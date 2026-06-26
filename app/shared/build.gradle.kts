@@ -60,6 +60,9 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.kotlinx.coroutinesCore)
+            implementation(libs.ktor.clientCore)
+            implementation(libs.ktor.clientWebsockets)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
