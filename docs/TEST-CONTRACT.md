@@ -1,4 +1,4 @@
-# Test-Contract (Entwurf v0.3) — CyppieAgents / KMPCyppieAgents
+# Test-Contract (Entwurf v0.4) — CyppieAgents / KMPCyppieAgents
 
 > Owner: QA/Test · Ticket: **CYP-7** (In Arbeit) · Status: **Entwurf — Gegenlesen Dev (CYP-6)/iOS-Tester ausstehend** · Stand: 2026-06-26
 > **Kanonischer Ort:** dieses Dokument im geteilten Repo `KMPCyppieAgents` unter `docs/TEST-CONTRACT.md`
@@ -73,12 +73,23 @@ nicht still umbenennen; Änderungen laufen über diesen Contract.
 |---|---|---|
 | Fenster-Manager | `window.<agentId>.titlebar`, `window.<agentId>.resizeHandle` | S2 |
 | Agent-Renderer | `agent.<agentId>.stream`, `agent.<agentId>.input`, `agent.<agentId>.sendBtn` | S1(05)/S8 |
+| Agent-Event-Zeile | `agent.<agentId>.event.<index>`, opt. `agent.<agentId>.event.<index>.<kind>` | S1(05)/S8 |
 | Comm-Panel | `comm.channelList`, `comm.channel.<channelId>`, `comm.timeline`, `comm.message.<msgId>` | S6 |
 | ACL-Matrix | `acl.cell.<channelId>.<agentId>.read`, `…​.write`, `acl.preset.hubSpoke` | S7 |
 
 `<agentId>`/`<channelId>` = stabile IDs aus der Config/DTO (z. B. `po`, `frontend`, `po-frontend`).
 `<msgId>` = `message.id` (ULID/UUID) — auch für **Reconnect-Idempotenz** (S6-Risiko) nutzbar.
 `agent.<id>.stream` = der scrollende stream-json-Renderer (Terminologie aus iOS-Vorschlag übernommen).
+
+**Per-Event-Zeilen-Adressierung im Stream (v0.4 — auf Dev-Flag aus `AgentViewTags.kt` / CYP-6 entschieden):**
+- `agent.<agentId>.event.<index>` — die **N-te** Event-Zeile im Stream. `<index>` = **0-basierte Render-Reihenfolge**,
+  stabil innerhalb einer Session (rein additiv — neue Events hängen hinten an, ändern keine bestehenden Indizes).
+- Optionaler Kind-Qualifier: `agent.<agentId>.event.<index>.<kind>` mit **`<kind>` ∈ `assistantText` · `toolCall` · `toolResult`**
+  (an die stream-json-Event-Arten aus 05 §4 angelehnt). Erlaubt typbasierte Assertions („eine `toolCall`-Zeile erschien")
+  zusätzlich zu positionsbasierten („Inhalt der Zeile 3").
+- `<index>` ist `[A-Za-z0-9-]+`-konform (Ziffern) → kompatibel mit der Maestro-Escaping-Regel (§4).
+- **Dev-Hinweis:** `AgentViewTags` um `event(agentId, index)` (+ optional `event(agentId, index, kind)`) erweitern;
+  die drei bestehenden Tags (`stream`/`input`/`sendBtn`) sind bereits contract-konform.
 
 > Maestro auf Wasm/Android konsumiert diese Tags über die **Compose-Semantics/Accessibility-Knoten**
 > (`testTagsAsResourceId` aktivieren, damit Tags als Resource-/Accessibility-IDs sichtbar werden).
@@ -168,6 +179,9 @@ Inspektion allein genügt nicht bei allem Testbaren. End-to-End-Pfad prüfen, ni
 ---
 
 ## Changelog
+- v0.4 (2026-06-26): Per-Event-Zeilen-Adressierung `agent.<id>.event.<index>[.<kind>]` ergänzt — entscheidet den in
+  `AgentViewTags.kt` (CYP-6) vom Dev an die Schema-Hoheit geflaggten offenen Punkt. Dev-WIP-Tags (`stream`/`input`/`sendBtn`)
+  als contract-konform bestätigt.
 - v0.3 (2026-06-26): Ins geteilte Repo nach `docs/TEST-CONTRACT.md` verlegt (PO-Konvention). Maestro-Input vom
   iOS-Tester eingearbeitet: (a) `id:`-Regex → Tag-Selektoren in Flows escapen+ankern (`^…\.…$`); (b) Segment-Zeichensatz
   auf `[A-Za-z0-9-]+` beschränkt. Severity-Skala S2 um „funktionale AC-Abweichung" geschärft (CYP-8).
