@@ -56,6 +56,19 @@ class AclMatrixTest {
     }
 
     @Test
+    fun contradictoryDuplicateEntriesDenyWins() {
+        // Two entries for the same (channel,agent): one grants write, one denies. Deny must win,
+        // so a stray appended canWrite=true cannot silently escalate over an intended false.
+        val dup = AclMatrix(
+            channels,
+            entries + AclEntry("po-backend", "backend", canRead = true, canWrite = false),
+        )
+        assertFalse(dup.canWrite("po-backend", "backend"))
+        // both grant read → read stays allowed
+        assertTrue(dup.canRead("po-backend", "backend"))
+    }
+
+    @Test
     fun unknownChannelOrAgentFailsClosed() {
         assertFalse(acl.canRead("does-not-exist", "po"))
         assertFalse(acl.canWrite("po-backend", "ghost"))
