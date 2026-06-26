@@ -1,14 +1,14 @@
 package com.tneff.cyppieagents.agentview
 
 /**
- * `testTag` contract for the agent renderer — follows the shared Test-Contract v0.2
- * (`test/TEST-CONTRACT.md` §2): schema `<area>.<element>[.<id>][.<qualifier>]`, prefixless,
- * area `agent`, addressed per `agentId`. This is the single source of truth shared with the
- * tester (CYP-7); tags are an API between Dev and QA — not renamed silently.
+ * `testTag` contract for the agent renderer — follows the shared Test-Contract v0.5
+ * (`docs/TEST-CONTRACT.md` §2): schema `<area>[.<scopeId>].<element>[.<selectorId>][.<qualifier>]`,
+ * prefixless. The `agent` area is instance-scoped, so tags read `agent.<agentId>.<element>…`.
+ * Single source of truth shared with the tester (CYP-7); tags are an API between Dev and QA —
+ * not renamed silently.
  *
- * Only the three elements the contract names for the `agent` area are defined here
- * (`stream`, `input`, `sendBtn`). Per-event-row addressing inside the stream is intentionally
- * NOT invented here — it is flagged to the tester (schema authority) for a contract addition.
+ * Segment values are `[A-Za-z0-9-]+` (no dots — they collide with the separator and Maestro's
+ * regex selector); callers must pass `agentId`s that satisfy that.
  */
 object AgentViewTags {
     /** The scrolling stream-json transcript (LazyColumn) for the given agent. */
@@ -19,4 +19,18 @@ object AgentViewTags {
 
     /** The send button. */
     fun sendBtn(agentId: String) = "agent.$agentId.sendBtn"
+
+    /** The N-th event line in the stream. [index] is the 0-based, additive-stable render order. */
+    fun event(agentId: String, index: Int) = "agent.$agentId.event.$index"
+
+    /** As [event], qualified by event kind for type-based assertions. */
+    fun event(agentId: String, index: Int, kind: EventKind) =
+        "agent.$agentId.event.$index.${kind.tag}"
+}
+
+/** Event-kind qualifier vocabulary from Test-Contract v0.4 §2 (`assistantText` · `toolCall` · `toolResult`). */
+enum class EventKind(val tag: String) {
+    ASSISTANT_TEXT("assistantText"),
+    TOOL_CALL("toolCall"),
+    TOOL_RESULT("toolResult"),
 }

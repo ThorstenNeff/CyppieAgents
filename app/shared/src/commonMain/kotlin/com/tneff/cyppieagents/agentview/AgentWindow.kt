@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -76,20 +76,33 @@ private fun AgentTranscript(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        items(events, key = { it.id }) { event ->
+        itemsIndexed(events, key = { _, event -> event.id }) { index, event ->
             when (event) {
-                is AgentEvent.AssistantText -> AssistantTextRow(event)
-                is AgentEvent.ToolCall -> ToolCallRow(event)
-                is AgentEvent.Result -> ResultRow(event)
-                is AgentEvent.Notice -> NoticeRow(event)
+                is AgentEvent.AssistantText -> AssistantTextRow(
+                    event,
+                    Modifier.testTag(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
+                )
+                is AgentEvent.ToolCall -> ToolCallRow(
+                    event,
+                    Modifier.testTag(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
+                )
+                is AgentEvent.Result -> ResultRow(
+                    event,
+                    Modifier.testTag(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
+                )
+                // Notice has no kind in the v0.4 vocabulary → index tag only (kind qualifier is optional).
+                is AgentEvent.Notice -> NoticeRow(
+                    event,
+                    Modifier.testTag(AgentViewTags.event(agentId, index)),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AssistantTextRow(event: AgentEvent.AssistantText) {
-    Row(modifier = Modifier.fillMaxWidth()) {
+private fun AssistantTextRow(event: AgentEvent.AssistantText, modifier: Modifier = Modifier) {
+    Row(modifier = modifier.fillMaxWidth()) {
         Text(
             text = event.text,
             color = MaterialTheme.colorScheme.onSurface,
@@ -106,14 +119,14 @@ private fun AssistantTextRow(event: AgentEvent.AssistantText) {
 }
 
 @Composable
-private fun ToolCallRow(event: AgentEvent.ToolCall) {
+private fun ToolCallRow(event: AgentEvent.ToolCall, modifier: Modifier = Modifier) {
     val (glyph, tint) = when (event.status) {
         ToolStatus.RUNNING -> "⟳" to MaterialTheme.colorScheme.tertiary
         ToolStatus.OK -> "✓" to MaterialTheme.colorScheme.primary
         ToolStatus.ERROR -> "✗" to MaterialTheme.colorScheme.error
     }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -128,7 +141,7 @@ private fun ToolCallRow(event: AgentEvent.ToolCall) {
 }
 
 @Composable
-private fun ResultRow(event: AgentEvent.Result) {
+private fun ResultRow(event: AgentEvent.Result, modifier: Modifier = Modifier) {
     val container =
         if (event.isError) MaterialTheme.colorScheme.errorContainer
         else MaterialTheme.colorScheme.surfaceVariant
@@ -136,7 +149,7 @@ private fun ResultRow(event: AgentEvent.Result) {
         if (event.isError) MaterialTheme.colorScheme.onErrorContainer
         else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(container)
             .padding(horizontal = 8.dp, vertical = 4.dp),
@@ -151,12 +164,12 @@ private fun ResultRow(event: AgentEvent.Result) {
 }
 
 @Composable
-private fun NoticeRow(event: AgentEvent.Notice) {
+private fun NoticeRow(event: AgentEvent.Notice, modifier: Modifier = Modifier) {
     Text(
         text = event.text,
         color = MaterialTheme.colorScheme.outline,
         style = MaterialTheme.typography.labelSmall,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     )
 }
 
