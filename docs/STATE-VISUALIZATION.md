@@ -62,13 +62,16 @@ Jede Transcript-Zeile trägt **drei redundante Signalträger** (WCAG 1.4.1 „Us
 
 ### 3.1 Status-Set
 
+**MVP `AgentStatus` (mit Dev bestätigt, abgeleitet aus dem Transcript):** `RUNNING` / `ERROR` / `IDLE` / `OFFLINE`.
+
 | Status | Token | Icon | Label-Key | Bedeutung (ehrlich) |
 |---|---|---|---|---|
 | `RUNNING` | `state.running` | Progress | `agent.status.running` | Agent arbeitet (Turn aktiv: Assistant streamt **oder** Tool RUNNING) |
 | `IDLE` | `state.idle` | Ruhe-Punkt | `agent.status.idle` | Turn abgeschlossen, **nichts** offen erwartet; nächster Turn jederzeit möglich |
-| `WAITING_FOR_INPUT` | `state.waiting` | Aufmerksamkeit | `agent.status.waiting` | Agent **kann ohne menschlichen/PO-Input nicht weiter** — siehe §3.2 |
 | `ERROR` | `state.error` | Warn-Dreieck | `agent.status.error` | Letzter Turn endete mit `Result.isError` |
 | `OFFLINE` | `state.offline` | Strich/leer | `agent.status.offline` | Session gestoppt/nicht verbunden (Lifecycle/`Notice`) |
+
+> **`WAITING_FOR_INPUT` ist bewusst NICHT im MVP** (Token/Key/Icon stehen für später bereit). Begründung in §3.2 — kein explizites Signal im stream-json, deshalb nicht raten (Disclosure). Kommt erst mit der Eskalations-Naht (05 §5).
 
 ### 3.2 `IDLE` vs `WAITING_FOR_INPUT` — der Ehrlichkeits-Kern
 
@@ -76,8 +79,7 @@ Diese beiden **dürfen nicht synonym** verwendet werden:
 - **`IDLE`** = „Turn fertig, ich erwarte nichts Bestimmtes." Default nach jedem erfolgreichen `Result`.
 - **`WAITING_FOR_INPUT`** = „Ich bin **blockiert** und brauche eine Antwort, um fortzufahren."
 
-> **Problem & Dev/PO-Ask:** Das stream-json-`ResultEvent` signalisiert **nicht explizit** „warte auf Input". Ein abgeschlossener Assistant-Turn ist technisch ununterscheidbar von „Agent stellt eine Rückfrage". **`WAITING_FOR_INPUT` darf nur gezeigt werden, wenn die Blockade real ist** — sonst implizieren wir eine Rückfrage, die es nicht gibt (Disclosure-Verstoß). 
-> **Vorschlag MVP:** Default nach `Result(success)` = **`IDLE`**. `WAITING_FOR_INPUT` nur, wenn ein **explizites Signal** vorliegt (späterer `PermissionRequest`-Event aus der Eskalations-Naht 05 §5, oder ein vom Mediator gesetztes Flag). Bis es das gibt: `WAITING_FOR_INPUT` **nicht** raten. → Mit Dev/PO bestätigen.
+> **Entschieden (Dev + PO, 2026-06-26):** Das stream-json-`ResultEvent` signalisiert **nicht explizit** „warte auf Input"; ein abgeschlossener Assistant-Turn ist technisch ununterscheidbar von „Agent stellt eine Rückfrage". Deshalb: Default nach `Result(success)` = **`IDLE`**; **`WAITING_FOR_INPUT` bleibt draußen**, bis die Eskalations-Naht (05 §5) ein **explizites Signal** liefert (`PermissionRequest`-Event o. ä.). Bis dahin **nicht raten** — sonst implizieren wir eine Rückfrage, die es nicht gibt (Disclosure-Verstoß).
 
 ### 3.3 Ableitungs-Vorschlag (für Dev, CYP-6)
 
@@ -87,10 +89,10 @@ Vorgeschlagene reine Funktion `deriveStatus(transcript): AgentStatus` bzw. ein z
 letztes Event ist ToolCall(RUNNING) ............... RUNNING
 es streamt ein AssistantText(complete=false) ...... RUNNING
 letztes Result(isError=true) ...................... ERROR
-letztes Result(isError=false), kein Block-Signal .. IDLE
-explizites Block-Signal (später) .................. WAITING_FOR_INPUT
+letztes Result(isError=false) ..................... IDLE
 Session gestoppt (Notice/Lifecycle) ............... OFFLINE
 vor erstem Event .................................. IDLE
+(WAITING_FOR_INPUT: erst mit explizitem Block-Signal, post-MVP)
 ```
 
 Dies ist ein **Design-Vorschlag**, keine Implementierungsvorgabe — die Platzierung (ViewModel vs. Mediator) entscheidet Dev.
@@ -147,16 +149,19 @@ Die Statusanzeige darf nie eine **Garantie** suggerieren, die nicht existiert. T
 
 Konvention + vollständige Key-Liste mit DE/EN-Werten: **`docs/design/i18n-keys.md`**.
 
-Kurz: Sprachen **`de` (Quelle/Default) + `en`**; namespaced Keys (`agent.state.*`, `agent.status.*`, `tool.status.*`, `result.*`, `a11y.*`). Es gibt **noch keinen** Projekt-Standard — diese Liste ist der **Vorschlag** zur Abnahme.
+Kurz: Sprachen **`de` (Quelle/Default) + `en`**. **Mechanismus (mit Dev bestätigt): `compose.resources`** → reale Keys sind **identifier-safe (Underscore)**, z. B. `Res.string.agent_status_running`. Die gepunktete Form (`agent.status.*`) bleibt als **menschlicher Namespace**; die reale Underscore-Key-Spalte steht in `i18n-keys.md`.
 
-> **⚠ Shared-Key-Drift (Pflicht-Flag, meine Rolle):** Sobald diese Keys in `:app:shared`-Resources landen, muss das **konsumierende Modul (CYP-6-Renderer) re-syncen**, sonst bricht ein geteilter Check. **Empfehlung: Key-Lieferung mit der CYP-6-Umsetzung timen**, nicht isoliert mergen. Mechanismus (compose.resources vs. moko-resources) mit Dev bestätigen — die Key-**Namen** sind mechanismus-neutral gehalten.
+> **⚠ Shared-Key-Drift (Pflicht-Flag, meine Rolle):** Sobald diese Keys in `:app:shared`-Resources landen, muss das **konsumierende Modul (CYP-6-Renderer) re-syncen**, sonst bricht ein geteilter Check. **Empfehlung: Key-Lieferung mit der CYP-6-Umsetzung timen**, nicht isoliert mergen.
 
 ---
 
-## 7. Offene Punkte / Dev-Asks (über PO)
+## 7. Entscheidungen & offene Punkte
 
-1. **Agent-Gesamtstatus (Ebene B)** existiert nicht im `AgentViewModel` — abgeleiteten `StateFlow<AgentStatus>` ergänzen (§3.3)? Platzierung ViewModel vs. Mediator?
-2. **`WAITING_FOR_INPUT`-Signal:** Bis ein explizites Block-Signal existiert (Eskalations-Naht 05 §5), Status nicht raten — bestätigt?
-3. **Resource-Mechanismus** in `:app:shared` (compose.resources / moko-resources) — bestimmt das finale Key-Format.
+**Entschieden (Dev + PO, 2026-06-26):**
+1. ✅ **`AgentStatus` = RUNNING / ERROR / IDLE / OFFLINE**, abgeleitet aus dem Transcript (§3.3). Platzierung (ViewModel vs. Mediator) liegt bei Dev.
+2. ✅ **`WAITING_FOR_INPUT` bleibt draußen**, bis die Eskalations-Naht (05 §5) ein explizites Signal liefert.
+3. ✅ **Resource-Mechanismus = `compose.resources`** → Underscore-Keys (siehe `i18n-keys.md`).
+
+**Offen:**
 4. **Kontrast-Validierung** der Hex-Werte automatisieren (QA/Dev) vor „Fertig".
 5. **Theme-Basis:** dark als Default des Agentenfensters bestätigt? Light-Werte sind mitgeliefert.
