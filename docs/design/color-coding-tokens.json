@@ -18,13 +18,13 @@
     "step1": "knownSlots[id] falls vorhanden (Vorhersagbarkeit der Demo)",
     "step2": "sonst FNV-1a(id) 32-bit mod paletteSize",
     "po": "immer reservierter Slot 'po' (Hub), nie per Hash",
-    "placement": "geteilte Util in :core (Dev bestaetigt), damit alle Clients identisch faerben"
+    "split": "Dev-bestaetigt: :core liefert NUR den Int-Index (compose-frei). Index->Farbe (diese Palette) lebt im UI :app:shared."
   },
   "knownSlots": {
     "po": "po",
     "frontend": "sender.0",
     "backend": "sender.1",
-    "_note": "weitere MVP-Agenten-IDs mit Dev/PO bestaetigen und hier ergaenzen"
+    "_note": "MVP-Agenten PO-bestaetigt: po/frontend/backend"
   },
   "po_slot": {
     "role": "PO / Hub — distinct, ruhig-autoritativ",

@@ -42,24 +42,29 @@ Definiert, wie Absender und Kanäle im Comm-Panel **deterministisch, barrierearm
 
 ---
 
-## 3. Deterministischer Mapping-Algorithmus (für Dev)
+## 3. Deterministischer Mapping-Algorithmus
 
-Reine Funktion, server- und clientseitig identisch:
+**Zwei-Schicht-Trennung (mit Dev bestätigt, 2026-06-26):**
+- **`:core` liefert nur den deterministischen Slot-Index (`Int`)** — reine, compose-freie Funktion. Damit bleibt `:core` UI-unabhängig und alle Clients/der Server berechnen denselben Index.
+- **Das Mapping Index → Farbe (Palette/Theme) lebt im UI (`:app:shared`).** Diese Spec definiert die **Slot-Vergabe** (unten) **und die Palette** (`color-coding-tokens.json`); `:core` kennt die Farben nicht.
 
-```
+```kotlin
+// :core — nur der Index, keine Compose-/Color-Typen
 fun colorSlot(id: String, paletteSize: Int): Int {
-    // 1) bekannte/feste Agenten: expliziter Slot (Vorhersagbarkeit)
-    knownSlots[id]?.let { return it }          // po, frontend, backend, ...
-    // 2) sonst: stabiler Hash (FNV-1a, 32-bit) → Slot
-    var h = 2166136261.toUInt()
+    knownSlots[id]?.let { return it }          // po/frontend/backend (Vorhersagbarkeit)
+    var h = 2166136261u                          // FNV-1a, 32-bit
     for (c in id.encodeToByteArray()) { h = h xor c.toUInt(); h *= 16777619u }
     return (h % paletteSize.toUInt()).toInt()
 }
 ```
+```kotlin
+// :app:shared — Index → Farbe (Palette aus dieser Spec / Theme)
+val color = senderPalette[colorSlot(agentId, senderPalette.size)]
+```
 
-- **PO:** reservierter Slot 0 (Hub) — fest, nie per Hash.
-- **`knownSlots`:** explizite Zuordnung für die MVP-Agenten (po/frontend/backend/…), damit die Demo-Farben vorhersehbar sind; Werte siehe `color-coding-tokens.json`.
-- **Kollisionen** bei vielen dynamischen Agenten sind akzeptabel, weil Avatar+Name die Eindeutigkeit tragen (Prinzip 2). Algorithmus-Platzierung (`:core` util vs. `:app:shared`) entscheidet Dev — er **muss** geteilt sein, damit alle Clients gleich färben.
+- **PO:** reservierter Slot (Hub) — fest über `knownSlots`, nie per Hash.
+- **`knownSlots`:** `po` / `frontend` / `backend` (MVP, PO-bestätigt); Werte siehe `color-coding-tokens.json`.
+- **Kollisionen** bei vielen dynamischen Agenten sind akzeptabel, weil Avatar+Name die Eindeutigkeit tragen (Prinzip 2).
 
 ---
 
@@ -90,7 +95,7 @@ Eigenständig von Absender/Kanal. **Reuse statt Neuerfindung:** für `STATUS` di
 ## 7. Entscheidungen & offene Punkte
 
 **Vom PO entschieden (2026-06-26), Devs finale Umsetzbarkeits-Bestätigung steht aus:**
-1. ✅ **Algorithmus-Platzierung:** `colorSlot`-Util liegt in `:core` (alle Clients färben identisch).
+1. ✅ **Algorithmus-Split:** `:core` liefert nur den Slot-**Index (`Int`)** (compose-frei); das **Index→Farbe-Mapping (Palette)** liegt im UI (`:app:shared`). Spec definiert Slot-Vergabe + Palette (§3).
 2. ✅ **`knownSlots`:** MVP-Agenten = `po` / `frontend` / `backend`.
 3. ✅ **Avatar-Quelle:** Initialen aus `Agent.name`, kein Bild-Asset im MVP.
 
