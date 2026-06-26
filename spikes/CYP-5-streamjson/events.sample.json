@@ -1,0 +1,94 @@
+{
+  "_note": "Sanitized representative sample, one of each observed event type (CLI 2.1.193). Session ids / env-specific cwd & mcp_servers redacted.",
+
+  "system/init": {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "<uuid>",
+    "model": "claude-opus-4-8",
+    "cwd": "<agent-worktree-cwd>",
+    "tools": 67,
+    "permissionMode": "bypassPermissions",
+    "apiKeySource": "none",
+    "mcp_servers": [{ "name": "<server>", "status": "connected" }],
+    "uuid": "<uuid>"
+  },
+
+  "rate_limit_event": {
+    "type": "rate_limit_event",
+    "rate_limit_info": {
+      "status": "allowed",
+      "resetsAt": 1782517200,
+      "rateLimitType": "five_hour",
+      "overageStatus": "rejected",
+      "isUsingOverage": false
+    },
+    "uuid": "<uuid>",
+    "session_id": "<uuid>"
+  },
+
+  "assistant#tool_use": {
+    "type": "assistant",
+    "session_id": "<uuid>",
+    "uuid": "<uuid>",
+    "parent_tool_use_id": null,
+    "message": {
+      "role": "assistant",
+      "model": "claude-opus-4-8",
+      "stop_reason": "tool_use",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_<id>",
+          "name": "Bash",
+          "input": { "command": "echo spike-tool-ok", "description": "Echo test string" },
+          "caller": { "type": "direct" }
+        }
+      ],
+      "usage": { "input_tokens": 0, "output_tokens": 0 }
+    }
+  },
+
+  "user#tool_result": {
+    "type": "user",
+    "session_id": "<uuid>",
+    "message": {
+      "role": "user",
+      "content": [
+        { "tool_use_id": "toolu_<id>", "type": "tool_result", "content": "spike-tool-ok", "is_error": false }
+      ]
+    }
+  },
+
+  "assistant#text": {
+    "type": "assistant",
+    "session_id": "<uuid>",
+    "message": {
+      "role": "assistant",
+      "stop_reason": "end_turn",
+      "content": [{ "type": "text", "text": "The command output was: spike-tool-ok" }]
+    }
+  },
+
+  "result/success": {
+    "type": "result",
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 11724,
+    "num_turns": 2,
+    "session_id": "<uuid>",
+    "total_cost_usd": 0.1271775,
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "result": "The command output was: spike-tool-ok"
+  },
+
+  "_stdin_user_turn": {
+    "type": "user",
+    "message": { "role": "user", "content": [{ "type": "text", "text": "<nachricht an den agenten>" }] }
+  }
+}
