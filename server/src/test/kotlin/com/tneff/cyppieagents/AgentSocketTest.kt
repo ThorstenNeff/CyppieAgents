@@ -125,6 +125,33 @@ class AgentSocketTest {
     }
 
     @Test
+    fun tokenAuthorizeDeniesAgentTokenForForeignAgent() = testApplication {
+        // CYP-25 (security branch): an agent token may watch ONLY its own session. frontend's token
+        // requesting backend's stream must be denied — otherwise one agent could drive another.
+        val sessions = ConnectorSessions()
+        sessions.register(FakeConnectorSession("backend"))
+        val registry = TokenRegistry(
+            mapOf("tok-backend" to "backend", "tok-frontend" to "frontend"),
+            operatorToken = "tok-op",
+        )
+        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry)) }
+        val client = createClient { install(ClientWebSockets) }
+
+        // Cross-agent: frontend's token on backend's socket → deny.
+        client.webSocket("/ws/agent?agentId=backend&token=tok-frontend") {
+            assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, closeReason.await()?.code)
+        }
+        // Own agent: backend's token on backend's socket → allowed.
+        client.webSocket("/ws/agent?agentId=backend&token=tok-backend") {
+            send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), UserTurn("self"))))
+            val ack = assertIs<AssistantEvent>(
+                CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText()),
+            )
+            assertTrue(assertIs<TextBlock>(ack.message.content.single()).text.contains("self"))
+        }
+    }
+
+    @Test
     fun unknownAgentIsRejected() = testApplication {
         application { installAgentSocket(ConnectorSessions(), authorize = { true }) }
         val client = createClient { install(ClientWebSockets) }
