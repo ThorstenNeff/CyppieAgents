@@ -1,4 +1,4 @@
-# Test-Contract (Entwurf v0.4) — CyppieAgents / KMPCyppieAgents
+# Test-Contract (Entwurf v0.5) — CyppieAgents / KMPCyppieAgents
 
 > Owner: QA/Test · Ticket: **CYP-7** (In Arbeit) · Status: **Entwurf — Gegenlesen Dev (CYP-6)/iOS-Tester ausstehend** · Stand: 2026-06-26
 > **Kanonischer Ort:** dieses Dokument im geteilten Repo `KMPCyppieAgents` unter `docs/TEST-CONTRACT.md`
@@ -52,16 +52,34 @@ nicht still umbenennen; Änderungen laufen über diesen Contract.
 **→ Einheitliches Schema (gewählt):**
 
 ```
-<area>.<element>[.<id>][.<qualifier>]
+<area>[.<scopeId>].<element>[.<selectorId> …][.<qualifier>]
 ```
 
 - **Prefixlos** (folgt dem iOS-Vorschlag; kürzer, gut lesbar). Namespacing übernimmt ohnehin
   `testTagsAsResourceId` innerhalb der App. *Falls je Tag-Kollisionen mit Library-Tags auftreten,
   führen wir einen `cyp.`-Prefix nachträglich global ein — der Punkt-Aufbau bleibt dann identisch.*
 - `<area>` aus **fester Vokabelliste**: `window` · `agent` · `comm` · `acl` · `app`.
-- `<element>` = lowerCamel. `<id>` = dynamische Entity-ID (nur beim Adressieren einer Instanz).
-  `<qualifier>` = Sub-Teil (z. B. `read`/`write`) — übernimmt die Rolle meines früheren Qualifiers,
-  deckt die Matrix-Zellen ab, die im 2-Segment-Schema nicht ausdrückbar wären.
+- `<element>` = lowerCamel. `<qualifier>` = Sub-Teil (z. B. `read`/`write`).
+
+**ID-Position — zwei Rollen (v0.5, löst Dev-Inkonsistenz-Finding CYP-6):** Die frühere flache Grammatik
+`<area>.<element>[.<id>]` war widersprüchlich zu den skalierten Beispielen (`window.<agentId>.titlebar`
+hat die ID **vor** dem Element). Auflösung: eine ID hat genau **eine von zwei Rollen**, an ihrer Position erkennbar:
+
+| ID-Rolle | Position | Bedeutung |
+|---|---|---|
+| **`<scopeId>`** | **direkt nach `<area>`** | skaliert den gesamten Teilbaum auf **eine Instanz** (instanz-skalierte Areas: `window`/`agent` → `agentId`) |
+| **`<selectorId>`** | **nach `<element>`** | wählt **welche** Entität in einer Sammlung (z. B. `channelId`/`msgId`/Matrix-Zelle) |
+
+| `<area>` | Rolle | Aufbau |
+|---|---|---|
+| `window` | instanz-skaliert (agentId) | `window.<agentId>.<element>` |
+| `agent` | instanz-skaliert (agentId) | `agent.<agentId>.<element>[.<selectorId>][.<qualifier>]` |
+| `comm` | Sammlung | `comm.<element>[.<selectorId>]` |
+| `acl` | Sammlung | `acl.<element>[.<selectorId> …][.<qualifier>]` |
+| `app` | global | `app.<element>` |
+
+So bleiben **alle** bestehenden Beispiele gültig (inkl. Devs bereits geschriebenem `agent.<agentId>.stream`).
+Der `<qualifier>` deckt weiterhin die ACL-Matrix-Zellen (`read`/`write`) ab.
 
 **Segment-Zeichensatz (verbindlich, iOS-Tester-Input v0.3):**
 - Jeder Segmentwert — inkl. dynamischer IDs — ist auf **`[A-Za-z0-9-]+`** beschränkt.
@@ -136,6 +154,15 @@ nicht still umbenennen; Änderungen laufen über diesen Contract.
 - Weil Segmentwerte auf `[A-Za-z0-9-]+` beschränkt sind (§2), bleibt das Escapen mechanisch und eindeutig:
   nur die Trenner-Punkte werden zu `\.`, sonst keine Regex-Sonderzeichen im Tag.
 
+**LazyColumn-/Scroll-Konvention (verbindlich, Dev-Input CYP-6 v0.5):**
+- In einer `LazyColumn` haben nur **sichtbare (komponierte)** Items einen Semantics-Knoten — off-screen-Tags
+  (`comm.message.<msgId>`, `agent.<agentId>.event.<index>`) **existieren für Test/Maestro nicht**, bis sie in
+  den Viewport gescrollt sind.
+- **Regel:** Vor einem Assert/`tapOn` auf eine bestimmte Listen-Zeile **erst scrollen**:
+  - Maestro: `scrollUntilVisible` mit dem (escapeten, geankerten) Tag-Selektor aus der Konvention oben.
+  - Compose-UI-Test: auf dem `LazyColumn`-Knoten `performScrollToNode(hasTestTag(...))`.
+- Container-Tags (`comm.timeline`, `agent.<agentId>.stream`) sind immer komponiert → als stabiles Scroll-Ziel nutzbar.
+
 ---
 
 ## 5. Severity-Skala (geteiltes Vokabular für Findings)
@@ -179,6 +206,9 @@ Inspektion allein genügt nicht bei allem Testbaren. End-to-End-Pfad prüfen, ni
 ---
 
 ## Changelog
+- v0.5 (2026-06-26): Zwei Dev-Findings (CYP-6, gg. v0.2) aufgelöst — Schema-Hoheit QA: (1) **Schema-Inkonsistenz**
+  behoben via ID-Rollen `<scopeId>` (nach area) vs `<selectorId>` (nach element); alle Beispiele bleiben gültig.
+  (2) **LazyColumn-/Scroll-Konvention** (`scrollUntilVisible`/`performScrollToNode` vor Assert auf off-screen-Zeilen).
 - v0.4 (2026-06-26): Per-Event-Zeilen-Adressierung `agent.<id>.event.<index>[.<kind>]` ergänzt — entscheidet den in
   `AgentViewTags.kt` (CYP-6) vom Dev an die Schema-Hoheit geflaggten offenen Punkt. Dev-WIP-Tags (`stream`/`input`/`sendBtn`)
   als contract-konform bestätigt.
