@@ -37,10 +37,13 @@ data class SystemEvent(
     override val uuid: String? = null,
     val model: String? = null,
     val cwd: String? = null,
-    val tools: Int? = null,
+    /** The CLI emits the available tool NAMES as an array (verified on a real run, CYP-13). */
+    val tools: List<String>? = null,
     val permissionMode: String? = null,
     @SerialName("apiKeySource") val apiKeySource: String? = null,
-) : StreamJsonEvent
+) : StreamJsonEvent {
+    val toolCount: Int? get() = tools?.size
+}
 
 /** `{"type":"rate_limit_event", ...}` — observability/spend signal; not routed to the hub. */
 @Serializable
