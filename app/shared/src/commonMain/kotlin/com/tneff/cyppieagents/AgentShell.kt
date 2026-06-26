@@ -3,6 +3,7 @@ package com.tneff.cyppieagents
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -39,6 +40,11 @@ fun AgentShell(modifier: Modifier = Modifier) {
         val hostHeight = maxHeight.value
         val state = remember {
             WindowManagerState(WindowReducer.tile(agents, hostWidth = hostWidth, hostHeight = hostHeight))
+        }
+        // Feed the measured host size into the manager so its resize re-clamp (CYP-16 F1/F6) fires
+        // when the window/viewport changes — otherwise windows can be stranded off-screen.
+        LaunchedEffect(hostWidth, hostHeight) {
+            state.updateHostSize(hostWidth, hostHeight)
         }
         WindowHost(
             state = state,
