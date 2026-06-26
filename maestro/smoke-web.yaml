@@ -1,0 +1,45 @@
+# CYP-11 — Web smoke flow (Maestro), Wasm/Web target.
+#
+# Proves the two points the iOS-tester required for the Wasm smoke (Test-Contract v0.5 §2/§4):
+#   (1) a testTag is addressable on the Wasm canvas, and
+#   (2) scrollUntilVisible reaches an OFF-SCREEN list row (only composed/visible nodes exist).
+#
+# Maestro `id:` selectors are REGEX → separator dots are escaped (\.) and the tag is anchored
+# (^…$) so they cannot match too broadly (Test-Contract v0.5 §4).
+#
+# PREREQUISITES (see README.md) — this flow is authored by Dev (CYP-11) but its RUNTIME
+# verification belongs to the tester's (CYP-7) environment; Dev's sandbox has no browser/Maestro:
+#   * Wasm/Web build served at ${APP_URL}.
+#   * The served screen exposes testTags as resource-ids — enable `testTagsAsResourceId` at the
+#     app/window root. This is platform-specific (not commonMain) and its Wasm mechanism is still to
+#     be confirmed; it is a flagged CYP-11 follow-up, coordinated with the root owner (CYP-10).
+#   * The screen renders the agent stream for agentId "backend" with enough event rows that the
+#     target row starts off-screen (e.g. the CYP-6 renderer on a scripted scenario, or a harness).
+#
+# Selector tags below follow the v0.5 schema: agent.<agentId>.input, agent.<agentId>.stream,
+# agent.<agentId>.event.<index>.
+appId: web            # web flow — placeholder; the real target is ${APP_URL} via openLink
+name: "CYP-11 Web smoke — testTag addressable + off-screen scroll"
+tags:
+  - smoke
+  - gating
+env:
+  APP_URL: "http://localhost:8080"
+---
+- openLink: ${APP_URL}
+
+# (1) a tagged element is addressable on the canvas
+- assertVisible:
+    id: "^agent\.backend\.input$"
+    label: "Agent input addressable via testTag on the Wasm canvas"
+
+# (2) an off-screen stream row is reached only by scrolling its container
+- scrollUntilVisible:
+    element:
+      id: "^agent\.backend\.event\.5$"
+    direction: DOWN
+    timeout: 10000
+    label: "Scroll the stream until an initially off-screen event row is visible"
+- assertVisible:
+    id: "^agent\.backend\.event\.5$"
+    label: "Off-screen event row is visible after scroll"
