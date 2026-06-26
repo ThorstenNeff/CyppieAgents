@@ -1,0 +1,43 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-12",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen (CYP-6) + Kontrast-Validierung (QA/Dev)",
+    "brand": "CyppieAgents (Anti-Hype, eigene Identität; NeonFi nur Referenz)",
+    "note": "Semantische Tokens. Komponenten referenzieren die semantischen Namen, nie Hex direkt. 'dark' ist Default des Agentenfensters. Kontrast-Ziele: Text >=4.5:1, Icon/Nicht-Text-UI >=3:1 gegen die jeweilige surface; Werte sind so gewaehlt, automatische Validierung steht aus.",
+    "color_is_never_sole_signal": "Jeder Zustand = Farbe + Icon + Text-Label (WCAG 1.4.1)."
+  },
+  "surface": {
+    "dark":  { "window": "#16171A", "raised": "#1E2024" },
+    "light": { "window": "#FFFFFF", "raised": "#F4F5F7" }
+  },
+  "semantic": {
+    "state.running":  { "role": "in-progress (Tool RUNNING / Assistant streaming / Agent RUNNING)", "dark": "#4DA3FF", "light": "#1A73E8", "icon": "progress", "label_key": "tool.status.running" },
+    "state.ok":       { "role": "Tool ohne Fehler ausgefuehrt / Turn abgeschlossen", "dark": "#3DD68C", "light": "#1E8E5A", "icon": "check", "label_key": "tool.status.ok" },
+    "state.error":    { "role": "Tool-/Turn-Fehler", "dark": "#FF6B6B", "light": "#C5221F", "icon": "alert-triangle", "label_key": "tool.status.error" },
+    "state.waiting":  { "role": "WAITING_FOR_INPUT (nur mit echtem Block-Signal)", "dark": "#FFC857", "light": "#B26A00", "icon": "attention", "label_key": "agent.status.waiting" },
+    "state.idle":     { "role": "Turn fertig, nichts offen erwartet", "dark": "#8A8F98", "light": "#6B7280", "icon": "dot", "label_key": "agent.status.idle" },
+    "state.offline":  { "role": "Session gestoppt / nicht verbunden", "dark": "#5A5E66", "light": "#9AA0A6", "icon": "minus", "label_key": "agent.status.offline" },
+    "state.notice":   { "role": "System-/Lifecycle-Hinweis", "dark": "#A0A4AD", "light": "#5F6368", "icon": "info", "label_key": null },
+    "state.neutral":  { "role": "abgeschlossener Assistant-Text (kein Status)", "dark": "#E6E7EA", "light": "#202124", "icon": null, "label_key": null }
+  },
+  "icons": {
+    "set": "Material-Symbols-aequivalent (final mit Dev abstimmen)",
+    "progress": "progress_activity / Spinner",
+    "check": "check",
+    "alert-triangle": "warning / error_outline",
+    "attention": "priority_high / help",
+    "dot": "circle (klein, gefuellt)",
+    "minus": "remove",
+    "info": "info"
+  },
+  "typography": {
+    "status_label": { "role": "Status-/Zustands-Label", "style": "label/caption, kompakt" },
+    "tool_summary": { "role": "Tool-summary (z.B. Bash-Kommando)", "style": "monospace, einzeilig, Ellipsis, voll per Tooltip/Expand" }
+  },
+  "motion": {
+    "running": "dezente Animation (Spinner / pulsierender Caret)",
+    "reduced_motion": "statischer Indikator, keine Endlos-Animation (prefers-reduced-motion respektieren)"
+  }
+}
