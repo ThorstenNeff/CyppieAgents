@@ -1,0 +1,230 @@
+# Test-Contract (v0.6) — CyppieAgents / KMPCyppieAgents
+
+> Owner: QA/Test · Ticket: **CYP-7** · Status: **Reviewt — Dev (CYP-6) + iOS-Tester OK; abgenommen** · Stand: 2026-06-26
+> **Kanonischer Ort:** dieses Dokument im geteilten Repo `KMPCyppieAgents` unter `docs/TEST-CONTRACT.md`
+> (geteilte Artefakte gehören ins Git-Repo mit `origin`, nicht in agent-lokale Ordner — PO-Konvention 2026-06-26).
+> Verbindliches Modul-Layout & Gating laut PO-Entscheid (Discord, 2026-06-26).
+> Dieses Dokument ist der **geteilte Test-Contract** zwischen QA und Dev/Backend: Test-IDs/Tags,
+> Test-Platzierung pro Modul, Maestro-Flow-Tags, Severity-Skala, Gating-Zuordnung.
+> Der Contract läuft dem Code bewusst voraus.
+
+---
+
+## 0. Verbindliche Rahmenbedingungen (vom PO bestätigt)
+
+- **Modul-Layout (real, maßgeblich):** `:app:{androidApp, desktopApp, webApp, shared, iosApp}`, `:core`, `:server`.
+  Die 02/04-Namen (`protocol`/`hub-cli`/`composeApp`) sind **vor-05** und nicht maßgeblich.
+  - `:core` = geteiltes Vertrags-/DTO-Modul (KMP common). `:server` = Ktor. `:app:shared` = Compose-UI (commonMain).
+  - `:hub-cli` existiert im MVP **nicht** (05: Koordination via stream-json + Backend-Mediation).
+- **Basis-Package:** `com.tneff.cyppieagents` (core: `…core`, shared: `…app.shared`).
+- **Gating-Fläche „Fertig" (slice-abhängig):**
+  - Backend/Logik/Comm-Hub (S0, S3, S4, S5): **`./gradlew check` grün** + Modul-/Server-Tests. Kein Maestro.
+  - UI-Slices (S2, S6, S7): **Maestro-Flow grün auf Web (Wasm)** als „≥1 Target" + Desktop (JVM) als manuelle Demo.
+    *Wasm-Gating noch unter Vorbehalt der Frontend-Bestätigung (Machbarkeit: **CYP-11**); Fallback-Target Android-Tablet.*
+  - **iOS-Baseline (v0.6):** **kompiliert = Pflicht** (Build darf nicht brechen); **Maestro-Smoke auf iOS = opportunistisch,
+    nicht-gatend** (kein Release-Gate). Deckt sich mit Epic CYP-4.
+
+---
+
+## 1. Ist-Stand des Repos (S0 Walking Skeleton) — verifiziert 2026-06-26
+
+| Modul | Test-Quellsatz | Framework (vorhanden) | Bestehende Tests |
+|---|---|---|---|
+| `:core` | `commonTest` | `kotlin.test` | – (Skeleton) |
+| `:server` | `src/test/kotlin` | `kotlin-test-junit` + `ktor-server-test-host` (`testApplication`) | `ApplicationTest.testRoot` |
+| `:app:shared` | `commonTest` / `jvmTest` / `iosTest` / `androidHostTest` | `kotlin.test` | `SharedCommonTest.example` u. a. |
+
+**Lücken, die der Contract voraussetzt (Dev-Asks, siehe §7):**
+- `:app:shared` hat **keine Compose-UI-Test-Abhängigkeit** → `testTag`-gestützte UI-Assertions noch nicht ausführbar.
+- `:core` hat **kein `kotlinx.serialization`** → DTO-Round-Trip-Tests erst möglich, wenn Plugin/Dep landen (S4).
+- **Kein Maestro** im Repo (`maestro/`-Verzeichnis + CI-Hook fehlen).
+
+---
+
+## 2. Test-ID-Schema für UI-Elemente (`Modifier.testTag`) — **konsolidiert**
+
+**Regel:** Jedes interaktive oder zustandstragende Compose-Element, das ein Test/Flow ansteuern muss,
+trägt einen stabilen `Modifier.testTag(...)`. Tags sind ein **API zwischen Dev und QA** — nicht raten,
+nicht still umbenennen; Änderungen laufen über diesen Contract.
+
+**Konsolidierung zweier Vorschläge (PO-Auftrag CYP-7):**
+- QA-Vorschlag: `cyp.<area>.<element>[.<qualifier>]` (Prefix + Qualifier für Matrix-Zellen).
+- iOS-Tester-Vorschlag: `<bereich>.<element>` (kurz, prefixlos — z. B. `comm.channelList`, `agent.input`, `agent.stream`).
+
+**→ Einheitliches Schema (gewählt):**
+
+```
+<area>[.<scopeId>].<element>[.<selectorId> …][.<qualifier>]
+```
+
+- **Prefixlos** (folgt dem iOS-Vorschlag; kürzer, gut lesbar). Namespacing übernimmt ohnehin
+  `testTagsAsResourceId` innerhalb der App. *Falls je Tag-Kollisionen mit Library-Tags auftreten,
+  führen wir einen `cyp.`-Prefix nachträglich global ein — der Punkt-Aufbau bleibt dann identisch.*
+- `<area>` aus **fester Vokabelliste**: `window` · `agent` · `comm` · `acl` · `app`.
+- `<element>` = lowerCamel. `<qualifier>` = Sub-Teil (z. B. `read`/`write`).
+
+**ID-Position — zwei Rollen (v0.5, löst Dev-Inkonsistenz-Finding CYP-6):** Die frühere flache Grammatik
+`<area>.<element>[.<id>]` war widersprüchlich zu den skalierten Beispielen (`window.<agentId>.titlebar`
+hat die ID **vor** dem Element). Auflösung: eine ID hat genau **eine von zwei Rollen**, an ihrer Position erkennbar:
+
+| ID-Rolle | Position | Bedeutung |
+|---|---|---|
+| **`<scopeId>`** | **direkt nach `<area>`** | skaliert den gesamten Teilbaum auf **eine Instanz** (instanz-skalierte Areas: `window`/`agent` → `agentId`) |
+| **`<selectorId>`** | **nach `<element>`** | wählt **welche** Entität in einer Sammlung (z. B. `channelId`/`msgId`/Matrix-Zelle) |
+
+| `<area>` | Rolle | Aufbau |
+|---|---|---|
+| `window` | instanz-skaliert (agentId) | `window.<agentId>.<element>` |
+| `agent` | instanz-skaliert (agentId) | `agent.<agentId>.<element>[.<selectorId>][.<qualifier>]` |
+| `comm` | Sammlung | `comm.<element>[.<selectorId>]` |
+| `acl` | Sammlung | `acl.<element>[.<selectorId> …][.<qualifier>]` |
+| `app` | global | `app.<element>` |
+
+So bleiben **alle** bestehenden Beispiele gültig (inkl. Devs bereits geschriebenem `agent.<agentId>.stream`).
+Der `<qualifier>` deckt weiterhin die ACL-Matrix-Zellen (`read`/`write`) ab.
+
+**Segment-Zeichensatz (verbindlich, iOS-Tester-Input v0.3):**
+- Jeder Segmentwert — inkl. dynamischer IDs — ist auf **`[A-Za-z0-9-]+`** beschränkt.
+  **Kein `.`** in `<id>`/`<qualifier>`/`<element>` (sonst kollidiert es mit dem Punkt-Trenner **und** mit
+  Maestros Regex-Selektor, §4). Bindestriche wie `po-frontend` sind erlaubt; UL/UUID-`<msgId>` erfüllen das.
+- Trenner zwischen Segmenten ist **ausschließlich** der Punkt `.`.
+
+| Bereich (`area`) | Beispiel-Tag | Slice |
+|---|---|---|
+| Fenster-Manager | `window.<agentId>.titlebar`, `window.<agentId>.resizeHandle` | S2 |
+| Agent-Renderer | `agent.<agentId>.stream`, `agent.<agentId>.input`, `agent.<agentId>.sendBtn` | S1(05)/S8 |
+| Agent-Event-Zeile | `agent.<agentId>.event.<index>`, opt. `agent.<agentId>.event.<index>.<kind>` | S1(05)/S8 |
+| Comm-Panel | `comm.channelList`, `comm.channel.<channelId>`, `comm.timeline`, `comm.message.<msgId>` | S6 |
+| ACL-Matrix | `acl.cell.<channelId>.<agentId>.read`, `…​.write`, `acl.preset.hubSpoke` | S7 |
+
+`<agentId>`/`<channelId>` = stabile IDs aus der Config/DTO (z. B. `po`, `frontend`, `po-frontend`).
+`<msgId>` = `message.id` (ULID/UUID) — auch für **Reconnect-Idempotenz** (S6-Risiko) nutzbar.
+`agent.<id>.stream` = der scrollende stream-json-Renderer (Terminologie aus iOS-Vorschlag übernommen).
+
+**Per-Event-Zeilen-Adressierung im Stream (v0.4 — auf Dev-Flag aus `AgentViewTags.kt` / CYP-6 entschieden):**
+- `agent.<agentId>.event.<index>` — die **N-te** Event-Zeile im Stream. `<index>` = **0-basierte Render-Reihenfolge**,
+  stabil innerhalb einer Session (rein additiv — neue Events hängen hinten an, ändern keine bestehenden Indizes).
+- Optionaler Kind-Qualifier: `agent.<agentId>.event.<index>.<kind>` mit **`<kind>` ∈ `assistantText` · `toolCall` · `toolResult`**
+  (an die stream-json-Event-Arten aus 05 §4 angelehnt). Erlaubt typbasierte Assertions („eine `toolCall`-Zeile erschien")
+  zusätzlich zu positionsbasierten („Inhalt der Zeile 3").
+- `<index>` ist `[A-Za-z0-9-]+`-konform (Ziffern) → kompatibel mit der Maestro-Escaping-Regel (§4).
+- **Dev-Hinweis:** `AgentViewTags` um `event(agentId, index)` (+ optional `event(agentId, index, kind)`) erweitern;
+  die drei bestehenden Tags (`stream`/`input`/`sendBtn`) sind bereits contract-konform.
+
+> Maestro auf Wasm/Android konsumiert diese Tags über die **Compose-Semantics/Accessibility-Knoten**
+> (`testTagsAsResourceId` aktivieren, damit Tags als Resource-/Accessibility-IDs sichtbar werden).
+>
+> **Status:** Schema-Vorschlag konsolidiert durch QA; **Gegenlesen durch Dev (CYP-6) + iOS-Tester ausstehend**
+> (CYP-7-AC).
+
+---
+
+## 3. Test-Benennung & Platzierung (Unit/Integration)
+
+- **Klassen:** `<Subjekt>Test` (z. B. `AclEnforcementTest`, `MessageStoreJsonTest`, `HealthRouteTest`).
+- **Methoden:** sprechend, Verhalten-orientiert: `send_withoutCanWrite_returns403`, `read_withoutCanRead_isExcluded`,
+  `messages_survive_serverRestart`. (Backticks erlaubt auf JVM; auf KMP-common neutral halten.)
+- **Platzierung pro Modul:**
+  - `:core/commonTest` → reine Vertrags-/Logik-Tests: DTO-Serialisierungs-Round-Trips **und ACL-Durchsetzung** (s. Empfehlung unten).
+  - `:server/src/test` → REST-/WS-Verdrahtung + ACL-Durchsetzung am Endpoint via `testApplication`; Persistenz In-Memory↔JSON.
+  - `:app:shared/commonTest` → plattformneutrale UI-State-/ViewModel-Logik (kotlin.test).
+  - `:app:shared` UI-Assertions (`testTag`) → eigener UI-Test-Quellsatz, **sobald Compose-UI-Test-Dep da ist** (§7).
+
+> **Empfehlung (v0.6, an Backend/CYP-9):** ACL-Durchsetzung als **eine pure Funktion in `:core`** modellieren
+> (zentrale Filterfunktion, vgl. 03 S4). Dann liegen die **gatenden ACL-Tests plattformneutral in `:core/commonTest`**
+> statt JVM-spezifisch im Server — sie laufen über **alle** Targets, und `:server` testet nur noch die Verdrahtung
+> (REST/WS). Hält die **Security-Surface-Tests** am breitesten lauffähig und macht die ACL-Logik unabhängig von Ktor testbar.
+
+---
+
+## 4. Maestro-Flow-Contract (UI-Slices)
+
+- **Ort:** `maestro/` im Repo-Root von `KMPCyppieAgents`; eine Datei je Flow (`*.yaml`).
+- **Web-Flow:** `appId`-frei, `url` + `openLink` (Wasm-Build im Browser/`chromium`).
+- **Tags (bare, ohne `@` beim Aufruf):**
+  - `smoke` — schneller Durchstich je Slice (Boot + Kernelement sichtbar).
+  - `gating` — der Flow, der „Fertig" entscheidet.
+  - `security` — Security-Surface-Pässe (z. B. ACL-Durchsetzung, geschützte Screens).
+  - Slice-Tags: `s2-windows`, `s4`, `s6-comm`, `s7-acl`.
+- **Element-Selektoren** referenzieren ausschließlich die testTags aus §2 (keine Text-Selektoren auf
+  lokalisierbaren Strings — Stabilität + Localization-Pass).
+
+**Maestro-Selektor-Konvention (verbindlich, iOS-Tester-Input v0.3):**
+- In Maestro ist `id:` ein **Regex** → der Punkt `.` ist dort eine **Wildcard** (matcht jedes Zeichen).
+  Ein unescapeter Tag-Selektor matcht daher zu breit (z. B. matchte `acl.cell.po-frontend.frontend.read`
+  versehentlich auch ähnliche Tags).
+- **Regel:** Tag-Selektoren in Flows **escapen (`\.`) und ankern (`^…$`)**. Beispiel:
+  ```yaml
+  - tapOn:
+      id: "^acl\.cell\.po-frontend\.frontend\.read$"
+  ```
+- Weil Segmentwerte auf `[A-Za-z0-9-]+` beschränkt sind (§2), bleibt das Escapen mechanisch und eindeutig:
+  nur die Trenner-Punkte werden zu `\.`, sonst keine Regex-Sonderzeichen im Tag.
+
+**LazyColumn-/Scroll-Konvention (verbindlich, Dev-Input CYP-6 v0.5):**
+- In einer `LazyColumn` haben nur **sichtbare (komponierte)** Items einen Semantics-Knoten — off-screen-Tags
+  (`comm.message.<msgId>`, `agent.<agentId>.event.<index>`) **existieren für Test/Maestro nicht**, bis sie in
+  den Viewport gescrollt sind.
+- **Regel:** Vor einem Assert/`tapOn` auf eine bestimmte Listen-Zeile **erst scrollen**:
+  - Maestro: `scrollUntilVisible` mit dem (escapeten, geankerten) Tag-Selektor aus der Konvention oben.
+  - Compose-UI-Test: auf dem `LazyColumn`-Knoten `performScrollToNode(hasTestTag(...))`.
+- Container-Tags (`comm.timeline`, `agent.<agentId>.stream`) sind immer komponiert → als stabiles Scroll-Ziel nutzbar.
+
+---
+
+## 5. Severity-Skala (geteiltes Vokabular für Findings)
+
+| Severity | Bedeutung | Beispiel |
+|---|---|---|
+| **S1 — Live-Gap** | reale, ausnutzbare/blockierende Lücke | ACL lässt Worker in fremden Kanal schreiben (403 fehlt) |
+| **S2 — Fragilität / funktionale Abweichung** | funktioniert, bricht aber unter Reconnect/Edge/Last — **oder** reale AC-Abweichung ohne Security-Impact | Reconnect dupliziert Nachrichten (fehlende `message.id`-Idempotenz); fehlender `GET /api/health` (CYP-8) |
+| **S3 — Kosmetik/Konsistenz** | Drift ohne Funktionsverlust | Empty-State fehlt, Farbcode inkonsistent |
+
+Findings stets **priorisiert** melden (Severity + konkreter Fix + Evidenz). Verifiziert-Gutes ebenfalls
+benennen (Trust-Line für den PO). Eine S2-Abweichung kann **slice-DoD-blockierend** werden, wenn der
+betroffene Slice ohne den Fix als „fertig" gemeldet wird (so vereinbart für CYP-8/S0).
+
+---
+
+## 6. „Verified" = ausgeführt + Evidenz
+
+Sign-off nur mit Beleg: grüner Run (`./gradlew check`-Ausgabe), Maestro-Report, Screenshot.
+Inspektion allein genügt nicht bei allem Testbaren. End-to-End-Pfad prüfen, nicht nur „kompiliert".
+
+---
+
+## 7. Offene Asks an Dev/Backend (Voraussetzung für Teile des Contracts)
+
+1. **Compose-UI-Test-Dep** in `:app:shared` (ui-test + JUnit-Runner je Target) + `testTagsAsResourceId = true`,
+   damit `testTag` für UI-Tests **und** Maestro adressierbar ist. (Blockt §2/§4 UI-Assertions.)
+2. **`testTag` konsequent setzen** auf allen interaktiven/zustandstragenden Elementen gemäß §2.
+3. **`kotlinx.serialization`** in `:core` (Plugin + Dep), wenn DTOs landen (S4) → Round-Trip-Tests.
+4. **`maestro/`-Verzeichnis + CI-Hook** anlegen (S2 vor erstem UI-Gating).
+5. **Stabile IDs** (`agentId`/`channelId`/`message.id`) als Vertragsbestandteil bestätigen — **`[A-Za-z0-9-]+`** (§2).
+
+---
+
+## 8. Früh-Beobachtungen / offene Findings
+
+- **S0/Health-Endpoint → Bug `CYP-8` (S2, S0-DoD-blockierend, PO-bestätigt):** Server liefert aktuell
+  `GET /` → `"Hello, Ktor!"`; Spec-AC für S0/§7 nennt `GET /api/health` → `ok`. Verknüpft mit Epic CYP-4.
+  **QA-Re-Verify nach Fix:** `./gradlew :server:check` grün + Health-Route-Test `health_returnsOk`.
+
+---
+
+## Changelog
+- v0.6 (2026-06-26): Nach Dev- + iOS-Tester-Abnahme: (b1) Empfehlung ACL-Durchsetzung als pure Funktion in `:core`
+  → gatende ACL-Tests plattformneutral in `:core/commonTest` (Querverweis CYP-9). (b2) iOS-Baseline-Gate in §0 explizit
+  (kompiliert = Pflicht; Maestro-Smoke nicht-gatend). Status: abgenommen.
+- v0.5 (2026-06-26): Zwei Dev-Findings (CYP-6, gg. v0.2) aufgelöst — Schema-Hoheit QA: (1) **Schema-Inkonsistenz**
+  behoben via ID-Rollen `<scopeId>` (nach area) vs `<selectorId>` (nach element); alle Beispiele bleiben gültig.
+  (2) **LazyColumn-/Scroll-Konvention** (`scrollUntilVisible`/`performScrollToNode` vor Assert auf off-screen-Zeilen).
+- v0.4 (2026-06-26): Per-Event-Zeilen-Adressierung `agent.<id>.event.<index>[.<kind>]` ergänzt — entscheidet den in
+  `AgentViewTags.kt` (CYP-6) vom Dev an die Schema-Hoheit geflaggten offenen Punkt. Dev-WIP-Tags (`stream`/`input`/`sendBtn`)
+  als contract-konform bestätigt.
+- v0.3 (2026-06-26): Ins geteilte Repo nach `docs/TEST-CONTRACT.md` verlegt (PO-Konvention). Maestro-Input vom
+  iOS-Tester eingearbeitet: (a) `id:`-Regex → Tag-Selektoren in Flows escapen+ankern (`^…\.…$`); (b) Segment-Zeichensatz
+  auf `[A-Za-z0-9-]+` beschränkt. Severity-Skala S2 um „funktionale AC-Abweichung" geschärft (CYP-8).
+- v0.2 (2026-06-26): Tag-Schema mit iOS-Tester-Vorschlag zu **einem** Schema `<area>.<element>[.<id>][.<qualifier>]`
+  konsolidiert (prefixlos); Maestro-Tags `security`/`s4` ergänzt; Health-Beobachtung als CYP-8 verlinkt. (CYP-7 In Arbeit.)
+- v0.1 (2026-06-26): Erst-Entwurf gegen reales `KMPCyppieAgents`-Layout (S0-Skeleton), PO-Gating-Entscheid eingearbeitet.
