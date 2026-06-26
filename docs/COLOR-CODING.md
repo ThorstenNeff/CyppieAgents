@@ -87,9 +87,12 @@ Eigenständig von Absender/Kanal. **Reuse statt Neuerfindung:** für `STATUS` di
 
 ---
 
-## 7. Offene Punkte / Dev-Asks (über PO)
+## 7. Entscheidungen & offene Punkte
 
-1. **Algorithmus-Platzierung:** geteilte `colorSlot`-Util in `:core` (damit alle Clients identisch färben) — ok?
-2. **`knownSlots`-Liste:** finale MVP-Agenten-IDs bestätigen (po/frontend/backend + weitere?).
-3. **Avatar-Quelle:** Initialen aus `Agent.name` generieren (kein Bild-Asset im MVP) — bestätigt?
-4. **Kontrast-Validierung** der Paletten automatisieren vor „Fertig".
+**Vom PO entschieden (2026-06-26), Devs finale Umsetzbarkeits-Bestätigung steht aus:**
+1. ✅ **Algorithmus-Platzierung:** `colorSlot`-Util liegt in `:core` (alle Clients färben identisch).
+2. ✅ **`knownSlots`:** MVP-Agenten = `po` / `frontend` / `backend`.
+3. ✅ **Avatar-Quelle:** Initialen aus `Agent.name`, kein Bild-Asset im MVP.
+
+**Offen:**
+4. **Kontrast-Validierung** der Paletten automatisieren vor „Fertig" (QA/Dev).
