@@ -2,7 +2,11 @@ package com.tneff.cyppieagents.comm
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.Message
+import org.slf4j.LoggerFactory
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Persistence seam (Spec 02 §15): swappable behind this interface (In-Memory ↔ JSON ↔ later
@@ -49,11 +53,19 @@ open class InMemoryMessageStore : MessageStore {
  */
 class JsonFileMessageStore(private val file: File) : InMemoryMessageStore() {
     private val flushLock = Any()
+    private val log = LoggerFactory.getLogger("comm.store")
 
     init {
         if (file.exists() && file.length() > 0) {
-            val loaded = CommJson.decodeFromString<List<Message>>(file.readText())
-            loadAll(loaded)
+            try {
+                loadAll(CommJson.decodeFromString<List<Message>>(file.readText()))
+            } catch (e: Exception) {
+                // A torn/corrupt file must NOT brick the boot (S4 AC "survives restart"). Back it
+                // up for forensics and start empty rather than crashing on decode.
+                val backup = File(file.parentFile, file.name + ".corrupt-" + System.currentTimeMillis())
+                runCatching { file.copyTo(backup, overwrite = true) }
+                log.error("corrupt message store at {}; backed up to {} and starting empty", file, backup, e)
+            }
         }
     }
 
@@ -66,7 +78,12 @@ class JsonFileMessageStore(private val file: File) : InMemoryMessageStore() {
         file.parentFile?.mkdirs()
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(CommJson.encodeToString(snapshot()))
-        tmp.copyTo(file, overwrite = true)
-        tmp.delete()
+        // Atomic replace: a crash mid-flush leaves either the old or the new file intact, never
+        // a half-written one (B1). Fall back to a plain replace only where atomic moves are unsupported.
+        try {
+            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 }

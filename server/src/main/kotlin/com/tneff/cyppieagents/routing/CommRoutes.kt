@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.comm.Audit
 import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
@@ -62,7 +63,8 @@ class CommConfig(
  */
 fun Application.installComm(config: CommConfig): Hub {
     val state = HubState.hubAndSpoke(config.agents)
-    val hub = Hub(state, config.store)
+    val audit = Audit()
+    val hub = Hub(state, config.store, audit)
     val registry = TokenRegistry(config.tokens, config.operatorToken)
 
     install(ContentNegotiation) { json(CommJson) }
@@ -77,11 +79,11 @@ fun Application.installComm(config: CommConfig): Hub {
             call.respond(HttpStatusCode.InternalServerError, ApiErrorBody(ApiError("internal", "internal error")))
         }
     }
-    routing { commRoutes(hub, state, registry) }
+    routing { commRoutes(hub, state, registry, audit) }
     return hub
 }
 
-fun Route.commRoutes(hub: Hub, state: HubState, registry: TokenRegistry) {
+fun Route.commRoutes(hub: Hub, state: HubState, registry: TokenRegistry, audit: Audit) {
     route("/api") {
         get("/health") { call.respondText("ok") }
 
@@ -138,7 +140,10 @@ fun Route.commRoutes(hub: Hub, state: HubState, registry: TokenRegistry) {
         put("/acl") {
             call.requireOperator(registry)
             val entry = call.receive<AclEntry>()
-            call.respond(state.setAcl(entry))
+            val saved = state.setAcl(entry)
+            // Audit the most security-relevant mutation (R1).
+            audit.aclChanged(saved.channelId, saved.agentId, saved.canRead, saved.canWrite, by = "operator")
+            call.respond(saved)
         }
     }
 }
