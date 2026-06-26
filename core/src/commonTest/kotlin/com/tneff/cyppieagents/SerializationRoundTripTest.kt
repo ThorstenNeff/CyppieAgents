@@ -99,6 +99,23 @@ class SerializationRoundTripTest {
     }
 
     @Test
+    fun systemInitToleratesToolsAsIntCount() {
+        // CYP-25: an older/future int shape must NOT break decoding (→ null), so the bind survives.
+        val line = """{"type":"system","subtype":"init","session_id":"s1","tools":67}"""
+        val ev = assertIs<SystemEvent>(CommJson.decodeFromString<StreamJsonEvent>(line))
+        assertEquals("s1", ev.sessionId) // still decoded → session can bind
+        assertEquals(null, ev.tools)
+    }
+
+    @Test
+    fun systemInitToleratesToolsAsObjectArray() {
+        // A future array-of-objects shape: non-string elements are skipped, never thrown on.
+        val line = """{"type":"system","subtype":"init","session_id":"s1","tools":[{"name":"Read"}]}"""
+        val ev = assertIs<SystemEvent>(CommJson.decodeFromString<StreamJsonEvent>(line))
+        assertEquals(emptyList(), ev.tools)
+    }
+
+    @Test
     fun streamJsonAssistantToolUseDeserializes() {
         val line = """{"type":"assistant","session_id":"s1","message":{"role":"assistant",
             "content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"echo hi"}}]}}"""

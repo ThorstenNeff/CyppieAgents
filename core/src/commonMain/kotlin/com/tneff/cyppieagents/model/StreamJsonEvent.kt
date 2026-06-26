@@ -37,7 +37,12 @@ data class SystemEvent(
     override val uuid: String? = null,
     val model: String? = null,
     val cwd: String? = null,
-    /** The CLI emits the available tool NAMES as an array (verified on a real run, CYP-13). */
+    /**
+     * The CLI emits the available tool NAMES as an array (verified on a real run, CYP-13). Decoded
+     * tolerantly (CYP-25): any non-array shape (e.g. a future int count) yields null instead of
+     * throwing, so a `tools` drift can never break `system/init` decoding / session binding.
+     */
+    @Serializable(with = TolerantToolsSerializer::class)
     val tools: List<String>? = null,
     val permissionMode: String? = null,
     @SerialName("apiKeySource") val apiKeySource: String? = null,
