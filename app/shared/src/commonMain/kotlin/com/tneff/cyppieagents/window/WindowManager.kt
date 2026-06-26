@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.window
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,11 +40,18 @@ fun WindowHost(
     modifier: Modifier = Modifier,
     windowContent: @Composable (WindowState) -> Unit,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .testTag(WindowTestTags.HOST),
     ) {
+        // Report the measured host size so the state can keep windows within the visible area.
+        val hostWidthDp = maxWidth.value
+        val hostHeightDp = maxHeight.value
+        LaunchedEffect(hostWidthDp, hostHeightDp) {
+            state.updateHostSize(hostWidthDp, hostHeightDp)
+        }
+
         state.windows.forEachIndexed { index, window ->
             // Key by id so a window keeps its identity (and any internal state) when the list is
             // reordered on focus; graphicsLayer below applies the z-order from the list index.

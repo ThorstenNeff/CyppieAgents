@@ -43,6 +43,48 @@ class WindowReducerTest {
     }
 
     @Test
+    fun moveBy_unknownId_returnsUnchanged() {
+        val original = sample()
+        val result = WindowReducer.moveBy(original, "does-not-exist", 10f, 10f)
+        assertEquals(original, result)
+    }
+
+    @Test
+    fun clampToBounds_draggedPastRightAndBottom_keepsMinVisibleInside() {
+        val window = WindowState("a", "A", 5000f, 5000f, 200f, 150f)
+        val result = WindowReducer.clampToBounds(window, hostWidth = 1000f, hostHeight = 800f)
+        // keepVisible default 48 → maxX = 1000-48, maxY = 800-48.
+        assertEquals(952f, result.x)
+        assertEquals(752f, result.y)
+    }
+
+    @Test
+    fun clampToBounds_draggedPastLeftAndTop_keepsWindowReachable() {
+        val window = WindowState("a", "A", -5000f, -5000f, 200f, 150f)
+        val result = WindowReducer.clampToBounds(window, hostWidth = 1000f, hostHeight = 800f)
+        // Left edge may go off-screen but keepVisible of the right side stays in (48 - width).
+        assertEquals(48f - 200f, result.x)
+        // Title bar is kept at the very top so it stays grabbable.
+        assertEquals(0f, result.y)
+    }
+
+    @Test
+    fun clampToBounds_withinBounds_returnsUnchanged() {
+        val window = WindowState("a", "A", 100f, 80f, 200f, 150f)
+        val result = WindowReducer.clampToBounds(window, hostWidth = 1000f, hostHeight = 800f)
+        assertEquals(100f, result.x)
+        assertEquals(80f, result.y)
+    }
+
+    @Test
+    fun clampToBounds_unmeasuredHost_returnsUnchanged() {
+        val window = WindowState("a", "A", 5000f, 5000f, 200f, 150f)
+        val result = WindowReducer.clampToBounds(window, hostWidth = 0f, hostHeight = 0f)
+        assertEquals(5000f, result.x)
+        assertEquals(5000f, result.y)
+    }
+
+    @Test
     fun resizeBy_positiveDelta_growsWindow() {
         val result = WindowReducer.resizeBy(sample(), "a", 50f, 40f)
         val a = result.first { it.id == "a" }
