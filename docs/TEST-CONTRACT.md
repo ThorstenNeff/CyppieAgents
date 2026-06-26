@@ -1,6 +1,6 @@
-# Test-Contract (Entwurf v0.5) — CyppieAgents / KMPCyppieAgents
+# Test-Contract (v0.6) — CyppieAgents / KMPCyppieAgents
 
-> Owner: QA/Test · Ticket: **CYP-7** (In Arbeit) · Status: **Entwurf — Gegenlesen Dev (CYP-6)/iOS-Tester ausstehend** · Stand: 2026-06-26
+> Owner: QA/Test · Ticket: **CYP-7** · Status: **Reviewt — Dev (CYP-6) + iOS-Tester OK; abgenommen** · Stand: 2026-06-26
 > **Kanonischer Ort:** dieses Dokument im geteilten Repo `KMPCyppieAgents` unter `docs/TEST-CONTRACT.md`
 > (geteilte Artefakte gehören ins Git-Repo mit `origin`, nicht in agent-lokale Ordner — PO-Konvention 2026-06-26).
 > Verbindliches Modul-Layout & Gating laut PO-Entscheid (Discord, 2026-06-26).
@@ -20,7 +20,9 @@
 - **Gating-Fläche „Fertig" (slice-abhängig):**
   - Backend/Logik/Comm-Hub (S0, S3, S4, S5): **`./gradlew check` grün** + Modul-/Server-Tests. Kein Maestro.
   - UI-Slices (S2, S6, S7): **Maestro-Flow grün auf Web (Wasm)** als „≥1 Target" + Desktop (JVM) als manuelle Demo.
-    *Wasm-Gating noch unter Vorbehalt der Frontend-Bestätigung; Fallback-Target Android-Tablet (PO klärt mit Dev).*
+    *Wasm-Gating noch unter Vorbehalt der Frontend-Bestätigung (Machbarkeit: **CYP-11**); Fallback-Target Android-Tablet.*
+  - **iOS-Baseline (v0.6):** **kompiliert = Pflicht** (Build darf nicht brechen); **Maestro-Smoke auf iOS = opportunistisch,
+    nicht-gatend** (kein Release-Gate). Deckt sich mit Epic CYP-4.
 
 ---
 
@@ -123,10 +125,15 @@ Der `<qualifier>` deckt weiterhin die ACL-Matrix-Zellen (`read`/`write`) ab.
 - **Methoden:** sprechend, Verhalten-orientiert: `send_withoutCanWrite_returns403`, `read_withoutCanRead_isExcluded`,
   `messages_survive_serverRestart`. (Backticks erlaubt auf JVM; auf KMP-common neutral halten.)
 - **Platzierung pro Modul:**
-  - `:core/commonTest` → reine Vertrags-/Logik-Tests: DTO-Serialisierungs-Round-Trips, ACL-Filter (falls pure Funktion).
-  - `:server/src/test` → REST-/WS-/ACL-Durchsetzung via `testApplication`; Persistenz In-Memory↔JSON.
+  - `:core/commonTest` → reine Vertrags-/Logik-Tests: DTO-Serialisierungs-Round-Trips **und ACL-Durchsetzung** (s. Empfehlung unten).
+  - `:server/src/test` → REST-/WS-Verdrahtung + ACL-Durchsetzung am Endpoint via `testApplication`; Persistenz In-Memory↔JSON.
   - `:app:shared/commonTest` → plattformneutrale UI-State-/ViewModel-Logik (kotlin.test).
   - `:app:shared` UI-Assertions (`testTag`) → eigener UI-Test-Quellsatz, **sobald Compose-UI-Test-Dep da ist** (§7).
+
+> **Empfehlung (v0.6, an Backend/CYP-9):** ACL-Durchsetzung als **eine pure Funktion in `:core`** modellieren
+> (zentrale Filterfunktion, vgl. 03 S4). Dann liegen die **gatenden ACL-Tests plattformneutral in `:core/commonTest`**
+> statt JVM-spezifisch im Server — sie laufen über **alle** Targets, und `:server` testet nur noch die Verdrahtung
+> (REST/WS). Hält die **Security-Surface-Tests** am breitesten lauffähig und macht die ACL-Logik unabhängig von Ktor testbar.
 
 ---
 
@@ -206,6 +213,9 @@ Inspektion allein genügt nicht bei allem Testbaren. End-to-End-Pfad prüfen, ni
 ---
 
 ## Changelog
+- v0.6 (2026-06-26): Nach Dev- + iOS-Tester-Abnahme: (b1) Empfehlung ACL-Durchsetzung als pure Funktion in `:core`
+  → gatende ACL-Tests plattformneutral in `:core/commonTest` (Querverweis CYP-9). (b2) iOS-Baseline-Gate in §0 explizit
+  (kompiliert = Pflicht; Maestro-Smoke nicht-gatend). Status: abgenommen.
 - v0.5 (2026-06-26): Zwei Dev-Findings (CYP-6, gg. v0.2) aufgelöst — Schema-Hoheit QA: (1) **Schema-Inkonsistenz**
   behoben via ID-Rollen `<scopeId>` (nach area) vs `<selectorId>` (nach element); alle Beispiele bleiben gültig.
   (2) **LazyColumn-/Scroll-Konvention** (`scrollUntilVisible`/`performScrollToNode` vor Assert auf off-screen-Zeilen).
