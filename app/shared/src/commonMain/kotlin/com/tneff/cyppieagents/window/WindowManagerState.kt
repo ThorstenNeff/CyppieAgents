@@ -29,6 +29,12 @@ const val MIN_WINDOW_WIDTH: Float = 160f
 const val MIN_WINDOW_HEIGHT: Float = 120f
 
 /**
+ * How much of a window must remain inside the host on every edge, in dp, so it can never be dragged
+ * completely out of the visible area.
+ */
+const val MIN_VISIBLE_WINDOW: Float = 48f
+
+/**
  * Pure, side-effect-free transformations over the window list.
  *
  * Invariant: list order encodes the z-order — index `0` is bottom-most and the **last** element is
@@ -67,6 +73,31 @@ object WindowReducer {
         } else {
             it
         }
+    }
+
+    /**
+     * Clamps a window's top-left so at least [keepVisible] dp stays inside the host on every edge,
+     * guaranteeing it can never be dragged completely off-screen. The top edge is kept at or below
+     * `0` so the (draggable) title bar always stays reachable.
+     *
+     * Returns the window unchanged when the host has not been measured yet
+     * ([hostWidth]/[hostHeight] `<= 0`).
+     */
+    fun clampToBounds(
+        window: WindowState,
+        hostWidth: Float,
+        hostHeight: Float,
+        keepVisible: Float = MIN_VISIBLE_WINDOW,
+    ): WindowState {
+        if (hostWidth <= 0f || hostHeight <= 0f) return window
+        val minX = keepVisible - window.width
+        val maxX = (hostWidth - keepVisible).coerceAtLeast(minX)
+        val minY = 0f
+        val maxY = (hostHeight - keepVisible).coerceAtLeast(minY)
+        return window.copy(
+            x = window.x.coerceIn(minX, maxX),
+            y = window.y.coerceIn(minY, maxY),
+        )
     }
 
     /**
@@ -116,16 +147,30 @@ class WindowManagerState(initial: List<WindowState>) {
     var windows: List<WindowState> by mutableStateOf(initial)
         private set
 
+    // Last measured host size (dp). Plain fields — they only feed clamp math, not rendering.
+    private var hostWidth: Float = 0f
+    private var hostHeight: Float = 0f
+
     /** Id of the currently focused (top-most) window, or `null` when there are no windows. */
     val focusedId: String?
         get() = windows.lastOrNull()?.id
+
+    /** Records the current host size and re-clamps every window so none is left stranded off-screen. */
+    fun updateHostSize(width: Float, height: Float) {
+        hostWidth = width
+        hostHeight = height
+        windows = windows.map { WindowReducer.clampToBounds(it, width, height) }
+    }
 
     fun focus(id: String) {
         windows = WindowReducer.bringToFront(windows, id)
     }
 
     fun moveBy(id: String, dx: Float, dy: Float) {
-        windows = WindowReducer.moveBy(windows, id, dx, dy)
+        val moved = WindowReducer.moveBy(windows, id, dx, dy)
+        windows = moved.map {
+            if (it.id == id) WindowReducer.clampToBounds(it, hostWidth, hostHeight) else it
+        }
     }
 
     fun resizeBy(id: String, dWidth: Float, dHeight: Float) {

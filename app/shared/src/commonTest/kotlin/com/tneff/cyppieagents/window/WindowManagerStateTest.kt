@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.window
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class WindowManagerStateTest {
 
@@ -41,5 +42,34 @@ class WindowManagerStateTest {
         val a = state.windows.first { it.id == "a" }
         assertEquals(220f, a.width)
         assertEquals(160f, a.height)
+    }
+
+    @Test
+    fun moveBy_pastHostBounds_isClampedAfterUpdateHostSize() {
+        val state = WindowManagerState(listOf(WindowState("a", "A", 0f, 0f, 200f, 150f)))
+        state.updateHostSize(1000f, 800f)
+        state.moveBy("a", 5000f, 5000f)
+        val a = state.windows.first { it.id == "a" }
+        assertEquals(952f, a.x) // 1000 - keepVisible(48)
+        assertEquals(752f, a.y) // 800 - keepVisible(48)
+    }
+
+    @Test
+    fun moveBy_withoutHostSize_isNotClamped() {
+        val state = WindowManagerState(listOf(WindowState("a", "A", 0f, 0f, 200f, 150f)))
+        state.moveBy("a", 5000f, 5000f)
+        val a = state.windows.first { it.id == "a" }
+        assertEquals(5000f, a.x)
+        assertEquals(5000f, a.y)
+    }
+
+    @Test
+    fun updateHostSize_shrunkBelowWindow_reclampsStrandedWindowIntoView() {
+        val state = WindowManagerState(listOf(WindowState("a", "A", 900f, 700f, 200f, 150f)))
+        state.updateHostSize(500f, 400f)
+        val a = state.windows.first { it.id == "a" }
+        assertEquals(452f, a.x) // 500 - 48
+        assertEquals(352f, a.y) // 400 - 48
+        assertTrue(a.x < 500f && a.y < 400f)
     }
 }
