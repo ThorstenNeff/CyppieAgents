@@ -19,15 +19,28 @@ interface AgentProcess {
     fun destroy()
 }
 
-interface ProcessSpawner {
+fun interface ProcessSpawner {
     fun spawn(command: List<String>, cwd: File, env: Map<String, String>): AgentProcess
 }
 
-/** Real spawner over [ProcessBuilder] with piped stdio (Decision D4: piped stdio, not a PTY). */
-class ProcessBuilderSpawner : ProcessSpawner {
+/**
+ * Real spawner over [ProcessBuilder] with piped stdio (Decision D4: piped stdio, not a PTY).
+ *
+ * Env hygiene (Reviewer #3): the agent process does NOT inherit the server's full environment —
+ * only a minimal whitelist (PATH so `claude`/node resolve, HOME so the CLI finds its credentials,
+ * locale) plus the explicitly-injected [env] (e.g. ANTHROPIC_API_KEY). This keeps unrelated server
+ * secrets from leaking into a spawned agent.
+ */
+class ProcessBuilderSpawner(
+    private val passthroughEnv: Set<String> = setOf("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE"),
+) : ProcessSpawner {
     override fun spawn(command: List<String>, cwd: File, env: Map<String, String>): AgentProcess {
         val builder = ProcessBuilder(command).directory(cwd)
-        builder.environment().putAll(env)
+        val processEnv = builder.environment()
+        val inherited = passthroughEnv.mapNotNull { name -> System.getenv(name)?.let { name to it } }.toMap()
+        processEnv.clear()
+        processEnv.putAll(inherited)
+        processEnv.putAll(env)
         // Discard stderr so its pipe buffer can't fill and block the process (F-C deadlock). We do
         // NOT route it to logs to avoid any chance of a secret-bearing line leaking unmasked.
         builder.redirectError(ProcessBuilder.Redirect.DISCARD)
