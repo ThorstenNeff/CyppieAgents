@@ -1,0 +1,63 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-14",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen + Kontrast-Validierung",
+    "brand": "CyppieAgents (Anti-Hype; NeonFi nur Referenz)",
+    "principles": [
+      "Deterministisch & stabil: gleiche id -> gleicher Slot (reine Funktion, server+client identisch).",
+      "Farbe nie alleiniger Traeger: Avatar(Initialen)+Name+Farbe; Kanal: Kind-Icon+Name+Farbe (WCAG 1.4.1).",
+      "KEINE Kollision mit Status-Hues aus CYP-12 (running-Blau/ok-Gruen/error-Rot/waiting-Amber sind reserviert).",
+      "Kontrast: Name-Text >=4.5:1, Avatar-Fill/Border >=3:1; dark Default + light.",
+      "Farbe ist Identitaet/Dekoration, NIE Garantie/Berechtigung (ACL hat eigene UI)."
+    ]
+  },
+  "algorithm": {
+    "fn": "colorSlot(id, paletteSize)",
+    "step1": "knownSlots[id] falls vorhanden (Vorhersagbarkeit der Demo)",
+    "step2": "sonst FNV-1a(id) 32-bit mod paletteSize",
+    "po": "immer reservierter Slot 'po' (Hub), nie per Hash",
+    "placement": "geteilte Util in :core (Dev bestaetigt), damit alle Clients identisch faerben"
+  },
+  "knownSlots": {
+    "po": "po",
+    "frontend": "sender.0",
+    "backend": "sender.1",
+    "_note": "weitere MVP-Agenten-IDs mit Dev/PO bestaetigen und hier ergaenzen"
+  },
+  "po_slot": {
+    "role": "PO / Hub — distinct, ruhig-autoritativ",
+    "dark":  { "avatarFill": "#3B3F8F", "onAvatar": "#FFFFFF", "nameAccent": "#A6A9F0" },
+    "light": { "avatarFill": "#3B3F8F", "onAvatar": "#FFFFFF", "nameAccent": "#3B3F8F" }
+  },
+  "sender_palette": [
+    { "slot": "sender.0", "hue": "teal",      "dark": { "avatarFill": "#1F7A6E", "onAvatar": "#FFFFFF", "nameAccent": "#5FD0BE" }, "light": { "avatarFill": "#0E6F63", "onAvatar": "#FFFFFF", "nameAccent": "#0E6F63" } },
+    { "slot": "sender.1", "hue": "violet",    "dark": { "avatarFill": "#6E4BD0", "onAvatar": "#FFFFFF", "nameAccent": "#B9A4F2" }, "light": { "avatarFill": "#5B36C7", "onAvatar": "#FFFFFF", "nameAccent": "#5B36C7" } },
+    { "slot": "sender.2", "hue": "magenta",   "dark": { "avatarFill": "#B5419A", "onAvatar": "#FFFFFF", "nameAccent": "#E693D2" }, "light": { "avatarFill": "#A12C86", "onAvatar": "#FFFFFF", "nameAccent": "#A12C86" } },
+    { "slot": "sender.3", "hue": "indigo",    "dark": { "avatarFill": "#3E63C0", "onAvatar": "#FFFFFF", "nameAccent": "#8FAAEF" }, "light": { "avatarFill": "#2F4FB0", "onAvatar": "#FFFFFF", "nameAccent": "#2F4FB0" } },
+    { "slot": "sender.4", "hue": "bronze",    "dark": { "avatarFill": "#9A6B2F", "onAvatar": "#FFFFFF", "nameAccent": "#D9AE6E" }, "light": { "avatarFill": "#855A22", "onAvatar": "#FFFFFF", "nameAccent": "#855A22" } },
+    { "slot": "sender.5", "hue": "pink",      "dark": { "avatarFill": "#C24D6A", "onAvatar": "#FFFFFF", "nameAccent": "#F0A0B3" }, "light": { "avatarFill": "#B23656", "onAvatar": "#FFFFFF", "nameAccent": "#B23656" } },
+    { "slot": "sender.6", "hue": "slateblue", "dark": { "avatarFill": "#4C6A8A", "onAvatar": "#FFFFFF", "nameAccent": "#9EB8D6" }, "light": { "avatarFill": "#3B5878", "onAvatar": "#FFFFFF", "nameAccent": "#3B5878" } },
+    { "slot": "sender.7", "hue": "olive",     "dark": { "avatarFill": "#6E7A2E", "onAvatar": "#FFFFFF", "nameAccent": "#BFC97E" }, "light": { "avatarFill": "#5C6826", "onAvatar": "#FFFFFF", "nameAccent": "#5C6826" } }
+  ],
+  "reserved_status_hues_DO_NOT_REUSE": {
+    "_note": "Diese gehoeren CYP-12 (Status). Sender/Channel meiden sie bewusst.",
+    "running": "#4DA3FF / #1A73E8",
+    "ok": "#3DD68C / #1E8E5A",
+    "error": "#FF6B6B / #C5221F",
+    "waiting": "#FFC857 / #B26A00"
+  },
+  "channel": {
+    "identity_color": "gleicher colorSlot-Algorithmus aus Channel.id (Punkt/Akzent in der Kanalliste)",
+    "kind_by_icon_not_color": {
+      "HUB":    { "icon": "hub / star", "label_key": "channel.kind.hub" },
+      "DIRECT": { "icon": "person", "label_key": "channel.kind.direct" },
+      "GROUP":  { "icon": "group", "label_key": "channel.kind.group" }
+    }
+  },
+  "avatar": {
+    "source": "Initialen aus Agent.name (kein Bild-Asset im MVP)",
+    "shape": "Kreis, RTL-spiegelbar"
+  }
+}
