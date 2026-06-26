@@ -15,19 +15,35 @@ class AclMatrix(
 ) {
     private val membersByChannel: Map<String, Set<String>> =
         channels.associate { it.id to it.members.toSet() }
-    private val entryByKey: Map<Pair<String, String>, AclEntry> =
-        entries.associateBy { it.channelId to it.agentId }
+
+    // Group (not associateBy) so duplicate (channel,agent) entries are all considered. A silent
+    // "last wins" could let an appended canWrite=true override an intended false (privilege
+    // escalation). Defense in depth: deny wins on conflict (see [canRead]/[canWrite]).
+    private val entriesByKey: Map<Pair<String, String>, List<AclEntry>> =
+        entries.groupBy { it.channelId to it.agentId }
 
     fun isMember(channelId: String, agentId: String): Boolean =
         membersByChannel[channelId]?.contains(agentId) == true
 
-    /** Fail-closed: unknown channel, non-member, or missing/false entry all yield false. */
-    fun canRead(channelId: String, agentId: String): Boolean =
-        isMember(channelId, agentId) && entryByKey[channelId to agentId]?.canRead == true
+    /**
+     * Fail-closed: unknown channel, non-member, or no entry all yield false. On conflicting
+     * duplicate entries, **deny wins** — every matching entry must grant read.
+     */
+    fun canRead(channelId: String, agentId: String): Boolean {
+        if (!isMember(channelId, agentId)) return false
+        val matching = entriesByKey[channelId to agentId] ?: return false
+        return matching.all { it.canRead }
+    }
 
-    /** Fail-closed: unknown channel, non-member, or missing/false entry all yield false. */
-    fun canWrite(channelId: String, agentId: String): Boolean =
-        isMember(channelId, agentId) && entryByKey[channelId to agentId]?.canWrite == true
+    /**
+     * Fail-closed: unknown channel, non-member, or no entry all yield false. On conflicting
+     * duplicate entries, **deny wins** — every matching entry must grant write.
+     */
+    fun canWrite(channelId: String, agentId: String): Boolean {
+        if (!isMember(channelId, agentId)) return false
+        val matching = entriesByKey[channelId to agentId] ?: return false
+        return matching.all { it.canWrite }
+    }
 
     /** Channels this agent may receive from. */
     fun readableChannels(agentId: String): List<Channel> =
