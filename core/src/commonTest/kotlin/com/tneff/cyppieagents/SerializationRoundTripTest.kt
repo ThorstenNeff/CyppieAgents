@@ -88,11 +88,14 @@ class SerializationRoundTripTest {
 
     @Test
     fun streamJsonSystemInitDeserializes() {
+        // Real CLI shape (CYP-13): `tools` is an ARRAY of tool names, not a count.
         val line = """{"type":"system","subtype":"init","session_id":"s1","model":"claude-opus-4-8",
-            "permissionMode":"bypassPermissions","apiKeySource":"none","tools":67}"""
+            "permissionMode":"bypassPermissions","apiKeySource":"none","tools":["Read","Bash","Edit"]}"""
         val ev = assertIs<SystemEvent>(CommJson.decodeFromString<StreamJsonEvent>(line))
         assertEquals("init", ev.subtype)
         assertEquals("bypassPermissions", ev.permissionMode)
+        assertEquals(listOf("Read", "Bash", "Edit"), ev.tools)
+        assertEquals(3, ev.toolCount)
     }
 
     @Test

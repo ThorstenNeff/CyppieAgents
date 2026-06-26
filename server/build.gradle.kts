@@ -17,7 +17,9 @@ dependencies {
     implementation(libs.ktor.serverContentNegotiation)
     implementation(libs.ktor.serverStatusPages)
     implementation(libs.ktor.serializationKotlinxJson)
+    implementation(libs.ktor.serverWebsockets)
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.ktor.clientContentNegotiation)
+    testImplementation(libs.ktor.clientWebsockets)
     testImplementation(libs.kotlin.testJunit)
 }
