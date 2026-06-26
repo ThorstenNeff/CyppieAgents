@@ -72,4 +72,32 @@ class WindowManagerStateTest {
         assertEquals(352f, a.y) // 400 - 48
         assertTrue(a.x < 500f && a.y < 400f)
     }
+
+    @Test
+    fun resizeBy_growthPastHostEdge_isCappedToHost() {
+        val state = WindowManagerState(listOf(WindowState("a", "A", 100f, 50f, 200f, 150f)))
+        state.updateHostSize(500f, 400f)
+        state.resizeBy("a", 1000f, 1000f)
+        val a = state.windows.first { it.id == "a" }
+        assertEquals(400f, a.width) // hostWidth(500) - x(100)
+        assertEquals(350f, a.height) // hostHeight(400) - y(50)
+    }
+
+    @Test
+    fun resizeBy_withoutHostSize_isNotCapped() {
+        val state = WindowManagerState(listOf(WindowState("a", "A", 0f, 0f, 200f, 150f)))
+        state.resizeBy("a", 1000f, 1000f)
+        val a = state.windows.first { it.id == "a" }
+        assertEquals(1200f, a.width)
+        assertEquals(1150f, a.height)
+    }
+
+    @Test
+    fun updateHostSize_windowLargerThanShrunkHost_isResizedToFit() {
+        val state = WindowManagerState(listOf(WindowState("a", "A", 0f, 0f, 900f, 700f)))
+        state.updateHostSize(500f, 400f)
+        val a = state.windows.first { it.id == "a" }
+        assertEquals(500f, a.width)
+        assertEquals(400f, a.height)
+    }
 }

@@ -101,6 +101,63 @@ class WindowReducerTest {
     }
 
     @Test
+    fun resizeBy_growthPastMaximum_clampsToMaximum() {
+        val result = WindowReducer.resizeBy(sample(), "a", 1000f, 1000f, maxWidth = 300f, maxHeight = 250f)
+        val a = result.first { it.id == "a" }
+        assertEquals(300f, a.width)
+        assertEquals(250f, a.height)
+    }
+
+    @Test
+    fun resizeBy_maximumBelowMinimum_neverGoesBelowMinimum() {
+        // Degenerate host smaller than the minimum window: width/height stay at the minimum.
+        val result = WindowReducer.resizeBy(sample(), "a", 1000f, 1000f, maxWidth = 10f, maxHeight = 10f)
+        val a = result.first { it.id == "a" }
+        assertEquals(MIN_WINDOW_WIDTH, a.width)
+        assertEquals(MIN_WINDOW_HEIGHT, a.height)
+    }
+
+    @Test
+    fun resizeDeltaForLayout_ltr_keepsSign() {
+        assertEquals(12f, WindowReducer.resizeDeltaForLayout(12f, isRtl = false))
+    }
+
+    @Test
+    fun resizeDeltaForLayout_rtl_invertsSign() {
+        assertEquals(-12f, WindowReducer.resizeDeltaForLayout(12f, isRtl = true))
+    }
+
+    @Test
+    fun clampSizeToBounds_windowLargerThanHost_shrinksToHost() {
+        val window = WindowState("a", "A", 0f, 0f, 2000f, 2000f)
+        val result = WindowReducer.clampSizeToBounds(window, hostWidth = 800f, hostHeight = 600f)
+        assertEquals(800f, result.width)
+        assertEquals(600f, result.height)
+    }
+
+    @Test
+    fun clampSizeToBounds_windowWithinHost_returnsUnchanged() {
+        val window = WindowState("a", "A", 0f, 0f, 300f, 200f)
+        val result = WindowReducer.clampSizeToBounds(window, hostWidth = 800f, hostHeight = 600f)
+        assertEquals(300f, result.width)
+        assertEquals(200f, result.height)
+    }
+
+    @Test
+    fun clampSizeToBounds_unmeasuredHost_returnsUnchanged() {
+        val window = WindowState("a", "A", 0f, 0f, 2000f, 2000f)
+        val result = WindowReducer.clampSizeToBounds(window, hostWidth = 0f, hostHeight = 0f)
+        assertEquals(2000f, result.width)
+        assertEquals(2000f, result.height)
+    }
+
+    @Test
+    fun resizeHandle_constants_meetWcagMinimumTargetSize() {
+        assertTrue(RESIZE_HANDLE_SIZE >= 24f) // WCAG 2.5.8
+        assertTrue(RESIZE_HIT_SLOP >= RESIZE_HANDLE_SIZE)
+    }
+
+    @Test
     fun tile_threeItems_producesDistinctInBoundsPositions() {
         val items = listOf("po" to "PO", "fe" to "FE", "be" to "BE")
         val result = WindowReducer.tile(items, hostWidth = 1200f, hostHeight = 800f)

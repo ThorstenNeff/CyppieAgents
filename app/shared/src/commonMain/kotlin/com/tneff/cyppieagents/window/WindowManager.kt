@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.window
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
@@ -19,12 +20,24 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 
@@ -75,9 +88,9 @@ fun WindowHost(
  * and a bottom-end resize grip. All geometry callbacks report deltas in dp.
  *
  * @param zOrder stacking order; higher draws on top. Set from the host's list index.
- * @param onFocus invoked when the window is pressed or a drag/resize gesture starts.
- * @param onMove drag delta of the title bar, in dp.
- * @param onResize drag delta of the resize grip, in dp.
+ * @param onFocus invoked when the window is pressed, keyboard-focused, or a drag/resize starts.
+ * @param onMove drag/keyboard delta to move the window, in dp.
+ * @param onResize drag/keyboard delta to resize the window, in dp.
  */
 @Composable
 fun FloatingWindow(
@@ -89,6 +102,7 @@ fun FloatingWindow(
     onResize: (dWidth: Float, dHeight: Float) -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Box(
         modifier = Modifier
             // Position via graphicsLayer translation + zIndex through the same layer so reordering on
@@ -100,6 +114,39 @@ fun FloatingWindow(
             .zIndex(zOrder)
             .size(window.width.dp, window.height.dp)
             .testTag(WindowTestTags.window(window.id))
+            // Screenreader: expose the window as a navigable heading (WCAG 1.3.1/4.1.2). testTag
+            // stays separate for tests.
+            .semantics {
+                heading()
+                contentDescription = "Agentenfenster ${window.title}"
+            }
+            // Keyboard operation (WCAG 2.1.1): Tab focuses the window; arrows move it, Shift+arrows
+            // resize it. Focusing also raises it. Move/resize go through the same clamped callbacks.
+            .onFocusChanged { if (it.isFocused) onFocus() }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                val resize = event.isShiftPressed
+                when (event.key) {
+                    Key.DirectionLeft -> {
+                        if (resize) onResize(-KEYBOARD_RESIZE_STEP, 0f) else onMove(-KEYBOARD_MOVE_STEP, 0f)
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        if (resize) onResize(KEYBOARD_RESIZE_STEP, 0f) else onMove(KEYBOARD_MOVE_STEP, 0f)
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        if (resize) onResize(0f, -KEYBOARD_RESIZE_STEP) else onMove(0f, -KEYBOARD_MOVE_STEP)
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        if (resize) onResize(0f, KEYBOARD_RESIZE_STEP) else onMove(0f, KEYBOARD_MOVE_STEP)
+                        true
+                    }
+                    else -> false
+                }
+            }
             // Pressing anywhere on the window raises it. Initial pass + no consume so child drag
             // handlers still receive the gesture; onFocus is idempotent for the already-front window.
             .pointerInput(window.id) {
@@ -128,6 +175,7 @@ fun FloatingWindow(
                             else MaterialTheme.colorScheme.surfaceVariant,
                         )
                         .testTag(WindowTestTags.titleBar(window.id))
+                        .semantics { contentDescription = "Titelleiste ${window.title}, mit Pfeiltasten verschieben" }
                         .pointerInput(window.id) {
                             detectDragGestures(
                                 onDragStart = { onFocus() },
@@ -160,23 +208,33 @@ fun FloatingWindow(
             }
         }
 
-        // Resize grip — drag to resize from the bottom-end corner.
+        // Resize grip — drag from the bottom-end corner. The hit area is RESIZE_HIT_SLOP (44dp) for a
+        // comfortable touch target (WCAG 2.5.8); the visible grip is RESIZE_HANDLE_SIZE (24dp).
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .size(20.dp)
-                .clip(RoundedCornerShape(topStart = 8.dp))
-                .background(MaterialTheme.colorScheme.secondary)
+                .size(RESIZE_HIT_SLOP.dp)
                 .testTag(WindowTestTags.resizeHandle(window.id))
-                .pointerInput(window.id) {
+                .semantics { contentDescription = "Größe ändern, ${window.title}" }
+                .pointerInput(window.id, isRtl) {
                     detectDragGestures(
                         onDragStart = { onFocus() },
                         onDrag = { change, dragAmount ->
                             change.consume()
-                            onResize(dragAmount.x.toDp().value, dragAmount.y.toDp().value)
+                            // RTL: the grip sits at the visual start, so mirror the horizontal delta.
+                            val dWidth = WindowReducer.resizeDeltaForLayout(dragAmount.x.toDp().value, isRtl)
+                            onResize(dWidth, dragAmount.y.toDp().value)
                         },
                     )
                 },
-        )
+            contentAlignment = Alignment.BottomEnd,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(RESIZE_HANDLE_SIZE.dp)
+                    .clip(RoundedCornerShape(topStart = 8.dp))
+                    .background(MaterialTheme.colorScheme.secondary),
+            )
+        }
     }
 }
