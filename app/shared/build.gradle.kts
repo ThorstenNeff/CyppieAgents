@@ -50,6 +50,11 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
         }
+        jvmMain.dependencies {
+            // Desktop/JVM Ktor engine so the agent WS (CYP-6 swap) actually connects at runtime.
+            // Other targets (web/ios/android) need their own engine — flagged follow-up.
+            implementation(libs.ktor.clientCio)
+        }
         commonMain.dependencies {
             api(projects.core)
             implementation(libs.compose.runtime)
@@ -74,6 +79,10 @@ kotlin {
             // Compose UI assertions actually execute on JVM (runComposeUiTest).
             implementation(compose.desktop.uiTestJUnit4)
             implementation(compose.desktop.currentOs)
+            // Embedded Ktor server to e2e-verify the live AgentWsClient socket path (CYP-6 swap).
+            implementation(libs.ktor.serverCore)
+            implementation(libs.ktor.serverNetty)
+            implementation(libs.ktor.serverWebsockets)
         }
         jsMain.dependencies {
             implementation(libs.wrappers.browser)

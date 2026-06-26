@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.agentview
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,8 +36,16 @@ class AgentViewModel(
 
     init {
         viewModelScope.launch {
-            session.events.collect { event ->
-                _transcript.update { foldEvent(it, event) }
+            try {
+                session.events.collect { event ->
+                    _transcript.update { foldEvent(it, event) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // The live session can drop (WS connect/loss). Stay alive and say so honestly,
+                // instead of crashing the window. Reconnect handling is later polish.
+                _transcript.update { foldEvent(it, AgentEvent.Notice("conn-error", "Verbindung zum Agenten verloren")) }
             }
         }
     }

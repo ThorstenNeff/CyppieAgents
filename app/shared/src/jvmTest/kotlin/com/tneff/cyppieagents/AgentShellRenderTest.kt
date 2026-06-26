@@ -5,6 +5,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.agentview.AgentViewTags
+import com.tneff.cyppieagents.agentview.StubAgentSession
 import com.tneff.cyppieagents.window.WindowTestTags
 import kotlin.test.Test
 
@@ -17,7 +18,8 @@ class AgentShellRenderTest {
 
     @Test
     fun shell_rendersWindowHostWithPerAgentStreams() = runComposeUiTest {
-        setContent { MaterialTheme { AgentShell() } }
+        // Hermetic: inject stub sessions so the test never touches the network.
+        setContent { MaterialTheme { AgentShell(sessionFactory = { StubAgentSession() }) } }
 
         onNodeWithTag(WindowTestTags.HOST).assertExists()
         // One AgentWindow per agent, addressed by its v0.5 stream tag.
