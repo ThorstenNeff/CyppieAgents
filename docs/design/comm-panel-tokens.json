@@ -1,0 +1,54 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-17",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen + Kontrast-Validierung",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "reuse_first": "Die meisten Werte kommen aus CYP-12 (state-tokens.json) und CYP-14 (color-coding-tokens.json). Hier NUR Comm-Panel-spezifische Neu-Tokens. Kontrast-Ziele wie gehabt: Text >=4.5:1, Nicht-Text-UI >=3:1; dark Default + light.",
+    "color_is_never_sole_signal": "Auswahl/Ungelesen/Verbindung immer mit Form/Icon/Text, nicht nur Farbe (WCAG 1.4.1)."
+  },
+  "reused": {
+    "sender_color": "CYP-14 color-coding-tokens.json -> colorSlot(Message.from)",
+    "channel_identity_color": "CYP-14 -> colorSlot(Channel.id)",
+    "channel_kind_icons": "CYP-14 channel.kind_by_icon_not_color (HUB/DIRECT/GROUP)",
+    "status_for_message_kind_STATUS": "CYP-12 state-tokens.json (state.ok/error/running) — getrennt vom Identitaetssystem, kein Umfaerben des Absenders",
+    "po_badge": "CYP-14 po_slot + i18n agent_role_po"
+  },
+  "new_tokens": {
+    "comm.unread": {
+      "role": "Ungelesen-Badge/Count in der Kanalliste",
+      "dark":  { "fill": "#4DA3FF", "onFill": "#06243F" },
+      "light": { "fill": "#1A73E8", "onFill": "#FFFFFF" },
+      "note": "blau = Aufmerksamkeit/Neuigkeit, NICHT Status; immer mit Count-Text"
+    },
+    "comm.channel.selected": {
+      "role": "ausgewaehlter Kanal in der Liste",
+      "dark":  { "fill": "#23262B", "startMarker": "#4DA3FF" },
+      "light": { "fill": "#ECEFF3", "startMarker": "#1A73E8" },
+      "note": "Fill + Start-Marker (Form), nicht nur Farbe"
+    },
+    "comm.connection.live": {
+      "role": "Live-Indikator (WS offen)",
+      "dark":  { "dot": "#3DD68C", "label_key": "comm_status_live" },
+      "light": { "dot": "#1E8E5A", "label_key": "comm_status_live" }
+    },
+    "comm.connection.offline": {
+      "role": "Reconnecting/Offline-Banner (ehrlich, mit Zeitstempel)",
+      "dark":  { "bg": "#3A2E12", "fg": "#FFC857", "label_key": "comm_status_offline" },
+      "light": { "bg": "#FFF4D6", "fg": "#8A5A00", "label_key": "comm_status_offline" },
+      "note": "amber = Achtung; Timeline gilt als veraltet, solange aktiv"
+    },
+    "comm.message.pending": {
+      "role": "optimistisch gesendet, noch nicht per message.id bestaetigt",
+      "dark":  { "fg": "#8A8F98", "label_key": "comm_msg_pending" },
+      "light": { "fg": "#6B7280", "label_key": "comm_msg_pending" },
+      "note": "gedimmt + 'wird gesendet'; NICHT als zugestellt darstellen"
+    },
+    "comm.composer.readonly": {
+      "role": "Composer wenn canWrite=false (kein 403-Feld)",
+      "dark":  { "bg": "#1B1C1F", "fg": "#8A8F98", "hint_key": "comm_readonly_hint" },
+      "light": { "bg": "#F0F1F3", "fg": "#6B7280", "hint_key": "comm_readonly_hint" }
+    }
+  }
+}
