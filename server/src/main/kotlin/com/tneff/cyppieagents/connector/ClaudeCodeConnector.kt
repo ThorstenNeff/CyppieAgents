@@ -64,8 +64,10 @@ class ClaudeCodeSession(
     private val _events = MutableSharedFlow<StreamJsonEvent>(extraBufferCapacity = 256)
     override val events: Flow<StreamJsonEvent> = _events
 
-    // Turn-queue key: agentId until the CLI reports its session_id, then the session_id.
-    @Volatile private var turnKey: String = agentId
+    // Turn-queue key is the STABLE agentId for the whole session lifetime (Gate #5): it must NOT
+    // change at system/init, or a turn injected after init would take a different mutex and race a
+    // turn still running on the old key. There is one long-lived session per agent, so agentId is
+    // the right, stable serialization key. The session_id is used only for routing (registry).
     @Volatile private var boundSessionId: String? = null
     @Volatile private var pendingTurn: CompletableDeferred<Unit>? = null
     private var readerJob: Job? = null
@@ -83,7 +85,6 @@ class ClaudeCodeSession(
 
                 if (masked is SystemEvent && boundSessionId == null && !masked.sessionId.isNullOrBlank()) {
                     boundSessionId = masked.sessionId
-                    turnKey = masked.sessionId!!
                     registry.bind(masked.sessionId!!, agentId) // Gate #1: authoritative session→agent
                 }
 
@@ -102,9 +103,10 @@ class ClaudeCodeSession(
     }
 
     override suspend fun sendTurn(turn: UserTurn) {
-        // Gate #5: serialize per session — hold from injection until this turn's result arrives,
-        // so a second injection cannot race a running turn.
-        turnQueue.runTurn(turnKey) {
+        // Gate #5: serialize on the stable agentId key — hold from injection until this turn's
+        // result arrives, so a second injection cannot race a running turn (even across system/init).
+        // Single-flight means only the lock holder ever sets pendingTurn, so it can't be overwritten.
+        turnQueue.runTurn(agentId) {
             val done = CompletableDeferred<Unit>()
             pendingTurn = done
             process.writeLine(turn.toNdjsonLine())

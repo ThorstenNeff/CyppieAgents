@@ -118,4 +118,42 @@ class ClaudeCodeSessionTest {
         session.close()
         scope.cancel()
     }
+
+    @Test
+    fun turnQueueStaysSerialAcrossSessionIdTransition() = runBlocking {
+        val hub = Hub(HubState.hubAndSpoke(agents()), InMemoryMessageStore())
+        val registry = SessionRegistry()
+        val proc = FakeAgentProcess()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val session = ClaudeCodeSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
+        session.start()
+
+        // Turn#1 before the CLI reports its session_id.
+        val t1 = scope.launch { session.sendTurn(UserTurn("one")) }
+        withTimeout(2000) { while (proc.written.isEmpty()) delay(5) }
+        assertEquals(1, proc.written.size)
+        assertTrue(t1.isActive)
+
+        // system/init arrives mid-session — under the old code this switched the turn key.
+        proc.feed("""{"type":"system","subtype":"init","session_id":"sess-1"}""")
+        withTimeout(2000) { while (registry.agentFor("sess-1") == null) delay(5) }
+
+        // Turn#2 attempts while Turn#1 still holds — it must queue, NOT inject (stable-key serial).
+        val t2 = scope.launch { session.sendTurn(UserTurn("two")) }
+        delay(200)
+        assertEquals(1, proc.written.size) // Turn#2 not injected: it waits for Result#1
+        assertTrue(t2.isActive)
+
+        // Result#1 releases Turn#1 → Turn#2 proceeds.
+        proc.feed("""{"type":"result","subtype":"success","session_id":"sess-1"}""")
+        withTimeout(2000) { t1.join() }
+        withTimeout(2000) { while (proc.written.size < 2) delay(5) }
+        assertEquals(2, proc.written.size)
+
+        proc.feed("""{"type":"result","subtype":"success","session_id":"sess-1"}""")
+        withTimeout(2000) { t2.join() }
+
+        session.close()
+        scope.cancel()
+    }
 }

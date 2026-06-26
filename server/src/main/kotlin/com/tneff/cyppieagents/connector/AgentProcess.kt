@@ -28,6 +28,9 @@ class ProcessBuilderSpawner : ProcessSpawner {
     override fun spawn(command: List<String>, cwd: File, env: Map<String, String>): AgentProcess {
         val builder = ProcessBuilder(command).directory(cwd)
         builder.environment().putAll(env)
+        // Discard stderr so its pipe buffer can't fill and block the process (F-C deadlock). We do
+        // NOT route it to logs to avoid any chance of a secret-bearing line leaking unmasked.
+        builder.redirectError(ProcessBuilder.Redirect.DISCARD)
         val process = builder.start()
         val writer = process.outputStream.bufferedWriter()
         return object : AgentProcess {

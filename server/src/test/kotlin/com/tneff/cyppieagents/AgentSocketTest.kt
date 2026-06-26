@@ -8,7 +8,9 @@ import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
 import com.tneff.cyppieagents.model.TextBlock
 import com.tneff.cyppieagents.model.UserTurn
+import com.tneff.cyppieagents.routing.TokenRegistry
 import com.tneff.cyppieagents.routing.installAgentSocket
+import com.tneff.cyppieagents.routing.tokenAuthorize
 import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.server.testing.testApplication
@@ -52,7 +54,7 @@ class AgentSocketTest {
         val sessions = ConnectorSessions()
         val fake = FakeConnectorSession("backend")
         sessions.register(fake)
-        application { installAgentSocket(sessions) }
+        application { installAgentSocket(sessions, authorize = { true }) }
         val client = createClient { install(ClientWebSockets) }
 
         // Buffered (replay) before the client connects → delivered on subscribe.
@@ -73,7 +75,7 @@ class AgentSocketTest {
         val sessions = ConnectorSessions()
         val fake = FakeConnectorSession("backend")
         sessions.register(fake)
-        application { installAgentSocket(sessions) }
+        application { installAgentSocket(sessions, authorize = { true }) }
         val client = createClient { install(ClientWebSockets) }
 
         client.webSocket("/ws/agent?agentId=backend") {
@@ -89,8 +91,42 @@ class AgentSocketTest {
     }
 
     @Test
+    fun defaultAuthIsFailClosed() = testApplication {
+        // No authorize predicate → deny everything (F-B): an open socket could otherwise drive an agent.
+        val sessions = ConnectorSessions()
+        sessions.register(FakeConnectorSession("backend"))
+        application { installAgentSocket(sessions) }
+        val client = createClient { install(ClientWebSockets) }
+        client.webSocket("/ws/agent?agentId=backend") {
+            assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, closeReason.await()?.code)
+        }
+    }
+
+    @Test
+    fun tokenAuthorizeAllowsOperatorAndRejectsNoToken() = testApplication {
+        val sessions = ConnectorSessions()
+        sessions.register(FakeConnectorSession("backend"))
+        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry)) }
+        val client = createClient { install(ClientWebSockets) }
+
+        // No token → fail-closed.
+        client.webSocket("/ws/agent?agentId=backend") {
+            assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, closeReason.await()?.code)
+        }
+        // Operator token via ?token= → allowed (connection stays open; we can send a turn).
+        client.webSocket("/ws/agent?agentId=backend&token=tok-op") {
+            send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), UserTurn("hi"))))
+            val ack = assertIs<AssistantEvent>(
+                CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText()),
+            )
+            assertTrue(assertIs<TextBlock>(ack.message.content.single()).text.contains("hi"))
+        }
+    }
+
+    @Test
     fun unknownAgentIsRejected() = testApplication {
-        application { installAgentSocket(ConnectorSessions()) }
+        application { installAgentSocket(ConnectorSessions(), authorize = { true }) }
         val client = createClient { install(ClientWebSockets) }
         client.webSocket("/ws/agent?agentId=ghost") {
             val reason = closeReason.await()
@@ -100,7 +136,7 @@ class AgentSocketTest {
 
     @Test
     fun missingAgentIdIsRejected() = testApplication {
-        application { installAgentSocket(ConnectorSessions()) }
+        application { installAgentSocket(ConnectorSessions(), authorize = { true }) }
         val client = createClient { install(ClientWebSockets) }
         client.webSocket("/ws/agent") {
             val reason = closeReason.await()
