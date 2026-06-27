@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.events
 
 import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventPage
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
 import java.util.concurrent.atomic.AtomicInteger

@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.events
 
 import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventPage
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
 import kotlinx.coroutines.flow.Flow
@@ -61,11 +62,8 @@ data class EventFilter(
 /** Cursor-based page request. Paging is stable over `seq` (PRD §6): return events with `seq > afterSeq`. */
 data class Page(val afterSeq: Long? = null, val limit: Int = 100)
 
-/**
- * A page of events in ascending `seq` order. [nextAfterSeq] is the cursor for the next page (null at
- * the end); [hasMore] mirrors it explicitly for the UI (CYP-39 REST wire shape, owner-confirmed).
- */
-data class EventPage(val events: List<Event>, val nextAfterSeq: Long?, val hasMore: Boolean = nextAfterSeq != null)
+// EventPage is the REST wire DTO (CYP-39) — it lives in :core (com.tneff.cyppieagents.model.EventPage,
+// imported above) so the Browse UI consumes the exact same shape.
 
 /**
  * The single ordering + persistence seam (PRD §3.2), swappable behind this narrow interface exactly

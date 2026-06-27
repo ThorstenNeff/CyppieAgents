@@ -7,6 +7,9 @@ import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.connector.ClaudeCodeConnector
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProcessSpawner
+import com.tneff.cyppieagents.events.EventSink
+import com.tneff.cyppieagents.events.InMemoryEventSink
+import com.tneff.cyppieagents.events.SystemTimeSource
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
@@ -23,6 +26,8 @@ class BootedPlatform(
     val connectorSessions: ConnectorSessions,
     val tokenRegistry: TokenRegistry,
     val store: MessageStore,
+    /** The Event-Log sink served by `/api/events` (CYP-39). The mediator tap (CYP-37) records into it. */
+    val eventSink: EventSink,
     /** Agents whose session spawned and registered. */
     val bootedAgents: List<String>,
     /** Agents whose spawn failed — fail-closed: NO session, NO open /ws/agent for them. */
@@ -47,6 +52,8 @@ class BootOrchestrator(
     private val spawner: ProcessSpawner,
     private val scope: CoroutineScope,
     private val storeFactory: () -> MessageStore = { InMemoryMessageStore() },
+    // Default in-memory; CYP-43 swaps in a SqliteEventSink from the events config (sinkPath/WAL).
+    private val eventSinkFactory: () -> EventSink = { InMemoryEventSink(SystemTimeSource()) },
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -63,6 +70,7 @@ class BootOrchestrator(
         val turnQueue = SessionTurnQueue()
         val sessions = ConnectorSessions()
         val tokenRegistry = TokenRegistry(secrets.agentTokens, secrets.operatorToken)
+        val eventSink = eventSinkFactory()
 
         val connector = ClaudeCodeConnector(
             spawner = spawner,
@@ -90,6 +98,6 @@ class BootOrchestrator(
             }
         }
 
-        return BootedPlatform(hub, state, registry, sessions, tokenRegistry, store, booted, failed)
+        return BootedPlatform(hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed)
     }
 }
