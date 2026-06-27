@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
 import kmpcyppieagents.app.shared.generated.resources.Res
-import kmpcyppieagents.app.shared.generated.resources.event_back
+import kmpcyppieagents.app.shared.generated.resources.comm_back
 import kmpcyppieagents.app.shared.generated.resources.event_detail_source_ts
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_correlated_by
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_show_run
@@ -239,7 +239,7 @@ private fun DetailPane(
         // Single-pane only: an explicit Back affordance returns to the master table (§6.1). Two-pane = null.
         if (onBack != null) {
             Text(
-                text = "‹ " + stringResource(Res.string.event_back),
+                text = "‹ " + stringResource(Res.string.comm_back),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,

@@ -23,7 +23,8 @@
     <string name="event_filter_timewindow">Time window</string>
     <string name="event_filter_correlation">Correlation ID</string>
     <string name="event_load_more">Load more</string>
-    <string name="event_back">Back</string>
+    <!-- Shared "Back" key (comm-panel-keys.md, CYP-17 contract) — reused by the Browse single-pane, not duplicated. -->
+    <string name="comm_back">Back</string>
     <string name="event_detail_source_ts">Observed: %1$s</string>
     <string name="event_drilldown_show_run">Show the whole run</string>
     <string name="event_drilldown_show_session">Show the whole session</string>
