@@ -74,6 +74,12 @@
       "light": { "fg": "#8A5A00", "icon": "pause", "label_key": "event_tail_paused" },
       "note": "Ansicht NIE als live ausgeben solange pausiert; Puffer-Count via event_tail_buffered_count"
     },
+    "event.tail.trimmed": {
+      "role": "Live-Ring-Trim — ältere Live-Zeilen aus dem begrenzten Ring geschoben (Client-Cap, sichtbar)",
+      "dark":  { "fg": "#A0A4AD", "icon": "arrow-up", "label_key": "event_tail_trimmed" },
+      "light": { "fg": "#5F6368", "icon": "arrow-up", "label_key": "event_tail_trimmed" },
+      "note": "zweiter Client-Cap neben event.tail.buffer_overflow (Pause-Puffer). 'No silent caps' auch im UI; Trim-Marker am oberen Rand. ~5000 Zeilen (Dev kalibriert)."
+    },
     "event.connection.offline": {
       "role": "Live-Tail WS getrennt — ehrlicher Banner mit Zeitstempel (reuse CYP-17-Prinzip)",
       "dark":  { "bg": "#3A2E12", "fg": "#FFC857", "label_key": "event_connection_offline" },
@@ -81,10 +87,10 @@
       "note": "Strom gilt als veraltet solange aktiv"
     },
     "event.access.denied": {
-      "role": "fail-closed Berechtigungs-Zustand (kein Operator-Token, PRD §7)",
+      "role": "Fallback fuer Token-Entzug ZUR LAUFZEIT (PRD §7). Default ohne Token = Fenster wird gar nicht angeboten (operator-gated Omission, PO-Entscheid), KEIN totes Fenster.",
       "dark":  { "bg": "#1B1C1F", "fg": "#A0A4AD", "icon": "lock", "label_key": "event_access_denied" },
       "light": { "bg": "#F0F1F3", "fg": "#5F6368", "icon": "lock", "label_key": "event_access_denied" },
-      "note": "KEIN Teildaten-Render, keine ausgegrauten echten Events"
+      "note": "Nur Laufzeit-Entzug: ehrlich 'Zugriff entzogen' + Fenster schliessen. KEIN Teildaten-Render, keine ausgegrauten echten Events."
     }
   },
   "typography": {
