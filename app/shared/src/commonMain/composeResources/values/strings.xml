@@ -1,0 +1,13 @@
+<resources>
+    <!-- Transcript accessibility (CYP-23, docs/design/a11y-keys.md §2). DE = source/default.
+         Disclosure-true: tool OK = "ausgeführt" (not "erfolgreich"); result success = "Turn
+         abgeschlossen" (not "erledigt"). %1$s = event.tool / event.label. -->
+    <string name="a11y_assistant_streaming">Agent schreibt</string>
+    <string name="a11y_tool_running">Werkzeug läuft: %1$s</string>
+    <string name="a11y_tool_ok">Werkzeug ausgeführt: %1$s</string>
+    <string name="a11y_tool_error">Werkzeug-Fehler: %1$s</string>
+    <string name="a11y_result_success">Ergebnis: Turn abgeschlossen</string>
+    <string name="a11y_result_error">Ergebnis: fehlgeschlagen — %1$s</string>
+    <string name="a11y_notice">Hinweis: %1$s</string>
+    <string name="a11y_agent_status">Agentenstatus: %1$s</string>
+</resources>
