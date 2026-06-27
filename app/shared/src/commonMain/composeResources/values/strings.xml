@@ -10,4 +10,41 @@
     <string name="a11y_result_error">Ergebnis: fehlgeschlagen — %1$s</string>
     <string name="a11y_notice">Hinweis: %1$s</string>
     <string name="a11y_agent_status">Agentenstatus: %1$s</string>
+
+    <!-- Observability Event-Log UI (CYP-41 Browse + CYP-42 Live-Tail), docs/design/event-log-keys.md.
+         Disclosure-true wording is binding (event-log-keys.md §6): gaps named "unvollständig", sourceTs
+         "Beobachtet" (not authoritative), paused != live, access denied = operators-only (fail-closed). -->
+    <string name="event_severity_error">Fehler</string>
+    <string name="event_severity_warn">Warnung</string>
+    <string name="event_severity_info">Info</string>
+    <string name="event_severity_debug">Debug</string>
+    <string name="event_title">Event-Log</string>
+    <string name="event_empty">Keine Events</string>
+    <string name="event_filter_active">Filter aktiv – Teilmenge</string>
+    <string name="event_filter_agent">Agent</string>
+    <string name="event_filter_type">Typ</string>
+    <string name="event_filter_severity">Severity</string>
+    <string name="event_filter_timewindow">Zeitfenster</string>
+    <string name="event_filter_correlation">Korrelations-ID</string>
+    <string name="event_load_more">Mehr laden</string>
+    <string name="event_detail_source_ts">Beobachtet: %1$s</string>
+    <string name="event_drilldown_show_run">Zeig den ganzen Lauf</string>
+    <string name="event_drilldown_show_session">Zeig die ganze Session</string>
+    <string name="event_drilldown_correlated_by">Korreliert über %1$s</string>
+    <string name="event_type_unknown">Unbekannter Typ: %1$s</string>
+    <string name="event_tail_title">Live-Tail</string>
+    <string name="event_tail_live">Live</string>
+    <string name="event_tail_pause">Pause</string>
+    <string name="event_tail_resume">Fortsetzen</string>
+    <string name="event_tail_paused">Pausiert</string>
+    <string name="event_tail_buffered_count">%1$s neue (pausiert)</string>
+    <string name="event_tail_buffer_overflow">Puffer voll – älteste pausierte Events verworfen</string>
+    <string name="event_tail_trimmed">Ältere getrimmt – %1$s</string>
+    <string name="event_gap_dropped">%1$s Events verworfen – Log in diesem Fenster unvollständig</string>
+    <string name="event_connection_offline">Verbindung getrennt – Stand %1$s</string>
+    <string name="event_access_denied">Nur für Operatoren</string>
+    <string name="a11y_event_row">%1$s, %2$s, von %3$s, %4$s</string>
+    <string name="a11y_event_gap">Lücke: %1$s Events verworfen</string>
+    <string name="a11y_event_correlation">Korrelations-ID %1$s, Lauf anzeigen</string>
+    <string name="a11y_event_tail_status">Live-Tail-Status: %1$s</string>
 </resources>

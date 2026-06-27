@@ -8,4 +8,39 @@
     <string name="a11y_result_error">Result: failed — %1$s</string>
     <string name="a11y_notice">Notice: %1$s</string>
     <string name="a11y_agent_status">Agent status: %1$s</string>
+
+    <!-- Observability Event-Log UI (CYP-41 Browse + CYP-42 Live-Tail), docs/design/event-log-keys.md. -->
+    <string name="event_severity_error">Error</string>
+    <string name="event_severity_warn">Warning</string>
+    <string name="event_severity_info">Info</string>
+    <string name="event_severity_debug">Debug</string>
+    <string name="event_title">Event log</string>
+    <string name="event_empty">No events</string>
+    <string name="event_filter_active">Filter active – subset</string>
+    <string name="event_filter_agent">Agent</string>
+    <string name="event_filter_type">Type</string>
+    <string name="event_filter_severity">Severity</string>
+    <string name="event_filter_timewindow">Time window</string>
+    <string name="event_filter_correlation">Correlation ID</string>
+    <string name="event_load_more">Load more</string>
+    <string name="event_detail_source_ts">Observed: %1$s</string>
+    <string name="event_drilldown_show_run">Show the whole run</string>
+    <string name="event_drilldown_show_session">Show the whole session</string>
+    <string name="event_drilldown_correlated_by">Correlated by %1$s</string>
+    <string name="event_type_unknown">Unknown type: %1$s</string>
+    <string name="event_tail_title">Live tail</string>
+    <string name="event_tail_live">Live</string>
+    <string name="event_tail_pause">Pause</string>
+    <string name="event_tail_resume">Resume</string>
+    <string name="event_tail_paused">Paused</string>
+    <string name="event_tail_buffered_count">%1$s new (paused)</string>
+    <string name="event_tail_buffer_overflow">Buffer full – oldest paused events dropped</string>
+    <string name="event_tail_trimmed">Older trimmed – %1$s</string>
+    <string name="event_gap_dropped">%1$s events dropped – log incomplete in this window</string>
+    <string name="event_connection_offline">Disconnected – as of %1$s</string>
+    <string name="event_access_denied">Operators only</string>
+    <string name="a11y_event_row">%1$s, %2$s, from %3$s, %4$s</string>
+    <string name="a11y_event_gap">Gap: %1$s events dropped</string>
+    <string name="a11y_event_correlation">Correlation ID %1$s, show run</string>
+    <string name="a11y_event_tail_status">Live tail status: %1$s</string>
 </resources>
