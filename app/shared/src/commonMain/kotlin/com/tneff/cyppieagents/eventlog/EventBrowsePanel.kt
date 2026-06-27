@@ -4,13 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.event_back
 import kmpcyppieagents.app.shared.generated.resources.event_detail_source_ts
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_correlated_by
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_show_run
@@ -52,23 +53,55 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun EventBrowsePanel(viewModel: EventBrowseViewModel, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsState()
-    Row(modifier = modifier.fillMaxSize()) {
-        MasterPane(
-            state = state,
-            onSelect = viewModel::select,
-            onLoadMore = viewModel::loadMore,
-            onClearDrilldown = viewModel::clearDrilldown,
-            onApplyFilter = viewModel::applyFilter,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        DetailPane(
-            state = state,
-            onShowRun = viewModel::showRun,
-            onShowSession = viewModel::showSession,
-            modifier = Modifier.width(300.dp).fillMaxHeight(),
-        )
+    // Responsive layout (EVENT-LOG-UI §6.1): the table is wider than Comm, so a hard 300dp detail pane
+    // starves the master to 0dp on a narrow phone tile (~140dp) → no filter/table composed → no testTags.
+    // Narrow (< ~560dp inner width) → Single-Pane (table OR detail, selection navigates, Back). Wide → Two-Pane.
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        if (maxWidth < TWO_PANE_MIN_WIDTH) {
+            // Single-Pane: a drilldown owns the (master) area; else a selected event shows the detail; else table.
+            if (state.selected != null && state.drilldown == null) {
+                DetailPane(
+                    state = state,
+                    onShowRun = viewModel::showRun,
+                    onShowSession = viewModel::showSession,
+                    onBack = viewModel::clearSelection,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                MasterPane(
+                    state = state,
+                    onSelect = viewModel::select,
+                    onLoadMore = viewModel::loadMore,
+                    onClearDrilldown = viewModel::clearDrilldown,
+                    onApplyFilter = viewModel::applyFilter,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        } else {
+            // Two-Pane: master table (start) + detail (end), weight-sized so the detail is never a hard 300dp.
+            Row(modifier = Modifier.fillMaxSize()) {
+                MasterPane(
+                    state = state,
+                    onSelect = viewModel::select,
+                    onLoadMore = viewModel::loadMore,
+                    onClearDrilldown = viewModel::clearDrilldown,
+                    onApplyFilter = viewModel::applyFilter,
+                    modifier = Modifier.weight(1.4f).fillMaxHeight(),
+                )
+                DetailPane(
+                    state = state,
+                    onShowRun = viewModel::showRun,
+                    onShowSession = viewModel::showSession,
+                    onBack = null,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            }
+        }
     }
 }
+
+/** Below this panel inner width the master-detail collapses to a single navigable pane (§6.1). */
+private val TWO_PANE_MIN_WIDTH = 560.dp
 
 @Composable
 private fun MasterPane(
@@ -198,10 +231,21 @@ private fun DetailPane(
     state: EventBrowseUiState,
     onShowRun: (com.tneff.cyppieagents.model.Event) -> Unit,
     onShowSession: (com.tneff.cyppieagents.model.Event) -> Unit,
+    onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val sel = state.selected
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant).padding(8.dp)) {
+        // Single-pane only: an explicit Back affordance returns to the master table (§6.1). Two-pane = null.
+        if (onBack != null) {
+            Text(
+                text = "‹ " + stringResource(Res.string.event_back),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClick = onBack).testTag(EventBrowseTags.BACK).padding(vertical = 4.dp),
+            )
+        }
         if (sel == null) return@Column
         Column(modifier = Modifier.fillMaxWidth().testTag(EventBrowseTags.DETAIL)) {
             Text("${sel.typeText()} · ${severityLabel(sel.severity)}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)

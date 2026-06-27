@@ -27,6 +27,7 @@
     <string name="event_filter_timewindow">Zeitfenster</string>
     <string name="event_filter_correlation">Korrelations-ID</string>
     <string name="event_load_more">Mehr laden</string>
+    <string name="event_back">Zurück</string>
     <string name="event_detail_source_ts">Beobachtet: %1$s</string>
     <string name="event_drilldown_show_run">Zeig den ganzen Lauf</string>
     <string name="event_drilldown_show_session">Zeig die ganze Session</string>

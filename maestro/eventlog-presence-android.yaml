@@ -14,7 +14,7 @@
 #     the omission proof is genuine; the demo appId is deliberately NOT used here.)
 #   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
 appId: com.tneff.cyppieagents
-name: "CYP-41/42 Event-Log presence (Android) — windows omitted without operator token"
+name: "CYP-41-42 Event-Log presence (Android) — windows omitted without operator token"
 tags:
   - security
   - event-log
