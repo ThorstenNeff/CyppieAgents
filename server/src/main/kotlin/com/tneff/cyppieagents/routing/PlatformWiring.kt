@@ -41,6 +41,9 @@ fun Application.installPlatform(booted: BootedPlatform) {
         commRoutes(booted.hub, booted.state, booted.tokenRegistry)
         // Production auth: only the operator token, or an agent watching its own session, is allowed.
         agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
+        // /api/events — operator-only Browse over the Event-Log (CYP-39). Live but empty until the
+        // mediator tap (CYP-37) records into booted.eventSink.
+        eventRoutes(booted.eventSink, booted.tokenRegistry)
     }
 }
 

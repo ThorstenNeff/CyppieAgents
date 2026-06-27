@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.events
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventPage
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
 import java.nio.file.Files
