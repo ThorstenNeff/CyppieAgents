@@ -1,5 +1,8 @@
 package com.tneff.cyppieagents.eventlog
 
+import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventType
+import com.tneff.cyppieagents.model.Severity
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

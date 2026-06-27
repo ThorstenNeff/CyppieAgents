@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.eventlog
 
+import com.tneff.cyppieagents.model.Event
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

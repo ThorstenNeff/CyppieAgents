@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.eventlog
 
+import com.tneff.cyppieagents.model.Event
+
 /** Honest connection state for the live-tail banner (mirrors comm CYP-17 §5). */
 enum class ConnectionStatus { CONNECTING, LIVE, DISCONNECTED }
 

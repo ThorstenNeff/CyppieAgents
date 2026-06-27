@@ -1,5 +1,12 @@
 package com.tneff.cyppieagents.eventlog
 
+import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventType
+import com.tneff.cyppieagents.model.Severity
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
 /**
  * In-memory [EventsApi] for ungated development + tests (no `/api/events` yet, CYP-39). Holds a fixed
  * event set, applies the [EventFilter] (time window half-open `[since, until)` — the CYP-39 semantic)
@@ -36,17 +43,17 @@ class StubEventsApi(events: List<Event> = sampleEvents()) : EventsApi {
             fun ev(
                 seq: Long, type: EventType, agent: String = "backend",
                 cid: String? = "run-1", sid: String? = "sess-1",
-                sev: Severity = Severity.INFO, detail: Map<String, String> = emptyMap(),
+                sev: Severity = Severity.INFO, detail: JsonObject = JsonObject(emptyMap()),
             ) = Event(
                 id = "e$seq", ts = 1_000 + seq, seq = seq, agentId = agent, teamId = "team-1",
                 type = type, severity = sev, correlationId = cid, sessionId = sid, detail = detail,
             )
             return listOf(
                 ev(1, EventType.TURN_START),
-                ev(2, EventType.TOOL_CALL, detail = mapOf("toolName" to "read_file", "toolUseId" to "t1")),
-                ev(3, EventType.TOOL_RESULT, detail = mapOf("toolUseId" to "t1", "isError" to "false")),
-                ev(4, EventType.CONTEXT_USAGE, detail = mapOf("bandPct" to "20")),
-                ev(5, EventType.RESULT_FINAL, detail = mapOf("subtype" to "success", "numTurns" to "1")),
+                ev(2, EventType.TOOL_CALL, detail = buildJsonObject { put("toolName", "read_file"); put("toolUseId", "t1") }),
+                ev(3, EventType.TOOL_RESULT, detail = buildJsonObject { put("toolUseId", "t1"); put("isError", "false") }),
+                ev(4, EventType.CONTEXT_USAGE, detail = buildJsonObject { put("bandPct", "20") }),
+                ev(5, EventType.RESULT_FINAL, detail = buildJsonObject { put("subtype", "success"); put("numTurns", "1") }),
                 // unrelated noise (different run/agent) — must NOT appear in a run-1 drilldown
                 ev(6, EventType.TURN_START, agent = "frontend", cid = "run-2", sid = "sess-2"),
                 ev(7, EventType.ERROR_RATELIMIT, agent = "frontend", cid = "run-2", sid = "sess-2", sev = Severity.WARN),

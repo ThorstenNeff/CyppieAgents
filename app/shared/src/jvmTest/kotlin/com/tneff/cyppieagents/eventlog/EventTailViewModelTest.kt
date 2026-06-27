@@ -1,5 +1,8 @@
 package com.tneff.cyppieagents.eventlog
 
+import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventType
+import com.tneff.cyppieagents.model.Severity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel

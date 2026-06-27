@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.eventlog
 
+import com.tneff.cyppieagents.model.EventType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
