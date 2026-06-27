@@ -41,4 +41,23 @@ class AgentA11yTest {
         }
         onNodeWithContentDescription("read_file", substring = true).assertExists()
     }
+
+    @Test
+    fun successResult_keepsSubstantiveLabelAccessible() = runComposeUiTest {
+        // M1: the success result's label (e.g. tool output detail) must reach the screen reader.
+        setContent {
+            MaterialTheme {
+                val session = sessionEmitting(
+                    AgentEvent.Result("r1", "42 Zeilen gelesen", isError = false),
+                )
+                val viewModel = remember { AgentViewModel(session) }
+                AgentWindow(agentId = "backend", viewModel = viewModel)
+            }
+        }
+
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithContentDescription("42 Zeilen gelesen", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithContentDescription("42 Zeilen gelesen", substring = true).assertExists()
+    }
 }

@@ -175,9 +175,15 @@ private fun ResultRow(event: AgentEvent.Result, modifier: Modifier = Modifier) {
         if (event.isError) MaterialTheme.colorScheme.onErrorContainer
         else MaterialTheme.colorScheme.onSurfaceVariant
     // Disclosure-true: success = "Turn abgeschlossen", not "erledigt" (CYP-23).
+    // M1 (UIUX): the success `label` carries substance (masked tool-result content), so expose it to
+    // the screen reader too — Equal Access — appended after the disclosure-safe base.
     val resultDescription =
-        if (event.isError) stringResource(Res.string.a11y_result_error, event.label)
-        else stringResource(Res.string.a11y_result_success)
+        if (event.isError) {
+            stringResource(Res.string.a11y_result_error, event.label)
+        } else {
+            val base = stringResource(Res.string.a11y_result_success)
+            if (event.label.isBlank()) base else "$base — ${event.label}"
+        }
     Row(
         modifier = modifier
             .fillMaxWidth()
