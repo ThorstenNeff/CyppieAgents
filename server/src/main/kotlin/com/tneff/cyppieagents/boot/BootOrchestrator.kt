@@ -54,7 +54,8 @@ class BootOrchestrator(
         worktrees.ensureClone(config.repo)
 
         val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName) }
-        val state = HubState.hubAndSpoke(agents) // channels + default ACL (hub-and-spoke)
+        // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
+        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID)
         val store = storeFactory()
         val hub = Hub(state, store)
         val registry = SessionRegistry()

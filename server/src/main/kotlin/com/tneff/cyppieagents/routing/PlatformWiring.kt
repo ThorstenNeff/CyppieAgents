@@ -2,7 +2,6 @@ package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.boot.BootedPlatform
-import com.tneff.cyppieagents.comm.Audit
 import com.tneff.cyppieagents.model.ApiError
 import com.tneff.cyppieagents.model.ApiErrorBody
 import io.ktor.http.HttpStatusCode
@@ -25,8 +24,6 @@ import io.ktor.server.plugins.BadRequestException as KtorBadRequestException
  * `?token=` query fallback exists, so the socket is not reachable off-box. See [bootHost].
  */
 fun Application.installPlatform(booted: BootedPlatform) {
-    val audit = Audit()
-
     install(ContentNegotiation) { json(CommJson) }
     install(WebSockets)
     install(StatusPages) {
@@ -41,7 +38,7 @@ fun Application.installPlatform(booted: BootedPlatform) {
         }
     }
     routing {
-        commRoutes(booted.hub, booted.state, booted.tokenRegistry, audit)
+        commRoutes(booted.hub, booted.state, booted.tokenRegistry)
         // Production auth: only the operator token, or an agent watching its own session, is allowed.
         agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
     }

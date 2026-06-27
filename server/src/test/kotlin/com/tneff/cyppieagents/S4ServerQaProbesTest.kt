@@ -170,12 +170,16 @@ class S4ServerQaProbesTest {
         assertTrue(justBefore.any { it.id == created.id }, "since=ts-1 must INCLUDE the message")
     }
 
-    /** The operator token is NOT an agent identity: it cannot read agent-scoped comm endpoints. */
+    /**
+     * CYP-18 contract change: the operator token IS now accepted on comm reads as a privileged
+     * AclMatrix participant (member of every channel) — the human/UI viewer. It is NOT a bypass:
+     * the same AclMatrix filter applies, so the operator sees all (readable) channels.
+     */
     @Test
-    fun operatorToken_isNotAnAgent_onChannels() = testApplication {
+    fun operatorToken_isAcceptedAsPrivilegedParticipant_onChannels() = testApplication {
         application { installComm(config()) }
         val client = jsonClient()
         val res = client.get("/api/channels") { bearerAuth("tok-op") }
-        assertEquals(HttpStatusCode.Unauthorized, res.status, "operator token maps to no agent ⇒ 401 on agent-scoped reads")
+        assertEquals(HttpStatusCode.OK, res.status, "CYP-18: operator token is an accepted privileged participant on comm reads")
     }
 }
