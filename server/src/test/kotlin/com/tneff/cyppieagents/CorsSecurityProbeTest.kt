@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents
 
 import com.tneff.cyppieagents.routing.installRestrictedCors
+import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
+import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.options
@@ -16,14 +18,19 @@ import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
- * QA security pass for CYP-30 CORS. Adversarial probes for the gaps the unit CorsTest doesn't cover:
- * the WS-upgrade origin path (PO check #5), preflight from a foreign origin, and matching strictness
- * (scheme / port / suffix-spoof). CORS is installed app-wide in `bootPlatform` BEFORE the WS routes,
- * so the same Origin check governs `/ws/comm` and `/ws/agent` — these probes prove that behaviorally.
+ * QA security pass for CYP-30 CORS — reviewer re-cert conditions.
+ *
+ * The WS-origin protection hangs on plugin order (CORS installed app-wide in `bootPlatform` BEFORE
+ * the WS routes). These probes prove it with a REAL WebSocket handshake (not a plain GET on the
+ * `/ws/…` path): a foreign Origin must be rejected at the upgrade on BOTH `/ws/comm` and `/ws/agent`,
+ * the allowed Origin must connect, and a MISSING Origin (native clients, e.g. Desktop/CIO) must be
+ * allowed — else the non-browser path breaks. This test must remain: it turns red if a refactor
+ * silently drops the CORS-before-WS ordering.
  */
 class CorsSecurityProbeTest {
 
@@ -34,36 +41,72 @@ class CorsSecurityProbeTest {
         install(WebSockets)
         routing {
             get("/api/health") { call.respondText("ok") }
-            webSocket("/ws/comm") { /* no-op: we only exercise the CORS gate on the upgrade GET */ }
+            webSocket("/ws/comm") { /* no-op: we only exercise the CORS gate on the upgrade handshake */ }
             webSocket("/ws/agent") { }
         }
     }
 
-    /** PO check #5: a WS upgrade is a GET carrying Origin → an off-origin page must be CORS-blocked. */
+    private fun ApplicationTestBuilder.wsClient() = createClient { install(ClientWebSockets) }
+
+    /** Attempts a real WS handshake; returns true iff the upgrade succeeded (block ran). */
+    private suspend fun ApplicationTestBuilder.wsConnects(path: String, origin: String?): Boolean =
+        runCatching {
+            wsClient().webSocket(path, request = { if (origin != null) header(HttpHeaders.Origin, origin) }) {
+                // handshake succeeded — nothing to do; session closes when the block returns
+            }
+        }.isSuccess
+
+    // ---- WS upgrade, real handshake: foreign Origin rejected on BOTH routes ----
+
     @Test
-    fun wsCommUpgradeFromForeignOrigin_blockedByCors() = testApplication {
+    fun wsCommHandshake_foreignOrigin_rejected() = testApplication {
         app()
-        val res = client.get("/ws/comm") { header(HttpHeaders.Origin, "http://evil.example") }
-        assertEquals(HttpStatusCode.Forbidden, res.status, "off-origin page must not reach the /ws/comm upgrade")
+        assertFalse(wsConnects("/ws/comm", "http://evil.example"), "foreign origin must not complete the /ws/comm upgrade")
     }
 
     @Test
-    fun wsAgentUpgradeFromForeignOrigin_blockedByCors() = testApplication {
+    fun wsAgentHandshake_foreignOrigin_rejected() = testApplication {
         app()
-        val res = client.get("/ws/agent") { header(HttpHeaders.Origin, "http://evil.example") }
-        assertEquals(HttpStatusCode.Forbidden, res.status, "off-origin page must not reach the /ws/agent upgrade")
+        assertFalse(wsConnects("/ws/agent", "http://evil.example"), "foreign origin must not complete the /ws/agent upgrade")
     }
 
-    /** The allowed origin must pass the CORS gate on the WS path (ACAO present, not a 403 block). */
+    /** Suffix-spoof of the allowed host must not open a socket either. */
     @Test
-    fun wsCommFromAllowedOrigin_passesCorsGate() = testApplication {
+    fun wsCommHandshake_suffixSpoofOrigin_rejected() = testApplication {
         app()
-        val res = client.get("/ws/comm") { header(HttpHeaders.Origin, allowed) }
-        assertEquals(allowed, res.headers[HttpHeaders.AccessControlAllowOrigin], "allowed origin must clear CORS on /ws/comm")
-        assertNotEquals(HttpStatusCode.Forbidden, res.status)
+        assertFalse(wsConnects("/ws/comm", "http://localhost.evil.example:8080"), "suffix-spoof origin must not complete the upgrade")
     }
 
-    /** A preflight from a disallowed origin must NOT be granted ACAO. */
+    // ---- WS upgrade: allowed Origin connects ----
+
+    @Test
+    fun wsCommHandshake_allowedOrigin_connects() = testApplication {
+        app()
+        assertTrue(wsConnects("/ws/comm", allowed), "allowed origin must complete the /ws/comm upgrade")
+    }
+
+    @Test
+    fun wsAgentHandshake_allowedOrigin_connects() = testApplication {
+        app()
+        assertTrue(wsConnects("/ws/agent", allowed), "allowed origin must complete the /ws/agent upgrade")
+    }
+
+    // ---- WS upgrade: MISSING Origin (native client, e.g. Desktop/CIO) must be allowed ----
+
+    @Test
+    fun wsCommHandshake_noOrigin_connects() = testApplication {
+        app()
+        assertTrue(wsConnects("/ws/comm", null), "native client (no Origin) must still connect — non-browser path must not break")
+    }
+
+    @Test
+    fun wsAgentHandshake_noOrigin_connects() = testApplication {
+        app()
+        assertTrue(wsConnects("/ws/agent", null), "native client (no Origin) must still connect on /ws/agent")
+    }
+
+    // ---- Plain CORS strictness (HTTP) ----
+
     @Test
     fun preflightFromForeignOrigin_getsNoAcao() = testApplication {
         app()
@@ -74,7 +117,6 @@ class CorsSecurityProbeTest {
         assertNull(res.headers[HttpHeaders.AccessControlAllowOrigin], "foreign preflight must not be granted ACAO")
     }
 
-    /** Strictness: a different scheme on the same host:port must NOT match an http-only allow. */
     @Test
     fun schemeMismatch_isRejected() = testApplication {
         app()
@@ -82,7 +124,6 @@ class CorsSecurityProbeTest {
         assertEquals(HttpStatusCode.Forbidden, res.status, "https origin must not match an http-only allow")
     }
 
-    /** Strictness: a different port must NOT match. */
     @Test
     fun portMismatch_isRejected() = testApplication {
         app()
@@ -90,9 +131,8 @@ class CorsSecurityProbeTest {
         assertEquals(HttpStatusCode.Forbidden, res.status, "different port must not match")
     }
 
-    /** Strictness: an attacker host that merely embeds the allowed host as a label must NOT match. */
     @Test
-    fun suffixSpoofOrigin_isRejected() = testApplication {
+    fun suffixSpoofOrigin_httpIsRejected() = testApplication {
         app()
         val res = client.get("/api/health") { header(HttpHeaders.Origin, "http://localhost.evil.example:8080") }
         assertEquals(HttpStatusCode.Forbidden, res.status, "suffix/subdomain spoof of the allowed host must not match")
