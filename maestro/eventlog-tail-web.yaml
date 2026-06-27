@@ -8,7 +8,8 @@
 # PREREQUISITES (tester CYP-7 runtime; Dev's sandbox has no browser/Maestro):
 #   * Wasm/Web build served at APP_URL in an OPERATOR context (cfg.operatorToken != null), Live-Tail
 #     window focused, fed by a stub source that keeps streaming long enough that events arrive WHILE
-#     paused (so the buffered-count pill appears) — e.g. StubEventsSource with a steady cadence.
+#     paused (so the buffered-count pill appears). Concretely: serve the `:app:webAppDemo` build — its
+#     SteadyDemoEventsSource streams at a steady cadence exactly for this. NOT prod `:app:webApp`.
 #   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
 url: "http://localhost:8080"
 name: "CYP-42 Event-Log Live-Tail — stream -> pause (!= live) -> buffer -> resume"

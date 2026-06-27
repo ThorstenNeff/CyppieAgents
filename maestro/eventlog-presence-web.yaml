@@ -7,9 +7,9 @@
 # Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
 #
 # PREREQUISITES (tester CYP-7 runtime):
-#   * Wasm/Web build served at APP_URL_NOOP in a NON-operator context (cfg.operatorToken == null) — the
-#     SAME shell, just without an operator token. The agent + comm windows still render; the two
-#     Event-Log windows must be omitted entirely.
+#   * Serve the PROD `:app:webApp` build at APP_URL_NOOP — its default is a NON-operator context
+#     (cfg.operatorToken == null). The agent + comm windows still render; the two Event-Log windows
+#     must be omitted entirely. (This is the real prod build — the omission proof is genuine.)
 #   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
 url: "http://localhost:8080"
 name: "CYP-41/42 Event-Log presence — windows omitted without operator token"

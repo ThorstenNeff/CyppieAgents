@@ -13,6 +13,8 @@
 #     fed by the stub sources (StubEventsApi/StubEventsSource) until the live wiring + CYP-37 data land.
 #   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
 #   * The Event-Log (Browse) window is the focused/visible window in the shell.
+#   * Concretely: serve the dedicated `:app:webAppDemo` build — its EventLogDemoApp wires exactly this
+#     (stub operator token + StubEventsApi/StubEventsSource). NOT the prod `:app:webApp` (operator=null).
 url: "http://localhost:8080"
 name: "CYP-41 Event-Log Browse — table -> detail -> drilldown -> filter"
 tags:
