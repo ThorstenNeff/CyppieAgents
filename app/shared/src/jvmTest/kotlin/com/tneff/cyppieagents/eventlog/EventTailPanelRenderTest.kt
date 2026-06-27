@@ -59,19 +59,31 @@ class EventTailPanelRenderTest {
     }
 
     /**
-     * CYP-47 P1-B regression: the VM correctly reaches LIVE on `Connected` (so the indicator EXISTS — the
-     * existing `assertExists` test above already proves the state machine). The Android-Maestro failure was
-     * geometric: on the narrow tile the non-wrapping header `Row` laid the live ● out PAST the right edge,
-     * so `assertVisible` failed. With the header as a wrapping `FlowRow`, the indicator must lay out WITHIN
-     * the tile width. (`assertExists` would miss this — it ignores position; we assert the bounds instead.)
+     * CYP-47 P1-B regression (made to BITE — reviewer note): the VM reaches LIVE on `Connected` (statusOf),
+     * so the failure was never state — it was geometric: on the narrow tile the non-wrapping header `Row`
+     * laid its children out past the right edge, so Maestro `assertVisible` failed. The live ● alone is a
+     * VACUOUS target (2nd child, ~123dp → fits 140dp whether Row or FlowRow); the elements that actually
+     * overflow are the LATER filter labels. So we assert the **rightmost** header child (`filter_severity`,
+     * the last one) lays out WITHIN the tile width. With the header as a `FlowRow` it wraps and every child
+     * is contained; mutate `FlowRow`→`Row` and this child's right edge shoots past the tile → RED.
      */
     @Test
-    fun narrowWidth_liveIndicatorStaysWithinTile() = runComposeUiTest {
+    fun narrowWidth_headerWraps_rightmostChildStaysWithinTile() = runComposeUiTest {
+        val tile = 140.dp
         val vm = EventTailViewModel(StubEventsSource())
-        setContent { MaterialTheme { Box(Modifier.width(140.dp).height(600.dp)) { EventTailPanel(vm) } } }
+        setContent { MaterialTheme { Box(Modifier.width(tile).height(600.dp)) { EventTailPanel(vm) } } }
 
+        // Header composed + VM live (statusOf(Connected)=LIVE) before we measure.
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventTailTags.LIVE_INDICATOR).fetchSemanticsNodes().isNotEmpty() }
-        val right = onNodeWithTag(EventTailTags.LIVE_INDICATOR, useUnmergedTree = true).getUnclippedBoundsInRoot().right
-        assertTrue(right <= 140.dp, "live indicator right edge $right must lay out within the 140dp tile")
+        // BITE on BOTH failure modes of a non-wrapping Row at narrow width: the last child is either
+        // squeezed toward 0-width (Row clamps the depleted remaining-width constraint) OR pushed past the
+        // edge. So require real width AND containment. A wrapping FlowRow satisfies both; a Row fails width.
+        val b = onNodeWithTag(EventTailTags.FILTER_SEVERITY, useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val width = b.right - b.left
+        assertTrue(
+            width >= 20.dp && b.right <= tile,
+            "rightmost header child (filter_severity) must lay out with real width WITHIN the $tile tile " +
+                "(width=$width, right=${b.right}) — header must wrap, not squeeze/overflow",
+        )
     }
 }
