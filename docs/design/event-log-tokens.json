@@ -1,0 +1,100 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "tickets": ["CYP-41", "CYP-42"],
+    "epic": "CYP-34",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen + Kontrast-Validierung",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "source_of_truth": "docs/prd/06-observability-event-log.md (§4 Schema, §4.1 Typen, §3.3 log.dropped, §7 Operator-only)",
+    "reuse_first": "Identitaet aus CYP-14 (color-coding-tokens.json), Severity aus CYP-12 (state-tokens.json), Verbindungs-/Pending-Muster aus CYP-17 (comm-panel-tokens.json). Hier NUR Event-Log-spezifische Neu-Tokens. Kontrast: Text >=4.5:1, Nicht-Text-UI >=3:1; dark Default + light.",
+    "three_color_axes": "Identitaet (CYP-14 colorSlot) / Severity (CYP-12 Hues) / Typ (Icon+Text, KEIN Hue) sind getrennt und kollidieren nicht.",
+    "color_is_never_sole_signal": "Severity, Gap, Pause, Verbindung immer mit Icon/Text, nie nur Farbe (WCAG 1.4.1)."
+  },
+  "reused": {
+    "identity_color": "CYP-14 -> colorSlot(agentId) / SenderPalette (Avatar+Name); PO-Slot fuer Hub",
+    "severity_error": "CYP-12 state.error (#FF6B6B / #C5221F)",
+    "severity_warn":  "CYP-12 state.waiting (#FFC857 / #B26A00)",
+    "severity_info":  "CYP-12 state.notice (#A0A4AD / #5F6368)",
+    "severity_debug": "CYP-12 state.offline (#5A5E66 / #9AA0A6)",
+    "connection_offline_pattern": "CYP-17 comm.connection.offline (amber Banner + Zeitstempel)",
+    "back_nav": "CYP-17 i18n comm_back (Single-Pane Zurueck)"
+  },
+  "severity_rail": {
+    "role": "Linke Rail/Akzent je Event-Zeile = severity. Reuse CYP-12 Hues, IMMER + Icon + (Detail) Text-Label.",
+    "map": {
+      "error": { "hue": "state.error",   "icon": "alert-triangle", "label_key": "event_severity_error" },
+      "warn":  { "hue": "state.waiting",  "icon": "attention",      "label_key": "event_severity_warn" },
+      "info":  { "hue": "state.notice",   "icon": "info",           "label_key": "event_severity_info" },
+      "debug": { "hue": "state.offline",  "icon": "dot",            "label_key": "event_severity_debug" }
+    },
+    "note": "Severity ist Schnellfilter, KEIN Korrektheits-Urteil. info/debug = ruhig, nicht 'gut'."
+  },
+  "type_coding": {
+    "role": "type = Gruppen-Icon + monospace Enum-Text. KEIN eigener Hue (Kollisionsschutz, §1/§3).",
+    "group_icons": {
+      "agent_activity": "bolt / terminal",
+      "token_limits":   "gauge",
+      "hooks":          "webhook",
+      "errors":         "alert-triangle",
+      "lifecycle":      "power / lifecycle",
+      "comm_meta":      "swap / forum",
+      "unknown":        "info"
+    },
+    "unknown_type": "Roh-String monospace + neutrales Icon anzeigen, NIE verschlucken (07-Erweiterung tolerant)."
+  },
+  "new_tokens": {
+    "event.gap.dropped": {
+      "role": "log.dropped / Luecke — hervorgehobene Gap-Zeile an seq-Position (PRD §3.3)",
+      "dark":  { "bg": "#3A2E12", "fg": "#FFC857", "border": "#FFC857", "icon": "alert-triangle", "label_key": "event_gap_dropped" },
+      "light": { "bg": "#FFF4D6", "fg": "#8A5A00", "border": "#B26A00", "icon": "alert-triangle", "label_key": "event_gap_dropped" },
+      "note": "amber + Rahmen + Text; NIE still ueberspringen, NIE als normale info-Zeile tarnen. 'No silent caps'."
+    },
+    "event.correlation.chip": {
+      "role": "Korrelations-Chip (correlationId/sessionId, klickbar -> Drilldown)",
+      "dark":  { "bg": "#23262B", "fg": "#C9CCD2", "icon": "link" },
+      "light": { "bg": "#ECEFF3", "fg": "#3A3D42", "icon": "link" },
+      "note": "neutral/dekorativ, KEIN Identitaets- oder Severity-Hue; leer/'—' wenn Feld fehlt (nie raten)"
+    },
+    "event.row.selected": {
+      "role": "ausgewaehlte Zeile in der Browse-Tabelle",
+      "dark":  { "fill": "#23262B", "startMarker": "#4DA3FF" },
+      "light": { "fill": "#ECEFF3", "startMarker": "#1A73E8" },
+      "note": "Fill + Start-Marker (Form), nicht nur Farbe"
+    },
+    "event.tail.live": {
+      "role": "Live-Tail aktiv (WS offen, nicht pausiert)",
+      "dark":  { "dot": "#3DD68C", "label_key": "event_tail_live" },
+      "light": { "dot": "#1E8E5A", "label_key": "event_tail_live" },
+      "note": "nur zeigen wenn WS offen UND nicht pausiert"
+    },
+    "event.tail.paused": {
+      "role": "Live-Tail pausiert (eingefroren, puffert weiter)",
+      "dark":  { "fg": "#FFC857", "icon": "pause", "label_key": "event_tail_paused" },
+      "light": { "fg": "#8A5A00", "icon": "pause", "label_key": "event_tail_paused" },
+      "note": "Ansicht NIE als live ausgeben solange pausiert; Puffer-Count via event_tail_buffered_count"
+    },
+    "event.connection.offline": {
+      "role": "Live-Tail WS getrennt — ehrlicher Banner mit Zeitstempel (reuse CYP-17-Prinzip)",
+      "dark":  { "bg": "#3A2E12", "fg": "#FFC857", "label_key": "event_connection_offline" },
+      "light": { "bg": "#FFF4D6", "fg": "#8A5A00", "label_key": "event_connection_offline" },
+      "note": "Strom gilt als veraltet solange aktiv"
+    },
+    "event.access.denied": {
+      "role": "fail-closed Berechtigungs-Zustand (kein Operator-Token, PRD §7)",
+      "dark":  { "bg": "#1B1C1F", "fg": "#A0A4AD", "icon": "lock", "label_key": "event_access_denied" },
+      "light": { "bg": "#F0F1F3", "fg": "#5F6368", "icon": "lock", "label_key": "event_access_denied" },
+      "note": "KEIN Teildaten-Render, keine ausgegrauten echten Events"
+    }
+  },
+  "typography": {
+    "event_time":    { "role": "ts lokalisiert, millisekundengenau", "style": "monospace, kompakt" },
+    "event_type":    { "role": "type Enum-Wert", "style": "monospace, einzeilig, Ellipsis, voll per Tooltip/Detail" },
+    "event_detail_json": { "role": "detail-JSON im Detail-View", "style": "monospace, pretty-print, kopierbar" }
+  },
+  "layout_hints": {
+    "row_height": "fix (Virtualisierung); dichte, scanbare Tabelle",
+    "browse_single_pane_breakpoint": "~560dp Panel-Innenbreite (Tabelle breiter als Comm-Panel)",
+    "rtl": "start/end; Severity-Rail an Start-Kante, Spalten/Filter spiegeln"
+  }
+}
