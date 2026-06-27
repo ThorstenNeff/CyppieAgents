@@ -1,0 +1,11 @@
+<resources>
+    <!-- English transcript accessibility (CYP-23, docs/design/a11y-keys.md §2). -->
+    <string name="a11y_assistant_streaming">Agent is typing</string>
+    <string name="a11y_tool_running">Tool running: %1$s</string>
+    <string name="a11y_tool_ok">Tool executed: %1$s</string>
+    <string name="a11y_tool_error">Tool error: %1$s</string>
+    <string name="a11y_result_success">Result: turn complete</string>
+    <string name="a11y_result_error">Result: failed — %1$s</string>
+    <string name="a11y_notice">Notice: %1$s</string>
+    <string name="a11y_agent_status">Agent status: %1$s</string>
+</resources>

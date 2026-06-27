@@ -27,9 +27,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.a11y_assistant_streaming
+import kmpcyppieagents.app.shared.generated.resources.a11y_notice
+import kmpcyppieagents.app.shared.generated.resources.a11y_result_error
+import kmpcyppieagents.app.shared.generated.resources.a11y_result_success
+import kmpcyppieagents.app.shared.generated.resources.a11y_tool_error
+import kmpcyppieagents.app.shared.generated.resources.a11y_tool_ok
+import kmpcyppieagents.app.shared.generated.resources.a11y_tool_running
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * The agent window: a scrolling transcript of [AgentEvent]s over a "message to the agent" composer.
@@ -109,10 +120,13 @@ private fun AssistantTextRow(event: AgentEvent.AssistantText, modifier: Modifier
             style = MaterialTheme.typography.bodyMedium,
         )
         if (!event.complete) {
+            // The cursor is a glyph; expose "Agent is typing" to the screen reader instead (CYP-23).
+            val streamingDesc = stringResource(Res.string.a11y_assistant_streaming)
             Text(
                 text = "▌",
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.clearAndSetSemantics { contentDescription = streamingDesc },
             )
         }
     }
@@ -125,12 +139,24 @@ private fun ToolCallRow(event: AgentEvent.ToolCall, modifier: Modifier = Modifie
         ToolStatus.OK -> "✓" to MaterialTheme.colorScheme.primary
         ToolStatus.ERROR -> "✗" to MaterialTheme.colorScheme.error
     }
+    // Glyph + colour alone aren't screen-reader accessible; announce the status as text (CYP-23).
+    // Disclosure-true: OK = "ausgeführt", not "erfolgreich".
+    val statusDescription = when (event.status) {
+        ToolStatus.RUNNING -> stringResource(Res.string.a11y_tool_running, event.tool)
+        ToolStatus.OK -> stringResource(Res.string.a11y_tool_ok, event.tool)
+        ToolStatus.ERROR -> stringResource(Res.string.a11y_tool_error, event.tool)
+    }
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = glyph, color = tint, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = glyph,
+            color = tint,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.clearAndSetSemantics { contentDescription = statusDescription },
+        )
         Text(
             text = "${event.tool}(${event.summary})",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -148,6 +174,10 @@ private fun ResultRow(event: AgentEvent.Result, modifier: Modifier = Modifier) {
     val content =
         if (event.isError) MaterialTheme.colorScheme.onErrorContainer
         else MaterialTheme.colorScheme.onSurfaceVariant
+    // Disclosure-true: success = "Turn abgeschlossen", not "erledigt" (CYP-23).
+    val resultDescription =
+        if (event.isError) stringResource(Res.string.a11y_result_error, event.label)
+        else stringResource(Res.string.a11y_result_success)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -159,17 +189,19 @@ private fun ResultRow(event: AgentEvent.Result, modifier: Modifier = Modifier) {
             color = content,
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
+            modifier = Modifier.clearAndSetSemantics { contentDescription = resultDescription },
         )
     }
 }
 
 @Composable
 private fun NoticeRow(event: AgentEvent.Notice, modifier: Modifier = Modifier) {
+    val noticeDescription = stringResource(Res.string.a11y_notice, event.text)
     Text(
         text = event.text,
         color = MaterialTheme.colorScheme.outline,
         style = MaterialTheme.typography.labelSmall,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = noticeDescription },
     )
 }
 
