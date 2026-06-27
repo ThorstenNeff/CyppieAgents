@@ -15,6 +15,10 @@ application {
 dependencies {
     api(projects.core)
     implementation(libs.logback)
+    implementation(libs.kotlinx.coroutinesCore)
+    // Event-Log persistence (CYP-35): xerial sqlite-jdbc, pinned. Full WAL/batch control behind the
+    // EventSink seam at the smallest dependency; SQLDelight stays the documented upgrade path (02 §15).
+    implementation(libs.sqlite.jdbc)
     implementation(libs.ktor.serverCore)
     implementation(libs.ktor.serverNetty)
     implementation(libs.ktor.serverContentNegotiation)
@@ -25,5 +29,6 @@ dependencies {
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.ktor.clientContentNegotiation)
     testImplementation(libs.ktor.clientWebsockets)
+    testImplementation(libs.kotlinx.coroutinesTest)
     testImplementation(libs.kotlin.testJunit)
 }
