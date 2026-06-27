@@ -1,0 +1,74 @@
+package com.tneff.cyppieagents.routing
+
+import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.events.EventFilter
+import com.tneff.cyppieagents.events.EventSink
+import com.tneff.cyppieagents.model.EventPushed
+import com.tneff.cyppieagents.model.EventsWsClientEvent
+import com.tneff.cyppieagents.model.EventsWsServerEvent
+import com.tneff.cyppieagents.model.SubscribeEvents
+import io.ktor.server.routing.Route
+import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.CloseReason
+import io.ktor.websocket.Frame
+import io.ktor.websocket.close
+import io.ktor.websocket.readText
+import kotlinx.coroutines.launch
+
+/**
+ * `/ws/events` — Event-Log live-tail (PRD §6, ST6/CYP-40). **Operator-only, fail-closed.**
+ *
+ * **Reject signal (owner-defined, CYP-40):**
+ *  - no token → WS close **1008 VIOLATED_POLICY "unauthorized"**;
+ *  - a valid **non-operator** (agent) token → WS close **1008 VIOLATED_POLICY "operator token required"**.
+ *
+ * Same post-upgrade close convention as `/ws/agent` and `/ws/comm`. Cross-origin browser upgrades are
+ * additionally refused **pre-handshake** by the CORS plugin (HTTP 403, CYP-30). The UI renders
+ * fail-closed on the 1008 close; the Tester asserts the close code + zero events via a real handshake.
+ *
+ * The Event-Log is team-wide, so the operator sees everything — there is no per-agent ACL here (unlike
+ * `/ws/comm`); [SubscribeEvents] only narrows the operator's own view.
+ */
+fun Route.eventSocket(sink: EventSink, registry: TokenRegistry) {
+    webSocket("/ws/events") {
+        val token = call.bearerToken() ?: call.request.queryParameters["token"]
+        if (token == null) {
+            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
+        }
+        if (!registry.isOperator(token)) {
+            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "operator token required"))
+        }
+
+        // Authorized operator. Subscribe to everything; narrow in-process when the client asks.
+        var filter = EventFilter.ALL
+
+        suspend fun emit(event: EventsWsServerEvent) =
+            send(Frame.Text(CommJson.encodeToString(EventsWsServerEvent.serializer(), event)))
+
+        val pump = launch {
+            sink.subscribe(EventFilter.ALL).collect { event ->
+                if (filter.matches(event)) emit(EventPushed(event))
+            }
+        }
+        try {
+            for (frame in incoming) {
+                if (frame is Frame.Text) {
+                    val msg = runCatching { CommJson.decodeFromString<EventsWsClientEvent>(frame.readText()) }.getOrNull()
+                    if (msg is SubscribeEvents) filter = msg.toEventFilter()
+                }
+            }
+        } finally {
+            pump.cancel()
+        }
+    }
+}
+
+private fun SubscribeEvents.toEventFilter() = EventFilter(
+    agentId = agentId,
+    type = eventType,
+    severity = severity,
+    since = since,
+    until = until,
+    correlationId = correlationId,
+    sessionId = sessionId,
+)
