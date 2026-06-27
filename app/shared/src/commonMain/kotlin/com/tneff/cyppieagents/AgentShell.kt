@@ -18,7 +18,7 @@ import com.tneff.cyppieagents.comm.CommLiveSource
 import com.tneff.cyppieagents.comm.CommPanel
 import com.tneff.cyppieagents.comm.CommRepository
 import com.tneff.cyppieagents.comm.CommViewModel
-import com.tneff.cyppieagents.comm.StubCommLiveSource
+import com.tneff.cyppieagents.comm.CommWsClient
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.window.WindowReducer
@@ -47,8 +47,8 @@ fun AgentShell(
     sessionFactory: ((String) -> AgentSession)? = null,
     /** Override the comm data port (tests inject a fake); `null` → the comm REST repository. */
     commApi: CommApi? = null,
-    /** Override the comm live source; defaults to the stub until `/ws/comm` lands (CYP-18). */
-    commLiveSource: CommLiveSource = StubCommLiveSource(),
+    /** Override the comm live source (tests inject a stub); `null` → the live `/ws/comm` adapter. */
+    commLiveSource: CommLiveSource? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -72,11 +72,16 @@ fun AgentShell(
     }
 
     // Operator viewer (CYP-17). The operator token comes from config (runtime), not baked; without it
-    // the comm REST calls return 401 → empty, and the panel runs on the stub live source until CYP-18.
+    // the comm REST / `/ws/comm` calls return 401 (→ empty / Disconnected banner) until one is set.
     val defaultCommApi = remember(httpClient, cfg) {
         CommRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedCommApi = commApi ?: defaultCommApi
+
+    val defaultLiveSource = remember(httpClient, cfg) {
+        CommWsClient(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedLiveSource = commLiveSource ?: defaultLiveSource
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
@@ -94,7 +99,7 @@ fun AgentShell(
             windowContent = { window ->
                 if (window.id == COMM_WINDOW_ID) {
                     val commViewModel = viewModel(key = COMM_WINDOW_ID) {
-                        CommViewModel(resolvedCommApi, commLiveSource, viewerId = "operator")
+                        CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
                     }
                     CommPanel(commViewModel)
                 } else {

@@ -9,6 +9,7 @@ import com.tneff.cyppieagents.agentview.AgentViewTags
 import com.tneff.cyppieagents.agentview.StubAgentSession
 import com.tneff.cyppieagents.comm.CommApi
 import com.tneff.cyppieagents.comm.CommTags
+import com.tneff.cyppieagents.comm.StubCommLiveSource
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
@@ -39,7 +40,11 @@ class AgentShellRenderTest {
     fun shell_rendersAgentStreamsAndCommWindow() = runComposeUiTest {
         setContent {
             MaterialTheme {
-                AgentShell(sessionFactory = { StubAgentSession() }, commApi = FakeCommApi())
+                AgentShell(
+                    sessionFactory = { StubAgentSession() },
+                    commApi = FakeCommApi(),
+                    commLiveSource = StubCommLiveSource(),
+                )
             }
         }
 
