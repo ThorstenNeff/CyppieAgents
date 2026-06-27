@@ -192,7 +192,9 @@ fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry) {
                         val ch = event.message.channelId
                         if (state.acl.canRead(ch, participant) && (subscribed?.contains(ch) != false)) event else null
                     }
-                    is AclEvent -> event // ACL changed — relevant to the live ACL view
+                    // Same ACL filter as messages: an ACL change is metadata about a channel, so only
+                    // a participant who can read that channel may learn of it (no cross-channel leak).
+                    is AclEvent -> if (state.acl.canRead(event.entry.channelId, participant)) event else null
                     is ChannelsEvent -> ChannelsEvent(hub.readableChannels(participant)) // re-scope to participant
                 }
                 if (out != null) emit(out)

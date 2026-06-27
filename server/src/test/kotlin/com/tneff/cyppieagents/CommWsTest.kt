@@ -129,6 +129,27 @@ class CommWsTest {
     }
 
     @Test
+    fun doesNotPushAclEventForUnreadableChannel() = testApplication {
+        application { installComm(config()) }
+        val rest = jsonClient()
+
+        wsClient().webSocket("/ws/comm?token=tok-frontend") {
+            assertIs<ChannelsEvent>(nextEvent()) // initial
+            delay(150)
+            // Operator changes po-backend's ACL — frontend cannot read po-backend, so it must NOT
+            // receive an AclEvent for it (cross-channel metadata leak). It only gets the re-scoped
+            // ChannelsEvent (its own channels), never the AclEvent (which is emitted first).
+            rest.put("/api/acl") {
+                bearerAuth("tok-op"); contentType(ContentType.Application.Json)
+                setBody(AclEntry("po-backend", "backend", canRead = true, canWrite = false))
+            }
+            val ev = nextEvent()
+            assertIs<ChannelsEvent>(ev) // NOT an AclEvent → the AclEvent was filtered out
+            assertEquals(listOf("po-frontend"), ev.channels.map { it.id })
+        }
+    }
+
+    @Test
     fun noTokenIsFailClosed() = testApplication {
         application { installComm(config()) }
         wsClient().webSocket("/ws/comm") {
