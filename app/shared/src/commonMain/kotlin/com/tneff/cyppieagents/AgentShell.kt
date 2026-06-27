@@ -25,8 +25,8 @@ import com.tneff.cyppieagents.eventlog.EventLiveSource
 import com.tneff.cyppieagents.eventlog.EventTailPanel
 import com.tneff.cyppieagents.eventlog.EventTailViewModel
 import com.tneff.cyppieagents.eventlog.EventsApi
-import com.tneff.cyppieagents.eventlog.StubEventsApi
-import com.tneff.cyppieagents.eventlog.StubEventsSource
+import com.tneff.cyppieagents.eventlog.EventsApiClient
+import com.tneff.cyppieagents.eventlog.EventsWsClient
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.window.WindowReducer
@@ -103,11 +103,16 @@ fun AgentShell(
     }
     val resolvedLiveSource = commLiveSource ?: defaultLiveSource
 
-    // Event-Log read sources: stub-first until the live `/api/events` + `/ws/events` adapters land
-    // (CYP-39/40). Injectable so tests stay hermetic; the live swap replaces only these two defaults.
-    val defaultEventsApi = remember { StubEventsApi() }
+    // Event-Log read sources, now LIVE (CYP-39 `/api/events` REST + CYP-40 `/ws/events` WS) — Browse and
+    // Live-Tail go live together, operator-only/fail-closed like comm. Injectable so tests stay hermetic;
+    // `:app:webAppDemo` injects stubs for the Maestro flows. Windows exist only when operatorToken != null.
+    val defaultEventsApi = remember(httpClient, cfg) {
+        EventsApiClient(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
     val resolvedEventsApi = eventsApi ?: defaultEventsApi
-    val defaultEventsLiveSource = remember { StubEventsSource() }
+    val defaultEventsLiveSource = remember(httpClient, cfg) {
+        EventsWsClient(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+    }
     val resolvedEventsLiveSource = eventsLiveSource ?: defaultEventsLiveSource
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {

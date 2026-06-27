@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.event_access_denied
 import kmpcyppieagents.app.shared.generated.resources.event_connection_offline
 import kmpcyppieagents.app.shared.generated.resources.event_empty
 import kmpcyppieagents.app.shared.generated.resources.event_filter_agent
@@ -48,6 +49,17 @@ fun EventTailPanel(viewModel: EventTailViewModel, modifier: Modifier = Modifier)
     val state by viewModel.state.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
         TailHeader(state, onToggle = { if (state.paused) viewModel.resume() else viewModel.pause() })
+        // Fail-closed: an operator-token reject (WS 1008) shows an honest "operators only", never "live".
+        if (state.accessRevoked) {
+            Text(
+                text = stringResource(Res.string.event_access_denied),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer)
+                    .testTag(EventTailTags.ACCESS_REVOKED).padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
         TailMarkers(state)
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             if (state.events.isEmpty()) {

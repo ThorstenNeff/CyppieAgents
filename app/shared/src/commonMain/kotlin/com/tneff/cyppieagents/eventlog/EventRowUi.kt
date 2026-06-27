@@ -72,7 +72,7 @@ fun EventRow(
         return
     }
     val sevLabel = severityLabel(event.severity)
-    val desc = stringResource(Res.string.a11y_event_row, sevLabel, event.type.wire, event.agentId, formatTs(event.ts))
+    val desc = stringResource(Res.string.a11y_event_row, sevLabel, event.typeText(), event.agentId, formatTs(event.ts))
     val identity = SenderPalette.forSender(event.agentId)
     Row(
         modifier = Modifier
@@ -93,7 +93,7 @@ fun EventRow(
         Text(formatTs(event.ts), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
         // Type: group glyph + monospace exact enum wire (aggregatable). Carries the id-stable tag.
         Text(
-            text = "${event.type.groupGlyph()} ${event.type.wire}",
+            text = "${event.type.groupGlyph()} ${event.typeText()}",
             fontFamily = FontFamily.Monospace,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.testTag(byIdTag),

@@ -21,6 +21,8 @@ data class EventTailUiState(
     val trimmedCount: Int = 0,
     /** Cumulative count of paused events dropped on pause-buffer overflow — surfaced, never silent. */
     val bufferOverflowCount: Int = 0,
+    /** The operator token was rejected at the socket (WS close 1008) — render fail-closed, never "live". */
+    val accessRevoked: Boolean = false,
 )
 
 /**
@@ -54,7 +56,11 @@ class EventTailViewModel(
     private suspend fun collect() {
         source.events(filter).collect { event ->
             EventReducer.statusOf(event)?.let { status -> _state.update { it.copy(connection = status) } }
-            if (event is EventLiveEvent.Received) onReceived(event.event)
+            when (event) {
+                is EventLiveEvent.Received -> onReceived(event.event)
+                is EventLiveEvent.AccessRevoked -> _state.update { it.copy(accessRevoked = true) }
+                else -> Unit
+            }
         }
     }
 

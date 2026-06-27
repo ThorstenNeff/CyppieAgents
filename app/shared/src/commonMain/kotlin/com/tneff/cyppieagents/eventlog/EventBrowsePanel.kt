@@ -204,7 +204,7 @@ private fun DetailPane(
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant).padding(8.dp)) {
         if (sel == null) return@Column
         Column(modifier = Modifier.fillMaxWidth().testTag(EventBrowseTags.DETAIL)) {
-            Text("${sel.type.wire} · ${severityLabel(sel.severity)}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
+            Text("${sel.typeText()} · ${severityLabel(sel.severity)}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
             Text("${formatTs(sel.ts)} · seq ${sel.seq} · ${sel.agentId}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // sourceTs is "observed", never authoritative (§5.2).
             sel.sourceTs?.let {
