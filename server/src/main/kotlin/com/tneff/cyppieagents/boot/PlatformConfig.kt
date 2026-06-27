@@ -14,6 +14,7 @@ data class PlatformConfig(
     val repo: RepoConfig,
     val hub: HubConfig = HubConfig(),
     val agents: List<AgentConfig>,
+    val web: WebConfig = WebConfig(),
 ) {
     init {
         require(agents.isNotEmpty()) { "platform.config: at least one agent required" }
@@ -31,6 +32,14 @@ data class RepoConfig(val url: String, val branch: String = "main")
 
 @Serializable
 data class HubConfig(val url: String = "http://localhost:8787")
+
+/**
+ * Web-client settings (Spec 02 §14). [allowedOrigins] are the exact frontend origins permitted by
+ * CORS (e.g. "http://localhost:8080") — NEVER a wildcard in production. Empty = no cross-origin
+ * browser access (the safest default; set it to enable the Wasm/JS web client).
+ */
+@Serializable
+data class WebConfig(val allowedOrigins: List<String> = emptyList())
 
 @Serializable
 data class AgentConfig(
