@@ -35,19 +35,7 @@ class BootOrchestratorTest {
 
     @AfterTest fun tearDown() = scope.cancel()
 
-    /** Fake git: records commands and materializes the dirs WorktreeManager probes (for idempotency). */
-    private class FakeGit : CommandRunner {
-        val commands = mutableListOf<List<String>>()
-        override fun run(command: List<String>, cwd: File): CommandResult {
-            commands += command
-            when (command.getOrNull(1)) {
-                "clone" -> File(command.last(), ".git").mkdirs()      // repoDir/.git
-                "worktree" -> if (command.getOrNull(2) == "add") File(command[3]).mkdirs() // target
-            }
-            return CommandResult(0, "")
-        }
-        fun count(vararg prefix: String) = commands.count { it.take(prefix.size) == prefix.toList() }
-    }
+    // Uses the shared realistic [FakeGit] (models checked-out branches) — see TestFakeGit.kt.
 
     private class FakeProcess : AgentProcess {
         override val stdoutLines: Flow<String> = emptyFlow()

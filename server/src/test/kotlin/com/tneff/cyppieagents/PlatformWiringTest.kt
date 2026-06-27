@@ -31,15 +31,7 @@ import kotlin.test.assertEquals
 
 class PlatformWiringTest {
 
-    private class FakeGit : CommandRunner {
-        override fun run(command: List<String>, cwd: File): CommandResult {
-            when (command.getOrNull(1)) {
-                "clone" -> File(command.last(), ".git").mkdirs()
-                "worktree" -> if (command.getOrNull(2) == "add") File(command[3]).mkdirs()
-            }
-            return CommandResult(0, "")
-        }
-    }
+    // Uses the shared realistic [FakeGit] (see TestFakeGit.kt).
 
     private class FakeProcess : AgentProcess {
         override val stdoutLines: Flow<String> = emptyFlow()

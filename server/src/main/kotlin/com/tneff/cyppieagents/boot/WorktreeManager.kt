@@ -51,19 +51,29 @@ class WorktreeManager(
 
     /**
      * Ensure a worktree exists for the agent and return its directory. Idempotent: an existing
-     * worktree dir is reused. The branch is per worktree (created off the repo branch on first add).
+     * worktree dir is reused. Each agent gets its OWN branch `agent/<name>` created off [baseBranch]
+     * — you cannot `git worktree add` the base branch itself, since it is already checked out in the
+     * main clone. The per-agent branch also matches the project's branch-per-agent strategy.
+     * If the branch already exists (e.g. a re-add after the dir was removed), reuse it without `-b`.
      */
-    fun ensureWorktree(worktreeName: String, branch: String): File {
+    fun ensureWorktree(worktreeName: String, baseBranch: String): File {
         val target = File(worktreesDir, worktreeName)
         if (target.exists()) {
             log.info("worktree already present at {}", target)
             return target
         }
         worktreesDir.mkdirs()
-        val res = runner.run(
-            listOf("git", "worktree", "add", target.absolutePath, branch),
+        val agentBranch = "agent/$worktreeName"
+        val branchExists = runner.run(
+            listOf("git", "rev-parse", "--verify", "--quiet", agentBranch),
             repoDir,
-        )
+        ).exitCode == 0
+        val command = if (branchExists) {
+            listOf("git", "worktree", "add", target.absolutePath, agentBranch)
+        } else {
+            listOf("git", "worktree", "add", "-b", agentBranch, target.absolutePath, baseBranch)
+        }
+        val res = runner.run(command, repoDir)
         check(res.exitCode == 0) { "git worktree add failed for '$worktreeName' (exit ${res.exitCode})" }
         return target
     }
