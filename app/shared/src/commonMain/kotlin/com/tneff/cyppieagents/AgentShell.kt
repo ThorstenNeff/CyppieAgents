@@ -25,10 +25,6 @@ import com.tneff.cyppieagents.window.WindowReducer
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 
-/** Dev server (CYP-13 `/ws/agent` + comm REST). Config-driven boot replaces these later (CYP-24). */
-private const val AGENT_WS_BASE_URL = "ws://localhost:8080"
-private const val COMM_REST_BASE_URL = "http://localhost:8080"
-private const val OPERATOR_TOKEN = "dev-operator-token"
 private const val COMM_WINDOW_ID = "comm"
 
 /**
@@ -36,15 +32,17 @@ private const val COMM_WINDOW_ID = "comm"
  * the agent renderer (CYP-6, one [AgentWindow] per agent over the live `/ws/agent` stream) and the
  * comm panel (CYP-21, one [CommPanel] window over comm REST + a stub live source).
  *
- * The single shared [HttpClient] backs both the agent WebSockets and the comm REST calls. Both the
- * agent session and the comm data are injectable so tests stay hermetic without touching the network.
- *
- * Agents are hardcoded for the MVP (`po`/`frontend`/`backend`, CYP-14 `knownSlots`); they come from
- * the Agent registry once config-driven boot lands (CYP-24).
+ * Hub URL + tokens come from [ShellConfig] (CYP-28) — never hardcoded. The JVM/desktop default reads
+ * the environment and falls back to the local server on the CYP-24 port (8787); the privileged
+ * operator token is supplied at runtime, never baked. The single shared [HttpClient] backs both the
+ * agent WebSockets and the comm REST calls. Agent session and comm data are injectable so tests stay
+ * hermetic without touching the network.
  */
 @Composable
 fun AgentShell(
     modifier: Modifier = Modifier,
+    /** Hub URL + tokens; `null` → the platform default ([defaultShellConfig]). */
+    config: ShellConfig? = null,
     /** Override the per-agent session (tests inject a stub); `null` → the live `/ws/agent` session. */
     sessionFactory: ((String) -> AgentSession)? = null,
     /** Override the comm data port (tests inject a fake); `null` → the comm REST repository. */
@@ -52,6 +50,8 @@ fun AgentShell(
     /** Override the comm live source; defaults to the stub until `/ws/comm` lands (CYP-18). */
     commLiveSource: CommLiveSource = StubCommLiveSource(),
 ) {
+    val cfg = remember { config ?: defaultShellConfig() }
+
     val windows = remember {
         listOf(
             "po" to "Product Owner",
@@ -67,13 +67,15 @@ fun AgentShell(
     DisposableEffect(Unit) { onDispose { httpClient.close() } }
 
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
-        val ws = AgentWsClient(httpClient, AGENT_WS_BASE_URL, agentId, "dev-token-$agentId")
+        val ws = AgentWsClient(httpClient, cfg.hubWsBaseUrl, agentId, cfg.agentToken(agentId))
         MappingAgentSession(source = ws.events, sink = ws::send)
     }
 
-    // Operator viewer (CYP-17). Live comm data needs operator-token acceptance on the read endpoints
-    // (CYP-18); until then the REST calls return empty and the panel runs on the stub live source.
-    val defaultCommApi = remember(httpClient) { CommRepository(httpClient, COMM_REST_BASE_URL, OPERATOR_TOKEN) }
+    // Operator viewer (CYP-17). The operator token comes from config (runtime), not baked; without it
+    // the comm REST calls return 401 → empty, and the panel runs on the stub live source until CYP-18.
+    val defaultCommApi = remember(httpClient, cfg) {
+        CommRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
     val resolvedCommApi = commApi ?: defaultCommApi
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
