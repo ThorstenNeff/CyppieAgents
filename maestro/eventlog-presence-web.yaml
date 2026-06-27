@@ -1,0 +1,38 @@
+# CYP-41/42 — Event-Log operator-gated PRESENCE/OMISSION web flow (Maestro, Wasm/Web target).
+#
+# Security surface (EVENT-LOG-UI §5.6 / §7): without an operator token the two Event-Log windows are
+# NOT offered (omission — not a dead "no access" window). QA proves this by the ABSENCE of the window
+# tags, exactly as the JVM render test (EventLogPresenceTest) does — same property, web target.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
+#
+# PREREQUISITES (tester CYP-7 runtime):
+#   * Wasm/Web build served at APP_URL_NOOP in a NON-operator context (cfg.operatorToken == null) — the
+#     SAME shell, just without an operator token. The agent + comm windows still render; the two
+#     Event-Log windows must be omitted entirely.
+#   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
+url: "http://localhost:8080"
+name: "CYP-41/42 Event-Log presence — windows omitted without operator token"
+tags:
+  - security
+  - event-log
+env:
+  APP_URL_NOOP: "http://localhost:8080"
+---
+- openLink: ${APP_URL_NOOP}
+
+# The shell is up (host + a non-Event-Log window prove the app rendered) ...
+- assertVisible:
+    id: '^window\.host$'
+    label: "Window host rendered"
+- assertVisible:
+    id: '^window\.comm$'
+    label: "Comm window present in non-operator context (shell is functional)"
+
+# ... but NEITHER Event-Log window exists — operator-gated omission, asserted via absence.
+- assertNotVisible:
+    id: '^window\.eventlog$'
+    label: "Browse window omitted without operator token"
+- assertNotVisible:
+    id: '^window\.eventtail$'
+    label: "Live-Tail window omitted without operator token"

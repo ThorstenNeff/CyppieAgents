@@ -1,0 +1,65 @@
+# CYP-41 — Event-Log Browse web flow (Maestro, Wasm/Web target).
+#
+# Verifies the Browse master-detail + correlation drilldown + interactive filter against the
+# canonical testTags (docs/design/event-log-tags.md) — NO text/localizable selectors (Test-Contract §4).
+#
+# Maestro `id:` selectors are REGEX → separator dots are escaped (\.) and anchored (^…$), and the
+# scalars are SINGLE-QUOTED so YAML keeps the backslashes literal (a double-quoted `\.` is an invalid
+# escape and the anchoring breaks — CYP-11 review fix).
+#
+# PREREQUISITES (runtime verification belongs to the tester CYP-7; Dev's sandbox has no browser/Maestro):
+#   * Wasm/Web build served at APP_URL, rendering AgentShell in an OPERATOR context (cfg.operatorToken
+#     != null) so the two Event-Log windows are present (operator-gated omission, EVENT-LOG-UI §5.6),
+#     fed by the stub sources (StubEventsApi/StubEventsSource) until the live wiring + CYP-37 data land.
+#   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
+#   * The Event-Log (Browse) window is the focused/visible window in the shell.
+url: "http://localhost:8080"
+name: "CYP-41 Event-Log Browse — table -> detail -> drilldown -> filter"
+tags:
+  - gating
+  - event-log
+env:
+  APP_URL: "http://localhost:8080"
+---
+- openLink: ${APP_URL}
+
+# Surface present (operator context): the master table container is always composed.
+- assertVisible:
+    id: '^eventBrowse\.table$'
+    label: "Browse master table addressable (operator-gated surface present)"
+
+# Select the first event row -> detail pane with the two explicit drilldown actions.
+- scrollUntilVisible:
+    element:
+      id: '^eventBrowse\.row\.0$'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: '^eventBrowse\.row\.0$'
+- assertVisible:
+    id: '^eventBrowse\.detail$'
+    label: "Detail pane opens on selection"
+- assertVisible:
+    id: '^eventBrowse\.detail\.showRun$'
+- assertVisible:
+    id: '^eventBrowse\.detail\.showSession$'
+
+# Correlation drilldown — "show the whole run" -> the seq-ordered timeline (correlationId axis).
+- tapOn:
+    id: '^eventBrowse\.detail\.showRun$'
+- assertVisible:
+    id: '^eventBrowse\.drilldown\.header$'
+    label: "Drilldown timeline opens, header names the axis/scope"
+
+# Clear the drilldown (header tap) -> back to the table.
+- tapOn:
+    id: '^eventBrowse\.drilldown\.header$'
+- assertVisible:
+    id: '^eventBrowse\.table$'
+
+# Interactive filter — tap the severity chip -> server-side filter -> honest "subset" cue (never silent).
+- tapOn:
+    id: '^eventBrowse\.filter\.severity$'
+- assertVisible:
+    id: '^eventBrowse\.filterActive$'
+    label: "Filtering announces an active subset"
