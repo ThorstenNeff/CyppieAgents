@@ -79,9 +79,17 @@ class BootOrchestrator(
 
         // Observability ingestion (CYP-37): one EventRecorder feeds the shared sink; the projector
         // turns masked stream events into content-free drafts at the connector tap and in the router.
+        // All knobs come from the events config (CYP-43).
+        val ev = config.events
         val eventSink = eventSinkFactory()
-        val eventRecorder = EventRecorder(eventSink, scope).also { it.start() }
-        val eventProjector = EventProjector(ContextUsageBander(), teamId = MVP_TEAM_ID)
+        val eventRecorder = EventRecorder(eventSink, scope, capacity = ev.queueCapacity, batchSize = ev.batchSize)
+            .also { it.start() }
+        val bander = ContextUsageBander(
+            contextWindowTokens = ev.contextWindowTokens,
+            bandPctWidth = ev.bandPct,
+            compactPct = ev.compactPct,
+        )
+        val eventProjector = EventProjector(bander, teamId = MVP_TEAM_ID)
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
 

@@ -73,8 +73,15 @@ fun Application.bootPlatform(
         worktrees = worktrees,
         spawner = com.tneff.cyppieagents.connector.ProcessBuilderSpawner(),
         scope = scope,
-        // Hook spool under the git root (CYP-37 tailer). CYP-43 makes this a config knob.
-        spoolPath = gitRoot.toPath().resolve(".cyppie/hooks.spool"),
+        // CYP-43: persistent SQLite sink (WAL/batch) + hook spool, both resolved from the events
+        // config under the git root (not in the repo). Default in-memory only for tests.
+        eventSinkFactory = {
+            com.tneff.cyppieagents.events.SqliteEventSink(
+                gitRoot.toPath().resolve(config.events.sinkPath),
+                com.tneff.cyppieagents.events.SystemTimeSource(),
+            )
+        },
+        spoolPath = gitRoot.toPath().resolve(config.events.spoolPath),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     installPlatform(booted)
