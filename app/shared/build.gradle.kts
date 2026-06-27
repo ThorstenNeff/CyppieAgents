@@ -49,6 +49,8 @@ kotlin {
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
+            // Android Ktor engine so the live agent WS connects on Android too (CYP-27 follow-up).
+            implementation(libs.ktor.clientOkhttp)
         }
         jvmMain.dependencies {
             // Desktop/JVM Ktor engine so the agent WS (CYP-6 swap) actually connects at runtime.
