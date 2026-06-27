@@ -7,8 +7,13 @@ import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.connector.ClaudeCodeConnector
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProcessSpawner
+import com.tneff.cyppieagents.events.ContextUsageBander
+import com.tneff.cyppieagents.events.EventProjector
+import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.events.InMemoryEventSink
+import com.tneff.cyppieagents.events.SpoolReader
+import com.tneff.cyppieagents.events.SpoolTailer
 import com.tneff.cyppieagents.events.SystemTimeSource
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
@@ -54,6 +59,8 @@ class BootOrchestrator(
     private val storeFactory: () -> MessageStore = { InMemoryMessageStore() },
     // Default in-memory; CYP-43 swaps in a SqliteEventSink from the events config (sinkPath/WAL).
     private val eventSinkFactory: () -> EventSink = { InMemoryEventSink(SystemTimeSource()) },
+    // Hook spool path; null → no spool tailer (default in tests). bootPlatform/CYP-43 supply it.
+    private val spoolPath: java.nio.file.Path? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -66,11 +73,17 @@ class BootOrchestrator(
         val store = storeFactory()
         val hub = Hub(state, store)
         val registry = SessionRegistry()
-        val router = MediationRouter(registry, hub)
         val turnQueue = SessionTurnQueue()
         val sessions = ConnectorSessions()
         val tokenRegistry = TokenRegistry(secrets.agentTokens, secrets.operatorToken)
+
+        // Observability ingestion (CYP-37): one EventRecorder feeds the shared sink; the projector
+        // turns masked stream events into content-free drafts at the connector tap and in the router.
         val eventSink = eventSinkFactory()
+        val eventRecorder = EventRecorder(eventSink, scope).also { it.start() }
+        val eventProjector = EventProjector(ContextUsageBander(), teamId = MVP_TEAM_ID)
+
+        val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
 
         val connector = ClaudeCodeConnector(
             spawner = spawner,
@@ -80,7 +93,13 @@ class BootOrchestrator(
             router = router,
             turnQueue = turnQueue,
             scope = scope,
+            recorder = eventRecorder,
+            projector = eventProjector,
         )
+
+        // Hook spool tailing (CYP-38 reader + CYP-37 tailer, at-most-once). Started only when a path
+        // is configured; bootPlatform supplies it, CYP-43 makes it a config knob.
+        spoolPath?.let { SpoolTailer(SpoolReader(it), eventRecorder, scope).start() }
 
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()
@@ -90,6 +109,7 @@ class BootOrchestrator(
                 val session = connector.open(agent.id, agent.worktreeName)
                 sessions.register(session)
                 booted += agent.id
+                eventRecorder.record(eventProjector.agentSpawned(agent.id, agent.worktreeName))
                 log.info("agent '{}' booted in worktree '{}'", agent.id, agent.worktreeName)
             } catch (e: Exception) {
                 // Fail-closed per agent (Reviewer #5): no session → no /ws/agent; hub stays up.
@@ -99,5 +119,10 @@ class BootOrchestrator(
         }
 
         return BootedPlatform(hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed)
+    }
+
+    private companion object {
+        // MVP is single-team (project token, 05 §3); CYP-43 can wire a real team id from config.
+        const val MVP_TEAM_ID = "default"
     }
 }
