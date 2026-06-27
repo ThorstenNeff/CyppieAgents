@@ -25,6 +25,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.model.EventType
+import com.tneff.cyppieagents.model.Severity
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.event_detail_source_ts
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_correlated_by
@@ -56,6 +58,7 @@ fun EventBrowsePanel(viewModel: EventBrowseViewModel, modifier: Modifier = Modif
             onSelect = viewModel::select,
             onLoadMore = viewModel::loadMore,
             onClearDrilldown = viewModel::clearDrilldown,
+            onApplyFilter = viewModel::applyFilter,
             modifier = Modifier.weight(1f).fillMaxHeight(),
         )
         DetailPane(
@@ -73,10 +76,11 @@ private fun MasterPane(
     onSelect: (com.tneff.cyppieagents.model.Event) -> Unit,
     onLoadMore: () -> Unit,
     onClearDrilldown: () -> Unit,
+    onApplyFilter: (EventFilter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
-        FilterBar(state)
+        FilterBar(state, onApplyFilter)
         if (state.drilldown != null) {
             DrilldownView(state, onClearDrilldown, modifier = Modifier.weight(1f).fillMaxWidth())
         } else {
@@ -112,17 +116,27 @@ private fun MasterPane(
 }
 
 @Composable
-private fun FilterBar(state: EventBrowseUiState) {
+private fun FilterBar(state: EventBrowseUiState, onApply: (EventFilter) -> Unit) {
+    val f = state.filter
+    val agents = state.events.map { it.agentId }.distinct()
     Column(modifier = Modifier.fillMaxWidth().testTag(EventBrowseTags.FILTER_BAR).padding(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(stringResource(Res.string.event_filter_agent), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventBrowseTags.FILTER_AGENT))
-            Text(stringResource(Res.string.event_filter_type), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventBrowseTags.FILTER_TYPE))
-            Text(stringResource(Res.string.event_filter_severity), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventBrowseTags.FILTER_SEVERITY))
-            Text(stringResource(Res.string.event_filter_timewindow), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventBrowseTags.FILTER_TIME_WINDOW))
-            Text(stringResource(Res.string.event_filter_correlation), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventBrowseTags.FILTER_CORRELATION))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Interactive cycle chips → applyFilter → server-side query (no client-side post-filter, §6.2).
+            FilterCycleChip(EventBrowseTags.FILTER_AGENT, stringResource(Res.string.event_filter_agent), f.agentId) {
+                onApply(f.copy(agentId = cycle(f.agentId, agents)))
+            }
+            FilterCycleChip(EventBrowseTags.FILTER_TYPE, stringResource(Res.string.event_filter_type), f.type?.wire) {
+                onApply(f.copy(type = cycle(f.type, TYPE_CYCLE)))
+            }
+            FilterCycleChip(EventBrowseTags.FILTER_SEVERITY, stringResource(Res.string.event_filter_severity), f.severity?.name) {
+                onApply(f.copy(severity = cycle(f.severity, SEVERITY_CYCLE)))
+            }
+            // Time window + correlation: present per contract; the correlation axis is driven via the drilldown.
+            Text(stringResource(Res.string.event_filter_timewindow), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag(EventBrowseTags.FILTER_TIME_WINDOW))
+            Text(stringResource(Res.string.event_filter_correlation), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag(EventBrowseTags.FILTER_CORRELATION))
         }
         // Honest "subset" cue so a filtered result is never misread as "nothing happened" (§6.2).
-        if (state.filter != EventFilter()) {
+        if (f != EventFilter()) {
             Text(
                 text = stringResource(Res.string.event_filter_active),
                 style = MaterialTheme.typography.labelSmall,
@@ -132,6 +146,27 @@ private fun FilterBar(state: EventBrowseUiState) {
         }
     }
 }
+
+/** A clickable filter chip that cycles its axis on tap; the current value is shown when set. */
+@Composable
+private fun FilterCycleChip(tag: String, label: String, value: String?, onClick: () -> Unit) {
+    Text(
+        text = if (value != null) "$label: $value" else label,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = if (value != null) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (value != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.clickable(onClick = onClick).testTag(tag).padding(horizontal = 4.dp, vertical = 2.dp),
+    )
+}
+
+/** Cycle a nullable filter axis: null → first → … → last → null (a tap can also clear it). */
+private fun <T> cycle(current: T?, options: List<T>): T? {
+    if (options.isEmpty()) return null
+    return options.getOrNull(options.indexOf(current) + 1)
+}
+
+private val SEVERITY_CYCLE = Severity.entries.toList()
+private val TYPE_CYCLE = listOf(EventType.TURN_START, EventType.TOOL_CALL, EventType.RESULT_FINAL, EventType.ERROR_RATELIMIT)
 
 @Composable
 private fun DrilldownView(state: EventBrowseUiState, onClear: () -> Unit, modifier: Modifier = Modifier) {

@@ -35,4 +35,16 @@ class EventBrowsePanelRenderTest {
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventBrowseTags.DRILLDOWN).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag(EventBrowseTags.DRILLDOWN_HEADER).assertExists()
     }
+
+    @Test
+    fun filterChip_appliesFilter_showsActiveSubset() = runComposeUiTest {
+        val vm = EventBrowseViewModel(StubEventsApi())
+        setContent { MaterialTheme { EventBrowsePanel(vm) } }
+
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventBrowseTags.row(0)).fetchSemanticsNodes().isNotEmpty() }
+        // Tap the severity filter chip → applyFilter → the "filter active – subset" cue appears.
+        onNodeWithTag(EventBrowseTags.FILTER_SEVERITY).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventBrowseTags.FILTER_ACTIVE).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(EventBrowseTags.FILTER_ACTIVE).assertExists()
+    }
 }
