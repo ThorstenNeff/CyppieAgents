@@ -33,11 +33,13 @@ fun interface ProcessSpawner {
  */
 class ProcessBuilderSpawner(
     private val passthroughEnv: Set<String> = setOf("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE"),
+    /** Source of host env values for the whitelist (injectable so env isolation is testable). */
+    private val envSource: (String) -> String? = System::getenv,
 ) : ProcessSpawner {
     override fun spawn(command: List<String>, cwd: File, env: Map<String, String>): AgentProcess {
         val builder = ProcessBuilder(command).directory(cwd)
         val processEnv = builder.environment()
-        val inherited = passthroughEnv.mapNotNull { name -> System.getenv(name)?.let { name to it } }.toMap()
+        val inherited = passthroughEnv.mapNotNull { name -> envSource(name)?.let { name to it } }.toMap()
         processEnv.clear()
         processEnv.putAll(inherited)
         processEnv.putAll(env)
