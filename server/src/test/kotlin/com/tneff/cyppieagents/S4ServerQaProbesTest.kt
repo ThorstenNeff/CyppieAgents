@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -180,6 +181,14 @@ class S4ServerQaProbesTest {
         application { installComm(config()) }
         val client = jsonClient()
         val res = client.get("/api/channels") { bearerAuth("tok-op") }
+        // Substance, not just acceptance (CYP-18 QA hardening): a privileged AclMatrix participant
+        // is a member of EVERY channel, so it must see ALL of them — not an empty 200, not a subset.
         assertEquals(HttpStatusCode.OK, res.status, "CYP-18: operator token is an accepted privileged participant on comm reads")
+        val channels: List<Channel> = res.body()
+        assertEquals(
+            setOf("po-frontend", "po-backend"),
+            channels.map { it.id }.toSet(),
+            "operator (privileged participant) must see ALL channels, not just be accepted",
+        )
     }
 }
