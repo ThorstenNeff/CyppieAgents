@@ -38,10 +38,13 @@ class ClaudeCodeConnector(
     private val cliCommand: String = "claude",
 ) : Connector {
 
-    override fun open(agentId: String): ConnectorSession {
-        val cwd = File(worktreesRoot, agentId)
+    override fun open(agentId: String): ConnectorSession = open(agentId, agentId)
+
+    /** Spawn an agent session whose cwd is [worktreesRoot]/[worktreeName] (Spec §11 isolation). */
+    fun open(agentId: String, worktreeName: String): ConnectorSession {
+        val cwd = File(worktreesRoot, worktreeName)
         val env = buildMap {
-            apiKey?.let { put("ANTHROPIC_API_KEY", it) } // D3: per-team key injected into the session
+            apiKey?.let { put("ANTHROPIC_API_KEY", it) } // D3: per-team key injected into the session ENV (never a CLI arg)
             put("HUB_AGENT_ID", agentId)
         }
         val command = listOf(cliCommand) + ConnectorDefaults.streamJsonArgs(allowedTools, permissionMode)

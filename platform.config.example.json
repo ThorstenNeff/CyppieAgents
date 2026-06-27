@@ -1,0 +1,9 @@
+{
+  "repo": { "url": "git@github.com:org/projekt.git", "branch": "main" },
+  "hub": { "url": "http://localhost:8787" },
+  "agents": [
+    { "id": "po", "name": "Product Owner", "role": "PO", "worktree": "po", "launch": "claude" },
+    { "id": "frontend", "name": "Frontend", "role": "WORKER", "worktree": "frontend", "launch": "claude" },
+    { "id": "backend", "name": "Backend", "role": "WORKER", "worktree": "backend", "launch": "claude" }
+  ]
+}
