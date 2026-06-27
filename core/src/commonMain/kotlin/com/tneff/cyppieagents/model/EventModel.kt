@@ -23,7 +23,7 @@ import kotlinx.serialization.json.JsonObject
  * `TextBlock.text`, `ToolUseBlock.input`, `ToolResultBlock.content` or `Message.body`. The projector
  * (CYP-37) is what fills it field-by-field; this DTO just transports the result.
  */
-@Serializable
+@Serializable(with = EventSerializer::class)
 data class Event(
     /** ULID — time-sortable, ideal for append-only + paging. */
     val id: String,
@@ -45,6 +45,13 @@ data class Event(
     val severity: Severity,
     /** type-specific, **content-free** payload (PRD §3.5). */
     val detail: JsonObject = JsonObject(emptyMap()),
+    /**
+     * The raw wire type string, kept ONLY when [type] decoded to [EventType.UNKNOWN] (a newer server
+     * or a 07 `stall.*` type this build doesn't model). Lets the UI show the raw type verbatim instead
+     * of swallowing it (EVENT-LOG-UI §3) — "nothing gets eaten". Null for known types; derived at
+     * decode time, round-trips via the `type` field, never a separate wire field. (CYP-37, additive.)
+     */
+    val rawType: String? = null,
 )
 
 /** Quick-filter axis during the load test (PRD §4). */
@@ -127,4 +134,54 @@ object EventTypeSerializer : KSerializer<EventType> {
     override fun serialize(encoder: Encoder, value: EventType) = encoder.encodeString(value.wire)
 
     override fun deserialize(decoder: Decoder): EventType = EventType.fromWire(decoder.decodeString())
+}
+
+/** Wire surrogate for [Event] — carries `type` as the raw string so the decoder can preserve it. */
+@Serializable
+private class EventSurrogate(
+    val id: String,
+    val ts: Long,
+    val seq: Long,
+    val sourceTs: Long? = null,
+    val agentId: String,
+    val teamId: String,
+    val sessionId: String? = null,
+    val correlationId: String? = null,
+    val type: String,
+    val severity: Severity,
+    val detail: JsonObject = JsonObject(emptyMap()),
+)
+
+/**
+ * Serializes [Event] while preserving an unknown wire `type` into [Event.rawType]. On decode, the raw
+ * `type` string is mapped via [EventType.fromWire]; if it's [EventType.UNKNOWN], the original string is
+ * kept in `rawType`. On encode, `rawType` (if present) is written back as `type`, so an unknown type
+ * round-trips losslessly without a separate wire field.
+ */
+object EventSerializer : KSerializer<Event> {
+    override val descriptor: SerialDescriptor = EventSurrogate.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): Event {
+        val s = decoder.decodeSerializableValue(EventSurrogate.serializer())
+        val resolved = EventType.fromWire(s.type)
+        return Event(
+            id = s.id, ts = s.ts, seq = s.seq, sourceTs = s.sourceTs, agentId = s.agentId,
+            teamId = s.teamId, sessionId = s.sessionId, correlationId = s.correlationId,
+            type = resolved, severity = s.severity, detail = s.detail,
+            rawType = if (resolved == EventType.UNKNOWN) s.type else null,
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: Event) {
+        encoder.encodeSerializableValue(
+            EventSurrogate.serializer(),
+            EventSurrogate(
+                id = value.id, ts = value.ts, seq = value.seq, sourceTs = value.sourceTs,
+                agentId = value.agentId, teamId = value.teamId, sessionId = value.sessionId,
+                correlationId = value.correlationId,
+                type = value.rawType ?: value.type.wire, // unknown raw string round-trips via `type`
+                severity = value.severity, detail = value.detail,
+            ),
+        )
+    }
 }
