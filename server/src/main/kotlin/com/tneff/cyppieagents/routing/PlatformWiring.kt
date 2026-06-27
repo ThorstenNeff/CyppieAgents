@@ -72,6 +72,8 @@ fun Application.bootPlatform(
         worktrees = worktrees,
         spawner = com.tneff.cyppieagents.connector.ProcessBuilderSpawner(),
         scope = scope,
+        // Hook spool under the git root (CYP-37 tailer). CYP-43 makes this a config knob.
+        spoolPath = gitRoot.toPath().resolve(".cyppie/hooks.spool"),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     installPlatform(booted)

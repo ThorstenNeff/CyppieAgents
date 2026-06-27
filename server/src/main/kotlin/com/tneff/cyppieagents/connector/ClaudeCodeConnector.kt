@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents.connector
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.events.EventProjector
+import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
@@ -16,6 +18,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.util.UUID
 
 /**
  * Live Claude-Code connector (Decision D1/D4/D8): spawns one long-lived `claude` process per agent
@@ -36,6 +39,9 @@ class ClaudeCodeConnector(
     private val allowedTools: List<String> = ConnectorDefaults.DEFAULT_ALLOWED_TOOLS,
     private val permissionMode: String = ConnectorDefaults.DEFAULT_PERMISSION_MODE,
     private val cliCommand: String = "claude",
+    // Observability tap (CYP-37). Null = no tapping (keeps tests/older callers working).
+    private val recorder: EventRecorder? = null,
+    private val projector: EventProjector? = null,
 ) : Connector {
 
     override fun open(agentId: String): ConnectorSession = open(agentId, agentId)
@@ -49,7 +55,8 @@ class ClaudeCodeConnector(
         }
         val command = listOf(cliCommand) + ConnectorDefaults.streamJsonArgs(allowedTools, permissionMode)
         val process = spawner.spawn(command, cwd, env)
-        return ClaudeCodeSession(agentId, process, registry, router, turnQueue, scope).also { it.start() }
+        return ClaudeCodeSession(agentId, process, registry, router, turnQueue, scope, recorder, projector)
+            .also { it.start() }
     }
 }
 
@@ -61,11 +68,16 @@ class ClaudeCodeSession(
     private val router: MediationRouter,
     private val turnQueue: SessionTurnQueue,
     private val scope: CoroutineScope,
+    private val recorder: EventRecorder? = null,
+    private val projector: EventProjector? = null,
 ) : ConnectorSession {
 
     private val log = LoggerFactory.getLogger("connector.session")
     private val _events = MutableSharedFlow<StreamJsonEvent>(extraBufferCapacity = 256)
     override val events: Flow<StreamJsonEvent> = _events
+
+    // correlationId for the in-flight work-run: minted at turn.start, carried to result.final (PO c).
+    @Volatile private var currentCorrelationId: String? = null
 
     // Turn-queue key is the STABLE agentId for the whole session lifetime (Gate #5): it must NOT
     // change at system/init, or a turn injected after init would take a different mutex and race a
@@ -91,6 +103,13 @@ class ClaudeCodeSession(
                     registry.bind(masked.sessionId!!, agentId) // Gate #1: authoritative session→agent
                 }
 
+                // Observability tap (CYP-37): the SINGLE point after masking, before the stream forks
+                // to the UI and the hub. Non-blocking (record() is trySend) — no Observer-Effect.
+                if (recorder != null && projector != null) {
+                    projector.project(agentId, masked.sessionId, currentCorrelationId, masked)
+                        .forEach { recorder.record(it) }
+                }
+
                 _events.emit(masked) // to /ws/agent (UI), already masked
 
                 if (masked is ResultEvent) {
@@ -102,6 +121,12 @@ class ClaudeCodeSession(
                     pendingTurn = null
                 }
             }
+            // Reached only on NORMAL stdout completion (the process exited on its own); a deliberate
+            // close() cancels this job instead → record process.exit here. Exit code isn't exposed by
+            // AgentProcess, so it's unknown (null) for MVP.
+            if (recorder != null && projector != null) {
+                recorder.record(projector.processExit(agentId, boundSessionId, null))
+            }
         }
     }
 
@@ -110,6 +135,12 @@ class ClaudeCodeSession(
         // result arrives, so a second injection cannot race a running turn (even across system/init).
         // Single-flight means only the lock holder ever sets pendingTurn, so it can't be overwritten.
         turnQueue.runTurn(agentId) {
+            // New work-run: mint a correlationId that the tap carries until this turn's result (PO c).
+            val correlationId = UUID.randomUUID().toString()
+            currentCorrelationId = correlationId
+            if (recorder != null && projector != null) {
+                recorder.record(projector.turnStart(agentId, boundSessionId, correlationId))
+            }
             val done = CompletableDeferred<Unit>()
             pendingTurn = done
             process.writeLine(turn.toNdjsonLine())
@@ -122,5 +153,6 @@ class ClaudeCodeSession(
         process.destroy()
         boundSessionId?.let { registry.unbind(it) }
         pendingTurn?.cancel()
+        if (recorder != null && projector != null) recorder.record(projector.agentStopped(agentId))
     }
 }

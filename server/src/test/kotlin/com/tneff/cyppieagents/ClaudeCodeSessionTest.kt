@@ -72,7 +72,17 @@ class ClaudeCodeSessionTest {
         )
         proc.feed("""{"type":"result","subtype":"success","is_error":false,"session_id":"sess-1","result":"done; sk-ant-anotherleakvalue0987654321"}""")
 
-        withTimeout(3000) { while (received.none { it is ResultEvent }) delay(10) }
+        // CYP-45: await the ACTUAL asserted conditions, not a proxy. The hub post (mediation) runs on
+        // an independent path AFTER `_events.emit`, so waiting only for the ResultEvent on `received`
+        // raced the post → flaky `expected:<1> but was:<0>`. Wait for both the collected assistant
+        // event AND the mediated post before asserting.
+        withTimeout(3000) {
+            while (received.filterIsInstance<AssistantEvent>().isEmpty() ||
+                hub.channelMessages("po", "po-backend").isEmpty()
+            ) {
+                delay(10)
+            }
+        }
 
         // Gate #1 source of truth: session_id → agent binding.
         assertEquals("backend", registry.agentFor("sess-1"))
