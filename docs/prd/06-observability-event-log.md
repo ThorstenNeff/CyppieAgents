@@ -3,7 +3,8 @@
 > Status: Entwurf v0.1 (zur Review beim PO) · Quelle: `06-Observability-Event-Log.md` (Decision Record)
 > Querbezüge: `02-Technische-Spezifikation` §15 (`MessageStore`-Naht), `05-MVP-Scope-Entscheidungen` §2 (Mediation)
 > Verifiziert gegen realen Code (Stand develop `51cef1f`): `:server` Connector/Mediation, `:core` DTOs, `:app:shared` UIs.
-> **Provisorischer Branch/Key:** `feature/CYP-34-prd-event-log` — **CYP-34 ist ein Platzhalter**, bis der PO das Epic anlegt; Branch ggf. auf den echten Key umbenennen.
+> **Jira:** Epic **CYP-34** „Observability: Event-Log"; Stories **CYP-35 (ST1) … CYP-44 (ST10)** mit Blocks-Kette. Branch `feature/CYP-34-prd-event-log`.
+> **PO-Entscheidungen (a)/(b)/(c) final eingearbeitet** (siehe Appendix A „Entschieden").
 
 ---
 
@@ -84,9 +85,10 @@ interface EventSink {
 
 **MVP-Impl:** SQLite, eigene `events`-Tabelle (getrennt von Hub-Daten), **WAL-Modus an**, **Batch-Inserts**.
 Hinter dem Interface jederzeit gegen Redis Streams / Postgres austauschbar (Exposé §8), ohne Aufrufer-Änderung.
-Treiberwahl ist Implementierungsdetail hinter der Naht; **Empfehlung MVP:** `sqlite-jdbc` (xerial) für volle
-WAL/Batch-Kontrolle bei kleinster Abhängigkeit; SQLDelight als typisierte Alternative (konsistent mit 02 §15
-Upgrade-Pfad). **Treiber/Version pinnen.** `:server`-only (JVM); kein KMP-Zwang für die Persistenz.
+Treiberwahl ist Implementierungsdetail hinter der Naht. **Entschieden (PO):** MVP-Treiber = **`sqlite-jdbc`
+(xerial), Version gepinnt** — volle WAL/Batch-Kontrolle bei kleinster Abhängigkeit; **SQLDelight = dokumentierter
+Upgrade-Pfad** (konsistent mit 02 §15), nicht MVP. SQLite-Zeilen-Mechanik bleibt **server-intern hinter `EventSink`**;
+`:server`-only (JVM), kein KMP-Zwang für die Persistenz.
 
 ### 3.3 Entkoppelter Puffer (nicht verhandelbar)
 
@@ -158,7 +160,9 @@ keine Duplikate erzeugt.
 ## 4. Event-Schema
 
 Eine **Wirbelsäule** (gemeinsame Felder, danach gefiltert) plus typisiertes `detail` (im Detail-View aufgeklappt).
-Als `@Serializable` im `:core`-Modul (oder server-intern, falls die UI nur das gepagte DTO sieht — siehe Story ST5).
+**Entschieden (PO):** das **`Event`-Read-DTO + `EventType`-Enum liegen in `:core`** (compiler-garantierter Wire wie
+`Message`/`AclEntry`, beidseitig kompiliert) — die UI nutzt sie direkt; die **SQLite-Zeilen-Mechanik bleibt
+server-intern hinter `EventSink`** (die UI sieht nie das Schreib-/SQL-Schema).
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
@@ -168,8 +172,8 @@ Als `@Serializable` im `:core`-Modul (oder server-intern, falls die UI nur das g
 | `sourceTs` | Long? | beobachtete Zeit der Quelle (Hook) — **informativ**, nicht ordnungsbildend |
 | `agentId` | String | Verursacher |
 | `teamId` | String | Team (Projekt-Token, 05 §3) |
-| `sessionId` | String? | Claude-Code-Session — Korrelation auch über eine Compaction hinweg |
-| `correlationId` | String? | welcher Arbeitsdurchlauf — für „zeig den ganzen Lauf" |
+| `sessionId` | String? | Claude-Code-Session (Session-Ebene) — Korrelation auch über eine Compaction hinweg |
+| `correlationId` | String? | **pro injiziertem Arbeitslauf** (PO-Entscheid c): der Mediator setzt ihn bei `turn.start` und trägt ihn bis `result.final` — für „zeig den ganzen Lauf" |
 | `type` | Enum | **kontrolliertes Vokabular** (§ Typen), kein Freitext → aggregierbar |
 | `severity` | Enum (`debug`/`info`/`warn`/`error`) | Schnellfilter beim Belastungstest |
 | `detail` | JSON | typspezifische, **inhaltsfreie** Nutzlast (§3.5) |
@@ -329,7 +333,9 @@ sind die zwei UIs (parallelisierbar, sobald ST5/ST6 stehen). ST9 zentralisiert d
 Querschnitts-Evidenz, die die „passing ≠ functional"-Eigenschaften beweist. **Reihenfolge:**
 ST1 → (ST2 ∥ ST3 ∥ ST4) → (ST5 → ST6) → (ST7 ∥ ST8), ST9 begleitend, ST10 fortlaufend.
 
-**Offene PO-Entscheidungen:** (a) `Event`-DTO in `:core` (von UI direkt genutzt) **oder** nur ein gepagtes
-Read-DTO in `:server` (UI sieht nie das Schreib-Schema)? (b) SQLite-Treiber `sqlite-jdbc` vs. SQLDelight?
-(c) `correlationId`-Herkunft: pro Turn neu, pro Aufgabe (PO-Auftrag) stabil, oder = `sessionId` bis Compact?
-— prägt den Drilldown-Mehrwert in ST7.
+**Entschieden (PO, 2026-06-27):**
+- **(a)** `Event`-**Read-DTO + `EventType`-Enum** in **`:core`** (compiler-garantierter Wire wie `Message`/`AclEntry`);
+  SQLite-Zeilen-Mechanik server-intern hinter `EventSink`. → §3.2/§4.
+- **(b)** SQLite-Treiber = **`sqlite-jdbc` (xerial), Version gepinnt**; **SQLDelight = dokumentierter Upgrade-Pfad**, nicht MVP. → §3.2.
+- **(c)** `correlationId` = **pro injiziertem Arbeitslauf**: Mediator setzt bei `turn.start`, trägt bis `result.final`;
+  `sessionId` = Session-Ebene (über Compact hinweg). → §4/§6 (Drilldown ST7 nutzt beide Achsen).
