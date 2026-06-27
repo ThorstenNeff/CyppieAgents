@@ -1,0 +1,130 @@
+package com.tneff.cyppieagents.model
+
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonObject
+
+/**
+ * Observability Event-Log read contract (PRD 06 §4). One definition compiled into both `:server`
+ * (the stamper/projector) and `:app:shared` (the Browse/Live-Tail UIs) via `:core`, so the wire
+ * shape can never drift — exactly like [Message]/[AclEntry].
+ *
+ * This is the **read** view. The write side lives server-side as `EventDraft`: callers supply only
+ * the content-free metadata, and the `append` path assigns `id`/`ts`/`seq` so a caller structurally
+ * *cannot* forge the total order (same security-by-structure stance as [Agent] having no token field).
+ *
+ * Non-Goal enforced structurally (PRD §2/§3.5): [detail] carries **only metadata** — never
+ * `TextBlock.text`, `ToolUseBlock.input`, `ToolResultBlock.content` or `Message.body`. The projector
+ * (CYP-37) is what fills it field-by-field; this DTO just transports the result.
+ */
+@Serializable
+data class Event(
+    /** ULID — time-sortable, ideal for append-only + paging. */
+    val id: String,
+    /** epoch ms, **authoritative**, set in the append path via `TimeSource.now()`. */
+    val ts: Long,
+    /** monotonic (`TimeSource.nextSeq()`) → **total order**, even on equal ms / clock jumps. */
+    val seq: Long,
+    /** observed source time (e.g. a hook) — informational, never order-forming. */
+    val sourceTs: Long? = null,
+    val agentId: String,
+    /** team = project token (05 §3). */
+    val teamId: String,
+    /** Claude-Code session — correlation across a compaction. */
+    val sessionId: String? = null,
+    /** per injected work-run (PO decision c): set at `turn.start`, carried to `result.final`. */
+    val correlationId: String? = null,
+    /** controlled vocabulary (no free text) → aggregatable, not just greppable. */
+    val type: EventType,
+    val severity: Severity,
+    /** type-specific, **content-free** payload (PRD §3.5). */
+    val detail: JsonObject = JsonObject(emptyMap()),
+)
+
+/** Quick-filter axis during the load test (PRD §4). */
+@Serializable
+enum class Severity {
+    @SerialName("debug") DEBUG,
+    @SerialName("info") INFO,
+    @SerialName("warn") WARN,
+    @SerialName("error") ERROR,
+}
+
+/**
+ * Controlled event vocabulary (PRD §4.1). Decoded **tolerantly**: an unknown wire string (a newer
+ * server, or an additive type 07 introduces like `stall.suspected`) maps to [UNKNOWN] instead of
+ * throwing — same resilience stance as [TolerantToolsSerializer]. The list is intentionally open.
+ */
+@Serializable(with = EventTypeSerializer::class)
+enum class EventType(val wire: String) {
+    // Agent activity (stream-json)
+    TURN_START("turn.start"),
+    TURN_END("turn.end"),
+    TOOL_CALL("tool.call"),
+    TOOL_RESULT("tool.result"),
+    FILE_CHANGED("file.changed"),
+    RESULT_FINAL("result.final"),
+
+    // Token boundaries (Mediator usage)
+    CONTEXT_USAGE("context.usage"),
+    COMPACT_TRIGGERED("compact.triggered"),
+    COMPACT_COMPLETED("compact.completed"),
+
+    // Hooks (spool)
+    HOOK_FIRED("hook.fired"),
+
+    // Errors / interruption (Mediator)
+    ERROR_MODEL("error.model"),
+    ERROR_TOOL("error.tool"),
+    ERROR_RATELIMIT("error.ratelimit"),
+    PROCESS_EXIT("process.exit"),
+    TIMEOUT("timeout"),
+    WS_DISCONNECT("ws.disconnect"),
+
+    // Lifecycle (Mediator/Boot)
+    AGENT_SPAWNED("agent.spawned"),
+    AGENT_RESTARTED("agent.restarted"),
+    AGENT_STOPPED("agent.stopped"),
+    SESSION_RECYCLED("session.recycled"),
+
+    // Communication metadata (Mediator/Router) — from/to/channel/kind, NO content
+    COMM_SENT("comm.sent"),
+    COMM_RECEIVED("comm.received"),
+
+    /**
+     * Telemetry self-report: the bounded queue dropped events under back-pressure (PRD §3.3, PO
+     * decision CYP-44). Emitted by the **writer** with a cumulative count so a gap in the log is
+     * visible in the same telemetry the operator watches — never silently swallowed.
+     */
+    LOG_DROPPED("log.dropped"),
+
+    /** Fallback for any wire string not modelled here (tolerant decode). */
+    UNKNOWN("unknown");
+
+    companion object {
+        private val byWire: Map<String, EventType> = entries.associateBy { it.wire }
+
+        /** Tolerant lookup: unknown wire string → [UNKNOWN], never throws. */
+        fun fromWire(wire: String): EventType = byWire[wire] ?: UNKNOWN
+    }
+}
+
+/**
+ * Serializes [EventType] as its [EventType.wire] string and decodes tolerantly via
+ * [EventType.fromWire] (unknown → [EventType.UNKNOWN]). Keeps older clients from crashing on a
+ * type a newer server emits (PRD §4.1).
+ */
+object EventTypeSerializer : KSerializer<EventType> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("com.tneff.cyppieagents.model.EventType", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: EventType) = encoder.encodeString(value.wire)
+
+    override fun deserialize(decoder: Decoder): EventType = EventType.fromWire(decoder.decodeString())
+}
