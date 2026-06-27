@@ -41,8 +41,14 @@ class BootOrchestratorTest {
         override fun run(command: List<String>, cwd: File): CommandResult {
             commands += command
             when (command.getOrNull(1)) {
-                "clone" -> File(command.last(), ".git").mkdirs()      // repoDir/.git
-                "worktree" -> if (command.getOrNull(2) == "add") File(command[3]).mkdirs() // target
+                "clone" -> File(command.last(), ".git").mkdirs() // repoDir/.git
+                // Per-agent branch doesn't exist yet → drives the real `-b` path.
+                "rev-parse" -> return CommandResult(1, "")
+                "worktree" -> if (command.getOrNull(2) == "add") {
+                    // `add <target> <branch>` OR `add -b <branch> <target> <base>`.
+                    val target = if (command.getOrNull(3) == "-b") command[5] else command[3]
+                    File(target).mkdirs()
+                }
             }
             return CommandResult(0, "")
         }
