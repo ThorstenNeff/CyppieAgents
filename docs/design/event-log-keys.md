@@ -33,6 +33,7 @@ Diese Keys machen Zustände **ohne Farbe/Glyph** zugänglich (WCAG 1.3.1/4.1.2; 
 | `event.load.more` | `event_load_more` | Mehr laden | Load more |
 | `event.detail.source_ts` | `event_detail_source_ts` | Beobachtet: %1$s | Observed: %1$s |
 | `event.drilldown.show_run` | `event_drilldown_show_run` | Zeig den ganzen Lauf | Show the whole run |
+| `event.drilldown.show_session` | `event_drilldown_show_session` | Zeig die ganze Session | Show the whole session |
 | `event.drilldown.correlated_by` | `event_drilldown_correlated_by` | Korreliert über %1$s | Correlated by %1$s |
 | `event.usage.banded_hint` | `event_usage_banded_hint` | Token-Stände gesampelt (10%-Bänder) | Token levels sampled (10% bands) |
 | `event.type.unknown` | `event_type_unknown` | Unbekannter Typ: %1$s | Unknown type: %1$s |
@@ -46,8 +47,9 @@ Diese Keys machen Zustände **ohne Farbe/Glyph** zugänglich (WCAG 1.3.1/4.1.2; 
 | `event.tail.pause` | `event_tail_pause` | Pause | Pause |
 | `event.tail.resume` | `event_tail_resume` | Fortsetzen | Resume |
 | `event.tail.paused` | `event_tail_paused` | Pausiert | Paused |
-| `event.tail.buffered_count` | `event_tail_buffered_count` | %1$s gepuffert | %1$s buffered |
+| `event.tail.buffered_count` | `event_tail_buffered_count` | %1$s neue (pausiert) | %1$s new (paused) |
 | `event.tail.buffer_overflow` | `event_tail_buffer_overflow` | Puffer voll – älteste pausierte Events verworfen | Buffer full – oldest paused events dropped |
+| `event.tail.trimmed` | `event_tail_trimmed` | Ältere getrimmt – %1$s | Older trimmed – %1$s |
 
 ## 4. Verbindung & Lücken (Disclosure-kritisch — beide UIs)
 
