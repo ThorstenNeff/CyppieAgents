@@ -86,6 +86,12 @@ kotlin {
         }
         jsMain.dependencies {
             implementation(libs.wrappers.browser)
+            // Browser Ktor engine so the live agent WS (CYP-6 swap) connects on JS web too (CYP-27).
+            implementation(libs.ktor.clientJs)
+        }
+        wasmJsMain.dependencies {
+            // Browser Ktor engine for the Wasm web target — the gating target for the live stream (CYP-27).
+            implementation(libs.ktor.clientJs)
         }
     }
 }
