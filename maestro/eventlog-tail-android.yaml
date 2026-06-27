@@ -1,0 +1,56 @@
+# CYP-42 — Event-Log Live-Tail Android flow (Maestro, native Compose target).
+#
+# Native-Android variant of eventlog-tail-web.yaml (Wasm-Maestro is env-blocked). Verifies the live
+# stream + the Pause disclosure mechanics (paused != live), the buffered-count pill, and resume —
+# against the canonical testTags (docs/design/event-log-tags.md), no text selectors.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
+# On Android the testTags surface as view resource-ids via Modifier.enableTestTagsAsResourceId() at root.
+#
+# PREREQUISITES (tester runtime; Dev's sandbox has no emulator/Maestro):
+#   * Install + launch the DEDICATED demo build `:app:androidAppDemo` (appId com.tneff.cyppieagents.demo)
+#     in an OPERATOR context, Live-Tail window focused, fed by a stub source that keeps streaming long
+#     enough that events arrive WHILE paused (so the buffered-count pill appears). DemoActivity's
+#     SteadyDemoEventsSource streams at a steady cadence exactly for this. NOT prod `:app:androidApp`.
+appId: com.tneff.cyppieagents.demo
+name: "CYP-42 Event-Log Live-Tail (Android) — stream -> pause (!= live) -> buffer -> resume"
+tags:
+  - gating
+  - event-log
+---
+- launchApp
+
+# Live stream present + honestly live (socket open, not paused).
+- assertVisible:
+    id: '^eventTail\.stream$'
+    label: "Live-Tail stream addressable (operator-gated surface present)"
+- assertVisible:
+    id: '^eventTail\.liveIndicator$'
+    label: "Live indicator shown while the socket is open and not paused"
+- scrollUntilVisible:
+    element:
+      id: '^eventTail\.row\.0$'
+    direction: DOWN
+    timeout: 10000
+
+# Pause -> paused != live: the paused marker appears, the live indicator is gone (§7.2 honesty).
+- tapOn:
+    id: '^eventTail\.pauseToggle$'
+- assertVisible:
+    id: '^eventTail\.pausedIndicator$'
+    label: "Paused marker shown"
+- assertNotVisible:
+    id: '^eventTail\.liveIndicator$'
+    label: "Live indicator hidden while paused (paused != live)"
+
+# While paused, incoming events buffer with an honest count (no silent loss).
+- assertVisible:
+    id: '^eventTail\.bufferedCount$'
+    label: "Buffered-count pill shown for events received while paused"
+
+# Resume -> live again (no loss; the buffer flushes into the visible tail).
+- tapOn:
+    id: '^eventTail\.pauseToggle$'
+- assertVisible:
+    id: '^eventTail\.liveIndicator$'
+    label: "Live indicator returns after resume"
