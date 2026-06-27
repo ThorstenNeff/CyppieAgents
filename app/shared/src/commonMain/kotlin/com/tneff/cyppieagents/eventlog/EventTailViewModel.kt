@@ -17,8 +17,10 @@ data class EventTailUiState(
     val paused: Boolean = false,
     /** Events buffered while paused, awaiting a flush on resume. */
     val pendingCount: Int = 0,
-    /** Cumulative count of old events trimmed by the ring cap — surfaced, never silent (PRD §3.3). */
+    /** Cumulative count of old events trimmed by the live ring cap — surfaced, never silent (PRD §3.3). */
     val trimmedCount: Int = 0,
+    /** Cumulative count of paused events dropped on pause-buffer overflow — surfaced, never silent. */
+    val bufferOverflowCount: Int = 0,
 )
 
 /**
@@ -59,14 +61,14 @@ class EventTailViewModel(
     private fun onReceived(event: Event) {
         if (_state.value.paused) {
             pending.add(event)
-            var trimmedExtra = 0
+            var overflow = 0
             if (pending.size > pauseBufferCapacity) {
-                // Overflowing the pause buffer is still a (visible) trim, not a silent drop.
+                // Overflowing the pause buffer is still a (visible) cap, not a silent drop.
                 val capped = EventReducer.capTail(pending, pauseBufferCapacity)
                 pending.clear(); pending.addAll(capped.events)
-                trimmedExtra = capped.trimmed
+                overflow = capped.trimmed
             }
-            _state.update { it.copy(pendingCount = pending.size, trimmedCount = it.trimmedCount + trimmedExtra) }
+            _state.update { it.copy(pendingCount = pending.size, bufferOverflowCount = it.bufferOverflowCount + overflow) }
         } else {
             val capped = EventReducer.capTail(EventReducer.merge(_state.value.events, event), ringCapacity)
             _state.update { it.copy(events = capped.events, trimmedCount = it.trimmedCount + capped.trimmed) }

@@ -19,6 +19,14 @@ import com.tneff.cyppieagents.comm.CommPanel
 import com.tneff.cyppieagents.comm.CommRepository
 import com.tneff.cyppieagents.comm.CommViewModel
 import com.tneff.cyppieagents.comm.CommWsClient
+import com.tneff.cyppieagents.eventlog.EventBrowsePanel
+import com.tneff.cyppieagents.eventlog.EventBrowseViewModel
+import com.tneff.cyppieagents.eventlog.EventLiveSource
+import com.tneff.cyppieagents.eventlog.EventTailPanel
+import com.tneff.cyppieagents.eventlog.EventTailViewModel
+import com.tneff.cyppieagents.eventlog.EventsApi
+import com.tneff.cyppieagents.eventlog.StubEventsApi
+import com.tneff.cyppieagents.eventlog.StubEventsSource
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.window.WindowReducer
@@ -26,6 +34,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 
 private const val COMM_WINDOW_ID = "comm"
+private const val EVENTLOG_BROWSE_WINDOW_ID = "eventlog"
+private const val EVENTLOG_TAIL_WINDOW_ID = "eventtail"
 
 /**
  * The app shell (CYP-15): a "desktop" of floating windows. Marries the window manager (CYP-10) with
@@ -49,16 +59,26 @@ fun AgentShell(
     commApi: CommApi? = null,
     /** Override the comm live source (tests inject a stub); `null` → the live `/ws/comm` adapter. */
     commLiveSource: CommLiveSource? = null,
+    /** Override the event-log REST port (tests/dev inject a stub); `null` → the stub until CYP-39. */
+    eventsApi: EventsApi? = null,
+    /** Override the event-log live source (tests/dev inject a stub); `null` → the stub until CYP-40. */
+    eventsLiveSource: EventLiveSource? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
     val windows = remember {
-        listOf(
-            "po" to "Product Owner",
-            "frontend" to "Frontend",
-            "backend" to "Backend",
-            COMM_WINDOW_ID to "Kommunikation",
-        )
+        buildList {
+            add("po" to "Product Owner")
+            add("frontend" to "Frontend")
+            add("backend" to "Backend")
+            add(COMM_WINDOW_ID to "Kommunikation")
+            // Operator-only observability windows: offered ONLY with an operator token (omission, not a
+            // dead "no access" window — EVENT-LOG-UI §5.6). Live sources swap in at CYP-39/40.
+            if (cfg.operatorToken != null) {
+                add(EVENTLOG_BROWSE_WINDOW_ID to "Event-Log")
+                add(EVENTLOG_TAIL_WINDOW_ID to "Live-Tail")
+            }
+        }
     }
 
     // One shared WS+HTTP client for agent sockets and comm REST; closed when the shell leaves
@@ -83,6 +103,13 @@ fun AgentShell(
     }
     val resolvedLiveSource = commLiveSource ?: defaultLiveSource
 
+    // Event-Log read sources: stub-first until the live `/api/events` + `/ws/events` adapters land
+    // (CYP-39/40). Injectable so tests stay hermetic; the live swap replaces only these two defaults.
+    val defaultEventsApi = remember { StubEventsApi() }
+    val resolvedEventsApi = eventsApi ?: defaultEventsApi
+    val defaultEventsLiveSource = remember { StubEventsSource() }
+    val resolvedEventsLiveSource = eventsLiveSource ?: defaultEventsLiveSource
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
@@ -97,15 +124,26 @@ fun AgentShell(
         WindowHost(
             state = state,
             windowContent = { window ->
-                if (window.id == COMM_WINDOW_ID) {
-                    val commViewModel = viewModel(key = COMM_WINDOW_ID) {
-                        CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
+                when (window.id) {
+                    COMM_WINDOW_ID -> {
+                        val commViewModel = viewModel(key = COMM_WINDOW_ID) {
+                            CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
+                        }
+                        CommPanel(commViewModel)
                     }
-                    CommPanel(commViewModel)
-                } else {
-                    // viewModel keyed by agent id → one AgentViewModel per agent, proper VM lifecycle.
-                    val agentViewModel = viewModel(key = window.id) { AgentViewModel(resolveSession(window.id)) }
-                    AgentWindow(agentId = window.id, viewModel = agentViewModel)
+                    EVENTLOG_BROWSE_WINDOW_ID -> {
+                        val vm = viewModel(key = EVENTLOG_BROWSE_WINDOW_ID) { EventBrowseViewModel(resolvedEventsApi) }
+                        EventBrowsePanel(vm)
+                    }
+                    EVENTLOG_TAIL_WINDOW_ID -> {
+                        val vm = viewModel(key = EVENTLOG_TAIL_WINDOW_ID) { EventTailViewModel(resolvedEventsLiveSource) }
+                        EventTailPanel(vm)
+                    }
+                    else -> {
+                        // viewModel keyed by agent id → one AgentViewModel per agent, proper VM lifecycle.
+                        val agentViewModel = viewModel(key = window.id) { AgentViewModel(resolveSession(window.id)) }
+                        AgentWindow(agentId = window.id, viewModel = agentViewModel)
+                    }
                 }
             },
         )
