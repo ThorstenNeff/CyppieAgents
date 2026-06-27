@@ -42,6 +42,9 @@ class EventTailViewModel(
     private val ringCapacity: Int = TAIL_RING_DEFAULT,
     private val pauseBufferCapacity: Int = PAUSE_BUFFER_DEFAULT,
     scope: CoroutineScope? = null,
+    // CYP-47 DEBUG (temporary) — instrumentation hook to root-cause why connection never reaches LIVE on
+    // Android-Compose (JVM can't reproduce it). null in prod (AgentShell never passes it). Remove after fix.
+    private val debug: ((String) -> Unit)? = null,
 ) : ViewModel() {
 
     private val runScope: CoroutineScope = scope ?: viewModelScope
@@ -54,14 +57,19 @@ class EventTailViewModel(
     init { runScope.launch { collect() } }
 
     private suspend fun collect() {
+        debug?.invoke("collect: subscribing to source.events(filter)")
         source.events(filter).collect { event ->
-            EventReducer.statusOf(event)?.let { status -> _state.update { it.copy(connection = status) } }
+            val status = EventReducer.statusOf(event)
+            debug?.invoke("recv ${event::class.simpleName}: statusOf=$status connBefore=${_state.value.connection}")
+            status?.let { s -> _state.update { it.copy(connection = s) } }
+            debug?.invoke("  -> connAfter=${_state.value.connection}")
             when (event) {
                 is EventLiveEvent.Received -> onReceived(event.event)
                 is EventLiveEvent.AccessRevoked -> _state.update { it.copy(accessRevoked = true) }
                 else -> Unit
             }
         }
+        debug?.invoke("collect: source flow COMPLETED")
     }
 
     private fun onReceived(event: Event) {
