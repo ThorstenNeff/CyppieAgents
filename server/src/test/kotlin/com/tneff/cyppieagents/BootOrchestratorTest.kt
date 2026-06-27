@@ -35,25 +35,7 @@ class BootOrchestratorTest {
 
     @AfterTest fun tearDown() = scope.cancel()
 
-    /** Fake git: records commands and materializes the dirs WorktreeManager probes (for idempotency). */
-    private class FakeGit : CommandRunner {
-        val commands = mutableListOf<List<String>>()
-        override fun run(command: List<String>, cwd: File): CommandResult {
-            commands += command
-            when (command.getOrNull(1)) {
-                "clone" -> File(command.last(), ".git").mkdirs() // repoDir/.git
-                // Per-agent branch doesn't exist yet → drives the real `-b` path.
-                "rev-parse" -> return CommandResult(1, "")
-                "worktree" -> if (command.getOrNull(2) == "add") {
-                    // `add <target> <branch>` OR `add -b <branch> <target> <base>`.
-                    val target = if (command.getOrNull(3) == "-b") command[5] else command[3]
-                    File(target).mkdirs()
-                }
-            }
-            return CommandResult(0, "")
-        }
-        fun count(vararg prefix: String) = commands.count { it.take(prefix.size) == prefix.toList() }
-    }
+    // Uses the shared realistic [FakeGit] (models checked-out branches) — see TestFakeGit.kt.
 
     private class FakeProcess : AgentProcess {
         override val stdoutLines: Flow<String> = emptyFlow()
