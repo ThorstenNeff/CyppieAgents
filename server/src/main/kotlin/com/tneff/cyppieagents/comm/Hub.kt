@@ -1,9 +1,17 @@
 package com.tneff.cyppieagents.comm
 
+import com.tneff.cyppieagents.model.AclEntry
+import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.ChannelsEvent
+import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.Message
+import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.MessageMeta
 import com.tneff.cyppieagents.routing.ForbiddenException
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 /**
  * The comm hub: the single place that enforces ACL on write and read, using the pure
@@ -22,6 +30,10 @@ class Hub(
     private val clock: Clock = Clock.SYSTEM,
     private val ids: IdGenerator = IdGenerator.UUIDS,
 ) {
+    // Live event stream for /ws/comm subscribers; filtered per participant at the WS boundary.
+    private val _events = MutableSharedFlow<CommWsServerEvent>(extraBufferCapacity = 256)
+    val events: SharedFlow<CommWsServerEvent> = _events.asSharedFlow()
+
     /** Post [body] from [senderId] into [channelId]. Throws 403 if the sender may not write. */
     fun postAsAgent(senderId: String, channelId: String, body: String, meta: MessageMeta? = null): Message {
         // Gate #2: fail-closed BEFORE any write.
@@ -40,7 +52,20 @@ class Hub(
         )
         store.append(message)
         audit.posted(message)
+        _events.tryEmit(MessageEvent(message)) // live push to /ws/comm (filtered per participant)
         return message
+    }
+
+    /**
+     * Operator-gated ACL change: delegates to [HubState.setAcl] (the single mutation point), audits
+     * it, and pushes [AclEvent] + a refreshed [ChannelsEvent] to live subscribers (CYP-18).
+     */
+    fun setAcl(entry: AclEntry, by: String): AclEntry {
+        val saved = state.setAcl(entry)
+        audit.aclChanged(saved.channelId, saved.agentId, saved.canRead, saved.canWrite, by)
+        _events.tryEmit(AclEvent(saved))
+        _events.tryEmit(ChannelsEvent(state.channels))
+        return saved
     }
 
     /** Messages of one channel for [readerId]; throws 403 if the reader may not read it. */

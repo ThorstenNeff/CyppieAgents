@@ -45,21 +45,33 @@ class HubState(
         channels.firstOrNull { it.id == "po-$agentId" && agentId in it.members }?.id
 
     companion object {
+        /** Reserved participant id for the human operator / UI viewer (Spec D2). */
+        const val OPERATOR_ID = "operator"
+
         /**
          * Builds the default hub-and-spoke topology from the agent list (Spec 02 §6.2):
          * one `po-<worker>` channel per worker, both members read+write. PO is in every spoke;
          * a worker only in its own. Hub-and-spoke = this ACL assignment, no special logic.
+         *
+         * When [operatorId] is given, the operator is added as a **privileged participant** — a
+         * member of every channel with read+write — via the SAME ACL entries (no bypass path). That
+         * gives the UI viewer the human-in-the-loop view/send while every check still flows through
+         * [AclMatrix] (CYP-18).
          */
-        fun hubAndSpoke(agents: List<Agent>): HubState {
+        fun hubAndSpoke(agents: List<Agent>, operatorId: String? = null): HubState {
             val po = agents.firstOrNull { it.role == Role.PO }
                 ?: error("hub-and-spoke requires exactly one PO agent")
             val workers = agents.filter { it.role == Role.WORKER }
             val channels = workers.map { w ->
+                val members = buildList {
+                    add(po.id); add(w.id)
+                    if (operatorId != null) add(operatorId)
+                }
                 Channel(
                     id = "po-${w.id}",
                     name = "po-${w.id}",
                     kind = com.tneff.cyppieagents.model.ChannelKind.HUB,
-                    members = listOf(po.id, w.id),
+                    members = members,
                 )
             }
             val entries = channels.flatMap { ch ->

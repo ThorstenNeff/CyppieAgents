@@ -1,17 +1,22 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
-import com.tneff.cyppieagents.comm.Audit
 import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AclEntry
+import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ApiError
 import com.tneff.cyppieagents.model.ApiErrorBody
+import com.tneff.cyppieagents.model.ChannelsEvent
+import com.tneff.cyppieagents.model.CommWsClientEvent
+import com.tneff.cyppieagents.model.CommWsServerEvent
+import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
+import com.tneff.cyppieagents.model.Subscribe
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -27,6 +32,13 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
+import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.CloseReason
+import io.ktor.websocket.Frame
+import io.ktor.websocket.close
+import io.ktor.websocket.readText
+import kotlinx.coroutines.launch
 import io.ktor.server.plugins.BadRequestException as KtorBadRequestException
 
 /**
@@ -58,16 +70,19 @@ class CommConfig(
 }
 
 /**
- * Installs content negotiation, the uniform error envelope, and the comm REST routes. Returns the
- * [Hub] so callers (e.g. the mediator) can post on agents' behalf through the same enforcement.
+ * Installs content negotiation, websockets, the uniform error envelope, and the comm REST + WS
+ * routes. Returns the [Hub] so callers (e.g. the mediator) can post on agents' behalf through the
+ * same enforcement.
  */
 fun Application.installComm(config: CommConfig): Hub {
-    val state = HubState.hubAndSpoke(config.agents)
-    val audit = Audit()
-    val hub = Hub(state, config.store, audit)
+    // Operator participates in the ACL (member of every channel) when an operator token exists.
+    val operatorId = if (config.operatorToken != null) HubState.OPERATOR_ID else null
+    val state = HubState.hubAndSpoke(config.agents, operatorId)
+    val hub = Hub(state, config.store)
     val registry = TokenRegistry(config.tokens, config.operatorToken)
 
     install(ContentNegotiation) { json(CommJson) }
+    install(WebSockets)
     install(StatusPages) {
         exception<ApiException> { call, cause ->
             call.respond(cause.status, ApiErrorBody(ApiError(cause.code, cause.message)))
@@ -79,43 +94,44 @@ fun Application.installComm(config: CommConfig): Hub {
             call.respond(HttpStatusCode.InternalServerError, ApiErrorBody(ApiError("internal", "internal error")))
         }
     }
-    routing { commRoutes(hub, state, registry, audit) }
+    routing { commRoutes(hub, state, registry) }
     return hub
 }
 
-fun Route.commRoutes(hub: Hub, state: HubState, registry: TokenRegistry, audit: Audit) {
+fun Route.commRoutes(hub: Hub, state: HubState, registry: TokenRegistry) {
     route("/api") {
         get("/health") { call.respondText("ok") }
 
         // Agents carry no secrets (token is server-side only) — safe to return as-is.
         get("/agents") { call.respond(state.agents) }
 
+        // Read/send accept an agent OR the operator (privileged participant) — same AclMatrix.
         get("/channels") {
-            val agentId = call.requireAgent(registry)
-            call.respond(hub.readableChannels(agentId))
+            val participant = call.requireParticipant(registry)
+            call.respond(hub.readableChannels(participant))
         }
 
         route("/channels/{id}/messages") {
             get {
-                val agentId = call.requireAgent(registry)
+                val participant = call.requireParticipant(registry)
                 val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
                 val since = call.request.queryParameters["since"]?.toLongOrNull()
-                call.respond(hub.channelMessages(agentId, channelId, since))
+                call.respond(hub.channelMessages(participant, channelId, since))
             }
             post {
-                val agentId = call.requireAgent(registry)
+                val participant = call.requireParticipant(registry)
                 val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
                 val body = call.receive<SendMessageRequest>()
                 // Sender = bearer identity; channel = path. Body carries neither (Gate #1).
-                val message = hub.postAsAgent(agentId, channelId, body.body, body.meta)
+                val message = hub.postAsAgent(participant, channelId, body.body, body.meta)
                 call.respond(HttpStatusCode.Created, message)
             }
         }
 
         get("/inbox") {
-            val agentId = call.requireAgent(registry)
+            val participant = call.requireParticipant(registry)
             val since = call.request.queryParameters["since"]?.toLongOrNull()
-            call.respond(hub.inbox(agentId, since))
+            call.respond(hub.inbox(participant, since))
         }
 
         get("/acl") {
@@ -140,10 +156,59 @@ fun Route.commRoutes(hub: Hub, state: HubState, registry: TokenRegistry, audit: 
         put("/acl") {
             call.requireOperator(registry)
             val entry = call.receive<AclEntry>()
-            val saved = state.setAcl(entry)
-            // Audit the most security-relevant mutation (R1).
-            audit.aclChanged(saved.channelId, saved.agentId, saved.canRead, saved.canWrite, by = "operator")
-            call.respond(saved)
+            call.respond(hub.setAcl(entry, by = HubState.OPERATOR_ID))
+        }
+    }
+
+    commSocket(hub, state, registry)
+}
+
+/**
+ * `/ws/comm` (Spec 02 §8): live push of messages / ACL changes / channel lists to a connected
+ * participant — using the SAME [com.tneff.cyppieagents.model.AclMatrix] filter as REST (only
+ * readable channels). Auth: agent OR operator token, via Bearer or `?token=` (browser). Idempotency
+ * is by `message.id` on the client. An optional [Subscribe] narrows the stream (still ACL-filtered).
+ */
+fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry) {
+    webSocket("/ws/comm") {
+        val token = call.bearerToken() ?: call.request.queryParameters["token"]
+        val participant = registry.participantFor(token)
+        if (participant == null) {
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
+            return@webSocket
+        }
+        var subscribed: Set<String>? = null // null = all readable channels
+
+        suspend fun emit(event: CommWsServerEvent) =
+            send(Frame.Text(CommJson.encodeToString(CommWsServerEvent.serializer(), event)))
+
+        // Initial snapshot: the channels this participant may read.
+        emit(ChannelsEvent(hub.readableChannels(participant)))
+
+        val pump = launch {
+            hub.events.collect { event ->
+                val out: CommWsServerEvent? = when (event) {
+                    is MessageEvent -> {
+                        val ch = event.message.channelId
+                        if (state.acl.canRead(ch, participant) && (subscribed?.contains(ch) != false)) event else null
+                    }
+                    // Same ACL filter as messages: an ACL change is metadata about a channel, so only
+                    // a participant who can read that channel may learn of it (no cross-channel leak).
+                    is AclEvent -> if (state.acl.canRead(event.entry.channelId, participant)) event else null
+                    is ChannelsEvent -> ChannelsEvent(hub.readableChannels(participant)) // re-scope to participant
+                }
+                if (out != null) emit(out)
+            }
+        }
+        try {
+            for (frame in incoming) {
+                if (frame is Frame.Text) {
+                    val client = runCatching { CommJson.decodeFromString<CommWsClientEvent>(frame.readText()) }.getOrNull()
+                    if (client is Subscribe) subscribed = client.channelIds.toSet()
+                }
+            }
+        } finally {
+            pump.cancel()
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.routing
 
+import com.tneff.cyppieagents.comm.HubState
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
@@ -37,3 +38,15 @@ fun ApplicationCall.requireOperator(registry: TokenRegistry) {
         throw ForbiddenException("operator token required", code = "operator_required")
     }
 }
+
+/**
+ * Resolves a token to a comm **participant** id: an agent id, or [HubState.OPERATOR_ID] for the
+ * operator token, or null. The operator is a privileged participant in the ACL — not a bypass —
+ * so downstream the same [com.tneff.cyppieagents.model.AclMatrix] checks apply (CYP-18).
+ */
+fun TokenRegistry.participantFor(token: String?): String? =
+    agentFor(token) ?: if (isOperator(token)) HubState.OPERATOR_ID else null
+
+/** Resolves the caller (agent OR operator) for the comm read/send endpoints, or throws 401. */
+fun ApplicationCall.requireParticipant(registry: TokenRegistry): String =
+    registry.participantFor(bearerToken()) ?: throw UnauthorizedException()

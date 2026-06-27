@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -170,12 +171,24 @@ class S4ServerQaProbesTest {
         assertTrue(justBefore.any { it.id == created.id }, "since=ts-1 must INCLUDE the message")
     }
 
-    /** The operator token is NOT an agent identity: it cannot read agent-scoped comm endpoints. */
+    /**
+     * CYP-18 contract change: the operator token IS now accepted on comm reads as a privileged
+     * AclMatrix participant (member of every channel) — the human/UI viewer. It is NOT a bypass:
+     * the same AclMatrix filter applies, so the operator sees all (readable) channels.
+     */
     @Test
-    fun operatorToken_isNotAnAgent_onChannels() = testApplication {
+    fun operatorToken_isAcceptedAsPrivilegedParticipant_onChannels() = testApplication {
         application { installComm(config()) }
         val client = jsonClient()
         val res = client.get("/api/channels") { bearerAuth("tok-op") }
-        assertEquals(HttpStatusCode.Unauthorized, res.status, "operator token maps to no agent ⇒ 401 on agent-scoped reads")
+        // Substance, not just acceptance (CYP-18 QA hardening): a privileged AclMatrix participant
+        // is a member of EVERY channel, so it must see ALL of them — not an empty 200, not a subset.
+        assertEquals(HttpStatusCode.OK, res.status, "CYP-18: operator token is an accepted privileged participant on comm reads")
+        val channels: List<Channel> = res.body()
+        assertEquals(
+            setOf("po-frontend", "po-backend"),
+            channels.map { it.id }.toSet(),
+            "operator (privileged participant) must see ALL channels, not just be accepted",
+        )
     }
 }
