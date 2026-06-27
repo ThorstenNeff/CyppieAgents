@@ -70,6 +70,7 @@ fun Application.bootPlatform(
         spawner = com.tneff.cyppieagents.connector.ProcessBuilderSpawner(),
         scope = scope,
     ).boot()
+    installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     installPlatform(booted)
     return booted
 }

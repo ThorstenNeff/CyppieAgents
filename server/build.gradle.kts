@@ -16,6 +16,7 @@ dependencies {
     implementation(libs.ktor.serverNetty)
     implementation(libs.ktor.serverContentNegotiation)
     implementation(libs.ktor.serverStatusPages)
+    implementation(libs.ktor.serverCors)
     implementation(libs.ktor.serializationKotlinxJson)
     implementation(libs.ktor.serverWebsockets)
     testImplementation(libs.ktor.serverTestHost)
