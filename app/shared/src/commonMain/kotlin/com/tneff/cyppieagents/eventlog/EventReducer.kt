@@ -40,6 +40,7 @@ object EventReducer {
     fun statusOf(event: EventLiveEvent): ConnectionStatus? = when (event) {
         is EventLiveEvent.Connected -> ConnectionStatus.LIVE
         is EventLiveEvent.Disconnected -> ConnectionStatus.DISCONNECTED
+        is EventLiveEvent.AccessRevoked -> ConnectionStatus.DISCONNECTED
         is EventLiveEvent.Received -> null
     }
 }

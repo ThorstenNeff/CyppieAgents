@@ -18,6 +18,12 @@ sealed interface EventLiveEvent {
 
     /** A new event pushed by the log; deduped by [Event.id] downstream. */
     data class Received(val event: Event) : EventLiveEvent
+
+    /**
+     * The operator token was rejected at the socket (WS close 1008, CYP-40 §7) — fail-closed: the tail
+     * shows an honest "operators only" reject, never "live" and never partial data.
+     */
+    data object AccessRevoked : EventLiveEvent
 }
 
 /** Source of the live event stream, narrowed by [filter] (server-side, operator-only). */

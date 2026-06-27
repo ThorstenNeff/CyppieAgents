@@ -16,6 +16,14 @@ import com.tneff.cyppieagents.model.Severity
 fun rowQualifier(event: Event): String =
     if (event.type == EventType.LOG_DROPPED) "gap" else event.severity.qualifier()
 
+/**
+ * Display text for the event type (EVENT-LOG-UI §3, monospace): the dotted enum wire, or — for an
+ * UNKNOWN type (a newer server / additive 07 `stall.*`) — the preserved raw wire string (CYP-37
+ * [Event.rawType]), never a flattened "unknown" that swallows which type it actually was.
+ */
+fun Event.typeText(): String =
+    if (type == EventType.UNKNOWN) (rawType ?: type.wire) else type.wire
+
 fun Severity.qualifier(): String = when (this) {
     Severity.ERROR -> "error"
     Severity.WARN -> "warn"
