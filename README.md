@@ -18,6 +18,20 @@ This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop (JVM
 
 * [/server](./server/src/main/kotlin) is for the Ktor server application.
 
+### Local-dev setup & quickstart
+
+New here? See **[docs/SETUP.md](./docs/SETUP.md)** — take a fresh clone to a running server +
+connected desktop UI. Fast path:
+
+```bash
+./scripts/dev-setup.sh        # generates .env (random dev tokens) + platform.config.json
+set -a; . ./.env; set +a      # load env into the shell (Gradle does not auto-load .env)
+./gradlew :server:run         # http://127.0.0.1:8787
+```
+
+Copy `.env.example` → `.env` and `platform.config.example.json` → `platform.config.json` to do it by
+hand. Both `.env` and `platform.config.json` are gitignored — never commit secrets.
+
 ### Running the apps
 
 Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:

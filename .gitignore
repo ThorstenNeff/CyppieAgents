@@ -17,3 +17,10 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+
+# Local secrets / env — never commit. The template `.env.example` IS tracked.
+.env
+!.env.example
+
+# Local platform config (may carry a real repo URL). The template is tracked.
+platform.config.json
