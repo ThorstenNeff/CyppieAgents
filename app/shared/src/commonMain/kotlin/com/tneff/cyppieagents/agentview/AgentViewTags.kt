@@ -20,6 +20,20 @@ object AgentViewTags {
     /** The send button. */
     fun sendBtn(agentId: String) = "agent.$agentId.sendBtn"
 
+    /** The window header bar (status + lifecycle controls), CYP-73. */
+    fun header(agentId: String) = "agent.$agentId.header"
+
+    /** The non-gated lifecycle status indicator (RUNNING/STOPPED/ERROR/UNKNOWN). */
+    fun status(agentId: String) = "agent.$agentId.status"
+
+    /** Operator-gated lifecycle controls. */
+    fun startBtn(agentId: String) = "agent.$agentId.startBtn"
+    fun stopBtn(agentId: String) = "agent.$agentId.stopBtn"
+    fun restartBtn(agentId: String) = "agent.$agentId.restartBtn"
+
+    /** Honest surfacing of a lifecycle-control failure (409/403/503/404). */
+    fun lifecycleError(agentId: String) = "agent.$agentId.lifecycleError"
+
     /** The N-th event line in the stream. [index] is the 0-based, additive-stable render order. */
     fun event(agentId: String, index: Int) = "agent.$agentId.event.$index"
 

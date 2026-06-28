@@ -6,6 +6,8 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageMeta
+import com.tneff.cyppieagents.net.Backoff
+import com.tneff.cyppieagents.net.reconnecting
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +39,8 @@ class CommViewModel(
     private val repository: CommApi,
     private val liveSource: CommLiveSource,
     private val viewerId: String,
+    /** Reconnect backoff for the live stream (CYP-73); injectable so tests can drive fast reconnects. */
+    private val backoff: Backoff = Backoff(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(CommUiState())
@@ -58,7 +62,10 @@ class CommViewModel(
     }
 
     private suspend fun collectLive() {
-        liveSource.events().collect { event ->
+        // Robust auto-reconnect (CYP-73): re-subscribe with backoff when the socket drops. On reconnect
+        // the server replays its snapshot (Connected + ChannelsChanged + recent messages); idempotency
+        // is preserved because [CommReducer.merge] dedups by `message.id` — no duplicates, no visible loss.
+        liveSource.events().reconnecting(backoff).collect { event ->
             CommReducer.statusOf(event)?.let { status -> _state.update { it.copy(connection = status) } }
             if (event is CommLiveEvent.ChannelsChanged) {
                 _state.update { it.copy(channels = event.channels) }
