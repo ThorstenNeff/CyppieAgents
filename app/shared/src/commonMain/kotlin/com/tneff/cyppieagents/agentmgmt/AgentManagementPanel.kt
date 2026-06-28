@@ -29,6 +29,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.agentview.AgentViewTags
+import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.TonedHint
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState
 import com.tneff.cyppieagents.model.Role
@@ -98,7 +100,7 @@ fun AgentManagementPanel(viewModel: AgentManagementViewModel, modifier: Modifier
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (!state.editable) {
-            HintLine(stringResource(Res.string.agent_mgmt_operator_required), MaterialTheme.colorScheme.tertiary, AgentMgmtTags.GATE_HINT)
+            TonedHint(stringResource(Res.string.agent_mgmt_operator_required), HintTone.GATED, AgentMgmtTags.GATE_HINT)
         }
 
         Button(
@@ -218,14 +220,14 @@ private fun AddDialog(state: AgentMgmtUiState, viewModel: AgentManagementViewMod
                     label = stringResource(Res.string.agent_add_worktree_label), tag = AgentMgmtTags.ADD_WORKTREE_INPUT,
                 )
                 // Disclosure: creating does NOT spawn — start is the CYP-73 lifecycle (no second mechanism).
-                HintLine(stringResource(Res.string.agent_add_spawn_hint), MaterialTheme.colorScheme.tertiary, AgentMgmtTags.ADD_SPAWN_HINT)
+                TonedHint(stringResource(Res.string.agent_add_spawn_hint), HintTone.INFO, AgentMgmtTags.ADD_SPAWN_HINT)
 
                 val err = when {
                     state.addIdCollision -> Res.string.agent_add_id_exists
                     state.addError != null -> addErrorRes(state.addError)
                     else -> null
                 }
-                if (err != null) HintLine(stringResource(err), MaterialTheme.colorScheme.error, AgentMgmtTags.ADD_ERROR)
+                if (err != null) TonedHint(stringResource(err), HintTone.ERROR, AgentMgmtTags.ADD_ERROR)
             }
         },
     )
@@ -262,7 +264,7 @@ private fun RemoveDialog(target: Agent, state: AgentMgmtUiState, viewModel: Agen
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // Explicit consequences (what happens) — never under-specified.
-                HintLine(stringResource(Res.string.agent_remove_consequences), MaterialTheme.colorScheme.onSurface, AgentMgmtTags.REMOVE_CONSEQUENCES)
+                TonedHint(stringResource(Res.string.agent_remove_consequences), HintTone.INFO, AgentMgmtTags.REMOVE_CONSEQUENCES)
 
                 Column(modifier = Modifier.fillMaxWidth().testTag(AgentMgmtTags.REMOVE_WORKTREE_CHOICE)) {
                     RadioRow(
@@ -276,16 +278,16 @@ private fun RemoveDialog(target: Agent, state: AgentMgmtUiState, viewModel: Agen
                 }
                 // The destructive path names the concrete data loss (error tone + text, not colour alone).
                 if (deleting) {
-                    HintLine(
+                    TonedHint(
                         stringResource(Res.string.agent_remove_worktree_warning, target.worktree),
-                        MaterialTheme.colorScheme.error, AgentMgmtTags.REMOVE_WORKTREE_WARNING,
+                        HintTone.ERROR, AgentMgmtTags.REMOVE_WORKTREE_WARNING,
                     )
                 }
                 // The only PO cannot be removed — rule visible (confirm disabled above) + explanation.
                 if (state.isOnlyPo(target)) {
-                    HintLine(stringResource(Res.string.agent_remove_last_po), MaterialTheme.colorScheme.error, AgentMgmtTags.REMOVE_ERROR)
+                    TonedHint(stringResource(Res.string.agent_remove_last_po), HintTone.ERROR, AgentMgmtTags.REMOVE_ERROR)
                 } else if (state.removeError != null) {
-                    HintLine(stringResource(removeErrorRes(state.removeError)), MaterialTheme.colorScheme.error, AgentMgmtTags.REMOVE_ERROR)
+                    TonedHint(stringResource(removeErrorRes(state.removeError)), HintTone.ERROR, AgentMgmtTags.REMOVE_ERROR)
                 }
             }
         },
@@ -342,11 +344,11 @@ private fun EditDialog(target: Agent, state: AgentMgmtUiState, viewModel: AgentM
                     else -> null
                 }
                 if (reason != null) {
-                    HintLine(stringResource(reason), MaterialTheme.colorScheme.error, AgentMgmtTags.EDIT_ERROR)
+                    TonedHint(stringResource(reason), HintTone.ERROR, AgentMgmtTags.EDIT_ERROR)
                 }
                 // Amber "saved ≠ active — restart to apply" (no second restart mechanism; reuse CYP-73).
                 if (state.editEffectHint) {
-                    HintLine(stringResource(Res.string.agent_edit_effect_hint), MaterialTheme.colorScheme.tertiary, AgentMgmtTags.EDIT_EFFECT_HINT)
+                    TonedHint(stringResource(Res.string.agent_edit_effect_hint), HintTone.EFFECT_DEFERRED, AgentMgmtTags.EDIT_EFFECT_HINT)
                 }
             }
         },
@@ -419,16 +421,6 @@ private fun LabeledField(
             .fillMaxWidth()
             .testTag(tag)
             .then(if (a11y != null) Modifier.semantics { contentDescription = a11y } else Modifier),
-    )
-}
-
-@Composable
-private fun HintLine(text: String, tone: Color, tag: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = tone,
-        modifier = Modifier.fillMaxWidth().testTag(tag).semantics { },
     )
 }
 

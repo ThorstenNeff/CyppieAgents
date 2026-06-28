@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.TonedHint
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -85,11 +87,7 @@ private fun RepoSection(state: SettingsUiState, viewModel: SettingsViewModel) {
 
         // Honest "not configured → agents cannot start" (info/warning tone, not error-red); §3.2.
         if (!state.repoConfigured) {
-            HintLine(
-                text = stringResource(Res.string.settings_repo_status_unset),
-                tone = MaterialTheme.colorScheme.tertiary,
-                tag = SettingsTags.REPO_STATUS,
-            )
+            TonedHint(stringResource(Res.string.settings_repo_status_unset), HintTone.INFO, SettingsTags.REPO_STATUS)
         }
 
         val urlLabel = stringResource(Res.string.settings_repo_url_label)
@@ -121,11 +119,7 @@ private fun RepoSection(state: SettingsUiState, viewModel: SettingsViewModel) {
         )
 
         if (!state.editable) {
-            HintLine(
-                text = stringResource(Res.string.settings_operator_required),
-                tone = MaterialTheme.colorScheme.tertiary,
-                tag = SettingsTags.REPO_GATE_HINT,
-            )
+            TonedHint(stringResource(Res.string.settings_operator_required), HintTone.GATED, SettingsTags.REPO_GATE_HINT)
         }
 
         Button(
@@ -137,20 +131,12 @@ private fun RepoSection(state: SettingsUiState, viewModel: SettingsViewModel) {
         }
 
         state.repoError?.let { key ->
-            HintLine(
-                text = errorText(key),
-                tone = MaterialTheme.colorScheme.error,
-                tag = SettingsTags.REPO_ERROR,
-            )
+            TonedHint(errorText(key), HintTone.ERROR, SettingsTags.REPO_ERROR)
         }
 
         // Amber "saved ≠ active" — applies to new worktrees / next boot (§3.2, disclosure mandatory).
         if (state.repoEffectHint) {
-            HintLine(
-                text = stringResource(Res.string.settings_repo_effect_hint),
-                tone = MaterialTheme.colorScheme.tertiary,
-                tag = SettingsTags.REPO_EFFECT_HINT,
-            )
+            TonedHint(stringResource(Res.string.settings_repo_effect_hint), HintTone.EFFECT_DEFERRED, SettingsTags.REPO_EFFECT_HINT)
         }
     }
 }
@@ -205,16 +191,14 @@ private fun ApiKeySection(state: SettingsUiState, viewModel: SettingsViewModel) 
                     .testTag(SettingsTags.API_KEY_REVEAL)
                     .semantics { contentDescription = revealDesc },
             ) {
-                Text(if (state.apiKeyReveal) "🙈" else "👁")
+                // CYP-99: a reliable text label, not an emoji (👁/🙈 was tofu-prone on Desktop-JVM and broke
+                // the no-emoji convention, CYP-54). Doubles as the a11y description above.
+                Text(revealDesc, style = MaterialTheme.typography.labelMedium)
             }
         }
 
         if (!state.editable) {
-            HintLine(
-                text = stringResource(Res.string.settings_operator_required),
-                tone = MaterialTheme.colorScheme.tertiary,
-                tag = SettingsTags.API_KEY_GATE_HINT,
-            )
+            TonedHint(stringResource(Res.string.settings_operator_required), HintTone.GATED, SettingsTags.API_KEY_GATE_HINT)
         }
 
         Button(
@@ -226,21 +210,13 @@ private fun ApiKeySection(state: SettingsUiState, viewModel: SettingsViewModel) 
         }
 
         state.apiKeyError?.let { key ->
-            HintLine(
-                text = errorText(key),
-                tone = MaterialTheme.colorScheme.error,
-                tag = SettingsTags.API_KEY_ERROR,
-            )
+            TonedHint(errorText(key), HintTone.ERROR, SettingsTags.API_KEY_ERROR)
         }
 
         // Amber "saved ≠ active — restart the affected agents" (§4.2). No restart button here: the
         // honest activation is the existing CYP-73 per-agent restart (agent.<id>.restartBtn).
         if (state.apiKeyEffectHint) {
-            HintLine(
-                text = stringResource(Res.string.settings_apikey_effect_hint),
-                tone = MaterialTheme.colorScheme.tertiary,
-                tag = SettingsTags.API_KEY_EFFECT_HINT,
-            )
+            TonedHint(stringResource(Res.string.settings_apikey_effect_hint), HintTone.EFFECT_DEFERRED, SettingsTags.API_KEY_EFFECT_HINT)
         }
     }
 }
@@ -252,16 +228,6 @@ private fun SectionHeading(text: String) {
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.semantics { heading() },
-    )
-}
-
-@Composable
-private fun HintLine(text: String, tone: androidx.compose.ui.graphics.Color, tag: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = tone,
-        modifier = Modifier.fillMaxWidth().testTag(tag),
     )
 }
 
