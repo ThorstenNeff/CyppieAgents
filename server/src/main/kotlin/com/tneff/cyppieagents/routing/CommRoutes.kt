@@ -112,6 +112,13 @@ fun Route.commRoutes(
         // LIVE status (RUNNING/STOPPED/ERROR). Status display is NOT operator-gated (same as this route);
         // only the controls below are operator-gated.
         get("/agents") {
+            // S13 / CYP-102 — agents are STRUCTURALLY scoped to the active project (PO decision, Option A):
+            // a single HubState holds exactly the active project's agents (per-project live hub/session
+            // re-instancing is S17, gated on `HubState.rescope`/switch — which today only re-scopes the
+            // ACL matrix, not the agent set). `Agent` carries no projectId, and in the one-hub model there
+            // is no other-project agent in this list to leak — so there is no cross-project agent vector to
+            // filter here and no separate mutation proof. Real per-project agent isolation lands in S17 when
+            // the hub is instanced per project; THEN this list filters by the active project's hub.
             val agents = state.agents.map { agent ->
                 lifecycle?.runStateOf(agent.id)?.let { agent.copy(runState = it) } ?: agent
             }

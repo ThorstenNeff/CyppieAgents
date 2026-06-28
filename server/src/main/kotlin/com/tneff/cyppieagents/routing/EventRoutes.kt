@@ -31,7 +31,7 @@ import io.ktor.server.routing.routing
  * Filters arrive as **query params** (not a JSON body, mirroring `CommApi.messages`); the time window
  * is half-open `[since, until)`; paging is stable over `seq` (`afterSeq` cursor + `limit`).
  */
-fun Route.eventRoutes(sink: EventSink, registry: TokenRegistry) {
+fun Route.eventRoutes(sink: EventSink, registry: TokenRegistry, activeProjectId: () -> String?) {
     route("/api/events") {
         get {
             call.requireOperator(registry) // fail-closed before any query runs
@@ -44,6 +44,9 @@ fun Route.eventRoutes(sink: EventSink, registry: TokenRegistry) {
                 until = q["until"]?.let { parseLong(it, "until") },
                 correlationId = q["correlationId"],
                 sessionId = q["sessionId"],
+                // S13 / CYP-102: server-side active-project scope (NOT a client param) — the operator
+                // browses only the active project's events; a foreign-project event can't be reached.
+                projectId = activeProjectId(),
             )
             val afterSeq = q["afterSeq"]?.let { parseLong(it, "afterSeq") }
             val limit = (q["limit"]?.let { parseInt(it, "limit") } ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
@@ -54,9 +57,11 @@ fun Route.eventRoutes(sink: EventSink, registry: TokenRegistry) {
 
 /**
  * Standalone install (plugins + route) for tests / a dedicated events surface. In production the
- * route is mounted by `installPlatform`, which already installs ContentNegotiation + StatusPages.
+ * route is mounted by `installPlatform`, which already installs ContentNegotiation + StatusPages and
+ * ALWAYS passes the registry active-pointer resolver. [activeProjectId] defaults to unscoped here so
+ * legacy single-store event tests are unaffected; production is never unscoped (CYP-102).
  */
-fun Application.installEvents(sink: EventSink, registry: TokenRegistry) {
+fun Application.installEvents(sink: EventSink, registry: TokenRegistry, activeProjectId: () -> String? = { null }) {
     install(ContentNegotiation) { json(CommJson) }
     install(StatusPages) {
         exception<ApiException> { call, cause ->
@@ -66,7 +71,7 @@ fun Application.installEvents(sink: EventSink, registry: TokenRegistry) {
             call.respond(HttpStatusCode.InternalServerError, ApiErrorBody(ApiError("internal", "internal error")))
         }
     }
-    routing { eventRoutes(sink, registry) }
+    routing { eventRoutes(sink, registry, activeProjectId) }
 }
 
 private const val DEFAULT_LIMIT = 100

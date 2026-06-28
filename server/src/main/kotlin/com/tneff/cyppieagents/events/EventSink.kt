@@ -51,6 +51,14 @@ data class EventFilter(
     val until: Long? = null,
     val correlationId: String? = null,
     val sessionId: String? = null,
+    /**
+     * Active-project scope (S13 / CYP-102). The Event-Log is a SHARED multi-project store (every event
+     * is stamped with its `projectId`), so Browse + live-tail must restrict to the active project. The
+     * routes set this server-side from the [com.tneff.cyppieagents.boot.ProjectRegistry] active pointer
+     * (never a client param), so a caller can't widen to another project. Null = unscoped (internal
+     * callers / tests only — the `/api/events` + `/ws/events` surfaces always pass the active project).
+     */
+    val projectId: String? = null,
 ) {
     fun matches(e: Event): Boolean =
         (agentId == null || e.agentId == agentId) &&
@@ -59,7 +67,8 @@ data class EventFilter(
             (since == null || e.ts >= since) &&
             (until == null || e.ts < until) &&
             (correlationId == null || e.correlationId == correlationId) &&
-            (sessionId == null || e.sessionId == sessionId)
+            (sessionId == null || e.sessionId == sessionId) &&
+            (projectId == null || e.projectId == projectId)
 
     companion object {
         val ALL = EventFilter()
