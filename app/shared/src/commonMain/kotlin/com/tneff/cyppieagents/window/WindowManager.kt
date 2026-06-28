@@ -1,22 +1,34 @@
 package com.tneff.cyppieagents.window
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,38 +45,77 @@ import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.a11y_pager_dot
+import kmpcyppieagents.app.shared.generated.resources.a11y_pager_page
+import kmpcyppieagents.app.shared.generated.resources.pager_empty
+import kmpcyppieagents.app.shared.generated.resources.pager_next
+import kmpcyppieagents.app.shared.generated.resources.pager_page_position
+import kmpcyppieagents.app.shared.generated.resources.pager_prev
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 
 /**
- * The "desktop" window host: a full-size surface that stacks every window in [state] according to
- * its z-order (list order). Each window's body is supplied by [windowContent], so the host is fully
- * decoupled from what lives inside a window — CYP-6's renderer plugs in there later without changing
- * this code.
+ * The window host. The layout mode is chosen from the **Compose Window Size Classes** of the measured
+ * host (CYP-50/S10, mandated primitive — not `expect`/`actual`):
+ *
+ * - **Phone-Pager** as soon as **either** axis is `Compact` (phone portrait, or a wide-but-short
+ *   landscape phone): the window contents become a snap [HorizontalPager], one page per window.
+ * - **Canvas** only when **both** axes are ≥ `Medium` (tablet/desktop): the unchanged floating-window
+ *   tiling (CYP-10/16).
+ *
+ * Each window's body is supplied by [windowContent], so the host stays decoupled from what lives in a
+ * window; the same slot feeds both modes. Mode separation is observable by tag: `window.host` exists
+ * only in canvas mode, `phonePager.pager` only in pager mode — never both (QA contract, CYP-54).
  */
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun WindowHost(
     state: WindowManagerState,
     modifier: Modifier = Modifier,
     windowContent: @Composable (WindowState) -> Unit,
 ) {
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag(WindowTestTags.HOST),
-    ) {
-        // Report the measured host size so the state can keep windows within the visible area.
-        val hostWidthDp = maxWidth.value
-        val hostHeightDp = maxHeight.value
-        LaunchedEffect(hostWidthDp, hostHeightDp) {
-            state.updateHostSize(hostWidthDp, hostHeightDp)
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        // Report the measured host size so the canvas can keep windows within the visible area; kept
+        // current in both modes so geometry stays valid across a mode switch (CYP-54 §3).
+        val widthDp = maxWidth
+        val heightDp = maxHeight
+        LaunchedEffect(widthDp.value, heightDp.value) {
+            state.updateHostSize(widthDp.value, heightDp.value)
         }
 
+        val sizeClass = WindowSizeClass.calculateFromSize(DpSize(widthDp, heightDp))
+        val isCompact = sizeClass.widthSizeClass == WindowWidthSizeClass.Compact ||
+            sizeClass.heightSizeClass == WindowHeightSizeClass.Compact
+
+        if (isCompact) {
+            PhonePager(state = state, windowContent = windowContent)
+        } else {
+            WindowCanvas(state = state, windowContent = windowContent)
+        }
+    }
+}
+
+/**
+ * The "desktop" canvas: a full-size surface that stacks every window in [state] by its z-order (list
+ * order). Unchanged tiling behaviour (CYP-10/16) — only ever shown when both axes are ≥ `Medium`.
+ */
+@Composable
+private fun WindowCanvas(
+    state: WindowManagerState,
+    windowContent: @Composable (WindowState) -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize().testTag(WindowTestTags.HOST)) {
         state.windows.forEachIndexed { index, window ->
             // Key by id so a window keeps its identity (and any internal state) when the list is
             // reordered on focus; graphicsLayer below applies the z-order from the list index.
@@ -79,6 +130,196 @@ fun WindowHost(
                     content = { windowContent(window) },
                 )
             }
+        }
+    }
+}
+
+/** Beyond this many pages the dot indicator is replaced by a compact "N / M" counter (CYP-54 §4). */
+private const val PAGER_DOT_THRESHOLD = 6
+
+/**
+ * The phone-pager (CYP-50/S10): shows exactly **one** window content at a time as a snap
+ * [HorizontalPager] page. Pages follow [WindowManagerState.windowOrder] — the **stable** registration
+ * order, decoupled from z-order — so giving a window focus never re-sorts the pages (CYP-54 §2).
+ *
+ * The shared anchor [WindowManagerState.focusedId] keeps "which window is active" in lock-step: the
+ * settled page drives focus, and an external focus change (deep-link / explicit "bring to front")
+ * scrolls the pager (CYP-54 §3/§5). One window → a single static page with no indicator chrome; zero
+ * windows → an honest empty state (CYP-54 §6).
+ */
+@Composable
+private fun PhonePager(
+    state: WindowManagerState,
+    windowContent: @Composable (WindowState) -> Unit,
+) {
+    val pages = state.orderedWindows
+    if (pages.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize().testTag(PhonePagerTags.EMPTY),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(stringResource(Res.string.pager_empty), style = MaterialTheme.typography.bodyMedium)
+        }
+        return
+    }
+
+    val initialPage = pages.indexOfFirst { it.id == state.focusedId }.coerceAtLeast(0)
+    val pagerState = rememberPagerState(initialPage = initialPage) { state.orderedWindows.size }
+    val scope = rememberCoroutineScope()
+
+    // Anchor sync — the settled page becomes the focused window (CYP-54 §3). Reads orderedWindows
+    // fresh per emission so it never captures a stale page list.
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { idx ->
+            state.orderedWindows.getOrNull(idx)?.let { state.focus(it.id) }
+        }
+    }
+    // External focus change (deep-link / explicit raise) → scroll to that page (CYP-54 §5). The guard
+    // makes the settle→focus→here path a no-op, so there is no feedback loop.
+    LaunchedEffect(state.focusedId) {
+        val target = state.orderedWindows.indexOfFirst { it.id == state.focusedId }
+        if (target >= 0 && target != pagerState.currentPage) pagerState.animateScrollToPage(target)
+    }
+
+    val currentIndex = pagerState.currentPage.coerceIn(0, pages.lastIndex)
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Slim header — only one window is visible, so it carries that page's title (CYP-54 §4).
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .testTag(PhonePagerTags.HEADER)
+                .semantics { heading() },
+        ) {
+            Text(
+                text = pages[currentIndex].title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .testTag(PhonePagerTags.HEADER_TITLE),
+            )
+        }
+
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f).fillMaxWidth().testTag(PhonePagerTags.PAGER),
+        ) { index ->
+            val window = pages[index]
+            // a11y: each page announces position + window name ("Seite 2 von 5: Frontend") — never
+            // just "page 2" (CYP-54 §4); the true page count never includes absent windows.
+            val pageDesc = stringResource(
+                Res.string.a11y_pager_page, (index + 1).toString(), pages.size.toString(), window.title,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag(PhonePagerTags.page(window.id))
+                    .semantics { contentDescription = pageDesc },
+            ) {
+                // Reuse window.<id>.content so a window's body is addressable identically to the canvas.
+                Box(modifier = Modifier.fillMaxSize().testTag(WindowTestTags.content(window.id))) {
+                    windowContent(window)
+                }
+            }
+        }
+
+        // Indicator only when there is more than one page — a lone page advertises no extra pages
+        // (CYP-54 §6 disclosure honesty).
+        if (pages.size > 1) {
+            PagerIndicator(
+                pages = pages,
+                currentIndex = currentIndex,
+                onSelect = { idx -> scope.launch { pagerState.animateScrollToPage(idx) } },
+            )
+        }
+    }
+}
+
+/**
+ * Page indicator + navigation (CYP-54 §4). ≤ [PAGER_DOT_THRESHOLD] pages → tappable dots whose active
+ * state is carried by shape/size (a child `…active` marker), not colour alone (WCAG 1.4.1); beyond
+ * that → a compact "N / M" counter. Prev/next affordances flank it for discoverability and a11y.
+ */
+@Composable
+private fun PagerIndicator(
+    pages: List<WindowState>,
+    currentIndex: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(PhonePagerTags.INDICATOR)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val prevDesc = stringResource(Res.string.pager_prev)
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .testTag(PhonePagerTags.PREV)
+                .semantics { contentDescription = prevDesc; role = Role.Button }
+                .clickable(enabled = currentIndex > 0) { onSelect(currentIndex - 1) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("‹", style = MaterialTheme.typography.titleMedium)
+        }
+
+        if (pages.size <= PAGER_DOT_THRESHOLD) {
+            pages.forEachIndexed { idx, window ->
+                val active = idx == currentIndex
+                val dotDesc = stringResource(Res.string.a11y_pager_dot, (idx + 1).toString(), window.title)
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag(PhonePagerTags.dot(window.id))
+                        .semantics { contentDescription = dotDesc; role = Role.Button }
+                        .clickable { onSelect(idx) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // Active = larger + filled; inactive = smaller + dimmed. Shape/size carry the
+                    // meaning; the `…active` marker node lets QA assert the active page non-visually.
+                    Box(
+                        modifier = Modifier
+                            .size(if (active) 10.dp else 6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (active) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            )
+                            .then(
+                                if (active) Modifier.testTag(PhonePagerTags.dotActive(window.id)) else Modifier,
+                            ),
+                    )
+                }
+            }
+        } else {
+            Text(
+                text = stringResource(
+                    Res.string.pager_page_position, (currentIndex + 1).toString(), pages.size.toString(),
+                ),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .testTag(PhonePagerTags.INDICATOR_POSITION),
+            )
+        }
+
+        val nextDesc = stringResource(Res.string.pager_next)
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .testTag(PhonePagerTags.NEXT)
+                .semantics { contentDescription = nextDesc; role = Role.Button }
+                .clickable(enabled = currentIndex < pages.lastIndex) { onSelect(currentIndex + 1) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("›", style = MaterialTheme.typography.titleMedium)
         }
     }
 }

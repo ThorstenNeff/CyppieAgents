@@ -189,6 +189,23 @@ class WindowManagerState(initial: List<WindowState>) {
     var windows: List<WindowState> by mutableStateOf(initial)
         private set
 
+    /**
+     * Stable page/registration order of window ids, captured once from the initial list and **never**
+     * reordered by focus. The canvas [windows] list encodes z-order (focus moves to the end); the phone
+     * pager (CYP-50/S10) keys its pages off this stable order instead, so giving a window focus never
+     * re-sorts the pages (CYP-54 §2). Membership is fixed at construction (windows aren't added/removed
+     * at runtime), so this stays in lock-step with [windows].
+     */
+    val windowOrder: List<String> = initial.map { it.id }
+
+    /**
+     * Windows in the stable [windowOrder] (not z-order) — the phone pager's page list. Reads the
+     * snapshot-backed [windows] so geometry/title changes still recompose, while the **order** stays
+     * fixed regardless of focus.
+     */
+    val orderedWindows: List<WindowState>
+        get() = windowOrder.mapNotNull { id -> windows.firstOrNull { it.id == id } }
+
     // Last measured host size (dp). Plain fields — they only feed clamp math, not rendering.
     private var hostWidth: Float = 0f
     private var hostHeight: Float = 0f

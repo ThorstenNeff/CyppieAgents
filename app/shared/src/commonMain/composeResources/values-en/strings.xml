@@ -91,4 +91,13 @@
     <string name="a11y_acl_toggle_write">Toggle reply for %1$s in %2$s</string>
     <string name="a11y_acl_pending">Change applying, not yet confirmed</string>
     <string name="a11y_acl_po_critical">PO-critical cell</string>
+    <!-- Phone-Pager-Layout (CYP-50 / S10). Keys per docs/design/phone-pager-keys.md (CYP-54).
+         Indicator/a11y always name the TRUE page count (operator-gated absent windows are not
+         counted — omission, no phantom page). %3$s/%2$s = WindowState.title of the target page. -->
+    <string name="pager_page_position">Page %1$s of %2$s</string>
+    <string name="pager_prev">Previous page</string>
+    <string name="pager_next">Next page</string>
+    <string name="pager_empty">No windows</string>
+    <string name="a11y_pager_page">Page %1$s of %2$s: %3$s</string>
+    <string name="a11y_pager_dot">Go to page %1$s: %2$s</string>
 </resources>

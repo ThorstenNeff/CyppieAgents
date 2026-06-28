@@ -39,16 +39,20 @@ import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
+import com.tneff.cyppieagents.window.WindowHost
+import com.tneff.cyppieagents.window.WindowManagerState
+import com.tneff.cyppieagents.window.WindowState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
-/** Demo panel selector — which Event-Log surface the [EventLogDemoApp] tab switcher shows. */
-private enum class DemoPanel { BROWSE, TAIL, ACL }
+/** Demo panel selector — which surface the [EventLogDemoApp] tab switcher shows. */
+private enum class DemoPanel { BROWSE, TAIL, ACL, PAGER }
 
 private const val DEMO_TAB_BROWSE = "demo.tab.browse"
 private const val DEMO_TAB_TAIL = "demo.tab.tail"
 private const val DEMO_TAB_ACL = "demo.tab.acl"
+private const val DEMO_TAB_PAGER = "demo.tab.pager"
 
 /**
  * DEDICATED test/demo entry — NOT the prod [com.tneff.cyppieagents.MainActivity] / [com.tneff.cyppieagents.App].
@@ -99,6 +103,9 @@ fun EventLogDemoApp() {
                 Button(onClick = { panel = DemoPanel.ACL }, modifier = Modifier.testTag(DEMO_TAB_ACL)) {
                     Text("ACL")
                 }
+                Button(onClick = { panel = DemoPanel.PAGER }, modifier = Modifier.testTag(DEMO_TAB_PAGER)) {
+                    Text("Pager")
+                }
             }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 // Injected scope (not viewModelScope) so the demo VMs run without a ViewModelStoreOwner.
@@ -119,10 +126,43 @@ fun EventLogDemoApp() {
                         val vm = remember { AclViewModel(hub, hub, editable = true, scope = scope) }
                         AclPanel(vm)
                     }
+                    DemoPanel.PAGER -> PhonePagerDemo()
                 }
             }
         }
     }
+}
+
+/**
+ * CYP-50 / S10 device harness: mounts the **real** [WindowHost] with stub windows + stub content, so
+ * the Android-Maestro flow (`maestro/phone-pager-android.yaml`) exercises the phone-pager on a real
+ * phone viewport. On a phone the [WindowHost] measures `Compact` width → it renders the
+ * `HorizontalPager` (snap, `phonePager.*` tags), not the canvas — i.e. exactly the seam under test.
+ *
+ * The window CONTENT is irrelevant to the pager mechanics (mode switch, snap, indicator, page tags),
+ * so it is a trivial stub — hermetic, no live server, no panel VMs.
+ */
+@Composable
+private fun PhonePagerDemo() {
+    val state = remember {
+        WindowManagerState(
+            listOf(
+                WindowState("po", "Product Owner", 0f, 0f, 200f, 150f),
+                WindowState("frontend", "Frontend", 0f, 0f, 200f, 150f),
+                WindowState("backend", "Backend", 0f, 0f, 200f, 150f),
+                WindowState("comm", "Kommunikation", 0f, 0f, 200f, 150f),
+            ),
+        )
+    }
+    WindowHost(
+        state = state,
+        modifier = Modifier.fillMaxSize(),
+        windowContent = { window ->
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                Text("Stub-Inhalt: ${window.title}")
+            }
+        },
+    )
 }
 
 /**
