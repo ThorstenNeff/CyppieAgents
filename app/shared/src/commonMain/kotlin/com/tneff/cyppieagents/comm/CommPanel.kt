@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -32,11 +34,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Role
@@ -253,22 +258,38 @@ private fun Composer(canWrite: Boolean, sendError: String?, channelName: String,
             val msg = if (it == "comm_send_denied") stringResource(Res.string.comm_send_denied) else stringResource(Res.string.comm_send_failed)
             Text(msg, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp))
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.weight(1f).testTag(CommTags.COMPOSER_INPUT),
-                placeholder = { Text(stringResource(Res.string.comm_composer_placeholder, channelName)) },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { submit() }),
-                singleLine = true,
-            )
-            Button(onClick = { submit() }, modifier = Modifier.testTag(CommTags.COMPOSER_SEND)) {
-                Text(stringResource(Res.string.comm_composer_send))
+        // CYP-26 §2.2: input holds a min width; below a threshold "Senden" degrades to a glyph (a11y
+        // label kept) and the placeholder ellipsizes rather than character-wrapping.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val compact = maxWidth < COMPOSER_MIN_WIDTH.dp + 96.dp
+            val sendLabel = stringResource(Res.string.comm_composer_send)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    modifier = Modifier.weight(1f).widthIn(min = COMPOSER_MIN_WIDTH.dp).testTag(CommTags.COMPOSER_INPUT),
+                    placeholder = {
+                        Text(
+                            stringResource(Res.string.comm_composer_placeholder, channelName),
+                            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { submit() }),
+                    singleLine = true,
+                )
+                Button(
+                    onClick = { submit() },
+                    modifier = Modifier
+                        .testTag(CommTags.COMPOSER_SEND)
+                        .then(if (compact) Modifier.semantics { contentDescription = sendLabel } else Modifier),
+                ) {
+                    Text(if (compact) "➤" else sendLabel)
+                }
             }
         }
     }

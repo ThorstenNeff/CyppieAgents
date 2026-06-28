@@ -100,4 +100,8 @@
     <string name="pager_empty">No windows</string>
     <string name="a11y_pager_page">Page %1$s of %2$s: %3$s</string>
     <string name="a11y_pager_dot">Go to page %1$s: %2$s</string>
+    <!-- Responsive window manager (CYP-26): the only user-triggered re-tile action. Wording "fit",
+         not "tidy/optimize" (promises no magic) — not an auto-layout. -->
+    <string name="window_fit_action">Fit windows</string>
+    <string name="a11y_window_fit">Re-fit all windows</string>
 </resources>

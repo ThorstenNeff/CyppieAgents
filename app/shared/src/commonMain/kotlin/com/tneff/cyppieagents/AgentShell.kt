@@ -5,8 +5,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tneff.cyppieagents.acl.AclApi
 import com.tneff.cyppieagents.acl.AclLiveSource
@@ -141,19 +146,39 @@ fun AgentShell(
     }
     val resolvedAclLiveSource = aclLiveSource ?: defaultAclLiveSource
 
+    // Content windows (Agent/Comm) carry a composer → wider tiled min-width (CYP-26 §2.2). ACL / Event-Log
+    // are reading surfaces and keep the 160 dp floor.
+    val contentWindowIds = remember(windows) {
+        windows.map { it.first }
+            .filterNot { it == ACL_WINDOW_ID || it == EVENTLOG_BROWSE_WINDOW_ID || it == EVENTLOG_TAIL_WINDOW_ID }
+            .toSet()
+    }
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
         val hostHeight = maxHeight.value
         val state = remember {
-            WindowManagerState(WindowReducer.tile(windows, hostWidth = hostWidth, hostHeight = hostHeight))
+            WindowManagerState(
+                WindowReducer.tile(windows, hostWidth, hostHeight, isRtl = isRtl, contentWindowIds = contentWindowIds),
+                contentWindowIds = contentWindowIds,
+            )
         }
-        // Feed the measured host size into the manager so its resize re-clamp (CYP-16 F1/F6) fires.
+        // CYP-26 §2.1: the initial tile may have run before the host was measured (size 0). Re-tile ONCE
+        // on the first real measurement so the default layout is fully visible — never auto-re-tile after.
+        var tiledToHost by remember { mutableStateOf(false) }
         LaunchedEffect(hostWidth, hostHeight) {
+            if (hostWidth > 0f && hostHeight > 0f && !tiledToHost) {
+                state.fit(isRtl)
+                tiledToHost = true
+            }
+            // Feed the measured host size into the manager so its resize re-clamp (CYP-16 F1/F6) fires.
             state.updateHostSize(hostWidth, hostHeight)
         }
         WindowHost(
             state = state,
+            onFit = { state.fit(isRtl) },
             windowContent = { window ->
                 when (window.id) {
                     COMM_WINDOW_ID -> {

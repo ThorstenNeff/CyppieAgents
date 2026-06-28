@@ -105,4 +105,8 @@
     <string name="pager_empty">Keine Fenster</string>
     <string name="a11y_pager_page">Seite %1$s von %2$s: %3$s</string>
     <string name="a11y_pager_dot">Zu Seite %1$s: %2$s</string>
+    <!-- Responsive Window-Manager (CYP-26): die einzige nutzer-getriggerte Re-Tile-Aktion. Wortlaut
+         "einpassen", nicht "aufräumen/optimieren" (verspricht keine Magie) — kein Auto-Layout. -->
+    <string name="window_fit_action">Fenster einpassen</string>
+    <string name="a11y_window_fit">Alle Fenster neu einpassen</string>
 </resources>

@@ -2,12 +2,14 @@ package com.tneff.cyppieagents.agentview
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -29,9 +31,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_assistant_streaming
 import kmpcyppieagents.app.shared.generated.resources.a11y_notice
@@ -224,25 +229,33 @@ private fun MessageComposer(
             draft = ""
         }
     }
-    Row(
-        modifier = modifier.padding(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedTextField(
-            value = draft,
-            onValueChange = { draft = it },
-            modifier = Modifier.weight(1f).testTag(AgentViewTags.input(agentId)),
-            placeholder = { Text("Nachricht an den Agenten…") },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { submit() }),
-            singleLine = true,
-        )
-        Button(
-            onClick = { submit() },
-            modifier = Modifier.testTag(AgentViewTags.sendBtn(agentId)),
+    // CYP-26 §2.2: keep the input usable when the window is narrow. The input holds a min width; below
+    // a threshold the "Senden" label degrades to a glyph (a11y label preserved) so nothing is truncated.
+    BoxWithConstraints(modifier = modifier) {
+        val compact = maxWidth < COMPOSER_MIN_WIDTH.dp + 96.dp
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Senden")
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.weight(1f).widthIn(min = COMPOSER_MIN_WIDTH.dp).testTag(AgentViewTags.input(agentId)),
+                // Placeholder degrades by ellipsis, never character-wrap, in a narrow field.
+                placeholder = { Text("Nachricht an den Agenten…", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { submit() }),
+                singleLine = true,
+            )
+            Button(
+                onClick = { submit() },
+                modifier = Modifier
+                    .testTag(AgentViewTags.sendBtn(agentId))
+                    .then(if (compact) Modifier.semantics { contentDescription = "Senden" } else Modifier),
+            ) {
+                Text(if (compact) "➤" else "Senden")
+            }
         }
     }
 }

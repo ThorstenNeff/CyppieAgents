@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
@@ -59,9 +60,11 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_pager_dot
 import kmpcyppieagents.app.shared.generated.resources.a11y_pager_page
 import kmpcyppieagents.app.shared.generated.resources.pager_empty
+import kmpcyppieagents.app.shared.generated.resources.a11y_window_fit
 import kmpcyppieagents.app.shared.generated.resources.pager_next
 import kmpcyppieagents.app.shared.generated.resources.pager_page_position
 import kmpcyppieagents.app.shared.generated.resources.pager_prev
+import kmpcyppieagents.app.shared.generated.resources.window_fit_action
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
@@ -83,6 +86,8 @@ import org.jetbrains.compose.resources.stringResource
 fun WindowHost(
     state: WindowManagerState,
     modifier: Modifier = Modifier,
+    /** User-triggered "fit windows" one-shot re-tile (CYP-26 §2.3); default no-op (e.g. in tests). */
+    onFit: () -> Unit = {},
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -101,18 +106,20 @@ fun WindowHost(
         if (isCompact) {
             PhonePager(state = state, windowContent = windowContent)
         } else {
-            WindowCanvas(state = state, windowContent = windowContent)
+            WindowCanvas(state = state, onFit = onFit, windowContent = windowContent)
         }
     }
 }
 
 /**
  * The "desktop" canvas: a full-size surface that stacks every window in [state] by its z-order (list
- * order). Unchanged tiling behaviour (CYP-10/16) — only ever shown when both axes are ≥ `Medium`.
+ * order). Free-floating tiling (CYP-10/16) — only ever shown when both axes are ≥ `Medium`. Hosts the
+ * "fit windows" affordance (CYP-26 §2.3): a user-triggered one-shot re-tile, never an automatic one.
  */
 @Composable
 private fun WindowCanvas(
     state: WindowManagerState,
+    onFit: () -> Unit,
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().testTag(WindowTestTags.HOST)) {
@@ -130,6 +137,20 @@ private fun WindowCanvas(
                     content = { windowContent(window) },
                 )
             }
+        }
+
+        // "Fit windows" affordance (CYP-26 §2.3): a user-triggered one-shot re-tile that heals
+        // off-host/overlapping states. Drawn above the windows; never an automatic re-layout.
+        val fitDescription = stringResource(Res.string.a11y_window_fit)
+        TextButton(
+            onClick = onFit,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .zIndex(Float.MAX_VALUE)
+                .testTag(WindowTestTags.FIT)
+                .semantics { contentDescription = fitDescription },
+        ) {
+            Text(stringResource(Res.string.window_fit_action))
         }
     }
 }

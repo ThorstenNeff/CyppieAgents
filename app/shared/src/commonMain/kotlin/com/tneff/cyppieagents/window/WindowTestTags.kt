@@ -13,6 +13,9 @@ object WindowTestTags {
     /** The window host / desktop surface that lays out all floating windows. */
     const val HOST: String = "window.host"
 
+    /** The "fit windows" host affordance — a user-triggered one-shot re-tile (CYP-26 §2.3). */
+    const val FIT: String = "window.host.fit"
+
     /** Root of the floating window with the given [id]. */
     fun window(id: String): String = "window.$id"
 
