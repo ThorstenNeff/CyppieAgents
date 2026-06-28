@@ -137,6 +137,9 @@ private fun WindowCanvas(
 /** Beyond this many pages the dot indicator is replaced by a compact "N / M" counter (CYP-54 §4). */
 private const val PAGER_DOT_THRESHOLD = 6
 
+/** Min touch-target for the indicator dots + prev/next affordances (WCAG 2.5.8 AAA = 44dp; 48dp here). */
+private val PAGER_TOUCH_TARGET = 48.dp
+
 /**
  * The phone-pager (CYP-50/S10): shows exactly **one** window content at a time as a snap
  * [HorizontalPager] page. Pages follow [WindowManagerState.windowOrder] — the **stable** registration
@@ -258,16 +261,22 @@ private fun PagerIndicator(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // RTL: the chevron glyphs are direction-bearing, so mirror them with the layout (the Row itself
+        // already mirrors child order). graphicsLayer flip keeps us dependency-free (the project ships no
+        // material-icons artifact) while matching AutoMirrored behaviour for the two arrows (CYP-57 #1).
+        val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+        val chevronMirror = Modifier.graphicsLayer { scaleX = if (isRtl) -1f else 1f }
+
         val prevDesc = stringResource(Res.string.pager_prev)
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(PAGER_TOUCH_TARGET)
                 .testTag(PhonePagerTags.PREV)
                 .semantics { contentDescription = prevDesc; role = Role.Button }
                 .clickable(enabled = currentIndex > 0) { onSelect(currentIndex - 1) },
             contentAlignment = Alignment.Center,
         ) {
-            Text("‹", style = MaterialTheme.typography.titleMedium)
+            Text("‹", style = MaterialTheme.typography.titleMedium, modifier = chevronMirror)
         }
 
         if (pages.size <= PAGER_DOT_THRESHOLD) {
@@ -276,7 +285,7 @@ private fun PagerIndicator(
                 val dotDesc = stringResource(Res.string.a11y_pager_dot, (idx + 1).toString(), window.title)
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(PAGER_TOUCH_TARGET)
                         .testTag(PhonePagerTags.dot(window.id))
                         .semantics { contentDescription = dotDesc; role = Role.Button }
                         .clickable { onSelect(idx) },
@@ -313,13 +322,13 @@ private fun PagerIndicator(
         val nextDesc = stringResource(Res.string.pager_next)
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(PAGER_TOUCH_TARGET)
                 .testTag(PhonePagerTags.NEXT)
                 .semantics { contentDescription = nextDesc; role = Role.Button }
                 .clickable(enabled = currentIndex < pages.lastIndex) { onSelect(currentIndex + 1) },
             contentAlignment = Alignment.Center,
         ) {
-            Text("›", style = MaterialTheme.typography.titleMedium)
+            Text("›", style = MaterialTheme.typography.titleMedium, modifier = chevronMirror)
         }
     }
 }
