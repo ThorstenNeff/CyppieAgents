@@ -20,6 +20,9 @@ import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.routing.TokenRegistry
+import com.tneff.cyppieagents.scanner.Detector
+import com.tneff.cyppieagents.scanner.EventLogSignalSink
+import com.tneff.cyppieagents.scanner.Scanner
 import kotlinx.coroutines.CoroutineScope
 import org.slf4j.LoggerFactory
 
@@ -61,6 +64,9 @@ class BootOrchestrator(
     private val eventSinkFactory: () -> EventSink = { InMemoryEventSink(SystemTimeSource()) },
     // Hook spool path; null → no spool tailer (default in tests). bootPlatform/CYP-43 supply it.
     private val spoolPath: java.nio.file.Path? = null,
+    // Mediator-Aufsicht (07/S11): the Scanner's detector set. Empty = the scaffold runs but finds
+    // nothing yet; CYP-61 adds the stall detector here with no change to the frame.
+    private val scannerDetectors: List<Detector> = emptyList(),
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -108,6 +114,11 @@ class BootOrchestrator(
         // Hook spool tailing (CYP-38 reader + CYP-37 tailer, at-most-once). Started only when a path
         // is configured; bootPlatform supplies it, CYP-43 makes it a config knob.
         spoolPath?.let { SpoolTailer(SpoolReader(it), eventRecorder, scope).start() }
+
+        // Mediator-Aufsicht Sense stage (07/S11, CYP-60): the Scanner consumes the same event bus via
+        // `subscribe` and emits Signals back into it. Read-only on the stream + signal-emit only — it
+        // gets no connector/session handle, so it cannot act on an agent. Detectors arrive in CYP-61.
+        Scanner(eventSink, scannerDetectors, EventLogSignalSink(eventRecorder), scope).start()
 
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()

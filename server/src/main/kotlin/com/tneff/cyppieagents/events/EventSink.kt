@@ -23,6 +23,13 @@ data class EventDraft(
     val teamId: String,
     val type: EventType,
     val severity: Severity,
+    /**
+     * Preserves the original wire `type` string when [type] is [EventType.UNKNOWN] — the write-side
+     * mirror of `Event.rawType`. Lets a writer emit an additive 07 type (e.g. `stall.suspected`,
+     * `nudge.sent`) before CYP-64 enumerates it: the type round-trips on the wire via `Event.rawType`
+     * instead of flattening to `"unknown"`. Null for every enumerated type (all pre-07 callers).
+     */
+    val rawType: String? = null,
     val sessionId: String? = null,
     val correlationId: String? = null,
     /** observed source time (hooks) — preserved as `Event.sourceTs`, never order-forming. */

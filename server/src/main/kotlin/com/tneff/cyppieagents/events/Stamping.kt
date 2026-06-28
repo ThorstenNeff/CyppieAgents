@@ -21,6 +21,7 @@ internal fun TimeSource.stamp(draft: EventDraft, rnd: RandomGenerator): Event {
         sessionId = draft.sessionId,
         correlationId = draft.correlationId,
         type = draft.type,
+        rawType = draft.rawType,
         severity = draft.severity,
         detail = draft.detail,
     )
