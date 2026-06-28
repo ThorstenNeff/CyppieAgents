@@ -98,12 +98,25 @@ fun Application.installComm(config: CommConfig): Hub {
     return hub
 }
 
-fun Route.commRoutes(hub: Hub, state: HubState, registry: TokenRegistry) {
+fun Route.commRoutes(
+    hub: Hub,
+    state: HubState,
+    registry: TokenRegistry,
+    // CYP-73: live process status. Null in the dev install (no boot) → status stays the default RUNNING.
+    lifecycle: com.tneff.cyppieagents.boot.LifecycleManager? = null,
+) {
     route("/api") {
         get("/health") { call.respondText("ok") }
 
-        // Agents carry no secrets (token is server-side only) — safe to return as-is.
-        get("/agents") { call.respond(state.agents) }
+        // Agents carry no secrets (token is server-side only) — public list. CYP-73: fill each agent's
+        // LIVE status (RUNNING/STOPPED/ERROR). Status display is NOT operator-gated (same as this route);
+        // only the controls below are operator-gated.
+        get("/agents") {
+            val agents = state.agents.map { agent ->
+                lifecycle?.runStateOf(agent.id)?.let { agent.copy(runState = it) } ?: agent
+            }
+            call.respond(agents)
+        }
 
         // Read/send accept an agent OR the operator (privileged participant) — same AclMatrix.
         get("/channels") {

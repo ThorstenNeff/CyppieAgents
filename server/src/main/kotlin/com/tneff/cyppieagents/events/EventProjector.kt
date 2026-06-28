@@ -101,6 +101,10 @@ class EventProjector(
     fun agentStopped(agentId: String) =
         draft(agentId, null, null, EventType.AGENT_STOPPED, Severity.INFO) {}
 
+    /** `agent.restarted`: a lifecycle restart respawned the agent in its worktree (CYP-73). */
+    fun agentRestarted(agentId: String) =
+        draft(agentId, null, null, EventType.AGENT_RESTARTED, Severity.INFO) {}
+
     /** `comm.sent`: a message the router posted on the agent's behalf — metadata only, NO body. */
     fun commSent(agentId: String, channelId: String, kind: MessageKind?) =
         draft(agentId, null, null, EventType.COMM_SENT, Severity.INFO) {

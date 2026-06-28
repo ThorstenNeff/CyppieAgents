@@ -17,6 +17,14 @@ enum class Role {
     @SerialName("WORKER") WORKER,
 }
 
+/** Runtime lifecycle state of an agent's process (CYP-73). Content-free; safe on the public wire. */
+@Serializable
+enum class AgentRunState {
+    @SerialName("RUNNING") RUNNING,
+    @SerialName("STOPPED") STOPPED,
+    @SerialName("ERROR") ERROR,
+}
+
 /** A participant in the hub. Hub role drives the default ACL (PO = hub of the spokes). */
 @Serializable
 data class Agent(
@@ -25,6 +33,13 @@ data class Agent(
     val role: Role,
     /** worktree sub-folder name; informational on the wire, used server-side for spawns. */
     val worktree: String,
+    /**
+     * Live process run-state (CYP-73). Named `runState` to avoid colliding with the agent *activity*
+     * `AgentStatus` (CYP-12) — different concept (process lifecycle ≠ activity). Additive + defaulted so
+     * older payloads still decode and the many config-time `Agent(...)` constructions are unaffected;
+     * `GET /api/agents` fills the real value per agent. Not a secret — same public exposure as this DTO.
+     */
+    val runState: AgentRunState = AgentRunState.RUNNING,
 )
 
 enum class ChannelKind {

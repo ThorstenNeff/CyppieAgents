@@ -47,6 +47,8 @@ class BootedPlatform(
     val bootedAgents: List<String>,
     /** Agents whose spawn failed — fail-closed: NO session, NO open /ws/agent for them. */
     val failedAgents: List<String>,
+    /** Agent process lifecycle (CYP-73): the stop/start/restart controls + `/ws/lifecycle` status feed. */
+    val lifecycle: LifecycleManager,
 )
 
 /**
@@ -146,24 +148,29 @@ class BootOrchestrator(
         Warden(eventSink, wardenPolicies + stallPolicy, actuator, scope).start()
         StallPolicyRunner(stallPolicy, eventSink, scope).start()
 
+        // Agent lifecycle (CYP-73): the spawn path is single-sourced here so boot-spawn and the runtime
+        // start/restart controls can't drift. Boot fail-closed per agent (Reviewer #5): a failed spawn
+        // → ERROR, no session, no /ws/agent; the hub and other agents are unaffected.
+        val lifecycle = LifecycleManager(
+            worktreeOf = config.agents.associate { it.id to it.worktreeName },
+            sessions = sessions,
+            ensureWorktree = { worktreeName -> worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+            spawn = { id, worktree -> connector.open(id, worktree) },
+            recorder = eventRecorder,
+            projector = eventProjector,
+        )
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()
         for (agent in config.agents) {
-            try {
-                worktrees.ensureWorktree(agent.worktreeName, config.repo.branch)
-                val session = connector.open(agent.id, agent.worktreeName)
-                sessions.register(session)
+            if (lifecycle.bootAgent(agent.id)) {
                 booted += agent.id
-                eventRecorder.record(eventProjector.agentSpawned(agent.id, agent.worktreeName))
                 log.info("agent '{}' booted in worktree '{}'", agent.id, agent.worktreeName)
-            } catch (e: Exception) {
-                // Fail-closed per agent (Reviewer #5): no session → no /ws/agent; hub stays up.
-                log.error("agent '{}' failed to boot ({}); other agents unaffected", agent.id, e.message)
+            } else {
                 failed += agent.id
             }
         }
 
-        return BootedPlatform(hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed)
+        return BootedPlatform(hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle)
     }
 
     private companion object {
