@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
+import com.tneff.cyppieagents.testing.testTagA11y
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_cell_nonmember
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_pending
@@ -126,7 +127,7 @@ private fun WideGrid(state: AclUiState, viewModel: AclViewModel) {
     }
     Column(
         modifier = Modifier.fillMaxSize().horizontalScroll(rememberScrollState())
-            .verticalScroll(rememberScrollState()).testTag(AclMatrixTags.GRID),
+            .verticalScroll(rememberScrollState()).testTagA11y(AclMatrixTags.GRID),
     ) {
         Row {
             Box(Modifier.width(CHANNEL_COL_WIDTH))
@@ -160,7 +161,7 @@ private fun NarrowCards(state: AclUiState, viewModel: AclViewModel) {
     var selected by remember { mutableStateOf<String?>(null) }
     val channel = state.channels.firstOrNull { it.id == selected }
     if (channel == null) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag(AclMatrixTags.GRID)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTagA11y(AclMatrixTags.GRID)) {
             state.channels.forEach { ch ->
                 TextButton(onClick = { selected = ch.id }, modifier = Modifier.fillMaxWidth().testTag(AclMatrixTags.rowHeader(ch.id))) {
                     Text(ch.name, modifier = Modifier.fillMaxWidth())
