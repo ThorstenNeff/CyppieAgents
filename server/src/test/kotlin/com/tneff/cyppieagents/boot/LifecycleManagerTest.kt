@@ -95,6 +95,29 @@ class LifecycleManagerTest {
     }
 
     @Test
+    fun stop_emitsStoppedOnlyAfterProcessTermination_noZombie() = runBlocking {
+        val f = Fix2()
+        f.manager.bootAgent("backend")
+        val first = f.sessionsCreated.single()
+
+        val stopping = async { f.manager.stop("backend") }
+        // Mutation guard (stop axis): STOPPED must be emitted only AFTER the process is confirmed gone.
+        // While termination is still pending, the agent must NOT yet read STOPPED — else a dying process
+        // could still write to the bus after the operator was told it stopped (the zombie vector).
+        yield()
+        assertEquals(1, first.closedAwait.get(), "stop closes+awaits the session")
+        assertEquals(
+            AgentRunState.RUNNING,
+            f.manager.runStateOf("backend"),
+            "stop must await process termination BEFORE emitting STOPPED",
+        )
+
+        first.terminate.complete(Unit)
+        assertEquals(AgentRunState.STOPPED, stopping.await().runState)
+        assertEquals(AgentRunState.STOPPED, f.manager.runStateOf("backend"))
+    }
+
+    @Test
     fun restart_awaitsOldSessionDeath_beforeRespawn_noOrphan() = runBlocking {
         val f = Fix2()
         f.manager.bootAgent("backend")
