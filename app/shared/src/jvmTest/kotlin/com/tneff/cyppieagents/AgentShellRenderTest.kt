@@ -48,6 +48,8 @@ class AgentShellRenderTest {
                     // The default agent-management port is now the live REST client (CYP-86/87/88 swap) —
                     // inject the stub so the agent list (→ dynamic windows) stays hermetic, like commApi.
                     agentManagementRepository = StubAgentManagementRepository(),
+                    // Likewise the project port is now the live client (CYP-92 swap) — inject the stub.
+                    projectRepository = com.tneff.cyppieagents.project.StubProjectRepository(),
                 )
             }
         }

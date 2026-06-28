@@ -42,6 +42,7 @@ class EventLogPresenceTest {
             commLiveSource = StubCommLiveSource(),
             eventsApi = StubEventsApi(),
             eventsLiveSource = StubEventsSource(),
+            projectRepository = com.tneff.cyppieagents.project.StubProjectRepository(),
         )
     }
 

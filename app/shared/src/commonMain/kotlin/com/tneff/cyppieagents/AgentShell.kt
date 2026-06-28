@@ -49,10 +49,10 @@ import com.tneff.cyppieagents.eventlog.EventsWsClient
 import com.tneff.cyppieagents.agentmgmt.AgentManagementHttpRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementPanel
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
+import com.tneff.cyppieagents.project.HttpProjectRepository
 import com.tneff.cyppieagents.project.ProjectRepository
 import com.tneff.cyppieagents.project.ProjectSwitcherBar
 import com.tneff.cyppieagents.project.ProjectViewModel
-import com.tneff.cyppieagents.project.StubProjectRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.report.ProductLeadPanel
@@ -150,11 +150,13 @@ fun AgentShell(
     val managedAgents = agentMgmtVm.state.collectAsState().value.agents
 
     // Project switcher + management (CYP-91/92): ONE VM backs the top-level bar and the management overlay.
-    // Stub until the /api/projects registry seam lands (then stub→real swap, no UI change). Switching +
-    // mutations are operator-gated (server also enforces; fail-closed). The bar makes the active project
-    // unambiguous and re-fetches the project view on switch; the shell-wide per-project window re-scope is
-    // the backend-gated piece deferred in ProjectModel.kt (lights up with the live active-pointer seam).
-    val resolvedProjectRepo = remember(projectRepository) { projectRepository ?: StubProjectRepository() }
+    // Now the LIVE REST client against the /api/projects registry endpoints (stub→real swap, no UI/VM change).
+    // Switching + mutations are operator-gated (server also enforces; fail-closed). The bar makes the active
+    // project unambiguous and re-fetches the project view on switch; the shell-wide per-project window
+    // re-scope is the backend-gated piece deferred in ProjectModel.kt (lights up with live re-instancing).
+    val resolvedProjectRepo = remember(projectRepository, httpClient, cfg) {
+        projectRepository ?: HttpProjectRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
     val projectVm = viewModel(key = "projectSwitcher") {
         ProjectViewModel(resolvedProjectRepo, editable = cfg.operatorToken != null)
     }
