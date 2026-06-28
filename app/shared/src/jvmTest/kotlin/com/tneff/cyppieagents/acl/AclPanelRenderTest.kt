@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -68,7 +69,11 @@ class AclPanelRenderTest {
             onAllNodesWithTag(AclMatrixTags.cellQualifier("po-frontend", "frontend", CellQualifier.ENFORCED))
                 .fetchSemanticsNodes().isNotEmpty()
         }
-        onNodeWithTag(AclMatrixTags.cellQualifier("po-frontend", "frontend", CellQualifier.ENFORCED)).assertExists()
+        // CYP-52: a REAL bounds assertion. assertExists() passes even on a zero-size node (it's still in
+        // the semantics tree), so it can't catch an F1 regression; assertWidthIsAtLeast bites zero-size →
+        // a revert to a zero-size marker fails the JVM test, not only the device gate. (Does not replace
+        // the device gate; it brings the JVM test up to it.)
+        onNodeWithTag(AclMatrixTags.cellQualifier("po-frontend", "frontend", CellQualifier.ENFORCED)).assertWidthIsAtLeast(1.dp)
         onNodeWithTag(AclMatrixTags.read("po-frontend", "frontend"), useUnmergedTree = true).assertIsOff()
     }
 
@@ -83,7 +88,9 @@ class AclPanelRenderTest {
         // Turn the PO's read off, confirm the consequence dialog → the server rejects with 409.
         onNodeWithTag(AclMatrixTags.read("po-frontend", "po"), useUnmergedTree = true).performClick()
         waitForIdle()
-        // Dialog confirm asserted on the MERGED tree (F2 — the dialog window must surface its tags).
+        // Dialog confirm asserted on the MERGED tree (F2 — the dialog window must surface its tags) AND
+        // with real bounds (CYP-52 — a zero-size dialog marker would pass assertExists but fail here).
+        onNodeWithTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM).assertWidthIsAtLeast(1.dp)
         onNodeWithTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM).performClick()
         waitUntil(timeoutMillis = 5_000L) {
             onAllNodesWithTag(AclMatrixTags.protected("po-frontend", "po")).fetchSemanticsNodes().isNotEmpty()
