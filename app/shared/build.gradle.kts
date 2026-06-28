@@ -69,6 +69,8 @@ kotlin {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
+            // Window Size Classes for the phone-pager breakpoint (CYP-50/S10) — multiplatform, commonMain.
+            implementation(libs.compose.material3.windowSizeClass)
             implementation(libs.compose.ui)
             implementation(libs.compose.components.resources)
             implementation(libs.compose.uiToolingPreview)

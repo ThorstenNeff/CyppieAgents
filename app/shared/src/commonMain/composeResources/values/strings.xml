@@ -96,4 +96,13 @@
     <string name="a11y_acl_toggle_write">Antwortrecht für %1$s in %2$s umschalten</string>
     <string name="a11y_acl_pending">Änderung wird übernommen, noch nicht bestätigt</string>
     <string name="a11y_acl_po_critical">PO-kritische Zelle</string>
+    <!-- Phone-Pager-Layout (CYP-50 / S10). Keys per docs/design/phone-pager-keys.md (CYP-54).
+         Indikator/a11y nennen IMMER die wahre Seitenzahl (operator-gated abwesende Fenster werden
+         nicht mitgezählt — Omission, keine Phantom-Seite). %3$s/%2$s = WindowState.title der Zielseite. -->
+    <string name="pager_page_position">Seite %1$s von %2$s</string>
+    <string name="pager_prev">Vorherige Seite</string>
+    <string name="pager_next">Nächste Seite</string>
+    <string name="pager_empty">Keine Fenster</string>
+    <string name="a11y_pager_page">Seite %1$s von %2$s: %3$s</string>
+    <string name="a11y_pager_dot">Zu Seite %1$s: %2$s</string>
 </resources>

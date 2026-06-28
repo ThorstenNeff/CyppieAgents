@@ -100,4 +100,32 @@ class WindowManagerStateTest {
         assertEquals(500f, a.width)
         assertEquals(400f, a.height)
     }
+
+    // --- Phone-pager page order (CYP-50/S10): orderedWindows is the STABLE registration order,
+    //     decoupled from z-order, so focus must never re-sort the pages (CYP-54 §2). ---
+
+    @Test
+    fun windowOrder_isInitialRegistrationOrder() {
+        assertEquals(listOf("a", "b"), twoWindows().windowOrder)
+    }
+
+    @Test
+    fun orderedWindows_stayInRegistrationOrder_evenAfterFocusReordersZOrder() {
+        val state = twoWindows()
+        // Focus moves "a" to the END of the z-order list ...
+        state.focus("a")
+        assertEquals(listOf("b", "a"), state.windows.map { it.id })
+        // ... but the page order is unchanged: pages must not jump around when focus changes.
+        assertEquals(listOf("a", "b"), state.orderedWindows.map { it.id })
+        assertEquals(listOf("a", "b"), state.windowOrder)
+    }
+
+    @Test
+    fun orderedWindows_reflectsGeometryAndTitle_whileKeepingOrder() {
+        val state = twoWindows()
+        state.moveBy("a", 5f, 7f)
+        val ordered = state.orderedWindows
+        assertEquals(listOf("a", "b"), ordered.map { it.id })
+        assertEquals(5f, ordered.first { it.id == "a" }.x)
+    }
 }
