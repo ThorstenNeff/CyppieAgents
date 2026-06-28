@@ -215,4 +215,36 @@
     <string name="report_error">Report failed</string>
     <string name="a11y_report_generate">Generate report</string>
     <string name="a11y_report_snapshot">Report snapshot, %1$s</string>
+
+    <!-- Project management & switcher (S13 · Epic CYP-78 · CYP-91/CYP-92) -->
+    <string name="project_switcher_active">Active project: %1$s</string>
+    <string name="project_switcher_scope_hint">All windows and data belong to this project.</string>
+    <string name="project_switch_hint">Switching reloads the UI for the selected project — nothing is deleted.</string>
+    <string name="project_manage">Manage projects</string>
+    <string name="a11y_project_switcher_menu">Open project menu, active: %1$s</string>
+    <string name="a11y_project_switch_to">Switch to project %1$s</string>
+    <string name="project_mgmt_title">Project management</string>
+    <string name="project_mgmt_operator_required">Editable only with an operator token</string>
+    <string name="project_add">Add project</string>
+    <string name="project_rename">Rename</string>
+    <string name="project_delete">Delete</string>
+    <string name="project_cancel">Cancel</string>
+    <string name="project_add_name_label">Project name</string>
+    <string name="project_add_confirm">Create</string>
+    <string name="project_add_name_empty">Please enter a name</string>
+    <string name="project_add_name_exists">A project with this name already exists</string>
+    <string name="project_add_error">Create failed</string>
+    <string name="a11y_project_add_name">Enter project name</string>
+    <string name="project_rename_title">Rename project “%1$s”</string>
+    <string name="project_rename_error">Rename failed</string>
+    <string name="project_delete_title">Delete project “%1$s”?</string>
+    <string name="project_delete_consequences">Permanently deleted: running sessions are stopped, and all channels, access rights, message history and event history of this project.</string>
+    <string name="project_delete_consequences_counts">Affected: %1$s</string>
+    <string name="project_delete_worktree_keep">Keep worktrees</string>
+    <string name="project_delete_worktree_delete">Delete all agents\' worktrees</string>
+    <string name="project_delete_worktree_warning">Uncommitted/unpushed work in this project\'s local worktrees will be lost. Pushed branches (agent/…) are kept.</string>
+    <string name="project_delete_confirm">Delete project permanently</string>
+    <string name="project_delete_active_blocked">Active project — switch to another first, then it can be deleted.</string>
+    <string name="project_delete_last_blocked">The last project cannot be deleted.</string>
+    <string name="project_delete_error">Delete failed</string>
 </resources>

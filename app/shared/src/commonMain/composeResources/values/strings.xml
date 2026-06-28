@@ -220,4 +220,36 @@
     <string name="report_error">Bericht fehlgeschlagen</string>
     <string name="a11y_report_generate">Bericht erzeugen</string>
     <string name="a11y_report_snapshot">Bericht-Momentaufnahme, %1$s</string>
+
+    <!-- Projekt-Verwaltung & Switcher (S13 · Epic CYP-78 · CYP-91/CYP-92) -->
+    <string name="project_switcher_active">Aktives Projekt: %1$s</string>
+    <string name="project_switcher_scope_hint">Alle Fenster und Daten gehören zu diesem Projekt.</string>
+    <string name="project_switch_hint">Wechsel lädt die Oberfläche für das gewählte Projekt neu – nichts wird gelöscht.</string>
+    <string name="project_manage">Projekte verwalten</string>
+    <string name="a11y_project_switcher_menu">Projekt-Menü öffnen, aktiv: %1$s</string>
+    <string name="a11y_project_switch_to">Zu Projekt %1$s wechseln</string>
+    <string name="project_mgmt_title">Projekt-Verwaltung</string>
+    <string name="project_mgmt_operator_required">Nur mit Operator-Token änderbar</string>
+    <string name="project_add">Projekt anlegen</string>
+    <string name="project_rename">Umbenennen</string>
+    <string name="project_delete">Löschen</string>
+    <string name="project_cancel">Abbrechen</string>
+    <string name="project_add_name_label">Projektname</string>
+    <string name="project_add_confirm">Anlegen</string>
+    <string name="project_add_name_empty">Bitte einen Namen eingeben</string>
+    <string name="project_add_name_exists">Ein Projekt mit diesem Namen existiert bereits</string>
+    <string name="project_add_error">Anlegen fehlgeschlagen</string>
+    <string name="a11y_project_add_name">Projektname eingeben</string>
+    <string name="project_rename_title">Projekt „%1$s“ umbenennen</string>
+    <string name="project_rename_error">Umbenennen fehlgeschlagen</string>
+    <string name="project_delete_title">Projekt „%1$s“ löschen?</string>
+    <string name="project_delete_consequences">Unwiderruflich gelöscht: laufende Sessions werden gestoppt, alle Kanäle und Zugriffsrechte, der Nachrichtenverlauf und die Ereignis-Historie dieses Projekts.</string>
+    <string name="project_delete_consequences_counts">Betroffen: %1$s</string>
+    <string name="project_delete_worktree_keep">Worktrees behalten</string>
+    <string name="project_delete_worktree_delete">Worktrees aller Agenten löschen</string>
+    <string name="project_delete_worktree_warning">Nicht committete/nicht gepushte Arbeit in den lokalen Worktrees dieses Projekts geht verloren. Gepushte Branches (agent/…) bleiben erhalten.</string>
+    <string name="project_delete_confirm">Projekt endgültig löschen</string>
+    <string name="project_delete_active_blocked">Aktives Projekt – erst zu einem anderen wechseln, dann löschbar.</string>
+    <string name="project_delete_last_blocked">Das letzte Projekt kann nicht gelöscht werden.</string>
+    <string name="project_delete_error">Löschen fehlgeschlagen</string>
 </resources>

@@ -1,7 +1,9 @@
 package com.tneff.cyppieagents
 
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -47,6 +49,10 @@ import com.tneff.cyppieagents.eventlog.EventsWsClient
 import com.tneff.cyppieagents.agentmgmt.AgentManagementHttpRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementPanel
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
+import com.tneff.cyppieagents.project.ProjectRepository
+import com.tneff.cyppieagents.project.ProjectSwitcherBar
+import com.tneff.cyppieagents.project.ProjectViewModel
+import com.tneff.cyppieagents.project.StubProjectRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.report.ProductLeadPanel
@@ -115,6 +121,8 @@ fun AgentShell(
     agentManagementRepository: AgentManagementRepository? = null,
     /** Override the Product-Lead report data port (CYP-90); `null` → the in-memory stub until CYP-89 lands. */
     reportRepository: ReportRepository? = null,
+    /** Override the project-lifecycle data port (CYP-91/92); `null` → the in-memory stub until the registry seam lands. */
+    projectRepository: ProjectRepository? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -140,6 +148,16 @@ fun AgentShell(
         AgentManagementViewModel(resolvedAgentMgmtRepo, editable = cfg.operatorToken != null)
     }
     val managedAgents = agentMgmtVm.state.collectAsState().value.agents
+
+    // Project switcher + management (CYP-91/92): ONE VM backs the top-level bar and the management overlay.
+    // Stub until the /api/projects registry seam lands (then stub→real swap, no UI change). Switching +
+    // mutations are operator-gated (server also enforces; fail-closed). The bar makes the active project
+    // unambiguous and re-fetches the project view on switch; the shell-wide per-project window re-scope is
+    // the backend-gated piece deferred in ProjectModel.kt (lights up with the live active-pointer seam).
+    val resolvedProjectRepo = remember(projectRepository) { projectRepository ?: StubProjectRepository() }
+    val projectVm = viewModel(key = "projectSwitcher") {
+        ProjectViewModel(resolvedProjectRepo, editable = cfg.operatorToken != null)
+    }
 
     // Dynamic window set (S14): agent windows are derived from the managed agent list; the system
     // windows (comm/acl/settings/agentMgmt/productLead + operator-only event-log) stay static. The
@@ -299,7 +317,11 @@ fun AgentShell(
     val tailMaxSeverity: Severity? =
         tailVm?.state?.collectAsState()?.value?.events?.maxOfOrNull { it.severity }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()) {
+      // CYP-92: the project switcher is a top-level bar ABOVE the window host (not a canvas window) — always
+      // visible, context-independent, framing the whole scoped shell below.
+      ProjectSwitcherBar(projectVm)
+      BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
         val hostHeight = maxHeight.value
@@ -361,5 +383,6 @@ fun AgentShell(
                 }
             },
         )
+      }
     }
 }
