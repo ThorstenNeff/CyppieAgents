@@ -17,7 +17,7 @@ Macht die drei Robustheits-Garantien (Default-in-Bounds, Composer-Min, Re-Flow) 
 | Fenster (je id) | `window.<id>` | Default-in-Bounds-Assertion (Position/Größe vs. Host) |
 | Titelleiste | `window.<id>.titlebar` | Drag/Fokus |
 | Inhalt | `window.<id>.content` | Composer-Min-Breite |
-| Resize-Griff | `window.<id>.resize` | Resize-Clamp |
+| Resize-Griff | `window.<id>.resizeHandle` | Resize-Clamp (`WindowTestTags.resizeHandle`) |
 
 > Es werden **keine** Fenster-id-Schemata neu erfunden. CYP-26 ergänzt nur Host-Affordanzen (unten).
 
@@ -33,8 +33,8 @@ Macht die drei Robustheits-Garantien (Default-in-Bounds, Composer-Min, Re-Flow) 
 
 | Element | testTag | Zweck |
 |---|---|---|
-| Agent-Composer-Input | `agentView.<id>.input` | bestehend (`AgentViewTags`) — Min-Breite/Ellipsis prüfen |
-| Comm-Composer-Input | `comm.composer.input` | bestehend (`CommTags`) — Min-Breite/Ellipsis prüfen |
+| Agent-Composer-Input | `agent.<id>.input` | bestehend (`AgentViewTags.input`) — Min-Breite/Ellipsis prüfen |
+| Comm-Composer-Input | `comm.composerInput` | bestehend (`CommTags.COMPOSER_INPUT`) — Min-Breite/Ellipsis prüfen |
 
 > Composer-Tags bleiben in ihren Modulen (CYP-6/CYP-17); CYP-26 fügt **kein** zweites Input-Tag hinzu.
 
