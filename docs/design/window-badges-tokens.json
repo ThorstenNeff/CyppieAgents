@@ -1,0 +1,58 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-55",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen + PO/Backend-Datenpfad-Entscheid (WINDOW-BADGES.md §2/§7)",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "reuse_first": "Severity-Farben aus CYP-34 (event-log-tokens.json severity_rail). Status/Attention aus CYP-12 (state-tokens.json). Identitaet aus CYP-14 (ColorSlot) — NUR Identitaet, NIE Badge/Severity. Hier nur Badge-spezifische Neu-Tokens (Count-Pille, Masse, Schwellen).",
+    "color_is_never_sole_signal": "Form traegt Bedeutung: Count=Zahl-Pille, Severity=Icon-Pille, Attention=Warn-Symbol. Farbe + Icon + Text/Zahl + a11y-Label. Kontrast Text >=4.5:1, Nicht-Text-UI >=3:1.",
+    "fail_closed": "Kein erlaubtes/ehrliches Aggregat -> KEIN Badge (kein '0', kein Phantom). Immer-sichtbarer Titelleisten-Badge traegt NIE operator-gated Inhalt.",
+    "code_anchor": "window/WindowManager.kt (FloatingWindow-Titlebar + PhonePager-Header); Bauform-Vorbild KindBadge in comm/CommPanel.kt."
+  },
+  "reused": {
+    "severity_rail": {
+      "from": "docs/design/event-log-tokens.json (CYP-34)",
+      "map": { "error": "state.error + alert-triangle", "warn": "state.waiting + attention", "info": "state.notice + info", "debug": "state.offline + dot" },
+      "used_by": "Event-Log Severity-Badge (C1/C2)"
+    },
+    "state_attention": {
+      "from": "docs/design/state-tokens.json (CYP-12)",
+      "tokens": { "state.error": "ERROR-Attention (#FF6B6B / #C5221F, icon alert-triangle)", "state.waiting": "Stall-Attention (#FFC857 / #B26A00, icon attention)" },
+      "used_by": "Agent-Attention-Badge (A1 ERROR / A2 Stall)"
+    },
+    "identity": {
+      "from": "CYP-14 ColorSlot",
+      "rule": "markiert NUR Fenster-/Agent-Identitaet — NIE Severity oder Berechtigung. Getrennte Achse vom Badge."
+    },
+    "pager_badge_slot": {
+      "from": "CYP-54 phone-pager-tokens.json pager.page.badge + Tag phonePager.page.<id>.badge",
+      "rule": "Pager-Modus reused diesen Slot — CYP-55 fuellt ihn (in CYP-54 als 'nach CYP-55' deferred)."
+    }
+  },
+  "new_tokens": {
+    "badge.count": {
+      "role": "Comm-Unread/Aktivitaets-Zaehler (B1 'neu seit zuletzt') — NEUTRAL, NICHT Severity",
+      "shape": "pill",
+      "dark":  { "fill": "#3A4250", "fg": "#E6E8EB", "note": "neutral notice, getrennt von Severity-Rot/Amber" },
+      "light": { "fill": "#E2E6EC", "fg": "#1B1C1F" },
+      "max_count": 9,
+      "overflow_label_key": "badge_count_overflow",
+      "note": "ab >9 -> '9+' (Layout-Stabilitaet in der Titelleiste); a11y nennt die echte Zahl"
+    },
+    "badge.dot": {
+      "role": "content-armer Punkt (Attention ohne Zahl) — Form/Position traegt Bedeutung",
+      "size_dp": 8,
+      "shape": "filled-circle",
+      "note": "Farbe aus state.error/state.waiting; Icon-Variante bevorzugt, Dot als kompakter Fallback"
+    },
+    "badge.metrics": {
+      "min_touch_target_dp": 48,
+      "pill_padding_dp": { "h": 5, "v": 1 },
+      "pill_corner_dp": 4,
+      "icon_size_dp": 12,
+      "placement": "rechtsbuendig am Ende der Titelleiste/Header (start/end RTL-automatisch)",
+      "note": "min_touch_target nur falls Badge tappbar (Pager-Dot); im Canvas-Titlebar ist der Badge i.d.R. passiv"
+    }
+  }
+}
