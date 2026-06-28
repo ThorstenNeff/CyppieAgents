@@ -151,12 +151,14 @@ fun Route.commRoutes(
             val token = call.bearerToken()
             val filterChannel = call.request.queryParameters["channelId"]
             val filterAgent = call.request.queryParameters["agentId"]
+            // Route through the project-scoped matrix (S12 / CYP-81), the SAME chokepoint as
+            // canRead/canWrite/visibleMessages/inbox/WS — so GET /acl can't egress raw cross-project
+            // entries. `state.acl.entries`/`isMember` are already filtered to the active project.
             val visible = if (registry.isOperator(token)) {
-                state.entries
+                state.acl.entries
             } else {
                 val agentId = registry.agentFor(token) ?: throw UnauthorizedException()
-                val myChannels = state.channels.filter { agentId in it.members }.map { it.id }.toSet()
-                state.entries.filter { it.channelId in myChannels }
+                state.acl.entries.filter { state.acl.isMember(it.channelId, agentId) }
             }
             call.respond(
                 visible.filter {

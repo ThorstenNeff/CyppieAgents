@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.Role
 import kotlinx.serialization.Serializable
 import java.io.File
@@ -17,6 +18,13 @@ data class PlatformConfig(
     val web: WebConfig = WebConfig(),
     /** Event-Log knobs (PRD 06 §8, CYP-43). Default-belegt → existing configs without it still load. */
     val events: EventsConfig = EventsConfig(),
+    /**
+     * Active tenant for this platform (S12 / CYP-81). MVP = exactly one project; defaulted to
+     * [DEFAULT_PROJECT_ID] so pre-S12 configs load unchanged. It is a concrete project id, never an
+     * "all/global" wildcard — boot single-sources it into the hub so channels/ACL/messages are
+     * scoped to it (fail-closed). The single value that opens "the one" project for later N.
+     */
+    val projectId: String = DEFAULT_PROJECT_ID,
 ) {
     init {
         require(agents.isNotEmpty()) { "platform.config: at least one agent required" }

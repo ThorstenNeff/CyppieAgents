@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AclMatrix
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
+import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.routing.ConflictException
 
@@ -18,6 +19,13 @@ class HubState(
     val agents: List<Agent>,
     initialChannels: List<Channel>,
     initialEntries: List<AclEntry>,
+    /**
+     * The single active tenant (S12 / CYP-81), single-sourced from `platform.config.json`
+     * (`projectId`, default [DEFAULT_PROJECT_ID]). Threaded into every [AclMatrix] this state builds
+     * so project scoping is decided in one place, and used by the [Hub] to stamp posted messages.
+     * MVP = 1 project, so it equals [DEFAULT_PROJECT_ID] unless overridden.
+     */
+    val activeProjectId: String = DEFAULT_PROJECT_ID,
 ) {
     private val lock = Any()
 
@@ -30,7 +38,7 @@ class HubState(
         private set
 
     @Volatile
-    var acl: AclMatrix = AclMatrix(initialChannels, initialEntries)
+    var acl: AclMatrix = AclMatrix(initialChannels, initialEntries, activeProjectId)
         private set
 
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
@@ -47,7 +55,7 @@ class HubState(
      */
     fun setAcl(entry: AclEntry): AclEntry = synchronized(lock) {
         val next = entries.filterNot { it.channelId == entry.channelId && it.agentId == entry.agentId } + entry
-        val candidate = AclMatrix(channels, next)
+        val candidate = AclMatrix(channels, next, activeProjectId)
         val po = agents.firstOrNull { it.role == Role.PO }
         if (po != null) {
             val lockedOut = AclGuard.lockedOutPoHubChannel(candidate, po.id, poHubChannelIds())
@@ -91,8 +99,15 @@ class HubState(
          * member of every channel with read+write — via the SAME ACL entries (no bypass path). That
          * gives the UI viewer the human-in-the-loop view/send while every check still flows through
          * [AclMatrix] (CYP-18).
+         *
+         * [activeProjectId] (S12 / CYP-81) stamps the generated channels and entries and seeds the
+         * state's scope, so the whole topology lives in the one active project (MVP=1).
          */
-        fun hubAndSpoke(agents: List<Agent>, operatorId: String? = null): HubState {
+        fun hubAndSpoke(
+            agents: List<Agent>,
+            operatorId: String? = null,
+            activeProjectId: String = DEFAULT_PROJECT_ID,
+        ): HubState {
             val po = agents.firstOrNull { it.role == Role.PO }
                 ?: error("hub-and-spoke requires exactly one PO agent")
             val workers = agents.filter { it.role == Role.WORKER }
@@ -106,12 +121,13 @@ class HubState(
                     name = "po-${w.id}",
                     kind = com.tneff.cyppieagents.model.ChannelKind.HUB,
                     members = members,
+                    projectId = activeProjectId,
                 )
             }
             val entries = channels.flatMap { ch ->
-                ch.members.map { AclEntry(ch.id, it, canRead = true, canWrite = true) }
+                ch.members.map { AclEntry(ch.id, it, canRead = true, canWrite = true, projectId = activeProjectId) }
             }
-            return HubState(agents, channels, entries)
+            return HubState(agents, channels, entries, activeProjectId)
         }
     }
 }

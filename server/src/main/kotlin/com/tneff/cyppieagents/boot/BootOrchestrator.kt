@@ -87,7 +87,8 @@ class BootOrchestrator(
 
         val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName) }
         // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
-        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID)
+        // S12 / CYP-81: single-source the active project from config into the hub (scopes channels/ACL/messages).
+        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID, config.projectId)
         val store = storeFactory()
         val hub = Hub(state, store)
         val registry = SessionRegistry()
