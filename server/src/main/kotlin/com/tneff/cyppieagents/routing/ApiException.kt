@@ -23,3 +23,11 @@ class NotFoundException(message: String = "not found") :
 
 class BadRequestException(message: String) :
     ApiException(HttpStatusCode.BadRequest, "bad_request", message)
+
+/**
+ * The request is well-formed and authorized but would violate a hub invariant that the server is
+ * the source of truth for — e.g. locking the PO out of a channel it is the hub of (CYP-49).
+ * 409 Conflict, fail-closed: nothing is persisted.
+ */
+class ConflictException(message: String, code: String = "conflict") :
+    ApiException(HttpStatusCode.Conflict, code, message)

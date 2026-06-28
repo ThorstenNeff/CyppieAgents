@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.MessageMeta
+import com.tneff.cyppieagents.routing.ConflictException
 import com.tneff.cyppieagents.routing.ForbiddenException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -57,11 +58,18 @@ class Hub(
     }
 
     /**
-     * Operator-gated ACL change: delegates to [HubState.setAcl] (the single mutation point), audits
-     * it, and pushes [AclEvent] + a refreshed [ChannelsEvent] to live subscribers (CYP-18).
+     * Operator-gated ACL change: delegates to [HubState.setAcl] (the single mutation point, which
+     * also enforces the CYP-49 PO-lockout guardrail fail-closed), audits it, and pushes [AclEvent] +
+     * a refreshed [ChannelsEvent] to live subscribers (CYP-18). A rejected change throws before any
+     * mutation, so no event is emitted and nothing is persisted.
      */
     fun setAcl(entry: AclEntry, by: String): AclEntry {
-        val saved = state.setAcl(entry)
+        val saved = try {
+            state.setAcl(entry)
+        } catch (e: ConflictException) {
+            audit.aclDenied(entry.channelId, entry.agentId, by, e.message)
+            throw e
+        }
         audit.aclChanged(saved.channelId, saved.agentId, saved.canRead, saved.canWrite, by)
         _events.tryEmit(AclEvent(saved))
         _events.tryEmit(ChannelsEvent(state.channels))
