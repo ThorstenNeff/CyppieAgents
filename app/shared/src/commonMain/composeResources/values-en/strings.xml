@@ -118,4 +118,13 @@
     <string name="agent_ctl_err_spawn_failed">Start failed</string>
     <string name="agent_ctl_err_operator_required">Only the operator may control the agent</string>
     <string name="agent_ctl_err_generic">Action failed</string>
+    <!-- Per-window badges (CYP-55). pager_activity_badge: deferred to CYP-55 by CYP-54/50, defined here
+         EXACTLY ONCE (titlebar count + pager activity badge share the wording). "new since last" = an
+         activity hint, NOT "unread of record"/"delivered". Severity names reuse event_severity_* (CYP-34).
+         a11y_badge_attention (A2/stall) deliberately NOT added. -->
+    <string name="pager_activity_badge">%1$s new</string>
+    <string name="badge_count_overflow">9+</string>
+    <string name="a11y_badge_unread">%1$s: %2$s new messages</string>
+    <string name="a11y_badge_error">%1$s: agent error</string>
+    <string name="a11y_badge_severity">%1$s: highest severity %2$s</string>
 </resources>
