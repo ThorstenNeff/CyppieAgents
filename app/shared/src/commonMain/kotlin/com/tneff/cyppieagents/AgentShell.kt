@@ -51,8 +51,8 @@ import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.report.ProductLeadPanel
 import com.tneff.cyppieagents.report.ProductLeadViewModel
+import com.tneff.cyppieagents.report.ReportHttpRepository
 import com.tneff.cyppieagents.report.ReportRepository
-import com.tneff.cyppieagents.report.StubReportRepository
 import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.SettingsPanel
 import com.tneff.cyppieagents.settings.SettingsViewModel
@@ -225,9 +225,13 @@ fun AgentShell(
         ConfigHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedConfigRepository = configRepository ?: defaultConfigRepository
-    // Product-Lead report port (CYP-90): stub until the backend seam (CYP-89); injectable so tests stay
-    // hermetic. Accessible iff an operator token is present (server enforces too; fail-closed, no leak).
-    val resolvedReportRepository = remember(reportRepository) { reportRepository ?: StubReportRepository() }
+    // Product-Lead report port (CYP-90): now the LIVE REST client against the CYP-89 endpoints (stub→real
+    // swap, no UI/VM change). Injectable so tests stay hermetic. Accessible iff an operator token is present
+    // (server enforces 401/403 too; fail-closed — no token → no list, no report, never a partial).
+    val defaultReportRepository = remember(httpClient, cfg) {
+        ReportHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedReportRepository = reportRepository ?: defaultReportRepository
 
     // Agent lifecycle (CYP-73). Controls = operator-gated REST (POST /api/agents/{id}/{stop|start|
     // restart}); status display = non-gated (GET /api/agents snapshot + /ws/lifecycle deltas). Operator
