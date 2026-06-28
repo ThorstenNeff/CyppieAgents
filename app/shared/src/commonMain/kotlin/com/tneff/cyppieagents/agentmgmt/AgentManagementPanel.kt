@@ -1,4 +1,5 @@
 package com.tneff.cyppieagents.agentmgmt
+import com.tneff.cyppieagents.model.WorktreeFate
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

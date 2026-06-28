@@ -90,6 +90,12 @@ data class AgentConfig(
     val worktree: String = "",
     /** spawn command in the worktree (Default: claude). */
     val launch: String = "claude",
+    /**
+     * Persona text (S14 / CYP-97, Doc 09 §9.2): the connector writes it to `CLAUDE.md` in the agent's
+     * worktree cwd so Claude-Code auto-discovers it (Doc 05 §5, no `--bare`). Defaulted/nullable so
+     * pre-CYP-97 configs load unchanged; null/blank → the connector writes no CLAUDE.md.
+     */
+    val claudeMd: String? = null,
 ) {
     /** Effective worktree folder name (falls back to the id when unset). */
     val worktreeName: String get() = worktree.ifBlank { id }
