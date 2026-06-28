@@ -56,7 +56,7 @@ import com.tneff.cyppieagents.report.StubReportRepository
 import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.SettingsPanel
 import com.tneff.cyppieagents.settings.SettingsViewModel
-import com.tneff.cyppieagents.settings.StubConfigRepository
+import com.tneff.cyppieagents.settings.ConfigHttpRepository
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.window.WindowReducer
@@ -217,9 +217,13 @@ fun AgentShell(
     }
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
-    // Project-settings data port (CYP-84/85): stub until the backend seam (CYP-96); injectable so tests
-    // stay hermetic. Operator token drives editability (server also enforces the gate; fail-closed UI).
-    val resolvedConfigRepository = remember(configRepository) { configRepository ?: StubConfigRepository() }
+    // Project-settings data port (CYP-84/85): now the LIVE REST client against the CYP-96 endpoints
+    // (CYP-85 stub→real swap — no UI/VM change). Injectable so tests stay hermetic. Operator token drives
+    // editability + the operator-only PUTs (server enforces 403 too; fail-closed UI; key write-only).
+    val defaultConfigRepository = remember(httpClient, cfg) {
+        ConfigHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedConfigRepository = configRepository ?: defaultConfigRepository
     // Product-Lead report port (CYP-90): stub until the backend seam (CYP-89); injectable so tests stay
     // hermetic. Accessible iff an operator token is present (server enforces too; fail-closed, no leak).
     val resolvedReportRepository = remember(reportRepository) { reportRepository ?: StubReportRepository() }
