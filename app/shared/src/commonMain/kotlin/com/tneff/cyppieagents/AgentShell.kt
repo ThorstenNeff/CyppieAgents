@@ -44,6 +44,10 @@ import com.tneff.cyppieagents.eventlog.EventTailViewModel
 import com.tneff.cyppieagents.eventlog.EventsApi
 import com.tneff.cyppieagents.eventlog.EventsApiClient
 import com.tneff.cyppieagents.eventlog.EventsWsClient
+import com.tneff.cyppieagents.agentmgmt.AgentManagementPanel
+import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
+import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
+import com.tneff.cyppieagents.agentmgmt.StubAgentManagementRepository
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.SettingsPanel
@@ -55,12 +59,14 @@ import com.tneff.cyppieagents.window.WindowReducer
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_title
 import kmpcyppieagents.app.shared.generated.resources.settings_title
 import org.jetbrains.compose.resources.stringResource
 
 private const val COMM_WINDOW_ID = "comm"
 private const val ACL_WINDOW_ID = "acl"
 private const val SETTINGS_WINDOW_ID = "settings"
+private const val AGENT_MGMT_WINDOW_ID = "agentMgmt"
 private const val EVENTLOG_BROWSE_WINDOW_ID = "eventlog"
 private const val EVENTLOG_TAIL_WINDOW_ID = "eventtail"
 
@@ -100,30 +106,44 @@ fun AgentShell(
     lifecycleSource: AgentLifecycleSource? = null,
     /** Override the project-settings data port (CYP-84/85); `null` → the in-memory stub until CYP-96 lands. */
     configRepository: ConfigRepository? = null,
+    /** Override the agent-management data port (CYP-86/87/88); `null` → the in-memory stub until CYP-97 lands. */
+    agentManagementRepository: AgentManagementRepository? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
-    // i18n window title for the settings window (the other titles are hardcoded today; CYP-84 wires the
-    // one new key the design defines). Resolved here so the title bar reads it like any string resource.
+    // i18n window titles for the two new system windows (other titles are hardcoded today). Resolved
+    // here so the title bars read them like any string resource.
     val settingsTitle = stringResource(Res.string.settings_title)
-    val windows = remember(settingsTitle) {
-        buildList {
-            add("po" to "Product Owner")
-            add("frontend" to "Frontend")
-            add("backend" to "Backend")
-            add(COMM_WINDOW_ID to "Kommunikation")
-            // ACL matrix (CYP-48): always present — editable for an operator, read-only partial view for an
-            // agent/no-token (ACL-MATRIX.md §4, deliberately NOT an omission like the event-log windows).
-            add(ACL_WINDOW_ID to "Zugriffsrechte")
-            // Project settings (CYP-84/85): always present — editable for an operator, read-only + gate
-            // hint otherwise (PROJECT-SETTINGS §1.3; same "gate visible" stance as ACL, not an omission).
-            add(SETTINGS_WINDOW_ID to settingsTitle)
-            // Operator-only observability windows: offered ONLY with an operator token (omission, not a
-            // dead "no access" window — EVENT-LOG-UI §5.6). Live sources swap in at CYP-39/40.
-            if (cfg.operatorToken != null) {
-                add(EVENTLOG_BROWSE_WINDOW_ID to "Event-Log")
-                add(EVENTLOG_TAIL_WINDOW_ID to "Live-Tail")
-            }
+    val agentMgmtTitle = stringResource(Res.string.agent_mgmt_title)
+
+    // Agent-management VM (CYP-86/87/88), hoisted FIRST because its agent list (GET /api/agents, stub
+    // until CYP-97) drives the **dynamic** window set: an added agent gets a window, a removed one loses
+    // it. Editable iff an operator token is present (server also enforces the gate; fail-closed UI).
+    val resolvedAgentMgmtRepo = remember(agentManagementRepository) {
+        agentManagementRepository ?: StubAgentManagementRepository()
+    }
+    val agentMgmtVm = viewModel(key = AGENT_MGMT_WINDOW_ID) {
+        AgentManagementViewModel(resolvedAgentMgmtRepo, editable = cfg.operatorToken != null)
+    }
+    val managedAgents = agentMgmtVm.state.collectAsState().value.agents
+
+    // Dynamic window set (S14): agent windows are derived from the managed agent list; the system
+    // windows (comm/acl/settings/agentMgmt + operator-only event-log) stay static. The window manager
+    // re-tiles when the *set* of windows changes (add/remove) — the static path is unaffected, so there
+    // is no canvas regress in normal use (position-preservation across add/remove is a tracked follow-up).
+    val windows: List<Pair<String, String>> = managedAgents.map { it.id to it.name } + buildList {
+        add(COMM_WINDOW_ID to "Kommunikation")
+        // ACL matrix (CYP-48): always present — editable for an operator, read-only partial view for an
+        // agent/no-token (ACL-MATRIX.md §4, deliberately NOT an omission like the event-log windows).
+        add(ACL_WINDOW_ID to "Zugriffsrechte")
+        // Project settings (CYP-84/85) + agent management (CYP-86/87/88): always present, operator-gated.
+        add(SETTINGS_WINDOW_ID to settingsTitle)
+        add(AGENT_MGMT_WINDOW_ID to agentMgmtTitle)
+        // Operator-only observability windows: offered ONLY with an operator token (omission, not a
+        // dead "no access" window — EVENT-LOG-UI §5.6). Live sources swap in at CYP-39/40.
+        if (cfg.operatorToken != null) {
+            add(EVENTLOG_BROWSE_WINDOW_ID to "Event-Log")
+            add(EVENTLOG_TAIL_WINDOW_ID to "Live-Tail")
         }
     }
 
@@ -179,7 +199,7 @@ fun AgentShell(
         windows.map { it.first }
             .filterNot {
                 it == ACL_WINDOW_ID || it == EVENTLOG_BROWSE_WINDOW_ID ||
-                    it == EVENTLOG_TAIL_WINDOW_ID || it == SETTINGS_WINDOW_ID
+                    it == EVENTLOG_TAIL_WINDOW_ID || it == SETTINGS_WINDOW_ID || it == AGENT_MGMT_WINDOW_ID
             }
             .toSet()
     }
@@ -207,11 +227,11 @@ fun AgentShell(
     // (CommVM/AgentVM/EventTailVM already collect); (2) the badge sources must stay live even when the
     // phone pager composes only the active page, so they hang on this always-alive state, not on the
     // per-page lifecycle. windowContent below reuses these very instances (no second viewModel()).
+    // One AgentViewModel per managed agent (dynamic, keyed by id → a new agent gets its own VM, a
+    // removed one is simply no longer iterated). Reused in windowContent (no second viewModel()).
     val agentVms = LinkedHashMap<String, AgentViewModel>()
-    for ((id, _) in windows) {
-        if (id == COMM_WINDOW_ID || id == ACL_WINDOW_ID || id == SETTINGS_WINDOW_ID ||
-            id == EVENTLOG_BROWSE_WINDOW_ID || id == EVENTLOG_TAIL_WINDOW_ID
-        ) continue
+    for (managed in managedAgents) {
+        val id = managed.id
         agentVms[id] = viewModel(key = id) {
             AgentViewModel(
                 session = resolveSession(id),
@@ -254,7 +274,11 @@ fun AgentShell(
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
         val hostHeight = maxHeight.value
-        val state = remember {
+        // Re-create (re-tile) only when the SET of windows changes (an agent added/removed) — keyed on the
+        // ordered id list. The static set keys identically every recomposition → one instance, positions
+        // persist (no regress); a dynamic add/remove deliberately re-tiles.
+        val windowKey = windows.joinToString(",") { it.first }
+        val state = remember(windowKey) {
             WindowManagerState(
                 WindowReducer.tile(windows, hostWidth, hostHeight, isRtl = isRtl, contentWindowIds = contentWindowIds),
                 contentWindowIds = contentWindowIds,
@@ -301,6 +325,7 @@ fun AgentShell(
                     COMM_WINDOW_ID -> CommPanel(commVm)
                     ACL_WINDOW_ID -> AclPanel(aclVm)
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
+                    AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(agentMgmtVm)
                     EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it) }
                     EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it) }
                     else -> agentVms[window.id]?.let { AgentWindow(agentId = window.id, viewModel = it) }

@@ -156,4 +156,45 @@
     <string name="a11y_settings_apikey_input">Neuen API-Schlüssel eingeben</string>
     <string name="a11y_settings_apikey_reveal">Eingabe anzeigen</string>
     <string name="a11y_settings_apikey_hide">Eingabe verbergen</string>
+    <!-- Agenten-Verwaltung (CYP-86 hinzufügen + CYP-87 entfernen + CYP-88 ändern, S14). Keys per
+         docs/design/agent-management-keys.md. Disclosure-true: "Gespeichert" ≠ "Aktiv" (agent_edit_effect_hint
+         amber, Aktivierung via CYP-73-Restart, KEIN zweiter Mechanismus); Entfernen irreversibel + Folgen +
+         Worktree-Datenverlust-Warnung; Guardrails (genau ein PO / einziger PO / id eindeutig) sichtbar VOR der
+         Aktion. Rolle nur PO/WORKER (Product-Lead deferred CYP-98). Reuse: agent_role_po, agent_ctl_*,
+         agent_status_* (CYP-73), agent_save/agent_cancel surface-lokal (NICHT acl_*). agent_role_worker neu. -->
+    <string name="agent_mgmt_title">Agenten-Verwaltung</string>
+    <string name="agent_mgmt_operator_required">Nur mit Operator-Token änderbar</string>
+    <string name="agent_role_worker">Worker</string>
+    <string name="agent_add">Agent hinzufügen</string>
+    <string name="agent_edit">Bearbeiten</string>
+    <string name="agent_remove">Entfernen</string>
+    <string name="agent_save">Speichern</string>
+    <string name="agent_cancel">Abbrechen</string>
+    <string name="agent_add_id_label">Agent-ID</string>
+    <string name="agent_add_name_label">Name</string>
+    <string name="agent_add_role_label">Rolle</string>
+    <string name="agent_add_persona_label">Persona / CLAUDE.md</string>
+    <string name="agent_add_launch_label">Startkommando</string>
+    <string name="agent_add_worktree_label">Worktree-Ordner</string>
+    <string name="agent_add_confirm">Anlegen</string>
+    <string name="agent_add_spawn_hint">Angelegt. Der Agent startet noch nicht – über die Lifecycle-Steuerung starten.</string>
+    <string name="agent_add_id_exists">Diese Agent-ID existiert bereits</string>
+    <string name="agent_add_po_exists">Es gibt bereits einen PO – nur ein PO pro Projekt möglich.</string>
+    <string name="agent_add_error">Anlegen fehlgeschlagen</string>
+    <string name="a11y_agent_add_id">Agent-ID eingeben</string>
+    <string name="a11y_agent_add_persona">Persona / CLAUDE.md eingeben</string>
+    <string name="agent_remove_title">Agent „%1$s" entfernen?</string>
+    <string name="agent_remove_consequences">Die laufende Session wird gestoppt.</string>
+    <string name="agent_remove_worktree_keep">Worktree behalten</string>
+    <string name="agent_remove_worktree_delete">Worktree löschen</string>
+    <string name="agent_remove_worktree_warning">Nicht committete/nicht gepushte Arbeit in „%1$s" geht unwiderbringlich verloren.</string>
+    <string name="agent_remove_confirm">Agent entfernen</string>
+    <string name="agent_remove_confirm_delete">Endgültig löschen</string>
+    <string name="agent_remove_last_po">Der einzige PO kann nicht entfernt werden – Hub-and-Spoke bräche.</string>
+    <string name="agent_remove_error">Entfernen fehlgeschlagen</string>
+    <string name="agent_edit_title">Agent „%1$s" bearbeiten</string>
+    <string name="agent_edit_effect_hint">Gespeichert. Wirkt erst beim nächsten Start des Agenten – jetzt neu starten, damit die neue Konfiguration zieht.</string>
+    <string name="agent_edit_id_locked_hint">ID und Worktree sind fest und hier nicht änderbar.</string>
+    <string name="agent_edit_po_exists">Rolle PO ist belegt – nur ein PO pro Projekt.</string>
+    <string name="agent_edit_error">Speichern fehlgeschlagen</string>
 </resources>
