@@ -49,7 +49,7 @@
     "note": "Manuelles Verschieben behaelt MIN_VISIBLE_WINDOW=48dp. Bewusste Trennung."
   },
   "optional_snap": {
-    "status": "VORSCHLAG — PO-Entscheid (MVP vs Backlog vs streichen). Kein forciertes Tiling; jederzeit uebersteuerbar.",
+    "status": "BACKLOG (PO 2026-06-28) — NICHT CYP-26-Scope. Referenz fuer ein spaeteres eigenes Snap-Ticket; Dev baut das in CYP-26 nicht.",
     "SNAP_THRESHOLD": { "dp": 12, "role": "Distanz, ab der eine Kante an Host-/Peer-Kante einrastet" },
     "window.snap.guide": {
       "role": "visuelle Snap-Hilfslinie waehrend des Drags (Form+Position, nicht nur Farbe)",

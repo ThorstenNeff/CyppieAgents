@@ -12,13 +12,9 @@
 
 > `window_fit_action` löst ein **einmaliges** Re-Tile aus (heilt off-host/überlappte Zustände auf Nutzerwunsch). **Kein** automatisches Re-Tile bei Resize — die Hand-Anordnung des Nutzers bleibt sonst unangetastet (`WINDOW-RESPONSIVE.md` §2.3).
 
-## 2. Optionales Snap (nur falls PO §3 übernimmt — sonst entfällt dieser Block)
+## 2. Snap — ⏸ BACKLOG (entfällt für CYP-26)
 
-| Namespace (human) | Real-Key | DE | EN |
-|---|---|---|---|
-| `window.snap.toggle` | `window_snap_toggle` | Einrasten | Snap to edges |
-
-> Nur nötig, wenn Snap als **abschaltbare Einstellung** kommt. Ist Snap fix-an oder gestrichen, entfällt `window_snap_toggle`. Die Snap-**Hilfslinie** selbst ist rein visuell (kein String).
+> **PO-Entscheid 2026-06-28: Snap → Backlog.** `window_snap_toggle` (DE „Einrasten" / EN „Snap to edges") wird in CYP-26 **nicht** angelegt — nur Referenz für ein späteres Snap-Ticket. **Für CYP-26 sind nur §1 + §3 zu verdrahten.**
 
 ## 3. Accessibility-Keys (Farbe nie alleiniger Träger)
 

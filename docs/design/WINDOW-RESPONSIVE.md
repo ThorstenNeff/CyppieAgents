@@ -6,6 +6,7 @@
 > Bezug (im Code verifiziert, develop `ebdf442`): `window/WindowManager.kt` (`WindowHost`/`WindowCanvas`/`FloatingWindow`), `window/WindowManagerState.kt` (`WindowReducer.tile()`/`clampToBounds`/`clampSizeToBounds`/`updateHostSize`), `AgentShell.kt` (Montage + Initial-`tile()`), Composer in `agentview/AgentWindow.kt` + `comm/CommPanel.kt`. **Brand:** CyppieAgents (Anti-Hype).
 
 > **PO-Rahmen (2026-06-28, verbindlich):** Der **Free-Floating-Window-Manager bleibt** (etablierte Desktop-Metapher). CYP-26 = **responsive Robustheit, kein Umbau.** **Kein forciertes Tiling.** Fokus: Desktop-Größen (**Medium/Expanded**); der **Compact**-Fall (Phone) ist über **S10/CYP-54** (`docs/PHONE-PAGER.md`, HorizontalPager) abgedeckt und hier **out of scope**.
+> **PO-Abnahme (2026-06-28):** Spec **akzeptiert**. Entscheide: **Snap → Backlog** (nicht CYP-26-Scope; §3 nur noch Referenz); Re-Tile-Politik **bestätigt** (kein Auto-Re-Tile, explizite „Fenster einpassen"-Aktion); Maße = **Defaults, Dev kalibriert** gegen echten Desktop-Render; `tile()` **nach Host-Messung** (BoxWithConstraints) bestätigt; **RTL-Kachelung (F10) in CYP-26 gebündelt** — ja.
 
 Spezifiziert die responsive Robustheit des frei beweglichen Fenster-Canvas auf Desktop-Hosts. Keine Implementierungsvorgabe — Verhalten + Leitplanken.
 
@@ -15,8 +16,8 @@ Spezifiziert die responsive Robustheit des frei beweglichen Fenster-Canvas auf D
 
 | | |
 |---|---|
-| **In Scope** | Canvas-Modus (beide Achsen ≥ `Medium`): (a) Default-Layout passt in den Viewport (kein off-host Fenster), (b) Composer-Min-Breite + Robustheit, (c) Re-Flow/Clamp bei Host- und Fenster-Resize, (d) **optionales** leichtes Snap (Vorschlag). |
-| **Nicht-Ziele** | **Kein** forciertes Tiling / Auto-Layout-Lock. **Kein** Umbau der Free-Floating-Metapher. **Kein** Compact/Phone-Layout (→ S10/CYP-54). Keine RTL-Spiegelung der Kachelung erfinden (bestehender F10-Punkt, §6). |
+| **In Scope** | Canvas-Modus (beide Achsen ≥ `Medium`): (a) Default-Layout passt in den Viewport (kein off-host Fenster), (b) Composer-Min-Breite + Robustheit, (c) Re-Flow/Clamp bei Host- und Fenster-Resize. **Plus RTL-Kachelung (F10)** — vom PO in CYP-26 gebündelt (§6). |
+| **Nicht-Ziele** | **Kein** forciertes Tiling / Auto-Layout-Lock. **Kein** Umbau der Free-Floating-Metapher. **Kein** Compact/Phone-Layout (→ S10/CYP-54). **Snap = Backlog** (PO 2026-06-28, eigenes Ticket falls je gewollt; §3 nur Referenz). |
 
 **Modus-Grenze (Recap, Quelle = `WindowHost`):** Pager sobald **eine** Achse `Compact` (S10); **Canvas nur, wenn beide ≥ `Medium`** (dieses Spec). Die **Width**-Size-Class steuert im Canvas den Spalten-Cap (§2.1).
 
@@ -63,9 +64,11 @@ Greift auch, wenn ein Fenster manuell schmal gezogen wird:
 
 ---
 
-## 3. Optionales leichtes Snap (Vorschlag — PO-Entscheid)
+## 3. Leichtes Snap — ⏸ BACKLOG (NICHT CYP-26-Scope)
 
-**Kein forciertes Tiling.** Vorschlag eines *weichen, jederzeit übersteuerbaren* Snaps beim Ziehen:
+> **PO-Entscheid 2026-06-28: Snap → Backlog**, eigenes Ticket falls je gewollt. CYP-26 liefert nur (a)(b)(c) + RTL. Diese Sektion bleibt als **Referenz** für ein späteres Snap-Ticket; Tokens/Keys/Tags dafür sind als „deferred" markiert. **Dev baut Snap in CYP-26 nicht.**
+
+Vorschlag (Referenz) eines *weichen, jederzeit übersteuerbaren* Snaps beim Ziehen:
 - **Edge-Snap:** Nähert sich eine Fensterkante einer **Host-Kante** auf < `SNAP_THRESHOLD ≈ 12 dp`, rastet sie an die Host-Kante (mit Standard-Rand). 
 - **Peer-Snap:** Nähert sich eine Kante der Kante eines anderen Fensters auf < `SNAP_THRESHOLD`, rasten die Kanten bündig.
 - **Visuelle Snap-Hilfslinie** während des Drags (Token `window.snap.guide`, reuse Outline-Hue) — Form/Position, nicht nur Farbe.
@@ -118,11 +121,13 @@ Greift auch, wenn ein Fenster manuell schmal gezogen wird:
 
 ---
 
-## 8. Offene Punkte / Dev-Asks (über PO)
+## 8. Entscheide (PO 2026-06-28) & verbleibende Dev-Kalibrierung
 
-1. **`COMPOSER_MIN_WIDTH` (280) und `TILED_CONTENT_WINDOW_MIN_WIDTH` (320)** final mit Dev kalibrieren (begründete Startwerte).
-2. **Re-Tile-Politik bestätigen:** kein Auto-Re-Tile bei Resize (nur explizite „Fenster einpassen"-Aktion) — Empfehlung, da forciertes Tiling ausgeschlossen ist. OK?
-3. **Optionales Snap (§3):** gewünscht fürs MVP oder Backlog? Falls nein, §3 streichen.
-4. **Init-Timing:** `tile()` erst nach erster Host-Messung (oder einmaliges Re-Tile bei erster Messung) — bestätigen, dass das die saubere Stelle ist (vs. Fallback-Maße).
-5. **RTL-Kachelung (F10)** mit CYP-26 bündeln oder separat? (Empfehlung: zusammen.)
-6. Gate: Reviewer + Desktop-`runComposeUiTest` (Tags in `window-responsive-tags.md`).
+**Vom PO entschieden (keine offenen Asks mehr):**
+1. ✅ **Maße = Defaults, Dev kalibriert** `COMPOSER_MIN_WIDTH` (280) / `TILED_CONTENT_WINDOW_MIN_WIDTH` (320) / Caps (Medium ≤2, Expanded sqrt) gegen den echten Desktop-Render.
+2. ✅ **Re-Tile-Politik:** kein Auto-Re-Tile; **explizite „Fenster einpassen"-Aktion**.
+3. ⏸ **Snap → Backlog** (eigenes Ticket, nicht CYP-26).
+4. ✅ **Init-Timing:** `tile()` **nach Host-Messung** (BoxWithConstraints).
+5. ✅ **RTL-Kachelung (F10) in CYP-26 gebündelt.**
+
+**Gate:** Reviewer + Desktop-`runComposeUiTest` (Tags in `window-responsive-tags.md`). Verbleibend ist nur die Zahlen-Kalibrierung (#1) — Designwerte sind Defaults.

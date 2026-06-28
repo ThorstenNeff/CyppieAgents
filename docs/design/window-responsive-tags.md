@@ -26,8 +26,8 @@ Macht die drei Robustheits-Garantien (Default-in-Bounds, Composer-Min, Re-Flow) 
 | Element | testTag | Zweck |
 |---|---|---|
 | Fenster einpassen | `window.host.fit` | nutzer-getriggertes einmaliges Re-Tile (`window_fit_action`) |
-| Snap-Hilfslinie *(optional)* | `window.host.snapguide` | nur falls §3 übernommen; während des Drags sichtbar |
-| Snap-Schalter *(optional)* | `window.host.snaptoggle` | nur falls Snap abschaltbar |
+| ~~Snap-Hilfslinie~~ | ~~`window.host.snapguide`~~ | ⏸ **BACKLOG** (PO 2026-06-28, nicht CYP-26) |
+| ~~Snap-Schalter~~ | ~~`window.host.snaptoggle`~~ | ⏸ **BACKLOG** (nicht CYP-26) |
 
 ## 2. Composer-Robustheit (Reuse Renderer-Tags)
 
