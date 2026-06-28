@@ -196,6 +196,9 @@
     <string name="agent_edit_effect_hint">Gespeichert. Wirkt erst beim nächsten Start des Agenten – jetzt neu starten, damit die neue Konfiguration zieht.</string>
     <string name="agent_edit_id_locked_hint">ID und Worktree sind fest und hier nicht änderbar.</string>
     <string name="agent_edit_po_exists">Rolle PO ist belegt – nur ein PO pro Projekt.</string>
+    <!-- CYP-101: only-PO gives up the role (editWouldDropLastPo) — distinct from agent_edit_po_exists
+         (PO taken elsewhere). Authoritative wording (PO 2026-06-28), design-key catalog follows. -->
+    <string name="agent_edit_last_po">Der einzige PO kann die Rolle nicht abgeben – Hub-and-Spoke bräche.</string>
     <string name="agent_edit_error">Speichern fehlgeschlagen</string>
     <!-- Product-Lead-Berichte (CYP-90, S16). Keys per docs/design/product-lead-keys.md. Disclosure-true:
          Snapshot ≠ Live → report_as_of „Stand: %1$s" (timestamped, eigener Key wie event_connection_offline,

@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.model.Agent
@@ -95,5 +96,33 @@ class AgentManagementPanelTest {
         onNodeWithTag(AgentMgmtTags.roleOption(AgentMgmtTags.ADD_ROLE_PICKER, "WORKER")).assertIsEnabled()
         // Creating does not spawn — the disclosure hint is present.
         onNodeWithTag(AgentMgmtTags.ADD_SPAWN_HINT).assertExists()
+    }
+
+    @Test
+    fun editDialog_onlyPoToWorker_showsLastPoReason_disablesSave() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                val vm = remember {
+                    AgentManagementViewModel(
+                        StubAgentManagementRepository(listOf(agent("po", Role.PO), agent("fe", Role.WORKER))),
+                        editable = true,
+                    )
+                }
+                AgentManagementPanel(vm)
+            }
+        }
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(AgentMgmtTags.itemEdit("po")).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithTag(AgentMgmtTags.itemEdit("po")).performClick()
+        onNodeWithTag(AgentMgmtTags.EDIT_DIALOG).assertExists()
+        // The only PO → WORKER: the guardrail engages and confirm is disabled.
+        onNodeWithTag(AgentMgmtTags.roleOption(AgentMgmtTags.EDIT_ROLE_PICKER, "WORKER")).performClick()
+        onNodeWithTag(AgentMgmtTags.EDIT_SAVE).assertIsNotEnabled()
+        // CYP-101 [Mittel 1]: the visible reason is the last-PO text, NOT the "PO taken elsewhere" text —
+        // the two are now distinct. Locale-robust: only the last-PO wording mentions hub-and-spoke
+        // ("Hub-and-Spoke" DE / "hub-and-spoke" EN → "ub-and-"); the po-taken wording never does.
+        onNodeWithTag(AgentMgmtTags.EDIT_ERROR).assertExists()
+        onNodeWithText("ub-and-", substring = true).assertExists()
     }
 }

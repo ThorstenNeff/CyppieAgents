@@ -52,6 +52,7 @@ import kmpcyppieagents.app.shared.generated.resources.agent_edit
 import kmpcyppieagents.app.shared.generated.resources.agent_edit_effect_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_edit_error
 import kmpcyppieagents.app.shared.generated.resources.agent_edit_id_locked_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_edit_last_po
 import kmpcyppieagents.app.shared.generated.resources.agent_edit_po_exists
 import kmpcyppieagents.app.shared.generated.resources.agent_edit_title
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_operator_required
@@ -331,8 +332,17 @@ private fun EditDialog(target: Agent, state: AgentMgmtUiState, viewModel: AgentM
                     stringResource(Res.string.agent_edit_id_locked_hint),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (state.editError != null) {
-                    HintLine(stringResource(editErrorRes(state.editError)), MaterialTheme.colorScheme.error, AgentMgmtTags.EDIT_ERROR)
+                // CYP-101 [Mittel 1]: a disabled confirm needs a visible reason BEFORE the action (like
+                // Add/Remove). The only PO giving up the role and PO-taken-elsewhere are distinct messages;
+                // a server error shows here too. (po-taken / last-PO are mutually exclusive — role is PO xor not.)
+                val reason = when {
+                    state.editWouldDropLastPo -> Res.string.agent_edit_last_po
+                    state.editPoTakenByOther -> Res.string.agent_edit_po_exists
+                    state.editError != null -> editErrorRes(state.editError)
+                    else -> null
+                }
+                if (reason != null) {
+                    HintLine(stringResource(reason), MaterialTheme.colorScheme.error, AgentMgmtTags.EDIT_ERROR)
                 }
                 // Amber "saved ≠ active — restart to apply" (no second restart mechanism; reuse CYP-73).
                 if (state.editEffectHint) {
@@ -448,6 +458,7 @@ private fun removeErrorRes(key: String): StringResource = when (key) {
 
 private fun editErrorRes(key: String): StringResource = when (key) {
     "agent_edit_po_exists" -> Res.string.agent_edit_po_exists
+    "agent_edit_last_po" -> Res.string.agent_edit_last_po
     "agent_mgmt_operator_required" -> Res.string.agent_mgmt_operator_required
     else -> Res.string.agent_edit_error
 }

@@ -191,6 +191,9 @@
     <string name="agent_edit_effect_hint">Saved. Takes effect on the agent's next start — restart now so the new configuration applies.</string>
     <string name="agent_edit_id_locked_hint">ID and worktree are fixed and cannot be changed here.</string>
     <string name="agent_edit_po_exists">The PO role is taken — only one PO per project.</string>
+    <!-- CYP-101: only-PO gives up the role (editWouldDropLastPo) — distinct from agent_edit_po_exists
+         (PO taken elsewhere). Authoritative wording (PO 2026-06-28), design-key catalog follows. -->
+    <string name="agent_edit_last_po">The only PO cannot give up the PO role — hub-and-spoke would break.</string>
     <string name="agent_edit_error">Save failed</string>
     <!-- Product-Lead reports (CYP-90, S16). Keys per docs/design/product-lead-keys.md. Disclosure-true:
          snapshot != live → report_as_of "As of: %1$s" (timestamped, own key like event_connection_offline,

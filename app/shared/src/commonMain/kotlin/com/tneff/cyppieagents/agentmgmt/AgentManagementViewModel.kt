@@ -191,12 +191,23 @@ class AgentManagementViewModel(
 
     fun openEdit(agent: Agent) {
         if (!_state.value.editable) return
+        // Open immediately with the known role; persona/launch fill in from the detail endpoint.
         _state.update {
             it.copy(
                 editTarget = agent,
-                editForm = EditForm(role = agent.role), // persona/launch are greenfield (not in GET /api/agents)
+                editForm = EditForm(role = agent.role),
                 editError = null, editEffectHint = false,
             )
+        }
+        // CYP-101: prefill the REAL launch/persona via GET /api/agents/{id} (the list Agent is lightweight).
+        runScope.launch {
+            runCatching { repository.detail(agent.id) }.onSuccess { d ->
+                _state.update {
+                    if (it.editTarget?.id != agent.id) it // user switched/closed in the meantime
+                    else it.copy(editForm = it.editForm.copy(persona = d.persona ?: "", launch = d.launch))
+                }
+            }
+            // On failure: keep the role-only form so role can still be edited (graceful degrade).
         }
     }
 
@@ -240,7 +251,9 @@ class AgentManagementViewModel(
     }
 
     private fun editErrorKey(e: Throwable): String = when ((e as? AgentMgmtException)?.code) {
-        "po_already_exists", "last_po" -> "agent_edit_po_exists"
+        // CYP-101: distinct disclosure — PO taken elsewhere vs. the only PO giving up the role.
+        "po_already_exists" -> "agent_edit_po_exists"
+        "last_po" -> "agent_edit_last_po"
         "operator_required", "unauthorized" -> "agent_mgmt_operator_required"
         else -> "agent_edit_error"
     }

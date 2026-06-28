@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.agentview.AgentViewTags
+import com.tneff.cyppieagents.agentmgmt.StubAgentManagementRepository
 import com.tneff.cyppieagents.agentview.StubAgentSession
 import com.tneff.cyppieagents.comm.CommApi
 import com.tneff.cyppieagents.comm.CommTags
@@ -44,6 +45,9 @@ class AgentShellRenderTest {
                     sessionFactory = { StubAgentSession() },
                     commApi = FakeCommApi(),
                     commLiveSource = StubCommLiveSource(),
+                    // The default agent-management port is now the live REST client (CYP-86/87/88 swap) —
+                    // inject the stub so the agent list (→ dynamic windows) stays hermetic, like commApi.
+                    agentManagementRepository = StubAgentManagementRepository(),
                 )
             }
         }

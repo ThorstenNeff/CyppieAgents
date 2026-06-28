@@ -44,10 +44,10 @@ import com.tneff.cyppieagents.eventlog.EventTailViewModel
 import com.tneff.cyppieagents.eventlog.EventsApi
 import com.tneff.cyppieagents.eventlog.EventsApiClient
 import com.tneff.cyppieagents.eventlog.EventsWsClient
+import com.tneff.cyppieagents.agentmgmt.AgentManagementHttpRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementPanel
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
-import com.tneff.cyppieagents.agentmgmt.StubAgentManagementRepository
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.report.ProductLeadPanel
 import com.tneff.cyppieagents.report.ProductLeadViewModel
@@ -123,11 +123,18 @@ fun AgentShell(
     val agentMgmtTitle = stringResource(Res.string.agent_mgmt_title)
     val productLeadTitle = stringResource(Res.string.report_title)
 
-    // Agent-management VM (CYP-86/87/88), hoisted FIRST because its agent list (GET /api/agents, stub
-    // until CYP-97) drives the **dynamic** window set: an added agent gets a window, a removed one loses
-    // it. Editable iff an operator token is present (server also enforces the gate; fail-closed UI).
-    val resolvedAgentMgmtRepo = remember(agentManagementRepository) {
-        agentManagementRepository ?: StubAgentManagementRepository()
+    // One shared WS+HTTP client (created here — the agent-management REST client below needs it). Closed
+    // when the shell leaves composition. The JVM/desktop engine (CIO) is wired; other engines = CYP-27.
+    val httpClient = remember { HttpClient { install(WebSockets) } }
+    DisposableEffect(Unit) { onDispose { httpClient.close() } }
+
+    // Agent-management VM (CYP-86/87/88): now the LIVE REST client against the CYP-97 endpoints (stub→real
+    // swap, no UI/VM change). Hoisted FIRST because its agent list (GET /api/agents) drives the **dynamic**
+    // window set — an added agent gets a window, a removed one loses it. Editable iff an operator token is
+    // present (server also enforces the gate; fail-closed UI).
+    val resolvedAgentMgmtRepo = remember(agentManagementRepository, httpClient, cfg) {
+        agentManagementRepository
+            ?: AgentManagementHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
     val agentMgmtVm = viewModel(key = AGENT_MGMT_WINDOW_ID) {
         AgentManagementViewModel(resolvedAgentMgmtRepo, editable = cfg.operatorToken != null)
@@ -156,11 +163,6 @@ fun AgentShell(
             add(EVENTLOG_TAIL_WINDOW_ID to "Live-Tail")
         }
     }
-
-    // One shared WS+HTTP client for agent sockets and comm REST; closed when the shell leaves
-    // composition. The JVM/desktop engine (CIO) is wired; web/ios/android engines = CYP-27.
-    val httpClient = remember { HttpClient { install(WebSockets) } }
-    DisposableEffect(Unit) { onDispose { httpClient.close() } }
 
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
         val ws = AgentWsClient(httpClient, cfg.hubWsBaseUrl, agentId, cfg.agentToken(agentId))
