@@ -182,7 +182,7 @@ private class SteadyDemoEventsSource(private val stepMillis: Long = 800L) : Even
             emit(
                 EventLiveEvent.Received(
                     Event(
-                        id = "d$seq", ts = 1_000 + seq, seq = seq, agentId = "backend", teamId = "team-1",
+                        id = "d$seq", ts = 1_000 + seq, seq = seq, agentId = "backend", projectId = "team-1",
                         type = types[((seq - 1) % types.size).toInt()], severity = Severity.INFO,
                         correlationId = "run-1", sessionId = "sess-1",
                     ),

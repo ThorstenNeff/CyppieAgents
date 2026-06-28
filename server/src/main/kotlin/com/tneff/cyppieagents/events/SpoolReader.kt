@@ -89,7 +89,9 @@ class SpoolReader(
         val outcome = obj.str("outcome")
         return EventDraft(
             agentId = obj.str("agentId") ?: PLATFORM,
-            teamId = obj.str("teamId") ?: PLATFORM,
+            // S12 / CYP-83: prefer the new `projectId` key, accept the legacy `teamId` from older hook
+            // spools, else the PLATFORM sentinel (platform-internal hook event, no specific project).
+            projectId = obj.str("projectId") ?: obj.str("teamId") ?: PLATFORM,
             type = EventType.HOOK_FIRED,
             severity = if (outcome.equals("error", ignoreCase = true)) Severity.WARN else Severity.INFO,
             sessionId = obj.str("sessionId"),

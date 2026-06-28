@@ -11,13 +11,20 @@ import com.tneff.cyppieagents.boot.Secrets
 import com.tneff.cyppieagents.boot.WorktreeManager
 import com.tneff.cyppieagents.connector.AgentProcess
 import com.tneff.cyppieagents.connector.ProcessSpawner
+import com.tneff.cyppieagents.events.EventFilter
+import com.tneff.cyppieagents.events.Page
+import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Role
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -146,6 +153,24 @@ class BootOrchestratorTest {
         val (cwd, env) = spawner.byAgent.getValue("backend")
         assertEquals(File(root, "projects/alpha/backend").absolutePath, cwd.absolutePath, "cwd under projects/<projectId>/<agent>")
         assertEquals("sk-alpha", env["ANTHROPIC_API_KEY"], "spawn env carries the project-resolved key")
+    }
+
+    @Test
+    fun bootStampsConfigProjectIdOnEvents() = runBlocking {
+        // S12 / CYP-83: events carry the active project, single-sourced from config.projectId (not a
+        // constant). agent.spawned is recorded through the EventProjector boot builds with config.projectId.
+        // Mutation: BootOrchestrator → EventProjector(bander, projectId = "default") → projectId≠"alpha" → red.
+        val cfg = config().copy(projectId = "alpha")
+        val booted = BootOrchestrator(cfg, secrets(), WorktreeManager(FakeGit(), gitRoot(), cfg.projectId), FakeSpawner(), scope).boot()
+        val spawned: Event = withTimeout(5_000) {
+            var ev: Event? = null
+            while (ev == null) {
+                ev = booted.eventSink.query(EventFilter(type = EventType.AGENT_SPAWNED), Page()).events.firstOrNull()
+                if (ev == null) delay(20)
+            }
+            ev
+        }
+        assertEquals("alpha", spawned.projectId)
     }
 
     @Test

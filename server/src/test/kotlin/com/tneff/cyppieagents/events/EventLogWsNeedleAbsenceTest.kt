@@ -47,7 +47,7 @@ class EventLogWsNeedleAbsenceTest {
 
     /** §4 recipe: inject 2-class needle → mask (real tap) → project (structural metadata-only). */
     private fun projectNeedledCorpus(): List<EventDraft> {
-        val projector = EventProjector(ContextUsageBander(), teamId = "team")
+        val projector = EventProjector(ContextUsageBander(), projectId = "team")
         return corpus().flatMap { ev ->
             val masked = EventMasking.mask(NeedleHarness.inject(ev))
             projector.project("backend", masked.sessionId, "corr-1", masked)

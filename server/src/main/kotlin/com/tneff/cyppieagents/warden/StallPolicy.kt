@@ -36,7 +36,7 @@ class StallPolicy(
 ) : Policy {
 
     private class Incident(
-        val teamId: String,
+        val projectId: String,
         val correlationId: String?,
         var attempts: Int,
         var lastActionMs: Long,
@@ -55,7 +55,7 @@ class StallPolicy(
         synchronized(lock) {
             if (incidents.containsKey(signal.agentId)) return // one open incident per agent
             incidents[signal.agentId] = Incident(
-                teamId = signal.teamId,
+                projectId = signal.projectId,
                 correlationId = signal.correlationId,
                 attempts = 0,
                 // Backoff is measured from here, so the FIRST nudge waits backoffMs[0] (no instant fire).
@@ -71,7 +71,7 @@ class StallPolicy(
             Signal(
                 type = RECOVERED,
                 agentId = agentId,
-                teamId = closed.teamId,
+                projectId = closed.projectId,
                 correlationId = closed.correlationId,
                 evidence = buildJsonObject { put("nudges", closed.attempts) },
             ),

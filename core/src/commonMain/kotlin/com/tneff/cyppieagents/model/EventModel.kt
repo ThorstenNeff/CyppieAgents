@@ -34,8 +34,8 @@ data class Event(
     /** observed source time (e.g. a hook) — informational, never order-forming. */
     val sourceTs: Long? = null,
     val agentId: String,
-    /** team = project token (05 §3). */
-    val teamId: String,
+    /** Active project / tenant (S12 / CYP-83 — formerly `teamId`; 05 §3 / Doc 08 §6). Server-stamped. */
+    val projectId: String,
     /** Claude-Code session — correlation across a compaction. */
     val sessionId: String? = null,
     /** per injected work-run (PO decision c): set at `turn.start`, carried to `result.final`. */
@@ -151,7 +151,7 @@ private class EventSurrogate(
     val seq: Long,
     val sourceTs: Long? = null,
     val agentId: String,
-    val teamId: String,
+    val projectId: String,
     val sessionId: String? = null,
     val correlationId: String? = null,
     val type: String,
@@ -173,7 +173,7 @@ object EventSerializer : KSerializer<Event> {
         val resolved = EventType.fromWire(s.type)
         return Event(
             id = s.id, ts = s.ts, seq = s.seq, sourceTs = s.sourceTs, agentId = s.agentId,
-            teamId = s.teamId, sessionId = s.sessionId, correlationId = s.correlationId,
+            projectId = s.projectId, sessionId = s.sessionId, correlationId = s.correlationId,
             type = resolved, severity = s.severity, detail = s.detail,
             rawType = if (resolved == EventType.UNKNOWN) s.type else null,
         )
@@ -184,7 +184,7 @@ object EventSerializer : KSerializer<Event> {
             EventSurrogate.serializer(),
             EventSurrogate(
                 id = value.id, ts = value.ts, seq = value.seq, sourceTs = value.sourceTs,
-                agentId = value.agentId, teamId = value.teamId, sessionId = value.sessionId,
+                agentId = value.agentId, projectId = value.projectId, sessionId = value.sessionId,
                 correlationId = value.correlationId,
                 type = value.rawType ?: value.type.wire, // unknown raw string round-trips via `type`
                 severity = value.severity, detail = value.detail,

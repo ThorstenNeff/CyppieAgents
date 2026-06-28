@@ -19,8 +19,8 @@ import kotlinx.serialization.json.JsonObject
  */
 data class EventDraft(
     val agentId: String,
-    /** team = project token (05 §3); MVP is single-team. */
-    val teamId: String,
+    /** Active project / tenant (S12 / CYP-83 — formerly `teamId`; 05 §3); MVP = 1 project. */
+    val projectId: String,
     val type: EventType,
     val severity: Severity,
     /**

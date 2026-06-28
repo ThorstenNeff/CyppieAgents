@@ -72,7 +72,7 @@ fun draft(
     detail: JsonObject = JsonObject(emptyMap()),
 ) = EventDraft(
     agentId = agent,
-    teamId = team,
+    projectId = team,
     type = type,
     severity = severity,
     sessionId = sessionId,

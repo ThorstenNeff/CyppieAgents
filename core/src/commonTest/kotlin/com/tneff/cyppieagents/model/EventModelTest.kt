@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.model
 import com.tneff.cyppieagents.CommJson
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -23,7 +24,7 @@ class EventModelTest {
             seq = 42,
             sourceTs = 1_718_999_999_000,
             agentId = "backend",
-            teamId = "team-1",
+            projectId = "team-1",
             sessionId = "sess-9",
             correlationId = "corr-7",
             type = EventType.TOOL_CALL,
@@ -54,7 +55,7 @@ class EventModelTest {
     @Test
     fun event_withUnknownType_decodesTolerantly_andPreservesRawType() {
         val wire = """
-            {"id":"x","ts":1,"seq":1,"agentId":"a","teamId":"t",
+            {"id":"x","ts":1,"seq":1,"agentId":"a","projectId":"t",
              "type":"budget.suspected","severity":"info","detail":{}}
         """.trimIndent()
         val e = CommJson.decodeFromString(Event.serializer(), wire)
@@ -80,11 +81,23 @@ class EventModelTest {
             assertEquals(expected, CommJson.decodeFromString(EventType.serializer(), "\"$wire\""))
             val e = CommJson.decodeFromString(
                 Event.serializer(),
-                """{"id":"x","ts":1,"seq":1,"agentId":"a","teamId":"t","type":"$wire","severity":"info","detail":{}}""",
+                """{"id":"x","ts":1,"seq":1,"agentId":"a","projectId":"t","type":"$wire","severity":"info","detail":{}}""",
             )
             assertEquals(expected, e.type)
             assertEquals(null, e.rawType, "$wire is a known type now → no rawType fallback")
         }
+    }
+
+    @Test
+    fun event_wireKeyIsProjectId_notTeamId() {
+        // S12 / CYP-83: the tenant field is `projectId` on the wire (formerly `teamId`). The Browse /
+        // Live-Tail UIs depend on this key. Mutation: revert EventSurrogate.projectId → teamId → red.
+        val json = CommJson.encodeToString(
+            Event.serializer(),
+            Event(id = "x", ts = 1, seq = 1, agentId = "a", projectId = "alpha", type = EventType.TURN_START, severity = Severity.INFO),
+        )
+        assertTrue(json.contains("\"projectId\":\"alpha\""), "wire key is projectId")
+        assertFalse(json.contains("teamId"), "legacy teamId key is gone")
     }
 
     @Test

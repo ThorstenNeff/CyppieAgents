@@ -49,7 +49,7 @@ class ConnectorTapTest {
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val sink = InMemoryEventSink(SystemTimeSource())
         val recorder = EventRecorder(sink, scope).also { it.start() }
-        val projector = EventProjector(ContextUsageBander(), teamId = "team")
+        val projector = EventProjector(ContextUsageBander(), projectId = "team")
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), InMemoryMessageStore())
         val registry = SessionRegistry()
         val router = MediationRouter(registry, hub, recorder, projector)

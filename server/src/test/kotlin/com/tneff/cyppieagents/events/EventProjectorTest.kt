@@ -23,7 +23,7 @@ class EventProjectorTest {
     private fun corpusDrafts(): List<EventDraft> {
         val lines = javaClass.getResourceAsStream("/streamjson/corpus.ndjson")!!
             .bufferedReader().readLines().filter { it.isNotBlank() }
-        val projector = EventProjector(ContextUsageBander(), teamId = "team-1")
+        val projector = EventProjector(ContextUsageBander(), projectId = "team-1")
         return lines.flatMap { line ->
             val masked = EventMasking.mask(CommJson.decodeFromString<StreamJsonEvent>(line))
             projector.project("backend", masked.sessionId, "corr-1", masked)
@@ -74,7 +74,7 @@ class EventProjectorTest {
             put("isUsingOverage", false)
         }
         val event = com.tneff.cyppieagents.model.RateLimitEvent(rateLimitInfo = info, sessionId = "s")
-        val draft = EventProjector(ContextUsageBander(), teamId = "t").project("backend", "s", "c", event).single()
+        val draft = EventProjector(ContextUsageBander(), projectId = "t").project("backend", "s", "c", event).single()
 
         assertEquals(EventType.ERROR_RATELIMIT, draft.type)
         assertEquals("blocked", draft.detail["status"]!!.jsonPrimitive.content)

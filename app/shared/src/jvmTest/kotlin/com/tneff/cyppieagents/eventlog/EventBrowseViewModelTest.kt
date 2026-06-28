@@ -75,7 +75,7 @@ class EventBrowseViewModelTest {
     fun showRunIsNoOpWithoutCorrelationId() = runBlocking {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         val noCid = Event(
-            id = "x", ts = 1, seq = 1, agentId = "a", teamId = "t",
+            id = "x", ts = 1, seq = 1, agentId = "a", projectId = "t",
             type = EventType.TURN_START, severity = Severity.INFO, correlationId = null,
         )
         val vm = EventBrowseViewModel(StubEventsApi(listOf(noCid)), scope = scope)

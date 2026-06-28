@@ -27,7 +27,7 @@ class EventTailViewModelTest {
     }
 
     private fun ev(seq: Long) = Event(
-        id = "e$seq", ts = seq, seq = seq, agentId = "a", teamId = "t",
+        id = "e$seq", ts = seq, seq = seq, agentId = "a", projectId = "t",
         type = EventType.TURN_START, severity = Severity.INFO,
     )
 

@@ -101,7 +101,7 @@ class EventRecorder(
         reportedDropped = total
         val report = EventDraft(
             agentId = PLATFORM,
-            teamId = PLATFORM,
+            projectId = PLATFORM,
             type = EventType.LOG_DROPPED,
             severity = Severity.WARN,
             detail = buildJsonObject {

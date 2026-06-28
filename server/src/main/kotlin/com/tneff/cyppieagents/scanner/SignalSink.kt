@@ -36,7 +36,7 @@ class EventLogSignalSink(
         recorder.record(
             EventDraft(
                 agentId = signal.agentId,
-                teamId = signal.teamId,
+                projectId = signal.projectId,
                 type = resolved,
                 rawType = if (resolved == EventType.UNKNOWN) signal.type else null,
                 severity = severityOf(signal.type),

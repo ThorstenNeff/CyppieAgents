@@ -42,7 +42,7 @@ class StallPolicyTest {
     }
 
     private suspend fun suspect(f: Fixture, agent: String = "backend") =
-        f.policy.onSignal(Signal(type = "stall.suspected", agentId = agent, teamId = "default"), f.actuator)
+        f.policy.onSignal(Signal(type = "stall.suspected", agentId = agent, projectId = "default"), f.actuator)
 
     // ---- Axis: backoff, not Dauerfeuer --------------------------------------------------------
     @Test

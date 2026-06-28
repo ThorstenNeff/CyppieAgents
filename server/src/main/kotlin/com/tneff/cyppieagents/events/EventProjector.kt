@@ -29,7 +29,7 @@ import kotlinx.serialization.json.put
  */
 class EventProjector(
     private val bander: ContextUsageBander,
-    private val teamId: String,
+    private val projectId: String,
 ) {
     /** Stream events → drafts. May produce 0 (e.g. system/init, text-only assistant), 1, or many. */
     fun project(
@@ -70,7 +70,7 @@ class EventProjector(
                 )
             }
             // context.usage: numbers only, persisted only on a band/compact crossing.
-            addAll(bander.onUsage(agentId, teamId, UsageSnapshot.fromUsageJson(event.usage), sessionId, correlationId))
+            addAll(bander.onUsage(agentId, projectId, UsageSnapshot.fromUsageJson(event.usage), sessionId, correlationId))
         }
 
         is RateLimitEvent -> listOf(
@@ -122,7 +122,7 @@ class EventProjector(
         detail: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit,
     ): EventDraft = EventDraft(
         agentId = agentId,
-        teamId = teamId,
+        projectId = projectId,
         type = type,
         severity = severity,
         sessionId = sessionId,

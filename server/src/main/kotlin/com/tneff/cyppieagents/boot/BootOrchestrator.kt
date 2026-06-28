@@ -108,7 +108,8 @@ class BootOrchestrator(
             bandPctWidth = ev.bandPct,
             compactPct = ev.compactPct,
         )
-        val eventProjector = EventProjector(bander, teamId = MVP_TEAM_ID)
+        // S12 / CYP-83: events carry the active project, single-sourced from config (not a constant).
+        val eventProjector = EventProjector(bander, projectId = config.projectId)
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
 
@@ -144,7 +145,7 @@ class BootOrchestrator(
         // that listens for signal Events and routes each to the Policy that handles it. Policies act
         // ONLY through the Actuator — the single write authority toward an agent (nudge = a user-turn
         // on the agent's session = the Mediator stdin).
-        val actuator = MediatorActuator(sessions, signalSink, MVP_TEAM_ID)
+        val actuator = MediatorActuator(sessions, signalSink, config.projectId)
         // CYP-63 stall policy: opens one incident/agent on stall.suspected, nudges with growing backoff,
         // escalates after N, recovers on activity. The runner feeds it activity + the backoff clock.
         val stallPolicy = StallPolicy(clock = System::currentTimeMillis, actuator = actuator, signals = signalSink)
@@ -174,10 +175,5 @@ class BootOrchestrator(
         }
 
         return BootedPlatform(hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle)
-    }
-
-    private companion object {
-        // MVP is single-team (project token, 05 §3); CYP-43 can wire a real team id from config.
-        const val MVP_TEAM_ID = "default"
     }
 }

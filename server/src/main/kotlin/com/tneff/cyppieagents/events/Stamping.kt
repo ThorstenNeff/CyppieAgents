@@ -17,7 +17,7 @@ internal fun TimeSource.stamp(draft: EventDraft, rnd: RandomGenerator): Event {
         seq = nextSeq(),
         sourceTs = draft.sourceTs,
         agentId = draft.agentId,
-        teamId = draft.teamId,
+        projectId = draft.projectId,
         sessionId = draft.sessionId,
         correlationId = draft.correlationId,
         type = draft.type,
