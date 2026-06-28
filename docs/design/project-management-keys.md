@@ -63,8 +63,6 @@
 | `project_delete_active_blocked` | Aktives Projekt – erst zu einem anderen wechseln, dann löschbar. | Active project — switch to another first, then it can be deleted. |
 | `project_delete_last_blocked` | Das letzte Projekt kann nicht gelöscht werden. | The last project cannot be deleted. |
 | `project_delete_error` | Löschen fehlgeschlagen | Delete failed |
-| `a11y_project_delete` | Projekt löschen | Delete project |
-| `a11y_project_rename` | Projekt umbenennen | Rename project |
 
 > **`project_delete_active_blocked` vs. `project_delete_last_blocked` — zwei getrennte Guardrails:**
 > `…active_blocked` = das **aktive** Projekt (erst wechseln → dann löschbar). `…last_blocked` = das
@@ -98,7 +96,9 @@ Konsolidierungs-Ticket. Tonal-Styling kommt aus der **geteilten `TonedHint`-Komp
 ist Code-Reuse, kein Key-Reuse.
 
 ## Self-Validation
-- **32 neue Keys** (6 CYP-92 + 6 gemeinsam + 6 Anlegen + 2 Umbenennen + 12 Löschen), alle DE+EN. Die
+- **30 neue Keys** (6 CYP-92 + 6 gemeinsam + 6 Anlegen + 2 Umbenennen + 10 Löschen), alle DE+EN. (Die
+  toten `a11y_project_rename`/`a11y_project_delete` wurden gestrichen — Row-Buttons tragen sichtbaren Text,
+  contentDescription redundant; Katalog dead-frei.) Die
   Verhaltens-Keys sind im Spec (`PROJECT-MANAGEMENT.md`) zitiert; a11y-Keys (`a11y_project_*`) und
   Fehler-Keys (`project_*_error`) sind an ihren Tags in `project-management-tags.md` verankert
   (a11y-Description bzw. `…error`-Slot).
