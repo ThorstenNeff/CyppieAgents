@@ -58,6 +58,8 @@ Macht die ACL-Matrix für Compose-UI-Tests + Maestro stabil adressierbar — ins
 |---|---|---|
 | Preset-Button | `aclMatrix.presetRestore` | startet Wiederherstellung |
 | Vorschau/Diff | `aclMatrix.presetPreview` | „N Zellen ändern sich" vor Anwendung |
+| Vorschau bestätigen | `aclMatrix.presetPreview.confirm` | Preset anwenden — **eigener** Tag (CYP-48-QA B1), NICHT `lockoutDialog.confirm` wiederverwenden |
+| Vorschau abbrechen | `aclMatrix.presetPreview.cancel` | Preset-Vorschau verwerfen |
 | Fortschritt | `aclMatrix.presetProgress` | „N/M wiederhergestellt" (nicht-atomar) |
 | Teilausfall | `aclMatrix.presetPartial` | „N/M – K fehlgeschlagen" |
 
@@ -67,7 +69,8 @@ Macht die ACL-Matrix für Compose-UI-Tests + Maestro stabil adressierbar — ins
 
 Diese Tags existieren **gerade**, damit die Honesty-Eigenschaften testbar sind:
 
-- **Pending ≠ Enforced:** nach Toggle erscheint `…​.pending`; erst nach `AclEvent`/200 wechselt die Zelle auf `…​.enforced`. Ein Test darf einen Toggle **nie** schon im Pending-Zustand als durchgesetzt werten.
+- **Pending ≠ Enforced:** nach Toggle erscheint `…​.pending`; erst nach dem **`AclEvent`-Echo** (Source of Truth, **nicht** schon nach PUT-200) wechselt die Zelle auf `…​.enforced`. Ein Test darf einen Toggle **nie** schon im Pending-Zustand — und auch nicht allein nach PUT-200 — als durchgesetzt werten.
+- **Preset-Bestätigung eigener Tag:** `aclMatrix.presetPreview.confirm`/`.cancel` (nicht `lockoutDialog.confirm`) — sonst kollidieren Preset-Apply und PO-Leitplanke im Test-Selektor.
 - **Nicht-Member ist N/A:** `…​.nonMember` präsent **und** `.read`/`.write` **abwesent** (kein editierbares Grau).
 - **PO-Leitplanke advisory:** Abschalten einer `…​.poCritical`-Zelle öffnet `aclMatrix.lockoutDialog` (kein stiller Toggle).
 - **Server ist der Schutz (CYP-49):** ein PO-entkoppelnder PUT endet in `…​.protected` + Rückfall, **nicht** in einem durchgesetzten Entzug.

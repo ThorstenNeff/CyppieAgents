@@ -20,7 +20,7 @@
 | `comm.timeline.loading` | `comm_timeline_loading` | Lädt… | Loading… |
 | `comm.timeline.empty` | `comm_timeline_empty` | Noch keine Nachrichten | No messages yet |
 | `comm.status.live` | `comm_status_live` | Live | Live |
-| `comm.status.offline` | `comm_status_offline` | Verbindung getrennt – Stand %1$s | Disconnected – as of %1$s |
+| `comm.status.offline` | `comm_status_offline` | Verbindung getrennt – Stand evtl. nicht aktuell | Disconnected – may be stale |
 
 ## 3. Composer
 
@@ -41,7 +41,7 @@
 | `a11y.comm.connection` | `a11y_comm_connection` | Verbindungsstatus: %1$s | Connection status: %1$s |
 
 ### Disclosure-kritische Wortwahl
-- `comm_status_offline` nennt **immer den Zeitstempel** des letzten Stands — Timeline nie als aktuell ausgeben, solange getrennt.
+- `comm_status_offline` = **no-arg** „Stand evtl. nicht aktuell" (Team-Standard ab 2026-06-28, CYP-48-QA / CYP-19 A2; gilt für Comm-Panel **und** ACL-Matrix, ein geteilter Key). Timeline/Matrix nie als aktuell ausgeben, solange getrennt. Der konkrete Stand-Zeitstempel (`%1$s`) ist **optionale spätere Politur** (Backlog), bewusst nicht im MVP-Key — vermeidet einen leeren/wörtlichen `%1$s`, wenn die konsumierende Stelle keine As-of-Zeit führt.
 - `comm_msg_pending` = **„Wird gesendet"**, nicht „Gesendet/Zugestellt", bis `message.id` bestätigt ist.
 - `comm_readonly_hint`/`comm_send_denied` benennen die ACL-Realität ehrlich, statt ein totes Eingabefeld zu zeigen.
 
