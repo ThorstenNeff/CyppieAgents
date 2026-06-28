@@ -23,6 +23,8 @@ import com.tneff.cyppieagents.routing.TokenRegistry
 import com.tneff.cyppieagents.scanner.Detector
 import com.tneff.cyppieagents.scanner.EventLogSignalSink
 import com.tneff.cyppieagents.scanner.Scanner
+import com.tneff.cyppieagents.scanner.StallDetector
+import com.tneff.cyppieagents.scanner.StallSweeper
 import kotlinx.coroutines.CoroutineScope
 import org.slf4j.LoggerFactory
 
@@ -115,10 +117,15 @@ class BootOrchestrator(
         // is configured; bootPlatform supplies it, CYP-43 makes it a config knob.
         spoolPath?.let { SpoolTailer(SpoolReader(it), eventRecorder, scope).start() }
 
-        // Mediator-Aufsicht Sense stage (07/S11, CYP-60): the Scanner consumes the same event bus via
+        // Mediator-Aufsicht Sense stage (07/S11). The Scanner consumes the same event bus via
         // `subscribe` and emits Signals back into it. Read-only on the stream + signal-emit only — it
-        // gets no connector/session handle, so it cannot act on an agent. Detectors arrive in CYP-61.
-        Scanner(eventSink, scannerDetectors, EventLogSignalSink(eventRecorder), scope).start()
+        // gets no connector/session handle, so it cannot act on an agent (CYP-60).
+        val signalSink = EventLogSignalSink(eventRecorder)
+        // CYP-61 stall detector: rate-limit throttle ∧ silence>T → stall.suspected. onEvent senses
+        // (arm/disarm) via the Scanner's fan-out; the timed decision is driven by the StallSweeper.
+        val stallDetector = StallDetector()
+        Scanner(eventSink, scannerDetectors + stallDetector, signalSink, scope).start()
+        StallSweeper(stallDetector, signalSink, scope, clock = System::currentTimeMillis).start()
 
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()

@@ -42,8 +42,15 @@ class Scanner(
      * Fan one event out to every detector and emit any signals. A detector that throws is isolated —
      * it neither kills the loop nor blocks the other detectors (fail-soft Sense; the cost of a buggy
      * detector is a missed signal, never a stalled scanner). Exposed for direct unit testing.
+     *
+     * **Loop-avoidance (structural, 07 §3):** signal-emitted event types (`stall.*`/`nudge.*`/…, see
+     * [SignalVocabulary]) are the loop's own output and are NOT re-dispatched to detectors. Doing it
+     * once here covers *every* detector — a new detector cannot forget to ignore foreign signal types
+     * and accidentally retrigger the loop. The effective wire type (`rawType ?: type.wire`) is used so
+     * it holds both before and after CYP-64 enumerates these types.
      */
     suspend fun scan(e: Event) {
+        if (SignalVocabulary.isSignal(e.rawType ?: e.type.wire)) return
         for (d in detectors) {
             val signal = try {
                 d.onEvent(e)
