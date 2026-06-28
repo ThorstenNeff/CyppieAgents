@@ -74,7 +74,7 @@ class WardenScaffoldTest {
 
     private object NoopActuator : Actuator {
         override suspend fun nudge(agentId: String, text: String) {}
-        override suspend fun escalateToPO(agentId: String, reason: String) {}
+        override suspend fun escalateToPO(agentId: String, reason: String, escalationType: String) {}
     }
 
     private var seq = 0L
@@ -172,12 +172,12 @@ class WardenScaffoldTest {
             val sessions = ConnectorSessions().apply { register(FakeSession("backend")) }
             val actuator = MediatorActuator(sessions, EventLogSignalSink(recorder), teamId = "default")
 
-            actuator.escalateToPO("backend", "exhausted nudges")
+            actuator.escalateToPO("backend", "exhausted nudges", escalationType = "stall.escalated")
 
             val ev = withTimeout(5_000) {
                 var found: Event? = null
                 while (found == null) {
-                    found = sink.query(EventFilter.ALL, Page(limit = 100)).events.firstOrNull { it.rawType == "po.escalated" }
+                    found = sink.query(EventFilter.ALL, Page(limit = 100)).events.firstOrNull { it.rawType == "stall.escalated" }
                     if (found == null) delay(20)
                 }
                 found

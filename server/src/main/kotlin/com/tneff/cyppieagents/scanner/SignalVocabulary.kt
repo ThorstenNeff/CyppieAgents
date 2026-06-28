@@ -11,14 +11,24 @@ package com.tneff.cyppieagents.scanner
  * watchers (budget, error-rate, security) add their signal/action types here as they land.
  */
 object SignalVocabulary {
+    /** The known signal/action types today (documentation + the loop-avoidance test iterates these). */
     val TYPES: Set<String> = setOf(
-        "stall.suspected", // CYP-61 (Scanner)
-        "stall.recovered", // CYP-63 (Warden)
-        "stall.escalated", // CYP-63 (Warden)
-        "nudge.sent",      // CYP-62 (Actuator action)
-        "po.escalated",    // CYP-62 (Actuator action: escalateToPO)
+        "stall.suspected", // CYP-61 (Scanner detector)
+        "stall.recovered", // CYP-63 (Stall policy: recovery)
+        "stall.escalated", // CYP-63 (Stall policy: escalateToPO action)
+        "nudge.sent",      // CYP-62 (Actuator: nudge action)
     )
 
+    /**
+     * The Sense/Act action-event **families** (07 §4). Matching by suffix/prefix — not a fixed list —
+     * means a future watcher's `budget.suspected` / `budget.escalated` / `budget.recovered` /
+     * `nudge.*` is loop-avoidance-covered automatically, with no edit here. None of the domain wire
+     * types (`turn.start`, `tool.call`, `error.ratelimit`, …) end in these suffixes, so nothing real
+     * is mis-filtered.
+     */
+    private val SIGNAL_SUFFIXES = listOf(".suspected", ".recovered", ".escalated")
+
     /** True if [wireType] is a Sense/Act-emitted type → not domain input, must not feed detectors. */
-    fun isSignal(wireType: String): Boolean = wireType in TYPES
+    fun isSignal(wireType: String): Boolean =
+        wireType in TYPES || wireType.startsWith("nudge.") || SIGNAL_SUFFIXES.any { wireType.endsWith(it) }
 }

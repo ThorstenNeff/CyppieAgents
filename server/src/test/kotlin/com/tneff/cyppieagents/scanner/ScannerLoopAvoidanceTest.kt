@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonObject
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -58,6 +59,39 @@ class ScannerLoopAvoidanceTest {
             // The filter must not over-block: a real domain event still fans out and produces a signal.
             scanner.scan(domainEvent())
             assertEquals(1, cap.emitted.size, "domain events must still be dispatched")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * Guards the **forward-looking** family promise (07 §4): a future watcher's signal type matches
+     * `SignalVocabulary` only via the suffix/prefix family, NOT the explicit [SignalVocabulary.TYPES]
+     * list — so this test uses synthetic types that are deliberately absent from TYPES. Without it the
+     * family branch is vacuum-tested (every other test uses a type already in TYPES, double-covering
+     * it). Mutation: drop the suffix/prefix branch in `isSignal` → these become non-signals →
+     * `isSignal` assert fails AND the scanner re-dispatches them → red.
+     */
+    @Test
+    fun futureFamilyTypes_notInExplicitList_areStillSignalsAndNotReDispatched() = runBlocking {
+        // Synthetic types a future watcher (budget/security/…) would emit; none are in the explicit list.
+        val familyOnly = listOf("budget.escalated", "budget.recovered", "xyz.suspected", "nudge.retried")
+        for (t in familyOnly) {
+            assertFalse(t in SignalVocabulary.TYPES, "$t must NOT be in the explicit list (tests the family branch)")
+            assertTrue(SignalVocabulary.isSignal(t), "$t must be a signal via the suffix/prefix family")
+        }
+
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val cap = CapturingSignalSink()
+            val scanner = Scanner(InMemoryEventSink(ManualTimeSource()), listOf(greedy), cap, scope)
+            for (t in familyOnly) scanner.scan(signalEvent(t))
+            assertTrue(cap.emitted.isEmpty(), "family-only signal types must not be re-dispatched (forward-looking loop-avoidance)")
+
+            // Sanity: a domain type that merely *contains* a family word but doesn't match is still dispatched.
+            assertFalse(SignalVocabulary.isSignal("tool.call"))
+            scanner.scan(domainEvent())
+            assertEquals(1, cap.emitted.size)
         } finally {
             scope.cancel()
         }
