@@ -115,7 +115,9 @@ class BootOrchestrator(
         val connector = ClaudeCodeConnector(
             spawner = spawner,
             worktreesRoot = worktrees.worktreesRoot,
-            apiKey = secrets.apiKey,
+            // S12 / CYP-82: resolve the API key PER PROJECT (single-sourced config.projectId), not a
+            // global server constant — the seam CYP-96 backs with an operator-settable per-project key.
+            apiKey = secrets.apiKeyFor(config.projectId),
             registry = registry,
             router = router,
             turnQueue = turnQueue,

@@ -112,7 +112,7 @@ class BootProofManualTest {
 
             println("=== S8 BOOT PROOF EVIDENCE (masked; auth=OAuth-subscription, not D3) ===")
             println("booted agents : ${booted.bootedAgents}")
-            println("worktrees     : ${File(gitRoot, "worktrees").list()?.toList()}")
+            println("worktrees     : ${File(gitRoot, "projects/default").list()?.toList()}")
             println("event types   : ${events.map { it::class.simpleName }.distinct()}")
             println("session bound : sid→${booted.registry.agentFor(sid ?: "?")}")
             println("po-backend    : ${spoke.map { SecretMasker.mask(it.body) }}")

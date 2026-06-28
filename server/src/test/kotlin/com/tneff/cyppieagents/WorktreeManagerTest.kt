@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.boot.WorktreeManager
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -62,8 +63,31 @@ class WorktreeManagerTest {
 
         wm.ensureWorktree("backend", "main")
 
-        val target = File(root, "worktrees/backend").absolutePath
+        // S12 / CYP-82: default project → projects/default/<name>.
+        val target = File(root, "projects/default/backend").absolutePath
         assertTrue(git.issued(listOf("git", "worktree", "add", target, "agent/backend")), "reuse path adds existing branch")
         assertFalse(git.commands.any { it.contains("-b") }, "reuse path must not pass -b")
+    }
+
+    @Test
+    fun worktreeNestsUnderProjectScopedRoot() {
+        // S12 / CYP-82: worktrees live at projects/<projectId>/<agent>, not the old flat worktrees/.
+        // Mutation: revert worktreesDir to File(gitRoot, "worktrees") → this goes red.
+        val git = FakeGit()
+        val root = gitRoot()
+        val wm = WorktreeManager(git, root, "alpha")
+        wm.ensureClone(RepoConfig("u", "main"))
+
+        val dir = wm.ensureWorktree("backend", "main")
+        val expected = File(root, "projects/alpha/backend")
+        assertEquals(expected.absolutePath, dir.absolutePath, "worktree under projects/<projectId>/<agent>")
+        assertEquals(expected.absolutePath, wm.worktreeDir("backend").absolutePath)
+        assertEquals(File(root, "projects/alpha").absolutePath, wm.worktreesRoot.absolutePath)
+        assertTrue(
+            git.commands.any { it.take(3) == listOf("git", "worktree", "add") && it.any { a -> a.contains("projects/alpha/backend") } },
+            "git worktree add targets the project-scoped path",
+        )
+        // The old flat layout must not be used.
+        assertFalse(git.commands.any { it.any { a -> a.contains("${root.absolutePath}/worktrees/") } }, "no flat worktrees/ path")
     }
 }
