@@ -1,0 +1,61 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-26",
+    "version": "0.2-draft",
+    "status": "Vorschlag — wartet auf Dev-Kalibrierung (Maße) + PO-Entscheid (optionales Snap)",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "scope": "Desktop Canvas (beide Achsen >= Medium). Compact/Phone = S10/CYP-54 (Pager), nicht hier.",
+    "reuse_first": "Ueberwiegend DIMENSIONALE Tokens (dp). Farben werden NICHT neu erfunden — Snap-Guide reused einen bestehenden Outline-Hue. Bestehende Konstanten (MIN_WINDOW_WIDTH/HEIGHT, MIN_VISIBLE_WINDOW, RESIZE_*) bleiben unveraendert; hier nur Ergaenzungen.",
+    "code_anchor": "window/WindowManagerState.kt (Konstanten + tile()/clamp), window/WindowManager.kt (WindowHost size-class)."
+  },
+  "existing_unchanged": {
+    "MIN_WINDOW_WIDTH": { "dp": 160, "role": "harter Floor fuer NICHT-Inhalts-Fenster (ACL/Event-Log lesbar auch schmal)", "source": "WindowManagerState.kt" },
+    "MIN_WINDOW_HEIGHT": { "dp": 120, "source": "WindowManagerState.kt" },
+    "MIN_VISIBLE_WINDOW": { "dp": 48, "role": "nur fuer MANUELLES Verschieben (Nutzer darf ans Rand schieben); NICHT fuer das Default-Layout", "source": "WindowManagerState.kt" },
+    "RESIZE_HIT_SLOP": { "dp": 44, "source": "WindowManagerState.kt" },
+    "RESIZE_HANDLE_SIZE": { "dp": 24, "source": "WindowManagerState.kt" }
+  },
+  "new_dimension_tokens": {
+    "COMPOSER_MIN_WIDTH": {
+      "dp": 280,
+      "role": "Inhaltsgarantie des Eingabefelds (Agent- + Comm-Composer). Darunter wird 'Senden' zum Icon-Button (Label nie abschneiden).",
+      "status": "Startwert — mit Dev kalibrieren",
+      "applies_to": ["agentview/AgentWindow.kt composer", "comm/CommPanel.kt composer"]
+    },
+    "TILED_CONTENT_WINDOW_MIN_WIDTH": {
+      "dp": 320,
+      "role": "Min-Breite fuer gekachelte INHALTS-Fenster (Agent/Comm), damit Composer+Senden passen. Ersetzt NICHT den 160-dp-Floor anderer Fenstertypen.",
+      "status": "Startwert — mit Dev kalibrieren",
+      "rationale": "COMPOSER_MIN_WIDTH + Sendebutton + Innenabstand"
+    },
+    "COMPOSER_PLACEHOLDER_OVERFLOW": {
+      "value": "ellipsis",
+      "maxLines": 1,
+      "softWrap": false,
+      "role": "Placeholder degradiert per Ellipsis statt zeichenweisem Umbruch (komponentenweit, breakpoint-unabhaengig)"
+    }
+  },
+  "size_class_column_caps": {
+    "role": "tile(): columns = min(ceil(sqrt(count)), cap[widthSizeClass]). Steuert NUR die Spaltenzahl des SYSTEM-Default-Layouts — kein forciertes Tiling zur Laufzeit.",
+    "compact": { "cap": "n/a", "note": "Compact => Pager (S10), nicht Canvas" },
+    "medium": { "widthDp": "600-839", "cap": 2 },
+    "expanded": { "widthDp": ">=840", "cap": "kein Cap (sqrt(count))" }
+  },
+  "default_layout_clamp": {
+    "role": "Das SYSTEM-erzeugte Default-Layout liegt VOLLSTAENDIG im Host (nicht 48-dp-Floor).",
+    "rule": "x in [0, host-width], y in [0, host-height]; Groesse vorher auf Host clampen.",
+    "gap_dp": 16,
+    "note": "Manuelles Verschieben behaelt MIN_VISIBLE_WINDOW=48dp. Bewusste Trennung."
+  },
+  "optional_snap": {
+    "status": "VORSCHLAG — PO-Entscheid (MVP vs Backlog vs streichen). Kein forciertes Tiling; jederzeit uebersteuerbar.",
+    "SNAP_THRESHOLD": { "dp": 12, "role": "Distanz, ab der eine Kante an Host-/Peer-Kante einrastet" },
+    "window.snap.guide": {
+      "role": "visuelle Snap-Hilfslinie waehrend des Drags (Form+Position, nicht nur Farbe)",
+      "reuse": "MaterialTheme.colorScheme.outline (KEINE neue Farbe)",
+      "dark": { "stroke": "outline", "width_dp": 1 },
+      "light": { "stroke": "outline", "width_dp": 1 }
+    }
+  }
+}
