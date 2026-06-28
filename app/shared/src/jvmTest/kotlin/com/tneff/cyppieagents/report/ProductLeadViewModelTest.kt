@@ -1,4 +1,5 @@
 package com.tneff.cyppieagents.report
+import com.tneff.cyppieagents.model.ReportType
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -82,6 +83,6 @@ class ProductLeadViewModelTest {
         val items = vm.state.value.selected!!.sections.flatMap { it.items }
         // At least one severity-bearing (defect) item; refs are non-sensitive labels, never bodies.
         assertTrue(items.any { it.severity != null })
-        assertTrue(items.all { it.refLabel == null || !it.refLabel.contains("\n") })
+        assertTrue(items.all { it.refLabel?.contains("\n") != true })
     }
 }

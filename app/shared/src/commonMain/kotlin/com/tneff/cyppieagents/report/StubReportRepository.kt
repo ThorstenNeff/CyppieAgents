@@ -1,4 +1,10 @@
 package com.tneff.cyppieagents.report
+import com.tneff.cyppieagents.model.ReportWindow
+import com.tneff.cyppieagents.model.ReportType
+import com.tneff.cyppieagents.model.ReportSnapshot
+import com.tneff.cyppieagents.model.ReportSection
+import com.tneff.cyppieagents.model.ReportMeta
+import com.tneff.cyppieagents.model.ReportItem
 
 import com.tneff.cyppieagents.model.Severity
 
