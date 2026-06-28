@@ -88,6 +88,12 @@ fun WindowHost(
     modifier: Modifier = Modifier,
     /** User-triggered "fit windows" one-shot re-tile (CYP-26 §2.3); default no-op (e.g. in tests). */
     onFit: () -> Unit = {},
+    /**
+     * Per-window activity badge (CYP-55); `null` → no badge (fail-closed). Default `{ null }` keeps the
+     * host badge-free for callers/tests that don't wire a source — never a regression. The shell derives
+     * it from the always-alive badge state. Canvas → title-bar badge; pager → indicator-dot badge.
+     */
+    badgeFor: (String) -> WindowBadge? = { null },
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -104,9 +110,9 @@ fun WindowHost(
             sizeClass.heightSizeClass == WindowHeightSizeClass.Compact
 
         if (isCompact) {
-            PhonePager(state = state, windowContent = windowContent)
+            PhonePager(state = state, badgeFor = badgeFor, windowContent = windowContent)
         } else {
-            WindowCanvas(state = state, onFit = onFit, windowContent = windowContent)
+            WindowCanvas(state = state, onFit = onFit, badgeFor = badgeFor, windowContent = windowContent)
         }
     }
 }
@@ -120,6 +126,7 @@ fun WindowHost(
 private fun WindowCanvas(
     state: WindowManagerState,
     onFit: () -> Unit,
+    badgeFor: (String) -> WindowBadge?,
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().testTag(WindowTestTags.HOST)) {
@@ -134,6 +141,7 @@ private fun WindowCanvas(
                     onFocus = { state.focus(window.id) },
                     onMove = { dx, dy -> state.moveBy(window.id, dx, dy) },
                     onResize = { dWidth, dHeight -> state.resizeBy(window.id, dWidth, dHeight) },
+                    badge = badgeFor(window.id),
                     content = { windowContent(window) },
                 )
             }
@@ -174,6 +182,7 @@ private val PAGER_TOUCH_TARGET = 48.dp
 @Composable
 private fun PhonePager(
     state: WindowManagerState,
+    badgeFor: (String) -> WindowBadge?,
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     val pages = state.orderedWindows
@@ -257,6 +266,7 @@ private fun PhonePager(
             PagerIndicator(
                 pages = pages,
                 currentIndex = currentIndex,
+                badgeFor = badgeFor,
                 onSelect = { idx -> scope.launch { pagerState.animateScrollToPage(idx) } },
             )
         }
@@ -272,6 +282,7 @@ private fun PhonePager(
 private fun PagerIndicator(
     pages: List<WindowState>,
     currentIndex: Int,
+    badgeFor: (String) -> WindowBadge?,
     onSelect: (Int) -> Unit,
 ) {
     Row(
@@ -326,6 +337,20 @@ private fun PagerIndicator(
                                 if (active) Modifier.testTag(PhonePagerTags.dotActive(window.id)) else Modifier,
                             ),
                     )
+                    // CYP-55: per-page activity badge on the dot for a NON-active page (the active page
+                    // is gated by the shell). Reuses the existing phonePager.page.<id>.badge slot
+                    // (CYP-54 §6). Only the dot mode (≤ threshold) has a per-page slot; counter mode is
+                    // a documented known limitation (WINDOW-BADGES §8) — no lying badge there.
+                    val dotBadge = badgeFor(window.id)
+                    if (dotBadge != null) {
+                        WindowBadgeView(
+                            windowId = window.id,
+                            windowTitle = window.title,
+                            badge = dotBadge,
+                            modifier = Modifier.align(Alignment.TopEnd),
+                            containerTag = PhonePagerTags.badge(window.id),
+                        )
+                    }
                 }
             }
         } else {
@@ -362,6 +387,7 @@ private fun PagerIndicator(
  * @param onFocus invoked when the window is pressed, keyboard-focused, or a drag/resize starts.
  * @param onMove drag/keyboard delta to move the window, in dp.
  * @param onResize drag/keyboard delta to resize the window, in dp.
+ * @param badge optional activity badge (CYP-55) shown at the end of the title bar; `null` → none.
  */
 @Composable
 fun FloatingWindow(
@@ -371,6 +397,7 @@ fun FloatingWindow(
     onFocus: () -> Unit,
     onMove: (dx: Float, dy: Float) -> Unit,
     onResize: (dWidth: Float, dHeight: Float) -> Unit,
+    badge: WindowBadge? = null,
     content: @Composable () -> Unit,
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -457,15 +484,29 @@ fun FloatingWindow(
                             )
                         },
                 ) {
-                    Text(
-                        text = window.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = if (isFocused) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = window.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (isFocused) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        // CYP-55 activity badge at the title end (fail-closed: only when present).
+                        if (badge != null) {
+                            WindowBadgeView(
+                                windowId = window.id,
+                                windowTitle = window.title,
+                                badge = badge,
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
+                    }
                 }
 
                 // Content slot — arbitrary composable supplied by the host.

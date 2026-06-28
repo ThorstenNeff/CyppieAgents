@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ import com.tneff.cyppieagents.agentview.AgentLifecycleLiveSource
 import com.tneff.cyppieagents.agentview.AgentLifecycleRepository
 import com.tneff.cyppieagents.agentview.AgentLifecycleSource
 import com.tneff.cyppieagents.agentview.AgentSession
+import com.tneff.cyppieagents.agentview.AgentStatus
 import com.tneff.cyppieagents.agentview.AgentViewModel
 import com.tneff.cyppieagents.agentview.AgentWindow
 import com.tneff.cyppieagents.agentview.AgentWsClient
@@ -42,6 +44,7 @@ import com.tneff.cyppieagents.eventlog.EventTailViewModel
 import com.tneff.cyppieagents.eventlog.EventsApi
 import com.tneff.cyppieagents.eventlog.EventsApiClient
 import com.tneff.cyppieagents.eventlog.EventsWsClient
+import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.window.WindowReducer
@@ -176,6 +179,50 @@ fun AgentShell(
     }
     val resolvedLifecycleSource = lifecycleSource ?: defaultLifecycleSource
 
+    // CYP-55: hoist the per-window VMs to the always-composed shell. Two reasons: (1) each VM opens
+    // exactly ONE subscription — a separate badge collector would double-subscribe the cold WS flows
+    // (CommVM/AgentVM/EventTailVM already collect); (2) the badge sources must stay live even when the
+    // phone pager composes only the active page, so they hang on this always-alive state, not on the
+    // per-page lifecycle. windowContent below reuses these very instances (no second viewModel()).
+    val agentVms = LinkedHashMap<String, AgentViewModel>()
+    for ((id, _) in windows) {
+        if (id == COMM_WINDOW_ID || id == ACL_WINDOW_ID ||
+            id == EVENTLOG_BROWSE_WINDOW_ID || id == EVENTLOG_TAIL_WINDOW_ID
+        ) continue
+        agentVms[id] = viewModel(key = id) {
+            AgentViewModel(
+                session = resolveSession(id),
+                agentId = id,
+                lifecycle = resolvedLifecycleApi,
+                lifecycleSource = resolvedLifecycleSource,
+                canControl = cfg.operatorToken != null,
+            )
+        }
+    }
+    val commVm = viewModel(key = COMM_WINDOW_ID) {
+        CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
+    }
+    val aclVm = viewModel(key = ACL_WINDOW_ID) {
+        AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = cfg.operatorToken != null)
+    }
+    // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
+    // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
+    val browseVm: EventBrowseViewModel? =
+        if (cfg.operatorToken != null) viewModel(key = EVENTLOG_BROWSE_WINDOW_ID) { EventBrowseViewModel(resolvedEventsApi) } else null
+    val tailVm: EventTailViewModel? =
+        if (cfg.operatorToken != null) viewModel(key = EVENTLOG_TAIL_WINDOW_ID) { EventTailViewModel(resolvedEventsLiveSource) } else null
+
+    // Collect the badge-relevant slices of the hoisted VM state (single subscription each).
+    // B1: comm-wide unread (others, while unfocused). A1: per-agent ERROR status. C1: the highest
+    // severity currently in the operator-gated tail buffer — a content-free enum, never event content.
+    val commUnread = commVm.state.collectAsState().value.unreadCount
+    val agentStatuses = LinkedHashMap<String, AgentStatus>()
+    for ((id, vm) in agentVms) {
+        agentStatuses[id] = vm.status.collectAsState().value
+    }
+    val tailMaxSeverity: Severity? =
+        tailVm?.state?.collectAsState()?.value?.events?.maxOfOrNull { it.severity }
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
@@ -197,45 +244,38 @@ fun AgentShell(
             // Feed the measured host size into the manager so its resize re-clamp (CYP-16 F1/F6) fires.
             state.updateHostSize(hostWidth, hostHeight)
         }
+
+        // CYP-55 B1: keep the comm VM's unread counter in step with focus (canvas: top z-order;
+        // pager: active page — focusedId tracks both). On focus it resets and suppresses, so leaving
+        // the comm window only ever surfaces traffic that arrived while you were elsewhere.
+        val focusedId = state.focusedId
+        LaunchedEffect(focusedId) { commVm.markCommFocused(focusedId == COMM_WINDOW_ID) }
+
+        // Fail-closed, focus-gated badge map (CYP-55) — pure policy in [deriveWindowBadges]. tailVm is
+        // null without an operator token → tailMaxSeverity null → C1 omitted (no leak). No source → no
+        // entry → no windowBadge.<id> node downstream.
+        val badges = deriveWindowBadges(
+            focusedId = focusedId,
+            commWindowId = COMM_WINDOW_ID,
+            commUnread = commUnread,
+            agentStatuses = agentStatuses,
+            eventTailWindowId = EVENTLOG_TAIL_WINDOW_ID,
+            tailMaxSeverity = tailMaxSeverity,
+        )
+
         WindowHost(
             state = state,
             onFit = { state.fit(isRtl) },
+            badgeFor = { id -> badges[id] },
             windowContent = { window ->
+                // Reuse the hoisted (always-alive) VMs — never a second viewModel() here, so each
+                // window keeps exactly one subscription whether rendered in the canvas or the pager.
                 when (window.id) {
-                    COMM_WINDOW_ID -> {
-                        val commViewModel = viewModel(key = COMM_WINDOW_ID) {
-                            CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
-                        }
-                        CommPanel(commViewModel)
-                    }
-                    ACL_WINDOW_ID -> {
-                        val vm = viewModel(key = ACL_WINDOW_ID) {
-                            AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = cfg.operatorToken != null)
-                        }
-                        AclPanel(vm)
-                    }
-                    EVENTLOG_BROWSE_WINDOW_ID -> {
-                        val vm = viewModel(key = EVENTLOG_BROWSE_WINDOW_ID) { EventBrowseViewModel(resolvedEventsApi) }
-                        EventBrowsePanel(vm)
-                    }
-                    EVENTLOG_TAIL_WINDOW_ID -> {
-                        val vm = viewModel(key = EVENTLOG_TAIL_WINDOW_ID) { EventTailViewModel(resolvedEventsLiveSource) }
-                        EventTailPanel(vm)
-                    }
-                    else -> {
-                        // viewModel keyed by agent id → one AgentViewModel per agent, proper VM lifecycle.
-                        // CYP-73: lifecycle state feeds the non-gated header; controls enabled iff operator.
-                        val agentViewModel = viewModel(key = window.id) {
-                            AgentViewModel(
-                                session = resolveSession(window.id),
-                                agentId = window.id,
-                                lifecycle = resolvedLifecycleApi,
-                                lifecycleSource = resolvedLifecycleSource,
-                                canControl = cfg.operatorToken != null,
-                            )
-                        }
-                        AgentWindow(agentId = window.id, viewModel = agentViewModel)
-                    }
+                    COMM_WINDOW_ID -> CommPanel(commVm)
+                    ACL_WINDOW_ID -> AclPanel(aclVm)
+                    EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it) }
+                    EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it) }
+                    else -> agentVms[window.id]?.let { AgentWindow(agentId = window.id, viewModel = it) }
                 }
             },
         )

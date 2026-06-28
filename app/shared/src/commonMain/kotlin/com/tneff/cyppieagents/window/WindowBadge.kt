@@ -44,10 +44,15 @@ sealed interface WindowBadge {
 }
 
 /**
- * Renders [badge] at the end of a window title bar / pager header. **Form carries meaning** (number
+ * Renders [badge] at the end of a window title bar / pager indicator. **Form carries meaning** (number
  * pill vs severity-symbol pill vs warning triangle), so the variants are distinguishable without
  * colour (WCAG 1.4.1); each carries an a11y label naming the window + meaning. [windowTitle] fills the
  * `%1$s` of the a11y strings.
+ *
+ * [containerTag] tags the badge container: in the canvas title bar it is `windowBadge.<id>` (the
+ * default); in the phone pager it reuses the existing `phonePager.page.<id>.badge` slot (CYP-54 §6).
+ * The inner variant nodes (`windowBadge.<id>.{count,severity,attention}`) stay the same in both modes —
+ * the badge *form* is one vocabulary across canvas and pager.
  */
 @Composable
 fun WindowBadgeView(
@@ -55,8 +60,9 @@ fun WindowBadgeView(
     windowTitle: String,
     badge: WindowBadge,
     modifier: Modifier = Modifier,
+    containerTag: String = WindowBadgeTags.badge(windowId),
 ) {
-    Box(modifier = modifier.testTag(WindowBadgeTags.badge(windowId))) {
+    Box(modifier = modifier.testTag(containerTag)) {
         when (badge) {
             is WindowBadge.Count -> CountBadge(windowId, windowTitle, badge.newCount)
             is WindowBadge.SeverityLevel -> SeverityBadge(windowId, windowTitle, badge.severity)
