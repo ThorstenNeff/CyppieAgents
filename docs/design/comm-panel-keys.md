@@ -20,6 +20,7 @@
 | `comm.timeline.loading` | `comm_timeline_loading` | Lädt… | Loading… |
 | `comm.timeline.empty` | `comm_timeline_empty` | Noch keine Nachrichten | No messages yet |
 | `comm.status.live` | `comm_status_live` | Live | Live |
+| `comm.status.connecting` | `comm_status_connecting` | Verbinde… | Connecting… |
 | `comm.status.offline` | `comm_status_offline` | Verbindung getrennt – Stand evtl. nicht aktuell | Disconnected – may be stale |
 
 ## 3. Composer
@@ -30,7 +31,10 @@
 | `comm.composer.send` | `comm_composer_send` | Senden | Send |
 | `comm.msg.pending` | `comm_msg_pending` | Wird gesendet… | Sending… |
 | `comm.send.denied` | `comm_send_denied` | Keine Schreibrechte in diesem Kanal | No write access in this channel |
+| `comm.send.failed` | `comm_send_failed` | Senden fehlgeschlagen | Sending failed |
 | `comm.readonly.hint` | `comm_readonly_hint` | Nur Lesezugriff in diesem Kanal | Read-only access in this channel |
+
+> **`comm_send_denied` ≠ `comm_readonly_hint` ≠ `comm_send_failed`** (CYP-53 §1, Disclosure): proaktiver Read-Only-Zustand (`comm_readonly_hint`, du darfst lesen, nicht schreiben) vs. abgelehnter Sende-Versuch wegen ACL (`comm_send_denied`) vs. generischer Sende-Fehler (`comm_send_failed`). Beim Verdrahten getrennt halten.
 
 ## 4. Accessibility-Keys (Farbe nie alleiniger Träger)
 
