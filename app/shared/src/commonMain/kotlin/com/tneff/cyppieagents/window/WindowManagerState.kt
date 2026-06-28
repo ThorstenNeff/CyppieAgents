@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.sqrt
 
 /**
@@ -46,6 +47,15 @@ const val MIN_WINDOW_HEIGHT: Float = 120f
  * completely out of the visible area.
  */
 const val MIN_VISIBLE_WINDOW: Float = 48f
+
+/**
+ * Height of the host **affordance band** reserved at the top of the canvas for the "fit windows"
+ * toolbar (CYP-95). [WindowReducer.tile] keeps every tiled window below it, so the `window.host.fit`
+ * control (top-end, drawn above the windows) can never overlap a window's title bar / drag corner /
+ * agent header — the CYP-73/§2.3 free space is **guaranteed**, not incidental. Comfortably exceeds the
+ * `TextButton`'s height so the bounds stay disjoint.
+ */
+const val HOST_AFFORDANCE_BAND: Float = 56f
 
 /** Visible size of the resize grip, in dp. Meets the WCAG 2.5.8 minimum target size (24 dp). */
 const val RESIZE_HANDLE_SIZE: Float = 24f
@@ -184,16 +194,34 @@ object WindowReducer {
         gap: Float = 16f,
         isRtl: Boolean = false,
         contentWindowIds: Set<String> = emptySet(),
+        /** Top band reserved for the host fit toolbar (CYP-95); windows tile below it. */
+        topBand: Float = HOST_AFFORDANCE_BAND,
     ): List<WindowState> {
         if (items.isEmpty()) return emptyList()
         val count = items.size
-        val columns = minOf(ceil(sqrt(count.toDouble())).toInt(), columnCapForWidth(hostWidth)).coerceAtLeast(1)
+        // CYP-95 [Low]: never tile more columns than actually fit side-by-side at the widest applicable
+        // min-width — on a narrow Medium host (2 × min > host) fall to a single column instead of
+        // placing overlapping "fully-visible" windows. Uses the content floor when any content window is
+        // present (its 320 dp dominates), else the 160 dp floor; ignored until the host is measured.
+        val widestMinWidth = if (items.any { it.first in contentWindowIds }) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        // Non-overlap criterion: N columns need N·min + (N−1)·gap ≤ host (edge-to-edge, no outer margin)
+        // → N ≤ (host + gap) / (min + gap). So two 320 dp content windows drop to one column once the
+        // host can't hold them without overlap (≈ 656 dp), but a roomier Medium keeps two.
+        val columnsThatFit = if (hostWidth > 0f) {
+            floor((hostWidth + gap) / (widestMinWidth + gap)).toInt().coerceAtLeast(1)
+        } else {
+            Int.MAX_VALUE
+        }
+        val columns = minOf(ceil(sqrt(count.toDouble())).toInt(), columnCapForWidth(hostWidth), columnsThatFit).coerceAtLeast(1)
         val rows = ceil(count.toDouble() / columns).toInt().coerceAtLeast(1)
 
         // Fall back to a layout that still fits the minimum tile size if the host hasn't been
         // measured yet (host size 0) or is smaller than the grid needs.
         val usableWidth = hostWidth.coerceAtLeast(columns * (MIN_WINDOW_WIDTH + gap) + gap)
-        val usableHeight = hostHeight.coerceAtLeast(rows * (MIN_WINDOW_HEIGHT + gap) + gap)
+        // CYP-95 [Medium]: reserve a top band for the host fit toolbar; windows tile in the remaining
+        // height below it, so the top row's chrome never lands under the (top-end) fit control.
+        val bandedHeight = hostHeight - topBand
+        val usableHeight = bandedHeight.coerceAtLeast(rows * (MIN_WINDOW_HEIGHT + gap) + gap)
         val cellWidth = (usableWidth - gap * (columns + 1)) / columns
         val cellHeight = (usableHeight - gap * (rows + 1)) / rows
 
@@ -205,12 +233,14 @@ object WindowReducer {
             val height = cellHeight.coerceAtLeast(MIN_WINDOW_HEIGHT)
             val xLtr = gap + col * (cellWidth + gap)
             val rawX = if (isRtl) usableWidth - xLtr - width else xLtr
+            val rawY = topBand + gap + row * (cellHeight + gap)
             WindowState(
                 id = id,
                 title = title,
                 // Fully visible: keep each window within the host (default layout never goes off-host).
                 x = rawX.coerceIn(0f, maxOf(0f, hostWidth - width)),
-                y = (gap + row * (cellHeight + gap)).coerceIn(0f, maxOf(0f, hostHeight - height)),
+                // Below the reserved top band AND within the host bottom (never under the fit toolbar).
+                y = rawY.coerceIn(topBand, maxOf(topBand, hostHeight - height)),
                 width = width,
                 height = height,
             )

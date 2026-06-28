@@ -224,20 +224,37 @@ class WindowReducerTest {
     }
 
     @Test
-    fun tile_narrowHost_contentFloorWouldOverflow_clampKeepsFullyVisible() {
-        // Medium host too narrow for two 320 dp content windows: the 320 floor pushes the 2nd column's
-        // rawX past host-width. The fully-visible clamp must pull it back in — WITHOUT the clamp this
-        // window would be off-host (x + width > host). This is the case that makes the clamp load-bearing
-        // (the natural-fit tests leave it a no-op). Mutation: x = rawX → this test goes RED.
+    fun tile_narrowMedium_twoContentWindowsFallToOneColumn_noOverlap() {
+        // CYP-95 [Low]: a Medium host too narrow for two 320 dp content windows side-by-side
+        // (2×320 + gap ≈ 656 > host) must fall to ONE column (stacked) instead of placing two cramped,
+        // overlapping "fully-visible" windows. Mutation: drop the columns-that-fit cap → two columns at
+        // 640 dp → the windows no longer share a column (different x) → RED.
         val items = listOf("comm" to "Comm", "acl-but-content" to "X")
-        val host = 640f // Medium (600–839), 2 columns; cell ≈ 296 dp < 320 dp content floor
+        val host = 640f
         val result = WindowReducer.tile(
             items, hostWidth = host, hostHeight = 600f, contentWindowIds = setOf("comm", "acl-but-content"),
         )
-        assertTrue(result.all { it.width == TILED_CONTENT_WINDOW_MIN_WIDTH }, "both content windows floored to 320")
+        // One column: both windows share the same x and are stacked on different rows.
+        assertEquals(result[0].x, result[1].x, "narrow Medium falls to a single column (same x)")
+        assertTrue(result[0].y != result[1].y, "the two windows are stacked, not overlaid")
+        // Still fully visible within the host.
         assertTrue(
             result.all { it.x >= 0f && it.x + it.width <= host + 0.01f },
-            "320-floor must not push a window off-host — clamp keeps it fully visible: ${result.map { it.x to it.width }}",
+            "single-column windows stay fully visible: ${result.map { it.x to it.width }}",
+        )
+    }
+
+    @Test
+    fun tile_reservesTopAffordanceBand_everyWindowBelowIt() {
+        // CYP-95 [Medium]: every tiled window starts below the reserved host affordance band, so the
+        // top-end fit toolbar can never overlap a window's chrome. The 50 dp threshold is a literal
+        // BELOW the band+gap (≈72) but ABOVE the band-less top (gap = 16), so mutating the band away
+        // (HOST_AFFORDANCE_BAND → 0) drops the top row to y = 16 < 50 → RED (not circular on the const).
+        val items = listOf("a" to "A", "b" to "B", "c" to "C")
+        val result = WindowReducer.tile(items, hostWidth = 900f, hostHeight = 700f)
+        assertTrue(
+            result.all { it.y >= 50f },
+            "every window tiles below the reserved affordance band: ${result.map { it.y }}",
         )
     }
 

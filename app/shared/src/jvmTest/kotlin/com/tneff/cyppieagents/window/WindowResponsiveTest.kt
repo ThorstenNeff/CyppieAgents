@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
@@ -52,5 +53,31 @@ class WindowResponsiveTest {
             },
             "fit must bring every window fully into the host — got ${state.windows.map { it.x to it.width }}",
         )
+    }
+
+    @Test
+    fun afterFit_fitButtonBoundsDisjointFromEveryTitleBar() = runComposeUiTest {
+        // CYP-95 [Medium]: after fit, the top-end `window.host.fit` toolbar must not overlap any window's
+        // title bar / drag chrome — the reserved affordance band guarantees the free space. Mutation:
+        // remove the band (tile from y = 0) → a top-row window's title bar sits under the button → RED.
+        val ids = listOf("a", "b", "c", "d")
+        val state = WindowManagerState(ids.map { WindowState(it, it.uppercase(), 0f, 0f, 300f, 200f) })
+        setContent {
+            MaterialTheme {
+                Box(Modifier.size(900.dp, 700.dp)) {
+                    WindowHost(state = state, onFit = { state.fit(isRtl = false) }, windowContent = { Text("x ${it.id}") })
+                }
+            }
+        }
+        onNodeWithTag(WindowTestTags.FIT).performClick()
+        waitForIdle()
+
+        val fit = onNodeWithTag(WindowTestTags.FIT).getBoundsInRoot()
+        ids.forEach { id ->
+            val title = onNodeWithTag(WindowTestTags.titleBar(id)).getBoundsInRoot()
+            val disjoint = fit.bottom <= title.top || title.bottom <= fit.top ||
+                fit.right <= title.left || title.right <= fit.left
+            assertTrue(disjoint, "fit button must not overlap $id title bar (fit=$fit, title=$title)")
+        }
     }
 }
