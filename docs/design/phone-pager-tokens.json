@@ -1,0 +1,47 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-54",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen + Kontrast-Validierung",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "reuse_first": "Identitaets-/Statusfarben aus CYP-14/CYP-12. Hier NUR Pager-spezifische Neu-Tokens. Kontrast: Text >=4.5:1, Nicht-Text-UI >=3:1; dark Default + light.",
+    "color_is_never_sole_signal": "Aktiver Indikator-Dot = gefuellt + groesser (Form/Groesse), nicht nur Farbe (WCAG 1.4.1). Identitaetsfarbe (CYP-14) markiert NUR Identitaet, nie eine Berechtigung."
+  },
+  "reused": {
+    "page_identity_color": "CYP-14 colorSlot(window/agent id) — optionaler Tint des aktiven Dots/Headers bei Agent-Seiten; Identitaet, nicht Recht",
+    "activity_attention": "CYP-12 state-tokens.json (attention/neu) fuer den Badge — getrennt vom Identitaetssystem"
+  },
+  "new_tokens": {
+    "pager.indicator.dot.active": {
+      "role": "aktive Seite im Dot-Indikator (<= ~6 Seiten)",
+      "dark":  { "fill": "#E6E8EB", "size_dp": 8, "shape": "filled" },
+      "light": { "fill": "#1B1C1F", "size_dp": 8, "shape": "filled" },
+      "note": "GROESSER + gefuellt als inactive — Form/Groesse tragen die Bedeutung, nicht Farbe"
+    },
+    "pager.indicator.dot.inactive": {
+      "role": "nicht-aktive Seite",
+      "dark":  { "fill": "#5A5E66", "size_dp": 6, "shape": "outline" },
+      "light": { "fill": "#A0A4AD", "size_dp": 6, "shape": "outline" },
+      "note": "kleiner + gedimmt/outline"
+    },
+    "pager.indicator.position": {
+      "role": "kompakter Zaehler statt Dots bei > ~6 Seiten",
+      "dark":  { "fg": "#C9CDD3", "label_key": "pager_page_position" },
+      "light": { "fg": "#3A3D42", "label_key": "pager_page_position" },
+      "note": "'N / M' — Textzaehler; immer die WAHRE Seitenzahl (Omission beachten)"
+    },
+    "pager.page.badge": {
+      "role": "Aktivitaets-Badge am Ziel-Dot/Seitenkante (Hintergrund-Event)",
+      "dark":  { "fill": "#4DA3FF", "onFill": "#06243F", "label_key": "pager_activity_badge" },
+      "light": { "fill": "#1A73E8", "onFill": "#FFFFFF", "label_key": "pager_activity_badge" },
+      "note": "blau = Aufmerksamkeit/Neuigkeit, NICHT 'zugestellt/erledigt'; kein Auto-Sprung, kein Kontext-Klau"
+    },
+    "pager.header": {
+      "role": "schlanke Kopfzeile mit Titel der aktuellen Seite (nur ein Fenster sichtbar)",
+      "dark":  { "bg": "#16171A", "fg": "#E6E8EB" },
+      "light": { "bg": "#F5F6F8", "fg": "#1B1C1F" },
+      "note": "traegt WindowState.title (+ optional colorSlot-Identitaetspunkt bei Agent-Seiten)"
+    }
+  }
+}

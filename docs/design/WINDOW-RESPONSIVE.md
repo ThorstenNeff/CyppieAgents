@@ -25,7 +25,7 @@ Breakpoint an der **Host-Breite** in dp (beim Panel ist das die Fenster-/Host-Br
 
 | Size Class | Host-Breite | Spalten-Cap | Verhalten |
 |---|---|---|---|
-| **Compact** | < 600 dp | **1** | Fenster **full-width gestapelt** (Phone-Portrait) |
+| **Compact** | < 600 dp | **1** | ⚠ **ERSETZT durch S10 (CYP-54, `docs/PHONE-PAGER.md`):** Compact/Phone = **HorizontalPager** (eine Seite je Fenster), **nicht** gestapelt. Diese Zeile gilt nur noch historisch. |
 | **Medium** | 600–839 dp | **2** | bis zu 2 Spalten |
 | **Expanded** | ≥ 840 dp | — | bestehende `sqrt(count)`-Logik (Desktop/Tablet-Landscape) |
 
@@ -51,5 +51,5 @@ Greift auch, falls je ein schmales Fenster durchrutscht (manuelles Resize, ungew
 ## 3. Offene Punkte
 
 1. Exakte `COMPOSER_MIN_WIDTH`/Min-Fensterbreite final mit Dev kalibrieren (280/300 dp sind begründete Startwerte).
-2. Ob in Compact echtes „Stapeln mit Scroll" oder „ein Fenster maximiert + Switcher" — UX-Entscheid, wenn iPhone-Portrait Priorität bekommt.
+2. ~~Ob in Compact echtes „Stapeln mit Scroll" oder „ein Fenster maximiert + Switcher"~~ → **ENTSCHIEDEN durch S10 (CYP-54): „ein Fenster + Switcher" als `HorizontalPager` mit Snap.** Außerdem deckt S10 die Compact-Erkennung über **Compose Window Size Classes** (Pager sobald **eine** Dimension Compact, width ODER height) ab — CYP-26 bleibt für **Medium/Expanded** (Canvas-Tiling-Caps) + Komponenten-Robustheit zuständig.
 3. Bündelung mit F10/F12 im `tile()`-Adaptiv-Refactor (PO/iOS-Dev).
