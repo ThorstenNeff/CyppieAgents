@@ -151,4 +151,45 @@
     <string name="a11y_settings_apikey_input">Enter new API key</string>
     <string name="a11y_settings_apikey_reveal">Show entry</string>
     <string name="a11y_settings_apikey_hide">Hide entry</string>
+    <!-- Agent management (CYP-86 add + CYP-87 remove + CYP-88 edit, S14). Keys per
+         docs/design/agent-management-keys.md. Disclosure-true: "Saved" != "Active" (agent_edit_effect_hint
+         amber, activation via CYP-73 restart, NO second mechanism); removal irreversible + consequences +
+         worktree data-loss warning; guardrails (exactly one PO / only PO / unique id) shown BEFORE the action.
+         Role PO/WORKER only (Product-Lead deferred CYP-98). Reuse: agent_role_po, agent_ctl_*, agent_status_*
+         (CYP-73), agent_save/agent_cancel surface-local (NOT acl_*). agent_role_worker is new. -->
+    <string name="agent_mgmt_title">Agent management</string>
+    <string name="agent_mgmt_operator_required">Editable only with an operator token</string>
+    <string name="agent_role_worker">Worker</string>
+    <string name="agent_add">Add agent</string>
+    <string name="agent_edit">Edit</string>
+    <string name="agent_remove">Remove</string>
+    <string name="agent_save">Save</string>
+    <string name="agent_cancel">Cancel</string>
+    <string name="agent_add_id_label">Agent ID</string>
+    <string name="agent_add_name_label">Name</string>
+    <string name="agent_add_role_label">Role</string>
+    <string name="agent_add_persona_label">Persona / CLAUDE.md</string>
+    <string name="agent_add_launch_label">Launch command</string>
+    <string name="agent_add_worktree_label">Worktree folder</string>
+    <string name="agent_add_confirm">Create</string>
+    <string name="agent_add_spawn_hint">Created. The agent is not started yet — start it via the lifecycle controls.</string>
+    <string name="agent_add_id_exists">This agent ID already exists</string>
+    <string name="agent_add_po_exists">A PO already exists — only one PO per project is allowed.</string>
+    <string name="agent_add_error">Create failed</string>
+    <string name="a11y_agent_add_id">Enter agent ID</string>
+    <string name="a11y_agent_add_persona">Enter persona / CLAUDE.md</string>
+    <string name="agent_remove_title">Remove agent “%1$s”?</string>
+    <string name="agent_remove_consequences">The running session will be stopped.</string>
+    <string name="agent_remove_worktree_keep">Keep worktree</string>
+    <string name="agent_remove_worktree_delete">Delete worktree</string>
+    <string name="agent_remove_worktree_warning">Uncommitted/unpushed work in “%1$s” will be permanently lost.</string>
+    <string name="agent_remove_confirm">Remove agent</string>
+    <string name="agent_remove_confirm_delete">Delete permanently</string>
+    <string name="agent_remove_last_po">The only PO cannot be removed — hub-and-spoke would break.</string>
+    <string name="agent_remove_error">Remove failed</string>
+    <string name="agent_edit_title">Edit agent “%1$s”</string>
+    <string name="agent_edit_effect_hint">Saved. Takes effect on the agent's next start — restart now so the new configuration applies.</string>
+    <string name="agent_edit_id_locked_hint">ID and worktree are fixed and cannot be changed here.</string>
+    <string name="agent_edit_po_exists">The PO role is taken — only one PO per project.</string>
+    <string name="agent_edit_error">Save failed</string>
 </resources>
