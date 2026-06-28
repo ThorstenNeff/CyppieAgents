@@ -32,6 +32,17 @@
     <!-- Shared keys introduced by CYP-48 (PO-approved 2026-06-28); CYP-17/14 hardcodes re-point in CYP-51. -->
     <string name="comm_status_offline">Verbindung getrennt – Stand evtl. nicht aktuell</string>
     <string name="agent_role_po">PO</string>
+    <!-- Comm-Panel i18n coverage (CYP-53) — keys per docs/design/comm-panel-keys.md. #5/#6/#7 are
+         deliberately distinct (read-only state ≠ send denied ≠ send failed) — do not merge. -->
+    <string name="comm_channels_empty">Keine zugänglichen Kanäle</string>
+    <string name="comm_timeline_empty">Noch keine Nachrichten</string>
+    <string name="comm_msg_pending">Wird gesendet…</string>
+    <string name="comm_status_connecting">Verbinde…</string>
+    <string name="comm_readonly_hint">Nur Lesezugriff in diesem Kanal</string>
+    <string name="comm_send_denied">Keine Schreibrechte in diesem Kanal</string>
+    <string name="comm_send_failed">Senden fehlgeschlagen</string>
+    <string name="comm_composer_placeholder">Nachricht an %1$s</string>
+    <string name="comm_composer_send">Senden</string>
     <string name="event_detail_source_ts">Beobachtet: %1$s</string>
     <string name="event_drilldown_show_run">Zeig den ganzen Lauf</string>
     <string name="event_drilldown_show_session">Zeig die ganze Session</string>

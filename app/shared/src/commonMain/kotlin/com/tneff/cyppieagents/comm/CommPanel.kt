@@ -42,7 +42,16 @@ import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Role
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_role_po
+import kmpcyppieagents.app.shared.generated.resources.comm_channels_empty
+import kmpcyppieagents.app.shared.generated.resources.comm_composer_placeholder
+import kmpcyppieagents.app.shared.generated.resources.comm_composer_send
+import kmpcyppieagents.app.shared.generated.resources.comm_msg_pending
+import kmpcyppieagents.app.shared.generated.resources.comm_readonly_hint
+import kmpcyppieagents.app.shared.generated.resources.comm_send_denied
+import kmpcyppieagents.app.shared.generated.resources.comm_send_failed
+import kmpcyppieagents.app.shared.generated.resources.comm_status_connecting
 import kmpcyppieagents.app.shared.generated.resources.comm_status_offline
+import kmpcyppieagents.app.shared.generated.resources.comm_timeline_empty
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -80,7 +89,7 @@ private fun ChannelListPane(
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
         if (channels.isEmpty()) {
             Text(
-                text = "Keine lesbaren Kanäle",
+                text = stringResource(Res.string.comm_channels_empty),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(12.dp).testTag(CommTags.EMPTY_CHANNELS),
@@ -135,7 +144,7 @@ private fun TimelinePane(
                 state.selectedChannelId == null -> Unit
                 state.messages.isEmpty() && !state.loadingHistory ->
                     Text(
-                        text = "Noch keine Nachrichten",
+                        text = stringResource(Res.string.comm_timeline_empty),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp).testTag(CommTags.EMPTY_TIMELINE),
@@ -148,7 +157,8 @@ private fun TimelinePane(
                     }
             }
         }
-        Composer(canWrite = state.canWrite, sendError = state.sendError, onSend = onSend)
+        val channelName = state.channels.firstOrNull { it.id == state.selectedChannelId }?.name ?: ""
+        Composer(canWrite = state.canWrite, sendError = state.sendError, channelName = channelName, onSend = onSend)
     }
 }
 
@@ -176,7 +186,7 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
                 Text(displayName, color = color.nameAccent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 if (agent?.role == Role.PO) KindBadge(stringResource(Res.string.agent_role_po))
                 item.message.meta?.kind?.let { KindBadge(it.name) }
-                if (item.pending) Text("· wird gesendet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                if (item.pending) Text("· " + stringResource(Res.string.comm_msg_pending), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
             Text(item.message.body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
         }
@@ -199,7 +209,7 @@ private fun KindBadge(label: String) {
 private fun ConnectionBanner(connection: ConnectionStatus) {
     if (connection == ConnectionStatus.LIVE) return
     val text = when (connection) {
-        ConnectionStatus.CONNECTING -> "Verbinde…"
+        ConnectionStatus.CONNECTING -> stringResource(Res.string.comm_status_connecting)
         // Shared offline/stale text — one source (CYP-51): the same key the ACL matrix uses (CYP-48).
         ConnectionStatus.DISCONNECTED -> stringResource(Res.string.comm_status_offline)
         ConnectionStatus.LIVE -> ""
@@ -217,10 +227,12 @@ private fun ConnectionBanner(connection: ConnectionStatus) {
 }
 
 @Composable
-private fun Composer(canWrite: Boolean, sendError: String?, onSend: (String) -> Unit) {
+private fun Composer(canWrite: Boolean, sendError: String?, channelName: String, onSend: (String) -> Unit) {
     if (!canWrite) {
+        // Proactive read-only STATE (you may read, just not write) — distinct from a denied send attempt
+        // (#6 comm_send_denied) and a generic failure (#7 comm_send_failed). Disclosure must stay separate.
         Text(
-            text = "Keine Schreibrechte in diesem Kanal",
+            text = stringResource(Res.string.comm_readonly_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(12.dp).testTag(CommTags.COMPOSER_READONLY),
@@ -236,7 +248,9 @@ private fun Composer(canWrite: Boolean, sendError: String?, onSend: (String) -> 
     }
     Column {
         sendError?.let {
-            val msg = if (it == "comm_send_denied") "Keine Schreibrechte in diesem Kanal" else "Senden fehlgeschlagen"
+            // The VM emits a key (comm_send_denied = ACL-rejected attempt) vs the generic else
+            // (comm_send_failed). Both distinct from the proactive read-only hint above (CYP-53 §1).
+            val msg = if (it == "comm_send_denied") stringResource(Res.string.comm_send_denied) else stringResource(Res.string.comm_send_failed)
             Text(msg, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp))
         }
         Row(
@@ -248,13 +262,13 @@ private fun Composer(canWrite: Boolean, sendError: String?, onSend: (String) -> 
                 value = draft,
                 onValueChange = { draft = it },
                 modifier = Modifier.weight(1f).testTag(CommTags.COMPOSER_INPUT),
-                placeholder = { Text("Nachricht an den Kanal…") },
+                placeholder = { Text(stringResource(Res.string.comm_composer_placeholder, channelName)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { submit() }),
                 singleLine = true,
             )
             Button(onClick = { submit() }, modifier = Modifier.testTag(CommTags.COMPOSER_SEND)) {
-                Text("Senden")
+                Text(stringResource(Res.string.comm_composer_send))
             }
         }
     }
