@@ -118,10 +118,20 @@ class ProjectConfigStore(
 
     private fun persist() {
         val f = file ?: return
-        f.parentFile?.mkdirs()
+        f.parentFile?.let { parent ->
+            parent.mkdirs()
+            // 0700 dir — not world-traversable / group-rwx (mkdirs default 0775 would let a local
+            // non-owner list the dir). Reviewer merge-gate hardening (CYP-96).
+            restrictDirToOwner(parent)
+        }
         val tmp = File(f.parentFile, f.name + ".tmp")
+        // 0600-FIRST: create the empty tmp and lock it down BEFORE the plaintext key is written, so the
+        // secret never lands in a world-readable file even briefly (writeText keeps an existing file's perms).
+        tmp.delete()
+        tmp.createNewFile()
+        restrictToOwner(tmp)
         tmp.writeText(CommJson.encodeToString(entries.toMap()))
-        restrictToOwner(tmp) // 0600 before it is in place
+        restrictToOwner(tmp) // re-assert (no-op if unchanged); defensive
         try {
             Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } catch (_: AtomicMoveNotSupportedException) {
@@ -137,6 +147,20 @@ class ProjectConfigStore(
         }.onFailure {
             f.setReadable(false, false); f.setReadable(true, true)
             f.setWritable(false, false); f.setWritable(true, true)
+        }
+    }
+
+    /** Owner-only rwx (0700) for the secret's directory — not world/group traversable. */
+    private fun restrictDirToOwner(d: File) {
+        runCatching {
+            Files.setPosixFilePermissions(
+                d.toPath(),
+                setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE),
+            )
+        }.onFailure {
+            d.setReadable(false, false); d.setReadable(true, true)
+            d.setWritable(false, false); d.setWritable(true, true)
+            d.setExecutable(false, false); d.setExecutable(true, true)
         }
     }
 

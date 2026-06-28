@@ -61,19 +61,28 @@ class ProjectConfigStoreTest {
     fun persistenceRoundTrip_andFileIs0600() {
         val dir = Files.createTempDirectory("pcs")
         try {
-            val file = dir.resolve("project-config.json").toFile()
+            // A NOT-yet-existing sub-dir, so the store's own mkdirs creates it (umask-default, world/group
+            // traversable) and restrictDirToOwner must tighten it to 0700 — otherwise the dir assert can't
+            // bite (Files.createTempDirectory already makes its dir 0700).
+            val file = dir.resolve("gitroot/project-config.json").toFile()
             ProjectConfigStore(file, RepoConfig("u", "main"), secrets()).apply {
                 setApiKey("default", "persisted-key")
                 setRepo("default", "https://x/y.git", "dev")
             }
             assertTrue(file.exists())
 
-            // 0600 guardrail (POSIX): owner rw only. Mutation: drop restrictToOwner → wider perms → red.
+            // 0600 file + 0700 dir guardrails (POSIX). Mutations: drop restrictToOwner → file wider → red;
+            // drop restrictDirToOwner → dir 0775 → red. The secret never sits in a world-readable place.
             if (file.toPath().fileSystem.supportedFileAttributeViews().contains("posix")) {
                 assertEquals(
                     setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
                     Files.getPosixFilePermissions(file.toPath()),
                     "project-config.json must be 0600 (holds a secret at rest)",
+                )
+                assertEquals(
+                    setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE),
+                    Files.getPosixFilePermissions(file.parentFile.toPath()),
+                    "the secret's directory must be 0700 (not world/group traversable)",
                 )
             }
 
