@@ -1,0 +1,79 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-78 (Stories CYP-91 Projekt-Verwaltung, CYP-92 Projekt-Switcher)",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf PO-Gegenlesen/Dev-Gegenlesen",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop c2055bd",
+    "note": "Semantische Tokens fuer Projekt-Switcher (Top-Level) + Projekt-Verwaltung (CRUD). Komponenten referenzieren Semantik, nie Hex. Dark = Default. Fast ausschliesslich Reuse: alle Hinweis-Toene laufen ueber die geteilte TonedHint-Komponente (HintTone, CYP-99) — kein eigenes Hint-Styling, keine neuen Farben. Nur wenige Dimensions-/Marker-Tokens sind neu.",
+    "reuse_note": "TonedHint-Mapping (verifiziert ui/TonedHint.kt @ c2055bd): EFFECT_DEFERRED=onTertiaryContainer (amber, gefuellter Container), ERROR=error, INFO=secondary, GATED=onSurfaceVariant. Glyphen: '!' / 'X' / 'i' / '·' (kein Emoji — CYP-54). Der destruktive Loesch-Button reuse't das RemoveDialog-Muster: containerColor=error / contentColor=onError."
+  },
+  "semantic": {
+    "projectSwitcher.activeMarker": {
+      "role": "Aktiv-Marker des laufenden Projekts in Switcher-Leiste UND Verwaltungs-Zeile. NICHT-farblicher Marker (Form/Glyph + Label) zusaetzlich zur Farbe — WCAG 1.4.1. Identitaet (welches Projekt) != Recht.",
+      "container": "primaryContainer",
+      "onContainer": "onPrimaryContainer",
+      "marker": "form+glyph (kein Farb-only)",
+      "label_key": "project_switcher_active"
+    },
+    "projectSwitcher.scopeHint": {
+      "role": "Scope-Disclosure 'Alle Fenster/Daten gehoeren zu diesem Projekt' — macht die Sicht-Grenze (ProjectScope.permits) explizit. Neutral, kein Fehler.",
+      "tone": "TonedHint.INFO",
+      "label_key": "project_switcher_scope_hint"
+    },
+    "projectSwitcher.switchHint": {
+      "role": "Wechsel-Hinweis 'laedt Oberflaeche neu — nichts wird geloescht'. Trennt den nicht-destruktiven Kontextwechsel vom Loeschen. Neutral.",
+      "tone": "TonedHint.INFO",
+      "label_key": "project_switch_hint"
+    },
+    "projectMgmt.gated": {
+      "role": "Gate-Hinweis 'nur mit Operator-Token aenderbar'; Liste read-only/disabled. Neutral, kein Fehler.",
+      "tone": "TonedHint.GATED",
+      "label_key": "project_mgmt_operator_required"
+    },
+    "projectMgmt.consequences": {
+      "role": "Loesch-Folgenanzeige (Kategorien: Sessions/Kanaele/ACL/Nachrichten/Events) — die GARANTIERTE Aussage was geloescht wird. Informierend, nicht alarmierend.",
+      "tone": "TonedHint.INFO",
+      "label_key": "project_delete_consequences"
+    },
+    "projectMgmt.consequencesCounts": {
+      "role": "Optionale Mengen-Zusammenfassung (advisory/best-effort, Backend-geliefert). Wird NIE erfunden — fehlt sie, faellt die Zeile weg (kein '0'/Phantom).",
+      "tone": "TonedHint.INFO",
+      "label_key": "project_delete_consequences_counts"
+    },
+    "projectMgmt.worktreeWarning": {
+      "role": "Datenverlust-Warnung beim Worktree-Loeschen: nicht committete/gepushte Arbeit ALLER Projekt-Worktrees geht verloren. Echter Datenverlust → Ton+Text, nie Farbe allein.",
+      "tone": "TonedHint.ERROR",
+      "label_key": "project_delete_worktree_warning"
+    },
+    "projectMgmt.deleteButton": {
+      "role": "Destruktiver, benannter Bestaetigungs-Button 'Projekt endgueltig loeschen'. Reuse RemoveDialog-Muster.",
+      "container": "error",
+      "onContainer": "onError",
+      "label_key": "project_delete_confirm"
+    },
+    "projectMgmt.deleteBlocked": {
+      "role": "Guardrail-Begruendung VOR der Aktion: aktives Projekt 'erst wechseln' / letztes Projekt nicht loeschbar. Anleitung/Systemregel — bewusst INFO (kein Fehlversuch), divergiert vom ERROR-getoenten last-PO der Agenten-Verwaltung.",
+      "tone": "TonedHint.INFO",
+      "label_key": "project_delete_active_blocked / project_delete_last_blocked"
+    },
+    "projectMgmt.error": {
+      "role": "Echter Fehler: Name leer/dupliziert, Create/Rename/Delete fehlgeschlagen, Gate-Ablehnung (403).",
+      "tone": "TonedHint.ERROR",
+      "label_key": "project_add_name_empty / project_add_name_exists / project_*_error"
+    }
+  },
+  "dimensions": {
+    "projectSwitcher.bar.height": {
+      "role": "Hoehe der Top-Level-Switcher-Leiste ueber dem WindowHost. Schlank, damit der Canvas/Pager den Rest behaelt.",
+      "value": "48dp",
+      "note": "Dev-kalibrierbar; >= 48dp haelt die Aktiv-Anzeige + Menue-Trigger als 48dp-Touch-Target (Material/WCAG 2.5.8)."
+    },
+    "projectMgmt.field.minWidth": {
+      "role": "Min-Breite des Projektname-Felds in Create/Rename-Dialog, damit der Name nicht zeichenweise umbricht.",
+      "value": "240dp",
+      "note": "Analog settings.field.minWidth; Dev-kalibrierbar."
+    }
+  }
+}
