@@ -6,6 +6,8 @@
 
 Spezifiziert einen **Aktivitätshinweis-Badge** hinter dem Fenstertitel (Canvas-Titelleiste **und** Pager-Header). Der Badge ist ein **passiver Hinweis** — „hier gibt es etwas", **nie** „erledigt/zugestellt". Keine Implementierungsvorgabe.
 
+> **PO-Abnahme (2026-06-28):** Spec **akzeptiert**. **MVP-Scope = B1 + A1 + C1** (null Backend, null Leak). **A2** (Stall-Signal) und **C2** (content-freies Per-Agent-Severity-Aggregat) sind **deferred → kein Backend-Pull für CYP-55**; **B2** (Last-Read) bleibt späteres Upgrade. **B1-Reset bei Fokus = ja.** `WAITING_FOR_INPUT` wird **nicht** gefakt.
+
 ---
 
 ## 0. Die drei Badge-Typen (nach Fenstertyp) & ihre Reife
@@ -127,10 +129,13 @@ Der Badge sitzt **am Ende der Titelleiste** (Canvas: `FloatingWindow`-Titlebar; 
 
 ---
 
-## 7. Offene Punkte / PO+Backend-Entscheide
+## 7. Entscheide (PO 2026-06-28) — keine offenen Asks mehr
 
-1. **Datenpfad pro Typ bestätigen** (§2-D): MVP = **B1 + A1 + C1** (kein Backend). Sollen A2 (Stall→non-gated Per-Agent-Attention), B2 (Last-Read), C2 (content-freies Severity-Aggregat pro Agent) gebaut werden? → **dann zieht der PO Backend** für die jeweils schmale, content-freie Naht.
-2. **C2-Grenze fixieren (falls gewünscht):** Aggregat = **Enum** „höchste offene Severity" pro Agent, **kein** Body/Meta; Endpoint fail-closed; UI zeigt bei leerem Aggregat **kein** Badge. (Genau die PO/Backend-Auflage — bitte als Vertrag bestätigen.)
-3. **Agent-Wortlaut (A2):** „stockt evtl." vs. „braucht Eingabe" — Wortwahl muss ehrlich bleiben (keine erfundene Frage). PO-Abnahme.
-4. **B1-Reset-Trigger:** Reset bei Fenster-**Fokus** (Canvas) bzw. **aktiver Seite** (Pager) — bestätigen.
-5. Gate: Reviewer + Desktop-`runComposeUiTest` (Tags + Fail-closed-Abwesenheits-Anker).
+1. ✅ **Datenpfad = B1 + A1 + C1** (§2-D) übernommen — **null Backend, null Leak.**
+2. ⏸ **A2** (Stall→non-gated Per-Agent-Attention) **deferred** → A2-Wortlaut vorerst moot; **kein** `stall.suspected`-Bridging in CYP-55.
+3. ⏸ **C2** (content-freies Per-Agent-Severity-Aggregat) **nicht jetzt** → **kein** Backend-Severity-Vertrag, **kein** Backend-Pull. (C2-Grenze bleibt als Referenz hier dokumentiert, falls je gewollt.)
+4. ⏳ **B2** (Last-Read) = späteres Upgrade, nicht MVP.
+5. ✅ **B1-Reset bei Fokus** (Canvas) / aktiver Seite (Pager) = **ja**.
+6. ✅ **A1 = nur ehrliches `ERROR`**; `WAITING_FOR_INPUT` wird **nicht** gefakt.
+
+**Verbleibender MVP-Bauumfang (Dev):** Count-Badge (B1) + ERROR-Attention (A1) + Severity-Badge **am gated Event-Log-Fenster** (C1). **Gate:** Reviewer + Desktop-`runComposeUiTest` (Tags + Fail-closed-Abwesenheits-Anker).

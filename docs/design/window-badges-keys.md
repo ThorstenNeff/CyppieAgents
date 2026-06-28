@@ -20,7 +20,9 @@
 | `a11y.badge.unread` | `a11y_badge_unread` | %1$s: %2$s neue Nachrichten | %1$s: %2$s new messages |
 | `a11y.badge.severity` | `a11y_badge_severity` | %1$s: höchste Severity %2$s | %1$s: highest severity %2$s |
 | `a11y.badge.error` | `a11y_badge_error` | %1$s: Agent-Fehler | %1$s: agent error |
-| `a11y.badge.attention` | `a11y_badge_attention` | %1$s: stockt evtl., ggf. Eingabe nötig | %1$s: may be stalled, input may be needed |
+| `a11y.badge.attention` *(⏸ A2, deferred)* | `a11y_badge_attention` | %1$s: stockt evtl., ggf. Eingabe nötig | %1$s: may be stalled, input may be needed |
+
+> **MVP-Set (PO 2026-06-28):** `pager_activity_badge`, `badge_count_overflow`, `a11y_badge_unread` (B1) · `a11y_badge_error` (A1) · `a11y_badge_severity` (C1). **`a11y_badge_attention` ist A2 (Stall) → deferred**, in CYP-55 **nicht** anlegen (Referenz für späteres A2-Ticket).
 
 > `%1$s` = `WindowState.title` (Fenster-/Agentname). `%2$s` = Zahl bzw. Severity-Name. Der Screenreader nennt **Fenstername + Bedeutung** („Frontend: 3 neue Nachrichten", „Event-Log: höchste Severity Fehler"), nicht nur „Badge".
 > `a11y_badge_severity` `%2$s` = Severity-Name **aus CYP-34** (`event-log-keys.md`: error/warn/info/debug-Labels) — **Reuse**, kein neuer Severity-String.
