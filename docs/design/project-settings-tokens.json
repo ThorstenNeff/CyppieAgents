@@ -1,0 +1,63 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-75 (Stories CYP-84 Repo-Config, CYP-85 API-Key)",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "note": "Semantische Tokens fuer das Projekt-Settings-Fenster. Komponenten referenzieren Semantik, nie Hex direkt. Dark = Default. Ueberwiegend Reuse bestehender MaterialTheme-Rollen + wenige dimensionale Tokens; nahezu keine neuen Farben.",
+    "reuse_note": "Banner-/Hinweis-Toene folgen der ACL-Re-Pass-Korrektur: Info=secondaryContainer, Hinweis/Effekt-deferred=tertiaryContainer (amber), Fehler=errorContainer. NICHT alles error-rot."
+  },
+  "semantic": {
+    "settings.effectDeferred": {
+      "role": "Banner 'gespeichert, aber erst nach Spawn/Restart aktiv' (CYP-84/85). Amber-Hinweis, KEIN Erfolg-gruen — gespeichert != aktiv.",
+      "container": "tertiaryContainer",
+      "onContainer": "onTertiaryContainer",
+      "icon": "schedule",
+      "label_key": "settings_apikey_effect_hint / settings_repo_effect_hint"
+    },
+    "settings.gated": {
+      "role": "Gate-Hinweis 'nur mit Operator-Token aenderbar'; Felder read-only/disabled. Neutral, kein Fehler.",
+      "container": "surfaceVariant",
+      "onContainer": "onSurfaceVariant",
+      "icon": "lock",
+      "label_key": "settings_operator_required"
+    },
+    "settings.notConfigured": {
+      "role": "Repo nicht konfiguriert -> Agenten koennen nicht starten (CYP-84). Info/Warnung, NICHT Fehler-rot.",
+      "container": "secondaryContainer",
+      "onContainer": "onSecondaryContainer",
+      "icon": "info",
+      "label_key": "settings_repo_status_unset"
+    },
+    "settings.error": {
+      "role": "Echter Fehler: ungueltige URL / Key, Save fehlgeschlagen, Gate-Ablehnung (403).",
+      "container": "errorContainer",
+      "onContainer": "onErrorContainer",
+      "icon": "error",
+      "label_key": "settings_repo_url_invalid / settings_apikey_save_failed"
+    },
+    "settings.secretMasked": {
+      "role": "Maskierte Anzeige des hinterlegten API-Keys (***last4). Dim, read-only; Klartext wird nie gerendert.",
+      "container": "surface",
+      "onContainer": "onSurfaceVariant",
+      "icon": "key",
+      "label_key": "settings_apikey_masked"
+    }
+  },
+  "dimensions": {
+    "settings.field.minWidth": {
+      "role": "Min-Breite der Formularfelder im Settings-Fenster, damit URL/Key nicht zeichenweise umbrechen.",
+      "value_dp": 280,
+      "reuse": "Gleicher Wert wie COMPOSER_MIN_WIDTH (CYP-26) — bewusst konsistent."
+    },
+    "settings.section.spacing": {
+      "role": "Vertikaler Abstand zwischen Settings-Abschnitten (Repo / API-Key) und zwischen Feldern.",
+      "value_dp": 16
+    },
+    "settings.field.spacing": {
+      "role": "Abstand Label->Feld->Hinweiszeile innerhalb eines Feldes.",
+      "value_dp": 8
+    }
+  }
+}
