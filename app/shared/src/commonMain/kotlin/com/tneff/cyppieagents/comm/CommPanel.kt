@@ -40,6 +40,10 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Role
+import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.agent_role_po
+import kmpcyppieagents.app.shared.generated.resources.comm_status_offline
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Comm panel (CYP-21, design CYP-17): master channel list + detail timeline + composer. Renders the
@@ -170,7 +174,7 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
         Column(modifier = Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(displayName, color = color.nameAccent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                if (agent?.role == Role.PO) KindBadge("PO")
+                if (agent?.role == Role.PO) KindBadge(stringResource(Res.string.agent_role_po))
                 item.message.meta?.kind?.let { KindBadge(it.name) }
                 if (item.pending) Text("· wird gesendet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
@@ -196,7 +200,8 @@ private fun ConnectionBanner(connection: ConnectionStatus) {
     if (connection == ConnectionStatus.LIVE) return
     val text = when (connection) {
         ConnectionStatus.CONNECTING -> "Verbinde…"
-        ConnectionStatus.DISCONNECTED -> "Verbindung getrennt – Timeline evtl. nicht aktuell"
+        // Shared offline/stale text — one source (CYP-51): the same key the ACL matrix uses (CYP-48).
+        ConnectionStatus.DISCONNECTED -> stringResource(Res.string.comm_status_offline)
         ConnectionStatus.LIVE -> ""
     }
     Text(
