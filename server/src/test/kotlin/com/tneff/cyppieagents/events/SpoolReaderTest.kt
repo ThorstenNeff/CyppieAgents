@@ -106,6 +106,20 @@ class SpoolReaderTest {
     }
 
     @Test
+    fun spoolProjectId_prefersNewKey_acceptsLegacyTeamId() = runBlocking {
+        // CYP-83 back-compat on the long-lived spool path: an OLD hook line wrote the tenant under
+        // "teamId" (pre-rename). It must still load as projectId, not silently fall to the PLATFORM
+        // sentinel. Mutation: drop `?: obj.str("teamId")` in SpoolReader → the first assertion goes red.
+        withSpool { spool ->
+            spool.appendLine("""{"name":"A","teamId":"alpha","sourceTs":1}""")               // legacy only
+            spool.appendLine("""{"name":"B","projectId":"beta","teamId":"x","sourceTs":2}""") // both → new wins
+            val drafts = SpoolReader(spool.toPath()).readNew()
+            assertEquals("alpha", drafts[0].projectId, "legacy teamId loads as projectId (back-compat)")
+            assertEquals("beta", drafts[1].projectId, "new projectId key preferred over legacy teamId")
+        }
+    }
+
+    @Test
     fun missingSpoolFile_isEmpty_notError() = runBlocking {
         withSpool { spool ->
             // spool file never created
