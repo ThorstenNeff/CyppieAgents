@@ -54,22 +54,14 @@ class EventTailViewModel(
     init { runScope.launch { collect() } }
 
     private suspend fun collect() {
-        // CYP-47 DEBUG (temporary) — UNCONDITIONAL so it fires on the REAL collect path however the VM is
-        // constructed (the AgentShell demo via DemoActivity included). On Android `println` → Logcat (tag
-        // System.out); grep the `CYP47TAIL` marker. Remove together with the real connection-state fix.
-        println("CYP47TAIL collect: subscribing to source.events(filter)")
         source.events(filter).collect { event ->
-            val status = EventReducer.statusOf(event)
-            println("CYP47TAIL recv ${event::class.simpleName} statusOf=$status connBefore=${_state.value.connection}")
-            status?.let { s -> _state.update { it.copy(connection = s) } }
-            println("CYP47TAIL connAfter=${_state.value.connection}")
+            EventReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
             when (event) {
                 is EventLiveEvent.Received -> onReceived(event.event)
                 is EventLiveEvent.AccessRevoked -> _state.update { it.copy(accessRevoked = true) }
                 else -> Unit
             }
         }
-        println("CYP47TAIL collect: source flow COMPLETED")
     }
 
     private fun onReceived(event: Event) {

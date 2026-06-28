@@ -8,10 +8,11 @@
 # On Android the testTags surface as view resource-ids via Modifier.enableTestTagsAsResourceId() at root.
 #
 # PREREQUISITES (tester runtime; Dev's sandbox has no emulator/Maestro):
-#   * Install + launch the DEDICATED demo build `:app:androidAppDemo` (appId com.tneff.cyppieagents.demo)
-#     in an OPERATOR context, Live-Tail window focused, fed by a stub source that keeps streaming long
-#     enough that events arrive WHILE paused (so the buffered-count pill appears). DemoActivity's
-#     SteadyDemoEventsSource streams at a steady cadence exactly for this. NOT prod `:app:androidApp`.
+#   * Install + launch the DEDICATED demo build `:app:androidAppDemo` (appId com.tneff.cyppieagents.demo).
+#     DemoActivity renders the Live-Tail panel FULL-SCREEN (not the desktop window shell — that tiles the
+#     Tail window off a phone viewport, CYP-47 P1-B) via a two-tab switcher, fed by SteadyDemoEventsSource
+#     which streams at a steady cadence so events arrive WHILE paused (buffered-count pill). At full width
+#     the header fits one line → the live ● is on-screen. NOT prod `:app:androidApp`.
 appId: com.tneff.cyppieagents.demo
 name: "CYP-42 Event-Log Live-Tail (Android) — stream -> pause (!= live) -> buffer -> resume"
 tags:
@@ -19,6 +20,10 @@ tags:
   - event-log
 ---
 - launchApp
+
+# Select the Live-Tail tab (full-screen panel) — deterministic regardless of the demo's default tab.
+- tapOn:
+    id: '^demo\.tab\.tail$'
 
 # Live stream present + honestly live (socket open, not paused).
 - assertVisible:

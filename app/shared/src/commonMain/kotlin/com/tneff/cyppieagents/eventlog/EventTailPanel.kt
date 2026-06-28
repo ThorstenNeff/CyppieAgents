@@ -4,8 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -85,17 +85,12 @@ fun EventTailPanel(viewModel: EventTailViewModel, modifier: Modifier = Modifier)
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TailHeader(state: EventTailUiState, onToggle: () -> Unit) {
-    // FlowRow (not Row): on a narrow tile the header wraps to multiple lines instead of pushing the
-    // live/paused indicator off-screen (CYP-47 P1-B — the live ● was laid out past the right edge, so
-    // Maestro's assertVisible failed even though the VM had correctly reached LIVE; render tests using
-    // assertExists missed it because the node was present-but-clipped, not absent).
-    FlowRow(
+    Row(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Button(onClick = onToggle, modifier = Modifier.testTag(EventTailTags.PAUSE_TOGGLE)) {
             Text(stringResource(if (state.paused) Res.string.event_tail_resume else Res.string.event_tail_pause))

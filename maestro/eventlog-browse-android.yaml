@@ -11,11 +11,10 @@
 #
 # PREREQUISITES (runtime verification belongs to the tester; Dev's sandbox has no emulator/Maestro):
 #   * Install + launch the DEDICATED demo build `:app:androidAppDemo` (appId com.tneff.cyppieagents.demo).
-#     Its DemoActivity wires AgentShell in an OPERATOR context (operatorToken set) fed by the stub
-#     sources (StubEventsApi/StubEventsSource) — so the two Event-Log windows are present
-#     (operator-gated omission, EVENT-LOG-UI §5.6) WITHOUT a live server. NOT the prod
-#     `:app:androidApp` (operatorToken=null → windows omitted).
-#   * The Event-Log (Browse) window is the focused/visible window in the shell.
+#     Its DemoActivity renders the Browse + Live-Tail panels FULL-SCREEN (not the desktop window shell —
+#     that tiles off a phone viewport, CYP-47 P1-B) via a two-tab switcher, fed by the stub sources
+#     (StubEventsApi/SteadyDemoEventsSource) WITHOUT a live server. NOT the prod `:app:androidApp`
+#     (operatorToken=null → Event-Log omitted; that omission is proven by eventlog-presence-android.yaml).
 appId: com.tneff.cyppieagents.demo
 name: "CYP-41 Event-Log Browse (Android) — table -> detail -> drilldown -> filter"
 tags:
@@ -24,7 +23,11 @@ tags:
 ---
 - launchApp
 
-# Surface present (operator context): the master table container is always composed.
+# Select the Browse tab (full-screen panel) — deterministic regardless of the demo's default tab.
+- tapOn:
+    id: '^demo\.tab\.browse$'
+
+# Surface present: the master table container is always composed.
 - assertVisible:
     id: '^eventBrowse\.table$'
     label: "Browse master table addressable (operator-gated surface present)"
