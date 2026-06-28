@@ -57,6 +57,13 @@ kotlin {
             // Other targets (web/ios/android) need their own engine — flagged follow-up.
             implementation(libs.ktor.clientCio)
         }
+        iosMain.dependencies {
+            // iOS Ktor client engine (Darwin) so the engine-less HttpClient {} in AgentShell can
+            // auto-select an engine on iOS — without it, engine discovery fails and the app aborts
+            // before the first frame (CYP-56, regression since CYP-27; same role as okhttp/cio/js on
+            // the other targets). Scope = app-start only; full iOS /ws live-stream parity is later.
+            implementation(libs.ktor.clientDarwin)
+        }
         commonMain.dependencies {
             api(projects.core)
             implementation(libs.compose.runtime)
