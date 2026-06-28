@@ -18,8 +18,12 @@ class UnauthorizedException(message: String = "missing or invalid bearer token")
 class ForbiddenException(message: String, code: String = "forbidden") :
     ApiException(HttpStatusCode.Forbidden, code, message)
 
-class NotFoundException(message: String = "not found") :
-    ApiException(HttpStatusCode.NotFound, "not_found", message)
+class NotFoundException(message: String = "not found", code: String = "not_found") :
+    ApiException(HttpStatusCode.NotFound, code, message)
+
+/** A bounded server action could not be carried out (e.g. an agent process failed to respawn, CYP-73). */
+class ServiceUnavailableException(message: String, code: String = "unavailable") :
+    ApiException(HttpStatusCode.ServiceUnavailable, code, message)
 
 class BadRequestException(message: String) :
     ApiException(HttpStatusCode.BadRequest, "bad_request", message)

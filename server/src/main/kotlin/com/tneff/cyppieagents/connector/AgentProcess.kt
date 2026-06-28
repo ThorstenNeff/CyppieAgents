@@ -17,6 +17,14 @@ interface AgentProcess {
     /** Write one NDJSON line (plus newline) to the agent's stdin. */
     suspend fun writeLine(line: String)
     fun destroy()
+
+    /**
+     * Suspend until the OS process has actually terminated (CYP-73). [destroy] only *requests*
+     * termination; a Stop must confirm the process is gone before reporting STOPPED, otherwise a
+     * still-dying agent could keep emitting onto the bus (a zombie). Default is a no-op for in-memory
+     * test doubles that have no real process; the real spawner overrides it with `Process.waitFor`.
+     */
+    suspend fun awaitTerminated() {}
 }
 
 fun interface ProcessSpawner {
@@ -64,6 +72,11 @@ class ProcessBuilderSpawner(
             override fun destroy() {
                 runCatching { writer.close() }
                 process.destroy()
+            }
+
+            override suspend fun awaitTerminated() {
+                // Block the IO dispatcher (not the caller's thread) until the process is really gone.
+                withContext(Dispatchers.IO) { process.waitFor() }
             }
         }
     }

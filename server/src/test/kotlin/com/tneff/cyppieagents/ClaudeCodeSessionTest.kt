@@ -102,6 +102,38 @@ class ClaudeCodeSessionTest {
         scope.cancel()
     }
 
+    /** Models a process that takes time to die: [awaitTerminated] parks until [terminate] is fired. */
+    private class TerminatingProcess : AgentProcess {
+        val destroyed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val terminate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        override val stdoutLines: Flow<String> = kotlinx.coroutines.flow.emptyFlow()
+        override suspend fun writeLine(line: String) {}
+        override fun destroy() { destroyed.set(true) }
+        override suspend fun awaitTerminated() { terminate.await() }
+    }
+
+    @Test
+    fun closeAndAwait_waitsForProcessTermination_noZombie() = runBlocking {
+        val hub = Hub(HubState.hubAndSpoke(agents()), InMemoryMessageStore())
+        val registry = SessionRegistry()
+        val proc = TerminatingProcess()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val session = ClaudeCodeSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
+        session.start()
+
+        val closing = scope.launch { session.closeAndAwait() }
+        // It must request destruction but NOT return until the process has actually terminated.
+        withTimeout(2000) { while (!proc.destroyed.get()) delay(5) }
+        delay(50)
+        assertTrue(closing.isActive, "closeAndAwait must wait for process termination (no zombie writing to the bus)")
+
+        proc.terminate.complete(Unit)
+        withTimeout(2000) { closing.join() }
+        assertFalse(closing.isActive, "returns once the process is confirmed gone")
+
+        scope.cancel()
+    }
+
     @Test
     fun sendTurnIsSingleFlightUntilResult() = runBlocking {
         val hub = Hub(HubState.hubAndSpoke(agents()), InMemoryMessageStore())

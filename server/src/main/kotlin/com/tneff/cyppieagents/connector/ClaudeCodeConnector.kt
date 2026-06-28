@@ -155,4 +155,18 @@ class ClaudeCodeSession(
         pendingTurn?.cancel()
         if (recorder != null && projector != null) recorder.record(projector.agentStopped(agentId))
     }
+
+    /**
+     * Stop the session and **confirm the process is gone** before returning (CYP-73, no zombie). Same
+     * teardown as [close] — cancel the reader first so the stdout-completion path doesn't misfire as a
+     * crash `process.exit` — then `destroy()` and await actual termination.
+     */
+    override suspend fun closeAndAwait() {
+        readerJob?.cancel()
+        process.destroy()
+        process.awaitTerminated() // the difference vs close(): we wait until it's really dead
+        boundSessionId?.let { registry.unbind(it) }
+        pendingTurn?.cancel()
+        if (recorder != null && projector != null) recorder.record(projector.agentStopped(agentId))
+    }
 }
