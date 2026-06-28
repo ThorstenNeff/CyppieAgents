@@ -8,6 +8,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tneff.cyppieagents.acl.AclApi
+import com.tneff.cyppieagents.acl.AclLiveSource
+import com.tneff.cyppieagents.acl.AclPanel
+import com.tneff.cyppieagents.acl.AclRepository
+import com.tneff.cyppieagents.acl.AclViewModel
+import com.tneff.cyppieagents.acl.AclWsClient
 import com.tneff.cyppieagents.agentview.AgentSession
 import com.tneff.cyppieagents.agentview.AgentViewModel
 import com.tneff.cyppieagents.agentview.AgentWindow
@@ -34,6 +40,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 
 private const val COMM_WINDOW_ID = "comm"
+private const val ACL_WINDOW_ID = "acl"
 private const val EVENTLOG_BROWSE_WINDOW_ID = "eventlog"
 private const val EVENTLOG_TAIL_WINDOW_ID = "eventtail"
 
@@ -63,6 +70,10 @@ fun AgentShell(
     eventsApi: EventsApi? = null,
     /** Override the event-log live source (tests/dev inject a stub); `null` → the stub until CYP-40. */
     eventsLiveSource: EventLiveSource? = null,
+    /** Override the ACL data port (tests/dev inject a fake); `null` → the ACL REST repository (CYP-48). */
+    aclApi: AclApi? = null,
+    /** Override the ACL live source (tests/dev inject a stub); `null` → the live `/ws/comm` ACL adapter. */
+    aclLiveSource: AclLiveSource? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -72,6 +83,9 @@ fun AgentShell(
             add("frontend" to "Frontend")
             add("backend" to "Backend")
             add(COMM_WINDOW_ID to "Kommunikation")
+            // ACL matrix (CYP-48): always present — editable for an operator, read-only partial view for an
+            // agent/no-token (ACL-MATRIX.md §4, deliberately NOT an omission like the event-log windows).
+            add(ACL_WINDOW_ID to "Zugriffsrechte")
             // Operator-only observability windows: offered ONLY with an operator token (omission, not a
             // dead "no access" window — EVENT-LOG-UI §5.6). Live sources swap in at CYP-39/40.
             if (cfg.operatorToken != null) {
@@ -115,6 +129,18 @@ fun AgentShell(
     }
     val resolvedEventsLiveSource = eventsLiveSource ?: defaultEventsLiveSource
 
+    // ACL matrix sources (CYP-48). Operator-token-bound: PUT is operator-only (server 403s otherwise);
+    // GET returns the operator's full view or the agent's partial view. Editable iff an operator token
+    // is present (the agent-token read-only repo is a tracked follow-up — see AclViewModel KDoc).
+    val defaultAclApi = remember(httpClient, cfg) {
+        AclRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedAclApi = aclApi ?: defaultAclApi
+    val defaultAclLiveSource = remember(httpClient, cfg) {
+        AclWsClient(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedAclLiveSource = aclLiveSource ?: defaultAclLiveSource
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
@@ -135,6 +161,12 @@ fun AgentShell(
                             CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
                         }
                         CommPanel(commViewModel)
+                    }
+                    ACL_WINDOW_ID -> {
+                        val vm = viewModel(key = ACL_WINDOW_ID) {
+                            AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = cfg.operatorToken != null)
+                        }
+                        AclPanel(vm)
                     }
                     EVENTLOG_BROWSE_WINDOW_ID -> {
                         val vm = viewModel(key = EVENTLOG_BROWSE_WINDOW_ID) { EventBrowseViewModel(resolvedEventsApi) }

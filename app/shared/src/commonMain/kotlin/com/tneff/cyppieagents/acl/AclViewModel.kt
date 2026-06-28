@@ -1,0 +1,245 @@
+package com.tneff.cyppieagents.acl
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.tneff.cyppieagents.comm.ConnectionStatus
+import com.tneff.cyppieagents.model.AclEntry
+import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.Channel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+/** A pending PO-guardrail confirmation (CYP-19 §6): turning a PO-critical grant — or the operator's own read — off. */
+data class LockoutPrompt(
+    val channelId: String,
+    val agentId: String,
+    val dimension: AclDimension,
+    val channelName: String,
+    /** true → operator removing their own `canRead` (self-blind, [acl_self_blind_warning]); false → PO lockout. */
+    val selfBlind: Boolean,
+)
+
+enum class PresetPhase { PREVIEW, APPLYING, PARTIAL, RESTORED }
+
+/** Non-atomic "restore hub-and-spoke" progress (CYP-19 §7): N per-entry PUTs, honest partial-failure. */
+data class PresetState(val phase: PresetPhase, val total: Int = 0, val done: Int = 0, val failed: Int = 0)
+
+/** Immutable UI state for the ACL-matrix panel (CYP-48 / CYP-19 §8). */
+data class AclUiState(
+    val channels: List<Channel> = emptyList(),
+    val agents: List<Agent> = emptyList(),
+    val entries: List<AclEntry> = emptyList(),
+    val connection: ConnectionStatus = ConnectionStatus.CONNECTING,
+    val loading: Boolean = true,
+    /** Operator-token present → switches; else read-only chips + [acl_partial_view] banner (§4). */
+    val editable: Boolean = true,
+    /** Cell keys (channelId|agentId) with an in-flight PUT — rendered `acl_pending`, not enforced (§5.1). */
+    val pending: Set<String> = emptySet(),
+    /** Per-cell server-protection notice (cellKey → i18n key, e.g. acl_po_protected) → `.protected` qualifier. */
+    val cellNotice: Map<String, String> = emptyMap(),
+    /** Global banner notice key (acl_operator_required / acl_unauthorized / acl_change_failed). */
+    val notice: String? = null,
+    /** Open PO-guardrail consequence dialog (§6b/§6c), or null. */
+    val lockoutPrompt: LockoutPrompt? = null,
+    /** Preset restore flow state (§7), or null. */
+    val preset: PresetState? = null,
+    /** Operator token revoked at runtime → honestly devalue, don't leave stale-editable (§8). */
+    val accessRevoked: Boolean = false,
+)
+
+/**
+ * Drives the ACL-matrix panel (CYP-48 / Spec 03 S7, design CYP-19): loads channels+agents+entries over
+ * [AclApi], folds the live [AclLiveSource] (`/ws/comm` AclEvent) into a **live mirror of the enforced
+ * hub state**, and applies operator toggles **optimistically but not enforced until the hub echoes an
+ * `AclEvent`** (the source of truth — NOT the PUT-200, CYP-19 §5.3). A rejected PUT reverts to the hub
+ * state and surfaces an honest notice (401/403/409 mapped, §5.4); a missing echo can't hang a cell
+ * (pending timeout, §5.4). The PO-lockout guardrail here is **advisory** — the server (CYP-49) enforces.
+ *
+ * Deferred (PO-tracked, CYP-48 scope): the agent-token-backed read-only partial path (§4). The MVP shell
+ * runs an operator context, so [editable] is wired from the operator token; the agent-token repo lands later.
+ */
+class AclViewModel(
+    private val api: AclApi,
+    private val liveSource: AclLiveSource,
+    /** Whether the viewer holds an operator token (editable matrix vs read-only partial view, §4). */
+    editable: Boolean = true,
+    scope: CoroutineScope? = null,
+) : ViewModel() {
+
+    private val runScope: CoroutineScope = scope ?: viewModelScope
+    private val _state = MutableStateFlow(AclUiState(editable = editable))
+    val state: StateFlow<AclUiState> = _state.asStateFlow()
+
+    init {
+        runScope.launch { load() }
+        runScope.launch { collectLive() }
+    }
+
+    private suspend fun load() {
+        val channels = runCatching { api.channels() }.getOrDefault(emptyList())
+        val agents = runCatching { api.agents() }.getOrDefault(emptyList())
+        val entries = runCatching { api.acl() }.getOrDefault(emptyList())
+        _state.update { it.copy(channels = channels, agents = agents, entries = entries, loading = false) }
+    }
+
+    private suspend fun collectLive() {
+        liveSource.events().collect { event ->
+            AclReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
+            when (event) {
+                // The AclEvent echo is the source of truth: it reconciles the entry AND clears pending →
+                // the cell becomes `enforced` (CYP-19 §5.3/§5.5, idempotent last-wins by key).
+                is AclLiveEvent.EntryChanged -> _state.update {
+                    val key = AclReducer.cellKey(event.entry.channelId, event.entry.agentId)
+                    it.copy(
+                        entries = AclReducer.upsert(it.entries, event.entry),
+                        pending = it.pending - key,
+                        cellNotice = it.cellNotice - key,
+                    )
+                }
+                is AclLiveEvent.ChannelsChanged -> _state.update { it.copy(channels = event.channels) }
+                else -> Unit
+            }
+        }
+    }
+
+    fun toggleRead(channelId: String, agentId: String) = toggle(channelId, agentId, AclDimension.READ)
+    fun toggleWrite(channelId: String, agentId: String) = toggle(channelId, agentId, AclDimension.WRITE)
+
+    private fun toggle(channelId: String, agentId: String, dimension: AclDimension) {
+        val s = _state.value
+        if (!s.editable) return
+        val agent = s.agents.firstOrNull { it.id == agentId } ?: return
+        val current = AclReducer.entryFor(s.entries, channelId, agentId)
+            ?: AclEntry(channelId = channelId, agentId = agentId, canRead = false, canWrite = false)
+        val newValue = when (dimension) {
+            AclDimension.READ -> !current.canRead
+            AclDimension.WRITE -> !current.canWrite
+        }
+
+        // §6: turning a PO-critical grant off — or the operator's OWN read off — opens a consequence
+        // dialog (advisory) instead of a silent toggle. Confirming routes back through [applyToggle].
+        val poLockout = AclReducer.wouldLockoutPo(channelId, agent, newValue, s.channels)
+        val selfBlind = agentId == OPERATOR_ID && dimension == AclDimension.READ && !newValue
+        if (poLockout || selfBlind) {
+            val channelName = s.channels.firstOrNull { it.id == channelId }?.name ?: channelId
+            _state.update {
+                it.copy(lockoutPrompt = LockoutPrompt(channelId, agentId, dimension, channelName, selfBlind))
+            }
+            return
+        }
+        applyToggle(channelId, agentId, dimension)
+    }
+
+    /** Confirm the open PO-guardrail dialog → proceed with the toggle (server still enforces, §6/§5.4). */
+    fun confirmLockout() {
+        val p = _state.value.lockoutPrompt ?: return
+        _state.update { it.copy(lockoutPrompt = null) }
+        applyToggle(p.channelId, p.agentId, p.dimension)
+    }
+
+    fun cancelLockout() = _state.update { it.copy(lockoutPrompt = null) }
+
+    private fun applyToggle(channelId: String, agentId: String, dimension: AclDimension) {
+        val s = _state.value
+        val prior = AclReducer.entryFor(s.entries, channelId, agentId)
+        val base = prior ?: AclEntry(channelId, agentId, canRead = false, canWrite = false)
+        val next = when (dimension) {
+            AclDimension.READ -> base.copy(canRead = !base.canRead)
+            AclDimension.WRITE -> base.copy(canWrite = !base.canWrite)
+        }
+        val key = AclReducer.cellKey(channelId, agentId)
+
+        // Optimistic, but explicitly NOT enforced — the cell stays `pending` until the AclEvent echo.
+        _state.update {
+            it.copy(
+                entries = AclReducer.upsert(it.entries, next),
+                pending = it.pending + key,
+                cellNotice = it.cellNotice - key,
+                notice = null,
+            )
+        }
+
+        runScope.launch {
+            runCatching { api.setAcl(next) }
+                .onFailure { error -> revert(key, channelId, agentId, prior, error) }
+            // onSuccess: do NOT clear pending — wait for the AclEvent echo (source of truth, §5.3).
+        }
+        // Safeguard (§5.4): a missing echo must never hang the cell in pending.
+        runScope.launch {
+            delay(PENDING_TIMEOUT_MS)
+            if (key in _state.value.pending) revert(key, channelId, agentId, prior, error = null)
+        }
+    }
+
+    /** Revert an optimistic toggle to the hub (pre-toggle) state and surface an honest notice (§5.4). */
+    private fun revert(key: String, channelId: String, agentId: String, prior: AclEntry?, error: Throwable?) {
+        val (cellNoticeKey, banner) = when {
+            error is AclHttpException && error.status == 409 -> "acl_po_protected" to null
+            error is AclHttpException && error.status == 403 -> null to "acl_operator_required"
+            error is AclHttpException && error.status == 401 -> null to "acl_unauthorized"
+            else -> null to "acl_change_failed"
+        }
+        _state.update {
+            val reverted = if (prior != null) AclReducer.upsert(it.entries, prior)
+            else AclReducer.remove(it.entries, channelId, agentId)
+            it.copy(
+                entries = reverted,
+                pending = it.pending - key,
+                cellNotice = if (cellNoticeKey != null) it.cellNotice + (key to cellNoticeKey) else it.cellNotice,
+                notice = banner ?: it.notice,
+            )
+        }
+    }
+
+    // ---- Preset "restore hub-and-spoke" (non-atomic, N PUTs — CYP-19 §7) ----
+
+    /** Show the preview diff ("N cells will change") before any write. */
+    fun previewPreset() {
+        val diff = AclReducer.presetDiff(_state.value.channels, _state.value.entries)
+        _state.update { it.copy(preset = PresetState(PresetPhase.PREVIEW, total = diff.size)) }
+    }
+
+    fun cancelPreset() = _state.update { it.copy(preset = null) }
+
+    /** Apply the canonical hub-and-spoke target via N idempotent PUTs, reporting honest partial failure. */
+    fun applyPreset() {
+        val diff = AclReducer.presetDiff(_state.value.channels, _state.value.entries)
+        if (diff.isEmpty()) {
+            _state.update { it.copy(preset = PresetState(PresetPhase.RESTORED)) }
+            return
+        }
+        _state.update { it.copy(preset = PresetState(PresetPhase.APPLYING, total = diff.size)) }
+        runScope.launch {
+            var done = 0
+            var failed = 0
+            for (entry in diff) {
+                val key = AclReducer.cellKey(entry.channelId, entry.agentId)
+                _state.update { it.copy(pending = it.pending + key) }
+                runCatching { api.setAcl(entry) }
+                    .onSuccess { done++ }
+                    .onFailure { failed++; _state.update { it.copy(pending = it.pending - key) } }
+                _state.update { it.copy(preset = PresetState(PresetPhase.APPLYING, total = diff.size, done = done, failed = failed)) }
+            }
+            // Honest result: "restored" ONLY when every cell succeeded (the AclEvent echoes clear pending).
+            _state.update {
+                val phase = if (failed == 0) PresetPhase.RESTORED else PresetPhase.PARTIAL
+                it.copy(preset = PresetState(phase, total = diff.size, done = done, failed = failed))
+            }
+        }
+    }
+
+    fun dismissNotice() = _state.update { it.copy(notice = null) }
+
+    private companion object {
+        /** `HubState.OPERATOR_ID` — the privileged viewer's own row (self-blind guardrail, §6c). */
+        const val OPERATOR_ID = "operator"
+
+        /** A missing `AclEvent` echo must never hang a cell in pending (§5.4). */
+        const val PENDING_TIMEOUT_MS = 8_000L
+    }
+}

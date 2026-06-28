@@ -29,6 +29,9 @@
     <string name="event_load_more">Mehr laden</string>
     <!-- Shared "Back" key (comm-panel-keys.md, CYP-17 contract) — reused by the Browse single-pane, not duplicated. -->
     <string name="comm_back">Zurück</string>
+    <!-- Shared keys introduced by CYP-48 (PO-approved 2026-06-28); CYP-17/14 hardcodes re-point in CYP-51. -->
+    <string name="comm_status_offline">Verbindung getrennt – Stand evtl. nicht aktuell</string>
+    <string name="agent_role_po">PO</string>
     <string name="event_detail_source_ts">Beobachtet: %1$s</string>
     <string name="event_drilldown_show_run">Zeig den ganzen Lauf</string>
     <string name="event_drilldown_show_session">Zeig die ganze Session</string>
@@ -49,4 +52,35 @@
     <string name="a11y_event_gap">Lücke: %1$s Events verworfen</string>
     <string name="a11y_event_correlation">Korrelations-ID %1$s, Lauf anzeigen</string>
     <string name="a11y_event_tail_status">Live-Tail-Status: %1$s</string>
+    <!-- ACL-Matrix (CYP-48 / S7). Keys per docs/design/acl-matrix-keys.md (CYP-19). -->
+    <string name="acl_title">Zugriffsrechte (Kanal × Teilnehmer)</string>
+    <string name="acl_empty">Keine Kanäle oder Teilnehmer</string>
+    <string name="acl_partial_view">Teilansicht – nur deine Kanäle. Vollständige Matrix nur als Operator.</string>
+    <string name="acl_operator_required">Nur der Operator darf Zugriffsrechte ändern</string>
+    <string name="acl_unauthorized">Nicht angemeldet</string>
+    <string name="acl_read">Lesen</string>
+    <string name="acl_write">Antworten</string>
+    <string name="acl_granted">gewährt</string>
+    <string name="acl_denied">gesperrt</string>
+    <string name="acl_non_member">kein Mitglied</string>
+    <string name="acl_write_only_hint">Antworten ohne Lesen – ungewöhnlich</string>
+    <string name="acl_conflict">Mehrfacheintrag – strengster Wert gilt</string>
+    <string name="acl_pending">wird übernommen…</string>
+    <string name="acl_enforced">durchgesetzt</string>
+    <string name="acl_change_failed">Änderung nicht bestätigt – erneut versuchen</string>
+    <string name="acl_po_critical">PO-kritisch – trägt Hub-and-Spoke</string>
+    <string name="acl_po_lockout_warning">Damit verliert der PO Lese-/Antwortrecht in %1$s – Hub-and-Spoke bricht. Wirklich?</string>
+    <string name="acl_self_blind_warning">Damit erblindet dein Live-Feed für %1$s; du kannst weiter editieren, siehst aber keine Live-Änderungen mehr.</string>
+    <string name="acl_po_protected">Geschützt: würde den PO aussperren – Änderung abgelehnt</string>
+    <string name="acl_preset_restore">Hub-and-Spoke wiederherstellen</string>
+    <string name="acl_preset_preview">%1$s Zellen ändern sich</string>
+    <string name="acl_preset_applying">Wird wiederhergestellt… %1$s/%2$s</string>
+    <string name="acl_preset_restored">Hub-and-Spoke wiederhergestellt</string>
+    <string name="acl_preset_partial">%1$s/%2$s wiederhergestellt – %3$s fehlgeschlagen, erneut versuchen</string>
+    <string name="a11y_acl_cell">%1$s in Kanal %2$s: Lesen %3$s, Antworten %4$s</string>
+    <string name="a11y_acl_cell_nonmember">%1$s ist kein Mitglied von %2$s</string>
+    <string name="a11y_acl_toggle_read">Leserecht für %1$s in %2$s umschalten</string>
+    <string name="a11y_acl_toggle_write">Antwortrecht für %1$s in %2$s umschalten</string>
+    <string name="a11y_acl_pending">Änderung wird übernommen, noch nicht bestätigt</string>
+    <string name="a11y_acl_po_critical">PO-kritische Zelle</string>
 </resources>
