@@ -68,6 +68,8 @@
     <string name="acl_po_lockout_warning">This removes the PO's read/reply right in %1$s – hub-and-spoke breaks. Continue?</string>
     <string name="acl_self_blind_warning">This blinds your live feed for %1$s; you can still edit but won't see live changes.</string>
     <string name="acl_po_protected">Protected: would lock out the PO – change rejected</string>
+    <string name="acl_continue">Continue</string>
+    <string name="acl_cancel">Cancel</string>
     <string name="acl_preset_restore">Restore hub-and-spoke</string>
     <string name="acl_preset_preview">%1$s cells will change</string>
     <string name="acl_preset_applying">Restoring… %1$s/%2$s</string>

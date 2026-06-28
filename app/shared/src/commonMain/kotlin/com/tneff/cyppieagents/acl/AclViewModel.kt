@@ -62,6 +62,8 @@ data class AclUiState(
  *
  * Deferred (PO-tracked, CYP-48 scope): the agent-token-backed read-only partial path (§4). The MVP shell
  * runs an operator context, so [editable] is wired from the operator token; the agent-token repo lands later.
+ * When it does, [AclApi.acl] over an agent token MUST return only the viewer's own channels (the server
+ * already does this) — otherwise the "only your channels" partial-view banner would misrepresent the data.
  */
 class AclViewModel(
     private val api: AclApi,
@@ -220,6 +222,12 @@ class AclViewModel(
             for (entry in diff) {
                 val key = AclReducer.cellKey(entry.channelId, entry.agentId)
                 _state.update { it.copy(pending = it.pending + key) }
+                // Safeguard (§5.4), same as the single toggle: a missing AclEvent echo must never leave a
+                // preset cell hanging in pending — clear it after the timeout (the row reflects hub truth).
+                runScope.launch {
+                    delay(PENDING_TIMEOUT_MS)
+                    if (key in _state.value.pending) _state.update { it.copy(pending = it.pending - key) }
+                }
                 runCatching { api.setAcl(entry) }
                     .onSuccess { done++ }
                     .onFailure { failed++; _state.update { it.copy(pending = it.pending - key) } }

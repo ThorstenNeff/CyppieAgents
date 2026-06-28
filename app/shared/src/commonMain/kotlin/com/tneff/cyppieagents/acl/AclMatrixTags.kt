@@ -38,6 +38,8 @@ object AclMatrixTags {
     // Preset "restore hub-and-spoke" (non-atomic, N PUTs).
     const val PRESET_RESTORE = "aclMatrix.presetRestore"
     const val PRESET_PREVIEW = "aclMatrix.presetPreview"
+    const val PRESET_PREVIEW_CONFIRM = "aclMatrix.presetPreview.confirm"
+    const val PRESET_PREVIEW_CANCEL = "aclMatrix.presetPreview.cancel"
     const val PRESET_PROGRESS = "aclMatrix.presetProgress"
     const val PRESET_PARTIAL = "aclMatrix.presetPartial"
 }

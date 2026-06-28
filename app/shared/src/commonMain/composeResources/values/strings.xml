@@ -72,6 +72,8 @@
     <string name="acl_po_lockout_warning">Damit verliert der PO Lese-/Antwortrecht in %1$s – Hub-and-Spoke bricht. Wirklich?</string>
     <string name="acl_self_blind_warning">Damit erblindet dein Live-Feed für %1$s; du kannst weiter editieren, siehst aber keine Live-Änderungen mehr.</string>
     <string name="acl_po_protected">Geschützt: würde den PO aussperren – Änderung abgelehnt</string>
+    <string name="acl_continue">Fortfahren</string>
+    <string name="acl_cancel">Abbrechen</string>
     <string name="acl_preset_restore">Hub-and-Spoke wiederherstellen</string>
     <string name="acl_preset_preview">%1$s Zellen ändern sich</string>
     <string name="acl_preset_applying">Wird wiederhergestellt… %1$s/%2$s</string>

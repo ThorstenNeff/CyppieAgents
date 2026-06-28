@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -33,7 +34,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.comm.ConnectionStatus
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.a11y_acl_cell_nonmember
+import kmpcyppieagents.app.shared.generated.resources.a11y_acl_pending
+import kmpcyppieagents.app.shared.generated.resources.a11y_acl_po_critical
+import kmpcyppieagents.app.shared.generated.resources.a11y_acl_toggle_read
+import kmpcyppieagents.app.shared.generated.resources.a11y_acl_toggle_write
+import kmpcyppieagents.app.shared.generated.resources.acl_cancel
 import kmpcyppieagents.app.shared.generated.resources.acl_change_failed
+import kmpcyppieagents.app.shared.generated.resources.acl_continue
 import kmpcyppieagents.app.shared.generated.resources.acl_conflict
 import kmpcyppieagents.app.shared.generated.resources.acl_denied
 import kmpcyppieagents.app.shared.generated.resources.acl_empty
@@ -76,11 +84,20 @@ private val AGENT_COL_WIDTH = 190.dp
 fun AclPanel(viewModel: AclViewModel, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
-        if (!state.editable) Banner(stringResource(Res.string.acl_partial_view), AclMatrixTags.PARTIAL_VIEW)
-        if (state.connection == ConnectionStatus.DISCONNECTED) {
-            Banner(stringResource(Res.string.comm_status_offline), AclMatrixTags.CONNECTION)
+        // Partial view = INFO (read-only), not an error → neutral/info tone (A3).
+        if (!state.editable) {
+            Banner(stringResource(Res.string.acl_partial_view), AclMatrixTags.PARTIAL_VIEW,
+                MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
         }
-        state.notice?.let { Banner(noticeText(it), tag = null) }
+        // Offline/stale = amber warning, not error-red (CYP-17 semantics) → tertiary container (A3).
+        if (state.connection == ConnectionStatus.DISCONNECTED) {
+            Banner(stringResource(Res.string.comm_status_offline), AclMatrixTags.CONNECTION,
+                MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+        }
+        // Actual error (operator-required / unauthorized / change-failed) → error tone.
+        state.notice?.let {
+            Banner(noticeText(it), tag = null, MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
+        }
         PresetBar(state, viewModel)
 
         if (state.channels.isEmpty() || state.agents.isEmpty()) {
@@ -118,7 +135,10 @@ private fun WideGrid(state: AclUiState, viewModel: AclViewModel) {
                         if (agent.role == com.tneff.cyppieagents.model.Role.PO) {
                             Text(stringResource(Res.string.agent_role_po), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
-                        if (agent.id == "operator") Text("◆", style = MaterialTheme.typography.labelSmall)
+                        if (agent.id == "operator") {
+                            Text("◆", style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.semantics { contentDescription = "Operator" })
+                        }
                     }
                 }
             }
@@ -167,34 +187,43 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
     val key = AclReducer.cellKey(cell.channelId, cell.agentId)
     val pending = key in state.pending
     val protectedNotice = state.cellNotice[key] == "acl_po_protected"
+    // Display names for screenreader labels (A1) — never the raw ids.
+    val agentName = state.agents.firstOrNull { it.id == cell.agentId }?.name ?: cell.agentId
+    val channelName = state.channels.firstOrNull { it.id == cell.channelId }?.name ?: cell.channelId
     Column(modifier = modifier.padding(4.dp).testTag(AclMatrixTags.cell(cell.channelId, cell.agentId))) {
         if (!cell.isMember) {
+            val nonMemberCd = stringResource(Res.string.a11y_acl_cell_nonmember, agentName, channelName)
             Text(
                 text = "—",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .testTag(AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.NON_MEMBER))
-                    .semantics { contentDescription = "${cell.agentId}/${cell.channelId} non-member" },
+                    .semantics { contentDescription = nonMemberCd },
             )
             return@Column
         }
+        val readCd = stringResource(Res.string.a11y_acl_toggle_read, agentName, channelName)
+        val writeCd = stringResource(Res.string.a11y_acl_toggle_write, agentName, channelName)
+        val poCriticalCd = stringResource(Res.string.a11y_acl_po_critical)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            GrantControl(cell.channelId, cell.agentId, stringResource(Res.string.acl_read), cell.canRead, state.editable, pending,
-                AclMatrixTags.read(cell.channelId, cell.agentId), AclMatrixTags.readonly(cell.channelId, cell.agentId)) {
+            GrantControl(stringResource(Res.string.acl_read), cell.canRead, state.editable, pending,
+                AclMatrixTags.read(cell.channelId, cell.agentId), AclMatrixTags.readonly(cell.channelId, cell.agentId), readCd) {
                 viewModel.toggleRead(cell.channelId, cell.agentId)
             }
-            GrantControl(cell.channelId, cell.agentId, stringResource(Res.string.acl_write), cell.canWrite, state.editable, pending,
-                AclMatrixTags.write(cell.channelId, cell.agentId), AclMatrixTags.readonly(cell.channelId, cell.agentId)) {
+            GrantControl(stringResource(Res.string.acl_write), cell.canWrite, state.editable, pending,
+                AclMatrixTags.write(cell.channelId, cell.agentId), AclMatrixTags.readonly(cell.channelId, cell.agentId), writeCd) {
                 viewModel.toggleWrite(cell.channelId, cell.agentId)
             }
             if (cell.poCritical) {
                 Text("⚑", color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.testTag(AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.PO_CRITICAL)))
+                    modifier = Modifier
+                        .testTag(AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.PO_CRITICAL))
+                        .semantics { contentDescription = poCriticalCd })
             }
         }
         // Disclosure markers: pending ≠ enforced; protected (server-rejected) ≠ either.
         when {
-            pending -> StateMarker(stringResource(Res.string.acl_pending), AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.PENDING))
+            pending -> StateMarker(stringResource(Res.string.acl_pending), AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.PENDING), stringResource(Res.string.a11y_acl_pending))
             protectedNotice -> StateMarker(stringResource(Res.string.acl_po_protected), AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.PROTECTED))
             else -> Box(Modifier.testTag(AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.ENFORCED)))
         }
@@ -205,19 +234,26 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
 
 @Composable
 private fun GrantControl(
-    channelId: String, agentId: String, label: String, granted: Boolean, editable: Boolean, pending: Boolean,
-    switchTag: String, readonlyTag: String, onToggle: () -> Unit,
+    label: String, granted: Boolean, editable: Boolean, pending: Boolean,
+    switchTag: String, readonlyTag: String, contentDescription: String, onToggle: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.labelSmall)
         if (editable) {
-            Switch(checked = granted, onCheckedChange = { onToggle() }, enabled = !pending, modifier = Modifier.testTag(switchTag))
+            Switch(
+                checked = granted,
+                onCheckedChange = { onToggle() },
+                enabled = !pending,
+                // Glyph in the thumb so the on/off state isn't carried by colour alone (B2 / WCAG 1.4.1).
+                thumbContent = { Text(if (granted) "✓" else "✕", style = MaterialTheme.typography.labelSmall) },
+                modifier = Modifier.testTag(switchTag).semantics { this.contentDescription = contentDescription },
+            )
         } else {
             // Read-only chip (no switch that fakes editability) — honest partial/agent view (CYP-19 §8).
             Text(
                 text = stringResource(if (granted) Res.string.acl_granted else Res.string.acl_denied),
                 style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.testTag(readonlyTag),
+                modifier = Modifier.testTag(readonlyTag).semantics { this.contentDescription = contentDescription },
             )
         }
     }
@@ -234,10 +270,8 @@ private fun PresetBar(state: AclUiState, viewModel: AclViewModel) {
         when (state.preset?.phase) {
             PresetPhase.PREVIEW -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(Res.string.acl_preset_preview, state.preset.total.toString()), modifier = Modifier.testTag(AclMatrixTags.PRESET_PREVIEW))
-                // NOTE: preset apply/cancel have no dedicated tag in acl-matrix-tags.md yet; a preset
-                // device-flow is out of this S7-gate's scope (advisory toggle + 409 path are the criticals).
-                TextButton(onClick = viewModel::applyPreset) { Text("✓") }
-                TextButton(onClick = viewModel::cancelPreset) { Text("✕") }
+                TextButton(onClick = viewModel::applyPreset, modifier = Modifier.testTag(AclMatrixTags.PRESET_PREVIEW_CONFIRM)) { Text(stringResource(Res.string.acl_continue)) }
+                TextButton(onClick = viewModel::cancelPreset, modifier = Modifier.testTag(AclMatrixTags.PRESET_PREVIEW_CANCEL)) { Text(stringResource(Res.string.acl_cancel)) }
             }
             PresetPhase.APPLYING -> Text(
                 stringResource(Res.string.acl_preset_applying, state.preset.done.toString(), state.preset.total.toString()),
@@ -262,21 +296,23 @@ private fun LockoutDialog(prompt: LockoutPrompt, onConfirm: () -> Unit, onCancel
         modifier = Modifier.testTag(if (prompt.selfBlind) AclMatrixTags.SELF_BLIND_WARNING else AclMatrixTags.LOCKOUT_DIALOG),
         title = { Text(stringResource(Res.string.acl_po_critical)) },
         text = { Text(text) },
-        confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.testTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM)) { Text("OK") } },
-        dismissButton = { TextButton(onClick = onCancel, modifier = Modifier.testTag(AclMatrixTags.LOCKOUT_DIALOG_CANCEL)) { Text(stringResource(Res.string.comm_back)) } },
+        confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.testTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM)) { Text(stringResource(Res.string.acl_continue)) } },
+        dismissButton = { TextButton(onClick = onCancel, modifier = Modifier.testTag(AclMatrixTags.LOCKOUT_DIALOG_CANCEL)) { Text(stringResource(Res.string.acl_cancel)) } },
     )
 }
 
 @Composable
-private fun Banner(text: String, tag: String?) {
-    var m = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 12.dp, vertical = 4.dp)
+private fun Banner(text: String, tag: String?, container: Color, onContainer: Color) {
+    var m = Modifier.fillMaxWidth().background(container).padding(horizontal = 12.dp, vertical = 4.dp)
     if (tag != null) m = m.testTag(tag)
-    Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer, modifier = m)
+    Text(text, style = MaterialTheme.typography.labelSmall, color = onContainer, modifier = m)
 }
 
 @Composable
-private fun StateMarker(text: String, tag: String) {
-    Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag(tag))
+private fun StateMarker(text: String, tag: String, a11y: String? = null) {
+    var m = Modifier.testTag(tag)
+    if (a11y != null) m = m.semantics { contentDescription = a11y }
+    Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = m)
 }
 
 @Composable
