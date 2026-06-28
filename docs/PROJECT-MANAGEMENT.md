@@ -169,10 +169,16 @@ Wie bei der Agenten-Entfernung, aber für **alle Worktrees des Projekts** auf ei
 - **Behalten** (`…worktreeKeep`, `project_delete_worktree_keep`) = **Default** (Arbeit auf Platte bleibt);
 - **Worktrees aller Agenten löschen** (`…worktreeDelete`, `project_delete_worktree_delete`).
 
+Das Radio mappt 1:1 auf das Backend-Flag **`deleteWorktrees`** (Default **`false`**) am DELETE — Reuse
+des bereits gebauten **`WorktreeManager.deleteProject`** (strict-child-Guard). **Gepushte Branches
+`agent/<…>` bleiben IMMER erhalten** (Remote-Arbeit überlebt jeden Lösch-Pfad); nur **lokale, nicht
+committete/nicht gepushte** Arbeit ist betroffen, und nur im „alle löschen"-Pfad.
+
 Im Lösch-Pfad erscheint `…deleteDialog.worktreeWarning` (HintTone.ERROR,
-`project_delete_worktree_warning`): „Nicht committete/nicht gepushte Arbeit in allen Worktrees dieses
-Projekts geht unwiderbringlich verloren." Datenverlust wird über **Ton + Text** getragen, nie nur über
-Farbe.
+`project_delete_worktree_warning`): „Nicht committete/nicht gepushte Arbeit in den lokalen Worktrees
+dieses Projekts geht verloren. Gepushte Branches (`agent/…`) bleiben erhalten." Die Warnung trennt damit
+**garantiert-sicher** (gepusht) von **gefährdet** (lokal uncommitted) — Honesty statt pauschaler Drohung;
+Datenverlust wird über **Ton + Text** getragen, nie nur über Farbe.
 
 Der Bestätigungs-Button `…deleteDialog.confirm` ist **error-gefärbt** und **benennt die Aktion**:
 `project_delete_confirm` = „Projekt endgültig löschen". Abbrechen `…deleteDialog.cancel`
@@ -185,17 +191,18 @@ Begründung — nicht erst als Post-hoc-Ablehnung):
 
 - **Aktives Projekt nicht löschbar** → `project_delete_active_blocked` = „Aktives Projekt – erst zu einem
   anderen wechseln, dann löschbar." (HintTone.INFO — eine **Anleitung**, kein Fehler.) Tag
-  `projectMgmt.row.<id>.deleteBlocked`.
+  `projectMgmt.row.<id>.deleteBlocked`. Mappt auf den Backend-Code **`active_project_protected`** (409).
 - **Letztes Projekt nicht löschbar** → `project_delete_last_blocked` = „Das letzte Projekt kann nicht
-  gelöscht werden." (HintTone.INFO.) Gleicher Tag-Slot.
+  gelöscht werden." (HintTone.INFO.) Gleicher Tag-Slot. Mappt auf **`last_project`** (409).
 
 > **Tonaler Hinweis (bewusste Divergenz):** Die Agenten-Verwaltung tönt den „letzter PO"-Block ERROR;
 > hier sind die Sperren **INFO-getönt**, weil sie eine erreichbare **Anleitung** sind („erst wechseln")
 > bzw. eine neutrale Systemregel, kein Fehlversuch. Beide bleiben ohne Farbe lesbar (Glyph + Text).
 
-> **Server bleibt Source of Truth (Reuse-Präzedenz CYP-49 ACL-PO-Lockout):** Die UI-Sperren sind
-> **advisory** — das Backend muss aktives/letztes Projekt **ebenfalls** ablehnen (fail-closed), damit ein
-> direkter API-Aufruf nicht am UI-Guard vorbei löscht. Siehe §6 (Backend-AC).
+> **Server bleibt Source of Truth (PO-entschieden; Reuse-Präzedenz CYP-49 ACL-PO-Lockout):** Die
+> UI-Sperren sind **advisory** — das Backend lehnt aktives/letztes Projekt **ebenfalls** ab (fail-closed),
+> damit ein direkter API-Aufruf nicht am UI-Guard vorbei löscht. Die Server-Codes sind bereits in `:core`
+> gebaut (siehe §6/§7) — die UI mappt diese §4.3-Hinweise darauf.
 
 ### 4.4 Nach dem Löschen
 
@@ -219,48 +226,59 @@ bleibt unverändert (es war ja nicht löschbar). Kein automatischer Kontextwechs
 
 ---
 
-## 6. Datenpfad & Backend-Naht (greenfield — PO/Backend reconcilen)
+## 6. Datenpfad & Backend-Naht (Vertrag — PO-entschieden, gegen Backend abgeglichen)
 
 Verifiziert gegen develop `c2055bd`: das **Fundament** steht (`ProjectScope`, `projectId` additiv auf
-`Channel`/`AclEntry`/`Message`, `EventDraft.teamId`), aber **Projekt-CRUD, aktiv-Projekt-Auflösung und
-Cascade-Delete sind greenfield**. Diese Spec definiert den UI-Vertrag; die Lifecycle-Naht baut Backend
-parallel.
+`Channel`/`AclEntry`/`Message`, `EventDraft.teamId`). Die folgende Naht ist vom PO **entschieden** und
+teils im Backend **bereits gebaut**; diese Spec ist damit die akkurate Dev-Referenz.
 
-1. **`Project`-DTO + `/api/projects`-CRUD (greenfield):** `Project(id, name, createdAt?)`;
+1. **`Project`-DTO + `/api/projects`-CRUD:** `Project(id, name, createdAt?)`;
    `POST /api/projects` (create), `GET /api/projects` (list), `PUT /api/projects/{id}` (rename),
    `DELETE /api/projects/{id}` (cascade). **Alle Mutationen operator-gated** — Reuse `requireOperator()`
    (→ 403 `operator_required`, 401 ohne Token), exakt wie Settings/Agent-Mgmt/ACL.
-2. **Aktiv-Projekt-Auflösung + Wechsel-Persistenz (greenfield):** Heute kein Token→Projekt-Mapping (D2
-   „Projekt-Token = Team"). Vertrag offen: aktives Projekt per `X-Project-Id`-Header / Query / Client-State;
-   die scoped Endpunkte (`/api/agents`, `/api/channels`, `/api/inbox`, `/api/events`, ACL) müssen nach
-   `projectId` filtern (Fundament `ProjectScope.permits` ist da, die **Endpunkt-Verdrahtung** noch nicht —
-   Agent-Endpoints sind heute global).
-3. **Cascade-Delete-Backend (greenfield, groß):** ein Projekt-Delete muss kaskadieren über
-   - **Sessions** (heute `ConnectorSessions` agentId-keyed → stoppen),
+2. **Aktiv-Projekt-Auflösung = server-seitiger Active-Pointer (PO-entschieden):** das aktive Projekt lebt
+   im Backend-**`ProjectRegistry`** (Active-Pointer); Wechsel läuft über den **`SwitchActiveRequest`**-
+   Endpunkt. **Alle scoped Endpunkte** (`/api/agents`, `/api/channels`, `/api/inbox`, `/api/events`, ACL)
+   lösen die aktive `projectId` **serverseitig** auf — **kein `X-Project-Id`-Header** (würde die
+   Scope-Grenze unterlaufen). **Folge:** das aktive Projekt ist Server-State und **überlebt UI-Reload/
+   -Neustart** (§7.4).
+3. **Cascade-Delete-Backend:** ein Projekt-Delete kaskadiert über
+   - **Sessions** (`ConnectorSessions` agentId-keyed → stoppen),
    - **Kanäle + ACL** (`projectId`-filterbar → entfernen),
    - **Event-Partition** (teamId-gestempelt, query-gefiltert → Projekt-Events löschen),
-   - **Worktrees** (heute agent-zentriert/global, **kein `deleteWorktree`** → `git worktree remove` je
-     Agent des Projekts, abhängig vom Worktree-Schicksal-Radio).
-4. **Folgen-Mengen (optional):** Liefert das DELETE-Preview/eine Count-API die Mengen (Agenten/Kanäle/
-   Events), zeigt die UI sie advisory (§4.1). Fehlt das, bleibt nur die Kategorienzeile — **kein Fake**.
-5. **Delete-Safety server-seitig (AC):** aktives Projekt und letztes Projekt **müssen** serverseitig
-   abgelehnt werden (fail-closed), unabhängig von der UI-Sperre — Präzedenz CYP-49 (PO-Lockout im Server).
-   Vorschlag: 409 mit Code `project_active`/`project_last` (UI mappt auf die §4.3-Hinweise).
+   - **Worktrees** via bereits gebautem **`WorktreeManager.deleteProject`** (strict-child-Guard),
+     gesteuert durch das Flag **`deleteWorktrees`** (Default **`false`** = Behalten). **Branches
+     `agent/<…>` bleiben IMMER** — nur lokale, nicht gepushte Arbeit entfällt bei `deleteWorktrees=true`
+     (§4.2).
+4. **Fehler-Codes (PO-entschieden, an Backends `:core`-Codes angeglichen):** die UI mappt ihre Hinweise
+   auf diese:
+   - **Create:** `invalid_project_id` (400) / `project_exists` (409).
+   - **Rename:** `invalid_project_id` (400) / `project_not_found` (404).
+   - **Delete (Prüf-Reihenfolge):** `project_not_found` (404) → **`last_project`** (409) →
+     **`active_project_protected`** (409). → UI: `last_project` ⇒ `project_delete_last_blocked`,
+     `active_project_protected` ⇒ `project_delete_active_blocked` (§4.3); generischer Rest ⇒
+     `project_*_error`.
+   - **Gate** (alle Mutationen): `operator_required` (403 mit Token-Mismatch, 401 ohne).
+5. **Folgen-Mengen = Fast-Follow (PO-entschieden):** **S13 zeigt nur die Kategorienzeile.** Der
+   advisory-Counts-Slot (`project_delete_consequences_counts`) bleibt wie spezifiziert stehen (Honesty-
+   Regel: nie erfunden), die Counts liefert ein kleiner Fast-Follow nach (§4.1).
+6. **Delete-Safety server-seitig (erfüllt):** aktives + letztes Projekt werden serverseitig abgelehnt
+   (`active_project_protected` / `last_project`, fail-closed) — UI-Sperren sind advisory (Präzedenz CYP-49).
 
 ---
 
-## 7. Offene Punkte (PO/Backend zu entscheiden)
+## 7. Entscheidungen (PO-entschieden — §7.1–§7.5 geschlossen)
 
-1. **Aktiv-Projekt-Transport:** Header `X-Project-Id` vs. Client-State vs. Token-Auflösung — prägt alle
-   scoped Endpunkte (§6.2).
-2. **Folgen-Mengen im Delete-Dialog:** liefert das Backend ein Preview (Counts) oder bleibt es bei der
-   Kategorienzeile? (§4.1)
-3. **Delete-Safety-Codes:** Bestätigung der Server-Codes für aktiv/letztes Projekt (Vorschlag
-   409 `project_active`/`project_last`, §6.5).
-4. **Wechsel-Persistenz:** überlebt das aktive Projekt einen Reload/Neustart der UI (Server-State) oder
-   ist es Session-lokal? (§2.3)
-5. **Default-Projekt-Sonderrolle:** Darf `default` umbenannt/gelöscht werden (sofern nicht aktiv/letztes),
-   oder ist es geschützt? (§3, §4)
+1. **Aktiv-Transport:** server-seitiger Active-Pointer (`ProjectRegistry`) + `SwitchActiveRequest`;
+   scoped Endpunkte lösen serverseitig auf; **kein `X-Project-Id`-Header**. (→ §6.2)
+2. **Folgen-Mengen:** S13 = nur Kategorienzeile; advisory-Counts-Slot bleibt, Counts als Fast-Follow.
+   (→ §6.5)
+3. **Fehler-Codes:** an `:core` angeglichen — Create `invalid_project_id`/`project_exists`; Rename
+   `invalid_project_id`/`project_not_found`; Delete `project_not_found`→`last_project`→
+   `active_project_protected`. (→ §6.4, §4.3)
+4. **Wechsel-Persistenz:** Server-State → aktives Projekt überlebt Reload (Folge von §7.1). (→ §2.3)
+5. **Default-Projekt:** **keine** Sonderrolle — `default` ist umbenennbar (id bleibt `default`) und
+   löschbar, **sofern nicht aktiv/letztes**; nur die universellen Guards greifen. (→ §3, §4)
 
 ---
 
@@ -274,4 +292,8 @@ parallel.
 - **Keys:** `project_*` greenfield (0 Kollision gegen `strings.xml` @ `c2055bd`); DE+EN-Parität Pflicht;
   surface-lokal (kein Cross-Surface-Reuse von `agent_`/`acl_` — bewusst, Drift-Vermeidung).
 - **Tags:** Areas `projectSwitcher` (CYP-92) + `projectMgmt` (CYP-91), Test-Contract v0.5 §2-konform.
-- **Backend-Naht §6 explizit geflaggt** (greenfield groß), Delete-Safety server-seitig als AC.
+- **Backend-Naht §6 = PO-entschiedener Vertrag** (Active-Pointer `ProjectRegistry`/`SwitchActiveRequest`,
+  kein `X-Project-Id`; `WorktreeManager.deleteProject` + `deleteWorktrees`-Flag Default false, Branches
+  `agent/<…>` bleiben; `:core`-Codes `invalid_project_id`/`project_exists`/`project_not_found`/
+  `last_project`/`active_project_protected`; Counts = Fast-Follow; `default` ohne Sonderrolle). §7.1–§7.5
+  geschlossen.

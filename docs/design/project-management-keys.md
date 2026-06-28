@@ -58,7 +58,7 @@
 | `project_delete_consequences_counts` | Betroffen: %1$s | Affected: %1$s |
 | `project_delete_worktree_keep` | Worktrees behalten | Keep worktrees |
 | `project_delete_worktree_delete` | Worktrees aller Agenten löschen | Delete all agents' worktrees |
-| `project_delete_worktree_warning` | Nicht committete/nicht gepushte Arbeit in allen Worktrees dieses Projekts geht unwiderbringlich verloren. | Uncommitted/unpushed work in all of this project's worktrees will be permanently lost. |
+| `project_delete_worktree_warning` | Nicht committete/nicht gepushte Arbeit in den lokalen Worktrees dieses Projekts geht verloren. Gepushte Branches (agent/…) bleiben erhalten. | Uncommitted/unpushed work in this project's local worktrees will be lost. Pushed branches (agent/…) are kept. |
 | `project_delete_confirm` | Projekt endgültig löschen | Delete project permanently |
 | `project_delete_active_blocked` | Aktives Projekt – erst zu einem anderen wechseln, dann löschbar. | Active project — switch to another first, then it can be deleted. |
 | `project_delete_last_blocked` | Das letzte Projekt kann nicht gelöscht werden. | The last project cannot be deleted. |
@@ -70,12 +70,24 @@
 > `…active_blocked` = das **aktive** Projekt (erst wechseln → dann löschbar). `…last_blocked` = das
 > **einzige** verbleibende Projekt (nie löschbar). Beide sind als **Anleitung/Systemregel** INFO-getönt
 > (TonedHint.INFO), bewusst abweichend vom ERROR-getönten `agent_remove_last_po` der Agenten-Verwaltung —
-> es ist hier kein Fehlversuch, sondern eine erreichbare/erwartete Sperre. **Server muss beide ebenfalls
-> ablehnen** (advisory UI; Präzedenz CYP-49) — Vorschlag 409 `project_active`/`project_last`.
+> es ist hier kein Fehlversuch, sondern eine erreichbare/erwartete Sperre. **Server lehnt beide ebenfalls
+> ab** (advisory UI; Präzedenz CYP-49): die `:core`-Codes (PO-entschieden) sind **`active_project_protected`**
+> (409) ⇒ `project_delete_active_blocked` und **`last_project`** (409) ⇒ `project_delete_last_blocked`.
 
 > **`project_delete_consequences_counts` ist advisory:** Mengen kommen best-effort vom Backend; fehlen sie,
 > wird die Zeile **weggelassen** (kein „0", kein Phantom). Die garantierte Aussage ist
 > `project_delete_consequences` (Kategorien).
+
+## Fehler-Code-Mapping (PO-entschieden, an Backends `:core` angeglichen)
+Die UI mappt die Server-Codes auf die obigen Keys:
+- **Create:** `invalid_project_id` (400) → `project_add_name_empty`; `project_exists` (409) →
+  `project_add_name_exists`; sonstiger Fehler → `project_add_error`.
+- **Rename:** `invalid_project_id` (400) → `project_add_name_empty`; `project_not_found` (404) /
+  sonstiger Fehler → `project_rename_error`.
+- **Delete (Prüf-Reihenfolge):** `project_not_found` (404) → `last_project` (409) →
+  `active_project_protected` (409); `last_project` → `project_delete_last_blocked`,
+  `active_project_protected` → `project_delete_active_blocked`; sonstiger Fehler → `project_delete_error`.
+- **Gate (alle Mutationen):** `operator_required` (403/401) → `project_mgmt_operator_required` (Gate-Hint).
 
 ## Reuse (bewusst KEINE Cross-Surface-Übernahme)
 Kein `agent_*`/`acl_*`-Key wird über die Surface-Grenze wiederverwendet (Cross-Surface-Drift-Risiko, vgl.
