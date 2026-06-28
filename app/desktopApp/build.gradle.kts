@@ -21,8 +21,19 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.tneff.cyppieagents"
+            // Human-friendly launcher/app name (was the raw reverse-DNS id) + minimal metadata (CYP-72 S9).
+            packageName = "CyppieAgents"
             packageVersion = "1.0.0"
+            description = "CyppieAgents — Multi-Agent Desktop"
+            vendor = "tneff"
+            // Linux .deb package names must be lowercase; keep the macOS bundle id at the reverse-DNS appId.
+            linux {
+                packageName = "cyppieagents"
+                appCategory = "Development"
+            }
+            macOS {
+                bundleID = "com.tneff.cyppieagents"
+            }
         }
     }
 }
