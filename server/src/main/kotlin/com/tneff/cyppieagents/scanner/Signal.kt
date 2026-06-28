@@ -18,8 +18,9 @@ data class Signal(
     /** Controlled vocabulary, e.g. `"stall.suspected"` (07 §4). Maps to the emitted Event's type. */
     val type: String,
     val agentId: String,
-    /** team = project token (05 §3); MVP single-team. */
-    val teamId: String,
+    /** Active project / tenant carried from the source event (S12 / CYP-83 — keeps the Scanner-on-the-bus
+        project-aware / N-mediator-capable; 05 §3 / Doc 07). MVP = 1 project. */
+    val projectId: String,
     /** ties the signal to the work-run that stalled (07 §3); null if not correlated. */
     val correlationId: String? = null,
     val evidence: JsonObject = JsonObject(emptyMap()),
@@ -37,7 +38,7 @@ data class Signal(
             return Signal(
                 type = type,
                 agentId = e.agentId,
-                teamId = e.teamId,
+                projectId = e.projectId,
                 correlationId = e.correlationId,
                 evidence = e.detail,
             )

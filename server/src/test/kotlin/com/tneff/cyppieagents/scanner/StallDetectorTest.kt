@@ -37,7 +37,7 @@ class StallDetectorTest {
         ts = tsMs,
         seq = seq,
         agentId = agent,
-        teamId = "default",
+        projectId = "default",
         type = type,
         severity = Severity.INFO,
         detail = detail,

@@ -32,16 +32,16 @@ class ScannerLoopAvoidanceTest {
 
     /** A deliberately greedy detector: emits on EVERY event it is handed — the worst case for loops. */
     private val greedy = Detector { e ->
-        Signal(type = "stall.suspected", agentId = e.agentId, teamId = e.teamId, evidence = JsonObject(emptyMap()))
+        Signal(type = "stall.suspected", agentId = e.agentId, projectId = e.projectId, evidence = JsonObject(emptyMap()))
     }
 
     private var seq = 0L
     private fun signalEvent(wire: String): Event = Event(
-        id = "s${seq++}", ts = 0, seq = seq, agentId = "backend", teamId = "default",
+        id = "s${seq++}", ts = 0, seq = seq, agentId = "backend", projectId = "default",
         type = EventType.UNKNOWN, rawType = wire, severity = Severity.WARN, detail = JsonObject(emptyMap()),
     )
     private fun domainEvent(): Event = Event(
-        id = "d${seq++}", ts = 0, seq = seq, agentId = "backend", teamId = "default",
+        id = "d${seq++}", ts = 0, seq = seq, agentId = "backend", projectId = "default",
         type = EventType.ERROR_RATELIMIT, severity = Severity.WARN, detail = JsonObject(emptyMap()),
     )
 

@@ -67,7 +67,7 @@ class S11StallLoopE2eTest {
         val signalSink = EventLogSignalSink(recorder)
         val session = StubSession(agent)
         val sessions = ConnectorSessions().apply { register(session) }
-        val actuator = MediatorActuator(sessions, signalSink, teamId = "default")
+        val actuator = MediatorActuator(sessions, signalSink, projectId = "default")
         val detector = StallDetector() // default T = 60s
         val scanner = Scanner(sink, listOf(detector), signalSink, scope)
         val policy = StallPolicy(clock = { nowMs }, actuator = actuator, signals = signalSink)

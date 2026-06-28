@@ -39,7 +39,7 @@ class ScannerScaffoldTest {
 
     private fun rateLimit(agent: String, status: String): EventDraft = EventDraft(
         agentId = agent,
-        teamId = "default",
+        projectId = "default",
         type = EventType.ERROR_RATELIMIT,
         severity = Severity.WARN,
         detail = buildJsonObject { put("status", status) },
@@ -54,7 +54,7 @@ class ScannerScaffoldTest {
             return Signal(
                 type = "stall.suspected",
                 agentId = e.agentId,
-                teamId = e.teamId,
+                projectId = e.projectId,
                 correlationId = e.correlationId,
                 evidence = buildJsonObject { put("trigger", "error.ratelimit"); put("status", status) },
             )
@@ -84,7 +84,7 @@ class ScannerScaffoldTest {
                 Signal(
                     type = "stall.suspected",
                     agentId = "backend",
-                    teamId = "default",
+                    projectId = "default",
                     correlationId = "run-7",
                     evidence = buildJsonObject { put("status", "blocked") },
                 ),
@@ -95,7 +95,7 @@ class ScannerScaffoldTest {
             assertEquals(null, ev.rawType)
             assertEquals(Severity.WARN, ev.severity) // ".suspected" → warn (07 §4)
             assertEquals("backend", ev.agentId)
-            assertEquals("default", ev.teamId)
+            assertEquals("default", ev.projectId)
             assertEquals("run-7", ev.correlationId)
             assertEquals("blocked", ev.detail["status"]?.jsonPrimitive?.content)
         } finally {

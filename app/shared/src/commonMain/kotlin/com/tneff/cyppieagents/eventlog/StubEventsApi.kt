@@ -46,7 +46,7 @@ class StubEventsApi(events: List<Event> = sampleEvents()) : EventsApi {
                 cid: String? = "run-1", sid: String? = "sess-1",
                 sev: Severity = Severity.INFO, detail: JsonObject = JsonObject(emptyMap()),
             ) = Event(
-                id = "e$seq", ts = 1_000 + seq, seq = seq, agentId = agent, teamId = "team-1",
+                id = "e$seq", ts = 1_000 + seq, seq = seq, agentId = agent, projectId = "team-1",
                 type = type, severity = sev, correlationId = cid, sessionId = sid, detail = detail,
             )
             return listOf(

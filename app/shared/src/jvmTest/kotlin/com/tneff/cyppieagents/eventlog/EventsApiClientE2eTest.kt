@@ -31,8 +31,8 @@ class EventsApiClientE2eTest {
         val seen = mutableMapOf<String, String?>()
         val page = EventPage(
             events = listOf(
-                Event(id = "e1", ts = 1, seq = 1, agentId = "backend", teamId = "t", type = EventType.TURN_START, severity = Severity.INFO),
-                Event(id = "e2", ts = 2, seq = 2, agentId = "backend", teamId = "t", type = EventType.RESULT_FINAL, severity = Severity.INFO),
+                Event(id = "e1", ts = 1, seq = 1, agentId = "backend", projectId = "t", type = EventType.TURN_START, severity = Severity.INFO),
+                Event(id = "e2", ts = 2, seq = 2, agentId = "backend", projectId = "t", type = EventType.RESULT_FINAL, severity = Severity.INFO),
             ),
             nextAfterSeq = 2,
             hasMore = false,

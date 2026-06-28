@@ -148,7 +148,7 @@ class SqliteEventSink(
         ps.setLong(3, e.ts)
         if (sourceTs == null) ps.setNull(4, Types.INTEGER) else ps.setLong(4, sourceTs)
         ps.setString(5, e.agentId)
-        ps.setString(6, e.teamId)
+        ps.setString(6, e.projectId)
         if (sessionId == null) ps.setNull(7, Types.VARCHAR) else ps.setString(7, sessionId)
         if (correlationId == null) ps.setNull(8, Types.VARCHAR) else ps.setString(8, correlationId)
         ps.setString(9, e.type.wire)
@@ -165,7 +165,7 @@ class SqliteEventSink(
             seq = rs.getLong("seq"),
             sourceTs = sourceTs,
             agentId = rs.getString("agent_id"),
-            teamId = rs.getString("team_id"),
+            projectId = rs.getString("team_id"), // physical column unchanged (see schema note, CYP-83)
             sessionId = rs.getString("session_id"),
             correlationId = rs.getString("correlation_id"),
             type = EventType.fromWire(rs.getString("type")),
@@ -186,6 +186,8 @@ class SqliteEventSink(
               ts             INTEGER NOT NULL,
               source_ts      INTEGER,
               agent_id       TEXT    NOT NULL,
+              -- S12 / CYP-83: the DTO field is `projectId`; the physical column stays `team_id`
+              -- deliberately so existing event DBs need no migration (storage detail, not the wire contract).
               team_id        TEXT    NOT NULL,
               session_id     TEXT,
               correlation_id TEXT,

@@ -42,7 +42,7 @@ interface Actuator {
 class MediatorActuator(
     private val sessions: ConnectorSessions,
     private val signals: SignalSink,
-    private val teamId: String,
+    private val projectId: String,
 ) : Actuator {
     private val log = LoggerFactory.getLogger("warden.actuator")
 
@@ -54,7 +54,7 @@ class MediatorActuator(
             return
         }
         session.sendTurn(UserTurn(text)) // THE ONLY write toward an agent in the whole supervision stack
-        signals.emit(Signal(type = NUDGE_SENT, agentId = agentId, teamId = teamId))
+        signals.emit(Signal(type = NUDGE_SENT, agentId = agentId, projectId = projectId))
     }
 
     override suspend fun escalateToPO(agentId: String, reason: String, escalationType: String) {
@@ -65,7 +65,7 @@ class MediatorActuator(
             Signal(
                 type = escalationType,
                 agentId = agentId,
-                teamId = teamId,
+                projectId = projectId,
                 evidence = buildJsonObject { put("reason", reason) },
             ),
         )

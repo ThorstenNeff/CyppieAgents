@@ -10,7 +10,7 @@ import kotlin.test.assertNull
 class EventReducerTest {
 
     private fun ev(id: String, seq: Long) = Event(
-        id = id, ts = seq, seq = seq, agentId = "a", teamId = "t",
+        id = id, ts = seq, seq = seq, agentId = "a", projectId = "t",
         type = EventType.TURN_START, severity = Severity.INFO,
     )
 

@@ -35,7 +35,7 @@ class StallDetector(
     private class Armed(
         val sinceMs: Long,
         val status: String,
-        val teamId: String,
+        val projectId: String,
         val correlationId: String?,
         var suspected: Boolean,
     )
@@ -59,7 +59,7 @@ class StallDetector(
                         byAgent[e.agentId] = Armed(
                             sinceMs = e.ts,
                             status = throttleStatus(e)!!,
-                            teamId = e.teamId,
+                            projectId = e.projectId,
                             correlationId = e.correlationId,
                             suspected = false,
                         )
@@ -86,7 +86,7 @@ class StallDetector(
             out += Signal(
                 type = SIGNAL_TYPE,
                 agentId = agentId,
-                teamId = a.teamId,
+                projectId = a.projectId,
                 correlationId = a.correlationId,
                 evidence = buildJsonObject {
                     put("rateLimitStatus", a.status)   // blocked | rejected

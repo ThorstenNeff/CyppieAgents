@@ -39,7 +39,7 @@ import io.ktor.server.websocket.webSocket as serverWebSocket
 class EventsWsClientE2eTest {
 
     private fun ev(seq: Long) = Event(
-        id = "e$seq", ts = seq, seq = seq, agentId = "backend", teamId = "t",
+        id = "e$seq", ts = seq, seq = seq, agentId = "backend", projectId = "t",
         type = EventType.TURN_START, severity = Severity.INFO,
     )
 

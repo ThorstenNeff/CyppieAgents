@@ -17,7 +17,7 @@ class EventRawTypeTest {
         // first-class (CYP-64) — see EventModelTest.stallTypesAreFirstClass — so they no longer
         // exercise the unknown path; a budget.* type still does.
         val wire = """
-            {"id":"x","ts":1,"seq":1,"agentId":"a","teamId":"t",
+            {"id":"x","ts":1,"seq":1,"agentId":"a","projectId":"t",
              "type":"budget.escalated","severity":"info","detail":{}}
         """.trimIndent()
         val decoded = CommJson.decodeFromString(Event.serializer(), wire)
@@ -33,7 +33,7 @@ class EventRawTypeTest {
     @Test
     fun knownType_hasNullRawType() {
         val e = Event(
-            id = "x", ts = 1, seq = 1, agentId = "a", teamId = "t",
+            id = "x", ts = 1, seq = 1, agentId = "a", projectId = "t",
             type = EventType.TOOL_CALL, severity = Severity.INFO,
         )
         assertNull(e.rawType)

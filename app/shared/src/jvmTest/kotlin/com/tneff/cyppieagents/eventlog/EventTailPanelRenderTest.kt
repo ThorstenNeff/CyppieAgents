@@ -39,7 +39,7 @@ class EventTailPanelRenderTest {
     @Test
     fun logDropped_rendersGapRow() = runComposeUiTest {
         val gap = Event(
-            id = "g1", ts = 1, seq = 1, agentId = "backend", teamId = "t",
+            id = "g1", ts = 1, seq = 1, agentId = "backend", projectId = "t",
             type = EventType.LOG_DROPPED, severity = Severity.WARN,
             detail = buildJsonObject { put("count", "5") },
         )

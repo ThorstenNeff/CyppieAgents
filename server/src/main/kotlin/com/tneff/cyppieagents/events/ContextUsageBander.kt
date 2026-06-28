@@ -42,7 +42,7 @@ class ContextUsageBander(
      */
     fun onUsage(
         agentId: String,
-        teamId: String,
+        projectId: String,
         snapshot: UsageSnapshot,
         sessionId: String? = null,
         correlationId: String? = null,
@@ -58,7 +58,7 @@ class ContextUsageBander(
                 band > prevBand && band >= bandPctWidth -> {
                     // Crossed up into a new band → record the new band (the highest reached).
                     lastBandByAgent[agentId] = band
-                    drafts += usageDraft(agentId, teamId, sessionId, correlationId, band, fillPct, snapshot, Reason.BAND)
+                    drafts += usageDraft(agentId, projectId, sessionId, correlationId, band, fillPct, snapshot, Reason.BAND)
                 }
                 band < prevBand -> {
                     // Context shrank (e.g. after a compaction) → reset so a later climb re-emits. No event.
@@ -69,7 +69,7 @@ class ContextUsageBander(
             val armed = compactArmedByAgent[agentId] ?: true
             if (fillPct >= compactPct && armed) {
                 compactArmedByAgent[agentId] = false
-                drafts += usageDraft(agentId, teamId, sessionId, correlationId, compactPct, fillPct, snapshot, Reason.COMPACT)
+                drafts += usageDraft(agentId, projectId, sessionId, correlationId, compactPct, fillPct, snapshot, Reason.COMPACT)
             } else if (fillPct < compactPct && !armed) {
                 compactArmedByAgent[agentId] = true // re-arm once we drop back below the threshold
             }
@@ -89,7 +89,7 @@ class ContextUsageBander(
 
     private fun usageDraft(
         agentId: String,
-        teamId: String,
+        projectId: String,
         sessionId: String?,
         correlationId: String?,
         bandPct: Int,
@@ -98,7 +98,7 @@ class ContextUsageBander(
         reason: Reason,
     ) = EventDraft(
         agentId = agentId,
-        teamId = teamId,
+        projectId = projectId,
         type = EventType.CONTEXT_USAGE,
         // Compact threshold is a "we're near the limit" signal → warn; ordinary band steps are info.
         severity = if (reason == Reason.COMPACT) Severity.WARN else Severity.INFO,

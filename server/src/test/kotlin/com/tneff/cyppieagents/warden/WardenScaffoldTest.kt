@@ -79,11 +79,11 @@ class WardenScaffoldTest {
 
     private var seq = 0L
     private fun signalEvent(wire: String, agent: String = "backend", evidence: JsonObject = JsonObject(emptyMap())) = Event(
-        id = "s${seq++}", ts = 0, seq = seq, agentId = agent, teamId = "default",
+        id = "s${seq++}", ts = 0, seq = seq, agentId = agent, projectId = "default",
         type = EventType.UNKNOWN, rawType = wire, severity = Severity.WARN, detail = evidence,
     )
     private fun domainEvent() = Event(
-        id = "d${seq++}", ts = 0, seq = seq, agentId = "backend", teamId = "default",
+        id = "d${seq++}", ts = 0, seq = seq, agentId = "backend", projectId = "default",
         type = EventType.ERROR_RATELIMIT, severity = Severity.WARN,
         detail = buildJsonObject { put("status", "blocked") },
     )
@@ -133,7 +133,7 @@ class WardenScaffoldTest {
         try {
             val sessions = ConnectorSessions().apply { register(FakeSession("backend")) }
             val cap = CapturingSignalSink()
-            val actuator = MediatorActuator(sessions, cap, teamId = "default")
+            val actuator = MediatorActuator(sessions, cap, projectId = "default")
 
             // Decide→Act through the seam: a policy acts ONLY via the actuator it is handed.
             val policy = RecordingPolicy("stall.suspected") { s, act -> act.nudge(s.agentId, "Bitte mach weiter.") }
@@ -156,7 +156,7 @@ class WardenScaffoldTest {
         try {
             val cap = CapturingSignalSink()
             // No session registered for "ghost".
-            MediatorActuator(ConnectorSessions(), cap, teamId = "default").nudge("ghost", "x")
+            MediatorActuator(ConnectorSessions(), cap, projectId = "default").nudge("ghost", "x")
             assertTrue(cap.emitted.isEmpty(), "no live session → nothing sent → no nudge.sent (fail-closed honesty)")
         } finally {
             scope.cancel()
@@ -170,7 +170,7 @@ class WardenScaffoldTest {
             val sink = InMemoryEventSink(ManualTimeSource())
             val recorder = EventRecorder(sink, scope).also { it.start() }
             val sessions = ConnectorSessions().apply { register(FakeSession("backend")) }
-            val actuator = MediatorActuator(sessions, EventLogSignalSink(recorder), teamId = "default")
+            val actuator = MediatorActuator(sessions, EventLogSignalSink(recorder), projectId = "default")
 
             actuator.escalateToPO("backend", "exhausted nudges", escalationType = "stall.escalated")
 
