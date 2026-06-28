@@ -96,7 +96,7 @@ Die Matrix zeigt **den durchgesetzten Hub-Zustand**, nicht ein lokales Draft. Ei
 4. **Fehlerpfade — ehrlich, kein stiller Verlust:**
    - **403 `operator_required`** → revert + `acl_operator_required` („Nur der Operator darf ACL ändern").
    - **401** → revert + `acl_unauthorized`.
-   - **Server-Guard-Ablehnung (CYP-49)** → der Server lehnt einen PO-entkoppelnden (oder Operator-selbst-blendenden) `PUT` ab → revert auf Hub-Zustand + `acl_po_protected` („Geschützt: würde den PO aussperren – Änderung abgelehnt"). **Das ist der maßgebliche Schutz**, die UI-Warnung (§6) nur vorgelagert.
+   - **Server-Guard-Ablehnung (CYP-49)** → der Server lehnt einen PO-entkoppelnden `PUT` mit **HTTP 409, `ApiError.code = "po_lockout_protected"`** ab (PO-entschieden 2026-06-28) → revert auf Hub-Zustand + `acl_po_protected` („Geschützt: würde den PO aussperren – Änderung abgelehnt"). **Das ist der maßgebliche Schutz**, die UI-Warnung (§6) nur vorgelagert. (Klar getrennt von `operator_required`/403 = fehlende Berechtigung.)
    - **Netz/Timeout** → revert auf letzten enforced Wert + `acl_change_failed` („Änderung nicht bestätigt – erneut versuchen"). Nie pending „hängen" lassen.
 5. **Live-Fremdänderung:** ein `AclEvent` eines anderen Operators aktualisiert die Zelle **live, ohne Reload** — die Matrix ist ein **Live-Spiegel** des Hub-Zustands. Idempotenz/Letzter-gewinnt über (channelId, agentId) des Eintrags.
 6. **Offline/Stale:** bricht `/ws/comm` ab, ist die Matrix **möglicherweise veraltet** → ehrlicher Banner **Reuse `comm_status_offline`** (CYP-17, nennt den Stand-Zeitstempel). Editieren während offline: entweder sperren oder nur mit deutlichem „unbestätigt"-Zustand — **nie** als enforced anzeigen, solange der WS-Spiegel nicht steht.
@@ -174,7 +174,7 @@ Die Matrix zeigt **den durchgesetzten Hub-Zustand**, nicht ein lokales Draft. Ei
 2. **Preset-Reset = N per-Entry-`PUT`s im MVP** mit ehrlicher Fortschritts-/Teilausfall-Darstellung (§7). **Atomarer Preset-Endpoint** (`POST /api/acl/preset/hub-and-spoke`) = optionaler **Backend-Follow-up, nicht MVP**.
 3. **Membership-Editor out-of-scope (endorsed):** kein Endpoint ändert `Channel.members` im MVP → Nicht-Member-Zellen bleiben N/A (§3).
 
-**Verbleibende Dev-Asks:**
-4. **Viewer-Identität final** (gleiche Frage wie CYP-17 #2, hier durch das Ticket weitgehend beantwortet: Operator editiert, Agent read-only-Teilansicht §4) — bestätigen, dass die UI den Operator-Token-Pfad nutzt.
-5. **`AclEvent` bei Preset-Massenänderung:** N PUTs erzeugen N `AclEvent`s — bestätigen, dass der Client das idempotent (last-wins je (channel,agent)) verarbeitet, kein Flackern. (Mit dem optionalen atomaren Endpoint aus #2 entfiele das.)
-6. **Rückgabeform der CYP-49-Ablehnung:** Welcher HTTP-Status + `ApiError.code` signalisiert „PO-protected" (für die ehrliche Unterscheidung von `operator_required`)? Vorschlag: `409`/`403` mit `code = "po_lockout_protected"` → mappt auf `acl_po_protected`. Mit Backend (CYP-49) abstimmen.
+**PO-geklärt (2026-06-28) — keine offenen Dev-Asks mehr:**
+4. **Viewer = Operator-Token-Pfad** (bestätigt). Operator editiert, Agent read-only-Teilansicht (§4).
+5. **`AclEvent` bei Preset-Massenänderung:** Client verarbeitet **idempotent, last-wins je `(channelId, agentId)`**, Reconcile auf Hub-Stand (endorsed) — kein Flackern. (Mit dem optionalen atomaren Endpoint aus #2 entfiele das.)
+6. **CYP-49-Ablehnung festgelegt:** **HTTP 409 + `ApiError.code = "po_lockout_protected"`** → mappt auf `acl_po_protected` (§5.4). An Backend relayt.

@@ -45,7 +45,7 @@
 | `acl.self.blind.warning` | `acl_self_blind_warning` | Damit erblindet dein Live-Feed für %1$s; du kannst weiter editieren, siehst aber keine Live-Änderungen mehr. | This blinds your live feed for %1$s; you can still edit but won't see live changes. |
 | `acl.po.protected` | `acl_po_protected` | Geschützt: würde den PO aussperren – Änderung abgelehnt | Protected: would lock out the PO – change rejected |
 
-> `acl_po_protected` = die **ehrliche** Server-Ablehnung (CYP-49). Wortwahl trennt sie klar von `acl_operator_required` (fehlende Berechtigung) — hier ist die Berechtigung da, aber die Änderung selbst ist unzulässig.
+> `acl_po_protected` = die **ehrliche** Server-Ablehnung (CYP-49): **HTTP 409 + `ApiError.code = "po_lockout_protected"`** (PO-festgelegt 2026-06-28). Wortwahl trennt sie klar von `acl_operator_required` (403, fehlende Berechtigung) — hier ist die Berechtigung da, aber die Änderung selbst ist unzulässig.
 
 ## 5. Preset „Hub-and-Spoke wiederherstellen" (N per-Entry-PUTs, nicht-atomar)
 
