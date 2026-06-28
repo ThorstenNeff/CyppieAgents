@@ -109,4 +109,18 @@
          "einpassen", nicht "aufräumen/optimieren" (verspricht keine Magie) — kein Auto-Layout. -->
     <string name="window_fit_action">Fenster einpassen</string>
     <string name="a11y_window_fit">Alle Fenster neu einpassen</string>
+    <!-- Agent-Lifecycle (CYP-73): Status-Labels (Anzeige nicht-gated) + Steuerungs-Labels
+         (operator-gated). Status nutzt zusätzlich a11y_agent_status für die contentDescription. -->
+    <string name="agent_status_running">Läuft</string>
+    <string name="agent_status_stopped">Gestoppt</string>
+    <string name="agent_status_error">Fehler</string>
+    <string name="agent_status_unknown">Unbekannt</string>
+    <string name="agent_ctl_start">Start</string>
+    <string name="agent_ctl_stop">Stop</string>
+    <string name="agent_ctl_restart">Neustart</string>
+    <!-- Lifecycle-Steuerungsfehler (CYP-73): ehrliche Server-Gründe (409/403/503/404). -->
+    <string name="agent_ctl_err_already_running">Läuft bereits</string>
+    <string name="agent_ctl_err_spawn_failed">Start fehlgeschlagen</string>
+    <string name="agent_ctl_err_operator_required">Nur der Operator darf den Agenten steuern</string>
+    <string name="agent_ctl_err_generic">Aktion fehlgeschlagen</string>
 </resources>

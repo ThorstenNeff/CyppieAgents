@@ -19,6 +19,10 @@ import com.tneff.cyppieagents.acl.AclPanel
 import com.tneff.cyppieagents.acl.AclRepository
 import com.tneff.cyppieagents.acl.AclViewModel
 import com.tneff.cyppieagents.acl.AclWsClient
+import com.tneff.cyppieagents.agentview.AgentLifecycleApi
+import com.tneff.cyppieagents.agentview.AgentLifecycleLiveSource
+import com.tneff.cyppieagents.agentview.AgentLifecycleRepository
+import com.tneff.cyppieagents.agentview.AgentLifecycleSource
 import com.tneff.cyppieagents.agentview.AgentSession
 import com.tneff.cyppieagents.agentview.AgentViewModel
 import com.tneff.cyppieagents.agentview.AgentWindow
@@ -79,6 +83,10 @@ fun AgentShell(
     aclApi: AclApi? = null,
     /** Override the ACL live source (tests/dev inject a stub); `null` → the live `/ws/comm` ACL adapter. */
     aclLiveSource: AclLiveSource? = null,
+    /** Override the agent lifecycle action port (CYP-73); `null` → the in-memory stub until the REST client lands. */
+    lifecycleApi: AgentLifecycleApi? = null,
+    /** Override the agent lifecycle state source (CYP-73); `null` → the in-memory stub until `/ws/lifecycle` lands. */
+    lifecycleSource: AgentLifecycleSource? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -155,6 +163,19 @@ fun AgentShell(
     }
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
+    // Agent lifecycle (CYP-73). Controls = operator-gated REST (POST /api/agents/{id}/{stop|start|
+    // restart}); status display = non-gated (GET /api/agents snapshot + /ws/lifecycle deltas). Operator
+    // token drives both the action auth and the participant-gated lifecycle socket. Injectable so tests
+    // stay hermetic. Controls are enabled only with an operator token (fail-closed) in the VM/header.
+    val defaultLifecycleApi = remember(httpClient, cfg) {
+        AgentLifecycleRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedLifecycleApi = lifecycleApi ?: defaultLifecycleApi
+    val defaultLifecycleSource = remember(httpClient, cfg) {
+        AgentLifecycleLiveSource(httpClient, cfg.hubHttpBaseUrl, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedLifecycleSource = lifecycleSource ?: defaultLifecycleSource
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
@@ -203,7 +224,16 @@ fun AgentShell(
                     }
                     else -> {
                         // viewModel keyed by agent id → one AgentViewModel per agent, proper VM lifecycle.
-                        val agentViewModel = viewModel(key = window.id) { AgentViewModel(resolveSession(window.id)) }
+                        // CYP-73: lifecycle state feeds the non-gated header; controls enabled iff operator.
+                        val agentViewModel = viewModel(key = window.id) {
+                            AgentViewModel(
+                                session = resolveSession(window.id),
+                                agentId = window.id,
+                                lifecycle = resolvedLifecycleApi,
+                                lifecycleSource = resolvedLifecycleSource,
+                                canControl = cfg.operatorToken != null,
+                            )
+                        }
                         AgentWindow(agentId = window.id, viewModel = agentViewModel)
                     }
                 }

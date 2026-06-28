@@ -2,23 +2,28 @@ package com.tneff.cyppieagents.agentview
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -28,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -38,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_status
 import kmpcyppieagents.app.shared.generated.resources.a11y_assistant_streaming
 import kmpcyppieagents.app.shared.generated.resources.a11y_notice
 import kmpcyppieagents.app.shared.generated.resources.a11y_result_error
@@ -45,6 +52,17 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_result_success
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_error
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_ok
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_running
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_already_running
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_generic
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_operator_required
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_spawn_failed
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_restart
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_start
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_stop
+import kmpcyppieagents.app.shared.generated.resources.agent_status_error
+import kmpcyppieagents.app.shared.generated.resources.agent_status_running
+import kmpcyppieagents.app.shared.generated.resources.agent_status_stopped
+import kmpcyppieagents.app.shared.generated.resources.agent_status_unknown
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -60,7 +78,18 @@ fun AgentWindow(
     modifier: Modifier = Modifier,
 ) {
     val transcript by viewModel.transcript.collectAsState()
+    val lifecycle by viewModel.lifecycleState.collectAsState()
+    val lifecycleError by viewModel.lifecycleError.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
+        lifecycleError?.let { code -> LifecycleErrorRow(agentId, code) }
+        AgentHeader(
+            agentId = agentId,
+            state = lifecycle,
+            canControl = viewModel.canControl,
+            onStart = viewModel::start,
+            onStop = viewModel::stop,
+            onRestart = viewModel::restart,
+        )
         AgentTranscript(
             agentId = agentId,
             events = transcript,
@@ -70,6 +99,103 @@ fun AgentWindow(
             agentId = agentId,
             onSend = viewModel::onSend,
             modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** Honest surfacing of a lifecycle-control failure (CYP-73) — the server's reason, not a generic blur. */
+@Composable
+private fun LifecycleErrorRow(agentId: String, code: String) {
+    val text = when (code) {
+        "already_running" -> stringResource(Res.string.agent_ctl_err_already_running)
+        "spawn_failed" -> stringResource(Res.string.agent_ctl_err_spawn_failed)
+        "operator_required" -> stringResource(Res.string.agent_ctl_err_operator_required)
+        else -> stringResource(Res.string.agent_ctl_err_generic)
+    }
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .testTag(AgentViewTags.lifecycleError(agentId)),
+    )
+}
+
+/**
+ * Window header (CYP-73): the **non-gated** lifecycle status indicator on the start, the
+ * **operator-gated** Start/Stop/Restart controls on the end. Controls are always present so the gate
+ * is observable, but `enabled` only with an operator token ([canControl]) and a sensible state —
+ * fail-closed; the server enforces the operator gate too (403).
+ */
+@Composable
+private fun AgentHeader(
+    agentId: String,
+    state: AgentLifecycleState,
+    canControl: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onRestart: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(AgentViewTags.header(agentId))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatusIndicator(agentId, state)
+        Spacer(Modifier.weight(1f))
+        TextButton(
+            onClick = onStart,
+            enabled = canControl && state != AgentLifecycleState.RUNNING,
+            modifier = Modifier.testTag(AgentViewTags.startBtn(agentId)),
+        ) { Text(stringResource(Res.string.agent_ctl_start)) }
+        TextButton(
+            onClick = onStop,
+            enabled = canControl && state == AgentLifecycleState.RUNNING,
+            modifier = Modifier.testTag(AgentViewTags.stopBtn(agentId)),
+        ) { Text(stringResource(Res.string.agent_ctl_stop)) }
+        TextButton(
+            onClick = onRestart,
+            enabled = canControl && (state == AgentLifecycleState.RUNNING || state == AgentLifecycleState.ERROR),
+            modifier = Modifier.testTag(AgentViewTags.restartBtn(agentId)),
+        ) { Text(stringResource(Res.string.agent_ctl_restart)) }
+    }
+}
+
+@Composable
+private fun StatusIndicator(agentId: String, state: AgentLifecycleState) {
+    val label = when (state) {
+        AgentLifecycleState.RUNNING -> stringResource(Res.string.agent_status_running)
+        AgentLifecycleState.STOPPED -> stringResource(Res.string.agent_status_stopped)
+        AgentLifecycleState.ERROR -> stringResource(Res.string.agent_status_error)
+        AgentLifecycleState.UNKNOWN -> stringResource(Res.string.agent_status_unknown)
+    }
+    val dotColor = when (state) {
+        AgentLifecycleState.RUNNING -> MaterialTheme.colorScheme.primary
+        AgentLifecycleState.STOPPED -> MaterialTheme.colorScheme.outline
+        AgentLifecycleState.ERROR -> MaterialTheme.colorScheme.error
+        AgentLifecycleState.UNKNOWN -> MaterialTheme.colorScheme.outlineVariant
+    }
+    val description = stringResource(Res.string.a11y_agent_status, label)
+    Row(
+        modifier = Modifier
+            .testTag(AgentViewTags.status(agentId))
+            .semantics { contentDescription = description },
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Colour is never the sole signal (WCAG 1.4.1): the text label carries the meaning; the dot
+        // only reinforces it.
+        Box(Modifier.size(8.dp).clip(CircleShape).background(dotColor))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

@@ -104,4 +104,18 @@
          not "tidy/optimize" (promises no magic) — not an auto-layout. -->
     <string name="window_fit_action">Fit windows</string>
     <string name="a11y_window_fit">Re-fit all windows</string>
+    <!-- Agent lifecycle (CYP-73): status labels (display non-gated) + control labels (operator-gated).
+         Status also uses a11y_agent_status for the contentDescription. -->
+    <string name="agent_status_running">Running</string>
+    <string name="agent_status_stopped">Stopped</string>
+    <string name="agent_status_error">Error</string>
+    <string name="agent_status_unknown">Unknown</string>
+    <string name="agent_ctl_start">Start</string>
+    <string name="agent_ctl_stop">Stop</string>
+    <string name="agent_ctl_restart">Restart</string>
+    <!-- Lifecycle control errors (CYP-73): honest server reasons (409/403/503/404). -->
+    <string name="agent_ctl_err_already_running">Already running</string>
+    <string name="agent_ctl_err_spawn_failed">Start failed</string>
+    <string name="agent_ctl_err_operator_required">Only the operator may control the agent</string>
+    <string name="agent_ctl_err_generic">Action failed</string>
 </resources>
