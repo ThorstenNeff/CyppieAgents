@@ -55,7 +55,7 @@ class EventTailViewModel(
 
     private suspend fun collect() {
         source.events(filter).collect { event ->
-            EventReducer.statusOf(event)?.let { status -> _state.update { it.copy(connection = status) } }
+            EventReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
             when (event) {
                 is EventLiveEvent.Received -> onReceived(event.event)
                 is EventLiveEvent.AccessRevoked -> _state.update { it.copy(accessRevoked = true) }

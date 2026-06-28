@@ -90,6 +90,9 @@ class EventBrowseViewModel(
 
     fun select(event: Event) = _state.update { it.copy(selected = event) }
 
+    /** Clear the current selection (single-pane "Back" → return to the master table, EVENT-LOG-UI §6.1). */
+    fun clearSelection() = _state.update { it.copy(selected = null) }
+
     /** Drill into the full work-run of [event] (correlationId axis). No-op if it carries none. */
     fun showRun(event: Event) {
         val cid = event.correlationId ?: return

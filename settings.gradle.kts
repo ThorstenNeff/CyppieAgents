@@ -33,6 +33,7 @@ plugins {
 }
 
 include(":app:androidApp")
+include(":app:androidAppDemo")
 include(":app:desktopApp")
 include(":app:shared")
 include(":app:webApp")
