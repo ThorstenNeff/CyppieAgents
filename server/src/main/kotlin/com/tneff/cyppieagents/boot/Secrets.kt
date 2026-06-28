@@ -2,18 +2,35 @@ package com.tneff.cyppieagents.boot
 
 /**
  * Boot secrets resolved from the host environment (Spec §14): one bearer token per agent, one
- * operator token, and the per-team API key. NEVER hardcoded, NEVER logged — [toString] is masked
- * so an accidental log line can't leak anything (Reviewer #1/#2).
+ * operator token, and the API key. NEVER hardcoded, NEVER logged — [toString] is masked so an
+ * accidental log line can't leak anything (Reviewer #1/#2).
+ *
+ * The API key is resolved **per project** ([apiKeyFor], S12 / CYP-82 — Doc 05 D3 / Doc 08 §3), never
+ * as a single global server constant. MVP=1 has no per-project override, so it falls back to the team
+ * key — but the resolution point is keyed by `projectId`, which is the seam CYP-96 backs with an
+ * operator-settable per-project store.
  */
 class Secrets(
     /** bearer token → agentId */
     val agentTokens: Map<String, String>,
     val operatorToken: String?,
-    /** ANTHROPIC_API_KEY for this team; injected into each session's ENV (never a CLI arg). */
+    /** Team/default ANTHROPIC_API_KEY; the fallback for a project without an explicit key. */
     val apiKey: String?,
+    /** Per-project ANTHROPIC_API_KEY overrides (S12 / CYP-82). The single backing for [apiKeyFor]. */
+    private val apiKeysByProject: Map<String, String> = emptyMap(),
 ) {
+    /**
+     * The ANTHROPIC_API_KEY for [projectId] — resolved PER PROJECT, never a global constant. An
+     * explicit per-project override wins; otherwise the team key. This is the one point the spawn
+     * resolves the key, so CYP-96 can swap the backing without touching the call site. Injected into
+     * the session ENV (never a CLI arg).
+     */
+    fun apiKeyFor(projectId: String): String? =
+        apiKeysByProject[projectId]?.takeIf { it.isNotBlank() } ?: apiKey
+
     override fun toString(): String =
-        "Secrets(agentTokens=${agentTokens.size} masked, operatorToken=${mask(operatorToken)}, apiKey=${mask(apiKey)})"
+        "Secrets(agentTokens=${agentTokens.size} masked, operatorToken=${mask(operatorToken)}, " +
+            "apiKey=${mask(apiKey)}, apiKeysByProject=${apiKeysByProject.size} masked)"
 
     private fun mask(value: String?): String =
         if (value.isNullOrEmpty()) "unset" else "***${value.takeLast(4)}"
@@ -23,8 +40,16 @@ class Secrets(
          * Resolves secrets from env. Per agent, requires `HUB_TOKEN_<ID>`; requires `OPERATOR_TOKEN`.
          * Fails closed (throws) on a missing required token rather than booting an unauthenticated hub.
          * `ANTHROPIC_API_KEY` is optional here (a real agent run needs it; tests / dry boots don't).
+         *
+         * [projectIds] (S12 / CYP-82) optionally resolves a per-project key from
+         * `ANTHROPIC_API_KEY_<PROJECTID>`; absent → that project falls back to the team key. Defaulted
+         * empty so existing callers are unchanged (MVP=1 with only the global key behaves as before).
          */
-        fun fromEnv(agentIds: List<String>, env: (String) -> String? = System::getenv): Secrets {
+        fun fromEnv(
+            agentIds: List<String>,
+            projectIds: List<String> = emptyList(),
+            env: (String) -> String? = System::getenv,
+        ): Secrets {
             val tokens = agentIds.associate { id ->
                 val key = "HUB_TOKEN_${id.uppercase()}"
                 val token = env(key)?.takeIf { it.isNotBlank() }
@@ -33,7 +58,10 @@ class Secrets(
             }
             val operator = env("OPERATOR_TOKEN")?.takeIf { it.isNotBlank() }
                 ?: error("missing required env OPERATOR_TOKEN")
-            return Secrets(tokens, operator, env("ANTHROPIC_API_KEY")?.takeIf { it.isNotBlank() })
+            val perProject = projectIds.mapNotNull { pid ->
+                env("ANTHROPIC_API_KEY_${pid.uppercase()}")?.takeIf { it.isNotBlank() }?.let { pid to it }
+            }.toMap()
+            return Secrets(tokens, operator, env("ANTHROPIC_API_KEY")?.takeIf { it.isNotBlank() }, perProject)
         }
     }
 }

@@ -65,10 +65,13 @@ fun Application.bootPlatform(
     scope: kotlinx.coroutines.CoroutineScope,
 ): BootedPlatform {
     val config = com.tneff.cyppieagents.boot.PlatformConfig.load(configFile)
-    val secrets = com.tneff.cyppieagents.boot.Secrets.fromEnv(config.agents.map { it.id })
+    // S12 / CYP-82: the active project (config.projectId) single-sources both the per-project API-key
+    // resolution and the project-scoped worktree layout (projects/<projectId>/<agent>).
+    val secrets = com.tneff.cyppieagents.boot.Secrets.fromEnv(config.agents.map { it.id }, listOf(config.projectId))
     val worktrees = com.tneff.cyppieagents.boot.WorktreeManager(
         com.tneff.cyppieagents.boot.ProcessCommandRunner(),
         gitRoot,
+        config.projectId,
     )
     val booted = com.tneff.cyppieagents.boot.BootOrchestrator(
         config = config,

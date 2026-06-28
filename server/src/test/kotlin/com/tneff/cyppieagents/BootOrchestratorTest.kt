@@ -56,6 +56,15 @@ class BootOrchestratorTest {
         }
     }
 
+    /** Captures the (cwd, env) handed to each spawn, keyed by the agent (HUB_AGENT_ID). */
+    private class CapturingSpawner : ProcessSpawner {
+        val byAgent = mutableMapOf<String, Pair<File, Map<String, String>>>()
+        override fun spawn(command: List<String>, cwd: File, env: Map<String, String>): AgentProcess {
+            byAgent[env["HUB_AGENT_ID"] ?: "?"] = cwd to env
+            return FakeProcess()
+        }
+    }
+
     private fun config() = PlatformConfig(
         repo = RepoConfig("git@github.com:org/repo.git", "main"),
         hub = HubConfig(),
@@ -114,6 +123,29 @@ class BootOrchestratorTest {
         assertNull(booted.connectorSessions.session("backend"))
         assertNotNull(booted.connectorSessions.session("frontend"))
         assertEquals(setOf("po-frontend", "po-backend"), booted.state.channels.map { it.id }.toSet())
+    }
+
+    @Test
+    fun spawnGetsProjectScopedCwdAndProjectResolvedKey() {
+        // S12 / CYP-82 end-to-end: the spawn cwd is projects/<projectId>/<agent> and the env carries
+        // the PROJECT-resolved API key (not the global team key). Mutations:
+        //  - revert WorktreeManager to the flat worktrees/ path → the cwd assertion goes red;
+        //  - revert BootOrchestrator to secrets.apiKey → the env key becomes "sk-team", assertion red.
+        val git = FakeGit()
+        val root = gitRoot()
+        val spawner = CapturingSpawner()
+        val cfg = config().copy(projectId = "alpha")
+        val secrets = Secrets(
+            agentTokens = mapOf("tok-po" to "po", "tok-frontend" to "frontend", "tok-backend" to "backend"),
+            operatorToken = "tok-op",
+            apiKey = "sk-team",
+            apiKeysByProject = mapOf("alpha" to "sk-alpha"),
+        )
+        BootOrchestrator(cfg, secrets, WorktreeManager(git, root, cfg.projectId), spawner, scope).boot()
+
+        val (cwd, env) = spawner.byAgent.getValue("backend")
+        assertEquals(File(root, "projects/alpha/backend").absolutePath, cwd.absolutePath, "cwd under projects/<projectId>/<agent>")
+        assertEquals("sk-alpha", env["ANTHROPIC_API_KEY"], "spawn env carries the project-resolved key")
     }
 
     @Test

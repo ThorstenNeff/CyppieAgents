@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.boot
 
+import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import org.slf4j.LoggerFactory
 import java.io.File
 
@@ -24,16 +25,24 @@ class ProcessCommandRunner : CommandRunner {
 
 /**
  * Idempotent git-worktree orchestration (Spec 02 §11): clone the repo once into [gitRoot]/repo,
- * then add one worktree per agent under [gitRoot]/worktrees/<name>. Re-running is a no-op when the
- * clone / worktree already exist. Each agent gets an ISOLATED working folder (Reviewer #3).
+ * then add one worktree per agent under the **project-scoped** root [gitRoot]/projects/<projectId>/<name>
+ * (S12 / CYP-82 — Doc 08 §3). Re-running is a no-op when the clone / worktree already exist. Each
+ * agent gets an ISOLATED working folder (Reviewer #3); MVP=1 → projects/default/<name>.
  */
 class WorktreeManager(
     private val runner: CommandRunner,
     private val gitRoot: File,
+    /**
+     * Active project (S12 / CYP-82). Worktrees nest under projects/<projectId>/, single-sourced from
+     * `platform.config.json` (`projectId`). Defaulted so existing constructions resolve to the one MVP
+     * project. The repo clone itself stays project-agnostic at [gitRoot]/repo (one remote, many
+     * project-scoped worktrees).
+     */
+    private val activeProjectId: String = DEFAULT_PROJECT_ID,
 ) {
     private val log = LoggerFactory.getLogger("boot.worktree")
     private val repoDir = File(gitRoot, "repo")
-    private val worktreesDir = File(gitRoot, "worktrees")
+    private val worktreesDir = File(gitRoot, "projects/$activeProjectId")
 
     /** Parent dir of all agent worktrees (the connector's worktreesRoot). */
     val worktreesRoot: File get() = worktreesDir
