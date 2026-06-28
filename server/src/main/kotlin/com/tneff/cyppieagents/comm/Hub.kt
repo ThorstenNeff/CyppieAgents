@@ -50,6 +50,10 @@ class Hub(
             body = maskedBody,
             ts = clock.now(),
             meta = meta,
+            // S12 / CYP-81: stamp the server's single-sourced active project, never a client value —
+            // same stance as `from`/`channelId` (Gate #1). The post already passed canWrite on an
+            // in-project channel, so this records the message's tenant for project-scoped reads.
+            projectId = state.activeProjectId,
         )
         store.append(message)
         audit.posted(message)
@@ -81,7 +85,10 @@ class Hub(
         if (!state.acl.canRead(channelId, readerId)) {
             throw ForbiddenException("agent '$readerId' has no read access to channel '$channelId'")
         }
-        return store.byChannel(channelId, since)
+        // S12 / CYP-81: route through the matrix so the project gate (and a defense-in-depth re-check
+        // of canRead) applies to the rows too — an out-of-project message that shared this channel id
+        // is dropped fail-closed, not served.
+        return state.acl.visibleMessages(readerId, store.byChannel(channelId, since))
     }
 
     /** Aggregated inbox across all channels [readerId] may read (Spec 02 §6.3, ACL-filtered). */

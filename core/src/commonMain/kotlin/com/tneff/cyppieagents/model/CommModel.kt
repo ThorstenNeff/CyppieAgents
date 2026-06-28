@@ -54,6 +54,12 @@ data class Channel(
     val name: String,
     val kind: ChannelKind,
     val members: List<String>,
+    /**
+     * Tenant scope (S12 / CYP-81). Additive + defaulted → older payloads decode onto the single MVP
+     * project ([DEFAULT_PROJECT_ID]); never a wildcard. Project isolation is enforced through
+     * [AclMatrix]/[ProjectScope], fail-closed (a blank/mismatched id is out of scope, not global).
+     */
+    val projectId: String = DEFAULT_PROJECT_ID,
 )
 
 /**
@@ -66,6 +72,10 @@ data class AclEntry(
     val agentId: String,
     val canRead: Boolean,
     val canWrite: Boolean,
+    /** Tenant scope (S12 / CYP-81). Additive + defaulted; see [Channel.projectId]. An entry whose
+        `projectId` ≠ the active project is dropped from the [AclMatrix] (fail-closed), so it can
+        grant nothing across the project boundary. */
+    val projectId: String = DEFAULT_PROJECT_ID,
 )
 
 enum class MessageKind {
@@ -89,6 +99,10 @@ data class Message(
     /** epoch millis */
     val ts: Long,
     val meta: MessageMeta? = null,
+    /** Tenant scope (S12 / CYP-81). Stamped by the [Hub] with the active project on post; additive +
+        defaulted so older persisted messages decode onto [DEFAULT_PROJECT_ID]. Out-of-project
+        messages are filtered out by [AclMatrix.visibleMessages] (fail-closed). */
+    val projectId: String = DEFAULT_PROJECT_ID,
 )
 
 // ----- REST request/response wire types -----
