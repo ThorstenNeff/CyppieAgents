@@ -2,10 +2,10 @@
   "$meta": {
     "owner": "UIUX-Designer",
     "ticket": "CYP-79 (Stories CYP-93 Cross-Projekt-Kanal-Autorisierung, CYP-94 Event-Log-Projekt-Filter)",
-    "version": "0.1-vorlauf",
-    "status": "Vorlauf-Entwurf — wartet auf PO-/Dev-Gegenlesen",
+    "version": "0.2-final",
+    "status": "Finalisiert — §6 PO-entschieden gefaltet, HOLD aufgehoben (CYP-102), Permit-Mechanismus backend-zu-reconcilen",
     "brand": "CyppieAgents (Anti-Hype)",
-    "grounded_against": "develop 3705b68",
+    "grounded_against": "develop f73a527",
     "note": "Semantische Tokens fuer die Cross-Projekt-Autorisierungs-/Disclosure-Schicht (CYP-93) + den Event-Log-Projekt-Filter (CYP-94). Fast ausschliesslich Reuse: Hinweis-Toene ueber die geteilte TonedHint-Komponente (HintTone, CYP-99); Identitaets-Marker ueber CYP-14-ColorSlot-Semantik (Identitaet != Recht != Severity); Event-Filter reiht sich in die bestehende event-log-Filterleiste. Keine neuen Farben.",
     "reuse_note": "TonedHint-Mapping (ui/TonedHint.kt @ 3705b68): INFO=secondary, GATED=onSurfaceVariant, ERROR=error, EFFECT_DEFERRED=onTertiaryContainer. Glyphen 'i'/'·'/'X'/'!' (kein Emoji). Cross-Projekt-Badge + Projekt-Spalte folgen CYP-14: Identitaet wird NICHT allein ueber Farbe getragen (Form/Glyph/Text), und Identitaet != Permission != Severity (drei getrennte Achsen wie EVENT-LOG-UI)."
   },
@@ -57,6 +57,11 @@
       "role": "Echter Fehler: Freigabe/Revoke fehlgeschlagen, Gate-Ablehnung (403).",
       "tone": "TonedHint.ERROR",
       "label_key": "crossproject_error"
+    },
+    "crossProject.member": {
+      "role": "Heimat-Projekt-Kennung eines fremd-projektigen Members in der Kanal-Mitglieder-/ACL-Ansicht (Membership-Transport-Disclosure). TEXT (Identitaets-Traeger), kein Farb-only; Identitaet != Recht (der Zugriff steht in der ACL). Reichweite nennt KONKRETE Agenten, nie 'Projekt B' pauschal (kein Over-Widen).",
+      "reuse": "CYP-14 ColorSlot (Identitaet) optional, nie alleiniger Traeger",
+      "label_key": "crossproject_member_project / crossproject_member_access"
     },
     "eventFilter.project": {
       "role": "Projekt-Filter-Achse in der Event-Log-Filterleiste (Browse + Tail). Reiht sich neben agent/type/severity/timeWindow/correlation — gleiche Surface-Familie.",

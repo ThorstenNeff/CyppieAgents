@@ -1,9 +1,11 @@
-# Cross-Projekt — Kanal-Autorisierung & Event-Log-Projekt-Filter (S17-Vorlauf · Epic CYP-79)
+# Cross-Projekt — Kanal-Autorisierung & Event-Log-Projekt-Filter (S17 · Epic CYP-79)
 
 > Owner: UIUX-Designer · Epic **CYP-79** „S17 — Cross-Projekt-Kanäle" [MP] · Stand 2026-06-28 ·
-> Status: **Vorlauf-Entwurf** — wartet auf PO-Gegenlesen/Routing
+> Status: **Finalisiert** — §6 PO-entschieden gefaltet, **§2.7-HOLD aufgehoben** (CYP-102 gelandet);
+> Membership-Transport mitdesignt, Permit-Mechanismus als Backend-zu-reconcilen markiert.
 > Begleit-Design-Files: `docs/design/cross-project-{tokens.json,keys.md,tags.md}`
-> Gegroundet gegen develop **`3705b68`** (S13-Modell gemergt: Switcher/Active-Pointer/Scope-Grenze).
+> Gegroundet gegen develop **`f73a527`** (S13 komplett gemergt; CYP-102 Endpunkt-Scoping gelandet:
+> events/comm rescope per Active-Pointer + WS-Scope-Pin).
 > Stories: **CYP-93** S17.1 Cross-Projekt-Kanal anlegen/freigeben (Single-User-Eigentümer-Zustimmung) ·
 > **CYP-94** S17.2 Event-Log-Projekt-Filter.
 
@@ -12,43 +14,55 @@
 ## 0. Auftrag, Vorlauf-Charakter & Abgrenzung
 
 S17 öffnet die fail-closed-Projektgrenze (S12/S13) **kontrolliert**: ein Kanal darf — explizit autorisiert
-— über die Projektgrenze reichen, und der Event-Log darf projektübergreifend gelesen werden. Dieser
-Vorlauf designt die **zwei am wenigsten gekoppelten** Stücke:
+— über die Projektgrenze reichen, und der Event-Log darf projektübergreifend gelesen werden. Diese Spec
+deckt die **zwei am wenigsten gekoppelten** Stücke:
 
-- **CYP-93** — die **Autorisierungs- und Disclosure-Schicht** für cross-projekt-Kanäle: Freigabe als
-  **Eigentümer-Zustimmungsakt** (nicht „Mitglied hinzufügen"), Single-User = **ein** Eigentümer (anlegen +
-  selbst-freigeben), plus die ehrliche Anzeige des Cross-Projekt-Zustands.
+- **CYP-93** — die **Autorisierungs- und Disclosure-Schicht** für cross-projekt-Kanäle **plus den
+  Membership-Transport** (kein HOLD mehr — CYP-102 ist gelandet): Freigabe als **Eigentümer-
+  Zustimmungsakt** (nicht „Mitglied hinzufügen"), Single-User = **ein** Eigentümer (anlegen +
+  selbst-freigeben), plus die ehrliche Anzeige des Cross-Projekt-Zustands und der konkreten Reichweite.
 - **CYP-94** — der **Event-Log-Projekt-Filter** als projektübergreifende Lese-Linse (read-only).
 
-**HOLD (PO-Auflage):** Alles, was an der konkreten **Cross-Projekt-Kanal-Mitgliedschafts-Verdrahtung**
-hängt (wie ACL/Channel im Backend die Projektgrenze technisch überspannen — das **Endpunkt-Scoping**),
-bleibt liegen, bis Backends Scoping-Stage landet. Hier wird die **Autorisierungs-/Disclosure-Schicht**
-designt, **nicht** die Transport-Details. Die Mitgliedschaft selbst trägt die **bestehende ACL**
-(`canRead`/`canWrite` pro Agent, Spec 02 §5.3) **ohne neuen Mechanismus** — der Vorlauf wickelt nur den
-**Autorisierungsakt** darum.
+**§2.7-HOLD aufgehoben (CYP-102 gelandet, develop `f73a527`):** Der Membership-Transport wird jetzt
+**mitdesignt** (nicht mehr gehalten). Die Mitgliedschaft selbst trägt die **bestehende ACL**
+(`canRead`/`canWrite` pro Agent, Spec 02 §5.3) **ohne neuen Mechanismus** — diese Spec wickelt den
+**Autorisierungsakt** darum **und** designt die **Reichweiten-/Member-Disclosure** (§2.7). **Einzig der
+konkrete Permit-Mechanismus** (wie ein autorisierter Cross-Projekt-Kanal die exact-match-
+`ProjectScope.permits`-Grenze überspannt) ist als **Backend-zu-reconcilen** markiert (PO seedet Backend
+parallel die Architektur-Frage) — §1/§5.
 
 **Außerhalb (bewusst):**
 - **Bilaterale Zustimmung** mehrerer Eigentümer (Multi-User) = **S18**, deferred. Hier **nicht** als
-  garantiert darstellen (§2.2).
+  garantiert darstellen (§2.2) — die **Datenform** der Zustimmung ist aber **1→N-fähig** (§2.2/§5).
 - **Repo-Config** = S15/CYP-84. **Projekt-CRUD/Switcher** = S13/CYP-78 (gemergt, Fundament hier genutzt).
 
 ---
 
 ## 1. Mentales Modell
 
-Die Projektgrenze ist heute **strukturell fail-closed**: `ProjectScope.permits(entityPid, activePid)` ist
+Die Projektgrenze ist **strukturell fail-closed**: `ProjectScope.permits(entityPid, activePid)` ist
 **exakt-gleich**, ohne Wildcard — `Channel`/`AclEntry`/`Message`/`Event` mit fremdem `projectId` werden
-aus der `AclMatrix` **gedroppt** (verifiziert `3705b68`). Cross-Projekt ist deshalb **kein** beiläufiges
-„Mitglied hinzufügen", sondern ein **bewusst gestochenes, autorisiertes Loch** in dieser Grenze.
+aus der `AclMatrix` **gedroppt** (verifiziert `f73a527`). CYP-102 scopt zusätzlich serverseitig per
+**Active-Pointer** (events/comm). Cross-Projekt ist deshalb **kein** beiläufiges „Mitglied hinzufügen",
+sondern ein **bewusst gestochenes, autorisiertes Loch** in dieser Grenze.
 
-Daraus die zwei Leitgedanken des Vorlaufs:
+> **Permit-Mechanismus = Backend-zu-reconcilen:** Wie ein autorisierter Cross-Projekt-Kanal die
+> exact-match-Grenze technisch überspannt (der konkrete `ProjectScope.permits`-Pfad für freigegebene
+> Kanäle), ist die zentrale offene Architektur-Frage — Backend baut/reconciled das parallel. Diese Spec
+> liefert die Autorisierungs-/Disclosure-Hülle **vollständig** und markiert nur diesen einen Mechanismus.
+
+Daraus die drei Leitgedanken:
 
 1. **Cross-Projekt entsteht nur durch einen expliziten Autorisierungsakt.** Die Mitgliedschaft (ACL)
    trägt die Reichweite technisch; **legitimiert** wird das Überschreiten durch die **Eigentümer-
    Freigabe**. Ohne Freigabe bleibt die Grenze fail-closed (kein Cross-Projekt-Effekt).
-2. **Wer wohin reicht, ist jederzeit ehrlich sichtbar.** Ein Kanal, der über Projekte reicht, sagt das
-   unmissverständlich (welche Projekte, von wem/wann freigegeben) — sonst wirkt eine Nachricht
-   unbemerkt über die Grenze.
+2. **Kein Over-Widen — Freigabe weitet auf DIESEN Kanal, nicht auf das ganze fremde Projekt.** Eine
+   Freigabe macht **genau die expliziten Mitglieder dieses einen Kanals** sichtbar: Agent A erhält B's
+   **einen geteilten Kanal**, **nicht** B's gesamtes Projekt. Das ist gleichzeitig **Disclosure-Wahrheit**
+   und **Sicherheitsgrenze** — Anzeige nennt **konkrete Agenten/den Kanal**, nie „Projekt B" pauschal.
+3. **Wer wohin reicht, ist jederzeit ehrlich sichtbar.** Ein Kanal, der über Projekte reicht, sagt das
+   unmissverständlich (welche **Agenten** aus welchem Projekt, von wem/wann freigegeben) — sonst wirkt
+   eine Nachricht unbemerkt über die Grenze.
 
 > **Sicherheits-Invariante (load-bearing, §2.6):** Eine Cross-Projekt-Freigabe ist eine **Zugriffs-
 > änderung**. Sie wird **ausschließlich** durch den **menschlichen Eigentümer** über die explizite UI
@@ -74,19 +88,32 @@ frei. Gegenseitige Zustimmung mehrerer Eigentümer folgt später." → **Keine**
 **gegenseitigen** Zustimmung, die es (noch) nicht gibt. Das ist die Disclosure-Honesty-Linie:
 *advisory ≠ garantiert*, *Single-Owner ≠ bilateral*.
 
+> **Owner-Consent als 1→N-Form (Reviewer-Leitplanke, PO):** Die **Datenform** der Zustimmung wird als
+> **Sammlung** von Eigentümer-Zustimmungen modelliert (wer hat zugestimmt), **nicht** hartcodiert auf
+> einen — trivial **N=1** heute, **S18** füllt die bilaterale/mehrseitige Zustimmung **ohne Umbau**. Das
+> ist die „Eins-auf-N"-Naht. Die **Disclosure bleibt ehrlich Single-Owner** (oben); nur das Modell ist
+> N-fähig. (Backend-Vertrag §5: Zustimmung = Set, nicht Bool.)
+
 ### 2.3 Der Autorisierungsakt (Dialog)
 
-Aus dem Kanalkontext (Comm-Kanalliste `comm.channel.<id>` bzw. ACL-Zeilenkopf
-`aclMatrix.rowHeader.<channelId>`) öffnet die Aktion **„Projektübergreifend freigeben"**
-(`crossProject.authorize`, `crossproject_authorize`) den Autorisierungs-Dialog (`crossProject.dialog`),
-**operator/owner-gated/fail-closed**:
+Die Freigabe ist **gerichtet** (PO-§6-Addendum b): der Eigentümer teilt **seinen** Kanal **hinaus** —
+keine gegenseitige Freigabe (deckt sich mit dem Single-Owner-Modell §2.2). Aus dem Kanalkontext
+(Comm-Kanalliste `comm.channel.<id>` bzw. ACL-Zeilenkopf `aclMatrix.rowHeader.<channelId>`) öffnet die
+Aktion **„Projektübergreifend freigeben"** (`crossProject.authorize`, `crossproject_authorize`) den
+Autorisierungs-Dialog (`crossProject.dialog`), **operator/owner-gated/fail-closed**:
 
-- **Reichweite/Folgen** (`crossProject.dialog.scope`, `crossproject_dialog_scope` = „Dieser Kanal erreicht
-  dann: %1$s") — benennt **explizit, welche Projekte und welche Agenten** der Kanal nach der Freigabe
-  erreicht. Die garantierte „was passiert"-Aussage (HintTone.INFO).
+- **Reichweite/Folgen — konkrete Agenten, kein Over-Widen** (`crossProject.dialog.scope`,
+  `crossproject_dialog_scope` = „Dieser Kanal erreicht dann diese Agenten: %1$s") — benennt die
+  **expliziten Mitglieds-Agenten dieses einen Kanals** mit ihrem **Heimat-Projekt und Zugriff**, **nie**
+  „Projekt B" pauschal (PO-§6-Addendum c + Reviewer-Leitplanke). Jeder Cross-Projekt-Member wird über
+  `crossproject_member_access` gerendert („%1$s (Projekt %2$s) – %3$s", %3$s = Zugriff). **Default eines
+  neuen Cross-Projekt-Members = lesend** (`crossproject_access_read`); **schreiben nur per expliziter ACL**
+  (`crossproject_access_write`) — **kein Auto-Read für alle Agenten des fremden Projekts**. Garantierte
+  „was passiert"-Aussage (HintTone.INFO).
 - **Eigentümer-Zustimmung** (`crossProject.dialog.ownerConsent`, `crossproject_owner_consent` = „Ich gebe
   diesen Kanal als Eigentümer projektübergreifend frei.") — eine **bewusste** Bestätigungs-Affordanz
-  (Checkbox/expliziter Schritt), nicht ein stiller Default.
+  (Checkbox/expliziter Schritt), nicht ein stiller Default. **Datenform 1→N-fähig** (§2.2): die Zustimmung
+  ist ein Eintrag in der Eigentümer-Zustimmungs-Sammlung (heute genau einer).
 - **Human-only-Hinweis** (`crossProject.dialog.humanOnlyNote`, `crossproject_human_only` = „Nur du als
   Eigentümer gibst frei – niemals ein Agent oder eine Nachricht.") — macht die Sicherheits-Invariante
   (§2.6) **im UI sichtbar** (HintTone.INFO).
@@ -101,18 +128,31 @@ Aus dem Kanalkontext (Comm-Kanalliste `comm.channel.<id>` bzw. ACL-Zeilenkopf
   nicht über Farbe allein (WCAG 1.4.1) — und **Identität ≠ Recht** (CYP-14): der Badge sagt „reicht über
   Projekte", nicht „du darfst".
 - **Status-Zeile** (`crossProject.status`):
-  - freigegeben → `crossproject_status_shared` = „Projektübergreifend: %1$s · freigegeben am %2$s"
-    (%1$s=Projektliste, %2$s=Zeitpunkt) — **wer/wann** ist Teil der ehrlichen Anzeige.
+  - freigegeben → `crossproject_status_shared` = „Projektübergreifend freigegeben am %1$s · erreicht: %2$s"
+    (%1$s=Zeitpunkt aus `sharedAt`, %2$s=konkrete erreichte Agenten) — **wann + konkrete Reichweite**, nie
+    „Projekt B" pauschal. **`sharedBy` (wer) ist S18-deferred** (PO-§6.2): im Single-User ist es trivial
+    der eine Operator → wird **nicht** angezeigt/gefordert.
   - **nicht** freigegeben → `crossproject_status_not_shared` = „Nur in diesem Projekt – nicht
     projektübergreifend freigegeben." → der **fail-closed-Default** ist explizit, kein Graubereich.
+- **Cross-Projekt-Member-Disclosure** (Membership-Transport, §2.7): in der Kanal-Mitglieder-/ACL-Ansicht
+  trägt jeder Member aus einem **anderen** Projekt eine Heimat-Projekt-Kennung
+  (`crossProject.member.<agentId>`, `crossproject_member_project` = „Aus Projekt %1$s") — als **Text**
+  (Identitäts-Träger), nicht über Farbe allein; **Identität ≠ Recht** (der Zugriff steht in der ACL, die
+  Heimat-Kennung sagt nur „gehört zu Projekt X"). So ist die über die Grenze reichende Mitgliedschaft
+  **explizit per-Agent sichtbar**, statt impliziter Projekt-Vermischung.
 - Ohne Operator/Eigentümer-Token: `crossProject.gateHint` (`crossproject_operator_required`) — read-only,
   Freigabe-Aktion deaktiviert.
 
 ### 2.5 Freigabe zurücknehmen (Revoke)
 
 `crossProject.revoke` (`crossproject_revoke` = „Freigabe zurücknehmen") schließt das Loch wieder: der
-Kanal fällt auf **projekt-lokal/fail-closed** zurück. Operator/owner-gated. (Revoke entfernt die
-Cross-Projekt-Sichtbarkeit; die ACL-Einträge selbst sind Sache der Membership-Verdrahtung — §2.7/HOLD.)
+Kanal fällt **sofort** auf **projekt-lokal/fail-closed** zurück. Operator/owner-gated.
+
+> **Revoke-Semantik (PO-§6.4):** Die **Autorisierung ist das Gate**, nicht die `AclEntry`s. Autorisierung
+> aus → **sofort fail-closed**, **unabhängig** davon, ob die cross-projekt-`AclEntry`s schon aufgeräumt
+> sind: ein revoke-ter Kanal ist auch mit **lingernden Einträgen** projekt-lokal (die exact-match-Grenze
+> greift wieder). Entry-Cleanup gehört zur Membership-Verdrahtung, aber **fail-closed darf nie davon
+> abhängen**. UI: Status fällt zurück auf `crossproject_status_not_shared`, Badge verschwindet.
 
 ### 2.6 Anti-Injection-Invariante (load-bearing Security)
 
@@ -126,22 +166,36 @@ oder anderer untrusted-Input. Konkrete UI-Konsequenzen:
   Token, der Server setzt es ebenfalls durch (Präzedenz CYP-49).
 - Der `crossproject_human_only`-Hinweis (§2.3) macht die Invariante für den Eigentümer sichtbar.
 
-### 2.7 HELD — Membership-Verdrahtung / Transport (Backend-Naht)
+### 2.7 Membership-Transport (HOLD aufgehoben — CYP-102 gelandet)
 
-**Nicht** in diesem Vorlauf: **wie** ACL/Channel die Projektgrenze technisch überspannen (Endpunkt-
-Scoping, projektübergreifende `members`/`AclEntry`-Persistenz, der Cross-Projekt-`ProjectScope`-Pfad).
-Die bestehende ACL **trägt** die Mitgliedschaft (Epic-Vorgabe); dieser Vorlauf liefert nur die
-**Autorisierungs-/Disclosure-Hülle**. Vertrag/Flag-Namen werden mit Backends Scoping-Stage reconciled
-(§5). **Wenn die UI-Schicht an eine harte Transport-Abhängigkeit stößt → an PO melden** (dann ggf.
-S13-UX-QA vorziehen).
+Die bestehende ACL **trägt** die Mitgliedschaft (`canRead`/`canWrite` pro Agent, Epic-Vorgabe) — **kein
+neuer Mechanismus**. Diese Spec designt die **Disclosure** des Transports vollständig:
+
+- **Mitgliedschaft bleibt explizit per-Agent** (PO-§6-Addendum c): die Freigabe ist das **Gate**, nicht
+  ein Massen-Beitritt. Ein neuer Cross-Projekt-Member ist **lesend** per Default; **schreiben nur per
+  expliziter ACL** — **kein** Auto-Read für alle Agenten des fremden Projekts.
+- **Reichweite/Member-Disclosure:** Status-Zeile nennt die konkreten erreichten Agenten (§2.4); jeder
+  fremd-projektige Member trägt seine Heimat-Projekt-Kennung (`crossProject.member.<agentId>`).
+- **Datenform 1→N-fähig** (§2.2): Eigentümer-Zustimmung als Sammlung; Backend-Vertrag §5.
+
+> **Einziger offener Punkt = der Permit-Mechanismus (Backend-zu-reconcilen):** **wie** ein autorisierter
+> Cross-Projekt-Kanal die exact-match-`ProjectScope.permits`-Grenze technisch überspannt (heute exact-match
+> → ein Kanal ist in genau **einem** Projekt-Scope sichtbar). Das ist das „bewusst gestochene autorisierte
+> Loch" auf Code-Ebene — **Backend baut/reconciled es** (PO seedet die Architektur-Frage parallel). Die
+> Autorisierungs-/Disclosure-Hülle hier ist **vollständig** und unabhängig davon korrekt (fail-closed:
+> ohne Permit-Pfad bleibt alles projekt-lokal — kein Leak). **Stößt der Bau an eine harte
+> Permit-Abhängigkeit → an PO melden.**
 
 ---
 
 ## 3. CYP-94 — Event-Log-Projekt-Filter (projektübergreifende Lese-Linse)
 
-Der Event-Log ist heute (mit S13-Active-Pointer) serverseitig auf das **aktive** Projekt gescoped; `Event`
-trägt `projectId` (server-gestempelt, verifiziert `3705b68`). CYP-94 gibt dem **Operator/Eigentümer** eine
-**read-only** Linse, Ereignisse **eines anderen** oder **aller** Projekte zu sehen.
+**CYP-102 (gelandet, `f73a527`) scopt den Event-Log serverseitig forced-active:** die Routes setzen
+`EventFilter.projectId` aus dem `ProjectRegistry`-Active-Pointer — **nie ein Client-Param** (verifiziert
+`EventSink.kt`: „a caller can't widen to another project"); der Client-`EventFilter` (EventContract.kt)
+hat **kein** `projectId`. `Event` trägt `projectId` (server-gestempelt). CYP-94 gibt dem
+**Operator/Eigentümer** eine **read-only** Linse, Ereignisse **eines anderen** oder **aller** Projekte zu
+sehen — als **bewusste, operator-only Relaxierung** dieses forced-active-Defaults (§3.4).
 
 ### 3.1 Default = aktives Projekt (ehrlich), Cross-Projekt explizit
 
@@ -156,6 +210,12 @@ Neue Filter-Achse in beiden Surfaces (Browse + Live-Tail), konsistent zur besteh
 („Projekt"), Option „alle" = `event_filter_project_all` („Alle Projekte"). Reiht sich neben
 `event_filter_agent/type/severity/timeWindow/correlation` — **gleiche Surface/Familie**, daher
 Namens-Reuse (kein Cross-Surface-Drift).
+
+**Vertrag (PO-§6.3):** die Achse ist `projectId` mit **`all`-Sentinel**, getragen über die **bereits in
+CYP-102 serverseitig eingeführte `EventFilter.projectId`-Achse** — **kein** separater Endpunkt. Der
+Client-`EventFilter` erhält dafür ein **`projectId`-Feld**, das **nur im operator-gated Pfad** als
+Query-Param/WS-Subscribe-Feld gesendet wird (§3.4). **`all`** = projektübergreifend (alle eigenen
+Projekte); ein konkreter `projectId` = ein anderes Projekt.
 
 ### 3.3 Cross-Projekt-Sicht-Indikator + Pro-Zeile-Projekt
 
@@ -173,10 +233,10 @@ Namens-Reuse (kein Cross-Surface-Drift).
 
 Der Event-Log ist bereits **operator-only** (ohne Token wird das Fenster gar nicht angeboten — Omission,
 EVENT-LOG-UI §5.6). Die projektübergreifende Linse erbt das: **kein Token → keine Linse, kein Cross-
-Projekt-Read**. Die Cross-Projekt-Abfrage **umgeht bewusst** das Active-Pointer-Scoping — das ist eine
-**explizite Operator-Fähigkeit** und muss serverseitig als solche durchgesetzt werden (fail-closed; der
-Operator/Eigentümer sieht nur **eigene** Projekte). Siehe §5 (Lese-Override-Naht; **nicht** die gehaltene
-Membership-Verdrahtung).
+Projekt-Read**. **CYP-102 nicht schwächen (PO-§6.3, kritisch):** der **Default-Pfad bleibt forced-active**
+(serverseitig per Active-Pointer, kein Client-Param); **nur** der **operator-gated Pfad** akzeptiert den
+`projectId`/`all`-Param und umgeht damit bewusst das Scoping. Serverseitig durchgesetzt (fail-closed; der
+Operator/Eigentümer sieht nur **eigene** Projekte). Siehe §5.3 (Lese-Override-Naht).
 
 ---
 
@@ -185,66 +245,81 @@ Membership-Verdrahtung).
 | Prinzip | Umsetzung hier |
 |---|---|
 | **Zugriffsänderung nur durch Menschen** | Cross-Projekt-Freigabe ist owner/operator-gated; keine „aus Nachricht/Agent freigeben"-Affordanz; Server autoritativ (§2.6). |
-| **Garantiert ≠ advisory** | Single-Owner-Freigabe ehrlich benannt; **keine** Implikation bilateraler Zustimmung (S18) (§2.2). |
-| **fail-closed-Default sichtbar** | „Nur in diesem Projekt – nicht freigegeben" ist explizit (§2.4); Event-Linse default = aktives Projekt (§3.1). |
-| **Reichweite nie unbemerkt** | Cross-Projekt-Badge + Status (welche Projekte, von wem/wann) (§2.4); Event-Sicht-Indikator + Pro-Zeile-Projekt (§3.3). |
+| **Garantiert ≠ advisory** | Single-Owner-Freigabe ehrlich benannt; **keine** Implikation bilateraler Zustimmung (S18), Datenform aber 1→N-fähig (§2.2). |
+| **Kein Over-Widen** | Freigabe erreicht **nur die expliziten Member-Agenten dieses Kanals** (lesend Default, schreiben per ACL), **nie** „Projekt B" pauschal; Mitgliedschaft explizit per-Agent (§1/§2.3/§2.7). |
+| **fail-closed-Default sichtbar** | „Nur in diesem Projekt – nicht freigegeben" ist explizit (§2.4); Revoke → sofort fail-closed unabhängig vom Entry-Cleanup (§2.5); Event-Linse default = forced-active (§3.1/§3.4). |
+| **Reichweite nie unbemerkt** | Cross-Projekt-Badge + Status (konkrete erreichte Agenten + wann; `sharedBy`=S18) + Member-Heimat-Kennung (§2.4); Event-Sicht-Indikator + Pro-Zeile-Projekt (§3.3). |
 | **Identität ≠ Recht ≠ Severity** | Cross-Projekt-Badge sagt „reicht", nicht „darf"; Projekt-Spalte = Identität, getrennt von Severity/Recht (CYP-14). |
 | **Farbe nie alleiniger Träger (WCAG 1.4.1)** | Badge/Marker = Form/Glyph + Label; Projekt pro Zeile = Text; alle Hinweise = TonedHint. |
 | **operator-gated / fail-closed** | Freigabe + Cross-Projekt-Read beide ohne Token unmöglich; Omission/Gate ehrlich. |
 
 ---
 
-## 5. Datenpfad & Backend-Naht (greenfield / teils HELD — reconcilen)
+## 5. Datenpfad & Backend-Naht (§6 PO-entschieden — Vertrag)
 
-Verifiziert gegen `3705b68`: Fundament steht (`Event.projectId` server-gestempelt; `Channel`/`AclEntry`
-projectId-scoped; `Project`/`ProjectsView`/`SwitchActiveRequest` aus S13). **Neu/greenfield:**
+Verifiziert gegen `f73a527`: Fundament steht (`Event.projectId` server-gestempelt; `Channel`/`AclEntry`
+projectId-scoped; `Project`/`ProjectsView`/`SwitchActiveRequest` aus S13; CYP-102 Active-Pointer-Scoping
+für events/comm + WS-Scope-Pin). **Vertrag:**
 
-1. **Cross-Projekt-Autorisierung (Vertrag, designt):** ein owner/operator-gated Endpunkt, der die
-   Cross-Projekt-Freigabe eines Kanals **setzt/zurücknimmt** und **wer/wann** festhält (für die Status-
-   Anzeige §2.4). Reuse `requireOperator()` (403 `operator_required`/401). Server **autoritativ**
-   (fail-closed; nie aus untrusted-Input). **Flag-/Endpunkt-Namen mit Backend reconcilen.**
-2. **Membership-Verdrahtung (HELD, §2.7):** wie `members`/`AclEntry` die Grenze technisch überspannen
-   (Endpunkt-Scoping, Cross-Projekt-`ProjectScope`-Pfad) — Backend baut die Scoping-Stage; UI-Schicht
-   wartet darauf. Bestehende ACL trägt die Mitgliedschaft (kein neuer Mechanismus).
-3. **Event-Log-Lese-Override (Naht, designt):** `EventFilter` (heute `agentId/type/severity/since/until/
-   correlationId/sessionId`, **kein `projectId`** — verifiziert `EventContract.kt`/`EventSink.kt`) +
-   `projectId`-Achse erweitern; REST-Query-Param `projectId` (bzw. „all") ergänzen (`EventsApiClient`
-   baut Query-Params). Der Override **umgeht das Active-Pointer-Scoping bewusst** und ist **operator-only**
-   (fail-closed; nur eigene Projekte). **Kein** Leak content-freier Severity/Type-Regel verletzt (Events
-   sind ohnehin content-frei, PRD §3.5).
+1. **Cross-Projekt-Autorisierung (PO-entschieden):** ein owner/operator-gated Endpunkt, der die **gerichtete**
+   Freigabe eines Kanals **setzt/zurücknimmt**. **Granularität = pro Kanal** (§6.1; keine Projekt-Paar-
+   Notation). **Status-Provenienz:** Backend liefert `{shared: Bool, sharedAt: ts, reachableScope (Projekte/
+   Agenten)}`; Status-String nutzt **`sharedAt` + konkrete erreichte Agenten** — **`sharedBy` deferred S18**
+   (§6.2). **Zustimmung = Sammlung (1→N-fähig)**, nicht Bool (§2.2). Reuse `requireOperator()` (403
+   `operator_required`/401), Server **autoritativ**, fail-closed.
+2. **Membership-Verdrahtung (un-held, CYP-102 gelandet):** ACL trägt die Mitgliedschaft **explizit
+   per-Agent** (neuer Cross-Projekt-Member **lesend** Default; schreiben nur per expliziter ACL — **kein**
+   Auto-Read aller fremden Agenten, §2.3/§2.7). **Einziger offener Mechanismus = der Permit-Pfad** (wie ein
+   autorisierter Kanal die exact-match-`ProjectScope.permits`-Grenze überspannt) → **Backend-zu-reconcilen**
+   (PO seedet parallel). **Revoke (§6.4):** Autorisierung ist das Gate → Revoke ⇒ **sofort fail-closed**,
+   **unabhängig** vom Entry-Cleanup (lingernde Einträge bleiben wirkungslos, exact-match greift wieder).
+3. **Event-Log-Lese-Override (PO-§6.3):** `projectId`-Param **+ `all`-Sentinel** auf der **in CYP-102
+   serverseitig eingeführten `EventFilter.projectId`-Achse** — **kein** separater Endpunkt. Client-
+   `EventFilter` (EventContract.kt, heute ohne `projectId`) erhält das Feld; es wird **nur im operator-gated
+   Pfad** als Query-Param/WS-Subscribe gesendet. **Default-Pfad bleibt forced-active (CYP-102 nicht
+   schwächen!)**; Override operator-only, fail-closed, **nur eigene Projekte**. Events sind content-frei
+   (PRD §3.5) → kein Leak.
 
 ---
 
-## 6. Offene Punkte (PO/Backend)
+## 6. Entscheidungen (PO-entschieden — §6.1–§6.5 geschlossen)
 
-1. **Freigabe-Granularität:** pro Kanal (designt) — bestätigen. Reicht „ein Eigentümer gibt seinen Kanal
-   für Projekt Y frei" als Single-User-Modell, oder braucht es schon eine Projekt-Paar-Notation?
-2. **Status-Provenienz:** liefert das Backend „freigegeben von <wer> am <ts>" zur Anzeige (§2.4), oder
-   nur ein boolesches „cross-project: ja/nein" (dann Status ohne wer/wann)?
-3. **Event-Lese-Override-Form:** `projectId`-Param mit Spezialwert „all" vs. separater Cross-Projekt-
-   Endpunkt — Backend-Präferenz (§5.3).
-4. **Revoke-Semantik:** entfernt Revoke nur die Sichtbarkeit/Autorisierung, oder auch die
-   cross-projekt-`AclEntry`s? (hängt an der gehaltenen Membership-Verdrahtung, §2.7).
-5. **Timing:** Wann landet Backends Endpunkt-Scoping-Stage (entscheidet, wann CYP-93-Membership baubar
-   wird; bis dahin ist nur die Autorisierungs-/Disclosure-Schicht implementierbar)?
+1. **Granularität:** **pro Kanal**; keine Projekt-Paar-Notation für Single-User. (→ §5.1)
+2. **Status-Provenienz:** Backend liefert `{shared, sharedAt, reachableScope}`; Status = Projekt-/Agent-
+   Reichweite + `sharedAt`; **`sharedBy` deferred S18** (Single-Owner = trivial der eine Operator). (→ §2.4/§5.1)
+3. **Event-Override-Form:** `projectId`-Param + `all`-Sentinel auf der bestehenden `EventFilter.projectId`-
+   Achse, **kein** separater Endpunkt; Override **nur** im operator-gated Pfad, **Default forced-active
+   (CYP-102 nicht schwächen)**, fail-closed, nur eigene Projekte. (→ §3.2/§3.4/§5.3)
+4. **Revoke:** Autorisierung-off → **sofort fail-closed**; die Autorisierung ist das Gate, **nicht** die
+   `AclEntry`s; Entry-Cleanup ist Membership-Sache, aber fail-closed hängt **nicht** davon ab. (→ §2.5)
+5. **Timing:** CYP-102 gelandet → **Membership-Verdrahtung jetzt baubar, Teil von CYP-93**; einzig der
+   Permit-Mechanismus bleibt Backend-zu-reconcilen. (→ §2.7)
+
+**Reviewer-Leitplanken gefaltet:** (1) **Kein Over-Widen** — Freigabe erreicht nur die expliziten
+Member-Agenten dieses Kanals, nicht das ganze fremde Projekt (§1/§2.3); (2) **Owner-Consent als 1→N-Form**
+— Zustimmung als Sammlung modelliert, Disclosure bleibt ehrlich Single-Owner (§2.2).
 
 ---
 
 ## 7. Self-Validation
 
 - **Artefakte:** diese Spec + `cross-project-{tokens.json,keys.md,tags.md}` (Muster CYP-17).
-- **Vorlauf-Disziplin:** Autorisierungs-/Disclosure-Schicht designt; **Membership-Transport explizit
-  GEHALTEN** (§2.7/§5.2) wie vom PO verlangt; bilaterale Zustimmung als S18 abgegrenzt (kein
-  Überversprechen).
-- **Reuse gegen Code (develop `3705b68`) verifiziert:** `Event.projectId`, `EventFilter` **ohne**
-  `projectId` (EventContract.kt/EventSink.kt → Erweiterung nötig), `EventsApiClient` Query-Param-Bau,
+- **Finalisierungs-Disziplin:** §6.1–§6.5 als **PO-entschieden** gefaltet; **HOLD aufgehoben** —
+  Membership-Transport mitdesignt (explizit per-Agent, Disclosure vollständig), **nur** der Permit-
+  Mechanismus als **Backend-zu-reconcilen** markiert; beide Reviewer-Leitplanken (Kein Over-Widen;
+  Owner-Consent 1→N-Form) gefaltet; bilaterale Zustimmung als S18 abgegrenzt (kein Überversprechen).
+- **Reuse gegen Code (develop `f73a527`) verifiziert:** `Event.projectId`, `EventFilter` **ohne** Client-
+  `projectId` (EventContract.kt) / server-forced-active `projectId` (EventSink.kt, CYP-102 „never a client
+  param") → operator-Override ergänzt das Client-Feld, `EventsApiClient` Query-Param-Bau,
   `CommTags.channel(id)`=`comm.channel.<id>`, `aclMatrix.rowHeader.<channelId>`, `EventLogTags`
-  (eventBrowse/eventTail), `ProjectScope.permits` (exakt-gleich/fail-closed), `requireOperator`,
-  `ui/TonedHint.kt`+`HintTone`, CYP-14 `ColorSlot` (Identität≠Recht), `event_filter_*`-Key-Familie.
+  (eventBrowse/eventTail), `ProjectScope.permits` (exakt-gleich/fail-closed — Permit-Pfad offen),
+  `requireOperator`, `ui/TonedHint.kt`+`HintTone`, CYP-14 `ColorSlot` (Identität≠Recht),
+  `event_filter_*`-Key-Familie.
 - **Keys:** `crossproject_*` greenfield (0 Kollision); `event_filter_project`/`_all`/`event_view_*`/
   `event_row_project` reihen sich in die **bestehende** `event_*`-Surface-Familie (kein Cross-Surface-
   Drift). DE+EN-Parität Pflicht.
-- **Tags:** neue Area `crossProject` (CYP-93) + **Additionen** zu den bestehenden `eventBrowse`/`eventTail`
-  -Areas (CYP-94); Test-Contract v0.5 §2-konform.
-- **Security:** Anti-Injection-Invariante (§2.6) load-bearing dokumentiert; Freigabe = owner/operator-
-  gated, Server autoritativ, fail-closed; keine „aus Nachricht freigeben"-Affordanz.
+- **Tags:** neue Area `crossProject` (CYP-93, inkl. `member.<agentId>`) + **Additionen** zu den bestehenden
+  `eventBrowse`/`eventTail`-Areas (CYP-94); Test-Contract v0.5 §2-konform.
+- **Security:** Anti-Injection-Invariante (§2.6) load-bearing; **Kein Over-Widen** (Member-explizit,
+  lesend-Default, kein Auto-Read) als Disclosure-Wahrheit **und** Sicherheitsgrenze; Revoke fail-closed
+  unabhängig vom Cleanup; Override operator-only ohne CYP-102 zu schwächen; Server autoritativ.

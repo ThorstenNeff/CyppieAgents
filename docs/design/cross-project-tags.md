@@ -12,7 +12,8 @@
 |---|---|
 | `crossProject.badge.<channelId>` | Cross-Projekt-Reichweiten-Badge am Kanal (scope = Kanal-id; Form/Glyph+Label, nicht Farb-only) |
 | `crossProject.badge.<channelId>.unauthorized` | Qualifier: Kanal reicht über Projekte, aber (noch) **nicht freigegeben** (fail-closed) |
-| `crossProject.status` | Status-Disclosure-Zeile (freigegeben: Projekte + wer/wann · ODER „nur dieses Projekt") |
+| `crossProject.status` | Status-Disclosure-Zeile (freigegeben: erreichte Agenten + `sharedAt` · ODER „nur dieses Projekt") |
+| `crossProject.member.<agentId>` | Heimat-Projekt-Kennung eines fremd-projektigen Members in der Kanal-Mitglieder-/ACL-Ansicht (Membership-Transport-Disclosure) |
 | `crossProject.authorize` | Aktion „Projektübergreifend freigeben" (öffnet Dialog) |
 | `crossProject.revoke` | Aktion „Freigabe zurücknehmen" |
 | `crossProject.gateHint` | Operator/Owner-Gate-Hinweis (fail-closed, read-only ohne Token) |
@@ -56,8 +57,9 @@
 > hier fixierten Werten.
 
 ## Self-Validation
-- **20 neue Tags** (14 Area `crossProject` + 6 Additionen zu `eventBrowse`/`eventTail`); Schema-konform
-  (camelCase-Werte wie `ownerConsent`/`humanOnlyNote`/`crossProjectView`; keine Punkte in Segmentwerten).
+- **21 neue Tags** (15 Area `crossProject` inkl. `member.<agentId>` + 6 Additionen zu `eventBrowse`/
+  `eventTail`); Schema-konform (camelCase-Werte wie `ownerConsent`/`humanOnlyNote`/`crossProjectView`;
+  keine Punkte in Segmentwerten).
 - **Verschachtelung** folgt Präzedenz: `crossProject.badge.<channelId>[.unauthorized]` analog
   `aclMatrix.cell.<channelId>.<agentId>.<qualifier>`; `…row.<index>.project` analog der bestehenden
   `eventBrowse.row.<index>.<severity>`-Qualifizierung.

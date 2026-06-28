@@ -11,11 +11,15 @@
 |---|---|---|
 | `crossproject_title` | Projektübergreifende Freigabe | Cross-project sharing |
 | `crossproject_badge` | Projektübergreifend | Cross-project |
-| `crossproject_status_shared` | Projektübergreifend: %1$s · freigegeben am %2$s | Cross-project: %1$s · authorized %2$s |
+| `crossproject_status_shared` | Projektübergreifend freigegeben am %1$s · erreicht: %2$s | Cross-project, authorized %1$s · reaches: %2$s |
 | `crossproject_status_not_shared` | Nur in diesem Projekt – nicht projektübergreifend freigegeben. | This project only — not authorized across projects. |
 | `crossproject_authorize` | Projektübergreifend freigeben | Authorize across projects |
 | `crossproject_revoke` | Freigabe zurücknehmen | Revoke sharing |
-| `crossproject_dialog_scope` | Dieser Kanal erreicht dann: %1$s | This channel will then reach: %1$s |
+| `crossproject_dialog_scope` | Dieser Kanal erreicht dann diese Agenten: %1$s | This channel will then reach these agents: %1$s |
+| `crossproject_member_access` | %1$s (Projekt %2$s) – %3$s | %1$s (project %2$s) — %3$s |
+| `crossproject_member_project` | Aus Projekt %1$s | From project %1$s |
+| `crossproject_access_read` | lesend | read |
+| `crossproject_access_write` | schreibend | write |
 | `crossproject_owner_consent` | Ich gebe diesen Kanal als Eigentümer projektübergreifend frei. | As the owner, I authorize this channel across projects. |
 | `crossproject_human_only` | Nur du als Eigentümer gibst frei – niemals ein Agent oder eine Nachricht. | Only you, the owner, authorize this — never an agent or a message. |
 | `crossproject_single_owner_note` | Single-User: ein Eigentümer gibt frei. Gegenseitige Zustimmung mehrerer Eigentümer folgt später. | Single-user: one owner authorizes. Mutual consent of multiple owners comes later. |
@@ -30,6 +34,13 @@
 > nicht abschwächen.
 > **`crossproject_single_owner_note` = Disclosure-Honesty:** Single-Owner ≠ bilateral (S18). Nicht so
 > formulieren, dass gegenseitige Zustimmung impliziert wird (Spec §2.2).
+> **Kein Over-Widen (Reviewer-Leitplanke + PO-§6-Addendum c):** `crossproject_dialog_scope` /
+> `crossproject_status_shared` nennen **konkrete Member-Agenten dieses Kanals**, nie „Projekt B" pauschal.
+> Jeder Member wird über `crossproject_member_access` („%1$s (Projekt %2$s) – %3$s") gerendert; %3$s =
+> `crossproject_access_read` (**Default** neuer Cross-Projekt-Member) bzw. `crossproject_access_write` (nur
+> per expliziter ACL). `crossproject_member_project` markiert einen fremd-projektigen Member in der
+> Mitglieder-/ACL-Ansicht (Membership-Transport-Disclosure, §2.4/§2.7). **`sharedBy` (wer) = S18-deferred**
+> (§6.2) → `crossproject_status_shared` trägt **nur** `sharedAt` + Reichweite, kein „von wem".
 
 ## Neue Keys — CYP-94 Event-Log-Projekt-Filter (in der bestehenden `event_*`-Familie)
 | Key | DE | EN |
@@ -58,13 +69,14 @@
 > bleibt surface-lokal. Tonal-Styling kommt aus der geteilten `TonedHint`-Komponente.
 
 ## Self-Validation
-- **20 neue Keys** (15 CYP-93 `crossproject_*`/`a11y_` + 5 CYP-94 `event_*`), alle DE+EN; alle im Spec
+- **24 neue Keys** (19 CYP-93 `crossproject_*`/`a11y_` + 5 CYP-94 `event_*`), alle DE+EN; alle im Spec
   (`CROSS-PROJECT.md`) bzw. an ihren Tags in `cross-project-tags.md` referenziert.
-- **Argument-Keys** (`%1$s`/`%2$s`): `crossproject_status_shared` (%1$s=Projektliste, %2$s=Zeitpunkt);
-  `crossproject_dialog_scope` (%1$s=Projekte+Agenten); `event_view_project`/`event_row_project`
+- **Argument-Keys:** `crossproject_status_shared` (%1$s=`sharedAt`-Zeit, %2$s=erreichte Agenten);
+  `crossproject_dialog_scope` (%1$s=Agentenliste); `crossproject_member_access` (%1$s=Agent, %2$s=Projekt,
+  %3$s=Zugriff); `crossproject_member_project` (%1$s=Projekt); `event_view_project`/`event_row_project`
   (%1$s=Projekt-id/-name). **Kein** content-tragender/sensibler Klartext interpoliert (nur Projekt-/
   Agent-Identität + Zeit; Events sind ohnehin content-frei).
 - **Kollision:** `crossproject_*` greenfield; `event_filter_project`/`_all`/`event_view_*`/`event_row_project`
-  existieren nicht in `strings.xml` @ `3705b68` (nur `event_filter_{active,agent,type,severity,timewindow,
+  existieren nicht in `strings.xml` @ `f73a527` (nur `event_filter_{active,agent,type,severity,timewindow,
   correlation}` vorhanden) → 0 Kollision.
 - DE/EN-Parität: jede Zeile beidseitig befüllt; gleiche Argument-Anzahl je Sprache.
