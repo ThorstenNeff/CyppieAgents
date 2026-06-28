@@ -197,4 +197,24 @@
     <string name="agent_edit_id_locked_hint">ID und Worktree sind fest und hier nicht änderbar.</string>
     <string name="agent_edit_po_exists">Rolle PO ist belegt – nur ein PO pro Projekt.</string>
     <string name="agent_edit_error">Speichern fehlgeschlagen</string>
+    <!-- Product-Lead-Berichte (CYP-90, S16). Keys per docs/design/product-lead-keys.md. Disclosure-true:
+         Snapshot ≠ Live → report_as_of „Stand: %1$s" (timestamped, eigener Key wie event_connection_offline,
+         NICHT no-arg comm_status_offline); report_advisory = beobachtet/nicht-vollständig (Defekt-Register);
+         report_snapshot_hint = kann veraltet sein. operator-gated/fail-closed → report_access_denied. Reuse
+         event_severity_*/event_detail_source_ts (CYP-34), kein neues Severity-Schema. Items content-frei. -->
+    <string name="report_title">Product-Lead-Berichte</string>
+    <string name="report_generate">Bericht erzeugen</string>
+    <string name="report_generating">Wird erzeugt…</string>
+    <string name="report_type_usage">Nutzungs-Leitfaden</string>
+    <string name="report_type_status">Status-Bericht</string>
+    <string name="report_type_defects">Defekt- &amp; Lücken-Register</string>
+    <string name="report_as_of">Stand: %1$s</string>
+    <string name="report_provenance">Quellen: %1$s · Zeitraum: %2$s</string>
+    <string name="report_advisory">Beobachtete Defekte/Lücken – nicht vollständig oder bestätigt.</string>
+    <string name="report_snapshot_hint">Momentaufnahme – kann bereits veraltet sein.</string>
+    <string name="report_empty">Noch keine Berichte – oben einen erzeugen.</string>
+    <string name="report_access_denied">Nur mit Operator-Token einsehbar.</string>
+    <string name="report_error">Bericht fehlgeschlagen</string>
+    <string name="a11y_report_generate">Bericht erzeugen</string>
+    <string name="a11y_report_snapshot">Bericht-Momentaufnahme, %1$s</string>
 </resources>
