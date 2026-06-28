@@ -41,21 +41,21 @@ fun Route.eventSocket(sink: EventSink, registry: TokenRegistry, activeProjectId:
             return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "operator token required"))
         }
 
-        // S13 / CYP-102: resolve the active project server-side at connect time and PIN it as the base
-        // scope. The client's SubscribeEvents may narrow other axes but never the project (re-applied
-        // below), so a live-tail can't reach another project's events. A switch re-scopes on reconnect
-        // (the UI re-subscribes on project switch — per-stream live re-scope is S17 with hub-instancing).
+        // S13 / CYP-102: resolve the active project server-side at connect time. The SINGLE scope
+        // chokepoint is the in-process [filter] (we subscribe to ALL and enforce here — no second,
+        // redundant guard on `subscribe` that could mask a regression / drift). The base pins the active
+        // project when the client hasn't narrowed; the re-pin below keeps the project scope when the
+        // client DOES narrow (a SubscribeEvents may adjust other axes but NEVER widen past the project).
+        // A switch re-scopes on reconnect (the UI re-subscribes on project switch — per-stream live
+        // re-scope is S17 with hub-instancing).
         val project = activeProjectId()
-        val baseScope = EventFilter(projectId = project)
-
-        // Authorized operator. Subscribe within the project scope; narrow in-process when the client asks.
-        var filter = baseScope
+        var filter = EventFilter(projectId = project) // base scope — the sole guard until a client narrow
 
         suspend fun emit(event: EventsWsServerEvent) =
             send(Frame.Text(CommJson.encodeToString(EventsWsServerEvent.serializer(), event)))
 
         val pump = launch {
-            sink.subscribe(baseScope).collect { event ->
+            sink.subscribe(EventFilter.ALL).collect { event ->
                 if (filter.matches(event)) emit(EventPushed(event))
             }
         }
