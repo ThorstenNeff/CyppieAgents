@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.scanner
 
+import com.tneff.cyppieagents.model.Event
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -22,4 +23,24 @@ data class Signal(
     /** ties the signal to the work-run that stalled (07 §3); null if not correlated. */
     val correlationId: String? = null,
     val evidence: JsonObject = JsonObject(emptyMap()),
-)
+) {
+    companion object {
+        /**
+         * Reconstruct the [Signal] a signal-type Event carries — the inverse of emitting a Signal as
+         * an Event (07 §2). The Warden consumes signal Events off the bus and routes them with this.
+         * Returns `null` for any non-signal event (effective wire type not in [SignalVocabulary]), so a
+         * domain event never looks like a signal. `detail` is carried back verbatim as [evidence].
+         */
+        fun fromEvent(e: Event): Signal? {
+            val type = e.rawType ?: e.type.wire
+            if (!SignalVocabulary.isSignal(type)) return null
+            return Signal(
+                type = type,
+                agentId = e.agentId,
+                teamId = e.teamId,
+                correlationId = e.correlationId,
+                evidence = e.detail,
+            )
+        }
+    }
+}

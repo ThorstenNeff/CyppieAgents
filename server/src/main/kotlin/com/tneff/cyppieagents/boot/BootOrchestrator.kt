@@ -25,6 +25,9 @@ import com.tneff.cyppieagents.scanner.EventLogSignalSink
 import com.tneff.cyppieagents.scanner.Scanner
 import com.tneff.cyppieagents.scanner.StallDetector
 import com.tneff.cyppieagents.scanner.StallSweeper
+import com.tneff.cyppieagents.warden.MediatorActuator
+import com.tneff.cyppieagents.warden.Policy
+import com.tneff.cyppieagents.warden.Warden
 import kotlinx.coroutines.CoroutineScope
 import org.slf4j.LoggerFactory
 
@@ -69,6 +72,9 @@ class BootOrchestrator(
     // Mediator-Aufsicht (07/S11): the Scanner's detector set. Empty = the scaffold runs but finds
     // nothing yet; CYP-61 adds the stall detector here with no change to the frame.
     private val scannerDetectors: List<Detector> = emptyList(),
+    // The Warden's policy set (07/S11, CYP-62). Empty = the Warden runs but routes nothing yet; the
+    // stall policy (CYP-63) registers here with no change to the frame.
+    private val wardenPolicies: List<Policy> = emptyList(),
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -126,6 +132,13 @@ class BootOrchestrator(
         val stallDetector = StallDetector()
         Scanner(eventSink, scannerDetectors + stallDetector, signalSink, scope).start()
         StallSweeper(stallDetector, signalSink, scope, clock = System::currentTimeMillis).start()
+
+        // Mediator-Aufsicht Decide+Act stage (07/S11, CYP-62): the Warden is a separate bus consumer
+        // that listens for signal Events and routes each to the Policy that handles it. Policies act
+        // ONLY through the Actuator — the single write authority toward an agent (nudge = a user-turn
+        // on the agent's session = the Mediator stdin). Policies arrive in CYP-63.
+        val actuator = MediatorActuator(sessions, signalSink, MVP_TEAM_ID)
+        Warden(eventSink, wardenPolicies, actuator, scope).start()
 
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()

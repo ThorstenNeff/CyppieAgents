@@ -15,7 +15,8 @@ object SignalVocabulary {
         "stall.suspected", // CYP-61 (Scanner)
         "stall.recovered", // CYP-63 (Warden)
         "stall.escalated", // CYP-63 (Warden)
-        "nudge.sent",      // CYP-62/63 (Warden/Actuator)
+        "nudge.sent",      // CYP-62 (Actuator action)
+        "po.escalated",    // CYP-62 (Actuator action: escalateToPO)
     )
 
     /** True if [wireType] is a Sense/Act-emitted type → not domain input, must not feed detectors. */
