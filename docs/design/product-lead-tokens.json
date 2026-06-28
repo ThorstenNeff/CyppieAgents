@@ -1,0 +1,63 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-77 (Stories CYP-89 Backend-Report-Vertrag, CYP-90 UI)",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "note": "Semantische Tokens fuer das Product-Lead-Report-Feature. Komponenten referenzieren Semantik, nie Hex direkt. Dark = Default. Ueberwiegend Reuse (CYP-34 severity_rail + state-tokens + MaterialTheme); wenige neue.",
+    "reuse_note": "Severity im Defekt-Register = event-log-tokens.json#severity_rail (CYP-34/CYP-12 Hues + Icon + Text). As-of/Provenienz = neutraler Info-Ton (kein Fehler). Advisory = secondaryContainer (Info, KEINE Garantie)."
+  },
+  "semantic": {
+    "report.snapshotAsOf": {
+      "role": "Prominente 'Stand: <ts>'-Kennzeichnung je Snapshot (Liste + Detail). Neutral/Info — Snapshot != live.",
+      "container": "surfaceVariant",
+      "onContainer": "onSurfaceVariant",
+      "icon": "schedule",
+      "label_key": "report_as_of"
+    },
+    "report.advisory": {
+      "role": "Defekt-/Luecken-Register ist beobachtet/advisory — KEINE Vollstaendigkeits-/Bestaetigungsgarantie. Info-Ton, nicht Fehler-rot.",
+      "container": "secondaryContainer",
+      "onContainer": "onSecondaryContainer",
+      "icon": "info",
+      "label_key": "report_advisory"
+    },
+    "report.provenance": {
+      "role": "Quellen + Beobachtungsfenster + 'beobachtet' (sourceTs != ts). Dim, informativ.",
+      "container": "surface",
+      "onContainer": "onSurfaceVariant",
+      "icon": "source",
+      "label_key": "report_provenance"
+    },
+    "report.gated": {
+      "role": "Operator-Gate, fail-closed: kein erlaubter Zugriff -> KEIN Bericht (kein Teil-/Phantom-Bericht).",
+      "container": "surfaceVariant",
+      "onContainer": "onSurfaceVariant",
+      "icon": "lock",
+      "label_key": "report_access_denied"
+    },
+    "report.error": {
+      "role": "Server-Ablehnung / invalid_report_type / 404.",
+      "container": "errorContainer",
+      "onContainer": "onErrorContainer",
+      "icon": "error",
+      "label_key": "report_error"
+    }
+  },
+  "reuse": {
+    "severity_rail": "docs/design/event-log-tokens.json#severity_rail — Defekt-Zeilen-Severity (error/warn/info/debug), IMMER Hue + Icon + Text-Label (event_severity_*).",
+    "as_of_pattern": "event_connection_offline / event_detail_source_ts — As-of + 'Beobachtet' Wortlaut-Muster (CYP-34)."
+  },
+  "dimensions": {
+    "report.list.width": {
+      "role": "Breite der Snapshot-Liste (linkes Pane), analog CommPanel Channel-Liste.",
+      "value_dp": 220,
+      "reuse": "Wie CommPanel ChannelListPane (220dp)."
+    },
+    "report.section.spacing": {
+      "role": "Vertikaler Abstand zwischen Report-Sektionen im Detail.",
+      "value_dp": 16
+    }
+  }
+}
