@@ -224,6 +224,24 @@ class WindowReducerTest {
     }
 
     @Test
+    fun tile_narrowHost_contentFloorWouldOverflow_clampKeepsFullyVisible() {
+        // Medium host too narrow for two 320 dp content windows: the 320 floor pushes the 2nd column's
+        // rawX past host-width. The fully-visible clamp must pull it back in — WITHOUT the clamp this
+        // window would be off-host (x + width > host). This is the case that makes the clamp load-bearing
+        // (the natural-fit tests leave it a no-op). Mutation: x = rawX → this test goes RED.
+        val items = listOf("comm" to "Comm", "acl-but-content" to "X")
+        val host = 640f // Medium (600–839), 2 columns; cell ≈ 296 dp < 320 dp content floor
+        val result = WindowReducer.tile(
+            items, hostWidth = host, hostHeight = 600f, contentWindowIds = setOf("comm", "acl-but-content"),
+        )
+        assertTrue(result.all { it.width == TILED_CONTENT_WINDOW_MIN_WIDTH }, "both content windows floored to 320")
+        assertTrue(
+            result.all { it.x >= 0f && it.x + it.width <= host + 0.01f },
+            "320-floor must not push a window off-host — clamp keeps it fully visible: ${result.map { it.x to it.width }}",
+        )
+    }
+
+    @Test
     fun tile_rtl_mirrorsColumnsToStartEdge() {
         val items = listOf("a" to "A", "b" to "B")
         val ltr = WindowReducer.tile(items, hostWidth = 800f, hostHeight = 600f, isRtl = false)
