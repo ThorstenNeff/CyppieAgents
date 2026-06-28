@@ -132,4 +132,28 @@
     <string name="a11y_badge_unread">%1$s: %2$s neue Nachrichten</string>
     <string name="a11y_badge_error">%1$s: Agent-Fehler</string>
     <string name="a11y_badge_severity">%1$s: höchste Severity %2$s</string>
+    <!-- Projekt-Settings (CYP-84 Repo-Config + CYP-85 API-Key, S15). Keys per docs/design/project-settings-keys.md.
+         Disclosure-true (verbindlich): „Gespeichert" ≠ „Aktiv" → Effekt-Hinweise amber/tertiary, nie Erfolg-grün;
+         API-Key nie im Klartext (settings_apikey_masked %1$s = server-maskiert ***last4, einziger interpolierter
+         Key). Restart-Aktivierung reuse agent_ctl_restart (CYP-73), KEIN neuer Restart-Key. settings_save geteilt. -->
+    <string name="settings_title">Projekt-Einstellungen</string>
+    <string name="settings_save">Speichern</string>
+    <string name="settings_operator_required">Nur mit Operator-Token änderbar</string>
+    <string name="settings_repo_section">Repository</string>
+    <string name="settings_repo_url_label">Repository-URL</string>
+    <string name="settings_repo_branch_label">Branch</string>
+    <string name="settings_repo_status_unset">Kein Repository konfiguriert – Agenten können nicht starten.</string>
+    <string name="settings_repo_effect_hint">Änderung wirkt auf neu angelegte Worktrees / beim nächsten Hochfahren – bestehende Worktrees bleiben unverändert.</string>
+    <string name="settings_repo_url_invalid">Ungültige Repository-URL</string>
+    <string name="a11y_settings_repo_url">Repository-URL eingeben</string>
+    <string name="a11y_settings_repo_branch">Branch eingeben</string>
+    <string name="settings_apikey_section">API-Schlüssel</string>
+    <string name="settings_apikey_masked">Hinterlegt: %1$s</string>
+    <string name="settings_apikey_unset">Kein Schlüssel hinterlegt</string>
+    <string name="settings_apikey_placeholder">Neuen Schlüssel eingeben…</string>
+    <string name="settings_apikey_effect_hint">Gespeichert. Wirkt erst beim nächsten Start des Agenten – jetzt neu starten, damit der neue Schlüssel zieht.</string>
+    <string name="settings_apikey_save_failed">Speichern fehlgeschlagen</string>
+    <string name="a11y_settings_apikey_input">Neuen API-Schlüssel eingeben</string>
+    <string name="a11y_settings_apikey_reveal">Eingabe anzeigen</string>
+    <string name="a11y_settings_apikey_hide">Eingabe verbergen</string>
 </resources>

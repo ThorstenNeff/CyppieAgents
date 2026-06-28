@@ -45,14 +45,22 @@ import com.tneff.cyppieagents.eventlog.EventsApi
 import com.tneff.cyppieagents.eventlog.EventsApiClient
 import com.tneff.cyppieagents.eventlog.EventsWsClient
 import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.settings.ConfigRepository
+import com.tneff.cyppieagents.settings.SettingsPanel
+import com.tneff.cyppieagents.settings.SettingsViewModel
+import com.tneff.cyppieagents.settings.StubConfigRepository
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.window.WindowReducer
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
+import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.settings_title
+import org.jetbrains.compose.resources.stringResource
 
 private const val COMM_WINDOW_ID = "comm"
 private const val ACL_WINDOW_ID = "acl"
+private const val SETTINGS_WINDOW_ID = "settings"
 private const val EVENTLOG_BROWSE_WINDOW_ID = "eventlog"
 private const val EVENTLOG_TAIL_WINDOW_ID = "eventtail"
 
@@ -90,10 +98,15 @@ fun AgentShell(
     lifecycleApi: AgentLifecycleApi? = null,
     /** Override the agent lifecycle state source (CYP-73); `null` → the in-memory stub until `/ws/lifecycle` lands. */
     lifecycleSource: AgentLifecycleSource? = null,
+    /** Override the project-settings data port (CYP-84/85); `null` → the in-memory stub until CYP-96 lands. */
+    configRepository: ConfigRepository? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
-    val windows = remember {
+    // i18n window title for the settings window (the other titles are hardcoded today; CYP-84 wires the
+    // one new key the design defines). Resolved here so the title bar reads it like any string resource.
+    val settingsTitle = stringResource(Res.string.settings_title)
+    val windows = remember(settingsTitle) {
         buildList {
             add("po" to "Product Owner")
             add("frontend" to "Frontend")
@@ -102,6 +115,9 @@ fun AgentShell(
             // ACL matrix (CYP-48): always present — editable for an operator, read-only partial view for an
             // agent/no-token (ACL-MATRIX.md §4, deliberately NOT an omission like the event-log windows).
             add(ACL_WINDOW_ID to "Zugriffsrechte")
+            // Project settings (CYP-84/85): always present — editable for an operator, read-only + gate
+            // hint otherwise (PROJECT-SETTINGS §1.3; same "gate visible" stance as ACL, not an omission).
+            add(SETTINGS_WINDOW_ID to settingsTitle)
             // Operator-only observability windows: offered ONLY with an operator token (omission, not a
             // dead "no access" window — EVENT-LOG-UI §5.6). Live sources swap in at CYP-39/40.
             if (cfg.operatorToken != null) {
@@ -161,10 +177,17 @@ fun AgentShell(
     // are reading surfaces and keep the 160 dp floor.
     val contentWindowIds = remember(windows) {
         windows.map { it.first }
-            .filterNot { it == ACL_WINDOW_ID || it == EVENTLOG_BROWSE_WINDOW_ID || it == EVENTLOG_TAIL_WINDOW_ID }
+            .filterNot {
+                it == ACL_WINDOW_ID || it == EVENTLOG_BROWSE_WINDOW_ID ||
+                    it == EVENTLOG_TAIL_WINDOW_ID || it == SETTINGS_WINDOW_ID
+            }
             .toSet()
     }
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+
+    // Project-settings data port (CYP-84/85): stub until the backend seam (CYP-96); injectable so tests
+    // stay hermetic. Operator token drives editability (server also enforces the gate; fail-closed UI).
+    val resolvedConfigRepository = remember(configRepository) { configRepository ?: StubConfigRepository() }
 
     // Agent lifecycle (CYP-73). Controls = operator-gated REST (POST /api/agents/{id}/{stop|start|
     // restart}); status display = non-gated (GET /api/agents snapshot + /ws/lifecycle deltas). Operator
@@ -186,7 +209,7 @@ fun AgentShell(
     // per-page lifecycle. windowContent below reuses these very instances (no second viewModel()).
     val agentVms = LinkedHashMap<String, AgentViewModel>()
     for ((id, _) in windows) {
-        if (id == COMM_WINDOW_ID || id == ACL_WINDOW_ID ||
+        if (id == COMM_WINDOW_ID || id == ACL_WINDOW_ID || id == SETTINGS_WINDOW_ID ||
             id == EVENTLOG_BROWSE_WINDOW_ID || id == EVENTLOG_TAIL_WINDOW_ID
         ) continue
         agentVms[id] = viewModel(key = id) {
@@ -204,6 +227,10 @@ fun AgentShell(
     }
     val aclVm = viewModel(key = ACL_WINDOW_ID) {
         AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = cfg.operatorToken != null)
+    }
+    // Project settings (CYP-84/85): hoisted like the others; editable iff an operator token is present.
+    val settingsVm = viewModel(key = SETTINGS_WINDOW_ID) {
+        SettingsViewModel(resolvedConfigRepository, editable = cfg.operatorToken != null)
     }
     // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
     // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
@@ -273,6 +300,7 @@ fun AgentShell(
                 when (window.id) {
                     COMM_WINDOW_ID -> CommPanel(commVm)
                     ACL_WINDOW_ID -> AclPanel(aclVm)
+                    SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
                     EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it) }
                     EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it) }
                     else -> agentVms[window.id]?.let { AgentWindow(agentId = window.id, viewModel = it) }
