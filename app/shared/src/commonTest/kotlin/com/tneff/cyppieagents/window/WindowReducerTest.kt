@@ -182,4 +182,73 @@ class WindowReducerTest {
     fun tile_emptyList_returnsEmpty() {
         assertEquals(emptyList(), WindowReducer.tile(emptyList(), 800f, 600f))
     }
+
+    // --- CYP-26: responsive tiling (size-class column cap, fully-visible, content-min, RTL) ---
+
+    @Test
+    fun tile_mediumWidth_capsAtTwoColumns() {
+        // 5 windows on a Medium host (600–839) → ≤ 2 columns (not sqrt(5)=3).
+        val items = (1..5).map { "w$it" to "W$it" }
+        val result = WindowReducer.tile(items, hostWidth = 760f, hostHeight = 700f)
+        val distinctX = result.map { it.x }.toSet().size
+        assertTrue(distinctX <= 2, "Medium host must cap at 2 columns, got $distinctX distinct x")
+    }
+
+    @Test
+    fun tile_expandedWidth_usesSqrtColumns() {
+        // 5 windows on an Expanded host (≥840) → uncapped sqrt → ceil(sqrt(5)) = 3 columns.
+        val items = (1..5).map { "w$it" to "W$it" }
+        val result = WindowReducer.tile(items, hostWidth = 1280f, hostHeight = 900f)
+        assertEquals(3, result.map { it.x }.toSet().size, "Expanded host uses sqrt columns (3 for 5 windows)")
+    }
+
+    @Test
+    fun tile_defaultLayout_everyWindowIsFullyVisible() {
+        val items = (1..5).map { "w$it" to "W$it" }
+        val host = 760f to 700f
+        val result = WindowReducer.tile(items, hostWidth = host.first, hostHeight = host.second)
+        // Default layout = fully visible (not the 48 dp manual floor): each window wholly within the host.
+        assertTrue(result.all { it.x >= 0f && it.x + it.width <= host.first + 0.01f }, "x within host")
+        assertTrue(result.all { it.y >= 0f && it.y + it.height <= host.second + 0.01f }, "y within host")
+    }
+
+    @Test
+    fun tile_contentWindow_getsWiderMinWidthThanReadingWindow() {
+        // Host where the raw cell width lands between 160 and 320 so the two floors diverge.
+        val items = listOf("comm" to "Comm", "acl" to "ACL")
+        val result = WindowReducer.tile(items, hostWidth = 680f, hostHeight = 600f, contentWindowIds = setOf("comm"))
+        val comm = result.first { it.id == "comm" }
+        val acl = result.first { it.id == "acl" }
+        assertEquals(TILED_CONTENT_WINDOW_MIN_WIDTH, comm.width, "content window floored at 320")
+        assertTrue(acl.width < TILED_CONTENT_WINDOW_MIN_WIDTH, "reading window keeps the narrower cell")
+    }
+
+    @Test
+    fun tile_narrowHost_contentFloorWouldOverflow_clampKeepsFullyVisible() {
+        // Medium host too narrow for two 320 dp content windows: the 320 floor pushes the 2nd column's
+        // rawX past host-width. The fully-visible clamp must pull it back in — WITHOUT the clamp this
+        // window would be off-host (x + width > host). This is the case that makes the clamp load-bearing
+        // (the natural-fit tests leave it a no-op). Mutation: x = rawX → this test goes RED.
+        val items = listOf("comm" to "Comm", "acl-but-content" to "X")
+        val host = 640f // Medium (600–839), 2 columns; cell ≈ 296 dp < 320 dp content floor
+        val result = WindowReducer.tile(
+            items, hostWidth = host, hostHeight = 600f, contentWindowIds = setOf("comm", "acl-but-content"),
+        )
+        assertTrue(result.all { it.width == TILED_CONTENT_WINDOW_MIN_WIDTH }, "both content windows floored to 320")
+        assertTrue(
+            result.all { it.x >= 0f && it.x + it.width <= host + 0.01f },
+            "320-floor must not push a window off-host — clamp keeps it fully visible: ${result.map { it.x to it.width }}",
+        )
+    }
+
+    @Test
+    fun tile_rtl_mirrorsColumnsToStartEdge() {
+        val items = listOf("a" to "A", "b" to "B")
+        val ltr = WindowReducer.tile(items, hostWidth = 800f, hostHeight = 600f, isRtl = false)
+        val rtl = WindowReducer.tile(items, hostWidth = 800f, hostHeight = 600f, isRtl = true)
+        // First item sits at the (visual) left in LTR, mirrored to the right in RTL → larger x.
+        assertTrue(rtl[0].x > ltr[0].x, "RTL mirrors the first column to the start (right) edge")
+        // Still fully visible after mirroring.
+        assertTrue(rtl.all { it.x >= 0f && it.x + it.width <= 800f + 0.01f })
+    }
 }

@@ -22,8 +22,21 @@ data class WindowState(
     val height: Float,
 )
 
-/** Smallest width a window may be resized to, in dp. */
+/** Smallest width a window may be resized to, in dp. Hard floor for non-content windows (ACL/Event-Log). */
 const val MIN_WINDOW_WIDTH: Float = 160f
+
+/**
+ * Min width for tiled **content** windows (Agent/Comm) so the composer + send button stay usable
+ * (CYP-26 §2.2; `COMPOSER_MIN_WIDTH` + send + padding). Does **not** replace the 160 dp floor for other
+ * window types. Applied by [WindowReducer.tile] only when room allows — "fully visible" wins over it.
+ */
+const val TILED_CONTENT_WINDOW_MIN_WIDTH: Float = 320f
+
+/**
+ * Content guarantee of the composer input field, in dp (CYP-26 §2.2). Below a window width that can't
+ * fit input + send label, the send control degrades to an icon button rather than truncating.
+ */
+const val COMPOSER_MIN_WIDTH: Float = 280f
 
 /** Smallest height a window may be resized to, in dp. */
 const val MIN_WINDOW_HEIGHT: Float = 120f
@@ -143,38 +156,63 @@ object WindowReducer {
     }
 
     /**
-     * Produces an initial side-by-side grid layout so that on first load windows are tiled rather
-     * than stacked. [items] is a list of `id to title`; positions/sizes are derived from the host
-     * size ([hostWidth] x [hostHeight] dp) and never go below the minimum window size.
+     * Column cap by **Width** Window-Size-Class (CYP-26 §2.1): Medium (600–839 dp) tiles ≤ 2 columns;
+     * Expanded (≥ 840 dp) is uncapped (`sqrt`); below Medium is Compact (pager territory, S10) → a
+     * single column. Pure dp thresholds keep [tile] testable without a Compose runtime.
+     */
+    fun columnCapForWidth(hostWidth: Float): Int = when {
+        hostWidth >= 840f -> Int.MAX_VALUE
+        hostWidth >= 600f -> 2
+        else -> 1
+    }
+
+    /**
+     * Produces the side-by-side default grid (CYP-26). Columns are capped by the Width-Size-Class
+     * ([columnCapForWidth]) instead of a naked `sqrt`, so on a Medium host content windows stay wide
+     * enough for their composer. The layout is **fully visible**: every window is kept within
+     * `[0, host − size]` (§2.1) — distinct from the 48 dp manual-move floor. Content windows
+     * ([contentWindowIds] = Agent/Comm) get the wider [TILED_CONTENT_WINDOW_MIN_WIDTH] floor; others
+     * keep [MIN_WINDOW_WIDTH]. RTL mirrors the columns to the start (visual right) edge (§6/F10).
+     *
+     * Should be called only once the host is measured (`hostWidth/Height > 0`); the caller re-tiles
+     * once on the first real measurement and on the explicit "fit windows" action (§2.3).
      */
     fun tile(
         items: List<Pair<String, String>>,
         hostWidth: Float,
         hostHeight: Float,
         gap: Float = 16f,
+        isRtl: Boolean = false,
+        contentWindowIds: Set<String> = emptySet(),
     ): List<WindowState> {
         if (items.isEmpty()) return emptyList()
         val count = items.size
-        val columns = ceil(sqrt(count.toDouble())).toInt().coerceAtLeast(1)
+        val columns = minOf(ceil(sqrt(count.toDouble())).toInt(), columnCapForWidth(hostWidth)).coerceAtLeast(1)
         val rows = ceil(count.toDouble() / columns).toInt().coerceAtLeast(1)
 
         // Fall back to a layout that still fits the minimum tile size if the host hasn't been
         // measured yet (host size 0) or is smaller than the grid needs.
         val usableWidth = hostWidth.coerceAtLeast(columns * (MIN_WINDOW_WIDTH + gap) + gap)
-        val usableHeight = rows.let { r -> hostHeight.coerceAtLeast(r * (MIN_WINDOW_HEIGHT + gap) + gap) }
+        val usableHeight = hostHeight.coerceAtLeast(rows * (MIN_WINDOW_HEIGHT + gap) + gap)
         val cellWidth = (usableWidth - gap * (columns + 1)) / columns
         val cellHeight = (usableHeight - gap * (rows + 1)) / rows
 
         return items.mapIndexed { i, (id, title) ->
             val col = i % columns
             val row = i / columns
+            val minWidth = if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+            val width = cellWidth.coerceAtLeast(minWidth)
+            val height = cellHeight.coerceAtLeast(MIN_WINDOW_HEIGHT)
+            val xLtr = gap + col * (cellWidth + gap)
+            val rawX = if (isRtl) usableWidth - xLtr - width else xLtr
             WindowState(
                 id = id,
                 title = title,
-                x = gap + col * (cellWidth + gap),
-                y = gap + row * (cellHeight + gap),
-                width = cellWidth.coerceAtLeast(MIN_WINDOW_WIDTH),
-                height = cellHeight.coerceAtLeast(MIN_WINDOW_HEIGHT),
+                // Fully visible: keep each window within the host (default layout never goes off-host).
+                x = rawX.coerceIn(0f, maxOf(0f, hostWidth - width)),
+                y = (gap + row * (cellHeight + gap)).coerceIn(0f, maxOf(0f, hostHeight - height)),
+                width = width,
+                height = height,
             )
         }
     }
@@ -184,7 +222,11 @@ object WindowReducer {
  * Observable holder driving the window manager UI. Wraps the window list in Compose snapshot state
  * and routes every mutation through [WindowReducer], so the UI re-renders while the logic stays pure.
  */
-class WindowManagerState(initial: List<WindowState>) {
+class WindowManagerState(
+    initial: List<WindowState>,
+    /** Ids of content windows (Agent/Comm) that get the wider tiled min-width (CYP-26 §2.2). */
+    private val contentWindowIds: Set<String> = emptySet(),
+) {
 
     var windows: List<WindowState> by mutableStateOf(initial)
         private set
@@ -225,6 +267,23 @@ class WindowManagerState(initial: List<WindowState>) {
             val resized = WindowReducer.clampSizeToBounds(it, width, height)
             WindowReducer.clampToBounds(resized, width, height)
         }
+    }
+
+    /**
+     * Re-tiles every window into the current host (CYP-26 §2.3): the explicit "fit windows" action and
+     * the one-shot re-tile once the host is first measured. Preserves identity (same ids/titles, stable
+     * [windowOrder]); only geometry changes. No-op until the host is measured. [isRtl] mirrors columns.
+     */
+    fun fit(isRtl: Boolean = false) {
+        if (hostWidth <= 0f || hostHeight <= 0f) return
+        windows = WindowReducer.tile(
+            // Tile in the STABLE registration order (not z-order) so "fit" is deterministic (CYP-54 §2).
+            items = orderedWindows.map { it.id to it.title },
+            hostWidth = hostWidth,
+            hostHeight = hostHeight,
+            isRtl = isRtl,
+            contentWindowIds = contentWindowIds,
+        )
     }
 
     fun focus(id: String) {
