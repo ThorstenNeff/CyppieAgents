@@ -27,6 +27,8 @@ import com.tneff.cyppieagents.scanner.StallDetector
 import com.tneff.cyppieagents.scanner.StallSweeper
 import com.tneff.cyppieagents.warden.MediatorActuator
 import com.tneff.cyppieagents.warden.Policy
+import com.tneff.cyppieagents.warden.StallPolicy
+import com.tneff.cyppieagents.warden.StallPolicyRunner
 import com.tneff.cyppieagents.warden.Warden
 import kotlinx.coroutines.CoroutineScope
 import org.slf4j.LoggerFactory
@@ -136,9 +138,13 @@ class BootOrchestrator(
         // Mediator-Aufsicht Decide+Act stage (07/S11, CYP-62): the Warden is a separate bus consumer
         // that listens for signal Events and routes each to the Policy that handles it. Policies act
         // ONLY through the Actuator — the single write authority toward an agent (nudge = a user-turn
-        // on the agent's session = the Mediator stdin). Policies arrive in CYP-63.
+        // on the agent's session = the Mediator stdin).
         val actuator = MediatorActuator(sessions, signalSink, MVP_TEAM_ID)
-        Warden(eventSink, wardenPolicies, actuator, scope).start()
+        // CYP-63 stall policy: opens one incident/agent on stall.suspected, nudges with growing backoff,
+        // escalates after N, recovers on activity. The runner feeds it activity + the backoff clock.
+        val stallPolicy = StallPolicy(clock = System::currentTimeMillis, actuator = actuator, signals = signalSink)
+        Warden(eventSink, wardenPolicies + stallPolicy, actuator, scope).start()
+        StallPolicyRunner(stallPolicy, eventSink, scope).start()
 
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()

@@ -21,8 +21,12 @@ interface Actuator {
     /** Wake a stuck agent: a `"keep going"` turn on the Mediator stdin (no new channel). */
     suspend fun nudge(agentId: String, text: String)
 
-    /** Hand a persistent problem to the PO (after a policy's attempts are exhausted). */
-    suspend fun escalateToPO(agentId: String, reason: String)
+    /**
+     * Hand a persistent problem to the PO (after a policy's attempts are exhausted). The **policy**
+     * supplies [escalationType] (e.g. `"stall.escalated"`) so the Actuator stays the single write-hand
+     * for *all* future watchers (a budget watcher escalates as `"budget.escalated"` with no change here).
+     */
+    suspend fun escalateToPO(agentId: String, reason: String, escalationType: String)
 }
 
 /**
@@ -53,10 +57,13 @@ class MediatorActuator(
         signals.emit(Signal(type = NUDGE_SENT, agentId = agentId, teamId = teamId))
     }
 
-    override suspend fun escalateToPO(agentId: String, reason: String) {
+    override suspend fun escalateToPO(agentId: String, reason: String, escalationType: String) {
+        // Emit the policy-chosen escalation event (error severity via the suffix rule, e.g.
+        // `stall.escalated`) onto the same bus the PO's Live-Tail reads (07 §4). The Actuator stays
+        // generic: it does not know *which* watcher escalated.
         signals.emit(
             Signal(
-                type = PO_ESCALATED,
+                type = escalationType,
                 agentId = agentId,
                 teamId = teamId,
                 evidence = buildJsonObject { put("reason", reason) },
@@ -66,6 +73,5 @@ class MediatorActuator(
 
     private companion object {
         const val NUDGE_SENT = "nudge.sent"
-        const val PO_ESCALATED = "po.escalated"
     }
 }
