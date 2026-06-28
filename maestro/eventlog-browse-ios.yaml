@@ -1,0 +1,81 @@
+# CYP-69 (CYP-41 parity) — Event-Log Browse iOS flow (Maestro, native CMP).
+#
+# iOS variant of `eventlog-browse-android.yaml`. Verifies the Browse master-detail + correlation
+# drilldown + interactive filter against the canonical testTags (docs/design/event-log-tags.md) —
+# NO text/localizable selectors (Test-Contract §4).
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
+#
+# ## iOS-specific notes — BLOCKED ON iOS-DEMO-TARGET (CYP-69 finding)
+#
+# 1. **appId** — single iOS bundle `com.tneff.cyppieagents.KMPCyppieAgents`. **No iOS demo target
+#    exists.** Android uses `:app:androidAppDemo` (`com.tneff.cyppieagents.demo`) whose `DemoActivity`
+#    mounts `EventBrowsePanel` FULL-SCREEN fed by `StubEventsApi` — hermetic, no server, the only
+#    reason the Browse + drilldown + filter paths are device-verifiable. iOS has only the prod
+#    `MainViewController()` → `App()` path, where Event-Log is operator-gated and OMITTED in the
+#    default non-operator context (see `eventlog-presence-ios.yaml`).
+#
+#    **CYP-69 finding (separately filed):** an `iosAppDemo` equivalent (or an in-app demo entry
+#    behind a test flag in iosApp) is required for this flow to run on iOS. Until that lands this
+#    flow stays a draft — even after CYP-67.
+#
+# 2. **Selectors assume the panel is mounted full-screen** — same testTags as Android. The Android
+#    flow first taps `demo.tab.browse`; this iOS draft omits that tap because there is no iOS demo
+#    tab. A future iOS demo entry must mount `EventBrowsePanel` full-screen with `StubEventsApi`.
+#
+# 3. **Pre-CYP-67 caveat** — testTags are not yet accessibilityIdentifiers on iOS; even with a demo
+#    target this flow only resolves after CYP-67 merges.
+#
+# PREREQUISITES (tester runtime — incomplete until the demo-target finding is closed):
+#   * **(blocking)** iOS demo entry mounting `EventBrowsePanel` full-screen with `StubEventsApi`.
+#   * Built + installed on an iPhone Simulator (Xcode 16.4, iOS 26.6).
+#   * iosMain `enableTestTagsAsResourceId()` actual wired (CYP-67).
+appId: com.tneff.cyppieagents.KMPCyppieAgents
+name: "CYP-69/CYP-41 Event-Log Browse (iOS) — table -> detail -> drilldown -> filter"
+tags:
+  - gating
+  - event-log
+  - ios
+---
+- launchApp
+
+# Surface present: the master table container is always composed.
+- assertVisible:
+    id: '^eventBrowse\.table$'
+    label: "Browse master table addressable (operator-gated surface present)"
+
+# Select the first event row -> detail pane with the two explicit drilldown actions.
+- scrollUntilVisible:
+    element:
+      id: '^eventBrowse\.row\.0$'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: '^eventBrowse\.row\.0$'
+- assertVisible:
+    id: '^eventBrowse\.detail$'
+    label: "Detail pane opens on selection"
+- assertVisible:
+    id: '^eventBrowse\.detail\.showRun$'
+- assertVisible:
+    id: '^eventBrowse\.detail\.showSession$'
+
+# Correlation drilldown — "show the whole run" -> the seq-ordered timeline (correlationId axis).
+- tapOn:
+    id: '^eventBrowse\.detail\.showRun$'
+- assertVisible:
+    id: '^eventBrowse\.drilldown\.header$'
+    label: "Drilldown timeline opens, header names the axis/scope"
+
+# Clear the drilldown (header tap) -> back to the table.
+- tapOn:
+    id: '^eventBrowse\.drilldown\.header$'
+- assertVisible:
+    id: '^eventBrowse\.table$'
+
+# Interactive filter — tap the severity chip -> server-side filter -> honest "subset" cue (never silent).
+- tapOn:
+    id: '^eventBrowse\.filter\.severity$'
+- assertVisible:
+    id: '^eventBrowse\.filterActive$'
+    label: "Filtering announces an active subset"

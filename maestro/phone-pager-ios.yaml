@@ -1,0 +1,83 @@
+# CYP-69 (CYP-50/57 parity) — Phone-Pager iOS flow (Maestro, native CMP).
+#
+# iOS variant of `phone-pager-android.yaml`. Device-verify for the smartphone single-window pager on
+# the native iOS path. On an iPhone Simulator the WindowHost measures Compact width → it renders the
+# snap HorizontalPager instead of the desktop canvas. Exercises the canonical testTags
+# (docs/design/phone-pager-tags.md, area `phonePager`) — NO text/localizable selectors
+# (Test-Contract §4):
+#   * the pager appears and the canvas does NOT (mode separation: window.host XOR phonePager.pager),
+#   * the multi-page indicator is present,
+#   * a tappable dot jumps to its page and the active-state marker (shape/size, not colour) follows,
+#   * the next-affordance advances the page and the active marker moves with it.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED so YAML keeps
+# the backslashes literal (Test-Contract §4).
+#
+# ## iOS-specific notes
+#
+# 1. **appId** — single iOS bundle `com.tneff.cyppieagents.KMPCyppieAgents` (from
+#    `app/iosApp/Configuration/Config.xcconfig`). **No iOS demo target** (iosApp launches
+#    `MainViewController()` → shared `App()` directly). The Android variant taps `demo.tab.pager`
+#    to mount the real WindowHost full-screen with 4 stub windows; iOS has no such tab and uses
+#    whatever the prod shell composes.
+#
+# 2. **Page-order (confirmed by PO 2026-06-28 via 26.6-iOS-Dev's S10-smoke).** The prod-shell
+#    default in non-operator context renders 5 pages in this STABLE order:
+#      po → frontend → backend → comm (Kommunikation) → acl (Zugriffsrechte)
+#    This matches `AgentShell.kt` (`po`, `frontend`, `backend`, `COMM_WINDOW_ID = "comm"`,
+#    `ACL_WINDOW_ID = "acl"`; `eventlog`/`eventtail` added only with an operator token). The
+#    Android-demo seeds 4 stubs (po/frontend/backend/comm); iOS prod always carries the 5th `acl`
+#    page on top. The first dot is `phonePager.indicator.dot.po`, the next (`phonePager.next`)
+#    moves to `phonePager.indicator.dot.frontend`. **CYP-70 (filed)** will add an iOS-demo entry
+#    so flows can run hermetically; this flow stays prod-shell-driven and is environment-stable
+#    against the confirmed default order.
+#
+# 3. **Pre-CYP-67 caveat** — same as the other iOS flows: testTags are not yet
+#    accessibilityIdentifiers, so this flow will only resolve `id:` selectors after CYP-67 merges.
+#
+# PREREQUISITES (tester runtime):
+#   * Built + installed prod iosApp (Xcode 16.4 — this is the 16.4-pair's floor; 26.6 cross-verifies
+#     elsewhere, PO 2026-06-28) on an iPhone Simulator (Compact).
+#   * Default shell composes the 5-page non-operator order (po/frontend/backend/comm/acl) per
+#     `AgentShell.kt`.
+#   * After CYP-67 merges: iosMain `enableTestTagsAsResourceId()` actual is wired.
+appId: com.tneff.cyppieagents.KMPCyppieAgents
+name: "CYP-69/CYP-50 Phone-Pager (iOS) — Compact -> pager (not canvas) -> dot nav -> next advances"
+tags:
+  - gating
+  - pager
+  - ios
+---
+- launchApp
+
+# Compact phone viewport → the pager renders and the canvas does NOT (mode separation is the contract).
+- assertVisible:
+    id: '^phonePager\.pager$'
+    label: "iPhone viewport (Compact) → HorizontalPager present"
+- assertNotVisible:
+    id: '^window\.host$'
+    label: "Canvas host absent in pager mode (window.host XOR phonePager.pager)"
+
+# Multiple pages → the multi-page indicator is present (a lone page would render no chrome).
+- assertVisible:
+    id: '^phonePager\.indicator$'
+    label: "Multi-page indicator present"
+
+# Tap the PO dot → the pager jumps to it and the active-state marker (shape/size, not colour alone)
+# is now on that dot.
+- tapOn:
+    id: '^phonePager\.indicator\.dot\.po$'
+- assertVisible:
+    id: '^phonePager\.page\.po$'
+    label: "Tappable dot navigates to the Product-Owner page"
+- assertVisible:
+    id: '^phonePager\.indicator\.dot\.po\.active$'
+    label: "Active-state marker follows to the selected page (a11y, not colour-only)"
+
+# The next affordance advances one page in the STABLE order (po → frontend) and the active marker
+# moves with it.
+- tapOn:
+    id: '^phonePager\.next$'
+- assertVisible:
+    id: '^phonePager\.indicator\.dot\.frontend\.active$'
+    label: "Next advances to the frontend page; active marker moves with it"

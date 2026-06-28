@@ -1,0 +1,74 @@
+# CYP-69 (CYP-41/42 parity) — Event-Log operator-gated PRESENCE/OMISSION iOS flow (Maestro, native CMP).
+#
+# iOS variant of `eventlog-presence-android.yaml`. Security surface (EVENT-LOG-UI §5.6 / §7): without an
+# operator token the two Event-Log surfaces are NOT offered (omission — not a dead "no access" window).
+# Same property as Android prod, addressed via the canonical testTags (docs/design/event-log-tags.md),
+# NO text/localizable selectors (Test-Contract §4).
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED so YAML keeps
+# the backslashes literal (Test-Contract §4).
+#
+# ## iOS-specific notes
+#
+# 1. **appId** — single iOS bundle (no demo target on iOS, unlike Android `:app:androidAppDemo`):
+#    `com.tneff.cyppieagents.KMPCyppieAgents` (from `app/iosApp/Configuration/Config.xcconfig`).
+#    The iosApp launches `MainViewController()` → shared `App()` — the same shared composable as
+#    Android prod, in a NON-operator context (defaultShellConfig() → operatorToken == null).
+#
+# 2. **Compact width on iPhone** — iPhone simulators (~390pt logical) report a Compact size class,
+#    so the shared `WindowHost` renders the Phone-Pager (S10/CYP-50), not the multi-window canvas:
+#    `phonePager.pager` is visible; `window.host` is NOT. The Event-Log omission therefore must be
+#    proven in the pager surface (pager pages exist for the non-gated windows but NOT for the
+#    operator-only Event-Log).
+#    The Android variant asserts `window.host + window.comm + !window.eventlog/eventtail`; the iOS
+#    variant adapts that to the pager equivalent.
+#
+#    **Confirmed default page order in non-operator context (`AgentShell.kt`, PO 2026-06-28):**
+#      po → frontend → backend → comm (Kommunikation) → acl (Zugriffsrechte)
+#    (5 pages). With an operator token the shell additionally exposes `eventlog` (Event-Log) and
+#    `eventtail` (Live-Tail) — those are the two pages this flow proves ABSENT.
+#
+# 3. **Pre-CYP-67 caveat** — in `iosMain`, `enableTestTagsAsResourceId()` is currently a no-op, so
+#    testTags are NOT yet surfaced as `accessibilityIdentifier` and Maestro `id:` lookups will fail
+#    until CYP-67 lands. This flow is staged READY for that moment; it is not expected to pass before.
+#
+# PREREQUISITES (tester runtime):
+#   * Built + installed prod iosApp (Xcode 16.4, target iOS 26.6) on a Simulator with iPhone form
+#     factor → Compact width → pager mode.
+#   * After CYP-67 merges: testTags exposed as accessibilityIdentifier via the iosMain
+#     `enableTestTagsAsResourceId()` actual.
+appId: com.tneff.cyppieagents.KMPCyppieAgents
+name: "CYP-69/CYP-41-42 Event-Log presence (iOS) — surfaces omitted without operator token"
+tags:
+  - security
+  - event-log
+  - ios
+---
+- launchApp
+
+# The shell is up (the Phone-Pager renders on Compact width — iPhone defaults here; the canvas host
+# is INTENTIONALLY absent on phone form factor, XOR with the pager per S10/CYP-50).
+- assertVisible:
+    id: '^phonePager\.pager$'
+    label: "Phone-Pager rendered on iPhone Compact width (shell is functional)"
+- assertNotVisible:
+    id: '^window\.host$'
+    label: "Canvas host absent on phone viewport (window.host XOR phonePager.pager)"
+
+# Non-operator surfaces that DO exist prove we are looking at a working shell, not an empty one:
+# `comm` (Kommunikation) AND `acl` (Zugriffsrechte) are both present in the default non-operator
+# pager — they are NOT operator-gated (ACL-MATRIX.md §4 deliberately is not an omission).
+- assertVisible:
+    id: '^phonePager\.indicator\.dot\.comm$'
+    label: "Comm page present in non-operator pager (Kommunikation, non-gated)"
+- assertVisible:
+    id: '^phonePager\.indicator\.dot\.acl$'
+    label: "ACL page present in non-operator pager (Zugriffsrechte, non-gated by design)"
+
+# ... but NEITHER Event-Log pager page exists — operator-gated omission, asserted via absence.
+- assertNotVisible:
+    id: '^phonePager\.indicator\.dot\.eventlog$'
+    label: "Event-Log Browse page omitted from pager without operator token"
+- assertNotVisible:
+    id: '^phonePager\.indicator\.dot\.eventtail$'
+    label: "Event-Log Live-Tail page omitted from pager without operator token"
