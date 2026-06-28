@@ -254,21 +254,27 @@ object WindowReducer {
  */
 class WindowManagerState(
     initial: List<WindowState>,
-    /** Ids of content windows (Agent/Comm) that get the wider tiled min-width (CYP-26 §2.2). */
-    private val contentWindowIds: Set<String> = emptySet(),
+    contentWindowIds: Set<String> = emptySet(),
 ) {
+
+    /**
+     * Ids of content windows (Agent/Comm) that get the wider tiled min-width (CYP-26 §2.2). A `var`
+     * because the dynamic window set (CYP-100/S14) can gain/lose agents at runtime — [resetTo]/[syncWindows]
+     * refresh it so a newly-added agent window still earns the 320 dp content floor.
+     */
+    private var contentWindowIds: Set<String> = contentWindowIds
 
     var windows: List<WindowState> by mutableStateOf(initial)
         private set
 
     /**
-     * Stable page/registration order of window ids, captured once from the initial list and **never**
-     * reordered by focus. The canvas [windows] list encodes z-order (focus moves to the end); the phone
-     * pager (CYP-50/S10) keys its pages off this stable order instead, so giving a window focus never
-     * re-sorts the pages (CYP-54 §2). Membership is fixed at construction (windows aren't added/removed
-     * at runtime), so this stays in lock-step with [windows].
+     * Stable page/registration order of window ids — **never** reordered by focus. The canvas [windows]
+     * list encodes z-order (focus moves to the end); the phone pager (CYP-50/S10) keys its pages off this
+     * stable order instead, so giving a window focus never re-sorts the pages (CYP-54 §2). Membership can
+     * change at runtime via [syncWindows]/[resetTo] (CYP-100), which keep it in lock-step with [windows].
      */
-    val windowOrder: List<String> = initial.map { it.id }
+    var windowOrder: List<String> by mutableStateOf(initial.map { it.id })
+        private set
 
     /**
      * Windows in the stable [windowOrder] (not z-order) — the phone pager's page list. Reads the
@@ -315,6 +321,101 @@ class WindowManagerState(
             contentWindowIds = contentWindowIds,
         )
     }
+
+    /**
+     * Replaces the whole window set and lays it out as a fresh full tile (CYP-100). Used for the **first**
+     * layout once the host is measured — every window is new, so there is nothing to preserve. Membership
+     * and [windowOrder] are set from [desired] (registration order).
+     */
+    fun resetTo(
+        desired: List<Pair<String, String>>,
+        contentWindowIds: Set<String> = this.contentWindowIds,
+        isRtl: Boolean = false,
+    ) {
+        this.contentWindowIds = contentWindowIds
+        windowOrder = desired.map { it.first }
+        windows = if (hostWidth > 0f && hostHeight > 0f) {
+            WindowReducer.tile(desired, hostWidth, hostHeight, isRtl = isRtl, contentWindowIds = contentWindowIds)
+        } else {
+            // Host not measured yet: stack at the band so they are at least valid; resetTo runs again on measure.
+            desired.map { (id, title) -> WindowState(id, title, 0f, HOST_AFFORDANCE_BAND, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT) }
+        }
+    }
+
+    /**
+     * Reconciles the window set to [desired] **preserving existing windows' geometry** (CYP-100): a window
+     * that stays keeps its exact position/size (only its title refreshes); a window that's gone is dropped;
+     * a **new** window is placed in a free slot that doesn't overlap any current window (falling back to a
+     * cascade when the host is full). z-order keeps the kept windows' relative stacking and puts new windows
+     * on top (focused); [windowOrder] follows the registration order. A pure membership-identical call only
+     * refreshes titles — so a host resize never re-tiles (that stays [updateHostSize]'s clamp job).
+     */
+    fun syncWindows(
+        desired: List<Pair<String, String>>,
+        contentWindowIds: Set<String> = this.contentWindowIds,
+        isRtl: Boolean = false,
+    ) {
+        this.contentWindowIds = contentWindowIds
+        val desiredIds = desired.map { it.first }
+        val titles = desired.associate { it.first to it.second }
+        val currentById = windows.associateBy { it.id }
+
+        if (desiredIds.toSet() == currentById.keys) {
+            // Same membership → only titles may have changed; positions are untouched.
+            windows = windows.map { it.copy(title = titles[it.id] ?: it.title) }
+            windowOrder = desiredIds
+            return
+        }
+
+        // Build the synced set: keep existing geometry (refresh title), place each new window free.
+        val placed = mutableListOf<WindowState>()
+        val kept = mutableMapOf<String, WindowState>()
+        for ((id, title) in desired) {
+            val existing = currentById[id]
+            if (existing != null) {
+                kept[id] = existing.copy(title = title)
+            } else {
+                val newWindow = placeNewWindow(placed + kept.values, id, title, isRtl)
+                placed += newWindow
+            }
+        }
+        val byId = kept + placed.associateBy { it.id }
+
+        // z-order: kept windows in their existing relative order, then the new ones on top (focused last).
+        val keptZOrder = windows.mapNotNull { if (it.id in byId && it.id in currentById) it.id else null }
+        val newZOrder = desiredIds.filter { it !in currentById }
+        windows = (keptZOrder + newZOrder).mapNotNull { byId[it] }
+        windowOrder = desiredIds
+    }
+
+    /** First non-overlapping, fully-visible slot below the affordance band for a new window (CYP-100). */
+    private fun placeNewWindow(existing: List<WindowState>, id: String, title: String, isRtl: Boolean): WindowState {
+        val minWidth = if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        val w = if (hostWidth > 0f) minWidth.coerceAtMost(maxOf(minWidth, hostWidth)) else minWidth
+        val h = if (hostHeight > 0f) MIN_WINDOW_HEIGHT.coerceAtMost(maxOf(MIN_WINDOW_HEIGHT, hostHeight - HOST_AFFORDANCE_BAND)) else MIN_WINDOW_HEIGHT
+        if (hostWidth <= 0f || hostHeight <= 0f) return WindowState(id, title, 0f, HOST_AFFORDANCE_BAND, w, h)
+
+        val gap = 16f
+        var y = HOST_AFFORDANCE_BAND + gap
+        while (y + h <= hostHeight) {
+            var x = gap
+            while (x + w <= hostWidth) {
+                val candidate = WindowState(id, title, if (isRtl) hostWidth - x - w else x, y, w, h)
+                if (existing.none { overlaps(it, candidate) }) return candidate
+                x += gap * 2f
+            }
+            y += gap * 2f
+        }
+        // Host full: cascade from the band, clamped fully visible.
+        val offset = existing.size * 24f
+        val cascadeX = (gap + offset % maxOf(1f, hostWidth - w)).coerceIn(0f, maxOf(0f, hostWidth - w))
+        val cascadeY = (HOST_AFFORDANCE_BAND + gap + offset % maxOf(1f, hostHeight - HOST_AFFORDANCE_BAND - h))
+            .coerceIn(HOST_AFFORDANCE_BAND, maxOf(HOST_AFFORDANCE_BAND, hostHeight - h))
+        return WindowState(id, title, cascadeX, cascadeY, w, h)
+    }
+
+    private fun overlaps(a: WindowState, b: WindowState): Boolean =
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
     fun focus(id: String) {
         windows = WindowReducer.bringToFront(windows, id)

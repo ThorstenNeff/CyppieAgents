@@ -59,7 +59,6 @@ import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.settings.ConfigHttpRepository
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
-import com.tneff.cyppieagents.window.WindowReducer
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -298,26 +297,25 @@ fun AgentShell(
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
         val hostHeight = maxHeight.value
-        // Re-create (re-tile) only when the SET of windows changes (an agent added/removed) — keyed on the
-        // ordered id list. The static set keys identically every recomposition → one instance, positions
-        // persist (no regress); a dynamic add/remove deliberately re-tiles.
+        // CYP-100: ONE stable state instance (no re-create on set change). The FIRST layout once the host
+        // is measured is a full tile (resetTo); every later set change preserves existing windows' positions
+        // and only places the new window in a free slot (syncWindows) — an added agent no longer reshuffles
+        // the desktop. Keyed by the ordered id list so the effect fires on add/remove.
         val windowKey = windows.joinToString(",") { it.first }
-        val state = remember(windowKey) {
-            WindowManagerState(
-                WindowReducer.tile(windows, hostWidth, hostHeight, isRtl = isRtl, contentWindowIds = contentWindowIds),
-                contentWindowIds = contentWindowIds,
-            )
-        }
-        // CYP-26 §2.1: the initial tile may have run before the host was measured (size 0). Re-tile ONCE
-        // on the first real measurement so the default layout is fully visible — never auto-re-tile after.
-        var tiledToHost by remember { mutableStateOf(false) }
-        LaunchedEffect(hostWidth, hostHeight) {
-            if (hostWidth > 0f && hostHeight > 0f && !tiledToHost) {
-                state.fit(isRtl)
-                tiledToHost = true
-            }
-            // Feed the measured host size into the manager so its resize re-clamp (CYP-16 F1/F6) fires.
+        val state = remember { WindowManagerState(emptyList(), contentWindowIds) }
+        var laidOut by remember { mutableStateOf(false) }
+        LaunchedEffect(hostWidth, hostHeight, windowKey) {
+            // Feed the measured host size in first so resetTo/syncWindows tile against the real size, and
+            // the resize re-clamp (CYP-16 F1/F6) fires for existing windows.
             state.updateHostSize(hostWidth, hostHeight)
+            if (hostWidth > 0f && hostHeight > 0f) {
+                if (!laidOut) {
+                    state.resetTo(windows, contentWindowIds, isRtl) // first full layout
+                    laidOut = true
+                } else {
+                    state.syncWindows(windows, contentWindowIds, isRtl) // preserve positions, place new free
+                }
+            }
         }
 
         // CYP-55 B1: keep the comm VM's unread counter in step with focus (canvas: top z-order;
