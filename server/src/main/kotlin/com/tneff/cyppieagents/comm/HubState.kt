@@ -19,13 +19,8 @@ class HubState(
     initialAgents: List<Agent>,
     initialChannels: List<Channel>,
     initialEntries: List<AclEntry>,
-    /**
-     * The single active tenant (S12 / CYP-81), single-sourced from `platform.config.json`
-     * (`projectId`, default [DEFAULT_PROJECT_ID]). Threaded into every [AclMatrix] this state builds
-     * so project scoping is decided in one place, and used by the [Hub] to stamp posted messages.
-     * MVP = 1 project, so it equals [DEFAULT_PROJECT_ID] unless overridden.
-     */
-    val activeProjectId: String = DEFAULT_PROJECT_ID,
+    /** Seed for [activeProjectId] (the body property below); single-sourced from `platform.config.json`. */
+    activeProjectId: String = DEFAULT_PROJECT_ID,
     /**
      * The privileged operator participant id (CYP-18), if the topology has one. Stored so a runtime
      * [addAgent] (CYP-97) puts the operator on the new spoke too — same membership as the boot spokes.
@@ -33,6 +28,19 @@ class HubState(
     private val operatorId: String? = null,
 ) {
     private val lock = Any()
+
+    /**
+     * The single active tenant (S12 / CYP-81), single-sourced from `platform.config.json` (`projectId`,
+     * default [DEFAULT_PROJECT_ID]). Threaded into every [AclMatrix] this state builds so project
+     * scoping is decided in one place, and used by the [Hub] to stamp posted messages.
+     *
+     * **Mutable at runtime via [rescope] (S13 / CYP-102):** a project switch flips this pointer and
+     * rebuilds the matrix, so the comm read-paths (channels/inbox/acl/ws-comm) re-scope to the new
+     * active project WITHOUT a restart. MVP = 1 project, so it stays [DEFAULT_PROJECT_ID] until a switch.
+     */
+    @Volatile
+    var activeProjectId: String = activeProjectId
+        private set
 
     /** The hub's agents. Mutable at runtime via [addAgent]/[removeAgent] (CYP-97). */
     @Volatile
@@ -117,6 +125,22 @@ class HubState(
         channels = channels.filterNot { it.id == spokeId }
         entries = entries.filterNot { it.channelId == spokeId }
         acl = AclMatrix(channels, entries, activeProjectId)
+    }
+
+    /**
+     * Re-scope the hub to a new active project (S13 / CYP-102): flip [activeProjectId] **and rebuild
+     * the [AclMatrix]** so every comm read-path (readableChannels/inbox/canRead/canWrite/visibleMessages)
+     * filters to the new project — the same chokepoint (CYP-81), now following the live active pointer.
+     * Atomic under the lock; the matrix rebuild is what makes the switch take effect, so it must run
+     * together with the pointer flip (a flip without rebuild would leave the OLD project's view live).
+     *
+     * Wired from `POST /api/projects/switch` after `ProjectRegistry.setActive`. Today one HubState holds
+     * the active project's topology, so re-scoping to a project with no live channels yields an empty
+     * view (honest); per-project hub/session re-instancing is S17.
+     */
+    fun rescope(newProjectId: String): Unit = synchronized(lock) {
+        activeProjectId = newProjectId
+        acl = AclMatrix(channels, entries, newProjectId)
     }
 
     /**

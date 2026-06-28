@@ -57,7 +57,9 @@ fun Application.installPlatform(booted: BootedPlatform) {
         reportRoutes(booted.reportStore, booted.tokenRegistry)
         // CYP-91: multi-project lifecycle — all operator-gated/fail-closed; cascade-delete is the
         // most destructive op (no-cross-project, opt-in worktree teardown, branches kept).
-        projectRoutes(booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry)
+        // CYP-102: a switch re-scopes the live comm hub (HubState.rescope) so channels/inbox/acl/ws-comm
+        // follow the active project without a restart.
+        projectRoutes(booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry, booted.state::rescope)
     }
 }
 

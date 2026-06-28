@@ -38,7 +38,17 @@ import io.ktor.server.routing.route
  * `PUT /api/projects/{id}` for a project whose id is literally `active`, leaving it unrenamable.
  * There is no `POST /{id}` route, so `/switch` collides with nothing (even a project id `switch`).
  */
-fun Route.projectRoutes(registry: ProjectRegistry, deleter: ProjectDeleter, tokens: TokenRegistry) {
+fun Route.projectRoutes(
+    registry: ProjectRegistry,
+    deleter: ProjectDeleter,
+    tokens: TokenRegistry,
+    /**
+     * Invoked after a successful active-project switch (S13 / CYP-102) with the new active projectId,
+     * so the live comm hub re-scopes (`HubState.rescope`) to match the flipped pointer — keeping the
+     * registry pointer and the hub's view consistent. Defaults to a no-op for the dev/standalone wiring.
+     */
+    onActiveSwitch: (String) -> Unit = {},
+) {
     route("/api/projects") {
         get {
             call.requireOperator(tokens)
@@ -53,7 +63,9 @@ fun Route.projectRoutes(registry: ProjectRegistry, deleter: ProjectDeleter, toke
         post("/switch") {
             call.requireOperator(tokens)
             val req = call.receive<SwitchActiveRequest>()
-            call.respond(registry.setActive(req.projectId))
+            val view = registry.setActive(req.projectId) // validates (404 if unknown) + flips the pointer
+            onActiveSwitch(req.projectId) // re-scope the live comm hub to the new active project (CYP-102)
+            call.respond(view)
         }
         put("/{id}") {
             call.requireOperator(tokens)
