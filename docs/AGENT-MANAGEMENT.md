@@ -18,6 +18,8 @@
 
 Spezifiziert die **Agenten-Verwaltung** als ein Desktop-Fenster: Liste der Agenten + **Hinzufügen** (CYP-86), **Entfernen** (CYP-87) und **Konfig ändern** (CYP-88). Keine Implementierungsvorgabe — Verhalten, Disclosure-Leitplanken, Tokens/Keys/Tags + der **zu bauende Datenpfad** (greenfield).
 
+> **PO-Abnahme (2026-06-28, verbindlich — auf CYP-76 verankert):** Spec **gemergt** (develop `82b7590`). Entscheide zu §9: (1) Endpunkt-Vertrag **wie spezifiziert bestätigt**; (2) Persona = **`claudeMd`-Feld im Modell**, Connector schreibt CLAUDE.md in den Worktree-cwd (Doc 05 §5); (3) Worktree-Löschung **Default = behalten**, Agent-Branch **nicht** auto-löschen; (4) **Product-Lead deferred als CYP-98** (ACL-Posture braucht Auftraggeber-Sign-off) — **MVP nur PO/WORKER, Product-Lead ist KEINE wählbare Rolle**; (5) **dynamische Fensterliste aus `GET /api/agents` = ja**; (6) **ein** Verwaltungs-Fenster, drei Aktionen **bestätigt**. Die Agent-CRUD-Naht (Backend/Connector) ist als **CYP-97** angelegt (nach S12); UI-Impl bei Dev nach S15.
+
 ---
 
 ## 0. Geltungsbereich & Nicht-Ziele
@@ -58,7 +60,7 @@ Spezifiziert die **Agenten-Verwaltung** als ein Desktop-Fenster: Liste der Agent
 1. **Connector besitzt Spawn + Config + Persona.** Die UI sendet nur die Felder; **Worktree-Anlage, CLAUDE.md-Platzierung (05-Doc §5 Auto-Discovery), Spawn** macht der Connector. Kein UI-seitiges Schreiben von Dateien/Prozessen.
 2. **Persona/CLAUDE.md ist greenfield.** `AgentConfig` hat kein `claudeMd`. Pfad A: Modell bekommt `claudeMd`/`persona`-Feld; Pfad B: die UI liefert Persona-Text, den der Connector in die `CLAUDE.md` des Worktree-cwd schreibt (Auto-Discovery). → **Connector-Seam, PO/Backend entscheidet Pfad.**
 3. **Worktree-Löschung ist greenfield.** Kein `deleteWorktree` heute. Der `worktree=delete`-Pfad braucht `git worktree remove` + Entscheid über den Agent-Branch (`agent/<name>`). **Default = behalten** (sicher); Löschen ist die bewusste, gewarnte Aktion.
-4. **„Product-Lead" ist greenfield.** Der Rollen-Picker zeigt heute **PO/WORKER**. Eine dritte Rolle „Product-Lead" erfordert eine **`:core`-`Role`-Enum-Erweiterung** (Vertrag, beidseitig kompiliert) + ACL-Default-Klärung. → **flag**: bis dahin nur PO/WORKER anbieten.
+4. **„Product-Lead" ist greenfield → PO-Entscheid: deferred als CYP-98.** Der Rollen-Picker führt **nur PO/WORKER**; **Product-Lead ist im MVP KEINE wählbare Rolle**. Eine dritte Rolle erfordert eine **`:core`-`Role`-Enum-Erweiterung** (Vertrag, beidseitig kompiliert) + Auftraggeber-Sign-off zur ACL-Posture — das ist **CYP-98** (S16/CYP-77), nicht hier.
 
 > **Shared-Key-Sync-Hinweis (stehende Disziplin):** neue i18n-Keys als `:app:shared` compose.resources (DE+EN) — mit der Impl timen, sonst bricht ein Shared-Check. **Vertrags-DTOs** (POST/PUT/DELETE-Bodies) gehören in `:core`, beidseitig kompiliert.
 
@@ -147,13 +149,16 @@ Spezifiziert die **Agenten-Verwaltung** als ein Desktop-Fenster: Liste der Agent
 
 ---
 
-## 9. Offene Punkte (PO / Backend / Connector)
+## 9. Entscheide (PO 2026-06-28) & Naht-Tickets
 
-1. **Endpunkt-Vertrag bestätigen** (§2): Pfade/Codes (`agent_exists`, `po_already_exists`, `last_po`, `invalid_agent`); `DELETE …?worktree=keep|delete` als Form ok?
-2. **Persona/CLAUDE.md-Pfad** (§2.2): Feld im Modell (`claudeMd`) **vs.** UI-Text → Connector schreibt `CLAUDE.md`? → bestimmt das Persona-Feld-Verhalten.
-3. **Worktree-Löschung + Branch** (§2.3): `git worktree remove` + Schicksal von `agent/<name>` (löschen/behalten). Default=behalten bestätigen.
-4. **„Product-Lead"** (§2.4): jetzt `:core`-`Role` erweitern (+ACL-Default) oder MVP nur PO/WORKER? (Empfehlung: MVP PO/WORKER, Product-Lead als Folge-Ticket mit ACL-Klärung.)
-5. **Dynamischer Fenster-Aufbau:** Soll die `AgentShell`-windows-Liste künftig aus `GET /api/agents` kommen (statt statisch), damit ein hinzugefügter Agent ein Fenster bekommt? (S14 setzt das voraus; heute statisch.)
-6. **Ein vs. drei Fenster:** ein Verwaltungs-Fenster mit drei Aktionen (so spezifiziert) — bestätigen.
+Alle §9-Punkte sind **entschieden** (siehe PO-Abnahme oben). Keine offenen Asks mehr.
 
+1. ✅ **Endpunkt-Vertrag wie §2 spezifiziert bestätigt** (Pfade/Codes `agent_exists`/`po_already_exists`/`last_po`/`invalid_agent`; `DELETE …?worktree=keep|delete`).
+2. ✅ **Persona = `claudeMd`-Feld im Modell** (`:core`/AgentConfig), Connector schreibt `CLAUDE.md` in den Worktree-cwd (Doc 05 §5). Das Persona-Feld der UI füllt dieses Feld.
+3. ✅ **Worktree-Löschung Default = behalten**; `git worktree remove` nur auf bewusste Wahl; Agent-Branch `agent/<name>` **nicht** auto-löschen.
+4. ✅ **MVP nur PO/WORKER** — **Product-Lead deferred als CYP-98** (S16/CYP-77, ACL-Posture-Sign-off). Picker führt Product-Lead **nicht**.
+5. ✅ **Dynamische Fensterliste aus `GET /api/agents` = ja** (statt statischer `AgentShell`-Liste) — hinzugefügter Agent bekommt ein Fenster.
+6. ✅ **Ein Verwaltungs-Fenster, drei Aktionen** bestätigt.
+
+**Naht:** Agent-CRUD (Backend/Connector) = **CYP-97** (nach S12); UI-Impl bei Dev nach S15.
 **Gate (später):** Reviewer + Desktop-`runComposeUiTest` (Tags in `agent-management-tags.md`). Diese Spec ist **docs-only**; sie definiert den Vertrag **über** dem Connector, baut ihn nicht.
