@@ -55,7 +55,10 @@
 | `agent_edit_effect_hint` | Gespeichert. Wirkt erst beim nächsten Start des Agenten – jetzt neu starten, damit die neue Konfiguration zieht. | Saved. Takes effect on the agent's next start — restart now so the new configuration applies. |
 | `agent_edit_id_locked_hint` | ID und Worktree sind fest und hier nicht änderbar. | ID and worktree are fixed and cannot be changed here. |
 | `agent_edit_po_exists` | Rolle PO ist belegt – nur ein PO pro Projekt. | The PO role is taken — only one PO per project. |
+| `agent_edit_last_po` | Der einzige PO kann die Rolle nicht abgeben – Hub-and-Spoke bräche. | The only PO cannot give up the PO role — hub-and-spoke would break. |
 | `agent_edit_error` | Speichern fehlgeschlagen | Save failed |
+
+> **`agent_edit_po_exists` vs. `agent_edit_last_po` — zwei getrennte Fälle (CYP-101):** `…po_exists` = Rolle PO **bei einem anderen** Agenten belegt (kein zweiter PO). `…last_po` = der **einzige** PO will die PO-Rolle **abgeben** (Guardrail `editWouldDropLastPo`). Der ursprüngliche Impl mappte beide auf `…po_exists` (falsche Botschaft fürs Abgeben) — `agent_edit_last_po` schließt das. Wortlaut parallel zu `agent_remove_last_po`. Design-Wortlaut ist **authoritativ**; Dev verdrahtet darauf.
 
 ## Reuse (bestehende Keys — NICHT neu anlegen)
 | Key | Quelle | Zweck hier |
@@ -68,6 +71,6 @@
 > **Konsolidierungs-Hinweis (PO/Dev):** `agent_save`/`agent_cancel` überlappen semantisch mit `acl_continue`/`acl_cancel` (=„Fortfahren"/„Abbrechen"). Bewusst **nicht** die `acl_`-Keys über die Surface-Grenze wiederverwendet (Cross-Surface-Drift-Risiko, vgl. CYP-51-Befund). Falls das Team einen generischen Shared-Key-Satz (`generic_save/cancel`) will → eigenes Konsolidierungs-Ticket; bis dahin surface-lokal.
 
 ## Self-Validation
-- 42 neue Keys (8 gemeinsam + 14 CYP-86 + 9 CYP-87 + 5 CYP-88 + 6 a11y verteilt), alle DE+EN; alle im Spec + `agent-management-tags.md` referenziert.
+- 43 neue Keys (8 gemeinsam + 14 CYP-86 + 9 CYP-87 + **6 CYP-88** + 6 a11y verteilt), alle DE+EN; alle im Spec + `agent-management-tags.md` referenziert. (`agent_edit_last_po` ergänzt im CYP-101-Fix-Backfill 2026-06-28.)
 - Argument-Keys: `agent_remove_title`/`_worktree_warning`, `agent_edit_title` (`%1$s`=Agentname/Worktree-Pfad). Persona-/Key-Klartext wird nie interpoliert.
 - Reuse-Keys gegen `strings.xml` (`cb2e9b5`) verifiziert: `agent_role_po`, `agent_ctl_restart`, `agent_status_*` vorhanden; `agent_role_worker` ist **neu** (existiert nicht).
