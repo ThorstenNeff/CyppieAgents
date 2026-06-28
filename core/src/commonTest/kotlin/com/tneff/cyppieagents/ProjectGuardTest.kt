@@ -66,4 +66,18 @@ class ProjectGuardTest {
         // The single remaining project is necessarily the active one; last_project is the clearer reason.
         assertEquals("last_project", ProjectGuard.validateDelete(one, "default", activeProjectId = "default"))
     }
+
+    // ---- delete ordering locks (Reviewer merge-gate): not-found must be reported FIRST, before the
+    // active/last guards. Each pins the order so mutation M8 (the not-found check moved last) ships
+    // green otherwise: a non-existent id would then leak active_project_protected / last_project.
+
+    @Test fun delete_unknownThatEqualsActive_projectNotFound() =
+        // id absent but == active: correct order → project_not_found; M8 → would leak active_project_protected.
+        assertEquals("project_not_found", ProjectGuard.validateDelete(projects, "ghost", activeProjectId = "ghost"))
+
+    @Test fun delete_unknownWhenOneProjectRemains_projectNotFound() {
+        // id absent with a single project: correct order → project_not_found; M8 → would leak last_project.
+        val one = listOf(Project("default", "Default"))
+        assertEquals("project_not_found", ProjectGuard.validateDelete(one, "ghost", activeProjectId = "default"))
+    }
 }
