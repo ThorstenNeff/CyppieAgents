@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
@@ -139,6 +140,71 @@ class CommHubAclTest {
             setBody(SendMessageRequest("blocked now"))
         }
         assertEquals(HttpStatusCode.Forbidden, res.status)
+    }
+
+    // ----- CYP-49: server-side PO-lockout guardrail on PUT /api/acl -----
+    // The PO is the hub of hub-and-spoke; the server (source of truth) rejects any operator change
+    // that strips the PO's read OR write on a spoke it hubs, fail-closed (409), persisting nothing.
+    // Mutation-proof note: each test below goes RED if the guard in HubState.setAcl is removed.
+
+    @Test
+    fun poLockoutViaCanWriteIsRejectedAndNotPersisted() = testApplication {
+        application { installComm(config()) }
+        val client = jsonClient()
+        // Operator tries to revoke the PO's WRITE on a channel it is the hub of.
+        val put = client.put("/api/acl") {
+            bearerAuth("tok-op"); contentType(ContentType.Application.Json)
+            setBody(AclEntry("po-backend", "po", canRead = true, canWrite = false))
+        }
+        assertEquals(HttpStatusCode.Conflict, put.status)
+        // Contract with UIUX/Dev: stable machine-readable code, not just a message.
+        val err: ApiErrorBody = put.body()
+        assertEquals("po_lockout_protected", err.error.code)
+        // Fail-closed: nothing persisted → the PO can still post into po-backend.
+        val post = client.post("/api/channels/po-backend/messages") {
+            bearerAuth("tok-po"); contentType(ContentType.Application.Json)
+            setBody(SendMessageRequest("still the hub"))
+        }
+        assertEquals(HttpStatusCode.Created, post.status)
+    }
+
+    @Test
+    fun poLockoutViaCanReadIsRejected() = testApplication {
+        application { installComm(config()) }
+        val client = jsonClient()
+        // Adjacent vector: revoke the PO's READ. A canWrite-only guard would miss this.
+        val put = client.put("/api/acl") {
+            bearerAuth("tok-op"); contentType(ContentType.Application.Json)
+            setBody(AclEntry("po-frontend", "po", canRead = false, canWrite = true))
+        }
+        assertEquals(HttpStatusCode.Conflict, put.status)
+        // Fail-closed: the PO still reads po-frontend.
+        val read = client.get("/api/channels/po-frontend/messages") { bearerAuth("tok-po") }
+        assertEquals(HttpStatusCode.OK, read.status)
+    }
+
+    @Test
+    fun poReaffirmingFullAccessIsAllowed() = testApplication {
+        application { installComm(config()) }
+        val client = jsonClient()
+        // A PO entry that keeps both read+write is not a lockout → allowed.
+        val put = client.put("/api/acl") {
+            bearerAuth("tok-op"); contentType(ContentType.Application.Json)
+            setBody(AclEntry("po-backend", "po", canRead = true, canWrite = true))
+        }
+        assertEquals(HttpStatusCode.OK, put.status)
+    }
+
+    @Test
+    fun workerToggleIsUnaffectedByPoGuard() = testApplication {
+        application { installComm(config()) }
+        val client = jsonClient()
+        // Legitimate worker revoke must still succeed — the guard only protects the PO.
+        val put = client.put("/api/acl") {
+            bearerAuth("tok-op"); contentType(ContentType.Application.Json)
+            setBody(AclEntry("po-backend", "backend", canRead = false, canWrite = false))
+        }
+        assertEquals(HttpStatusCode.OK, put.status)
     }
 
     @Test

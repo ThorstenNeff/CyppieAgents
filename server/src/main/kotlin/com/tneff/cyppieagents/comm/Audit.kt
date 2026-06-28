@@ -23,4 +23,9 @@ class Audit(private val masker: (String) -> String = SecretMasker::mask) {
     fun aclChanged(channelId: String, agentId: String, canRead: Boolean, canWrite: Boolean, by: String) {
         log.info("acl-set channel={} agent={} canRead={} canWrite={} by={}", channelId, agentId, canRead, canWrite, by)
     }
+
+    fun aclDenied(channelId: String, agentId: String, by: String, reason: String) {
+        // Rejected ACL change (e.g. PO-lockout guardrail, CYP-49): security-relevant → WARN.
+        log.warn("acl-denied channel={} agent={} by={} reason={}", channelId, agentId, by, reason)
+    }
 }
