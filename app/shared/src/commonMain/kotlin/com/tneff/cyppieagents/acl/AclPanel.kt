@@ -234,7 +234,9 @@ private fun PresetBar(state: AclUiState, viewModel: AclViewModel) {
         when (state.preset?.phase) {
             PresetPhase.PREVIEW -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(Res.string.acl_preset_preview, state.preset.total.toString()), modifier = Modifier.testTag(AclMatrixTags.PRESET_PREVIEW))
-                TextButton(onClick = viewModel::applyPreset, modifier = Modifier.testTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM)) { Text("✓") }
+                // NOTE: preset apply/cancel have no dedicated tag in acl-matrix-tags.md yet; a preset
+                // device-flow is out of this S7-gate's scope (advisory toggle + 409 path are the criticals).
+                TextButton(onClick = viewModel::applyPreset) { Text("✓") }
                 TextButton(onClick = viewModel::cancelPreset) { Text("✕") }
             }
             PresetPhase.APPLYING -> Text(

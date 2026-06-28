@@ -19,6 +19,12 @@ class StubAclHub(
     private val seedChannels: List<Channel> = DEFAULT_CHANNELS,
     private val seedAgents: List<Agent> = DEFAULT_AGENTS,
     seedEntries: List<AclEntry> = AclReducer.hubAndSpokePreset(DEFAULT_CHANNELS),
+    /**
+     * When true, `setAcl` mirrors the CYP-49 server guard: a PO-decoupling PUT on a HUB spoke is
+     * rejected with `409 po_lockout_protected` and nothing persists — so the Maestro device-verify can
+     * exercise the real `acl_po_protected` revert path. Default off keeps the pure tests deterministic.
+     */
+    private val rejectPoLockout: Boolean = false,
 ) : AclApi, AclLiveSource {
 
     private val entries = seedEntries.toMutableList()
@@ -32,10 +38,21 @@ class StubAclHub(
         entries.filter { (channelId == null || it.channelId == channelId) && (agentId == null || it.agentId == agentId) }
 
     override suspend fun setAcl(entry: AclEntry): AclEntry {
+        if (rejectPoLockout && wouldLockOutPo(entry)) {
+            throw AclHttpException(409, """{"error":{"code":"po_lockout_protected","message":"PO lockout protected"}}""")
+        }
         entries.removeAll { it.channelId == entry.channelId && it.agentId == entry.agentId }
         entries.add(entry)
         broadcasts.tryEmit(AclLiveEvent.EntryChanged(entry)) // hub echo → the cell becomes enforced
         return entry
+    }
+
+    /** Mirrors the server guard (bef2cbb): a PO losing read or write on a HUB-spoke they belong to. */
+    private fun wouldLockOutPo(entry: AclEntry): Boolean {
+        if (entry.canRead && entry.canWrite) return false
+        val agent = seedAgents.firstOrNull { it.id == entry.agentId } ?: return false
+        val channel = seedChannels.firstOrNull { it.id == entry.channelId } ?: return false
+        return agent.role == Role.PO && channel.kind == ChannelKind.HUB && entry.agentId in channel.members
     }
 
     override fun events(): Flow<AclLiveEvent> = broadcasts.onStart { emit(AclLiveEvent.Connected) }

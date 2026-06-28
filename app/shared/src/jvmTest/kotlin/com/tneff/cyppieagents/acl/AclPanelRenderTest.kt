@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -65,5 +66,25 @@ class AclPanelRenderTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
         onNodeWithTag(AclMatrixTags.read("po-frontend", "frontend"), useUnmergedTree = true).assertIsOff()
+    }
+
+    @Test
+    fun poLockoutConfirm_hits409_revertsToProtected_nothingPersisted() = runComposeUiTest {
+        // Stub mirrors the CYP-49 server guard (409 po_lockout_protected).
+        val hub = StubAclHub(rejectPoLockout = true)
+        val vm = AclViewModel(hub, hub)
+        setContent { MaterialTheme { Box(Modifier.width(900.dp)) { AclPanel(vm) } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AclMatrixTags.GRID).fetchSemanticsNodes().isNotEmpty() }
+
+        // Turn the PO's read off, confirm the consequence dialog → the server rejects with 409.
+        onNodeWithTag(AclMatrixTags.read("po-frontend", "po"), useUnmergedTree = true).performClick()
+        waitForIdle()
+        onNodeWithTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM, useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(AclMatrixTags.protected("po-frontend", "po"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        // The cell shows `protected`, and the PO read stayed granted (hub truth — nothing persisted).
+        onNodeWithTag(AclMatrixTags.protected("po-frontend", "po"), useUnmergedTree = true).assertExists()
+        onNodeWithTag(AclMatrixTags.read("po-frontend", "po"), useUnmergedTree = true).assertIsOn()
     }
 }
