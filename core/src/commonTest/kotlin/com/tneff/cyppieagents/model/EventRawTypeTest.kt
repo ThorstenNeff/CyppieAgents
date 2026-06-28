@@ -13,18 +13,21 @@ class EventRawTypeTest {
 
     @Test
     fun unknownType_preservesRawType_andRoundTrips() {
+        // A type this build doesn't model yet (a future watcher's). The 07 stall.* types are now
+        // first-class (CYP-64) — see EventModelTest.stallTypesAreFirstClass — so they no longer
+        // exercise the unknown path; a budget.* type still does.
         val wire = """
             {"id":"x","ts":1,"seq":1,"agentId":"a","teamId":"t",
-             "type":"stall.suspected","severity":"info","detail":{}}
+             "type":"budget.escalated","severity":"info","detail":{}}
         """.trimIndent()
         val decoded = CommJson.decodeFromString(Event.serializer(), wire)
         assertEquals(EventType.UNKNOWN, decoded.type)
-        assertEquals("stall.suspected", decoded.rawType)
+        assertEquals("budget.escalated", decoded.rawType)
 
         // Re-encode → decode: the raw type survives (written back as `type`).
         val round = CommJson.decodeFromString(Event.serializer(), CommJson.encodeToString(Event.serializer(), decoded))
         assertEquals(EventType.UNKNOWN, round.type)
-        assertEquals("stall.suspected", round.rawType)
+        assertEquals("budget.escalated", round.rawType)
     }
 
     @Test

@@ -45,21 +45,46 @@ class EventModelTest {
 
     @Test
     fun eventType_unknownWire_decodesToUnknown_neverThrows() {
-        // A type a newer server (or 07) emits that this build doesn't model.
-        val future = CommJson.decodeFromString(EventType.serializer(), "\"stall.suspected\"")
+        // A type a *future* watcher emits that this build doesn't model yet (e.g. a budget watcher).
+        // (The 07 stall.* types are now first-class — see stallTypesAreFirstClass below.)
+        val future = CommJson.decodeFromString(EventType.serializer(), "\"budget.escalated\"")
         assertEquals(EventType.UNKNOWN, future)
     }
 
     @Test
-    fun event_withUnknownType_decodesTolerantly() {
+    fun event_withUnknownType_decodesTolerantly_andPreservesRawType() {
         val wire = """
             {"id":"x","ts":1,"seq":1,"agentId":"a","teamId":"t",
-             "type":"nudge.sent","severity":"info","detail":{}}
+             "type":"budget.suspected","severity":"info","detail":{}}
         """.trimIndent()
         val e = CommJson.decodeFromString(Event.serializer(), wire)
         assertEquals(EventType.UNKNOWN, e.type)
+        assertEquals("budget.suspected", e.rawType, "unknown wire type preserved in rawType, never flattened")
         assertEquals(Severity.INFO, e.severity)
         assertEquals(JsonObject(emptyMap()), e.detail)
+        // …and the raw string round-trips back out via `type` (UI never shows a bare "unknown").
+        val reEncoded = CommJson.encodeToString(Event.serializer(), e)
+        assertTrue(reEncoded.contains("\"type\":\"budget.suspected\""))
+    }
+
+    @Test
+    fun stallTypesAreFirstClass_decodeToTheirEnum_withNullRawType() {
+        // CYP-64: the 07/S11 supervision vocabulary is now official, not rawType-only.
+        val cases = mapOf(
+            "stall.suspected" to EventType.STALL_SUSPECTED,
+            "nudge.sent" to EventType.NUDGE_SENT,
+            "stall.recovered" to EventType.STALL_RECOVERED,
+            "stall.escalated" to EventType.STALL_ESCALATED,
+        )
+        for ((wire, expected) in cases) {
+            assertEquals(expected, CommJson.decodeFromString(EventType.serializer(), "\"$wire\""))
+            val e = CommJson.decodeFromString(
+                Event.serializer(),
+                """{"id":"x","ts":1,"seq":1,"agentId":"a","teamId":"t","type":"$wire","severity":"info","detail":{}}""",
+            )
+            assertEquals(expected, e.type)
+            assertEquals(null, e.rawType, "$wire is a known type now → no rawType fallback")
+        }
     }
 
     @Test

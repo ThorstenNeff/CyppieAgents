@@ -9,6 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * ST3 (CYP-37) projection contract, driven by the canonical corpus (`/streamjson/corpus.ndjson`).
@@ -60,6 +61,27 @@ class EventProjectorTest {
     @Test
     fun correlationId_isCarried() {
         assertTrue(corpusDrafts().all { it.correlationId == "corr-1" })
+    }
+
+    @Test
+    fun rateLimitProjectsRealCamelCaseSchema_excludesOverageStatusTrap() {
+        // The REAL wire shape (CYP-59 live spike), not the old synthetic snake_case.
+        val info = kotlinx.serialization.json.buildJsonObject {
+            put("status", "blocked")            // the throttle discriminator
+            put("resetsAt", 1782657000L)
+            put("rateLimitType", "five_hour")
+            put("overageStatus", "rejected")    // live "rejected" even when healthy — the trap
+            put("isUsingOverage", false)
+        }
+        val event = com.tneff.cyppieagents.model.RateLimitEvent(rateLimitInfo = info, sessionId = "s")
+        val draft = EventProjector(ContextUsageBander(), teamId = "t").project("backend", "s", "c", event).single()
+
+        assertEquals(EventType.ERROR_RATELIMIT, draft.type)
+        assertEquals("blocked", draft.detail["status"]!!.jsonPrimitive.content)
+        assertTrue("resetsAt" in draft.detail.keys, "real camelCase field resetsAt must be projected")
+        assertTrue("rateLimitType" in draft.detail.keys, "real camelCase field rateLimitType must be projected")
+        assertFalse("overageStatus" in draft.detail.keys, "overageStatus (CYP-59 trap) must never be projected")
+        assertFalse("reset_at" in draft.detail.keys, "synthetic snake_case is not the real schema")
     }
 
     @Test

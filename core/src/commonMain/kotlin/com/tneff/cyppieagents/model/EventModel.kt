@@ -104,6 +104,13 @@ enum class EventType(val wire: String) {
     COMM_SENT("comm.sent"),
     COMM_RECEIVED("comm.received"),
 
+    // Mediator-Aufsicht: Scanner & Warden (07/S11) — the Sense→Decide→Act loop's own events. Now
+    // first-class in the controlled vocabulary (CYP-64); before CYP-64 they rode in via `rawType`.
+    STALL_SUSPECTED("stall.suspected"),
+    NUDGE_SENT("nudge.sent"),
+    STALL_RECOVERED("stall.recovered"),
+    STALL_ESCALATED("stall.escalated"),
+
     /**
      * Telemetry self-report: the bounded queue dropped events under back-pressure (PRD §3.3, PO
      * decision CYP-44). Emitted by the **writer** with a cumulative count so a gap in the log is

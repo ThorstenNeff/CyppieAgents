@@ -67,7 +67,7 @@ class ScannerScaffoldTest {
     private suspend fun awaitSignal(sink: InMemoryEventSink, timeoutMs: Long = 5_000): List<Event> =
         withTimeout(timeoutMs) {
             var seen = snapshot(sink)
-            while (seen.none { it.rawType == "stall.suspected" }) {
+            while (seen.none { (it.rawType ?: it.type.wire) == "stall.suspected" }) {
                 delay(20)
                 seen = snapshot(sink)
             }
@@ -75,7 +75,7 @@ class ScannerScaffoldTest {
         }
 
     @Test
-    fun signalEmittedAsEvent_unknownTypeRoundTripsViaRawType() = runBlocking {
+    fun signalEmittedAsEvent_firstClassStallType() = runBlocking {
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         val sink = InMemoryEventSink(ManualTimeSource())
         val recorder = EventRecorder(sink, scope).also { it.start() }
@@ -89,10 +89,10 @@ class ScannerScaffoldTest {
                     evidence = buildJsonObject { put("status", "blocked") },
                 ),
             )
-            val ev = awaitSignal(sink).single { it.rawType == "stall.suspected" }
-            // Unknown enum, but the real wire type survives via rawType (round-trips as `type`).
-            assertEquals(EventType.UNKNOWN, ev.type)
-            assertEquals("stall.suspected", ev.rawType)
+            val ev = awaitSignal(sink).single { (it.rawType ?: it.type.wire) == "stall.suspected" }
+            // CYP-64: stall.suspected is now a first-class EventType → no rawType fallback needed.
+            assertEquals(EventType.STALL_SUSPECTED, ev.type)
+            assertEquals(null, ev.rawType)
             assertEquals(Severity.WARN, ev.severity) // ".suspected" → warn (07 §4)
             assertEquals("backend", ev.agentId)
             assertEquals("default", ev.teamId)
@@ -115,14 +115,14 @@ class ScannerScaffoldTest {
             // bus) holds — awaiting the actual condition, not a proxy.
             val events = withTimeout(8_000) {
                 var all = snapshot(sink)
-                while (all.none { it.rawType == "stall.suspected" }) {
+                while (all.none { (it.rawType ?: it.type.wire) == "stall.suspected" }) {
                     sink.append(rateLimit("backend", "blocked"))
                     delay(50)
                     all = snapshot(sink)
                 }
                 all
             }
-            val signal = events.first { it.rawType == "stall.suspected" }
+            val signal = events.first { (it.rawType ?: it.type.wire) == "stall.suspected" }
             assertEquals("backend", signal.agentId)
             assertEquals("error.ratelimit", signal.detail["trigger"]?.jsonPrimitive?.content)
         } finally {
@@ -142,7 +142,7 @@ class ScannerScaffoldTest {
             // Drive scan() directly (race-free): a routine "allowed_warning" beat → no finding.
             scanner.scan(sink.append(rateLimit("backend", "allowed_warning")))
             delay(200) // give any (erroneous) emission time to land
-            assertNull(snapshot(sink).firstOrNull { it.rawType == "stall.suspected" }, "routine beat must not signal")
+            assertNull(snapshot(sink).firstOrNull { (it.rawType ?: it.type.wire) == "stall.suspected" }, "routine beat must not signal")
         } finally {
             scope.cancel()
         }
@@ -160,7 +160,7 @@ class ScannerScaffoldTest {
             // good detector's signal would be lost.
             scanner.scan(sink.append(rateLimit("frontend", "rejected")))
             val events = awaitSignal(sink)
-            assertTrue(events.any { it.rawType == "stall.suspected" && it.agentId == "frontend" })
+            assertTrue(events.any { (it.rawType ?: it.type.wire) == "stall.suspected" && it.agentId == "frontend" })
         } finally {
             scope.cancel()
         }

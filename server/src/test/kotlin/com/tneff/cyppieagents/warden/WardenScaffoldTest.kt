@@ -177,7 +177,7 @@ class WardenScaffoldTest {
             val ev = withTimeout(5_000) {
                 var found: Event? = null
                 while (found == null) {
-                    found = sink.query(EventFilter.ALL, Page(limit = 100)).events.firstOrNull { it.rawType == "stall.escalated" }
+                    found = sink.query(EventFilter.ALL, Page(limit = 100)).events.firstOrNull { (it.rawType ?: it.type.wire) == "stall.escalated" }
                     if (found == null) delay(20)
                 }
                 found
