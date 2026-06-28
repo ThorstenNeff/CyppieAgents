@@ -41,10 +41,11 @@ fun Application.installPlatform(booted: BootedPlatform) {
         commRoutes(booted.hub, booted.state, booted.tokenRegistry, booted.lifecycle)
         // Production auth: only the operator token, or an agent watching its own session, is allowed.
         agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
-        // /api/events — operator-only Browse over the Event-Log (CYP-39).
-        eventRoutes(booted.eventSink, booted.tokenRegistry)
-        // /ws/events — operator-only live-tail of the Event-Log (CYP-40), fail-closed.
-        eventSocket(booted.eventSink, booted.tokenRegistry)
+        // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
+        // project (resolved server-side from the registry pointer; a switch re-scopes without restart).
+        eventRoutes(booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId)
+        // /ws/events — operator-only live-tail of the Event-Log (CYP-40), fail-closed; CYP-102 active-scoped.
+        eventSocket(booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId)
         // CYP-73: agent lifecycle controls (operator-gated) + content-free status feed (participant-gated).
         lifecycleRoutes(booted.lifecycle, booted.tokenRegistry)
         lifecycleSocket(booted.lifecycle, booted.tokenRegistry)

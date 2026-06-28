@@ -29,7 +29,9 @@ import kotlinx.coroutines.launch
  * The Event-Log is team-wide, so the operator sees everything — there is no per-agent ACL here (unlike
  * `/ws/comm`); [SubscribeEvents] only narrows the operator's own view.
  */
-fun Route.eventSocket(sink: EventSink, registry: TokenRegistry) {
+// [activeProjectId] defaults to unscoped for legacy single-store WS tests; production (installPlatform)
+// always passes the registry active-pointer resolver (CYP-102).
+fun Route.eventSocket(sink: EventSink, registry: TokenRegistry, activeProjectId: () -> String? = { null }) {
     webSocket("/ws/events") {
         val token = call.bearerToken() ?: call.request.queryParameters["token"]
         if (token == null) {
@@ -39,14 +41,21 @@ fun Route.eventSocket(sink: EventSink, registry: TokenRegistry) {
             return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "operator token required"))
         }
 
-        // Authorized operator. Subscribe to everything; narrow in-process when the client asks.
-        var filter = EventFilter.ALL
+        // S13 / CYP-102: resolve the active project server-side at connect time and PIN it as the base
+        // scope. The client's SubscribeEvents may narrow other axes but never the project (re-applied
+        // below), so a live-tail can't reach another project's events. A switch re-scopes on reconnect
+        // (the UI re-subscribes on project switch — per-stream live re-scope is S17 with hub-instancing).
+        val project = activeProjectId()
+        val baseScope = EventFilter(projectId = project)
+
+        // Authorized operator. Subscribe within the project scope; narrow in-process when the client asks.
+        var filter = baseScope
 
         suspend fun emit(event: EventsWsServerEvent) =
             send(Frame.Text(CommJson.encodeToString(EventsWsServerEvent.serializer(), event)))
 
         val pump = launch {
-            sink.subscribe(EventFilter.ALL).collect { event ->
+            sink.subscribe(baseScope).collect { event ->
                 if (filter.matches(event)) emit(EventPushed(event))
             }
         }
@@ -54,7 +63,8 @@ fun Route.eventSocket(sink: EventSink, registry: TokenRegistry) {
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val msg = runCatching { CommJson.decodeFromString<EventsWsClientEvent>(frame.readText()) }.getOrNull()
-                    if (msg is SubscribeEvents) filter = msg.toEventFilter()
+                    // Re-pin the project scope so a client narrow can't widen past the active project.
+                    if (msg is SubscribeEvents) filter = msg.toEventFilter().copy(projectId = project)
                 }
             }
         } finally {

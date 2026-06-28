@@ -114,6 +114,8 @@ class SqliteEventSink(
             filter.until?.let { v -> wheres += "ts < ?"; binds += { ps, i -> ps.setLong(i, v) } }
             filter.correlationId?.let { v -> wheres += "correlation_id = ?"; binds += { ps, i -> ps.setString(i, v) } }
             filter.sessionId?.let { v -> wheres += "session_id = ?"; binds += { ps, i -> ps.setString(i, v) } }
+            // S13 / CYP-102: active-project scope. Physical column is `team_id` (stores projectId, CYP-83).
+            filter.projectId?.let { v -> wheres += "team_id = ?"; binds += { ps, i -> ps.setString(i, v) } }
 
             val where = if (wheres.isEmpty()) "" else "WHERE " + wheres.joinToString(" AND ")
             val sql = "SELECT $COLUMNS FROM events $where ORDER BY seq ASC LIMIT ?"
