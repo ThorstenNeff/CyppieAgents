@@ -52,6 +52,8 @@ fun Application.installPlatform(booted: BootedPlatform) {
         configRoutes(booted.projectConfig, booted.tokenRegistry, booted.activeProjectId)
         // CYP-97: agent CRUD — detail GET participant, POST/PUT/DELETE operator (fail-closed).
         agentMgmtRoutes(booted.agentManagement, booted.tokenRegistry)
+        // CYP-89: Product-Lead reports — all three operator-gated/fail-closed, content-free items.
+        reportRoutes(booted.reportStore, booted.tokenRegistry)
     }
 }
 

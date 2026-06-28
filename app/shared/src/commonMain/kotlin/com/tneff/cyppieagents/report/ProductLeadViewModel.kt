@@ -1,4 +1,7 @@
 package com.tneff.cyppieagents.report
+import com.tneff.cyppieagents.model.ReportType
+import com.tneff.cyppieagents.model.ReportSnapshot
+import com.tneff.cyppieagents.model.ReportMeta
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

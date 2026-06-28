@@ -55,6 +55,8 @@ class BootedPlatform(
     val activeProjectId: String,
     /** Runtime agent CRUD (S14 / CYP-97): POST/PUT/DELETE `/api/agents` + the edit-prefill detail. */
     val agentManagement: AgentManagement,
+    /** Product-Lead report snapshots (S16 / CYP-89), served operator-gated by `/api/reports`. */
+    val reportStore: com.tneff.cyppieagents.report.ReportStore,
 )
 
 /**
@@ -201,9 +203,16 @@ class BootOrchestrator(
             }
         }
 
+        // S16 / CYP-89: Product-Lead reports fold READ sources (events/agents/channels/inbox) into
+        // content-free, immutable snapshots — operator-gated at /api/reports.
+        val reportStore = com.tneff.cyppieagents.report.ReportStore(
+            generator = com.tneff.cyppieagents.report.ReportGenerator(eventSink, state, hub),
+            projectId = config.projectId,
+        )
+
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
-            projectConfig, config.projectId, agentManagement,
+            projectConfig, config.projectId, agentManagement, reportStore,
         )
     }
 }
