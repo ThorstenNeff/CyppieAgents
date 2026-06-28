@@ -162,4 +162,32 @@ class AgentManagementViewModelTest {
         vm.openEdit(vm.state.value.agents.first { it.id == "fe" })
         assertNull(vm.state.value.editTarget) // no-op
     }
+
+    // --- CYP-101 ---
+
+    @Test
+    fun openEdit_prefillsPersonaAndLaunch_fromDetail() {
+        val vm = vm(stub(agent("po", Role.PO)))
+        // Add a worker with a persona + launch, then open its edit dialog.
+        vm.openAdd(); vm.setAddId("fe"); vm.setAddName("Frontend"); vm.setAddRole(Role.WORKER)
+        vm.setAddPersona("be a careful frontend dev"); vm.setAddLaunch("claude --foo")
+        vm.confirmAdd()
+        vm.openEdit(vm.state.value.agents.first { it.id == "fe" })
+        // Prefilled from GET /api/agents/{id} (the list Agent doesn't carry these).
+        assertEquals("be a careful frontend dev", vm.state.value.editForm.persona)
+        assertEquals("claude --foo", vm.state.value.editForm.launch)
+    }
+
+    @Test
+    fun edit_blankPersona_preservesStoredValue_noBlankClear() {
+        val vm = vm(stub(agent("po", Role.PO)))
+        vm.openAdd(); vm.setAddId("fe"); vm.setAddName("FE"); vm.setAddRole(Role.WORKER)
+        vm.setAddPersona("original persona"); vm.confirmAdd()
+        vm.openEdit(vm.state.value.agents.first { it.id == "fe" })
+        vm.setEditPersona("") // user clears the field
+        vm.confirmEdit()
+        // Re-open: the stored persona is PRESERVED (blank → null → server keeps it), not cleared (CYP-101).
+        vm.openEdit(vm.state.value.agents.first { it.id == "fe" })
+        assertEquals("original persona", vm.state.value.editForm.persona)
+    }
 }

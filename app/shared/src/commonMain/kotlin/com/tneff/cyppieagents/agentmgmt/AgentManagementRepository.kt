@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.agentmgmt
 
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.AgentDetail
 import com.tneff.cyppieagents.model.AgentEdit
 import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.Role
@@ -20,6 +21,12 @@ import com.tneff.cyppieagents.model.WorktreeFate
 interface AgentManagementRepository {
     /** Current agents (`GET /api/agents`) — also drives the dynamic window list. */
     suspend fun list(): List<Agent>
+
+    /**
+     * Edit-prefill detail (`GET /api/agents/{id}`, CYP-101): the real `launch` + `persona` so the edit
+     * dialog prefills the actual config (the list [Agent] stays lightweight). Throws on `agent_not_found`.
+     */
+    suspend fun detail(id: String): AgentDetail
 
     /** Operator-only: register a new agent (not spawned). Throws [AgentMgmtException] on the §2 codes. */
     suspend fun add(spec: NewAgentSpec): Agent
