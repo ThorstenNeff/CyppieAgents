@@ -42,9 +42,13 @@ class EventSinkDeleteByProjectTest {
 
     private suspend fun assertBlankFailClosed(sink: EventSink) {
         seedAB(sink, aCount = 4, bCount = 2)
+        // A stray event WITH a blank projectId (must not exist in prod, but defense-in-depth). It gives
+        // the blank guard teeth: without the `isBlank() → return 0` short-circuit, a blank-key delete
+        // would run `team_id = ''` and sweep exactly THIS event → the assert below reddens.
+        sink.append(draft(team = ""))
         val removed = sink.deleteByProject("")
-        assertEquals(0, removed, "fail-closed: a blank projectId deletes nothing")
-        assertEquals(6, sink.query(EventFilter.ALL, Page(limit = 10_000)).events.size, "no event wiped on blank key")
+        assertEquals(0, removed, "fail-closed: a blank projectId deletes nothing — not even blank-projectId events")
+        assertEquals(7, sink.query(EventFilter.ALL, Page(limit = 10_000)).events.size, "no event wiped on blank key")
     }
 
     @Test

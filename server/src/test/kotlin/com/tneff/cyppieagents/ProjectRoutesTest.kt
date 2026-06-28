@@ -170,11 +170,11 @@ class ProjectRoutesTest {
         assertEquals("project_not_found", resp.body<ApiErrorBody>().error.code)
     }
 
-    // ---- switch active (pointer only) ----
+    // ---- switch active (pointer only; POST /switch — never shadows rename) ----
 
-    @Test fun putActive_operator_flipsPointer() = testApplication {
+    @Test fun switch_operator_flipsPointer() = testApplication {
         val (r, d) = fixture(); app(r, d)
-        val resp = jsonClient().put("/api/projects/active") {
+        val resp = jsonClient().post("/api/projects/switch") {
             bearerAuth("tok-op"); contentType(ContentType.Application.Json); setBody(SwitchActiveRequest("beta"))
         }
         assertEquals(HttpStatusCode.OK, resp.status)
@@ -182,21 +182,34 @@ class ProjectRoutesTest {
         assertEquals("beta", r.activeProjectId())
     }
 
-    @Test fun putActive_noToken_401_pointerUnchanged() = testApplication {
+    @Test fun switch_noToken_401_pointerUnchanged() = testApplication {
         val (r, d) = fixture(); app(r, d)
-        val resp = jsonClient().put("/api/projects/active") {
+        val resp = jsonClient().post("/api/projects/switch") {
             contentType(ContentType.Application.Json); setBody(SwitchActiveRequest("beta"))
         }
         assertEquals(HttpStatusCode.Unauthorized, resp.status)
         assertEquals("default", r.activeProjectId(), "fail-closed: pointer not flipped without auth")
     }
 
-    @Test fun putActive_unknown_404() = testApplication {
+    @Test fun switch_unknown_404() = testApplication {
         val (r, d) = fixture(); app(r, d)
-        val resp = jsonClient().put("/api/projects/active") {
+        val resp = jsonClient().post("/api/projects/switch") {
             bearerAuth("tok-op"); contentType(ContentType.Application.Json); setBody(SwitchActiveRequest("ghost"))
         }
         assertEquals(HttpStatusCode.NotFound, resp.status)
+    }
+
+    @Test fun renameProjectNamedActive_reachesRenameNotSwitch() = testApplication {
+        // N2 (route-shadowing edge): a project whose id is literally `active` must be renamable. Since
+        // switch is POST /switch (not PUT /active), PUT /api/projects/active hits the rename route.
+        val (r, d) = fixture(); app(r, d)
+        r.create(CreateProjectRequest("active", "Active")) // a real project id == the old switch segment
+        val resp = jsonClient().put("/api/projects/active") {
+            bearerAuth("tok-op"); contentType(ContentType.Application.Json); setBody(RenameProjectRequest("Renamed"))
+        }
+        assertEquals(HttpStatusCode.OK, resp.status)
+        assertEquals("Renamed", resp.body<Project>().name, "PUT /api/projects/active renames the project, not switches")
+        assertEquals("default", r.activeProjectId(), "rename must not have flipped the active pointer")
     }
 
     // ---- delete (fail-closed + safety codes + opt-in worktrees) ----

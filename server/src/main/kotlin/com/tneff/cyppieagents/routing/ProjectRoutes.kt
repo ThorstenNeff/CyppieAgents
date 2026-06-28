@@ -28,11 +28,15 @@ import io.ktor.server.routing.route
  * Routes:
  * - `GET    /api/projects`         → [com.tneff.cyppieagents.model.ProjectsView] (registry + active pointer)
  * - `POST   /api/projects`         → 201 [com.tneff.cyppieagents.model.Project] · 400 invalid_project_id · 409 project_exists
- * - `PUT    /api/projects/active`  → ProjectsView (flip active pointer; live re-instancing is deferred) · 404 project_not_found
+ * - `POST   /api/projects/switch`  → ProjectsView (flip active pointer; live re-instancing is deferred) · 404 project_not_found
  * - `PUT    /api/projects/{id}`    → Project (rename) · 400 invalid_project_id · 404 project_not_found
  * - `DELETE /api/projects/{id}?deleteWorktrees=` → ProjectDeleteReceipt · 404 project_not_found ·
  *   409 last_project / active_project_protected. `deleteWorktrees` defaults FALSE (worktree kept;
  *   config + events always cascade; branches always kept — S13-design §4).
+ *
+ * NB: switch is `POST /api/projects/switch`, NOT `PUT /api/projects/active` — the latter would shadow
+ * `PUT /api/projects/{id}` for a project whose id is literally `active`, leaving it unrenamable.
+ * There is no `POST /{id}` route, so `/switch` collides with nothing (even a project id `switch`).
  */
 fun Route.projectRoutes(registry: ProjectRegistry, deleter: ProjectDeleter, tokens: TokenRegistry) {
     route("/api/projects") {
@@ -45,8 +49,8 @@ fun Route.projectRoutes(registry: ProjectRegistry, deleter: ProjectDeleter, toke
             val req = call.receive<CreateProjectRequest>()
             call.respond(HttpStatusCode.Created, registry.create(req))
         }
-        // Constant segment beats the `/{id}` parameter route, so `active` is never captured as an id.
-        put("/active") {
+        // POST (not PUT /{id}) so the switch action can never shadow a rename of a project named `active`.
+        post("/switch") {
             call.requireOperator(tokens)
             val req = call.receive<SwitchActiveRequest>()
             call.respond(registry.setActive(req.projectId))
