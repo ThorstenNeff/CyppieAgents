@@ -87,7 +87,7 @@ Nachrichtenzeile:
 | **Leerer Kanal** | Empty-State („Noch keine Nachrichten") | — |
 | **Keine lesbaren Kanäle** | Empty-State Kanalliste | nie Kanäle listen, die der Viewer nicht lesen darf |
 | **Live verbunden** | dezenter „Live"-Indikator | nur zeigen, wenn WS wirklich offen |
-| **Reconnecting/Offline** | **ehrlicher Banner**: „Verbindung getrennt – Stand HH:MM" | Timeline **nicht** als live/aktuell ausgeben, solange getrennt |
+| **Reconnecting/Offline** | **ehrlicher Banner**: „Verbindung getrennt – Stand evtl. nicht aktuell" (`comm_status_offline`, no-arg) | Timeline **nicht** als live/aktuell ausgeben, solange getrennt |
 | **Senden pending** | Nachricht als „wird gesendet" markiert | **nicht** als zugestellt zeigen, bis `message.id` bestätigt |
 | **Senden abgelehnt (403/ACL)** | klare Fehlerzeile (`comm_send_denied`) | ehrlich: „keine Schreibrechte in diesem Kanal" |
 

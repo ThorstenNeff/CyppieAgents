@@ -2,7 +2,7 @@
 
 > Owner: UIUX-Designer · Ticket: **CYP-19** · Status: **Entwurf** · Stand: 2026-06-28
 > Begleitend zu `docs/ACL-MATRIX.md`. `compose.resources` → **Underscore-Real-Keys** (gepunktete Form = menschlicher Namespace). Platzhalter positional (`%1$s`).
-> **Reuse (nicht dupliziert):** `comm_back` (Single-Pane Zurück) und `comm_status_offline` (Stale-Banner, nennt Stand-Zeitstempel) aus CYP-17 (`comm-panel-keys.md`); Rollen-/Kanal-Typ-Labels aus CYP-14 (`color-coding-keys.md`); Status-Wortregeln aus CYP-12.
+> **Reuse (nicht dupliziert):** `comm_back` (Single-Pane Zurück) und `comm_status_offline` (Stale-Banner, no-arg „evtl. nicht aktuell") aus CYP-17 (`comm-panel-keys.md`); Rollen-/Kanal-Typ-Labels aus CYP-14 (`color-coding-keys.md`); Status-Wortregeln aus CYP-12.
 
 ## 1. Rahmen / Titel / Sicht
 
