@@ -1,4 +1,7 @@
 package com.tneff.cyppieagents.agentmgmt
+import com.tneff.cyppieagents.model.AgentEdit
+import com.tneff.cyppieagents.model.NewAgentSpec
+import com.tneff.cyppieagents.model.WorktreeFate
 
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState

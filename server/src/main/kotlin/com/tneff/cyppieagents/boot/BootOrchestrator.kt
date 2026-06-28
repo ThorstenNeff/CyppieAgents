@@ -53,6 +53,8 @@ class BootedPlatform(
     val projectConfig: ProjectConfigStore,
     /** The active project (MVP = 1) the config endpoints resolve against. */
     val activeProjectId: String,
+    /** Runtime agent CRUD (S14 / CYP-97): POST/PUT/DELETE `/api/agents` + the edit-prefill detail. */
+    val agentManagement: AgentManagement,
 )
 
 /**
@@ -123,6 +125,10 @@ class BootOrchestrator(
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
 
+        // S14 / CYP-97: the mutable per-agent connector config (launch + persona), seeded from config.
+        // The connector reads personaOf at open() to place CLAUDE.md; AgentManagement mutates it.
+        val agentConfigs = AgentConfigRegistry(config.agents)
+
         val connector = ClaudeCodeConnector(
             spawner = spawner,
             worktreesRoot = worktrees.worktreesRoot,
@@ -135,6 +141,7 @@ class BootOrchestrator(
             scope = scope,
             recorder = eventRecorder,
             projector = eventProjector,
+            personaOf = agentConfigs::personaOf,
         )
 
         // Hook spool tailing (CYP-38 reader + CYP-37 tailer, at-most-once). Started only when a path
@@ -166,13 +173,23 @@ class BootOrchestrator(
         // start/restart controls can't drift. Boot fail-closed per agent (Reviewer #5): a failed spawn
         // → ERROR, no session, no /ws/agent; the hub and other agents are unaffected.
         val lifecycle = LifecycleManager(
-            worktreeOf = config.agents.associate { it.id to it.worktreeName },
+            initialWorktrees = config.agents.associate { it.id to it.worktreeName },
             sessions = sessions,
             ensureWorktree = { worktreeName -> worktrees.ensureWorktree(worktreeName, config.repo.branch) },
             spawn = { id, worktree -> connector.open(id, worktree) },
             recorder = eventRecorder,
             projector = eventProjector,
         )
+
+        // S14 / CYP-97: runtime agent CRUD over the (now mutable) HubState topology + lifecycle + config.
+        val agentManagement = AgentManagement(
+            state = state,
+            lifecycle = lifecycle,
+            configs = agentConfigs,
+            ensureWorktree = { worktreeName -> worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+            deleteWorktree = { worktreeName -> worktrees.deleteWorktree(worktreeName) },
+        )
+
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()
         for (agent in config.agents) {
@@ -186,7 +203,7 @@ class BootOrchestrator(
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
-            projectConfig, config.projectId,
+            projectConfig, config.projectId, agentManagement,
         )
     }
 }

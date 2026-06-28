@@ -40,7 +40,7 @@ class LifecycleManagerTest {
         val spawnedWorktrees = CopyOnWriteArrayList<String>()
         val sessionsCreated = CopyOnWriteArrayList<FakeSession>()
         val manager = LifecycleManager(
-            worktreeOf = mapOf("backend" to "backend", "frontend" to "frontend"),
+            initialWorktrees = mapOf("backend" to "backend", "frontend" to "frontend"),
             sessions = sessions,
             ensureWorktree = { ensured.add(it) },
             spawn = { id, wt ->

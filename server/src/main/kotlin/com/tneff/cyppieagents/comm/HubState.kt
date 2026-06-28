@@ -16,7 +16,7 @@ import com.tneff.cyppieagents.routing.ConflictException
  * the *decision* itself lives only in [AclMatrix] (single source).
  */
 class HubState(
-    val agents: List<Agent>,
+    initialAgents: List<Agent>,
     initialChannels: List<Channel>,
     initialEntries: List<AclEntry>,
     /**
@@ -26,8 +26,18 @@ class HubState(
      * MVP = 1 project, so it equals [DEFAULT_PROJECT_ID] unless overridden.
      */
     val activeProjectId: String = DEFAULT_PROJECT_ID,
+    /**
+     * The privileged operator participant id (CYP-18), if the topology has one. Stored so a runtime
+     * [addAgent] (CYP-97) puts the operator on the new spoke too — same membership as the boot spokes.
+     */
+    private val operatorId: String? = null,
 ) {
     private val lock = Any()
+
+    /** The hub's agents. Mutable at runtime via [addAgent]/[removeAgent] (CYP-97). */
+    @Volatile
+    var agents: List<Agent> = initialAgents
+        private set
 
     @Volatile
     var channels: List<Channel> = initialChannels
@@ -72,6 +82,41 @@ class HubState(
         entries = next
         acl = candidate
         entry
+    }
+
+    /**
+     * Register a new agent at runtime (CYP-97) and, for a WORKER, add its hub-and-spoke spoke
+     * `po-<id>` with the SAME shape the boot factory builds: members `[po, <id>, operator?]`, all
+     * read+write, **stamped with [activeProjectId]** (no cross-project leak), and rebuild the matrix.
+     * Atomic under the lock. The add-guard (exactly-one-PO / unique id) runs at the call site before
+     * this; a PO is never added at runtime (so no second hub), and this only ever creates a spoke.
+     */
+    fun addAgent(agent: Agent): Agent = synchronized(lock) {
+        val po = agents.firstOrNull { it.role == Role.PO }
+        agents = agents + agent
+        if (agent.role == Role.WORKER && po != null) {
+            val members = buildList { add(po.id); add(agent.id); operatorId?.let { add(it) } }
+            val channel = Channel("po-${agent.id}", "po-${agent.id}", ChannelKind.HUB, members, projectId = activeProjectId)
+            val newEntries = members.map { AclEntry(channel.id, it, canRead = true, canWrite = true, projectId = activeProjectId) }
+            channels = channels + channel
+            entries = entries + newEntries
+            acl = AclMatrix(channels, entries, activeProjectId)
+        }
+        agent
+    }
+
+    /**
+     * Remove an agent at runtime (CYP-97): drop it from [agents] **and** its spoke channel `po-<id>`
+     * **and every ACL entry on that channel** — a clean removal with no dangling channel/ACL — then
+     * rebuild the matrix. Atomic under the lock. The remove-guard (the only PO is undeletable) runs at
+     * the call site; the agent branch `agent/<id>` is never touched here (worktree fate is the caller's).
+     */
+    fun removeAgent(id: String): Unit = synchronized(lock) {
+        agents = agents.filterNot { it.id == id }
+        val spokeId = "po-$id"
+        channels = channels.filterNot { it.id == spokeId }
+        entries = entries.filterNot { it.channelId == spokeId }
+        acl = AclMatrix(channels, entries, activeProjectId)
     }
 
     /**
@@ -127,7 +172,7 @@ class HubState(
             val entries = channels.flatMap { ch ->
                 ch.members.map { AclEntry(ch.id, it, canRead = true, canWrite = true, projectId = activeProjectId) }
             }
-            return HubState(agents, channels, entries, activeProjectId)
+            return HubState(agents, channels, entries, activeProjectId, operatorId)
         }
     }
 }

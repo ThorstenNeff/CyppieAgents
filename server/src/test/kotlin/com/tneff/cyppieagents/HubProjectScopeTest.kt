@@ -43,7 +43,7 @@ class HubProjectScopeTest {
         // sender holds full canWrite in beta — scoping (not the ACL flag) must still deny.
         // Mutation: drop the AclMatrix construction filter → this post succeeds.
         val state = HubState(
-            agents = agents,
+            initialAgents = agents,
             initialChannels = listOf(Channel("po-frontend", "po-frontend", ChannelKind.HUB, listOf("po", "frontend"), projectId = "beta")),
             initialEntries = listOf(
                 AclEntry("po-frontend", "po", canRead = true, canWrite = true, projectId = "beta"),
