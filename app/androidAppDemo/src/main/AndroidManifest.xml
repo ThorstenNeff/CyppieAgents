@@ -17,11 +17,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- CYP-47 DEBUG (temporary): instrumented Live-Tail harness for the Android connection-state
-             root-cause. Launch: adb shell am start -n com.tneff.cyppieagents.demo/.TailDebugActivity -->
-        <activity
-            android:exported="true"
-            android:name=".TailDebugActivity" />
     </application>
 
 </manifest>
