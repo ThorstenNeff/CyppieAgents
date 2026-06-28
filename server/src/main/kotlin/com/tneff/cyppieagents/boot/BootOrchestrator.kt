@@ -57,6 +57,10 @@ class BootedPlatform(
     val agentManagement: AgentManagement,
     /** Product-Lead report snapshots (S16 / CYP-89), served operator-gated by `/api/reports`. */
     val reportStore: com.tneff.cyppieagents.report.ReportStore,
+    /** Multi-project registry (S13 / CYP-91): N projects + active pointer, served by `/api/projects`. */
+    val projectRegistry: ProjectRegistry,
+    /** Project cascade-delete (S13 / CYP-91): fail-closed, strictly per-projectId teardown. */
+    val projectDeleter: ProjectDeleter,
 )
 
 /**
@@ -90,6 +94,9 @@ class BootOrchestrator(
     // Operator-settable per-project config store (S15 / CYP-96); null file → in-memory (tests).
     // bootPlatform supplies the out-of-repo, gitignored, 0600 file under the gitRoot.
     private val projectConfigFile: java.io.File? = null,
+    // Multi-project registry persistence (S13 / CYP-91); null → in-memory (tests). bootPlatform
+    // supplies the out-of-repo, gitignored, 0600 file under the gitRoot (seeded with config.projectId).
+    private val projectRegistryFile: java.io.File? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -210,9 +217,14 @@ class BootOrchestrator(
             projectId = config.projectId,
         )
 
+        // S13 / CYP-91: the multi-project registry (seeded with the boot project) + the cascade deleter
+        // composing the strictly-projectId-scoped teardown primitives — operator-gated at /api/projects.
+        val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
+        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees)
+
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
-            projectConfig, config.projectId, agentManagement, reportStore,
+            projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
         )
     }
 }

@@ -134,6 +134,18 @@ class SqliteEventSink(
 
     override fun subscribe(filter: EventFilter): Flow<Event> = stream.asSharedFlow().filter(filter::matches)
 
+    override suspend fun deleteByProject(projectId: String): Int = withContext(io) {
+        if (projectId.isBlank()) return@withContext 0 // fail-closed: never an unscoped wipe
+        mutex.withLock {
+            // physical column is `team_id` (stores projectId; CYP-83). Exact-match key → only THIS
+            // project's partition is removed; project B's rows are never touched (no-cross-project).
+            conn.prepareStatement("DELETE FROM events WHERE team_id = ?").use { ps ->
+                ps.setString(1, projectId)
+                ps.executeUpdate()
+            }
+        }
+    }
+
     override fun close() {
         runCatching { conn.close() }.onFailure { log.warn("error closing event sink", it) }
     }

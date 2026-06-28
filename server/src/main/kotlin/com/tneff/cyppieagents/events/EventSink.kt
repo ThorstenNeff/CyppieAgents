@@ -93,4 +93,13 @@ interface EventSink {
 
     /** Live-tail: a hot stream of newly-appended events matching [filter] (PRD §6 / §9 reacting consumers). */
     fun subscribe(filter: EventFilter): Flow<Event>
+
+    /**
+     * Delete every event of [projectId] — the event partition of the project cascade-delete (S13 /
+     * CYP-91). Returns the number of rows removed (for honest no-orphan reporting). **Strictly scoped
+     * to the exact [projectId]:** only this project's partition is touched, so deleting project A can
+     * never remove project B's events (the no-cross-project guarantee — same fail-closed discipline as
+     * [ProjectScope]). A blank [projectId] deletes NOTHING (fail-closed; no accidental table wipe).
+     */
+    suspend fun deleteByProject(projectId: String): Int
 }

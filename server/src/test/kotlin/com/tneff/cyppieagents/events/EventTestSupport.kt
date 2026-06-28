@@ -58,6 +58,7 @@ class LatchableEventSink(private val delegate: EventSink) : EventSink {
 
     override suspend fun query(filter: EventFilter, page: Page): EventPage = delegate.query(filter, page)
     override fun subscribe(filter: EventFilter): Flow<Event> = delegate.subscribe(filter)
+    override suspend fun deleteByProject(projectId: String): Int = delegate.deleteByProject(projectId)
 }
 
 /** Compact draft builder for tests. */

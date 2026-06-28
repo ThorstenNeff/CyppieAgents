@@ -29,3 +29,5 @@ platform.config.json
 # (holds the API key at rest, 0600). Never commit. (CYP-96)
 .cyppie/
 project-config.json
+# Multi-project registry (N projects + active pointer), 0600 under the gitRoot. (CYP-91)
+projects.json

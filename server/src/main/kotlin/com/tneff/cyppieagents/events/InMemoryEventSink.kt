@@ -53,6 +53,14 @@ class InMemoryEventSink(
 
     override fun subscribe(filter: EventFilter): Flow<Event> = stream.asSharedFlow().filter(filter::matches)
 
+    override suspend fun deleteByProject(projectId: String): Int = mutex.withLock {
+        if (projectId.isBlank()) return@withLock 0 // fail-closed: never an unscoped wipe
+        // exact-match key → only THIS project's events go; other projects' events stay (no-cross-project).
+        val before = events.size
+        events.removeAll { it.projectId == projectId }
+        before - events.size
+    }
+
     /** Test/diagnostic snapshot of everything stored, in seq order. */
     suspend fun all(): List<Event> = mutex.withLock { events.toList() }
 }
