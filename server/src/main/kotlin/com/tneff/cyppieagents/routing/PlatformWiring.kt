@@ -50,7 +50,9 @@ fun Application.installPlatform(booted: BootedPlatform) {
         lifecycleRoutes(booted.lifecycle, booted.tokenRegistry)
         lifecycleSocket(booted.lifecycle, booted.tokenRegistry)
         // CYP-96: project-settings config — GET participant (masked key), PUT operator (fail-closed).
-        configRoutes(booted.projectConfig, booted.tokenRegistry, booted.activeProjectId)
+        // CYP-102 fix: bind the LIVE active-pointer resolver (not booted.activeProjectId by-value) so
+        // config follows a project switch, mirroring eventRoutes/eventSocket above.
+        configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId)
         // CYP-97: agent CRUD — detail GET participant, POST/PUT/DELETE operator (fail-closed).
         agentMgmtRoutes(booted.agentManagement, booted.tokenRegistry)
         // CYP-89: Product-Lead reports — all three operator-gated/fail-closed, content-free items.
