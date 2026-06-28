@@ -25,6 +25,13 @@ data class CommUiState(
     /** Operator viewer (CYP-17 PO decision): writable in MVP. Per-channel ACL is a later seam. */
     val canWrite: Boolean = true,
     val sendError: String? = null,
+    /**
+     * B1 activity badge (CYP-55, WINDOW-BADGES §2-B): count of messages from **other** participants
+     * received while the comm window was **not** focused, since it was last focused. Session-local,
+     * client-only, never persisted — an honest "new since you last looked", **not** "unread of record".
+     * Reset to 0 (and suppressed) while the comm window is focused ([markCommFocused]); 0 → no badge.
+     */
+    val unreadCount: Int = 0,
 )
 
 /**
@@ -48,6 +55,14 @@ class CommViewModel(
 
     private var optimisticSeq = 0
 
+    /**
+     * B1 (CYP-55): whether the comm window currently has focus. While focused, incoming activity is
+     * "seen" → the unread counter is suppressed/reset, so leaving the window only ever surfaces
+     * genuinely new traffic. A [MutableStateFlow] (not a plain field) so the collector's read is a
+     * safe volatile read across the focus-callback / collect dispatchers.
+     */
+    private val commFocused = MutableStateFlow(false)
+
     init {
         viewModelScope.launch { loadChannelsAndAgents() }
         viewModelScope.launch { collectLive() }
@@ -70,10 +85,28 @@ class CommViewModel(
             if (event is CommLiveEvent.ChannelsChanged) {
                 _state.update { it.copy(channels = event.channels) }
             }
-            if (event is CommLiveEvent.MessageReceived && event.message.channelId == _state.value.selectedChannelId) {
-                _state.update { it.copy(messages = CommReducer.merge(it.messages, event.message)) }
+            if (event is CommLiveEvent.MessageReceived) {
+                // B1 (CYP-55): count comm-wide activity from OTHERS while unfocused — across all
+                // readable channels, not just the selected one (the live source is already ACL-filtered).
+                // Own (optimistic/echoed) messages never raise the badge; suppressed while focused.
+                if (!commFocused.value && event.message.from != viewerId) {
+                    _state.update { it.copy(unreadCount = it.unreadCount + 1) }
+                }
+                if (event.message.channelId == _state.value.selectedChannelId) {
+                    _state.update { it.copy(messages = CommReducer.merge(it.messages, event.message)) }
+                }
             }
         }
+    }
+
+    /**
+     * B1 (CYP-55): the comm window gained or lost focus. On gaining focus the activity badge clears
+     * (the hint is "done") and stays suppressed until focus is lost again — so the count only ever
+     * reflects traffic that arrived while you were elsewhere.
+     */
+    fun markCommFocused(focused: Boolean) {
+        commFocused.value = focused
+        if (focused) _state.update { it.copy(unreadCount = 0) }
     }
 
     fun select(channelId: String) {

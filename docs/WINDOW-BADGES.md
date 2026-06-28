@@ -139,3 +139,13 @@ Der Badge sitzt **am Ende der Titelleiste** (Canvas: `FloatingWindow`-Titlebar; 
 6. ✅ **A1 = nur ehrliches `ERROR`**; `WAITING_FOR_INPUT` wird **nicht** gefakt.
 
 **Verbleibender MVP-Bauumfang (Dev):** Count-Badge (B1) + ERROR-Attention (A1) + Severity-Badge **am gated Event-Log-Fenster** (C1). **Gate:** Reviewer + Desktop-`runComposeUiTest` (Tags + Fail-closed-Abwesenheits-Anker).
+
+---
+
+## 8. Known limitation — Pager-Counter-Modus (>6 Fenster) hat keinen Per-Page-Badge-Slot
+
+> **Bewusste Scope-Grenze (PO-bestätigt 2026-06-28), keine stille Lücke.** Aktiver Scope = **Desktop/Canvas** — dort ist jeder Badge in der `FloatingWindow`-Titelleiste sichtbar (kein Per-Fenster-Limit). Im **Phone-Pager** sitzt der Per-Page-Aktivitäts-Badge auf dem **Indikator-Dot** (`phonePager.page.<id>.badge`). Dots existieren laut CYP-54 §4 nur **bis 6 Seiten**; ab >6 Fenstern schaltet der Pager auf den kompakten **„N / M"-Counter** ohne Per-Page-Dots — **damit gibt es dort keinen Per-Page-Badge-Slot**.
+>
+> **Praktische Wirkung:** Der einzige Fall mit >6 Fenstern ist **Operator + Event-Log/Live-Tail** (7 Fenster). Genau dann fällt der C1-Severity-Badge im **Pager** weg — **Canvas/Desktop ist unberührt** (C1 dort voll sichtbar). Ohne Operator-Token bleibt es bei ≤5 Fenstern → Dot-Modus → B1/A1-Badges am Dot wie spezifiziert.
+>
+> **Ehrlichkeit gewahrt (kein lügendes Badge):** Im Counter-Modus wird **kein** falsches/leeres Badge erzeugt — **Abwesenheit** ist ehrlicher als ein irreführender Aggregat-Indikator. Ein Aggregat-Marker auf dem Counter-Chip ist ein **nice-to-have für später**, **nicht** Teil von CYP-55.

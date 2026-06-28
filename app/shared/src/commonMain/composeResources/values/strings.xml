@@ -123,4 +123,13 @@
     <string name="agent_ctl_err_spawn_failed">Start fehlgeschlagen</string>
     <string name="agent_ctl_err_operator_required">Nur der Operator darf den Agenten steuern</string>
     <string name="agent_ctl_err_generic">Aktion fehlgeschlagen</string>
+    <!-- Per-Fenster-Badges (CYP-55). pager_activity_badge: in CYP-54/50 bewusst zu CYP-55 deferred,
+         hier GENAU EINMAL definiert (Titelleisten-Count + Pager-Aktivitäts-Badge teilen den Wortlaut).
+         „neu seit zuletzt" = Aktivitätshinweis, NICHT „ungelesen von Record"/„zugestellt". Severity-Namen
+         reuse event_severity_* (CYP-34). a11y_badge_attention (A2/Stall) bewusst NICHT angelegt. -->
+    <string name="pager_activity_badge">%1$s neu</string>
+    <string name="badge_count_overflow">9+</string>
+    <string name="a11y_badge_unread">%1$s: %2$s neue Nachrichten</string>
+    <string name="a11y_badge_error">%1$s: Agent-Fehler</string>
+    <string name="a11y_badge_severity">%1$s: höchste Severity %2$s</string>
 </resources>
