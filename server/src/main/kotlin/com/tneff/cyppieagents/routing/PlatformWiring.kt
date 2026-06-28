@@ -48,6 +48,8 @@ fun Application.installPlatform(booted: BootedPlatform) {
         // CYP-73: agent lifecycle controls (operator-gated) + content-free status feed (participant-gated).
         lifecycleRoutes(booted.lifecycle, booted.tokenRegistry)
         lifecycleSocket(booted.lifecycle, booted.tokenRegistry)
+        // CYP-96: project-settings config — GET participant (masked key), PUT operator (fail-closed).
+        configRoutes(booted.projectConfig, booted.tokenRegistry, booted.activeProjectId)
     }
 }
 
@@ -88,6 +90,9 @@ fun Application.bootPlatform(
             )
         },
         spoolPath = gitRoot.toPath().resolve(config.events.spoolPath),
+        // CYP-96: operator-set repo/API-key overrides persist here — out-of-repo under the gitRoot,
+        // next to events.db, written 0600 + gitignored (the key never enters the repo or a log).
+        projectConfigFile = gitRoot.toPath().resolve("project-config.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     installPlatform(booted)

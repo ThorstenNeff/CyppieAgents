@@ -32,10 +32,15 @@ class Secrets(
         "Secrets(agentTokens=${agentTokens.size} masked, operatorToken=${mask(operatorToken)}, " +
             "apiKey=${mask(apiKey)}, apiKeysByProject=${apiKeysByProject.size} masked)"
 
-    private fun mask(value: String?): String =
-        if (value.isNullOrEmpty()) "unset" else "***${value.takeLast(4)}"
-
     companion object {
+        /**
+         * The single masking helper (Reviewer): `***<last4>`, or `unset` when empty. Used by [toString]
+         * and reused by the per-project config store (CYP-96) so a key value is never rendered in full
+         * anywhere — the same `mask()` the design (PROJECT-SETTINGS §5) calls out.
+         */
+        fun mask(value: String?): String =
+            if (value.isNullOrEmpty()) "unset" else "***${value.takeLast(4)}"
+
         /**
          * Resolves secrets from env. Per agent, requires `HUB_TOKEN_<ID>`; requires `OPERATOR_TOKEN`.
          * Fails closed (throws) on a missing required token rather than booting an unauthenticated hub.

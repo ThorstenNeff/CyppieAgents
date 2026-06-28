@@ -57,7 +57,7 @@ class ConnectorSmokeManualTest {
             val connector = ClaudeCodeConnector(
                 spawner = ProcessBuilderSpawner(),
                 worktreesRoot = worktreesRoot,
-                apiKey = System.getenv("ANTHROPIC_API_KEY"),
+                resolveApiKey = { System.getenv("ANTHROPIC_API_KEY") },
                 registry = registry,
                 router = router,
                 turnQueue = SessionTurnQueue(),

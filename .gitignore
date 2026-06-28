@@ -24,3 +24,8 @@ node_modules/
 
 # Local platform config (may carry a real repo URL). The template is tracked.
 platform.config.json
+
+# Platform working dir (clones, worktrees, events.db) + the operator-set project config
+# (holds the API key at rest, 0600). Never commit. (CYP-96)
+.cyppie/
+project-config.json

@@ -25,8 +25,8 @@ class NotFoundException(message: String = "not found", code: String = "not_found
 class ServiceUnavailableException(message: String, code: String = "unavailable") :
     ApiException(HttpStatusCode.ServiceUnavailable, code, message)
 
-class BadRequestException(message: String) :
-    ApiException(HttpStatusCode.BadRequest, "bad_request", message)
+class BadRequestException(message: String, code: String = "bad_request") :
+    ApiException(HttpStatusCode.BadRequest, code, message)
 
 /**
  * The request is well-formed and authorized but would violate a hub invariant that the server is

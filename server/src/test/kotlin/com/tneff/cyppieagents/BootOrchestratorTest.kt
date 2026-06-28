@@ -174,6 +174,34 @@ class BootOrchestratorTest {
     }
 
     @Test
+    fun spawnUsesOperatorStoreKeyOverEnv() {
+        // S15 / CYP-96 end-to-end: an operator-set per-project key (persisted in project-config.json)
+        // wins over the env key at SPAWN time — proving the connector lazy-resolves through the store.
+        // Mutation: revert the connector wiring to secrets.apiKeyFor → env "env-key" leaks, assertion red.
+        val dir = Files.createTempDirectory("boot-pcs")
+        try {
+            val cfgFile = dir.resolve("project-config.json").toFile()
+            cfgFile.writeText("""{"alpha":{"apiKey":"store-override"}}""")
+            val spawner = CapturingSpawner()
+            val cfg = config().copy(projectId = "alpha")
+            val secrets = Secrets(
+                agentTokens = mapOf("tok-po" to "po", "tok-frontend" to "frontend", "tok-backend" to "backend"),
+                operatorToken = "tok-op",
+                apiKey = "env-key",
+            )
+            BootOrchestrator(
+                cfg, secrets, WorktreeManager(FakeGit(), gitRoot(), cfg.projectId), spawner, scope,
+                projectConfigFile = cfgFile,
+            ).boot()
+
+            val (_, env) = spawner.byAgent.getValue("backend")
+            assertEquals("store-override", env["ANTHROPIC_API_KEY"], "spawn resolves the operator store override, not env")
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun configRejectsZeroOrMultiplePOs() {
         assertFailsWith<IllegalArgumentException> {
             PlatformConfig(RepoConfig("u"), agents = listOf(AgentConfig("a", "A", Role.WORKER)))

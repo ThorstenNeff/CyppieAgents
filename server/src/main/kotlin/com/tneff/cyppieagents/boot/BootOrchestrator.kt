@@ -49,6 +49,10 @@ class BootedPlatform(
     val failedAgents: List<String>,
     /** Agent process lifecycle (CYP-73): the stop/start/restart controls + `/ws/lifecycle` status feed. */
     val lifecycle: LifecycleManager,
+    /** Operator-settable per-project repo + API-key config store (S15 / CYP-96), served by `/api/config`. */
+    val projectConfig: ProjectConfigStore,
+    /** The active project (MVP = 1) the config endpoints resolve against. */
+    val activeProjectId: String,
 )
 
 /**
@@ -79,11 +83,17 @@ class BootOrchestrator(
     // The Warden's policy set (07/S11, CYP-62). Empty = the Warden runs but routes nothing yet; the
     // stall policy (CYP-63) registers here with no change to the frame.
     private val wardenPolicies: List<Policy> = emptyList(),
+    // Operator-settable per-project config store (S15 / CYP-96); null file → in-memory (tests).
+    // bootPlatform supplies the out-of-repo, gitignored, 0600 file under the gitRoot.
+    private val projectConfigFile: java.io.File? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
     fun boot(): BootedPlatform {
-        worktrees.ensureClone(config.repo)
+        // S15 / CYP-96: operator overrides for repo + API key, per project, fall back to boot config.
+        val projectConfig = ProjectConfigStore(projectConfigFile, config.repo, secrets)
+        // Repo change takes effect at the next boot (design §3.2): clone the resolved (override→boot) repo.
+        worktrees.ensureClone(projectConfig.resolvedRepo(config.projectId))
 
         val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName) }
         // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
@@ -116,9 +126,9 @@ class BootOrchestrator(
         val connector = ClaudeCodeConnector(
             spawner = spawner,
             worktreesRoot = worktrees.worktreesRoot,
-            // S12 / CYP-82: resolve the API key PER PROJECT (single-sourced config.projectId), not a
-            // global server constant — the seam CYP-96 backs with an operator-settable per-project key.
-            apiKey = secrets.apiKeyFor(config.projectId),
+            // S15 / CYP-96: resolve the key AT SPAWN per project — operator override (store) → env
+            // fallback (Secrets, CYP-82). Lazy so a CYP-73 restart picks up an operator key change.
+            resolveApiKey = { projectConfig.resolvedApiKey(config.projectId) },
             registry = registry,
             router = router,
             turnQueue = turnQueue,
@@ -174,6 +184,9 @@ class BootOrchestrator(
             }
         }
 
-        return BootedPlatform(hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle)
+        return BootedPlatform(
+            hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
+            projectConfig, config.projectId,
+        )
     }
 }

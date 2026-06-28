@@ -31,7 +31,12 @@ import java.util.UUID
 class ClaudeCodeConnector(
     private val spawner: ProcessSpawner,
     private val worktreesRoot: File,
-    private val apiKey: String?,
+    /**
+     * Resolves the ANTHROPIC_API_KEY **at spawn time** (S15 / CYP-96), so an operator key change takes
+     * effect on the next `open()` (a CYP-73 restart) — there is no boot-frozen value. Backed by the
+     * per-project config store (override) → [com.tneff.cyppieagents.boot.Secrets] (env fallback).
+     */
+    private val resolveApiKey: () -> String?,
     private val registry: SessionRegistry,
     private val router: MediationRouter,
     private val turnQueue: SessionTurnQueue,
@@ -50,7 +55,9 @@ class ClaudeCodeConnector(
     fun open(agentId: String, worktreeName: String): ConnectorSession {
         val cwd = File(worktreesRoot, worktreeName)
         val env = buildMap {
-            apiKey?.let { put("ANTHROPIC_API_KEY", it) } // D3: per-team key injected into the session ENV (never a CLI arg)
+            // D3 / CYP-96: resolve the key AT SPAWN (store override → env fallback) → injected into the
+            // session ENV, never a CLI arg. A boot-frozen value would ignore an operator key change.
+            resolveApiKey()?.let { put("ANTHROPIC_API_KEY", it) }
             put("HUB_AGENT_ID", agentId)
         }
         val command = listOf(cliCommand) + ConnectorDefaults.streamJsonArgs(allowedTools, permissionMode)
