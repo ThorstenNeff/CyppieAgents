@@ -47,8 +47,9 @@ class AclPanelRenderTest {
         onNodeWithTag(AclMatrixTags.cellQualifier("po-frontend", "po", CellQualifier.PO_CRITICAL), useUnmergedTree = true).assertExists()
         onNodeWithTag(AclMatrixTags.read("po-frontend", "po"), useUnmergedTree = true).performClick()
         waitForIdle()
-        // Advisory guardrail: the consequence dialog opens; the toggle is NOT silently applied.
-        onNodeWithTag(AclMatrixTags.LOCKOUT_DIALOG, useUnmergedTree = true).assertExists()
+        // Advisory guardrail: the consequence dialog opens; the toggle is NOT silently applied. Asserted on
+        // the MERGED tree (no useUnmergedTree) so a regression to a non-surfacing dialog (F2) fails here too.
+        onNodeWithTag(AclMatrixTags.LOCKOUT_DIALOG).assertExists()
     }
 
     @Test
@@ -61,10 +62,13 @@ class AclPanelRenderTest {
         // Worker read is seeded granted; toggling off is unguarded → optimistic, then the hub echoes
         // AclEvent → the cell becomes enforced and the switch reflects the hub truth (off).
         onNodeWithTag(AclMatrixTags.read("po-frontend", "frontend"), useUnmergedTree = true).performClick()
+        // Assert `enforced` on the MERGED tree (no useUnmergedTree) — a real-size surfacing node (F1); a
+        // regression to a zero-size Box would fail here too, not only on-device.
         waitUntil(timeoutMillis = 5_000L) {
-            onAllNodesWithTag(AclMatrixTags.cellQualifier("po-frontend", "frontend", CellQualifier.ENFORCED), useUnmergedTree = true)
+            onAllNodesWithTag(AclMatrixTags.cellQualifier("po-frontend", "frontend", CellQualifier.ENFORCED))
                 .fetchSemanticsNodes().isNotEmpty()
         }
+        onNodeWithTag(AclMatrixTags.cellQualifier("po-frontend", "frontend", CellQualifier.ENFORCED)).assertExists()
         onNodeWithTag(AclMatrixTags.read("po-frontend", "frontend"), useUnmergedTree = true).assertIsOff()
     }
 
@@ -79,12 +83,13 @@ class AclPanelRenderTest {
         // Turn the PO's read off, confirm the consequence dialog → the server rejects with 409.
         onNodeWithTag(AclMatrixTags.read("po-frontend", "po"), useUnmergedTree = true).performClick()
         waitForIdle()
-        onNodeWithTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM, useUnmergedTree = true).performClick()
+        // Dialog confirm asserted on the MERGED tree (F2 — the dialog window must surface its tags).
+        onNodeWithTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM).performClick()
         waitUntil(timeoutMillis = 5_000L) {
-            onAllNodesWithTag(AclMatrixTags.protected("po-frontend", "po"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            onAllNodesWithTag(AclMatrixTags.protected("po-frontend", "po")).fetchSemanticsNodes().isNotEmpty()
         }
-        // The cell shows `protected`, and the PO read stayed granted (hub truth — nothing persisted).
-        onNodeWithTag(AclMatrixTags.protected("po-frontend", "po"), useUnmergedTree = true).assertExists()
+        // The cell shows `protected` (merged tree), and the PO read stayed granted (hub truth — nothing persisted).
+        onNodeWithTag(AclMatrixTags.protected("po-frontend", "po")).assertExists()
         onNodeWithTag(AclMatrixTags.read("po-frontend", "po"), useUnmergedTree = true).assertIsOn()
     }
 }

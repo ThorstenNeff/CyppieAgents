@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.comm.ConnectionStatus
+import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_cell_nonmember
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_pending
@@ -225,7 +227,16 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
         when {
             pending -> StateMarker(stringResource(Res.string.acl_pending), AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.PENDING), stringResource(Res.string.a11y_acl_pending))
             protectedNotice -> StateMarker(stringResource(Res.string.acl_po_protected), AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.PROTECTED))
-            else -> Box(Modifier.testTag(AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.ENFORCED)))
+            // Enforced = the settled hub state. A real-size (not zero-size) node so it surfaces in the
+            // merged tree / on-device (F1) — visually negligible, carries the acl_enforced a11y (§8).
+            else -> {
+                val enforcedCd = stringResource(Res.string.acl_enforced)
+                Box(
+                    Modifier.size(8.dp)
+                        .testTag(AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.ENFORCED))
+                        .semantics { contentDescription = enforcedCd },
+                )
+            }
         }
         if (cell.conflict) StateMarker(stringResource(Res.string.acl_conflict), AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.CONFLICT))
         if (cell.canWrite && !cell.canRead) Text(stringResource(Res.string.acl_write_only_hint), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -293,7 +304,11 @@ private fun LockoutDialog(prompt: LockoutPrompt, onConfirm: () -> Unit, onCancel
     else stringResource(Res.string.acl_po_lockout_warning, prompt.channelName)
     AlertDialog(
         onDismissRequest = onCancel,
-        modifier = Modifier.testTag(if (prompt.selfBlind) AclMatrixTags.SELF_BLIND_WARNING else AclMatrixTags.LOCKOUT_DIALOG),
+        // The dialog renders in its OWN Compose window, which does NOT inherit the root's
+        // enableTestTagsAsResourceId() → re-apply it here so the dialog/confirm/cancel testTags resolve
+        // as Android resource-ids for Maestro (F2). No-op on non-Android targets.
+        modifier = Modifier.enableTestTagsAsResourceId()
+            .testTag(if (prompt.selfBlind) AclMatrixTags.SELF_BLIND_WARNING else AclMatrixTags.LOCKOUT_DIALOG),
         title = { Text(stringResource(Res.string.acl_po_critical)) },
         text = { Text(text) },
         confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.testTag(AclMatrixTags.LOCKOUT_DIALOG_CONFIRM)) { Text(stringResource(Res.string.acl_continue)) } },
