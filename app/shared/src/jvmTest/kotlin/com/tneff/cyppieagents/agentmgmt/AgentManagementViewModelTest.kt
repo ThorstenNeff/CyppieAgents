@@ -114,6 +114,15 @@ class AgentManagementViewModelTest {
         assertNull(vm.state.value.removeTarget) // no-op
     }
 
+    @Test
+    fun openRemove_defaultsToKeepWorktree_safeNotDestructive() {
+        // Merge-gate pin (reviewer): the worktree fate of an irreversible delete defaults to the SAFE
+        // KEEP — never pre-selected to the destructive DELETE. Mutation: default → DELETE turns this RED.
+        val vm = vm(stub(agent("po", Role.PO), agent("fe", Role.WORKER)))
+        vm.openRemove(vm.state.value.agents.first { it.id == "fe" })
+        assertEquals(WorktreeFate.KEEP, vm.state.value.removeWorktreeFate)
+    }
+
     // --- CYP-88 edit ---
 
     @Test
