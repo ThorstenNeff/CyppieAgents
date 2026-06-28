@@ -49,6 +49,10 @@ import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
 import com.tneff.cyppieagents.agentmgmt.StubAgentManagementRepository
 import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.report.ProductLeadPanel
+import com.tneff.cyppieagents.report.ProductLeadViewModel
+import com.tneff.cyppieagents.report.ReportRepository
+import com.tneff.cyppieagents.report.StubReportRepository
 import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.SettingsPanel
 import com.tneff.cyppieagents.settings.SettingsViewModel
@@ -60,6 +64,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_title
+import kmpcyppieagents.app.shared.generated.resources.report_title
 import kmpcyppieagents.app.shared.generated.resources.settings_title
 import org.jetbrains.compose.resources.stringResource
 
@@ -67,6 +72,7 @@ private const val COMM_WINDOW_ID = "comm"
 private const val ACL_WINDOW_ID = "acl"
 private const val SETTINGS_WINDOW_ID = "settings"
 private const val AGENT_MGMT_WINDOW_ID = "agentMgmt"
+private const val PRODUCT_LEAD_WINDOW_ID = "productLead"
 private const val EVENTLOG_BROWSE_WINDOW_ID = "eventlog"
 private const val EVENTLOG_TAIL_WINDOW_ID = "eventtail"
 
@@ -108,13 +114,15 @@ fun AgentShell(
     configRepository: ConfigRepository? = null,
     /** Override the agent-management data port (CYP-86/87/88); `null` → the in-memory stub until CYP-97 lands. */
     agentManagementRepository: AgentManagementRepository? = null,
+    /** Override the Product-Lead report data port (CYP-90); `null` → the in-memory stub until CYP-89 lands. */
+    reportRepository: ReportRepository? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
-    // i18n window titles for the two new system windows (other titles are hardcoded today). Resolved
-    // here so the title bars read them like any string resource.
+    // i18n window titles for the system windows the designs name (other titles are hardcoded today).
     val settingsTitle = stringResource(Res.string.settings_title)
     val agentMgmtTitle = stringResource(Res.string.agent_mgmt_title)
+    val productLeadTitle = stringResource(Res.string.report_title)
 
     // Agent-management VM (CYP-86/87/88), hoisted FIRST because its agent list (GET /api/agents, stub
     // until CYP-97) drives the **dynamic** window set: an added agent gets a window, a removed one loses
@@ -128,9 +136,9 @@ fun AgentShell(
     val managedAgents = agentMgmtVm.state.collectAsState().value.agents
 
     // Dynamic window set (S14): agent windows are derived from the managed agent list; the system
-    // windows (comm/acl/settings/agentMgmt + operator-only event-log) stay static. The window manager
-    // re-tiles when the *set* of windows changes (add/remove) — the static path is unaffected, so there
-    // is no canvas regress in normal use (position-preservation across add/remove is a tracked follow-up).
+    // windows (comm/acl/settings/agentMgmt/productLead + operator-only event-log) stay static. The
+    // window manager re-tiles when the *set* of windows changes (add/remove) — the static path is
+    // unaffected, so there is no canvas regress in normal use (position-preservation = tracked CYP-100).
     val windows: List<Pair<String, String>> = managedAgents.map { it.id to it.name } + buildList {
         add(COMM_WINDOW_ID to "Kommunikation")
         // ACL matrix (CYP-48): always present — editable for an operator, read-only partial view for an
@@ -139,6 +147,9 @@ fun AgentShell(
         // Project settings (CYP-84/85) + agent management (CYP-86/87/88): always present, operator-gated.
         add(SETTINGS_WINDOW_ID to settingsTitle)
         add(AGENT_MGMT_WINDOW_ID to agentMgmtTitle)
+        // Product-Lead reports (CYP-90): always present; operator-gated/fail-closed — without a token the
+        // panel shows only the gate hint (no report), not an omission (PRODUCT-LEAD §3).
+        add(PRODUCT_LEAD_WINDOW_ID to productLeadTitle)
         // Operator-only observability windows: offered ONLY with an operator token (omission, not a
         // dead "no access" window — EVENT-LOG-UI §5.6). Live sources swap in at CYP-39/40.
         if (cfg.operatorToken != null) {
@@ -199,7 +210,8 @@ fun AgentShell(
         windows.map { it.first }
             .filterNot {
                 it == ACL_WINDOW_ID || it == EVENTLOG_BROWSE_WINDOW_ID ||
-                    it == EVENTLOG_TAIL_WINDOW_ID || it == SETTINGS_WINDOW_ID || it == AGENT_MGMT_WINDOW_ID
+                    it == EVENTLOG_TAIL_WINDOW_ID || it == SETTINGS_WINDOW_ID ||
+                    it == AGENT_MGMT_WINDOW_ID || it == PRODUCT_LEAD_WINDOW_ID
             }
             .toSet()
     }
@@ -208,6 +220,9 @@ fun AgentShell(
     // Project-settings data port (CYP-84/85): stub until the backend seam (CYP-96); injectable so tests
     // stay hermetic. Operator token drives editability (server also enforces the gate; fail-closed UI).
     val resolvedConfigRepository = remember(configRepository) { configRepository ?: StubConfigRepository() }
+    // Product-Lead report port (CYP-90): stub until the backend seam (CYP-89); injectable so tests stay
+    // hermetic. Accessible iff an operator token is present (server enforces too; fail-closed, no leak).
+    val resolvedReportRepository = remember(reportRepository) { reportRepository ?: StubReportRepository() }
 
     // Agent lifecycle (CYP-73). Controls = operator-gated REST (POST /api/agents/{id}/{stop|start|
     // restart}); status display = non-gated (GET /api/agents snapshot + /ws/lifecycle deltas). Operator
@@ -251,6 +266,11 @@ fun AgentShell(
     // Project settings (CYP-84/85): hoisted like the others; editable iff an operator token is present.
     val settingsVm = viewModel(key = SETTINGS_WINDOW_ID) {
         SettingsViewModel(resolvedConfigRepository, editable = cfg.operatorToken != null)
+    }
+    // Product-Lead reports (CYP-90): hoisted; accessible iff operator token (fail-closed — without it the
+    // VM never loads a report). Aggregates operator-gated observability, so no token → no report at all.
+    val productLeadVm = viewModel(key = PRODUCT_LEAD_WINDOW_ID) {
+        ProductLeadViewModel(resolvedReportRepository, accessible = cfg.operatorToken != null)
     }
     // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
     // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
@@ -326,6 +346,7 @@ fun AgentShell(
                     ACL_WINDOW_ID -> AclPanel(aclVm)
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
                     AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(agentMgmtVm)
+                    PRODUCT_LEAD_WINDOW_ID -> ProductLeadPanel(productLeadVm)
                     EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it) }
                     EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it) }
                     else -> agentVms[window.id]?.let { AgentWindow(agentId = window.id, viewModel = it) }

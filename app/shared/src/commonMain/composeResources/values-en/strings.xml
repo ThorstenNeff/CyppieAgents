@@ -192,4 +192,24 @@
     <string name="agent_edit_id_locked_hint">ID and worktree are fixed and cannot be changed here.</string>
     <string name="agent_edit_po_exists">The PO role is taken — only one PO per project.</string>
     <string name="agent_edit_error">Save failed</string>
+    <!-- Product-Lead reports (CYP-90, S16). Keys per docs/design/product-lead-keys.md. Disclosure-true:
+         snapshot != live → report_as_of "As of: %1$s" (timestamped, own key like event_connection_offline,
+         NOT no-arg comm_status_offline); report_advisory = observed/not-exhaustive (defect register);
+         report_snapshot_hint = may be outdated. operator-gated/fail-closed → report_access_denied. Reuse
+         event_severity_*/event_detail_source_ts (CYP-34), no second severity schema. Items content-free. -->
+    <string name="report_title">Product-Lead reports</string>
+    <string name="report_generate">Generate report</string>
+    <string name="report_generating">Generating…</string>
+    <string name="report_type_usage">Usage guide</string>
+    <string name="report_type_status">Status report</string>
+    <string name="report_type_defects">Defect &amp; gap register</string>
+    <string name="report_as_of">As of: %1$s</string>
+    <string name="report_provenance">Sources: %1$s · Window: %2$s</string>
+    <string name="report_advisory">Observed defects/gaps — not exhaustive or confirmed.</string>
+    <string name="report_snapshot_hint">Snapshot — may already be outdated.</string>
+    <string name="report_empty">No reports yet — generate one above.</string>
+    <string name="report_access_denied">Viewable only with an operator token.</string>
+    <string name="report_error">Report failed</string>
+    <string name="a11y_report_generate">Generate report</string>
+    <string name="a11y_report_snapshot">Report snapshot, %1$s</string>
 </resources>
