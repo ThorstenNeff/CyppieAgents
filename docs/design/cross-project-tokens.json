@@ -1,0 +1,89 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-79 (Stories CYP-93 Cross-Projekt-Kanal-Autorisierung, CYP-94 Event-Log-Projekt-Filter)",
+    "version": "0.2-final",
+    "status": "Finalisiert — §6 PO-entschieden gefaltet, HOLD aufgehoben (CYP-102), Permit-Mechanismus backend-zu-reconcilen",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop f73a527",
+    "note": "Semantische Tokens fuer die Cross-Projekt-Autorisierungs-/Disclosure-Schicht (CYP-93) + den Event-Log-Projekt-Filter (CYP-94). Fast ausschliesslich Reuse: Hinweis-Toene ueber die geteilte TonedHint-Komponente (HintTone, CYP-99); Identitaets-Marker ueber CYP-14-ColorSlot-Semantik (Identitaet != Recht != Severity); Event-Filter reiht sich in die bestehende event-log-Filterleiste. Keine neuen Farben.",
+    "reuse_note": "TonedHint-Mapping (ui/TonedHint.kt @ 3705b68): INFO=secondary, GATED=onSurfaceVariant, ERROR=error, EFFECT_DEFERRED=onTertiaryContainer. Glyphen 'i'/'·'/'X'/'!' (kein Emoji). Cross-Projekt-Badge + Projekt-Spalte folgen CYP-14: Identitaet wird NICHT allein ueber Farbe getragen (Form/Glyph/Text), und Identitaet != Permission != Severity (drei getrennte Achsen wie EVENT-LOG-UI)."
+  },
+  "semantic": {
+    "crossProject.badge": {
+      "role": "Kanal-Badge 'reicht ueber Projekte'. Scope-/Reichweiten-Marker mit Form/Glyph + Label, NICHT Farb-only (WCAG 1.4.1). Sagt 'reicht', NICHT 'du darfst' (Identitaet != Recht, CYP-14).",
+      "container": "secondaryContainer",
+      "onContainer": "onSecondaryContainer",
+      "marker": "form+glyph+label (kein Farb-only)",
+      "label_key": "crossproject_badge"
+    },
+    "crossProject.statusShared": {
+      "role": "Status 'projektuebergreifend freigegeben: <Projekte> · von <wer> am <wann>'. Ehrliche Reichweiten-Anzeige. Informierend.",
+      "tone": "TonedHint.INFO",
+      "label_key": "crossproject_status_shared"
+    },
+    "crossProject.statusNotShared": {
+      "role": "fail-closed-Default 'nur in diesem Projekt – nicht freigegeben'. Macht den geschlossenen Default explizit. Neutral.",
+      "tone": "TonedHint.INFO",
+      "label_key": "crossproject_status_not_shared"
+    },
+    "crossProject.scope": {
+      "role": "Folgen-/Reichweiten-Anzeige im Freigabe-Dialog: welche Projekte + Agenten der Kanal danach erreicht. Garantierte 'was passiert'-Aussage.",
+      "tone": "TonedHint.INFO",
+      "label_key": "crossproject_dialog_scope"
+    },
+    "crossProject.humanOnly": {
+      "role": "Sicherheits-Disclosure 'nur du als Eigentuemer gibst frei – nie ein Agent/eine Nachricht'. Macht die Anti-Injection-Invariante im UI sichtbar.",
+      "tone": "TonedHint.INFO",
+      "label_key": "crossproject_human_only"
+    },
+    "crossProject.singleOwner": {
+      "role": "Honesty-Hinweis 'Single-User: ein Eigentuemer gibt frei; bilaterale Zustimmung folgt (S18)'. KEINE Implikation gegenseitiger Zustimmung.",
+      "tone": "TonedHint.INFO",
+      "label_key": "crossproject_single_owner_note"
+    },
+    "crossProject.gated": {
+      "role": "Gate-Hinweis 'nur Eigentuemer/Operator-Token kann freigeben'; Aktion deaktiviert. Neutral, kein Fehler.",
+      "tone": "TonedHint.GATED",
+      "label_key": "crossproject_operator_required"
+    },
+    "crossProject.authorizeButton": {
+      "role": "Bestaetigungs-Button des Autorisierungsakts ('Freigeben'). Bewusste, benannte Eigentuemer-Handlung — kein destruktiver Ton (Freigabe ist additiv), aber prominent.",
+      "container": "primary",
+      "onContainer": "onPrimary",
+      "label_key": "crossproject_confirm"
+    },
+    "crossProject.error": {
+      "role": "Echter Fehler: Freigabe/Revoke fehlgeschlagen, Gate-Ablehnung (403).",
+      "tone": "TonedHint.ERROR",
+      "label_key": "crossproject_error"
+    },
+    "crossProject.member": {
+      "role": "Heimat-Projekt-Kennung eines fremd-projektigen Members in der Kanal-Mitglieder-/ACL-Ansicht (Membership-Transport-Disclosure). TEXT (Identitaets-Traeger), kein Farb-only; Identitaet != Recht (der Zugriff steht in der ACL). Reichweite nennt KONKRETE Agenten, nie 'Projekt B' pauschal (kein Over-Widen).",
+      "reuse": "CYP-14 ColorSlot (Identitaet) optional, nie alleiniger Traeger",
+      "label_key": "crossproject_member_project / crossproject_member_access"
+    },
+    "eventFilter.project": {
+      "role": "Projekt-Filter-Achse in der Event-Log-Filterleiste (Browse + Tail). Reiht sich neben agent/type/severity/timeWindow/correlation — gleiche Surface-Familie.",
+      "reuse": "event-log-tokens.json Filterleisten-Stil",
+      "label_key": "event_filter_project"
+    },
+    "eventFilter.crossProjectView": {
+      "role": "Sicht-Indikator 'Sicht: Projekt X' / 'Sicht: alle Projekte (projektuebergreifend)' wenn die Linse NICHT das aktive Projekt zeigt. Analog event_filter_active-'Teilmenge', aber Scope-Dimension.",
+      "tone": "TonedHint.INFO",
+      "label_key": "event_view_project / event_view_all_projects"
+    },
+    "eventRow.project": {
+      "role": "Pro-Zeile-Projekt-Kennung NUR in projektuebergreifender Sicht — macht Ereignisse verschiedener Projekte unterscheidbar. TEXT (Identitaets-Traeger), optionaler ColorSlot-Tint NIE alleiniger Traeger. Identitaet != Severity != Recht.",
+      "reuse": "CYP-14 ColorSlot (Identitaet), getrennt von severity_rail (Severity)",
+      "label_key": "event_row_project"
+    }
+  },
+  "dimensions": {
+    "crossProject.badge.minHitArea": {
+      "role": "Touch-/Klickflaeche des Cross-Projekt-Badges/Actions, falls interaktiv (oeffnet Status/Dialog).",
+      "value": "48dp",
+      "note": "Material/WCAG 2.5.8; Dev-kalibrierbar."
+    }
+  }
+}
