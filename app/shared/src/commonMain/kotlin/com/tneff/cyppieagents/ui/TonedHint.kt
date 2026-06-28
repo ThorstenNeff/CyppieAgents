@@ -34,7 +34,8 @@ enum class HintTone { EFFECT_DEFERRED, GATED, INFO, ERROR }
 /**
  * A single toned hint line: a leading tone glyph + the [text]. [EFFECT_DEFERRED] additionally renders in a
  * filled amber container so it reads as Attention. [tag] is the node's testTag (the design's hint id); the
- * glyph is decorative (its meaning is the text), so it is hidden from the a11y tree.
+ * glyph is a meaningful tone symbol kept in the a11y tree, while the message text still carries the full
+ * meaning (so neither colour nor the glyph alone is the sole carrier — WCAG 1.4.1).
  */
 @Composable
 fun TonedHint(text: String, tone: HintTone, tag: String, modifier: Modifier = Modifier) {
