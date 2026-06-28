@@ -127,7 +127,10 @@ class EventProjector(
     )
 
     private companion object {
-        // rate_limit_info fields worth recording — all server-side numbers/status, no user content.
-        val RATE_LIMIT_KEYS = listOf("status", "remaining", "reset_at", "used_pct", "retry_after")
+        // rate_limit_info fields worth recording — the REAL wire schema (CYP-59 spike, CLI 2.1.193/195,
+        // camelCase), NOT the earlier synthetic-corpus snake_case. `status` is the throttle discriminator
+        // (blocked/rejected vs allowed/allowed_warning). `overageStatus` is DELIBERATELY excluded: live it
+        // is "rejected" even on a perfectly healthy agent (overage-billing availability, not a throttle).
+        val RATE_LIMIT_KEYS = listOf("status", "resetsAt", "rateLimitType", "retryAfter")
     }
 }

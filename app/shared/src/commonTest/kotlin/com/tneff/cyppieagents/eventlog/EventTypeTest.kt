@@ -14,8 +14,20 @@ class EventTypeTest {
 
     @Test
     fun fromWire_unknownIsTolerantSentinel() {
-        assertEquals(EventType.UNKNOWN, EventType.fromWire("stall.suspected")) // future 07 type, additive
+        // A type this build doesn't model yet (a future watcher's). The 07 stall.* types are now
+        // first-class (CYP-64) — see stallTypesAreFirstClass — so a budget.* type carries the sentinel.
+        assertEquals(EventType.UNKNOWN, EventType.fromWire("budget.suspected"))
+        assertEquals(EventType.UNKNOWN, EventType.fromWire("totally.unknown.type"))
         assertEquals(EventType.UNKNOWN, EventType.fromWire(""))
+    }
+
+    @Test
+    fun stallTypesAreFirstClass() {
+        // CYP-64: the 07/S11 supervision vocabulary is official now, no longer rawType-only.
+        assertEquals(EventType.STALL_SUSPECTED, EventType.fromWire("stall.suspected"))
+        assertEquals(EventType.NUDGE_SENT, EventType.fromWire("nudge.sent"))
+        assertEquals(EventType.STALL_RECOVERED, EventType.fromWire("stall.recovered"))
+        assertEquals(EventType.STALL_ESCALATED, EventType.fromWire("stall.escalated"))
     }
 
     @Test

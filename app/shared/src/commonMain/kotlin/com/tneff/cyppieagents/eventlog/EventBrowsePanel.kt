@@ -199,7 +199,11 @@ private fun <T> cycle(current: T?, options: List<T>): T? {
 }
 
 private val SEVERITY_CYCLE = Severity.entries.toList()
-private val TYPE_CYCLE = listOf(EventType.TURN_START, EventType.TOOL_CALL, EventType.RESULT_FINAL, EventType.ERROR_RATELIMIT)
+private val TYPE_CYCLE = listOf(
+    EventType.TURN_START, EventType.TOOL_CALL, EventType.RESULT_FINAL, EventType.ERROR_RATELIMIT,
+    // Mediator-Aufsicht supervision family (07/S11, CYP-64) — makes the stall loop filterable in Browse.
+    EventType.STALL_SUSPECTED, EventType.NUDGE_SENT, EventType.STALL_RECOVERED, EventType.STALL_ESCALATED,
+)
 
 @Composable
 private fun DrilldownView(state: EventBrowseUiState, onClear: () -> Unit, modifier: Modifier = Modifier) {
