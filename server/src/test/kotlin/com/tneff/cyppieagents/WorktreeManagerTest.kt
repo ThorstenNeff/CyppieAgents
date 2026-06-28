@@ -53,6 +53,29 @@ class WorktreeManagerTest {
     }
 
     @Test
+    fun deleteWorktree_forceRemoves_keepsAgentBranch() {
+        // S14 / CYP-97: the destructive ?worktree=delete path. `git worktree remove --force`, and the
+        // agent branch agent/<name> is NOT auto-deleted (PO §9.3) — its commits survive.
+        val git = FakeGit()
+        val root = gitRoot()
+        val wm = WorktreeManager(git, root)
+        wm.ensureClone(RepoConfig("u", "main"))
+        // FakeGit doesn't create real worktree dirs, so make it exist → deleteWorktree proceeds.
+        val target = File(root, "projects/default/backend").apply { mkdirs() }
+
+        wm.deleteWorktree("backend")
+
+        assertTrue(
+            git.issued(listOf("git", "worktree", "remove", "--force", target.absolutePath)),
+            "uses git worktree remove --force",
+        )
+        assertFalse(
+            git.commands.any { it.take(2) == listOf("git", "branch") },
+            "the agent branch must NOT be auto-deleted",
+        )
+    }
+
+    @Test
     fun reusesExistingAgentBranchWithoutDashB() {
         val git = FakeGit()
         val root = gitRoot()

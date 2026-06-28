@@ -88,4 +88,20 @@ class WorktreeManager(
     }
 
     fun worktreeDir(worktreeName: String): File = File(worktreesDir, worktreeName)
+
+    /**
+     * Remove an agent's worktree (S14 / CYP-97 — the destructive `?worktree=delete` path). Uses
+     * `git worktree remove --force` so an unclean worktree is removed too (the UI warns about lost
+     * uncommitted/unpushed work, AGENT-MANAGEMENT §5). The agent branch `agent/<name>` is **NOT**
+     * deleted (PO decision §9.3) — its commits survive. No-op if the worktree is already gone.
+     */
+    fun deleteWorktree(worktreeName: String) {
+        val target = File(worktreesDir, worktreeName)
+        if (!target.exists()) {
+            log.info("worktree already absent at {}", target)
+            return
+        }
+        val res = runner.run(listOf("git", "worktree", "remove", "--force", target.absolutePath), repoDir)
+        check(res.exitCode == 0) { "git worktree remove failed for '$worktreeName' (exit ${res.exitCode})" }
+    }
 }

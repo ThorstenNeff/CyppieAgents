@@ -29,8 +29,9 @@ import org.slf4j.LoggerFactory
  *  - The status broadcast carries only `{agentId, status}` (no event content) — the leak-free path.
  */
 class LifecycleManager(
-    /** agentId → worktree sub-folder name (the SAME folder a respawn reuses; no orphan). */
-    private val worktreeOf: Map<String, String>,
+    /** agentId → worktree sub-folder name (the SAME folder a respawn reuses; no orphan). Mutable at
+        runtime via [register]/[forget] (CYP-97 agent add/remove). */
+    initialWorktrees: Map<String, String>,
     private val sessions: ConnectorSessions,
     /** Idempotently ensure the agent's worktree exists before a (re)spawn (boot wires the real one). */
     private val ensureWorktree: (worktreeName: String) -> Unit,
@@ -41,6 +42,7 @@ class LifecycleManager(
 ) {
     private val log = LoggerFactory.getLogger("lifecycle")
     private val lock = Any()
+    private val worktreeOf = java.util.concurrent.ConcurrentHashMap(initialWorktrees)
     private val status = HashMap<String, AgentRunState>()
     private val _events = MutableSharedFlow<AgentRunStateEvent>(
         extraBufferCapacity = 64,
@@ -50,7 +52,20 @@ class LifecycleManager(
     /** Live status deltas for `/ws/lifecycle`; the socket prepends a snapshot via [snapshot]. */
     val events: Flow<AgentRunStateEvent> = _events.asSharedFlow()
 
-    fun knows(agentId: String): Boolean = agentId in worktreeOf
+    fun knows(agentId: String): Boolean = worktreeOf.containsKey(agentId)
+
+    /** Register a newly-added agent (CYP-97) as known + STOPPED, without spawning (start is a separate op). */
+    fun register(agentId: String, worktreeName: String): Unit = synchronized(lock) {
+        worktreeOf[agentId] = worktreeName
+        status[agentId] = AgentRunState.STOPPED
+        _events.tryEmit(AgentRunStateEvent(agentId, AgentRunState.STOPPED))
+    }
+
+    /** Forget a removed agent (CYP-97) — caller has already stopped its session. */
+    fun forget(agentId: String): Unit = synchronized(lock) {
+        worktreeOf.remove(agentId)
+        status.remove(agentId)
+    }
 
     fun runStateOf(agentId: String): AgentRunState? = synchronized(lock) { status[agentId] }
 

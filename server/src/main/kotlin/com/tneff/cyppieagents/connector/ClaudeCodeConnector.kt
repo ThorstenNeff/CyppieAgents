@@ -47,6 +47,12 @@ class ClaudeCodeConnector(
     // Observability tap (CYP-37). Null = no tapping (keeps tests/older callers working).
     private val recorder: EventRecorder? = null,
     private val projector: EventProjector? = null,
+    /**
+     * Resolves the agent's persona at spawn (S14 / CYP-97), written to `CLAUDE.md` in the worktree cwd
+     * so Claude-Code auto-discovers it (Doc 05 §5, no `--bare`). Resolved at `open()` so an operator
+     * edit takes effect on the next spawn (a CYP-73 restart). Default → no persona / no CLAUDE.md write.
+     */
+    private val personaOf: (agentId: String) -> String? = { null },
 ) : Connector {
 
     override fun open(agentId: String): ConnectorSession = open(agentId, agentId)
@@ -54,6 +60,12 @@ class ClaudeCodeConnector(
     /** Spawn an agent session whose cwd is [worktreesRoot]/[worktreeName] (Spec §11 isolation). */
     fun open(agentId: String, worktreeName: String): ConnectorSession {
         val cwd = File(worktreesRoot, worktreeName)
+        // CYP-97: place the persona as CLAUDE.md before spawn (auto-discovery). Resolved here so the
+        // current (possibly edited) persona is used; null/blank → no file written.
+        personaOf(agentId)?.takeIf { it.isNotBlank() }?.let {
+            cwd.mkdirs()
+            File(cwd, "CLAUDE.md").writeText(it)
+        }
         val env = buildMap {
             // D3 / CYP-96: resolve the key AT SPAWN (store override → env fallback) → injected into the
             // session ENV, never a CLI arg. A boot-frozen value would ignore an operator key change.
