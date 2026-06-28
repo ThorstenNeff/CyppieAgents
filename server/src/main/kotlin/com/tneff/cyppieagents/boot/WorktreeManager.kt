@@ -104,4 +104,38 @@ class WorktreeManager(
         val res = runner.run(listOf("git", "worktree", "remove", "--force", target.absolutePath), repoDir)
         check(res.exitCode == 0) { "git worktree remove failed for '$worktreeName' (exit ${res.exitCode})" }
     }
+
+    /**
+     * Remove an ENTIRE project's worktree root `projects/<projectId>/` — the worktree partition of the
+     * project cascade-delete (S13 / CYP-91). Unlike [deleteWorktree] this targets [projectId]
+     * explicitly (NOT the instance's [activeProjectId]), because delete always operates on a NON-active
+     * project. Each agent worktree under the project is `git worktree remove --force`d (so the shared
+     * clone's metadata is cleaned), then the dir is removed and `git worktree prune` clears any
+     * dangling registration. Agent branches `agent/<…>` are **kept** (PO decision §9.3) — commits
+     * survive. Returns the number of agent worktrees removed (for honest no-orphan reporting).
+     *
+     * **Fail-closed scoping (the no-cross-project guard):** a blank [projectId], or any value whose
+     * resolved dir is not STRICTLY below `projects/`, removes NOTHING — so the teardown can never walk
+     * up to the projects root and take out sibling projects. Idempotent: an absent project dir is a no-op.
+     */
+    fun deleteProject(projectId: String): Int {
+        if (projectId.isBlank()) return 0 // fail-closed: never resolve to the projects root
+        val projectsRoot = File(gitRoot, "projects").canonicalFile
+        val projectDir = File(gitRoot, "projects/$projectId").canonicalFile
+        // Defense-in-depth: the target must be a strict child of projects/ (guards against `..`/escape
+        // even though SAFE_ID already rejected such ids at the registry boundary).
+        if (projectDir == projectsRoot || projectDir.parentFile != projectsRoot) return 0
+        if (!projectDir.exists()) return 0
+
+        var removed = 0
+        projectDir.listFiles()?.filter { it.isDirectory }?.forEach { worktree ->
+            val res = runner.run(listOf("git", "worktree", "remove", "--force", worktree.absolutePath), repoDir)
+            check(res.exitCode == 0) { "git worktree remove failed for '${worktree.name}' (exit ${res.exitCode})" }
+            removed++
+        }
+        projectDir.deleteRecursively()
+        // Clean any dangling worktree registration the remove didn't (e.g. a manually-deleted dir).
+        runner.run(listOf("git", "worktree", "prune"), repoDir)
+        return removed
+    }
 }

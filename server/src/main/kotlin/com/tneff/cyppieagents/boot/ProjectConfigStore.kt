@@ -107,6 +107,21 @@ class ProjectConfigStore(
         return ApiKeyView(set = true, masked = Secrets.mask(k))
     }
 
+    // ---- cascade teardown (S13 / CYP-91 — the config partition of project delete) ----
+
+    /**
+     * Drop [projectId]'s config override (repo + API key at rest) — the config partition of the
+     * project cascade-delete. Returns `true` if an entry existed. **Strictly scoped to the exact
+     * [projectId]** (the map is keyed by it), so deleting project A never removes project B's override
+     * (no-cross-project). A blank key removes nothing (fail-closed). Idempotent: absent → no-op.
+     */
+    fun remove(projectId: String): Boolean = synchronized(lock) {
+        if (projectId.isBlank()) return@synchronized false // fail-closed: never an unscoped clear
+        val existed = entries.remove(projectId) != null
+        if (existed) persist()
+        existed
+    }
+
     private fun resolvedRepoLocked(projectId: String): RepoConfig {
         val e = entries[projectId]
         return if (!e?.repoUrl.isNullOrBlank()) RepoConfig(e!!.repoUrl!!, e.repoBranch?.ifBlank { null } ?: "main") else fallbackRepo

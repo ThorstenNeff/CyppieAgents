@@ -54,6 +54,9 @@ fun Application.installPlatform(booted: BootedPlatform) {
         agentMgmtRoutes(booted.agentManagement, booted.tokenRegistry)
         // CYP-89: Product-Lead reports — all three operator-gated/fail-closed, content-free items.
         reportRoutes(booted.reportStore, booted.tokenRegistry)
+        // CYP-91: multi-project lifecycle — all operator-gated/fail-closed; cascade-delete is the
+        // most destructive op (no-cross-project, opt-in worktree teardown, branches kept).
+        projectRoutes(booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry)
     }
 }
 
@@ -97,6 +100,9 @@ fun Application.bootPlatform(
         // CYP-96: operator-set repo/API-key overrides persist here — out-of-repo under the gitRoot,
         // next to events.db, written 0600 + gitignored (the key never enters the repo or a log).
         projectConfigFile = gitRoot.toPath().resolve("project-config.json").toFile(),
+        // CYP-91: the multi-project registry persists here — out-of-repo under the gitRoot, 0600,
+        // gitignored, seeded with config.projectId on first boot.
+        projectRegistryFile = gitRoot.toPath().resolve("projects.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     installPlatform(booted)
