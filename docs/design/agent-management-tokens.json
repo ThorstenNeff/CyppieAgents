@@ -1,0 +1,65 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-76 (Stories CYP-86 hinzufuegen, CYP-87 entfernen, CYP-88 Konfig aendern)",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "note": "Semantische Tokens fuer das Agenten-Verwaltungs-Fenster. Komponenten referenzieren Semantik, nie Hex direkt. Dark = Default. Ueberwiegend Reuse (S15 + state-tokens + MaterialTheme-Rollen); wenige neue.",
+    "reuse_note": "Effekt-deferred + Gate-Toene = wie S15 (project-settings-tokens.json): effectDeferred=tertiaryContainer/amber, gated=surfaceVariant. Destructive = errorContainer mit Warn-Icon. Info=secondaryContainer."
+  },
+  "semantic": {
+    "agentMgmt.destructive": {
+      "role": "Irreversible Aktion (Agent + Worktree loeschen, CYP-87): Folgen-/Warnzeile + destruktiver Confirm. Nicht-committete Arbeit geht verloren.",
+      "container": "errorContainer",
+      "onContainer": "onErrorContainer",
+      "icon": "warning",
+      "label_key": "agent_remove_worktree_warning"
+    },
+    "agentMgmt.effectDeferred": {
+      "role": "Konfig gespeichert, aber erst nach Spawn/Restart aktiv (CYP-88). Amber-Hinweis, KEIN Erfolg-gruen. Reuse S15 settings.effectDeferred.",
+      "container": "tertiaryContainer",
+      "onContainer": "onTertiaryContainer",
+      "icon": "schedule",
+      "label_key": "agent_edit_effect_hint",
+      "reuse": "project-settings-tokens.json#semantic.settings.effectDeferred"
+    },
+    "agentMgmt.gated": {
+      "role": "Operator-Gate-Hinweis; Mutations-Controls disabled/read-only. Neutral, kein Fehler. Reuse S15 settings.gated.",
+      "container": "surfaceVariant",
+      "onContainer": "onSurfaceVariant",
+      "icon": "lock",
+      "label_key": "agent_mgmt_operator_required",
+      "reuse": "project-settings-tokens.json#semantic.settings.gated"
+    },
+    "agentMgmt.guardrail": {
+      "role": "Regel-Guardrail sichtbar (genau ein PO / eindeutige id): Control disabled + Erklaerung. Info, kein harter Fehler.",
+      "container": "secondaryContainer",
+      "onContainer": "onSecondaryContainer",
+      "icon": "info",
+      "label_key": "agent_add_po_exists / agent_remove_last_po"
+    },
+    "agentMgmt.error": {
+      "role": "Server-Ablehnung / invalid (id-Kollision, invalid_agent, Save fehlgeschlagen).",
+      "container": "errorContainer",
+      "onContainer": "onErrorContainer",
+      "icon": "error",
+      "label_key": "agent_add_error / agent_edit_error / agent_remove_error"
+    }
+  },
+  "dimensions": {
+    "agentMgmt.field.minWidth": {
+      "role": "Min-Breite der Formularfelder im Dialog (id/Name/launch/Worktree).",
+      "value_dp": 280,
+      "reuse": "Wie settings.field.minWidth / COMPOSER_MIN_WIDTH (CYP-26) — bewusst konsistent."
+    },
+    "agentMgmt.row.spacing": {
+      "role": "Vertikaler Abstand zwischen Agenten-Listenzeilen.",
+      "value_dp": 8
+    },
+    "agentMgmt.dialog.spacing": {
+      "role": "Abstand zwischen Dialog-Feldern und zur Hinweis-/Folgenzeile.",
+      "value_dp": 16
+    }
+  }
+}
