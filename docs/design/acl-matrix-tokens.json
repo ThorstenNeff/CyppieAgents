@@ -1,0 +1,82 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-19",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen + Kontrast-Validierung",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "reuse_first": "Die meisten Werte kommen aus CYP-12 (state-tokens.json) und CYP-14 (color-coding-tokens.json). Hier NUR ACL-Matrix-spezifische Neu-Tokens. Kontrast-Ziele: Text >=4.5:1, Nicht-Text-UI >=3:1; dark Default + light.",
+    "acl_never_color_only": "R/W-Zustand wird NIE allein ueber Farbe getragen — immer Schalter-Stellung + Icon + Text-Label (acl_read/acl_write, acl_granted/acl_denied). Identitaets-/Kanalfarbe (CYP-14) markiert NUR Identitaet, NIE ein Recht (WCAG 1.4.1)."
+  },
+  "reused": {
+    "agent_identity_color": "CYP-14 color-coding-tokens.json -> colorSlot(Agent.id) (Spaltenkopf)",
+    "channel_identity_color": "CYP-14 -> colorSlot(Channel.id) (Zeilenkopf)",
+    "channel_kind_icons": "CYP-14 channel.kind_by_icon_not_color (HUB/DIRECT/GROUP)",
+    "po_badge": "CYP-14 po_slot + i18n agent_role_po",
+    "granted_base": "CYP-12 state-tokens.json state.ok (gewaehrt-Akzent), getrennt vom Identitaetssystem",
+    "attention_base": "CYP-12 state.error/running (denied/pending-Achtung)",
+    "offline_banner": "CYP-17 comm-panel-tokens.json comm.connection.offline (Stale-Banner, Reuse statt Neu)"
+  },
+  "new_tokens": {
+    "acl.toggle.granted": {
+      "role": "Schalter R/W = gewaehrt (canRead/canWrite true)",
+      "dark":  { "track": "#1E5B3A", "thumb": "#3DD68C", "icon": "check", "label_key": "acl_granted" },
+      "light": { "track": "#CDEEDB", "thumb": "#1E8E5A", "icon": "check", "label_key": "acl_granted" },
+      "note": "Form (Schalter an) + Icon + Text tragen die Bedeutung; gruen ist sekundaer"
+    },
+    "acl.toggle.denied": {
+      "role": "Schalter R/W = gesperrt (false)",
+      "dark":  { "track": "#3A2326", "thumb": "#8A8F98", "icon": "block", "label_key": "acl_denied" },
+      "light": { "track": "#EFD9DC", "thumb": "#6B7280", "icon": "block", "label_key": "acl_denied" },
+      "note": "neutral-grau, NICHT rot-als-Fehler; 'gesperrt' ist ein gueltiger Zustand, kein Error"
+    },
+    "acl.cell.pending": {
+      "role": "Toggle angefragt, noch nicht per AclEvent/200 bestaetigt",
+      "dark":  { "overlay": "#000000A0", "fg": "#C9A227", "label_key": "acl_pending" },
+      "light": { "overlay": "#FFFFFFA0", "fg": "#8A5A00", "label_key": "acl_pending" },
+      "note": "gedimmt + 'wird uebernommen'; NICHT als durchgesetzt darstellen"
+    },
+    "acl.cell.enforced": {
+      "role": "bestaetigter, durchgesetzter Hub-Zustand (a11y-Marker)",
+      "dark":  { "marker": "#3DD68C", "label_key": "acl_enforced" },
+      "light": { "marker": "#1E8E5A", "label_key": "acl_enforced" },
+      "note": "Beweis = AclEvent auf /ws/comm, nicht nur PUT-200"
+    },
+    "acl.cell.nonMember": {
+      "role": "agentId nicht in channel.members — N/A, nicht togglebar",
+      "dark":  { "fg": "#5A5E66", "glyph": "—", "label_key": "acl_non_member" },
+      "light": { "fg": "#A0A4AD", "glyph": "—", "label_key": "acl_non_member" },
+      "note": "kein deaktivierter Schalter (taeuscht Editierbarkeit vor); Membership ist eine eigene Achse"
+    },
+    "acl.cell.poCritical": {
+      "role": "PO-kritische Zelle — Entzug entkoppelt den PO (Leitplanke)",
+      "dark":  { "marker": "#FFC857", "glyph": "flag", "label_key": "acl_po_critical" },
+      "light": { "amber": "#8A5A00", "glyph": "flag", "label_key": "acl_po_critical" },
+      "note": "amber-Flag + PO-Badge; loest Konsequenz-Dialog beim Abschalten aus"
+    },
+    "acl.cell.conflict": {
+      "role": "mehrere AclEntry fuer (Kanal,Agent) — deny-wins, effektiver Zustand",
+      "dark":  { "marker": "#FF8A3D", "label_key": "acl_conflict" },
+      "light": { "marker": "#B85C00", "label_key": "acl_conflict" },
+      "note": "zeigt den effektiven (all-must-grant) Zustand, nie den freundlicheren Einzelwert"
+    },
+    "acl.readonly.chip": {
+      "role": "Read-only-Sicht (Agent/kein Operator-Token) — Chip statt Schalter",
+      "dark":  { "bg": "#1B1C1F", "fg": "#8A8F98", "hint_key": "acl_operator_required" },
+      "light": { "bg": "#F0F1F3", "fg": "#6B7280", "hint_key": "acl_operator_required" },
+      "note": "kein deaktivierter Schalter; ehrlicher Read-only-Zustand + Teilansicht-Banner acl_partial_view"
+    },
+    "acl.preset.diff": {
+      "role": "Zelle aendert sich durch Preset-Wiederherstellung (Vorschau)",
+      "dark":  { "outline": "#4DA3FF", "label_key": "acl_preset_preview" },
+      "light": { "outline": "#1A73E8", "label_key": "acl_preset_preview" },
+      "note": "blau = Aenderungs-Hinweis (nicht Status); Diff VOR Anwendung, kein stiller Massen-Change"
+    },
+    "acl.preset.partial": {
+      "role": "Preset nur teilweise angewendet (N nicht-atomare PUTs)",
+      "dark":  { "bg": "#3A2E12", "fg": "#FFC857", "label_key": "acl_preset_partial" },
+      "light": { "bg": "#FFF4D6", "fg": "#8A5A00", "label_key": "acl_preset_partial" },
+      "note": "fehlgeschlagene Zellen markiert; nie 'wiederhergestellt' bei Unvollstaendigkeit"
+    }
+  }
+}
