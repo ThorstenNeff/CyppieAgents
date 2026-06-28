@@ -24,6 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.acl.AclPanel
+import com.tneff.cyppieagents.acl.AclViewModel
+import com.tneff.cyppieagents.acl.StubAclHub
 import com.tneff.cyppieagents.eventlog.EventBrowsePanel
 import com.tneff.cyppieagents.eventlog.EventBrowseViewModel
 import com.tneff.cyppieagents.eventlog.EventFilter
@@ -41,10 +44,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /** Demo panel selector — which Event-Log surface the [EventLogDemoApp] tab switcher shows. */
-private enum class DemoPanel { BROWSE, TAIL }
+private enum class DemoPanel { BROWSE, TAIL, ACL }
 
 private const val DEMO_TAB_BROWSE = "demo.tab.browse"
 private const val DEMO_TAB_TAIL = "demo.tab.tail"
+private const val DEMO_TAB_ACL = "demo.tab.acl"
 
 /**
  * DEDICATED test/demo entry — NOT the prod [com.tneff.cyppieagents.MainActivity] / [com.tneff.cyppieagents.App].
@@ -92,6 +96,9 @@ fun EventLogDemoApp() {
                 Button(onClick = { panel = DemoPanel.TAIL }, modifier = Modifier.testTag(DEMO_TAB_TAIL)) {
                     Text("Live-Tail")
                 }
+                Button(onClick = { panel = DemoPanel.ACL }, modifier = Modifier.testTag(DEMO_TAB_ACL)) {
+                    Text("ACL")
+                }
             }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 // Injected scope (not viewModelScope) so the demo VMs run without a ViewModelStoreOwner.
@@ -104,6 +111,13 @@ fun EventLogDemoApp() {
                     DemoPanel.TAIL -> {
                         val vm = remember { EventTailViewModel(SteadyDemoEventsSource(), scope = scope) }
                         EventTailPanel(vm)
+                    }
+                    DemoPanel.ACL -> {
+                        // Operator context (editable = true). rejectPoLockout = true so the demo mirrors
+                        // the CYP-49 server guard → the Maestro flow can see the real 409/protected path.
+                        val hub = remember { StubAclHub(rejectPoLockout = true) }
+                        val vm = remember { AclViewModel(hub, hub, editable = true, scope = scope) }
+                        AclPanel(vm)
                     }
                 }
             }
