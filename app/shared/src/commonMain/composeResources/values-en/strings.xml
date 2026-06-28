@@ -127,4 +127,28 @@
     <string name="a11y_badge_unread">%1$s: %2$s new messages</string>
     <string name="a11y_badge_error">%1$s: agent error</string>
     <string name="a11y_badge_severity">%1$s: highest severity %2$s</string>
+    <!-- Project settings (CYP-84 repo-config + CYP-85 API-key, S15). Keys per docs/design/project-settings-keys.md.
+         Disclosure-true: "Saved" != "Active" → effect hints amber/tertiary, never success-green; API key never in
+         clear (settings_apikey_masked %1$s = server-masked ***last4, the only interpolated key). Restart activation
+         reuses agent_ctl_restart (CYP-73), NO new restart key. settings_save shared. -->
+    <string name="settings_title">Project settings</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_operator_required">Editable only with an operator token</string>
+    <string name="settings_repo_section">Repository</string>
+    <string name="settings_repo_url_label">Repository URL</string>
+    <string name="settings_repo_branch_label">Branch</string>
+    <string name="settings_repo_status_unset">No repository configured — agents cannot start.</string>
+    <string name="settings_repo_effect_hint">Change applies to newly created worktrees / on next startup — existing worktrees are unchanged.</string>
+    <string name="settings_repo_url_invalid">Invalid repository URL</string>
+    <string name="a11y_settings_repo_url">Enter repository URL</string>
+    <string name="a11y_settings_repo_branch">Enter branch</string>
+    <string name="settings_apikey_section">API key</string>
+    <string name="settings_apikey_masked">Stored: %1$s</string>
+    <string name="settings_apikey_unset">No key stored</string>
+    <string name="settings_apikey_placeholder">Enter a new key…</string>
+    <string name="settings_apikey_effect_hint">Saved. Takes effect on the agent's next start — restart now so the new key applies.</string>
+    <string name="settings_apikey_save_failed">Save failed</string>
+    <string name="a11y_settings_apikey_input">Enter new API key</string>
+    <string name="a11y_settings_apikey_reveal">Show entry</string>
+    <string name="a11y_settings_apikey_hide">Hide entry</string>
 </resources>
