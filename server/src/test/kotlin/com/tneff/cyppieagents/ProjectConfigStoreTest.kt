@@ -30,10 +30,10 @@ class ProjectConfigStoreTest {
     @Test
     fun perProjectIsolation_noCrossProjectRead() {
         val store = ProjectConfigStore(null, RepoConfig("u", "main"), secrets())
-        store.setApiKey("alpha", "ka")
-        store.setApiKey("beta", "kb")
-        assertEquals("ka", store.resolvedApiKey("alpha"))
-        assertEquals("kb", store.resolvedApiKey("beta"))
+        store.setApiKey("alpha", "key-alpha-1234") // >= MIN_SECRET_LEN (CYP-104)
+        store.setApiKey("beta", "key-beta-5678")
+        assertEquals("key-alpha-1234", store.resolvedApiKey("alpha"))
+        assertEquals("key-beta-5678", store.resolvedApiKey("beta"))
         assertNull(store.resolvedApiKey("gamma")) // no override, no env key → null (fail-closed)
     }
 

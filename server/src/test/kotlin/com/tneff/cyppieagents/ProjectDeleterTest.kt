@@ -45,8 +45,8 @@ class ProjectDeleterTest {
 
         fun seedTwoProjectsWithResources() = runBlocking {
             registry.create(CreateProjectRequest("beta", "Beta")) // default stays active
-            config.setApiKey("default", "key-default")
-            config.setApiKey("beta", "key-beta")
+            config.setApiKey("default", "key-default-0001") // >= MIN_SECRET_LEN (CYP-104)
+            config.setApiKey("beta", "key-beta-00002")
             repeat(3) { events.append(draft(team = "default")) }
             repeat(2) { events.append(draft(team = "beta")) }
             File(gitRoot, "projects/default/po").mkdirs()
@@ -138,7 +138,7 @@ class ProjectDeleterTest {
         val f = Fixture()
         try {
             // only the seed project exists → it is both last AND active
-            f.config.setApiKey("default", "key-default")
+            f.config.setApiKey("default", "key-default-0001") // >= MIN_SECRET_LEN (CYP-104)
             repeat(2) { f.events.append(draft(team = "default")) }
             File(f.gitRoot, "projects/default/po").mkdirs()
 

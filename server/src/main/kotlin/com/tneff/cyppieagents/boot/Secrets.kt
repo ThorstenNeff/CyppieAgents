@@ -34,12 +34,23 @@ class Secrets(
 
     companion object {
         /**
-         * The single masking helper (Reviewer): `***<last4>`, or `unset` when empty. Used by [toString]
-         * and reused by the per-project config store (CYP-96) so a key value is never rendered in full
-         * anywhere — the same `mask()` the design (PROJECT-SETTINGS §5) calls out.
+         * Below this length a value is too short to reveal ANY plaintext (CYP-104): `mask` drops the
+         * `<last4>` tail entirely, and [ProjectConfigStore.setApiKey] rejects new keys as implausible.
+         * Single-sourced here so the redaction floor and the key-plausibility floor can't drift.
          */
-        fun mask(value: String?): String =
-            if (value.isNullOrEmpty()) "unset" else "***${value.takeLast(4)}"
+        const val MIN_SECRET_LEN: Int = 12
+
+        /**
+         * The single masking helper (Reviewer): `***<last4>`, or `unset` when empty. **CYP-104 redaction
+         * floor:** a value shorter than [MIN_SECRET_LEN] renders as `****` with NO plaintext tail — for a
+         * short value `takeLast(4)` would otherwise expose most/all of it (e.g. a 4-char value → `***abcd`).
+         * Reused by the per-project config store (CYP-96) so a key value is never rendered in full anywhere.
+         */
+        fun mask(value: String?): String = when {
+            value.isNullOrEmpty() -> "unset"
+            value.length < MIN_SECRET_LEN -> "****"
+            else -> "***${value.takeLast(4)}"
+        }
 
         /**
          * Resolves secrets from env. Per agent, requires `HUB_TOKEN_<ID>`; requires `OPERATOR_TOKEN`.
