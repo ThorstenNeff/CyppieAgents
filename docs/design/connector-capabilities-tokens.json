@@ -1,0 +1,95 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-119 (Epic CYP-118) — Connector-Vertrag & Capabilities",
+    "version": "0.1-vorlauf",
+    "status": "Design-Vorlauf, docs-only — wartet auf PO-Gegenlesen; Wire-Form (CapabilityStatus/ConnectorKind-Feldnamen) zurueckgehalten bis Backend CYP-120",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop ac70819",
+    "note": "Semantische Tokens fuer die Connector-Capability-/Degradations-Anzeige (Doc 10 Teil 1) und die Connector-Auswahl + B-Opt-in (Doc 10 Teil 2). Fast ausschliesslich Reuse: Hinweis-/Status-Toene ueber die geteilte TonedHint-Komponente (HintTone, CYP-99); Picker spiegelt RolePicker (CYP-86/88); Opt-in spiegelt AuthorizeDialog/owner-consent (CYP-93). Keine neuen Farben.",
+    "reuse_note": "TonedHint-Mapping (ui/TonedHint.kt @ ac70819): INFO=secondary, GATED=onSurfaceVariant, ERROR=error, EFFECT_DEFERRED=onTertiaryContainer (amber Banner). Glyphen 'i'/'·'/'X'/'!' (kein Emoji, CYP-54). Vier getrennte Achsen (CYP-14): Identitaet (welcher Connector) != Recht/Gate != Severity != Fidelity. Fidelity wird NICHT rot eingefaerbt, nur weil reduziert."
+  },
+  "semantic": {
+    "connector.fidelityBadge": {
+      "role": "Kompakter Degradations-Marker im Agentenfenster-Header (Anchor agent.<id>.header). PRAESENT <=> Fidelity < voll ODER Capabilities nicht gemeldet (fail-closed durch Absenz, wie WindowBadges CYP-55). Voll-fideler Agent zeigt KEINEN Badge (kein falsches 'alles gruen'). Form/Glyph '!' + Label, NIE Farb-only. Sagt 'reduziert', keine Garantie. Klickbar -> Panel.",
+      "marker": "form+glyph+label (kein Farb-only)",
+      "tone_when_limited": "TonedHint.EFFECT_DEFERRED",
+      "tone_when_unknown": "TonedHint.GATED",
+      "label_key": "connector_fidelity_badge / connector_fidelity_unknown",
+      "a11y_key": "a11y_connector_fidelity_badge"
+    },
+    "connector.capabilityStatus.available": {
+      "role": "Tri-State AVAILABLE einer Dimension. Ehrlicher Fakt, NEUTRAL — KEIN gesaettigtes Erfolgs-Gruen (Anti-Hype). Glyph + Label tragen den Sinn.",
+      "glyph": "checkmark (plain, kein Emoji)",
+      "tone": "TonedHint.INFO (neutral secondary)",
+      "label_key": "connector_cap_available"
+    },
+    "connector.capabilityStatus.limited": {
+      "role": "Tri-State LIMITED. 'degradiert/markiert' = Attention, kein Fehler.",
+      "glyph": "!",
+      "tone": "TonedHint.EFFECT_DEFERRED (amber onTertiaryContainer)",
+      "label_key": "connector_cap_limited"
+    },
+    "connector.capabilityStatus.unavailable": {
+      "role": "Tri-State UNAVAILABLE. 'aus', SICHTBAR — schlaegt falsches Gruen, ist aber kein ERROR-Rot (Connector-Grenze != Fehler). Nie weggeblendet. Fail-closed-Default auch bei nicht gemeldeten Caps.",
+      "glyph": "circle (plain, 'off')",
+      "tone": "TonedHint.GATED (neutral onSurfaceVariant)",
+      "label_key": "connector_cap_unavailable"
+    },
+    "connector.activeConnector": {
+      "role": "Aktiver-Connector-Identitaetstext im Panel. TEXT (Identitaets-Traeger). Identitaet != Fidelity != Recht. Optional CYP-14 ColorSlot, nie alleiniger Traeger.",
+      "reuse": "CYP-14 ColorSlot (Identitaet) optional",
+      "label_key": "connector_active"
+    },
+    "connector.picker": {
+      "role": "Connector-A/B-RadioGroup im Agenten-Konfig-Dialog (spiegelt RolePicker). A (streamJson) = Default, VORAUSGEWAEHLT, erstklassig. B (mcp) = fail-closed, NIE vorausgewaehlt.",
+      "reuse": "RolePicker/RadioRow (AgentManagementPanel.kt, CYP-86/88)",
+      "default": "streamJson (A)",
+      "label_key": "connector_picker_label / connector_kind_stream_json / connector_kind_mcp / connector_default_note"
+    },
+    "connector.optIn.dialog": {
+      "role": "B-Opt-in Risiko-Aufklaerungs-Dialog (spiegelt AuthorizeDialog, CYP-93). Bewusster Akt; nur menschlich/operator-gegatet (Gate geerbt aus Agenten-Konfig).",
+      "reuse": "AuthorizeDialog (CrossProjectControls.kt)",
+      "label_key": "connector_optin_title / connector_optin_intro"
+    },
+    "connector.optIn.risk": {
+      "role": "Drei Risiko-Zeilen (bypass/account/fragile). Gefahren-Aufklaerung = Attention (amber), KEIN App-ERROR-Rot. Salient, nicht weggeblendet.",
+      "tone": "TonedHint.EFFECT_DEFERRED",
+      "label_key": "connector_optin_risk_bypass / connector_optin_risk_account / connector_optin_risk_fragile"
+    },
+    "connector.optIn.capabilityPreview": {
+      "role": "Degradierte-Capabilities-Vorschau fuer Connector B VOR der Bestaetigung (ehrliche Folgenanzeige). Rendert die Tri-State-Zeilen (Scope 'preview'). Man sieht, was man eintauscht.",
+      "reuse": "connector.capabilityStatus.* (Scope preview)",
+      "label_key": "connector_optin_preview_title"
+    },
+    "connector.optIn.ack": {
+      "role": "Bewusste Bestaetigungs-Checkbox (spiegelt owner-consent). Ganze Zeile togglebar (Hit-Area). canConfirm = ack -> kein versehentliches Aktivieren.",
+      "reuse": "ownerConsent-Checkbox (CrossProjectControls.kt)",
+      "gates": "canConfirm",
+      "label_key": "connector_optin_ack"
+    },
+    "connector.optIn.humanOnly": {
+      "role": "Anti-Injection-Disclosure (load-bearing): 'nur du/Operator aktivierst – nie ein Agent/eine Nachricht'. Macht die Invariante im UI sichtbar (§2.6-Analog zu CYP-79).",
+      "tone": "TonedHint.INFO",
+      "label_key": "connector_optin_human_only"
+    },
+    "connector.optIn.confirm": {
+      "role": "Benannter Confirm-Button ('Connector B aktivieren'). Bewusste, benannte Handlung. NICHT destruktiv-rot (B ist reversibel: zurueck auf A moeglich), aber prominent. enabled = ack.",
+      "container": "primary",
+      "onContainer": "onPrimary",
+      "label_key": "connector_optin_confirm"
+    },
+    "connector.optIn.error": {
+      "role": "Echter Fehler: Aktivierung fehlgeschlagen / Gate-Ablehnung (403). Hier ist ERROR-Rot korrekt.",
+      "tone": "TonedHint.ERROR",
+      "label_key": "connector_optin_error"
+    }
+  },
+  "dimensions": {
+    "connector.fidelityBadge.minHitArea": {
+      "role": "Touch-/Klickflaeche des Fidelity-Badges (oeffnet das Capability-Panel).",
+      "value": "48dp",
+      "note": "Material/WCAG 2.5.8; Dev-kalibrierbar."
+    }
+  }
+}
