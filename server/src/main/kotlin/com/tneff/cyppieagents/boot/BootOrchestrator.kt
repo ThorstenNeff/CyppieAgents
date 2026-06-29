@@ -61,6 +61,8 @@ class BootedPlatform(
     val projectRegistry: ProjectRegistry,
     /** Project cascade-delete (S13 / CYP-91): fail-closed, strictly per-projectId teardown. */
     val projectDeleter: ProjectDeleter,
+    /** Cross-project channel-share gate (S17 / CYP-93), served by `/api/channels/{id}/share`. */
+    val channelShares: com.tneff.cyppieagents.comm.ChannelShareStore,
 )
 
 /**
@@ -97,6 +99,8 @@ class BootOrchestrator(
     // Multi-project registry persistence (S13 / CYP-91); null → in-memory (tests). bootPlatform
     // supplies the out-of-repo, gitignored, 0600 file under the gitRoot (seeded with config.projectId).
     private val projectRegistryFile: java.io.File? = null,
+    // S17 / CYP-93: the cross-project channel-share gate persists here — out-of-repo, 0600, gitignored.
+    private val channelShareFile: java.io.File? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -107,9 +111,14 @@ class BootOrchestrator(
         worktrees.ensureClone(projectConfig.resolvedRepo(config.projectId))
 
         val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName) }
+        // S17 / CYP-93: the cross-project share gate. The hub consults it for the AclMatrix permit
+        // (channels authorized to reach into the active project); revoke → immediate fail-closed.
+        val channelShares = com.tneff.cyppieagents.comm.ChannelShareStore(channelShareFile)
         // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
         // S12 / CYP-81: single-source the active project from config into the hub (scopes channels/ACL/messages).
-        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID, config.projectId)
+        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID, config.projectId) { pid ->
+            channelShares.sharedInboundChannelIds(pid)
+        }
         val store = storeFactory()
         val hub = Hub(state, store)
         val registry = SessionRegistry()
@@ -225,6 +234,7 @@ class BootOrchestrator(
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
+            channelShares,
         )
     }
 }

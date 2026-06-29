@@ -71,6 +71,9 @@ fun Application.installPlatform(booted: BootedPlatform) {
         // CYP-102: a switch re-scopes the live comm hub (HubState.rescope) so channels/inbox/acl/ws-comm
         // follow the active project without a restart.
         projectRoutes(booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry, booted.state::rescope)
+        // CYP-93: cross-project channel-share — GET participant (disclosure), PUT/DELETE operator/owner
+        // (the authorization gate, fail-closed); the AclMatrix permit takes effect via HubState.refreshShares.
+        channelShareRoutes(booted.state, booted.channelShares, booted.tokenRegistry)
     }
 }
 
@@ -117,6 +120,8 @@ fun Application.bootPlatform(
         // CYP-91: the multi-project registry persists here — out-of-repo under the gitRoot, 0600,
         // gitignored, seeded with config.projectId on first boot.
         projectRegistryFile = gitRoot.toPath().resolve("projects.json").toFile(),
+        // CYP-93: the cross-project channel-share gate persists here — out-of-repo, 0600, gitignored.
+        channelShareFile = gitRoot.toPath().resolve("channel-shares.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     installPlatform(booted)
