@@ -63,6 +63,8 @@ fun EventType.groupGlyph(): String = when (this) {
     // Connector fidelity degradation (Doc 10 §3, CYP-121). Provisional glyph; severity (warn) carries
     // the signal, this is the scan aid. CYP-119/123 UIUX may refine it (per-agent degradation surface).
     EventType.CAPABILITY_DEGRADED -> "▽"
+    // Connector opt-in (Doc 10 §5, CYP-122) — an operator chose a connector (e.g. Connector B). Provisional.
+    EventType.CONNECTOR_OPTIN -> "⇆"
     EventType.LOG_DROPPED -> "⚠"
     EventType.UNKNOWN -> "ⓘ"
 }

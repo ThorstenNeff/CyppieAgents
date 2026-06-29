@@ -33,17 +33,18 @@ class EventProjector(
     private val bander: ContextUsageBander,
     private val projectId: String,
     /**
-     * Per-agent connector capabilities resolver (CYP-121, Doc 10 §3). **Null = no capability system
+     * Per-agent connector capabilities resolver (CYP-121/122, Doc 10 §3). **Null = no capability system
      * configured** → no gating (legacy behaviour for installs/tests). When wired, two fidelity dimensions
      * gate event-log depth: `toolGranularity` (tool.call/tool.result) and `structuredUsage`
-     * (context.usage). A resolver that returns null for an agent (registry miss) **fails closed** to OFF
-     * via [CapabilityGate.isEnabled] — never assumed AVAILABLE (F2).
+     * (context.usage). A resolver that returns null for an agent (registry miss) **fails closed** to OFF —
+     * never assumed AVAILABLE (F2). CYP-122: a DEGRADED dimension runs reduced (tools still emit; usage is
+     * coarse — compact-threshold only), only OFF/unknown suppresses.
      */
     private val capabilities: ((agentId: String) -> Capabilities?)? = null,
 ) {
-    private fun enforced(agentId: String, capability: CapabilityGate.EnforcedCapability): Boolean {
-        val resolve = capabilities ?: return true // no capability system → enabled (legacy)
-        return CapabilityGate.isEnabled(capability, resolve(agentId)) // resolve()==null → fail-closed OFF
+    private fun mode(agentId: String, capability: CapabilityGate.EnforcedCapability): CapabilityGate.CapabilityMode {
+        val resolve = capabilities ?: return CapabilityGate.CapabilityMode.ENABLED // no system → enabled (legacy)
+        return CapabilityGate.mode(capability, resolve(agentId)) // resolve()==null → fail-closed OFF
     }
     /** Stream events → drafts. May produce 0 (e.g. system/init, text-only assistant), 1, or many. */
     fun project(
@@ -52,9 +53,9 @@ class EventProjector(
         correlationId: String?,
         event: StreamJsonEvent,
     ): List<EventDraft> = when (event) {
-        // toolGranularity gate (CYP-121): a connector without full tool.call/tool.result fidelity yields
-        // no tool events for this agent — the event-log is honestly thinner, not faked.
-        is AssistantEvent -> if (!enforced(agentId, CapabilityGate.EnforcedCapability.TOOL_GRANULARITY)) emptyList()
+        // toolGranularity gate (CYP-121/122): OFF (or unknown) → no tool events; ENABLED/DEGRADED → emit
+        // (a DEGRADED connector just produces fewer tool blocks — honestly thinner, never faked).
+        is AssistantEvent -> if (mode(agentId, CapabilityGate.EnforcedCapability.TOOL_GRANULARITY) == CapabilityGate.CapabilityMode.OFF) emptyList()
         else event.message.content.filterIsInstance<ToolUseBlock>().map { tu ->
             draft(agentId, sessionId, correlationId, EventType.TOOL_CALL, Severity.INFO) {
                 put("toolName", tu.name)
@@ -62,7 +63,7 @@ class EventProjector(
             }
         }
 
-        is UserEvent -> if (!enforced(agentId, CapabilityGate.EnforcedCapability.TOOL_GRANULARITY)) emptyList()
+        is UserEvent -> if (mode(agentId, CapabilityGate.EnforcedCapability.TOOL_GRANULARITY) == CapabilityGate.CapabilityMode.OFF) emptyList()
         else event.message.content.filterIsInstance<ToolResultBlock>().map { tr ->
             draft(agentId, sessionId, correlationId, EventType.TOOL_RESULT, if (tr.isError) Severity.WARN else Severity.INFO) {
                 tr.toolUseId?.let { put("toolUseId", it) }
@@ -88,10 +89,16 @@ class EventProjector(
                 )
             }
             // context.usage: numbers only, persisted only on a band/compact crossing. structuredUsage
-            // gate (CYP-121): without per-turn token usage we emit no context.usage / compact signal for
-            // this agent rather than band on fabricated numbers.
-            if (enforced(agentId, CapabilityGate.EnforcedCapability.STRUCTURED_USAGE)) {
-                addAll(bander.onUsage(agentId, projectId, UsageSnapshot.fromUsageJson(event.usage), sessionId, correlationId))
+            // gate (CYP-121/122): OFF/unknown → no context.usage (don't band on numbers we don't have);
+            // ENABLED → full banding; DEGRADED → coarse — only the compact-threshold crossing, not every
+            // band step (Doc 10 §4 col B: B's token tracking is too coarse to trust the fine bands).
+            val snapshot = UsageSnapshot.fromUsageJson(event.usage)
+            when (mode(agentId, CapabilityGate.EnforcedCapability.STRUCTURED_USAGE)) {
+                CapabilityGate.CapabilityMode.OFF -> {}
+                CapabilityGate.CapabilityMode.ENABLED ->
+                    addAll(bander.onUsage(agentId, projectId, snapshot, sessionId, correlationId))
+                CapabilityGate.CapabilityMode.DEGRADED ->
+                    addAll(bander.onUsage(agentId, projectId, snapshot, sessionId, correlationId, coarse = true))
             }
         }
 

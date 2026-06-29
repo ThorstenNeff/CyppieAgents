@@ -49,6 +49,14 @@ data class Agent(
      * additively in CYP-122; this field is the foundation Dev scaffolds the UI against.
      */
     val capabilities: Capabilities? = null,
+    /**
+     * Which connector drives this agent (Doc 10 §1 / CYP-122). `STREAM_JSON` (default) = Connector A, the
+     * first-class full-fidelity path; `MCP` = Connector B (opt-in, lower fidelity). Additive + defaulted so
+     * older payloads/config-time constructions are unaffected. The choice is operator-set on the agent
+     * spec (server-enforced opt-in, never flipped by a channel message); the spawn path selects the
+     * connector implementation from it (CYP-122).
+     */
+    val connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON,
 )
 
 enum class ChannelKind {

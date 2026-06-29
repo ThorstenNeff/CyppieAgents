@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.Role
 import kotlinx.serialization.Serializable
@@ -96,6 +97,9 @@ data class AgentConfig(
      * pre-CYP-97 configs load unchanged; null/blank → the connector writes no CLAUDE.md.
      */
     val claudeMd: String? = null,
+    /** Connector choice (Doc 10 §1 / CYP-122); default Connector A (stream-json). Defaulted so pre-CYP-122
+     *  configs load unchanged. The spawn path selects the connector implementation from this. */
+    val connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON,
 ) {
     /** Effective worktree folder name (falls back to the id when unset). */
     val worktreeName: String get() = worktree.ifBlank { id }

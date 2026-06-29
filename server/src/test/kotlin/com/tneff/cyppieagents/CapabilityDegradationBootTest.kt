@@ -140,4 +140,40 @@ class CapabilityDegradationBootTest {
             "Connector A is all-AVAILABLE → no degradation events, live path byte-unchanged",
         )
     }
+
+    @Test
+    fun multiplexingBoot_onlyTheMcpAgentIsDegraded_pinsPerAgentCapabilitiesFor() = runBlocking {
+        // Reviewer merge-gate (M4): the prior boot tests use a UNIFORM connector, where
+        // capabilities == capabilitiesFor(*), so the `capabilitiesFor(agent.id) → capabilities` mutation
+        // (router default = A's all-AVAILABLE → a B agent over-trusted as full fidelity) stays GREEN. This
+        // boots a REAL multiplexing setup via the production ConnectorRouter: backend = Connector B (MCP),
+        // po/frontend = Connector A. ONLY backend gets its column-B `capability.degraded` events; the A
+        // agents get none. Under the M4 mutation every agent would resolve A's all-AVAILABLE caps → backend
+        // emits nothing → this reddens.
+        val cfg = PlatformConfig(
+            repo = RepoConfig("git@github.com:org/repo.git", "main"),
+            hub = HubConfig(),
+            agents = listOf(
+                AgentConfig("po", "PO", Role.PO),
+                AgentConfig("frontend", "FE", Role.WORKER),
+                AgentConfig("backend", "BE", Role.WORKER, connectorKind = ConnectorKind.MCP),
+            ),
+        )
+        // No connectorFactory → the real ConnectorRouter selects A vs B per agent.connectorKind. The A
+        // agents spawn via the fake process; the B agent's McpConnector does not spawn.
+        val booted = BootOrchestrator(
+            cfg, secrets(), WorktreeManager(FakeGit(), Files.createTempDirectory("cap-mux").toFile()),
+            FakeProcessSpawner(), scope,
+        ).boot()
+
+        // Connector B (col B) has 4 non-AVAILABLE dims (coordination is AVAILABLE) → 4 events, all backend.
+        val events = degradedEvents(booted.eventSink, expectAtLeast = 4)
+        assertEquals(setOf("backend"), events.map { it.agentId }.toSet(), "only the MCP agent is degraded")
+        val dims = events.filter { it.agentId == "backend" }.map { (it.detail["dimension"] as JsonPrimitive).content }.toSet()
+        assertEquals(
+            setOf("structuredUsage", "toolGranularity", "reliableResult", "rateLimitSignal"),
+            dims,
+            "backend gets exactly Connector B's non-AVAILABLE dimensions (coordination is AVAILABLE)",
+        )
+    }
 }

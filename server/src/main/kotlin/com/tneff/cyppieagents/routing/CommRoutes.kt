@@ -104,6 +104,12 @@ fun Route.commRoutes(
     registry: TokenRegistry,
     // CYP-73: live process status. Null in the dev install (no boot) → status stays the default RUNNING.
     lifecycle: com.tneff.cyppieagents.boot.LifecycleManager? = null,
+    // CYP-122: per-agent connector fidelity for the steady-state read model (Doc 10 §6.4). Null in the dev
+    // install → capabilities stay null (UI shows nothing reduced).
+    capabilitiesOf: (agentId: String) -> com.tneff.cyppieagents.model.Capabilities? = { null },
+    // CYP-122: the agent's connector kind, single-sourced from the config registry so an opt-in is
+    // reflected without mutating the hub Agent. Null → keep the Agent's own value (default STREAM_JSON).
+    connectorKindOf: (agentId: String) -> com.tneff.cyppieagents.model.ConnectorKind? = { null },
 ) {
     route("/api") {
         get("/health") { call.respondText("ok") }
@@ -120,7 +126,12 @@ fun Route.commRoutes(
             // filter here and no separate mutation proof. Real per-project agent isolation lands in S17 when
             // the hub is instanced per project; THEN this list filters by the active project's hub.
             val agents = state.agents.map { agent ->
-                lifecycle?.runStateOf(agent.id)?.let { agent.copy(runState = it) } ?: agent
+                agent.copy(
+                    runState = lifecycle?.runStateOf(agent.id) ?: agent.runState,
+                    // CYP-122: fill the steady-state connector fidelity + kind for the per-agent read model.
+                    capabilities = capabilitiesOf(agent.id) ?: agent.capabilities,
+                    connectorKind = connectorKindOf(agent.id) ?: agent.connectorKind,
+                )
             }
             call.respond(agents)
         }

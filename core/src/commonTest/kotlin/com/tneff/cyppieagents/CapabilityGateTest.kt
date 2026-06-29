@@ -35,7 +35,8 @@ class CapabilityGateTest {
         // exactly these LIMITED lines change — a deliberate, visible edit, never a silent drift.
         for (cap in EnforcedCapability.entries) {
             assertEquals(CapabilityMode.ENABLED, CapabilityGate.mode(cap, capsWith(cap, CapabilityStatus.AVAILABLE)), "$cap AVAILABLE")
-            assertEquals(CapabilityMode.OFF, CapabilityGate.mode(cap, capsWith(cap, CapabilityStatus.LIMITED)), "$cap LIMITED (CYP-121 conservative)")
+            // CYP-122: LIMITED → DEGRADED (run reduced/marked), the deliberate flip CYP-121 promised.
+            assertEquals(CapabilityMode.DEGRADED, CapabilityGate.mode(cap, capsWith(cap, CapabilityStatus.LIMITED)), "$cap LIMITED (degraded-running)")
             assertEquals(CapabilityMode.OFF, CapabilityGate.mode(cap, capsWith(cap, CapabilityStatus.UNAVAILABLE)), "$cap UNAVAILABLE")
         }
     }

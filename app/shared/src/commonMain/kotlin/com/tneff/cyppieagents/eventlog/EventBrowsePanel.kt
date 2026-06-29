@@ -252,6 +252,8 @@ private val TYPE_CYCLE = listOf(
     EventType.STALL_SUSPECTED, EventType.NUDGE_SENT, EventType.STALL_RECOVERED, EventType.STALL_ESCALATED,
     // Connector fidelity degradation (Doc 10 §3, CYP-121) — operators can filter to the degraded agents.
     EventType.CAPABILITY_DEGRADED,
+    // Connector opt-in (Doc 10 §5, CYP-122) — filter to the audited connector choices.
+    EventType.CONNECTOR_OPTIN,
 )
 
 @Composable
