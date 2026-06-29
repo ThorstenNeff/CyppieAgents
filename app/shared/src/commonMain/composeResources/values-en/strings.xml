@@ -253,4 +253,25 @@
     <string name="project_delete_active_blocked">Active project — switch to another first, then it can be deleted.</string>
     <string name="project_delete_last_blocked">The last project cannot be deleted.</string>
     <string name="project_delete_error">Delete failed</string>
+
+    <!-- Cross-project channel authorization (S17 · Epic CYP-79 · CYP-93) -->
+    <string name="crossproject_title">Cross-project sharing</string>
+    <string name="crossproject_badge">Cross-project</string>
+    <string name="crossproject_status_shared">Cross-project, authorized %1$s · reaches: %2$s</string>
+    <string name="crossproject_status_not_shared">This project only — not authorized across projects.</string>
+    <string name="crossproject_authorize">Authorize across projects</string>
+    <string name="crossproject_revoke">Revoke sharing</string>
+    <string name="crossproject_dialog_scope">This channel will then reach these agents: %1$s</string>
+    <string name="crossproject_member_access">%1$s (project %2$s) — %3$s</string>
+    <string name="crossproject_member_project">From project %1$s</string>
+    <string name="crossproject_access_read">read</string>
+    <string name="crossproject_access_write">write</string>
+    <string name="crossproject_owner_consent">As the owner, I authorize this channel across projects.</string>
+    <string name="crossproject_human_only">Only you, the owner, authorize this — never an agent or a message.</string>
+    <string name="crossproject_single_owner_note">Single-user: one owner authorizes. Mutual consent of multiple owners comes later.</string>
+    <string name="crossproject_confirm">Authorize</string>
+    <string name="crossproject_cancel">Cancel</string>
+    <string name="crossproject_error">Authorization failed</string>
+    <string name="crossproject_operator_required">Only the owner (operator token) can authorize.</string>
+    <string name="a11y_crossproject_badge">Cross-project channel</string>
 </resources>
