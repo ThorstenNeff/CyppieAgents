@@ -42,6 +42,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.connector.ConnectorCapabilityBadge
+import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.testing.testTagA11y
 import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -77,6 +79,10 @@ fun AgentWindow(
     agentId: String,
     viewModel: AgentViewModel,
     modifier: Modifier = Modifier,
+    /** CYP-123 connector fidelity for this agent (`null` = not yet reported → fail-closed badge). */
+    capabilities: Capabilities? = null,
+    /** Opens the capability detail panel (CYP-123); no-op default keeps existing call sites/tests intact. */
+    onCapabilityBadgeClick: () -> Unit = {},
 ) {
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
@@ -90,6 +96,8 @@ fun AgentWindow(
             onStart = viewModel::start,
             onStop = viewModel::stop,
             onRestart = viewModel::restart,
+            capabilities = capabilities,
+            onCapabilityBadgeClick = onCapabilityBadgeClick,
         )
         AgentTranscript(
             agentId = agentId,
@@ -139,6 +147,8 @@ private fun AgentHeader(
     onStop: () -> Unit,
     onRestart: () -> Unit,
     modifier: Modifier = Modifier,
+    capabilities: Capabilities? = null,
+    onCapabilityBadgeClick: () -> Unit = {},
 ) {
     Row(
         modifier = modifier
@@ -149,6 +159,9 @@ private fun AgentHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StatusIndicator(agentId, state)
+        // Fidelity axis (CYP-123) — its own marker next to the lifecycle status, NOT mixed into it. Present
+        // only when degraded / not-yet-reported (fail-closed by absence); opens the capability panel.
+        ConnectorCapabilityBadge(caps = capabilities, agentId = agentId, onClick = onCapabilityBadgeClick)
         Spacer(Modifier.weight(1f))
         TextButton(
             onClick = onStart,

@@ -88,7 +88,13 @@ import org.jetbrains.compose.resources.stringResource
  * restarts itself (add → start via lifecycle; edit → amber "restart to apply").
  */
 @Composable
-fun AgentManagementPanel(viewModel: AgentManagementViewModel, modifier: Modifier = Modifier) {
+fun AgentManagementPanel(
+    viewModel: AgentManagementViewModel,
+    modifier: Modifier = Modifier,
+    // CYP-123: the connector picker (+ B opt-in dialog), host-anchored inside the add/edit dialogs (spec §3.1).
+    // Default no-op = no regress; the dialogs are already operator-gated so the picker inherits that gate (§3.3).
+    connectorPickerSlot: @Composable () -> Unit = {},
+) {
     val state by viewModel.state.collectAsState()
 
     Column(
@@ -121,9 +127,9 @@ fun AgentManagementPanel(viewModel: AgentManagementViewModel, modifier: Modifier
         }
     }
 
-    if (state.addOpen) AddDialog(state, viewModel)
+    if (state.addOpen) AddDialog(state, viewModel, connectorPickerSlot)
     state.removeTarget?.let { RemoveDialog(it, state, viewModel) }
-    state.editTarget?.let { EditDialog(it, state, viewModel) }
+    state.editTarget?.let { EditDialog(it, state, viewModel, connectorPickerSlot) }
 }
 
 @Composable
@@ -164,7 +170,11 @@ private fun AgentRow(agent: Agent, state: AgentMgmtUiState, viewModel: AgentMana
 }
 
 @Composable
-private fun AddDialog(state: AgentMgmtUiState, viewModel: AgentManagementViewModel) {
+private fun AddDialog(
+    state: AgentMgmtUiState,
+    viewModel: AgentManagementViewModel,
+    connectorPickerSlot: @Composable () -> Unit = {},
+) {
     AlertDialog(
         onDismissRequest = viewModel::closeAdd,
         confirmButton = {
@@ -221,6 +231,9 @@ private fun AddDialog(state: AgentMgmtUiState, viewModel: AgentManagementViewMod
                 )
                 // Disclosure: creating does NOT spawn — start is the CYP-73 lifecycle (no second mechanism).
                 TonedHint(stringResource(Res.string.agent_add_spawn_hint), HintTone.INFO, AgentMgmtTags.ADD_SPAWN_HINT)
+
+                // CYP-123: connector picker (+ B opt-in). Add context → no restart hint (fresh spawn, spec §3.4).
+                connectorPickerSlot()
 
                 val err = when {
                     state.addIdCollision -> Res.string.agent_add_id_exists
@@ -295,7 +308,12 @@ private fun RemoveDialog(target: Agent, state: AgentMgmtUiState, viewModel: Agen
 }
 
 @Composable
-private fun EditDialog(target: Agent, state: AgentMgmtUiState, viewModel: AgentManagementViewModel) {
+private fun EditDialog(
+    target: Agent,
+    state: AgentMgmtUiState,
+    viewModel: AgentManagementViewModel,
+    connectorPickerSlot: @Composable () -> Unit = {},
+) {
     AlertDialog(
         onDismissRequest = viewModel::closeEdit,
         confirmButton = {
@@ -334,6 +352,9 @@ private fun EditDialog(target: Agent, state: AgentMgmtUiState, viewModel: AgentM
                     stringResource(Res.string.agent_edit_id_locked_hint),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // CYP-123: connector picker (+ B opt-in). The picker itself renders the reused amber
+                // "restart to apply" hint in its edit context (showEffectHint=true; spec §3.4).
+                connectorPickerSlot()
                 // CYP-101 [Mittel 1]: a disabled confirm needs a visible reason BEFORE the action (like
                 // Add/Remove). The only PO giving up the role and PO-taken-elsewhere are distinct messages;
                 // a server error shows here too. (po-taken / last-PO are mutually exclusive — role is PO xor not.)
