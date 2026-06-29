@@ -9,6 +9,7 @@ import com.tneff.cyppieagents.model.Role
 import io.ktor.client.call.body
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
@@ -94,15 +95,18 @@ class J7ObservabilityE2eTest {
         platform().use { p ->
             // SECRET is seeded as beta's apiKey; it must NEVER appear in the Event-Log on either surface.
             repeat(3) { p.injectDroppedEvent("alpha") }
+            // NON-VACUITY (needle audit): a FOREIGN (beta) event must actually EXIST, else "beta absent in
+            // alpha scope" is trivially true. We inject one so the absence assertion has something to catch.
+            p.injectDroppedEvent("beta")
             // REST (active = alpha): no secret, no foreign 'beta'
-            p.asOperator().use { c ->
-                c.get("${p.baseUrl}/api/events").assertNoNeedles("events REST (active=alpha)", foreignProjectIds = setOf("beta"))
-            }
+            val restText = p.asOperator().use { it.get("${p.baseUrl}/api/events").bodyAsText() }
+            assertNoNeedles("events REST (active=alpha)", restText, foreignProjectIds = setOf("beta"))
             // WS: collect the raw stream and grep it
             val raw = StringBuilder()
             p.asOperator().use { c ->
                 c.webSocket("${p.wsBaseUrl}/ws/events") {
                     delay(200)
+                    p.injectDroppedEvent("beta") // foreign, live — if scope leaked it would be pushed here (non-vacuous)
                     p.injectDroppedEvent("alpha")
                     runCatching {
                         withTimeout(2000) {
