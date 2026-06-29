@@ -2,13 +2,14 @@
 
 > Owner: UIUX-Designer · Epic **CYP-130** (Lokale & Remote Connectoren + Hub-Wire-Protokoll — Doc 12 + Doc 10 Provider) · Story **CYP-137** · Stand 2026-06-29
 > Reuse-Linie: baut auf der Connector-Capabilities-Familie **CYP-118/119/123** auf (siehe §7).
-> Status: **Design-Vorlauf (docs-only) — wartet auf PO-Gegenlesen. PO merged, nicht selbst mergen.**
+> Status: **Design gemergt (develop `abbdd51`). Wire-Form gefolded gegen die gemergte `:core`-DTO
+> (CYP-137-Backend @ develop `b57778b`) — alle 4 §-Asks resolved (§9). Folge-Push docs-only; PO merged.**
 > Quellen: `10-Connector-Vertrag-und-Capabilities.md` (§1 Connectoren, §3 Capabilities), `09-UI-Funktionskatalog.md`
 > (§3 Agentenfenster), `06-observability-event-log.md` (Event-Schema).
 > **Reconcile mit der Degradations-Linie:** baut direkt auf **CYP-119/123** (`connector-capabilities-spec.md`)
 > auf — Provider ist „Connector-Fidelity"-verwandte Info und lebt in **derselben Area `connector`** + im
 > bestehenden Capability-Panel. Kein neues Surface, keine Neuerfindung.
-> Grounded gegen **develop `608c8ad`** (Reuse-Anker real verifiziert, siehe §8).
+> Grounded gegen **develop `b57778b`** (Reuse-Anker + Provider-DTO real verifiziert, siehe §8).
 > Begleit-Artefakte: `provider-display-tokens.json`, `provider-display-keys.md`, `provider-display-tags.md`.
 
 ---
@@ -22,13 +23,21 @@
    + Fidelity sind verwandte „Connector-Fidelity"-Infos und gehören gebündelt ins **bestehende**
    Capability-Panel — Provider als dessen oberste Identitätszeile.
 
-**Wire-Form ZURÜCKGEHALTEN (wie CYP-119 die Capability-DTO bis CYP-120 hielt):**
-`Agent.provider` existiert **heute nicht** am DTO (verifiziert §8). Dev implementiert **nach Backends
-Provider-DTO (CYP-137-Backend)**. Design-Form festgezurrt, Feldname offen → **§-Ask 1**:
-- **Design-Annahme (additiv, nullable):** ein **menschenlesbares Provider-Label** am Agent-DTO, additiv +
-  defaulted **`null`** (genau wie `capabilities`/`connectorKind` es vormachen) → `null` = **noch nicht
-  gemeldet** ⇒ fail-closed (Qualifier weglassen / im Panel „noch nicht gemeldet", **nie** ein Provider
-  erfunden). Optionales Modell-Detail (z. B. „Claude Opus 4.8") ist **gehalten/optional** → §-Ask 2.
+**Wire-Form GEFOLDED gegen die gemergte `:core`-DTO (CYP-137-Backend @ develop `b57778b` — real verifiziert §8):**
+Das Design war 1:1 deckungsgleich (PO-§-Ask-1: strukturiert statt reiner String); nur die Form präzisiert.
+- **`Agent.provider: ProviderInfo? = null`** — additiv am Agent-DTO, **nullable**; **`null` ⇒ fail-closed**
+  (noch nicht gemeldet / config-time / alter Payload): Qualifier **weglassen** (Header/Event-Log) bzw. im
+  Panel „Anbieter noch nicht gemeldet" — **nie** ein Provider erfunden. Muster wie `capabilities`/`connectorKind`.
+- **`data class ProviderInfo(val id: String, val displayName: String)`** — **strukturiert** (PO-§-Ask 1, für
+  spätere Realisierung MCP/CLI/HTTP/Extraktion erweiterbar ohne Wire-Bruch). **`displayName` = der EINZIGE
+  sichtbare Text** (Header-Chip, Panel-Zeile, Event-Log-Sekundärtext, a11y-`%1$s`); **`id` = stabiler
+  Maschinen-Schlüssel** (z. B. `"claude"`) für Diffing/Tests/Telemetrie — **nie als Anzeigewert gerendert**.
+- **Werte (Wire):** `provider: { "id": "...", "displayName": "..." }` oder `null`. MVP einziger Provider:
+  `ProviderInfo("claude", "Claude")` (`ProviderInfo.CLAUDE`) — beide Connectoren A/B sind „Claude" (§-Ask 4).
+- **Provider = eigenes deklariertes Connector-Feld** (PO-§-Ask 4) — **nicht** aus `connectorKind` abgeleitet;
+  eigene Pflicht-Dimension (Doc 10 §3). Die UI bleibt **quellen-unabhängig** (rendert `displayName`, `null`⇒weglassen).
+- **Modell-Detail (z. B. „Claude Opus 4.8") gehalten** (PO-§-Ask 2 = nein/gehalten, Anti-Hype) — Slot
+  `connector.<id>.provider.model` vorgesehen, **nicht** gerendert; landet später additiv.
 
 **Außerhalb des Scope:** der Connector-Vertrag/Spawn (Backend, Doc 10 §2), die Capability-Degradations-
 *Mechanik* (das ist CYP-119/123 — hier nur referenziert/erweitert), Modell-/Versions-Telemetrie als eigenes
@@ -67,9 +76,11 @@ ist **anbieter-agnostisch** — sie darf nicht zum Provider-Label degradieren. D
 
 - **Ort:** im bestehenden Agentenfenster-Header (Host-Anchor `agent.<id>.header`, CYP-73), **bei** der
   Identität/Status — als **eigene Achse**, **nicht** in den Lifecycle-Status oder den Fidelity-Badge gemischt.
-- **Inhalt:** **neutraler Text-Chip** mit dem Provider-Label (sichtbarer Wert = der Provider, z. B. „Claude").
-  `contentDescription` nennt ihn **gelabelt** (`a11y_provider`, „Anbieter: %1$s") — der Screenreader hört
-  „Anbieter: Claude", auch wenn der Chip kurz „Claude" zeigt.
+- **Inhalt:** **neutraler Text-Chip** mit dem Provider-Label = **`provider.displayName`** (der einzige
+  sichtbare Text, z. B. „Claude"); **`provider.id`** (z. B. `"claude"`) ist **nur** stabiler Schlüssel
+  (Tests/Diffing/Telemetrie), **nie** Anzeigewert. `contentDescription` nennt ihn **gelabelt**
+  (`a11y_provider`, „Anbieter: %1$s" mit `displayName`) — der Screenreader hört „Anbieter: Claude", auch
+  wenn der Chip kurz „Claude" zeigt.
 - **Untergeordnet, nicht prominent:** kleinere/gedämpfte Typo (`onSurfaceVariant`, `labelSmall`-Klasse) —
   liest als **Qualifier** der Identität, nicht als zweite Identität. Kein Hue, kein Icon-Schmuck, **kein
   Logo**.
@@ -116,9 +127,10 @@ Provider ist „Connector-Fidelity"-verwandt → er gehört **gebündelt** ins *
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Provider-Zeile** `connector.<agentId>.provider` (Key `connector_provider` = „Anbieter: %1$s") — **ganz
-  oben**, als **Identitäts-Text** (Identität ≠ Fidelity). Liest die Achsen-Reihenfolge ehrlich von außen
-  nach innen: *womit* (Provider) → *wie* (Connector-Kind) → *was möglich ist* (Fidelity).
+- **Provider-Zeile** `connector.<agentId>.provider` (Key `connector_provider` = „Anbieter: %1$s",
+  `%1$s` = **`provider.displayName`**) — **ganz oben**, als **Identitäts-Text** (Identität ≠ Fidelity). Liest
+  die Achsen-Reihenfolge ehrlich von außen nach innen: *womit* (Provider) → *wie* (Connector-Kind) → *was
+  möglich ist* (Fidelity).
 - **Fail-closed:** Provider `null` ⇒ Zeile zeigt `connector_provider_unknown` („Anbieter noch nicht
   gemeldet") — analog `connector_fidelity_unknown`. **Nie** weggelassen-als-ob-voll, **nie** erfunden.
 - **Optionales Modell-Detail (gehalten, §-Ask 2):** liefert das Backend ein Modell (z. B. „Claude Opus
@@ -135,7 +147,8 @@ Name + `colorSlot(agentId)`, dort §1/§4). Provider wird dort **derselbe unterg
 Header — **kein** neuer Hue, **keine** neue Spalte:
 
 - **Ort:** in der **Identitätszelle** der Event-Zeile (`EVENT-LOG-UI.md` §4), als **gedämpftes
-  Sekundär-Detail** neben/unter dem Namen. Beispiel: `⬡FE  frontend` · darunter klein „Claude".
+  Sekundär-Detail** neben/unter dem Namen — sichtbarer Text = **`provider.displayName`** (`id` nie angezeigt).
+  Beispiel: `⬡FE  frontend` · darunter klein „Claude".
 - **Identität bleibt führend:** der Identitäts-Hue (`colorSlot`) und der Name tragen die Achse; der Provider
   ist ein **neutraler Zusatz** (`onSurfaceVariant`), nie der Identitäts-Hue, nie eine Severity-Farbe.
 - **a11y:** die Zeilen-Zusammenfassung (`a11y_event_row`, EVENT-LOG-UI §4) wird um den Provider **erweitert,
@@ -216,11 +229,13 @@ Header — **kein** neuer Hue, **keine** neue Spalte:
 
 ## 8. Code-Verifikation (Source of Truth)
 
-Gegen develop `608c8ad` real gelesen — bestätigt:
-- **`Agent` (`core/.../model/CommModel.kt`):** Felder `id, name, role, worktree, runState, capabilities:
-  Capabilities? = null, connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON`. **Kein `provider`-Feld**
-  → Wire-Form korrekt zurückgehalten (§0, §-Ask 1). Additiv-nullable-Muster (`capabilities`/`connectorKind`)
-  ist die Vorlage für `provider`.
+Gegen develop `b57778b` real gelesen (Provider-DTO) bzw. `608c8ad` (Reuse-Anker) — bestätigt:
+- **`Agent.provider: ProviderInfo? = null` (`core/.../model/CommModel.kt` @ `b57778b`):** additiv-nullable,
+  fail-closed `null`; KDoc zitiert **diese Spec §1** („fourth, separate axis: provider ≠ connectorKind ≠
+  fidelity ≠ identity"). **`data class ProviderInfo(val id: String, val displayName: String)`** (keine
+  `@SerialName` → Wire-Feldnamen = `id`/`displayName`); Companion **`ProviderInfo.CLAUDE = ProviderInfo(
+  "claude", "Claude")`** (MVP-Single-Source, A+B beide Claude). **Design 1:1 deckungsgleich** — Wire-Form
+  gefolded (§0): `displayName` = einziger sichtbarer Text, `id` = stabiler Key, `null` ⇒ weglassen.
 - **`agentview/AgentWindow.kt`:** `AgentHeader` = `Row` mit `StatusIndicator` + `ConnectorCapabilityBadge`
   (fail-closed) + `Spacer(weight)` + Lifecycle-Controls; Anchor `AgentViewTags.header(agentId)` =
   `agent.<id>.header`. Provider-Chip reiht sich **bei der Identität/Status** ein (eigener Tag).
@@ -233,26 +248,26 @@ Gegen develop `608c8ad` real gelesen — bestätigt:
 - **`EVENT-LOG-UI.md` §1/§4:** Identitäts-Achse = Avatar + Name + `colorSlot`; Event-Log **noch nicht
   implementiert** (§10 Impl-Timing) → Provider-Erweiterung der Identitätszelle = forward-prep (§3).
 - **Kollision:** `provider` / `anbieter` / `vendor` existieren **nicht** in `values/strings.xml` **noch** in
-  `values-en/strings.xml` @ `608c8ad` → **0 Kollision** (DE+EN).
+  `values-en/strings.xml` @ `b57778b` → **0 Kollision** (DE+EN).
 
 ---
 
-## 9. §-Asks (für PO / Backend CYP-137-Backend)
+## 9. §-Asks — PO-Resolutions (2026-06-29)
 
-1. **Provider-Wire-Form** *(offen bis CYP-137-Backend, wie CYP-119 bis CYP-120):* Design-Annahme =
-   menschenlesbares Provider-Label, **additiv + nullable** am `Agent`-DTO (`null` = noch nicht gemeldet,
-   fail-closed). **Bitte bestätigen:** Feldname/Form (reiner `String?` „Claude" vs. strukturiert
-   `{ id, displayName }`). Sobald gemergt, **folde ich die Wire-Form 1:1** ein (analog CYP-119-Wire-Fold).
-2. **Modell-Detail ja/nein:** Soll das Panel optional ein **Modell** („Claude Opus 4.8") als gedämpfte
-   Sekundärzeile zeigen, wenn das Backend es liefert? **Mein Default: nein/gehalten** (Anti-Hype — Modell als
-   Badge riecht nach Marketing). Bis Entscheid: nicht rendern, Slot vorgesehen (`connector.<id>.provider.model`).
-3. **Event-Log-Doc-Sync-Timing:** Die Provider-Zeile in `EVENT-LOG-UI.md` §4 + die `eventBrowse`/`eventTail`-
-   Provider-Tags landen **mit der CYP-41/42-Impl**. Bestätigen, dass ich das **dann** (timed) nachziehe und
-   jetzt nicht die fremde Spec ändere.
-4. **Provider-Quelle = Connector-abgeleitet?** Liegt der Provider 1:1 am Connector (A/B beide „Claude" im
-   MVP) oder ist er ein eigenes Feld (zukünftig Nicht-Claude-Werkzeuge, Doc 10 §1 „später")? Beeinflusst nur,
-   ob die Anzeige heute fast immer „Claude" zeigt — die UI ist **quellen-unabhängig** (rendert, was gemeldet
-   ist; `null` ⇒ weglassen).
+1. **Provider-Wire-Form:** **Resolved (PO 2026-06-29) — gefolded gegen die gemergte `:core`-DTO
+   (CYP-137-Backend, develop `b57778b`).** Form = **strukturiert `ProviderInfo { id, displayName }`**
+   (additiv + nullable, `null` fail-closed) — **nicht** reiner String; wächst ohne Wire-Bruch für spätere
+   Realisierung (MCP/CLI/HTTP/Extraktion). **`displayName` 1:1 in die Anzeige gefolded** (einziger sichtbarer
+   Text); **`id` = stabiler Schlüssel**, nie angezeigt. Details §0. **Kein offener Punkt mehr.**
+2. **Modell-Detail:** **Resolved (PO 2026-06-29) — nein/gehalten** (Anti-Hype). Slot
+   `connector.<id>.provider.model` vorgesehen, **nicht** gerendert; landet später additiv.
+3. **Event-Log-Doc-Sync-Timing:** **Resolved (PO 2026-06-29) — bestätigt.** Provider-Zeile in
+   `EVENT-LOG-UI.md` §4 + `eventBrowse`/`eventTail`-Provider-Tags ziehe ich **timed mit der CYP-41/42-Impl**
+   nach; fremde Spec jetzt nicht geändert; Forward-prep-Tags (Teil 2 `-tags.md`) bleiben vorgemerkt.
+4. **Provider-Quelle:** **Resolved (PO 2026-06-29) — eigenes deklariertes Connector-Feld**, **nicht** aus
+   `connectorKind` abgeleitet (eigene Pflicht-Dimension, Doc 10 §3). MVP immer „Claude"
+   (`ProviderInfo.CLAUDE`, A+B), forward-compat Codex/Gemini/Grok. Die UI bleibt **quellen-unabhängig**
+   (rendert `displayName`, `null` ⇒ weglassen) — bestätigt korrekt.
 
 ---
 
@@ -265,4 +280,5 @@ Gegen develop `608c8ad` real gelesen — bestätigt:
 - **Disclosure:** Identität anbieter-agnostisch (Titel unverändert), kein Phantom-Provider (fail-closed),
   Provider = Info nicht Marketing, vier getrennte Achsen, keine Secrets, nicht gated — alle in §5 verankert.
 - **Reuse vor Neuerfindung:** 7 verifizierte Reuse-Punkte (§7/§8); **keine** neue Area, **keine** neue Farbe.
-- **Wire-Form korrekt zurückgehalten** (§0/§9-Ask-1); Design-Form festgezurrt, Feldname offen.
+- **Wire-Form gefolded** (§0/§8/§9-Ask-1) gegen `ProviderInfo { id, displayName }` @ `b57778b`: `displayName`
+  = sichtbar, `id` = Key, `null` ⇒ fail-closed. **Alle 4 §-Asks resolved (§9).**
