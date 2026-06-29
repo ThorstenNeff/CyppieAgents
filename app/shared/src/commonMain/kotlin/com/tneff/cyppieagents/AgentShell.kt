@@ -22,6 +22,10 @@ import com.tneff.cyppieagents.connector.CapabilityPanel
 import com.tneff.cyppieagents.connector.ConnectorCapabilityHttpRepository
 import com.tneff.cyppieagents.connector.ConnectorCapabilityRepository
 import com.tneff.cyppieagents.connector.ConnectorCapabilityViewModel
+import com.tneff.cyppieagents.connector.ConnectorPicker
+import com.tneff.cyppieagents.connector.ConnectorSelectionRepository
+import com.tneff.cyppieagents.connector.ConnectorSelectionViewModel
+import com.tneff.cyppieagents.connector.StubConnectorSelectionRepository
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -141,6 +145,8 @@ fun AgentShell(
     projectRepository: ProjectRepository? = null,
     /** Override the connector-capability read port (CYP-123); `null` → the live read against `Agent.capabilities`. */
     connectorCapabilityRepository: ConnectorCapabilityRepository? = null,
+    /** Override the connector-selection write port (CYP-123 Inc 2); `null` → the in-memory stub until CYP-122. */
+    connectorSelectionRepository: ConnectorSelectionRepository? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -346,6 +352,18 @@ fun AgentShell(
         ConnectorCapabilityViewModel(resolvedConnectorCapRepo)
     }
     val connectorCapState = connectorCapVm.state.collectAsState().value
+
+    // Connector selection write (CYP-123 Inc 2, spec §3): the operator-gated picker + B opt-in. Stub until
+    // CYP-122 (the choice rides the agent-spec; the server re-checks the operator gate + the B ack + audits).
+    // Operator-gated (editable iff an operator token is present) — the agentMgmt dialogs that host the picker
+    // are already operator-gated, so the picker inherits that gate (no second gate, §3.3). agentId = null here:
+    // one shell-level picker keyed to the open add/edit dialog (real per-agent binding is CYP-122).
+    val resolvedConnectorSelRepo = remember(connectorSelectionRepository) {
+        connectorSelectionRepository ?: StubConnectorSelectionRepository()
+    }
+    val connectorSelVm = viewModel(key = "connectorSelection") {
+        ConnectorSelectionViewModel(resolvedConnectorSelRepo, agentId = null, editable = cfg.operatorToken != null)
+    }
     // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
     // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
     val browseVm: EventBrowseViewModel? =
@@ -430,7 +448,10 @@ fun AgentShell(
                     })
                     ACL_WINDOW_ID -> AclPanel(aclVm)
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
-                    AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(agentMgmtVm)
+                    AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(
+                        agentMgmtVm,
+                        connectorPickerSlot = { ConnectorPicker(connectorSelVm) },
+                    )
                     PRODUCT_LEAD_WINDOW_ID -> ProductLeadPanel(productLeadVm)
                     EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
                     EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
