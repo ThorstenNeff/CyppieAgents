@@ -99,7 +99,7 @@ class ProjectConfigStore(
 
     fun setApiKey(projectId: String, key: String): ApiKeyView {
         val k = key.trim()
-        if (k.isBlank()) throw BadRequestException("invalid api key", code = "invalid_api_key")
+        if (!isPlausibleApiKey(k)) throw BadRequestException("invalid api key", code = "invalid_api_key")
         synchronized(lock) {
             entries[projectId] = (entries[projectId] ?: ProjectConfigEntry()).copy(apiKey = k)
             persist()
@@ -130,6 +130,15 @@ class ProjectConfigStore(
     /** Source-of-truth validation (design §6.4): a scheme URL or an scp-like `user@host:path`. */
     private fun isPlausibleRepoUrl(url: String): Boolean =
         url.isNotBlank() && (url.contains("://") || SCP_LIKE.matches(url))
+
+    /**
+     * CYP-104 — plausibility for an API key, mirroring [isPlausibleRepoUrl]. **Prefix-TOLERANT** on
+     * purpose: it does NOT require an `sk-ant-`/any specific prefix (BYOK/proxy keys differ), so a valid
+     * key is never rejected. It only rejects the implausibly short / whitespace-y — a too-short key would
+     * also defeat [Secrets.mask]'s redaction (hence the shared [Secrets.MIN_SECRET_LEN] floor, no drift).
+     */
+    private fun isPlausibleApiKey(key: String): Boolean =
+        key.length >= Secrets.MIN_SECRET_LEN && key.none { it.isWhitespace() }
 
     private fun persist() {
         val f = file ?: return
