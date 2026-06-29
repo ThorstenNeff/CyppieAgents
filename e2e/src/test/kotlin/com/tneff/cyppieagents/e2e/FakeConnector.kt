@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +23,8 @@ import kotlinx.coroutines.flow.emptyFlow
  * in-process sink.
  */
 class FakeConnector(override val capabilities: Capabilities) : Connector {
+    // CYP-137 added `provider` to the Connector contract; the e2e double must declare one (MVP = Claude).
+    override val provider: ProviderInfo = ProviderInfo.CLAUDE
     override fun open(agentId: String): ConnectorSession = FakeSession(agentId)
 
     private class FakeSession(override val agentId: String) : ConnectorSession {
