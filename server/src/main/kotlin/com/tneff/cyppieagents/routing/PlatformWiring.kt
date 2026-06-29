@@ -111,6 +111,11 @@ fun Application.bootPlatform(
         worktrees = worktrees,
         spawner = com.tneff.cyppieagents.connector.ProcessBuilderSpawner(),
         scope = scope,
+        // CYP-132: durable per-recipient delivered-id log — out-of-repo under the gitRoot, gitignored
+        // (newline-separated keys, atomic-move flush). Survives restart so re-attach replays correctly.
+        deliveryLog = com.tneff.cyppieagents.comm.JsonFileDeliveryLog(
+            gitRoot.toPath().resolve("delivery-log.txt").toFile(),
+        ),
         // CYP-43: persistent SQLite sink (WAL/batch) + hook spool, both resolved from the events
         // config under the git root (not in the repo). Default in-memory only for tests.
         eventSinkFactory = {

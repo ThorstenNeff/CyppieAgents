@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.flow.Flow
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * The connector seam (Decision D8): one live agent session, independent of *how* it is produced.
@@ -74,9 +75,18 @@ interface Connector {
 /** Registry of currently-live sessions, looked up by the `/ws/agent` route by agentId. */
 class ConnectorSessions {
     private val byAgent = ConcurrentHashMap<String, ConnectorSession>()
+    // CYP-132: notified with the agentId AFTER a session registers (boot spawn / CYP-73 restart) — the
+    // MessageDeliverer's attach trigger to replay any undelivered inbound to a (re)attached session.
+    private val onRegister = CopyOnWriteArrayList<(String) -> Unit>()
+
+    /** Register a listener fired (with the agentId) after each [register]. */
+    fun addRegisterListener(listener: (String) -> Unit) {
+        onRegister.add(listener)
+    }
 
     fun register(session: ConnectorSession) {
         byAgent[session.agentId] = session
+        onRegister.forEach { it(session.agentId) }
     }
 
     fun session(agentId: String): ConnectorSession? = byAgent[agentId]

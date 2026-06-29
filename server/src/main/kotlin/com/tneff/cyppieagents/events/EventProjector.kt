@@ -142,6 +142,18 @@ class EventProjector(
             kind?.let { put("kind", it.name) }
         }
 
+    /**
+     * `comm.received` (CYP-132): a message DELIVERED as inbound into [recipientId]'s session — metadata
+     * only (recipient / message id / channel), **never the body**, which legitimately enters only the
+     * recipient's connector session via `sendTurn`. The content-free "delivered" marker.
+     */
+    fun commReceived(recipientId: String, messageId: String, channelId: String) =
+        draft(recipientId, null, null, EventType.COMM_RECEIVED, Severity.INFO) {
+            put("to", recipientId)
+            put("messageId", messageId)
+            put("channel", channelId)
+        }
+
     private inline fun draft(
         agentId: String,
         sessionId: String?,
