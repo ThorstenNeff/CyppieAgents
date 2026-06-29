@@ -75,6 +75,13 @@ private suspend fun handleToolsCall(hub: Hub, agentId: String, id: JsonElement, 
     val args = params["arguments"]?.jsonObject ?: JsonObject(emptyMap())
     val cmd = HubSendArgs.parse(args)
         ?: return jsonRpcResult(id, toolErrorContent("hub_send: missing/invalid 'channel' or 'text'")) // fail-closed
+    // A5 (E2.4 / CYP-140): size-cap the remote send path too — CYP-143 reuse. The MCP `hub_send` is a
+    // send boundary just like REST/WS; an oversized/abusive body is rejected here, not at the chokepoint.
+    try {
+        MessageInput.requireValidBody(cmd.text)
+    } catch (e: ApiException) {
+        return jsonRpcResult(id, toolErrorContent("rejected: ${e.message}"))
+    }
     return try {
         // SINGLE write path: identity = the authenticated agentId (NEVER an arg); canWrite + stamps in postAsAgent.
         val posted = HubMcpTools(hub, agentId).send(cmd.channel, cmd.text, cmd.kind?.let { MessageMeta(kind = it) })

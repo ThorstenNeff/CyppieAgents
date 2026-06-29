@@ -256,7 +256,15 @@ class BootOrchestrator(
         // noise. A connector *change* (the CYP-122 opt-in) is the event that re-declares; that is the
         // `connector.optin` audit, which the opt-in path emits explicitly.
         for (agent in config.agents) {
-            val caps = connector.capabilitiesFor(agent.id)
+            // E2.4 / CYP-140: clamp the connector's SELF-DECLARED caps to the server trust ceiling for its
+            // source (reducing-only) — the SINGLE application point, so every downstream consumer (gate,
+            // degradation event, Agent DTO) sees the clamped, server-authoritative caps. trustOf is LOCAL
+            // for every MVP-spawned agent ⇒ ceiling all-AVAILABLE ⇒ clamp is identity ⇒ local byte-unchanged
+            // (E2-S2 regression guard). REMOTE caps (E2.2 wire) get the §1 ceiling and degrade, never escalate.
+            val caps = com.tneff.cyppieagents.model.CapabilityCeiling.clamp(
+                connector.capabilitiesFor(agent.id),
+                com.tneff.cyppieagents.model.CapabilityCeiling.ceilingFor(connector.trustFor(agent.id)),
+            )
             capabilityRegistry.set(agent.id, caps)
             providerRegistry.set(agent.id, connector.providerFor(agent.id)) // CYP-137: per-agent provider
             for (dim in CapabilityGate.degraded(caps)) {
