@@ -22,13 +22,13 @@ import java.io.File
  * **real mediation path** (PO decomposes → worker in its worktree → commit/push to the sandbox → status).
  *
  * **Hard safety rules (Doc 05 / [[auth-credentials-policy]]):**
- *  - **No autonomous / env / self-set key.** The harness NEVER sets a key: [Secrets] is built with
- *    `apiKey = null` (no env team-key), and [requireNoApiKeyInEnv] fails closed if `ANTHROPIC_API_KEY` is
- *    present in the env. The key, **if any**, is supplied **out-of-band by the human** via the CYP-96
- *    operator key-store (`project-config.json` under the gitRoot, masked, per-project) — the connector
- *    lazy-resolves it at spawn (store override → none). With no store key, `claude` runs on its
- *    subscription OAuth login (`~/.claude`). If headless can't authenticate either way → it aborts and
- *    reports (we never inject a key to "fix" it).
+ *  - **No autonomous / env / self-set key.** The harness never *invents* a key, and [requireNoApiKeyInEnv]
+ *    fails closed if `ANTHROPIC_API_KEY` is in the env. The key, **if any**, is supplied **out-of-band by
+ *    the human**: CYP-110 creds-go uses Option ii — a single-run read of `ANTHROPIC_API_KEY` from the
+ *    human's **gitignored `local.properties`** ([readSubscriptionKeyFromLocalProperties]) into [Secrets]
+ *    in-memory only (never persisted to the CYP-96 store, never logged/committed; masked via SecretMasker
+ *    at every event egress as usual). Absent → `claude` falls back to its subscription OAuth login
+ *    (`~/.claude`) / the CYP-96 store. If headless can't authenticate either way → it aborts and reports.
  *  - **CLI pinned** ([ConnectorDefaults.PINNED_CLI_VERSION]); [assertPinnedClaudeCli] checks the runtime.
  *  - **RUN_RB1=1-gated** ([rb1Enabled]); never in the default gate. The single quota-aware live run fires
  *    only on the human/PO creds-go — no autonomous live run.
@@ -48,6 +48,29 @@ object Rb1RealAgentHarness {
             "RB1 must run on subscription OAuth only — ANTHROPIC_API_KEY is set; aborting (the harness " +
                 "never injects or consumes a key). Unset it and ensure `claude` is logged in (~/.claude)."
         }
+    }
+
+    /**
+     * The one-run subscription key bridge (CYP-110 creds-go, **Option ii**): read `ANTHROPIC_API_KEY` from
+     * the **gitignored `local.properties`** the human placed out-of-band (operator-authorized for this run).
+     * Walks UP from the test cwd so a worktree run finds the MAIN checkout's `local.properties` (the key is
+     * working-dir-local, NOT shared across worktrees). Returns null if absent → the caller stays fail-closed
+     * (OAuth / CYP-96 store). **Never logs or returns the value anywhere but into [Secrets]; never persisted.**
+     */
+    fun readSubscriptionKeyFromLocalProperties(): String? {
+        var dir: File? = File(".").absoluteFile
+        while (dir != null) {
+            val lp = File(dir, "local.properties")
+            if (lp.isFile) {
+                val key = lp.readLines()
+                    .firstOrNull { it.trimStart().startsWith("ANTHROPIC_API_KEY") && it.contains('=') }
+                    ?.substringAfter('=')?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                if (key != null) return key
+            }
+            dir = dir.parentFile
+        }
+        return null
     }
 
     /** Assert the installed `claude` matches the pinned CLI; returns the reported version line for evidence. */
@@ -95,13 +118,16 @@ object Rb1RealAgentHarness {
      * Caller is responsible for [rb1Enabled]/[requireNoApiKeyInEnv]/[assertPinnedClaudeCli] gating first.
      */
     fun bootRealAgentPlatform(gitRoot: File, repoUrl: String, scope: CoroutineScope): BootedPlatform {
-        requireNoApiKeyInEnv()
+        requireNoApiKeyInEnv() // the key path is local.properties (out-of-band), never the env
         val config = sandboxConfig(repoUrl)
-        // Platform tokens are test-local (NOT secrets in the product sense); the API key stays null (OAuth).
+        // CYP-110 creds-go (Option ii): the one-run subscription key comes from the human's gitignored
+        // local.properties (never persisted/logged/committed). Absent → null → OAuth / CYP-96 store fallback.
+        val key = readSubscriptionKeyFromLocalProperties()
+        println("RB1: subscription key ${if (key != null) "present (masked) — one-run only" else "absent → OAuth/store fallback"}")
         val secrets = Secrets(
             agentTokens = config.agents.associate { "tok-${it.id}" to it.id },
             operatorToken = "tok-operator",
-            apiKey = null, // ← subscription OAuth only; never a key (fail-closed)
+            apiKey = key, // in-memory only → connector injects at spawn; NOT written to the CYP-96 store
         )
         val worktrees = WorktreeManager(ProcessCommandRunner(), gitRoot, config.projectId)
         return BootOrchestrator(
