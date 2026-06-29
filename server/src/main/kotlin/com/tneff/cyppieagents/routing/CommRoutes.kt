@@ -153,6 +153,7 @@ fun Route.commRoutes(
                 val participant = call.requireParticipant(registry)
                 val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
                 val body = call.receive<SendMessageRequest>()
+                MessageInput.requireValidBody(body.body) // CYP-143: cap + validate before the chokepoint
                 // Sender = bearer identity; channel = path. Body carries neither (Gate #1).
                 val message = hub.postAsAgent(participant, channelId, body.body, body.meta)
                 call.respond(HttpStatusCode.Created, message)
