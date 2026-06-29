@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.scanner
 
+import com.tneff.cyppieagents.model.Capabilities
+import com.tneff.cyppieagents.model.CapabilityGate
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import kotlinx.serialization.json.JsonPrimitive
@@ -30,7 +32,21 @@ import kotlinx.serialization.json.put
  */
 class StallDetector(
     private val thresholdMs: Long = DEFAULT_THRESHOLD_MS,
+    /**
+     * Per-agent connector capabilities resolver (CYP-121, Doc 10 §3). **Null = no capability system
+     * configured** → no gating (legacy). When wired and a connector's `rateLimitSignal` is not AVAILABLE
+     * the structured throttle marker is absent/untrusted, so this detector does NOT arm for that agent —
+     * stall detection is honestly off rather than driven off a fabricated signal. A resolver that returns
+     * null for an agent (registry miss) fails closed (no arm), never assumed AVAILABLE (F2). (A
+     * text-matched degraded path is CYP-122/B work.)
+     */
+    private val capabilities: ((agentId: String) -> Capabilities?)? = null,
 ) : Detector {
+
+    private fun rateLimitSignalEnabled(agentId: String): Boolean {
+        val resolve = capabilities ?: return true // no capability system → enabled (legacy)
+        return CapabilityGate.isEnabled(CapabilityGate.EnforcedCapability.RATE_LIMIT_SIGNAL, resolve(agentId))
+    }
 
     private class Armed(
         val sinceMs: Long,
@@ -55,7 +71,8 @@ class StallDetector(
                 isThrottle(e) -> {
                     // Arm once; a repeated throttle beat is NOT activity and must not reset the silence
                     // baseline (07 §4: silence = no turn.*/tool.*/tokens — a rate_limit beat is none).
-                    if (byAgent[e.agentId] == null) {
+                    // CYP-121: don't arm when the agent's connector lacks a trusted rateLimitSignal.
+                    if (rateLimitSignalEnabled(e.agentId) && byAgent[e.agentId] == null) {
                         byAgent[e.agentId] = Armed(
                             sinceMs = e.ts,
                             status = throttleStatus(e)!!,

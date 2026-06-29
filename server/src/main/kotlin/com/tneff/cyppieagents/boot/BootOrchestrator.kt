@@ -4,11 +4,13 @@ import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.comm.MessageStore
+import com.tneff.cyppieagents.connector.CapabilityRegistry
 import com.tneff.cyppieagents.connector.ClaudeCodeConnector
 import com.tneff.cyppieagents.connector.Connector
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.events.ContextUsageBander
+import com.tneff.cyppieagents.events.EventDraft
 import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.events.EventSink
@@ -20,6 +22,9 @@ import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.CapabilityGate
+import com.tneff.cyppieagents.model.EventType
+import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.routing.TokenRegistry
 import com.tneff.cyppieagents.scanner.Detector
 import com.tneff.cyppieagents.scanner.EventLogSignalSink
@@ -32,6 +37,8 @@ import com.tneff.cyppieagents.warden.StallPolicy
 import com.tneff.cyppieagents.warden.StallPolicyRunner
 import com.tneff.cyppieagents.warden.Warden
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.slf4j.LoggerFactory
 
 /** Everything the wiring layer needs after a boot. */
@@ -145,8 +152,13 @@ class BootOrchestrator(
             bandPctWidth = ev.bandPct,
             compactPct = ev.compactPct,
         )
+        // CYP-121: per-agent connector capabilities, populated below once the connector is resolved.
+        // Built empty here so the projector + stall detector can hold a live `::get` resolver; reads
+        // happen at event-time (after boot populates it). Connector A = all-AVAILABLE → no gating.
+        val capabilityRegistry = CapabilityRegistry()
         // S12 / CYP-83: events carry the active project, single-sourced from config (not a constant).
-        val eventProjector = EventProjector(bander, projectId = config.projectId)
+        // CYP-121: the projector gates tool.* (toolGranularity) and context.usage (structuredUsage).
+        val eventProjector = EventProjector(bander, projectId = config.projectId, capabilities = capabilityRegistry::get)
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
 
@@ -172,6 +184,34 @@ class BootOrchestrator(
         )
         val connector: Connector = connectorFactory?.invoke(defaultConnector) ?: defaultConnector
 
+        // CYP-121: record each agent's capabilities (MVP = one connector → uniform; per-agent in CYP-122)
+        // and log a content-free `capability.degraded` event for every non-AVAILABLE dimension, so the
+        // fidelity gap is visible in the Event-Log ("ehrlich degradiert, nie vorgetäuscht", Doc 10 §3).
+        // Connector A is all-AVAILABLE → this emits nothing and changes no live behaviour.
+        //
+        // Idempotency (deliberate): this is a **once-per-platform-boot** emit. A CYP-73 agent restart goes
+        // through LifecycleManager.respawn (not BootOrchestrator.boot), and a restart does NOT change the
+        // connector or its declared capabilities, so it must NOT re-emit — re-declaring would just be log
+        // noise. When CYP-122 makes the connector selectable per agent, a connector *change* (not a plain
+        // restart) is the event that re-declares; that re-emit hook lands with the per-agent selection.
+        for (agent in config.agents) {
+            capabilityRegistry.set(agent.id, connector.capabilities)
+            for (dim in CapabilityGate.degraded(connector.capabilities)) {
+                eventRecorder.record(
+                    EventDraft(
+                        agentId = agent.id,
+                        projectId = config.projectId,
+                        type = EventType.CAPABILITY_DEGRADED,
+                        severity = Severity.WARN,
+                        detail = buildJsonObject {
+                            put("dimension", dim.dimension)
+                            put("status", dim.status.name) // content-free: dimension + declared status
+                        },
+                    ),
+                )
+            }
+        }
+
         // Hook spool tailing (CYP-38 reader + CYP-37 tailer, at-most-once). Started only when a path
         // is configured; bootPlatform supplies it, CYP-43 makes it a config knob.
         spoolPath?.let { SpoolTailer(SpoolReader(it), eventRecorder, scope).start() }
@@ -182,7 +222,8 @@ class BootOrchestrator(
         val signalSink = EventLogSignalSink(eventRecorder)
         // CYP-61 stall detector: rate-limit throttle ∧ silence>T → stall.suspected. onEvent senses
         // (arm/disarm) via the Scanner's fan-out; the timed decision is driven by the StallSweeper.
-        val stallDetector = StallDetector()
+        // CYP-121: the detector won't arm for an agent whose connector lacks a trusted rateLimitSignal.
+        val stallDetector = StallDetector(capabilities = capabilityRegistry::get)
         Scanner(eventSink, scannerDetectors + stallDetector, signalSink, scope).start()
         StallSweeper(stallDetector, signalSink, scope, clock = System::currentTimeMillis).start()
 
