@@ -11,7 +11,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -44,11 +44,15 @@ class AgentWsClient(
     private val outbound = Channel<UserTurn>(Channel.BUFFERED)
 
     /** Cold stream: opens the WS on collection, decodes each masked frame, closes on cancel. */
-    val events: Flow<StreamJsonEvent> = flow {
+    val events: Flow<StreamJsonEvent> = channelFlow {
         client.webSocket(
             urlString = agentUrl(),
             request = { header(HttpHeaders.Authorization, "Bearer $token") },
         ) {
+            // channelFlow (not flow): the webSocket body runs on the engine dispatcher (Dispatchers.IO on
+            // Native), so emitting from here is a cross-context send — illegal in flow{} (the ISE behind the
+            // CYP-115 Darwin churn) but what channelFlow allows. Decoded events go to this@channelFlow; the
+            // outbound `send(Frame…)` pump and `incoming` stay on the WebSocketSession.
             val pump = launch {
                 for (turn in outbound) {
                     send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), turn)))
@@ -57,7 +61,7 @@ class AgentWsClient(
             try {
                 for (frame in incoming) {
                     if (frame is Frame.Text) {
-                        emit(CommJson.decodeFromString(StreamJsonEvent.serializer(), frame.readText()))
+                        this@channelFlow.send(CommJson.decodeFromString(StreamJsonEvent.serializer(), frame.readText()))
                     }
                 }
             } finally {

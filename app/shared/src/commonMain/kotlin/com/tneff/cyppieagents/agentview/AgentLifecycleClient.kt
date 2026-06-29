@@ -19,7 +19,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.builtins.ListSerializer
 
 /**
@@ -105,12 +105,15 @@ class AgentLifecycleLiveSource(
         emptyMap()
     }
 
-    override fun events(): Flow<AgentLifecycleEvent> = flow {
+    override fun events(): Flow<AgentLifecycleEvent> = channelFlow {
+        // channelFlow (not flow): the webSocket body runs on the engine dispatcher (Dispatchers.IO on Native),
+        // so emitting from here is a cross-context send — illegal in flow{} (the ISE behind the CYP-115 Darwin
+        // churn) but exactly what channelFlow allows. `.reconnecting()` still re-subscribes on a real drop.
         client.webSocket(urlString = lifecycleUrl()) {
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val event = CommJson.decodeFromString(AgentRunStateEvent.serializer(), frame.readText())
-                    emit(AgentLifecycleEvent(event.agentId, event.runState.toLifecycleState()))
+                    this@channelFlow.send(AgentLifecycleEvent(event.agentId, event.runState.toLifecycleState()))
                 }
             }
         }

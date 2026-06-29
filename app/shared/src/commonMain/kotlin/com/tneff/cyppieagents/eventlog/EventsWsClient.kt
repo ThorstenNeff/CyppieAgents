@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.model.EventPushed
 import com.tneff.cyppieagents.model.EventsWsClientEvent
 import com.tneff.cyppieagents.model.EventsWsServerEvent
 import com.tneff.cyppieagents.model.SubscribeEvents
+import com.tneff.cyppieagents.net.logWsError
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
@@ -17,7 +18,7 @@ import io.ktor.websocket.send
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
 
 /**
@@ -38,20 +39,24 @@ class EventsWsClient(
     private val token: String,
 ) : EventLiveSource {
 
-    override fun events(filter: EventFilter): Flow<EventLiveEvent> = flow {
+    override fun events(filter: EventFilter): Flow<EventLiveEvent> = channelFlow {
         var closeCode: Short? = null
         try {
             client.webSocket(
                 urlString = eventsUrl(),
                 request = { header(HttpHeaders.Authorization, "Bearer $token") },
             ) {
-                emit(EventLiveEvent.Connected)
+                // channelFlow (not flow): the webSocket body runs on the engine dispatcher (Dispatchers.IO on
+                // Native), so emitting from here is a cross-context send — illegal in flow{} (the ISE behind
+                // the CYP-115 Darwin churn) but what channelFlow allows. Element emissions go to
+                // this@channelFlow; the subscribe + `incoming` frames stay on the WebSocketSession.
+                this@channelFlow.send(EventLiveEvent.Connected)
                 try {
                     send(Frame.Text(CommJson.encodeToString(EventsWsClientEvent.serializer(), subscribe(filter))))
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             when (val event = CommJson.decodeFromString(EventsWsServerEvent.serializer(), frame.readText())) {
-                                is EventPushed -> emit(EventLiveEvent.Received(event.event))
+                                is EventPushed -> this@channelFlow.send(EventLiveEvent.Received(event.event))
                                 is CaughtUp -> Unit // backfill boundary marker — nothing to render
                             }
                         }
@@ -70,10 +75,12 @@ class EventsWsClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            // Connection failed/dropped (incl. cross-origin 403 pre-handshake) — fall through honestly.
+            // CYP-115: log a real failure (incl. cross-origin 403 pre-handshake) instead of masking it as a
+            // silent Disconnected (a normal close does not throw). The cross-context ISE was swallowed here before.
+            logWsError("events", e)
         }
         // Always end honestly: a rejected operator token (1008) is a distinct, fail-closed state.
-        emit(
+        this@channelFlow.send(
             if (closeCode == CloseReason.Codes.VIOLATED_POLICY.code) EventLiveEvent.AccessRevoked
             else EventLiveEvent.Disconnected,
         )

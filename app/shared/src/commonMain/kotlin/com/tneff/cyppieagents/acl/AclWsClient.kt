@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.net.logWsError
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
@@ -13,7 +14,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 
 /**
  * Live `/ws/comm` adapter for the ACL-matrix UI (CYP-48) — same socket + frame contract as
@@ -28,18 +29,21 @@ class AclWsClient(
     private val token: String,
 ) : AclLiveSource {
 
-    override fun events(): Flow<AclLiveEvent> = flow {
+    override fun events(): Flow<AclLiveEvent> = channelFlow {
         try {
             client.webSocket(
                 urlString = commUrl(),
                 request = { header(HttpHeaders.Authorization, "Bearer $token") },
             ) {
-                emit(AclLiveEvent.Connected)
+                // channelFlow (not flow): the webSocket body runs on the engine dispatcher (Dispatchers.IO on
+                // Native) — a cross-context emit, illegal in flow{} (the CYP-115 ISE/churn) but what channelFlow
+                // allows. Element emissions go to this@channelFlow; `incoming` frames stay on the session.
+                this@channelFlow.send(AclLiveEvent.Connected)
                 for (frame in incoming) {
                     if (frame is Frame.Text) {
                         when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
-                            is AclEvent -> emit(AclLiveEvent.EntryChanged(event.entry))
-                            is ChannelsEvent -> emit(AclLiveEvent.ChannelsChanged(event.channels))
+                            is AclEvent -> this@channelFlow.send(AclLiveEvent.EntryChanged(event.entry))
+                            is ChannelsEvent -> this@channelFlow.send(AclLiveEvent.ChannelsChanged(event.channels))
                             is MessageEvent -> Unit // consumed by the comm timeline, not the ACL matrix
                         }
                     }
@@ -48,9 +52,11 @@ class AclWsClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            // Connection failed/dropped — end honestly with Disconnected instead of crashing the panel.
+            // CYP-115: log a real failure instead of masking it as a silent Disconnected (a normal close does
+            // not throw). The cross-context ISE that caused the churn was swallowed here before.
+            logWsError("acl", e)
         }
-        emit(AclLiveEvent.Disconnected)
+        this@channelFlow.send(AclLiveEvent.Disconnected)
     }
 
     private fun commUrl(): String {
