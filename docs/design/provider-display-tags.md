@@ -1,12 +1,12 @@
 # Provider-Anzeige — testTag-Vertrag (CYP-137)
 
-> Owner: UIUX-Designer · Epic CYP-130 · Story CYP-137 · Stand 2026-06-29 · Status: Vorlauf — wartet auf Gegenlesen. (Reuse-Linie CYP-118/119/123.)
+> Owner: UIUX-Designer · Epic CYP-130 · Story CYP-137 · Stand 2026-06-29 · Status: gemergt (develop `abbdd51`); Provider-Tags gefolded gg. `:core`-DTO @ `b57778b`. (Reuse-Linie CYP-118/119/123.)
 > Test-Contract v0.5 §2 (`docs/TEST-CONTRACT.md`): **prefixless** `<area>[.<scopeId>].<element>[.<selectorId>][.<qualifier>]`,
 > Segment-Werte `[A-Za-z0-9-]+` (camelCase, **keine Punkte** im Wert). **Geteilte API mit QA (CYP-7) — nicht
 > still umbenennen, über den PO koordinieren.**
 > **Keine neue Area.** Der Provider lebt in den **bestehenden** Areas: `connector` (Agentenfenster/Panel,
 > CYP-119) und — als **Forward-prep** — `eventBrowse`/`eventTail` (Event-Log, CYP-41/42).
-> Verifiziert gg. develop `608c8ad` (Anchor-Tags real vorhanden, siehe Reuse-Tabelle).
+> Verifiziert gg. develop `b57778b` (Anchor-Tags real vorhanden, siehe Reuse-Tabelle).
 
 ## Teil 1 — Provider am Agentenfenster + Capability-Panel (Area `connector`, CYP-119-Familie)
 
@@ -40,7 +40,7 @@ Eigene Connector-Tags (kein Reuse fremder Tag-Werte). Erweitert das bestehende `
 > der Provider-Tag adressiert nur den **neutralen Zusatz**. Die Zeilen-a11y (`a11y_event_row`) wird um den
 > Provider erweitert, wenn vorhanden.
 
-## Reuse (bestehende Tags/Anchor — NICHT neu anlegen; verifiziert @ `608c8ad`)
+## Reuse (bestehende Tags/Anchor — NICHT neu anlegen; verifiziert @ `b57778b`)
 | Reuse-Tag/Anchor | Quelle | Rolle hier |
 |---|---|---|
 | `agent.<id>.header` (`AgentViewTags.header`) | CYP-73 | Host-Anchor des kompakten Provider-Chips |
@@ -55,7 +55,7 @@ Eigene Connector-Tags (kein Reuse fremder Tag-Werte). Erweitert das bestehende `
   Funktionssignatur je Tags-Objekt, forward-prep) = **3** Identifier. (`providerModel` gehalten/optional;
   `rowProvider` forward-prep bis Event-Log-Impl.)
 - Alle Werte erfüllen `[A-Za-z0-9-]+` je Segment (camelCase, keine Punkte im Wert).
-- Jeder Tag ist in `provider-display-spec.md` verankert; 5 Reuse-Anchor real auf develop `608c8ad`
+- Jeder Tag ist in `provider-display-spec.md` verankert; 5 Reuse-Anchor real auf develop `b57778b`
   verifiziert (kein Neuanlegen): `agent.<id>.header`, `connector.<id>.capabilityPanel`/`.activeConnector`,
   `eventBrowse.row.*`/`eventTail.row.*`, `window.<id>.titlebar`.
 - **Kollision:** kein bestehender `connector.<id>.provider*`-Tag im Code; `eventBrowse/eventTail.row.*.provider`

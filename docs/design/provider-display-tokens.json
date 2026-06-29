@@ -2,11 +2,11 @@
   "$meta": {
     "owner": "UIUX-Designer",
     "ticket": "CYP-137 (Epic CYP-130; Reuse-Linie CYP-118/119/123) — Provider-Anzeige",
-    "version": "0.1-design-vorlauf",
-    "status": "Design-Vorlauf (docs-only) — wartet auf PO-Gegenlesen. Wire-Form (Agent.provider) zurueckgehalten bis CYP-137-Backend.",
+    "version": "0.2-wireform-gefolded",
+    "status": "Design gemergt (develop abbdd51). Wire-Form gefolded gegen die gemergte :core-DTO (CYP-137-Backend, develop b57778b). Alle 4 §-Asks resolved. Folge-Push docs-only; PO merged.",
     "brand": "CyppieAgents (Anti-Hype)",
-    "grounded_against": "develop 608c8ad",
-    "wire_form_held": "Agent.provider existiert heute NICHT am DTO (core/.../model/CommModel.kt @ 608c8ad). Design-Annahme: menschenlesbares Provider-Label, additiv + nullable (null = noch nicht gemeldet => fail-closed), Muster wie capabilities/connectorKind. Feldname/Form bestaetigt Backend in CYP-137-Backend.",
+    "grounded_against": "develop b57778b",
+    "wire_form": "core/.../model/CommModel.kt @ b57778b: Agent.provider: ProviderInfo? = null (additiv-nullable, null => fail-closed). data class ProviderInfo(val id: String, val displayName: String) (keine @SerialName => Wire-Feldnamen id/displayName); ProviderInfo.CLAUDE = ProviderInfo('claude','Claude'). displayName = EINZIGER sichtbarer Text (Header-Chip/Panel-Zeile/Event-Log-Sekundaertext/a11y %1$s); id = stabiler Schluessel, nie angezeigt. Provider = eigenes Connector-Feld (nicht aus connectorKind abgeleitet, §-Ask 4).",
     "note": "Semantische Tokens fuer die Provider-Anzeige (Doc 10 §3). Provider ist eine VIERTE, eigene Achse: Identitaet (anbieter-agnostisch) != Provider (Werkzeug/Anbieter) != Connector-Kind (A/B) != Fidelity (Degradation). FAST AUSSCHLIESSLICH REUSE: keine neue Farbe, keine neue Area. Provider ist ein NEUTRALER, untergeordneter Text-Qualifier (kein Identitaets-Hue, keine Severity-Farbe, kein Logo).",
     "reuse_note": "Identitaets-Hue bleibt CYP-14 colorSlot/SenderPalette (Provider traegt ihn NICHT). Neutrale Toenung onSurfaceVariant wie TonedHint.GATED (ui/TonedHint.kt @ 608c8ad). Capability-Panel + connector_active-Muster aus CYP-119/123. Fail-closed-durch-Absenz wie WindowBadges CYP-55."
   },
