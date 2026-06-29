@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState
 import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.model.ApiErrorBody
+import com.tneff.cyppieagents.net.logWsError
 import com.tneff.cyppieagents.net.reconnecting
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
@@ -109,13 +110,23 @@ class AgentLifecycleLiveSource(
         // channelFlow (not flow): the webSocket body runs on the engine dispatcher (Dispatchers.IO on Native),
         // so emitting from here is a cross-context send — illegal in flow{} (the ISE behind the CYP-115 Darwin
         // churn) but exactly what channelFlow allows. `.reconnecting()` still re-subscribes on a real drop.
-        client.webSocket(urlString = lifecycleUrl()) {
-            for (frame in incoming) {
-                if (frame is Frame.Text) {
-                    val event = CommJson.decodeFromString(AgentRunStateEvent.serializer(), frame.readText())
-                    this@channelFlow.send(AgentLifecycleEvent(event.agentId, event.runState.toLifecycleState()))
+        try {
+            client.webSocket(urlString = lifecycleUrl()) {
+                for (frame in incoming) {
+                    if (frame is Frame.Text) {
+                        val event = CommJson.decodeFromString(AgentRunStateEvent.serializer(), frame.readText())
+                        this@channelFlow.send(AgentLifecycleEvent(event.agentId, event.runState.toLifecycleState()))
+                    }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // CYP-125: log a real /ws/lifecycle failure instead of relying purely on reconnecting() to swallow
+            // it — observability parity with Comm/Acl/Events (CYP-115). A normal close doesn't throw → only real
+            // errors, no per-disconnect noise; CancellationException is rethrown; `.reconnecting()` still
+            // re-subscribes (on the block's completion or failure).
+            logWsError("lifecycle", e)
         }
     }.reconnecting()
 
