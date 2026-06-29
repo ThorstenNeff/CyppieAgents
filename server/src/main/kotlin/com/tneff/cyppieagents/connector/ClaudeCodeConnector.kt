@@ -3,11 +3,9 @@ package com.tneff.cyppieagents.connector
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
-import com.tneff.cyppieagents.mediation.HubTools
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
-import com.tneff.cyppieagents.model.AssistantEvent
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
@@ -15,7 +13,6 @@ import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.ResultEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
-import com.tneff.cyppieagents.model.ToolUseBlock
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +57,14 @@ class ClaudeCodeConnector(
      * edit takes effect on the next spawn (a CYP-73 restart). Default → no persona / no CLAUDE.md write.
      */
     private val personaOf: (agentId: String) -> String? = { null },
+    /**
+     * CYP-146 / E1.7 — writes the per-agent `--mcp-config` exposing the in-process Hub MCP server, so the
+     * agent has a callable `hub_send` tool (the emission half). Null → no hub tools (dev/tests). The config
+     * carries the agent token and is written **out-of-repo, 0600** ([HubMcpConfigWriter]); F1.
+     */
+    private val mcpConfigWriter: HubMcpConfigWriter? = null,
+    /** The agent's bearer token (for the mcp-config auth header). Null → no hub tools for that agent. */
+    private val tokenFor: (agentId: String) -> String? = { null },
 ) : Connector {
 
     /**
@@ -100,7 +105,17 @@ class ClaudeCodeConnector(
             resolveApiKey()?.let { put("ANTHROPIC_API_KEY", it) }
             put("HUB_AGENT_ID", agentId)
         }
-        val command = listOf(cliCommand) + ConnectorDefaults.streamJsonArgs(allowedTools, permissionMode)
+        // CYP-146: expose `hub_send` by handing the agent an --mcp-config for the in-process Hub MCP server
+        // (F1: token-bearing config written 0600 OUT-OF-REPO via [HubMcpConfigWriter], absolute path). The
+        // hub tool is pre-approved as ONLY `mcp__hub__hub_send` (F3 tight allowlist, no wildcard, never
+        // bypassPermissions); built-in tools stay governed by [permissionMode].
+        val mcpConfigPath: String? =
+            mcpConfigWriter?.let { w -> tokenFor(agentId)?.let { tok -> w.writeFor(agentId, tok).absolutePath } }
+        val effectiveAllowedTools =
+            if (mcpConfigPath != null) allowedTools + HubMcpConfigWriter.PREFIXED_SEND_TOOL else allowedTools
+        val command = listOf(cliCommand) +
+            ConnectorDefaults.streamJsonArgs(effectiveAllowedTools, permissionMode) +
+            (mcpConfigPath?.let { listOf("--mcp-config", it) } ?: emptyList())
         val process = spawner.spawn(command, cwd, env)
         return ClaudeCodeSession(agentId, process, registry, router, turnQueue, scope, recorder, projector)
             .also { it.start() }
@@ -171,19 +186,12 @@ class ClaudeCodeSession(
 
                 _events.emit(masked) // to /ws/agent (UI), already masked
 
-                if (masked is AssistantEvent) {
-                    // CYP-131: extract agent-initiated `hub_send` tool-calls from the stream and route them
-                    // through the SAME chokepoint as Connector B (router → HubMcpTools.send → postAsAgent;
-                    // canWrite/masking enforced there). runCatching so a denied/failed send never breaks the
-                    // reader. Content is already masked (Gate #3) before it reaches the hub.
-                    masked.message.content
-                        .filterIsInstance<ToolUseBlock>()
-                        .filter { it.name == HubTools.SEND }
-                        .forEach { block ->
-                            runCatching { router.onHubSend(agentId, block) }
-                                .onFailure { log.warn("hub_send mediation failed for agent={}: {}", agentId, it.message) }
-                        }
-                }
+                // CYP-146 RECONCILE: the stdout `hub_send` extraction (CYP-131 `router.onHubSend`) is
+                // RETIRED. The agent now emits via the in-process Hub MCP server (CYP-146), which is the
+                // SINGLE router (→ HubMcpTools → postAsAgent). The MCP tool_use surfaces in the stream as
+                // the PREFIXED `mcp__hub__hub_send`; routing it here too would DOUBLE-POST, so the collector
+                // does not route any tool_use to the hub (tool_use blocks still reach `_events` for the UI).
+                // See HubSendExtractionTest.collectorDoesNotRouteMcpHubSend (F2 non-vacuous guard).
 
                 if (masked is ResultEvent) {
                     // Turn end: mediate to the hub spoke (Gate #1/#2/#6 live in the router/hub)…

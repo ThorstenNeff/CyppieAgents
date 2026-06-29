@@ -1,14 +1,12 @@
 package com.tneff.cyppieagents.mediation
 
 import com.tneff.cyppieagents.comm.Hub
-import com.tneff.cyppieagents.connector.HubMcpTools
 import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageKind
 import com.tneff.cyppieagents.model.MessageMeta
 import com.tneff.cyppieagents.model.ResultEvent
-import com.tneff.cyppieagents.model.ToolUseBlock
 import org.slf4j.LoggerFactory
 
 /**
@@ -65,31 +63,8 @@ class MediationRouter(
         return posted
     }
 
-    /**
-     * CYP-131 — route a stream-json `hub_send` tool-call as a hub post **on [agentId]'s behalf**: the
-     * agent-initiated, addressed counterpart to [onResult]. The agent identity is the bound [agentId]
-     * (server-stamped from the session→agent registry), **never** a tool argument (Gate #1, same stance
-     * as Connector B). The route is the **same** chokepoint Connector B's MCP tool uses
-     * ([HubMcpTools.send] → [Hub.postAsAgent]): `canWrite`-403 + masking enforced identically, not
-     * re-implemented (no second write path). Malformed/partial args → **fail-closed**: post nothing,
-     * return null, do not guess. A `canWrite`-denied channel throws [ForbiddenException]; the caller (the
-     * session's stdout collector) wraps this in `runCatching`, so the stream survives.
-     *
-     * @return the posted [Message], or null when the args are malformed (nothing posted).
-     */
-    fun onHubSend(agentId: String, toolUse: ToolUseBlock): Message? {
-        val cmd = HubSendArgs.parse(toolUse.input) ?: run {
-            // Fail-closed: a malformed hub_send is dropped, never guessed into a post.
-            log.warn("dropping malformed hub_send from agent={} (tool_use={})", agentId, toolUse.id)
-            return null
-        }
-        // Same route as Connector B (single funnel): canWrite enforced inside postAsAgent (403 propagates).
-        val posted = HubMcpTools(hub, agentId).send(
-            cmd.channel, cmd.text, cmd.kind?.let { MessageMeta(kind = it) },
-        )
-        if (recorder != null && projector != null) {
-            recorder.record(projector.commSent(agentId, cmd.channel, posted.meta?.kind))
-        }
-        return posted
-    }
+    // CYP-146 RECONCILE: `onHubSend` (CYP-131 stdout `hub_send` extraction) is RETIRED. A Connector-A
+    // agent now emits via the in-process Hub MCP server (`/mcp/hub`, [HubMcpTools] → [Hub.postAsAgent]),
+    // which is the SINGLE router — routing the stream tool_use here too would double-post. The shared arg
+    // contract ([HubTools] / [HubSendArgs]) is reused by the MCP server's `hub_send` handler.
 }
