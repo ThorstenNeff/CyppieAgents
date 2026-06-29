@@ -31,3 +31,5 @@ platform.config.json
 project-config.json
 # Multi-project registry (N projects + active pointer), 0600 under the gitRoot. (CYP-91)
 projects.json
+# Cross-project channel-share gate, 0600 under the gitRoot. (CYP-93)
+channel-shares.json

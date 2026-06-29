@@ -26,6 +26,14 @@ class HubState(
      * [addAgent] (CYP-97) puts the operator on the new spoke too — same membership as the boot spokes.
      */
     private val operatorId: String? = null,
+    /**
+     * Resolver for the cross-project shares reaching INTO a given active project (S17 / CYP-93): the
+     * set of channel ids the [AclMatrix] permit lets span the boundary. Reads the [ChannelShareStore]
+     * in production; defaulted to "no shares" (pure S13 fail-closed) for tests / the dev install. The
+     * result is recomputed on [rescope] (the active project changed) and on [refreshShares] (a share
+     * was set/revoked), then folded into every matrix this state builds — the single chokepoint.
+     */
+    private val sharedInboundProvider: (String) -> Set<String> = { emptySet() },
 ) {
     private val lock = Any()
 
@@ -42,6 +50,15 @@ class HubState(
     var activeProjectId: String = activeProjectId
         private set
 
+    /**
+     * Channel ids authorized to reach INTO the active project (S17 / CYP-93). Recomputed from
+     * [sharedInboundProvider] on construction, on [rescope], and on [refreshShares]; passed to every
+     * [AclMatrix] so the cross-project permit is decided at the one chokepoint.
+     */
+    @Volatile
+    var sharedInboundChannelIds: Set<String> = sharedInboundProvider(activeProjectId)
+        private set
+
     /** The hub's agents. Mutable at runtime via [addAgent]/[removeAgent] (CYP-97). */
     @Volatile
     var agents: List<Agent> = initialAgents
@@ -56,7 +73,7 @@ class HubState(
         private set
 
     @Volatile
-    var acl: AclMatrix = AclMatrix(initialChannels, initialEntries, activeProjectId)
+    var acl: AclMatrix = AclMatrix(initialChannels, initialEntries, activeProjectId, sharedInboundChannelIds)
         private set
 
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
@@ -73,7 +90,7 @@ class HubState(
      */
     fun setAcl(entry: AclEntry): AclEntry = synchronized(lock) {
         val next = entries.filterNot { it.channelId == entry.channelId && it.agentId == entry.agentId } + entry
-        val candidate = AclMatrix(channels, next, activeProjectId)
+        val candidate = AclMatrix(channels, next, activeProjectId, sharedInboundChannelIds)
         val po = agents.firstOrNull { it.role == Role.PO }
         if (po != null) {
             val lockedOut = AclGuard.lockedOutPoHubChannel(candidate, po.id, poHubChannelIds())
@@ -108,7 +125,7 @@ class HubState(
             val newEntries = members.map { AclEntry(channel.id, it, canRead = true, canWrite = true, projectId = activeProjectId) }
             channels = channels + channel
             entries = entries + newEntries
-            acl = AclMatrix(channels, entries, activeProjectId)
+            acl = AclMatrix(channels, entries, activeProjectId, sharedInboundChannelIds)
         }
         agent
     }
@@ -124,7 +141,7 @@ class HubState(
         val spokeId = "po-$id"
         channels = channels.filterNot { it.id == spokeId }
         entries = entries.filterNot { it.channelId == spokeId }
-        acl = AclMatrix(channels, entries, activeProjectId)
+        acl = AclMatrix(channels, entries, activeProjectId, sharedInboundChannelIds)
     }
 
     /**
@@ -140,7 +157,20 @@ class HubState(
      */
     fun rescope(newProjectId: String): Unit = synchronized(lock) {
         activeProjectId = newProjectId
-        acl = AclMatrix(channels, entries, newProjectId)
+        // S17 / CYP-93: the new active project has its OWN inbound shares — recompute before rebuild.
+        sharedInboundChannelIds = sharedInboundProvider(newProjectId)
+        acl = AclMatrix(channels, entries, newProjectId, sharedInboundChannelIds)
+    }
+
+    /**
+     * Recompute the active project's inbound shares and rebuild the matrix (S17 / CYP-93) — called after
+     * a share is set/revoked so the cross-project permit takes effect without a restart. The share is the
+     * gate: a revoke shrinks the set, so the channel falls back to exact-match/fail-closed here, regardless
+     * of any lingering AclEntries (§6.4). Atomic under the lock, like [rescope].
+     */
+    fun refreshShares(): Unit = synchronized(lock) {
+        sharedInboundChannelIds = sharedInboundProvider(activeProjectId)
+        acl = AclMatrix(channels, entries, activeProjectId, sharedInboundChannelIds)
     }
 
     /**
@@ -176,6 +206,7 @@ class HubState(
             agents: List<Agent>,
             operatorId: String? = null,
             activeProjectId: String = DEFAULT_PROJECT_ID,
+            sharedInboundProvider: (String) -> Set<String> = { emptySet() },
         ): HubState {
             val po = agents.firstOrNull { it.role == Role.PO }
                 ?: error("hub-and-spoke requires exactly one PO agent")
@@ -196,7 +227,7 @@ class HubState(
             val entries = channels.flatMap { ch ->
                 ch.members.map { AclEntry(ch.id, it, canRead = true, canWrite = true, projectId = activeProjectId) }
             }
-            return HubState(agents, channels, entries, activeProjectId, operatorId)
+            return HubState(agents, channels, entries, activeProjectId, operatorId, sharedInboundProvider)
         }
     }
 }
