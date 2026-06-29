@@ -400,6 +400,8 @@ fun AgentShell(
                             viewModel(key = "crossproject-$cid") {
                                 CrossProjectViewModel(resolvedCrossProjectRepo, cid, editable = cfg.operatorToken != null)
                             },
+                            // PO flag-2: the target projects = the operator's other projects (the derived sharedWith).
+                            targetProjects = projectState.projects.filter { it.id != projectState.activeProjectId },
                         )
                     })
                     ACL_WINDOW_ID -> AclPanel(aclVm)

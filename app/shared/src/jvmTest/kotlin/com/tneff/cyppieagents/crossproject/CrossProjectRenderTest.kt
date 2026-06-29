@@ -7,8 +7,10 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
+import com.tneff.cyppieagents.model.Project
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
@@ -71,5 +73,21 @@ class CrossProjectRenderTest {
         onNodeWithTag(CrossProjectTags.DIALOG_CONFIRM).assertIsNotEnabled()
         onNodeWithTag(CrossProjectTags.DIALOG_OWNER_CONSENT).performClick()
         onNodeWithTag(CrossProjectTags.DIALOG_CONFIRM).assertIsEnabled()
+    }
+
+    @Test
+    fun dialog_scopePreview_namesTargetProjects_notEmpty() = runComposeUiTest {
+        // PO flag-2: the pre-share scope must NOT be empty — it names the target projects (+ honest hint
+        // that concrete agents appear after authorization). Mutation: revert to the empty member summary
+        // → the project name vanishes from the scope → RED.
+        setContent {
+            MaterialTheme {
+                val v = remember { vm(editable = true) }
+                CrossProjectControls(v, targetProjects = listOf(Project("p2", "Project-Two")))
+            }
+        }
+        onNodeWithTag(CrossProjectTags.AUTHORIZE).performClick()
+        onNodeWithTag(CrossProjectTags.DIALOG_SCOPE).assertExists()
+        onNodeWithText("Project-Two", substring = true).assertExists()
     }
 }

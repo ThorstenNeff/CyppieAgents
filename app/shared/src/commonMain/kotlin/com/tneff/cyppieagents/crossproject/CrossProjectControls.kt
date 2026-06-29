@@ -56,7 +56,14 @@ import org.jetbrains.compose.resources.stringResource
  * token the controls are read-only with a gate hint.
  */
 @Composable
-fun CrossProjectControls(viewModel: CrossProjectViewModel, modifier: Modifier = Modifier) {
+fun CrossProjectControls(
+    viewModel: CrossProjectViewModel,
+    modifier: Modifier = Modifier,
+    // CYP-93 (PO flag-2): the target projects (= the operator's other projects, the derived `sharedWith`)
+    // for the honest pre-share preview — the GET returns no concrete reach until authorized, so the dialog
+    // names the target PROJECTS + a hint; the post-share status names the concrete agents (contract).
+    targetProjects: List<com.tneff.cyppieagents.model.Project> = emptyList(),
+) {
     val state by viewModel.state.collectAsState()
     val channelId = state.channelId
 
@@ -98,7 +105,7 @@ fun CrossProjectControls(viewModel: CrossProjectViewModel, modifier: Modifier = 
         }
     }
 
-    if (state.dialogOpen) AuthorizeDialog(state, viewModel)
+    if (state.dialogOpen) AuthorizeDialog(state, viewModel, targetProjects)
 }
 
 @Composable
@@ -115,7 +122,11 @@ private fun BadgeChip(tag: String, a11y: String) {
 }
 
 @Composable
-private fun AuthorizeDialog(state: CrossProjectUiState, viewModel: CrossProjectViewModel) {
+private fun AuthorizeDialog(
+    state: CrossProjectUiState,
+    viewModel: CrossProjectViewModel,
+    targetProjects: List<com.tneff.cyppieagents.model.Project>,
+) {
     AlertDialog(
         onDismissRequest = viewModel::closeDialog,
         confirmButton = {
@@ -136,9 +147,12 @@ private fun AuthorizeDialog(state: CrossProjectUiState, viewModel: CrossProjectV
                 modifier = Modifier.fillMaxWidth().testTag(CrossProjectTags.DIALOG),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Scope/consequences — the CONCRETE member-agents reached, never "project B" wholesale.
+                // Scope/consequences (PO flag-2): pre-share names the TARGET PROJECTS (the derived sharedWith)
+                // + an honest hint that concrete agents appear after authorization (the contract gives no
+                // concrete reach until shared). Reach stays per-agent ACL-gated server-side (no over-widen).
+                val projectsLabel = if (targetProjects.isEmpty()) "—" else targetProjects.joinToString(", ") { it.name }
                 TonedHint(
-                    stringResource(Res.string.crossproject_dialog_scope, membersSummary(state.reachableMembers)),
+                    stringResource(Res.string.crossproject_dialog_scope, projectsLabel),
                     HintTone.INFO, CrossProjectTags.DIALOG_SCOPE,
                 )
                 // Owner consent — a deliberate, named affordance, not a silent default (data form is 1→N-able).
