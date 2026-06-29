@@ -96,6 +96,9 @@ class J4EventOverrideE2eTest {
                     val text = c.get("${p.baseUrl}/api/events?projectId=$bad")
                         .assertNoNeedles("GET /api/events?projectId=$bad (must fall back to active)", foreignProjectIds = setOf(FOREIGN))
                     val page = CommJson.decodeFromString<EventPage>(text)
+                    // Positive proof of →active (not just no-widen): the active project's events ARE present,
+                    // so `all { proja }` is non-vacuous (an empty list would pass it for the wrong reason).
+                    assertTrue(page.events.isNotEmpty(), "unauthorized/garbage '$bad' → falls back to the ACTIVE project (its events are returned), not an empty result")
                     assertTrue(page.events.all { it.projectId == "proja" }, "unauthorized/garbage '$bad' → fail-closed to active, never widens to FOREIGN")
                 }
             }
