@@ -15,6 +15,14 @@ object ConnectorTags {
     // ── capability display (per agent + opt-in preview) ──────────────────────────────────────────────
     fun fidelityBadge(agentId: String) = "$AREA.$agentId.fidelityBadge"
     fun capabilityPanel(agentId: String) = "$AREA.$agentId.capabilityPanel"
+
+    // ── provider (CYP-137, `docs/design/provider-display-tags.md`) ───────────────────────────────────
+    // ONE tag concept, TWO render sites (spec §tags): the compact provider qualifier-chip in the agent
+    // header AND the top identity line in the capability panel. Present ⇔ provider known; `null` ⇒ chip
+    // absent (fail-closed, no phantom) / panel line says "not yet reported". If a combined assertion ever
+    // needs to tell the two sites apart, the spec's coordinated escape is an optional `.header`/`.panel`
+    // qualifier — to be introduced via PO/QA (CYP-7), never silently.
+    fun provider(agentId: String) = "$AREA.$agentId.provider"
     fun activeConnector(agentId: String) = "$AREA.$agentId.activeConnector"
     fun capability(scope: String, dim: CapabilityDimension) = "$AREA.$scope.capability.${dim.tagKey}"
     fun capabilityStatus(scope: String, dim: CapabilityDimension) = "$AREA.$scope.capability.${dim.tagKey}.status"

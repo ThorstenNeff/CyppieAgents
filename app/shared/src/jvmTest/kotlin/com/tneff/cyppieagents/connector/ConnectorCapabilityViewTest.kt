@@ -9,6 +9,7 @@ import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 import kotlin.test.Test
 
 /**
@@ -31,6 +32,40 @@ class ConnectorCapabilityViewTest {
         CapabilityStatus.UNAVAILABLE, CapabilityStatus.LIMITED, CapabilityStatus.LIMITED,
         CapabilityStatus.LIMITED, CapabilityStatus.AVAILABLE, ConnectorKind.MCP,
     )
+    private val claudeProvider = ProviderInfo("claude", "Claude")
+
+    // ── CYP-137 provider chip (agent header) ─────────────────────────────────────────────────────────
+    @Test
+    fun providerChip_presentWhenKnown_showsDisplayNameOnly() = runComposeUiTest {
+        setContent { MaterialTheme { ConnectorProviderChip(claudeProvider, "agA") } }
+        onNodeWithTag(ConnectorTags.provider("agA")).assertExists()
+        // Visible text = displayName alone ("Claude"); the stable id ("claude") is never rendered.
+        onNodeWithTag(ConnectorTags.provider("agA")).assertTextContains("Claude", substring = true)
+    }
+
+    @Test
+    fun providerChip_absentWhenNull_failClosedByAbsence() = runComposeUiTest {
+        // Fail-closed: unknown provider ⇒ NO chip (no phantom "Claude") — mirrors the fidelity badge's absence.
+        setContent { MaterialTheme { ConnectorProviderChip(null, "agA") } }
+        onNodeWithTag(ConnectorTags.provider("agA")).assertDoesNotExist()
+    }
+
+    // ── CYP-137 provider line (capability panel — top identity line) ─────────────────────────────────
+    @Test
+    fun panel_providerLine_knownShowsName() = runComposeUiTest {
+        setContent { MaterialTheme { CapabilityPanel(degraded, "agA", provider = claudeProvider) } }
+        onNodeWithTag(ConnectorTags.provider("agA")).assertExists()
+        onNodeWithTag(ConnectorTags.provider("agA")).assertTextContains("Claude", substring = true)
+    }
+
+    @Test
+    fun panel_providerLine_nullSaysNotYetReported_neverInventedNeverOmitted() = runComposeUiTest {
+        // Fail-closed: in the PANEL a null provider is the honest "not yet reported" line — NOT omitted, NOT
+        // invented. (The JVM gate resolves EN strings, like the existing "unavailable"/"never faked" asserts.)
+        setContent { MaterialTheme { CapabilityPanel(degraded, "agA", provider = null) } }
+        onNodeWithTag(ConnectorTags.provider("agA")).assertExists()
+        onNodeWithTag(ConnectorTags.provider("agA")).assertTextContains("not yet reported", substring = true)
+    }
 
     @Test
     fun badge_absentForFullAgent_failClosedByAbsence() = runComposeUiTest {
