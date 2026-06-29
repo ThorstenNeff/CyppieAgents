@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.boot.RepoConfig
 import com.tneff.cyppieagents.boot.Secrets
 import com.tneff.cyppieagents.boot.WorktreeManager
 import com.tneff.cyppieagents.connector.AgentProcess
+import com.tneff.cyppieagents.connector.Connector
 import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.events.EventDraft
 import com.tneff.cyppieagents.model.CreateProjectRequest
@@ -117,8 +118,18 @@ class E2ePlatform internal constructor(
     }
 }
 
-/** Boot a real multi-project platform over [projects] (first = active) and start the embedded server. */
-fun e2ePlatform(projects: List<SeedProject>, now: () -> Long = { 0L }): E2ePlatform {
+/**
+ * Boot a real multi-project platform over [projects] (first = active) and start the embedded server.
+ *
+ * [connectorFactory] (CYP-124, additive, default null = unchanged prod path → Connector A all-AVAILABLE)
+ * is threaded straight into [BootOrchestrator]'s CYP-120 seam, so a journey can boot a [FakeConnector]
+ * with reduced capabilities and observe the resulting `capability.degraded` events over the real Event-Log.
+ */
+fun e2ePlatform(
+    projects: List<SeedProject>,
+    now: () -> Long = { 0L },
+    connectorFactory: ((Connector) -> Connector)? = null,
+): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
     require(active.agents.count { it.role == Role.PO } == 1) { "the first (active) project needs exactly one PO" }
@@ -142,6 +153,7 @@ fun e2ePlatform(projects: List<SeedProject>, now: () -> Long = { 0L }): E2ePlatf
         worktrees = WorktreeManager(FakeGit(), gitRoot, active.id),
         spawner = FakeSpawner(),
         scope = scope,
+        connectorFactory = connectorFactory,
     ).boot()
 
     // Seed the remaining projects through REAL APIs (no production seam): create in the registry, rescope
