@@ -117,7 +117,11 @@ object Rb1RealAgentHarness {
         File(dir, "README.md").writeText("# RB1 sandbox — throwaway, NOT a product repo\n")
         git.run(listOf("git", "add", "."), dir)
         git.run(listOf("git", "commit", "-m", "RB1: seed sandbox"), dir)
-        return dir.toURI().toString()
+        // RB1 #1 found this: File.toURI() yields a SINGLE-slash `file:/tmp/…`, which `git clone` misparses
+        // as scp-style `host:path` (host="file") → SSH → "Could not resolve hostname file" → exit 128
+        // before any claude spawn. A triple-slash `file:///abs/path` clones cleanly. (FakeGit never cloned,
+        // so Tier-A couldn't see this — exactly what the first real clone in RB1 is for.)
+        return "file://" + dir.absolutePath
     }
 
     /** The RB1 platform config: PO + one Worker, both real `claude`, pointed at the sandbox [repoUrl]. */
