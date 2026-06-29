@@ -49,6 +49,14 @@ object Rb1RealAgentHarness {
     fun apiKeyModeSelected(): Boolean = System.getenv("RB1_AUTH").equals("apikey", ignoreCase = true)
 
     /**
+     * The billing-direction decision, **pure** so it is unit-mutation-provable WITHOUT the RUN_RB1 gate
+     * (reviewer M4): the run uses a key ONLY in apikey mode. In subscription mode a present [keyFromProps]
+     * is **ignored** → a leftover local.properties key can never hijack a subscription run onto API
+     * billing. The fail-open mutation (returning [keyFromProps] unconditionally) reddens [Rb1AuthModeTest].
+     */
+    fun resolveRunKey(apiKeyMode: Boolean, keyFromProps: String?): String? = if (apiKeyMode) keyFromProps else null
+
+    /**
      * Fail-closed: RB1 runs on subscription OAuth, never an API key. If `ANTHROPIC_API_KEY` is present we
      * abort rather than risk an unintended billed/keyed run — the harness must not set or consume a key.
      */
@@ -134,7 +142,7 @@ object Rb1RealAgentHarness {
         // one-run local.properties key bridge (Option ii); the fail-closed default (subscription) ignores a
         // present key and runs on OAuth/Abo (Option i). The key, when read, is in-memory only — never
         // persisted/logged/committed.
-        val key = if (apiKeyModeSelected()) readSubscriptionKeyFromLocalProperties() else null
+        val key = resolveRunKey(apiKeyModeSelected(), readSubscriptionKeyFromLocalProperties())
         val authNote = when {
             !apiKeyModeSelected() -> "subscription/OAuth (default; any local.properties key IGNORED)"
             key != null -> "apikey mode: key present (masked) — one-run only"
