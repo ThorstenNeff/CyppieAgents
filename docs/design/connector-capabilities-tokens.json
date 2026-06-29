@@ -2,10 +2,11 @@
   "$meta": {
     "owner": "UIUX-Designer",
     "ticket": "CYP-119 (Epic CYP-118) — Connector-Vertrag & Capabilities",
-    "version": "0.1-vorlauf",
-    "status": "Design-Vorlauf, docs-only — wartet auf PO-Gegenlesen; Wire-Form (CapabilityStatus/ConnectorKind-Feldnamen) zurueckgehalten bis Backend CYP-120",
+    "version": "0.2-wireform-gefolded",
+    "status": "PO-GO + gemergt (docs-only). Wire-Form gefolded gegen die gemergte :core-DTO (CYP-120, develop 4fe60d5).",
     "brand": "CyppieAgents (Anti-Hype)",
-    "grounded_against": "develop ac70819",
+    "grounded_against": "develop 4fe60d5",
+    "wire_form": "core/.../model/ConnectorCapabilities.kt @ 4fe60d5: CapabilityStatus AVAILABLE/LIMITED/UNAVAILABLE (@SerialName available/limited/unavailable); ConnectorKind STREAM_JSON/MCP (@SerialName stream_json/mcp); Agent.capabilities: Capabilities? = null (null bis CYP-122 => fail-closed 'noch nicht gemeldet'). Token-Slots referenzieren die Enum-Namen; Wire-Werte sind lowercase.",
     "note": "Semantische Tokens fuer die Connector-Capability-/Degradations-Anzeige (Doc 10 Teil 1) und die Connector-Auswahl + B-Opt-in (Doc 10 Teil 2). Fast ausschliesslich Reuse: Hinweis-/Status-Toene ueber die geteilte TonedHint-Komponente (HintTone, CYP-99); Picker spiegelt RolePicker (CYP-86/88); Opt-in spiegelt AuthorizeDialog/owner-consent (CYP-93). Keine neuen Farben.",
     "reuse_note": "TonedHint-Mapping (ui/TonedHint.kt @ ac70819): INFO=secondary, GATED=onSurfaceVariant, ERROR=error, EFFECT_DEFERRED=onTertiaryContainer (amber Banner). Glyphen 'i'/'·'/'X'/'!' (kein Emoji, CYP-54). Vier getrennte Achsen (CYP-14): Identitaet (welcher Connector) != Recht/Gate != Severity != Fidelity. Fidelity wird NICHT rot eingefaerbt, nur weil reduziert."
   },
