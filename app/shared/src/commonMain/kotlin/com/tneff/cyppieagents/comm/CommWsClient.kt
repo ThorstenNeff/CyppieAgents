@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.net.logWsError
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
@@ -13,7 +14,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 
 /**
  * Live `/ws/comm` adapter (CYP-21 swap, against the CYP-18 frame contract). Decodes each masked
@@ -32,18 +33,22 @@ class CommWsClient(
     private val token: String,
 ) : CommLiveSource {
 
-    override fun events(): Flow<CommLiveEvent> = flow {
+    override fun events(): Flow<CommLiveEvent> = channelFlow {
         try {
             client.webSocket(
                 urlString = commUrl(),
                 request = { header(HttpHeaders.Authorization, "Bearer $token") },
             ) {
-                emit(CommLiveEvent.Connected)
+                // channelFlow (not flow): the webSocket body runs on the engine dispatcher (Dispatchers.IO on
+                // Native), so emitting from here is a cross-context send — illegal in flow{} (the ISE behind
+                // the CYP-115 Darwin churn) but exactly what channelFlow allows. Element emissions go to
+                // this@channelFlow; `incoming` frames stay on the WebSocketSession.
+                this@channelFlow.send(CommLiveEvent.Connected)
                 for (frame in incoming) {
                     if (frame is Frame.Text) {
                         when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
-                            is MessageEvent -> emit(CommLiveEvent.MessageReceived(event.message))
-                            is ChannelsEvent -> emit(CommLiveEvent.ChannelsChanged(event.channels))
+                            is MessageEvent -> this@channelFlow.send(CommLiveEvent.MessageReceived(event.message))
+                            is ChannelsEvent -> this@channelFlow.send(CommLiveEvent.ChannelsChanged(event.channels))
                             is AclEvent -> Unit // consumed by the ACL-matrix UI (S7), not the timeline
                         }
                     }
@@ -52,10 +57,12 @@ class CommWsClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            // Connection failed/dropped — fall through to Disconnected instead of crashing the panel.
+            // CYP-115: log a real failure instead of masking it as a silent Disconnected (a normal close does
+            // not throw). The cross-context ISE that caused the churn was swallowed here before.
+            logWsError("comm", e)
         }
         // Always end honestly: the timeline stops claiming "live" once the socket is gone (CYP-17 §5).
-        emit(CommLiveEvent.Disconnected)
+        this@channelFlow.send(CommLiveEvent.Disconnected)
     }
 
     private fun commUrl(): String {
