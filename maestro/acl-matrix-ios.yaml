@@ -1,0 +1,69 @@
+# CYP-69 Phase ④ — ACL-Matrix iOS flow (Maestro, Compose-iOS target). PRE-DRAFT (2026-06-29).
+#
+# Direct iOS port of acl-matrix-android.yaml (demo full-screen tab → ports 1:1; only the appId changes).
+# RUN/FINALIZE once iOS-Dev's demo-target (CYP-69 ①) lands. Exercises the CYP-19 disclosure-critical
+# paths against the canonical testTags (docs/design/acl-matrix-tags.md, area `aclMatrix`) — NO
+# text/localizable selectors (Test-Contract §4):
+#   * the matrix appears, an operator R/W toggle round-trips to `enforced` (hub echo = source of truth),
+#   * a PO-critical cell opens the advisory consequence dialog (not a silent toggle),
+#   * confirming it hits the server-guard 409 path → the cell reverts to `protected` (acl_po_protected),
+#   * the narrow-cards responsiveness (phone viewport < 600dp inner width → per-channel cards).
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
+# On iOS testTags surface as accessibilityIdentifiers (CYP-67; container-swaps ③ no-op).
+#
+# PREREQUISITES (tester runtime; baseline pair Xcode 26.6 / iOS-Sim 26.5, iPhone 17):
+#   * Build + launch the DEDICATED iOS demo build (appId com.tneff.cyppieagents.demo). Its `demo.tab.acl`
+#     renders AclPanel FULL-SCREEN in an OPERATOR context (editable) fed by StubAclHub(rejectPoLockout =
+#     true) — an in-memory hub that echoes AclEvent on setAcl AND mirrors the CYP-49 server guard (409
+#     po_lockout_protected) — so the enforced + protected paths run WITHOUT a server. On an iPhone (~Compact)
+#     the panel is below the 600dp breakpoint → narrow per-channel cards.
+appId: com.tneff.cyppieagents.demo
+name: "CYP-69 ACL-Matrix (iOS) — grid -> operator toggle -> PO lockout dialog -> 409 protected"
+tags:
+  - gating
+  - acl
+  - ios
+---
+- launchApp
+
+# Select the ACL tab (full-screen panel).
+- tapOn:
+    id: '^demo\.tab\.acl$'
+
+# Narrow viewport → the matrix is the per-channel card list (responsiveness). Open a HUB spoke.
+- assertVisible:
+    id: '^aclMatrix\.grid$'
+    label: "ACL matrix surface present (narrow channel-card list on a phone)"
+- tapOn:
+    id: '^aclMatrix\.rowHeader\.po-frontend$'
+
+# Operator toggle on a WORKER grant is unguarded → optimistic, then the hub echoes AclEvent and the cell
+# becomes enforced (pending != enforced; the echo is the source of truth, not the PUT-200).
+- assertVisible:
+    id: '^aclMatrix\.cell\.po-frontend\.frontend\.read$'
+    label: "Member R switch present (operator-editable)"
+- tapOn:
+    id: '^aclMatrix\.cell\.po-frontend\.frontend\.read$'
+- assertVisible:
+    id: '^aclMatrix\.cell\.po-frontend\.frontend\.enforced$'
+    label: "Worker toggle round-trips through the hub echo to enforced"
+
+# A PO-critical cell (PO read on a HUB spoke) must open the advisory consequence dialog — never a silent
+# toggle (the UI guardrail).
+- assertVisible:
+    id: '^aclMatrix\.cell\.po-frontend\.po\.poCritical$'
+    label: "PO-critical marker present on the PO HUB-spoke cell"
+- tapOn:
+    id: '^aclMatrix\.cell\.po-frontend\.po\.read$'
+- assertVisible:
+    id: '^aclMatrix\.lockoutDialog$'
+    label: "PO-lockout consequence dialog opens (advisory, not silent)"
+
+# Confirming routes the PUT to the server guard → 409 po_lockout_protected → the cell reverts to the hub
+# state and shows the `protected` disclosure (the real enforcement, CYP-49; the UI warning is advisory).
+- tapOn:
+    id: '^aclMatrix\.lockoutDialog\.confirm$'
+- assertVisible:
+    id: '^aclMatrix\.cell\.po-frontend\.po\.protected$'
+    label: "Server-guard 409 -> cell reverts to protected (acl_po_protected), not an applied lockout"
