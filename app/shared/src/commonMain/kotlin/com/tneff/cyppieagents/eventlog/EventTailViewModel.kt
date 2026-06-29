@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.model.Event
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,8 @@ data class EventTailUiState(
     val bufferOverflowCount: Int = 0,
     /** The operator token was rejected at the socket (WS close 1008) — render fail-closed, never "live". */
     val accessRevoked: Boolean = false,
+    /** CYP-94 cross-project lens: null = forced-active (default); concrete id / `all` = an explicit override. */
+    val projectId: String? = null,
 )
 
 /**
@@ -45,16 +48,38 @@ class EventTailViewModel(
 ) : ViewModel() {
 
     private val runScope: CoroutineScope = scope ?: viewModelScope
-    private val _state = MutableStateFlow(EventTailUiState())
+    private val _state = MutableStateFlow(EventTailUiState(projectId = filter.projectId))
     val state: StateFlow<EventTailUiState> = _state.asStateFlow()
 
     /** Events received while paused (bounded by [pauseBufferCapacity]); not visible until resume. */
     private val pending = mutableListOf<Event>()
 
-    init { runScope.launch { collect() } }
+    /** The live filter (CYP-94: re-subscribed when the cross-project lens changes). */
+    private var currentFilter = filter
+    private var collectJob: Job? = null
+
+    init { startCollect() }
+
+    private fun startCollect() {
+        collectJob?.cancel()
+        collectJob = runScope.launch { collect() }
+    }
+
+    /**
+     * CYP-94: switch the cross-project read lens (operator-only). Resets the visible ring + pause buffer and
+     * re-subscribes with the new `projectId` (null = forced-active default; `all`/concrete id = override). The
+     * WS carries it via `SubscribeEvents.projectId` (Backend `:core` seam); the stub source mirrors it.
+     */
+    fun applyProjectFilter(projectId: String?) {
+        if (currentFilter.projectId == projectId) return
+        currentFilter = currentFilter.copy(projectId = projectId)
+        pending.clear()
+        _state.update { it.copy(events = emptyList(), pendingCount = 0, projectId = projectId) }
+        startCollect()
+    }
 
     private suspend fun collect() {
-        source.events(filter).collect { event ->
+        source.events(currentFilter).collect { event ->
             EventReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
             when (event) {
                 is EventLiveEvent.Received -> onReceived(event.event)

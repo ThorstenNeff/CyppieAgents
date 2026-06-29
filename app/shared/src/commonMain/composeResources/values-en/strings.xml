@@ -22,6 +22,12 @@
     <string name="event_filter_severity">Severity</string>
     <string name="event_filter_timewindow">Time window</string>
     <string name="event_filter_correlation">Correlation ID</string>
+    <!-- CYP-94 event-log project filter (cross-project read lens) -->
+    <string name="event_filter_project">Project</string>
+    <string name="event_filter_project_all">All projects</string>
+    <string name="event_view_project">View: project %1$s</string>
+    <string name="event_view_all_projects">View: all projects (cross-project)</string>
+    <string name="event_row_project">Project: %1$s</string>
     <string name="event_load_more">Load more</string>
     <!-- Shared "Back" key (comm-panel-keys.md, CYP-17 contract) — reused by the Browse single-pane, not duplicated. -->
     <string name="comm_back">Back</string>

@@ -33,6 +33,7 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_event_gap
 import kmpcyppieagents.app.shared.generated.resources.a11y_event_row
 import kmpcyppieagents.app.shared.generated.resources.event_gap_dropped
+import kmpcyppieagents.app.shared.generated.resources.event_row_project
 import kmpcyppieagents.app.shared.generated.resources.event_severity_debug
 import kmpcyppieagents.app.shared.generated.resources.event_severity_error
 import kmpcyppieagents.app.shared.generated.resources.event_severity_info
@@ -66,6 +67,9 @@ fun EventRow(
     qualifierTag: String,
     byIdTag: String,
     onClick: (() -> Unit)? = null,
+    /** CYP-94: render the per-row project identity (Text, never colour alone) — ONLY in the cross-project view. */
+    showProject: Boolean = false,
+    projectTag: String? = null,
 ) {
     if (event.type == EventType.LOG_DROPPED) {
         GapRow(event, rowTag, qualifierTag, byIdTag)
@@ -110,6 +114,16 @@ fun EventRow(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.outline,
         )
+        // CYP-94: project identity — only in the cross-project view, as TEXT (identity ≠ severity ≠ right).
+        if (showProject && projectTag != null) {
+            Text(
+                text = stringResource(Res.string.event_row_project, event.projectId),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.testTag(projectTag),
+            )
+        }
     }
 }
 

@@ -160,6 +160,8 @@ fun AgentShell(
     val projectVm = viewModel(key = "projectSwitcher") {
         ProjectViewModel(resolvedProjectRepo, editable = cfg.operatorToken != null)
     }
+    // CYP-94: the project registry feeds the event-log cross-project filter (operator-only surfaces).
+    val projectState = projectVm.state.collectAsState().value
 
     // Dynamic window set (S14): agent windows are derived from the managed agent list; the system
     // windows (comm/acl/settings/agentMgmt/productLead + operator-only event-log) stay static. The
@@ -379,8 +381,8 @@ fun AgentShell(
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
                     AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(agentMgmtVm)
                     PRODUCT_LEAD_WINDOW_ID -> ProductLeadPanel(productLeadVm)
-                    EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it) }
-                    EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it) }
+                    EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
+                    EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
                     else -> agentVms[window.id]?.let { AgentWindow(agentId = window.id, viewModel = it) }
                 }
             },

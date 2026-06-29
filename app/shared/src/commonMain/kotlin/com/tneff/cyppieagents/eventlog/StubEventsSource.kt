@@ -30,5 +30,8 @@ class StubEventsSource(
             (f.type == null || e.type == f.type) &&
             (f.severity == null || e.severity == f.severity) &&
             (f.correlationId == null || e.correlationId == f.correlationId) &&
-            (f.sessionId == null || e.sessionId == f.sessionId)
+            (f.sessionId == null || e.sessionId == f.sessionId) &&
+            // CYP-94: mirror the WS cross-project lens (the real `SubscribeEvents.projectId` lands in :core
+            // from Backend's seam). null (forced-active default) / `all` → no narrowing; concrete id → match.
+            (f.projectId == null || f.projectId == EventFilter.PROJECT_ALL || e.projectId == f.projectId)
 }

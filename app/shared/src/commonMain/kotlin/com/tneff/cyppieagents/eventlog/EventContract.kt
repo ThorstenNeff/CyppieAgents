@@ -22,7 +22,20 @@ data class EventFilter(
     val until: Long? = null,
     val correlationId: String? = null,
     val sessionId: String? = null,
-)
+    /**
+     * CYP-94 cross-project read lens (operator-only). `null` = no param → the server forces the active
+     * project (CYP-102, unchanged); a concrete project id = that other project; [PROJECT_ALL] = all of the
+     * operator's authorized projects. Sent as the `projectId` query param **only when non-null** (the
+     * operator-gated path). This is the CLIENT [EventFilter] (app:shared) — distinct from the server's
+     * forced-active `EventFilter.projectId`; the operator-override is validated server-side (Backend seam).
+     */
+    val projectId: String? = null,
+) {
+    companion object {
+        /** Sentinel `projectId` value = cross-project (all of the operator's own authorized projects). */
+        const val PROJECT_ALL = "all"
+    }
+}
 
 /** Paging cursor: fetch events with `seq > afterSeq`, up to [limit]. Stable over `Event.seq`. */
 data class Page(val afterSeq: Long? = null, val limit: Int = 100)
