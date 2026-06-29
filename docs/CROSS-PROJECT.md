@@ -102,14 +102,15 @@ keine gegenseitige Freigabe (deckt sich mit dem Single-Owner-Modell §2.2). Aus 
 Aktion **„Projektübergreifend freigeben"** (`crossProject.authorize`, `crossproject_authorize`) den
 Autorisierungs-Dialog (`crossProject.dialog`), **operator/owner-gated/fail-closed**:
 
-- **Reichweite/Folgen — konkrete Agenten, kein Over-Widen** (`crossProject.dialog.scope`,
-  `crossproject_dialog_scope` = „Dieser Kanal erreicht dann diese Agenten: %1$s") — benennt die
-  **expliziten Mitglieds-Agenten dieses einen Kanals** mit ihrem **Heimat-Projekt und Zugriff**, **nie**
-  „Projekt B" pauschal (PO-§6-Addendum c + Reviewer-Leitplanke). Jeder Cross-Projekt-Member wird über
-  `crossproject_member_access` gerendert („%1$s (Projekt %2$s) – %3$s", %3$s = Zugriff). **Default eines
-  neuen Cross-Projekt-Members = lesend** (`crossproject_access_read`); **schreiben nur per expliziter ACL**
-  (`crossproject_access_write`) — **kein Auto-Read für alle Agenten des fremden Projekts**. Garantierte
-  „was passiert"-Aussage (HintTone.INFO).
+- **Reichweite/Folgen — zwei-phasig, kein Over-Widen** (`crossProject.dialog.scope`,
+  `crossproject_dialog_scope`): **Pre-Share** nennt die **Ziel-Projekte** + den ehrlichen Hinweis „Konkrete
+  Agenten je nach deren Leserechten – erscheinen nach der Freigabe" (Kontrakt: `reachableScope` ist leer
+  bis `shared`, also gibt es **vor** der Freigabe keine konkreten Agenten zu nennen). **Post-Share** nennt
+  die **konkreten Member-Agenten** in der Status-Zeile (§2.4) — **nie** „Projekt B" pauschal **mit
+  Auto-Access**. Jeder Cross-Projekt-Member wird über `crossproject_member_access` gerendert („%1$s
+  (Projekt %2$s) – %3$s", %3$s = Zugriff). **Default eines neuen Cross-Projekt-Members = lesend**
+  (`crossproject_access_read`); **schreiben nur per expliziter ACL** (`crossproject_access_write`) — **kein
+  Auto-Read für alle Agenten des fremden Projekts**. Garantierte „was passiert"-Aussage (HintTone.INFO).
 - **Eigentümer-Zustimmung** (`crossProject.dialog.ownerConsent`, `crossproject_owner_consent` = „Ich gebe
   diesen Kanal als Eigentümer projektübergreifend frei.") — eine **bewusste** Bestätigungs-Affordanz
   (Checkbox/expliziter Schritt), nicht ein stiller Default. **Datenform 1→N-fähig** (§2.2): die Zustimmung
