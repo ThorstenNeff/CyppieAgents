@@ -279,4 +279,33 @@
     <string name="crossproject_error">Freigabe fehlgeschlagen</string>
     <string name="crossproject_operator_required">Nur der Eigentümer (Operator-Token) kann freigeben.</string>
     <string name="a11y_crossproject_badge">Projektübergreifender Kanal</string>
+    <!-- CYP-123 Connector-Vertrag & Capabilities (Doc 10) -->
+    <string name="connector_kind_stream_json">stream-json (API)</string>
+    <string name="connector_kind_mcp">MCP (Abo)</string>
+    <string name="connector_status_available">verfügbar</string>
+    <string name="connector_status_limited">eingeschränkt</string>
+    <string name="connector_status_unavailable">nicht verfügbar</string>
+    <string name="connector_dim_structured_usage">Token-Nutzung pro Turn</string>
+    <string name="connector_dim_tool_granularity">Tool-Call-Granularität</string>
+    <string name="connector_dim_reliable_result">Verlässliches Turn-Ende</string>
+    <string name="connector_dim_rate_limit_signal">Rate-Limit-Signal</string>
+    <string name="connector_dim_coordination">Hub-Koordination</string>
+    <string name="connector_degraded">eingeschränkt</string>
+    <string name="connector_unknown">Connector unbekannt</string>
+    <string name="connector_panel_unknown">Capabilities nicht gemeldet</string>
+    <string name="connector_degradation_hint">Einige Funktionen sind wegen der Connector-Fidelity reduziert – markiert, nicht geraten.</string>
+    <string name="connector_select_title">Connector wählen</string>
+    <string name="connector_select_current">Aktuell: %1$s</string>
+    <string name="connector_select_button">Connector ändern</string>
+    <string name="connector_risk_note">Connector B (MCP/Abo) umgeht die Trennung interaktiv/autonom, die Anbieter aktiv erkennen. Das Risiko (Drosselung/Sperrung) trägt dein eigenes Konto. Geringere Fidelity: Token-Tracking grob oder aus, Event-Log dünner. Bewusstes Opt-in, kein Default.</string>
+    <string name="connector_risk_ack">Ich verstehe das Risiko und aktiviere Connector B bewusst.</string>
+    <string name="connector_human_only">Nur du als Operator wählst den Connector – niemals ein Agent oder eine Nachricht.</string>
+    <string name="connector_gate_hint">Nur der Operator (Operator-Token) kann den Connector ändern.</string>
+    <string name="connector_confirm">Übernehmen</string>
+    <string name="connector_cancel">Abbrechen</string>
+    <string name="connector_error">Connector-Änderung fehlgeschlagen</string>
+    <string name="connector_operator_required">Nur der Operator (Operator-Token) kann den Connector ändern.</string>
+    <string name="connector_risk_required">Connector B erfordert die ausdrückliche Risiko-Bestätigung.</string>
+    <string name="a11y_connector_badge">Connector-Fähigkeiten des Agenten</string>
+    <string name="a11y_connector_degraded">Fähigkeiten eingeschränkt</string>
 </resources>
