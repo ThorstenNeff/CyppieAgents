@@ -10,7 +10,7 @@
 
 ## Scope-Vokabular
 - `scope` (Capability-Surface) ∈ { `<agentId>` (Live, am Agentenfenster), `preview` (im B-Opt-in-Dialog) }.
-- `dim` (Capability-Dimension) ∈ { `structuredUsage`, `toolGranularity`, `reliableResult`, `rateLimitSignal`, `coordination` } — **exakt die `Capabilities`-Feldnamen** (`core/.../model/ConnectorCapabilities.kt` @ `4fe60d5`), segment-sicher (camelCase). Unbekannte künftige Dimension → `dim` = sanitisierte Wire-Id (Label `connector_dim_unknown`, §-Ask 4).
+- `dim` (Capability-Dimension) ∈ { `structuredUsage`, `toolGranularity`, `reliableResult`, `rateLimitSignal`, `coordination` } — **exakt die `Capabilities`-Feldnamen** (`core/.../model/ConnectorCapabilities.kt` @ `4fe60d5`), segment-sicher (camelCase). Unbekannte künftige Dimension → `dim` = sanitisierte Wire-Id (Label `connector_dim_unknown`, §-Ask 4). _(Forward-prep: bei der aktuellen festen 5-Feld-`Capabilities`-DTO noch nicht erreichbar — greift erst mit einem erweiterbaren Carrier; kein Defekt.)_
 - `kind` (Connector) ∈ { `streamJson`, `mcp` } (Tag-`selectorId`, camelCase) — **mappt auf Wire `@SerialName`** `stream_json`/`mcp` (`ConnectorKind` STREAM_JSON/MCP @ `4fe60d5`). Underscore ist **kein** gültiges Tag-Segment → camelCase im Tag, lowercase-underscore auf dem Draht.
 
 ## Capability-Anzeige (pro Agent + Vorschau)
@@ -27,6 +27,8 @@
 |---|---|---|
 | `PICKER` | `connector.picker` | A/B-RadioGroup (spiegelt `RolePicker`). |
 | `pickerOption(kind)` | `connector.picker.<kind>` | Option `streamJson` (Default, vorausgewählt) / `mcp` (nie vorausgewählt). RadioButton getaggt → enabled/selected assertierbar. |
+| `PICKER.defaultNote` (inline `TonedHint`-Tag) | `connector.picker.defaultNote` | INFO-Hinweis: A erstklassig, B Opt-in — macht den fail-closed-Default explizit (`connector_default_note`). |
+| `PICKER.effectHint` (inline `TonedHint`-Tag) | `connector.picker.effectHint` | „gespeichert ≠ aktiv – Neustart" **im Picker** (EFFECT_DEFERRED), sichtbar bei B-Draft / Edit-Kontext. Reuse des **Keys** `agent_edit_effect_hint`, aber **eigener** Tag auf der Connector-Surface. |
 
 ## B-Opt-in-Dialog (Risiko-Aufklärung)
 | Tag (Konstante) | Wert | Zweck |
@@ -47,14 +49,16 @@
 |---|---|---|
 | `agent.<id>.header` (`AgentViewTags.header`) | CYP-73 | Host-Anchor des Fidelity-Badges |
 | `agentMgmt.add.dialog` / `agentMgmt.edit.dialog` (`AgentMgmtTags.ADD_DIALOG`/`EDIT_DIALOG`) | CYP-86/88 | Host-Anchor des Connector-Pickers |
-| `agentMgmt.edit.effectHint` (`AgentMgmtTags.EDIT_EFFECT_HINT`) | CYP-88 | „gespeichert ≠ aktiv – Neustart" beim Connector-Wechsel (kein neuer Tag) |
+| `agent_edit_effect_hint` (**Key**, CYP-88) | CYP-88 | „gespeichert ≠ aktiv – Neustart" — Key wiederverwendet, im Picker unter eigenem Tag `connector.picker.effectHint` gerendert (s. o.) |
 | `agentMgmt.gateHint` (`AgentMgmtTags.GATE_HINT`) | CYP-86 | Config-Operator-Gate (geerbt, kein neuer Tag) |
 
 ## Self-Validation
-- **17 neue Tag-Identifier** in Area `connector`: 5 Capability-Anzeige (`fidelityBadge`, `capabilityPanel`,
-  `activeConnector`, `capability`, `capabilityStatus`) + 2 Picker (`PICKER`, `pickerOption`) + 10 Opt-in
+- **19 neue Tag-Identifier** in Area `connector`: 5 Capability-Anzeige (`fidelityBadge`, `capabilityPanel`,
+  `activeConnector`, `capability`, `capabilityStatus`) + 4 Picker (`PICKER`, `pickerOption`,
+  `picker.defaultNote`, `picker.effectHint`) + 10 Opt-in
   (`OPTIN_DIALOG`, `…RISK_BYPASS`, `…RISK_ACCOUNT`, `…RISK_FRAGILE`, `…PREVIEW`, `…ACK`, `…HUMAN_ONLY`,
-  `…CONFIRM`, `…CANCEL`, `…ERROR`).
+  `…CONFIRM`, `…CANCEL`, `…ERROR`). _(CYP-123-Doc-Sync 2026-06-29: `picker.defaultNote`/`picker.effectHint`
+  ergänzt — sie werden in der Impl als `TonedHint`-Tags gerendert; 17→19.)_
 - Alle Werte erfüllen `[A-Za-z0-9-]+` je Segment (camelCase, keine Punkte im Wert); `dim`/`kind`/`scope`
   segment-sicher.
 - Jeder Tag ist in `connector-capabilities-spec.md` verankert; 4 Reuse-Tags real auf develop `ac70819`
