@@ -62,8 +62,6 @@ import org.jetbrains.compose.resources.stringResource
 fun ConnectorPicker(
     viewModel: ConnectorSelectionViewModel,
     modifier: Modifier = Modifier,
-    /** Edit context (existing agent): also render the reused amber "restart to apply" hint (spec §3.4). */
-    showEffectHint: Boolean = false,
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -92,11 +90,11 @@ fun ConnectorPicker(
         TonedHint(stringResource(Res.string.connector_default_note), HintTone.INFO, "${ConnectorTags.PICKER}.defaultNote")
 
         // "Saved ≠ active" — the picker is INTENT, never a claim that B is ACTIVE (the active connector is the
-        // server-truth capability display only; `Agent.capabilities` stays fail-closed until CYP-122). Whenever B
-        // is the selected draft — or any change in the edit context — surface the reused CYP-88 amber "restart to
-        // apply" hint, so opting into B never reads as "B is now live" (spec §3.4; PO honesty constraint: never
-        // suggest B is active while the write-seam is a stub / before the CYP-122 server-enforced opt-in).
-        if (showEffectHint || state.draftKind == ConnectorKind.MCP) {
+        // server-truth capability display only). The VM derives [ConnectorSelectionUiState.showEffectHint] =
+        // a change from the agent's current connector in EDIT context (a fresh add carries the kind in
+        // NewAgentSpec → no restart, no hint). So changing an existing agent's connector reads as "saved ≠
+        // active — restart to apply" (reused CYP-88 amber hint), never "B is now live" (spec §3.4; CYP-126).
+        if (state.showEffectHint) {
             TonedHint(stringResource(Res.string.agent_edit_effect_hint), HintTone.EFFECT_DEFERRED, "${ConnectorTags.PICKER}.effectHint")
         }
     }

@@ -23,9 +23,10 @@ import com.tneff.cyppieagents.connector.ConnectorCapabilityHttpRepository
 import com.tneff.cyppieagents.connector.ConnectorCapabilityRepository
 import com.tneff.cyppieagents.connector.ConnectorCapabilityViewModel
 import com.tneff.cyppieagents.connector.ConnectorPicker
+import com.tneff.cyppieagents.connector.ConnectorSelectionHttpRepository
 import com.tneff.cyppieagents.connector.ConnectorSelectionRepository
 import com.tneff.cyppieagents.connector.ConnectorSelectionViewModel
-import com.tneff.cyppieagents.connector.StubConnectorSelectionRepository
+import com.tneff.cyppieagents.model.ConnectorKind
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -353,16 +354,14 @@ fun AgentShell(
     }
     val connectorCapState = connectorCapVm.state.collectAsState().value
 
-    // Connector selection write (CYP-123 Inc 2, spec §3): the operator-gated picker + B opt-in. Stub until
-    // CYP-122 (the choice rides the agent-spec; the server re-checks the operator gate + the B ack + audits).
-    // Operator-gated (editable iff an operator token is present) — the agentMgmt dialogs that host the picker
-    // are already operator-gated, so the picker inherits that gate (no second gate, §3.3). agentId = null here:
-    // one shell-level picker keyed to the open add/edit dialog (real per-agent binding is CYP-122).
-    val resolvedConnectorSelRepo = remember(connectorSelectionRepository) {
-        connectorSelectionRepository ?: StubConnectorSelectionRepository()
-    }
-    val connectorSelVm = viewModel(key = "connectorSelection") {
-        ConnectorSelectionViewModel(resolvedConnectorSelRepo, agentId = null, editable = cfg.operatorToken != null)
+    // Connector selection write (CYP-123 / CYP-126, spec §3): now the LIVE REST client against the CYP-122
+    // connector opt-in endpoint (POST /api/agents/{id}/connector — stub→real swap, no UI change). Operator-gated
+    // (editable iff an operator token is present); the server re-checks the operator gate + the B ack + audits.
+    // The agentMgmt dialogs that host the picker are already operator-gated, so the picker inherits that gate
+    // (no second gate, §3.3). The per-dialog picker VMs are created agent-bound inside the add/edit slots below.
+    val resolvedConnectorSelRepo = remember(connectorSelectionRepository, httpClient, cfg) {
+        connectorSelectionRepository
+            ?: ConnectorSelectionHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
     // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
     // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
@@ -450,7 +449,34 @@ fun AgentShell(
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
                     AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(
                         agentMgmtVm,
-                        connectorPickerSlot = { ConnectorPicker(connectorSelVm) },
+                        // CYP-126 ADD: the picker feeds NewAgentSpec.connectorKind (onKindChosen) — no
+                        // connector-endpoint call, no restart hint (fresh spawn). B still goes through the
+                        // ack-gated opt-in before the kind is accepted into the spec.
+                        addConnectorPickerSlot = {
+                            val addVm = viewModel(key = "connectorSelection-add") {
+                                ConnectorSelectionViewModel(
+                                    resolvedConnectorSelRepo, agentId = null,
+                                    editable = cfg.operatorToken != null,
+                                    initialKind = ConnectorKind.STREAM_JSON,
+                                    onKindChosen = agentMgmtVm::setAddConnectorKind,
+                                )
+                            }
+                            ConnectorPicker(addVm)
+                        },
+                        // CYP-126 EDIT: agent-bound — the picker initialises to the agent's CURRENT connector
+                        // (so an existing B agent shows B, never silently reset to A) and a B confirm POSTs the
+                        // dedicated connector endpoint for THIS agent. Keyed by id+connectorKind so a re-fetched
+                        // truth yields a fresh VM with the right initial kind.
+                        editConnectorPickerSlot = { target ->
+                            val editVm = viewModel(key = "connectorSelection-edit-${target.id}-${target.connectorKind}") {
+                                ConnectorSelectionViewModel(
+                                    resolvedConnectorSelRepo, agentId = target.id,
+                                    editable = cfg.operatorToken != null,
+                                    initialKind = target.connectorKind,
+                                )
+                            }
+                            ConnectorPicker(editVm)
+                        },
                     )
                     PRODUCT_LEAD_WINDOW_ID -> ProductLeadPanel(productLeadVm)
                     EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
