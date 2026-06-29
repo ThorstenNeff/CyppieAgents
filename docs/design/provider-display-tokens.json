@@ -1,0 +1,51 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-137 (Epic CYP-130; Reuse-Linie CYP-118/119/123) — Provider-Anzeige",
+    "version": "0.1-design-vorlauf",
+    "status": "Design-Vorlauf (docs-only) — wartet auf PO-Gegenlesen. Wire-Form (Agent.provider) zurueckgehalten bis CYP-137-Backend.",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop 608c8ad",
+    "wire_form_held": "Agent.provider existiert heute NICHT am DTO (core/.../model/CommModel.kt @ 608c8ad). Design-Annahme: menschenlesbares Provider-Label, additiv + nullable (null = noch nicht gemeldet => fail-closed), Muster wie capabilities/connectorKind. Feldname/Form bestaetigt Backend in CYP-137-Backend.",
+    "note": "Semantische Tokens fuer die Provider-Anzeige (Doc 10 §3). Provider ist eine VIERTE, eigene Achse: Identitaet (anbieter-agnostisch) != Provider (Werkzeug/Anbieter) != Connector-Kind (A/B) != Fidelity (Degradation). FAST AUSSCHLIESSLICH REUSE: keine neue Farbe, keine neue Area. Provider ist ein NEUTRALER, untergeordneter Text-Qualifier (kein Identitaets-Hue, keine Severity-Farbe, kein Logo).",
+    "reuse_note": "Identitaets-Hue bleibt CYP-14 colorSlot/SenderPalette (Provider traegt ihn NICHT). Neutrale Toenung onSurfaceVariant wie TonedHint.GATED (ui/TonedHint.kt @ 608c8ad). Capability-Panel + connector_active-Muster aus CYP-119/123. Fail-closed-durch-Absenz wie WindowBadges CYP-55."
+  },
+  "semantic": {
+    "provider.headerChip": {
+      "role": "Kompakter Provider-Qualifier im Agentenfenster-Header (Anchor agent.<id>.header), NEBEN Identitaet/Status. Sichtbarer Wert = Provider-Label (z.B. 'Claude'); a11y gelabelt 'Anbieter: %1$s'. PRAESENT <=> Provider bekannt; null => ABSENT (fail-closed, kein Phantom, nie 'Claude' erfunden). Untergeordnet, NICHT prominent.",
+      "marker": "neutraler Text (kein Hue, kein Icon, KEIN Logo)",
+      "color": "onSurfaceVariant (neutral, untergeordnet) — NICHT colorSlot/Identitaets-Hue, NICHT Severity",
+      "typography": "labelSmall-Klasse (gedaempft, untergeordnet zur Identitaet)",
+      "label_key": "connector_provider (Panel/a11y) / sichtbarer Chip = reiner Wert",
+      "a11y_key": "a11y_provider"
+    },
+    "provider.panelLine": {
+      "role": "Oberste Identitaetszeile des BESTEHENDEN Capability-Panels (connector.<id>.capabilityPanel, CYP-119 §2.3) — UEBER 'Aktiver Connector'. Liest die Achsen von aussen nach innen: Provider (womit) -> Connector-Kind (wie) -> Fidelity (was moeglich). Identitaets-Text, Identitaet != Fidelity.",
+      "reuse": "connector_active-Muster (CYP-119); kein neues Surface",
+      "color": "onSurface (Identitaets-Text, wie connector_active)",
+      "label_key": "connector_provider",
+      "unknown_key": "connector_provider_unknown",
+      "fail_closed": "Provider null => 'Anbieter noch nicht gemeldet' (connector_provider_unknown), analog connector_fidelity_unknown. Nie weggelassen-als-ob-voll, nie erfunden."
+    },
+    "provider.panelLine.model": {
+      "role": "OPTIONAL/GEHALTEN (§-Ask 2): gedaempfte Modell-Sekundaerzeile unter dem Provider (z.B. 'Claude Opus 4.8'), NUR wenn Backend ein Modell liefert. KEIN Badge, KEIN 'neuestes/bestes' (Anti-Hype). Default: NICHT rendern bis PO/Backend entscheidet.",
+      "color": "onSurfaceVariant (gedaempft, sekundaer)",
+      "status": "held — Slot vorgesehen (connector.<id>.provider.model), bis CYP-137-Backend + PO §-Ask 2"
+    },
+    "provider.eventLogIdentity": {
+      "role": "Provider als gedaempftes Sekundaer-Detail in der Event-Log-Identitaetszelle (EVENT-LOG-UI §4), NEBEN/UNTER dem Namen. Identitaets-Hue (colorSlot) + Name bleiben FUEHREND; Provider ist neutraler Zusatz. FORWARD-PREP: landet mit der CYP-41/42-Impl (Event-Log noch nicht gebaut).",
+      "reuse": "Event-Zeile Identitaetszelle (CYP-41/42) + colorSlot (CYP-14)",
+      "color": "onSurfaceVariant (neutral, untergeordnet) — NIE Identitaets-Hue, NIE Severity-Farbe",
+      "fail_closed": "Provider am Event unbekannt => kein Provider-Sekundaertext (nie geraten); Identitaet allein bleibt vollstaendig.",
+      "a11y": "erweitert a11y_event_row um '(Anbieter %1$s)' wenn vorhanden"
+    }
+  },
+  "axes_separation": {
+    "role": "VERBINDLICH (CYP-14-Disziplin fortgeschrieben): vier getrennte Bedeutungsachsen, nie ineinander gefaerbt.",
+    "identity": "wer (Teilnehmer, anbieter-agnostisch) — colorSlot/SenderPalette (CYP-14). Name/Fenstertitel NICHT umbenennen.",
+    "provider": "womit (Werkzeug/Anbieter) — NEUTRAL onSurfaceVariant, untergeordnet, kein Hue/Logo (CYP-137).",
+    "connector_kind": "wie gesprochen wird (A stream-json / B MCP) — Picker/Panel-Text (CYP-119/123).",
+    "fidelity": "was der Connector kann (Degradation) — Tri-State-Chip + amber Fidelity-Badge (CYP-119/123).",
+    "rule": "Farbe nie alleiniger Traeger (WCAG 1.4.1); jede Achse traegt Text. Provider weder Identitaets-Hue noch Severity-Farbe."
+  }
+}
