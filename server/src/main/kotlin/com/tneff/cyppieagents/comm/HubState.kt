@@ -91,7 +91,26 @@ class HubState(
      */
     fun setAcl(entry: AclEntry): AclEntry = synchronized(lock) {
         val next = entries.filterNot { it.channelId == entry.channelId && it.agentId == entry.agentId } + entry
-        val candidate = AclMatrix(channels, next, activeProjectId, sharedInboundChannelIds)
+        // S17 / CYP-112: membership IS the per-agent ACL (CYP-93). An entry that grants access
+        // (canRead || canWrite) makes the agent a member of that channel; a revoke to no access removes
+        // it. Synced into the channel's members BEFORE the candidate matrix is built, so the PO-lockout
+        // guard and every read see correct membership — and so a cross-project grantee provisioned via
+        // `PUT /api/acl` actually becomes a member of the shared channel (unblocks J3 grantee-READ: the
+        // share permit puts the channel in scope, this makes the grantee a member of it).
+        val grantsAccess = entry.canRead || entry.canWrite
+        val nextChannels = channels.map { ch ->
+            if (ch.id != entry.channelId) {
+                ch
+            } else {
+                val member = entry.agentId in ch.members
+                when {
+                    grantsAccess && !member -> ch.copy(members = ch.members + entry.agentId)
+                    !grantsAccess && member -> ch.copy(members = ch.members - entry.agentId)
+                    else -> ch
+                }
+            }
+        }
+        val candidate = AclMatrix(nextChannels, next, activeProjectId, sharedInboundChannelIds)
         val po = agents.firstOrNull { it.role == Role.PO }
         if (po != null) {
             val lockedOut = AclGuard.lockedOutPoHubChannel(candidate, po.id, poHubChannelIds())
@@ -106,6 +125,7 @@ class HubState(
             }
         }
         entries = next
+        channels = nextChannels
         acl = candidate
         entry
     }
