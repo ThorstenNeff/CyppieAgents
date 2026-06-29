@@ -66,13 +66,20 @@ import org.jetbrains.compose.resources.stringResource
  * state, and optimistic sends are clearly marked until confirmed.
  */
 @Composable
-fun CommPanel(viewModel: CommViewModel, modifier: Modifier = Modifier) {
+fun CommPanel(
+    viewModel: CommViewModel,
+    modifier: Modifier = Modifier,
+    // CYP-93: per-channel cross-project authorization affordance (badge/status/authorize), host-anchored
+    // here as the primary entry. Default no-op → no behaviour change where it isn't wired.
+    crossProjectSlot: @Composable (channelId: String) -> Unit = {},
+) {
     val state by viewModel.state.collectAsState()
     Row(modifier = modifier.fillMaxSize()) {
         ChannelListPane(
             channels = state.channels,
             selectedId = state.selectedChannelId,
             onSelect = viewModel::select,
+            crossProjectSlot = crossProjectSlot,
             modifier = Modifier.width(220.dp).fillMaxSize(),
         )
         TimelinePane(
@@ -89,6 +96,7 @@ private fun ChannelListPane(
     channels: List<Channel>,
     selectedId: String?,
     onSelect: (String) -> Unit,
+    crossProjectSlot: @Composable (channelId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
@@ -103,7 +111,11 @@ private fun ChannelListPane(
         }
         LazyColumn(modifier = Modifier.fillMaxSize().testTag(CommTags.CHANNEL_LIST)) {
             items(channels, key = { it.id }) { channel ->
-                ChannelRow(channel, selected = channel.id == selectedId, onClick = { onSelect(channel.id) })
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ChannelRow(channel, selected = channel.id == selectedId, onClick = { onSelect(channel.id) })
+                    // CYP-93: the cross-project authorization affordance for this channel (badge/status/authorize).
+                    crossProjectSlot(channel.id)
+                }
             }
         }
     }

@@ -50,6 +50,10 @@ import com.tneff.cyppieagents.agentmgmt.AgentManagementHttpRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementPanel
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
 import com.tneff.cyppieagents.project.HttpProjectRepository
+import com.tneff.cyppieagents.crossproject.CrossProjectControls
+import com.tneff.cyppieagents.crossproject.CrossProjectRepository
+import com.tneff.cyppieagents.crossproject.CrossProjectViewModel
+import com.tneff.cyppieagents.crossproject.StubCrossProjectRepository
 import com.tneff.cyppieagents.project.ProjectRepository
 import com.tneff.cyppieagents.project.ProjectSwitcherBar
 import com.tneff.cyppieagents.project.ProjectViewModel
@@ -121,6 +125,8 @@ fun AgentShell(
     agentManagementRepository: AgentManagementRepository? = null,
     /** Override the Product-Lead report data port (CYP-90); `null` → the in-memory stub until CYP-89 lands. */
     reportRepository: ReportRepository? = null,
+    /** Override the cross-project authorization port (CYP-93); `null` → the in-memory stub until the backend seam lands. */
+    crossProjectRepository: CrossProjectRepository? = null,
     /** Override the project-lifecycle data port (CYP-91/92); `null` → the in-memory stub until the registry seam lands. */
     projectRepository: ProjectRepository? = null,
 ) {
@@ -154,6 +160,8 @@ fun AgentShell(
     // Switching + mutations are operator-gated (server also enforces; fail-closed). The bar makes the active
     // project unambiguous and re-fetches the project view on switch; the shell-wide per-project window
     // re-scope is the backend-gated piece deferred in ProjectModel.kt (lights up with live re-instancing).
+    // CYP-93: cross-project authorization port (stub until the backend /api/channels/{id}/share seam lands).
+    val resolvedCrossProjectRepo = remember(crossProjectRepository) { crossProjectRepository ?: StubCrossProjectRepository() }
     val resolvedProjectRepo = remember(projectRepository, httpClient, cfg) {
         projectRepository ?: HttpProjectRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
@@ -376,7 +384,13 @@ fun AgentShell(
                 // Reuse the hoisted (always-alive) VMs — never a second viewModel() here, so each
                 // window keeps exactly one subscription whether rendered in the canvas or the pager.
                 when (window.id) {
-                    COMM_WINDOW_ID -> CommPanel(commVm)
+                    COMM_WINDOW_ID -> CommPanel(commVm, crossProjectSlot = { cid ->
+                        CrossProjectControls(
+                            viewModel(key = "crossproject-$cid") {
+                                CrossProjectViewModel(resolvedCrossProjectRepo, cid, editable = cfg.operatorToken != null)
+                            },
+                        )
+                    })
                     ACL_WINDOW_ID -> AclPanel(aclVm)
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
                     AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(agentMgmtVm)
