@@ -5,10 +5,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.runComposeUiTest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
 
 /**
@@ -73,5 +76,32 @@ class SettingsPanelTest {
             onAllNodesWithText("***ef45", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         onNodeWithText("***ef45", substring = true).assertExists()
+    }
+
+    /**
+     * CYP-149 — close the one real S3-tag-render gap: the API-key effect-hint render path
+     * (`SettingsPanel.kt`, `SettingsTags.API_KEY_EFFECT_HINT`) was VM-covered ([SettingsViewModelTest]) but
+     * had **no `runComposeUiTest` node-assertion**, unlike `REPO_STATUS` (#1) and `rowProject` (#3). This
+     * locks the contract: the amber "saved ≠ active — restart" hint is **absent before a save** (set ONLY by
+     * an explicit save action, never on load) and **present after** — mutation-style, so it proves the save
+     * renders the node, not an always-on artifact. Unconfined scope settles the save synchronously.
+     */
+    @Test
+    fun apiKeyEffectHint_absentBeforeSave_rendersAfterSave() = runComposeUiTest {
+        val vm = SettingsViewModel(
+            StubConfigRepository(),
+            editable = true,
+            scope = CoroutineScope(Dispatchers.Unconfined),
+        )
+        setContent { MaterialTheme { SettingsPanel(vm) } }
+        // Not present on load — the hint is an after-save effect, never implied while running agents use the old key.
+        onNodeWithTag(SettingsTags.API_KEY_EFFECT_HINT).assertDoesNotExist()
+        // Drive a real save through the VM's public surface → apiKeyEffectHint = true.
+        vm.onApiKeyInputChange("sk-ant-supersecret1234")
+        vm.saveApiKey()
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(SettingsTags.API_KEY_EFFECT_HINT).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithTag(SettingsTags.API_KEY_EFFECT_HINT).assertExists()
     }
 }
