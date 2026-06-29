@@ -1,7 +1,8 @@
 # Connector-Vertrag & Capabilities — UX/UI-Spec (CYP-119)
 
 > Owner: UIUX-Designer · Epic **CYP-118** · Story **CYP-119** · Stand 2026-06-29
-> Status: **Design-Vorlauf (docs-only)** — wartet auf PO-Gegenlesen; **nicht selbst mergen**.
+> Status: **Design-Vorlauf (docs-only) — PO-Gegenlesen GO (2026-06-29), 7 §-Ask-Resolutions in §9 gefolded;
+> §-Ask 1 (Wire-Form) offen bis CYP-120.** Merge-bereit; **PO merged, nicht selbst mergen**.
 > Quellen: `10-Connector-Vertrag-und-Capabilities.md` (§1–§6), `09-UI-Funktionskatalog.md` (§3 Agentenfenster, §9 Einstellungen).
 > Grounded gegen **develop `ac70819`** (Reuse-Komponenten/Tags/Keys real verifiziert, siehe §8).
 > Begleit-Artefakte: `connector-capabilities-tokens.json`, `-keys.md`, `-tags.md`.
@@ -97,8 +98,12 @@ ein **eigener Glyph** (Farbe nie allein):
 
 - **Ehrlichkeits-Fußnote** `connector_degraded_note`: „Eingeschränkte oder nicht verfügbare Fähigkeiten
   werden ehrlich markiert – nie vorgetäuscht."
-- **Erweiterbar (Doc 10 §6.3):** die Dimensionsliste ist datengetrieben; eine künftig zusätzliche
-  Dimension rendert generisch (Wire-Key als Fallback-Label), statt zu verschwinden → §-Ask 4.
+- **Erweiterbar (Doc 10 §6.3; PO Resolved 2026-06-29):** die Dimensionsliste ist **datengetrieben**. Eine
+  **unbekannte** künftige Dimension rendert **generisch** statt zu verschwinden — Haupt-Label
+  `connector_dim_unknown` („Unbekannte Dimension"), die **Wire-Id nur als gedämpftes Sekundär-Detail**
+  (kein roher Key-Dump als Haupt-Label). Das wahrt „nie vorgetäuscht": Unbekanntes wird **nicht
+  stillschweigend gedroppt**, sondern ehrlich als unbekannt markiert (Status weiter Tri-State, fail-closed
+  ⇒ *UNAVAILABLE*/unbekannt bis gemeldet).
 
 ---
 
@@ -244,29 +249,38 @@ Gegen develop `ac70819` real gelesen — bestätigt:
 
 ---
 
-## 9. Offene §-Asks (im Spec gesammelt, an PO)
+## 9. §-Asks — PO-Resolutions (2026-06-29)
 
-1. **Capability-DTO-Wire-Form (Feldnamen):** zurückgehalten bis Backend CYP-120 gemergt; Design-Form steht,
-   Feldnamen kursiv. (PO reicht durch.)
-2. **Connector pro Agent** (nicht pro Projekt) — Doc 10 impliziert pro-Agent; bitte bestätigen, dann ist der
-   Picker-Ort (Agenten-Konfig) final.
-3. **A↔B-Wechsel an bestehendem Agenten wirkt erst beim Neustart** (Reuse `agent_edit_effect_hint`) —
-   bestätigen?
-4. **Capability-Set erweiterbar (§6.3):** 5 Dimensionen jetzt; künftige Dimension rendert generisch (Wire-Key
-   als Fallback-Label). OK so, oder feste Liste?
-5. **Abrechnungs-Unsicherheit (§6.1):** soll die UI **explizit** sagen, dass B's Kostenvorteil noch
-   ungeklärt ist (Spike), oder reicht das **Weglassen** jeder Kosten-Aussage (mein Default)?
-6. **Panel-Erreichbarkeit:** Header-Badge → Panel (live) **und** Vorschau im Konfig-Dialog — passt das, oder
-   soll das ausführliche Panel zusätzlich in Settings (§9) hängen?
-7. **B-Anmelde-Naht:** Falls Connector B eine eigene (Abo-)Anmeldung braucht, ist das ein separates maskiertes
-   Backend-Surface — diese Spec hält es zurück. Existiert es?
+1. **Capability-DTO-Wire-Form (Feldnamen):** **OFFEN bis CYP-120** (PO reicht durch). Design-Form steht,
+   Feldnamen kursiv/offen. — _einziger offener Punkt._
+2. **Connector pro Agent:** **Resolved (PO 2026-06-29) — BESTÄTIGT** (Doc 10 §3 „pro Agent an/aus").
+   Picker-Ort = Agenten-Konfig (`agentMgmt.{add,edit}.dialog`) **final**.
+3. **A↔B-Wechsel wirkt erst beim Neustart:** **Resolved (PO 2026-06-29) — BESTÄTIGT.** Reuse
+   `agent_edit_effect_hint`; **kein** neuer Hinweis/Mechanismus (konsistent mit Key/CLAUDE.md, Doc 09
+   Querschnitt).
+4. **Capability-Set erweiterbar:** **Resolved (PO 2026-06-29) — JA, datengetrieben mit generischem
+   Fallback.** Die 5 sind das gelabelte MVP-Set; eine **unbekannte** künftige Dimension rendert generisch
+   (Haupt-Label `connector_dim_unknown` = „Unbekannte Dimension", Wire-Id nur als **Sekundär-Detail**) statt
+   zu verschwinden — wahrt „nie vorgetäuscht" (Unbekanntes nicht stillschweigend droppen). **Kein roher
+   Key-Dump als Haupt-Label.** Umgesetzt in §2.3.
+5. **Abrechnungs-Unsicherheit:** **Resolved (PO 2026-06-29) — jede Kosten-Aussage WEGLASSEN** (mein Default).
+   B neutral beschriftet, kein „spart/günstiger"; die Account-Risiko-Zeile (`connector_optin_risk_account`)
+   deckt das Nötige; **keine** spekulative Kosten-Unsicherheits-Zeile (Anti-Hype).
+6. **Panel-Erreichbarkeit:** **Resolved (PO 2026-06-29) — Header-Badge → Panel + Vorschau im Konfig-Dialog
+   reicht für MVP.** **KEINE** zusätzliche Settings-Kopie (Doc 09 §3 verortet es am Agentenfenster; Duplikat
+   vermeiden, später nachrüstbar). §-Ask-6-Variante „Panel in Settings" damit **verworfen**.
+7. **B-Anmelde-Naht:** **Resolved (PO 2026-06-29) — kein neues maskiertes UI-Surface in CYP-119.** Connector
+   B nutzt die **interaktive Claude-Code-Abo-Anmeldung host-seitig** (OAuth-Abo, wie die echten Läufe), **nicht**
+   einen Key in unserer UI. Genaue Auth-Verdrahtung bestätigt Backend in **CYP-122**. Diese Spec rendert
+   nichts Geheimes — korrekt zurückgehalten.
 
 ---
 
 ## 10. Self-Validation
 
-- **Counts:** Spec referenziert **34 neue Keys** (`-keys.md`) und **17 neue Tags** (`-tags.md`), beide 1:1 hier
-  verankert; **13 semantische Token-Slots** (`-tokens.json`). Counts stimmen mit den drei Begleit-Dateien überein.
+- **Counts:** Spec referenziert **35 neue Keys** (`-keys.md`, inkl. `connector_dim_unknown` aus PO-§-Ask-4)
+  und **17 neue Tags** (`-tags.md`), beide 1:1 hier verankert; **13 semantische Token-Slots** (`-tokens.json`).
+  Counts stimmen mit den drei Begleit-Dateien überein.
 - **Disclosure:** keine Phantom-Status, fail-closed Default (B aus, Caps unbekannt⇒unavailable), Fidelity ≠
   ERROR-Rot, Anti-Injection load-bearing, keine Secrets, keine ungedeckten Versprechen — alle in §5 verankert.
 - **Reuse vor Neuerfindung:** 8 verifizierte Reuse-Punkte (§7/§8); neue Area `connector` host-verankert.

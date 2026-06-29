@@ -36,6 +36,7 @@
 | `connector_dim_reliable_result` | Sauberes Turn-Ende | Clean turn end |
 | `connector_dim_rate_limit_signal` | Rate-Limit-Signal | Rate-limit signal |
 | `connector_dim_coordination` | Hub-Koordination | Hub coordination |
+| `connector_dim_unknown` | Unbekannte Dimension | Unknown dimension |
 
 ## Dimension „speist" (welche Funktion degradiert — Doc 10 §3)
 | Key | DE | EN |
@@ -76,8 +77,9 @@
 | `ui/TonedHint.kt` + `HintTone` | CYP-99 (Komponente) | alle Hinweis-/Status-Töne (Code-Reuse, kein Key-Reuse) |
 
 ## Self-Validation
-- **34 neue Keys**, alle DE+EN befüllt, gleiche Argument-Anzahl je Sprache:
-  5 Auswahl/Identität + 8 Panel/Tri-State (inkl. `a11y_`) + 5 Dimensionen + 5 „speist" + 11 Opt-in = **34**.
+- **35 neue Keys**, alle DE+EN befüllt, gleiche Argument-Anzahl je Sprache:
+  5 Auswahl/Identität + 8 Panel/Tri-State (inkl. `a11y_`) + 6 Dimensionen (inkl. `connector_dim_unknown`
+  generischer Fallback, PO §-Ask-4) + 5 „speist" + 11 Opt-in = **35**.
 - **Argument-Keys:** nur `connector_active` (%1$s = Connector-Name). Sonst kein interpolierter, content-tragender
   oder sensibler Klartext (nur Connector-Identität).
 - **Kollision:** `connector_*` greenfield; `connector*`/`capabilit*`/`fidelity*`/`degrad*` existieren **nicht**
