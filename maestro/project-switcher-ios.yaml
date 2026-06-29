@@ -1,0 +1,91 @@
+# CYP-69 ④ / CYP-116 — Project-Switcher + Management iOS flow (Maestro, Compose-iOS target).
+#
+# NET-NEW: the CYP-92 project switcher + the CYP-91 management overlay (add; delete deferred as
+# destructive). Tags verified against the LIVE demo hierarchy (CYP-116, develop bd0e3de) + ProjectTags.kt.
+# NO text/localizable selectors (Test-Contract §4).
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED. On iOS testTags
+# surface as accessibilityIdentifiers (CYP-67).
+#
+# INTERACTION (verified live): the demo tab bar is a 7-tab horizontally-scrollable LazyRow → swipe LEFT
+# from `demo.tab.pager` to reveal the new tabs. The DROPDOWN trigger is `projectSwitcher.menu` (NOT .bar);
+# selecting an item CLOSES the dropdown → re-open to read the active marker. `manage` lives in the dropdown.
+# SCENARIO (CYP-116 DemoScenario): `team-1` (active) + `team-2`; switch target = team-2.
+#
+# PREREQUISITES (tester runtime; baseline pair Xcode 26.6 / iOS-Sim 26.5, iPhone 17):
+#   * iOS demo build (appId com.tneff.cyppieagents.demo) on develop ≥ bd0e3de. Reboot sim + respawn the
+#     Maestro driver before the run.
+appId: com.tneff.cyppieagents.demo
+name: "CYP-69 Project-Switcher (iOS) — switch team-1->team-2 -> manage -> add dialog"
+tags:
+  - gating
+  - project
+  - ios
+env:
+  PROJECT_ALT: "team-2"   # CYP-116 seeded non-active project (active = team-1)
+---
+- launchApp
+
+# Reveal the off-screen new tabs (7-tab scrollable LazyRow) with one swipe LEFT from the pager tab.
+- swipe:
+    direction: LEFT
+    from:
+      id: '^demo\.tab\.pager$'
+
+# Mount the switcher surface.
+- tapOn:
+    id: '^demo\.tab\.projectSwitcher$'
+- assertVisible:
+    id: '^projectSwitcher\.bar$'
+    label: "Project switcher bar present"
+- assertVisible:
+    id: '^projectSwitcher\.active$'
+    label: "Active project shown (team-1)"
+- assertVisible:
+    id: '^projectSwitcher\.scopeHint$'
+    label: "Scope hint present (everything below is project-scoped)"
+
+# Open the dropdown (trigger = projectSwitcher.menu) and switch to team-2.
+- tapOn:
+    id: '^projectSwitcher\.menu$'
+- assertVisible:
+    id: '^projectSwitcher\.switchHint$'
+    label: "Dropdown open (switch hint shown)"
+- assertVisible:
+    id: '^projectSwitcher\.item\.${PROJECT_ALT}$'
+    label: "team-2 offered in the dropdown"
+- tapOn:
+    id: '^projectSwitcher\.item\.${PROJECT_ALT}$'
+
+# Selecting closes the dropdown → re-open and confirm the active marker moved to team-2.
+- tapOn:
+    id: '^projectSwitcher\.menu$'
+- assertVisible:
+    id: '^projectSwitcher\.item\.${PROJECT_ALT}\.active$'
+    label: "Active marker followed the switch to team-2"
+
+# Open the management overlay from the dropdown.
+- tapOn:
+    id: '^projectSwitcher\.manage$'
+- assertVisible:
+    id: '^projectMgmt\.panel$'
+    label: "Management overlay opens"
+- assertVisible:
+    id: '^projectMgmt\.list$'
+
+# Add a project — the add dialog is addressable (name + confirm); cancel without mutating (non-destructive).
+- tapOn:
+    id: '^projectMgmt\.add$'
+- assertVisible:
+    id: '^projectMgmt\.addDialog$'
+- assertVisible:
+    id: '^projectMgmt\.addDialog\.name$'
+- assertVisible:
+    id: '^projectMgmt\.addDialog\.confirm$'
+- tapOn:
+    id: '^projectMgmt\.addDialog\.cancel$'
+    label: "Cancel closes the add dialog without mutating (no destructive default)"
+
+# NOTE (verified live): the active project (team-1) shows projectMgmt.row.team-1.deleteBlocked; team-2 is
+# deletable (projectMgmt.row.team-2.delete). Destructive delete (deleteDialog.consequences/counts/
+# worktreeChoice) is a SEPARATE security-critical flow — NOT exercised in this smoke pass.
