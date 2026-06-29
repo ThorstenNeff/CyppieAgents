@@ -12,8 +12,16 @@ package com.tneff.cyppieagents.connector
  */
 object ConnectorDefaults {
 
-    /** Pinned CLI version (CYP-5). The connector should assert the runtime matches. */
-    const val PINNED_CLI_VERSION = "2.1.193"
+    /**
+     * Pinned CLI version (CYP-5). The connector should assert the runtime matches.
+     *
+     * CYP-110: bumped 2.1.193 → **2.1.195** (the installed version; no host downgrade). The stream-json
+     * surface we depend on is **identical across 2.1.193↔2.1.195** — the rate-limit `status` enum
+     * (`allowed`/`allowed_warning`/`blocked`/`rejected`) is binary-identical in both (CYP-59/61 reviewer
+     * grep of the shipped binaries). Pinning the installed 195 also closes the latent prod pin-drift
+     * (installed=195 vs pin was 193) and is what the RB1 real-agent harness asserts.
+     */
+    const val PINNED_CLI_VERSION = "2.1.195"
 
     /** Verified long-lived-session flags (CYP-5). `--verbose` is mandatory with stream-json. */
     val BASE_STREAM_JSON_FLAGS: List<String> = listOf(
