@@ -26,7 +26,7 @@ class EventProjectorCapabilityGateTest {
         kind = ConnectorKind.MCP,
     )
 
-    private fun projector(resolve: (String) -> Capabilities?) =
+    private fun projector(resolve: ((String) -> Capabilities?)?) =
         EventProjector(ContextUsageBander(), projectId = "t", capabilities = resolve)
 
     private val toolUse = CommJson.decodeFromString<StreamJsonEvent>(
@@ -44,7 +44,7 @@ class EventProjectorCapabilityGateTest {
            "usage":{"input_tokens":50000}}""",
     )
 
-    private fun types(resolve: (String) -> Capabilities?, e: StreamJsonEvent) =
+    private fun types(resolve: ((String) -> Capabilities?)?, e: StreamJsonEvent) =
         projector(resolve).project("backend", "s", "c", e).map { it.type }
 
     @Test
@@ -56,10 +56,20 @@ class EventProjectorCapabilityGateTest {
     }
 
     @Test
-    fun unknownCapsEmitsToolAndUsage_legacyEnabled() {
-        // No registry (null) → enabled, so every pre-CYP-121 install/test behaves exactly as before.
-        assertTrue(EventType.TOOL_CALL in types({ null }, toolUse))
-        assertTrue(EventType.CONTEXT_USAGE in types({ null }, resultWithUsage))
+    fun noResolverEmitsToolAndUsage_legacy() {
+        // No capability system configured (null resolver) → no gating, so every pre-CYP-121 install/test
+        // behaves exactly as before.
+        assertTrue(EventType.TOOL_CALL in types(null, toolUse))
+        assertTrue(EventType.CONTEXT_USAGE in types(null, resultWithUsage))
+    }
+
+    @Test
+    fun registryMissFailsClosed_suppressesGatedEvents() {
+        // F2: capability system IS configured (non-null resolver) but the agent is unknown (returns null)
+        // → fail-closed, NOT assumed AVAILABLE. tool.* and context.usage are suppressed.
+        val miss: (String) -> Capabilities? = { null }
+        assertEquals(emptyList(), types(miss, toolUse))
+        assertTrue(EventType.CONTEXT_USAGE !in types(miss, resultWithUsage))
     }
 
     @Test

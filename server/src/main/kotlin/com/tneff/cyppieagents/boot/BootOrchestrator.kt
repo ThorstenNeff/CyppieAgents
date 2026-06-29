@@ -188,6 +188,12 @@ class BootOrchestrator(
         // and log a content-free `capability.degraded` event for every non-AVAILABLE dimension, so the
         // fidelity gap is visible in the Event-Log ("ehrlich degradiert, nie vorgetäuscht", Doc 10 §3).
         // Connector A is all-AVAILABLE → this emits nothing and changes no live behaviour.
+        //
+        // Idempotency (deliberate): this is a **once-per-platform-boot** emit. A CYP-73 agent restart goes
+        // through LifecycleManager.respawn (not BootOrchestrator.boot), and a restart does NOT change the
+        // connector or its declared capabilities, so it must NOT re-emit — re-declaring would just be log
+        // noise. When CYP-122 makes the connector selectable per agent, a connector *change* (not a plain
+        // restart) is the event that re-declares; that re-emit hook lands with the per-agent selection.
         for (agent in config.agents) {
             capabilityRegistry.set(agent.id, connector.capabilities)
             for (dim in CapabilityGate.degraded(connector.capabilities)) {

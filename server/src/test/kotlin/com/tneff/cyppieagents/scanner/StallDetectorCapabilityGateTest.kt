@@ -48,10 +48,19 @@ class StallDetectorCapabilityGateTest {
     }
 
     @Test
-    fun unknownCapsArms_legacyEnabled() {
-        val d = StallDetector() // no resolver → enabled (pre-CYP-121 behaviour)
+    fun noResolverArms_legacy() {
+        val d = StallDetector() // no capability system configured → no gating (pre-CYP-121 behaviour)
         d.onEvent(throttle("backend", armTs))
         assertEquals(1, d.sweep(afterThreshold).size)
+    }
+
+    @Test
+    fun registryMissFailsClosed_doesNotArm() {
+        // F2: capability system configured (non-null resolver) but the agent is unknown (returns null) →
+        // fail-closed, not assumed AVAILABLE. The throttle must NOT arm a stall.
+        val d = StallDetector(capabilities = { null })
+        d.onEvent(throttle("backend", armTs))
+        assertTrue(d.sweep(afterThreshold).isEmpty(), "unknown caps → no arm (fail-closed)")
     }
 
     @Test

@@ -33,17 +33,19 @@ import kotlinx.serialization.json.put
 class StallDetector(
     private val thresholdMs: Long = DEFAULT_THRESHOLD_MS,
     /**
-     * Per-agent connector capabilities (CYP-121, Doc 10 §3). Default `{ null }` = unknown → enabled
-     * (legacy). When a connector's `rateLimitSignal` is not AVAILABLE the structured throttle marker is
-     * absent/untrusted, so this detector does NOT arm for that agent — stall detection is honestly off
-     * rather than driven off a fabricated signal. (A text-matched degraded path is CYP-122/B work.)
+     * Per-agent connector capabilities resolver (CYP-121, Doc 10 §3). **Null = no capability system
+     * configured** → no gating (legacy). When wired and a connector's `rateLimitSignal` is not AVAILABLE
+     * the structured throttle marker is absent/untrusted, so this detector does NOT arm for that agent —
+     * stall detection is honestly off rather than driven off a fabricated signal. A resolver that returns
+     * null for an agent (registry miss) fails closed (no arm), never assumed AVAILABLE (F2). (A
+     * text-matched degraded path is CYP-122/B work.)
      */
-    private val capabilities: (agentId: String) -> Capabilities? = { null },
+    private val capabilities: ((agentId: String) -> Capabilities?)? = null,
 ) : Detector {
 
     private fun rateLimitSignalEnabled(agentId: String): Boolean {
-        val caps = capabilities(agentId) ?: return true // unknown → enabled (legacy)
-        return CapabilityGate.enabled(caps.rateLimitSignal)
+        val resolve = capabilities ?: return true // no capability system → enabled (legacy)
+        return CapabilityGate.isEnabled(CapabilityGate.EnforcedCapability.RATE_LIMIT_SIGNAL, resolve(agentId))
     }
 
     private class Armed(

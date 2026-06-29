@@ -33,16 +33,17 @@ class EventProjector(
     private val bander: ContextUsageBander,
     private val projectId: String,
     /**
-     * Per-agent connector capabilities (CYP-121, Doc 10 §3). Default `{ null }` = capabilities unknown →
-     * everything enabled (legacy behaviour for installs/tests with no registry). When known, two
-     * fidelity dimensions gate event-log depth: `toolGranularity` (tool.call/tool.result) and
-     * `structuredUsage` (context.usage). A gated dimension is skipped — never faked.
+     * Per-agent connector capabilities resolver (CYP-121, Doc 10 §3). **Null = no capability system
+     * configured** → no gating (legacy behaviour for installs/tests). When wired, two fidelity dimensions
+     * gate event-log depth: `toolGranularity` (tool.call/tool.result) and `structuredUsage`
+     * (context.usage). A resolver that returns null for an agent (registry miss) **fails closed** to OFF
+     * via [CapabilityGate.isEnabled] — never assumed AVAILABLE (F2).
      */
-    private val capabilities: (agentId: String) -> Capabilities? = { null },
+    private val capabilities: ((agentId: String) -> Capabilities?)? = null,
 ) {
-    private fun enabled(agentId: String, dimension: (Capabilities) -> com.tneff.cyppieagents.model.CapabilityStatus): Boolean {
-        val caps = capabilities(agentId) ?: return true // unknown → enabled (legacy)
-        return CapabilityGate.enabled(dimension(caps))
+    private fun enforced(agentId: String, capability: CapabilityGate.EnforcedCapability): Boolean {
+        val resolve = capabilities ?: return true // no capability system → enabled (legacy)
+        return CapabilityGate.isEnabled(capability, resolve(agentId)) // resolve()==null → fail-closed OFF
     }
     /** Stream events → drafts. May produce 0 (e.g. system/init, text-only assistant), 1, or many. */
     fun project(
@@ -53,7 +54,7 @@ class EventProjector(
     ): List<EventDraft> = when (event) {
         // toolGranularity gate (CYP-121): a connector without full tool.call/tool.result fidelity yields
         // no tool events for this agent — the event-log is honestly thinner, not faked.
-        is AssistantEvent -> if (!enabled(agentId) { it.toolGranularity }) emptyList()
+        is AssistantEvent -> if (!enforced(agentId, CapabilityGate.EnforcedCapability.TOOL_GRANULARITY)) emptyList()
         else event.message.content.filterIsInstance<ToolUseBlock>().map { tu ->
             draft(agentId, sessionId, correlationId, EventType.TOOL_CALL, Severity.INFO) {
                 put("toolName", tu.name)
@@ -61,7 +62,7 @@ class EventProjector(
             }
         }
 
-        is UserEvent -> if (!enabled(agentId) { it.toolGranularity }) emptyList()
+        is UserEvent -> if (!enforced(agentId, CapabilityGate.EnforcedCapability.TOOL_GRANULARITY)) emptyList()
         else event.message.content.filterIsInstance<ToolResultBlock>().map { tr ->
             draft(agentId, sessionId, correlationId, EventType.TOOL_RESULT, if (tr.isError) Severity.WARN else Severity.INFO) {
                 tr.toolUseId?.let { put("toolUseId", it) }
@@ -89,7 +90,7 @@ class EventProjector(
             // context.usage: numbers only, persisted only on a band/compact crossing. structuredUsage
             // gate (CYP-121): without per-turn token usage we emit no context.usage / compact signal for
             // this agent rather than band on fabricated numbers.
-            if (enabled(agentId) { it.structuredUsage }) {
+            if (enforced(agentId, CapabilityGate.EnforcedCapability.STRUCTURED_USAGE)) {
                 addAll(bander.onUsage(agentId, projectId, UsageSnapshot.fromUsageJson(event.usage), sessionId, correlationId))
             }
         }
