@@ -23,7 +23,19 @@ data class NewAgentSpec(
     val persona: String? = null,
     val launch: String? = null,
     val worktree: String? = null,
+    /**
+     * Connector choice (Doc 10 §1 / CYP-122). Default `STREAM_JSON` (Connector A). Creating an agent with
+     * `MCP` (Connector B) is an opt-in to lower fidelity — server-enforced + audited (`connector.optin`).
+     * Deliberately ABSENT from [AgentEdit]: an existing agent's connector is changed only through the
+     * dedicated operator-gated opt-in action, never silently via a general edit (no "off-message" path).
+     */
+    val connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON,
 )
+
+/** Operator opt-in to a connector (CYP-122 / Doc 10 §3,§5). Body of the dedicated, audited set-connector
+ *  action — separate from [AgentEdit] so a connector change is always an explicit, logged decision. */
+@Serializable
+data class ConnectorChoice(val connectorKind: ConnectorKind)
 
 /**
  * Editable agent config (CYP-88 / PUT /api/agents/{id}). id and worktree are identity/path-defining and

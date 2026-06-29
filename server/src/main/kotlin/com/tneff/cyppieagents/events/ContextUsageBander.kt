@@ -46,6 +46,10 @@ class ContextUsageBander(
         snapshot: UsageSnapshot,
         sessionId: String? = null,
         correlationId: String? = null,
+        // CYP-122: degraded-running for a connector whose structuredUsage is LIMITED (Doc 10 §4 col B) —
+        // emit ONLY the compact-threshold crossing, suppress the fine 10%-band steps (B's token counts are
+        // too coarse to trust the fine bands). The band/compact state still advances so each crosses once.
+        coarse: Boolean = false,
     ): List<EventDraft> {
         // fill% of the context window; output tokens are excluded (not standing context).
         val fillPct = snapshot.contextTokens * 100.0 / contextWindowTokens
@@ -56,9 +60,10 @@ class ContextUsageBander(
             val prevBand = lastBandByAgent[agentId] ?: 0
             when {
                 band > prevBand && band >= bandPctWidth -> {
-                    // Crossed up into a new band → record the new band (the highest reached).
+                    // Crossed up into a new band → record the new band (the highest reached). In coarse
+                    // mode we still advance the marker (so it won't re-emit later) but emit no band event.
                     lastBandByAgent[agentId] = band
-                    drafts += usageDraft(agentId, projectId, sessionId, correlationId, band, fillPct, snapshot, Reason.BAND)
+                    if (!coarse) drafts += usageDraft(agentId, projectId, sessionId, correlationId, band, fillPct, snapshot, Reason.BAND)
                 }
                 band < prevBand -> {
                     // Context shrank (e.g. after a compaction) → reset so a later climb re-emits. No event.

@@ -38,7 +38,11 @@ fun Application.installPlatform(booted: BootedPlatform) {
         }
     }
     routing {
-        commRoutes(booted.hub, booted.state, booted.tokenRegistry, booted.lifecycle)
+        commRoutes(
+            booted.hub, booted.state, booted.tokenRegistry, booted.lifecycle,
+            capabilitiesOf = booted.capabilityRegistry::get,
+            connectorKindOf = booted.agentConfigs::connectorKindOf,
+        )
         // Production auth: only the operator token, or an agent watching its own session, is allowed.
         agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
         // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
@@ -64,6 +68,8 @@ fun Application.installPlatform(booted: BootedPlatform) {
         configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId)
         // CYP-97: agent CRUD — detail GET participant, POST/PUT/DELETE operator (fail-closed).
         agentMgmtRoutes(booted.agentManagement, booted.tokenRegistry)
+        // CYP-122: connector opt-in (operator-gated, server-enforced, audited) — sets an agent's connector.
+        connectorRoutes(booted.state, booted.tokenRegistry, booted.capabilityRegistry, booted.connectorOptIn)
         // CYP-89: Product-Lead reports — all three operator-gated/fail-closed, content-free items.
         reportRoutes(booted.reportStore, booted.tokenRegistry)
         // CYP-91: multi-project lifecycle — all operator-gated/fail-closed; cascade-delete is the

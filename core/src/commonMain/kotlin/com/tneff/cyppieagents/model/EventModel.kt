@@ -120,6 +120,13 @@ enum class EventType(val wire: String) {
     CAPABILITY_DEGRADED("capability.degraded"),
 
     /**
+     * Operator opt-in to a connector (Doc 10 §3/§5 / CYP-122): a connector choice was set server-side and
+     * audited as a deliberate, logged decision (esp. the Connector-B lower-fidelity risk acknowledgment).
+     * Content-free: detail carries only `{agentId, connectorKind}`. First-class warn.
+     */
+    CONNECTOR_OPTIN("connector.optin"),
+
+    /**
      * Telemetry self-report: the bounded queue dropped events under back-pressure (PRD §3.3, PO
      * decision CYP-44). Emitted by the **writer** with a cumulative count so a gap in the log is
      * visible in the same telemetry the operator watches — never silently swallowed.

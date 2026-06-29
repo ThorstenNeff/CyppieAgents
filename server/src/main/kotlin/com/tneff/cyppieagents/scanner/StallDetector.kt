@@ -33,19 +33,19 @@ import kotlinx.serialization.json.put
 class StallDetector(
     private val thresholdMs: Long = DEFAULT_THRESHOLD_MS,
     /**
-     * Per-agent connector capabilities resolver (CYP-121, Doc 10 §3). **Null = no capability system
-     * configured** → no gating (legacy). When wired and a connector's `rateLimitSignal` is not AVAILABLE
-     * the structured throttle marker is absent/untrusted, so this detector does NOT arm for that agent —
-     * stall detection is honestly off rather than driven off a fabricated signal. A resolver that returns
-     * null for an agent (registry miss) fails closed (no arm), never assumed AVAILABLE (F2). (A
-     * text-matched degraded path is CYP-122/B work.)
+     * Per-agent connector capabilities resolver (CYP-121/122, Doc 10 §3). **Null = no capability system
+     * configured** → no gating (legacy). When wired, `rateLimitSignal` gates arming: OFF/unknown (UNAVAIL
+     * or registry-miss, fail-closed F2) → do NOT arm (no structured marker to trust). ENABLED → arm on the
+     * structured throttle. DEGRADED (Connector B, LIMITED) → arm, but the resulting suspicion is **marked**
+     * `degraded:true` — the throttle came from the McpConnector's text-match (the narrow scraping
+     * exception, Doc 10 §4), so the evidence is less robust and labelled as such.
      */
     private val capabilities: ((agentId: String) -> Capabilities?)? = null,
 ) : Detector {
 
-    private fun rateLimitSignalEnabled(agentId: String): Boolean {
-        val resolve = capabilities ?: return true // no capability system → enabled (legacy)
-        return CapabilityGate.isEnabled(CapabilityGate.EnforcedCapability.RATE_LIMIT_SIGNAL, resolve(agentId))
+    private fun rateLimitMode(agentId: String): CapabilityGate.CapabilityMode {
+        val resolve = capabilities ?: return CapabilityGate.CapabilityMode.ENABLED // no system → enabled (legacy)
+        return CapabilityGate.mode(CapabilityGate.EnforcedCapability.RATE_LIMIT_SIGNAL, resolve(agentId))
     }
 
     private class Armed(
@@ -53,6 +53,7 @@ class StallDetector(
         val status: String,
         val projectId: String,
         val correlationId: String?,
+        val degraded: Boolean,
         var suspected: Boolean,
     )
 
@@ -71,13 +72,15 @@ class StallDetector(
                 isThrottle(e) -> {
                     // Arm once; a repeated throttle beat is NOT activity and must not reset the silence
                     // baseline (07 §4: silence = no turn.*/tool.*/tokens — a rate_limit beat is none).
-                    // CYP-121: don't arm when the agent's connector lacks a trusted rateLimitSignal.
-                    if (rateLimitSignalEnabled(e.agentId) && byAgent[e.agentId] == null) {
+                    // CYP-121/122: OFF/unknown → don't arm; DEGRADED → arm but mark the evidence.
+                    val rlMode = rateLimitMode(e.agentId)
+                    if (rlMode != CapabilityGate.CapabilityMode.OFF && byAgent[e.agentId] == null) {
                         byAgent[e.agentId] = Armed(
                             sinceMs = e.ts,
                             status = throttleStatus(e)!!,
                             projectId = e.projectId,
                             correlationId = e.correlationId,
+                            degraded = rlMode == CapabilityGate.CapabilityMode.DEGRADED,
                             suspected = false,
                         )
                     }
@@ -110,6 +113,9 @@ class StallDetector(
                     put("rateLimitAtMs", a.sinceMs)    // when the throttle armed the stall
                     put("silenceMs", silenceMs)
                     put("thresholdMs", thresholdMs)
+                    // CYP-122: mark a stall armed off a DEGRADED (text-matched) rate-limit signal — the
+                    // evidence is less robust than a structured throttle, surfaced so the Warden/UI know.
+                    if (a.degraded) put("degraded", true)
                 },
             )
         }

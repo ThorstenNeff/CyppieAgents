@@ -44,6 +44,12 @@ class EventProjectorCapabilityGateTest {
            "usage":{"input_tokens":50000}}""",
     )
 
+    // contextTokens = 160000 / 200k = 80% → crosses the compact threshold (75) → a COMPACT CONTEXT_USAGE.
+    private val resultPastCompact = CommJson.decodeFromString<StreamJsonEvent>(
+        """{"type":"result","subtype":"success","is_error":false,"session_id":"s","uuid":"u",
+           "usage":{"input_tokens":160000}}""",
+    )
+
     private fun types(resolve: ((String) -> Capabilities?)?, e: StreamJsonEvent) =
         projector(resolve).project("backend", "s", "c", e).map { it.type }
 
@@ -61,6 +67,23 @@ class EventProjectorCapabilityGateTest {
         // behaves exactly as before.
         assertTrue(EventType.TOOL_CALL in types(null, toolUse))
         assertTrue(EventType.CONTEXT_USAGE in types(null, resultWithUsage))
+    }
+
+    @Test
+    fun toolGranularityDegradedStillEmitsToolEvents() {
+        // CYP-122: LIMITED → DEGRADED → tools still emit (B is just thinner), only OFF suppresses.
+        val degraded = caps(CapabilityStatus.LIMITED, CapabilityStatus.AVAILABLE)
+        assertTrue(EventType.TOOL_CALL in types({ degraded }, toolUse))
+        assertTrue(EventType.TOOL_RESULT in types({ degraded }, toolResult))
+    }
+
+    @Test
+    fun structuredUsageDegradedIsCoarse_compactOnly() {
+        // CYP-122: LIMITED → DEGRADED → coarse: a fine band-crossing (25%) emits NOTHING, but a
+        // compact-threshold crossing (80%) still emits the one important context.usage.
+        val degraded = caps(CapabilityStatus.AVAILABLE, CapabilityStatus.LIMITED)
+        assertEquals(emptyList(), types({ degraded }, resultWithUsage).filter { it == EventType.CONTEXT_USAGE })
+        assertTrue(EventType.CONTEXT_USAGE in types({ degraded }, resultPastCompact))
     }
 
     @Test

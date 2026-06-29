@@ -13,10 +13,13 @@ package com.tneff.cyppieagents.model
  *    safe branch ([CapabilityMode.OFF]), **never** assumed AVAILABLE. "No capability system configured"
  *    is a *different* case handled by the consumer (it simply doesn't call the gate); a configured
  *    system that can't resolve an agent fails closed.
- *  - **Conservative LIMITED (CYP-121):** for the enforced dimensions LIMITED currently maps to OFF — an
- *    *explicit, documented* entry, not a hidden collapse. The real *degraded-running* path
- *    ([CapabilityMode.DEGRADED]) is reserved for CYP-122, when Connector B declares LIMITED for real;
- *    changing the LIMITED output there is a deliberate table + test change, not silent drift.
+ *  - **LIMITED = degraded-running (CYP-122):** for the enforced dimensions LIMITED maps to
+ *    [CapabilityMode.DEGRADED] — the function runs in a reduced, *marked* mode (Doc 10 §3), NOT off.
+ *    Only UNAVAILABLE (and unknown) gate fully OFF. Each consumer interprets DEGRADED for its own
+ *    dimension (the projector still emits tool events but expects fewer; the bander emits only the
+ *    coarse compact-threshold crossing; the stall detector arms off a text-matched marker). This was
+ *    OFF in CYP-121 (conservative, no connector emitted LIMITED then) — the flip here is the deliberate,
+ *    test-pinned change CYP-121's table promised, now that Connector B declares LIMITED for real.
  */
 object CapabilityGate {
 
@@ -37,14 +40,14 @@ object CapabilityGate {
         // the null (unknown) branch is its own fail-closed entry (F2).
         return when (status) {
             CapabilityStatus.AVAILABLE -> CapabilityMode.ENABLED
-            // CYP-121 conservative: LIMITED → OFF. CYP-122 → CapabilityMode.DEGRADED (real degraded-running).
-            CapabilityStatus.LIMITED -> CapabilityMode.OFF
+            // CYP-122: LIMITED → DEGRADED (run reduced/marked), per-dimension semantics at the consumer.
+            CapabilityStatus.LIMITED -> CapabilityMode.DEGRADED
             CapabilityStatus.UNAVAILABLE -> CapabilityMode.OFF
             null -> CapabilityMode.OFF // fail-closed: unknown caps are never assumed AVAILABLE (F2)
         }
     }
 
-    /** Convenience: does the [capability]-fed function run fully? (OFF/DEGRADED both gate it in CYP-121.) */
+    /** Convenience: is the [capability]-fed function fully on (ENABLED)? DEGRADED/OFF are both not-full. */
     fun isEnabled(capability: EnforcedCapability, caps: Capabilities?): Boolean =
         mode(capability, caps) == CapabilityMode.ENABLED
 

@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.connector.CapabilityRegistry
 import com.tneff.cyppieagents.connector.ClaudeCodeConnector
 import com.tneff.cyppieagents.connector.Connector
 import com.tneff.cyppieagents.connector.ConnectorSessions
+import com.tneff.cyppieagents.connector.McpConnector
 import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.events.ContextUsageBander
 import com.tneff.cyppieagents.events.EventDraft
@@ -71,6 +72,14 @@ class BootedPlatform(
     val projectDeleter: ProjectDeleter,
     /** Cross-project channel-share gate (S17 / CYP-93), served by `/api/channels/{id}/share`. */
     val channelShares: com.tneff.cyppieagents.comm.ChannelShareStore,
+    /** Per-agent connector capabilities (CYP-121/122): fills `GET /api/agents` + gates the Mediator. */
+    val capabilityRegistry: com.tneff.cyppieagents.connector.CapabilityRegistry,
+    /** Mutable per-agent connector config incl. connectorKind (CYP-97/122): the connector-opt-in source. */
+    val agentConfigs: AgentConfigRegistry,
+    /** The Event-Log write tap (CYP-35): operator actions (e.g. the CYP-122 `connector.optin`) audit through it. */
+    val eventRecorder: EventRecorder,
+    /** Connector opt-in (CYP-122): the operator-gated, audited set-connector action served by `/api/agents/{id}/connector`. */
+    val connectorOptIn: ConnectorOptIn,
 )
 
 /**
@@ -182,21 +191,30 @@ class BootOrchestrator(
             projector = eventProjector,
             personaOf = agentConfigs::personaOf,
         )
-        val connector: Connector = connectorFactory?.invoke(defaultConnector) ?: defaultConnector
+        // CYP-122: Connector B (MCP) + per-agent selection. The router picks A vs B by the agent's
+        // declared connectorKind at spawn; it IS a Connector so the connectorFactory seam still wraps it.
+        val mcpConnector = McpConnector(hub)
+        val connectorRouter = ConnectorRouter(
+            streamJson = defaultConnector,
+            mcp = mcpConnector,
+            kindOf = agentConfigs::connectorKindOf,
+        )
+        val connector: Connector = connectorFactory?.invoke(connectorRouter) ?: connectorRouter
 
-        // CYP-121: record each agent's capabilities (MVP = one connector → uniform; per-agent in CYP-122)
-        // and log a content-free `capability.degraded` event for every non-AVAILABLE dimension, so the
-        // fidelity gap is visible in the Event-Log ("ehrlich degradiert, nie vorgetäuscht", Doc 10 §3).
-        // Connector A is all-AVAILABLE → this emits nothing and changes no live behaviour.
+        // CYP-121/122: record each agent's capabilities (per-agent via the router) and log a content-free
+        // `capability.degraded` event for every non-AVAILABLE dimension, so the fidelity gap is visible in
+        // the Event-Log ("ehrlich degradiert, nie vorgetäuscht", Doc 10 §3). Connector A is all-AVAILABLE →
+        // emits nothing; a Connector-B agent emits its column-B degradations.
         //
         // Idempotency (deliberate): this is a **once-per-platform-boot** emit. A CYP-73 agent restart goes
         // through LifecycleManager.respawn (not BootOrchestrator.boot), and a restart does NOT change the
         // connector or its declared capabilities, so it must NOT re-emit — re-declaring would just be log
-        // noise. When CYP-122 makes the connector selectable per agent, a connector *change* (not a plain
-        // restart) is the event that re-declares; that re-emit hook lands with the per-agent selection.
+        // noise. A connector *change* (the CYP-122 opt-in) is the event that re-declares; that is the
+        // `connector.optin` audit, which the opt-in path emits explicitly.
         for (agent in config.agents) {
-            capabilityRegistry.set(agent.id, connector.capabilities)
-            for (dim in CapabilityGate.degraded(connector.capabilities)) {
+            val caps = connector.capabilitiesFor(agent.id)
+            capabilityRegistry.set(agent.id, caps)
+            for (dim in CapabilityGate.degraded(caps)) {
                 eventRecorder.record(
                     EventDraft(
                         agentId = agent.id,
@@ -250,6 +268,9 @@ class BootOrchestrator(
             projector = eventProjector,
         )
 
+        // CYP-122: the single, audited, server-enforced point that sets an agent's connector (opt-in).
+        val connectorOptIn = ConnectorOptIn(agentConfigs, capabilityRegistry, eventRecorder, config.projectId)
+
         // S14 / CYP-97: runtime agent CRUD over the (now mutable) HubState topology + lifecycle + config.
         val agentManagement = AgentManagement(
             state = state,
@@ -257,6 +278,7 @@ class BootOrchestrator(
             configs = agentConfigs,
             ensureWorktree = { worktreeName -> worktrees.ensureWorktree(worktreeName, config.repo.branch) },
             deleteWorktree = { worktreeName -> worktrees.deleteWorktree(worktreeName) },
+            onConnectorOptIn = connectorOptIn::apply, // CYP-122: create-as-B audits like the dedicated opt-in
         )
 
         val booted = mutableListOf<String>()
@@ -285,7 +307,7 @@ class BootOrchestrator(
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
-            channelShares,
+            channelShares, capabilityRegistry, agentConfigs, eventRecorder, connectorOptIn,
         )
     }
 }

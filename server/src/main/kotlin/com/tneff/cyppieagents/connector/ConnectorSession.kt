@@ -41,12 +41,32 @@ interface ConnectorSession {
  */
 interface Connector {
     val capabilities: Capabilities
+
+    /**
+     * Capabilities for a SPECIFIC agent (CYP-122). Defaults to the connector's single [capabilities] —
+     * correct for a uniform connector (A, B, a test double). A multiplexing connector that serves several
+     * connector kinds (the per-agent [com.tneff.cyppieagents.boot.ConnectorRouter]) overrides this to
+     * return the kind actually serving [agentId], so the Mediator gates each agent on the right fidelity.
+     */
+    fun capabilitiesFor(agentId: String): Capabilities = capabilities
+
+    /**
+     * Open a session for [agentId]. **Implementers MUST override this single-arg form** (it is the
+     * one with no default).
+     *
+     * ⚠️ Recursion footgun for connector authors (CYP-122): the two-arg [open] defaults to calling this
+     * one-arg form, and [ClaudeCodeConnector]'s one-arg form delegates to its two-arg form. If a new
+     * connector implements ONLY the two-arg form by delegating to `open(agentId)` (this one), and leaves
+     * this one-arg form unimplemented, the two defaults call each other → infinite recursion / stack
+     * overflow. Rule: always implement the **one-arg** [open]; override the two-arg form only if the
+     * worktree cwd matters (the stream-json connector does), and never have it call back into `open(id)`.
+     */
     fun open(agentId: String): ConnectorSession
 
     /**
      * Open a session whose worktree cwd may differ from the agent id (Spec §11 isolation). The default
      * ignores [worktreeName] — connectors with no worktree concept (a [Capabilities]-only test double,
-     * an MCP connector) need only implement [open]. The live stream-json connector overrides it.
+     * an MCP connector) need only implement the one-arg [open]. The live stream-json connector overrides it.
      */
     fun open(agentId: String, worktreeName: String): ConnectorSession = open(agentId)
 }

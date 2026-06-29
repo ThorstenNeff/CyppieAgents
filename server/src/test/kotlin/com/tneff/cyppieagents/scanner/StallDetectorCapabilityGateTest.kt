@@ -71,10 +71,25 @@ class StallDetectorCapabilityGateTest {
     }
 
     @Test
-    fun stallSuppressedWhenRateLimitSignalLimited() {
-        // LIMITED is conservatively off in CYP-121 (text-matched degraded path is CYP-122/B work).
+    fun limitedArmsButMarksEvidenceDegraded() {
+        // CYP-122: rateLimitSignal LIMITED → DEGRADED → the detector ARMS (text-matched throttle is still a
+        // signal) but marks the suspicion `degraded:true` (less robust than a structured throttle).
         val d = StallDetector(capabilities = { caps(CapabilityStatus.LIMITED) })
         d.onEvent(throttle("backend", armTs))
-        assertTrue(d.sweep(afterThreshold).isEmpty())
+        val signal = d.sweep(afterThreshold).single()
+        assertEquals(StallDetector.SIGNAL_TYPE, signal.type)
+        assertEquals(
+            true,
+            (signal.evidence["degraded"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toBoolean(),
+            "a DEGRADED-armed stall is marked degraded:true",
+        )
+    }
+
+    @Test
+    fun availableArmIsNotMarkedDegraded() {
+        // Control: a structured (AVAILABLE) throttle arms WITHOUT the degraded mark.
+        val d = StallDetector(capabilities = { caps(CapabilityStatus.AVAILABLE) })
+        d.onEvent(throttle("backend", armTs))
+        assertEquals(null, d.sweep(afterThreshold).single().evidence["degraded"])
     }
 }

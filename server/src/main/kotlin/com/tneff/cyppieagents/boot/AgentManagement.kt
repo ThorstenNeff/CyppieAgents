@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.model.AgentDetail
 import com.tneff.cyppieagents.model.AgentEdit
 import com.tneff.cyppieagents.model.AgentMgmtGuard
 import com.tneff.cyppieagents.model.AgentRunState
+import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.WorktreeFate
 import com.tneff.cyppieagents.routing.BadRequestException
@@ -29,6 +30,12 @@ class AgentManagement(
     private val configs: AgentConfigRegistry,
     private val ensureWorktree: (worktreeName: String) -> Unit,
     private val deleteWorktree: (worktreeName: String) -> Unit,
+    /**
+     * CYP-122: invoked when an agent is created with a non-default connector (an opt-in to Connector B).
+     * Routes through [ConnectorOptIn] (config + caps re-declare + `connector.optin` audit) so create-as-B
+     * is audited identically to the dedicated opt-in change. Default no-op (tests / no-event installs).
+     */
+    private val onConnectorOptIn: (agentId: String, kind: ConnectorKind) -> Unit = { _, _ -> },
 ) {
     private val lock = Any()
 
@@ -46,11 +53,13 @@ class AgentManagement(
     fun add(spec: NewAgentSpec): Agent = synchronized(lock) {
         AgentMgmtGuard.validateAdd(state.agents, spec)?.let { throw codeToException(it) }
         val worktree = spec.worktree?.ifBlank { null }?.trim() ?: spec.id.trim()
-        val agent = Agent(spec.id.trim(), spec.name.trim(), spec.role, worktree, AgentRunState.STOPPED)
+        val agent = Agent(spec.id.trim(), spec.name.trim(), spec.role, worktree, AgentRunState.STOPPED, connectorKind = spec.connectorKind)
         configs.put(agent.id, spec.launch?.ifBlank { null }?.trim() ?: "claude", spec.persona?.ifBlank { null })
         state.addAgent(agent)                 // spoke channel + ACL, projectId-stamped (fail-closed)
         ensureWorktree(worktree)              // create the worktree; CLAUDE.md is written at first spawn
         lifecycle.register(agent.id, worktree) // known + STOPPED — start is the CYP-73 lifecycle
+        // CYP-122: a non-default connector at create is an opt-in → audited + caps re-declared (server-enforced).
+        if (spec.connectorKind != ConnectorKind.STREAM_JSON) onConnectorOptIn(agent.id, spec.connectorKind)
         agent
     }
 
