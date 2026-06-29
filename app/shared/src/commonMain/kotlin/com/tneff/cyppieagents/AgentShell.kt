@@ -53,7 +53,7 @@ import com.tneff.cyppieagents.project.HttpProjectRepository
 import com.tneff.cyppieagents.crossproject.CrossProjectControls
 import com.tneff.cyppieagents.crossproject.CrossProjectRepository
 import com.tneff.cyppieagents.crossproject.CrossProjectViewModel
-import com.tneff.cyppieagents.crossproject.StubCrossProjectRepository
+import com.tneff.cyppieagents.crossproject.HttpCrossProjectRepository
 import com.tneff.cyppieagents.project.ProjectRepository
 import com.tneff.cyppieagents.project.ProjectSwitcherBar
 import com.tneff.cyppieagents.project.ProjectViewModel
@@ -160,8 +160,6 @@ fun AgentShell(
     // Switching + mutations are operator-gated (server also enforces; fail-closed). The bar makes the active
     // project unambiguous and re-fetches the project view on switch; the shell-wide per-project window
     // re-scope is the backend-gated piece deferred in ProjectModel.kt (lights up with live re-instancing).
-    // CYP-93: cross-project authorization port (stub until the backend /api/channels/{id}/share seam lands).
-    val resolvedCrossProjectRepo = remember(crossProjectRepository) { crossProjectRepository ?: StubCrossProjectRepository() }
     val resolvedProjectRepo = remember(projectRepository, httpClient, cfg) {
         projectRepository ?: HttpProjectRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
@@ -170,6 +168,19 @@ fun AgentShell(
     }
     // CYP-94: the project registry feeds the event-log cross-project filter (operator-only surfaces).
     val projectState = projectVm.state.collectAsState().value
+
+    // CYP-93: cross-project authorization port — now the LIVE client against /api/channels/{id}/share
+    // (stub→real swap, no UI/VM change). `sharedWith` derives from the operator's OTHER projects (reach stays
+    // per-agent ACL-gated server-side → no over-widen); read live from the project VM so it isn't stale.
+    val resolvedCrossProjectRepo = remember(crossProjectRepository, httpClient, cfg, projectVm) {
+        crossProjectRepository ?: HttpCrossProjectRepository(
+            httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "",
+            granteeProjects = {
+                val s = projectVm.state.value
+                s.projects.map { it.id }.toSet() - s.activeProjectId
+            },
+        )
+    }
 
     // Dynamic window set (S14): agent windows are derived from the managed agent list; the system
     // windows (comm/acl/settings/agentMgmt/productLead + operator-only event-log) stay static. The
