@@ -59,10 +59,18 @@ tags:
     id: '^eventBrowse\.filter\.project$'
     label: "Project filter present (CYP-94 cross-project addition)"
 
-# DEFERRED (demo-coverage gap, verified 2026-06-29): `eventBrowse.crossProjectView` + the per-row
-# `eventBrowse.row.<n>.project` identity render ONLY in a cross-project scenario; the iOSAppDemo's default
-# scenario is single-project, so the toggle is not in the tree (Maestro: "Element not found"). The tags
-# are real in EventLogTags.kt — this is a missing demo scenario, not a UI/tag defect. Re-enable these two
-# steps once the demo (cross-target) seeds ≥2 projects:
-#   - tapOn:     id: '^eventBrowse\.crossProjectView$'
-#   - assertVisible: id: '^eventBrowse\.row\.0\.project$'   # per-row project identity in the x-project view
+# CYP-94 cross-project view (CYP-116 multi-project seed). Verified live: `eventBrowse.crossProjectView`
+# is GATED behind tapping `filter.project` (enters the project-filter mode) — only then is it in the tree.
+- tapOn:
+    id: '^eventBrowse\.filter\.project$'
+- assertVisible:
+    id: '^eventBrowse\.crossProjectView$'
+    label: "Cross-project view toggle appears once the project filter is engaged (CYP-94)"
+- tapOn:
+    id: '^eventBrowse\.crossProjectView$'
+- assertVisible:
+    id: '^eventBrowse\.crossProjectView$'
+    label: "Cross-project view toggle remains addressable after toggling"
+# NOTE (verified live): per-row `eventBrowse.row.<n>.project` does NOT render in this demo scenario (rows
+# carry only the severity qualifier) → not asserted (sharp condition). Flagged for the demo owner if the
+# per-row project identity is intended to surface under crossProjectView.

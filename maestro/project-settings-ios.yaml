@@ -1,0 +1,68 @@
+# CYP-69 ④ / CYP-116 — Project-Settings iOS flow (Maestro, Compose-iOS target).
+#
+# NET-NEW: the Project-Settings panel — CYP-84 repo-config + CYP-85 API-key, incl. the security-critical
+# masking/reveal. Tags verified against app/shared/.../settings/SettingsTags.kt (area `settings`). NO
+# text/localizable selectors (Test-Contract §4).
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED. On iOS testTags
+# surface as accessibilityIdentifiers (CYP-67).
+#
+# ENTRY: `demo.tab.settings` (CYP-116 mount). SCENARIO: Repo + masked API-key seeded.
+#
+# PREREQUISITES (tester runtime; baseline pair Xcode 26.6 / iOS-Sim 26.5, iPhone 17):
+#   * iOS demo build (appId com.tneff.cyppieagents.demo) on develop ≥ bd0e3de. Reboot sim + respawn the
+#     Maestro driver before the run.
+appId: com.tneff.cyppieagents.demo
+name: "CYP-69 Project-Settings (iOS) — repo config + API-key mask/reveal"
+tags:
+  - gating
+  - settings
+  - ios
+---
+- launchApp
+
+# 7-tab horizontally-scrollable tab bar (CYP-116) — reveal the off-screen new tabs with one swipe LEFT
+# from the last initially-visible tab (pager). (scrollUntilVisible drives the wrong scrollable here.)
+- swipe:
+    direction: LEFT
+    from:
+      id: '^demo\.tab\.pager$'
+
+# Mount the settings surface.
+- tapOn:
+    id: '^demo\.tab\.settings$'
+
+# Panel + both sections present.
+- assertVisible:
+    id: '^settings\.panel$'
+    label: "Settings panel present"
+- assertVisible:
+    id: '^settings\.section\.repo$'
+- assertVisible:
+    id: '^settings\.section\.apiKey$'
+
+# CYP-84 repo config — inputs present + save button addressable + the effect-disclosure hint shown.
+# NOTE (verified live): the demo does NOT render `settings.repo.status` (a real tag in SettingsTags.kt,
+# but the stub save produces no status node) → not asserted (sharp condition: assert only real nodes).
+- assertVisible:
+    id: '^settings\.repo\.url\.input$'
+- assertVisible:
+    id: '^settings\.repo\.branch\.input$'
+- tapOn:
+    id: '^settings\.repo\.save$'
+# effectHint surfaces AFTER save (verified live) — the "takes effect on next spawn/restart" disclosure.
+- assertVisible:
+    id: '^settings\.repo\.effectHint$'
+    label: "Repo-config effect disclosed after save (takes effect on next spawn/restart)"
+
+# CYP-85 API-key — SECURITY: the key renders MASKED by default; reveal is an explicit action; never
+# re-rendered in clear without an explicit reveal (PROJECT-SETTINGS §5 / decision D3).
+# NOTE (verified live): `settings.apiKey.effectHint` is not rendered by the demo → not asserted.
+- assertVisible:
+    id: '^settings\.apiKey\.masked$'
+    label: "API-key shown MASKED by default (never clear-by-default)"
+- tapOn:
+    id: '^settings\.apiKey\.reveal$'
+- assertVisible:
+    id: '^settings\.apiKey\.input$'
+    label: "Reveal is an explicit, deliberate action (key input revealed only on demand)"

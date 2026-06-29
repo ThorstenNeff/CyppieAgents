@@ -1,0 +1,82 @@
+# CYP-69 ④ / CYP-116 — Cross-Project authorization iOS flow (Maestro, Compose-iOS target).
+#
+# NET-NEW: CYP-93 cross-project channel authorization — authorizing a project-spanning channel is an
+# EXPLICIT, owner-consented, human-only action (never a silent grant); revoking is a direct fail-safe.
+# Tags verified against the LIVE demo hierarchy (CYP-116, develop bd0e3de) + CrossProjectTags.kt. NO
+# text/localizable selectors (Test-Contract §4).
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED. On iOS testTags
+# surface as accessibilityIdentifiers (CYP-67).
+#
+# INTERACTION (verified live): swipe LEFT from `demo.tab.pager` to reveal the new tabs. SCENARIO: channel
+# `po-frontend` is initiallyShared (po@team-1/WRITE, frontend@team-2/READ) → `crossProject.revoke` shown.
+# REVOKE is a DIRECT toggle (no dialog) → channel becomes UNAUTHORIZED (badge `.unauthorized`, `authorize`
+# now shown). AUTHORIZE is the consent-gated action → opens `crossProject.dialog` (scope + ownerConsent +
+# humanOnly + singleOwner). This is the security core: granting cross-project access requires explicit
+# owner consent and is human-only; cancel leaves it fail-closed (unauthorized).
+#
+# PREREQUISITES (tester runtime; baseline pair Xcode 26.6 / iOS-Sim 26.5, iPhone 17):
+#   * iOS demo build (appId com.tneff.cyppieagents.demo) on develop ≥ bd0e3de. Reboot sim + respawn the
+#     Maestro driver before the run.
+appId: com.tneff.cyppieagents.demo
+name: "CYP-69 Cross-Project (iOS) — revoke->fail-closed -> authorize is consent-gated -> cancel preserves"
+tags:
+  - security
+  - project
+  - ios
+---
+- launchApp
+
+# Reveal the off-screen new tabs (7-tab scrollable LazyRow) with one swipe LEFT from the pager tab.
+- swipe:
+    direction: LEFT
+    from:
+      id: '^demo\.tab\.pager$'
+
+# Mount the cross-project panel (po-frontend context).
+- tapOn:
+    id: '^demo\.tab\.crossProject$'
+
+# Seeded SHARED state: status surface present + foreign-project members surfaced (transparency) + REVOKE
+# offered (revoke shows only while shared/authorized).
+- assertVisible:
+    id: '^crossProject\.status$'
+    label: "Cross-project status surface present (po-frontend, seeded shared)"
+- assertVisible:
+    id: '^crossProject\.member\.frontend$'
+    label: "Foreign-project member (frontend@team-2) surfaced (transparency)"
+- assertVisible:
+    id: '^crossProject\.revoke$'
+    label: "Revoke affordance shown → channel is currently shared/authorized"
+
+# Revoke is a DIRECT fail-safe → the channel flips to fail-closed UNAUTHORIZED (badge + authorize shown).
+- tapOn:
+    id: '^crossProject\.revoke$'
+- assertVisible:
+    id: '^crossProject\.badge\.po-frontend\.unauthorized$'
+    label: "After revoke: channel is fail-closed UNAUTHORIZED (spans projects, not authorized)"
+- assertVisible:
+    id: '^crossProject\.authorize$'
+    label: "Authorize affordance now offered (was revoke)"
+
+# Authorize is the CONSENT-GATED action — opens the dialog with owner-consent + human-only + scope.
+- tapOn:
+    id: '^crossProject\.authorize$'
+- assertVisible:
+    id: '^crossProject\.dialog$'
+- assertVisible:
+    id: '^crossProject\.dialog\.scope$'
+    label: "Dialog states the cross-project scope"
+- assertVisible:
+    id: '^crossProject\.dialog\.ownerConsent$'
+    label: "Owner-consent control present (authorization requires owner consent)"
+- assertVisible:
+    id: '^crossProject\.dialog\.humanOnlyNote$'
+    label: "Human-only note present (an agent cannot self-authorize — out-of-band human action)"
+
+# Cancel closes without authorizing → the channel stays fail-closed UNAUTHORIZED (no accidental grant).
+- tapOn:
+    id: '^crossProject\.dialog\.cancel$'
+- assertVisible:
+    id: '^crossProject\.badge\.po-frontend\.unauthorized$'
+    label: "Cancel preserves the fail-closed (unauthorized) state — no silent grant"
