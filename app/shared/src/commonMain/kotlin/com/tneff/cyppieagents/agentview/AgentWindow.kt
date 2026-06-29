@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.testing.testTagA11y
 import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_status
@@ -214,7 +215,7 @@ private fun AgentTranscript(
     }
     LazyColumn(
         state = listState,
-        modifier = modifier.testTag(AgentViewTags.stream(agentId)),
+        modifier = modifier.testTagA11y(AgentViewTags.stream(agentId)),
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -222,15 +223,15 @@ private fun AgentTranscript(
             when (event) {
                 is AgentEvent.AssistantText -> AssistantTextRow(
                     event,
-                    Modifier.testTag(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
+                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
                 )
                 is AgentEvent.ToolCall -> ToolCallRow(
                     event,
-                    Modifier.testTag(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
+                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
                 )
                 is AgentEvent.Result -> ResultRow(
                     event,
-                    Modifier.testTag(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
+                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
                 )
                 // Notice has no kind in the v0.4 vocabulary → index tag only (kind qualifier is optional).
                 is AgentEvent.Notice -> NoticeRow(

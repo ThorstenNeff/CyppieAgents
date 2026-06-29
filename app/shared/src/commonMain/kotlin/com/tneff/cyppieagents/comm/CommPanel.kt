@@ -45,6 +45,7 @@ import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.testing.testTagA11y
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_role_po
 import kmpcyppieagents.app.shared.generated.resources.comm_channels_empty
@@ -109,7 +110,7 @@ private fun ChannelListPane(
             )
             return@Column
         }
-        LazyColumn(modifier = Modifier.fillMaxSize().testTag(CommTags.CHANNEL_LIST)) {
+        LazyColumn(modifier = Modifier.fillMaxSize().testTagA11y(CommTags.CHANNEL_LIST)) {
             items(channels, key = { it.id }) { channel ->
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ChannelRow(channel, selected = channel.id == selectedId, onClick = { onSelect(channel.id) })
@@ -167,7 +168,7 @@ private fun TimelinePane(
                         modifier = Modifier.padding(12.dp).testTag(CommTags.EMPTY_TIMELINE),
                     )
                 else ->
-                    LazyColumn(modifier = Modifier.fillMaxSize().testTag(CommTags.TIMELINE)) {
+                    LazyColumn(modifier = Modifier.fillMaxSize().testTagA11y(CommTags.TIMELINE)) {
                         items(state.messages, key = { it.message.id }) { item ->
                             MessageRow(item, agents)
                         }
@@ -187,7 +188,7 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(CommTags.message(item.message.id))
+            .testTagA11y(CommTags.message(item.message.id))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

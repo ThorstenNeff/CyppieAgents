@@ -54,6 +54,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
+import com.tneff.cyppieagents.testing.testTagA11y
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -129,7 +130,7 @@ private fun WindowCanvas(
     badgeFor: (String) -> WindowBadge?,
     windowContent: @Composable (WindowState) -> Unit,
 ) {
-    Box(modifier = Modifier.fillMaxSize().testTag(WindowTestTags.HOST)) {
+    Box(modifier = Modifier.fillMaxSize().testTagA11y(WindowTestTags.HOST)) {
         state.windows.forEachIndexed { index, window ->
             // Key by id so a window keeps its identity (and any internal state) when the list is
             // reordered on focus; graphicsLayer below applies the z-order from the list index.
@@ -188,7 +189,7 @@ private fun PhonePager(
     val pages = state.orderedWindows
     if (pages.isEmpty()) {
         Box(
-            modifier = Modifier.fillMaxSize().testTag(PhonePagerTags.EMPTY),
+            modifier = Modifier.fillMaxSize().testTagA11y(PhonePagerTags.EMPTY),
             contentAlignment = Alignment.Center,
         ) {
             Text(stringResource(Res.string.pager_empty), style = MaterialTheme.typography.bodyMedium)
@@ -239,7 +240,7 @@ private fun PhonePager(
 
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.weight(1f).fillMaxWidth().testTag(PhonePagerTags.PAGER),
+            modifier = Modifier.weight(1f).fillMaxWidth().testTagA11y(PhonePagerTags.PAGER),
         ) { index ->
             val window = pages[index]
             // a11y: each page announces position + window name ("Seite 2 von 5: Frontend") — never
@@ -254,7 +255,7 @@ private fun PhonePager(
                     .semantics { contentDescription = pageDesc },
             ) {
                 // Reuse window.<id>.content so a window's body is addressable identically to the canvas.
-                Box(modifier = Modifier.fillMaxSize().testTag(WindowTestTags.content(window.id))) {
+                Box(modifier = Modifier.fillMaxSize().testTagA11y(WindowTestTags.content(window.id))) {
                     windowContent(window)
                 }
             }
@@ -288,7 +289,7 @@ private fun PagerIndicator(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(PhonePagerTags.INDICATOR)
+            .testTagA11y(PhonePagerTags.INDICATOR)
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
@@ -513,7 +514,7 @@ fun FloatingWindow(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .testTag(WindowTestTags.content(window.id)),
+                        .testTagA11y(WindowTestTags.content(window.id)),
                 ) {
                     content()
                 }
