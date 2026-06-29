@@ -171,6 +171,7 @@
     <string name="agent_mgmt_title">Agenten-Verwaltung</string>
     <string name="agent_mgmt_operator_required">Nur mit Operator-Token änderbar</string>
     <string name="agent_role_worker">Worker</string>
+    <string name="agent_role_product_lead">Product Lead</string>
     <string name="agent_add">Agent hinzufügen</string>
     <string name="agent_edit">Bearbeiten</string>
     <string name="agent_remove">Entfernen</string>

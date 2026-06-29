@@ -166,6 +166,7 @@
     <string name="agent_mgmt_title">Agent management</string>
     <string name="agent_mgmt_operator_required">Editable only with an operator token</string>
     <string name="agent_role_worker">Worker</string>
+    <string name="agent_role_product_lead">Product Lead</string>
     <string name="agent_add">Add agent</string>
     <string name="agent_edit">Edit</string>
     <string name="agent_remove">Remove</string>
