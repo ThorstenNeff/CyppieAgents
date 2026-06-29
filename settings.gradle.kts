@@ -38,6 +38,7 @@ include(":app:desktopApp")
 include(":app:shared")
 include(":app:webApp")
 include(":app:webAppDemo")
+include(":app:iosAppDemo")
 include(":core")
 include(":server")
 // CYP-106: hermetic embedded-server E2E harness — needs :server + the client repos (:app:shared) on ONE
