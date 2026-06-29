@@ -69,6 +69,7 @@ import kmpcyppieagents.app.shared.generated.resources.agent_remove_worktree_dele
 import kmpcyppieagents.app.shared.generated.resources.agent_remove_worktree_keep
 import kmpcyppieagents.app.shared.generated.resources.agent_remove_worktree_warning
 import kmpcyppieagents.app.shared.generated.resources.agent_role_po
+import kmpcyppieagents.app.shared.generated.resources.agent_role_product_lead
 import kmpcyppieagents.app.shared.generated.resources.agent_role_worker
 import kmpcyppieagents.app.shared.generated.resources.agent_save
 import kmpcyppieagents.app.shared.generated.resources.agent_status_error
@@ -455,6 +456,7 @@ private fun LabeledField(
 private fun roleLabel(role: Role): StringResource = when (role) {
     Role.PO -> Res.string.agent_role_po
     Role.WORKER -> Res.string.agent_role_worker
+    Role.PRODUCT_LEAD -> Res.string.agent_role_product_lead // CYP-98
 }
 
 private fun runStateLabel(state: AgentRunState): StringResource = when (state) {

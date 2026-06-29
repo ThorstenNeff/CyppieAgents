@@ -139,14 +139,34 @@ class HubState(
      */
     fun addAgent(agent: Agent): Agent = synchronized(lock) {
         val po = agents.firstOrNull { it.role == Role.PO }
+        val productLeadIds = agents.filter { it.role == Role.PRODUCT_LEAD }.map { it.id } // existing PLs
         agents = agents + agent
-        if (agent.role == Role.WORKER && po != null) {
-            val members = buildList { add(po.id); add(agent.id); operatorId?.let { add(it) } }
-            val channel = Channel("po-${agent.id}", "po-${agent.id}", ChannelKind.HUB, members, projectId = activeProjectId)
-            val newEntries = members.map { AclEntry(channel.id, it, canRead = true, canWrite = true, projectId = activeProjectId) }
-            channels = channels + channel
-            entries = entries + newEntries
-            acl = AclMatrix(channels, entries, activeProjectId, sharedInboundChannelIds)
+        when {
+            agent.role == Role.WORKER && po != null -> {
+                // New worker spoke: po + worker + operator? all read+write, plus existing PLs read-only (CYP-98).
+                val members = buildList {
+                    add(po.id); add(agent.id); operatorId?.let { add(it) }; addAll(productLeadIds)
+                }
+                val channel = Channel("po-${agent.id}", "po-${agent.id}", ChannelKind.HUB, members, projectId = activeProjectId)
+                val newEntries = members.map { m ->
+                    AclEntry(channel.id, m, canRead = true, canWrite = m !in productLeadIds, projectId = activeProjectId)
+                }
+                channels = channels + channel
+                entries = entries + newEntries
+                acl = AclMatrix(channels, entries, activeProjectId, sharedInboundChannelIds)
+            }
+            agent.role == Role.PRODUCT_LEAD -> {
+                // CYP-98: a runtime-added Product Lead joins every existing HUB spoke as a read-only member
+                // (canRead, canWrite=false) and gets NO spoke of its own → never a task target. Fail-closed.
+                val spokeIds = channels.filter { it.kind == ChannelKind.HUB }.map { it.id }
+                channels = channels.map { ch ->
+                    if (ch.kind == ChannelKind.HUB) ch.copy(members = ch.members + agent.id) else ch
+                }
+                entries = entries + spokeIds.map {
+                    AclEntry(it, agent.id, canRead = true, canWrite = false, projectId = activeProjectId)
+                }
+                acl = AclMatrix(channels, entries, activeProjectId, sharedInboundChannelIds)
+            }
         }
         agent
     }
@@ -241,10 +261,14 @@ class HubState(
             val po = agents.firstOrNull { it.role == Role.PO }
                 ?: error("hub-and-spoke requires exactly one PO agent")
             val workers = agents.filter { it.role == Role.WORKER }
+            // CYP-98: Product Leads are read-only reviewers on every spoke — members (canRead) but NEVER
+            // canWrite, and they get NO spoke of their own → structurally never a task target.
+            val productLeadIds = agents.filter { it.role == Role.PRODUCT_LEAD }.map { it.id }
             val channels = workers.map { w ->
                 val members = buildList {
                     add(po.id); add(w.id)
                     if (operatorId != null) add(operatorId)
+                    addAll(productLeadIds)
                 }
                 Channel(
                     id = "po-${w.id}",
@@ -255,7 +279,11 @@ class HubState(
                 )
             }
             val entries = channels.flatMap { ch ->
-                ch.members.map { AclEntry(ch.id, it, canRead = true, canWrite = true, projectId = activeProjectId) }
+                ch.members.map { member ->
+                    // PL read-only posture enforced HERE (core ACL, not just UI): canWrite=false, fail-closed.
+                    val readOnly = member in productLeadIds
+                    AclEntry(ch.id, member, canRead = true, canWrite = !readOnly, projectId = activeProjectId)
+                }
             }
             return HubState(agents, channels, entries, activeProjectId, operatorId, sharedInboundProvider)
         }

@@ -15,6 +15,14 @@ import kotlinx.serialization.Serializable
 enum class Role {
     @SerialName("PO") PO,
     @SerialName("WORKER") WORKER,
+    /**
+     * Read-only reviewer ("Product Lead", CYP-98 / Doc 09). NOT part of the MVP build loop (PO/WORKER):
+     * the ACL default posture grants `canRead` on the authorized hub spokes but **`canWrite = false`
+     * everywhere** (enforced in [AclMatrix], not just the UI) and gives it **no spoke of its own** — so it
+     * is structurally never a task target (the mediation router routes to `po-<agentId>`, which does not
+     * exist for a PL). PL output is untrusted data, never an instruction; fail-closed.
+     */
+    @SerialName("PRODUCT_LEAD") PRODUCT_LEAD,
 }
 
 /** Runtime lifecycle state of an agent's process (CYP-73). Content-free; safe on the public wire. */
