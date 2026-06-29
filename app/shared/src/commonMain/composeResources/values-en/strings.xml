@@ -280,6 +280,9 @@
     <string name="connector_kind_stream_json">stream-json (API) — default</string>
     <string name="connector_kind_mcp">Claude Code via MCP (subscription) — opt-in</string>
     <string name="connector_default_note">stream-json is the first-class default. Connector B is an opt-in alternative.</string>
+    <string name="connector_provider">Provider: %1$s</string>
+    <string name="connector_provider_unknown">Provider not yet reported</string>
+    <string name="a11y_provider">Provider: %1$s</string>
     <string name="connector_active">Active connector: %1$s</string>
     <string name="connector_capabilities_title">Connector capabilities</string>
     <string name="connector_cap_available">available</string>

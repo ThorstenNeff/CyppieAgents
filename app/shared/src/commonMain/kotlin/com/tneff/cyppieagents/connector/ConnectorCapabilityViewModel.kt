@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.connector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.model.Capabilities
+import com.tneff.cyppieagents.model.ProviderInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,8 @@ import kotlinx.coroutines.launch
  */
 data class ConnectorCapabilityUiState(
     val capabilities: Map<String, Capabilities> = emptyMap(),
+    /** Per-agent provider (CYP-137), same `GET /api/agents` snapshot as [capabilities]. Absent ⇒ not yet reported. */
+    val providers: Map<String, ProviderInfo> = emptyMap(),
     /** The agent whose detail panel is open (header-badge click → [openPanel]); `null` = none open. */
     val openPanelAgentId: String? = null,
 )
@@ -40,13 +43,16 @@ class ConnectorCapabilityViewModel(
     init { runScope.launch { reload() } }
 
     private suspend fun reload() {
-        runCatching { repository.capabilities() }
-            .onSuccess { caps -> _state.update { it.copy(capabilities = caps) } }
-            .onFailure { e -> if (e is CancellationException) throw e } // keep prior; fail-closed (no invented caps)
+        runCatching { repository.read() }
+            .onSuccess { snap -> _state.update { it.copy(capabilities = snap.capabilities, providers = snap.providers) } }
+            .onFailure { e -> if (e is CancellationException) throw e } // keep prior; fail-closed (no invented caps/provider)
     }
 
     /** The caps for [agentId], or `null` when not reported (fail-closed — never a faked "full" default). */
     fun capabilitiesFor(agentId: String): Capabilities? = _state.value.capabilities[agentId]
+
+    /** The provider for [agentId], or `null` when not reported (fail-closed — never an invented provider). */
+    fun providerFor(agentId: String): ProviderInfo? = _state.value.providers[agentId]
 
     fun openPanel(agentId: String) = _state.update { it.copy(openPanelAgentId = agentId) }
     fun closePanel() = _state.update { it.copy(openPanelAgentId = null) }

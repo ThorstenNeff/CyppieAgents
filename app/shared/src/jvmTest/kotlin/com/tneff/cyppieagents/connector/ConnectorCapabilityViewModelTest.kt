@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.connector
 
+import com.tneff.cyppieagents.model.ProviderInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
@@ -7,9 +8,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * CYP-123 display-VM contract: the read load populates the per-agent caps, an unknown agent is `null`
- * (fail-closed — never a faked "full" default), and the panel open/close toggle is honest. The non-suspending
- * stub settles synchronously under [Dispatchers.Unconfined], so the `init` reload is visible immediately.
+ * CYP-123/137 display-VM contract: the single read load populates the per-agent caps AND the per-agent provider
+ * from one snapshot; an unknown agent is `null` (fail-closed — never a faked "full" default / never an invented
+ * provider), and the panel open/close toggle is honest. The non-suspending stub settles synchronously under
+ * [Dispatchers.Unconfined], so the `init` reload is visible immediately.
  */
 class ConnectorCapabilityViewModelTest {
 
@@ -17,7 +19,12 @@ class ConnectorCapabilityViewModelTest {
     private val mcpCaps = defaultCapabilitiesFor(com.tneff.cyppieagents.model.ConnectorKind.MCP)
 
     private fun vm() = ConnectorCapabilityViewModel(
-        StubConnectorCapabilityRepository(mapOf("a-stream" to streamCaps, "a-mcp" to mcpCaps)),
+        StubConnectorCapabilityRepository(
+            initial = mapOf("a-stream" to streamCaps, "a-mcp" to mcpCaps),
+            // Deliberately: "a-stream" has a provider, "a-mcp" does NOT — provider absence is independent of
+            // caps presence (an agent can have caps but no reported provider ⇒ fail-closed, no invented one).
+            providers = mapOf("a-stream" to ProviderInfo.CLAUDE),
+        ),
         scope = CoroutineScope(Dispatchers.Unconfined),
     )
 
@@ -29,8 +36,21 @@ class ConnectorCapabilityViewModelTest {
     }
 
     @Test
+    fun load_populatesProviderFor() {
+        assertEquals(ProviderInfo.CLAUDE, vm().providerFor("a-stream"))
+    }
+
+    @Test
     fun unknownAgent_isNull_failClosed() {
         assertNull(vm().capabilitiesFor("nope"), "fail-closed: unknown agent → no faked caps")
+    }
+
+    @Test
+    fun providerAbsent_isNull_failClosed_independentOfCaps() {
+        // "a-mcp" has caps but no reported provider → providerFor is null (no phantom "Claude"); "nope" is
+        // unknown entirely → also null. Provider is never invented from caps presence.
+        assertNull(vm().providerFor("a-mcp"), "fail-closed: caps present but provider unreported → no phantom")
+        assertNull(vm().providerFor("nope"), "fail-closed: unknown agent → no invented provider")
     }
 
     @Test

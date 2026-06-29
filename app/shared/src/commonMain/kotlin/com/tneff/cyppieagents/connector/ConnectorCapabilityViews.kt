@@ -19,9 +19,11 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.ui.HintTone
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_connector_fidelity_badge
+import kmpcyppieagents.app.shared.generated.resources.a11y_provider
 import kmpcyppieagents.app.shared.generated.resources.connector_active
 import kmpcyppieagents.app.shared.generated.resources.connector_cap_available
 import kmpcyppieagents.app.shared.generated.resources.connector_cap_limited
@@ -43,6 +45,8 @@ import kmpcyppieagents.app.shared.generated.resources.connector_fidelity_badge
 import kmpcyppieagents.app.shared.generated.resources.connector_fidelity_unknown
 import kmpcyppieagents.app.shared.generated.resources.connector_kind_mcp
 import kmpcyppieagents.app.shared.generated.resources.connector_kind_stream_json
+import kmpcyppieagents.app.shared.generated.resources.connector_provider
+import kmpcyppieagents.app.shared.generated.resources.connector_provider_unknown
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -145,6 +149,34 @@ fun CapabilityStatusChip(status: CapabilityStatus, scope: String, dim: Capabilit
 }
 
 /**
+ * Compact provider qualifier-chip at the agent-window header (CYP-137, `provider-display-spec.md` §2.1/§2.2).
+ * Provider is the **fourth, separate axis** — provider ≠ identity ≠ connector-kind ≠ fidelity, never merged: a
+ * neutral, **subordinate** text qualifier with **no** identity hue, **no** severity colour, **no** logo/marketing
+ * (anti-hype, spec §1/§5). **Fail-closed by absence** (like CYP-55): rendered **only** when the provider is
+ * known; `null` ⇒ NOTHING is drawn (never an invented "Claude") — the agent stays fully named by its identity.
+ *
+ * The visible text is the provider's [ProviderInfo.displayName] **alone** (the short label, e.g. "Claude"); the
+ * labelled `contentDescription` (`a11y_provider` = "Anbieter: %1$s") carries the meaning so colour is never the
+ * sole carrier (WCAG 1.4.1) and the chip stays unobtrusive. [ProviderInfo.id] is the stable key, never shown.
+ */
+@Composable
+fun ConnectorProviderChip(provider: ProviderInfo?, agentId: String, modifier: Modifier = Modifier) {
+    // Fail-closed by absence: unknown provider ⇒ no chip (no phantom). Identity is complete without it.
+    val p = provider ?: return
+    val description = stringResource(Res.string.a11y_provider, p.displayName)
+    Text(
+        text = p.displayName,
+        style = MaterialTheme.typography.labelSmall,
+        // Neutral + subordinate — NOT an identity hue (else it reads as identity) and NOT a severity colour
+        // (provider is not a state). onSurfaceVariant matches the muted-qualifier tone.
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .testTag(ConnectorTags.provider(agentId))
+            .semantics { contentDescription = description },
+    )
+}
+
+/**
  * Compact fidelity badge at the agent-window header (spec §2.2). **Fail-closed by absence** (like CYP-55):
  * present **only** when caps are degraded or `null`; a full-fidelity agent renders NOTHING (no false
  * "all-green" seal). Clickable (opens the detail panel via [onClick]); carries the a11y label and the Fidelity
@@ -195,7 +227,13 @@ fun ConnectorCapabilityBadge(
  * rows are NEVER omitted (absence of a status is shown, never assumed available).
  */
 @Composable
-fun CapabilityPanel(caps: Capabilities?, agentId: String, modifier: Modifier = Modifier) {
+fun CapabilityPanel(
+    caps: Capabilities?,
+    agentId: String,
+    modifier: Modifier = Modifier,
+    /** CYP-137 provider — the top identity line; `null` ⇒ "not yet reported" (fail-closed, never invented). */
+    provider: ProviderInfo? = null,
+) {
     Column(
         modifier = modifier.fillMaxWidth().testTag(ConnectorTags.capabilityPanel(agentId)),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -203,6 +241,21 @@ fun CapabilityPanel(caps: Capabilities?, agentId: String, modifier: Modifier = M
         Text(
             text = stringResource(Res.string.connector_capabilities_title),
             style = MaterialTheme.typography.titleSmall,
+        )
+
+        // Provider — the TOP identity line (CYP-137, spec §2.3): reads the axes honestly outside-in, *womit*
+        // (provider) → *wie* (connector-kind, below) → *was möglich ist* (the five fidelity rows). Identity
+        // text (≠ fidelity). Fail-closed: null ⇒ "not yet reported", never omitted-as-if-full, never invented.
+        val providerText = if (provider != null) {
+            stringResource(Res.string.connector_provider, provider.displayName)
+        } else {
+            stringResource(Res.string.connector_provider_unknown)
+        }
+        Text(
+            text = providerText,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag(ConnectorTags.provider(agentId)),
         )
 
         // Active connector — identity axis (≠ fidelity). When unreported we say so honestly, never a faked kind.

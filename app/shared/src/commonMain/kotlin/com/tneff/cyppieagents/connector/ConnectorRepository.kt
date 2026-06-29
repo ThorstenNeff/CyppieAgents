@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
@@ -13,44 +14,59 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.builtins.ListSerializer
 
 /**
- * Read port for per-agent connector capabilities (CYP-123, spec §2). Capabilities ride the **Agent read-model**
- * (`GET /api/agents`, beside `runState`); an agent whose `Agent.capabilities` is `null` is **absent** from the
- * map ⇒ the UI shows "not yet reported" (fail-closed, never faked as full). Stub today; [ConnectorCapabilityHttpRepository]
- * at the swap. The connector **write** (selection/opt-in) is a separate seam, stubbed until CYP-122.
+ * One consistent read snapshot of the per-agent connector read-model (CYP-123 capabilities + CYP-137 provider),
+ * resolved from a **single** `GET /api/agents` so caps and provider are always the same server snapshot (never
+ * two GETs that could disagree). Both maps are fail-closed by absence: an agent whose field is `null` is simply
+ * **absent** from its map ⇒ the UI shows "not yet reported" (caps) / omits the qualifier (provider), never faked.
+ */
+data class ConnectorReadModel(
+    val capabilities: Map<String, Capabilities> = emptyMap(),
+    val providers: Map<String, ProviderInfo> = emptyMap(),
+)
+
+/**
+ * Read port for the per-agent connector read-model (CYP-123 capabilities + CYP-137 provider). Both ride the
+ * **Agent read-model** (`GET /api/agents`, beside `runState`); a `null` field ⇒ **absent** from its map ⇒
+ * fail-closed display (never faked as full / never an invented provider). Stub today; [ConnectorCapabilityHttpRepository]
+ * at the swap. The connector **write** (selection/opt-in) is a separate seam (operator-gated, CYP-122/126).
  */
 interface ConnectorCapabilityRepository {
-    suspend fun capabilities(): Map<String, Capabilities>
+    suspend fun read(): ConnectorReadModel
 }
 
-/** In-memory read stub for dev/tests. */
+/** In-memory read stub for dev/tests. Provider map defaults empty so existing caps-only call sites are unchanged. */
 class StubConnectorCapabilityRepository(
     private val initial: Map<String, Capabilities> = emptyMap(),
+    private val providers: Map<String, ProviderInfo> = emptyMap(),
 ) : ConnectorCapabilityRepository {
-    override suspend fun capabilities(): Map<String, Capabilities> = initial
+    override suspend fun read(): ConnectorReadModel = ConnectorReadModel(initial, providers)
 }
 
 /**
- * Live read against the public `GET /api/agents` (secret-free, same source as the lifecycle snapshot). Maps each
- * `Agent.capabilities` (when non-null) into the per-agent map; a missing/undecodable response yields no caps —
- * honest, the UI stays "not yet reported" rather than inventing fidelity (fail-closed).
+ * Live read against the public `GET /api/agents` (secret-free, same source as the lifecycle snapshot). One fetch
+ * maps both `Agent.capabilities` and `Agent.provider` (each only when non-null) into their per-agent maps; a
+ * missing/undecodable response yields an empty snapshot — honest, the UI stays "not yet reported" / omits the
+ * provider rather than inventing either (fail-closed).
  */
 class ConnectorCapabilityHttpRepository(
     private val client: HttpClient,
     private val httpBaseUrl: String,
 ) : ConnectorCapabilityRepository {
-    override suspend fun capabilities(): Map<String, Capabilities> = try {
+    override suspend fun read(): ConnectorReadModel = try {
         val response = client.get("$httpBaseUrl/api/agents")
         if (!response.status.isSuccess()) {
-            emptyMap()
+            ConnectorReadModel()
         } else {
-            CommJson.decodeFromString(ListSerializer(Agent.serializer()), response.bodyAsText())
-                .mapNotNull { agent -> agent.capabilities?.let { agent.id to it } }
-                .toMap()
+            val agents = CommJson.decodeFromString(ListSerializer(Agent.serializer()), response.bodyAsText())
+            ConnectorReadModel(
+                capabilities = agents.mapNotNull { agent -> agent.capabilities?.let { agent.id to it } }.toMap(),
+                providers = agents.mapNotNull { agent -> agent.provider?.let { agent.id to it } }.toMap(),
+            )
         }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Throwable) {
-        emptyMap()
+        ConnectorReadModel()
     }
 }
 

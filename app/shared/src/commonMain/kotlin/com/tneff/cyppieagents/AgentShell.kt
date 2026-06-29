@@ -486,6 +486,7 @@ fun AgentShell(
                             agentId = window.id,
                             viewModel = it,
                             capabilities = connectorCapState.capabilities[window.id],
+                            provider = connectorCapState.providers[window.id],
                             onCapabilityBadgeClick = { connectorCapVm.openPanel(window.id) },
                         )
                     }
@@ -500,6 +501,7 @@ fun AgentShell(
                     CapabilityPanel(
                         caps = connectorCapState.capabilities[openId],
                         agentId = openId,
+                        provider = connectorCapState.providers[openId],
                         modifier = Modifier.padding(16.dp),
                     )
                 }
