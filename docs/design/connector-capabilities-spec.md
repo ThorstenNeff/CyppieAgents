@@ -1,10 +1,11 @@
 # Connector-Vertrag & Capabilities — UX/UI-Spec (CYP-119)
 
 > Owner: UIUX-Designer · Epic **CYP-118** · Story **CYP-119** · Stand 2026-06-29
-> Status: **Design-Vorlauf (docs-only) — PO-Gegenlesen GO (2026-06-29), 7 §-Ask-Resolutions in §9 gefolded;
-> §-Ask 1 (Wire-Form) offen bis CYP-120.** Merge-bereit; **PO merged, nicht selbst mergen**.
+> Status: **PO-GO + gemergt (docs-only) auf develop. Alle 7 §-Asks resolved — §-Ask 1 (Wire-Form) gefolded
+> gegen die gemergte `:core`-DTO (CYP-120, develop `4fe60d5`).** Folge-Push docs-only; **PO merged, nicht
+> selbst mergen**.
 > Quellen: `10-Connector-Vertrag-und-Capabilities.md` (§1–§6), `09-UI-Funktionskatalog.md` (§3 Agentenfenster, §9 Einstellungen).
-> Grounded gegen **develop `ac70819`** (Reuse-Komponenten/Tags/Keys real verifiziert, siehe §8).
+> Grounded gegen **develop `4fe60d5`** (Reuse + Capability-DTO real verifiziert, siehe §8).
 > Begleit-Artefakte: `connector-capabilities-tokens.json`, `-keys.md`, `-tags.md`.
 
 ---
@@ -17,15 +18,20 @@
 2. **Connector-Auswahl + Opt-in für Connector B** — A (stream-json) als erstklassiger Default, B (MCP/Abo)
    als bewusster Opt-in-Akt mit Risiko-Aufklärung, **human-only**.
 
-**Zurückgehalten (PO reicht durch, sobald Backend `CYP-120` gemergt ist):** die finale
-**`:core`-Capability-DTO-Wire-Form** (Feldnamen). Diese Spec zurrt die **Design-Form** fest und benutzt die
-vom PO durchgereichten **Design-Namen** als Platzhalter (kursiv markiert) — Feldnamen bleiben offen:
-- `ConnectorKind` ∈ { *STREAM_JSON*, *MCP* }
-- `CapabilityStatus` ∈ { *AVAILABLE*, *LIMITED*, *UNAVAILABLE* }
-- fünf Dimensionen: `structuredUsage`, `toolGranularity`, `reliableResult`, `rateLimitSignal`, `coordination`
+**Wire-Form (gefolded gegen die gemergte `:core`-DTO, CYP-120 @ develop `4fe60d5` — real verifiziert):**
+Das Design war 1:1 deckungsgleich; nur Werte-/Feld-Schreibweise angeglichen.
+- **`Agent.capabilities: Capabilities? = null`** — additiv am Agent-DTO, **nullable**, `null` bis CYP-122 den
+  Connector populiert. **`null` ⇒ fail-closed**: Fidelity-Badge präsent als „noch nicht gemeldet"
+  (`connector_fidelity_unknown`), alle Dimensionen als **unbekannt/UNAVAILABLE** behandelt — **nie** als „voll".
+- **`Capabilities { structuredUsage, toolGranularity, reliableResult, rateLimitSignal, coordination:
+  CapabilityStatus, kind: ConnectorKind }`** — die 5 Dimensions-Feldnamen sind **exakt** meine Design-Namen.
+- **`enum CapabilityStatus`** AVAILABLE / LIMITED / UNAVAILABLE → Wire-(JSON-)Werte **lowercase**
+  `available` / `limited` / `unavailable` (`@SerialName`).
+- **`enum ConnectorKind`** STREAM_JSON / MCP → Wire-Werte **`stream_json`** / **`mcp`** (`@SerialName`).
+  (Tag-`selectorId` bleibt camelCase `streamJson`/`mcp` — Underscore ist kein gültiges Tag-Segment; Mapping in `-tags.md`.)
 
 **Außerhalb des Scope:** der Connector-Vertrag selbst (Backend, Doc 10 §2), der MCP-Server-Aufbau (Doc 10 §5),
-die Abrechnungs-/Spike-Fragen (Doc 10 §6.1/§6.2) — siehe **§9 Offene §-Asks**.
+die Abrechnungs-/Spike-Fragen (Doc 10 §6.1/§6.2) — siehe **§9 §-Ask-Resolutions**.
 
 ---
 
@@ -57,11 +63,12 @@ Master/Detail (Event-Log) und der zwei-phasigen Cross-Projekt-Anzeige.
 Vom PO bestätigt. Die drei Status nutzen die **bestehende** Tonalitäts-Palette (Glyph + Farbe), pro Status
 ein **eigener Glyph** (Farbe nie allein):
 
-| `CapabilityStatus` | Label-Key | Glyph | Tonalität / Farbe | Begründung |
+| `CapabilityStatus` (Wire) | Label-Key | Glyph | Tonalität / Farbe | Begründung |
 |---|---|---|---|---|
-| *AVAILABLE* (verfügbar) | `connector_cap_available` | `✓` | **neutral** (`secondary`, INFO-Familie) | ehrlicher Fakt, **kein** gesättigtes Erfolgs-Grün (Anti-Hype) |
-| *LIMITED* (eingeschränkt) | `connector_cap_limited` | `!` | **EFFECT_DEFERRED** (amber `onTertiaryContainer`) | „degradiert/markiert" — Attention, kein Fehler |
-| *UNAVAILABLE* (nicht verfügbar) | `connector_cap_unavailable` | `○` | **GATED** (neutral `onSurfaceVariant`) | „aus", **sichtbar** — schlägt falsches Grün, ist aber kein ERROR-Rot |
+| `AVAILABLE` (`available`) | `connector_cap_available` | `✓` | **neutral** (`secondary`, INFO-Familie) | ehrlicher Fakt, **kein** gesättigtes Erfolgs-Grün (Anti-Hype) |
+| `LIMITED` (`limited`) | `connector_cap_limited` | `!` | **EFFECT_DEFERRED** (amber `onTertiaryContainer`) | „degradiert/markiert" — Attention, kein Fehler |
+| `UNAVAILABLE` (`unavailable`) | `connector_cap_unavailable` | `○` | **GATED** (neutral `onSurfaceVariant`) | „aus", **sichtbar** — schlägt falsches Grün, ist aber kein ERROR-Rot |
+| — `Agent.capabilities == null` (bis CYP-122) | `connector_fidelity_unknown` | `!`/`○` | **GATED/EFFECT_DEFERRED** | fail-closed: noch nicht gemeldet ⇒ **nie** „voll", Badge präsent |
 
 > Glyphen sind Plain-Text (kein Emoji, CYP-54), Desktop-JVM-sicher (vgl. `✕`/`·`/`⇄` im Bestand).
 > Der **Status-Chip** je Dimension ist ein eigener kleiner Visual (`connector.<scope>.capability.<dim>.status`),
@@ -234,7 +241,12 @@ Effekt-Hinweis (frischer Spawn).
 
 ## 8. Code-Verifikation (Source of Truth)
 
-Gegen develop `ac70819` real gelesen — bestätigt:
+Gegen develop `ac70819` (Reuse) bzw. `4fe60d5` (Capability-DTO) real gelesen — bestätigt:
+- **`core/.../model/ConnectorCapabilities.kt` @ `4fe60d5`:** `data class Capabilities(structuredUsage,
+  toolGranularity, reliableResult, rateLimitSignal, coordination: CapabilityStatus, kind: ConnectorKind)`;
+  `enum CapabilityStatus{AVAILABLE,LIMITED,UNAVAILABLE}` (`@SerialName` `available`/`limited`/`unavailable`);
+  `enum ConnectorKind{STREAM_JSON,MCP}` (`@SerialName` `stream_json`/`mcp`); `Agent.capabilities: Capabilities?
+  = null` (CommModel.kt). **Dimensions-Feldnamen = meine Design-Namen 1:1.**
 - `TonedHint(text, tone, tag, modifier)`; `HintTone{EFFECT_DEFERRED,GATED,INFO,ERROR}`; Glyphen `!`/`✕`/`i`/`·`;
   Farben EFFECT_DEFERRED→`onTertiaryContainer` (amber Banner), ERROR→`error`, INFO→`secondary`,
   GATED→`onSurfaceVariant`.
@@ -245,14 +257,17 @@ Gegen develop `ac70819` real gelesen — bestätigt:
 - `AgentViewTags.header(agentId)` = `agent.<id>.header`; `AgentMgmtTags.{ADD_DIALOG,EDIT_DIALOG,GATE_HINT,
   EDIT_EFFECT_HINT}`; `WindowBadgeTags` (fail-closed-durch-Absenz).
 - **Kollision:** `connector*`/`capabilit*`/`fidelity*`/`degrad*` existieren **nicht** in `values/strings.xml`
-  @ `ac70819` → 0 Kollision. **Kein** `connector`-Feld im Code (Wire-Form steht aus, CYP-120).
+  @ `4fe60d5` → 0 Kollision (DE+EN). Capability-DTO ist `:core` (gemergt) — UI rendert sie nur, keine
+  eigene Wire-Definition (kein Drift, wie `Message`/`Event`).
 
 ---
 
 ## 9. §-Asks — PO-Resolutions (2026-06-29)
 
-1. **Capability-DTO-Wire-Form (Feldnamen):** **OFFEN bis CYP-120** (PO reicht durch). Design-Form steht,
-   Feldnamen kursiv/offen. — _einziger offener Punkt._
+1. **Capability-DTO-Wire-Form:** **Resolved (PO 2026-06-29) — gefolded gegen die gemergte `:core`-DTO
+   (CYP-120, develop `4fe60d5`).** Design war 1:1 deckungsgleich; nur Schreibweise angeglichen (Status-Werte
+   lowercase `available|limited|unavailable`, `kind` `stream_json|mcp`, `Agent.capabilities` nullable ⇒
+   `null` fail-closed = noch nicht gemeldet). Details in §0. **Kein offener Punkt mehr.**
 2. **Connector pro Agent:** **Resolved (PO 2026-06-29) — BESTÄTIGT** (Doc 10 §3 „pro Agent an/aus").
    Picker-Ort = Agenten-Konfig (`agentMgmt.{add,edit}.dialog`) **final**.
 3. **A↔B-Wechsel wirkt erst beim Neustart:** **Resolved (PO 2026-06-29) — BESTÄTIGT.** Reuse

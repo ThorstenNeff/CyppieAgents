@@ -10,8 +10,8 @@
 
 ## Scope-Vokabular
 - `scope` (Capability-Surface) ∈ { `<agentId>` (Live, am Agentenfenster), `preview` (im B-Opt-in-Dialog) }.
-- `dim` (Capability-Dimension) ∈ { `structuredUsage`, `toolGranularity`, `reliableResult`, `rateLimitSignal`, `coordination` } — exakt die Doc-10-§3-Namen, segment-sicher (camelCase).
-- `kind` (Connector) ∈ { `streamJson`, `mcp` } — Design-Namen für `ConnectorKind` *STREAM_JSON*/*MCP* (Wire offen, CYP-120).
+- `dim` (Capability-Dimension) ∈ { `structuredUsage`, `toolGranularity`, `reliableResult`, `rateLimitSignal`, `coordination` } — **exakt die `Capabilities`-Feldnamen** (`core/.../model/ConnectorCapabilities.kt` @ `4fe60d5`), segment-sicher (camelCase). Unbekannte künftige Dimension → `dim` = sanitisierte Wire-Id (Label `connector_dim_unknown`, §-Ask 4).
+- `kind` (Connector) ∈ { `streamJson`, `mcp` } (Tag-`selectorId`, camelCase) — **mappt auf Wire `@SerialName`** `stream_json`/`mcp` (`ConnectorKind` STREAM_JSON/MCP @ `4fe60d5`). Underscore ist **kein** gültiges Tag-Segment → camelCase im Tag, lowercase-underscore auf dem Draht.
 
 ## Capability-Anzeige (pro Agent + Vorschau)
 | Tag (Funktion/Konstante) | Wert | Zweck |
