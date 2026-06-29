@@ -3,15 +3,18 @@ package com.tneff.cyppieagents.connector
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
+import com.tneff.cyppieagents.mediation.HubTools
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
+import com.tneff.cyppieagents.model.AssistantEvent
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.ResultEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
+import com.tneff.cyppieagents.model.ToolUseBlock
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -163,6 +166,20 @@ class ClaudeCodeSession(
                 }
 
                 _events.emit(masked) // to /ws/agent (UI), already masked
+
+                if (masked is AssistantEvent) {
+                    // CYP-131: extract agent-initiated `hub_send` tool-calls from the stream and route them
+                    // through the SAME chokepoint as Connector B (router → HubMcpTools.send → postAsAgent;
+                    // canWrite/masking enforced there). runCatching so a denied/failed send never breaks the
+                    // reader. Content is already masked (Gate #3) before it reaches the hub.
+                    masked.message.content
+                        .filterIsInstance<ToolUseBlock>()
+                        .filter { it.name == HubTools.SEND }
+                        .forEach { block ->
+                            runCatching { router.onHubSend(agentId, block) }
+                                .onFailure { log.warn("hub_send mediation failed for agent={}: {}", agentId, it.message) }
+                        }
+                }
 
                 if (masked is ResultEvent) {
                     // Turn end: mediate to the hub spoke (Gate #1/#2/#6 live in the router/hub)…
