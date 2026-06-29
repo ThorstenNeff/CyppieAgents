@@ -22,13 +22,14 @@ import java.io.File
  * **real mediation path** (PO decomposes → worker in its worktree → commit/push to the sandbox → status).
  *
  * **Hard safety rules (Doc 05 / [[auth-credentials-policy]]):**
- *  - **No autonomous / env / self-set key.** The harness never *invents* a key, and [requireNoApiKeyInEnv]
- *    fails closed if `ANTHROPIC_API_KEY` is in the env. The key, **if any**, is supplied **out-of-band by
- *    the human**: CYP-110 creds-go uses Option ii — a single-run read of `ANTHROPIC_API_KEY` from the
+ *  - **Auth direction is structural, fail-closed to subscription** ([apiKeyModeSelected]). The default
+ *    (no `RB1_AUTH`, or anything but `apikey`) runs on subscription OAuth and **ignores any key in
+ *    local.properties** — a leftover key can NEVER hijack a subscription run onto API billing. Only an
+ *    explicit `RB1_AUTH=apikey` activates the single-run bridge that reads `ANTHROPIC_API_KEY` from the
  *    human's **gitignored `local.properties`** ([readSubscriptionKeyFromLocalProperties]) into [Secrets]
  *    in-memory only (never persisted to the CYP-96 store, never logged/committed; masked via SecretMasker
- *    at every event egress as usual). Absent → `claude` falls back to its subscription OAuth login
- *    (`~/.claude`) / the CYP-96 store. If headless can't authenticate either way → it aborts and reports.
+ *    at every event egress). The harness never *invents* a key; [requireNoApiKeyInEnv] fails closed if
+ *    `ANTHROPIC_API_KEY` is in the env. If headless can't authenticate either way → it aborts and reports.
  *  - **CLI pinned** ([ConnectorDefaults.PINNED_CLI_VERSION]); [assertPinnedClaudeCli] checks the runtime.
  *  - **RUN_RB1=1-gated** ([rb1Enabled]); never in the default gate. The single quota-aware live run fires
  *    only on the human/PO creds-go — no autonomous live run.
@@ -37,6 +38,15 @@ object Rb1RealAgentHarness {
 
     /** True only when the operator has explicitly opted into the (quota-consuming) real run. */
     fun rb1Enabled(): Boolean = System.getenv("RUN_RB1") == "1"
+
+    /**
+     * Auth mode for the run, **fail-closed to subscription** (CYP-110 hardening). The *direction* steers
+     * structurally, NOT the presence of a key: only an explicit `RB1_AUTH=apikey` activates the
+     * local.properties key bridge. The default (`subscription`, or any other value) keeps the bridge OFF
+     * and ignores a stray local.properties key — so a leftover key can never hijack a subscription run onto
+     * API billing. (i) Abo-only → no flag → key ignored; (ii) API-key → `RB1_AUTH=apikey` → bridge active.
+     */
+    fun apiKeyModeSelected(): Boolean = System.getenv("RB1_AUTH").equals("apikey", ignoreCase = true)
 
     /**
      * Fail-closed: RB1 runs on subscription OAuth, never an API key. If `ANTHROPIC_API_KEY` is present we
@@ -120,10 +130,17 @@ object Rb1RealAgentHarness {
     fun bootRealAgentPlatform(gitRoot: File, repoUrl: String, scope: CoroutineScope): BootedPlatform {
         requireNoApiKeyInEnv() // the key path is local.properties (out-of-band), never the env
         val config = sandboxConfig(repoUrl)
-        // CYP-110 creds-go (Option ii): the one-run subscription key comes from the human's gitignored
-        // local.properties (never persisted/logged/committed). Absent → null → OAuth / CYP-96 store fallback.
-        val key = readSubscriptionKeyFromLocalProperties()
-        println("RB1: subscription key ${if (key != null) "present (masked) — one-run only" else "absent → OAuth/store fallback"}")
+        // CYP-110 hardening: the auth DIRECTION steers structurally. Only RB1_AUTH=apikey activates the
+        // one-run local.properties key bridge (Option ii); the fail-closed default (subscription) ignores a
+        // present key and runs on OAuth/Abo (Option i). The key, when read, is in-memory only — never
+        // persisted/logged/committed.
+        val key = if (apiKeyModeSelected()) readSubscriptionKeyFromLocalProperties() else null
+        val authNote = when {
+            !apiKeyModeSelected() -> "subscription/OAuth (default; any local.properties key IGNORED)"
+            key != null -> "apikey mode: key present (masked) — one-run only"
+            else -> "apikey mode requested but NO key in local.properties → OAuth fallback"
+        }
+        println("RB1: auth = $authNote")
         val secrets = Secrets(
             agentTokens = config.agents.associate { "tok-${it.id}" to it.id },
             operatorToken = "tok-operator",
