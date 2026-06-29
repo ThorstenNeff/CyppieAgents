@@ -14,6 +14,7 @@ import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
@@ -43,6 +44,7 @@ class BootConnectorInjectionTest {
 
     /** A connector test double with caller-chosen tri-state caps and no real process (no spawn). */
     private class FakeConnector(override val capabilities: Capabilities) : Connector {
+        override val provider: ProviderInfo = ProviderInfo.CLAUDE
         val opened = mutableListOf<String>()
         override fun open(agentId: String): ConnectorSession {
             opened += agentId

@@ -74,6 +74,8 @@ class BootedPlatform(
     val channelShares: com.tneff.cyppieagents.comm.ChannelShareStore,
     /** Per-agent connector capabilities (CYP-121/122): fills `GET /api/agents` + gates the Mediator. */
     val capabilityRegistry: com.tneff.cyppieagents.connector.CapabilityRegistry,
+    /** Per-agent connector provider (E2.1 / CYP-137): fills the `Agent.provider` of `GET /api/agents`. */
+    val providerRegistry: com.tneff.cyppieagents.connector.ProviderRegistry,
     /** Mutable per-agent connector config incl. connectorKind (CYP-97/122): the connector-opt-in source. */
     val agentConfigs: AgentConfigRegistry,
     /** The Event-Log write tap (CYP-35): operator actions (e.g. the CYP-122 `connector.optin`) audit through it. */
@@ -168,6 +170,8 @@ class BootOrchestrator(
         // Built empty here so the projector + stall detector can hold a live `::get` resolver; reads
         // happen at event-time (after boot populates it). Connector A = all-AVAILABLE → no gating.
         val capabilityRegistry = CapabilityRegistry()
+        // E2.1 / CYP-137: per-agent provider, populated below from the connector (like capabilities).
+        val providerRegistry = com.tneff.cyppieagents.connector.ProviderRegistry()
         // S12 / CYP-83: events carry the active project, single-sourced from config (not a constant).
         // CYP-121: the projector gates tool.* (toolGranularity) and context.usage (structuredUsage).
         val eventProjector = EventProjector(bander, projectId = config.projectId, capabilities = capabilityRegistry::get)
@@ -241,6 +245,7 @@ class BootOrchestrator(
         for (agent in config.agents) {
             val caps = connector.capabilitiesFor(agent.id)
             capabilityRegistry.set(agent.id, caps)
+            providerRegistry.set(agent.id, connector.providerFor(agent.id)) // CYP-137: per-agent provider
             for (dim in CapabilityGate.degraded(caps)) {
                 eventRecorder.record(
                     EventDraft(
@@ -334,7 +339,7 @@ class BootOrchestrator(
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
-            channelShares, capabilityRegistry, agentConfigs, eventRecorder, connectorOptIn,
+            channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
         )
     }
 }

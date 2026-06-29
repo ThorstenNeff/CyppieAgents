@@ -11,6 +11,7 @@ import com.tneff.cyppieagents.model.AssistantEvent
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.ResultEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
@@ -78,6 +79,9 @@ class ClaudeCodeConnector(
      *                                 ([MediationRouter] + [sendTurn]), so the agent reaches the hub (05 §2).
      */
     override val capabilities: Capabilities = STREAM_JSON_CAPABILITIES
+
+    // E2.1 / CYP-137: Connector A's provider (tool) — Claude (CLI / stream-json realization).
+    override val provider: ProviderInfo = ProviderInfo.CLAUDE
 
     override fun open(agentId: String): ConnectorSession = open(agentId, agentId)
 

@@ -42,6 +42,7 @@ fun Application.installPlatform(booted: BootedPlatform) {
             booted.hub, booted.state, booted.tokenRegistry, booted.lifecycle,
             capabilitiesOf = booted.capabilityRegistry::get,
             connectorKindOf = booted.agentConfigs::connectorKindOf,
+            providerOf = booted.providerRegistry::get, // CYP-137: surface the provider in GET /api/agents
         )
         // Production auth: only the operator token, or an agent watching its own session, is allowed.
         agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
