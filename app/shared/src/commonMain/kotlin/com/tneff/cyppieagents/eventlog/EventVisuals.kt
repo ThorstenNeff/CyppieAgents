@@ -60,6 +60,9 @@ fun EventType.groupGlyph(): String = when (this) {
     // Mediator-Aufsicht supervision family (07/S11, CYP-64). Provisional glyph — a non-blocking
     // UIUX/Dev polish may refine it; severity (warn/info/error) still carries the alarm, not this.
     EventType.STALL_SUSPECTED, EventType.NUDGE_SENT, EventType.STALL_RECOVERED, EventType.STALL_ESCALATED -> "☂"
+    // Connector fidelity degradation (Doc 10 §3, CYP-121). Provisional glyph; severity (warn) carries
+    // the signal, this is the scan aid. CYP-119/123 UIUX may refine it (per-agent degradation surface).
+    EventType.CAPABILITY_DEGRADED -> "▽"
     EventType.LOG_DROPPED -> "⚠"
     EventType.UNKNOWN -> "ⓘ"
 }

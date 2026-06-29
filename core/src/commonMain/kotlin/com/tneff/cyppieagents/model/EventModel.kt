@@ -112,6 +112,14 @@ enum class EventType(val wire: String) {
     STALL_ESCALATED("stall.escalated"),
 
     /**
+     * Connector fidelity degradation (Doc 10 §3 / CYP-121): a connector declared a capability dimension
+     * as not AVAILABLE, so the Mediator function it feeds is degraded/off **for that agent** — logged so
+     * the gap is visible, never silently pretended-available ("ehrlich degradiert, nie vorgetäuscht").
+     * Content-free: detail carries only `{dimension, status}`. First-class warn (CYP-64 pattern).
+     */
+    CAPABILITY_DEGRADED("capability.degraded"),
+
+    /**
      * Telemetry self-report: the bounded queue dropped events under back-pressure (PRD §3.3, PO
      * decision CYP-44). Emitted by the **writer** with a cumulative count so a gap in the log is
      * visible in the same telemetry the operator watches — never silently swallowed.

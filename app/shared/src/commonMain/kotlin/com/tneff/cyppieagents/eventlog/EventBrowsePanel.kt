@@ -250,6 +250,8 @@ private val TYPE_CYCLE = listOf(
     EventType.TURN_START, EventType.TOOL_CALL, EventType.RESULT_FINAL, EventType.ERROR_RATELIMIT,
     // Mediator-Aufsicht supervision family (07/S11, CYP-64) — makes the stall loop filterable in Browse.
     EventType.STALL_SUSPECTED, EventType.NUDGE_SENT, EventType.STALL_RECOVERED, EventType.STALL_ESCALATED,
+    // Connector fidelity degradation (Doc 10 §3, CYP-121) — operators can filter to the degraded agents.
+    EventType.CAPABILITY_DEGRADED,
 )
 
 @Composable
