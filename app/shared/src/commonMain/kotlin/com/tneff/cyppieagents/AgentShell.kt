@@ -69,6 +69,7 @@ import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.settings.ConfigHttpRepository
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
+import com.tneff.cyppieagents.net.sharedWsHttpClient
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -139,7 +140,8 @@ fun AgentShell(
 
     // One shared WS+HTTP client (created here — the agent-management REST client below needs it). Closed
     // when the shell leaves composition. The JVM/desktop engine (CIO) is wired; other engines = CYP-27.
-    val httpClient = remember { HttpClient { install(WebSockets) } }
+    // CYP-115: keep-alive pinging (sharedWsHttpClient) so idle comm/lifecycle sockets aren't Darwin-idle-closed.
+    val httpClient = remember { sharedWsHttpClient() }
     DisposableEffect(Unit) { onDispose { httpClient.close() } }
 
     // Agent-management VM (CYP-86/87/88): now the LIVE REST client against the CYP-97 endpoints (stub→real
