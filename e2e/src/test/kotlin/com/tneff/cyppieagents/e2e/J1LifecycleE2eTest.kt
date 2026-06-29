@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.e2e
 
+import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.boot.ProjectDeleteReceipt
 import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.CreateProjectRequest
@@ -48,7 +49,11 @@ class J1LifecycleE2eTest {
         asOperator().use { it.get("$baseUrl/api/projects").body() }
 
     private suspend fun E2ePlatform.activeEventProjectIds(): List<String> =
-        asOperator().use { it.get("$baseUrl/api/events").body<EventPage>().events.map { e -> e.projectId } }
+        asOperator().use {
+            // CYP-108 retrofit: same raw-byte needle helper — no foreign "beta" id and no raw beta key in alpha scope.
+            val text = it.get("$baseUrl/api/events").assertNoNeedles("J1 events (active=alpha)", foreignProjectIds = setOf("beta"), secrets = setOf("beta-secret-key-1234"))
+            CommJson.decodeFromString<EventPage>(text).events.map { e -> e.projectId }
+        }
 
     @Test
     fun create_operator_addsB_201_listShowsBoth() = runBlocking {
