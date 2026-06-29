@@ -31,7 +31,15 @@ import io.ktor.server.routing.routing
  * Filters arrive as **query params** (not a JSON body, mirroring `CommApi.messages`); the time window
  * is half-open `[since, until)`; paging is stable over `seq` (`afterSeq` cursor + `limit`).
  */
-fun Route.eventRoutes(sink: EventSink, registry: TokenRegistry, activeProjectId: () -> String?) {
+fun Route.eventRoutes(
+    sink: EventSink,
+    registry: TokenRegistry,
+    activeProjectId: () -> String?,
+    // S17 / CYP-94: the operator's authorized project set (MVP = all of the registry's projects). The
+    // override `?projectId=` is honored only for ids in this set; defaulted empty so legacy installs
+    // never honor an override (forced-active stays the only behavior).
+    authorizedProjects: () -> Set<String> = { emptySet() },
+) {
     route("/api/events") {
         get {
             call.requireOperator(registry) // fail-closed before any query runs
@@ -44,9 +52,10 @@ fun Route.eventRoutes(sink: EventSink, registry: TokenRegistry, activeProjectId:
                 until = q["until"]?.let { parseLong(it, "until") },
                 correlationId = q["correlationId"],
                 sessionId = q["sessionId"],
-                // S13 / CYP-102: server-side active-project scope (NOT a client param) — the operator
-                // browses only the active project's events; a foreign-project event can't be reached.
-                projectId = activeProjectId(),
+                // S13 / CYP-102 default = forced-active; S17 / CYP-94 operator-only override resolved here
+                // (single resolver, also used by /ws/events): `?projectId=<id>|all`, bounded to the
+                // operator's authorized set, fail-closed to active on anything unauthorized.
+                projectId = resolveEventScope(q["projectId"], activeProjectId(), authorizedProjects()),
             )
             val afterSeq = q["afterSeq"]?.let { parseLong(it, "afterSeq") }
             val limit = (q["limit"]?.let { parseInt(it, "limit") } ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
@@ -61,7 +70,12 @@ fun Route.eventRoutes(sink: EventSink, registry: TokenRegistry, activeProjectId:
  * ALWAYS passes the registry active-pointer resolver. [activeProjectId] defaults to unscoped here so
  * legacy single-store event tests are unaffected; production is never unscoped (CYP-102).
  */
-fun Application.installEvents(sink: EventSink, registry: TokenRegistry, activeProjectId: () -> String? = { null }) {
+fun Application.installEvents(
+    sink: EventSink,
+    registry: TokenRegistry,
+    activeProjectId: () -> String? = { null },
+    authorizedProjects: () -> Set<String> = { emptySet() },
+) {
     install(ContentNegotiation) { json(CommJson) }
     install(StatusPages) {
         exception<ApiException> { call, cause ->
@@ -71,7 +85,7 @@ fun Application.installEvents(sink: EventSink, registry: TokenRegistry, activePr
             call.respond(HttpStatusCode.InternalServerError, ApiErrorBody(ApiError("internal", "internal error")))
         }
     }
-    routing { eventRoutes(sink, registry, activeProjectId) }
+    routing { eventRoutes(sink, registry, activeProjectId, authorizedProjects) }
 }
 
 private const val DEFAULT_LIMIT = 100

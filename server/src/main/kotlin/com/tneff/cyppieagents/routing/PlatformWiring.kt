@@ -43,9 +43,18 @@ fun Application.installPlatform(booted: BootedPlatform) {
         agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
         // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
         // project (resolved server-side from the registry pointer; a switch re-scopes without restart).
-        eventRoutes(booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId)
-        // /ws/events — operator-only live-tail of the Event-Log (CYP-40), fail-closed; CYP-102 active-scoped.
-        eventSocket(booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId)
+        // CYP-94: the operator's authorized set (MVP = all of the registry's projects) bounds the
+        // optional `?projectId=<id>|all` cross-project read override; default stays forced-active.
+        eventRoutes(
+            booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
+            authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
+        )
+        // /ws/events — operator-only live-tail of the Event-Log (CYP-40), fail-closed; CYP-102 active-scoped,
+        // CYP-94 operator-only SubscribeEvents.projectId override (same authorized-set bound).
+        eventSocket(
+            booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
+            authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
+        )
         // CYP-73: agent lifecycle controls (operator-gated) + content-free status feed (participant-gated).
         lifecycleRoutes(booted.lifecycle, booted.tokenRegistry)
         lifecycleSocket(booted.lifecycle, booted.tokenRegistry)

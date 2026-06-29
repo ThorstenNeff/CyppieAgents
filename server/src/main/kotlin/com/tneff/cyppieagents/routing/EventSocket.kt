@@ -30,8 +30,15 @@ import kotlinx.coroutines.launch
  * `/ws/comm`); [SubscribeEvents] only narrows the operator's own view.
  */
 // [activeProjectId] defaults to unscoped for legacy single-store WS tests; production (installPlatform)
-// always passes the registry active-pointer resolver (CYP-102).
-fun Route.eventSocket(sink: EventSink, registry: TokenRegistry, activeProjectId: () -> String? = { null }) {
+// always passes the registry active-pointer resolver (CYP-102). [authorizedProjects] (S17 / CYP-94) is
+// the operator's own project set — bounds the optional cross-project read override; defaulted empty so
+// legacy installs never honor an override.
+fun Route.eventSocket(
+    sink: EventSink,
+    registry: TokenRegistry,
+    activeProjectId: () -> String? = { null },
+    authorizedProjects: () -> Set<String> = { emptySet() },
+) {
     webSocket("/ws/events") {
         val token = call.bearerToken() ?: call.request.queryParameters["token"]
         if (token == null) {
@@ -44,12 +51,13 @@ fun Route.eventSocket(sink: EventSink, registry: TokenRegistry, activeProjectId:
         // S13 / CYP-102: resolve the active project server-side at connect time. The SINGLE scope
         // chokepoint is the in-process [filter] (we subscribe to ALL and enforce here — no second,
         // redundant guard on `subscribe` that could mask a regression / drift). The base pins the active
-        // project when the client hasn't narrowed; the re-pin below keeps the project scope when the
-        // client DOES narrow (a SubscribeEvents may adjust other axes but NEVER widen past the project).
-        // A switch re-scopes on reconnect (the UI re-subscribes on project switch — per-stream live
-        // re-scope is S17 with hub-instancing).
-        val project = activeProjectId()
-        var filter = EventFilter(projectId = project) // base scope — the sole guard until a client narrow
+        // project when the client hasn't narrowed; the re-pin below keeps the scope when the client DOES
+        // narrow. S17 / CYP-94: an operator's `SubscribeEvents.projectId` override is resolved through the
+        // SAME `resolveEventScope` as REST — bounded to the operator's authorized set, fail-closed; with
+        // no override it stays forced-active (CYP-102 unchanged). This WS is already operator-only (above).
+        val active = activeProjectId()
+        val authorized = authorizedProjects()
+        var filter = EventFilter(projectId = resolveEventScope(null, active, authorized)) // base = forced-active
 
         suspend fun emit(event: EventsWsServerEvent) =
             send(Frame.Text(CommJson.encodeToString(EventsWsServerEvent.serializer(), event)))
@@ -63,8 +71,11 @@ fun Route.eventSocket(sink: EventSink, registry: TokenRegistry, activeProjectId:
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val msg = runCatching { CommJson.decodeFromString<EventsWsClientEvent>(frame.readText()) }.getOrNull()
-                    // Re-pin the project scope so a client narrow can't widen past the active project.
-                    if (msg is SubscribeEvents) filter = msg.toEventFilter().copy(projectId = project)
+                    // Re-pin scope through the resolver: a client narrow keeps forced-active unless it
+                    // carries an AUTHORIZED override; an unauthorized/garbage projectId falls back to active.
+                    if (msg is SubscribeEvents) {
+                        filter = msg.toEventFilter().copy(projectId = resolveEventScope(msg.projectId, active, authorized))
+                    }
                 }
             }
         } finally {

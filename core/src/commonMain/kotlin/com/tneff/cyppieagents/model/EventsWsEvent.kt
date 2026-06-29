@@ -40,4 +40,12 @@ data class SubscribeEvents(
     val sessionId: String? = null,
     val since: Long? = null,
     val until: Long? = null,
+    /**
+     * Operator-only cross-project read override (S17 / CYP-94). `null` = no override → the live-tail
+     * stays forced to the active project (CYP-102 default, unchanged). `"all"` = all the operator's own
+     * projects; a concrete projectId = another of the operator's projects. The server honors this ONLY
+     * on the operator-gated `/ws/events` path and ONLY for projects in the operator's authorized set
+     * (else it falls back to the active project, fail-closed) — a client can never widen past authorization.
+     */
+    val projectId: String? = null,
 ) : EventsWsClientEvent
