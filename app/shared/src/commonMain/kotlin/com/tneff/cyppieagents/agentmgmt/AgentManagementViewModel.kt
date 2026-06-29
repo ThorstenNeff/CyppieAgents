@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.model.WorktreeFate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.Role
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +24,12 @@ data class AddForm(
     val persona: String = "",
     val launch: String = "",
     val worktree: String = "",
+    /**
+     * Connector choice for the create (CYP-126 / `NewAgentSpec.connectorKind`). Default `STREAM_JSON` (A) — B
+     * is an opt-in the connector picker drives through its ack-gated dialog before this is ever set to MCP.
+     * The create carries it (no connector-endpoint call for add).
+     */
+    val connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON,
 )
 
 /** Edit-dialog fields (CYP-88). id/worktree are identity/path-defining and intentionally NOT here. */
@@ -137,6 +144,13 @@ class AgentManagementViewModel(
     fun setAddLaunch(v: String) = _state.update { it.copy(addForm = it.addForm.copy(launch = v)) }
     fun setAddWorktree(v: String) = _state.update { it.copy(addForm = it.addForm.copy(worktree = v)) }
 
+    /**
+     * CYP-126: the connector picker (its ack-gated opt-in dialog) hands the settled kind here so the create
+     * carries it. The picker is the ONLY caller (operator UI, B behind the ack) — never external input.
+     */
+    fun setAddConnectorKind(kind: ConnectorKind) =
+        _state.update { it.copy(addForm = it.addForm.copy(connectorKind = kind)) }
+
     fun confirmAdd() {
         val s = _state.value
         if (!s.canConfirmAdd) return // fail-closed + guardrail (server also enforces)
@@ -148,6 +162,9 @@ class AgentManagementViewModel(
                         id = f.id.trim(), name = f.name.trim(), role = f.role,
                         persona = f.persona.ifBlank { null }, launch = f.launch.ifBlank { null },
                         worktree = f.worktree.ifBlank { null },
+                        // CYP-126: the create carries the connector (A by default; B only after the picker's
+                        // ack-gated opt-in). No connector-endpoint call for add — the spec carries the choice.
+                        connectorKind = f.connectorKind,
                     ),
                 )
             }.onSuccess {

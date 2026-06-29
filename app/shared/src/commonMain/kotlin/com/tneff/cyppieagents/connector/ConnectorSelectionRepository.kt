@@ -1,11 +1,15 @@
 package com.tneff.cyppieagents.connector
 
 /**
- * Write-seam for an operator's connector choice (CYP-123, spec §3 — Connector-Auswahl + Opt-in B). Stubbed
- * until CYP-122: the real persistence rides the **agent-spec** (`NewAgentSpec`/`AgentEdit` — the CYP-86 line),
- * not a parallel store; the **server is authoritative** and re-checks the operator gate, re-verifies the B
- * acknowledgment, and audits B activations (spec §3.3, fail-closed). [agentId] is **nullable** for the add
- * dialog (no id yet — the choice is captured; the real binding lands at CYP-122).
+ * Write-seam for an operator's connector choice on an **existing** agent (CYP-123/CYP-126, spec §3 —
+ * Connector-Auswahl + Opt-in B). The live [ConnectorSelectionHttpRepository] hits the dedicated, audited
+ * `POST /api/agents/{id}/connector` endpoint (CYP-122); the **server is authoritative** and re-checks the
+ * operator gate, re-verifies the B acknowledgment, and audits B activations (spec §3.3, fail-closed).
+ *
+ * [agentId] is **nullable** only to keep the contract uniform; the edit/opt-in path always has a concrete id
+ * (the live impl throws `agent_required` on null). The **add** case does NOT reach this port — the create
+ * carries the connector on `NewAgentSpec.connectorKind` (no connector-endpoint call), so an add picker captures
+ * the kind into the add-form rather than calling [activate].
  *
  * Security (spec §3.3/§5, load-bearing): there is **no** path that activates a connector from message/agent
  * input — activation is exclusively the operator's deliberate UI act ([ConnectorSelectionViewModel.selectKind]

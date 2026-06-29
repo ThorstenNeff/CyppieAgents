@@ -91,9 +91,13 @@ import org.jetbrains.compose.resources.stringResource
 fun AgentManagementPanel(
     viewModel: AgentManagementViewModel,
     modifier: Modifier = Modifier,
-    // CYP-123: the connector picker (+ B opt-in dialog), host-anchored inside the add/edit dialogs (spec §3.1).
-    // Default no-op = no regress; the dialogs are already operator-gated so the picker inherits that gate (§3.3).
-    connectorPickerSlot: @Composable () -> Unit = {},
+    // CYP-123/CYP-126: the connector picker (+ B opt-in dialog), host-anchored inside the add/edit dialogs
+    // (spec §3.1). Two context-bound slots so the picker binds to the right write target (CYP-126): the ADD
+    // slot feeds NewAgentSpec.connectorKind (no endpoint); the EDIT slot is bound to the specific agent and
+    // writes the dedicated connector endpoint. Default no-op = no regress; the dialogs are already
+    // operator-gated so the picker inherits that gate (§3.3).
+    addConnectorPickerSlot: @Composable () -> Unit = {},
+    editConnectorPickerSlot: @Composable (Agent) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -127,9 +131,9 @@ fun AgentManagementPanel(
         }
     }
 
-    if (state.addOpen) AddDialog(state, viewModel, connectorPickerSlot)
+    if (state.addOpen) AddDialog(state, viewModel, addConnectorPickerSlot)
     state.removeTarget?.let { RemoveDialog(it, state, viewModel) }
-    state.editTarget?.let { EditDialog(it, state, viewModel, connectorPickerSlot) }
+    state.editTarget?.let { EditDialog(it, state, viewModel, editConnectorPickerSlot) }
 }
 
 @Composable
@@ -173,7 +177,7 @@ private fun AgentRow(agent: Agent, state: AgentMgmtUiState, viewModel: AgentMana
 private fun AddDialog(
     state: AgentMgmtUiState,
     viewModel: AgentManagementViewModel,
-    connectorPickerSlot: @Composable () -> Unit = {},
+    addConnectorPickerSlot: @Composable () -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = viewModel::closeAdd,
@@ -232,8 +236,9 @@ private fun AddDialog(
                 // Disclosure: creating does NOT spawn — start is the CYP-73 lifecycle (no second mechanism).
                 TonedHint(stringResource(Res.string.agent_add_spawn_hint), HintTone.INFO, AgentMgmtTags.ADD_SPAWN_HINT)
 
-                // CYP-123: connector picker (+ B opt-in). Add context → no restart hint (fresh spawn, spec §3.4).
-                connectorPickerSlot()
+                // CYP-123/CYP-126: connector picker (+ B opt-in). Add context → feeds NewAgentSpec.connectorKind,
+                // no connector-endpoint call, no restart hint (fresh spawn, spec §3.4).
+                addConnectorPickerSlot()
 
                 val err = when {
                     state.addIdCollision -> Res.string.agent_add_id_exists
@@ -312,7 +317,7 @@ private fun EditDialog(
     target: Agent,
     state: AgentMgmtUiState,
     viewModel: AgentManagementViewModel,
-    connectorPickerSlot: @Composable () -> Unit = {},
+    editConnectorPickerSlot: @Composable (Agent) -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = viewModel::closeEdit,
@@ -352,9 +357,11 @@ private fun EditDialog(
                     stringResource(Res.string.agent_edit_id_locked_hint),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                // CYP-123: connector picker (+ B opt-in). The picker itself renders the reused amber
-                // "restart to apply" hint in its edit context (showEffectHint=true; spec §3.4).
-                connectorPickerSlot()
+                // CYP-123/CYP-126: connector picker (+ B opt-in), bound to THIS agent. Writes the dedicated
+                // connector endpoint for target.id; an existing B agent shows B selected (the truth), and a
+                // change surfaces the reused amber "restart to apply" hint (spec §3.4). Without this binding a
+                // B agent opened in Edit would silently reset to A — the bug CYP-126 fixes.
+                editConnectorPickerSlot(target)
                 // CYP-101 [Mittel 1]: a disabled confirm needs a visible reason BEFORE the action (like
                 // Add/Remove). The only PO giving up the role and PO-taken-elsewhere are distinct messages;
                 // a server error shows here too. (po-taken / last-PO are mutually exclusive — role is PO xor not.)

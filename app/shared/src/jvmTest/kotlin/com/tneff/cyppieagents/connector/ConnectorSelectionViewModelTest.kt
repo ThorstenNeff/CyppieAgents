@@ -125,6 +125,65 @@ class ConnectorSelectionViewModelTest {
         assertTrue(vm.state.value.optInDialogOpen) // stays open to show the error
     }
 
+    /**
+     * CYP-126 [Mittel]: an existing **B** agent opened in edit (initialKind = MCP) shows B as the settled draft
+     * — proving a B agent is NOT silently reset to A. This is the **truth** being reflected, not a fresh opt-in:
+     * no activation is recorded and no "changed" restart hint fires (draft == initial). [confirmOptIn] is still
+     * the only path that *changes* to B. (Mutation: ignore initialKind / hardcode STREAM_JSON → RED.)
+     */
+    @Test
+    fun cyp126_existingBAgentInEdit_draftInitsToMcp_notResetToA() {
+        val repo = StubConnectorSelectionRepository()
+        val vm = ConnectorSelectionViewModel(
+            repo, agentId = "frontend", editable = true,
+            initialKind = ConnectorKind.MCP,
+            scope = CoroutineScope(Dispatchers.Unconfined),
+        )
+        assertEquals(ConnectorKind.MCP, vm.state.value.draftKind)
+        assertEquals(ConnectorKind.MCP, vm.state.value.initialKind)
+        assertFalse(vm.state.value.optInDialogOpen)
+        assertTrue(repo.activations.isEmpty()) // truth reflected, no fresh opt-in/activation
+        assertFalse(vm.state.value.showEffectHint) // draft == initial ⇒ nothing changed yet
+    }
+
+    /**
+     * CYP-126 ADD context: the create carries the connector (NewAgentSpec) — B at creation STILL goes through the
+     * ack-gated opt-in, but the settled kind is captured via the callback with **no** connector-endpoint call,
+     * and the edit-only "restart to apply" hint is suppressed (fresh spawn).
+     */
+    @Test
+    fun cyp126_addContext_bGoesThroughAck_capturedViaCallback_noEndpointCall() {
+        val repo = StubConnectorSelectionRepository()
+        val chosen = mutableListOf<ConnectorKind>()
+        val vm = ConnectorSelectionViewModel(
+            repo, agentId = null, editable = true,
+            onKindChosen = { chosen.add(it) },
+            scope = CoroutineScope(Dispatchers.Unconfined),
+        )
+        vm.selectKind(ConnectorKind.MCP)
+        assertTrue(vm.state.value.optInDialogOpen)
+        vm.confirmOptIn() // no ack → fail-closed: nothing captured
+        assertTrue(chosen.none { it == ConnectorKind.MCP })
+        vm.setRiskAcknowledged(true)
+        vm.confirmOptIn()
+        assertEquals(ConnectorKind.MCP, chosen.last())
+        assertEquals(ConnectorKind.MCP, vm.state.value.draftKind)
+        assertTrue(repo.activations.isEmpty()) // add never calls the connector endpoint (the create carries it)
+        assertFalse(vm.state.value.showEffectHint) // no restart hint in add context (fresh spawn)
+    }
+
+    /** CYP-126: in edit context, changing an existing A agent to B surfaces the "saved ≠ active — restart" hint. */
+    @Test
+    fun cyp126_editContext_changeFromInitial_showsEffectHint() {
+        val (vm, _) = vm()
+        assertFalse(vm.state.value.showEffectHint) // initialKind = STREAM_JSON, draft = STREAM_JSON
+        vm.selectKind(ConnectorKind.MCP)
+        vm.setRiskAcknowledged(true)
+        vm.confirmOptIn()
+        assertEquals(ConnectorKind.MCP, vm.state.value.draftKind)
+        assertTrue(vm.state.value.showEffectHint) // draft (MCP) != initial (STREAM_JSON)
+    }
+
     /** cancelOptIn closes the dialog, resets the ack, and leaves the draft at A. */
     @Test
     fun cancel_leavesDraftA() {
