@@ -7,6 +7,7 @@ import com.tneff.cyppieagents.model.AclMatrix
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
+import com.tneff.cyppieagents.model.ProjectScope
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.routing.ConflictException
 
@@ -177,9 +178,18 @@ class HubState(
      * Ids of the channels the PO is the hub of — every hub-and-spoke spoke ([ChannelKind.HUB]).
      * Computed from the channel kind (set at boot, immutable via the API) rather than current
      * membership, so the membership vector is in scope even though no endpoint mutates members.
+     *
+     * **S13 / CYP-111 — scoped to the ACTIVE project.** The PO-lockout guard ([setAcl]) compares these
+     * ids against the candidate [AclMatrix], which is ACTIVE-scoped; without this filter a *foreign*
+     * project's hub channel (e.g. `po-backend` while project A is active) is absent from that matrix and
+     * reads as a lockout → a false 409 `po_lockout_protected` on EVERY ACL edit once ≥2 projects exist.
+     * Filtering by the active project makes the comparison like-for-like (and excludes cross-project
+     * shared-inbound channels, which the active PO is not the hub of). The guard stays sharp for a real
+     * lockout in the active project.
      */
     fun poHubChannelIds(): Set<String> =
-        channels.filter { it.kind == ChannelKind.HUB }.map { it.id }.toSet()
+        channels.filter { it.kind == ChannelKind.HUB && ProjectScope.permits(it.projectId, activeProjectId) }
+            .map { it.id }.toSet()
 
     /** The agent's hub-and-spoke channel (`po-<agentId>`), if present and the agent is a member. */
     fun spokeChannelFor(agentId: String): String? =
