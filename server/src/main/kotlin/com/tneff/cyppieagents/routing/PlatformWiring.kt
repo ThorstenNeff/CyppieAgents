@@ -25,7 +25,7 @@ import io.ktor.server.plugins.BadRequestException as KtorBadRequestException
  */
 fun Application.installPlatform(booted: BootedPlatform) {
     install(ContentNegotiation) { json(CommJson) }
-    install(WebSockets)
+    install(WebSockets) { maxFrameSize = MessageInput.MAX_FRAME_BYTES } // CYP-143: protocol backstop on inject frames
     install(StatusPages) {
         exception<ApiException> { call, cause ->
             call.respond(cause.status, ApiErrorBody(ApiError(cause.code, cause.message)))

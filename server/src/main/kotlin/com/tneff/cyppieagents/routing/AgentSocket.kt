@@ -51,7 +51,7 @@ fun Application.installAgentSocket(
     sessions: ConnectorSessions,
     authorize: (ApplicationCall) -> Boolean = { false },
 ) {
-    install(WebSockets)
+    install(WebSockets) { maxFrameSize = MessageInput.MAX_FRAME_BYTES } // CYP-143: protocol backstop
     routing { agentSocket(sessions, authorize) }
 }
 
@@ -85,10 +85,17 @@ fun Route.agentSocket(
             }
         }
         try {
-            // Client → Server: each text frame is a UserTurn; inject it.
+            // Client → Server: each text frame is a UserTurn; validate (CYP-143) then inject it.
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val turn = CommJson.decodeFromString<UserTurn>(frame.readText())
+                    try {
+                        MessageInput.requireValidBody(turn.text)
+                    } catch (e: ApiException) {
+                        // CYP-143: reject an oversized/blank inject fail-closed — never drive the agent with it.
+                        close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, e.message))
+                        return@webSocket
+                    }
                     session.sendTurn(turn)
                 }
             }
