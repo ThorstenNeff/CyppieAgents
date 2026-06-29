@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.connector
 
 import com.tneff.cyppieagents.model.Capabilities
+import com.tneff.cyppieagents.model.ConnectorTrust
 import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
@@ -62,6 +63,18 @@ interface Connector {
     /** The provider for a SPECIFIC agent (CYP-137). Defaults to the connector's single [provider]; the
      *  per-agent [com.tneff.cyppieagents.boot.ConnectorRouter] overrides it to the serving connector's. */
     fun providerFor(agentId: String): ProviderInfo = provider
+
+    /**
+     * The trust level of this connector source (E2.4 / CYP-140). Defaults to **LOCAL** — every connector
+     * we spawn is our code. Only the E2.2 wire connector (a foreign/BYOA source) declares REMOTE, whose
+     * self-declared caps get clamped by [com.tneff.cyppieagents.model.CapabilityCeiling]. A default getter
+     * (not a ctor field) so existing connectors inherit LOCAL with no change.
+     */
+    val trust: ConnectorTrust get() = ConnectorTrust.LOCAL
+
+    /** The trust for a SPECIFIC agent (CYP-140). Defaults to [trust]; the per-agent
+     *  [com.tneff.cyppieagents.boot.ConnectorRouter] overrides it to the serving connector's. */
+    fun trustFor(agentId: String): ConnectorTrust = trust
 
     /**
      * Open a session for [agentId]. **Implementers MUST override this single-arg form** (it is the

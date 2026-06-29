@@ -41,6 +41,11 @@ class ConnectorRouter(
 
     override fun providerFor(agentId: String): ProviderInfo = forAgent(agentId).provider
 
+    // CYP-140: the trust of the connector actually serving the agent (per-agent, like capabilities).
+    override val trust: com.tneff.cyppieagents.model.ConnectorTrust get() = streamJson.trust
+
+    override fun trustFor(agentId: String): com.tneff.cyppieagents.model.ConnectorTrust = forAgent(agentId).trust
+
     override fun open(agentId: String): ConnectorSession = forAgent(agentId).open(agentId)
 
     override fun open(agentId: String, worktreeName: String): ConnectorSession =
