@@ -47,6 +47,11 @@ class AclMatrixSharePermitTest {
         // Only the per-channelId keying gives this; a "owner alpha shared anything → widen all" leaks c2.
         assertFalse(m.canRead("c2", "b1"), "non-shared sibling c2 is unreadable despite the grantee's entry")
         assertEquals(listOf("c"), m.readableChannels("b1").map { it.id }, "grantee reaches ONLY the shared channel")
+        // ENTRIES are NOT OR'd by the share — only the CHANNEL visibility is (the per-agent grantee reads
+        // via its OWN active-stamped entry). Every visible entry carries the ACTIVE project; an owner
+        // (alpha) entry on the shared channel must never egress into beta's scope (CYP-81 egress class).
+        // Mutation: `entries.filter { permits || channelId in shared }` → an alpha entry on c leaks → red.
+        assertTrue(m.entries.all { it.projectId == "beta" }, "no foreign-project AclEntry egresses via the share")
     }
 
     @Test fun nonMember_cannotSeeSharedChannel() {
