@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.connector.ClaudeCodeConnector
+import com.tneff.cyppieagents.connector.Connector
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.events.ContextUsageBander
@@ -101,6 +102,12 @@ class BootOrchestrator(
     private val projectRegistryFile: java.io.File? = null,
     // S17 / CYP-93: the cross-project channel-share gate persists here — out-of-repo, 0600, gitignored.
     private val channelShareFile: java.io.File? = null,
+    // CYP-120: the connector-injection seam. Default (null) builds the real Connector A
+    // (stream-json [ClaudeCodeConnector]) — production boot is unchanged. A test/CYP-121 harness can
+    // inject a `FakeConnector(caps)` with reduced tri-state capabilities to prove Mediator gating +
+    // degradation events, and CYP-122 selects A-vs-B per agent here. The factory receives the
+    // already-built [Connector] so a decorator can wrap it; ignore the arg to fully replace it.
+    private val connectorFactory: ((default: Connector) -> Connector)? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -147,7 +154,9 @@ class BootOrchestrator(
         // The connector reads personaOf at open() to place CLAUDE.md; AgentManagement mutates it.
         val agentConfigs = AgentConfigRegistry(config.agents)
 
-        val connector = ClaudeCodeConnector(
+        // CYP-120: build the real Connector A by default, then pass it through the injection seam.
+        // Prod leaves connectorFactory null → the stream-json connector is used verbatim.
+        val defaultConnector = ClaudeCodeConnector(
             spawner = spawner,
             worktreesRoot = worktrees.worktreesRoot,
             // S15 / CYP-96: resolve the key AT SPAWN per project — operator override (store) → env
@@ -161,6 +170,7 @@ class BootOrchestrator(
             projector = eventProjector,
             personaOf = agentConfigs::personaOf,
         )
+        val connector: Connector = connectorFactory?.invoke(defaultConnector) ?: defaultConnector
 
         // Hook spool tailing (CYP-38 reader + CYP-37 tailer, at-most-once). Started only when a path
         // is configured; bootPlatform supplies it, CYP-43 makes it a config knob.
