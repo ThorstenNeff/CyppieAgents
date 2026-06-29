@@ -123,6 +123,9 @@ class BootOrchestrator(
     private val projectRegistryFile: java.io.File? = null,
     // S17 / CYP-93: the cross-project channel-share gate persists here — out-of-repo, 0600, gitignored.
     private val channelShareFile: java.io.File? = null,
+    // CYP-146: dir for per-agent --mcp-config files (token-bearing) — out-of-repo under the gitRoot, 0600.
+    // Null (tests/dev) → no Hub MCP tools wired into the Connector-A spawn.
+    private val mcpConfigDir: java.io.File? = null,
     // CYP-120: the connector-injection seam. Default (null) builds the real Connector A
     // (stream-json [ClaudeCodeConnector]) — production boot is unchanged. A test/CYP-121 harness can
     // inject a `FakeConnector(caps)` with reduced tri-state capabilities to prove Mediator gating +
@@ -208,6 +211,14 @@ class BootOrchestrator(
 
         // CYP-120: build the real Connector A by default, then pass it through the injection seam.
         // Prod leaves connectorFactory null → the stream-json connector is used verbatim.
+        // CYP-146: the Hub MCP config writer (token-bearing mcp-config, out-of-repo 0600) + the per-agent
+        // token resolver, so a Connector-A spawn exposes `hub_send`. Localhost-bound URL derived from the
+        // hub config. Null mcpConfigDir (tests) → no hub tools wired.
+        val hubMcpUrl = config.hub.url.replace("localhost", "127.0.0.1").trimEnd('/') + "/mcp/hub"
+        val mcpConfigWriter = mcpConfigDir?.let {
+            com.tneff.cyppieagents.connector.HubMcpConfigWriter(it, hubMcpUrl)
+        }
+        val tokenByAgent = secrets.agentTokens.entries.associate { (token, agent) -> agent to token }
         val defaultConnector = ClaudeCodeConnector(
             spawner = spawner,
             worktreesRoot = worktrees.worktreesRoot,
@@ -221,6 +232,8 @@ class BootOrchestrator(
             recorder = eventRecorder,
             projector = eventProjector,
             personaOf = agentConfigs::personaOf,
+            mcpConfigWriter = mcpConfigWriter, // CYP-146: expose hub_send to the Connector-A spawn
+            tokenFor = { tokenByAgent[it] },
         )
         // CYP-122: Connector B (MCP) + per-agent selection. The router picks A vs B by the agent's
         // declared connectorKind at spawn; it IS a Connector so the connectorFactory seam still wraps it.

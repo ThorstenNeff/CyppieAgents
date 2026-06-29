@@ -46,6 +46,9 @@ fun Application.installPlatform(booted: BootedPlatform) {
         )
         // Production auth: only the operator token, or an agent watching its own session, is allowed.
         agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
+        // CYP-146: the in-process Hub MCP server (`POST /mcp/hub`) — exposes `hub_send` to a Connector-A
+        // agent (the emission half). Token→agentId server-bound, localhost, single write path via postAsAgent.
+        hubMcpRoutes(booted.hub, booted.tokenRegistry)
         // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
         // project (resolved server-side from the registry pointer; a switch re-scopes without restart).
         // CYP-94: the operator's authorized set (MVP = all of the registry's projects) bounds the
@@ -134,6 +137,9 @@ fun Application.bootPlatform(
         projectRegistryFile = gitRoot.toPath().resolve("projects.json").toFile(),
         // CYP-93: the cross-project channel-share gate persists here — out-of-repo, 0600, gitignored.
         channelShareFile = gitRoot.toPath().resolve("channel-shares.json").toFile(),
+        // CYP-146: per-agent token-bearing --mcp-config files live here — out-of-repo under the gitRoot,
+        // 0600, NEVER in the tracked worktree (F1: a committed token would leak into the shared remote).
+        mcpConfigDir = gitRoot.toPath().resolve("mcp").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     installPlatform(booted)

@@ -4,41 +4,43 @@ import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryDeliveryLog
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
-import com.tneff.cyppieagents.connector.AgentProcess
-import com.tneff.cyppieagents.connector.ClaudeCodeSession
 import com.tneff.cyppieagents.connector.ConnectorSessions
+import com.tneff.cyppieagents.connector.HubMcpTools
 import com.tneff.cyppieagents.events.ContextUsageBander
+import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.events.InMemoryEventSink
 import com.tneff.cyppieagents.events.ManualTimeSource
-import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.Page
-import com.tneff.cyppieagents.mediation.HubTools
-import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.MessageDeliverer
-import com.tneff.cyppieagents.mediation.SessionRegistry
-import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.MessageKind
+import com.tneff.cyppieagents.model.MessageMeta
 import com.tneff.cyppieagents.model.Role
-import com.tneff.cyppieagents.model.ToolUseBlock
 import com.tneff.cyppieagents.routing.ForbiddenException
+import com.tneff.cyppieagents.routing.TokenRegistry
+import com.tneff.cyppieagents.routing.hubMcpRoutes
 import com.tneff.cyppieagents.support.RecordingSession
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.install
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation as ServerContentNegotiation
+import io.ktor.server.routing.routing
+import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -50,26 +52,24 @@ import kotlin.test.assertTrue
  * CYP-147 (T1/T2) — hermetic **DELIVERY-PLUMBING CHAIN** regression net, 0-quota, in the `:server:check`
  * gate. Proves a synthetic `hub_send` flows END-TO-END to the worker's inbound:
  *
- *   producer extraction/routing (CYP-131) → `Hub.postAsAgent` funnel → `onPosted` → `MessageDeliverer`
- *   (CYP-132) → `ConnectorSession.sendTurn` (worker inbound).
+ *   producer (the Hub MCP server / `HubMcpTools`, CYP-146) → `Hub.postAsAgent` funnel → `onPosted` →
+ *   `MessageDeliverer` (CYP-132) → `ConnectorSession.sendTurn` (worker inbound).
  *
- * **Complementary, not duplicative.** The halves are already unit-pinned:
- *   - `HubSendExtractionTest` — producer: `hub_send` → posted Message (stops at the funnel).
- *   - `MessageDelivererTest`  — deliverer: `postAsAgent` → worker inbound (starts at the funnel).
- *   - `DelivererBootWiringTest` — R2 boot wiring.
- * NONE spans a *synthetic hub_send all the way to the worker's inbound* — the exact composition the
- * RB1 real-run exercises end-to-end and that RB1 Run #3 showed is reachable only once the agent emits
- * (CYP-146). Injecting a synthetic `hub_send` **bypasses that emission gap** and locks the plumbing.
+ * **CYP-146 reconcile:** the producer leg is the in-process Hub MCP server (the agent's `hub_send` tool),
+ * NOT the retired CYP-131 stdout-extraction. T1a drives it at the handler core ([HubMcpTools.send]); T1b
+ * drives the FULL wire (`POST /mcp/hub`). Both land in the same funnel→deliver→inject chain.
  *
- * Determinism: the deliverer drains on `Dispatchers.Unconfined`; `drain` has no real suspension point,
- * so delivery completes by the time `onHubSend`/`register` returns. The collector path (T1b) awaits the
- * worker inbound under a bounded timeout.
+ * **Complementary, not duplicative.** The halves are already unit-pinned (`HubMcpRoutesTest` producer,
+ * `MessageDelivererTest` deliverer, `DelivererBootWiringTest` R2 boot wiring); NONE spans a synthetic
+ * `hub_send` all the way to the worker's inbound — the exact composition the RB1 real-run exercises.
  *
- * Non-vacuity (verified locally per axis — see CYP-147 evidence; every absence has a positive control
- * in the same fixture):
+ * Determinism: the deliverer drains on `Dispatchers.Unconfined`; `drain` has no real suspension point, so
+ * delivery completes by the time the producer call / `register` returns.
+ *
+ * Non-vacuity (every absence has a positive control in the same fixture):
  *   - remove `MessageDeliverer.drain` `session.sendTurn(...)` → T1a/T1b/T2-forward + comm.received redden (CYP-132 inject).
- *   - break `ClaudeCodeSession` `hub_send` extraction filter → T1b reddens (CYP-131 extraction).
- *   - flip the `canWrite` check → T2 (forbidden reverse) reddens (ACL on the funnel).
+ *   - flip the `canWrite` check at the funnel → T2 (forbidden reverse) reddens (ACL).
+ *   - drop the `comm.received` emit → its pre-guard reddens.
  */
 class DeliveryPlumbingChainTest {
 
@@ -83,15 +83,17 @@ class DeliveryPlumbingChainTest {
         Agent("backend", "BE", Role.WORKER, "backend"),
     )
 
-    /** The FULL wired graph: producer (router) + Hub funnel + deliverer, over in-memory stores. */
+    /** The FULL wired graph: producer (Hub MCP / HubMcpTools) + Hub funnel + deliverer, in-memory. */
     private class Chain(agents: List<Agent>, scope: CoroutineScope) {
         val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID)
         val store = InMemoryMessageStore()
         val hub = Hub(state, store)
         val sessions = ConnectorSessions()
-        val registry = SessionRegistry()
         val deliverer = MessageDeliverer({ state }, { state.activeProjectId }, sessions, store, InMemoryDeliveryLog(), scope)
-        val router = MediationRouter(registry, hub)
+        val tokenRegistry = TokenRegistry(
+            mapOf("tok-po" to "po", "tok-frontend" to "frontend", "tok-backend" to "backend"),
+            operatorToken = "tok-op",
+        )
         init {
             hub.onPosted = deliverer::onPosted
             sessions.addRegisterListener(deliverer::onSessionAttached)
@@ -99,25 +101,18 @@ class DeliveryPlumbingChainTest {
         fun attach(agentId: String): RecordingSession = RecordingSession(agentId).also { sessions.register(it) }
     }
 
-    private fun hubSend(channel: String, text: String, kind: MessageKind? = null) =
-        ToolUseBlock(
-            "toolu_x", HubTools.SEND,
-            buildJsonObject {
-                put("channel", channel); put("text", text); kind?.let { put("kind", it.name) }
-            },
-        )
-
-    // ---- T1a — router-level synthetic hub_send → worker inbound (producer routing → deliver) ----
+    // ---- T1a — producer (HubMcpTools, the /mcp/hub handler core) → worker inbound, server-stamped from ----
     @Test
-    fun t1a_routerHubSend_reachesWorkerInbound_serverStampedFrom() {
+    fun t1a_mcpHubSend_reachesWorkerInbound_serverStampedFrom() {
         val c = Chain(agents(), scope)
         val backend = c.attach("backend")
         val marker = "DELEGATE-NEEDLE-7f3a"
         assertTrue(backend.received.isEmpty(), "pre-guard: no inbound before the hub_send")
 
-        val posted = c.router.onHubSend("po", hubSend("po-backend", "build module: $marker", MessageKind.TASK))
+        // The agent emits via the Hub MCP server bound to its identity (here "po") — the new producer leg.
+        val posted = HubMcpTools(c.hub, "po").send("po-backend", "build module: $marker", MessageMeta(kind = MessageKind.TASK))
 
-        assertEquals("po", posted?.from, "server-stamps the sender as the routing agent (never input `from`)")
+        assertEquals("po", posted.from, "server-stamps the sender as the bound agent (never an input `from`)")
         assertTrue(
             backend.received.any { it.contains(marker) },
             "a synthetic PO hub_send must land in the worker's inbound (producer→funnel→deliver→inject)",
@@ -128,29 +123,28 @@ class DeliveryPlumbingChainTest {
         )
     }
 
-    // ---- T1b ⭐ — collector-level raw stream hub_send → worker inbound (CYP-131 extraction + CYP-132) ----
+    // ---- T1b ⭐ — FULL wire: POST /mcp/hub → extracted/routed → delivered to worker inbound ----
     @Test
-    fun t1b_rawStreamHubSend_extractedAndDeliveredToWorkerInbound() = runBlocking {
+    fun t1b_hubSendViaMcpEndpoint_deliveredToWorkerInbound() = testApplication {
         val c = Chain(agents(), scope)
         val backend = c.attach("backend")
-        val proc = FakeAgentProcess()
-        val poSession = ClaudeCodeSession("po", proc, c.registry, c.router, SessionTurnQueue(), scope)
-        poSession.start()
-        delay(50)
-        val marker = "STREAM-DELEGATE-d91c"
+        application {
+            install(ServerContentNegotiation) { json(CommJson) }
+            routing { hubMcpRoutes(c.hub, c.tokenRegistry) }
+        }
+        val client = createClient { install(ClientContentNegotiation) { json(CommJson) } }
+        val marker = "MCP-DELEGATE-d91c"
         assertTrue(backend.received.isEmpty(), "pre-guard: no inbound before the stream emits hub_send")
 
-        proc.feed(
-            """{"type":"assistant","session_id":"sess-po","message":{"content":[
-               {"type":"tool_use","id":"toolu_1","name":"hub_send","input":{"channel":"po-backend","text":"$marker"}}]}}""",
-        )
-        withTimeout(3000) { while (backend.received.none { it.contains(marker) }) delay(10) }
-
+        val res = client.post("/mcp/hub") {
+            bearerAuth("tok-po"); contentType(ContentType.Application.Json)
+            setBody("""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"hub_send","arguments":{"channel":"po-backend","text":"$marker"}}}""")
+        }
+        assertEquals(HttpStatusCode.OK, res.status)
         assertTrue(
             backend.received.any { it.contains(marker) },
-            "a raw hub_send tool_use in the PO stream must be EXTRACTED and DELIVERED to the worker inbound",
+            "a hub_send via POST /mcp/hub must be routed and DELIVERED to the worker inbound (the full wire path)",
         )
-        poSession.close()
     }
 
     // ---- T2 — directional ACL: forbidden reverse → no injection; allowed forward delivers (same fixture) ----
@@ -161,12 +155,12 @@ class DeliveryPlumbingChainTest {
         val frontend = c.attach("frontend") // a real reader of po-frontend → a wrong inject would land here
 
         // positive control / non-vacuity: the allowed edge po→backend delivers
-        c.router.onHubSend("po", hubSend("po-backend", "allowed: forward-OK"))
+        HubMcpTools(c.hub, "po").send("po-backend", "allowed: forward-OK")
         assertTrue(backend.received.any { it.contains("forward-OK") }, "allowed direction delivers")
 
         // forbidden edge: backend → po-frontend (backend is NOT a member) → 403 at the funnel
         assertFailsWith<ForbiddenException> {
-            c.router.onHubSend("backend", hubSend("po-frontend", "intrusion into frontend"))
+            HubMcpTools(c.hub, "backend").send("po-frontend", "intrusion into frontend")
         }
         assertTrue(
             frontend.received.none { it.contains("intrusion") },
@@ -191,14 +185,12 @@ class DeliveryPlumbingChainTest {
         )
         hub.onPosted = deliverer::onPosted
         sessions.addRegisterListener(deliverer::onSessionAttached)
-        val router = MediationRouter(SessionRegistry(), hub, recorder, projector)
         val backend = RecordingSession("backend").also { sessions.register(it) }
 
-        // A benign, unique BODY marker (no secret shape: the SecretMasker at the funnel would redact a
-        // secret-shaped one — that masking is SecretMasker's own concern). This axis proves the event log
-        // is metadata-only: the message BODY, whatever it is, must never appear in comm.sent/comm.received.
+        // A benign, unique BODY marker (no secret shape). This axis proves the event log is metadata-only:
+        // the message BODY, whatever it is, must never appear in comm.sent/comm.received.
         val bodyMarker = "BODY-PAYLOAD-c0ffee-xyz"
-        router.onHubSend("po", hubSend("po-backend", "deploy task $bodyMarker", MessageKind.TASK))
+        HubMcpTools(hub, "po").send("po-backend", "deploy task $bodyMarker", MessageMeta(kind = MessageKind.TASK))
 
         // positive control: the body legitimately reaches the worker session — that IS delivery
         assertTrue(backend.received.any { it.contains(bodyMarker) }, "the body is delivered to the worker session (legit)")
@@ -219,13 +211,5 @@ class DeliveryPlumbingChainTest {
             events.any { it.detail.toString().contains(bodyMarker) },
             "no event detail anywhere leaks the message body",
         )
-    }
-
-    private class FakeAgentProcess : AgentProcess {
-        private val lines = Channel<String>(Channel.UNLIMITED)
-        override val stdoutLines: Flow<String> = lines.receiveAsFlow()
-        suspend fun feed(line: String) = lines.send(line)
-        override suspend fun writeLine(line: String) {}
-        override fun destroy() { lines.close() }
     }
 }
