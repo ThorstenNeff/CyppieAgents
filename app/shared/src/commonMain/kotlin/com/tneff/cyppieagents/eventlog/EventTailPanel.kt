@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.eventlog
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,9 +26,15 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.event_access_denied
 import kmpcyppieagents.app.shared.generated.resources.event_connection_offline
 import kmpcyppieagents.app.shared.generated.resources.event_empty
+import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.event_filter_agent
+import kmpcyppieagents.app.shared.generated.resources.event_filter_project
+import kmpcyppieagents.app.shared.generated.resources.event_filter_project_all
 import kmpcyppieagents.app.shared.generated.resources.event_filter_severity
 import kmpcyppieagents.app.shared.generated.resources.event_filter_type
+import kmpcyppieagents.app.shared.generated.resources.event_view_all_projects
+import kmpcyppieagents.app.shared.generated.resources.event_view_project
 import kmpcyppieagents.app.shared.generated.resources.event_tail_buffer_overflow
 import kmpcyppieagents.app.shared.generated.resources.event_tail_buffered_count
 import kmpcyppieagents.app.shared.generated.resources.event_tail_live
@@ -45,10 +52,20 @@ import org.jetbrains.compose.resources.stringResource
  * area only — window chrome comes from the host (operator-gated presence in `AgentShell`).
  */
 @Composable
-fun EventTailPanel(viewModel: EventTailViewModel, modifier: Modifier = Modifier) {
+fun EventTailPanel(
+    viewModel: EventTailViewModel,
+    modifier: Modifier = Modifier,
+    // CYP-94: the operator's projects + active id drive the cross-project lens (re-subscribes the tail).
+    projects: List<com.tneff.cyppieagents.model.Project> = emptyList(),
+    activeProjectId: String = "",
+) {
     val state by viewModel.state.collectAsState()
+    val isCrossView = state.projectId != null
     Column(modifier = modifier.fillMaxSize()) {
-        TailHeader(state, onToggle = { if (state.paused) viewModel.resume() else viewModel.pause() })
+        TailHeader(
+            state, onToggle = { if (state.paused) viewModel.resume() else viewModel.pause() },
+            projects = projects, activeProjectId = activeProjectId, onApplyProject = viewModel::applyProjectFilter,
+        )
         // Fail-closed: an operator-token reject (WS 1008) shows an honest "operators only", never "live".
         if (state.accessRevoked) {
             Text(
@@ -77,6 +94,8 @@ fun EventTailPanel(viewModel: EventTailViewModel, modifier: Modifier = Modifier)
                             rowTag = EventTailTags.row(index),
                             qualifierTag = EventTailTags.row(index, rowQualifier(event)),
                             byIdTag = EventTailTags.rowById(event.id),
+                            showProject = isCrossView,
+                            projectTag = EventTailTags.rowProject(index),
                         )
                     }
                 }
@@ -86,7 +105,13 @@ fun EventTailPanel(viewModel: EventTailViewModel, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun TailHeader(state: EventTailUiState, onToggle: () -> Unit) {
+private fun TailHeader(
+    state: EventTailUiState,
+    onToggle: () -> Unit,
+    projects: List<com.tneff.cyppieagents.model.Project>,
+    activeProjectId: String,
+    onApplyProject: (String?) -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -113,6 +138,31 @@ private fun TailHeader(state: EventTailUiState, onToggle: () -> Unit) {
         Text(stringResource(Res.string.event_filter_agent), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_AGENT))
         Text(stringResource(Res.string.event_filter_type), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_TYPE))
         Text(stringResource(Res.string.event_filter_severity), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_SEVERITY))
+        // CYP-94: interactive project lens — cycle null(active) → other projects → all → null (re-subscribes).
+        val projectCycle = projects.map { it.id }.filter { it != activeProjectId } + EventFilter.PROJECT_ALL
+        val projectChip = when (state.projectId) {
+            null -> stringResource(Res.string.event_filter_project)
+            EventFilter.PROJECT_ALL -> stringResource(Res.string.event_filter_project) + ": " + stringResource(Res.string.event_filter_project_all)
+            else -> stringResource(Res.string.event_filter_project) + ": " + (projects.firstOrNull { it.id == state.projectId }?.name ?: state.projectId)
+        }
+        Text(
+            text = projectChip,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (state.projectId != null) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (state.projectId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .clickable { onApplyProject(cycleProject(state.projectId, projectCycle)) }
+                .testTag(EventTailTags.FILTER_PROJECT),
+        )
+    }
+    // CYP-94: cross-project view indicator — foreign events never mistaken for the active project's.
+    if (state.projectId != null) {
+        val viewText = if (state.projectId == EventFilter.PROJECT_ALL) {
+            stringResource(Res.string.event_view_all_projects)
+        } else {
+            stringResource(Res.string.event_view_project, projects.firstOrNull { it.id == state.projectId }?.name ?: state.projectId)
+        }
+        TonedHint(viewText, HintTone.INFO, EventTailTags.CROSS_PROJECT_VIEW)
     }
     // Honest offline banner (never shown as live) — only when the socket is actually down.
     if (state.connection == ConnectionStatus.DISCONNECTED) {
@@ -124,6 +174,12 @@ private fun TailHeader(state: EventTailUiState, onToggle: () -> Unit) {
                 .testTag(EventTailTags.CONNECTION).padding(horizontal = 12.dp, vertical = 4.dp),
         )
     }
+}
+
+/** Cycle the project lens: null(active) → first other → … → `all` → null (a tap can also clear it). */
+private fun cycleProject(current: String?, options: List<String>): String? {
+    if (options.isEmpty()) return null
+    return options.getOrNull(options.indexOf(current) + 1)
 }
 
 /** The two visible client caps + the paused buffer count — none silent (§7.1/§7.2, tags §3). */

@@ -50,6 +50,10 @@ import com.tneff.cyppieagents.agentmgmt.AgentManagementHttpRepository
 import com.tneff.cyppieagents.agentmgmt.AgentManagementPanel
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
 import com.tneff.cyppieagents.project.HttpProjectRepository
+import com.tneff.cyppieagents.crossproject.CrossProjectControls
+import com.tneff.cyppieagents.crossproject.CrossProjectRepository
+import com.tneff.cyppieagents.crossproject.CrossProjectViewModel
+import com.tneff.cyppieagents.crossproject.HttpCrossProjectRepository
 import com.tneff.cyppieagents.project.ProjectRepository
 import com.tneff.cyppieagents.project.ProjectSwitcherBar
 import com.tneff.cyppieagents.project.ProjectViewModel
@@ -121,6 +125,8 @@ fun AgentShell(
     agentManagementRepository: AgentManagementRepository? = null,
     /** Override the Product-Lead report data port (CYP-90); `null` → the in-memory stub until CYP-89 lands. */
     reportRepository: ReportRepository? = null,
+    /** Override the cross-project authorization port (CYP-93); `null` → the in-memory stub until the backend seam lands. */
+    crossProjectRepository: CrossProjectRepository? = null,
     /** Override the project-lifecycle data port (CYP-91/92); `null` → the in-memory stub until the registry seam lands. */
     projectRepository: ProjectRepository? = null,
 ) {
@@ -159,6 +165,21 @@ fun AgentShell(
     }
     val projectVm = viewModel(key = "projectSwitcher") {
         ProjectViewModel(resolvedProjectRepo, editable = cfg.operatorToken != null)
+    }
+    // CYP-94: the project registry feeds the event-log cross-project filter (operator-only surfaces).
+    val projectState = projectVm.state.collectAsState().value
+
+    // CYP-93: cross-project authorization port — now the LIVE client against /api/channels/{id}/share
+    // (stub→real swap, no UI/VM change). `sharedWith` derives from the operator's OTHER projects (reach stays
+    // per-agent ACL-gated server-side → no over-widen); read live from the project VM so it isn't stale.
+    val resolvedCrossProjectRepo = remember(crossProjectRepository, httpClient, cfg, projectVm) {
+        crossProjectRepository ?: HttpCrossProjectRepository(
+            httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "",
+            granteeProjects = {
+                val s = projectVm.state.value
+                s.projects.map { it.id }.toSet() - s.activeProjectId
+            },
+        )
     }
 
     // Dynamic window set (S14): agent windows are derived from the managed agent list; the system
@@ -374,13 +395,21 @@ fun AgentShell(
                 // Reuse the hoisted (always-alive) VMs — never a second viewModel() here, so each
                 // window keeps exactly one subscription whether rendered in the canvas or the pager.
                 when (window.id) {
-                    COMM_WINDOW_ID -> CommPanel(commVm)
+                    COMM_WINDOW_ID -> CommPanel(commVm, crossProjectSlot = { cid ->
+                        CrossProjectControls(
+                            viewModel(key = "crossproject-$cid") {
+                                CrossProjectViewModel(resolvedCrossProjectRepo, cid, editable = cfg.operatorToken != null)
+                            },
+                            // PO flag-2: the target projects = the operator's other projects (the derived sharedWith).
+                            targetProjects = projectState.projects.filter { it.id != projectState.activeProjectId },
+                        )
+                    })
                     ACL_WINDOW_ID -> AclPanel(aclVm)
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
                     AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(agentMgmtVm)
                     PRODUCT_LEAD_WINDOW_ID -> ProductLeadPanel(productLeadVm)
-                    EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it) }
-                    EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it) }
+                    EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
+                    EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
                     else -> agentVms[window.id]?.let { AgentWindow(agentId = window.id, viewModel = it) }
                 }
             },

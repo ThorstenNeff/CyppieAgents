@@ -50,6 +50,8 @@ class AgentShellRenderTest {
                     agentManagementRepository = StubAgentManagementRepository(),
                     // Likewise the project port is now the live client (CYP-92 swap) — inject the stub.
                     projectRepository = com.tneff.cyppieagents.project.StubProjectRepository(),
+                    // And the cross-project port is the live client (CYP-93 swap) — inject the stub.
+                    crossProjectRepository = com.tneff.cyppieagents.crossproject.StubCrossProjectRepository(),
                 )
             }
         }

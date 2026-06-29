@@ -36,7 +36,10 @@ class StubEventsApi(events: List<Event> = sampleEvents()) : EventsApi {
             (f.since == null || e.ts >= f.since) &&
             (f.until == null || e.ts < f.until) && // half-open [since, until)
             (f.correlationId == null || e.correlationId == f.correlationId) &&
-            (f.sessionId == null || e.sessionId == f.sessionId)
+            (f.sessionId == null || e.sessionId == f.sessionId) &&
+            // CYP-94: null (forced-active default) / `all` → no project narrowing in the stub; a concrete id
+            // matches that project. (The real server forces-active on null + validates the override.)
+            (f.projectId == null || f.projectId == EventFilter.PROJECT_ALL || e.projectId == f.projectId)
 
     companion object {
         /** A small, deterministic fixture: one correlated work-run (`run-1`) plus unrelated noise. */

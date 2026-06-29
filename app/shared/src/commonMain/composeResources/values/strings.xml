@@ -26,6 +26,12 @@
     <string name="event_filter_severity">Severity</string>
     <string name="event_filter_timewindow">Zeitfenster</string>
     <string name="event_filter_correlation">Korrelations-ID</string>
+    <!-- CYP-94 Event-Log-Projekt-Filter (Cross-Projekt-Lese-Linse) -->
+    <string name="event_filter_project">Projekt</string>
+    <string name="event_filter_project_all">Alle Projekte</string>
+    <string name="event_view_project">Sicht: Projekt %1$s</string>
+    <string name="event_view_all_projects">Sicht: alle Projekte (projektübergreifend)</string>
+    <string name="event_row_project">Projekt: %1$s</string>
     <string name="event_load_more">Mehr laden</string>
     <!-- Shared "Back" key (comm-panel-keys.md, CYP-17 contract) — reused by the Browse single-pane, not duplicated. -->
     <string name="comm_back">Zurück</string>
@@ -252,4 +258,25 @@
     <string name="project_delete_active_blocked">Aktives Projekt – erst zu einem anderen wechseln, dann löschbar.</string>
     <string name="project_delete_last_blocked">Das letzte Projekt kann nicht gelöscht werden.</string>
     <string name="project_delete_error">Löschen fehlgeschlagen</string>
+
+    <!-- Cross-Projekt-Kanal-Autorisierung (S17 · Epic CYP-79 · CYP-93) -->
+    <string name="crossproject_title">Projektübergreifende Freigabe</string>
+    <string name="crossproject_badge">Projektübergreifend</string>
+    <string name="crossproject_status_shared">Projektübergreifend freigegeben am %1$s · erreicht: %2$s</string>
+    <string name="crossproject_status_not_shared">Nur in diesem Projekt – nicht projektübergreifend freigegeben.</string>
+    <string name="crossproject_authorize">Projektübergreifend freigeben</string>
+    <string name="crossproject_revoke">Freigabe zurücknehmen</string>
+    <string name="crossproject_dialog_scope">Freigabe an diese Projekte: %1$s. Konkrete Agenten je nach deren Leserechten – erscheinen nach der Freigabe.</string>
+    <string name="crossproject_member_access">%1$s (Projekt %2$s) – %3$s</string>
+    <string name="crossproject_member_project">Aus Projekt %1$s</string>
+    <string name="crossproject_access_read">lesend</string>
+    <string name="crossproject_access_write">schreibend</string>
+    <string name="crossproject_owner_consent">Ich gebe diesen Kanal als Eigentümer projektübergreifend frei.</string>
+    <string name="crossproject_human_only">Nur du als Eigentümer gibst frei – niemals ein Agent oder eine Nachricht.</string>
+    <string name="crossproject_single_owner_note">Single-User: ein Eigentümer gibt frei. Gegenseitige Zustimmung mehrerer Eigentümer folgt später.</string>
+    <string name="crossproject_confirm">Freigeben</string>
+    <string name="crossproject_cancel">Abbrechen</string>
+    <string name="crossproject_error">Freigabe fehlgeschlagen</string>
+    <string name="crossproject_operator_required">Nur der Eigentümer (Operator-Token) kann freigeben.</string>
+    <string name="a11y_crossproject_badge">Projektübergreifender Kanal</string>
 </resources>

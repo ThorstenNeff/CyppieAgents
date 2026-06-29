@@ -27,7 +27,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.event_filter_project
+import kmpcyppieagents.app.shared.generated.resources.event_filter_project_all
+import kmpcyppieagents.app.shared.generated.resources.event_view_all_projects
+import kmpcyppieagents.app.shared.generated.resources.event_view_project
 import kmpcyppieagents.app.shared.generated.resources.comm_back
 import kmpcyppieagents.app.shared.generated.resources.event_detail_source_ts
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_correlated_by
@@ -51,7 +57,13 @@ import org.jetbrains.compose.resources.stringResource
  * `log.dropped` event renders as a gap row inside the timeline. Renders the inner area only.
  */
 @Composable
-fun EventBrowsePanel(viewModel: EventBrowseViewModel, modifier: Modifier = Modifier) {
+fun EventBrowsePanel(
+    viewModel: EventBrowseViewModel,
+    modifier: Modifier = Modifier,
+    // CYP-94: the operator's projects + active id drive the cross-project filter axis + view indicator.
+    projects: List<com.tneff.cyppieagents.model.Project> = emptyList(),
+    activeProjectId: String = "",
+) {
     val state by viewModel.state.collectAsState()
     // Responsive layout (EVENT-LOG-UI §6.1): the table is wider than Comm, so a hard 300dp detail pane
     // starves the master to 0dp on a narrow phone tile (~140dp) → no filter/table composed → no testTags.
@@ -74,6 +86,8 @@ fun EventBrowsePanel(viewModel: EventBrowseViewModel, modifier: Modifier = Modif
                     onLoadMore = viewModel::loadMore,
                     onClearDrilldown = viewModel::clearDrilldown,
                     onApplyFilter = viewModel::applyFilter,
+                    projects = projects,
+                    activeProjectId = activeProjectId,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -86,6 +100,8 @@ fun EventBrowsePanel(viewModel: EventBrowseViewModel, modifier: Modifier = Modif
                     onLoadMore = viewModel::loadMore,
                     onClearDrilldown = viewModel::clearDrilldown,
                     onApplyFilter = viewModel::applyFilter,
+                    projects = projects,
+                    activeProjectId = activeProjectId,
                     modifier = Modifier.weight(1.4f).fillMaxHeight(),
                 )
                 DetailPane(
@@ -110,10 +126,14 @@ private fun MasterPane(
     onLoadMore: () -> Unit,
     onClearDrilldown: () -> Unit,
     onApplyFilter: (EventFilter) -> Unit,
+    projects: List<com.tneff.cyppieagents.model.Project>,
+    activeProjectId: String,
     modifier: Modifier = Modifier,
 ) {
+    // CYP-94: a non-null project lens = a cross-project view (a concrete other project, or `all`).
+    val isCrossView = state.filter.projectId != null
     Column(modifier = modifier) {
-        FilterBar(state, onApplyFilter)
+        FilterBar(state, onApplyFilter, projects, activeProjectId)
         if (state.drilldown != null) {
             DrilldownView(state, onClearDrilldown, modifier = Modifier.weight(1f).fillMaxWidth())
         } else {
@@ -134,6 +154,8 @@ private fun MasterPane(
                                 qualifierTag = EventBrowseTags.row(index, rowQualifier(event)),
                                 byIdTag = EventBrowseTags.rowById(event.id),
                                 onClick = { onSelect(event) },
+                                showProject = isCrossView,
+                                projectTag = EventBrowseTags.rowProject(index),
                             )
                         }
                     }
@@ -149,11 +171,27 @@ private fun MasterPane(
 }
 
 @Composable
-private fun FilterBar(state: EventBrowseUiState, onApply: (EventFilter) -> Unit) {
+private fun FilterBar(
+    state: EventBrowseUiState,
+    onApply: (EventFilter) -> Unit,
+    projects: List<com.tneff.cyppieagents.model.Project>,
+    activeProjectId: String,
+) {
     val f = state.filter
     val agents = state.events.map { it.agentId }.distinct()
+    // CYP-94 project axis: cycle null(active, default) → other projects → all → null. Operator-gated already
+    // (the event-log window is operator-only by omission). null = no param → server forced-active (CYP-102).
+    val projectCycle = projects.map { it.id }.filter { it != activeProjectId } + EventFilter.PROJECT_ALL
     Column(modifier = Modifier.fillMaxWidth().testTag(EventBrowseTags.FILTER_BAR).padding(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            val projectChip = when (f.projectId) {
+                null -> null
+                EventFilter.PROJECT_ALL -> stringResource(Res.string.event_filter_project_all)
+                else -> projects.firstOrNull { it.id == f.projectId }?.name ?: f.projectId
+            }
+            FilterCycleChip(EventBrowseTags.FILTER_PROJECT, stringResource(Res.string.event_filter_project), projectChip) {
+                onApply(f.copy(projectId = cycle(f.projectId, projectCycle)))
+            }
             // Interactive cycle chips → applyFilter → server-side query (no client-side post-filter, §6.2).
             FilterCycleChip(EventBrowseTags.FILTER_AGENT, stringResource(Res.string.event_filter_agent), f.agentId) {
                 onApply(f.copy(agentId = cycle(f.agentId, agents)))
@@ -176,6 +214,15 @@ private fun FilterBar(state: EventBrowseUiState, onApply: (EventFilter) -> Unit)
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.testTag(EventBrowseTags.FILTER_ACTIVE),
             )
+        }
+        // CYP-94: cross-project view indicator — so foreign events are never mistaken for the active project's.
+        if (f.projectId != null) {
+            val viewText = if (f.projectId == EventFilter.PROJECT_ALL) {
+                stringResource(Res.string.event_view_all_projects)
+            } else {
+                stringResource(Res.string.event_view_project, projects.firstOrNull { it.id == f.projectId }?.name ?: f.projectId)
+            }
+            TonedHint(viewText, HintTone.INFO, EventBrowseTags.CROSS_PROJECT_VIEW)
         }
     }
 }

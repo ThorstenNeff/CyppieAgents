@@ -38,6 +38,10 @@ class EventsApiClient(
             filter.until?.let { add("until" to it.toString()) }
             filter.correlationId?.let { add("correlationId" to it) }
             filter.sessionId?.let { add("sessionId" to it) }
+            // CYP-94: the cross-project lens is sent ONLY when set (operator-gated path); no param → the
+            // server keeps the forced-active default (CYP-102 not weakened). Wire contract: `projectId`
+            // param, `all` sentinel = the operator's authorized projects (server validates).
+            filter.projectId?.let { add("projectId" to it) }
             page.afterSeq?.let { add("afterSeq" to it.toString()) }
             add("limit" to page.limit.toString())
         }

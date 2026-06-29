@@ -87,6 +87,9 @@ class EventsWsClient(
         sessionId = filter.sessionId,
         since = filter.since,
         until = filter.until,
+        // CYP-94 WS real-swap: the cross-project lens rides the :core `SubscribeEvents.projectId` (server
+        // honors it operator-only; null/no-override = forced-active, CYP-102). Matches the locked wire form.
+        projectId = filter.projectId,
     )
 
     private fun eventsUrl(): String {

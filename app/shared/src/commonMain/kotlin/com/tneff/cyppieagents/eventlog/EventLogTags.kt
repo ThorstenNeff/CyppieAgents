@@ -14,6 +14,9 @@ object EventBrowseTags {
     const val FILTER_TIME_WINDOW = "eventBrowse.filter.timeWindow"
     const val FILTER_CORRELATION = "eventBrowse.filter.correlation"
     const val FILTER_ACTIVE = "eventBrowse.filterActive"
+    // CYP-94 cross-project additions.
+    const val FILTER_PROJECT = "eventBrowse.filter.project"
+    const val CROSS_PROJECT_VIEW = "eventBrowse.crossProjectView"
 
     const val TABLE = "eventBrowse.table"
 
@@ -22,6 +25,9 @@ object EventBrowseTags {
 
     /** n-th row + qualifier (severity `error`/`warn`/`info`/`debug` or `gap`). */
     fun row(index: Int, qualifier: String) = "eventBrowse.row.$index.$qualifier"
+
+    /** n-th row's project identity (CYP-94) — rendered ONLY in the cross-project view. */
+    fun rowProject(index: Int) = "eventBrowse.row.$index.project"
 
     /** id-stable row selector (ULID is punctuation-free → safe). */
     fun rowById(eventId: String) = "eventBrowse.rowById.$eventId"
@@ -61,6 +67,12 @@ object EventTailTags {
     const val FILTER_AGENT = "eventTail.filter.agent"
     const val FILTER_TYPE = "eventTail.filter.type"
     const val FILTER_SEVERITY = "eventTail.filter.severity"
+    // CYP-94 cross-project additions.
+    const val FILTER_PROJECT = "eventTail.filter.project"
+    const val CROSS_PROJECT_VIEW = "eventTail.crossProjectView"
+
+    /** n-th row's project identity (CYP-94) — rendered ONLY in the cross-project view. */
+    fun rowProject(index: Int) = "eventTail.row.$index.project"
 
     const val EMPTY = "eventTail.empty"
     const val ACCESS_REVOKED = "eventTail.accessRevoked"
