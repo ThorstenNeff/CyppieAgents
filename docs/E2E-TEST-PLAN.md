@@ -150,6 +150,12 @@ Implementation-ready. Each row: **pre** (via §7 harness `e2ePlatform`/`SeedProj
 
 **Exit for CYP-107:** all rows green in the (E2E) JVM gate, harness smoke green, plan doc committed on `feature/CYP-107-e2e-j1-j2`. Then report → PO routes Reviewer.
 
-## 9. Open coordination (QA → PO)
-- **Jira coordinates for the E2E phase:** which Epic/Story key do the harness + J1/J2 commits reference? (Git discipline = `feature/<CYP-KEY>-…`, commits `<CYP-KEY>: …`; PO owns Epic/Story creation.) Needed before I commit this plan + specs on the harness branch.
-- **Harness branch ownership:** Backend creates `feature/<KEY>-e2e-harness` and I add `E2E-TEST-PLAN.md` + J1/J2 specs there, **or** I seed the branch with the plan and Backend builds on it? (PO said "commit the plan with the harness branch" — confirming the mechanic.)
+## 9. Build status
+
+- **CYP-107 (J1/J2): DONE/merged** → develop `c278727`. `:e2e:test` green; foreign-channel = 403-deny (stronger than the planned "empty").
+- **CYP-108 (J3/J4 + raw-byte needle helper): IN PROGRESS.** `:e2e:test` 36/0 (J1 11, J2 7, J3 5, J4 8, smoke 1, NeedleHelperSelfTest 4).
+  - **Needle helper (`NeedleAbsence.kt`) + positive-control self-test (`NeedleHelperSelfTest`):** raw-byte grep over `bodyAsText()` + `/ws` stream text for a foreign-projectId needle and a secret needle; the self-test deliberately presents each needle and asserts the helper THROWS (non-vacuous). Retrofitted into J1/J2.
+  - **J4 (event override): COMPLETE.** REST + WS; no-override=active, authorized id=that, `all`=operator's projects, unauthorized/garbage=fail-closed→active; WS operator-only (1008 no-token / agent); needle-absence per active-scoped hop.
+  - **J3 (cross-project sharing): share-authorization surface complete** — lifecycle, operator-gating, anti-injection (agent can't share/switch/config → 403), unknown-channel 404, no-over-widen at record level (neighbor not auto-shared), no foreign AclEntry egress, secret-needle absence.
+  - **J3 grantee-READ axes DEFERRED (blocked):** "shared visible as member / neighbor NOT / non-member NOT / revoke→gone on the actual read" need a cross-project channel-membership to exist. No endpoint provisions one, and the only seam (`PUT /api/acl`) is **broken in any multi-project state** — the PO-lockout guard 409s on an out-of-active-scope hub channel (**filed as a Bug**). Permit DECISION is unit-proven (AclMatrixSharePermitTest / ChannelSharePermitWiringTest). These E2E read-axes land once the guard bug is fixed (QA re-verify).
+- **Next:** CYP-109 (J5/J6/J7, incl. CYP-104 masking-floor e2e). RB1/CYP-110 parked till Tier A green.

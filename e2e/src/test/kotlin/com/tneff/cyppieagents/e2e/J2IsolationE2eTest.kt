@@ -73,15 +73,16 @@ class J2IsolationE2eTest {
     }
 
     @Test
-    fun events_followSwitch_onlyActiveProjectEvents() = runBlocking {
+    fun events_followSwitch_onlyActiveProjectEvents_noForeignByteLeak() = runBlocking {
         twoProjects().use { p ->
             p.injectDroppedEvent("alpha")
             p.injectDroppedEvent("beta")
-            val alphaEvents = p.asOperator().use { it.get("${p.baseUrl}/api/events").body<com.tneff.cyppieagents.model.EventPage>().events }
-            assertTrue(alphaEvents.isNotEmpty() && alphaEvents.all { it.projectId == "alpha" }, "active=alpha → only alpha events")
+            // CYP-108 retrofit: structural check AND raw-byte foreign-projectId needle-absence.
+            val alphaText = p.asOperator().use { it.get("${p.baseUrl}/api/events").assertNoNeedles("events active=alpha", foreignProjectIds = setOf("beta")) }
+            assertTrue(CommJson.decodeFromString<com.tneff.cyppieagents.model.EventPage>(alphaText).events.let { it.isNotEmpty() && it.all { e -> e.projectId == "alpha" } }, "active=alpha → only alpha events")
             p.switchActive("beta")
-            val betaEvents = p.asOperator().use { it.get("${p.baseUrl}/api/events").body<com.tneff.cyppieagents.model.EventPage>().events }
-            assertTrue(betaEvents.isNotEmpty() && betaEvents.all { it.projectId == "beta" }, "active=beta → only beta events")
+            val betaText = p.asOperator().use { it.get("${p.baseUrl}/api/events").assertNoNeedles("events active=beta", foreignProjectIds = setOf("alpha")) }
+            assertTrue(CommJson.decodeFromString<com.tneff.cyppieagents.model.EventPage>(betaText).events.let { it.isNotEmpty() && it.all { e -> e.projectId == "beta" } }, "active=beta → only beta events")
         }
     }
 
@@ -95,6 +96,8 @@ class J2IsolationE2eTest {
                 }
             }
             assertEquals("***AAAA", p.apiKeyMasked())
+            // CYP-108 retrofit: the raw key must NEVER appear on the wire — only the masked tail.
+            p.asOperator().use { it.get("${p.baseUrl}/api/config/apikey").assertNoNeedles("config apikey (active=alpha)", secrets = setOf("alpha-secret-key-AAAA")) }
 
             // switch to beta: config follows → beta's seeded key, NOT alpha's
             p.switchActive("beta")
