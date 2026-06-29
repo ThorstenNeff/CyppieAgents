@@ -6,6 +6,9 @@ import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
+import com.tneff.cyppieagents.model.Capabilities
+import com.tneff.cyppieagents.model.CapabilityStatus
+import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.ResultEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
@@ -55,10 +58,28 @@ class ClaudeCodeConnector(
     private val personaOf: (agentId: String) -> String? = { null },
 ) : Connector {
 
+    /**
+     * Connector A capability declaration (Doc 10 §4, column A) — **all AVAILABLE**, but NOT blindly:
+     * stream-json is the full-fidelity transport and each dimension is coupled to a concrete event/path
+     * this connector already produces. Honest declaration is the contract (Doc 10 §3) — if a future
+     * change removed a source, the matching dimension would have to drop to LIMITED/UNAVAILABLE here.
+     *
+     *  - structuredUsage  AVAILABLE ← [ResultEvent.usage] carries per-turn token usage (CYP-36 bander).
+     *  - toolGranularity  AVAILABLE ← assistant `tool_use` + user `tool_result` blocks give full
+     *                                 `tool.call`/`tool.result` depth (projector CYP-37).
+     *  - reliableResult   AVAILABLE ← every turn ends on a [ResultEvent]; this session keys turn-end +
+     *                                 mediation handover off it (see [ClaudeCodeSession.start]).
+     *  - rateLimitSignal  AVAILABLE ← structured `RateLimitEvent.rate_limit_info` (NOT text-scraped),
+     *                                 the source the Warden stall detector reads (S11/Doc 07).
+     *  - coordination     AVAILABLE ← mediation: the backend reads the stream + injects turns on stdin
+     *                                 ([MediationRouter] + [sendTurn]), so the agent reaches the hub (05 §2).
+     */
+    override val capabilities: Capabilities = STREAM_JSON_CAPABILITIES
+
     override fun open(agentId: String): ConnectorSession = open(agentId, agentId)
 
     /** Spawn an agent session whose cwd is [worktreesRoot]/[worktreeName] (Spec §11 isolation). */
-    fun open(agentId: String, worktreeName: String): ConnectorSession {
+    override fun open(agentId: String, worktreeName: String): ConnectorSession {
         val cwd = File(worktreesRoot, worktreeName)
         // CYP-97: place the persona as CLAUDE.md before spawn (auto-discovery). Resolved here so the
         // current (possibly edited) persona is used; null/blank → no file written.
@@ -76,6 +97,18 @@ class ClaudeCodeConnector(
         val process = spawner.spawn(command, cwd, env)
         return ClaudeCodeSession(agentId, process, registry, router, turnQueue, scope, recorder, projector)
             .also { it.start() }
+    }
+
+    companion object {
+        /** Connector A (stream-json / API) — full fidelity, all dimensions AVAILABLE (Doc 10 §4). */
+        val STREAM_JSON_CAPABILITIES = Capabilities(
+            structuredUsage = CapabilityStatus.AVAILABLE,
+            toolGranularity = CapabilityStatus.AVAILABLE,
+            reliableResult = CapabilityStatus.AVAILABLE,
+            rateLimitSignal = CapabilityStatus.AVAILABLE,
+            coordination = CapabilityStatus.AVAILABLE,
+            kind = ConnectorKind.STREAM_JSON,
+        )
     }
 }
 

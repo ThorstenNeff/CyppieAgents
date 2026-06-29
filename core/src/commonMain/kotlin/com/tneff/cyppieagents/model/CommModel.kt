@@ -40,6 +40,15 @@ data class Agent(
      * `GET /api/agents` fills the real value per agent. Not a secret — same public exposure as this DTO.
      */
     val runState: AgentRunState = AgentRunState.RUNNING,
+    /**
+     * Connector fidelity for the steady-state per-agent read model (Doc 10 §6.4 / CYP-120). Known at
+     * boot from the agent's connector; the UI surfaces which Mediator functions are reduced. Additive +
+     * defaulted (null = not yet resolved / config-time `Agent(...)`), exactly like [runState] — so older
+     * payloads still decode and every config-time construction is unaffected. The endpoint population
+     * (per-agent connector → capabilities) and the `connectorKind` choice on the agent-spec land
+     * additively in CYP-122; this field is the foundation Dev scaffolds the UI against.
+     */
+    val capabilities: Capabilities? = null,
 )
 
 enum class ChannelKind {
