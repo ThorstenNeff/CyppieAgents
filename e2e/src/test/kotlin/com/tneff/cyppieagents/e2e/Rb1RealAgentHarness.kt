@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.e2e
 import com.tneff.cyppieagents.boot.AgentConfig
 import com.tneff.cyppieagents.boot.BootOrchestrator
 import com.tneff.cyppieagents.boot.BootedPlatform
+import com.tneff.cyppieagents.boot.CommandRunner
 import com.tneff.cyppieagents.boot.PlatformConfig
 import com.tneff.cyppieagents.boot.ProcessCommandRunner
 import com.tneff.cyppieagents.boot.RepoConfig
@@ -10,6 +11,12 @@ import com.tneff.cyppieagents.boot.Secrets
 import com.tneff.cyppieagents.boot.WorktreeManager
 import com.tneff.cyppieagents.connector.ConnectorDefaults
 import com.tneff.cyppieagents.connector.ProcessBuilderSpawner
+import com.tneff.cyppieagents.connector.ProcessSpawner
+import com.tneff.cyppieagents.routing.bootHost
+import com.tneff.cyppieagents.routing.installPlatform
+import io.ktor.server.engine.EmbeddedServer
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
 import com.tneff.cyppieagents.model.Role
 import kotlinx.coroutines.CoroutineScope
 import java.io.File
@@ -139,7 +146,14 @@ object Rb1RealAgentHarness {
      * (`project-config.json`, operator/human-set, masked, per-project) if present, else runs on OAuth.
      * Caller is responsible for [rb1Enabled]/[requireNoApiKeyInEnv]/[assertPinnedClaudeCli] gating first.
      */
-    fun bootRealAgentPlatform(gitRoot: File, repoUrl: String, scope: CoroutineScope): BootedPlatform {
+    fun bootRealAgentPlatform(
+        gitRoot: File,
+        repoUrl: String,
+        scope: CoroutineScope,
+        // Injectable for the hermetic (0-quota) guard ([Rb1HubSendOfferedTest]); production uses the real ones.
+        spawner: ProcessSpawner = ProcessBuilderSpawner(),
+        commandRunner: CommandRunner = ProcessCommandRunner(),
+    ): BootedPlatform {
         requireNoApiKeyInEnv() // the key path is local.properties (out-of-band), never the env
         val config = sandboxConfig(repoUrl)
         // CYP-110 hardening: the auth DIRECTION steers structurally. Only RB1_AUTH=apikey activates the
@@ -158,16 +172,30 @@ object Rb1RealAgentHarness {
             operatorToken = "tok-operator",
             apiKey = key, // in-memory only → connector injects at spawn; NOT written to the CYP-96 store
         )
-        val worktrees = WorktreeManager(ProcessCommandRunner(), gitRoot, config.projectId)
+        val worktrees = WorktreeManager(commandRunner, gitRoot, config.projectId)
         return BootOrchestrator(
             config = config,
             secrets = secrets,
             worktrees = worktrees,
-            spawner = ProcessBuilderSpawner(), // real `claude` spawn (env-whitelisted, stderr discarded)
+            spawner = spawner, // real `claude` spawn (env-whitelisted, stderr discarded); injectable for the guard
             scope = scope,
             projectConfigFile = gitRoot.toPath().resolve("project-config.json").toFile(),
             projectRegistryFile = gitRoot.toPath().resolve("projects.json").toFile(),
             channelShareFile = gitRoot.toPath().resolve("channel-shares.json").toFile(),
+            // CYP-150 ⭐ — the missing wire: give the boot an mcp-config dir so the Connector-A PO is spawned
+            // with `--mcp-config` → it actually has `hub_send` (CYP-146). Without this the PO ran solo (RB1 #4).
+            // Out-of-repo under the sandbox gitRoot, 0600 (HubMcpConfigWriter); tokens come from secrets.agentTokens.
+            mcpConfigDir = gitRoot.toPath().resolve("mcp").toFile(),
         ).boot()
     }
+
+    /**
+     * CYP-150 ⭐ — serve the booted platform's HTTP/WS surface (incl. **`/mcp/hub`**) on localhost so a
+     * spawned `claude`'s `hub_send` MCP call is actually **reachable** (the second RB1 #4 blocker: offered
+     * but not served). Production: bind `127.0.0.1:8787` (the mcp-config url's port, [ConnectorDefaults]/
+     * config default). Returns the started engine; the caller (the journey) starts this BEFORE injecting the
+     * task and stops it after. [port] 0 binds a free port (read via `engine.resolvedConnectors()`) for tests.
+     */
+    fun serveRealAgentPlatform(booted: BootedPlatform, port: Int = 8787): EmbeddedServer<*, *> =
+        embeddedServer(Netty, port = port, host = bootHost) { installPlatform(booted) }.start(wait = false)
 }
