@@ -35,6 +35,13 @@ class HarnessSmokeTest {
             val channels: List<Channel> = p.asAgent("frontend").use { it.get("${p.baseUrl}/api/channels").body() }
             assertEquals(listOf("po-frontend"), channels.map { it.id }, "agent sees only its active project's channel")
             assertTrue(channels.none { it.id == "po-backend" }, "the other project's channel is not visible (scoped)")
+
+            // (c) PROJECT-SCOPE PARITY (Reviewer): the OPERATOR is a member of EVERY channel, so membership
+            // can't hide `po-backend` — ONLY ProjectScope can. As operator with active=alpha the list must
+            // still be just [po-frontend]; under `ProjectScope.permits → true` the operator would see
+            // `po-backend` too, so this reddens. (The frontend probe above only proves membership isolation.)
+            val opChannels: List<Channel> = p.asOperator().use { it.get("${p.baseUrl}/api/channels").body() }
+            assertEquals(listOf("po-frontend"), opChannels.map { it.id }, "operator (member of all) sees only the active project's channel → project-scope, not membership")
         }
     }
 }
