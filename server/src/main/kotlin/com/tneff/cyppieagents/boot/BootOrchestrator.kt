@@ -100,6 +100,9 @@ class BootOrchestrator(
     private val spawner: ProcessSpawner,
     private val scope: CoroutineScope,
     private val storeFactory: () -> MessageStore = { InMemoryMessageStore() },
+    // CYP-132: durable per-recipient delivered-id log. Default in-memory (tests); bootPlatform supplies
+    // a JsonFileDeliveryLog out-of-repo under the gitRoot (gitignored).
+    private val deliveryLog: com.tneff.cyppieagents.comm.DeliveryLog = com.tneff.cyppieagents.comm.InMemoryDeliveryLog(),
     // Default in-memory; CYP-43 swaps in a SqliteEventSink from the events config (sinkPath/WAL).
     private val eventSinkFactory: () -> EventSink = { InMemoryEventSink(SystemTimeSource()) },
     // Hook spool path; null → no spool tailer (default in tests). bootPlatform/CYP-43 supply it.
@@ -170,6 +173,25 @@ class BootOrchestrator(
         val eventProjector = EventProjector(bander, projectId = config.projectId, capabilities = capabilityRegistry::get)
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
+
+        // CYP-132: durable inbound delivery — the mediator's "ear". Wired to the SINGLE write funnel
+        // (hub.onPosted, called after persist) and to session (re)attach, so a PO→worker TASK (and a
+        // worker→PO STATUS, watch-as-inbound) is injected into the recipient's session, surviving a
+        // down/not-yet-attached recipient (replayed on attach). Reads through the active HubState
+        // (rescope-aware) + visibleMessages gate (project-scope + canRead, R1); dedups over message.id
+        // (R3). The two wirings below are the production path the boot-wiring test (R2) pins.
+        val deliverer = com.tneff.cyppieagents.mediation.MessageDeliverer(
+            state = { hub.state },
+            projectId = { hub.state.activeProjectId },
+            sessions = sessions,
+            store = store,
+            log = deliveryLog,
+            scope = scope,
+            recorder = eventRecorder,
+            projector = eventProjector,
+        )
+        hub.onPosted = deliverer::onPosted
+        sessions.addRegisterListener(deliverer::onSessionAttached)
 
         // S14 / CYP-97: the mutable per-agent connector config (launch + persona), seeded from config.
         // The connector reads personaOf at open() to place CLAUDE.md; AgentManagement mutates it.

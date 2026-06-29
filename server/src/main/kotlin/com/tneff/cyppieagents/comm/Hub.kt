@@ -35,6 +35,13 @@ class Hub(
     private val _events = MutableSharedFlow<CommWsServerEvent>(extraBufferCapacity = 256)
     val events: SharedFlow<CommWsServerEvent> = _events.asSharedFlow()
 
+    /**
+     * CYP-132: invoked with the persisted [Message] AFTER every successful post — the single funnel the
+     * [com.tneff.cyppieagents.mediation.MessageDeliverer] hooks for durable inbound delivery. Set once at
+     * boot; default no-op so dev/test installs (and any non-boot use) are unchanged.
+     */
+    var onPosted: (Message) -> Unit = {}
+
     /** Post [body] from [senderId] into [channelId]. Throws 403 if the sender may not write. */
     fun postAsAgent(senderId: String, channelId: String, body: String, meta: MessageMeta? = null): Message {
         // Gate #2: fail-closed BEFORE any write.
@@ -58,6 +65,7 @@ class Hub(
         store.append(message)
         audit.posted(message)
         _events.tryEmit(MessageEvent(message)) // live push to /ws/comm (filtered per participant)
+        onPosted(message) // CYP-132: durable inbound delivery — AFTER persist (the single funnel)
         return message
     }
 
