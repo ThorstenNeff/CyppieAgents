@@ -173,7 +173,12 @@ class BootOrchestrator(
 
         // S14 / CYP-97: the mutable per-agent connector config (launch + persona), seeded from config.
         // The connector reads personaOf at open() to place CLAUDE.md; AgentManagement mutates it.
-        val agentConfigs = AgentConfigRegistry(config.agents)
+        // CYP-133: when an agent carries no explicit persona, seed the role default (PO = coordinator /
+        // decompose+delegate, WORKER = work+report) so a spawned agent is never persona-less — the RB1
+        // gap where the PO had no coordinator persona and did the task itself. Single-sourced in [Personas].
+        val agentConfigs = AgentConfigRegistry(
+            config.agents.map { it.copy(claudeMd = it.claudeMd?.ifBlank { null } ?: Personas.forRole(it.role)) },
+        )
 
         // CYP-120: build the real Connector A by default, then pass it through the injection seam.
         // Prod leaves connectorFactory null → the stream-json connector is used verbatim.
