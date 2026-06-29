@@ -12,7 +12,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import com.tneff.cyppieagents.connector.CapabilityPanel
+import com.tneff.cyppieagents.connector.ConnectorCapabilityHttpRepository
+import com.tneff.cyppieagents.connector.ConnectorCapabilityRepository
+import com.tneff.cyppieagents.connector.ConnectorCapabilityViewModel
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -130,6 +139,8 @@ fun AgentShell(
     crossProjectRepository: CrossProjectRepository? = null,
     /** Override the project-lifecycle data port (CYP-91/92); `null` → the in-memory stub until the registry seam lands. */
     projectRepository: ProjectRepository? = null,
+    /** Override the connector-capability read port (CYP-123); `null` → the live read against `Agent.capabilities`. */
+    connectorCapabilityRepository: ConnectorCapabilityRepository? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -324,6 +335,17 @@ fun AgentShell(
     val productLeadVm = viewModel(key = PRODUCT_LEAD_WINDOW_ID) {
         ProductLeadViewModel(resolvedReportRepository, accessible = cfg.operatorToken != null)
     }
+    // Connector capabilities (CYP-123): read-only per-agent fidelity, hoisted once for all agent windows. Live
+    // read against `Agent.capabilities` (GET /api/agents); fail-closed (null caps → "not yet reported", never
+    // faked full). Non-gated display (the truth is shown to anyone) — the connector write/opt-in is a separate
+    // operator-gated seam (stub until CYP-122).
+    val resolvedConnectorCapRepo = remember(connectorCapabilityRepository, httpClient, cfg) {
+        connectorCapabilityRepository ?: ConnectorCapabilityHttpRepository(httpClient, cfg.hubHttpBaseUrl)
+    }
+    val connectorCapVm = viewModel(key = "connectorCapabilities") {
+        ConnectorCapabilityViewModel(resolvedConnectorCapRepo)
+    }
+    val connectorCapState = connectorCapVm.state.collectAsState().value
     // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
     // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
     val browseVm: EventBrowseViewModel? =
@@ -412,10 +434,30 @@ fun AgentShell(
                     PRODUCT_LEAD_WINDOW_ID -> ProductLeadPanel(productLeadVm)
                     EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
                     EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
-                    else -> agentVms[window.id]?.let { AgentWindow(agentId = window.id, viewModel = it) }
+                    else -> agentVms[window.id]?.let {
+                        AgentWindow(
+                            agentId = window.id,
+                            viewModel = it,
+                            capabilities = connectorCapState.capabilities[window.id],
+                            onCapabilityBadgeClick = { connectorCapVm.openPanel(window.id) },
+                        )
+                    }
                 }
             },
         )
+        // CYP-123: the capability detail panel opens from the header fidelity badge — one Dialog at shell level,
+        // keyed by the opened agent. Read-only; fail-closed content (null caps → "not yet reported"). Tap-out closes.
+        connectorCapState.openPanelAgentId?.let { openId ->
+            Dialog(onDismissRequest = { connectorCapVm.closePanel() }) {
+                Surface(shape = MaterialTheme.shapes.medium, tonalElevation = 6.dp) {
+                    CapabilityPanel(
+                        caps = connectorCapState.capabilities[openId],
+                        agentId = openId,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+        }
       }
     }
 }

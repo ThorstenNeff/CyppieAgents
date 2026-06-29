@@ -1,71 +1,80 @@
 package com.tneff.cyppieagents.connector
 
-/**
- * The connector/capability data port for CYP-123 (Doc 10). One seam, two responsibilities:
- *  - **read** the per-agent connector + capabilities for the steady-state display (badge + panel);
- *  - **write** an operator's connector choice (the deliberate opt-in act for [ConnectorKind.MCP]).
- *
- * Stub today ([StubConnectorRepository]); a later stub→real swap with NO UI/VM change (the S13/S17 pattern).
- * At real-swap:
- *  - [connectorInfos] reads the per-agent read-model (the Agents DTO, beside `runState` — CYP-120 locks the
- *    field placement);
- *  - [setConnector] rides the **agent-spec write** (CYP-86 line — NOT a parallel store). The server is the
- *    authority: it enforces the operator gate, re-checks the [ConnectorSelection] acknowledgment for B, and
- *    logs it as an audit event (CYP-122). The UI is only the affordance — a client-only gate would be the
- *    exact fail-open a reviewer catches (cf. CYP-49 server-side PO-lockout).
- */
-interface ConnectorRepository {
-    /** Per-agent connector info keyed by agentId. Fail-closed: a missing agent = no info (never a faked one). */
-    suspend fun connectorInfos(): Map<String, AgentConnectorInfo>
+import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.Capabilities
+import com.tneff.cyppieagents.model.CapabilityStatus
+import com.tneff.cyppieagents.model.ConnectorKind
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.builtins.ListSerializer
 
-    /** Operator-gated. Returns the updated [AgentConnectorInfo]. Throws [ConnectorException] on a server gate. */
-    suspend fun setConnector(agentId: String, selection: ConnectorSelection): AgentConnectorInfo
+/**
+ * Read port for per-agent connector capabilities (CYP-123, spec §2). Capabilities ride the **Agent read-model**
+ * (`GET /api/agents`, beside `runState`); an agent whose `Agent.capabilities` is `null` is **absent** from the
+ * map ⇒ the UI shows "not yet reported" (fail-closed, never faked as full). Stub today; [ConnectorCapabilityHttpRepository]
+ * at the swap. The connector **write** (selection/opt-in) is a separate seam, stubbed until CYP-122.
+ */
+interface ConnectorCapabilityRepository {
+    suspend fun capabilities(): Map<String, Capabilities>
+}
+
+/** In-memory read stub for dev/tests. */
+class StubConnectorCapabilityRepository(
+    private val initial: Map<String, Capabilities> = emptyMap(),
+) : ConnectorCapabilityRepository {
+    override suspend fun capabilities(): Map<String, Capabilities> = initial
 }
 
 /**
- * The capability profile a connector *kind* declares (Doc 10 §4). Real values come from the server at
- * real-swap; this stub models the documented A/B contract so the panel/badge demo the tri-state honestly.
+ * Live read against the public `GET /api/agents` (secret-free, same source as the lifecycle snapshot). Maps each
+ * `Agent.capabilities` (when non-null) into the per-agent map; a missing/undecodable response yields no caps —
+ * honest, the UI stays "not yet reported" rather than inventing fidelity (fail-closed).
+ */
+class ConnectorCapabilityHttpRepository(
+    private val client: HttpClient,
+    private val httpBaseUrl: String,
+) : ConnectorCapabilityRepository {
+    override suspend fun capabilities(): Map<String, Capabilities> = try {
+        val response = client.get("$httpBaseUrl/api/agents")
+        if (!response.status.isSuccess()) {
+            emptyMap()
+        } else {
+            CommJson.decodeFromString(ListSerializer(Agent.serializer()), response.bodyAsText())
+                .mapNotNull { agent -> agent.capabilities?.let { agent.id to it } }
+                .toMap()
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        emptyMap()
+    }
+}
+
+/**
+ * The capability profile a connector *kind* declares (Doc 10 §4) — used for the B opt-in **preview** (showing
+ * what B trades away before activation) and dev/test fixtures. Real per-agent values come from the server; this
+ * is the documented A/B contract: A full fidelity; B = no token tracking, thinner tool/result/rate-limit, but
+ * coordination GOOD via MCP tools.
  */
 fun defaultCapabilitiesFor(kind: ConnectorKind): Capabilities = when (kind) {
-    // A — stream-json (API): full fidelity, everything available.
     ConnectorKind.STREAM_JSON -> Capabilities(
         structuredUsage = CapabilityStatus.AVAILABLE,
         toolGranularity = CapabilityStatus.AVAILABLE,
         reliableResult = CapabilityStatus.AVAILABLE,
         rateLimitSignal = CapabilityStatus.AVAILABLE,
         coordination = CapabilityStatus.AVAILABLE,
+        kind = ConnectorKind.STREAM_JSON,
     )
-    // B — MCP (subscription): declared lower fidelity. Token tracking gone, others thinner, but coordination
-    // is GOOD (structured MCP tool-calls, no scraping for the essential path) — Doc 10 §4.
     ConnectorKind.MCP -> Capabilities(
         structuredUsage = CapabilityStatus.UNAVAILABLE,
         toolGranularity = CapabilityStatus.LIMITED,
         reliableResult = CapabilityStatus.LIMITED,
         rateLimitSignal = CapabilityStatus.LIMITED,
         coordination = CapabilityStatus.AVAILABLE,
+        kind = ConnectorKind.MCP,
     )
-}
-
-/**
- * In-memory [ConnectorRepository] for dev/tests. [denyWrites] (e.g. `"operator_required"`) models the server
- * gate so tests can prove the UI fails closed; with it `null` the dev surface is writable. The write also
- * re-checks the MCP acknowledgment ([ConnectorSelection.isAcknowledgmentSatisfied]) — mirroring the server's
- * fail-closed re-check so a client that somehow skipped the ack is still rejected here.
- */
-class StubConnectorRepository(
-    initial: Map<String, AgentConnectorInfo> = emptyMap(),
-    private val denyWrites: String? = null,
-) : ConnectorRepository {
-
-    private val infos: MutableMap<String, AgentConnectorInfo> = initial.toMutableMap()
-
-    override suspend fun connectorInfos(): Map<String, AgentConnectorInfo> = infos.toMap()
-
-    override suspend fun setConnector(agentId: String, selection: ConnectorSelection): AgentConnectorInfo {
-        denyWrites?.let { throw ConnectorException(it) } // fail-closed: server operator gate
-        if (!selection.isAcknowledgmentSatisfied) throw ConnectorException("risk_ack_required") // server re-check
-        val updated = AgentConnectorInfo(agentId, selection.kind, defaultCapabilitiesFor(selection.kind))
-        infos[agentId] = updated
-        return updated
-    }
 }
