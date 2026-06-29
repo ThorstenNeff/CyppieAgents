@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.emptyFlow
  * Records the agentIds it [open]ed so a test can assert the platform actually used the injected connector.
  */
 class FakeConnector(override val capabilities: Capabilities) : Connector {
+    override val provider: ProviderInfo = ProviderInfo.CLAUDE
     val opened = mutableListOf<String>()
 
     override fun open(agentId: String): ConnectorSession {

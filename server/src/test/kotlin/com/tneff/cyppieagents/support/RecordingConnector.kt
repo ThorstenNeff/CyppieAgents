@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.flow.Flow
@@ -41,6 +42,7 @@ class RecordingConnector(
         kind = ConnectorKind.STREAM_JSON,
     ),
 ) : Connector {
+    override val provider: ProviderInfo = ProviderInfo.CLAUDE
     val sessions = ConcurrentHashMap<String, RecordingSession>()
     override fun open(agentId: String): ConnectorSession = sessions.getOrPut(agentId) { RecordingSession(agentId) }
 }

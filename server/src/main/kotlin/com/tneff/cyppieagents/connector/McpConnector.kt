@@ -7,6 +7,7 @@ import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.MessageMeta
+import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,9 @@ class McpConnector(
 ) : Connector {
 
     override val capabilities: Capabilities = MCP_CAPABILITIES
+
+    // E2.1 / CYP-137: Connector B's provider is the SAME tool (Claude) — only the realization (MCP) differs.
+    override val provider: ProviderInfo = ProviderInfo.CLAUDE
 
     override fun open(agentId: String): ConnectorSession = McpSession(agentId, hub)
 

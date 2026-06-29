@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.connector
 
 import com.tneff.cyppieagents.model.Capabilities
+import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.flow.Flow
@@ -44,12 +45,23 @@ interface Connector {
     val capabilities: Capabilities
 
     /**
+     * The provider (tool/vendor) this connector declares (E2.1 / CYP-137) — a fourth axis, distinct from
+     * [capabilities] (fidelity) and the connector kind (realization). Surfaced into the `Agent` DTO so
+     * the UI can show "PO (Claude)". MVP = Claude for both A and B. Required (every connector declares one).
+     */
+    val provider: ProviderInfo
+
+    /**
      * Capabilities for a SPECIFIC agent (CYP-122). Defaults to the connector's single [capabilities] —
      * correct for a uniform connector (A, B, a test double). A multiplexing connector that serves several
      * connector kinds (the per-agent [com.tneff.cyppieagents.boot.ConnectorRouter]) overrides this to
      * return the kind actually serving [agentId], so the Mediator gates each agent on the right fidelity.
      */
     fun capabilitiesFor(agentId: String): Capabilities = capabilities
+
+    /** The provider for a SPECIFIC agent (CYP-137). Defaults to the connector's single [provider]; the
+     *  per-agent [com.tneff.cyppieagents.boot.ConnectorRouter] overrides it to the serving connector's. */
+    fun providerFor(agentId: String): ProviderInfo = provider
 
     /**
      * Open a session for [agentId]. **Implementers MUST override this single-arg form** (it is the

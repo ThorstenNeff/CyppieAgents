@@ -65,7 +65,29 @@ data class Agent(
      * connector implementation from it (CYP-122).
      */
     val connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON,
+    /**
+     * The provider (tool) behind this agent (E2.1 / CYP-137, provider-display-spec §1) — a **fourth,
+     * separate axis**: provider ≠ [connectorKind] ≠ fidelity ([capabilities]) ≠ identity, never merged.
+     * Declared by the agent's connector, surfaced subordinate to identity ("PO (Claude)"). Additive +
+     * nullable (null = not yet resolved / config-time `Agent(...)` / an older payload), exactly like
+     * [capabilities] — so older payloads still decode and the participant identity stays
+     * **provider-agnostic**. Not a secret / not operator-gated — same public exposure as the rest of this DTO.
+     */
+    val provider: ProviderInfo? = null,
 )
+
+/**
+ * A provider (the tool/vendor behind an agent, e.g. Claude/Codex/Gemini), the fourth connector-vertrag
+ * axis (CYP-137). [id] is a stable machine id (`"claude"`); [displayName] the human label (`"Claude"`).
+ * MVP declares only Claude. Kept deliberately minimal; an optional model detail lands later additively.
+ */
+@Serializable
+data class ProviderInfo(val id: String, val displayName: String) {
+    companion object {
+        /** The single-sourced MVP provider — both Connector A (CLI/stream-json) and B (MCP) are Claude. */
+        val CLAUDE: ProviderInfo = ProviderInfo("claude", "Claude")
+    }
+}
 
 enum class ChannelKind {
     @SerialName("DIRECT") DIRECT,

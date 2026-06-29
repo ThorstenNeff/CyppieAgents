@@ -110,6 +110,9 @@ fun Route.commRoutes(
     // CYP-122: the agent's connector kind, single-sourced from the config registry so an opt-in is
     // reflected without mutating the hub Agent. Null → keep the Agent's own value (default STREAM_JSON).
     connectorKindOf: (agentId: String) -> com.tneff.cyppieagents.model.ConnectorKind? = { null },
+    // CYP-137: the agent's provider (tool), from the boot ProviderRegistry. Null in the dev install →
+    // provider stays null (fail-closed: the UI omits the qualifier, never guesses).
+    providerOf: (agentId: String) -> com.tneff.cyppieagents.model.ProviderInfo? = { null },
 ) {
     route("/api") {
         get("/health") { call.respondText("ok") }
@@ -131,6 +134,8 @@ fun Route.commRoutes(
                     // CYP-122: fill the steady-state connector fidelity + kind for the per-agent read model.
                     capabilities = capabilitiesOf(agent.id) ?: agent.capabilities,
                     connectorKind = connectorKindOf(agent.id) ?: agent.connectorKind,
+                    // CYP-137: fill the provider (tool) so the UI can show it subordinate to identity.
+                    provider = providerOf(agent.id) ?: agent.provider,
                 )
             }
             call.respond(agents)

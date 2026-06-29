@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.connector.McpConnector
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.ProviderInfo
 
 /**
  * Per-agent connector selection (CYP-122). Each agent declares a [ConnectorKind] (`STREAM_JSON` = Connector
@@ -34,6 +35,11 @@ class ConnectorRouter(
     override val capabilities: Capabilities get() = streamJson.capabilities
 
     override fun capabilitiesFor(agentId: String): Capabilities = forAgent(agentId).capabilities
+
+    // CYP-137: like capabilities — the router has no own provider; resolve the serving connector's per agent.
+    override val provider: ProviderInfo get() = streamJson.provider
+
+    override fun providerFor(agentId: String): ProviderInfo = forAgent(agentId).provider
 
     override fun open(agentId: String): ConnectorSession = forAgent(agentId).open(agentId)
 
