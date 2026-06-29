@@ -15,7 +15,7 @@
 | `crossproject_status_not_shared` | Nur in diesem Projekt – nicht projektübergreifend freigegeben. | This project only — not authorized across projects. |
 | `crossproject_authorize` | Projektübergreifend freigeben | Authorize across projects |
 | `crossproject_revoke` | Freigabe zurücknehmen | Revoke sharing |
-| `crossproject_dialog_scope` | Dieser Kanal erreicht dann diese Agenten: %1$s | This channel will then reach these agents: %1$s |
+| `crossproject_dialog_scope` | Freigabe an diese Projekte: %1$s. Konkrete Agenten je nach deren Leserechten – erscheinen nach der Freigabe. | Authorizing to these projects: %1$s. Concrete agents depend on their read rights — they appear after authorization. |
 | `crossproject_member_access` | %1$s (Projekt %2$s) – %3$s | %1$s (project %2$s) — %3$s |
 | `crossproject_member_project` | Aus Projekt %1$s | From project %1$s |
 | `crossproject_access_read` | lesend | read |
@@ -34,8 +34,11 @@
 > nicht abschwächen.
 > **`crossproject_single_owner_note` = Disclosure-Honesty:** Single-Owner ≠ bilateral (S18). Nicht so
 > formulieren, dass gegenseitige Zustimmung impliziert wird (Spec §2.2).
-> **Kein Over-Widen (Reviewer-Leitplanke + PO-§6-Addendum c):** `crossproject_dialog_scope` /
-> `crossproject_status_shared` nennen **konkrete Member-Agenten dieses Kanals**, nie „Projekt B" pauschal.
+> **Kein Over-Widen — zwei-phasig (Reviewer-Leitplanke + PO-§6-Addendum c, geschärft):**
+> `crossproject_dialog_scope` (**Pre-Share**) nennt die **Ziel-Projekte** + den ehrlichen Hinweis, dass die
+> **konkreten Agenten je nach deren Leserechten erst NACH der Freigabe** erscheinen (Kontrakt: keine
+> konkrete Reichweite vor der Freigabe — `reachableScope` ist leer bis `shared`). `crossproject_status_shared`
+> (**Post-Share**) nennt die **konkreten Member-Agenten** — nie „Projekt B" pauschal mit Auto-Access.
 > Jeder Member wird über `crossproject_member_access` („%1$s (Projekt %2$s) – %3$s") gerendert; %3$s =
 > `crossproject_access_read` (**Default** neuer Cross-Projekt-Member) bzw. `crossproject_access_write` (nur
 > per expliziter ACL). `crossproject_member_project` markiert einen fremd-projektigen Member in der
@@ -72,7 +75,8 @@
 - **24 neue Keys** (19 CYP-93 `crossproject_*`/`a11y_` + 5 CYP-94 `event_*`), alle DE+EN; alle im Spec
   (`CROSS-PROJECT.md`) bzw. an ihren Tags in `cross-project-tags.md` referenziert.
 - **Argument-Keys:** `crossproject_status_shared` (%1$s=`sharedAt`-Zeit, %2$s=erreichte Agenten);
-  `crossproject_dialog_scope` (%1$s=Agentenliste); `crossproject_member_access` (%1$s=Agent, %2$s=Projekt,
+  `crossproject_dialog_scope` (%1$s=Ziel-Projekte; konkrete Agenten erst Post-Share im Status);
+  `crossproject_member_access` (%1$s=Agent, %2$s=Projekt,
   %3$s=Zugriff); `crossproject_member_project` (%1$s=Projekt); `event_view_project`/`event_row_project`
   (%1$s=Projekt-id/-name). **Kein** content-tragender/sensibler Klartext interpoliert (nur Projekt-/
   Agent-Identität + Zeit; Events sind ohnehin content-frei).
