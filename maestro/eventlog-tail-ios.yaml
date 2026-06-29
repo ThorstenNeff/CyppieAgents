@@ -1,0 +1,62 @@
+# CYP-69 Phase ④ — Event-Log Live-Tail iOS flow (Maestro, Compose-iOS target). PRE-DRAFT (2026-06-29).
+#
+# Direct iOS port of eventlog-tail-android.yaml (demo full-screen tab → ports 1:1; only the appId
+# changes). RUN/FINALIZE once iOS-Dev's demo-target (CYP-69 ①) lands. Verifies the live stream + the
+# Pause disclosure mechanics (paused != live), the buffered-count pill, and resume — against the
+# canonical testTags (docs/design/event-log-tags.md), no text selectors.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
+# On iOS testTags surface as accessibilityIdentifiers (CYP-67; container-swaps ③ no-op).
+#
+# PREREQUISITES (tester runtime; baseline pair Xcode 26.6 / iOS-Sim 26.5, iPhone 17):
+#   * Build + launch the DEDICATED iOS demo build (appId com.tneff.cyppieagents.demo). Its demo renders the
+#     Live-Tail panel FULL-SCREEN via a two-tab switcher, fed by SteadyDemoEventsSource which streams at a
+#     steady cadence so events arrive WHILE paused (buffered-count pill). At full width the header fits one
+#     line → the live ● is on-screen. NOT the prod build.
+appId: com.tneff.cyppieagents.demo
+name: "CYP-69 Event-Log Live-Tail (iOS) — stream -> pause (!= live) -> buffer -> resume"
+tags:
+  - gating
+  - event-log
+  - ios
+---
+- launchApp
+
+# Select the Live-Tail tab (full-screen panel) — deterministic regardless of the demo's default tab.
+- tapOn:
+    id: '^demo\.tab\.tail$'
+
+# Live stream present + honestly live (socket open, not paused).
+- assertVisible:
+    id: '^eventTail\.stream$'
+    label: "Live-Tail stream addressable (operator-gated surface present)"
+- assertVisible:
+    id: '^eventTail\.liveIndicator$'
+    label: "Live indicator shown while the socket is open and not paused"
+- scrollUntilVisible:
+    element:
+      id: '^eventTail\.row\.0$'
+    direction: DOWN
+    timeout: 10000
+
+# Pause -> paused != live: the paused marker appears, the live indicator is gone (§7.2 honesty).
+- tapOn:
+    id: '^eventTail\.pauseToggle$'
+- assertVisible:
+    id: '^eventTail\.pausedIndicator$'
+    label: "Paused marker shown"
+- assertNotVisible:
+    id: '^eventTail\.liveIndicator$'
+    label: "Live indicator hidden while paused (paused != live)"
+
+# While paused, incoming events buffer with an honest count (no silent loss).
+- assertVisible:
+    id: '^eventTail\.bufferedCount$'
+    label: "Buffered-count pill shown for events received while paused"
+
+# Resume -> live again (no loss; the buffer flushes into the visible tail).
+- tapOn:
+    id: '^eventTail\.pauseToggle$'
+- assertVisible:
+    id: '^eventTail\.liveIndicator$'
+    label: "Live indicator returns after resume"

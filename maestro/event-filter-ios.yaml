@@ -1,0 +1,68 @@
+# CYP-69 Phase ④ — Event-Filter iOS flow (Maestro, Compose-iOS target). PRE-DRAFT (2026-06-29).
+#
+# NET-NEW (not a port): exercises the Event-Log filter dimensions + the CYP-94 cross-project filter
+# additions, which the existing browse/tail ports only touch via the single severity chip. Tags verified
+# against app/shared/.../eventlog/EventLogTags.kt (objects EventBrowseTags / EventTailTags). NO
+# text/localizable selectors (Test-Contract §4). RUN/FINALIZE once iOS-Dev's demo-target (CYP-69 ①) lands.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED. On iOS testTags
+# surface as accessibilityIdentifiers (CYP-67).
+#
+# ENTRY: via the demo Browse tab `demo.tab.browse` (same mount as eventlog-browse-ios; confirmed in the
+# existing android demo). The cross-project view + filter.project are CYP-94 surfaces — present only when
+# the demo seeds a cross-project scenario; if the demo's default scenario is single-project, the two
+# cross-project steps no-op-fail → split them out after inspect_screen on ①.
+#
+# PREREQUISITES (tester runtime; baseline pair Xcode 26.6 / iOS-Sim 26.5, iPhone 17):
+#   * iOS demo build (appId com.tneff.cyppieagents.demo), demo.tab.browse → full-screen Browse panel with
+#     a filter bar, fed by the stub events source. For the cross-project steps the demo scenario must seed
+#     ≥2 projects (else mark those steps pending).
+appId: com.tneff.cyppieagents.demo
+name: "CYP-69 Event-Filter (iOS) — filter bar -> dimensions -> active subset -> cross-project view"
+tags:
+  - gating
+  - event-log
+  - ios
+---
+- launchApp
+
+- tapOn:
+    id: '^demo\.tab\.browse$'
+
+# The filter bar and its dimension controls are present (operator-gated surface).
+- assertVisible:
+    id: '^eventBrowse\.filterBar$'
+    label: "Filter bar present"
+- assertVisible:
+    id: '^eventBrowse\.filter\.severity$'
+- assertVisible:
+    id: '^eventBrowse\.filter\.agent$'
+- assertVisible:
+    id: '^eventBrowse\.filter\.type$'
+
+# Applying a dimension announces an active subset (never a silent filter).
+- tapOn:
+    id: '^eventBrowse\.filter\.severity$'
+- assertVisible:
+    id: '^eventBrowse\.filterActive$'
+    label: "Filtering announces an active subset (honest 'subset' cue)"
+
+# A second dimension composes with the first (still an honest active-subset state).
+- tapOn:
+    id: '^eventBrowse\.filter\.type$'
+- assertVisible:
+    id: '^eventBrowse\.filterActive$'
+    label: "Composed filter still announces an active subset"
+
+# CYP-94 — the project filter control is present even single-project (verified PASS on the demo).
+- assertVisible:
+    id: '^eventBrowse\.filter\.project$'
+    label: "Project filter present (CYP-94 cross-project addition)"
+
+# DEFERRED (demo-coverage gap, verified 2026-06-29): `eventBrowse.crossProjectView` + the per-row
+# `eventBrowse.row.<n>.project` identity render ONLY in a cross-project scenario; the iOSAppDemo's default
+# scenario is single-project, so the toggle is not in the tree (Maestro: "Element not found"). The tags
+# are real in EventLogTags.kt — this is a missing demo scenario, not a UI/tag defect. Re-enable these two
+# steps once the demo (cross-target) seeds ≥2 projects:
+#   - tapOn:     id: '^eventBrowse\.crossProjectView$'
+#   - assertVisible: id: '^eventBrowse\.row\.0\.project$'   # per-row project identity in the x-project view

@@ -1,0 +1,78 @@
+# CYP-69 Phase ④ — Event-Log operator-gated PRESENCE/OMISSION iOS flow. PRE-DRAFT (2026-06-29).
+#
+# Pager-ADAPTATION of eventlog-presence-android.yaml — the ONLY flow that is not a 1:1 port. On an iPhone
+# there is NO desktop canvas (window.host); the WindowHost renders the pager. The android window.*
+# omission assertions don't exist on iOS, so the proof is re-expressed in pager terms.
+#
+# Security surface (EVENT-LOG-UI §5.6/§7): without an operator token the two Event-Log windows are NOT
+# offered (omission — not a dead "no access" page). Same property as the JVM EventLogPresenceTest.
+#
+# OMISSION RECIPE (PO + iOS-Dev handoff 2026-06-29, approved): the robust, NON-vacuous omission proof is
+# the INDICATOR DOT SET — `phonePager.indicator.dot.<windowId>` — because all dots compose at once, so a
+# MISSING dot proves a MISSING page (unlike `assertNotVisible: phonePager.page.<id>`, which passes
+# trivially for any non-current lazy page = the vacuum class we reject).
+#
+#   ⚠ REGIME PRECONDITION (load-bearing): dots only render at **≤ ~6 pages**; beyond that the indicator
+#   is the compact `phonePager.indicator.position` "N / M" counter and the per-id dots DO NOT EXIST.
+#   → Run this on PROD, **without operator token AND without a server connection → exactly 5 windows →
+#   dots regime.** With a token = 10 pages = the position counter, where the dot-omission would silently
+#   go vacuous. So the flow first PROVES the dots regime (dot.comm present + position counter absent); only
+#   then is the dot-absence of eventlog/eventtail a real omission proof.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
+# Tags verified against app/shared/.../window/PhonePagerTags.kt. On iOS testTags surface as
+# accessibilityIdentifiers (CYP-67).
+#
+# PREREQUISITES (tester runtime; baseline pair Xcode 26.6 / iOS-Sim 26.5, iPhone 17):
+#   * Build + launch the PROD iOS build (appId com.tneff.cyppieagents.KMPCyppieAgents) in its default
+#     NON-operator context (operatorToken == null), NO server → exactly 5 windows. The agent + comm pages
+#     render; the two Event-Log pages must be omitted entirely. (Real prod build — the omission is genuine.)
+appId: com.tneff.cyppieagents.KMPCyppieAgents
+name: "CYP-69 Event-Log presence (iOS) — eventlog pages omitted (dot-set omission, non-operator)"
+tags:
+  - security
+  - event-log
+  - ios
+---
+- launchApp
+
+# The pager shell is up (iPhone Compact → pager, not canvas) and the multi-page indicator is present.
+- assertVisible:
+    id: '^phonePager\.pager$'
+    label: "Pager rendered (iPhone Compact path; no desktop canvas on iOS)"
+- assertVisible:
+    id: '^phonePager\.indicator$'
+    label: "Multi-page indicator present (5 windows)"
+
+# REGIME GUARD — prove we are in the DOTS regime, so the dot-omission below is non-vacuous:
+#   (a) the comm dot exists (comm offered) AND its mere existence proves dots, not the counter;
+#   (b) the compact position counter is NOT shown (we are ≤6 pages).
+- assertVisible:
+    id: '^phonePager\.indicator\.dot\.comm$'
+    label: "Comm dot present → comm offered AND indicator is in the DOTS regime (≤6 windows)"
+- assertNotVisible:
+    id: '^phonePager\.indicator\.position$'
+    label: "Position counter NOT shown → confirmed dots regime (dot-omission is non-vacuous)"
+
+# PRIMARY omission proof — a missing dot proves a missing page (all dots composed at once).
+- assertNotVisible:
+    id: '^phonePager\.indicator\.dot\.eventlog$'
+    label: "Browse page omitted without operator token (no indicator dot)"
+- assertNotVisible:
+    id: '^phonePager\.indicator\.dot\.eventtail$'
+    label: "Live-Tail page omitted without operator token (no indicator dot)"
+
+# Positive cross-check — navigate to the comm page so its node is really in the tree, then assert.
+- tapOn:
+    id: '^phonePager\.indicator\.dot\.comm$'
+- assertVisible:
+    id: '^phonePager\.page\.comm$'
+    label: "Comm page node real in the tree after nav (shell is functional)"
+
+# SECONDARY omission cross-check (weaker on a lazy pager; kept only as a corroborating cue, not the proof).
+- assertNotVisible:
+    id: '^phonePager\.page\.eventlog$'
+    label: "Browse page node absent (secondary cue)"
+- assertNotVisible:
+    id: '^phonePager\.page\.eventtail$'
+    label: "Live-Tail page node absent (secondary cue)"

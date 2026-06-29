@@ -1,0 +1,68 @@
+# CYP-69 Phase ④ — Event-Log Browse iOS flow (Maestro, Compose-iOS target). PRE-DRAFT (2026-06-29).
+#
+# Direct iOS port of eventlog-browse-android.yaml (demo full-screen tab → no window-shell/canvas
+# dependency, so it ports 1:1; only the appId changes). RUN/FINALIZE once iOS-Dev's demo-target (CYP-69 ①)
+# lands. Verifies the Browse master-detail + correlation drilldown + interactive filter against the
+# canonical testTags (docs/design/event-log-tags.md) — NO text/localizable selectors (Test-Contract §4).
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED. On iOS testTags
+# surface as accessibilityIdentifiers (CYP-67; container-swaps ③ no-op).
+#
+# PREREQUISITES (tester runtime; baseline pair Xcode 26.6 / iOS-Sim 26.5, iPhone 17):
+#   * Build + launch the DEDICATED iOS demo build (appId com.tneff.cyppieagents.demo). Its demo renders the
+#     Browse + Live-Tail panels FULL-SCREEN via a two-tab switcher, fed by the stub sources
+#     (StubEventsApi/SteadyDemoEventsSource) WITHOUT a live server. (Full-screen panel → independent of
+#     the pager/canvas question.) NOT the prod build (operatorToken=null → Event-Log omitted).
+appId: com.tneff.cyppieagents.demo
+name: "CYP-69 Event-Log Browse (iOS) — table -> detail -> drilldown -> filter"
+tags:
+  - gating
+  - event-log
+  - ios
+---
+- launchApp
+
+# Select the Browse tab (full-screen panel) — deterministic regardless of the demo's default tab.
+- tapOn:
+    id: '^demo\.tab\.browse$'
+
+# Surface present: the master table container is always composed.
+- assertVisible:
+    id: '^eventBrowse\.table$'
+    label: "Browse master table addressable (operator-gated surface present)"
+
+# Select the first event row -> detail pane with the two explicit drilldown actions.
+- scrollUntilVisible:
+    element:
+      id: '^eventBrowse\.row\.0$'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: '^eventBrowse\.row\.0$'
+- assertVisible:
+    id: '^eventBrowse\.detail$'
+    label: "Detail pane opens on selection"
+- assertVisible:
+    id: '^eventBrowse\.detail\.showRun$'
+- assertVisible:
+    id: '^eventBrowse\.detail\.showSession$'
+
+# Correlation drilldown — "show the whole run" -> the seq-ordered timeline (correlationId axis).
+- tapOn:
+    id: '^eventBrowse\.detail\.showRun$'
+- assertVisible:
+    id: '^eventBrowse\.drilldown\.header$'
+    label: "Drilldown timeline opens, header names the axis/scope"
+
+# Clear the drilldown (header tap) -> back to the table.
+- tapOn:
+    id: '^eventBrowse\.drilldown\.header$'
+- assertVisible:
+    id: '^eventBrowse\.table$'
+
+# Interactive filter — tap the severity chip -> server-side filter -> honest "subset" cue (never silent).
+- tapOn:
+    id: '^eventBrowse\.filter\.severity$'
+- assertVisible:
+    id: '^eventBrowse\.filterActive$'
+    label: "Filtering announces an active subset"
