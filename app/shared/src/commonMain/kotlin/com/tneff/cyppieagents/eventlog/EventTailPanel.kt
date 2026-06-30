@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,6 +106,7 @@ fun EventTailPanel(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TailHeader(
     state: EventTailUiState,
@@ -112,48 +115,57 @@ private fun TailHeader(
     activeProjectId: String,
     onApplyProject: (String?) -> Unit,
 ) {
-    Row(
+    // CYP-158 §2.1: the Pause control + the Live/Paused indicator stay PROMINENT on the first line; the
+    // filter chips flow in a FlowRow below (wrap on a phone instead of clipping). Pause/Live disclosure
+    // (§7.2 "paused ≠ live") is unchanged — only the chip container wraps. Same nodes + tags.
+    Column(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Button(onClick = onToggle, modifier = Modifier.testTag(EventTailTags.PAUSE_TOGGLE)) {
-            Text(stringResource(if (state.paused) Res.string.event_tail_resume else Res.string.event_tail_pause))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(onClick = onToggle, modifier = Modifier.testTag(EventTailTags.PAUSE_TOGGLE)) {
+                Text(stringResource(if (state.paused) Res.string.event_tail_resume else Res.string.event_tail_pause))
+            }
+            // Paused != live: when paused, ONLY the paused indicator; the live ● is absent (§7.2).
+            when {
+                state.paused -> Text(
+                    text = "⏸ " + stringResource(Res.string.event_tail_paused),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag(EventTailTags.PAUSED_INDICATOR),
+                )
+                state.connection == ConnectionStatus.LIVE -> Text(
+                    text = "● " + stringResource(Res.string.event_tail_live),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.testTag(EventTailTags.LIVE_INDICATOR),
+                )
+            }
         }
-        // Paused != live: when paused, ONLY the paused indicator; the live ● is absent (§7.2).
-        when {
-            state.paused -> Text(
-                text = "⏸ " + stringResource(Res.string.event_tail_paused),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.testTag(EventTailTags.PAUSED_INDICATOR),
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(Res.string.event_filter_agent), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_AGENT))
+            Text(stringResource(Res.string.event_filter_type), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_TYPE))
+            Text(stringResource(Res.string.event_filter_severity), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_SEVERITY))
+            // CYP-94: interactive project lens — cycle null(active) → other projects → all → null (re-subscribes).
+            val projectCycle = projects.map { it.id }.filter { it != activeProjectId } + EventFilter.PROJECT_ALL
+            val projectChip = when (state.projectId) {
+                null -> stringResource(Res.string.event_filter_project)
+                EventFilter.PROJECT_ALL -> stringResource(Res.string.event_filter_project) + ": " + stringResource(Res.string.event_filter_project_all)
+                else -> stringResource(Res.string.event_filter_project) + ": " + (projects.firstOrNull { it.id == state.projectId }?.name ?: state.projectId)
+            }
+            Text(
+                text = projectChip,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (state.projectId != null) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (state.projectId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .clickable { onApplyProject(cycleProject(state.projectId, projectCycle)) }
+                    .testTag(EventTailTags.FILTER_PROJECT),
             )
-            state.connection == ConnectionStatus.LIVE -> Text(
-                text = "● " + stringResource(Res.string.event_tail_live),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.testTag(EventTailTags.LIVE_INDICATOR),
-            )
         }
-        Text(stringResource(Res.string.event_filter_agent), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_AGENT))
-        Text(stringResource(Res.string.event_filter_type), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_TYPE))
-        Text(stringResource(Res.string.event_filter_severity), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(EventTailTags.FILTER_SEVERITY))
-        // CYP-94: interactive project lens — cycle null(active) → other projects → all → null (re-subscribes).
-        val projectCycle = projects.map { it.id }.filter { it != activeProjectId } + EventFilter.PROJECT_ALL
-        val projectChip = when (state.projectId) {
-            null -> stringResource(Res.string.event_filter_project)
-            EventFilter.PROJECT_ALL -> stringResource(Res.string.event_filter_project) + ": " + stringResource(Res.string.event_filter_project_all)
-            else -> stringResource(Res.string.event_filter_project) + ": " + (projects.firstOrNull { it.id == state.projectId }?.name ?: state.projectId)
-        }
-        Text(
-            text = projectChip,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (state.projectId != null) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (state.projectId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .clickable { onApplyProject(cycleProject(state.projectId, projectCycle)) }
-                .testTag(EventTailTags.FILTER_PROJECT),
-        )
     }
     // CYP-94: cross-project view indicator — foreign events never mistaken for the active project's.
     if (state.projectId != null) {

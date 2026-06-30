@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -19,6 +20,19 @@ import kotlin.test.Test
  */
 @OptIn(ExperimentalTestApi::class)
 class EventBrowsePanelRenderTest {
+
+    @Test
+    fun narrowWidth_filterBarWraps_trailingChipsOnScreen() = runComposeUiTest {
+        val vm = EventBrowseViewModel(StubEventsApi())
+        setContent { MaterialTheme { Box(Modifier.width(400.dp).height(700.dp)) { EventBrowsePanel(vm) } } }
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(EventBrowseTags.FILTER_CORRELATION).fetchSemanticsNodes().isNotEmpty()
+        }
+        // CYP-158 §2.1: FilterBar Row → FlowRow → the 6 chips wrap on a narrow width so the trailing
+        // time-window + correlation chips stay ON-SCREEN (they would clip off the right edge un-wrapped).
+        onNodeWithTag(EventBrowseTags.FILTER_TIME_WINDOW).assertIsDisplayed()
+        onNodeWithTag(EventBrowseTags.FILTER_CORRELATION).assertIsDisplayed()
+    }
 
     @Test
     fun table_select_detail_drilldown() = runComposeUiTest {

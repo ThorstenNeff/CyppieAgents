@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -67,9 +70,9 @@ fun EventBrowsePanel(
     val state by viewModel.state.collectAsState()
     // Responsive layout (EVENT-LOG-UI §6.1): the table is wider than Comm, so a hard 300dp detail pane
     // starves the master to 0dp on a narrow phone tile (~140dp) → no filter/table composed → no testTags.
-    // Narrow (< ~560dp inner width) → Single-Pane (table OR detail, selection navigates, Back). Wide → Two-Pane.
+    // Narrow (< PANE_COLLAPSE_WIDTH) → Single-Pane (table OR detail, selection navigates, Back). Wide → Two-Pane.
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        if (maxWidth < TWO_PANE_MIN_WIDTH) {
+        if (maxWidth < PANE_COLLAPSE_WIDTH) {
             // Single-Pane: a drilldown owns the (master) area; else a selected event shows the detail; else table.
             if (state.selected != null && state.drilldown == null) {
                 DetailPane(
@@ -116,8 +119,9 @@ fun EventBrowsePanel(
     }
 }
 
-/** Below this panel inner width the master-detail collapses to a single navigable pane (§6.1). */
-private val TWO_PANE_MIN_WIDTH = 560.dp
+// CYP-158 §2.3: the pane-collapse threshold is migrated to the shared PANE_COLLAPSE_WIDTH (560→600dp),
+// so EventBrowse, Comm and ACL all collapse at the same width (no 560–600dp inconsistency). The local
+// TWO_PANE_MIN_WIDTH is gone. (Distinct from EVENT_ROW_REFLOW_WIDTH=560 in EventRowUi — pane vs row.)
 
 @Composable
 private fun MasterPane(
@@ -170,6 +174,7 @@ private fun MasterPane(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterBar(
     state: EventBrowseUiState,
@@ -183,7 +188,10 @@ private fun FilterBar(
     // (the event-log window is operator-only by omission). null = no param → server forced-active (CYP-102).
     val projectCycle = projects.map { it.id }.filter { it != activeProjectId } + EventFilter.PROJECT_ALL
     Column(modifier = Modifier.fillMaxWidth().testTag(EventBrowseTags.FILTER_BAR).padding(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        // CYP-158 §2.1: Row → FlowRow so the 6 filter chips WRAP to 2–3 rows on a phone instead of
+        // clipping off the right edge. Same chips + tags; horizontal spacing unchanged, +4dp between
+        // wrapped rows. The subset cue + cross-project indicator stay below, unchanged.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val projectChip = when (f.projectId) {
                 null -> null
                 EventFilter.PROJECT_ALL -> stringResource(Res.string.event_filter_project_all)
