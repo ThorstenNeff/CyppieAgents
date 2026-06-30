@@ -18,4 +18,9 @@ object CommTags {
     const val CONNECTION = "comm.connection"
     const val EMPTY_CHANNELS = "comm.emptyChannels"
     const val EMPTY_TIMELINE = "comm.emptyTimeline"
+
+    // CYP-156: single-pane "back" affordance (compact width < PANE_COLLAPSE_WIDTH). A genuinely new
+    // interactive node — there is no back today (the panel was always two-pane). Additive, follows the
+    // `eventBrowse.back` precedent; PO-coordinated with QA/CYP-7 (no rename).
+    const val BACK = "comm.back"
 }

@@ -42,12 +42,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
+import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.testing.testTagA11y
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_role_po
+import kmpcyppieagents.app.shared.generated.resources.comm_back
 import kmpcyppieagents.app.shared.generated.resources.comm_channels_empty
 import kmpcyppieagents.app.shared.generated.resources.comm_composer_placeholder
 import kmpcyppieagents.app.shared.generated.resources.comm_composer_send
@@ -75,20 +77,46 @@ fun CommPanel(
     crossProjectSlot: @Composable (channelId: String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
-    Row(modifier = modifier.fillMaxSize()) {
-        ChannelListPane(
-            channels = state.channels,
-            selectedId = state.selectedChannelId,
-            onSelect = viewModel::select,
-            crossProjectSlot = crossProjectSlot,
-            modifier = Modifier.width(220.dp).fillMaxSize(),
-        )
-        TimelinePane(
-            state = state,
-            agents = state.agents,
-            onSend = viewModel::send,
-            modifier = Modifier.weight(1f).fillMaxSize(),
-        )
+    // CYP-156: collapse to single-pane below PANE_COLLAPSE_WIDTH, measured at the panel inner width
+    // (window-agnostic — a comm window can be dragged narrow on desktop or be full-width in the phone
+    // pager). Same master/detail nodes as two-pane, just list OR conversation (EventBrowse precedent).
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        if (maxWidth < PANE_COLLAPSE_WIDTH) {
+            if (state.selectedChannelId == null) {
+                ChannelListPane(
+                    channels = state.channels,
+                    selectedId = state.selectedChannelId,
+                    onSelect = viewModel::select,
+                    crossProjectSlot = crossProjectSlot,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                TimelinePane(
+                    state = state,
+                    agents = state.agents,
+                    onSend = viewModel::send,
+                    onBack = viewModel::clearSelection,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxSize()) {
+                ChannelListPane(
+                    channels = state.channels,
+                    selectedId = state.selectedChannelId,
+                    onSelect = viewModel::select,
+                    crossProjectSlot = crossProjectSlot,
+                    modifier = Modifier.width(220.dp).fillMaxSize(),
+                )
+                TimelinePane(
+                    state = state,
+                    agents = state.agents,
+                    onSend = viewModel::send,
+                    onBack = null,
+                    modifier = Modifier.weight(1f).fillMaxSize(),
+                )
+            }
+        }
     }
 }
 
@@ -153,9 +181,22 @@ private fun TimelinePane(
     state: CommUiState,
     agents: Map<String, Agent>,
     onSend: (String) -> Unit,
+    // CYP-156: single-pane only — an explicit "back to channels" affordance. null in two-pane (no back).
+    onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
+        if (onBack != null) {
+            Text(
+                text = "‹ " + stringResource(Res.string.comm_back),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable(onClick = onBack)
+                    .testTag(CommTags.BACK)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
         ConnectionBanner(state.connection)
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {

@@ -4,7 +4,10 @@ import com.tneff.cyppieagents.model.ReportItem
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +30,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.eventlog.formatTs
 import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.comm_back
 import kmpcyppieagents.app.shared.generated.resources.event_severity_debug
 import kmpcyppieagents.app.shared.generated.resources.event_severity_error
 import kmpcyppieagents.app.shared.generated.resources.event_severity_info
@@ -78,21 +83,41 @@ fun ProductLeadPanel(viewModel: ProductLeadViewModel, modifier: Modifier = Modif
         }
         state.error?.let { HintLine(stringResource(errorRes(it)), MaterialTheme.colorScheme.error, ProductLeadTags.ERROR) }
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SnapshotList(state, viewModel, modifier = Modifier.weight(0.4f))
-            DetailPane(state, modifier = Modifier.weight(0.6f))
+        // CYP-156: the TriggerBar above stays put (it is not a pane); only the master/detail collapses.
+        // Below PANE_COLLAPSE_WIDTH (panel inner width) → single-pane: snapshot list OR detail (+back).
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth < PANE_COLLAPSE_WIDTH) {
+                if (state.selectedId == null) {
+                    SnapshotList(state, viewModel, modifier = Modifier.fillMaxWidth())
+                } else {
+                    DetailPane(state, onBack = viewModel::clearSelection, modifier = Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SnapshotList(state, viewModel, modifier = Modifier.weight(0.4f))
+                    DetailPane(state, onBack = null, modifier = Modifier.weight(0.6f))
+                }
+            }
         }
     }
 }
 
+// CYP-156 §3.1: Row → FlowRow so the label + 3 trigger buttons WRAP instead of squashing the narrowest
+// button to a 2-line text break on a phone (411dp; Tester-measured). Same node + tags (productLead.trigger
+// + .usage/.status/.defects). FlowRow is Foundation-only — no shared code with CYP-158.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TriggerBar(state: ProductLeadUiState, viewModel: ProductLeadViewModel) {
-    Row(
+    FlowRow(
         modifier = Modifier.fillMaxWidth().testTag(ProductLeadTags.TRIGGER),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(stringResource(Res.string.report_generate), style = MaterialTheme.typography.labelMedium)
+        Text(
+            text = stringResource(Res.string.report_generate),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.align(Alignment.CenterVertically),
+        )
         TriggerButton(Res.string.report_type_usage, ProductLeadTags.TRIGGER_USAGE, state.generating) { viewModel.generate(ReportType.USAGE) }
         TriggerButton(Res.string.report_type_status, ProductLeadTags.TRIGGER_STATUS, state.generating) { viewModel.generate(ReportType.STATUS) }
         TriggerButton(Res.string.report_type_defects, ProductLeadTags.TRIGGER_DEFECTS, state.generating) { viewModel.generate(ReportType.DEFECTS) }
@@ -102,7 +127,8 @@ private fun TriggerBar(state: ProductLeadUiState, viewModel: ProductLeadViewMode
 @Composable
 private fun TriggerButton(label: StringResource, tag: String, generating: Boolean, onClick: () -> Unit) {
     Button(onClick = onClick, enabled = !generating, modifier = Modifier.testTag(tag)) {
-        Text(stringResource(label))
+        // maxLines = 1: never break a label like "Status"/"report" across two lines inside the button.
+        Text(stringResource(label), maxLines = 1)
     }
 }
 
@@ -143,12 +169,28 @@ private fun SnapshotList(state: ProductLeadUiState, viewModel: ProductLeadViewMo
 }
 
 @Composable
-private fun DetailPane(state: ProductLeadUiState, modifier: Modifier) {
+private fun DetailPane(
+    state: ProductLeadUiState,
+    // CYP-156: single-pane only — an explicit "back to snapshots" affordance. null in two-pane (no back).
+    onBack: (() -> Unit)?,
+    modifier: Modifier,
+) {
     val snap = state.selected
     Column(
         modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag(ProductLeadTags.DETAIL),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (onBack != null) {
+            Text(
+                text = "‹ " + stringResource(Res.string.comm_back),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable(onClick = onBack)
+                    .testTag(ProductLeadTags.BACK)
+                    .padding(vertical = 4.dp),
+            )
+        }
         if (snap == null) return
         // Prominent "As of" — snapshot ≠ live, restated with the may-be-outdated hint.
         Text(

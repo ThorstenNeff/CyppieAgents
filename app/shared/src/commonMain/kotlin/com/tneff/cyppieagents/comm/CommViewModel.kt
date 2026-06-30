@@ -120,6 +120,11 @@ class CommViewModel(
         }
     }
 
+    /** Clears the channel selection (CYP-156 single-pane "back": return to the channel list). */
+    fun clearSelection() {
+        _state.update { it.copy(selectedChannelId = null, messages = emptyList(), loadingHistory = false, sendError = null) }
+    }
+
     fun send(text: String) {
         val body = text.trim()
         val channelId = _state.value.selectedChannelId
