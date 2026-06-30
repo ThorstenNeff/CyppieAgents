@@ -44,8 +44,8 @@ missing (it will not run an unauthenticated hub):
 |---|---|---|
 | `HUB_TOKEN_PO` / `HUB_TOKEN_FRONTEND` / `HUB_TOKEN_BACKEND` | ✅ | One per agent; suffix = agent id **uppercased**, must match `platform.config.json`. |
 | `OPERATOR_TOKEN` | ✅ | Privileged token (ACL + operator-only REST/WS). **Same variable name on the client** → identical value when both run from the same `.env`. |
-| `PLATFORM_CONFIG` | — | Config path. Default `platform.config.json`. |
-| `PLATFORM_GIT_ROOT` | — | Clone + per-agent worktrees + event-log db/spool. Default `.cyppie`. |
+| `PLATFORM_CONFIG` | — | Config path. Default `platform.config.json`, resolved from the repo root for `:server:run` (CYP-157). Use an absolute path to override. |
+| `PLATFORM_GIT_ROOT` | — | Clone + per-agent worktrees + event-log db/spool. Default `.cyppie` (at the repo root for `:server:run`). |
 | `ANTHROPIC_API_KEY` | — | **Real agent run only.** Default auth is OAuth subscription creds (`~/.claude`); set this only for explicit key auth. |
 | `HUB_HOST` / `HUB_PORT` | — | **Client-side** (desktop UI). Defaults `localhost` / `8787`. The server itself binds `127.0.0.1:8787` (hardcoded). |
 
@@ -60,6 +60,10 @@ set -a; . ./.env; set +a
 ```bash
 ./gradlew :server:run        # binds http://127.0.0.1:8787
 ```
+
+`:server:run` runs from the **repo root** (CYP-157), so the default `platform.config.json` and `.cyppie`
+(§2) are found without setting `PLATFORM_CONFIG` — a fresh clone's `:server:run` works as-is. Set
+`PLATFORM_CONFIG` / `PLATFORM_GIT_ROOT` only to point elsewhere (use an absolute path then).
 
 **Important — the boot clones `repo.url` as a hard prerequisite.** If the clone fails, the boot
 aborts and the server does **not** start. The example config's `repo.url`
