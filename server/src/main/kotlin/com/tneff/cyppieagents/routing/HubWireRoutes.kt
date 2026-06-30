@@ -7,6 +7,8 @@ import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProviderRegistry
 import com.tneff.cyppieagents.model.CapabilityCeiling
 import com.tneff.cyppieagents.model.WireDeliver
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.tneff.cyppieagents.model.ConnectorTrust
@@ -61,6 +63,9 @@ fun Route.hubWireRoutes(
     // (server-stamped source=remote), restoring event-log tool depth + the Warden stall-net for remote.
     eventRecorder: com.tneff.cyppieagents.events.EventRecorder,
     activeProjectId: () -> String,
+    // CYP-173: slow-loris reap — max time an authenticated connection may stay BEFORE completing the
+    // WireHello handshake. Generous for a real bridge (handshake is immediate); tests override it short.
+    helloTimeoutMs: Long = 10_000,
 ) {
     webSocket("/ws/hub") {
         // Auth FIRST, fail-closed, BEFORE any frame: only an agent token (→ its own agentId) may connect.
@@ -85,6 +90,17 @@ fun Route.hubWireRoutes(
         var consecutiveRejects = 0
         // CYP-141: the wire-backed session, registered at handshake, removed (compare-and-remove) on close.
         var session: WireConnectorSession? = null
+        // CYP-173: slow-loris reap. An authenticated connection that never sends WireHello leaves the
+        // read-loop blocked on `incoming` forever (each such socket holds a coroutine + the connection —
+        // resource exhaustion). This watchdog reaps it after [helloTimeoutMs] unless handshook; it is
+        // cancelled on a successful Hello (below) and auto-cancelled when the session scope closes.
+        val helloWatchdog = launch {
+            delay(helloTimeoutMs)
+            if (!handshook) {
+                runCatching { reply(WireError(WireErrorCode.PROTOCOL, "handshake timeout")) }
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "handshake timeout"))
+            }
+        }
         try {
             for (frame in incoming) {
             if (frame !is Frame.Text) continue
@@ -116,6 +132,7 @@ fun Route.hubWireRoutes(
                     )
                     providerRegistry.set(agentId, f.provider)
                     handshook = true
+                    helloWatchdog.cancel() // CYP-173: handshake completed in time — stand the reaper down
                     reply(WireAck("hello")) // Ack BEFORE register, so a replayed WireDeliver can't precede it
                     // CYP-141 ⭐: register the wire-backed session → fires deliverer.onSessionAttached →
                     // drains any pending inbound (at-least-once replay). RC1: sendDeliver pushes WireDeliver
@@ -207,6 +224,7 @@ fun Route.hubWireRoutes(
             }
             }
         } finally {
+            helloWatchdog.cancel() // CYP-173: never leave the reaper running past the connection's life
             // RC3: evict ONLY if still the current registered instance — a reconnect that already replaced
             // this session is left untouched (a blind remove would orphan the new connection).
             session?.let { connectorSessions.removeIfSame(it) }
