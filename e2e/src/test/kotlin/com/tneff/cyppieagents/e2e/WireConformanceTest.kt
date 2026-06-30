@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus.AVAILABLE
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.WireAck
@@ -146,8 +147,11 @@ class WireConformanceTest {
         }
     }
 
-    // ---------- C4: 403 without write right (R1, re-pinned externally) ----------
-    // Mutation: Subscribe via raw store.byChannel (drop visibleMessages) → the forbidden body leaks to a reader → C4 reddens.
+    // ---------- C4: 403 without write right (the WRITE-side 403; R1 read-egress is C4b) ----------
+    // Mutation (WRITE-side, verified): bypass canWrite in Hub.postAsAgent → the forbidden send Acks and is
+    // delivered to frontend → C4 reddens. (NOT the read-side raw-byChannel: C4's forbidden body is never
+    // posted — it is write-rejected — so a read-filter mutation can't surface it. The read-egress R1 line is
+    // re-pinned separately in C4b, where a foreign-project body actually exists to leak.)
     @Test
     fun c4_forbiddenWithoutWriteRight() = runBlocking {
         platform().use { p ->
@@ -174,6 +178,38 @@ class WireConformanceTest {
                     val bodies = drainSubscribeBodies()
                     assertTrue(bodies.any { it.contains(allowed) }, "pre-guard: an allowed send IS delivered")
                     assertTrue(bodies.none { it.contains(forbidden) }, "a forbidden send never reaches a subscriber")
+                }
+            }
+        }
+    }
+
+    // ---------- C4b: R1 read-egress — no cross-project leak on a reused channelId (the E2.3 read pin) ----------
+    // Externally mirrors the white-box subscribe_doesNotLeakAForeignProjectMessageOnAReusedChannelId: a foreign
+    // project's message sharing the channelId "po-backend" must NOT reach a projA subscriber over the wire.
+    // Mutation (READ-side): Hub.channelMessages `visibleMessages(reader, store.byChannel(..))` → raw
+    // `store.byChannel(..)` (drop visibleMessages) → the foreign-project body streams to B → C4b reddens.
+    @Test
+    fun c4b_subscribeDoesNotLeakForeignProjectOnReusedChannelId() = runBlocking {
+        platform().use { p ->
+            val inProject = "C4b-inproject-needle-7b3c"
+            val foreign = "C4b-foreign-needle-9f1a"
+            // The foreign-project message reuses the SAME channelId. It is SEEDED via the fixture store because
+            // a wire WireSend always stamps the ACTIVE project (postAsAgent) — a reused-channelId cross-project
+            // message cannot be produced over the wire. Only the SEED touches the fixture; the ASSERTION is pure wire.
+            p.booted.store.append(Message("m-foreign", "po-backend", "backend", foreign, ts = 1, projectId = "projB"))
+            // The in-project body is posted over the WIRE (correctly stamped the active project projA).
+            p.asAgent("po").use { c ->
+                c.webSocket("${p.wsBaseUrl}/ws/hub") {
+                    handshake(); sendFrame(WireSend("po-backend", inProject)); assertIs<WireAck>(recv())
+                }
+            }
+            // black-box: a projA subscriber drains po-backend history over the wire.
+            p.asAgent("backend").use { c ->
+                c.webSocket("${p.wsBaseUrl}/ws/hub") {
+                    handshake(); sendFrame(WireSubscribe(listOf("po-backend")))
+                    val bodies = drainSubscribeBodies()
+                    assertTrue(bodies.any { it.contains(inProject) }, "content pre-guard: the in-project body IS delivered over the wire")
+                    assertTrue(bodies.none { it.contains(foreign) }, "R1: a foreign-project body on a reused channelId must NOT leak over the wire")
                 }
             }
         }
