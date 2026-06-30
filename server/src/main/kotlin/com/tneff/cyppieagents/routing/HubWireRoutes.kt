@@ -57,6 +57,10 @@ fun Route.hubWireRoutes(
     providerRegistry: ProviderRegistry,
     rateLimiter: WireRateLimiter,
     connectorSessions: ConnectorSessions,
+    // S5 / G4: the Event-Log sink + active project — a remote's WireEvent self-report is recorded here
+    // (server-stamped source=remote), restoring event-log tool depth + the Warden stall-net for remote.
+    eventRecorder: com.tneff.cyppieagents.events.EventRecorder,
+    activeProjectId: () -> String,
 ) {
     webSocket("/ws/hub") {
         // Auth FIRST, fail-closed, BEFORE any frame: only an agent token (→ its own agentId) may connect.
@@ -172,6 +176,27 @@ fun Route.hubWireRoutes(
                         msgs.forEach { reply(WireMessage(it)) }
                     }
                     reply(WireAck("subscribed"))
+                }
+
+                is com.tneff.cyppieagents.model.WireEvent -> {
+                    // G4-1: Hello-required — identity + the REMOTE caps clamp must be established first.
+                    if (!handshook) {
+                        reply(WireError(WireErrorCode.PROTOCOL, "hello required before event"))
+                        return@webSocket close(CloseReason(CloseReason.Codes.PROTOCOL_ERROR, "event before hello"))
+                    }
+                    // G4-2: rate-limit FIRST (the SAME per-agent bucket as WireSend); a sustained flood closes.
+                    if (!rateLimiter.tryAcquire(agentId)) {
+                        reply(WireError(WireErrorCode.RATE_LIMITED, "rate limit exceeded — back off"))
+                        if (++consecutiveRejects >= rateLimiter.floodCloseAfter) {
+                            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "flood"))
+                        }
+                        continue
+                    }
+                    consecutiveRejects = 0
+                    // G4-3/G4-5: record the self-report attributed to the BOUND agentId (never a frame field),
+                    // server-stamped source=remote, fields whitelist-dropped + size-capped ([WireEventIngest]).
+                    // G4-4: NO capabilityRegistry write — caps stay Hello-only. Fire-and-forget telemetry, no ack.
+                    eventRecorder.record(WireEventIngest.toDraft(agentId, activeProjectId(), f))
                 }
 
                 // Server→client frames arriving as input (Ack/Message/Error) are unexpected → fail-closed.
