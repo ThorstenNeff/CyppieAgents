@@ -62,15 +62,18 @@ class AgentShellRenderTest {
         onNodeWithTag(AgentViewTags.stream("frontend")).assertExists()
         onNodeWithTag(AgentViewTags.stream("backend")).assertExists()
 
-        // The comm panel is a window too. CYP-156: in the shell it tiles narrow (< PANE_COLLAPSE_WIDTH,
-        // a content window's min is 320dp) → single-pane. The first channel auto-selects, so the
-        // conversation (timeline) renders once the fake API resolves — proving the channels loaded +
-        // selection wired — with the single-pane back affordance to the channel list. (Before CYP-156
-        // the panel was unconditionally two-pane, so the channel list showed directly.)
+        // The comm panel is a window too. Its tiled width in the shell straddles PANE_COLLAPSE_WIDTH
+        // (600dp) ENV-DEPENDENTLY (screen density / default window size): some environments render it
+        // two-pane (≥600 → channel list + timeline side by side), others CYP-156 single-pane (<600 →
+        // channel list, or the auto-selected conversation). So neither a hard two-pane nor a hard
+        // single-pane assertion is portable. LAYOUT-AGNOSTIC check: the comm window renders functional
+        // content either way — the channel list OR the conversation timeline — and both require the
+        // channels to have loaded (= comm wired). The pane-mode behaviour itself is covered
+        // deterministically by CommPaneCollapseTest (fixed-width Box).
         onNodeWithTag(WindowTestTags.window("comm")).assertExists()
         waitUntil(timeoutMillis = 5_000L) {
-            onAllNodesWithTag(CommTags.TIMELINE).fetchSemanticsNodes().isNotEmpty()
+            onAllNodesWithTag(CommTags.CHANNEL_LIST).fetchSemanticsNodes().isNotEmpty() ||
+                onAllNodesWithTag(CommTags.TIMELINE).fetchSemanticsNodes().isNotEmpty()
         }
-        onNodeWithTag(CommTags.BACK).assertExists()
     }
 }
