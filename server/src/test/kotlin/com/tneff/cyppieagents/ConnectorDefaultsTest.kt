@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents
 
 import com.tneff.cyppieagents.connector.ConnectorDefaults
+import com.tneff.cyppieagents.connector.SandboxBypassGrant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -30,6 +31,28 @@ class ConnectorDefaultsTest {
     fun bypassPermissionModeIsRejected() {
         assertFailsWith<IllegalArgumentException> {
             ConnectorDefaults.streamJsonArgs(permissionMode = "bypassPermissions")
+        }
+    }
+
+    // ---- CYP-163: the sandbox-only bypass override (human + reviewer signed) ----
+
+    @Test
+    fun sandboxOverrideEmitsBypass_withAnExplicitGrant() {
+        // Guard axis (a) "write-enabled": the grant-gated override DOES emit bypassPermissions, visible in args.
+        val args = ConnectorDefaults.sandboxBypassStreamJsonArgs(SandboxBypassGrant.rb1Sandbox())
+        assertTrue(ConnectorDefaults.bypassesPermissions(args), "the sandbox override must enable bypass for the worker")
+        assertTrue(args.contains("bypassPermissions"), "the bypass flag is inspectable in the spawn args")
+    }
+
+    @Test
+    fun sandboxOverrideAndProdDefaultAreTwoDistinctPaths_nonLeak() {
+        // Guard axis (b) "non-leak": two STRUCTURALLY DISJOINT paths — the override bypasses, the default
+        // does NOT and fails closed on a bypass mode. (If they were one bent path, the leak mutation is moot.)
+        assertTrue(ConnectorDefaults.bypassesPermissions(ConnectorDefaults.sandboxBypassStreamJsonArgs(SandboxBypassGrant.rb1Sandbox())))
+        assertFalse(ConnectorDefaults.bypassesPermissions(ConnectorDefaults.streamJsonArgs()), "prod default never bypasses")
+        // and the prod default path stays sharp — it cannot be coaxed into bypass even if asked (Gate #4).
+        assertFailsWith<IllegalArgumentException> {
+            ConnectorDefaults.streamJsonArgs(permissionMode = ConnectorDefaults.FORBIDDEN_PERMISSION_MODE)
         }
     }
 

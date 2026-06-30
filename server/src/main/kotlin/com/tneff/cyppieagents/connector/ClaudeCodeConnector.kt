@@ -65,6 +65,14 @@ class ClaudeCodeConnector(
     private val mcpConfigWriter: HubMcpConfigWriter? = null,
     /** The agent's bearer token (for the mcp-config auth header). Null → no hub tools for that agent. */
     private val tokenFor: (agentId: String) -> String? = { null },
+    /**
+     * CYP-163 — a sandbox-ONLY `bypassPermissions` grant. **Null is the production default** → spawns use
+     * the sharp [ConnectorDefaults.streamJsonArgs] (Gate #4 fail-closed, never bypass). **Non-null** (the
+     * RB1 throwaway-sandbox worker ONLY, human + reviewer signed) → spawns use the **separate, explicit**
+     * [ConnectorDefaults.sandboxBypassStreamJsonArgs] override. Must NEVER be set on a product/S8-prod
+     * connector — that is the hard, non-leaking invariant the override exists to protect.
+     */
+    private val sandboxBypassGrant: SandboxBypassGrant? = null,
 ) : Connector {
 
     /**
@@ -113,8 +121,12 @@ class ClaudeCodeConnector(
             mcpConfigWriter?.let { w -> tokenFor(agentId)?.let { tok -> w.writeFor(agentId, tok).absolutePath } }
         val effectiveAllowedTools =
             if (mcpConfigPath != null) allowedTools + HubMcpConfigWriter.PREFIXED_SEND_TOOL else allowedTools
-        val command = listOf(cliCommand) +
-            ConnectorDefaults.streamJsonArgs(effectiveAllowedTools, permissionMode) +
+        // CYP-163: a sandbox-only grant (RB1 throwaway worker) routes through the SEPARATE bypass override;
+        // the production path (grant == null) stays sharp. The two are structurally disjoint — no bent default.
+        val baseArgs = sandboxBypassGrant
+            ?.let { ConnectorDefaults.sandboxBypassStreamJsonArgs(it, effectiveAllowedTools) }
+            ?: ConnectorDefaults.streamJsonArgs(effectiveAllowedTools, permissionMode)
+        val command = listOf(cliCommand) + baseArgs +
             (mcpConfigPath?.let { listOf("--mcp-config", it) } ?: emptyList())
         val process = spawner.spawn(command, cwd, env)
         return ClaudeCodeSession(agentId, process, registry, router, turnQueue, scope, recorder, projector)
