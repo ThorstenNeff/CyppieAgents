@@ -49,14 +49,18 @@ class EventRowCompact411dpVisualTest {
             }
         }
         onNodeWithTag("row").assertExists()
-        // 2-line grouping → the trailing identity-line cells (project, type, severity rail) stay on-screen;
-        // in the un-reflowed 1-line layout at 411dp the project cell would be pushed off the right edge.
+        // Sanity: the identity-line cells (project, type, severity rail) are present. NOTE: at 411dp these
+        // stay displayed in BOTH the 1- and 2-line layouts — so this is a presence sanity, NOT the test's
+        // teeth. The regression the 1-line layout actually introduces at 411dp is the corrId char-stacking
+        // (it has horizontal room only on its own line), which balloons the row height — pinned below.
         onNodeWithTag("qual").assertIsDisplayed()
         onNodeWithTag("byId").assertIsDisplayed()
         onNodeWithTag("proj").assertIsDisplayed()
-        // ⭐ the exact finding: the row stays ~2 visual lines tall. A char-stacked correlation-ID
-        // ("r-u-n--1") would balloon the row well past two lines. Bound sits above 2 lines + padding
-        // (~54dp) and far below an 8-char vertical stack (~130dp+).
+        // ⭐ THE teeth of this test (the exact finding): the 2-line grouping keeps the corrId on one
+        // horizontal line, so the row stays ~2 lines tall (measured ~54dp). Forcing the 1-line layout at
+        // 411dp char-stacks the corrId and balloons the row to ~120dp (empirically verified) → the 80dp
+        // bound catches exactly that. (The reflow THRESHOLD itself is guarded by EventRowReflowTest; this
+        // test's unique value is this height / char-stack guard, not the threshold.)
         val rowBounds = onNodeWithTag("row").getBoundsInRoot()
         val rowHeight = rowBounds.bottom - rowBounds.top
         println("CYP-158 visual-confirm @411dp: EventRow height = $rowHeight (2-line; corrId not squeezed)")
