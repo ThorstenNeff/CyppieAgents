@@ -2,12 +2,12 @@
   "$comment": "CYP-158 Klasse B — Event-Log Compact-Dichte. docs-only. Grounded @ develop d57dccb.",
   "dimensions": {
     "EVENT_ROW_REFLOW_WIDTH": {
-      "value": 480,
+      "value": 560,
       "unit": "dp",
       "status": "Dev-calibrated default (analog CYP-26 Maße)",
       "measuredAgainst": "EventRow inner content width (BoxWithConstraints maxWidth)",
       "rule": "rowWidth < EVENT_ROW_REFLOW_WIDTH => 2-line deterministic grouping; else 1 line (today)",
-      "rationale": "Below this the 7-8 fixed columns cannot fit without char-squeezing the correlation chip. NOT FlowRow (PO: deterministic layout for structured data rows).",
+      "rationale": "The 7-8 fixed columns stop fitting around here; the tester overlay shows hard char-stacking on a 411dp phone (CorrID column 3px x 294px; Live-Tail '6-col tabular below ~274dp degrades'). 560dp keeps the single-pane phone (411) on 2 lines while a wide desktop master-pane (>560) stays 1 line. NOT FlowRow (PO: deterministic layout for structured data rows; card-list declined for the 1-D log, see spec 2.2.1).",
       "consumer": "eventlog/EventRowUi.kt EventRow (shared by Browse + Tail)"
     }
   },

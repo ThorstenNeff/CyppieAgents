@@ -54,6 +54,30 @@ Breite <  EVENT_ROW_REFLOW_WIDTH → 2 Zeilen (deterministisch):
 - **GapRow** (`log.dropped`, EventRowUi.kt Z. 131) ist kurz (Rail + ⚠ + Text) → kein Multi-Column-Risiko,
   bleibt einzeilig.
 
+#### 2.2.1 Design-Entscheidung: deterministische 2-Zeilen-Zeile — NICHT Karten-Liste (PO-Call delegiert)
+Der Android-Tester schlug eine **Karten-Liste** vor (unter ~720dp Tabelle→Karte: Time/Type oben,
+Agent/Project/Severity unten, CorrID als Chip; Header → vertikal gestapelte Chips). **Mein Call:
+2-Zeilen-Zeile beibehalten.** Begründung:
+- **Dichte zuerst.** Das Event-Log ist ein **1-D Hochvolumen-Strom** zum schnellen vertikalen Scannen.
+  Karten (Container + Elevation + Padding) senken Events-pro-Screen deutlich — für einen **Log** ein
+  Verlust. Die 2-Zeilen-Zeile fixt das Char-Quetschen und **hält die Dichte**.
+- **Disclosure: Severity bleibt scan-führend.** Die Severity-Rail ist die **eine Farb-Achse** (WCAG, immer
+  führend/links). Der Tester-Vorschlag „Severity in die untere Zeile" **degradiert** das primäre Triage-
+  Signal. Mein Layout hält Rail+Glyph **führend in Zeile 1** → ich übernehme „Severity unten" **nicht**.
+- **Reuse / QA-Vertrag.** 2-Zeilen = **dieselben** Knoten/Tags (`rowTag`/`qualifierTag`/`byIdTag`/
+  `projectTag`), **kein** neuer Tag, **null** CYP-7-Churn. Eine Karte (CorrID-als-Chip, neue Container)
+  verschöbe Struktur/Tag-Träger → mehr Risiko, gerade auf den **CYP-154-gekoppelten** Dateien.
+- **Header: `FlowRow` subsumiert „vertikal gestapelte Chips".** FlowRow umbricht bei schmaler Breite genau
+  zu mehrzeiligen Chips — gleiches Ergebnis, gleiche Knoten/Tags, weniger Starrheit.
+- **CorrID** bleibt in Zeile 2 als der bestehende `· <8 Zeichen>`-Text (optisch chip-artig möglich, aber
+  **derselbe Knoten** — keine Tag-Änderung).
+- **Wo die Karte richtig ist:** der Tester-Instinkt stimmt — nur für die **echte 2-D-Daten**-Fläche, die
+  **ACL-Matrix** (Kanal×Agent), nicht den 1-D-Log. Genau das ist bereits **Parität-Inventar P2** („dichte
+  2-D → Liste/Detail"-Pattern). Dort gehört die Karte hin, nicht in CYP-158.
+
+> **Fazit:** minimal-invasiv, dicht, disclosure-treu, tag-stabil — fixt „kein vertikales CorrID-Quetschen"
+> ohne Dichteverlust. Tester-Vorschlag als wertvoller Input aufgenommen, Karte für ACL (P2) vorgemerkt.
+
 ### 2.3 Pane-Threshold-Konsistenz (Browse, gehört in diese Datei)
 `EventBrowsePanel.kt` `TWO_PANE_MIN_WIDTH = 560.dp` (Z. 120) → auf **600** ziehen, deckungsgleich mit dem
 geteilten `PANE_COLLAPSE_WIDTH` (CYP-156). Sonst bleiben bei 560–600dp ACL=Single, aber EventBrowse=Two-Pane
