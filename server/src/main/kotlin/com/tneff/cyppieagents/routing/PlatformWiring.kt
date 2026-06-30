@@ -49,6 +49,10 @@ fun Application.installPlatform(booted: BootedPlatform) {
         // CYP-146: the in-process Hub MCP server (`POST /mcp/hub`) — exposes `hub_send` to a Connector-A
         // agent (the emission half). Token→agentId server-bound, localhost, single write path via postAsAgent.
         hubMcpRoutes(booted.hub, booted.tokenRegistry)
+        // CYP-138 / E2.2: the versioned external Hub-Wire-Protocol (`/ws/hub`) for remote / BYOA connectors.
+        // Auth-first; the handshake clamps self-declared caps to the REMOTE ceiling (FO#1); Send funnels
+        // postAsAgent, Subscribe funnels channelMessages — the same chokepoints as the local paths.
+        hubWireRoutes(booted.hub, booted.tokenRegistry, booted.capabilityRegistry, booted.providerRegistry)
         // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
         // project (resolved server-side from the registry pointer; a switch re-scopes without restart).
         // CYP-94: the operator's authorized set (MVP = all of the registry's projects) bounds the
