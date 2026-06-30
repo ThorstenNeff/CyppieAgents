@@ -121,6 +121,15 @@ class ConnectorSessions {
     }
 
     /**
+     * CYP-141 (RC3) — remove ONLY if [session] is still the registered instance for its agentId (atomic
+     * compare-and-remove). The wire reconnect race: a NEW connection registers under the agentId, then the
+     * OLD connection's `finally` fires — a blind [remove] would evict the NEW session and orphan the agent.
+     * This evicts only when the old session is still current; a reconnect that already replaced it is a no-op.
+     * Does NOT `close()` (the caller's WS is already tearing down). Returns true if it removed.
+     */
+    fun removeIfSame(session: ConnectorSession): Boolean = byAgent.remove(session.agentId, session)
+
+    /**
      * Remove the session and **wait for its process to terminate** (CYP-73 Stop). Returns true if a
      * session was present. The registry entry is removed FIRST (atomically), so no `/ws/agent` reconnect
      * or restart can re-find a half-dead session while we await its exit.

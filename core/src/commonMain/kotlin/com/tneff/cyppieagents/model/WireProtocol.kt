@@ -64,6 +64,16 @@ data class WireAck(val detail: String? = null) : WireFrame
 @SerialName("message")
 data class WireMessage(val message: Message) : WireFrame
 
+/**
+ * E2.5 / CYP-141 — the deliverer's **inbound push** to a remote agent (hub→remote): the durable,
+ * deduped, at-least-once task/status the [com.tneff.cyppieagents.mediation.MessageDeliverer] injects.
+ * [text] is the formatted `inboundTurn` (`"[hub:<channel>] <from>: <body>"`), already ACL-filtered +
+ * secret-masked at the source. The remote connector injects it into its local agent's session.
+ */
+@Serializable
+@SerialName("deliver")
+data class WireDeliver(val text: String) : WireFrame
+
 /** A fail-closed error. [WireErrorCode] is uniform (a forbidden `Send` and an unknown channel share the
  *  SAME `FORBIDDEN` shape — no topology leak, M2). */
 @Serializable
