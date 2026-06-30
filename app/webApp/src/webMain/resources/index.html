@@ -15,6 +15,12 @@
                               repeatCount="indefinite"/>
         </circle>
     </svg>
+    <!-- CYP-152: operator context is supplied by the DEPLOY environment, never baked into the bundle.
+         To serve this build as an OPERATOR, the host injects the token as a global BEFORE the app
+         bundle below loads, e.g.:
+             <script>globalThis.CYPPIE_OPERATOR_TOKEN = "…token from the deploy/launch env…";</script>
+         Omitted by default → fail-closed participant view (defaultShellConfig reads it; absent/blank →
+         null). The token is NEVER committed to this file and NEVER part of the compiled .js/.wasm. -->
     <script type="application/javascript" src="webApp.js"></script>
 </body>
 </html>

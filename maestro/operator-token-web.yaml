@@ -1,0 +1,54 @@
+# CYP-152 — Web operator-token carry flow (Maestro, Wasm/Web target, PROD build).
+#
+# Complement of eventlog-presence-web.yaml. That flow proves the FAIL-CLOSED default: the prod
+# `:app:webApp` served WITHOUT an operator token → the two operator-gated Event-Log windows are
+# OMITTED. This flow proves the OTHER half of the seam (CYP-152): when the deploy environment supplies
+# an operator token, the same prod build promotes to an operator context and the windows are PRESENT.
+#
+# The seam (security-critical): the web has no shell env. The deploy-/launch environment injects the
+# token as a host-page global (`globalThis.CYPPIE_OPERATOR_TOKEN`) BEFORE the app bundle loads, and
+# defaultShellConfig() reads it fail-closed (absent/blank → null). The token is the web analogue of the
+# desktop `OPERATOR_TOKEN` env var / iOS `simctl` env — it is **never baked into the shipped .js/.wasm
+# bundle** and **never logged**. (No URL/query token: that would leak into access logs / history.)
+#
+# Together the two flows are the full gate: same prod artifact, the deploy-injected global toggles the
+# operator surfaces present/absent — proving the carry works AND that the default stays fail-closed.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
+#
+# PREREQUISITES (tester CYP-7 runtime):
+#   * Serve the PROD `:app:webApp` build (the SAME real prod artifact as eventlog-presence-web.yaml) at
+#     APP_URL_OP, but in an OPERATOR context: the served index.html injects the global BEFORE the
+#     bundle, e.g. a deploy snippet
+#         <script>globalThis.CYPPIE_OPERATOR_TOKEN = "demo-operator-stub";</script>
+#     placed ahead of <script src="webApp.js">. The token is a throwaway stub, supplied by the
+#     deploy/launch env — never committed, never in the bundle. (Mirrors how the iOS operator flows
+#     have the tester supply the launch-env via simctl; the web equivalent is the deploy-injected
+#     global.)
+#   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
+url: "http://localhost:8080"
+name: "CYP-152 Web operator-token — deploy-injected token unlocks operator surfaces"
+tags:
+  - security
+  - event-log
+env:
+  APP_URL_OP: "http://localhost:8080"
+---
+- openLink: ${APP_URL_OP}
+
+# The shell is up (host + the non-operator comm window prove the app rendered) ...
+- assertVisible:
+    id: '^window\.host$'
+    label: "Window host rendered"
+- assertVisible:
+    id: '^window\.comm$'
+    label: "Comm window present (shell is functional)"
+
+# ... and BOTH operator-gated Event-Log windows are now PRESENT — the deploy-injected global promoted
+# the prod build to an operator context (the carry seam works; cf. the omitted case in the presence flow).
+- assertVisible:
+    id: '^window\.eventlog$'
+    label: "Browse window offered WITH operator token (carry seam unlocks the operator surface)"
+- assertVisible:
+    id: '^window\.eventtail$'
+    label: "Live-Tail window offered WITH operator token (carry seam unlocks the operator surface)"
