@@ -1,0 +1,18 @@
+{
+  "$comment": "CYP-159 Klasse C — ProjectSwitcher dropdown hint width bound. docs-only. Grounded @ develop d57dccb.",
+  "dimensions": {
+    "SWITCHER_HINT_MAX_WIDTH": {
+      "value": 280,
+      "unit": "dp",
+      "status": "Dev-calibrated default",
+      "rule": "Modifier.widthIn(max = SWITCHER_HINT_MAX_WIDTH) on the TonedHint inside the DropdownMenu => text wraps instead of clipping off the right screen edge",
+      "rationale": "A long single-line hint widens the DropdownMenu past the screen edge on a 411dp phone. Bounding the width makes it wrap. 280dp keeps the menu comfortably on-screen; calibrate against the longest localized hint (DE/EN).",
+      "consumer": "project/ProjectSwitcherBar.kt DropdownMenu hint (project_switch_hint)"
+    }
+  },
+  "secondary": {
+    "$comment": "Long project names should also be bounded so they don't widen the menu.",
+    "menuItemLabels": "maxLines = 1 + TextOverflow.Ellipsis on DropdownMenuItem project-name Text (mirrors the active-row at Z.72-73)"
+  },
+  "noBreakpoint": true
+}
