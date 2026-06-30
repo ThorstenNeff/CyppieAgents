@@ -59,6 +59,12 @@ class Rb1RealAgentJourneyTest {
         val sandbox = Files.createTempDirectory("rb1-sandbox").toFile()
         val repoUrl = Rb1RealAgentHarness.initSandboxRepo(sandbox)
         val booted = Rb1RealAgentHarness.bootRealAgentPlatform(gitRoot, repoUrl, scope)
+        // CYP-150 ⭐ — SERVE the booted platform's HTTP surface (incl. `/mcp/hub`) BEFORE injecting the task,
+        // so the spawned PO's `hub_send` MCP call is actually reachable (the 2nd RB1 #4 blocker: offered but
+        // NOT served). DEFAULT port 8787 is required here — it must match the url baked into the agent's
+        // mcp-config at boot (BootOrchestrator: `config.hub.url` → `http://127.0.0.1:8787/mcp/hub`; sandboxConfig
+        // leaves the HubConfig default). A free port (0) would NOT match what the PO was spawned to call.
+        val server = Rb1RealAgentHarness.serveRealAgentPlatform(booted)
         val evidence = (System.getenv("RB1_EVIDENCE_DIR")?.let { File(it) }
             ?: Files.createTempDirectory("rb1-evidence").toFile()).apply { mkdirs() }
         println("RB1 evidence dir: $evidence  (copy to test/qa-artifacts/rb1-<date>/ after the run)")
@@ -100,6 +106,7 @@ class Rb1RealAgentJourneyTest {
             assertNoCredentialNeedle(evidence)
         } finally {
             booted.bootedAgents.forEach { booted.connectorSessions.remove(it) }
+            runCatching { server.stop(0, 0) } // stop the served HTTP surface (CYP-150 serve) — frees port 8787
             // Teardown (Reviewer note #2, hygiene): the throwaway gitRoot + sandbox are temp dirs — clean them
             // up so the run leaves no /tmp leak. Evidence lives in a SEPARATE dir and is preserved.
             runCatching { gitRoot.deleteRecursively() }
