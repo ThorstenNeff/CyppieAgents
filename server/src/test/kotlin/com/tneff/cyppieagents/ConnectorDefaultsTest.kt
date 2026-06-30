@@ -35,7 +35,7 @@ class ConnectorDefaultsTest {
 
     @Test
     fun cliVersionIsPinned() {
-        // CYP-110: pinned to the installed 2.1.195 (stream-json surface identical to 193; CYP-59/61).
-        assertEquals("2.1.195", ConnectorDefaults.PINNED_CLI_VERSION)
+        // CYP-160: pinned to the installed 2.1.196 (host moved on; stream-json surface identical; CYP-59/61).
+        assertEquals("2.1.196", ConnectorDefaults.PINNED_CLI_VERSION)
     }
 }
