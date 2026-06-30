@@ -11,7 +11,8 @@ Zwei Panels haben einen **unbedingten Zwei-Pane-`Row` ohne Breakpoint** → bei 
 also auch auf 411dp-Phone:
 - **`comm/CommPanel.kt`** Z. 78 `Row(fillMaxSize)` + Z. 84 fixe `Modifier.width(220.dp)`-Channel-Pane.
   (Die zwei `BoxWithConstraints` liegen **nur im Composer**, Z. 276 — **nicht** auf Panel-Ebene.)
-  → 220dp Pane + ~191dp Konversation bei 411dp; der Composer ist dann sogar unter seinem Min (CYP-26).
+  → 220dp Pane + **nur 132dp** Thread/Konversation bei 411dp (Tester-Overlay, Pixel_9a, Split x=656);
+  der **Composer ist auf ~117dp gequetscht** — weit unter seinem Min (CYP-26, 280dp).
 - **`report/ProductLeadPanel.kt`** Z. 81–83 `Row { SnapshotList(weight 0.4f); DetailPane(weight 0.6f) }`,
   kein Breakpoint → 40/60-Split bei 411dp. (Tester sah nur den Gated-State; Code belegt den Defekt mit
   Report-Daten — empirische Bestätigung kommt mit CYP-151-Operator-Token, §5.)
@@ -39,7 +40,9 @@ maxWidth <  600dp → Single-Pane:
 - Selektion (der `selectedId`/`channelId`-State existiert bereits, Two-Pane nutzt ihn) leitet „Liste vs.
   Konversation" ab — **kein neuer State**.
 - Composer (CYP-26: Min 280dp + Icon-Compaction) bekommt in Single-Pane die volle Breite (heute im
-  411dp-Two-Pane nur ~191dp → schon jetzt unter Min, doppelt kaputt).
+  411dp-Two-Pane nur ~117dp → schon jetzt weit unter Min, doppelt kaputt — Tester-Overlay bestätigt).
+- **Tester-Validierung (Overlay, 2026-06-30):** „<600dp → Thread+Composer als **Nav-Push** statt
+  side-by-side" deckt sich exakt mit diesem `comm_back`-Single-Pane-Muster.
 
 **ProductLeadPanel:**
 ```
