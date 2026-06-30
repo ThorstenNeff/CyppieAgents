@@ -1,0 +1,201 @@
+package com.tneff.cyppieagents.e2e
+
+import com.tneff.cyppieagents.boot.AgentConfig
+import com.tneff.cyppieagents.boot.BootOrchestrator
+import com.tneff.cyppieagents.boot.BootedPlatform
+import com.tneff.cyppieagents.boot.CommandRunner
+import com.tneff.cyppieagents.boot.PlatformConfig
+import com.tneff.cyppieagents.boot.ProcessCommandRunner
+import com.tneff.cyppieagents.boot.RepoConfig
+import com.tneff.cyppieagents.boot.Secrets
+import com.tneff.cyppieagents.boot.WorktreeManager
+import com.tneff.cyppieagents.connector.ConnectorDefaults
+import com.tneff.cyppieagents.connector.ProcessBuilderSpawner
+import com.tneff.cyppieagents.connector.ProcessSpawner
+import com.tneff.cyppieagents.routing.bootHost
+import com.tneff.cyppieagents.routing.installPlatform
+import io.ktor.server.engine.EmbeddedServer
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import com.tneff.cyppieagents.model.Role
+import kotlinx.coroutines.CoroutineScope
+import java.io.File
+
+/**
+ * RB1 / CYP-110 — Real-Agent E2E (Tier B) harness. I build/wire it; the Tester drives the journey + evidence.
+ *
+ * It boots the **production** path (real `claude` spawner + real git) against a **fresh throwaway sandbox
+ * repo** (NEVER the product repo) with a PO + one Worker, so a small real task runs end-to-end over the
+ * **real mediation path** (PO decomposes → worker in its worktree → commit/push to the sandbox → status).
+ *
+ * **Hard safety rules (Doc 05 / [[auth-credentials-policy]]):**
+ *  - **Auth direction is structural, fail-closed to subscription** ([apiKeyModeSelected]). The default
+ *    (no `RB1_AUTH`, or anything but `apikey`) runs on subscription OAuth and **ignores any key in
+ *    local.properties** — a leftover key can NEVER hijack a subscription run onto API billing. Only an
+ *    explicit `RB1_AUTH=apikey` activates the single-run bridge that reads `ANTHROPIC_API_KEY` from the
+ *    human's **gitignored `local.properties`** ([readSubscriptionKeyFromLocalProperties]) into [Secrets]
+ *    in-memory only (never persisted to the CYP-96 store, never logged/committed; masked via SecretMasker
+ *    at every event egress). The harness never *invents* a key; [requireNoApiKeyInEnv] fails closed if
+ *    `ANTHROPIC_API_KEY` is in the env. If headless can't authenticate either way → it aborts and reports.
+ *  - **CLI pinned** ([ConnectorDefaults.PINNED_CLI_VERSION]); [assertPinnedClaudeCli] checks the runtime.
+ *  - **RUN_RB1=1-gated** ([rb1Enabled]); never in the default gate. The single quota-aware live run fires
+ *    only on the human/PO creds-go — no autonomous live run.
+ */
+object Rb1RealAgentHarness {
+
+    /** True only when the operator has explicitly opted into the (quota-consuming) real run. */
+    fun rb1Enabled(): Boolean = System.getenv("RUN_RB1") == "1"
+
+    /**
+     * Auth mode for the run, **fail-closed to subscription** (CYP-110 hardening). The *direction* steers
+     * structurally, NOT the presence of a key: only an explicit `RB1_AUTH=apikey` activates the
+     * local.properties key bridge. The default (`subscription`, or any other value) keeps the bridge OFF
+     * and ignores a stray local.properties key — so a leftover key can never hijack a subscription run onto
+     * API billing. (i) Abo-only → no flag → key ignored; (ii) API-key → `RB1_AUTH=apikey` → bridge active.
+     */
+    fun apiKeyModeSelected(): Boolean = System.getenv("RB1_AUTH").equals("apikey", ignoreCase = true)
+
+    /**
+     * The billing-direction decision, **pure** so it is unit-mutation-provable WITHOUT the RUN_RB1 gate
+     * (reviewer M4): the run uses a key ONLY in apikey mode. In subscription mode a present [keyFromProps]
+     * is **ignored** → a leftover local.properties key can never hijack a subscription run onto API
+     * billing. The fail-open mutation (returning [keyFromProps] unconditionally) reddens [Rb1AuthModeTest].
+     */
+    fun resolveRunKey(apiKeyMode: Boolean, keyFromProps: String?): String? = if (apiKeyMode) keyFromProps else null
+
+    /**
+     * Fail-closed: RB1 runs on subscription OAuth, never an API key. If `ANTHROPIC_API_KEY` is present we
+     * abort rather than risk an unintended billed/keyed run — the harness must not set or consume a key.
+     */
+    fun requireNoApiKeyInEnv() {
+        val key = System.getenv("ANTHROPIC_API_KEY")
+        check(key.isNullOrBlank()) {
+            "RB1 must run on subscription OAuth only — ANTHROPIC_API_KEY is set; aborting (the harness " +
+                "never injects or consumes a key). Unset it and ensure `claude` is logged in (~/.claude)."
+        }
+    }
+
+    /**
+     * The one-run subscription key bridge (CYP-110 creds-go, **Option ii**): read `ANTHROPIC_API_KEY` from
+     * the **gitignored `local.properties`** the human placed out-of-band (operator-authorized for this run).
+     * Walks UP from the test cwd so a worktree run finds the MAIN checkout's `local.properties` (the key is
+     * working-dir-local, NOT shared across worktrees). Returns null if absent → the caller stays fail-closed
+     * (OAuth / CYP-96 store). **Never logs or returns the value anywhere but into [Secrets]; never persisted.**
+     */
+    fun readSubscriptionKeyFromLocalProperties(): String? {
+        var dir: File? = File(".").absoluteFile
+        while (dir != null) {
+            val lp = File(dir, "local.properties")
+            if (lp.isFile) {
+                val key = lp.readLines()
+                    .firstOrNull { it.trimStart().startsWith("ANTHROPIC_API_KEY") && it.contains('=') }
+                    ?.substringAfter('=')?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                if (key != null) return key
+            }
+            dir = dir.parentFile
+        }
+        return null
+    }
+
+    /** Assert the installed `claude` matches the pinned CLI; returns the reported version line for evidence. */
+    fun assertPinnedClaudeCli(): String {
+        val out = ProcessBuilder("claude", "--version")
+            .redirectErrorStream(true).start()
+            .inputStream.bufferedReader().readText().trim()
+        check(out.contains(ConnectorDefaults.PINNED_CLI_VERSION)) {
+            "RB1 expects pinned claude ${ConnectorDefaults.PINNED_CLI_VERSION}, but runtime reports: '$out'"
+        }
+        return out
+    }
+
+    /**
+     * Create a throwaway sandbox git repo at [dir] (NOT the product repo) with one seed commit, and return
+     * its `file://` URL for `repo.url`. Uses real git — the worker will clone this and push back to it.
+     */
+    fun initSandboxRepo(dir: File): String {
+        dir.mkdirs()
+        val git = ProcessCommandRunner()
+        git.run(listOf("git", "init", "--initial-branch=main"), dir)
+        git.run(listOf("git", "config", "user.email", "rb1@sandbox.local"), dir)
+        git.run(listOf("git", "config", "user.name", "RB1 Sandbox"), dir)
+        // Accept pushes to the checked-out branch (a non-bare sandbox the worker can push to).
+        git.run(listOf("git", "config", "receive.denyCurrentBranch", "updateInstead"), dir)
+        File(dir, "README.md").writeText("# RB1 sandbox — throwaway, NOT a product repo\n")
+        git.run(listOf("git", "add", "."), dir)
+        git.run(listOf("git", "commit", "-m", "RB1: seed sandbox"), dir)
+        // RB1 #1 found this: File.toURI() yields a SINGLE-slash `file:/tmp/…`, which `git clone` misparses
+        // as scp-style `host:path` (host="file") → SSH → "Could not resolve hostname file" → exit 128
+        // before any claude spawn. A triple-slash `file:///abs/path` clones cleanly. (FakeGit never cloned,
+        // so Tier-A couldn't see this — exactly what the first real clone in RB1 is for.)
+        return "file://" + dir.absolutePath
+    }
+
+    /** The RB1 platform config: PO + one Worker, both real `claude`, pointed at the sandbox [repoUrl]. */
+    fun sandboxConfig(repoUrl: String) = PlatformConfig(
+        repo = RepoConfig(repoUrl, "main"),
+        agents = listOf(
+            AgentConfig("po", "Product Owner", Role.PO, launch = "claude"),
+            AgentConfig("backend", "Backend", Role.WORKER, launch = "claude"),
+        ),
+    )
+
+    /**
+     * Boot the REAL platform (real `claude` spawner + real git) against the sandbox. The harness wires NO
+     * key into [Secrets] (apiKey=null) — the connector lazy-resolves a key from the CYP-96 store
+     * (`project-config.json`, operator/human-set, masked, per-project) if present, else runs on OAuth.
+     * Caller is responsible for [rb1Enabled]/[requireNoApiKeyInEnv]/[assertPinnedClaudeCli] gating first.
+     */
+    fun bootRealAgentPlatform(
+        gitRoot: File,
+        repoUrl: String,
+        scope: CoroutineScope,
+        // Injectable for the hermetic (0-quota) guard ([Rb1HubSendOfferedTest]); production uses the real ones.
+        spawner: ProcessSpawner = ProcessBuilderSpawner(),
+        commandRunner: CommandRunner = ProcessCommandRunner(),
+    ): BootedPlatform {
+        requireNoApiKeyInEnv() // the key path is local.properties (out-of-band), never the env
+        val config = sandboxConfig(repoUrl)
+        // CYP-110 hardening: the auth DIRECTION steers structurally. Only RB1_AUTH=apikey activates the
+        // one-run local.properties key bridge (Option ii); the fail-closed default (subscription) ignores a
+        // present key and runs on OAuth/Abo (Option i). The key, when read, is in-memory only — never
+        // persisted/logged/committed.
+        val key = resolveRunKey(apiKeyModeSelected(), readSubscriptionKeyFromLocalProperties())
+        val authNote = when {
+            !apiKeyModeSelected() -> "subscription/OAuth (default; any local.properties key IGNORED)"
+            key != null -> "apikey mode: key present (masked) — one-run only"
+            else -> "apikey mode requested but NO key in local.properties → OAuth fallback"
+        }
+        println("RB1: auth = $authNote")
+        val secrets = Secrets(
+            agentTokens = config.agents.associate { "tok-${it.id}" to it.id },
+            operatorToken = "tok-operator",
+            apiKey = key, // in-memory only → connector injects at spawn; NOT written to the CYP-96 store
+        )
+        val worktrees = WorktreeManager(commandRunner, gitRoot, config.projectId)
+        return BootOrchestrator(
+            config = config,
+            secrets = secrets,
+            worktrees = worktrees,
+            spawner = spawner, // real `claude` spawn (env-whitelisted, stderr discarded); injectable for the guard
+            scope = scope,
+            projectConfigFile = gitRoot.toPath().resolve("project-config.json").toFile(),
+            projectRegistryFile = gitRoot.toPath().resolve("projects.json").toFile(),
+            channelShareFile = gitRoot.toPath().resolve("channel-shares.json").toFile(),
+            // CYP-150 ⭐ — the missing wire: give the boot an mcp-config dir so the Connector-A PO is spawned
+            // with `--mcp-config` → it actually has `hub_send` (CYP-146). Without this the PO ran solo (RB1 #4).
+            // Out-of-repo under the sandbox gitRoot, 0600 (HubMcpConfigWriter); tokens come from secrets.agentTokens.
+            mcpConfigDir = gitRoot.toPath().resolve("mcp").toFile(),
+        ).boot()
+    }
+
+    /**
+     * CYP-150 ⭐ — serve the booted platform's HTTP/WS surface (incl. **`/mcp/hub`**) on localhost so a
+     * spawned `claude`'s `hub_send` MCP call is actually **reachable** (the second RB1 #4 blocker: offered
+     * but not served). Production: bind `127.0.0.1:8787` (the mcp-config url's port, [ConnectorDefaults]/
+     * config default). Returns the started engine; the caller (the journey) starts this BEFORE injecting the
+     * task and stops it after. [port] 0 binds a free port (read via `engine.resolvedConnectors()`) for tests.
+     */
+    fun serveRealAgentPlatform(booted: BootedPlatform, port: Int = 8787): EmbeddedServer<*, *> =
+        embeddedServer(Netty, port = port, host = bootHost) { installPlatform(booted) }.start(wait = false)
+}
