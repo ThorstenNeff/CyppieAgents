@@ -100,6 +100,15 @@ data class AgentConfig(
     /** Connector choice (Doc 10 §1 / CYP-122); default Connector A (stream-json). Defaulted so pre-CYP-122
      *  configs load unchanged. The spawn path selects the connector implementation from this. */
     val connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON,
+    /**
+     * CYP-169 / E2.6 — **no-spawn / remote (BYOA) flag.** **Orthogonal to [connectorKind]**: location
+     * (local vs remote), not execution mode (Doc 12 §1). When true, boot does NOT spawn a local process;
+     * the agent is registered into the topology/ACL/lifecycle (STOPPED) and joins over the wire (`/ws/hub`,
+     * E2.5) — its `WireHello` binds a [com.tneff.cyppieagents.routing.WireConnectorSession]. Its caps are
+     * clamped to the **REMOTE** ceiling from boot (untrusted from birth, E2.4). Defaulted false so existing
+     * configs load unchanged; `launch` is ignored for a remote agent (it spawns its own CC in user infra).
+     */
+    val remote: Boolean = false,
 ) {
     /** Effective worktree folder name (falls back to the id when unset). */
     val worktreeName: String get() = worktree.ifBlank { id }

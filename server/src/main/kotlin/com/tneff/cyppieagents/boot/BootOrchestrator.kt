@@ -278,9 +278,15 @@ class BootOrchestrator(
             // degradation event, Agent DTO) sees the clamped, server-authoritative caps. trustOf is LOCAL
             // for every MVP-spawned agent ⇒ ceiling all-AVAILABLE ⇒ clamp is identity ⇒ local byte-unchanged
             // (E2-S2 regression guard). REMOTE caps (E2.2 wire) get the §1 ceiling and degrade, never escalate.
+            // CYP-169: a remote/BYOA agent is untrusted from birth — clamp its boot caps to the REMOTE
+            // ceiling even before it connects (fail-closed), so a not-yet-connected remote can never sit
+            // with stale LOCAL all-AVAILABLE caps. The wire WireHello later REFINES (still REMOTE-clamped,
+            // E2.4) with the bridge's honest self-declaration.
+            val trust =
+                if (agent.remote) com.tneff.cyppieagents.model.ConnectorTrust.REMOTE else connector.trustFor(agent.id)
             val caps = com.tneff.cyppieagents.model.CapabilityCeiling.clamp(
                 connector.capabilitiesFor(agent.id),
-                com.tneff.cyppieagents.model.CapabilityCeiling.ceilingFor(connector.trustFor(agent.id)),
+                com.tneff.cyppieagents.model.CapabilityCeiling.ceilingFor(trust),
             )
             capabilityRegistry.set(agent.id, caps)
             providerRegistry.set(agent.id, connector.providerFor(agent.id)) // CYP-137: per-agent provider
@@ -354,7 +360,14 @@ class BootOrchestrator(
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()
         for (agent in config.agents) {
-            if (lifecycle.bootAgent(agent.id)) {
+            if (agent.remote) {
+                // CYP-169: a remote/BYOA agent is NOT spawned locally — it joins over the wire (/ws/hub).
+                // It is already in the topology/ACL (HubState.hubAndSpoke) and token registry; register it
+                // as known + STOPPED so a WireHello can bind its [WireConnectorSession] (E2.5). The real
+                // no-spawn flag CYP-169 needs — `launch:""` did NOT skip the spawn.
+                lifecycle.register(agent.id, agent.worktreeName)
+                log.info("agent '{}' is remote (no local spawn); awaiting /ws/hub connection", agent.id)
+            } else if (lifecycle.bootAgent(agent.id)) {
                 booted += agent.id
                 log.info("agent '{}' booted in worktree '{}'", agent.id, agent.worktreeName)
             } else {
