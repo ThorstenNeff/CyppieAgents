@@ -132,6 +132,11 @@ class BootOrchestrator(
     // degradation events, and CYP-122 selects A-vs-B per agent here. The factory receives the
     // already-built [Connector] so a decorator can wrap it; ignore the arg to fully replace it.
     private val connectorFactory: ((default: Connector) -> Connector)? = null,
+    // CYP-163: sandbox-ONLY `bypassPermissions` grant, threaded into the [ClaudeCodeConnector]. Default
+    // (null) = production-sharp — the prod boot NEVER passes a grant, so the spawn stays Gate #4 fail-closed
+    // (never bypass). Non-null ONLY on the RB1 throwaway-sandbox harness path (human + reviewer signed,
+    // [SandboxBypassGrant.rb1Sandbox]); it lets the disposable-sandbox worker write/commit/push autonomously.
+    private val sandboxBypassGrant: com.tneff.cyppieagents.connector.SandboxBypassGrant? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -234,6 +239,8 @@ class BootOrchestrator(
             personaOf = agentConfigs::personaOf,
             mcpConfigWriter = mcpConfigWriter, // CYP-146: expose hub_send to the Connector-A spawn
             tokenFor = { tokenByAgent[it] },
+            // CYP-163: null in prod (sharp, Gate #4); non-null ONLY via the RB1 sandbox harness path.
+            sandboxBypassGrant = sandboxBypassGrant,
         )
         // CYP-122: Connector B (MCP) + per-agent selection. The router picks A vs B by the agent's
         // declared connectorKind at spawn; it IS a Connector so the connectorFactory seam still wraps it.

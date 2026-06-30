@@ -12,6 +12,7 @@ import com.tneff.cyppieagents.boot.WorktreeManager
 import com.tneff.cyppieagents.connector.ConnectorDefaults
 import com.tneff.cyppieagents.connector.ProcessBuilderSpawner
 import com.tneff.cyppieagents.connector.ProcessSpawner
+import com.tneff.cyppieagents.connector.SandboxBypassGrant
 import com.tneff.cyppieagents.routing.bootHost
 import com.tneff.cyppieagents.routing.installPlatform
 import io.ktor.server.engine.EmbeddedServer
@@ -186,6 +187,12 @@ object Rb1RealAgentHarness {
             // with `--mcp-config` → it actually has `hub_send` (CYP-146). Without this the PO ran solo (RB1 #4).
             // Out-of-repo under the sandbox gitRoot, 0600 (HubMcpConfigWriter); tokens come from secrets.agentTokens.
             mcpConfigDir = gitRoot.toPath().resolve("mcp").toFile(),
+            // CYP-163 ⭐ — the RB1 throwaway-sandbox worker must write/commit/push autonomously, but headless
+            // stream-json blocks tool use pending permission approval (RB1 Run #5 finding). The sandbox-ONLY,
+            // human + reviewer-signed bypass grant routes the spawn through the SEPARATE bypass override so the
+            // disposable-sandbox worker can act. Prod/default stays sharp (Gate #4) — this grant lives ONLY on
+            // this disposable RB1 sandbox connector, never a product/S8-prod spawn.
+            sandboxBypassGrant = SandboxBypassGrant.rb1Sandbox(),
         ).boot()
     }
 
