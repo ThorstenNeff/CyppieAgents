@@ -141,6 +141,9 @@ class BootOrchestrator(
     // (in-memory tests/dev, no `--resume`). bootPlatform supplies the out-of-repo, gitignored file
     // under the gitRoot, so an agent resumes its conversation after a server restart.
     private val sessionStoreFile: java.io.File? = null,
+    // CYP-171 / E2.6 (S3): durable secret-at-rest store for runtime-minted remote-agent tokens; null →
+    // in-memory (tests). bootPlatform supplies the out-of-repo, gitignored, 0600 file under the gitRoot.
+    private val remoteTokensFile: java.io.File? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -165,6 +168,11 @@ class BootOrchestrator(
         val turnQueue = SessionTurnQueue()
         val sessions = ConnectorSessions()
         val tokenRegistry = TokenRegistry(secrets.agentTokens, secrets.operatorToken)
+        // CYP-171: restore persisted remote-agent tokens into the registry (a pre-provisioned remote agent
+        // reconnects after a restart), and compose the mint+persist / revoke issuer for AgentManagement.
+        val remoteTokenStore = RemoteTokenStore(remoteTokensFile)
+        remoteTokenStore.all().forEach { (agentId, token) -> tokenRegistry.bind(token, agentId) }
+        val remoteTokenIssuer = RemoteTokenIssuer(tokenRegistry, remoteTokenStore)
 
         // Observability ingestion (CYP-37): one EventRecorder feeds the shared sink; the projector
         // turns masked stream events into content-free drafts at the connector tap and in the router.
@@ -355,6 +363,7 @@ class BootOrchestrator(
             ensureWorktree = { worktreeName -> worktrees.ensureWorktree(worktreeName, config.repo.branch) },
             deleteWorktree = { worktreeName -> worktrees.deleteWorktree(worktreeName) },
             onConnectorOptIn = connectorOptIn::apply, // CYP-122: create-as-B audits like the dedicated opt-in
+            remoteToken = remoteTokenIssuer, // CYP-171: mint/revoke the per-agent token for a remote create/remove
         )
 
         val booted = mutableListOf<String>()

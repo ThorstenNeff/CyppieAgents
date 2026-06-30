@@ -57,7 +57,7 @@ class AgentManagementTest {
 
     @Test fun add_createsStoppedAgent_notSpawned_andEnsuresWorktree() {
         val f = Fix()
-        val a = f.mgmt.add(NewAgentSpec("backend", "Backend", Role.WORKER, persona = "be", launch = "claude"))
+        val a = f.mgmt.add(NewAgentSpec("backend", "Backend", Role.WORKER, persona = "be", launch = "claude")).agent
         assertEquals(AgentRunState.STOPPED, a.runState, "add does not spawn — STOPPED (start is CYP-73)")
         assertTrue(f.state.agents.any { it.id == "backend" })
         assertTrue(f.lifecycle.knows("backend"))

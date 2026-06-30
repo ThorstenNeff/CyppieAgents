@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * HTTP contract for agent CRUD (S14 / CYP-97). Reviewer focus: operator-only writes (fail-closed), the
@@ -110,9 +111,10 @@ class AgentMgmtRoutesTest {
         app(mgmt()); val c = jsonClient()
         val r = c.post("/api/agents") { bearerAuth("tok-op"); contentType(ContentType.Application.Json); setBody(NewAgentSpec("backend", "Backend", Role.WORKER, persona = "be")) }
         assertEquals(HttpStatusCode.Created, r.status)
-        val a = r.body<Agent>()
-        assertEquals("backend", a.id)
-        assertEquals(com.tneff.cyppieagents.model.AgentRunState.STOPPED, a.runState)
+        val created = r.body<com.tneff.cyppieagents.model.CreatedAgent>() // CYP-171: 201 body is CreatedAgent
+        assertEquals("backend", created.agent.id)
+        assertEquals(com.tneff.cyppieagents.model.AgentRunState.STOPPED, created.agent.runState)
+        assertNull(created.token, "a local (non-remote) create discloses no token")
     }
 
     @Test fun post_operator_duplicate_409_agentExists() = testApplication {

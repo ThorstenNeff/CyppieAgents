@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.model.Role
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * The pure agent-management invariants (S14 / CYP-97). Platform-neutral so the server enforcement and
@@ -37,6 +38,19 @@ class AgentMgmtGuardTest {
 
     @Test fun add_duplicateId_agentExists() =
         assertEquals("agent_exists", AgentMgmtGuard.validateAdd(agents, add("frontend")))
+
+    /**
+     * CYP-171 / SEC-OP1: an agent id may NEVER collide with a reserved non-agent participant id (the
+     * operator). The duplicate-check only scans the agent list — the operator is a separate participant —
+     * so without this a `POST /api/agents {id:"operator"}` would slip through and S3 would mint a token
+     * resolving to the operator participant. Reject `invalid_agent`, BEFORE any mint. (Mutation: drop the
+     * reserved-id check → this reds.)
+     */
+    @Test fun add_reservedOperatorId_invalidAgent() {
+        assertEquals("invalid_agent", AgentMgmtGuard.validateAdd(agents, add("operator")))
+        assertEquals("invalid_agent", AgentMgmtGuard.validateAdd(agents, NewAgentSpec("operator", "X", Role.WORKER, remote = true)))
+        assertTrue(AgentMgmtGuard.RESERVED_AGENT_IDS.contains("operator"))
+    }
 
     @Test fun add_secondPo_poAlreadyExists() =
         assertEquals("po_already_exists", AgentMgmtGuard.validateAdd(agents, add("po2", Role.PO)))

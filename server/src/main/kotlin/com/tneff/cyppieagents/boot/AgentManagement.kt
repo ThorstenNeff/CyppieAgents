@@ -7,6 +7,7 @@ import com.tneff.cyppieagents.model.AgentEdit
 import com.tneff.cyppieagents.model.AgentMgmtGuard
 import com.tneff.cyppieagents.model.AgentRunState
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.CreatedAgent
 import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.WorktreeFate
 import com.tneff.cyppieagents.routing.BadRequestException
@@ -36,6 +37,12 @@ class AgentManagement(
      * is audited identically to the dedicated opt-in change. Default no-op (tests / no-event installs).
      */
     private val onConnectorOptIn: (agentId: String, kind: ConnectorKind) -> Unit = { _, _ -> },
+    /**
+     * CYP-171 / E2.6 (S3) — mints/revokes the per-agent bearer token for a **remote** create/remove.
+     * Null (tests / non-remote installs) → no token issuance. The minted token is disclosed ONCE via the
+     * [CreatedAgent] return of [add]; identity stays `token→agentId` (no client-supplied agentId).
+     */
+    private val remoteToken: RemoteTokenIssuer? = null,
 ) {
     private val lock = Any()
 
@@ -49,8 +56,9 @@ class AgentManagement(
         return AgentDetail(a.id, a.name, a.role, a.worktree, cfg?.launch ?: "claude", cfg?.persona)
     }
 
-    /** Register a new agent (NOT spawned). Throws the §2 4xx on a guard violation. */
-    fun add(spec: NewAgentSpec): Agent = synchronized(lock) {
+    /** Register a new agent (NOT spawned). Throws the §2 4xx on a guard violation. Returns the agent and,
+     *  for a remote create, the **once-disclosed** minted token (CYP-171). */
+    fun add(spec: NewAgentSpec): CreatedAgent = synchronized(lock) {
         AgentMgmtGuard.validateAdd(state.agents, spec)?.let { throw codeToException(it) }
         val worktree = spec.worktree?.ifBlank { null }?.trim() ?: spec.id.trim()
         val agent = Agent(spec.id.trim(), spec.name.trim(), spec.role, worktree, AgentRunState.STOPPED, connectorKind = spec.connectorKind)
@@ -60,7 +68,10 @@ class AgentManagement(
         lifecycle.register(agent.id, worktree) // known + STOPPED — start is the CYP-73 lifecycle
         // CYP-122: a non-default connector at create is an opt-in → audited + caps re-declared (server-enforced).
         if (spec.connectorKind != ConnectorKind.STREAM_JSON) onConnectorOptIn(agent.id, spec.connectorKind)
-        agent
+        // CYP-171: a remote/BYOA agent gets a server-minted per-agent token, disclosed ONCE in this response
+        // (SEC-OP1's reserved-id guard in validateAdd already rejected an id colliding with the operator).
+        val token = if (spec.remote) remoteToken?.issue(agent.id) else null
+        CreatedAgent(agent, token)
     }
 
     /** Write agent config (effective next spawn). Omitted/blank persona/launch PRESERVE the stored value. */
@@ -87,6 +98,7 @@ class AgentManagement(
         state.removeAgent(id)     // clean topology removal — spoke channel + every ACL entry gone
         configs.remove(id)
         lifecycle.forget(id)
+        remoteToken?.revoke(id)   // CYP-171 / SEC5: revoke any minted token (idempotent) — agentFor → null
         if (fate == WorktreeFate.DELETE) deleteWorktree(worktree) // branch agent/<id> NOT touched (§9.3)
     }
 
