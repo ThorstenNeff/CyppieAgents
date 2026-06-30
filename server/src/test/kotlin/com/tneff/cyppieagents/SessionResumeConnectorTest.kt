@@ -5,7 +5,6 @@ import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.connector.AgentProcess
 import com.tneff.cyppieagents.connector.ClaudeCodeConnector
-import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.connector.SessionEntry
 import com.tneff.cyppieagents.connector.SessionStore
@@ -38,27 +37,43 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * CYP-167 — read-before-spawn, write-after-init, and the [com.tneff.cyppieagents.connector.ResumingSession]
- * stale-fallback, driven end-to-end through [ClaudeCodeConnector.open] with fake processes whose startup
- * outcome the test controls (bind via system/init, or die-unbound via an error result / closed stdout).
+ * CYP-167/CYP-170 — read-before-spawn, write-after-init, and the resume facade, driven through
+ * [ClaudeCodeConnector.open] with fakes that model the REAL CLI timing (CYP-170): a process emits
+ * `system/init` ONLY in reaction to the first stdin turn (lazy init), never at startup. The old fakes
+ * emitted init independently of any turn, which masked the deadlock — the reviewer's "fixture fidelity".
  */
 class SessionResumeConnectorTest {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     @AfterTest fun tearDown() = scope.cancel()
 
-    private class FakeProc : AgentProcess {
+    // Lazy-init fake: emits NOTHING until the first `writeLine` (turn), then runs [onFirstTurn]. This is
+    // the verified `claude` behaviour and the whole point of CYP-170 — a gate keyed on a pre-turn signal
+    // would deadlock here, exactly as in production.
+    private class FakeProc(private val onFirstTurn: (suspend (FakeProc) -> Unit)? = null) : AgentProcess {
         private val lines = Channel<String>(Channel.UNLIMITED)
         val written = CopyOnWriteArrayList<String>()
+        private val turns = AtomicInteger(0)
         override val stdoutLines: Flow<String> = lines.receiveAsFlow()
         suspend fun feed(line: String) = lines.send(line)
-        override suspend fun writeLine(line: String) { written.add(line) }
+        override suspend fun writeLine(line: String) {
+            written.add(line)
+            if (turns.getAndIncrement() == 0) onFirstTurn?.invoke(this)
+        }
         override fun destroy() { lines.close() }
-        fun bind(sessionId: String) = runBlocking { feed("""{"type":"system","subtype":"init","session_id":"$sessionId"}""") }
-        fun errorUnbound() = runBlocking { feed("""{"type":"result","subtype":"error_during_execution","is_error":true}""") }
     }
 
-    /** Records every spawn command and hands out pre-seeded processes in order. */
+    private fun initLine(sid: String) = """{"type":"system","subtype":"init","session_id":"$sid"}"""
+    private fun successLine(sid: String) =
+        """{"type":"result","subtype":"success","is_error":false,"session_id":"$sid","result":"ack"}"""
+    private fun errorLine(sid: String) =
+        """{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"$sid"}"""
+
+    /** A process that BINDS on the first turn (init + success) — a working (resumed or fresh) session. */
+    private fun boundProc(sid: String) = FakeProc { p -> p.feed(initLine(sid)); p.feed(successLine(sid)) }
+    /** A STALE `--resume`: on the first turn emits an error WHILE unbound (no init), then dies. */
+    private fun staleProc() = FakeProc { p -> p.feed(errorLine("stale-echo-id")); p.destroy() }
+
     private class RecordingSpawner(private vararg val procs: FakeProc) : ProcessSpawner {
         val commands = CopyOnWriteArrayList<List<String>>()
         private val idx = AtomicInteger(0)
@@ -76,7 +91,6 @@ class SessionResumeConnectorTest {
         val clears = AtomicInteger(0)
         val upserts = CopyOnWriteArrayList<String>()
         @Volatile private var entry: SessionEntry? = seed
-        // Scope by the full key so the connector-level M10 test actually exercises projectId routing.
         override fun find(projectId: String, agentId: String): SessionEntry? =
             entry?.takeIf { it.projectId == projectId && it.agentId == agentId }
         override fun upsert(projectId: String, agentId: String, sessionId: String, now: Long) {
@@ -88,15 +102,19 @@ class SessionResumeConnectorTest {
 
     private fun agents() = listOf(Agent("po", "PO", Role.PO, "po"), Agent("backend", "BE", Role.WORKER, "backend"))
 
-    private fun connector(
-        spawner: RecordingSpawner,
-        store: FakeSessionStore,
-        projectId: String = "default",
-    ): ClaudeCodeConnector {
+    private class Fixture(
+        val connector: ClaudeCodeConnector,
+        val hub: Hub,
+        val store: FakeSessionStore,
+        val spawner: RecordingSpawner,
+    )
+
+    private fun fixture(store: FakeSessionStore, projectId: String, vararg procs: FakeProc): Fixture {
         val hub = Hub(HubState.hubAndSpoke(agents()), InMemoryMessageStore())
         val registry = SessionRegistry()
+        val spawner = RecordingSpawner(*procs)
         val tmp = Files.createTempDirectory("resume-cwd").toFile()
-        return ClaudeCodeConnector(
+        val connector = ClaudeCodeConnector(
             spawner = spawner,
             worktreesRoot = tmp,
             resolveApiKey = { null },
@@ -108,139 +126,116 @@ class SessionResumeConnectorTest {
             projectIdOf = { projectId },
             clock = { 12345L },
         )
+        return Fixture(connector, hub, store, spawner)
     }
 
-    private suspend fun await(timeoutMs: Long = 3000, cond: () -> Boolean) =
+    private fun spokeMsgs(hub: Hub) = hub.channelMessages("po", "po-backend")
+    private suspend fun await(timeoutMs: Long = 5000, cond: () -> Boolean) =
         withTimeout(timeoutMs) { while (!cond()) delay(10) }
 
     // ---- read-before-spawn / write-after-init ----
 
-    /** M1 + M4 + M3: no entry ⇒ no `--resume`; nothing written before init; the bound id is persisted after. */
     @Test
     fun freshStart_noResumeFlag_writesAfterInit() = runBlocking {
-        val proc = FakeProc()
-        val spawner = RecordingSpawner(proc)
-        val store = FakeSessionStore()
-        val session = connector(spawner, store).open("backend")
-        scope.launch { session.events.collect { } } // activate the reader
+        val fx = fixture(FakeSessionStore(), "default", boundProc("sess-new"))
+        val session = fx.connector.open("backend") // no entry → plain session, no facade
+        assertFalse(fx.spawner.hasResume(0), "M1: first start has no --resume")
+        assertNull(fx.store.sessionId(), "M4: nothing persisted before the first turn binds")
 
-        assertFalse(spawner.hasResume(0), "M1: first start has no --resume")
-        assertNull(store.sessionId(), "M4: nothing persisted before system/init")
-
-        proc.bind("sess-new")
-        await { store.sessionId() == "sess-new" }
-        assertTrue(store.upserts.contains("sess-new"), "M3: the bound id is persisted write-after-init")
+        withTimeout(5000) { session.sendTurn(UserTurn("hi")) } // lazy init: the turn triggers init+result
+        assertEquals("sess-new", fx.store.sessionId(), "M3: the bound id is persisted write-after-init")
     }
 
-    /** M2: a durable entry ⇒ the first spawn prepends `--resume <id>`. */
     @Test
     fun entryPresent_prependsResumeFlag() = runBlocking {
-        val proc = FakeProc()
-        val spawner = RecordingSpawner(proc)
-        val store = FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L))
-        connector(spawner, store).open("backend")
-        await { spawner.count() == 1 }
-        assertTrue(spawner.hasResume(0), "M2: an existing entry yields --resume")
-        assertEquals("sess-1", spawner.commands[0][spawner.commands[0].indexOf("--resume") + 1])
+        val fx = fixture(FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L)), "default", boundProc("sess-1"))
+        val session = fx.connector.open("backend")
+        withTimeout(5000) { session.sendTurn(UserTurn("hi")) }
+        assertTrue(fx.spawner.hasResume(0), "M2: an existing entry yields --resume on attempt #1")
     }
 
-    /** M10 (connector): a different active projectId does NOT find another project's entry ⇒ no --resume. */
     @Test
     fun differentProject_doesNotResume() = runBlocking {
-        val proc = FakeProc()
-        val spawner = RecordingSpawner(proc)
-        val store = FakeSessionStore(SessionEntry("projA", "backend", "sess-A", 1L, 1L))
-        connector(spawner, store, projectId = "projB").open("backend") // find("projB",…) == null in this fake
-        await { spawner.count() == 1 }
-        assertFalse(spawner.hasResume(0), "M10: projectId scopes the key — projB must not resume projA")
+        val fx = fixture(FakeSessionStore(SessionEntry("projA", "backend", "sess-A", 1L, 1L)), "projB", boundProc("x"))
+        fx.connector.open("backend") // find("projB",…) == null → plain, no --resume
+        await { fx.spawner.count() == 1 }
+        assertFalse(fx.spawner.hasResume(0), "M10: projectId scopes the key — projB must not resume projA")
     }
 
-    // ---- the resume facade ----
+    // ---- the resume facade (CYP-170 ungated-first-turn model) ----
 
-    /** Happy resume: the resumed id binds on attempt #1 ⇒ no clear, no respawn. */
     @Test
-    fun resumeSucceeds_noFallback() = runBlocking {
-        val p1 = FakeProc()
-        val spawner = RecordingSpawner(p1)
-        val store = FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L))
-        val session = connector(spawner, store).open("backend")
-        scope.launch { session.events.collect { } }
-        p1.bind("sess-1")
-        await { store.sessionId() == "sess-1" && store.upserts.contains("sess-1") }
-        delay(100) // give any (wrong) fallback a chance to fire
-        assertEquals(0, store.clears.get(), "a successful resume never clears")
-        assertEquals(1, spawner.count(), "a successful resume never respawns")
+    fun resumeSucceeds_firstTurnBinds_noFallback_deliveredOnce() = runBlocking {
+        val fx = fixture(FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L)), "default", boundProc("sess-1"))
+        val session = fx.connector.open("backend")
+        withTimeout(5000) { session.sendTurn(UserTurn("hi resumed")) } // binds during the turn → committed
+        assertEquals(0, fx.store.clears.get(), "a successful resume never clears")
+        assertEquals(1, fx.spawner.count(), "a successful resume never respawns")
+        assertEquals(1, spokeMsgs(fx.hub).size, "the turn is delivered exactly once")
     }
 
-    /** M5 + M6 + M7: a stale id dies unbound ⇒ clear once + respawn fresh WITHOUT the flag, exactly once. */
     @Test
-    fun staleResume_clearsAndRespawnsFreshOnce() = runBlocking {
-        val p1 = FakeProc()
-        val p2 = FakeProc()
-        val spawner = RecordingSpawner(p1, p2)
-        val store = FakeSessionStore(SessionEntry("default", "backend", "sess-stale", 1L, 1L))
-        val session = connector(spawner, store).open("backend")
-        scope.launch { session.events.collect { } }
-        assertTrue(spawner.hasResume(0), "attempt #1 carried --resume")
+    fun staleResume_clearsRespawnsFresh_reinjectsTurnOnce_noDoubleDeliver() = runBlocking {
+        val fx = fixture(
+            FakeSessionStore(SessionEntry("default", "backend", "sess-stale", 1L, 1L)), "default",
+            staleProc(), boundProc("fresh-sid"),
+        )
+        val session = fx.connector.open("backend")
+        assertTrue(fx.spawner.hasResume(0), "attempt #1 carried --resume")
 
-        p1.errorUnbound(); p1.destroy() // stale id → is_error while unbound → DIED_UNBOUND
-        await { spawner.count() == 2 }
+        withTimeout(8000) { session.sendTurn(UserTurn("important turn")) } // stale → fallback → re-inject
 
-        assertTrue(store.clears.get() >= 1, "M5: the stale entry is cleared")
-        assertFalse(spawner.hasResume(1), "M6: the fresh respawn has NO --resume")
+        assertEquals(1, fx.store.clears.get(), "M5: the stale entry is cleared")
+        assertEquals(2, fx.spawner.count(), "exactly one respawn")
+        assertFalse(fx.spawner.hasResume(1), "M6: the fresh respawn has NO --resume")
+        // CYP-170 reviewer axis — the stale attempt never bound, so it never mediated: the hub sees the
+        // turn EXACTLY once (from the fresh attempt), NOT once-per-attempt.
+        assertEquals(1, spokeMsgs(fx.hub).size, "no double-deliver: the turn reaches the hub exactly once")
+    }
 
-        p2.destroy() // the fresh attempt also dies → must NOT trigger a 3rd spawn
+    @Test
+    fun staleResume_freshAlsoDies_noThirdSpawn() = runBlocking {
+        val fx = fixture(
+            FakeSessionStore(SessionEntry("default", "backend", "sess-stale", 1L, 1L)), "default",
+            staleProc(), staleProc(), // both attempts die unbound
+        )
+        val session = fx.connector.open("backend")
+        // The fallback fires exactly once; the re-inject on the (also-dead) fresh session surfaces as a
+        // dead session — but there is NO third spawn (RecordingSpawner only seeded 2 → a 3rd would throw).
+        withTimeout(8000) { session.sendTurn(UserTurn("doomed turn")) }
         delay(150)
-        assertEquals(2, spawner.count(), "M7: the fallback fires exactly once (no third attempt)")
+        assertEquals(2, fx.spawner.count(), "M7: the fallback fires exactly once — no third attempt")
+        assertEquals(0, spokeMsgs(fx.hub).size, "neither (unbound) attempt mediates → no spurious delivery")
     }
 
-    /**
-     * R2 (M5b + M7b): an error / death AFTER the session bound is a mid-session crash (CYP-73), NOT a
-     * resume failure — it must NOT clear the durable entry and must NOT respawn. This is the guard that
-     * keeps the NEXT real restart resumable.
-     */
     @Test
     fun postBindCrash_doesNotClearOrRespawn() = runBlocking {
-        val p1 = FakeProc()
-        val p2 = FakeProc()
-        val spawner = RecordingSpawner(p1, p2)
-        val store = FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L))
-        val session = connector(spawner, store).open("backend")
-        scope.launch { session.events.collect { } }
+        val p1 = boundProc("sess-1")
+        val fx = fixture(FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L)), "default", p1, staleProc())
+        val session = fx.connector.open("backend")
+        withTimeout(5000) { session.sendTurn(UserTurn("hi")) } // first turn binds → committed
+        assertEquals(0, fx.store.clears.get(), "BOUND on the first turn → no clear")
 
-        p1.bind("sess-1")
-        await { store.sessionId() == "sess-1" }
-
-        p1.errorUnbound(); p1.destroy() // error + death AFTER bind = mid-session crash
+        p1.feed(errorLine("sess-1")); p1.destroy() // a crash AFTER bind = mid-session (CYP-73), not a resume failure
         delay(200)
-
-        assertEquals(0, store.clears.get(), "R2: a post-bind crash must NOT clear the durable entry")
-        assertEquals(1, spawner.count(), "R2: a post-bind crash must NOT respawn")
-        assertEquals("sess-1", store.sessionId(), "the binding stays intact for the next real restart")
+        assertEquals(0, fx.store.clears.get(), "R2: a post-bind crash must NOT clear the durable entry")
+        assertEquals(1, fx.spawner.count(), "R2: a post-bind crash must NOT respawn")
     }
 
-    /** R3: closing in the pre-bind window ⇒ no spurious clear, no respawn, and sendTurn does not hang. */
     @Test
     fun preBindClose_noSpuriousClear_noHang() = runBlocking {
-        val p1 = FakeProc()
-        val p2 = FakeProc()
-        val spawner = RecordingSpawner(p1, p2)
-        val store = FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L))
-        val session: ConnectorSession = connector(spawner, store).open("backend")
-
-        session.close() // close BEFORE anything binds
+        val fx = fixture(FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L)), "default", boundProc("sess-1"), staleProc())
+        val session = fx.connector.open("backend")
+        session.close() // close BEFORE any turn — the resume question was never asked
         delay(150)
-
-        assertEquals(0, store.clears.get(), "R3: a pre-bind close must NOT clear (clear is only for a real stale resume)")
-        assertEquals(1, spawner.count(), "R3: a pre-bind close must NOT respawn")
-        // sendTurn must not HANG on the ready-gate after close: a real timeout fails the test, while a fast
-        // cancellation (the gate was cancelled) is the expected, no-hang outcome.
+        assertEquals(0, fx.store.clears.get(), "R3: a pre-bind close must NOT clear")
+        assertEquals(1, fx.spawner.count(), "R3: a pre-bind close must NOT respawn")
         try {
             withTimeout(1000) { session.sendTurn(UserTurn("x")) }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            throw AssertionError("R3: sendTurn hung on the ready-gate after close", e)
+            throw AssertionError("R3: sendTurn hung after close", e)
         } catch (expected: Exception) {
-            // ready-gate cancelled → sendTurn fails fast (no hang). Good.
+            // closed session → sendTurn fails fast (no hang). Good.
         }
     }
 }
