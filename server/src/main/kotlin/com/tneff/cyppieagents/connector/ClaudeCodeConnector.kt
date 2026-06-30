@@ -273,9 +273,16 @@ class ClaudeCodeSession(
                     if (masked.isError && boundSessionId == null && !startupOutcome.isCompleted) {
                         startupOutcome.complete(StartupOutcome.DIED_UNBOUND)
                     }
-                    // Turn end: mediate to the hub spoke (Gate #1/#2/#6 live in the router/hub)…
-                    runCatching { router.onResult(masked) }
-                        .onFailure { log.warn("mediation failed for agent={}: {}", agentId, it.message) }
+                    // CYP-170: ONLY mediate a result from a session that actually BOUND. A result while still
+                    // unbound is a failed/stale `--resume` attempt (the `error_during_execution`) about to be
+                    // replaced by a fresh respawn — it must NOT reach the hub, or the re-injected turn on the
+                    // fresh session would DOUBLE-DELIVER the turn (reviewer axis). The committed attempt (bound
+                    // resume, or the fresh respawn) binds at `system/init` BEFORE its result, so it mediates
+                    // normally. Gate #1/#2/#6 still live in the router/hub.
+                    if (boundSessionId != null) {
+                        runCatching { router.onResult(masked) }
+                            .onFailure { log.warn("mediation failed for agent={}: {}", agentId, it.message) }
+                    }
                     // …and release the single-flight turn (Gate #5).
                     pendingTurn?.complete(Unit)
                     pendingTurn = null
@@ -287,6 +294,10 @@ class ClaudeCodeSession(
             // CYP-167 secondary net: if stdout ended before ANY bind (a death with no error result either),
             // it's still a failed startup → DIED_UNBOUND so the resume facade can fall back.
             if (!startupOutcome.isCompleted) startupOutcome.complete(StartupOutcome.DIED_UNBOUND)
+            // CYP-170: release a turn that is awaiting a result from a process that died WITHOUT one, so the
+            // resume facade's `firstAttempt.sendTurn` returns (→ falls back) instead of hanging on a dead pipe.
+            pendingTurn?.complete(Unit)
+            pendingTurn = null
             if (recorder != null && projector != null) {
                 recorder.record(projector.processExit(agentId, boundSessionId, null))
             }
