@@ -69,7 +69,9 @@ class HubWireRoutesTest {
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), store)
         val caps = CapabilityRegistry()
         val prov = ProviderRegistry()
-        application { install(WebSockets); routing { hubWireRoutes(hub, registry(), caps, prov) } }
+        // A default limiter (capacity 20) never throttles these few-send E2.2 tests; CYP-161 rate-limit
+        // behavior is exercised in HubWireRateLimitTest with a fake Clock.
+        application { install(WebSockets); routing { hubWireRoutes(hub, registry(), caps, prov, com.tneff.cyppieagents.routing.WireRateLimiter()) } }
         return Fixture(hub, store, caps, prov)
     }
 

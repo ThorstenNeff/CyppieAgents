@@ -52,6 +52,7 @@ fun Route.hubWireRoutes(
     registry: TokenRegistry,
     capabilityRegistry: CapabilityRegistry,
     providerRegistry: ProviderRegistry,
+    rateLimiter: WireRateLimiter,
 ) {
     webSocket("/ws/hub") {
         // Auth FIRST, fail-closed, BEFORE any frame: only an agent token (→ its own agentId) may connect.
@@ -63,6 +64,10 @@ fun Route.hubWireRoutes(
         }
 
         var handshook = false
+        // RC2: the flood-close counter is per-CONNECTION-local (NOT in the limiter). A fresh connection of
+        // a throttled agent gets a fresh counter (no stale insta-close) — yet its sends are still throttled,
+        // because the agent's SHARED bucket (in [rateLimiter]) is still empty. Tokens shared, counter local.
+        var consecutiveRejects = 0
         for (frame in incoming) {
             if (frame !is Frame.Text) continue
             // R3: a malformed / non-decodable envelope (incl. an unknown frame `type`) → fail-closed.
@@ -101,6 +106,17 @@ fun Route.hubWireRoutes(
                         reply(WireError(WireErrorCode.PROTOCOL, "hello required before send"))
                         return@webSocket close(CloseReason(CloseReason.Codes.PROTOCOL_ERROR, "send before hello"))
                     }
+                    // E2.5a / CYP-161: rate-limit FIRST (before size-cap + postAsAgent) so a flood is dropped
+                    // before any work. Bucket is per-agentId (shared across this agent's connections, RL5).
+                    if (!rateLimiter.tryAcquire(agentId)) {
+                        reply(WireError(WireErrorCode.RATE_LIMITED, "rate limit exceeded — back off")) // transient
+                        // RC4 flood backstop: sustained throttling on THIS connection → close fail-closed.
+                        if (++consecutiveRejects >= rateLimiter.floodCloseAfter) {
+                            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "flood"))
+                        }
+                        continue
+                    }
+                    consecutiveRejects = 0 // an accepted send resets THIS connection's flood counter
                     // A5: size-cap at the wire edge (CYP-143 reuse) — oversized/blank → nothing posted.
                     try {
                         MessageInput.requireValidBody(f.text)

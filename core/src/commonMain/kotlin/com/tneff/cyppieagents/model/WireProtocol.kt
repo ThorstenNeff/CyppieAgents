@@ -77,4 +77,5 @@ enum class WireErrorCode {
     @SerialName("too_large") TOO_LARGE, // oversized/blank body (size-cap at the edge)
     @SerialName("bad_request") BAD_REQUEST, // malformed envelope / unknown or unexpected frame type
     @SerialName("protocol") PROTOCOL, // ordering violation: send/subscribe before hello, or a 2nd hello
+    @SerialName("rate_limited") RATE_LIMITED, // E2.5a/CYP-161: token-bucket throttle — the transient "back off"
 }
