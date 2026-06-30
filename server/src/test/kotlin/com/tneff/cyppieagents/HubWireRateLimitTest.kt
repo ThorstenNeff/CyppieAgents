@@ -63,7 +63,7 @@ class HubWireRateLimitTest {
 
     private fun ApplicationTestBuilder.installWire(limiter: WireRateLimiter): Fixture {
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), InMemoryMessageStore())
-        application { install(WebSockets); routing { hubWireRoutes(hub, registry(), CapabilityRegistry(), ProviderRegistry(), limiter) } }
+        application { install(WebSockets); routing { hubWireRoutes(hub, registry(), CapabilityRegistry(), ProviderRegistry(), limiter, com.tneff.cyppieagents.connector.ConnectorSessions()) } }
         return Fixture(hub)
     }
 

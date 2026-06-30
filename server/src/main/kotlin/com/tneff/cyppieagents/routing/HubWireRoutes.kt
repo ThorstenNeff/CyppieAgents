@@ -3,8 +3,12 @@ package com.tneff.cyppieagents.routing
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.connector.CapabilityRegistry
+import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProviderRegistry
 import com.tneff.cyppieagents.model.CapabilityCeiling
+import com.tneff.cyppieagents.model.WireDeliver
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.tneff.cyppieagents.model.ConnectorTrust
 import com.tneff.cyppieagents.model.MessageMeta
 import com.tneff.cyppieagents.model.SUPPORTED_WIRE_VERSIONS
@@ -18,7 +22,6 @@ import com.tneff.cyppieagents.model.WireMessage
 import com.tneff.cyppieagents.model.WireSend
 import com.tneff.cyppieagents.model.WireSubscribe
 import io.ktor.server.routing.Route
-import io.ktor.server.websocket.DefaultWebSocketServerSession
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
@@ -53,6 +56,7 @@ fun Route.hubWireRoutes(
     capabilityRegistry: CapabilityRegistry,
     providerRegistry: ProviderRegistry,
     rateLimiter: WireRateLimiter,
+    connectorSessions: ConnectorSessions,
 ) {
     webSocket("/ws/hub") {
         // Auth FIRST, fail-closed, BEFORE any frame: only an agent token (→ its own agentId) may connect.
@@ -63,12 +67,22 @@ fun Route.hubWireRoutes(
             return@webSocket
         }
 
+        // RC1 (CYP-141): ONE shared lock guards EVERY send on this WS — the read-loop's reply() AND the
+        // deliverer's async WireDeliver push (the wire-backed session). Two unsynchronized writers on one
+        // socket interleave frames / hit ClosedSendChannelException.
+        val sendLock = Mutex()
+        suspend fun reply(frame: WireFrame) = sendLock.withLock {
+            send(Frame.Text(CommJson.encodeToString(WireEnvelope.serializer(), WireEnvelope(1, frame))))
+        }
         var handshook = false
-        // RC2: the flood-close counter is per-CONNECTION-local (NOT in the limiter). A fresh connection of
-        // a throttled agent gets a fresh counter (no stale insta-close) — yet its sends are still throttled,
+        // The flood-close counter is per-CONNECTION-local (NOT in the limiter). A fresh connection of a
+        // throttled agent gets a fresh counter (no stale insta-close) — yet its sends are still throttled,
         // because the agent's SHARED bucket (in [rateLimiter]) is still empty. Tokens shared, counter local.
         var consecutiveRejects = 0
-        for (frame in incoming) {
+        // CYP-141: the wire-backed session, registered at handshake, removed (compare-and-remove) on close.
+        var session: WireConnectorSession? = null
+        try {
+            for (frame in incoming) {
             if (frame !is Frame.Text) continue
             // R3: a malformed / non-decodable envelope (incl. an unknown frame `type`) → fail-closed.
             val env = runCatching { CommJson.decodeFromString<WireEnvelope>(frame.readText()) }.getOrNull()
@@ -98,7 +112,18 @@ fun Route.hubWireRoutes(
                     )
                     providerRegistry.set(agentId, f.provider)
                     handshook = true
-                    reply(WireAck("hello"))
+                    reply(WireAck("hello")) // Ack BEFORE register, so a replayed WireDeliver can't precede it
+                    // CYP-141 ⭐: register the wire-backed session → fires deliverer.onSessionAttached →
+                    // drains any pending inbound (at-least-once replay). RC1: sendDeliver pushes WireDeliver
+                    // through the SAME sendLock as reply(). RC2: sendTurn propagates a closed-WS throw, so the
+                    // deliverer's markDelivered (after-success) doesn't advance → re-delivered on reconnect.
+                    val s = WireConnectorSession(
+                        agentId,
+                        sendDeliver = { reply(WireDeliver(it)) },
+                        closeWs = { outgoing.close() },
+                    )
+                    session = s
+                    connectorSessions.register(s)
                 }
 
                 is WireSend -> {
@@ -155,11 +180,11 @@ fun Route.hubWireRoutes(
                     return@webSocket close(CloseReason(CloseReason.Codes.PROTOCOL_ERROR, "unexpected frame"))
                 }
             }
+            }
+        } finally {
+            // RC3: evict ONLY if still the current registered instance — a reconnect that already replaced
+            // this session is left untouched (a blind remove would orphan the new connection).
+            session?.let { connectorSessions.removeIfSame(it) }
         }
     }
-}
-
-/** Encode a server→client [WireFrame] in a v1 envelope and send it as one text frame. */
-private suspend fun DefaultWebSocketServerSession.reply(frame: WireFrame) {
-    send(Frame.Text(CommJson.encodeToString(WireEnvelope.serializer(), WireEnvelope(1, frame))))
 }

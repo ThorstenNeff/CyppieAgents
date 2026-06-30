@@ -54,7 +54,9 @@ fun Application.installPlatform(booted: BootedPlatform) {
         // postAsAgent, Subscribe funnels channelMessages — the same chokepoints as the local paths.
         // CYP-161 / E2.5a: one WireRateLimiter shared across all /ws/hub connections (per-agentId token-buckets)
         // defends the live wire against a remote-connector flood (the named E2.2-M2 obligation).
-        hubWireRoutes(booted.hub, booted.tokenRegistry, booted.capabilityRegistry, booted.providerRegistry, WireRateLimiter())
+        // CYP-141 / E2.5: connectorSessions lets a handshaking remote connector register a wire-backed
+        // ConnectorSession → the CYP-132 deliverer pushes inbound (WireDeliver) to it like any local agent.
+        hubWireRoutes(booted.hub, booted.tokenRegistry, booted.capabilityRegistry, booted.providerRegistry, WireRateLimiter(), booted.connectorSessions)
         // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
         // project (resolved server-side from the registry pointer; a switch re-scopes without restart).
         // CYP-94: the operator's authorized set (MVP = all of the registry's projects) bounds the
