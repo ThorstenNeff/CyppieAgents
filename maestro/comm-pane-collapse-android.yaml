@@ -1,0 +1,64 @@
+# CYP-156 — Comm single-pane collapse Android flow (Maestro, native Compose target).
+#
+# Device-verify for the Class-A pane-collapse on the native path (the authoritative gate, like
+# CYP-47/48). The REAL CommPanel renders FULL-SCREEN via the demo `demo.tab.comm` tab — at a phone
+# width (~411dp) the panel inner width is < PANE_COLLAPSE_WIDTH (600dp) → single-pane. Exercises the
+# panel-internal testTags (`comm.channelList` / `comm.timeline` / `comm.back`, area `comm`), which are
+# MODE-AGNOSTIC (identical in canvas and pager) — so this flow is unaffected by the canvas/pager
+# window-frame tag split (cf. CYP-162). NO text/localizable selectors (Test-Contract §4):
+#   * narrow → single-pane: the conversation OR the channel list owns the area, never both,
+#   * the new `comm.back` affordance navigates conversation → list,
+#   * selecting a channel navigates list → conversation.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED so YAML keeps the
+# backslashes literal. On Android the testTags surface as view resource-ids via
+# Modifier.enableTestTagsAsResourceId() at the demo root (CYP-15).
+#
+# PREREQUISITES (tester runtime; Dev's sandbox has no emulator/Maestro):
+#   * Install + launch the DEDICATED demo build `:app:androidAppDemo` (appId com.tneff.cyppieagents.demo).
+#     DemoActivity's `demo.tab.comm` renders the REAL CommPanel FULL-SCREEN (not the desktop window shell)
+#     fed by a hermetic stub (DemoCommApi + StubCommLiveSource) — no server. On a phone the panel inner
+#     width < 600dp → single-pane. NOT the prod `:app:androidApp`.
+appId: com.tneff.cyppieagents.demo
+name: "CYP-156 Comm pane-collapse (Android) — single-pane <600dp -> back -> select navigates"
+tags:
+  - gating
+  - comm
+---
+- launchApp
+
+# Select the Comm tab (real CommPanel full-screen).
+- tapOn:
+    id: '^demo\.tab\.comm$'
+
+# Single-pane: the first channel auto-selects → the conversation owns the area with a back affordance,
+# and the channel list is NOT shown beside it.
+- assertVisible:
+    id: '^comm\.timeline$'
+    label: "Conversation owns the single pane (auto-selected channel)"
+- assertVisible:
+    id: '^comm\.back$'
+    label: "New single-pane back affordance present (< PANE_COLLAPSE_WIDTH)"
+- assertNotVisible:
+    id: '^comm\.channelList$'
+    label: "Channel list NOT shown beside the conversation (single-pane, not two-pane)"
+
+# Back → the channel list owns the area; the conversation is gone.
+- tapOn:
+    id: '^comm\.back$'
+- assertVisible:
+    id: '^comm\.channelList$'
+    label: "Back navigates to the channel list"
+- assertNotVisible:
+    id: '^comm\.timeline$'
+    label: "Conversation no longer composed (single-pane)"
+
+# Select a channel → navigate back to the conversation (single-pane again).
+- tapOn:
+    id: '^comm\.channel\.po-frontend$'
+- assertVisible:
+    id: '^comm\.timeline$'
+    label: "Selecting a channel navigates to the conversation"
+- assertVisible:
+    id: '^comm\.back$'
+    label: "Back affordance present again on the conversation"
