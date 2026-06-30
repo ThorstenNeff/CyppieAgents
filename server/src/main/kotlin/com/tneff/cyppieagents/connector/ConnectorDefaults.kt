@@ -66,4 +66,45 @@ object ConnectorDefaults {
     /** True if a built arg list would bypass permissions — used to assert the default never does. */
     fun bypassesPermissions(args: List<String>): Boolean =
         args.any { it == DANGEROUS_FLAG || it == FORBIDDEN_PERMISSION_MODE }
+
+    /**
+     * CYP-163 — the NARROW, sandbox-only escape hatch: build spawn args WITH `bypassPermissions`, permitted
+     * ONLY when the caller presents an explicit [SandboxBypassGrant]. This is the **single** path that may
+     * emit bypass. The production [streamJsonArgs] keeps its fail-closed `require` (Gate #4), so bypass can
+     * **never** leak into the prod default — the two paths are disjoint and the grant is a non-defaulted,
+     * greppable parameter, so the exception is explicit at every call site, never implicit.
+     *
+     * Authorized: Auftraggeber (human, out-of-band) for the RB1 **throwaway-sandbox** worker spawn ONLY;
+     * reviewer co-signed (CYP-163). NOT for any product-repo / S8-prod spawn.
+     */
+    fun sandboxBypassStreamJsonArgs(
+        grant: SandboxBypassGrant,
+        allowedTools: List<String> = DEFAULT_ALLOWED_TOOLS,
+    ): List<String> {
+        // The grant's presence IS the authorization (its type can only be produced via the named factory).
+        require(grant.reason.isNotBlank()) { "sandbox bypass grant must state its reason" }
+        val args = BASE_STREAM_JSON_FLAGS.toMutableList()
+        args += "--permission-mode"
+        args += FORBIDDEN_PERMISSION_MODE // bypassPermissions — sandbox-only, grant-gated
+        if (allowedTools.isNotEmpty()) {
+            args += "--allowedTools"
+            args += allowedTools.joinToString(",")
+        }
+        return args
+    }
+}
+
+/**
+ * CYP-163 — an explicit, sandbox-signed capability token that authorizes [ConnectorDefaults
+ * .sandboxBypassStreamJsonArgs] to emit `bypassPermissions`. The **private constructor + single named
+ * factory** mean a grant cannot be produced implicitly or by accident: it documents intent at the call
+ * site and is trivially greppable. Production code never constructs one, so the prod spawn path stays
+ * sharp (Gate #4). Auftraggeber-authorized (human) + reviewer co-signed for the RB1 sandbox worker ONLY.
+ */
+class SandboxBypassGrant private constructor(val reason: String) {
+    companion object {
+        /** The ONLY sanctioned grant: the RB1 **throwaway** sandbox worker (a disposable, non-product repo). */
+        fun rb1Sandbox(): SandboxBypassGrant =
+            SandboxBypassGrant("RB1 throwaway-sandbox worker (CYP-163; human + reviewer signed)")
+    }
 }
