@@ -267,8 +267,9 @@ class ClaudeCodeSession(
                 if (masked is ResultEvent) {
                     // CYP-167 stale-resume discriminator (spike-verified, R2): an error result WHILE still
                     // unbound = a dead `--resume` (the spike's `error_during_execution` before any system/init).
-                    // The `boundSessionId == null` guard is the line that protects R2: an error AFTER bind is a
-                    // mid-session crash (CYP-73's job), NOT a resume failure — it must not trip the fallback.
+                    // R2 is carried by the bind-time complete(BOUND) above: once BOUND, a later error is a no-op
+                    // via isCompleted. This boundSessionId==null check is a defensive belt-and-suspenders (an
+                    // error is only reachable here while unbound anyway).
                     if (masked.isError && boundSessionId == null && !startupOutcome.isCompleted) {
                         startupOutcome.complete(StartupOutcome.DIED_UNBOUND)
                     }
