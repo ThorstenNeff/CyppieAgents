@@ -1,11 +1,17 @@
 package com.tneff.cyppieagents.eventlog
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
@@ -19,6 +25,19 @@ import kotlin.test.Test
  */
 @OptIn(ExperimentalTestApi::class)
 class EventTailPanelRenderTest {
+
+    @Test
+    fun narrowWidth_tailHeaderChipsWrap_pauseStaysOnScreen() = runComposeUiTest {
+        val vm = EventTailViewModel(StubEventsSource())
+        setContent { MaterialTheme { Box(Modifier.width(360.dp).height(700.dp)) { EventTailPanel(vm) } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventTailTags.FILTER_PROJECT).fetchSemanticsNodes().isNotEmpty() }
+        // CYP-158 §2.1: Pause control stays prominent on the first line; the filter chips flow in a
+        // FlowRow below → the trailing severity + project chips stay ON-SCREEN at a narrow width
+        // (un-wrapped they'd clip off the right edge). Pause/Live disclosure unchanged.
+        onNodeWithTag(EventTailTags.PAUSE_TOGGLE).assertIsDisplayed()
+        onNodeWithTag(EventTailTags.FILTER_SEVERITY).assertIsDisplayed()
+        onNodeWithTag(EventTailTags.FILTER_PROJECT).assertIsDisplayed()
+    }
 
     @Test
     fun streams_showsLive_thenPauseHidesLive() = runComposeUiTest {

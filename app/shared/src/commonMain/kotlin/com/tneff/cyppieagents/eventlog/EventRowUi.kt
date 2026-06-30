@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,6 +44,13 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.compose.resources.stringResource
 
+// CYP-158 §2.2: below this ROW inner width the 7–8 fixed columns stop fitting → the row reflows to a
+// deterministic 2-line grouping (triage line + identity line) so no column clips or char-stacks
+// vertically. Row-density-specific and DELIBERATELY DISTINCT from the pane breakpoint
+// (PANE_COLLAPSE_WIDTH=600dp): this is measured at the row's own inner width, not the pane. Dev-calibrated
+// 560dp (CYP-26-analogue) keeps the single-pane phone (~411dp) on 2 lines and a wide master pane (>560) on 1.
+private val EVENT_ROW_REFLOW_WIDTH = 560.dp
+
 /** Localized severity label (event-log-keys §1) — severity is never colour alone (§2). */
 @Composable
 fun severityLabel(severity: Severity): String = stringResource(
@@ -77,53 +86,80 @@ fun EventRow(
     }
     val sevLabel = severityLabel(event.severity)
     val desc = stringResource(Res.string.a11y_event_row, sevLabel, event.typeText(), event.agentId, formatTs(event.ts))
-    val identity = SenderPalette.forSender(event.agentId)
-    Row(
+    // rowTag + contentDescription + click live on the OUTER container (Box) so they are unchanged whether
+    // the row renders as 1 visual line (≥ EVENT_ROW_REFLOW_WIDTH) or 2 (CYP-158 §2.2). Same child nodes
+    // and tags either way — only their grouping changes.
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(rowTag)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .semantics { contentDescription = desc }
             .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // Severity rail (the qualifier-tagged node) + glyph — colour never the sole carrier (§2).
-        Box(
-            modifier = Modifier.width(4.dp).height(22.dp).clip(RoundedCornerShape(2.dp))
-                .background(event.severity.railColor()).testTag(qualifierTag),
-        )
-        Text(event.severity.glyph(), style = MaterialTheme.typography.labelSmall)
-        Text(formatTs(event.ts), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
-        // Type: group glyph + monospace exact enum wire (aggregatable). Carries the id-stable tag.
-        Text(
-            text = "${event.type.groupGlyph()} ${event.typeText()}",
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.testTag(byIdTag),
-        )
-        // Identity: avatar initials + name (CYP-14 hue), never status (§1).
-        Box(
-            modifier = Modifier.size(22.dp).clip(CircleShape).background(identity.avatarFill),
-            contentAlignment = Alignment.Center,
-        ) { Text(initialsOf(event.agentId), color = identity.onAvatar, style = MaterialTheme.typography.labelSmall) }
-        Text(event.agentId, color = identity.nameAccent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-        // Correlation chip — truncated correlationId; absent → "—", never guessed (§4).
-        Text(
-            text = event.correlationId?.let { "· ${it.take(8)}" } ?: "· —",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.outline,
-        )
-        // CYP-94: project identity — only in the cross-project view, as TEXT (identity ≠ severity ≠ right).
-        if (showProject && projectTag != null) {
-            Text(
-                text = stringResource(Res.string.event_row_project, event.projectId),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.testTag(projectTag),
-            )
+        if (maxWidth < EVENT_ROW_REFLOW_WIDTH) {
+            // Deterministic 2-line grouping: line 1 = triage (severity, time, type), line 2 = identity/meta.
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TriageCells(event, qualifierTag, byIdTag)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IdentityCells(event, showProject, projectTag)
+                }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TriageCells(event, qualifierTag, byIdTag)
+                IdentityCells(event, showProject, projectTag)
+            }
         }
+    }
+}
+
+/** Triage cells (severity rail+glyph, timestamp, type) — line 1 narrow, leading cells wide. */
+@Composable
+private fun TriageCells(event: Event, qualifierTag: String, byIdTag: String) {
+    // Severity rail (the qualifier-tagged node) + glyph — colour never the sole carrier (§2).
+    Box(
+        modifier = Modifier.width(4.dp).height(22.dp).clip(RoundedCornerShape(2.dp))
+            .background(event.severity.railColor()).testTag(qualifierTag),
+    )
+    Text(event.severity.glyph(), style = MaterialTheme.typography.labelSmall)
+    Text(formatTs(event.ts), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
+    // Type: group glyph + monospace exact enum wire (aggregatable). Carries the id-stable tag.
+    Text(
+        text = "${event.type.groupGlyph()} ${event.typeText()}",
+        fontFamily = FontFamily.Monospace,
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier.testTag(byIdTag),
+    )
+}
+
+/** Identity/meta cells (avatar+name, correlation, optional project) — line 2 narrow, trailing cells wide. */
+@Composable
+private fun IdentityCells(event: Event, showProject: Boolean, projectTag: String?) {
+    val identity = SenderPalette.forSender(event.agentId)
+    // Identity: avatar initials + name (CYP-14 hue), never status (§1).
+    Box(
+        modifier = Modifier.size(22.dp).clip(CircleShape).background(identity.avatarFill),
+        contentAlignment = Alignment.Center,
+    ) { Text(initialsOf(event.agentId), color = identity.onAvatar, style = MaterialTheme.typography.labelSmall) }
+    Text(event.agentId, color = identity.nameAccent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
+    // Correlation chip — truncated correlationId; absent → "—", never guessed (§4).
+    Text(
+        text = event.correlationId?.let { "· ${it.take(8)}" } ?: "· —",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.outline,
+    )
+    // CYP-94: project identity — only in the cross-project view, as TEXT (identity ≠ severity ≠ right).
+    if (showProject && projectTag != null) {
+        Text(
+            text = stringResource(Res.string.event_row_project, event.projectId),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.testTag(projectTag),
+        )
     }
 }
 
