@@ -6,16 +6,55 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
 
 /**
- * MVP auth (Spec 02 §14): a static bearer token per agent maps to an agent id; one separate
- * operator token authorizes ACL changes. The server maps token → agentId; the agent's identity
- * is therefore the *token*, never anything the client sends in a body (Reviewer Gate #1).
+ * MVP auth (Spec 02 §14): a bearer token per agent maps to an agent id; one separate operator token
+ * authorizes ACL changes. The server maps token → agentId; the agent's identity is therefore the
+ * *token*, never anything the client sends in a body (Reviewer Gate #1).
+ *
+ * CYP-171 / E2.6 (S3): the map is **runtime-mutable** — boot seeds it from the env ([Secrets.agentTokens])
+ * + the persisted remote tokens, and [mint] adds a server-generated per-agent token at runtime (operator
+ * pre-provision of a remote/BYOA agent). The lookup semantics are UNCHANGED: [agentFor] stays the SOLE
+ * identity source; mint only adds an entry, never a second identity path. Thread-safe.
  */
 class TokenRegistry(
-    private val tokenToAgent: Map<String, String>,
+    seed: Map<String, String>,
     private val operatorToken: String?,
 ) {
+    private val tokenToAgent = java.util.concurrent.ConcurrentHashMap(seed)
+
     fun agentFor(token: String?): String? = token?.let { tokenToAgent[it] }
     fun isOperator(token: String?): Boolean = operatorToken != null && token == operatorToken
+
+    /**
+     * CYP-171 — mint a cryptographically-random per-agent bearer token (256-bit `SecureRandom`,
+     * base64url), register `token→agentId`, and return it. Server-generated, never client-chosen; the
+     * returned value is the credential disclosed once. Regenerates on the (astronomically unlikely)
+     * collision with an existing token or the operator token, so the new credential is always unique.
+     */
+    fun mint(agentId: String): String {
+        var token: String
+        do {
+            token = secureToken()
+        } while (tokenToAgent.containsKey(token) || token == operatorToken)
+        tokenToAgent[token] = agentId
+        return token
+    }
+
+    /** CYP-171 — revoke every token bound to [agentId] (idempotent; on agent removal). After this,
+     *  `agentFor(<that token>)` is null → the next wire connect closes VIOLATED_POLICY (fail-closed). */
+    fun revoke(agentId: String) {
+        tokenToAgent.entries.removeIf { it.value == agentId }
+    }
+
+    /** CYP-171 — boot load of a persisted `(token→agentId)` binding (the secret-at-rest restore). */
+    fun bind(token: String, agentId: String) {
+        tokenToAgent[token] = agentId
+    }
+
+    private fun secureToken(): String {
+        val bytes = ByteArray(32) // 256-bit
+        java.security.SecureRandom().nextBytes(bytes)
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
 }
 
 /** Extracts the bearer token from the Authorization header, or null. */

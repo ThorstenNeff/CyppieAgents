@@ -30,7 +30,24 @@ data class NewAgentSpec(
      * dedicated operator-gated opt-in action, never silently via a general edit (no "off-message" path).
      */
     val connectorKind: ConnectorKind = ConnectorKind.STREAM_JSON,
+    /**
+     * CYP-171 / E2.6 (S3) — create this agent as a **remote/BYOA** agent (the runtime twin of
+     * [com.tneff.cyppieagents.boot.AgentConfig]`.remote`): not spawned locally; the server **mints a
+     * per-agent bearer token** (returned ONCE in [CreatedAgent]) and the agent joins over the wire
+     * (`/ws/hub`). Default false (a normal local agent). The minted token is the credential; identity
+     * stays `token→agentId` — there is NO client-supplied agentId/role anywhere.
+     */
+    val remote: Boolean = false,
 )
+
+/**
+ * CYP-171 — the 201 response of `POST /api/agents`. [token] is non-null **only** for a remote create and
+ * is the **one and only** time the server discloses the minted bearer token (the operator hands it to the
+ * BYOA user out-of-band). It is NEVER re-rendered: `GET /api/agents` ([Agent]) and the detail view
+ * ([AgentDetail]) carry no token. A normal (local) create returns [token] = null.
+ */
+@Serializable
+data class CreatedAgent(val agent: Agent, val token: String? = null)
 
 /** Operator opt-in to a connector (CYP-122 / Doc 10 §3,§5). Body of the dedicated, audited set-connector
  *  action — separate from [AgentEdit] so a connector change is always an explicit, logged decision. */

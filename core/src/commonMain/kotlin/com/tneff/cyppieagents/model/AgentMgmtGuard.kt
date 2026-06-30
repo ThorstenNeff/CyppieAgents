@@ -14,10 +14,23 @@ object AgentMgmtGuard {
     /** `null` if [spec] may be added, else `invalid_agent` / `agent_exists` / `po_already_exists`. */
     fun validateAdd(existing: List<Agent>, spec: NewAgentSpec): String? {
         if (spec.id.isBlank() || spec.name.isBlank() || !SAFE_ID.matches(spec.id)) return "invalid_agent"
+        // CYP-171 / SEC-OP1: an agent id may NEVER collide with a reserved non-agent participant id (the
+        // operator). The duplicate-check below only scans the AGENT list, but the operator is a separate
+        // participant — without this, `POST /api/agents {id:"operator"}` would slip through, S3 would mint
+        // a token, and `agentFor(minted) == OPERATOR_ID` → the remote holder is treated as the operator
+        // participant in comm/ACL (identity confusion). Reject fail-closed, BEFORE any mint.
+        if (spec.id in RESERVED_AGENT_IDS) return "invalid_agent"
         if (existing.any { it.id == spec.id }) return "agent_exists"
         if (spec.role == Role.PO && existing.any { it.role == Role.PO }) return "po_already_exists"
         return null
     }
+
+    /**
+     * CYP-171 / SEC-OP1 — ids reserved for **non-agent participants**; an agent may never claim one. Must
+     * include `HubState.OPERATOR_ID` ("operator"); a `:server` drift-test pins that membership so the two
+     * can't diverge (single-source). Any future privileged non-agent participant id is added here.
+     */
+    val RESERVED_AGENT_IDS: Set<String> = setOf("operator")
 
     /** `null` if [edit] may be applied to [id], else `agent_not_found` / `po_already_exists` / `last_po`. */
     fun validateEdit(existing: List<Agent>, id: String, edit: AgentEdit): String? {
