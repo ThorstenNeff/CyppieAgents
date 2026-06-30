@@ -36,11 +36,17 @@ fun interface ProcessSpawner {
  *
  * Env hygiene (Reviewer #3): the agent process does NOT inherit the server's full environment —
  * only a minimal whitelist (PATH so `claude`/node resolve, HOME so the CLI finds its credentials,
- * locale) plus the explicitly-injected [env] (e.g. ANTHROPIC_API_KEY). This keeps unrelated server
- * secrets from leaking into a spawned agent.
+ * USER/LOGNAME so the macOS Keychain OAuth lookup can resolve the calling user, locale) plus the
+ * explicitly-injected [env] (e.g. ANTHROPIC_API_KEY). This keeps unrelated server secrets from
+ * leaking into a spawned agent.
+ *
+ * CYP-168: `USER`/`LOGNAME` are REQUIRED for OAuth on macOS — the CLI reads its credential from the
+ * Keychain keyed by the calling user, and without these vars the lookup fails with "Not logged in"
+ * (only the `ANTHROPIC_API_KEY` path worked). Verified on a real staging turn. They carry no secret
+ * (just the login name), so adding them does not weaken the hygiene invariant.
  */
 class ProcessBuilderSpawner(
-    private val passthroughEnv: Set<String> = setOf("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE"),
+    private val passthroughEnv: Set<String> = setOf("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE"),
     /** Source of host env values for the whitelist (injectable so env isolation is testable). */
     private val envSource: (String) -> String? = System::getenv,
 ) : ProcessSpawner {
