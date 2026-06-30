@@ -1,0 +1,54 @@
+# CYP-151 — Android operator-token carry flow (Maestro, native Compose target, PROD build).
+#
+# Complement of eventlog-presence-android.yaml. That flow proves the FAIL-CLOSED default: prod
+# `:app:androidApp` with no token → the two operator-gated Event-Log windows are OMITTED. This flow
+# proves the OTHER half of the seam (CYP-151): when an operator token IS supplied at launch, the same
+# prod build promotes to an operator context and the Event-Log windows are PRESENT.
+#
+# The seam: Android has no ambient shell env (unlike desktop `System.getenv` / iOS `simctl` →
+# `SIMCTL_CHILD_*`). The equivalent is the LAUNCH INTENT — MainActivity reads the
+# `CYPPIE_OPERATOR_TOKEN` extra into AndroidLaunchEnv before composition, and defaultShellConfig()
+# promotes it (fail-closed: absent/blank → null). Maestro injects it via `launchApp: arguments:`
+# (mapped to Android intent extras). The token is NEVER baked into the APK and NEVER logged.
+#
+# Together the two flows are the full gate: same prod APK, token toggles the operator surfaces
+# present/absent — proving the carry works AND that the default stays fail-closed.
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED so YAML keeps
+# the backslashes literal (Test-Contract §4). On Android testTags surface as view resource-ids via
+# Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
+#
+# PREREQUISITES (tester runtime; Dev's sandbox has no emulator/Maestro):
+#   * Install + launch the PROD `:app:androidApp` (appId com.tneff.cyppieagents) — the SAME real prod
+#     build as eventlog-presence-android.yaml (NOT the demo appId). The operator token is supplied at
+#     launch via the intent extra below; it is a throwaway stub value, never a real secret.
+#   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
+appId: com.tneff.cyppieagents
+name: "CYP-151 Android operator-token — launch-intent token unlocks operator surfaces"
+tags:
+  - security
+  - event-log
+---
+# Supply the operator token via the launch intent (Android extra → MainActivity → AndroidLaunchEnv →
+# defaultShellConfig). `clearState` forces a fresh process so onCreate re-reads the extra.
+- launchApp:
+    clearState: true
+    arguments:
+      CYPPIE_OPERATOR_TOKEN: "demo-operator-stub"
+
+# The shell is up (host + the non-operator comm window prove the app rendered) ...
+- assertVisible:
+    id: '^window\.host$'
+    label: "Window host rendered"
+- assertVisible:
+    id: '^window\.comm$'
+    label: "Comm window present (shell is functional)"
+
+# ... and BOTH operator-gated Event-Log windows are now PRESENT — the launch-intent token promoted the
+# prod build to an operator context (the carry seam works; cf. the omitted case in the presence flow).
+- assertVisible:
+    id: '^window\.eventlog$'
+    label: "Browse window offered WITH operator token (carry seam unlocks the operator surface)"
+- assertVisible:
+    id: '^window\.eventtail$'
+    label: "Live-Tail window offered WITH operator token (carry seam unlocks the operator surface)"

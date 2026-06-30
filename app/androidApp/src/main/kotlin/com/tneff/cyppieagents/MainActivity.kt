@@ -12,9 +12,19 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        // CYP-151: carry an optionally-supplied operator token from the launch intent into the shared
+        // config seam BEFORE composition (defaultShellConfig reads it). Absent/blank → null →
+        // fail-closed participant view. Never baked into the APK, never logged.
+        AndroidLaunchEnv.operatorToken = intent?.getStringExtra(EXTRA_OPERATOR_TOKEN)
+
         setContent {
             App()
         }
+    }
+
+    private companion object {
+        /** Launch-intent extra carrying the operator token (Maestro: `launchApp: arguments:`). */
+        const val EXTRA_OPERATOR_TOKEN = "CYPPIE_OPERATOR_TOKEN"
     }
 }
 
