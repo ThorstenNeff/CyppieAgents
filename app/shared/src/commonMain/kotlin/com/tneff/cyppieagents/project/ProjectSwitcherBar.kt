@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,6 +35,13 @@ import kmpcyppieagents.app.shared.generated.resources.project_switch_hint
 import kmpcyppieagents.app.shared.generated.resources.project_switcher_active
 import kmpcyppieagents.app.shared.generated.resources.project_switcher_scope_hint
 import org.jetbrains.compose.resources.stringResource
+
+// CYP-159 (Klasse C): cap the width of the switch-hint inside the DropdownMenu. A DropdownMenu sizes to
+// its widest child; the single-line hint was that child → the menu surface stretched edge-to-edge and
+// the hint clipped off the right screen edge. Constraining the hint lets it wrap (multi-line) → the menu
+// surface shrinks to ~this width. Switcher-specific (distinct from the 600dp pane / 560dp event-row
+// breakpoints); not a responsive breakpoint — a plain max width that holds on every form factor.
+private val SWITCHER_HINT_MAX_WIDTH = 280.dp
 
 /**
  * The project switcher (CYP-92) — the top-level navigation **above** the `WindowHost` (PROJECT-MANAGEMENT
@@ -83,7 +91,12 @@ fun ProjectSwitcherBar(viewModel: ProjectViewModel, modifier: Modifier = Modifie
 
                 DropdownMenu(expanded = state.menuOpen, onDismissRequest = viewModel::closeMenu) {
                     // Disclosure: switching is non-destructive (separates it from delete). Neutral tone.
-                    TonedHint(stringResource(Res.string.project_switch_hint), HintTone.INFO, ProjectTags.SWITCH_HINT)
+                    // CYP-159: cap the hint width so it wraps instead of stretching the menu edge-to-edge
+                    // (the wording stays — "nothing is deleted" is disclosure-bearing; wrap, don't shorten).
+                    TonedHint(
+                        stringResource(Res.string.project_switch_hint), HintTone.INFO, ProjectTags.SWITCH_HINT,
+                        modifier = Modifier.widthIn(max = SWITCHER_HINT_MAX_WIDTH),
+                    )
                     state.projects.forEach { project ->
                         val isActive = project.id == state.activeProjectId
                         val switchA11y = stringResource(Res.string.a11y_project_switch_to, project.name)
@@ -96,7 +109,8 @@ fun ProjectSwitcherBar(viewModel: ProjectViewModel, modifier: Modifier = Modifie
                                     if (isActive) {
                                         Text("●", modifier = Modifier.testTag(ProjectTags.itemActive(project.id)))
                                     }
-                                    Text(project.name)
+                                    // CYP-159: a long project name must not re-stretch the (now capped) menu surface.
+                                    Text(project.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             },
                             onClick = { viewModel.switchTo(project.id) },
