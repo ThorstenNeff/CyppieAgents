@@ -19,6 +19,18 @@
 # Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
 #
 # PREREQUISITES (tester runtime; Dev's sandbox has no emulator/Maestro):
+#   * CYP-162 — CANVAS-MODE REQUIRED. This flow asserts the window SET (window.host / the 7 window.<id>),
+#     which exists only in the desktop CANVAS layout. On a Compact phone (<600dp, e.g. Pixel_9a 411dp)
+#     the WindowHost renders the PHONE-PAGER instead (phonePager.* / phonePager.page.<id>), where these
+#     `window.*` frame tags are absent and set-presence isn't robustly assertable (a HorizontalPager
+#     composes only near pages; >6 windows show a position counter, not per-window dots). Maestro flows
+#     cannot run adb/shell themselves (`runScript` is a JS sandbox), so the tester WRAPS the run with a
+#     density override that flips the SAME Pixel_9a to a Medium width → canvas mode (verified): no second
+#     AVD, no APK diff. Run as:
+#         adb shell wm density 240   # 1080px / (240/160) = 720dp → Medium → canvas mode
+#         maestro test maestro/operator-token-android.yaml
+#         adb shell wm density reset # cleanup
+#     The `window.*` assertions below are then correct verbatim — no tag remapping, no pager-nav.
 #   * Install + launch the PROD `:app:androidApp` (appId com.tneff.cyppieagents) — the SAME real prod
 #     build as eventlog-presence-android.yaml (NOT the demo appId). The operator token is supplied at
 #     launch via the intent extra below; it is a throwaway stub value, never a real secret.
