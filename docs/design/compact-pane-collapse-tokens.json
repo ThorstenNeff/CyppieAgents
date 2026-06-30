@@ -1,0 +1,39 @@
+{
+  "$comment": "CYP-156 Klasse A — Compact Pane-Collapse. docs-only design tokens. Grounded @ develop d57dccb.",
+  "breakpoints": {
+    "PANE_COLLAPSE_WIDTH": {
+      "value": 600,
+      "unit": "dp",
+      "measuredAgainst": "panel inner width (BoxWithConstraints maxWidth), window-agnostic",
+      "rule": "maxWidth < PANE_COLLAPSE_WIDTH => Single-Pane; else Two-Pane",
+      "rationale": "Material WindowWidthSizeClass.Compact upper bound; covers 411dp + all phones. P1 Adaptive-Scaffold shared token (uiux/PARITY-DESIGN-GAP-INVENTORY.md).",
+      "consumers": [
+        "comm/CommPanel.kt (NEW: introduce BoxWithConstraints gate)",
+        "report/ProductLeadPanel.kt (NEW: introduce BoxWithConstraints gate)",
+        "acl/AclPanel.kt (MIGRATE: existing NARROW_BREAKPOINT=600.dp -> shared token, value unchanged)",
+        "eventlog/EventBrowsePanel.kt (ALIGN in CYP-158: TWO_PANE_MIN_WIDTH 560 -> 600; that file is CYP-154-coupled, kept out of CYP-156)"
+      ]
+    }
+  },
+  "controlRowDensity": {
+    "$comment": "CYP-156 ⚠️-Nachmessung (Operator-Token, 411dp): Control-Rows auf den CYP-156-Panels quetschen (Class-B-Mechanik, hier gehomet — gleiche Dateien, keine CYP-154-Kopplung). FlowRow = nur Foundation-API, kein geteilter Code mit CYP-158.",
+    "PRODUCTLEAD_TRIGGER_FLOWROW_VSPACING": {
+      "value": 8,
+      "unit": "dp",
+      "rule": "report/ProductLeadPanel.kt TriggerBar Row -> FlowRow; vertical gap between wrapped button rows. Each TriggerButton text maxLines=1 (no internal 'Status/report' break).",
+      "empirical": "Tester: 3 buttons + label, narrowest button ~47dp -> text wraps 2-line on 411dp"
+    },
+    "AGENTROW_REFLOW_WIDTH": {
+      "value": 600,
+      "unit": "dp",
+      "status": "reuses PANE_COLLAPSE_WIDTH; measured against AgentRow inner width (BoxWithConstraints)",
+      "rule": "agentmgmt/AgentManagementPanel.kt AgentRow < 600dp -> deterministic 2-line (line1 name+role+status, line2 actions) OR overflow menu. Default: 2-line. Guardrails (only-PO-not-removable) stay visible/disabled before action.",
+      "status_measurement": "empirical confirmation needs a server-backed test env (operator token only reveals surface, not agent rows)"
+    }
+  },
+  "reused": {
+    "$comment": "No new colour/spacing tokens. CommPanel 220dp channel pane width + ProductLead 0.4f/0.6f weights are unchanged in the >=600dp branch.",
+    "CHANNEL_PANE_WIDTH": "220.dp (comm/CommPanel.kt, unchanged in Two-Pane branch)",
+    "REPORT_SPLIT_WEIGHTS": "0.4f / 0.6f (report/ProductLeadPanel.kt, unchanged in Two-Pane branch)"
+  }
+}
