@@ -34,6 +34,20 @@ dieses Single-Pane-Muster.
   ist neu (kein `comm.back`/`productLead.back` heute). Diese 2 Tags sind **bewusst neu**, dem QA/CYP-7-Vertrag
   gemeldet — kein stiller Tag. (Text bleibt `comm_back`-Reuse, s. keys.md.)
 
+## Control-Row-Dichte (§3.1 der Spec) — Tags UNVERÄNDERT
+Die ⚠️-Nachmessung foldet zwei Control-Row-Reflows in CYP-156 (ProductLead-TriggerBar, AgentMgmt-AgentRow).
+**Kein neuer Tag** — nur Layout-Container wechselt (`Row` → `FlowRow` bzw. 2-Zeilen):
+
+| Knoten | Tag | Quelle |
+|---|---|---|
+| ProductLead TriggerBar | `productLead.trigger` (`ProductLeadTags.TRIGGER`) | bestehend (Row → FlowRow) |
+| Trigger-Buttons | `productLead.trigger.usage/.status/.defects` | bestehend |
+| AgentMgmt Agent-Zeile | `agentMgmt.item.<id>` | bestehend (Row → 2-Zeilen) |
+| AgentMgmt Edit/Remove | `agentMgmt.item.<id>.itemEdit/.itemRemove` | bestehend |
+| AgentMgmt Status | `agentView.status.<id>` | bestehend |
+
 ## a11y
 - `comm_back` trägt bereits `contentDescription`; der neue Back-Knoten nutzt es. Fokus-Führung: Auswahl →
   Detail, Zurück → Liste.
+- Control-Row-Reflow ändert die Lesereihenfolge nicht (Label/Buttons bzw. Identität→Aktionen bleiben in
+  logischer Folge); Guardrail-Disable (nur-PO-nicht-entfernbar) bleibt vor der Aktion sichtbar.
