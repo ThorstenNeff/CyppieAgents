@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.UserTurn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -76,7 +77,15 @@ class MessageDeliverer(
     private fun launchDrain(agentId: String) {
         scope.launch {
             runCatching { drain(agentId) }
-                .onFailure { logger.error("delivery drain failed for agent={}", agentId, it) }
+                .onFailure { e ->
+                    // CYP-166: a benign teardown cancellation (scope.cancel / a CYP-73 stop/restart cancels
+                    // an in-flight drain) is NOT a delivery failure — rethrow it so structured-concurrency
+                    // cancellation propagates and it is NOT logged as ERROR (alarm-fatigue, and it would mask
+                    // a real "ws closed mid-drain" throwable). The cancelled drain stays pending → redelivered
+                    // on the next attach (at-least-once intact).
+                    if (e is CancellationException) throw e
+                    logger.error("delivery drain failed for agent={}", agentId, e)
+                }
         }
     }
 
