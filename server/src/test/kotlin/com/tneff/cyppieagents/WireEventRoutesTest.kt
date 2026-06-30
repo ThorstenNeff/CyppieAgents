@@ -57,16 +57,22 @@ class WireEventRoutesTest {
         CapabilityStatus.UNAVAILABLE, CapabilityStatus.LIMITED, CapabilityStatus.LIMITED,
         CapabilityStatus.LIMITED, CapabilityStatus.AVAILABLE, ConnectorKind.STREAM_JSON,
     )
+    /** A maximal (lying) self-declaration — the server MUST clamp it to the REMOTE ceiling at Hello. */
+    private fun allAvailable() = Capabilities(
+        CapabilityStatus.AVAILABLE, CapabilityStatus.AVAILABLE, CapabilityStatus.AVAILABLE,
+        CapabilityStatus.AVAILABLE, CapabilityStatus.AVAILABLE, ConnectorKind.STREAM_JSON,
+    )
     private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
 
-    private class Fx(val sink: InMemoryEventSink)
+    private class Fx(val sink: InMemoryEventSink, val caps: CapabilityRegistry)
 
     private fun ApplicationTestBuilder.installWire(): Fx {
         val hub = Hub(HubState.hubAndSpoke(listOf(Agent("po", "PO", Role.PO, "po"), Agent("backend", "BE", Role.WORKER, "backend")), HubState.OPERATOR_ID), InMemoryMessageStore())
         val sink = InMemoryEventSink(SystemTimeSource())
         val recorder = EventRecorder(sink, CoroutineScope(Dispatchers.Default + SupervisorJob())).also { it.start() }
-        application { install(WebSockets); routing { hubWireRoutes(hub, registry(), CapabilityRegistry(), ProviderRegistry(), WireRateLimiter(), ConnectorSessions(), recorder, { "default" }) } }
-        return Fx(sink)
+        val caps = CapabilityRegistry()
+        application { install(WebSockets); routing { hubWireRoutes(hub, registry(), caps, ProviderRegistry(), WireRateLimiter(), ConnectorSessions(), recorder, { "default" }) } }
+        return Fx(sink, caps)
     }
 
     private fun frame(f: WireFrame) = CommJson.encodeToString(WireEnvelope.serializer(), WireEnvelope(1, f))
@@ -102,6 +108,33 @@ class WireEventRoutesTest {
                     }) delay(10)
             }
         }
+    }
+
+    /**
+     * ⭐ G4-4 (the load-bearing invariant, teethed WHERE it can break): the `hubWireRoutes` WireEvent branch
+     * has `capabilityRegistry` in scope (the Hello-clamp dependency) and COULD escalate caps. A `WireEvent`
+     * must NEVER write caps — they stay Hello-clamped (REMOTE). Reviewer MUT-G4-4: a
+     * `capabilityRegistry.set(agentId, all-AVAILABLE)` in the WireEvent branch flips `structuredUsage` to
+     * AVAILABLE → this reds. (The mapper-level test couldn't catch it — `toDraft` has no caps in scope.)
+     */
+    @Test
+    fun event_neverEscalatesCaps_capsStayHelloClamped() = testApplication {
+        val fx = installWire()
+        wsClient(this).webSocket("/ws/hub?token=tok-backend") {
+            sendFrame(WireHello(allAvailable(), provider)) // a lying remote declares all-AVAILABLE
+            assertIs<com.tneff.cyppieagents.model.WireAck>(recv())
+            // Hello clamped to REMOTE → structuredUsage is UNAVAILABLE (the ceiling).
+            assertEquals(CapabilityStatus.UNAVAILABLE, fx.caps.get("backend")?.structuredUsage, "Hello clamped REMOTE")
+            sendFrame(WireEvent(WireEventType.RATE_LIMIT, rateLimit = mapOf("status" to "blocked")))
+            // Wait until the WireEvent branch has fully run (its draft reached the sink) — so any (mutated)
+            // caps-write in the branch has already happened before we assert.
+            withTimeout(3000) { while (fx.sink.all().none { it.type == EventType.ERROR_RATELIMIT }) delay(10) }
+        }
+        // THE TEETH: caps unchanged by the WireEvent — still the REMOTE-clamped Hello value.
+        assertEquals(
+            CapabilityStatus.UNAVAILABLE, fx.caps.get("backend")?.structuredUsage,
+            "G4-4: a WireEvent must NEVER escalate caps past the REMOTE ceiling",
+        )
     }
 
     /** v1-compat — an UNKNOWN frame type makes the decoder fail; the server bounded-closes (PROTOCOL_ERROR),
