@@ -12,6 +12,15 @@ application {
     mainClass = "com.tneff.cyppieagents.ApplicationKt"
 }
 
+// CYP-157 (onboarding): the application plugin's `run` task otherwise uses the module dir as its
+// working directory, so Application.main's relative defaults — `platform.config.json` and `.cyppie`
+// (PLATFORM_CONFIG / PLATFORM_GIT_ROOT), which live at the REPO ROOT per SETUP.md §2 — are not found,
+// and `:server:run` aborts with FileNotFoundException unless the user exports an absolute PLATFORM_CONFIG.
+// Run from the repo root so a fresh clone's `:server:run` just works (no manual env var).
+tasks.named<JavaExec>("run") {
+    workingDir = rootProject.projectDir
+}
+
 dependencies {
     api(projects.core)
     implementation(libs.logback)
