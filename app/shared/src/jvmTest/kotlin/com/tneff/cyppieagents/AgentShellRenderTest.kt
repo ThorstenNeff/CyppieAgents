@@ -62,11 +62,15 @@ class AgentShellRenderTest {
         onNodeWithTag(AgentViewTags.stream("frontend")).assertExists()
         onNodeWithTag(AgentViewTags.stream("backend")).assertExists()
 
-        // The comm panel is a window too: its channel list renders once the fake API resolves.
+        // The comm panel is a window too. CYP-156: in the shell it tiles narrow (< PANE_COLLAPSE_WIDTH,
+        // a content window's min is 320dp) → single-pane. The first channel auto-selects, so the
+        // conversation (timeline) renders once the fake API resolves — proving the channels loaded +
+        // selection wired — with the single-pane back affordance to the channel list. (Before CYP-156
+        // the panel was unconditionally two-pane, so the channel list showed directly.)
         onNodeWithTag(WindowTestTags.window("comm")).assertExists()
         waitUntil(timeoutMillis = 5_000L) {
-            onAllNodesWithTag(CommTags.CHANNEL_LIST).fetchSemanticsNodes().isNotEmpty()
+            onAllNodesWithTag(CommTags.TIMELINE).fetchSemanticsNodes().isNotEmpty()
         }
-        onNodeWithTag(CommTags.channel("po-frontend")).assertExists()
+        onNodeWithTag(CommTags.BACK).assertExists()
     }
 }
