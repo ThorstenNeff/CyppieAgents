@@ -70,11 +70,6 @@ class ProductLeadViewModel(
         }
     }
 
-    /** Clears the snapshot selection (CYP-156 single-pane "back": return to the snapshot list). */
-    fun clearSelection() {
-        _state.update { it.copy(selectedId = null, selected = null) }
-    }
-
     fun generate(type: ReportType) {
         // Fail-closed gate + no double-trigger while one is in flight.
         if (!_state.value.accessible || _state.value.generating) return

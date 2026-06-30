@@ -27,10 +27,6 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.acl.AclPanel
 import com.tneff.cyppieagents.acl.AclViewModel
 import com.tneff.cyppieagents.acl.StubAclHub
-import com.tneff.cyppieagents.comm.CommApi
-import com.tneff.cyppieagents.comm.CommPanel
-import com.tneff.cyppieagents.comm.CommViewModel
-import com.tneff.cyppieagents.comm.StubCommLiveSource
 import com.tneff.cyppieagents.eventlog.EventBrowsePanel
 import com.tneff.cyppieagents.eventlog.EventBrowseViewModel
 import com.tneff.cyppieagents.eventlog.EventFilter
@@ -39,14 +35,8 @@ import com.tneff.cyppieagents.eventlog.EventLiveSource
 import com.tneff.cyppieagents.eventlog.EventTailPanel
 import com.tneff.cyppieagents.eventlog.EventTailViewModel
 import com.tneff.cyppieagents.eventlog.StubEventsApi
-import com.tneff.cyppieagents.model.Agent
-import com.tneff.cyppieagents.model.Channel
-import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
-import com.tneff.cyppieagents.model.Message
-import com.tneff.cyppieagents.model.MessageMeta
-import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 import com.tneff.cyppieagents.window.WindowHost
@@ -57,12 +47,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /** Demo panel selector — which surface the [EventLogDemoApp] tab switcher shows. */
-private enum class DemoPanel { BROWSE, TAIL, ACL, COMM, PAGER }
+private enum class DemoPanel { BROWSE, TAIL, ACL, PAGER }
 
 private const val DEMO_TAB_BROWSE = "demo.tab.browse"
 private const val DEMO_TAB_TAIL = "demo.tab.tail"
 private const val DEMO_TAB_ACL = "demo.tab.acl"
-private const val DEMO_TAB_COMM = "demo.tab.comm"
 private const val DEMO_TAB_PAGER = "demo.tab.pager"
 
 /**
@@ -114,9 +103,6 @@ fun EventLogDemoApp() {
                 Button(onClick = { panel = DemoPanel.ACL }, modifier = Modifier.testTag(DEMO_TAB_ACL)) {
                     Text("ACL")
                 }
-                Button(onClick = { panel = DemoPanel.COMM }, modifier = Modifier.testTag(DEMO_TAB_COMM)) {
-                    Text("Comm")
-                }
                 Button(onClick = { panel = DemoPanel.PAGER }, modifier = Modifier.testTag(DEMO_TAB_PAGER)) {
                     Text("Pager")
                 }
@@ -139,14 +125,6 @@ fun EventLogDemoApp() {
                         val hub = remember { StubAclHub(rejectPoLockout = true) }
                         val vm = remember { AclViewModel(hub, hub, editable = true, scope = scope) }
                         AclPanel(vm)
-                    }
-                    DemoPanel.COMM -> {
-                        // CYP-156: the REAL CommPanel full-screen → on a phone the panel inner width is
-                        // < PANE_COLLAPSE_WIDTH → single-pane (channel list XOR conversation + comm.back),
-                        // exercised by `maestro/comm-pane-collapse-android.yaml`. Hermetic (stub API +
-                        // StubCommLiveSource), no server. CommViewModel self-manages viewModelScope.
-                        val vm = remember { CommViewModel(DemoCommApi(), StubCommLiveSource(), viewerId = "operator") }
-                        CommPanel(vm)
                     }
                     DemoPanel.PAGER -> PhonePagerDemo()
                 }
@@ -185,26 +163,6 @@ private fun PhonePagerDemo() {
             }
         },
     )
-}
-
-/**
- * Demo-only [CommApi] for the CYP-156 single-pane collapse flow: a fixed pair of channels + agents and
- * a couple of messages, no backend. Mirrors the hermetic test stub used by `CommPanelRenderTest`.
- */
-private class DemoCommApi : CommApi {
-    override suspend fun channels() = listOf(
-        Channel("po-frontend", "PO ↔ Frontend", ChannelKind.HUB, listOf("po", "frontend")),
-        Channel("po-backend", "PO ↔ Backend", ChannelKind.HUB, listOf("po", "backend")),
-    )
-    override suspend fun agents() = listOf(
-        Agent("po", "Product Owner", Role.PO, "po"),
-        Agent("frontend", "Frontend", Role.WORKER, "frontend"),
-        Agent("backend", "Backend", Role.WORKER, "backend"),
-    )
-    override suspend fun messages(channelId: String, since: Long?) =
-        listOf(Message("m1", channelId, "frontend", "bereit für den nächsten Slice", 1L))
-    override suspend fun send(channelId: String, body: String, meta: MessageMeta?) =
-        Message("local-1", channelId, "operator", body, 2L)
 }
 
 /**

@@ -34,7 +34,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.comm.ConnectionStatus
-import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 import com.tneff.cyppieagents.testing.testTagA11y
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -73,8 +72,7 @@ import kmpcyppieagents.app.shared.generated.resources.comm_back
 import kmpcyppieagents.app.shared.generated.resources.comm_status_offline
 import org.jetbrains.compose.resources.stringResource
 
-// CYP-156: migrated to the shared PANE_COLLAPSE_WIDTH (value unchanged at 600.dp). Was a local
-// NARROW_BREAKPOINT; now one token drives comm/report/acl collapse.
+private val NARROW_BREAKPOINT = 600.dp
 private val CHANNEL_COL_WIDTH = 150.dp
 private val AGENT_COL_WIDTH = 190.dp
 
@@ -114,7 +112,7 @@ fun AclPanel(viewModel: AclViewModel, modifier: Modifier = Modifier) {
             )
         } else {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                if (maxWidth < PANE_COLLAPSE_WIDTH) NarrowCards(state, viewModel) else WideGrid(state, viewModel)
+                if (maxWidth < NARROW_BREAKPOINT) NarrowCards(state, viewModel) else WideGrid(state, viewModel)
             }
         }
     }

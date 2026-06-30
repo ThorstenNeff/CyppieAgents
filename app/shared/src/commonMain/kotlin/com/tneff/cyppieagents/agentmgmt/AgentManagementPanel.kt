@@ -2,10 +2,8 @@ package com.tneff.cyppieagents.agentmgmt
 import com.tneff.cyppieagents.model.WorktreeFate
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,7 +29,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.agentview.AgentViewTags
-import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
 import com.tneff.cyppieagents.model.Agent
@@ -142,64 +139,39 @@ fun AgentManagementPanel(
 
 @Composable
 private fun AgentRow(agent: Agent, state: AgentMgmtUiState, viewModel: AgentManagementViewModel) {
-    // CYP-156 §3.1: below PANE_COLLAPSE_WIDTH the 5-column row squeezes the action buttons off-screen →
-    // deterministic 2-line layout (line 1 = identity name+role+status, line 2 = actions). The
-    // only-PO-unremovable guardrail stays visible+disabled before any action. Same tags
-    // (item/itemEdit/itemRemove/status); wide (≥600dp) keeps the single row unchanged.
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().testTag(AgentMgmtTags.item(agent.id))) {
-        if (maxWidth < PANE_COLLAPSE_WIDTH) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AgentIdentity(agent)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AgentActions(agent, state, viewModel)
-                }
-            }
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AgentIdentity(agent)
-                AgentActions(agent, state, viewModel)
-            }
-        }
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag(AgentMgmtTags.item(agent.id)),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = agent.name,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        // Role: text carries the meaning (not colour). Reuse role labels.
+        Text(stringResource(roleLabel(agent.role)), style = MaterialTheme.typography.labelMedium)
+        // Lifecycle status (read) — reuse the CYP-73 status tag + agent_status_* labels.
+        Text(
+            text = stringResource(runStateLabel(agent.runState)),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag(AgentViewTags.status(agent.id)),
+        )
+        TextButton(
+            onClick = { viewModel.openEdit(agent) },
+            enabled = state.editable,
+            modifier = Modifier.testTag(AgentMgmtTags.itemEdit(agent.id)),
+        ) { Text(stringResource(Res.string.agent_edit)) }
+        TextButton(
+            onClick = { viewModel.openRemove(agent) },
+            // The only PO is unremovable — the guardrail is visible (disabled) before any dialog.
+            enabled = state.editable && !state.isOnlyPo(agent),
+            modifier = Modifier.testTag(AgentMgmtTags.itemRemove(agent.id)),
+        ) { Text(stringResource(Res.string.agent_remove)) }
     }
-}
-
-/** Identity cluster (name + role + status) — line 1 narrow, leading cells wide. Tags unchanged. */
-@Composable
-private fun RowScope.AgentIdentity(agent: Agent) {
-    Text(
-        text = agent.name,
-        style = MaterialTheme.typography.bodyMedium,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.weight(1f),
-    )
-    // Role: text carries the meaning (not colour). Reuse role labels.
-    Text(stringResource(roleLabel(agent.role)), style = MaterialTheme.typography.labelMedium)
-    // Lifecycle status (read) — reuse the CYP-73 status tag + agent_status_* labels.
-    Text(
-        text = stringResource(runStateLabel(agent.runState)),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.testTag(AgentViewTags.status(agent.id)),
-    )
-}
-
-/** Action cluster (edit + remove) — line 2 narrow, trailing cells wide. Guardrail stays disabled. */
-@Composable
-private fun RowScope.AgentActions(agent: Agent, state: AgentMgmtUiState, viewModel: AgentManagementViewModel) {
-    TextButton(
-        onClick = { viewModel.openEdit(agent) },
-        enabled = state.editable,
-        modifier = Modifier.testTag(AgentMgmtTags.itemEdit(agent.id)),
-    ) { Text(stringResource(Res.string.agent_edit)) }
-    TextButton(
-        onClick = { viewModel.openRemove(agent) },
-        // The only PO is unremovable — the guardrail is visible (disabled) before any dialog.
-        enabled = state.editable && !state.isOnlyPo(agent),
-        modifier = Modifier.testTag(AgentMgmtTags.itemRemove(agent.id)),
-    ) { Text(stringResource(Res.string.agent_remove)) }
 }
 
 @Composable
