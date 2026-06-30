@@ -18,16 +18,23 @@ nach der `weight(1f)`-Aktiv-Zeile Z. 64) → der Text dehnt die Menü-Inhaltsbre
 Bildschirmkante → clippt. Wortlaut (values-en): „Switching reloads the UI for the selected project — nothing
 is deleted."
 
-## 2. Soll
-- Den Hinweis (und damit die Menü-Inhaltsbreite) **beschränken**, sodass er **umbricht** statt zu clippen:
-  `Modifier.widthIn(max = SWITCHER_HINT_MAX_WIDTH)` am `TonedHint` im `DropdownMenu`.
-- **Wortlaut bleibt** — er ist disclosure-tragend: „nothing is deleted" trennt den (nicht-destruktiven)
-  Wechsel vom Löschen. **Nicht kürzen.**
-- Auch die Menü-`DropdownMenuItem`-Labels (Projektnamen) sollten lange Namen mit `maxLines = 1` +
-  `TextOverflow.Ellipsis` bändigen (wie die Aktiv-Zeile Z. 72–73 es schon tut), damit ein langer Projektname
-  das Menü nicht ebenfalls über den Rand zieht. (Sekundär; primär ist der Hinweis.)
-- Kein Breakpoint nötig — eine reine Breitenschranke; gilt auf jedem Formfaktor (Desktop-Menü ist ohnehin
-  schmal genug).
+**Tester-Overlay (2026-06-30, Pixel_9a):** die `DropdownMenu`-**Surface ist edge-to-edge** `x[33..1080]px`
+(= volle 411dp-Breite), weil der einzeilige Hinweis sie so weit aufzieht; „…is deleted." wird rechts
+abgeschnitten. Der Trigger (▾) sitzt oben rechts (~894px).
+
+- **(Primär) Hinweis-Breite beschränken → Surface schrumpft mit.** Ein `DropdownMenu` dimensioniert sich auf
+  sein **breitestes Kind**; der einzeilige Hinweis ist dieses Kind. `Modifier.widthIn(max =
+  SWITCHER_HINT_MAX_WIDTH)` am `TonedHint` lässt ihn **umbrechen (multi-line)** → die Menü-Surface ist nicht
+  länger edge-to-edge, sondern ~`SWITCHER_HINT_MAX_WIDTH` breit. Das ist die Wurzel-Korrektur.
+- **(Sekundär) Menü unter dem Trigger ausrichten.** Damit das (jetzt ~300dp schmale) Menü unter dem ▾ statt
+  am Bildschirmrand klebt: `DropdownMenu(offset = …)` / Alignment unter dem Trigger-`Box`. Verhindert, dass
+  das Menü trotz schmalerer Surface rechtsbündig „hängt". (Compose hält das Menü ohnehin im Fensterrahmen;
+  die Ausrichtung ist Politur, die Breitenschranke ist die Substanz.)
+- **Wortlaut bleibt** — disclosure-tragend: „nothing is deleted" trennt den (nicht-destruktiven) Wechsel vom
+  Löschen. **Nicht kürzen** — stattdessen umbrechen lassen (multi-line, Tester-Vorschlag bestätigt).
+- Auch die Menü-`DropdownMenuItem`-Labels (Projektnamen) mit `maxLines = 1` + `TextOverflow.Ellipsis`
+  bändigen (wie die Aktiv-Zeile Z. 72–73), damit ein langer Name die Surface nicht erneut aufzieht.
+- Kein Breakpoint nötig — reine Breitenschranke + Ausrichtung; gilt auf jedem Formfaktor.
 
 ## 3. Disclosure / a11y / RTL — unverändert
 - Disclosure (Wechsel ≠ Löschen, Scope-Grenze) unverändert; INFO-Ton bleibt.

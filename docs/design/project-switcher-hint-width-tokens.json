@@ -12,7 +12,11 @@
   },
   "secondary": {
     "$comment": "Long project names should also be bounded so they don't widen the menu.",
-    "menuItemLabels": "maxLines = 1 + TextOverflow.Ellipsis on DropdownMenuItem project-name Text (mirrors the active-row at Z.72-73)"
+    "menuItemLabels": "maxLines = 1 + TextOverflow.Ellipsis on DropdownMenuItem project-name Text (mirrors the active-row at Z.72-73)",
+    "menuAlignment": "DropdownMenu(offset/alignment) under the trigger (Box) so the ~300dp surface sits below the trigger, not edge-bound. Tester overlay: surface was edge-to-edge x[33..1080]px because the single-line hint forced full width; bounding the hint (primary) shrinks the surface, alignment is polish."
+  },
+  "empirical": {
+    "$comment": "Tester overlay Pixel_9a 411dp: menu surface x[33..1080]px (full width), hint single-line clipped at 'is deleted.', trigger at ~894px."
   },
   "noBreakpoint": true
 }
