@@ -40,6 +40,7 @@ include(":app:webApp")
 include(":app:webAppDemo")
 include(":app:iosAppDemo")
 include(":core")
+include(":connector-core")
 include(":server")
 // CYP-106: hermetic embedded-server E2E harness — needs :server + the client repos (:app:shared) on ONE
 // test classpath, which neither has alone. Additive, own gate (`:e2e:test`), NOT in the default `check`.

@@ -4,7 +4,7 @@ import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.connector.AgentProcess
-import com.tneff.cyppieagents.connector.ClaudeCodeSession
+import com.tneff.cyppieagents.connector.claudeCodeServerSession
 import com.tneff.cyppieagents.mediation.HubSendArgs
 import com.tneff.cyppieagents.mediation.HubSendCommand
 import com.tneff.cyppieagents.mediation.MediationRouter
@@ -67,7 +67,7 @@ class HubSendExtractionTest {
         val registry = SessionRegistry()
         val proc = FakeAgentProcess()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val session = ClaudeCodeSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
+        val session = claudeCodeServerSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
         session.start()
         delay(50)
 

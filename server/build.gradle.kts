@@ -23,6 +23,7 @@ tasks.named<JavaExec>("run") {
 
 dependencies {
     api(projects.core)
+    api(projects.connectorCore)
     implementation(libs.logback)
     implementation(libs.kotlinx.coroutinesCore)
     // Event-Log persistence (CYP-35): xerial sqlite-jdbc, pinned. Full WAL/batch control behind the

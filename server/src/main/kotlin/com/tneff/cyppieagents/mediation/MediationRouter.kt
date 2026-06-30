@@ -47,18 +47,15 @@ class MediationRouter(
             return null
         }
 
-        // Gate #6: only a fully successful turn is posted as the agent's result.
-        val (body, meta) = if (event.isSuccess) {
-            (event.result?.takeIf { it.isNotBlank() } ?: "(no output)") to MessageMeta(kind = MessageKind.STATUS)
-        } else {
-            "[turn failed: ${event.subtype ?: "error"}]" to MessageMeta(kind = MessageKind.STATUS)
-        }
+        // Gate #6 (CYP-142 S4.0): the failed-turn discipline now lives in the shared [MediationGate], so the
+        // local router and the remote bridge classify a turn-end identically (reuse, not re-derive).
+        val post = com.tneff.cyppieagents.connector.MediationGate.classify(event)
 
         // Gate #1: channelId comes from identity→spoke, NOT from `body`. Gate #2: canWrite enforced here.
-        val posted = hub.postAsAgent(senderId = agentId, channelId = channelId, body = body, meta = meta)
+        val posted = hub.postAsAgent(senderId = agentId, channelId = channelId, body = post.body, meta = MessageMeta(kind = post.kind))
         // Observability (CYP-37): comm.sent metadata only — from/channel/kind, never the body.
         if (recorder != null && projector != null) {
-            recorder.record(projector.commSent(agentId, channelId, meta.kind))
+            recorder.record(projector.commSent(agentId, channelId, post.kind))
         }
         return posted
     }

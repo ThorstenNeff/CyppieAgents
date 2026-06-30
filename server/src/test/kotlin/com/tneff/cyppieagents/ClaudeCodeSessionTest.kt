@@ -5,7 +5,7 @@ import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.comm.SecretMasker
 import com.tneff.cyppieagents.connector.AgentProcess
-import com.tneff.cyppieagents.connector.ClaudeCodeSession
+import com.tneff.cyppieagents.connector.claudeCodeServerSession
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
@@ -60,7 +60,7 @@ class ClaudeCodeSessionTest {
         val router = MediationRouter(registry, hub)
         val proc = FakeAgentProcess()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val session = ClaudeCodeSession("backend", proc, registry, router, SessionTurnQueue(), scope)
+        val session = claudeCodeServerSession("backend", proc, registry, router, SessionTurnQueue(), scope)
         val received = CopyOnWriteArrayList<StreamJsonEvent>()
 
         session.start()
@@ -121,7 +121,7 @@ class ClaudeCodeSessionTest {
         val registry = SessionRegistry()
         val proc = TerminatingProcess()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val session = ClaudeCodeSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
+        val session = claudeCodeServerSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
         session.start()
 
         val closing = scope.launch { session.closeAndAwait() }
@@ -143,7 +143,7 @@ class ClaudeCodeSessionTest {
         val registry = SessionRegistry()
         val proc = FakeAgentProcess()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val session = ClaudeCodeSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
+        val session = claudeCodeServerSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
         session.start()
 
         val turn = scope.launch { session.sendTurn(UserTurn("do it")) }
@@ -176,7 +176,7 @@ class ClaudeCodeSessionTest {
         // `Dispatchers.Default` that raced under high parallel load — the timing bet is gone, determinism stays.
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
         val scope = CoroutineScope(dispatcher + SupervisorJob())
-        val session = ClaudeCodeSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
+        val session = claudeCodeServerSession("backend", proc, registry, MediationRouter(registry, hub), SessionTurnQueue(), scope)
         session.start()
 
         // Turn#1 before the CLI reports its session_id.
