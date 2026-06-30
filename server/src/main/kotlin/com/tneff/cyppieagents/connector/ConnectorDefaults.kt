@@ -41,12 +41,24 @@ object ConnectorDefaults {
     const val DANGEROUS_FLAG: String = "--dangerously-skip-permissions"
 
     /**
+     * CYP-167 — `--resume <id>` single-source. Prepended (verified flag position: the spike resumed with
+     * `claude --resume <id> -p …`) when a durable [SessionStore] entry exists, so BOTH arg paths
+     * ([streamJsonArgs] and [sandboxBypassStreamJsonArgs]) emit it identically and can't drift. Null/blank
+     * id ⇒ no flag (the first-start invariant: nothing to resume ⇒ a fresh session).
+     */
+    private fun withResume(resumeSessionId: String?, args: List<String>): List<String> =
+        if (resumeSessionId.isNullOrBlank()) args else listOf("--resume", resumeSessionId) + args
+
+    /**
      * Builds the spawn args for a production session. Fails closed if a caller tries to make
      * `bypassPermissions` the mode. MVP keeps partial-messages OFF (no `--include-partial-messages`).
+     *
+     * CYP-167: [resumeSessionId] non-blank ⇒ `--resume <id>` is prepended (resume after restart).
      */
     fun streamJsonArgs(
         allowedTools: List<String> = DEFAULT_ALLOWED_TOOLS,
         permissionMode: String = DEFAULT_PERMISSION_MODE,
+        resumeSessionId: String? = null,
     ): List<String> {
         require(permissionMode != FORBIDDEN_PERMISSION_MODE) {
             "bypassPermissions must not be the connector default (Gate #4)"
@@ -60,7 +72,7 @@ object ConnectorDefaults {
             args += "--allowedTools"
             args += allowedTools.joinToString(",")
         }
-        return args
+        return withResume(resumeSessionId, args)
     }
 
     /** True if a built arg list would bypass permissions — used to assert the default never does. */
@@ -80,6 +92,7 @@ object ConnectorDefaults {
     fun sandboxBypassStreamJsonArgs(
         grant: SandboxBypassGrant,
         allowedTools: List<String> = DEFAULT_ALLOWED_TOOLS,
+        resumeSessionId: String? = null,
     ): List<String> {
         // The grant's presence IS the authorization (its type can only be produced via the named factory).
         require(grant.reason.isNotBlank()) { "sandbox bypass grant must state its reason" }
@@ -90,7 +103,8 @@ object ConnectorDefaults {
             args += "--allowedTools"
             args += allowedTools.joinToString(",")
         }
-        return args
+        // CYP-167: same `--resume` single-source as the prod path — both paths emit it identically.
+        return withResume(resumeSessionId, args)
     }
 }
 

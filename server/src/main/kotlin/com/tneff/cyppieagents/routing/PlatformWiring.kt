@@ -148,6 +148,9 @@ fun Application.bootPlatform(
         // CYP-146: per-agent token-bearing --mcp-config files live here — out-of-repo under the gitRoot,
         // 0600, NEVER in the tracked worktree (F1: a committed token would leak into the shared remote).
         mcpConfigDir = gitRoot.toPath().resolve("mcp").toFile(),
+        // CYP-167: durable `(projectId,agentId)→session_id` so agents resume after a restart — out-of-repo
+        // under the gitRoot, gitignored (it carries no secret, just CLI session ids).
+        sessionStoreFile = gitRoot.toPath().resolve("session-store.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     installPlatform(booted)

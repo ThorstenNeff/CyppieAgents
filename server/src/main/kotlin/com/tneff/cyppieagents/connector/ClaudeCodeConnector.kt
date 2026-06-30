@@ -9,6 +9,7 @@ import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
+import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.ResultEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
@@ -73,6 +74,21 @@ class ClaudeCodeConnector(
      * connector — that is the hard, non-leaking invariant the override exists to protect.
      */
     private val sandboxBypassGrant: SandboxBypassGrant? = null,
+    /**
+     * CYP-167 — durable session-resume. **Null (default) → feature OFF** (no `--resume`, no persistence),
+     * so existing callers/tests are unchanged. Non-null (boot) → [open] does read-before-spawn (look up
+     * `(projectId, agentId)` → prepend `--resume <id>`) + write-after-init (persist the bound id) + the
+     * [ResumingSession] stale-fallback (clear + fresh respawn once if the resumed id is dead).
+     */
+    private val sessionStore: SessionStore? = null,
+    /**
+     * Resolves the durable key's projectId at spawn. Boot wires `{ config.projectId }` (boot-frozen,
+     * MVP-correct: an agent doesn't change project mid-life — CYP-91 `setActive` is pointer-only). When a
+     * live project-switch lands, this would track the agent's owning project instead.
+     */
+    private val projectIdOf: (agentId: String) -> String = { DEFAULT_PROJECT_ID },
+    /** Injectable clock for the entry timestamps (testable). */
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : Connector {
 
     /**
@@ -121,16 +137,41 @@ class ClaudeCodeConnector(
             mcpConfigWriter?.let { w -> tokenFor(agentId)?.let { tok -> w.writeFor(agentId, tok).absolutePath } }
         val effectiveAllowedTools =
             if (mcpConfigPath != null) allowedTools + HubMcpConfigWriter.PREFIXED_SEND_TOOL else allowedTools
-        // CYP-163: a sandbox-only grant (RB1 throwaway worker) routes through the SEPARATE bypass override;
-        // the production path (grant == null) stays sharp. The two are structurally disjoint — no bent default.
-        val baseArgs = sandboxBypassGrant
-            ?.let { ConnectorDefaults.sandboxBypassStreamJsonArgs(it, effectiveAllowedTools) }
-            ?: ConnectorDefaults.streamJsonArgs(effectiveAllowedTools, permissionMode)
-        val command = listOf(cliCommand) + baseArgs +
-            (mcpConfigPath?.let { listOf("--mcp-config", it) } ?: emptyList())
-        val process = spawner.spawn(command, cwd, env)
-        return ClaudeCodeSession(agentId, process, registry, router, turnQueue, scope, recorder, projector)
-            .also { it.start() }
+
+        // CYP-167: write-after-init — persist the bound id ONCE `system/init` delivers it (the session
+        // invokes this at its bind point). Null store (feature off) → null callback → no persistence.
+        val projectId = projectIdOf(agentId)
+        val onBound: ((String) -> Unit)? = sessionStore?.let { store ->
+            { sessionId -> store.upsert(projectId, agentId, sessionId, clock()) }
+        }
+
+        // Spawn ONE session with the given resume id (null = fresh, no `--resume`). Both arg paths emit
+        // `--resume` identically; Gate #4 stays sharp (only the grant path emits bypass, CYP-163).
+        fun spawnSession(resume: String?): ClaudeCodeSession {
+            val baseArgs = sandboxBypassGrant
+                ?.let { ConnectorDefaults.sandboxBypassStreamJsonArgs(it, effectiveAllowedTools, resume) }
+                ?: ConnectorDefaults.streamJsonArgs(effectiveAllowedTools, permissionMode, resume)
+            val command = listOf(cliCommand) + baseArgs +
+                (mcpConfigPath?.let { listOf("--mcp-config", it) } ?: emptyList())
+            val process = spawner.spawn(command, cwd, env)
+            return ClaudeCodeSession(agentId, process, registry, router, turnQueue, scope, recorder, projector, onBound)
+        }
+
+        // CYP-167: read-before-spawn. No durable entry (first start, or feature off) ⇒ fresh, no `--resume`,
+        // no facade — structurally nothing to resume.
+        val resumeId = sessionStore?.find(projectId, agentId)?.sessionId?.takeIf { it.isNotBlank() }
+        if (resumeId == null) {
+            return spawnSession(null).also { it.start() }
+        }
+        // An entry exists → attempt `--resume` behind the E4 facade, which self-heals a STALE id: clear the
+        // durable entry and respawn fresh exactly once (spike (a)/(b): stale id → is_error while unbound).
+        return ResumingSession(
+            agentId = agentId,
+            scope = scope,
+            firstAttempt = spawnSession(resumeId),
+            onResumeFailed = { sessionStore.clear(projectId, agentId) },
+            respawnFresh = { spawnSession(null) },
+        ).also { it.start() }
     }
 
     companion object {
@@ -156,11 +197,25 @@ class ClaudeCodeSession(
     private val scope: CoroutineScope,
     private val recorder: EventRecorder? = null,
     private val projector: EventProjector? = null,
+    /**
+     * CYP-167 — invoked ONCE with the session id at the bind point (after `system/init`), so the durable
+     * [SessionStore] is written **after** the id is real (write-after-init). Null → no persistence.
+     */
+    private val onSessionBound: ((String) -> Unit)? = null,
 ) : ConnectorSession {
+
+    /** CYP-167 — did this spawn ever bind a session id, or did it die unbound (e.g. a stale `--resume`)? */
+    enum class StartupOutcome { BOUND, DIED_UNBOUND }
 
     private val log = LoggerFactory.getLogger("connector.session")
     private val _events = MutableSharedFlow<StreamJsonEvent>(extraBufferCapacity = 256)
     override val events: Flow<StreamJsonEvent> = _events
+
+    // CYP-167 — completes BOUND at the first system/init bind, or DIED_UNBOUND if the process emits an
+    // error result / ends its stdout before ever binding. The [ResumingSession] facade awaits this to
+    // decide whether a `--resume` attempt succeeded or must fall back to a fresh respawn.
+    private val startupOutcome = CompletableDeferred<StartupOutcome>()
+    suspend fun awaitStartupOutcome(): StartupOutcome = startupOutcome.await()
 
     // correlationId for the in-flight work-run: minted at turn.start, carried to result.final (PO c).
     @Volatile private var currentCorrelationId: String? = null
@@ -187,6 +242,10 @@ class ClaudeCodeSession(
                 if (masked is SystemEvent && boundSessionId == null && !masked.sessionId.isNullOrBlank()) {
                     boundSessionId = masked.sessionId
                     registry.bind(masked.sessionId!!, agentId) // Gate #1: authoritative session→agent
+                    // CYP-167: write-after-init — persist the durable binding only now the id is real, and
+                    // signal the resume facade that this spawn committed (a `--resume` succeeded).
+                    onSessionBound?.invoke(masked.sessionId!!)
+                    if (!startupOutcome.isCompleted) startupOutcome.complete(StartupOutcome.BOUND)
                 }
 
                 // Observability tap (CYP-37): the SINGLE point after masking, before the stream forks
@@ -206,6 +265,13 @@ class ClaudeCodeSession(
                 // See HubSendExtractionTest.collectorDoesNotRouteMcpHubSend (F2 non-vacuous guard).
 
                 if (masked is ResultEvent) {
+                    // CYP-167 stale-resume discriminator (spike-verified, R2): an error result WHILE still
+                    // unbound = a dead `--resume` (the spike's `error_during_execution` before any system/init).
+                    // The `boundSessionId == null` guard is the line that protects R2: an error AFTER bind is a
+                    // mid-session crash (CYP-73's job), NOT a resume failure — it must not trip the fallback.
+                    if (masked.isError && boundSessionId == null && !startupOutcome.isCompleted) {
+                        startupOutcome.complete(StartupOutcome.DIED_UNBOUND)
+                    }
                     // Turn end: mediate to the hub spoke (Gate #1/#2/#6 live in the router/hub)…
                     runCatching { router.onResult(masked) }
                         .onFailure { log.warn("mediation failed for agent={}: {}", agentId, it.message) }
@@ -217,6 +283,9 @@ class ClaudeCodeSession(
             // Reached only on NORMAL stdout completion (the process exited on its own); a deliberate
             // close() cancels this job instead → record process.exit here. Exit code isn't exposed by
             // AgentProcess, so it's unknown (null) for MVP.
+            // CYP-167 secondary net: if stdout ended before ANY bind (a death with no error result either),
+            // it's still a failed startup → DIED_UNBOUND so the resume facade can fall back.
+            if (!startupOutcome.isCompleted) startupOutcome.complete(StartupOutcome.DIED_UNBOUND)
             if (recorder != null && projector != null) {
                 recorder.record(projector.processExit(agentId, boundSessionId, null))
             }
