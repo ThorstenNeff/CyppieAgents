@@ -29,13 +29,15 @@ import java.io.File
  */
 private val log = LoggerFactory.getLogger("remote.main")
 
-/** The honest capability declaration over the current text-only wire (S1 / E2.8 verdict); the server
- *  clamps REMOTE regardless (E2.4). S5 (G4) raises rateLimit+tool to LIMITED via a self-report frame. */
+/** The honest capability declaration (S1 / E2.8 verdict); the server clamps REMOTE regardless (E2.4).
+ *  S5 (G4): the bridge now self-reports rate-limit + tool events ([WireReportingObserver]) → so
+ *  `rateLimitSignal` + `toolGranularity` are honestly **LIMITED** (≤ the REMOTE ceiling). `structuredUsage`
+ *  stays UNAVAILABLE (remote token counts are unverifiable — self-report is moot). */
 val BRIDGE_REMOTE_CAPABILITIES = Capabilities(
     structuredUsage = CapabilityStatus.UNAVAILABLE,
-    toolGranularity = CapabilityStatus.UNAVAILABLE,
+    toolGranularity = CapabilityStatus.LIMITED,
     reliableResult = CapabilityStatus.LIMITED,
-    rateLimitSignal = CapabilityStatus.UNAVAILABLE,
+    rateLimitSignal = CapabilityStatus.LIMITED,
     coordination = CapabilityStatus.AVAILABLE,
     kind = ConnectorKind.STREAM_JSON,
 )
