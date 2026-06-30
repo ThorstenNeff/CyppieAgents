@@ -1,0 +1,32 @@
+{
+  "$comment": "CYP-158 Klasse B — Event-Log Compact-Dichte. docs-only. Grounded @ develop d57dccb.",
+  "dimensions": {
+    "EVENT_ROW_REFLOW_WIDTH": {
+      "value": 480,
+      "unit": "dp",
+      "status": "Dev-calibrated default (analog CYP-26 Maße)",
+      "measuredAgainst": "EventRow inner content width (BoxWithConstraints maxWidth)",
+      "rule": "rowWidth < EVENT_ROW_REFLOW_WIDTH => 2-line deterministic grouping; else 1 line (today)",
+      "rationale": "Below this the 7-8 fixed columns cannot fit without char-squeezing the correlation chip. NOT FlowRow (PO: deterministic layout for structured data rows).",
+      "consumer": "eventlog/EventRowUi.kt EventRow (shared by Browse + Tail)"
+    }
+  },
+  "flowRow": {
+    "$comment": "Chip bars switch Row -> FlowRow; no breakpoint (auto-wrap). Arrangement values reuse today's spacedBy.",
+    "FILTER_BAR_HORIZONTAL_SPACING": "10.dp (existing, eventlog/EventBrowsePanel.kt FilterBar)",
+    "FILTER_BAR_VERTICAL_SPACING": "4.dp (NEW: vertical gap between wrapped chip rows)",
+    "TAIL_HEADER_CHIP_SPACING": "8.dp (existing, eventlog/EventTailPanel.kt TailHeader)",
+    "consumers": [
+      "eventlog/EventBrowsePanel.kt FilterBar (Row -> FlowRow)",
+      "eventlog/EventTailPanel.kt TailHeader chip group (Row -> FlowRow; Pause+indicator stay first line)"
+    ]
+  },
+  "alignedToSharedToken": {
+    "$comment": "Pane-collapse threshold consistency — pull EventBrowse to the shared CYP-156 value.",
+    "TWO_PANE_MIN_WIDTH": {
+      "from": "560.dp (eventlog/EventBrowsePanel.kt Z.120)",
+      "to": "600.dp (== PANE_COLLAPSE_WIDTH, CYP-156)",
+      "reason": "avoid 560-600dp inconsistency vs AclPanel; this file is CYP-154-coupled so the change lives in CYP-158, not CYP-156"
+    }
+  }
+}
