@@ -137,6 +137,10 @@ class BootOrchestrator(
     // (never bypass). Non-null ONLY on the RB1 throwaway-sandbox harness path (human + reviewer signed,
     // [SandboxBypassGrant.rb1Sandbox]); it lets the disposable-sandbox worker write/commit/push autonomously.
     private val sandboxBypassGrant: com.tneff.cyppieagents.connector.SandboxBypassGrant? = null,
+    // CYP-167: durable session-resume store (`(projectId,agentId)→session_id`); null → feature off
+    // (in-memory tests/dev, no `--resume`). bootPlatform supplies the out-of-repo, gitignored file
+    // under the gitRoot, so an agent resumes its conversation after a server restart.
+    private val sessionStoreFile: java.io.File? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -224,6 +228,8 @@ class BootOrchestrator(
             com.tneff.cyppieagents.connector.HubMcpConfigWriter(it, hubMcpUrl)
         }
         val tokenByAgent = secrets.agentTokens.entries.associate { (token, agent) -> agent to token }
+        // CYP-167: durable session-resume binding store. Null file → in-memory off-switch (tests/dev).
+        val sessionStore = sessionStoreFile?.let { com.tneff.cyppieagents.connector.JsonFileSessionStore(it) }
         val defaultConnector = ClaudeCodeConnector(
             spawner = spawner,
             worktreesRoot = worktrees.worktreesRoot,
@@ -241,6 +247,10 @@ class BootOrchestrator(
             tokenFor = { tokenByAgent[it] },
             // CYP-163: null in prod (sharp, Gate #4); non-null ONLY via the RB1 sandbox harness path.
             sandboxBypassGrant = sandboxBypassGrant,
+            // CYP-167: read-before-spawn / write-after-init persistence + the resume facade. projectId is
+            // the active project (boot-frozen; MVP-correct — an agent doesn't switch project mid-life).
+            sessionStore = sessionStore,
+            projectIdOf = { config.projectId },
         )
         // CYP-122: Connector B (MCP) + per-agent selection. The router picks A vs B by the agent's
         // declared connectorKind at spawn; it IS a Connector so the connectorFactory seam still wraps it.
