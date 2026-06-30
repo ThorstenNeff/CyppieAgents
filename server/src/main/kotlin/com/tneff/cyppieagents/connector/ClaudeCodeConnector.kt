@@ -1,6 +1,5 @@
 package com.tneff.cyppieagents.connector
 
-import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.mediation.MediationRouter
@@ -11,19 +10,8 @@ import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.ProviderInfo
-import com.tneff.cyppieagents.model.ResultEvent
-import com.tneff.cyppieagents.model.StreamJsonEvent
-import com.tneff.cyppieagents.model.SystemEvent
-import com.tneff.cyppieagents.model.UserTurn
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
 import java.io.File
-import java.util.UUID
 
 /**
  * Live Claude-Code connector (Decision D1/D4/D8): spawns one long-lived `claude` process per agent
@@ -154,7 +142,9 @@ class ClaudeCodeConnector(
             val command = listOf(cliCommand) + baseArgs +
                 (mcpConfigPath?.let { listOf("--mcp-config", it) } ?: emptyList())
             val process = spawner.spawn(command, cwd, env)
-            return ClaudeCodeSession(agentId, process, registry, router, turnQueue, scope, recorder, projector, onBound)
+            // CYP-142 S4.0: the :server factory maps the hub types onto the shared core's seams (the bridge
+            // builds its own ClaudeCodeSession with wire-relay/no-op seams). onBound = the CYP-167 store closure.
+            return claudeCodeServerSession(agentId, process, registry, router, turnQueue, scope, recorder, projector, onBound)
         }
 
         // CYP-167: read-before-spawn. No durable entry (first start, or feature off) ⇒ fresh, no `--resume`,
@@ -187,160 +177,3 @@ class ClaudeCodeConnector(
     }
 }
 
-/** One long-lived stream-json session for a single agent. */
-class ClaudeCodeSession(
-    override val agentId: String,
-    private val process: AgentProcess,
-    private val registry: SessionRegistry,
-    private val router: MediationRouter,
-    private val turnQueue: SessionTurnQueue,
-    private val scope: CoroutineScope,
-    private val recorder: EventRecorder? = null,
-    private val projector: EventProjector? = null,
-    /**
-     * CYP-167 — invoked ONCE with the session id at the bind point (after `system/init`), so the durable
-     * [SessionStore] is written **after** the id is real (write-after-init). Null → no persistence.
-     */
-    private val onSessionBound: ((String) -> Unit)? = null,
-) : ConnectorSession {
-
-    /** CYP-167 — did this spawn ever bind a session id, or did it die unbound (e.g. a stale `--resume`)? */
-    enum class StartupOutcome { BOUND, DIED_UNBOUND }
-
-    private val log = LoggerFactory.getLogger("connector.session")
-    private val _events = MutableSharedFlow<StreamJsonEvent>(extraBufferCapacity = 256)
-    override val events: Flow<StreamJsonEvent> = _events
-
-    // CYP-167 — completes BOUND at the first system/init bind, or DIED_UNBOUND if the process emits an
-    // error result / ends its stdout before ever binding. The [ResumingSession] facade awaits this to
-    // decide whether a `--resume` attempt succeeded or must fall back to a fresh respawn.
-    private val startupOutcome = CompletableDeferred<StartupOutcome>()
-    suspend fun awaitStartupOutcome(): StartupOutcome = startupOutcome.await()
-
-    // correlationId for the in-flight work-run: minted at turn.start, carried to result.final (PO c).
-    @Volatile private var currentCorrelationId: String? = null
-
-    // Turn-queue key is the STABLE agentId for the whole session lifetime (Gate #5): it must NOT
-    // change at system/init, or a turn injected after init would take a different mutex and race a
-    // turn still running on the old key. There is one long-lived session per agent, so agentId is
-    // the right, stable serialization key. The session_id is used only for routing (registry).
-    @Volatile private var boundSessionId: String? = null
-    @Volatile private var pendingTurn: CompletableDeferred<Unit>? = null
-    private var readerJob: Job? = null
-
-    fun start() {
-        readerJob = scope.launch {
-            process.stdoutLines.collect { line ->
-                val parsed = runCatching { CommJson.decodeFromString<StreamJsonEvent>(line) }.getOrNull()
-                if (parsed == null) {
-                    // Version drift / partial line: skip rather than crash the reader (CYP-5 note).
-                    if (line.isNotBlank()) log.debug("skipping unparsable line for agent={}", agentId)
-                    return@collect
-                }
-                val masked = EventMasking.mask(parsed) // Gate #3: mask BEFORE any egress
-
-                if (masked is SystemEvent && boundSessionId == null && !masked.sessionId.isNullOrBlank()) {
-                    boundSessionId = masked.sessionId
-                    registry.bind(masked.sessionId!!, agentId) // Gate #1: authoritative session→agent
-                    // CYP-167: write-after-init — persist the durable binding only now the id is real, and
-                    // signal the resume facade that this spawn committed (a `--resume` succeeded).
-                    onSessionBound?.invoke(masked.sessionId!!)
-                    if (!startupOutcome.isCompleted) startupOutcome.complete(StartupOutcome.BOUND)
-                }
-
-                // Observability tap (CYP-37): the SINGLE point after masking, before the stream forks
-                // to the UI and the hub. Non-blocking (record() is trySend) — no Observer-Effect.
-                if (recorder != null && projector != null) {
-                    projector.project(agentId, masked.sessionId, currentCorrelationId, masked)
-                        .forEach { recorder.record(it) }
-                }
-
-                _events.emit(masked) // to /ws/agent (UI), already masked
-
-                // CYP-146 RECONCILE: the stdout `hub_send` extraction (CYP-131 `router.onHubSend`) is
-                // RETIRED. The agent now emits via the in-process Hub MCP server (CYP-146), which is the
-                // SINGLE router (→ HubMcpTools → postAsAgent). The MCP tool_use surfaces in the stream as
-                // the PREFIXED `mcp__hub__hub_send`; routing it here too would DOUBLE-POST, so the collector
-                // does not route any tool_use to the hub (tool_use blocks still reach `_events` for the UI).
-                // See HubSendExtractionTest.collectorDoesNotRouteMcpHubSend (F2 non-vacuous guard).
-
-                if (masked is ResultEvent) {
-                    // CYP-167 stale-resume discriminator (spike-verified, R2): an error result WHILE still
-                    // unbound = a dead `--resume` (the spike's `error_during_execution` before any system/init).
-                    // R2 is carried by the bind-time complete(BOUND) above: once BOUND, a later error is a no-op
-                    // via isCompleted. This boundSessionId==null check is a defensive belt-and-suspenders (an
-                    // error is only reachable here while unbound anyway).
-                    if (masked.isError && boundSessionId == null && !startupOutcome.isCompleted) {
-                        startupOutcome.complete(StartupOutcome.DIED_UNBOUND)
-                    }
-                    // CYP-170: ONLY mediate a result from a session that actually BOUND. A result while still
-                    // unbound is a failed/stale `--resume` attempt (the `error_during_execution`) about to be
-                    // replaced by a fresh respawn — it must NOT reach the hub, or the re-injected turn on the
-                    // fresh session would DOUBLE-DELIVER the turn (reviewer axis). The committed attempt (bound
-                    // resume, or the fresh respawn) binds at `system/init` BEFORE its result, so it mediates
-                    // normally. Gate #1/#2/#6 still live in the router/hub.
-                    if (boundSessionId != null) {
-                        runCatching { router.onResult(masked) }
-                            .onFailure { log.warn("mediation failed for agent={}: {}", agentId, it.message) }
-                    }
-                    // …and release the single-flight turn (Gate #5).
-                    pendingTurn?.complete(Unit)
-                    pendingTurn = null
-                }
-            }
-            // Reached only on NORMAL stdout completion (the process exited on its own); a deliberate
-            // close() cancels this job instead → record process.exit here. Exit code isn't exposed by
-            // AgentProcess, so it's unknown (null) for MVP.
-            // CYP-167 secondary net: if stdout ended before ANY bind (a death with no error result either),
-            // it's still a failed startup → DIED_UNBOUND so the resume facade can fall back.
-            if (!startupOutcome.isCompleted) startupOutcome.complete(StartupOutcome.DIED_UNBOUND)
-            // CYP-170: release a turn that is awaiting a result from a process that died WITHOUT one, so the
-            // resume facade's `firstAttempt.sendTurn` returns (→ falls back) instead of hanging on a dead pipe.
-            pendingTurn?.complete(Unit)
-            pendingTurn = null
-            if (recorder != null && projector != null) {
-                recorder.record(projector.processExit(agentId, boundSessionId, null))
-            }
-        }
-    }
-
-    override suspend fun sendTurn(turn: UserTurn) {
-        // Gate #5: serialize on the stable agentId key — hold from injection until this turn's
-        // result arrives, so a second injection cannot race a running turn (even across system/init).
-        // Single-flight means only the lock holder ever sets pendingTurn, so it can't be overwritten.
-        turnQueue.runTurn(agentId) {
-            // New work-run: mint a correlationId that the tap carries until this turn's result (PO c).
-            val correlationId = UUID.randomUUID().toString()
-            currentCorrelationId = correlationId
-            if (recorder != null && projector != null) {
-                recorder.record(projector.turnStart(agentId, boundSessionId, correlationId))
-            }
-            val done = CompletableDeferred<Unit>()
-            pendingTurn = done
-            process.writeLine(turn.toNdjsonLine())
-            done.await()
-        }
-    }
-
-    override fun close() {
-        readerJob?.cancel()
-        process.destroy()
-        boundSessionId?.let { registry.unbind(it) }
-        pendingTurn?.cancel()
-        if (recorder != null && projector != null) recorder.record(projector.agentStopped(agentId))
-    }
-
-    /**
-     * Stop the session and **confirm the process is gone** before returning (CYP-73, no zombie). Same
-     * teardown as [close] — cancel the reader first so the stdout-completion path doesn't misfire as a
-     * crash `process.exit` — then `destroy()` and await actual termination.
-     */
-    override suspend fun closeAndAwait() {
-        readerJob?.cancel()
-        process.destroy()
-        process.awaitTerminated() // the difference vs close(): we wait until it's really dead
-        boundSessionId?.let { registry.unbind(it) }
-        pendingTurn?.cancel()
-        if (recorder != null && projector != null) recorder.record(projector.agentStopped(agentId))
-    }
-}

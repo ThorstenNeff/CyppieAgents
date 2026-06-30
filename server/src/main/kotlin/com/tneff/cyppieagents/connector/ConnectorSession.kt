@@ -3,36 +3,12 @@ package com.tneff.cyppieagents.connector
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.ConnectorTrust
 import com.tneff.cyppieagents.model.ProviderInfo
-import com.tneff.cyppieagents.model.StreamJsonEvent
-import com.tneff.cyppieagents.model.UserTurn
-import kotlinx.coroutines.flow.Flow
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
-/**
- * The connector seam (Decision D8): one live agent session, independent of *how* it is produced.
- * The MVP implementation is a Claude-Code process over piped stdio (CYP-5/CYP-13 live wiring);
- * MCP / OpenAI / remote connectors can implement the same interface later without changes here.
- *
- * Contract:
- *  - [events] are **already masked** `StreamJsonEvent`s — the implementation applies the secret
- *    masker before emitting (Reviewer Gate #3: masking happens before any egress, incl. this WS).
- *  - [sendTurn] injects a human/PO turn; the implementation serializes turns per session
- *    (single-flight turn-queue, Gate #5) so an injection can't race a running turn.
- */
-interface ConnectorSession {
-    val agentId: String
-    val events: Flow<StreamJsonEvent>
-    suspend fun sendTurn(turn: UserTurn)
-    fun close()
-
-    /**
-     * Like [close], but **suspends until the underlying process has terminated** (CYP-73): a Stop must
-     * confirm the agent is gone before reporting STOPPED, so a dying process can't keep writing to the
-     * bus (no zombie). Default delegates to [close] for sessions with no real process (stubs/fakes).
-     */
-    suspend fun closeAndAwait() = close()
-}
+// CYP-142 (S4.0): the `ConnectorSession` interface moved to `:connector-core` (shared by the local hub
+// connector and the remote bridge). `Connector` (capability/provider/trust declaration + open()) and
+// `ConnectorSessions` (the hub-side live-session registry) stay here — they are hub-wired, not the bridge's.
 
 /**
  * Opens (spawns/attaches) a session for an agent. Live impl lands with the CYP-13 wiring.

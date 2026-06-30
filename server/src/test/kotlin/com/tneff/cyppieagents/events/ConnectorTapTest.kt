@@ -4,7 +4,7 @@ import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.connector.AgentProcess
-import com.tneff.cyppieagents.connector.ClaudeCodeSession
+import com.tneff.cyppieagents.connector.claudeCodeServerSession
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
@@ -54,7 +54,7 @@ class ConnectorTapTest {
         val registry = SessionRegistry()
         val router = MediationRouter(registry, hub, recorder, projector)
         val proc = FakeAgentProcess()
-        val session = ClaudeCodeSession("backend", proc, registry, router, SessionTurnQueue(), scope, recorder, projector)
+        val session = claudeCodeServerSession("backend", proc, registry, router, SessionTurnQueue(), scope, recorder, projector)
         session.start()
 
         proc.feed("""{"type":"system","subtype":"init","session_id":"sess-1"}""")
