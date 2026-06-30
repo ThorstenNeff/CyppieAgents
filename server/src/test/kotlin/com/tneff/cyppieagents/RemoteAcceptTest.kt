@@ -83,7 +83,7 @@ class RemoteAcceptTest {
         sessions.addRegisterListener(deliverer::onSessionAttached)
         application {
             install(WebSockets)
-            routing { hubWireRoutes(hub, registry(), CapabilityRegistry(), ProviderRegistry(), WireRateLimiter(), sessions) }
+            routing { hubWireRoutes(hub, registry(), CapabilityRegistry(), ProviderRegistry(), WireRateLimiter(), sessions, com.tneff.cyppieagents.events.EventRecorder(com.tneff.cyppieagents.events.InMemoryEventSink(com.tneff.cyppieagents.events.SystemTimeSource()), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)), { "default" }) }
         }
         return RemoteFx(hub, store, sessions)
     }

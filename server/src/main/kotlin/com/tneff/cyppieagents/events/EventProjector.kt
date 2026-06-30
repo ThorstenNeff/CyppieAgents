@@ -171,7 +171,7 @@ class EventProjector(
         detail = buildJsonObject(detail),
     )
 
-    private companion object {
+    companion object {
         // rate_limit_info fields worth recording — the REAL wire schema (CYP-59 spike, CLI 2.1.193/195,
         // camelCase), NOT the earlier synthetic-corpus snake_case. `status` is the throttle discriminator
         // (blocked/rejected vs allowed/allowed_warning). `overageStatus` is DELIBERATELY excluded: live it

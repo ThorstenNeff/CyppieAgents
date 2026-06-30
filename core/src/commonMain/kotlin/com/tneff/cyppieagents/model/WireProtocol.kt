@@ -52,6 +52,35 @@ data class WireSend(val channel: String, val text: String, val kind: MessageKind
 @SerialName("subscribe")
 data class WireSubscribe(val channels: List<String>, val since: Long? = null) : WireFrame
 
+/**
+ * S5 / G4 — a remote agent's **self-report** of a structured signal the text-only relay drops, so its
+ * `rateLimitSignal`/`toolGranularity` caps can honestly be **LIMITED** (S1/E2.8 verdict) — restoring the
+ * Warden stall-net + event-log tool depth for remote. Carries ONLY a content-free signal, never raw tool
+ * I/O. **The bridge is UNTRUSTED** (a malicious user can handcraft this frame), so the SERVER treats every
+ * field as an opaque, whitelisted + size-capped display label (G4-5) and stamps provenance itself:
+ *  - it NEVER touches the capability clamp (caps are `WireHello`-only, REMOTE-clamped; G4-4).
+ *  - it carries **no `source` / `agentId` / `projectId`** — the server stamps `source=remote` (the wire
+ *    provenance) and the bearer-bound agentId; a frame cannot claim `LOCAL` or spoof identity.
+ */
+@Serializable
+@SerialName("event")
+data class WireEvent(
+    // named `signal` (not `type`) — `type` is the polymorphic [WireFrame] discriminator (CommJson), and a
+    // property named `type` would collide with it at (de)serialization.
+    val signal: WireEventType,
+    /** RATE_LIMIT only: rate-limit fields. The server keeps ONLY whitelisted keys; values are size-capped. */
+    val rateLimit: Map<String, String>? = null,
+    /** TOOL_CALL/TOOL_RESULT only: the tool NAME (server size-capped); never the tool input/output. */
+    val tool: String? = null,
+) : WireFrame
+
+@Serializable
+enum class WireEventType {
+    @SerialName("rate_limit") RATE_LIMIT,
+    @SerialName("tool_call") TOOL_CALL,
+    @SerialName("tool_result") TOOL_RESULT,
+}
+
 // ---------- server → client ----------
 
 /** A handshake / send / subscribe was accepted. */

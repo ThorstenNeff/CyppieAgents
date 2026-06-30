@@ -56,7 +56,7 @@ fun Application.installPlatform(booted: BootedPlatform) {
         // defends the live wire against a remote-connector flood (the named E2.2-M2 obligation).
         // CYP-141 / E2.5: connectorSessions lets a handshaking remote connector register a wire-backed
         // ConnectorSession → the CYP-132 deliverer pushes inbound (WireDeliver) to it like any local agent.
-        hubWireRoutes(booted.hub, booted.tokenRegistry, booted.capabilityRegistry, booted.providerRegistry, WireRateLimiter(), booted.connectorSessions)
+        hubWireRoutes(booted.hub, booted.tokenRegistry, booted.capabilityRegistry, booted.providerRegistry, WireRateLimiter(), booted.connectorSessions, booted.eventRecorder, { booted.hub.state.activeProjectId })
         // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
         // project (resolved server-side from the registry pointer; a switch re-scopes without restart).
         // CYP-94: the operator's authorized set (MVP = all of the registry's projects) bounds the

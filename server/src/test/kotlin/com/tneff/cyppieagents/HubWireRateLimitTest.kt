@@ -63,7 +63,7 @@ class HubWireRateLimitTest {
 
     private fun ApplicationTestBuilder.installWire(limiter: WireRateLimiter): Fixture {
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), InMemoryMessageStore())
-        application { install(WebSockets); routing { hubWireRoutes(hub, registry(), CapabilityRegistry(), ProviderRegistry(), limiter, com.tneff.cyppieagents.connector.ConnectorSessions()) } }
+        application { install(WebSockets); routing { hubWireRoutes(hub, registry(), CapabilityRegistry(), ProviderRegistry(), limiter, com.tneff.cyppieagents.connector.ConnectorSessions(), com.tneff.cyppieagents.events.EventRecorder(com.tneff.cyppieagents.events.InMemoryEventSink(com.tneff.cyppieagents.events.SystemTimeSource()), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)), { "default" }) } }
         return Fixture(hub)
     }
 
