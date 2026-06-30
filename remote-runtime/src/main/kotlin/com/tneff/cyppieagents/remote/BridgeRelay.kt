@@ -46,7 +46,10 @@ class BridgeRelay(
         process = process,
         turnQueue = turnQueue,
         scope = scope,
-        observer = null,              // no hub recorder/projector in user infra (a wire self-report tap is G4/S5)
+        // S5/G4: the self-report tap — relays masked rate-limit/tool events as WireEvents over the link,
+        // making the bridge's declared rateLimitSignal/toolGranularity=LIMITED honest. (No hub recorder in
+        // user infra; this taps the SAME already-masked stream.)
+        observer = WireReportingObserver(link, scope),
         onBind = null,                // the bridge has no hub SessionRegistry / durable store
         onUnbind = null,
         onTurnResult = { result ->    // OUTBOUND: a bound session's turn-result → the hub, once (Gate #6)
