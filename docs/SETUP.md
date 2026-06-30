@@ -12,7 +12,9 @@ the code, the code wins — please file it.
 - **openssl** — used to generate dev tokens.
 - *Optional (real agent run):* the `claude` CLI authenticated with your **OAuth subscription
   credentials** (`~/.claude`). Only needed when agents `launch: claude`.
-- *Optional (extra targets):* Android SDK (Android app), macOS/Xcode (iOS — stubbed).
+- *Optional (extra targets):* Android SDK (Android app), macOS/Xcode (iOS — full Compose app; see
+  `app/iosApp` / `app/iosAppDemo`). iOS toolchain floor: build against **Xcode 16.4**, deployment
+  target **iOS 18.2**, runtime/sim **26.6**.
 
 ## 2. One-time setup
 

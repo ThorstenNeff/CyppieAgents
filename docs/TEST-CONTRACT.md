@@ -23,6 +23,8 @@
     *Wasm-Gating noch unter Vorbehalt der Frontend-Bestätigung (Machbarkeit: **CYP-11**); Fallback-Target Android-Tablet.*
   - **iOS-Baseline (v0.6):** **kompiliert = Pflicht** (Build darf nicht brechen); **Maestro-Smoke auf iOS = opportunistisch,
     nicht-gatend** (kein Release-Gate). Deckt sich mit Epic CYP-4.
+    iOS-Toolchain-Floor (wenn iOS-Maestro läuft): Build gegen **Xcode 16.4**, Deploy-Target **iOS 18.2**,
+    Laufzeit/Sim **26.6** (bestätigt CYP-66; pbxproj-`LastUpgradeCheck` ist kein harter Pin).
 
 ---
 

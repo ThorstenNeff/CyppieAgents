@@ -54,14 +54,15 @@ kotlin {
         }
         jvmMain.dependencies {
             // Desktop/JVM Ktor engine so the agent WS (CYP-6 swap) actually connects at runtime.
-            // Other targets (web/ios/android) need their own engine — flagged follow-up.
+            // Other targets now provide their own engine per source set (android=okhttp, ios=Darwin, web=js).
             implementation(libs.ktor.clientCio)
         }
         iosMain.dependencies {
             // iOS Ktor client engine (Darwin) so the engine-less HttpClient {} in AgentShell can
             // auto-select an engine on iOS — without it, engine discovery fails and the app aborts
             // before the first frame (CYP-56, regression since CYP-27; same role as okhttp/cio/js on
-            // the other targets). Scope = app-start only; full iOS /ws live-stream parity is later.
+            // the other targets). CYP-56 brought app-start; CYP-68 extended Darwin to the live WS
+            // streams (/ws/comm, /ws/lifecycle, /ws/events) — iOS live-stream parity is landed.
             implementation(libs.ktor.clientDarwin)
         }
         commonMain.dependencies {
