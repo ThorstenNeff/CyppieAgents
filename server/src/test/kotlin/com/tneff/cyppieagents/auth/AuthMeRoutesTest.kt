@@ -77,6 +77,32 @@ class AuthMeRoutesTest {
         store.close()
     }
 
+    /** Counts resolve() calls — proves the present-token path does a SINGLE whoami (no DoS-amp). */
+    private class CountingIdp(private val delegate: IdentityProvider) : IdentityProvider {
+        @Volatile var calls = 0
+        override suspend fun resolve(sessionCredential: String?): ResolvedIdentity? {
+            calls++; return delegate.resolve(sessionCredential)
+        }
+    }
+
+    @Test
+    fun presentSession_resolvesExactlyOnce_noDoubleWhoami() = testApplication {
+        val idp = CountingIdp(FakeIdentityProvider(mapOf("sess-unverified" to ResolvedIdentity("bob", verified = false))))
+        val store = SqliteRoleStore(Files.createTempFile("me-count-roles", ".db"))
+        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = "tok-op"), idp, store, { 1L })
+        application { install(ContentNegotiation) { json(CommJson) }; routing { authMeRoutes(deps) } }
+
+        // A present (here unverified) session token — the old code resolved TWICE; now exactly once.
+        client.get("/api/auth/me") { header("X-Session-Token", "sess-unverified") }
+        assertEquals(1, idp.calls, "a present-token /api/auth/me must call Kratos whoami exactly once")
+
+        // A no-credential call must not touch Kratos at all (zero whoami).
+        idp.calls = 0
+        client.get("/api/auth/me")
+        assertEquals(0, idp.calls, "no-credential /api/auth/me must not call Kratos whoami at all")
+        store.close()
+    }
+
     @Test
     fun unverifiedSession_isAuthenticatedButUnverifiedNoRole() = testApplication {
         val store = installMe()

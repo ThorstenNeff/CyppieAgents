@@ -1,9 +1,7 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.auth.AuthDeps
-import com.tneff.cyppieagents.auth.resolvePrincipal
-import com.tneff.cyppieagents.auth.sessionCredential
-import com.tneff.cyppieagents.model.AuthMe
+import com.tneff.cyppieagents.auth.resolveAuthState
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -19,21 +17,6 @@ import io.ktor.server.routing.get
  * (RC1 — the client shows "verify your email"); neither → `{authenticated:false}`.
  */
 fun Route.authMeRoutes(deps: AuthDeps) {
-    get("/api/auth/me") {
-        val principal = call.resolvePrincipal(deps)
-        val me = when {
-            // Operator token / agent token / verified human — resolvePrincipal is non-null only when verified.
-            principal != null -> AuthMe(authenticated = true, role = principal.role.name, verified = true)
-            // No principal: distinguish a valid-but-unverified session from no session at all.
-            else -> {
-                val resolved = deps.idp.resolve(call.sessionCredential())
-                if (resolved != null) {
-                    AuthMe(authenticated = true, role = null, verified = resolved.verified) // verified==false here
-                } else {
-                    AuthMe(authenticated = false)
-                }
-            }
-        }
-        call.respond(me)
-    }
+    // resolveAuthState is a SINGLE idp.resolve (no double whoami on a present garbage/unverified token).
+    get("/api/auth/me") { call.respond(call.resolveAuthState(deps)) }
 }
