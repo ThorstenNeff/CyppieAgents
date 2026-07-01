@@ -3,7 +3,14 @@ package com.tneff.cyppieagents.auth
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.cookies.HttpCookies
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
+import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -125,5 +132,88 @@ class HttpAuthRepositoryLiveE2eTest {
         repo.logout()
         assertEquals(null, store.sessionToken())
         assertEquals(SessionState.None, repo.session())
+    }
+
+    // --- Deep-link completion (recovery-code / verify-code) — reads the code from Mailpit ---
+    //
+    // Secret hygiene (P2.5): the code/token is read into memory only, NEVER logged and never placed in an
+    // assertion/error message — only the repo outcome (Ok/TokenInvalid/Verified) is asserted. The fresh live
+    // code is generated per-run and never leaves the box.
+
+    private val mailpit = System.getenv("CYPPIE_MAILPIT") ?: "http://127.0.0.1:8025"
+    private val resetPassword = "Cyppie-Reset-New-7z!"
+
+    /** Poll Mailpit for the newest message to [email] whose subject contains [subjectNeedle]; return its Text. */
+    private suspend fun mailText(client: HttpClient, email: String, subjectNeedle: String): String {
+        repeat(20) {
+            val list = client.get("$mailpit/api/v1/search") {
+                parameter("query", "to:$email")
+                parameter("limit", "10")
+            }.bodyAsText()
+            val id = KratosJson.parseToJsonElement(list).jsonObject["messages"]?.jsonArray
+                ?.firstOrNull { (it.jsonObject["subject"]?.jsonPrimitive?.content ?: "").contains(subjectNeedle, ignoreCase = true) }
+                ?.jsonObject?.get("id")?.jsonPrimitive?.content
+            if (id != null) {
+                val msg = client.get("$mailpit/api/v1/message/$id").bodyAsText()
+                return KratosJson.parseToJsonElement(msg).jsonObject["Text"]?.jsonPrimitive?.content ?: ""
+            }
+            delay(500)
+        }
+        error("no Mailpit mail to $email matching subject '$subjectNeedle'") // no secret in this message
+    }
+
+    /** The bare 6-digit recovery code (its own line in the mail). The text is never logged (it holds the code). */
+    private fun recoveryCode(text: String): String =
+        Regex("(?m)^\\s*(\\d{6,8})\\s*$").find(text)?.groupValues?.get(1)
+            ?: error("recovery code not found in the recovery mail")
+
+    /** The verification link (`…/self-service/verification?code=…&flow=…`); repo parses code+flow from it. */
+    private fun verificationLink(text: String): String =
+        Regex("https?://\\S*?/self-service/verification\\?\\S+").find(text)?.value?.replace("&amp;", "&")
+            ?: error("verification link not found in the verification mail")
+
+    @Test
+    fun live_recovery_setNewPassword_ok_thenNewPasswordLogsIn() = live { repo, _ ->
+        val mailClient = HttpClient(CIO)
+        try {
+            val email = uniqueEmail()
+            repo.register(email, strongPassword)                                  // create the identity
+            assertEquals(ResetRequestResult.Accepted, repo.requestReset(email))   // opens + holds the recovery flow
+            val code = recoveryCode(mailText(mailClient, email, "Recover access")) // masked: never logged
+            assertEquals(SetPasswordResult.Ok, repo.setNewPassword(code, resetPassword))
+            // Sharpened #1: the NEW password actually logs in (a session is issued).
+            val relogin = repo.login(email, resetPassword)
+            assertTrue(
+                relogin is LoginResult.Verified || relogin is LoginResult.Unverified,
+                "the new password must log in (session issued)",
+            )
+        } finally {
+            mailClient.close()
+        }
+    }
+
+    @Test
+    fun live_verify_verifyEmail_ok_thenVerifiedFlipLive() = live { repo, _ ->
+        val mailClient = HttpClient(CIO)
+        try {
+            val email = uniqueEmail()
+            repo.register(email, strongPassword)                                      // verification-first → sends a verify mail
+            val link = verificationLink(mailText(mailClient, email, "verify your email")) // masked: never logged
+            assertEquals(VerifyResult.Ok, repo.verifyEmail(link))
+            // Sharpened #2: the verified-flip is LIVE — after verify, login → /api/auth/me verified:true.
+            assertEquals(LoginResult.Verified, repo.login(email, strongPassword))
+            assertEquals(SessionState.Verified, repo.session()) // closes the P2.3 linkage live
+        } finally {
+            mailClient.close()
+        }
+    }
+
+    @Test
+    fun live_recovery_wrongCode_mapsTokenInvalid() = live { repo, _ ->
+        val email = uniqueEmail()
+        repo.register(email, strongPassword)
+        repo.requestReset(email) // opens the recovery flow
+        // fail-closed teeth: a wrong/expired code must map to TokenInvalid, never a silent success.
+        assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("000000", resetPassword))
     }
 }

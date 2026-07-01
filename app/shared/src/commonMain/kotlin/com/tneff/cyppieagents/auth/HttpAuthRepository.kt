@@ -53,6 +53,17 @@ class HttpAuthRepository(
     private val platform = platformBaseUrl.trimEnd('/')
     private val kratos = kratosBaseUrl.trimEnd('/')
 
+    /**
+     * The recovery flow [requestReset] opened. Kratos recovery here is **code-only + flow-scoped**: the
+     * emailed 6-digit code is valid only for the flow it was issued against, so [setNewPassword] must submit
+     * it to THIS held flow, not a freshly-initialised one. Null → fall back to a fresh flow (hermetic path).
+     */
+    private var recoveryFlowId: String? = null
+
+    /** Extract a query param value (`?name=…` / `&name=…`) from a URL/query string, or null. */
+    private fun queryParam(s: String, name: String): String? =
+        Regex("[?&]" + Regex.escape(name) + "=([^&\\s\"]+)").find(s)?.groupValues?.get(1)
+
     // --- §7.1 boot probe: /api/auth/me (public, content-free) → AuthState ---
 
     override suspend fun session(): SessionState = failClosed(SessionState.None) {
@@ -132,13 +143,16 @@ class HttpAuthRepository(
 
     override suspend fun requestReset(email: String): ResetRequestResult =
         failClosed(ResetRequestResult.Accepted) { // neutral even on failure — no enumeration leak
-            val resp = submitFlow(
-                "recovery",
-                buildJsonObject {
-                    put("method", "code")
-                    put("email", email)
-                },
-            )
+            // Hold the recovery flow id: the emailed code is scoped to THIS flow, so setNewPassword submits
+            // it to the same flow (Kratos recovery here is code-only, flow-scoped — no deep-link).
+            val flow = initFlow("recovery")
+            recoveryFlowId = flow.id.ifBlank { null }
+            val action = flow.action.ifBlank { "$kratos/self-service/recovery?flow=${flow.id}" }
+            val resp = client.post(action) {
+                authHeaders()
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject { put("method", "code"); put("email", email) }.toString())
+            }
             if (resp.status.value == 429) ResetRequestResult.RateLimited(retryAfterOf(resp)) else ResetRequestResult.Accepted
         }
 
@@ -146,14 +160,19 @@ class HttpAuthRepository(
 
     override suspend fun setNewPassword(token: String, newPassword: String): SetPasswordResult =
         failClosed(SetPasswordResult.TokenInvalid) {
-            // Step 1: complete the recovery flow with the deep-link code → yields a privileged settings flow.
-            val recovery = submitFlow(
-                "recovery",
-                buildJsonObject {
-                    put("method", "code")
-                    put("code", token)
-                },
-            )
+            // Step 1: complete the recovery flow with the emailed code → yields a privileged settings session.
+            // Submit to the HELD flow the code is scoped to (requestReset opened it); fall back to a fresh
+            // flow only when there is none (hermetic / link-carried context).
+            val heldFlow = recoveryFlowId
+            val recovery = if (heldFlow != null) {
+                client.post("$kratos/self-service/recovery?flow=$heldFlow") {
+                    authHeaders()
+                    contentType(ContentType.Application.Json)
+                    setBody(buildJsonObject { put("method", "code"); put("code", token) }.toString())
+                }
+            } else {
+                submitFlow("recovery", buildJsonObject { put("method", "code"); put("code", token) })
+            }
             if (recovery.status.value == 429) return@failClosed SetPasswordResult.RateLimited(retryAfterOf(recovery))
             if (!recovery.status.isSuccess()) return@failClosed SetPasswordResult.TokenInvalid
             captureSession(recovery.bodyAsText())
@@ -175,13 +194,19 @@ class HttpAuthRepository(
     // --- §7.6 email verification (verify deep-link). Reconciled at the live gate. ---
 
     override suspend fun verifyEmail(token: String): VerifyResult = failClosed(VerifyResult.TokenInvalid) {
-        val resp = submitFlow(
-            "verification",
-            buildJsonObject {
-                put("method", "code")
-                put("code", token)
-            },
-        )
+        // The verification deep-link carries `code` + `flow`; submit the code to THAT exact flow. A bare
+        // token (no `flow=`) falls back to a fresh flow (hermetic / code-only contexts).
+        val flowId = queryParam(token, "flow")
+        val code = queryParam(token, "code") ?: token
+        val resp = if (flowId != null) {
+            client.post("$kratos/self-service/verification?flow=$flowId") {
+                authHeaders()
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject { put("method", "code"); put("code", code) }.toString())
+            }
+        } else {
+            submitFlow("verification", buildJsonObject { put("method", "code"); put("code", code) })
+        }
         if (resp.status.isSuccess()) VerifyResult.Ok else VerifyResult.TokenInvalid
     }
 
