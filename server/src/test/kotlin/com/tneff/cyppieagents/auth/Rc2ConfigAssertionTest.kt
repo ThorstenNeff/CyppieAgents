@@ -147,7 +147,7 @@ class Rc2ConfigAssertionTest {
     fun whoami_boundedUnderHang_returnsNullNeverHangs() = runBlocking {
         val idp = KratosIdentityProvider("http://localhost:$hungPort/sessions/whoami", timeoutMs = 500)
         // If the timeout were unbounded, the 60s server delay would blow this withTimeout → test fails.
-        val result = withTimeout(5_000) { idp.resolve("some-session") }
+        val result = withTimeout(5_000) { idp.resolve(SessionCredential("some-session", SessionCredential.Source.HEADER)) }
         assertNull(result, "a hung Kratos must fail closed to null, bounded by the request timeout")
     }
 

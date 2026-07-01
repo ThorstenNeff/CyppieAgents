@@ -25,7 +25,7 @@ data class SettingsOutcome(val status: Int, val body: String)
 /**
  * CYP-181 / P2.4 — the **thin shim** that mediates a logged-in member's Kratos **settings** flow
  * (change password / email). It creates a native settings flow authenticated with the CALLER's OWN session
- * credential (forwarded as both `X-Session-Token` and the `ory_kratos_session` cookie, like
+ * credential (forwarded in the ONE header its source dictates, never both — like
  * [KratosIdentityProvider]) and submits the requested change. **ALL security is delegated to Kratos**
  * (session validity, `privileged_session_max_age`, password hashing, re-verification on email change) —
  * the shim adds none.
@@ -46,20 +46,20 @@ class KratosSettingsClient(
     private val base = publicBaseUrl.trimEnd('/')
 
     /** Change the caller's password via the Kratos settings `password` method. Never logs [newPassword]. */
-    suspend fun changePassword(sessionCredential: String, newPassword: String): SettingsOutcome =
-        submit(sessionCredential, buildJsonObject { put("method", "password"); put("password", newPassword) }.toString())
+    suspend fun changePassword(session: SessionCredential, newPassword: String): SettingsOutcome =
+        submit(session, buildJsonObject { put("method", "password"); put("password", newPassword) }.toString())
 
     /** Change the caller's email via the Kratos settings `profile` method. Never logs [newEmail]. */
-    suspend fun changeEmail(sessionCredential: String, newEmail: String): SettingsOutcome =
-        submit(sessionCredential, buildJsonObject { put("method", "profile"); put("traits", buildJsonObject { put("email", newEmail) }) }.toString())
+    suspend fun changeEmail(session: SessionCredential, newEmail: String): SettingsOutcome =
+        submit(session, buildJsonObject { put("method", "profile"); put("traits", buildJsonObject { put("email", newEmail) }) }.toString())
 
-    private suspend fun submit(sessionCredential: String, payload: String): SettingsOutcome {
+    private suspend fun submit(session: SessionCredential, payload: String): SettingsOutcome {
         return try {
-            val flow = get("$base/self-service/settings/api", sessionCredential)
+            val flow = get("$base/self-service/settings/api", session)
             val action = json.parseToJsonElement(flow.body).jsonObject["ui"]?.jsonObject
                 ?.get("action")?.jsonPrimitive?.content
                 ?: return SettingsOutcome(HttpStatusCode.BadGateway.value, """{"error":"settings flow missing ui.action"}""")
-            post(action, sessionCredential, payload)
+            post(action, session, payload)
         } catch (e: Exception) {
             // Log the failure class ONLY — never the payload (which carries the new password / email).
             log.warn("settings submit failed (fail-closed): {}", e.javaClass.simpleName)
@@ -67,23 +67,27 @@ class KratosSettingsClient(
         }
     }
 
-    private suspend fun get(url: String, cred: String): SettingsOutcome {
+    private suspend fun get(url: String, session: SessionCredential): SettingsOutcome {
         val resp = client.get(url) {
-            header("Accept", "application/json"); authHeaders(cred); timeout { requestTimeoutMillis = timeoutMs }
+            header("Accept", "application/json"); authHeader(session); timeout { requestTimeoutMillis = timeoutMs }
         }
         return SettingsOutcome(resp.status.value, resp.bodyAsText())
     }
 
-    private suspend fun post(url: String, cred: String, payload: String): SettingsOutcome {
+    private suspend fun post(url: String, session: SessionCredential, payload: String): SettingsOutcome {
         val resp = client.post(url) {
             header("Accept", "application/json"); contentType(ContentType.Application.Json)
-            authHeaders(cred); setBody(payload); timeout { requestTimeoutMillis = timeoutMs }
+            authHeader(session); setBody(payload); timeout { requestTimeoutMillis = timeoutMs }
         }
         return SettingsOutcome(resp.status.value, resp.bodyAsText())
     }
 
-    private fun io.ktor.client.request.HttpRequestBuilder.authHeaders(cred: String) {
-        header("X-Session-Token", cred)
-        header("Cookie", "$KRATOS_SESSION_COOKIE=$cred")
+    // Send ONLY the header matching the credential's source — both would poison the Kratos settings flow
+    // exactly as it poisons whoami (the real-path bug).
+    private fun io.ktor.client.request.HttpRequestBuilder.authHeader(session: SessionCredential) {
+        when (session.source) {
+            SessionCredential.Source.HEADER -> header("X-Session-Token", session.value)
+            SessionCredential.Source.COOKIE -> header("Cookie", "$KRATOS_SESSION_COOKIE=${session.value}")
+        }
     }
 }

@@ -18,8 +18,9 @@ import org.slf4j.LoggerFactory
 
 /**
  * CYP-178 / P1 — the real [IdentityProvider]: validates a caller's Kratos session against
- * `GET {kratos-public}/sessions/whoami`, forwarding the credential as BOTH the `X-Session-Token` header
- * (native clients) and the `ory_kratos_session` cookie (browser) so Kratos accepts whichever is valid.
+ * `GET {kratos-public}/sessions/whoami`, forwarding the credential in the ONE header its [SessionCredential.source]
+ * dictates — the `X-Session-Token` header (native) OR the `ory_kratos_session` cookie (browser), never both
+ * (both poisons the whoami on v1.3.0; the real-path bug this fixes).
  * Maps the response to [ResolvedIdentity] (id + whether any verifiable address is verified).
  *
  * **RC1 fail-closed + bounded:** a non-200 (401 = invalid/expired), an inactive session, a missing id, a
@@ -37,12 +38,16 @@ class KratosIdentityProvider(
     private val log = LoggerFactory.getLogger("auth.kratos")
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun resolve(sessionCredential: String?): ResolvedIdentity? {
-        if (sessionCredential.isNullOrBlank()) return null
+    override suspend fun resolve(credential: SessionCredential?): ResolvedIdentity? {
+        if (credential == null || credential.value.isBlank()) return null
         return try {
             val resp = client.get(whoamiUrl) {
-                header("X-Session-Token", sessionCredential)
-                header("Cookie", "$KRATOS_SESSION_COOKIE=$sessionCredential")
+                // Send ONLY the header matching the credential's source. Sending BOTH poisons the whoami on
+                // Kratos v1.3.0 (native+cookie → 500, browser+token → 401) → every real session would fail.
+                when (credential.source) {
+                    SessionCredential.Source.HEADER -> header("X-Session-Token", credential.value)
+                    SessionCredential.Source.COOKIE -> header("Cookie", "$KRATOS_SESSION_COOKIE=${credential.value}")
+                }
                 timeout { requestTimeoutMillis = timeoutMs }
             }
             if (resp.status != HttpStatusCode.OK) return null // fail-closed: 401 = invalid/expired session

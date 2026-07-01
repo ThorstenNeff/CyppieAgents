@@ -49,8 +49,10 @@ private fun AuthRole.satisfies(required: AuthRole): Boolean =
  * the settings shim (CYP-181 / P2.4) can forward the caller's OWN session to the Kratos settings flow — the
  * thin-shim delegates auth to Kratos, and the credential is the one the guard already validated.
  */
-fun ApplicationCall.sessionCredential(): String? =
-    request.header("X-Session-Token")?.ifBlank { null } ?: request.cookies[KRATOS_SESSION_COOKIE]
+fun ApplicationCall.sessionCredential(): SessionCredential? {
+    request.header("X-Session-Token")?.ifBlank { null }?.let { return SessionCredential(it, SessionCredential.Source.HEADER) }
+    return request.cookies[KRATOS_SESSION_COOKIE]?.ifBlank { null }?.let { SessionCredential(it, SessionCredential.Source.COOKIE) }
+}
 
 /**
  * CYP-178 / P1 — the ONE principal resolution (fail-closed). Two mutually-exclusive paths, exactly one
