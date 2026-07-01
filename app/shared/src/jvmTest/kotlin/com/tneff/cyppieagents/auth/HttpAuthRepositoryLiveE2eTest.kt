@@ -8,6 +8,7 @@ import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -148,11 +149,17 @@ class HttpAuthRepositoryLiveE2eTest {
         repeat(20) {
             val list = client.get("$mailpit/api/v1/search") {
                 parameter("query", "to:$email")
-                parameter("limit", "10")
+                parameter("limit", "20")
             }.bodyAsText()
-            val id = KratosJson.parseToJsonElement(list).jsonObject["messages"]?.jsonArray
-                ?.firstOrNull { (it.jsonObject["subject"]?.jsonPrimitive?.content ?: "").contains(subjectNeedle, ignoreCase = true) }
-                ?.jsonObject?.get("id")?.jsonPrimitive?.content
+            // Mailpit's `to:` search is FUZZY on the domain (any @…-address matches), so filter by the EXACT
+            // recipient too (deploy-verified) — else a sibling @cyppie.dev mail from the same run is picked.
+            val id = (KratosJson.parseToJsonElement(list).jsonObject["messages"]?.jsonArray ?: emptyList())
+                .map { it.jsonObject }
+                .firstOrNull { m ->
+                    recipientMatches(m, email) &&
+                        (m["subject"]?.jsonPrimitive?.content ?: "").contains(subjectNeedle, ignoreCase = true)
+                }
+                ?.get("id")?.jsonPrimitive?.content
             if (id != null) {
                 val msg = client.get("$mailpit/api/v1/message/$id").bodyAsText()
                 return KratosJson.parseToJsonElement(msg).jsonObject["Text"]?.jsonPrimitive?.content ?: ""
@@ -160,6 +167,15 @@ class HttpAuthRepositoryLiveE2eTest {
             delay(500)
         }
         error("no Mailpit mail to $email matching subject '$subjectNeedle'") // no secret in this message
+    }
+
+    /** True if a Mailpit search-result message was sent to exactly [email] (To/Address casing varies by version). */
+    private fun recipientMatches(msg: JsonObject, email: String): Boolean {
+        val to = (msg["To"] ?: msg["to"])?.jsonArray ?: return false
+        return to.any { entry ->
+            val addr = (entry.jsonObject["Address"] ?: entry.jsonObject["address"])?.jsonPrimitive?.content
+            addr.equals(email, ignoreCase = true)
+        }
     }
 
     /** The bare 6-digit recovery code (its own line in the mail). The text is never logged (it holds the code). */
