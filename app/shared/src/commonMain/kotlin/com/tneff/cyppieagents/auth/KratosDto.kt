@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.auth
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -37,4 +38,22 @@ internal fun parseKratosSessionToken(body: String): String? = runCatching {
 internal fun parseKratosWhoamiEmail(body: String): String? = runCatching {
     KratosJson.parseToJsonElement(body).jsonObject["identity"]?.jsonObject
         ?.get("traits")?.jsonObject?.get("email")?.jsonPrimitive?.content
+}.getOrNull()?.ifBlank { null }
+
+/**
+ * The Kratos error id (`error.id`, or a top-level `id` fallback), or null. Used to recognise the browser-flow
+ * `browser_location_change_required` — a **success** signal ("code accepted, continue"), not a failure — so
+ * the recovery/settings completion isn't misread as an invalid token.
+ */
+internal fun parseKratosErrorId(body: String): String? = runCatching {
+    val root = KratosJson.parseToJsonElement(body).jsonObject
+    root["error"]?.jsonObject?.get("id")?.jsonPrimitive?.content
+        ?: root["id"]?.jsonPrimitive?.content
+}.getOrNull()
+
+/** The `csrf_token` hidden-node value from a **browser** flow's `ui.nodes` (required to submit it), or null. */
+internal fun parseKratosCsrfToken(body: String): String? = runCatching {
+    KratosJson.parseToJsonElement(body).jsonObject["ui"]?.jsonObject?.get("nodes")?.jsonArray
+        ?.firstOrNull { n -> n.jsonObject["attributes"]?.jsonObject?.get("name")?.jsonPrimitive?.content == "csrf_token" }
+        ?.jsonObject?.get("attributes")?.jsonObject?.get("value")?.jsonPrimitive?.content
 }.getOrNull()?.ifBlank { null }
