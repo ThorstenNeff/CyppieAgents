@@ -41,6 +41,7 @@
 | `auth.register.submit` | Konto-erstellen-Button | — |
 | `auth.register.toLogin` | Link → Anmelden | — |
 | `auth.register.error` | Validierungs-/Server-Fehler (generisch) | **Assertive** |
+| `auth.register.rateLimited` | Drosselung 429 (`HintTone.EFFECT_DEFERRED`) | **Assertive** |
 
 ### E-Mail bestätigen (`scopeId = verify`)
 | Tag | Element | liveRegion |
@@ -76,6 +77,7 @@
 | `auth.reset.success` | Erfolg → Anmelden (`HintTone.INFO`) | **Polite** |
 | `auth.reset.tokenInvalid` | Link ungültig/abgelaufen (`HintTone.ERROR`) | **Assertive** |
 | `auth.reset.error` | generischer Reset-Fehler | **Assertive** |
+| `auth.reset.rateLimited` | Drosselung 429 (`HintTone.EFFECT_DEFERRED`) | **Assertive** |
 
 ### P2 — GitHub OIDC-Zustände (`scopeId = github`)
 | Tag | Element | liveRegion |
@@ -100,12 +102,17 @@ Knoten** über die Tags — der Announce ist damit test-verankert.
 
 ## Zähl-/Validierungs-Block (Selbst-Validierung)
 
-- **Neue Tags gesamt: 46** — Area `auth`. Aufschlüsselung: Gate/Boot 2 · login 10 · register 8 · verify 9 · forgot 6 ·
-  reset 8 · github 3. (Der GitHub-Button ist `auth.login.github`, unter Login geführt; die 3 `auth.github.*`-Tags sind
+- **Neue Tags gesamt: 48** — Area `auth`. Aufschlüsselung: Gate/Boot 2 · login 10 · register 9 · verify 9 · forgot 6 ·
+  reset 9 · github 3. (Der GitHub-Button ist `auth.login.github`, unter Login geführt; die 3 `auth.github.*`-Tags sind
   die reinen OIDC-Zustände.)
-- **Announce-Knoten (liveRegion): 11.** **Assertive (8)** = `login.error`, `login.rateLimited`, `register.error`,
-  `verify.error`, `forgot.rateLimited`, `reset.tokenInvalid`, `reset.error`, `github.error`. **Polite (3)** =
-  `verify.resendResult`, `forgot.sent`, `reset.success`.
+- **Announce-Knoten (liveRegion): 13.** **Assertive (10)** = `login.error`, `login.rateLimited`, `register.error`,
+  `register.rateLimited`, `verify.error`, `forgot.rateLimited`, `reset.tokenInvalid`, `reset.error`,
+  `reset.rateLimited`, `github.error`. **Polite (3)** = `verify.resendResult`, `forgot.sent`, `reset.success`.
+- **Refine 2026-07-01 (CYP-177-Dev-Flag):** `auth.register.rateLimited` + `auth.reset.rateLimited` ergänzt (46→48).
+  Grund: §7 drosselt Register (§7.3) **und** Reset (§7.5), aber die tags.md gab nur login/forgot einen dedizierten
+  `rateLimited`-Knoten — Inkonsistenz. Der ehrliche 429 (`EFFECT_DEFERRED` amber, **≠** rotes `ERROR`) braucht auf
+  **allen vier** drosselbaren Aktionen einen eigenen Knoten, damit die 429-Honesty-Invariante überall gleich
+  test-verankert ist. **Keine neuen Keys** (reused `auth_rate_limited`/`auth_rate_limited_wait`).
 - **0 Kollision:** Area `auth` existiert in keiner `*Tags.kt` (im Push-Schritt via `grep` gegengeprüft).
 - **Kein Secret in Tags:** kein Token/Passwort/Endpunkt als Segment (Deep-Link-Token werden **nie** zu Tags).
 - **Reuse:** keine bestehenden Tags reused (neue Fläche); die Reveal-Toggle-Tags folgen dem `SettingsTags`-Muster (eigener Tag, kein Reuse-Zwang).

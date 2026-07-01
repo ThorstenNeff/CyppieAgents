@@ -111,7 +111,7 @@ verändert; der Desktop wird nur später gemountet.
 | `Register` | Erfolg | `AuthedUnverified` **oder** `VerifySuccess`-Pending-Ansicht | **neutrale** Bestätigung |
 | `ForgotRequest` | Absenden | bleibt + **neutrale** „falls Konto…"-Meldung | **kein** Enumeration-Leak |
 | Deep-Link Reset-Token | geöffnet | `ResetSetNew` | Token-ungültig → ehrlicher Zustand |
-| `ResetSetNew` | Erfolg | `Unauthenticated` (Login) + Erfolgs-Hinweis | — |
+| `ResetSetNew` | Erfolg | terminaler `ResetSetNew(done)` (`auth.reset.success`) + Login-Link → `Unauthenticated` | **kein Auto-Login** — Re-Login mit neuem Passwort |
 | Deep-Link Verify-Token | geöffnet | `VerifySuccess` | Token-ungültig → ehrlicher Zustand |
 | `AuthedUnverified` | „Mail erneut senden" | bleibt + **neutrale** Resend-Meldung (rate-limited) | kein Fake |
 | `AuthedUnverified` | „Abmelden" | `Unauthenticated` | Ausweg, nie eingesperrt |
@@ -170,8 +170,9 @@ Stärke-Meter) · Submit `auth_submit_register` (`auth.register.submit`) · Link
 
 **Validierung (client, vor Submit):** leere Felder → Submit disabled; E-Mail-Form offensichtlich ungültig →
 `isError` am Feld + `auth_register_email_invalid`; Passwort ≠ Bestätigung → `isError` an beiden + `auth_register_pw_mismatch`.
-Server-Ablehnung → generischer `auth_register_error_generic` (`ERROR`, liveRegion). **Erfolg → `AuthedUnverified`**
-mit **neutraler** Meldung (§4), **nie** „Konto angelegt für <email>" als Existenz-Beweis.
+Server-Ablehnung → generischer `auth_register_error_generic` (`ERROR`, liveRegion); Drosselung (429) →
+`auth_rate_limited` (`EFFECT_DEFERRED` amber, Tag `auth.register.rateLimited`, Assertive) — ehrlich, nie Fake.
+**Erfolg → `AuthedUnverified`** mit **neutraler** Meldung (§4), **nie** „Konto angelegt für <email>" als Existenz-Beweis.
 
 ---
 
@@ -217,9 +218,12 @@ haben wir einen Link zum Zurücksetzen gesendet") — `INFO`, liveRegion, Tag `a
 Erreicht über den Reset-Deep-Link (§2.2). **Aufbau:** Titel `auth_reset_title` (heading) · **Neues-Passwort**-Feld +
 Reveal (`auth.reset.password`, Label `auth_reset_new_label`) · **Bestätigen**-Feld (`auth.reset.passwordConfirm`) ·
 Passwort-Regel-Hinweis (`auth_register_password_rule`, Reuse) · Submit `auth_submit_reset` (`auth.reset.submit`) ·
-Erfolg `auth_reset_success` („Passwort geändert. Du kannst dich jetzt anmelden.") → `Unauthenticated` · **Token
-ungültig/abgelaufen** → `auth_reset_token_invalid` (`ERROR`, „Link ungültig oder abgelaufen. Fordere einen neuen an.")
-+ Link zurück zu `ForgotRequest`. Tags `auth.reset.success`/`auth.reset.tokenInvalid`/`auth.reset.error`.
+**Erfolg → terminaler `ResetSetNew(done)`-Zustand** mit `auth_reset_success` („Passwort geändert. Du kannst dich jetzt
+anmelden.", Tag `auth.reset.success`, Polite) **+ Login-Link** → `Unauthenticated`. **Kein Auto-Login:** der Nutzer
+meldet sich mit dem neuen Passwort neu an (sichere Praxis; der reset-scoped Success-Tag bleibt in seinem Scope statt im
+Login-Screen zu rendern). · Drosselung (429) → `auth_rate_limited` (`EFFECT_DEFERRED`, Tag `auth.reset.rateLimited`) ·
+**Token ungültig/abgelaufen** → `auth_reset_token_invalid` (`ERROR`, „Link ungültig oder abgelaufen. Fordere einen neuen
+an.") + Link zurück zu `ForgotRequest`. Tags `auth.reset.success`/`auth.reset.tokenInvalid`/`auth.reset.error`/`auth.reset.rateLimited`.
 
 ### 5.3 Bootstrap / Loading
 
