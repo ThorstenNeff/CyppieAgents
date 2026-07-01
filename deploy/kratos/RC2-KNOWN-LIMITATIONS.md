@@ -116,3 +116,31 @@ proof** (emitted into the evidence as `teeth_proof`): the mask collapses two enu
 byte-identical result while keeping `4000006` distinct from `4000007` — proving the probe's content gates
 discriminate the real enumeration signal. Plus the probe's real discovery of the §A + §B leaks on the safe
 instance is itself the demonstration that it catches what it guards.
+
+---
+
+## §C — email-change POST-auth account-enumeration (CYP-181 / P2.4)
+
+### The finding
+
+Changing a logged-in member's email to one that **already belongs to another account** goes through Kratos's
+settings flow, which — like registration (§B) — rejects the duplicate (a `4000007`-class conflict). So a
+member can learn whether an arbitrary email is registered by trying to set it as their own. This is a **POST-
+auth** enumeration vector on the `POST /api/auth/settings/email` surface.
+
+### Why it is graded BELOW §A and §B (weakest of the three)
+
+- **Requires a verified MEMBER session** — the attacker must already be an authenticated, verified user (a
+  high bar; not an anonymous probe).
+- **Self-scoped + throttled** — one probe per settings submit from the caller's own session, rate-limited.
+- **No account-creation side-effect** — unlike §B, nothing is written (§B's DoS/pollution vector is absent).
+
+### Disposition — documented soft limit (backend developer's call, PO-affirmed)
+
+**NOT mediate-to-generic.** Masking Kratos's duplicate error in the shim would require a **version-fragile**
+error match that could silently **fail-open** on a future Kratos version (the same v26/v1.3.0 drift class that
+bit §A/§B), and it would add platform security-logic against the **thin-shim** invariant (all security is
+Kratos's). Instead: a **documented soft post-auth limit**, gated at the same exposure milestone as §A/§B
+(**CYP-179**); re-evaluate at the v26 upgrade (which may make the settings flow generic). The shim stays thin
+(pure passthrough), and the residual weakest-of-three vector is thrown into the throttle + localhost-binding
+posture until then.

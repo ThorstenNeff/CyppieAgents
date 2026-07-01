@@ -69,6 +69,17 @@ hashers:
     salt_length: 16
     key_length: 32
 
+# CYP-181 / P2.1 — SMTP courier: Kratos sends the recovery + verification (+ email-change) mails through it.
+# `connection_uri` carries the SMTP password → it is an **env reference, NEVER a literal secret here**
+# (SmtpCourierConfigTest reds on a literal — `^${...}$` required; the secret comes from the env / secret
+# store at deploy time, 0600, gitignored, never logged). Dev = mailslurper (visible inbox for the P2.5 live
+# mail check): connection_uri e.g. smtp://test:test@mailslurper:1025/?disable_starttls=true.
+courier:
+  smtp:
+    connection_uri: ${SMTP_CONNECTION_URI}
+    from_address: no-reply@cyppie.com
+    from_name: Cyppie
+
 session:
   lifespan: 24h
   cookie:

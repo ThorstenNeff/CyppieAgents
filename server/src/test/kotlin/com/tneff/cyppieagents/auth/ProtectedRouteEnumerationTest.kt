@@ -65,7 +65,7 @@ class ProtectedRouteEnumerationTest {
         lateinit var app: Application
         application {
             app = this
-            installPlatform(bootFake())
+            installPlatform(bootFake(), settingsClient = com.tneff.cyppieagents.auth.KratosSettingsClient("http://localhost:1"))
         }
         startApplication() // materialize the application + routing tree
 
@@ -92,7 +92,7 @@ class ProtectedRouteEnumerationTest {
         lateinit var app: Application
         application {
             app = this
-            installPlatform(bootFake())
+            installPlatform(bootFake(), settingsClient = com.tneff.cyppieagents.auth.KratosSettingsClient("http://localhost:1"))
             routing { get("/api/leak") { call.respondText("open") } }
         }
         startApplication()
