@@ -46,7 +46,7 @@ secrets:
 # → ~35× faster than an existing-identifier wrong-password → existence leaks by timing). ACCEPTED posture
 # (Auftraggeber decision A): throttle-mitigated (CYP-179, does not close) + localhost-bound until exposure;
 # RE-EVALUATE before off-localhost exposure (v26 dummy-hash). Full record + exposure gate:
-# deploy/kratos/RC2-TIMING-KNOWN-LIMITATION.md. The leaky negative-control instance keeps this FALSE so the
+# deploy/kratos/RC2-KNOWN-LIMITATIONS.md (§A timing + §B registration-content). The leaky control keeps this FALSE so the
 # probe's teeth-demo catches the P1-register exists-tell (4000007).
 security:
   account_enumeration:
