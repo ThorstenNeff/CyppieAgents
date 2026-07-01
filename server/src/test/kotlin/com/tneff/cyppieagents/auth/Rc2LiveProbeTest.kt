@@ -18,6 +18,7 @@ import java.security.MessageDigest
 import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * CYP-178 / **RC2 LIVE behavioral probe** — the deploy-coordinated real-path gate (the hermetic merge-gate
@@ -108,6 +109,17 @@ class Rc2LiveProbeTest {
         // Escalated + documented like timing (RC2-KNOWN-LIMITATIONS.md); re-evaluate before off-localhost exposure.
         val p1 = safePairs.first { it.id.startsWith("P1") }
         println("RC2 P1 register content GRADED LIMITATION (reported, not gated): new=${p1.a.status} existing=${p1.b.status} masked-equal=${p1.a.masked == p1.b.masked}")
+
+        // Condition-4 (version pin) — a HARD gate: a version that reads "unknown" is a VACUOUS pass (same class
+        // as stale-green), so fail closed on it, then assert the running Kratos matches the pinned reference.
+        assertTrue(
+            resolvedKratosVersion != "unknown",
+            "Condition-4 version pin could not be resolved — set KRATOS_ADMIN_URL=http://127.0.0.1:4434 (a version gate that passes on 'unknown' is vacuous)",
+        )
+        assertEquals(
+            pinnedKratosVersion(), resolvedKratosVersion,
+            "Condition-4: the running Kratos ($resolvedKratosVersion) must match the pinned reference version (${pinnedKratosVersion()})",
+        )
         // Timing is REPORTED (raw timings_ms in the evidence), not hard-gated here: the Tester recomputes the
         // ratio, and on Kratos v1.3.0 mitigate:true equalises CONTENT but NOT timing (absent identifiers are
         // not dummy-hashed → the ~ratio remains) — the escalated Auftraggeber decision (v1.3.0+throttle vs v26).
@@ -168,7 +180,7 @@ class Rc2LiveProbeTest {
     private fun writeEvidence(pairs: List<ProbePair>, teeth: JsonElement?) {
         val doc = buildJsonObject {
             put("probe", "cyp178-rc2-live")
-            put("kratos_version", kratosVersion())
+            put("kratos_version", resolvedKratosVersion)
             put("kratos_config_sha", kratosConfigSha())
             put("masked_fields", buildJsonArray { maskedFields.forEach { add(JsonPrimitive(it)) } })
             put("pairs", buildJsonArray { pairs.forEach { add(pairJson(it)) } })
@@ -242,14 +254,25 @@ class Rc2LiveProbeTest {
 
     private fun median(xs: List<Long>): Long = xs.sorted()[xs.size / 2]
 
+    // Resolved once (cached) so writeEvidence + the Condition-4 hard gate agree on one value.
+    private val resolvedKratosVersion: String by lazy { detectKratosVersion() }
+
     // Version lives on the ADMIN API in v1.3.0 (`/admin/version`, :4434) — the public `/version` 404s.
-    // Prefer the env (deploy sets it reliably), then the admin endpoint, then public, else "unknown".
-    private fun kratosVersion(): String = System.getenv("KRATOS_VERSION")
-        ?: System.getenv("KRATOS_ADMIN_URL")?.let { admin ->
-            runCatching { getJson("${admin.trimEnd('/')}/admin/version").jsonObject["version"]?.jsonPrimitive?.content }.getOrNull()
+    // Prefer the env (deploy sets it reliably), then the admin endpoint (both `/admin/version` and `/version`
+    // paths), else "unknown" — which the Condition-4 gate HARD-fails on (no vacuous pass).
+    private fun detectKratosVersion(): String {
+        System.getenv("KRATOS_VERSION")?.ifBlank { null }?.let { return it }
+        val admin = System.getenv("KRATOS_ADMIN_URL")?.trimEnd('/')
+        for (url in listOfNotNull(admin?.let { "$it/admin/version" }, admin?.let { "$it/version" })) {
+            runCatching { getJson(url).jsonObject["version"]?.jsonPrimitive?.content }.getOrNull()?.let { return it }
         }
-        ?: runCatching { getJson("$safeUrl/admin/version").jsonObject["version"]?.jsonPrimitive?.content }.getOrNull()
-        ?: "unknown"
+        return "unknown"
+    }
+
+    /** The Kratos version the reference config is pinned to (single source: `version: vX.Y.Z`). */
+    private fun pinnedKratosVersion(): String =
+        Regex("(?m)^version:\\s*(v\\S+)\\s*$").find(runCatching { repoFile("deploy/kratos/kratos.reference.yml").readText() }.getOrNull().orEmpty())
+            ?.groupValues?.get(1) ?: "v1.3.0"
 
     private fun kratosConfigSha(): String = System.getenv("KRATOS_CONFIG_SHA")
         ?: System.getenv("KRATOS_CONFIG_PATH")?.let { p ->
