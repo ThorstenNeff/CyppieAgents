@@ -41,6 +41,19 @@ class Rc2MaskTest {
     }
 
     @Test
+    fun recovery_echoedEmailNode_isMasked_soPresentAndAbsentMatch() {
+        // The recovery flow echoes the submitted address under a node named "email" (not "identifier");
+        // both branches reach the generic sent_email state, differing ONLY in that echo + nonces.
+        val present = recoveryBody(id = "RRR", ts = "2026-07-01T00:00:00Z", email = "rc2-test@cyppie.dev")
+        val absent = recoveryBody(id = "SSS", ts = "2026-07-01T09:09:09Z", email = "rc2-absent@cyppie.dev")
+        val a = Rc2Mask.maskBody(json, present)
+        val b = Rc2Mask.maskBody(json, absent)
+        assertEquals(a, b, "recovery present vs absent must mask byte-identical (the echoed email is attacker input)")
+        assertTrue(!a.contains("rc2-test@cyppie.dev") && !a.contains("rc2-absent@cyppie.dev"), "the echoed email must be normalised")
+        assertTrue(a.contains("1060003") && a.contains("sent_email"), "the generic recovery signal must survive the mask")
+    }
+
+    @Test
     fun negative_differentEnumSignal_staysDistinctAfterMask() {
         val safe = Rc2Mask.maskBody(json, absentBody) // 4000006
         val leak = Rc2Mask.maskBody(json, existsBody) // 4000007
@@ -56,4 +69,12 @@ class Rc2MaskTest {
             """{"type":"input","group":"default","attributes":{"name":"identifier","type":"text","value":"$identifier","node_type":"input"},"meta":{"label":{"id":1070002,"text":"E-Mail","type":"info"}}}],""" +
             """"messages":[{"id":$msgId,"text":"$msgText","type":"error"}]},""" +
             """"created_at":"$ts","updated_at":"$ts","state":"choose_method"}"""
+
+    /** A compact recovery-flow response: the echoed address is under a node named "email"; generic sent_email. */
+    private fun recoveryBody(id: String, ts: String, email: String): String =
+        """{"id":"$id","type":"api","expires_at":"$ts","issued_at":"$ts","request_url":"http://k/self-service/recovery/api","active":"code",""" +
+            """"ui":{"action":"http://k/self-service/recovery?flow=$id","method":"POST","nodes":[""" +
+            """{"type":"input","group":"code","attributes":{"name":"email","type":"submit","value":"$email","node_type":"input"}}],""" +
+            """"messages":[{"id":1060003,"text":"An email containing a recovery code has been sent.","type":"info"}]},""" +
+            """"created_at":"$ts","updated_at":"$ts","state":"sent_email"}"""
 }

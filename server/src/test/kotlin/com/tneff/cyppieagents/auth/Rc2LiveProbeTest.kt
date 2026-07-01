@@ -55,7 +55,7 @@ class Rc2LiveProbeTest {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
     private val json = Json { ignoreUnknownKeys = true }
     private val evidenceDir = File("build/rc2-probe-evidence").apply { mkdirs() }
-    private val maskedFields = listOf("id", "csrf_token", "created_at", "expires_at", "issued_at", "updated_at", "action", "identifier")
+    private val maskedFields = listOf("id", "csrf_token", "created_at", "expires_at", "issued_at", "updated_at", "action", "identifier", "email")
 
     private val absentEmail = "rc2-absent-probe-nonexistent@cyppie.dev"
     // Per-run nonce so the new-branch email is genuinely NEW every run (else teeth is vacuous).
@@ -198,8 +198,13 @@ class Rc2LiveProbeTest {
 
     private fun median(xs: List<Long>): Long = xs.sorted()[xs.size / 2]
 
+    // Version lives on the ADMIN API in v1.3.0 (`/admin/version`, :4434) — the public `/version` 404s.
+    // Prefer the env (deploy sets it reliably), then the admin endpoint, then public, else "unknown".
     private fun kratosVersion(): String = System.getenv("KRATOS_VERSION")
-        ?: runCatching { json.parseToJsonElement(getJson("$safeUrl/version").toString()).jsonObject["version"]?.jsonPrimitive?.content }.getOrNull()
+        ?: System.getenv("KRATOS_ADMIN_URL")?.let { admin ->
+            runCatching { getJson("${admin.trimEnd('/')}/admin/version").jsonObject["version"]?.jsonPrimitive?.content }.getOrNull()
+        }
+        ?: runCatching { getJson("$safeUrl/admin/version").jsonObject["version"]?.jsonPrimitive?.content }.getOrNull()
         ?: "unknown"
 
     private fun kratosConfigSha(): String = System.getenv("KRATOS_CONFIG_SHA")
@@ -256,7 +261,9 @@ internal object Rc2Mask {
                         k == "id" && depth == 0 -> put(k, MASK) // the flow id (a per-flow nonce), NOT message ids
                         k in TS_KEYS -> put(k, MASK)
                         k == "action" -> put(k, MASK) // ui.action carries the flow id
-                        k == "value" && nodeName == "identifier" -> put(k, IDENTIFIER_MASK) // echoed attacker input
+                        // echoed attacker input (the submitted identifier/email) — non-signal; the recovery flow
+                        // echoes it under a node named "email", login/registration under "identifier".
+                        k == "value" && (nodeName == "identifier" || nodeName == "email") -> put(k, IDENTIFIER_MASK)
                         k == "value" && nodeName == "csrf_token" -> put(k, MASK) // per-flow csrf nonce
                         else -> put(k, maskNonces(v, depth + 1))
                     }
