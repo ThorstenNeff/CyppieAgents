@@ -60,6 +60,12 @@ class Rc2ConfigAssertionTest {
         assertEquals(2, Regex("notify_unknown_recipients:\\s*false").findAll(text).count(), "recovery AND verification must set notify_unknown_recipients: false")
         // Constant-cost password hashing → no login-timing oracle.
         assertTrue(Regex("algorithm:\\s*argon2").containsMatchIn(text), "password hashing must be argon2 (constant-cost)")
+        // RC2 live-probe finding: the MASTER enumeration switch (dummy-hash for absent identifiers → login
+        // timing equalized; generic register/recovery). The per-flow knobs don't cover the timing channel.
+        assertTrue(
+            Regex("account_enumeration:\\s*\\n\\s*mitigate:\\s*true").containsMatchIn(text),
+            "security.account_enumeration.mitigate must be true (closes the login-timing enumeration oracle)",
+        )
         // Session cookie SameSite hardening (defense-in-depth alongside the platform CSRF double-submit).
         assertTrue(Regex("same_site:\\s*(Lax|Strict)").containsMatchIn(text), "session cookie must be SameSite Lax/Strict")
         // RC4: the privileged Kratos ADMIN API must be loopback-bound — never internet-exposed. The platform
