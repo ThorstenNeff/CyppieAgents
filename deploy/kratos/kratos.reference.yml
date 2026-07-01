@@ -96,6 +96,22 @@ selfservice:
   methods:
     password:
       enabled: true
+    # CYP-183 / P4 — OIDC "Sign in with GitHub". Kratos owns the whole OAuth dance (state/PKCE/nonce,
+    # callback exchange, mapper, account-linking). client_id is PUBLIC; client_secret is an env reference
+    # ONLY (OidcProviderConfigTest reds on a literal — the SMTP/P2.1 pattern). ⚠️ The linking-TAKEOVER
+    # safety (an attacker's GitHub acct with the victim's email UNVERIFIED must NOT auto-link/verify) is a
+    # HARD gate settled by the deploy-coordinated spike BEFORE any UX — not by this config assertion.
+    oidc:
+      enabled: true
+      config:
+        providers:
+          - id: github
+            provider: github
+            client_id: Ov23lioeKkKuWAesQBKT # PUBLIC — safe in the repo
+            client_secret: ${GITHUB_CLIENT_SECRET} # env-ref ONLY — never a literal (config-assert reds)
+            scope:
+              - user:email
+            mapper_url: file:///etc/config/kratos/oidc.github.jsonnet
 
   flows:
     registration:
