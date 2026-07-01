@@ -184,14 +184,33 @@ class HttpAuthRepository(
                 return@failClosed SetPasswordResult.TokenInvalid
             }
             captureSession(recoveryBody) // native session_token if present; browser rides the Set-Cookie
-            // Step 2: set the new password on the settings flow the recovery session established.
-            val settings = submitFlow(
-                "settings",
-                buildJsonObject {
-                    put("method", "password")
-                    put("password", newPassword)
-                },
-            )
+            // Step 2: set the new password on the settings flow — **source-aware**, following the mode of the
+            // session Step 1 actually established (like the whoami credential-source principle): a native
+            // token → `/settings/api` (X-Session-Token carries it); a cookie session (the v1.3.0 browser-
+            // recovery-422 case — no token in the body) → `/settings/browser` + csrf_token (the auto-sent
+            // recovery cookie would otherwise 400-block an api-initiated flow). Handles both modes, not one.
+            val settings = if (parseKratosSessionToken(recoveryBody) != null) {
+                submitFlow(
+                    "settings",
+                    buildJsonObject { put("method", "password"); put("password", newPassword) },
+                )
+            } else {
+                val init = client.get("$kratos/self-service/settings/browser") { authHeaders() }
+                val initBody = init.bodyAsText()
+                val flow = parseKratosFlow(initBody)
+                val csrf = parseKratosCsrfToken(initBody)
+                client.post(flow.action.ifBlank { "$kratos/self-service/settings?flow=${flow.id}" }) {
+                    authHeaders()
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        buildJsonObject {
+                            put("method", "password")
+                            put("password", newPassword)
+                            if (csrf != null) put("csrf_token", csrf)
+                        }.toString(),
+                    )
+                }
+            }
             val settingsBody = settings.bodyAsText()
             when {
                 settings.status.value == 429 -> SetPasswordResult.RateLimited(retryAfterOf(settings))

@@ -29,7 +29,7 @@ import kotlin.test.assertIs
  */
 class HttpAuthRepositoryE2eTest {
 
-    private data class SubmitResp(val status: Int, val body: String, val retryAfter: String? = null)
+    private data class SubmitResp(val status: Int, val body: String, val retryAfter: String? = null, val setCookie: String? = null)
 
     private class Fixture {
         var me: AuthMe = AuthMe(authenticated = false)
@@ -63,12 +63,28 @@ class HttpAuthRepositoryE2eTest {
                 post("/.ory/kratos/public/self-service/logout/api") {
                     call.respondText("{}", ContentType.Application.Json)
                 }
+                // Browser settings flow (the flow-mode-consistent post-recovery step for a cookie session):
+                // its init carries a csrf_token node, and its submit is a DISTINCT path from the /api one — so
+                // the mock can model /api+cookie→400 (old path teeth) vs /browser+csrf→200 (new path).
+                get("/.ory/kratos/public/self-service/settings/browser") {
+                    call.respondText(
+                        """{"id":"sf","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/settings/browser-submit","nodes":[{"attributes":{"name":"csrf_token","value":"csrf-abc","type":"hidden"}}]}}""",
+                        ContentType.Application.Json,
+                    )
+                }
+                post("/.ory/kratos/public/self-service/settings/browser-submit") {
+                    val body = call.receiveText()
+                    fx.lastSubmit = "settingsBrowser" to body
+                    val r = fx.onSubmit("settingsBrowser", body)
+                    call.respondText(r.body, ContentType.Application.Json, HttpStatusCode.fromValue(r.status))
+                }
                 post("/.ory/kratos/public/self-service/{kind}") {
                     val kind = call.parameters["kind"]!!
                     val body = call.receiveText()
                     fx.lastSubmit = kind to body
                     val r = fx.onSubmit(kind, body)
                     if (r.retryAfter != null) call.response.headers.append(HttpHeaders.RetryAfter, r.retryAfter)
+                    if (r.setCookie != null) call.response.headers.append(HttpHeaders.SetCookie, r.setCookie)
                     call.respondText(r.body, ContentType.Application.Json, HttpStatusCode.fromValue(r.status))
                 }
             }
@@ -198,14 +214,21 @@ class HttpAuthRepositoryE2eTest {
 
     @Test
     fun setNewPassword_recoveryThenSettings_ok() = withFixture({
-        // Fixture fidelity: the CORRECT code answers 422 browser_location_change_required + an issued session
-        // (here a native session_token) — the real Kratos browser-flow success path. This reddens the OLD
-        // blanket `!isSuccess()`-→TokenInvalid logic and greens the 422+session-aware logic.
+        // Fixture fidelity (two real bugs modelled): the CORRECT code answers 422 browser_location_change_required
+        // + a COOKIE session (NO session_token in the body — the v1.3.0 browser-recovery reality) → source-aware
+        // Step 2 must use /settings/browser. The mock models /settings/api → 400 (the api+cookie blockade) and
+        // /settings/browser → 200 — so the OLD blanket `!isSuccess()` AND the OLD `/settings/api` step BOTH redden,
+        // and only the new 422+session-aware, source-aware-browser logic greens.
         onSubmit = { kind, _ ->
-            if (kind == "recovery") {
-                SubmitResp(422, """{"error":{"id":"browser_location_change_required"},"session_token":"priv-sess"}""")
-            } else {
-                SubmitResp(200, "{}")
+            when (kind) {
+                "recovery" -> SubmitResp(
+                    422,
+                    """{"error":{"id":"browser_location_change_required"}}""",
+                    setCookie = "ory_kratos_session=hermetic-sess; Path=/",
+                )
+                "settings" -> SubmitResp(400, """{"error":{"reason":"api flow initiated but Cookie present — blocked"}}""")
+                "settingsBrowser" -> SubmitResp(200, "{}")
+                else -> SubmitResp(200, "{}")
             }
         }
     }) { _, repo, _ ->
