@@ -1,6 +1,9 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.boot.LifecycleManager
 import com.tneff.cyppieagents.model.AgentRunStateEvent
 import io.ktor.server.application.ApplicationCall
@@ -16,26 +19,29 @@ import kotlinx.coroutines.flow.onStart
 
 /**
  * Agent lifecycle controls (CYP-73). `POST /api/agents/{id}/{stop|start|restart}` are **operator-gated
- * and fail-closed** ([requireOperator] first, so a non-operator never even learns whether an id
- * exists). The control surface is the only operator-gated part; the *status display* (`GET /api/agents`
+ * and fail-closed** (gated STRUCTURALLY under the [authenticatedApi] group, CYP-178, so a non-operator
+ * never even learns whether an id exists). The control surface is the only operator-gated part; the
+ * *status display* (`GET /api/agents`
  * + `/ws/lifecycle`) is not.
  *
  * Errors via the uniform envelope: 401 (no token), 403 `operator_required`, 404 `agent_not_found`,
  * 409 `already_running`, 503 `spawn_failed` — thrown by [LifecycleManager], mapped by StatusPages.
  */
-fun Route.lifecycleRoutes(lifecycle: LifecycleManager, registry: TokenRegistry) {
-    route("/api/agents/{id}") {
-        post("/stop") { call.operatorAction(registry) { lifecycle.stop(it) } }
-        post("/start") { call.operatorAction(registry) { lifecycle.start(it) } }
-        post("/restart") { call.operatorAction(registry) { lifecycle.restart(it) } }
+fun Route.lifecycleRoutes(lifecycle: LifecycleManager, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) {
+    // CYP-178: operator gate is STRUCTURAL (mounted under the group) — 401/403 before the agent id is
+    // touched (no existence leak to non-operators); the RC1 route-enumeration meta-test is the net.
+    authenticatedApi(deps, AuthRole.OPERATOR) {
+        route("/api/agents/{id}") {
+            post("/stop") { call.lifecycleAction { lifecycle.stop(it) } }
+            post("/start") { call.lifecycleAction { lifecycle.start(it) } }
+            post("/restart") { call.lifecycleAction { lifecycle.restart(it) } }
+        }
     }
 }
 
-private suspend inline fun ApplicationCall.operatorAction(
-    registry: TokenRegistry,
+private suspend inline fun ApplicationCall.lifecycleAction(
     action: (agentId: String) -> AgentRunStateEvent,
 ) {
-    requireOperator(registry) // 401/403 BEFORE touching the agent id — no existence leak to non-operators
     val id = parameters["id"] ?: throw BadRequestException("missing agent id")
     respond(action(id)) // 200 { agentId, status }; 404/409/503 thrown inside
 }

@@ -23,8 +23,17 @@ import io.ktor.server.plugins.BadRequestException as KtorBadRequestException
  * Reviewer #4: the boot entrypoint must bind the server to localhost (127.0.0.1) as long as the
  * `?token=` query fallback exists, so the socket is not reachable off-box. See [bootHost].
  */
-fun Application.installPlatform(booted: BootedPlatform) {
+fun Application.installPlatform(
+    booted: BootedPlatform,
+    // CYP-178: the principal-resolution deps for the operator-gated `/api` writes. Defaults to the
+    // token-only path (only the static operator token authenticates; the Kratos human path is deny-all,
+    // fail-closed). A real boot passes an [com.tneff.cyppieagents.auth.AuthDeps] backed by the Kratos
+    // [com.tneff.cyppieagents.auth.KratosIdentityProvider] + the durable [com.tneff.cyppieagents.auth.SqliteRoleStore]
+    // so a verified human OPERATOR also authenticates. ONE instance is shared across every operator route.
+    authDeps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(booted.tokenRegistry),
+) {
     install(ContentNegotiation) { json(CommJson) }
+    install(com.tneff.cyppieagents.auth.CsrfCookieIssuer) // CYP-178 RC5: issue the double-submit CSRF cookie
     install(WebSockets) { maxFrameSize = MessageInput.MAX_FRAME_BYTES } // CYP-143: protocol backstop on inject frames
     install(StatusPages) {
         exception<ApiException> { call, cause ->
@@ -43,6 +52,7 @@ fun Application.installPlatform(booted: BootedPlatform) {
             capabilitiesOf = booted.capabilityRegistry::get,
             connectorKindOf = booted.agentConfigs::connectorKindOf,
             providerOf = booted.providerRegistry::get, // CYP-137: surface the provider in GET /api/agents
+            deps = authDeps, // CYP-178: operator gate for PUT /api/acl
         )
         // Production auth: only the operator token, or an agent watching its own session, is allowed.
         agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
@@ -64,6 +74,7 @@ fun Application.installPlatform(booted: BootedPlatform) {
         eventRoutes(
             booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
             authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
+            deps = authDeps, // CYP-178: structural operator gate for GET /api/events
         )
         // /ws/events — operator-only live-tail of the Event-Log (CYP-40), fail-closed; CYP-102 active-scoped,
         // CYP-94 operator-only SubscribeEvents.projectId override (same authorized-set bound).
@@ -72,26 +83,26 @@ fun Application.installPlatform(booted: BootedPlatform) {
             authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
         )
         // CYP-73: agent lifecycle controls (operator-gated) + content-free status feed (participant-gated).
-        lifecycleRoutes(booted.lifecycle, booted.tokenRegistry)
+        lifecycleRoutes(booted.lifecycle, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
         lifecycleSocket(booted.lifecycle, booted.tokenRegistry)
         // CYP-96: project-settings config — GET participant (masked key), PUT operator (fail-closed).
         // CYP-102 fix: bind the LIVE active-pointer resolver (not booted.activeProjectId by-value) so
         // config follows a project switch, mirroring eventRoutes/eventSocket above.
-        configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId)
+        configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps) // CYP-178
         // CYP-97: agent CRUD — detail GET participant, POST/PUT/DELETE operator (fail-closed).
-        agentMgmtRoutes(booted.agentManagement, booted.tokenRegistry)
+        agentMgmtRoutes(booted.agentManagement, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
         // CYP-122: connector opt-in (operator-gated, server-enforced, audited) — sets an agent's connector.
-        connectorRoutes(booted.state, booted.tokenRegistry, booted.capabilityRegistry, booted.connectorOptIn)
+        connectorRoutes(booted.state, booted.tokenRegistry, booted.capabilityRegistry, booted.connectorOptIn, authDeps) // CYP-178
         // CYP-89: Product-Lead reports — all three operator-gated/fail-closed, content-free items.
-        reportRoutes(booted.reportStore, booted.tokenRegistry)
+        reportRoutes(booted.reportStore, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
         // CYP-91: multi-project lifecycle — all operator-gated/fail-closed; cascade-delete is the
         // most destructive op (no-cross-project, opt-in worktree teardown, branches kept).
         // CYP-102: a switch re-scopes the live comm hub (HubState.rescope) so channels/inbox/acl/ws-comm
         // follow the active project without a restart.
-        projectRoutes(booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry, booted.state::rescope)
+        projectRoutes(booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry, booted.state::rescope, deps = authDeps) // CYP-178
         // CYP-93: cross-project channel-share — GET participant (disclosure), PUT/DELETE operator/owner
         // (the authorization gate, fail-closed); the AclMatrix permit takes effect via HubState.refreshShares.
-        channelShareRoutes(booted.state, booted.channelShares, booted.tokenRegistry)
+        channelShareRoutes(booted.state, booted.channelShares, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
     }
 }
 
@@ -156,6 +167,19 @@ fun Application.bootPlatform(
         remoteTokensFile = gitRoot.toPath().resolve("remote-tokens.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
-    installPlatform(booted)
+    // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;
+    // otherwise fail-closed to token-only (human path deny-all). The role store is durable + out-of-repo.
+    val authDeps = config.auth?.let { authCfg ->
+        com.tneff.cyppieagents.auth.AuthDeps(
+            tokens = booted.tokenRegistry,
+            idp = com.tneff.cyppieagents.auth.KratosIdentityProvider(
+                whoamiUrl = authCfg.kratosPublicUrl.trimEnd('/') + "/sessions/whoami",
+                timeoutMs = authCfg.whoamiTimeoutMs,
+            ),
+            roles = com.tneff.cyppieagents.auth.SqliteRoleStore(gitRoot.toPath().resolve(authCfg.roleDbPath)),
+            nowMs = { System.currentTimeMillis() },
+        )
+    } ?: com.tneff.cyppieagents.auth.AuthDeps(booted.tokenRegistry)
+    installPlatform(booted, authDeps)
     return booted
 }

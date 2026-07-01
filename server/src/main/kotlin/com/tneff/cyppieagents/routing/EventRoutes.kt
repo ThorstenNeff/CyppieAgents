@@ -1,6 +1,9 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.events.Page
@@ -25,8 +28,8 @@ import io.ktor.server.routing.routing
  *
  * **Operator-only, fail-closed (PRD §7):** the Event-Log aggregates team-wide, cross-agent metadata,
  * so a single agent reading it would be a cross-agent metadata leak of the same class as the filtered
- * `AclEvent` (CYP-18). [requireOperator] enforces it like `PUT /api/acl`: a missing token → 401, an
- * agent token → 403.
+ * `AclEvent` (CYP-18). The STRUCTURAL [authenticatedApi] group (CYP-178) enforces it like `PUT /api/acl`:
+ * a missing credential → 401, an agent token → 403.
  *
  * Filters arrive as **query params** (not a JSON body, mirroring `CommApi.messages`); the time window
  * is half-open `[since, until)`; paging is stable over `seq` (`afterSeq` cursor + `limit`).
@@ -39,27 +42,31 @@ fun Route.eventRoutes(
     // override `?projectId=` is honored only for ids in this set; defaulted empty so legacy installs
     // never honor an override (forced-active stays the only behavior).
     authorizedProjects: () -> Set<String> = { emptySet() },
+    deps: AuthDeps = AuthDeps(registry),
 ) {
-    route("/api/events") {
-        get {
-            call.requireOperator(registry) // fail-closed before any query runs
-            val q = call.request.queryParameters
-            val filter = EventFilter(
-                agentId = q["agentId"],
-                type = q["type"]?.let { parseType(it) },
-                severity = q["severity"]?.let { parseSeverity(it) },
-                since = q["since"]?.let { parseLong(it, "since") },
-                until = q["until"]?.let { parseLong(it, "until") },
-                correlationId = q["correlationId"],
-                sessionId = q["sessionId"],
-                // S13 / CYP-102 default = forced-active; S17 / CYP-94 operator-only override resolved here
-                // (single resolver, also used by /ws/events): `?projectId=<id>|all`, bounded to the
-                // operator's authorized set, fail-closed to active on anything unauthorized.
-                projectId = resolveEventScope(q["projectId"], activeProjectId(), authorizedProjects()),
-            )
-            val afterSeq = q["afterSeq"]?.let { parseLong(it, "afterSeq") }
-            val limit = (q["limit"]?.let { parseInt(it, "limit") } ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
-            call.respond(sink.query(filter, Page(afterSeq = afterSeq, limit = limit)))
+    // CYP-178: operator gate is STRUCTURAL (mounted under the group), fail-closed before any query runs;
+    // the RC1 route-enumeration meta-test is the net that catches any /api route mounted outside a guard.
+    authenticatedApi(deps, AuthRole.OPERATOR) {
+        route("/api/events") {
+            get {
+                val q = call.request.queryParameters
+                val filter = EventFilter(
+                    agentId = q["agentId"],
+                    type = q["type"]?.let { parseType(it) },
+                    severity = q["severity"]?.let { parseSeverity(it) },
+                    since = q["since"]?.let { parseLong(it, "since") },
+                    until = q["until"]?.let { parseLong(it, "until") },
+                    correlationId = q["correlationId"],
+                    sessionId = q["sessionId"],
+                    // S13 / CYP-102 default = forced-active; S17 / CYP-94 operator-only override resolved here
+                    // (single resolver, also used by /ws/events): `?projectId=<id>|all`, bounded to the
+                    // operator's authorized set, fail-closed to active on anything unauthorized.
+                    projectId = resolveEventScope(q["projectId"], activeProjectId(), authorizedProjects()),
+                )
+                val afterSeq = q["afterSeq"]?.let { parseLong(it, "afterSeq") }
+                val limit = (q["limit"]?.let { parseInt(it, "limit") } ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
+                call.respond(sink.query(filter, Page(afterSeq = afterSeq, limit = limit)))
+            }
         }
     }
 }

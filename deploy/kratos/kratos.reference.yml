@@ -1,0 +1,89 @@
+# CYP-178 / RC2 — Kratos SECURITY-REFERENCE config (NOT directly deployable).
+#
+# This file version-controls the security-relevant Kratos settings that the C1 (constant-time /
+# account-enumeration) property depends on, so the deploy-coordinated LIVE behavioral probe (RC2
+# option b) runs against an asserted, reproducible baseline instead of a hand-typed box config.
+# `server/src/test/.../auth/KratosSecurityConfigTest` asserts the knobs below stay set.
+#
+# Deploy owns the INFRA values marked REPLACE_ME (dsn, secrets, base/public URLs, courier SMTP) and
+# the final same_site/secure posture for the deployment origin. Never commit real secrets here.
+
+version: v1.3.0
+
+dsn: REPLACE_ME # e.g. postgres://... (SQLite only for local dev)
+
+serve:
+  public:
+    base_url: REPLACE_ME # e.g. https://api.cyppie.com/.ory/kratos/public/
+    cors:
+      enabled: true
+      allowed_origins:
+        - REPLACE_ME # the SPA origin ONLY (never "*")
+  admin:
+    # RC4: the admin API (identity CRUD, privileged) must NOT be internet-exposed. Bind it to loopback
+    # / the private network only; the platform reaches it over localhost. Enforced at the network layer.
+    base_url: http://127.0.0.1:4434/
+
+secrets:
+  cookie:
+    - REPLACE_ME # 32+ byte random; rotate-capable list
+  cipher:
+    - REPLACE_ME # 32 byte random
+
+# Constant-cost password hashing → no login-timing oracle distinguishing "user exists" from "wrong pw".
+hashers:
+  algorithm: argon2
+  argon2:
+    memory: 128MB
+    iterations: 3
+    parallelism: 4
+    salt_length: 16
+    key_length: 32
+
+session:
+  lifespan: 24h
+  cookie:
+    name: ory_kratos_session # MUST match the platform's KRATOS_SESSION_COOKIE constant (auth/Principal.kt)
+    same_site: Lax # defense-in-depth: the session cookie is not sent on cross-site sub-requests
+    secure: true # prod: cookie only over TLS (dev-only override to false behind localhost)
+    persistent: true
+
+selfservice:
+  default_browser_return_url: REPLACE_ME
+  allowed_return_urls:
+    - REPLACE_ME
+
+  methods:
+    password:
+      enabled: true
+
+  flows:
+    registration:
+      # Modern two-step flow — the enumeration-safe path (a taken email yields the same generic outcome).
+      enable_legacy_one_step: false
+      lifespan: 10m
+      ui_url: REPLACE_ME
+
+    recovery:
+      enabled: true
+      use: code
+      ui_url: REPLACE_ME
+      # Do NOT reveal whether a recovery address exists: an unknown recipient gets the same response.
+      notify_unknown_recipients: false
+
+    verification:
+      enabled: true
+      use: code
+      ui_url: REPLACE_ME
+      notify_unknown_recipients: false
+
+    login:
+      ui_url: REPLACE_ME
+      lifespan: 10m
+
+    settings:
+      ui_url: REPLACE_ME
+      privileged_session_max_age: 15m
+
+    error:
+      ui_url: REPLACE_ME

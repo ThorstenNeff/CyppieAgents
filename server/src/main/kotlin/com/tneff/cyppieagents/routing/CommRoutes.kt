@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
@@ -113,6 +114,10 @@ fun Route.commRoutes(
     // CYP-137: the agent's provider (tool), from the boot ProviderRegistry. Null in the dev install →
     // provider stays null (fail-closed: the UI omits the qualifier, never guesses).
     providerOf: (agentId: String) -> com.tneff.cyppieagents.model.ProviderInfo? = { null },
+    // CYP-178: the principal-resolution deps for the operator-gated write (PUT /api/acl). Defaults to the
+    // token-only path (operator token authenticates; the Kratos human path is deny-all); installPlatform
+    // passes the real AuthDeps so a verified human OPERATOR also authenticates.
+    deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry),
 ) {
     route("/api") {
         get("/health") { call.respondText("ok") }
@@ -192,10 +197,13 @@ fun Route.commRoutes(
             )
         }
 
-        put("/acl") {
-            call.requireOperator(registry)
-            val entry = call.receive<AclEntry>()
-            call.respond(hub.setAcl(entry, by = HubState.OPERATOR_ID))
+        // CYP-178: the ACL write is gated STRUCTURALLY under the group — fail-closed BEFORE the body is
+        // received. The RC1 route-enumeration meta-test is the net. (The reads above stay participant-gated.)
+        authenticatedApi(deps, com.tneff.cyppieagents.auth.AuthRole.OPERATOR) {
+            put("/acl") {
+                val entry = call.receive<AclEntry>()
+                call.respond(hub.setAcl(entry, by = HubState.OPERATOR_ID))
+            }
         }
     }
 
