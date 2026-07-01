@@ -7,6 +7,11 @@
 #
 # Deploy owns the INFRA values marked REPLACE_ME (dsn, secrets, base/public URLs, courier SMTP) and
 # the final same_site/secure posture for the deployment origin. Never commit real secrets here.
+#
+# ⚠️ KRATOS VERSION PIN = v1.3.0 (config schema below is authored for it; Rc2ConfigAssertionTest binds it).
+# `brew install ory/kratos/kratos` currently ships an INCOMPATIBLE v26.2.0 with a config schema break
+# (e.g. `session.cookie.secure` string-vs-bool) → do NOT use brew. Install the pinned GitHub release binary:
+#   github.com/ory/kratos/releases/tag/v1.3.0  (or the oryd/kratos:v1.3.0 Docker image).
 
 version: v1.3.0
 

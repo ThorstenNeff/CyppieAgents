@@ -49,6 +49,9 @@ class Rc2ConfigAssertionTest {
     @Test
     fun kratosReferenceConfig_keepsAntiEnumerationAndConstantTimeKnobs() {
         val text = repoFile("deploy/kratos/kratos.reference.yml").readText()
+        // Version pin (deploy-found drift): the schema below is authored for Kratos v1.3.0; brew ships an
+        // incompatible v26 (schema break). A bump here without re-validating the schema reds this line.
+        assertTrue(Regex("(?m)^version:\\s*v1\\.3\\.0\\s*$").containsMatchIn(text), "Kratos config must stay pinned to v1.3.0 (brew's v26 is schema-incompatible)")
         // The session cookie name MUST equal the constant the guard reads (single-source — drift = red).
         assertTrue(text.contains("name: $KRATOS_SESSION_COOKIE"), "session cookie name must match KRATOS_SESSION_COOKIE")
         // Modern two-step registration (the enumeration-safe flow).
