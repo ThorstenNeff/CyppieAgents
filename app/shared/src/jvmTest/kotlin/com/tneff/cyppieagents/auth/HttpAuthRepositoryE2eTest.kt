@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.AuthMe
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -63,6 +64,23 @@ class HttpAuthRepositoryE2eTest {
                 post("/.ory/kratos/public/self-service/logout/api") {
                     call.respondText("{}", ContentType.Application.Json)
                 }
+                // Browser recovery flow: its 422 sets the ory_kratos_session cookie (into the jar via
+                // HttpCookies), unlike the /api recovery (no session). Distinct submit path so the mock can
+                // model both — the OLD /api path (no cookie) reddens, the new browser path greens.
+                get("/.ory/kratos/public/self-service/recovery/browser") {
+                    call.respondText(
+                        """{"id":"rfb","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/recovery/browser-submit","nodes":[{"attributes":{"name":"csrf_token","value":"rcsrf","type":"hidden"}}]}}""",
+                        ContentType.Application.Json,
+                    )
+                }
+                post("/.ory/kratos/public/self-service/recovery/browser-submit") {
+                    val body = call.receiveText()
+                    fx.lastSubmit = "recoveryBrowser" to body
+                    val r = fx.onSubmit("recoveryBrowser", body)
+                    if (r.retryAfter != null) call.response.headers.append(HttpHeaders.RetryAfter, r.retryAfter)
+                    if (r.setCookie != null) call.response.headers.append(HttpHeaders.SetCookie, r.setCookie)
+                    call.respondText(r.body, ContentType.Application.Json, HttpStatusCode.fromValue(r.status))
+                }
                 // Browser settings flow (the flow-mode-consistent post-recovery step for a cookie session):
                 // its init carries a csrf_token node, and its submit is a DISTINCT path from the /api one — so
                 // the mock can model /api+cookie→400 (old path teeth) vs /browser+csrf→200 (new path).
@@ -91,7 +109,9 @@ class HttpAuthRepositoryE2eTest {
         }
         server.start(wait = false)
         fx.port = server.engine.resolvedConnectors().first().port
-        val client = HttpClient(CIO)
+        // HttpCookies so the mock's Set-Cookie is consumed into the JAR (exactly as the live client does) —
+        // the fidelity core: sessionEstablished must read the jar, not the (now-empty) response header.
+        val client = HttpClient(CIO) { install(HttpCookies) }
         try {
             val store = InMemoryAuthSessionStore()
             val repo = HttpAuthRepository(client, "http://127.0.0.1:${fx.port}", sessionStore = store)
@@ -221,13 +241,17 @@ class HttpAuthRepositoryE2eTest {
         // and only the new 422+session-aware, source-aware-browser logic greens.
         onSubmit = { kind, _ ->
             when (kind) {
-                "recovery" -> SubmitResp(
+                // NEW browser path: 422 + a real ory_kratos_session cookie (HttpCookies consumes it into the jar).
+                "recoveryBrowser" -> SubmitResp(
                     422,
                     """{"error":{"id":"browser_location_change_required"}}""",
                     setCookie = "ory_kratos_session=hermetic-sess; Path=/",
                 )
-                "settings" -> SubmitResp(400, """{"error":{"reason":"api flow initiated but Cookie present — blocked"}}""")
+                // OLD /api recovery path: 422 but NO session → reddens if the repo regresses to /recovery/api.
+                "recovery" -> SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""")
                 "settingsBrowser" -> SubmitResp(200, "{}")
+                // OLD /api settings path: the api+cookie blockade → reddens if the repo regresses to /settings/api.
+                "settings" -> SubmitResp(400, """{"error":{"reason":"api flow initiated but Cookie present — blocked"}}""")
                 else -> SubmitResp(200, "{}")
             }
         }
@@ -239,8 +263,12 @@ class HttpAuthRepositoryE2eTest {
     fun setNewPassword_recovery422_otherErrorId_mapsTokenInvalid() = withFixture({
         // fail-closed: only browser_location_change_required is the accept signal — any other 422 error.id → TokenInvalid.
         onSubmit = { kind, _ ->
-            if (kind == "recovery") SubmitResp(422, """{"error":{"id":"some_other_continuation"},"session_token":"x"}""")
-            else SubmitResp(200, "{}")
+            // Even WITH a session cookie, a non-matching error.id is not the accept signal → TokenInvalid.
+            if (kind == "recoveryBrowser") {
+                SubmitResp(422, """{"error":{"id":"some_other_continuation"}}""", setCookie = "ory_kratos_session=s; Path=/")
+            } else {
+                SubmitResp(200, "{}")
+            }
         }
     }) { _, repo, _ ->
         assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("code", "brandNewPw"))
@@ -251,7 +279,8 @@ class HttpAuthRepositoryE2eTest {
         // fail-closed (reviewer's condition): the error.id string alone is not enough — WITHOUT a real issued
         // session the code is NOT treated as accepted.
         onSubmit = { kind, _ ->
-            if (kind == "recovery") SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""") // no session
+            // Correct error.id but NO session issued (no cookie, no token) → NOT accepted (session is the proof).
+            if (kind == "recoveryBrowser") SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""")
             else SubmitResp(200, "{}")
         }
     }) { _, repo, _ ->
@@ -261,7 +290,7 @@ class HttpAuthRepositoryE2eTest {
     @Test
     fun setNewPassword_invalidRecoveryCode_mapsTokenInvalid() = withFixture({
         // Grounded matrix: a WRONG code answers 403 → the fail-closed teeth (never a silent success).
-        onSubmit = { kind, _ -> if (kind == "recovery") SubmitResp(403, "{}") else SubmitResp(200, "{}") }
+        onSubmit = { kind, _ -> if (kind == "recoveryBrowser") SubmitResp(403, "{}") else SubmitResp(200, "{}") }
     }) { _, repo, _ ->
         assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("stale-code", "brandNewPw"))
     }

@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.auth
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.AuthMe
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.cookies.cookies
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -54,11 +55,14 @@ class HttpAuthRepository(
     private val kratos = kratosBaseUrl.trimEnd('/')
 
     /**
-     * The recovery flow [requestReset] opened. Kratos recovery here is **code-only + flow-scoped**: the
-     * emailed 6-digit code is valid only for the flow it was issued against, so [setNewPassword] must submit
-     * it to THIS held flow, not a freshly-initialised one. Null → fall back to a fresh flow (hermetic path).
+     * The **browser** recovery flow [requestReset] opened — its submit `action` and `csrf_token`. Kratos
+     * recovery here is code-only + flow-scoped, and must run in **browser** mode: only browser-recovery
+     * establishes the `ory_kratos_session` cookie (API-recovery-422 issues no session), and browser flows
+     * require the csrf token. [setNewPassword] submits the code to THIS held action. Null → fall back to a
+     * fresh browser flow (hermetic path without a prior requestReset).
      */
-    private var recoveryFlowId: String? = null
+    private var recoveryAction: String? = null
+    private var recoveryCsrf: String? = null
 
     /** Extract a query param value (`?name=…` / `&name=…`) from a URL/query string, or null. */
     private fun queryParam(s: String, name: String): String? =
@@ -143,35 +147,49 @@ class HttpAuthRepository(
 
     override suspend fun requestReset(email: String): ResetRequestResult =
         failClosed(ResetRequestResult.Accepted) { // neutral even on failure — no enumeration leak
-            // Hold the recovery flow id: the emailed code is scoped to THIS flow, so setNewPassword submits
-            // it to the same flow (Kratos recovery here is code-only, flow-scoped — no deep-link).
-            val flow = initFlow("recovery")
-            recoveryFlowId = flow.id.ifBlank { null }
-            val action = flow.action.ifBlank { "$kratos/self-service/recovery?flow=${flow.id}" }
+            // Open a BROWSER recovery flow (only browser-recovery establishes the ory_kratos_session cookie —
+            // API-recovery issues no session) and HOLD its action + csrf; setNewPassword submits the emailed
+            // code to the same flow. Browser flows require the csrf token from the flow init.
+            val (action, csrf) = initRecoveryBrowserFlow()
+            recoveryAction = action
+            recoveryCsrf = csrf
             val resp = client.post(action) {
                 authHeaders()
                 contentType(ContentType.Application.Json)
-                setBody(buildJsonObject { put("method", "code"); put("email", email) }.toString())
+                setBody(
+                    buildJsonObject {
+                        put("method", "code"); put("email", email); if (csrf != null) put("csrf_token", csrf)
+                    }.toString(),
+                )
             }
             if (resp.status.value == 429) ResetRequestResult.RateLimited(retryAfterOf(resp)) else ResetRequestResult.Accepted
         }
+
+    /** Open a Kratos **browser** recovery flow; return its submit `action` + the `csrf_token` to echo. */
+    private suspend fun initRecoveryBrowserFlow(): Pair<String, String?> {
+        val resp = client.get("$kratos/self-service/recovery/browser") { authHeaders() }
+        val body = resp.bodyAsText()
+        val flow = parseKratosFlow(body)
+        val action = flow.action.ifBlank { "$kratos/self-service/recovery?flow=${flow.id}" }
+        return action to parseKratosCsrfToken(body)
+    }
 
     // --- §7.5 set-new-password (recovery deep-link → settings). Reconciled at the live gate. ---
 
     override suspend fun setNewPassword(token: String, newPassword: String): SetPasswordResult =
         failClosed(SetPasswordResult.TokenInvalid) {
-            // Step 1: complete the recovery flow with the emailed code → yields a privileged settings session.
-            // Submit to the HELD flow the code is scoped to (requestReset opened it); fall back to a fresh
-            // flow only when there is none (hermetic / link-carried context).
-            val heldFlow = recoveryFlowId
-            val recovery = if (heldFlow != null) {
-                client.post("$kratos/self-service/recovery?flow=$heldFlow") {
-                    authHeaders()
-                    contentType(ContentType.Application.Json)
-                    setBody(buildJsonObject { put("method", "code"); put("code", token) }.toString())
-                }
-            } else {
-                submitFlow("recovery", buildJsonObject { put("method", "code"); put("code", token) })
+            // Step 1: complete the BROWSER recovery flow with the emailed code → establishes the privileged
+            // session. Submit to the HELD browser action (requestReset opened it); fall back to a fresh
+            // browser flow when there is none (hermetic path without a prior requestReset).
+            val (recoveryActionUrl, csrf) = recoveryAction?.let { it to recoveryCsrf } ?: initRecoveryBrowserFlow()
+            val recovery = client.post(recoveryActionUrl) {
+                authHeaders()
+                contentType(ContentType.Application.Json)
+                setBody(
+                    buildJsonObject {
+                        put("method", "code"); put("code", token); if (csrf != null) put("csrf_token", csrf)
+                    }.toString(),
+                )
             }
             if (recovery.status.value == 429) return@failClosed SetPasswordResult.RateLimited(retryAfterOf(recovery))
             val recoveryBody = recovery.bodyAsText()
@@ -180,10 +198,10 @@ class HttpAuthRepository(
             // BOTH the browser-flow success signal AND a REAL established session are present (the error.id
             // string alone is not enough — Kratos can emit it for other continuations). Every other case
             // (wrong code 403, other/absent error.id, no session, any other 4xx) is fail-closed → TokenInvalid.
-            if (!isBrowserFlowSuccess(recovery.status.value, recoveryBody) || !sessionEstablished(recovery, recoveryBody)) {
+            if (!isBrowserFlowSuccess(recovery.status.value, recoveryBody) || !sessionEstablished(recoveryBody)) {
                 return@failClosed SetPasswordResult.TokenInvalid
             }
-            captureSession(recoveryBody) // native session_token if present; browser rides the Set-Cookie
+            captureSession(recoveryBody) // native session_token if present; browser rides the ory_kratos_session cookie
             // Step 2: set the new password on the settings flow — **source-aware**, following the mode of the
             // session Step 1 actually established (like the whoami credential-source principle): a native
             // token → `/settings/api` (X-Session-Token carries it); a cookie session (the v1.3.0 browser-
@@ -312,11 +330,19 @@ class HttpAuthRepository(
     private fun isBrowserFlowSuccess(status: Int, body: String): Boolean =
         status in 200..299 || (status == 422 && parseKratosErrorId(body) == "browser_location_change_required")
 
-    /** True iff the response actually issued a Kratos session — a native `session_token` OR an `ory_kratos_session` Set-Cookie. */
-    private fun sessionEstablished(resp: HttpResponse, body: String): Boolean =
-        parseKratosSessionToken(body) != null ||
-            resp.headers.getAll(HttpHeaders.SetCookie).orEmpty()
-                .any { Regex("ory_kratos_session=[^;\\s]+").containsMatchIn(it) }
+    /**
+     * True iff a Kratos session was actually issued — a native `session_token` in [body], OR an
+     * `ory_kratos_session` cookie **in the client jar**. The `HttpCookies` plugin CONSUMES the `Set-Cookie`
+     * response header into the jar (so the header is empty by the time we'd read it) — read the JAR. Check
+     * specifically the `ory_kratos_session` name with a non-blank value (not "any cookie") — a non-session
+     * cookie must never be mistaken for an established session on this secret path (fail-closed).
+     */
+    private suspend fun sessionEstablished(body: String): Boolean {
+        if (parseKratosSessionToken(body) != null) return true
+        return runCatching {
+            client.cookies(kratos).any { it.name == "ory_kratos_session" && it.value.isNotBlank() }
+        }.getOrElse { false }
+    }
 
     /** Run [block], mapping any thrown error (except cancellation) to the safe [fallback] (fail-closed). */
     private inline fun <T> failClosed(fallback: T, block: () -> T): T =
