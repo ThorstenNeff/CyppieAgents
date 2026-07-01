@@ -39,6 +39,8 @@ import kotlin.test.fail
  *  2. The guard leaks **no enumeration oracle**: absent, invalid, and unverified sessions are byte-identical 401s.
  *  3. `KratosIdentityProvider` is **bounded** — a hung Kratos resolves to null well within the timeout, never
  *     hanging the guard (C1 availability).
+ *  4. **CC2** — the login brute-force posture (§8 flag-1): the per-account defense is the argon2 cost floor
+ *     with **no hard account-lockout** (a lockout is a victim-DoS); per-IP rate-limiting is edge (CYP-179).
  */
 class Rc2ConfigAssertionTest {
 
@@ -63,6 +65,32 @@ class Rc2ConfigAssertionTest {
         assertTrue(
             Regex("base_url:\\s*http://127\\.0\\.0\\.1:").containsMatchIn(text),
             "RC4: the Kratos admin base_url must be loopback-bound (127.0.0.1)",
+        )
+    }
+
+    // ---- CC2: the §8 flag-1 binding target — per-account brute-force posture, NO hard-lockout ----
+
+    @Test
+    fun kratosReferenceConfig_loginBruteForcePosture_bindsFlag1() {
+        val text = repoFile("deploy/kratos/kratos.reference.yml").readText()
+        // OSS Kratos has no per-account attempt-lockout knob and never locks accounts by design (a lockout
+        // is a victim-DoS, reviewer flag-1). So the per-account defense is the argon2 per-attempt COST FLOOR:
+        // argon2 with a meaningful iteration count → each online guess is deliberately expensive.
+        val iterations = Regex("iterations:\\s*(\\d+)").find(text)?.groupValues?.get(1)?.toInt()
+            ?: fail("argon2 iterations (the per-account brute-force cost floor) must be set")
+        assertTrue(iterations >= 2, "argon2 iterations must be a meaningful cost floor (>= 2), was $iterations")
+        assertTrue(Regex("memory:\\s*\\d+MB").containsMatchIn(text), "argon2 memory cost must be set (per-attempt expense)")
+        // The explicit no-lockout posture marker — the reviewer/§8 flag-1 line binds here: NO account-lockout
+        // (avoids victim-DoS); the real request-rate throttle is per-IP at the edge (CYP-179), not in Kratos.
+        assertTrue(
+            text.contains("CC2-NO-ACCOUNT-LOCKOUT"),
+            "the reference config must declare the explicit no-hard-lockout posture (§8 flag-1 binding target)",
+        )
+        // Defensive: no accidental lockout/max-attempts knob crept in (Kratos would ignore it, but its
+        // presence would signal the wrong intent — fail closed on the posture).
+        assertTrue(
+            !Regex("(?i)(max_login_attempts|account_lockout|lockout_duration)\\s*:").containsMatchIn(text),
+            "no account-lockout knob may be configured (no victim-DoS) — per-IP throttling belongs at the edge (CYP-179)",
         )
     }
 

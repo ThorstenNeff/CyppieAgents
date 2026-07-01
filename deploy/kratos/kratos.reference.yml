@@ -3,7 +3,7 @@
 # This file version-controls the security-relevant Kratos settings that the C1 (constant-time /
 # account-enumeration) property depends on, so the deploy-coordinated LIVE behavioral probe (RC2
 # option b) runs against an asserted, reproducible baseline instead of a hand-typed box config.
-# `server/src/test/.../auth/KratosSecurityConfigTest` asserts the knobs below stay set.
+# `server/src/test/.../auth/Rc2ConfigAssertionTest` asserts the knobs below stay set.
 #
 # Deploy owns the INFRA values marked REPLACE_ME (dsn, secrets, base/public URLs, courier SMTP) and
 # the final same_site/secure posture for the deployment origin. Never commit real secrets here.
@@ -30,12 +30,19 @@ secrets:
   cipher:
     - REPLACE_ME # 32 byte random
 
-# Constant-cost password hashing → no login-timing oracle distinguishing "user exists" from "wrong pw".
+# CC2 — LOGIN BRUTE-FORCE POSTURE (the §8 flag-1 binding target). Decision: per-IP at the edge (Caddy,
+# CYP-179) + per-account in Kratos, with NO hard account-lockout (a lockout is a victim-DoS: an attacker
+# locks a known victim out on purpose — reviewer flag 1). OSS Kratos has NO per-account attempt-lockout
+# knob and never locks accounts BY DESIGN; the per-account brute-force defense is therefore the argon2
+# per-attempt COST FLOOR below (each guess is deliberately expensive), NOT a counter/lockout. The actual
+# request-rate throttle is per-IP at the edge (CYP-179). Rc2ConfigAssertionTest binds flag-1 here:
+# argon2 + a meaningful cost floor + the explicit no-lockout posture.
+# CC2-NO-ACCOUNT-LOCKOUT: intentionally no lockout/max-attempts key — avoids the victim-DoS vector.
 hashers:
   algorithm: argon2
   argon2:
     memory: 128MB
-    iterations: 3
+    iterations: 3 # cost floor: >= 2 (each online guess is expensive → per-account brute-force is slow)
     parallelism: 4
     salt_length: 16
     key_length: 32
