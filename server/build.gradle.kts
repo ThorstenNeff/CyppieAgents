@@ -36,6 +36,9 @@ dependencies {
     implementation(libs.ktor.serverCors)
     implementation(libs.ktor.serializationKotlinxJson)
     implementation(libs.ktor.serverWebsockets)
+    // CYP-178: an HTTP client to validate Kratos sessions (GET /sessions/whoami).
+    implementation(libs.ktor.clientCore)
+    implementation(libs.ktor.clientCio)
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.ktor.clientContentNegotiation)
     testImplementation(libs.ktor.clientWebsockets)
