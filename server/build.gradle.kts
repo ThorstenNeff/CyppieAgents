@@ -21,6 +21,16 @@ tasks.named<JavaExec>("run") {
     workingDir = rootProject.projectDir
 }
 
+// CYP-178 CC2 (teeth-hygiene): Rc2ConfigAssertionTest reads deploy/kratos/kratos.reference.yml at RUNTIME
+// (a repoFile() walk), so Gradle can't see the yml as a test input. Without this, editing ONLY the yml
+// leaves the `test` task UP-TO-DATE → the config-drift guard is stale-green on a pure-yml change (a false
+// green on the exact surface RC2 guards). Declaring it as a task input makes a yml change re-run the tests.
+tasks.named<Test>("test") {
+    inputs.file(rootProject.file("deploy/kratos/kratos.reference.yml"))
+        .withPropertyName("kratosReferenceConfig")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
     api(projects.core)
     api(projects.connectorCore)

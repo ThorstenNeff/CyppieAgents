@@ -3,10 +3,15 @@
 # This file version-controls the security-relevant Kratos settings that the C1 (constant-time /
 # account-enumeration) property depends on, so the deploy-coordinated LIVE behavioral probe (RC2
 # option b) runs against an asserted, reproducible baseline instead of a hand-typed box config.
-# `server/src/test/.../auth/KratosSecurityConfigTest` asserts the knobs below stay set.
+# `server/src/test/.../auth/Rc2ConfigAssertionTest` asserts the knobs below stay set.
 #
 # Deploy owns the INFRA values marked REPLACE_ME (dsn, secrets, base/public URLs, courier SMTP) and
 # the final same_site/secure posture for the deployment origin. Never commit real secrets here.
+#
+# ⚠️ KRATOS VERSION PIN = v1.3.0 (config schema below is authored for it; Rc2ConfigAssertionTest binds it).
+# `brew install ory/kratos/kratos` currently ships an INCOMPATIBLE v26.2.0 with a config schema break
+# (e.g. `session.cookie.secure` string-vs-bool) → do NOT use brew. Install the pinned GitHub release binary:
+#   github.com/ory/kratos/releases/tag/v1.3.0  (or the oryd/kratos:v1.3.0 Docker image).
 
 version: v1.3.0
 
@@ -30,12 +35,36 @@ secrets:
   cipher:
     - REPLACE_ME # 32 byte random
 
-# Constant-cost password hashing → no login-timing oracle distinguishing "user exists" from "wrong pw".
+# RC2 (deploy live-probe finding) — the MASTER account-enumeration switch. The per-flow knobs
+# (enable_legacy_one_step, notify_unknown_recipients) do NOT cover the login TIMING side-channel: with
+# this false (Kratos default), a login for a NON-existent identifier skips the argon2 hash and returns in
+# ~4ms while an existing-identifier wrong-password runs argon2 (~80ms) → the response is generic but the
+# TIMING reveals account existence (measured 7.8×+ on the safe instance before this fix). TRUE makes Kratos
+# dummy-hash for absent identifiers (timing equalized) AND registration/recovery generic (no exists-tell).
+# Ory caveat (verbatim): "degrades UX + does not mitigate all possible attack vectors yet". On v1.3.0 this
+# closes the enumeration CONTENT leak but NOT the login-TIMING one (absent identifiers are not dummy-hashed
+# → ~35× faster than an existing-identifier wrong-password → existence leaks by timing). ACCEPTED posture
+# (Auftraggeber decision A): throttle-mitigated (CYP-179, does not close) + localhost-bound until exposure;
+# RE-EVALUATE before off-localhost exposure (v26 dummy-hash). Full record + exposure gate:
+# deploy/kratos/RC2-KNOWN-LIMITATIONS.md (§A timing + §B registration-content). The leaky control keeps this FALSE so the
+# probe's teeth-demo catches the P1-register exists-tell (4000007).
+security:
+  account_enumeration:
+    mitigate: true
+
+# CC2 — LOGIN BRUTE-FORCE POSTURE (the §8 flag-1 binding target). Decision: per-IP at the edge (Caddy,
+# CYP-179) + per-account in Kratos, with NO hard account-lockout (a lockout is a victim-DoS: an attacker
+# locks a known victim out on purpose — reviewer flag 1). OSS Kratos has NO per-account attempt-lockout
+# knob and never locks accounts BY DESIGN; the per-account brute-force defense is therefore the argon2
+# per-attempt COST FLOOR below (each guess is deliberately expensive), NOT a counter/lockout. The actual
+# request-rate throttle is per-IP at the edge (CYP-179). Rc2ConfigAssertionTest binds flag-1 here:
+# argon2 + a meaningful cost floor + the explicit no-lockout posture.
+# CC2-NO-ACCOUNT-LOCKOUT: intentionally no lockout/max-attempts key — avoids the victim-DoS vector.
 hashers:
   algorithm: argon2
   argon2:
     memory: 128MB
-    iterations: 3
+    iterations: 3 # cost floor: >= 2 (each online guess is expensive → per-account brute-force is slow)
     parallelism: 4
     salt_length: 16
     key_length: 32
