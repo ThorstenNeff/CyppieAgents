@@ -156,8 +156,9 @@ class HttpAuthRepositoryLiveE2eTest {
             val id = (KratosJson.parseToJsonElement(list).jsonObject["messages"]?.jsonArray ?: emptyList())
                 .map { it.jsonObject }
                 .firstOrNull { m ->
+                    // Subject/subject casing varies by Mailpit version (search result uses `Subject`) — read either.
                     recipientMatches(m, email) &&
-                        (m["subject"]?.jsonPrimitive?.content ?: "").contains(subjectNeedle, ignoreCase = true)
+                        ((m["Subject"] ?: m["subject"])?.jsonPrimitive?.content ?: "").contains(subjectNeedle, ignoreCase = true)
                 }
                 ?.get("id")?.jsonPrimitive?.content
             if (id != null) {
