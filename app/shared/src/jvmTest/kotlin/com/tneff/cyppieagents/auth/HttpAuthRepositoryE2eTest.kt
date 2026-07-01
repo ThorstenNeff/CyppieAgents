@@ -198,14 +198,47 @@ class HttpAuthRepositoryE2eTest {
 
     @Test
     fun setNewPassword_recoveryThenSettings_ok() = withFixture({
-        onSubmit = { kind, _ -> SubmitResp(200, if (kind == "recovery") "{}" else "{}") }
+        // Fixture fidelity: the CORRECT code answers 422 browser_location_change_required + an issued session
+        // (here a native session_token) — the real Kratos browser-flow success path. This reddens the OLD
+        // blanket `!isSuccess()`-→TokenInvalid logic and greens the 422+session-aware logic.
+        onSubmit = { kind, _ ->
+            if (kind == "recovery") {
+                SubmitResp(422, """{"error":{"id":"browser_location_change_required"},"session_token":"priv-sess"}""")
+            } else {
+                SubmitResp(200, "{}")
+            }
+        }
     }) { _, repo, _ ->
         assertEquals(SetPasswordResult.Ok, repo.setNewPassword("recovery-code", "brandNewPw"))
     }
 
     @Test
+    fun setNewPassword_recovery422_otherErrorId_mapsTokenInvalid() = withFixture({
+        // fail-closed: only browser_location_change_required is the accept signal — any other 422 error.id → TokenInvalid.
+        onSubmit = { kind, _ ->
+            if (kind == "recovery") SubmitResp(422, """{"error":{"id":"some_other_continuation"},"session_token":"x"}""")
+            else SubmitResp(200, "{}")
+        }
+    }) { _, repo, _ ->
+        assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("code", "brandNewPw"))
+    }
+
+    @Test
+    fun setNewPassword_recovery422_correctErrorId_butNoSession_mapsTokenInvalid() = withFixture({
+        // fail-closed (reviewer's condition): the error.id string alone is not enough — WITHOUT a real issued
+        // session the code is NOT treated as accepted.
+        onSubmit = { kind, _ ->
+            if (kind == "recovery") SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""") // no session
+            else SubmitResp(200, "{}")
+        }
+    }) { _, repo, _ ->
+        assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("code", "brandNewPw"))
+    }
+
+    @Test
     fun setNewPassword_invalidRecoveryCode_mapsTokenInvalid() = withFixture({
-        onSubmit = { kind, _ -> if (kind == "recovery") SubmitResp(400, "{}") else SubmitResp(200, "{}") }
+        // Grounded matrix: a WRONG code answers 403 → the fail-closed teeth (never a silent success).
+        onSubmit = { kind, _ -> if (kind == "recovery") SubmitResp(403, "{}") else SubmitResp(200, "{}") }
     }) { _, repo, _ ->
         assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("stale-code", "brandNewPw"))
     }

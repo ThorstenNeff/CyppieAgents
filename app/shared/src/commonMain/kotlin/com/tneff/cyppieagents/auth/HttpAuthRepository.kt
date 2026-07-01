@@ -174,9 +174,17 @@ class HttpAuthRepository(
                 submitFlow("recovery", buildJsonObject { put("method", "code"); put("code", token) })
             }
             if (recovery.status.value == 429) return@failClosed SetPasswordResult.RateLimited(retryAfterOf(recovery))
-            if (!recovery.status.isSuccess()) return@failClosed SetPasswordResult.TokenInvalid
-            captureSession(recovery.bodyAsText())
-            // Step 2: set the new password on the settings flow the recovery established.
+            val recoveryBody = recovery.bodyAsText()
+            // A CORRECT code in the browser flow answers 422 `browser_location_change_required` (+ an issued
+            // session) — the "code accepted → go to settings" success path, NOT a failure. Accept ONLY when
+            // BOTH the browser-flow success signal AND a REAL established session are present (the error.id
+            // string alone is not enough — Kratos can emit it for other continuations). Every other case
+            // (wrong code 403, other/absent error.id, no session, any other 4xx) is fail-closed → TokenInvalid.
+            if (!isBrowserFlowSuccess(recovery.status.value, recoveryBody) || !sessionEstablished(recovery, recoveryBody)) {
+                return@failClosed SetPasswordResult.TokenInvalid
+            }
+            captureSession(recoveryBody) // native session_token if present; browser rides the Set-Cookie
+            // Step 2: set the new password on the settings flow the recovery session established.
             val settings = submitFlow(
                 "settings",
                 buildJsonObject {
@@ -184,9 +192,10 @@ class HttpAuthRepository(
                     put("password", newPassword)
                 },
             )
+            val settingsBody = settings.bodyAsText()
             when {
-                settings.status.isSuccess() -> SetPasswordResult.Ok
                 settings.status.value == 429 -> SetPasswordResult.RateLimited(retryAfterOf(settings))
+                isBrowserFlowSuccess(settings.status.value, settingsBody) -> SetPasswordResult.Ok
                 else -> SetPasswordResult.TokenInvalid
             }
         }
@@ -274,6 +283,21 @@ class HttpAuthRepository(
     /** The honest 429 hint from the `Retry-After` header, or null (auth-spec §5.4 — never a fake "sent"). */
     private fun retryAfterOf(resp: HttpResponse): String? =
         resp.headers[HttpHeaders.RetryAfter]?.ifBlank { null }
+
+    /**
+     * A Kratos browser-flow **success** for a flow step: a 2xx, OR the `422 browser_location_change_required`
+     * "step accepted → continue" signal. NOT sufficient alone to conclude a recovery code was correct — pair
+     * it with [sessionEstablished] (the reviewer's condition: the error.id string can appear for other
+     * continuations; the real proof is an issued privileged session).
+     */
+    private fun isBrowserFlowSuccess(status: Int, body: String): Boolean =
+        status in 200..299 || (status == 422 && parseKratosErrorId(body) == "browser_location_change_required")
+
+    /** True iff the response actually issued a Kratos session — a native `session_token` OR an `ory_kratos_session` Set-Cookie. */
+    private fun sessionEstablished(resp: HttpResponse, body: String): Boolean =
+        parseKratosSessionToken(body) != null ||
+            resp.headers.getAll(HttpHeaders.SetCookie).orEmpty()
+                .any { Regex("ory_kratos_session=[^;\\s]+").containsMatchIn(it) }
 
     /** Run [block], mapping any thrown error (except cancellation) to the safe [fallback] (fail-closed). */
     private inline fun <T> failClosed(fallback: T, block: () -> T): T =

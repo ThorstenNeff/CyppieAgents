@@ -38,3 +38,14 @@ internal fun parseKratosWhoamiEmail(body: String): String? = runCatching {
     KratosJson.parseToJsonElement(body).jsonObject["identity"]?.jsonObject
         ?.get("traits")?.jsonObject?.get("email")?.jsonPrimitive?.content
 }.getOrNull()?.ifBlank { null }
+
+/**
+ * The Kratos error id (`error.id`, or a top-level `id` fallback), or null. Used to recognise the browser-flow
+ * `browser_location_change_required` — a **success** signal ("code accepted, continue"), not a failure — so
+ * the recovery/settings completion isn't misread as an invalid token.
+ */
+internal fun parseKratosErrorId(body: String): String? = runCatching {
+    val root = KratosJson.parseToJsonElement(body).jsonObject
+    root["error"]?.jsonObject?.get("id")?.jsonPrimitive?.content
+        ?: root["id"]?.jsonPrimitive?.content
+}.getOrNull()
