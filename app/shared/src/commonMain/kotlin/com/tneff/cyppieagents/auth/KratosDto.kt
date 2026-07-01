@@ -1,0 +1,40 @@
+package com.tneff.cyppieagents.auth
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * Parsing of the **minimal** slice of the Ory Kratos self-service wire shapes the client's login-gate
+ * binding needs (CYP-182). `:app:shared` does **not** apply the kotlinx.serialization compiler plugin
+ * (only `:core` does), so — exactly like the server's `KratosSettingsClient` — these navigate the JSON
+ * via [JsonElement] rather than generated serializers. Version-tolerant: only the few fields the fixed
+ * email/password mapping reads (PO Q3) are touched; every other Kratos field is ignored, so a Kratos
+ * minor bump can't break the client. Never parses messages for enumeration cues.
+ */
+internal val KratosJson: Json = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+}
+
+/** A Kratos flow's identity + submit target (from `GET /self-service/{kind}/api`). */
+internal data class KratosFlowRef(val id: String, val action: String)
+
+/** Parse `{ id, ui: { action } }`; missing fields → blank (the caller falls back to a constructed URL). */
+internal fun parseKratosFlow(body: String): KratosFlowRef = runCatching {
+    val root = KratosJson.parseToJsonElement(body).jsonObject
+    val id = root["id"]?.jsonPrimitive?.content ?: ""
+    val action = root["ui"]?.jsonObject?.get("action")?.jsonPrimitive?.content ?: ""
+    KratosFlowRef(id, action)
+}.getOrElse { KratosFlowRef("", "") }
+
+/** The native `session_token` from a successful login/registration body, or null (browser sets a cookie). */
+internal fun parseKratosSessionToken(body: String): String? = runCatching {
+    KratosJson.parseToJsonElement(body).jsonObject["session_token"]?.jsonPrimitive?.content
+}.getOrNull()?.ifBlank { null }
+
+/** The caller's OWN `identity.traits.email` from `sessions/whoami` (self-reflecting), or null. */
+internal fun parseKratosWhoamiEmail(body: String): String? = runCatching {
+    KratosJson.parseToJsonElement(body).jsonObject["identity"]?.jsonObject
+        ?.get("traits")?.jsonObject?.get("email")?.jsonPrimitive?.content
+}.getOrNull()?.ifBlank { null }
