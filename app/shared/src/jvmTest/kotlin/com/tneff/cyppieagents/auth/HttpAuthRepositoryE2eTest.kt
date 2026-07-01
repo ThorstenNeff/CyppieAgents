@@ -32,7 +32,7 @@ import kotlin.test.assertIs
  */
 class HttpAuthRepositoryE2eTest {
 
-    private data class SubmitResp(val status: Int, val body: String, val retryAfter: String? = null, val setCookie: String? = null)
+    private data class SubmitResp(val status: Int, val body: String, val retryAfter: String? = null, val setCookies: List<String> = emptyList())
 
     private class Fixture {
         var me: AuthMe = AuthMe(authenticated = false)
@@ -65,7 +65,7 @@ class HttpAuthRepositoryE2eTest {
                     val kind = call.parameters["kind"]
                     // Cookie-on-API-flow blockade: a recovery ory_kratos_session cookie present at /login/api → 400
                     // (the post-reset re-login must be cookie-free — the recovery session must be cleared first).
-                    if (kind == "login" && !call.request.cookies["ory_kratos_session"].isNullOrBlank()) {
+                    if (kind == "login" && !call.request.headers["Cookie"].isNullOrBlank()) {
                         call.respondText(
                             """{"error":{"reason":"Cookie present on API-initiated login flow — blocked"}}""",
                             ContentType.Application.Json, HttpStatusCode.BadRequest,
@@ -108,11 +108,21 @@ class HttpAuthRepositoryE2eTest {
                 }
                 post("/.ory/kratos/public/self-service/{kind}") {
                     val kind = call.parameters["kind"]!!
+                    // Cookie-on-API-flow blockade at SUBMIT too (faithful to Kratos): a lingering recovery
+                    // ory_kratos_session cookie on /login is 400 — makes postResetLoginIsCookieFree non-vacuous
+                    // (submitFlow swallows the GET-init 400 and still POSTs; that init-status gap is F4/follow-up).
+                    if (kind == "login" && !call.request.headers["Cookie"].isNullOrBlank()) {
+                        call.respondText(
+                            """{"error":{"reason":"Cookie present on API-initiated login flow — blocked"}}""",
+                            ContentType.Application.Json, HttpStatusCode.BadRequest,
+                        )
+                        return@post
+                    }
                     val body = call.receiveText()
                     fx.lastSubmit = kind to body
                     val r = fx.onSubmit(kind, body)
                     if (r.retryAfter != null) call.response.headers.append(HttpHeaders.RetryAfter, r.retryAfter)
-                    if (r.setCookie != null) call.response.headers.append(HttpHeaders.SetCookie, r.setCookie)
+                    r.setCookies.forEach { call.response.headers.append(HttpHeaders.SetCookie, it) }
                     call.respondText(r.body, ContentType.Application.Json, HttpStatusCode.fromValue(r.status))
                 }
             }
@@ -258,7 +268,7 @@ class HttpAuthRepositoryE2eTest {
                 "recovery" -> SubmitResp(
                     422,
                     """{"error":{"id":"browser_location_change_required"}}""",
-                    setCookie = "ory_kratos_session=hermetic-sess; Path=/",
+                    setCookies = listOf("ory_kratos_session=hermetic-sess; Path=/"),
                 )
                 "settings" -> SubmitResp(200, "{}")
                 else -> SubmitResp(200, "{}")
@@ -274,7 +284,7 @@ class HttpAuthRepositoryE2eTest {
         onSubmit = { kind, _ ->
             // Even WITH a session cookie, a non-matching error.id is not the accept signal → TokenInvalid.
             if (kind == "recovery") {
-                SubmitResp(422, """{"error":{"id":"some_other_continuation"}}""", setCookie = "ory_kratos_session=s; Path=/")
+                SubmitResp(422, """{"error":{"id":"some_other_continuation"}}""", setCookies = listOf("ory_kratos_session=s; Path=/"))
             } else {
                 SubmitResp(200, "{}")
             }
@@ -307,7 +317,7 @@ class HttpAuthRepositoryE2eTest {
                 "recovery" -> SubmitResp(
                     422,
                     """{"error":{"id":"browser_location_change_required"}}""",
-                    setCookie = "csrf_token=not-a-session; Path=/",
+                    setCookies = listOf("csrf_token=not-a-session; Path=/"),
                 )
                 "settings" -> SubmitResp(200, "{}") // reachable only if the gate wrongly passed (the mutant)
                 else -> SubmitResp(200, "{}")
@@ -325,7 +335,13 @@ class HttpAuthRepositoryE2eTest {
         me = AuthMe(authenticated = true, role = "MEMBER", verified = true)
         onSubmit = { kind, _ ->
             when (kind) {
-                "recovery" -> SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""", setCookie = "ory_kratos_session=recov; Path=/")
+                "recovery" -> SubmitResp(
+                    422,
+                    """{"error":{"id":"browser_location_change_required"}}""",
+                    // Browser recovery sets BOTH the session AND a dynamic csrf cookie — clearRecoverySession
+                    // must expire ALL of them, or a lingering csrf still 400s the post-reset /login (MUT-B teeth).
+                    setCookies = listOf("ory_kratos_session=recov; Path=/", "csrf_token_9f2a=zzz; Path=/"),
+                )
                 "settings" -> SubmitResp(200, "{}")
                 else -> SubmitResp(200, "{}")
             }
@@ -340,7 +356,13 @@ class HttpAuthRepositoryE2eTest {
         me = AuthMe(authenticated = true, role = null, verified = false) // the fresh re-login → unverified session
         onSubmit = { kind, _ ->
             when (kind) {
-                "recovery" -> SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""", setCookie = "ory_kratos_session=recov; Path=/")
+                "recovery" -> SubmitResp(
+                    422,
+                    """{"error":{"id":"browser_location_change_required"}}""",
+                    // Browser recovery sets BOTH the session AND a dynamic csrf cookie — clearRecoverySession
+                    // must expire ALL of them, or a lingering csrf still 400s the post-reset /login (MUT-B teeth).
+                    setCookies = listOf("ory_kratos_session=recov; Path=/", "csrf_token_9f2a=zzz; Path=/"),
+                )
                 "settings" -> SubmitResp(200, "{}")
                 "login" -> SubmitResp(200, """{"session_token":"login-sess"}""")
                 else -> SubmitResp(200, "{}")

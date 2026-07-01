@@ -266,7 +266,14 @@ class HttpAuthRepository(
         recoveryAction = null
         recoveryCsrf = null
         runCatching {
-            cookieStorage?.addCookie(Url(kratos), Cookie(name = "ory_kratos_session", value = "", maxAge = 0, path = "/"))
+            val storage = cookieStorage ?: return@runCatching
+            val url = Url(kratos)
+            // Expire EVERY cookie the recovery flow left on the Kratos host — not only ory_kratos_session but
+            // also the dynamic csrf_token_<hash> cookies — so the post-reset /login/api is TRULY cookie-free
+            // (Kratos 400s an API-initiated flow that carries ANY cookie, not just the session).
+            client.cookies(kratos).forEach { c ->
+                storage.addCookie(url, Cookie(name = c.name, value = "", maxAge = 0, path = c.path ?: "/"))
+            }
         }
     }
 
