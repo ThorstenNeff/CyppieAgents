@@ -70,14 +70,6 @@ fun ApplicationCall.requireAgent(registry: TokenRegistry): String {
     return registry.agentFor(token) ?: throw UnauthorizedException()
 }
 
-/** Requires the operator token, or throws 401/403. */
-fun ApplicationCall.requireOperator(registry: TokenRegistry) {
-    val token = bearerToken() ?: throw UnauthorizedException()
-    if (!registry.isOperator(token)) {
-        throw ForbiddenException("operator token required", code = "operator_required")
-    }
-}
-
 /**
  * Resolves a token to a comm **participant** id: an agent id, or [HubState.OPERATOR_ID] for the
  * operator token, or null. The operator is a privileged participant in the ACL — not a bypass —

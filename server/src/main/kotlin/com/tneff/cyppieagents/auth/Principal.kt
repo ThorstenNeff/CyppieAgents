@@ -24,9 +24,22 @@ val PrincipalKey = AttributeKey<AuthPrincipal>("cyppie.AuthPrincipal")
 class AuthDeps(
     val tokens: TokenRegistry,
     val idp: IdentityProvider,
-    val roles: SqliteRoleStore,
+    val roles: RoleStore,
     val nowMs: () -> Long,
-)
+) {
+    /**
+     * Token-only convenience (tests + the operator-token-only mount default): the human-auth path is
+     * **deny-all** (no Kratos), so only the static operator token authenticates. Production wires the
+     * real [IdentityProvider] + [SqliteRoleStore] via the primary constructor. Fail-closed by default:
+     * with no IdP, a Kratos session credential resolves to null (401), never open.
+     */
+    constructor(tokens: TokenRegistry) : this(
+        tokens,
+        idp = FakeIdentityProvider(emptyMap()),
+        roles = InMemoryRoleStore(),
+        nowMs = { System.currentTimeMillis() },
+    )
+}
 
 private fun AuthRole.satisfies(required: AuthRole): Boolean =
     required == AuthRole.MEMBER || this == AuthRole.OPERATOR
@@ -42,9 +55,17 @@ private fun ApplicationCall.sessionCredential(): String? =
  * merely session-valid); any absent/invalid/error/timeout from the IdP → null (unauthenticated).
  */
 suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? {
-    if (deps.tokens.isOperator(bearerToken())) return AuthPrincipal.MachineOperator
+    // Machine axis first (a bearer token). A present bearer is an authenticated machine: operator → OPERATOR,
+    // anything else → a MEMBER MachineAgent (so an operator route is a 403, not a 401 — the pre-CYP-178
+    // `requireOperator` semantics). Only the ABSENCE of any credential is 401.
+    val bearer = bearerToken()
+    if (bearer != null) {
+        if (deps.tokens.isOperator(bearer)) return AuthPrincipal.MachineOperator
+        return AuthPrincipal.MachineAgent(deps.tokens.agentFor(bearer))
+    }
+    // Human axis (a Kratos session). RC1: session-valid is NOT enough — the identity must be verified.
     val resolved = deps.idp.resolve(sessionCredential()) ?: return null
-    if (!resolved.verified) return null // RC1: session-valid is NOT enough — the identity must be verified
+    if (!resolved.verified) return null
     return AuthPrincipal.Human(resolved.identityId, deps.roles.ensureAssigned(resolved.identityId, deps.nowMs()))
 }
 
@@ -62,7 +83,10 @@ suspend fun ApplicationCall.requirePrincipal(deps: AuthDeps, required: AuthRole 
  * the route-enumeration meta-test is designed to catch.
  */
 fun Route.authenticatedApi(deps: AuthDeps, required: AuthRole = AuthRole.OPERATOR, build: Route.() -> Unit): Route {
-    val guarded = createChild(AuthenticatedRouteSelector)
+    // A FRESH selector instance per call: the selector is identity-equal only to itself, so Ktor does NOT
+    // merge sibling guarded sub-trees under a shared parent into one node (which would try to install
+    // AuthGuard twice → DuplicatePluginException). Each authenticatedApi block is its own guarded child.
+    val guarded = createChild(AuthenticatedRouteSelector())
     guarded.install(AuthGuard) { this.deps = deps; this.required = required }
     guarded.build()
     return guarded
@@ -84,7 +108,12 @@ val AuthGuard = createRouteScopedPlugin("AuthGuard", ::AuthGuardConfig) {
     }
 }
 
-private object AuthenticatedRouteSelector : RouteSelector() {
+/**
+ * A transparent (no-path-segment) selector: matches without consuming a path segment, so a guarded child
+ * preserves its parent's path. A CLASS (not an object) so each [authenticatedApi] call gets a distinct,
+ * identity-unique instance and Ktor never merges two guarded sub-trees (see [authenticatedApi]).
+ */
+private class AuthenticatedRouteSelector : RouteSelector() {
     override suspend fun evaluate(context: RoutingResolveContext, segmentIndex: Int): RouteSelectorEvaluation =
         RouteSelectorEvaluation.Transparent
 }

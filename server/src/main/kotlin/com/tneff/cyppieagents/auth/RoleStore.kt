@@ -16,6 +16,40 @@ import org.slf4j.LoggerFactory
 enum class AuthRole { OPERATOR, MEMBER }
 
 /**
+ * CYP-178 / P1 — the platform's authorization store seam: a Kratos identity-id → [AuthRole] map with
+ * a race-safe first-identity-bootstraps-OPERATOR grant (the ratified Middleway). Production is
+ * [SqliteRoleStore] (durable, DB-enforced single OPERATOR); [InMemoryRoleStore] is the process-local
+ * convenience default for the token-only [AuthDeps] path (the operator-token path never touches it).
+ */
+interface RoleStore {
+    /** The role of [identityId] — the assigned role, or [AuthRole.MEMBER] by default (never null). */
+    suspend fun roleOf(identityId: String): AuthRole
+
+    /** Idempotently assign [identityId] a role and return it: OPERATOR iff none exists yet, else MEMBER. */
+    suspend fun ensureAssigned(identityId: String, nowMs: Long): AuthRole
+}
+
+/**
+ * A process-local [RoleStore] with the same first-identity-bootstraps-OPERATOR semantics as
+ * [SqliteRoleStore], for the token-only [AuthDeps] convenience path + focused tests. Not durable and not
+ * the production authZ store — the durable, DB-single-OPERATOR guarantee lives in [SqliteRoleStore].
+ */
+class InMemoryRoleStore : RoleStore {
+    private val mutex = Mutex()
+    private val assignments = HashMap<String, AuthRole>()
+
+    override suspend fun roleOf(identityId: String): AuthRole =
+        mutex.withLock { assignments[identityId] ?: AuthRole.MEMBER }
+
+    override suspend fun ensureAssigned(identityId: String, nowMs: Long): AuthRole = mutex.withLock {
+        assignments[identityId]?.let { return it }
+        val role = if (assignments.none { it.value == AuthRole.OPERATOR }) AuthRole.OPERATOR else AuthRole.MEMBER
+        assignments[identityId] = role
+        role
+    }
+}
+
+/**
  * CYP-178 / P1 — the platform's **authorization** store: a Kratos identity-id → [AuthRole] map. Kratos
  * owns identity; this owns authZ. The **first** identity to appear bootstraps **OPERATOR** (the ratified
  * Middleway); everyone else defaults MEMBER. On the established SQLite line (mirrors `SqliteEventSink`:
@@ -29,7 +63,7 @@ enum class AuthRole { OPERATOR, MEMBER }
 class SqliteRoleStore(
     dbPath: Path,
     private val io: CoroutineDispatcher = Dispatchers.IO,
-) : AutoCloseable {
+) : RoleStore, AutoCloseable {
     private val log = LoggerFactory.getLogger("auth.rolestore")
     private val mutex = Mutex()
     private val conn: Connection
@@ -52,7 +86,7 @@ class SqliteRoleStore(
     }
 
     /** The role of [identityId] — the assigned role, or [AuthRole.MEMBER] by default (never null). */
-    suspend fun roleOf(identityId: String): AuthRole = withContext(io) {
+    override suspend fun roleOf(identityId: String): AuthRole = withContext(io) {
         mutex.withLock {
             conn.prepareStatement("SELECT role FROM role_assignments WHERE identity_id=?").use { ps ->
                 ps.setString(1, identityId)
@@ -65,7 +99,7 @@ class SqliteRoleStore(
      * Idempotently assign [identityId] a role and return it. If it already has one, return that. Otherwise
      * grant **OPERATOR iff none exists yet** (the Middleway bootstrap), else **MEMBER** — race-safe (§class).
      */
-    suspend fun ensureAssigned(identityId: String, nowMs: Long): AuthRole = withContext(io) {
+    override suspend fun ensureAssigned(identityId: String, nowMs: Long): AuthRole = withContext(io) {
         mutex.withLock {
             // Idempotent: an existing assignment wins.
             conn.prepareStatement("SELECT role FROM role_assignments WHERE identity_id=?").use { ps ->

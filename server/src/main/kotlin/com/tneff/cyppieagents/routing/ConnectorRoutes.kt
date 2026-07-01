@@ -1,5 +1,8 @@
 package com.tneff.cyppieagents.routing
 
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.boot.ConnectorOptIn
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.connector.CapabilityRegistry
@@ -17,7 +20,7 @@ import io.ktor.server.routing.route
  * message can never flip a connector; only this operator-token route can).
  *
  * `POST /api/agents/{id}/connector` body `{ "connectorKind": "mcp" | "stream_json" }`:
- *  - **operator, fail-closed:** `requireOperator` runs BEFORE the body is received (401/403 unparsed).
+ *  - **operator, fail-closed:** the STRUCTURAL [authenticatedApi] group (CYP-178) runs BEFORE the body is received (401/403 unparsed).
  *  - 404 `agent_not_found` for an unknown agent (checked before the mutation).
  *  - on success: persists + re-declares caps + emits `connector.optin` ([ConnectorOptIn.apply]); returns
  *    the updated [com.tneff.cyppieagents.model.Agent] (with the new connectorKind + capabilities).
@@ -27,18 +30,22 @@ fun Route.connectorRoutes(
     registry: TokenRegistry,
     capabilityRegistry: CapabilityRegistry,
     optIn: ConnectorOptIn,
+    deps: AuthDeps = AuthDeps(registry),
 ) {
-    route("/api/agents/{id}/connector") {
-        post {
-            call.requireOperator(registry) // fail-closed BEFORE receive
-            val id = call.parameters["id"] ?: throw BadRequestException("missing path parameter 'id'")
-            val agent = state.agents.firstOrNull { it.id == id }
-                ?: throw NotFoundException("agent '$id' not found")
-            val choice = call.receive<ConnectorChoice>()
-            optIn.apply(id, choice.connectorKind)
-            call.respond(
-                agent.copy(connectorKind = choice.connectorKind, capabilities = capabilityRegistry.get(id)),
-            )
+    // CYP-178: operator gate is STRUCTURAL (mounted under the group), fail-closed BEFORE receive; the RC1
+    // route-enumeration meta-test is the net. No "off-message" path — only this operator route flips a connector.
+    authenticatedApi(deps, AuthRole.OPERATOR) {
+        route("/api/agents/{id}/connector") {
+            post {
+                val id = call.parameters["id"] ?: throw BadRequestException("missing path parameter 'id'")
+                val agent = state.agents.firstOrNull { it.id == id }
+                    ?: throw NotFoundException("agent '$id' not found")
+                val choice = call.receive<ConnectorChoice>()
+                optIn.apply(id, choice.connectorKind)
+                call.respond(
+                    agent.copy(connectorKind = choice.connectorKind, capabilities = capabilityRegistry.get(id)),
+                )
+            }
         }
     }
 }

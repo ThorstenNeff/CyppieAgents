@@ -1,5 +1,8 @@
 package com.tneff.cyppieagents.routing
 
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.boot.ProjectDeleter
 import com.tneff.cyppieagents.boot.ProjectRegistry
 import com.tneff.cyppieagents.model.CreateProjectRequest
@@ -19,8 +22,9 @@ import io.ktor.server.routing.route
  * Multi-project lifecycle endpoints (S13 / CYP-91). **PROVISIONAL contract**, reconciled with the S13
  * design — the `:core` vocabulary ([com.tneff.cyppieagents.model.Project] et al.) is the reference.
  *
- * **All operations are operator-gated and fail-closed** (`requireOperator` runs BEFORE any body parse
- * or mutation — a non-operator gets a 401/403 and changes nothing; the touchy delete-safety lives in
+ * **All operations are operator-gated and fail-closed** (gated STRUCTURALLY under the [authenticatedApi]
+ * group, CYP-178, so the check runs BEFORE any body parse or mutation — a non-operator gets a 401/403 and
+ * changes nothing; the touchy delete-safety lives in
  * the pure [com.tneff.cyppieagents.model.ProjectGuard], surfaced via the registry's 4xx codes). The
  * active project is the server-side pointer in [ProjectRegistry]; scoped endpoints resolve it
  * server-side (no client header).
@@ -48,36 +52,35 @@ fun Route.projectRoutes(
      * registry pointer and the hub's view consistent. Defaults to a no-op for the dev/standalone wiring.
      */
     onActiveSwitch: (String) -> Unit = {},
+    deps: AuthDeps = AuthDeps(tokens),
 ) {
-    route("/api/projects") {
-        get {
-            call.requireOperator(tokens)
-            call.respond(registry.view())
-        }
-        post {
-            call.requireOperator(tokens)
-            val req = call.receive<CreateProjectRequest>()
-            call.respond(HttpStatusCode.Created, registry.create(req))
-        }
-        // POST (not PUT /{id}) so the switch action can never shadow a rename of a project named `active`.
-        post("/switch") {
-            call.requireOperator(tokens)
-            val req = call.receive<SwitchActiveRequest>()
-            val view = registry.setActive(req.projectId) // validates (404 if unknown) + flips the pointer
-            onActiveSwitch(req.projectId) // re-scope the live comm hub to the new active project (CYP-102)
-            call.respond(view)
-        }
-        put("/{id}") {
-            call.requireOperator(tokens)
-            val id = call.parameters["id"] ?: throw BadRequestException("missing project id")
-            val req = call.receive<RenameProjectRequest>()
-            call.respond(registry.rename(id, req.name))
-        }
-        delete("/{id}") {
-            call.requireOperator(tokens)
-            val id = call.parameters["id"] ?: throw BadRequestException("missing project id")
-            val deleteWorktrees = call.request.queryParameters["deleteWorktrees"]?.toBoolean() ?: false
-            call.respond(deleter.delete(id, deleteWorktrees))
+    // CYP-178: the operator gate is STRUCTURAL (mounted under the group); the RC1 meta-test is the net.
+    authenticatedApi(deps, AuthRole.OPERATOR) {
+        route("/api/projects") {
+            get {
+                call.respond(registry.view())
+            }
+            post {
+                val req = call.receive<CreateProjectRequest>()
+                call.respond(HttpStatusCode.Created, registry.create(req))
+            }
+            // POST (not PUT /{id}) so the switch action can never shadow a rename of a project named `active`.
+            post("/switch") {
+                val req = call.receive<SwitchActiveRequest>()
+                val view = registry.setActive(req.projectId) // validates (404 if unknown) + flips the pointer
+                onActiveSwitch(req.projectId) // re-scope the live comm hub to the new active project (CYP-102)
+                call.respond(view)
+            }
+            put("/{id}") {
+                val id = call.parameters["id"] ?: throw BadRequestException("missing project id")
+                val req = call.receive<RenameProjectRequest>()
+                call.respond(registry.rename(id, req.name))
+            }
+            delete("/{id}") {
+                val id = call.parameters["id"] ?: throw BadRequestException("missing project id")
+                val deleteWorktrees = call.request.queryParameters["deleteWorktrees"]?.toBoolean() ?: false
+                call.respond(deleter.delete(id, deleteWorktrees))
+            }
         }
     }
 }

@@ -1,5 +1,8 @@
 package com.tneff.cyppieagents.routing
 
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.comm.ChannelShareStore
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.model.AuthorizeShareRequest
@@ -25,34 +28,43 @@ import io.ktor.server.routing.route
  *  - `PUT    /api/channels/{id}/share` `AuthorizeShareRequest{sharedWith}` → set the directed share.
  *  - `DELETE /api/channels/{id}/share` → revoke (the gate closes → immediate fail-closed).
  *
- * **Both mutations are operator/owner-gated and fail-closed** (`requireOperator` before `receive`,
- * Anti-Injection-Invariante §2.6 — only the human owner authorizes, never an agent/message). After a
+ * **Both mutations are operator/owner-gated and fail-closed** (gated STRUCTURALLY under the
+ * [authenticatedApi] group, CYP-178, so the check runs before `receive`; Anti-Injection-Invariante §2.6 —
+ * only the human owner authorizes, never an agent/message). After a
  * set/revoke we call [HubState.refreshShares] so the permit takes effect without a restart; revoke is
  * fail-closed regardless of any lingering AclEntries (§6.4).
  */
-fun Route.channelShareRoutes(state: HubState, shares: ChannelShareStore, tokens: TokenRegistry) {
+fun Route.channelShareRoutes(
+    state: HubState,
+    shares: ChannelShareStore,
+    tokens: TokenRegistry,
+    deps: AuthDeps = AuthDeps(tokens),
+) {
     route("/api/channels/{id}/share") {
         get {
             call.requireParticipant(tokens)
             val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
             call.respond(shareView(state, shares, id))
         }
-        put {
-            call.requireOperator(tokens) // owner authorization act — gated BEFORE the body is parsed
-            val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
-            val channel = state.channels.firstOrNull { it.id == id }
-                ?: throw NotFoundException("channel '$id' not found", code = "channel_not_found")
-            val req = call.receive<AuthorizeShareRequest>()
-            shares.share(id, ownerProjectId = channel.projectId, sharedWith = req.sharedWith)
-            state.refreshShares() // permit takes effect now (no restart)
-            call.respond(shareView(state, shares, id))
-        }
-        delete {
-            call.requireOperator(tokens)
-            val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
-            shares.revoke(id)
-            state.refreshShares() // gate closed → channel falls back to exact-match/fail-closed
-            call.respond(shareView(state, shares, id))
+        // CYP-178: the owner authorization mutations are gated STRUCTURALLY under the group — only the
+        // human owner authorizes, never an agent/message (Anti-Injection §2.6), fail-closed BEFORE the
+        // body is parsed. The RC1 route-enumeration meta-test is the net.
+        authenticatedApi(deps, AuthRole.OPERATOR) {
+            put {
+                val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+                val channel = state.channels.firstOrNull { it.id == id }
+                    ?: throw NotFoundException("channel '$id' not found", code = "channel_not_found")
+                val req = call.receive<AuthorizeShareRequest>()
+                shares.share(id, ownerProjectId = channel.projectId, sharedWith = req.sharedWith)
+                state.refreshShares() // permit takes effect now (no restart)
+                call.respond(shareView(state, shares, id))
+            }
+            delete {
+                val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+                shares.revoke(id)
+                state.refreshShares() // gate closed → channel falls back to exact-match/fail-closed
+                call.respond(shareView(state, shares, id))
+            }
         }
     }
 }
