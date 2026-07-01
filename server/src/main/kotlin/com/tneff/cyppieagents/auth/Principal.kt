@@ -73,6 +73,30 @@ suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? {
     return AuthPrincipal.Human(resolved.identityId, deps.roles.ensureAssigned(resolved.identityId, deps.nowMs()))
 }
 
+/**
+ * CYP-182 — the `/api/auth/me` projection of the caller's auth STATE in a **single** `idp.resolve`. Unlike
+ * [resolvePrincipal] (which the guard uses and which collapses an unverified session to null), this reports
+ * the authenticated-but-unverified state too — so `/me` resolves once instead of twice (a present garbage/
+ * unverified token no longer double-calls Kratos on the PUBLIC endpoint). Same axis order as [resolvePrincipal]:
+ * a present bearer is the machine axis (operator → OPERATOR, any other → MEMBER, no idp call), else the
+ * session axis (one whoami). Content-free — no id/email leaves here.
+ */
+suspend fun ApplicationCall.resolveAuthState(deps: AuthDeps): com.tneff.cyppieagents.model.AuthMe {
+    val bearer = bearerToken()
+    if (bearer != null) {
+        val role = if (deps.tokens.isOperator(bearer)) AuthRole.OPERATOR else AuthRole.MEMBER
+        return com.tneff.cyppieagents.model.AuthMe(authenticated = true, role = role.name, verified = true)
+    }
+    // No session credential at all → not authenticated, WITHOUT an idp call (no-cred = zero whoami).
+    val cred = sessionCredential() ?: return com.tneff.cyppieagents.model.AuthMe(authenticated = false)
+    val resolved = deps.idp.resolve(cred) ?: return com.tneff.cyppieagents.model.AuthMe(authenticated = false)
+    return if (resolved.verified) {
+        com.tneff.cyppieagents.model.AuthMe(true, deps.roles.ensureAssigned(resolved.identityId, deps.nowMs()).name, true)
+    } else {
+        com.tneff.cyppieagents.model.AuthMe(authenticated = true, role = null, verified = false)
+    }
+}
+
 /** Per-handler guard (fail-closed): 401 unauth, 403 role-insufficient. Returns the principal on success. */
 suspend fun ApplicationCall.requirePrincipal(deps: AuthDeps, required: AuthRole = AuthRole.OPERATOR): AuthPrincipal {
     val p = resolvePrincipal(deps) ?: throw UnauthorizedException()
