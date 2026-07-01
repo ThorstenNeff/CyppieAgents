@@ -58,6 +58,9 @@ class ProtectedRouteEnumerationTest {
     private val publicAllowlist = setOf(
         "GET /api/health",
         "GET /api/agents",
+        // CYP-182: the client whoami — public by design (reports {authenticated:false} to an unauthenticated
+        // caller instead of a 401) and content-free (no id/email/secrets). Audited here as intentionally open.
+        "GET /api/auth/me",
     )
 
     @Test
