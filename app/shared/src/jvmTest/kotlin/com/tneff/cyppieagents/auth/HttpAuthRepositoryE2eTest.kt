@@ -288,6 +288,27 @@ class HttpAuthRepositoryE2eTest {
     }
 
     @Test
+    fun setNewPassword_recovery422_foreignCookieNoSession_mapsTokenInvalid() = withFixture({
+        // MUT-10b teeth: a browser_location_change_required whose ONLY jar cookie is a FOREIGN one (a
+        // csrf/flow cookie Kratos really sets) — no ory_kratos_session — is NOT an established session. The
+        // name-specific jar check must reject it; an "any cookie" loosening would false-positive here (accept
+        // the code + set a password without a real recovery session), so this reddens on that mutation.
+        onSubmit = { kind, _ ->
+            when (kind) {
+                "recoveryBrowser" -> SubmitResp(
+                    422,
+                    """{"error":{"id":"browser_location_change_required"}}""",
+                    setCookie = "csrf_token=not-a-session; Path=/",
+                )
+                "settingsBrowser" -> SubmitResp(200, "{}") // reachable only if the gate wrongly passed (the mutant)
+                else -> SubmitResp(200, "{}")
+            }
+        }
+    }) { _, repo, _ ->
+        assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("code", "brandNewPw"))
+    }
+
+    @Test
     fun setNewPassword_invalidRecoveryCode_mapsTokenInvalid() = withFixture({
         // Grounded matrix: a WRONG code answers 403 → the fail-closed teeth (never a silent success).
         onSubmit = { kind, _ -> if (kind == "recoveryBrowser") SubmitResp(403, "{}") else SubmitResp(200, "{}") }
