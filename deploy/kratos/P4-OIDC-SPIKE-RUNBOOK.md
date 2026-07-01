@@ -60,3 +60,14 @@ Run on the Kratos box: `KRATOS_PUBLIC_URL=… ./gradlew :server:test --tests "*O
 - **S4** → delegation confirmed (automated).
 - **Multi-user:** confirm a new GitHub identity is **MEMBER**, not OPERATOR (only the FIRST verified identity
   bootstraps OPERATOR — the existing `SqliteRoleStore` Middleway; verify via `/api/auth/me` role).
+
+## Follow-up (post-GO) — automated S1 regression via a mock OIDC IdP
+
+The manual S1 above is the *initial* gate. For long-term **regression protection** (catching a future config/
+version change that reintroduces auto-link-on-unverified), a **mock OIDC IdP** can automate the S1a core check:
+a local OIDC provider (`.well-known` + JWKS + a signed `id_token`) registered as a Kratos **`generic`** provider
+that returns `email_verified:false, email=v@x` → assert Kratos does NOT auto-link/verify to the existing `v@x`.
+Caveats (why it is a follow-up, not the initial gate): (1) it still needs deploy coordination (live Kratos must
+reach the mock); (2) it exercises the `generic`-OIDC path, not the ship path's `github` OAuth2 provider — so it
+is a fast **BLOCK-if-unsafe** tripwire on the core logic, never a **GO** confirmation (only the real GitHub flow
+is faithful). Build it when OIDC ships if the HARD-gate automation is judged worth the signed-JWT-provider effort.
