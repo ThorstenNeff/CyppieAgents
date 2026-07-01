@@ -5,9 +5,12 @@
 > both **re-evaluated before that gate**. CLOSED by contrast: login + recovery **content** are enum-safe
 > (masked full-body parity holds — hard gates).
 >
-> - **§A — login-timing** (Auftraggeber decision A, 2026-07-01): ACCEPTED — documented + throttle-mitigated.
-> - **§B — registration-content** (escalated 2026-07-01 as the 2nd graded limit): existing-email registration
->   reveals existence; config-unreachable on v1.3.0.
+> - **§A — login-timing** (Auftraggeber decision A, 2026-07-01): ACCEPTED — documented + throttle-mitigated;
+>   soft posture (re-evaluate at exposure).
+> - **§B — registration-content** (Auftraggeber decision A, 2026-07-01): documented + bound to a **HARD**
+>   exposure gate — the account-creation side-effect makes off-localhost materially worse, so throttle is NOT
+>   an accepted mitigation and the surface **does not go off-localhost until §B is actually closed** (v26 or a
+>   platform register-wrapper). Config-unreachable on v1.3.0 (proven).
 
 ---
 
@@ -77,15 +80,23 @@ verification-required flow that returns a generic `200 "check your email"` for b
 version. (The only untested avenue, the non-deprecated `style` control, governs UI step-rendering, not the
 uniqueness-reject path — assessed as not helping.)
 
-### Disposition
+### Disposition — HARD exposure gate (Auftraggeber decision A, 2026-07-01)
 
-- **Graded limitation, NOT dropped** — escalated as the 2nd graded limit alongside §A.
-- **The RC2 probe REPORTS it** (not a hard gate — like timing): the `P1_registration_new_vs_existing` pair is
-  emitted with its status/masked-body delta; recovery + login content remain the **hard** content gates.
-- **Probe hygiene:** the register pair runs **once** per branch (not N) to bound the junk-identity
-  side-effect; **coordinate junk-identity cleanup with deploy** after each run.
-- **Re-evaluate before off-localhost exposure (CYP-179):** the v26 upgrade (may add an enum-safe
-  registration flow — needs re-schema-validation + probe re-run) or accept with sign-off + throttle.
+Unlike §A (soft/throttle-accepted), §B is bound to a **HARD** exposure gate: **the registration surface does
+NOT go off-localhost until §B is actually closed.** Rationale (Test emphasis): the account-creation
+side-effect makes the leak materially worse off-box (a one-request response-level tell *and* a
+registration-DoS / store-pollution vector), so **a per-IP throttle is NOT an accepted mitigation** here.
+
+- **Closed BEFORE off-localhost exposure (CYP-179), by one of:**
+  1. **Kratos v26 upgrade** (documented fix-path — may add an enum-safe registration flow; needs
+     re-schema-validation against the v26 schema break + an RC2 probe re-run), **or**
+  2. **a platform register-wrapper** (the backend mediates registration: a quiet existence check → a generic
+     `200 "check your email"` for both new and existing, with the appropriate mail — closing §B in our layer).
+- **Until then:** the platform stays localhost-bound (same gate as CC1/RC4); the RC2 probe **REPORTS** the
+  `P1_registration_new_vs_existing` pair (status/masked-body delta) — recovery + login content remain the
+  **hard** content gates.
+- **Probe hygiene:** the register pair runs **once** per branch (not N) to bound the account-creation
+  side-effect; deploy runs `cleanup-junk-identities.sh` (admin API :4434) **before each re-run**.
 
 ## Teeth (why a green here is not vacuous)
 
