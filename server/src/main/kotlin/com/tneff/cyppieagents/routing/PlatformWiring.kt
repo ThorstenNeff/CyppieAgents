@@ -33,6 +33,7 @@ fun Application.installPlatform(
     authDeps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(booted.tokenRegistry),
 ) {
     install(ContentNegotiation) { json(CommJson) }
+    install(com.tneff.cyppieagents.auth.CsrfCookieIssuer) // CYP-178 RC5: issue the double-submit CSRF cookie
     install(WebSockets) { maxFrameSize = MessageInput.MAX_FRAME_BYTES } // CYP-143: protocol backstop on inject frames
     install(StatusPages) {
         exception<ApiException> { call, cause ->
@@ -166,6 +167,19 @@ fun Application.bootPlatform(
         remoteTokensFile = gitRoot.toPath().resolve("remote-tokens.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
-    installPlatform(booted)
+    // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;
+    // otherwise fail-closed to token-only (human path deny-all). The role store is durable + out-of-repo.
+    val authDeps = config.auth?.let { authCfg ->
+        com.tneff.cyppieagents.auth.AuthDeps(
+            tokens = booted.tokenRegistry,
+            idp = com.tneff.cyppieagents.auth.KratosIdentityProvider(
+                whoamiUrl = authCfg.kratosPublicUrl.trimEnd('/') + "/sessions/whoami",
+                timeoutMs = authCfg.whoamiTimeoutMs,
+            ),
+            roles = com.tneff.cyppieagents.auth.SqliteRoleStore(gitRoot.toPath().resolve(authCfg.roleDbPath)),
+            nowMs = { System.currentTimeMillis() },
+        )
+    } ?: com.tneff.cyppieagents.auth.AuthDeps(booted.tokenRegistry)
+    installPlatform(booted, authDeps)
     return booted
 }

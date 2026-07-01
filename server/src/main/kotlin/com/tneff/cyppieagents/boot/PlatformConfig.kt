@@ -26,6 +26,12 @@ data class PlatformConfig(
      * scoped to it (fail-closed). The single value that opens "the one" project for later N.
      */
     val projectId: String = DEFAULT_PROJECT_ID,
+    /**
+     * End-user auth (CYP-178 / P1). Defaulted null so pre-CYP-178 configs load unchanged and boot stays
+     * **fail-closed**: with no `auth` block the human path is deny-all (only the static operator token
+     * authenticates). Setting [AuthConfig.kratosPublicUrl] activates the verified-human OPERATOR path.
+     */
+    val auth: AuthConfig? = null,
 ) {
     init {
         require(agents.isNotEmpty()) { "platform.config: at least one agent required" }
@@ -40,6 +46,21 @@ data class PlatformConfig(
 
 @Serializable
 data class RepoConfig(val url: String, val branch: String = "main")
+
+/**
+ * End-user auth config (CYP-178). [kratosPublicUrl] is the Kratos PUBLIC base URL (e.g.
+ * `http://127.0.0.1:4433`); boot appends `/sessions/whoami` to validate a caller's session. The
+ * platform never talks to the Kratos ADMIN API (RC4) — identities self-serve via Kratos, roles are the
+ * platform's own store. [roleDbPath] is the durable authZ role store (resolved against the git root,
+ * out-of-repo, gitignored). No secrets live here (the Kratos session secret is Kratos's, at rest on its host).
+ */
+@Serializable
+data class AuthConfig(
+    val kratosPublicUrl: String,
+    val roleDbPath: String = ".cyppie/roles.db",
+    /** whoami request timeout (ms) — bounded so a hung Kratos never hangs the guard (RC1/RC2). */
+    val whoamiTimeoutMs: Long = 3_000,
+)
 
 @Serializable
 data class HubConfig(val url: String = "http://localhost:8787")

@@ -104,6 +104,7 @@ val AuthGuard = createRouteScopedPlugin("AuthGuard", ::AuthGuardConfig) {
     onCall { call ->
         val p = call.resolvePrincipal(deps) ?: throw UnauthorizedException()
         if (!p.role.satisfies(required)) throw ForbiddenException("operator required", code = "operator_required")
+        call.enforceCsrf() // RC5: a cookie-authed state-changing request must carry the double-submit token
         call.attributes.put(PrincipalKey, p)
     }
 }
