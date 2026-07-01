@@ -16,10 +16,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * CYP-178 / P1 — [KratosIdentityProvider] whoami parsing + **RC1 fail-closed**. A fake `/sessions/whoami`
- * server replies per the forwarded token; the provider maps active+verified correctly and returns null on
- * every failure mode (inactive, 401, malformed, unknown) — the guard treats null as unauthenticated. (The
- * live enumeration/timing behaviour is the deploy-coordinated probe, not this hermetic test.)
+ * CYP-178 / P1 — [KratosIdentityProvider] whoami parsing + **RC1 fail-closed**, and the **real-path
+ * dual-header regression** (the bug that FakeIdentityProvider never exercised).
+ *
+ * The fake `/sessions/whoami` models Kratos v1.3.0's matrix: a request carrying **BOTH** `X-Session-Token`
+ * and the `ory_kratos_session` cookie is **poisoned → 500** (native+cookie) / rejected — so a provider that
+ * blindly sends both fails on every real session. Testing BOTH the native (HEADER) and browser (COOKIE)
+ * paths against this server proves the provider sends **only the one** header its source dictates: if it sent
+ * both, these would 500 → null → red. (Live enum/timing is the deploy probe, not this hermetic test.)
  */
 class KratosIdentityProviderTest {
 
@@ -27,7 +31,13 @@ class KratosIdentityProviderTest {
         install(WebSockets)
         routing {
             get("/sessions/whoami") {
-                val body = when (call.request.header("X-Session-Token")) {
+                val token = call.request.header("X-Session-Token")
+                val cookie = call.request.cookies["ory_kratos_session"]
+                // BOTH present → poisoned (the real-path bug). A correct provider never triggers this.
+                if (token != null && cookie != null) {
+                    call.respondText("both-headers-poisoned", status = HttpStatusCode.InternalServerError); return@get
+                }
+                val body = when (token ?: cookie) {
                     "verified" -> """{"active":true,"identity":{"id":"alice","verifiable_addresses":[{"verified":true}]}}"""
                     "unverified" -> """{"active":true,"identity":{"id":"bob","verifiable_addresses":[{"verified":false}]}}"""
                     "inactive" -> """{"active":false,"identity":{"id":"x"}}"""
@@ -42,23 +52,32 @@ class KratosIdentityProviderTest {
     private val port = runBlocking { server.engine.resolvedConnectors().first().port }
     private val idp = KratosIdentityProvider("http://localhost:$port/sessions/whoami")
 
+    private fun native(v: String) = SessionCredential(v, SessionCredential.Source.HEADER)
+    private fun browser(v: String) = SessionCredential(v, SessionCredential.Source.COOKIE)
+
     @AfterTest fun tearDown() = server.stop(100, 100)
 
-    @Test fun activeVerified_mapsToVerifiedIdentity() = runBlocking {
-        assertEquals(ResolvedIdentity("alice", verified = true), idp.resolve("verified"))
+    // ⭐ regression: each path succeeds ONLY because the provider sends a single header (the server 500s on both).
+    @Test fun nativeToken_headerOnly_mapsToVerifiedIdentity() = runBlocking {
+        assertEquals(ResolvedIdentity("alice", verified = true), idp.resolve(native("verified")))
+    }
+
+    @Test fun browserCookie_cookieOnly_mapsToVerifiedIdentity() = runBlocking {
+        assertEquals(ResolvedIdentity("alice", verified = true), idp.resolve(browser("verified")))
     }
 
     @Test fun activeUnverified_mapsToUnverified() = runBlocking {
-        assertEquals(ResolvedIdentity("bob", verified = false), idp.resolve("unverified"))
+        assertEquals(ResolvedIdentity("bob", verified = false), idp.resolve(native("unverified")))
+        assertEquals(ResolvedIdentity("bob", verified = false), idp.resolve(browser("unverified")))
     }
 
-    @Test fun inactiveSession_isNull() = runBlocking { assertNull(idp.resolve("inactive")) }
+    @Test fun inactiveSession_isNull() = runBlocking { assertNull(idp.resolve(native("inactive"))) }
 
-    @Test fun unauthorized401_isNull_failClosed() = runBlocking { assertNull(idp.resolve("whatever-unknown")) }
+    @Test fun unauthorized401_isNull_failClosed() = runBlocking { assertNull(idp.resolve(native("whatever-unknown"))) }
 
-    @Test fun malformedBody_isNull_failClosed() = runBlocking { assertNull(idp.resolve("malformed")) }
+    @Test fun malformedBody_isNull_failClosed() = runBlocking { assertNull(idp.resolve(native("malformed"))) }
 
     @Test fun blankOrNullCredential_isNull_noCall() = runBlocking {
-        assertNull(idp.resolve(null)); assertNull(idp.resolve("  "))
+        assertNull(idp.resolve(null)); assertNull(idp.resolve(native("  ")))
     }
 }

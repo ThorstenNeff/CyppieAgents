@@ -80,8 +80,8 @@ class AuthMeRoutesTest {
     /** Counts resolve() calls — proves the present-token path does a SINGLE whoami (no DoS-amp). */
     private class CountingIdp(private val delegate: IdentityProvider) : IdentityProvider {
         @Volatile var calls = 0
-        override suspend fun resolve(sessionCredential: String?): ResolvedIdentity? {
-            calls++; return delegate.resolve(sessionCredential)
+        override suspend fun resolve(credential: SessionCredential?): ResolvedIdentity? {
+            calls++; return delegate.resolve(credential)
         }
     }
 

@@ -27,8 +27,8 @@ class P2VerifiedFlipGuardTest {
 
     /** A session whose identity's `verified` status can be flipped between requests (models the verify event). */
     private class ToggleIdp(@Volatile var verified: Boolean) : IdentityProvider {
-        override suspend fun resolve(sessionCredential: String?): ResolvedIdentity? =
-            sessionCredential?.let { ResolvedIdentity("member-identity", verified) }
+        override suspend fun resolve(credential: SessionCredential?): ResolvedIdentity? =
+            credential?.let { ResolvedIdentity("member-identity", verified) }
     }
 
     @Test
