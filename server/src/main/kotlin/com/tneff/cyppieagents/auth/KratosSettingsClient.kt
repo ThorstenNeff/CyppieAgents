@@ -13,8 +13,10 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.slf4j.LoggerFactory
 
 /** The raw Kratos settings-flow outcome — passed through unchanged to the caller (thin shim). */
@@ -45,11 +47,11 @@ class KratosSettingsClient(
 
     /** Change the caller's password via the Kratos settings `password` method. Never logs [newPassword]. */
     suspend fun changePassword(sessionCredential: String, newPassword: String): SettingsOutcome =
-        submit(sessionCredential, """{"method":"password","password":${quote(newPassword)}}""")
+        submit(sessionCredential, buildJsonObject { put("method", "password"); put("password", newPassword) }.toString())
 
     /** Change the caller's email via the Kratos settings `profile` method. Never logs [newEmail]. */
     suspend fun changeEmail(sessionCredential: String, newEmail: String): SettingsOutcome =
-        submit(sessionCredential, """{"method":"profile","traits":{"email":${quote(newEmail)}}}""")
+        submit(sessionCredential, buildJsonObject { put("method", "profile"); put("traits", buildJsonObject { put("email", newEmail) }) }.toString())
 
     private suspend fun submit(sessionCredential: String, payload: String): SettingsOutcome {
         return try {
@@ -84,6 +86,4 @@ class KratosSettingsClient(
         header("X-Session-Token", cred)
         header("Cookie", "$KRATOS_SESSION_COOKIE=$cred")
     }
-
-    private fun quote(s: String): String = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }

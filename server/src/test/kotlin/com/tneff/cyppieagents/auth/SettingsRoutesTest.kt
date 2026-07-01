@@ -67,7 +67,12 @@ class SettingsRoutesTest {
         val store = SqliteRoleStore(db)
         val deps = AuthDeps(
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
-            idp = FakeIdentityProvider(mapOf("sess-member" to ResolvedIdentity("member", verified = true))),
+            idp = FakeIdentityProvider(
+                mapOf(
+                    "sess-member" to ResolvedIdentity("member", verified = true),
+                    "sess-unverified" to ResolvedIdentity("unverified-member", verified = false),
+                ),
+            ),
             roles = store,
             nowMs = { 1L },
         )
@@ -113,6 +118,36 @@ class SettingsRoutesTest {
         // The operator token authenticates (MEMBER satisfied) but has no Kratos session → nothing to change.
         val r = client.post("/api/auth/settings/password") {
             bearerAuth("tok-op"); contentType(ContentType.Application.Json); setBody("""{"newPassword":"x"}""")
+        }
+        assertEquals(HttpStatusCode.Forbidden, r.status)
+        store.close()
+    }
+
+    // ---- guard teeth: the MEMBER guard MUST bite where it can break (un-guarding must red these) ----
+
+    @Test
+    fun unverifiedSession_settings_is401_verifiedGuardBites() = testApplication {
+        val store = installSettings()
+        // A valid-but-UNVERIFIED session must be rejected by the guard (RC1). Un-guarding the route
+        // (authenticatedApi→apply{}) would let the handler run (the session_required check passes, the
+        // session IS present) → NOT 401 → this reds, catching the removed guard.
+        val r = client.post("/api/auth/settings/password") {
+            header("X-Session-Token", "sess-unverified"); contentType(ContentType.Application.Json)
+            setBody("""{"newPassword":"x"}""")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, r.status)
+        store.close()
+    }
+
+    @Test
+    fun cookieSession_settings_withoutCsrf_is403_csrfGuardBites() = testApplication {
+        val store = installSettings()
+        // A COOKIE-authed state-changing POST without X-CSRF-Token must 403 (RC5 double-submit, enforced in
+        // the guard). Un-guarding would skip enforceCsrf → the handler runs → NOT 403 → this reds.
+        val r = client.post("/api/auth/settings/password") {
+            header(io.ktor.http.HttpHeaders.Cookie, "$KRATOS_SESSION_COOKIE=sess-member")
+            contentType(ContentType.Application.Json); setBody("""{"newPassword":"x"}""")
+            // deliberately NO X-CSRF-Token
         }
         assertEquals(HttpStatusCode.Forbidden, r.status)
         store.close()
