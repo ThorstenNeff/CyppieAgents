@@ -170,7 +170,11 @@ class HttpAuthRepository(
         val resp = client.get("$kratos/self-service/recovery/browser") { authHeaders() }
         val body = resp.bodyAsText()
         val flow = parseKratosFlow(body)
-        val action = flow.action.ifBlank { "$kratos/self-service/recovery?flow=${flow.id}" }
+        // Always submit via the configured proxy (`$kratos`) + flow id — NEVER follow the flow's own
+        // `action`, which Kratos renders with its OWN base_url (a different host:port). The csrf +
+        // ory_kratos_session cookies are bound to the proxy host, and ktor HttpCookies is port-specific, so
+        // following `action` to another host drops them → 403 security_csrf_violation. Same-origin invariant.
+        val action = "$kratos/self-service/recovery?flow=${flow.id}"
         return action to parseKratosCsrfToken(body)
     }
 
@@ -217,7 +221,8 @@ class HttpAuthRepository(
                 val initBody = init.bodyAsText()
                 val flow = parseKratosFlow(initBody)
                 val csrf = parseKratosCsrfToken(initBody)
-                client.post(flow.action.ifBlank { "$kratos/self-service/settings?flow=${flow.id}" }) {
+                // Same-origin invariant (see initRecoveryBrowserFlow): submit via the proxy + flow id, never flow.action.
+                client.post("$kratos/self-service/settings?flow=${flow.id}") {
                     authHeaders()
                     contentType(ContentType.Application.Json)
                     setBody(
@@ -288,10 +293,11 @@ class HttpAuthRepository(
 
     // --- Kratos flow driving ---
 
-    /** Init a native flow (`GET /self-service/{kind}/api`) then POST the [payload] to its `ui.action`. */
+    /** Init a native flow (`GET /self-service/{kind}/api`) then POST the [payload] via the proxy + flow id. */
     private suspend fun submitFlow(kind: String, payload: JsonObject): HttpResponse {
         val flow = initFlow(kind)
-        val action = flow.action.ifBlank { "$kratos/self-service/$kind?flow=${flow.id}" }
+        // Same-origin invariant: submit via the configured proxy + flow id, never the flow's own action host.
+        val action = "$kratos/self-service/$kind?flow=${flow.id}"
         return client.post(action) {
             authHeaders()
             contentType(ContentType.Application.Json)

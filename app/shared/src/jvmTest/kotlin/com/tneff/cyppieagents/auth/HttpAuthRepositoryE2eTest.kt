@@ -64,37 +64,31 @@ class HttpAuthRepositoryE2eTest {
                 post("/.ory/kratos/public/self-service/logout/api") {
                     call.respondText("{}", ContentType.Application.Json)
                 }
-                // Browser recovery flow: its 422 sets the ory_kratos_session cookie (into the jar via
-                // HttpCookies), unlike the /api recovery (no session). Distinct submit path so the mock can
-                // model both — the OLD /api path (no cookie) reddens, the new browser path greens.
+                // Browser recovery/settings flows: Kratos renders `flow.action` with its OWN base_url (a
+                // different host:port — :4433 in deploy), so FOLLOWING it drops the proxy-bound csrf/session
+                // cookies (ktor HttpCookies is port-specific) → 403 security_csrf_violation. Modelled here as
+                // an "action-trap" path that 403s. The repo MUST NOT follow `flow.action`; it must reconstruct
+                // `$kratos/self-service/{recovery|settings}?flow=<id>` (the generic route below). Following the
+                // trap reddens; reconstructing greens — this teeths the same-origin-submit invariant.
                 get("/.ory/kratos/public/self-service/recovery/browser") {
                     call.respondText(
-                        """{"id":"rfb","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/recovery/browser-submit","nodes":[{"attributes":{"name":"csrf_token","value":"rcsrf","type":"hidden"}}]}}""",
+                        """{"id":"rfb","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/recovery/action-trap","nodes":[{"attributes":{"name":"csrf_token","value":"rcsrf","type":"hidden"}}]}}""",
                         ContentType.Application.Json,
                     )
                 }
-                post("/.ory/kratos/public/self-service/recovery/browser-submit") {
-                    val body = call.receiveText()
-                    fx.lastSubmit = "recoveryBrowser" to body
-                    val r = fx.onSubmit("recoveryBrowser", body)
-                    if (r.retryAfter != null) call.response.headers.append(HttpHeaders.RetryAfter, r.retryAfter)
-                    if (r.setCookie != null) call.response.headers.append(HttpHeaders.SetCookie, r.setCookie)
-                    call.respondText(r.body, ContentType.Application.Json, HttpStatusCode.fromValue(r.status))
-                }
-                // Browser settings flow (the flow-mode-consistent post-recovery step for a cookie session):
-                // its init carries a csrf_token node, and its submit is a DISTINCT path from the /api one — so
-                // the mock can model /api+cookie→400 (old path teeth) vs /browser+csrf→200 (new path).
                 get("/.ory/kratos/public/self-service/settings/browser") {
                     call.respondText(
-                        """{"id":"sf","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/settings/browser-submit","nodes":[{"attributes":{"name":"csrf_token","value":"csrf-abc","type":"hidden"}}]}}""",
+                        """{"id":"sf","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/settings/action-trap","nodes":[{"attributes":{"name":"csrf_token","value":"csrf-abc","type":"hidden"}}]}}""",
                         ContentType.Application.Json,
                     )
                 }
-                post("/.ory/kratos/public/self-service/settings/browser-submit") {
-                    val body = call.receiveText()
-                    fx.lastSubmit = "settingsBrowser" to body
-                    val r = fx.onSubmit("settingsBrowser", body)
-                    call.respondText(r.body, ContentType.Application.Json, HttpStatusCode.fromValue(r.status))
+                post("/.ory/kratos/public/self-service/recovery/action-trap") {
+                    fx.lastSubmit = "actionTrap" to call.receiveText()
+                    call.respondText("""{"error":{"id":"security_csrf_violation"}}""", ContentType.Application.Json, HttpStatusCode.Forbidden)
+                }
+                post("/.ory/kratos/public/self-service/settings/action-trap") {
+                    fx.lastSubmit = "actionTrap" to call.receiveText()
+                    call.respondText("""{"error":{"id":"security_csrf_violation"}}""", ContentType.Application.Json, HttpStatusCode.Forbidden)
                 }
                 post("/.ory/kratos/public/self-service/{kind}") {
                     val kind = call.parameters["kind"]!!
@@ -234,24 +228,18 @@ class HttpAuthRepositoryE2eTest {
 
     @Test
     fun setNewPassword_recoveryThenSettings_ok() = withFixture({
-        // Fixture fidelity (two real bugs modelled): the CORRECT code answers 422 browser_location_change_required
-        // + a COOKIE session (NO session_token in the body — the v1.3.0 browser-recovery reality) → source-aware
-        // Step 2 must use /settings/browser. The mock models /settings/api → 400 (the api+cookie blockade) and
-        // /settings/browser → 200 — so the OLD blanket `!isSuccess()` AND the OLD `/settings/api` step BOTH redden,
-        // and only the new 422+session-aware, source-aware-browser logic greens.
+        // The CORRECT code answers 422 browser_location_change_required + a COOKIE session (no body token —
+        // the v1.3.0 browser-recovery reality) via the PROXY-reconstructed submit (`/self-service/recovery`,
+        // the generic route); Step 2 completes on the proxy-reconstructed settings submit. The greening proves
+        // the repo reconstructed rather than following `flow.action` (whose action-trap path 403s).
         onSubmit = { kind, _ ->
             when (kind) {
-                // NEW browser path: 422 + a real ory_kratos_session cookie (HttpCookies consumes it into the jar).
-                "recoveryBrowser" -> SubmitResp(
+                "recovery" -> SubmitResp(
                     422,
                     """{"error":{"id":"browser_location_change_required"}}""",
                     setCookie = "ory_kratos_session=hermetic-sess; Path=/",
                 )
-                // OLD /api recovery path: 422 but NO session → reddens if the repo regresses to /recovery/api.
-                "recovery" -> SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""")
-                "settingsBrowser" -> SubmitResp(200, "{}")
-                // OLD /api settings path: the api+cookie blockade → reddens if the repo regresses to /settings/api.
-                "settings" -> SubmitResp(400, """{"error":{"reason":"api flow initiated but Cookie present — blocked"}}""")
+                "settings" -> SubmitResp(200, "{}")
                 else -> SubmitResp(200, "{}")
             }
         }
@@ -264,7 +252,7 @@ class HttpAuthRepositoryE2eTest {
         // fail-closed: only browser_location_change_required is the accept signal — any other 422 error.id → TokenInvalid.
         onSubmit = { kind, _ ->
             // Even WITH a session cookie, a non-matching error.id is not the accept signal → TokenInvalid.
-            if (kind == "recoveryBrowser") {
+            if (kind == "recovery") {
                 SubmitResp(422, """{"error":{"id":"some_other_continuation"}}""", setCookie = "ory_kratos_session=s; Path=/")
             } else {
                 SubmitResp(200, "{}")
@@ -280,7 +268,7 @@ class HttpAuthRepositoryE2eTest {
         // session the code is NOT treated as accepted.
         onSubmit = { kind, _ ->
             // Correct error.id but NO session issued (no cookie, no token) → NOT accepted (session is the proof).
-            if (kind == "recoveryBrowser") SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""")
+            if (kind == "recovery") SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""")
             else SubmitResp(200, "{}")
         }
     }) { _, repo, _ ->
@@ -295,12 +283,12 @@ class HttpAuthRepositoryE2eTest {
         // the code + set a password without a real recovery session), so this reddens on that mutation.
         onSubmit = { kind, _ ->
             when (kind) {
-                "recoveryBrowser" -> SubmitResp(
+                "recovery" -> SubmitResp(
                     422,
                     """{"error":{"id":"browser_location_change_required"}}""",
                     setCookie = "csrf_token=not-a-session; Path=/",
                 )
-                "settingsBrowser" -> SubmitResp(200, "{}") // reachable only if the gate wrongly passed (the mutant)
+                "settings" -> SubmitResp(200, "{}") // reachable only if the gate wrongly passed (the mutant)
                 else -> SubmitResp(200, "{}")
             }
         }
@@ -311,7 +299,7 @@ class HttpAuthRepositoryE2eTest {
     @Test
     fun setNewPassword_invalidRecoveryCode_mapsTokenInvalid() = withFixture({
         // Grounded matrix: a WRONG code answers 403 → the fail-closed teeth (never a silent success).
-        onSubmit = { kind, _ -> if (kind == "recoveryBrowser") SubmitResp(403, "{}") else SubmitResp(200, "{}") }
+        onSubmit = { kind, _ -> if (kind == "recovery") SubmitResp(403, "{}") else SubmitResp(200, "{}") }
     }) { _, repo, _ ->
         assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("stale-code", "brandNewPw"))
     }
