@@ -195,8 +195,9 @@ private fun RegisterScreen(state: AuthUiState.Register, vm: AuthViewModel) {
             modifier = Modifier.fillMaxWidth().testTag(AuthTags.REGISTER_SUBMIT),
         ) { Text(stringResource(if (submitting) Res.string.auth_submitting else Res.string.auth_submit_register)) }
 
-        // One error node (auth.register.error): client validation first, then the generic server error;
-        // a 429 surfaces here too (the frozen tag set has no register.rateLimited) with the amber tone.
+        // Error node (auth.register.error): client validation first, then the generic server error.
+        // A 429 has its own dedicated node (auth.register.rateLimited, amber) — honest throttling is
+        // test-anchored the same on all four throttleable actions (spec refine 1982acb).
         when {
             emailInvalid -> AnnouncingHint(
                 stringResource(Res.string.auth_register_email_invalid), HintTone.ERROR,
@@ -212,7 +213,7 @@ private fun RegisterScreen(state: AuthUiState.Register, vm: AuthViewModel) {
             )
             state.phase is Phase.RateLimited -> AnnouncingHint(
                 rateLimitedText(state.phase.retryAfter), HintTone.EFFECT_DEFERRED,
-                AuthTags.REGISTER_ERROR, LiveRegionMode.Assertive,
+                AuthTags.REGISTER_RATE_LIMITED, LiveRegionMode.Assertive,
             )
         }
 
@@ -386,7 +387,7 @@ private fun ResetScreen(state: AuthUiState.ResetSetNew, vm: AuthViewModel) {
                 (state.phase as? Phase.RateLimited)?.let { p ->
                     AnnouncingHint(
                         rateLimitedText(p.retryAfter), HintTone.EFFECT_DEFERRED,
-                        AuthTags.RESET_ERROR, LiveRegionMode.Assertive,
+                        AuthTags.RESET_RATE_LIMITED, LiveRegionMode.Assertive,
                     )
                 }
             }

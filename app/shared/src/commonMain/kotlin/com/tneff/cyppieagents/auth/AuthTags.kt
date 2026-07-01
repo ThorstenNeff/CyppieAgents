@@ -4,6 +4,7 @@ package com.tneff.cyppieagents.auth
  * `testTag` contract for the end-user auth / login-gate (CYP-176), exactly per `docs/design/auth-tags.md`.
  * Test-Contract v0.5 §2: prefixless `<area>[.<scopeId>].<element>`, segment values `[A-Za-z0-9-]+`
  * (camelCase, no dots). **Area `auth` is new** — 0 collision against the existing 13 `*Tags.kt`.
+ * 48 tags (incl. the dedicated register/reset `rateLimited` nodes, spec refine 1982acb).
  * **Shared API with QA (CYP-7) — do not rename silently; coordinate via the PO.**
  *
  * Deep-link verify/reset tokens are **never** materialised as a tag segment (auth-spec §2.2).
@@ -38,6 +39,7 @@ object AuthTags {
     const val REGISTER_SUBMIT = "auth.register.submit"
     const val REGISTER_TO_LOGIN = "auth.register.toLogin"
     const val REGISTER_ERROR = "auth.register.error"
+    const val REGISTER_RATE_LIMITED = "auth.register.rateLimited"
 
     // --- Email verification (scopeId = verify) ---
     const val VERIFY_PENDING = "auth.verify.pending"
@@ -67,6 +69,7 @@ object AuthTags {
     const val RESET_SUCCESS = "auth.reset.success"
     const val RESET_TOKEN_INVALID = "auth.reset.tokenInvalid"
     const val RESET_ERROR = "auth.reset.error"
+    const val RESET_RATE_LIMITED = "auth.reset.rateLimited"
 
     // --- P2 GitHub OIDC states (scopeId = github; rendered when the P2 slice lands) ---
     const val GITHUB_REDIRECTING = "auth.github.redirecting"

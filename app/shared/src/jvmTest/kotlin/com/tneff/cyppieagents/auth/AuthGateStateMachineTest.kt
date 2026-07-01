@@ -176,6 +176,30 @@ class AuthGateStateMachineTest {
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_TOKEN_INVALID).fetchSemanticsNodes().isNotEmpty() }
     }
 
+    @Test
+    fun register_rateLimited_showsHonest429_atDedicatedNode() = runComposeUiTest {
+        val vm = gate(StubAuthRepository(registerResult = { _, _ -> RegisterResult.RateLimited() }))
+        setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.LOGIN_TO_REGISTER).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.REGISTER_FORM).fetchSemanticsNodes().isNotEmpty() }
+        vm.register("new@example.com", "hunter2")
+        // Dedicated amber 429 node (spec refine 1982acb), not the generic error node.
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.REGISTER_RATE_LIMITED).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.REGISTER_ERROR).assertDoesNotExist()
+    }
+
+    @Test
+    fun resetDeepLink_rateLimited_showsHonest429_atDedicatedNode() = runComposeUiTest {
+        val vm = gate(StubAuthRepository(setNewPasswordResult = { _, _ -> SetPasswordResult.RateLimited() }))
+        setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
+        vm.openResetLink("opaque-token")
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_FORM).fetchSemanticsNodes().isNotEmpty() }
+        vm.setNewPassword("brandNewPw")
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_RATE_LIMITED).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.RESET_ERROR).assertDoesNotExist()
+    }
+
     // --- Verify deep-link (§2.2 / §7.6) ---
 
     @Test
