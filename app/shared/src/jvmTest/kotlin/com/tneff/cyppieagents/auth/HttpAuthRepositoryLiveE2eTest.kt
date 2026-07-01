@@ -8,6 +8,7 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * CYP-182 — **LIVE** end-to-end for [HttpAuthRepository] against the RUNNING platform-auth stack
@@ -15,6 +16,13 @@ import kotlin.test.assertIs
  * [HttpAuthRepositoryE2eTest]: same repo, same branches, but against **real Kratos** — it proves the wire
  * shapes, the native `X-Session-Token` capture+replay, and the live `sessions/whoami` boot-echo on the real
  * chain. This is the **P3 real-path gate**; the PO-gated stub→real default flip depends on its GO.
+ *
+ * ## Verification-first posture (deploy-grounded 2026-07-01)
+ * Kratos v1.3.0 (reference config) is **verification-first**: **registration issues NO session**
+ * (`continue_with=[show_verification_ui]`) — deliberately, so an unverified user is never auto-logged-in
+ * (the Auftraggeber's "verify first" posture). But Kratos **does allow login of a not-yet-verified
+ * identity**, which yields a session with `verified:false` → the client's [SessionState.Unverified]
+ * (`AuthedUnverified`). The `verified:false` guard-deny on protected mutations stays orthogonal (server-side).
  *
  * ## Gated + no-op by default
  * Without `CYPPIE_AUTH_E2E=1` every test returns immediately, so the normal `:app:shared:jvmTest` gate
@@ -28,15 +36,15 @@ import kotlin.test.assertIs
  *   ./gradlew :app:shared:jvmTest --tests '*HttpAuthRepositoryLiveE2eTest*'
  * ```
  *
- * ## Coverage
- * Live: `session()` unauth → None; self-service **register** a fresh identity → Pending, then `session()` →
- * AuthedUnverified with the live whoami email echo (the intended granular `/api/auth/me`
- * `{authenticated:true, verified:false}`); **login** the pre-verified [CYPPIE_AUTH_EMAIL] → Verified (skipped
- * if no password given); **recovery request** + **resend** → neutral Accepted; **logout** → None.
+ * ## Coverage (target 6/6)
+ * `session()` unauth → None · **register** a fresh identity → Pending + **no session** (verification-first) →
+ * `session()` still None · **login the unverified identity** → AuthedUnverified with the live whoami echo ·
+ * **login the pre-verified** [CYPPIE_AUTH_EMAIL] → Verified (skipped without CYPPIE_AUTH_PASSWORD) · **recovery
+ * request** → neutral Accepted · **logout** an active session → None.
  *
  * NOT automated: the **deep-link completion** (`setNewPassword`/`verifyEmail` with the emailed code) — it
- * needs a mailbox to read the code. The init/neutral halves ARE covered live; the completion mapping stays
- * proven hermetically ([HttpAuthRepositoryE2eTest]) until a test-mailbox / Kratos courier-dump is wired.
+ * needs a mailbox to read the code; the init/neutral halves are covered live, the completion mapping stays
+ * hermetic. A follow-up can read the code from deploy's Mailpit (`:8025`) once a sample message is confirmed.
  */
 class HttpAuthRepositoryLiveE2eTest {
 
@@ -50,19 +58,15 @@ class HttpAuthRepositoryLiveE2eTest {
 
     private fun uniqueEmail() = "live-${UUID.randomUUID().toString().substring(0, 8)}@cyppie.dev"
 
-    /** A fresh client+repo. HttpCookies so the browser-cookie path also works if the stack sets a cookie. */
-    private fun freshRepo(): Pair<HttpAuthRepository, HttpClient> {
-        val client = HttpClient(CIO) { install(HttpCookies) }
-        val repo = HttpAuthRepository(client, origin, kratosBaseUrl = proxy, sessionStore = InMemoryAuthSessionStore())
-        return repo to client
-    }
-
-    private fun live(block: suspend (HttpAuthRepository) -> Unit) {
+    /** A fresh client+repo+store. HttpCookies so the browser-cookie path also works if the stack sets one. */
+    private fun live(block: suspend (HttpAuthRepository, InMemoryAuthSessionStore) -> Unit) {
         if (!enabled) return // no-op without the stack → the normal gate stays green
         runBlocking {
-            val (repo, client) = freshRepo()
+            val client = HttpClient(CIO) { install(HttpCookies) }
+            val store = InMemoryAuthSessionStore()
+            val repo = HttpAuthRepository(client, origin, kratosBaseUrl = proxy, sessionStore = store)
             try {
-                block(repo)
+                block(repo, store)
             } finally {
                 client.close()
             }
@@ -70,43 +74,56 @@ class HttpAuthRepositoryLiveE2eTest {
     }
 
     @Test
-    fun live_session_unauthenticated_mapsNone() = live { repo ->
+    fun live_session_unauthenticated_mapsNone() = live { repo, _ ->
         assertEquals(SessionState.None, repo.session()) // /api/auth/me is public → {authenticated:false}
     }
 
     @Test
-    fun live_register_thenSession_authedUnverified_withWhoamiEcho() = live { repo ->
+    fun live_register_verificationFirst_issuesNoSession() = live { repo, store ->
         val email = uniqueEmail()
-        assertIs<RegisterResult.Pending>(repo.register(email, strongPassword))
-        // Intended granular /api/auth/me: authenticated:true, verified:false → AuthedUnverified.
+        assertIs<RegisterResult.Pending>(repo.register(email, strongPassword)) // neutral pending
+        // Verification-first: registration issues NO session (continue_with=[show_verification_ui]) —
+        // no session element captured, and the user is NOT auto-logged-in.
+        assertEquals(null, store.sessionToken())
+        assertEquals(SessionState.None, repo.session())
+    }
+
+    @Test
+    fun live_login_unverifiedIdentity_mapsAuthedUnverified_withWhoamiEcho() = live { repo, store ->
+        val email = uniqueEmail()
+        repo.register(email, strongPassword)              // verification-first: no session yet
+        val login = repo.login(email, strongPassword)     // v1.3.0 ALLOWS login of an unverified identity
+        assertIs<LoginResult.Unverified>(login)
+        assertEquals(email, login.email)
+        assertTrue(store.sessionToken() != null, "an unverified login issues a session_token")
+        // /api/auth/me → authenticated:true, verified:false → AuthedUnverified (session active, not verified;
+        // the guard-deny on protected mutations is orthogonal, server-side).
         val s = repo.session()
         assertIs<SessionState.Unverified>(s)
         assertEquals(email, s.email) // LIVE self-reflecting whoami echo (no platform PII)
     }
 
     @Test
-    fun live_login_verifiedIdentity_mapsVerified() = live { repo ->
+    fun live_login_verifiedIdentity_mapsVerified() = live { repo, _ ->
         val pw = verifiedPassword ?: return@live // needs the pre-verified identity's password
         assertEquals(LoginResult.Verified, repo.login(verifiedEmail, pw))
         assertEquals(SessionState.Verified, repo.session())
     }
 
     @Test
-    fun live_requestReset_neutralAccepted() = live { repo ->
+    fun live_requestReset_neutralAccepted() = live { repo, _ ->
         // Enumeration-safe: a real Kratos recovery init answers neutrally whether or not the account exists.
         assertEquals(ResetRequestResult.Accepted, repo.requestReset(uniqueEmail()))
     }
 
     @Test
-    fun live_resendVerification_afterRegister_accepted() = live { repo ->
-        repo.register(uniqueEmail(), strongPassword) // establishes an unverified session
-        assertEquals(ResendResult.Accepted, repo.resendVerification())
-    }
-
-    @Test
-    fun live_logout_clearsSession() = live { repo ->
-        repo.register(uniqueEmail(), strongPassword)
+    fun live_logout_afterActiveLogin_clearsSession() = live { repo, store ->
+        val email = uniqueEmail()
+        repo.register(email, strongPassword)
+        repo.login(email, strongPassword) // an active (unverified) session
+        assertTrue(store.sessionToken() != null)
         repo.logout()
+        assertEquals(null, store.sessionToken())
         assertEquals(SessionState.None, repo.session())
     }
 }
