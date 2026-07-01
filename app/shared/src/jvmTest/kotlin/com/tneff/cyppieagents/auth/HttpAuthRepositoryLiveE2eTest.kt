@@ -8,6 +8,7 @@ import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -144,6 +145,13 @@ class HttpAuthRepositoryLiveE2eTest {
     private val mailpit = System.getenv("CYPPIE_MAILPIT") ?: "http://127.0.0.1:8025"
     private val resetPassword = "Cyppie-Reset-New-7z!"
 
+    /**
+     * Case-tolerant field read. Mailpit's `/api/v1/search` result objects are **PascalCase** (`ID`, `To`,
+     * `Subject`, `From`, `Created`), while the docs/older versions use lowercase — so EVERY Mailpit key read
+     * goes through here (audited in one pass, deploy-verified) rather than assuming a casing.
+     */
+    private fun JsonObject.field(vararg names: String): JsonElement? = names.firstNotNullOfOrNull { this[it] }
+
     /** Poll Mailpit for the newest message to [email] whose subject contains [subjectNeedle]; return its Text. */
     private suspend fun mailText(client: HttpClient, email: String, subjectNeedle: String): String {
         repeat(20) {
@@ -153,29 +161,27 @@ class HttpAuthRepositoryLiveE2eTest {
             }.bodyAsText()
             // Mailpit's `to:` search is FUZZY on the domain (any @…-address matches), so filter by the EXACT
             // recipient too (deploy-verified) — else a sibling @cyppie.dev mail from the same run is picked.
-            val id = (KratosJson.parseToJsonElement(list).jsonObject["messages"]?.jsonArray ?: emptyList())
-                .map { it.jsonObject }
+            val messages = KratosJson.parseToJsonElement(list).jsonObject.field("messages", "Messages")?.jsonArray ?: emptyList()
+            val id = messages.map { it.jsonObject }
                 .firstOrNull { m ->
-                    // Subject/subject casing varies by Mailpit version (search result uses `Subject`) — read either.
                     recipientMatches(m, email) &&
-                        ((m["Subject"] ?: m["subject"])?.jsonPrimitive?.content ?: "").contains(subjectNeedle, ignoreCase = true)
+                        (m.field("Subject", "subject")?.jsonPrimitive?.content ?: "").contains(subjectNeedle, ignoreCase = true)
                 }
-                ?.get("id")?.jsonPrimitive?.content
+                ?.field("ID", "id")?.jsonPrimitive?.content
             if (id != null) {
                 val msg = client.get("$mailpit/api/v1/message/$id").bodyAsText()
-                return KratosJson.parseToJsonElement(msg).jsonObject["Text"]?.jsonPrimitive?.content ?: ""
+                return KratosJson.parseToJsonElement(msg).jsonObject.field("Text", "text")?.jsonPrimitive?.content ?: ""
             }
             delay(500)
         }
         error("no Mailpit mail to $email matching subject '$subjectNeedle'") // no secret in this message
     }
 
-    /** True if a Mailpit search-result message was sent to exactly [email] (To/Address casing varies by version). */
+    /** True if a Mailpit search-result message was sent to exactly [email] (To/Address casing tolerant). */
     private fun recipientMatches(msg: JsonObject, email: String): Boolean {
-        val to = (msg["To"] ?: msg["to"])?.jsonArray ?: return false
+        val to = msg.field("To", "to")?.jsonArray ?: return false
         return to.any { entry ->
-            val addr = (entry.jsonObject["Address"] ?: entry.jsonObject["address"])?.jsonPrimitive?.content
-            addr.equals(email, ignoreCase = true)
+            entry.jsonObject.field("Address", "address")?.jsonPrimitive?.content.equals(email, ignoreCase = true)
         }
     }
 
