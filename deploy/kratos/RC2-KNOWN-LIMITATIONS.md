@@ -35,6 +35,15 @@ it does **not** equalise **timing**: absent identifiers are still not dummy-hash
   own wording is verbatim: *"does not mitigate all possible attack vectors yet."* There is **no** separate
   v1.3.0 dummy-hash / constant-time login knob.
 
+**The timing PROFILE is run-variable — the leak is a statistical distribution, not a fixed profile.** Across
+runs the `absent` branch measured ~11 ms and, on a later run, ~487 ms (existing/wrong-password stayed a stable
+~81 ms — the argon2 cost), i.e. the ratio can even INVERT run-to-run under host noise (GC/JIT/DB/cleanup
+contention). This is **run noise, not a regression**: a 487 ms absent is a latency outlier, NOT a dummy-hash
+(a dummy-hash would land absent ≈ 81 ms). Consequences: (1) the RC2 probe **reports raw `timings_ms`** and does
+not gate on a fixed ratio (any such gate would be flaky); (2) any mitigation MUST NOT assume a fixed timing
+profile — the exploitable signal is the *statistical distribution* over many samples, which is exactly what the
+per-IP throttle (CYP-179) raises the cost of sampling.
+
 ## Mitigation (accepted posture)
 
 1. **Content leak: CLOSED** — `mitigate:true` + the modern flows; the probe's teeth-demo confirms a
