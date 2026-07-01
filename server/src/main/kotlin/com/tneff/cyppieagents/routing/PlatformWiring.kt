@@ -31,6 +31,9 @@ fun Application.installPlatform(
     // [com.tneff.cyppieagents.auth.KratosIdentityProvider] + the durable [com.tneff.cyppieagents.auth.SqliteRoleStore]
     // so a verified human OPERATOR also authenticates. ONE instance is shared across every operator route.
     authDeps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(booted.tokenRegistry),
+    // CYP-181 / P2.4: the Kratos settings shim for `/api/auth/settings/*`. Null (dev/no-auth) → the routes
+    // are not mounted (no human self-management surface without Kratos); a real boot passes it.
+    settingsClient: com.tneff.cyppieagents.auth.KratosSettingsClient? = null,
 ) {
     install(ContentNegotiation) { json(CommJson) }
     install(com.tneff.cyppieagents.auth.CsrfCookieIssuer) // CYP-178 RC5: issue the double-submit CSRF cookie
@@ -103,6 +106,8 @@ fun Application.installPlatform(
         // CYP-93: cross-project channel-share — GET participant (disclosure), PUT/DELETE operator/owner
         // (the authorization gate, fail-closed); the AclMatrix permit takes effect via HubState.refreshShares.
         channelShareRoutes(booted.state, booted.channelShares, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
+        // CYP-181 / P2.4: authenticated self-management (change pw/email) — MEMBER-guarded thin Kratos shim.
+        settingsClient?.let { settingsRoutes(authDeps, it) }
     }
 }
 
@@ -180,6 +185,11 @@ fun Application.bootPlatform(
             nowMs = { System.currentTimeMillis() },
         )
     } ?: com.tneff.cyppieagents.auth.AuthDeps(booted.tokenRegistry)
-    installPlatform(booted, authDeps)
+    // CYP-181 / P2.4: the Kratos settings shim, wired only when Kratos is configured (the human self-
+    // management surface). Same public base URL as the whoami provider.
+    val settingsClient = config.auth?.let {
+        com.tneff.cyppieagents.auth.KratosSettingsClient(publicBaseUrl = it.kratosPublicUrl)
+    }
+    installPlatform(booted, authDeps, settingsClient)
     return booted
 }
