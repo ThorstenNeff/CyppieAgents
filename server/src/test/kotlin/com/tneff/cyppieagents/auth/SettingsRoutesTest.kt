@@ -48,16 +48,24 @@ class SettingsRoutesTest {
     private val fakeKratos = embeddedServer(Netty, port = 0) {
         routing {
             get("/self-service/settings/api") {
+                if (poisoned(call)) { call.respondText("both-headers-poisoned", status = HttpStatusCode.InternalServerError); return@get }
                 val base = "http://localhost:${call.request.local.localPort}"
                 call.respondText("""{"ui":{"action":"$base/self-service/settings?flow=f1"}}""", ContentType.Application.Json)
             }
             post("/self-service/settings") {
+                if (poisoned(call)) { call.respondText("both-headers-poisoned", status = HttpStatusCode.InternalServerError); return@post }
                 receivedSessionToken = call.request.header("X-Session-Token")
                 // Distinctive outcome the shim must pass through UNCHANGED.
                 call.respondText("""{"state":"success","kratos":"real-response"}""", ContentType.Application.Json, HttpStatusCode.OK)
             }
         }
     }.start(wait = false)
+
+    // Model Kratos v1.3.0: a request carrying BOTH X-Session-Token AND the ory_kratos_session cookie is
+    // poisoned → 500 (the real-path bug). If the settings shim ever regresses to sending both, the passthrough
+    // test reds — the teeth that were missing when only X-Session-Token was read.
+    private fun poisoned(call: io.ktor.server.application.ApplicationCall): Boolean =
+        call.request.header("X-Session-Token") != null && call.request.cookies["ory_kratos_session"] != null
     private val kratosPort = runBlocking { fakeKratos.engine.resolvedConnectors().first().port }
 
     @AfterTest fun stop() = fakeKratos.stop(100, 100)
