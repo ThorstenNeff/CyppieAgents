@@ -1,0 +1,84 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-176 (Epic: End-User-Authentifizierung & Login-Gate)",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf PO-Gegenlesen; 2 §-Asks PO-eingefroren 2026-07-01 (enumeration-sicher / hartes Gate / orthogonal)",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop 09def21",
+    "note": "Semantische Tokens fuer die Auth-Flaeche (Login-Gate + 7 Screens). Komponenten referenzieren Semantik, nie Hex direkt. Ueberwiegend REUSE der TonedHint-Toene (ui/TonedHint.kt) + MaterialTheme-Rollen; genau EIN neuer Layout-Token (AUTH_FORM_MAX_WIDTH). Kein neues Erfolgs-Gruen (Anti-Hype; INFO fuer 'bestaetigt/geaendert' — DS-Luecke notiert in spec §10).",
+    "reuse_note": "Alle Disclosure-Zeilen laufen ueber TonedHint. Fehler=ERROR (content=error), Drosselung=EFFECT_DEFERRED (amber container=tertiaryContainer), Gate=GATED (onSurfaceVariant), Info/neutrale-Bestaetigung=INFO (secondary). Passwortfeld+Reveal = SettingsPanel-Muster (PasswordVisualTransformation + TextButton, kein Emoji CYP-54)."
+  },
+  "semantic": {
+    "auth.error": {
+      "role": "Generischer Auth-Fehler (Login abgelehnt, Register/Reset fehlgeschlagen, Token ungueltig, GitHub-Abbruch). BEWUSST generisch (§-Ask 1, kein Enumeration-Leak). Echtes Rot, echter Fehler.",
+      "tone": "HintTone.ERROR",
+      "content": "error",
+      "glyph": "✕",
+      "reuse": "ui/TonedHint.kt#ERROR",
+      "a11y": "liveRegion = Assertive"
+    },
+    "auth.rateLimited": {
+      "role": "Drosselung 429 (Login/Register/Forgot/Resend). Amber 'Attention', KEIN ERROR-Rot (Nutzer hat nichts falsch gemacht). NIE Fake-'gesendet'.",
+      "tone": "HintTone.EFFECT_DEFERRED",
+      "container": "tertiaryContainer",
+      "onContainer": "onTertiaryContainer",
+      "glyph": "!",
+      "reuse": "ui/TonedHint.kt#EFFECT_DEFERRED",
+      "a11y": "liveRegion = Assertive"
+    },
+    "auth.gate": {
+      "role": "Verify-Gate-Hinweis ('bitte E-Mail bestaetigen'). Neutral — unverifiziert ist KEIN Fehler des Nutzers. Reuse GATED-Ton wie Operator-Gate in Settings/AgentMgmt.",
+      "tone": "HintTone.GATED",
+      "content": "onSurfaceVariant",
+      "glyph": "·",
+      "reuse": "ui/TonedHint.kt#GATED"
+    },
+    "auth.info": {
+      "role": "Neutrale Bestaetigung / Info: enumeration-sichere 'falls Konto…'-Meldung, Resend-Ergebnis, Passwort-Regel, Erfolg ('bestaetigt/geaendert'). Kein Erfolgs-Gruen (Anti-Hype).",
+      "tone": "HintTone.INFO",
+      "content": "secondary",
+      "glyph": "i",
+      "reuse": "ui/TonedHint.kt#INFO",
+      "a11y": "liveRegion = Polite (bei neutralen Bestaetigungen)"
+    },
+    "auth.field": {
+      "role": "Eingabefeld (E-Mail/Passwort). OutlinedTextField + label + isError + contentDescription. Passwort maskiert per Default (PasswordVisualTransformation), Reveal opt-in.",
+      "component": "OutlinedTextField",
+      "error": "isError → Material error-Outline (Farbe nie allein: zusaetzlich TonedHint-Fehlerzeile)",
+      "reuse": "settings/SettingsPanel.kt (API-Key-Feld) + agentmgmt LabeledField"
+    },
+    "auth.passwordReveal": {
+      "role": "Passwort-Sichtbarkeits-Toggle. TextButton mit Text-Label (KEIN Emoji, CYP-54); Label doppelt als contentDescription (a11y_auth_password_show/_hide).",
+      "component": "TextButton",
+      "reuse": "settings/SettingsPanel.kt#API_KEY_REVEAL (CYP-99-Muster)"
+    },
+    "auth.title": {
+      "role": "Screen-Titel als a11y-heading.",
+      "typography": "titleMedium",
+      "content": "onSurface",
+      "semantics": "heading()",
+      "reuse": "settings/SettingsPanel.kt#SectionHeading"
+    }
+  },
+  "layout": {
+    "AUTH_FORM_MAX_WIDTH": {
+      "value": "400.dp",
+      "role": "NEU (einziger neuer Token). Max-Breite der zentrierten Auth-Formular-Card. Phone: volle Breite mit Padding; Desktop: zentriert gecappt (nicht edge-to-edge). Adaptiv-Haltung wie CYP-156/159 (widthIn(max=…)); nicht window-abhaengig, an der Card gemessen.",
+      "measured_at": "Formular-Card-Innenbreite",
+      "note": "Analog SWITCHER_HINT_MAX_WIDTH (CYP-159) — ein einfacher max-width-Cap, kein Responsive-Breakpoint."
+    },
+    "auth.spacing": {
+      "value": "16.dp zwischen Feldgruppen, 8.dp innerhalb (Reuse bestehender Column-spacedBy-Werte)",
+      "role": "Reuse — keine neuen Spacing-Konstanten."
+    }
+  },
+  "validation": {
+    "new_tokens": 1,
+    "new_token_names": ["AUTH_FORM_MAX_WIDTH"],
+    "reuse_semantic_roles": 6,
+    "no_hardcoded_hex": true,
+    "no_new_success_green": "bewusst — Anti-Hype; DS-Luecke in spec §10 notiert",
+    "no_secrets": "keine Token/Passwoerter/Endpunkte in Tokens"
+  }
+}
