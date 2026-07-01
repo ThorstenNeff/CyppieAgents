@@ -4,12 +4,14 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.AuthMe
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.ktor.server.request.header
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -49,13 +51,27 @@ class HttpAuthRepositoryE2eTest {
         val server = embeddedServer(Netty, port = 0) {
             routing {
                 get("/api/auth/me") {
-                    call.respondText(CommJson.encodeToString(AuthMe.serializer(), fx.me), ContentType.Application.Json)
+                    // Public content-free whoami: it reflects the caller's CREDENTIAL — no cookie/token → not
+                    // authenticated (so a cleared recovery session correctly reads as None).
+                    val hasCred = !call.request.cookies["ory_kratos_session"].isNullOrBlank() ||
+                        !call.request.header("X-Session-Token").isNullOrBlank()
+                    val me = if (hasCred) fx.me else AuthMe(authenticated = false)
+                    call.respondText(CommJson.encodeToString(AuthMe.serializer(), me), ContentType.Application.Json)
                 }
                 get("/.ory/kratos/public/sessions/whoami") {
                     call.respondText(fx.whoami, ContentType.Application.Json)
                 }
                 get("/.ory/kratos/public/self-service/{kind}/api") {
                     val kind = call.parameters["kind"]
+                    // Cookie-on-API-flow blockade: a recovery ory_kratos_session cookie present at /login/api → 400
+                    // (the post-reset re-login must be cookie-free — the recovery session must be cleared first).
+                    if (kind == "login" && !call.request.cookies["ory_kratos_session"].isNullOrBlank()) {
+                        call.respondText(
+                            """{"error":{"reason":"Cookie present on API-initiated login flow — blocked"}}""",
+                            ContentType.Application.Json, HttpStatusCode.BadRequest,
+                        )
+                        return@get
+                    }
                     call.respondText(
                         """{"id":"f1","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/$kind"}}""",
                         ContentType.Application.Json,
@@ -103,12 +119,15 @@ class HttpAuthRepositoryE2eTest {
         }
         server.start(wait = false)
         fx.port = server.engine.resolvedConnectors().first().port
-        // HttpCookies so the mock's Set-Cookie is consumed into the JAR (exactly as the live client does) —
-        // the fidelity core: sessionEstablished must read the jar, not the (now-empty) response header.
-        val client = HttpClient(CIO) { install(HttpCookies) }
+        // HttpCookies with a SHARED storage: the mock's Set-Cookie is consumed into this jar (as the live
+        // client does), sessionEstablished reads the jar, and the repo clears the recovery cookie via it.
+        val cookieStorage = AcceptAllCookiesStorage()
+        val client = HttpClient(CIO) { install(HttpCookies) { storage = cookieStorage } }
         try {
             val store = InMemoryAuthSessionStore()
-            val repo = HttpAuthRepository(client, "http://127.0.0.1:${fx.port}", sessionStore = store)
+            val repo = HttpAuthRepository(
+                client, "http://127.0.0.1:${fx.port}", sessionStore = store, cookieStorage = cookieStorage,
+            )
             block(fx, repo, store)
         } finally {
             client.close()
@@ -125,7 +144,8 @@ class HttpAuthRepositoryE2eTest {
 
     @Test
     fun session_verified_mapsVerified() =
-        withFixture({ me = AuthMe(authenticated = true, role = "MEMBER", verified = true) }) { _, repo, _ ->
+        withFixture({ me = AuthMe(authenticated = true, role = "MEMBER", verified = true) }) { _, repo, store ->
+            store.setSessionToken("sess") // a credential present → /api/auth/me reflects the logged-in state
             assertEquals(SessionState.Verified, repo.session())
         }
 
@@ -133,7 +153,8 @@ class HttpAuthRepositoryE2eTest {
     fun session_unverified_mapsUnverified_withSelfReflectingEmail() = withFixture({
         me = AuthMe(authenticated = true, role = null, verified = false)
         whoami = """{"identity":{"traits":{"email":"pending@example.com"}}}"""
-    }) { _, repo, _ ->
+    }) { _, repo, store ->
+        store.setSessionToken("sess")
         val s = repo.session()
         assertIs<SessionState.Unverified>(s)
         assertEquals("pending@example.com", s.email) // boot echo from Kratos whoami (no platform PII)
@@ -294,6 +315,51 @@ class HttpAuthRepositoryE2eTest {
         }
     }) { _, repo, _ ->
         assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("code", "brandNewPw"))
+    }
+
+    @Test
+    fun setNewPassword_success_clearsSession_postResetStateIsNone() = withFixture({
+        // Security: the recovery session is authorised by the emailed CODE, not the new password → it must NOT
+        // linger as an implicit login. `me` is authenticated, so if the recovery cookie were NOT cleared the
+        // post-reset session() would wrongly read authenticated (this reddens on the "clear removed" mutation).
+        me = AuthMe(authenticated = true, role = "MEMBER", verified = true)
+        onSubmit = { kind, _ ->
+            when (kind) {
+                "recovery" -> SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""", setCookie = "ory_kratos_session=recov; Path=/")
+                "settings" -> SubmitResp(200, "{}")
+                else -> SubmitResp(200, "{}")
+            }
+        }
+    }) { _, repo, _ ->
+        assertEquals(SetPasswordResult.Ok, repo.setNewPassword("code", "newPw"))
+        assertEquals(SessionState.None, repo.session()) // cleared → not implicitly logged in
+    }
+
+    @Test
+    fun setNewPassword_success_clearsSession_postResetLoginIsCookieFree() = withFixture({
+        me = AuthMe(authenticated = true, role = null, verified = false) // the fresh re-login → unverified session
+        onSubmit = { kind, _ ->
+            when (kind) {
+                "recovery" -> SubmitResp(422, """{"error":{"id":"browser_location_change_required"}}""", setCookie = "ory_kratos_session=recov; Path=/")
+                "settings" -> SubmitResp(200, "{}")
+                "login" -> SubmitResp(200, """{"session_token":"login-sess"}""")
+                else -> SubmitResp(200, "{}")
+            }
+        }
+    }) { _, repo, _ ->
+        assertEquals(SetPasswordResult.Ok, repo.setNewPassword("code", "newPw"))
+        // Re-login with the new password must be cookie-free: /login/api 400s if the recovery cookie lingers.
+        assertIs<LoginResult.Unverified>(repo.login("user@example.com", "newPw"))
+    }
+
+    @Test
+    fun setNewPassword_failure_doesNotClearSession() = withFixture({
+        onSubmit = { kind, _ -> if (kind == "recovery") SubmitResp(403, "{}") else SubmitResp(200, "{}") }
+    }) { _, repo, store ->
+        store.setSessionToken("pre-existing")
+        assertEquals(SetPasswordResult.TokenInvalid, repo.setNewPassword("wrong-code", "newPw"))
+        // Clear happens ONLY on the success path — a failed reset must not touch existing state.
+        assertEquals("pre-existing", store.sessionToken())
     }
 
     @Test

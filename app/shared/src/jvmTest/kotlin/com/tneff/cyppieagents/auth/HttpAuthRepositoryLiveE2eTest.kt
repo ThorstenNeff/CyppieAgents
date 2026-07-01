@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.auth
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
@@ -71,9 +72,10 @@ class HttpAuthRepositoryLiveE2eTest {
     private fun live(block: suspend (HttpAuthRepository, InMemoryAuthSessionStore) -> Unit) {
         if (!enabled) return // no-op without the stack → the normal gate stays green
         runBlocking {
-            val client = HttpClient(CIO) { install(HttpCookies) }
+            val cookieStorage = AcceptAllCookiesStorage()
+            val client = HttpClient(CIO) { install(HttpCookies) { storage = cookieStorage } }
             val store = InMemoryAuthSessionStore()
-            val repo = HttpAuthRepository(client, origin, kratosBaseUrl = proxy, sessionStore = store)
+            val repo = HttpAuthRepository(client, origin, kratosBaseUrl = proxy, sessionStore = store, cookieStorage = cookieStorage)
             try {
                 block(repo, store)
             } finally {

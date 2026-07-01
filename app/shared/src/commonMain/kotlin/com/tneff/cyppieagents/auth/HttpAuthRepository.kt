@@ -3,8 +3,11 @@ package com.tneff.cyppieagents.auth
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.AuthMe
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.cookies.CookiesStorage
 import io.ktor.client.plugins.cookies.cookies
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.http.Cookie
+import io.ktor.http.Url
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -49,6 +52,12 @@ class HttpAuthRepository(
     private val platformBaseUrl: String,
     private val kratosBaseUrl: String = "$platformBaseUrl/.ory/kratos/public",
     private val sessionStore: AuthSessionStore = InMemoryAuthSessionStore(),
+    /**
+     * The client's cookie jar storage (the SAME instance installed in its `HttpCookies`) — needed to
+     * **clear** the browser `ory_kratos_session` after a password reset (the elevated recovery session must
+     * not linger; §setNewPassword). Null → only the native token is cleared (browser targets pass it).
+     */
+    private val cookieStorage: CookiesStorage? = null,
 ) : AuthRepository {
 
     private val platform = platformBaseUrl.trimEnd('/')
@@ -237,10 +246,29 @@ class HttpAuthRepository(
             val settingsBody = settings.bodyAsText()
             when {
                 settings.status.value == 429 -> SetPasswordResult.RateLimited(retryAfterOf(settings))
-                isBrowserFlowSuccess(settings.status.value, settingsBody) -> SetPasswordResult.Ok
+                isBrowserFlowSuccess(settings.status.value, settingsBody) -> {
+                    clearRecoverySession() // success ONLY: terminate the elevated recovery session (no implicit login)
+                    SetPasswordResult.Ok
+                }
                 else -> SetPasswordResult.TokenInvalid
             }
         }
+
+    /**
+     * Terminate the elevated recovery session **after a successful password change** (Option a, security
+     * hygiene): the recovery session was authorised by the emailed CODE, not the new password, so it must not
+     * linger as an implicit login (least-privilege / re-auth). Drops the native token AND expires the browser
+     * `ory_kratos_session` cookie in the jar, so the post-reset state is logged-out and a subsequent `/login`
+     * is cookie-free (a recovery cookie on the api login flow would 400). Called ONLY on the success path.
+     */
+    private suspend fun clearRecoverySession() {
+        sessionStore.clear()
+        recoveryAction = null
+        recoveryCsrf = null
+        runCatching {
+            cookieStorage?.addCookie(Url(kratos), Cookie(name = "ory_kratos_session", value = "", maxAge = 0, path = "/"))
+        }
+    }
 
     // --- §7.6 email verification (verify deep-link). Reconciled at the live gate. ---
 
