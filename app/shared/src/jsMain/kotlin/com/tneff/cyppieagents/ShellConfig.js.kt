@@ -11,20 +11,21 @@ package com.tneff.cyppieagents
  */
 private fun rawOperatorToken(): String = js("(globalThis.CYPPIE_OPERATOR_TOKEN || '').toString()")
 
+/** CYP-188 — the page origin (`window.location.origin`), e.g. `https://app.example.com`. Undefined-safe. */
+private fun browserOrigin(): String = js("(window.location.origin || '').toString()")
+
 /**
- * Web (JS) shell config (CYP-152 — operator-token carry).
+ * Web (JS) shell config (CYP-152 operator-token carry + CYP-188 same-origin base).
  *
- * Production default = [ShellConfig.dev] (local hub on 8787, **no operator token**) — a normally
- * served web app stays a fail-closed participant view. The web has no shell env; the deploy-/launch
- * environment supplies the operator token as a host-injected global (see [rawOperatorToken]), the web
- * analogue of the desktop `OPERATOR_TOKEN` env var / iOS `simctl` env. It is **never baked** into the
- * shipped `.js` bundle and **never logged**.
+ * CYP-188: the base is the **page origin** ([browserOrigin]) — the deployed SPA is served same-origin with the
+ * API + Kratos proxy, so the browser `ory_kratos_session` session cookie flows on the shell's data reads/sockets
+ * (the P2a browser path). CORS keeps `allowCredentials=false`, so a cross-origin base would drop the cookie →
+ * app dead for a logged-in end-user.
  *
- * Security (mirrors iOS CYP-114 / Android CYP-151): **absent OR blank/whitespace-only →
- * `operatorToken = null` → fail-closed** (a set-but-blank global must never read as a valid operator).
+ * The deploy-/launch environment supplies the operator token as a host-injected global (see [rawOperatorToken]),
+ * the web analogue of the desktop `OPERATOR_TOKEN` env var. It is **never baked** into the shipped `.js` bundle
+ * and **never logged**; the **public** build injects nothing → `operatorToken = null` → fail-closed participant
+ * view. Absent OR blank/whitespace-only → null (a set-but-blank global must never read as a valid operator).
  */
-actual fun defaultShellConfig(): ShellConfig {
-    val base = ShellConfig.dev()
-    val operatorToken = rawOperatorToken().takeIf { it.isNotBlank() }
-    return if (operatorToken != null) base.copy(operatorToken = operatorToken) else base
-}
+actual fun defaultShellConfig(): ShellConfig =
+    ShellConfig.forOrigin(browserOrigin(), rawOperatorToken().takeIf { it.isNotBlank() })

@@ -23,6 +23,30 @@ data class ShellConfig(
             agentToken = { id -> "dev-token-$id" },
             operatorToken = null,
         )
+
+        /**
+         * CYP-188 — derive the shell config from the page [origin] (web: `window.location.origin`). The deployed
+         * SPA is served **same-origin** with the API + Kratos proxy, so the browser `ory_kratos_session` cookie
+         * flows on the shell's data reads/sockets (the P2a browser path). This is load-bearing: CORS keeps
+         * `allowCredentials=false` (Cors.kt), so a cross-origin base would drop the session cookie → app dead for
+         * a logged-in end-user. The WS base derives ws/wss from the origin's http/https scheme. [operatorToken]
+         * stays runtime-injected — the **public** build passes `null` (tokenless); an operator serve passes the
+         * host-injected token (break-glass) — never baked into the artifact (CYP-152).
+         */
+        fun forOrigin(origin: String, operatorToken: String? = null): ShellConfig {
+            val http = origin.trimEnd('/')
+            val ws = when {
+                http.startsWith("https://") -> "wss://" + http.removePrefix("https://")
+                http.startsWith("http://") -> "ws://" + http.removePrefix("http://")
+                else -> http // already ws(s) / a bare host — pass through unchanged
+            }
+            return ShellConfig(
+                hubWsBaseUrl = ws,
+                hubHttpBaseUrl = http,
+                agentToken = { id -> "dev-token-$id" },
+                operatorToken = operatorToken,
+            )
+        }
     }
 }
 

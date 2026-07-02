@@ -15,12 +15,15 @@
                               repeatCount="indefinite"/>
         </circle>
     </svg>
-    <!-- CYP-152: operator context is supplied by the DEPLOY environment, never baked into the bundle.
-         To serve this build as an OPERATOR, the host injects the token as a global BEFORE the app
-         bundle below loads, e.g.:
-             <script>globalThis.CYPPIE_OPERATOR_TOKEN = "…token from the deploy/launch env…";</script>
-         Omitted by default → fail-closed participant view (defaultShellConfig reads it; absent/blank →
-         null). The token is NEVER committed to this file and NEVER part of the compiled .js/.wasm. -->
+    <!-- CYP-152 / CYP-188 — PUBLIC build: this file is TOKENLESS by construction and MUST stay so. The operator
+         token is supplied ONLY by the DEPLOY environment as a host-injected global, at serve time, BEFORE the
+         bundle loads — it is NEVER committed here and NEVER part of the compiled .js/.wasm. The public serve
+         injects nothing → defaultShellConfig reads absent/blank → operatorToken=null → fail-closed participant
+         view (CYP-188 same-origin base means the ory_kratos_session session cookie carries a logged-in end-user).
+         Operator serve is a SEPARATE deploy concern (build-separation is ours, serve-separation + a tokenless
+         re-verify of the served bundle is the deploy's). Do NOT add an active operator-token <script> to this
+         public file; the injection below is the deploy's global, e.g. (NOT present in this build):
+             <script>globalThis.CYPPIE_OPERATOR_TOKEN = "…from the deploy/launch env…";</script> -->
     <script type="application/javascript" src="webApp.js"></script>
 </body>
 </html>
