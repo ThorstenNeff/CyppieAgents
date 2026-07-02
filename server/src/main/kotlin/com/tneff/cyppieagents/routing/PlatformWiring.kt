@@ -34,6 +34,9 @@ fun Application.installPlatform(
     // CYP-181 / P2.4: the Kratos settings shim for `/api/auth/settings/*`. Null (dev/no-auth) → the routes
     // are not mounted (no human self-management surface without Kratos); a real boot passes it.
     settingsClient: com.tneff.cyppieagents.auth.KratosSettingsClient? = null,
+    // CYP-179 / §B(b): the register-wrapper mediator for `POST /api/auth/register`. Null (dev/no-auth, or no
+    // kratosAdminUrl) → the route is not mounted (fail-closed: no app register path); a real boot passes it.
+    registerMediator: com.tneff.cyppieagents.auth.RegisterMediator? = null,
 ) {
     install(ContentNegotiation) { json(CommJson) }
     install(com.tneff.cyppieagents.auth.CsrfCookieIssuer) // CYP-178 RC5: issue the double-submit CSRF cookie
@@ -108,6 +111,10 @@ fun Application.installPlatform(
         channelShareRoutes(booted.state, booted.channelShares, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
         // CYP-181 / P2.4: authenticated self-management (change pw/email) — MEMBER-guarded thin Kratos shim.
         settingsClient?.let { settingsRoutes(authDeps, it) }
+        // CYP-179 / §B(b): the platform register-wrapper — PUBLIC by design (anyone may register), returns a
+        // branch-invariant response so registration reveals no account existence (closes RC2 §B). Mounted only
+        // when the Kratos admin URL is configured (else no app register path — fail-closed).
+        registerMediator?.let { registerRoutes(it) }
         // CYP-182 / P3: the content-free client whoami read — PUBLIC by design (reports {authenticated:false}
         // to an unauthenticated caller, never a 401); no id/email/secrets.
         authMeRoutes(authDeps)
@@ -199,6 +206,16 @@ fun Application.bootPlatform(
     val settingsClient = config.auth?.let {
         com.tneff.cyppieagents.auth.KratosSettingsClient(publicBaseUrl = it.kratosPublicUrl)
     }
-    installPlatform(booted, authDeps, settingsClient)
+    // CYP-179 / §B(b): the register-wrapper — wired only when the Kratos ADMIN URL is configured (loopback,
+    // RC4). Its branch-divergent side-effects fire-and-forget on a dedicated supervised scope (off the response
+    // path → timing parity, MUST-2); a failed side-effect is swallowed branch-blind inside the mediator.
+    val registerMediator = config.auth?.kratosAdminUrl?.let { adminUrl ->
+        val backend = com.tneff.cyppieagents.auth.HttpKratosRegisterBackend(adminBaseUrl = adminUrl)
+        val sideEffectScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+        )
+        com.tneff.cyppieagents.auth.RegisterMediator(backend, sideEffectScope)
+    }
+    installPlatform(booted, authDeps, settingsClient, registerMediator)
     return booted
 }
