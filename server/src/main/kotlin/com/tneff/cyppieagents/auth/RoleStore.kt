@@ -21,12 +21,18 @@ enum class AuthRole { OPERATOR, MEMBER }
  * [SqliteRoleStore] (durable, DB-enforced single OPERATOR); [InMemoryRoleStore] is the process-local
  * convenience default for the token-only [AuthDeps] path (the operator-token path never touches it).
  */
+/** A single role assignment row — CYP-186 BE3a, for the OPERATOR-only workspace roster. */
+data class RoleAssignment(val identityId: String, val role: AuthRole, val grantedAtMs: Long)
+
 interface RoleStore {
     /** The role of [identityId] — the assigned role, or [AuthRole.MEMBER] by default (never null). */
     suspend fun roleOf(identityId: String): AuthRole
 
     /** Idempotently assign [identityId] a role and return it: OPERATOR iff none exists yet, else MEMBER. */
     suspend fun ensureAssigned(identityId: String, nowMs: Long): AuthRole
+
+    /** All assignments (identityId → role) — CYP-186 BE3a workspace roster (OPERATOR-only surface). */
+    suspend fun list(): List<RoleAssignment>
 }
 
 /**
@@ -47,6 +53,9 @@ class InMemoryRoleStore : RoleStore {
         assignments[identityId] = role
         role
     }
+
+    override suspend fun list(): List<RoleAssignment> =
+        mutex.withLock { assignments.map { RoleAssignment(it.key, it.value, 0L) } }
 }
 
 /**
@@ -121,6 +130,20 @@ class SqliteRoleStore(
                 ps.setString(1, identityId); ps.setLong(2, nowMs); ps.executeUpdate()
             }
             AuthRole.MEMBER
+        }
+    }
+
+    override suspend fun list(): List<RoleAssignment> = withContext(io) {
+        mutex.withLock {
+            conn.prepareStatement("SELECT identity_id, role, granted_at FROM role_assignments ORDER BY granted_at").use { ps ->
+                ps.executeQuery().use { rs ->
+                    buildList {
+                        while (rs.next()) {
+                            add(RoleAssignment(rs.getString(1), AuthRole.valueOf(rs.getString(2)), rs.getLong(3)))
+                        }
+                    }
+                }
+            }
         }
     }
 
