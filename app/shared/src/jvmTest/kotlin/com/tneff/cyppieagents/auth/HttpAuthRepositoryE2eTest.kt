@@ -224,6 +224,18 @@ class HttpAuthRepositoryE2eTest {
     }
 
     @Test
+    fun currentSessionToken_reflectsCapturedNativeToken_forShellThreading() = withFixture({
+        me = AuthMe(authenticated = true, role = "MEMBER", verified = true)
+        onSubmit = { _, _ -> SubmitResp(200, """{"session_token":"live-tok"}""") }
+    }) { _, repo, _ ->
+        // CYP-188: this is the exact value App threads into the shared HTTP/WS client (X-Session-Token). Null before
+        // login (no session), the captured native token after — so a session-only user authenticates its reads.
+        assertEquals(null, repo.currentSessionToken())
+        repo.login("user@example.com", "hunter2")
+        assertEquals("live-tok", repo.currentSessionToken())
+    }
+
+    @Test
     fun login_unverified_mapsUnverifiedWithTypedEmail() = withFixture({
         me = AuthMe(authenticated = true, role = null, verified = false)
     }) { _, repo, _ ->

@@ -1,7 +1,9 @@
 package com.tneff.cyppieagents.net
 
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.request.header
 
 /**
  * Keep-alive ping interval for the shared WS client (CYP-115). Idle `/ws/comm` + `/ws/lifecycle` sockets
@@ -19,8 +21,18 @@ const val WS_PING_INTERVAL_MILLIS = 15_000L
  * JVM/CIO engine never churns idle sockets, so this is intentionally **not** a Darwin-green claim from the
  * JVM gate (the JVM test only asserts the keep-alive is configured).
  */
-fun sharedWsHttpClient(): HttpClient = HttpClient {
+fun sharedWsHttpClient(sessionToken: () -> String? = { null }): HttpClient = HttpClient {
     install(WebSockets) {
         pingIntervalMillis = WS_PING_INTERVAL_MILLIS
+    }
+    // CYP-188 — session-credential seam. A signed-in user with NO operator token must still authenticate every
+    // data read AND WS handshake, else it sends an empty `Bearer ` → the server 401s the whole app. NATIVE
+    // (JVM/iOS/Android): attach the Kratos session as the `X-Session-Token` header (read live from the auth
+    // session store via [sessionToken]) on every request, incl. the WS upgrade. BROWSER (Wasm/JS): [sessionToken]
+    // is null — a browser session's credential is the same-origin `ory_kratos_session` cookie the engine sends
+    // automatically — so no header is added, and the request never carries BOTH the header and the cookie (which
+    // the server rejects with 500). The operator token stays break-glass (each repo still sends its own Bearer).
+    install(DefaultRequest) {
+        sessionToken()?.let { header("X-Session-Token", it) }
     }
 }
