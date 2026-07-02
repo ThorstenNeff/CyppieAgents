@@ -61,6 +61,13 @@ data class AuthConfig(
     /** whoami request timeout (ms) — bounded so a hung Kratos never hangs the guard (RC1/RC2). */
     val whoamiTimeoutMs: Long = 3_000,
     /**
+     * CYP-179 / §B(b) — the Kratos **ADMIN** base URL (e.g. `http://127.0.0.1:4434`), LOOPBACK-only (RC4:
+     * the admin API is never internet-exposed). Set → the platform register-wrapper (`POST /api/auth/register`)
+     * is mounted, closing the RC2 §B registration-enumeration leak; it becomes the ONLY app register path.
+     * Defaulted null so pre-CYP-179 configs load unchanged and the wrapper stays fail-closed (not mounted).
+     */
+    val kratosAdminUrl: String? = null,
+    /**
      * CYP-186 C.2 — deploy kill-switch for the static operator token. Overridden at boot by the
      * `CYPPIE_OPERATOR_TOKEN_DISABLED` env (env wins). Never settable at runtime / by any endpoint. When set,
      * the token stops satisfying the OPERATOR gate ONCE a role-OPERATOR exists (never-lock-out) — C→A collapse.

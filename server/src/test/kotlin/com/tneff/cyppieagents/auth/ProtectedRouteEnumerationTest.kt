@@ -61,6 +61,9 @@ class ProtectedRouteEnumerationTest {
         // CYP-182: the client whoami — public by design (reports {authenticated:false} to an unauthenticated
         // caller instead of a 401) and content-free (no id/email/secrets). Audited here as intentionally open.
         "GET /api/auth/me",
+        // CYP-179 / §B(b): the register-wrapper — public by design (anyone may register) and branch-INVARIANT
+        // (a new and an existing email get the identical response; see RegisterRoutesTest). Audited as open here.
+        "POST /api/auth/register",
     )
 
     @Test
@@ -68,7 +71,7 @@ class ProtectedRouteEnumerationTest {
         lateinit var app: Application
         application {
             app = this
-            installPlatform(bootFake(), settingsClient = com.tneff.cyppieagents.auth.KratosSettingsClient("http://localhost:1"))
+            installPlatform(bootFake(), settingsClient = com.tneff.cyppieagents.auth.KratosSettingsClient("http://localhost:1"), registerMediator = fakeRegisterMediator())
         }
         startApplication() // materialize the application + routing tree
 
@@ -95,7 +98,7 @@ class ProtectedRouteEnumerationTest {
         lateinit var app: Application
         application {
             app = this
-            installPlatform(bootFake(), settingsClient = com.tneff.cyppieagents.auth.KratosSettingsClient("http://localhost:1"))
+            installPlatform(bootFake(), settingsClient = com.tneff.cyppieagents.auth.KratosSettingsClient("http://localhost:1"), registerMediator = fakeRegisterMediator())
             routing { get("/api/leak") { call.respondText("open") } }
         }
         startApplication()
@@ -157,6 +160,17 @@ class ProtectedRouteEnumerationTest {
         override val stdoutLines: Flow<String> = emptyFlow()
         override suspend fun writeLine(line: String) {}
         override fun destroy() {}
+    }
+
+    // CYP-179: a fake register-wrapper so `POST /api/auth/register` is actually mounted here — the meta-test
+    // then confirms it is present, PUBLIC (no guard), and on the audited allowlist (not a fail-open surprise).
+    private fun fakeRegisterMediator(): RegisterMediator {
+        val backend = object : KratosRegisterBackend {
+            override suspend fun identityExists(email: String) = false
+            override suspend fun createAndVerify(email: String, password: String) {}
+            override suspend fun notifyExisting(email: String) {}
+        }
+        return RegisterMediator(backend, dispatch = {})
     }
 
     private fun bootFake(): BootedPlatform {
