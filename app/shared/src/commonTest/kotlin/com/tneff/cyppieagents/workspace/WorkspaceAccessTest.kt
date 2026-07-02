@@ -29,4 +29,12 @@ class WorkspaceAccessTest {
         // Hybrid C: a break-glass operator token overrides the tier (bootstrap / override path).
         assertTrue(isOperatorAccess(UserTier.MEMBER, operatorToken = "op-token"))
     }
+
+    @Test
+    fun showRoster_onlyForOperatorTier() {
+        // Roster mount is tier-gated (NOT the token) — matches the backend's OPERATOR-only GET. A mutation
+        // that shows it for MEMBER, or hides it for OPERATOR, reddens (§3.2 enumeration seam).
+        assertTrue(showRoster(UserTier.OPERATOR))
+        assertFalse(showRoster(UserTier.MEMBER))
+    }
 }
