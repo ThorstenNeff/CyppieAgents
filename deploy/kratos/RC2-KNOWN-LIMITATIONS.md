@@ -161,10 +161,11 @@ evidence in `P4-OIDC-SPIKE-RUNBOOK.md`).
   not a one-time check.
 - **S2 verified-mapping: verify-then-admit is the SAFE default (kept).** An OIDC identity lands
   platform-`verified=false` — Kratos does not blindly trust the provider's verified flag, so the P1 guard
-  (verified-required) denies it until an on-platform verification (P2.3 flip). The UX cost (GitHub sign-in is
-  not one-click) is an Auftraggeber decision; enabling per-provider "trust the provider's verified flag" is a
-  documented per-provider risk (auto-verify + a provider that surfaces unverified emails = the S1a takeover
-  class). Recommendation: keep the safe default.
+  (verified-required) denies it until an on-platform verification (P2.3 flip). **DECIDED (Auftraggeber,
+  2026-07-02): the secure default (verify-then-admit) is BINDING; one-click / per-provider "trust the
+  provider's verified flag" is NOT chosen.** Rationale on record: per-provider auto-verify + a provider that
+  surfaces unverified emails = the S1a takeover class. GitHub sign-in requires an on-platform verify (CYP-185
+  builds exactly this).
 - **S1b silent auto-merge: GO.** For a GitHub-verified email colliding with an existing password identity,
   Kratos REFUSES the auto-link and pauses at an ownership proof ("email already used — sign in to add github");
   the victim identity is untouched (no `oidc` credential appended, no merge). Login-at-the-account first.
