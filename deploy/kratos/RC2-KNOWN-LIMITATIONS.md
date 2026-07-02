@@ -144,3 +144,34 @@ Kratos's). Instead: a **documented soft post-auth limit**, gated at the same exp
 (**CYP-179**); re-evaluate at the v26 upgrade (which may make the settings flow generic). The shim stays thin
 (pure passthrough), and the residual weakest-of-three vector is thrown into the throttle + localhost-binding
 posture until then.
+
+---
+
+## §D — OIDC "Sign in with GitHub" security posture (CYP-183 / P4, 2026-07-02)
+
+Not a graded *leak* like §A–§C, but the canonical record of the OIDC security decisions (full detail +
+evidence in `P4-OIDC-SPIKE-RUNBOOK.md`).
+
+- **S1a linking-takeover: GO for GitHub, but a PER-PROVIDER HARD gate.** The unverified-secondary-email →
+  auto-link → takeover vector is structurally impossible with GitHub (it never exposes an unverified secondary
+  email in the OIDC claim; the spike proved the victim identity untouched). **Residual:** Kratos's own
+  "refuse to link an unverified email to an existing identity" defense was therefore never exercised. So
+  **before adding ANY future OIDC provider, S1a MUST be re-probed against that provider's unverified-email
+  exposure AND Kratos's link-refusal tested** — the GitHub result does NOT generalize. This is a standing gate,
+  not a one-time check.
+- **S2 verified-mapping: verify-then-admit is the SAFE default (kept).** An OIDC identity lands
+  platform-`verified=false` — Kratos does not blindly trust the provider's verified flag, so the P1 guard
+  (verified-required) denies it until an on-platform verification (P2.3 flip). **DECIDED (Auftraggeber,
+  2026-07-02): the secure default (verify-then-admit) is BINDING; one-click / per-provider "trust the
+  provider's verified flag" is NOT chosen.** Rationale on record: per-provider auto-verify + a provider that
+  surfaces unverified emails = the S1a takeover class. GitHub sign-in requires an on-platform verify (CYP-185
+  builds exactly this).
+- **S1b silent auto-merge: GO.** For a GitHub-verified email colliding with an existing password identity,
+  Kratos REFUSES the auto-link and pauses at an ownership proof ("email already used — sign in to add github");
+  the victim identity is untouched (no `oidc` credential appended, no merge). Login-at-the-account first.
+- **✅ FINAL S1 VERDICT: GO — GitHub-OIDC is safe against email-collision/takeover**, on three independent
+  layers: (1) at-GitHub — unverified secondary emails never reach the OIDC claim (S1a); (2) Kratos — an
+  ownership proof is required before linking to an existing same-email identity (S1b); (3) on-platform — OIDC
+  identities are `verified=false`, so the guard denies until on-platform verify (S2). Residuals (documented,
+  non-blocking): the S1a per-provider gate above (still open, standing). The S2 one-click-UX residual is
+  DECIDED (secure default kept; one-click not chosen).
