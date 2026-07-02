@@ -17,7 +17,12 @@ import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 
 @Composable
 @Preview
-fun App(authRepository: AuthRepository? = null) {
+fun App(
+    authRepository: AuthRepository? = null,
+    // CYP-185: platform hook to open the GitHub OIDC redirect URL externally (§6 — the OAuth dance stays out
+    // of commonMain). Default no-op; a platform entry point wires the real open (Desktop.browse / window nav).
+    onOpenExternalUrl: (String) -> Unit = {},
+) {
     // CYP-176: the login gate wraps the existing desktop (auth-spec §8.1) — it renders the auth screens
     // until AuthState == Verified, then mounts AgentShell unchanged (CYP-15). enableTestTagsAsResourceId()
     // sits at the gate root so Maestro can address both the auth screens and the desktop subtree (CYP-11).
@@ -38,6 +43,7 @@ fun App(authRepository: AuthRepository? = null) {
                 .enableTestTagsAsResourceId()
                 .safeContentPadding()
                 .fillMaxSize(),
+            onOpenExternalUrl = onOpenExternalUrl,
         ) {
             AgentShell(modifier = Modifier.fillMaxSize())
         }

@@ -92,6 +92,13 @@ class HttpAuthRepositoryE2eTest {
                         ContentType.Application.Json,
                     )
                 }
+                // Browser login flow init (OIDC uses it): carries the csrf_token node the repo echoes.
+                get("/.ory/kratos/public/self-service/login/browser") {
+                    call.respondText(
+                        """{"id":"lfb","ui":{"nodes":[{"attributes":{"name":"csrf_token","value":"lcsrf","type":"hidden"}}]}}""",
+                        ContentType.Application.Json,
+                    )
+                }
                 get("/.ory/kratos/public/self-service/settings/browser") {
                     call.respondText(
                         """{"id":"sf","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/settings/action-trap","nodes":[{"attributes":{"name":"csrf_token","value":"csrf-abc","type":"hidden"}}]}}""",
@@ -393,6 +400,31 @@ class HttpAuthRepositoryE2eTest {
     }
 
     // --- logout ---
+
+    // --- GitHub OIDC start (§5) ---
+
+    @Test
+    fun githubStart_redirect_returnsRedirectUrl() = withFixture({
+        // The login flow's oidc/github submit answers with a browser-location-change to GitHub.
+        onSubmit = { kind, _ ->
+            if (kind == "login") {
+                SubmitResp(422, """{"error":{"id":"browser_location_change_required"},"redirect_browser_to":"https://github.test/login/oauth/authorize?state=abc"}""")
+            } else {
+                SubmitResp(200, "{}")
+            }
+        }
+    }) { _, repo, _ ->
+        val r = repo.githubStart()
+        assertIs<GithubStart.Redirect>(r)
+        assertEquals("https://github.test/login/oauth/authorize?state=abc", r.url)
+    }
+
+    @Test
+    fun githubStart_noRedirect_returnsError() = withFixture({
+        onSubmit = { kind, _ -> if (kind == "login") SubmitResp(400, """{"ui":{"messages":[{"text":"nope"}]}}""") else SubmitResp(200, "{}") }
+    }) { _, repo, _ ->
+        assertEquals(GithubStart.Error, repo.githubStart())
+    }
 
     @Test
     fun logout_clearsSessionToken() = withFixture { _, repo, store ->

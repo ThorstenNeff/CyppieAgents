@@ -34,8 +34,8 @@ sealed interface AuthUiState {
     /** Boot session probe in flight (§5.3) — no login flash before the probe answers. */
     data object Loading : AuthUiState
 
-    /** The login hub. */
-    data class Unauthenticated(val phase: Phase = Phase.Idle) : AuthUiState
+    /** The login hub. [github] carries the P2/P4 GitHub-OIDC sub-state (auth-spec §6). */
+    data class Unauthenticated(val phase: Phase = Phase.Idle, val github: GithubUiState = GithubUiState.Idle) : AuthUiState
 
     /** Register sub-screen. */
     data class Register(val phase: Phase = Phase.Idle) : AuthUiState
@@ -65,6 +65,19 @@ sealed interface AuthUiState {
 
     /** Verified → the [AuthGate] mounts the existing desktop. */
     data object Verified : AuthUiState
+}
+
+/**
+ * The GitHub-OIDC sub-state on the login hub (auth-spec §6): its own honest sequence — [Redirecting] to
+ * GitHub (controls disabled; the platform opens [Redirecting.url]), [Returning] while the callback completes,
+ * [Error] on failure/cancel. A GitHub success is **not** special-cased into "logged in" — it flows through the
+ * normal gate ([SessionState] → Verified / AuthedUnverified), so the S2 verified-gate applies unchanged.
+ */
+sealed interface GithubUiState {
+    data object Idle : GithubUiState
+    data class Redirecting(val url: String) : GithubUiState
+    data object Returning : GithubUiState
+    data object Error : GithubUiState
 }
 
 /**
@@ -210,6 +223,46 @@ class AuthViewModel(
             runCatching { repository.logout() }
             _state.value = AuthUiState.Unauthenticated()
         }
+    }
+
+    // --- GitHub OIDC (§6 / P4 — CYP-185) ---
+
+    /** Initiate the GitHub OIDC login (§5): the platform opens [GithubUiState.Redirecting.url] on success. */
+    fun startGithub() {
+        if (_state.value !is AuthUiState.Unauthenticated) return
+        runScope.launch {
+            val r = runCatching { repository.githubStart() }
+                .getOrElse { e -> if (e is CancellationException) throw e; GithubStart.Error }
+            val github = when (r) {
+                is GithubStart.Redirect -> GithubUiState.Redirecting(r.url)
+                // S1b: existing-email collision → Kratos requires login-first; surface (route to sign-in), NEVER merge.
+                GithubStart.LoginRequired, GithubStart.Error -> GithubUiState.Error
+            }
+            (_state.value as? AuthUiState.Unauthenticated)?.let { _state.value = it.copy(github = github) }
+        }
+    }
+
+    /**
+     * The OIDC callback returned to the app → complete through the **normal gate** (no GitHub special-casing):
+     * [session] maps the established session, so an OIDC identity's `verified=false` → [AuthedUnverified] (S2,
+     * not one-click). Called by the platform's callback handler (deep-link / redirect return).
+     */
+    fun onGithubReturn() {
+        _state.value = AuthUiState.Unauthenticated(github = GithubUiState.Returning)
+        runScope.launch {
+            val s = runCatching { repository.session() }
+                .getOrElse { e -> if (e is CancellationException) throw e; SessionState.None }
+            _state.value = when (s) {
+                is SessionState.Verified -> AuthUiState.Verified
+                is SessionState.Unverified -> AuthUiState.AuthedUnverified(s.email) // S2 verified-gate
+                SessionState.None -> AuthUiState.Unauthenticated(github = GithubUiState.Error) // no session established
+            }
+        }
+    }
+
+    /** Dismiss the GitHub redirect/error sub-state back to the plain login hub. */
+    fun dismissGithub() {
+        (_state.value as? AuthUiState.Unauthenticated)?.let { _state.value = it.copy(github = GithubUiState.Idle) }
     }
 
     /**

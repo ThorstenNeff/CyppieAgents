@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 private const val DESKTOP = "desktop.marker"
 
@@ -240,5 +241,69 @@ class AuthGateStateMachineTest {
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.VERIFY_LOGOUT).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag(AuthTags.VERIFY_LOGOUT).performClick()
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    // --- GitHub OIDC (§6 / P4 — CYP-185) ---
+
+    @Test
+    fun github_start_redirect_showsRedirecting_andOpensExternalUrl() = runComposeUiTest {
+        val url = "https://github.test/login/oauth/authorize?state=x"
+        val vm = gate(StubAuthRepository(githubStartResult = { GithubStart.Redirect(url) }))
+        var opened: String? = null
+        setContent { MaterialTheme { AuthGate(vm, onOpenExternalUrl = { opened = it }) { DesktopMarker() } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_GITHUB).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.LOGIN_GITHUB).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.GITHUB_REDIRECTING).fetchSemanticsNodes().isNotEmpty() }
+        // §6: the platform opens the external OAuth URL (commonMain only holds the state).
+        waitUntil(timeoutMillis = 5_000L) { opened != null }
+        assertEquals(url, opened)
+        onNodeWithTag(AuthTags.LOGIN_GITHUB).assertIsNotEnabled() // controls disabled while redirecting
+    }
+
+    @Test
+    fun github_start_error_showsGithubError() = runComposeUiTest {
+        val vm = gate(StubAuthRepository(githubStartResult = { GithubStart.Error }))
+        setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_GITHUB).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.LOGIN_GITHUB).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.GITHUB_ERROR).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
+    fun github_start_loginRequired_surfacesError_neverSilentMerge() = runComposeUiTest {
+        // S1b: existing-email collision → Kratos requires login-first; the client surfaces it (error), never merges.
+        val vm = gate(StubAuthRepository(githubStartResult = { GithubStart.LoginRequired }))
+        setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_GITHUB).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.LOGIN_GITHUB).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.GITHUB_ERROR).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(DESKTOP).assertDoesNotExist() // never silently logged in
+    }
+
+    @Test
+    fun github_returnUnverifiedIdentity_mapsAuthedUnverified_notDesktop() = runComposeUiTest {
+        // ⭐ S2 security default (mutation-teethed): an OIDC identity is verified=false → the verify-gate, NOT
+        // one-click into the desktop. A mutation mapping OIDC-return → Verified reddens here.
+        val stub = StubAuthRepository(sessionState = SessionState.None)
+        val vm = AuthViewModel(stub)
+        setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
+        stub.sessionState = SessionState.Unverified("gh@example.com") // OIDC callback established an unverified session
+        vm.onGithubReturn() // the platform callback after the GitHub OAuth round-trip
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.VERIFY_PENDING).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(DESKTOP).assertDoesNotExist()
+        onNodeWithTag(AuthTags.VERIFY_EMAIL).assertExists()
+    }
+
+    @Test
+    fun github_returnVerifiedIdentity_mountsDesktop() = runComposeUiTest {
+        // Contrast (non-vacuous): a VERIFIED OIDC identity does reach the desktop — the mapping is real, not "always unverified".
+        val stub = StubAuthRepository(sessionState = SessionState.None)
+        val vm = AuthViewModel(stub)
+        setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
+        stub.sessionState = SessionState.Verified
+        vm.onGithubReturn()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(DESKTOP).fetchSemanticsNodes().isNotEmpty() }
     }
 }
