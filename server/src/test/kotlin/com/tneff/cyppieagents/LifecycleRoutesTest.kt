@@ -61,7 +61,7 @@ class LifecycleRoutesTest {
     private fun ApplicationTestBuilder.wsClient() = createClient { install(ClientWebSockets) }
 
     private suspend fun agentsByStatus(tb: ApplicationTestBuilder): Map<String, AgentRunState> {
-        val body = tb.client.get("/api/agents").bodyAsText()
+        val body = tb.client.get("/api/agents") { bearerAuth("tok-op") }.bodyAsText() // CC1/CYP-179: roster now gated
         return CommJson.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Agent.serializer()), body)
             .associate { it.id to it.runState }
     }

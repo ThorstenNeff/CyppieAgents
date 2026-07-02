@@ -122,10 +122,15 @@ fun Route.commRoutes(
     route("/api") {
         get("/health") { call.respondText("ok") }
 
-        // Agents carry no secrets (token is server-side only) — public list. CYP-73: fill each agent's
-        // LIVE status (RUNNING/STOPPED/ERROR). Status display is NOT operator-gated (same as this route);
-        // only the controls below are operator-gated.
+        // CC1 / CYP-179 — the roster is a comm READ, gated like its siblings (`/channels`, `/inbox`, `/acl`):
+        // [requireCommReader] (agent / operator token OR a verified human OPERATOR/MEMBER session). This CLOSES
+        // the former anonymous list — off-localhost it leaked the topology (ids, names, roles, worktree names,
+        // connectorKind, provider) to any unauthenticated caller. Removed from the route-enum public allowlist,
+        // so the enumeration meta-test now REQUIRES this to fail closed without a credential (structural teeth).
+        // Read-only tier: a MEMBER session sees the roster (like it sees channels) but the controls below stay
+        // operator-gated and the send path stays token-only. CYP-73: fill each agent's LIVE status.
         get("/agents") {
+            call.requireCommReader(deps, registry)
             // S13 / CYP-102 — agents are STRUCTURALLY scoped to the active project (PO decision, Option A):
             // a single HubState holds exactly the active project's agents (per-project live hub/session
             // re-instancing is S17, gated on `HubState.rescope`/switch — which today only re-scopes the

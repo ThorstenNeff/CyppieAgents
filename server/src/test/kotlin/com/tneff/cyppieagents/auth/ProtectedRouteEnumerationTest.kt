@@ -51,13 +51,16 @@ import kotlin.test.assertTrue
 class ProtectedRouteEnumerationTest {
 
     /**
-     * The ONLY `/api` endpoints intentionally reachable with no credential (Spec 02 §7): liveness, and
-     * the agent list (agents carry no secrets — the token is server-side only). Everything else on `/api`
-     * MUST 401/403 without a credential. A reviewer audits exactly this set.
+     * The ONLY `/api` endpoints intentionally reachable with no credential (Spec 02 §7): liveness and the
+     * content-free client whoami. Everything else on `/api` MUST 401/403 without a credential. A reviewer
+     * audits exactly this set.
+     *
+     * CC1 / CYP-179: `GET /api/agents` was REMOVED from this allowlist — it is now [requireCommReader]-gated
+     * (the roster leaked the topology off-localhost). Its absence here means this meta-test now REQUIRES it to
+     * fail closed without a credential — the durable structural teeth on the gate (forget the guard → RED).
      */
     private val publicAllowlist = setOf(
         "GET /api/health",
-        "GET /api/agents",
         // CYP-182: the client whoami — public by design (reports {authenticated:false} to an unauthenticated
         // caller instead of a 401) and content-free (no id/email/secrets). Audited here as intentionally open.
         "GET /api/auth/me",

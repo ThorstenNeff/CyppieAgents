@@ -14,6 +14,7 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.routing.installPlatform
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
@@ -79,7 +80,7 @@ class ProviderDtoTest {
         application { installPlatform(booted) }
         val client = createClient { install(ClientContentNegotiation) { json(CommJson) } }
 
-        val agents: List<Agent> = client.get("/api/agents").body()
+        val agents: List<Agent> = client.get("/api/agents") { bearerAuth("tok-op") }.body() // CC1/CYP-179: roster now gated
         assertTrue(agents.isNotEmpty(), "agents listed")
         assertEquals(
             ProviderInfo.CLAUDE, agents.first { it.id == "backend" }.provider,
