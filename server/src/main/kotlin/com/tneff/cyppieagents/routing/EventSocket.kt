@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.model.EventPushed
@@ -16,18 +17,17 @@ import io.ktor.websocket.readText
 import kotlinx.coroutines.launch
 
 /**
- * `/ws/events` — Event-Log live-tail (PRD §6, ST6/CYP-40). **Operator-only, fail-closed.**
+ * `/ws/events` — Event-Log live-tail (PRD §6, ST6/CYP-40). **CYP-188 B: MEMBER-tier, fail-closed** (was
+ * operator-only — now matches `GET /api/events` `authenticatedApi(MEMBER)`, fixing the REST/WS tier mismatch).
  *
- * **Reject signal (owner-defined, CYP-40):**
- *  - no token → WS close **1008 VIOLATED_POLICY "unauthorized"**;
- *  - a valid **non-operator** (agent) token → WS close **1008 VIOLATED_POLICY "operator token required"**.
+ * **Admit:** an agent / operator **token**, OR a **verified human** MEMBER/OPERATOR session (browser cookie or
+ * `X-Session-Token`). **Reject:** no/invalid credential → WS close **1008 VIOLATED_POLICY "unauthorized"**. Same
+ * post-upgrade close convention as `/ws/agent` and `/ws/comm`; cross-origin browser upgrades are additionally
+ * refused pre-handshake by CORS (HTTP 403, CYP-30).
  *
- * Same post-upgrade close convention as `/ws/agent` and `/ws/comm`. Cross-origin browser upgrades are
- * additionally refused **pre-handshake** by the CORS plugin (HTTP 403, CYP-30). The UI renders
- * fail-closed on the 1008 close; the Tester asserts the close code + zero events via a real handshake.
- *
- * The Event-Log is team-wide, so the operator sees everything — there is no per-agent ACL here (unlike
- * `/ws/comm`); [SubscribeEvents] only narrows the operator's own view.
+ * The Event-Log is team-wide + secret-free, so every reader sees the active project's events — no per-agent ACL
+ * (unlike `/ws/comm`). The cross-project `?projectId` override (CYP-94) stays **operator-only** (a non-operator's
+ * authorized set is empty → forced-active). [SubscribeEvents] otherwise only narrows the caller's own view.
  */
 // [activeProjectId] defaults to unscoped for legacy single-store WS tests; production (installPlatform)
 // always passes the registry active-pointer resolver (CYP-102). [authorizedProjects] (S17 / CYP-94) is
@@ -38,15 +38,17 @@ fun Route.eventSocket(
     registry: TokenRegistry,
     activeProjectId: () -> String? = { null },
     authorizedProjects: () -> Set<String> = { emptySet() },
+    deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry),
 ) {
     webSocket("/ws/events") {
-        val token = call.bearerToken() ?: call.request.queryParameters["token"]
-        if (token == null) {
-            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
-        }
-        if (!registry.isOperator(token)) {
-            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "operator token required"))
-        }
+        // CYP-188 B: MEMBER-tier read (was operator-only) — matches GET /api/events (authenticatedApi MEMBER),
+        // fixing the REST(MEMBER)/WS(operator-only) tier mismatch: an agent/operator token OR a verified human
+        // MEMBER/OPERATOR session may tail the (team-wide, secret-free) event-log live. No-cred → close.
+        val reader = call.wsReaderOrNull(deps, registry)
+            ?: return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
+        // The cross-project `?projectId` override (CYP-94) stays OPERATOR-only: a non-operator's authorized set
+        // is empty, so any override falls back to forced-active (same as REST). Operator = op-token OR human-OP.
+        val isOperator = reader == HubState.OPERATOR_ID
 
         // S13 / CYP-102: resolve the active project server-side at connect time. The SINGLE scope
         // chokepoint is the in-process [filter] (we subscribe to ALL and enforce here — no second,
@@ -54,9 +56,11 @@ fun Route.eventSocket(
         // project when the client hasn't narrowed; the re-pin below keeps the scope when the client DOES
         // narrow. S17 / CYP-94: an operator's `SubscribeEvents.projectId` override is resolved through the
         // SAME `resolveEventScope` as REST — bounded to the operator's authorized set, fail-closed; with
-        // no override it stays forced-active (CYP-102 unchanged). This WS is already operator-only (above).
+        // no override it stays forced-active (CYP-102 unchanged). Non-operators get an empty authorized set.
         val active = activeProjectId()
-        val authorized = authorizedProjects()
+        // Operator-only override (CYP-94): a non-operator (agent token / human MEMBER) gets an EMPTY authorized
+        // set → every `?projectId` override falls back to forced-active. Only an operator can cross-project.
+        val authorized = if (isOperator) authorizedProjects() else emptySet()
         var filter = EventFilter(projectId = resolveEventScope(null, active, authorized)) // base = forced-active
 
         suspend fun emit(event: EventsWsServerEvent) =

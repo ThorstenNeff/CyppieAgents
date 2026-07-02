@@ -82,15 +82,17 @@ fun Application.installPlatform(
             authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
             deps = authDeps, // CYP-178: structural operator gate for GET /api/events
         )
-        // /ws/events — operator-only live-tail of the Event-Log (CYP-40), fail-closed; CYP-102 active-scoped,
-        // CYP-94 operator-only SubscribeEvents.projectId override (same authorized-set bound).
+        // /ws/events — CYP-188 B: MEMBER-tier live-tail (was operator-only), fail-closed; CYP-102 active-scoped,
+        // CYP-94 operator-only SubscribeEvents.projectId override. `deps` carries the human-session read-tier.
         eventSocket(
             booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
             authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
+            deps = authDeps,
         )
-        // CYP-73: agent lifecycle controls (operator-gated) + content-free status feed (participant-gated).
+        // CYP-73: agent lifecycle controls (operator-gated) + content-free status feed. CYP-188 B: the status
+        // socket is read-tier (token OR verified human session), so `authDeps` is passed through.
         lifecycleRoutes(booted.lifecycle, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
-        lifecycleSocket(booted.lifecycle, booted.tokenRegistry)
+        lifecycleSocket(booted.lifecycle, booted.tokenRegistry, authDeps)
         // CYP-96: project-settings config — GET participant (masked key), PUT operator (fail-closed).
         // CYP-102 fix: bind the LIVE active-pointer resolver (not booted.activeProjectId by-value) so
         // config follows a project switch, mirroring eventRoutes/eventSocket above.

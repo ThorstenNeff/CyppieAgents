@@ -55,10 +55,11 @@ private suspend inline fun ApplicationCall.lifecycleAction(
  * is a separate socket from the operator-gated `/ws/events`, so it cannot become a leak vector around
  * the Event-Log egress. On connect it streams a snapshot (one per agent) then live deltas.
  */
-fun Route.lifecycleSocket(lifecycle: LifecycleManager, registry: TokenRegistry) {
+fun Route.lifecycleSocket(lifecycle: LifecycleManager, registry: TokenRegistry, deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry)) {
     webSocket("/ws/lifecycle") {
-        val token = call.bearerToken() ?: call.request.queryParameters["token"]
-        if (registry.participantFor(token) == null) {
+        // CYP-188 B: read-tier (token OR verified human session) — the status feed is content-free (agent
+        // runState only), so any authenticated reader (like GET /api/agents) may watch it live.
+        if (call.wsReaderOrNull(deps, registry) == null) {
             return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
         }
         // Snapshot-then-deltas in ONE coroutine (no concurrent WS sends): onStart emits the current
