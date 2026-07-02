@@ -1,0 +1,49 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-189 (Operator Grant-UI — Human canWrite pro Channel)",
+    "version": "0.1",
+    "status": "Vorschlag — Referenz fuer Dev-Impl; PO reconcilet §-Asks (spec §9)",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop 3832bb4",
+    "note": "REINER REUSE — 0 neue Tokens. Menschen sind ein weiteres Subjekt in der bestehenden ACL-Matrix; die Grant-Zelle reused AclCellView (Read/Write-GrantControl, Pending/Enforced-Disclosure) verbatim. Spalten reusen AGENT_COL_WIDTH. Human-Marker + Gruppen-Koepfe reusen neutrale Text-Stile (onSurfaceVariant/labelSmall). Kein neues Aussehen, keine neue Farbe, keine neue Dimension.",
+    "axis_note": "Drei getrennte Achsen, nie vermischt: (1) Subjekt-Art Mensch-vs-Agent (NEU sichtbar via Gruppen-Koepfe/Marker); (2) User-Tier OPERATOR/MEMBER (Rolle eines Menschen, Roster); (3) Agent-Rolle agent_role_po/worker/product_lead. Farbe nie alleiniger Traeger."
+  },
+  "semantic": {
+    "aclMatrix.subjectGroupHeader": {
+      "role": "Band-Ueberschrift, die Agenten- und Menschen-Subjekte trennt (acl_agents_group / acl_humans_group). Neutral, strukturell — kein Prestige, keine Severity.",
+      "typography": "labelMedium",
+      "content": "onSurfaceVariant",
+      "reuse": "bestehende Section-/Header-Textstile der Matrix (kein neuer Token)"
+    },
+    "aclMatrix.humanMarker": {
+      "role": "Inline-Marker je Menschen-Subjekt (acl_human 'Mensch') — load-bearing in der Narrow-Card-Ansicht ohne Spaltengruppierung. Text-Marker + a11y (a11y_acl_human_subject), Farbe nie allein.",
+      "typography": "labelSmall",
+      "content": "onSurfaceVariant",
+      "reuse": "neutrales Label-Muster (wie ProjectSwitcher-/Roster-Sekundaertext); kein Hue/Badge"
+    },
+    "aclMatrix.humanGrantCell": {
+      "role": "Grant-Zelle je (Channel × Mensch): zwei GrantControl-Switches (Read/Write) fuer Operator, Read-only-Text sonst. IDENTISCH zur Agenten-Zelle.",
+      "reuse": "acl/AclPanel.kt#AclCellView + GrantControl (Switch thumb ✓/✕; acl_granted/acl_denied) — verbatim, identityId im agentId-Slot",
+      "no_membership_suppression": "Menschen-Zellen tragen Toggles auf ALLEN Channels (kein NON_MEMBER-'—', Spec §3.1) — required by feature"
+    },
+    "aclMatrix.humanColumnWidth": {
+      "role": "Spaltenbreite der Menschen-Subjekte im Wide-Grid.",
+      "reuse": "AGENT_COL_WIDTH (bestehende ACL-Matrix-Konstante) — Menschen-Spalten = gleiche Breite wie Agenten-Spalten"
+    },
+    "aclMatrix.channelGoneNotice": {
+      "role": "Ehrlicher, nicht-retrybarer Hinweis bei Ghost-Channel-404 (acl_channel_gone). Distinct von acl_change_failed (retrybar).",
+      "tone": "HintTone.ERROR-Pfad ODER neutraler Notice-Banner (bestehender AclViewModel-Notice-Pfad; kein neuer Ton)",
+      "reuse": "bestehender 401/403/409-Notice-Mechanismus des AclViewModel, um 404 erweitert"
+    }
+  },
+  "validation": {
+    "new_tokens": 0,
+    "reuse_only": true,
+    "no_hardcoded_hex": true,
+    "no_new_tone": "Read/Write-GrantControl, Pending/Enforced, Notice-Banner alle reused",
+    "no_prestige_badge": "Human-Marker + Gruppen-Koepfe = neutrale Text-Label (Anti-Hype)",
+    "no_new_surface": "eine bestehende Flaeche (ACL-Matrix); kein neues Fenster/Route/DTO/Gate",
+    "no_secrets": "Menschen-Label = displayName ?? shortId(8); identityId nur als Tag-Scope/Wire-Feld; kein projectId aus dem Client (server-single-source)"
+  }
+}
