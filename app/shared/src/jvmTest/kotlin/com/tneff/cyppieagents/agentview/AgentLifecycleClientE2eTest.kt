@@ -1,27 +1,34 @@
 package com.tneff.cyppieagents.agentview
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState
 import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.model.ApiError
 import com.tneff.cyppieagents.model.ApiErrorBody
+import com.tneff.cyppieagents.model.Role
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.ktor.server.request.header
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets as ServerWebSockets
 import io.ktor.server.websocket.webSocket
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.websocket.Frame
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.builtins.ListSerializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -105,6 +112,45 @@ class AgentLifecycleClientE2eTest {
             assertEquals(emptyMap(), snap, "unreachable server must fail-closed to an empty snapshot, not throw")
         } finally {
             client.close()
+        }
+    }
+
+    @Test
+    fun snapshot_sendsCredential_soGatedServerAccepts() = runBlocking {
+        // CC1 / CYP-179: GET /api/agents is now gated by requireCommReader. Model that exactly — 401 without
+        // the bearer, the roster WITH it — and prove snapshot() carries the token it holds (same credential the
+        // comm reads send). ⭐ Mutation: drop the Authorization header on the GET → server 401s → snapshot()
+        // fails closed to empty → this is the only test that goes RED (the anonymous-fetch regression CC1 closes).
+        val server = embeddedServer(Netty, port = 0) {
+            routing {
+                get("/api/agents") {
+                    if (call.request.header(HttpHeaders.Authorization) != "Bearer op") {
+                        call.respondText("unauthorized", status = HttpStatusCode.Unauthorized)
+                    } else {
+                        call.respondText(
+                            CommJson.encodeToString(
+                                ListSerializer(Agent.serializer()),
+                                listOf(Agent("backend", "Backend", Role.WORKER, "backend", AgentRunState.RUNNING)),
+                            ),
+                            ContentType.Application.Json,
+                        )
+                    }
+                }
+            }
+        }
+        server.start(wait = false)
+        try {
+            val port = server.engine.resolvedConnectors().first().port
+            val client = HttpClient(CIO)
+            try {
+                val source = AgentLifecycleLiveSource(client, "http://127.0.0.1:$port", "ws://127.0.0.1:$port", token = "op")
+                val snap = withTimeout(10_000) { source.snapshot() }
+                assertEquals(mapOf("backend" to AgentLifecycleState.RUNNING), snap)
+            } finally {
+                client.close()
+            }
+        } finally {
+            server.stop(100, 200)
         }
     }
 

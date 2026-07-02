@@ -372,7 +372,7 @@ fun AgentShell(
     // faked full). Non-gated display (the truth is shown to anyone) — the connector write/opt-in is a separate
     // operator-gated seam (stub until CYP-122).
     val resolvedConnectorCapRepo = remember(connectorCapabilityRepository, httpClient, cfg) {
-        connectorCapabilityRepository ?: ConnectorCapabilityHttpRepository(httpClient, cfg.hubHttpBaseUrl)
+        connectorCapabilityRepository ?: ConnectorCapabilityHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
     val connectorCapVm = viewModel(key = "connectorCapabilities") {
         ConnectorCapabilityViewModel(resolvedConnectorCapRepo)
