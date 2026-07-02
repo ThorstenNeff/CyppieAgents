@@ -24,6 +24,18 @@ interface AuthRepository {
     /** §7.1 — boot session probe. Fail-closed: a network error resolves to [SessionState.None]. */
     suspend fun session(): SessionState
 
+    /**
+     * CYP-188 — the current **native** Kratos session credential (the `X-Session-Token` value) for a signed-in
+     * session user, or `null`. The app shell threads this into its shared HTTP/WS client so a **session-only**
+     * user (Kratos login, no operator token) authenticates every data read/socket — otherwise it sends an empty
+     * `Bearer ` and the server 401s the whole app. `null` covers "no session" AND a **browser** session, whose
+     * credential is the same-origin `ory_kratos_session` cookie the engine sends automatically (never a header —
+     * the server 500s a request carrying BOTH the header and the cookie). Default `null` (Stub/dev has no
+     * session); the live [HttpAuthRepository] returns its session store's token. The operator token stays the
+     * break-glass path (each data repo still sends its own `Authorization: Bearer`).
+     */
+    fun currentSessionToken(): String? = null
+
     /** §7.2 — credentials → verified / unverified / **generic** rejection / rate-limited. */
     suspend fun login(email: String, password: String): LoginResult
 

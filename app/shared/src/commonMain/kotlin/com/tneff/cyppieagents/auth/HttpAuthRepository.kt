@@ -378,6 +378,11 @@ class HttpAuthRepository(
 
     // --- request helpers ---
 
+    // CYP-188 — expose the native session credential so the app shell threads it into its shared HTTP/WS client
+    // (a session-only user authenticates its reads/sockets). Null on a browser session (its credential is the
+    // same-origin ory_kratos_session cookie, sent automatically — never a header) and when there's no session.
+    override fun currentSessionToken(): String? = sessionStore.sessionToken()
+
     private fun HttpRequestBuilder.authHeaders() {
         header(HttpHeaders.Accept, ContentType.Application.Json.toString())
         // Native session credential; browser cookies ride automatically on the same-origin proxy.

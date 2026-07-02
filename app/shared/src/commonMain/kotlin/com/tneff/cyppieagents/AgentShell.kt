@@ -162,6 +162,10 @@ fun AgentShell(
     connectorSelectionRepository: ConnectorSelectionRepository? = null,
     /** Override the workspace-roster read port (CYP-186 BE3a); `null` → the live `GET /api/workspace/members`. */
     workspaceRepository: WorkspaceRepository? = null,
+    /** CYP-188 — the signed-in user's native session credential (`X-Session-Token`) for the shared HTTP/WS client,
+     *  so a session-only user (no operator token) authenticates its reads/sockets. `null`/absent → none (a browser
+     *  session rides its same-origin `ory_kratos_session` cookie; the operator token stays break-glass). */
+    sessionToken: () -> String? = { null },
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -180,7 +184,7 @@ fun AgentShell(
     // One shared WS+HTTP client (created here — the agent-management REST client below needs it). Closed
     // when the shell leaves composition. The JVM/desktop engine (CIO) is wired; other engines = CYP-27.
     // CYP-115: keep-alive pinging (sharedWsHttpClient) so idle comm/lifecycle sockets aren't Darwin-idle-closed.
-    val httpClient = remember { sharedWsHttpClient() }
+    val httpClient = remember { sharedWsHttpClient(sessionToken) }
     DisposableEffect(Unit) { onDispose { httpClient.close() } }
 
     // Agent-management VM (CYP-86/87/88): now the LIVE REST client against the CYP-97 endpoints (stub→real

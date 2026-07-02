@@ -46,7 +46,13 @@ fun App(
             onOpenExternalUrl = onOpenExternalUrl,
         ) { tier ->
             // CYP-186: the verified user's tier gates the desktop's operator surfaces (hybrid: role OR token).
-            AgentShell(modifier = Modifier.fillMaxSize(), tier = tier)
+            // CYP-188: thread the session credential so a session-only user (Kratos login, no operator token)
+            // authenticates the shell's data reads/sockets (X-Session-Token native / same-origin cookie browser).
+            AgentShell(
+                modifier = Modifier.fillMaxSize(),
+                tier = tier,
+                sessionToken = authRepo::currentSessionToken,
+            )
         }
     }
 }
