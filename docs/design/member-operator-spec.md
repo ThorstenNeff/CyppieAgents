@@ -1,7 +1,7 @@
 # Multi-User: MEMBER-vs-OPERATOR-Erfahrung — UX/UI-Spec (CYP-80 / S18)
 
 > Owner: UIUX-Designer · Story **CYP-80** (S18 — Multi-User, aktiviert) · Stand 2026-07-02
-> Status: **Auftraggeber-Entscheid 2026-07-02 GEFOLDED: Access-Modell = C (Hybrid); MEMBER = read-only-observer (B).** Offen bleibt nur Backends per-Surface-**Read**-Matrix (§5, welche Lese-Flächen ein Observer bekommt) + Promote-forward (§-Ask 3). Docs-only, Referenz — Dev baut die Client-Slice dagegen. **PO merged, nicht selbst mergen.**
+> Status: **FINAL (2026-07-02) — alle Entscheidungen gefolded:** Access-Modell = C (Hybrid); MEMBER = read-only-observer (B); Backends **BE1-Read-Ceiling-Matrix** in §4/§5 geerdet (Comm/Config-masked/Event-Log ja · Terminals/Projekt-Switch nein). Nur zwei **forward**-Items bleiben (kein CYP-80-Scope): Promote/Nachfolge (§-Ask 3), Terminal-Read-mit-Redaction (§-Ask 5). Docs-only, Referenz — Dev baut die Client-Slice dagegen. **PO merged, nicht selbst mergen.**
 > Grounded gegen **develop `8cf393a`** (Operator-Gate + Auth-Session real verifiziert, §8). Kein neuer Login/Register-Flow — der End-User-Auth-Bogen (CYP-176/177/185) steht.
 > Begleit-Artefakte: `member-operator-tokens.json`, `-keys.md`, `-tags.md`.
 > Kontext: mehrere verifizierte Nutzer teilen einen Workspace. **Erster verifizierter = OPERATOR, alle weiteren = MEMBER** (Backend-bestimmt). Diese Spec entwirft **nur** die Post-Login-Tier-Differenzierung der bestehenden Desktop-Oberfläche.
@@ -107,7 +107,16 @@ kämen `workspace.member.<id>.promote`/`.demote` als disabled+GATED-Controls daz
   erst den Roster (Naht-Bedingung an Backend — die UI-Auslassung ist die halbe Miete; die API darf den Roster einem
   MEMBER-Token nicht herausgeben, analog der Enumeration-Sicherheit aus CYP-176 §7).
 - **Operator-Name ≠ Kontakt-Dump:** nur Anzeigename, kein E-Mail/kein Token/kein Endpoint.
-- **Fail-closed:** kcommt keine Tier an ⇒ MEMBER-Sicht (kein Roster, keine Mutation).
+- **Fail-closed:** kommt keine Tier an ⇒ MEMBER-Sicht (kein Roster, keine Mutation).
+
+### 3.4 Secret-Naht: MEMBER-Config-Read ist masked-only (Reveal operator-only)
+
+**Verbindlich (BE1 + Test-Guardrails i/iv, PO 2026-07-02):** ein MEMBER darf Config **lesen**, sieht aber **nur die
+maskierten last-4**, **nie den Rohschlüssel**. Der **Reveal/Un-Mask-Toggle ist OPERATOR-only** (hängt schon an `editable`
+→ unter C ist `editable=false` für MEMBER ⇒ Toggle disabled) — und **kein Endpoint** gibt einem MEMBER-Token den Raw-Key
+(Backend). **Explizit verankert, damit „read-only Config" nicht versehentlich den Reveal freigibt:** die read-only-
+Config-Ansicht rendert `API_KEY_MASKED` (last-4) + den `workspace_operator_only`-Hinweis, **nie** das entmaskierte Feld.
+Das ist die eine Stelle, wo „darf lesen" **nicht** „darf alles lesen" heißt — Secret bleibt hinter der Operator-Grenze.
 
 ---
 
@@ -115,19 +124,27 @@ kämen `workspace.member.<id>.promote`/`.demote` als disabled+GATED-Controls daz
 
 Jede heute operator-gatete Fläche (verifiziert §8) → OPERATOR- vs MEMBER-Verhalten, **auf dem bestehenden Muster**:
 
-| Fläche (Datei) | OPERATOR | MEMBER | Muster (schon gebaut) |
+Jede heute operator-gatete Fläche → OPERATOR- vs MEMBER-Verhalten, gefolded gegen **Backends BE1-Read-Ceiling-Matrix
+(2026-07-02)**:
+
+| Fläche (Datei) | OPERATOR | MEMBER (read-only-observer) | Muster / BE1-Mechanismus |
 |---|---|---|---|
-| **Settings** — Repo + API-Key (`SettingsPanel`) | voll | **Fenster nicht angeboten** (API-Key = Secret, kein MEMBER-Lesewert) | strukturelle Auslassung |
-| **Agent-Verwaltung** CRUD (`AgentManagementPanel`) | voll | **CRUD-Panel nicht angeboten**; Agenten sieht der MEMBER über die normalen Agentenfenster (read) | strukturelle Auslassung |
-| **ACL-Matrix** (`AclPanel`) | Switches | **read-only-Ersatz** (Switch→„gewährt/verweigert"-Text), Partial-View-Banner | read-only-Ersatz (`acl_partial_view`) — schon gebaut |
-| **Projekt-Verwaltung** CRUD (`ProjectManagementPanel`) | voll | **disabled + GATED** (sieht Projekte, mutiert nicht) | disabled+Hinweis |
-| **Projekt-Switch** (`ProjectSwitcherBar`) | ja | **§-Ask 2** (darf ein MEMBER den aktiven Kontext wechseln? oder scope-fix?) → Matrix | (bedingt) |
-| **Cross-Projekt-Autorisierung** (`CrossProjectControls`) | voll | **nicht angeboten / GATED** | conditional render (schon gebaut) |
-| **Agent-Lifecycle** Start/Stop/Restart (`AgentWindow`) | voll (`canControl`) | **disabled + GATED-Rollen-Hinweis** (sieht den Agenten, steuert ihn nicht) | disabled+Hinweis (schon gebaut) |
-| **Event-Log** Browse + Live-Tail (`AgentShell`) | angeboten | **§-Ask 2** (heute operator-only; MEMBER-Read nur, falls Matrix es gewährt) | strukturelle Auslassung (schon gebaut) |
-| **Comm-Composer** (`CommPanel`) | schreiben (per ACL) | Timeline **lesen**; Schreiben/Teilnehmen **per Matrix** | read-only-Ersatz (`comm_readonly_hint`) — schon gebaut |
-| **Agentenfenster/Terminal** (`AgentWindow`/AgentView) | Stream lesen + „Nachricht an Agent" | Stream **lesen**; „Nachricht an Agent" **per Matrix** | (Matrix, §5) |
+| **Settings/Config** — Repo + API-Key (`SettingsPanel`) | voll | **read-only, maskiert** — `{set,masked}`-GET (last-4); **Reveal/Raw = OPERATOR-only** (§3.4) | read-only-Ersatz + `API_KEY_MASKED` (schon gebaut) |
+| **Agent-Verwaltung** CRUD (`AgentManagementPanel`) | voll | **CRUD-Panel nicht angeboten** | strukturelle Auslassung |
+| **ACL-Matrix** (`AclPanel`) | Switches | **read-only-Ersatz** (Switch→„gewährt/verweigert"-Text), Partial-View-Banner | `acl_partial_view` (schon gebaut) |
+| **Projekt-Verwaltung** CRUD (`ProjectManagementPanel`) | voll | **nicht angeboten** | strukturelle Auslassung |
+| **Projekt-Sicht/Switcher** (`ProjectSwitcherBar`) | ja | **NEIN — nicht angeboten** (fail-closed, BE1: switch = globale State-Mutation; Projekt-Liste leakt Tenant-Struktur) | strukturelle Auslassung |
+| **Cross-Projekt-Autorisierung** (`CrossProjectControls`) | voll | **nicht angeboten** | conditional render (schon gebaut) |
+| **Agent-Lifecycle** Start/Stop/Restart (`AgentWindow`) | voll (`canControl`) | **nicht member-facing** — die Agent-Stream-Fenster (wo Lifecycle sitzt) sind für MEMBER nicht angeboten (↓ Terminals) | strukturelle Auslassung |
+| **Agentenfenster/Terminal/Stream** (`AgentWindow`/AgentView) | Stream lesen + „Nachricht an Agent" | **NEIN — nicht angeboten** (fail-closed, BE1: Agent-stdout NICHT secret-free garantiert / kann Keys echoen, keine Redaction) | strukturelle Auslassung |
+| **Event-Log** Browse + Live-Tail (`AgentShell`) | angeboten | **read-only angeboten** (BE1: metadata-only, nie Bodies/Secrets by construction → secret-free) — MEMBERs Fenster auf Agenten-Aktivität | strukturelle Auslassung → read-only aufgehoben |
+| **Comm** (`CommPanel`) | schreiben (per ACL) | **Timeline read-only** (ACL-`canRead`-gefiltert nach eigener Identität, **fail-closed leer by default**, OPERATOR grantet per-Channel — nie blanket); **Senden nein** | read-only-Ersatz (`comm_readonly_hint`) |
 | **Mitglieder-Roster** (NEU, §3.2) | sieht Roster | **nicht angeboten** (Enumerations-Naht) | strukturelle Auslassung |
+
+> **MEMBERs Beobachtungs-Fläche ist damit: Comm (read, ACL-gefiltert) + Event-Log (metadata, secret-free) + Config
+> (maskiert).** Agenten-Aktivität beobachtet ein MEMBER über das **secret-free Event-Log**, **nicht** über den rohen
+> Agent-stdout — das ist die bewusste, ehrliche Grenze (Raw-Stream kann Secrets echoen; erst mit Redaction-Garantie
+> revisiten, §9 §-Ask 5).
 
 **Der GATED-Hinweis (disabled-Fälle) wird rollen-ehrlich** (§6-bedingt für den Wortlaut): heute „nur mit Operator-Token
 änderbar"; im Rollen-Modell **„Nur der Operator kann das ändern"** (`workspace_operator_only`) — sonst suggeriert der
@@ -135,26 +152,25 @@ Text einem MEMBER, er müsse „nur einen Token eingeben".
 
 ---
 
-## 5. MEMBER-Read/Participate-Umfang — ENTSCHIEDEN: read-only-observer (B), 2026-07-02
+## 5. MEMBER-Read/Participate-Umfang — FINAL (Backends BE1-Read-Ceiling-Matrix gefolded, 2026-07-02)
 
-**Auftraggeber-Entscheid:** MEMBER = **read-only-observer**. **Kein Mutieren, kein Senden/Teilnehmen** — nur Lesen. Das
-resolved die „Participate"-Frage: Teilnahme ist im MVP **aus** (additive Gewährung später, falls je gewünscht). Offen
-bleibt allein das **Read-Ceiling** — welche *Lese*-Flächen ein Observer bekommt — aus Backends Capability-Matrix (§-Ask 1).
+MEMBER = **read-only-observer**: **kein Mutieren, kein Senden/Teilnehmen** — nur Lesen; die zulässigen Lese-Flächen sind
+durch Backends **BE1-Matrix** autoritativ gesetzt (Read-Ceiling geerdet):
 
-| Fähigkeit | MEMBER (read-only-observer) | Naht |
+| Fähigkeit | MEMBER (read-only-observer) | BE1-Mechanismus |
 |---|---|---|
-| **Comm-Timeline lesen** | **ja** (erlaubte Kanäle, ACL wie gehabt) | ACL filtert ohnehin |
-| **Comm senden** | **nein** (Observer) | `comm_readonly_hint` (read-only-Ersatz, schon gebaut) |
-| **Agenten-Stream lesen** | **ja** (Agentenfenster read) | Kern der „begehbaren" Beobachtung |
-| **„Nachricht an Agent" senden** | **nein** (Observer — Senden ist eine Wirkung) | Eingabe entfällt / read-only |
-| **Event-Log lesen** | **Read-Ceiling-Frage** (Observer könnte Observability lesen; heute operator-only) → Backend-Matrix | strukturelle Auslassung **oder** read-Fenster, je Matrix |
-| **Projekt-Switch / -Sicht** | **Read-Ceiling-Frage** (Kontext sehen ja; wechseln = Mutation? → nein als Observer) | §-Ask 2 |
-| **Jegliche Mutation** (CRUD/ACL/Config/Lifecycle) | **nein** (OPERATOR) | §4 |
+| **Comm-Timeline lesen** | **ja** | ACL-`canRead`-gefiltert nach eigener Identität, **fail-closed leer by default**, OPERATOR grantet per-Channel — nie blanket |
+| **Comm senden** | **nein** | `comm_readonly_hint` (read-only-Ersatz) |
+| **Config lesen** | **ja, masked-only** | `{set,masked}`-GET (last-4); **Reveal/Raw = OPERATOR-only**, kein Endpoint gibt MEMBER den Rohschlüssel (§3.4) |
+| **Event-Log lesen** | **ja** | metadata-only (nie Bodies/Secrets by construction) → secret-free |
+| **Agenten-Stream / Terminal lesen** | **NEIN (fail-closed)** | Agent-stdout nicht secret-free garantiert (kann Keys echoen), keine Redaction → keine Raw-Streams; Revisit **nur** mit Redaction-Garantie (§-Ask 5) |
+| **„Nachricht an Agent" senden** | **nein** | Observer; Stream-Fenster ohnehin nicht angeboten |
+| **Projekt-Sicht / -Switch** | **NEIN (fail-closed)** | switch = globale State-Mutation (OPERATOR); Projekt-Liste leakt Tenant-Struktur |
+| **Jegliche Mutation** (CRUD/ACL/Config-Write/Lifecycle) | **nein** (OPERATOR) | §4 |
 
-**Naht:** wo Senden/Teilnehmen entfällt, rendert die UI das **vorhandene** read-only-Muster (`comm_readonly_hint` bzw.
-`workspace_operator_only`) — **kein neues Surface**. Das einzige noch offene Detail ist das **Read-Ceiling** (Event-Log/
-Projekt-Sicht): ich folde die zwei Read-Ceiling-Zeilen, sobald der PO Backends Matrix reconciled. Fail-closed: nicht
-explizit gewährte Lese-Fläche ⇒ **nicht** angeboten.
+**Naht:** wo Senden/Teilnehmen/Read entfällt, rendert die UI das **vorhandene** read-only-Muster (`comm_readonly_hint`
+bzw. `workspace_operator_only`) oder lässt die Fläche strukturell aus — **kein neues Surface**. **Fail-closed:** nicht
+explizit gewährte Lese-Fläche ⇒ **nicht** angeboten. Das Read-Ceiling ist damit **geerdet**, keine offene Zeile mehr.
 
 ---
 
@@ -226,17 +242,20 @@ Indikator + ein operator-only Roster.
 
 ## 9. §-Ask-Resolutions (offen — PO/Backend/Auftraggeber)
 
-- **§-Ask 1 — MEMBER-Capability-Matrix (§5). ✅ TEIL-RESOLVED: MEMBER = read-only-observer (B)** — Senden/Teilnehmen aus,
-  nur Lesen. **Rest offen = nur das Read-Ceiling** (bekommt der Observer Event-Log-Read und/oder Projekt-Sicht?). Bitte
-  Backends Matrix reichen → ich folde die zwei Read-Ceiling-Zeilen (Rest von §5 ist gefolded).
-- **§-Ask 2 — Projekt-Switch & Event-Log für MEMBER (§4).** Darf ein MEMBER den aktiven Projekt-Kontext wechseln und/oder
-  das Event-Log **lesen**? Beide heute operator-gebunden. Default (fail-closed): **nein**, bis Matrix gewährt.
+- **§-Ask 1 — MEMBER-Capability-Matrix (§5). ✅ RESOLVED (Backends BE1-Matrix gefolded 2026-07-02):** read-only-observer;
+  Read-Ceiling = Comm(ACL) + Config(masked) + Event-Log(metadata) **ja**, Terminals + Projekt-Switch **nein**. §4/§5 final.
+- **§-Ask 2 — Projekt-Switch & Event-Log für MEMBER. ✅ RESOLVED (BE1):** Event-Log **ja** (metadata, secret-free);
+  Projekt-Switch/-Sicht **nein** (fail-closed: switch=Mutation, Liste leakt Tenant-Struktur).
 - **§-Ask 3 — Operator-Nachfolge / Promote-Demote (§3.2).** Was, wenn der OPERATOR geht? Übertragbar? Beförderung? **Nicht
   in CYP-80** außer Backends Matrix nimmt es auf → dann liefere ich die `workspace.member.<id>.promote/.demote`-Controls
   (disabled+GATED) als additiven Folge-Slice.
 - **§-Ask 4 — Access-Modell A/B/C (§6). ✅ RESOLVED (Auftraggeber 2026-07-02): C (Hybrid)** — Rolle Default + Token
   Break-Glass. Gefolded in §2/§4/§6 + keys.md (`workspace_operator_only` unbedingt). Client = Boolean-Quellen-Tausch +
   Wortlaut, kein Umbau.
+- **§-Ask 5 — MEMBER-Terminal-Read mit Redaction (forward, NICHT CYP-80).** Heute fail-closed **nein** (Agent-stdout kann
+  Secrets echoen, keine Redaction). Falls je eine **Redaction-Garantie** am Stream-Sink existiert, kann MEMBER-Read der
+  Terminals revisitet werden (additiver Folge-Slice) — dann liefere ich die read-only-Stream-Zeile. Bis dahin: Event-Log
+  (metadata, secret-free) ist MEMBERs Beobachtungs-Kanal auf Agenten-Aktivität.
 
 ---
 
@@ -249,6 +268,8 @@ Indikator + ein operator-only Roster.
 - **Disclosure-Invarianten (load-bearing, dürfen bei Impl nicht degradieren):** (1) MEMBER enumeriert den Roster nicht
   (operator-only, strukturell ausgelassen); (2) Rollen-Indikator ehrlich (MEMBER weiß Tier + Operator-Name, kein Kontakt-
   Dump); (3) fail-closed: unbekannte Tier ⇒ MEMBER; (4) User-Tier ≠ Agent-Rolle (nie vermischt); (5) kein Panel gaukelt
-  einem MEMBER Mutierbarkeit vor (read-only-Ersatz statt toter Switch). Diese prüfe ich in der UX-QA nach Dev-Impl.
+  einem MEMBER Mutierbarkeit vor (read-only-Ersatz statt toter Switch); (6) **MEMBER liest keine Raw-Agent-Streams/
+  Terminals** (stdout nicht redaction-garantiert → fail-closed; Beobachtung via secret-free Event-Log); (7)
+  **MEMBER-Config-Read = masked-only, Reveal operator-only** (nie Rohschlüssel, §3.4). Diese prüfe ich in der UX-QA nach Dev-Impl.
 - **DS-Notiz:** der Rollen-Indikator ist ein neutrales Identitäts-Label (kein Prestige-Badge) — bewusst anti-hype; falls
   je ein „Rollen-Chip"-DS-Element gewünscht ist, wäre das ein separater Parität-Kandidat, kein CYP-80-Scope.
