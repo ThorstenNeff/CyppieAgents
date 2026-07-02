@@ -209,13 +209,17 @@ fun Application.bootPlatform(
     // CYP-179 / §B(b): the register-wrapper — wired only when the Kratos ADMIN URL is configured (loopback,
     // RC4). Its branch-divergent side-effects fire-and-forget on a dedicated supervised scope (off the response
     // path → timing parity, MUST-2); a failed side-effect is swallowed branch-blind inside the mediator.
-    val registerMediator = config.auth?.kratosAdminUrl?.let { adminUrl ->
-        val backend = com.tneff.cyppieagents.auth.HttpKratosRegisterBackend(adminBaseUrl = adminUrl)
+    val registerMediator = config.auth?.let { authCfg -> authCfg.kratosAdminUrl?.let { adminUrl ->
+        // Admin URL (:4434) for exists + create; public URL (:4433) for the verification/recovery flow triggers
+        // that actually send the mail (CYP-179 C2 — admin-create alone sends none on v1.3.0).
+        val backend = com.tneff.cyppieagents.auth.HttpKratosRegisterBackend(
+            adminBaseUrl = adminUrl, publicBaseUrl = authCfg.kratosPublicUrl,
+        )
         val sideEffectScope = kotlinx.coroutines.CoroutineScope(
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
         )
         com.tneff.cyppieagents.auth.RegisterMediator(backend, sideEffectScope)
-    }
+    } }
     installPlatform(booted, authDeps, settingsClient, registerMediator)
     return booted
 }
