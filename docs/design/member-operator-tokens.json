@@ -1,0 +1,47 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-80 (S18 — Multi-User: MEMBER-vs-OPERATOR-Erfahrung)",
+    "version": "0.1-draft",
+    "status": "Vorschlag — wartet auf PO-Reconcile mit Backends Capability-Matrix + Auftraggeber-Entscheidung Access-Modell (A/B/C, spec §6)",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop 8cf393a",
+    "note": "REINER REUSE — 0 neue Tokens. Die Tier-Differenzierung tauscht die QUELLE des bestehenden editable/canControl-Booleans (Operator-Token -> Rolle), nicht das Aussehen. Alle Gate-/Read-only-/Label-Stile bestehen bereits. Rollen-Indikator = neutrales Identitaets-Label (kein Prestige-Badge, Anti-Hype).",
+    "axis_note": "User-Tier (Mensch: OPERATOR/MEMBER) ist eine eigene Achse, NICHT die Agent-Rolle (agent_role_po/worker/product_lead). Nie vermischt."
+  },
+  "semantic": {
+    "workspace.roleIndicator": {
+      "role": "Persistenter Rollen-Indikator in der Top-Leiste (neben ProjectSwitcher). Neutrales Identitaets-Label, Farbe nie allein (Rolle als Text). KEIN Hue/Severity/Prestige-Badge.",
+      "typography": "titleSmall",
+      "content": "onSurfaceVariant",
+      "marker": "● (Form-Marker, wie ProjectSwitcher-Aktiv-Marker)",
+      "reuse": "project/ProjectSwitcherBar.kt (Aktiv-Marker-Muster)"
+    },
+    "workspace.gated": {
+      "role": "GATED-Hinweis fuer MEMBER an disabled inline-Controls ('Nur der Operator kann das aendern'). Neutral — MEMBER-Tier ist KEIN Fehler.",
+      "tone": "HintTone.GATED",
+      "content": "onSurfaceVariant",
+      "glyph": "·",
+      "reuse": "ui/TonedHint.kt#GATED",
+      "wording_key": "workspace_operator_only (bedingt A/B/C, spec §6)"
+    },
+    "workspace.readOnlyReplace": {
+      "role": "Read-only-Ersatz fuer MEMBER an geteilten Flaechen (interaktiv -> statisch). Kein toter Switch, der Mutierbarkeit vorgaukelt.",
+      "reuse": "acl/AclPanel.kt (Switch->Text, acl_partial_view) + comm/CommPanel.kt (Composer->comm_readonly_hint)"
+    },
+    "workspace.members": {
+      "role": "Operator-only Mitglieder-Roster (strukturell ausgelassen fuer MEMBER — Enumerations-Naht). Zeilen = neutrale Name+Tier-Labels.",
+      "typography": "bodyMedium / labelSmall (Tier)",
+      "content": "onSurface / onSurfaceVariant",
+      "reuse": "Fenster-/Listen-Muster (wie Event-Log operator-only-Fenster, strukturelle Auslassung)"
+    }
+  },
+  "validation": {
+    "new_tokens": 0,
+    "reuse_only": true,
+    "no_hardcoded_hex": true,
+    "no_new_tone": "GATED/INFO/read-only-Ersatz reused",
+    "no_prestige_badge": "Rollen-Indikator = neutrales Label (Anti-Hype)",
+    "no_secrets": "Operator-Name = neutraler Anzeigename; user-id als Tag-scope, kein E-Mail/Token"
+  }
+}
