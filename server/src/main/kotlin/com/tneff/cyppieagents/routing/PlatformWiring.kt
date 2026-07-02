@@ -187,6 +187,11 @@ fun Application.bootPlatform(
             ),
             roles = com.tneff.cyppieagents.auth.SqliteRoleStore(gitRoot.toPath().resolve(authCfg.roleDbPath)),
             nowMs = { System.currentTimeMillis() },
+            audit = com.tneff.cyppieagents.auth.InMemoryAuditSink(), // CYP-186 C.1: OPERATOR-only audit
+            // CYP-186 C.2: the operator-token kill-switch — deploy-controlled at boot (env wins over config),
+            // NEVER settable by any endpoint/UI/channel. Effective only once a role-OPERATOR exists (lockout-guard).
+            operatorTokenDisabled = System.getenv("CYPPIE_OPERATOR_TOKEN_DISABLED")?.toBooleanStrictOrNull()
+                ?: authCfg.operatorTokenDisabled,
         )
     } ?: com.tneff.cyppieagents.auth.AuthDeps(booted.tokenRegistry)
     // CYP-181 / P2.4: the Kratos settings shim, wired only when Kratos is configured (the human self-

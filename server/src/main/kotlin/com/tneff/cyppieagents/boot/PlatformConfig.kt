@@ -60,6 +60,12 @@ data class AuthConfig(
     val roleDbPath: String = ".cyppie/roles.db",
     /** whoami request timeout (ms) — bounded so a hung Kratos never hangs the guard (RC1/RC2). */
     val whoamiTimeoutMs: Long = 3_000,
+    /**
+     * CYP-186 C.2 — deploy kill-switch for the static operator token. Overridden at boot by the
+     * `CYPPIE_OPERATOR_TOKEN_DISABLED` env (env wins). Never settable at runtime / by any endpoint. When set,
+     * the token stops satisfying the OPERATOR gate ONCE a role-OPERATOR exists (never-lock-out) — C→A collapse.
+     */
+    val operatorTokenDisabled: Boolean = false,
 )
 
 @Serializable

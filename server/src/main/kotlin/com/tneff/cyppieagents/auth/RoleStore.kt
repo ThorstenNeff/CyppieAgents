@@ -33,6 +33,9 @@ interface RoleStore {
 
     /** All assignments (identityId → role) — CYP-186 BE3a workspace roster (OPERATOR-only surface). */
     suspend fun list(): List<RoleAssignment>
+
+    /** Does a role-OPERATOR already exist? — CYP-186 C.2 never-lock-out guard for the token kill-switch. */
+    suspend fun hasOperator(): Boolean
 }
 
 /**
@@ -56,6 +59,9 @@ class InMemoryRoleStore : RoleStore {
 
     override suspend fun list(): List<RoleAssignment> =
         mutex.withLock { assignments.map { RoleAssignment(it.key, it.value, 0L) } }
+
+    override suspend fun hasOperator(): Boolean =
+        mutex.withLock { assignments.any { it.value == AuthRole.OPERATOR } }
 }
 
 /**
@@ -143,6 +149,14 @@ class SqliteRoleStore(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    override suspend fun hasOperator(): Boolean = withContext(io) {
+        mutex.withLock {
+            conn.prepareStatement("SELECT 1 FROM role_assignments WHERE role='OPERATOR' LIMIT 1").use { ps ->
+                ps.executeQuery().use { rs -> rs.next() }
             }
         }
     }
