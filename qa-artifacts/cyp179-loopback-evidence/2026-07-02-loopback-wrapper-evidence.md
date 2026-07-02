@@ -17,13 +17,18 @@
 | **Mail-Seam** | ✓ | Mailpit: **verify-Mail** „Please verify your email address" → NEW-Email · **recovery-Mail** „Recover access to your account" → EXISTING (rc2-test). Beide Branches mail-symmetrisch. |
 | `code` vs `link` | code | dev-Kratos `recovery.use: code` / `verification.use: code` → Mails tragen **Code** (kein Magic-Link). |
 | **fail-mode uniform (MUST-3)** | ✓ | kratosAdminUrl→toter Port :4599, Hub-Restart: NEW **und** EXISTING → **HTTP 503**, body identisch; admin-count **10→10 kein create**. Config restored → 200. |
-| **Timing-Baseline** | ⚠️ **BEFUND** | loopback (low-noise), 8×/Branch: **new ~0.011–0.088s (median ~0.045)** vs **existing ~0.003–0.043s (median ~0.004 nach Warmup)** → **branch-separierbar**: der create+mail läuft im new-Branch **synchron im Response-Pfad**, nicht deferred. |
+| **Timing-Baseline** | ⛔ **SUPERSEDED** | ~~loopback 8×/Branch: new ~0.045 vs existing ~0.004 → „branch-separierbar, create+mail synchron im Response-Pfad".~~ **WIDERLEGT** durch die spätere Locus-Isolation (§ unten): dieser erste Wert war ein **Warmup-/Connection-Artefakt** eines unwarmed 8×-Laufs. **Autoritativ: create IST deferred (NEW ~11.6ms ≪ 82ms create), KEIN stabiles Orakel (Vorzeichen dreht, Verteilungen überlappen), nur ein +0.24ms Micro-Tell.** Siehe §Timing-Locus-Isolation + Test's hermetischen `RegisterWrapperTimingTest`. |
 | **Version-Pin** | ✓ | Kratos **v1.3.0** (Binary + laufender Prozess + config `version: v1.3.0`). Standing-Rule: Bump → RC2-Re-Probe. |
 
-### Timing-Befund (ehrlich, an Test/Backend)
-Auf loopback ist die Response-Latenz **new vs existing unterscheidbar** (~40ms Delta): der new-Branch wartet im Response-Pfad auf admin-create + verification-flow-Trigger, der existing-Branch nur auf existence-check + recovery-notice. Das ist ein **branch-separierbares Timing-Orakel** für Enumeration.
-- **Kompensation (akzeptiert, §A-Posture):** der per-IP G3-Edge-Throttle hebt die Kosten pro Versuch.
-- **Empfehlung (Backend):** create+mail **off den Response-Pfad** deferren (fire-and-forget nach dem 200), dann verschwindet das Delta auch ohne Throttle. Sonst bleibt die Timing-Trennung unter Traffic-Rauschen evtl. nicht verdeckt.
+### ⛔ Timing-Befund (dieser Abschnitt ist SUPERSEDED — hier belassen für den Record, autoritativ ersetzt)
+> **Diese frühe „~40ms-Orakel"-Interpretation ist WIDERLEGT von meiner eigenen späteren Locus-Isolation (§Timing-Locus-Isolation) + Test's hermetischem `RegisterWrapperTimingTest`. Sie bleibt nur als Historie stehen; sie gilt NICHT.**
+>
+> ~~Auf loopback ist die Response-Latenz new vs existing unterscheidbar (~40ms): create+mail synchron im Response-Pfad → branch-separierbares Timing-Orakel; Empfehlung create+mail off-path deferren.~~
+
+**Autoritativ (ersetzt das Obige):**
+- **create IST bereits deferred** (NEW-Response ~11.6ms ≪ 82ms admin-create) — off den Response-Pfad, live + hermetisch bestätigt.
+- **Kein stabiles branch-separierbares Timing-Orakel:** über 3 Läufe dreht das Vorzeichen (new+40 → existing+16 → existing+4.7), |Delta| < stdev, Verteilungen überlappen. Der erste Wert war ein Warmup-/Connection-Artefakt.
+- **Einziges reales Signal:** +0.24ms Micro-Tell in `identityExists` (found vs miss) — unausnutzbar, von G3-Throttle (§A) gedeckt. FINAL: **kein Floor** (monitored Residual). Details + Floor-Daten unten.
 
 ## Test-Harness (kanonisch)
 `RegisterWrapperLiveProbeTest` (RUN-gated, `KRATOS_ADMIN_URL`+`KRATOS_PUBLIC_URL`) → **BUILD SUCCESSFUL** gegen den Live-Stack (C1 existence-false-for-random + C2 create/existence-true).
