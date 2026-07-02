@@ -4,9 +4,12 @@ import com.tneff.cyppieagents.routing.ForbiddenException
 import com.tneff.cyppieagents.routing.TokenRegistry
 import com.tneff.cyppieagents.routing.UnauthorizedException
 import com.tneff.cyppieagents.routing.bearerToken
+import io.ktor.http.HttpMethod
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.createRouteScopedPlugin
 import io.ktor.server.application.install
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.request.header
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.RouteSelector
@@ -26,6 +29,10 @@ class AuthDeps(
     val idp: IdentityProvider,
     val roles: RoleStore,
     val nowMs: () -> Long,
+    /** CYP-186 C.1 — OPERATOR-only audit sink; the guard records every OPERATOR mutation here (default no-op). */
+    val audit: AuditSink = NoOpAuditSink,
+    /** CYP-186 C.2 — deploy kill-switch (boot/env only). Effective ONLY once a role-OPERATOR exists (never lock out). */
+    val operatorTokenDisabled: Boolean = false,
 ) {
     /**
      * Token-only convenience (tests + the operator-token-only mount default): the human-auth path is
@@ -66,7 +73,12 @@ suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? {
     // `requireOperator` semantics). Only the ABSENCE of any credential is 401.
     val bearer = bearerToken()
     if (bearer != null) {
-        if (deps.tokens.isOperator(bearer)) return AuthPrincipal.MachineOperator
+        // CYP-186 C.2: the operator token is INERT when the deploy kill-switch is set AND a role-OPERATOR
+        // already exists (never-lock-out: it carries until the first human bootstraps OPERATOR). Inert →
+        // falls through to a MEMBER MachineAgent → 403 on operator routes (C collapses to A by config).
+        if (deps.tokens.isOperator(bearer) && !(deps.operatorTokenDisabled && deps.roles.hasOperator())) {
+            return AuthPrincipal.MachineOperator
+        }
         return AuthPrincipal.MachineAgent(deps.tokens.agentFor(bearer))
     }
     // Human axis (a Kratos session). RC1: session-valid is NOT enough — the identity must be verified.
@@ -122,6 +134,15 @@ fun Route.authenticatedApi(deps: AuthDeps, required: AuthRole = AuthRole.OPERATO
     return guarded
 }
 
+private val UNSAFE_METHODS = setOf(HttpMethod.Post, HttpMethod.Put, HttpMethod.Delete, HttpMethod.Patch)
+
+/** CYP-186 C.1 — attribute the authorized principal, NEVER a generic "operator". */
+private fun actorOf(p: AuthPrincipal): String = when (p) {
+    is AuthPrincipal.Human -> "human:${p.identityId}"
+    AuthPrincipal.MachineOperator -> "operator-token" // the machine / bootstrap / break-glass path
+    is AuthPrincipal.MachineAgent -> "agent:${p.agentId ?: "unknown"}" // never reaches an OPERATOR gate (403 first)
+}
+
 class AuthGuardConfig {
     lateinit var deps: AuthDeps
     var required: AuthRole = AuthRole.OPERATOR
@@ -136,6 +157,11 @@ val AuthGuard = createRouteScopedPlugin("AuthGuard", ::AuthGuardConfig) {
         if (!p.role.satisfies(required)) throw ForbiddenException("operator required", code = "operator_required")
         call.enforceCsrf() // RC5: a cookie-authed state-changing request must carry the double-submit token
         call.attributes.put(PrincipalKey, p)
+        // CYP-186 C.1: attribute every OPERATOR MUTATION (unsafe method) to the principal — single-source, no
+        // per-handler drift. Body/payload is NEVER captured (the apikey PUT body IS a secret): method + path only.
+        if (required == AuthRole.OPERATOR && call.request.httpMethod in UNSAFE_METHODS) {
+            deps.audit.record(OperatorAudit(actorOf(p), call.request.httpMethod.value, call.request.path(), deps.nowMs()))
+        }
     }
 }
 
