@@ -101,3 +101,21 @@ suspend fun ApplicationCall.requireCommReader(deps: AuthDeps, registry: TokenReg
         else -> throw UnauthorizedException()
     }
 }
+
+/**
+ * CYP-188 B — the WS-handshake read-tier resolver, **non-throwing** (returns null; the caller closes the socket).
+ * Same tier as [requireCommReader] — an agent / operator **token** (via `Authorization` OR the `?token=` query,
+ * since a browser WebSocket can't set an Authorization header), OR a **verified human session** (the same-origin
+ * `ory_kratos_session` cookie on browsers, or `X-Session-Token` natively): OPERATOR → [HubState.OPERATOR_ID],
+ * MEMBER → identityId (a first-class ACL read-subject; comm streams stay ACL-`canRead`-filtered, fail-closed
+ * empty until granted). READ-ONLY: the send path stays token-only — no session path is weaker than the `/api`
+ * guard. Returns null → the WS handler closes VIOLATED_POLICY (no app frame delivered).
+ */
+suspend fun ApplicationCall.wsReaderOrNull(deps: AuthDeps, registry: TokenRegistry): String? {
+    val token = bearerToken() ?: request.queryParameters["token"]
+    registry.participantFor(token)?.let { return it }
+    return when (val p = resolvePrincipal(deps)) {
+        is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
+        else -> null
+    }
+}

@@ -26,8 +26,10 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * ST6 (CYP-40) `/ws/events` over a REAL handshake (not `client.get`): operator receives live pushes,
- * filter narrows, and the fail-closed reject signal (close 1008) fires for no-token / agent-token.
+ * ST6 (CYP-40) `/ws/events` over a REAL handshake (not `client.get`): a reader receives live pushes and the
+ * filter narrows. Fail-closed reject signal (close 1008) fires for no-token. CYP-188 B: the socket is now
+ * **MEMBER-tier** (matches `GET /api/events`), so an **agent token is ADMITTED** (was operator-only) — the
+ * cross-project override stays operator-only (covered by [EventSocketOverrideTest]).
  */
 class EventSocketTest {
 
@@ -98,12 +100,24 @@ class EventSocketTest {
     }
 
     @Test
-    fun agentToken_rejected_close1008() = testApplication {
+    fun agentToken_admitted_receivesLivePushes() = testApplication {
+        // CYP-188 B: MEMBER-tier — an agent token now tails the (team-wide, secret-free) event-log (was 1008).
         val sink = InMemoryEventSink(SystemTimeSource())
         serve(sink)
         wsClient().webSocket("/ws/events?token=tok-be") {
-            val reason = withTimeout(3_000) { closeReason.await() }
-            assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, reason?.code, "agent token is not operator → fail-closed")
+            val pushed = withTimeout(5_000) {
+                var hit: EventPushed? = null
+                while (hit == null) {
+                    sink.append(draft(agent = "backend", type = EventType.TURN_START))
+                    val f = withTimeoutOrNull(50) { incoming.receive() }
+                    if (f is Frame.Text) {
+                        (CommJson.decodeFromString<EventsWsServerEvent>(f.readText()) as? EventPushed)?.let { hit = it }
+                    }
+                }
+                hit
+            }
+            assertEquals("backend", pushed.event.agentId, "agent token is admitted at MEMBER tier and receives pushes")
+            close()
         }
     }
 }

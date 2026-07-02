@@ -213,7 +213,7 @@ fun Route.commRoutes(
         }
     }
 
-    commSocket(hub, state, registry)
+    commSocket(hub, state, registry, deps)
 }
 
 /**
@@ -222,10 +222,11 @@ fun Route.commRoutes(
  * readable channels). Auth: agent OR operator token, via Bearer or `?token=` (browser). Idempotency
  * is by `message.id` on the client. An optional [Subscribe] narrows the stream (still ACL-filtered).
  */
-fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry) {
+fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry, deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry)) {
     webSocket("/ws/comm") {
-        val token = call.bearerToken() ?: call.request.queryParameters["token"]
-        val participant = registry.participantFor(token)
+        // CYP-188 B: read-tier (token OR verified human session) — same as GET /api/channels. A MEMBER session
+        // maps to its identityId → the stream stays ACL-`canRead`-filtered (fail-closed empty until granted).
+        val participant = call.wsReaderOrNull(deps, registry)
         if (participant == null) {
             close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
             return@webSocket
