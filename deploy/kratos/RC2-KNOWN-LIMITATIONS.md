@@ -144,3 +144,26 @@ Kratos's). Instead: a **documented soft post-auth limit**, gated at the same exp
 (**CYP-179**); re-evaluate at the v26 upgrade (which may make the settings flow generic). The shim stays thin
 (pure passthrough), and the residual weakest-of-three vector is thrown into the throttle + localhost-binding
 posture until then.
+
+---
+
+## §D — OIDC "Sign in with GitHub" security posture (CYP-183 / P4, 2026-07-02)
+
+Not a graded *leak* like §A–§C, but the canonical record of the OIDC security decisions (full detail +
+evidence in `P4-OIDC-SPIKE-RUNBOOK.md`).
+
+- **S1a linking-takeover: GO for GitHub, but a PER-PROVIDER HARD gate.** The unverified-secondary-email →
+  auto-link → takeover vector is structurally impossible with GitHub (it never exposes an unverified secondary
+  email in the OIDC claim; the spike proved the victim identity untouched). **Residual:** Kratos's own
+  "refuse to link an unverified email to an existing identity" defense was therefore never exercised. So
+  **before adding ANY future OIDC provider, S1a MUST be re-probed against that provider's unverified-email
+  exposure AND Kratos's link-refusal tested** — the GitHub result does NOT generalize. This is a standing gate,
+  not a one-time check.
+- **S2 verified-mapping: verify-then-admit is the SAFE default (kept).** An OIDC identity lands
+  platform-`verified=false` — Kratos does not blindly trust the provider's verified flag, so the P1 guard
+  (verified-required) denies it until an on-platform verification (P2.3 flip). The UX cost (GitHub sign-in is
+  not one-click) is an Auftraggeber decision; enabling per-provider "trust the provider's verified flag" is a
+  documented per-provider risk (auto-verify + a provider that surfaces unverified emails = the S1a takeover
+  class). Recommendation: keep the safe default.
+- **S1b (silent auto-merge on verified email-collision):** pending a quick deploy probe; verdict to follow.
+- **No OIDC "Sign in with GitHub" client button / UX ships before the final S1 verdict.**
