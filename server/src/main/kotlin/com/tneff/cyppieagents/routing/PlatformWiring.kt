@@ -111,6 +111,7 @@ fun Application.installPlatform(
         // CYP-182 / P3: the content-free client whoami read — PUBLIC by design (reports {authenticated:false}
         // to an unauthenticated caller, never a 401); no id/email/secrets.
         authMeRoutes(authDeps)
+        workspaceRoutes(authDeps) // CYP-186 BE3a: OPERATOR-only workspace roster
     }
 }
 
