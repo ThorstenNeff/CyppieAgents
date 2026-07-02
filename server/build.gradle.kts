@@ -50,6 +50,7 @@ dependencies {
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.clientCio)
     testImplementation(libs.ktor.serverTestHost)
+    testImplementation(libs.ktor.clientMock) // CYP-179 C2: hermetic wiring assertion for the register-backend seam
     testImplementation(libs.ktor.clientContentNegotiation)
     testImplementation(libs.ktor.clientWebsockets)
     testImplementation(libs.kotlinx.coroutinesTest)

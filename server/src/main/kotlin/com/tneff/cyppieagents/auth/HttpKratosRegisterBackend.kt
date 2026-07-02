@@ -16,7 +16,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.slf4j.LoggerFactory
 
@@ -37,16 +38,25 @@ import org.slf4j.LoggerFactory
  * Secret hygiene: the password is sent only to Kratos; NEVER logged. Only status classes are logged.
  */
 class HttpKratosRegisterBackend(
-    /** The Kratos ADMIN base URL — loopback only (e.g. `http://127.0.0.1:4434`), RC4. */
+    /** The Kratos ADMIN base URL — loopback only (e.g. `http://127.0.0.1:4434`), RC4. Used for exists + create. */
     private val adminBaseUrl: String,
+    /**
+     * The Kratos PUBLIC base URL (e.g. `http://127.0.0.1:4433`) — used to drive the self-service VERIFICATION
+     * flow (new branch: sends the verify mail — deploy proved on v1.3.0 that admin-create alone does NOT) and
+     * the self-service RECOVERY flow (existing branch: the "you already have an account" notice mail).
+     */
+    private val publicBaseUrl: String,
     /** The identity schema id (Doc/deploy owns the schema; default matches the reference config). */
     private val schemaId: String = "default",
+    /** The verification/recovery method — the reference config sets both to `code` (CYP-179 C2 confirmed). */
+    private val flowMethod: String = "code",
     private val client: HttpClient = HttpClient(CIO) { install(HttpTimeout) },
     private val timeoutMs: Long = 5_000,
 ) : KratosRegisterBackend {
     private val log = LoggerFactory.getLogger("auth.register.kratos")
     private val json = Json { ignoreUnknownKeys = true }
     private val base = adminBaseUrl.trimEnd('/')
+    private val publicBase = publicBaseUrl.trimEnd('/')
 
     /**
      * `GET /admin/identities?credentials_identifier=<email>` → any match ⇒ exists. A non-2xx (admin down)
@@ -72,9 +82,11 @@ class HttpKratosRegisterBackend(
     }
 
     /**
-     * NEW branch: `POST /admin/identities` with the cleartext password (Kratos hashes it), state active.
-     * DEPLOY-VERIFIED: whether this alone dispatches the verification mail on v1.3.0, or needs a follow-up
-     * admin verification/recovery trigger — the runbook pins the Mailpit assertion. Never logs the password.
+     * NEW branch: `POST /admin/identities` with the cleartext password (Kratos hashes it), state active, THEN
+     * trigger the verification flow so the verify mail is sent. CYP-179 C2: deploy LIVE-proved admin-create alone
+     * does NOT send the mail on v1.3.0 (Mailpit stayed 0), but the verification flow DOES — hence this follow-up.
+     * Best-effort after a successful create (a trigger hiccup logs its class; the identity still exists and can
+     * re-verify later); never throws past the mediator's branch-blind catch. Never logs the password.
      */
     override suspend fun createAndVerify(email: String, password: String) {
         val body = buildJsonObject {
@@ -89,21 +101,48 @@ class HttpKratosRegisterBackend(
             header("Accept", "application/json"); contentType(ContentType.Application.Json)
             setBody(body); timeout { requestTimeoutMillis = timeoutMs }
         }
-        // A conflict here (409) means the identity appeared between the check and the create (a race) — safe:
-        // no duplicate is created and we still return the generic response. Log only the status class.
-        if (!resp.status.isSuccess()) log.warn("admin identity create returned {} (no verification mail sent)", resp.status.value)
-        // DEPLOY-VERIFIED follow-up (runbook): if create does not auto-send verification on v1.3.0, trigger it here
-        // via the admin verification/recovery path. Left as the pinned seam so it is proven against the live stack.
+        if (!resp.status.isSuccess()) {
+            // 409 = the identity appeared between check and create (a race) — the concurrent register drives its
+            // own verification; skip ours. Any other non-2xx → no identity, no verification to trigger. Log class only.
+            log.warn("admin identity create returned {} (skipping verification trigger)", resp.status.value)
+            return
+        }
+        triggerFlow("verification", email) // the follow-up that actually sends the verify mail (C2)
     }
 
     /**
-     * EXISTING branch: send the "you already have an account" notice so the branches are mail-symmetric.
-     * DEPLOY-VERIFIED (runbook): the exact notice path (admin recovery-code vs a dedicated SMTP notice) on
-     * v1.3.0. A failure here is swallowed by the mediator (branch-blind) — it must never surface as a
-     * branch-dependent response. Never logs beyond the status class.
+     * EXISTING branch: drive the self-service RECOVERY flow for the email → Kratos sends the recovery/notice
+     * mail ("you already have an account — recover it"), keeping the branches mail-symmetric. Best-effort +
+     * branch-blind: a failure here must never surface as a branch-dependent response (the mediator already
+     * returned the uniform generic body). Never logs beyond the status class.
      */
     override suspend fun notifyExisting(email: String) {
-        // Pinned deploy seam: emit the existing-account notice. Intentionally best-effort + branch-blind.
-        log.info("existing-account notice enqueued (mechanics deploy-verified per runbook)")
+        triggerFlow("recovery", email)
+    }
+
+    /**
+     * Drive a self-service `verification` | `recovery` **api** flow for [email]: initialize the flow (GET), read
+     * its `ui.action` submit URL, then POST `{method, email}`. Kratos sends the corresponding mail. Best-effort:
+     * a non-2xx or a missing action is logged by class only and swallowed (the caller is already off the response
+     * path). Never logs the email beyond nothing — only statuses/classes are logged.
+     */
+    private suspend fun triggerFlow(type: String, email: String) {
+        try {
+            val init = client.get("$publicBase/self-service/$type/api") {
+                header("Accept", "application/json"); timeout { requestTimeoutMillis = timeoutMs }
+            }
+            if (!init.status.isSuccess()) { log.warn("{} flow init returned {}", type, init.status.value); return }
+            val action = json.parseToJsonElement(init.bodyAsText()).jsonObject["ui"]?.jsonObject
+                ?.get("action")?.jsonPrimitive?.content
+            if (action == null) { log.warn("{} flow missing ui.action", type); return }
+            val payload = buildJsonObject { put("method", flowMethod); put("email", email) }.toString()
+            val submit = client.post(action) {
+                header("Accept", "application/json"); contentType(ContentType.Application.Json)
+                setBody(payload); timeout { requestTimeoutMillis = timeoutMs }
+            }
+            if (!submit.status.isSuccess()) log.warn("{} flow submit returned {}", type, submit.status.value)
+        } catch (e: Exception) {
+            log.warn("{} flow trigger failed (branch-blind): {}", type, e.javaClass.simpleName)
+        }
     }
 }

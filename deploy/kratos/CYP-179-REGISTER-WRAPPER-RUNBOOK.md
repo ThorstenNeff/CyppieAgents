@@ -30,18 +30,24 @@
       `?credentials_identifier=` semantics or the documented filter and update the backend.
 
 ### C2 — new-email branch: create + verify mail  ⭐ the load-bearing mechanic
-`POST /admin/identities {schema_id, state:active, traits.email, credentials.password.config.password}`.
+`createAndVerify` = `POST /admin/identities {schema_id, state:active, traits.email, credentials.password.config.password}`
+THEN the **verification-flow trigger** (deploy LIVE-confirmed 2026-07-02: admin-create ALONE sends no mail on
+v1.3.0 — Mailpit stayed 0 — but the verification flow DOES). Trigger = public API flow:
+`GET /self-service/verification/api` → read `ui.action` → `POST {method:"code", email}` (method matches the
+reference config `verification.use: code`).
 - [ ] A **fresh** register → identity created (admin count **+1**), state `active`, password set.
-- [ ] **A verification mail lands in Mailpit** for that email. **If NOT** (admin-create does not auto-send
-      verification on v1.3.0): wire the follow-up trigger in `createAndVerify` (admin verification/recovery
-      code path) and re-run until the mail lands. This is the pinned TODO in the backend.
+- [ ] **A verification mail lands in Mailpit** for that email (this is the follow-up trigger, now wired).
+      If it does NOT land, capture the flow init/submit statuses (the backend logs the class) and reconcile the
+      method (`code` vs `link`) against the live config.
 - [ ] Response to the caller = generic `200 {"status":"verification_pending"}`.
 
 ### C3 — existing-email branch: no create + notice mail
+`notifyExisting` = the **recovery-flow trigger** (public API): `GET /self-service/recovery/api` → `ui.action` →
+`POST {method:"code", email}` → Kratos sends the recovery/notice mail ("you already have an account — recover it").
 - [ ] Register with an **existing** email → admin identity count **UNCHANGED** (no dup, no pollution/DoS).
 - [ ] Response = the **byte-identical** generic `200 {"status":"verification_pending"}` (compare bytes to C2's).
-- [ ] A **notice mail** ("you already have an account") lands in Mailpit (wire `notifyExisting` to the chosen
-      path — admin recovery-code or a dedicated SMTP notice). Keeps the branches mail-symmetric.
+- [ ] A **recovery/notice mail** lands in Mailpit for the existing email. Keeps the branches mail-symmetric
+      (no "silence == exists" side-channel). Confirm the notice UX reads acceptably ("recover your account").
 
 ### C4 — branch-invariance end-to-end (the §B closure, on the live stack)
 - [ ] C2 and C3 responses are **byte-identical** (status + body + headers; no branch-differing Set-Cookie/flow-id).
