@@ -68,6 +68,16 @@ data class AuthConfig(
      */
     val kratosAdminUrl: String? = null,
     /**
+     * CYP-179 (stage-2) — the register-wrapper **constant-time floor** (ms): every `POST /api/auth/register`
+     * response is padded UP to ≥ this from request-start, AND the existence check is **capped at this same value**
+     * (a check past it → uniform 503, never a slow-200), so the Kratos admin existence check's found/miss latency
+     * tell (Aiven-Postgres: FOUND hydrates → extra round-trips, +12.8ms vs MISS) never reaches the wire. MUST be
+     * **> the found-branch absolute worst-case** response time — single-source it from deploy's Aiven N≥40
+     * found-path p99/max + jitter margin (this default is a placeholder; deploy sets the real value via config,
+     * no rebuild). The cap IS the floor by design (a cap ≫ floor would re-open a slow-200 tail leak).
+     */
+    val registerFloorMs: Long = 40,
+    /**
      * CYP-186 C.2 — deploy kill-switch for the static operator token. Overridden at boot by the
      * `CYPPIE_OPERATOR_TOKEN_DISABLED` env (env wins). Never settable at runtime / by any endpoint. When set,
      * the token stops satisfying the OPERATOR gate ONCE a role-OPERATOR exists (never-lock-out) — C→A collapse.

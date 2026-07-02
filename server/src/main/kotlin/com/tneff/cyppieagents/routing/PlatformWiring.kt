@@ -218,7 +218,12 @@ fun Application.bootPlatform(
         val sideEffectScope = kotlinx.coroutines.CoroutineScope(
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
         )
-        com.tneff.cyppieagents.auth.RegisterMediator(backend, sideEffectScope)
+        // CYP-179 (stage-2): the constant-time floor (which also CAPS the existence check at the same value)
+        // masks the Aiven-Postgres existence-check found/miss timing tell. Value single-sourced from deploy's
+        // Aiven N≥40 found-path p99/max + jitter margin (config, no rebuild).
+        com.tneff.cyppieagents.auth.RegisterMediator(
+            backend, sideEffectScope, floorMs = authCfg.registerFloorMs,
+        )
     } }
     installPlatform(booted, authDeps, settingsClient, registerMediator)
     return booted
