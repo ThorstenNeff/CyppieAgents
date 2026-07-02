@@ -107,7 +107,7 @@ registration-DoS / store-pollution vector), so **a per-IP throttle is NOT an acc
 - **Probe hygiene:** the register pair runs **once** per branch (not N) to bound the account-creation
   side-effect; deploy runs `cleanup-junk-identities.sh` (admin API :4434) **before each re-run**.
 
-### Resolution (CYP-179, 2026-07-02) — content CLOSED; timing = monitored residual
+### Resolution (CYP-179, 2026-07-02) — content CLOSED; timing: monitored residual (stage-1 SQLite) → constant-time floor (stage-2 Aiven-Postgres)
 
 **§B content is CLOSED (the HARD gate is satisfied)** via closure path (2): the **platform register-wrapper**
 (`POST /api/auth/register`, CYP-179 §B(b), merged). It is the only app register path and returns a
@@ -153,10 +153,49 @@ Disposition (§A-consistent, but weaker — §A had a real ~35× argon2 delta; t
   teethable (fast + slow existence-check fake → **both** responses ≥ floor, buckets overlap; "floor for only one
   branch" → RED). Minutes to build once a real signal justifies and sizes it.
 
-**Flip disposition:** §B content is HARD-closed → the register surface may go off-localhost on the content axis;
-the timing residual is bundled into the flip release as an **accepted monitored residual** (weaker than the
-already-accepted §A) — **no new Auftraggeber build-decision required**; the Auftraggeber gets the status
-one-liner (§B content = HARD-closed · §B timing = no exploitable signal, monitored + throttle + re-measure).
+**Flip disposition (stage-1):** §B content is HARD-closed → the register surface may go off-localhost on the
+content axis; the timing residual was bundled into the flip release as an accepted monitored residual — **until
+stage-2 (below) superseded the residual with an actual fix.**
+
+### Stage-2 update (Aiven-Postgres, 2026-07-02) — the timing residual did NOT hold → constant-time floor BUILT
+
+Re-measure trigger (1) fired: the Auftraggeber chose **Aiven-Postgres** for the exposed auth surface. Deploy's
+tight-alternating paired-Δ isolation (3×40) found a **real, reproducible** timing oracle — unlike SQLite's
+sub-jitter noise: **+12.8ms found > miss, sign +++ stable across all runs, no distribution overlap, 40/40**.
+
+**Mechanism (verified against Ory docs / Context7, not just the field report):** server-side PG execution is
+constant (found 0.116ms vs miss 0.092ms) → **not** the query. The delta is **round-trip count**: the only
+v1.3.0 admin credential-existence query is the LIST endpoint `?credentials_identifier=`, which **hydrates** the
+found identity (traits + verifiable/recovery addresses = extra sequential queries = extra network round-trips to
+the remote DB) while a MISS short-circuits. v1.3.0 exposes **no** hydration-free / count / HEAD / projection
+existence check → **Option 1 (equalize at source) is not reachable** without a fragile direct-DB `SELECT EXISTS`
+against Kratos's internal schema (rejected: schema/version coupling + new infra). The sync existence check runs
+on the response path (MUST-2), so the wrapper inherits the delta.
+
+**Closure — constant-time floor (this build).** The earlier "can't dimension a floor" objection does **not**
+apply here: the delta is a **bounded fixed hydration-RTT cost, not a store-size scan**, so a floor **>
+found-branch absolute worst-case + jitter** closes it robustly, sized from real data. The mediator pads EVERY
+response (200 AND 503) to ≥ `registerFloorMs` from register-start (found/miss-blind), with a `withTimeout` clamp
+(`registerClampMs`) so a found-spike past the floor collapses to a **uniform 503** (never a slow-200 tell).
+MUST-2/3 + register-only preserved; the off-path dispatch is unchanged. Hermetic teeth (`RegisterFloorTest`): an
+asymmetric-round-trip fake (found-slow / miss-fast) → both branches ≥ floor + buckets overlap; a floor-off
+mutation reds the (fast) miss branch. Deferred-202 (Option 2) was rejected — it would drop the sync-503 (a UX
+regression); the floor has no UX trade-off.
+
+**Dimensioning + monitoring (Test's conditions):**
+- (a) `registerFloorMs` = the Aiven **found-branch p99/max + a jitter margin** (NOT the median ~26ms) — **deploy
+  single-sources it from the N≥40 measurement and sets it via config** (no rebuild). The code default (40ms) is a
+  placeholder until deploy dimensions it.
+- (b) the **clamp is mandatory** (a found-spike > floor → uniform 503, never a slow 200); (c) the floor is
+  **found/miss-blind** — both hold in this build.
+- (e) **Monitor the clamp / 503 rate:** a rising uniform-503 rate means the clamp is firing (floor too low vs
+  live latency, or a Kratos/RTT regression) → re-dimension.
+- (f) **Re-measure the paired-Δ on any RTT change** (region/instance move, network path) **or Kratos version
+  bump** — the floor value is valid only for the measured RTT profile.
+
+**Authoritative gate:** the hermetic teeth prove only the padding *mechanics*; the closure is confirmed by
+deploy's **live Aiven paired-Δ collapse** (found ≡ miss after the data-sized floor) — network timing is not
+hermetically provable.
 
 ## Teeth (why a green here is not vacuous)
 
