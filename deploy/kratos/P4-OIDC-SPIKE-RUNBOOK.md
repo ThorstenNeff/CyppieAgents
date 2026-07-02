@@ -113,3 +113,36 @@ Caveats (why it is a follow-up, not the initial gate): (1) it still needs deploy
 reach the mock); (2) it exercises the `generic`-OIDC path, not the ship path's `github` OAuth2 provider — so it
 is a fast **BLOCK-if-unsafe** tripwire on the core logic, never a **GO** confirmation (only the real GitHub flow
 is faithful). Build it when OIDC ships if the HARD-gate automation is judged worth the signed-JWT-provider effort.
+
+## S1a / S2 spike RESULTS + verdict (2026-07-02, deploy :4434 authoritative readout)
+
+**S1a — GitHub takeover: GO (empirical).** VICTIM (email E) provably UNCHANGED — `credentials=[password]`,
+no oidc, `verified=true`; a SEPARATE identity was created from GitHub's **verified primary** email A (not the
+collision email E), platform-`verified=false`. Root cause: **GitHub never exposes the unverified secondary
+email in the OIDC claim**, so the collision email never reaches Kratos → the "unverified-secondary → auto-link
+→ takeover" vector is **structurally impossible with GitHub**. Not a guess — the probe ran and the victim was
+untouched.
+
+**⚠️ Per-provider residual (documented, NOT a GitHub blocker):** because GitHub never sent the unverified
+email, **Kratos's own "refuse to link an unverified email to an existing identity" defense was NOT exercised**
+(upstream-moot for GitHub). Therefore **S1a is a PER-PROVIDER HARD gate**: before adding ANY future OIDC
+provider, re-run S1a against that provider's unverified-email exposure AND test Kratos's link-refusal. Do NOT
+assume the GitHub result generalizes to a provider that DOES surface unverified emails.
+
+**S2 — verified-mapping: GO (safe default).** The new OIDC identity is platform-`verified=false` — Kratos does
+NOT blindly trust GitHub's verified flag → `requirePrincipal` (verified-required) rejects it until an
+on-platform verification → **verify-then-admit** (the P2.3 verified-flip covers it; the client shows "verify
+your email", P3). Security-safe.
+**UX tradeoff (Auftraggeber decision):** this makes GitHub sign-in NOT one-click (a follow-up email verify is
+required). One-click would need per-provider "trust GitHub's verified flag" config — GitHub-safe (only sends
+the verified primary) but a documented per-provider decision (auto-verify + a provider that surfaces unverified
+emails = takeover). **Recommended: keep the safe default (verified=false / verify-then-admit).**
+
+**S1b — verified-collision: PENDING a quick probe.** This run had no real collision (A ≠ E). To settle whether
+Kratos silently auto-merges a GitHub login into an existing same-email PASSWORD identity (no ownership proof),
+run once with a VICTIM whose email == GitHub's verified primary A. Silent auto-merge → finding (assess
+severity); separate identity / proof-required → clean S1b-GO. Not P3-blocking (S1a closed + the verified guard
+is a backstop), but worth knowing before the client button ships.
+
+**Overall:** S1a-GO (GitHub) + S2-GO (safe default). **The client "Sign in with GitHub" button (dev-lane) waits
+on the S1b quick probe** for the final S1 verdict.
