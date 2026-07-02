@@ -36,14 +36,15 @@ fun Route.configRoutes(
     deps: AuthDeps = AuthDeps(registry),
 ) {
     route("/api/config") {
-        // GET = participant (any authenticated agent/operator): the masked status line, never the key.
+        // GET = any authenticated reader — agent/operator token OR a verified human (incl. a MEMBER session,
+        // CYP-186 BE2): the MASKED status line only, never the key. The reveal/raw key is egressed by NO GET.
         get("/repo") {
-            call.requireParticipant(registry)
+            call.requireCommReader(deps, registry)
             call.respond(store.repoView(activeProjectId()))
         }
         get("/apikey") {
-            call.requireParticipant(registry)
-            call.respond(store.apiKeyView(activeProjectId())) // only { set, masked }
+            call.requireCommReader(deps, registry)
+            call.respond(store.apiKeyView(activeProjectId())) // only { set, masked } — MEMBER never sees the raw key
         }
         // CYP-178: operator WRITES gated STRUCTURALLY under the group — fail-closed BEFORE the body is
         // received (a non-operator is 401/403, unparsed). The RC1 route-enumeration meta-test is the net.

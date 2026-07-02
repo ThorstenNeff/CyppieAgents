@@ -2,8 +2,10 @@ package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.authenticatedApi
+import com.tneff.cyppieagents.auth.resolvePrincipal
 import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.events.Page
@@ -44,12 +46,19 @@ fun Route.eventRoutes(
     authorizedProjects: () -> Set<String> = { emptySet() },
     deps: AuthDeps = AuthDeps(registry),
 ) {
-    // CYP-178: operator gate is STRUCTURAL (mounted under the group), fail-closed before any query runs;
-    // the RC1 route-enumeration meta-test is the net that catches any /api route mounted outside a guard.
-    authenticatedApi(deps, AuthRole.OPERATOR) {
+    // CYP-186 BE2: the event-log is secret-free metadata → readable at the MEMBER tier (gate STRUCTURAL,
+    // fail-closed; the RC1 route-enumeration meta-test is the net). The cross-project `?projectId` override
+    // stays OPERATOR-only: a non-operator (agent / human MEMBER) is FORCED to the active project so the
+    // event read can never enumerate or leak OTHER projects (guardrail b).
+    authenticatedApi(deps, AuthRole.MEMBER) {
         route("/api/events") {
             get {
                 val q = call.request.queryParameters
+                val isOperator = when (val p = call.resolvePrincipal(deps)) {
+                    is AuthPrincipal.MachineOperator -> true
+                    is AuthPrincipal.Human -> p.role == AuthRole.OPERATOR
+                    else -> false
+                }
                 val filter = EventFilter(
                     agentId = q["agentId"],
                     type = q["type"]?.let { parseType(it) },
@@ -60,8 +69,10 @@ fun Route.eventRoutes(
                     sessionId = q["sessionId"],
                     // S13 / CYP-102 default = forced-active; S17 / CYP-94 operator-only override resolved here
                     // (single resolver, also used by /ws/events): `?projectId=<id>|all`, bounded to the
-                    // operator's authorized set, fail-closed to active on anything unauthorized.
-                    projectId = resolveEventScope(q["projectId"], activeProjectId(), authorizedProjects()),
+                    // operator's authorized set, fail-closed to active. Non-operators: override IGNORED → active only.
+                    projectId = resolveEventScope(
+                        if (isOperator) q["projectId"] else null, activeProjectId(), authorizedProjects(),
+                    ),
                 )
                 val afterSeq = q["afterSeq"]?.let { parseLong(it, "afterSeq") }
                 val limit = (q["limit"]?.let { parseInt(it, "limit") } ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)

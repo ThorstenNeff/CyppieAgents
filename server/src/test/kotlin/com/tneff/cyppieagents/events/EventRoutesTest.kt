@@ -38,15 +38,17 @@ class EventRoutesTest {
     }
 
     @Test
-    fun operatorOnly_failClosed() = testApplication {
+    fun memberReadable_failClosedWithoutCredential() = testApplication {
         val time = ManualTimeSource()
         val sink = InMemoryEventSink(time)
         application { installEvents(sink, registry) }
         val rest = restClient()
         seed(sink, time)
 
-        assertEquals(HttpStatusCode.Unauthorized, rest.get("/api/events").status, "no token → 401")
-        assertEquals(HttpStatusCode.Forbidden, rest.get("/api/events") { bearerAuth("tok-be") }.status, "agent token → 403")
+        // CYP-186 BE2: the event-log is secret-free metadata → MEMBER-readable (was operator-only). Still
+        // fail-closed without a credential; an agent (MEMBER tier) may now read (forced to the active project).
+        assertEquals(HttpStatusCode.Unauthorized, rest.get("/api/events").status, "no token → 401 (fail-closed)")
+        assertEquals(HttpStatusCode.OK, rest.get("/api/events") { bearerAuth("tok-be") }.status, "agent (MEMBER tier) → 200")
         val page: EventPage = rest.get("/api/events") { bearerAuth("tok-op") }.body()
         assertEquals(3, page.events.size, "operator sees the full team-wide log")
     }
