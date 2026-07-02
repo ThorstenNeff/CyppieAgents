@@ -165,5 +165,11 @@ evidence in `P4-OIDC-SPIKE-RUNBOOK.md`).
   not one-click) is an Auftraggeber decision; enabling per-provider "trust the provider's verified flag" is a
   documented per-provider risk (auto-verify + a provider that surfaces unverified emails = the S1a takeover
   class). Recommendation: keep the safe default.
-- **S1b (silent auto-merge on verified email-collision):** pending a quick deploy probe; verdict to follow.
-- **No OIDC "Sign in with GitHub" client button / UX ships before the final S1 verdict.**
+- **S1b silent auto-merge: GO.** For a GitHub-verified email colliding with an existing password identity,
+  Kratos REFUSES the auto-link and pauses at an ownership proof ("email already used — sign in to add github");
+  the victim identity is untouched (no `oidc` credential appended, no merge). Login-at-the-account first.
+- **✅ FINAL S1 VERDICT: GO — GitHub-OIDC is safe against email-collision/takeover**, on three independent
+  layers: (1) at-GitHub — unverified secondary emails never reach the OIDC claim (S1a); (2) Kratos — an
+  ownership proof is required before linking to an existing same-email identity (S1b); (3) on-platform — OIDC
+  identities are `verified=false`, so the guard denies until on-platform verify (S2). Residuals (documented,
+  non-blocking): the S1a per-provider gate above + the S2 one-click-UX Auftraggeber decision.
