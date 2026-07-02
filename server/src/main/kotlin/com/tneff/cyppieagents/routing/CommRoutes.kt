@@ -146,15 +146,16 @@ fun Route.commRoutes(
             call.respond(agents)
         }
 
-        // Read/send accept an agent OR the operator (privileged participant) — same AclMatrix.
+        // Reads accept an agent, the operator, OR a verified human (OPERATOR=member-of-all, MEMBER=ACL-subject
+        // by identityId, fail-closed) — SAME AclMatrix. The send (POST) stays token-only: a MEMBER can't post.
         get("/channels") {
-            val participant = call.requireParticipant(registry)
+            val participant = call.requireCommReader(deps, registry)
             call.respond(hub.readableChannels(participant))
         }
 
         route("/channels/{id}/messages") {
             get {
-                val participant = call.requireParticipant(registry)
+                val participant = call.requireCommReader(deps, registry)
                 val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
                 val since = call.request.queryParameters["since"]?.toLongOrNull()
                 call.respond(hub.channelMessages(participant, channelId, since))
@@ -171,23 +172,23 @@ fun Route.commRoutes(
         }
 
         get("/inbox") {
-            val participant = call.requireParticipant(registry)
+            val participant = call.requireCommReader(deps, registry)
             val since = call.request.queryParameters["since"]?.toLongOrNull()
             call.respond(hub.inbox(participant, since))
         }
 
         get("/acl") {
-            val token = call.bearerToken()
+            val participant = call.requireCommReader(deps, registry)
             val filterChannel = call.request.queryParameters["channelId"]
             val filterAgent = call.request.queryParameters["agentId"]
             // Route through the project-scoped matrix (S12 / CYP-81), the SAME chokepoint as
             // canRead/canWrite/visibleMessages/inbox/WS — so GET /acl can't egress raw cross-project
-            // entries. `state.acl.entries`/`isMember` are already filtered to the active project.
-            val visible = if (registry.isOperator(token)) {
+            // entries. `state.acl.entries`/`isMember` are already filtered to the active project. A human
+            // MEMBER (participant=identityId) sees only entries of channels they are a member of → fail-closed.
+            val visible = if (participant == HubState.OPERATOR_ID) {
                 state.acl.entries
             } else {
-                val agentId = registry.agentFor(token) ?: throw UnauthorizedException()
-                state.acl.entries.filter { state.acl.isMember(it.channelId, agentId) }
+                state.acl.entries.filter { state.acl.isMember(it.channelId, participant) }
             }
             call.respond(
                 visible.filter {

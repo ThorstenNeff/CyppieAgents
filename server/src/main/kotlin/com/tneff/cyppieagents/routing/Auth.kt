@@ -1,5 +1,9 @@
 package com.tneff.cyppieagents.routing
 
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthPrincipal
+import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.resolvePrincipal
 import com.tneff.cyppieagents.comm.HubState
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
@@ -81,3 +85,19 @@ fun TokenRegistry.participantFor(token: String?): String? =
 /** Resolves the caller (agent OR operator) for the comm read/send endpoints, or throws 401. */
 fun ApplicationCall.requireParticipant(registry: TokenRegistry): String =
     registry.participantFor(bearerToken()) ?: throw UnauthorizedException()
+
+/**
+ * CYP-186 BE2 — resolve the comm-**READ** participant. Token axis first (agent / operator — unchanged), then a
+ * verified **human** session: a human OPERATOR maps to [HubState.OPERATOR_ID] (member-of-all, like the operator
+ * token); a human MEMBER maps to their **identityId** — a first-class ACL read-subject, so
+ * `acl.canRead(channel, identityId)` is **fail-closed empty** until an OPERATOR grants them per-channel read.
+ * READ-ONLY by construction: the send path keeps [requireParticipant] (token axis only), so a MEMBER session
+ * can never post — and the grant is written `canWrite:false`.
+ */
+suspend fun ApplicationCall.requireCommReader(deps: AuthDeps, registry: TokenRegistry): String {
+    registry.participantFor(bearerToken())?.let { return it } // agent / operator token — unchanged
+    return when (val p = resolvePrincipal(deps)) {
+        is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
+        else -> throw UnauthorizedException()
+    }
+}

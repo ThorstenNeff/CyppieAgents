@@ -50,6 +50,9 @@ class MemberTier403MatrixTest {
     private val memberAllowlist = setOf(
         "GET /api/health", "GET /api/agents", "GET /api/auth/me",
         "POST /api/auth/settings/password", "POST /api/auth/settings/email",
+        // CYP-186 BE2 — MEMBER-permitted READS (ACL-filtered / masked / secret-free metadata), not operator-deny:
+        "GET /api/channels", "GET /api/channels/{id}/messages", "GET /api/inbox", "GET /api/acl",
+        "GET /api/config/repo", "GET /api/config/apikey", "GET /api/events",
     )
 
     @Test
