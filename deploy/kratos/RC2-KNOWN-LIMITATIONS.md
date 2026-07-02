@@ -172,4 +172,5 @@ evidence in `P4-OIDC-SPIKE-RUNBOOK.md`).
   layers: (1) at-GitHub — unverified secondary emails never reach the OIDC claim (S1a); (2) Kratos — an
   ownership proof is required before linking to an existing same-email identity (S1b); (3) on-platform — OIDC
   identities are `verified=false`, so the guard denies until on-platform verify (S2). Residuals (documented,
-  non-blocking): the S1a per-provider gate above + the S2 one-click-UX Auftraggeber decision.
+  non-blocking): the S1a per-provider gate above (still open, standing). The S2 one-click-UX residual is
+  DECIDED (secure default kept; one-click not chosen).

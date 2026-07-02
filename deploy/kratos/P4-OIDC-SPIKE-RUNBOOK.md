@@ -136,7 +136,7 @@ your email", P3). Security-safe.
 **UX tradeoff (Auftraggeber decision):** this makes GitHub sign-in NOT one-click (a follow-up email verify is
 required). One-click would need per-provider "trust GitHub's verified flag" config — GitHub-safe (only sends
 the verified primary) but a documented per-provider decision (auto-verify + a provider that surfaces unverified
-emails = takeover). **Recommended: keep the safe default (verified=false / verify-then-admit).**
+emails = takeover). **DECIDED (Auftraggeber, 2026-07-02): the safe default (verified=false / verify-then-admit) is BINDING; one-click is NOT chosen** (CYP-185 builds it).
 
 **S1b — verified-collision: PENDING a quick probe.** This run had no real collision (A ≠ E). To settle whether
 Kratos silently auto-merges a GitHub login into an existing same-email PASSWORD identity (no ownership proof),
