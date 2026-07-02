@@ -51,6 +51,11 @@ internal fun parseKratosErrorId(body: String): String? = runCatching {
         ?: root["id"]?.jsonPrimitive?.content
 }.getOrNull()
 
+/** The `redirect_browser_to` URL from a Kratos browser-location-change response (the OIDC → GitHub URL), or null. */
+internal fun parseKratosRedirectUrl(body: String): String? = runCatching {
+    KratosJson.parseToJsonElement(body).jsonObject["redirect_browser_to"]?.jsonPrimitive?.content
+}.getOrNull()?.ifBlank { null }
+
 /** The `csrf_token` hidden-node value from a **browser** flow's `ui.nodes` (required to submit it), or null. */
 internal fun parseKratosCsrfToken(body: String): String? = runCatching {
     KratosJson.parseToJsonElement(body).jsonObject["ui"]?.jsonObject?.get("nodes")?.jsonArray

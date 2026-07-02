@@ -3,12 +3,15 @@ package com.tneff.cyppieagents.auth
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -19,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -27,7 +31,12 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_auth_password_confirm
 import kmpcyppieagents.app.shared.generated.resources.auth_forgot_body
 import kmpcyppieagents.app.shared.generated.resources.auth_forgot_sent
 import kmpcyppieagents.app.shared.generated.resources.auth_forgot_title
+import kmpcyppieagents.app.shared.generated.resources.auth_github_button
+import kmpcyppieagents.app.shared.generated.resources.auth_github_error
+import kmpcyppieagents.app.shared.generated.resources.auth_github_redirect
+import kmpcyppieagents.app.shared.generated.resources.auth_github_returning
 import kmpcyppieagents.app.shared.generated.resources.auth_link_forgot
+import kmpcyppieagents.app.shared.generated.resources.auth_or_divider
 import kmpcyppieagents.app.shared.generated.resources.auth_link_to_login
 import kmpcyppieagents.app.shared.generated.resources.auth_link_to_register
 import kmpcyppieagents.app.shared.generated.resources.auth_loading
@@ -74,13 +83,16 @@ import org.jetbrains.compose.resources.stringResource
 fun AuthGate(
     viewModel: AuthViewModel,
     modifier: Modifier = Modifier,
+    /** Platform hook to open the GitHub OIDC redirect URL externally (browser/custom-tab) — §6 keeps the
+     *  OAuth dance out of commonMain. Default no-op; the platform entry points wire the real open. */
+    onOpenExternalUrl: (String) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     Box(modifier = modifier.testTag(AuthTags.GATE)) {
         when (val s = state) {
             AuthUiState.Loading -> LoadingScreen()
-            is AuthUiState.Unauthenticated -> LoginScreen(s, viewModel)
+            is AuthUiState.Unauthenticated -> LoginScreen(s, viewModel, onOpenExternalUrl)
             is AuthUiState.Register -> RegisterScreen(s, viewModel)
             is AuthUiState.ForgotRequest -> ForgotScreen(s, viewModel)
             is AuthUiState.ResetSetNew -> ResetScreen(s, viewModel)
@@ -108,7 +120,11 @@ private fun LoadingScreen() {
 // --- Login (§3.1) ---
 
 @Composable
-private fun LoginScreen(state: AuthUiState.Unauthenticated, vm: AuthViewModel) {
+private fun LoginScreen(
+    state: AuthUiState.Unauthenticated,
+    vm: AuthViewModel,
+    onOpenExternalUrl: (String) -> Unit = {},
+) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val submitting = state.phase is Phase.Submitting
@@ -152,7 +168,44 @@ private fun LoginScreen(state: AuthUiState.Unauthenticated, vm: AuthViewModel) {
             onClick = vm::goToForgot, enabled = !submitting,
             modifier = Modifier.testTag(AuthTags.LOGIN_TO_FORGOT),
         ) { Text(stringResource(Res.string.auth_link_forgot)) }
-        // P2 (auth-spec §6): the "or" divider + "Sign in with GitHub" button land additively later.
+
+        // --- P4 (auth-spec §6): "or" divider + GitHub OIDC (CYP-185) ---
+        val github = state.github
+        val githubBusy = github is GithubUiState.Redirecting || github is GithubUiState.Returning
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Text(
+            text = stringResource(Res.string.auth_or_divider),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = vm::startGithub, enabled = !submitting && !githubBusy,
+            modifier = Modifier.fillMaxWidth().testTag(AuthTags.LOGIN_GITHUB),
+        ) { Text(stringResource(Res.string.auth_github_button)) }
+
+        when (github) {
+            is GithubUiState.Redirecting -> {
+                // "Continuing to GitHub…" — controls disabled; the platform opens the external OAuth URL.
+                Text(
+                    text = stringResource(Res.string.auth_github_redirect),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().testTag(AuthTags.GITHUB_REDIRECTING),
+                )
+                LaunchedEffect(github.url) { onOpenExternalUrl(github.url) }
+            }
+            GithubUiState.Returning -> Text(
+                text = stringResource(Res.string.auth_github_returning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().testTag(AuthTags.GITHUB_RETURNING),
+            )
+            GithubUiState.Error -> AnnouncingHint(
+                stringResource(Res.string.auth_github_error), HintTone.ERROR,
+                AuthTags.GITHUB_ERROR, LiveRegionMode.Assertive,
+            )
+            GithubUiState.Idle -> {}
+        }
     }
 }
 

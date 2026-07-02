@@ -326,6 +326,28 @@ class HttpAuthRepository(
         sessionStore.clear()
     }
 
+    // --- §5 / P4 GitHub OIDC (CYP-185) ---
+
+    override suspend fun githubStart(): GithubStart = failClosed(GithubStart.Error) {
+        // OIDC is a browser-mode login method: init the browser login flow, then submit oidc/github via the
+        // proxy + flow id (same-origin invariant). Kratos does state+PKCE and answers with a
+        // browser_location_change to GitHub — we hand its `redirect_browser_to` to the platform to open.
+        val initBody = client.get("$kratos/self-service/login/browser") { authHeaders() }.bodyAsText()
+        val flow = parseKratosFlow(initBody)
+        val csrf = parseKratosCsrfToken(initBody)
+        val resp = client.post("$kratos/self-service/login?flow=${flow.id}") {
+            authHeaders()
+            contentType(ContentType.Application.Json)
+            setBody(
+                buildJsonObject {
+                    put("method", "oidc"); put("provider", "github"); if (csrf != null) put("csrf_token", csrf)
+                }.toString(),
+            )
+        }
+        val redirect = parseKratosRedirectUrl(resp.bodyAsText())
+        if (redirect != null) GithubStart.Redirect(redirect) else GithubStart.Error
+    }
+
     // --- Kratos flow driving ---
 
     /** Init a native flow (`GET /self-service/{kind}/api`) then POST the [payload] via the proxy + flow id. */

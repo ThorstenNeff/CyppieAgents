@@ -44,6 +44,28 @@ interface AuthRepository {
 
     /** §7.8 — the always-available exit from the gate. */
     suspend fun logout()
+
+    /**
+     * §5 / P4 (CYP-185) — initiate the GitHub OIDC login: drive the Kratos login flow with
+     * `{method:"oidc", provider:"github"}`; Kratos does state+PKCE and returns the GitHub redirect URL (the
+     * platform opens it, then the session is read back via [session]). The platform never touches the OAuth
+     * dance. Security default (S2): an OIDC identity is `verified=false` → [session] returns
+     * [SessionState.Unverified] → the "verify your email" gate, **not** one-click access.
+     */
+    suspend fun githubStart(): GithubStart
+}
+
+/** §5 outcome of initiating the GitHub OIDC login. */
+sealed interface GithubStart {
+    /** The external GitHub OAuth [url] to open; after the callback the session is read via [AuthRepository.session]. */
+    data class Redirect(val url: String) : GithubStart
+
+    /** S1b — the GitHub email collides with an existing account; Kratos requires **login-first** (ownership
+     *  proof) before linking. The client routes to sign-in — it never silently merges. */
+    data object LoginRequired : GithubStart
+
+    /** Initiation failed (flow error / cancelled). */
+    data object Error : GithubStart
 }
 
 /** §7.1 boot probe outcome. [None] on no/invalid session **and** on network failure (fail-closed). */

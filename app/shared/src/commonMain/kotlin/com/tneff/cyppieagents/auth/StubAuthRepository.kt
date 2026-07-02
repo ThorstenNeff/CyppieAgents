@@ -22,6 +22,7 @@ class StubAuthRepository(
     var setNewPasswordResult: (token: String, newPassword: String) -> SetPasswordResult = { _, _ -> SetPasswordResult.Ok },
     var verifyEmailResult: (token: String) -> VerifyResult = { _ -> VerifyResult.Ok },
     var resendVerificationResult: () -> ResendResult = { ResendResult.Accepted },
+    var githubStartResult: () -> GithubStart = { GithubStart.Redirect("https://github.test/login/oauth/authorize") },
 ) : AuthRepository {
 
     override suspend fun session(): SessionState = sessionState
@@ -43,6 +44,8 @@ class StubAuthRepository(
 
     override suspend fun resendVerification(): ResendResult =
         resendVerificationResult()
+
+    override suspend fun githubStart(): GithubStart = githubStartResult()
 
     override suspend fun logout() {
         sessionState = SessionState.None
