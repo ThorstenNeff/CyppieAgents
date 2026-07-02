@@ -61,3 +61,32 @@ Hub temporär auf Postgres-Kratos (:5433/:5434) repointed. Ergebnis (unabhängig
 - **Postgres-Kratos (:5433/:5434) geparkt** mit `pg-seed`-Identity — bereit für den Re-Measure nach Backends equalized-existence-check-Fix.
 - **Aiven:** ip_filter `162.55.248.10/32`, verify-full, EU. Secrets box-local (`secrets/kratos-aiven.env`, ca.pem, local.properties — alle gitignored/geschützt).
 - **Kein Public.** Plattform-`roles.db`/`events.db` unverändert SQLite (Scope = nur Kratos' DSN).
+
+## Floor-Dimensionierung (Backend nahm Konstant-Zeit-Floor statt equalized-check)
+found-Zweig n=120 (Aiven): median 26.0 · p90 28.4 · p95 29.9 · **p99 44.9** · **MAX 61.1ms** · stdev 3.8.
+**Vorschlag `AuthConfig.registerFloorMs = 95`** (config-gated) = max(p99,MAX)×1.5 → überschreitet found-Tail + ~55% Jitter-Marge (Median ~26ms wäre zu niedrig → Spikes leaken).
+**Vorbehalt:** Basis = rohe admin-`identityExists`-Latenz, nicht volle Wrapper-Response → **final gegen Wrapper-Response-Tail im Live-Re-Measure validieren/justieren** (mit aktivem Floor).
+**Post-Merge-Sequenz (Hold):** (1) Floor setzen, (2) PG-Kratos+Floor hochfahren, (3) Live-Re-Measure tight-alternating paired-Δ N≥40 → Gate = Collapse (Overlap + [flip ODER |Δ|<sd] + Δ≪G3).
+
+## Stage-2b — Floor-Fix (a589a0e) LIVE gegen Aiven — COLLAPSE ✓
+
+Floor gemergt (develop `a589a0e`), Hub-Jar neu gebaut, `AuthConfig.registerFloorMs` config-gesetzt (kein Rebuild), Hub→PG-Kratos.
+
+**Floor final dimensioniert aus large-N found-Sample (N=1200, Aiven):** median 26.9 · p95 32.4 · p99 38.7 · p99.9 77.9 · **MAX 96.3ms** (der große Tail bestätigte die PO-Schärfung: N=120-Max war nur 61ms). → **`registerFloorMs = 150`** (> found-identityExists-MAX 96ms + Marge). Der Floor cappt **identityExists** (`withTimeout(floorMs)`), nicht die Total-Response → P(found-check > 150) = 0 → 503-Rate 0.
+
+**Live-Re-Measure gegen den Wrapper (`POST /api/auth/register`, existing=found/new=miss), tight-alternating, 3 Läufe:**
+| Lauf | found_med | miss_med | paired Δmed | sd | found>miss | 503 f/m |
+|---|---|---|---|---|---|---|
+| rapid N=50 | 299.0 | 278.7 | **+11.68ms** | 66.5 | 31/50 | 0/0 |
+| spaced N=30 | 254.1 | 297.5 | **−30.67ms** | 42.2 | 12/30 | 0/0 |
+| final N=50 | 300.6 | 300.0 | **+0.77ms** | 60.3 | 28/50 | 0/0 |
+
+**Vorzeichen `+ / − / +` → FLIPPT = Rauschen.** Alle 3: |paired Δmed| < paired-sd. **503-Rate 0/0 (symmetrisch + vernachlässigbar) in allen Läufen.**
+→ **Test-Gate erfüllt:** (1) 200-paired-Δ-**Collapse** (von stabilem +12.8ms/40-40-sign+++ pre-fix zu +0.77ms/sign-flip post-fix) UND (2) 503-Rate vernachlässigbar + zweig-symmetrisch. Der Aiven-found>miss-Oracle ist zu.
+
+### Floor-Mechanik verifiziert (gegroundet, nicht geraten)
+- **Floor bindet:** Diagnose floor=600 → Response ~760ms (skaliert mit floorMs). Bei 150 → ~300ms.
+- **Response = floorMs + ~150ms branch-UNABHÄNGIGe Konstante** (Side-Effect-Dispatch/HTTP-Pipeline nach `register()`-Return; create/notify sind deferred via `dispatch{}` off dem Response-Pfad). Die Konstante leakt nicht (branch-invariant). Register-Total-Latenz ~300ms = akzeptabel (register low-freq, Security>Latenz).
+- **503-Cap korrekt:** cappt identityExists (found-worst 96ms) < floor 150 → 0 Timeouts. `registerFloorMs=150` ist der validierte Wert.
+
+**Vorbehalt-Auflösung:** mein früherer 95ms-Startwert (aus N=120-Max 61) wäre zu niedrig gewesen (large-N found-MAX=96ms) — das größere Sample trieb ihn korrekt auf 150ms. Wrapper-Response-Tail (~310ms) ist branch-invariant, drückt NICHT die 503-Rate (die hängt am identityExists-Cap, nicht an der Total-Response).
