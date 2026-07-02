@@ -10,7 +10,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.tneff.cyppieagents.auth.AuthGate
 import com.tneff.cyppieagents.auth.AuthRepository
 import com.tneff.cyppieagents.auth.AuthViewModel
-import com.tneff.cyppieagents.auth.StubAuthRepository
+import com.tneff.cyppieagents.auth.authRepositoryFor
+import com.tneff.cyppieagents.auth.defaultAuthLiveEnv
+import com.tneff.cyppieagents.auth.resolveAuthMode
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 
 @Composable
@@ -20,12 +22,14 @@ fun App(authRepository: AuthRepository? = null) {
     // until AuthState == Verified, then mounts AgentShell unchanged (CYP-15). enableTestTagsAsResourceId()
     // sits at the gate root so Maestro can address both the auth screens and the desktop subtree (CYP-11).
     //
-    // CYP-182 real-swap seam: [authRepository] injects the live port. The DEFAULT stays the CYP-177
-    // StubAuthRepository until the Kratos/Caddy deploy is live (P2.2) — the real HttpAuthRepository is
-    // proven by hermetic tests and swaps in with NO VM/UI change (the seam's point) by passing e.g.
-    //   HttpAuthRepository(sharedWsHttpClient(), defaultShellConfig().hubHttpBaseUrl)
-    // here (or via this param) once the live endpoint/proxy is up (PO-gated final flip).
-    val authRepo = remember(authRepository) { authRepository ?: StubAuthRepository() }
+    // CYP-182 config-gated flip: [authRepository] overrides for tests; otherwise the repository is chosen by
+    // the auth-live config (CYP-182 flip, client GO 2026-07-02) — CYPPIE_AUTH_LIVE + stack URLs → the live
+    // HttpAuthRepository; absent → the CYP-177 StubAuthRepository (Dev/Demo default, zero blast-radius); flag
+    // set with missing/malformed URLs → fail-loud (AuthConfigException at startup, never a silent stub
+    // downgrade — "login live was intended"). No VM/UI change (the seam's point).
+    val authRepo = remember(authRepository) {
+        authRepository ?: authRepositoryFor(resolveAuthMode(defaultAuthLiveEnv()))
+    }
     val authViewModel = remember(authRepo) { AuthViewModel(authRepo) }
     MaterialTheme {
         AuthGate(
