@@ -175,21 +175,28 @@ on the response path (MUST-2), so the wrapper inherits the delta.
 **Closure — constant-time floor (this build).** The earlier "can't dimension a floor" objection does **not**
 apply here: the delta is a **bounded fixed hydration-RTT cost, not a store-size scan**, so a floor **>
 found-branch absolute worst-case + jitter** closes it robustly, sized from real data. The mediator pads EVERY
-response (200 AND 503) to ≥ `registerFloorMs` from register-start (found/miss-blind), with a `withTimeout` clamp
-(`registerClampMs`) so a found-spike past the floor collapses to a **uniform 503** (never a slow-200 tell).
+response (200 AND 503) UP to ≥ `registerFloorMs` from register-start (found/miss-blind), AND **caps the existence
+check AT that same floor** (`withTimeout(registerFloorMs)`): a check that would run PAST the floor is cut to a
+**uniform 503**, never a slow-200 above the floor. So every 200 lands at ~floor and no slow-200 survives in the
+tail. **The cap IS the floor by design** — a cap ≫ floor (an earlier bug Test caught) would let a found check in
+the (floor, cap) band return a slow-200 → the found/miss tell surviving in the tail. When the floor > found-worst-
+case, found normally lands under the cap (→ 200) and the miss branch is always fast (→ 200); only a rare
+over-worst-case spike (or an outage) → 503, a branch-symmetric, monitorable rate — never a precise timing signal.
 MUST-2/3 + register-only preserved; the off-path dispatch is unchanged. Hermetic teeth (`RegisterFloorTest`): an
-asymmetric-round-trip fake (found-slow / miss-fast) → both branches ≥ floor + buckets overlap; a floor-off
-mutation reds the (fast) miss branch. Deferred-202 (Option 2) was rejected — it would drop the sync-503 (a UX
+asymmetric-round-trip fake (found-slow / miss-fast) → both branches ≥ floor + buckets overlap (floor-off mutation
+reds the miss branch); **a found check PAST the floor → uniform 503 at ~floor, never a slow-200** (a cap moved
+back above the floor reds it). Deferred-202 (Option 2) was rejected — it would drop the sync-503 (a UX
 regression); the floor has no UX trade-off.
 
 **Dimensioning + monitoring (Test's conditions):**
 - (a) `registerFloorMs` = the Aiven **found-branch p99/max + a jitter margin** (NOT the median ~26ms) — **deploy
   single-sources it from the N≥40 measurement and sets it via config** (no rebuild). The code default (40ms) is a
   placeholder until deploy dimensions it.
-- (b) the **clamp is mandatory** (a found-spike > floor → uniform 503, never a slow 200); (c) the floor is
-  **found/miss-blind** — both hold in this build.
-- (e) **Monitor the clamp / 503 rate:** a rising uniform-503 rate means the clamp is firing (floor too low vs
-  live latency, or a Kratos/RTT regression) → re-dimension.
+- (b) the **cap-at-the-floor is mandatory** (`withTimeout(registerFloorMs)`; a check past the floor → uniform
+  503, never a slow-200 — the cap is the floor, not a larger value); (c) the floor is **found/miss-blind** —
+  both hold in this build.
+- (e) **Monitor the 503 rate:** a rising uniform-503 rate means the cap is firing (floor too low vs live
+  latency, or a Kratos/RTT regression) → re-dimension the floor upward.
 - (f) **Re-measure the paired-Δ on any RTT change** (region/instance move, network path) **or Kratos version
   bump** — the floor value is valid only for the measured RTT profile.
 

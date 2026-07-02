@@ -40,35 +40,37 @@ class RegisterMediator(
      */
     private val dispatch: (suspend () -> Unit) -> Unit,
     /**
-     * CYP-179 (stage-2) — the **constant-time floor** (ms). Every response is padded to ≥ this many ms from
-     * register-start, found/miss-BLIND, so the existence check's found/miss latency tell never reaches the wire.
-     * MUST be **> the found-branch absolute worst-case** response time (not just > the delta) so BOTH branches
-     * pad UP to the same value — single-sourced from deploy's Aiven-Postgres N=40 found-path max + jitter margin.
+     * CYP-179 (stage-2) — the **constant-time floor** (ms), which is BOTH the response pad AND the existence-check
+     * **cap** (the two are the same value on purpose — see below). Every response is padded UP to ≥ this from
+     * register-start, and any existence check that would run PAST it is cut to a **uniform 503** instead of a
+     * slow-200. So every 200 sits at ~floor and no slow-200 survives above it → the found/miss latency tell never
+     * reaches the wire. MUST be **> the found-branch absolute worst-case** response (deploy single-sources it from
+     * the Aiven-Postgres N≥40 found-path p99/max + a jitter margin) so found normally lands under the cap → 200;
+     * only a rare over-p99 spike (or an outage) → 503, a monitorable rate (never a precise timing signal).
      * `0` = off (the default, so the hermetic non-timing tests stay fast); production wires it from config.
+     *
+     * **Why cap == floor (Test's fix):** a cap ≫ floor would let a found check land in the (floor, cap) band and
+     * return a slow-200 above the floor — the found/miss tell surviving in the tail. Capping AT the floor converts
+     * that into a uniform 503 (branch-symmetric when floor > found-worst-case), monitorable via the 503 rate.
      */
     private val floorMs: Long = 0,
-    /**
-     * The existence-check timeout (ms): a check slower than this → [RegisterOutcome.UNAVAILABLE] (a uniform 503),
-     * so a hang or a jitter spike can never surface as a found/miss timing tell. Must be comfortably > [floorMs].
-     * Defaulted large so instant-fake tests never trip it.
-     */
-    private val clampMs: Long = 60_000,
 ) {
     constructor(
         backend: KratosRegisterBackend,
         scope: CoroutineScope,
         floorMs: Long = 0,
-        clampMs: Long = 60_000,
-    ) : this(backend, { block -> scope.launch { block() } }, floorMs, clampMs)
+    ) : this(backend, { block -> scope.launch { block() } }, floorMs)
 
     private val log = LoggerFactory.getLogger("auth.register")
 
     suspend fun register(email: String, password: String): RegisterOutcome {
         val startNanos = System.nanoTime()
         val outcome = try {
-            // MUST-2: the check runs for BOTH branches. The clamp turns a hang/spike into a uniform outage
-            // (below) rather than a slow, found/miss-correlated response.
-            val exists = withTimeout(clampMs) { backend.identityExists(email) }
+            // MUST-2: the check runs for BOTH branches, CAPPED AT the floor — a check that would run past the floor
+            // is cut to a uniform 503 (below), never a slow-200 above the floor (the tail-leak Test caught). When
+            // the floor is off (tests/dev), run the check plainly (withTimeout(0) would insta-timeout).
+            val exists = if (floorMs > 0) withTimeout(floorMs) { backend.identityExists(email) }
+                         else backend.identityExists(email)
             // MUST-2: the divergent work is deferred OFF the response path (create+verify / notice). The existing
             // branch enqueues a notice mail so it is mail-symmetric (no "silence == exists" side-channel).
             dispatch {
@@ -81,8 +83,8 @@ class RegisterMediator(
             }
             RegisterOutcome.ACCEPTED
         } catch (e: TimeoutCancellationException) {
-            // MUST-3: a check slower than the clamp → uniform outage (found/miss-blind), NO create.
-            log.warn("register existence-check exceeded clamp ({}ms) → fail-closed", clampMs)
+            // A check that ran past the floor cap → uniform 503 (found/miss-blind), NO create. NOT a slow-200.
+            log.warn("register existence-check exceeded the floor cap ({}ms) → fail-closed", floorMs)
             RegisterOutcome.UNAVAILABLE
         } catch (e: CancellationException) {
             throw e // a genuine cancellation (e.g. the client disconnected) — never swallow it
@@ -91,10 +93,9 @@ class RegisterMediator(
             log.warn("register existence-check failed (fail-closed, no create): {}", e.javaClass.simpleName)
             RegisterOutcome.UNAVAILABLE
         }
-        // CYP-179 (stage-2) constant-time floor: pad EVERY outcome (200 AND 503) to ≥ floorMs from start, so the
-        // response time is a constant — not a function of found/miss. Closes the Aiven-Postgres +12.8ms
-        // hydration-round-trip tell structurally at our boundary. `delay` never undershoots (elapsedMs is
-        // truncated ≤ actual) and is cooperative (costs no thread).
+        // CYP-179 (stage-2) constant-time floor: pad EVERY outcome (200 AND 503) UP to ≥ floorMs from start. With
+        // the cap above, a 200 can never sit ABOVE the floor and every response lands at ~floor — constant-time,
+        // not a function of found/miss. `delay` never undershoots (elapsedMs truncated ≤ actual), cooperative.
         val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
         if (elapsedMs < floorMs) delay(floorMs - elapsedMs)
         return outcome
