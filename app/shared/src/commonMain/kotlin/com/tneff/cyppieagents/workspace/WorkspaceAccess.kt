@@ -13,3 +13,12 @@ import com.tneff.cyppieagents.auth.UserTier
  */
 fun isOperatorAccess(tier: UserTier, operatorToken: String?): Boolean =
     tier == UserTier.OPERATOR || operatorToken != null
+
+/**
+ * CYP-186 (roster fold) — should the OPERATOR-only member roster (§3.2) be mounted? Gated on the true [tier]
+ * being OPERATOR, **not** on [isOperatorAccess]: the backend `GET /api/workspace/members` is tier-gated (403,
+ * content-free, for any non-OPERATOR identity — including a break-glass-token MEMBER), so mounting it for
+ * anyone else would be a dead 403 window. A MEMBER's tree therefore never contains the roster nodes
+ * (enumeration/defense-in-depth seam §3.3) — the omission is client-side, not merely a disabled control.
+ */
+fun showRoster(tier: UserTier): Boolean = tier == UserTier.OPERATOR

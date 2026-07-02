@@ -31,7 +31,12 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tneff.cyppieagents.auth.UserTier
+import com.tneff.cyppieagents.workspace.WorkspaceHttpRepository
+import com.tneff.cyppieagents.workspace.WorkspaceRepository
+import com.tneff.cyppieagents.workspace.WorkspaceRosterPanel
+import com.tneff.cyppieagents.workspace.WorkspaceRosterViewModel
 import com.tneff.cyppieagents.workspace.isOperatorAccess
+import com.tneff.cyppieagents.workspace.showRoster
 import com.tneff.cyppieagents.acl.AclApi
 import com.tneff.cyppieagents.acl.AclLiveSource
 import com.tneff.cyppieagents.acl.AclPanel
@@ -92,6 +97,7 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_title
 import kmpcyppieagents.app.shared.generated.resources.report_title
 import kmpcyppieagents.app.shared.generated.resources.settings_title
+import kmpcyppieagents.app.shared.generated.resources.workspace_members_title
 import org.jetbrains.compose.resources.stringResource
 
 private const val COMM_WINDOW_ID = "comm"
@@ -101,6 +107,7 @@ private const val AGENT_MGMT_WINDOW_ID = "agentMgmt"
 private const val PRODUCT_LEAD_WINDOW_ID = "productLead"
 private const val EVENTLOG_BROWSE_WINDOW_ID = "eventlog"
 private const val EVENTLOG_TAIL_WINDOW_ID = "eventtail"
+private const val ROSTER_WINDOW_ID = "workspaceRoster"
 
 /**
  * The app shell (CYP-15): a "desktop" of floating windows. Marries the window manager (CYP-10) with
@@ -153,6 +160,8 @@ fun AgentShell(
     connectorCapabilityRepository: ConnectorCapabilityRepository? = null,
     /** Override the connector-selection write port (CYP-123 Inc 2); `null` → the in-memory stub until CYP-122. */
     connectorSelectionRepository: ConnectorSelectionRepository? = null,
+    /** Override the workspace-roster read port (CYP-186 BE3a); `null` → the live `GET /api/workspace/members`. */
+    workspaceRepository: WorkspaceRepository? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -166,6 +175,7 @@ fun AgentShell(
     val settingsTitle = stringResource(Res.string.settings_title)
     val agentMgmtTitle = stringResource(Res.string.agent_mgmt_title)
     val productLeadTitle = stringResource(Res.string.report_title)
+    val rosterTitle = stringResource(Res.string.workspace_members_title)
 
     // One shared WS+HTTP client (created here — the agent-management REST client below needs it). Closed
     // when the shell leaves composition. The JVM/desktop engine (CIO) is wired; other engines = CYP-27.
@@ -234,6 +244,9 @@ fun AgentShell(
             add(EVENTLOG_BROWSE_WINDOW_ID to "Event-Log")
             add(EVENTLOG_TAIL_WINDOW_ID to "Live-Tail")
         }
+        // CYP-186 roster (§3.2): OPERATOR-only member roster, offered ONLY to a real OPERATOR tier (not the
+        // break-glass token — the backend GET is tier-gated). A MEMBER's window set never contains it.
+        if (showRoster(tier)) add(ROSTER_WINDOW_ID to rosterTitle)
     }
 
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
@@ -284,7 +297,8 @@ fun AgentShell(
             .filterNot {
                 it == ACL_WINDOW_ID || it == EVENTLOG_BROWSE_WINDOW_ID ||
                     it == EVENTLOG_TAIL_WINDOW_ID || it == SETTINGS_WINDOW_ID ||
-                    it == AGENT_MGMT_WINDOW_ID || it == PRODUCT_LEAD_WINDOW_ID
+                    it == AGENT_MGMT_WINDOW_ID || it == PRODUCT_LEAD_WINDOW_ID ||
+                    it == ROSTER_WINDOW_ID
             }
             .toSet()
     }
@@ -380,6 +394,12 @@ fun AgentShell(
         if (isOperator) viewModel(key = EVENTLOG_BROWSE_WINDOW_ID) { EventBrowseViewModel(resolvedEventsApi) } else null
     val tailVm: EventTailViewModel? =
         if (isOperator) viewModel(key = EVENTLOG_TAIL_WINDOW_ID) { EventTailViewModel(resolvedEventsLiveSource) } else null
+
+    // CYP-186 roster: OPERATOR-only. Built only when the window is mounted (showRoster) → no MEMBER load, no leak.
+    val resolvedWorkspaceRepo = workspaceRepository
+        ?: WorkspaceHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    val rosterVm: WorkspaceRosterViewModel? =
+        if (showRoster(tier)) viewModel(key = ROSTER_WINDOW_ID) { WorkspaceRosterViewModel(resolvedWorkspaceRepo) } else null
 
     // Collect the badge-relevant slices of the hoisted VM state (single subscription each).
     // B1: comm-wide unread (others, while unfocused). A1: per-agent ERROR status. C1: the highest
@@ -494,6 +514,7 @@ fun AgentShell(
                     PRODUCT_LEAD_WINDOW_ID -> ProductLeadPanel(productLeadVm)
                     EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
                     EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
+                    ROSTER_WINDOW_ID -> rosterVm?.let { WorkspaceRosterPanel(it) }
                     else -> agentVms[window.id]?.let {
                         AgentWindow(
                             agentId = window.id,
