@@ -62,3 +62,18 @@ MEMBER in PG-Kratos, extern `/api/auth/me` → `role:MEMBER,verified:true`.
 3. **App-Daten-Routen bleiben basic-auth-Belt** (konservativer Flip: nur Auth-Fläche public, App hinter Belt) — der Kratos-Guard ist zusätzlich aktiv (loopback-belegt).
 
 **Pull-back-Bereitschaft scharf:** jedes rote Feld → `caddy reload`→cyp173. Secrets box-local, kein Disclosure.
+
+## VERDIKT (Test, 2026-07-02): ALL-5-GRÜN — FLIP BESTÄTIGT, CYP-179 ZU
+- G1/MUST-1, G2-TLS/Cookies, G4/G4b-admin-Klasse+no-Disclosure, G5-MEMBER/forge = live-verifiziert grün.
+- **G3(b)** geschlossen per **Option 2 — autoritative Runtime-Topologie-Attestierung** (Test akzeptiert als FAKT, da wir die Infra besitzen): DNS `api.cyppie.com` A→162.55.248.10 · Box hält IP direkt (ifconfig) · A==Box-Egress (kein Intermediary) · TLS=Let's-Encrypt-YE1 an meinem Caddy (kein CDN-Cert/-Marker; `Via: 1.1 Caddy` = eigener reverse_proxy-Hop) → `rate_limit {remote_host}` = echter Peer, per-Client by construction. *(3× (a)+(c) empirisch: 429-Onset + XFF-forge-throttled.)*
+- Liveness→`/api/auth/me` bestätigt (nicht /api/health).
+- **Stack darf public BLEIBEN.**
+
+## ⚠️ Persistenz-Hinweis (offen, Auftraggeber-Entscheidung)
+Der Flip läuft via `caddy reload` — die root-LaunchDaemon-Plist (`/Library/LaunchDaemons/com.cyppie.caddy.plist`) zeigt weiter auf `Caddyfile.cyp173`. **Ein Daemon-Restart/Reboot revertiert die Auth-Fläche still auf basic-auth-only** (fail-safe, kein Breach, aber public-Auth down bis Re-Flip). Optionen an PO: (1) `Caddyfile.cyp173` mit Flip-Inhalt überschreiben (Backup daneben, kein sudo), (2) Plist umbiegen (sudo), (3) non-persistent lassen. Wartet auf Entscheidung.
+
+## Standing (im Record)
+- **CDN/LB je davor → Throttle-Keying VORHER re-verifizieren** (dann `trusted_proxies`+`{client_ip}`; siehe §2b).
+- **503-Rate monitoren** (registerFloorMs=150; found>Floor→503; large-store-Re-Measure-Trigger).
+- **Liveness `/api/auth/me`** (nicht /api/health = belt-gated 401).
+- Aiven-Lockdown (ip_filter /32, verify-full, EU), Secrets box-local, Plattform-`roles.db`/`events.db` = SQLite.
