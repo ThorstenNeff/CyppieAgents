@@ -86,5 +86,16 @@ Nachdem Test hermetisch zeigte, dass create+mail **schon** off-path deferred ist
 - **Mikro-Tell:** found−miss Median-Delta = **+0.24ms** (found liefert 1 Zeile vs. leer) — real, aber ~0.24ms, **3 Größenordnungen unter meinem Phantom-40ms**, von einem ~2ms-Floor trivial verdeckt. Das ist das *echte* (winzige) identityExists-Signal; genau das killt der Konstant-Zeit-Floor.
 - **Re-Run nach Fix-Merge:** beide Zweige flach **≥ Floor**, Buckets überlappen, kein found/miss-Tell mehr.
 
+## Re-Measure-Trigger für das monitored Timing-Residual (CYP-179 Residual-Doc)
+
+FINAL: **kein Konstant-Zeit-Floor gebaut** — das reale Tell (+0.24ms) ist heute unausnutzbar (§A-/G3-konsistent). Damit das Residual *monitored* bleibt, wird `identityExists` (found vs not-found) neu gemessen, wenn EINER dieser Trigger greift:
+
+1. **MANDATORY — DB-Backend-Wechsel (dev SQLite → prod Postgres/o.ä.):** die heutigen ~1ms / +0.24ms gelten **nur für SQLite-on-loopback**. Prod-DB hat anderen Query-Planner, Index-Impl und Netz-Hop → **Zahlen übertragen sich NICHT.** Vor dem Vertrauen aufs Residual auf der prod-DB **neu messen** (N≥40 interleaved found/miss). Das ist der wichtigste Trigger.
+2. **Identity-Count-Schwelle:** Re-Measure ab **≥ 10.000 Identities**, danach bei jedem **10×** (100k, 1M). Rationale: der Lookup ist ein indizierter Seek (`identity_credential_identifiers.identifier`, O(log n)) → Delta bleibt in der Theorie beschränkt, aber page-cache-Miss / B-Tree-Tiefe / Planner-Regression können bei großem Bestand ein Fenster öffnen. 10k = konservativer, billiger Früh-Checkpoint weit unter jeder erwarteten Regression.
+3. **Kratos-Version-Bump** (bereits Standing-Rule) — neues Query-/Index-Verhalten.
+4. **Schema-/Index-Änderung** an der Identity-Credentials-Tabelle.
+
+**Re-Measure-Protokoll + Gate:** exakt der N≥40 interleaved found/miss-Lauf dieses Runs. **Grün-Kriterium:** found−miss Median-Delta bleibt rausch-dominiert (Verteilungen überlappen, |Delta| < stdev) **und** ≪ der G3-Throttle-Kosten-pro-Versuch. **Eskalation** (dann Floor **oder** deferred-existence-check bauen), falls das Delta material wächst (z. B. > wenige ms, nicht mehr rausch-dominiert).
+
 ## Ausstehend / Stufe 2 (Public-Fenster, NICHT jetzt)
 raw-`:4433`-unreachable · TLS-secure-cookie (G2) · Throttle/XFF (G3) · admin-port-extern. Kein Public-Bring-up ohne weitergeleitetes GO.
