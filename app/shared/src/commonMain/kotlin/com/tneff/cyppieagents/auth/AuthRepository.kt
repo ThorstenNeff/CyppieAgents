@@ -68,16 +68,25 @@ sealed interface GithubStart {
     data object Error : GithubStart
 }
 
+/**
+ * The workspace **User-Tier** (CYP-80 / CYP-186) — the *human's* role (operator vs member), NOT the Agent-Role
+ * (`agent_role_*`). Backend decides it (first verified = OPERATOR, all others = MEMBER). **Fail-closed:
+ * unknown/missing ⇒ [MEMBER]** (the restrictive tier) — a session error never grants operator rights.
+ */
+enum class UserTier { OPERATOR, MEMBER }
+
 /** §7.1 boot probe outcome. [None] on no/invalid session **and** on network failure (fail-closed). */
 sealed interface SessionState {
     data object None : SessionState
     data class Unverified(val email: String) : SessionState
-    data object Verified : SessionState
+    /** Verified session; [tier] rides on the `role?` the auth-me seam already carries (fail-closed → MEMBER). */
+    data class Verified(val tier: UserTier = UserTier.MEMBER) : SessionState
 }
 
 /** §7.2. [Rejected] is **generic** (no enumeration); [retryAfter] is a server-supplied human hint. */
 sealed interface LoginResult {
-    data object Verified : LoginResult
+    /** [tier] rides the login success so the desktop mounts with the right tier (no extra probe); default MEMBER. */
+    data class Verified(val tier: UserTier = UserTier.MEMBER) : LoginResult
     data class Unverified(val email: String) : LoginResult
     data object Rejected : LoginResult
     data class RateLimited(val retryAfter: String? = null) : LoginResult

@@ -30,6 +30,8 @@ import com.tneff.cyppieagents.model.ConnectorKind
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tneff.cyppieagents.auth.UserTier
+import com.tneff.cyppieagents.workspace.isOperatorAccess
 import com.tneff.cyppieagents.acl.AclApi
 import com.tneff.cyppieagents.acl.AclLiveSource
 import com.tneff.cyppieagents.acl.AclPanel
@@ -116,6 +118,9 @@ fun AgentShell(
     modifier: Modifier = Modifier,
     /** Hub URL + tokens; `null` → the platform default ([defaultShellConfig]). */
     config: ShellConfig? = null,
+    /** The signed-in user's workspace tier (CYP-186). Fail-closed default MEMBER; OPERATOR (or a break-glass
+     *  operator token) unlocks the mutation surfaces. NOT the Agent-Role. */
+    tier: UserTier = UserTier.MEMBER,
     /** Override the per-agent session (tests inject a stub); `null` → the live `/ws/agent` session. */
     sessionFactory: ((String) -> AgentSession)? = null,
     /** Override the comm data port (tests inject a fake); `null` → the comm REST repository. */
@@ -151,6 +156,12 @@ fun AgentShell(
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
+    // CYP-186 — the ONE gate-source swap (hybrid access-model C, Auftraggeber 2026-07-02): operator surfaces are
+    // editable when the user's tier is OPERATOR OR a break-glass operator token is present. This one derivation
+    // replaces every former `cfg.operatorToken != null` editable/canControl line below — no panel changed, only the
+    // source. Fail-closed: an unknown tier is MEMBER (and no token) ⇒ read-only.
+    val isOperator = isOperatorAccess(tier, cfg.operatorToken)
+
     // i18n window titles for the system windows the designs name (other titles are hardcoded today).
     val settingsTitle = stringResource(Res.string.settings_title)
     val agentMgmtTitle = stringResource(Res.string.agent_mgmt_title)
@@ -171,7 +182,7 @@ fun AgentShell(
             ?: AgentManagementHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
     val agentMgmtVm = viewModel(key = AGENT_MGMT_WINDOW_ID) {
-        AgentManagementViewModel(resolvedAgentMgmtRepo, editable = cfg.operatorToken != null)
+        AgentManagementViewModel(resolvedAgentMgmtRepo, editable = isOperator)
     }
     val managedAgents = agentMgmtVm.state.collectAsState().value.agents
 
@@ -184,7 +195,7 @@ fun AgentShell(
         projectRepository ?: HttpProjectRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
     val projectVm = viewModel(key = "projectSwitcher") {
-        ProjectViewModel(resolvedProjectRepo, editable = cfg.operatorToken != null)
+        ProjectViewModel(resolvedProjectRepo, editable = isOperator)
     }
     // CYP-94: the project registry feeds the event-log cross-project filter (operator-only surfaces).
     val projectState = projectVm.state.collectAsState().value
@@ -219,7 +230,7 @@ fun AgentShell(
         add(PRODUCT_LEAD_WINDOW_ID to productLeadTitle)
         // Operator-only observability windows: offered ONLY with an operator token (omission, not a
         // dead "no access" window — EVENT-LOG-UI §5.6). Live sources swap in at CYP-39/40.
-        if (cfg.operatorToken != null) {
+        if (isOperator) {
             add(EVENTLOG_BROWSE_WINDOW_ID to "Event-Log")
             add(EVENTLOG_TAIL_WINDOW_ID to "Live-Tail")
         }
@@ -323,7 +334,7 @@ fun AgentShell(
                 agentId = id,
                 lifecycle = resolvedLifecycleApi,
                 lifecycleSource = resolvedLifecycleSource,
-                canControl = cfg.operatorToken != null,
+                canControl = isOperator,
             )
         }
     }
@@ -331,16 +342,16 @@ fun AgentShell(
         CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
     }
     val aclVm = viewModel(key = ACL_WINDOW_ID) {
-        AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = cfg.operatorToken != null)
+        AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = isOperator)
     }
     // Project settings (CYP-84/85): hoisted like the others; editable iff an operator token is present.
     val settingsVm = viewModel(key = SETTINGS_WINDOW_ID) {
-        SettingsViewModel(resolvedConfigRepository, editable = cfg.operatorToken != null)
+        SettingsViewModel(resolvedConfigRepository, editable = isOperator)
     }
     // Product-Lead reports (CYP-90): hoisted; accessible iff operator token (fail-closed — without it the
     // VM never loads a report). Aggregates operator-gated observability, so no token → no report at all.
     val productLeadVm = viewModel(key = PRODUCT_LEAD_WINDOW_ID) {
-        ProductLeadViewModel(resolvedReportRepository, accessible = cfg.operatorToken != null)
+        ProductLeadViewModel(resolvedReportRepository, accessible = isOperator)
     }
     // Connector capabilities (CYP-123): read-only per-agent fidelity, hoisted once for all agent windows. Live
     // read against `Agent.capabilities` (GET /api/agents); fail-closed (null caps → "not yet reported", never
@@ -366,9 +377,9 @@ fun AgentShell(
     // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
     // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
     val browseVm: EventBrowseViewModel? =
-        if (cfg.operatorToken != null) viewModel(key = EVENTLOG_BROWSE_WINDOW_ID) { EventBrowseViewModel(resolvedEventsApi) } else null
+        if (isOperator) viewModel(key = EVENTLOG_BROWSE_WINDOW_ID) { EventBrowseViewModel(resolvedEventsApi) } else null
     val tailVm: EventTailViewModel? =
-        if (cfg.operatorToken != null) viewModel(key = EVENTLOG_TAIL_WINDOW_ID) { EventTailViewModel(resolvedEventsLiveSource) } else null
+        if (isOperator) viewModel(key = EVENTLOG_TAIL_WINDOW_ID) { EventTailViewModel(resolvedEventsLiveSource) } else null
 
     // Collect the badge-relevant slices of the hoisted VM state (single subscription each).
     // B1: comm-wide unread (others, while unfocused). A1: per-agent ERROR status. C1: the highest
@@ -384,7 +395,9 @@ fun AgentShell(
     Column(modifier = modifier.fillMaxSize()) {
       // CYP-92: the project switcher is a top-level bar ABOVE the window host (not a canvas window) — always
       // visible, context-independent, framing the whole scoped shell below.
-      ProjectSwitcherBar(projectVm)
+      // CYP-186: the persistent role indicator rides in the top bar. operatorName is BE1-pending (the
+      // workspace member/operator identity isn't on the /api/auth/me seam yet) → null omits the "Operator: …" line.
+      ProjectSwitcherBar(projectVm, tier = tier, operatorName = null)
       BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
@@ -439,7 +452,7 @@ fun AgentShell(
                     COMM_WINDOW_ID -> CommPanel(commVm, crossProjectSlot = { cid ->
                         CrossProjectControls(
                             viewModel(key = "crossproject-$cid") {
-                                CrossProjectViewModel(resolvedCrossProjectRepo, cid, editable = cfg.operatorToken != null)
+                                CrossProjectViewModel(resolvedCrossProjectRepo, cid, editable = isOperator)
                             },
                             // PO flag-2: the target projects = the operator's other projects (the derived sharedWith).
                             targetProjects = projectState.projects.filter { it.id != projectState.activeProjectId },
@@ -456,7 +469,7 @@ fun AgentShell(
                             val addVm = viewModel(key = "connectorSelection-add") {
                                 ConnectorSelectionViewModel(
                                     resolvedConnectorSelRepo, agentId = null,
-                                    editable = cfg.operatorToken != null,
+                                    editable = isOperator,
                                     initialKind = ConnectorKind.STREAM_JSON,
                                     onKindChosen = agentMgmtVm::setAddConnectorKind,
                                 )
@@ -471,7 +484,7 @@ fun AgentShell(
                             val editVm = viewModel(key = "connectorSelection-edit-${target.id}-${target.connectorKind}") {
                                 ConnectorSelectionViewModel(
                                     resolvedConnectorSelRepo, agentId = target.id,
-                                    editable = cfg.operatorToken != null,
+                                    editable = isOperator,
                                     initialKind = target.connectorKind,
                                 )
                             }

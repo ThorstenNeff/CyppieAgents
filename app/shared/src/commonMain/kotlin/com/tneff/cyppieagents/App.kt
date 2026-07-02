@@ -44,8 +44,9 @@ fun App(
                 .safeContentPadding()
                 .fillMaxSize(),
             onOpenExternalUrl = onOpenExternalUrl,
-        ) {
-            AgentShell(modifier = Modifier.fillMaxSize())
+        ) { tier ->
+            // CYP-186: the verified user's tier gates the desktop's operator surfaces (hybrid: role OR token).
+            AgentShell(modifier = Modifier.fillMaxSize(), tier = tier)
         }
     }
 }

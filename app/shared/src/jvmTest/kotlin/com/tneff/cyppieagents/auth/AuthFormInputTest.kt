@@ -35,7 +35,7 @@ class AuthFormInputTest {
 
     @Test
     fun login_typeCredentials_enablesSubmit_click_mountsDesktop() = runComposeUiTest {
-        val vm = AuthViewModel(StubAuthRepository(loginResult = { _, _ -> LoginResult.Verified }))
+        val vm = AuthViewModel(StubAuthRepository(loginResult = { _, _ -> LoginResult.Verified() }))
         setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
 

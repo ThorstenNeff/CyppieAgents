@@ -37,6 +37,7 @@ import kmpcyppieagents.app.shared.generated.resources.crossproject_human_only
 import kmpcyppieagents.app.shared.generated.resources.crossproject_member_access
 import kmpcyppieagents.app.shared.generated.resources.crossproject_member_project
 import kmpcyppieagents.app.shared.generated.resources.crossproject_operator_required
+import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import kmpcyppieagents.app.shared.generated.resources.crossproject_owner_consent
 import kmpcyppieagents.app.shared.generated.resources.crossproject_revoke
 import kmpcyppieagents.app.shared.generated.resources.crossproject_single_owner_note
@@ -95,7 +96,7 @@ fun CrossProjectControls(
 
         // Action / gate (owner-gated, fail-closed).
         when {
-            !state.editable -> TonedHint(stringResource(Res.string.crossproject_operator_required), HintTone.GATED, CrossProjectTags.GATE_HINT)
+            !state.editable -> TonedHint(stringResource(Res.string.workspace_operator_only), HintTone.GATED, CrossProjectTags.GATE_HINT)
             state.shared -> TextButton(onClick = viewModel::revoke, modifier = Modifier.testTag(CrossProjectTags.REVOKE)) {
                 Text(stringResource(Res.string.crossproject_revoke))
             }

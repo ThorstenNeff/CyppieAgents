@@ -63,8 +63,9 @@ sealed interface AuthUiState {
     /** Verify deep-link landing. [tokenInvalid] → honest error instead of a silent success. */
     data class VerifySuccess(val tokenInvalid: Boolean = false) : AuthUiState
 
-    /** Verified → the [AuthGate] mounts the existing desktop. */
-    data object Verified : AuthUiState
+    /** Verified → the [AuthGate] mounts the existing desktop. [tier] rides through to gate the desktop's
+     *  operator surfaces (CYP-186); fail-closed default MEMBER. */
+    data class Verified(val tier: UserTier = UserTier.MEMBER) : AuthUiState
 }
 
 /**
@@ -106,7 +107,7 @@ class AuthViewModel(
     private suspend fun checkSession() {
         val s = runCatching { repository.session() }.getOrElse { e -> if (e is CancellationException) throw e; SessionState.None }
         _state.value = when (s) {
-            is SessionState.Verified -> AuthUiState.Verified
+            is SessionState.Verified -> AuthUiState.Verified(s.tier)
             is SessionState.Unverified -> AuthUiState.AuthedUnverified(s.email)
             SessionState.None -> AuthUiState.Unauthenticated()
         }
@@ -125,7 +126,7 @@ class AuthViewModel(
             val r = runCatching { repository.login(email, password) }
                 .getOrElse { e -> if (e is CancellationException) throw e; LoginResult.Rejected } // fail-closed → generic
             _state.value = when (r) {
-                LoginResult.Verified -> AuthUiState.Verified
+                is LoginResult.Verified -> AuthUiState.Verified(r.tier) // tier rides the login success
                 is LoginResult.Unverified -> AuthUiState.AuthedUnverified(r.email)
                 LoginResult.Rejected -> AuthUiState.Unauthenticated(Phase.Error("auth_login_error_generic"))
                 is LoginResult.RateLimited -> AuthUiState.Unauthenticated(Phase.RateLimited(r.retryAfter))
@@ -253,7 +254,7 @@ class AuthViewModel(
             val s = runCatching { repository.session() }
                 .getOrElse { e -> if (e is CancellationException) throw e; SessionState.None }
             _state.value = when (s) {
-                is SessionState.Verified -> AuthUiState.Verified
+                is SessionState.Verified -> AuthUiState.Verified(s.tier)
                 is SessionState.Unverified -> AuthUiState.AuthedUnverified(s.email) // S2 verified-gate
                 SessionState.None -> AuthUiState.Unauthenticated(github = GithubUiState.Error) // no session established
             }

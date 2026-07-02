@@ -40,6 +40,7 @@ import kmpcyppieagents.app.shared.generated.resources.settings_apikey_save_faile
 import kmpcyppieagents.app.shared.generated.resources.settings_apikey_section
 import kmpcyppieagents.app.shared.generated.resources.settings_apikey_unset
 import kmpcyppieagents.app.shared.generated.resources.settings_operator_required
+import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import kmpcyppieagents.app.shared.generated.resources.settings_repo_branch_label
 import kmpcyppieagents.app.shared.generated.resources.settings_repo_effect_hint
 import kmpcyppieagents.app.shared.generated.resources.settings_repo_section
@@ -119,7 +120,7 @@ private fun RepoSection(state: SettingsUiState, viewModel: SettingsViewModel) {
         )
 
         if (!state.editable) {
-            TonedHint(stringResource(Res.string.settings_operator_required), HintTone.GATED, SettingsTags.REPO_GATE_HINT)
+            TonedHint(stringResource(Res.string.workspace_operator_only), HintTone.GATED, SettingsTags.REPO_GATE_HINT)
         }
 
         Button(
@@ -198,7 +199,7 @@ private fun ApiKeySection(state: SettingsUiState, viewModel: SettingsViewModel) 
         }
 
         if (!state.editable) {
-            TonedHint(stringResource(Res.string.settings_operator_required), HintTone.GATED, SettingsTags.API_KEY_GATE_HINT)
+            TonedHint(stringResource(Res.string.workspace_operator_only), HintTone.GATED, SettingsTags.API_KEY_GATE_HINT)
         }
 
         Button(

@@ -40,7 +40,7 @@ class AuthGateStateMachineTest {
 
     @Test
     fun boot_verifiedSession_mountsDesktop_notLogin() = runComposeUiTest {
-        val vm = gate(StubAuthRepository(sessionState = SessionState.Verified))
+        val vm = gate(StubAuthRepository(sessionState = SessionState.Verified()))
         setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(DESKTOP).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag(AuthTags.LOGIN_FORM).assertDoesNotExist()
@@ -71,7 +71,7 @@ class AuthGateStateMachineTest {
 
     @Test
     fun login_verified_mountsDesktop() = runComposeUiTest {
-        val vm = gate(StubAuthRepository(loginResult = { _, _ -> LoginResult.Verified }))
+        val vm = gate(StubAuthRepository(loginResult = { _, _ -> LoginResult.Verified() }))
         setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
         vm.login("user@example.com", "hunter2")
@@ -302,7 +302,7 @@ class AuthGateStateMachineTest {
         val vm = AuthViewModel(stub)
         setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
-        stub.sessionState = SessionState.Verified
+        stub.sessionState = SessionState.Verified()
         vm.onGithubReturn()
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(DESKTOP).fetchSemanticsNodes().isNotEmpty() }
     }

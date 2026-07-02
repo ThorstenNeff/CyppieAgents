@@ -160,10 +160,32 @@ class HttpAuthRepositoryE2eTest {
     }
 
     @Test
-    fun session_verified_mapsVerified() =
+    fun session_verified_member_mapsVerifiedMember() =
         withFixture({ me = AuthMe(authenticated = true, role = "MEMBER", verified = true) }) { _, repo, store ->
             store.setSessionToken("sess") // a credential present → /api/auth/me reflects the logged-in state
-            assertEquals(SessionState.Verified, repo.session())
+            assertEquals(SessionState.Verified(UserTier.MEMBER), repo.session())
+        }
+
+    @Test
+    fun session_verified_operator_mapsVerifiedOperator() =
+        withFixture({ me = AuthMe(authenticated = true, role = "OPERATOR", verified = true) }) { _, repo, store ->
+            store.setSessionToken("sess")
+            assertEquals(SessionState.Verified(UserTier.OPERATOR), repo.session())
+        }
+
+    @Test
+    fun session_verified_nullOrUnknownRole_failsClosedToMember() =
+        withFixture({ me = AuthMe(authenticated = true, role = null, verified = true) }) { _, repo, store ->
+            store.setSessionToken("sess")
+            // ⭐ CYP-186 fail-closed: an absent/unknown role never grants OPERATOR (mutation → OPERATOR reddens).
+            assertEquals(SessionState.Verified(UserTier.MEMBER), repo.session())
+        }
+
+    @Test
+    fun session_verified_garbageRole_failsClosedToMember() =
+        withFixture({ me = AuthMe(authenticated = true, role = "superadmin", verified = true) }) { _, repo, store ->
+            store.setSessionToken("sess")
+            assertEquals(SessionState.Verified(UserTier.MEMBER), repo.session())
         }
 
     @Test
@@ -184,7 +206,7 @@ class HttpAuthRepositoryE2eTest {
         me = AuthMe(authenticated = true, role = "MEMBER", verified = true)
         onSubmit = { _, _ -> SubmitResp(200, """{"session_token":"live-tok"}""") }
     }) { _, repo, store ->
-        assertEquals(LoginResult.Verified, repo.login("user@example.com", "hunter2"))
+        assertIs<LoginResult.Verified>(repo.login("user@example.com", "hunter2"))
         assertEquals("live-tok", store.sessionToken()) // native token captured + will be replayed as X-Session-Token
     }
 

@@ -86,7 +86,8 @@ fun AuthGate(
     /** Platform hook to open the GitHub OIDC redirect URL externally (browser/custom-tab) — §6 keeps the
      *  OAuth dance out of commonMain. Default no-op; the platform entry points wire the real open. */
     onOpenExternalUrl: (String) -> Unit = {},
-    content: @Composable () -> Unit,
+    /** The verified desktop — receives the session's [UserTier] (CYP-186) so it can gate operator surfaces. */
+    content: @Composable (UserTier) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     Box(modifier = modifier.testTag(AuthTags.GATE)) {
@@ -98,7 +99,7 @@ fun AuthGate(
             is AuthUiState.ResetSetNew -> ResetScreen(s, viewModel)
             is AuthUiState.AuthedUnverified -> VerifyPendingScreen(s, viewModel)
             is AuthUiState.VerifySuccess -> VerifySuccessScreen(s, viewModel)
-            AuthUiState.Verified -> content()
+            is AuthUiState.Verified -> content(s.tier)
         }
     }
 }

@@ -83,10 +83,14 @@ class HttpAuthRepository(
         val me = authMe()
         when {
             !me.authenticated -> SessionState.None
-            me.verified -> SessionState.Verified
+            me.verified -> SessionState.Verified(tierOf(me.role))
             else -> SessionState.Unverified(whoamiEmailOrBlank()) // unverified: self-reflecting email echo
         }
     }
+
+    /** CYP-186 — `role` → [UserTier]. Fail-closed: only an explicit "OPERATOR" grants OPERATOR; null/unknown → MEMBER. */
+    private fun tierOf(role: String?): UserTier =
+        if (role?.trim().equals("OPERATOR", ignoreCase = true)) UserTier.OPERATOR else UserTier.MEMBER
 
     private suspend fun authMe(): AuthMe {
         val resp = client.get("$platform/api/auth/me") { authHeaders() }
@@ -119,8 +123,8 @@ class HttpAuthRepository(
                 captureSession(resp.bodyAsText())
                 // Kratos login succeeds regardless of verification; the PLATFORM gates on verified (RC1) —
                 // so ask /api/auth/me for the verified state. Use the typed email (better than whoami here).
-                when (session()) {
-                    SessionState.Verified -> LoginResult.Verified
+                when (val s = session()) {
+                    is SessionState.Verified -> LoginResult.Verified(s.tier)
                     is SessionState.Unverified -> LoginResult.Unverified(email)
                     SessionState.None -> LoginResult.Rejected // unexpected post-login → fail-closed
                 }
