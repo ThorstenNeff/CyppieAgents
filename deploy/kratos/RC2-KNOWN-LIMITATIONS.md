@@ -107,6 +107,57 @@ registration-DoS / store-pollution vector), so **a per-IP throttle is NOT an acc
 - **Probe hygiene:** the register pair runs **once** per branch (not N) to bound the account-creation
   side-effect; deploy runs `cleanup-junk-identities.sh` (admin API :4434) **before each re-run**.
 
+### Resolution (CYP-179, 2026-07-02) — content CLOSED; timing = monitored residual
+
+**§B content is CLOSED (the HARD gate is satisfied)** via closure path (2): the **platform register-wrapper**
+(`POST /api/auth/register`, CYP-179 §B(b), merged). It is the only app register path and returns a
+**branch-invariant response** (a new and an existing email → byte-identical `200 {"status":"verification_pending"}`;
+the mail carries the branch, never the HTTP response), gating the account-creation side-effect behind a quiet
+admin existence check (no create for an existing email → the DoS/store-pollution vector is closed too). Hermetic
+teeth: `RegisterWrapperTest` (content/timing/no-leak/fail-closed) + `RegisterRoutesTest` (wire byte-parity).
+The v26 upgrade (path 1) is therefore **not** required to close §B content. Off-localhost register is unblocked
+on the content axis.
+
+**Timing sub-channel — documented MONITORED RESIDUAL (proportionally weaker than the accepted §A).** Deploy's
+loopback-G1 first reported a ~40ms new-vs-existing delta, **retracted** after rigorous N-run isolation as a
+warmup/connection **phantom** (create is confirmed deferred off-path live: ~11.6ms ≪ 82ms argon2; the earlier
+"create runs sync" reading was a `testApplication`-drain measurement artifact, not on-path). Deploy's refined
+**N=40** isolation of the raw admin existence check (`GET /admin/identities?credentials_identifier=`) found a
+**real but tiny** tell: found median 0.79ms / max 1.66ms vs miss median 0.55ms / max 1.04ms ≈ **+0.24ms** —
+three orders of magnitude below the phantom, **below scheduler jitter**, with **overlapping distributions and a
+sign that flips across runs** → **not exploitable at the current store scale**.
+
+Disposition (§A-consistent, but weaker — §A had a real ~35× argon2 delta; this is sub-jitter):
+- **Accepted as a monitored residual**, compensated by the **G3 per-IP edge throttle** (raises the cost of the
+  many timed samples enumeration would need — same mitigation posture as §A).
+- **Re-measure triggers (deploy's concrete set — the residual is valid ONLY while these hold; re-run the
+  found-vs-miss timing isolation on each):**
+  1. **MANDATORY — DB-backend change** (dev-SQLite → prod-Postgres): the ~1ms raw / +0.24ms figures hold **only
+     for SQLite-on-loopback**; a prod DB has a different query planner, index, and network hop, so **the numbers
+     do NOT transfer** — **re-measure before trusting this residual in prod.** (The single most important trigger.)
+  2. **Identity-count ≥ 10,000**, then again at every **10×** (100k, 1M): an indexed seek is O(log n), so 10k is
+     a cheap early checkpoint for the large-store index-miss-scan risk.
+  3. **Kratos-version bump** (standing rule), or any **schema/index change** on the credentials table.
+  4. **Protocol:** N ≥ 40 interleaved samples; **green** = the delta is noise-dominated AND ≪ the G3 sampling
+     cost; **escalate** if the delta grows material — either build the constant-time floor **sized from that
+     measured data** (single-sourced, not guessed) **or** move to a fully deferred existence check.
+  The one real risk being watched: a **large-store index-miss scan** making a not-found lookup diverge from a
+  found one at scale.
+- **Why NOT a floor now:** a constant-time floor must exceed the worst-case handler time to mask the tell. A
+  today-sized ~2ms floor (today's worst case 1.66ms) would mask only the current, unexploitable ~0.24ms tell but
+  would **not** close the large-store case (a future scan > the floor leaks again) and **cannot be dimensioned**
+  against an unmeasured future latency — premature complexity + false assurance. Correct control = monitor →
+  measure-at-scale → floor-from-data. (Confirmed by Test's own floor-correctness check.)
+- **Floor = spec-ready fast-follow:** pad every response to ≥ X ms from register-start (found/miss-blind) + a
+  `withTimeout` clamp so a hang/spike collapses to a **uniform 503** (never a found/miss tell); hermetically
+  teethable (fast + slow existence-check fake → **both** responses ≥ floor, buckets overlap; "floor for only one
+  branch" → RED). Minutes to build once a real signal justifies and sizes it.
+
+**Flip disposition:** §B content is HARD-closed → the register surface may go off-localhost on the content axis;
+the timing residual is bundled into the flip release as an **accepted monitored residual** (weaker than the
+already-accepted §A) — **no new Auftraggeber build-decision required**; the Auftraggeber gets the status
+one-liner (§B content = HARD-closed · §B timing = no exploitable signal, monitored + throttle + re-measure).
+
 ## Teeth (why a green here is not vacuous)
 
 On v1.3.0 `mitigate:true` has little API-observable effect vs `mitigate:false` (content was already generic
