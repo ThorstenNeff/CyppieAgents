@@ -34,6 +34,24 @@
   - **DOPPELT fail-closed (stärker als erwartet, gegroundet):** `canWrite` verlangt **BEIDES** — `isMember(channelId, agentId)` aus **`Channel.members`** (agent-/wire-provisioniert) UND einen `canWrite:true`-ACL-Entry. Ein blanker Operator-`PUT /api/acl`-Grant (Entry via `GET /api/acl` **bestätigt** `canWrite:True`) zieht **NICHT** → Send bleibt **403 (loopback+extern)** ohne Channel-Membership. Deny-wins.
   - **ALLOW-201 nicht live-demonstriert (ehrlich):** die 201-Richtung braucht einen Channel mit dem MEMBER in `Channel.members` — Channels/Members entstehen über den **Agent-Wire** (kein Operator/Human-REST-Channel-Create gefunden). Ein Live-201 bräuchte einen **agent-provisionierten Channel** (echter Agent-Run) — schwerer Setup, nicht ohne Freigabe gefahren. Der 201-Pfad ist **code-evident** (`postAsAgent` → `HttpStatusCode.Created` bei `canWrite=true`); die security-kritische DENY-Seite ist live-belegt. **Offen für Test:** ob die Live-201 (agent-provisioniert) verlangt wird oder Code-Evidenz + doppelt-fail-closed-DENY genügt.
 
+## Nach Test-Security-Grün: Persistenz + 2 Completeness-Sweeps
+
+**Test-Verdikt: SECURITY-GRÜN** — Belt-off sicher, App-UI bleibt public (App-Guard trägt ohne Belt).
+
+### Persistenz ✅ (analog CYP-179)
+`Caddyfile.cyp173` mit der Belt-off-Config überschrieben (Backup **`Caddyfile.cyp173.pre-cyp188.bak`** = CYP-179-Belt-Config, atomarer Rollback). Live-Hub bleibt `3832bb4`. Simulierter-Restart-Re-Verify (reload aus Plist-Pfad cyp173) grün: SPA `/`→200 tokenlos · MUST-1→404 · admin 404/`:5434`→000 · `/api/health`→200 · `/api/events`→401-Guard · `.git`→404 · `/ws/comm,events`→Hub(400). → **Reboot-persistent.**
+
+### Completeness (a) — full-9-OPERATOR-Sweep ✅
+MEMBER-Session extern → **403 auf ALLE 9 Gruppen:** agentMgmt `PUT /api/agents/{id}` · ChannelShare `PUT /api/channels/{id}/share` · acl `PUT /api/acl` · config `PUT /api/config/repo` · connector `POST /api/agents/{id}/connector` · lifecycle `POST /api/agents/{id}/stop` · project `POST /api/projects/switch` · report `GET /api/reports/{id}` · workspace `GET /api/workspace/members` (+ `GET /api/audit`). Alle 403.
+
+### Completeness (b) — BG-WS-5 Query-Token-Redaction ⚠️ (gemischt)
+Canary `?token=<canary>` an `/ws/comm`+`/ws/hub`, dann Logs gegreppt:
+- **Edge (Caddy access/proxy) CLEAN:** 0 Canary-Treffer in caddy.daemon.out/err (cyp173 hat **0 `log`-Direktiven** → kein access-log). ✅
+- **⚠️ Hub-App-Log (`hub.out.log`) loggt den Query-Token: 8 Canary-Treffer.** Hub-seitig (pre-belt-off, aber durch public `/ws/*` relevanter). **Kein Edge-Leak; routet an Backend (Hub-Log-Query-Redaction).**
+
+### Send-ALLOW Root-Cause (an Backend)
+Aktives Projekt war **DEFAULT** + Grant `projectId:"default"` → projectId-Scoping greift NICHT (beide default). Der reale Cause: `canWrite`→`isMember` liest **`Channel.members`** (nicht ACL-Entries; `AclMatrix.kt:47-48`) → Grant-ohne-Channel-Membership = 403. Membership-Naht, nicht projectId.
+
 ## Ehrliche Punkte / Rollback
 - **G3-(b) IP-B-Unabhängigkeit** live nicht darstellbar (1 Egress-IP) — durch Topologie-Attestierung (kein Intermediary) gedeckt.
 - **Rollback scharf:** jedes rote Feld → Edge→cyp173 (Belt) + optional Hub→a589a0e. Non-persistent = Reboot safe-fail auf Belt.
