@@ -70,13 +70,14 @@ hashers:
     key_length: 32
 
 # CYP-181 / P2.1 — SMTP courier: Kratos sends the recovery + verification (+ email-change) mails through it.
-# `connection_uri` carries the SMTP password → it is an **env reference, NEVER a literal secret here**
-# (SmtpCourierConfigTest reds on a literal — `^${...}$` required; the secret comes from the env / secret
-# store at deploy time, 0600, gitignored, never logged). Dev = mailslurper (visible inbox for the P2.5 live
-# mail check): connection_uri e.g. smtp://test:test@mailslurper:1025/?disable_starttls=true.
+# ⚠️ Kratos does NOT interpolate ${VAR} in YAML — a `${...}` would be sent as a LITERAL string (broken). The
+# real relay URI (which carries the SMTP password) is injected in PROD via the Kratos env-OVERRIDE path
+# COURIER_SMTP_CONNECTION_URI (config path uppercased, dots→underscores; the env value OVERRIDES this line),
+# so the secret is NEVER in this file or a log. The value below is a DEV-safe, credential-free default
+# (mailpit) — no password, safe to commit.
 courier:
   smtp:
-    connection_uri: ${SMTP_CONNECTION_URI}
+    connection_uri: smtp://mailpit:1025/?disable_starttls=true # DEV default (no creds); prod → COURIER_SMTP_CONNECTION_URI env
     from_address: no-reply@cyppie.com
     from_name: Cyppie
 
@@ -97,10 +98,13 @@ selfservice:
     password:
       enabled: true
     # CYP-183 / P4 — OIDC "Sign in with GitHub". Kratos owns the whole OAuth dance (state/PKCE/nonce,
-    # callback exchange, mapper, account-linking). client_id is PUBLIC; client_secret is an env reference
-    # ONLY (OidcProviderConfigTest reds on a literal — the SMTP/P2.1 pattern). ⚠️ The linking-TAKEOVER
-    # safety (an attacker's GitHub acct with the victim's email UNVERIFIED must NOT auto-link/verify) is a
-    # HARD gate settled by the deploy-coordinated spike BEFORE any UX — not by this config assertion.
+    # callback exchange, mapper, account-linking). client_id is PUBLIC. ⚠️ Kratos does NOT interpolate ${VAR}
+    # in YAML, so the client_secret is NOT written here (a `${...}` would be sent as a literal → GitHub
+    # incorrect_client_credentials). In PROD the WHOLE providers array — INCLUDING client_secret — is injected
+    # via the Kratos env-OVERRIDE SELFSERVICE_METHODS_OIDC_CONFIG_PROVIDERS (a JSON array; deploy's proven
+    # path, secret box-local, never in file/log), which OVERRIDES the block below. This block documents the
+    # provider SHAPE; omitting client_secret here FAILS CLOSED (Kratos validation errors) if the env is missing
+    # — better than shipping a broken literal. The linking-TAKEOVER safety (S1) is settled by the spike, not here.
     oidc:
       enabled: true
       config:
@@ -108,7 +112,7 @@ selfservice:
           - id: github
             provider: github
             client_id: Ov23lioeKkKuWAesQBKT # PUBLIC — safe in the repo
-            client_secret: ${GITHUB_CLIENT_SECRET} # env-ref ONLY — never a literal (config-assert reds)
+            # client_secret: NOT here — injected via SELFSERVICE_METHODS_OIDC_CONFIG_PROVIDERS env (see above).
             scope:
               - user:email
             mapper_url: file:///etc/config/kratos/oidc.github.jsonnet
