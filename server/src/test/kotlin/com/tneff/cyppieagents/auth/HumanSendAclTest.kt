@@ -40,6 +40,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * CYP-188 P2b-iii (option a) — the **human-send** ACL. A verified human MEMBER session may post ONLY where an
@@ -93,6 +94,11 @@ class HumanSendAclTest {
             setBody("""{"channelId":"$ch","agentId":"$memberId","canRead":true,"canWrite":true}""")
         }
         assertEquals(HttpStatusCode.OK, grant.status)
+        // CYP-188 durable regression guard (explicit, not just implied by the 201): the grant syncs the human
+        // into Channel.members VIA the HTTP route — so `canWrite` (which needs membership AND the flag) passes.
+        val members = json.parseToJsonElement(client.get("/api/channels") { header("Authorization", "Bearer $opToken") }.bodyAsText())
+            .jsonArray.first { it.jsonObject["id"]!!.jsonPrimitive.content == ch }.jsonObject["members"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(memberId in members, "the canWrite grant must add the human to Channel.members (via the route) — was $members")
         assertEquals(HttpStatusCode.Created, memberSend(ch).status, "MEMBER WITH a canWrite:true grant may post (201)")
 
         store.close(); Files.deleteIfExists(db)
