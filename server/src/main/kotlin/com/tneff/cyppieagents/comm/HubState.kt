@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.ProjectScope
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.routing.ConflictException
+import com.tneff.cyppieagents.routing.NotFoundException
 
 /**
  * Mutable hub configuration (agents, channels, ACL entries) and the derived [AclMatrix].
@@ -90,6 +91,19 @@ class HubState(
      * reused for the commit, so the checked state and the persisted state cannot drift.
      */
     fun setAcl(entry: AclEntry): AclEntry = synchronized(lock) {
+        // CYP-188: single-source the tenant scope — a `PUT /api/acl` grant is ALWAYS for the active project, so
+        // stamp it server-side and IGNORE the client's `AclEntry.projectId` (defaults to DEFAULT_PROJECT_ID). Without
+        // this, a grant in a non-default active project is DEFAULT-stamped and the [AclMatrix] `ProjectScope.permits`
+        // (exact-match) filters it OUT → canRead/canWrite false → 403 even though membership syncs below. Also
+        // prevents cross-project entry injection via this path (cross-project sharing is the ChannelShare permit).
+        val entry = entry.copy(projectId = activeProjectId)
+        // CYP-188: fail-fast — a grant for a channelId with NO `Channel` object is rejected (404) instead of
+        // persisting a silent ORPHAN entry that `GET /api/acl` shows yet every later send/read 403s (there is no
+        // `Channel.members` to sync the grantee into → isMember=false). This is exactly the misleading live symptom
+        // (a granted human on a non-existent channel). `channels` holds the active project's real channels.
+        if (channels.none { it.id == entry.channelId }) {
+            throw NotFoundException("channel '${entry.channelId}' not found", code = "channel_not_found")
+        }
         val next = entries.filterNot { it.channelId == entry.channelId && it.agentId == entry.agentId } + entry
         // S17 / CYP-112: membership IS the per-agent ACL (CYP-93). An entry that grants access
         // (canRead || canWrite) makes the agent a member of that channel; a revoke to no access removes
