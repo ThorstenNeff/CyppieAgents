@@ -29,6 +29,48 @@ credential was linked to the victim identity (admin API `GET /admin/identities/{
 and the victim's `verifiable_addresses[].verified` before/after. **GO only if BOTH S1a and S1b are SAFE.**
 Any unsafe result → report to PO → **OIDC BLOCKED** until closed (config knob or v26 re-spike).
 
+### S1 — exact account-state setup (for the Auftraggeber)
+
+**Platform precondition (both S1a & S1b):** create a **VICTIM** identity on dev-Kratos via the P2 **password
+register** flow with a test email the Auftraggeber controls (e.g. `victim@<test-domain>`) and **verify** it —
+a normal established password account (the collision target). Capture its admin-API state BEFORE the test:
+`GET :4434/admin/identities/{id}` → `credentials` (should be **password only**) + `verifiable_addresses`
+(victim email `verified:true`).
+
+**S1a — unverified attacker-email == victim-email (the takeover test):**
+1. On the dedicated GitHub **test account**, **add** `victim@<test-domain>` as an email but **do NOT click
+   GitHub's confirmation** → it stays **unverified** (it will be a *secondary* email — GitHub forbids an
+   unverified *primary*). Keep the test account's OWN real email as primary + verified.
+   *(Models an attacker who does NOT own the victim's email but attaches it unverified.)*
+2. **Action:** "Sign in with GitHub" with this test account.
+3. **Capture AFTER:** the victim identity's admin JSON (credentials + verifiable_addresses) + the OIDC-result
+   session's `GET /api/auth/me` + the raw flow outcome.
+
+**S1b — verified attacker-email == existing (defense-in-depth):**
+1. On the GitHub test account, **add `victim@<test-domain>` and VERIFY it** (click GitHub's confirmation —
+   needs the real mailbox) + set it **primary**. Now the GitHub verified-primary equals the existing platform
+   identity's email.
+2. **Action:** "Sign in with GitHub".
+3. **Capture AFTER:** same as S1a — was the GitHub credential **silently linked** to the existing victim
+   identity, or was an **ownership proof** (the account's password / a linking confirmation while authed as the
+   victim) required first?
+
+**Notes:** the test email must be a real mailbox the Auftraggeber controls (GitHub's S1b confirmation + being
+the targeted "victim"). S1a's unverified-secondary is the realistic setup (unverified-primary is impossible on
+GitHub) — the spike observes whether Kratos surfaces/uses the unverified secondary at all.
+
+### GO / BLOCK eval (my call — probe, not guess)
+
+- **S1a SAFE (GO):** the victim identity is **UNCHANGED** — no `oidc` credential linked to it, the victim email
+  NOT (re)marked verified via this flow; the unverified GitHub email is **not** used to link/verify (Kratos
+  ignores it, keys the new identity on the attacker's OWN verified primary, or errors).
+  **S1a UNSAFE (BLOCK):** an `oidc` credential is linked to the victim identity and/or the victim email is
+  marked verified from the *unverified* GitHub email → **account takeover**.
+- **S1b SAFE (GO):** linking to the existing identity requires an **ownership proof** — no silent auto-merge.
+  **S1b UNSAFE (BLOCK):** silent auto-link with no proof.
+- **HARD:** GO only if BOTH S1a and S1b are SAFE. Test #1 = **verified-source-only** (S1a) + **ownership-proof-
+  before-link** (S1b). Any unsafe on v1.3.0 → **OIDC BLOCKED** (fix via config / v26 + re-spike), never documented.
+
 ## S2 — verified-mapping (graded; feeds the P1 guard)
 
 **New** GitHub user (email NOT in Kratos), GitHub email **verified** → Sign in with GitHub.
