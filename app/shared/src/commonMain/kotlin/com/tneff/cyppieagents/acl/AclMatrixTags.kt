@@ -28,6 +28,15 @@ object AclMatrixTags {
     fun cellQualifier(channelId: String, agentId: String, qualifier: CellQualifier) =
         "${cell(channelId, agentId)}.${qualifier.tag}"
 
+    // CYP-189 — Human-vs-Agent subject bands + the human-subject marker. The `<agentId>` slot carries a
+    // human's `identityId` unchanged (Kratos-UUID: hyphens, no dots → a valid selector segment). Humans
+    // render ONLY for the operator (Invariante E): [HUMANS_GROUP] and every human column/cell are
+    // STRUCTURALLY ABSENT in the non-operator/partialView tree — QA asserts the no-roster-leak by absence.
+    const val AGENTS_GROUP = "aclMatrix.agentsGroup"
+    const val HUMANS_GROUP = "aclMatrix.humansGroup"
+    /** Qualifier on a human subject's column header → "this subject is a Human, not an Agent". */
+    fun humanMarker(identityId: String) = "${colHeader(identityId)}.human"
+
     // PO guardrail + server protection.
     const val LOCKOUT_DIALOG = "aclMatrix.lockoutDialog"
     const val LOCKOUT_DIALOG_CONFIRM = "aclMatrix.lockoutDialog.confirm"

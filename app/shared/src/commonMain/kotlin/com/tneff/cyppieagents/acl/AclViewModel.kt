@@ -6,6 +6,8 @@ import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.WorkspaceMember
+import com.tneff.cyppieagents.workspace.WorkspaceRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +35,10 @@ data class PresetState(val phase: PresetPhase, val total: Int = 0, val done: Int
 data class AclUiState(
     val channels: List<Channel> = emptyList(),
     val agents: List<Agent> = emptyList(),
+    /** CYP-189 — human subjects (roster `identityId`s), grantable per-channel. Loaded ONLY when [editable]
+     *  (operator); in the non-operator/partialView tree this stays empty AND the panel omits the human band
+     *  entirely (Invariante E — the operator-only roster never leaks through the matrix). */
+    val members: List<WorkspaceMember> = emptyList(),
     val entries: List<AclEntry> = emptyList(),
     val connection: ConnectionStatus = ConnectionStatus.CONNECTING,
     val loading: Boolean = true,
@@ -70,6 +76,9 @@ class AclViewModel(
     private val liveSource: AclLiveSource,
     /** Whether the viewer holds an operator token (editable matrix vs read-only partial view, §4). */
     editable: Boolean = true,
+    /** CYP-189 — the operator-only human roster (`GET /api/workspace/members`, BE3a). Consulted ONLY when
+     *  [editable]; null (or non-operator) → no human subjects (Invariante E: never fetched as a non-operator). */
+    private val workspaceRepository: WorkspaceRepository? = null,
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -86,7 +95,17 @@ class AclViewModel(
         val channels = runCatching { api.channels() }.getOrDefault(emptyList())
         val agents = runCatching { api.agents() }.getOrDefault(emptyList())
         val entries = runCatching { api.acl() }.getOrDefault(emptyList())
-        _state.update { it.copy(channels = channels, agents = agents, entries = entries, loading = false) }
+        // CYP-189 Invariante E: the human roster is operator-only. Fetch it ONLY when editable (operator) — a
+        // non-operator never even requests GET /api/workspace/members (403 fail-closed server-side), so the
+        // matrix cannot leak the roster. Fail-closed to empty on any error (never a partial/guessed list).
+        val repo = workspaceRepository
+        val members = if (_state.value.editable && repo != null)
+            // §9.4 (PO default): omit OPERATOR-tier identities from the grantable human band — the operator's OWN
+            // row (a self-grant is a no-op; they have access via tier/token) AND co-operators. Fail-safe by case.
+            runCatching { repo.members() }.getOrDefault(emptyList())
+                .filterNot { it.tier.equals("OPERATOR", ignoreCase = true) }
+        else emptyList()
+        _state.update { it.copy(channels = channels, agents = agents, entries = entries, members = members, loading = false) }
     }
 
     private suspend fun collectLive() {
@@ -115,7 +134,14 @@ class AclViewModel(
     private fun toggle(channelId: String, agentId: String, dimension: AclDimension) {
         val s = _state.value
         if (!s.editable) return
-        val agent = s.agents.firstOrNull { it.id == agentId } ?: return
+        // CYP-189 — a human subject (roster identityId in the agentId slot) is grantable but NEVER PO → no
+        // hub-and-spoke lockout / self-blind guardrail applies (§7.2): apply directly. An unknown subject is
+        // ignored (defensive). Agents keep the full PO-lockout path below.
+        val agent = s.agents.firstOrNull { it.id == agentId }
+        if (agent == null) {
+            if (s.members.any { it.identityId == agentId }) applyToggle(channelId, agentId, dimension)
+            return
+        }
         val current = AclReducer.entryFor(s.entries, channelId, agentId)
             ?: AclEntry(channelId = channelId, agentId = agentId, canRead = false, canWrite = false)
         val newValue = when (dimension) {
@@ -182,6 +208,9 @@ class AclViewModel(
     private fun revert(key: String, channelId: String, agentId: String, prior: AclEntry?, error: Throwable?) {
         val (cellNoticeKey, banner) = when {
             error is AclHttpException && error.status == 409 -> "acl_po_protected" to null
+            // CYP-189 §5: a grant on a ghost `channelId` → 404 (built server hardening). Honest, NON-retryable
+            // banner (distinct from `acl_change_failed` "try again") — a gone channel heals by refreshing, not retry.
+            error is AclHttpException && error.status == 404 -> null to "acl_channel_gone"
             error is AclHttpException && error.status == 403 -> null to "acl_operator_required"
             error is AclHttpException && error.status == 401 -> null to "acl_unauthorized"
             else -> null to "acl_change_failed"

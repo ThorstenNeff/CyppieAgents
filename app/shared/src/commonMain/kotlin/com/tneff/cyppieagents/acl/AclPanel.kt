@@ -29,15 +29,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
+import com.tneff.cyppieagents.model.WorkspaceMember
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 import com.tneff.cyppieagents.testing.testTagA11y
+import com.tneff.cyppieagents.workspace.memberLabel
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.a11y_acl_human_subject
+import kmpcyppieagents.app.shared.generated.resources.acl_agents_group
+import kmpcyppieagents.app.shared.generated.resources.acl_channel_gone
+import kmpcyppieagents.app.shared.generated.resources.acl_human
+import kmpcyppieagents.app.shared.generated.resources.acl_humans_group
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_cell_nonmember
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_pending
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_po_critical
@@ -127,10 +135,31 @@ private fun WideGrid(state: AclUiState, viewModel: AclViewModel) {
     val cells = remember(state.channels, state.agents, state.entries) {
         AclReducer.cells(state.channels, state.agents, state.entries)
     }
+    // CYP-189 Invariante E: human subjects render ONLY for the operator. `state.members` is already empty for a
+    // non-operator (never fetched); the `editable` guard is the structural defense-in-depth — the human band's
+    // nodes are NEVER built into a non-operator tree (no roster leak through the matrix).
+    val showHumans = state.editable && state.members.isNotEmpty()
+    val humanCells = remember(state.channels, state.members, state.entries, showHumans) {
+        if (showHumans) AclReducer.humanCells(state.channels, state.members, state.entries) else emptyMap()
+    }
     Column(
         modifier = Modifier.fillMaxSize().horizontalScroll(rememberScrollState())
             .verticalScroll(rememberScrollState()).testTagA11y(AclMatrixTags.GRID),
     ) {
+        // Subject-band group heads (§2): Agents always; Humans operator-only. Each spans its columns' width.
+        Row {
+            Box(Modifier.width(CHANNEL_COL_WIDTH))
+            Text(
+                stringResource(Res.string.acl_agents_group),
+                Modifier.width(AGENT_COL_WIDTH * state.agents.size).padding(horizontal = 4.dp).testTag(AclMatrixTags.AGENTS_GROUP),
+                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (showHumans) Text(
+                stringResource(Res.string.acl_humans_group),
+                Modifier.width(AGENT_COL_WIDTH * state.members.size).padding(horizontal = 4.dp).testTag(AclMatrixTags.HUMANS_GROUP),
+                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Row {
             Box(Modifier.width(CHANNEL_COL_WIDTH))
             state.agents.forEach { agent ->
@@ -147,12 +176,34 @@ private fun WideGrid(state: AclUiState, viewModel: AclViewModel) {
                     }
                 }
             }
+            if (showHumans) state.members.forEach { member -> HumanColHeader(member) }
         }
         state.channels.forEach { channel ->
             val rowCells = cells[channel.id].orEmpty()
             Row(Modifier.testTag(AclMatrixTags.rowHeader(channel.id)), verticalAlignment = Alignment.CenterVertically) {
                 Text(channel.name, Modifier.width(CHANNEL_COL_WIDTH).padding(4.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
                 rowCells.forEach { cell -> AclCellView(cell, state, viewModel, Modifier.width(AGENT_COL_WIDTH)) }
+                if (showHumans) humanCells[channel.id].orEmpty().forEach { cell -> AclCellView(cell, state, viewModel, Modifier.width(AGENT_COL_WIDTH)) }
+            }
+        }
+    }
+}
+
+/** A human subject's column head: neutral [memberLabel] + the text `acl_human` marker (§2, never colour-only). */
+@Composable
+private fun HumanColHeader(member: WorkspaceMember) {
+    val label = memberLabel(member)
+    val a11y = stringResource(Res.string.a11y_acl_human_subject, label)
+    Column(Modifier.width(AGENT_COL_WIDTH).padding(4.dp).testTag(AclMatrixTags.colHeader(member.identityId))) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics { contentDescription = a11y })
+            // The "Mensch" text is DECORATIVE here — the label's contentDescription already announces "Mensch
+            // <label>", so the screen-reader must not read "Mensch" a second time. The testTag stays on the Box (QA
+            // asserts the Human-vs-Agent marker); clearAndSetSemantics on the inner text drops it from a11y.
+            Box(Modifier.testTag(AclMatrixTags.humanMarker(member.identityId))) {
+                Text(stringResource(Res.string.acl_human), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clearAndSetSemantics { })
             }
         }
     }
@@ -174,12 +225,30 @@ private fun NarrowCards(state: AclUiState, viewModel: AclViewModel) {
         val cells = remember(channel, state.agents, state.entries) {
             AclReducer.cells(listOf(channel), state.agents, state.entries)[channel.id].orEmpty()
         }
+        // CYP-189 Invariante E: human rows operator-only (see WideGrid).
+        val showHumans = state.editable && state.members.isNotEmpty()
+        val humanCells = remember(channel, state.members, state.entries, showHumans) {
+            if (showHumans) AclReducer.humanCells(listOf(channel), state.members, state.entries)[channel.id].orEmpty() else emptyList()
+        }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             TextButton(onClick = { selected = null }) { Text("‹ " + stringResource(Res.string.comm_back)) }
             Text(channel.name, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.titleSmall)
             cells.forEach { cell ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(state.agents.first { it.id == cell.agentId }.name, Modifier.width(CHANNEL_COL_WIDTH))
+                    AclCellView(cell, state, viewModel, Modifier.weight(1f))
+                }
+            }
+            // Human subject rows: no column grouping here, so the inline acl_human marker per row is the
+            // load-bearing Human-vs-Agent signal (§6). Label = neutral memberLabel, never the raw identityId.
+            humanCells.forEach { cell ->
+                val member = state.members.first { it.identityId == cell.agentId }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.width(CHANNEL_COL_WIDTH), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(memberLabel(member))
+                        Text(stringResource(Res.string.acl_human), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag(AclMatrixTags.humanMarker(member.identityId)))
+                    }
                     AclCellView(cell, state, viewModel, Modifier.weight(1f))
                 }
             }
@@ -192,12 +261,15 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
     val key = AclReducer.cellKey(cell.channelId, cell.agentId)
     val pending = key in state.pending
     val protectedNotice = state.cellNotice[key] == "acl_po_protected"
-    // Display names for screenreader labels (A1) — never the raw ids.
-    val agentName = state.agents.firstOrNull { it.id == cell.agentId }?.name ?: cell.agentId
+    // Display names for screenreader labels (A1) — never the raw ids. CYP-189: a human subject resolves to its
+    // neutral memberLabel (displayName ?? shortId), NEVER the raw identityId (§4 no-secrets).
+    val subjectName = state.agents.firstOrNull { it.id == cell.agentId }?.name
+        ?: state.members.firstOrNull { it.identityId == cell.agentId }?.let { memberLabel(it) }
+        ?: cell.agentId
     val channelName = state.channels.firstOrNull { it.id == cell.channelId }?.name ?: cell.channelId
     Column(modifier = modifier.padding(4.dp).testTag(AclMatrixTags.cell(cell.channelId, cell.agentId))) {
         if (!cell.isMember) {
-            val nonMemberCd = stringResource(Res.string.a11y_acl_cell_nonmember, agentName, channelName)
+            val nonMemberCd = stringResource(Res.string.a11y_acl_cell_nonmember, subjectName, channelName)
             Text(
                 text = "—",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -207,8 +279,8 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
             )
             return@Column
         }
-        val readCd = stringResource(Res.string.a11y_acl_toggle_read, agentName, channelName)
-        val writeCd = stringResource(Res.string.a11y_acl_toggle_write, agentName, channelName)
+        val readCd = stringResource(Res.string.a11y_acl_toggle_read, subjectName, channelName)
+        val writeCd = stringResource(Res.string.a11y_acl_toggle_write, subjectName, channelName)
         val poCriticalCd = stringResource(Res.string.a11y_acl_po_critical)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             GrantControl(stringResource(Res.string.acl_read), cell.canRead, state.editable, pending,
@@ -337,5 +409,7 @@ private fun StateMarker(text: String, tag: String, a11y: String? = null) {
 private fun noticeText(key: String): String = when (key) {
     "acl_operator_required" -> stringResource(Res.string.acl_operator_required)
     "acl_unauthorized" -> stringResource(Res.string.acl_unauthorized)
+    // CYP-189 §5: ghost-channel 404 — honest, non-retryable (distinct from the retryable acl_change_failed).
+    "acl_channel_gone" -> stringResource(Res.string.acl_channel_gone)
     else -> stringResource(Res.string.acl_change_failed)
 }

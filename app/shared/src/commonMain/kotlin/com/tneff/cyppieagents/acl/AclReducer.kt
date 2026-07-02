@@ -92,6 +92,32 @@ object AclReducer {
     }
 
     /**
+     * CYP-189 — cells for **human** subjects (roster `identityId` in the `agentId` slot), grantable on EVERY
+     * channel. Unlike [cells] (agents), this is **membership-independent**: [AclCell.isMember] is always true
+     * (no `NON_MEMBER` "—" suppression) because CYP-188 gates a human's send on `canWrite` at the chokepoint,
+     * NOT on `Channel.members` (§3.1 — required by feature). Effective grants come straight from the entries
+     * with the SAME **deny-wins** rule as [AclMatrix] (every matching entry must grant), but WITHOUT the
+     * membership gate. Humans are never PO → [AclCell.poCritical] is always false (no lockout guardrail, §7.2).
+     */
+    fun humanCells(channels: List<Channel>, members: List<com.tneff.cyppieagents.model.WorkspaceMember>, entries: List<AclEntry>): Map<String, List<AclCell>> {
+        val byKey: Map<Pair<String, String>, List<AclEntry>> = entries.groupBy { it.channelId to it.agentId }
+        return channels.associate { channel ->
+            channel.id to members.map { member ->
+                val matching = byKey[channel.id to member.identityId].orEmpty()
+                AclCell(
+                    channelId = channel.id,
+                    agentId = member.identityId,
+                    isMember = true, // humans grantable on ALL channels — no membership suppression (§3.1)
+                    canRead = matching.isNotEmpty() && matching.all { it.canRead }, // deny-wins, membership-independent
+                    canWrite = matching.isNotEmpty() && matching.all { it.canWrite },
+                    conflict = matching.size > 1,
+                    poCritical = false, // a human is never PO — no hub-and-spoke lockout guardrail (§7.2)
+                )
+            }
+        }
+    }
+
+    /**
      * The canonical hub-and-spoke target (CYP-19 §7 = `HubState.hubAndSpoke()`): every member of every
      * channel gets `canRead=true, canWrite=true`. Used for the preset's preview-diff and the N PUTs.
      */

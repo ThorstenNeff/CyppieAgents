@@ -359,8 +359,13 @@ fun AgentShell(
     val commVm = viewModel(key = COMM_WINDOW_ID) {
         CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
     }
+    // CYP-186 roster repo — OPERATOR-only reads (GET /api/workspace/members). Hoisted so the ACL matrix
+    // (CYP-189 human-grant band) and the roster window share ONE instance; never fetched as a non-operator.
+    val resolvedWorkspaceRepo = workspaceRepository
+        ?: WorkspaceHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     val aclVm = viewModel(key = ACL_WINDOW_ID) {
-        AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = isOperator)
+        // CYP-189: the human-grant band consults the roster ONLY when editable (operator) — Invariante E.
+        AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = isOperator, workspaceRepository = resolvedWorkspaceRepo)
     }
     // Project settings (CYP-84/85): hoisted like the others; editable iff an operator token is present.
     val settingsVm = viewModel(key = SETTINGS_WINDOW_ID) {
@@ -400,8 +405,6 @@ fun AgentShell(
         if (isOperator) viewModel(key = EVENTLOG_TAIL_WINDOW_ID) { EventTailViewModel(resolvedEventsLiveSource) } else null
 
     // CYP-186 roster: OPERATOR-only. Built only when the window is mounted (showRoster) → no MEMBER load, no leak.
-    val resolvedWorkspaceRepo = workspaceRepository
-        ?: WorkspaceHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     val rosterVm: WorkspaceRosterViewModel? =
         if (showRoster(tier)) viewModel(key = ROSTER_WINDOW_ID) { WorkspaceRosterViewModel(resolvedWorkspaceRepo) } else null
 

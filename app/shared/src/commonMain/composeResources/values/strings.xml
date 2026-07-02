@@ -85,6 +85,11 @@
     <string name="acl_pending">wird übernommen…</string>
     <string name="acl_enforced">durchgesetzt</string>
     <string name="acl_change_failed">Änderung nicht bestätigt – erneut versuchen</string>
+    <!-- CYP-189 Operator-Grant-UI (Human canWrite pro Channel) -->
+    <string name="acl_agents_group">Agenten</string>
+    <string name="acl_humans_group">Menschen</string>
+    <string name="acl_human">Mensch</string>
+    <string name="acl_channel_gone">Kanal existiert nicht mehr – Ansicht aktualisieren</string>
     <string name="acl_po_critical">PO-kritisch – trägt Hub-and-Spoke</string>
     <string name="acl_po_lockout_warning">Damit verliert der PO Lese-/Antwortrecht in %1$s – Hub-and-Spoke bricht. Wirklich?</string>
     <string name="acl_self_blind_warning">Damit erblindet dein Live-Feed für %1$s; du kannst weiter editieren, siehst aber keine Live-Änderungen mehr.</string>
@@ -100,6 +105,7 @@
     <string name="a11y_acl_cell_nonmember">%1$s ist kein Mitglied von %2$s</string>
     <string name="a11y_acl_toggle_read">Leserecht für %1$s in %2$s umschalten</string>
     <string name="a11y_acl_toggle_write">Antwortrecht für %1$s in %2$s umschalten</string>
+    <string name="a11y_acl_human_subject">Mensch %1$s</string>
     <string name="a11y_acl_pending">Änderung wird übernommen, noch nicht bestätigt</string>
     <string name="a11y_acl_po_critical">PO-kritische Zelle</string>
     <!-- Phone-Pager-Layout (CYP-50 / S10). Keys per docs/design/phone-pager-keys.md (CYP-54).
