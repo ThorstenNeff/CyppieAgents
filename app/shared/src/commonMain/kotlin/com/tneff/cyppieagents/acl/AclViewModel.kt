@@ -100,7 +100,10 @@ class AclViewModel(
         // matrix cannot leak the roster. Fail-closed to empty on any error (never a partial/guessed list).
         val repo = workspaceRepository
         val members = if (_state.value.editable && repo != null)
+            // §9.4 (PO default): omit OPERATOR-tier identities from the grantable human band — the operator's OWN
+            // row (a self-grant is a no-op; they have access via tier/token) AND co-operators. Fail-safe by case.
             runCatching { repo.members() }.getOrDefault(emptyList())
+                .filterNot { it.tier.equals("OPERATOR", ignoreCase = true) }
         else emptyList()
         _state.update { it.copy(channels = channels, agents = agents, entries = entries, members = members, loading = false) }
     }

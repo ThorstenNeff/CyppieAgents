@@ -101,6 +101,25 @@ class AclHumanGrantTest {
     }
 
     @Test
+    fun operatorTierMember_omittedFromGrantableHumanBand() {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        try {
+            val hub = StubAclHub()
+            val roster = StubWorkspaceRepository(listOf(
+                WorkspaceMember("mmmm-member", "MEMBER", "Alice"),
+                WorkspaceMember("oooo-operator", "OPERATOR", "Owner"),
+            ))
+            val vm = AclViewModel(hub, hub, editable = true, workspaceRepository = roster, scope = scope)
+            val members = vm.state.value.members
+            // §9.4: MEMBER-tier grantable; OPERATOR-tier (self + co-operators) omitted — a self-grant is a no-op.
+            assertTrue(members.any { it.identityId == "mmmm-member" })
+            assertTrue(members.none { it.identityId == "oooo-operator" }, "operator-tier omitted from the grantable band")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun nonOperator_neverFetchesRoster_membersEmpty() {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         try {

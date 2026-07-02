@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -197,8 +198,13 @@ private fun HumanColHeader(member: WorkspaceMember) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.semantics { contentDescription = a11y })
-            Text(stringResource(Res.string.acl_human), style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag(AclMatrixTags.humanMarker(member.identityId)))
+            // The "Mensch" text is DECORATIVE here — the label's contentDescription already announces "Mensch
+            // <label>", so the screen-reader must not read "Mensch" a second time. The testTag stays on the Box (QA
+            // asserts the Human-vs-Agent marker); clearAndSetSemantics on the inner text drops it from a11y.
+            Box(Modifier.testTag(AclMatrixTags.humanMarker(member.identityId))) {
+                Text(stringResource(Res.string.acl_human), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clearAndSetSemantics { })
+            }
         }
     }
 }
