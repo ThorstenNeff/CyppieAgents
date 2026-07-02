@@ -80,6 +80,11 @@
     <string name="acl_pending">applying…</string>
     <string name="acl_enforced">enforced</string>
     <string name="acl_change_failed">Change not confirmed – retry</string>
+    <!-- CYP-189 Operator Grant-UI (Human canWrite per channel) -->
+    <string name="acl_agents_group">Agents</string>
+    <string name="acl_humans_group">Humans</string>
+    <string name="acl_human">Human</string>
+    <string name="acl_channel_gone">Channel no longer exists – refresh the view</string>
     <string name="acl_po_critical">PO-critical – carries hub-and-spoke</string>
     <string name="acl_po_lockout_warning">This removes the PO's read/reply right in %1$s – hub-and-spoke breaks. Continue?</string>
     <string name="acl_self_blind_warning">This blinds your live feed for %1$s; you can still edit but won't see live changes.</string>
@@ -95,6 +100,7 @@
     <string name="a11y_acl_cell_nonmember">%1$s is not a member of %2$s</string>
     <string name="a11y_acl_toggle_read">Toggle read for %1$s in %2$s</string>
     <string name="a11y_acl_toggle_write">Toggle reply for %1$s in %2$s</string>
+    <string name="a11y_acl_human_subject">Human %1$s</string>
     <string name="a11y_acl_pending">Change applying, not yet confirmed</string>
     <string name="a11y_acl_po_critical">PO-critical cell</string>
     <!-- Phone-Pager-Layout (CYP-50 / S10). Keys per docs/design/phone-pager-keys.md (CYP-54).

@@ -82,6 +82,36 @@ class AclReducerTest {
         assertFalse(diff.any { it.agentId == "po" }, "po already satisfied → not in the diff")
     }
 
+    // ---- CYP-189: human subjects — grantable on ALL channels, membership-independent, never PO ----
+
+    @Test
+    fun humanCells_grantableOnEveryChannel_membershipIndependent_neverPoCritical() {
+        val alice = com.tneff.cyppieagents.model.WorkspaceMember("iiii-1111", "MEMBER", "Alice")
+        // Alice is NOT in the channel's members; a human grant is still valid there (§3.1 — required by feature).
+        val entries = listOf(AclEntry("po-frontend", "iiii-1111", canRead = true, canWrite = false))
+        val cell = AclReducer.humanCells(listOf(hubSpoke), listOf(alice), entries).getValue("po-frontend").single()
+        assertTrue(cell.isMember, "humans are grantable on all channels — no NON_MEMBER suppression")
+        assertTrue(cell.canRead)
+        assertFalse(cell.canWrite)
+        assertFalse(cell.poCritical, "a human is never PO — no lockout guardrail")
+        assertEquals("iiii-1111", cell.agentId)
+    }
+
+    @Test
+    fun humanCells_noEntry_failClosed_and_denyWinsOnConflict() {
+        val alice = com.tneff.cyppieagents.model.WorkspaceMember("iiii-1111", "MEMBER")
+        val none = AclReducer.humanCells(listOf(hubSpoke), listOf(alice), emptyList()).getValue("po-frontend").single()
+        assertFalse(none.canRead || none.canWrite, "no entry → not granted (fail-closed)")
+        val conflicting = listOf(
+            AclEntry("po-frontend", "iiii-1111", canRead = true, canWrite = true),
+            AclEntry("po-frontend", "iiii-1111", canRead = true, canWrite = false),
+        )
+        val cell = AclReducer.humanCells(listOf(hubSpoke), listOf(alice), conflicting).getValue("po-frontend").single()
+        assertTrue(cell.canRead)
+        assertFalse(cell.canWrite, "deny wins on conflicting entries (mirrors AclMatrix, minus the membership gate)")
+        assertTrue(cell.conflict)
+    }
+
     @Test
     fun statusOf_mapsConnectionEvents() {
         assertEquals(ConnectionStatus.LIVE, AclReducer.statusOf(AclLiveEvent.Connected))
