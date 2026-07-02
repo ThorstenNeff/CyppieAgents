@@ -1,7 +1,7 @@
 # Multi-User: MEMBER-vs-OPERATOR-Erfahrung — UX/UI-Spec (CYP-80 / S18)
 
 > Owner: UIUX-Designer · Story **CYP-80** (S18 — Multi-User, aktiviert) · Stand 2026-07-02
-> Status: **Vorschlag — wartet auf PO-Reconcile mit Backends Capability-Matrix + Auftraggeber-Entscheidung zum Access-Modell (§6).** Docs-only, Referenz. **PO merged, nicht selbst mergen.**
+> Status: **Auftraggeber-Entscheid 2026-07-02 GEFOLDED: Access-Modell = C (Hybrid); MEMBER = read-only-observer (B).** Offen bleibt nur Backends per-Surface-**Read**-Matrix (§5, welche Lese-Flächen ein Observer bekommt) + Promote-forward (§-Ask 3). Docs-only, Referenz — Dev baut die Client-Slice dagegen. **PO merged, nicht selbst mergen.**
 > Grounded gegen **develop `8cf393a`** (Operator-Gate + Auth-Session real verifiziert, §8). Kein neuer Login/Register-Flow — der End-User-Auth-Bogen (CYP-176/177/185) steht.
 > Begleit-Artefakte: `member-operator-tokens.json`, `-keys.md`, `-tags.md`.
 > Kontext: mehrere verifizierte Nutzer teilen einen Workspace. **Erster verifizierter = OPERATOR, alle weiteren = MEMBER** (Backend-bestimmt). Diese Spec entwirft **nur** die Post-Login-Tier-Differenzierung der bestehenden Desktop-Oberfläche.
@@ -135,30 +135,40 @@ Text einem MEMBER, er müsse „nur einen Token eingeben".
 
 ---
 
-## 5. MEMBER-Read/Participate-Umfang (Vorschlag → Backend-Matrix-Reconcile, §-Ask 1)
+## 5. MEMBER-Read/Participate-Umfang — ENTSCHIEDEN: read-only-observer (B), 2026-07-02
 
-Backend definiert die **Capability-Matrix** parallel; der PO reconciled. **Mein Vorschlag** (fail-closed, restriktiv per
-Default — Erweiterung ist additiv, Zurücknehmen ist ein Bruch):
+**Auftraggeber-Entscheid:** MEMBER = **read-only-observer**. **Kein Mutieren, kein Senden/Teilnehmen** — nur Lesen. Das
+resolved die „Participate"-Frage: Teilnahme ist im MVP **aus** (additive Gewährung später, falls je gewünscht). Offen
+bleibt allein das **Read-Ceiling** — welche *Lese*-Flächen ein Observer bekommt — aus Backends Capability-Matrix (§-Ask 1).
 
-| Fähigkeit | MEMBER-Vorschlag | Begründung |
+| Fähigkeit | MEMBER (read-only-observer) | Naht |
 |---|---|---|
-| **Comm-Timeline lesen** | **ja** (erlaubte Kanäle, ACL wie gehabt) | Teilhabe braucht Sicht; ACL filtert ohnehin |
-| **Comm senden** | **per ACL/Matrix** (Default: nur wo `canWrite`) | vorhandenes `comm_readonly_hint`-Muster trägt das schon |
-| **Event-Log lesen** | **Default nein** (heute operator-only) → **nur falls Matrix gewährt** | Observability ist heute operator-only; nicht stillschweigend öffnen |
-| **Agenten-Stream lesen** | **ja** (Agentenfenster read) | Kern der „begehbaren" Teilhabe |
-| **„Nachricht an Agent" senden** | **per Matrix** (Default: nein, sonst mutiert der MEMBER Agenten-Verhalten) | Senden an einen Agenten ist eine Wirkung, kein reines Lesen |
+| **Comm-Timeline lesen** | **ja** (erlaubte Kanäle, ACL wie gehabt) | ACL filtert ohnehin |
+| **Comm senden** | **nein** (Observer) | `comm_readonly_hint` (read-only-Ersatz, schon gebaut) |
+| **Agenten-Stream lesen** | **ja** (Agentenfenster read) | Kern der „begehbaren" Beobachtung |
+| **„Nachricht an Agent" senden** | **nein** (Observer — Senden ist eine Wirkung) | Eingabe entfällt / read-only |
+| **Event-Log lesen** | **Read-Ceiling-Frage** (Observer könnte Observability lesen; heute operator-only) → Backend-Matrix | strukturelle Auslassung **oder** read-Fenster, je Matrix |
+| **Projekt-Switch / -Sicht** | **Read-Ceiling-Frage** (Kontext sehen ja; wechseln = Mutation? → nein als Observer) | §-Ask 2 |
 | **Jegliche Mutation** (CRUD/ACL/Config/Lifecycle) | **nein** (OPERATOR) | §4 |
 
-**Naht:** wo „per Matrix" steht, rendert die UI das **vorhandene** read-only-Muster (`comm_readonly_hint` bzw. ein
-analoger `workspace_operator_only`-Hinweis), sobald die Fähigkeit fehlt — **kein neues Surface**. Ich passe die Zeilen an,
-sobald der PO die Matrix reconciled.
+**Naht:** wo Senden/Teilnehmen entfällt, rendert die UI das **vorhandene** read-only-Muster (`comm_readonly_hint` bzw.
+`workspace_operator_only`) — **kein neues Surface**. Das einzige noch offene Detail ist das **Read-Ceiling** (Event-Log/
+Projekt-Sicht): ich folde die zwei Read-Ceiling-Zeilen, sobald der PO Backends Matrix reconciled. Fail-closed: nicht
+explizit gewährte Lese-Fläche ⇒ **nicht** angeboten.
 
 ---
 
-## 6. ⟨BEDINGT — Access-Modell-Entscheidung A/B/C (Backend rahmt, Auftraggeber entscheidet)⟩
+## 6. Access-Modell — ENTSCHIEDEN: C (Hybrid), 2026-07-02 (Auftraggeber)
 
-**Unbedingt (in dieser Spec fertig):** MEMBER=`editable=false`+Rollen-Indikator, OPERATOR=`editable=true`, die Matrix §4,
-Rollen-Sichtbarkeit §3. **Bedingt (hier offengelassen):** das **Schicksal der token-zentrierten Affordanzen** — konkret:
+**Auftraggeber-Entscheid: Option C (Hybrid)** — **Rolle ist Default, Operator-Token ist Break-Glass/Override.** Dank des
+Befunds (kein Token-Eingabefeld in der UI) ist das client-seitig **ein Boolean-Quellen-Tausch + Wortlaut, kein Umbau**:
+`editable = (tier==OPERATOR) || operatorTokenPresent` (Token als Break-Glass), und die 5 GATED-Hinweise werden für den
+**MEMBER** rollen-ehrlich (`workspace_operator_only` „Nur der Operator kann das ändern") statt token-zentrisch. Der
+Token-Pfad bleibt als operator-/bootstrap-seitiges Break-Glass bestehen, ist aber **nicht member-facing** (ein MEMBER
+sieht nie „Token eingeben"). `workspace_operator_only` ist damit **nicht mehr bedingt** — es ist der member-facing
+Standard-Hinweis (keys.md aktualisiert).
+
+**Historie (Optionen, die zur Wahl standen):**
 
 - **Befund (`8cf393a`):** es gibt **kein Operator-Token-Eingabefeld in der UI** — der Token wird via Env/Runtime
   injiziert (`ShellConfig`). Der sichtbare token-zentrierte Rest ist der **Wortlaut** der GATED-Hinweise („…mit Operator-
@@ -169,10 +179,13 @@ Rollen-Sichtbarkeit §3. **Bedingt (hier offengelassen):** das **Schicksal der t
   (erster Operator), nicht mehr UI-benannt. **(Sauberster MEMBER-Read; meine Präferenz.)**
 - **Option B — Token koexistiert:** Tier **und** Token gewähren `editable` (OR). Dann müssen **beide** Wortlaute
   kontextabhängig existieren (Rolle *und* Token) — mehr Erklärungslast.
-- **Option C — Hybrid:** Rolle ist Default, Token ist Break-Glass/Override. Wortlaut nennt beides ehrlich.
+- **✅ Option C — Hybrid (GEWÄHLT):** Rolle ist Default, Token ist Break-Glass/Override. Member-facing Wortlaut = rollen-
+  ehrlich (`workspace_operator_only`); Token-Break-Glass bleibt operator-/bootstrap-seitig, nicht member-facing.
 
-**In der Spec markiert als `⟨A/B/C⟩`:** §2 (Quelle von `editable`) + der GATED-Wortlaut in §4. Der Rest ist entscheidungs-
-unabhängig. **Ich folde den finalen Wortlaut/Key-Satz, sobald Backend/Auftraggeber A/B/C festlegt** (wie CYP-119→120).
+**Gefolded (2026-07-02):** §2 (`editable = tier==OPERATOR || operatorTokenPresent`, Token=Break-Glass), §4 GATED-Wortlaut
+(member-facing `workspace_operator_only`), keys.md (`workspace_operator_only` von bedingt → unbedingt). Kein `⟨A/B/C⟩`
+mehr offen. **Test-Alignment bestätigt (PO):** meine zwei Ehrlichkeits-Anker == Testers Security-Guardrails (Roster
+operator-only + MEMBER-sieht-nur-eigene-Rolle; fail-closed unbekannte-Tier⇒MEMBER = Test-Default).
 
 ---
 
@@ -213,23 +226,24 @@ Indikator + ein operator-only Roster.
 
 ## 9. §-Ask-Resolutions (offen — PO/Backend/Auftraggeber)
 
-- **§-Ask 1 — MEMBER-Capability-Matrix (§5).** Backend definiert, PO reconciled. Ich habe fail-closed/restriktiv
-  vorgeschlagen (Comm-Read ja, Comm-Send per ACL, Event-Log/Agent-Send Default nein). **Bitte Matrix reichen → ich folde
-  die §5-Zeilen + die Read-only-Hinweise.**
+- **§-Ask 1 — MEMBER-Capability-Matrix (§5). ✅ TEIL-RESOLVED: MEMBER = read-only-observer (B)** — Senden/Teilnehmen aus,
+  nur Lesen. **Rest offen = nur das Read-Ceiling** (bekommt der Observer Event-Log-Read und/oder Projekt-Sicht?). Bitte
+  Backends Matrix reichen → ich folde die zwei Read-Ceiling-Zeilen (Rest von §5 ist gefolded).
 - **§-Ask 2 — Projekt-Switch & Event-Log für MEMBER (§4).** Darf ein MEMBER den aktiven Projekt-Kontext wechseln und/oder
   das Event-Log **lesen**? Beide heute operator-gebunden. Default (fail-closed): **nein**, bis Matrix gewährt.
 - **§-Ask 3 — Operator-Nachfolge / Promote-Demote (§3.2).** Was, wenn der OPERATOR geht? Übertragbar? Beförderung? **Nicht
   in CYP-80** außer Backends Matrix nimmt es auf → dann liefere ich die `workspace.member.<id>.promote/.demote`-Controls
   (disabled+GATED) als additiven Folge-Slice.
-- **§-Ask 4 — Access-Modell A/B/C (§6).** Rolle ersetzt Token / koexistiert / hybrid. **Backend rahmt (+Security), finaler
-  Call Auftraggeber.** Ich baue unblockiert; folde den GATED-Wortlaut/Key-Satz nach der Entscheidung. Präferenz: A.
+- **§-Ask 4 — Access-Modell A/B/C (§6). ✅ RESOLVED (Auftraggeber 2026-07-02): C (Hybrid)** — Rolle Default + Token
+  Break-Glass. Gefolded in §2/§4/§6 + keys.md (`workspace_operator_only` unbedingt). Client = Boolean-Quellen-Tausch +
+  Wortlaut, kein Umbau.
 
 ---
 
 ## 10. Selbst-Validierung & DS-Notizen
 
-- **Keys:** `member-operator-keys.md` — neue Area-Prefix `workspace_*`/`a11y_workspace_*`; DE+EN-Parität; 0 Kollision gg.
-  `strings.xml` @ `8cf393a` (im Keys-Doc geprüft). Bedingter §6-Key (`workspace_operator_only`) separat markiert.
+- **Keys:** `member-operator-keys.md` — **10 Keys** (8 `workspace_` + 2 `a11y_workspace_`, inkl. `workspace_operator_only`
+  **jetzt unbedingt** nach dem C-Entscheid); DE+EN-Parität; 0 Kollision gg. `strings.xml` @ `8cf393a`.
 - **Tags:** `member-operator-tags.md` — Area `workspace` NEU, 0 Kollision gg. die bestehenden `*Tags.kt`.
 - **Token:** `member-operator-tokens.json` — **0 neue Tokens** (reiner Reuse: neutrales Label + GATED-Ton + read-only-Ersatz).
 - **Disclosure-Invarianten (load-bearing, dürfen bei Impl nicht degradieren):** (1) MEMBER enumeriert den Roster nicht

@@ -35,24 +35,24 @@
 | `a11y_workspace_role` | Deine Rolle: %1$s | Your role: %1$s |
 | `a11y_workspace_members` | Mitgliederliste | Member list |
 
-## Bedingter Key (§6 — Access-Modell A/B/C)
+### Member-facing GATED-Hinweis (§6 — Access-Modell C entschieden 2026-07-02)
 
 | Key | DE | EN |
 |---|---|---|
 | `workspace_operator_only` | Nur der Operator kann das ändern | Only the operator can change this |
 
-> **Bedingt:** rollen-ehrliche Umformulierung der heutigen token-zentrierten GATED-Hinweise (`settings_operator_required`,
-> `agent_mgmt_operator_required`, `project_mgmt_operator_required`, `crossproject_operator_required`, `acl_operator_required`).
-> Unter **Option A** (Rolle ersetzt Token) ersetzt `workspace_operator_only` deren Wortlaut (die 5 bestehenden Keys werden
-> im Wert umformuliert **oder** durch diesen einen ersetzt — PO-Entscheid beim Fold). Unter **B/C** koexistieren beide
-> Wortlaute. **Landet erst mit der A/B/C-Entscheidung** (kein Blocker für den Rest).
+> **Unbedingt** (nach Auftraggeber-Entscheid **C/Hybrid**): rollen-ehrliche member-facing Formulierung der GATED-Hinweise.
+> Ein MEMBER sieht **diesen** Hinweis (nicht die token-zentrischen `*_operator_required`). Die 5 bestehenden Keys
+> (`settings_operator_required`, `agent_mgmt_operator_required`, `project_mgmt_operator_required`,
+> `crossproject_operator_required`, `acl_operator_required`) bleiben für den **operator-/bootstrap-seitigen Token-Break-Glass**-
+> Kontext bestehen (nicht member-facing) — kleiner Dev-Fold beim Verdrahten, kein neuer Key.
 
 ---
 
 ## Zähl-/Validierungs-Block (Selbst-Validierung)
 
-- **Neue Keys unbedingt: 9** — 7 `workspace_*` + 2 `a11y_workspace_*`. **DE+EN-Parität 9/9.**
-- **Bedingter Key (§6): 1** — `workspace_operator_only` (landet mit A/B/C).
+- **Neue Keys gesamt: 10** — 8 `workspace_*` + 2 `a11y_workspace_*` (inkl. `workspace_operator_only`, **unbedingt** nach
+  dem C-Entscheid 2026-07-02). **DE+EN-Parität 10/10.**
 - **Argument-Keys (`%1$s`): 2** — `workspace_operator_is`, `a11y_workspace_role` (DE+EN gleiche Argument-Zahl).
 - **0 Kollision** gg. `strings.xml`/`values-en` @ `8cf393a` (Prefix `workspace_`/`a11y_workspace_` neu — im Push via `grep`
   gegengeprüft).
