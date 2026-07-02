@@ -96,11 +96,13 @@ class MemberReadGrantTest {
         val after = channelIds(client.get("/api/channels") { header("X-Session-Token", member()) }.bodyAsText())
         assertEquals(listOf(granted), after, "MEMBER must see ONLY the granted channel, not $allChannels")
 
-        // 4. Read-only: the MEMBER can NOT post (the send path is token-only → 401).
+        // 4. CYP-188 P2b-iii: the MEMBER has a READ grant (canWrite:false), so the send path denies — NOT because
+        // the gate is token-only (it now admits the session) but because `canWrite` is false at the chokepoint.
+        // The deny-WITHOUT-grant / allow-WITH-`canWrite:true` invariant is proven in full by HumanSendAclTest.
         val send = client.post("/api/channels/$granted/messages") {
             header("X-Session-Token", member()); contentType(ContentType.Application.Json); setBody("""{"body":"hi"}""")
         }
-        assertFalse(send.status.value in 200..299, "MEMBER must NOT be able to post (read-only) — got ${send.status}")
+        assertEquals(HttpStatusCode.Forbidden, send.status, "a read-granted MEMBER (canWrite:false) must be 403 on send")
 
         store.close(); Files.deleteIfExists(db)
     }

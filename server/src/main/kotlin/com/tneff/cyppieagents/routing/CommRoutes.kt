@@ -166,7 +166,11 @@ fun Route.commRoutes(
                 call.respond(hub.channelMessages(participant, channelId, since))
             }
             post {
-                val participant = call.requireParticipant(registry)
+                // CYP-188 P2b-iii: the WRITE gate admits a verified human session (like the read gate); the
+                // per-channel `canWrite` authz stays at the postAsAgent chokepoint (deny-without-grant → 403,
+                // allow-with-`canWrite:true`-grant → 201; uniform 403, no channel-existence tell). Send is
+                // STILL the single write path — no WS-send bypasses this chokepoint.
+                val participant = call.requireCommWriter(deps, registry)
                 val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
                 val body = call.receive<SendMessageRequest>()
                 MessageInput.requireValidBody(body.body) // CYP-143: cap + validate before the chokepoint

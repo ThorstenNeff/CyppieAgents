@@ -91,10 +91,28 @@ fun ApplicationCall.requireParticipant(registry: TokenRegistry): String =
  * verified **human** session: a human OPERATOR maps to [HubState.OPERATOR_ID] (member-of-all, like the operator
  * token); a human MEMBER maps to their **identityId** — a first-class ACL read-subject, so
  * `acl.canRead(channel, identityId)` is **fail-closed empty** until an OPERATOR grants them per-channel read.
- * READ-ONLY by construction: the send path keeps [requireParticipant] (token axis only), so a MEMBER session
- * can never post — and the grant is written `canWrite:false`.
+ * The READ vs WRITE distinction is NOT this gate but the downstream ACL check (`canRead` vs `canWrite`); the
+ * send path uses [requireCommWriter] (CYP-188), which resolves identically but is gated by `canWrite`.
  */
 suspend fun ApplicationCall.requireCommReader(deps: AuthDeps, registry: TokenRegistry): String {
+    registry.participantFor(bearerToken())?.let { return it } // agent / operator token — unchanged
+    return when (val p = resolvePrincipal(deps)) {
+        is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
+        else -> throw UnauthorizedException()
+    }
+}
+
+/**
+ * CYP-188 P2b-iii (a) — the comm **WRITE** gate. Resolves the caller **identically to [requireCommReader]** (an
+ * agent / operator token, OR a verified human session → [HubState.OPERATOR_ID] / identityId): the READ vs WRITE
+ * difference is NOT the gate but the downstream ACL check. [com.tneff.cyppieagents.comm.Hub.postAsAgent] — the
+ * **single write chokepoint** — enforces `canWrite(channelId, participant)`: **deny WITHOUT a grant → 403,
+ * allow WITH a per-channel `canWrite:true` grant → 201** (a human MEMBER a `PUT /api/acl` operator-granted).
+ * The deny is a **uniform 403** — `canWrite` is false for a non-granted AND for a non-existent channel, so there
+ * is no 404-vs-403 channel-existence tell. So this gate only widens WHO reaches the chokepoint; the write authz
+ * (and its fail-closed uniform deny) stays exactly where it already is.
+ */
+suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenRegistry): String {
     registry.participantFor(bearerToken())?.let { return it } // agent / operator token — unchanged
     return when (val p = resolvePrincipal(deps)) {
         is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
