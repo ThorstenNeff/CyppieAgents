@@ -8,7 +8,9 @@ import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.ProviderInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.builtins.ListSerializer
@@ -43,17 +45,25 @@ class StubConnectorCapabilityRepository(
 }
 
 /**
- * Live read against the public `GET /api/agents` (secret-free, same source as the lifecycle snapshot). One fetch
- * maps both `Agent.capabilities` and `Agent.provider` (each only when non-null) into their per-agent maps; a
+ * Live read against `GET /api/agents` (same source as the lifecycle snapshot). One fetch maps both
+ * `Agent.capabilities` and `Agent.provider` (each only when non-null) into their per-agent maps; a
  * missing/undecodable response yields an empty snapshot — honest, the UI stays "not yet reported" / omits the
  * provider rather than inventing either (fail-closed).
+ *
+ * CC1 / CYP-179: this read is no longer anonymous — `GET /api/agents` is now gated by `requireCommReader`
+ * (agent/operator token OR a verified human session), exactly like `/api/channels`. So we send the **same
+ * bearer the comm reads send** ([token] = the operator token in the operator UI); without it the gate 401s and
+ * this snapshot would silently fail closed to empty (caps/provider blank). The body still carries no secrets.
  */
 class ConnectorCapabilityHttpRepository(
     private val client: HttpClient,
     private val httpBaseUrl: String,
+    private val token: String,
 ) : ConnectorCapabilityRepository {
     override suspend fun read(): ConnectorReadModel = try {
-        val response = client.get("$httpBaseUrl/api/agents")
+        val response = client.get("$httpBaseUrl/api/agents") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
         if (!response.status.isSuccess()) {
             ConnectorReadModel()
         } else {

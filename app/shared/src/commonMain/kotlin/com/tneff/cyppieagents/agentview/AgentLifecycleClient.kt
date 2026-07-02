@@ -76,8 +76,9 @@ class AgentLifecycleRepository(
 }
 
 /**
- * Real lifecycle **state source** (CYP-73, non-gated display): the initial [snapshot] from the public
- * `GET /api/agents` `runState`, and live [events] from the participant-gated `/ws/lifecycle`
+ * Real lifecycle **state source** (CYP-73, non-gated display): the initial [snapshot] from the
+ * `GET /api/agents` `runState` (CC1/CYP-179 — now credentialed like the comm reads, see [snapshot]),
+ * and live [events] from the participant-gated `/ws/lifecycle`
  * (snapshot-then-deltas of content-free [AgentRunStateEvent]). The socket auto-reconnects with backoff
  * ([reconnecting]); a reconnect just re-streams the snapshot, which the per-agent header upserts
  * idempotently. Kept separate from the operator-gated egress — no leak vector (same boundary as CYP-55).
@@ -90,7 +91,12 @@ class AgentLifecycleLiveSource(
 ) : AgentLifecycleSource {
 
     override suspend fun snapshot(): Map<String, AgentLifecycleState> = try {
-        val response = client.get("$httpBaseUrl/api/agents") // public, secret-free
+        // CC1 / CYP-179: `GET /api/agents` is now gated by requireCommReader (agent/operator token OR a verified
+        // human session), like /api/channels — so send the same bearer we already hold ([token]). Without it the
+        // gate 401s and the snapshot fails closed to empty (header stays UNKNOWN until /ws/lifecycle delivers a state).
+        val response = client.get("$httpBaseUrl/api/agents") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
         val text = response.bodyAsText()
         if (!response.status.isSuccess()) {
             emptyMap()
