@@ -56,3 +56,6 @@ Aktives Projekt war **DEFAULT** + Grant `projectId:"default"` → projectId-Scop
 - **G3-(b) IP-B-Unabhängigkeit** live nicht darstellbar (1 Egress-IP) — durch Topologie-Attestierung (kein Intermediary) gedeckt.
 - **Rollback scharf:** jedes rote Feld → Edge→cyp173 (Belt) + optional Hub→a589a0e. Non-persistent = Reboot safe-fail auf Belt.
 - Secrets/DSN box-local, redacted. Test-Junk-Identities (belt-member, bg3-*) in PG-Kratos → cleanup nach dem Lauf.
+
+## Nachtrag — Send-ALLOW-201 LIVE bestätigt (post-Backend-Klärung)
+Auf REALEM Channel `po-dev1`: Operator `PUT /api/acl` (canWrite:true für Test-Human) → 200; `po-dev1.members` VOR `[po,dev1,operator]` → NACH `[po,dev1,operator,<human>]` (**Route synct `Channel.members`** — bestätigt Backends Fund, kein Core-Bug); Human-Send extern `POST /api/channels/po-dev1/messages` → **201**. Cleanup: revoke → members zurück `[po,dev1,operator]`, Test-Identity DELETE 204; Test-Message in-memory (HubState, kein persistenter comm-Store, clearet bei Restart), Event-Log append-only unangetastet. **Root-Cause meines früheren 403 = ghost-channelId (`allow-ch` nie als Channel-Entität existent).**
