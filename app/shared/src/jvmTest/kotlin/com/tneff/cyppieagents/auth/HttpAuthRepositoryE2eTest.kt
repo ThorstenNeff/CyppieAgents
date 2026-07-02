@@ -41,6 +41,11 @@ class HttpAuthRepositoryE2eTest {
             { _, _ -> SubmitResp(200, """{"session_token":"tok-123"}""") }
         var port: Int = 0
         var lastSubmit: Pair<String, String>? = null
+        // CYP-187: the platform register-wrapper (`POST /api/auth/register`). Default = the branch-invariant
+        // success (`200 {"status":"verification_pending"}`); `lastRegister` records the body the client POSTs
+        // there (null ⇒ the wrapper was never hit — e.g. a regression back to the raw Kratos registration flow).
+        var registerResp: SubmitResp = SubmitResp(200, """{"status":"verification_pending"}""")
+        var lastRegister: String? = null
     }
 
     private fun withFixture(
@@ -60,6 +65,14 @@ class HttpAuthRepositoryE2eTest {
                 }
                 get("/.ory/kratos/public/sessions/whoami") {
                     call.respondText(fx.whoami, ContentType.Application.Json)
+                }
+                // CYP-187 — the platform register-wrapper. The client's ONLY external register path now; it must
+                // POST {email,password} HERE, not to the raw Kratos registration self-service flow (MUST-1).
+                post("/api/auth/register") {
+                    fx.lastRegister = call.receiveText()
+                    val r = fx.registerResp
+                    if (r.retryAfter != null) call.response.headers.append(HttpHeaders.RetryAfter, r.retryAfter)
+                    call.respondText(r.body, ContentType.Application.Json, HttpStatusCode.fromValue(r.status))
                 }
                 get("/.ory/kratos/public/self-service/{kind}/api") {
                     val kind = call.parameters["kind"]
@@ -235,24 +248,48 @@ class HttpAuthRepositoryE2eTest {
         assertEquals("30", r.retryAfter)
     }
 
-    // --- register (neutral) ---
+    // --- register → platform wrapper (neutral). CYP-187: POST /api/auth/register, NOT the raw Kratos flow. ---
 
     @Test
     fun register_success_mapsNeutralPending() = withFixture({
-        onSubmit = { _, _ -> SubmitResp(200, """{"session_token":"reg-tok"}""") }
-    }) { _, repo, _ ->
+        registerResp = SubmitResp(200, """{"status":"verification_pending"}""")
+    }) { fx, repo, _ ->
         val r = repo.register("new@example.com", "hunter2")
         assertIs<RegisterResult.Pending>(r)
         assertEquals("new@example.com", r.email)
+        assertEquals(null, fx.lastSubmit) // the raw Kratos registration submit was NOT driven
+    }
+
+    @Test
+    fun register_hitsWrapperPath_withEmailAndPassword_notRawKratos() = withFixture({
+        registerResp = SubmitResp(200, """{"status":"verification_pending"}""")
+    }) { fx, repo, _ ->
+        // ⭐ Path-teeth (MUST-1): the client POSTs {email,password} to the wrapper. A regression back to
+        // submitFlow("registration",…) never hits /api/auth/register → fx.lastRegister stays null → RED.
+        repo.register("new@example.com", "hunter2")
+        val body = fx.lastRegister
+        assertIs<String>(body)
+        assertEquals(true, body.contains("\"email\":\"new@example.com\""))
+        assertEquals(true, body.contains("\"password\":\"hunter2\""))
+        assertEquals(null, fx.lastSubmit) // no raw Kratos self-service submit at all
     }
 
     @Test
     fun register_throttled_mapsRateLimited() = withFixture({
-        onSubmit = { _, _ -> SubmitResp(429, "{}", retryAfter = "60") }
+        registerResp = SubmitResp(429, "{}", retryAfter = "60") // edge throttle (G3) fronts the wrapper
     }) { _, repo, _ ->
         val r = repo.register("new@example.com", "hunter2")
         assertIs<RegisterResult.RateLimited>(r)
         assertEquals("60", r.retryAfter)
+    }
+
+    @Test
+    fun register_serverError_mapsGenericInvalidInput() = withFixture({
+        // 503 = admin/Kratos outage, uniform for everyone (MUST-3). Fail-closed to the generic negative — never a
+        // fabricated Pending, never an enumeration branch. (400 invalid_request maps the same way.)
+        registerResp = SubmitResp(503, """{"error":"unavailable"}""")
+    }) { _, repo, _ ->
+        assertIs<RegisterResult.InvalidInput>(repo.register("new@example.com", "hunter2"))
     }
 
     // --- recovery request (always neutral) ---
