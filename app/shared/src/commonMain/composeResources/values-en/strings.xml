@@ -366,4 +366,17 @@
     <string name="a11y_auth_password_confirm">Re-enter password</string>
     <string name="a11y_auth_password_show">Show password</string>
     <string name="a11y_auth_password_hide">Hide password</string>
+
+    <!-- ===== CYP-80/CYP-186 Multi-User MEMBER/OPERATOR. User-Tier (human: operator/member), NOT the agent
+         role. Fail-closed: unknown tier → member. ===== -->
+    <string name="workspace_role_indicator_operator">You are the operator</string>
+    <string name="workspace_role_indicator_member">You are a member</string>
+    <string name="workspace_operator_is">Operator: %1$s</string>
+    <string name="workspace_members_title">Members</string>
+    <string name="workspace_tier_operator">Operator</string>
+    <string name="workspace_tier_member">Member</string>
+    <string name="workspace_member_you">You</string>
+    <string name="workspace_operator_only">Only the operator can change this</string>
+    <string name="a11y_workspace_role">Your role: %1$s</string>
+    <string name="a11y_workspace_members">Member list</string>
 </resources>

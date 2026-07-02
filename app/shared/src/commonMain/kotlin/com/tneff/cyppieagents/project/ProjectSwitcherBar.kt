@@ -23,11 +23,17 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.auth.UserTier
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
+import com.tneff.cyppieagents.workspace.WorkspaceTags
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_project_switch_to
 import kmpcyppieagents.app.shared.generated.resources.a11y_project_switcher_menu
+import kmpcyppieagents.app.shared.generated.resources.a11y_workspace_role
+import kmpcyppieagents.app.shared.generated.resources.workspace_operator_is
+import kmpcyppieagents.app.shared.generated.resources.workspace_role_indicator_member
+import kmpcyppieagents.app.shared.generated.resources.workspace_role_indicator_operator
 import kmpcyppieagents.app.shared.generated.resources.project_cancel
 import kmpcyppieagents.app.shared.generated.resources.project_manage
 import kmpcyppieagents.app.shared.generated.resources.project_mgmt_title
@@ -54,7 +60,15 @@ private val SWITCHER_HINT_MAX_WIDTH = 280.dp
  * project is a no-op, never a "switch target" (no phantom entry).
  */
 @Composable
-fun ProjectSwitcherBar(viewModel: ProjectViewModel, modifier: Modifier = Modifier) {
+fun ProjectSwitcherBar(
+    viewModel: ProjectViewModel,
+    modifier: Modifier = Modifier,
+    /** CYP-186: the signed-in user's workspace tier — drives the persistent role indicator. */
+    tier: UserTier = UserTier.MEMBER,
+    /** The operator's display name shown to a MEMBER ("Operator: …"). null (e.g. BE1 not yet delivering it) omits
+     *  that line — never an email/contact dump (§3.3). */
+    operatorName: String? = null,
+) {
     val state by viewModel.state.collectAsState()
     val activeName = state.projects.firstOrNull { it.id == state.activeProjectId }?.name ?: state.activeProjectId
 
@@ -62,6 +76,35 @@ fun ProjectSwitcherBar(viewModel: ProjectViewModel, modifier: Modifier = Modifie
         modifier = modifier.fillMaxWidth().testTag(ProjectTags.BAR).padding(horizontal = 12.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+        // CYP-186 — persistent role indicator (spec §3.1): a neutral identity label (reuse the ● marker), NOT a
+        // prestige badge. The honest reason operator controls are gated; names the operator so a MEMBER knows whom
+        // to ask. Colour is never the sole carrier — the role is text (WCAG 1.4.1). User-Tier ≠ Agent-Role.
+        val roleText = stringResource(
+            if (tier == UserTier.OPERATOR) Res.string.workspace_role_indicator_operator
+            else Res.string.workspace_role_indicator_member,
+        )
+        val roleA11y = stringResource(Res.string.a11y_workspace_role, roleText)
+        Row(
+            modifier = Modifier.testTag(WorkspaceTags.ROLE_INDICATOR).semantics { contentDescription = roleA11y },
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("●", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = roleText,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (tier == UserTier.MEMBER && !operatorName.isNullOrBlank()) {
+                Text(
+                    text = stringResource(Res.string.workspace_operator_is, operatorName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag(WorkspaceTags.OPERATOR_NAME),
+                )
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

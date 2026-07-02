@@ -117,8 +117,8 @@ class HttpAuthRepositoryLiveE2eTest {
     @Test
     fun live_login_verifiedIdentity_mapsVerified() = live { repo, _ ->
         val pw = verifiedPassword ?: return@live // needs the pre-verified identity's password
-        assertEquals(LoginResult.Verified, repo.login(verifiedEmail, pw))
-        assertEquals(SessionState.Verified, repo.session())
+        assertIs<LoginResult.Verified>(repo.login(verifiedEmail, pw))
+        assertIs<SessionState.Verified>(repo.session())
     }
 
     @Test
@@ -226,8 +226,8 @@ class HttpAuthRepositoryLiveE2eTest {
             val link = verificationLink(mailText(mailClient, email, "verify your email")) // masked: never logged
             assertEquals(VerifyResult.Ok, repo.verifyEmail(link))
             // Sharpened #2: the verified-flip is LIVE — after verify, login → /api/auth/me verified:true.
-            assertEquals(LoginResult.Verified, repo.login(email, strongPassword))
-            assertEquals(SessionState.Verified, repo.session()) // closes the P2.3 linkage live
+            assertIs<LoginResult.Verified>(repo.login(email, strongPassword))
+            assertIs<SessionState.Verified>(repo.session()) // closes the P2.3 linkage live
         } finally {
             mailClient.close()
         }

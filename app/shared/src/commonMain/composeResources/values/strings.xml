@@ -371,4 +371,17 @@
     <string name="a11y_auth_password_confirm">Passwort erneut eingeben</string>
     <string name="a11y_auth_password_show">Passwort anzeigen</string>
     <string name="a11y_auth_password_hide">Passwort verbergen</string>
+
+    <!-- ===== CYP-80/CYP-186 Multi-User MEMBER/OPERATOR (docs/design/member-operator-keys.md). User-Tier
+         (Mensch: Operator/Mitglied), NICHT die Agent-Rolle. Fail-closed: unbekannte Tier → Mitglied. ===== -->
+    <string name="workspace_role_indicator_operator">Du bist Operator</string>
+    <string name="workspace_role_indicator_member">Du bist Mitglied</string>
+    <string name="workspace_operator_is">Operator: %1$s</string>
+    <string name="workspace_members_title">Mitglieder</string>
+    <string name="workspace_tier_operator">Operator</string>
+    <string name="workspace_tier_member">Mitglied</string>
+    <string name="workspace_member_you">Du</string>
+    <string name="workspace_operator_only">Nur der Operator kann das ändern</string>
+    <string name="a11y_workspace_role">Deine Rolle: %1$s</string>
+    <string name="a11y_workspace_members">Mitgliederliste</string>
 </resources>

@@ -61,6 +61,7 @@ import kmpcyppieagents.app.shared.generated.resources.agent_edit_last_po
 import kmpcyppieagents.app.shared.generated.resources.agent_edit_po_exists
 import kmpcyppieagents.app.shared.generated.resources.agent_edit_title
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_operator_required
+import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import kmpcyppieagents.app.shared.generated.resources.agent_remove
 import kmpcyppieagents.app.shared.generated.resources.agent_remove_confirm
 import kmpcyppieagents.app.shared.generated.resources.agent_remove_confirm_delete
@@ -114,7 +115,7 @@ fun AgentManagementPanel(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (!state.editable) {
-            TonedHint(stringResource(Res.string.agent_mgmt_operator_required), HintTone.GATED, AgentMgmtTags.GATE_HINT)
+            TonedHint(stringResource(Res.string.workspace_operator_only), HintTone.GATED, AgentMgmtTags.GATE_HINT)
         }
 
         Button(

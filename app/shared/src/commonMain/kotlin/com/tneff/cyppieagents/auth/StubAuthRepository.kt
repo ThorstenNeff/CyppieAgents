@@ -16,7 +16,7 @@ package com.tneff.cyppieagents.auth
 class StubAuthRepository(
     /** Boot session (mutated by [logout] to [SessionState.None]). */
     var sessionState: SessionState = SessionState.None,
-    var loginResult: (email: String, password: String) -> LoginResult = { _, _ -> LoginResult.Verified },
+    var loginResult: (email: String, password: String) -> LoginResult = { _, _ -> LoginResult.Verified() },
     var registerResult: (email: String, password: String) -> RegisterResult = { email, _ -> RegisterResult.Pending(email) },
     var requestResetResult: (email: String) -> ResetRequestResult = { _ -> ResetRequestResult.Accepted },
     var setNewPasswordResult: (token: String, newPassword: String) -> SetPasswordResult = { _, _ -> SetPasswordResult.Ok },

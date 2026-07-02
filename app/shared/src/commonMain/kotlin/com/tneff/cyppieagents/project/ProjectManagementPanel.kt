@@ -48,6 +48,7 @@ import kmpcyppieagents.app.shared.generated.resources.project_delete_worktree_de
 import kmpcyppieagents.app.shared.generated.resources.project_delete_worktree_keep
 import kmpcyppieagents.app.shared.generated.resources.project_delete_worktree_warning
 import kmpcyppieagents.app.shared.generated.resources.project_mgmt_operator_required
+import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import kmpcyppieagents.app.shared.generated.resources.project_rename
 import kmpcyppieagents.app.shared.generated.resources.project_rename_error
 import kmpcyppieagents.app.shared.generated.resources.project_rename_title
@@ -77,7 +78,7 @@ fun ProjectManagementPanel(viewModel: ProjectViewModel, modifier: Modifier = Mod
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (!state.editable) {
-            TonedHint(stringResource(Res.string.project_mgmt_operator_required), HintTone.GATED, ProjectTags.GATE_HINT)
+            TonedHint(stringResource(Res.string.workspace_operator_only), HintTone.GATED, ProjectTags.GATE_HINT)
         }
         Button(
             onClick = viewModel::openAdd,
