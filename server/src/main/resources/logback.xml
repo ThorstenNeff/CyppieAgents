@@ -1,7 +1,11 @@
 <configuration>
+    <!-- CYP-188 / BG-WS-5: redact `?token=`/`Bearer` credentials from log messages (WS accepts a `?token=`
+         query param → at trace level Ktor logs the handshake URI incl. the token). Defense-hygiene, now
+         relevant with the public /ws/* surface. -->
+    <conversionRule conversionWord="redactedMsg" converterClass="com.tneff.cyppieagents.logging.TokenRedactingMessageConverter"/>
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %redactedMsg%n</pattern>
         </encoder>
     </appender>
     <root level="trace">
