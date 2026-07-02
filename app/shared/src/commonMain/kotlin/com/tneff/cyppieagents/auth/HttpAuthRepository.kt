@@ -134,25 +134,25 @@ class HttpAuthRepository(
         }
     }
 
-    // --- §7.3 register (neutral) ---
+    // --- §7.3 register → platform wrapper (neutral). CYP-187 / §B(b): the client's ONLY external register path
+    // is POST /api/auth/register {email,password} (Exposure MUST-1) — the raw Kratos self-service register is made
+    // off-box unreachable at the edge, so we no longer drive `submitFlow("registration",…)`. The wrapper answers
+    // branch-invariant `200 {"status":"verification_pending"}` for a NEW and an EXISTING email (anti-enumeration
+    // lives server-side, RegisterMediator) → the client shows the same verification-pending state either way; the
+    // mail carries the branch, never the HTTP response. No session is returned (verification pending ⇒ not logged
+    // in) → NO captureSession. Any non-2xx (incl. 400 invalid_request, 503 admin outage) is the generic negative. ---
 
     override suspend fun register(email: String, password: String): RegisterResult =
         failClosed(RegisterResult.InvalidInput) {
-            val resp = submitFlow(
-                "registration",
-                buildJsonObject {
-                    put("method", "password")
-                    put("password", password)
-                    put("traits", buildJsonObject { put("email", email) })
-                },
-            )
+            val resp = client.post("$platform/api/auth/register") {
+                authHeaders()
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject { put("email", email); put("password", password) }.toString())
+            }
             when {
-                resp.status.isSuccess() -> {
-                    captureSession(resp.bodyAsText())
-                    RegisterResult.Pending(email) // neutral: verification pending, never "exists"
-                }
-                resp.status.value == 429 -> RegisterResult.RateLimited(retryAfterOf(resp))
-                else -> RegisterResult.InvalidInput // generic; UI shows the generic register error
+                resp.status.isSuccess() -> RegisterResult.Pending(email) // neutral: verification pending, never "exists"
+                resp.status.value == 429 -> RegisterResult.RateLimited(retryAfterOf(resp)) // edge throttle (G3)
+                else -> RegisterResult.InvalidInput // generic; UI shows the generic register error (fail-closed)
             }
         }
 
