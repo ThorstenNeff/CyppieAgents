@@ -77,6 +77,39 @@ class Rc2ConfigAssertionTest {
         )
     }
 
+    // ---- CYP-190: Kratos-side log hardening (token/code leak into kratos.log) ----
+
+    @Test
+    fun kratosReferenceConfig_logHardening_noSensitiveLeak() {
+        // Kratos logs its OWN request handling; without a pinned `log:` block the box ran leaky defaults and
+        // wrote cleartext session tokens (ory_st_…) + recovery/verification codes into kratos.log (deploy found
+        // 259). The master redaction switch is `leak_sensitive_values` and the level must not log request URIs.
+        // (This is the Kratos-side analog of the hub's BG-WS-5 logback redaction — a separate process.)
+        val text = repoFile("deploy/kratos/kratos.reference.yml").readText()
+        // ANCHORED to a real config line (`^…$`) — an un-anchored match would also be satisfied by the yml
+        // DOC-COMMENT mention of `leak_sensitive_values: false`, so deleting the config value while keeping the
+        // comment would false-green while Kratos ran the leaky default (Test's demonstration; the CYP-184 lesson
+        // — assert the VALUE, not the form). The comment line starts with `#` and has trailing prose → excluded.
+        assertTrue(
+            Regex("(?m)^\\s*leak_sensitive_values:\\s*false\\s*$").containsMatchIn(text),
+            "log.leak_sensitive_values must be false on a real config line — Kratos redacts tokens/codes from its logs",
+        )
+        // Teeth: `true` is exactly what leaked the 259 tokens → it must NEVER appear.
+        assertTrue(
+            !Regex("leak_sensitive_values:\\s*true").containsMatchIn(text),
+            "log.leak_sensitive_values must NEVER be true (that leaks tokens/codes into kratos.log)",
+        )
+        assertTrue(
+            Regex("(?m)^\\s*level:\\s*info\\s*$").containsMatchIn(text),
+            "log.level must be info (debug/trace would log token-bearing request URIs)",
+        )
+        // Teeth: a debug/trace level logs request detail incl. `?token=`/codes → must NOT appear.
+        assertTrue(
+            !Regex("level:\\s*(debug|trace)").containsMatchIn(text),
+            "log.level must NOT be debug/trace (logs token-bearing request detail)",
+        )
+    }
+
     // ---- CC2: the §8 flag-1 binding target — per-account brute-force posture, NO hard-lockout ----
 
     @Test
