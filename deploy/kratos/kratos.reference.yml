@@ -34,7 +34,7 @@ dsn: REPLACE_ME # e.g. postgres://... (SQLite only for local dev)
 
 serve:
   public:
-    base_url: REPLACE_ME # e.g. https://api.cyppie.com/.ory/kratos/public/
+    base_url: REPLACE_ME # e.g. https://api.cyppie-agents.com/.ory/kratos/public/
     cors:
       enabled: true
       allowed_origins:
@@ -93,7 +93,7 @@ hashers:
 courier:
   smtp:
     connection_uri: smtp://mailpit:1025/?disable_starttls=true # DEV default (no creds); prod → COURIER_SMTP_CONNECTION_URI env
-    from_address: no-reply@cyppie.com
+    from_address: no-reply@cyppie-agents.com # CYP-192: aligned to the product domain (deploy's SMTP/SPF-DKIM must carry @cyppie-agents.com)
     from_name: Cyppie
 
 session:
