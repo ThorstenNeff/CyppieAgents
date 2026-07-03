@@ -22,7 +22,7 @@ import java.io.File
  * and runs the [BridgeRelay].
  *
  * Config (env, no secrets in any file the bridge ships):
- *  - `HUB_URL`       — e.g. `wss://api.cyppie.com` (the `/ws/hub` path is appended).
+ *  - `HUB_URL`       — e.g. `wss://api.cyppie-agents.com` (the `/ws/hub` path is appended).
  *  - `HUB_AGENT_ID`  — the server-assigned agent id (the spoke is `po-<id>`).
  *  - `HUB_TOKEN`     — the S3-minted per-agent bearer token (the ONLY secret the bridge holds).
  *  - `CLAUDE_CMD`    — the CC launch command (default `claude`); `BRIDGE_CWD` — its working dir.
