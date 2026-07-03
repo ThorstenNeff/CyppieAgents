@@ -15,6 +15,21 @@
 
 version: v1.3.0
 
+# CYP-190 — LOG HARDENING (Kratos-side; the hub's own log redaction is BG-WS-5, a SEPARATE process). Kratos
+# logs its OWN request handling, and without this block it runs box defaults that carry cleartext session
+# tokens (`ory_st_…`) and recovery/verification codes into kratos.log (deploy found 259). Pin the redaction:
+#  - leak_sensitive_values: false → Kratos REDACTS secrets/tokens/codes from its logs (the MASTER switch;
+#    `true` is exactly what leaks them — Ory's own guide is to set it false).
+#  - level: info → do NOT log token-bearing request URIs/bodies (a `debug`/`trace` level would).
+#  - format: json → structured (the default).
+# Rc2ConfigAssertionTest binds these. Residual (documented, NOT this fix): v1.3.0 may still leak some sensitive
+# values into error RESPONSES (fixed in v26) — that is the standing v26-upgrade re-probe track, separate from
+# this logging fix; the live canary (deploy) confirms the log leak is closed.
+log:
+  level: info
+  leak_sensitive_values: false
+  format: json
+
 dsn: REPLACE_ME # e.g. postgres://... (SQLite only for local dev)
 
 serve:
