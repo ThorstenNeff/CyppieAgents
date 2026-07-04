@@ -126,12 +126,17 @@ class AgentEventStoreTest {
 
     @Test
     fun subscribe_concurrentAppendBurst_noGap_stress_sqlite() = runBlocking<Unit> {
-        // CYP-205: the same race-teeth against the DURABLE SqliteAgentEventStore — the onSubscription fix is
-        // identical in both impls, but the WAL/disk path has different timing, so a real-db variant is the
-        // complete proof. Fewer iterations (disk is slower) but the same guarantee: every seq 1..N arrives,
-        // contiguous, no gap under concurrency.
-        val iters = 60
-        val n = 30
+        // CYP-205b — the durable-store concurrency guard: over 100×50 racing appends on the WAL/disk store,
+        // every seq 1..N must arrive contiguous (no drop/dup in the live-fan-out under load). **NON-VACUOUS,
+        // RED-verified** by a live-buffer mutation (extraBufferCapacity 256→1, DROP_OLDEST → events lost → RED).
+        // NOTE (verify-don't-trust, Test's re-gate): the *register-before-query* race that the InMemory burst
+        // catches (mutation-verified 98/300) is **benign in Sqlite** — its `query`'s `withContext(io)` YIELDS,
+        // so the collector subscribes to `live` BEFORE the query completes → the race window is structurally
+        // closed here (the faithful `launch{collect};query` bug stays GREEN even at 200×80). That race is
+        // guarded by the InMemory variant + the shared `onSubscription` code; THIS variant guards the
+        // Sqlite-specific live-fan-out correctness over WAL/disk (which the InMemory one can't).
+        val iters = 100
+        val n = 50
         var gapIters = 0
         repeat(iters) {
             val db = Files.createTempFile("agentev-burst-sq", ".db")
