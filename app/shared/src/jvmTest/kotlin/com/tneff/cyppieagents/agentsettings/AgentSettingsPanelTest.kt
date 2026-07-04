@@ -40,18 +40,21 @@ class AgentSettingsPanelTest {
     )
 
     @Test
-    fun operator_nameEditable_idReadonly_present_and_noEffectHintUntilPersonaChanges() = runComposeUiTest {
+    fun operator_nameEditable_idReadonly_present_and_effectHintOnlyPostPersonaSave() = runComposeUiTest {
         val v = vm(editable = true)
         setContent { MaterialTheme { AgentSettingsPanel(v, onDismiss = {}) } }
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AgentSettingsTags.PANEL).fetchSemanticsNodes().isNotEmpty() }
 
         onNodeWithTag(AgentSettingsTags.NAME_INPUT).assertIsEnabled()
         onNodeWithTag(AgentSettingsTags.ID_READONLY).assertExists()      // stable identity shown, not editable
-        // Rename/recolour are immediate → NO restart hint.
+        // Rename/recolour are immediate → NO restart hint, ever.
         v.setName("Renamed"); v.setColorHex("#3B82F6"); waitForIdle()
         onNodeWithTag(AgentSettingsTags.EFFECT_HINT).assertDoesNotExist()
-        // Persona edit → restart-deferred → the hint appears.
+        // ⭐ UX-QA: editing the persona pre-save must NOT show the "Gespeichert…" hint (nothing saved yet).
         v.setPersona("persona v2"); waitForIdle()
+        onNodeWithTag(AgentSettingsTags.EFFECT_HINT).assertDoesNotExist()
+        // Only AFTER the save (saved ≠ active → restart) does the hint appear.
+        v.save(); waitForIdle()
         onNodeWithTag(AgentSettingsTags.EFFECT_HINT).assertExists()
     }
 

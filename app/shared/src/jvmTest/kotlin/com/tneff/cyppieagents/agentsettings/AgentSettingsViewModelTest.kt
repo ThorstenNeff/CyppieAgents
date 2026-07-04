@@ -71,14 +71,25 @@ class AgentSettingsViewModelTest {
     }
 
     @Test
-    fun personaChanged_flipsOnPersonaEdit_notOnNameOrColor() {
+    fun needsRestart_trueAfterPersonaSave_notWhileEditing() {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         try {
-            val v = vm(scope) // load() prefills persona="old persona" under Unconfined
-            assertFalse(v.state.value.personaChanged)
-            v.setName("Renamed"); assertFalse(v.state.value.personaChanged, "rename is immediate → no restart hint")
-            v.setColorHex("#3B82F6"); assertFalse(v.state.value.personaChanged, "recolour is immediate → no restart hint")
-            v.setPersona("changed"); assertTrue(v.state.value.personaChanged, "persona is restart-deferred → hint")
+            val v = vm(scope) // load() prefills active persona = "old persona" under Unconfined
+            assertFalse(v.state.value.needsRestart)
+            // UX-QA fix: editing the persona is NOT yet a "Gespeichert" state → no restart hint pre-save.
+            v.setPersona("changed"); assertFalse(v.state.value.needsRestart, "unsaved persona edit → no hint")
+            // Only after the SAVE (stored persona ≠ active) is the restart hint true.
+            v.save(); assertTrue(v.state.value.needsRestart, "post-save saved≠active → restart hint")
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun nameOrColorSave_neverTriggersRestartHint() {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        try {
+            val v = vm(scope)
+            v.setName("Renamed"); v.setColorHex("#3B82F6"); v.save()
+            assertFalse(v.state.value.needsRestart, "name/colour are immediate → no restart hint even after save")
         } finally { scope.cancel() }
     }
 

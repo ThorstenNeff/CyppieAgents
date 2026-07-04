@@ -484,7 +484,9 @@ fun FloatingWindow(
         val surfaceColor = MaterialTheme.colorScheme.surface
         val barBg = titleBarColors?.let { if (isFocused) it.background else lerp(it.background, surfaceColor, 0.45f) }
             ?: if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-        val barContent = titleBarColors?.let { if (isFocused) it.content else it.content.copy(alpha = 0.75f) }
+        // UX-QA [Low]①: use the FULL derived onColor when unfocused too (no alpha reduction) — it stays
+        // contrast-strong; the bg dim + elevation already carry "unfocused" (a 0.75-alpha could drop below 4.5:1).
+        val barContent = titleBarColors?.content
             ?: if (isFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
         val borderColor = titleBarColors?.let { if (isFocused) it.border else lerp(it.border, surfaceColor, 0.45f) }
         Surface(

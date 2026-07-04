@@ -179,8 +179,9 @@ fun AgentSettingsPanel(viewModel: AgentSettingsViewModel, onDismiss: () -> Unit)
                     modifier = Modifier.fillMaxWidth().testTag(AgentSettingsTags.PERSONA_INPUT)
                         .semantics { contentDescription = personaCd },
                 )
-                // The restart hint is shown ONLY when the persona changed — name/colour are immediate (§4.4/§7.3).
-                if (state.personaChanged) {
+                // The restart hint is shown ONLY AFTER a persona SAVE (saved ≠ active → restart) — never while merely
+                // editing (the key says "Gespeichert…"; pre-save that would be a lie). Name/colour are immediate (§4.4/§7.3).
+                if (state.needsRestart) {
                     TonedHint(stringResource(Res.string.agent_edit_effect_hint), HintTone.EFFECT_DEFERRED, AgentSettingsTags.EFFECT_HINT)
                 }
             }

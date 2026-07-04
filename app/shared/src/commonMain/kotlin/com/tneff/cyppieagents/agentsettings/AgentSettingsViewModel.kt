@@ -24,8 +24,11 @@ data class AgentSettingsUiState(
     /** The custom `#RRGGBB` (or a picked swatch's hex); blank = no override → the deterministic slot default. */
     val colorHex: String = "",
     val persona: String = "",
-    /** The persona as loaded — the panel shows the restart hint only while [persona] differs (§4.4). */
-    val loadedPersona: String = "",
+    /** The persona ACTIVE in the running agent (baseline captured at open). A SAVE that moves [savedPersona]
+     *  away from this ⇒ saved ≠ active ⇒ restart needed (§4.4 / UX-QA fix: the hint is a POST-save state). */
+    val activePersona: String = "",
+    /** The persona persisted THIS session (starts == [activePersona]; set on a successful save). */
+    val savedPersona: String = "",
     val editable: Boolean = false,
     val saving: Boolean = false,
     val saved: Boolean = false,
@@ -33,8 +36,13 @@ data class AgentSettingsUiState(
 ) {
     /** A non-blank custom hex that isn't `#RRGGBB` → format error (blocks Save; §4.2). */
     val hexError: Boolean get() = colorHex.isNotBlank() && parseHexColor(colorHex) == null
-    /** Persona edited → restart-deferred (EFFECT_DEFERRED). Name/colour are immediate → never this hint. */
-    val personaChanged: Boolean get() = persona != loadedPersona
+    /**
+     * The EFFECT_DEFERRED restart hint state: a persona was SAVED this session but the agent hasn't restarted, so
+     * the stored persona ≠ the active one. The key reads "Gespeichert. Wirkt erst beim nächsten Start" → it is
+     * true ONLY **after** a persona-changing save, never while merely editing (UX-QA: pre-save "Gespeichert" is a
+     * lie). Name/colour are immediate → never this hint.
+     */
+    val needsRestart: Boolean get() = savedPersona != activePersona
     /** The effective base ARGB for the live preview + titlebar theming: valid custom hex, else the slot default. */
     val baseArgb: Int
         get() = colorHex.takeIf { it.isNotBlank() }?.let { parseHexColor(it) }
@@ -78,7 +86,8 @@ class AgentSettingsViewModel(
                 name = d.name,
                 role = d.role,
                 persona = d.persona ?: "",
-                loadedPersona = d.persona ?: "",
+                activePersona = d.persona ?: "",
+                savedPersona = d.persona ?: "",
                 colorHex = d.color?.takeIf { c -> c.isNotBlank() } ?: it.colorHex,
             )
         }
@@ -101,7 +110,8 @@ class AgentSettingsViewModel(
                 persona = s.persona.ifBlank { null },
             )
             runCatching { repository.edit(agentId, edit) }
-                .onSuccess { _state.update { it.copy(saving = false, saved = true, loadedPersona = s.persona) } }
+                // Record the persona as SAVED (not restarted) → needsRestart flips true iff it moved off active.
+                .onSuccess { _state.update { it.copy(saving = false, saved = true, savedPersona = s.persona) } }
                 .onFailure { _state.update { it.copy(saving = false, error = true) } }
         }
     }
