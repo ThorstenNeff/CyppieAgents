@@ -64,6 +64,8 @@ import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_spawn_failed
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_restart
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_start
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_stop
+import com.tneff.cyppieagents.comm.ConnectionStatus
+import kmpcyppieagents.app.shared.generated.resources.agent_reconnecting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_error
 import kmpcyppieagents.app.shared.generated.resources.agent_status_running
 import kmpcyppieagents.app.shared.generated.resources.agent_status_stopped
@@ -91,11 +93,13 @@ fun AgentWindow(
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
     val lifecycleError by viewModel.lifecycleError.collectAsState()
+    val connection by viewModel.connection.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
         lifecycleError?.let { code -> LifecycleErrorRow(agentId, code) }
         AgentHeader(
             agentId = agentId,
             state = lifecycle,
+            connection = connection,
             canControl = viewModel.canControl,
             onStart = viewModel::start,
             onStop = viewModel::stop,
@@ -152,6 +156,7 @@ private fun AgentHeader(
     onStop: () -> Unit,
     onRestart: () -> Unit,
     modifier: Modifier = Modifier,
+    connection: ConnectionStatus = ConnectionStatus.LIVE,
     capabilities: Capabilities? = null,
     provider: ProviderInfo? = null,
     onCapabilityBadgeClick: () -> Unit = {},
@@ -165,6 +170,10 @@ private fun AgentHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StatusIndicator(agentId, state)
+        // CYP-204: reconnecting indicator — present ONLY while the per-agent WS is not LIVE (the adapter is
+        // auto-reconnecting from the seq cursor; on reconnect the server replays the history gapless). Its OWN
+        // axis, next to but distinct from the lifecycle status (process state ≠ socket state).
+        ReconnectingChip(agentId, connection)
         // Provider axis (CYP-137) — the subordinate "(Claude)" qualifier next to the identity/status, its OWN
         // marker (≠ fidelity, ≠ lifecycle). Present only when known (fail-closed by absence); neutral, no hue.
         ConnectorProviderChip(provider = provider, agentId = agentId)
@@ -188,6 +197,24 @@ private fun AgentHeader(
             modifier = Modifier.testTag(AgentViewTags.restartBtn(agentId)),
         ) { Text(stringResource(Res.string.agent_ctl_restart)) }
     }
+}
+
+/**
+ * CYP-204: the reconnecting chip — shown ONLY when the per-agent WS is not [ConnectionStatus.LIVE]. Text (not
+ * colour-only) carries the meaning (WCAG 1.4.1); absent on a healthy socket so a LIVE window adds no chrome.
+ */
+@Composable
+private fun ReconnectingChip(agentId: String, connection: ConnectionStatus) {
+    if (connection == ConnectionStatus.LIVE) return
+    val label = stringResource(Res.string.agent_reconnecting)
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.tertiary,
+        modifier = Modifier
+            .testTag(AgentViewTags.reconnecting(agentId))
+            .semantics { contentDescription = label },
+    )
 }
 
 @Composable

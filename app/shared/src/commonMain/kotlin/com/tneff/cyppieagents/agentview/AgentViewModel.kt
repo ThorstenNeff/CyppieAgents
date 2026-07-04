@@ -35,6 +35,13 @@ class AgentViewModel(
     val transcript: StateFlow<List<AgentEvent>> = _transcript.asStateFlow()
 
     /**
+     * CYP-204: live connection state for the reconnecting indicator, straight from the [AgentSession]
+     * (the WS adapter auto-reconnects from the seq cursor). LIVE for stubs. The transcript is NOT cleared on
+     * a drop — the [foldEvent] transcript survives, and on reconnect the server replays gapless from the cursor.
+     */
+    val connection: StateFlow<com.tneff.cyppieagents.comm.ConnectionStatus> = session.connection
+
+    /**
      * Server-reported lifecycle state for THIS agent (CYP-73), non-gated display: seeded from the
      * public-agent-list snapshot, then refined live by `/ws/lifecycle` deltas. Starts [UNKNOWN] until
      * the snapshot lands (never guesses a server fact).
@@ -63,8 +70,9 @@ class AgentViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                // The live session can drop (WS connect/loss). Stay alive and say so honestly,
-                // instead of crashing the window. Reconnect handling is later polish.
+                // CYP-204: transient WS drops are handled by the self-reconnecting [AgentSession] (cursor-resume
+                // + the [connection] indicator), so this catch is now only a last-resort safety net for a fatal,
+                // non-reconnecting stream error — stay alive and say so honestly instead of crashing the window.
                 _transcript.update { foldEvent(it, AgentEvent.Notice("conn-error", "Verbindung zum Agenten verloren")) }
             }
         }

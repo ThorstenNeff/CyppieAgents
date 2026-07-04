@@ -11,6 +11,7 @@ import io.ktor.server.routing.routing
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.send
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -35,8 +36,10 @@ class AgentWsClientE2eTest {
             install(ServerWebSockets)
             routing {
                 serverWebSocket("/ws/agent") {
-                    send(Frame.Text("""{"type":"system","subtype":"init","uuid":"u1","model":"claude-opus-4-8"}"""))
-                    send(Frame.Text("""{"type":"assistant","uuid":"u2","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"hallo"}]}}"""))
+                    // CYP-198/204: frames are StoredAgentEvent wrappers ({seq, …, event}); the client reads the
+                    // wrapper, tracks seq, and surfaces `.event`.
+                    send(Frame.Text("""{"seq":1,"agentId":"backend","projectId":"p","tsMs":0,"event":{"type":"system","subtype":"init","uuid":"u1","model":"claude-opus-4-8"}}"""))
+                    send(Frame.Text("""{"seq":2,"agentId":"backend","projectId":"p","tsMs":0,"event":{"type":"assistant","uuid":"u2","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"hallo"}]}}}"""))
                     close()
                 }
             }
@@ -47,8 +50,9 @@ class AgentWsClientE2eTest {
             val client = HttpClient(CIO) { install(ClientWebSockets) }
             try {
                 val ws = AgentWsClient(client, "ws://127.0.0.1:$port", agentId = "backend", token = "tok")
-                // The flow completes when the server closes the socket.
-                val events = withTimeout(10_000) { ws.events.toList() }
+                // CYP-204: `events` now auto-reconnects (never completes), so take the two pushed frames rather
+                // than toList(). The server close triggers a reconnect whose replay the client dedups by seq.
+                val events = withTimeout(10_000) { ws.events.take(2).toList() }
                 assertEquals(2, events.size, "expected the two pushed frames")
                 assertTrue(events[0] is SystemEvent)
                 assertTrue(events[1] is AssistantEvent)

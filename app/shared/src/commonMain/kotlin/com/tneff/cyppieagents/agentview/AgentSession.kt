@@ -1,6 +1,9 @@
 package com.tneff.cyppieagents.agentview
 
+import com.tneff.cyppieagents.comm.ConnectionStatus
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The renderer's view of one agent's conversation.
@@ -19,4 +22,11 @@ interface AgentSession {
 
     /** Renderer → Hub. Posts a human turn as a message to the agent's channel. */
     fun sendMessage(text: String)
+
+    /**
+     * CYP-204: live connection state for the window's reconnecting indicator. Default [ConnectionStatus.LIVE]
+     * for stubs/tests that don't model a socket; the real [MappingAgentSession] forwards the WS adapter's
+     * [AgentWsClient.connection] (CONNECTING → LIVE → DISCONNECTED while it auto-reconnects from the cursor).
+     */
+    val connection: StateFlow<ConnectionStatus> get() = MutableStateFlow(ConnectionStatus.LIVE)
 }

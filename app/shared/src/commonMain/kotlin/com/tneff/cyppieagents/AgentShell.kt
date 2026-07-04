@@ -255,7 +255,7 @@ fun AgentShell(
 
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
         val ws = AgentWsClient(httpClient, cfg.hubWsBaseUrl, agentId, cfg.agentToken(agentId))
-        MappingAgentSession(source = ws.events, sink = ws::send)
+        MappingAgentSession(source = ws.events, sink = ws::send, connection = ws.connection)
     }
 
     // Operator viewer (CYP-17). The operator token comes from config (runtime), not baked; without it

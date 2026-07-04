@@ -26,6 +26,9 @@ object AgentViewTags {
     /** The non-gated lifecycle status indicator (RUNNING/STOPPED/ERROR/UNKNOWN). */
     fun status(agentId: String) = "agent.$agentId.status"
 
+    /** CYP-204: the reconnecting indicator, present only while the per-agent WS is not LIVE (auto-reconnect). */
+    fun reconnecting(agentId: String) = "agent.$agentId.reconnecting"
+
     /** Operator-gated lifecycle controls. */
     fun startBtn(agentId: String) = "agent.$agentId.startBtn"
     fun stopBtn(agentId: String) = "agent.$agentId.stopBtn"

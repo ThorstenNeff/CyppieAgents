@@ -1,8 +1,11 @@
 package com.tneff.cyppieagents.agentview
 
+import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 
 /**
@@ -24,6 +27,8 @@ import kotlinx.coroutines.flow.flow
 class MappingAgentSession(
     private val source: Flow<StreamJsonEvent>,
     private val sink: (UserTurn) -> Unit,
+    /** CYP-204: the WS adapter's live connection state (default LIVE for tests that pass only a source). */
+    override val connection: StateFlow<ConnectionStatus> = MutableStateFlow(ConnectionStatus.LIVE),
 ) : AgentSession {
 
     // Fresh mapper per collection so the tool-id linkage state is never shared across collectors.
