@@ -74,7 +74,7 @@ class InMemoryAgentEventStore(private val retainPerAgent: Int = DEFAULT_RETAIN_P
         // CYP-198 race fix (see SqliteAgentEventStore): onSubscription registers this collector on `live`
         // BEFORE the replay query runs, so a concurrent append can't slip through the gap; dedup by seq.
         live
-            .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it) } }
+            .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it); cursor = maxOf(cursor, it.seq) } }
             .collect { rec -> if (rec.agentId == agentId && rec.seq > cursor) { emit(rec); cursor = rec.seq } }
     }
 

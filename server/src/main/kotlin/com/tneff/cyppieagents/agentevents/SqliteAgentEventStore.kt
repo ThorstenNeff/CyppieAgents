@@ -88,9 +88,11 @@ class SqliteAgentEventStore(
         // concurrent with the replay is captured by `live` (not silently dropped by its replay=0). Replaying
         // the durable tail INSIDE onSubscription closes the "after query-read, before subscribe" gap that a
         // naive `launch { live.collect }; query()` leaves (measured ~33% loss). Overlap (an event in BOTH the
-        // replay and the live buffer, appended during the query) is de-duplicated by the `seq > cursor` guard.
+        // replay and the live buffer, appended during the query) is de-duplicated **correct-by-construction**
+        // by the `seq > cursor` guard: the replay advances `cursor` as it emits (CYP-205 — explicit at the
+        // site), so a live event with `seq <= cursor` (already replayed) is dropped, never re-emitted.
         live
-            .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it) } }
+            .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it); cursor = maxOf(cursor, it.seq) } }
             .collect { rec -> if (rec.agentId == agentId && rec.seq > cursor) { emit(rec); cursor = rec.seq } }
     }
 

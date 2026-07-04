@@ -125,6 +125,30 @@ class AgentEventStoreTest {
     }
 
     @Test
+    fun subscribe_concurrentAppendBurst_noGap_stress_sqlite() = runBlocking<Unit> {
+        // CYP-205: the same race-teeth against the DURABLE SqliteAgentEventStore — the onSubscription fix is
+        // identical in both impls, but the WAL/disk path has different timing, so a real-db variant is the
+        // complete proof. Fewer iterations (disk is slower) but the same guarantee: every seq 1..N arrives,
+        // contiguous, no gap under concurrency.
+        val iters = 60
+        val n = 30
+        var gapIters = 0
+        repeat(iters) {
+            val db = Files.createTempFile("agentev-burst-sq", ".db")
+            val store = SqliteAgentEventStore(db)
+            val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            val got = java.util.Collections.synchronizedList(ArrayList<Long>())
+            val sub = scope.launch { store.subscribe("a", sinceSeq = 0L).collect { got.add(it.seq) } }
+            val appender = scope.launch { repeat(n) { store.append("a", "p", 0L, ev(it)) } }
+            appender.join()
+            val complete = withTimeoutOrNull(2_000) { while (got.size < n) delay(1); true } ?: false
+            if (!complete || got.sorted() != (1L..n.toLong()).toList()) gapIters++
+            sub.cancel(); appender.cancel(); scope.cancel(); store.close(); Files.deleteIfExists(db)
+        }
+        assertEquals(0, gapIters, "sqlite: the replay→live seam LOST events in $gapIters/$iters iterations (gap under concurrency)")
+    }
+
+    @Test
     fun recorder_feedsStoreInOrder() = runBlocking<Unit> {
         // The observer tap → AgentEventRecorder (non-blocking) → store, in emit order.
         val db = Files.createTempFile("agentev-rec", ".db")
