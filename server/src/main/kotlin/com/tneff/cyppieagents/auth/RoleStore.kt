@@ -28,7 +28,15 @@ interface RoleStore {
     /** The role of [identityId] — the assigned role, or [AuthRole.MEMBER] by default (never null). */
     suspend fun roleOf(identityId: String): AuthRole
 
-    /** Idempotently assign [identityId] a role and return it: OPERATOR iff none exists yet, else MEMBER. */
+    /**
+     * Idempotently ensure [identityId] has a role and return it. **CYP-196 (explicit-assignment hardening):**
+     * a verified identity is **MEMBER by default** — there is **no implicit auto-OPERATOR grant** (the old
+     * "first identity bootstraps OPERATOR" was a latent land-grab on the public app). OPERATOR is granted
+     * **only** to the store's explicitly-pinned `bootstrapOperatorId` (deploy-owned config), and only while
+     * the single OPERATOR slot is free — upgrading that identity from a prior MEMBER row. No pin → **no
+     * identity ever becomes OPERATOR** (fail-closed). The static OPERATOR_TOKEN stays the break-glass
+     * machine-operator, independent of this store.
+     */
     suspend fun ensureAssigned(identityId: String, nowMs: Long): AuthRole
 
     /** All assignments (identityId → role) — CYP-186 BE3a workspace roster (OPERATOR-only surface). */
@@ -39,11 +47,12 @@ interface RoleStore {
 }
 
 /**
- * A process-local [RoleStore] with the same first-identity-bootstraps-OPERATOR semantics as
- * [SqliteRoleStore], for the token-only [AuthDeps] convenience path + focused tests. Not durable and not
- * the production authZ store — the durable, DB-single-OPERATOR guarantee lives in [SqliteRoleStore].
+ * A process-local [RoleStore] with the same explicit-assignment semantics as [SqliteRoleStore] (CYP-196),
+ * for the token-only [AuthDeps] convenience path + focused tests. Not durable and not the production authZ
+ * store — the durable, DB-single-OPERATOR guarantee lives in [SqliteRoleStore]. [bootstrapOperatorId] is the
+ * explicitly-pinned OPERATOR identity (null = no OPERATOR is ever auto-granted; fail-closed default).
  */
-class InMemoryRoleStore : RoleStore {
+class InMemoryRoleStore(private val bootstrapOperatorId: String? = null) : RoleStore {
     private val mutex = Mutex()
     private val assignments = HashMap<String, AuthRole>()
 
@@ -51,8 +60,17 @@ class InMemoryRoleStore : RoleStore {
         mutex.withLock { assignments[identityId] ?: AuthRole.MEMBER }
 
     override suspend fun ensureAssigned(identityId: String, nowMs: Long): AuthRole = mutex.withLock {
-        assignments[identityId]?.let { return it }
-        val role = if (assignments.none { it.value == AuthRole.OPERATOR }) AuthRole.OPERATOR else AuthRole.MEMBER
+        val existing = assignments[identityId]
+        val slotFree = assignments.none { it.value == AuthRole.OPERATOR }
+        val pinned = bootstrapOperatorId != null && identityId == bootstrapOperatorId
+        // CYP-196: OPERATOR ONLY for the pinned identity while the single slot is free (upgrades a prior
+        // MEMBER); everyone else is MEMBER. No implicit auto-grant → a random verified identity never grabs
+        // OPERATOR, even on an empty store.
+        val role = when {
+            pinned && slotFree -> AuthRole.OPERATOR
+            existing != null -> existing
+            else -> AuthRole.MEMBER
+        }
         assignments[identityId] = role
         role
     }
@@ -66,18 +84,24 @@ class InMemoryRoleStore : RoleStore {
 
 /**
  * CYP-178 / P1 — the platform's **authorization** store: a Kratos identity-id → [AuthRole] map. Kratos
- * owns identity; this owns authZ. The **first** identity to appear bootstraps **OPERATOR** (the ratified
- * Middleway); everyone else defaults MEMBER. On the established SQLite line (mirrors `SqliteEventSink`:
- * xerial jdbc, WAL, one [Connection] guarded by [mutex]).
+ * owns identity; this owns authZ. On the established SQLite line (mirrors `SqliteEventSink`: xerial jdbc,
+ * WAL, one [Connection] guarded by [mutex]).
  *
- * **RC3 — race-safe single-grant OPERATOR:** two guards, defense-in-depth: (1) a **partial UNIQUE index**
- * `WHERE role='OPERATOR'` makes a second OPERATOR row a constraint violation at the DB; (2) [ensureAssigned]
- * inserts OPERATOR **atomically** only `WHERE NOT EXISTS` an OPERATOR already, else MEMBER — under the
- * mutex the two are serialized, so N concurrent first-callers ⇒ **exactly one** OPERATOR.
+ * **CYP-196 — explicit OPERATOR assignment (fail-closed).** A verified identity defaults to **MEMBER**;
+ * OPERATOR is granted **only** to the explicitly-pinned [bootstrapOperatorId] (deploy-owned config), and
+ * only while the single slot is free (upgrading it from a prior MEMBER row). `null` pin ⇒ **no identity is
+ * ever auto-granted OPERATOR**. This replaces the old "first identity bootstraps OPERATOR" Middleway, which
+ * was a latent land-grab once the app is publicly reachable with real verified identities.
+ *
+ * **RC3 — race-safe single OPERATOR:** two guards, defense-in-depth: (1) a **partial UNIQUE index**
+ * `WHERE role='OPERATOR'` makes a second OPERATOR row a DB constraint violation; (2) [ensureAssigned]
+ * upgrades the pinned id to OPERATOR **only** `WHERE NOT EXISTS` another OPERATOR — under the mutex the two
+ * are serialized, so the slot holds **exactly one** OPERATOR.
  */
 class SqliteRoleStore(
     dbPath: Path,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val bootstrapOperatorId: String? = null,
 ) : RoleStore, AutoCloseable {
     private val log = LoggerFactory.getLogger("auth.rolestore")
     private val mutex = Mutex()
@@ -111,31 +135,34 @@ class SqliteRoleStore(
     }
 
     /**
-     * Idempotently assign [identityId] a role and return it. If it already has one, return that. Otherwise
-     * grant **OPERATOR iff none exists yet** (the Middleway bootstrap), else **MEMBER** — race-safe (§class).
+     * Idempotently ensure [identityId] has a role and return it (CYP-196). A verified identity gets a
+     * **MEMBER** row by default (no implicit auto-OPERATOR). If it is the pinned [bootstrapOperatorId], it is
+     * upgraded to **OPERATOR** — but only while the single slot is free (`WHERE NOT EXISTS` another OPERATOR;
+     * the partial-unique index is the backstop). No pin ⇒ never OPERATOR (fail-closed).
      */
     override suspend fun ensureAssigned(identityId: String, nowMs: Long): AuthRole = withContext(io) {
         mutex.withLock {
-            // Idempotent: an existing assignment wins.
+            val pinned = bootstrapOperatorId != null && identityId == bootstrapOperatorId
+            // Default: ensure a MEMBER row (idempotent; never overwrites an existing OPERATOR row).
+            conn.prepareStatement(
+                "INSERT OR IGNORE INTO role_assignments(identity_id, role, granted_at) VALUES (?, 'MEMBER', ?)",
+            ).use { ps -> ps.setString(1, identityId); ps.setLong(2, nowMs); ps.executeUpdate() }
+            if (pinned) {
+                // Upgrade the PINNED identity to OPERATOR iff the single slot is free (no OTHER operator).
+                // The NOT EXISTS makes it a no-op when a stale/other OPERATOR still holds the slot; the
+                // partial-unique index is the race backstop. This also upgrades a prior MEMBER row for the
+                // pin (the bootstrap flow: the pinned human logs in as MEMBER, deploy pins them → OPERATOR).
+                val upgraded = conn.prepareStatement(
+                    "UPDATE role_assignments SET role='OPERATOR', granted_at=? WHERE identity_id=? AND role<>'OPERATOR' " +
+                        "AND NOT EXISTS (SELECT 1 FROM role_assignments WHERE role='OPERATOR' AND identity_id<>?)",
+                ).use { ps -> ps.setLong(1, nowMs); ps.setString(2, identityId); ps.setString(3, identityId); ps.executeUpdate() == 1 }
+                if (upgraded) log.info("assigned OPERATOR to the pinned bootstrap identity")
+            }
+            // Read back the effective role.
             conn.prepareStatement("SELECT role FROM role_assignments WHERE identity_id=?").use { ps ->
                 ps.setString(1, identityId)
-                ps.executeQuery().use { rs -> if (rs.next()) return@withContext AuthRole.valueOf(rs.getString(1)) }
+                ps.executeQuery().use { rs -> if (rs.next()) AuthRole.valueOf(rs.getString(1)) else AuthRole.MEMBER }
             }
-            // Try OPERATOR only if none exists yet (atomic; the partial-unique index is the backstop).
-            val grantedOperator = conn.prepareStatement(
-                "INSERT INTO role_assignments(identity_id, role, granted_at) " +
-                    "SELECT ?, 'OPERATOR', ? WHERE NOT EXISTS (SELECT 1 FROM role_assignments WHERE role='OPERATOR')",
-            ).use { ps ->
-                ps.setString(1, identityId); ps.setLong(2, nowMs); ps.executeUpdate() == 1
-            }
-            if (grantedOperator) {
-                log.info("bootstrapped OPERATOR for the first identity")
-                return@withContext AuthRole.OPERATOR
-            }
-            conn.prepareStatement("INSERT INTO role_assignments(identity_id, role, granted_at) VALUES (?, 'MEMBER', ?)").use { ps ->
-                ps.setString(1, identityId); ps.setLong(2, nowMs); ps.executeUpdate()
-            }
-            AuthRole.MEMBER
         }
     }
 

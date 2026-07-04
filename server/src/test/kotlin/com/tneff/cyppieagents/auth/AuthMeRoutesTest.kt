@@ -26,7 +26,7 @@ import kotlin.test.assertEquals
 class AuthMeRoutesTest {
 
     private fun ApplicationTestBuilder.installMe(): SqliteRoleStore {
-        val store = SqliteRoleStore(Files.createTempFile("me-roles", ".db"))
+        val store = SqliteRoleStore(Files.createTempFile("me-roles", ".db"), bootstrapOperatorId = "alice") // CYP-196: pinned OPERATOR
         val deps = AuthDeps(
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
             idp = FakeIdentityProvider(
@@ -73,7 +73,7 @@ class AuthMeRoutesTest {
         val (_, me) = me { header("X-Session-Token", "sess-verified") }
         assertEquals(true, me.authenticated)
         assertEquals(true, me.verified)
-        assertEquals("OPERATOR", me.role) // the first verified identity bootstraps OPERATOR (Middleway)
+        assertEquals("OPERATOR", me.role) // CYP-196: alice is the PINNED bootstrap OPERATOR
         store.close()
     }
 

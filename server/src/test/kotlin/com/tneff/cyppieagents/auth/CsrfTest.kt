@@ -38,7 +38,7 @@ class CsrfTest {
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
             // A verified human whose session credential IS the cookie value "sess-op" → bootstraps OPERATOR.
             idp = FakeIdentityProvider(mapOf("sess-op" to ResolvedIdentity("alice", verified = true))),
-            roles = SqliteRoleStore(db),
+            roles = SqliteRoleStore(db, bootstrapOperatorId = "alice"), // CYP-196: alice is the pinned OPERATOR
             nowMs = { 1_000L },
         )
         application {

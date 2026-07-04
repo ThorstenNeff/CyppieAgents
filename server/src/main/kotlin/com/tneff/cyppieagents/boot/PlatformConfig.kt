@@ -83,6 +83,16 @@ data class AuthConfig(
      * the token stops satisfying the OPERATOR gate ONCE a role-OPERATOR exists (never-lock-out) — C→A collapse.
      */
     val operatorTokenDisabled: Boolean = false,
+    /**
+     * CYP-196 — the explicitly-pinned OPERATOR identity (a Kratos identity-id), deploy-owned. The [RoleStore]
+     * grants OPERATOR **only** to this exact identity (while the single slot is free), upgrading it from a
+     * prior MEMBER row; every other verified identity is MEMBER. Defaulted **null → NO identity is ever
+     * auto-granted OPERATOR** (fail-closed) — this replaces the old first-verified-wins bootstrap (a public
+     * land-grab). Bootstrap: the intended operator logs in (→ MEMBER), deploy reads their identity-id from the
+     * workspace roster, pins it here, restarts → they resolve to OPERATOR. The static operator token stays the
+     * break-glass machine-operator independent of this.
+     */
+    val bootstrapOperatorIdentityId: String? = null,
 )
 
 @Serializable

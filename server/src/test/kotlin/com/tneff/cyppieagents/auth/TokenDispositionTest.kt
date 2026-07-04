@@ -63,7 +63,7 @@ class TokenDispositionTest {
 
     @Test
     fun operatorTokenMutation_auditedAsOperatorToken_noSecretBody() = testApplication {
-        val db = Files.createTempFile("c1-op", ".db"); val store = SqliteRoleStore(db); val audit = InMemoryAuditSink()
+        val db = Files.createTempFile("c1-op", ".db"); val store = SqliteRoleStore(db, bootstrapOperatorId = "alice-op"); val audit = InMemoryAuditSink()
         application { installPlatform(bootFake(), deps(store, audit), settingsClient = KratosSettingsClient("http://localhost:1")) }
         startApplication()
 
@@ -83,10 +83,10 @@ class TokenDispositionTest {
 
     @Test
     fun humanOperatorMutation_auditedByIdentityId() = testApplication {
-        val db = Files.createTempFile("c1-hu", ".db"); val store = SqliteRoleStore(db); val audit = InMemoryAuditSink()
+        val db = Files.createTempFile("c1-hu", ".db"); val store = SqliteRoleStore(db, bootstrapOperatorId = "alice-op"); val audit = InMemoryAuditSink()
         application { installPlatform(bootFake(), deps(store, audit), settingsClient = KratosSettingsClient("http://localhost:1")) }
         startApplication()
-        bootstrap("sess-alice") // alice → OPERATOR (first verified)
+        bootstrap("sess-alice") // alice-op → OPERATOR (pinned, CYP-196)
 
         // X-Session-Token is CSRF-immune (RC5); a human OPERATOR PUT is attributed by identityId, never "operator".
         client.put("/api/config/apikey") {
@@ -101,10 +101,10 @@ class TokenDispositionTest {
 
     @Test
     fun safeGet_notAudited_and_memberCannotReadAudit_norSeesItInEventLog() = testApplication {
-        val db = Files.createTempFile("c1-iso", ".db"); val store = SqliteRoleStore(db); val audit = InMemoryAuditSink()
+        val db = Files.createTempFile("c1-iso", ".db"); val store = SqliteRoleStore(db, bootstrapOperatorId = "alice-op"); val audit = InMemoryAuditSink()
         application { installPlatform(bootFake(), deps(store, audit), settingsClient = KratosSettingsClient("http://localhost:1")) }
         startApplication()
-        bootstrap("sess-alice", "sess-carol") // alice OPERATOR, carol MEMBER
+        bootstrap("sess-alice", "sess-carol") // alice-op OPERATOR (pinned), carol MEMBER
 
         // A safe GET under the operator gate is NOT audited (mutations only).
         client.get("/api/workspace/members") { header("Authorization", "Bearer $opToken") }
@@ -124,7 +124,7 @@ class TokenDispositionTest {
 
     @Test
     fun killSwitch_beforeFirstOperator_tokenStillAuthorizes_thenInertOnceRoleOperatorExists() = testApplication {
-        val db = Files.createTempFile("c2", ".db"); val store = SqliteRoleStore(db)
+        val db = Files.createTempFile("c2", ".db"); val store = SqliteRoleStore(db, bootstrapOperatorId = "alice-op")
         application { installPlatform(bootFake(), deps(store, disabled = true), settingsClient = KratosSettingsClient("http://localhost:1")) }
         startApplication()
 
