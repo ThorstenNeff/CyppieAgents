@@ -140,6 +140,9 @@ class BootOrchestrator(
     // degradation events, and CYP-122 selects A-vs-B per agent here. The factory receives the
     // already-built [Connector] so a decorator can wrap it; ignore the arg to fully replace it.
     private val connectorFactory: ((default: Connector) -> Connector)? = null,
+    // CYP-210: durable per-agent name/color/persona/launch overlay (`.cyppie/agent-overrides.json`), out-of-
+    // repo under the gitRoot. Null (tests) = in-memory off-switch (no restart durability).
+    private val agentOverrideFile: java.io.File? = null,
     // CYP-163: sandbox-ONLY `bypassPermissions` grant, threaded into the [ClaudeCodeConnector]. Default
     // (null) = production-sharp — the prod boot NEVER passes a grant, so the spawn stays Gate #4 fail-closed
     // (never bypass). Non-null ONLY on the RB1 throwaway-sandbox harness path (human + reviewer signed,
@@ -161,7 +164,7 @@ class BootOrchestrator(
         // Repo change takes effect at the next boot (design §3.2): clone the resolved (override→boot) repo.
         worktrees.ensureClone(projectConfig.resolvedRepo(config.projectId))
 
-        val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName) }
+        val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName, color = it.color?.ifBlank { null }) }
         // S17 / CYP-93: the cross-project share gate. The hub consults it for the AclMatrix permit
         // (channels authorized to reach into the active project); revoke → immediate fail-closed.
         val channelShares = com.tneff.cyppieagents.comm.ChannelShareStore(channelShareFile)
@@ -237,6 +240,17 @@ class BootOrchestrator(
         val agentConfigs = AgentConfigRegistry(
             config.agents.map { it.copy(claudeMd = it.claudeMd?.ifBlank { null } ?: Personas.forRole(it.role)) },
         )
+
+        // CYP-210: apply the durable overlay OVER the platform.config.json seed (overlay wins per-field), so
+        // operator edits of name/color/persona/launch survive a restart. Scoped to the active project.
+        val agentOverrides = AgentOverrideStore(agentOverrideFile)
+        agentOverrides.allFor(config.projectId).forEach { (agentId, ov) ->
+            if (ov.name != null || ov.color != null) state.editAgent(agentId, ov.name, ov.color)
+            if (ov.persona != null || ov.launch != null) {
+                val curCfg = agentConfigs.configOf(agentId)
+                agentConfigs.put(agentId, ov.launch ?: curCfg?.launch ?: "claude", ov.persona ?: curCfg?.persona)
+            }
+        }
 
         // CYP-120: build the real Connector A by default, then pass it through the injection seam.
         // Prod leaves connectorFactory null → the stream-json connector is used verbatim.
@@ -377,6 +391,8 @@ class BootOrchestrator(
             deleteWorktree = { worktreeName -> worktrees.deleteWorktree(worktreeName) },
             onConnectorOptIn = connectorOptIn::apply, // CYP-122: create-as-B audits like the dedicated opt-in
             remoteToken = remoteTokenIssuer, // CYP-171: mint/revoke the per-agent token for a remote create/remove
+            overrides = agentOverrides, // CYP-210: persist name/color/persona/launch edits (restart-durable)
+            projectId = config.projectId,
         )
 
         val booted = mutableListOf<String>()

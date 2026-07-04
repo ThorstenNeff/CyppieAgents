@@ -190,6 +190,9 @@ fun Application.bootPlatform(
         // CYP-171: runtime-minted remote-agent tokens — out-of-repo under the gitRoot, 0600, gitignored,
         // NEVER logged (a committed token would leak into the shared remote). Secret-at-rest.
         remoteTokensFile = gitRoot.toPath().resolve("remote-tokens.json").toFile(),
+        // CYP-210: durable per-agent name/color/persona/launch overlay — out-of-repo under the gitRoot,
+        // gitignored; overlaid over the platform.config.json seed at boot (operator edits survive restart).
+        agentOverrideFile = gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;

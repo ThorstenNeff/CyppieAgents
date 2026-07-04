@@ -145,6 +145,19 @@ class HubState(
     }
 
     /**
+     * CYP-210 — update an agent's DISPLAY name/color (id is immutable). Pure display fields → NO topology /
+     * ACL / matrix impact (name/color are not in [Channel.members] or [AclEntry]); only the [agents] list is
+     * rebuilt. A `null` argument leaves that field unchanged (the caller resolves blank→preserve). Returns
+     * the updated agent, or null if unknown.
+     */
+    fun editAgent(id: String, name: String? = null, color: String? = null): Agent? = synchronized(lock) {
+        val cur = agents.firstOrNull { it.id == id } ?: return@synchronized null
+        val next = cur.copy(name = name ?: cur.name, color = color ?: cur.color)
+        agents = agents.map { if (it.id == id) next else it }
+        next
+    }
+
+    /**
      * Register a new agent at runtime (CYP-97) and, for a WORKER, add its hub-and-spoke spoke
      * `po-<id>` with the SAME shape the boot factory builds: members `[po, <id>, operator?]`, all
      * read+write, **stamped with [activeProjectId]** (no cross-project leak), and rebuild the matrix.

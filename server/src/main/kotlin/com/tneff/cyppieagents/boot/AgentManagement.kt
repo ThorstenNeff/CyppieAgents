@@ -43,6 +43,13 @@ class AgentManagement(
      * [CreatedAgent] return of [add]; identity stays `token→agentId` (no client-supplied agentId).
      */
     private val remoteToken: RemoteTokenIssuer? = null,
+    /**
+     * CYP-210 — the durable overlay for per-agent name/color/persona/launch. Non-null persists an edit so it
+     * survives a restart (overlaid over the `platform.config.json` seed at boot). Null (tests) = no durability.
+     */
+    private val overrides: AgentOverrideStore? = null,
+    /** CYP-210 — the active project the overrides are scoped to (boot-frozen; MVP = 1). */
+    private val projectId: String = com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID,
 ) {
     private val lock = Any()
 
@@ -53,7 +60,7 @@ class AgentManagement(
     fun detail(id: String): AgentDetail {
         val a = state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
         val cfg = configs.configOf(id)
-        return AgentDetail(a.id, a.name, a.role, a.worktree, cfg?.launch ?: "claude", cfg?.persona)
+        return AgentDetail(a.id, a.name, a.role, a.worktree, cfg?.launch ?: "claude", cfg?.persona, color = a.color)
     }
 
     /** Register a new agent (NOT spawned). Throws the §2 4xx on a guard violation. Returns the agent and,
@@ -61,7 +68,7 @@ class AgentManagement(
     fun add(spec: NewAgentSpec): CreatedAgent = synchronized(lock) {
         AgentMgmtGuard.validateAdd(state.agents, spec)?.let { throw codeToException(it) }
         val worktree = spec.worktree?.ifBlank { null }?.trim() ?: spec.id.trim()
-        val agent = Agent(spec.id.trim(), spec.name.trim(), spec.role, worktree, AgentRunState.STOPPED, connectorKind = spec.connectorKind)
+        val agent = Agent(spec.id.trim(), spec.name.trim(), spec.role, worktree, AgentRunState.STOPPED, connectorKind = spec.connectorKind, color = spec.color?.ifBlank { null })
         configs.put(agent.id, spec.launch?.ifBlank { null }?.trim() ?: "claude", spec.persona?.ifBlank { null })
         state.addAgent(agent)                 // spoke channel + ACL, projectId-stamped (fail-closed)
         ensureWorktree(worktree)              // create the worktree; CLAUDE.md is written at first spawn
@@ -81,8 +88,15 @@ class AgentManagement(
         val persona = edit.persona?.ifBlank { null } ?: cur.persona // PRESERVE (no blank→null clear)
         val launch = edit.launch?.ifBlank { null } ?: cur.launch
         configs.put(id, launch, persona)
-        // MVP=1-PO: the guard only permits a no-op role change, so the hub Agent's role is unchanged;
-        // persona/launch take effect on the next spawn (connector reads configs at open()).
+        // CYP-210: display name/color (blank/omitted → PRESERVE; null = no change). id stays IMMUTABLE — it is
+        // not a field on AgentEdit, so it can never be touched here. Pure display fields → no ACL/topology.
+        val newName = edit.name?.ifBlank { null }
+        val newColor = edit.color?.ifBlank { null }
+        state.editAgent(id, newName, newColor)
+        // CYP-210: persist the override so name/color/persona/launch SURVIVE a restart (overlaid over the
+        // config seed at boot). The store applies the same blank→preserve rule against its own stored value.
+        overrides?.put(projectId, id, name = edit.name, color = edit.color, persona = edit.persona, launch = edit.launch)
+        // persona/launch take effect on the next spawn (connector reads configs at open()); name/color are live.
         state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
     }
 
