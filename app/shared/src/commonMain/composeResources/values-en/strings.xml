@@ -204,6 +204,21 @@
     <string name="agent_remove_error">Remove failed</string>
     <string name="agent_edit_title">Edit agent “%1$s”</string>
     <string name="agent_edit_effect_hint">Saved. Takes effect on the agent's next start — restart now so the new configuration applies.</string>
+    <!-- CYP-211 Per-Agent-Customization (⋮ panel: name/color/persona). Name+color immediate, persona restart-deferred. -->
+    <string name="agent_settings_title">Customize %1$s</string>
+    <string name="agent_display_name_label">Display name</string>
+    <string name="agent_id_stable_label">ID (fixed)</string>
+    <string name="agent_color_section">Color</string>
+    <string name="agent_color_palette_label">Palette</string>
+    <string name="agent_color_custom_label">Custom color (hex)</string>
+    <string name="agent_color_custom_invalid">Invalid hex value (e.g. #3B82F6)</string>
+    <string name="agent_color_adjusted_hint">Adjusted for readable contrast</string>
+    <string name="agent_color_status_like_hint">Resembles a status color – color is identity, not status</string>
+    <string name="a11y_agent_settings_open">Open settings for %1$s</string>
+    <string name="a11y_agent_display_name">Enter display name</string>
+    <string name="a11y_agent_color_custom">Enter custom hex color</string>
+    <string name="a11y_agent_color_swatch">Color %1$s</string>
+    <string name="a11y_agent_color_preview">Color preview: %1$s</string>
     <string name="agent_edit_id_locked_hint">ID and worktree are fixed and cannot be changed here.</string>
     <string name="agent_edit_po_exists">The PO role is taken — only one PO per project.</string>
     <!-- CYP-101: only-PO gives up the role (editWouldDropLastPo) — distinct from agent_edit_po_exists

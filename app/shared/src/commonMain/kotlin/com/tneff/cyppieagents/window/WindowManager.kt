@@ -34,7 +34,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -58,6 +62,7 @@ import com.tneff.cyppieagents.testing.testTagA11y
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_settings_open
 import kmpcyppieagents.app.shared.generated.resources.a11y_pager_dot
 import kmpcyppieagents.app.shared.generated.resources.a11y_pager_page
 import kmpcyppieagents.app.shared.generated.resources.pager_empty
@@ -95,6 +100,10 @@ fun WindowHost(
      * it from the always-alive badge state. Canvas → title-bar badge; pager → indicator-dot badge.
      */
     badgeFor: (String) -> WindowBadge? = { null },
+    /** CYP-211: per-window derived titlebar colours (agent identity theming); `null` → default M3 (system windows). */
+    titleBarColorsFor: (String) -> TitleBarColors? = { null },
+    /** CYP-211: per-window settings opener for the titlebar ⋮ button; `null` → no button (system windows). */
+    settingsFor: (String) -> (() -> Unit)? = { null },
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -111,9 +120,13 @@ fun WindowHost(
             sizeClass.heightSizeClass == WindowHeightSizeClass.Compact
 
         if (isCompact) {
+            // The phone pager shows one page per window without a floating titlebar → no ⋮/theming there (CYP-211).
             PhonePager(state = state, badgeFor = badgeFor, windowContent = windowContent)
         } else {
-            WindowCanvas(state = state, onFit = onFit, badgeFor = badgeFor, windowContent = windowContent)
+            WindowCanvas(
+                state = state, onFit = onFit, badgeFor = badgeFor,
+                titleBarColorsFor = titleBarColorsFor, settingsFor = settingsFor, windowContent = windowContent,
+            )
         }
     }
 }
@@ -128,6 +141,8 @@ private fun WindowCanvas(
     state: WindowManagerState,
     onFit: () -> Unit,
     badgeFor: (String) -> WindowBadge?,
+    titleBarColorsFor: (String) -> TitleBarColors? = { null },
+    settingsFor: (String) -> (() -> Unit)? = { null },
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().testTagA11y(WindowTestTags.HOST)) {
@@ -143,6 +158,8 @@ private fun WindowCanvas(
                     onMove = { dx, dy -> state.moveBy(window.id, dx, dy) },
                     onResize = { dWidth, dHeight -> state.resizeBy(window.id, dWidth, dHeight) },
                     badge = badgeFor(window.id),
+                    titleBarColors = titleBarColorsFor(window.id),
+                    onSettings = settingsFor(window.id),
                     content = { windowContent(window) },
                 )
             }
@@ -399,6 +416,11 @@ fun FloatingWindow(
     onMove: (dx: Float, dy: Float) -> Unit,
     onResize: (dWidth: Float, dHeight: Float) -> Unit,
     badge: WindowBadge? = null,
+    /** CYP-211: the agent's derived titlebar colours; `null` → the default M3 primary/surfaceVariant theming
+     *  (system windows). Focused = full colour; unfocused = dimmed toward the surface (elevation still carries focus). */
+    titleBarColors: TitleBarColors? = null,
+    /** CYP-211: opens this window's settings panel; `null` → no ⋮ button (e.g. system windows). */
+    onSettings: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -457,8 +479,17 @@ fun FloatingWindow(
                 }
             },
     ) {
+        // CYP-211 §6 — titlebar theming from the agent's derived colours. Unfocused DIMS the colour toward the
+        // surface, but elevation (below) is the non-colour focus signal (WCAG 1.4.1). `null` → default M3 theming.
+        val surfaceColor = MaterialTheme.colorScheme.surface
+        val barBg = titleBarColors?.let { if (isFocused) it.background else lerp(it.background, surfaceColor, 0.45f) }
+            ?: if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+        val barContent = titleBarColors?.let { if (isFocused) it.content else it.content.copy(alpha = 0.75f) }
+            ?: if (isFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+        val borderColor = titleBarColors?.let { if (isFocused) it.border else lerp(it.border, surfaceColor, 0.45f) }
         Surface(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize()
+                .then(if (borderColor != null) Modifier.border(BorderStroke(1.5.dp, borderColor), RoundedCornerShape(8.dp)) else Modifier),
             shape = RoundedCornerShape(8.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = if (isFocused) 6.dp else 1.dp,
@@ -469,10 +500,7 @@ fun FloatingWindow(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            if (isFocused) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant,
-                        )
+                        .background(barBg)
                         .testTag(WindowTestTags.titleBar(window.id))
                         .semantics { contentDescription = "Titelleiste ${window.title}, mit Pfeiltasten verschieben" }
                         .pointerInput(window.id) {
@@ -494,8 +522,7 @@ fun FloatingWindow(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleSmall,
-                            color = if (isFocused) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = barContent,
                             modifier = Modifier.weight(1f, fill = false),
                         )
                         // CYP-55 activity badge at the title end (fail-closed: only when present).
@@ -506,6 +533,20 @@ fun FloatingWindow(
                                 badge = badge,
                                 modifier = Modifier.padding(start = 8.dp),
                             )
+                        }
+                        // CYP-211: the ⋮ settings button — agent windows only (onSettings null → absent). Themed
+                        // onColor so it stays legible on any agent colour; text glyph + a11y (never colour-only).
+                        onSettings?.let { open ->
+                            val settingsCd = stringResource(Res.string.a11y_agent_settings_open, window.title)
+                            TextButton(
+                                onClick = open,
+                                modifier = Modifier
+                                    .padding(start = 4.dp)
+                                    .testTag(WindowTestTags.settings(window.id))
+                                    .semantics { contentDescription = settingsCd },
+                            ) {
+                                Text("⋮", style = MaterialTheme.typography.titleMedium, color = barContent)
+                            }
                         }
                     }
                 }
@@ -551,3 +592,14 @@ fun FloatingWindow(
         }
     }
 }
+
+/**
+ * CYP-211 — the derived titlebar colours for a window (agent identity theming, §6). [background]/[content]/[border]
+ * come from the shared `:core` `deriveScheme` (WCAG-safe: content ≥ 4.5:1, border ≥ 3:1). The window package stays
+ * decoupled from `comm.SenderColor`: the shell maps its resolved colour into this small chrome type.
+ */
+data class TitleBarColors(
+    val background: Color,
+    val content: Color,
+    val border: Color,
+)

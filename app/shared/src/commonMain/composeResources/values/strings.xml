@@ -209,6 +209,21 @@
     <string name="agent_remove_error">Entfernen fehlgeschlagen</string>
     <string name="agent_edit_title">Agent „%1$s" bearbeiten</string>
     <string name="agent_edit_effect_hint">Gespeichert. Wirkt erst beim nächsten Start des Agenten – jetzt neu starten, damit die neue Konfiguration zieht.</string>
+    <!-- CYP-211 Per-Agent-Customization (⋮-Panel: Name/Farbe/Persona). Name+Farbe sofort, Persona restart-deferred. -->
+    <string name="agent_settings_title">„%1$s" anpassen</string>
+    <string name="agent_display_name_label">Anzeigename</string>
+    <string name="agent_id_stable_label">ID (fest)</string>
+    <string name="agent_color_section">Farbe</string>
+    <string name="agent_color_palette_label">Palette</string>
+    <string name="agent_color_custom_label">Eigener Farbwert (Hex)</string>
+    <string name="agent_color_custom_invalid">Ungültiger Hex-Wert (z. B. #3B82F6)</string>
+    <string name="agent_color_adjusted_hint">Für Lesbarkeit angepasst (Kontrast)</string>
+    <string name="agent_color_status_like_hint">Ähnelt einer Status-Farbe – Farbe ist Identität, kein Status</string>
+    <string name="a11y_agent_settings_open">Einstellungen für %1$s öffnen</string>
+    <string name="a11y_agent_display_name">Anzeigename eingeben</string>
+    <string name="a11y_agent_color_custom">Eigenen Hex-Farbwert eingeben</string>
+    <string name="a11y_agent_color_swatch">Farbe %1$s</string>
+    <string name="a11y_agent_color_preview">Farbvorschau: %1$s</string>
     <string name="agent_edit_id_locked_hint">ID und Worktree sind fest und hier nicht änderbar.</string>
     <string name="agent_edit_po_exists">Rolle PO ist belegt – nur ein PO pro Projekt.</string>
     <!-- CYP-101: only-PO gives up the role (editWouldDropLastPo) — distinct from agent_edit_po_exists

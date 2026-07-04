@@ -27,4 +27,7 @@ object WindowTestTags {
 
     /** Content slot of the window with the given [id] (where CYP-6's renderer plugs in). */
     fun content(id: String): String = "window.$id.content"
+
+    /** CYP-211: the titlebar ⋮ settings button of the window with the given [id] (opens its settings panel). */
+    fun settings(id: String): String = "window.$id.settings"
 }
