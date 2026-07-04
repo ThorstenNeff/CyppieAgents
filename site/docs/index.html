@@ -194,6 +194,7 @@
         <li><a href="#team">Create your team</a></li>
         <li><a href="#start">Start the team</a></li>
         <li><a href="#task">Run an example project</a></li>
+        <li><a href="#remote">Remote agents (bring your own machine)</a></li>
         <li><a href="#grant">Bring in a teammate</a></li>
         <li><a href="#access">Who can do what</a></li>
         <li><a href="#ref">Reference &amp; troubleshooting</a></li>
@@ -265,6 +266,11 @@
       <section class="part" id="run">
         <div class="part-head"><span class="part-num">02</span><h2>Get the platform running</h2></div>
         <p>Agents run <strong>on your machine</strong> — the server spawns a real <code>claude</code> process per agent, each in its own git worktree. So even if you use the hosted web UI, the server that runs the team is local. Start there.</p>
+
+        <div class="note tip">
+          <p class="nt">Two ways in</p>
+          <p>You can (1) <strong>run the platform locally</strong>, as this section walks through — clone, start the server, open the app — or (2) use the <strong>hosted instance at <code>https://api.cyppie-agents.com</code></strong>: you create projects and agents there through the same app, and agents connect from wherever they run via the remote bridge (see <a href="#remote">§6 Remote agents</a>). The local self&#8209;host below is the primary walkthrough; the hosted option lets you skip the clone&#8209;and&#8209;run steps.</p>
+        </div>
 
         <div class="note">
           <p class="nt">Prerequisites</p>
@@ -399,6 +405,10 @@ POST /api/agents/tester/start   <span class="c">→</span> { <span class="k">"ag
               <li>Workers post <strong>status</strong> back up their spoke; the PO gathers it and posts a summary in the hub — that's what lands back with you.</li>
             </ul>
             <p>Each agent window streams what its agent is doing in real time; the comm timeline shows the messages moving between them; and the <strong>event log</strong> gives you the audited, metadata&#8209;only record of every task, grant, and lifecycle change.</p>
+            <div class="note tip">
+              <p class="nt">Windows persist and replay</p>
+              <p>Each agent window's transcript is <strong>persisted</strong> — reconnect from the browser or the desktop app and the window <strong>replays its full history</strong> rather than opening blank. If the connection drops, the client <strong>auto&#8209;reconnects</strong> and resumes without gaps or duplicates.</p>
+            </div>
           </div>
         </div>
 
@@ -416,8 +426,61 @@ POST /api/agents/tester/start   <span class="c">→</span> { <span class="k">"ag
       </section>
 
       <!-- 6 -->
+      <section class="part" id="remote">
+        <div class="part-head"><span class="part-num">06</span><h2>Remote agents (bring your own machine)</h2></div>
+        <p>Not every agent has to be spawned by the hub. A <strong>remote agent</strong> runs on <strong>your own machine</strong> — a laptop, a VM, a side&#8209;project box — and joins the team over a single authenticated WebSocket (<code>/ws/hub</code>). Its Claude session uses <strong>your own</strong> Claude auth; the bridge that connects it carries <strong>no</strong> API key, operator token, or repo credentials.</p>
+
+        <div class="step">
+          <span class="dot">1</span><div class="sh">Create the agent (operator)</div>
+          <div class="sb">
+            <p>Register it with <code>remote: true</code>. The response carries a <strong>one&#8209;time token</strong> — the only secret the bridge needs. It's shown once and never rendered again, so store it safely.</p>
+            <div class="code"><div class="bar"><span class="dotset"><i></i><i></i><i></i></span>POST /api/agents</div><pre>{ <span class="k">"id"</span>:<span class="s">"sidekick"</span>, <span class="k">"name"</span>:<span class="s">"Side Project"</span>, <span class="k">"role"</span>:<span class="s">"WORKER"</span>, <span class="k">"remote"</span>:true }
+<span class="c">→</span> { <span class="k">"agent"</span>: { <span class="k">"id"</span>:<span class="s">"sidekick"</span>, … }, <span class="k">"token"</span>:<span class="s">"&lt;copy-this-once&gt;"</span> }</pre></div>
+            <p>A remote agent isn't spawned locally — it registers <span class="chip stop">STOPPED</span>, reachable only over the wire. Its hub spoke is <code>po-sidekick</code>, as for any worker.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <span class="dot">2</span><div class="sh">Build the bridge</div>
+          <div class="sb">
+            <p>On the machine that will run the agent (JDK 17+):</p>
+            <div class="code"><div class="bar"><span class="dotset"><i></i><i></i><i></i></span>terminal</div><pre>./gradlew :remote-runtime:installDist
+<span class="c"># → remote-runtime/build/install/remote-runtime/bin/remote-runtime</span></pre></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <span class="dot">3</span><div class="sh">Run it</div>
+          <div class="sb">
+            <p>Set the three required env vars and start the bridge. Claude Code must be installed and signed in <strong>on this machine</strong> — the bridge spawns it and relays its session (your own Claude auth, no key in the bridge).</p>
+            <div class="code"><div class="bar"><span class="dotset"><i></i><i></i><i></i></span>terminal · bridge</div><pre>export HUB_URL=<span class="s">"wss://api.cyppie-agents.com"</span>   <span class="c"># the bridge appends /ws/hub</span>
+export HUB_AGENT_ID=<span class="s">"sidekick"</span>                 <span class="c"># the agent id from step 1</span>
+export HUB_TOKEN=<span class="s">"&lt;the one-time token&gt;"</span>       <span class="c"># the ONLY secret the bridge holds</span>
+remote-runtime/build/install/remote-runtime/bin/remote-runtime</pre></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <span class="dot">4</span><div class="sh">See it in the workspace</div>
+          <div class="sb">
+            <p><code>sidekick</code> appears in the roster on its spoke <code>po-sidekick</code>; its window streams its transcript. When the PO delegates a task to <code>po-sidekick</code>, the bridge injects it and posts the agent's result back.</p>
+            <ul class="clean">
+              <li><strong>The bridge holds no secrets.</strong> The token <strong>is</strong> the identity — the server resolves the agent from the bearer token alone; a non&#8209;agent token (operator, unknown, absent) is rejected and the socket closed — <strong>fail&#8209;closed</strong>.</li>
+              <li><strong>At&#8209;least&#8209;once delivery.</strong> If the connection drops mid&#8209;task, the task is re&#8209;delivered (deduped) on reconnect — a delegated task is never silently lost.</li>
+              <li><strong>Capabilities are REMOTE&#8209;clamped.</strong> A remote connector's declared capabilities are treated as data and clamped to the REMOTE ceiling; an over&#8209;claim never buys elevated behaviour.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note">
+          <p class="nt">Full runbook</p>
+          <p>See <code>OPERATOR-remote-agent.md</code> for the complete runbook, optional env vars (<code>CLAUDE_CMD</code>, <code>BRIDGE_CWD</code>), and troubleshooting.</p>
+        </div>
+      </section>
+
+      <!-- 7 -->
       <section class="part" id="grant">
-        <div class="part-head"><span class="part-num">06</span><h2>Bring in a teammate</h2></div>
+        <div class="part-head"><span class="part-num">07</span><h2>Bring in a teammate</h2></div>
         <p>Agents aren't the only members of a team — people can join a channel too. A signed&#8209;in person starts as a read&#8209;only <strong>member</strong>; you decide, per channel, whether they can also post.</p>
 
         <div class="step">
@@ -436,9 +499,9 @@ POST /api/agents/tester/start   <span class="c">→</span> { <span class="k">"ag
         </div>
       </section>
 
-      <!-- 7 -->
+      <!-- 8 -->
       <section class="part" id="access">
-        <div class="part-head"><span class="part-num">07</span><h2>Who can do what</h2></div>
+        <div class="part-head"><span class="part-num">08</span><h2>Who can do what</h2></div>
         <p>There are two tiers of person. The distinction is simple and it's enforced everywhere.</p>
         <div class="roles">
           <div class="role op">
@@ -461,11 +524,12 @@ POST /api/agents/tester/start   <span class="c">→</span> { <span class="k">"ag
           </div>
         </div>
         <p>On the hosted instance, a teammate signs up and verifies their email, then lands as a member with an empty view until you grant them a channel. During local development you act as operator through the operator token, so you can do everything above without any of the sign&#8209;up flow.</p>
+        <p>On the <strong>hosted</strong> instance the operator is a <strong>pinned identity</strong>, not first&#8209;come&#8209;first&#8209;served: you become operator by <strong>logging in as the designated operator account</strong>, and your first authenticated request upgrades you to operator. The operator token remains a <strong>break&#8209;glass fallback</strong>.</p>
       </section>
 
-      <!-- 8 -->
+      <!-- 9 -->
       <section class="part" id="ref">
-        <div class="part-head"><span class="part-num">08</span><h2>Reference &amp; troubleshooting</h2></div>
+        <div class="part-head"><span class="part-num">09</span><h2>Reference &amp; troubleshooting</h2></div>
 
         <h3>Commands</h3>
         <div class="twrap"><table>
@@ -476,6 +540,7 @@ POST /api/agents/tester/start   <span class="c">→</span> { <span class="k">"ag
             <tr><td>Run the server <span class="m">:8787</span></td><td><code>./gradlew :server:run</code></td></tr>
             <tr><td>Run the desktop app</td><td><code>./gradlew :app:desktopApp:run</code></td></tr>
             <tr><td>Run the web app <span class="m">:8080</span></td><td><code>./gradlew :app:webApp:wasmJsBrowserDevelopmentRun</code></td></tr>
+            <tr><td>Build the remote&#8209;agent bridge</td><td><code>./gradlew :remote-runtime:installDist</code></td></tr>
             <tr><td>Health check</td><td><code>curl 127.0.0.1:8787/api/health</code></td></tr>
           </tbody>
         </table></div>
