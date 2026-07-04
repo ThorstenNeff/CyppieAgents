@@ -28,3 +28,12 @@
 - Canary-Test-Identity gelöscht (204). prod-Identities: V (cyppie.dev), pg-seed, ab7c54e3 (thorsten-neff.de).
 - **courier=Resend LIVE** (delivered ✓, kein Rollback). Bonus: echte User self-verify + `ab7c54e3` real per Mail verifizierbar.
 - **Rollback:** `start-kratos-prod.sh.pre-cyp193.bak` (bzw. COURIER-env raus) → yaml-Mailpit + Kratos-restart.
+
+## ⭐ Recipient-computed Authentication-Results (Auftraggeber echte Inbox, thorsten-neff.de) — Test condition-1
+Aus „Show original" seiner echten Inbox (Recovery-Mail via courier=Resend, Code redacted):
+- **`spf=pass`** (smtp.mailfrom=<local>@`send.cyppie-agents.com`)
+- **`dmarc=pass`** (header.from=`cyppie-agents.com`, policy.dmarc=none) — trägt via **SPF-alignment (relaxed)**
+- **`iprev=pass`** (`54.240.6.53` = amazonses)
+- `dkim=` NICHT in der Empfänger-Zeile gelistet (sein MX listete SPF/DMARC/iprev; SPF-alignment reichte für DMARC). Literaler `dkim=pass` = confirmatory/Forwarding-Robustheit; per Test-Option-(a) **kein Blocker** (die Mail ist DKIM-signed d=cyppie-agents.com aligned + Key published, s. oben).
+
+**→ CYP-193-Gate (Option a) erfüllt:** recipient-computed **SPF=pass + DMARC=pass** aus echter Inbox + Resend `delivered` + real-world-Beweis, dass sein echtes Postfach Plattform-Mail empfängt. (Inbox-vs-Spam-Reputation-Standing separat abgefragt.)
