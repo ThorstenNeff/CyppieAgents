@@ -1,0 +1,78 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-209 (Per-Agent-Customization — Design-Lane von Epic CYP-208)",
+    "version": "0.1",
+    "status": "Vorschlag — Referenz fuer Backend CYP-210 (color-Shape) + Dev CYP-211 (Impl); PO reconcilet §-Asks (spec §9)",
+    "brand": "CyppieAgents (Anti-Hype; interim look + M3, KEIN maritime-Redesign)",
+    "grounded_against": "develop 56567a1",
+    "principles": [
+      "Deterministisch & shared: gleiche Base-Color -> gleiches Derived-Scheme, server+client (wie colorSlot). Kein Runtime-Seed.",
+      "Farbe nie alleiniger Traeger (WCAG 1.4.1): Swatch-Auswahl = Ring/Haekchen + a11y; Focus = Elevation + Border; Tone-Glyphen.",
+      "Kontrast garantiert: Text/onColor >= 4.5:1, border/large >= 3:1 (dark + light).",
+      "Farbe = Identitaet/Dekoration, NIE Garantie/Berechtigung/Status (CYP-12-Status-Hues reserviert).",
+      "id read-only = stabile Identitaet; Umbenennen kosmetisch. Name/Farbe sofort; CLAUDE.md-Persona restart-deferred."
+    ]
+  },
+  "derivation": {
+    "where": ":core (compose-frei, ARGB-Int), server+client-shared wie ColorSlot.kt — :app:shared wrappt Int->Compose Color.",
+    "fn": "derive(base: Int): DerivedScheme",
+    "result": { "background": "Int", "onColor": "Int (WHITE|BLACK)", "border": "Int", "adjusted": "Boolean" },
+    "wcag": {
+      "relLuminance": "sRGB linearisieren; L = 0.2126*R + 0.7152*G + 0.0722*B",
+      "contrastRatio": "(Lheller + 0.05) / (Ldunkler + 0.05), Bereich [1,21]"
+    },
+    "rules": {
+      "onColor": "contrastRatio(WHITE, base) >= contrastRatio(BLACK, base) ? WHITE : BLACK (kontraststaerkere der beiden)",
+      "background_self_correct": "falls contrastRatio(onColor, base) < 4.5 -> background in fixen L-Schritten von der Mitte weg (dunkler falls onColor=WHITE, heller falls BLACK) bis >= 4.5:1; Hue bleibt, adjusted=true. Deterministische Schritt-Obergrenze; nicht erreicht -> bester Wert + adjusted=true (Vorschau+Advisory zeigen Wahrheit).",
+      "border": "base um festes L-Delta Richtung hoeherer Kontrast verschoben, so dass >= 3:1 gegen neutrale Surface in beiden Themes (Fensterkante hell+dunkel sichtbar)."
+    },
+    "constants": {
+      "CONTRAST_TEXT_MIN": 4.5,
+      "CONTRAST_BORDER_MIN": 3.0,
+      "L_STEP": "fixe Lightness-Schrittweite fuer die Selbstkorrektur (Dev/Impl: z.B. 0.04-0.06, gegen die Palette empirisch pruefen)",
+      "BORDER_L_DELTA": "fixe Lightness-Verschiebung fuer den border (>= 3:1-Ziel)",
+      "TITLEBAR_UNFOCUS_DIM": "lerp-Faktor Background Richtung Surface fuer Unfocused (fix, z.B. 0.4-0.55; onColor gegen den gedimmten bg NEU ableiten)"
+    }
+  },
+  "senderColor_change": {
+    "current": "SenderColor(avatarFill, onAvatar, nameAccent) — 3 Felder (comm/SenderPalette.kt)",
+    "new": "SenderColor(avatarFill, onAvatar, nameAccent, borderColor) — +borderColor (4 Felder)",
+    "palette_border": "Die 8 SenderPalette-Slots + PO bekommen borderColor aus derive(avatarFill).border (einmalig hinterlegt ODER via derive() berechnet). avatarFill=Background, onAvatar=onColor, nameAccent unveraendert (Name-Text auf App-Surface, eigene Achse).",
+    "no_new_palette_colors": true
+  },
+  "titlebar_theming": {
+    "replaces": "WindowManager.kt:472-498 hardcoded (isFocused ? primary : surfaceVariant) / (isFocused ? onPrimary : onSurfaceVariant)",
+    "focused":   { "background": "scheme.background", "content": "scheme.onColor (Titel+Badge+Settings-Button)", "border": "scheme.border" },
+    "unfocused": { "background": "scheme.background gedimmt (TITLEBAR_UNFOCUS_DIM lerp->Surface)", "content": "onColor gegen gedimmten bg NEU abgeleitet", "border": "border gedimmt" },
+    "elevation": "tonal/shadow (WindowManager.kt:464-465) UNVERAENDERT — Focus nie Farbe-allein (Elevation + Border tragen mit).",
+    "default_agents": "kein Override -> colorSlot(id)-Scheme; Titelbar ab sofort agenten-farbig statt uniform primary.",
+    "po": "reservierter PO-Slot (ruhig-autoritativ, CYP-14)."
+  },
+  "color_source": {
+    "base_from": "(a) Palette-Slot-Pick, (b) custom-hex, (c) kein Override -> colorSlot(id)-Default (backward-compatible fail-safe).",
+    "persistence_shape_recommendation": "Backend CYP-210 besitzt die Shape. Empfehlung (§-Ask 2): nullable additives Agent.color = AgentColor{kind:PALETTE|CUSTOM, ref}. PALETTE-ref=Slot-Index (theme-adaptiv), CUSTOM-ref=Hex (derive() kontrast-sicher). null/absent -> colorSlot(id).",
+    "hex_only_alternative": "Ein nullable colorHex simpler, verloere aber die dark/light-Adaptivitaet der Palette-Slots."
+  },
+  "contrast_guard": {
+    "format_reject": "custom-hex != #RRGGBB -> isError + TonedHint(agent_color_custom_invalid, ERROR)",
+    "self_correct": "derive() garantiert Text >= 4.5:1 (background nudge); Vorschau zeigt Effektiv-Ergebnis.",
+    "advisory_adjusted": "adjusted==true -> TonedHint(agent_color_adjusted_hint, INFO) — ehrlich, dass die effektive Farbe abweicht.",
+    "advisory_status_like": "Base aehnelt CYP-12-Status-Hue -> TonedHint(agent_color_status_like_hint, INFO) 'Farbe ist Identitaet, kein Status' (optional, §-Ask 4; kein Hard-Block)."
+  },
+  "reserved_status_hues_DO_NOT_REUSE": {
+    "_note": "Gehoeren CYP-12 (Status). Custom-Farbe, die diese trifft, loest die Status-Advisory (kein Vortaeuschen von Status).",
+    "running": "#4DA3FF / #1A73E8",
+    "ok": "#3DD68C / #1E8E5A",
+    "error": "#FF6B6B / #C5221F",
+    "waiting": "#FFC857 / #B26A00"
+  },
+  "validation": {
+    "new_tokens": "1 Feld (SenderColor.borderColor) + Derivations-Konstanten (CONTRAST_TEXT_MIN 4.5, CONTRAST_BORDER_MIN 3.0, L_STEP, BORDER_L_DELTA, TITLEBAR_UNFOCUS_DIM)",
+    "new_palette_colors": 0,
+    "reuse": "SenderPalette (8 Slots + PO), colorSlot(id), TonedHint-Toene, LabeledField/RolePicker-Muster/SectionHeading",
+    "no_hardcoded_hex_new": "keine neuen Palette-Farben; custom = User-Input; Derivation rechnet, nicht hardcoded",
+    "no_prestige": "Rollen/Farbe = neutrale Identitaet (Anti-Hype); kein Badge-Prestige",
+    "no_secrets": "Name/Farbe/Persona keine Secrets; API-Key bleibt im operator-only/maskierten SettingsPanel (unberuehrt)"
+  }
+}
