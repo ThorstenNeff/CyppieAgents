@@ -119,6 +119,8 @@
     <!-- Agent lifecycle (CYP-73): status labels (display non-gated) + control labels (operator-gated).
          Status also uses a11y_agent_status for the contentDescription. -->
     <string name="agent_status_running">Running</string>
+    <!-- CYP-204: per-agent WS reconnecting indicator (history replays on reconnect) -->
+    <string name="agent_reconnecting">Reconnecting…</string>
     <string name="agent_status_stopped">Stopped</string>
     <string name="agent_status_error">Error</string>
     <string name="agent_status_unknown">Unknown</string>

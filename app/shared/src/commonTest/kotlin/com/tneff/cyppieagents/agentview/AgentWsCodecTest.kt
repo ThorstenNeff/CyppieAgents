@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.agentview
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.AssistantEvent
 import com.tneff.cyppieagents.model.ResultEvent
+import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
 import com.tneff.cyppieagents.model.ToolUseBlock
@@ -46,6 +47,20 @@ class AgentWsCodecTest {
         val ev = decode("""{"type":"result","subtype":"success","is_error":false,"some_future_field":42,"uuid":"u"}""")
         assertTrue(ev is ResultEvent)
         assertTrue((ev as ResultEvent).isSuccess)
+    }
+
+    @Test
+    fun storedAgentEventFrame_decodes_withSeqCursorAndInnerEvent() {
+        // CYP-198/204: the server→client frame is now a StoredAgentEvent wrapper (for the `seq` cursor); the
+        // client reads the wrapper, tracks `seq`, and renders `.event` exactly as before.
+        val stored = CommJson.decodeFromString(
+            StoredAgentEvent.serializer(),
+            """{"seq":7,"agentId":"backend","projectId":"p","tsMs":123,"event":{"type":"result","subtype":"success","is_error":false,"uuid":"u"}}""",
+        )
+        assertEquals(7L, stored.seq)
+        assertEquals("backend", stored.agentId)
+        assertTrue(stored.event is ResultEvent)
+        assertTrue((stored.event as ResultEvent).isSuccess)
     }
 
     @Test
