@@ -6,12 +6,11 @@ import com.tneff.cyppieagents.model.StreamJsonEvent
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -84,18 +83,15 @@ class SqliteAgentEventStore(
     }
 
     override fun subscribe(agentId: String, sinceSeq: Long?): Flow<StoredAgentEvent> = flow {
-        coroutineScope {
-            // Attach to live BEFORE the replay query (no gap); drain with a seq>cursor guard (no dup).
-            val buffered = Channel<StoredAgentEvent>(Channel.UNLIMITED)
-            val job = launch { live.collect { if (it.agentId == agentId) buffered.send(it) } }
-            var cursor = sinceSeq ?: 0L
-            query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it); cursor = maxOf(cursor, it.seq) }
-            try {
-                for (e in buffered) if (e.seq > cursor) { emit(e); cursor = e.seq }
-            } finally {
-                job.cancel()
-            }
-        }
+        var cursor = sinceSeq ?: 0L
+        // CYP-198 race fix: [onSubscription] runs AFTER this collector is REGISTERED on `live`, so any append
+        // concurrent with the replay is captured by `live` (not silently dropped by its replay=0). Replaying
+        // the durable tail INSIDE onSubscription closes the "after query-read, before subscribe" gap that a
+        // naive `launch { live.collect }; query()` leaves (measured ~33% loss). Overlap (an event in BOTH the
+        // replay and the live buffer, appended during the query) is de-duplicated by the `seq > cursor` guard.
+        live
+            .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it) } }
+            .collect { rec -> if (rec.agentId == agentId && rec.seq > cursor) { emit(rec); cursor = rec.seq } }
     }
 
     override suspend fun query(agentId: String, sinceSeq: Long?, limit: Int): List<StoredAgentEvent> = withContext(io) {

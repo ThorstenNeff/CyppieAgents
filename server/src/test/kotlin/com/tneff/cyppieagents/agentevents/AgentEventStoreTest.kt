@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
@@ -97,6 +98,30 @@ class AgentEventStoreTest {
             assertEquals(1, s.query("a2", null, 100).size, "a2 (project pB) intact")
         }
         Files.deleteIfExists(db)
+    }
+
+    @Test
+    fun subscribe_concurrentAppendBurst_noGap_stress() = runBlocking<Unit> {
+        // CYP-198 (Test's gate finding, re-gate): the replay→live SEAM must lose NO event when appends race the
+        // subscribe setup. An event committed in the window "after the replay query reads, before the live
+        // collector is subscribed" is neither in the query nor buffered by `live` (replay=0) → LOST. The naive
+        // `launch { live.collect }; query()` dropped ~33% (gaps=98/300). This bursts N appends CONCURRENTLY with
+        // the subscribe over many iterations; every seq 1..N must arrive (via replay OR live), contiguous.
+        val iters = 200
+        val n = 40
+        var gapIters = 0
+        repeat(iters) {
+            val store = InMemoryAgentEventStore()
+            val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            val got = java.util.Collections.synchronizedList(ArrayList<Long>())
+            val sub = scope.launch { store.subscribe("a", sinceSeq = 0L).collect { got.add(it.seq) } }
+            val appender = scope.launch { repeat(n) { store.append("a", "p", 0L, ev(it)) } }
+            appender.join()
+            val complete = withTimeoutOrNull(1_000) { while (got.size < n) delay(1); true } ?: false
+            if (!complete || got.sorted() != (1L..n.toLong()).toList()) gapIters++
+            sub.cancel(); appender.cancel(); scope.cancel()
+        }
+        assertEquals(0, gapIters, "the replay→live seam LOST events in $gapIters/$iters iterations (gap under concurrency)")
     }
 
     @Test
