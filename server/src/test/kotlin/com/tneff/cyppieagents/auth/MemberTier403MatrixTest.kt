@@ -62,7 +62,7 @@ class MemberTier403MatrixTest {
     @Test
     fun memberSession_is403_onEveryOperatorRouteTheOperatorReaches() = testApplication {
         val db = Files.createTempFile("member-403", ".db")
-        val store = SqliteRoleStore(db)
+        val store = SqliteRoleStore(db, bootstrapOperatorId = "alice") // CYP-196: alice is the pinned OPERATOR
         val authDeps = AuthDeps(
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
             idp = FakeIdentityProvider(
@@ -80,7 +80,7 @@ class MemberTier403MatrixTest {
         }
         startApplication()
 
-        // Bootstrap the tiers via the public whoami: alice verifies FIRST → OPERATOR; carol → MEMBER.
+        // Bootstrap the tiers via the public whoami: alice is the PINNED OPERATOR (CYP-196); carol → MEMBER.
         suspend fun ApplicationTestBuilder.bump(session: String) =
             client.request("/api/auth/me") { header("X-Session-Token", session) }
         bump("sess-alice"); bump("sess-carol")

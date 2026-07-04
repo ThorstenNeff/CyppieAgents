@@ -28,7 +28,7 @@ import kotlin.test.assertEquals
 class AuthGuardTest {
 
     private val db = Files.createTempFile("guard-roles", ".db")
-    private fun roles() = SqliteRoleStore(db)
+    private fun roles() = SqliteRoleStore(db, bootstrapOperatorId = "alice") // CYP-196: alice is the pinned OPERATOR
 
     private fun ApplicationTestBuilder.installGuarded(store: SqliteRoleStore) {
         val deps = AuthDeps(
@@ -67,8 +67,8 @@ class AuthGuardTest {
     }
 
     @Test
-    fun verifiedSession_is200_firstUserBootstrapsOperator() = testApplication {
-        val store = roles(); installGuarded(store)
+    fun verifiedSession_is200_pinnedBootstrapOperator() = testApplication {
+        val store = roles(); installGuarded(store) // CYP-196: alice is the PINNED OPERATOR (not first-verified)
         val r = client.get("/api/secret") { header("X-Session-Token", "sess-alice") }
         assertEquals(HttpStatusCode.OK, r.status)
         assertEquals("ok", r.bodyAsText())
@@ -93,7 +93,7 @@ class AuthGuardTest {
     @Test
     fun memberHuman_onOperatorRoute_is403() = testApplication {
         val store = roles(); installGuarded(store)
-        // alice logs in first → bootstraps OPERATOR; carol is then MEMBER → 403 on an OPERATOR route.
+        // alice is the pinned OPERATOR; carol (any other verified identity) is MEMBER → 403 on an OPERATOR route.
         assertEquals(HttpStatusCode.OK, client.get("/api/secret") { header("X-Session-Token", "sess-alice") }.status)
         assertEquals(HttpStatusCode.Forbidden, client.get("/api/secret") { header("X-Session-Token", "sess-carol") }.status)
         store.close(); Files.deleteIfExists(db)

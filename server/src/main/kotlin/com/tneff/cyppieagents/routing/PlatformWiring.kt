@@ -194,7 +194,10 @@ fun Application.bootPlatform(
                 whoamiUrl = authCfg.kratosPublicUrl.trimEnd('/') + "/sessions/whoami",
                 timeoutMs = authCfg.whoamiTimeoutMs,
             ),
-            roles = com.tneff.cyppieagents.auth.SqliteRoleStore(gitRoot.toPath().resolve(authCfg.roleDbPath)),
+            roles = com.tneff.cyppieagents.auth.SqliteRoleStore(
+                gitRoot.toPath().resolve(authCfg.roleDbPath),
+                bootstrapOperatorId = authCfg.bootstrapOperatorIdentityId,
+            ),
             nowMs = { System.currentTimeMillis() },
             audit = com.tneff.cyppieagents.auth.InMemoryAuditSink(), // CYP-186 C.1: OPERATOR-only audit
             // CYP-186 C.2: the operator-token kill-switch — deploy-controlled at boot (env wins over config),

@@ -57,8 +57,8 @@ class MemberTierGuardTest {
         client.get(path) { header("X-Session-Token", session) }.status
 
     @Test
-    fun roleWiring_firstVerifiedIsOperator_laterIsMember_oidcVerifyThenAdmit() = testApplication {
-        val store = SqliteRoleStore(db)
+    fun roleWiring_pinnedIsOperator_laterIsMember_oidcVerifyThenAdmit() = testApplication {
+        val store = SqliteRoleStore(db, bootstrapOperatorId = "alice") // CYP-196: alice is the PINNED OPERATOR
         val daveVerified = AtomicBoolean(false) // OIDC: verified flips false→true at on-platform verify
         val idp = object : IdentityProvider {
             override suspend fun resolve(credential: SessionCredential?): ResolvedIdentity? = when (credential?.value) {
@@ -73,10 +73,10 @@ class MemberTierGuardTest {
         assertEquals(HttpStatusCode.Unauthorized, status("/api/op", "dave"))
         assertEquals(HttpStatusCode.Unauthorized, status("/api/mem", "dave"))
 
-        // Password alice verifies first → bootstraps OPERATOR.
+        // Password alice (the PINNED identity) verifies → OPERATOR.
         assertEquals(HttpStatusCode.OK, status("/api/op", "alice"))
 
-        // OIDC dave completes on-platform verify → now a role is assignable; alice already OPERATOR ⇒ dave = MEMBER.
+        // OIDC dave completes on-platform verify → assignable now; NOT the pinned id ⇒ dave = MEMBER (no land-grab).
         daveVerified.set(true)
         assertEquals(HttpStatusCode.Forbidden, status("/api/op", "dave"))  // MEMBER on OPERATOR gate → 403 authz
         assertEquals(HttpStatusCode.OK, status("/api/mem", "dave"))        // MEMBER satisfies MEMBER gate
@@ -85,8 +85,11 @@ class MemberTierGuardTest {
     }
 
     @Test
-    fun bootstrapRace_twoVerifiedIdentities_exactlyOneOperator() = testApplication {
-        val store = SqliteRoleStore(db)
+    fun explicitPin_onlyPinnedBecomesOperator_otherIsMember_evenRacing() = testApplication {
+        // CYP-196: with explicit assignment there is no "first-verified" race — ONLY the pinned identity can be
+        // OPERATOR. Two verified identities hit the OPERATOR gate concurrently; the pinned one (u1) is OPERATOR
+        // (200), the other (u2) is MEMBER (403) — deterministic, and the single slot still holds exactly one.
+        val store = SqliteRoleStore(db, bootstrapOperatorId = "u1")
         val idp = object : IdentityProvider {
             override suspend fun resolve(credential: SessionCredential?): ResolvedIdentity? = when (credential?.value) {
                 "u1" -> ResolvedIdentity("u1", verified = true)
@@ -96,13 +99,12 @@ class MemberTierGuardTest {
         }
         installTiers(idp, store)
 
-        // Two verified identities race first-access at the OPERATOR gate; the RC3 atomic bootstrap must make
-        // exactly one OPERATOR (200) and the other MEMBER (403) — never two operators, never zero.
         val statuses = coroutineScope {
             listOf("u1", "u2").map { async { status("/api/op", it) } }.awaitAll()
         }
-        assertEquals(1, statuses.count { it == HttpStatusCode.OK }, "exactly one racer must become OPERATOR")
-        assertEquals(1, statuses.count { it == HttpStatusCode.Forbidden }, "the other racer must be MEMBER (403)")
+        assertEquals(HttpStatusCode.OK, status("/api/op", "u1"), "the pinned identity is OPERATOR")
+        assertEquals(HttpStatusCode.Forbidden, status("/api/op", "u2"), "a non-pinned identity is MEMBER (403), never OPERATOR")
+        assertEquals(1, statuses.count { it == HttpStatusCode.OK }, "exactly one (the pinned) is OPERATOR")
 
         store.close(); Files.deleteIfExists(db)
     }

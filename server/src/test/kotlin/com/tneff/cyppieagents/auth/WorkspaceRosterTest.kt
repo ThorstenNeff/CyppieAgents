@@ -52,13 +52,13 @@ class WorkspaceRosterTest {
     )
 
     private suspend fun ApplicationTestBuilder.bootstrapOperatorThenMember() {
-        client.get("/api/auth/me") { header("X-Session-Token", "sess-alice") }  // first-verified → OPERATOR
-        client.get("/api/auth/me") { header("X-Session-Token", "sess-member") } // later → MEMBER
+        client.get("/api/auth/me") { header("X-Session-Token", "sess-alice") }  // CYP-196: pinned alice-op → OPERATOR
+        client.get("/api/auth/me") { header("X-Session-Token", "sess-member") } // any other verified → MEMBER
     }
 
     @Test
     fun roster_operatorSeesTiers_memberIs403_noCredential401_contentFree() = testApplication {
-        val db = Files.createTempFile("be3a-roster", ".db"); val store = SqliteRoleStore(db)
+        val db = Files.createTempFile("be3a-roster", ".db"); val store = SqliteRoleStore(db, bootstrapOperatorId = "alice-op") // CYP-196: pinned OPERATOR
         application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
         startApplication()
         bootstrapOperatorThenMember()
