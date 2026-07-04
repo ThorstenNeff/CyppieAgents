@@ -43,6 +43,8 @@ class ProjectDeleter(
     private val projectConfig: ProjectConfigStore,
     private val eventSink: EventSink,
     private val worktrees: WorktreeManager,
+    // CYP-198: durable per-agent transcript store — cascade-purged with the project (fail-closed teardown).
+    private val agentEventStore: com.tneff.cyppieagents.agentevents.AgentEventStore? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.projectdeleter")
     private val mutex = Mutex()
@@ -52,6 +54,7 @@ class ProjectDeleter(
 
         val configRemoved = projectConfig.remove(projectId)
         val eventsRemoved = eventSink.deleteByProject(projectId)
+        agentEventStore?.deleteByProject(projectId) // CYP-198: purge the agent-window transcript too
         // opt-in: only the warned path removes the worktree (uncommitted work); branches always kept.
         val worktreesRemoved = if (deleteWorktrees) worktrees.deleteProject(projectId) else 0
         registry.drop(projectId) // commit metadata removal last (no half-gone-but-listed project)

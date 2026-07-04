@@ -40,6 +40,8 @@ class ClaudeCodeConnector(
     // Observability tap (CYP-37). Null = no tapping (keeps tests/older callers working).
     private val recorder: EventRecorder? = null,
     private val projector: EventProjector? = null,
+    // CYP-198: the durable per-agent transcript feeder. Null = no persistence (older callers/tests).
+    private val agentEvents: com.tneff.cyppieagents.agentevents.AgentEventRecorder? = null,
     /**
      * Resolves the agent's persona at spawn (S14 / CYP-97), written to `CLAUDE.md` in the worktree cwd
      * so Claude-Code auto-discovers it (Doc 05 §5, no `--bare`). Resolved at `open()` so an operator
@@ -144,7 +146,7 @@ class ClaudeCodeConnector(
             val process = spawner.spawn(command, cwd, env)
             // CYP-142 S4.0: the :server factory maps the hub types onto the shared core's seams (the bridge
             // builds its own ClaudeCodeSession with wire-relay/no-op seams). onBound = the CYP-167 store closure.
-            return claudeCodeServerSession(agentId, process, registry, router, turnQueue, scope, recorder, projector, onBound)
+            return claudeCodeServerSession(agentId, process, registry, router, turnQueue, scope, recorder, projector, onBound, agentEvents, projectId)
         }
 
         // CYP-167: read-before-spawn. No durable entry (first start, or feature off) ⇒ fresh, no `--resume`,

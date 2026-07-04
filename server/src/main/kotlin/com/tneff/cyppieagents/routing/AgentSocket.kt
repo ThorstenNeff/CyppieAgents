@@ -1,7 +1,9 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.agentevents.AgentEventStore
 import com.tneff.cyppieagents.connector.ConnectorSessions
+import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import io.ktor.server.application.Application
@@ -50,9 +52,11 @@ fun tokenAuthorize(registry: TokenRegistry): (ApplicationCall) -> Boolean = { ca
 fun Application.installAgentSocket(
     sessions: ConnectorSessions,
     authorize: (ApplicationCall) -> Boolean = { false },
+    // CYP-198: the durable transcript store — when wired, /ws/agent replays history-then-live from it.
+    agentEvents: AgentEventStore? = null,
 ) {
     install(WebSockets) { maxFrameSize = MessageInput.MAX_FRAME_BYTES } // CYP-143: protocol backstop
-    routing { agentSocket(sessions, authorize) }
+    routing { agentSocket(sessions, authorize, agentEvents) }
 }
 
 fun Route.agentSocket(
@@ -61,6 +65,7 @@ fun Route.agentSocket(
     // an open socket lets anyone inject user-messages into an agent (i.e. drive it). Production
     // passes [tokenAuthorize]; tests opt in explicitly.
     authorize: (ApplicationCall) -> Boolean = { false },
+    agentEvents: AgentEventStore? = null,
 ) {
     webSocket("/ws/agent") {
         if (!authorize(call)) {
@@ -73,21 +78,34 @@ fun Route.agentSocket(
             return@webSocket
         }
         val session = sessions.session(agentId)
-        if (session == null) {
+        // A local session enables live inject; a wired [agentEvents] store enables durable transcript replay
+        // (also for a REMOTE agent that has no local session — its window is read-only, driven over the wire).
+        if (session == null && agentEvents == null) {
             close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "no live session for agent '$agentId'"))
             return@webSocket
         }
 
-        // Server → Client: stream masked events, one JSON object per text frame.
+        // Server → Client: CYP-198 — replay durable history since the client's cursor, then live (gapless,
+        // deduped by seq — the AgentEventStore is the single source). Falls back to the live-only connector
+        // stream when no durable store is wired (backward-compatible).
+        val since = call.request.queryParameters["since"]?.toLongOrNull()
         val pump = launch {
-            session.events.collect { event ->
-                send(Frame.Text(CommJson.encodeToString(StreamJsonEvent.serializer(), event)))
+            if (agentEvents != null) {
+                agentEvents.subscribe(agentId, since).collect { stored ->
+                    send(Frame.Text(CommJson.encodeToString(StoredAgentEvent.serializer(), stored)))
+                }
+            } else {
+                session!!.events.collect { event ->
+                    send(Frame.Text(CommJson.encodeToString(StreamJsonEvent.serializer(), event)))
+                }
             }
         }
         try {
-            // Client → Server: each text frame is a UserTurn; validate (CYP-143) then inject it.
+            // Client → Server: each text frame is a UserTurn; validate (CYP-143) then inject it. Only a LOCAL
+            // session can be driven this way — a remote agent's window is read-only here (it's driven over the wire).
             for (frame in incoming) {
                 if (frame is Frame.Text) {
+                    if (session == null) continue // read-only transcript view (remote agent)
                     val turn = CommJson.decodeFromString<UserTurn>(frame.readText())
                     try {
                         MessageInput.requireValidBody(turn.text)

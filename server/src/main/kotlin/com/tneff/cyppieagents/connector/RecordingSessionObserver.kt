@@ -1,10 +1,12 @@
 package com.tneff.cyppieagents.connector
 
+import com.tneff.cyppieagents.agentevents.AgentEventRecorder
 import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
+import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import kotlinx.coroutines.CoroutineScope
 
@@ -25,12 +27,21 @@ fun claudeCodeServerSession(
     recorder: EventRecorder? = null,
     projector: EventProjector? = null,
     onSessionBound: ((String) -> Unit)? = null,
+    // CYP-198: the durable per-agent transcript feeder + the active project it is stamped with.
+    agentEvents: AgentEventRecorder? = null,
+    projectId: String = DEFAULT_PROJECT_ID,
 ): ClaudeCodeSession = ClaudeCodeSession(
     agentId = agentId,
     process = process,
     turnQueue = turnQueue,
     scope = scope,
-    observer = if (recorder != null && projector != null) RecordingSessionObserver(recorder, projector) else null,
+    observer = if (recorder != null && projector != null) {
+        RecordingSessionObserver(recorder, projector, agentEvents, projectId)
+    } else if (agentEvents != null) {
+        RecordingSessionObserver(null, null, agentEvents, projectId)
+    } else {
+        null
+    },
     onBind = { sid -> registry.bind(sid, agentId); onSessionBound?.invoke(sid) },
     onUnbind = { sid -> registry.unbind(sid) },
     onTurnResult = { router.onResult(it) },
@@ -43,22 +54,31 @@ fun claudeCodeServerSession(
  * stay out of `:connector-core` and out of user infra.
  */
 class RecordingSessionObserver(
-    private val recorder: EventRecorder,
-    private val projector: EventProjector,
+    private val recorder: EventRecorder?,
+    private val projector: EventProjector?,
+    // CYP-198: the durable per-agent transcript feeder (the agent-window persistence) + its project stamp.
+    // Non-null feeds every MASKED event (this observer sees the post-mask event) into the AgentEventStore.
+    private val agentEvents: AgentEventRecorder? = null,
+    private val projectId: String = DEFAULT_PROJECT_ID,
 ) : SessionObserver {
     override fun onEvent(agentId: String, sessionId: String?, correlationId: String?, event: StreamJsonEvent) {
-        projector.project(agentId, sessionId, correlationId, event).forEach { recorder.record(it) }
+        // CYP-198: durably record the masked transcript event (non-blocking, in-order). Same masked event
+        // the Event-Log projector sees — the window transcript keeps content, the Event-Log keeps metadata.
+        agentEvents?.record(agentId, projectId, event)
+        if (recorder != null && projector != null) {
+            projector.project(agentId, sessionId, correlationId, event).forEach { recorder.record(it) }
+        }
     }
 
     override fun onTurnStart(agentId: String, sessionId: String?, correlationId: String) {
-        recorder.record(projector.turnStart(agentId, sessionId, correlationId))
+        if (recorder != null && projector != null) recorder.record(projector.turnStart(agentId, sessionId, correlationId))
     }
 
     override fun onProcessExit(agentId: String, sessionId: String?) {
-        recorder.record(projector.processExit(agentId, sessionId, null))
+        if (recorder != null && projector != null) recorder.record(projector.processExit(agentId, sessionId, null))
     }
 
     override fun onStopped(agentId: String) {
-        recorder.record(projector.agentStopped(agentId))
+        if (recorder != null && projector != null) recorder.record(projector.agentStopped(agentId))
     }
 }

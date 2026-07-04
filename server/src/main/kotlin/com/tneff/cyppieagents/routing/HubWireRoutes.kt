@@ -66,6 +66,10 @@ fun Route.hubWireRoutes(
     // CYP-173: slow-loris reap — max time an authenticated connection may stay BEFORE completing the
     // WireHello handshake. Generous for a real bridge (handshake is immediate); tests override it short.
     helloTimeoutMs: Long = 10_000,
+    // CYP-198: the durable per-agent transcript feeder (LAST param — purely additive for existing positional
+    // callers). A remote agent's window has no local stream-json session, so its self-reported WireEvents are
+    // persisted here (masked/whitelisted at ingest) so the remote window survives reconnect too. Null = none.
+    agentEvents: com.tneff.cyppieagents.agentevents.AgentEventRecorder? = null,
 ) {
     webSocket("/ws/hub") {
         // Auth FIRST, fail-closed, BEFORE any frame: only an agent token (→ its own agentId) may connect.
@@ -214,6 +218,20 @@ fun Route.hubWireRoutes(
                     // server-stamped source=remote, fields whitelist-dropped + size-capped ([WireEventIngest]).
                     // G4-4: NO capabilityRegistry write — caps stay Hello-only. Fire-and-forget telemetry, no ack.
                     eventRecorder.record(WireEventIngest.toDraft(agentId, activeProjectId(), f))
+                    // CYP-198: also persist the remote signal into the durable agent-window transcript, so a
+                    // REMOTE agent's window survives a reconnect. The remote wire carries NO rich stream-json
+                    // (REMOTE clamp — assistant text stays in user infra); the rate-limit signal is the
+                    // observable, already whitelisted at ingest. Tool signals live in the Event-Log metadata.
+                    if (f.signal == com.tneff.cyppieagents.model.WireEventType.RATE_LIMIT && f.rateLimit != null) {
+                        agentEvents?.record(
+                            agentId, activeProjectId(),
+                            com.tneff.cyppieagents.model.RateLimitEvent(
+                                rateLimitInfo = kotlinx.serialization.json.buildJsonObject {
+                                    f.rateLimit!!.forEach { (k, v) -> put(k, kotlinx.serialization.json.JsonPrimitive(v)) }
+                                },
+                            ),
+                        )
+                    }
                 }
 
                 // Server→client frames arriving as input (Ack/Message/Error) are unexpected → fail-closed.

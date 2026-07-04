@@ -61,7 +61,7 @@ fun Application.installPlatform(
             deps = authDeps, // CYP-178: operator gate for PUT /api/acl
         )
         // Production auth: only the operator token, or an agent watching its own session, is allowed.
-        agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry))
+        agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry), booted.agentEventStore)
         // CYP-146: the in-process Hub MCP server (`POST /mcp/hub`) — exposes `hub_send` to a Connector-A
         // agent (the emission half). Token→agentId server-bound, localhost, single write path via postAsAgent.
         hubMcpRoutes(booted.hub, booted.tokenRegistry)
@@ -72,7 +72,7 @@ fun Application.installPlatform(
         // defends the live wire against a remote-connector flood (the named E2.2-M2 obligation).
         // CYP-141 / E2.5: connectorSessions lets a handshaking remote connector register a wire-backed
         // ConnectorSession → the CYP-132 deliverer pushes inbound (WireDeliver) to it like any local agent.
-        hubWireRoutes(booted.hub, booted.tokenRegistry, booted.capabilityRegistry, booted.providerRegistry, WireRateLimiter(), booted.connectorSessions, booted.eventRecorder, { booted.hub.state.activeProjectId })
+        hubWireRoutes(booted.hub, booted.tokenRegistry, booted.capabilityRegistry, booted.providerRegistry, WireRateLimiter(), booted.connectorSessions, booted.eventRecorder, { booted.hub.state.activeProjectId }, agentEvents = booted.agentEventRecorder)
         // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
         // project (resolved server-side from the registry pointer; a switch re-scopes without restart).
         // CYP-94: the operator's authorized set (MVP = all of the registry's projects) bounds the
@@ -163,6 +163,13 @@ fun Application.bootPlatform(
             com.tneff.cyppieagents.events.SqliteEventSink(
                 gitRoot.toPath().resolve(config.events.sinkPath),
                 com.tneff.cyppieagents.events.SystemTimeSource(),
+            )
+        },
+        // CYP-198: durable per-agent transcript store — out-of-repo under the gitRoot (WAL), so the
+        // agent-window survives a restart. Retention default (last-N per agent) keeps growth bounded.
+        agentEventStoreFactory = {
+            com.tneff.cyppieagents.agentevents.SqliteAgentEventStore(
+                gitRoot.toPath().resolve(".cyppie/agent-events.db"),
             )
         },
         spoolPath = gitRoot.toPath().resolve(config.events.spoolPath),
