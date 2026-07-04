@@ -52,6 +52,12 @@ Two more pieces make the rest of the guide readable:
 Agents run **on your machine** — the server spawns a real `claude` process per agent, each in its own git
 worktree. So even if you use the hosted web UI, the server that runs the team is local. Start there.
 
+> **Two ways in.** You can (1) **run the platform locally**, as this section walks through — clone, start
+> the server, open the app — or (2) use the **hosted instance at `https://api.cyppie-agents.com`**: you
+> create projects and agents there through the same app, and agents connect from wherever they run via the
+> remote bridge (see [§6 Remote agents](#6-remote-agents-bring-your-own-machine)). The local self-host below
+> is the primary walkthrough; the hosted option lets you skip the clone-and-run steps.
+
 > **Prerequisites:** JDK 17+ (JetBrains Runtime recommended) · Git · the Claude CLI installed and signed
 > in (`claude` on your `PATH`; the agents use your Claude login). An Anthropic API key is optional and set
 > per project, not required to start.
@@ -196,6 +202,10 @@ Each agent window streams what its agent is doing in real time; the comm timelin
 between them; and the **event log** gives you the audited, metadata-only record of every task, grant, and
 lifecycle change.
 
+> **Windows persist and replay.** Each agent window's transcript is **persisted** — reconnect from the
+> browser or the desktop app and the window **replays its full history** rather than opening blank. If the
+> connection drops, the client **auto-reconnects** and resumes without gaps or duplicates.
+
 **Step 3 — Close the loop.** When the PO reports done, you have real branches pushed to your repo. Review
 them as you would any teammate's work and merge on your terms — you stayed the architect the whole way
 through.
@@ -206,7 +216,64 @@ through.
 
 ---
 
-## 6. Bring in a teammate
+## 6. Remote agents (bring your own machine)
+
+Not every agent has to be spawned by the hub. A **remote agent** runs on **your own machine** — a laptop, a
+VM, a side-project box — and joins the team over a single authenticated WebSocket (`/ws/hub`). Its Claude
+session uses **your own** Claude auth; the bridge that connects it carries **no** API key, operator token,
+or repo credentials.
+
+**Step 1 — Create the agent (operator).** Register it with `remote: true`. The response carries a
+**one-time token** — the only secret the bridge needs. It's shown once and never rendered again, so store it
+safely.
+
+```http
+POST /api/agents
+{ "id":"sidekick", "name":"Side Project", "role":"WORKER", "remote":true }
+→ { "agent": { "id":"sidekick", … }, "token":"<copy-this-once>" }
+```
+
+A remote agent isn't spawned locally — it registers `STOPPED`, reachable only over the wire. Its hub spoke
+is `po-sidekick`, as for any worker.
+
+**Step 2 — Build the bridge.** On the machine that will run the agent (JDK 17+):
+
+```bash
+./gradlew :remote-runtime:installDist
+# → remote-runtime/build/install/remote-runtime/bin/remote-runtime
+```
+
+**Step 3 — Run it.** Set the three required env vars and start the bridge. Claude Code must be installed and
+signed in **on this machine** — the bridge spawns it and relays its session (your own Claude auth, no key in
+the bridge).
+
+```bash
+export HUB_URL="wss://api.cyppie-agents.com"   # the bridge appends /ws/hub
+export HUB_AGENT_ID="sidekick"                 # the agent id from step 1
+export HUB_TOKEN="<the one-time token>"         # the ONLY secret the bridge holds
+remote-runtime/build/install/remote-runtime/bin/remote-runtime
+```
+
+**Step 4 — See it in the workspace.** `sidekick` appears in the roster on its spoke `po-sidekick`; its
+window streams its transcript. When the PO delegates a task to `po-sidekick`, the bridge injects it and
+posts the agent's result back.
+
+Key properties:
+
+- **The bridge holds no secrets.** The token **is** the identity — the server resolves the agent from the
+  bearer token alone; a non-agent token (operator, unknown, absent) is rejected and the socket closed —
+  **fail-closed**.
+- **At-least-once delivery.** If the connection drops mid-task, the task is re-delivered (deduped) on
+  reconnect — a delegated task is never silently lost.
+- **Capabilities are REMOTE-clamped.** A remote connector's declared capabilities are treated as data and
+  clamped to the REMOTE ceiling; an over-claim never buys elevated behaviour.
+
+See [`OPERATOR-remote-agent.md`](OPERATOR-remote-agent.md) for the full runbook, optional env vars
+(`CLAUDE_CMD`, `BRIDGE_CWD`), and troubleshooting.
+
+---
+
+## 7. Bring in a teammate
 
 Agents aren't the only members of a team — people can join a channel too. A signed-in person starts as a
 read-only **member**; you decide, per channel, whether they can also post.
@@ -231,7 +298,7 @@ other people.
 
 ---
 
-## 7. Who can do what
+## 8. Who can do what
 
 There are two tiers of person. The distinction is simple and it's enforced everywhere.
 
@@ -246,9 +313,13 @@ On the hosted instance, a teammate signs up and verifies their email, then lands
 view until you grant them a channel. During local development you act as operator through the operator
 token, so you can do everything above without any of the sign-up flow.
 
+On the **hosted** instance the operator is a **pinned identity**, not first-come-first-served: you become
+operator by **logging in as the designated operator account**, and your first authenticated request upgrades
+you to operator. The operator token remains a **break-glass fallback**.
+
 ---
 
-## 8. Reference & troubleshooting
+## 9. Reference & troubleshooting
 
 ### Commands
 
@@ -259,6 +330,7 @@ token, so you can do everything above without any of the sign-up flow.
 | Run the server (`:8787`)    | `./gradlew :server:run`                                   |
 | Run the desktop app         | `./gradlew :app:desktopApp:run`                           |
 | Run the web app (`:8080`)   | `./gradlew :app:webApp:wasmJsBrowserDevelopmentRun`       |
+| Build the remote-agent bridge | `./gradlew :remote-runtime:installDist`                 |
 | Health check                | `curl 127.0.0.1:8787/api/health`                          |
 
 ### Endpoints you'll use most
