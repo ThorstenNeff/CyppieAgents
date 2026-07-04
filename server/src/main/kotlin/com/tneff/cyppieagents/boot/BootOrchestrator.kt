@@ -82,6 +82,10 @@ class BootedPlatform(
     val eventRecorder: EventRecorder,
     /** Connector opt-in (CYP-122): the operator-gated, audited set-connector action served by `/api/agents/{id}/connector`. */
     val connectorOptIn: ConnectorOptIn,
+    /** CYP-198: durable per-agent transcript store (reads: /ws/agent, REST, cascade-delete). */
+    val agentEventStore: com.tneff.cyppieagents.agentevents.AgentEventStore,
+    /** CYP-198: the transcript feeder (writes: the remote WireEvent path; local path feeds via the connector tap). */
+    val agentEventRecorder: com.tneff.cyppieagents.agentevents.AgentEventRecorder,
 )
 
 /**
@@ -107,6 +111,10 @@ class BootOrchestrator(
     private val deliveryLog: com.tneff.cyppieagents.comm.DeliveryLog = com.tneff.cyppieagents.comm.InMemoryDeliveryLog(),
     // Default in-memory; CYP-43 swaps in a SqliteEventSink from the events config (sinkPath/WAL).
     private val eventSinkFactory: () -> EventSink = { InMemoryEventSink(SystemTimeSource()) },
+    // CYP-198: durable per-agent transcript store. Default in-memory (tests); bootPlatform supplies a
+    // SqliteAgentEventStore out-of-repo under the gitRoot (WAL, gitignored).
+    private val agentEventStoreFactory: () -> com.tneff.cyppieagents.agentevents.AgentEventStore =
+        { com.tneff.cyppieagents.agentevents.InMemoryAgentEventStore() },
     // Hook spool path; null → no spool tailer (default in tests). bootPlatform/CYP-43 supply it.
     private val spoolPath: java.nio.file.Path? = null,
     // Mediator-Aufsicht (07/S11): the Scanner's detector set. Empty = the scaffold runs but finds
@@ -181,6 +189,10 @@ class BootOrchestrator(
         val eventSink = eventSinkFactory()
         val eventRecorder = EventRecorder(eventSink, scope, capacity = ev.queueCapacity, batchSize = ev.batchSize)
             .also { it.start() }
+        // CYP-198: the durable per-agent transcript store + its ordered non-blocking feeder (local connector
+        // events via the observer tap; remote WireEvents via hubWireRoutes).
+        val agentEventStore = agentEventStoreFactory()
+        val agentEventRecorder = com.tneff.cyppieagents.agentevents.AgentEventRecorder(agentEventStore, scope)
         val bander = ContextUsageBander(
             contextWindowTokens = ev.contextWindowTokens,
             bandPctWidth = ev.bandPct,
@@ -250,6 +262,7 @@ class BootOrchestrator(
             scope = scope,
             recorder = eventRecorder,
             projector = eventProjector,
+            agentEvents = agentEventRecorder, // CYP-198: persist the local agent's stream-json transcript
             personaOf = agentConfigs::personaOf,
             mcpConfigWriter = mcpConfigWriter, // CYP-146: expose hub_send to the Connector-A spawn
             tokenFor = { tokenByAgent[it] },
@@ -394,12 +407,13 @@ class BootOrchestrator(
         // S13 / CYP-91: the multi-project registry (seeded with the boot project) + the cascade deleter
         // composing the strictly-projectId-scoped teardown primitives — operator-gated at /api/projects.
         val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
-        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees)
+        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore)
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
+            agentEventStore, agentEventRecorder,
         )
     }
 }
