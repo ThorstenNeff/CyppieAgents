@@ -88,8 +88,12 @@ import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.SettingsPanel
 import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.settings.ConfigHttpRepository
+import com.tneff.cyppieagents.window.TitleBarColors
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
+import com.tneff.cyppieagents.agentsettings.AgentSettingsPanel
+import com.tneff.cyppieagents.agentsettings.AgentSettingsViewModel
+import com.tneff.cyppieagents.comm.SenderPalette
 import com.tneff.cyppieagents.net.sharedWsHttpClient
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
@@ -468,10 +472,31 @@ fun AgentShell(
             tailMaxSeverity = tailMaxSeverity,
         )
 
+        // CYP-211: the id→Agent lookup drives per-window titlebar theming; `settingsAgentId` = which agent's
+        // settings overlay is open (null = none). The AlertDialog renders above the desktop regardless of position.
+        val agentById = remember(managedAgents) { managedAgents.associateBy { it.id } }
+        var settingsAgentId by remember { mutableStateOf<String?>(null) }
+        settingsAgentId?.let { sid ->
+            val a = agentById[sid]
+            val agentSettingsVm = viewModel(key = "agentSettings-$sid") {
+                AgentSettingsViewModel(sid, resolvedAgentMgmtRepo, editable = isOperator, initialName = a?.name ?: sid, initialColorHex = a?.color)
+            }
+            AgentSettingsPanel(agentSettingsVm, onDismiss = { settingsAgentId = null })
+        }
+
         WindowHost(
             state = state,
             onFit = { state.fit(isRtl) },
             badgeFor = { id -> badges[id] },
+            // CYP-211: agent windows get their identity-coloured titlebar (system windows → null → default M3) +
+            // the ⋮ settings button; system windows (comm/acl/…) are not in [agentById] → no theme, no button.
+            titleBarColorsFor = { id ->
+                agentById[id]?.let { agent ->
+                    val sc = SenderPalette.forAgent(agent.id, agent.role, agent.color)
+                    TitleBarColors(background = sc.avatarFill, content = sc.onAvatar, border = sc.borderColor)
+                }
+            },
+            settingsFor = { id -> if (id in agentById) ({ settingsAgentId = id }) else null },
             windowContent = { window ->
                 // Reuse the hoisted (always-alive) VMs — never a second viewModel() here, so each
                 // window keeps exactly one subscription whether rendered in the canvas or the pager.
