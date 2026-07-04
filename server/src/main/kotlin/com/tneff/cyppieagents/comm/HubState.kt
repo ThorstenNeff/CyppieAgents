@@ -152,7 +152,10 @@ class HubState(
      */
     fun editAgent(id: String, name: String? = null, color: String? = null): Agent? = synchronized(lock) {
         val cur = agents.firstOrNull { it.id == id } ?: return@synchronized null
-        val next = cur.copy(name = name ?: cur.name, color = color ?: cur.color)
+        // CYP-210 (Test defense-in-depth): blank/null PRESERVE — `ifBlank` here too (not only `?: cur`), so a
+        // DIRECT caller passing a blank string can't clear the field where the store's `put` (ifBlank-robust)
+        // would preserve it. Parity between the in-memory update and the durable overlay, route or not.
+        val next = cur.copy(name = name?.ifBlank { null } ?: cur.name, color = color?.ifBlank { null } ?: cur.color)
         agents = agents.map { if (it.id == id) next else it }
         next
     }
