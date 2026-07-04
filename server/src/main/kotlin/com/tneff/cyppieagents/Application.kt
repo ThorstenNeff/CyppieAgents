@@ -21,6 +21,18 @@ import java.io.File
  * `OPERATOR_TOKEN` in the host env (fail-closed); a real agent run also needs `ANTHROPIC_API_KEY`.
  */
 fun main() {
+    // CYP-206: silence Netty 4.2's JFR buffer-pool telemetry BEFORE any Netty class loads. Netty 4.2 emits
+    // JFR events for buffer alloc/free (`io.netty.buffer.FreeChunkEvent` etc., which `extends jdk.jfr.Event`);
+    // on a JVM where that class can't be defined (a stripped/quirky jdk.jfr) it throws
+    // `NoClassDefFoundError: …FreeChunkEvent` off the critical path (pool metrics only — buffers still work).
+    // This is NOT a Netty version mismatch: all `io.netty:*` resolve to a single 4.2.13.Final and the class is
+    // present in the jar. The emit sites (`PooledByteBufAllocator`, `AdaptivePoolingAllocator$Chunk`) gate on
+    // `PlatformDependent.isJfrEnabled()` (= `jdk.jfr.FlightRecorder.isAvailable()` AND `-Dio.netty.jfr.enabled`,
+    // cached once at class-init) and `ifeq`-skip the whole event block when false — so setting this property
+    // false here, before `embeddedServer(Netty)` triggers Netty's class-load, guarantees the event classes are
+    // never touched. We do not use Netty's JFR pool telemetry, so this is a pure no-op for behaviour.
+    if (System.getProperty("io.netty.jfr.enabled") == null) System.setProperty("io.netty.jfr.enabled", "false")
+
     val configFile = File(System.getenv("PLATFORM_CONFIG") ?: "platform.config.json")
     val gitRoot = File(System.getenv("PLATFORM_GIT_ROOT") ?: ".cyppie")
     val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
