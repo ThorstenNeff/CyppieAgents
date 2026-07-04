@@ -38,6 +38,9 @@ data class NewAgentSpec(
      * stays `token→agentId` — there is NO client-supplied agentId/role anywhere.
      */
     val remote: Boolean = false,
+    /** CYP-210 — optional per-agent display colour (nullable hex string seam; see [Agent.color]). null =
+     *  no override (the client derives a default). Final hex-vs-slot shape settled with CYP-209. */
+    val color: String? = null,
 )
 
 /**
@@ -55,15 +58,20 @@ data class CreatedAgent(val agent: Agent, val token: String? = null)
 data class ConnectorChoice(val connectorKind: ConnectorKind)
 
 /**
- * Editable agent config (CYP-88 / PUT /api/agents/{id}). id and worktree are identity/path-defining and
- * intentionally absent. **Omitted/blank `persona`/`launch` PRESERVE the stored value** (no blank→null
- * clear — PO-confirmed, data-safety footgun closed); deliberate clearing is a separate future ticket.
+ * Editable agent config (CYP-88 / PUT /api/agents/{id}). **`id` and `worktree` are identity/path-defining
+ * and intentionally absent (id is IMMUTABLE).** **Omitted/blank `name`/`persona`/`launch`/`color` PRESERVE
+ * the stored value** (no blank→null clear — PO-confirmed, data-safety footgun closed); deliberate clearing
+ * is a separate future ticket. CYP-210 added editable display `name` (was deliberately omitted) + `color`.
  */
 @Serializable
 data class AgentEdit(
     val role: Role,
     val persona: String? = null,
     val launch: String? = null,
+    /** CYP-210 — editable display name (blank/omitted → PRESERVE). The agent `id` stays immutable. */
+    val name: String? = null,
+    /** CYP-210 — editable display colour (blank/omitted → PRESERVE; see [Agent.color]). */
+    val color: String? = null,
 )
 
 /** Worktree fate on removal (CYP-87). [KEEP] is the safe default; [DELETE] is the warned, destructive path. */
@@ -82,4 +90,6 @@ data class AgentDetail(
     val worktree: String,
     val launch: String,
     val persona: String? = null,
+    /** CYP-210 — the stored display colour, so the edit dialog prefills it (see [Agent.color]). */
+    val color: String? = null,
 )

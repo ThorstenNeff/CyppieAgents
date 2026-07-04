@@ -74,6 +74,15 @@ data class Agent(
      * **provider-agnostic**. Not a secret / not operator-gated — same public exposure as the rest of this DTO.
      */
     val provider: ProviderInfo? = null,
+    /**
+     * CYP-208 / CYP-210 — per-agent display colour for UI theming (window chrome / title bar), carried on
+     * the list [Agent] so the client themes without an extra call. **Seam shape = nullable hex string** (e.g.
+     * `"#3B82F6"`); the final derivation (hex vs palette-slot / [`ColorSlot`]) is settled by the UIUX spec
+     * (CYP-209) — this stays a nullable String so a slot id or a hex both fit and older payloads decode.
+     * `null` = no override → the client derives a default (slot from the agent id). Not a secret, not
+     * operator-gated — same public exposure as the rest of this DTO.
+     */
+    val color: String? = null,
 )
 
 /**

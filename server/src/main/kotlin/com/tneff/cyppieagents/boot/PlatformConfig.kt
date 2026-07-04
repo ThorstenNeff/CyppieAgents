@@ -163,6 +163,12 @@ data class AgentConfig(
      * configs load unchanged; `launch` is ignored for a remote agent (it spawns its own CC in user infra).
      */
     val remote: Boolean = false,
+    /**
+     * CYP-210 — optional per-agent display colour (nullable hex-string seam; see [com.tneff.cyppieagents.model.Agent.color]).
+     * The `platform.config.json` **seed**; the `.cyppie/agent-overrides.json` overlay OVERRIDES it at boot
+     * (operator edits win over the file seed, per-field). Defaulted so existing configs load unchanged.
+     */
+    val color: String? = null,
 ) {
     /** Effective worktree folder name (falls back to the id when unset). */
     val worktreeName: String get() = worktree.ifBlank { id }
