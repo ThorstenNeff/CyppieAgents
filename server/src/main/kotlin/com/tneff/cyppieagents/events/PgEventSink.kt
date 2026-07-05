@@ -130,16 +130,22 @@ class PgEventSink(
     }
 
     override fun importRows(rows: List<ByteArray>) {
+        var maxSeq = 0L
         tx { c ->
             c.prepareStatement("DELETE FROM events").use { it.executeUpdate() }
             c.prepareStatement(INSERT_SQL).use { ps ->
                 for (row in rows) {
                     val e = CommJson.decodeFromString(Event.serializer(), MigrationRowCodec.decode(row).first())
                     bind(ps, e); ps.addBatch()
+                    if (e.seq > maxSeq) maxSeq = e.seq
                 }
                 ps.executeBatch()
             }
         }
+        // Resync the in-process seq stamper above the imported history (mirrors PgAgentEventStore's identity
+        // setval realign; the same resume the ctor does from MAX(seq)). WITHOUT this, the next append restamps a
+        // seq already in the imported history → PK collision / silent sub-history writes after a migration.
+        time.resumeAtLeast(maxSeq)
     }
 
     override fun close() {}

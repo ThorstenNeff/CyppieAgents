@@ -112,6 +112,21 @@ class PgEventStoresTest {
         assertEquals(appended, sink.query(EventFilter(projectId = "p"), Page(null, 1000)).events, "export→import preserves rows exactly")
     } }
 
+    @Test fun eventLog_importResyncsSeqCounterAboveImportedMax() = EmbeddedPostgres.start().use { pg -> runBlocking<Unit> {
+        // Realistic cross-DB migration: a FRESH sink (TimeSource counter at 0) imports a stream whose seqs
+        // (100..102) are AHEAD of its counter. importRows must resumeAtLeast(maxImported), else the next append
+        // restamps a seq already imported → PK collision (BatchUpdateException) / silent sub-history writes.
+        val sink = PgEventSink(pg.postgresDatabase, FixedTimeSource(), Random(5))
+        val rows = (100L..102L).map { seq ->
+            val e = Event(id = "id$seq", ts = 1_000L, seq = seq, agentId = "a1", projectId = "p", type = EventType.TURN_START, severity = Severity.INFO)
+            MigrationRowCodec.encode(listOf(CommJson.encodeToString(Event.serializer(), e)))
+        }
+        sink.importRows(rows)
+        assertEquals(listOf(100L, 101L, 102L), sink.query(EventFilter(projectId = "p"), Page(null, 100)).events.map { it.seq }, "imported seqs preserved")
+        // the next append must land ABOVE the imported max (no throw, no sub-history seq)
+        assertEquals(103L, sink.appendBatch(drafts(1)).single().seq, "seq resumed above the imported max (no PK collision)")
+    } }
+
     @Test fun eventLog_routing_and_migrationWindow() = EmbeddedPostgres.start().use { pg -> runBlocking<Unit> {
         val dsns = dsnRegistryFor(pg.port)
         val dbFile = Files.createTempFile("evroute", ".db")
