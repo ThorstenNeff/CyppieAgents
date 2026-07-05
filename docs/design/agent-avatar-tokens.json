@@ -108,13 +108,15 @@
     "reuse": "TonedHint/Panel-Bausteine — kein neues Fenster-System."
   },
   "upload_constraints": {
-    "formats_allowed": ["png", "jpg", "jpeg", "webp"],
-    "format_forbidden": ["svg", "*andere*"],
-    "validation": "Client-Vorpruefung (Typ + grobe Groesse) NUR Hinweis; Server autoritativ (Magic-Bytes, nicht Extension; kein SVG; Groessen-/Dimensions-Limit), fail-closed.",
+    "formats_allowed": ["png", "jpg", "jpeg"],
+    "format_forbidden_security": ["svg"],
+    "formats_unsupported": ["webp"],
+    "formats_note": "Zwei verschiedene Gruende, beide ehrlich gespiegelt: svg = SECURITY-verboten (Script-/XSS-Vektor); webp = schlicht NICHT unterstuetzt (Backend/CYP-215 ohne nativen WebP-Decoder -> bewusst kleinere Angriffsflaeche). UI-Texte (agent_avatar_upload_type_error / a11y_agent_avatar_upload) nennen daher NUR PNG/JPG -> kein Format versprechen, das der Server ablehnt.",
+    "validation": "Client-Vorpruefung (Typ + grobe Groesse) NUR Hinweis; Server autoritativ (Magic-Bytes, nicht Extension; nur png/jpg; kein SVG; kein WebP; Groessen-/Dimensions-Limit), fail-closed.",
     "processing": "server: downsize + center-crop-square (autoritativ, MVP). Client-Reposition-Crop = Zukunft (bestaetigt).",
     "max_size": "Backend setzt das autoritative Limit (%1$s in agent_avatar_upload_size_error); UI zeigt es.",
     "errors": {
-      "type": "agent_avatar_upload_type_error (ERROR) — 'Nur PNG, JPG oder WebP – kein SVG'",
+      "type": "agent_avatar_upload_type_error (ERROR) — 'Nur PNG oder JPG – kein SVG'",
       "size": "agent_avatar_upload_size_error (ERROR)",
       "generic": "agent_avatar_upload_generic_error (ERROR)"
     }
