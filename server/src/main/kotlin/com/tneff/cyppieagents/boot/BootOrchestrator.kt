@@ -434,7 +434,7 @@ class BootOrchestrator(
         // S13 / CYP-91: the multi-project registry (seeded with the boot project) + the cascade deleter
         // composing the strictly-projectId-scoped teardown primitives — operator-gated at /api/projects.
         val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
-        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs)
+        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides)
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,

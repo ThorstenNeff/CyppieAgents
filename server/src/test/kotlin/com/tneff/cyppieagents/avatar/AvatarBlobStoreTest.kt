@@ -27,7 +27,12 @@ class AvatarBlobStoreTest {
     }
 
     @Test fun traversalKeys_areRejected_neverEscapeTheRoot() {
-        val root = Files.createTempDirectory("avatarblob-trav").toFile()
+        // HERMETIC: an EXCLUSIVELY-ours sandbox is the store's PARENT, so the "did anything escape the root?"
+        // scan inspects only what THIS test controls — never shared /tmp (which, if dirty with a pre-existing
+        // /tmp/etc, false-REDs the scan; Test's CYP-215 finding). The sandbox starts empty; the only entry
+        // under it must remain `root` itself.
+        val sandbox = Files.createTempDirectory("avatarblob-trav").toFile()
+        val root = java.io.File(sandbox, "avatars").apply { mkdirs() }
         val store = AvatarBlobStore(root)
         val hostile = listOf("../../etc/passwd", "..", ".", "a/b", "a\\b", "", "x/../../y")
         for (bad in hostile) {
@@ -36,10 +41,10 @@ class AvatarBlobStoreTest {
             assertFalse(store.delete("default", bad), "delete must reject hostile agentId '$bad'")
             assertFalse(store.write(bad, "backend", png), "write must reject hostile projectId '$bad'")
         }
-        // Nothing escaped: the ONLY thing under the temp root is (at most) the project dir — never `etc`, `passwd`, …
-        val leaked = root.parentFile.listFiles { f -> f.name == "etc" || f.name == "passwd" || f.name == "y" }
-        assertTrue(leaked == null || leaked.isEmpty(), "a hostile key escaped the root: ${leaked?.joinToString { it.path }}")
-        assertTrue(root.walkTopDown().none { it.name == "passwd" }, "a traversal wrote inside the tree")
+        // Nothing escaped: the ONLY filesystem entry under our exclusive sandbox is `root` itself — no hostile
+        // key created a file/dir anywhere (above, beside, or inside the root).
+        val escaped = sandbox.walkTopDown().filter { it != sandbox && it != root }.toList()
+        assertTrue(escaped.isEmpty(), "a hostile key created something outside the store root: ${escaped.joinToString { it.path }}")
     }
 
     @Test fun perProjectIsolation_andCascadeDelete() {
