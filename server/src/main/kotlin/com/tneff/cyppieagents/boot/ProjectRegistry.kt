@@ -24,6 +24,19 @@ private data class RegistrySnapshot(
 )
 
 /**
+ * The single source for the [ProjectGuard] code → HTTP-exception mapping — shared by every [ProjectRegistry]
+ * impl (File + PG) so the 4xx contract can't drift between backends (CLAUDE.md: single-source derived values).
+ */
+internal fun projectGuardException(code: String): Exception = when (code) {
+    "invalid_project_id" -> BadRequestException("invalid project id", code = "invalid_project_id")
+    "project_exists" -> ConflictException("a project with this id already exists", code = "project_exists")
+    "project_not_found" -> NotFoundException("project not found", code = "project_not_found")
+    "last_project" -> ConflictException("cannot delete the last project", code = "last_project")
+    "active_project_protected" -> ConflictException("cannot delete the active project; switch away first", code = "active_project_protected")
+    else -> BadRequestException(code, code = code)
+}
+
+/**
  * The multi-project registry (S13 / CYP-91 — "die Eins auf N aufmachen"): the persisted set of N
  * projects plus the active-project pointer, seeded from the boot `config.projectId` so a single-project
  * MVP install upgrades to N transparently.
@@ -163,14 +176,7 @@ class FileProjectRegistry(
         removed
     }
 
-    private fun codeToException(code: String): Exception = when (code) {
-        "invalid_project_id" -> BadRequestException("invalid project id", code = "invalid_project_id")
-        "project_exists" -> ConflictException("a project with this id already exists", code = "project_exists")
-        "project_not_found" -> NotFoundException("project not found", code = "project_not_found")
-        "last_project" -> ConflictException("cannot delete the last project", code = "last_project")
-        "active_project_protected" -> ConflictException("cannot delete the active project; switch away first", code = "active_project_protected")
-        else -> BadRequestException(code, code = code)
-    }
+    private fun codeToException(code: String): Exception = projectGuardException(code)
 
     // ---- persistence (atomic 0600; mirrors ProjectConfigStore) ----
 

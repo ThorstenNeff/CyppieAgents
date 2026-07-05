@@ -69,6 +69,11 @@ dependencies {
     // hands per bound store; one HikariDataSource per DSN instance). No store is wired to a pool yet.
     implementation(libs.hikaricp)
     implementation(libs.postgresql)
+    // CYP-220 Phase 3: Flyway migrates each bound Postgres instance's schema (per-datasource, baselineOnMigrate).
+    implementation(libs.flyway.core)
+    implementation(libs.flyway.postgresql)
+    // Phase 3 tests: a real embedded Postgres binary in-process (no Docker) to prove the PG store end-to-end.
+    testImplementation(libs.zonky.embeddedPostgres)
     // CYP-178: an HTTP client to validate Kratos sessions (GET /sessions/whoami).
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.clientCio)
