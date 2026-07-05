@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.boot
 
+import com.tneff.cyppieagents.comm.ChannelShareStore
+import com.tneff.cyppieagents.comm.PgChannelShareStore
 import com.tneff.cyppieagents.crypto.SecretCipher
 import com.tneff.cyppieagents.db.BindingRegistry
 import com.tneff.cyppieagents.db.BindingState
@@ -81,5 +83,29 @@ object PgStoreRouting {
         if (inMigrationWindow("project_config", projectId, bindings)) return MigrationGatedProjectConfigStore(fileFallback())
         return activeDataSource("project_config", projectId, bindings, connections)
             ?.let { PgProjectConfigStore(it, cipher, fallbackRepo, secrets) } ?: fileFallback()
+    }
+
+    // ---- S4: non-secret user-DB-capable stores (no cipher) ----
+
+    fun agentOverrideStore(
+        projectId: String,
+        bindings: BindingRegistry,
+        connections: ConnectionProvider,
+        fileFallback: () -> AgentOverrideStore,
+    ): AgentOverrideStore {
+        if (inMigrationWindow("agent_override", projectId, bindings)) return MigrationGatedAgentOverrideStore(fileFallback())
+        return activeDataSource("agent_override", projectId, bindings, connections)
+            ?.let { PgAgentOverrideStore(it) } ?: fileFallback()
+    }
+
+    fun channelShareStore(
+        projectId: String,
+        bindings: BindingRegistry,
+        connections: ConnectionProvider,
+        fileFallback: () -> ChannelShareStore,
+    ): ChannelShareStore {
+        if (inMigrationWindow("channel_share", projectId, bindings)) return MigrationGatedChannelShareStore(fileFallback())
+        return activeDataSource("channel_share", projectId, bindings, connections)
+            ?.let { PgChannelShareStore(it) } ?: fileFallback()
     }
 }
