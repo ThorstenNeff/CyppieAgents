@@ -161,6 +161,19 @@ class HubState(
     }
 
     /**
+     * CYP-215 — set (or, with `avatar = null`, CLEAR) an agent's avatar on the in-memory list. Pure display
+     * field → NO topology/ACL/matrix impact (same as [editAgent]). Unlike name/color this is a DIRECT set
+     * (null genuinely clears — the avatar has an explicit clear path), mirroring [AgentOverrideStore.setAvatar]
+     * so the in-memory list and the durable overlay stay in parity. Returns the updated agent, or null if unknown.
+     */
+    fun setAvatar(id: String, avatar: com.tneff.cyppieagents.model.AgentAvatar?): Agent? = synchronized(lock) {
+        val cur = agents.firstOrNull { it.id == id } ?: return@synchronized null
+        val next = cur.copy(avatar = avatar)
+        agents = agents.map { if (it.id == id) next else it }
+        next
+    }
+
+    /**
      * Register a new agent at runtime (CYP-97) and, for a WORKER, add its hub-and-spoke spoke
      * `po-<id>` with the SAME shape the boot factory builds: members `[po, <id>, operator?]`, all
      * read+write, **stamped with [activeProjectId]** (no cross-project leak), and rebuild the matrix.

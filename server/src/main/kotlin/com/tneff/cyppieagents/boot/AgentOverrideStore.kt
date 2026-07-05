@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.model.AgentAvatar
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -18,6 +19,13 @@ data class AgentOverride(
     val color: String? = null,
     val persona: String? = null,
     val launch: String? = null,
+    /**
+     * CYP-215 — the per-agent avatar override (Preset or the server-minted Upload `ref`). Set/cleared via
+     * [AgentOverrideStore.setAvatar] (NOT the string-merge [AgentOverrideStore.put], which preserves it) —
+     * because unlike the string fields the avatar has an explicit CLEAR path (`DELETE .../avatar`). `null`
+     * = no override → the client's default. Serialized polymorphically (`{"type":"preset"|"upload",…}`).
+     */
+    val avatar: AgentAvatar? = null,
 )
 
 /**
@@ -58,6 +66,21 @@ class AgentOverrideStore(private val file: File?) {
                 persona = persona?.ifBlank { null } ?: cur.persona,
                 launch = launch?.ifBlank { null } ?: cur.launch,
             )
+            byProject.getOrPut(projectId) { HashMap() }[agentId] = next
+            persist()
+            next
+        }
+
+    /**
+     * CYP-215 — set (or, with `avatar = null`, CLEAR) an agent's avatar override, preserving the other
+     * fields. Distinct from [put]'s blank→preserve rule because the avatar has an explicit clear path
+     * (`DELETE .../avatar`): here `null` genuinely clears. Used by the multipart upload (Upload ref), the
+     * preset-set edit (Preset), and the clear endpoint (null). Returns the merged override.
+     */
+    fun setAvatar(projectId: String, agentId: String, avatar: AgentAvatar?): AgentOverride =
+        synchronized(lock) {
+            val cur = byProject.getOrPut(projectId) { HashMap() }[agentId] ?: AgentOverride()
+            val next = cur.copy(avatar = avatar)
             byProject.getOrPut(projectId) { HashMap() }[agentId] = next
             persist()
             next
