@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,8 +25,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.comm.AgentAvatar
 import com.tneff.cyppieagents.comm.SenderPalette
-import com.tneff.cyppieagents.comm.initialsOf
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
@@ -139,11 +138,10 @@ private fun TriageCells(event: Event, qualifierTag: String, byIdTag: String) {
 @Composable
 private fun IdentityCells(event: Event, showProject: Boolean, projectTag: String?) {
     val identity = SenderPalette.forSender(event.agentId)
-    // Identity: avatar initials + name (CYP-14 hue), never status (§1).
-    Box(
-        modifier = Modifier.size(22.dp).clip(CircleShape).background(identity.avatarFill),
-        contentAlignment = Alignment.Center,
-    ) { Text(initialsOf(event.agentId), color = identity.onAvatar, style = MaterialTheme.typography.labelSmall) }
+    // Identity: the shared AgentAvatar (CYP-216) — initials + CYP-14 hue + CYP-209 ring, never status (§1). The
+    // event stream carries only the agentId (no Agent/custom colour) → slot default; honouring a custom colour here
+    // is a follow-up (needs the agent colour map threaded into the log). Name accent stays the CYP-14 slot tint.
+    AgentAvatar(id = event.agentId, size = 22.dp)
     Text(event.agentId, color = identity.nameAccent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
     // Correlation chip — truncated correlationId; absent → "—", never guessed (§4).
     Text(
