@@ -407,4 +407,27 @@
     <string name="workspace_operator_only">Nur der Operator kann das ändern</string>
     <string name="a11y_workspace_role">Deine Rolle: %1$s</string>
     <string name="a11y_workspace_members">Mitgliederliste</string>
+    <!-- CYP-216 / Per-Agent-Avatar-Picker (keys: docs/design/agent-avatar-keys.md, CYP-214). Parität mit values-en/. -->
+    <string name="agent_avatar_section">Avatar</string>
+    <string name="agent_avatar_preset_label">Vorlagen</string>
+    <string name="agent_avatar_upload">Bild hochladen</string>
+    <string name="agent_avatar_shuffle">Variante</string>
+    <string name="agent_avatar_remove">Entfernen</string>
+    <string name="agent_avatar_crop_hint">Wird mittig quadratisch zugeschnitten</string>
+    <string name="agent_avatar_style_bottts">Roboter</string>
+    <string name="agent_avatar_style_avataaars">Charaktere</string>
+    <string name="agent_avatar_style_adventurer">Abenteurer</string>
+    <string name="agent_avatar_style_big_smile">Frohe Gesichter</string>
+    <string name="agent_avatar_style_fun_emoji">Emojis</string>
+    <string name="agent_avatar_credits">Bild-Vorlagen · Credits</string>
+    <string name="agent_avatar_credit_line">%1$s von %2$s — %3$s</string>
+    <string name="agent_avatar_credit_modified">bearbeitet</string>
+    <string name="agent_avatar_upload_type_error">Nur PNG oder JPG – kein SVG</string>
+    <string name="agent_avatar_upload_size_error">Bild zu groß (max %1$s)</string>
+    <string name="agent_avatar_upload_generic_error">Upload fehlgeschlagen – erneut versuchen</string>
+    <string name="a11y_agent_avatar_preset">Avatar-Vorlage %1$s</string>
+    <string name="a11y_agent_avatar_upload">Bild hochladen (PNG oder JPG)</string>
+    <string name="a11y_agent_avatar_current">Aktueller Avatar: %1$s</string>
+    <string name="a11y_agent_avatar_remove">Avatar entfernen</string>
+    <string name="a11y_agent_avatar_credits">Lizenz-Credits der Bild-Vorlagen</string>
 </resources>

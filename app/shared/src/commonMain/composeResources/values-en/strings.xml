@@ -402,4 +402,27 @@
     <string name="workspace_operator_only">Only the operator can change this</string>
     <string name="a11y_workspace_role">Your role: %1$s</string>
     <string name="a11y_workspace_members">Member list</string>
+    <!-- CYP-216 / Per-Agent-Avatar-Picker (keys: docs/design/agent-avatar-keys.md, CYP-214). Parity with values/. -->
+    <string name="agent_avatar_section">Avatar</string>
+    <string name="agent_avatar_preset_label">Presets</string>
+    <string name="agent_avatar_upload">Upload image</string>
+    <string name="agent_avatar_shuffle">Shuffle</string>
+    <string name="agent_avatar_remove">Remove</string>
+    <string name="agent_avatar_crop_hint">Cropped to a centered square</string>
+    <string name="agent_avatar_style_bottts">Robots</string>
+    <string name="agent_avatar_style_avataaars">Characters</string>
+    <string name="agent_avatar_style_adventurer">Adventurers</string>
+    <string name="agent_avatar_style_big_smile">Happy Faces</string>
+    <string name="agent_avatar_style_fun_emoji">Emojis</string>
+    <string name="agent_avatar_credits">Avatar presets · Credits</string>
+    <string name="agent_avatar_credit_line">%1$s by %2$s — %3$s</string>
+    <string name="agent_avatar_credit_modified">modified</string>
+    <string name="agent_avatar_upload_type_error">Only PNG or JPG – no SVG</string>
+    <string name="agent_avatar_upload_size_error">Image too large (max %1$s)</string>
+    <string name="agent_avatar_upload_generic_error">Upload failed – try again</string>
+    <string name="a11y_agent_avatar_preset">Avatar preset %1$s</string>
+    <string name="a11y_agent_avatar_upload">Upload image (PNG or JPG)</string>
+    <string name="a11y_agent_avatar_current">Current avatar: %1$s</string>
+    <string name="a11y_agent_avatar_remove">Remove avatar</string>
+    <string name="a11y_agent_avatar_credits">Avatar preset license credits</string>
 </resources>

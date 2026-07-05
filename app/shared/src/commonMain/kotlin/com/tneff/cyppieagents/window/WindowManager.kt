@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
 import com.tneff.cyppieagents.testing.testTagA11y
+import com.tneff.cyppieagents.ui.TitleBarColors
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -594,14 +595,3 @@ fun FloatingWindow(
         }
     }
 }
-
-/**
- * CYP-211 — the derived titlebar colours for a window (agent identity theming, §6). [background]/[content]/[border]
- * come from the shared `:core` `deriveScheme` (WCAG-safe: content ≥ 4.5:1, border ≥ 3:1). The window package stays
- * decoupled from `comm.SenderColor`: the shell maps its resolved colour into this small chrome type.
- */
-data class TitleBarColors(
-    val background: Color,
-    val content: Color,
-    val border: Color,
-)
