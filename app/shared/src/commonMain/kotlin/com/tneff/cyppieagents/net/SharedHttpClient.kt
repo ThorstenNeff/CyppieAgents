@@ -47,6 +47,20 @@ fun sharedWsHttpClient(sessionToken: () -> String? = { null }): HttpClient {
 }
 
 /**
+ * CYP-243 — web bootstrap ordering seam. Runs [installSameOriginCredentials] SYNCHRONOUSLY, THEN [startUi]. Called
+ * from the web entry point (`main.kt`) **before** `ComposeViewport`, so `window.fetch` is patched before ANY Ktor
+ * client is created — including the **pre-shell auth-probe client** (`buildLiveAuthRepository` → `GET /api/auth/me`
+ * from `AuthViewModel.init`), which today fires UNWRAPPED (install lived only in [sharedWsHttpClient], reached at
+ * shell-mount). The shell's own [installSameOriginCredentials] call stays as an idempotent (CYP-238 `__cyppieCredsPatched`
+ * guard) belt-and-suspenders. Pure ordering: install first, then start — the one non-vacuous, testable invariant of
+ * an otherwise untestable `main()` (see `WebBootstrapTest`). No-op wrapper on native (install is a no-op there).
+ */
+fun installCredentialsThenStart(startUi: () -> Unit) {
+    installSameOriginCredentials()
+    startUi()
+}
+
+/**
  * CYP-229/231 — a ONE-TIME, idempotent wrapper over the browser `window.fetch` that hardens **same-origin** requests
  * (cross-origin fetches are untouched — the same-origin guard is the security boundary). Ktor's JS/Wasm engine uses
  * `fetch` and exposes no config for either concern:
