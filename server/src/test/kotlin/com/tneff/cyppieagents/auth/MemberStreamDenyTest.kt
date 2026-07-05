@@ -27,7 +27,7 @@ class MemberStreamDenyTest {
     @Test
     fun memberSession_cannotOpenAgentStream_failClosed() = testApplication {
         val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
-        application { installAgentSocket(ConnectorSessions(), authorize = tokenAuthorize(registry)) }
+        application { installAgentSocket(ConnectorSessions(), authorize = tokenAuthorize(registry, AuthDeps(registry))) }
         val client = createClient { install(ClientWebSockets) }
 
         // A human MEMBER carries a valid Kratos session header — but NO operator/agent token. The stream gate

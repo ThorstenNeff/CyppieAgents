@@ -71,6 +71,40 @@ class SessionReadonlyWsTest {
         }
     }
 
+    /** true = admitted (authorize passed — not closed VIOLATED_POLICY); optional session token + query token. */
+    private suspend fun ApplicationTestBuilder.wsAdmitted(path: String, sessionToken: String? = null): Boolean {
+        val wsClient = createClient { install(ClientWebSockets) }
+        return try {
+            var rejected = false
+            wsClient.webSocket(path, request = { if (sessionToken != null) header("X-Session-Token", sessionToken) }) {
+                val reason = withTimeoutOrNull(1_500) { closeReason.await() }
+                rejected = reason?.code == CloseReason.Codes.VIOLATED_POLICY.code
+            }
+            !rejected
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    @Test
+    fun cyp230_operatorSessionAdmitted_memberAndInvalidTokenRejected_onWsAgent() = testApplication {
+        // CYP-196: OPERATOR is granted ONLY to the pinned bootstrap identity — pin alice-op so she is a real OPERATOR.
+        val db = Files.createTempFile("cyp230-ws", ".db"); val store = SqliteRoleStore(db, bootstrapOperatorId = "alice-op")
+        application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
+        startApplication()
+        bootstrapOperatorThenMember() // alice → OPERATOR, carol → MEMBER
+
+        // CYP-230: the tokenless public SPA's verified OPERATOR session opens /ws/agent (the same-origin cookie
+        // path — no agent secret ships to the public client).
+        assertTrue(wsAdmitted("/ws/agent?agentId=backend", sessionToken = "sess-alice"), "OPERATOR session must open /ws/agent")
+        // A verified MEMBER session must NOT (only an operator watches another agent's stream).
+        assertFalse(wsAdmitted("/ws/agent?agentId=backend", sessionToken = "sess-carol"), "MEMBER session must not open /ws/agent")
+        // The pre-fix public-SPA failure: a dev-placeholder/invalid token with NO session → 1008 (VIOLATED_POLICY).
+        assertFalse(wsAdmitted("/ws/agent?agentId=backend&token=dev-token-bogus"), "invalid token + no session must be rejected")
+
+        store.close(); Files.deleteIfExists(db)
+    }
+
     @Test
     fun memberSession_admittedOnReadWs_rejectedOnMachineWs() = testApplication {
         val db = Files.createTempFile("cyp188b-ws", ".db"); val store = SqliteRoleStore(db)
