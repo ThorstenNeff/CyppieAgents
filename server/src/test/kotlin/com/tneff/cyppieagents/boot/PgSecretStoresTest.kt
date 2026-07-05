@@ -15,6 +15,8 @@ import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -140,6 +142,28 @@ class PgSecretStoresTest {
             val store = PgStoreRouting.remoteTokenStore("default", bound, cp, c) { FileRemoteTokenStore(null) }
             assertTrue(store is PgRemoteTokenStore, "bound+ACTIVE → Postgres")
             store.put("x", "tok-routed-to-pg-1"); assertEquals("tok-routed-to-pg-1", store.all()["x"])
+        }
+    }
+
+    @Test fun routing_mustStayHomeStore_neverRoutesToPg_evenBoundActive() = EmbeddedPostgres.start().use { pg ->
+        // FAIL-CLOSED residency enforcement (P6-S2 finding): even if a MUST_STAY_HOME store is bound + ACTIVE
+        // (metadata), the placement point must REFUSE a user-DB route — never Pg. Guard-out mutation → RED.
+        val mk = SecretCipherFactory.newBoxKeyset()
+        val c = cipher(mk)
+        val dsns = DsnRegistry(null, c).apply {
+            put(DsnDescriptor("pg1", "local", "localhost", pg.port, "postgres", "postgres", sslMode = "disable", tierOrigin = DsnTierOrigin.AIVEN_MANAGED, createdBy = "op", createdAt = 1L), "pw")
+        }
+        val bindings = BindingRegistry(null).apply {
+            // a bootstrap store bound + ACTIVE to a user DB (the leak P6-S1 classifies against)
+            bind("dsn_registry", "default", "pg1"); setState("dsn_registry", "default", BindingState.ACTIVE)
+            // and a genuinely offloadable store, also bound + ACTIVE
+            bind("remote_token", "default", "pg1"); setState("remote_token", "default", BindingState.ACTIVE)
+        }
+        ConnectionProvider(dsns, bindings, maxPoolSize = 2).use { cp ->
+            assertNull(PgStoreRouting.activeDataSource("dsn_registry", "default", bindings, cp), "MUST_STAY_HOME never routes to a user DB, even bound+ACTIVE")
+            // non-vacuous: the guard is residency-specific, not a blanket null — a capable store DOES route to Pg
+            assertNotNull(PgStoreRouting.activeDataSource("remote_token", "default", bindings, cp))
+            Unit
         }
     }
 }

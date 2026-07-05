@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.crypto.SecretCipher
 import com.tneff.cyppieagents.db.BindingRegistry
 import com.tneff.cyppieagents.db.BindingState
 import com.tneff.cyppieagents.db.ConnectionProvider
+import com.tneff.cyppieagents.tier.StoreResidencies
 import javax.sql.DataSource
 
 /**
@@ -15,16 +16,25 @@ import javax.sql.DataSource
  */
 object PgStoreRouting {
 
-    /** The live Postgres [DataSource] for a store iff it is bound+ACTIVE and a pool resolves; else null → File. */
+    /**
+     * The live Postgres [DataSource] for a store iff it is bound+ACTIVE and a pool resolves; else null → File.
+     *
+     * **FAIL-CLOSED residency enforcement (P6-S2 finding):** a `MUST_STAY_HOME` store (roles/account/dsn_registry/
+     * …) **NEVER** gets a user-DB route, **regardless of binding state** — the P6-S1 classification is enforced
+     * HERE, at the single data-path placement point, so it is not a paper promise. (Latent today — no prod bind
+     * path yet — but fail-closed by construction before the live-bind wiring lands.)
+     */
     fun activeDataSource(
         storeKey: String,
         projectId: String,
         bindings: BindingRegistry,
         connections: ConnectionProvider,
-    ): DataSource? =
-        bindings.binding(storeKey, projectId)
+    ): DataSource? {
+        if (!StoreResidencies.isUserDbCapable(storeKey)) return null // MUST_STAY_HOME → never a user DB
+        return bindings.binding(storeKey, projectId)
             ?.takeIf { it.state == BindingState.ACTIVE }
             ?.let { connections.forStore(storeKey, projectId) }
+    }
 
     fun remoteTokenStore(
         projectId: String,
