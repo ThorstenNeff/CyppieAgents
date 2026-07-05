@@ -25,7 +25,9 @@ import io.ktor.server.routing.route
  * Routes (granularity = per channel, §6.1):
  *  - `GET    /api/channels/{id}/share` → [ChannelShareView] (disclosure: shared? + sharedAt + reachable
  *    agents). **Read-tier** (CYP-242): an agent/operator token OR a verified human OPERATOR/MEMBER session —
- *    the badge/status is read-only disclosure, not a secret, and the tokenless SPA must render it.
+ *    the badge/status is read-only disclosure, not a secret, and the tokenless SPA must render it. **Scoped
+ *    per-channel** (CYP-244): gated on [AclMatrix.canRead] for the resolved caller — the un-scoped view leaked
+ *    every channel's reachable-agent topology to any read-tier member; a non-reader is a uniform 403.
  *  - `PUT    /api/channels/{id}/share` `AuthorizeShareRequest{sharedWith}` → set the directed share.
  *  - `DELETE /api/channels/{id}/share` → revoke (the gate closes → immediate fail-closed).
  *
@@ -45,11 +47,17 @@ fun Route.channelShareRoutes(
         get {
             // CYP-242: read-tier gate (token OR verified human OPERATOR/MEMBER session) — the tokenless public
             // SPA must load the share badge/status via its same-origin Kratos cookie; token-only
-            // requireParticipant → constant 401 (never self-heals) exactly like CYP-230/232. Read-only
-            // disclosure (shared? + sharedAt + reached agents), not a secret; the write authz is unchanged
-            // (PUT/DELETE stay OPERATOR-gated under the authenticatedApi group below).
-            call.requireCommReader(deps, tokens)
+            // requireParticipant → constant 401 (never self-heals) exactly like CYP-230/232.
+            val participant = call.requireCommReader(deps, tokens)
             val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+            // CYP-244: scope the disclosure to the caller's per-channel ACL read. `shareView` was un-scoped, so
+            // any read-tier caller (on the public app, ANY verified member) could read `reachableScope` — the
+            // cross-project reached-agent topology — for ANY channel id. Gate on the SAME [AclMatrix.canRead] as
+            // every other comm read (single chokepoint, no drift): OPERATOR_ID is a spoke member with canRead=true
+            // so the operator keeps read on its channels (CYP-242 intact — the Auftraggeber still reads po-*); a
+            // token-agent reads only its own channels; a non-canRead member is denied. Uniform 403 for a
+            // non-readable OR non-existent channel — no channel-existence tell (the CYP-188 chokepoint posture).
+            if (!state.acl.canRead(id, participant)) throw ForbiddenException("not a reader of this channel")
             call.respond(shareView(state, shares, id))
         }
         // CYP-178: the owner authorization mutations are gated STRUCTURALLY under the group — only the
