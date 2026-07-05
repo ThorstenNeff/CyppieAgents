@@ -10,6 +10,18 @@ group = "com.tneff.cyppieagents"
 version = "1.0.0"
 application {
     mainClass = "com.tneff.cyppieagents.ApplicationKt"
+    // CYP-225: disable Netty 4.2's JFR buffer telemetry via a JVM LAUNCH ARG, not only the in-code
+    // System.setProperty in Application.main (CYP-206). Root cause of the persistent NoClassDefFoundError
+    // FreeChunkEvent: `PlatformDependent.JFR` is a `static final` computed in `<clinit>` (cached at class-load)
+    // and the emit sites guard `new FreeChunkEvent` with `isJfrEnabled()`; the in-code setProperty only takes
+    // effect if it runs BEFORE PlatformDependent is class-initialized — which the deploy runtime does not
+    // guarantee, so JFR cached `true` and the fix was a no-op (symptom identical to pre-fix). A launch arg is
+    // applied before ANY class loads → `<clinit>` always caches JFR=false → FreeChunkEvent (extends
+    // jdk.jfr.Event; NoClassDefFoundError on a stripped/quirky jdk.jfr JVM) is never referenced. Covers the
+    // generated distribution start scripts + `:server:run`. (NOT a netty version/transitive issue — single
+    // 4.2.13.Final; the in-code guard stays as belt-and-suspenders.) The deploy launch must carry the same arg
+    // if it does not use the generated start script (java -jar / custom command) — flagged to deploy.
+    applicationDefaultJvmArgs = listOf("-Dio.netty.jfr.enabled=false")
 }
 
 // CYP-157 (onboarding): the application plugin's `run` task otherwise uses the module dir as its
