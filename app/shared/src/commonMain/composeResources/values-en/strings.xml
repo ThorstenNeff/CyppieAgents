@@ -447,4 +447,7 @@
     <string name="a11y_agent_avatar_current">Current avatar: %1$s</string>
     <string name="a11y_agent_avatar_remove">Remove avatar</string>
     <string name="a11y_agent_avatar_credits">Avatar preset license credits</string>
+    <!-- CYP-241: window state (titlebar double-click Expand/Restore). Honest: "enlarged & centered", not "everything visible". -->
+    <string name="window_state_expanded">Enlarged and centered</string>
+    <string name="window_state_normal">Normal size</string>
 </resources>
