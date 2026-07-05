@@ -12,6 +12,11 @@ import kotlinx.serialization.Serializable
  * of an agent is [Agent] itself — there is nothing to strip.
  */
 
+// CYP-217: `@Serializable` gives a COMPILE-TIME serializer on every target. Without it, direct
+// `encodeToString(Role)`/`decodeFromString<Role>` fell back to runtime reflection — fine on jvm/android but
+// throwing `SerializationException` on js/wasmJs (no reflection). The `@SerialName`s below were already
+// present (they equal the constant names → wire format is unchanged, no DTO regress).
+@Serializable
 enum class Role {
     @SerialName("PO") PO,
     @SerialName("WORKER") WORKER,
