@@ -135,6 +135,13 @@ class PgOverrideShareStoresTest {
      * read-merge-write, like File's single-lock RMW. Repro: 40× barrier-synced `put(name)` ∥ `setAvatar(preset)`
      * on the SAME `(project, agent)`. A non-atomic two-tx RMW loses one field every time (measured 40/40); the
      * one-tx `SELECT … FOR UPDATE` fix serializes them → BOTH survive, lost == 0.
+     *
+     * The row is **pre-seeded before the barrier** so both racers are UPDATERs on an existing row — the real
+     * prod case (the agent already has an override; a name-edit races an avatar-upload). This is what makes the
+     * tooth guard the **`FOR UPDATE`** specifically: without a pre-seed both threads are first-writers and the
+     * `INSERT … ON CONFLICT DO NOTHING` serializes them on its own, so dropping `FOR UPDATE` would stay green.
+     * On an existing row, `INSERT … DO NOTHING` no-ops (no lock) → only `FOR UPDATE` serializes the RMW
+     * (drop it → RED, 40/40 lost).
      */
     @Test fun agentOverride_concurrentPutAndSetAvatar_noLostUpdate() = EmbeddedPostgres.start().use { pg ->
         val store = PgAgentOverrideStore(pg.postgresDatabase)
@@ -144,6 +151,7 @@ class PgOverrideShareStoresTest {
             repeat(40) { i ->
                 val agentId = "agent$i"
                 val preset = AgentAvatar.Preset("bottts", agentId)
+                store.put("p", agentId, "seed", "#seed", null, null) // pre-seed → both racers are UPDATERs on an existing row
                 val barrier = CyclicBarrier(2)
                 val f1 = pool.submit { barrier.await(5, TimeUnit.SECONDS); store.put("p", agentId, "Name$i", null, null, null) }
                 val f2 = pool.submit { barrier.await(5, TimeUnit.SECONDS); store.setAvatar("p", agentId, preset) }
@@ -154,7 +162,7 @@ class PgOverrideShareStoresTest {
         } finally {
             pool.shutdownNow()
         }
-        assertEquals(0, lost, "lost updates across 40 barrier-synced put∥setAvatar races (non-atomic RMW ⇒ 40/40)")
+        assertEquals(0, lost, "lost updates across 40 barrier-synced put∥setAvatar races on a pre-seeded row (non-atomic RMW ⇒ 40/40)")
     }
 
     // ============================ ChannelShareStore ============================
