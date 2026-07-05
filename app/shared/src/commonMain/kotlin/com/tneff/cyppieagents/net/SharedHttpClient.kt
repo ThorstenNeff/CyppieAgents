@@ -47,10 +47,14 @@ fun sharedWsHttpClient(sessionToken: () -> String? = { null }): HttpClient {
 }
 
 /**
- * CYP-229 — ensure browser requests carry the same-origin session cookie. Ktor's JS/Wasm engine uses `fetch`,
- * which OMITS credentials unless the RequestInit sets them, and Ktor exposes no credentials config. This installs a
- * ONE-TIME, idempotent wrapper over `window.fetch` that forces `credentials:'include'` for **same-origin** requests
- * only (the app + API are same-origin via `ShellConfig.forOrigin`); cross-origin fetches are untouched (no CORS
- * change / no server change). No-op on native targets (they carry the session via `X-Session-Token` / their own jar).
+ * CYP-229/231 — a ONE-TIME, idempotent wrapper over the browser `window.fetch` that hardens **same-origin** requests
+ * (cross-origin fetches are untouched — the same-origin guard is the security boundary). Ktor's JS/Wasm engine uses
+ * `fetch` and exposes no config for either concern:
+ *  - **CYP-229:** force `credentials:'include'` so the `ory_kratos_session` cookie rides the `/api` reads (Ktor's
+ *    fetch OMITS credentials by default → a session-operator's whole read surface 401'd → empty agent list).
+ *  - **CYP-231:** echo the JS-readable double-submit CSRF cookie (`cyppie_csrf`) in the `X-CSRF-Token` header on
+ *    unsafe methods (POST/PUT/DELETE/PATCH) → else a cookie-authed write is a 403 `csrf_failed`. Safe methods +
+ *    cross-origin never get the header (no token leak).
+ * No server/CORS change (same-origin). No-op on native targets (they carry the session via `X-Session-Token`).
  */
 expect fun installSameOriginCredentials()
