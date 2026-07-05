@@ -18,6 +18,7 @@ import com.tneff.cyppieagents.model.WorktreeFate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -35,10 +36,23 @@ class AgentSettingsPanelTest {
         override suspend fun remove(id: String, worktree: WorktreeFate) {}
     }
 
+    /** CYP-237: `edit` FAILS (server 500 / network) → save() takes the onFailure path → state.error=true, saved=false. */
+    private class FailingEditRepo(private val detail: AgentDetail) : AgentManagementRepository {
+        override suspend fun list(): List<Agent> = emptyList()
+        override suspend fun detail(id: String): AgentDetail = detail
+        override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+        override suspend fun edit(id: String, edit: AgentEdit): Agent = throw RuntimeException("save failed")
+        override suspend fun remove(id: String, worktree: WorktreeFate) {}
+    }
+
     private val detail = AgentDetail("backend", "Backend", Role.WORKER, "backend", "bash", persona = "persona v1", color = null)
     private fun vm(editable: Boolean) = AgentSettingsViewModel(
         "backend", FakeRepo(detail), editable, initialName = "Backend", initialColorHex = null,
         scope = CoroutineScope(Dispatchers.Unconfined), // load() resolves synchronously before assertions
+    )
+    private fun vmFailingSave() = AgentSettingsViewModel(
+        "backend", FailingEditRepo(detail), editable = true, initialName = "Backend", initialColorHex = null,
+        scope = CoroutineScope(Dispatchers.Unconfined),
     )
 
     @Test
@@ -77,6 +91,27 @@ class AgentSettingsPanelTest {
         // save() success flips state.saved → the close-on-save LaunchedEffect signals the host.
         waitUntil(timeoutMillis = 5_000L) { onSavedCount >= 1 }
         assertTrue(onSavedCount >= 1, "a successful save must signal onSaved (host closes + refreshes)")
+    }
+
+    /**
+     * CYP-237 fail-save invariant (Test-found teeth gap): a save that FAILS (state.error=true, state.saved stays
+     * false) must NOT fire onSaved → the host keeps the overlay open (no silent data-loss close). Correct-by-
+     * construction today (the LaunchedEffect is keyed on `saved`, not `error`), but unguarded. Mutation: fire the
+     * effect unconditionally / re-key it on `error` → onSaved fires on failure → this asserts RED.
+     */
+    @Test
+    fun failedSave_doesNotFireOnSaved_dialogStaysOpen() = runComposeUiTest {
+        val v = vmFailingSave()
+        var onSavedCount = 0
+        setContent { MaterialTheme { AgentSettingsPanel(v, onDismiss = {}, onSaved = { onSavedCount++ }) } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AgentSettingsTags.PANEL).fetchSemanticsNodes().isNotEmpty() }
+        v.setName("Renamed"); waitForIdle()
+        onNodeWithTag(AgentSettingsTags.SAVE).performClick()
+        // Let the FAILING save settle — the VM reports the error; saved must remain false.
+        waitUntil(timeoutMillis = 5_000L) { v.state.value.error }
+        waitForIdle()
+        assertEquals(false, v.state.value.saved, "a failed save must leave state.saved false")
+        assertEquals(0, onSavedCount, "a FAILED save must NOT fire onSaved (dialog stays open — no data-loss close)")
     }
 
     @Test
