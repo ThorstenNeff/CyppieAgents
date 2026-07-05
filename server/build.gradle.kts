@@ -46,6 +46,10 @@ dependencies {
     implementation(libs.ktor.serverCors)
     implementation(libs.ktor.serializationKotlinxJson)
     implementation(libs.ktor.serverWebsockets)
+    // CYP-215 (avatar backend): Thumbnailator — thin, no-native-deps, ImageIO-based resize/crop/re-encode.
+    // We control the decode (header-dim gate ourselves, then hand it a bounded BufferedImage). png+jpg only;
+    // no native webp decoder pulled in (smallest attack surface on the untrusted upload path).
+    implementation(libs.thumbnailator)
     // CYP-178: an HTTP client to validate Kratos sessions (GET /sessions/whoami).
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.clientCio)

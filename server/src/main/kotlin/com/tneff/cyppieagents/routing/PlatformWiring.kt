@@ -193,6 +193,10 @@ fun Application.bootPlatform(
         // CYP-210: durable per-agent name/color/persona/launch overlay — out-of-repo under the gitRoot,
         // gitignored; overlaid over the platform.config.json seed at boot (operator edits survive restart).
         agentOverrideFile = gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile(),
+        // CYP-215: re-encoded avatar PNGs (`<projectId>/<agentId>.png`) + the self-hosted DiceBear preset
+        // asset set (`<style>/*.png`, populated offline via the DiceBear CLI) — out-of-repo, gitignored.
+        avatarDir = gitRoot.toPath().resolve(".cyppie/avatars").toFile(),
+        avatarPresetsDir = gitRoot.toPath().resolve(".cyppie/avatar-presets").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;

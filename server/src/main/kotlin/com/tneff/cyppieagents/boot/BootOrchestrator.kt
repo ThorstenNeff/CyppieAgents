@@ -143,6 +143,10 @@ class BootOrchestrator(
     // CYP-210: durable per-agent name/color/persona/launch overlay (`.cyppie/agent-overrides.json`), out-of-
     // repo under the gitRoot. Null (tests) = in-memory off-switch (no restart durability).
     private val agentOverrideFile: java.io.File? = null,
+    // CYP-215: the on-disk root for re-encoded avatar PNGs (`.cyppie/avatars/<projectId>/<agentId>.png`) and
+    // the self-hosted DiceBear preset asset root (`.cyppie/avatar-presets/<style>/*.png`). Null (tests) = off.
+    private val avatarDir: java.io.File? = null,
+    private val avatarPresetsDir: java.io.File? = null,
     // CYP-163: sandbox-ONLY `bypassPermissions` grant, threaded into the [ClaudeCodeConnector]. Default
     // (null) = production-sharp — the prod boot NEVER passes a grant, so the spawn stays Gate #4 fail-closed
     // (never bypass). Non-null ONLY on the RB1 throwaway-sandbox harness path (human + reviewer signed,
@@ -244,8 +248,13 @@ class BootOrchestrator(
         // CYP-210: apply the durable overlay OVER the platform.config.json seed (overlay wins per-field), so
         // operator edits of name/color/persona/launch survive a restart. Scoped to the active project.
         val agentOverrides = AgentOverrideStore(agentOverrideFile)
+        // CYP-215: the avatar stores (blob bytes on disk + the self-hosted DiceBear preset resolver).
+        val avatarBlobs = com.tneff.cyppieagents.avatar.AvatarBlobStore(avatarDir)
+        val avatarPresets = com.tneff.cyppieagents.avatar.AvatarPresetResolver(avatarPresetsDir)
         agentOverrides.allFor(config.projectId).forEach { (agentId, ov) ->
             if (ov.name != null || ov.color != null) state.editAgent(agentId, ov.name, ov.color)
+            // CYP-215: apply the durable avatar overlay too (Preset or the stored Upload ref) so it survives a restart.
+            if (ov.avatar != null) state.setAvatar(agentId, ov.avatar)
             if (ov.persona != null || ov.launch != null) {
                 val curCfg = agentConfigs.configOf(agentId)
                 agentConfigs.put(agentId, ov.launch ?: curCfg?.launch ?: "claude", ov.persona ?: curCfg?.persona)
@@ -393,6 +402,8 @@ class BootOrchestrator(
             remoteToken = remoteTokenIssuer, // CYP-171: mint/revoke the per-agent token for a remote create/remove
             overrides = agentOverrides, // CYP-210: persist name/color/persona/launch edits (restart-durable)
             projectId = config.projectId,
+            avatarBlobs = avatarBlobs,   // CYP-215: re-encoded avatar PNG store
+            avatarPresets = avatarPresets, // CYP-215: self-hosted DiceBear preset resolver
         )
 
         val booted = mutableListOf<String>()
@@ -423,7 +434,7 @@ class BootOrchestrator(
         // S13 / CYP-91: the multi-project registry (seeded with the boot project) + the cascade deleter
         // composing the strictly-projectId-scoped teardown primitives — operator-gated at /api/projects.
         val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
-        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore)
+        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides)
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,

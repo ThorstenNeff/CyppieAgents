@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents
 
+import com.tneff.cyppieagents.boot.AgentOverrideStore
 import com.tneff.cyppieagents.boot.ProjectConfigStore
 import com.tneff.cyppieagents.boot.ProjectDeleter
 import com.tneff.cyppieagents.boot.ProjectRegistry
@@ -41,7 +42,9 @@ class ProjectDeleterTest {
         val config = ProjectConfigStore(file = null, RepoConfig("u", "main"), Secrets(mapOf("t" to "po"), "op", apiKey = null))
         val events = InMemoryEventSink(SystemTimeSource())
         val worktrees = WorktreeManager(FakeGit(), gitRoot)
-        val deleter = ProjectDeleter(registry, config, events, worktrees)
+        // CYP-215 F2: a REAL override file so the cascade's removeProject is exercised end-to-end (durable).
+        val overrides = AgentOverrideStore(File(gitRoot, "agent-overrides.json"))
+        val deleter = ProjectDeleter(registry, config, events, worktrees, agentOverrides = overrides)
 
         fun seedTwoProjectsWithResources() = runBlocking {
             registry.create(CreateProjectRequest("beta", "Beta")) // default stays active
@@ -105,6 +108,28 @@ class ProjectDeleterTest {
             assertFalse(f.registry.exists("beta"), "beta removed from registry")
             assertEquals(0, f.eventCount("beta"), "beta events gone")
             assertTrue(File(f.gitRoot, "projects/beta/po").exists(), "beta worktree KEPT (opt-in not set)")
+        } finally {
+            f.cleanup()
+        }
+    }
+
+    @Test
+    fun delete_nonActive_purgesOverrideJson_notOtherProjects() = runBlocking {
+        // CYP-215 F2 (closing a pre-existing CYP-210 gap): the durable agent-override overlay (name/color/
+        // persona/launch/avatar) must be cascade-purged with the project — it was orphaned before (removeProject
+        // defined but never wired). no-cross-project: the OTHER project's override is byte-for-byte intact.
+        val f = Fixture()
+        try {
+            f.seedTwoProjectsWithResources()
+            f.overrides.setAvatar("beta", "po", com.tneff.cyppieagents.model.AgentAvatar.Preset("bottts", "s"))
+            f.overrides.put("default", "po", name = "KeepMe", color = "#123456", persona = null, launch = null)
+            assertTrue(f.overrides.overrideOf("beta", "po") != null, "seed: beta has an override")
+
+            f.deleter.delete("beta") // non-active cascade
+
+            assertEquals(0, f.overrides.allFor("beta").size, "F2: beta's override JSON (incl. avatar) purged on cascade")
+            assertTrue(f.overrides.overrideOf("default", "po") != null, "no-cross-project: default's override intact")
+            assertEquals("KeepMe", f.overrides.overrideOf("default", "po")?.name, "default override byte-intact")
         } finally {
             f.cleanup()
         }

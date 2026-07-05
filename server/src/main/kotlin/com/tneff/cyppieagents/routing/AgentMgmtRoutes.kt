@@ -3,19 +3,33 @@ package com.tneff.cyppieagents.routing
 import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.authenticatedApi
+import com.tneff.cyppieagents.avatar.AvatarLimits
+import com.tneff.cyppieagents.avatar.AvatarRejected
 import com.tneff.cyppieagents.boot.AgentManagement
 import com.tneff.cyppieagents.model.AgentEdit
 import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.WorktreeFate
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.PartData
+import io.ktor.http.content.forEachPart
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveMultipart
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
+import io.ktor.utils.io.jvm.javaio.toInputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 
 /**
  * Agent-management CRUD endpoints (S14 / CYP-97 — AGENT-MANAGEMENT §2). The list `GET /api/agents`
@@ -33,6 +47,16 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
         get("/{id}") {
             call.requireParticipant(registry)
             call.respond(mgmt.detail(call.parameters.getOrFail("id"))) // 404 agent_not_found
+        }
+        // CYP-215: serve the agent's avatar PNG = participant-gated (same read posture as the detail/list).
+        // Upload → stored re-encoded blob; Preset → self-hosted DiceBear bytes; none/unknown → 404 (the client
+        // falls back to its default). ETag = the content-hash ref (cache-busting on re-upload).
+        get("/{id}/avatar") {
+            call.requireParticipant(registry)
+            val served = mgmt.serveAvatar(call.parameters.getOrFail("id"))
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            served.ref?.let { call.response.header(HttpHeaders.ETag, "\"$it\"") }
+            call.respondBytes(served.png, ContentType.Image.PNG)
         }
         // CYP-178: the mutations are gated STRUCTURALLY under the group — fail-closed BEFORE the body is
         // received (a non-operator is 401/403, unparsed). The RC1 route-enumeration meta-test is the net.
@@ -55,8 +79,56 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
                 mgmt.remove(call.parameters.getOrFail("id"), fate) // 404/409 last_po per the guard
                 call.respond(HttpStatusCode.NoContent)
             }
+            // CYP-215: custom-avatar upload — operator-gated (structural), UNTRUSTED bytes. Read the file part
+            // with a HARD ceiling (a lying Content-Length can't blow past it), then hand it to the authoritative
+            // validation pipeline. A reject → UNIFORM 400 (no parser-mapping leak) while the SERVER logs the
+            // exact check that fired (diagnostics). Success logs bytes-in/out + dims; responds the updated agent.
+            post("/{id}/avatar") {
+                val id = call.parameters.getOrFail("id")
+                val bytes = call.readFirstFilePartBounded(AvatarLimits.MAX_BYTES)
+                    ?: throw BadRequestException("no file part in the multipart body", code = "avatar_no_file")
+                try {
+                    val r = mgmt.uploadAvatar(id, bytes)
+                    avatarLog.info(
+                        "avatar upload OK agent={} ref={} in={}B out={}B src={} {}x{} -> {}x{}",
+                        r.agentId, r.ref, r.bytesIn, r.bytesOut, r.srcFormat, r.srcWidth, r.srcHeight, r.outWidth, r.outHeight,
+                    )
+                    call.respond(mgmt.detail(id))
+                } catch (rej: AvatarRejected) {
+                    avatarLog.warn("avatar upload REJECTED agent={} check={} — {}", id, rej.check, rej.message)
+                    throw BadRequestException("avatar rejected", code = "avatar_rejected") // uniform to the client
+                }
+            }
+            // CYP-215: clear the avatar back to the default (operator-gated) — drops metadata + blob.
+            delete("/{id}/avatar") {
+                mgmt.clearAvatar(call.parameters.getOrFail("id")) // 404 agent_not_found
+                call.respond(HttpStatusCode.NoContent)
+            }
         }
     }
+}
+
+private val avatarLog = LoggerFactory.getLogger("routing.avatar")
+
+/**
+ * Read the FIRST multipart file part into memory with a HARD byte ceiling: at most [maxBytes]+1 bytes are
+ * materialised (so an oversized upload is caught as > cap by the pipeline without ever buffering the whole
+ * thing). Returns null if the body has no file part. Every part is disposed.
+ */
+private suspend fun ApplicationCall.readFirstFilePartBounded(maxBytes: Int): ByteArray? {
+    var bytes: ByteArray? = null
+    receiveMultipart().forEachPart { part ->
+        try {
+            if (part is PartData.FileItem && bytes == null) {
+                // Bounded: read AT MOST maxBytes+1 (an oversized upload is then caught as > cap by the pipeline
+                // without ever buffering the whole thing). Blocking javaio bridge → off the event loop.
+                bytes = withContext(Dispatchers.IO) { part.provider().toInputStream().readNBytes(maxBytes + 1) }
+            }
+        } finally {
+            part.dispose()
+        }
+    }
+    return bytes
 }
 
 private fun io.ktor.http.Parameters.getOrFail(name: String): String =
