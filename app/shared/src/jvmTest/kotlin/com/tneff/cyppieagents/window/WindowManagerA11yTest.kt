@@ -2,19 +2,25 @@ package com.tneff.cyppieagents.window
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -88,6 +94,60 @@ class WindowManagerA11yTest {
         waitForIdle()
 
         assertTrue(state.windows.first { it.id == "po" }.height > 200f)
+    }
+
+    // --- CYP-241: titlebar double-click Expand+Center / Restore — the gesture + stateDescription binding,
+    //     driven through the REAL WindowHost/FloatingWindow (geometry itself is covered purely in WindowExpandTest). ---
+
+    @Test
+    fun doubleTap_titleBar_togglesExpand_andFlipsStateDescription() = runComposeUiTest {
+        val state = singleWindowState()
+        setContent {
+            MaterialTheme {
+                WindowHost(state = state, windowContent = { Text("stub ${it.id}") })
+            }
+        }
+        // Locale-robust: read the actual stateDescription and assert it FLIPS with the state (the exact DE/EN copy
+        // is pinned by the resource files + keys doc; the test locale here is EN, so no hardcoded string).
+        fun stateDesc(): String? = onNodeWithTag(WindowTestTags.window("po"), useUnmergedTree = true)
+            .fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
+
+        assertFalse(state.isExpanded("po"))
+        val normalDesc = stateDesc()
+
+        // First double-tap on the titlebar → Expand: state flips, brings to front, stateDescription changes.
+        onNodeWithTag(WindowTestTags.titleBar("po")).performTouchInput { doubleClick() }
+        waitForIdle()
+        assertTrue(state.isExpanded("po"))
+        assertEquals("po", state.focusedId)
+        assertNotEquals(normalDesc, stateDesc(), "stateDescription must flip to the expanded copy")
+
+        // Second double-tap (untouched) → Restore: state + stateDescription return to normal.
+        onNodeWithTag(WindowTestTags.titleBar("po")).performTouchInput { doubleClick() }
+        waitForIdle()
+        assertFalse(state.isExpanded("po"))
+        assertEquals(normalDesc, stateDesc())
+    }
+
+    /** CYP-241 §9.4: the double-tap detector coexists with the drag one — a moving gesture on the titlebar is still
+     *  a DRAG (window moves), not a double-tap (no expand). Guards against the tap detector swallowing drags. */
+    @Test
+    fun titleBarDrag_stillMovesWindow_andIsNotAnExpand() = runComposeUiTest {
+        val state = singleWindowState()
+        setContent {
+            MaterialTheme {
+                WindowHost(state = state, windowContent = { Text("stub ${it.id}") })
+            }
+        }
+        val startX = state.windows.first { it.id == "po" }.x
+        onNodeWithTag(WindowTestTags.titleBar("po")).performTouchInput {
+            down(center)
+            moveTo(center + Offset(140f, 0f))
+            up()
+        }
+        waitForIdle()
+        assertTrue(state.windows.first { it.id == "po" }.x > startX, "titlebar drag still moves the window")
+        assertFalse(state.isExpanded("po"), "a drag is not a double-tap → never an accidental expand")
     }
 
     @Test

@@ -452,4 +452,7 @@
     <string name="a11y_agent_avatar_current">Aktueller Avatar: %1$s</string>
     <string name="a11y_agent_avatar_remove">Avatar entfernen</string>
     <string name="a11y_agent_avatar_credits">Lizenz-Credits der Bild-Vorlagen</string>
+    <!-- CYP-241: Fenster-Zustand (Titelleisten-Doppelklick Expand/Restore). Ehrlich: "vergrößert & zentriert", nicht "alles sichtbar". -->
+    <string name="window_state_expanded">Vergrößert und zentriert</string>
+    <string name="window_state_normal">Normalgröße</string>
 </resources>

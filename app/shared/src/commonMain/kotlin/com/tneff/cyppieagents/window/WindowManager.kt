@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
@@ -55,6 +56,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -72,6 +74,8 @@ import kmpcyppieagents.app.shared.generated.resources.pager_next
 import kmpcyppieagents.app.shared.generated.resources.pager_page_position
 import kmpcyppieagents.app.shared.generated.resources.pager_prev
 import kmpcyppieagents.app.shared.generated.resources.window_fit_action
+import kmpcyppieagents.app.shared.generated.resources.window_state_expanded
+import kmpcyppieagents.app.shared.generated.resources.window_state_normal
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
@@ -165,6 +169,10 @@ private fun WindowCanvas(
                     onFocus = { state.focus(window.id) },
                     onMove = { dx, dy -> state.moveBy(window.id, dx, dy) },
                     onResize = { dWidth, dHeight -> state.resizeBy(window.id, dWidth, dHeight) },
+                    // CYP-241: titlebar double-click → Expand+Center / Restore toggle (uses the stored host size,
+                    // like onMove/onResize). isExpanded drives the titlebar stateDescription (anchor presence).
+                    onToggleExpand = { state.toggleExpand(window.id) },
+                    isExpanded = state.isExpanded(window.id),
                     badge = badgeFor(window.id),
                     titleBarColors = titleBarColorsFor(window.id),
                     onSettings = settingsFor(window.id),
@@ -424,6 +432,10 @@ fun FloatingWindow(
     onFocus: () -> Unit,
     onMove: (dx: Float, dy: Float) -> Unit,
     onResize: (dWidth: Float, dHeight: Float) -> Unit,
+    /** CYP-241: titlebar double-click → Expand+Center / Restore toggle; default no-op (tests/callers not wiring it). */
+    onToggleExpand: () -> Unit = {},
+    /** CYP-241: this window is Expanded (a Restore anchor exists) → titlebar `stateDescription` = "enlarged & centered". */
+    isExpanded: Boolean = false,
     badge: WindowBadge? = null,
     /** CYP-211: the agent's derived titlebar colours; `null` → the default M3 primary/surfaceVariant theming
      *  (system windows). Focused = full colour; unfocused = dimmed toward the surface (elevation still carries focus). */
@@ -434,6 +446,9 @@ fun FloatingWindow(
     content: @Composable () -> Unit,
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    // CYP-241: honest state copy — "enlarged & centered" vs "normal size", NOT "everything visible" (§7). Reflects
+    // the Restore-anchor presence, so dragging an expanded window away (anchor cleared) honestly falls to "normal".
+    val expandStateDesc = stringResource(if (isExpanded) Res.string.window_state_expanded else Res.string.window_state_normal)
     Box(
         modifier = Modifier
             // Position via graphicsLayer translation + zIndex through the same layer so reordering on
@@ -450,6 +465,8 @@ fun FloatingWindow(
             .semantics {
                 heading()
                 contentDescription = "Agentenfenster ${window.title}"
+                // CYP-241: Expand/Restore state (anchor presence) exposed for a11y + QA on the window root node.
+                stateDescription = expandStateDesc
             }
             // Keyboard operation (WCAG 2.1.1): Tab focuses the window; arrows move it, Shift+arrows
             // resize it. Focusing also raises it. Move/resize go through the same clamped callbacks.
@@ -515,6 +532,12 @@ fun FloatingWindow(
                         .background(barBg)
                         .testTag(WindowTestTags.titleBar(window.id))
                         .semantics { contentDescription = "Titelleiste ${window.title}, mit Pfeiltasten verschieben" }
+                        // CYP-241 §3: a SEPARATE tap detector for the double-click (Expand+Center / Restore toggle),
+                        // NEXT TO the drag one — not instead. A stationary double-tap fires onDoubleTap; a moving
+                        // gesture becomes a drag (detectTapGestures discards the tap past touch-slop) → no conflict.
+                        .pointerInput(window.id) {
+                            detectTapGestures(onDoubleTap = { onToggleExpand() })
+                        }
                         .pointerInput(window.id) {
                             detectDragGestures(
                                 onDragStart = { onFocus() },

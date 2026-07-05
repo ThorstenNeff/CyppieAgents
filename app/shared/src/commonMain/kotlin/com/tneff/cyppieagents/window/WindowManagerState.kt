@@ -69,6 +69,27 @@ const val KEYBOARD_MOVE_STEP: Float = 16f
 /** Step a window resizes per Shift+arrow-key press, in dp (keyboard operation, WCAG 2.1.1). */
 const val KEYBOARD_RESIZE_STEP: Float = 16f
 
+// --- CYP-241 titlebar double-click Expand+Center (tokens; abstimmbar, live next to the other window constants) ---
+
+/** Preferred expand width for **content** windows (Agent/Comm), dp — capped to the usable viewport. */
+const val EXPAND_PREFERRED_CONTENT_W: Float = 640f
+
+/** Preferred expand height for **content** windows, dp — capped to the usable viewport. */
+const val EXPAND_PREFERRED_CONTENT_H: Float = 560f
+
+/** Preferred expand width for other windows (e.g. composer), dp — capped to usable, floored to [MIN_WINDOW_WIDTH]. */
+const val EXPAND_PREFERRED_DEFAULT_W: Float = 460f
+
+/** Preferred expand height for other windows, dp — capped to usable, floored to [MIN_WINDOW_HEIGHT]. */
+const val EXPAND_PREFERRED_DEFAULT_H: Float = 380f
+
+/**
+ * Both-sides viewport margin (dp) so Expand is **never** fullscreen/overflow — reads as a large centered window,
+ * not fill-max (CYP-95-consistent). `usableW = hostWidth − 2·EXPAND_MARGIN`;
+ * `usableH = hostHeight − HOST_AFFORDANCE_BAND − 2·EXPAND_MARGIN`.
+ */
+const val EXPAND_MARGIN: Float = 24f
+
 /**
  * Pure, side-effect-free transformations over the window list.
  *
@@ -163,6 +184,38 @@ object WindowReducer {
             width = window.width.coerceIn(minWidth, maxOf(minWidth, hostWidth)),
             height = window.height.coerceIn(minHeight, maxOf(minHeight, hostHeight)),
         )
+    }
+
+    /**
+     * CYP-241 — the Expand+Center target for one window: a per-type **preferred** size, component-wise **capped**
+     * to the usable viewport (never fullscreen — [EXPAND_MARGIN] on every edge; never overflow — the final
+     * [clampSizeToBounds]/[clampToBounds]), **floored** to the type minimum, and **centered** in the usable area
+     * below the [HOST_AFFORDANCE_BAND] (same viewport discipline as [tile], CYP-95). Pure/testable — no Compose.
+     * Returns [window] unchanged until the host is measured (`hostWidth`/`hostHeight <= 0`).
+     *
+     * "Preferred, capped" — NOT wrap-content: an agent window renders an unbounded scrolling stream, so a literal
+     * "natural size" is meaningless; the honest promise is "enlarged & centered", not "everything visible" (§0/§1).
+     */
+    fun expandCentered(
+        window: WindowState,
+        hostWidth: Float,
+        hostHeight: Float,
+        isContent: Boolean,
+    ): WindowState {
+        if (hostWidth <= 0f || hostHeight <= 0f) return window
+        val usableW = hostWidth - 2f * EXPAND_MARGIN
+        val usableH = hostHeight - HOST_AFFORDANCE_BAND - 2f * EXPAND_MARGIN
+        val prefW = if (isContent) EXPAND_PREFERRED_CONTENT_W else EXPAND_PREFERRED_DEFAULT_W
+        val prefH = if (isContent) EXPAND_PREFERRED_CONTENT_H else EXPAND_PREFERRED_DEFAULT_H
+        val typeMinW = if (isContent) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        val width = minOf(prefW, usableW).coerceAtLeast(typeMinW)
+        val height = minOf(prefH, usableH).coerceAtLeast(MIN_WINDOW_HEIGHT)
+        // Window centre = usable-area centre (top band reserved, exactly like tile()).
+        val x = (hostWidth - width) / 2f
+        val y = HOST_AFFORDANCE_BAND + (hostHeight - HOST_AFFORDANCE_BAND - height) / 2f
+        val centered = window.copy(x = x, y = y, width = width, height = height)
+        // Defensive: the SAME clamps as tiling → never off-host / oversized on a tiny host (CYP-95).
+        return clampToBounds(clampSizeToBounds(centered, hostWidth, hostHeight), hostWidth, hostHeight)
     }
 
     /**
@@ -284,6 +337,16 @@ class WindowManagerState(
     val orderedWindows: List<WindowState>
         get() = windowOrder.mapNotNull { id -> windows.firstOrNull { it.id == id } }
 
+    /**
+     * CYP-241 — transient Expand/Restore anchors: `id → the window's geometry BEFORE its Expand`. Snapshot-backed
+     * so the titlebar `stateDescription` recomposes. **Not persisted** (CYP-204 persists geometry, NOT this) →
+     * no stale "restore to last session"; session-local. Presence ⇒ Restore available; absence ⇒ (re-)Expand. Any
+     * real user [moveBy]/[resizeBy] on a window, or a global [fit], clears its/all anchor(s) — the automatic,
+     * threshold-free invalidation of §2.
+     */
+    var expandAnchors: Map<String, WindowState> by mutableStateOf(emptyMap())
+        private set
+
     // Last measured host size (dp). Plain fields — they only feed clamp math, not rendering.
     private var hostWidth: Float = 0f
     private var hostHeight: Float = 0f
@@ -320,6 +383,9 @@ class WindowManagerState(
             isRtl = isRtl,
             contentWindowIds = contentWindowIds,
         )
+        // CYP-241 §4: a global re-tile assigns fresh geometry to ALL windows → every Restore anchor is now a lie
+        // ("the old position" no longer exists). Drop them all; a later double-click starts a fresh Expand cycle.
+        expandAnchors = emptyMap()
     }
 
     /**
@@ -426,6 +492,7 @@ class WindowManagerState(
         windows = moved.map {
             if (it.id == id) WindowReducer.clampToBounds(it, hostWidth, hostHeight) else it
         }
+        clearExpandAnchor(id) // CYP-241 §2: a real user move invalidates the Restore anchor (any source).
     }
 
     fun resizeBy(id: String, dWidth: Float, dHeight: Float) {
@@ -441,5 +508,40 @@ class WindowManagerState(
             maxWidth = maxWidth,
             maxHeight = maxHeight,
         )
+        clearExpandAnchor(id) // CYP-241 §2: a real user resize invalidates the Restore anchor (any source).
+    }
+
+    /** CYP-241 — is [id] currently Expanded (a Restore anchor exists) → drives the titlebar `stateDescription`. */
+    fun isExpanded(id: String): Boolean = expandAnchors.containsKey(id)
+
+    /**
+     * CYP-241 — titlebar double-click Expand+Center / Restore toggle (§2). **Anchor absent** → Expand: remember the
+     * current geometry as the anchor, set the window to the [WindowReducer.expandCentered] target. **Anchor present**
+     * → Restore: geometry back to the anchor (defensively re-clamped), drop the anchor. Either way `focus(id)` (§5).
+     * A 2nd double-click after a manual move/resize (anchor cleared) is a **fresh** Expand — never a dead click (§2).
+     * Sets geometry DIRECTLY (not via [moveBy]/[resizeBy]) so it manages the anchor explicitly and doesn't self-clear.
+     * No-op until the host is measured.
+     */
+    fun toggleExpand(id: String) {
+        if (hostWidth <= 0f || hostHeight <= 0f) return
+        val current = windows.firstOrNull { it.id == id } ?: return
+        val anchor = expandAnchors[id]
+        if (anchor == null) {
+            val target = WindowReducer.expandCentered(current, hostWidth, hostHeight, isContent = id in contentWindowIds)
+            expandAnchors = expandAnchors + (id to current)
+            windows = windows.map { if (it.id == id) target else it }
+        } else {
+            val restored = WindowReducer.clampToBounds(
+                WindowReducer.clampSizeToBounds(anchor, hostWidth, hostHeight), hostWidth, hostHeight,
+            )
+            expandAnchors = expandAnchors - id
+            windows = windows.map { if (it.id == id) restored else it }
+        }
+        focus(id)
+    }
+
+    /** Drop [id]'s transient Expand anchor (a real move/resize happened) — no-op if none. */
+    private fun clearExpandAnchor(id: String) {
+        if (expandAnchors.containsKey(id)) expandAnchors = expandAnchors - id
     }
 }
