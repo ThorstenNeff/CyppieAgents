@@ -1,0 +1,144 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-214 (Per-Agent-Avatar-Picker Design — Feature CYP-212; Epic CYP-208 gemergt)",
+    "version": "1.0",
+    "status": "final — §-Asks + Lizenz-Entscheid resolvet (PO 2026-07-05). Speist Backend CYP-215 (Style-Satz + Upload) + Dev CYP-216 (AgentAvatar-Resolver + UI).",
+    "brand": "CyppieAgents (Anti-Hype; interim look + M3)",
+    "grounded_against": "develop c4f2d53 (CYP-208/209/210/211 gemergt: SenderColor.borderColor + :core deriveScheme real im Code)",
+    "principles": [
+      "Bild = Dekoration, NIE Identitaets-/Trust-Signal. Farb-Ring (CYP-211 borderColor) + id + Name = die echten Identitaets-Anker.",
+      "Raster-only, KEIN SVG (Script-/XSS-Vektor). Client-Hinweis + server-autoritative Validierung (Magic-Bytes), fail-closed.",
+      "Self-hosted DiceBear = kein Dritt-Egress (Seed/Uploads verlassen die Plattform nicht).",
+      "Fallback nie leer/kaputt: custom-upload -> preset -> initials -> color, jede Stufe fail-closed auf die naechste.",
+      "Determinismus: {style, seed} -> stabiler Avatar (wie colorSlot/derive).",
+      "Ehrliche Attribution: PNG streift DiceBears <metadata>-Attribution ab -> In-App-Credits-Flaeche Pflicht fuer CC-BY-Styles."
+    ]
+  },
+  "fallback_chain": {
+    "order": ["custom_upload", "preset", "initials", "color"],
+    "custom_upload": "server-downsized + center-crop-square Blob (Ref im DTO, nie rohe Bytes)",
+    "preset": "DiceBear {style, seed} -> self-hosted PNG",
+    "initials": "initialsOf(name) auf avatarFill (bestehend, CYP-14)",
+    "color": "reiner avatarFill-Kreis (initialsOf liefert '?' bei leerem Namen)",
+    "on_load_error": "Bild-Stufe (1/2) nicht ladbar -> automatisch naechste Stufe; nie Broken-Image, nie leer",
+    "color_ring": "auf ALLEN Stufen: Farb-Ring = CYP-211 borderColor (Identitaets-Anker, unabhaengig von der Bild-Stufe)"
+  },
+  "dicebear": {
+    "mode": "self-hosted HTTP-API (kein Dritt-Egress)",
+    "url_scheme": "<selfHostedHost>/<version>/<style>/png?seed=<seed>&size=<n>",
+    "format": "png (Raster; NICHT svg — Compose rendert Raster plattform-neutral, SVG-Render vermeiden)",
+    "styles_curated": ["bottts", "avataaars", "adventurer", "big-smile", "fun-emoji"],
+    "seed": "deterministisch; Default-Seed = Agent-id (bestaetigt). Shuffle = Seed-Reroll innerhalb des Styles (MVP).",
+    "host_version_config": "Backend-Deployment besitzt Host + version (CYP-215)"
+  },
+  "styles": [
+    {
+      "style": "bottts",
+      "label_key": "agent_avatar_style_bottts",
+      "artist": "Pablo Stanley",
+      "license": "Free for personal and commercial use",
+      "license_spdx": null,
+      "license_url": "https://bottts.com/",
+      "attribution_required": false,
+      "credit_modified_suffix": false,
+      "release": "free"
+    },
+    {
+      "style": "avataaars",
+      "label_key": "agent_avatar_style_avataaars",
+      "artist": "Pablo Stanley",
+      "license": "Free for personal and commercial use",
+      "license_spdx": null,
+      "license_url": "https://avataaars.com/",
+      "attribution_required": false,
+      "credit_modified_suffix": false,
+      "release": "free"
+    },
+    {
+      "style": "adventurer",
+      "label_key": "agent_avatar_style_adventurer",
+      "artist": "Lisa Wischofsky",
+      "license": "CC BY 4.0",
+      "license_spdx": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_required": true,
+      "credit_modified_suffix": true,
+      "release": "with-credits-notice"
+    },
+    {
+      "style": "big-smile",
+      "label_key": "agent_avatar_style_big_smile",
+      "artist": "Ashley Seo",
+      "license": "CC BY 4.0",
+      "license_spdx": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_required": true,
+      "credit_modified_suffix": true,
+      "release": "with-credits-notice"
+    },
+    {
+      "style": "fun-emoji",
+      "label_key": "agent_avatar_style_fun_emoji",
+      "artist": "Davis Uche",
+      "license": "CC BY 4.0",
+      "license_spdx": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_required": true,
+      "credit_modified_suffix": true,
+      "release": "with-credits-notice"
+    }
+  ],
+  "license_notes": {
+    "dicebear_code": "MIT (Bibliothek/Code) — maßgeblich ist aber die Artwork-Lizenz je Style (unten).",
+    "po_decision_2026_07_05": "Alle 5 Styles behalten + In-App-Credits-Flaeche (konventionell/reversibel). Shipping mit Attribution = voll compliant.",
+    "png_metadata_strip": "PNG traegt KEINE eingebettete <metadata>-Attribution -> die 3 CC-BY-Styles brauchen die In-App-Credits (agentSettings.avatar.credits), sonst nicht compliant.",
+    "permissive_nuance": "bottts/avataaars sind NICHT literal CC0/MIT, sondern Pablo Stanleys eigener 'free for personal & commercial'-Grant (wirkungsgleich permissiv, kein Attribution-Zwang, aber kein SPDX-Standard) — deshalb license_spdx = null.",
+    "cc_by_change_indication": "credit_modified_suffix=true -> agent_avatar_credit_modified '(bearbeitet)' anhaengen; erfuellt CC-BYs Aenderungs-Hinweis (DiceBear-Avatare sind Remixe/Derivate).",
+    "third_party_doc_entry": "Diese styles[]-Liste IST der Third-Party-License-Eintrag (Style -> Artist -> Lizenz -> Link). Backend CYP-215 konsumiert sie fuer den self-hosted Style-Satz; Dev CYP-216 rendert daraus die Credits-Flaeche."
+  },
+  "credits_surface": {
+    "tag": "agentSettings.avatar.credits",
+    "affordance_key": "agent_avatar_credits",
+    "a11y_key": "a11y_agent_avatar_credits",
+    "line_key": "agent_avatar_credit_line",
+    "line_format": "%1$s (label) von %2$s (artist) — %3$s (license)",
+    "modified_suffix_key": "agent_avatar_credit_modified",
+    "content": "alle 5 Styles gelistet; license-Name verlinkt license_url; CC-BY-Zeilen zusaetzlich '(bearbeitet)'.",
+    "reuse": "TonedHint/Panel-Bausteine — kein neues Fenster-System."
+  },
+  "upload_constraints": {
+    "formats_allowed": ["png", "jpg", "jpeg", "webp"],
+    "format_forbidden": ["svg", "*andere*"],
+    "validation": "Client-Vorpruefung (Typ + grobe Groesse) NUR Hinweis; Server autoritativ (Magic-Bytes, nicht Extension; kein SVG; Groessen-/Dimensions-Limit), fail-closed.",
+    "processing": "server: downsize + center-crop-square (autoritativ, MVP). Client-Reposition-Crop = Zukunft (bestaetigt).",
+    "max_size": "Backend setzt das autoritative Limit (%1$s in agent_avatar_upload_size_error); UI zeigt es.",
+    "errors": {
+      "type": "agent_avatar_upload_type_error (ERROR) — 'Nur PNG, JPG oder WebP – kein SVG'",
+      "size": "agent_avatar_upload_size_error (ERROR)",
+      "generic": "agent_avatar_upload_generic_error (ERROR)"
+    }
+  },
+  "avatar_render": {
+    "shape": "Kreis (CYP-14), RTL-spiegelbar; Bild quadratisch (center-crop) im Kreis",
+    "ring": "Farb-Ring = CYP-211 borderColor (>=3:1); immer sichtbar",
+    "shared_composable": "AgentAvatar(agent, size) — EIN Resolver fuer Titelbar/Roster/Comm/Event-Log (Dev CYP-216; kein Per-Site-One-off)",
+    "sizes": "reuse bestehende Avatar-Groessen je Site (Titelbar klein, Comm/Roster mittel); Preset-Grid-Vorschau = feste Grid-Zelle (Impl-Detail Dev)",
+    "async_load": "Raster-PNG async (KMP-Loader Impl-Detail Dev — Coil/Kamel); Fallback-Kette bei Laden/Fehler"
+  },
+  "model_recommendation": {
+    "note": "Backend besitzt die finale Shape (wie CYP-210). Empfehlung bestaetigt (§-Ask 2 = diskriminierte Union, Backend-owned):",
+    "shape": "Agent.avatar: AgentAvatar? = { kind: UPLOAD, ref } | { kind: PRESET, style, seed } | null",
+    "null_meaning": "null -> Fallback Initialen/Farbe (backward-compatible)",
+    "rationale": "Upload (Blob-Ref) vs Preset (style+seed) strukturell verschieden -> diskriminierte Union ehrlicher als ein Skalar (anders als color=base-hex, CYP-210)."
+  },
+  "validation": {
+    "new_tokens": "Avatar-/Grid-Masse + Upload-Constraints (Formate/max-size/center-crop) + Fallback-Kette + styles[]-Lizenz-Freigabe; keine harten Werte, Groessen reusen bestehende Avatar-Masse.",
+    "new_colors": 0,
+    "reuse": "avatarFill + borderColor (CYP-211), initialsOf, Kreis-Form (CYP-14), TonedHint-Toene, agentSettings-Panel (CYP-209)",
+    "no_svg": "Raster-only; SVG explizit verboten (XSS)",
+    "no_secrets": "Style/Seed/Upload-Ref/Artist/URL = neutrale Werte; keine rohen Bytes im DTO; self-hosted = kein Egress",
+    "no_prestige": "Bild = Dekoration, kein Trust-/Identitaets-Badge (Anti-Hype); Farbe/id bleiben Identitaet",
+    "license_release": "5/5 Styles freigegeben (2 attributionsfrei + 3 CC-BY mit Credits-Notice); styles[] = autoritative Freigabe-Liste fuer CYP-215."
+  }
+}
