@@ -92,6 +92,7 @@ import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.agentsettings.AgentSettingsPanel
 import com.tneff.cyppieagents.agentsettings.AgentSettingsViewModel
+import com.tneff.cyppieagents.agentsettings.rememberImagePicker
 import com.tneff.cyppieagents.ui.AgentAvatarView
 import com.tneff.cyppieagents.ui.LocalAvatarBaseUrl
 import com.tneff.cyppieagents.ui.LocalAvatarImageLoader
@@ -504,7 +505,12 @@ fun AgentShell(
             val agentSettingsVm = viewModel(key = "agentSettings-$sid") {
                 AgentSettingsViewModel(sid, resolvedAgentMgmtRepo, editable = isOperator, initialName = a?.name ?: sid, initialColorHex = a?.color)
             }
-            AgentSettingsPanel(agentSettingsVm, onDismiss = { settingsAgentId = null })
+            // CYP-216: the platform image picker (wasmJs/jvm real; android/ios stub) → the VM does the pre-check
+            // + multipart upload + server-truth adopt. onRequestUpload launches the picker for THIS agent's VM.
+            val requestUpload = rememberImagePicker { picked ->
+                agentSettingsVm.uploadAvatar(picked.bytes, picked.filename, picked.mimeType)
+            }
+            AgentSettingsPanel(agentSettingsVm, onDismiss = { settingsAgentId = null }, onRequestUpload = requestUpload)
         }
 
         WindowHost(
