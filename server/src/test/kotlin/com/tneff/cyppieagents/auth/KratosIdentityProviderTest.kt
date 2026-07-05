@@ -1,6 +1,12 @@
 package com.tneff.cyppieagents.auth
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -10,6 +16,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -79,5 +86,35 @@ class KratosIdentityProviderTest {
 
     @Test fun blankOrNullCredential_isNull_noCall() = runBlocking {
         assertNull(idp.resolve(null)); assertNull(idp.resolve(native("  ")))
+    }
+
+    // ---- CYP-240 (D-lite): retry ONCE on a transient transport failure, NEVER on a definitive non-200 ----
+
+    private val jsonHeaders = headersOf(HttpHeaders.ContentType, "application/json")
+    private fun mockIdp(engine: MockEngine) =
+        KratosIdentityProvider("http://kratos/sessions/whoami", HttpClient(engine) { install(HttpTimeout) })
+
+    @Test fun transientThenSuccess_retriesOnce() = runBlocking {
+        val calls = AtomicInteger(0)
+        val idp = mockIdp(MockEngine { _ ->
+            if (calls.incrementAndGet() == 1) throw java.io.IOException("connection reset") // transient
+            respond("""{"active":true,"identity":{"id":"alice","verifiable_addresses":[{"verified":true}]}}""", HttpStatusCode.OK, jsonHeaders)
+        })
+        assertEquals(ResolvedIdentity("alice", verified = true), idp.resolve(native("verified")))
+        assertEquals(2, calls.get(), "one transient failure → retried once → succeeds on the 2nd attempt")
+    }
+
+    @Test fun non200_isDefinitive_noRetry() = runBlocking {
+        val calls = AtomicInteger(0)
+        val idp = mockIdp(MockEngine { _ -> calls.incrementAndGet(); respond("", HttpStatusCode.Unauthorized) })
+        assertNull(idp.resolve(native("whatever"))) // fail-closed
+        assertEquals(1, calls.get(), "a 401 is a DEFINITIVE answer — never retried (the PO's 'never retry a 401' rule)")
+    }
+
+    @Test fun transientBothAttemptsFail_isNull_retryBounded() = runBlocking {
+        val calls = AtomicInteger(0)
+        val idp = mockIdp(MockEngine { _ -> calls.incrementAndGet(); throw java.net.ConnectException("kratos down") })
+        assertNull(idp.resolve(native("x"))) // fail-closed after the bounded retry
+        assertEquals(2, calls.get(), "retry is bounded to exactly once, then fail-closed null (not an infinite loop)")
     }
 }

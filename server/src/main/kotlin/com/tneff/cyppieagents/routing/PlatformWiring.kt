@@ -208,9 +208,19 @@ fun Application.bootPlatform(
     val authDeps = config.auth?.let { authCfg ->
         com.tneff.cyppieagents.auth.AuthDeps(
             tokens = booted.tokenRegistry,
-            idp = com.tneff.cyppieagents.auth.KratosIdentityProvider(
-                whoamiUrl = authCfg.kratosPublicUrl.trimEnd('/') + "/sessions/whoami",
-                timeoutMs = authCfg.whoamiTimeoutMs,
+            // CYP-240 (B): coalesce the ~N concurrent whoami a tokenless-SPA shell load fires for the SAME
+            // session into ONE in-flight resolution (no cross-request cache → posture unchanged). The shared
+            // resolution runs on an app-lifetime supervised scope, NOT a request coroutine, so a client
+            // disconnect can't kill it for the other awaiters. D-lite (retry-once on transient) lives inside
+            // the Kratos provider it wraps.
+            idp = com.tneff.cyppieagents.auth.CoalescingIdentityProvider(
+                delegate = com.tneff.cyppieagents.auth.KratosIdentityProvider(
+                    whoamiUrl = authCfg.kratosPublicUrl.trimEnd('/') + "/sessions/whoami",
+                    timeoutMs = authCfg.whoamiTimeoutMs,
+                ),
+                scope = kotlinx.coroutines.CoroutineScope(
+                    kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+                ),
             ),
             roles = com.tneff.cyppieagents.auth.SqliteRoleStore(
                 gitRoot.toPath().resolve(authCfg.roleDbPath),

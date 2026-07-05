@@ -4,8 +4,8 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.PrincipalKey
 import com.tneff.cyppieagents.auth.authenticatedApi
-import com.tneff.cyppieagents.auth.resolvePrincipal
 import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.events.Page
@@ -54,7 +54,11 @@ fun Route.eventRoutes(
         route("/api/events") {
             get {
                 val q = call.request.queryParameters
-                val isOperator = when (val p = call.resolvePrincipal(deps)) {
+                // CYP-240 (A): reuse the principal the STRUCTURAL AuthGuard already resolved + stashed under
+                // [PrincipalKey] — do NOT call resolvePrincipal again (that was a 2nd live Kratos whoami per
+                // /api/events request, doubling this endpoint's exposure to the whoami-race/timeout). The
+                // handler runs inside the authenticatedApi(MEMBER) group, so PrincipalKey is always present.
+                val isOperator = when (val p = call.attributes[PrincipalKey]) {
                     is AuthPrincipal.MachineOperator -> true
                     is AuthPrincipal.Human -> p.role == AuthRole.OPERATOR
                     else -> false
