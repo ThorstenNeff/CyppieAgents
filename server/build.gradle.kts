@@ -50,6 +50,9 @@ dependencies {
     // We control the decode (header-dim gate ourselves, then hand it a bounded BufferedImage). png+jpg only;
     // no native webp decoder pulled in (smallest attack surface on the untrusted upload path).
     implementation(libs.thumbnailator)
+    // CYP-220 Phase 2a: Google Tink — misuse-resistant AEAD + KMS envelope encryption for secrets at rest
+    // (API keys / remote tokens / DSN secrets). Master key (KEK) never in a user PG; AAD-bound ciphertext.
+    implementation(libs.tink)
     // CYP-178: an HTTP client to validate Kratos sessions (GET /sessions/whoami).
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.clientCio)
