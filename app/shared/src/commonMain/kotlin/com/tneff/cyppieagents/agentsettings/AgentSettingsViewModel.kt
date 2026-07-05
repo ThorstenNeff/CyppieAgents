@@ -130,6 +130,15 @@ class AgentSettingsViewModel(
         }
     }
 
+    /**
+     * CYP-237: [AgentSettingsUiState.saved] is a ONE-SHOT close signal — the host consumes it (resets to false)
+     * right after acting on it. The overlay's VM is RETAINED (`viewModel(key="agentSettings-$id")` survives the
+     * close), so a sticky `saved=true` would make the panel's `LaunchedEffect(saved)` re-fire `onSaved` at first
+     * composition when the SAME agent is reopened → an instant-close race (the user couldn't reopen the just-edited
+     * agent until reload). Consuming it makes every real save a fresh false→true edge.
+     */
+    fun consumeSaved() { _state.update { it.copy(saved = false) } }
+
     fun setName(v: String) = ifEditable { _state.update { it.copy(name = v, saved = false) } }
     fun setColorHex(v: String) = ifEditable { _state.update { it.copy(colorHex = v, saved = false) } }
     fun pickSwatch(hex: String) = ifEditable { _state.update { it.copy(colorHex = hex, saved = false) } }

@@ -510,7 +510,14 @@ fun AgentShell(
             val requestUpload = rememberImagePicker { picked ->
                 agentSettingsVm.uploadAvatar(picked.bytes, picked.filename, picked.mimeType)
             }
-            AgentSettingsPanel(agentSettingsVm, onDismiss = { settingsAgentId = null }, onRequestUpload = requestUpload)
+            AgentSettingsPanel(
+                agentSettingsVm,
+                onDismiss = { settingsAgentId = null },
+                // CYP-237: a successful save closes the overlay AND refreshes the management list (server truth) so
+                // the live titlebar/name/colour reflect the edit without a page reload. Cancel/backdrop → onDismiss only.
+                onSaved = { agentMgmtVm.refresh(); settingsAgentId = null },
+                onRequestUpload = requestUpload,
+            )
         }
 
         WindowHost(

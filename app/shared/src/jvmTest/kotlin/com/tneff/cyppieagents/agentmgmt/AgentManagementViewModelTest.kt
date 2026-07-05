@@ -2,7 +2,10 @@ package com.tneff.cyppieagents.agentmgmt
 import com.tneff.cyppieagents.model.WorktreeFate
 
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.AgentDetail
+import com.tneff.cyppieagents.model.AgentEdit
 import com.tneff.cyppieagents.model.AgentRunState
+import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.Role
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -189,5 +192,35 @@ class AgentManagementViewModelTest {
         // Re-open: the stored persona is PRESERVED (blank → null → server keeps it), not cleared (CYP-101).
         vm.openEdit(vm.state.value.agents.first { it.id == "fe" })
         assertEquals("original persona", vm.state.value.editForm.persona)
+    }
+
+    // --- CYP-237: live refresh after an out-of-band settings save (defect 2) ---
+
+    /** A repo whose server truth (the agent's name) can change out of band — models the per-agent settings
+     *  overlay persisting a rename through the SHARED repo, separate from this management VM. */
+    private class RenamingRepo(var serverName: String) : AgentManagementRepository {
+        override suspend fun list(): List<Agent> = listOf(Agent("fe", serverName, Role.WORKER, "fe", AgentRunState.RUNNING))
+        override suspend fun detail(id: String): AgentDetail = AgentDetail("fe", serverName, Role.WORKER, "fe", "claude", null)
+        override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+        override suspend fun edit(id: String, edit: AgentEdit): Agent = Agent("fe", serverName, Role.WORKER, "fe")
+        override suspend fun remove(id: String, worktree: WorktreeFate) {}
+    }
+
+    /**
+     * CYP-237 defect-2 (stale live state): after the per-agent settings overlay persists a rename through the SHARED
+     * repo, the management list — a SEPARATE VM that drives the live titlebar/window name — must reflect it via
+     * refresh() on the SAME instance, with NO page reload. Mutation: make refresh() a no-op → the name stays stale
+     * → RED (which is exactly the bug: only a reload re-instantiated the VM and re-fetched).
+     */
+    @Test
+    fun refresh_reflectsOutOfBandServerRename_sameInstance_noReload() {
+        val repo = RenamingRepo("Frontend")
+        val mgmt = vm(repo)
+        assertEquals("Frontend", mgmt.state.value.agents.first { it.id == "fe" }.name)
+        // The settings overlay saved a rename server-side (out of band from `mgmt`).
+        repo.serverName = "Frontend Renamed"
+        mgmt.refresh()
+        // Same VM instance now reflects the server truth — no reload needed.
+        assertEquals("Frontend Renamed", mgmt.state.value.agents.first { it.id == "fe" }.name)
     }
 }
