@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.db.MigrationRowCodec
 import com.tneff.cyppieagents.model.CreateProjectRequest
 import com.tneff.cyppieagents.model.Project
 import com.tneff.cyppieagents.model.ProjectGuard
@@ -105,7 +106,7 @@ class FileProjectRegistry(
     private val file: File?,
     seedProjectId: String,
     seedProjectName: String = seedProjectId,
-) : ProjectRegistry {
+) : ProjectRegistry, com.tneff.cyppieagents.db.MigrationTarget {
     private val lock = Any()
     private val log = LoggerFactory.getLogger("boot.projectregistry")
     private val projects = LinkedHashMap<String, Project>() // insertion order == list order
@@ -174,6 +175,26 @@ class FileProjectRegistry(
         val removed = projects.remove(id) ?: throw NotFoundException("project '$id' not found", code = "project_not_found")
         persist()
         removed
+    }
+
+    // ---- CYP-220 Phase 4 migration surface (com.tneff.cyppieagents.db.MigrationTarget) ----
+
+    override fun exportRows(): List<ByteArray> = synchronized(lock) {
+        buildList {
+            add(MigrationRowCodec.encode(listOf("A", active)))
+            projects.values.forEach { add(MigrationRowCodec.encode(listOf("P", it.id, it.name))) }
+        }
+    }
+
+    override fun importRows(rows: List<ByteArray>): Unit = synchronized(lock) {
+        projects.clear()
+        var newActive: String? = null
+        rows.forEach {
+            val f = MigrationRowCodec.decode(it)
+            when (f.first()) { "A" -> newActive = f[1]; "P" -> projects[f[1]] = Project(f[1], f[2]) }
+        }
+        newActive?.let { active = it }
+        persist()
     }
 
     private fun codeToException(code: String): Exception = projectGuardException(code)
