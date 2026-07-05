@@ -243,6 +243,7 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
             displayName = displayName,
             role = agent?.role,
             colorHex = agent?.color,
+            avatar = agent?.avatar, // CYP-216 UX-QA②: a set image shows on comm rows too, not just the titlebar.
         )
         Column(modifier = Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {

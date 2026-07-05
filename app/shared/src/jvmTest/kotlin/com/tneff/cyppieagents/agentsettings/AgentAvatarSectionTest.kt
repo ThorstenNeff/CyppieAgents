@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
@@ -60,11 +61,12 @@ class AgentAvatarSectionTest {
         onNodeWithTag(AgentSettingsTags.AVATAR_CURRENT).assert(stageIs("initials"))
         AVATAR_STYLES.forEach { onNodeWithTag(AgentSettingsTags.avatarPresetStyle(it.style)).assertExists() }
         onNodeWithTag(AgentSettingsTags.AVATAR_UPLOAD).assertExists()
-        // QA-7: one addressable credit line per CC-BY style (adventurer/big-smile/fun-emoji), not the free ones.
-        onNodeWithTag(AgentSettingsTags.avatarCreditEntry("adventurer")).assertExists()
-        onNodeWithTag(AgentSettingsTags.avatarCreditEntry("big-smile")).assertExists()
-        onNodeWithTag(AgentSettingsTags.avatarCreditEntry("fun-emoji")).assertExists()
-        onNodeWithTag(AgentSettingsTags.avatarCreditEntry("bottts")).assertDoesNotExist() // free → no attribution line
+        // QA-7 (UX-QA③): ALL 5 styles carry an addressable credit line — the free ones as honest courtesy credits.
+        AVATAR_STYLES.forEach { onNodeWithTag(AgentSettingsTags.avatarCreditEntry(it.style)).assertExists() }
+        onNodeWithTag(AgentSettingsTags.avatarCreditEntry("bottts")).assertExists() // free style now credited too
+        // UX-QA①: the licence URI is actually RENDERED (CC BY 4.0 §3(a)) — assert the unique bottts URL (same
+        // code path renders info.licenseUrl for every style, incl. the 3 shared CC-BY URIs).
+        onNodeWithText("https://bottts.com/").assertExists()
     }
 
     @Test

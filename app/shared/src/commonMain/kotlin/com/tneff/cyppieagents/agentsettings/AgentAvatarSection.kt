@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -172,22 +173,29 @@ fun AgentAvatarSection(viewModel: AgentSettingsViewModel, onRequestUpload: () ->
             }
         }
 
-        // --- Credits (§3.4): one addressable line per attributed (CC-BY) style. ---
-        val credited = AVATAR_STYLES.filter { it.attributionRequired }
-        if (credited.isNotEmpty()) {
-            val creditsCd = stringResource(Res.string.a11y_agent_avatar_credits)
-            Column(
-                modifier = Modifier.testTag(AgentSettingsTags.AVATAR_CREDITS).semantics { contentDescription = creditsCd },
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(stringResource(Res.string.agent_avatar_credits), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                credited.forEach { info ->
-                    val modified = if (info.modifiedSuffix) " (" + stringResource(Res.string.agent_avatar_credit_modified) + ")" else ""
+        // --- Credits (§3.4): ONE line per style — ALL five (PO directive 2026-07-05: bottts/avataaars as honest
+        // courtesy credits too), the "(modified)" suffix ONLY on the CC-BY ones. The licence NAME + its URI as a
+        // clickable link (CC BY 4.0 §3(a) requires the licence URI) — the free styles link their source homepage. ---
+        val uriHandler = LocalUriHandler.current
+        val creditsCd = stringResource(Res.string.a11y_agent_avatar_credits)
+        Column(
+            modifier = Modifier.testTag(AgentSettingsTags.AVATAR_CREDITS).semantics { contentDescription = creditsCd },
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(stringResource(Res.string.agent_avatar_credits), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+            AVATAR_STYLES.forEach { info ->
+                val modified = if (info.modifiedSuffix) " (" + stringResource(Res.string.agent_avatar_credit_modified) + ")" else ""
+                Column(modifier = Modifier.testTag(AgentSettingsTags.avatarCreditEntry(info.style))) {
                     Text(
                         text = stringResource(Res.string.agent_avatar_credit_line, stringResource(info.label), info.artist, info.license) + modified,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.testTag(AgentSettingsTags.avatarCreditEntry(info.style)),
+                    )
+                    Text(
+                        text = info.licenseUrl,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { uriHandler.openUri(info.licenseUrl) },
                     )
                 }
             }
