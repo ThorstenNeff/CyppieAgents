@@ -25,8 +25,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.tneff.cyppieagents.comm.AgentAvatar
-import com.tneff.cyppieagents.comm.SenderPalette
+import com.tneff.cyppieagents.ui.AgentAvatarView
+import com.tneff.cyppieagents.ui.SenderPalette
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
@@ -141,7 +141,7 @@ private fun IdentityCells(event: Event, showProject: Boolean, projectTag: String
     // Identity: the shared AgentAvatar (CYP-216) — initials + CYP-14 hue + CYP-209 ring, never status (§1). The
     // event stream carries only the agentId (no Agent/custom colour) → slot default; honouring a custom colour here
     // is a follow-up (needs the agent colour map threaded into the log). Name accent stays the CYP-14 slot tint.
-    AgentAvatar(id = event.agentId, size = 22.dp)
+    AgentAvatarView(id = event.agentId, size = 22.dp)
     Text(event.agentId, color = identity.nameAccent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
     // Correlation chip — truncated correlationId; absent → "—", never guessed (§4).
     Text(

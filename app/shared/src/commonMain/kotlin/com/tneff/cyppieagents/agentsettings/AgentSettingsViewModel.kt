@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
-import com.tneff.cyppieagents.comm.SenderPalette
+import com.tneff.cyppieagents.ui.SenderPalette
 import com.tneff.cyppieagents.model.AgentEdit
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.parseHexColor

@@ -93,7 +93,7 @@ import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.agentsettings.AgentSettingsPanel
 import com.tneff.cyppieagents.agentsettings.AgentSettingsViewModel
-import com.tneff.cyppieagents.comm.SenderPalette
+import com.tneff.cyppieagents.ui.SenderPalette
 import com.tneff.cyppieagents.net.sharedWsHttpClient
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets

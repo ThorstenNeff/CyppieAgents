@@ -47,6 +47,8 @@ import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.testing.testTagA11y
+import com.tneff.cyppieagents.ui.AgentAvatarView
+import com.tneff.cyppieagents.ui.SenderPalette
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_role_po
 import kmpcyppieagents.app.shared.generated.resources.comm_back
@@ -235,7 +237,7 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
     ) {
         // Avatar — the shared AgentAvatar (CYP-216): initials + identity colour + CYP-209 ring, honouring the
         // agent's custom colour (CYP-211). Name accent stays the CYP-14 slot tint (readable on the surface).
-        AgentAvatar(
+        AgentAvatarView(
             id = item.message.from,
             size = 28.dp,
             displayName = displayName,

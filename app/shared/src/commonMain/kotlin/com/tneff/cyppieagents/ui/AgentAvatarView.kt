@@ -1,4 +1,4 @@
-package com.tneff.cyppieagents.comm
+package com.tneff.cyppieagents.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -40,7 +40,7 @@ object AvatarTags {
  * announced here (no double-read).
  */
 @Composable
-fun AgentAvatar(
+fun AgentAvatarView(
     id: String,
     size: Dp,
     modifier: Modifier = Modifier,
@@ -71,8 +71,8 @@ fun AgentAvatar(
 
 /** Convenience overload for a resolved [Agent] — pulls id/name/role/colour off the model (CYP-210 seam). */
 @Composable
-fun AgentAvatar(agent: Agent, size: Dp, modifier: Modifier = Modifier) =
-    AgentAvatar(
+fun AgentAvatarView(agent: Agent, size: Dp, modifier: Modifier = Modifier) =
+    AgentAvatarView(
         id = agent.id,
         size = size,
         modifier = modifier,

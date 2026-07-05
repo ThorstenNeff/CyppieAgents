@@ -1,4 +1,4 @@
-package com.tneff.cyppieagents.comm
+package com.tneff.cyppieagents.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -15,25 +15,25 @@ import kotlin.test.Test
  * teeth (initials from name, id fallback, custom-colour path, the Agent overload) hold for all call sites at once.
  */
 @OptIn(ExperimentalTestApi::class)
-class AgentAvatarTest {
+class AgentAvatarViewTest {
 
     @Test
     fun rendersInitials_fromDisplayName() = runComposeUiTest {
-        setContent { MaterialTheme { AgentAvatar(id = "backend", size = 28.dp, displayName = "Backend Dev") } }
+        setContent { MaterialTheme { AgentAvatarView(id = "backend", size = 28.dp, displayName = "Backend Dev") } }
         onNodeWithTag(AvatarTags.avatar("backend")).assertExists()
         onNodeWithText("BD").assertExists() // first+last initial
     }
 
     @Test
     fun fallsBackToId_whenDisplayNameBlank() = runComposeUiTest {
-        setContent { MaterialTheme { AgentAvatar(id = "backend", size = 22.dp, displayName = "") } }
+        setContent { MaterialTheme { AgentAvatarView(id = "backend", size = 22.dp, displayName = "") } }
         // Stage-3 fallback: a blank name → initials of the stable id (never an empty avatar).
         onNodeWithText("BA").assertExists()
     }
 
     @Test
     fun customColorHex_takesTheDerivedPath_withoutCrashing() = runComposeUiTest {
-        setContent { MaterialTheme { AgentAvatar(id = "x", size = 24.dp, displayName = "Foo", colorHex = "#3B82F6") } }
+        setContent { MaterialTheme { AgentAvatarView(id = "x", size = 24.dp, displayName = "Foo", colorHex = "#3B82F6") } }
         onNodeWithTag(AvatarTags.avatar("x")).assertExists()
         onNodeWithText("FO").assertExists() // single word → first two letters
     }
@@ -41,7 +41,7 @@ class AgentAvatarTest {
     @Test
     fun agentOverload_pullsIdentityFromTheModel() = runComposeUiTest {
         val agent = Agent("frontend", "Frontend", Role.WORKER, "frontend")
-        setContent { MaterialTheme { AgentAvatar(agent, size = 28.dp) } }
+        setContent { MaterialTheme { AgentAvatarView(agent, size = 28.dp) } }
         onNodeWithTag(AvatarTags.avatar("frontend")).assertExists()
         onNodeWithText("FR").assertExists()
     }
