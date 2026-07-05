@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.crypto.MasterKeySource
 import com.tneff.cyppieagents.crypto.SecretCipher
 import com.tneff.cyppieagents.crypto.SecretCipherFactory
 import com.tneff.cyppieagents.model.CreateProjectRequest
+import com.tneff.cyppieagents.model.Project
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import java.io.PrintWriter
 import java.nio.file.Files
@@ -71,6 +72,32 @@ class ProjectRegistryMigrationTest {
         // ROLLBACK: the store is unbound → falls back to the File source, which is untouched (A retained).
         assertNull(bindings.binding("projectregistry", "default"), "failed migration → unbound (File fallback)")
         assertEquals(listOf("default", "beta", "gamma"), source.projects().map { it.id }, "source registry intact")
+        assertEquals("beta", source.activeProjectId())
+    }
+
+    @Test fun migrate_checksumMismatch_countEqual_abortsAndRollsBack() {
+        // NON-VACUOUS checksum tooth (Test/PO-Assistant Finding A): a target that copies a COUNT-EQUAL but
+        // CONTENT-DIFFERENT snapshot. Row-count matches → ONLY the checksum catches it. This exercises the
+        // mismatch → MigrationVerifyException → rollback branch that no real-PG test could reach (importAll is
+        // faithful). Mutate the checksum out (count-only) → this goes RED (no exception). No embedded PG needed.
+        val source = fileRegistry() // [default, beta, gamma], active = beta
+        val corruptTarget = object : MigrationTarget {
+            private var stored: List<Project> = emptyList()
+            private var active = ""
+            override fun importAll(projects: List<Project>, active: String) {
+                this.stored = projects.map { it.copy(name = it.name + "-tampered") } // same COUNT, different content
+                this.active = active
+            }
+            override fun projects(): List<Project> = stored
+            override fun activeProjectId(): String = active
+        }
+        val bindings = BindingRegistry(null)
+        assertFailsWith<MigrationVerifyException> {
+            ProjectRegistryMigrator(bindings).migrate(source, corruptTarget, "projectregistry", "default", "pg1")
+        }
+        // rollback: the store is unbound (File fallback) and the source is byte-for-byte intact (A retained).
+        assertNull(bindings.binding("projectregistry", "default"), "checksum mismatch → unbound (rollback to File)")
+        assertEquals(listOf("default", "beta", "gamma"), source.projects().map { it.id }, "source A retained + intact")
         assertEquals("beta", source.activeProjectId())
     }
 

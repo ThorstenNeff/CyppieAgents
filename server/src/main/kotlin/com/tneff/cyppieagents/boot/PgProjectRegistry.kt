@@ -24,7 +24,7 @@ class PgProjectRegistry(
     migrate: Boolean = true,
     /** A **migration target** passes false: migrate the schema but do NOT seed — the migrator fills it via [importAll]. */
     seedIfEmpty: Boolean = true,
-) : ProjectRegistry {
+) : ProjectRegistry, com.tneff.cyppieagents.db.MigrationTarget {
     private val lock = Any()
 
     init {
@@ -50,13 +50,14 @@ class PgProjectRegistry(
      * table with [projects] (in order) + set the active pointer. One transaction — all-or-nothing. Used only by
      * [com.tneff.cyppieagents.db.ProjectRegistryMigrator] into a freshly-migrated, un-seeded target.
      */
-    fun importAll(projects: List<Project>, active: String) = synchronized(lock) {
+    override fun importAll(projects: List<Project>, active: String): Unit = synchronized(lock) {
         tx { c ->
             c.prepareStatement("DELETE FROM project").use { it.executeUpdate() }
             c.prepareStatement("DELETE FROM project_active").use { it.executeUpdate() }
             projects.forEach { insertProject(c, it) } // seq auto-increments in insertion order
             setActivePointer(c, active)
         }
+        Unit
     }
 
     // ---- reads ----

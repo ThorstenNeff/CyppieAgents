@@ -1,10 +1,21 @@
 package com.tneff.cyppieagents.db
 
-import com.tneff.cyppieagents.boot.PgProjectRegistry
 import com.tneff.cyppieagents.boot.ProjectRegistry
 import com.tneff.cyppieagents.model.Project
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
+
+/**
+ * The **migration-target seam** (CYP-220 Phase 3): exactly what [ProjectRegistryMigrator] needs of a target —
+ * a raw bulk [importAll] plus the two verify reads. Implemented by [com.tneff.cyppieagents.boot.PgProjectRegistry];
+ * an interface (not the concrete class) so a test can inject a **count-equal, content-different** target and
+ * exercise the checksum-mismatch → abort → rollback branch (which a count-only verify would slip through).
+ */
+interface MigrationTarget {
+    fun importAll(projects: List<Project>, active: String)
+    fun projects(): List<Project>
+    fun activeProjectId(): String
+}
 
 /** The outcome of a store migration — honest no-orphan reporting (counts + checksum, no content). */
 data class MigrationReceipt(
@@ -33,7 +44,7 @@ class ProjectRegistryMigrator(private val bindings: BindingRegistry) {
 
     fun migrate(
         source: ProjectRegistry,
-        target: PgProjectRegistry,
+        target: MigrationTarget,
         storeKey: String,
         projectId: String,
         targetDsnId: String,
