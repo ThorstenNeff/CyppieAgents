@@ -1,0 +1,42 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-233 (Projekt-Leiste Discoverability — Erst-Nutzer-Politur)",
+    "version": "1.0",
+    "status": "Vorschlag — rein UI + Copy/a11y, keine Model-/Endpoint-Aenderung. Speist Dev CYP-233; UX-QA danach UIUX. Low, XS-S.",
+    "brand": "CyppieAgents (Anti-Hype; interim look + M3)",
+    "grounded_against": "develop 0394316 (ProjectSwitcherBar/ProjectTags/strings.xml)",
+    "origin": "Multi-Projekt-Support-Fund. Der staerkere dritte Fund (Add-Agent nennt aktives Projekt nicht) ist als agent_add_project_scope_note in CYP-228 gefaltet.",
+    "principles": [
+      "Rein Affordance/Copy: kein Menue-Weg-Wechsel, kein zweiter Anlegen-Button.",
+      "Ein-Projekt-Hinweis verweist nur auf den real vorhandenen 'Projekte verwalten'-Eintrag (kein toter Hinweis) und nur bei projects.size==1 (kein Dauer-Rauschen).",
+      "Operator-Gate bleibt; der Hinweis ist neutrale Info, kein CTA."
+    ]
+  },
+  "menu_affordance": {
+    "tag": "projectSwitcher.menu (reuse — bestehender Menue-Button)",
+    "label_key": "project_switcher_menu_label",
+    "visible": "'Projekte' + '▾'-Caret statt nacktem '▾'",
+    "a11y": "a11y_project_switcher_menu bleibt unveraendert (war schon gut)",
+    "behavior": "unveraendert (oeffnet dasselbe Dropdown: Wechseln + 'Projekte verwalten')"
+  },
+  "single_project_hint": {
+    "tag": "projectSwitcher.singleHint",
+    "key": "project_switcher_single_hint",
+    "tone": "INFO",
+    "condition": "state.projects.size == 1",
+    "placement": "im Dropdown ueber dem 'Projekte verwalten'-Eintrag",
+    "references": "project_manage ('Projekte verwalten') — zitierter Name MUSS diesem String entsprechen",
+    "content": "'Weitere Projekte ueber ‚Projekte verwalten’ anlegen.' — verschwindet ab dem zweiten Projekt."
+  },
+  "validation": {
+    "new_keys": 2,
+    "new_tags": 1,
+    "new_colors": 0,
+    "new_tokens": 0,
+    "reuse": "projectSwitcher.menu/manage/switchHint/scopeHint, a11y_project_switcher_menu, project_manage, TonedHint(INFO)",
+    "no_model_change": "Project/Routes/Switch-Verhalten unveraendert; nur sichtbares Label + bedingter INFO-Hinweis.",
+    "no_secrets": "keine Token/E-Mail/Endpoints; Copy neutral",
+    "honesty": "Affordance-only (kein Verhaltenswechsel); Ein-Projekt-Hinweis nur bei 1 Projekt + verweist auf realen Eintrag; Operator-Gate intakt; Zitat == project_manage."
+  }
+}
