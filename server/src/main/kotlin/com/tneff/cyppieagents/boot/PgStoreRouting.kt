@@ -3,7 +3,13 @@ package com.tneff.cyppieagents.boot
 import com.tneff.cyppieagents.agentevents.AgentEventStore
 import com.tneff.cyppieagents.agentevents.MigrationGatedAgentEventStore
 import com.tneff.cyppieagents.comm.ChannelShareStore
+import com.tneff.cyppieagents.comm.DeliveryLog
+import com.tneff.cyppieagents.comm.MigrationGatedDeliveryLog
 import com.tneff.cyppieagents.comm.PgChannelShareStore
+import com.tneff.cyppieagents.comm.PgDeliveryLog
+import com.tneff.cyppieagents.connector.MigrationGatedSessionStore
+import com.tneff.cyppieagents.connector.PgSessionStore
+import com.tneff.cyppieagents.connector.SessionStore
 import com.tneff.cyppieagents.crypto.SecretCipher
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.events.MigrationGatedEventSink
@@ -139,5 +145,27 @@ object PgStoreRouting {
     ): AgentEventStore {
         if (inMigrationWindow("agent_events", projectId, bindings)) return MigrationGatedAgentEventStore(fileFallback())
         return activeDataSource("agent_events", projectId, bindings, connections)?.let { pg(it) } ?: fileFallback()
+    }
+
+    // ---- S6: non-secret lightweight stores (no cipher; inline construction like S4 — no WAL/flow/seq). ----
+
+    fun sessionStore(
+        projectId: String,
+        bindings: BindingRegistry,
+        connections: ConnectionProvider,
+        fileFallback: () -> SessionStore,
+    ): SessionStore {
+        if (inMigrationWindow("session", projectId, bindings)) return MigrationGatedSessionStore(fileFallback())
+        return activeDataSource("session", projectId, bindings, connections)?.let { PgSessionStore(it) } ?: fileFallback()
+    }
+
+    fun deliveryLog(
+        projectId: String,
+        bindings: BindingRegistry,
+        connections: ConnectionProvider,
+        fileFallback: () -> DeliveryLog,
+    ): DeliveryLog {
+        if (inMigrationWindow("delivery", projectId, bindings)) return MigrationGatedDeliveryLog(fileFallback())
+        return activeDataSource("delivery", projectId, bindings, connections)?.let { PgDeliveryLog(it) } ?: fileFallback()
     }
 }
