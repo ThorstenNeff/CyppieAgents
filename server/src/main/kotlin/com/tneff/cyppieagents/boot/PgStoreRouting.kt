@@ -1,8 +1,12 @@
 package com.tneff.cyppieagents.boot
 
+import com.tneff.cyppieagents.agentevents.AgentEventStore
+import com.tneff.cyppieagents.agentevents.MigrationGatedAgentEventStore
 import com.tneff.cyppieagents.comm.ChannelShareStore
 import com.tneff.cyppieagents.comm.PgChannelShareStore
 import com.tneff.cyppieagents.crypto.SecretCipher
+import com.tneff.cyppieagents.events.EventSink
+import com.tneff.cyppieagents.events.MigrationGatedEventSink
 import com.tneff.cyppieagents.db.BindingRegistry
 import com.tneff.cyppieagents.db.BindingState
 import com.tneff.cyppieagents.db.ConnectionProvider
@@ -107,5 +111,33 @@ object PgStoreRouting {
         if (inMigrationWindow("channel_share", projectId, bindings)) return MigrationGatedChannelShareStore(fileFallback())
         return activeDataSource("channel_share", projectId, bindings, connections)
             ?.let { PgChannelShareStore(it) } ?: fileFallback()
+    }
+
+    // ---- S5: high-volume append-only stores. UNLIKE the JSON/File stores above, these are HEAVYWEIGHT +
+    //         LONG-LIVED (a JDBC connection + WAL + a live SharedFlow + seq continuity), so `pg` is a
+    //         MEMOIZING factory the caller (live-wiring) supplies — it must return the SAME instance per
+    //         DataSource, never construct one per op (that would reopen the DB and orphan live subscribers).
+    //         The accessor only SELECTS (residency + window + bound/ACTIVE), it does not own the lifetime.
+
+    fun eventSink(
+        projectId: String,
+        bindings: BindingRegistry,
+        connections: ConnectionProvider,
+        pg: (DataSource) -> EventSink,
+        fileFallback: () -> EventSink,
+    ): EventSink {
+        if (inMigrationWindow("event_log", projectId, bindings)) return MigrationGatedEventSink(fileFallback())
+        return activeDataSource("event_log", projectId, bindings, connections)?.let { pg(it) } ?: fileFallback()
+    }
+
+    fun agentEventStore(
+        projectId: String,
+        bindings: BindingRegistry,
+        connections: ConnectionProvider,
+        pg: (DataSource) -> AgentEventStore,
+        fileFallback: () -> AgentEventStore,
+    ): AgentEventStore {
+        if (inMigrationWindow("agent_events", projectId, bindings)) return MigrationGatedAgentEventStore(fileFallback())
+        return activeDataSource("agent_events", projectId, bindings, connections)?.let { pg(it) } ?: fileFallback()
     }
 }
