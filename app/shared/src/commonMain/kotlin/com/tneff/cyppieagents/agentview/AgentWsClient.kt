@@ -10,6 +10,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
+import io.ktor.http.encodeURLParameter
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
@@ -73,7 +74,9 @@ class AgentWsClient(
             try {
                 client.webSocket(
                     urlString = agentUrl(),
-                    request = { header(HttpHeaders.Authorization, "Bearer $token") },
+                    // CYP-230: only send a Bearer when we actually have a token (native/agent-self/break-glass
+                    // operator). The deployed SPA sends none → the server authenticates via the handshake session cookie.
+                    request = { if (token.isNotBlank()) header(HttpHeaders.Authorization, "Bearer $token") },
                 ) {
                     _connection.value = ConnectionStatus.LIVE
                     attempt = 0 // a successful connect resets the backoff ladder
@@ -115,6 +118,9 @@ class AgentWsClient(
         // Omit `since` on the first connect (lastSeq < 0) → the server replays the whole history; on reconnect
         // resume from the cursor. Auth via `?token=` (browser WS can't set the Authorization header).
         val since = if (lastSeq >= 0L) "&since=$lastSeq" else ""
-        return "$baseUrl${sep}ws/agent?agentId=$agentId&token=$token$since"
+        // CYP-230: send `?token=` ONLY when a token is present; the deployed SPA sends none → cookie auth. No blank/
+        // guessable token ever leaves the client. id + token URL-encoded (defense: no `&`/scheme/param injection).
+        val tokenParam = if (token.isNotBlank()) "&token=${token.encodeURLParameter()}" else ""
+        return "$baseUrl${sep}ws/agent?agentId=${agentId.encodeURLParameter()}$tokenParam$since"
     }
 }
