@@ -105,6 +105,9 @@ fun WindowHost(
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     /** CYP-211: per-window settings opener for the titlebar ⋮ button; `null` → no button (system windows). */
     settingsFor: (String) -> (() -> Unit)? = { null },
+    // CYP-216: optional leading titlebar slot (the §5.1 inverted-disc avatar) — a host-injected composable so the
+    // window layer stays free of Agent/avatar/comm imports; null → no leading element (e.g. system windows).
+    titleBarLeadingFor: (String) -> (@Composable () -> Unit)? = { null },
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -126,7 +129,8 @@ fun WindowHost(
         } else {
             WindowCanvas(
                 state = state, onFit = onFit, badgeFor = badgeFor,
-                titleBarColorsFor = titleBarColorsFor, settingsFor = settingsFor, windowContent = windowContent,
+                titleBarColorsFor = titleBarColorsFor, settingsFor = settingsFor, titleBarLeadingFor = titleBarLeadingFor,
+                windowContent = windowContent,
             )
         }
     }
@@ -144,6 +148,9 @@ private fun WindowCanvas(
     badgeFor: (String) -> WindowBadge?,
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     settingsFor: (String) -> (() -> Unit)? = { null },
+    // CYP-216: optional leading titlebar slot (the §5.1 inverted-disc avatar) — a host-injected composable so the
+    // window layer stays free of Agent/avatar/comm imports; null → no leading element (e.g. system windows).
+    titleBarLeadingFor: (String) -> (@Composable () -> Unit)? = { null },
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().testTagA11y(WindowTestTags.HOST)) {
@@ -161,6 +168,7 @@ private fun WindowCanvas(
                     badge = badgeFor(window.id),
                     titleBarColors = titleBarColorsFor(window.id),
                     onSettings = settingsFor(window.id),
+                    titleBarLeading = titleBarLeadingFor(window.id),
                     content = { windowContent(window) },
                 )
             }
@@ -420,6 +428,7 @@ fun FloatingWindow(
     /** CYP-211: the agent's derived titlebar colours; `null` → the default M3 primary/surfaceVariant theming
      *  (system windows). Focused = full colour; unfocused = dimmed toward the surface (elevation still carries focus). */
     titleBarColors: TitleBarColors? = null,
+    titleBarLeading: (@Composable () -> Unit)? = null,
     /** CYP-211: opens this window's settings panel; `null` → no ⋮ button (e.g. system windows). */
     onSettings: (() -> Unit)? = null,
     content: @Composable () -> Unit,
@@ -520,6 +529,10 @@ fun FloatingWindow(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // CYP-216 §5.1: the leading inverted-disc avatar (host-injected), left of the title.
+                        titleBarLeading?.let { leading ->
+                            Box(modifier = Modifier.padding(end = 8.dp)) { leading() }
+                        }
                         Text(
                             text = window.title,
                             maxLines = 1,

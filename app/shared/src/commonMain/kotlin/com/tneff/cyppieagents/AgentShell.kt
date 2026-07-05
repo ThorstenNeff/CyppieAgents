@@ -92,6 +92,7 @@ import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.agentsettings.AgentSettingsPanel
 import com.tneff.cyppieagents.agentsettings.AgentSettingsViewModel
+import com.tneff.cyppieagents.ui.AgentAvatarView
 import com.tneff.cyppieagents.ui.LocalAvatarBaseUrl
 import com.tneff.cyppieagents.ui.LocalAvatarImageLoader
 import com.tneff.cyppieagents.ui.SenderPalette
@@ -519,6 +520,16 @@ fun AgentShell(
                 }
             },
             settingsFor = { id -> if (id in agentById) ({ settingsAgentId = id }) else null },
+            // CYP-216 §5.1: agent windows get the leading inverted-disc avatar (same TitleBarColors the bar is themed
+            // with → the avatar inverts within it). System windows (not in agentById) → null → no leading avatar.
+            titleBarLeadingFor = { id ->
+                agentById[id]?.let { agent ->
+                    val sc = SenderPalette.forAgent(agent.id, agent.role, agent.color)
+                    val tb = TitleBarColors(background = sc.avatarFill, content = sc.onAvatar, border = sc.borderColor)
+                    val slot: @Composable () -> Unit = { AgentAvatarView(agent, size = 20.dp, tintedBar = tb) }
+                    slot
+                }
+            },
             windowContent = { window ->
                 // Reuse the hoisted (always-alive) VMs — never a second viewModel() here, so each
                 // window keeps exactly one subscription whether rendered in the canvas or the pager.
