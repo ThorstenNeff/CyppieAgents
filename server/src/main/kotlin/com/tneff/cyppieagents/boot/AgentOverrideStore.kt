@@ -70,6 +70,19 @@ interface AgentOverrideStore {
 }
 
 /**
+ * CYP-220 Phase 6 — the **blank/null-PRESERVES** string-field merge (the [AgentOverrideStore.put] data-safety
+ * rule), extracted so the File and Postgres impls apply it from ONE source and cannot drift. The avatar is never
+ * touched here (it has its own [AgentOverrideStore.setAvatar] clear path).
+ */
+internal fun AgentOverride.mergeStringFields(name: String?, color: String?, persona: String?, launch: String?): AgentOverride =
+    copy(
+        name = name?.ifBlank { null } ?: this.name,
+        color = color?.ifBlank { null } ?: this.color,
+        persona = persona?.ifBlank { null } ?: this.persona,
+        launch = launch?.ifBlank { null } ?: this.launch,
+    )
+
+/**
  * It is the
  * OVERRIDE layer over the `platform.config.json` **seed** (the operator's hand-authored file is never
  * rewritten — non-invasive, no clobber). Mirrors [ProjectConfigStore]: a single JSON file, atomic-move
@@ -93,12 +106,7 @@ class FileAgentOverrideStore(private val file: File?) : AgentOverrideStore {
     override fun put(projectId: String, agentId: String, name: String?, color: String?, persona: String?, launch: String?): AgentOverride =
         synchronized(lock) {
             val cur = byProject.getOrPut(projectId) { HashMap() }[agentId] ?: AgentOverride()
-            val next = cur.copy(
-                name = name?.ifBlank { null } ?: cur.name,
-                color = color?.ifBlank { null } ?: cur.color,
-                persona = persona?.ifBlank { null } ?: cur.persona,
-                launch = launch?.ifBlank { null } ?: cur.launch,
-            )
+            val next = cur.mergeStringFields(name, color, persona, launch)
             byProject.getOrPut(projectId) { HashMap() }[agentId] = next
             persist()
             next
