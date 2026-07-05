@@ -21,6 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.ui.HintTone
@@ -36,6 +41,9 @@ import kmpcyppieagents.app.shared.generated.resources.auth_github_error
 import kmpcyppieagents.app.shared.generated.resources.auth_github_redirect
 import kmpcyppieagents.app.shared.generated.resources.auth_github_returning
 import kmpcyppieagents.app.shared.generated.resources.auth_link_forgot
+import kmpcyppieagents.app.shared.generated.resources.auth_reset_code_hint
+import kmpcyppieagents.app.shared.generated.resources.auth_reset_code_label
+import kmpcyppieagents.app.shared.generated.resources.a11y_auth_reset_code
 import kmpcyppieagents.app.shared.generated.resources.auth_or_divider
 import kmpcyppieagents.app.shared.generated.resources.auth_link_to_login
 import kmpcyppieagents.app.shared.generated.resources.auth_link_to_register
@@ -393,58 +401,77 @@ private fun ForgotScreen(state: AuthUiState.ForgotRequest, vm: AuthViewModel) {
 
 @Composable
 private fun ResetScreen(state: AuthUiState.ResetSetNew, vm: AuthViewModel) {
+    // CYP-227: Kratos code-recovery — collect the emailed 6-digit CODE + the new password. The code field pre-fills
+    // from a code-carrying deep-link ([prefilledCode]); the user's typed code survives a wrong-code retry.
+    var code by remember { mutableStateOf((state.prefilledCode ?: "").filter(Char::isDigit).take(6)) }
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     val submitting = state.phase is Phase.Submitting
     val mismatch = confirm.isNotBlank() && password != confirm
-    val canSubmit = !submitting && password.isNotBlank() && confirm.isNotBlank() && !mismatch
-    val submit = { if (canSubmit) vm.setNewPassword(password) }
+    val codeOk = code.length == 6
+    val canSubmit = !submitting && codeOk && password.isNotBlank() && confirm.isNotBlank() && !mismatch
+    val submit = { if (canSubmit) vm.setNewPassword(code, password) }
 
     AuthFormCard(AuthTags.RESET_FORM) {
         AuthTitle(stringResource(Res.string.auth_reset_title))
-        when {
+        if (state.done) {
             // Success terminal: shown here (reset-scoped tag) with a path back to sign-in.
-            state.done -> {
-                AnnouncingHint(
-                    stringResource(Res.string.auth_reset_success), HintTone.INFO,
-                    AuthTags.RESET_SUCCESS, LiveRegionMode.Polite,
-                )
-                TextButton(onClick = vm::goToLogin) { Text(stringResource(Res.string.auth_link_to_login)) }
-            }
-            // Token invalid/expired: honest error + a path to request a fresh link.
-            state.tokenInvalid -> {
+            AnnouncingHint(
+                stringResource(Res.string.auth_reset_success), HintTone.INFO,
+                AuthTags.RESET_SUCCESS, LiveRegionMode.Polite,
+            )
+            TextButton(onClick = vm::goToLogin) { Text(stringResource(Res.string.auth_link_to_login)) }
+        } else {
+            // "Enter the 6-digit code we sent to <email>" — the code-entry step.
+            state.sentTo?.let { AuthInfoNote(stringResource(Res.string.auth_reset_code_hint, it)) }
+            val codeCd = stringResource(Res.string.a11y_auth_reset_code)
+            OutlinedTextField(
+                value = code,
+                // Digits-only + max 6 → paste-friendly (strips spaces/dashes) and numeric keyboard (§UX ergonomics).
+                onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                label = { Text(stringResource(Res.string.auth_reset_code_label)) },
+                singleLine = true,
+                enabled = !submitting,
+                isError = state.tokenInvalid,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                modifier = Modifier.fillMaxWidth().testTag(AuthTags.RESET_CODE).semantics { contentDescription = codeCd },
+            )
+            AuthPasswordField(
+                value = password, onValueChange = { password = it }, enabled = !submitting, isError = mismatch,
+                label = Res.string.auth_reset_new_label, contentDesc = Res.string.a11y_auth_password,
+                fieldTag = AuthTags.RESET_PASSWORD, revealTag = AuthTags.RESET_PASSWORD_REVEAL,
+                imeAction = ImeAction.Next,
+            )
+            AuthPasswordField(
+                value = confirm, onValueChange = { confirm = it }, enabled = !submitting, isError = mismatch,
+                label = Res.string.auth_password_confirm_label, contentDesc = Res.string.a11y_auth_password_confirm,
+                fieldTag = AuthTags.RESET_PASSWORD_CONFIRM, revealTag = null,
+                imeAction = ImeAction.Done, keyboardActions = KeyboardActions(onDone = { submit() }),
+            )
+            AuthInfoNote(stringResource(Res.string.auth_register_password_rule))
+            Button(
+                onClick = submit, enabled = canSubmit,
+                modifier = Modifier.fillMaxWidth().testTag(AuthTags.RESET_SUBMIT),
+            ) { Text(stringResource(if (submitting) Res.string.auth_submitting else Res.string.auth_submit_reset)) }
+
+            // Wrong/expired code — inline + re-enterable (never a terminal dead-end for the real recovery path).
+            if (state.tokenInvalid) {
                 AnnouncingHint(
                     stringResource(Res.string.auth_reset_token_invalid), HintTone.ERROR,
                     AuthTags.RESET_TOKEN_INVALID, LiveRegionMode.Assertive,
                 )
-                TextButton(onClick = vm::goToForgot) { Text(stringResource(Res.string.auth_link_forgot)) }
             }
-            else -> {
-                AuthPasswordField(
-                    value = password, onValueChange = { password = it }, enabled = !submitting, isError = mismatch,
-                    label = Res.string.auth_reset_new_label, contentDesc = Res.string.a11y_auth_password,
-                    fieldTag = AuthTags.RESET_PASSWORD, revealTag = AuthTags.RESET_PASSWORD_REVEAL,
-                    imeAction = ImeAction.Next,
+            (state.phase as? Phase.RateLimited)?.let { p ->
+                AnnouncingHint(
+                    rateLimitedText(p.retryAfter), HintTone.EFFECT_DEFERRED,
+                    AuthTags.RESET_RATE_LIMITED, LiveRegionMode.Assertive,
                 )
-                AuthPasswordField(
-                    value = confirm, onValueChange = { confirm = it }, enabled = !submitting, isError = mismatch,
-                    label = Res.string.auth_password_confirm_label, contentDesc = Res.string.a11y_auth_password_confirm,
-                    fieldTag = AuthTags.RESET_PASSWORD_CONFIRM, revealTag = null,
-                    imeAction = ImeAction.Done, keyboardActions = KeyboardActions(onDone = { submit() }),
-                )
-                AuthInfoNote(stringResource(Res.string.auth_register_password_rule))
-                Button(
-                    onClick = submit, enabled = canSubmit,
-                    modifier = Modifier.fillMaxWidth().testTag(AuthTags.RESET_SUBMIT),
-                ) { Text(stringResource(if (submitting) Res.string.auth_submitting else Res.string.auth_submit_reset)) }
-
-                (state.phase as? Phase.RateLimited)?.let { p ->
-                    AnnouncingHint(
-                        rateLimitedText(p.retryAfter), HintTone.EFFECT_DEFERRED,
-                        AuthTags.RESET_RATE_LIMITED, LiveRegionMode.Assertive,
-                    )
-                }
             }
+            // Request a fresh code (e.g. expired) — back to the email step.
+            TextButton(
+                onClick = vm::goToForgot, enabled = !submitting,
+                modifier = Modifier.testTag(AuthTags.RESET_TO_FORGOT),
+            ) { Text(stringResource(Res.string.auth_link_forgot)) }
         }
     }
 }

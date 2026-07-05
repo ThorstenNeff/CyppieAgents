@@ -373,12 +373,16 @@
     <string name="auth_verify_token_invalid">This confirmation link is invalid or has expired.</string>
     <string name="auth_logout">Sign out</string>
     <string name="auth_forgot_title">Forgot password</string>
-    <string name="auth_forgot_body">Enter your email address. We'll send you a reset link.</string>
-    <string name="auth_forgot_sent">If an account exists for %1$s, we've sent a reset link.</string>
+    <string name="auth_forgot_body">Enter your email address. We'll send you a reset code.</string>
+    <string name="auth_forgot_sent">If an account exists for %1$s, we've sent a reset code.</string>
     <string name="auth_reset_title">Set a new password</string>
     <string name="auth_reset_new_label">New password</string>
+    <!-- CYP-227: Kratos code-recovery — the 6-digit code the user enters to complete a password reset. -->
+    <string name="auth_reset_code_label">Code</string>
+    <string name="auth_reset_code_hint">Enter the 6-digit code we sent to %1$s.</string>
+    <string name="a11y_auth_reset_code">Recovery code</string>
     <string name="auth_reset_success">Password changed. You can sign in now.</string>
-    <string name="auth_reset_token_invalid">This link is invalid or has expired. Request a new one.</string>
+    <string name="auth_reset_token_invalid">This code is invalid or has expired. Request a new one.</string>
     <string name="auth_reset_error">Reset failed. Please try again.</string>
     <string name="auth_github_button">Sign in with GitHub</string>
     <string name="auth_github_redirect">Continuing to GitHub…</string>

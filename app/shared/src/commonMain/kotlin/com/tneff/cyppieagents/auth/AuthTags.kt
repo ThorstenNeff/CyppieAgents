@@ -62,6 +62,8 @@ object AuthTags {
 
     // --- Reset password / set-new (scopeId = reset) ---
     const val RESET_FORM = "auth.reset.form"
+    const val RESET_CODE = "auth.reset.code"
+    const val RESET_TO_FORGOT = "auth.reset.toForgot"
     const val RESET_PASSWORD = "auth.reset.password"
     const val RESET_PASSWORD_REVEAL = "auth.reset.passwordReveal"
     const val RESET_PASSWORD_CONFIRM = "auth.reset.passwordConfirm"

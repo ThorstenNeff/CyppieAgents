@@ -43,9 +43,16 @@ sealed interface AuthUiState {
     /** Forgot-password request. [sentTo] set → render the **neutral** "if an account exists…" line. */
     data class ForgotRequest(val phase: Phase = Phase.Idle, val sentTo: String? = null) : AuthUiState
 
-    /** Set-new-password (reached via the reset deep-link). [tokenInvalid]/[done] are terminal cues. */
+    /**
+     * The recovery **code**-entry step (CYP-227): Kratos is `use: code`, so [requestReset] leads here (neutral —
+     * shown whether or not the address exists) to collect the 6-digit code + the new password. [sentTo] labels the
+     * address the code was emailed to; [prefilledCode] pre-fills the field from a code-carrying reset deep-link.
+     * [tokenInvalid] = a wrong/expired code (re-enterable, not terminal); [done] = terminal success.
+     */
     data class ResetSetNew(
         val phase: Phase = Phase.Idle,
+        val sentTo: String? = null,
+        val prefilledCode: String? = null,
         val tokenInvalid: Boolean = false,
         val done: Boolean = false,
     ) : AuthUiState
@@ -97,9 +104,6 @@ class AuthViewModel(
     private val runScope: CoroutineScope = scope ?: viewModelScope
     private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Loading)
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
-
-    /** The reset deep-link token, held only in memory, never rendered/logged (auth-spec §2.2). */
-    private var resetToken: String? = null
 
     init { runScope.launch { checkSession() } }
 
@@ -157,32 +161,37 @@ class AuthViewModel(
             val r = runCatching { repository.requestReset(email) }
                 .getOrElse { e -> if (e is CancellationException) throw e; ResetRequestResult.Accepted } // neutral even on failure
             _state.value = when (r) {
-                ResetRequestResult.Accepted -> AuthUiState.ForgotRequest(sentTo = email)
+                // CYP-227: Kratos is code-recovery → advance to the code-entry step. Neutral, no enumeration: the
+                // screen appears whether or not the address exists; only a valid code + account can succeed.
+                ResetRequestResult.Accepted -> AuthUiState.ResetSetNew(sentTo = email)
                 is ResetRequestResult.RateLimited -> AuthUiState.ForgotRequest(Phase.RateLimited(r.retryAfter))
             }
         }
     }
 
-    // --- Reset deep-link (§2.2 / §7.5) ---
-    /** Entry from the platform reset deep-link handler. The token is held, never rendered. */
+    // --- Reset deep-link (§2.2 / §7.5) — a code-carrying magic link pre-fills the code field (CYP-227 fallback) ---
+    /** Entry from the platform reset deep-link handler. In code-recovery the link carries the code → pre-fill it. */
     fun openResetLink(token: String) {
-        resetToken = token
-        _state.value = AuthUiState.ResetSetNew()
+        _state.value = AuthUiState.ResetSetNew(prefilledCode = token)
     }
 
-    fun setNewPassword(newPassword: String) {
+    /**
+     * CYP-227 — submit the emailed 6-digit recovery [code] + the [newPassword] to the held browser recovery flow
+     * (`repository.setNewPassword` submits `method=code`, then sets the password on the elevated session). A
+     * wrong/expired code → [ResetSetNew.tokenInvalid] on the SAME screen (re-enterable), never a terminal dead-end.
+     */
+    fun setNewPassword(code: String, newPassword: String) {
         val cur = _state.value as? AuthUiState.ResetSetNew ?: return
-        val token = resetToken ?: run {
-            _state.value = cur.copy(tokenInvalid = true, phase = Phase.Idle); return
-        }
-        _state.value = cur.copy(phase = Phase.Submitting)
+        if (code.isBlank()) { _state.value = cur.copy(tokenInvalid = true, phase = Phase.Idle); return }
+        _state.value = cur.copy(phase = Phase.Submitting, tokenInvalid = false)
         runScope.launch {
-            val r = runCatching { repository.setNewPassword(token, newPassword) }
+            val r = runCatching { repository.setNewPassword(code, newPassword) }
                 .getOrElse { e -> if (e is CancellationException) throw e; SetPasswordResult.TokenInvalid }
             _state.value = when (r) {
                 SetPasswordResult.Ok -> AuthUiState.ResetSetNew(done = true)
-                SetPasswordResult.TokenInvalid -> AuthUiState.ResetSetNew(tokenInvalid = true)
-                is SetPasswordResult.RateLimited -> AuthUiState.ResetSetNew(phase = Phase.RateLimited(r.retryAfter))
+                // Wrong/expired code — keep the entry screen (sentTo/prefill) so the user can re-type; not terminal.
+                SetPasswordResult.TokenInvalid -> cur.copy(tokenInvalid = true, phase = Phase.Idle)
+                is SetPasswordResult.RateLimited -> cur.copy(phase = Phase.RateLimited(r.retryAfter))
             }
         }
     }
