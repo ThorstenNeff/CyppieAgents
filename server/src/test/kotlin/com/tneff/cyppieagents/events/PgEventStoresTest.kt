@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.agentevents.MigrationGatedAgentEventStore
 import com.tneff.cyppieagents.agentevents.PgAgentEventStore
 import com.tneff.cyppieagents.agentevents.SqliteAgentEventStore
 import com.tneff.cyppieagents.boot.PgStoreRouting
+import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.crypto.MasterKeySource
 import com.tneff.cyppieagents.crypto.SecretCipher
 import com.tneff.cyppieagents.crypto.SecretCipherFactory
@@ -14,6 +15,7 @@ import com.tneff.cyppieagents.db.ConnectionProvider
 import com.tneff.cyppieagents.db.DsnDescriptor
 import com.tneff.cyppieagents.db.DsnRegistry
 import com.tneff.cyppieagents.db.DsnTierOrigin
+import com.tneff.cyppieagents.db.MigrationRowCodec
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.RateLimitEvent
@@ -176,13 +178,25 @@ class PgEventStoresTest {
     } }
 
     @Test fun agentEvents_migrationTargetRoundtrip() = EmbeddedPostgres.start().use { pg -> runBlocking<Unit> {
-        val store = PgAgentEventStore(pg.postgresDatabase, retainPerAgent = 0) // no trim → all rows kept
-        repeat(5) { store.append("a1", "p", 1_000L + it, ev(it)) }
-        val before = store.query("a1", null, 100)
-        store.importRows(store.exportRows())
-        assertEquals(before, store.query("a1", null, 100), "export→import preserves rows + seq exactly")
-        // identity was realigned → a subsequent append does not collide with the imported max seq
-        assertEquals(6L, store.append("a1", "p", 9_000L, ev(9)).seq, "seq continues above the imported max")
+        // Fidelity: append 5 to a source store, export → import into it, rows+seq preserved exactly.
+        val src = PgAgentEventStore(pg.postgresDatabase, retainPerAgent = 0)
+        repeat(5) { src.append("a1", "p", 1_000L + it, ev(it)) }
+        val before = src.query("a1", null, 100)
+        src.importRows(src.exportRows())
+        assertEquals(before, src.query("a1", null, 100), "export→import preserves rows + seq exactly")
+
+        // Realistic cross-DB migration: import rows whose seqs (100..102) are AHEAD of a FRESH store's identity
+        // (at 0). The setval realign must lift the identity above the imported max, else the next append reuses a
+        // low seq (< the imported max) → breaks the monotonic cursor. Second embedded PG = a genuinely fresh seq.
+        EmbeddedPostgres.start().use { pg2 ->
+            val fresh = PgAgentEventStore(pg2.postgresDatabase, retainPerAgent = 0)
+            val rows = listOf(100L, 101L, 102L).map { seq ->
+                MigrationRowCodec.encode(listOf(seq.toString(), "a1", "p", "1000", CommJson.encodeToString(StreamJsonEvent.serializer(), ev(seq.toInt()))))
+            }
+            fresh.importRows(rows)
+            assertEquals(listOf(100L, 101L, 102L), fresh.query("a1", null, 100).map { it.seq }, "imported seqs preserved exactly")
+            assertEquals(103L, fresh.append("a1", "p", 2_000L, ev(9)).seq, "seq continues ABOVE the imported max (identity realigned by setval)")
+        }
     } }
 
     @Test fun agentEvents_routing_and_migrationWindow() = EmbeddedPostgres.start().use { pg -> runBlocking<Unit> {
