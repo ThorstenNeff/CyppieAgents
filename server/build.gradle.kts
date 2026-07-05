@@ -53,6 +53,10 @@ dependencies {
     // CYP-220 Phase 2a: Google Tink — misuse-resistant AEAD + KMS envelope encryption for secrets at rest
     // (API keys / remote tokens / DSN secrets). Master key (KEK) never in a user PG; AAD-bound ciphertext.
     implementation(libs.tink)
+    // CYP-220 Phase 2b: per-instance JDBC connection pools + the Postgres driver (the pools the ConnectionProvider
+    // hands per bound store; one HikariDataSource per DSN instance). No store is wired to a pool yet.
+    implementation(libs.hikaricp)
+    implementation(libs.postgresql)
     // CYP-178: an HTTP client to validate Kratos sessions (GET /sessions/whoami).
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.clientCio)
