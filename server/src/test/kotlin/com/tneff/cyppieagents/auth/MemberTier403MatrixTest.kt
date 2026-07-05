@@ -53,6 +53,9 @@ class MemberTier403MatrixTest {
         // CYP-186 BE2 — MEMBER-permitted READS (ACL-filtered / masked / secret-free metadata), not operator-deny:
         "GET /api/channels", "GET /api/channels/{id}/messages", "GET /api/inbox", "GET /api/acl",
         "GET /api/config/repo", "GET /api/config/apikey", "GET /api/events",
+        // CYP-232 — avatar serve + preset preview are READ-TIER (token OR verified human session), so the tokenless
+        // SPA renders avatars; a MEMBER reaches them (200/404, not tier-denied) exactly like the other reads above.
+        "GET /api/agents/{id}/avatar", "GET /api/agents/{id}/avatar/preview",
         // CYP-188 P2b-iii — message SEND is no longer operator-tier: the gate admits a session, and the per-channel
         // `canWrite` at postAsAgent is the authz (deny-without-grant 403 / allow-with-grant 201). It is ACL-gated,
         // not tier-denied → member-permitted here; the deny/allow invariant is proven by HumanSendAclTest.
