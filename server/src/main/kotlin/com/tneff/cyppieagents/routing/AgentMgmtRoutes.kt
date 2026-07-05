@@ -58,6 +58,20 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
             served.ref?.let { call.response.header(HttpHeaders.ETag, "\"$it\"") }
             call.respondBytes(served.png, ContentType.Image.PNG)
         }
+        // CYP-219: DiceBear preset PREVIEW = participant-gated, SAME read posture as the serve. Resolves an
+        // arbitrary (style, seed) to a self-hosted bundled PNG (egress-free — the client NEVER calls
+        // api.dicebear.com; this same-origin route is the only source). Unknown/unsupported style OR no bundled
+        // asset → 404 → the grid degrades to a placeholder. Deterministic → ETag + long cache for the grid.
+        get("/{id}/avatar/preview") {
+            call.requireParticipant(registry)
+            val style = call.request.queryParameters["style"].orEmpty()
+            val seed = call.request.queryParameters["seed"].orEmpty()
+            val served = mgmt.previewAvatar(style, seed)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            served.ref?.let { call.response.header(HttpHeaders.ETag, "\"$it\"") }
+            call.response.header(HttpHeaders.CacheControl, "public, max-age=86400")
+            call.respondBytes(served.png, ContentType.Image.PNG)
+        }
         // CYP-178: the mutations are gated STRUCTURALLY under the group — fail-closed BEFORE the body is
         // received (a non-operator is 401/403, unparsed). The RC1 route-enumeration meta-test is the net.
         authenticatedApi(deps, AuthRole.OPERATOR) {

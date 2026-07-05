@@ -179,6 +179,19 @@ class AgentManagement(
         }
     }
 
+    /**
+     * CYP-219 — resolve a DiceBear PRESET PREVIEW `(style, seed)` to servable PNG bytes, independent of any
+     * agent's stored avatar (the picker grid probes arbitrary combinations before committing). Egress-free:
+     * bytes come from the self-hosted bundled set via [AvatarPresetResolver] — which validates `style` against
+     * the allow-list (unknown/traversal-y → null) and hashes `seed` to an index (never a path). null (unknown
+     * style / no bundled asset) → the route 404s and the grid degrades to a placeholder. The [ServedAvatar.ref]
+     * is a content hash → a deterministic ETag for the many preview requests.
+     */
+    fun previewAvatar(style: String, seed: String): ServedAvatar? {
+        val png = avatarPresets?.resolve(style, seed.ifBlank { "default" }) ?: return null
+        return ServedAvatar(png, com.tneff.cyppieagents.avatar.AvatarImageProcessor.contentRef(png))
+    }
+
     /** Validate a preset's style FAIL-CLOSED against the self-hosted allow-list; default a blank seed to [id]. */
     private fun normalizePreset(preset: AgentAvatar.Preset, id: String): AgentAvatar.Preset {
         if (preset.style !in AvatarPresetResolver.ALLOWED_STYLES) {
