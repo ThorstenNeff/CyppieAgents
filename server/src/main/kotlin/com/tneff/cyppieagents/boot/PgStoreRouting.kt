@@ -8,11 +8,16 @@ import com.tneff.cyppieagents.tier.StoreResidencies
 import javax.sql.DataSource
 
 /**
- * CYP-220 Phase 6 S2 — the **boot factory** that selects a store's backing (File on our infra vs a bound
+ * CYP-220 Phase 6 S2/S3 — the **boot factory** that selects a store's backing (File on our infra vs a bound
  * Postgres) **per binding**. A store routes to Postgres ONLY when it is **bound + [BindingState.ACTIVE]** and a
- * pool resolves; otherwise it uses the File fallback (unbound, or a MIGRATING/READ_ONLY window → reads come from
- * the retained source A — the write-reject during MIGRATING is Finding B / S3). Fail-safe: an unresolvable
- * binding falls back to File rather than failing the boot.
+ * pool resolves; unbound → the File fallback.
+ *
+ * **The single store-access placement point** — the only way a caller obtains a store instance, so residency
+ * (S2) and the migration write-freeze (S3, Finding B) are both enforced HERE, no bypass path:
+ * - **Residency (S2):** a MUST_STAY_HOME store never routes to a user DB (in [activeDataSource]).
+ * - **Read-only window (S3):** while a store's binding is MIGRATING/READ_ONLY, the accessor returns a
+ *   [MigrationGatedRemoteTokenStore]/[MigrationGatedProjectConfigStore] — reads pass through to source A, every
+ *   write is rejected (`store_migrating` 409) so no write is lost in A or duplicated into B (see [MigrationGate]).
  */
 object PgStoreRouting {
 
@@ -36,15 +41,33 @@ object PgStoreRouting {
             ?.let { connections.forStore(storeKey, projectId) }
     }
 
+    /**
+     * True iff a **user-DB-capable** store's binding is in a **write-freeze window** — the MIGRATING/READ_ONLY
+     * interval between the copy `A → B` and the atomic rebind to ACTIVE (Design §4.3, Finding B). During it reads
+     * stay served from source A and writes MUST be rejected. A MUST_STAY_HOME store never holds a user-DB binding
+     * (residency, S2), so it is never in a window here — its own writes are unaffected.
+     */
+    fun inMigrationWindow(storeKey: String, projectId: String, bindings: BindingRegistry): Boolean {
+        if (!StoreResidencies.isUserDbCapable(storeKey)) return false
+        return when (bindings.binding(storeKey, projectId)?.state) {
+            BindingState.MIGRATING, BindingState.READ_ONLY -> true
+            else -> false
+        }
+    }
+
     fun remoteTokenStore(
         projectId: String,
         bindings: BindingRegistry,
         connections: ConnectionProvider,
         cipher: SecretCipher,
         fileFallback: () -> RemoteTokenStore,
-    ): RemoteTokenStore =
-        activeDataSource("remote_token", projectId, bindings, connections)
+    ): RemoteTokenStore {
+        // S3: during the migration window, reads come from source A (the File fallback for the File→Pg
+        // initial-offload the migrator performs today); writes are frozen (store_migrating 409).
+        if (inMigrationWindow("remote_token", projectId, bindings)) return MigrationGatedRemoteTokenStore(fileFallback())
+        return activeDataSource("remote_token", projectId, bindings, connections)
             ?.let { PgRemoteTokenStore(it, cipher, projectId) } ?: fileFallback()
+    }
 
     fun projectConfigStore(
         projectId: String,
@@ -54,7 +77,9 @@ object PgStoreRouting {
         fallbackRepo: RepoConfig,
         secrets: Secrets,
         fileFallback: () -> ProjectConfigStore,
-    ): ProjectConfigStore =
-        activeDataSource("project_config", projectId, bindings, connections)
+    ): ProjectConfigStore {
+        if (inMigrationWindow("project_config", projectId, bindings)) return MigrationGatedProjectConfigStore(fileFallback())
+        return activeDataSource("project_config", projectId, bindings, connections)
             ?.let { PgProjectConfigStore(it, cipher, fallbackRepo, secrets) } ?: fileFallback()
+    }
 }
