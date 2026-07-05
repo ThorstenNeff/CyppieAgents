@@ -39,6 +39,8 @@ import kmpcyppieagents.app.shared.generated.resources.project_manage
 import kmpcyppieagents.app.shared.generated.resources.project_mgmt_title
 import kmpcyppieagents.app.shared.generated.resources.project_switch_hint
 import kmpcyppieagents.app.shared.generated.resources.project_switcher_active
+import kmpcyppieagents.app.shared.generated.resources.project_switcher_menu_label
+import kmpcyppieagents.app.shared.generated.resources.project_switcher_single_hint
 import kmpcyppieagents.app.shared.generated.resources.project_switcher_scope_hint
 import org.jetbrains.compose.resources.stringResource
 
@@ -130,7 +132,14 @@ fun ProjectSwitcherBar(
                 TextButton(
                     onClick = viewModel::openMenu,
                     modifier = Modifier.testTag(ProjectTags.MENU).semantics { contentDescription = menuA11y },
-                ) { Text("▾", style = MaterialTheme.typography.titleMedium) }
+                ) {
+                    // CYP-233: a visible label ("Projekte ▾") makes the switch/manage affordance discoverable —
+                    // a bare "▾" left a first-user guessing. Same button/tag/a11y; pure affordance, no behaviour change.
+                    Text(
+                        "${stringResource(Res.string.project_switcher_menu_label)} ▾",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
 
                 DropdownMenu(expanded = state.menuOpen, onDismissRequest = viewModel::closeMenu) {
                     // Disclosure: switching is non-destructive (separates it from delete). Neutral tone.
@@ -160,6 +169,15 @@ fun ProjectSwitcherBar(
                             // The active project is a no-op; switching needs operator (server-gated mutation).
                             enabled = state.editable && !isActive,
                             modifier = Modifier.testTag(ProjectTags.item(project.id)).semantics { contentDescription = switchA11y },
+                        )
+                    }
+                    // CYP-233: with exactly ONE project a first-user doesn't know more can be created — a quiet hint
+                    // points at the REAL "Manage projects" entry below (the quoted name == project_manage; no dead
+                    // hint). Only at size 1: from the 2nd project on, the list itself carries the discoverability.
+                    if (state.projects.size == 1) {
+                        TonedHint(
+                            stringResource(Res.string.project_switcher_single_hint), HintTone.INFO, ProjectTags.SINGLE_HINT,
+                            modifier = Modifier.widthIn(max = SWITCHER_HINT_MAX_WIDTH),
                         )
                     }
                     // Management entry — hosts the CRUD overlay (§3), not a duplicate.

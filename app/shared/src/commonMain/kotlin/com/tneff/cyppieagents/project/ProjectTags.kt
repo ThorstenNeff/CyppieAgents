@@ -19,6 +19,7 @@ object ProjectTags {
     const val MENU = "projectSwitcher.menu"
     const val SCOPE_HINT = "projectSwitcher.scopeHint"
     const val SWITCH_HINT = "projectSwitcher.switchHint"
+    const val SINGLE_HINT = "projectSwitcher.singleHint" // CYP-233: single-project onboarding hint
     const val MANAGE = "projectSwitcher.manage"
 
     fun item(id: String) = "projectSwitcher.item.$id"

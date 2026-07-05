@@ -5,6 +5,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -86,6 +87,51 @@ class ProjectSwitcherBarTest {
         }
         // Switching is a server-gated mutation — without an operator token the target is disabled.
         onNodeWithTag(ProjectTags.item("other")).assertIsNotEnabled()
+    }
+
+    // --- CYP-233: project-bar discoverability (visible label + single-project onboarding) ---
+
+    @Test
+    fun cyp233_menuButton_showsVisibleLabel_notBareCaret() = runComposeUiTest {
+        setBar(this, editable = true)
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(ProjectTags.MENU).fetchSemanticsNodes().isNotEmpty()
+        }
+        // The affordance is a visible label (DE "Projekte" / EN "Projects" → common prefix "Proje"), not a bare "▾".
+        onNodeWithTag(ProjectTags.MENU).assertTextContains("Proje", substring = true)
+    }
+
+    @Test
+    fun cyp233_singleProject_showsCreateMoreHint() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                val vm = remember { ProjectViewModel(StubProjectRepository(listOf(default), "default"), editable = true) }
+                ProjectSwitcherBar(vm)
+            }
+        }
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(ProjectTags.MENU).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithTag(ProjectTags.MENU).performClick()
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(ProjectTags.MANAGE).fetchSemanticsNodes().isNotEmpty()
+        }
+        // Exactly one project → the onboarding hint points at the real "Manage projects" entry.
+        onNodeWithTag(ProjectTags.SINGLE_HINT).assertExists()
+    }
+
+    @Test
+    fun cyp233_multipleProjects_noSingleHint() = runComposeUiTest {
+        setBar(this, editable = true) // default + other → 2 projects
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(ProjectTags.MENU).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithTag(ProjectTags.MENU).performClick()
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(ProjectTags.item("other")).fetchSemanticsNodes().isNotEmpty()
+        }
+        // From the 2nd project on, the list carries discoverability — no permanent hint noise.
+        onNodeWithTag(ProjectTags.SINGLE_HINT).assertDoesNotExist()
     }
 
     // --- CYP-186: persistent role indicator (spec §3.1) ---

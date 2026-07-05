@@ -266,6 +266,9 @@
     <string name="project_switcher_scope_hint">All windows and data belong to this project.</string>
     <string name="project_switch_hint">Switching reloads the UI for the selected project — nothing is deleted.</string>
     <string name="project_manage">Manage projects</string>
+    <!-- CYP-233: project-bar discoverability — visible menu label + single-project onboarding hint -->
+    <string name="project_switcher_menu_label">Projects</string>
+    <string name="project_switcher_single_hint">Create more projects via "Manage projects".</string>
     <string name="a11y_project_switcher_menu">Open project menu, active: %1$s</string>
     <string name="a11y_project_switch_to">Switch to project %1$s</string>
     <string name="project_mgmt_title">Project management</string>
