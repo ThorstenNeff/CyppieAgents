@@ -30,34 +30,67 @@ data class AgentOverride(
 
 /**
  * CYP-210 — the durable **overlay** for per-agent customization, out-of-repo under the gitRoot
- * (`.cyppie/agent-overrides.json`, gitignored), keyed `projectId → agentId → [AgentOverride]`. It is the
- * OVERRIDE layer over the `platform.config.json` **seed** (the operator's hand-authored file is never
- * rewritten — non-invasive, no clobber). Mirrors [ProjectConfigStore]: a single JSON file, atomic-move
- * write under a lock, per-project keying (so a project cascade-delete drops exactly its entries). Closes the
- * latent gap that runtime name/color/persona/launch edits did NOT survive a restart. Not a credential store;
- * still owner-restricted for hygiene. A null [file] is the in-memory off-switch (tests / dev).
+ * (`.cyppie/agent-overrides.json`, gitignored), keyed `projectId → agentId → [AgentOverride]`.
+ *
+ * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileAgentOverrideStore]; a future PG
+ * impl implements this; companion `invoke` = current factory choice, no behavior change.
  */
-class AgentOverrideStore(private val file: File?) {
-    private val log = LoggerFactory.getLogger("boot.agentoverrides")
-    private val lock = Any()
-    private val byProject = HashMap<String, MutableMap<String, AgentOverride>>()
-
-    init { load() }
-
+interface AgentOverrideStore {
     /** This agent's override in [projectId], or null (no override → the config seed wins). */
-    fun overrideOf(projectId: String, agentId: String): AgentOverride? =
-        synchronized(lock) { byProject[projectId]?.get(agentId) }
+    fun overrideOf(projectId: String, agentId: String): AgentOverride?
 
     /** All overrides for [projectId] (agentId → override) — applied over the config seed at boot. */
-    fun allFor(projectId: String): Map<String, AgentOverride> =
-        synchronized(lock) { byProject[projectId]?.toMap() ?: emptyMap() }
+    fun allFor(projectId: String): Map<String, AgentOverride>
 
     /**
      * Merge a partial edit and persist atomically. **Blank/null fields PRESERVE the stored value** (no
      * blank→null clear — the same data-safety rule as [AgentManagement.edit]); `id` is never a field here
      * (immutable). Returns the merged override.
      */
-    fun put(projectId: String, agentId: String, name: String?, color: String?, persona: String?, launch: String?): AgentOverride =
+    fun put(projectId: String, agentId: String, name: String?, color: String?, persona: String?, launch: String?): AgentOverride
+
+    /**
+     * CYP-215 — set (or, with `avatar = null`, CLEAR) an agent's avatar override, preserving the other
+     * fields. Distinct from [put]'s blank→preserve rule because the avatar has an explicit clear path
+     * (`DELETE .../avatar`): here `null` genuinely clears. Used by the multipart upload (Upload ref), the
+     * preset-set edit (Preset), and the clear endpoint (null). Returns the merged override.
+     */
+    fun setAvatar(projectId: String, agentId: String, avatar: AgentAvatar?): AgentOverride
+
+    /** Drop [agentId]'s override in [projectId] (agent removal). Idempotent. */
+    fun removeAgent(projectId: String, agentId: String): Boolean
+
+    /** Cascade: drop ALL of [projectId]'s overrides (the customization partition of a project delete). */
+    fun removeProject(projectId: String): Int
+
+    companion object {
+        /** Factory seam (CYP-223): the current impl choice is the file store. */
+        operator fun invoke(file: File?): AgentOverrideStore = FileAgentOverrideStore(file)
+    }
+}
+
+/**
+ * It is the
+ * OVERRIDE layer over the `platform.config.json` **seed** (the operator's hand-authored file is never
+ * rewritten — non-invasive, no clobber). Mirrors [ProjectConfigStore]: a single JSON file, atomic-move
+ * write under a lock, per-project keying (so a project cascade-delete drops exactly its entries). Closes the
+ * latent gap that runtime name/color/persona/launch edits did NOT survive a restart. Not a credential store;
+ * still owner-restricted for hygiene. A null [file] is the in-memory off-switch (tests / dev).
+ */
+class FileAgentOverrideStore(private val file: File?) : AgentOverrideStore {
+    private val log = LoggerFactory.getLogger("boot.agentoverrides")
+    private val lock = Any()
+    private val byProject = HashMap<String, MutableMap<String, AgentOverride>>()
+
+    init { load() }
+
+    override fun overrideOf(projectId: String, agentId: String): AgentOverride? =
+        synchronized(lock) { byProject[projectId]?.get(agentId) }
+
+    override fun allFor(projectId: String): Map<String, AgentOverride> =
+        synchronized(lock) { byProject[projectId]?.toMap() ?: emptyMap() }
+
+    override fun put(projectId: String, agentId: String, name: String?, color: String?, persona: String?, launch: String?): AgentOverride =
         synchronized(lock) {
             val cur = byProject.getOrPut(projectId) { HashMap() }[agentId] ?: AgentOverride()
             val next = cur.copy(
@@ -71,13 +104,7 @@ class AgentOverrideStore(private val file: File?) {
             next
         }
 
-    /**
-     * CYP-215 — set (or, with `avatar = null`, CLEAR) an agent's avatar override, preserving the other
-     * fields. Distinct from [put]'s blank→preserve rule because the avatar has an explicit clear path
-     * (`DELETE .../avatar`): here `null` genuinely clears. Used by the multipart upload (Upload ref), the
-     * preset-set edit (Preset), and the clear endpoint (null). Returns the merged override.
-     */
-    fun setAvatar(projectId: String, agentId: String, avatar: AgentAvatar?): AgentOverride =
+    override fun setAvatar(projectId: String, agentId: String, avatar: AgentAvatar?): AgentOverride =
         synchronized(lock) {
             val cur = byProject.getOrPut(projectId) { HashMap() }[agentId] ?: AgentOverride()
             val next = cur.copy(avatar = avatar)
@@ -86,15 +113,13 @@ class AgentOverrideStore(private val file: File?) {
             next
         }
 
-    /** Drop [agentId]'s override in [projectId] (agent removal). Idempotent. */
-    fun removeAgent(projectId: String, agentId: String): Boolean = synchronized(lock) {
+    override fun removeAgent(projectId: String, agentId: String): Boolean = synchronized(lock) {
         val removed = byProject[projectId]?.remove(agentId) != null
         if (removed) persist()
         removed
     }
 
-    /** Cascade: drop ALL of [projectId]'s overrides (the customization partition of a project delete). */
-    fun removeProject(projectId: String): Int = synchronized(lock) {
+    override fun removeProject(projectId: String): Int = synchronized(lock) {
         if (projectId.isBlank()) return@synchronized 0 // fail-closed: never an unscoped clear
         val n = byProject.remove(projectId)?.size ?: 0
         if (n > 0) persist()

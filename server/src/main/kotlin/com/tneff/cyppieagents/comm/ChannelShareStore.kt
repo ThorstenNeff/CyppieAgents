@@ -32,13 +32,42 @@ data class ChannelShareRecord(
  * derived from here. **The share is the gate:** [revoke] drops the record, so the channel immediately
  * falls back to exact-match/fail-closed — independent of any AclEntry cleanup (§6.4).
  *
+ * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileChannelShareStore]; a future PG
+ * impl implements this; companion `invoke` = current factory choice, no behavior change.
+ */
+interface ChannelShareStore {
+    /** Set (or replace) the directed share of [channelId] owned by [ownerProjectId] to [sharedWith]. */
+    fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord
+
+    /** Revoke [channelId]'s share (the gate closes). Returns true if a share existed. Idempotent. */
+    fun revoke(channelId: String): Boolean
+
+    fun record(channelId: String): ChannelShareRecord?
+
+    /**
+     * The channel ids authorized to reach INTO [activeProjectId] — i.e. shares whose `sharedWith`
+     * contains it. This is exactly the [com.tneff.cyppieagents.model.AclMatrix] permit input; strictly
+     * per-channelId, so a share never widens to the owner's other channels.
+     */
+    fun sharedInboundChannelIds(activeProjectId: String): Set<String>
+
+    companion object {
+        /** Factory seam (CYP-223): the current impl choice is the file store. */
+        operator fun invoke(
+            file: File?,
+            clock: () -> Long = { System.currentTimeMillis() },
+        ): ChannelShareStore = FileChannelShareStore(file, clock)
+    }
+}
+
+/**
  * Persisted as an atomic 0600 JSON file under the gitRoot working dir (out-of-repo, gitignored), like
  * [com.tneff.cyppieagents.boot.ProjectRegistry]. `null` file → in-memory only (tests / dry boots).
  */
-class ChannelShareStore(
+class FileChannelShareStore(
     private val file: File?,
     private val clock: () -> Long = { System.currentTimeMillis() },
-) {
+) : ChannelShareStore {
     private val lock = Any()
     private val log = LoggerFactory.getLogger("comm.channelshare")
     private val records: MutableMap<String, ChannelShareRecord> = mutableMapOf()
@@ -51,8 +80,7 @@ class ChannelShareStore(
         }
     }
 
-    /** Set (or replace) the directed share of [channelId] owned by [ownerProjectId] to [sharedWith]. */
-    fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord = synchronized(lock) {
+    override fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord = synchronized(lock) {
         // A share to nobody (or only to the owner's own project) is a no-op hole — treat empty as revoke.
         val grantees = sharedWith.filter { it.isNotBlank() && it != ownerProjectId }.toSet()
         if (grantees.isEmpty()) {
@@ -64,21 +92,15 @@ class ChannelShareStore(
         rec
     }
 
-    /** Revoke [channelId]'s share (the gate closes). Returns true if a share existed. Idempotent. */
-    fun revoke(channelId: String): Boolean = synchronized(lock) {
+    override fun revoke(channelId: String): Boolean = synchronized(lock) {
         val existed = records.remove(channelId) != null
         if (existed) persist()
         existed
     }
 
-    fun record(channelId: String): ChannelShareRecord? = synchronized(lock) { records[channelId] }
+    override fun record(channelId: String): ChannelShareRecord? = synchronized(lock) { records[channelId] }
 
-    /**
-     * The channel ids authorized to reach INTO [activeProjectId] — i.e. shares whose `sharedWith`
-     * contains it. This is exactly the [com.tneff.cyppieagents.model.AclMatrix] permit input; strictly
-     * per-channelId, so a share never widens to the owner's other channels.
-     */
-    fun sharedInboundChannelIds(activeProjectId: String): Set<String> = synchronized(lock) {
+    override fun sharedInboundChannelIds(activeProjectId: String): Set<String> = synchronized(lock) {
         if (activeProjectId.isBlank()) return@synchronized emptySet() // fail-closed: blank active reaches nothing
         records.values.filter { activeProjectId in it.sharedWith }.map { it.channelId }.toSet()
     }
