@@ -14,12 +14,17 @@ import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.FakeIdentityProvider
+import com.tneff.cyppieagents.auth.InMemoryRoleStore
+import com.tneff.cyppieagents.auth.ResolvedIdentity
 import com.tneff.cyppieagents.routing.ApiException
 import com.tneff.cyppieagents.routing.TokenRegistry
 import com.tneff.cyppieagents.routing.agentMgmtRoutes
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -92,6 +97,38 @@ class AvatarPreviewRoutesTest {
         val g = img.createGraphics(); g.color = tint; g.fillRect(0, 0, 256, 256); g.dispose()
         val out = ByteArrayOutputStream(); ImageIO.write(img, "png", out); val b = out.toByteArray()
         File(root, style).mkdirs(); File(root, "$style/$style-$n.png").writeBytes(b); return b
+    }
+
+    @Test fun cyp232_verifiedSessionServesAvatarRoutes_noAuthStill401() = testApplication {
+        // CYP-232: the avatar serve + preview were token-only (requireParticipant) → the tokenless public SPA
+        // (verified Kratos session, no agent token) got 401 → fallback icon / placeholder grid. The read-tier gate
+        // (requireCommReader) now admits a verified human session too. A MEMBER session suffices (read-tier).
+        val presets = Files.createTempDirectory("preview-cyp232").toFile()
+        bundle(presets, "bottts", 0, Color(20, 140, 90))
+        val registry = TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op")
+        val deps = AuthDeps(registry, FakeIdentityProvider(mapOf("sess-m" to ResolvedIdentity("mem-1", verified = true))), InMemoryRoleStore(), { 1L })
+        application {
+            install(ContentNegotiation) { json(CommJson) }
+            install(StatusPages) {
+                exception<ApiException> { call, cause -> call.respond(cause.status, ApiErrorBody(com.tneff.cyppieagents.model.ApiError(cause.code, cause.message))) }
+            }
+            routing { agentMgmtRoutes(mgmt(presets), registry, deps) }
+        }
+        // preview: a verified session renders the PNG (was 401 before the read-tier gate).
+        assertEquals(
+            HttpStatusCode.OK,
+            jsonClient().get("/api/agents/frontend/avatar/preview?style=bottts&seed=x") { header("X-Session-Token", "sess-m") }.status,
+            "verified session must serve the preset preview PNG",
+        )
+        // serve /{id}/avatar: the session passes the gate (404 = no avatar set, NOT 401 → auth admitted).
+        assertEquals(
+            HttpStatusCode.NotFound,
+            jsonClient().get("/api/agents/frontend/avatar") { header("X-Session-Token", "sess-m") }.status,
+            "verified session passes the avatar-serve gate (404 no-avatar, not 401)",
+        )
+        // no auth at all → still 401 on both (fail-closed unchanged).
+        assertEquals(HttpStatusCode.Unauthorized, jsonClient().get("/api/agents/frontend/avatar/preview?style=bottts&seed=x").status)
+        assertEquals(HttpStatusCode.Unauthorized, jsonClient().get("/api/agents/frontend/avatar").status)
     }
 
     @Test fun preview_bundledStyle_servesPng_withCacheHeaders() = testApplication {

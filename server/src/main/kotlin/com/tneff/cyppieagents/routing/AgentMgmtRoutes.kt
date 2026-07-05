@@ -52,7 +52,9 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
         // Upload → stored re-encoded blob; Preset → self-hosted DiceBear bytes; none/unknown → 404 (the client
         // falls back to its default). ETag = the content-hash ref (cache-busting on re-upload).
         get("/{id}/avatar") {
-            call.requireParticipant(registry)
+            // CYP-232: read-tier gate (token OR verified human session) so the tokenless public SPA renders the
+            // real avatar via its same-origin Kratos cookie — token-only requireParticipant → 401 → fallback icon.
+            call.requireCommReader(deps, registry)
             val served = mgmt.serveAvatar(call.parameters.getOrFail("id"))
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             served.ref?.let { call.response.header(HttpHeaders.ETag, "\"$it\"") }
@@ -63,7 +65,9 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
         // api.dicebear.com; this same-origin route is the only source). Unknown/unsupported style OR no bundled
         // asset → 404 → the grid degrades to a placeholder. Deterministic → ETag + long cache for the grid.
         get("/{id}/avatar/preview") {
-            call.requireParticipant(registry)
+            // CYP-232: read-tier gate (token OR verified human session) — the preset preview grid must render for
+            // the tokenless SPA (same read posture as the serve). token-only → 401 → placeholder-only grid.
+            call.requireCommReader(deps, registry)
             val style = call.request.queryParameters["style"].orEmpty()
             val seed = call.request.queryParameters["seed"].orEmpty()
             val served = mgmt.previewAvatar(style, seed)
