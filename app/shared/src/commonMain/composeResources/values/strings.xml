@@ -378,12 +378,16 @@
     <string name="auth_verify_token_invalid">Dieser Bestätigungslink ist ungültig oder abgelaufen.</string>
     <string name="auth_logout">Abmelden</string>
     <string name="auth_forgot_title">Passwort vergessen</string>
-    <string name="auth_forgot_body">Gib deine E-Mail-Adresse ein. Wir senden dir einen Link zum Zurücksetzen.</string>
-    <string name="auth_forgot_sent">Falls ein Konto zu %1$s existiert, haben wir einen Link zum Zurücksetzen gesendet.</string>
+    <string name="auth_forgot_body">Gib deine E-Mail-Adresse ein. Wir senden dir einen Code zum Zurücksetzen.</string>
+    <string name="auth_forgot_sent">Falls ein Konto zu %1$s existiert, haben wir einen Code zum Zurücksetzen gesendet.</string>
     <string name="auth_reset_title">Neues Passwort setzen</string>
     <string name="auth_reset_new_label">Neues Passwort</string>
+    <!-- CYP-227: Kratos code-recovery — the 6-digit code the user enters to complete a password reset. -->
+    <string name="auth_reset_code_label">Code</string>
+    <string name="auth_reset_code_hint">Gib den 6-stelligen Code ein, den wir an %1$s gesendet haben.</string>
+    <string name="a11y_auth_reset_code">Wiederherstellungscode</string>
     <string name="auth_reset_success">Passwort geändert. Du kannst dich jetzt anmelden.</string>
-    <string name="auth_reset_token_invalid">Dieser Link ist ungültig oder abgelaufen. Fordere einen neuen an.</string>
+    <string name="auth_reset_token_invalid">Dieser Code ist ungültig oder abgelaufen. Fordere einen neuen an.</string>
     <string name="auth_reset_error">Zurücksetzen fehlgeschlagen. Bitte erneut versuchen.</string>
     <string name="auth_github_button">Mit GitHub anmelden</string>
     <string name="auth_github_redirect">Weiter zu GitHub…</string>

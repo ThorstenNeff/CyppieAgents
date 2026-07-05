@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -145,14 +146,16 @@ class AuthGateStateMachineTest {
     // --- Forgot → neutral "sent" (no enumeration) ---
 
     @Test
-    fun forgot_submit_showsNeutralSent() = runComposeUiTest {
+    fun forgot_submit_advancesToCodeEntry_neutral() = runComposeUiTest {
         val vm = gate(StubAuthRepository())
         setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag(AuthTags.LOGIN_TO_FORGOT).performClick()
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.FORGOT_FORM).fetchSemanticsNodes().isNotEmpty() }
         vm.requestReset("user@example.com")
-        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.FORGOT_SENT).fetchSemanticsNodes().isNotEmpty() }
+        // CYP-227: Kratos code-recovery → the code-entry step appears (neutral — shown regardless of account existence).
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_CODE).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.RESET_FORM).assertExists()
     }
 
     // --- Reset deep-link (§2.2 / §7.5) ---
@@ -163,7 +166,7 @@ class AuthGateStateMachineTest {
         setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
         vm.openResetLink("opaque-token")
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_FORM).fetchSemanticsNodes().isNotEmpty() }
-        vm.setNewPassword("brandNewPw")
+        vm.setNewPassword("123456", "brandNewPw")
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_SUCCESS).fetchSemanticsNodes().isNotEmpty() }
     }
 
@@ -173,7 +176,7 @@ class AuthGateStateMachineTest {
         setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
         vm.openResetLink("stale-token")
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_FORM).fetchSemanticsNodes().isNotEmpty() }
-        vm.setNewPassword("brandNewPw")
+        vm.setNewPassword("123456", "brandNewPw")
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_TOKEN_INVALID).fetchSemanticsNodes().isNotEmpty() }
     }
 
@@ -196,9 +199,51 @@ class AuthGateStateMachineTest {
         setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
         vm.openResetLink("opaque-token")
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_FORM).fetchSemanticsNodes().isNotEmpty() }
-        vm.setNewPassword("brandNewPw")
+        vm.setNewPassword("123456", "brandNewPw")
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_RATE_LIMITED).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag(AuthTags.RESET_ERROR).assertDoesNotExist()
+    }
+
+    // --- CYP-227: recovery CODE-entry end-to-end through the UI (the Auftraggeber's real unlock path) ---
+
+    @Test
+    fun recovery_codeEntry_happyPath_uiDriven_reachesSuccess() = runComposeUiTest {
+        // The code the user enters must reach setNewPassword(code, …); a matching code → Ok → success.
+        val vm = gate(StubAuthRepository(setNewPasswordResult = { code, _ -> if (code == "123456") SetPasswordResult.Ok else SetPasswordResult.TokenInvalid }))
+        setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.LOGIN_TO_FORGOT).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.FORGOT_EMAIL).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.FORGOT_EMAIL).performTextInput("user@example.com")
+        onNodeWithTag(AuthTags.FORGOT_SUBMIT).performClick()
+        // requestReset → the 6-digit code-entry step (the field that used to be missing).
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_CODE).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.RESET_CODE).performTextInput("123456")
+        onNodeWithTag(AuthTags.RESET_PASSWORD).performTextInput("brandNewPw1")
+        onNodeWithTag(AuthTags.RESET_PASSWORD_CONFIRM).performTextInput("brandNewPw1")
+        onNodeWithTag(AuthTags.RESET_SUBMIT).performClick()
+        // code → new password → success, entirely through the UI.
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_SUCCESS).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
+    fun recovery_codeEntry_wrongCode_showsInlineError_stillReEnterable() = runComposeUiTest {
+        val vm = gate(StubAuthRepository(setNewPasswordResult = { _, _ -> SetPasswordResult.TokenInvalid }))
+        setContent { MaterialTheme { AuthGate(vm) { DesktopMarker() } } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.LOGIN_FORM).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.LOGIN_TO_FORGOT).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.FORGOT_EMAIL).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.FORGOT_EMAIL).performTextInput("user@example.com")
+        onNodeWithTag(AuthTags.FORGOT_SUBMIT).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_CODE).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.RESET_CODE).performTextInput("000000")
+        onNodeWithTag(AuthTags.RESET_PASSWORD).performTextInput("brandNewPw1")
+        onNodeWithTag(AuthTags.RESET_PASSWORD_CONFIRM).performTextInput("brandNewPw1")
+        onNodeWithTag(AuthTags.RESET_SUBMIT).performClick()
+        // Wrong/expired code → honest inline error, and the code-entry form STAYS (re-enterable, not a dead-end).
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AuthTags.RESET_TOKEN_INVALID).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(AuthTags.RESET_CODE).assertExists()
+        onNodeWithTag(AuthTags.RESET_SUBMIT).assertExists()
     }
 
     // --- Verify deep-link (§2.2 / §7.6) ---
