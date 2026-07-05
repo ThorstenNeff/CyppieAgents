@@ -41,6 +41,12 @@ data class NewAgentSpec(
     /** CYP-210 — optional per-agent display colour (nullable hex string seam; see [Agent.color]). null =
      *  no override (the client derives a default). Final hex-vs-slot shape settled with CYP-209. */
     val color: String? = null,
+    /**
+     * CYP-215 — optional avatar at create. **Preset-only on the JSON write path** ([AgentAvatar.Preset]):
+     * a client cannot express an [AgentAvatar.Upload] here (server-authoritative — an upload `ref` is only
+     * ever minted by the validated multipart endpoint). null = no override.
+     */
+    val avatar: AgentAvatar.Preset? = null,
 )
 
 /**
@@ -62,6 +68,7 @@ data class ConnectorChoice(val connectorKind: ConnectorKind)
  * and intentionally absent (id is IMMUTABLE).** **Omitted/blank `name`/`persona`/`launch`/`color` PRESERVE
  * the stored value** (no blank→null clear — PO-confirmed, data-safety footgun closed); deliberate clearing
  * is a separate future ticket. CYP-210 added editable display `name` (was deliberately omitted) + `color`.
+ * CYP-215 added [avatar] (Preset-only; upload + clear are their own endpoints — see below).
  */
 @Serializable
 data class AgentEdit(
@@ -72,6 +79,16 @@ data class AgentEdit(
     val name: String? = null,
     /** CYP-210 — editable display colour (blank/omitted → PRESERVE; see [Agent.color]). */
     val color: String? = null,
+    /**
+     * CYP-215 — set/replace the avatar with a self-hosted DiceBear **preset**. **Preset-only by
+     * construction**: an [AgentAvatar.Upload] cannot be expressed here, so this JSON path can never forge
+     * an upload `ref` (server-authoritative — uploads go through the validated multipart endpoint).
+     * `null`/omitted = PRESERVE the stored avatar (consistent with the other edit fields — a name-only edit
+     * never wipes the avatar). To go BACK to the default (no avatar) use `DELETE /api/agents/{id}/avatar`;
+     * to set an uploaded image use `POST /api/agents/{id}/avatar` (multipart). Both replace whatever was
+     * stored (an orphaned upload blob is cleaned up server-side).
+     */
+    val avatar: AgentAvatar.Preset? = null,
 )
 
 /** Worktree fate on removal (CYP-87). [KEEP] is the safe default; [DELETE] is the warned, destructive path. */
@@ -92,4 +109,9 @@ data class AgentDetail(
     val persona: String? = null,
     /** CYP-210 — the stored display colour, so the edit dialog prefills it (see [Agent.color]). */
     val color: String? = null,
+    /**
+     * CYP-215 — the stored avatar (full [AgentAvatar]: Preset or the server-minted Upload `ref`), so the
+     * settings dialog prefills the current selection + resolves the preview. `null` = no override.
+     */
+    val avatar: AgentAvatar? = null,
 )

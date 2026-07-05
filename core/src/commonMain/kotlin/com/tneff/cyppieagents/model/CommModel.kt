@@ -83,6 +83,15 @@ data class Agent(
      * operator-gated — same public exposure as the rest of this DTO.
      */
     val color: String? = null,
+    /**
+     * CYP-215 (CYP-212 avatar backend) — the per-agent avatar override, carried on the list [Agent] so the
+     * client resolver (CYP-216) themes the window without an extra call. A discriminated [AgentAvatar]:
+     * a self-hosted DiceBear [AgentAvatar.Preset] or an operator [AgentAvatar.Upload] (opaque server-minted
+     * `ref`). Additive + nullable exactly like [color] — `null` = no override → the client falls back to
+     * its deterministic default (the colour slot), and older payloads without the field still decode. Not
+     * a secret, not operator-gated to READ — same public exposure as the rest of this DTO.
+     */
+    val avatar: AgentAvatar? = null,
 )
 
 /**
