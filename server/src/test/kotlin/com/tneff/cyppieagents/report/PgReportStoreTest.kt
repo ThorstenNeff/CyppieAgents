@@ -24,6 +24,8 @@ import com.tneff.cyppieagents.routing.NotFoundException
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -114,20 +116,28 @@ class PgReportStoreTest {
     @Test fun pg_generateConcurrent_distinctIds_noCollision() {
         EmbeddedPostgres.start().use { pg ->
             runBlocking {
-                val store = PgReportStore(generator(), "default", pg.postgresDatabase, clock())
+                val gen = generator()
                 val ids = ConcurrentHashMap.newKeySet<String>()
                 repeat(20) {
-                    // two concurrent generate() on ONE instance → distinct rep-N (in-process counter under mutex)
+                    // Barrier-align the two generate()s AT the id-stamping step: buildFn blocks both coroutines on
+                    // a CyclicBarrier(2), so they leave build() together and race counter++ head-on. Without the
+                    // barrier they desync at build() and the counter race never triggers (the guard would look
+                    // load-bearing when it isn't). With the mutex → distinct ids; mutex removed → RED (same id / PK
+                    // collision). One fresh store per round so both racers are genuine first-writers on the counter.
+                    val barrier = CyclicBarrier(2)
+                    val store = PgReportStore(
+                        gen, "default", pg.postgresDatabase, clock(),
+                        buildFn = { type, since, until -> barrier.await(5, TimeUnit.SECONDS); gen.build(type, since, until) },
+                    )
                     val pair = coroutineScope {
                         val a = async(Dispatchers.IO) { store.generate(req(ReportType.STATUS)).id }
                         val b = async(Dispatchers.IO) { store.generate(req(ReportType.STATUS)).id }
                         a.await() to b.await()
                     }
-                    assertNotEquals(pair.first, pair.second, "concurrent generate stamped the SAME id")
+                    assertNotEquals(pair.first, pair.second, "concurrent generate stamped the SAME id (counter race)")
                     ids.add(pair.first); ids.add(pair.second)
                 }
-                assertEquals(40, ids.size, "all 40 ids distinct — no counter race, no PK collision")
-                assertEquals(40, store.list().size, "all 40 snapshots persisted")
+                assertEquals(40, ids.size, "all 40 ids distinct — counter mutex serialized every barrier-aligned pair")
             }
         }
     }

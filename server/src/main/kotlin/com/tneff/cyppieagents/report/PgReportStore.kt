@@ -7,6 +7,7 @@ import com.tneff.cyppieagents.db.MigrationTarget
 import com.tneff.cyppieagents.model.GenerateReportRequest
 import com.tneff.cyppieagents.model.ReportMeta
 import com.tneff.cyppieagents.model.ReportSnapshot
+import com.tneff.cyppieagents.model.ReportType
 import com.tneff.cyppieagents.routing.NotFoundException
 import java.sql.Connection
 import javax.sql.DataSource
@@ -33,6 +34,12 @@ class PgReportStore(
     private val clock: () -> Long = System::currentTimeMillis,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     migrate: Boolean = true,
+    /**
+     * The section builder — defaults to the injected [generator]; overridable ONLY so the concurrency tooth can
+     * barrier-align two `generate`s at the id-stamping step (the build step otherwise desyncs them, hiding the
+     * counter race). Not a production seam beyond that.
+     */
+    private val buildFn: suspend (ReportType, Long?, Long?) -> ReportGenerator.Built = generator::build,
 ) : ReportStore, MigrationTarget {
     private val lock = Any()
     private var counter = 0
@@ -43,7 +50,7 @@ class PgReportStore(
     }
 
     override suspend fun generate(req: GenerateReportRequest): ReportSnapshot {
-        val built = generator.build(req.type, req.since, req.until) // reads sources OUTSIDE the lock/tx
+        val built = buildFn(req.type, req.since, req.until) // reads sources OUTSIDE the lock/tx
         val snap = synchronized(lock) {
             ReportSnapshot(
                 id = "rep-${counter++}",
