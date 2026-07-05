@@ -47,18 +47,20 @@
 ### Upload-Security-Fehler (§3.3 / §8 — ehrlich, server-autoritativ)
 | Key | DE | EN |
 |---|---|---|
-| `agent_avatar_upload_type_error` | Nur PNG, JPG oder WebP – kein SVG | Only PNG, JPG or WebP – no SVG |
+| `agent_avatar_upload_type_error` | Nur PNG oder JPG – kein SVG | Only PNG or JPG – no SVG |
 | `agent_avatar_upload_size_error` | Bild zu groß (max %1$s) | Image too large (max %1$s) |
 | `agent_avatar_upload_generic_error` | Upload fehlgeschlagen – erneut versuchen | Upload failed – try again |
 
 > Alle drei = ERROR-Ton. `..._type_error` nennt **explizit „kein SVG"** (Script-/XSS-Vektor). `%1$s` in `..._size_error` = das
 > vom Backend gesetzte Limit. Der **Server** validiert autoritativ (Magic-Bytes) — die UI spiegelt die ehrliche Ablehnung.
+> **WebP entfällt** (Backend/CYP-215 ohne nativen Decoder → kleinere Angriffsfläche): die Texte nennen daher nur **PNG/JPG** —
+> ehrlich = kein Format anbieten, das der Server ablehnt. Zwei Gründe: **SVG** = verboten (XSS); **WebP** = nicht unterstützt.
 
 ### a11y
 | Key | DE | EN |
 |---|---|---|
 | `a11y_agent_avatar_preset` | Avatar-Vorlage %1$s | Avatar preset %1$s |
-| `a11y_agent_avatar_upload` | Bild hochladen (PNG, JPG oder WebP) | Upload image (PNG, JPG or WebP) |
+| `a11y_agent_avatar_upload` | Bild hochladen (PNG oder JPG) | Upload image (PNG or JPG) |
 | `a11y_agent_avatar_current` | Aktueller Avatar: %1$s | Current avatar: %1$s |
 | `a11y_agent_avatar_remove` | Avatar entfernen | Remove avatar |
 | `a11y_agent_avatar_credits` | Lizenz-Credits der Bild-Vorlagen | Avatar preset license credits |

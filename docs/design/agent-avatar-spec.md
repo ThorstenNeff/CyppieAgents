@@ -9,7 +9,7 @@
 > (CYP-211), Render-Sites `comm/CommPanel.kt` + `eventlog/EventRowUi.kt`. DiceBear self-hosted HTTP-API + Style-Lizenzen
 > verifiziert via Context7/Doku (`/dicebear/dicebear`).
 > **Auftraggeber-Wahl (bestätigt):** DiceBear **self-hosted**, Styles: `bottts` · `avataaars` · `adventurer` · `big-smile` ·
-> `fun-emoji`; **Custom-Upload** (any-size → **server**-downsize + center-crop-square). Raster-only (png/jpg/webp), **kein SVG**.
+> `fun-emoji`; **Custom-Upload** (any-size → **server**-downsize + center-crop-square). Raster-only (png/jpg), **kein SVG**.
 > **Konsumenten:** Backend **CYP-215** (self-hosted Style-Satz + Upload-Verarbeitung), Dev **CYP-216** (`AgentAvatar`-Resolver + UI).
 
 ---
@@ -88,8 +88,8 @@ Event-Log — kein weiterer One-off je Site. Die Fallback-Kette lebt an **einer*
 
 ### 3.3 Custom-Upload
 - **Upload-Button** (`agent_avatar_upload` „Bild hochladen", Tag `agentSettings.avatar.upload`), a11y `a11y_agent_avatar_upload`
-  „Bild hochladen (PNG, JPG oder WebP)".
-- **Flow:** Datei wählen → **Client-Vorprüfung** (Typ png/jpg/webp; grobe Größen-Obergrenze) → Upload → **Server** downsized +
+  „Bild hochladen (PNG oder JPG)".
+- **Flow:** Datei wählen → **Client-Vorprüfung** (Typ png/jpg; grobe Größen-Obergrenze) → Upload → **Server** downsized +
   **center-crop-square** (autoritativ — **§-Ask 3 bestätigt: MVP = Server-Center-Crop**) → gespeicherter Avatar (Ref) → Stufe 1.
 - **Crop/Preview** (`agent_avatar_crop_hint` „Wird mittig quadratisch zugeschnitten", INFO; Tag `agentSettings.avatar.preview`):
   eine **quadratische** Vorschau, die den **center-crop** ehrlich zeigt (der eigentliche Zuschnitt ist server-seitig; die Vorschau
@@ -97,8 +97,11 @@ Event-Log — kein weiterer One-off je Site. Die Fallback-Kette lebt an **einer*
 - **Limits (Backend-autoritativ, §-Ask 4 bestätigt):** max Dateigröße/Dimension setzt **Backend** (CYP-215); die UI **zeigt** die
   Grenze (`%1$s` in `agent_avatar_upload_size_error`) und spiegelt die ehrliche Server-Ablehnung.
 - **Security-UX (§7/§8):** Fehler klar und ehrlich —
-  - falscher Typ (inkl. **SVG**) → `TonedHint(agent_avatar_upload_type_error, ERROR)` „Nur PNG, JPG oder WebP – kein SVG",
+  - falscher Typ (inkl. **SVG**) → `TonedHint(agent_avatar_upload_type_error, ERROR)` „Nur PNG oder JPG – kein SVG",
     Tag `agentSettings.avatar.uploadError`.
+  - **WebP entfällt (Backend/CYP-215 ohne nativen WebP-Decoder → bewusst kleinere Angriffsfläche):** die UI verspricht daher nur
+    **PNG/JPG** — ehrlich = **kein Format anbieten, das der Server ablehnt**. Zwei verschiedene Gründe, beide ehrlich gespiegelt:
+    **SVG** = security-**verboten** (Script-/XSS-Vektor); **WebP** = schlicht **nicht unterstützt** (kein Decoder).
   - zu groß → `agent_avatar_upload_size_error` „Bild zu groß (max %1$s)".
   - sonstiger Fehler → `agent_avatar_upload_generic_error` „Upload fehlgeschlagen – erneut versuchen".
   - **Server ist die Wahrheit:** die Client-Vorprüfung ist ein erster Hinweis; **der Server validiert autoritativ** (Magic-Bytes,
