@@ -30,6 +30,15 @@
 |---|---|---|
 | `agent_add_autofields_note` | Token, Git-Branch und Hub-Kanal vergibt das System automatisch. Farbe & Avatar setzt du danach über das ⋮-Panel des Agenten. | Token, git branch and hub channel are assigned automatically. Set colour & avatar afterwards via the agent's ⋮ panel. |
 
+### A) Projekt-Scope-Note (INFO — Fold aus Multi-Projekt-Support-Gap; nennt das aktive Projekt, 1 Arg)
+| Key | DE | EN |
+|---|---|---|
+| `agent_add_project_scope_note` | Wird im aktiven Projekt %1$s angelegt. | Added to the active project %1$s. |
+
+> `%1$s` = Anzeigename des **aktiven** Projekts. Steht **am Kopf** des Add-Dialogs (vor den Feldern) — löst die „aus bestehenden
+> Fenstern übernehmen?"-Verwirrung an der Quelle: ein Agent gehört immer zum aktiven Projekt. Ehrlich, kein projekt-übergreifendes
+> Versprechen.
+
 ### B) Leerzustand-Onboarding
 | Key | DE | EN |
 |---|---|---|
@@ -49,9 +58,9 @@
 ---
 
 ## Zähl-/Validierungs-Block (Selbst-Validierung)
-- **Neue Keys gesamt: 13** — 6 `agent_add_*_hint` + 4 `agent_add_*_placeholder` + `agent_add_autofields_note` + 2 `agent_empty_*`.
-  **DE+EN-Parität 13/13.**
-- **Argument-Keys (`%…$s`): 0.**
+- **Neue Keys gesamt: 14** — 6 `agent_add_*_hint` + 4 `agent_add_*_placeholder` + `agent_add_autofields_note` +
+  `agent_add_project_scope_note` + 2 `agent_empty_*`. **DE+EN-Parität 14/14.**
+- **Argument-Keys (`%…$s`): 1** — `agent_add_project_scope_note` (`%1$s` = aktiver Projektname).
 - **0 Kollision** gg. `strings.xml`/`values-en` @ `6cfff22` (Prefixe `agent_add_*_hint`/`_placeholder`/`agent_add_autofields_note`/
   `agent_empty_*` neu; im Push `grep`-gegengeprüft).
 - **Kein Secret in Keys:** keine E-Mail/Token/Endpoints; Beispiele sind neutrale Anzeige-Werte.

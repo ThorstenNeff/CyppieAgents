@@ -14,6 +14,7 @@
 |---|---|---|
 | Leerzustand-Block | `agentMgmt.empty` | Onboarding bei `agents.isEmpty()` (Titel + Body); CTA = bestehender `ADD_BUTTON` |
 | Auto-Vergeben-Note | `agentMgmt.add.autoNote` | INFO-Zeile „Token/Branch/Kanal system-vergeben" im Add-Dialog |
+| Projekt-Scope-Note | `agentMgmt.add.projectNote` | INFO-Zeile am Dialog-Kopf „Wird im aktiven Projekt %1$s angelegt" (Fold Support-Gap) |
 
 > Optional (falls QA Titel/Body getrennt adressieren will): `agentMgmt.empty.title` / `agentMgmt.empty.body` — nicht zwingend,
 > wenn die Container-Text-Assertion reicht.
@@ -51,8 +52,9 @@ Die Inline-Hints (`supportingText`) und Placeholder hängen an den **bestehenden
 
 ## 4. Hand-off + Zähl-/Validierungs-Block
 - Neue Konstanten in `AgentMgmtTags` (`:app:shared`), geteilt mit Tester (CYP-7); Änderungen über den PO.
-- **Neue Tags gesamt: 2** (`agentMgmt.empty`, `agentMgmt.add.autoNote`); optional +2 (`…empty.title`/`…empty.body`).
-- **0 Kollision** gg. `AgentMgmtTags.kt` @ `6cfff22` (kein `agentMgmt.empty`/`…add.autoNote` vorhanden).
+- **Neue Tags gesamt: 3** (`agentMgmt.empty`, `agentMgmt.add.autoNote`, `agentMgmt.add.projectNote`); optional +2
+  (`…empty.title`/`…empty.body`).
+- **0 Kollision** gg. `AgentMgmtTags.kt` @ `6cfff22` (kein `agentMgmt.empty`/`…add.autoNote`/`…add.projectNote` vorhanden).
 - **Reuse-gegen-Code verifiziert:** `ADD_BUTTON`=`agentMgmt.addButton`, `GATE_HINT`=`agentMgmt.gateHint`, `LIST`=`agentMgmt.list`,
   `ADD_*_INPUT`=`agentMgmt.add.*.input`, `ADD_SPAWN_HINT`=`agentMgmt.add.spawnHint` — alle bestehend.
 - **⚠ Shared-Tag-Drift:** mit dem CYP-228-Impl-Slice timen.

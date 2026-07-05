@@ -31,6 +31,14 @@
     "tone": "INFO",
     "content": "Token/Git-Branch/Hub-Kanal system-vergeben; Farbe/Avatar via ⋮-Panel. Kein Feld ist ein Token-Input."
   },
+  "project_scope_note": {
+    "tag": "agentMgmt.add.projectNote",
+    "key": "agent_add_project_scope_note",
+    "tone": "INFO",
+    "placement": "am KOPF des Add-Dialogs (vor den Feldern)",
+    "arg": "%1$s = Anzeigename des AKTIVEN Projekts",
+    "content": "Fold aus Multi-Projekt-Support-Gap: 'Wird im aktiven Projekt %1$s angelegt.' Loest die 'aus bestehenden Fenstern uebernehmen?'-Verwirrung an der Quelle — Agent gehoert immer zum aktiven Projekt (Fenster=projekt-scoped Agenten). Ehrlich: nennt das aktive Projekt wahr, kein projekt-uebergreifendes Versprechen."
+  },
   "empty_state": {
     "tag": "agentMgmt.empty",
     "title_key": "agent_empty_title",
@@ -39,8 +47,8 @@
     "operator_gate": "Nicht-Operator: agentMgmt.empty + agentMgmt.gateHint, addButton disabled (kein toter CTA)"
   },
   "validation": {
-    "new_keys": 13,
-    "new_tags": 2,
+    "new_keys": 14,
+    "new_tags": 3,
     "new_colors": 0,
     "new_tokens": 0,
     "reuse": "LabeledField, TonedHint(INFO), agent_add_spawn_hint, ADD_BUTTON/GATE_HINT/LIST/ADD_*_INPUT, agent_role_po/worker",

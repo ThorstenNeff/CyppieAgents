@@ -44,6 +44,13 @@ Das Add-Formular (`AddDialog`) zeigt je Feld **nur ein `label`** (`OutlinedTextF
 `LabeledField` bekommt `hint: String? = null` (→ `OutlinedTextField.supportingText`) und `placeholder: String? = null`
 (→ `OutlinedTextField.placeholder`). Beide sind Teil der Feld-Semantik (a11y: der Screenreader liest `supportingText` mit).
 
+**Projekt-Scope-Note (am KOPF des Dialogs — Fold aus dem Multi-Projekt-Support-Gap):** eine ruhige `TonedHint(INFO)` **vor** den
+Feldern (Tag `agentMgmt.add.projectNote`): `agent_add_project_scope_note` — „Wird im aktiven Projekt **%1$s** angelegt." (`%1$s` =
+Anzeigename des aktiven Projekts). Löst die häufige Modell-Verwirrung („aus bestehenden Terminal-Fenstern übernehmen?") **an der
+Quelle**: ein Agent gehört **immer zum aktiven Projekt** (Fenster = projekt-scoped Agenten; kein projekt-übergreifendes Anlegen).
+**Ehrlichkeits-Anker:** nennt das aktive Projekt **wahr** (`%1$s` = realer Name); kein Hinweis impliziert eine projekt-übergreifende
+Wirkung.
+
 | Feld (Tag) | `supportingText` (Key) | `placeholder` (Key) |
 |---|---|---|
 | **Agent-ID** (`agentMgmt.add.id.input`) | `agent_add_id_hint` — „Pflicht · unveränderlich. Nur a–z, 0–9, `-`, `_`. Wird zu Ordner, Branch & Kanal." | `agent_add_id_placeholder` — „frontend" |
@@ -104,10 +111,11 @@ Params), die Add-Dialog-Aufrufe (Hints/Placeholder durchreichen), die Auto-Note,
 
 ## 6. Counts / Reuse (Selbst-Validierung → Begleitdateien)
 
-- **Neue i18n-Keys:** ~**13** (6 `…_hint` + 4 `…_placeholder` + `agent_add_autofields_note` + `agent_empty_title` +
-  `agent_empty_body`), DE+EN-Parität — siehe `agent-add-onboarding-keys.md`.
-- **Neue Tags:** **`agentMgmt.empty`** (+ optional `…empty.title`/`…empty.body`) + `agentMgmt.add.autoNote`; Feld-Hints **ohne** neue
-  Tags (an den bestehenden `agentMgmt.add.*.input`) — siehe `agent-add-onboarding-tags.md`.
+- **Neue i18n-Keys:** **14** (6 `…_hint` + 4 `…_placeholder` + `agent_add_autofields_note` + `agent_add_project_scope_note` [1 Arg]
+  + `agent_empty_title` + `agent_empty_body`), DE+EN-Parität — siehe `agent-add-onboarding-keys.md`.
+- **Neue Tags:** **`agentMgmt.empty`** (+ optional `…empty.title`/`…empty.body`) + `agentMgmt.add.autoNote` +
+  `agentMgmt.add.projectNote`; Feld-Hints **ohne** neue Tags (an den bestehenden `agentMgmt.add.*.input`) — siehe
+  `agent-add-onboarding-tags.md`.
 - **Neue Tokens/Farben:** **0** — siehe `agent-add-onboarding-tokens.json`.
 - **Größe: S (1–2 Tage)** — reine UI + Strings, Reuse `LabeledField`/`TonedHint`, keine Model-/Endpoint-Änderung.
 
