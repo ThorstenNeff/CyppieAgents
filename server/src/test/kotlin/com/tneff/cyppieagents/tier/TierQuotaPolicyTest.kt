@@ -66,21 +66,47 @@ class TierQuotaPolicyTest {
         assertEquals(DbPlacement.HOME, TierPolicy.resolve("roles", Tier.FREE, hasByoBinding = false, freeFallbackEnabled = false, grandfathered = false))
         assertEquals(DbPlacement.HOME, TierPolicy.resolve("dsn_registry", Tier.PAID, hasByoBinding = true, freeFallbackEnabled = true, grandfathered = true))
         // a bound BYO instance → BYO (no fallback/quota)
-        assertEquals(DbPlacement.BYO, TierPolicy.resolve("events", Tier.FREE, hasByoBinding = true, freeFallbackEnabled = false, grandfathered = false))
+        assertEquals(DbPlacement.BYO, TierPolicy.resolve("event_log", Tier.FREE, hasByoBinding = true, freeFallbackEnabled = false, grandfathered = false))
         // Paid, no BYO → MANAGED
-        assertEquals(DbPlacement.MANAGED, TierPolicy.resolve("events", Tier.PAID, hasByoBinding = false, freeFallbackEnabled = true, grandfathered = false))
+        assertEquals(DbPlacement.MANAGED, TierPolicy.resolve("event_log", Tier.PAID, hasByoBinding = false, freeFallbackEnabled = true, grandfathered = false))
         // Free, no BYO, fallback ON → MANAGED_QUOTA_FALLBACK
-        assertEquals(DbPlacement.MANAGED_QUOTA_FALLBACK, TierPolicy.resolve("events", Tier.FREE, hasByoBinding = false, freeFallbackEnabled = true, grandfathered = false))
+        assertEquals(DbPlacement.MANAGED_QUOTA_FALLBACK, TierPolicy.resolve("event_log", Tier.FREE, hasByoBinding = false, freeFallbackEnabled = true, grandfathered = false))
         // Free, no BYO, fallback OFF, NOT grandfathered → BYO_REQUIRED (fail-closed block)
-        assertEquals(DbPlacement.BYO_REQUIRED, TierPolicy.resolve("events", Tier.FREE, hasByoBinding = false, freeFallbackEnabled = false, grandfathered = false))
+        assertEquals(DbPlacement.BYO_REQUIRED, TierPolicy.resolve("event_log", Tier.FREE, hasByoBinding = false, freeFallbackEnabled = false, grandfathered = false))
         // Free, no BYO, fallback OFF, GRANDFATHERED → keeps the fallback
-        assertEquals(DbPlacement.MANAGED_QUOTA_FALLBACK, TierPolicy.resolve("events", Tier.FREE, hasByoBinding = false, freeFallbackEnabled = false, grandfathered = true))
+        assertEquals(DbPlacement.MANAGED_QUOTA_FALLBACK, TierPolicy.resolve("event_log", Tier.FREE, hasByoBinding = false, freeFallbackEnabled = false, grandfathered = true))
     }
 
-    @Test fun storeResidency_bootstrapExempt_operationalCapable() {
-        listOf("roles", "account", "dsn_registry", "store_binding", "migration_audit", "mcp_config", "free_fallback_toggle")
-            .forEach { assertEquals(StoreResidency.MUST_STAY_HOME, StoreResidencies.of(it), "$it must stay home") }
-        listOf("events", "agent_events", "project_config", "avatar_blob", "project", "report")
+    // ---- CYP-220 Phase 6 Slice 1: residency FAIL-CLOSED + inventory gate ----
+
+    @Test fun storeResidency_operationalCapable_bootstrapHome() {
+        listOf("project", "project_config", "remote_token", "agent_override", "channel_share", "avatar_blob", "event_log", "agent_events", "report", "session", "delivery")
             .forEach { assertEquals(StoreResidency.USER_DB_CAPABLE, StoreResidencies.of(it), "$it offloadable") }
+        listOf("roles", "account", "dsn_registry", "store_binding", "migration_audit", "mcp_config", "free_fallback_toggle", "quota_usage")
+            .forEach { assertEquals(StoreResidency.MUST_STAY_HOME, StoreResidencies.of(it), "$it must stay home") }
+    }
+
+    @Test fun residency_failClosed_unknownStaysHome() {
+        // FAIL-CLOSED (P5-finding): an unknown / newly-added / typo'd store key is MUST_STAY_HOME — a store is
+        // NEVER accidentally offloadable to a user DB; it must be an explicit allow-list opt-in.
+        listOf("some_new_store", "event_logg" /* typo */, "events" /* old non-canonical */, "", "PROJECT" /* case */)
+            .forEach {
+                assertEquals(StoreResidency.MUST_STAY_HOME, StoreResidencies.of(it), "'$it' must fail closed to home")
+                assertFalse(StoreResidencies.isUserDbCapable(it))
+            }
+    }
+
+    @Test fun residency_inventory_isDisjointAndComplete() {
+        // Inventory gate: every classified store is in exactly one bucket (the init-check enforces disjointness),
+        // and `inventory` is exactly the union — so a reviewer adding a store must classify it deliberately.
+        val expected = setOf(
+            "project", "project_config", "remote_token", "agent_override", "channel_share", "avatar_blob",
+            "event_log", "agent_events", "report", "session", "delivery",
+            "roles", "account", "dsn_registry", "store_binding", "migration_audit", "mcp_config",
+            "free_fallback_toggle", "quota_usage",
+        )
+        assertEquals(expected, StoreResidencies.inventory, "the known-store inventory drifted — classify new stores explicitly")
+        // every inventory key resolves (capable keys → USER_DB_CAPABLE), and nothing outside is capable.
+        assertTrue(StoreResidencies.inventory.isNotEmpty())
     }
 }
