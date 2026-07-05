@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.db.FlywayMigrator
+import com.tneff.cyppieagents.db.MigrationRowCodec
 import com.tneff.cyppieagents.model.CreateProjectRequest
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.Project
@@ -45,17 +46,31 @@ class PgProjectRegistry(
         }
     }
 
-    /**
-     * CYP-220 Phase 3 — RAW bulk copy for a File→PG migration (no [ProjectGuard], no seed): replace the whole
-     * table with [projects] (in order) + set the active pointer. One transaction — all-or-nothing. Used only by
-     * [com.tneff.cyppieagents.db.ProjectRegistryMigrator] into a freshly-migrated, un-seeded target.
-     */
-    override fun importAll(projects: List<Project>, active: String): Unit = synchronized(lock) {
+    // ---- CYP-220 Phase 4 migration surface (com.tneff.cyppieagents.db.MigrationTarget) ----
+
+    /** Export the whole store as canonical rows: an `A`(active) row then a `P`(id,name) row per project, in order. */
+    override fun exportRows(): List<ByteArray> = synchronized(lock) {
+        tx { c ->
+            buildList {
+                add(MigrationRowCodec.encode(listOf("A", requireActive(c))))
+                allProjects(c).forEach { add(MigrationRowCodec.encode(listOf("P", it.id, it.name))) }
+            }
+        }
+    }
+
+    /** RAW bulk replace for a migration target (no [ProjectGuard], no seed) — one transaction, all-or-nothing. */
+    override fun importRows(rows: List<ByteArray>): Unit = synchronized(lock) {
         tx { c ->
             c.prepareStatement("DELETE FROM project").use { it.executeUpdate() }
             c.prepareStatement("DELETE FROM project_active").use { it.executeUpdate() }
+            var active: String? = null
+            val projects = mutableListOf<Project>()
+            rows.forEach {
+                val f = MigrationRowCodec.decode(it)
+                when (f.first()) { "A" -> active = f[1]; "P" -> projects.add(Project(f[1], f[2])) }
+            }
             projects.forEach { insertProject(c, it) } // seq auto-increments in insertion order
-            setActivePointer(c, active)
+            active?.let { setActivePointer(c, it) }
         }
         Unit
     }
