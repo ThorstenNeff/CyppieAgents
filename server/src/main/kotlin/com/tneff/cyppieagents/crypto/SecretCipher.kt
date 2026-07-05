@@ -26,8 +26,23 @@ import java.security.GeneralSecurityException
  * relocated** to a different row / store / field — a moved blob fails to decrypt (fail-closed).
  */
 data class SecretAad(val storeKey: String, val projectId: String, val field: String) {
-    /** The exact contract string `"{storeKey}|{projectId}|{field}"` as AAD bytes. */
-    fun bytes(): ByteArray = "$storeKey|$projectId|$field".encodeToByteArray()
+    /**
+     * The context as AAD bytes — a **length-prefixed, INJECTIVE** encoding (each component = a 4-byte
+     * big-endian length + its UTF-8 bytes). A naive `"a|b|c"` delimiter-join is NOT injective: a component
+     * containing the delimiter collides two DISTINCT triples onto identical bytes (e.g. `("s","p|x","f")` and
+     * `("s|p","x","f")` both → `"s|p|x|f"`), which would let a ciphertext bound to one context decrypt under
+     * another — the "cannot-be-relocated" property (Design §3.3) would break. Length-prefixing makes the
+     * encoding a bijection with the triple, so no two distinct contexts can ever share AAD bytes.
+     */
+    fun bytes(): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        for (part in listOf(storeKey, projectId, field)) {
+            val b = part.encodeToByteArray()
+            out.write(byteArrayOf((b.size ushr 24).toByte(), (b.size ushr 16).toByte(), (b.size ushr 8).toByte(), b.size.toByte()))
+            out.write(b)
+        }
+        return out.toByteArray()
+    }
 }
 
 /**

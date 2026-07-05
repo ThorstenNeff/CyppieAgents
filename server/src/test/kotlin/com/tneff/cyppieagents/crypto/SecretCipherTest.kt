@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.crypto
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -80,10 +81,26 @@ class SecretCipherTest {
         }
     }
 
-    @Test fun aadBytes_isTheExactContractString() {
-        assertEquals(
-            "project_config|projb|apiKey",
-            SecretAad("project_config", "projb", "apiKey").bytes().decodeToString(),
+    @Test fun aadEncoding_isInjective_noDelimiterCollision() {
+        // PO-Assistant Phase-2a blocker: a naive "a|b|c" join is NOT injective — a component containing the
+        // delimiter collides two DISTINCT contexts onto identical AAD bytes (("s","p|x","f") == ("s|p","x","f")
+        // → "s|p|x|f"), which would let a ciphertext bound to ONE decrypt under the OTHER (relocation).
+        val a = SecretAad("s", "p|x", "f")
+        val b = SecretAad("s|p", "x", "f")
+        assertFalse(a.bytes().contentEquals(b.bytes()), "distinct contexts must NOT share AAD bytes (injective)")
+
+        // The load-bearing consequence: a ciphertext bound to `a` does NOT decrypt under the colliding `b`.
+        val c = boxCipher()
+        val secret = c.encrypt("value", a)
+        assertFailsWith<SecretCipherException>("delimiter collision must not permit cross-context decrypt") {
+            c.decrypt(secret, b)
+        }
+        assertEquals("value", c.decrypt(secret, a), "the true context still works")
+
+        // A field also can't absorb another component's tail: ("s","p","x|f") vs ("s","p|x","f") stay distinct.
+        assertFalse(
+            SecretAad("s", "p", "x|f").bytes().contentEquals(SecretAad("s", "p|x", "f").bytes()),
+            "length-prefix disambiguates where the delimiter lands",
         )
     }
 
