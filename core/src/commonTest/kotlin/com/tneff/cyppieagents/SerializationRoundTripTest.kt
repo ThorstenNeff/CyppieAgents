@@ -149,6 +149,24 @@ class SerializationRoundTripTest {
     }
 
     @Test
+    fun roleRoundTrips_directTopLevel_onEveryTarget() {
+        // CYP-217: direct top-level Role (de)serialization — the exact reified `encodeToString(Role)` /
+        // `decodeFromString<Role>` path. Without `@Serializable` on the enum this fell back to runtime
+        // reflection: green on jvm/android, but SerializationException on js/wasmJs. This runs on ALL targets
+        // via commonTest, so it is RED on the browser targets without the fix.
+        for (r in Role.entries) assertEquals(r, roundTrip(r))
+        // Wire value = the @SerialName (== the constant name) → unchanged, so no DTO-ser regression.
+        assertEquals("\"PO\"", CommJson.encodeToString(Role.PO))
+        assertEquals(Role.PRODUCT_LEAD, CommJson.decodeFromString<Role>("\"PRODUCT_LEAD\""))
+    }
+
+    @Test
+    fun roleRoundTrips_insideList() {
+        val list = listOf(Role.PO, Role.WORKER, Role.PRODUCT_LEAD)
+        assertEquals(list, roundTrip(list))
+    }
+
+    @Test
     fun userTurnSerializesToVerifiedStdinShape() {
         val line = UserTurn("Reply with: FIRST").toNdjsonLine()
         // Must round-trip back to a UserEvent with a single text block (the verified stdin shape).
