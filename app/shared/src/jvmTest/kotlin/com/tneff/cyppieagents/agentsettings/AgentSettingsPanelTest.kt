@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.agentsettings
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -112,6 +113,38 @@ class AgentSettingsPanelTest {
         waitForIdle()
         assertEquals(false, v.state.value.saved, "a failed save must leave state.saved false")
         assertEquals(0, onSavedCount, "a FAILED save must NOT fire onSaved (dialog stays open — no data-loss close)")
+    }
+
+    /**
+     * CYP-237 ask-3 double-close race (PO-Assistent-found prod regress): the overlay's VM is RETAINED across close
+     * (`viewModel(key="agentSettings-$id")`), so `saved` must be ONE-SHOT. After a save closes the overlay, reopening
+     * the SAME agent's VM must NOT re-fire onSaved at first composition (which would instantly re-close it — the user
+     * couldn't reopen the just-edited agent until reload). Empirically the bug fired onSaved 2×. Mutation: make
+     * `consumeSaved()` a no-op (sticky saved) → reopen re-fires → count 2 + panel instant-closes → RED.
+     */
+    @Test
+    fun reopenSameVmAfterSave_firesOnSavedExactlyOnce_noInstantCloseRace() = runComposeUiTest {
+        val v = vm(editable = true)
+        var onSavedCount = 0
+        val open = mutableStateOf(true) // models AgentShell's settingsAgentId?.let { } gate over the SAME retained VM
+        setContent {
+            MaterialTheme {
+                if (open.value) {
+                    AgentSettingsPanel(v, onDismiss = { open.value = false }, onSaved = { onSavedCount++; open.value = false })
+                }
+            }
+        }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AgentSettingsTags.PANEL).fetchSemanticsNodes().isNotEmpty() }
+        v.setName("Renamed"); waitForIdle()
+        onNodeWithTag(AgentSettingsTags.SAVE).performClick()
+        waitUntil(timeoutMillis = 5_000L) { onSavedCount == 1 } // save success → onSaved once → overlay closes
+        waitForIdle()
+        // Reopen the SAME retained VM (the just-edited agent). With a one-shot `saved`, saved is already consumed →
+        // the reopened panel's LaunchedEffect is inert → it STAYS open and onSaved does NOT fire again.
+        open.value = true
+        waitForIdle()
+        onNodeWithTag(AgentSettingsTags.PANEL).assertExists()
+        assertEquals(1, onSavedCount, "reopening the just-saved agent's retained VM must NOT re-fire onSaved (no instant-close)")
     }
 
     @Test

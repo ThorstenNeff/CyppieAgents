@@ -86,8 +86,15 @@ fun AgentSettingsPanel(
     val scheme = deriveScheme(state.baseArgb)
 
     // CYP-237 close-on-save: a successful save sets state.saved → signal the host exactly once (it closes +
-    // refreshes). Keyed on `saved`, so it fires only on the false→true transition, never while merely editing.
-    LaunchedEffect(state.saved) { if (state.saved) onSaved() }
+    // refreshes). `saved` is CONSUMED first (reset to false) — the overlay's VM is retained across close, so a
+    // sticky true would re-fire onSaved at first composition when the SAME agent is reopened (instant-close race).
+    // Consuming makes each real save a fresh false→true edge; a reopen with saved=false is inert.
+    LaunchedEffect(state.saved) {
+        if (state.saved) {
+            viewModel.consumeSaved()
+            onSaved()
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
