@@ -36,6 +36,22 @@ interface AgentManagementRepository {
 
     /** Operator-only: stop + remove the agent; [worktree] decides the (warned) worktree fate. */
     suspend fun remove(id: String, worktree: WorktreeFate)
+
+    /**
+     * CYP-216: replace the avatar with a custom UPLOADED image (`POST /api/agents/{id}/avatar`, multipart,
+     * operator-gated). The server validates authoritatively (magic-bytes → no SVG/webp → dimension cap →
+     * center-crop → re-encode) and **mints** the `AgentAvatar.Upload` ref — the client never forges it. The
+     * returned [AgentDetail] carries the SERVER's truth (the effective avatar), so "avatar set" comes from the
+     * response, not the local file-pick. Throws [AgentMgmtException] (`avatar_rejected`/`avatar_no_file`/…).
+     * Default = unsupported (stubs/non-live repos); the live REST client overrides it.
+     */
+    suspend fun uploadAvatar(id: String, bytes: ByteArray, filename: String, mimeType: String): AgentDetail =
+        throw AgentMgmtException("avatar_unsupported")
+
+    /** CYP-216: clear the avatar back to the default (`DELETE /api/agents/{id}/avatar`, operator-gated; 204). */
+    suspend fun clearAvatar(id: String) {
+        throw AgentMgmtException("avatar_unsupported")
+    }
 }
 
 /**

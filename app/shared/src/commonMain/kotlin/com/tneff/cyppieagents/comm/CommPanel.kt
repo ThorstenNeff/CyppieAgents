@@ -47,6 +47,8 @@ import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.testing.testTagA11y
+import com.tneff.cyppieagents.ui.AgentAvatarView
+import com.tneff.cyppieagents.ui.SenderPalette
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_role_po
 import kmpcyppieagents.app.shared.generated.resources.comm_back
@@ -224,7 +226,7 @@ private fun TimelinePane(
 @Composable
 private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
     val agent = agents[item.message.from]
-    val color = SenderPalette.forSender(item.message.from, agent?.role)
+    val nameColor = SenderPalette.forSender(item.message.from, agent?.role).nameAccent
     val displayName = agent?.name ?: item.message.from
     Row(
         modifier = Modifier
@@ -233,16 +235,19 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
             .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // Avatar = initials (CYP-14), colour from the slot.
-        Box(
-            modifier = Modifier.size(28.dp).clip(CircleShape).background(color.avatarFill),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(initialsOf(displayName), color = color.onAvatar, style = MaterialTheme.typography.labelSmall)
-        }
+        // Avatar — the shared AgentAvatar (CYP-216): initials + identity colour + CYP-209 ring, honouring the
+        // agent's custom colour (CYP-211). Name accent stays the CYP-14 slot tint (readable on the surface).
+        AgentAvatarView(
+            id = item.message.from,
+            size = 28.dp,
+            displayName = displayName,
+            role = agent?.role,
+            colorHex = agent?.color,
+            avatar = agent?.avatar, // CYP-216 UX-QA②: a set image shows on comm rows too, not just the titlebar.
+        )
         Column(modifier = Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(displayName, color = color.nameAccent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                Text(displayName, color = nameColor, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 if (agent?.role == Role.PO) KindBadge(stringResource(Res.string.agent_role_po))
                 item.message.meta?.kind?.let { KindBadge(it.name) }
                 if (item.pending) Text("· " + stringResource(Res.string.comm_msg_pending), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)

@@ -88,12 +88,20 @@ import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.SettingsPanel
 import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.settings.ConfigHttpRepository
-import com.tneff.cyppieagents.window.TitleBarColors
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.agentsettings.AgentSettingsPanel
 import com.tneff.cyppieagents.agentsettings.AgentSettingsViewModel
-import com.tneff.cyppieagents.comm.SenderPalette
+import com.tneff.cyppieagents.agentsettings.rememberImagePicker
+import com.tneff.cyppieagents.ui.AgentAvatarView
+import com.tneff.cyppieagents.ui.LocalAvatarBaseUrl
+import com.tneff.cyppieagents.ui.LocalAvatarImageLoader
+import com.tneff.cyppieagents.ui.SenderPalette
+import com.tneff.cyppieagents.ui.TitleBarColors
+import androidx.compose.runtime.CompositionLocalProvider
+import coil3.ImageLoader
+import coil3.compose.LocalPlatformContext
+import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.tneff.cyppieagents.net.sharedWsHttpClient
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
@@ -190,6 +198,16 @@ fun AgentShell(
     // CYP-115: keep-alive pinging (sharedWsHttpClient) so idle comm/lifecycle sockets aren't Darwin-idle-closed.
     val httpClient = remember { sharedWsHttpClient(sessionToken) }
     DisposableEffect(Unit) { onDispose { httpClient.close() } }
+
+    // CYP-216: an authed Coil ImageLoader over the SHARED client — the avatar serve endpoint
+    // (GET /api/agents/{id}/avatar) is participant-gated, so image GETs must carry the same
+    // session/operator credential. Provided to the shared AgentAvatarView via CompositionLocals.
+    val avatarPlatformContext = LocalPlatformContext.current
+    val avatarImageLoader = remember(httpClient, avatarPlatformContext) {
+        ImageLoader.Builder(avatarPlatformContext)
+            .components { add(KtorNetworkFetcherFactory(httpClient = { httpClient })) }
+            .build()
+    }
 
     // Agent-management VM (CYP-86/87/88): now the LIVE REST client against the CYP-97 endpoints (stub→real
     // swap, no UI/VM change). Hoisted FIRST because its agent list (GET /api/agents) drives the **dynamic**
@@ -476,12 +494,23 @@ fun AgentShell(
         // settings overlay is open (null = none). The AlertDialog renders above the desktop regardless of position.
         val agentById = remember(managedAgents) { managedAgents.associateBy { it.id } }
         var settingsAgentId by remember { mutableStateOf<String?>(null) }
+        // CYP-216: provide the authed avatar loader + base URL to every AgentAvatarView beneath (titlebar, comm,
+        // event-log, settings panel). Locals default null → those sites render stages 3-4 when not wrapped.
+        CompositionLocalProvider(
+            LocalAvatarImageLoader provides avatarImageLoader,
+            LocalAvatarBaseUrl provides cfg.hubHttpBaseUrl,
+        ) {
         settingsAgentId?.let { sid ->
             val a = agentById[sid]
             val agentSettingsVm = viewModel(key = "agentSettings-$sid") {
                 AgentSettingsViewModel(sid, resolvedAgentMgmtRepo, editable = isOperator, initialName = a?.name ?: sid, initialColorHex = a?.color)
             }
-            AgentSettingsPanel(agentSettingsVm, onDismiss = { settingsAgentId = null })
+            // CYP-216: the platform image picker (wasmJs/jvm real; android/ios stub) → the VM does the pre-check
+            // + multipart upload + server-truth adopt. onRequestUpload launches the picker for THIS agent's VM.
+            val requestUpload = rememberImagePicker { picked ->
+                agentSettingsVm.uploadAvatar(picked.bytes, picked.filename, picked.mimeType)
+            }
+            AgentSettingsPanel(agentSettingsVm, onDismiss = { settingsAgentId = null }, onRequestUpload = requestUpload)
         }
 
         WindowHost(
@@ -497,6 +526,16 @@ fun AgentShell(
                 }
             },
             settingsFor = { id -> if (id in agentById) ({ settingsAgentId = id }) else null },
+            // CYP-216 §5.1: agent windows get the leading inverted-disc avatar (same TitleBarColors the bar is themed
+            // with → the avatar inverts within it). System windows (not in agentById) → null → no leading avatar.
+            titleBarLeadingFor = { id ->
+                agentById[id]?.let { agent ->
+                    val sc = SenderPalette.forAgent(agent.id, agent.role, agent.color)
+                    val tb = TitleBarColors(background = sc.avatarFill, content = sc.onAvatar, border = sc.borderColor)
+                    val slot: @Composable () -> Unit = { AgentAvatarView(agent, size = 20.dp, tintedBar = tb) }
+                    slot
+                }
+            },
             windowContent = { window ->
                 // Reuse the hoisted (always-alive) VMs — never a second viewModel() here, so each
                 // window keeps exactly one subscription whether rendered in the canvas or the pager.
@@ -559,6 +598,7 @@ fun AgentShell(
                 }
             },
         )
+        } // CYP-216: end LocalAvatar* provider
         // CYP-123: the capability detail panel opens from the header fidelity badge — one Dialog at shell level,
         // keyed by the opened agent. Read-only; fail-closed content (null caps → "not yet reported"). Tap-out closes.
         connectorCapState.openPanelAgentId?.let { openId ->

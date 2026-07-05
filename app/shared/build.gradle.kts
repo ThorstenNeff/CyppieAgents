@@ -80,6 +80,9 @@ kotlin {
             implementation(libs.kotlinx.coroutinesCore)
             implementation(libs.ktor.clientCore)
             implementation(libs.ktor.clientWebsockets)
+            // CYP-216 avatar images: Coil 3 (KMP incl. wasmJs) + Ktor-3 network engine (reuses our authed client).
+            implementation(libs.coil.compose)
+            implementation(libs.coil.networkKtor3)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
