@@ -2,9 +2,25 @@ package com.tneff.cyppieagents
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 class ShellConfigTest {
+
+    @Test
+    fun forOrigin_agentToken_neverGuessable_sessionOrOperatorTokenOnly() {
+        // CYP-230: the deployed SPA must NEVER derive a per-agent WS token from the agent id (an agentId-derivable
+        // `dev-token-<id>` = an agent-stream auth-bypass footgun). With no operator token → empty (the client omits
+        // it and relies on the same-origin session cookie on the WS handshake); dev-token is dev()-only.
+        val public = ShellConfig.forOrigin("https://app.example.com")
+        assertEquals("", public.agentToken("frontend"))
+        assertEquals("", public.agentToken("po"))
+        assertNotEquals("dev-token-frontend", public.agentToken("frontend"))
+        // A break-glass operator serve sends its operator token (isOperator on the server), not a per-agent one.
+        val op = ShellConfig.forOrigin("https://app.example.com", operatorToken = "op-tok")
+        assertEquals("op-tok", op.agentToken("frontend"))
+        assertEquals("op-tok", op.agentToken("anything"))
+    }
 
     @Test
     fun dev_targetsCyp24Port8787() {
