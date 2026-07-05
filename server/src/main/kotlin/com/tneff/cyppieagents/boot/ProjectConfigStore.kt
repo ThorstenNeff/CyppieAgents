@@ -66,6 +66,13 @@ interface ProjectConfigStore {
     }
 }
 
+/** CYP-96 repo-URL plausibility (design §6.4): a scheme URL or an scp-like `user@host:path`. Shared File+Pg (no drift). */
+private val PROJECT_CONFIG_SCP_LIKE = Regex("^[^@\\s]+@[^:\\s]+:.+$")
+internal fun isPlausibleRepoUrl(url: String): Boolean = url.isNotBlank() && (url.contains("://") || PROJECT_CONFIG_SCP_LIKE.matches(url))
+
+/** CYP-104 API-key plausibility (prefix-TOLERANT; shared File+Pg so the contract can't drift). */
+internal fun isPlausibleApiKey(key: String): Boolean = key.length >= Secrets.MIN_SECRET_LEN && key.none { it.isWhitespace() }
+
 /**
  * Backs the `/api/config` endpoints and the spawn-/boot-time resolution.
  *
@@ -162,19 +169,6 @@ class FileProjectConfigStore(
         val e = entries[projectId]
         return if (!e?.repoUrl.isNullOrBlank()) RepoConfig(e!!.repoUrl!!, e.repoBranch?.ifBlank { null } ?: "main") else fallbackRepo
     }
-
-    /** Source-of-truth validation (design §6.4): a scheme URL or an scp-like `user@host:path`. */
-    private fun isPlausibleRepoUrl(url: String): Boolean =
-        url.isNotBlank() && (url.contains("://") || SCP_LIKE.matches(url))
-
-    /**
-     * CYP-104 — plausibility for an API key, mirroring [isPlausibleRepoUrl]. **Prefix-TOLERANT** on
-     * purpose: it does NOT require an `sk-ant-`/any specific prefix (BYOK/proxy keys differ), so a valid
-     * key is never rejected. It only rejects the implausibly short / whitespace-y — a too-short key would
-     * also defeat [Secrets.mask]'s redaction (hence the shared [Secrets.MIN_SECRET_LEN] floor, no drift).
-     */
-    private fun isPlausibleApiKey(key: String): Boolean =
-        key.length >= Secrets.MIN_SECRET_LEN && key.none { it.isWhitespace() }
 
     private fun persist() {
         val f = file ?: return
