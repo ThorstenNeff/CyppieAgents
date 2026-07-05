@@ -60,8 +60,9 @@ fun Application.installPlatform(
             providerOf = booted.providerRegistry::get, // CYP-137: surface the provider in GET /api/agents
             deps = authDeps, // CYP-178: operator gate for PUT /api/acl
         )
-        // Production auth: only the operator token, or an agent watching its own session, is allowed.
-        agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry), booted.agentEventStore)
+        // Production auth: an operator token, an agent watching its OWN session, or a verified OPERATOR Kratos
+        // session (CYP-230: the tokenless public SPA uses its same-origin cookie — no agent secret in the client).
+        agentSocket(booted.connectorSessions, tokenAuthorize(booted.tokenRegistry, authDeps), booted.agentEventStore)
         // CYP-146: the in-process Hub MCP server (`POST /mcp/hub`) — exposes `hub_send` to a Connector-A
         // agent (the emission half). Token→agentId server-bound, localhost, single write path via postAsAgent.
         hubMcpRoutes(booted.hub, booted.tokenRegistry)

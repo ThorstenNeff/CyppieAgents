@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.model.TextBlock
 import com.tneff.cyppieagents.model.UserTurn
 import com.tneff.cyppieagents.routing.TokenRegistry
 import com.tneff.cyppieagents.routing.installAgentSocket
+import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.routing.tokenAuthorize
 import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
 import io.ktor.client.plugins.websocket.webSocket
@@ -107,7 +108,7 @@ class AgentSocketTest {
         val sessions = ConnectorSessions()
         sessions.register(FakeConnectorSession("backend"))
         val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
-        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry)) }
+        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry, AuthDeps(registry))) }
         val client = createClient { install(ClientWebSockets) }
 
         // No token → fail-closed.
@@ -134,7 +135,7 @@ class AgentSocketTest {
             mapOf("tok-backend" to "backend", "tok-frontend" to "frontend"),
             operatorToken = "tok-op",
         )
-        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry)) }
+        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry, AuthDeps(registry))) }
         val client = createClient { install(ClientWebSockets) }
 
         // Cross-agent: frontend's token on backend's socket → deny.

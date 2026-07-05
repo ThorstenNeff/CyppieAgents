@@ -2,6 +2,10 @@ package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.agentevents.AgentEventStore
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthPrincipal
+import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.resolvePrincipal
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
@@ -34,24 +38,31 @@ import kotlinx.coroutines.launch
  * so this route never sees unmasked content.
  */
 /**
- * Authorizer built on the CYP-9 [TokenRegistry]: a connection is allowed when it presents a valid
- * operator token, or an agent token whose agent matches the requested `agentId` (an agent may watch
- * its own session). Token via `Authorization: Bearer` or the `?token=` query fallback (browsers).
+ * Authorizer built on the CYP-9 [TokenRegistry] + the CYP-178 auth chain. A connection is allowed when it:
+ * (1) presents a valid **operator token**, or (2) an **agent token** whose agent matches the requested
+ * `agentId` (an agent may watch its own session), or (3) carries a **verified OPERATOR Kratos session**
+ * (CYP-230). Token via `Authorization: Bearer` or the `?token=` query fallback.
+ *
+ * **CYP-230 (deploy-blocker):** the tokenless public SPA has no real agent token (those are `HUB_TOKEN_*`
+ * secrets that must NOT ship to a public client) — it relies on its same-origin Kratos session cookie, which
+ * the browser sends automatically on the WSS handshake. The session branch is **OPERATOR-only, fail-closed**:
+ * only a human operator may watch **another** agent's stream (a MEMBER session is rejected → 1008); an agent
+ * still watches its own via its token. The suspend `resolvePrincipal` reads the cookie (there is no bearer for
+ * the SPA), so this predicate is `suspend`.
  */
-fun tokenAuthorize(registry: TokenRegistry): (ApplicationCall) -> Boolean = { call ->
+fun tokenAuthorize(registry: TokenRegistry, deps: AuthDeps): suspend (ApplicationCall) -> Boolean = { call ->
     val token = call.bearerToken() ?: call.request.queryParameters["token"]
     when {
         registry.isOperator(token) -> true
-        else -> {
-            val agentForToken = registry.agentFor(token)
-            agentForToken != null && agentForToken == call.request.queryParameters["agentId"]
-        }
+        registry.agentFor(token)?.let { it == call.request.queryParameters["agentId"] } == true -> true
+        // CYP-230: a verified OPERATOR session (Kratos cookie). NOT any session — a MEMBER human is rejected.
+        else -> (call.resolvePrincipal(deps) as? AuthPrincipal.Human)?.role == AuthRole.OPERATOR
     }
 }
 
 fun Application.installAgentSocket(
     sessions: ConnectorSessions,
-    authorize: (ApplicationCall) -> Boolean = { false },
+    authorize: suspend (ApplicationCall) -> Boolean = { false },
     // CYP-198: the durable transcript store — when wired, /ws/agent replays history-then-live from it.
     agentEvents: AgentEventStore? = null,
 ) {
@@ -64,7 +75,7 @@ fun Route.agentSocket(
     // Fail-closed by default (F-B): without an explicit predicate, NO connection is authorized —
     // an open socket lets anyone inject user-messages into an agent (i.e. drive it). Production
     // passes [tokenAuthorize]; tests opt in explicitly.
-    authorize: (ApplicationCall) -> Boolean = { false },
+    authorize: suspend (ApplicationCall) -> Boolean = { false },
     agentEvents: AgentEventStore? = null,
 ) {
     webSocket("/ws/agent") {
