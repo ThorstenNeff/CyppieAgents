@@ -16,6 +16,9 @@ import com.tneff.cyppieagents.db.DsnTierOrigin
 import com.tneff.cyppieagents.model.AgentAvatar
 import com.tneff.cyppieagents.routing.ConflictException
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -125,6 +128,33 @@ class PgOverrideShareStoresTest {
             assertEquals("store_migrating", assertFailsWith<ConflictException> { s.removeProject("default") }.code)
             assertEquals("FromA", fileA.overrideOf("default", "backend")?.name) // no ghost write in A
         }
+    }
+
+    /**
+     * S4 must-fix (PO-Assistant, empirically proven): [PgAgentOverrideStore.put]/[setAvatar] must be an **atomic**
+     * read-merge-write, like File's single-lock RMW. Repro: 40× barrier-synced `put(name)` ∥ `setAvatar(preset)`
+     * on the SAME `(project, agent)`. A non-atomic two-tx RMW loses one field every time (measured 40/40); the
+     * one-tx `SELECT … FOR UPDATE` fix serializes them → BOTH survive, lost == 0.
+     */
+    @Test fun agentOverride_concurrentPutAndSetAvatar_noLostUpdate() = EmbeddedPostgres.start().use { pg ->
+        val store = PgAgentOverrideStore(pg.postgresDatabase)
+        val pool = Executors.newFixedThreadPool(2)
+        var lost = 0
+        try {
+            repeat(40) { i ->
+                val agentId = "agent$i"
+                val preset = AgentAvatar.Preset("bottts", agentId)
+                val barrier = CyclicBarrier(2)
+                val f1 = pool.submit { barrier.await(5, TimeUnit.SECONDS); store.put("p", agentId, "Name$i", null, null, null) }
+                val f2 = pool.submit { barrier.await(5, TimeUnit.SECONDS); store.setAvatar("p", agentId, preset) }
+                f1.get(15, TimeUnit.SECONDS); f2.get(15, TimeUnit.SECONDS)
+                val fin = store.overrideOf("p", agentId)
+                if (fin?.name != "Name$i" || fin.avatar != preset) lost++ // a lost update drops one field
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+        assertEquals(0, lost, "lost updates across 40 barrier-synced put∥setAvatar races (non-atomic RMW ⇒ 40/40)")
     }
 
     // ============================ ChannelShareStore ============================

@@ -43,17 +43,11 @@ class PgAgentOverrideStore(
         }
     }
 
-    override fun put(projectId: String, agentId: String, name: String?, color: String?, persona: String?, launch: String?): AgentOverride {
-        val next = (overrideOf(projectId, agentId) ?: AgentOverride()).mergeStringFields(name, color, persona, launch)
-        upsert(projectId, agentId, next)
-        return next
-    }
+    override fun put(projectId: String, agentId: String, name: String?, color: String?, persona: String?, launch: String?): AgentOverride =
+        mutateInTx(projectId, agentId) { it.mergeStringFields(name, color, persona, launch) }
 
-    override fun setAvatar(projectId: String, agentId: String, avatar: AgentAvatar?): AgentOverride {
-        val next = (overrideOf(projectId, agentId) ?: AgentOverride()).copy(avatar = avatar)
-        upsert(projectId, agentId, next)
-        return next
-    }
+    override fun setAvatar(projectId: String, agentId: String, avatar: AgentAvatar?): AgentOverride =
+        mutateInTx(projectId, agentId) { it.copy(avatar = avatar) }
 
     override fun removeAgent(projectId: String, agentId: String): Boolean = tx { c ->
         c.prepareStatement("DELETE FROM agent_override WHERE project_id = ? AND agent_id = ?")
@@ -88,12 +82,27 @@ class PgAgentOverrideStore(
         Unit
     }
 
-    private fun upsert(projectId: String, agentId: String, o: AgentOverride) = tx { c ->
+    /**
+     * **Atomic** read-merge-write in ONE transaction, so it matches [FileAgentOverrideStore]'s single-lock RMW
+     * (parity — else two concurrent edits on the same `(project, agent)`, e.g. an avatar-upload racing a name
+     * edit, read the same base and the second write is a **lost update**). Steps in one tx: (1) `INSERT … ON
+     * CONFLICT DO NOTHING` guarantees the row exists so there is something to lock — this also serializes two
+     * concurrent first-writers; (2) `SELECT … FOR UPDATE` takes the row lock; (3) merge; (4) `UPDATE`. A second
+     * concurrent tx blocks on the lock and then reads THIS tx's committed value → its merge is not lost.
+     */
+    private fun mutateInTx(projectId: String, agentId: String, transform: (AgentOverride) -> AgentOverride): AgentOverride = tx { c ->
         c.prepareStatement(
-            "INSERT INTO agent_override (project_id, agent_id, override_json) VALUES (?, ?, ?) " +
-                "ON CONFLICT (project_id, agent_id) DO UPDATE SET override_json = EXCLUDED.override_json",
-        ).use { it.setString(1, projectId); it.setString(2, agentId); it.setString(3, CommJson.encodeToString(o)); it.executeUpdate() }
-        Unit
+            "INSERT INTO agent_override (project_id, agent_id, override_json) VALUES (?, ?, ?) ON CONFLICT (project_id, agent_id) DO NOTHING",
+        ).use { it.setString(1, projectId); it.setString(2, agentId); it.setString(3, EMPTY_OVERRIDE_JSON); it.executeUpdate() }
+
+        val cur = c.prepareStatement("SELECT override_json FROM agent_override WHERE project_id = ? AND agent_id = ? FOR UPDATE").use { st ->
+            st.setString(1, projectId); st.setString(2, agentId)
+            st.executeQuery().use { rs -> if (rs.next()) decode(rs.getString(1)) else AgentOverride() }
+        }
+        val next = transform(cur)
+        c.prepareStatement("UPDATE agent_override SET override_json = ? WHERE project_id = ? AND agent_id = ?")
+            .use { it.setString(1, CommJson.encodeToString(next)); it.setString(2, projectId); it.setString(3, agentId); it.executeUpdate() }
+        next
     }
 
     private fun decode(json: String): AgentOverride = CommJson.decodeFromString(json)
@@ -108,5 +117,10 @@ class PgAgentOverrideStore(
         } finally {
             runCatching { c.autoCommit = prev }
         }
+    }
+
+    private companion object {
+        /** The canonical empty-override row inserted transiently by [mutateInTx] so `FOR UPDATE` has a row to lock. */
+        val EMPTY_OVERRIDE_JSON: String = CommJson.encodeToString(AgentOverride())
     }
 }

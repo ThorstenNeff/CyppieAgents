@@ -25,13 +25,10 @@ class PgChannelShareStore(
     init { if (migrate) FlywayMigrator.migrate(dataSource, "classpath:db/migration/channelshare") }
 
     override fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord {
-        // A share to nobody (or only to the owner's own project) is a no-op hole — treat empty as revoke.
-        val grantees = sharedWith.filter { it.isNotBlank() && it != ownerProjectId }.toSet()
-        if (grantees.isEmpty()) {
-            deleteRecord(channelId)
-            return ChannelShareRecord(channelId, ownerProjectId, emptySet(), setOf(ownerProjectId), clock())
-        }
-        val rec = ChannelShareRecord(channelId, ownerProjectId, grantees, consents = setOf(ownerProjectId), sharedAt = clock())
+        val now = clock()
+        // Same "empty grantees → revoke" rule as File (single-sourced [computeShareRecord], no drift).
+        val rec = computeShareRecord(channelId, ownerProjectId, sharedWith, now)
+            ?: run { deleteRecord(channelId); return emptyShareRecord(channelId, ownerProjectId, now) }
         upsert(rec)
         return rec
     }

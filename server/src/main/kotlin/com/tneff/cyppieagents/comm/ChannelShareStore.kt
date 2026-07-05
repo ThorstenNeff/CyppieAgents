@@ -61,6 +61,22 @@ interface ChannelShareStore {
 }
 
 /**
+ * CYP-220 Phase 6 — the **"empty grantees → revoke"** share rule, shared File+Pg so it cannot drift. Filters the
+ * requested grantees (non-blank, not the owner's own project) and returns the record to PERSIST, or `null` = the
+ * caller must REVOKE (a share to nobody / only the owner is a no-op hole). The no-op reply record for the null
+ * case is [emptyShareRecord]. Pass a single captured `now` so both branches stamp the same time.
+ */
+internal fun computeShareRecord(channelId: String, ownerProjectId: String, sharedWith: Set<String>, now: Long): ChannelShareRecord? {
+    val grantees = sharedWith.filter { it.isNotBlank() && it != ownerProjectId }.toSet()
+    return if (grantees.isEmpty()) null
+    else ChannelShareRecord(channelId, ownerProjectId, grantees, consents = setOf(ownerProjectId), sharedAt = now)
+}
+
+/** The no-op reply for an empty-grantees [share] (the record is removed; this is just the returned shape). */
+internal fun emptyShareRecord(channelId: String, ownerProjectId: String, now: Long): ChannelShareRecord =
+    ChannelShareRecord(channelId, ownerProjectId, emptySet(), setOf(ownerProjectId), now)
+
+/**
  * Persisted as an atomic 0600 JSON file under the gitRoot working dir (out-of-repo, gitignored), like
  * [com.tneff.cyppieagents.boot.ProjectRegistry]. `null` file → in-memory only (tests / dry boots).
  */
@@ -81,12 +97,9 @@ class FileChannelShareStore(
     }
 
     override fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord = synchronized(lock) {
-        // A share to nobody (or only to the owner's own project) is a no-op hole — treat empty as revoke.
-        val grantees = sharedWith.filter { it.isNotBlank() && it != ownerProjectId }.toSet()
-        if (grantees.isEmpty()) {
-            records.remove(channelId); persist(); return@synchronized ChannelShareRecord(channelId, ownerProjectId, emptySet(), setOf(ownerProjectId), clock())
-        }
-        val rec = ChannelShareRecord(channelId, ownerProjectId, grantees, consents = setOf(ownerProjectId), sharedAt = clock())
+        val now = clock()
+        val rec = computeShareRecord(channelId, ownerProjectId, sharedWith, now)
+            ?: run { if (records.remove(channelId) != null) persist(); return@synchronized emptyShareRecord(channelId, ownerProjectId, now) }
         records[channelId] = rec
         persist()
         rec
