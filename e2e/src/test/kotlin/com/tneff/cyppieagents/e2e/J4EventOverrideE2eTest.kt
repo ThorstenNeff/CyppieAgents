@@ -29,8 +29,10 @@ import kotlin.test.assertTrue
  * E2E Journey J4 (CYP-108) — operator cross-project Event-Log read override over the REAL platform, on
  * BOTH `/api/events` (`?projectId=`) and `/ws/events` (`SubscribeEvents.projectId`), through the one
  * `resolveEventScope` policy. Axes: no-override → active; an AUTHORIZED other project → that project;
- * `all` → the operator's projects; an UNAUTHORIZED/garbage id → **fail-closed to active** (no widen);
- * the WS is **operator-only** (1008 close for no-token / agent token). Raw-byte needle-absence
+ * `all` → the operator's projects; an UNAUTHORIZED/garbage id → **fail-closed to active** (no widen).
+ * Read admission is **MEMBER-tier** (CYP-188 B): an agent/operator token is admitted; only a no/invalid
+ * credential → 1008. The cross-project override stays OPERATOR-only, so a non-operator (agent) is
+ * **forced-active** on both transports — that is the invariant J4 protects. Raw-byte needle-absence
  * ([assertNoNeedles]) at every active-scoped hop catches a leak the parsed-DTO checks would miss.
  *
  * The foreign project's id is [Needles.FOREIGN_PROJECT_ID] so its appearance in an active/unauthorized
@@ -106,19 +108,68 @@ class J4EventOverrideE2eTest {
     }
 
     @Test
-    fun rest_operatorOnly_agentForbidden() = runBlocking {
+    fun rest_agentMember_readsActiveOnly_cannotCrossProjectOverride() = runBlocking {
+        // CYP-218 (was `rest_operatorOnly_agentForbidden`, stale since CYP-186 / `ac140ed`): a MEMBER-tier agent
+        // MAY now READ the Event-Log (200, not 403), but ONLY its ACTIVE project. The cross-project `?projectId`
+        // override stays OPERATOR-only — a non-operator's authorized set is empty, so any override falls back to
+        // **forced-active** (resolveEventScope). That forced-active invariant is what this still bites (kept
+        // non-vacuous: the override request DOES return the active project's events, just never the foreign one).
         platform().use { p ->
+            p.injectDroppedEvent("proja")
+            p.injectDroppedEvent(FOREIGN)
             p.asAgent("frontend").use { c ->
-                assertEquals(HttpStatusCode.Forbidden, c.get("${p.baseUrl}/api/events").status, "agent token → 403 on the Event-Log")
+                // CYP-186 posture: the agent/MEMBER reads its ACTIVE project's events.
+                val plain = c.get("${p.baseUrl}/api/events")
+                assertEquals(HttpStatusCode.OK, plain.status, "agent/MEMBER may READ the Event-Log (CYP-186), not 403")
+                val plainPage = CommJson.decodeFromString<EventPage>(
+                    plain.assertNoNeedles("GET /api/events as agent (active=proja)", foreignProjectIds = setOf(FOREIGN)),
+                )
+                assertTrue(plainPage.events.isNotEmpty() && plainPage.events.all { it.projectId == "proja" }, "agent sees its ACTIVE project's events only")
+
+                // THE INVARIANT (still bites): a non-operator's `?projectId` override is NOT honored — forced-active,
+                // never a cross-project read. Agent asking for FOREIGN → stays proja, no foreign leak.
+                val over = c.get("${p.baseUrl}/api/events?projectId=$FOREIGN")
+                assertEquals(HttpStatusCode.OK, over.status, "override doesn't 403 the agent — it silently forces active")
+                val overPage = CommJson.decodeFromString<EventPage>(
+                    over.assertNoNeedles("GET /api/events?projectId=FOREIGN as agent (must stay active)", foreignProjectIds = setOf(FOREIGN)),
+                )
+                assertTrue(overPage.events.isNotEmpty(), "override still returns the ACTIVE project's events (non-vacuous)")
+                assertTrue(overPage.events.all { it.projectId == "proja" }, "agent cross-project override → fail-closed to active, never widens to FOREIGN")
             }
         }
     }
 
     @Test
-    fun ws_operatorOnly_noToken_1008_agent_1008() = runBlocking {
+    fun ws_noToken_1008_agentAdmitted_forcedActive_noForeignLeak() = runBlocking {
+        // CYP-218 B (was `ws_operatorOnly_noToken_1008_agent_1008`, stale since CYP-188 B — and the SOURCE of
+        // the J4 class hang: `wsEventsCloseCode(asAgent)` awaited a close frame that, post-admit, never comes →
+        // indefinite block → 240s class timeout). Verify-first finding: TEST DEFECT, not a WS regress —
+        // `EventSocket` deliberately admits MEMBER-tier now (matches `GET /api/events`). So:
+        //  - no/invalid credential → still 1008 (that half was always right);
+        //  - an agent is ADMITTED and streams its ACTIVE project only; its `?projectId` override is forced-active
+        //    (non-operator authorized set empty) → the OPERATOR-only cross-project invariant this test guards.
         platform().use { p ->
             assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, p.wsEventsCloseCode(p.client(null)), "no token → 1008")
-            assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, p.wsEventsCloseCode(p.asAgent("frontend")), "agent token → 1008 operator required")
+
+            // agent admitted (no close/hang); a FOREIGN override is forced-active → only proja streams, never FOREIGN.
+            val seen = mutableListOf<String>()
+            p.asAgent("frontend").use { c ->
+                c.webSocket("${p.wsBaseUrl}/ws/events") {
+                    send(Frame.Text(CommJson.encodeToString(EventsWsClientEvent.serializer(), SubscribeEvents(projectId = FOREIGN))))
+                    delay(200)
+                    p.injectDroppedEvent(FOREIGN) // foreign first (FIFO): a leak would arrive before proja
+                    p.injectDroppedEvent("proja")
+                    withTimeout(4000) {
+                        while (true) {
+                            val ev = CommJson.decodeFromString<EventsWsServerEvent>((incoming.receive() as Frame.Text).readText())
+                            if (ev is EventPushed) { seen.add(ev.event.projectId); if (ev.event.projectId == "proja") break }
+                        }
+                    }
+                    close()
+                }
+            }
+            assertTrue("proja" in seen, "agent is ADMITTED (CYP-188 B) and streams its active project")
+            assertFalse(FOREIGN in seen, "agent `?projectId` override → forced-active, never a cross-project (FOREIGN) read")
         }
     }
 
