@@ -71,7 +71,7 @@ private fun hexOf(c: Color): String = "#" + (c.toArgb() and 0xFFFFFF).toString(1
  * gets a read-only view. Honesty (§7): id ≠ name (rename cosmetic); name/colour immediate, persona deferred.
  */
 @Composable
-fun AgentSettingsPanel(viewModel: AgentSettingsViewModel, onDismiss: () -> Unit) {
+fun AgentSettingsPanel(viewModel: AgentSettingsViewModel, onDismiss: () -> Unit, onRequestUpload: () -> Unit = {}) {
     val state by viewModel.state.collectAsState()
     val scheme = deriveScheme(state.baseArgb)
 
@@ -184,6 +184,9 @@ fun AgentSettingsPanel(viewModel: AgentSettingsViewModel, onDismiss: () -> Unit)
                 if (state.needsRestart) {
                     TonedHint(stringResource(Res.string.agent_edit_effect_hint), HintTone.EFFECT_DEFERRED, AgentSettingsTags.EFFECT_HINT)
                 }
+
+                // CYP-216 §3: the avatar section (current + preset grid + upload/remove + credits).
+                AgentAvatarSection(viewModel, onRequestUpload)
             }
         },
         confirmButton = {

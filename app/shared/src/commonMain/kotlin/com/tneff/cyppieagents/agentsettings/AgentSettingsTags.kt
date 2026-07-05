@@ -25,6 +25,22 @@ object AgentSettingsTags {
     const val EFFECT_HINT = "agentSettings.effectHint"
     const val GATE_HINT = "agentSettings.gateHint"
 
+    // CYP-216 avatar section (shared with QA — docs/design/agent-avatar-tags.md / -qa.md).
+    const val AVATAR_SECTION = "agentSettings.avatar.section"
+    /** The effective avatar; carries a `stateDescription` = the fallback stage (QA-3, deterministic — no pixel peek). */
+    const val AVATAR_CURRENT = "agentSettings.avatar.current"
+    const val AVATAR_PRESET = "agentSettings.avatar.preset"
+    /** One per curated style; [style] = the raw DiceBear key (punktfrei, e.g. `big-smile`). */
+    fun avatarPresetStyle(style: String) = "agentSettings.avatar.presetStyle.$style"
+    const val AVATAR_SHUFFLE = "agentSettings.avatar.shuffle"
+    const val AVATAR_UPLOAD = "agentSettings.avatar.upload"
+    const val AVATAR_REMOVE = "agentSettings.avatar.remove"
+    const val AVATAR_CREDITS = "agentSettings.avatar.credits"
+    /** One per attributed (CC-BY) style, so QA-7 can address each credit line. */
+    fun avatarCreditEntry(style: String) = "agentSettings.avatar.credits.entry-$style"
+    const val AVATAR_CROP_HINT = "agentSettings.avatar.cropHint"
+    const val AVATAR_UPLOAD_ERROR = "agentSettings.avatar.uploadError"
+
     const val SAVE = "agentSettings.save"
     const val CANCEL = "agentSettings.cancel"
 }
