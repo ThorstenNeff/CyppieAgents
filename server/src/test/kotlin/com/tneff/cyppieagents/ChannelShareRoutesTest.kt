@@ -49,13 +49,19 @@ class ChannelShareRoutesTest {
     private val tokens = TokenRegistry(mapOf("tok-fe" to "frontend"), operatorToken = "tok-op")
 
     private fun fixture(): Pair<HubState, ChannelShareStore> {
-        val channels = listOf(Channel("c", "c", ChannelKind.GROUP, listOf("a1", "b1"), projectId = "alpha"))
+        // CYP-244: the GET is now canRead-scoped, so the readers here are explicit members of "c" — the operator
+        // (OPERATOR_ID, a spoke member with canRead in prod) and a human member `mem-1`. `out-1` is deliberately
+        // NOT a member → the non-reader-403 subject. reachableScope still filters entries by the share's target
+        // project (beta), so the extra alpha members don't perturb the disclosure assertions.
+        val channels = listOf(Channel("c", "c", ChannelKind.GROUP, listOf("a1", "b1", HubState.OPERATOR_ID, "mem-1"), projectId = "alpha"))
         val entries = listOf(
             AclEntry("c", "a1", canRead = true, canWrite = true, projectId = "alpha"),
             AclEntry("c", "b1", canRead = true, canWrite = false, projectId = "beta"),
+            AclEntry("c", HubState.OPERATOR_ID, canRead = true, canWrite = true, projectId = "alpha"),
+            AclEntry("c", "mem-1", canRead = true, canWrite = false, projectId = "alpha"),
         )
         val shares = ChannelShareStore(null, clock = { 7L })
-        val state = HubState(emptyList(), channels, entries, activeProjectId = "alpha", operatorId = null) { pid ->
+        val state = HubState(emptyList(), channels, entries, activeProjectId = "alpha", operatorId = HubState.OPERATOR_ID) { pid ->
             shares.sharedInboundChannelIds(pid)
         }
         return state to shares
@@ -131,6 +137,35 @@ class ChannelShareRoutesTest {
         assertEquals(HttpStatusCode.OK, ok.status, "a verified human session must read the share disclosure")
         assertFalse(ok.body<ChannelShareView>().shared, "fail-closed default: not shared")
         // no auth at all → still 401 (fail-closed unchanged; the widening is token-OR-session, never anonymous).
+        assertEquals(HttpStatusCode.Unauthorized, jsonClient().get("/api/channels/c/share").status)
+    }
+
+    // ---- CYP-244 — the share disclosure is scoped to the caller's per-channel canRead ----
+
+    @Test fun cyp244_shareView_scopedToCanRead_nonReaderForbidden() = testApplication {
+        // CYP-242 opened the GET to any read-tier caller but `shareView` ran UN-scoped → on the public app any
+        // verified member could read reachableScope (cross-project topology) for ANY channel id. CYP-244 gates it
+        // on AclMatrix.canRead: a channel member reads it; a verified member who is NOT a reader is a uniform 403.
+        val (s, sh) = fixture()
+        val deps = AuthDeps(
+            tokens,
+            FakeIdentityProvider(mapOf(
+                "sess-mem" to ResolvedIdentity("mem-1", verified = true), // a canRead member of "c"
+                "sess-out" to ResolvedIdentity("out-1", verified = true), // verified, but NOT a member of "c"
+            )),
+            InMemoryRoleStore(), { 1L },
+        )
+        appWithDeps(s, sh, deps)
+        // a canRead member (human session) reads the disclosure
+        assertEquals(HttpStatusCode.OK, jsonClient().get("/api/channels/c/share") { header("X-Session-Token", "sess-mem") }.status)
+        // the operator keeps read on its channel (CYP-242 intact — the operator is a spoke member, not tightened out)
+        assertEquals(HttpStatusCode.OK, jsonClient().get("/api/channels/c/share") { bearerAuth("tok-op") }.status)
+        // a verified member who is NOT a reader of THIS channel → uniform 403 (was an un-scoped 200 leak). Mutation
+        // guard: drop the `canRead` gate and this flips to 200 (RED) — the disclosure leaks to a non-reader.
+        val denied = jsonClient().get("/api/channels/c/share") { header("X-Session-Token", "sess-out") }
+        assertEquals(HttpStatusCode.Forbidden, denied.status, "a non-reader must not read the channel's share topology")
+        assertEquals("forbidden", denied.body<ApiErrorBody>().error.code)
+        // no auth → still 401 (the gate is canRead for an AUTHENTICATED caller, never anonymous access).
         assertEquals(HttpStatusCode.Unauthorized, jsonClient().get("/api/channels/c/share").status)
     }
 

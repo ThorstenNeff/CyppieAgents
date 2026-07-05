@@ -56,10 +56,11 @@ class MemberTier403MatrixTest {
         // CYP-232 — avatar serve + preset preview are READ-TIER (token OR verified human session), so the tokenless
         // SPA renders avatars; a MEMBER reaches them (200/404, not tier-denied) exactly like the other reads above.
         "GET /api/agents/{id}/avatar", "GET /api/agents/{id}/avatar/preview",
-        // CYP-242 — the channel-share GET is READ-TIER too (read-only disclosure: shared? + sharedAt + reached
-        // agents, not a secret); a MEMBER reaches it (200, shared=false default). The write authz (PUT/DELETE)
-        // stays OPERATOR-gated. Read-tier widening newly exposes this GET to the operator-session walk (was
-        // token-only → operator SESSION 401 → previously skipped); the matrix correctly demands the allowlist entry.
+        // CYP-242/244 — the channel-share GET is READ-TIER (token OR verified session) but per-channel
+        // canRead-SCOPED (CYP-244): a reader gets 200, a non-reader a uniform 403. It is NOT a flat operator-tier
+        // route, so it belongs on the allowlist — the matrix's tier deny-set is not the right net for it (the
+        // canRead scoping is proven directly by ChannelShareRoutesTest.cyp244_*). On this walk's synthetic
+        // (non-existent) channel id neither role is a reader, so both 403 — no tier leak either way.
         "GET /api/channels/{id}/share",
         // CYP-188 P2b-iii — message SEND is no longer operator-tier: the gate admits a session, and the per-channel
         // `canWrite` at postAsAgent is the authz (deny-without-grant 403 / allow-with-grant 201). It is ACL-gated,
