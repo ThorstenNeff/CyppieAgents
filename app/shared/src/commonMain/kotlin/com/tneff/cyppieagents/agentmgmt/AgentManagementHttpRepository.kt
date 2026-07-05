@@ -11,9 +11,12 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.http.Headers
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -71,6 +74,39 @@ class AgentManagementHttpRepository(
 
     override suspend fun remove(id: String, worktree: WorktreeFate) {
         val response = client.delete("$baseUrl/api/agents/$id?worktree=${worktree.name.lowercase()}") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        ensureSuccess(response, response.bodyAsText()) // 204 No Content
+    }
+
+    // CYP-216: custom-avatar upload. The server (POST /api/agents/{id}/avatar) validates the UNTRUSTED bytes
+    // authoritatively, mints the Upload ref, and responds the updated AgentDetail (§3.3 / security #3 — the client
+    // reads "avatar set" from this response, never from the local pick, and can't forge the ref).
+    override suspend fun uploadAvatar(id: String, bytes: ByteArray, filename: String, mimeType: String): AgentDetail {
+        val response = client.post("$baseUrl/api/agents/$id/avatar") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append(
+                            "file", bytes,
+                            Headers.build {
+                                append(HttpHeaders.ContentType, mimeType)
+                                append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
+                            },
+                        )
+                    },
+                ),
+            )
+        }
+        val text = response.bodyAsText()
+        ensureSuccess(response, text) // 400 avatar_rejected / avatar_no_file per the guard
+        return CommJson.decodeFromString(AgentDetail.serializer(), text)
+    }
+
+    // CYP-216: clear the avatar (DELETE /api/agents/{id}/avatar → 204). The caller reloads detail for the new truth.
+    override suspend fun clearAvatar(id: String) {
+        val response = client.delete("$baseUrl/api/agents/$id/avatar") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
         ensureSuccess(response, response.bodyAsText()) // 204 No Content
