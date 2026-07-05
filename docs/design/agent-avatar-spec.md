@@ -145,10 +145,49 @@ Heute rendern **CommPanel** + **EventRowUi** (+ Titelbar CYP-209/211) den Initia
 gemeinsamen `AgentAvatar(agent, size)`-Composable ein, der die Fallback-Kette (§4) + den Farb-Ring kapselt; alle Sites rufen
 **nur** ihn. So sind Avatar-Verhalten, Fallback und Ring **überall identisch** (Reuse-Mandat; kein dritter divergenter Avatar).
 
-- **Titelbar (CYP-209/211):** kleiner Avatar links vom Titel (themed; Ring = `scheme.border`).
-- **Roster / Comm / Event-Log:** bestehende Avatar-Stellen rufen `AgentAvatar` statt der Inline-Initialen.
+- **Titelbar (CYP-209/211):** kleiner Avatar links vom Titel — die Leiste ist bereits agent-getönt → **Blend-Auflösung §5.1**.
+- **Roster / Comm / Event-Log:** neutrale Flächen → Standard-Rendering (Fill = `avatarFill`, Ring = `borderColor`); bestehende
+  Avatar-Stellen rufen `AgentAvatar` statt der Inline-Initialen (Comm-Größe heute 28.dp, ohne Ring — der Ring kommt mit `AgentAvatar`).
 - **Bild-Laden (KMP):** async Raster-Loader (Impl-Detail Dev — Coil/Kamel o. ä.); Design fordert nur: Raster-PNG vom self-hosted
   Host, async, mit Fallback-Kette bei Laden/Fehler.
+
+### 5.1 Titelbar-Avatar auf getönter Leiste — Blend-Auflösung (CYP-211 × Avatar, aus CYP-216-Impl)
+
+**Konflikt (real, aus der Impl):** Die Titelbar-Leiste ist bereits mit der **Agentenfarbe getönt** (CYP-211: `barBg` = `TitleBarColors.background`
+fokussiert; `lerp(background, surface, 0.45)` unfokussiert). Der Standard-Avatar-Fill (Stufen 3/4) ist **dieselbe** Agentenfarbe
+(`avatarFill`) → auf der getönten Leiste **verschwimmt** der Fill; nur Ring + Initialen tragen noch.
+
+**Entscheidung — „Invertierte Scheibe" (context-aware, EIN Resolver):** In der agent-getönten Titelbar **trägt die Leiste selbst die
+Farb-Identität** (CYP-211). Der Avatar muss die Farbe dort **nicht** re-assertieren, sondern **legibel** bleiben → er rendert
+**invertiert**: Scheibe = die kontraststarke `content`-Tönung (die pops off der Leiste), die Agentenfarbe erscheint als **Figur**
+(Initialen/Glyph), nicht als Grund. **Kein neuer Farbwert** — nutzt die bereits von `:core deriveScheme` abgeleiteten, WCAG-sicheren
+`TitleBarColors{background, content, border}`.
+
+**`AgentAvatar` bleibt EIN Composable** (§5, Anti-Divergenz) — parameterisiert über den Untergrund (z. B. `tintedBar: TitleBarColors? =
+null`): `null` = neutrale Fläche (Standard: `avatarFill` + `borderColor`-Ring); non-null = die Titelbar-Invertierung unten. **Keine
+dritte One-off-Variante** — ein Code-Pfad mit background-aware Zweig.
+
+**Exakte Werte (Titelbar-Kontext; `it` = `TitleBarColors`):**
+
+| Aspekt | Wert |
+|---|---|
+| Durchmesser | **20.dp** (inline zur `titleSmall`-Zeile; Row-Padding v=8.dp bleibt unverändert; < 28.dp Comm-Avatar, da Titelbar dichter) |
+| Platzierung | links vom Titel, `padding(end = 8.dp)` (spiegelt den CYP-55-Badge-Abstand) |
+| **Scheibe-Fill** | **`it.content`** (onColor-Extrem; ≥4.5:1 vs. `background` fokussiert; als Form ≥3:1 vs. der unfokussiert gedimmten Leiste) |
+| **Initialen / „?"-Glyph (Stufe 3/4)** | **`it.background`** (volle Agentenfarbe) → Kontrast Glyph↔Scheibe = `contrast(background, content)` = abgeleitet **≥4.5:1**, in BEIDEN Fokus-Zuständen garantiert (volle Paarung, **nie** die gedimmte `barBg`). Text-Stil `labelSmall`. **Farbe bleibt Identität — als Figur.** |
+| **Bild (Stufe 1/2)** | Bild kreis-geclippt + **1.5.dp-Matte-Ring = `it.content`** (trennt die Silhouette vom Balken unabhängig von den Bild-Pixeln) |
+| **Ring-Breite** | **1.5.dp** (= Fenster-`BorderStroke`-Gewicht, konsistent) |
+| **Ring-Farbe (Titelbar)** | **`it.content`** — **nicht** `borderColor`. Grund: `borderColor` ist gg. die **App-Surface** (≥3:1) abgeleitet, **nicht** gg. die getönte Leiste → kann mit dem Balken verschwimmen. `content` ist per Definition ≥4.5:1 vs. `background` → trennt **immer**. (Deckt zugleich das CYP-211-[Low] „border nur gg. Surface geprüft" im getönten Kontext ab.) |
+
+**Fallback-Kette unverändert** (custom→preset→initials→color); nur das **Fill-/Ring-Treatment** ist im getönten Kontext invertiert.
+Fokussiert **und** unfokussiert: Scheibe = volle `it.content`, Glyph = volle `it.background` (nie die gedimmte `barBg`) → Kontrast in
+beiden Zuständen garantiert. Comm/Roster/Event-Log (neutrale Flächen) unberührt: Standard `avatarFill` + `borderColor`.
+
+**Disclosure-Konsequenz (erweitert §8):** In der Titelbar sind die Identitäts-Anker die **Leisten-Tönung** (Agentenfarbe, CYP-211) +
+**`id`/Name im Titel**; der Avatar hält die Farbe als **Glyph-Figur**. Der Ring flippt hier auf `content` **rein zur Lesbarkeit** — das
+ist **kein** Divergenz-Bruch der „Ring = `borderColor` = Identität"-Regel (§8.1), die für **neutrale** Flächen gilt, wo der Avatar der
+einzige Farb-Träger ist. **UX-QA (§8) zusätzlich:** Titelbar-Avatar auf getönter Leiste sichtbar (Scheibe `content`, Glyph
+`background`), Ring trägt in beiden Fokus-Zuständen, Farb-Identität als Figur präsent.
 
 ---
 

@@ -126,6 +126,21 @@
     "sizes": "reuse bestehende Avatar-Groessen je Site (Titelbar klein, Comm/Roster mittel); Preset-Grid-Vorschau = feste Grid-Zelle (Impl-Detail Dev)",
     "async_load": "Raster-PNG async (KMP-Loader Impl-Detail Dev — Coil/Kamel); Fallback-Kette bei Laden/Fehler"
   },
+  "titlebar_avatar_blend": {
+    "conflict": "CYP-211 toent die Titelbar mit TitleBarColors.background (Agentenfarbe); Standard-avatarFill = dieselbe Farbe -> Fill verschwimmt auf der getoenten Leiste (Spec §5.1, aus CYP-216-Impl).",
+    "decision": "Invertierte Scheibe (context-aware, EIN Resolver): Scheibe = it.content (onColor-Extrem, pops off Leiste); Agentenfarbe erscheint als Figur (Glyph in it.background). Kein neuer Farbwert; nutzt deriveScheme-abgeleitete TitleBarColors.",
+    "one_resolver": "AgentAvatar(tintedBar: TitleBarColors? = null): null = neutrale Flaeche (avatarFill + borderColor-Ring); non-null = Titelbar-Invertierung. Kein dritter One-off.",
+    "size_dp": 20,
+    "placement": "links vom Titel, padding(end = 8.dp)",
+    "disc_fill": "it.content (>=4.5:1 vs background fokussiert; als Form >=3:1 vs unfokussiert gedimmte Leiste)",
+    "glyph_color": "it.background (volle Agentenfarbe) -> contrast(background, content) >=4.5:1 in BEIDEN Fokus-Zustaenden (nie die gedimmte barBg); Text-Stil labelSmall",
+    "image_stage": "Bild kreis-geclippt + 1.5.dp-Matte-Ring = it.content",
+    "ring_width_dp": 1.5,
+    "ring_color": "it.content (NICHT borderColor — borderColor ist gg. App-Surface abgeleitet, kann mit der getoenten Leiste verschwimmen)",
+    "fallback_chain": "unveraendert (custom->preset->initials->color); nur Fill-/Ring-Treatment invertiert im getoenten Kontext.",
+    "neutral_sites": "Comm/Roster/Event-Log unberuehrt: Standard avatarFill + borderColor.",
+    "disclosure": "Titelbar-Identitaets-Anker = Leisten-Toenung (Agentenfarbe) + id/Name im Titel; Avatar haelt die Farbe als Glyph-Figur. Ring flippt hier auf content REIN zur Lesbarkeit — kein Divergenz-Bruch der 'Ring=borderColor=Identitaet'-Regel (gilt fuer neutrale Flaechen). Deckt zugleich CYP-211-[Low] 'border nur gg. Surface geprueft' im getoenten Kontext."
+  },
   "model_recommendation": {
     "note": "Backend besitzt die finale Shape (wie CYP-210). Empfehlung bestaetigt (§-Ask 2 = diskriminierte Union, Backend-owned):",
     "shape": "Agent.avatar: AgentAvatar? = { kind: UPLOAD, ref } | { kind: PRESET, style, seed } | null",
