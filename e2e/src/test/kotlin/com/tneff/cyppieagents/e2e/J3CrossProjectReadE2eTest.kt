@@ -44,19 +44,32 @@ class J3CrossProjectReadE2eTest {
         ),
     )
 
-    /** Real-path provisioning: grantee `backend` gets a projb-stamped read entry on `po-frontend`
-     * (→ member via CYP-112), then the owner shares `po-frontend` → `projb`, then switch to projb. */
+    /**
+     * CYP-218 (J3 provisioning rebuilt for the post-CYP-188 correct path — like J4). Order matters:
+     *  1. the owner AUTHORIZES the share (`po-frontend` → `projb`) — this is the cross-project gate (CYP-93),
+     *     putting `po-frontend` in projb's scope;
+     *  2. SWITCH active → `projb`;
+     *  3. THEN grant the grantee its read entry — `setAcl` stamps the ACTIVE project (CYP-188 `27fa831`:
+     *     the client `AclEntry.projectId` is ignored, cross-project ACL injection is deliberately closed), so
+     *     the entry must be written WHILE active=projb to be **projb-stamped** (survive the projb-scope filter)
+     *     AND to sync `backend` into the now-in-scope shared channel's members (CYP-112). The OLD order (a
+     *     `projectId="projb"` entry written while active=proja) is exactly what CYP-188 closed → the entry was
+     *     re-stamped `proja` and dropped in projb scope → grantee member-but-can't-read. That was the stale rot.
+     */
     private suspend fun E2ePlatform.provisionShareAndSwitch() {
         asOperator().use { c ->
-            c.put("$baseUrl/api/acl") {
-                contentType(ContentType.Application.Json)
-                setBody(AclEntry("po-frontend", "backend", canRead = true, canWrite = false, projectId = "projb"))
-            }
             c.put("$baseUrl/api/channels/po-frontend/share") {
                 contentType(ContentType.Application.Json); setBody(AuthorizeShareRequest(setOf("projb")))
             }
         }
         switchActive("projb")
+        asOperator().use { c ->
+            // projectId omitted — setAcl stamps activeProjectId (projb) server-side (CYP-188 single-source).
+            c.put("$baseUrl/api/acl") {
+                contentType(ContentType.Application.Json)
+                setBody(AclEntry("po-frontend", "backend", canRead = true, canWrite = false))
+            }
+        }
     }
 
     private suspend fun E2ePlatform.channelIds(token: String): Set<String> =
