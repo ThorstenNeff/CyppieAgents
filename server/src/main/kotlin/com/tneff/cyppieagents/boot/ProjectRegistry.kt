@@ -26,7 +26,57 @@ private data class RegistrySnapshot(
 /**
  * The multi-project registry (S13 / CYP-91 — "die Eins auf N aufmachen"): the persisted set of N
  * projects plus the active-project pointer, seeded from the boot `config.projectId` so a single-project
- * MVP install upgrades to N transparently. All mutations run the pure [ProjectGuard] first and throw
+ * MVP install upgrades to N transparently.
+ *
+ * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileProjectRegistry]; a future PG
+ * impl implements this; companion `invoke` = current factory choice, no behavior change.
+ */
+interface ProjectRegistry {
+
+    // ---- reads ----
+
+    fun view(): ProjectsView
+    fun activeProjectId(): String
+    fun projects(): List<Project>
+    fun exists(id: String): Boolean
+
+    // ---- mutations (operator-gated at the endpoint) ----
+
+    /** Create a project. Throws the §guard 4xx on `invalid_project_id` / `project_exists`. */
+    fun create(spec: CreateProjectRequest): Project
+
+    /** Rename a project (id is immutable). Throws on `invalid_project_id` (blank) / `project_not_found`. */
+    fun rename(id: String, name: String): Project
+
+    /** Flip the active pointer (PROVISIONAL — pointer only; live re-instancing is deferred). 404 if unknown. */
+    fun setActive(projectId: String): ProjectsView
+
+    /**
+     * Guard the delete WITHOUT mutating — the fail-closed precondition [ProjectDeleter] checks BEFORE
+     * any resource teardown, so a rejected delete cascades nothing. Throws `project_not_found` /
+     * `last_project` / `active_project_protected`.
+     */
+    fun requireDeletable(id: String)
+
+    /**
+     * Drop a project's metadata + persist — the registry commit at the END of the cascade (after the
+     * resources are torn down). Re-runs the guard (deny-wins; the state can't have drifted under the
+     * deleter's lock, but the re-check keeps this method safe to call on its own).
+     */
+    fun drop(id: String): Project
+
+    companion object {
+        /** Factory seam (CYP-223): the current impl choice is the file store. */
+        operator fun invoke(
+            file: File?,
+            seedProjectId: String,
+            seedProjectName: String = seedProjectId,
+        ): ProjectRegistry = FileProjectRegistry(file, seedProjectId, seedProjectName)
+    }
+}
+
+/**
+ * All mutations run the pure [ProjectGuard] first and throw
  * the matching 4xx on a violation — **fail-closed: a rejection mutates nothing** (and, for delete,
  * cascades nothing; see [ProjectDeleter]). The endpoints layered on top are operator-gated.
  *
@@ -38,11 +88,11 @@ private data class RegistrySnapshot(
  * Persistence mirrors [ProjectConfigStore]: an atomic 0600 write to an out-of-repo file under the
  * gitRoot working dir (`null` file → in-memory only, for tests / dry boots).
  */
-class ProjectRegistry(
+class FileProjectRegistry(
     private val file: File?,
     seedProjectId: String,
     seedProjectName: String = seedProjectId,
-) {
+) : ProjectRegistry {
     private val lock = Any()
     private val log = LoggerFactory.getLogger("boot.projectregistry")
     private val projects = LinkedHashMap<String, Project>() // insertion order == list order
@@ -71,15 +121,14 @@ class ProjectRegistry(
 
     // ---- reads ----
 
-    fun view(): ProjectsView = synchronized(lock) { ProjectsView(active, projects.values.toList()) }
-    fun activeProjectId(): String = synchronized(lock) { active }
-    fun projects(): List<Project> = synchronized(lock) { projects.values.toList() }
-    fun exists(id: String): Boolean = synchronized(lock) { projects.containsKey(id) }
+    override fun view(): ProjectsView = synchronized(lock) { ProjectsView(active, projects.values.toList()) }
+    override fun activeProjectId(): String = synchronized(lock) { active }
+    override fun projects(): List<Project> = synchronized(lock) { projects.values.toList() }
+    override fun exists(id: String): Boolean = synchronized(lock) { projects.containsKey(id) }
 
     // ---- mutations (operator-gated at the endpoint) ----
 
-    /** Create a project. Throws the §guard 4xx on `invalid_project_id` / `project_exists`. */
-    fun create(spec: CreateProjectRequest): Project = synchronized(lock) {
+    override fun create(spec: CreateProjectRequest): Project = synchronized(lock) {
         ProjectGuard.validateCreate(projects.values.toList(), spec)?.let { throw codeToException(it) }
         val p = Project(spec.id.trim(), spec.name.trim())
         projects[p.id] = p
@@ -87,8 +136,7 @@ class ProjectRegistry(
         p
     }
 
-    /** Rename a project (id is immutable). Throws on `invalid_project_id` (blank) / `project_not_found`. */
-    fun rename(id: String, name: String): Project = synchronized(lock) {
+    override fun rename(id: String, name: String): Project = synchronized(lock) {
         ProjectGuard.validateRename(projects.values.toList(), id, name)?.let { throw codeToException(it) }
         val updated = projects.getValue(id).copy(name = name.trim())
         projects[id] = updated
@@ -96,30 +144,19 @@ class ProjectRegistry(
         updated
     }
 
-    /** Flip the active pointer (PROVISIONAL — pointer only; live re-instancing is deferred). 404 if unknown. */
-    fun setActive(projectId: String): ProjectsView = synchronized(lock) {
+    override fun setActive(projectId: String): ProjectsView = synchronized(lock) {
         if (!projects.containsKey(projectId)) throw NotFoundException("project '$projectId' not found", code = "project_not_found")
         active = projectId
         persist()
         ProjectsView(active, projects.values.toList())
     }
 
-    /**
-     * Guard the delete WITHOUT mutating — the fail-closed precondition [ProjectDeleter] checks BEFORE
-     * any resource teardown, so a rejected delete cascades nothing. Throws `project_not_found` /
-     * `last_project` / `active_project_protected`.
-     */
-    fun requireDeletable(id: String) = synchronized(lock) {
+    override fun requireDeletable(id: String) = synchronized(lock) {
         ProjectGuard.validateDelete(projects.values.toList(), id, active)?.let { throw codeToException(it) }
         Unit
     }
 
-    /**
-     * Drop a project's metadata + persist — the registry commit at the END of the cascade (after the
-     * resources are torn down). Re-runs the guard (deny-wins; the state can't have drifted under the
-     * deleter's lock, but the re-check keeps this method safe to call on its own).
-     */
-    fun drop(id: String): Project = synchronized(lock) {
+    override fun drop(id: String): Project = synchronized(lock) {
         ProjectGuard.validateDelete(projects.values.toList(), id, active)?.let { throw codeToException(it) }
         val removed = projects.remove(id) ?: throw NotFoundException("project '$id' not found", code = "project_not_found")
         persist()

@@ -5,9 +5,32 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
 /**
- * CYP-215 — the on-disk store for the **re-encoded** avatar PNGs (never the original upload). Bytes live
- * out-of-repo at `<root>/<projectId>/<agentId>.png` (root = `.cyppie/avatars`, gitignored, per-project) —
- * mirrors [com.tneff.cyppieagents.boot.AgentOverrideStore] / ProjectConfigStore. Atomic-move write.
+ * CYP-215 — the store for the **re-encoded** avatar PNGs (never the original upload), per (projectId, agentId).
+ *
+ * CYP-223 (CYP-220 Phase 1): **store-seam interface.** The default on-disk impl is [FileAvatarBlobStore]; a
+ * future PG impl (`bytea`) implements this same interface, selected by the boot factory from the store binding.
+ * The companion `invoke` keeps `AvatarBlobStore(root)` construction resolving to the file impl (the current
+ * factory choice) — no behavior change.
+ */
+interface AvatarBlobStore {
+    /** Store the re-encoded PNG for an agent (overwrites any prior one). Returns false if disabled/invalid. */
+    fun write(projectId: String, agentId: String, png: ByteArray): Boolean
+    /** The stored re-encoded PNG bytes, or null if none / disabled / an unsafe key. */
+    fun read(projectId: String, agentId: String): ByteArray?
+    /** Delete one agent's avatar blob. Returns true if a file was removed. */
+    fun delete(projectId: String, agentId: String): Boolean
+    /** Cascade: purge a whole project's avatar directory. Returns the number of blobs removed. */
+    fun deleteByProject(projectId: String): Int
+
+    companion object {
+        /** Factory seam (CYP-223): the current impl choice is the file store. */
+        operator fun invoke(root: File?): AvatarBlobStore = FileAvatarBlobStore(root)
+    }
+}
+
+/**
+ * The on-disk avatar blob store. Bytes live out-of-repo at `<root>/<projectId>/<agentId>.png`
+ * (root = `.cyppie/avatars`, gitignored, per-project) — atomic-move write.
  *
  * **Path-traversal-safe by construction:** the file name is derived ONLY from the validated `projectId` +
  * `agentId` (never a user-supplied filename). Both are re-validated here ([safeSegment]) as defence in
@@ -15,12 +38,11 @@ import java.nio.file.StandardCopyOption
  * touch the filesystem, so `../../etc/…` can never be formed. A `null` root disables persistence (tests /
  * a store-less boot) — every op is then a no-op / empty read.
  */
-class AvatarBlobStore(private val root: File?) {
+class FileAvatarBlobStore(private val root: File?) : AvatarBlobStore {
 
     private val lock = Any()
 
-    /** Store the re-encoded PNG for an agent (overwrites any prior one). Returns false if disabled/invalid. */
-    fun write(projectId: String, agentId: String, png: ByteArray): Boolean = synchronized(lock) {
+    override fun write(projectId: String, agentId: String, png: ByteArray): Boolean = synchronized(lock) {
         val target = fileFor(projectId, agentId) ?: return false
         target.parentFile?.mkdirs()
         val tmp = File(target.parentFile, "${target.name}.tmp")
@@ -33,20 +55,17 @@ class AvatarBlobStore(private val root: File?) {
         true
     }
 
-    /** The stored re-encoded PNG bytes, or null if none / disabled / an unsafe key. */
-    fun read(projectId: String, agentId: String): ByteArray? = synchronized(lock) {
+    override fun read(projectId: String, agentId: String): ByteArray? = synchronized(lock) {
         val f = fileFor(projectId, agentId) ?: return null
         if (f.isFile) f.readBytes() else null
     }
 
-    /** Delete one agent's avatar blob. Returns true if a file was removed. */
-    fun delete(projectId: String, agentId: String): Boolean = synchronized(lock) {
+    override fun delete(projectId: String, agentId: String): Boolean = synchronized(lock) {
         val f = fileFor(projectId, agentId) ?: return false
         f.isFile && f.delete()
     }
 
-    /** Cascade: purge a whole project's avatar directory. Returns the number of blobs removed. */
-    fun deleteByProject(projectId: String): Int = synchronized(lock) {
+    override fun deleteByProject(projectId: String): Int = synchronized(lock) {
         val dir = dirFor(projectId) ?: return 0
         if (!dir.isDirectory) return 0
         val pngs = dir.listFiles { f -> f.isFile && f.name.endsWith(".png") } ?: emptyArray()

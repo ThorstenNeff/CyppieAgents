@@ -12,15 +12,35 @@ import java.nio.file.attribute.PosixFilePermission
 /**
  * CYP-171 / E2.6 (S3) — durable, **secret-at-rest** store for runtime-minted remote-agent bearer tokens
  * (`agentId → token`), so an operator-pre-provisioned remote agent's credential survives a server restart
- * (the agent can reconnect). Mirrors [ProjectConfigStore] hardening 1:1: out-of-repo under the gitRoot,
+ * (the agent can reconnect).
+ *
+ * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileRemoteTokenStore]; a future PG
+ * impl implements this; companion `invoke` = current factory choice, no behavior change.
+ */
+interface RemoteTokenStore {
+    /** Snapshot `agentId → token` (boot restore into the [TokenRegistry]). */
+    fun all(): Map<String, String>
+
+    fun put(agentId: String, token: String)
+
+    fun remove(agentId: String)
+
+    companion object {
+        /** Factory seam (CYP-223): the current impl choice is the file store. */
+        operator fun invoke(file: File?): RemoteTokenStore = FileRemoteTokenStore(file)
+    }
+}
+
+/**
+ * Mirrors [ProjectConfigStore] hardening 1:1: out-of-repo under the gitRoot,
  * **0700 dir + 0600 file**, atomic-move write, **0600-FIRST tmp** (the token never lands in a world-
  * readable file even briefly), and a corrupt store is **NOT logged/backed-up** (it holds secrets) — it
  * starts empty rather than bricking boot. The token is NEVER logged anywhere.
  */
-class RemoteTokenStore(
+class FileRemoteTokenStore(
     /** Persistence target; `null` → in-memory only (tests / dry boots). */
     private val file: File?,
-) {
+) : RemoteTokenStore {
     private val lock = Any()
     private val log = LoggerFactory.getLogger("boot.remotetoken")
     private val tokenByAgent: MutableMap<String, String> = mutableMapOf()
@@ -38,14 +58,13 @@ class RemoteTokenStore(
         }
     }
 
-    /** Snapshot `agentId → token` (boot restore into the [TokenRegistry]). */
-    fun all(): Map<String, String> = synchronized(lock) { tokenByAgent.toMap() }
+    override fun all(): Map<String, String> = synchronized(lock) { tokenByAgent.toMap() }
 
-    fun put(agentId: String, token: String) {
+    override fun put(agentId: String, token: String) {
         synchronized(lock) { tokenByAgent[agentId] = token; persist() }
     }
 
-    fun remove(agentId: String) {
+    override fun remove(agentId: String) {
         synchronized(lock) { if (tokenByAgent.remove(agentId) != null) persist() }
     }
 

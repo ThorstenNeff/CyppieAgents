@@ -23,6 +23,50 @@ data class ProjectConfigEntry(
 
 /**
  * Operator-settable, per-`projectId` config overrides for repo + API key (S15 / CYP-96; Doc 05 D3).
+ *
+ * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileProjectConfigStore]; a future
+ * PG impl implements this; companion `invoke` = current factory choice, no behavior change.
+ */
+interface ProjectConfigStore {
+
+    // ---- resolution (spawn / boot read paths) ----
+
+    /** The repo for [projectId]: operator override → boot fallback. Read at clone/worktree time. */
+    fun resolvedRepo(projectId: String): RepoConfig
+
+    /** The API key for [projectId]: operator override → env/[Secrets] fallback. Spawn-time ENV only. */
+    fun resolvedApiKey(projectId: String): String?
+
+    // ---- views (GET; the key is only ever masked here) ----
+
+    fun repoView(projectId: String): RepoConfigView
+
+    fun apiKeyView(projectId: String): ApiKeyView
+
+    // ---- mutations (operator PUT) ----
+
+    fun setRepo(projectId: String, url: String, branch: String): RepoConfigView
+
+    fun setApiKey(projectId: String, key: String): ApiKeyView
+
+    // ---- cascade teardown (S13 / CYP-91 — the config partition of project delete) ----
+
+    /**
+     * Drop [projectId]'s config override (repo + API key at rest) — the config partition of the
+     * project cascade-delete. Returns `true` if an entry existed. **Strictly scoped to the exact
+     * [projectId]** (the map is keyed by it), so deleting project A never removes project B's override
+     * (no-cross-project). A blank key removes nothing (fail-closed). Idempotent: absent → no-op.
+     */
+    fun remove(projectId: String): Boolean
+
+    companion object {
+        /** Factory seam (CYP-223): the current impl choice is the file store. */
+        operator fun invoke(file: File?, fallbackRepo: RepoConfig, secrets: Secrets): ProjectConfigStore =
+            FileProjectConfigStore(file, fallbackRepo, secrets)
+    }
+}
+
+/**
  * Backs the `/api/config` endpoints and the spawn-/boot-time resolution.
  *
  * **Security (Reviewer merge-gate):** the API key lives at rest only here, in an out-of-repo [file]
@@ -34,12 +78,12 @@ data class ProjectConfigEntry(
  *
  * MVP = 1 project. The map is keyed by `projectId` so N projects are a data change, not a code change.
  */
-class ProjectConfigStore(
+class FileProjectConfigStore(
     /** Persistence target; `null` → in-memory only (tests / dry boots). */
     private val file: File?,
     private val fallbackRepo: RepoConfig,
     private val secrets: Secrets,
-) {
+) : ProjectConfigStore {
     private val lock = Any()
     private val log = LoggerFactory.getLogger("boot.projectconfig")
     private val entries: MutableMap<String, ProjectConfigEntry> = mutableMapOf()
@@ -59,26 +103,24 @@ class ProjectConfigStore(
 
     // ---- resolution (spawn / boot read paths) ----
 
-    /** The repo for [projectId]: operator override → boot fallback. Read at clone/worktree time. */
-    fun resolvedRepo(projectId: String): RepoConfig = synchronized(lock) {
+    override fun resolvedRepo(projectId: String): RepoConfig = synchronized(lock) {
         val e = entries[projectId]
         if (!e?.repoUrl.isNullOrBlank()) RepoConfig(e!!.repoUrl!!, e.repoBranch?.ifBlank { null } ?: "main") else fallbackRepo
     }
 
-    /** The API key for [projectId]: operator override → env/[Secrets] fallback. Spawn-time ENV only. */
-    fun resolvedApiKey(projectId: String): String? = synchronized(lock) {
+    override fun resolvedApiKey(projectId: String): String? = synchronized(lock) {
         entries[projectId]?.apiKey?.takeIf { it.isNotBlank() } ?: secrets.apiKeyFor(projectId)
     }
 
     // ---- views (GET; the key is only ever masked here) ----
 
-    fun repoView(projectId: String): RepoConfigView = synchronized(lock) {
+    override fun repoView(projectId: String): RepoConfigView = synchronized(lock) {
         val repo = resolvedRepoLocked(projectId)
         if (repo.url.isBlank()) RepoConfigView(configured = false)
         else RepoConfigView(configured = true, url = repo.url, branch = repo.branch)
     }
 
-    fun apiKeyView(projectId: String): ApiKeyView = synchronized(lock) {
+    override fun apiKeyView(projectId: String): ApiKeyView = synchronized(lock) {
         val key = entries[projectId]?.apiKey?.takeIf { it.isNotBlank() } ?: secrets.apiKeyFor(projectId)
         if (key.isNullOrBlank()) ApiKeyView(set = false, masked = null)
         else ApiKeyView(set = true, masked = Secrets.mask(key))
@@ -86,7 +128,7 @@ class ProjectConfigStore(
 
     // ---- mutations (operator PUT) ----
 
-    fun setRepo(projectId: String, url: String, branch: String): RepoConfigView {
+    override fun setRepo(projectId: String, url: String, branch: String): RepoConfigView {
         val u = url.trim()
         if (!isPlausibleRepoUrl(u)) throw BadRequestException("invalid repository url", code = "invalid_repo_url")
         val b = branch.trim().ifBlank { "main" }
@@ -97,7 +139,7 @@ class ProjectConfigStore(
         return RepoConfigView(configured = true, url = u, branch = b)
     }
 
-    fun setApiKey(projectId: String, key: String): ApiKeyView {
+    override fun setApiKey(projectId: String, key: String): ApiKeyView {
         val k = key.trim()
         if (!isPlausibleApiKey(k)) throw BadRequestException("invalid api key", code = "invalid_api_key")
         synchronized(lock) {
@@ -109,13 +151,7 @@ class ProjectConfigStore(
 
     // ---- cascade teardown (S13 / CYP-91 — the config partition of project delete) ----
 
-    /**
-     * Drop [projectId]'s config override (repo + API key at rest) — the config partition of the
-     * project cascade-delete. Returns `true` if an entry existed. **Strictly scoped to the exact
-     * [projectId]** (the map is keyed by it), so deleting project A never removes project B's override
-     * (no-cross-project). A blank key removes nothing (fail-closed). Idempotent: absent → no-op.
-     */
-    fun remove(projectId: String): Boolean = synchronized(lock) {
+    override fun remove(projectId: String): Boolean = synchronized(lock) {
         if (projectId.isBlank()) return@synchronized false // fail-closed: never an unscoped clear
         val existed = entries.remove(projectId) != null
         if (existed) persist()
