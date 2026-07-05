@@ -24,6 +24,8 @@ thumbnailator = "0.4.20"
 tink = "1.15.0"
 hikaricp = "5.1.0"
 postgresql = "42.7.4"
+flyway = "10.17.0"
+zonkyEmbeddedPg = "2.0.7"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -73,6 +75,9 @@ thumbnailator = { module = "net.coobird:thumbnailator", version.ref = "thumbnail
 tink = { module = "com.google.crypto.tink:tink", version.ref = "tink" }
 hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+zonky-embeddedPostgres = { module = "io.zonky.test:embedded-postgres", version.ref = "zonkyEmbeddedPg" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
