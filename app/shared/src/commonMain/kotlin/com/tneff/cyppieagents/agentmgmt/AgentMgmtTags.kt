@@ -17,6 +17,7 @@ object AgentMgmtTags {
     const val LIST = "agentMgmt.list"
     const val ADD_BUTTON = "agentMgmt.addButton"
     const val GATE_HINT = "agentMgmt.gateHint"
+    const val EMPTY = "agentMgmt.empty" // CYP-228: empty-state onboarding when agents.isEmpty()
 
     fun item(id: String) = "agentMgmt.item.$id"
     fun itemEdit(id: String) = "agentMgmt.item.$id.edit"
@@ -33,6 +34,8 @@ object AgentMgmtTags {
     const val ADD_CONFIRM = "agentMgmt.add.confirm"
     const val ADD_CANCEL = "agentMgmt.add.cancel"
     const val ADD_SPAWN_HINT = "agentMgmt.add.spawnHint"
+    const val ADD_PROJECT_NOTE = "agentMgmt.add.projectNote" // CYP-228: "added to the active project <name>" (dialog head)
+    const val ADD_AUTO_NOTE = "agentMgmt.add.autoNote" // CYP-228: "token/branch/channel are auto-assigned"
     const val ADD_ERROR = "agentMgmt.add.error"
 
     // CYP-87 — remove (irreversible)

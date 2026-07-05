@@ -41,8 +41,22 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_add_id
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_add_persona
 import kmpcyppieagents.app.shared.generated.resources.agent_add
+import kmpcyppieagents.app.shared.generated.resources.agent_add_autofields_note
 import kmpcyppieagents.app.shared.generated.resources.agent_add_confirm
 import kmpcyppieagents.app.shared.generated.resources.agent_add_error
+import kmpcyppieagents.app.shared.generated.resources.agent_add_id_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_add_id_placeholder
+import kmpcyppieagents.app.shared.generated.resources.agent_add_launch_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_add_launch_placeholder
+import kmpcyppieagents.app.shared.generated.resources.agent_add_name_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_add_name_placeholder
+import kmpcyppieagents.app.shared.generated.resources.agent_add_persona_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_add_persona_placeholder
+import kmpcyppieagents.app.shared.generated.resources.agent_add_project_scope_note
+import kmpcyppieagents.app.shared.generated.resources.agent_add_role_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_add_worktree_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_empty_body
+import kmpcyppieagents.app.shared.generated.resources.agent_empty_title
 import kmpcyppieagents.app.shared.generated.resources.agent_add_id_exists
 import kmpcyppieagents.app.shared.generated.resources.agent_add_id_label
 import kmpcyppieagents.app.shared.generated.resources.agent_add_launch_label
@@ -96,6 +110,9 @@ import org.jetbrains.compose.resources.stringResource
 fun AgentManagementPanel(
     viewModel: AgentManagementViewModel,
     modifier: Modifier = Modifier,
+    // CYP-228: display name of the ACTIVE project — named in the add-dialog scope note ("added to the active
+    // project <name>"). null → the note is omitted (honest: never a fake/blank project name).
+    activeProjectName: String? = null,
     // CYP-123/CYP-126: the connector picker (+ B opt-in dialog), host-anchored inside the add/edit dialogs
     // (spec §3.1). Two context-bound slots so the picker binds to the right write target (CYP-126): the ADD
     // slot feeds NewAgentSpec.connectorKind (no endpoint); the EDIT slot is bound to the specific agent and
@@ -126,6 +143,27 @@ fun AgentManagementPanel(
             Text(stringResource(Res.string.agent_add))
         }
 
+        if (state.agents.isEmpty()) {
+            // CYP-228 B: onboarding empty-state instead of a blank list. CTA = the EXISTING add button above
+            // (no second button); with no operator token the gate hint above stays + the button is disabled
+            // (no dead CTA). Reuses the honest "creating ≠ running" framing.
+            Column(
+                modifier = Modifier.fillMaxWidth().testTag(AgentMgmtTags.EMPTY),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    stringResource(Res.string.agent_empty_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    stringResource(Res.string.agent_empty_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         Column(
             modifier = Modifier.fillMaxWidth().testTag(AgentMgmtTags.LIST),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -136,7 +174,7 @@ fun AgentManagementPanel(
         }
     }
 
-    if (state.addOpen) AddDialog(state, viewModel, addConnectorPickerSlot)
+    if (state.addOpen) AddDialog(state, viewModel, addConnectorPickerSlot, activeProjectName)
     state.removeTarget?.let { RemoveDialog(it, state, viewModel) }
     state.editTarget?.let { EditDialog(it, state, viewModel, editConnectorPickerSlot) }
 }
@@ -208,6 +246,7 @@ private fun AddDialog(
     state: AgentMgmtUiState,
     viewModel: AgentManagementViewModel,
     addConnectorPickerSlot: @Composable () -> Unit = {},
+    activeProjectName: String? = null,
 ) {
     AlertDialog(
         onDismissRequest = viewModel::closeAdd,
@@ -229,19 +268,37 @@ private fun AddDialog(
                 modifier = Modifier.fillMaxWidth().testTag(AgentMgmtTags.ADD_DIALOG),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // CYP-228: at the dialog head — an agent always belongs to the ACTIVE project (fold the common
+                // "inherit from the open terminal windows?" confusion at the source). Names the real project; the
+                // note is omitted when the active name is unknown (never a fake/blank name).
+                if (activeProjectName != null) {
+                    TonedHint(
+                        stringResource(Res.string.agent_add_project_scope_note, activeProjectName),
+                        HintTone.INFO, AgentMgmtTags.ADD_PROJECT_NOTE,
+                    )
+                }
                 val idA11y = stringResource(Res.string.a11y_agent_add_id)
                 LabeledField(
                     value = state.addForm.id, onChange = viewModel::setAddId,
                     label = stringResource(Res.string.agent_add_id_label),
                     tag = AgentMgmtTags.ADD_ID_INPUT, a11y = idA11y, isError = state.addIdCollision,
+                    hint = stringResource(Res.string.agent_add_id_hint),
+                    placeholder = stringResource(Res.string.agent_add_id_placeholder),
                 )
                 LabeledField(
                     value = state.addForm.name, onChange = viewModel::setAddName,
                     label = stringResource(Res.string.agent_add_name_label), tag = AgentMgmtTags.ADD_NAME_INPUT,
+                    hint = stringResource(Res.string.agent_add_name_hint),
+                    placeholder = stringResource(Res.string.agent_add_name_placeholder),
                 )
                 RolePicker(
                     pickerTag = AgentMgmtTags.ADD_ROLE_PICKER, selected = state.addForm.role,
                     onSelect = viewModel::setAddRole, poEnabled = !state.addPoBlocked,
+                )
+                // CYP-228: RolePicker has no supportingText slot — its meaning (Worker/PO) as a quiet line below.
+                Text(
+                    stringResource(Res.string.agent_add_role_hint),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (state.addPoBlocked) {
                     Text(
@@ -254,15 +311,23 @@ private fun AddDialog(
                     value = state.addForm.persona, onChange = viewModel::setAddPersona,
                     label = stringResource(Res.string.agent_add_persona_label),
                     tag = AgentMgmtTags.ADD_PERSONA_INPUT, a11y = personaA11y, singleLine = false,
+                    hint = stringResource(Res.string.agent_add_persona_hint),
+                    placeholder = stringResource(Res.string.agent_add_persona_placeholder),
                 )
                 LabeledField(
                     value = state.addForm.launch, onChange = viewModel::setAddLaunch,
                     label = stringResource(Res.string.agent_add_launch_label), tag = AgentMgmtTags.ADD_LAUNCH_INPUT,
+                    hint = stringResource(Res.string.agent_add_launch_hint),
+                    placeholder = stringResource(Res.string.agent_add_launch_placeholder),
                 )
                 LabeledField(
                     value = state.addForm.worktree, onChange = viewModel::setAddWorktree,
                     label = stringResource(Res.string.agent_add_worktree_label), tag = AgentMgmtTags.ADD_WORKTREE_INPUT,
+                    hint = stringResource(Res.string.agent_add_worktree_hint),
                 )
+                // CYP-228: name what the system auto-assigns (token/branch/channel) — no field fakes a token input;
+                // colour/avatar are the ⋮-panel, set after creation.
+                TonedHint(stringResource(Res.string.agent_add_autofields_note), HintTone.INFO, AgentMgmtTags.ADD_AUTO_NOTE)
                 // Disclosure: creating does NOT spawn — start is the CYP-73 lifecycle (no second mechanism).
                 TonedHint(stringResource(Res.string.agent_add_spawn_hint), HintTone.INFO, AgentMgmtTags.ADD_SPAWN_HINT)
 
@@ -468,11 +533,16 @@ private fun LabeledField(
     a11y: String? = null,
     isError: Boolean = false,
     singleLine: Boolean = true,
+    // CYP-228: permanent inline help (→ supportingText, read by the screen reader) + an example (→ placeholder).
+    hint: String? = null,
+    placeholder: String? = null,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
+        placeholder = placeholder?.let { { Text(it) } },
+        supportingText = hint?.let { { Text(it) } },
         singleLine = singleLine,
         isError = isError,
         modifier = Modifier
