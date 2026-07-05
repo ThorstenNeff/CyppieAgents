@@ -188,6 +188,21 @@
     <string name="agent_add_worktree_label">Worktree folder</string>
     <string name="agent_add_confirm">Create</string>
     <string name="agent_add_spawn_hint">Created. The agent is not started yet — start it via the lifecycle controls.</string>
+    <!-- CYP-228: Agent-Add onboarding — inline field help (supportingText + placeholder) + auto-note + project-scope note + empty state -->
+    <string name="agent_add_id_hint">Required · permanent. Only a–z, 0–9, "-", "_". Becomes folder, branch &amp; channel.</string>
+    <string name="agent_add_name_hint">Required · display name, editable anytime.</string>
+    <string name="agent_add_role_hint">Required · Worker = doer · PO = coordinator (exactly one).</string>
+    <string name="agent_add_persona_hint">Optional · the agent's role &amp; rules (becomes its CLAUDE.md). Blank = add later.</string>
+    <string name="agent_add_launch_hint">Optional · command that starts the session. Blank = project default.</string>
+    <string name="agent_add_worktree_hint">Optional · custom folder name. Blank = derived from the ID.</string>
+    <string name="agent_add_id_placeholder">frontend</string>
+    <string name="agent_add_name_placeholder">Frontend developer</string>
+    <string name="agent_add_persona_placeholder">You are the frontend developer. Tasks, DoD, conventions …</string>
+    <string name="agent_add_launch_placeholder">claude</string>
+    <string name="agent_add_autofields_note">Token, git branch and hub channel are assigned automatically. Set colour &amp; avatar afterwards via the agent's ⋮ panel.</string>
+    <string name="agent_add_project_scope_note">Added to the active project %1$s.</string>
+    <string name="agent_empty_title">No agents yet</string>
+    <string name="agent_empty_body">Add your first agent — an ID and a name are enough. It won't run until you start it via the lifecycle controls.</string>
     <string name="agent_add_id_exists">This agent ID already exists</string>
     <string name="agent_add_po_exists">A PO already exists — only one PO per project is allowed.</string>
     <string name="agent_add_error">Create failed</string>

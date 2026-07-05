@@ -125,4 +125,70 @@ class AgentManagementPanelTest {
         onNodeWithTag(AgentMgmtTags.EDIT_ERROR).assertExists()
         onNodeWithText("ub-and-", substring = true).assertExists()
     }
+
+    // ── CYP-228: add-onboarding (inline field help + empty state) ─────────────────────────────────────
+
+    @Test
+    fun cyp228_emptyState_operator_showsOnboarding_addEnabled_noEmptyStateWhenAgentsExist() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                val vm = remember { AgentManagementViewModel(StubAgentManagementRepository(emptyList()), editable = true) }
+                AgentManagementPanel(vm)
+            }
+        }
+        // Empty list → the onboarding block appears; the CTA is the EXISTING add button (still enabled for an operator).
+        onNodeWithTag(AgentMgmtTags.EMPTY).assertExists()
+        onNodeWithTag(AgentMgmtTags.ADD_BUTTON).assertIsEnabled()
+    }
+
+    @Test
+    fun cyp228_emptyState_nonOperator_showsOnboardingPlusGate_addDisabled_noDeadCta() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                val vm = remember { AgentManagementViewModel(StubAgentManagementRepository(emptyList()), editable = false) }
+                AgentManagementPanel(vm)
+            }
+        }
+        onNodeWithTag(AgentMgmtTags.EMPTY).assertExists()
+        onNodeWithTag(AgentMgmtTags.GATE_HINT).assertExists()
+        onNodeWithTag(AgentMgmtTags.ADD_BUTTON).assertIsNotEnabled() // no dead CTA
+    }
+
+    @Test
+    fun cyp228_emptyState_absentWhenAgentsExist() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                val vm = remember { AgentManagementViewModel(StubAgentManagementRepository(listOf(agent("po", Role.PO))), editable = true) }
+                AgentManagementPanel(vm)
+            }
+        }
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(AgentMgmtTags.item("po")).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithTag(AgentMgmtTags.EMPTY).assertDoesNotExist()
+    }
+
+    @Test
+    fun cyp228_addDialog_projectScopeNote_namesActiveProject_autoNote_andFieldHelp_present() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                val vm = remember { AgentManagementViewModel(StubAgentManagementRepository(emptyList()), editable = true) }
+                AgentManagementPanel(vm, activeProjectName = "Cyppie-Prod")
+            }
+        }
+        waitUntil(timeoutMillis = 5_000L) {
+            onAllNodesWithTag(AgentMgmtTags.ADD_BUTTON).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithTag(AgentMgmtTags.ADD_BUTTON).performClick()
+        onNodeWithTag(AgentMgmtTags.ADD_DIALOG).assertExists()
+        // Project-scope note at the head — names the REAL active project (interpolated, locale-independent).
+        onNodeWithTag(AgentMgmtTags.ADD_PROJECT_NOTE).assertExists()
+        onNodeWithText("Cyppie-Prod", substring = true).assertExists()
+        // Auto-assigned note present; existing "creating ≠ running" hint preserved.
+        onNodeWithTag(AgentMgmtTags.ADD_AUTO_NOTE).assertExists()
+        onNodeWithTag(AgentMgmtTags.ADD_SPAWN_HINT).assertExists()
+        // Field help wired: the always-visible role-meaning line ("Worker = " in both locales). Placeholders are
+        // focus-gated by Material3 (only shown on focus) → not assertable in an unfocused render; UIUX UX-QA covers them.
+        onNodeWithText("Worker = ", substring = true).assertExists()
+    }
 }

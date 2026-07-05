@@ -193,6 +193,21 @@
     <string name="agent_add_worktree_label">Worktree-Ordner</string>
     <string name="agent_add_confirm">Anlegen</string>
     <string name="agent_add_spawn_hint">Angelegt. Der Agent startet noch nicht – über die Lifecycle-Steuerung starten.</string>
+    <!-- CYP-228: Agent-Add-Onboarding — Inline-Feldhilfe (supportingText + placeholder) + Auto-Note + Projekt-Scope-Note + Leerzustand -->
+    <string name="agent_add_id_hint">Pflicht · unveränderlich. Nur a–z, 0–9, „-", „_". Wird zu Ordner, Branch &amp; Kanal.</string>
+    <string name="agent_add_name_hint">Pflicht · Anzeigename, jederzeit änderbar.</string>
+    <string name="agent_add_role_hint">Pflicht · Worker = ausführender Agent · PO = Koordinator (genau einer).</string>
+    <string name="agent_add_persona_hint">Optional · Rolle &amp; Regeln des Agenten (wird zur CLAUDE.md). Leer = später ergänzbar.</string>
+    <string name="agent_add_launch_hint">Optional · Befehl, der die Session startet. Leer = Projekt-Standard.</string>
+    <string name="agent_add_worktree_hint">Optional · eigener Ordnername. Leer = automatisch aus der ID.</string>
+    <string name="agent_add_id_placeholder">frontend</string>
+    <string name="agent_add_name_placeholder">Frontend-Entwickler</string>
+    <string name="agent_add_persona_placeholder">Du bist der Frontend-Entwickler. Aufgaben, DoD, Konventionen …</string>
+    <string name="agent_add_launch_placeholder">claude</string>
+    <string name="agent_add_autofields_note">Token, Git-Branch und Hub-Kanal vergibt das System automatisch. Farbe &amp; Avatar setzt du danach über das ⋮-Panel des Agenten.</string>
+    <string name="agent_add_project_scope_note">Wird im aktiven Projekt %1$s angelegt.</string>
+    <string name="agent_empty_title">Noch keine Agenten</string>
+    <string name="agent_empty_body">Lege deinen ersten Agenten an — ID und Name genügen. Er startet erst über die Lifecycle-Steuerung.</string>
     <string name="agent_add_id_exists">Diese Agent-ID existiert bereits</string>
     <string name="agent_add_po_exists">Es gibt bereits einen PO – nur ein PO pro Projekt möglich.</string>
     <string name="agent_add_error">Anlegen fehlgeschlagen</string>

@@ -553,6 +553,8 @@ fun AgentShell(
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
                     AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(
                         agentMgmtVm,
+                        // CYP-228: name the active project in the add-dialog scope note (server-authoritative pointer).
+                        activeProjectName = projectState.projects.find { it.id == projectState.activeProjectId }?.name,
                         // CYP-126 ADD: the picker feeds NewAgentSpec.connectorKind (onKindChosen) — no
                         // connector-endpoint call, no restart hint (fresh spawn). B still goes through the
                         // ack-gated opt-in before the kind is accepted into the spec.
