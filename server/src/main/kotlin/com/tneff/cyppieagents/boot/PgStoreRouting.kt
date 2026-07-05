@@ -13,6 +13,8 @@ import com.tneff.cyppieagents.connector.SessionStore
 import com.tneff.cyppieagents.crypto.SecretCipher
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.events.MigrationGatedEventSink
+import com.tneff.cyppieagents.report.MigrationGatedReportStore
+import com.tneff.cyppieagents.report.ReportStore
 import com.tneff.cyppieagents.db.BindingRegistry
 import com.tneff.cyppieagents.db.BindingState
 import com.tneff.cyppieagents.db.ConnectionProvider
@@ -167,5 +169,20 @@ object PgStoreRouting {
     ): DeliveryLog {
         if (inMigrationWindow("delivery", projectId, bindings)) return MigrationGatedDeliveryLog(fileFallback())
         return activeDataSource("delivery", projectId, bindings, connections)?.let { PgDeliveryLog(it) } ?: fileFallback()
+    }
+
+    /**
+     * S6 report — stateful (in-process `rep-N` counter), so `pg` is a MEMOIZING factory (like the event stores),
+     * not per-op construction: the counter must be coherent across generate calls on one instance.
+     */
+    fun reportStore(
+        projectId: String,
+        bindings: BindingRegistry,
+        connections: ConnectionProvider,
+        pg: (DataSource) -> ReportStore,
+        fileFallback: () -> ReportStore,
+    ): ReportStore {
+        if (inMigrationWindow("report", projectId, bindings)) return MigrationGatedReportStore(fileFallback())
+        return activeDataSource("report", projectId, bindings, connections)?.let { pg(it) } ?: fileFallback()
     }
 }
