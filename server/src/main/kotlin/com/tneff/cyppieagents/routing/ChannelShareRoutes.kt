@@ -24,7 +24,8 @@ import io.ktor.server.routing.route
  *
  * Routes (granularity = per channel, §6.1):
  *  - `GET    /api/channels/{id}/share` → [ChannelShareView] (disclosure: shared? + sharedAt + reachable
- *    agents). **Participant** — the badge/status is read-only disclosure, not a secret.
+ *    agents). **Read-tier** (CYP-242): an agent/operator token OR a verified human OPERATOR/MEMBER session —
+ *    the badge/status is read-only disclosure, not a secret, and the tokenless SPA must render it.
  *  - `PUT    /api/channels/{id}/share` `AuthorizeShareRequest{sharedWith}` → set the directed share.
  *  - `DELETE /api/channels/{id}/share` → revoke (the gate closes → immediate fail-closed).
  *
@@ -42,7 +43,12 @@ fun Route.channelShareRoutes(
 ) {
     route("/api/channels/{id}/share") {
         get {
-            call.requireParticipant(tokens)
+            // CYP-242: read-tier gate (token OR verified human OPERATOR/MEMBER session) — the tokenless public
+            // SPA must load the share badge/status via its same-origin Kratos cookie; token-only
+            // requireParticipant → constant 401 (never self-heals) exactly like CYP-230/232. Read-only
+            // disclosure (shared? + sharedAt + reached agents), not a secret; the write authz is unchanged
+            // (PUT/DELETE stay OPERATOR-gated under the authenticatedApi group below).
+            call.requireCommReader(deps, tokens)
             val id = call.parameters["id"] ?: throw BadRequestException("missing channel id")
             call.respond(shareView(state, shares, id))
         }
