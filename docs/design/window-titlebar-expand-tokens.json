@@ -1,0 +1,51 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-241 (Titelleisten-Doppelklick Expand+Center / Restore-Toggle)",
+    "version": "1.0",
+    "status": "Vorschlag — reiner commonMain-Fenster-Manager (Offset/Size-State + pointerInput), keine Server-/Protokoll-Aenderung. Speist Dev CYP-241; UX-QA danach UIUX. S-M.",
+    "brand": "CyppieAgents (Anti-Hype; interim look + M3)",
+    "grounded_against": "develop 328e7ed (WindowManagerState.kt Konstanten/Clamp/Tile, WindowManager.kt FloatingWindow, WindowTestTags.kt)",
+    "principles": [
+      "Keine Farben, kein neues visuelles Chrome: die Tokens sind Layout-Konstanten fuer die Expand-Zielgroesse.",
+      "Werte abstimmbar (Design-Default) — sie leben im Impl neben den bestehenden Window-Konstanten (MIN_WINDOW_*, HOST_AFFORDANCE_BAND).",
+      "Nie Vollbild (EXPAND_MARGIN haelt Rand), nie Ueberlauf (min(pref,usable) + clampSizeToBounds = CYP-95-konsistent)."
+    ]
+  },
+  "expand_layout": {
+    "EXPAND_PREFERRED_CONTENT_W": { "value_dp": 640, "note": "Vorzugsbreite fuer Content-Fenster (Agent/Comm = contentWindowIds). Gecappt auf usableW." },
+    "EXPAND_PREFERRED_CONTENT_H": { "value_dp": 560, "note": "Vorzugshoehe fuer Content-Fenster. Gecappt auf usableH." },
+    "EXPAND_PREFERRED_DEFAULT_W": { "value_dp": 460, "note": "Vorzugsbreite fuer uebrige Fenster (z. B. Composer). Gecappt auf usableW, gefloort auf MIN_WINDOW_WIDTH." },
+    "EXPAND_PREFERRED_DEFAULT_H": { "value_dp": 380, "note": "Vorzugshoehe fuer uebrige Fenster. Gecappt auf usableH, gefloort auf MIN_WINDOW_HEIGHT." },
+    "EXPAND_MARGIN": { "value_dp": 24, "note": "Beidseitiger Rand im Viewport → nie fill-max/Vollbild. usableW = hostWidth - 2*EXPAND_MARGIN; usableH = hostHeight - HOST_AFFORDANCE_BAND - 2*EXPAND_MARGIN." }
+  },
+  "reused_constants": {
+    "note": "NICHT neu — bestehende WindowManagerState-Konstanten, die Expand/Zentrierung wiederverwendet.",
+    "HOST_AFFORDANCE_BAND": 56,
+    "MIN_VISIBLE_WINDOW": 48,
+    "TILED_CONTENT_WINDOW_MIN_WIDTH": 320,
+    "MIN_WINDOW_WIDTH": 160,
+    "MIN_WINDOW_HEIGHT": 120
+  },
+  "center_formula": {
+    "width": "min(pref_w, hostWidth - 2*EXPAND_MARGIN).coerceAtLeast(typeMin)",
+    "height": "min(pref_h, hostHeight - HOST_AFFORDANCE_BAND - 2*EXPAND_MARGIN).coerceAtLeast(MIN_WINDOW_HEIGHT)",
+    "x": "(hostWidth - width) / 2",
+    "y": "HOST_AFFORDANCE_BAND + (hostHeight - HOST_AFFORDANCE_BAND - height) / 2",
+    "post": "WindowReducer.clampToBounds(keepVisible=MIN_VISIBLE_WINDOW) + clampSizeToBounds — defensiv, CYP-95-konsistent"
+  },
+  "animation": {
+    "mvp": "instant (kein Tween) — konsistent mit der bestehenden 1:1-Drag-Motion; haelt den Restore-Anker-Zustand test-stabil",
+    "deferred_optional": "~180-220ms Ease rein visuell ueber graphicsLayer, ohne Float-State/Anker-Logik anzufassen"
+  },
+  "validation": {
+    "new_tokens": 5,
+    "new_colors": 0,
+    "new_keys": 2,
+    "new_tags": 0,
+    "reuse": "clampToBounds/clampSizeToBounds, tile()-Viewport-Disziplin, HOST_AFFORDANCE_BAND/MIN_VISIBLE_WINDOW/TILED_CONTENT_WINDOW_MIN_WIDTH/MIN_WINDOW_*, WindowTestTags.titleBar/window/FIT/HOST, focus()/bringToFront",
+    "no_model_change": "WindowState-Felder, tile()/fit(), clamp-Funktionen, Drag/Resize/Keyboard-Pfade unveraendert (nur Anker-Loeschung ergaenzt); Server/Protokoll 0.",
+    "no_secrets": "keine Token/E-Mail/Endpoints; reine Layout-/Zustands-Werte",
+    "honesty": "Expand nie Vollbild (Margin) + nie Ueberlauf (Cappe+Clamp); Copy 'vergroessert & zentriert' nicht 'alles sichtbar'; Restore-Anker transient (kein stale Restore nach Reload/CYP-204); 2. Doppelklick nie tot (Restore ODER frischer Re-Expand)."
+  }
+}
