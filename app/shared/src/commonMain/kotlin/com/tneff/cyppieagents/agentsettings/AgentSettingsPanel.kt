@@ -21,6 +21,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -69,11 +70,24 @@ private fun hexOf(c: Color): String = "#" + (c.toArgb() and 0xFFFFFF).toString(1
  * identity), **colour** (8 palette swatches + custom hex with a contrast guard + a live derived preview), and
  * **CLAUDE.md persona** (restart-deferred via the reused [agent_edit_effect_hint]). Operator-gated; a non-operator
  * gets a read-only view. Honesty (§7): id ≠ name (rename cosmetic); name/colour immediate, persona deferred.
+ *
+ * CYP-237: [onSaved] fires once when a save SUCCEEDS (`state.saved` flips true) — the host closes the overlay AND
+ * refreshes the agent list so the change is live without a page reload. [onDismiss] is cancel/backdrop only (no
+ * refresh). A save that FAILS keeps the dialog open (state.saved stays false → onSaved never fires).
  */
 @Composable
-fun AgentSettingsPanel(viewModel: AgentSettingsViewModel, onDismiss: () -> Unit, onRequestUpload: () -> Unit = {}) {
+fun AgentSettingsPanel(
+    viewModel: AgentSettingsViewModel,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit = {},
+    onRequestUpload: () -> Unit = {},
+) {
     val state by viewModel.state.collectAsState()
     val scheme = deriveScheme(state.baseArgb)
+
+    // CYP-237 close-on-save: a successful save sets state.saved → signal the host exactly once (it closes +
+    // refreshes). Keyed on `saved`, so it fires only on the false→true transition, never while merely editing.
+    LaunchedEffect(state.saved) { if (state.saved) onSaved() }
 
     AlertDialog(
         onDismissRequest = onDismiss,

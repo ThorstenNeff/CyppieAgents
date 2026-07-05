@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
 import com.tneff.cyppieagents.model.Agent
@@ -17,6 +18,7 @@ import com.tneff.cyppieagents.model.WorktreeFate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 /**
  * CYP-211 — the settings panel's disclosure invariants (§7/§10), teethed: id read-only (identity ≠ name),
@@ -56,6 +58,25 @@ class AgentSettingsPanelTest {
         // Only AFTER the save (saved ≠ active → restart) does the hint appear.
         v.save(); waitForIdle()
         onNodeWithTag(AgentSettingsTags.EFFECT_HINT).assertExists()
+    }
+
+    /**
+     * CYP-237 defect-1 (close-on-save): clicking SAVE on a successful edit fires [onSaved] exactly once (the host
+     * turns that into "close the overlay + refresh the live list"). Before the fix the panel called `save()` and
+     * nothing observed `state.saved` → the dialog stayed open. Mutation: drop the `LaunchedEffect(state.saved)` →
+     * onSaved never fires → this waitUntil times out → RED.
+     */
+    @Test
+    fun successfulSave_firesOnSaved_forCloseAndRefresh() = runComposeUiTest {
+        val v = vm(editable = true)
+        var onSavedCount = 0
+        setContent { MaterialTheme { AgentSettingsPanel(v, onDismiss = {}, onSaved = { onSavedCount++ }) } }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AgentSettingsTags.PANEL).fetchSemanticsNodes().isNotEmpty() }
+        v.setName("Renamed"); waitForIdle()
+        onNodeWithTag(AgentSettingsTags.SAVE).performClick()
+        // save() success flips state.saved → the close-on-save LaunchedEffect signals the host.
+        waitUntil(timeoutMillis = 5_000L) { onSavedCount >= 1 }
+        assertTrue(onSavedCount >= 1, "a successful save must signal onSaved (host closes + refreshes)")
     }
 
     @Test

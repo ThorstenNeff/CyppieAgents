@@ -129,6 +129,14 @@ class AgentManagementViewModel(
         _state.update { it.copy(agents = agents, loading = false) }
     }
 
+    /**
+     * CYP-237: re-fetch the agent list from the server (the source of truth). The per-agent settings overlay
+     * ([com.tneff.cyppieagents.agentsettings.AgentSettingsViewModel]) is a SEPARATE VM that persists
+     * name/colour/persona through the SHARED repo; calling this after a successful settings save makes the live
+     * titlebar/window state reflect the change WITHOUT a page reload — the same re-fetch add/remove/edit already do.
+     */
+    fun refresh() { runScope.launch { reload() } }
+
     // --- CYP-86 add ---
 
     fun openAdd() {
