@@ -143,6 +143,9 @@ class BootOrchestrator(
     // CYP-210: durable per-agent name/color/persona/launch overlay (`.cyppie/agent-overrides.json`), out-of-
     // repo under the gitRoot. Null (tests) = in-memory off-switch (no restart durability).
     private val agentOverrideFile: java.io.File? = null,
+    // CYP-220 S6: durable report-snapshot store (`.cyppie/reports.json`), out-of-repo under the gitRoot. Null
+    // (tests) = in-memory off-switch. Was in-memory-only before S6; now File-durable (reports survive a restart).
+    private val reportFile: java.io.File? = null,
     // CYP-215: the on-disk root for re-encoded avatar PNGs (`.cyppie/avatars/<projectId>/<agentId>.png`) and
     // the self-hosted DiceBear preset asset root (`.cyppie/avatar-presets/<style>/*.png`). Null (tests) = off.
     private val avatarDir: java.io.File? = null,
@@ -429,6 +432,7 @@ class BootOrchestrator(
         val reportStore = com.tneff.cyppieagents.report.ReportStore(
             generator = com.tneff.cyppieagents.report.ReportGenerator(eventSink, state, hub),
             projectId = config.projectId,
+            file = reportFile, // CYP-220 S6: File-durable when supplied (prod), in-memory when null (tests)
         )
 
         // S13 / CYP-91: the multi-project registry (seeded with the boot project) + the cascade deleter
