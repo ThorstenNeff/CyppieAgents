@@ -150,6 +150,121 @@ class WindowManagerA11yTest {
         assertFalse(state.isExpanded("po"), "a drag is not a double-tap → never an accidental expand")
     }
 
+    // --- CYP-245 (Enter = toggle Expand+Center ↔ Restore) + CYP-248 (Escape = Restore-only): the keyboard path on
+    //     the focused window root, driven through the REAL WindowHost/FloatingWindow. Same onToggleExpand as the
+    //     CYP-241 double-tap → geometry + stateDescription parity is by construction; these pin the key wiring, the
+    //     toggle / no-dead-key behaviour, Escape's restore-only + non-expanding no-op, and the a11y hint appendage. ---
+
+    @Test
+    fun enter_togglesExpand_andFlipsStateDescription() = runComposeUiTest {
+        val state = singleWindowState()
+        setContent { MaterialTheme { WindowHost(state = state, windowContent = { Text("stub ${it.id}") }) } }
+        fun stateDesc(): String? = onNodeWithTag(WindowTestTags.window("po"), useUnmergedTree = true)
+            .fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
+
+        onNodeWithTag(WindowTestTags.window("po")).requestFocus()
+        assertFalse(state.isExpanded("po"))
+        val normalDesc = stateDesc()
+
+        // Enter → Expand (same path as the double-tap): state flips, brings to front, stateDescription changes.
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.Enter) }
+        waitForIdle()
+        assertTrue(state.isExpanded("po"))
+        assertEquals("po", state.focusedId)
+        assertNotEquals(normalDesc, stateDesc(), "stateDescription must flip to the expanded copy")
+
+        // Enter again → Restore: state + stateDescription return to normal.
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.Enter) }
+        waitForIdle()
+        assertFalse(state.isExpanded("po"))
+        assertEquals(normalDesc, stateDesc())
+    }
+
+    /** §9-③: after a manual move (anchor cleared) Enter is a FRESH expand, never a dead no-op. */
+    @Test
+    fun enter_afterManualMove_isFreshExpand_notDeadKey() = runComposeUiTest {
+        val state = singleWindowState()
+        setContent { MaterialTheme { WindowHost(state = state, windowContent = { Text("stub ${it.id}") }) } }
+        onNodeWithTag(WindowTestTags.window("po")).requestFocus()
+
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.Enter) } // expand
+        waitForIdle()
+        assertTrue(state.isExpanded("po"))
+
+        // A manual arrow move clears the Restore anchor (CYP-241) → no longer "expanded".
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.DirectionRight) }
+        waitForIdle()
+        assertFalse(state.isExpanded("po"))
+
+        // Enter is NOT dead here → a fresh Expand, not a no-op.
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.Enter) }
+        waitForIdle()
+        assertTrue(state.isExpanded("po"))
+    }
+
+    /** §9-⑥/⑨: Escape restores an expanded window and returns the announcement to normal (== Enter-restore). */
+    @Test
+    fun escape_restoresExpandedWindow_toNormal() = runComposeUiTest {
+        val state = singleWindowState()
+        setContent { MaterialTheme { WindowHost(state = state, windowContent = { Text("stub ${it.id}") }) } }
+        fun stateDesc(): String? = onNodeWithTag(WindowTestTags.window("po"), useUnmergedTree = true)
+            .fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
+
+        onNodeWithTag(WindowTestTags.window("po")).requestFocus()
+        val normalDesc = stateDesc()
+
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.Enter) } // expand
+        waitForIdle()
+        assertTrue(state.isExpanded("po"))
+
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.Escape) }
+        waitForIdle()
+        assertFalse(state.isExpanded("po"))
+        assertEquals(normalDesc, stateDesc())
+    }
+
+    /** §9-⑥/⑦: on a non-expanded window Escape NEVER expands and leaves the geometry untouched (restore-only, no dead jump). */
+    @Test
+    fun escape_whenNotExpanded_neverExpands_geometryUntouched() = runComposeUiTest {
+        val state = singleWindowState()
+        setContent { MaterialTheme { WindowHost(state = state, windowContent = { Text("stub ${it.id}") }) } }
+        onNodeWithTag(WindowTestTags.window("po")).requestFocus()
+        waitForIdle()
+
+        assertFalse(state.isExpanded("po"))
+        val before = state.windows.first { it.id == "po" }
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.Escape) }
+        waitForIdle()
+        assertFalse(state.isExpanded("po"))
+        assertEquals(before, state.windows.first { it.id == "po" })
+    }
+
+    /** §9-⑩: the Enter hint is always advertised; the Escape (restore) hint is appended ONLY while expanded. */
+    @Test
+    fun keyHints_enterAlways_escapeOnlyWhenExpanded() = runComposeUiTest {
+        val state = singleWindowState()
+        setContent { MaterialTheme { WindowHost(state = state, windowContent = { Text("stub ${it.id}") }) } }
+        fun contentDesc(): String = onNodeWithTag(WindowTestTags.window("po"), useUnmergedTree = true)
+            .fetchSemanticsNode().config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull() ?: ""
+
+        onNodeWithTag(WindowTestTags.window("po")).requestFocus()
+        waitForIdle()
+
+        // Normal: a keyboard hint is appended to the base description; locale-robust (assert the base + growth,
+        // not the exact copy, which the resource files pin).
+        val base = "Agentenfenster Product Owner" // the window's title, not its id
+        val normalDesc = contentDesc()
+        assertTrue(normalDesc.startsWith(base), "keeps the base window description")
+        assertTrue(normalDesc.length > "$base. ".length, "the Enter hint is appended in normal state")
+
+        // Expanded: the restore hint is now appended too — the description extends the normal one.
+        onNodeWithTag(WindowTestTags.window("po")).performKeyInput { pressKey(Key.Enter) }
+        waitForIdle()
+        val expandedDesc = contentDesc()
+        assertTrue(expandedDesc.startsWith(normalDesc), "expanded description extends the normal one")
+        assertTrue(expandedDesc.length > normalDesc.length, "the restore hint is appended only while expanded")
+    }
+
     @Test
     fun keyboard_focus_bringsWindowToFront() = runComposeUiTest {
         val state = WindowManagerState(

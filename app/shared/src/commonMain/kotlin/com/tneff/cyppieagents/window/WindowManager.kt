@@ -74,6 +74,8 @@ import kmpcyppieagents.app.shared.generated.resources.pager_next
 import kmpcyppieagents.app.shared.generated.resources.pager_page_position
 import kmpcyppieagents.app.shared.generated.resources.pager_prev
 import kmpcyppieagents.app.shared.generated.resources.window_fit_action
+import kmpcyppieagents.app.shared.generated.resources.a11y_window_expand_key_hint
+import kmpcyppieagents.app.shared.generated.resources.a11y_window_restore_key_hint
 import kmpcyppieagents.app.shared.generated.resources.window_state_expanded
 import kmpcyppieagents.app.shared.generated.resources.window_state_normal
 import kotlinx.coroutines.launch
@@ -449,6 +451,10 @@ fun FloatingWindow(
     // CYP-241: honest state copy — "enlarged & centered" vs "normal size", NOT "everything visible" (§7). Reflects
     // the Restore-anchor presence, so dragging an expanded window away (anchor cleared) honestly falls to "normal".
     val expandStateDesc = stringResource(if (isExpanded) Res.string.window_state_expanded else Res.string.window_state_normal)
+    // CYP-245/CYP-248: a11y discoverability of the Enter (toggle) + Escape (restore-only) window keys. The Escape
+    // hint is appended ONLY while expanded — Escape is a no-op in normal state, so it is not advertised then (§9-10).
+    val expandKeyHint = stringResource(Res.string.a11y_window_expand_key_hint)
+    val restoreKeyHint = stringResource(Res.string.a11y_window_restore_key_hint)
     Box(
         modifier = Modifier
             // Position via graphicsLayer translation + zIndex through the same layer so reordering on
@@ -464,7 +470,13 @@ fun FloatingWindow(
             // stays separate for tests.
             .semantics {
                 heading()
-                contentDescription = "Agentenfenster ${window.title}"
+                // CYP-245/248: append the keyboard-key hints to the focusable root's a11y description so a keyboard
+                // user learns the Enter/Escape affordances (Escape only while it actually acts — expanded).
+                contentDescription = buildString {
+                    append("Agentenfenster ${window.title}. ")
+                    append(expandKeyHint)
+                    if (isExpanded) append(". $restoreKeyHint")
+                }
                 // CYP-241: Expand/Restore state (anchor presence) exposed for a11y + QA on the window root node.
                 stateDescription = expandStateDesc
             }
@@ -491,6 +503,27 @@ fun FloatingWindow(
                     Key.DirectionDown -> {
                         if (resize) onResize(0f, KEYBOARD_RESIZE_STEP) else onMove(0f, KEYBOARD_MOVE_STEP)
                         true
+                    }
+                    // CYP-245: Enter toggles Expand+Center ↔ Restore on the focused window — the keyboard equal of
+                    // the CYP-241 titlebar double-tap (same onToggleExpand → state.toggleExpand → identical geometry
+                    // + stateDescription flip, incl. "no dead key" after a manual move). Fires only when the window
+                    // ROOT holds focus; a focused child input keeps its own Enter (e.g. the composer "send"), exactly
+                    // as the arrow keys move the cursor inside a text field, not the window.
+                    Key.Enter -> {
+                        onToggleExpand()
+                        true
+                    }
+                    // CYP-248: Escape = Restore-only. Gated on isExpanded so it can NEVER expand (when expanded,
+                    // toggleExpand == Restore). Not expanded (no / move-invalidated anchor) → a NON-consuming no-op
+                    // (false) so Escape bubbles free for a dialog/menu/popup close (precedence, spec §2b/D7: a modal
+                    // catches focus structurally, so the root never even sees Escape while one is open).
+                    Key.Escape -> {
+                        if (isExpanded) {
+                            onToggleExpand()
+                            true
+                        } else {
+                            false
+                        }
                     }
                     else -> false
                 }
