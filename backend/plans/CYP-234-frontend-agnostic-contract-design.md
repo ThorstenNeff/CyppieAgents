@@ -205,17 +205,30 @@ route-enumeration drift-test (§1) pins BOTH prefixes during the window.
 
 ## 4. ④ Sizing cut (like .5a/b/c — build order after ratification)
 
-- **234a — the UNBLOCKER: neutral contract + versioning.** OpenAPI 3.1 (REST) + AsyncAPI (WS) generated from
-  `:core`; the **bidirectional path/channel drift-test** + the **per-DTO schema-conformance tooth** (§1); the
-  **spike proves nested-sealed + carves opaque `JsonElement`/contextual fields BEFORE pinning the generator**
-  (§1); `/api/v1` mounting. After 234a, a foreign client can be built against a real, conformance-proven spec.
-  (🔴 blocker, ~2-3d + ~1d versioning; the carve-out spike is the first, risk-retiring step.)
+- **234a — the UNBLOCKER: neutral contract + versioning + RENDERED HOSTED DOCS.** OpenAPI 3.1 (REST) +
+  AsyncAPI (WS) generated from `:core`; the **bidirectional path/channel drift-test** + the **per-DTO
+  schema-conformance tooth** (§1); the **spike proves nested-sealed + carves opaque `JsonElement`/contextual
+  fields BEFORE pinning the generator** (§1); `/api/v1` mounting. **PLUS (Auftraggeber sharpening — the API
+  docs are a FIRST-CLASS deliverable, "genaue Doku für zukünftige GUIs", not a by-product): a RENDERED,
+  BROWSABLE API reference pulled EARLY** — Swagger-UI or Redoc over the OpenAPI + an AsyncAPI renderer over the
+  WS side (clickable endpoints / params / schemas / frame-unions), **hosted on the staging box** (like the app)
+  = one live reference URL. Because the spec is generated-from-`:core` + conformance-tested, the rendered docs
+  are **accurate by construction** — the real value. The rendered docs stay **generated/drift-tested**, never
+  hand-maintained-in-parallel (same no-drift discipline). Sub-cut: **234a-1** = the schema-fidelity core
+  (walker + conformance + collision guard — DONE, proven); **234a-2** = the OpenAPI/AsyncAPI document assembly
+  (paths + channels) + bidirectional path/channel drift-test + `/api/v1` dual-mount; **234a-3** = the rendered
+  hosted docs. (🔴 blocker.)
 - **234b — auth uniformity (ACCESS-RATIFIED).** The one-resolver/three-tier refactor + whichever BYO-frontend
   credential path the Auftraggeber ratified (§2) + CORS/origin policy. Gated on his access ratification. Every
   operation's tier lands in the spec. (🟡 ~1-2d, access-critical.)
-- **234c — codegen + reference client + protocol docs.** Generate a Go (and/or Godot) client from the spec; a
-  minimal reference client (CLI or Go) as a LIVING contract proof + the human-readable protocol/auth/error docs.
-  (🟠/🟢, proves the contract; the spec alone already unblocks.)
+- **234c — NARRATIVE GUIDE + examples (+ optional reference client).** The explicit "build-a-frontend-from-
+  scratch" document (Auftraggeber first-class deliverable, NOT "if time"): auth flows (the new participant
+  token class + Kratos login), the error envelope, pagination (`afterSeq` + limit), rate-limits, the WS-frame
+  protocol + reconnect/replay (CYP-198/204), **and worked examples per endpoint**. Kept **generated/drift-tested
+  where derivable** (examples validated against the generated schemas; the narrative references the generated
+  spec, never a hand-maintained parallel) so the guide can't drift from the real API. **Optional (Auftraggeber
+  deciding): a generated reference client (Go/TS) as a living contract proof** — keep 234c flexible to add it.
+  (🟠/🟢; the spec + rendered docs from 234a already unblock a builder, the narrative makes it turnkey.)
 
 ## 5. ⑤ Honest scope — real blocker vs. nice-to-have, and what does NOT change
 
