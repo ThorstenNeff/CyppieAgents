@@ -56,8 +56,10 @@ class RestContractDriftTest {
         }
         startApplication()
 
+        // CYP-234a-2b: the canonical /api surface only (exclude the additive /api/v1 alias — RestContract stays
+        // /api-keyed; the /api/v1 ⇔ /api equality is the 2b gate's job in ProtectedRouteEnumerationTest).
         val real = enumerate(app.routing { })
-            .filter { it.path.startsWith("/api") || it.path.startsWith("/mcp") }
+            .filter { (it.path.startsWith("/api/") && !it.path.startsWith("/api/v1")) || it.path.startsWith("/mcp") }
             .map { it.method to it.path }
         val realSet = real.toSet()
         val documented = RestContract.REST_OPS.map { it.method to it.path }.toSet()

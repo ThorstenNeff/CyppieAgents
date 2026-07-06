@@ -30,8 +30,8 @@ const val REGISTER_GENERIC_BODY = """{"status":"verification_pending"}"""
  *  - the per-IP **edge throttle (G3)** fronts this endpoint (same layer as login, §A) — the throttle is not
  *    in-app.
  */
-fun Route.registerRoutes(mediator: RegisterMediator) {
-    post("/api/auth/register") {
+fun Route.registerRoutes(mediator: RegisterMediator, apiBase: String = "/api") {
+    post("$apiBase/auth/register") {
         val req = call.receive<RegisterRequest>()
         // Existence-INDEPENDENT input validation only (a malformed input is the same for everyone → not an
         // enumeration oracle). Never branches on whether the email exists.

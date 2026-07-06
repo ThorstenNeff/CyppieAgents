@@ -56,10 +56,11 @@ fun Route.projectRoutes(
     // HOT = no indicator (dev/standalone wiring with no policy). The route NEVER takes it from the caller.
     runtimeStateOf: (projectId: String) -> com.tneff.cyppieagents.model.RuntimeState = { com.tneff.cyppieagents.model.RuntimeState.HOT },
     deps: AuthDeps = AuthDeps(tokens),
+    apiBase: String = "/api",
 ) {
     // CYP-178: the operator gate is STRUCTURAL (mounted under the group); the RC1 meta-test is the net.
     authenticatedApi(deps, AuthRole.OPERATOR) {
-        route("/api/projects") {
+        route("$apiBase/projects") {
             get {
                 // CYP-255 (.4b): enrich each project with its live runtime state (HOT/BACKGROUND/SUSPENDED).
                 val view = registry.view()

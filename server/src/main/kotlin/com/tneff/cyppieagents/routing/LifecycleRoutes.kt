@@ -29,11 +29,11 @@ import kotlinx.coroutines.flow.onStart
  */
 // CYP-255 (.4b): [lifecycle] resolves the ACTIVE project's LifecycleManager per request, so stop/start/
 // restart act on the switched-to project's agents (a same-id agent in another project has its own runtime).
-fun Route.lifecycleRoutes(lifecycle: () -> LifecycleManager, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) {
+fun Route.lifecycleRoutes(lifecycle: () -> LifecycleManager, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry), apiBase: String = "/api") {
     // CYP-178: operator gate is STRUCTURAL (mounted under the group) — 401/403 before the agent id is
     // touched (no existence leak to non-operators); the RC1 route-enumeration meta-test is the net.
     authenticatedApi(deps, AuthRole.OPERATOR) {
-        route("/api/agents/{id}") {
+        route("$apiBase/agents/{id}") {
             post("/stop") { call.lifecycleAction { lifecycle().stop(it) } }
             post("/start") { call.lifecycleAction { lifecycle().start(it) } }
             post("/restart") { call.lifecycleAction { lifecycle().restart(it) } }

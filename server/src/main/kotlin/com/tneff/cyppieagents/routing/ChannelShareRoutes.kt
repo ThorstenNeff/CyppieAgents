@@ -42,8 +42,9 @@ fun Route.channelShareRoutes(
     shares: ChannelShareStore,
     tokens: TokenRegistry,
     deps: AuthDeps = AuthDeps(tokens),
+    apiBase: String = "/api",
 ) {
-    route("/api/channels/{id}/share") {
+    route("$apiBase/channels/{id}/share") {
         get {
             // CYP-242: read-tier gate (token OR verified human OPERATOR/MEMBER session) — the tokenless public
             // SPA must load the share badge/status via its same-origin Kratos cookie; token-only

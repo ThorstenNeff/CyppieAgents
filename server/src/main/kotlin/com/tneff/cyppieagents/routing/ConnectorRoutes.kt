@@ -33,7 +33,8 @@ fun Route.connectorRoutes(
     capabilityRegistry: CapabilityRegistry,
     optIn: ConnectorOptIn,
     deps: AuthDeps = AuthDeps(registry),
-) = connectorRoutes(state, registry, { capabilityRegistry }, optIn, deps)
+    apiBase: String = "/api",
+) = connectorRoutes(state, registry, { capabilityRegistry }, optIn, deps, apiBase)
 
 fun Route.connectorRoutes(
     state: HubState,
@@ -43,11 +44,12 @@ fun Route.connectorRoutes(
     capabilityRegistry: () -> CapabilityRegistry,
     optIn: ConnectorOptIn,
     deps: AuthDeps = AuthDeps(registry),
+    apiBase: String = "/api",
 ) {
     // CYP-178: operator gate is STRUCTURAL (mounted under the group), fail-closed BEFORE receive; the RC1
     // route-enumeration meta-test is the net. No "off-message" path — only this operator route flips a connector.
     authenticatedApi(deps, AuthRole.OPERATOR) {
-        route("/api/agents/{id}/connector") {
+        route("$apiBase/agents/{id}/connector") {
             post {
                 val id = call.parameters["id"] ?: throw BadRequestException("missing path parameter 'id'")
                 val agent = state.agents.firstOrNull { it.id == id }

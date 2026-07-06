@@ -31,9 +31,9 @@ import kotlinx.serialization.Serializable
  * A caller with no browser/native **session** (e.g. the machine operator token) has no Kratos identity to
  * change → **403 `session_required`** (fail-closed).
  */
-fun Route.settingsRoutes(deps: AuthDeps, kratos: KratosSettingsClient) {
+fun Route.settingsRoutes(deps: AuthDeps, kratos: KratosSettingsClient, apiBase: String = "/api") {
     authenticatedApi(deps, AuthRole.MEMBER) {
-        route("/api/auth/settings") {
+        route("$apiBase/auth/settings") {
             post("/password") {
                 val cred = call.sessionCredential()
                     ?: throw ForbiddenException("a browser/native session is required to change settings", code = "session_required")

@@ -16,7 +16,7 @@ import io.ktor.server.routing.get
  * role + verified; a valid-but-**unverified** Kratos session → authenticated but `verified=false`, no role yet
  * (RC1 — the client shows "verify your email"); neither → `{authenticated:false}`.
  */
-fun Route.authMeRoutes(deps: AuthDeps) {
+fun Route.authMeRoutes(deps: AuthDeps, apiBase: String = "/api") {
     // resolveAuthState is a SINGLE idp.resolve (no double whoami on a present garbage/unverified token).
-    get("/api/auth/me") { call.respond(call.resolveAuthState(deps)) }
+    get("$apiBase/auth/me") { call.respond(call.resolveAuthState(deps)) }
 }

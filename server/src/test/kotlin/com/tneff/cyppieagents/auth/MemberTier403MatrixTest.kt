@@ -100,7 +100,9 @@ class MemberTier403MatrixTest {
         var operatorRoutesChecked = 0
         val leaks = mutableListOf<String>()
         for (ep in endpoints) {
-            val key = "${ep.method} ${ep.path}"
+            // CYP-234a-2b: normalize the additive /api/v1 alias to /api so BOTH prefixes are held to the
+            // identical MEMBER allowlist / operator-deny matrix (a mis-gate under either prefix is caught).
+            val key = "${ep.method} ${ep.path.replace("/api/v1/", "/api/")}"
             if (key in memberAllowlist) continue
             val concrete = ep.path.replace(Regex("\\{[^}]*}"), "metatest-x")
             val m = HttpMethod.parse(ep.method)

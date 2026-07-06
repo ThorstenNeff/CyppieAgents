@@ -46,13 +46,14 @@ fun Route.eventRoutes(
     // never honor an override (forced-active stays the only behavior).
     authorizedProjects: () -> Set<String> = { emptySet() },
     deps: AuthDeps = AuthDeps(registry),
+    apiBase: String = "/api",
 ) {
     // CYP-186 BE2: the event-log is secret-free metadata → readable at the MEMBER tier (gate STRUCTURAL,
     // fail-closed; the RC1 route-enumeration meta-test is the net). The cross-project `?projectId` override
     // stays OPERATOR-only: a non-operator (agent / human MEMBER) is FORCED to the active project so the
     // event read can never enumerate or leak OTHER projects (guardrail b).
     authenticatedApi(deps, AuthRole.MEMBER) {
-        route("/api/events") {
+        route("$apiBase/events") {
             get {
                 val q = call.request.queryParameters
                 // CYP-240 (A): reuse the principal the STRUCTURAL AuthGuard already resolved + stashed under
