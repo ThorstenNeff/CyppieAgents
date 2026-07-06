@@ -5,10 +5,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.tneff.cyppieagents.auth.AuthGate
+import com.tneff.cyppieagents.ui.ThemePreferences
+import com.tneff.cyppieagents.ui.defaultThemePreferences
+import com.tneff.cyppieagents.ui.isDark
 import com.tneff.cyppieagents.ui.maritimeColorScheme
 import com.tneff.cyppieagents.auth.AuthRepository
 import com.tneff.cyppieagents.auth.AuthViewModel
@@ -24,6 +30,9 @@ fun App(
     // CYP-185: platform hook to open the GitHub OIDC redirect URL externally (§6 — the OAuth dance stays out
     // of commonMain). Default no-op; a platform entry point wires the real open (Desktop.browse / window nav).
     onOpenExternalUrl: (String) -> Unit = {},
+    // CYP-268 R3: the persisted theme-mode store; tests inject a fake (e.g. InMemoryThemePreferences(DARK)).
+    // null → the platform default ([defaultThemePreferences]): durable on Web/Desktop, in-memory on Android/iOS.
+    themePreferences: ThemePreferences? = null,
 ) {
     // CYP-176: the login gate wraps the existing desktop (auth-spec §8.1) — it renders the auth screens
     // until AuthState == Verified, then mounts AgentShell unchanged (CYP-15). enableTestTagsAsResourceId()
@@ -38,9 +47,13 @@ fun App(
         authRepository ?: authRepositoryFor(resolveAuthMode(defaultAuthLiveEnv()))
     }
     val authViewModel = remember(authRepo) { AuthViewModel(authRepo) }
-    // CYP-268 R1: the ONE theme seam — inject the maritime ColorScheme (Light + Dark), follow-system by default
-    // (R3 adds the explicit toggle). Recolours the whole app here; no screen is touched (M3 theme-ready).
-    MaterialTheme(colorScheme = maritimeColorScheme(isSystemInDarkTheme())) {
+    // CYP-268 R1/R3: the ONE theme seam — inject the maritime ColorScheme (Light + Dark). R1 followed the system;
+    // R3 makes it user-switchable via a persisted [ThemeMode] (default SYSTEM → still follow-system). The mode is
+    // read synchronously here (this seam sits above AuthGate, no coroutine scope) and the toggle both updates the
+    // recompose-driving state AND persists. M3 roles stay the single colour source — no colour is added here.
+    val themePrefs = remember(themePreferences) { themePreferences ?: defaultThemePreferences() }
+    var themeMode by remember { mutableStateOf(themePrefs.themeMode()) }
+    MaterialTheme(colorScheme = maritimeColorScheme(themeMode.isDark(isSystemInDarkTheme()))) {
         AuthGate(
             viewModel = authViewModel,
             modifier = Modifier
@@ -56,6 +69,8 @@ fun App(
                 modifier = Modifier.fillMaxSize(),
                 tier = tier,
                 sessionToken = authRepo::currentSessionToken,
+                themeMode = themeMode,
+                onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
             )
         }
     }

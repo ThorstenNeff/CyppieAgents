@@ -464,4 +464,11 @@
     <!-- CYP-245 / CYP-248: a11y discoverability of the Enter (toggle) and Escape (restore-only) window keys. -->
     <string name="a11y_window_expand_key_hint">Enter: enlarge and center the window, or restore it</string>
     <string name="a11y_window_restore_key_hint">Escape: restore the enlarged window to its place</string>
+    <!-- CYP-268 R3: app-global theme switcher (System/Light/Dark). Theme is a client-local, per-user preference. -->
+    <string name="theme_menu_label">Theme</string>
+    <string name="theme_mode_system">System</string>
+    <string name="theme_mode_light">Light</string>
+    <string name="theme_mode_dark">Dark</string>
+    <string name="a11y_theme_menu">Theme selection, current: %1$s</string>
+    <string name="a11y_theme_mode">Theme %1$s</string>
 </resources>
