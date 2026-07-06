@@ -455,4 +455,8 @@
     <!-- CYP-241: Fenster-Zustand (Titelleisten-Doppelklick Expand/Restore). Ehrlich: "vergrößert & zentriert", nicht "alles sichtbar". -->
     <string name="window_state_expanded">Vergrößert und zentriert</string>
     <string name="window_state_normal">Normalgröße</string>
+    <!-- CYP-245 / CYP-248: a11y discoverability of the Enter (toggle) and Escape (restore-only) window keys.
+         Wording mirrors the CYP-241 state vocabulary ("vergrößern und zentrieren"), never "shows everything". -->
+    <string name="a11y_window_expand_key_hint">Eingabetaste: Fenster vergrößern und zentrieren oder zurückstellen</string>
+    <string name="a11y_window_restore_key_hint">Escape: vergrößertes Fenster an seinen Platz zurückstellen</string>
 </resources>

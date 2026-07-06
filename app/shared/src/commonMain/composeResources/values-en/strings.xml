@@ -450,4 +450,7 @@
     <!-- CYP-241: window state (titlebar double-click Expand/Restore). Honest: "enlarged & centered", not "everything visible". -->
     <string name="window_state_expanded">Enlarged and centered</string>
     <string name="window_state_normal">Normal size</string>
+    <!-- CYP-245 / CYP-248: a11y discoverability of the Enter (toggle) and Escape (restore-only) window keys. -->
+    <string name="a11y_window_expand_key_hint">Enter: enlarge and center the window, or restore it</string>
+    <string name="a11y_window_restore_key_hint">Escape: restore the enlarged window to its place</string>
 </resources>
