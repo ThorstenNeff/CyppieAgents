@@ -72,18 +72,25 @@ class PgProjectAgentStore(...)            : ProjectAgentStore, MigrationTarget  
   vacuous same-instance roundtrip would pass a broken importRows. Checksum non-vacuous (mutation drop a field
   from the row codec → checksum diverges → RED).
 
-## 3. Boot rehydration
+## 3. Rehydration — **LAZY, per activation** (CR2 ratified — EAGER was wrong; the .4b model is lazy)
 
-At boot, after the `ProjectRegistry` is built, for EACH registered project: load `ProjectAgentStore.agentsFor(p)`
-and repopulate — the boot project ADDS its stored runtime-added agents ON TOP of its config seed; a non-boot
-project is built ENTIRELY from its stored rows. Rehydration feeds:
-- the project's `HubState` slice (topology + spoke channels + ACL, projectId-stamped) — via the existing
-  `HubState.addAgent` per project (the M/CYP-246 stash is populated from the store, not left empty);
-- the project's runtime `AgentConfigRegistry` (persona/launch/kind) — the `ProjectRuntimeFactory` gains a
-  rehydrate step: a non-boot runtime is no longer minted EMPTY (.4b) but seeded from `ProjectAgentStore`.
+Rehydration is **LAZY**, consistent with .4b's lazy runtime model — NOT an eager boot-time repopulate-every-
+project, and **no new boot-stash mechanism**. One `rehydrateActiveProject()` runs against the ACTIVE project:
+- **at boot** — the boot project is already active, so it ADDS its stored runtime-added agents ON TOP of its
+  config seed;
+- **per switch, AFTER `rescope`** — a non-boot project's in-memory slice is empty after a restart, so the store
+  refills it the moment the project is activated (the `getOrCreate` runtime is live by then).
 
-Agents rehydrate as **STOPPED** (no auto-spawn at boot for non-active projects — same posture as `add`); the
-active project's agents spawn as today. This closes "a restart loses non-boot projects' agents".
+It feeds, while the project is active (so `active()` = its runtime, `state.agents` = its slice):
+- the `HubState` slice (topology + spoke + ACL, projectId-stamped) via `HubState.addAgent`;
+- the runtime `AgentConfigRegistry` (launch/persona/kind) via `active().agentConfigs.put`;
+- `active().lifecycle.register` (known + **STOPPED**; start is the CYP-73 lifecycle) + an **idempotent
+  `ensureWorktree`** (D3: reuse the existing worktree — no re-clone / re-`git worktree add`).
+
+**Idempotent**: skips an agent already in the slice (config-seeded or previously rehydrated), so repeated
+switches are no-ops. It **bypasses `AgentManagement.add`** (writes directly to state/configs/lifecycle) so
+rehydration does NOT write back to the store (no rehydrate→persist loop). This closes "a restart loses
+non-boot projects' agents".
 
 ## 4. Write-through (single-sourced with the live cache)
 
@@ -169,3 +176,15 @@ gitignored `.cyppie/project-agents.json` (File default); the Pg path is opt-in p
 
 **Build gating (both required before .5a):** (1) the .4b monolith is MERGED (the base) + (2) the PO-Assistant's
 design second opinion (PO fetches it once out of the monolith gate). Until both land, this stays design-only.
+
+### .5a change-requests (PO, at build-approval) — as-built
+
+- **CR1 (load-bearing):** the D1 no-double-write route (`contains` → store, else overlay) is applied at **ALL
+  six** `overrides.*` write sites in `AgentManagement`, not just `edit`: `add`, `edit`-fields, `edit`-avatar,
+  `uploadAvatar`, `clearAvatar`, `remove` (via `persistRuntimeOrOverlay`). A runtime-added agent's avatar can
+  never leak into the overlay → no rehydrate drift.
+- **CR2:** rehydration is **LAZY** (§3, corrected).
+- **CR3:** a `ProjectAgentStore.put` failure is **never swallowed** — it throws; `add` persists BEFORE the
+  in-memory point-of-no-return, `edit`/others propagate → the route surfaces it (no live-but-not-durable).
+- **CR4:** `.5a` scopes to **LOCAL** agents (`RemoteTokenStore` is verified agentId-GLOBAL, not per-project);
+  remote-agent per-project durability couples to **CYP-264** (remote BYOA is off in MVP).
