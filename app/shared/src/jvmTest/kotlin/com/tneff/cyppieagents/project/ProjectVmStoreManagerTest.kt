@@ -18,10 +18,24 @@ import kotlin.test.assertTrue
  * exactly when the manager evicts that project (== `viewModelScope` cancel == its ws sockets close). A warm
  * project (within K) keeps the SAME store/VM (cheap switch-back, no reconnect); an evicted-then-re-entered project
  * gets a FRESH store/VM (a clean reconnect + cursor-resume, the normal re-entry path).
+ *
+ * **CYP-266 #2 — the socket-teardown is a PROXY, and why (honest teeth-limit).** [TrackingVm.cleared] observes
+ * `onCleared()` firing on eviction, NOT the WS `close()` itself. What this proves is exactly the load-bearing link:
+ * (i) eviction runs the evicted store's `ViewModelStore.clear()` → each held VM's `onCleared()` fires; (ii) in
+ * production that same `clear()` cancels the VM's `viewModelScope` (androidx-framework-guaranteed), which cancels
+ * the `session.events` collection that keeps the WS alive → the socket closes (see AgentViewModel: it holds no
+ * explicit `close()`, the socket's lifetime IS the viewModelScope collection). (iii) The exact
+ * `viewModelScope`-cancel→socket-close chain is deliberately NOT unit-tested here: driving `viewModelScope`
+ * requires a `Dispatchers.Main` in the test, i.e. `kotlinx-coroutines-test`'s `runTest`/`setMain` — and that dep,
+ * once on the app test classpath, GLOBALLY swaps `Dispatchers.Main` for `TestMainDispatcher` (ServiceLoader),
+ * hanging unrelated suite tests (verified: `AgentWsTokenTest` hangs the full `:app:shared:jvmTest`). A suite-wide
+ * landmine is strictly worse than the marginal gain over this proxy, so the proxy stands and its limit is named,
+ * not hidden.
  */
 class ProjectVmStoreManagerTest {
 
-    /** A stand-in for a project-scoped VM whose `onCleared()` is the observable proxy for its socket teardown. */
+    /** A stand-in for a project-scoped VM whose `onCleared()` is the observable proxy for its socket teardown
+     *  (see the class KDoc — the exact viewModelScope-cancel→close chain is framework-guaranteed, not unit-tested). */
     private class TrackingVm : ViewModel() {
         var cleared = false
             private set
