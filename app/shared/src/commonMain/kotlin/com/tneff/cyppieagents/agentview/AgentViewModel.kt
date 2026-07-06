@@ -42,6 +42,17 @@ class AgentViewModel(
     val connection: StateFlow<com.tneff.cyppieagents.comm.ConnectionStatus> = session.connection
 
     /**
+     * CYP-262 Teil 1: transient, client-only "start requested — awaiting the server" flag driving the
+     * "Startet…" label on the [StatusIndicator]. Armed when the operator's Start action is accepted (the
+     * fire-and-forget POST, only after the fail-closed gate), cleared by the NEXT lifecycle event for this
+     * agent (RUNNING on success, STOPPED/ERROR on failure) or a synchronous start rejection. Honest: it
+     * mirrors the request in flight, NEVER claims RUNNING before the server does, and always resolves on the
+     * terminal event — it can't stick. Declared before [lifecycleState] because that eager flow clears it.
+     */
+    val startPending: StateFlow<Boolean> get() = _startPending
+    private val _startPending = MutableStateFlow(false)
+
+    /**
      * Server-reported lifecycle state for THIS agent (CYP-73), non-gated display: seeded from the
      * public-agent-list snapshot, then refined live by `/ws/lifecycle` deltas. Starts [UNKNOWN] until
      * the snapshot lands (never guesses a server fact).
@@ -49,7 +60,11 @@ class AgentViewModel(
     val lifecycleState: StateFlow<AgentLifecycleState> =
         flow {
             emit(lifecycleSource?.snapshot()?.get(agentId) ?: AgentLifecycleState.UNKNOWN)
-            lifecycleSource?.events()?.filter { it.agentId == agentId }?.collect { emit(it.state) }
+            lifecycleSource?.events()?.filter { it.agentId == agentId }?.collect { event ->
+                // CYP-262: any terminal lifecycle event for this agent resolves an in-flight "Startet…".
+                _startPending.value = false
+                emit(event.state)
+            }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, AgentLifecycleState.UNKNOWN)
 
     /**
@@ -94,19 +109,25 @@ class AgentViewModel(
     private val _lifecycleError = MutableStateFlow<String?>(null)
 
     /** Operator-only: (re)spawn / stop the agent's connector. Fail-closed — a no-op without control. */
-    fun start() = lifecycleAction { it.start(agentId) }
+    fun start() = lifecycleAction(pending = true) { it.start(agentId) }
     fun stop() = lifecycleAction { it.stop(agentId) }
     fun restart() = lifecycleAction { it.restart(agentId) }
 
-    private fun lifecycleAction(block: suspend (AgentLifecycleApi) -> Unit) {
+    private fun lifecycleAction(pending: Boolean = false, block: suspend (AgentLifecycleApi) -> Unit) {
         // Fail-closed defence in depth: the server enforces the operator gate (403); the UI also
         // disables the controls and the VM refuses to act without [canControl] + a wired [lifecycle].
         if (!canControl) return
         val api = lifecycle ?: return
+        // CYP-262: arm the transient "Startet…" only for Start, and only AFTER the fail-closed gate — so a
+        // no-op (no control / no port) never shows spawn feedback. Set synchronously for instant feedback.
+        if (pending) _startPending.value = true
         viewModelScope.launch {
             _lifecycleError.value = null
             runCatching { block(api) }.onFailure { e ->
                 if (e is CancellationException) throw e
+                // A synchronous start rejection (e.g. spawn_failed 503) resolves the transient at once — never
+                // leave "Startet…" hanging on a request that already failed; the state stays STOPPED honestly.
+                _startPending.value = false
                 // Surface the server's reason code (409/403/503/404) honestly; generic fallback otherwise.
                 _lifecycleError.value = (e as? AgentLifecycleHttpException)?.code ?: "lifecycle_failed"
             }

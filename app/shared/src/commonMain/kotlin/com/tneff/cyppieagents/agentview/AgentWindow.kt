@@ -68,6 +68,7 @@ import com.tneff.cyppieagents.comm.ConnectionStatus
 import kmpcyppieagents.app.shared.generated.resources.agent_reconnecting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_error
 import kmpcyppieagents.app.shared.generated.resources.agent_status_running
+import kmpcyppieagents.app.shared.generated.resources.agent_status_starting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_stopped
 import kmpcyppieagents.app.shared.generated.resources.agent_status_unknown
 import org.jetbrains.compose.resources.stringResource
@@ -92,6 +93,7 @@ fun AgentWindow(
 ) {
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
+    val startPending by viewModel.startPending.collectAsState()
     val lifecycleError by viewModel.lifecycleError.collectAsState()
     val connection by viewModel.connection.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
@@ -99,6 +101,7 @@ fun AgentWindow(
         AgentHeader(
             agentId = agentId,
             state = lifecycle,
+            startPending = startPending,
             connection = connection,
             canControl = viewModel.canControl,
             onStart = viewModel::start,
@@ -156,6 +159,8 @@ private fun AgentHeader(
     onStop: () -> Unit,
     onRestart: () -> Unit,
     modifier: Modifier = Modifier,
+    /** CYP-262: a Start request is in flight → the status shows the transient "Startet…" (client-only). */
+    startPending: Boolean = false,
     connection: ConnectionStatus = ConnectionStatus.LIVE,
     capabilities: Capabilities? = null,
     provider: ProviderInfo? = null,
@@ -169,7 +174,7 @@ private fun AgentHeader(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatusIndicator(agentId, state)
+        StatusIndicator(agentId, state, startPending)
         // CYP-204: reconnecting indicator — present ONLY while the per-agent WS is not LIVE (the adapter is
         // auto-reconnecting from the seq cursor; on reconnect the server replays the history gapless). Its OWN
         // axis, next to but distinct from the lifecycle status (process state ≠ socket state).
@@ -218,14 +223,18 @@ private fun ReconnectingChip(agentId: String, connection: ConnectionStatus) {
 }
 
 @Composable
-private fun StatusIndicator(agentId: String, state: AgentLifecycleState) {
-    val label = when (state) {
+private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPending: Boolean = false) {
+    // CYP-262 Teil 1: while a Start request is in flight (client-only, before the server's RUNNING event),
+    // show the honest transient "Startet…" instead of the resolved state — NEVER "Läuft" before the server
+    // confirms it (§9-1). The flag always resolves on the next lifecycle event, so this can't stick. Same
+    // node/tag (0 new tag) and the in-progress tertiary tone shared with the ReconnectingChip (0 new colour).
+    val label = if (startPending) stringResource(Res.string.agent_status_starting) else when (state) {
         AgentLifecycleState.RUNNING -> stringResource(Res.string.agent_status_running)
         AgentLifecycleState.STOPPED -> stringResource(Res.string.agent_status_stopped)
         AgentLifecycleState.ERROR -> stringResource(Res.string.agent_status_error)
         AgentLifecycleState.UNKNOWN -> stringResource(Res.string.agent_status_unknown)
     }
-    val dotColor = when (state) {
+    val dotColor = if (startPending) MaterialTheme.colorScheme.tertiary else when (state) {
         AgentLifecycleState.RUNNING -> MaterialTheme.colorScheme.primary
         AgentLifecycleState.STOPPED -> MaterialTheme.colorScheme.outline
         AgentLifecycleState.ERROR -> MaterialTheme.colorScheme.error

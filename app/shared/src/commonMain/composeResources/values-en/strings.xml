@@ -119,6 +119,9 @@
     <!-- Agent lifecycle (CYP-73): status labels (display non-gated) + control labels (operator-gated).
          Status also uses a11y_agent_status for the contentDescription. -->
     <string name="agent_status_running">Running</string>
+    <!-- CYP-262 Teil 1: transient, client-only spawn-feedback state ("start requested, awaiting the server").
+         Mirrors the request in flight, NEVER "Running" before server RUNNING; always resolves on the next lifecycle event. -->
+    <string name="agent_status_starting">Starting…</string>
     <!-- CYP-204: per-agent WS reconnecting indicator (history replays on reconnect) -->
     <string name="agent_reconnecting">Reconnecting…</string>
     <string name="agent_status_stopped">Stopped</string>
