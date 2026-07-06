@@ -17,7 +17,7 @@ Der QA-relevante Unterschied ist der **Text/Zustand** (Label „Startet…"), ke
 
 | Element | neuer Tag | Rolle |
 |---|---|---|
-| per-Projekt-Session-Indikator (▾-Menü-Zeile) | `ProjectTags.itemSession(id)` = `projectSwitcher.item.<id>.session` | Träger des `TonedHint(INFO)`; zeigt BACKGROUND/SUSPENDED (ACTIVE = ●, kein Indikator) |
+| per-Projekt-Session-Indikator (▾-Menü-Zeile) | `ProjectTags.itemSession(id)` = `projectSwitcher.item.<id>.session` | Träger des `TonedHint(INFO)`; zeigt BACKGROUND/SUSPENDED (HOT = ●, kein Indikator) |
 | *(optional, D4 §-Ask)* Bar-Level-Background-Summe | `ProjectTags.BACKGROUND_SUMMARY` = `projectSwitcher.backgroundSummary` | „N Projekte laufen im Hintergrund" (nur wenn PO den Bar-Hinweis will) |
 
 > Konsistent mit der bestehenden `projectSwitcher.item.<id>.*`-Familie (`.active`). Übergabe:
@@ -45,11 +45,12 @@ Der QA-relevante Unterschied ist der **Text/Zustand** (Label „Startet…"), ke
 - **③ Running:** `/ws/lifecycle` RUNNING → `agent.<id>.status` == „Läuft"; `agent.<id>.reconnecting` verschwindet auf `LIVE`.
 - **④ Spawn-Fehler:** `spawn_failed` → `agent.<id>.status` bleibt „Gestoppt" + `agent.<id>.lifecycleError` == „Start fehlgeschlagen".
 
-**Teil 2 (sobald Server-Session-State bindet, §5):**
-- **⑤ Background:** verlassenes, laufendes Projekt → `projectSwitcher.item.<id>.session` == „Läuft im Hintergrund" (INFO-Ton, „i"-Glyph).
-- **⑥ Suspended:** LRU-evicted Projekt → `projectSwitcher.item.<id>.session` == „Suspendiert — Resume beim Öffnen" (INFO).
-- **⑦ Active ohne Extra-Indikator:** aktives Projekt → `projectSwitcher.item.<id>.active` present, **kein** `.session`-Indikator.
+**Teil 2 (gebunden an `ProjectsView.runtimeState`, §5 — Feld existiert ab Push 3):**
+- **⑤ Background:** `Project.runtimeState == BACKGROUND` → `projectSwitcher.item.<id>.session` == „Läuft im Hintergrund" (INFO-Ton, „i"-Glyph).
+- **⑥ Suspended:** `Project.runtimeState == SUSPENDED` → `projectSwitcher.item.<id>.session` == „Suspendiert — Resume beim Öffnen" (INFO).
+- **⑦ HOT ohne Extra-Indikator:** `runtimeState == HOT` (aktiv) → `projectSwitcher.item.<id>.active` present, **kein** `.session`-Indikator.
 - **⑧ Kein Fehler-Ton:** weder ⑤ noch ⑥ nutzt den ERROR-/`✕`-Ton (a11y liest „Projekt-Sitzung: …", nie „Fehler").
+- **⑨ Fail-safe:** fehlt `runtimeState` / Default `HOT` (Pre-Push-3) → **kein** `.session`-Knoten (nie ein geratener Zustand).
 
 ---
 
@@ -59,4 +60,6 @@ Der QA-relevante Unterschied ist der **Text/Zustand** (Label „Startet…"), ke
 - **Teil 1: 0 neue Tags** (reuse `agent.<id>.status`/`.reconnecting`/`.lifecycleError`/`.startBtn`).
 - **Reuse-gegen-Code verifiziert @ `44b1b1b`:** `AgentViewTags.{status,reconnecting,lifecycleError,startBtn}`, `ProjectTags.{item,item.active}` — alle bestehend.
 - **⚠ Shared-Tag-Drift:** 1 (+1 opt) neue Konstante → **`ProjectTags` + CYP-7-Test-Modul re-syncen** (mit dem Impl-Slice timen).
-- **⚠ Backend-Dep (T2):** die `.session`-Indikator-Knoten existieren erst, wenn der Server den per-Projekt-Session-State liefert (§5).
+- **⚠ Backend-Dep (T2) — finalisiert:** die `.session`-Indikator-Knoten existieren erst, wenn der Server das additive
+  `Project.runtimeState`-Feld auf `ProjectsView` (`GET /api/projects`) liefert — Backend baut es mit **Push 3** (CYP-249-Kontrakt §5).
+  `RuntimeState`-Enum in `:core` → Server + Client re-syncen mit dem Push-3-Slice.

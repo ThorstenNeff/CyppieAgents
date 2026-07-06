@@ -1,11 +1,17 @@
 # Design-Spec — L-Client-UX: Spawn-Flow + Background-/LRU-Indikator (CYP-262)
 
-> Owner: UIUX-Designer · Story **CYP-262** (unter Epic-Arc CYP-247 „L") · Stand: 2026-07-06 · Status: Vorschlag
+> Owner: UIUX-Designer · Story **CYP-262** (unter Epic-Arc CYP-247 „L") · Stand: 2026-07-06 · Status: **v1.1 (Teil-2-Naht-Bindung finalisiert)** — Teil 1 PO-ratifiziert; **Teil 2 auf die echte Naht gefaltet, wartet PO-Fold-Ratifikation.**
+> **⚠ v1.1-Änderung ggü. v1.0:** Teil-2-Backend-Dep war seam-agnostisch (§5 „PO liefert Kontrakt nach .4b"). **Jetzt gebunden:** der
+> Server-Kontrakt steht (`backend/plans/CYP-249-switch-runtime-contract.md`, off CYP-255 .4b/Push 2). Teil 2 bindet an das PO-autorisierte
+> additive **`runtimeState`-Enum-Feld (`HOT|BACKGROUND|SUSPENDED`) auf `ProjectsView` (`GET /api/projects`)**, server-abgeleitet, Backend baut
+> es mit **Push 3**. Mein provisorischer Zustandsname **ACTIVE → HOT** (Server-Enum). **D4 Bar-Summe = PO-entschieden Menü-only** (§10a bleibt
+> toggle-ready, NICHT gebaut). Rest unverändert. Copy/Tags/Töne waren kontrakt-agnostisch → **0 neue Keys/Tags durch die Bindung.**
 > **Design-first — Ratifikation durch PO VOR Dev-Bau.** Konsumenten: **Teil 1 ↔ CYP-256** (247.5 Spawn/CRUD),
-> **Teil 2 ↔ CYP-255** (247.4 Teardown-Policy ① Background-live + LRU-K), Hygiene-Naht **CYP-249** (per-Projekt-VM).
+> **Teil 2 ↔ CYP-255** (247.4 Teardown-Policy ① Background-live + LRU-K=3) auf **CYP-249-Kontrakt**, Hygiene-Naht **CYP-249** (per-Projekt-VM).
 > **Grounded gegen** `origin/develop 44b1b1b` (`agentview/AgentWindow.kt` `StatusIndicator`/`ReconnectingChip`/Lifecycle-Controls/Errors,
 > `AgentLifecycleApi` `AgentLifecycleState`, `AgentViewTags`, `project/ProjectSwitcherBar`+`ProjectTags`, `ui/TonedHint`,
-> `strings.xml`). **Reine `commonMain`-UI** — Teil 1 client-only; **Teil 2 = 1 Backend-Dep** (per-Projekt-Session-State, §5).
+> `strings.xml`, `core/…/model/ProjectModel.kt` `ProjectsView{activeProjectId, projects:List<Project>}` + `Project{id,name}`).
+> **Reine `commonMain`-UI** — Teil 1 client-only; **Teil 2 = 1 Backend-Dep** (`ProjectsView.runtimeState`, §5, Push 3).
 
 ---
 
@@ -77,26 +83,31 @@ Teil 1 fügt **nur** das transiente „Startet…" (1 Key + 1 client-Flag) hinzu
 
 ## §3 — Teil 2: Background-/LRU-Suspend-Indikator (↔ CYP-255)
 
-### Die drei Projekt-Session-Zustände (Policy ① Background-live + LRU-K=3)
+### Die drei Projekt-Session-Zustände = `ProjectsView.runtimeState` (server-autoritativ, Client spiegelt)
 
-| Zustand | Bedeutung | Copy (Vorschlag) | Ton |
-|---|---|---|---|
-| **ACTIVE** | Vordergrund, du siehst die Agenten | „● Aktives Projekt" (bestehend, `projectSwitcher.active`) | — |
-| **BACKGROUND** | verlassen, aber **Agenten laufen weiter** (①), innerhalb K=3 hot | **„Läuft im Hintergrund"** (`project_session_background`) | **INFO** |
-| **SUSPENDED** | LRU-evicted (jenseits K=3 hot) → **pausiert**, kommt per Resume beim Öffnen zurück | **„Suspendiert — Resume beim Öffnen"** (`project_session_suspended`) | **INFO** |
+Server-Enum aus dem CYP-249-Kontrakt: **`HOT | BACKGROUND | SUSPENDED`** (Client bindet 1:1; kein client-abgeleiteter Zustand).
+
+| `runtimeState` | Server-Prädikat (CYP-249 §1) | UI-Indikator | Copy | Ton |
+|---|---|---|---|---|
+| **HOT** | das EINE aktive Projekt (`runtimeRegistry.active()`) | **keiner** — bestehende ●-Markierung `projectSwitcher.active` genügt | „● Aktives Projekt" (bestehend) | — |
+| **BACKGROUND** | besucht, nicht aktiv, innerhalb Cap K=3 — Runtime + **Agenten laufen live** | Session-Indikator `TonedHint(INFO)` | **„Läuft im Hintergrund"** (`project_session_background`) | **INFO** |
+| **SUSPENDED** | jenseits K=3 — via persist-kill-resume abgebaut, Daten intakt, Prozesse weg bis Re-Entry | Session-Indikator `TonedHint(INFO)` | **„Suspendiert — Resume beim Öffnen"** (`project_session_suspended`) | **INFO** |
+
+> **Push-3-Timing (CYP-249 §3):** `SUSPENDED` wird erst mit dem Teardown real; bis dahin beobachtet der Client nur `HOT`/`BACKGROUND`.
+> Der Indikator handhabt **alle drei** ab Tag 1 (kontrakt-vollständig) — kein Nachrüsten nötig, wenn Push 3 die Eviction einschaltet.
 
 ### D3 — Platzierung: per-Projekt-Zeile im ▾-Menü, `TonedHint(INFO)`
 
 Jede Projekt-Zeile `projectSwitcher.item.<id>` im ▾-Dropdown trägt einen **INFO-Session-Indikator** (neuer Tag
-`projectSwitcher.item.<id>.session`) — Text + „i"-Glyph via `TonedHint(HintTone.INFO)`, **Farbe nie alleiniger Träger**. ACTIVE
+`projectSwitcher.item.<id>.session`) — Text + „i"-Glyph via `TonedHint(HintTone.INFO)`, **Farbe nie alleiniger Träger**. `HOT`
 bleibt die bestehende ●-Markierung (kein zusätzlicher Indikator). a11y: neuer Key `a11y_project_session` („Projekt-Sitzung: %1$s").
 
-### D4 — Ressourcen-Ehrlichkeit: Background sichtbar, nicht versteckt
+### D4 — Ressourcen-Ehrlichkeit: Background sichtbar, nicht versteckt · **PO-entschieden: Menü-only**
 
-**Kern-Ehrlichkeit:** BACKGROUND heißt **echte laufende Agenten** (verbrauchen Compute/API-Tokens) — der Nutzer soll das **wissen**,
-auch ohne das Menü zu öffnen. Darum **empfohlen (D4-§-Ask):** ein dezenter **Bar-Level-Summenhinweis**, wenn ≥1 Projekt im Hintergrund
-läuft (z. B. `project_session_background_summary` „%1$s weitere Projekte laufen im Hintergrund", Tag `projectSwitcher.backgroundSummary`,
-INFO). **Kern = per-Projekt-Indikator im Menü (D3); der Bar-Summenhinweis ist der PO-Call** (berührt die immer-sichtbare Leiste).
+**Kern-Ehrlichkeit:** BACKGROUND heißt **echte laufende Agenten** (verbrauchen Compute/API-Tokens) — der Nutzer soll das **wissen**.
+**PO-Entscheid (2026-07-06): Menü-only** — der ehrliche Kern ist der per-Projekt-Indikator im ▾-Menü (D3); der **Bar-Level-Summenhinweis
+wird NICHT gebaut**. Das Design dafür bleibt **toggle-ready in §10a** (falls der Auftraggeber später Fleet-Awareness ohne Menü-Öffnen will;
+zählt dann NUR `BACKGROUND` = laufend/verbraucht, nie `SUSPENDED` = pausiert/verbraucht nichts). **Für den T2-Bau: kein Bar-Summenhinweis.**
 
 ### D5 — Kein Fehler-Anschein, keine LRU-Mechanik-Leaks
 
@@ -107,16 +118,35 @@ INFO). **Kern = per-Projekt-Indikator im Menü (D3); der Bar-Summenhinweis ist d
 
 ---
 
-## §5 — Backend-Dep (Teil 2) — Server-Kontrakt, PO liefert
+## §5 — Backend-Dep (Teil 2) — **finalisierte Naht-Bindung** (`ProjectsView.runtimeState`, CYP-249-Kontrakt)
 
-Der per-Projekt-Session-Zustand **existiert client-seitig nicht** und ist **kein** Client-Konstrukt — nur der Server (Switch-Orchestrierung
-.4b) kennt „hot/background/suspended". **Der Client bindet an ein Server-Signal.** Ich designe **gegen die ratifizierte Policy**
-(① Background-live + LRU-K=3); der **exakte Kontrakt** (Enum-Namen z. B. `ProjectSessionState{ACTIVE,BACKGROUND,SUSPENDED}`, Feld an der
-Projektliste vs. `/ws`-Delta, Update-Kanal) kommt vom PO, **sobald .4b-Switch-Semantik steht** → dann faltet der Client-Impl auf die echte Naht.
+Der per-Projekt-Session-Zustand ist **kein** Client-Konstrukt (grep=0 client-seitig) — nur der Server (Switch-Orchestrierung .4b) kennt
+„hot/background/suspended". Der Kontrakt steht jetzt: **`backend/plans/CYP-249-switch-runtime-contract.md`** (off CYP-255 .4b/Push 2).
 
-> **Design ist naht-bereit:** die Copy/Tags/Töne oben sind kontrakt-agnostisch (3 Zustände). Nur die **Bindung** (welches Feld/Event den
-> Zustand trägt) wartet auf .4b. **Kein Blocker fürs Design/die Ratifikation** — nur fürs Dev-Wiring.
-> **Falls der Server einen `ERROR`/failed-Session-Zustand liefert** (Policy nennt keinen): → error-toned, eigener Forward; nicht in diesem Scope.
+**Die Naht (PO-autorisiert, Backend baut mit Push 3):** ein additives, server-abgeleitetes Feld
+
+```
+GET /api/projects → ProjectsView { activeProjectId, projects: List<Project> }
+   Project.runtimeState: RuntimeState = HOT | BACKGROUND | SUSPENDED   // additiv, server-derived
+```
+
+- **Enum `RuntimeState { HOT, BACKGROUND, SUSPENDED }` gehört ins `:core`** (eine Definition, Server + Client kompilieren dieselbe) —
+  konsistent mit dem bestehenden `ProjectModel.kt`. Server leitet es aus `runtimeRegistry` ab (active / `of(pid)!=null` / else suspended,
+  CYP-249 §1). **Additiv mit Default** (`= HOT` oder nullable), damit die Deserialisierung alt/neu robust bleibt.
+- **Der Client spiegelt EIN autoritatives Feld** — `Project.runtimeState` — und leitet den Zustand **nicht** parallel aus `activeProjectId`
+  ab (Doppelquelle = Drift-Risiko). `HOT` ⇒ kein Session-Indikator (bestehende ●); `BACKGROUND`/`SUSPENDED` ⇒ `TonedHint(INFO)` (§3-Copy).
+- **Update-Kanal:** `GET /api/projects` beim Öffnen des ▾-Menüs / nach `POST /api/projects/switch` neu lesen (der Switch ändert die States
+  aller Projekte). Ein `/ws`-Delta ist **nicht** nötig fürs MVP (das Menü ist Pull-getrieben); falls Backend eins liefert, bindet der Client additiv.
+
+> **Fail-safe (Push-3-Rollout):** fehlt `runtimeState` (Pre-Push-3-Server / alter Client) → Feld defaultet auf `HOT` ⇒ **kein** Indikator.
+> Der Client **rät nie** einen Hintergrund-/Suspend-Zustand ohne das Server-Feld (Invariante §9-11). Kein Fehlalarm während des Rollouts.
+
+> **Re-Entry ist normal, kein Fehler (CYP-249 §4):** ein `SUSPENDED`-Projekt wird beim Öffnen per `switch` + `--resume` frisch gespawnt;
+> der Client reconnectet frisch und replayt ab Cursor (CYP-198 history-then-live / CYP-204). Der dabei sichtbare `ReconnectingChip` ist der
+> **normale** Re-Entry-Pfad — **kein** Error-Ton. Das deckt sich mit „Suspendiert — Resume beim Öffnen" (SUSPENDED-Copy).
+
+> **Falls der Server je einen `ERROR`/failed-Runtime-Zustand liefert** (CYP-249 nennt keinen — 409 `project_not_runnable` ist ein
+> Switch-Ergebnis, kein Dauerzustand): → error-toned, eigener Forward; **nicht** in diesem Scope.
 
 ---
 
@@ -135,8 +165,10 @@ kein LRU-Jargon.
 
 - **Im Scope (Teil 1, client-only):** transientes „Startet…"-Spawn-Feedback + die ehrliche Add→Start→Running→Connect-Sequenz, rein aus
   Reuse (StatusIndicator/ReconnectingChip/Controls/Errors) + 1 Key + 1 client-Flag.
-- **Im Scope (Teil 2, Design):** per-Projekt-Session-Indikator (ACTIVE/BACKGROUND/SUSPENDED) im ▾-Menü, `TonedHint(INFO)`, Copy + Tags.
-- **Backend-Dep (Teil 2):** per-Projekt-Session-State-Signal (Server-Kontrakt .4b, §5).
+- **Im Scope (Teil 2, Design):** per-Projekt-Session-Indikator (`HOT`/`BACKGROUND`/`SUSPENDED`) im ▾-Menü, `TonedHint(INFO)`, Copy + Tags,
+  gebunden an `ProjectsView.runtimeState`. **D4 Bar-Summe: NICHT im Bau-Scope** (PO Menü-only; toggle-ready §10a).
+- **Backend-Dep (Teil 2):** additives server-abgeleitetes `Project.runtimeState`-Enum-Feld auf `ProjectsView` (`GET /api/projects`),
+  Backend baut mit Push 3 (CYP-249-Kontrakt, §5). `RuntimeState`-Enum in `:core`.
 - **Nicht im Scope:** die Spawn-/Teardown-/LRU-Server-Mechanik selbst (CYP-255/256); ein echter Server-`STARTING`-Zustand (Forward);
   Socket-Hygiene (CYP-249).
 
@@ -157,9 +189,11 @@ kein LRU-Jargon.
 7. **Kein Fehler-Anschein:** BACKGROUND **und** SUSPENDED in **INFO**-Ton (kein ERROR/WARN); beide lesen als normale Zustände.
 8. **Background = ehrlich laufend + entdeckbar:** „Läuft im Hintergrund" macht echte Ressourcen-Nutzung sichtbar (nicht versteckt).
 9. **Suspended ehrlich:** „Suspendiert — Resume beim Öffnen" — pausiert, resumt, **kein** Datenverlust; kein LRU/K=3-Jargon.
-10. **BACKGROUND ≠ SUSPENDED unterscheidbar:** die zwei Zustände sind in Copy **und** a11y klar getrennt; ACTIVE bleibt die ●-Markierung.
-11. **Autoritative Quelle:** der Indikator bindet an den **Server**-Session-State (Backend-Dep §5), nicht an client-geratenes „ist wohl im
-    Hintergrund"; bis der Kontrakt steht, kein erfundener Client-Zustand.
+10. **BACKGROUND ≠ SUSPENDED unterscheidbar:** die zwei Zustände sind in Copy **und** a11y klar getrennt; **`HOT` trägt keinen
+    Session-Indikator** (nur die bestehende ●-Markierung `projectSwitcher.active`).
+11. **Autoritative Quelle = `ProjectsView.runtimeState`:** der Indikator bindet **1:1** an das server-abgeleitete `Project.runtimeState`
+    (`HOT|BACKGROUND|SUSPENDED`, §5), **nicht** an client-geratenes „ist wohl im Hintergrund" und **nicht** parallel aus `activeProjectId`.
+    **Fail-safe:** fehlt das Feld (Pre-Push-3 / Default `HOT`) → **kein** Indikator; nie ein erfundener/geratener Zustand.
 
 ---
 
@@ -200,5 +234,9 @@ kein LRU-Jargon.
 - **Neue Tags:** **Teil 1: 0** (reuse `agent.<id>.status`) · **Teil 2: 1** (`projectSwitcher.item.<id>.session`) **+ optional 1**
   (`projectSwitcher.backgroundSummary`, D4). ⚠ CYP-7-Sync. `-tags.md`.
 - **Neue Tokens/Farben:** **0** (reuse M3 + `TonedHint(INFO)` + StatusIndicator-Töne). `-tokens.json`.
-- **⚠ Backend-Dep (Teil 2):** per-Projekt-Session-State-Signal — **PO liefert den Server-Kontrakt nach .4b** (§5). Teil 1 hat **keine** Dep.
-- **Konsumenten:** Dev CYP-256 (Teil 1) + CYP-255/Backend (Teil 2) + CYP-249 (Hygiene). Danach **UX-QA durch UIUX** gegen §9 (11 Invarianten).
+- **⚠ Backend-Dep (Teil 2) — FINALISIERT:** additives `Project.runtimeState: RuntimeState { HOT, BACKGROUND, SUSPENDED }` auf `ProjectsView`
+  (`GET /api/projects`), server-abgeleitet, `:core`-Enum, Backend baut mit **Push 3** (CYP-249-Kontrakt §5). Client spiegelt 1:1, fail-safe
+  auf Feld-Absenz = kein Indikator. **⚠ Shared-DTO-Drift:** `:core`-Enum + Feld → Server **und** Client re-syncen (mit dem Push-3-Slice timen).
+  Teil 1 hat **keine** Dep.
+- **Konsumenten:** Dev CYP-256 (Teil 1) + CYP-255/Backend (Teil 2, `ProjectsView.runtimeState`) + CYP-249 (Hygiene). Danach **UX-QA durch
+  UIUX** gegen §9 (11 Invarianten). **Bau-Reihenfolge:** Teil 1 → Dev nach CYP-250-Merge (keine Dep); Teil 2 → nach Push 3 (Feld existiert).
