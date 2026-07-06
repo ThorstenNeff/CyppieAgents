@@ -64,6 +64,21 @@ class WindowExpandTest {
     }
 
     @Test
+    fun expandCentered_belowPagerCanvas_flooredToTypeMins() {
+        // Guards the type-min FLOOR (`coerceAtLeast`) directly. The tiny-viewport case above uses host 400
+        // (usableW 352 ≥ content-min 320), so its `width ≥ 320` assertion is slack — the floor never binds
+        // there. A host below the pager/canvas breakpoint DOES bind it: [WindowHost] switches to the phone
+        // PAGER under ~600 dp (the expand-canvas is hidden), but [WindowReducer.expandCentered] is pure with
+        // no such gate, so calling it directly exercises the floor the live UI can't reach.
+        // host 360×220 → usableW 312 < 320 AND usableH 116 < MIN_WINDOW_HEIGHT 120 → both floors bite.
+        val target = WindowReducer.expandCentered(
+            WindowState("comm", "C", 0f, 0f, 300f, 200f), 360f, 220f, isContent = true,
+        )
+        assertEquals(TILED_CONTENT_WINDOW_MIN_WIDTH, target.width)  // floored to 320, not the 312 usable
+        assertEquals(MIN_WINDOW_HEIGHT, target.height)             // floored to 120, not the 116 usable
+    }
+
+    @Test
     fun expandCentered_hostNotMeasured_returnsUnchanged() {
         val w = WindowState("comm", "C", 12f, 34f, 300f, 200f)
         assertEquals(w, WindowReducer.expandCentered(w, 0f, 0f, isContent = true))
