@@ -45,7 +45,7 @@ Aus dem ratifizierten Access-Kontrakt (`CYP-234-frontend-agnostic-contract-desig
 
 Die REST- und die WS-Seite werden von **verschiedenen** Tools gerendert (OpenAPI-Renderer + AsyncAPI-Renderer). Das Design ist **eine maritime Doku-Shell**, die **beide** unter **einer** Chrome (Header, Nav, Footer, Theme) hostet — der Entwickler erlebt **eine** Referenz, nicht zwei Tools.
 
-**Renderer-Empfehlung (REST):** **Redoc** als Primär-Look — ruhige, lesbare 3-Spalten-Referenz (Nav · Inhalt · Code-Beispiele rechts), themt sauber auf eine Marke, „reference documentation"-Charakter. **Swagger-UI** ist interaktiver („Try it out"-Konsole) — wertvoll fürs Auth-Onboarding. **Empfehlung: Redoc primär (lesbar/gebrandet); optional eine „Try it"-Affordance** (Swagger-UI-Konsole oder Redoc-try-Plugin) für den Auth- + First-Call-Durchstich. **PO-/Auftraggeber-Call**, wenn interaktives „Try it" First-Class sein soll. AsyncAPI-Seite: der Standard-AsyncAPI-React-Renderer, gleich getheme-t.
+**Renderer-Entscheidung (REST, PO-ratifiziert 2026-07-06): Redoc — statische Referenz.** Ruhige, lesbare 3-Spalten-Referenz (Nav · Inhalt · Code-Beispiele rechts), themt sauber auf eine Marke, „reference documentation"-Charakter. **„Try it" (Swagger-UI-Konsole) = NEIN für v1** (bräuchte Docs-Origin auf der CORS-Allow-Liste + Auth-in-der-Doku = Flächen-Weitung, für eine reine Referenz nicht wert). Der Spec hält „Try it" als späteres Enhancement ready (D4). AsyncAPI-Seite: der Standard-AsyncAPI-React-Renderer, gleich getheme-t, unter derselben Chrome.
 
 ### D2 — Landing / Index = Onboarding-Reihenfolge, NICHT alphabetisch
 
@@ -193,11 +193,12 @@ Jeder Referenz-Endpunkt trägt ein **Request/Response-Beispiel, validiert gegen 
 
 ## §7 — Offene Punkte / §-Asks (nicht-blockierend, PO/Auftraggeber-Call)
 
-1. **Renderer-Wahl (D1):** Redoc-primär (Empfehlung, lesbar/gebrandet) vs. Swagger-UI-primär (interaktives „Try it"). Auftraggeber-Call, wenn „Try it" First-Class sein soll.
-2. ✅ **Auth-Credential-Pfad (D4/§3.1) — GELÖST (Kontrakt §2.2 + §6 ratifiziert):** participant-scoped Token-Klasse (Maschine) + Kratos-Login (Mensch) + kontrollierte CORS-Allow-Liste. **Konkret dokumentiert, kein Konjunktiv mehr.**
-3. **„Try it"-Interaktivität:** rein Referenz-Lesen (ruhiger) vs. Live-Requests aus der Doku (onboarding-stärker). **⚠ Wenn „Try it": die Docs-Origin muss auf die CORS-Allow-Liste (§6)** — Backend-Flag beim 234a-3-Bau (Redoc-Referenz braucht das nicht). PO-Call.
-4. **Doku-Sprache:** EN (Standard für fremde Entwickler) vs. DE vs. beide. Empfehlung: **EN** für die API-Referenz/Anleitung (breiteste BYO-Dev-Reichweite); die App bleibt DE-default. Auftraggeber-Call.
-5. **Ticket-Key:** speist 234a-3 + 234c; PO vergibt den präzisen Sub-Key bei Ratifikation.
+**Alle 5 §-Asks vom PO entschieden (2026-07-06) — hier als ratifizierter Record festgehalten:**
+1. ✅ **Renderer: Redoc** (read-fokussiert, sauber, gebrandet). Swagger-UI entfällt für v1.
+2. ✅ **Auth-Credential-Pfad — GELÖST (Kontrakt §2.2 + §6 ratifiziert):** participant-scoped Token-Klasse (Maschine) + Kratos-Login (Mensch) + kontrollierte CORS-Allow-Liste. Konkret dokumentiert.
+3. ✅ **„Try it": NEIN für v1** — Redoc **statische Referenz**. Swagger-UI-„Try it" (bräuchte Docs-Origin auf der CORS-Allow-Liste + Auth-in-der-Doku = Flächen-Weitung) ist eine reine Referenz nicht wert; späteres Enhancement, der Spec hält es ready (D4/§3).
+4. ✅ **Doku-Sprache: EN** (BYO-Frontend-Entwickler = globales/externes Publikum; die App bleibt DE/EN, die API-Doku ist EN).
+5. ✅ **Sub-Key:** 234a-3 (gehostete Doku) + 234c (narrativ) = Slices unter **CYP-234**; kein separates Epic. Design-Anker = Jira-Kommentar **12646**.
 
 ---
 
