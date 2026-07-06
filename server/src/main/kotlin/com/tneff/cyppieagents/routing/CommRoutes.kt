@@ -248,7 +248,13 @@ fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry, deps: c
                 val out: CommWsServerEvent? = when (event) {
                     is MessageEvent -> {
                         val ch = event.message.channelId
-                        if (state.acl.canRead(ch, participant) && (subscribed?.contains(ch) != false)) event else null
+                        // CYP-255 ① — route through visibleMessages (canRead AND the ProjectScope gate),
+                        // the SAME filter as the REST path (Hub.channelMessages), not canRead alone. A
+                        // buffered MessageEvent from project A must NOT leak over a live /ws/comm connection
+                        // that has since switched to B: canRead alone still passes an out-of-project channel
+                        // the participant is a lingering member of; the project gate drops it fail-closed.
+                        val visible = state.acl.visibleMessages(participant, listOf(event.message)).isNotEmpty()
+                        if (visible && (subscribed?.contains(ch) != false)) event else null
                     }
                     // Same ACL filter as messages: an ACL change is metadata about a channel, so only
                     // a participant who can read that channel may learn of it (no cross-channel leak).
