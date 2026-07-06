@@ -49,6 +49,7 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.testing.testTagA11y
 import com.tneff.cyppieagents.ui.AgentAvatarView
 import com.tneff.cyppieagents.ui.SenderPalette
+import com.tneff.cyppieagents.ui.readableNameAccent
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_role_po
 import kmpcyppieagents.app.shared.generated.resources.comm_back
@@ -226,7 +227,9 @@ private fun TimelinePane(
 @Composable
 private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
     val agent = agents[item.message.from]
-    val nameColor = SenderPalette.forSender(item.message.from, agent?.role).nameAccent
+    // CYP-275: adapt the CYP-14 identity accent to be AA-readable on the CURRENT surface (light OR dark) — the raw
+    // pastels are dark-palette-calibrated and wash out on the maritime light surface (a name is real TEXT → 4.5:1).
+    val nameColor = readableNameAccent(SenderPalette.forSender(item.message.from, agent?.role).nameAccent)
     val displayName = agent?.name ?: item.message.from
     Row(
         modifier = Modifier
@@ -236,7 +239,8 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         // Avatar — the shared AgentAvatar (CYP-216): initials + identity colour + CYP-209 ring, honouring the
-        // agent's custom colour (CYP-211). Name accent stays the CYP-14 slot tint (readable on the surface).
+        // agent's custom colour (CYP-211). Name accent keeps the CYP-14 slot HUE but is luminance-adapted per
+        // surface (CYP-275) so it stays AA-readable in both the maritime light and dark schemes.
         AgentAvatarView(
             id = item.message.from,
             size = 28.dp,

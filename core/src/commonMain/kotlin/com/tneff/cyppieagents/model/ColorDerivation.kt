@@ -108,3 +108,26 @@ fun parseHexColor(hex: String): Int? {
     val rgb = h.substring(1).toLong(16).toInt()
     return OPAQUE or (rgb and 0xFFFFFF)
 }
+
+/**
+ * CYP-275 — a sender/agent NAME accent readable as TEXT on the given app [surface] (hue preserved). The CYP-14
+ * identity pastels are calibrated for a DARK surface (they clear the [CONTRAST_TEXT_MIN] text target on the
+ * maritime navy) but wash out on the maritime LIGHT (white) surface (e.g. `#A6A9F0` = 2.2:1 on white).
+ *
+ * If the accent already meets 4.5:1 vs [surface] it is returned **unchanged** — so the maritime-DARK rendering is
+ * untouched (no regression); only the light-surface case is corrected. Otherwise the accent's lightness is nudged
+ * AWAY from the surface (darkened when the surface is the lighter of the two, lightened when it is darker) in fixed
+ * hue-preserving steps until the target is met or [MAX_STEPS] is hit (then the best-reached value — an extreme
+ * surface may not always reach 4.5:1, but this only ever moves toward legibility, never away).
+ */
+fun readableAccentOn(accent: Int, surface: Int): Int {
+    if (contrastRatio(accent, surface) >= CONTRAST_TEXT_MIN) return accent
+    val darker = relLuminance(surface) > relLuminance(accent) // surface is lighter → go darker; else lighter
+    var c = accent
+    var step = 0
+    while (contrastRatio(c, surface) < CONTRAST_TEXT_MIN && step < MAX_STEPS) {
+        c = if (darker) darken(accent, 1.0 - 0.06 * (step + 1)) else lighten(accent, 0.06 * (step + 1))
+        step++
+    }
+    return c
+}
