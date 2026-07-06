@@ -36,6 +36,11 @@ class SchemaWalker {
     /** Collected named component schemas (schema name → schema), for `components/schemas` in the spec. */
     val components: LinkedHashMap<String, JsonObject> = LinkedHashMap()
 
+    /** Component name → EVERY distinct serialName that claimed it — the collision-guard ledger. Two DIFFERENT
+     *  serialNames under one component name (a cross-union wire-discriminator clash, e.g. two unrelated `user`
+     *  subtypes) silently drop the second schema; [nameCollisions] surfaces it for the guard tooth. */
+    val registeredNames: LinkedHashMap<String, MutableSet<String>> = LinkedHashMap()
+
     /** Stable component name for a named descriptor: the simple name (works for both an FQN serialName and a
      *  short `@SerialName` discriminator value like "text"). */
     fun schemaName(desc: SerialDescriptor): String = desc.serialName.removeSuffix("?").substringAfterLast('.')
@@ -68,12 +73,18 @@ class SchemaWalker {
     /** Register [desc] as a named component (once) and return a `$ref` to it. */
     private fun refTo(desc: SerialDescriptor, build: () -> JsonObject): JsonObject {
         val name = schemaName(desc)
+        val serial = desc.serialName.removeSuffix("?")
+        // Collision ledger: record EVERY serialName that claims this component name (guard tooth = injectivity).
+        registeredNames.getOrPut(name) { LinkedHashSet() }.add(serial)
         if (name !in components) {
             components[name] = JsonObject(emptyMap()) // reserve the slot FIRST (breaks recursion cycles)
             components[name] = build()
         }
         return buildJsonObject { put("\$ref", "#/components/schemas/$name") }
     }
+
+    /** Collision-guard result: component names claimed by MORE THAN ONE distinct serialName (should be empty). */
+    fun nameCollisions(): Map<String, Set<String>> = registeredNames.filterValues { it.size > 1 }
 
     private fun objectSchema(desc: SerialDescriptor): JsonObject = buildJsonObject {
         put("type", "object")
