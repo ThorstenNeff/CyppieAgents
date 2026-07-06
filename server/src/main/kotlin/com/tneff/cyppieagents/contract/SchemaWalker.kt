@@ -41,6 +41,12 @@ class SchemaWalker {
      *  subtypes) silently drop the second schema; [nameCollisions] surfaces it for the guard tooth. */
     val registeredNames: LinkedHashMap<String, MutableSet<String>> = LinkedHashMap()
 
+    /** Component name → the [SerialDescriptor] it was projected from — so the STRUCTURAL tightness check
+     *  (CYP-234a-2a) can compare a generated schema back against its descriptor's ground truth (catching
+     *  WIDENING: a required→optional field or a phantom oneOf branch that the instance-based conformance tooth
+     *  cannot red — a real instance always carries its required fields). */
+    val componentDescriptors: LinkedHashMap<String, SerialDescriptor> = LinkedHashMap()
+
     /** Stable component name for a named descriptor: the simple name (works for both an FQN serialName and a
      *  short `@SerialName` discriminator value like "text"). */
     fun schemaName(desc: SerialDescriptor): String = desc.serialName.removeSuffix("?").substringAfterLast('.')
@@ -76,6 +82,7 @@ class SchemaWalker {
         val serial = desc.serialName.removeSuffix("?")
         // Collision ledger: record EVERY serialName that claims this component name (guard tooth = injectivity).
         registeredNames.getOrPut(name) { LinkedHashSet() }.add(serial)
+        componentDescriptors.putIfAbsent(name, desc) // for the structural tightness check
         if (name !in components) {
             components[name] = JsonObject(emptyMap()) // reserve the slot FIRST (breaks recursion cycles)
             components[name] = build()
