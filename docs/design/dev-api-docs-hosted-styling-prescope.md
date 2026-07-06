@@ -13,9 +13,11 @@ Die gehostete Doku ist **eine maritime Shell (unser HTML/CSS)**, die **zwei Rend
 
 ---
 
-## §1 — DIE eine Entscheidung: Doku-Palette an CYP-268-„kräftig" angleichen (§-Ask für PO/Auftraggeber)
+## §1 — ✅ ENTSCHIEDEN (PO 2026-07-06): Marken-Rollen an CYP-268-„kräftig" angleichen — eine Sprache, EINE Marke
 
-**Problem:** Die Doku-Tokens (`dev-api-docs-experience-tokens.json` v1.1) wurden **vor** dem Auftraggeber-Override „kräftiger" (CYP-268) autorisiert. Zwei primary-Werte existieren für **eine** Sprache:
+> **PO-Call:** primary/Links/aktive Nav ziehen auf die bold App-Familie (`#0A5AA0` light / `#6FBEEA` dark). Begründung: die Doku ist Teil der öffentlichen Produkt-Fläche → sie matcht die App; der Auftraggeber wählte die präsentere Signatur bewusst. **Lese-Flächen bleiben ruhig** (Sidebar/Body/Panels hell, Code-Panel Ozean-dunkel) — **nur** die Marken-Rollen werden bold. In `dev-api-docs-experience-tokens.json` v1.2 gefaltet; §9-1 (Dark-Method-Töne) geschlossen. Kontext unten.
+
+**Problem (Ausgangslage):** Die Doku-Tokens (`dev-api-docs-experience-tokens.json` v1.1) wurden **vor** dem Auftraggeber-Override „kräftiger" (CYP-268) autorisiert. Zwei primary-Werte existieren für **eine** Sprache:
 
 | Rolle | Doku heute (v1.1) | App CYP-268 (kräftig, R2-AA) | Kontrast auf Weiß |
 |---|---|---|---|
@@ -54,54 +56,54 @@ Die gehostete Doku ist **eine maritime Shell (unser HTML/CSS)**, die **zwei Rend
 
 > Keys gegen aktuelle Redoc-Doku geprüft (`colors.primary.main`, `colors.http.*`, `sidebar.*`, `rightPanel.*`, `typography.headings/code/links`). Werte = kräftig-angeglichen (§1-RECOMMENDED); bei „ruhig bleiben"-Call → v1.1-Werte einsetzen.
 
-**Light:**
+**Light** (Marke bold, Lese-Flächen v1.1-ruhig):
 ```
 theme:
   colors:
-    primary:   { main: '#0A5AA0' }            # Marke = App
-    text:      { primary: '#0C2635', secondary: '#3A4E5A' }   # onSurface / onSurfaceVariant
-    border:    { light: '#CBDCE7', dark: '#6E8C9E' }          # outlineVariant / outline
-    http:                                       # method_badges.* (Tokens, unverändert, AA)
+    primary:   { main: '#0A5AA0' }            # BOLD — Marke = App
+    text:      { primary: '#0F2A38', secondary: '#41535C' }   # onSurface / onSurfaceVariant (v1.1, ruhig)
+    border:    { light: '#B4C6D0', dark: '#B4C6D0' }          # outline (v1.1, ruhig)
+    http:                                       # method_badges.*.fg (Tokens, unverändert, AA)
       get:    '#1C5E93'
       post:   '#1F6B4A'
       put:    '#6A4A12'
       delete: '#8A2F2F'
       patch:  '#5A3E86'
   sidebar:
-    backgroundColor: '#F4F8FB'                  # ruhige Lese-Fläche (surfaceContainer)
-    textColor:       '#3A4E5A'
-    activeTextColor: '#0A5AA0'                  # kräftiger Marken-Akzent NUR am aktiven Item
+    backgroundColor: '#F4F8FB'                  # ruhige Lese-Fläche (surfaceContainer, v1.1)
+    textColor:       '#41535C'                  # onSurfaceVariant (v1.1)
+    activeTextColor: '#0A5AA0'                  # BOLD Marken-Akzent NUR am aktiven Item
   rightPanel:
-    backgroundColor: '#0C2635'                  # dunkles Ozean-Code-Panel (auch im Light-Mode, §5)
-    textColor:       '#E7F1F6'
+    backgroundColor: '#0F2A38'                  # dunkles Ozean-Code-Panel (auch im Light-Mode, §5; codeBg v1.1)
+    textColor:       '#E7F1F6'                  # codeFg
   typography:
     fontFamily:  "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     headings:    { fontWeight: '600' }
-    code:        { fontFamily: "'JetBrains Mono', ui-monospace, monospace", color: '#E7F1F6', backgroundColor: '#0C2635' }
-    links:       { color: '#0A5AA0' }
+    code:        { fontFamily: "'JetBrains Mono', ui-monospace, monospace", color: '#E7F1F6', backgroundColor: '#0F2A38' }
+    links:       { color: '#0A5AA0' }           # BOLD, app-konsistent
 ```
 
 **Dark** (Shell-Toggle swappt das Theme-Objekt, §6):
 ```
 theme:
   colors:
-    primary:   { main: '#6FBEEA' }
-    text:      { primary: '#DCE7ED', secondary: '#A6BECD' }
-    border:    { light: '#263946', dark: '#57707F' }
-    http: { get:'#7FB3D9', post:'#7FC6A3', put:'#D9BE7F', delete:'#E39A9A', patch:'#B79FD9' }  # dark-getunte Method-Töne (AA auf dunklem BG, §7)
+    primary:   { main: '#6FBEEA' }             # BOLD
+    text:      { primary: '#DCE7ED', secondary: '#A9BCC6' }   # v1.1 dark onSurface/onSurfaceVariant
+    border:    { light: '#3A4E59', dark: '#3A4E59' }          # v1.1 dark outline
+    http: { get:'#7FB3D9', post:'#7FC6A3', put:'#D9BE7F', delete:'#E39A9A', patch:'#B79FD9' }  # method_badges_dark.*.color (AA >=7.6:1, §7/§9-1 GESCHLOSSEN)
   sidebar:
     backgroundColor: '#12232C'
-    textColor:       '#A6BECD'
-    activeTextColor: '#6FBEEA'
+    textColor:       '#A9BCC6'
+    activeTextColor: '#6FBEEA'                  # BOLD
   rightPanel:
     backgroundColor: '#06141C'
     textColor:       '#DCE7ED'
   typography:
-    links: { color: '#6FBEEA' }
+    links: { color: '#6FBEEA' }                 # BOLD
     code:  { color: '#DCE7ED', backgroundColor: '#06141C' }
 ```
 
-> **Method-Badges Dark:** die Light-`method_badges` sind für helle Container getunt; auf dunkler Fläche brauchen sie eigene Töne (oben skizziert). Exakte Dark-Method-Hex = **kleiner offener Punkt** (§9-1), im R2-Stil AA-zu-verifizieren.
+> **Method-Badges Dark GESCHLOSSEN (§9-1):** in `dev-api-docs-experience-tokens.json` → `method_badges_dark` gefaltet + AA-verifiziert auf surface `#0A1922`: GET 7.96 / POST 8.94 / PUT 9.89 / DELETE 7.96 / PATCH 7.64 : 1 — alle ≥ 7.6:1 (Body-AA 4.5 übererfüllt).
 
 ---
 
@@ -135,7 +137,7 @@ Redoc themt **nicht** live um. Der Dark-Toggle lebt in **unserer Shell**: bei Um
 | `link`/`activeTextColor` auf `surface` | `#0A5AA0`/`#FFF` **7.04:1** | `#6FBEEA`/`#0A1922` ~7:1 | ✓ |
 | `sidebar.textColor` auf `sidebar.bg` | `#3A4E5A`/`#F4F8FB` ~7.5:1 | `#A6BECD`/`#12232C` ~6:1 | ✓ |
 | `codeFg` auf `rightPanel.bg` | `#E7F1F6`/`#0C2635` >12:1 | `#DCE7ED`/`#06141C` >13:1 | ✓ AAA |
-| Method-Badge fg/bg (light) | Tokens `method_badges.*` alle ≥ AA | Dark-Töne **§9-1 offen** | ⚠ |
+| Method-Badge (light fg/bg · dark color) | Tokens `method_badges.*` alle ≥ AA | `method_badges_dark.*` ≥ 7.6:1 auf `#0A1922` | ✓ |
 | Tier-Badge fg/bg | Tokens `tier_badges.*` ≥ AA | (heller Badge auch im Dark, kontrolliert) | ✓ |
 
 **Farbe nie alleiniger Träger** (WCAG 1.4.1): Method-/Tier-Badges tragen **immer** Text-Label; Trust-Zeile ist Text; aktive Nav zusätzlich durch Position/Gewicht markiert, nicht nur Farbe.
@@ -155,15 +157,15 @@ Redoc themt **nicht** live um. Der Dark-Toggle lebt in **unserer Shell**: bei Um
 
 ---
 
-## §9 — Offene Punkte / §-Asks (nicht-blockierend)
+## §9 — Offene Punkte / §-Asks
 
-1. **§-Ask (mir zu liefern):** Dark-Mode-Method-Badge-Hex (5 Töne) — im R2-Stil AA gegen dunkle Container verifizieren. Kleiner, ich ziehe das mit der finalen Token-Fassung nach dem §1-Call nach.
-2. **§-Ask (PO/Auftraggeber):** §1 — Doku-Marke an CYP-268-„kräftig" angleichen (RECOMMENDED) oder bewusst ruhiger halten? Ich re-tokene erst nach diesem Call.
-3. **Info:** AsyncAPI-React-Theme-Keys weniger standardisiert als Redoc; die Frame-Union-/Kanal-Darstellung erbt `palette_* + typography + tier_badges` — exaktes Key-Mapping beim 234a-3-Bau gegen die dann gepinnte AsyncAPI-Version fixieren (versionsempfindlich, wie beim Renderer üblich).
+1. **✅ GESCHLOSSEN:** Dark-Mode-Method-Badge-Hex (5 Töne) → `method_badges_dark` in den Tokens (v1.2), AA ≥ 7.6:1 auf `#0A1922` verifiziert.
+2. **✅ ENTSCHIEDEN (PO):** §1 — angleichen an CYP-268-„kräftig" (Marken-Rollen bold, Lese-Flächen ruhig). In Tokens v1.2 gefaltet.
+3. **Info (offen bis 234a-3-Bau):** AsyncAPI-React-Theme-Keys weniger standardisiert als Redoc; die Frame-Union-/Kanal-Darstellung erbt `palette_* + typography + tier_badges` — exaktes Key-Mapping beim Bau gegen die dann gepinnte AsyncAPI-Version fixieren (versionsempfindlich, wie beim Renderer üblich).
 
 ---
 
 ## §10 — Hand-off
 
-- **Kein Bau** — Design-Pass, feeds 234a-3. **PO/Auftraggeber:** §1-Call (kräftig-angeglichen vs. ruhig). Danach falte ich die finalen Werte in `dev-api-docs-experience-tokens.json` (`renderer_mapping` → konkrete Hex) + schließe §9-1.
+- **Kein Bau** — Design-Pass, feeds 234a-3. **✅ §1 PO-entschieden (kräftig-angeglichen) + in `dev-api-docs-experience-tokens.json` v1.2 gefaltet; §9-1 geschlossen (Dark-Method-Töne).** 234a-3 steht damit buildbar bereit (baut Backend/Dev, wenn die REST/AsyncAPI-Docs live sind).
 - **UX-QA später:** die 8 Invarianten §8 sind meine Abnahme-Checkliste, sobald 234a-3 gebaut ist (zusammen mit der §6=10-Invarianten-Abnahme des Haupt-Specs).

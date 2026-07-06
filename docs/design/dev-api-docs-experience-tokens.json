@@ -2,8 +2,8 @@
   "$meta": {
     "owner": "UIUX-Designer",
     "ticket": "CYP-234 (Entwickler-API-Doku-Experience: 234a-3 gehostete Referenz + 234c narrative Anleitung)",
-    "version": "1.1",
-    "status": "v1.1 — PO-ratifiziert; Auth konkret (Kontrakt §2.2+§6 ratifiziert: participant-scoped Token-Klasse [Maschine] + Kratos-Login [Mensch] + kontrollierte CORS-Allow-Liste). Maritime Doku-Theme fuer die NEUE gehostete HTML-Surface (Redoc/Swagger-UI/AsyncAPI), NICHT der Compose-App-Theme.",
+    "version": "1.2",
+    "status": "v1.2 — PO-ratifiziert (2026-07-06): Marken-Rollen an CYP-268-'kraeftig' angeglichen (§1-Call: eine Sprache, EINE Marke). NUR primary/secondary/accent/link ziehen auf die bold App-Familie (#0A5AA0-Familie light / #6FBEEA-Familie dark); Lese-Flaechen (surface/onSurface/surfaceVariant/Sidebar/Code-Panel) BLEIBEN v1.1-ruhig. Dark-Method-Badge-Toene ergaenzt + AA-verifiziert (>=7.6:1 auf dunkler Surface). Auth konkret (Kontrakt §2.2+§6 ratifiziert). Maritime Doku-Theme fuer die NEUE gehostete HTML-Surface (Redoc/AsyncAPI), NICHT der Compose-App-Theme. Detail-Mapping: dev-api-docs-hosted-styling-prescope.md.",
     "design_language": "maritime — blau/weiss, Material 3; [[design-language-maritime-m3]]. Die Compose-App nutzt heute baren M3-Default (keine kodifizierte Palette); diese Tokens definieren die maritime Sprache erstmals fuer die Doku-Surface.",
     "grounded_against": "backend/plans/CYP-234-frontend-agnostic-contract-design.md (§1 generated-contract, §2 auth-tiers, §3 /api/v1, §4 234a-3/234c). App-Theme: app/shared/.../App.kt bares MaterialTheme{}.",
     "contrast_policy": "Alle Text-auf-Hintergrund-Paare >= WCAG AA (4.5:1 Body, 3:1 Large/UI). Tier- und Method-Badges tragen IMMER ein Label (Farbe nie alleiniger Traeger, WCAG 1.4.1).",
@@ -11,39 +11,41 @@
   },
 
   "palette_light": {
-    "primary": "#14567A",
+    "_brand_roles_note": "v1.2: primary/secondary/accent/link = CYP-268-'kraeftig' (App-Marke). onPrimary=weiss (AA-Fill). Rest = v1.1-Lese-ruhig, UNVERAENDERT.",
+    "primary": "#0A5AA0",
     "onPrimary": "#FFFFFF",
     "primaryContainer": "#CDE7F5",
     "onPrimaryContainer": "#062033",
-    "secondary": "#3E7CA6",
+    "secondary": "#0F5B88",
     "onSecondary": "#FFFFFF",
-    "accent": "#2E8FA6",
+    "accent": "#0B7E9C",
     "surface": "#FFFFFF",
     "surfaceVariant": "#EEF4F8",
     "surfaceContainer": "#F4F8FB",
     "onSurface": "#0F2A38",
     "onSurfaceVariant": "#41535C",
     "outline": "#B4C6D0",
-    "link": "#1C6FB0",
+    "link": "#0A5AA0",
     "codeBg": "#0F2A38",
     "codeFg": "#E7F1F6"
   },
 
   "palette_dark": {
-    "primary": "#7FC4E4",
+    "_brand_roles_note": "v1.2: primary/secondary/accent/link = CYP-268-dark-'kraeftig'. onColor dunkel-navy (AA). Rest = v1.1-Lese-ruhig, UNVERAENDERT.",
+    "primary": "#6FBEEA",
     "onPrimary": "#04283B",
     "primaryContainer": "#123E56",
     "onPrimaryContainer": "#CDE7F5",
-    "secondary": "#9BC3DC",
+    "secondary": "#93CCEA",
     "onSecondary": "#0B2A3B",
-    "accent": "#63C0D3",
+    "accent": "#4FC6DE",
     "surface": "#0D1B23",
     "surfaceVariant": "#172A34",
     "surfaceContainer": "#12232C",
     "onSurface": "#DCE7ED",
     "onSurfaceVariant": "#A9BCC6",
     "outline": "#3A4E59",
-    "link": "#7FC4E4",
+    "link": "#6FBEEA",
     "codeBg": "#06141C",
     "codeFg": "#DCE7ED"
   },
@@ -70,12 +72,21 @@
   },
 
   "method_badges": {
-    "note": "Zurueckhaltend + maritim-konsistent (nicht der grelle Swagger-Default). Text auf hellem Container, AA.",
+    "note": "Zurueckhaltend + maritim-konsistent (nicht der grelle Swagger-Default). Text auf hellem Container, AA. Light.",
     "GET":    { "fg": "#1C5E93", "bg": "#DCEBF7" },
     "POST":   { "fg": "#1F6B4A", "bg": "#D8EEE2" },
     "PUT":    { "fg": "#6A4A12", "bg": "#F3E7C7" },
     "DELETE": { "fg": "#8A2F2F", "bg": "#F5DCDC" },
     "PATCH":  { "fg": "#5A3E86", "bg": "#E7DFF4" }
+  },
+
+  "method_badges_dark": {
+    "note": "v1.2: Dark-Method-Toene (Redoc colors.http.* = Label-Farbe auf dunkler Surface). AA-verifiziert auf surface #0A1922: alle >= 7.6:1 (Body-AA 4.5 uebererfuellt). Schliesst §9-1 des Pre-Scopes.",
+    "GET":    { "color": "#7FB3D9", "contrast_on_surface": "7.96:1" },
+    "POST":   { "color": "#7FC6A3", "contrast_on_surface": "8.94:1" },
+    "PUT":    { "color": "#D9BE7F", "contrast_on_surface": "9.89:1" },
+    "DELETE": { "color": "#E39A9A", "contrast_on_surface": "7.96:1" },
+    "PATCH":  { "color": "#B79FD9", "contrast_on_surface": "7.64:1" }
   },
 
   "trust_line": {
@@ -89,12 +100,15 @@
   "renderer_mapping": {
     "note": "WO die Tokens im jeweiligen Renderer landen — der baubare Anker fuer 234a-3.",
     "redoc": {
-      "theme.colors.primary.main": "palette.primary",
-      "theme.colors.http.get/post/put/delete": "method_badges.*",
+      "theme.colors.primary.main": "palette.primary (v1.2 bold #0A5AA0 / #6FBEEA)",
+      "theme.colors.http.get/post/put/delete/patch": "light=method_badges.*.fg · dark=method_badges_dark.*.color",
+      "theme.typography.links.color": "palette.link (v1.2 bold, app-konsistent)",
       "theme.typography.fontFamily": "typography.fontFamilyBase",
       "theme.typography.code.fontFamily": "typography.fontFamilyMono",
-      "theme.sidebar.backgroundColor": "palette.surfaceVariant",
-      "theme.rightPanel.backgroundColor": "palette.codeBg"
+      "theme.sidebar.backgroundColor": "palette.surfaceContainer (Lese-ruhig)",
+      "theme.sidebar.activeTextColor": "palette.primary (bold Akzent NUR am aktiven Item)",
+      "theme.rightPanel.backgroundColor": "palette.codeBg (Ozean-dunkel, beide Modi)",
+      "_full_component_mapping": "dev-api-docs-hosted-styling-prescope.md §3 (Redoc-theme, light+dark, buildbar)"
     },
     "swagger_ui": {
       "css_vars": "ueberschreibe .swagger-ui Farb-/Font-Variablen (Topbar aus, maritime Header rein); .opblock method-Farben = method_badges.*",
@@ -110,7 +124,8 @@
     "new_app_tokens": 0,
     "new_app_colors": 0,
     "note_scope": "0 Aenderung am Compose-App-Theme/strings.xml/testTags — reine gehostete Doku-Surface.",
-    "wcag": "alle fg/bg-Paare AA-geprueft (Body 4.5:1 / UI 3:1); Badges label-tragend.",
+    "wcag": "alle fg/bg-Paare AA-geprueft (Body 4.5:1 / UI 3:1); Badges label-tragend. v1.2: bold primary/link auf Weiss 7.04:1 (AAA); Dark-Method-Toene >= 7.6:1 auf dunkler Surface.",
+    "brand_alignment": "v1.2 (PO-Call): Marken-Rollen = CYP-268-App-Familie (eine Marke); Lese-Flaechen unveraendert v1.1-ruhig. [[design-language-maritime-m3]].",
     "no_secrets": "keine Token/Keys/Endpoints-Credentials in den Tokens — nur Theme-/Badge-/Copy-Intent-Werte.",
     "honesty": "Trust-Line nur Schema-Treue; Operator-Badge kein Alarm-Ton; token-only-WS als eigener Badge, nie als normaler read-Kanal getarnt."
   }
