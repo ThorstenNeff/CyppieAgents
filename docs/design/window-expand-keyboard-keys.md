@@ -1,24 +1,32 @@
-# i18n-Keys — Tastatur-Äquivalent Fenster-Expand/Restore (CYP-245)
+# i18n-Keys — Tastatur-Pfad Fenster-Expand/Restore (CYP-245 + CYP-248)
 
-> Owner: UIUX-Designer · Story **CYP-245** · Stand: 2026-07-06 · Status: Vorschlag — Keys landen MIT dem CYP-245-Impl-Slice
-> (Shared-Key-Drift → mit Dev/CYP-7 timen).
+> Owner: UIUX-Designer · Stories **CYP-245** (`Enter`) **+ CYP-248** (`Escape`) · Stand: 2026-07-06 · Status: Vorschlag —
+> Keys landen MIT dem gemeinsamen Impl-Slice (Shared-Key-Drift → mit Dev/CYP-7 timen).
 > Konvention (verifiziert gg. `values/strings.xml` @ `e6f0882`): **Underscore-Realkeys**, **DE = Default** (`values/`),
 > **EN** (`values-en/`), Parität Pflicht. a11y-Beschreibungs-Keys → Prefix `a11y_window_`.
 
 ---
 
-## 1. Pflicht — neuer Key (1): a11y-Auffindbarkeit der `Enter`-Verknüpfung
+## 1. Pflicht — neue Keys (2): a11y-Auffindbarkeit der `Enter`- und `Escape`-Verknüpfungen
 
-| Key | DE | EN |
-|---|---|---|
-| `a11y_window_expand_key_hint` | Eingabetaste: Fenster vergrößern und zentrieren oder zurückstellen | Enter: enlarge and center the window, or restore it |
+| Key | Ticket | DE | EN |
+|---|---|---|---|
+| `a11y_window_expand_key_hint` | CYP-245 | Eingabetaste: Fenster vergrößern und zentrieren oder zurückstellen | Enter: enlarge and center the window, or restore it |
+| `a11y_window_restore_key_hint` | CYP-248 | Escape: vergrößertes Fenster an seinen Platz zurückstellen | Escape: restore the enlarged window to its place |
 
-> **Ehrlichkeits-Anker (mein Kern):** bewusst **„vergrößern und zentrieren … oder zurückstellen"** — spiegelt das
-> CYP-241-Zustands-Vokabular (`window_state_expanded` = „Vergrößert und zentriert") **verbatim**. **Kein** „zeigt alles" /
-> „alle Inhalte sichtbar": der scrollende Event-Stream bleibt ein Ausschnitt (Spec §7). **Toggle-ehrlich** („oder
-> zurückstellen") — nennt beide Richtungen einer Taste.
-> **Platzierung:** angehängt an die a11y-`contentDescription` des **fokussierten Fenster-Knotens** (die `.focusable()`-
-> Wurzel, die die Tab-Navigation erreicht) — Impl-Wahl konsistent mit dem D5-Cleanup unten.
+> **Ehrlichkeits-Anker (mein Kern):**
+> - `a11y_window_expand_key_hint` — bewusst **„vergrößern und zentrieren … oder zurückstellen"**, spiegelt das
+>   CYP-241-Zustands-Vokabular (`window_state_expanded` = „Vergrößert und zentriert") **verbatim**. **Kein** „zeigt alles" /
+>   „alle Inhalte sichtbar" (Event-Stream bleibt ein Ausschnitt, Spec §7). **Toggle-ehrlich** — nennt beide Richtungen.
+> - `a11y_window_restore_key_hint` — nennt **nur Restore** („zurückstellen"), passend zur Restore-only-Semantik von
+>   `Escape` (Spec §2b/D6). Kein Wort von „vergrößern" — `Escape` expandiert nie.
+>
+> **Platzierung:**
+> - `a11y_window_expand_key_hint`: **immer** an die a11y-`contentDescription` des fokussierten Fenster-Knotens (die
+>   `.focusable()`-Wurzel, die die Tab-Navigation erreicht).
+> - `a11y_window_restore_key_hint`: **nur anhängen, während `isExpanded == true`** — `Escape` wird sonst nicht
+>   beworben, weil es im Normalzustand nichts tut (No-op, Spec §9-Invariante 10). Kein a11y-Versprechen einer
+>   wirkungslosen Taste.
 
 ---
 
@@ -56,7 +64,8 @@
 
 ## Zähl-/Validierungs-Block (Selbst-Validierung)
 
-- **Neue Keys Pflicht: 1** — `a11y_window_expand_key_hint`. **DE+EN-Parität 1/1.**
+- **Neue Keys Pflicht: 2** — `a11y_window_expand_key_hint` (CYP-245), `a11y_window_restore_key_hint` (CYP-248).
+  **DE+EN-Parität 2/2.**
 - **Neue Keys optional (D5-Cleanup): 2** — `a11y_window_root` (1 Arg `%1$s`), `a11y_window_move_hint` (0 Args). DE+EN 2/2.
 - **Argument-Keys (`%…$s`):** 0 im Pflicht-Set; 1 im optionalen Set (`a11y_window_root`, positional `%1$s`).
 - **Reuse-gegen-Code verifiziert @ `e6f0882`:** `window_state_expanded`/`window_state_normal` existieren bereits in

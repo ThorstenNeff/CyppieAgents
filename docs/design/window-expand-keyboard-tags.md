@@ -1,6 +1,6 @@
-# testTag-Schema — Tastatur-Äquivalent Fenster-Expand/Restore (CYP-245)
+# testTag-Schema — Tastatur-Pfad Fenster-Expand/Restore (CYP-245 + CYP-248)
 
-> Owner: UIUX-Designer · Story **CYP-245** · Stand: 2026-07-06 · Status: Vorschlag
+> Owner: UIUX-Designer · Stories **CYP-245** (`Enter`) **+ CYP-248** (`Escape`) · Stand: 2026-07-06 · Status: Vorschlag
 > **Schema (Test-Contract v0.5 §2):** `<area>[.<scopeId>].<element>[.<selectorId>][.<qualifier>]`, **prefixless**, camelCase.
 > Bestehende Area **`window`** — verifiziert gg. `WindowTestTags.kt` @ `e6f0882`.
 > **Vertrag Dev/QA (CYP-7):** API, nicht still umbenennen; koordiniert über den PO.
@@ -9,9 +9,10 @@
 
 ## 1. Neue Tags: **KEINE (0)**
 
-CYP-245 fügt **keinen sichtbaren Control** hinzu — es ist eine **Tastenbindung** (`Enter`) auf dem **bestehenden**,
-bereits fokussierbaren Fenster-Wurzel-Knoten. Der QA-relevante Unterschied ist **Zustand** (Expand/Restore), und der
-ist seit CYP-241 über **`stateDescription`** exponiert (Semantik-Property, kein Tag). → **keine neue Konstante.**
+CYP-245 + CYP-248 fügen **keinen sichtbaren Control** hinzu — es sind **Tastenbindungen** (`Enter`, `Escape`) auf dem
+**bestehenden**, bereits fokussierbaren Fenster-Wurzel-Knoten. Der QA-relevante Unterschied ist **Zustand**
+(Expand/Restore), und der ist seit CYP-241 über **`stateDescription`** exponiert (Semantik-Property, kein Tag). →
+**keine neue Konstante.**
 
 ---
 
@@ -42,6 +43,7 @@ ist seit CYP-241 über **`stateDescription`** exponiert (Semantik-Property, kein
 
 ## 4. Test-relevante Anker (für QA/CYP-7)
 
+**`Enter` — Toggle (CYP-245):**
 - **① Expand (Tastatur):** Fokus auf `window.<id>`, `Enter` → `stateDescription == window_state_expanded`; Geometrie
   zentriert, ≤ Viewport, nie Vollbild.
 - **② Restore (Tastatur):** zweites `Enter` → `stateDescription == window_state_normal`; Geometrie == Original.
@@ -51,11 +53,25 @@ ist seit CYP-241 über **`stateDescription`** exponiert (Semantik-Property, kein
   `window.<id>.titlebar` (identischer `toggleExpand`).
 - **⑤ Kein Composer-Hijack:** Fokus in einem Kind-Eingabefeld (Composer) → `Enter` **verändert die Fenstergeometrie
   nicht** (bleibt Feld-`Enter`); `stateDescription` unverändert.
-- **⑥ Fit invalidiert:** Klick/Aktivierung `window.host.fit` → `stateDescription == window_state_normal` an allen
-  Fenstern (auch tastaturseitig zuvor expandierten).
-- Geometrie-Assertions laufen zusätzlich **außerhalb Compose** gegen `WindowManagerState.toggleExpand`/`WindowReducer`
-  (reine Float-Logik — der Tastaturpfad ruft exakt dieselbe Funktion, daher deckt der bestehende State-Test die
-  Geometrie bereits ab; der Compose-Test prüft nur die **Verdrahtung** `Enter → onToggleExpand` + Fokus-Scoping).
+
+**`Escape` — Restore-only (CYP-248):**
+- **⑥ Escape restauriert (expandiert):** Fenster expandiert (Anker gültig), Fokus auf `window.<id>`, `Escape` →
+  `stateDescription == window_state_normal`, Geometrie == Anker (== `Enter`-Restore == Doppeltipp-Restore).
+- **⑦ Escape No-op (nicht expandiert):** Fenster in Normalgröße → `Escape` → Geometrie **und** `stateDescription`
+  **unverändert**; Event **nicht konsumiert** (bubbelt). **Nie ein Expand.**
+- **⑧ Escape No-op nach Anker-Invalidierung:** Fenster expandiert → manuelle Pfeiltasten-Bewegung (Anker gelöscht) →
+  `Escape` → **kein toter Sprung** (Geometrie bleibt wo der Nutzer sie zog; `stateDescription == window_state_normal`).
+- **⑨ Kollisions-Präzedenz (Pflicht-Vet):** Agent-Settings-`AlertDialog` offen über dem expandierten Fenster →
+  `Escape` **schließt den Dialog** (`onDismissRequest`), **Fenstergeometrie unverändert**. Danach (Dialog zu, Fenster
+  noch expandiert, Wurzel refokussiert) → `Escape` restauriert. Beweist: Dialog-Close gewinnt vor Fenster-Restore.
+
+**Gemeinsam:**
+- **⑩ Fit invalidiert:** Klick/Aktivierung `window.host.fit` → `stateDescription == window_state_normal` an allen
+  Fenstern (auch tastaturseitig zuvor expandierten); danach `Escape` = No-op (kein Anker mehr).
+- Geometrie-Assertions laufen zusätzlich **außerhalb Compose** gegen `WindowManagerState.toggleExpand`/`isExpanded`/
+  `WindowReducer` (reine Float-Logik — beide Tasten rufen exakt dieselbe Funktion; der Compose-Test prüft nur die
+  **Verdrahtung** `Enter → onToggleExpand`, `Escape → (isExpanded ? Restore : No-op)`, Fokus-Scoping und die
+  Dialog-Präzedenz ⑨).
 
 ---
 
@@ -65,5 +81,5 @@ ist seit CYP-241 über **`stateDescription`** exponiert (Semantik-Property, kein
 - **Reuse-gegen-Code verifiziert @ `e6f0882`:** `window(id)`=`window.<id>`, `titleBar(id)`=`window.<id>.titlebar`,
   `FIT`=`window.host.fit`, `HOST`=`window.host` — alle bestehend.
 - **Zustand:** über die **bestehenden** CYP-241-Keys `window_state_expanded`/`window_state_normal` (Property, kein Tag).
-- **⚠ Shared-Tag-Drift:** keine neuen Konstanten → **kein** Tag-Re-Sync mit CYP-7 nötig; nur der 1 Pflicht-Key
-  (+ optional 2 Cleanup-Keys) timen mit dem Impl-Slice.
+- **⚠ Shared-Tag-Drift:** keine neuen Konstanten → **kein** Tag-Re-Sync mit CYP-7 nötig; nur die **2 Pflicht-Keys**
+  (`a11y_window_expand_key_hint`, `a11y_window_restore_key_hint`) + optional 2 Cleanup-Keys timen mit dem Impl-Slice.
