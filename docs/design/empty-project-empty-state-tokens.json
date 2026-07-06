@@ -2,7 +2,7 @@
   "$meta": {
     "owner": "UIUX-Designer",
     "ticket": "CYP-250 (Empty-Project Empty-State — 0 Agenten; verlinkt CYP-246/CYP-247)",
-    "version": "1.0",
+    "version": "1.1",
     "status": "Vorschlag — reine commonMain-UI (Desktop-Canvas-Empty-State bei 0 Agenten), keine Server-/Protokoll-/DTO-Aenderung, keine Backend-Dep. Near-pure-Reuse. Speist Dev CYP-250 (nach/mit CYP-246); UX-QA danach UIUX. S.",
     "brand": "CyppieAgents (Anti-Hype; interim look + M3)",
     "grounded_against": "origin/develop 34b4fd4 (window/WindowManager.kt WindowCanvas, AgentShell.kt Fensterliste Z.256, agentmgmt/AgentManagementPanel.kt CYP-228-Empty-State Z.146-165 + Add-Button, AgentMgmtTags, WindowTestTags, window/PhonePager Empty-State-Praezedenz, project/ProjectSwitcherBar, strings.xml)",
@@ -27,7 +27,7 @@
     "note": "Der ehrliche Kern — 'leerer Desktop' = 0 AGENTEN, nicht 0 Fenster.",
     "condition": "managedAgents.isEmpty() (0 Agenten-Fenster)",
     "NOT": "state.windows.isEmpty() — nie wahr, weil System-Fenster (AgentMgmt/Comm/ACL/...) in AgentShell.kt Z.256 immer angehaengt werden",
-    "placement": "WindowCanvas-Box (Z.160, testTag window.host), Hintergrundebene zentriert, VOR forEachIndexed — unter den schwebenden Fenstern (kein Z-Fight)",
+    "placement": "v1.1 (UX-QA-Korrektur, Jira 12560): Vordergrund-Overlay zentriert, NACH forEachIndexed (zeichnet oben), in Surface gewickelt (Lesbarkeit) — sichtbar+klickbar ueber den Tool-Fenstern. (v1.0 war Hintergrundebene VOR forEachIndexed -> von den tile()-Vollcanvas-Tool-Fenstern verdeckt, CTA nicht klickbar.) z-Fight per Konstruktion unmoeglich: agentsEmpty <=> keine Agenten-Fenster.",
     "self_clearing": "verschwindet sobald >=1 Agent existiert"
   },
   "cta_route": {
@@ -54,6 +54,6 @@
     "reuse": "agent_empty_title/agent_empty_body/agent_add/workspace_operator_only (verbatim), Button, TonedHint(GATED), WindowTestTags.HOST, AgentMgmtTags.ADD_BUTTON, openAdd (CYP-86/87/88), managedAgents (bestehender State)",
     "no_model_change": "kein neuer State/DTO; Trigger aus vorhandenem managedAgents, CTA aus vorhandenem openAdd; Server/Protokoll 0.",
     "no_secrets": "keine Token/E-Mail/Endpoints; reine UI-/a11y-Werte",
-    "honesty": "0 AGENTEN != 0 Fenster (Trigger managedAgents.isEmpty, nie state.windows.isEmpty); 'noch keine Agenten' nicht 'nichts hier' (System-Fenster koexistieren, Hintergrundebene, kein Z-Fight); 'Anlegen != Start' im reused Body; CTA = bestehender openAdd (kein 2. Weg); Operator-Gate ehrlich + kein toter CTA; self-clearing; pager_empty bewusst nicht reused."
+    "honesty": "0 AGENTEN != 0 Fenster (Trigger managedAgents.isEmpty, nie state.windows.isEmpty); 'noch keine Agenten' nicht 'nichts hier'; Overlay im VORDERGRUND -> sichtbar+CTA-klickbar ueber den tile()-Vollcanvas-Tool-Fenstern (v1.1-Korrektur; v1.0-Hintergrund wurde verdeckt, UX-QA Jira 12560); 'Anlegen != Start' im reused Body; CTA = bestehender openAdd (kein 2. Weg); Operator-Gate ehrlich + kein toter CTA; self-clearing; pager_empty bewusst nicht reused."
   }
 }

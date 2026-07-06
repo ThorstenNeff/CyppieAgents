@@ -1,6 +1,9 @@
 # Design-Spec — Empty-Project Empty-State (0 Agenten) (CYP-250)
 
-> Owner: UIUX-Designer · Story **CYP-250** (Medium) · verlinkt CYP-246 (High Bug, Projekt-Isolation) + CYP-247 (L) · Stand: 2026-07-06 · Status: Vorschlag
+> Owner: UIUX-Designer · Story **CYP-250** (Medium) · verlinkt CYP-246 (High Bug, Projekt-Isolation) + CYP-247 (L) · Stand: 2026-07-06 · Status: **v1.1** (UX-QA-Korrektur)
+> **⚠ v1.1-Änderung ggü. v1.0 (UX-QA Jira 12560):** Platzierung §D2 **Hintergrundebene → Vordergrund-Overlay** (in `Surface`,
+> NACH der Fenster-Schleife). Grund: bei 0 Agenten füllen die `tile()`-gekachelten Tool-Fenster den Canvas und verdeckten
+> die Hintergrund-Fläche (CTA nicht klickbar). Rest unverändert. Speist Devs Vordergrund-Fix (CYP-250 reopened → In Arbeit).
 > **Grounded gegen** `origin/develop 34b4fd4` (`window/WindowManager.kt` `WindowCanvas`, `AgentShell.kt` Fensterliste,
 > `agentmgmt/AgentManagementPanel.kt` CYP-228-Empty-State + Add-Button, `AgentMgmtTags`, `WindowTestTags`,
 > `window/PhonePager` Empty-State-Präzedenz, `project/ProjectSwitcherBar`, `strings.xml`).
@@ -44,11 +47,22 @@ sagen — **nie** „leerer Desktop / nichts hier", weil Werkzeug-Fenster koexis
 Der Empty-State erscheint **genau dann**, wenn das aktive Projekt **0 Agenten** hat, und **verschwindet**, sobald ≥1
 Agent existiert (dessen Fenster erscheint). Kein Trigger auf `state.windows` (System-Fenster verfälschen das).
 
-### D2 — Platzierung: **Canvas-Hintergrundebene** (`window.host`), zentriert, hinter den schwebenden Fenstern
+### D2 — Platzierung: **Vordergrund-Overlay** über den Fenstern (`window.host`), zentriert, in `Surface`
 
-Eine ruhige, zentrierte „Get-started"-Fläche auf dem **Hintergrund** des `WindowCanvas` (die „Tapete"), **unter** den
-schwebenden System-Fenstern — **kein Z-Fight** (System-Fenster liegen darüber, wie gehabt). Injektion: im
-`WindowCanvas`-`Box` (Z. 160), **vor** der `forEachIndexed`-Schleife, konditioniert auf `managedAgents.isEmpty()`.
+> **⚠ UX-QA-Korrektur (2026-07-06, Jira 12560) — v1.1:** ursprünglich (v1.0) als **Hintergrundebene** („hinter den
+> schwebenden Fenstern, kein Z-Fight") spezifiziert. **Das war falsch.** Bei 0 Agenten kacheln die Tool-Fenster via
+> `resetTo → WindowReducer.tile()` (AgentShell:499) über den **ganzen** Canvas und **verdecken** eine Hintergrund-Fläche
+> vollständig → Panel unsichtbar, **CTA nicht klickbar**. Korrekt = **Vordergrund-Overlay**. (Der v1.0-Impl folgte der
+> falschen §D2 und wurde in der UX-QA gefangen; Feature reopened → Dev-Vordergrund-Fix.)
+
+Eine ruhige, zentrierte „Get-started"-Fläche als **Vordergrund-Overlay**, in eine `Surface` gewickelt (Lesbarkeit über
+den Fenstern), **über** den schwebenden Fenstern. Injektion: im `WindowCanvas`-`Box` (Z. 160), **NACH** der
+`forEachIndexed`-Schleife (zeichnet oben), konditioniert auf `managedAgents.isEmpty()`.
+
+**Warum Vordergrund strikt sicher ist (Z-Fight per Konstruktion unmöglich):** `agentsEmpty` ⟺ **es gibt keine
+Agenten-Fenster.** Das Overlay überdeckt also **nie** ein Agenten-Fenster — nur die (bei 0 Agenten noch nutzlosen)
+Tool-Fenster, und nur solange 0 Agenten. Sobald ≥1 Agent existiert, ist `agentsEmpty = false` → kein Overlay. Das
+ursprüngliche Z-Fight-Bedenken (v1.0-§D2) kann damit **nie** eintreten — es war von Anfang an gegenstandslos.
 
 ### D3 — Inhalt = **CYP-228-Muster wiederverwendet + eine primäre CTA**
 
@@ -83,25 +97,32 @@ Copy-Keys** (reuse `agent_empty_title`, `agent_empty_body`, `agent_add`, `worksp
 ## §3 — Impl-Skizze (illustrativ, Dev besitzt den Code)
 
 ```kotlin
-// WindowManager.kt — WindowCanvas, im Box(testTag = WindowTestTags.HOST), VOR forEachIndexed:
+// WindowManager.kt — WindowCanvas, im Box(testTag = WindowTestTags.HOST):
+state.windows.forEachIndexed { index, window -> /* unverändert */ }
+// v1.1 (UX-QA-Korrektur): das Overlay NACH der Fenster-Schleife → zeichnet OBEN (Vordergrund), in Surface gewickelt.
 if (agentsEmpty) {                                   // agentsEmpty = managedAgents.isEmpty() (hochgereicht)
-    Column(
+    Surface(                                         // Lesbarkeit über den Fenstern (nicht transparent-über-opak)
         modifier = Modifier.align(Alignment.Center).testTag(WindowTestTags.EMPTY),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 3.dp,                        // dezent abgehoben; keine neue Farbe (M3-Surface)
     ) {
-        Text(stringResource(Res.string.agent_empty_title), style = titleSmall,
-             modifier = Modifier.semantics { heading() })
-        Text(stringResource(Res.string.agent_empty_body), style = bodyMedium, color = onSurfaceVariant)
-        Button(onClick = onAddFirstAgent, enabled = isOperator,
-               modifier = Modifier.testTag(WindowTestTags.emptyAddBtn)) {
-            Text(stringResource(Res.string.agent_add))
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(stringResource(Res.string.agent_empty_title), style = titleSmall,
+                 modifier = Modifier.semantics { heading() })
+            Text(stringResource(Res.string.agent_empty_body), style = bodyMedium, color = onSurfaceVariant)
+            Button(onClick = onAddFirstAgent, enabled = isOperator,
+                   modifier = Modifier.testTag(WindowTestTags.emptyAddBtn)) {
+                Text(stringResource(Res.string.agent_add))
+            }
+            if (!isOperator) TonedHint(stringResource(Res.string.workspace_operator_only),
+                   HintTone.GATED, WindowTestTags.emptyGateHint)
         }
-        if (!isOperator) TonedHint(stringResource(Res.string.workspace_operator_only),
-               HintTone.GATED, WindowTestTags.emptyGateHint)
     }
 }
-state.windows.forEachIndexed { index, window -> /* unverändert */ }
 ```
 - `agentsEmpty` + `isOperator` + `onAddFirstAgent` werden aus `AgentShell` (wo `managedAgents`, `isOperator`,
   `agentMgmtVm`, Window-Focus in Scope sind) an `WindowCanvas` durchgereicht. **Kein neuer State, kein DTO.**
@@ -112,7 +133,10 @@ state.windows.forEachIndexed { index, window -> /* unverändert */ }
 ## §7 — Ehrlichkeit (mein Kern)
 
 - **„Noch keine Agenten", nicht „nichts hier".** Der Empty-State beschreibt ehrlich den **Agenten**-Zustand; die
-  Werkzeug-Fenster koexistieren (Hintergrundebene). Keine Copy, die einen wirklich leeren Bildschirm behauptet.
+  Werkzeug-Fenster koexistieren (das Overlay liegt **sichtbar im Vordergrund** darüber). Keine Copy, die einen wirklich
+  leeren Bildschirm behauptet.
+- **Sichtbar = ehrlich.** Ein Empty-State, der (verdeckt) nicht sichtbar ist, wäre eine stille Lüge („Feature da, aber
+  unbrauchbar"). Vordergrund-Overlay (D2, v1.1) garantiert Sichtbarkeit **und** Klickbarkeit der CTA.
 - **„Anlegen ≠ Start" reused.** `agent_empty_body` sagt bereits „startet erst über die Lifecycle-Steuerung" — kein
   Vortäuschen, dass ein angelegter Agent schon läuft.
 - **Kein zweiter Add-Weg.** Die CTA routet in den **bestehenden** `openAdd`-Flow (D4) — keine divergente Anlege-Logik.
@@ -141,8 +165,11 @@ state.windows.forEachIndexed { index, window -> /* unverändert */ }
 
 1. **Trigger = 0 Agenten:** sichtbar **genau dann**, wenn `managedAgents.isEmpty()`; **nicht** an `state.windows`
    gekoppelt (System-Fenster sind immer da). Self-clearing, sobald ≥1 Agent.
-2. **Ehrliche Scope-Copy:** sagt „noch keine **Agenten**", nie „leerer Desktop/nichts hier"; koexistiert mit den
-   Werkzeug-Fenstern auf der Hintergrundebene (kein Z-Fight, keine Occlusion-Lüge).
+2. **Ehrliche Scope-Copy + SICHTBAR:** sagt „noch keine **Agenten**", nie „leerer Desktop/nichts hier". **Das Overlay
+   liegt im Vordergrund** (NACH `forEachIndexed`, in `Surface`) → **sichtbar und CTA klickbar**, auch wenn die
+   Tool-Fenster via `tile()` den Canvas füllen. (v1.1-Korrektur: v1.0-Hintergrundebene wurde verdeckt — UX-QA Jira 12560.)
+   QA-Zahn: mit Tool-Fenstern via `tile()` platziert (echtes Vollcanvas-Layout) ist `window.host.empty`/`.addBtn`
+   sichtbar **und** klickbar (nicht nur im Semantik-Baum präsent).
 3. **Copy verbatim reused:** `agent_empty_title` + `agent_empty_body` (DE+EN) aus CYP-228 — **0 neue Copy** für Titel/
    Body; „Anlegen ≠ Start" bleibt („startet erst über die Lifecycle-Steuerung").
 4. **CTA = bestehender Flow:** Button-Label reused `agent_add`; Klick routet in `openAdd` (Agenten-Verwaltung nach vorn
