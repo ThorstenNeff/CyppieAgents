@@ -20,12 +20,12 @@ import io.ktor.server.routing.route
  * group (CYP-178) runs before any read or body parse. The items the store returns are content-free by construction (see
  * [com.tneff.cyppieagents.report.ReportGenerator]).
  */
-fun Route.reportRoutes(store: ReportStore, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) {
+fun Route.reportRoutes(store: ReportStore, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry), apiBase: String = "/api") {
     // CYP-178: operator gate is STRUCTURAL (by mounting under the group), not a per-handler call a new
     // endpoint could forget; the RC1 route-enumeration meta-test is the net. Operator = the static
     // operator token OR a Kratos-verified human with the OPERATOR role.
     authenticatedApi(deps, AuthRole.OPERATOR) {
-        route("/api/reports") {
+        route("$apiBase/reports") {
             get {
                 call.respond(store.list())
             }

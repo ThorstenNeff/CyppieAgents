@@ -128,7 +128,7 @@ fun Route.authenticatedApi(deps: AuthDeps, required: AuthRole = AuthRole.OPERATO
     // A FRESH selector instance per call: the selector is identity-equal only to itself, so Ktor does NOT
     // merge sibling guarded sub-trees under a shared parent into one node (which would try to install
     // AuthGuard twice → DuplicatePluginException). Each authenticatedApi block is its own guarded child.
-    val guarded = createChild(AuthenticatedRouteSelector())
+    val guarded = createChild(AuthenticatedRouteSelector(required))
     guarded.install(AuthGuard) { this.deps = deps; this.required = required }
     guarded.build()
     return guarded
@@ -169,8 +169,12 @@ val AuthGuard = createRouteScopedPlugin("AuthGuard", ::AuthGuardConfig) {
  * A transparent (no-path-segment) selector: matches without consuming a path segment, so a guarded child
  * preserves its parent's path. A CLASS (not an object) so each [authenticatedApi] call gets a distinct,
  * identity-unique instance and Ktor never merges two guarded sub-trees (see [authenticatedApi]).
+ *
+ * CYP-272: it CARRIES its [required] role (no equals/hashCode override → still reference-identity-equal, so
+ * the merge-avoidance holds) so a routing-tree walk can read the EXACT enforced tier per guarded route and
+ * bind it to the documented `RestContract.tier` (the tier-tooth), catching a stale-doc desync structurally.
  */
-private class AuthenticatedRouteSelector : RouteSelector() {
+internal class AuthenticatedRouteSelector(val required: AuthRole) : RouteSelector() {
     override suspend fun evaluate(context: RoutingResolveContext, segmentIndex: Int): RouteSelectorEvaluation =
         RouteSelectorEvaluation.Transparent
 }

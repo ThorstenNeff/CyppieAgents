@@ -43,14 +43,14 @@ import org.slf4j.LoggerFactory
  */
 // CYP-255 (.4b): the concrete overload (dev/test) delegates to the resolver form with a constant provider,
 // so existing call-sites are unchanged; production passes { runtimeRegistry.active().agentManagement }.
-fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) =
-    agentMgmtRoutes({ mgmt }, registry, deps)
+fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry), apiBase: String = "/api") =
+    agentMgmtRoutes({ mgmt }, registry, deps, apiBase)
 
 // CYP-255 (.4b): [mgmt] resolves the ACTIVE project's AgentManagement per request, so a CRUD op (add/edit/
 // remove/avatar) lands in the switched-to project's runtime (own lifecycle/configs/worktrees) — a same-id
 // agent in another project is untouched.
-fun Route.agentMgmtRoutes(mgmt: () -> AgentManagement, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) {
-    route("/api/agents") {
+fun Route.agentMgmtRoutes(mgmt: () -> AgentManagement, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry), apiBase: String = "/api") {
+    route("$apiBase/agents") {
         // Detail = participant (the management list is read-only visible without an operator token).
         get("/{id}") {
             call.requireParticipant(registry)

@@ -53,107 +53,86 @@ fun Application.installPlatform(
         }
     }
     routing {
-        // CYP-255 (.4b): GET /api/agents fills each per-agent read from the ACTIVE project's runtime, so after
-        // a switch it shows the switched-to project's run-state / caps / kind / provider (not the boot project's).
-        commRoutes(
-            booted.hub, booted.state, booted.tokenRegistry,
-            runStateOf = { booted.runtimeRegistry.active().lifecycle.runStateOf(it) },
-            capabilitiesOf = { booted.runtimeRegistry.active().capabilityRegistry.get(it) },
-            connectorKindOf = { booted.runtimeRegistry.active().agentConfigs.connectorKindOf(it) },
-            providerOf = { booted.runtimeRegistry.active().providerRegistry.get(it) }, // CYP-137
-            deps = authDeps, // CYP-178: operator gate for PUT /api/acl
-        )
-        // Production auth: an operator token, an agent watching its OWN session, or a verified OPERATOR Kratos
-        // session (CYP-230: the tokenless public SPA uses its same-origin cookie — no agent secret in the client).
-        // CYP-255 ②: resolve the session through the ACTIVE project's runtime + require the agentId to be in the
-        // active project's slice (fail-closed) — so a same-id agent in another project can't attach cross-project.
+        // ── WS + MCP transports — NOT versioned; single-mount, OUTSIDE the /api-prefix loop (they are not
+        //    `/api` REST resources: `/ws/*` are sockets, `/mcp/hub` is the connector wire, design §2.5). ──
+        // CYP-255 ②: resolve the session through the ACTIVE project's runtime + require the agentId in the
+        // active project's slice (fail-closed) — a same-id agent in another project can't attach cross-project.
         agentSocket(
             { booted.runtimeRegistry.active().connectorSessions },
             tokenAuthorize(booted.tokenRegistry, authDeps),
             booted.agentEventStore,
             activeAgentIds = { booted.state.agents.map { it.id }.toSet() },
         )
-        // CYP-146: the in-process Hub MCP server (`POST /mcp/hub`) — exposes `hub_send` to a Connector-A
-        // agent (the emission half). Token→agentId server-bound, localhost, single write path via postAsAgent.
+        // CYP-146: the in-process Hub MCP server (`POST /mcp/hub`) — `hub_send` for a Connector-A agent.
         hubMcpRoutes(booted.hub, booted.tokenRegistry)
-        // CYP-138 / E2.2: the versioned external Hub-Wire-Protocol (`/ws/hub`) for remote / BYOA connectors.
-        // Auth-first; the handshake clamps self-declared caps to the REMOTE ceiling (FO#1); Send funnels
-        // postAsAgent, Subscribe funnels channelMessages — the same chokepoints as the local paths.
-        // CYP-161 / E2.5a: one WireRateLimiter shared across all /ws/hub connections (per-agentId token-buckets)
-        // defends the live wire against a remote-connector flood (the named E2.2-M2 obligation).
-        // CYP-141 / E2.5: connectorSessions lets a handshaking remote connector register a wire-backed
-        // ConnectorSession → the CYP-132 deliverer pushes inbound (WireDeliver) to it like any local agent.
+        // CYP-138 / E2.2: the external Hub-Wire-Protocol (`/ws/hub`) for remote / BYOA connectors (auth-first,
+        // caps clamped to the remote ceiling; CYP-161 WireRateLimiter; CYP-141 wire-backed ConnectorSession).
         hubWireRoutes(booted.hub, booted.tokenRegistry, booted.capabilityRegistry, booted.providerRegistry, WireRateLimiter(), booted.connectorSessions, booted.eventRecorder, { booted.hub.state.activeProjectId }, agentEvents = booted.agentEventRecorder)
-        // /api/events — operator-only Browse over the Event-Log (CYP-39). CYP-102: scoped to the active
-        // project (resolved server-side from the registry pointer; a switch re-scopes without restart).
-        // CYP-94: the operator's authorized set (MVP = all of the registry's projects) bounds the
-        // optional `?projectId=<id>|all` cross-project read override; default stays forced-active.
-        eventRoutes(
-            booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
-            authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
-            deps = authDeps, // CYP-178: structural operator gate for GET /api/events
-        )
-        // /ws/events — CYP-188 B: MEMBER-tier live-tail (was operator-only), fail-closed; CYP-102 active-scoped,
-        // CYP-94 operator-only SubscribeEvents.projectId override. `deps` carries the human-session read-tier.
+        // /ws/events — CYP-188 B: MEMBER-tier live-tail, fail-closed; CYP-102 active-scoped, CYP-94 override.
         eventSocket(
             booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
             authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
             deps = authDeps,
         )
-        // CYP-73: agent lifecycle controls (operator-gated) + content-free status feed. CYP-188 B: the status
-        // socket is read-tier (token OR verified human session), so `authDeps` is passed through.
-        // CYP-255 (.4b): lifecycle controls act on the ACTIVE project's runtime (resolver, per request).
-        lifecycleRoutes({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps) // CYP-178
+        // /ws/lifecycle — CYP-73/CYP-188 B: content-free status feed, read-tier. CYP-255 (.4b): active runtime.
         lifecycleSocket({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps)
-        // CYP-96: project-settings config — GET participant (masked key), PUT operator (fail-closed).
-        // CYP-102 fix: bind the LIVE active-pointer resolver (not booted.activeProjectId by-value) so
-        // config follows a project switch, mirroring eventRoutes/eventSocket above.
-        configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps) // CYP-178
-        // CYP-97: agent CRUD — detail GET participant, POST/PUT/DELETE operator (fail-closed).
-        // CYP-255 (.4b): CRUD lands in the ACTIVE project's runtime (resolver, per request).
-        agentMgmtRoutes({ booted.runtimeRegistry.active().agentManagement }, booted.tokenRegistry, authDeps) // CYP-178
-        // CYP-122: connector opt-in (operator-gated, server-enforced, audited) — sets an agent's connector.
-        // CYP-255 (.4b): the re-declared caps come from the ACTIVE project (resolver).
-        connectorRoutes(booted.state, booted.tokenRegistry, { booted.runtimeRegistry.active().capabilityRegistry }, booted.connectorOptIn, authDeps) // CYP-178
-        // CYP-89: Product-Lead reports — all three operator-gated/fail-closed, content-free items.
-        reportRoutes(booted.reportStore, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
-        // CYP-91: multi-project lifecycle — all operator-gated/fail-closed; cascade-delete is the
-        // most destructive op (no-cross-project, opt-in worktree teardown, branches kept).
-        // CYP-102: a switch re-scopes the live comm hub (HubState.rescope) so channels/inbox/acl/ws-comm
-        // follow the active project without a restart.
-        // CYP-255/CYP-259 (.4b) — the switch ORCHESTRATION: mint the target's runtime (getOrCreate) BEFORE it
-        // becomes active, so the fail-closed active() never resolves a project whose lifecycle isn't live yet
-        // (closes the non-boot-add 500). getOrCreate is atomic per key; then rescope the comm hub (CYP-102).
-        projectRoutes(
-            booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry,
-            onActiveSwitch = { pid ->
-                booted.runtimeRegistry.getOrCreate(pid, booted.projectRuntimeFactory)
-                booted.state.rescope(pid)
-                // CYP-256 (.5a): rehydrate the just-activated project's agents from the durable store (a
-                // non-boot project's in-memory slice is empty after a restart) — AFTER rescope so `active()`
-                // + the slice are the target's. Idempotent (skips agents already present).
-                booted.rehydrateActiveProject()
-                // CYP-255 (.4b): mark the target HOT in the LRU, resume it if it was suspended, and enforce
-                // the K cap (session-suspend the least-recently-hot background project).
-                booted.suspensionPolicy.onActivated(pid)
-            },
-            // CYP-255 (.4b): fill each Project.runtimeState (HOT/BACKGROUND/SUSPENDED), server-derived.
-            runtimeStateOf = { booted.suspensionPolicy.stateOf(it, booted.state.activeProjectId) },
-            deps = authDeps, // CYP-178
-        )
-        // CYP-93: cross-project channel-share — GET participant (disclosure), PUT/DELETE operator/owner
-        // (the authorization gate, fail-closed); the AclMatrix permit takes effect via HubState.refreshShares.
-        channelShareRoutes(booted.state, booted.channelShares, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
-        // CYP-181 / P2.4: authenticated self-management (change pw/email) — MEMBER-guarded thin Kratos shim.
-        settingsClient?.let { settingsRoutes(authDeps, it) }
-        // CYP-179 / §B(b): the platform register-wrapper — PUBLIC by design (anyone may register), returns a
-        // branch-invariant response so registration reveals no account existence (closes RC2 §B). Mounted only
-        // when the Kratos admin URL is configured (else no app register path — fail-closed).
-        registerMediator?.let { registerRoutes(it) }
-        // CYP-182 / P3: the content-free client whoami read — PUBLIC by design (reports {authenticated:false}
-        // to an unauthenticated caller, never a 401); no id/email/secrets.
-        authMeRoutes(authDeps)
-        workspaceRoutes(authDeps) // CYP-186 BE3a: OPERATOR-only workspace roster
+
+        // ── REST — CYP-234a-2b: dual-mounted under `/api` (the live surface, byte-identical) AND `/api/v1`.
+        //    The single loop body mounts the SAME sub-tree under each base, so BOTH prefixes are identical BY
+        //    CONSTRUCTION (same route fns, same authenticatedApi groups, same handlers). apiBase threads the
+        //    prefix into each route fn (default `/api`, so every direct-call test is unaffected). ──
+        for (apiBase in listOf("/api", "/api/v1")) {
+            // CYP-255 (.4b): GET /api/agents fills each per-agent read from the ACTIVE project's runtime.
+            commRoutes(
+                booted.hub, booted.state, booted.tokenRegistry,
+                runStateOf = { booted.runtimeRegistry.active().lifecycle.runStateOf(it) },
+                capabilitiesOf = { booted.runtimeRegistry.active().capabilityRegistry.get(it) },
+                connectorKindOf = { booted.runtimeRegistry.active().agentConfigs.connectorKindOf(it) },
+                providerOf = { booted.runtimeRegistry.active().providerRegistry.get(it) }, // CYP-137
+                deps = authDeps, // CYP-178: operator gate for PUT /api/acl
+                apiBase = apiBase,
+            )
+            // /api/events — CYP-186 BE2 MEMBER-tier metadata read; CYP-102 active-scoped; CYP-94 operator override.
+            eventRoutes(
+                booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
+                authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
+                deps = authDeps,
+                apiBase = apiBase,
+            )
+            // CYP-73/CYP-255 (.4b): agent lifecycle controls act on the ACTIVE project's runtime (resolver).
+            lifecycleRoutes({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps, apiBase = apiBase)
+            // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
+            configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase)
+            // CYP-97/CYP-255 (.4b): agent CRUD lands in the ACTIVE project's runtime (resolver).
+            agentMgmtRoutes({ booted.runtimeRegistry.active().agentManagement }, booted.tokenRegistry, authDeps, apiBase = apiBase)
+            // CYP-122: connector opt-in (operator-gated, audited); CYP-255 (.4b) caps from the ACTIVE project.
+            connectorRoutes(booted.state, booted.tokenRegistry, { booted.runtimeRegistry.active().capabilityRegistry }, booted.connectorOptIn, authDeps, apiBase = apiBase)
+            // CYP-89: Product-Lead reports — operator-gated/fail-closed, content-free.
+            reportRoutes(booted.reportStore, booted.tokenRegistry, authDeps, apiBase = apiBase)
+            // CYP-91/CYP-102/CYP-255/CYP-259 (.4b): multi-project lifecycle + the switch ORCHESTRATION
+            // (getOrCreate the target runtime BEFORE it becomes active, rescope the hub, rehydrate, LRU cap).
+            projectRoutes(
+                booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry,
+                onActiveSwitch = { pid ->
+                    booted.runtimeRegistry.getOrCreate(pid, booted.projectRuntimeFactory)
+                    booted.state.rescope(pid)
+                    booted.rehydrateActiveProject() // CYP-256 (.5a): rehydrate the target's durable agents
+                    booted.suspensionPolicy.onActivated(pid) // CYP-255 (.4b): HOT + resume + enforce K cap
+                },
+                runtimeStateOf = { booted.suspensionPolicy.stateOf(it, booted.state.activeProjectId) }, // CYP-255 (.4b)
+                deps = authDeps, // CYP-178
+                apiBase = apiBase,
+            )
+            // CYP-93: cross-project channel-share — GET participant, PUT/DELETE operator/owner (fail-closed).
+            channelShareRoutes(booted.state, booted.channelShares, booted.tokenRegistry, authDeps, apiBase = apiBase)
+            // CYP-181 / P2.4: authenticated self-management (change pw/email) — MEMBER-guarded Kratos shim.
+            settingsClient?.let { settingsRoutes(authDeps, it, apiBase = apiBase) }
+            // CYP-179 / §B(b): the platform register-wrapper — PUBLIC, branch-invariant (Kratos-admin-gated).
+            registerMediator?.let { registerRoutes(it, apiBase = apiBase) }
+            // CYP-182 / P3: the content-free client whoami read — PUBLIC (never a 401), no id/email/secrets.
+            authMeRoutes(authDeps, apiBase = apiBase)
+            workspaceRoutes(authDeps, apiBase = apiBase) // CYP-186 BE3a: OPERATOR-only workspace roster
+        }
     }
 }
 

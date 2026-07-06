@@ -121,8 +121,9 @@ fun Route.commRoutes(
     // token-only path (operator token authenticates; the Kratos human path is deny-all); installPlatform
     // passes the real AuthDeps so a verified human OPERATOR also authenticates.
     deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry),
+    apiBase: String = "/api",
 ) {
-    route("/api") {
+    route(apiBase) {
         get("/health") { call.respondText("ok") }
 
         // CC1 / CYP-179 — the roster is a comm READ, gated like its siblings (`/channels`, `/inbox`, `/acl`):

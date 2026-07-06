@@ -34,8 +34,9 @@ fun Route.configRoutes(
     registry: TokenRegistry,
     activeProjectId: () -> String,
     deps: AuthDeps = AuthDeps(registry),
+    apiBase: String = "/api",
 ) {
-    route("/api/config") {
+    route("$apiBase/config") {
         // GET = any authenticated reader — agent/operator token OR a verified human (incl. a MEMBER session,
         // CYP-186 BE2): the MASKED status line only, never the key. The reveal/raw key is egressed by NO GET.
         get("/repo") {

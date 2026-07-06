@@ -14,14 +14,14 @@ import io.ktor.server.routing.get
  * the RC1 route-enumeration meta-test is the net). Content = identityId + tier only — **no email, no secret**.
  * [WorkspaceMember.displayName] is deferred (null) until the Kratos admin-API seam + a name trait land.
  */
-fun Route.workspaceRoutes(deps: AuthDeps) {
+fun Route.workspaceRoutes(deps: AuthDeps, apiBase: String = "/api") {
     authenticatedApi(deps, AuthRole.OPERATOR) {
-        get("/api/workspace/members") {
+        get("$apiBase/workspace/members") {
             call.respond(deps.roles.list().map { WorkspaceMember(it.identityId, it.role.name) })
         }
         // CYP-186 C.1 — the OPERATOR-only audit log (a SEPARATE sink from the MEMBER-readable event-log →
         // operator identityIds/activity never enter the MEMBER stream). MEMBER → 403 (structural, this group).
-        get("/api/audit") {
+        get("$apiBase/audit") {
             val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 200
             call.respond(deps.audit.recent(limit))
         }

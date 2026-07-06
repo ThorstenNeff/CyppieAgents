@@ -81,7 +81,9 @@ class ProtectedRouteEnumerationTest {
         val endpoints = enumerate(app.routing { }).filter { it.path.startsWith("/api") }
         // Sanity: enumeration actually traversed the API surface (guards a silent empty-tree false-pass).
         assertTrue(endpoints.size >= 20, "route enumeration found too few /api endpoints (${endpoints.size}) — tree walk broken?")
-        val protected = endpoints.filter { "${it.method} ${it.path}" !in publicAllowlist }
+        // CYP-234a-2b: normalize the additive /api/v1 alias to /api for the allowlist check, so BOTH prefixes
+        // are held to the identical public-allowlist (a public route under only ONE prefix would still be caught).
+        val protected = endpoints.filter { "${it.method} ${it.path.replace("/api/v1/", "/api/")}" !in publicAllowlist }
         assertTrue(protected.size >= 15, "too few PROTECTED /api endpoints checked (${protected.size}) — allowlist too wide or walk broken?")
 
         val leaks = scanForLeaks(protected)
