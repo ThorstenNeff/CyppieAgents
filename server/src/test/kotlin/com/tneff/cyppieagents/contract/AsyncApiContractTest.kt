@@ -19,6 +19,7 @@ import io.ktor.server.routing.PathSegmentParameterRouteSelector
 import io.ktor.server.routing.RoutingNode
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import io.ktor.server.websocket.webSocket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -82,6 +83,30 @@ class AsyncApiContractTest {
         val documented = channels().keys + ContractGenerator.EXCLUDED_WS_PATHS
         assertEquals(emptySet(), actualWsSockets - documented, "every DERIVED real WS socket is a channel or a known exclusion")
         assertEquals(emptySet(), documented - actualWsSockets, "no documented channel/exclusion without a real socket")
+    }
+
+    /**
+     * CYP-234a-2a (Tester standing guard) — the REST-analog to `scanDetectsAnUnguardedApiRoute`: proves the
+     * routing-DERIVED drift check actually catches a NEW real socket (the actual→documented axis that was
+     * VACUUM while the socket inventory was a hand-maintained literal — PO NO-GO). Plant a REAL `webSocket`
+     * that is NEITHER a frontend channel NOR a known exclusion; the derived drift set MUST flag it. If the
+     * derivation ever regresses (stops discovering `webSocket(...)` routes), this reds — a permanent backstop,
+     * not a one-shot probe.
+     */
+    @Test
+    fun wsChannelDrift_detectsARealUnguardedSocket_provingTheDerivationIsLive() = testApplication {
+        lateinit var app: Application
+        application {
+            app = this
+            installPlatform(bootFake())
+            routing { webSocket("/ws/leak") {} } // a REAL socket, no channel + no exclusion
+        }
+        startApplication()
+
+        val actualWsSockets = enumerate(app.routing { }).map { it.path }.filter { it.startsWith("/ws") }.toSet()
+        val documented = channels().keys + ContractGenerator.EXCLUDED_WS_PATHS
+        assertTrue("/ws/leak" in actualWsSockets, "the planted webSocket is DISCOVERED by the routing derivation (not a hand-list)")
+        assertTrue("/ws/leak" in (actualWsSockets - documented), "…and the drift check FLAGS it — an unguarded socket with no channel/exclusion is caught")
     }
 
     // ---- real routing-tree enumeration (mirrors ProtectedRouteEnumerationTest) ----
