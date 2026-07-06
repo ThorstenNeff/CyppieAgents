@@ -26,6 +26,17 @@ class RuntimeRegistry(private val activeProjectId: () -> String) {
         return runtime
     }
 
+    /**
+     * CYP-255 (.4a) — the switch/activation entry point: return the LIVE runtime for [projectId], or mint +
+     * register one via [factory] the first time the project is activated (lazy per-project instancing, so a
+     * fresh project gets its own lifecycle/sessions the moment it is switched to — before any spawn). Atomic
+     * per key via [ConcurrentHashMap.computeIfAbsent], so two concurrent activations of the same project share
+     * ONE runtime. [factory] fully wires the runtime before it becomes visible (fail-closed — [active] never
+     * sees a half-built runtime). The LRU cap + eviction of cold runtimes is layered on in CYP-247.4 (.4b).
+     */
+    fun getOrCreate(projectId: String, factory: ProjectRuntimeFactory): ProjectRuntime =
+        runtimes.computeIfAbsent(projectId) { factory.create(it) }
+
     /** The runtime for [projectId], or null if none is live (not yet activated / LRU-evicted). */
     fun of(projectId: String): ProjectRuntime? = runtimes[projectId]
 
