@@ -93,6 +93,12 @@ class BootedPlatform(
      * consumers migrate from the direct fields to `runtimeRegistry.active().*` in CYP-247.2/.3.
      */
     val runtimeRegistry: RuntimeRegistry,
+    /**
+     * CYP-255 (.4b) — mints a DISTINCT [ProjectRuntime] for a non-boot project on first activation. The
+     * switch route feeds it to [RuntimeRegistry.getOrCreate] (so a switched-to project gets its own
+     * lifecycle before any spawn), and the e2e harness seeds distinct per-project runtimes with it.
+     */
+    val projectRuntimeFactory: ProjectRuntimeFactory,
 )
 
 /**
@@ -421,6 +427,53 @@ class BootOrchestrator(
             ),
         )
 
+        // CYP-255 (.4b) — the per-project runtime FACTORY: mints DISTINCT lifecycle machinery for a
+        // NON-boot project the first time it is activated (RuntimeRegistry.getOrCreate on switch), so two
+        // projects with an agent id `backend` get SEPARATE sessions / worktrees / configs / registries — the
+        // collision the money-tooth pins. It closes over the SHARED spine (state, connector, deliverer,
+        // eventRecorder/projector, worktrees-base, the CRUD/override/token deps): the spine resolves
+        // `runtimeRegistry.active().*`, so a switch re-targets it onto whichever project the factory minted.
+        //
+        // The BOOT project keeps its pre-built runtime (registered above) rather than being minted here — its
+        // instances are already wired into boot (the deliverer ear on `sessions`, the intake loop's caps
+        // writes, the override overlay on `agentConfigs`), so re-minting would orphan those. A non-boot
+        // project has none of that history, so a fresh empty runtime is correct: it starts with NO agents and
+        // the operator adds them (AgentManagement.add), exactly like the boot project got its from config.
+        val projectRuntimeFactory = ProjectRuntimeFactory { pid ->
+            val pSessions = ConnectorSessions()
+            // Wire THIS project's sessions to the shared mediator ear, so replay-on-attach fires for its
+            // agents too (the deliverer targets active().connectorSessions for live delivery).
+            pSessions.addRegisterListener(deliverer::onSessionAttached)
+            val pConfigs = AgentConfigRegistry(emptyList()) // empty: agents are added at runtime, not from config
+            val pCaps = CapabilityRegistry()
+            val pProvider = com.tneff.cyppieagents.connector.ProviderRegistry()
+            val pWorktrees = worktrees.forProject(pid) // projects/<pid>/ — reuses the shared clone + runner
+            val pLifecycle = LifecycleManager(
+                initialWorktrees = emptyMap(),
+                sessions = pSessions,
+                // Resolves active().worktrees — identical to the boot lifecycle; this project's lifecycle is
+                // only invoked while it is active, so active().worktrees == pWorktrees (its own root).
+                ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+                spawn = { id, worktree -> connector.open(id, worktree) },
+                recorder = eventRecorder,
+                projector = eventProjector,
+            )
+            val pAgentManagement = AgentManagement(
+                state = state,
+                lifecycle = pLifecycle,
+                configs = pConfigs,
+                ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+                deleteWorktree = { worktreeName -> runtimeRegistry.active().worktrees.deleteWorktree(worktreeName) },
+                onConnectorOptIn = connectorOptIn::apply,
+                remoteToken = remoteTokenIssuer,
+                overrides = agentOverrides,
+                activeProjectId = { state.activeProjectId },
+                avatarBlobs = avatarBlobs,
+                avatarPresets = avatarPresets,
+            )
+            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees)
+        }
+
         // CYP-121/122: record each agent's capabilities (per-agent via the router) and log a content-free
         // `capability.degraded` event for every non-AVAILABLE dimension, so the fidelity gap is visible in
         // the Event-Log ("ehrlich degradiert, nie vorgetäuscht", Doc 10 §3). Connector A is all-AVAILABLE →
@@ -506,7 +559,7 @@ class BootOrchestrator(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
-            agentEventStore, agentEventRecorder, runtimeRegistry,
+            agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory,
         )
     }
 }

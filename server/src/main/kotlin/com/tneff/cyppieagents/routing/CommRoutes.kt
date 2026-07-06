@@ -104,8 +104,10 @@ fun Route.commRoutes(
     hub: Hub,
     state: HubState,
     registry: TokenRegistry,
-    // CYP-73: live process status. Null in the dev install (no boot) → status stays the default RUNNING.
-    lifecycle: com.tneff.cyppieagents.boot.LifecycleManager? = null,
+    // CYP-73: live per-agent run-state. CYP-255 (.4b): resolves the ACTIVE project's run-state per request
+    // (was the boot LifecycleManager) — after a switch, GET /api/agents shows the switched-to project's
+    // agents' states, not the boot project's. Default `{ null }` (dev install, no boot) → status stays default.
+    runStateOf: (agentId: String) -> com.tneff.cyppieagents.model.AgentRunState? = { null },
     // CYP-122: per-agent connector fidelity for the steady-state read model (Doc 10 §6.4). Null in the dev
     // install → capabilities stay null (UI shows nothing reduced).
     capabilitiesOf: (agentId: String) -> com.tneff.cyppieagents.model.Capabilities? = { null },
@@ -141,7 +143,7 @@ fun Route.commRoutes(
             // the hub is instanced per project; THEN this list filters by the active project's hub.
             val agents = state.agents.map { agent ->
                 agent.copy(
-                    runState = lifecycle?.runStateOf(agent.id) ?: agent.runState,
+                    runState = runStateOf(agent.id) ?: agent.runState,
                     // CYP-122: fill the steady-state connector fidelity + kind for the per-agent read model.
                     capabilities = capabilitiesOf(agent.id) ?: agent.capabilities,
                     connectorKind = connectorKindOf(agent.id) ?: agent.connectorKind,

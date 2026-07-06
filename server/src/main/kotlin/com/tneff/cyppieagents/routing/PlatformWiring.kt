@@ -53,11 +53,14 @@ fun Application.installPlatform(
         }
     }
     routing {
+        // CYP-255 (.4b): GET /api/agents fills each per-agent read from the ACTIVE project's runtime, so after
+        // a switch it shows the switched-to project's run-state / caps / kind / provider (not the boot project's).
         commRoutes(
-            booted.hub, booted.state, booted.tokenRegistry, booted.lifecycle,
-            capabilitiesOf = booted.capabilityRegistry::get,
-            connectorKindOf = booted.agentConfigs::connectorKindOf,
-            providerOf = booted.providerRegistry::get, // CYP-137: surface the provider in GET /api/agents
+            booted.hub, booted.state, booted.tokenRegistry,
+            runStateOf = { booted.runtimeRegistry.active().lifecycle.runStateOf(it) },
+            capabilitiesOf = { booted.runtimeRegistry.active().capabilityRegistry.get(it) },
+            connectorKindOf = { booted.runtimeRegistry.active().agentConfigs.connectorKindOf(it) },
+            providerOf = { booted.runtimeRegistry.active().providerRegistry.get(it) }, // CYP-137
             deps = authDeps, // CYP-178: operator gate for PUT /api/acl
         )
         // Production auth: an operator token, an agent watching its OWN session, or a verified OPERATOR Kratos
@@ -99,23 +102,36 @@ fun Application.installPlatform(
         )
         // CYP-73: agent lifecycle controls (operator-gated) + content-free status feed. CYP-188 B: the status
         // socket is read-tier (token OR verified human session), so `authDeps` is passed through.
-        lifecycleRoutes(booted.lifecycle, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
-        lifecycleSocket(booted.lifecycle, booted.tokenRegistry, authDeps)
+        // CYP-255 (.4b): lifecycle controls act on the ACTIVE project's runtime (resolver, per request).
+        lifecycleRoutes({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps) // CYP-178
+        lifecycleSocket({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps)
         // CYP-96: project-settings config — GET participant (masked key), PUT operator (fail-closed).
         // CYP-102 fix: bind the LIVE active-pointer resolver (not booted.activeProjectId by-value) so
         // config follows a project switch, mirroring eventRoutes/eventSocket above.
         configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps) // CYP-178
         // CYP-97: agent CRUD — detail GET participant, POST/PUT/DELETE operator (fail-closed).
-        agentMgmtRoutes(booted.agentManagement, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
+        // CYP-255 (.4b): CRUD lands in the ACTIVE project's runtime (resolver, per request).
+        agentMgmtRoutes({ booted.runtimeRegistry.active().agentManagement }, booted.tokenRegistry, authDeps) // CYP-178
         // CYP-122: connector opt-in (operator-gated, server-enforced, audited) — sets an agent's connector.
-        connectorRoutes(booted.state, booted.tokenRegistry, booted.capabilityRegistry, booted.connectorOptIn, authDeps) // CYP-178
+        // CYP-255 (.4b): the re-declared caps come from the ACTIVE project (resolver).
+        connectorRoutes(booted.state, booted.tokenRegistry, { booted.runtimeRegistry.active().capabilityRegistry }, booted.connectorOptIn, authDeps) // CYP-178
         // CYP-89: Product-Lead reports — all three operator-gated/fail-closed, content-free items.
         reportRoutes(booted.reportStore, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate
         // CYP-91: multi-project lifecycle — all operator-gated/fail-closed; cascade-delete is the
         // most destructive op (no-cross-project, opt-in worktree teardown, branches kept).
         // CYP-102: a switch re-scopes the live comm hub (HubState.rescope) so channels/inbox/acl/ws-comm
         // follow the active project without a restart.
-        projectRoutes(booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry, booted.state::rescope, deps = authDeps) // CYP-178
+        // CYP-255/CYP-259 (.4b) — the switch ORCHESTRATION: mint the target's runtime (getOrCreate) BEFORE it
+        // becomes active, so the fail-closed active() never resolves a project whose lifecycle isn't live yet
+        // (closes the non-boot-add 500). getOrCreate is atomic per key; then rescope the comm hub (CYP-102).
+        projectRoutes(
+            booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry,
+            onActiveSwitch = { pid ->
+                booted.runtimeRegistry.getOrCreate(pid, booted.projectRuntimeFactory)
+                booted.state.rescope(pid)
+            },
+            deps = authDeps, // CYP-178
+        )
         // CYP-93: cross-project channel-share — GET participant (disclosure), PUT/DELETE operator/owner
         // (the authorization gate, fail-closed); the AclMatrix permit takes effect via HubState.refreshShares.
         channelShareRoutes(booted.state, booted.channelShares, booted.tokenRegistry, authDeps) // CYP-178: structural operator gate

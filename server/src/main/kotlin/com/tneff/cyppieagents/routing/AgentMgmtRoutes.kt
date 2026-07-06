@@ -41,12 +41,20 @@ import org.slf4j.LoggerFactory
  * group (CYP-178), so the operator check runs **before** the body is received and cannot be forgotten by a
  * new endpoint added inside the group; a non-operator is rejected (401/403) without the request being parsed.
  */
-fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) {
+// CYP-255 (.4b): the concrete overload (dev/test) delegates to the resolver form with a constant provider,
+// so existing call-sites are unchanged; production passes { runtimeRegistry.active().agentManagement }.
+fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) =
+    agentMgmtRoutes({ mgmt }, registry, deps)
+
+// CYP-255 (.4b): [mgmt] resolves the ACTIVE project's AgentManagement per request, so a CRUD op (add/edit/
+// remove/avatar) lands in the switched-to project's runtime (own lifecycle/configs/worktrees) — a same-id
+// agent in another project is untouched.
+fun Route.agentMgmtRoutes(mgmt: () -> AgentManagement, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) {
     route("/api/agents") {
         // Detail = participant (the management list is read-only visible without an operator token).
         get("/{id}") {
             call.requireParticipant(registry)
-            call.respond(mgmt.detail(call.parameters.getOrFail("id"))) // 404 agent_not_found
+            call.respond(mgmt().detail(call.parameters.getOrFail("id"))) // 404 agent_not_found
         }
         // CYP-215: serve the agent's avatar PNG = participant-gated (same read posture as the detail/list).
         // Upload → stored re-encoded blob; Preset → self-hosted DiceBear bytes; none/unknown → 404 (the client
@@ -55,7 +63,7 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
             // CYP-232: read-tier gate (token OR verified human session) so the tokenless public SPA renders the
             // real avatar via its same-origin Kratos cookie — token-only requireParticipant → 401 → fallback icon.
             call.requireCommReader(deps, registry)
-            val served = mgmt.serveAvatar(call.parameters.getOrFail("id"))
+            val served = mgmt().serveAvatar(call.parameters.getOrFail("id"))
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             served.ref?.let { call.response.header(HttpHeaders.ETag, "\"$it\"") }
             call.respondBytes(served.png, ContentType.Image.PNG)
@@ -70,7 +78,7 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
             call.requireCommReader(deps, registry)
             val style = call.request.queryParameters["style"].orEmpty()
             val seed = call.request.queryParameters["seed"].orEmpty()
-            val served = mgmt.previewAvatar(style, seed)
+            val served = mgmt().previewAvatar(style, seed)
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             served.ref?.let { call.response.header(HttpHeaders.ETag, "\"$it\"") }
             call.response.header(HttpHeaders.CacheControl, "public, max-age=86400")
@@ -81,11 +89,11 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
         authenticatedApi(deps, AuthRole.OPERATOR) {
             post {
                 val spec = call.receive<NewAgentSpec>()
-                call.respond(HttpStatusCode.Created, mgmt.add(spec)) // 400/409 per the guard
+                call.respond(HttpStatusCode.Created, mgmt().add(spec)) // 400/409 per the guard
             }
             put("/{id}") {
                 val edit = call.receive<AgentEdit>()
-                call.respond(mgmt.edit(call.parameters.getOrFail("id"), edit)) // 404/409 per the guard
+                call.respond(mgmt().edit(call.parameters.getOrFail("id"), edit)) // 404/409 per the guard
             }
             delete("/{id}") {
                 // Default fate = KEEP (safe); only an explicit ?worktree=delete is the destructive path.
@@ -94,7 +102,7 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
                 } else {
                     WorktreeFate.KEEP
                 }
-                mgmt.remove(call.parameters.getOrFail("id"), fate) // 404/409 last_po per the guard
+                mgmt().remove(call.parameters.getOrFail("id"), fate) // 404/409 last_po per the guard
                 call.respond(HttpStatusCode.NoContent)
             }
             // CYP-215: custom-avatar upload — operator-gated (structural), UNTRUSTED bytes. Read the file part
@@ -106,12 +114,12 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
                 val bytes = call.readFirstFilePartBounded(AvatarLimits.MAX_BYTES)
                     ?: throw BadRequestException("no file part in the multipart body", code = "avatar_no_file")
                 try {
-                    val r = mgmt.uploadAvatar(id, bytes)
+                    val r = mgmt().uploadAvatar(id, bytes)
                     avatarLog.info(
                         "avatar upload OK agent={} ref={} in={}B out={}B src={} {}x{} -> {}x{}",
                         r.agentId, r.ref, r.bytesIn, r.bytesOut, r.srcFormat, r.srcWidth, r.srcHeight, r.outWidth, r.outHeight,
                     )
-                    call.respond(mgmt.detail(id))
+                    call.respond(mgmt().detail(id))
                 } catch (rej: AvatarRejected) {
                     avatarLog.warn("avatar upload REJECTED agent={} check={} — {}", id, rej.check, rej.message)
                     throw BadRequestException("avatar rejected", code = "avatar_rejected") // uniform to the client
@@ -119,7 +127,7 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
             }
             // CYP-215: clear the avatar back to the default (operator-gated) — drops metadata + blob.
             delete("/{id}/avatar") {
-                mgmt.clearAvatar(call.parameters.getOrFail("id")) // 404 agent_not_found
+                mgmt().clearAvatar(call.parameters.getOrFail("id")) // 404 agent_not_found
                 call.respond(HttpStatusCode.NoContent)
             }
         }

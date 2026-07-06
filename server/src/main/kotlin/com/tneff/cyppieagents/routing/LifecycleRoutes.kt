@@ -27,14 +27,16 @@ import kotlinx.coroutines.flow.onStart
  * Errors via the uniform envelope: 401 (no token), 403 `operator_required`, 404 `agent_not_found`,
  * 409 `already_running`, 503 `spawn_failed` — thrown by [LifecycleManager], mapped by StatusPages.
  */
-fun Route.lifecycleRoutes(lifecycle: LifecycleManager, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) {
+// CYP-255 (.4b): [lifecycle] resolves the ACTIVE project's LifecycleManager per request, so stop/start/
+// restart act on the switched-to project's agents (a same-id agent in another project has its own runtime).
+fun Route.lifecycleRoutes(lifecycle: () -> LifecycleManager, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry)) {
     // CYP-178: operator gate is STRUCTURAL (mounted under the group) — 401/403 before the agent id is
     // touched (no existence leak to non-operators); the RC1 route-enumeration meta-test is the net.
     authenticatedApi(deps, AuthRole.OPERATOR) {
         route("/api/agents/{id}") {
-            post("/stop") { call.lifecycleAction { lifecycle.stop(it) } }
-            post("/start") { call.lifecycleAction { lifecycle.start(it) } }
-            post("/restart") { call.lifecycleAction { lifecycle.restart(it) } }
+            post("/stop") { call.lifecycleAction { lifecycle().stop(it) } }
+            post("/start") { call.lifecycleAction { lifecycle().start(it) } }
+            post("/restart") { call.lifecycleAction { lifecycle().restart(it) } }
         }
     }
 }
@@ -55,17 +57,18 @@ private suspend inline fun ApplicationCall.lifecycleAction(
  * is a separate socket from the operator-gated `/ws/events`, so it cannot become a leak vector around
  * the Event-Log egress. On connect it streams a snapshot (one per agent) then live deltas.
  */
-fun Route.lifecycleSocket(lifecycle: LifecycleManager, registry: TokenRegistry, deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry)) {
+fun Route.lifecycleSocket(lifecycle: () -> LifecycleManager, registry: TokenRegistry, deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry)) {
     webSocket("/ws/lifecycle") {
         // CYP-188 B: read-tier (token OR verified human session) — the status feed is content-free (agent
         // runState only), so any authenticated reader (like GET /api/agents) may watch it live.
         if (call.wsReaderOrNull(deps, registry) == null) {
             return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
         }
-        // Snapshot-then-deltas in ONE coroutine (no concurrent WS sends): onStart emits the current
-        // status of every agent before the live deltas. The client upserts by agentId (duplicates harmless).
-        lifecycle.events
-            .onStart { lifecycle.snapshot().forEach { emit(it) } }
+        // CYP-255 (.4b): bind to the ACTIVE project's lifecycle at connect (the status feed is per-view; a
+        // switch reopens the socket, mirrored by the client). Snapshot-then-deltas in ONE coroutine.
+        val lc = lifecycle()
+        lc.events
+            .onStart { lc.snapshot().forEach { emit(it) } }
             .collect { event ->
                 send(Frame.Text(CommJson.encodeToString(AgentRunStateEvent.serializer(), event)))
             }

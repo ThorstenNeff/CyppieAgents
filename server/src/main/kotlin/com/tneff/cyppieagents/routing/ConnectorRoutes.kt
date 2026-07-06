@@ -25,10 +25,22 @@ import io.ktor.server.routing.route
  *  - on success: persists + re-declares caps + emits `connector.optin` ([ConnectorOptIn.apply]); returns
  *    the updated [com.tneff.cyppieagents.model.Agent] (with the new connectorKind + capabilities).
  */
+// CYP-255 (.4b): the concrete overload (dev/test) delegates with a constant provider; production passes
+// { runtimeRegistry.active().capabilityRegistry } so the re-declared caps come from the ACTIVE project.
 fun Route.connectorRoutes(
     state: HubState,
     registry: TokenRegistry,
     capabilityRegistry: CapabilityRegistry,
+    optIn: ConnectorOptIn,
+    deps: AuthDeps = AuthDeps(registry),
+) = connectorRoutes(state, registry, { capabilityRegistry }, optIn, deps)
+
+fun Route.connectorRoutes(
+    state: HubState,
+    registry: TokenRegistry,
+    // CYP-255 (.4b): resolve the ACTIVE project's capability registry per request (the opt-in itself
+    // already resolves active() internally).
+    capabilityRegistry: () -> CapabilityRegistry,
     optIn: ConnectorOptIn,
     deps: AuthDeps = AuthDeps(registry),
 ) {
@@ -43,7 +55,7 @@ fun Route.connectorRoutes(
                 val choice = call.receive<ConnectorChoice>()
                 optIn.apply(id, choice.connectorKind)
                 call.respond(
-                    agent.copy(connectorKind = choice.connectorKind, capabilities = capabilityRegistry.get(id)),
+                    agent.copy(connectorKind = choice.connectorKind, capabilities = capabilityRegistry().get(id)),
                 )
             }
         }
