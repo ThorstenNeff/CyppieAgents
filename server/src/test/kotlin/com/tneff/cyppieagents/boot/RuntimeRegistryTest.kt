@@ -113,6 +113,35 @@ class RuntimeRegistryTest {
     }
 
     @Test
+    fun worktreeManager_forProject_scopesToThatProjectsRoot() {
+        // CYP-255 (.4a): the factory mints a per-project WorktreeManager via forProject — distinct project dirs.
+        val base = WorktreeManager(noopRunner, gitRoot, "boot")
+        assertTrue(base.forProject("beta").worktreesRoot.path.endsWith("projects/beta"), "forProject(beta) → projects/beta")
+        assertTrue(base.forProject("gamma").worktreesRoot.path.endsWith("projects/gamma"), "forProject(gamma) → projects/gamma")
+    }
+
+    @Test
+    fun getOrCreate_mintsOncePerProject_sharedThereafter() {
+        // CYP-255 (.4a): the switch/activation entry — lazily mint a runtime the first time a project is
+        // activated, then share it. Two activations of the same project → ONE runtime (one factory call); a
+        // distinct project → a distinct runtime. Mutation: `factory.create` called unconditionally (not
+        // computeIfAbsent) → alpha minted twice → the created-once assertion reds.
+        val reg = RuntimeRegistry { "alpha" }
+        val created = mutableListOf<String>()
+        val factory = ProjectRuntimeFactory { pid -> created.add(pid); runtime(pid) }
+
+        val a1 = reg.getOrCreate("alpha", factory)
+        val a2 = reg.getOrCreate("alpha", factory)
+        assertSame(a1, a2, "second getOrCreate returns the SAME runtime — minted once")
+        assertEquals(listOf("alpha"), created, "factory invoked exactly once for alpha")
+
+        val b = reg.getOrCreate("beta", factory)
+        assertEquals("beta", b.projectId)
+        assertEquals(listOf("alpha", "beta"), created, "a distinct project mints a distinct runtime")
+        assertSame(b, reg.of("beta"), "getOrCreate registered it (visible to of/active)")
+    }
+
+    @Test
     fun active_failsClosed_whenActiveProjectHasNoRuntime() {
         // active = beta, but only alpha is registered. active() MUST throw — never fall back to alpha's
         // lifecycle (that fallback would be the cross-project bleed). Mutation: return runtimes.values.first()

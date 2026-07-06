@@ -47,6 +47,14 @@ class WorktreeManager(
     /** Parent dir of all agent worktrees (the connector's worktreesRoot). */
     val worktreesRoot: File get() = worktreesDir
 
+    /**
+     * CYP-255 (.4a) — a sibling manager scoped to [projectId], reusing this one's shared clone
+     * ([runner] + [gitRoot], so `projects/<projectId>/`). The [ProjectRuntimeFactory] mints one per
+     * project runtime so a spawn lands in that project's worktree root; the shared `repo` clone
+     * ([ensureClone]) stays project-agnostic and is done once at boot on the base manager.
+     */
+    fun forProject(projectId: String): WorktreeManager = WorktreeManager(runner, gitRoot, projectId)
+
     /** Clone [repo] into [repoDir] if not already a git repo. */
     fun ensureClone(repo: RepoConfig) {
         if (File(repoDir, ".git").exists()) {
