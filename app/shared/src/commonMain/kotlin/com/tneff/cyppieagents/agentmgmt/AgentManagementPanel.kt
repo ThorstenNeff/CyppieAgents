@@ -143,7 +143,9 @@ fun AgentManagementPanel(
             Text(stringResource(Res.string.agent_add))
         }
 
-        if (state.agents.isEmpty()) {
+        // CYP-276 (CYP-270 class): gate the onboarding empty-state on !loading so it never FLASHES during the
+        // async load window (cold open / project switch) before the agent list arrives — only a settled-empty shows it.
+        if (!state.loading && state.agents.isEmpty()) {
             // CYP-228 B: onboarding empty-state instead of a blank list. CTA = the EXISTING add button above
             // (no second button); with no operator token the gate hint above stays + the button is disabled
             // (no dead CTA). Reuses the honest "creating ≠ running" framing.
