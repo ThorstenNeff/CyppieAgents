@@ -63,6 +63,27 @@ Extend `ProtectedRouteEnumerationTest` (the real routing-tree walk) into a per-p
 4. **Non-vacuous:** a mutation that mounts the loop over only `["/api"]` (drops the v1 mount) → the
    both-prefixes test reds; a mutation that guards `/api/v1` differently → the auth-per-prefix test reds.
 
+## 3.5 CYP-272 — bind the `tier` column to the REAL gate (fold in here)
+
+The Tester flagged: `RestContract`'s `tier` column feeds the OpenAPI `security` / `x-auth-tier` but is bound to
+NO tooth → silent desync risk. Feasibility (investigated read-only): the gate structure is heterogeneous —
+OPERATOR/MEMBER routes sit under a structurally-walkable `authenticatedApi` group (`AuthenticatedRouteSelector`
+child + `AuthGuard`, `required` role in plugin config); PARTICIPANT routes gate **in-handler**
+(`requireParticipant`/`requireCommReader`, invisible to the tree); PUBLIC = no gate. `AuthRole` = {OPERATOR,
+MEMBER}, OPERATOR ⊇ MEMBER. **A HYBRID tooth binds tier ↔ gate:**
+1. **1-line enabler:** `authenticatedApi` also does `attributes.put(RequiredRoleKey, required)` on the guarded
+   route → the tree walk reads OPERATOR vs MEMBER EXACTLY (not just "grouped").
+2. **No-cred probe** (existing `scanForLeaks`) → PUBLIC vs protected.
+3. **Classify each `/api` route:** grouped+role → OPERATOR/MEMBER · protected+not-grouped → PARTICIPANT ·
+   no-cred-reachable → PUBLIC → **assert == `RestContract.tier`** (folding PARTICIPANT_WRITE→participant, since
+   the write/ACL distinction is downstream, not an auth tier `security` expresses). Non-vacuous: flip a tier → RED.
+
+Fold into the extended `ProtectedRouteEnumerationTest` — it already walks the tree for both prefixes, so the
+tier-tooth runs **per prefix** (both `/api` and `/api/v1` bind their tier identically). **CYP-272 closes here,
+BEFORE the 234a-3 docs deploy**, so the served OpenAPI `security` is gate-bound, not silently drift-able. The F2
+widening (`GET /api/agents/{id}` = token-only `requireParticipant`) classifies as PARTICIPANT — the documented
+widening point, now tooth-pinned.
+
 ## 4. Contract/drift reconciliation
 
 `RestContract.REST_OPS` stays keyed on `/api` (the canonical surface). The `RestContractDriftTest` continues to
