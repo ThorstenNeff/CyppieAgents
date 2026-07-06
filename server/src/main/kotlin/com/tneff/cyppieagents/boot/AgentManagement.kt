@@ -52,8 +52,13 @@ class AgentManagement(
      * survives a restart (overlaid over the `platform.config.json` seed at boot). Null (tests) = no durability.
      */
     private val overrides: AgentOverrideStore? = null,
-    /** CYP-210 — the active project the overrides are scoped to (boot-frozen; MVP = 1). */
-    private val projectId: String = com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID,
+    /**
+     * CYP-210/CYP-246 — resolves the ACTIVE project the overrides/avatar blobs are scoped to, so a CRUD op
+     * writes into whichever project is active at the time (not a boot-frozen constant). Defaults to the
+     * single MVP project. Boot wires it to `{ state.activeProjectId }` so it follows a switch (CYP-246);
+     * keeping it a resolver (not the live field) leaves it trivially injectable in tests.
+     */
+    private val activeProjectId: () -> String = { com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID },
     /** CYP-215 — the on-disk store for re-encoded avatar PNGs. Null (tests) = no blob persistence. */
     private val avatarBlobs: AvatarBlobStore? = null,
     /** CYP-215 — resolves a Preset `(style,seed)` to bundled PNG bytes on serve. Null = no preset bytes. */
@@ -82,7 +87,7 @@ class AgentManagement(
         val agent = Agent(spec.id.trim(), spec.name.trim(), spec.role, worktree, AgentRunState.STOPPED, connectorKind = spec.connectorKind, color = spec.color?.ifBlank { null }, avatar = avatar)
         configs.put(agent.id, spec.launch?.ifBlank { null }?.trim() ?: "claude", spec.persona?.ifBlank { null })
         state.addAgent(agent)                 // spoke channel + ACL, projectId-stamped (fail-closed)
-        if (avatar != null) overrides?.setAvatar(projectId, agent.id, avatar) // durable overlay (restart-survive)
+        if (avatar != null) overrides?.setAvatar(activeProjectId(), agent.id, avatar) // durable overlay (restart-survive)
         ensureWorktree(worktree)              // create the worktree; CLAUDE.md is written at first spawn
         lifecycle.register(agent.id, worktree) // known + STOPPED — start is the CYP-73 lifecycle
         // CYP-122: a non-default connector at create is an opt-in → audited + caps re-declared (server-enforced).
@@ -107,7 +112,7 @@ class AgentManagement(
         state.editAgent(id, newName, newColor)
         // CYP-210: persist the override so name/color/persona/launch SURVIVE a restart (overlaid over the
         // config seed at boot). The store applies the same blank→preserve rule against its own stored value.
-        overrides?.put(projectId, id, name = edit.name, color = edit.color, persona = edit.persona, launch = edit.launch)
+        overrides?.put(activeProjectId(), id, name = edit.name, color = edit.color, persona = edit.persona, launch = edit.launch)
         // CYP-215: a non-null avatar sets/replaces it with a PRESET (Preset-only by type → an Upload ref can't be
         // forged on this JSON path). Validate the style FAIL-CLOSED; blank seed → the agent id. null = PRESERVE
         // (a name-only edit never wipes the avatar; the clear path is DELETE .../avatar). Switching to a preset
@@ -115,8 +120,8 @@ class AgentManagement(
         edit.avatar?.let { preset ->
             val normalized = normalizePreset(preset, id)
             state.setAvatar(id, normalized)
-            overrides?.setAvatar(projectId, id, normalized)
-            avatarBlobs?.delete(projectId, id)
+            overrides?.setAvatar(activeProjectId(), id, normalized)
+            avatarBlobs?.delete(activeProjectId(), id)
         }
         // persona/launch take effect on the next spawn (connector reads configs at open()); name/color are live.
         state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
@@ -135,8 +140,8 @@ class AgentManagement(
         configs.remove(id)
         lifecycle.forget(id)
         remoteToken?.revoke(id)   // CYP-171 / SEC5: revoke any minted token (idempotent) — agentFor → null
-        overrides?.removeAgent(projectId, id)   // CYP-210/215: drop the durable overlay (name/color/avatar)
-        avatarBlobs?.delete(projectId, id)      // CYP-215: purge the stored avatar blob (no dangling bytes)
+        overrides?.removeAgent(activeProjectId(), id)   // CYP-210/215: drop the durable overlay (name/color/avatar)
+        avatarBlobs?.delete(activeProjectId(), id)      // CYP-215: purge the stored avatar blob (no dangling bytes)
         if (fate == WorktreeFate.DELETE) deleteWorktree(worktree) // branch agent/<id> NOT touched (§9.3)
     }
 
@@ -150,10 +155,10 @@ class AgentManagement(
     fun uploadAvatar(id: String, bytes: ByteArray): AvatarUploadReceipt = synchronized(lock) {
         state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
         val result = AvatarImageProcessor.process(bytes) // throws AvatarRejected → uniform 400 at the route
-        avatarBlobs?.write(projectId, id, result.png)
+        avatarBlobs?.write(activeProjectId(), id, result.png)
         val avatar = AgentAvatar.Upload(result.ref)
         state.setAvatar(id, avatar)
-        overrides?.setAvatar(projectId, id, avatar)
+        overrides?.setAvatar(activeProjectId(), id, avatar)
         AvatarUploadReceipt(id, result.ref, result.bytesIn, result.bytesOut, result.srcFormat, result.srcWidth, result.srcHeight, result.outWidth, result.outHeight)
     }
 
@@ -161,8 +166,8 @@ class AgentManagement(
     fun clearAvatar(id: String) = synchronized(lock) {
         state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
         state.setAvatar(id, null)
-        overrides?.setAvatar(projectId, id, null)
-        avatarBlobs?.delete(projectId, id)
+        overrides?.setAvatar(activeProjectId(), id, null)
+        avatarBlobs?.delete(activeProjectId(), id)
     }
 
     /**
@@ -173,7 +178,7 @@ class AgentManagement(
     fun serveAvatar(id: String): ServedAvatar? {
         val a = state.agent(id) ?: return null
         return when (val av = a.avatar) {
-            is AgentAvatar.Upload -> avatarBlobs?.read(projectId, id)?.let { ServedAvatar(it, av.ref) }
+            is AgentAvatar.Upload -> avatarBlobs?.read(activeProjectId(), id)?.let { ServedAvatar(it, av.ref) }
             is AgentAvatar.Preset -> avatarPresets?.resolve(av.style, av.seed)?.let { ServedAvatar(it, null) }
             null -> null
         }

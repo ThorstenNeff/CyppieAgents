@@ -53,6 +53,28 @@ class AgentManagementTest {
         val mgmt = AgentManagement(state, lifecycle, configs, ensureWorktree = { ensured.add(it) }, deleteWorktree = { deleted.add(it) })
     }
 
+    // ---- CYP-246: CRUD writes into the ACTIVE project's overlay, not a boot-frozen DEFAULT ----
+
+    @Test fun edit_persistsOverride_toActiveProject_notDefault() {
+        // CYP-246: an edit's durable overlay follows the ACTIVE project (resolved live), so a rename made
+        // after a switch lands in the switched project's overlay — parity with the per-project agent slice.
+        // The mutant "activeProjectId → the DEFAULT constant" reddens (the override would land under default).
+        val f = Fix()
+        val overridesFile = java.io.File.createTempFile("cyp246-overrides", ".json").also { it.deleteOnExit() }
+        val overrides = AgentOverrideStore(overridesFile)
+        var active = "default"
+        val mgmt = AgentManagement(
+            f.state, f.lifecycle, f.configs,
+            ensureWorktree = {}, deleteWorktree = {},
+            overrides = overrides,
+            activeProjectId = { active },
+        )
+        active = "beta" // switch the active project before the edit
+        mgmt.edit("frontend", AgentEdit(role = Role.WORKER, name = "FE-in-beta"))
+        assertEquals("FE-in-beta", overrides.allFor("beta")["frontend"]?.name, "edit writes into the ACTIVE project's overlay")
+        assertNull(overrides.allFor("default")["frontend"]?.name, "and NOT into DEFAULT (the old boot-frozen constant)")
+    }
+
     // ---- add ----
 
     @Test fun add_createsStoppedAgent_notSpawned_andEnsuresWorktree() {
