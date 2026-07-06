@@ -2,8 +2,8 @@
   "$meta": {
     "owner": "UIUX-Designer",
     "ticket": "CYP-234 (Entwickler-API-Doku-Experience: 234a-3 gehostete Referenz + 234c narrative Anleitung)",
-    "version": "1.0",
-    "status": "Vorschlag — Design-first, Ratifikation durch PO VOR Bau. Maritime Doku-Theme fuer die NEUE gehostete HTML-Surface (Redoc/Swagger-UI/AsyncAPI-Renderer), NICHT der Compose-App-Theme.",
+    "version": "1.1",
+    "status": "v1.1 — PO-ratifiziert; Auth konkret (Kontrakt §2.2+§6 ratifiziert: participant-scoped Token-Klasse [Maschine] + Kratos-Login [Mensch] + kontrollierte CORS-Allow-Liste). Maritime Doku-Theme fuer die NEUE gehostete HTML-Surface (Redoc/Swagger-UI/AsyncAPI), NICHT der Compose-App-Theme.",
     "design_language": "maritime — blau/weiss, Material 3; [[design-language-maritime-m3]]. Die Compose-App nutzt heute baren M3-Default (keine kodifizierte Palette); diese Tokens definieren die maritime Sprache erstmals fuer die Doku-Surface.",
     "grounded_against": "backend/plans/CYP-234-frontend-agnostic-contract-design.md (§1 generated-contract, §2 auth-tiers, §3 /api/v1, §4 234a-3/234c). App-Theme: app/shared/.../App.kt bares MaterialTheme{}.",
     "contrast_policy": "Alle Text-auf-Hintergrund-Paare >= WCAG AA (4.5:1 Body, 3:1 Large/UI). Tier- und Method-Badges tragen IMMER ein Label (Farbe nie alleiniger Traeger, WCAG 1.4.1).",
@@ -64,7 +64,7 @@
   "tier_badges": {
     "note": "Tier-Badge = Farbe + PFLICHT-Label (WCAG 1.4.1). Operator NICHT alarm-rot (= 'mehr Zugang noetig', kein Fehler).",
     "public":      { "label": "PUBLIC",      "fg": "#3C4A50", "bg": "#E7EDF0", "meaning": "keine Auth" },
-    "participant": { "label": "PARTICIPANT", "fg": "#1C5E93", "bg": "#DCEBF7", "meaning": "Token ODER verifizierte Session (read-Default)" },
+    "participant": { "label": "PARTICIPANT", "fg": "#1C5E93", "bg": "#DCEBF7", "meaning": "participant-scoped Token-Klasse (BYO-Maschine, ratifiziert) ODER verifizierte Kratos-Session (Mensch) — read-Default" },
     "operator":    { "label": "OPERATOR",    "fg": "#1F3A66", "bg": "#D9E2F2", "meaning": "Operator-Token ODER OPERATOR-Session (Control/Write)" },
     "token_only_ws": { "label": "TOKEN-ONLY WS", "fg": "#6A4A12", "bg": "#F6E9CC", "meaning": "/ws/agent — Agent-/Operator-Credential; kein read-only-Session-Zugriff" }
   },

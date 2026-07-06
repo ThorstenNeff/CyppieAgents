@@ -1,6 +1,7 @@
 # Design-Spec — Entwickler-API-Doku-Experience (CYP-234: hosted reference 234a-3 + narrative guide 234c)
 
-> Owner: UIUX-Designer · CYP-234-Pfad (speist **234a-3** gehostete Referenz + **234c** narrative Anleitung) · Stand: 2026-07-06 · Status: **Vorschlag — Design-first, Ratifikation durch PO VOR Bau.**
+> Owner: UIUX-Designer · CYP-234-Pfad (speist **234a-3** gehostete Referenz + **234c** narrative Anleitung) · Stand: 2026-07-06 · Status: **v1.1 — PO-RATIFIZIERT; Auth-Sektion konkret gemacht (1 PO-Korrektur eingearbeitet).**
+> **⚠ v1.1-Änderung ggü. v1.0:** Auth-Sektion war ratifikations-agnostisch gehedged. **Der Auftraggeber hat den Access-Kontrakt §2.2 + §6 SCHON ratifiziert** → jetzt **konkret**: participant-scoped **Token-Klasse** (BYO-Maschine, read-Default, revocable, per-Token-Rate-Limit) + nativer **Kratos-Login** (Mensch) + kontrollierte **CORS-Allow-Liste**. Kein Konjunktiv mehr. + Impl-Notiz: Swagger-UI-„Try it" braucht die Docs-Origin auf der CORS-Allow-Liste (§6). Rest unverändert.
 > **Zielgruppe der Doku:** ein **fremder Entwickler**, der ein Go-/Godot-/Web-/CLI-Frontend gegen unseren Server baut, **ohne Kotlin zu lesen**.
 > **Grounding:** ratifizierter **CYP-234-Access-Kontrakt** (`backend/plans/CYP-234-frontend-agnostic-contract-design.md`, Auth-Modell §2, Versioning §3, Doku-Cut §4) + **maritime Design-Sprache** (blau/weiß, Material 3) — [[design-language-maritime-m3]].
 > **Zwei Deliverables:** **Teil 1** = Präsentations-/Theming-Design der gehosteten, klickbaren API-Referenz (Swagger-UI/Redoc über OpenAPI 3.1 + AsyncAPI-Renderer über die WS-Seite). **Teil 2** = **Informations-Architektur** der narrativen „Frontend-von-Null"-Anleitung (die Struktur/der Fluss — 234c füllt den Text).
@@ -25,7 +26,7 @@ Aus dem ratifizierten Access-Kontrakt (`CYP-234-frontend-agnostic-contract-desig
 
 - **Neutral-Contract (234a):** OpenAPI 3.1 (REST) + AsyncAPI 2.6 (WS), **generiert aus `:core`**, drift-getestet + per-DTO-conformance-validiert → **accurate by construction**.
 - **Auth-Tiers (§2, Auftraggeber ratifiziert die offenen Punkte):** **public** (health, `auth/me` unauth, register) · **participant/read** (Token ODER verifizierte Human-Session; Default) · **operator** (Operator-Token ODER verifizierte OPERATOR-Session; Control/Write).
-- **Credential-Pfade:** Browser-Frontend → Kratos-**Session-Cookie** (same-origin, CYP-229/230/232); Non-Browser → **Token** (`Authorization: Bearer`; WS-Fallback `?token=` weil Browser keinen WS-`Authorization`-Header setzen können). *Ein self-service Participant-Token (Kontrakt §2.2.ii) ist NEUE Access-Surface → Auftraggeber-ratifikationsabhängig.*
+- **Credential-Pfade (RATIFIZIERT, Kontrakt §2.2 + §6 — Auftraggeber-beschlossen):** **Menschen/Browser-Frontend** → nativer **Kratos-Login** → Session-Cookie (same-origin, CYP-229/230/232); **Maschinen-/Non-Browser-Frontend** → eine **neue participant-scoped Token-Klasse** (`Authorization: Bearer`; WS-Fallback `?token=` weil Browser keinen WS-`Authorization`-Header setzen können). **CORS = kontrollierte Allow-Liste** (§6, deploy-verwaltet) — ein BYO-Web-Frontend braucht seine Origin auf der Liste. **Kein Konjunktiv: das ist der beschlossene BYO-Credential-Weg.**
 - **Token-only-WS:** `/ws/agent` (Agent treiben/beobachten), `/ws/hub` (Remote-**Agent**-Wire, **OUT of frontend contract**, Kontrakt §2.5).
 - **REST-Versioning (§3):** `/api/v1` Pfad-Prefix **kanonisch**; unversioniertes `/api` = dokumentierter deprecated-Alias.
 - **WS-Kanäle:** `/ws/comm`, `/ws/events`, `/ws/lifecycle` (read-tier) + `/ws/agent` (token/operator).
@@ -69,11 +70,13 @@ Die REST- und die WS-Seite werden von **verschiedenen** Tools gerendert (OpenAPI
 
 - **Zuerst** in der Nav + eigener „Authentication"-Landing-Block über den Endpunkten.
 - **Die 3 Tiers als kleine Matrix:** public / participant(read) / operator — was jedes freischaltet; **Default = participant/read**.
-- **Zwei Credential-Pfade, ehrlich getrennt:** Browser → Kratos-Session-Cookie (same-origin); Non-Browser → Token (`Authorization: Bearer`; WS `?token=`-Fallback erklärt). **Klar, welcher Pfad für welchen Frontend-Typ.**
+- **Zwei ratifizierte Credential-Pfade, ehrlich getrennt (KONKRET, Kontrakt §2.2):**
+  - **Mensch / Browser-Frontend →** nativer **Kratos-Login** → Session-Cookie (same-origin). Die Doku zeigt den Login-Flow konkret.
+  - **Maschine / Non-Browser-Frontend →** die **participant-scoped Token-Klasse** (der beschlossene BYO-Maschinen-Credential): wie man sie erhält/setzt (`Authorization: Bearer`; WS `?token=`-Fallback + warum), ihr Default-Tier = **participant/read**, ihre Lifecycle (revocable + optional expiry, Kontrakt §2-F8), ihr Rate-Limit (per-Token-Bucket, §2-F7). **Klar, welcher Pfad für welchen Frontend-Typ.**
+- **CORS (§6, konkret):** ein BYO-Web-Frontend serviert von einer **anderen Origin** → seine Origin muss auf der **kontrollierten Allow-Liste** stehen (deploy-verwaltet). Non-Browser-Clients (Go/CLI) sind CORS-unabhängig. Cross-Origin-Web-Frontends authentifizieren per **Token** (nicht Cookie) → kein `allowCredentials`, kein Cross-Origin-CSRF (Kontrakt §2-F9.a).
 - **Per-Endpunkt-Tier-Badge inline** (jeder Endpunkt zeigt sein benötigtes Tier — kein Raten).
-- **Ehrliche Disclosure (mein Kern):** die **token-only-WS-Constraints** stehen hier als First-Class-Notiz (`/ws/agent` braucht Agent-/Operator-Credential; `/ws/hub` = kein Frontend-Transport). Die Auth-Sektion impliziert **nie**, dass ein Participant-Token/eine read-Session Control gewährt.
-- **Falls „Try it":** ein prominenter „Authorize"-Button, vorkonfiguriert für Token- **und** Session-Flow.
-- **Ratifikations-agnostisch:** rendert **den ratifizierten** Credential-Pfad. Wird das self-service Participant-Token (Kontrakt §2.2.ii) **nicht** ratifiziert, zeigt der Non-Browser-Pfad die Operator-Token-/Kratos-native-Option statt einer neuen Token-Klasse. **Kein erfundenes Credential** in der Doku vor Ratifikation.
+- **Ehrliche Disclosure (mein Kern):** die **token-only-WS-Constraints** stehen hier als First-Class-Notiz (`/ws/agent` braucht Agent-/Operator-Credential; `/ws/hub` = kein Frontend-Transport). Die Auth-Sektion impliziert **nie**, dass die participant-scoped Token-Klasse / eine read-Session Control gewährt — **Default = read; Operator braucht explizit ein Operator-Credential.**
+- **Falls „Try it":** ein prominenter „Authorize"-Button, vorkonfiguriert für Token- **und** Session-Flow. **⚠ Impl-Constraint (an Backend beim 234a-3-Bau):** Swagger-UI-„Try it" macht **Live-Requests aus der Doku-Origin** → die **Docs-Origin muss auf der CORS-Allow-Liste** stehen (§6). Redoc (reine Referenz) hat diesen Bedarf **nicht**.
 
 ### D5 — Maritime Theming (blau/weiß, M3) — Tokens in `-tokens.json`
 
@@ -101,13 +104,14 @@ Da die Referenz **generiert aus `:core` + drift-getestet + conformance-validiert
 ### §3.0 — Orientierung / „was du baust"
 Mentales Modell: JSON-über-HTTP + WebSocket mit `type`-Diskriminator; **eine** Contract, accurate-by-construction; wähle dein Tier. Was ein read-only- vs. ein Full-Control-Frontend am Ende kann.
 
-### §3.1 — **Authentifiziere ZUERST** (Auth-Flow first)
-- **1a** Credential nach Frontend-Typ wählen: Browser → Kratos-Session-Cookie · Non-Browser → Token.
-- **1b** Browser: der Kratos-Login-Flow → Session; der `GET /api/auth/me`-Check.
-- **1c** Non-Browser: wohin das Token gehört (`Authorization: Bearer`; WS-`?token=`-Query-Fallback + **warum** — kein WS-Auth-Header im Browser).
+### §3.1 — **Authentifiziere ZUERST** (Auth-Flow first) — konkret (Kontrakt §2.2 ratifiziert)
+- **1a** Credential nach Frontend-Typ wählen: **Mensch/Browser → Kratos-Login/Session-Cookie** · **Maschine/Non-Browser → participant-scoped Token-Klasse**.
+- **1b** Browser: der native **Kratos-Login-Flow** → Session; der `GET /api/auth/me`-Check.
+- **1c** Non-Browser: die **participant-scoped Token-Klasse** — wie man sie erhält (mint), wohin sie gehört (`Authorization: Bearer`; WS-`?token=`-Query-Fallback + **warum** — kein WS-Auth-Header im Browser), Lifecycle (revoke/expiry).
 - **1d** Verifizieren: `GET /api/auth/me` → `{authenticated:true, tier}`.
-- **1e** Die 3 Tiers — was jedes freischaltet; **Default = participant/read**; Operator = explizit.
-> *Ehrlichkeits-Marker:* hier steht der Tier-Contract, bevor der Dev irgendeinen Call macht — kein „später Auth nachrüsten".
+- **1e** Die 3 Tiers — was jedes freischaltet; **Default der Token-Klasse = participant/read**; Operator = **explizit** (eigenes Operator-Credential).
+- **1f** CORS für BYO-Web-Frontends: Origin auf die Allow-Liste (§6); Cross-Origin-Web authentifiziert per **Token**, nicht Cookie.
+> *Ehrlichkeits-Marker:* hier steht der Tier-Contract, bevor der Dev irgendeinen Call macht — kein „später Auth nachrüsten". Die Token-Klasse gewährt **nie** Control (read-Default).
 
 ### §3.2 — Deine ersten REST-Calls (Reads)
 - **2a** Base-URL + `/api/v1`-Prefix (kanonisch).
@@ -130,7 +134,7 @@ Mentales Modell: JSON-über-HTTP + WebSocket mit `type`-Diskriminator; **eine** 
 
 ### §3.5 — Error-Handling & Resilienz (Querschnitt)
 - **5a** Error-Envelope in der Tiefe; Bedeutung je Code.
-- **5b** **Rate-Limits** *(nur falls die Participant-Token-Klasse + Limiter ratifiziert — Kontrakt §2 F7)*: die 429-Response + Backoff. *Ratifikations-abhängig → conditional-Abschnitt.*
+- **5b** **Rate-Limits** (konkret — die participant-scoped Token-Klasse ist ratifiziert → per-Token-Bucket, Kontrakt §2-F7): die 429-Response + Backoff-Empfehlung.
 - **5c** WS-Disconnect/Reconnect-Resilienz (Ref §3.3-3d).
 - **5d** Versioning & Deprecation: Ziel `/api/v1`; auf Deprecation-Hinweise auf `/api` achten.
 
@@ -155,7 +159,7 @@ Jeder Referenz-Endpunkt trägt ein **Request/Response-Beispiel, validiert gegen 
 | `/ws/agent` token/operator-only · `/ws/hub` excluded | **garantierte Constraint** | First-Class-Notiz (D4/§3.3-3e), nie verwischt |
 | `/api/v1` kanonisch, `/api` deprecated-alias | **garantiert** (dual-mount, drift-getestet) | Versioning-Notiz (D7/§3.5-5d) |
 | Rate-Limit-Werte, Deprecation-Fristen | **advisory** (tuning/policy) | Als advisory markiert, **nie** als harte Garantie |
-| Self-service Participant-Token-Klasse | **unratifiziert** (Kontrakt §2.2.ii) | Ratifikations-agnostisch rendern; nicht als Fakt zeigen, bis der Auftraggeber ratifiziert |
+| Participant-scoped Token-Klasse (BYO-Maschine) · Kratos-Login (Mensch) · CORS-Allow-Liste | **ratifiziert** (Kontrakt §2.2 + §6, Auftraggeber-beschlossen) | **Konkret** dokumentiert (der beschlossene BYO-Credential-Weg) — read-Default, revocable, per-Token-Rate-Limit; **nie** impliziert Control |
 
 **Kernregel:** die Doku überstellt **keine** Garantie, die der Kontrakt nicht deckt; und sie **versteckt keine** Zugangs-Grenze (token-only-WS), die ein naiver Leser sonst überschätzt.
 
@@ -190,8 +194,8 @@ Jeder Referenz-Endpunkt trägt ein **Request/Response-Beispiel, validiert gegen 
 ## §7 — Offene Punkte / §-Asks (nicht-blockierend, PO/Auftraggeber-Call)
 
 1. **Renderer-Wahl (D1):** Redoc-primär (Empfehlung, lesbar/gebrandet) vs. Swagger-UI-primär (interaktives „Try it"). Auftraggeber-Call, wenn „Try it" First-Class sein soll.
-2. **Auth-Credential-Pfad (D4/§3.1):** hängt an der Kontrakt-§2-Ratifikation (self-service Participant-Token ja/nein). Design ist agnostisch; die Doku rendert den ratifizierten Pfad.
-3. **„Try it"-Interaktivität:** rein Referenz-Lesen (ruhiger) vs. Live-Requests aus der Doku (onboarding-stärker, aber braucht eine sichere Test-Credential-Story). PO-Call.
+2. ✅ **Auth-Credential-Pfad (D4/§3.1) — GELÖST (Kontrakt §2.2 + §6 ratifiziert):** participant-scoped Token-Klasse (Maschine) + Kratos-Login (Mensch) + kontrollierte CORS-Allow-Liste. **Konkret dokumentiert, kein Konjunktiv mehr.**
+3. **„Try it"-Interaktivität:** rein Referenz-Lesen (ruhiger) vs. Live-Requests aus der Doku (onboarding-stärker). **⚠ Wenn „Try it": die Docs-Origin muss auf die CORS-Allow-Liste (§6)** — Backend-Flag beim 234a-3-Bau (Redoc-Referenz braucht das nicht). PO-Call.
 4. **Doku-Sprache:** EN (Standard für fremde Entwickler) vs. DE vs. beide. Empfehlung: **EN** für die API-Referenz/Anleitung (breiteste BYO-Dev-Reichweite); die App bleibt DE-default. Auftraggeber-Call.
 5. **Ticket-Key:** speist 234a-3 + 234c; PO vergibt den präzisen Sub-Key bei Ratifikation.
 
