@@ -34,6 +34,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class BootOrchestratorTest {
@@ -199,6 +200,27 @@ class BootOrchestratorTest {
         } finally {
             dir.toFile().deleteRecursively()
         }
+    }
+
+    @Test
+    fun runtimeRegistry_wrapsBootProjectsRealInstances_activeResolvesThem() {
+        // CYP-247.1 (L scaffold): the per-project runtime seam is populated with the boot project's runtime,
+        // holding the SAME lifecycle instances BootedPlatform exposes directly → zero behavior change. active()
+        // resolves them via the live projectId pointer. Mutation: register a runtime holding copies / a wrong
+        // projectId, or point the resolver elsewhere → an assertSame/projectId assertion goes red.
+        val cfg = config().copy(projectId = "alpha")
+        val booted = BootOrchestrator(cfg, secrets(), WorktreeManager(FakeGit(), gitRoot(), cfg.projectId), FakeSpawner(), scope).boot()
+
+        val rt = booted.runtimeRegistry.active()
+        assertEquals("alpha", rt.projectId, "active runtime is the boot project")
+        assertSame(booted.lifecycle, rt.lifecycle, "seam wraps the REAL lifecycle instance, not a copy")
+        assertSame(booted.connectorSessions, rt.connectorSessions)
+        assertSame(booted.agentConfigs, rt.agentConfigs)
+        assertSame(booted.capabilityRegistry, rt.capabilityRegistry)
+        assertSame(booted.providerRegistry, rt.providerRegistry)
+        assertSame(booted.agentManagement, rt.agentManagement)
+        assertEquals(1, booted.runtimeRegistry.liveCount(), "scaffold: exactly one live runtime")
+        assertSame(rt, booted.runtimeRegistry.of("alpha"), "of(bootProject) is the same runtime")
     }
 
     @Test
