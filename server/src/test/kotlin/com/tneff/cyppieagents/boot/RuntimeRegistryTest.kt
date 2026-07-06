@@ -2,15 +2,22 @@ package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.connector.CapabilityRegistry
+import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProviderRegistry
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.model.StreamJsonEvent
+import com.tneff.cyppieagents.model.UserTurn
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -76,6 +83,33 @@ class RuntimeRegistryTest {
         assertTrue(reg.active().worktrees.worktreesRoot.path.endsWith("projects/alpha"), "active=alpha → projects/alpha root")
         active = "beta"
         assertTrue(reg.active().worktrees.worktreesRoot.path.endsWith("projects/beta"), "switch → projects/beta root (per-project)")
+    }
+
+    private class FakeSession(override val agentId: String) : ConnectorSession {
+        override val events: Flow<StreamJsonEvent> = emptyFlow()
+        override suspend fun sendTurn(turn: UserTurn) {}
+        override fun close() {}
+        override suspend fun closeAndAwait() {}
+    }
+
+    @Test
+    fun perRuntimeRegistries_isolateAgentState_acrossProjects_evenSameAgentId() {
+        // CYP-254 — the CORE L isolation invariant: two projects with the SAME agent id do NOT collide,
+        // because each ProjectRuntime holds its OWN lifecycle + sessions maps (Arch B: structural isolation,
+        // not a shared agentId-keyed map). Register `backend` in alpha's runtime; beta's runtime must not see
+        // it — in either the run-state (lifecycle) or the live session. Mutation: share ONE LifecycleManager /
+        // ConnectorSessions across the two runtimes → beta sees alpha's `backend` → red. This is the guard
+        // that the de-singletonization (CYP-254 spine wiring) must never regress into cross-project bleed.
+        val a = runtime("alpha")
+        val b = runtime("beta")
+
+        a.lifecycle.register("backend", "backend")
+        assertTrue(a.lifecycle.knows("backend"), "alpha's runtime knows its own backend")
+        assertFalse(b.lifecycle.knows("backend"), "beta's runtime does NOT see alpha's backend (isolated lifecycle map)")
+
+        a.connectorSessions.register(FakeSession("backend"))
+        assertNotNull(a.connectorSessions.session("backend"), "alpha's runtime holds its own backend session")
+        assertNull(b.connectorSessions.session("backend"), "beta's runtime does NOT see alpha's backend session (isolated)")
     }
 
     @Test
