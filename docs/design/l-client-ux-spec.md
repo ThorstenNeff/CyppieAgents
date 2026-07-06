@@ -165,10 +165,31 @@ kein LRU-Jargon.
 
 ## §10 — §-Asks / Forwards (nicht blockierend, PO-Call)
 
-- **D4 Bar-Level-Summenhinweis** („N Projekte laufen im Hintergrund") — Ressourcen-Ehrlichkeit auf der immer-sichtbaren Leiste;
-  berührt die Bar → **PO-Call** (Default: nur per-Projekt-Indikator im Menü). Copy/Tag in `-keys.md`/`-tags.md` als optional markiert.
+- **D4 Bar-Level-Summenhinweis** — **PO-ratifiziert (2026-07-06): Default = nur Menü-Indikator (D3), minimal-first.** Das Bar-Summen-
+  Design steht als **toggle-ready Addendum §10a** bereit — falls der (kosten-bewusste) Auftraggeber immer-sichtbare Hintergrund-Fleet-
+  Awareness will, ist es ein kleiner Toggle-on (keine Re-Spezifikation nötig).
 - **Server-`STARTING`-Zustand** (falls .5 einen echten liefert) → „Startet…" bindet additiv daran statt client-`startPending`.
 - **Session-`ERROR`-Zustand** (falls der Server einen surfaced) → error-toned, eigener Forward.
+
+---
+
+## §10a — D4 Addendum: Bar-Level Background-Summe (toggle-ready, Menü-only ist Default)
+
+> **Status:** vollständig spezifiziert, **aus**geschaltet per Default (PO-ratifiziert Menü-only). Ein-Schalten = dieses Addendum bauen;
+> keine Änderung an D1–D5. Motiv: **Kosten-/Ressourcen-Ehrlichkeit** für den Auftraggeber — Hintergrund-Agenten verbrauchen
+> Compute/API-Tokens, auch ungesehen; ein immer-sichtbarer Zähler macht das entdeckbar, ohne das ▾-Menü zu öffnen.
+
+- **Trigger — zählt NUR BACKGROUND, nie SUSPENDED:** sichtbar, wenn `count(BACKGROUND) ≥ 1`. **Ehrlichkeits-Kern:** SUSPENDED-Projekte
+  verbrauchen **nichts** (pausiert) → sie gehören **nicht** in eine Ressourcen-/Kosten-Summe. „N laufen im Hintergrund" = N **laufende**
+  (BACKGROUND) Projekte, exkl. des aktiven und exkl. suspendierter. Bei `count == 0` → **absent** (fail-closed, kein „0 im Hintergrund").
+- **Platzierung:** eine `TonedHint(HintTone.INFO)`-Zeile in der `ProjectSwitcherBar`, unter der Scope-Hinweis-Zeile (nicht über der
+  aktiven-Projekt-Zeile — die bleibt primär). Tag `projectSwitcher.backgroundSummary`.
+- **Copy:** `project_session_background_summary` „%1$s weitere Projekte laufen im Hintergrund" / „%1$s more projects running in the
+  background" (positional `%1$s` = BACKGROUND-Count). a11y = der sichtbare Text (INFO).
+- **Interaktion (optional):** Tap öffnet das ▾-Menü (wo die per-Projekt-Zustände stehen) — kein neuer Surface. Reuse `projectSwitcher.menu`.
+- **Konsistenz:** derselbe INFO-Ton/„i"-Glyph wie der per-Projekt-Menü-Indikator (D3) — ein Vokabular, kein zweiter Stil.
+- **Counts (nur falls getoggelt):** +1 Key (`project_session_background_summary`), +1 Tag (`projectSwitcher.backgroundSummary`), 0 Farben.
+  Beide bereits in `-keys.md`/`-tags.md` als **optional** geführt → beim Toggle-on nur von „optional" auf „aktiv" heben.
 
 ---
 
