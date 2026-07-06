@@ -31,12 +31,27 @@ fun Severity.qualifier(): String = when (this) {
     Severity.DEBUG -> "debug"
 }
 
-/** Severity rail hue (EVENT-LOG-UI §2 — reuse of CYP-12 state hues, dark palette). */
-fun Severity.railColor(): Color = when (this) {
-    Severity.ERROR -> Color(0xFFFF6B6B)
-    Severity.WARN -> Color(0xFFFFC857)
-    Severity.INFO -> Color(0xFFA0A4AD)
-    Severity.DEBUG -> Color(0xFF5A5E66)
+/**
+ * Severity rail hue (EVENT-LOG-UI §2), **scheme-adaptive** (CYP-274). [dark] keeps the CYP-12 dark palette; the
+ * maritime LIGHT scheme uses darker/saturated tones so ERROR/WARN/INFO clear the ≥3:1 non-text target
+ * (WCAG 1.4.11) on the white surface — semantics preserved, none confusable with the brand `primary`. DEBUG is
+ * **deliberately dim in BOTH schemes**: the quietest severity earns no ≥3:1 rail; its meaning rides the `·` glyph
+ * + text label, never colour alone (§2 / WCAG 1.4.1). Hand-picked per UIUX (severity-rail-per-scheme-forward.md).
+ */
+fun Severity.railColor(dark: Boolean): Color = if (dark) {
+    when (this) {
+        Severity.ERROR -> Color(0xFFFF6B6B)
+        Severity.WARN -> Color(0xFFFFC857)
+        Severity.INFO -> Color(0xFFA0A4AD)
+        Severity.DEBUG -> Color(0xFF5A5E66)
+    }
+} else {
+    when (this) {
+        Severity.ERROR -> Color(0xFFB3261E) // = colorScheme.error, 6.5:1 on white
+        Severity.WARN -> Color(0xFF9A6400) // 5.0:1
+        Severity.INFO -> Color(0xFF567083) // 5.2:1
+        Severity.DEBUG -> Color(0xFFB8BCC4) // ~2.0:1 — deliberately dim (see KDoc)
+    }
 }
 
 /** Severity glyph — icon stand-in so colour is never the sole carrier (§2). */

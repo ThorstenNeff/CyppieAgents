@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -119,9 +120,12 @@ fun EventRow(
 @Composable
 private fun TriageCells(event: Event, qualifierTag: String, byIdTag: String) {
     // Severity rail (the qualifier-tagged node) + glyph — colour never the sole carrier (§2).
+    // CYP-274: pick the rail palette by the ACTIVE scheme (follows the R3 toggle, not just the OS) — a dark
+    // surface luminance means the dark scheme is live.
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     Box(
         modifier = Modifier.width(4.dp).height(22.dp).clip(RoundedCornerShape(2.dp))
-            .background(event.severity.railColor()).testTag(qualifierTag),
+            .background(event.severity.railColor(dark)).testTag(qualifierTag),
     )
     Text(event.severity.glyph(), style = MaterialTheme.typography.labelSmall)
     Text(formatTs(event.ts), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
@@ -175,7 +179,8 @@ private fun GapRow(event: Event, rowTag: String, qualifierTag: String, byIdTag: 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(modifier = Modifier.width(4.dp).height(22.dp).background(Severity.ERROR.railColor()).testTag(qualifierTag))
+        val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f // CYP-274: rail palette by active scheme
+        Box(modifier = Modifier.width(4.dp).height(22.dp).background(Severity.ERROR.railColor(dark)).testTag(qualifierTag))
         Text("⚠", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer)
         Text(
             text = stringResource(Res.string.event_gap_dropped, count),
