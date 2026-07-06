@@ -1,0 +1,59 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-250 (Empty-Project Empty-State — 0 Agenten; verlinkt CYP-246/CYP-247)",
+    "version": "1.0",
+    "status": "Vorschlag — reine commonMain-UI (Desktop-Canvas-Empty-State bei 0 Agenten), keine Server-/Protokoll-/DTO-Aenderung, keine Backend-Dep. Near-pure-Reuse. Speist Dev CYP-250 (nach/mit CYP-246); UX-QA danach UIUX. S.",
+    "brand": "CyppieAgents (Anti-Hype; interim look + M3)",
+    "grounded_against": "origin/develop 34b4fd4 (window/WindowManager.kt WindowCanvas, AgentShell.kt Fensterliste Z.256, agentmgmt/AgentManagementPanel.kt CYP-228-Empty-State Z.146-165 + Add-Button, AgentMgmtTags, WindowTestTags, window/PhonePager Empty-State-Praezedenz, project/ProjectSwitcherBar, strings.xml)",
+    "principles": [
+      "Keine neuen Tokens/Farben: M3-Typografie (Heading titleSmall + Body bodyMedium/onSurfaceVariant) + bestehender Button + TonedHint(GATED).",
+      "Near-pure-Reuse: 0 neue Copy-Keys — agent_empty_title/agent_empty_body/agent_add/workspace_operator_only verbatim; gleiches Onboarding-Vokabular wie CYP-228.",
+      "Ehrlichkeit: 0 AGENTEN != 0 Fenster (System-Fenster immer da); 'noch keine Agenten' nicht 'nichts hier'; 'Anlegen != Start'; Gate ehrlich ohne toten CTA; self-clearing."
+    ]
+  },
+  "new_tokens": {
+    "note": "KEINE. CYP-250 hat keine eigenen Layout-/Farb-Konstanten."
+  },
+  "reused_visual": {
+    "note": "M3 + bestehende Komponenten — CYP-250 fuegt KEIN Vokabular hinzu.",
+    "heading": "MaterialTheme.typography.titleSmall + semantics { heading() }",
+    "body": "MaterialTheme.typography.bodyMedium, color = onSurfaceVariant",
+    "cta": "Button (bestehend), Label = agent_add, enabled = isOperator",
+    "gate_hint": "TonedHint(HintTone.GATED) mit workspace_operator_only",
+    "pattern_source": "AgentManagementPanel.kt Z.146-165 (CYP-228-Empty-State), verbatim Copy-Reuse"
+  },
+  "trigger": {
+    "note": "Der ehrliche Kern — 'leerer Desktop' = 0 AGENTEN, nicht 0 Fenster.",
+    "condition": "managedAgents.isEmpty() (0 Agenten-Fenster)",
+    "NOT": "state.windows.isEmpty() — nie wahr, weil System-Fenster (AgentMgmt/Comm/ACL/...) in AgentShell.kt Z.256 immer angehaengt werden",
+    "placement": "WindowCanvas-Box (Z.160, testTag window.host), Hintergrundebene zentriert, VOR forEachIndexed — unter den schwebenden Fenstern (kein Z-Fight)",
+    "self_clearing": "verschwindet sobald >=1 Agent existiert"
+  },
+  "cta_route": {
+    "note": "Keine zweite Add-Mechanik — bestehender Flow.",
+    "action": "focus(AGENT_MGMT_WINDOW_ID) + agentMgmtVm.openAdd() (CYP-86/87/88)",
+    "fallback": "nur Agenten-Verwaltung fokussieren (zeigt intern eigenen CYP-228-Empty-State + Add-Button)"
+  },
+  "new_tags": {
+    "count": 3,
+    "family": "window.host.empty.*",
+    "values": ["window.host.empty", "window.host.empty.addBtn", "window.host.empty.gateHint"],
+    "note": "WindowTestTags + CYP-7 re-syncen (Shared-Tag-Drift)."
+  },
+  "not_reused_on_purpose": {
+    "pager_empty": "PhonePager-Empty-State 'Keine Fenster' — Desktop ist agentenlos, nicht fensterlos; Reuse waere semantisch falsch."
+  },
+  "validation": {
+    "new_tokens": 0,
+    "new_colors": 0,
+    "new_copy_keys_required": 0,
+    "new_copy_keys_optional_forward": 1,
+    "new_tags": 3,
+    "backend_dependency": 0,
+    "reuse": "agent_empty_title/agent_empty_body/agent_add/workspace_operator_only (verbatim), Button, TonedHint(GATED), WindowTestTags.HOST, AgentMgmtTags.ADD_BUTTON, openAdd (CYP-86/87/88), managedAgents (bestehender State)",
+    "no_model_change": "kein neuer State/DTO; Trigger aus vorhandenem managedAgents, CTA aus vorhandenem openAdd; Server/Protokoll 0.",
+    "no_secrets": "keine Token/E-Mail/Endpoints; reine UI-/a11y-Werte",
+    "honesty": "0 AGENTEN != 0 Fenster (Trigger managedAgents.isEmpty, nie state.windows.isEmpty); 'noch keine Agenten' nicht 'nichts hier' (System-Fenster koexistieren, Hintergrundebene, kein Z-Fight); 'Anlegen != Start' im reused Body; CTA = bestehender openAdd (kein 2. Weg); Operator-Gate ehrlich + kein toter CTA; self-clearing; pager_empty bewusst nicht reused."
+  }
+}
