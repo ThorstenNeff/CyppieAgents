@@ -15,6 +15,7 @@ import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.model.ProjectScope
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
 import com.tneff.cyppieagents.model.Subscribe
@@ -103,8 +104,10 @@ fun Route.commRoutes(
     hub: Hub,
     state: HubState,
     registry: TokenRegistry,
-    // CYP-73: live process status. Null in the dev install (no boot) → status stays the default RUNNING.
-    lifecycle: com.tneff.cyppieagents.boot.LifecycleManager? = null,
+    // CYP-73: live per-agent run-state. CYP-255 (.4b): resolves the ACTIVE project's run-state per request
+    // (was the boot LifecycleManager) — after a switch, GET /api/agents shows the switched-to project's
+    // agents' states, not the boot project's. Default `{ null }` (dev install, no boot) → status stays default.
+    runStateOf: (agentId: String) -> com.tneff.cyppieagents.model.AgentRunState? = { null },
     // CYP-122: per-agent connector fidelity for the steady-state read model (Doc 10 §6.4). Null in the dev
     // install → capabilities stay null (UI shows nothing reduced).
     capabilitiesOf: (agentId: String) -> com.tneff.cyppieagents.model.Capabilities? = { null },
@@ -140,7 +143,7 @@ fun Route.commRoutes(
             // the hub is instanced per project; THEN this list filters by the active project's hub.
             val agents = state.agents.map { agent ->
                 agent.copy(
-                    runState = lifecycle?.runStateOf(agent.id) ?: agent.runState,
+                    runState = runStateOf(agent.id) ?: agent.runState,
                     // CYP-122: fill the steady-state connector fidelity + kind for the per-agent read model.
                     capabilities = capabilitiesOf(agent.id) ?: agent.capabilities,
                     connectorKind = connectorKindOf(agent.id) ?: agent.connectorKind,
@@ -245,22 +248,11 @@ fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry, deps: c
 
         val pump = launch {
             hub.events.collect { event ->
-                val out: CommWsServerEvent? = when (event) {
-                    is MessageEvent -> {
-                        val ch = event.message.channelId
-                        // CYP-255 ① — route through visibleMessages (canRead AND the ProjectScope gate),
-                        // the SAME filter as the REST path (Hub.channelMessages), not canRead alone. A
-                        // buffered MessageEvent from project A must NOT leak over a live /ws/comm connection
-                        // that has since switched to B: canRead alone still passes an out-of-project channel
-                        // the participant is a lingering member of; the project gate drops it fail-closed.
-                        val visible = state.acl.visibleMessages(participant, listOf(event.message)).isNotEmpty()
-                        if (visible && (subscribed?.contains(ch) != false)) event else null
-                    }
-                    // Same ACL filter as messages: an ACL change is metadata about a channel, so only
-                    // a participant who can read that channel may learn of it (no cross-channel leak).
-                    is AclEvent -> if (state.acl.canRead(event.entry.channelId, participant)) event else null
-                    is ChannelsEvent -> ChannelsEvent(hub.readableChannels(participant)) // re-scope to participant
-                }
+                // CYP-255 ① — the per-participant filter is a pure function over the LIVE [state] (read
+                // fresh per event, so a live project switch on this held connection re-scopes it), extracted
+                // so BOTH egress axes (MessageEvent body + AclEvent metadata) are project-scoped through one
+                // chokepoint and are testable deterministically against a foreign-project event.
+                val out = commEventForParticipant(event, participant, state, subscribed)
                 if (out != null) emit(out)
             }
         }
@@ -275,4 +267,46 @@ fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry, deps: c
             pump.cancel()
         }
     }
+}
+
+/**
+ * CYP-255 ① — the pure per-participant filter for the `/ws/comm` live pump, extracted from [commSocket] so
+ * BOTH egress axes are project-scoped through ONE chokepoint and testable deterministically (no live
+ * socket) against a foreign-project event. Returns the event to forward to [participant], or null to drop.
+ * Reads the ACTIVE project from [state] on **every** call, so a buffered event stamped for project A is
+ * dropped once the held connection's active project has switched to B (the live-rescope leak the money-
+ * tooth exercises end-to-end).
+ *
+ *  - **MessageEvent** → `visibleMessages` (canRead AND the ProjectScope/CYP-93-share gate) — EXACTLY the
+ *    REST `Hub.channelMessages` filter, not canRead alone: an out-of-project channel the participant is a
+ *    lingering member of passes canRead but is dropped by the project gate, fail-closed.
+ *  - **AclEvent** → `ProjectScope.permits(entry.projectId, active) AND canRead(entry.channelId)`. An
+ *    [com.tneff.cyppieagents.model.AclEntry] carries its OWN `projectId` (the AclMatrix filters the static
+ *    entries list the same way, AclMatrix.kt:45), so it is scoped by that field — NOT `visibleMessages`,
+ *    which is Message-shaped. Same leak class as the message body, lower severity (ACL metadata): who may
+ *    read/write project A's channel must not surface over a connection since switched to B on an id
+ *    collision. (Before this pass the branch was canRead-only; the old "same ACL filter as messages"
+ *    comment was wrong — messages funnel through `visibleMessages`, an AclEvent through this pair.)
+ *  - **ChannelsEvent** → re-scoped to the channels [participant] may currently read.
+ */
+internal fun commEventForParticipant(
+    event: CommWsServerEvent,
+    participant: String,
+    state: HubState,
+    subscribed: Set<String>?,
+): CommWsServerEvent? = when (event) {
+    is MessageEvent -> {
+        val ch = event.message.channelId
+        val visible = state.acl.visibleMessages(participant, listOf(event.message)).isNotEmpty()
+        if (visible && (subscribed?.contains(ch) != false)) event else null
+    }
+    is AclEvent ->
+        if (ProjectScope.permits(event.entry.projectId, state.activeProjectId) &&
+            state.acl.canRead(event.entry.channelId, participant)
+        ) {
+            event
+        } else {
+            null
+        }
+    is ChannelsEvent -> ChannelsEvent(state.acl.readableChannels(participant)) // re-scope to participant
 }

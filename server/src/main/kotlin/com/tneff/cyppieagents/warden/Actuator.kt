@@ -40,14 +40,17 @@ interface Actuator {
  * carries the short platform-authored `reason`, never agent content.
  */
 class MediatorActuator(
-    private val sessions: ConnectorSessions,
+    // CYP-255 (.4b): resolved through the ACTIVE project's runtime (was a boot-pinned [ConnectorSessions]).
+    // The Warden is the SHARED supervision stack; a nudge reaches the ACTIVE project's session for the
+    // agent — a same-id agent in another project has its own session under that project's runtime.
+    private val sessions: () -> ConnectorSessions,
     private val signals: SignalSink,
     private val projectId: String,
 ) : Actuator {
     private val log = LoggerFactory.getLogger("warden.actuator")
 
     override suspend fun nudge(agentId: String, text: String) {
-        val session = sessions.session(agentId)
+        val session = sessions().session(agentId)
         if (session == null) {
             // Fail-closed honesty: no live session → nothing was sent → no `nudge.sent` is emitted.
             log.warn("nudge skipped: no live session for agent '{}'", agentId)

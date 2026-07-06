@@ -22,18 +22,21 @@ import kotlinx.serialization.json.put
  * (no "off-message" path). The opt-in event is the deliberate re-declare hook the boot caps-emit defers to.
  */
 class ConnectorOptIn(
-    private val agentConfigs: AgentConfigRegistry,
-    private val capabilityRegistry: CapabilityRegistry,
+    // CYP-255 (.4b): resolved through the ACTIVE project's runtime (were boot-pinned singletons). An opt-in
+    // sets the connector on the ACTIVE project's agent config + re-declares its caps in the ACTIVE project's
+    // registry — a same-id agent in another project is untouched.
+    private val agentConfigs: () -> AgentConfigRegistry,
+    private val capabilityRegistry: () -> CapabilityRegistry,
     private val eventRecorder: EventRecorder,
-    private val projectId: String,
+    private val projectId: () -> String,
 ) {
     fun apply(agentId: String, kind: ConnectorKind) {
-        agentConfigs.setConnectorKind(agentId, kind)
-        capabilityRegistry.set(agentId, ConnectorRouter.capabilitiesForKind(kind))
+        agentConfigs().setConnectorKind(agentId, kind)
+        capabilityRegistry().set(agentId, ConnectorRouter.capabilitiesForKind(kind))
         eventRecorder.record(
             EventDraft(
                 agentId = agentId,
-                projectId = projectId,
+                projectId = projectId(),
                 type = EventType.CONNECTOR_OPTIN,
                 severity = Severity.WARN,
                 detail = buildJsonObject {

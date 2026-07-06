@@ -153,6 +153,39 @@ class AgentSocketTest {
     }
 
     @Test
+    fun agentNotInActiveProjectSliceIsRejected_evenWithLiveSession() = testApplication {
+        // CYP-255 ② — a LIVE session exists for "backend", but "backend" is NOT in the active project's
+        // slice → the connection is rejected fail-closed (a same-id agent in another project must not
+        // attach cross-project: foreign terminal / stdin / stdout). Non-vacuous partner below admits the
+        // same live session once the slice includes it. Mutation: drop the `activeAgentIds` guard → the
+        // live session admits this and the socket stays open → this reds.
+        val sessions = ConnectorSessions()
+        sessions.register(FakeConnectorSession("backend"))
+        application { installAgentSocket(sessions, authorize = { true }, activeAgentIds = { setOf("frontend") }) }
+        val client = createClient { install(ClientWebSockets) }
+        client.webSocket("/ws/agent?agentId=backend") {
+            assertEquals(CloseReason.Codes.CANNOT_ACCEPT.code, closeReason.await()?.code)
+        }
+    }
+
+    @Test
+    fun agentInActiveProjectSliceWithSessionIsAdmitted() = testApplication {
+        // Non-vacuous partner to the reject above: same live session, but the active slice INCLUDES backend
+        // → admitted (proves the reject is the slice gate, not a blanket deny).
+        val sessions = ConnectorSessions()
+        sessions.register(FakeConnectorSession("backend"))
+        application { installAgentSocket(sessions, authorize = { true }, activeAgentIds = { setOf("backend") }) }
+        val client = createClient { install(ClientWebSockets) }
+        client.webSocket("/ws/agent?agentId=backend") {
+            send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), UserTurn("hi"))))
+            val ack = assertIs<AssistantEvent>(
+                CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText()),
+            )
+            assertTrue(assertIs<TextBlock>(ack.message.content.single()).text.contains("hi"))
+        }
+    }
+
+    @Test
     fun unknownAgentIsRejected() = testApplication {
         application { installAgentSocket(ConnectorSessions(), authorize = { true }) }
         val client = createClient { install(ClientWebSockets) }

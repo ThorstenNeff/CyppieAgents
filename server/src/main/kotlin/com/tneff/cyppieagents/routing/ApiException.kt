@@ -39,3 +39,13 @@ class PayloadTooLargeException(message: String, code: String = "payload_too_larg
  */
 class ConflictException(message: String, code: String = "conflict") :
     ApiException(HttpStatusCode.Conflict, code, message)
+
+/**
+ * CYP-255 / CYP-259 — the active project has no live runtime (not yet activated, or LRU-evicted by the
+ * teardown policy). Fail-closed: rather than silently falling back to another project's lifecycle (the very
+ * cross-project bleed L exists to prevent), [com.tneff.cyppieagents.boot.RuntimeRegistry.active] throws this,
+ * and the route boundary maps it to a clean **409** ("not runnable yet") instead of a 500. In normal flow it
+ * never fires — a switch mints the target's runtime (getOrCreate) BEFORE it becomes active.
+ */
+class ProjectNotRunnableException(message: String, code: String = "project_not_runnable") :
+    ApiException(HttpStatusCode.Conflict, code, message)

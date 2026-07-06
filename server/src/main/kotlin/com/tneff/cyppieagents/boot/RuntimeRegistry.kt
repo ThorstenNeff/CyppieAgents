@@ -43,11 +43,14 @@ class RuntimeRegistry(private val activeProjectId: () -> String) {
     /**
      * The active project's runtime. **Fail-closed:** throws if the active project has no live runtime — a
      * caller must never silently fall back to another project's lifecycle (that would be the very
-     * cross-project bleed L exists to prevent). Today the boot runtime is always registered for the active
-     * project, so this never throws; when L lazily instances runtimes, activation registers before first use.
+     * cross-project bleed L exists to prevent). CYP-259: the switch mints the target's runtime (getOrCreate)
+     * BEFORE it becomes active, so in normal flow this never throws; the throw is the backstop for a not-yet-
+     * activated / LRU-evicted project, mapped to a clean 409 at the route boundary (not a 500).
      */
     fun active(): ProjectRuntime = runtimes[activeProjectId()]
-        ?: error("no live ProjectRuntime for active project '${activeProjectId()}'")
+        ?: throw com.tneff.cyppieagents.routing.ProjectNotRunnableException(
+            "no live runtime for the active project '${activeProjectId()}'",
+        )
 
     /** Count of live runtimes — the accounting the CYP-247.4 LRU cap K reads. */
     fun liveCount(): Int = runtimes.size

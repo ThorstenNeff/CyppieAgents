@@ -93,6 +93,18 @@ class BootedPlatform(
      * consumers migrate from the direct fields to `runtimeRegistry.active().*` in CYP-247.2/.3.
      */
     val runtimeRegistry: RuntimeRegistry,
+    /**
+     * CYP-255 (.4b) — mints a DISTINCT [ProjectRuntime] for a non-boot project on first activation. The
+     * switch route feeds it to [RuntimeRegistry.getOrCreate] (so a switched-to project gets its own
+     * lifecycle before any spawn), and the e2e harness seeds distinct per-project runtimes with it.
+     */
+    val projectRuntimeFactory: ProjectRuntimeFactory,
+    /**
+     * CYP-255 (.4b) / CYP-247.4 — the session-suspension teardown policy (LRU cap K on live sessions). The
+     * switch route calls [RuntimeSuspensionPolicy.onActivated]; `GET /api/projects` reads
+     * [RuntimeSuspensionPolicy.stateOf] to fill each [com.tneff.cyppieagents.model.Project.runtimeState].
+     */
+    val suspensionPolicy: RuntimeSuspensionPolicy,
 )
 
 /**
@@ -169,6 +181,10 @@ class BootOrchestrator(
     // CYP-171 / E2.6 (S3): durable secret-at-rest store for runtime-minted remote-agent tokens; null →
     // in-memory (tests). bootPlatform supplies the out-of-repo, gitignored, 0600 file under the gitRoot.
     private val remoteTokensFile: java.io.File? = null,
+    // CYP-255 (.4b) / CYP-247.4: the HARD LRU cap on projects whose agent SESSIONS run (the ratified
+    // teardown — active + K-1 recent-hot stay live; beyond that the LRU project is session-suspended,
+    // resumed via --resume on re-entry). Default 3 (ratified). ≤ 0 disables suspension (unbounded live).
+    private val runtimeSuspensionCap: Int = 3,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -228,7 +244,13 @@ class BootOrchestrator(
         val providerRegistry = com.tneff.cyppieagents.connector.ProviderRegistry()
         // S12 / CYP-83: events carry the active project, single-sourced from config (not a constant).
         // CYP-121: the projector gates tool.* (toolGranularity) and context.usage (structuredUsage).
-        val eventProjector = EventProjector(bander, projectId = config.projectId, capabilities = capabilityRegistry::get)
+        // CYP-255 (.4b): the projector is SHARED (one instance); it gates tool.*/context.usage against the
+        // ACTIVE project's capabilities. Resolver, not the boot registry — a switch re-targets it.
+        val eventProjector = EventProjector(
+            bander,
+            projectId = config.projectId,
+            capabilities = { runtimeRegistry.active().capabilityRegistry.get(it) },
+        )
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
 
@@ -241,7 +263,10 @@ class BootOrchestrator(
         val deliverer = com.tneff.cyppieagents.mediation.MessageDeliverer(
             state = { hub.state },
             projectId = { hub.state.activeProjectId },
-            sessions = sessions,
+            // CYP-255 (.4b): the deliverer is the SHARED "ear"; it injects into the ACTIVE project's sessions.
+            // Each per-project runtime wires its OWN sessions to onSessionAttached (below for boot; the factory
+            // for the rest), so replay-on-attach fires per project while live delivery targets the active one.
+            sessions = { runtimeRegistry.active().connectorSessions },
             store = store,
             log = deliveryLog,
             scope = scope,
@@ -303,7 +328,9 @@ class BootOrchestrator(
             recorder = eventRecorder,
             projector = eventProjector,
             agentEvents = agentEventRecorder, // CYP-198: persist the local agent's stream-json transcript
-            personaOf = agentConfigs::personaOf,
+            // CYP-255 (.4b): the connector is SHARED; it reads the ACTIVE project's persona at open() so a
+            // spawn in a switched-to project gets THAT project's persona — not the boot project's.
+            personaOf = { runtimeRegistry.active().agentConfigs.personaOf(it) },
             mcpConfigWriter = mcpConfigWriter, // CYP-146: expose hub_send to the Connector-A spawn
             tokenFor = { tokenByAgent[it] },
             // CYP-163: null in prod (sharp, Gate #4); non-null ONLY via the RB1 sandbox harness path.
@@ -319,14 +346,179 @@ class BootOrchestrator(
         val connectorRouter = ConnectorRouter(
             streamJson = defaultConnector,
             mcp = mcpConnector,
-            kindOf = agentConfigs::connectorKindOf,
+            // CYP-255 (.4b): resolve the serving kind from the ACTIVE project's config (a switched-to project's
+            // agent uses ITS declared kind). Reads active() — so the caps-intake loop below runs AFTER the boot
+            // runtime is registered (the reorder), else active() would throw during boot.
+            kindOf = { runtimeRegistry.active().agentConfigs.connectorKindOf(it) },
         )
         val connector: Connector = connectorFactory?.invoke(connectorRouter) ?: connectorRouter
+
+        // Hook spool tailing (CYP-38 reader + CYP-37 tailer, at-most-once). Started only when a path
+        // is configured; bootPlatform supplies it, CYP-43 makes it a config knob.
+        spoolPath?.let { SpoolTailer(SpoolReader(it), eventRecorder, scope).start() }
+
+        // Mediator-Aufsicht Sense stage (07/S11). The Scanner consumes the same event bus via
+        // `subscribe` and emits Signals back into it. Read-only on the stream + signal-emit only — it
+        // gets no connector/session handle, so it cannot act on an agent (CYP-60).
+        val signalSink = EventLogSignalSink(eventRecorder)
+        // CYP-61 stall detector: rate-limit throttle ∧ silence>T → stall.suspected. onEvent senses
+        // (arm/disarm) via the Scanner's fan-out; the timed decision is driven by the StallSweeper.
+        // CYP-121: the detector won't arm for an agent whose connector lacks a trusted rateLimitSignal.
+        val stallDetector = StallDetector(capabilities = { runtimeRegistry.active().capabilityRegistry.get(it) })
+        Scanner(eventSink, scannerDetectors + stallDetector, signalSink, scope).start()
+        StallSweeper(stallDetector, signalSink, scope, clock = System::currentTimeMillis).start()
+
+        // Mediator-Aufsicht Decide+Act stage (07/S11, CYP-62): the Warden is a separate bus consumer
+        // that listens for signal Events and routes each to the Policy that handles it. Policies act
+        // ONLY through the Actuator — the single write authority toward an agent (nudge = a user-turn
+        // on the agent's session = the Mediator stdin).
+        val actuator = MediatorActuator({ runtimeRegistry.active().connectorSessions }, signalSink, config.projectId)
+        // CYP-63 stall policy: opens one incident/agent on stall.suspected, nudges with growing backoff,
+        // escalates after N, recovers on activity. The runner feeds it activity + the backoff clock.
+        val stallPolicy = StallPolicy(clock = System::currentTimeMillis, actuator = actuator, signals = signalSink)
+        Warden(eventSink, wardenPolicies + stallPolicy, actuator, scope).start()
+        StallPolicyRunner(stallPolicy, eventSink, scope).start()
+
+        // Agent lifecycle (CYP-73): the spawn path is single-sourced here so boot-spawn and the runtime
+        // start/restart controls can't drift. Boot fail-closed per agent (Reviewer #5): a failed spawn
+        // → ERROR, no session, no /ws/agent; the hub and other agents are unaffected.
+        val lifecycle = LifecycleManager(
+            initialWorktrees = config.agents.associate { it.id to it.worktreeName },
+            sessions = sessions,
+            // CYP-247.2: ensure the worktree under the ACTIVE project's root (lazy via the runtime seam).
+            ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+            spawn = { id, worktree -> connector.open(id, worktree) },
+            recorder = eventRecorder,
+            projector = eventProjector,
+        )
+
+        // CYP-122: the single, audited, server-enforced point that sets an agent's connector (opt-in).
+        val connectorOptIn = ConnectorOptIn(
+            agentConfigs = { runtimeRegistry.active().agentConfigs },
+            capabilityRegistry = { runtimeRegistry.active().capabilityRegistry },
+            eventRecorder = eventRecorder,
+            projectId = { state.activeProjectId },
+        )
+
+        // S14 / CYP-97: runtime agent CRUD over the (now mutable) HubState topology + lifecycle + config.
+        val agentManagement = AgentManagement(
+            state = state,
+            lifecycle = lifecycle,
+            configs = agentConfigs,
+            // CYP-247.2: worktree create/delete on the ACTIVE project's manager (lazy via the runtime seam).
+            ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+            deleteWorktree = { worktreeName -> runtimeRegistry.active().worktrees.deleteWorktree(worktreeName) },
+            onConnectorOptIn = connectorOptIn::apply, // CYP-122: create-as-B audits like the dedicated opt-in
+            remoteToken = remoteTokenIssuer, // CYP-171: mint/revoke the per-agent token for a remote create/remove
+            overrides = agentOverrides, // CYP-210: persist name/color/persona/launch edits (restart-durable)
+            // CYP-246: CRUD writes (override/avatar-blob) follow the ACTIVE project, not a boot-frozen constant,
+            // so an edit made after a switch lands in the switched project's overlay — parity with the per-project
+            // agent slice. Reads the live pointer HubState.rescope updates.
+            activeProjectId = { state.activeProjectId },
+            avatarBlobs = avatarBlobs,   // CYP-215: re-encoded avatar PNG store
+            avatarPresets = avatarPresets, // CYP-215: self-hosted DiceBear preset resolver
+        )
+
+        // CYP-247.1/.2 (L): register the boot project's runtime in the per-project seam L de-singletonizes
+        // (the registry itself was declared above so the connector + worktree lambdas could capture it).
+        // Registered HERE — once lifecycle/agentManagement exist, but still BEFORE the spawn loop below — so
+        // the lazily-resolving worktree ops / spawns always find a live runtime. Scaffold: one runtime holding
+        // the SAME instances built above (incl. the boot `worktrees`), so behavior is unchanged.
+        runtimeRegistry.register(
+            ProjectRuntime(
+                projectId = config.projectId,
+                lifecycle = lifecycle,
+                connectorSessions = sessions,
+                agentConfigs = agentConfigs,
+                capabilityRegistry = capabilityRegistry,
+                providerRegistry = providerRegistry,
+                agentManagement = agentManagement,
+                worktrees = worktrees,
+            ),
+        )
+
+        // CYP-255 (.4b) — the per-project runtime FACTORY: mints DISTINCT lifecycle machinery for a
+        // NON-boot project the first time it is activated (RuntimeRegistry.getOrCreate on switch), so two
+        // projects with an agent id `backend` get SEPARATE sessions / worktrees / configs / registries — the
+        // collision the money-tooth pins. It closes over the SHARED spine (state, connector, deliverer,
+        // eventRecorder/projector, worktrees-base, the CRUD/override/token deps): the spine resolves
+        // `runtimeRegistry.active().*`, so a switch re-targets it onto whichever project the factory minted.
+        //
+        // The BOOT project keeps its pre-built runtime (registered above) rather than being minted here — its
+        // instances are already wired into boot (the deliverer ear on `sessions`, the intake loop's caps
+        // writes, the override overlay on `agentConfigs`), so re-minting would orphan those. A non-boot
+        // project has none of that history, so a fresh empty runtime is correct: it starts with NO agents and
+        // the operator adds them (AgentManagement.add), exactly like the boot project got its from config.
+        val projectRuntimeFactory = ProjectRuntimeFactory { pid ->
+            val pSessions = ConnectorSessions()
+            // Wire THIS project's sessions to the shared mediator ear, so replay-on-attach fires for its
+            // agents too (the deliverer targets active().connectorSessions for live delivery).
+            pSessions.addRegisterListener(deliverer::onSessionAttached)
+            val pConfigs = AgentConfigRegistry(emptyList()) // empty: agents are added at runtime, not from config
+            val pCaps = CapabilityRegistry()
+            val pProvider = com.tneff.cyppieagents.connector.ProviderRegistry()
+            val pWorktrees = worktrees.forProject(pid) // projects/<pid>/ — reuses the shared clone + runner
+            val pLifecycle = LifecycleManager(
+                initialWorktrees = emptyMap(),
+                sessions = pSessions,
+                // Resolves active().worktrees — identical to the boot lifecycle; this project's lifecycle is
+                // only invoked while it is active, so active().worktrees == pWorktrees (its own root).
+                ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+                spawn = { id, worktree -> connector.open(id, worktree) },
+                recorder = eventRecorder,
+                projector = eventProjector,
+            )
+            val pAgentManagement = AgentManagement(
+                state = state,
+                lifecycle = pLifecycle,
+                configs = pConfigs,
+                ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+                deleteWorktree = { worktreeName -> runtimeRegistry.active().worktrees.deleteWorktree(worktreeName) },
+                onConnectorOptIn = connectorOptIn::apply,
+                remoteToken = remoteTokenIssuer,
+                overrides = agentOverrides,
+                activeProjectId = { state.activeProjectId },
+                avatarBlobs = avatarBlobs,
+                avatarPresets = avatarPresets,
+            )
+            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees)
+        }
+
+        // CYP-255 (.4b) / CYP-247.4: the session-suspension teardown policy. suspend = stop a project's
+        // RUNNING agents (kill the `claude` processes; session ids are already persisted by the connector,
+        // CYP-167 — so start() re-spawns with --resume); resume = start exactly those agents again. The
+        // runtime OBJECT is kept in memory either way (full reclaim = CYP-247.5). Runs on the boot scope.
+        val suspensionPolicy = RuntimeSuspensionPolicy(
+            cap = runtimeSuspensionCap,
+            scope = scope,
+            suspendProject = { pid ->
+                val rt = runtimeRegistry.of(pid)
+                if (rt == null) {
+                    emptySet()
+                } else {
+                    val running = rt.lifecycle.snapshot()
+                        .filter { it.runState == com.tneff.cyppieagents.model.AgentRunState.RUNNING }
+                        .map { it.agentId }.toSet()
+                    running.forEach { rt.lifecycle.stop(it) } // removeAndAwait → process gone, runState STOPPED
+                    running
+                }
+            },
+            resumeProject = { pid, agents ->
+                val rt = runtimeRegistry.of(pid)
+                if (rt != null) agents.forEach { runCatching { rt.lifecycle.start(it) } } // start → open --resume
+            },
+        )
 
         // CYP-121/122: record each agent's capabilities (per-agent via the router) and log a content-free
         // `capability.degraded` event for every non-AVAILABLE dimension, so the fidelity gap is visible in
         // the Event-Log ("ehrlich degradiert, nie vorgetäuscht", Doc 10 §3). Connector A is all-AVAILABLE →
         // emits nothing; a Connector-B agent emits its column-B degradations.
+        //
+        // CYP-255 (.4b) — REORDER: this intake loop runs AFTER the boot runtime is registered (above),
+        // because `connector.capabilitiesFor/trustFor/providerFor` route through the router's `kindOf`, which
+        // now resolves `runtimeRegistry.active()` — that would throw if the boot runtime weren't yet live. The
+        // caps/provider are still written to the boot project's registries (they ARE `active().*` for the boot
+        // project here), so `GET /api/agents` reads them exactly as before — behavior-preserving.
         //
         // Idempotency (deliberate): this is a **once-per-platform-boot** emit. A CYP-73 agent restart goes
         // through LifecycleManager.respawn (not BootOrchestrator.boot), and a restart does NOT change the
@@ -367,85 +559,6 @@ class BootOrchestrator(
             }
         }
 
-        // Hook spool tailing (CYP-38 reader + CYP-37 tailer, at-most-once). Started only when a path
-        // is configured; bootPlatform supplies it, CYP-43 makes it a config knob.
-        spoolPath?.let { SpoolTailer(SpoolReader(it), eventRecorder, scope).start() }
-
-        // Mediator-Aufsicht Sense stage (07/S11). The Scanner consumes the same event bus via
-        // `subscribe` and emits Signals back into it. Read-only on the stream + signal-emit only — it
-        // gets no connector/session handle, so it cannot act on an agent (CYP-60).
-        val signalSink = EventLogSignalSink(eventRecorder)
-        // CYP-61 stall detector: rate-limit throttle ∧ silence>T → stall.suspected. onEvent senses
-        // (arm/disarm) via the Scanner's fan-out; the timed decision is driven by the StallSweeper.
-        // CYP-121: the detector won't arm for an agent whose connector lacks a trusted rateLimitSignal.
-        val stallDetector = StallDetector(capabilities = capabilityRegistry::get)
-        Scanner(eventSink, scannerDetectors + stallDetector, signalSink, scope).start()
-        StallSweeper(stallDetector, signalSink, scope, clock = System::currentTimeMillis).start()
-
-        // Mediator-Aufsicht Decide+Act stage (07/S11, CYP-62): the Warden is a separate bus consumer
-        // that listens for signal Events and routes each to the Policy that handles it. Policies act
-        // ONLY through the Actuator — the single write authority toward an agent (nudge = a user-turn
-        // on the agent's session = the Mediator stdin).
-        val actuator = MediatorActuator(sessions, signalSink, config.projectId)
-        // CYP-63 stall policy: opens one incident/agent on stall.suspected, nudges with growing backoff,
-        // escalates after N, recovers on activity. The runner feeds it activity + the backoff clock.
-        val stallPolicy = StallPolicy(clock = System::currentTimeMillis, actuator = actuator, signals = signalSink)
-        Warden(eventSink, wardenPolicies + stallPolicy, actuator, scope).start()
-        StallPolicyRunner(stallPolicy, eventSink, scope).start()
-
-        // Agent lifecycle (CYP-73): the spawn path is single-sourced here so boot-spawn and the runtime
-        // start/restart controls can't drift. Boot fail-closed per agent (Reviewer #5): a failed spawn
-        // → ERROR, no session, no /ws/agent; the hub and other agents are unaffected.
-        val lifecycle = LifecycleManager(
-            initialWorktrees = config.agents.associate { it.id to it.worktreeName },
-            sessions = sessions,
-            // CYP-247.2: ensure the worktree under the ACTIVE project's root (lazy via the runtime seam).
-            ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
-            spawn = { id, worktree -> connector.open(id, worktree) },
-            recorder = eventRecorder,
-            projector = eventProjector,
-        )
-
-        // CYP-122: the single, audited, server-enforced point that sets an agent's connector (opt-in).
-        val connectorOptIn = ConnectorOptIn(agentConfigs, capabilityRegistry, eventRecorder, config.projectId)
-
-        // S14 / CYP-97: runtime agent CRUD over the (now mutable) HubState topology + lifecycle + config.
-        val agentManagement = AgentManagement(
-            state = state,
-            lifecycle = lifecycle,
-            configs = agentConfigs,
-            // CYP-247.2: worktree create/delete on the ACTIVE project's manager (lazy via the runtime seam).
-            ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
-            deleteWorktree = { worktreeName -> runtimeRegistry.active().worktrees.deleteWorktree(worktreeName) },
-            onConnectorOptIn = connectorOptIn::apply, // CYP-122: create-as-B audits like the dedicated opt-in
-            remoteToken = remoteTokenIssuer, // CYP-171: mint/revoke the per-agent token for a remote create/remove
-            overrides = agentOverrides, // CYP-210: persist name/color/persona/launch edits (restart-durable)
-            // CYP-246: CRUD writes (override/avatar-blob) follow the ACTIVE project, not a boot-frozen constant,
-            // so an edit made after a switch lands in the switched project's overlay — parity with the per-project
-            // agent slice. Reads the live pointer HubState.rescope updates.
-            activeProjectId = { state.activeProjectId },
-            avatarBlobs = avatarBlobs,   // CYP-215: re-encoded avatar PNG store
-            avatarPresets = avatarPresets, // CYP-215: self-hosted DiceBear preset resolver
-        )
-
-        // CYP-247.1/.2 (L): register the boot project's runtime in the per-project seam L de-singletonizes
-        // (the registry itself was declared above so the connector + worktree lambdas could capture it).
-        // Registered HERE — once lifecycle/agentManagement exist, but still BEFORE the spawn loop below — so
-        // the lazily-resolving worktree ops / spawns always find a live runtime. Scaffold: one runtime holding
-        // the SAME instances built above (incl. the boot `worktrees`), so behavior is unchanged.
-        runtimeRegistry.register(
-            ProjectRuntime(
-                projectId = config.projectId,
-                lifecycle = lifecycle,
-                connectorSessions = sessions,
-                agentConfigs = agentConfigs,
-                capabilityRegistry = capabilityRegistry,
-                providerRegistry = providerRegistry,
-                agentManagement = agentManagement,
-                worktrees = worktrees,
-            ),
-        )
-
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()
         for (agent in config.agents) {
@@ -464,6 +577,11 @@ class BootOrchestrator(
             }
         }
 
+        // CYP-255 (.4b): seed the boot project as the first HOT project in the suspension policy's LRU (it
+        // is the active project at boot). With one project this never suspends anything; the switch feeds
+        // subsequent activations. Placed after the spawn loop so the boot project is genuinely live.
+        suspensionPolicy.onActivated(config.projectId)
+
         // S16 / CYP-89: Product-Lead reports fold READ sources (events/agents/channels/inbox) into
         // content-free, immutable snapshots — operator-gated at /api/reports.
         val reportStore = com.tneff.cyppieagents.report.ReportStore(
@@ -481,7 +599,7 @@ class BootOrchestrator(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
-            agentEventStore, agentEventRecorder, runtimeRegistry,
+            agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory, suspensionPolicy,
         )
     }
 }

@@ -80,7 +80,7 @@ class RemoteAcceptTest {
         val state = HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID)
         val hub = Hub(state, store)
         val sessions = ConnectorSessions()
-        val deliverer = MessageDeliverer({ hub.state }, { hub.state.activeProjectId }, sessions, store, InMemoryDeliveryLog(), scope)
+        val deliverer = MessageDeliverer({ hub.state }, { hub.state.activeProjectId }, { sessions }, store, InMemoryDeliveryLog(), scope)
         hub.onPosted = deliverer::onPosted
         sessions.addRegisterListener(deliverer::onSessionAttached)
         application {
@@ -227,7 +227,7 @@ class RemoteAcceptTest {
         val state = HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID)
         val hub = Hub(state, store)
         val sessions = ConnectorSessions()
-        val deliverer = MessageDeliverer({ hub.state }, { hub.state.activeProjectId }, sessions, store, InMemoryDeliveryLog(), scope)
+        val deliverer = MessageDeliverer({ hub.state }, { hub.state.activeProjectId }, { sessions }, store, InMemoryDeliveryLog(), scope)
         hub.onPosted = deliverer::onPosted
         sessions.addRegisterListener(deliverer::onSessionAttached)
 

@@ -89,7 +89,7 @@ class DeliveryPlumbingChainTest {
         val store = InMemoryMessageStore()
         val hub = Hub(state, store)
         val sessions = ConnectorSessions()
-        val deliverer = MessageDeliverer({ state }, { state.activeProjectId }, sessions, store, InMemoryDeliveryLog(), scope)
+        val deliverer = MessageDeliverer({ state }, { state.activeProjectId }, { sessions }, store, InMemoryDeliveryLog(), scope)
         val tokenRegistry = TokenRegistry(
             mapOf("tok-po" to "po", "tok-frontend" to "frontend", "tok-backend" to "backend"),
             operatorToken = "tok-op",
@@ -181,7 +181,7 @@ class DeliveryPlumbingChainTest {
         val hub = Hub(state, store)
         val sessions = ConnectorSessions()
         val deliverer = MessageDeliverer(
-            { state }, { state.activeProjectId }, sessions, store, InMemoryDeliveryLog(), scope, recorder, projector,
+            { state }, { state.activeProjectId }, { sessions }, store, InMemoryDeliveryLog(), scope, recorder, projector,
         )
         hub.onPosted = deliverer::onPosted
         sessions.addRegisterListener(deliverer::onSessionAttached)

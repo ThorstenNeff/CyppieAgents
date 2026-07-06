@@ -145,9 +145,10 @@ class RuntimeRegistryTest {
     fun active_failsClosed_whenActiveProjectHasNoRuntime() {
         // active = beta, but only alpha is registered. active() MUST throw — never fall back to alpha's
         // lifecycle (that fallback would be the cross-project bleed). Mutation: return runtimes.values.first()
-        // instead of throwing → this stops throwing → red.
+        // instead of throwing → this stops throwing → red. CYP-259: it throws the 409-mapped
+        // ProjectNotRunnableException (route boundary → clean 409 "not runnable yet", not a 500).
         val reg = RuntimeRegistry { "beta" }
         reg.register(runtime("alpha"))
-        assertFailsWith<IllegalStateException> { reg.active() }
+        assertFailsWith<com.tneff.cyppieagents.routing.ProjectNotRunnableException> { reg.active() }
     }
 }

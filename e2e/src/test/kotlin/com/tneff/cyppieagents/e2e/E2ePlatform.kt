@@ -6,7 +6,6 @@ import com.tneff.cyppieagents.boot.BootedPlatform
 import com.tneff.cyppieagents.boot.CommandResult
 import com.tneff.cyppieagents.boot.CommandRunner
 import com.tneff.cyppieagents.boot.PlatformConfig
-import com.tneff.cyppieagents.boot.ProjectRuntime
 import com.tneff.cyppieagents.boot.RepoConfig
 import com.tneff.cyppieagents.boot.Secrets
 import com.tneff.cyppieagents.boot.WorktreeManager
@@ -170,32 +169,21 @@ fun e2ePlatform(
     // through [HubState.addAgent] directly (topology-only: a PO gets no spoke, no lifecycle/worktree), so it
     // does NOT collide with the boot PO in the agentId-keyed lifecycle — that per-project lifecycle is S17/L.
     val bootPo = booted.state.agents.firstOrNull { it.role == Role.PO }
-    // CYP-253: the worktree/spawn path now resolves through the fail-closed runtime seam
-    // (runtimeRegistry.active().worktrees). A seeded project is rescoped-to below and has agents added to it,
-    // so it MUST have a live runtime while active — otherwise active() throws. Register one per seeded project,
-    // reusing the boot runtime's still-shared lifecycle machinery (per-runtime instancing is CYP-254/.3) plus a
-    // WorktreeManager scoped to the project's id (projects/<p.id>/). This is the harness analogue of CYP-246's
-    // per-project seed; production lazily creates the runtime on switch in CYP-255/.4.
-    val bootRt = booted.runtimeRegistry.of(active.id)!!
+    // CYP-255 (.4b): mint each seeded project's runtime via the REAL [ProjectRuntimeFactory] — the SAME path
+    // the production switch takes (RuntimeRegistry.getOrCreate on activation) — so every seeded project gets
+    // DISTINCT per-project instances (sessions / worktrees / configs / caps / provider / agentManagement), NOT
+    // the boot runtime's shared ones. This is what makes the collision-leak money-tooth load-bearing: two
+    // projects with an agent id `backend` now resolve to SEPARATE sessions + `projects/<id>/backend` worktrees.
+    // Agents are added through the PROJECT'S OWN agentManagement (its runtime), mirroring how a switched-to
+    // project's agents land in its runtime in production.
     for (p in projects.drop(1)) {
         booted.projectRegistry.create(CreateProjectRequest(p.id, p.name))
-        booted.state.rescope(p.id)
-        booted.runtimeRegistry.register(
-            ProjectRuntime(
-                projectId = p.id,
-                lifecycle = bootRt.lifecycle,
-                connectorSessions = bootRt.connectorSessions,
-                agentConfigs = bootRt.agentConfigs,
-                capabilityRegistry = bootRt.capabilityRegistry,
-                providerRegistry = bootRt.providerRegistry,
-                agentManagement = bootRt.agentManagement,
-                worktrees = WorktreeManager(FakeGit(), gitRoot, p.id),
-            ),
-        )
+        val rt = booted.runtimeRegistry.getOrCreate(p.id, booted.projectRuntimeFactory)
+        booted.state.rescope(p.id) // stamp the new spoke channels with ITS projectId (addAgent below)
         val hubPo = p.agents.firstOrNull { it.role == Role.PO }?.let { Agent(it.id, it.id, it.role, it.id) } ?: bootPo
         if (hubPo != null && booted.state.agents.none { it.role == Role.PO }) booted.state.addAgent(hubPo)
         p.agents.filter { it.role == Role.WORKER }.forEach { a ->
-            booted.agentManagement.add(NewAgentSpec(a.id, a.id, a.role))
+            rt.agentManagement.add(NewAgentSpec(a.id, a.id, a.role)) // the PROJECT's own runtime (distinct)
         }
         p.repo?.let { booted.projectConfig.setRepo(p.id, it, "main") }
         p.apiKey?.let { booted.projectConfig.setApiKey(p.id, it) }
