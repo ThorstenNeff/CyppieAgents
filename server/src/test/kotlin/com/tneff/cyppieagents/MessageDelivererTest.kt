@@ -48,7 +48,7 @@ class MessageDelivererTest {
         val hub = Hub(state, store)
         val sessions = ConnectorSessions()
         val log = InMemoryDeliveryLog()
-        val deliverer = MessageDeliverer({ state }, { state.activeProjectId }, sessions, store, log, scope)
+        val deliverer = MessageDeliverer({ state }, { state.activeProjectId }, { sessions }, store, log, scope)
         init {
             hub.onPosted = deliverer::onPosted
             sessions.addRegisterListener(deliverer::onSessionAttached)
@@ -164,7 +164,7 @@ class MessageDelivererTest {
         run {
             val store = InMemoryMessageStore()
             val sessions = ConnectorSessions()
-            val d = MessageDeliverer({ st }, { st.activeProjectId }, sessions, store, log, scope)
+            val d = MessageDeliverer({ st }, { st.activeProjectId }, { sessions }, store, log, scope)
             val hub = Hub(st, store).also { it.onPosted = d::onPosted }
             sessions.addRegisterListener(d::onSessionAttached)
             sessions.register(RecordingSession("backend"))
@@ -174,7 +174,7 @@ class MessageDelivererTest {
         // Run 2: store is RESET (fresh, empty) — only [log] survives (JsonFileMessageStore corrupt→empty).
         val store2 = InMemoryMessageStore()
         val sessions2 = ConnectorSessions()
-        val d2 = MessageDeliverer({ st }, { st.activeProjectId }, sessions2, store2, log, scope)
+        val d2 = MessageDeliverer({ st }, { st.activeProjectId }, { sessions2 }, store2, log, scope)
         val hub2 = Hub(st, store2).also { it.onPosted = d2::onPosted }
         sessions2.addRegisterListener(d2::onSessionAttached)
         val backend2 = RecordingSession("backend")

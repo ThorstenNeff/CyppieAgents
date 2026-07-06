@@ -59,7 +59,7 @@ class DelivererCancellationHygieneTest {
         val store = InMemoryMessageStore()
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), store)
         val sessions = ConnectorSessions()
-        val deliverer = MessageDeliverer({ hub.state }, { hub.state.activeProjectId }, sessions, store, InMemoryDeliveryLog(), scope)
+        val deliverer = MessageDeliverer({ hub.state }, { hub.state.activeProjectId }, { sessions }, store, InMemoryDeliveryLog(), scope)
         hub.onPosted = deliverer::onPosted
         sessions.addRegisterListener(deliverer::onSessionAttached)
         sessions.register(session)

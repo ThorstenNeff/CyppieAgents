@@ -65,18 +65,28 @@ fun Application.installAgentSocket(
     authorize: suspend (ApplicationCall) -> Boolean = { false },
     // CYP-198: the durable transcript store — when wired, /ws/agent replays history-then-live from it.
     agentEvents: AgentEventStore? = null,
+    // CYP-255 ②: the ACTIVE project's agent slice — see [agentSocket]. Null (dev/test) → no membership filter.
+    activeAgentIds: (() -> Set<String>)? = null,
 ) {
     install(WebSockets) { maxFrameSize = MessageInput.MAX_FRAME_BYTES } // CYP-143: protocol backstop
-    routing { agentSocket(sessions, authorize, agentEvents) }
+    routing { agentSocket({ sessions }, authorize, agentEvents, activeAgentIds) }
 }
 
 fun Route.agentSocket(
-    sessions: ConnectorSessions,
+    // CYP-255 ②: resolved per connection through the ACTIVE project's runtime (not a boot-pinned instance),
+    // so a bare agentId maps to the ACTIVE project's sessions — two projects with an agent `backend` no
+    // longer share one session map.
+    sessions: () -> ConnectorSessions,
     // Fail-closed by default (F-B): without an explicit predicate, NO connection is authorized —
     // an open socket lets anyone inject user-messages into an agent (i.e. drive it). Production
     // passes [tokenAuthorize]; tests opt in explicitly.
     authorize: suspend (ApplicationCall) -> Boolean = { false },
     agentEvents: AgentEventStore? = null,
+    // CYP-255 ②: the ACTIVE project's agent ids. Non-null (production) → a bare agentId that is NOT in the
+    // active project's slice is rejected fail-closed, BEFORE any session/transcript resolution — else a
+    // same-id agent in ANOTHER project (its session lives under that project's runtime) could attach
+    // cross-project (foreign terminal / stdin / stdout). Null (dev/test) → no membership filter (unchanged).
+    activeAgentIds: (() -> Set<String>)? = null,
 ) {
     webSocket("/ws/agent") {
         if (!authorize(call)) {
@@ -88,7 +98,13 @@ fun Route.agentSocket(
             close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "agentId required"))
             return@webSocket
         }
-        val session = sessions.session(agentId)
+        // CYP-255 ②: fail-closed on cross-project agent-id — the id must belong to the ACTIVE project.
+        // Even an operator (workspace-wide by token) can only watch the ACTIVE project's agents (switch first).
+        if (activeAgentIds != null && agentId !in activeAgentIds!!()) {
+            close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "no such agent in the active project"))
+            return@webSocket
+        }
+        val session = sessions().session(agentId)
         // A local session enables live inject; a wired [agentEvents] store enables durable transcript replay
         // (also for a REMOTE agent that has no local session — its window is read-only, driven over the wire).
         if (session == null && agentEvents == null) {

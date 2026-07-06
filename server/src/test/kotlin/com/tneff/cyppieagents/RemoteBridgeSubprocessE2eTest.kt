@@ -116,7 +116,7 @@ class RemoteBridgeSubprocessE2eTest {
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), store)
         val sessions = ConnectorSessions()
         val capReg = CapabilityRegistry()
-        val deliverer = MessageDeliverer({ hub.state }, { hub.state.activeProjectId }, sessions, store, InMemoryDeliveryLog(), scope)
+        val deliverer = MessageDeliverer({ hub.state }, { hub.state.activeProjectId }, { sessions }, store, InMemoryDeliveryLog(), scope)
         hub.onPosted = deliverer::onPosted
         sessions.addRegisterListener(deliverer::onSessionAttached)
         val server = embeddedServer(Netty, port = 0) {

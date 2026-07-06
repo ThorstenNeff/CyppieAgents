@@ -43,7 +43,11 @@ import java.util.concurrent.ConcurrentHashMap
 class MessageDeliverer(
     private val state: () -> HubState,
     private val projectId: () -> String,
-    private val sessions: ConnectorSessions,
+    // CYP-255 (.4b): resolved through the ACTIVE project's runtime (was a boot-pinned [ConnectorSessions]).
+    // The deliverer is the SHARED mediator "ear"; it injects into whichever project is active. Each
+    // per-project runtime wires its OWN sessions to [onSessionAttached] (the factory), so replay-on-attach
+    // fires per project, while delivery targets the active project's sessions.
+    private val sessions: () -> ConnectorSessions,
     private val store: MessageStore,
     private val log: DeliveryLog,
     private val scope: CoroutineScope,
@@ -61,9 +65,10 @@ class MessageDeliverer(
      */
     fun onPosted(message: Message) {
         val channel = state().channels.firstOrNull { it.id == message.channelId } ?: return
+        val activeSessions = sessions()
         for (member in channel.members) {
             if (member == message.from) continue
-            if (sessions.session(member) == null) continue // down → replay on attach, not dropped
+            if (activeSessions.session(member) == null) continue // down → replay on attach, not dropped
             launchDrain(member)
         }
     }
@@ -95,7 +100,7 @@ class MessageDeliverer(
      * [onPosted] + [onSessionAttached] cannot double-deliver.
      */
     private suspend fun drain(agentId: String) = mutexFor(agentId).withLock {
-        val session = sessions.session(agentId) ?: return@withLock // not attached → leave pending (recoverable)
+        val session = sessions().session(agentId) ?: return@withLock // not attached → leave pending (recoverable)
         val pid = projectId()
         val st = state()
         for (channel in st.channels) {

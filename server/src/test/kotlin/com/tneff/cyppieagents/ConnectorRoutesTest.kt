@@ -68,7 +68,7 @@ class ConnectorRoutesTest {
 
     private fun io.ktor.server.testing.ApplicationTestBuilder.app(fx: Fixture) {
         val recorder = EventRecorder(fx.eventSink, scope).also { it.start() }
-        val optIn = ConnectorOptIn(fx.configs, fx.capabilityRegistry, recorder, "default")
+        val optIn = ConnectorOptIn({ fx.configs }, { fx.capabilityRegistry }, recorder, { "default" })
         application {
             install(ContentNegotiation) { json(CommJson) }
             install(StatusPages) {
