@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.ui
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import com.tneff.cyppieagents.model.Role
@@ -7,6 +9,7 @@ import com.tneff.cyppieagents.model.colorSlot
 import com.tneff.cyppieagents.model.deriveScheme
 import com.tneff.cyppieagents.model.isPoSlot
 import com.tneff.cyppieagents.model.parseHexColor
+import com.tneff.cyppieagents.model.readableAccentOn
 
 /**
  * Identity colours for a sender/channel: avatar fill, on-avatar text, the name accent (CYP-14), and — CYP-211 —
@@ -91,3 +94,14 @@ fun initialsOf(name: String): String {
         else -> (parts.first().take(1) + parts.last().take(1)).uppercase()
     }
 }
+
+/**
+ * CYP-275 — the [nameAccent] adapted to be AA-readable as TEXT on the CURRENT MaterialTheme surface (hue preserved,
+ * via the shared `:core` [readableAccentOn]). The CYP-14 identity pastels clear 4.5:1 on the maritime DARK (navy)
+ * surface → returned unchanged there; on the maritime LIGHT (white) surface they wash out → darkened until they
+ * reach the text target. Reads the ACTUAL `colorScheme.surface` (not an assumed light/dark constant), so the
+ * contrast is measured against exactly what the name text sits on.
+ */
+@Composable
+fun readableNameAccent(nameAccent: Color): Color =
+    Color(readableAccentOn(nameAccent.toArgb(), MaterialTheme.colorScheme.surface.toArgb()))
