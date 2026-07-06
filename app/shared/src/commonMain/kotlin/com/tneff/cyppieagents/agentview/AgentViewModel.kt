@@ -3,6 +3,8 @@ package com.tneff.cyppieagents.agentview
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +15,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** CYP-262 T1 robustness: default watchdog window for the transient "Startet…" spawn feedback. If an accepted Start
+ *  produces neither a terminal lifecycle event nor a synchronous failure within this window, the flag falls back to
+ *  the last resolved state — a stuck spinner can't outlive a real spawn (spawns confirm in seconds). */
+const val START_PENDING_TIMEOUT_MS: Long = 30_000L
 
 /**
  * Drives the agent window: collects the [AgentSession] event stream, folds it into the rendered
@@ -29,6 +36,9 @@ class AgentViewModel(
     lifecycleSource: AgentLifecycleSource? = null,
     /** Whether the operator token is present → Start/Stop/Restart controls are enabled (fail-closed). */
     val canControl: Boolean = false,
+    /** CYP-262 T1 robustness: watchdog window for the "Startet…" transient (see [START_PENDING_TIMEOUT_MS]).
+     *  Injectable so tests can drive the fallback with a tiny value. */
+    private val startPendingTimeoutMs: Long = START_PENDING_TIMEOUT_MS,
 ) : ViewModel() {
 
     private val _transcript = MutableStateFlow<List<AgentEvent>>(emptyList())
@@ -52,6 +62,17 @@ class AgentViewModel(
     val startPending: StateFlow<Boolean> get() = _startPending
     private val _startPending = MutableStateFlow(false)
 
+    // CYP-262 T1 robustness: the watchdog for an in-flight "Startet…". Cancelled the moment the transient resolves.
+    private var startTimeoutJob: Job? = null
+
+    /** Resolve an in-flight "Startet…" (clear the flag) and cancel its watchdog. Called by the terminal lifecycle
+     *  event and a synchronous start failure — idempotent, so a late watchdog tick is a harmless no-op. */
+    private fun clearStartPending() {
+        _startPending.value = false
+        startTimeoutJob?.cancel()
+        startTimeoutJob = null
+    }
+
     /**
      * Server-reported lifecycle state for THIS agent (CYP-73), non-gated display: seeded from the
      * public-agent-list snapshot, then refined live by `/ws/lifecycle` deltas. Starts [UNKNOWN] until
@@ -61,8 +82,9 @@ class AgentViewModel(
         flow {
             emit(lifecycleSource?.snapshot()?.get(agentId) ?: AgentLifecycleState.UNKNOWN)
             lifecycleSource?.events()?.filter { it.agentId == agentId }?.collect { event ->
-                // CYP-262: any terminal lifecycle event for this agent resolves an in-flight "Startet…".
-                _startPending.value = false
+                // CYP-262: any terminal lifecycle event for this agent resolves an in-flight "Startet…" (and cancels
+                // its watchdog — the server confirmed, so the fallback isn't needed).
+                clearStartPending()
                 emit(event.state)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, AgentLifecycleState.UNKNOWN)
@@ -119,15 +141,25 @@ class AgentViewModel(
         if (!canControl) return
         val api = lifecycle ?: return
         // CYP-262: arm the transient "Startet…" only for Start, and only AFTER the fail-closed gate — so a
-        // no-op (no control / no port) never shows spawn feedback. Set synchronously for instant feedback.
-        if (pending) _startPending.value = true
+        // no-op (no control / no port) never shows spawn feedback. Set synchronously for instant feedback, and
+        // arm a watchdog so an accepted-but-never-confirmed spawn (POST 2xx, then no `/ws/lifecycle` event) can't
+        // leave "Startet…" stuck — after the window it falls back to the last resolved state (§9-2 "always resolves,
+        // never hangs"). A terminal event or a synchronous failure cancels the watchdog first (the normal paths).
+        if (pending) {
+            _startPending.value = true
+            startTimeoutJob?.cancel()
+            startTimeoutJob = viewModelScope.launch {
+                delay(startPendingTimeoutMs)
+                _startPending.value = false // fallback only; a resolved transient would have cancelled this job
+            }
+        }
         viewModelScope.launch {
             _lifecycleError.value = null
             runCatching { block(api) }.onFailure { e ->
                 if (e is CancellationException) throw e
                 // A synchronous start rejection (e.g. spawn_failed 503) resolves the transient at once — never
                 // leave "Startet…" hanging on a request that already failed; the state stays STOPPED honestly.
-                _startPending.value = false
+                clearStartPending()
                 // Surface the server's reason code (409/403/503/404) honestly; generic fallback otherwise.
                 _lifecycleError.value = (e as? AgentLifecycleHttpException)?.code ?: "lifecycle_failed"
             }
