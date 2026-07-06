@@ -86,6 +86,13 @@ class BootedPlatform(
     val agentEventStore: com.tneff.cyppieagents.agentevents.AgentEventStore,
     /** CYP-198: the transcript feeder (writes: the remote WireEvent path; local path feeds via the connector tap). */
     val agentEventRecorder: com.tneff.cyppieagents.agentevents.AgentEventRecorder,
+    /**
+     * CYP-247.1 (L) — the per-project agent-runtime seam. Scaffold: holds exactly one [ProjectRuntime] (the
+     * boot project's), wrapping the SAME lifecycle instances exposed directly above, so behavior is
+     * unchanged. Later stories make the runtime members per-project and instance/evict them on switch;
+     * consumers migrate from the direct fields to `runtimeRegistry.active().*` in CYP-247.2/.3.
+     */
+    val runtimeRegistry: RuntimeRegistry,
 )
 
 /**
@@ -412,6 +419,23 @@ class BootOrchestrator(
             avatarPresets = avatarPresets, // CYP-215: self-hosted DiceBear preset resolver
         )
 
+        // CYP-247.1 (L): register the boot project's runtime in the per-project seam L de-singletonizes.
+        // Scaffold — one runtime holding the SAME lifecycle instances built above, so behavior is unchanged.
+        // The resolver follows the live active pointer (rescope-aware), like AgentManagement's projectId (M).
+        val runtimeRegistry = RuntimeRegistry { state.activeProjectId }.apply {
+            register(
+                ProjectRuntime(
+                    projectId = config.projectId,
+                    lifecycle = lifecycle,
+                    connectorSessions = sessions,
+                    agentConfigs = agentConfigs,
+                    capabilityRegistry = capabilityRegistry,
+                    providerRegistry = providerRegistry,
+                    agentManagement = agentManagement,
+                ),
+            )
+        }
+
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()
         for (agent in config.agents) {
@@ -447,7 +471,7 @@ class BootOrchestrator(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
-            agentEventStore, agentEventRecorder,
+            agentEventStore, agentEventRecorder, runtimeRegistry,
         )
     }
 }
