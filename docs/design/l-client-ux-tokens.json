@@ -1,0 +1,47 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-262 (L-Client-UX: Spawn-Flow ↔ CYP-256 + Background/LRU-Indikator ↔ CYP-255; Epic-Arc CYP-247 L)",
+    "version": "1.0",
+    "status": "Vorschlag — Design-first, Ratifikation durch PO VOR Dev-Bau. Teil 1 client-only; Teil 2 = 1 Backend-Dep (per-Projekt-Session-State, Server-Kontrakt .4b). Reine commonMain-UI. UX-QA danach UIUX.",
+    "brand": "CyppieAgents (Anti-Hype; interim look + M3)",
+    "grounded_against": "origin/develop 44b1b1b (agentview/AgentWindow.kt StatusIndicator/ReconnectingChip/Lifecycle-Controls/Errors, AgentLifecycleApi AgentLifecycleState, AgentViewTags, project/ProjectSwitcherBar + ProjectTags, ui/TonedHint HintTone.INFO, strings.xml)",
+    "principles": [
+      "Keine neuen Tokens/Farben: Teil 1 reused StatusIndicator-Toene (in-progress = tertiaer, wie ReconnectingChip) + Controls/Errors; Teil 2 reused TonedHint(HintTone.INFO).",
+      "Ehrlichkeit Teil 1: nie Fake-Running (transientes 'Startet...' != 'Laeuft'); Anlegen != Start; Spawn-Fehler ehrlich; Terminal-Connect via bestehenden ReconnectingChip.",
+      "Ehrlichkeit Teil 2: BACKGROUND = echt laufend + entdeckbar (Ressourcen), SUSPENDED = pausiert + resumt (kein Verlust); INFO-Ton nie ERROR; kein K=3/LRU-Jargon; bindet an Server-Session-State (kein client-geratener Zustand)."
+    ]
+  },
+  "new_tokens": { "note": "KEINE. CYP-262 hat keine eigenen Layout-/Farb-Konstanten." },
+  "reused_visual": {
+    "note": "M3 + bestehende Komponenten — CYP-262 fuegt KEIN Vokabular hinzu.",
+    "part1_status": "AgentWindow StatusIndicator (Punkt + Label; RUNNING=primary, STOPPED=outline, ERROR=error, UNKNOWN=outlineVariant). 'Startet...' = transient in-progress-Ton (tertiaer, wie ReconnectingChip) auf agent.<id>.status; 0 neue Farbe.",
+    "part1_connect": "ReconnectingChip (tertiaer, nur wenn connection != LIVE) auf agent.<id>.reconnecting",
+    "part2_indicator": "TonedHint(HintTone.INFO) — 'i'-Glyph + secondary Text (Farbe nie alleiniger Traeger, WCAG 1.4.1)"
+  },
+  "part1_client_state": {
+    "note": "Teil 1 = client-only Spawn-Feedback, keine Backend-Dep.",
+    "startPending": "client-Flag im Lifecycle-VM: gesetzt beim Start-Action, geloescht beim naechsten terminalen /ws/lifecycle-Event (RUNNING/STOPPED/ERROR). Rendert 'Startet...' dazwischen. Resolvet immer, bleibt nie haengen.",
+    "forward": "falls Server spaeter echten STARTING/SPAWNING-Zustand liefert -> 'Startet...' bindet additiv daran (derselbe Slot)."
+  },
+  "part2_backend_dep": {
+    "note": "Teil 2 = der ehrliche Kern haengt an einem NEUEN Server-Zustand; Client bindet, erfindet nichts.",
+    "states": ["ACTIVE (Vordergrund, bestehende ●-Markierung)", "BACKGROUND (verlassen, Agenten laufen weiter, innerhalb K=3 hot)", "SUSPENDED (LRU-evicted jenseits K=3, resumt beim Oeffnen)"],
+    "server_contract_pending": "Enum-Namen (z.B. ProjectSessionState{ACTIVE,BACKGROUND,SUSPENDED}), Feld-an-Projektliste vs. /ws-Delta, Update-Kanal = PO liefert nach .4b-Switch-Semantik. Design ist naht-bereit (kontrakt-agnostisch, 3 Zustaende).",
+    "policy": "ratifiziert: ① Background-live + LRU-Cap K=3"
+  },
+  "validation": {
+    "new_tokens": 0,
+    "new_colors": 0,
+    "new_keys_required": 4,
+    "new_keys_optional": 1,
+    "new_tags": 1,
+    "new_tags_optional": 1,
+    "backend_dependency": 1,
+    "reuse": "StatusIndicator + agent_status_* + a11y_agent_status, ReconnectingChip + agent_reconnecting, agent_ctl_* + agent_ctl_err_spawn_failed, AgentViewTags.{status,reconnecting,lifecycleError,startBtn}, TonedHint(INFO), ProjectTags.{item,item.active}, project_switcher_active",
+    "no_model_change_part1": "1 client-startPending-Flag + 1 Key (agent_status_starting); 0 Tags/Farben; keine Server-/DTO-Aenderung.",
+    "part2_needs_backend": "per-Projekt-Session-State-Signal (Server-Kontrakt .4b) — Client bindet; ohne das Signal rendert der Indikator nicht.",
+    "no_secrets": "keine Token/E-Mail/Endpoints; reine Zustands-/a11y-Werte",
+    "honesty": "nie Fake-Running (Startet...!=Laeuft, resolvet immer); Anlegen!=Start; Spawn-Fehler ehrlich bleibt STOPPED; Terminal nie live vor LIVE; BACKGROUND=echt laufend+entdeckbar; SUSPENDED=pausiert+resumt kein Verlust; INFO nie ERROR fuer beide; BACKGROUND!=SUSPENDED klar getrennt; kein LRU-Jargon; bindet an Server-State nicht client-Rateung."
+  }
+}
