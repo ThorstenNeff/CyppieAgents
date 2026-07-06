@@ -1,0 +1,117 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-234 (Entwickler-API-Doku-Experience: 234a-3 gehostete Referenz + 234c narrative Anleitung)",
+    "version": "1.0",
+    "status": "Vorschlag — Design-first, Ratifikation durch PO VOR Bau. Maritime Doku-Theme fuer die NEUE gehostete HTML-Surface (Redoc/Swagger-UI/AsyncAPI-Renderer), NICHT der Compose-App-Theme.",
+    "design_language": "maritime — blau/weiss, Material 3; [[design-language-maritime-m3]]. Die Compose-App nutzt heute baren M3-Default (keine kodifizierte Palette); diese Tokens definieren die maritime Sprache erstmals fuer die Doku-Surface.",
+    "grounded_against": "backend/plans/CYP-234-frontend-agnostic-contract-design.md (§1 generated-contract, §2 auth-tiers, §3 /api/v1, §4 234a-3/234c). App-Theme: app/shared/.../App.kt bares MaterialTheme{}.",
+    "contrast_policy": "Alle Text-auf-Hintergrund-Paare >= WCAG AA (4.5:1 Body, 3:1 Large/UI). Tier- und Method-Badges tragen IMMER ein Label (Farbe nie alleiniger Traeger, WCAG 1.4.1).",
+    "note": "Werte sind Design-Vorschlag; der Renderer-CSS-Variablen-Mapping-Block (§renderer_mapping) zeigt, WO sie landen. Buildbarer Teil des Specs."
+  },
+
+  "palette_light": {
+    "primary": "#14567A",
+    "onPrimary": "#FFFFFF",
+    "primaryContainer": "#CDE7F5",
+    "onPrimaryContainer": "#062033",
+    "secondary": "#3E7CA6",
+    "onSecondary": "#FFFFFF",
+    "accent": "#2E8FA6",
+    "surface": "#FFFFFF",
+    "surfaceVariant": "#EEF4F8",
+    "surfaceContainer": "#F4F8FB",
+    "onSurface": "#0F2A38",
+    "onSurfaceVariant": "#41535C",
+    "outline": "#B4C6D0",
+    "link": "#1C6FB0",
+    "codeBg": "#0F2A38",
+    "codeFg": "#E7F1F6"
+  },
+
+  "palette_dark": {
+    "primary": "#7FC4E4",
+    "onPrimary": "#04283B",
+    "primaryContainer": "#123E56",
+    "onPrimaryContainer": "#CDE7F5",
+    "secondary": "#9BC3DC",
+    "onSecondary": "#0B2A3B",
+    "accent": "#63C0D3",
+    "surface": "#0D1B23",
+    "surfaceVariant": "#172A34",
+    "surfaceContainer": "#12232C",
+    "onSurface": "#DCE7ED",
+    "onSurfaceVariant": "#A9BCC6",
+    "outline": "#3A4E59",
+    "link": "#7FC4E4",
+    "codeBg": "#06141C",
+    "codeFg": "#DCE7ED"
+  },
+
+  "typography": {
+    "fontFamilyBase": "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    "fontFamilyMono": "'JetBrains Mono', 'SF Mono', 'Roboto Mono', ui-monospace, monospace",
+    "scale": {
+      "displayTitle": { "size": "28px", "weight": 700, "note": "Landing-Hero" },
+      "sectionHeading": { "size": "20px", "weight": 600 },
+      "endpointHeading": { "size": "16px", "weight": 600 },
+      "body": { "size": "15px", "weight": 400, "lineHeight": "1.6" },
+      "code": { "size": "13px", "weight": 400, "family": "mono" },
+      "badge": { "size": "11px", "weight": 700, "letterSpacing": "0.04em", "case": "uppercase" }
+    }
+  },
+
+  "tier_badges": {
+    "note": "Tier-Badge = Farbe + PFLICHT-Label (WCAG 1.4.1). Operator NICHT alarm-rot (= 'mehr Zugang noetig', kein Fehler).",
+    "public":      { "label": "PUBLIC",      "fg": "#3C4A50", "bg": "#E7EDF0", "meaning": "keine Auth" },
+    "participant": { "label": "PARTICIPANT", "fg": "#1C5E93", "bg": "#DCEBF7", "meaning": "Token ODER verifizierte Session (read-Default)" },
+    "operator":    { "label": "OPERATOR",    "fg": "#1F3A66", "bg": "#D9E2F2", "meaning": "Operator-Token ODER OPERATOR-Session (Control/Write)" },
+    "token_only_ws": { "label": "TOKEN-ONLY WS", "fg": "#6A4A12", "bg": "#F6E9CC", "meaning": "/ws/agent — Agent-/Operator-Credential; kein read-only-Session-Zugriff" }
+  },
+
+  "method_badges": {
+    "note": "Zurueckhaltend + maritim-konsistent (nicht der grelle Swagger-Default). Text auf hellem Container, AA.",
+    "GET":    { "fg": "#1C5E93", "bg": "#DCEBF7" },
+    "POST":   { "fg": "#1F6B4A", "bg": "#D8EEE2" },
+    "PUT":    { "fg": "#6A4A12", "bg": "#F3E7C7" },
+    "DELETE": { "fg": "#8A2F2F", "bg": "#F5DCDC" },
+    "PATCH":  { "fg": "#5A3E86", "bg": "#E7DFF4" }
+  },
+
+  "trust_line": {
+    "tone": "info/neutral (nie ERROR/WARN)",
+    "placement": "Landing-Hero-Subline + Footer",
+    "copy_intent_de": "Diese Referenz wird aus den Server-Typen generiert und in CI verifiziert — sie kann nicht von der laufenden API abweichen.",
+    "copy_intent_en": "This reference is generated from the server's types and verified in CI — it cannot drift from the running API.",
+    "honesty_scope": "behauptet NUR Schema-Treue (Shapes/Tiers/Envelope); NICHT Rate-Limit-Werte/Deprecation-Fristen (advisory)."
+  },
+
+  "renderer_mapping": {
+    "note": "WO die Tokens im jeweiligen Renderer landen — der baubare Anker fuer 234a-3.",
+    "redoc": {
+      "theme.colors.primary.main": "palette.primary",
+      "theme.colors.http.get/post/put/delete": "method_badges.*",
+      "theme.typography.fontFamily": "typography.fontFamilyBase",
+      "theme.typography.code.fontFamily": "typography.fontFamilyMono",
+      "theme.sidebar.backgroundColor": "palette.surfaceVariant",
+      "theme.rightPanel.backgroundColor": "palette.codeBg"
+    },
+    "swagger_ui": {
+      "css_vars": "ueberschreibe .swagger-ui Farb-/Font-Variablen (Topbar aus, maritime Header rein); .opblock method-Farben = method_badges.*",
+      "note": "Falls Swagger-UI (interaktives 'Try it'): Default-Topbar entfernen, maritime Chrome + Authorize-Button prominent."
+    },
+    "asyncapi_react": {
+      "config.theme": "palette_* + typography; Frame-Union-Darstellung erbt tier_badges fuer read-tier-Kanaele",
+      "note": "WS-Seite unter DERSELBEN maritimen Chrome wie die REST-Seite (D1)."
+    }
+  },
+
+  "validation": {
+    "new_app_tokens": 0,
+    "new_app_colors": 0,
+    "note_scope": "0 Aenderung am Compose-App-Theme/strings.xml/testTags — reine gehostete Doku-Surface.",
+    "wcag": "alle fg/bg-Paare AA-geprueft (Body 4.5:1 / UI 3:1); Badges label-tragend.",
+    "no_secrets": "keine Token/Keys/Endpoints-Credentials in den Tokens — nur Theme-/Badge-/Copy-Intent-Werte.",
+    "honesty": "Trust-Line nur Schema-Treue; Operator-Badge kein Alarm-Ton; token-only-WS als eigener Badge, nie als normaler read-Kanal getarnt."
+  }
+}
