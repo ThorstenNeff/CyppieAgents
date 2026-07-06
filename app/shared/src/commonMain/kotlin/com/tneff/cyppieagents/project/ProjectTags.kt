@@ -25,6 +25,9 @@ object ProjectTags {
     fun item(id: String) = "projectSwitcher.item.$id"
     fun itemActive(id: String) = "projectSwitcher.item.$id.active"
 
+    // CYP-262 Teil 2: per-project runtime-session indicator (BACKGROUND/SUSPENDED); absent for HOT (fail-safe).
+    fun itemSession(id: String) = "projectSwitcher.item.$id.session"
+
     // --- CYP-91 management (overlay) ---
     const val PANEL = "projectMgmt.panel"
     const val GATE_HINT = "projectMgmt.gateHint"

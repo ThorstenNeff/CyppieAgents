@@ -276,6 +276,12 @@
     <string name="project_switcher_single_hint">Weitere Projekte über „Projekte verwalten" anlegen.</string>
     <string name="a11y_project_switcher_menu">Projekt-Menü öffnen, aktiv: %1$s</string>
     <string name="a11y_project_switch_to">Zu Projekt %1$s wechseln</string>
+    <!-- CYP-262 Teil 2: per-Projekt-Runtime-Session-Indikator im Switcher-Menü (server-autoritatives
+         Project.runtimeState, CYP-249-Kontrakt). INFO-Ton, NIE Fehler — normale Zustände; HOT → kein Indikator;
+         kein LRU/K=3-Jargon. BACKGROUND ≠ SUSPENDED in Copy + a11y unterscheidbar. -->
+    <string name="project_session_background">Läuft im Hintergrund</string>
+    <string name="project_session_suspended">Suspendiert — Resume beim Öffnen</string>
+    <string name="a11y_project_session">Projekt-Sitzung: %1$s</string>
     <string name="project_mgmt_title">Projekt-Verwaltung</string>
     <string name="project_mgmt_operator_required">Nur mit Operator-Token änderbar</string>
     <string name="project_add">Projekt anlegen</string>
