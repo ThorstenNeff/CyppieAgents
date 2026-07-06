@@ -537,7 +537,13 @@ fun AgentShell(
         ) {
         settingsAgentId?.let { sid ->
             val a = agentById[sid]
-            val agentSettingsVm = viewModel(key = "agentSettings-$sid") {
+            // CYP-246: the store key carries activeProjectId (like the agent VMs) — agent ids are reused across
+            // projects, so a bare "agentSettings-$sid" key would hand back the PREVIOUS project's retained overlay VM
+            // on a same-id reopen (its init{load()} ran in the old scope). That stale VM shows the wrong name AND a
+            // save from it lands the old project's values in the new project's override (the repo is project-agnostic;
+            // the SERVER resolves scope to the now-active project) — a data-integrity leak, not just cosmetics. The
+            // settingsAgentId reset above only closes the overlay across a switch; it does NOT clear the retained VM.
+            val agentSettingsVm = viewModel(key = "agentSettings-$activeProjectId-$sid") {
                 AgentSettingsViewModel(sid, resolvedAgentMgmtRepo, editable = isOperator, initialName = a?.name ?: sid, initialColorHex = a?.color)
             }
             // CYP-216: the platform image picker (wasmJs/jvm real; android/ios stub) → the VM does the pre-check
