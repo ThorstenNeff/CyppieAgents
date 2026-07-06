@@ -28,10 +28,11 @@ import io.ktor.server.routing.routing
 /**
  * `/api/events` — historical Browse over the Event-Log (PRD §6, ST5/CYP-39).
  *
- * **Operator-only, fail-closed (PRD §7):** the Event-Log aggregates team-wide, cross-agent metadata,
- * so a single agent reading it would be a cross-agent metadata leak of the same class as the filtered
- * `AclEvent` (CYP-18). The STRUCTURAL [authenticatedApi] group (CYP-178) enforces it like `PUT /api/acl`:
- * a missing credential → 401, an agent token → 403.
+ * **MEMBER-tier, fail-closed (CYP-186 BE2):** the Event-Log is secret-free, cross-agent *metadata* (never
+ * bodies), so it is readable at the MEMBER tier — a verified human MEMBER (or an agent/operator token), NOT
+ * operator-only. The STRUCTURAL [authenticatedApi] group (CYP-178) enforces it: a missing credential → 401.
+ * The cross-project `?projectId=` override stays OPERATOR-only (a non-operator is forced to the active
+ * project). (Historical note: this was operator-only pre-CYP-186; the read tier was widened to MEMBER there.)
  *
  * Filters arrive as **query params** (not a JSON body, mirroring `CommApi.messages`); the time window
  * is half-open `[since, until)`; paging is stable over `seq` (`afterSeq` cursor + `limit`).

@@ -31,16 +31,29 @@ import kotlin.test.assertEquals
  */
 class SchemaTightnessTest {
 
-    private val roots: List<SerialDescriptor> = listOf(
-        serializer<StreamJsonEvent>().descriptor,
-        serializer<CommWsServerEvent>().descriptor,
-        serializer<CommWsClientEvent>().descriptor,
-        serializer<EventsWsServerEvent>().descriptor,
-        serializer<EventsWsClientEvent>().descriptor,
-        serializer<com.tneff.cyppieagents.model.AgentRunStateEvent>().descriptor,
-        serializer<com.tneff.cyppieagents.model.UserTurn>().descriptor,
-        serializer<com.tneff.cyppieagents.model.StoredAgentEvent>().descriptor,
-    )
+    // WS roots + the REST request/response DTOs (derived from RestContract.REST_OPS so tightness covers EXACTLY
+    // the components the OpenAPI emits) + the error envelope. The walker recurses; these are the roots.
+    private val roots: List<SerialDescriptor> = buildList {
+        add(serializer<StreamJsonEvent>().descriptor)
+        add(serializer<CommWsServerEvent>().descriptor)
+        add(serializer<CommWsClientEvent>().descriptor)
+        add(serializer<EventsWsServerEvent>().descriptor)
+        add(serializer<EventsWsClientEvent>().descriptor)
+        add(serializer<com.tneff.cyppieagents.model.AgentRunStateEvent>().descriptor)
+        add(serializer<com.tneff.cyppieagents.model.UserTurn>().descriptor)
+        add(serializer<com.tneff.cyppieagents.model.StoredAgentEvent>().descriptor)
+        add(serializer<com.tneff.cyppieagents.model.ApiErrorBody>().descriptor)
+        RestContract.REST_OPS.forEach { op ->
+            restBodyDescriptor(op.request)?.let { add(it) }
+            restBodyDescriptor(op.response)?.let { add(it) }
+        }
+    }.distinct()
+
+    private fun restBodyDescriptor(b: RestContract.Body): SerialDescriptor? = when (b) {
+        is RestContract.Body.Json -> b.descriptor
+        is RestContract.Body.JsonArray -> b.element
+        else -> null
+    }
 
     private fun JsonObject.reqSet(): Set<String> =
         (this["required"] as? JsonArray)?.map { (it as JsonPrimitive).content }?.toSet() ?: emptySet()

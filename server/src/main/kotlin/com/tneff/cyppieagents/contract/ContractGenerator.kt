@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.contract
 
 import com.tneff.cyppieagents.model.AgentRunStateEvent
+import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.EventsWsClientEvent
@@ -8,9 +9,13 @@ import com.tneff.cyppieagents.model.EventsWsServerEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.serializer
 
@@ -77,6 +82,93 @@ object ContractGenerator {
                     }
                 }
                 put("schemas", JsonObject(walker.components))
+            }
+        }
+    }
+
+    // ---- CYP-234a-2a: OpenAPI 3.1 (REST) — assembled from the hand-authored [RestContract], components
+    // walker-generated, drift-tested against the live routing by RestContractDriftTest ----
+
+    private fun bodyDescriptor(b: RestContract.Body): SerialDescriptor? = when (b) {
+        is RestContract.Body.Json -> b.descriptor
+        is RestContract.Body.JsonArray -> b.element
+        else -> null
+    }
+
+    /** The JSON-Schema for a request/response body (a `$ref` for named types, resolved via [walker]). */
+    private fun bodyContent(b: RestContract.Body, walker: SchemaWalker): JsonObject? = when (b) {
+        RestContract.Body.None -> null
+        RestContract.Body.Text -> jsonContent("text/plain", buildJsonObject { put("type", "string") })
+        RestContract.Body.BinaryPng -> jsonContent("image/png", buildJsonObject { put("type", "string"); put("format", "binary") })
+        RestContract.Body.Multipart -> jsonContent("multipart/form-data", buildJsonObject { put("type", "object") })
+        is RestContract.Body.Json -> jsonContent("application/json", walker.schemaFor(b.descriptor))
+        is RestContract.Body.JsonArray -> jsonContent("application/json", buildJsonObject {
+            put("type", "array"); put("items", walker.schemaFor(b.element))
+        })
+    }
+
+    private fun jsonContent(mediaType: String, schema: JsonObject): JsonObject = buildJsonObject {
+        putJsonObject("content") { putJsonObject(mediaType) { put("schema", schema) } }
+    }
+
+    /** Auth: PUBLIC → no requirement; else either the bearer token OR the session cookie satisfies. The
+     *  fine-grained authZ level (participant/operator/member) is documented per-op via `x-auth-tier`. */
+    private fun securityFor(tier: RestContract.Tier): JsonArray = when (tier) {
+        RestContract.Tier.PUBLIC -> JsonArray(emptyList())
+        else -> buildJsonArray {
+            add(buildJsonObject { putJsonArray("bearerAuth") {} })
+            add(buildJsonObject { putJsonArray("sessionCookie") {} })
+        }
+    }
+
+    fun openApi(): JsonObject {
+        val walker = SchemaWalker()
+        val errorSchema = walker.schemaFor(serializer<ApiErrorBody>().descriptor)
+        RestContract.REST_OPS.forEach { op ->
+            bodyDescriptor(op.request)?.let { walker.schemaFor(it) }
+            bodyDescriptor(op.response)?.let { walker.schemaFor(it) }
+        }
+
+        return buildJsonObject {
+            put("openapi", "3.1.0")
+            putJsonObject("info") {
+                put("title", "Cyppie Agents — REST API")
+                put("version", "1.0.0")
+                put("description", "Frontend REST surface. Components generated from :core (kotlinx.serialization); paths hand-authored and drift-tested against the live routing. /mcp/hub (connector wire) is excluded.")
+            }
+            putJsonObject("paths") {
+                RestContract.REST_OPS.groupBy { it.path }.forEach { (path, ops) ->
+                    putJsonObject(path) {
+                        ops.forEach { op ->
+                            putJsonObject(op.method.lowercase()) {
+                                put("operationId", op.method.lowercase() + path.replace(Regex("[/{}]"), "_"))
+                                put("x-auth-tier", op.tier.name)
+                                put("security", securityFor(op.tier))
+                                bodyContent(op.request, walker)?.let { put("requestBody", it) }
+                                putJsonObject("responses") {
+                                    val success = if (op.response == RestContract.Body.None) "204" else "200"
+                                    putJsonObject(success) {
+                                        put("description", "success")
+                                        bodyContent(op.response, walker)?.let { rb ->
+                                            (rb["content"] as? JsonObject)?.let { put("content", it) }
+                                        }
+                                    }
+                                    putJsonObject("4XX") {
+                                        put("description", "error envelope")
+                                        putJsonObject("content") { putJsonObject("application/json") { put("schema", errorSchema) } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            putJsonObject("components") {
+                put("schemas", JsonObject(walker.components))
+                putJsonObject("securitySchemes") {
+                    putJsonObject("bearerAuth") { put("type", "http"); put("scheme", "bearer") }
+                    putJsonObject("sessionCookie") { put("type", "apiKey"); put("in", "cookie"); put("name", "ory_kratos_session") }
+                }
             }
         }
     }
