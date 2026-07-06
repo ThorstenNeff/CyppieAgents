@@ -7,27 +7,35 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
 
 /**
  * CYP-41: the Browse panel renders the master table against the stub API, opens the detail pane with
  * the two explicit drilldown actions on selection, and enters the correlation drilldown on "show run".
+ *
+ * CYP-271 de-flake (CYP-263 precedent): the first-page load is driven on an **[Dispatchers.Unconfined]** scope
+ * ([browseVm]) so it runs SYNCHRONOUSLY at VM construction (StubEventsApi.query is pure in-memory — no real
+ * suspension). The panel therefore composes with the rows already in state, so the tests use only the
+ * deterministic [runComposeUiTest.waitForIdle] barrier — never a wall-clock `waitUntil(timeout)` precondition that
+ * could starve under parallel CPU load (the old `narrowWidth…backReturns` flake). No load-padding; the assertions
+ * (the CYP-41/47 teeth) are unchanged and non-vacuous.
  */
 @OptIn(ExperimentalTestApi::class)
 class EventBrowsePanelRenderTest {
 
+    /** The load runs synchronously at construction (Unconfined) → the panel renders with rows already present. */
+    private fun browseVm() = EventBrowseViewModel(StubEventsApi(), scope = CoroutineScope(Dispatchers.Unconfined))
+
     @Test
     fun narrowWidth_filterBarWraps_trailingChipsOnScreen() = runComposeUiTest {
-        val vm = EventBrowseViewModel(StubEventsApi())
-        setContent { MaterialTheme { Box(Modifier.width(400.dp).height(700.dp)) { EventBrowsePanel(vm) } } }
-        waitUntil(timeoutMillis = 5_000L) {
-            onAllNodesWithTag(EventBrowseTags.FILTER_CORRELATION).fetchSemanticsNodes().isNotEmpty()
-        }
+        setContent { MaterialTheme { Box(Modifier.width(400.dp).height(700.dp)) { EventBrowsePanel(browseVm()) } } }
+        waitForIdle()
         // CYP-158 §2.1: FilterBar Row → FlowRow → the 6 chips wrap on a narrow width so the trailing
         // time-window + correlation chips stay ON-SCREEN (they would clip off the right edge un-wrapped).
         onNodeWithTag(EventBrowseTags.FILTER_TIME_WINDOW).assertIsDisplayed()
@@ -36,10 +44,8 @@ class EventBrowsePanelRenderTest {
 
     @Test
     fun table_select_detail_drilldown() = runComposeUiTest {
-        val vm = EventBrowseViewModel(StubEventsApi())
-        setContent { MaterialTheme { EventBrowsePanel(vm) } }
-
-        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventBrowseTags.row(0)).fetchSemanticsNodes().isNotEmpty() }
+        setContent { MaterialTheme { EventBrowsePanel(browseVm()) } }
+        waitForIdle()
         onNodeWithTag(EventBrowseTags.TABLE).assertExists()
 
         // Select the first row → detail pane with both drilldown actions (§6.3).
@@ -51,19 +57,17 @@ class EventBrowsePanelRenderTest {
 
         // "Show the whole run" → the correlation drilldown timeline.
         onNodeWithTag(EventBrowseTags.DETAIL_SHOW_RUN).performClick()
-        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventBrowseTags.DRILLDOWN).fetchSemanticsNodes().isNotEmpty() }
+        waitForIdle()
         onNodeWithTag(EventBrowseTags.DRILLDOWN_HEADER).assertExists()
     }
 
     @Test
     fun filterChip_appliesFilter_showsActiveSubset() = runComposeUiTest {
-        val vm = EventBrowseViewModel(StubEventsApi())
-        setContent { MaterialTheme { EventBrowsePanel(vm) } }
-
-        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventBrowseTags.row(0)).fetchSemanticsNodes().isNotEmpty() }
+        setContent { MaterialTheme { EventBrowsePanel(browseVm()) } }
+        waitForIdle()
         // Tap the severity filter chip → applyFilter → the "filter active – subset" cue appears.
         onNodeWithTag(EventBrowseTags.FILTER_SEVERITY).performClick()
-        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventBrowseTags.FILTER_ACTIVE).fetchSemanticsNodes().isNotEmpty() }
+        waitForIdle()
         onNodeWithTag(EventBrowseTags.FILTER_ACTIVE).assertExists()
     }
 
@@ -76,11 +80,10 @@ class EventBrowsePanelRenderTest {
      */
     @Test
     fun narrowWidth_collapsesToSinglePane_selectionNavigates_backReturns() = runComposeUiTest {
-        val vm = EventBrowseViewModel(StubEventsApi())
-        setContent { MaterialTheme { Box(Modifier.width(140.dp).height(600.dp)) { EventBrowsePanel(vm) } } }
+        setContent { MaterialTheme { Box(Modifier.width(140.dp).height(600.dp)) { EventBrowsePanel(browseVm()) } } }
+        waitForIdle()
 
         // Master table composed full-width on the narrow tile; detail not shown until a selection.
-        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(EventBrowseTags.row(0)).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag(EventBrowseTags.TABLE).assertExists()
         onNodeWithTag(EventBrowseTags.DETAIL).assertDoesNotExist()
 
