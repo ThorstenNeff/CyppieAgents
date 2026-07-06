@@ -75,7 +75,9 @@ class E2ePlatform internal constructor(
     val baseUrl: String,
     private val now: () -> Long,
     private val scope: CoroutineScope,
-    private val gitRoot: File,
+    val gitRoot: File,
+    // CYP-256 (.5a): a restart-gate reuses ONE gitRoot across two boots, so the first close must NOT delete it.
+    private val deleteGitRootOnClose: Boolean = true,
 ) : AutoCloseable {
 
     /** WS base (`ws://…`) for real `client.webSocket{}` handshakes — never `client.get` a `/ws/...`. */
@@ -110,7 +112,7 @@ class E2ePlatform internal constructor(
     override fun close() {
         runCatching { server.stop(100, 500) }
         scope.cancel()
-        gitRoot.deleteRecursively()
+        if (deleteGitRootOnClose) gitRoot.deleteRecursively()
     }
 
     companion object {
@@ -130,12 +132,18 @@ fun e2ePlatform(
     projects: List<SeedProject>,
     now: () -> Long = { 0L },
     connectorFactory: ((Connector) -> Connector)? = null,
+    // CYP-256 (.5a) — the restart gate: reuse ONE gitRoot across two boots (so files + worktree dirs persist),
+    // [fileBacked] the durable stores (projectRegistry + projectAgents + overrides), and inject a [runner] so a
+    // test can COUNT `git worktree add` calls (the D3 no-re-add assertion). Defaults preserve every existing test.
+    gitRootOverride: File? = null,
+    fileBacked: Boolean = false,
+    runner: CommandRunner? = null,
 ): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
     require(active.agents.count { it.role == Role.PO } == 1) { "the first (active) project needs exactly one PO" }
 
-    val gitRoot = Files.createTempDirectory("e2e-cyp106").toFile()
+    val gitRoot = gitRootOverride ?: Files.createTempDirectory("e2e-cyp106").toFile()
     val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     // Tokens for EVERY agent across ALL projects (so asAgent(id) works after the seed) + the operator.
@@ -151,10 +159,15 @@ fun e2ePlatform(
     val booted = BootOrchestrator(
         config = config,
         secrets = secrets,
-        worktrees = WorktreeManager(FakeGit(), gitRoot, active.id),
+        worktrees = WorktreeManager(runner ?: FakeGit(), gitRoot, active.id),
         spawner = FakeSpawner(),
         scope = scope,
         connectorFactory = connectorFactory,
+        // CYP-256 (.5a): when file-backed, the durable stores live under the (reused) gitRoot so they survive a
+        // re-boot() — projectRegistry (which projects exist) + projectAgents (runtime-added agent sets) + overrides.
+        projectRegistryFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/projects.json").toFile() else null,
+        projectAgentFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/project-agents.json").toFile() else null,
+        agentOverrideFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile() else null,
     ).boot()
 
     // Seed the remaining projects through REAL APIs (no production seam): create in the registry, rescope
@@ -193,7 +206,7 @@ fun e2ePlatform(
     val server = embeddedServerNetty(booted)
     server.start(wait = false)
     val port = runBlocking { server.engine.resolvedConnectors().first().port }
-    return E2ePlatform(booted, server, "http://127.0.0.1:$port", now, scope, gitRoot)
+    return E2ePlatform(booted, server, "http://127.0.0.1:$port", now, scope, gitRoot, deleteGitRootOnClose = gitRootOverride == null)
 }
 
 private fun embeddedServerNetty(booted: BootedPlatform) =

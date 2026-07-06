@@ -63,8 +63,31 @@ class AgentManagement(
     private val avatarBlobs: AvatarBlobStore? = null,
     /** CYP-215 — resolves a Preset `(style,seed)` to bundled PNG bytes on serve. Null = no preset bytes. */
     private val avatarPresets: AvatarPresetResolver? = null,
+    /**
+     * CYP-256 (.5a) — the durable per-project agent-set store (single source for RUNTIME-ADDED agents). When
+     * wired, a runtime-added LOCAL agent's full record persists here (survives restart / enables re-entry
+     * rehydration), and D1's single-source routing kicks in: a runtime-added agent's persist goes HERE, a
+     * config-seeded boot agent's stays on the [overrides] overlay — **no double-write** (via [ProjectAgentStore.contains]).
+     * Null (tests / dev) = no durability → the pre-.5a overlay path is used unchanged.
+     */
+    private val projectAgents: ProjectAgentStore? = null,
 ) {
     private val lock = Any()
+
+    /**
+     * CYP-256 (.5a) — D1 single-source route: persist a runtime-added agent's FULL record to [projectAgents]
+     * (re-put the current live state + config), OR run [overlayWrite] (the [overrides] overlay) for a
+     * config-seeded boot agent. The discriminator is [ProjectAgentStore.contains] — no double-write, no drift.
+     * A [ProjectAgentStore.put] failure THROWS (CR3 — never swallowed; the route surfaces it, not silently lost).
+     */
+    private fun persistRuntimeOrOverlay(pid: String, id: String, overlayWrite: () -> Unit) {
+        if (projectAgents?.contains(pid, id) == true) {
+            val a = state.agent(id) ?: return
+            projectAgents.put(pid, StoredAgent.of(a, configs.configOf(id)))
+        } else {
+            overlayWrite()
+        }
+    }
 
     /** Lightweight list (GET /api/agents) with each agent's live run-state. */
     fun list(): List<Agent> = state.agents.map { it.copy(runState = lifecycle.runStateOf(it.id) ?: it.runState) }
@@ -90,9 +113,22 @@ class AgentManagement(
         // partial state / orphan agent (a bare worktree dir is idempotent + harmless, reused on retry). The
         // validate + preset checks above already threw before here; the mutations below are all in-memory.
         ensureWorktree(worktree)              // create the worktree; CLAUDE.md is written at first spawn
-        configs.put(agent.id, spec.launch?.ifBlank { null }?.trim() ?: "claude", spec.persona?.ifBlank { null })
+        val pid = activeProjectId()
+        val launch = spec.launch?.ifBlank { null }?.trim() ?: "claude"
+        val persona = spec.persona?.ifBlank { null }
+        // CYP-256 (.5a) — a runtime-added LOCAL agent's FULL record (incl. avatar) persists to the
+        // ProjectAgentStore = its single durable source (D1: NOT the override overlay). Persisted BEFORE the
+        // in-memory mutations (CR3 / CYP-259c extended to durability): a persist failure THROWS here, leaving no
+        // live-but-not-durable agent. Remote agents stay OUT of .5a (CR4 → CYP-264): they keep the overlay path.
+        val toStore = projectAgents != null && !spec.remote
+        if (toStore) {
+            projectAgents!!.put(pid, StoredAgent(agent.id, agent.name, agent.role, worktree, launch, persona, agent.connectorKind, agent.color, agent.avatar))
+        }
+        configs.put(agent.id, launch, persona)
         state.addAgent(agent)                 // spoke channel + ACL, projectId-stamped (fail-closed)
-        if (avatar != null) overrides?.setAvatar(activeProjectId(), agent.id, avatar) // durable overlay (restart-survive)
+        // Overlay avatar ONLY when the agent is NOT in the store (no store wired, or a remote agent) — else the
+        // avatar already lives in the stored record above (no double-write).
+        if (avatar != null && !toStore) overrides?.setAvatar(pid, agent.id, avatar) // durable overlay (restart-survive)
         lifecycle.register(agent.id, worktree) // known + STOPPED — start is the CYP-73 lifecycle
         // CYP-122: a non-default connector at create is an opt-in → audited + caps re-declared (server-enforced).
         if (spec.connectorKind != ConnectorKind.STREAM_JSON) onConnectorOptIn(agent.id, spec.connectorKind)
@@ -111,21 +147,25 @@ class AgentManagement(
         configs.put(id, launch, persona)
         // CYP-210: display name/color (blank/omitted → PRESERVE; null = no change). id stays IMMUTABLE — it is
         // not a field on AgentEdit, so it can never be touched here. Pure display fields → no ACL/topology.
+        val pid = activeProjectId()
         val newName = edit.name?.ifBlank { null }
         val newColor = edit.color?.ifBlank { null }
         state.editAgent(id, newName, newColor)
-        // CYP-210: persist the override so name/color/persona/launch SURVIVE a restart (overlaid over the
-        // config seed at boot). The store applies the same blank→preserve rule against its own stored value.
-        overrides?.put(activeProjectId(), id, name = edit.name, color = edit.color, persona = edit.persona, launch = edit.launch)
         // CYP-215: a non-null avatar sets/replaces it with a PRESET (Preset-only by type → an Upload ref can't be
         // forged on this JSON path). Validate the style FAIL-CLOSED; blank seed → the agent id. null = PRESERVE
         // (a name-only edit never wipes the avatar; the clear path is DELETE .../avatar). Switching to a preset
-        // orphans any prior upload blob → delete it (no dangling bytes).
+        // orphans any prior upload blob → delete it (no dangling bytes). Live mutation first (below), then persist.
         edit.avatar?.let { preset ->
             val normalized = normalizePreset(preset, id)
             state.setAvatar(id, normalized)
-            overrides?.setAvatar(activeProjectId(), id, normalized)
-            avatarBlobs?.delete(activeProjectId(), id)
+            avatarBlobs?.delete(pid, id)
+        }
+        // CYP-256 (.5a) D1 — persist the merged record to its single source: a runtime-added agent → the
+        // ProjectAgentStore (full record, incl. the name/color/persona/launch/avatar just applied above); a
+        // config-seeded boot agent → the CYP-210 override overlay (name/color/persona/launch + the avatar).
+        persistRuntimeOrOverlay(pid, id) {
+            overrides?.put(pid, id, name = edit.name, color = edit.color, persona = edit.persona, launch = edit.launch)
+            edit.avatar?.let { overrides?.setAvatar(pid, id, normalizePreset(it, id)) }
         }
         // persona/launch take effect on the next spawn (connector reads configs at open()); name/color are live.
         state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
@@ -139,13 +179,17 @@ class AgentManagement(
         AgentMgmtGuard.validateRemove(state.agents, id)?.let { throw codeToException(it) }
         val worktree = state.agent(id)?.worktree
             ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
+        val pid = activeProjectId()
+        val wasStored = projectAgents?.contains(pid, id) == true // CYP-256 (.5a): route before we mutate state
         lifecycle.stop(id)        // CYP-73 stop: removeAndAwait — process gone before we drop the agent
         state.removeAgent(id)     // clean topology removal — spoke channel + every ACL entry gone
         configs.remove(id)
         lifecycle.forget(id)
         remoteToken?.revoke(id)   // CYP-171 / SEC5: revoke any minted token (idempotent) — agentFor → null
-        overrides?.removeAgent(activeProjectId(), id)   // CYP-210/215: drop the durable overlay (name/color/avatar)
-        avatarBlobs?.delete(activeProjectId(), id)      // CYP-215: purge the stored avatar blob (no dangling bytes)
+        // CYP-256 (.5a) D1 — drop from the single source: a runtime-added agent → the ProjectAgentStore; a
+        // config-seeded boot agent → the CYP-210 override overlay. No double-write.
+        if (wasStored) projectAgents!!.remove(pid, id) else overrides?.removeAgent(pid, id)
+        avatarBlobs?.delete(pid, id)      // CYP-215: purge the stored avatar blob (no dangling bytes)
         if (fate == WorktreeFate.DELETE) deleteWorktree(worktree) // branch agent/<id> NOT touched (§9.3)
     }
 
@@ -159,19 +203,24 @@ class AgentManagement(
     fun uploadAvatar(id: String, bytes: ByteArray): AvatarUploadReceipt = synchronized(lock) {
         state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
         val result = AvatarImageProcessor.process(bytes) // throws AvatarRejected → uniform 400 at the route
-        avatarBlobs?.write(activeProjectId(), id, result.png)
+        val pid = activeProjectId()
+        avatarBlobs?.write(pid, id, result.png)
         val avatar = AgentAvatar.Upload(result.ref)
         state.setAvatar(id, avatar)
-        overrides?.setAvatar(activeProjectId(), id, avatar)
+        // CYP-256 (.5a) D1 — single source for the avatar ref: store (runtime-added) or overlay (config-seeded).
+        persistRuntimeOrOverlay(pid, id) { overrides?.setAvatar(pid, id, avatar) }
         AvatarUploadReceipt(id, result.ref, result.bytesIn, result.bytesOut, result.srcFormat, result.srcWidth, result.srcHeight, result.outWidth, result.outHeight)
     }
 
     /** CYP-215 — clear the avatar back to the default (null): drop the metadata (state + overlay) and the blob. */
     fun clearAvatar(id: String) = synchronized(lock) {
         state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
+        val pid = activeProjectId()
         state.setAvatar(id, null)
-        overrides?.setAvatar(activeProjectId(), id, null)
-        avatarBlobs?.delete(activeProjectId(), id)
+        // CYP-256 (.5a) D1 — clear on the single source: re-put the record with avatar=null (runtime-added) or
+        // the overlay's null-clear (config-seeded).
+        persistRuntimeOrOverlay(pid, id) { overrides?.setAvatar(pid, id, null) }
+        avatarBlobs?.delete(pid, id)
     }
 
     /**

@@ -75,6 +75,34 @@ class AgentManagementTest {
         assertNull(overrides.allFor("default")["frontend"]?.name, "and NOT into DEFAULT (the old boot-frozen constant)")
     }
 
+    // ---- CYP-256 (.5a) D1: single-source routing — runtime-added → ProjectAgentStore, config-seeded → overlay ----
+
+    @Test fun cyp256_runtimeAdded_persistsToStoreNotOverlay_configSeeded_toOverlay_noDoubleWrite() {
+        val f = Fix()
+        val store = FileProjectAgentStore(null)
+        val overrides = FileAgentOverrideStore(null)
+        val mgmt = AgentManagement(
+            f.state, f.lifecycle, f.configs, ensureWorktree = {}, deleteWorktree = {},
+            overrides = overrides, activeProjectId = { "default" }, projectAgents = store,
+        )
+        // A runtime-added agent → the ProjectAgentStore, NEVER the override overlay (no double-write at add).
+        mgmt.add(NewAgentSpec(id = "added", name = "Added", role = Role.WORKER))
+        assertTrue(store.contains("default", "added"), "runtime-added agent lives in the ProjectAgentStore")
+        assertNull(overrides.overrideOf("default", "added"), "and NOT in the overlay (no double-write at add)")
+
+        // Editing it (name + avatar) updates the STORE record only — the overlay stays untouched (D1).
+        mgmt.edit("added", AgentEdit(role = Role.WORKER, name = "Renamed", avatar = com.tneff.cyppieagents.model.AgentAvatar.Preset("bottts", "x")))
+        val rec = store.agentsFor("default").first { it.id == "added" }
+        assertEquals("Renamed", rec.name)
+        assertEquals(com.tneff.cyppieagents.model.AgentAvatar.Preset("bottts", "x"), rec.avatar)
+        assertNull(overrides.overrideOf("default", "added"), "editing a runtime-added agent NEVER touches the overlay")
+
+        // A CONFIG-SEEDED agent (frontend) routes the OTHER way: its edit lands in the overlay, never the store.
+        mgmt.edit("frontend", AgentEdit(role = Role.WORKER, name = "FrontendRenamed"))
+        assertFalse(store.contains("default", "frontend"), "a config-seeded agent is never put into the store")
+        assertEquals("FrontendRenamed", overrides.overrideOf("default", "frontend")?.name, "its edit lands in the overlay")
+    }
+
     // ---- add ----
 
     @Test fun add_createsStoppedAgent_notSpawned_andEnsuresWorktree() {

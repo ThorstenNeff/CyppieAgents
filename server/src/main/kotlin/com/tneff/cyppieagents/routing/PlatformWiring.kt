@@ -129,6 +129,10 @@ fun Application.installPlatform(
             onActiveSwitch = { pid ->
                 booted.runtimeRegistry.getOrCreate(pid, booted.projectRuntimeFactory)
                 booted.state.rescope(pid)
+                // CYP-256 (.5a): rehydrate the just-activated project's agents from the durable store (a
+                // non-boot project's in-memory slice is empty after a restart) — AFTER rescope so `active()`
+                // + the slice are the target's. Idempotent (skips agents already present).
+                booted.rehydrateActiveProject()
                 // CYP-255 (.4b): mark the target HOT in the LRU, resume it if it was suspended, and enforce
                 // the K cap (session-suspend the least-recently-hot background project).
                 booted.suspensionPolicy.onActivated(pid)
@@ -222,6 +226,9 @@ fun Application.bootPlatform(
         // CYP-210: durable per-agent name/color/persona/launch overlay — out-of-repo under the gitRoot,
         // gitignored; overlaid over the platform.config.json seed at boot (operator edits survive restart).
         agentOverrideFile = gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile(),
+        // CYP-256 (.5a): the durable per-project agent-set store — out-of-repo under the gitRoot, gitignored,
+        // next to the other .cyppie stores. Single source for runtime-added agents (non-boot agents survive restart).
+        projectAgentFile = gitRoot.toPath().resolve(".cyppie/project-agents.json").toFile(),
         // CYP-220 S6: durable report snapshots — out-of-repo under the gitRoot, gitignored (report was
         // in-memory-only before; File-durable now so reports survive a restart).
         reportFile = gitRoot.toPath().resolve(".cyppie/reports.json").toFile(),

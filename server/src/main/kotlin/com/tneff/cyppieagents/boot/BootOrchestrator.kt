@@ -105,6 +105,12 @@ class BootedPlatform(
      * [RuntimeSuspensionPolicy.stateOf] to fill each [com.tneff.cyppieagents.model.Project.runtimeState].
      */
     val suspensionPolicy: RuntimeSuspensionPolicy,
+    /**
+     * CYP-256 (.5a) — rehydrate the ACTIVE project's runtime + HubState slice from the durable
+     * [ProjectAgentStore]. The switch wiring calls it AFTER `getOrCreate` + `rescope`, so a non-boot project's
+     * agents (empty in-memory slice after a restart) are refilled from the store. Idempotent.
+     */
+    val rehydrateActiveProject: () -> Unit,
 )
 
 /**
@@ -181,6 +187,10 @@ class BootOrchestrator(
     // CYP-171 / E2.6 (S3): durable secret-at-rest store for runtime-minted remote-agent tokens; null →
     // in-memory (tests). bootPlatform supplies the out-of-repo, gitignored, 0600 file under the gitRoot.
     private val remoteTokensFile: java.io.File? = null,
+    // CYP-256 (.5a): durable per-project agent-set store (`.cyppie/project-agents.json`), out-of-repo under the
+    // gitRoot, gitignored. Null (tests) = in-memory off-switch (no cross-restart durability, pre-.5a behavior).
+    // The single source for RUNTIME-ADDED agents → a non-boot project's agents survive a restart (rehydrated).
+    private val projectAgentFile: java.io.File? = null,
     // CYP-255 (.4b) / CYP-247.4: the HARD LRU cap on projects whose agent SESSIONS run (the ratified
     // teardown — active + K-1 recent-hot stay live; beyond that the LRU project is session-suspended,
     // resumed via --resume on re-entry). Default 3 (ratified). ≤ 0 disables suspension (unbounded live).
@@ -288,6 +298,8 @@ class BootOrchestrator(
         // CYP-210: apply the durable overlay OVER the platform.config.json seed (overlay wins per-field), so
         // operator edits of name/color/persona/launch survive a restart. Scoped to the active project.
         val agentOverrides = AgentOverrideStore(agentOverrideFile)
+        // CYP-256 (.5a): the durable per-project agent-set store (single source for runtime-added agents).
+        val projectAgents = ProjectAgentStore(projectAgentFile)
         // CYP-215: the avatar stores (blob bytes on disk + the self-hosted DiceBear preset resolver).
         val avatarBlobs = com.tneff.cyppieagents.avatar.AvatarBlobStore(avatarDir)
         val avatarPresets = com.tneff.cyppieagents.avatar.AvatarPresetResolver(avatarPresetsDir)
@@ -417,6 +429,7 @@ class BootOrchestrator(
             activeProjectId = { state.activeProjectId },
             avatarBlobs = avatarBlobs,   // CYP-215: re-encoded avatar PNG store
             avatarPresets = avatarPresets, // CYP-215: self-hosted DiceBear preset resolver
+            projectAgents = projectAgents, // CYP-256 (.5a): durable single source for runtime-added agents
         )
 
         // CYP-247.1/.2 (L): register the boot project's runtime in the per-project seam L de-singletonizes
@@ -480,6 +493,7 @@ class BootOrchestrator(
                 activeProjectId = { state.activeProjectId },
                 avatarBlobs = avatarBlobs,
                 avatarPresets = avatarPresets,
+                projectAgents = projectAgents, // CYP-256 (.5a): same durable single source for this project
             )
             ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees)
         }
@@ -508,6 +522,28 @@ class BootOrchestrator(
                 if (rt != null) agents.forEach { runCatching { rt.lifecycle.start(it) } } // start → open --resume
             },
         )
+
+        // CYP-256 (.5a) — LAZY rehydration (CR2): repopulate the ACTIVE project's runtime + HubState slice from
+        // the durable [ProjectAgentStore]. Called at boot for the boot project (its runtime-added agents from a
+        // prior session) and, per switch, AFTER rescope for the just-activated project (a non-boot project's
+        // slice is empty after a restart → the store refills it). LAZY, consistent with .4b — no eager
+        // repopulate-every-project, no new boot-stash mechanism. Idempotent: skips an agent already in the slice
+        // (config-seeded or previously rehydrated). Rehydrated agents are STOPPED; start is the CYP-73 lifecycle.
+        // Bypasses AgentManagement.add so it does NOT write back to the store (no rehydrate→persist loop).
+        val rehydrateActiveProject: () -> Unit = {
+            val pid = state.activeProjectId
+            val rt = runtimeRegistry.active()
+            for (stored in projectAgents.agentsFor(pid)) {
+                if (state.agent(stored.id) == null) {
+                    // D3 (ratified): idempotent worktree reuse — the dir already exists from the original add, so
+                    // this is a metadata rebuild, no re-clone / re-`git worktree add`.
+                    rt.worktrees.ensureWorktree(stored.worktree, config.repo.branch)
+                    rt.agentConfigs.put(stored.id, stored.launch, stored.persona, stored.connectorKind)
+                    state.addAgent(stored.toAgent()) // HubState slice + spoke + ACL (projectId-stamped)
+                    rt.lifecycle.register(stored.id, stored.worktree) // known + STOPPED
+                }
+            }
+        }
 
         // CYP-121/122: record each agent's capabilities (per-agent via the router) and log a content-free
         // `capability.degraded` event for every non-AVAILABLE dimension, so the fidelity gap is visible in
@@ -581,6 +617,9 @@ class BootOrchestrator(
         // is the active project at boot). With one project this never suspends anything; the switch feeds
         // subsequent activations. Placed after the spawn loop so the boot project is genuinely live.
         suspensionPolicy.onActivated(config.projectId)
+        // CYP-256 (.5a): rehydrate the boot project's runtime-added agents (from a prior session) — the boot
+        // project is already active here, so this fills its slice/runtime from the store, on top of the config seed.
+        rehydrateActiveProject()
 
         // S16 / CYP-89: Product-Lead reports fold READ sources (events/agents/channels/inbox) into
         // content-free, immutable snapshots — operator-gated at /api/reports.
@@ -593,13 +632,14 @@ class BootOrchestrator(
         // S13 / CYP-91: the multi-project registry (seeded with the boot project) + the cascade deleter
         // composing the strictly-projectId-scoped teardown primitives — operator-gated at /api/projects.
         val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
-        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides)
+        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides, projectAgents)
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
             agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory, suspensionPolicy,
+            rehydrateActiveProject,
         )
     }
 }
