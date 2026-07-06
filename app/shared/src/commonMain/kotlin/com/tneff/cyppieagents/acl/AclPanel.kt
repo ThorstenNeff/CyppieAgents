@@ -113,7 +113,9 @@ fun AclPanel(viewModel: AclViewModel, modifier: Modifier = Modifier) {
         }
         PresetBar(state, viewModel)
 
-        if (state.channels.isEmpty() || state.agents.isEmpty()) {
+        // CYP-276 (CYP-270 class): gate the "no data" message on !loading so it never FLASHES during the async
+        // load window (cold open / project switch) before the ACL matrix arrives — only a settled-empty shows it.
+        if (!state.loading && (state.channels.isEmpty() || state.agents.isEmpty())) {
             Text(
                 text = stringResource(Res.string.acl_empty),
                 style = MaterialTheme.typography.bodySmall,
