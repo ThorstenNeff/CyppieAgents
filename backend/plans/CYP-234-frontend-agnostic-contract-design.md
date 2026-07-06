@@ -221,14 +221,15 @@ route-enumeration drift-test (§1) pins BOTH prefixes during the window.
 - **234b — auth uniformity (ACCESS-RATIFIED).** The one-resolver/three-tier refactor + whichever BYO-frontend
   credential path the Auftraggeber ratified (§2) + CORS/origin policy. Gated on his access ratification. Every
   operation's tier lands in the spec. (🟡 ~1-2d, access-critical.)
-- **234c — NARRATIVE GUIDE + examples (+ optional reference client).** The explicit "build-a-frontend-from-
-  scratch" document (Auftraggeber first-class deliverable, NOT "if time"): auth flows (the new participant
-  token class + Kratos login), the error envelope, pagination (`afterSeq` + limit), rate-limits, the WS-frame
-  protocol + reconnect/replay (CYP-198/204), **and worked examples per endpoint**. Kept **generated/drift-tested
-  where derivable** (examples validated against the generated schemas; the narrative references the generated
-  spec, never a hand-maintained parallel) so the guide can't drift from the real API. **Optional (Auftraggeber
-  deciding): a generated reference client (Go/TS) as a living contract proof** — keep 234c flexible to add it.
-  (🟠/🟢; the spec + rendered docs from 234a already unblock a builder, the narrative makes it turnkey.)
+- **234c — NARRATIVE GUIDE + per-endpoint examples (NO codegen client — Auftraggeber trim 2026-07-06).** The
+  explicit "build-a-frontend-from-scratch" document (first-class deliverable, NOT "if time"): auth flows (the
+  new participant token class + Kratos login), the error envelope, pagination (`afterSeq` + limit), rate-limits,
+  the WS-frame protocol + reconnect/replay (CYP-198/204), **and worked examples per endpoint** — served
+  alongside the rendered hosted reference (234a-3). Kept **generated/drift-tested where derivable** (examples
+  validated against the generated schemas; the narrative references the generated spec, never a hand-maintained
+  parallel) so the guide can't drift from the real API. **A generated reference client (Go/TS) is EXPLICITLY
+  OUT of scope** (Auftraggeber decision — saves ~3-5 d/language; the hosted Swagger-UI/Redoc + AsyncAPI render +
+  the narrative ARE the doc proof). (🟠/🟢.)
 
 ## 5. ⑤ Honest scope — real blocker vs. nice-to-have, and what does NOT change
 
