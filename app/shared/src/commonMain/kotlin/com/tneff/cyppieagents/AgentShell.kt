@@ -565,6 +565,16 @@ fun AgentShell(
             state = state,
             onFit = { state.fit(isRtl) },
             badgeFor = { id -> badges[id] },
+            // CYP-250: desktop empty-state for a 0-agent project (the tool windows still coexist, so this keys on
+            // the agent list, NOT the window set). The CTA routes into the EXISTING add flow — bring the
+            // agent-management window to front + open its add dialog — and is operator-gated (honest gate hint,
+            // no dead CTA). Self-clearing: managedAgents is non-empty as soon as the first agent exists.
+            agentsEmpty = managedAgents.isEmpty(),
+            canAddAgent = isOperator,
+            onAddFirstAgent = {
+                state.focus(AGENT_MGMT_WINDOW_ID)
+                agentMgmtVm.openAdd()
+            },
             // CYP-211: agent windows get their identity-coloured titlebar (system windows → null → default M3) +
             // the ⋮ settings button; system windows (comm/acl/…) are not in [agentById] → no theme, no button.
             titleBarColorsFor = { id ->

@@ -18,6 +18,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -61,11 +62,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
 import com.tneff.cyppieagents.testing.testTagA11y
+import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.TonedHint
 import com.tneff.cyppieagents.ui.TitleBarColors
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_settings_open
+import kmpcyppieagents.app.shared.generated.resources.agent_add
+import kmpcyppieagents.app.shared.generated.resources.agent_empty_body
+import kmpcyppieagents.app.shared.generated.resources.agent_empty_title
 import kmpcyppieagents.app.shared.generated.resources.a11y_pager_dot
 import kmpcyppieagents.app.shared.generated.resources.a11y_pager_page
 import kmpcyppieagents.app.shared.generated.resources.pager_empty
@@ -76,6 +82,7 @@ import kmpcyppieagents.app.shared.generated.resources.pager_prev
 import kmpcyppieagents.app.shared.generated.resources.window_fit_action
 import kmpcyppieagents.app.shared.generated.resources.window_state_expanded
 import kmpcyppieagents.app.shared.generated.resources.window_state_normal
+import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
@@ -112,6 +119,13 @@ fun WindowHost(
     // CYP-216: optional leading titlebar slot (the §5.1 inverted-disc avatar) — a host-injected composable so the
     // window layer stays free of Agent/avatar/comm imports; null → no leading element (e.g. system windows).
     titleBarLeadingFor: (String) -> (@Composable () -> Unit)? = { null },
+    // CYP-250: desktop empty-state (0 AGENTS, not 0 windows — the tool windows always coexist). agentsEmpty shows
+    // the get-started panel on the canvas background; canAddAgent gates its CTA (operator); onAddFirstAgent routes
+    // into the EXISTING openAdd flow (focus agent-mgmt + open its add dialog). Desktop canvas only (not the pager,
+    // which has its own zero-windows empty state). Defaults keep every existing caller/test unchanged.
+    agentsEmpty: Boolean = false,
+    canAddAgent: Boolean = false,
+    onAddFirstAgent: () -> Unit = {},
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -134,6 +148,7 @@ fun WindowHost(
             WindowCanvas(
                 state = state, onFit = onFit, badgeFor = badgeFor,
                 titleBarColorsFor = titleBarColorsFor, settingsFor = settingsFor, titleBarLeadingFor = titleBarLeadingFor,
+                agentsEmpty = agentsEmpty, canAddAgent = canAddAgent, onAddFirstAgent = onAddFirstAgent,
                 windowContent = windowContent,
             )
         }
@@ -155,9 +170,51 @@ private fun WindowCanvas(
     // CYP-216: optional leading titlebar slot (the §5.1 inverted-disc avatar) — a host-injected composable so the
     // window layer stays free of Agent/avatar/comm imports; null → no leading element (e.g. system windows).
     titleBarLeadingFor: (String) -> (@Composable () -> Unit)? = { null },
+    agentsEmpty: Boolean = false,
+    canAddAgent: Boolean = false,
+    onAddFirstAgent: () -> Unit = {},
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().testTagA11y(WindowTestTags.HOST)) {
+        // CYP-250: desktop empty-state — the active project has 0 AGENTS. Triggers on [agentsEmpty], NOT on
+        // state.windows.isEmpty() (the tool windows are always present). A quiet, centered "add your first agent"
+        // panel on the canvas BACKGROUND, composed BEFORE the floating windows so it draws behind them (no z-fight,
+        // §D2). Self-clearing: the shell passes agentsEmpty=false as soon as ≥1 agent exists. Copy is verbatim CYP-228
+        // ("noch keine Agenten", carries "creating ≠ running"); the CTA routes into the existing openAdd flow and is
+        // operator-gated with an honest reason (no dead CTA), exactly like the CYP-228 add button.
+        if (agentsEmpty) {
+            Column(
+                modifier = Modifier.align(Alignment.Center).testTag(WindowTestTags.EMPTY),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    stringResource(Res.string.agent_empty_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    stringResource(Res.string.agent_empty_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onAddFirstAgent,
+                    enabled = canAddAgent,
+                    modifier = Modifier.testTag(WindowTestTags.EMPTY_ADD_BTN),
+                ) {
+                    Text(stringResource(Res.string.agent_add))
+                }
+                // Non-operator: disabled CTA + the honest "why" (reused gate hint) — no dead end (§D5).
+                if (!canAddAgent) {
+                    TonedHint(
+                        stringResource(Res.string.workspace_operator_only),
+                        HintTone.GATED,
+                        WindowTestTags.EMPTY_GATE_HINT,
+                    )
+                }
+            }
+        }
         state.windows.forEachIndexed { index, window ->
             // Key by id so a window keeps its identity (and any internal state) when the list is
             // reordered on focus; graphicsLayer below applies the z-order from the list index.
