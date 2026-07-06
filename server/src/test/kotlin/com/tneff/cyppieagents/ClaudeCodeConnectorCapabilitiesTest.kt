@@ -38,7 +38,7 @@ class ClaudeCodeConnectorCapabilitiesTest {
         // No spawn happens in this test — capabilities is a static declaration, independent of I/O.
         return ClaudeCodeConnector(
             spawner = { _, _, _ -> error("no spawn in capability test") },
-            worktreesRoot = File("/tmp/cyp120-cap-test"),
+            worktreesRoot = { File("/tmp/cyp120-cap-test") },
             resolveApiKey = { null },
             registry = registry,
             router = MediationRouter(registry, hub),

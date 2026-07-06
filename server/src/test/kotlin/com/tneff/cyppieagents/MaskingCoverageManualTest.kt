@@ -67,7 +67,7 @@ class MaskingCoverageManualTest {
 
             val connector = ClaudeCodeConnector(
                 spawner = ProcessBuilderSpawner(),
-                worktreesRoot = scratch,
+                worktreesRoot = { scratch },
                 resolveApiKey = { System.getenv("ANTHROPIC_API_KEY") }, // null → OAuth subscription
                 registry = registry,
                 router = MediationRouter(registry, hub),

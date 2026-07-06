@@ -6,11 +6,14 @@ import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProviderRegistry
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Role
+import java.io.File
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /**
  * CYP-247.1 (L) — the [RuntimeRegistry] resolution contract: the ONE place L makes the agent lifecycle
@@ -21,6 +24,11 @@ import kotlin.test.assertSame
  */
 class RuntimeRegistryTest {
 
+    private val gitRoot: File = Files.createTempDirectory("runtime-reg").toFile().also { it.deleteOnExit() }
+    private val noopRunner = object : CommandRunner {
+        override fun run(command: List<String>, cwd: File) = CommandResult(0, "")
+    }
+
     /** A throwaway [ProjectRuntime] with real-but-inert members (never spawned) — enough to test resolution. */
     private fun runtime(projectId: String): ProjectRuntime {
         val state = HubState.hubAndSpoke(listOf(Agent("po", "PO", Role.PO, "po")), HubState.OPERATOR_ID, projectId)
@@ -28,7 +36,9 @@ class RuntimeRegistryTest {
         val configs = AgentConfigRegistry()
         val lifecycle = LifecycleManager(emptyMap(), sessions, ensureWorktree = {}, spawn = { _, _ -> error("no spawn in test") })
         val mgmt = AgentManagement(state, lifecycle, configs, ensureWorktree = {}, deleteWorktree = {})
-        return ProjectRuntime(projectId, lifecycle, sessions, configs, CapabilityRegistry(), ProviderRegistry(), mgmt)
+        // CYP-247.2: a WorktreeManager scoped to THIS project → worktreesRoot = <gitRoot>/projects/<projectId>.
+        val worktrees = WorktreeManager(noopRunner, gitRoot, projectId)
+        return ProjectRuntime(projectId, lifecycle, sessions, configs, CapabilityRegistry(), ProviderRegistry(), mgmt, worktrees)
     }
 
     @Test
@@ -50,6 +60,22 @@ class RuntimeRegistryTest {
         val a = reg.register(runtime("alpha"))
         assertSame(a, reg.of("alpha"))
         assertNull(reg.of("ghost"), "of(unknown) is null — no live runtime for a not-yet-activated/evicted project")
+    }
+
+    @Test
+    fun active_worktrees_resolvePerProjectRoot_andFollowSwitch() {
+        // CYP-247.2: each runtime carries a WorktreeManager scoped to its projectId; active().worktrees follows
+        // the switch, so a spawn / ensureWorktree lands in projects/<active>/ — the un-pin that makes two
+        // projects' agents (even same id) land in DISTINCT dirs. Mutation (a consumer captures the single boot
+        // worktrees instead of active().worktrees) → the root stops following the switch → red.
+        var active = "alpha"
+        val reg = RuntimeRegistry { active }
+        reg.register(runtime("alpha"))
+        reg.register(runtime("beta"))
+
+        assertTrue(reg.active().worktrees.worktreesRoot.path.endsWith("projects/alpha"), "active=alpha → projects/alpha root")
+        active = "beta"
+        assertTrue(reg.active().worktrees.worktreesRoot.path.endsWith("projects/beta"), "switch → projects/beta root (per-project)")
     }
 
     @Test

@@ -187,6 +187,11 @@ class BootOrchestrator(
         val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID, config.projectId) { pid ->
             channelShares.sharedInboundChannelIds(pid)
         }
+        // CYP-247.1/.2: the per-project runtime seam. Declared HERE (before the connector + the worktree
+        // lambdas below) so those consumers capture it and resolve `active().worktrees` LAZILY — the boot
+        // project's ProjectRuntime is registered further down (once lifecycle/agentManagement exist) but
+        // still BEFORE the spawn loop, so every worktree op / spawn resolves through a live-registered runtime.
+        val runtimeRegistry = RuntimeRegistry { state.activeProjectId }
         val store = storeFactory()
         val hub = Hub(state, store)
         val registry = SessionRegistry()
@@ -285,7 +290,9 @@ class BootOrchestrator(
         val sessionStore = sessionStoreFile?.let { com.tneff.cyppieagents.connector.JsonFileSessionStore(it) }
         val defaultConnector = ClaudeCodeConnector(
             spawner = spawner,
-            worktreesRoot = worktrees.worktreesRoot,
+            // CYP-247.2: resolve the spawn cwd root through the ACTIVE project's runtime (lazy, per spawn),
+            // so a spawn lands in `projects/<activeProjectId>/` — one runtime today (boot), per-project later.
+            worktreesRoot = { runtimeRegistry.active().worktrees.worktreesRoot },
             // S15 / CYP-96: resolve the key AT SPAWN per project — operator override (store) → env
             // fallback (Secrets, CYP-82). Lazy so a CYP-73 restart picks up an operator key change.
             resolveApiKey = { projectConfig.resolvedApiKey(config.projectId) },
@@ -392,7 +399,8 @@ class BootOrchestrator(
         val lifecycle = LifecycleManager(
             initialWorktrees = config.agents.associate { it.id to it.worktreeName },
             sessions = sessions,
-            ensureWorktree = { worktreeName -> worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+            // CYP-247.2: ensure the worktree under the ACTIVE project's root (lazy via the runtime seam).
+            ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
             spawn = { id, worktree -> connector.open(id, worktree) },
             recorder = eventRecorder,
             projector = eventProjector,
@@ -406,8 +414,9 @@ class BootOrchestrator(
             state = state,
             lifecycle = lifecycle,
             configs = agentConfigs,
-            ensureWorktree = { worktreeName -> worktrees.ensureWorktree(worktreeName, config.repo.branch) },
-            deleteWorktree = { worktreeName -> worktrees.deleteWorktree(worktreeName) },
+            // CYP-247.2: worktree create/delete on the ACTIVE project's manager (lazy via the runtime seam).
+            ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+            deleteWorktree = { worktreeName -> runtimeRegistry.active().worktrees.deleteWorktree(worktreeName) },
             onConnectorOptIn = connectorOptIn::apply, // CYP-122: create-as-B audits like the dedicated opt-in
             remoteToken = remoteTokenIssuer, // CYP-171: mint/revoke the per-agent token for a remote create/remove
             overrides = agentOverrides, // CYP-210: persist name/color/persona/launch edits (restart-durable)
@@ -419,22 +428,23 @@ class BootOrchestrator(
             avatarPresets = avatarPresets, // CYP-215: self-hosted DiceBear preset resolver
         )
 
-        // CYP-247.1 (L): register the boot project's runtime in the per-project seam L de-singletonizes.
-        // Scaffold — one runtime holding the SAME lifecycle instances built above, so behavior is unchanged.
-        // The resolver follows the live active pointer (rescope-aware), like AgentManagement's projectId (M).
-        val runtimeRegistry = RuntimeRegistry { state.activeProjectId }.apply {
-            register(
-                ProjectRuntime(
-                    projectId = config.projectId,
-                    lifecycle = lifecycle,
-                    connectorSessions = sessions,
-                    agentConfigs = agentConfigs,
-                    capabilityRegistry = capabilityRegistry,
-                    providerRegistry = providerRegistry,
-                    agentManagement = agentManagement,
-                ),
-            )
-        }
+        // CYP-247.1/.2 (L): register the boot project's runtime in the per-project seam L de-singletonizes
+        // (the registry itself was declared above so the connector + worktree lambdas could capture it).
+        // Registered HERE — once lifecycle/agentManagement exist, but still BEFORE the spawn loop below — so
+        // the lazily-resolving worktree ops / spawns always find a live runtime. Scaffold: one runtime holding
+        // the SAME instances built above (incl. the boot `worktrees`), so behavior is unchanged.
+        runtimeRegistry.register(
+            ProjectRuntime(
+                projectId = config.projectId,
+                lifecycle = lifecycle,
+                connectorSessions = sessions,
+                agentConfigs = agentConfigs,
+                capabilityRegistry = capabilityRegistry,
+                providerRegistry = providerRegistry,
+                agentManagement = agentManagement,
+                worktrees = worktrees,
+            ),
+        )
 
         val booted = mutableListOf<String>()
         val failed = mutableListOf<String>()

@@ -116,7 +116,7 @@ class SessionResumeConnectorTest {
         val tmp = Files.createTempDirectory("resume-cwd").toFile()
         val connector = ClaudeCodeConnector(
             spawner = spawner,
-            worktreesRoot = tmp,
+            worktreesRoot = { tmp },
             resolveApiKey = { null },
             registry = registry,
             router = MediationRouter(registry, hub),

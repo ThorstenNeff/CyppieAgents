@@ -23,7 +23,13 @@ import java.io.File
  */
 class ClaudeCodeConnector(
     private val spawner: ProcessSpawner,
-    private val worktreesRoot: File,
+    /**
+     * Resolves the parent dir of the agent worktrees **at spawn time** (CYP-247.2), so a spawn lands in the
+     * ACTIVE project's `projects/<projectId>/` root rather than a boot-frozen one — boot wires it to
+     * `{ runtimeRegistry.active().worktrees.worktreesRoot }`. Lazy like [resolveApiKey], so a CYP-73 restart
+     * (and, once runtimes are per-project, a project switch) picks up the current root.
+     */
+    private val worktreesRoot: () -> File,
     /**
      * Resolves the ANTHROPIC_API_KEY **at spawn time** (S15 / CYP-96), so an operator key change takes
      * effect on the next `open()` (a CYP-73 restart) — there is no boot-frozen value. Backed by the
@@ -106,7 +112,7 @@ class ClaudeCodeConnector(
 
     /** Spawn an agent session whose cwd is [worktreesRoot]/[worktreeName] (Spec §11 isolation). */
     override fun open(agentId: String, worktreeName: String): ConnectorSession {
-        val cwd = File(worktreesRoot, worktreeName)
+        val cwd = File(worktreesRoot(), worktreeName)
         // CYP-97: place the persona as CLAUDE.md before spawn (auto-discovery). Resolved here so the
         // current (possibly edited) persona is used; null/blank → no file written.
         personaOf(agentId)?.takeIf { it.isNotBlank() }?.let {
