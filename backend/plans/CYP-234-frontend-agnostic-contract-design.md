@@ -43,9 +43,17 @@ its OWN no-drift guarantee.
 - **Sealed unions → `oneOf` + `discriminator`:** a sealed hierarchy with `classDiscriminator="type"` maps
   exactly to OpenAPI `oneOf: [<subtypes>]` + `discriminator: { propertyName: "type", mapping: { "<wire>":
   "#/…/<Subtype>" } }`. The wire ALREADY carries `{"type":…}`, so the discriminator is HONEST (not invented).
-  Each `@SerialName` is the mapping key. This is the crux of the projection and it is well-defined for every
-  WS frame union (`CommWsServerEvent`, `StreamJsonEvent`, the `/ws/hub` `WireEnvelope`, …) and any polymorphic
-  REST DTO (`AgentAvatar`).
+  Each `@SerialName` is the mapping key. This is the crux of the projection and it is well-defined for the
+  FLAT unions (`CommWsServerEvent`, the `/ws/hub` `WireEnvelope`, polymorphic REST `AgentAvatar`). **It is NOT
+  yet proven for the harder shapes — the 234a spike MUST prove these BEFORE the generator is pinned (PO-A F1):**
+  - **nested sealed inside a collection** — `AssistantEvent.content: List<ContentBlock>` (`StreamJsonEvent.kt:115`)
+    where `ContentBlock` is itself a sealed interface (`:122`: `TextBlock`/`ThinkingBlock`/`ToolUseBlock`/…) →
+    a `oneOf` array of items each `oneOf`+`discriminator`. Generators vary on nested-in-array discriminators.
+  - **opaque / contextual fields** — `ToolResultBlock.content: JsonElement?` (`StreamJsonEvent.kt:148`) and the
+    custom `TolerantToolsSerializer` — these have NO closed schema; they must be **carved out explicitly** as
+    `{}` (any-JSON) in the spec, NOT force-projected. The spike enumerates every such field and carves it.
+  If the picked generator can't do nested-sealed faithfully, the fallback in-house descriptor walker handles it
+  (it already must, for the conformance tooth below).
 - **Paths/operations (REST) + channels+operations (WS) = hand-authored in the spec, DRIFT-TESTED.** Routes
   live in Ktor wiring, not `:core`, so they can't be descriptor-generated. The guarantee: extend the EXISTING
   route enumeration (`ProtectedRouteEnumerationTest.kt:83`, already the authoritative route inventory) into a
@@ -55,10 +63,23 @@ its OWN no-drift guarantee.
 - **Auth + errors in the spec:** every operation declares its security tier (§2) + the uniform error envelope
   (`{error:{code,message}}`) as a shared response schema.
 
-**Sync/drift guarantee (replaces the compiler guarantee):** `./gradlew check` runs (a) the schema generator
-(schemas ARE the types → zero schema drift) + (b) the path/channel drift-test (paths match the route inventory
-→ zero path drift). So "one contract, both sides" becomes "generated-schema + drift-tested-paths, enforced in
-CI" — an equivalent no-drift property, now language-neutral. **This is the load-bearing decision of ①.**
+**Sync/drift guarantee (replaces the compiler guarantee) — THREE checks in `./gradlew check`:**
+1. **schema generation** (schemas ARE the types → zero schema DRIFT);
+2. **path/channel drift-test — BIDIRECTIONAL, for REST paths AND WS channels+frame-unions** (PO-A F1c): assert
+   the spec's path/channel set == the actual route/socket inventory in BOTH directions — **no spec entry without
+   a route, and no route/socket without a spec entry** (extends `ProtectedRouteEnumerationTest.kt:83`; the WS
+   side pins the 5 `/ws/*` channels + each channel's frame union the same way);
+3. **schema CONFORMANCE tooth (PO-A F1a) — the mis-projection net that drift alone misses:** generation +
+   drift guarantee that the spec MATCHES the types and the ROUTES, but NOT that a *consistently-wrong* schema is
+   correct. So: serialize a real instance of EVERY `:core` wire DTO (via `CommJson`) and **assert it VALIDATES
+   against its own generated schema** (a JSON-Schema validator over the emitted OpenAPI/AsyncAPI). A schema that
+   is wrong-but-self-consistent (e.g. a mis-projected discriminator, a wrong nullability, a mishandled nested
+   union) fails here even though the path drift-test is green. This is the tooth that makes "generated ⇒
+   correct" actually true — without it, "generate" only guarantees "in sync with a possibly-wrong projector".
+
+So "one contract, both sides" becomes "generated-schema + bidirectional-path/channel-drift-test +
+per-DTO-conformance-validation, enforced in CI" — an equivalent (arguably stronger) no-drift-AND-no-misprojection
+property, now language-neutral. **This is the load-bearing decision of ①.**
 
 > Rejected: fully hand-authored spec + a round-trip drift-test. It works but re-writes every DTO shape by hand
 > (100+ types) and drifts the moment someone edits a DTO but not the spec — the drift-test would catch it, but
@@ -88,6 +109,25 @@ CI" — an equivalent no-drift property, now language-neutral. **This is the loa
   fork). Replace `requireParticipant`'s token-only uses with the unified read resolver (so a human session works
   everywhere a token does — closing the fragmentation). The `?token=` query fallback stays a documented
   WS-transport detail (browsers can't set `Authorization` on a WS handshake).
+
+### Endpoint → tier table (PO-A F2 — the one silent widening flagged)
+
+| Tier | Surface (representative — 234b does the exhaustive mapping) |
+|---|---|
+| **public** | `GET /api/health` · `GET /api/auth/me` (unauth → `{authenticated:false}`) · `POST /api/auth/register` |
+| **participant (read)** | `GET /api/agents` (roster) · `/api/channels` · `/api/channels/{id}/messages` · `/api/inbox` · `/api/acl` · `/api/agents/{id}/avatar` + `/avatar/preview` · `GET /api/config` (masked) · `GET /api/projects` · **⚠ `GET /api/agents/{id}` (detail) — see widening below** · WS `/ws/comm` · `/ws/events` · `/ws/lifecycle` (read-tier) |
+| **participant (write)** | `POST /api/channels/{id}/messages` (resolves like read; the `canWrite` ACL check is the downstream gate) |
+| **operator** | `PUT /api/acl` · `POST/PUT/DELETE /api/agents` · avatar upload/clear · `POST /api/agents/{id}/{stop,start,restart}` · `PUT /api/config/*` · `POST /api/agents/{id}/connector` · `POST/PUT/DELETE /api/projects` + `/switch` · `PUT/DELETE /api/channels/{id}/share` · `POST /api/reports` · `GET /api/events` · `GET /api/workspace/members` · settings |
+| **token-only WS (honest constraint)** | `/ws/agent` (drives/watches an agent process — §2.4) · `/ws/hub` (remote-**agent** wire — OUT of the frontend contract, §2.5) |
+
+> **⚠ The ONE silent widening under unification (must be ratified, not assumed):** `GET /api/agents/{id}`
+> (agent detail) is TODAY the **only** `requireParticipant` (token-ONLY) site (`AgentMgmtRoutes.kt:56`). Moving
+> it onto the unified read tier makes it **session-readable** (a verified human MEMBER/OPERATOR could read agent
+> detail, not just a token holder). This is consistent with `GET /api/agents` (the roster), already
+> session-readable — so the widening is small and symmetric. **RATIFY: (a) accept it (agent detail joins the
+> read tier — recommended, consistent with the roster), OR (b) keep agent-detail token-only as a documented
+> exception.** No other endpoint's tier changes under unification (verified: `requireParticipant` has exactly
+> one call site).
 
 ### The Trust/Access decisions the AUFTRAGGEBER must ratify (no boundary softening without this)
 
@@ -122,6 +162,33 @@ CI" — an equivalent no-drift property, now language-neutral. **This is the loa
    list — recommended, deploy-controlled — vs. wildcard, which he must explicitly accept as it widens the
    browser-reachable surface). Non-browser clients (Go/CLI) are unaffected by CORS.
 
+**Dependent decisions (PO-A F3 — only live IF the decision they hang on is ratified):**
+
+7. **Rate-limiting the new token class — DEPENDS ON #2.** IF the Auftraggeber ratifies a self-service
+   participant token (#2.ii), a public-ish token surface needs abuse protection. **Options:** (a) a per-token
+   bucket reusing the existing `WireRateLimiter` pattern (already defends `/ws/hub` per-agentId) — recommended;
+   (b) deploy-level (reverse-proxy) rate-limiting only; (c) none. **Recommend (a)** — a per-token limiter, so a
+   BYO frontend token can't flood the read surface. Moot if #2 stays session-only/(iii).
+8. **Token lifecycle — DEPENDS ON #2.** IF a new token class is minted, it needs issuance / rotation /
+   revocation / expiry. **Options:** (a) static long-lived (like the current `HUB_TOKEN_*` agent tokens) — simple
+   but unrevocable; (b) **revocable + optional expiry, reusing the `RemoteTokenIssuer`/`RemoteTokenStore`
+   mint+revoke pattern (CYP-171)** — recommended (a compromised or retired frontend token can be killed, same as
+   a remote-agent token); (c) rotation on a schedule. **Recommend (b).** Moot if #2 stays session-only.
+9. **CSRF / `allowCredentials` for a cross-origin cookie BYO web frontend — DEPENDS ON #6.** IF #6 widens CORS to
+   a different origin AND that frontend authenticates by **cookie** (not token), the browser needs
+   `allowCredentials=true` on CORS AND the same-origin CSRF assumption (CYP-231 double-submit) breaks for the
+   cross-origin case. **Options:** (a) **cross-origin BYO web frontends authenticate by TOKEN, not cookie** — no
+   `allowCredentials`, no cross-origin CSRF surface at all (recommended — the cleanest, keeps CYP-231's
+   same-origin cookie model intact for the first-party SPA only); (b) `allowCredentials=true` + explicit
+   cross-origin CSRF hardening (a real new attack surface he must accept). **Recommend (a)** — cookie auth stays
+   same-origin (the first-party SPA); a third-party origin uses a token. Moot if #6 stays same-origin-only.
+
+**So the Auftraggeber's ratification template is 6 primary + 3 dependent decisions.** The 3 dependents only
+require a decision IF he ratifies the new-access-surface primaries (#2, #6); if he keeps the current posture
+(session + machine-secret tokens, same-origin cookies), #7/#8/#9 fall away entirely. Honestly: **#1/#3/#4/#5 =
+current audited posture (safe to ratify as-is); #2/#6 = genuinely new access surface; #7/#8/#9 = the
+consequences of saying yes to #2/#6.**
+
 ## 3. ③ REST versioning — `/api/v1` PATH, additive migration
 
 **Recommend: a PATH prefix `/api/v1`** (not a header). Rationale: trivial for any foreign client (no content-
@@ -139,8 +206,10 @@ route-enumeration drift-test (§1) pins BOTH prefixes during the window.
 ## 4. ④ Sizing cut (like .5a/b/c — build order after ratification)
 
 - **234a — the UNBLOCKER: neutral contract + versioning.** OpenAPI 3.1 (REST) + AsyncAPI (WS) generated from
-  `:core` + the path/channel drift-test + `/api/v1` mounting. After 234a, a foreign client can be built against
-  a real spec. (🔴 blocker, ~2-3d + ~1d versioning.)
+  `:core`; the **bidirectional path/channel drift-test** + the **per-DTO schema-conformance tooth** (§1); the
+  **spike proves nested-sealed + carves opaque `JsonElement`/contextual fields BEFORE pinning the generator**
+  (§1); `/api/v1` mounting. After 234a, a foreign client can be built against a real, conformance-proven spec.
+  (🔴 blocker, ~2-3d + ~1d versioning; the carve-out spike is the first, risk-retiring step.)
 - **234b — auth uniformity (ACCESS-RATIFIED).** The one-resolver/three-tier refactor + whichever BYO-frontend
   credential path the Auftraggeber ratified (§2) + CORS/origin policy. Gated on his access ratification. Every
   operation's tier lands in the spec. (🟡 ~1-2d, access-critical.)
