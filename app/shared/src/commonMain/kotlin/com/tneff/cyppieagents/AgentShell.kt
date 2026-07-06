@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,9 +15,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.tneff.cyppieagents.connector.CapabilityPanel
@@ -109,6 +117,7 @@ import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_title
 import kmpcyppieagents.app.shared.generated.resources.report_title
+import kmpcyppieagents.app.shared.generated.resources.project_loading
 import kmpcyppieagents.app.shared.generated.resources.settings_title
 import kmpcyppieagents.app.shared.generated.resources.workspace_members_title
 import org.jetbrains.compose.resources.stringResource
@@ -235,6 +244,20 @@ fun AgentShell(
     val projectState = projectVm.state.collectAsState().value
     // CYP-246: the active project id — the re-key suffix for every per-project VM below.
     val activeProjectId = projectState.activeProjectId
+
+    // CYP-249 loading-gate (Option A, PO-ratified): the project-scoped desktop (its VMs + sockets + per-project
+    // store) is composed ONLY once the active project is CONFIRMED (`!loading`). Before the initial reload the VM
+    // seeds `activeProjectId="default"`; composing the desktop then would mint a phantom "default" per-project store
+    // (fetching VMs + sockets) that lingers until it self-evicts. `loading` flips true→false exactly ONCE (the
+    // initial reload — switches never re-set it), so this gate guards only the FIRST mount: no switch regression.
+    // The workspace-scoped ProjectSwitcherBar stays OUTSIDE the gate → the bar (with "loading…") shows during the wait.
+    Column(modifier = modifier.fillMaxSize()) {
+      // CYP-92: the project switcher is a top-level bar ABOVE the window host (always visible, context-independent).
+      // CYP-186: the persistent role indicator rides here; operatorName is BE1-pending (null omits the "Operator:" line).
+      ProjectSwitcherBar(projectVm, tier = tier, operatorName = null)
+      if (projectState.loading) {
+        ProjectLoadingPlaceholder(modifier = Modifier.weight(1f).fillMaxWidth())
+      } else {
 
     // CYP-249: bound the client's warm per-project socket set to the server's runtime LRU (K=3, see the switch-runtime
     // contract). Each project's project-scoped VMs live in their OWN ViewModelStore (passed as viewModelStoreOwner
@@ -492,12 +515,6 @@ fun AgentShell(
     val tailMaxSeverity: Severity? =
         tailVm?.state?.collectAsState()?.value?.events?.maxOfOrNull { it.severity }
 
-    Column(modifier = modifier.fillMaxSize()) {
-      // CYP-92: the project switcher is a top-level bar ABOVE the window host (not a canvas window) — always
-      // visible, context-independent, framing the whole scoped shell below.
-      // CYP-186: the persistent role indicator rides in the top bar. operatorName is BE1-pending (the
-      // workspace member/operator identity isn't on the /api/auth/me seam yet) → null omits the "Operator: …" line.
-      ProjectSwitcherBar(projectVm, tier = tier, operatorName = null)
       BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
         // Capture the first measured host size for the initial tiling; window positions then persist.
         val hostWidth = maxWidth.value
@@ -708,5 +725,36 @@ fun AgentShell(
             }
         }
       }
+      } // CYP-249 loading-gate: end the !loading desktop branch
+    }
+}
+
+/** CYP-249 loading-gate: testTag for the desktop-area loading placeholder shown on the initial (pre-`!loading`) mount. */
+internal const val SHELL_LOADING_TAG = "shell.loading"
+
+/**
+ * CYP-249 loading-gate (Option A): the desktop-area placeholder shown while the initial project view loads
+ * (`ProjectUiState.loading`). A brief, one-time state on first mount — `loading` flips true→false exactly once,
+ * switches never re-set it — so it is not a per-switch spinner. Keeps the project-scoped VMs from composing
+ * against the unconfirmed seed project (no phantom per-project store). The switcher bar stays visible above it.
+ */
+@Composable
+private fun ProjectLoadingPlaceholder(modifier: Modifier = Modifier) {
+    val label = stringResource(Res.string.project_loading)
+    Box(
+        modifier = modifier.testTag(SHELL_LOADING_TAG).semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CircularProgressIndicator()
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
