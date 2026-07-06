@@ -129,7 +129,12 @@ fun Application.installPlatform(
             onActiveSwitch = { pid ->
                 booted.runtimeRegistry.getOrCreate(pid, booted.projectRuntimeFactory)
                 booted.state.rescope(pid)
+                // CYP-255 (.4b): mark the target HOT in the LRU, resume it if it was suspended, and enforce
+                // the K cap (session-suspend the least-recently-hot background project).
+                booted.suspensionPolicy.onActivated(pid)
             },
+            // CYP-255 (.4b): fill each Project.runtimeState (HOT/BACKGROUND/SUSPENDED), server-derived.
+            runtimeStateOf = { booted.suspensionPolicy.stateOf(it, booted.state.activeProjectId) },
             deps = authDeps, // CYP-178
         )
         // CYP-93: cross-project channel-share — GET participant (disclosure), PUT/DELETE operator/owner

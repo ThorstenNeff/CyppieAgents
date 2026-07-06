@@ -52,13 +52,18 @@ fun Route.projectRoutes(
      * registry pointer and the hub's view consistent. Defaults to a no-op for the dev/standalone wiring.
      */
     onActiveSwitch: (String) -> Unit = {},
+    // CYP-255 (.4b): fills each Project.runtimeState (server-derived from the live suspension policy). Default
+    // HOT = no indicator (dev/standalone wiring with no policy). The route NEVER takes it from the caller.
+    runtimeStateOf: (projectId: String) -> com.tneff.cyppieagents.model.RuntimeState = { com.tneff.cyppieagents.model.RuntimeState.HOT },
     deps: AuthDeps = AuthDeps(tokens),
 ) {
     // CYP-178: the operator gate is STRUCTURAL (mounted under the group); the RC1 meta-test is the net.
     authenticatedApi(deps, AuthRole.OPERATOR) {
         route("/api/projects") {
             get {
-                call.respond(registry.view())
+                // CYP-255 (.4b): enrich each project with its live runtime state (HOT/BACKGROUND/SUSPENDED).
+                val view = registry.view()
+                call.respond(view.copy(projects = view.projects.map { it.copy(runtimeState = runtimeStateOf(it.id)) }))
             }
             post {
                 val req = call.receive<CreateProjectRequest>()
@@ -67,9 +72,12 @@ fun Route.projectRoutes(
             // POST (not PUT /{id}) so the switch action can never shadow a rename of a project named `active`.
             post("/switch") {
                 val req = call.receive<SwitchActiveRequest>()
-                val view = registry.setActive(req.projectId) // validates (404 if unknown) + flips the pointer
-                onActiveSwitch(req.projectId) // re-scope the live comm hub to the new active project (CYP-102)
-                call.respond(view)
+                registry.setActive(req.projectId) // validates (404 if unknown) + flips the registry pointer
+                onActiveSwitch(req.projectId) // getOrCreate(target) + rescope (CYP-102) + policy.onActivated (.4b)
+                // Re-read AFTER the switch so runtimeState reflects the post-switch states (new HOT + any
+                // BACKGROUND→SUSPENDED the cap enforced).
+                val view = registry.view()
+                call.respond(view.copy(projects = view.projects.map { it.copy(runtimeState = runtimeStateOf(it.id)) }))
             }
             put("/{id}") {
                 val id = call.parameters["id"] ?: throw BadRequestException("missing project id")

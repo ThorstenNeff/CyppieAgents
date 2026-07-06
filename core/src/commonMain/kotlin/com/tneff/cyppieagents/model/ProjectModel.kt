@@ -14,14 +14,37 @@ import kotlinx.serialization.Serializable
  */
 
 /**
+ * The runtime state of a project's agent-lifecycle (CYP-255 .4b / CYP-247.4 — the ratified teardown). It is
+ * about the LIVE agent processes, NOT the project's data (channels/events/config persist in every state):
+ *  - [HOT] — the ACTIVE project; its agents' sessions are live.
+ *  - [BACKGROUND] — live but not active, within the LRU cap K; its agents keep running in the background.
+ *  - [SUSPENDED] — beyond the LRU cap K (or never activated): its agent processes are killed (session ids
+ *    persisted), resumed via `--resume` on re-entry. The cheap runtime object may stay in memory (MVP: full
+ *    runtime reclaim is deferred to per-project config persistence, CYP-247.5 / CYP-220).
+ *
+ * Surfaced additively on [Project.runtimeState] so the client (CYP-249 / CYP-262-T2) can show a background /
+ * suspended indicator — the ratified "resource honesty" of the L client UX. The client treats [HOT] (and an
+ * absent field, pre-.4b) as **no indicator**, so [HOT] is the fail-safe default for a never-activated project
+ * (which has no live processes and must not show a "was-live" background/suspended badge).
+ */
+@Serializable
+enum class RuntimeState { HOT, BACKGROUND, SUSPENDED }
+
+/**
  * A project (tenant). [id] is the scoping key shared with [ProjectScope.permits] — it becomes a
  * worktree root `projects/<id>/`, a channel projectId-stamp and an event partition key, so it is
  * constrained to the same path/ref-safe charset as an agent id ([ProjectGuard]).
+ *
+ * [runtimeState] (CYP-255 .4b) is additive + defaulted [RuntimeState.HOT] (= no indicator): the persisted
+ * registry doesn't store it (it is a live property of the runtime, not of the project record), so the
+ * registry leaves the default and the `GET /api/projects` route fills the real per-project state from the
+ * live suspension policy. A pre-.4b payload (no field) decodes to HOT → the client shows no indicator.
  */
 @Serializable
 data class Project(
     val id: String,
     val name: String,
+    val runtimeState: RuntimeState = RuntimeState.HOT,
 )
 
 /** GET /api/projects response: the full registry plus which project is active. */

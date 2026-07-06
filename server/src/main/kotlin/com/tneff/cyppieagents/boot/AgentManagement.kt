@@ -85,10 +85,14 @@ class AgentManagement(
         // against the self-hosted allow-list; a blank seed defaults to the agent id (deterministic).
         val avatar = spec.avatar?.let { normalizePreset(it, spec.id.trim()) }
         val agent = Agent(spec.id.trim(), spec.name.trim(), spec.role, worktree, AgentRunState.STOPPED, connectorKind = spec.connectorKind, color = spec.color?.ifBlank { null }, avatar = avatar)
+        // CYP-259 (c) — check-before-mutate: run the ONE fallible external op (worktree creation; git can
+        // fail on disk/permissions) BEFORE any in-memory topology/config mutation, so a failure leaves NO
+        // partial state / orphan agent (a bare worktree dir is idempotent + harmless, reused on retry). The
+        // validate + preset checks above already threw before here; the mutations below are all in-memory.
+        ensureWorktree(worktree)              // create the worktree; CLAUDE.md is written at first spawn
         configs.put(agent.id, spec.launch?.ifBlank { null }?.trim() ?: "claude", spec.persona?.ifBlank { null })
         state.addAgent(agent)                 // spoke channel + ACL, projectId-stamped (fail-closed)
         if (avatar != null) overrides?.setAvatar(activeProjectId(), agent.id, avatar) // durable overlay (restart-survive)
-        ensureWorktree(worktree)              // create the worktree; CLAUDE.md is written at first spawn
         lifecycle.register(agent.id, worktree) // known + STOPPED — start is the CYP-73 lifecycle
         // CYP-122: a non-default connector at create is an opt-in → audited + caps re-declared (server-enforced).
         if (spec.connectorKind != ConnectorKind.STREAM_JSON) onConnectorOptIn(agent.id, spec.connectorKind)

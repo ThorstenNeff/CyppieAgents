@@ -14,11 +14,22 @@ project's runtime is in exactly one of:
 | State | Meaning | Server predicate | Agent sessions |
 |---|---|---|---|
 | **HOT** (active) | the ONE active project | `runtimeRegistry.active()` resolves it | live; `/ws/agent`, `/ws/comm`, `/ws/lifecycle`, `GET /api/agents` all resolve to it |
-| **BACKGROUND** (live, not active) | visited before, not currently active, within the LRU cap K | `runtimeRegistry.of(pid) != null` AND not active | **stay LIVE** (agents keep running in the background) |
-| **SUSPENDED** (evicted) | beyond the LRU cap K — torn down | `runtimeRegistry.of(pid) == null` | killed; session ids persisted (SessionStore); transcript persists (CYP-198) |
+| **BACKGROUND** (live, not active) | activated before, not currently active, within the LRU cap K | in the policy's live set | agents keep **running** in the background |
+| **SUSPENDED** (session-suspended) | activated before, beyond the LRU cap K | in the policy's suspended set | agent **processes killed** (session ids persisted, CYP-167); transcript persists (CYP-198) |
 
-**Cap K = 3** (config): the active project + the **2 most-recently-hot** background projects stay live; any
-further background project is SUSPENDED. Comm/ACL/events/config/reports remain per-project-scoped for ALL
+> **MVP realization = session-suspension, NOT full runtime eviction.** Beyond K, a project's expensive
+> `claude` **processes** are killed (session ids persisted → `--resume`), but the **cheap runtime object stays
+> in memory** (its registries). Full runtime eviction (`of(pid)==null`) needs durable per-project agent config
+> (a non-boot project's config is in-memory-only today), which is deferred to CYP-247.5 / CYP-220 — so it is
+> **not** done here. The **client-facing contract is identical either way**: a SUSPENDED project's processes
+> are off + resumable; re-entry = reconnect + `--resume`. Only the server-internal reclaim differs.
+
+**A never-activated project reads `HOT`** (the no-indicator fail-safe): BACKGROUND/SUSPENDED both mean "was
+live", which a fresh project never was — so it must not show a stale badge. The `runtimeState` field
+(`RuntimeState { HOT, BACKGROUND, SUSPENDED }`) is additive on `Project` in `GET /api/projects`, server-derived.
+
+**Cap K = 3** (config): the active project + the **2 most-recently-hot** projects keep their sessions live;
+any further one is session-suspended. Comm/ACL/events/config/reports remain per-project-scoped for ALL
 projects regardless of runtime state (that is the shared HubState + stores, not the runtime — a SUSPENDED
 project's data is intact and correct; only its live agent processes are gone until re-entry).
 
@@ -35,16 +46,20 @@ project's data is intact and correct; only its live agent processes are gone unt
 - A **fresh** project (created via `POST /api/projects`, never activated) has **no runtime and 0 agents**
   until first switched-to; `GET /api/agents` for it (once active) is empty until the operator adds agents.
 
-## 3. Eviction transitions (ratified teardown — Push 3, mirror-relevant NOW)
+## 3. Suspension transitions (session-suspension teardown — Push 3, LIVE)
 
-- On a switch, if `liveCount() > K`, the **least-recently-hot BACKGROUND** runtime is **evicted → SUSPENDED**
-  via **persist-kill-resume**: persist its agents' session ids (SessionStore / `--resume`), kill the
-  processes, drop the runtime from the registry.
-- **Re-entry** to a SUSPENDED project = `switch(→ that project)` = `getOrCreate` mints a FRESH runtime and
-  **re-spawns its agents with `--resume <session_id>`** (falls back to a clean spawn if `--resume` is flaky /
-  version-sensitive). The project returns to **HOT** with its conversations restored.
-- Eviction is bounded and lossless at the data plane: the Event-Log, comm history, config, reports, and the
-  per-agent transcript (CYP-198) all persist independent of runtime state.
+- On a switch, if the number of projects with live sessions would exceed **K=3**, the **least-recently-hot
+  BACKGROUND** project is **session-suspended**: its RUNNING agents are stopped (`lifecycle.stop` → process
+  killed; session ids already persisted by the connector, CYP-167). The runtime OBJECT is kept in memory.
+- **Re-entry** to a SUSPENDED project = `switch(→ that project)` → the policy **resumes** it: `lifecycle.start`
+  each previously-suspended agent → the connector re-spawns with `--resume <session_id>` (falls back to a
+  clean spawn if `--resume` is flaky / version-sensitive). The project returns to **HOT**, conversations
+  restored. The stop/spawn run async off the switch response; the `runtimeState` bookkeeping is synchronous.
+- Bounded + lossless at the data plane: Event-Log, comm history, config, reports, per-agent transcript
+  (CYP-198) all persist independent of runtime state.
+- **Deferred (tracked follow-up):** full runtime eviction (drop the runtime object, `of(pid)==null`) — needs
+  durable per-project agent config (CYP-247.5 / CYP-220). Until then the cheap runtime objects of visited
+  projects stay resident; the expensive processes are what K bounds.
 
 ## 4. What the client (CYP-249 / CYP-262-T2) must mirror
 
@@ -59,10 +74,10 @@ project's data is intact and correct; only its live agent processes are gone unt
 - **Mirror K = 3** if the client caps warm VMs/sockets: keep the active + 2 recent hot; dispose the rest,
   reconnecting on re-entry.
 
-## 5. Open (PO / UIUX decision — not blocking the client build)
+## 5. Decided / built
 
-- **Does the UI need to DISPLAY runtime state** (hot / background / suspended badges per project)? If yes, the
-  server adds a per-project `runtimeState` to `ProjectsView` (`GET /api/projects`) — a small additive field,
-  server-derived from `runtimeRegistry` (active / `of(pid)!=null` / else suspended). NOT built yet; flag if
-  wanted. Without it, the client drives switches + cursor-resume with no runtime-state read (sufficient for MVP).
-- **K value** (default 3) — confirm or override via config.
+- **`runtimeState` field — BUILT (PO + UIUX ratified).** `RuntimeState { HOT, BACKGROUND, SUSPENDED }` in
+  `:core` (compiler-shared), additive `Project.runtimeState` on `ProjectsView` (`GET /api/projects`),
+  server-derived from the live suspension policy, filled per project. Never-activated → `HOT` (no indicator).
+- **K value** = **3** (default; `BootOrchestrator.runtimeSuspensionCap`, config-overridable). ≤ 0 disables
+  suspension (unbounded background-live).

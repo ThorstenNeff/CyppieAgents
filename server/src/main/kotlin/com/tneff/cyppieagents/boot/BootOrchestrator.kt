@@ -99,6 +99,12 @@ class BootedPlatform(
      * lifecycle before any spawn), and the e2e harness seeds distinct per-project runtimes with it.
      */
     val projectRuntimeFactory: ProjectRuntimeFactory,
+    /**
+     * CYP-255 (.4b) / CYP-247.4 — the session-suspension teardown policy (LRU cap K on live sessions). The
+     * switch route calls [RuntimeSuspensionPolicy.onActivated]; `GET /api/projects` reads
+     * [RuntimeSuspensionPolicy.stateOf] to fill each [com.tneff.cyppieagents.model.Project.runtimeState].
+     */
+    val suspensionPolicy: RuntimeSuspensionPolicy,
 )
 
 /**
@@ -175,6 +181,10 @@ class BootOrchestrator(
     // CYP-171 / E2.6 (S3): durable secret-at-rest store for runtime-minted remote-agent tokens; null →
     // in-memory (tests). bootPlatform supplies the out-of-repo, gitignored, 0600 file under the gitRoot.
     private val remoteTokensFile: java.io.File? = null,
+    // CYP-255 (.4b) / CYP-247.4: the HARD LRU cap on projects whose agent SESSIONS run (the ratified
+    // teardown — active + K-1 recent-hot stay live; beyond that the LRU project is session-suspended,
+    // resumed via --resume on re-entry). Default 3 (ratified). ≤ 0 disables suspension (unbounded live).
+    private val runtimeSuspensionCap: Int = 3,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -474,6 +484,31 @@ class BootOrchestrator(
             ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees)
         }
 
+        // CYP-255 (.4b) / CYP-247.4: the session-suspension teardown policy. suspend = stop a project's
+        // RUNNING agents (kill the `claude` processes; session ids are already persisted by the connector,
+        // CYP-167 — so start() re-spawns with --resume); resume = start exactly those agents again. The
+        // runtime OBJECT is kept in memory either way (full reclaim = CYP-247.5). Runs on the boot scope.
+        val suspensionPolicy = RuntimeSuspensionPolicy(
+            cap = runtimeSuspensionCap,
+            scope = scope,
+            suspendProject = { pid ->
+                val rt = runtimeRegistry.of(pid)
+                if (rt == null) {
+                    emptySet()
+                } else {
+                    val running = rt.lifecycle.snapshot()
+                        .filter { it.runState == com.tneff.cyppieagents.model.AgentRunState.RUNNING }
+                        .map { it.agentId }.toSet()
+                    running.forEach { rt.lifecycle.stop(it) } // removeAndAwait → process gone, runState STOPPED
+                    running
+                }
+            },
+            resumeProject = { pid, agents ->
+                val rt = runtimeRegistry.of(pid)
+                if (rt != null) agents.forEach { runCatching { rt.lifecycle.start(it) } } // start → open --resume
+            },
+        )
+
         // CYP-121/122: record each agent's capabilities (per-agent via the router) and log a content-free
         // `capability.degraded` event for every non-AVAILABLE dimension, so the fidelity gap is visible in
         // the Event-Log ("ehrlich degradiert, nie vorgetäuscht", Doc 10 §3). Connector A is all-AVAILABLE →
@@ -542,6 +577,11 @@ class BootOrchestrator(
             }
         }
 
+        // CYP-255 (.4b): seed the boot project as the first HOT project in the suspension policy's LRU (it
+        // is the active project at boot). With one project this never suspends anything; the switch feeds
+        // subsequent activations. Placed after the spawn loop so the boot project is genuinely live.
+        suspensionPolicy.onActivated(config.projectId)
+
         // S16 / CYP-89: Product-Lead reports fold READ sources (events/agents/channels/inbox) into
         // content-free, immutable snapshots — operator-gated at /api/reports.
         val reportStore = com.tneff.cyppieagents.report.ReportStore(
@@ -559,7 +599,7 @@ class BootOrchestrator(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
-            agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory,
+            agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory, suspensionPolicy,
         )
     }
 }
