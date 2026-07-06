@@ -1,6 +1,7 @@
-# Design-Scope — Maritimes App-Redesign (Compose `ColorScheme`-Umzug vom baren M3-Default)
+# Design-Scope — Maritimes App-Redesign (CYP-268) (Compose `ColorScheme`-Umzug vom baren M3-Default)
 
-> Owner: UIUX-Designer · Stand: 2026-07-06 · Status: **SCOPE-Entwurf — Design-first. Ratifikation durch PO + Auftraggeber-Sign-off aufs Scope VOR jedem Bau. KEIN Redesign-Bau ohne Freigabe.**
+> Owner: UIUX-Designer · Ticket **CYP-268** · Stand: 2026-07-06 · Status: **v1.1 — AUFTRAGGEBER-GO + Design-Ansatz PO-ratifiziert. Finalisiertes ColorScheme (kräftig, Day+Night) → wartet PO-GO für Dev-Bau R1.**
+> **⚠ Auftraggeber-Entscheid (2026-07-06):** voll **Day + Night**; **KRÄFTIGERE Sättigung** (Override meiner dezent-Empfehlung — präsentere Marken-Signatur → sattere Blaus/Akzente in `-tokens.json` v1.1, Kontrast hält via R2); Severity/SenderPalette **semantisch behalten**; Theme-Toggle = **follow-system**. Design-Ansatz (R1–R4) PO-ratifiziert. **Bau erst auf PO-GO.**
 > **Motiv:** Die Compose-App läuft heute auf **barem `MaterialTheme {}`** (M3-Default-Violett). Die **maritime Design-Sprache** (blau/weiß, M3 — [[design-language-maritime-m3]]) wurde in CYP-234 erstmals als Doku-Theme kodifiziert (`dev-api-docs-experience-tokens.json`); dieser Scope überträgt sie auf die **App**.
 > **Auftrag (PO):** wie die maritime Palette auf die Compose-`ColorScheme` mappt (Day/Night), **was sich ändert**, **Effort/Slices**. Kein Redesign-Bau in diesem Pass — nur Scope + Mapping + Plan.
 > **Grounding (verifiziert @ develop `c7def58`):** `app/shared/.../App.kt` (Theme-Root), app-weite `colorScheme.*`-Nutzung, `ui/SenderPalette.kt`, `ui/TonedHint.kt`, `eventlog/EventVisuals.kt`, `core/.../model/ColorDerivation.kt`.
@@ -34,20 +35,20 @@
 
 ## §2 — Palette-Mapping: maritime Tokens → M3 `ColorScheme`-Rollen
 
-Basis-Hues aus `dev-api-docs-experience-tokens.json` (CYP-234), erweitert auf die **volle** M3-Rollen-Menge (die App nutzt tertiary/error/Container-Rollen, die das Doku-Theme nicht brauchte). Konkrete Werte (light + dark) in `maritime-app-redesign-scope-tokens.json`. Mapping-Logik:
+Basis-Hues aus `dev-api-docs-experience-tokens.json` (CYP-234), **kräftiger gesättigt** (Auftraggeber-Override) und erweitert auf die **volle** M3-Rollen-Menge. **Konkrete, maßgebliche Werte (light + dark, kräftig, 24 Rollen) = `maritime-app-redesign-scope-tokens.json` v1.1** (Source of Truth; unten nur die Kern-Anker). Mapping-Logik:
 
-| M3-Rolle | Maritime-Quelle | Anmerkung |
+| M3-Rolle | Maritime-Quelle (kräftig, v1.1) | Anmerkung |
 |---|---|---|
-| `primary` / `onPrimary` | deep ocean blue `#14567A` / weiß | Haupt-Akzent (Buttons, aktive Marker) |
-| `primaryContainer` / `onPrimaryContainer` | sky `#CDE7F5` / `#062033` | |
-| `secondary` / `onSecondary` | mid-sea `#3E7CA6` / weiß | **TonedHint INFO** hängt hier |
-| `tertiary` / `tertiaryContainer` / `on…` | shoal `#2E8FA6` / helles Foam | **TonedHint EFFECT_DEFERRED + Chip-bg** hängt hier |
-| `error` / `onError` / `errorContainer` / `on…` | **semantisches Rot behalten** (M3-Rot, leicht maritim-harmonisiert) | Fehler bleibt als Fehler erkennbar — **keine** maritime Umfärbung der Fehler-Semantik |
-| `surface` / `background` / `onSurface` | weiß/foam `#FFFFFF`/`#EEF4F8` / navy-ink `#0F2A38` | Dark: deep navy `#0D1B23` / `#DCE7ED` |
-| `surfaceVariant` / `onSurfaceVariant` | foam `#EEF4F8` / `#41535C` | **57× genutzt** — der häufigste Träger, Kontrast kritisch |
-| `outline` / `outlineVariant` | `#B4C6D0` | Ränder/Divider |
+| `primary` / `onPrimary` | vivid ocean blue `#0A5AA0` / weiß | Haupt-Akzent (Buttons, aktive Marker) |
+| `secondary` / `onSecondary` | saturated mid-sea `#12689F` / weiß | **TonedHint INFO** hängt hier → R2 prüft Kontrast auf `tertiaryContainer` |
+| `tertiary` / `tertiaryContainer` / `on…` | vivid shoal-teal `#0B7E9C` / helles Foam `#B7E7F2` | **TonedHint EFFECT_DEFERRED + Chip-bg** hängt hier |
+| `error` / `onError` / `errorContainer` / `on…` | **semantisches Rot behalten** (`#B3261E`, unverändert) | Fehler bleibt als Fehler erkennbar — **keine** maritime Umfärbung der Fehler-Semantik |
+| `surface` / `background` / `onSurface` | weiß / navy-ink `#0C2635` | Dark: deep navy `#0A1922` / `#DCE7ED` |
+| `surfaceVariant` / `onSurfaceVariant` | leicht-blau Foam `#E4EFF8` / `#3A4E5A` | **57× genutzt** — häufigster Träger, Kontrast kritisch (R2) |
+| `outline` / `outlineVariant` | `#6E8C9E` / `#CBDCE7` | Ränder/Divider |
 
-> **Ehrlichkeits-/Semantik-Anker:** **`error` bleibt rot** (Fehler-Bedeutung ist nicht verhandelbar fürs Branding); maritime Färbung betrifft **Marke/Neutrale**, nicht die **semantischen** Rollen. Gilt auch für die Severity-/Status-Farben in §3.
+> **Kräftig, aber lesbar:** die Sättigung steigt bei **primary/secondary/tertiary** (Marken-Signatur); **Surfaces bleiben überwiegend hell** (Anti-Hype, Lesbarkeit) mit leichtem Blau-Tint. **R2 verifiziert/tunt** die grenzwertigen Paare (`tertiary`-auf-weiß als UI-Fill ~3:1 UI-OK; `secondary`-auf-`tertiaryContainer` bei TonedHint-INFO).
+> **Ehrlichkeits-/Semantik-Anker:** **`error` bleibt rot** (Fehler-Bedeutung nicht verhandelbar); maritime Färbung betrifft **Marke/Neutrale**, nicht die **semantischen** Rollen. Gilt auch für Severity-/Status-Farben in §3.
 
 ---
 
@@ -77,14 +78,14 @@ Diese folgen dem Theme-Seam **nicht** automatisch → je eine bewusste Entscheid
 
 ---
 
-## §5 — Offene Punkte / §-Asks (für PO + Auftraggeber-Scope-Sign-off)
+## §5 — §-Asks — ALLE ENTSCHIEDEN (2026-07-06, Auftraggeber + PO)
 
-1. **Scope-Freigabe (Auftraggeber):** Ist ein maritimes Re-Coloring der App jetzt gewollt (vs. „interim M3-Default lassen")? **Kein Bau ohne dieses Sign-off.**
-2. **Dark-Mode:** beide Schemata (light+dark, empfohlen — modern, augenschonend) **oder** nur Light-maritim für v1? Beeinflusst R1/R2/R3-Aufwand.
-3. **Theme-Toggle:** System-Folge only (schlank) **oder** zusätzlicher In-App-Umschalter (Komfort, +R3-Aufwand)?
-4. **Umfang der Marken-Sättigung:** dezent-maritim (nur primary/secondary/surface maritim, Rest neutral — empfohlen, ruhig/Anti-Hype) **vs.** voll-durchgefärbt (mehr Charakter, mehr Kontrast-Arbeit).
-5. **Severity-Farben (§3-1):** semantisch behalten (empfohlen) vs. maritim-angleichen (Risiko Ampel-Semantik-Verlust).
-6. **Ticket-Key:** dieser Scope ist design-ahead unter [[design-language-maritime-m3]]; **PO vergibt den Jira-Key** (eigenes Redesign-Ticket/Epic) bei Ratifikation. *(Branch heißt bis dahin `feature/maritime-app-redesign-scope` — bei Key-Vergabe umbenennbar.)*
+1. ✅ **Scope-Freigabe (Auftraggeber): GO** — maritimes Re-Coloring jetzt, parallel zu CYP-234.
+2. ✅ **Dark-Mode: JA, voll Day + Night** (beide Schemata, 24 Rollen je).
+3. ✅ **Theme-Toggle: follow-system** (PO-Entscheid; kein In-App-Umschalter für v1).
+4. ✅ **Marken-Sättigung: KRÄFTIG** (Auftraggeber-Override meiner dezent-Empfehlung → präsentere Marken-Signatur; sattere Blaus/Akzente, `-tokens.json` v1.1; Kontrast hält via R2).
+5. ✅ **Severity-Farben: semantisch behalten** (PO-bestätigt; Ampel-Semantik bleibt).
+6. ✅ **Ticket-Key: CYP-268** (Branch `feature/CYP-268-maritime-redesign`).
 
 ---
 
@@ -103,7 +104,7 @@ Diese folgen dem Theme-Seam **nicht** automatisch → je eine bewusste Entscheid
 
 ## §7 — Hand-off
 
-- **Deliverables (dieser Pass):** `-spec.md` (Scope + Mapping + Slices) + `-tokens.json` (volles maritimes `ColorScheme` light + dark, alle genutzten Rollen). **Kein** Bau.
-- **Grounding:** App-Theme-Audit @ develop `c7def58`; maritime Basis-Hues aus CYP-234 `dev-api-docs-experience-tokens.json`; [[design-language-maritime-m3]].
-- **Danach:** **PO ratifiziert + Auftraggeber-Sign-off aufs Scope** (§5-1) → dann Bau (R1–R4) → **UX-QA durch mich gegen §6 (8 Invarianten)**.
+- **Deliverables:** `-spec.md` (Scope + Mapping + Slices) + `-tokens.json` v1.1 (volles maritimes `ColorScheme` **kräftig**, light + dark, 24 Rollen). Branch `feature/CYP-268-maritime-redesign`.
+- **Grounding:** App-Theme-Audit @ develop `c7def58`; maritime Basis-Hues aus CYP-234 `dev-api-docs-experience-tokens.json` (kräftiger gesättigt); [[design-language-maritime-m3]].
+- **Status/Danach:** Auftraggeber-GO + Design-Ansatz PO-ratifiziert. **Auf PO-GO** baut Dev **R1** (`App.kt`-Seam-Injektion) → R2 (Kontrast-Audit, tunt die grenzwertigen kräftig-Paare) → R3 (Day/Night follow-system) → **R4 UX-QA durch mich gegen §6 (8 Invarianten)**.
 - **Anti-Divergenz:** die maritime App-Palette und das CYP-234-Doku-Theme teilen dieselben Basis-Hues (eine Sprache, zwei Surfaces) — Doku und App bleiben visuell konsistent.
