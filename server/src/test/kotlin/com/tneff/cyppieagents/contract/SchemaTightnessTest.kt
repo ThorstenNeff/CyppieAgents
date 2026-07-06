@@ -37,6 +37,9 @@ class SchemaTightnessTest {
         serializer<CommWsClientEvent>().descriptor,
         serializer<EventsWsServerEvent>().descriptor,
         serializer<EventsWsClientEvent>().descriptor,
+        serializer<com.tneff.cyppieagents.model.AgentRunStateEvent>().descriptor,
+        serializer<com.tneff.cyppieagents.model.UserTurn>().descriptor,
+        serializer<com.tneff.cyppieagents.model.StoredAgentEvent>().descriptor,
     )
 
     private fun JsonObject.reqSet(): Set<String> =
