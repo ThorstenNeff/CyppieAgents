@@ -114,8 +114,9 @@ object RestContract {
         Op("GET", "/api/channels/{id}/share", Tier.PARTICIPANT, response = json<ChannelShareView>()),
         Op("PUT", "/api/channels/{id}/share", Tier.OPERATOR, response = json<ChannelShareView>()),
         Op("DELETE", "/api/channels/{id}/share", Tier.OPERATOR, response = json<ChannelShareView>()),
-        // --- EventRoutes ---
-        Op("GET", "/api/events", Tier.OPERATOR, response = json<EventPage>()),
+        // --- EventRoutes (CYP-186 BE2: event-log is secret-free metadata → MEMBER-readable; the ?projectId
+        //     cross-project override stays operator-only, but the read tier itself is MEMBER, matching settings) ---
+        Op("GET", "/api/events", Tier.MEMBER, response = json<EventPage>()),
         // --- ReportRoutes (/api/reports) ---
         Op("GET", "/api/reports", Tier.OPERATOR, response = arr<ReportSnapshot>()),
         Op("GET", "/api/reports/{id}", Tier.OPERATOR, response = json<ReportSnapshot>()),

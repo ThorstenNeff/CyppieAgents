@@ -19,7 +19,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * ST5 (CYP-39) `/api/events`: operator-only fail-closed, query-param filters (half-open `[since,until)`),
+ * ST5 (CYP-39) `/api/events`: MEMBER-tier fail-closed (CYP-186 BE2: secret-free metadata; was operator-only),
+ * query-param filters (half-open `[since,until)`),
  * stable `seq`-paging, and strict 400s on unparseable filters. Driven over the real Ktor route against
  * a real in-memory sink, with a [ManualTimeSource] for deterministic `ts`.
  */
