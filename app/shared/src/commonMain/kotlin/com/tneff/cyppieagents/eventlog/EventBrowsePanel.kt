@@ -25,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.EventType
@@ -39,6 +41,8 @@ import kmpcyppieagents.app.shared.generated.resources.event_view_all_projects
 import kmpcyppieagents.app.shared.generated.resources.event_view_project
 import kmpcyppieagents.app.shared.generated.resources.comm_back
 import kmpcyppieagents.app.shared.generated.resources.event_detail_source_ts
+import kmpcyppieagents.app.shared.generated.resources.a11y_event_drilldown_header
+import kmpcyppieagents.app.shared.generated.resources.a11y_event_filter_chip
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_correlated_by
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_show_run
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_show_session
@@ -238,12 +242,17 @@ private fun FilterBar(
 /** A clickable filter chip that cycles its axis on tap; the current value is shown when set. */
 @Composable
 private fun FilterCycleChip(tag: String, label: String, value: String?, onClick: () -> Unit) {
+    // CYP-277: announce the chip as an interactive filter with its current value + the tap action (not just its
+    // visible "label: value" text) — the cycle behaviour is invisible to a screen reader otherwise.
+    val chipA11y = stringResource(Res.string.a11y_event_filter_chip, label, value?.let { ": $it" } ?: "")
     Text(
         text = if (value != null) "$label: $value" else label,
         style = MaterialTheme.typography.labelSmall,
         fontWeight = if (value != null) FontWeight.SemiBold else FontWeight.Normal,
         color = if (value != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.clickable(onClick = onClick).testTag(tag).padding(horizontal = 4.dp, vertical = 2.dp),
+        modifier = Modifier.clickable(onClick = onClick).testTag(tag)
+            .semantics { contentDescription = chipA11y }
+            .padding(horizontal = 4.dp, vertical = 2.dp),
     )
 }
 
@@ -269,11 +278,14 @@ private fun DrilldownView(state: EventBrowseUiState, onClear: () -> Unit, modifi
     val axisValue = state.filter.correlationId ?: state.filter.sessionId ?: "—"
     Column(modifier = modifier.testTag(EventBrowseTags.DRILLDOWN)) {
         // Header names the axis + scope explicitly (§6.3) and clears the drilldown on click.
+        // CYP-277: announce the clear-on-tap action for screen readers (the plain axis text hid the affordance).
+        val headerA11y = stringResource(Res.string.a11y_event_drilldown_header, axisValue)
         Text(
             text = stringResource(Res.string.event_drilldown_correlated_by, axisValue),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.fillMaxWidth().clickable(onClick = onClear)
+                .semantics { contentDescription = headerA11y }
                 .padding(horizontal = 12.dp, vertical = 6.dp).testTag(EventBrowseTags.DRILLDOWN_HEADER),
         )
         LazyColumn(modifier = Modifier.fillMaxSize()) {
