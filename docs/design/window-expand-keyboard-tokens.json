@@ -1,0 +1,49 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-245 (Tastatur-Aequivalent Fenster-Expand/Restore — schliesst CYP-241-a11y-Empfehlung)",
+    "version": "1.0",
+    "status": "Vorschlag — reiner commonMain-Fenster-Manager (Tastenbindung Enter im bestehenden .onKeyEvent), keine Server-/Protokoll-Aenderung. Speist Dev CYP-245; UX-QA danach UIUX. S.",
+    "brand": "CyppieAgents (Anti-Hype; interim look + M3)",
+    "grounded_against": "origin/develop e6f0882 (WindowManager.kt .onKeyEvent/.focusable/detectTapGestures, WindowManagerState.toggleExpand, WindowTestTags, values*/strings.xml)",
+    "principles": [
+      "Keine neuen Layout-Tokens: CYP-245 fuegt eine Eingabemodalitaet (Enter) zu einer bestehenden Aktion (toggleExpand) hinzu — Geometrie ist zu 100% CYP-241.",
+      "Keine Farben, kein neues Chrome, kein neuer Control: nur eine Tastenbindung + ein a11y-Hinweis-String.",
+      "Parade ueber Reuse: identischer toggleExpand -> identische Geometrie UND identische stateDescription-Ansage (Maus == Tastatur)."
+    ]
+  },
+  "new_tokens": {
+    "note": "KEINE. CYP-245 hat keine eigenen Layout-Konstanten."
+  },
+  "reused_from_CYP_241": {
+    "note": "Die Expand-Geometrie wird vollstaendig wiederverwendet — der Enter-Pfad ruft exakt dieselbe WindowManagerState.toggleExpand -> WindowReducer.expandCentered wie der Doppelklick.",
+    "EXPAND_PREFERRED_CONTENT_W": 640,
+    "EXPAND_PREFERRED_CONTENT_H": 560,
+    "EXPAND_PREFERRED_DEFAULT_W": 460,
+    "EXPAND_PREFERRED_DEFAULT_H": 380,
+    "EXPAND_MARGIN": 24,
+    "HOST_AFFORDANCE_BAND": 56,
+    "MIN_VISIBLE_WINDOW": 48,
+    "TILED_CONTENT_WINDOW_MIN_WIDTH": 320,
+    "MIN_WINDOW_WIDTH": 160,
+    "MIN_WINDOW_HEIGHT": 120
+  },
+  "reused_interaction_constants": {
+    "note": "Bestehende Tastatur-Konstanten des Fenster-Manager — CYP-245 fuegt KEINE hinzu, sondern reiht Enter neben ihnen ein.",
+    "KEYBOARD_MOVE_STEP": 16,
+    "KEYBOARD_RESIZE_STEP": 16,
+    "binding_added": "Key.Enter -> onToggleExpand() (im bestehenden .onKeyEvent-when; kein Modifier, toggelnd)"
+  },
+  "validation": {
+    "new_tokens": 0,
+    "new_colors": 0,
+    "new_keys_required": 1,
+    "new_keys_optional_cleanup": 2,
+    "new_state_keys": 0,
+    "new_tags": 0,
+    "reuse": "toggleExpand/expandCentered/clampToBounds/clampSizeToBounds, expandAnchors (transient), window_state_expanded/window_state_normal, WindowTestTags.window/titleBar/FIT/HOST, .focusable()/.onKeyEvent/.onFocusChanged",
+    "no_model_change": "WindowState-Felder, toggleExpand, clamp-Funktionen, Drag/Resize/Doppelklick-Pfade unveraendert; nur ein .onKeyEvent-Zweig + 1 a11y-String. Server/Protokoll 0.",
+    "no_secrets": "keine Token/E-Mail/Endpoints; reine Interaktions-/a11y-Werte",
+    "honesty": "Enter-Geometrie == Doppelklick-Geometrie (nie Vollbild/Ueberlauf); Ansage-Paritaet ueber die BESTEHENDEN Zustands-Keys (nicht neue Tastatur-only-Meldung); Hint-Copy 'vergroessern & zentrieren / zurueckstellen' (kein 'alles sichtbar'); kein Composer-Enter-Hijack (fokus-scoped); transienter Anker unangetastet (kein stale Restore)."
+  }
+}
