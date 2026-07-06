@@ -78,6 +78,7 @@ import com.tneff.cyppieagents.crossproject.HttpCrossProjectRepository
 import com.tneff.cyppieagents.project.ProjectRepository
 import com.tneff.cyppieagents.project.ProjectSwitcherBar
 import com.tneff.cyppieagents.project.ProjectViewModel
+import com.tneff.cyppieagents.project.ProjectVmStoreManager
 import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.report.ProductLeadPanel
@@ -174,6 +175,9 @@ fun AgentShell(
     connectorSelectionRepository: ConnectorSelectionRepository? = null,
     /** Override the workspace-roster read port (CYP-186 BE3a); `null` → the live `GET /api/workspace/members`. */
     workspaceRepository: WorkspaceRepository? = null,
+    /** CYP-249 — injectable per-project ViewModelStore LRU (test seam: observe warm/evicted projects). `null` → the
+     *  shell owns one (K=3). Prod never injects; tests pass one to assert the K-cap + eviction across switches. */
+    projectVmStores: ProjectVmStoreManager? = null,
     /** CYP-188 — the signed-in user's native session credential (`X-Session-Token`) for the shared HTTP/WS client,
      *  so a session-only user (no operator token) authenticates its reads/sockets. `null`/absent → none (a browser
      *  session rides its same-origin `ory_kratos_session` cookie; the operator token stays break-glass). */
@@ -232,6 +236,21 @@ fun AgentShell(
     // CYP-246: the active project id — the re-key suffix for every per-project VM below.
     val activeProjectId = projectState.activeProjectId
 
+    // CYP-249: bound the client's warm per-project socket set to the server's runtime LRU (K=3, see the switch-runtime
+    // contract). Each project's project-scoped VMs live in their OWN ViewModelStore (passed as viewModelStoreOwner
+    // below); the active + 2 most-recently-hot stay warm (a cheap switch-back, no reconnect), and the least-recently-
+    // used beyond K is disposed → its VMs' onCleared() → viewModelScope cancel → its /ws sockets close. Re-entry mints
+    // a fresh store → fresh VMs → a clean reconnect + cursor-resume (CYP-198/204) — the normal re-entry path, not an
+    // error. The workspace-scoped projectSwitcher (above) + roster (below) OMIT this owner → they stay on the always-
+    // alive shell store, never evicted. The CYP-246 "-$activeProjectId" key suffix is retained as defense-in-depth
+    // (isolation holds even if this owner wiring regresses). ownerFor() is a side-effect-free get-or-create (safe in
+    // composition); the MRU-promote + destructive eviction run in noteActive() from the post-commit effect.
+    val defaultProjectStores = remember { ProjectVmStoreManager() }
+    val projectStores = projectVmStores ?: defaultProjectStores
+    DisposableEffect(projectStores) { onDispose { projectStores.clearAll() } }
+    val projectStoreOwner = remember(activeProjectId) { projectStores.ownerFor(activeProjectId) }
+    LaunchedEffect(activeProjectId) { projectStores.noteActive(activeProjectId) }
+
     // Agent-management VM (CYP-86/87/88): the LIVE REST client against the CYP-97 endpoints (stub→real swap,
     // no UI/VM change). Its agent list (GET /api/agents) drives the **dynamic** window set — an added agent
     // gets a window, a removed one loses it. CYP-246: re-keyed on activeProjectId (the reported-bug VM,
@@ -242,7 +261,7 @@ fun AgentShell(
         agentManagementRepository
             ?: AgentManagementHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
-    val agentMgmtVm = viewModel(key = "$AGENT_MGMT_WINDOW_ID-$activeProjectId") {
+    val agentMgmtVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$AGENT_MGMT_WINDOW_ID-$activeProjectId") {
         AgentManagementViewModel(resolvedAgentMgmtRepo, editable = isOperator)
     }
     val managedAgents = agentMgmtVm.state.collectAsState().value.agents
@@ -382,7 +401,7 @@ fun AgentShell(
         // CYP-246: the store key carries activeProjectId (the MAP key stays the bare id for windowContent
         // lookup) — so two projects that reuse an agent id (po/frontend/backend are conventional) never share
         // a retained AgentViewModel + its `/ws/agent` socket across a switch. Follows the re-keyed agent set.
-        agentVms[id] = viewModel(key = "agent-$activeProjectId-$id") {
+        agentVms[id] = viewModel(viewModelStoreOwner = projectStoreOwner, key = "agent-$activeProjectId-$id") {
             AgentViewModel(
                 session = resolveSession(id),
                 agentId = id,
@@ -395,7 +414,7 @@ fun AgentShell(
     // CYP-246: re-keyed on activeProjectId. Comm data (channels/timeline/agents) is project-scoped; the VM
     // loads channels+agents ONCE in init and the live `/ws/comm` only pushes ChannelsChanged — the selected
     // timeline + agents map never re-scope on switch. Re-key = a clean, deterministic reload in the new scope.
-    val commVm = viewModel(key = "$COMM_WINDOW_ID-$activeProjectId") {
+    val commVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$COMM_WINDOW_ID-$activeProjectId") {
         CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
     }
     // CYP-186 roster repo — OPERATOR-only reads (GET /api/workspace/members). Hoisted so the ACL matrix
@@ -405,21 +424,21 @@ fun AgentShell(
     // CYP-246: re-keyed on activeProjectId. ACL channels/entries/agents are project-scoped; the VM loads once
     // and the live stream only upserts single entries (old-project entries never prune) → stale on switch.
     // (The `members` human-roster is workspace-scoped, so the reload re-fetches identical members — harmless.)
-    val aclVm = viewModel(key = "$ACL_WINDOW_ID-$activeProjectId") {
+    val aclVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$ACL_WINDOW_ID-$activeProjectId") {
         // CYP-189: the human-grant band consults the roster ONLY when editable (operator) — Invariante E.
         AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = isOperator, workspaceRepository = resolvedWorkspaceRepo)
     }
     // Project settings (CYP-84/85): hoisted like the others; editable iff an operator token is present.
     // CYP-246: re-keyed on activeProjectId. Project settings (repo url/branch + API-key) are per-project and
     // the VM loads once with no re-scope trigger → stale on switch.
-    val settingsVm = viewModel(key = "$SETTINGS_WINDOW_ID-$activeProjectId") {
+    val settingsVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$SETTINGS_WINDOW_ID-$activeProjectId") {
         SettingsViewModel(resolvedConfigRepository, editable = isOperator)
     }
     // Product-Lead reports (CYP-90): hoisted; accessible iff operator token (fail-closed — without it the
     // VM never loads a report). Aggregates operator-gated observability, so no token → no report at all.
     // CYP-246: re-keyed on activeProjectId. The Product-Lead report aggregates the active project's
     // observability and the VM loads once (accessible-gated) → stale on switch.
-    val productLeadVm = viewModel(key = "$PRODUCT_LEAD_WINDOW_ID-$activeProjectId") {
+    val productLeadVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$PRODUCT_LEAD_WINDOW_ID-$activeProjectId") {
         ProductLeadViewModel(resolvedReportRepository, accessible = isOperator)
     }
     // Connector capabilities (CYP-123): read-only per-agent fidelity, hoisted once for all agent windows. Live
@@ -431,7 +450,7 @@ fun AgentShell(
     }
     // CYP-246: re-keyed on activeProjectId — the caps are read per-agent (project-scoped via the agent set)
     // and the VM loads once, so a switch must re-instance it to reflect the new project's agents.
-    val connectorCapVm = viewModel(key = "connectorCapabilities-$activeProjectId") {
+    val connectorCapVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "connectorCapabilities-$activeProjectId") {
         ConnectorCapabilityViewModel(resolvedConnectorCapRepo)
     }
     val connectorCapState = connectorCapVm.state.collectAsState().value
@@ -451,9 +470,9 @@ fun AgentShell(
     // only on user action, not on switch); Tail's ring never clears on switch and the client never re-subscribes
     // the socket — both stale on switch → re-instance for a clean, in-scope reload.
     val browseVm: EventBrowseViewModel? =
-        if (isOperator) viewModel(key = "$EVENTLOG_BROWSE_WINDOW_ID-$activeProjectId") { EventBrowseViewModel(resolvedEventsApi) } else null
+        if (isOperator) viewModel(viewModelStoreOwner = projectStoreOwner, key = "$EVENTLOG_BROWSE_WINDOW_ID-$activeProjectId") { EventBrowseViewModel(resolvedEventsApi) } else null
     val tailVm: EventTailViewModel? =
-        if (isOperator) viewModel(key = "$EVENTLOG_TAIL_WINDOW_ID-$activeProjectId") { EventTailViewModel(resolvedEventsLiveSource) } else null
+        if (isOperator) viewModel(viewModelStoreOwner = projectStoreOwner, key = "$EVENTLOG_TAIL_WINDOW_ID-$activeProjectId") { EventTailViewModel(resolvedEventsLiveSource) } else null
 
     // CYP-186 roster: OPERATOR-only. Built only when the window is mounted (showRoster) → no MEMBER load, no leak.
     // CYP-246: DELIBERATELY NOT re-keyed on activeProjectId — the workspace member roster is team-wide
@@ -543,7 +562,7 @@ fun AgentShell(
             // save from it lands the old project's values in the new project's override (the repo is project-agnostic;
             // the SERVER resolves scope to the now-active project) — a data-integrity leak, not just cosmetics. The
             // settingsAgentId reset above only closes the overlay across a switch; it does NOT clear the retained VM.
-            val agentSettingsVm = viewModel(key = "agentSettings-$activeProjectId-$sid") {
+            val agentSettingsVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "agentSettings-$activeProjectId-$sid") {
                 AgentSettingsViewModel(sid, resolvedAgentMgmtRepo, editable = isOperator, initialName = a?.name ?: sid, initialColorHex = a?.color)
             }
             // CYP-216: the platform image picker (wasmJs/jvm real; android/ios stub) → the VM does the pre-check
@@ -606,7 +625,7 @@ fun AgentShell(
                             // scope; the repo is project-agnostic, server resolves the active project). Verified
                             // deterministically (CrossProjectSwitchScopeTest): the project-scoped key clears it — and
                             // it DOES suffice through the real CommPanel LazyColumn nesting (naive-suffix concern ruled out).
-                            viewModel(key = "crossproject-$activeProjectId-$cid") {
+                            viewModel(viewModelStoreOwner = projectStoreOwner, key = "crossproject-$activeProjectId-$cid") {
                                 CrossProjectViewModel(resolvedCrossProjectRepo, cid, editable = isOperator)
                             },
                             // PO flag-2: the target projects = the operator's other projects (the derived sharedWith).
@@ -629,7 +648,7 @@ fun AgentShell(
                             // at the previous project's agentMgmtVm → the connector choice lands on the stale add
                             // form and the agent created in the new project gets the default connector. Re-keying
                             // gives a fresh VM per project that captures the current agentMgmtVm.
-                            val addVm = viewModel(key = "connectorSelection-add-$activeProjectId") {
+                            val addVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "connectorSelection-add-$activeProjectId") {
                                 ConnectorSelectionViewModel(
                                     resolvedConnectorSelRepo, agentId = null,
                                     editable = isOperator,
@@ -647,7 +666,7 @@ fun AgentShell(
                             // CYP-258: include activeProjectId for consistency — agent ids repeat across projects, and
                             // two projects' same-id agent with the same connectorKind would otherwise share one keyed
                             // VM. (No method-ref capture here, so lower-risk than the add slot, but same posture.)
-                            val editVm = viewModel(key = "connectorSelection-edit-$activeProjectId-${target.id}-${target.connectorKind}") {
+                            val editVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "connectorSelection-edit-$activeProjectId-${target.id}-${target.connectorKind}") {
                                 ConnectorSelectionViewModel(
                                     resolvedConnectorSelRepo, agentId = target.id,
                                     editable = isOperator,
