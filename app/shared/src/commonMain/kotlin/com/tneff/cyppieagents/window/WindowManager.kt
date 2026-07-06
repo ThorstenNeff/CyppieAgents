@@ -178,45 +178,9 @@ private fun WindowCanvas(
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().testTagA11y(WindowTestTags.HOST)) {
-        // CYP-250: desktop empty-state — the active project has 0 AGENTS. Triggers on [agentsEmpty], NOT on
-        // state.windows.isEmpty() (the tool windows are always present). A quiet, centered "add your first agent"
-        // panel on the canvas BACKGROUND, composed BEFORE the floating windows so it draws behind them (no z-fight,
-        // §D2). Self-clearing: the shell passes agentsEmpty=false as soon as ≥1 agent exists. Copy is verbatim CYP-228
-        // ("noch keine Agenten", carries "creating ≠ running"); the CTA routes into the existing openAdd flow and is
-        // operator-gated with an honest reason (no dead CTA), exactly like the CYP-228 add button.
-        if (agentsEmpty) {
-            Column(
-                modifier = Modifier.align(Alignment.Center).testTag(WindowTestTags.EMPTY),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    stringResource(Res.string.agent_empty_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Text(
-                    stringResource(Res.string.agent_empty_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
-                    onClick = onAddFirstAgent,
-                    enabled = canAddAgent,
-                    modifier = Modifier.testTag(WindowTestTags.EMPTY_ADD_BTN),
-                ) {
-                    Text(stringResource(Res.string.agent_add))
-                }
-                // Non-operator: disabled CTA + the honest "why" (reused gate hint) — no dead end (§D5).
-                if (!canAddAgent) {
-                    TonedHint(
-                        stringResource(Res.string.workspace_operator_only),
-                        HintTone.GATED,
-                        WindowTestTags.EMPTY_GATE_HINT,
-                    )
-                }
-            }
-        }
+        // CYP-250: the desktop empty-state (0 agents) is rendered as a FOREGROUND overlay AFTER the window loop
+        // below — see the block after `forEachIndexed`. (UIUX §D2 addendum: a background placement is occluded by
+        // the always-present tool windows that resetTo/tile lays across the canvas.)
         state.windows.forEachIndexed { index, window ->
             // Key by id so a window keeps its identity (and any internal state) when the list is
             // reordered on focus; graphicsLayer below applies the z-order from the list index.
@@ -238,6 +202,59 @@ private fun WindowCanvas(
                     titleBarLeading = titleBarLeadingFor(window.id),
                     content = { windowContent(window) },
                 )
+            }
+        }
+
+        // CYP-250 (UIUX §D2 addendum): the desktop empty-state (active project has 0 AGENTS — keys on [agentsEmpty],
+        // NOT state.windows.isEmpty(), since the tool windows always coexist). A FOREGROUND overlay: drawn AFTER the
+        // window loop AND lifted above the window stack (windows carry an explicit zIndex = their list index, so draw
+        // order alone is not enough) — wrapped in a Surface so it is opaque + readable over whatever is behind. At 0
+        // agents there are no AGENT windows to cover (only the tiled tool windows), so it can never occlude agent
+        // content and is strictly visible + clickable. Self-clearing (agentsEmpty=false at ≥1 agent). Copy is verbatim
+        // CYP-228 ("noch keine Agenten", carries "creating ≠ running"); the CTA routes into the existing openAdd flow,
+        // operator-gated with an honest reason (no dead CTA), exactly like the CYP-228 add button.
+        if (agentsEmpty) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    // Above the window stack (window zIndex = list index, small); below the FIT toolbar (MAX).
+                    .zIndex(Float.MAX_VALUE / 2f)
+                    .testTag(WindowTestTags.EMPTY),
+                shape = MaterialTheme.shapes.medium,
+                tonalElevation = 6.dp,
+                shadowElevation = 6.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        stringResource(Res.string.agent_empty_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Text(
+                        stringResource(Res.string.agent_empty_body),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(
+                        onClick = onAddFirstAgent,
+                        enabled = canAddAgent,
+                        modifier = Modifier.testTag(WindowTestTags.EMPTY_ADD_BTN),
+                    ) {
+                        Text(stringResource(Res.string.agent_add))
+                    }
+                    // Non-operator: disabled CTA + the honest "why" (reused gate hint) — no dead end (§D5).
+                    if (!canAddAgent) {
+                        TonedHint(
+                            stringResource(Res.string.workspace_operator_only),
+                            HintTone.GATED,
+                            WindowTestTags.EMPTY_GATE_HINT,
+                        )
+                    }
+                }
             }
         }
 
