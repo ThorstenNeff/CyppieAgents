@@ -165,7 +165,25 @@ Redoc themt **nicht** live um. Der Dark-Toggle lebt in **unserer Shell**: bei Um
 
 ---
 
-## §10 — Hand-off
+## §10 — Shell-Template & Slot-Contract (→ `dev-api-docs-shell-template.html`)
 
-- **Kein Bau** — Design-Pass, feeds 234a-3. **✅ §1 PO-entschieden (kräftig-angeglichen) + in `dev-api-docs-experience-tokens.json` v1.2 gefaltet; §9-1 geschlossen (Dark-Method-Töne).** 234a-3 steht damit buildbar bereit (baut Backend/Dev, wenn die REST/AsyncAPI-Docs live sind).
+Das äußere maritime Chrome ist als **buildbares Template mit Füll-Slots** ausgeliefert: `docs/design/dev-api-docs-shell-template.html` (self-contained, EN, light+dark via `--maritime-*`-CSS-Vars v1.2 + Toggle). **Design-Grenze:** UIUX = diese Chrome; **Backend füllt die Slots** mit dem generierten Redoc(REST)/AsyncAPI(WS)-Render + Route. Jeder Slot trägt `data-slot="<id>"` + einen `<!-- SLOT: <id> -->`-Marker.
+
+| Slot-`id` | Wo | Backend füllt mit | Ehrlichkeits-/A11y-Randbedingung |
+|---|---|---|---|
+| `version` | Header + Footer (2×) | kanonische API-Version (z. B. `v1`) | rein informativ; keine Garantie-Sprache |
+| `guide-link` | Header-Nav | URL der gehosteten 234c-Anleitung | — |
+| `rest-render` | `<main>` | generierter **Redoc**-Mount (REST), Theme via `theme`-Objekt §3 | Method/Tier-Badges label-tragend |
+| `ws-render` | `<main>` (hidden bis gewählt) | generierter **AsyncAPI**-Mount (WS), selbe Chrome (D1) | token-only-WS nie als normaler read-Kanal getarnt |
+| `license-contact` | Footer | Lizenz- + Kontakt/Impressum-Zeile | — |
+
+**Fixe Chrome (nicht Slot, UIUX-owned):** Wortmarke, **Trust-Zeile** (D6, info/neutral, EN verbatim), **Tier-Legende** (4 label-tragende Chips, Operator ≠ Alarm-Rot), **REST↔WS-Segmented-Toggle** (swappt Render-Slot-Sichtbarkeit, `role="tablist"`), **Dark-Toggle-Seam** (Default `data-theme="auto"` = follow-system; User-Toggle überschreibt). **0 API-Inhalt in der Chrome** — der lebt ausschließlich in den zwei Render-Slots (kein Doku-Drift).
+
+**Backend-Kontrakt-Notiz:** die Slots sind **additiv** — der Backend ersetzt/injiziert nur `data-slot`-Knoten, ohne die `--maritime-*`-Vars oder die fixe Chrome zu verändern (sonst driftet die Abnahme). Renderer-Theme-Werte kommen aus `dev-api-docs-experience-tokens.json` v1.2 (`renderer_mapping` + `method_badges`/`method_badges_dark`).
+
+---
+
+## §11 — Hand-off
+
+- **Kein Bau** — Design-Pass + **Shell-Template** (`dev-api-docs-shell-template.html`, §10), feeds 234a-3. **✅ §1 PO-entschieden (kräftig-angeglichen) + in `dev-api-docs-experience-tokens.json` v1.2 gefaltet; §9-1 geschlossen (Dark-Method-Töne).** Die maritime Chrome ist als Füll-Slot-Template ausgeliefert → **Backend füllt die Render-Slots** (Redoc/AsyncAPI) + Route, wenn 234a-3 in der Sequenz ankommt.
 - **UX-QA später:** die 8 Invarianten §8 sind meine Abnahme-Checkliste, sobald 234a-3 gebaut ist (zusammen mit der §6=10-Invarianten-Abnahme des Haupt-Specs).
