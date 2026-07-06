@@ -149,6 +149,37 @@ class CommWsTest {
         }
     }
 
+    // CYP-255 ①-AclEvent — the /ws/comm pump's AclEvent branch must be PROJECT-scoped, not canRead-only:
+    // an AclEvent stamped for project A (its entry.projectId) must NOT reach a participant on a connection
+    // whose ACTIVE project is B, even on a channel-id collision the participant can read in the active
+    // project. Tested against the extracted pure pump filter (deterministic, no live socket).
+    // Non-vacuous: the SAME entry stamped for the ACTIVE project DOES pass (proves canRead is satisfied, so
+    // the drop is specifically the project gate). Mutation: drop `ProjectScope.permits(...)` from the
+    // AclEvent branch → the foreign-project event passes → this reds.
+    @Test
+    fun aclEvent_foreignProject_isDroppedByProjectGate_notCanReadAlone() {
+        val agents = listOf(
+            com.tneff.cyppieagents.model.Agent("po", "PO", com.tneff.cyppieagents.model.Role.PO, "po"),
+            com.tneff.cyppieagents.model.Agent("backend", "BE", com.tneff.cyppieagents.model.Role.WORKER, "backend"),
+        )
+        // active project = "default"; operator is a member (canRead=true) of every channel.
+        val state = com.tneff.cyppieagents.comm.HubState.hubAndSpoke(
+            agents, com.tneff.cyppieagents.comm.HubState.OPERATOR_ID, "default",
+        )
+        val op = com.tneff.cyppieagents.comm.HubState.OPERATOR_ID
+        val foreign = AclEvent(AclEntry("po-backend", "backend", canRead = true, canWrite = false, projectId = "other"))
+        assertNull(
+            com.tneff.cyppieagents.routing.commEventForParticipant(foreign, op, state, null),
+            "an AclEvent from a foreign project must not reach an active-project participant (①-AclEvent)",
+        )
+        // Same channel + participant, but stamped for the ACTIVE project → passes (non-vacuous).
+        val local = AclEvent(AclEntry("po-backend", "backend", canRead = true, canWrite = false, projectId = "default"))
+        assertIs<AclEvent>(
+            com.tneff.cyppieagents.routing.commEventForParticipant(local, op, state, null),
+            "an active-project AclEvent the participant can read must pass (proves the drop above is the project gate, not canRead)",
+        )
+    }
+
     @Test
     fun noTokenIsFailClosed() = testApplication {
         application { installComm(config()) }
