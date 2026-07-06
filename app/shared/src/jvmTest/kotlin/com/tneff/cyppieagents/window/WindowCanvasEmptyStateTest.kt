@@ -102,8 +102,13 @@ class WindowCanvasEmptyStateTest {
         assertEquals(true, covered, "fixture sanity: a tiled tool window must sit under the CTA (real occlusion scenario)")
 
         // ...and clicking at that coordinate through the root (z-order-aware) must still reach the CTA.
+        // CYP-266#1: BOUND the wait. A background-placement regression occludes the CTA → the click lands on a
+        // tiled window → addFlow stays 0. With a bare waitForIdle() that regression manifests as a skiko
+        // render-SPIN (the occluded frame never idles) → an indefinite test HANG, illegible in CI. waitUntil
+        // fails fast+clean at the deadline (ComposeTimeoutException naming the condition) so the regression is
+        // a legible RED, not a hang. On correct code addFlow hits 1 immediately → returns at once (no penalty).
         onRoot().performTouchInput { click(ctaCenter) }
-        waitForIdle()
+        waitUntil("the foreground CTA received the click (not occluded by a tiled tool window)", timeoutMillis = 2_000) { addFlow == 1 }
         assertEquals(1, addFlow, "the CTA is the foreground overlay (top-most at its position), not occluded by a tiled tool window")
     }
 
