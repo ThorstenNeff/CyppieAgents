@@ -272,6 +272,9 @@
     <!-- Projekt-Verwaltung & Switcher (S13 · Epic CYP-78 · CYP-91/CYP-92) -->
     <string name="project_switcher_active">Aktives Projekt: %1$s</string>
     <string name="project_switcher_scope_hint">Alle Fenster und Daten gehören zu diesem Projekt.</string>
+    <!-- CYP-249 loading-gate: der Desktop-Bereich-Platzhalter, während die initiale Projekt-Ansicht noch lädt
+         (Erst-Mount, einmalig). Die Switcher-Leiste bleibt darüber sichtbar. -->
+    <string name="project_loading">Projekt wird geladen…</string>
     <string name="project_switch_hint">Wechsel lädt die Oberfläche für das gewählte Projekt neu – nichts wird gelöscht.</string>
     <string name="project_manage">Projekte verwalten</string>
     <!-- CYP-233: Projekt-Leiste Discoverability — sichtbares Menü-Label + Ein-Projekt-Onboarding-Hinweis -->

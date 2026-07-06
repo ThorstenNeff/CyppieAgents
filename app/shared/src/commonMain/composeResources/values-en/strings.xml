@@ -267,6 +267,9 @@
     <!-- Project management & switcher (S13 · Epic CYP-78 · CYP-91/CYP-92) -->
     <string name="project_switcher_active">Active project: %1$s</string>
     <string name="project_switcher_scope_hint">All windows and data belong to this project.</string>
+    <!-- CYP-249 loading-gate: the desktop-area placeholder while the initial project view is still loading
+         (first mount, one-time). The switcher bar stays visible above it. -->
+    <string name="project_loading">Loading project…</string>
     <string name="project_switch_hint">Switching reloads the UI for the selected project — nothing is deleted.</string>
     <string name="project_manage">Manage projects</string>
     <!-- CYP-233: project-bar discoverability — visible menu label + single-project onboarding hint -->

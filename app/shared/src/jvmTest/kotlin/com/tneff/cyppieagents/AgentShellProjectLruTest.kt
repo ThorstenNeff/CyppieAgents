@@ -32,9 +32,12 @@ import com.tneff.cyppieagents.model.WorktreeFate
 import com.tneff.cyppieagents.project.ProjectRepository
 import com.tneff.cyppieagents.project.ProjectTags
 import com.tneff.cyppieagents.project.ProjectVmStoreManager
+import com.tneff.cyppieagents.window.WindowTestTags
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * CYP-249 — the SHELL wiring of the per-project ViewModelStore LRU (K=3), mirroring the server's runtime cap. The
@@ -148,5 +151,65 @@ class AgentShellProjectLruTest {
         switchTo("default") // switch BACK to a warm project (within K) — a cheap re-entry, no growth
         // default is promoted to MRU; still exactly {beta, default} warm — bounded, no accumulation.
         assertEquals(listOf("beta", "default"), stores.liveProjectIds(), "a warm switch-back reuses, promotes, never grows the set")
+    }
+
+    /** A project repo whose initial `list()` is held open on [gate] — models a slow `/api/projects` so the test can
+     *  observe the loading phase deterministically (before the active project is confirmed). */
+    private class GatedProjectRepo(
+        private val view: ProjectsView,
+        private val gate: CompletableDeferred<Unit>,
+    ) : ProjectRepository {
+        override suspend fun list(): ProjectsView { gate.await(); return view }
+        override suspend fun switchActive(projectId: String): ProjectsView = view
+        override suspend fun create(request: CreateProjectRequest): Project = throw NotImplementedError()
+        override suspend fun rename(id: String, request: RenameProjectRequest): Project = throw NotImplementedError()
+        override suspend fun delete(id: String, deleteWorktrees: Boolean) = throw NotImplementedError()
+    }
+
+    /**
+     * CYP-249 loading-gate (Option A) money tooth: with a boot project ≠ the ProjectViewModel seed "default", the
+     * gate must keep the project-scoped desktop from composing against the unconfirmed seed — so NO phantom "default"
+     * per-project store is ever minted. While `/api/projects` is in flight the desktop-area placeholder shows (no
+     * windows); once the active project is confirmed the desktop composes with ONLY the real boot project's store.
+     *
+     * Mutation: drop the `if (projectState.loading)` gate (compose the desktop unconditionally) → during loading the
+     * seed "default" mints a store → the "no store while unconfirmed" assertion (and the final `== [beta]`) go RED.
+     */
+    @Test
+    fun loadingGate_bootNotDefault_placeholderThenDesktop_noPhantomSeedStore() = runComposeUiTest {
+        val gate = CompletableDeferred<Unit>()
+        val view = ProjectsView("beta", listOf(Project("beta", "Beta"))) // boot = beta, NOT the seed "default"
+        val stores = ProjectVmStoreManager()
+        setContent {
+            MaterialTheme {
+                Box(Modifier.size(1500.dp, 1000.dp)) {
+                    AgentShell(
+                        config = ShellConfig.dev().copy(operatorToken = "op-token"),
+                        sessionFactory = { StubAgentSession() },
+                        commApi = FakeCommApi(),
+                        commLiveSource = StubCommLiveSource(),
+                        eventsApi = StubEventsApi(),
+                        eventsLiveSource = StubEventsSource(),
+                        agentManagementRepository = FakeAgentMgmtRepo(),
+                        projectRepository = GatedProjectRepo(view, gate),
+                        crossProjectRepository = com.tneff.cyppieagents.crossproject.StubCrossProjectRepository(),
+                        projectVmStores = stores,
+                    )
+                }
+            }
+        }
+        // Initial /api/projects still in flight: the placeholder shows, NO desktop window composes, and — the point —
+        // NO per-project store exists yet (the seed "default" never mints a phantom).
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(SHELL_LOADING_TAG).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(SHELL_LOADING_TAG).assertExists()
+        onNodeWithTag(WindowTestTags.window("comm")).assertDoesNotExist()
+        assertTrue(stores.liveProjectIds().isEmpty(), "no phantom per-project store while the active project is unconfirmed")
+
+        // Release the load → the confirmed project's desktop composes; ONLY beta's store exists, never a "default" phantom.
+        runOnUiThread { gate.complete(Unit) }
+        waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(WindowTestTags.window("comm")).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(SHELL_LOADING_TAG).assertDoesNotExist()
+        assertEquals(listOf("beta"), stores.liveProjectIds())
+        assertFalse(stores.liveProjectIds().contains("default"), "the transient seed never created a phantom store")
     }
 }
