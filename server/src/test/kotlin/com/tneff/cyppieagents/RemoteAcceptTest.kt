@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryDeliveryLog
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.connector.CapabilityRegistry
+import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProviderRegistry
 import com.tneff.cyppieagents.mediation.MessageDeliverer
@@ -40,6 +41,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
@@ -178,6 +180,12 @@ class RemoteAcceptTest {
             client.webSocket("/ws/hub?token=tok-backend") { handshake(); ready1.complete(Unit); close1.await() }
         }
         ready1.await()
+        // CYP-263 — barrier on the SERVER-SIDE registration, not the client handshake. A client `handshake()`
+        // completes (and fires ready1/ready2) BEFORE the server runs `connectorSessions.register(s)`; the old
+        // test relied on that gap not existing, which flaked under peak-load starvation (ra5 waited the full
+        // delivery timeout because the reconnect had not actually replaced conn1 server-side yet). Wait for the
+        // registry to reflect the state each step assumes, exactly like ra3 polls `sessions.session("backend")`.
+        val conn1Session = awaitRegisteredSession(fx) // conn1 is provably the live session server-side
         val job2 = scope.launch {
             client.webSocket("/ws/hub?token=tok-backend") { // reconnect: replaces conn1 as the current session
                 handshake(); ready2.complete(Unit)
@@ -185,13 +193,28 @@ class RemoteAcceptTest {
                 if (f is WireDeliver) conn2GotTask.complete(f.text)
             }
         }
-        ready2.await()       // conn2 is now the registered session for "backend"
+        ready2.await()
+        awaitSessionReplaced(fx, conn1Session) // conn2 has REPLACED conn1 as the live session (server-side)
         close1.complete(Unit) // conn1 closes → its finally fires removeIfSame(conn1) → must be a no-op
         job1.join()
         fx.hub.postAsAgent("po", "po-backend", "after-reconnect-9f1a") // → must reach conn2
-        val delivered = withTimeout(20_000) { conn2GotTask.await() }
+        // With the precondition now deterministic, delivery is prompt — a modest bound, not a load polster.
+        val delivered = withTimeout(5_000) { conn2GotTask.await() }
         assertTrue(delivered.contains("after-reconnect-9f1a"), "the reconnected session keeps receiving; old close didn't orphan it")
         job2.cancel()
+    }
+
+    /** CYP-263 — block until "backend" has a live SERVER-SIDE session registered, and return it. Mirrors ra3's
+     *  server-side poll: a client `handshake()` does NOT imply the server ran `connectorSessions.register(s)`. */
+    private suspend fun awaitRegisteredSession(fx: RemoteFx): ConnectorSession = withTimeout(5_000) {
+        while (fx.sessions.session("backend") == null) delay(10)
+        fx.sessions.session("backend")!!
+    }
+
+    /** CYP-263 — block until the live "backend" session is a DIFFERENT instance than [old] (a reconnect has
+     *  replaced it server-side), so the subsequent old-close is provably a no-op on the surviving session. */
+    private suspend fun awaitSessionReplaced(fx: RemoteFx, old: ConnectorSession): Unit = withTimeout(5_000) {
+        while (fx.sessions.session("backend").let { it == null || it === old }) delay(10)
     }
 
     // ---------- RC2 ⭐ failure-replay: a wire push that THROWS (closed mid-drain) is NOT marked → re-delivered ----------
