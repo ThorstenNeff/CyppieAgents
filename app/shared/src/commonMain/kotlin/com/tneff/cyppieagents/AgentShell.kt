@@ -590,7 +590,13 @@ fun AgentShell(
                 when (window.id) {
                     COMM_WINDOW_ID -> CommPanel(commVm, crossProjectSlot = { cid ->
                         CrossProjectControls(
-                            viewModel(key = "crossproject-$cid") {
+                            // CYP-258: key on activeProjectId too. Hub-and-spoke seeds same-id `po-<worker>` channels
+                            // per project, so a bare `crossproject-$cid` key would hand back the PREVIOUS project's
+                            // retained VM after a switch → stale share badge/status (its init{reload()} ran in the old
+                            // scope; the repo is project-agnostic, server resolves the active project). Verified
+                            // deterministically (CrossProjectSwitchScopeTest): the project-scoped key clears it — and
+                            // it DOES suffice through the real CommPanel LazyColumn nesting (naive-suffix concern ruled out).
+                            viewModel(key = "crossproject-$activeProjectId-$cid") {
                                 CrossProjectViewModel(resolvedCrossProjectRepo, cid, editable = isOperator)
                             },
                             // PO flag-2: the target projects = the operator's other projects (the derived sharedWith).
@@ -607,7 +613,13 @@ fun AgentShell(
                         // connector-endpoint call, no restart hint (fresh spawn). B still goes through the
                         // ack-gated opt-in before the kind is accepted into the spec.
                         addConnectorPickerSlot = {
-                            val addVm = viewModel(key = "connectorSelection-add") {
+                            // CYP-258: key on activeProjectId. This VM's factory captures a method-ref to
+                            // `agentMgmtVm`, which re-instantiates per project (CYP-246). A constant key would
+                            // retain the OLD project's add-picker VM after a switch → its onKindChosen still points
+                            // at the previous project's agentMgmtVm → the connector choice lands on the stale add
+                            // form and the agent created in the new project gets the default connector. Re-keying
+                            // gives a fresh VM per project that captures the current agentMgmtVm.
+                            val addVm = viewModel(key = "connectorSelection-add-$activeProjectId") {
                                 ConnectorSelectionViewModel(
                                     resolvedConnectorSelRepo, agentId = null,
                                     editable = isOperator,
@@ -622,7 +634,10 @@ fun AgentShell(
                         // dedicated connector endpoint for THIS agent. Keyed by id+connectorKind so a re-fetched
                         // truth yields a fresh VM with the right initial kind.
                         editConnectorPickerSlot = { target ->
-                            val editVm = viewModel(key = "connectorSelection-edit-${target.id}-${target.connectorKind}") {
+                            // CYP-258: include activeProjectId for consistency — agent ids repeat across projects, and
+                            // two projects' same-id agent with the same connectorKind would otherwise share one keyed
+                            // VM. (No method-ref capture here, so lower-risk than the add slot, but same posture.)
+                            val editVm = viewModel(key = "connectorSelection-edit-$activeProjectId-${target.id}-${target.connectorKind}") {
                                 ConnectorSelectionViewModel(
                                     resolvedConnectorSelRepo, agentId = target.id,
                                     editable = isOperator,
