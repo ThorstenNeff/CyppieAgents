@@ -1,0 +1,75 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "maritimes App-Redesign (Scope-Pass; PO vergibt Jira-Key bei Ratifikation) — [[design-language-maritime-m3]]",
+    "version": "1.0",
+    "status": "SCOPE-Entwurf — Design-first, Ratifikation durch PO + Auftraggeber-Sign-off VOR Bau. Volles maritimes M3-ColorScheme (light+dark) als Bau-Vorlage fuer R1.",
+    "design_language": "maritime — blau/weiss, M3 (Anti-Hype/ruhig). Basis-Hues geteilt mit CYP-234 dev-api-docs-experience-tokens.json (eine Sprache, zwei Surfaces: Doku + App).",
+    "grounded_against": "app/shared/.../App.kt (bare MaterialTheme{} = M3-Default heute); app-weite colorScheme.*-Nutzung; ui/TonedHint.kt (Rollen: tertiaryContainer/onTertiaryContainer/error/secondary/onSurfaceVariant); ui/SenderPalette.kt (9 slots); eventlog/EventVisuals.kt (4 severity); core/model/ColorDerivation.kt.",
+    "usage": "Baut zu MaritimeTheme.kt: lightMaritime = lightColorScheme(<light-Werte>), darkMaritime = darkColorScheme(<dark-Werte>); App.kt MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkMaritime else lightMaritime).",
+    "contrast_note": "Werte sind Scope-Vorschlag. R2 (Kontrast-Audit) VERIFIZIERT + tunt jedes Text-auf-Hintergrund-Paar auf WCAG AA (Body 4.5:1 / UI 3:1) in BEIDEN Schemata — bes. onSurfaceVariant (57x) und die TonedHint-INFO-Kombi (secondary auf tertiaryContainer). Grenzwertige Paare werden in R2 nachgezogen."
+  },
+
+  "colorScheme_light": {
+    "primary": "#14567A", "onPrimary": "#FFFFFF",
+    "primaryContainer": "#CDE7F5", "onPrimaryContainer": "#062033",
+    "secondary": "#366F97", "onSecondary": "#FFFFFF",
+    "secondaryContainer": "#D3E6F2", "onSecondaryContainer": "#0C2A3B",
+    "tertiary": "#256F82", "onTertiary": "#FFFFFF",
+    "tertiaryContainer": "#C5E9F0", "onTertiaryContainer": "#05303A",
+    "error": "#B3261E", "onError": "#FFFFFF",
+    "errorContainer": "#F9DEDC", "onErrorContainer": "#410E0B",
+    "background": "#FFFFFF", "onBackground": "#0F2A38",
+    "surface": "#FFFFFF", "onSurface": "#0F2A38",
+    "surfaceVariant": "#EEF4F8", "onSurfaceVariant": "#41535C",
+    "outline": "#7C93A1", "outlineVariant": "#D3DFE6"
+  },
+
+  "colorScheme_dark": {
+    "primary": "#7FC4E4", "onPrimary": "#04283B",
+    "primaryContainer": "#123E56", "onPrimaryContainer": "#CDE7F5",
+    "secondary": "#9BC3DC", "onSecondary": "#0B2A3B",
+    "secondaryContainer": "#23485E", "onSecondaryContainer": "#CFE4F1",
+    "tertiary": "#63C0D3", "onTertiary": "#003641",
+    "tertiaryContainer": "#0E4A57", "onTertiaryContainer": "#C5E9F0",
+    "error": "#F2B8B5", "onError": "#601410",
+    "errorContainer": "#8C1D18", "onErrorContainer": "#F9DEDC",
+    "background": "#0D1B23", "onBackground": "#DCE7ED",
+    "surface": "#0D1B23", "onSurface": "#DCE7ED",
+    "surfaceVariant": "#172A34", "onSurfaceVariant": "#A9BCC6",
+    "outline": "#5A6E79", "outlineVariant": "#2A3A44"
+  },
+
+  "audit_surface": {
+    "note": "Farben, die NICHT an colorScheme haengen → je eine bewusste R2-Entscheidung (spec §3).",
+    "event_severity": {
+      "file": "eventlog/EventVisuals.kt",
+      "recommendation": "SEMANTISCH behalten (Schweregrad = Bedeutung, nicht Marke); Kontrast auf maritimer Surface (bes. Dark) re-verifizieren, ggf. leicht nachziehen. Nie in maritim-blau aufloesen.",
+      "current": { "ERROR": "#FF6B6B", "WARN": "#FFC857", "INFO": "#A0A4AD", "DEBUG": "#5A5E66" }
+    },
+    "sender_palette": {
+      "file": "ui/SenderPalette.kt",
+      "recommendation": "9 Agenten-Identitaets-Slots BEHALTEN (WCAG-getunt, CYP-14); auf maritimer Light+Dark-Surface re-verifizieren (Kontrast + Unterscheidbarkeit; Agenten-Farbe nie mit Marken-primary verwechselbar)."
+    },
+    "color_derivation": {
+      "file": "core/model/ColorDerivation.kt",
+      "recommendation": "compose-frei, scheme-unabhaengig → keine Code-Aenderung; Einbettung in maritime Panels auf Kontrast re-pruefen (Derivation garantiert Kontrast gegen ihre eigene bg)."
+    },
+    "toned_hint": {
+      "file": "ui/TonedHint.kt",
+      "recommendation": "nutzt NUR colorScheme-Rollen → folgt automatisch; 4 Toene (EFFECT_DEFERRED/ERROR/INFO/GATED) auf beiden Schemata visuell re-verifizieren."
+    }
+  },
+
+  "validation": {
+    "scheme_roles_covered": 24,
+    "new_strings": 0,
+    "new_testtags": 0,
+    "layout_flow_change": 0,
+    "note_scope": "Reines Re-Coloring: 0 strings.xml / 0 testTag / 0 Layout-/Flow-Aenderung. Nur Theme-Seam + ColorScheme + Audit-Surface.",
+    "semantics_preserved": "error bleibt rot; Severity-Ampel semantisch; Farbe nie alleiniger Traeger (WCAG 1.4.1).",
+    "wcag": "R2 verifiziert alle Rollen-Paare AA light+dark; grenzwertige (secondary-auf-tertiaryContainer, onSurfaceVariant-57x) explizit getunt.",
+    "no_secrets": "keine Token/Keys — reine Farb-/Theme-Werte.",
+    "consistency": "Basis-Hues geteilt mit CYP-234-Doku-Theme → App + Doku visuell konsistent."
+  }
+}
