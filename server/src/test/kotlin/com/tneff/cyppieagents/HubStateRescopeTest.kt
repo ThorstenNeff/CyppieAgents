@@ -2,8 +2,10 @@ package com.tneff.cyppieagents
 
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.model.AclEntry
+import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
+import com.tneff.cyppieagents.model.Role
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -53,6 +55,25 @@ class HubStateRescopeTest {
         // and back
         s.rescope("alpha")
         assertEquals(listOf("ca"), s.acl.readableChannels(op).map { it.id }, "rescoping back restores alpha")
+    }
+
+    @Test fun rescope_swapsAgentSet_freshProjectEmpty_thenSwitchBackRestores() {
+        // CYP-246: the agent SET is per-project (the piece the matrix could not isolate — Agent has no
+        // projectId, and GET /api/agents reads state.agents directly). Seed alpha with two agents; a switch
+        // to a FRESH project (beta, never seeded) must yield 0 agents — NOT leak alpha's set (the reported
+        // bug). Switching back restores them (loss-free). The mutant "rescope skips the agent-list swap"
+        // reddens here (beta would keep alpha's two agents).
+        val chA = Channel("ca", "ca", ChannelKind.GROUP, listOf(op), projectId = "alpha")
+        val agents = listOf(Agent("po", "PO", Role.PO, "po"), Agent("backend", "Backend", Role.WORKER, "backend"))
+        val entries = listOf(AclEntry("ca", op, canRead = true, canWrite = true, projectId = "alpha"))
+        val s = HubState(agents, listOf(chA), entries, activeProjectId = "alpha", operatorId = op)
+        assertEquals(listOf("po", "backend"), s.agents.map { it.id }, "alpha starts with its two agents")
+
+        s.rescope("beta")
+        assertTrue(s.agents.isEmpty(), "fresh project beta → 0 agents (no leak of alpha's set — the reported bug)")
+
+        s.rescope("alpha")
+        assertEquals(listOf("po", "backend"), s.agents.map { it.id }, "switching back restores alpha's agents (loss-free)")
     }
 
     @Test fun blankRescope_failsClosed_empty() {

@@ -12,10 +12,12 @@ import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.events.InMemoryEventSink
 import com.tneff.cyppieagents.events.SystemTimeSource
 import com.tneff.cyppieagents.model.AclEntry
+import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.CreateProjectRequest
+import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SwitchActiveRequest
 import com.tneff.cyppieagents.routing.ApiException
 import com.tneff.cyppieagents.routing.TokenRegistry
@@ -64,6 +66,13 @@ class ProjectSwitchRescopeTest {
             AclEntry("cb", op, canRead = true, canWrite = true, projectId = "beta"),
         )
         return HubState(emptyList(), listOf(chA, chB), entries, activeProjectId = "alpha", operatorId = op)
+    }
+
+    private fun stateWithAgents(): HubState {
+        val chA = Channel("ca", "ca", ChannelKind.GROUP, listOf(op), projectId = "alpha")
+        val agents = listOf(Agent("po", "PO", Role.PO, "po"), Agent("backend", "Backend", Role.WORKER, "backend"))
+        val entries = listOf(AclEntry("ca", op, canRead = true, canWrite = true, projectId = "alpha"))
+        return HubState(agents, listOf(chA), entries, activeProjectId = "alpha", operatorId = op)
     }
 
     private fun registry(): ProjectRegistry =
@@ -121,6 +130,41 @@ class ProjectSwitchRescopeTest {
             val aclBeta: List<AclEntry> = c.get("/api/acl") { bearerAuth("tok-op") }.body()
             assertEquals(listOf("cb"), aclBeta.map { it.channelId }, "switch changed /api/acl without restart")
             assertTrue(chBeta.none { it.id == "ca" }, "no-cross-project: alpha channel not leaked after switch")
+        }
+    }
+
+    @Test
+    fun switch_toFreshProject_agentsEmpty_survivesReload() = runBlocking {
+        // CYP-246 — the reported bug at the real endpoint: switching to a FRESH project must leave
+        // GET /api/agents empty (0 windows), and a SECOND independent fetch (the browser-reload the prod
+        // repro exercised) must STILL be empty — the scoping is durable server-side state, not a one-shot.
+        testApplication {
+            val s = stateWithAgents(); val reg = registry(); app(s, reg)
+            val c = jsonClient()
+
+            val a0: List<Agent> = c.get("/api/agents") { bearerAuth("tok-op") }.body()
+            assertEquals(listOf("po", "backend"), a0.map { it.id }, "active=alpha → its two agents")
+
+            // switch to the fresh project beta — the same wiring production uses (onActiveSwitch = state::rescope)
+            val sw = c.post("/api/projects/switch") {
+                bearerAuth("tok-op"); contentType(ContentType.Application.Json); setBody(SwitchActiveRequest("beta"))
+            }
+            assertEquals(HttpStatusCode.OK, sw.status)
+
+            val a1: List<Agent> = c.get("/api/agents") { bearerAuth("tok-op") }.body()
+            assertTrue(a1.isEmpty(), "fresh project → 0 agents (no leak of alpha's set — the reported bug)")
+
+            // RELOAD scenario: a fresh, independent GET must STILL be empty. In prod the leak survived the
+            // reload because the server's agent list itself was never re-scoped — this pins that it now is.
+            val a1Reload: List<Agent> = c.get("/api/agents") { bearerAuth("tok-op") }.body()
+            assertTrue(a1Reload.isEmpty(), "reload: agents still empty — durable server-side scoping, not one-shot")
+
+            // switch back → alpha's agents return (loss-free — the boot project keeps everything)
+            c.post("/api/projects/switch") {
+                bearerAuth("tok-op"); contentType(ContentType.Application.Json); setBody(SwitchActiveRequest("alpha"))
+            }
+            val a2: List<Agent> = c.get("/api/agents") { bearerAuth("tok-op") }.body()
+            assertEquals(listOf("po", "backend"), a2.map { it.id }, "switch back restores alpha's agents (loss-free)")
         }
     }
 }

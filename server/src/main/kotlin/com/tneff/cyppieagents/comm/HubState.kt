@@ -78,6 +78,19 @@ class HubState(
     var acl: AclMatrix = AclMatrix(initialChannels, initialEntries, activeProjectId, sharedInboundChannelIds)
         private set
 
+    /**
+     * CYP-246 — the INACTIVE projects' agent lists, parked on [rescope]. The ACTIVE project's agents are the
+     * live [agents] field above; on a switch the active list is stashed here under its projectId and the
+     * target project's list is restored (or an EMPTY list minted for a fresh project that has none yet). This
+     * partitions the AGENT SET per project WITHOUT a second HubState — the one piece the comm chokepoint could
+     * NOT isolate, because [Agent] carries no projectId and `GET /api/agents` reads [agents] directly (the leak
+     * that survived a browser reload). [channels]/[entries] need NO such stash: they ARE project-stamped and the
+     * [AclMatrix] already filters them by the active project (CYP-81/102) — only [agents] was un-scoped. It does
+     * NOT touch the per-agent lifecycle/spawn/worktree (still boot-pinned) — that is the deferred S17. Guarded
+     * by [lock] like every other mutation.
+     */
+    private val stashedAgents = HashMap<String, List<Agent>>()
+
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
 
     /**
@@ -229,17 +242,30 @@ class HubState(
     }
 
     /**
-     * Re-scope the hub to a new active project (S13 / CYP-102): flip [activeProjectId] **and rebuild
-     * the [AclMatrix]** so every comm read-path (readableChannels/inbox/canRead/canWrite/visibleMessages)
-     * filters to the new project — the same chokepoint (CYP-81), now following the live active pointer.
-     * Atomic under the lock; the matrix rebuild is what makes the switch take effect, so it must run
-     * together with the pointer flip (a flip without rebuild would leave the OLD project's view live).
+     * Re-scope the hub to a new active project (S13 / CYP-102, extended by CYP-246): flip [activeProjectId],
+     * **swap in the new project's agent list**, **and rebuild the [AclMatrix]** so every read-path follows the
+     * switch. The comm topology (readableChannels/inbox/canRead/canWrite/visibleMessages) re-scopes via the
+     * matrix rebuild (channels/entries are project-stamped, CYP-81); `GET /api/agents` / the window set re-scope
+     * via the agent-list swap. Atomic under the lock.
      *
-     * Wired from `POST /api/projects/switch` after `ProjectRegistry.setActive`. Today one HubState holds
-     * the active project's topology, so re-scoping to a project with no live channels yields an empty
-     * view (honest); per-project hub/session re-instancing is S17.
+     * **CYP-246 — the agent set is per-project.** The CURRENT active [agents] list is stashed under its
+     * projectId and the target project's list is restored, or an EMPTY list is minted for a FRESH project
+     * (→ 0 agents / 0 windows, the reported expectation). Switching back restores the stashed list. Without
+     * the swap the matrix rebuild alone re-scopes the comm reads but leaves the boot project's [agents] live —
+     * the exact leak that survived a browser reload in prod (`/api/agents` reads this list, un-rescoped, and
+     * [Agent] carries no projectId for the matrix to filter on). [channels]/[entries] are deliberately NOT
+     * stashed — the matrix already isolates them by project.
+     *
+     * Wired from `POST /api/projects/switch` after `ProjectRegistry.setActive`. This partitions the SET only;
+     * the per-agent lifecycle/spawn/worktree stay boot-pinned (an agent added in a non-boot project renders
+     * but is not yet runnable there) — the full per-project hub/session re-instancing is the deferred S17.
      */
     fun rescope(newProjectId: String): Unit = synchronized(lock) {
+        // CYP-246: park the active project's agents and restore the target's (EMPTY for a fresh project) so
+        // GET /api/agents / the window set follow the switch. channels/entries stay in the shared,
+        // project-stamped list the matrix filters — only the un-scoped agent list needs the swap.
+        stashedAgents[activeProjectId] = agents
+        agents = stashedAgents.remove(newProjectId) ?: emptyList()
         activeProjectId = newProjectId
         // S17 / CYP-93: the new active project has its OWN inbound shares — recompute before rebuild.
         sharedInboundChannelIds = sharedInboundProvider(newProjectId)

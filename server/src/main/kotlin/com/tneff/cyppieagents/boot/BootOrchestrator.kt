@@ -404,7 +404,10 @@ class BootOrchestrator(
             onConnectorOptIn = connectorOptIn::apply, // CYP-122: create-as-B audits like the dedicated opt-in
             remoteToken = remoteTokenIssuer, // CYP-171: mint/revoke the per-agent token for a remote create/remove
             overrides = agentOverrides, // CYP-210: persist name/color/persona/launch edits (restart-durable)
-            projectId = config.projectId,
+            // CYP-246: CRUD writes (override/avatar-blob) follow the ACTIVE project, not a boot-frozen constant,
+            // so an edit made after a switch lands in the switched project's overlay — parity with the per-project
+            // agent slice. Reads the live pointer HubState.rescope updates.
+            activeProjectId = { state.activeProjectId },
             avatarBlobs = avatarBlobs,   // CYP-215: re-encoded avatar PNG store
             avatarPresets = avatarPresets, // CYP-215: self-hosted DiceBear preset resolver
         )
