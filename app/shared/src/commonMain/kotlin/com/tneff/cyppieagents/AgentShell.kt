@@ -264,7 +264,8 @@ fun AgentShell(
     val agentMgmtVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$AGENT_MGMT_WINDOW_ID-$activeProjectId") {
         AgentManagementViewModel(resolvedAgentMgmtRepo, editable = isOperator)
     }
-    val managedAgents = agentMgmtVm.state.collectAsState().value.agents
+    val agentMgmtState = agentMgmtVm.state.collectAsState().value
+    val managedAgents = agentMgmtState.agents
 
     // CYP-93: cross-project authorization port — now the LIVE client against /api/channels/{id}/share
     // (stub→real swap, no UI/VM change). `sharedWith` derives from the operator's OTHER projects (reach stays
@@ -588,7 +589,11 @@ fun AgentShell(
             // the agent list, NOT the window set). The CTA routes into the EXISTING add flow — bring the
             // agent-management window to front + open its add dialog — and is operator-gated (honest gate hint,
             // no dead CTA). Self-clearing: managedAgents is non-empty as soon as the first agent exists.
-            agentsEmpty = managedAgents.isEmpty(),
+            // CYP-270: gate on the agent-list load COMPLETING. On a project switch (or initial mount) the re-keyed
+            // agentMgmtVm starts `loading=true` with `agents=[]`; a bare isEmpty() would flash the "add first agent"
+            // CTA in a NON-empty project during the ~re-fetch window (reads as data loss). Only a genuinely-empty,
+            // fully-loaded project shows it. This is the per-switch analogue of CYP-267's initial-mount loading-gate.
+            agentsEmpty = !agentMgmtState.loading && managedAgents.isEmpty(),
             canAddAgent = isOperator,
             onAddFirstAgent = {
                 state.focus(AGENT_MGMT_WINDOW_ID)
