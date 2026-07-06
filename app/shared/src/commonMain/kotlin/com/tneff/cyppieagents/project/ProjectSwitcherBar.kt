@@ -74,6 +74,9 @@ fun ProjectSwitcherBar(
     /** The operator's display name shown to a MEMBER ("Operator: …"). null (e.g. BE1 not yet delivering it) omits
      *  that line — never an email/contact dump (§3.3). */
     operatorName: String? = null,
+    /** CYP-268 R3 — trailing slot for app-global chrome (the theme toggle) at the bar's trailing edge. Default
+     *  empty → the bar is unchanged for every existing call site/test; only AgentShell passes a non-empty slot. */
+    trailing: @Composable () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val activeName = state.projects.firstOrNull { it.id == state.activeProjectId }?.name ?: state.activeProjectId
@@ -215,6 +218,9 @@ fun ProjectSwitcherBar(
                     )
                 }
             }
+            // CYP-268 R3: app-global trailing slot (the theme toggle) at the bar's trailing edge, after the
+            // "Projekte ▾" menu. Default-empty → zero change for existing call sites/tests.
+            trailing()
         }
         // Scope boundary disclosure (§1): all windows/data belong to the active project. Neutral.
         TonedHint(stringResource(Res.string.project_switcher_scope_hint), HintTone.INFO, ProjectTags.SCOPE_HINT)

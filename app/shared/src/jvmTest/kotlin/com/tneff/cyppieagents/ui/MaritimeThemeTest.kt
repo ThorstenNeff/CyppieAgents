@@ -40,9 +40,12 @@ class MaritimeThemeTest {
 
     @Test
     fun brandIsMaritimeBlue_errorStaysRed_inBothSchemes() {
-        // primary is a blue (blue channel dominant over red) — NOT the M3 baseline purple — in both schemes.
-        assertTrue(MaritimeLight.primary.blue > MaritimeLight.primary.red, "light primary is blue-dominant")
-        assertTrue(MaritimeDark.primary.blue > MaritimeDark.primary.red, "dark primary is blue-dominant")
+        // CYP-268 R3 sharpen: assert GREEN > RED (not blue > red). The M3 baseline purple (#6750A4) is ALSO
+        // blue-dominant (B 164 > R 103), so `blue > red` would let purple pass; but purple's green (80) < red
+        // (103), whereas the maritime primary is a true blue with green > red (light #0A5AA0 G90>R10, dark
+        // #6FBEEA G190>R111). So `green > red` genuinely EXCLUDES purple — belt-and-suspenders with the value-pin.
+        assertTrue(MaritimeLight.primary.green > MaritimeLight.primary.red, "light primary is maritime blue, not purple")
+        assertTrue(MaritimeDark.primary.green > MaritimeDark.primary.red, "dark primary is maritime blue, not purple")
         // §3 semantics preserved: error stays a red hue (red channel dominant) — data-loss meaning, never re-branded.
         assertTrue(MaritimeLight.error.red > MaritimeLight.error.blue, "light error stays red")
         assertTrue(MaritimeDark.error.red > MaritimeDark.error.blue, "dark error stays red")

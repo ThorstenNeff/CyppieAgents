@@ -471,4 +471,11 @@
          Wording mirrors the CYP-241 state vocabulary ("vergrößern und zentrieren"), never "shows everything". -->
     <string name="a11y_window_expand_key_hint">Eingabetaste: Fenster vergrößern und zentrieren oder zurückstellen</string>
     <string name="a11y_window_restore_key_hint">Escape: vergrößertes Fenster an seinen Platz zurückstellen</string>
+    <!-- CYP-268 R3: app-globaler Theme-Umschalter (System/Hell/Dunkel). Theme ist eine client-lokale, per-User-Präferenz. -->
+    <string name="theme_menu_label">Thema</string>
+    <string name="theme_mode_system">System</string>
+    <string name="theme_mode_light">Hell</string>
+    <string name="theme_mode_dark">Dunkel</string>
+    <string name="a11y_theme_menu">Design-Auswahl, aktuell: %1$s</string>
+    <string name="a11y_theme_mode">Design %1$s</string>
 </resources>

@@ -106,6 +106,8 @@ import com.tneff.cyppieagents.ui.AgentAvatarView
 import com.tneff.cyppieagents.ui.LocalAvatarBaseUrl
 import com.tneff.cyppieagents.ui.LocalAvatarImageLoader
 import com.tneff.cyppieagents.ui.SenderPalette
+import com.tneff.cyppieagents.ui.ThemeMode
+import com.tneff.cyppieagents.ui.ThemeModeToggle
 import com.tneff.cyppieagents.ui.TitleBarColors
 import androidx.compose.runtime.CompositionLocalProvider
 import coil3.ImageLoader
@@ -191,6 +193,11 @@ fun AgentShell(
      *  so a session-only user (no operator token) authenticates its reads/sockets. `null`/absent → none (a browser
      *  session rides its same-origin `ory_kratos_session` cookie; the operator token stays break-glass). */
     sessionToken: () -> String? = { null },
+    /** CYP-268 R3 — the current app theme mode (owned + persisted by the App.kt seam). Default SYSTEM keeps the
+     *  R1 follow-system behaviour and leaves every existing call site/test unchanged (the toggle is opt-in chrome). */
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** CYP-268 R3 — invoked when the user picks a mode from the switcher-bar toggle; the seam persists + recolours. */
+    onThemeModeChange: (ThemeMode) -> Unit = {},
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -254,7 +261,12 @@ fun AgentShell(
     Column(modifier = modifier.fillMaxSize()) {
       // CYP-92: the project switcher is a top-level bar ABOVE the window host (always visible, context-independent).
       // CYP-186: the persistent role indicator rides here; operatorName is BE1-pending (null omits the "Operator:" line).
-      ProjectSwitcherBar(projectVm, tier = tier, operatorName = null)
+      // CYP-268 R3: the app-global theme toggle rides the bar's trailing slot — a client-local, per-user preference
+      // (NOT operator-gated, NOT project-scoped; it follows no project switch). Stays OUTSIDE the loading gate.
+      ProjectSwitcherBar(
+          projectVm, tier = tier, operatorName = null,
+          trailing = { ThemeModeToggle(mode = themeMode, onChange = onThemeModeChange) },
+      )
       if (projectState.loading) {
         ProjectLoadingPlaceholder(modifier = Modifier.weight(1f).fillMaxWidth())
       } else {
