@@ -209,24 +209,18 @@ fun AgentShell(
             .build()
     }
 
-    // Agent-management VM (CYP-86/87/88): now the LIVE REST client against the CYP-97 endpoints (stub→real
-    // swap, no UI/VM change). Hoisted FIRST because its agent list (GET /api/agents) drives the **dynamic**
-    // window set — an added agent gets a window, a removed one loses it. Editable iff an operator token is
-    // present (server also enforces the gate; fail-closed UI).
-    val resolvedAgentMgmtRepo = remember(agentManagementRepository, httpClient, cfg) {
-        agentManagementRepository
-            ?: AgentManagementHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
-    }
-    val agentMgmtVm = viewModel(key = AGENT_MGMT_WINDOW_ID) {
-        AgentManagementViewModel(resolvedAgentMgmtRepo, editable = isOperator)
-    }
-    val managedAgents = agentMgmtVm.state.collectAsState().value.agents
-
     // Project switcher + management (CYP-91/92): ONE VM backs the top-level bar and the management overlay.
     // Now the LIVE REST client against the /api/projects registry endpoints (stub→real swap, no UI/VM change).
-    // Switching + mutations are operator-gated (server also enforces; fail-closed). The bar makes the active
-    // project unambiguous and re-fetches the project view on switch; the shell-wide per-project window
-    // re-scope is the backend-gated piece deferred in ProjectModel.kt (lights up with live re-instancing).
+    // Switching + mutations are operator-gated (server also enforces; fail-closed).
+    // CYP-246: HOISTED FIRST so `activeProjectId` scopes every per-project data VM below. Backend partitions
+    // the agent set per project (rescope swaps the active slice → `/api/agents` returns the switched-to
+    // project's agents, fresh = empty); the client's job is to RE-SCOPE on switch. We do that by appending
+    // `activeProjectId` to each verified-stale, project-scoped VM's key → `viewModel()` hands back a FRESH
+    // instance on switch → its `init` re-fetches in the new scope → managedAgents/channels/… update → the
+    // windows (derived from managedAgents) rebuild. This is the "live re-instancing" the shell previously
+    // deferred. Scoped, not a rasur: only the audited-stale VMs are re-keyed (see the ticket audit note);
+    // the workspace-scoped roster VM (team-wide, project-independent) stays constant-keyed — re-keying it
+    // would be a pointless reload of identical data.
     val resolvedProjectRepo = remember(projectRepository, httpClient, cfg) {
         projectRepository ?: HttpProjectRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
@@ -235,6 +229,23 @@ fun AgentShell(
     }
     // CYP-94: the project registry feeds the event-log cross-project filter (operator-only surfaces).
     val projectState = projectVm.state.collectAsState().value
+    // CYP-246: the active project id — the re-key suffix for every per-project VM below.
+    val activeProjectId = projectState.activeProjectId
+
+    // Agent-management VM (CYP-86/87/88): the LIVE REST client against the CYP-97 endpoints (stub→real swap,
+    // no UI/VM change). Its agent list (GET /api/agents) drives the **dynamic** window set — an added agent
+    // gets a window, a removed one loses it. CYP-246: re-keyed on activeProjectId (the reported-bug VM,
+    // definitely stale on switch) so a switch re-instances it → re-fetch → managedAgents reflects the new
+    // project's slice (fresh project = 0 agents → 0 agent windows). Repo stays project-agnostic (the SERVER
+    // resolves scope from the registry pointer — no client projectId), so only the VM re-instances.
+    val resolvedAgentMgmtRepo = remember(agentManagementRepository, httpClient, cfg) {
+        agentManagementRepository
+            ?: AgentManagementHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
+    val agentMgmtVm = viewModel(key = "$AGENT_MGMT_WINDOW_ID-$activeProjectId") {
+        AgentManagementViewModel(resolvedAgentMgmtRepo, editable = isOperator)
+    }
+    val managedAgents = agentMgmtVm.state.collectAsState().value.agents
 
     // CYP-93: cross-project authorization port — now the LIVE client against /api/channels/{id}/share
     // (stub→real swap, no UI/VM change). `sharedWith` derives from the operator's OTHER projects (reach stays
@@ -368,7 +379,10 @@ fun AgentShell(
     val agentVms = LinkedHashMap<String, AgentViewModel>()
     for (managed in managedAgents) {
         val id = managed.id
-        agentVms[id] = viewModel(key = id) {
+        // CYP-246: the store key carries activeProjectId (the MAP key stays the bare id for windowContent
+        // lookup) — so two projects that reuse an agent id (po/frontend/backend are conventional) never share
+        // a retained AgentViewModel + its `/ws/agent` socket across a switch. Follows the re-keyed agent set.
+        agentVms[id] = viewModel(key = "agent-$activeProjectId-$id") {
             AgentViewModel(
                 session = resolveSession(id),
                 agentId = id,
@@ -378,24 +392,34 @@ fun AgentShell(
             )
         }
     }
-    val commVm = viewModel(key = COMM_WINDOW_ID) {
+    // CYP-246: re-keyed on activeProjectId. Comm data (channels/timeline/agents) is project-scoped; the VM
+    // loads channels+agents ONCE in init and the live `/ws/comm` only pushes ChannelsChanged — the selected
+    // timeline + agents map never re-scope on switch. Re-key = a clean, deterministic reload in the new scope.
+    val commVm = viewModel(key = "$COMM_WINDOW_ID-$activeProjectId") {
         CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
     }
     // CYP-186 roster repo — OPERATOR-only reads (GET /api/workspace/members). Hoisted so the ACL matrix
     // (CYP-189 human-grant band) and the roster window share ONE instance; never fetched as a non-operator.
     val resolvedWorkspaceRepo = workspaceRepository
         ?: WorkspaceHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
-    val aclVm = viewModel(key = ACL_WINDOW_ID) {
+    // CYP-246: re-keyed on activeProjectId. ACL channels/entries/agents are project-scoped; the VM loads once
+    // and the live stream only upserts single entries (old-project entries never prune) → stale on switch.
+    // (The `members` human-roster is workspace-scoped, so the reload re-fetches identical members — harmless.)
+    val aclVm = viewModel(key = "$ACL_WINDOW_ID-$activeProjectId") {
         // CYP-189: the human-grant band consults the roster ONLY when editable (operator) — Invariante E.
         AclViewModel(resolvedAclApi, resolvedAclLiveSource, editable = isOperator, workspaceRepository = resolvedWorkspaceRepo)
     }
     // Project settings (CYP-84/85): hoisted like the others; editable iff an operator token is present.
-    val settingsVm = viewModel(key = SETTINGS_WINDOW_ID) {
+    // CYP-246: re-keyed on activeProjectId. Project settings (repo url/branch + API-key) are per-project and
+    // the VM loads once with no re-scope trigger → stale on switch.
+    val settingsVm = viewModel(key = "$SETTINGS_WINDOW_ID-$activeProjectId") {
         SettingsViewModel(resolvedConfigRepository, editable = isOperator)
     }
     // Product-Lead reports (CYP-90): hoisted; accessible iff operator token (fail-closed — without it the
     // VM never loads a report). Aggregates operator-gated observability, so no token → no report at all.
-    val productLeadVm = viewModel(key = PRODUCT_LEAD_WINDOW_ID) {
+    // CYP-246: re-keyed on activeProjectId. The Product-Lead report aggregates the active project's
+    // observability and the VM loads once (accessible-gated) → stale on switch.
+    val productLeadVm = viewModel(key = "$PRODUCT_LEAD_WINDOW_ID-$activeProjectId") {
         ProductLeadViewModel(resolvedReportRepository, accessible = isOperator)
     }
     // Connector capabilities (CYP-123): read-only per-agent fidelity, hoisted once for all agent windows. Live
@@ -405,7 +429,9 @@ fun AgentShell(
     val resolvedConnectorCapRepo = remember(connectorCapabilityRepository, httpClient, cfg) {
         connectorCapabilityRepository ?: ConnectorCapabilityHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
     }
-    val connectorCapVm = viewModel(key = "connectorCapabilities") {
+    // CYP-246: re-keyed on activeProjectId — the caps are read per-agent (project-scoped via the agent set)
+    // and the VM loads once, so a switch must re-instance it to reflect the new project's agents.
+    val connectorCapVm = viewModel(key = "connectorCapabilities-$activeProjectId") {
         ConnectorCapabilityViewModel(resolvedConnectorCapRepo)
     }
     val connectorCapState = connectorCapVm.state.collectAsState().value
@@ -421,12 +447,18 @@ fun AgentShell(
     }
     // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
     // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
+    // CYP-246: re-keyed on activeProjectId. Browse loads its first page once (the panel re-applies the filter
+    // only on user action, not on switch); Tail's ring never clears on switch and the client never re-subscribes
+    // the socket — both stale on switch → re-instance for a clean, in-scope reload.
     val browseVm: EventBrowseViewModel? =
-        if (isOperator) viewModel(key = EVENTLOG_BROWSE_WINDOW_ID) { EventBrowseViewModel(resolvedEventsApi) } else null
+        if (isOperator) viewModel(key = "$EVENTLOG_BROWSE_WINDOW_ID-$activeProjectId") { EventBrowseViewModel(resolvedEventsApi) } else null
     val tailVm: EventTailViewModel? =
-        if (isOperator) viewModel(key = EVENTLOG_TAIL_WINDOW_ID) { EventTailViewModel(resolvedEventsLiveSource) } else null
+        if (isOperator) viewModel(key = "$EVENTLOG_TAIL_WINDOW_ID-$activeProjectId") { EventTailViewModel(resolvedEventsLiveSource) } else null
 
     // CYP-186 roster: OPERATOR-only. Built only when the window is mounted (showRoster) → no MEMBER load, no leak.
+    // CYP-246: DELIBERATELY NOT re-keyed on activeProjectId — the workspace member roster is team-wide
+    // (GET /api/workspace/members is workspace-scoped, not project-scoped), so it is identical across projects.
+    // Re-keying it would force a needless reload flash of the same data on every switch (the guardrail case).
     val rosterVm: WorkspaceRosterViewModel? =
         if (showRoster(tier)) viewModel(key = ROSTER_WINDOW_ID) { WorkspaceRosterViewModel(resolvedWorkspaceRepo) } else null
 
@@ -494,6 +526,9 @@ fun AgentShell(
         // settings overlay is open (null = none). The AlertDialog renders above the desktop regardless of position.
         val agentById = remember(managedAgents) { managedAgents.associateBy { it.id } }
         var settingsAgentId by remember { mutableStateOf<String?>(null) }
+        // CYP-246: a project switch closes any open per-agent settings overlay — its target belongs to the
+        // previous project's agent set (which is being torn down), so leaving it open would show a stale agent.
+        LaunchedEffect(activeProjectId) { settingsAgentId = null }
         // CYP-216: provide the authed avatar loader + base URL to every AgentAvatarView beneath (titlebar, comm,
         // event-log, settings panel). Locals default null → those sites render stages 3-4 when not wrapped.
         CompositionLocalProvider(
