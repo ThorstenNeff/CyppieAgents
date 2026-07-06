@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.material3.MaterialTheme
@@ -8,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.tneff.cyppieagents.auth.AuthGate
+import com.tneff.cyppieagents.ui.maritimeColorScheme
 import com.tneff.cyppieagents.auth.AuthRepository
 import com.tneff.cyppieagents.auth.AuthViewModel
 import com.tneff.cyppieagents.auth.authRepositoryFor
@@ -36,7 +38,9 @@ fun App(
         authRepository ?: authRepositoryFor(resolveAuthMode(defaultAuthLiveEnv()))
     }
     val authViewModel = remember(authRepo) { AuthViewModel(authRepo) }
-    MaterialTheme {
+    // CYP-268 R1: the ONE theme seam — inject the maritime ColorScheme (Light + Dark), follow-system by default
+    // (R3 adds the explicit toggle). Recolours the whole app here; no screen is touched (M3 theme-ready).
+    MaterialTheme(colorScheme = maritimeColorScheme(isSystemInDarkTheme())) {
         AuthGate(
             viewModel = authViewModel,
             modifier = Modifier
