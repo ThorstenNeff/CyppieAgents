@@ -13,6 +13,7 @@ import com.tneff.cyppieagents.connector.AgentProcess
 import com.tneff.cyppieagents.connector.Connector
 import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.events.EventDraft
+import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.CreateProjectRequest
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.NewAgentSpec
@@ -158,9 +159,21 @@ fun e2ePlatform(
 
     // Seed the remaining projects through REAL APIs (no production seam): create in the registry, rescope
     // to it so addAgent stamps the new spoke channels with ITS projectId, then restore the active project.
+    //
+    // CYP-246: agents are now PARTITIONED per project — a freshly-rescoped project's slice is EMPTY. Before
+    // the partition, the ambient boot PO leaked across projects and was the hub that let `addAgent` form each
+    // worker's `po-<id>` spoke; now it is absent from a seeded project's slice, so the spokes would not form
+    // (leaving cross-project isolation journeys with no channels to assert on). Seed each non-active project's
+    // slice with a hub PO EXPLICITLY — the SeedProject's own PO if it declares one, else the boot PO carried
+    // in as the hub (faithful to the pre-partition seed topology these journeys assert against). This goes
+    // through [HubState.addAgent] directly (topology-only: a PO gets no spoke, no lifecycle/worktree), so it
+    // does NOT collide with the boot PO in the agentId-keyed lifecycle — that per-project lifecycle is S17/L.
+    val bootPo = booted.state.agents.firstOrNull { it.role == Role.PO }
     for (p in projects.drop(1)) {
         booted.projectRegistry.create(CreateProjectRequest(p.id, p.name))
         booted.state.rescope(p.id)
+        val hubPo = p.agents.firstOrNull { it.role == Role.PO }?.let { Agent(it.id, it.id, it.role, it.id) } ?: bootPo
+        if (hubPo != null && booted.state.agents.none { it.role == Role.PO }) booted.state.addAgent(hubPo)
         p.agents.filter { it.role == Role.WORKER }.forEach { a ->
             booted.agentManagement.add(NewAgentSpec(a.id, a.id, a.role))
         }
