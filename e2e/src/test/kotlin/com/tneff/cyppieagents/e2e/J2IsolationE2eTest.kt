@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.e2e
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.AclEntry
+import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.ApiKeyRequest
 import com.tneff.cyppieagents.model.ApiKeyView
@@ -12,6 +13,8 @@ import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.EventPushed
 import com.tneff.cyppieagents.model.EventsWsClientEvent
 import com.tneff.cyppieagents.model.EventsWsServerEvent
+import com.tneff.cyppieagents.model.Message
+import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SubscribeEvents
 import io.ktor.client.call.body
@@ -29,9 +32,12 @@ import io.ktor.websocket.send
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -212,7 +218,147 @@ class J2IsolationE2eTest {
         }
     }
 
+    /**
+     * CYP-255 ① — the LIVE-SWITCH comm-egress money-tooth (2 AXES). A `/ws/comm` connection is HELD open
+     * while the active project switches A→B; the global `state.acl` the pump filters through flips to B's
+     * matrix. A foreign (project-A) event that reaches the pump AFTER the switch must be dropped fail-closed
+     * on BOTH axes — the MessageEvent (message body) AND the AclEvent (ACL metadata).
+     *
+     * The scenario is sharpened so `canRead` ALONE cannot tell the two projects apart: both projects own a
+     * channel of the SAME id (`po-frontend`, via [collidingProjects]) and the held participant (operator)
+     * lingers as a member of B's same-id channel — so `canRead("po-frontend", operator)` is TRUE under B, and
+     * ONLY the project gate (the event's own `projectId` ≠ active) can drop the A event. That project gate is
+     * in `visibleMessages` (MessageEvent, merged in .4b①) but NOT YET in the AclEvent branch (still
+     * `canRead`-only). Hence:
+     *   • axis 1 (MessageEvent) runs against the `visibleMessages` pump (merged in .4b①) → GREEN;
+     *   • axis 2 (AclEvent) runs against the monolith's `commEventForParticipant` AclEvent branch, now
+     *     project-gated (`ProjectScope.permits(entry.projectId, active) AND canRead(...)` — the ①-AclEvent
+     *     residual PO-Assistant flagged at the .4b① merge, closed here) → GREEN. Before the monolith this
+     *     axis LEAKED (canRead-only); it exercises the pair's RUNTIME behavior, not just the unit teeth.
+     * Full-stack sibling of CYP-254's unit collision tooth.
+     *
+     * The foreign A-event is staged with [injectBufferedMessageEvent]/[injectBufferedAclEvent] — the
+     * deterministic analogue of an in-flight event created in A that reaches the pump after the switch (the
+     * write API is fail-closed to the active project, so a foreign event can only be staged directly, exactly
+     * as [injectDroppedEvent] stages an EventLog event). Each axis carries a same-project (B) POSITIVE CONTROL
+     * that MUST arrive first, so the fail-closed `assertNull` means "filtered", never "delivery was broken".
+     */
+    @Test
+    fun heldCommConn_afterSwitch_dropsForeignBufferedMessageEvent_axis1_body() = runBlocking {
+        collidingProjects().use { p ->
+            p.asOperator().use { c ->
+                c.webSocket("${p.wsBaseUrl}/ws/comm") {
+                    assertIs<ChannelsEvent>(nextCommEvent()) // initial snapshot (active = alpha)
+                    delay(150) // let the server pump subscribe to the hub event stream
+                    p.switchActive("beta") // held conn: global active flips → the pump now filters through beta's matrix
+
+                    // POSITIVE CONTROL — an active-project (beta) message on the colliding channel DOES arrive, so
+                    // the post-switch delivery path is proven live (the drop-assert below is not vacuously green).
+                    p.injectBufferedMessageEvent(projectId = "beta", channelId = "po-frontend", from = "frontend", body = "beta-live")
+                    val delivered = withTimeoutOrNull(2000) { nextMessageOrAcl() }
+                    assertTrue(
+                        delivered is MessageEvent && delivered.message.body == "beta-live",
+                        "positive control: an active-project MessageEvent is delivered over the held, switched connection",
+                    )
+
+                    // AXIS 1 — a buffered ALPHA message (projectId=alpha) on the SAME channel id must NOT leak:
+                    // visibleMessages gates the event's projectId first (alpha ≠ active beta) → dropped fail-closed,
+                    // EVEN THOUGH canRead("po-frontend", operator) is true under beta.
+                    p.injectBufferedMessageEvent(projectId = "alpha", channelId = "po-frontend", from = "frontend", body = "alpha-secret-body")
+                    val leaked = withTimeoutOrNull(700) { nextMessageOrAcl() }
+                    assertNull(
+                        leaked,
+                        "axis-1: a foreign (project-A) MessageEvent must not leak over a /ws/comm switched to B (visibleMessages projectId gate)",
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun heldCommConn_afterSwitch_dropsForeignBufferedAclEvent_axis2_aclMetadata() = runBlocking {
+        collidingProjects().use { p ->
+            p.asOperator().use { c ->
+                c.webSocket("${p.wsBaseUrl}/ws/comm") {
+                    assertIs<ChannelsEvent>(nextCommEvent()) // initial snapshot (active = alpha)
+                    delay(150)
+                    p.switchActive("beta")
+
+                    // POSITIVE CONTROL — an active-project (beta) AclEvent on the colliding channel DOES arrive.
+                    p.injectBufferedAclEvent(projectId = "beta", channelId = "po-frontend", agentId = "frontend")
+                    val delivered = withTimeoutOrNull(2000) { nextMessageOrAcl() }
+                    assertTrue(
+                        delivered is AclEvent && delivered.entry.channelId == "po-frontend",
+                        "positive control: an active-project AclEvent is delivered over the held, switched connection",
+                    )
+
+                    // AXIS 2 — a buffered ALPHA AclEvent (projectId=alpha) on the SAME channel id must NOT leak.
+                    // Today the pump checks only canRead("po-frontend", operator) — TRUE under beta → it LEAKS;
+                    // the projectId gate the monolith adds is what will drop it.
+                    p.injectBufferedAclEvent(projectId = "alpha", channelId = "po-frontend", agentId = "frontend")
+                    val leaked = withTimeoutOrNull(700) { nextMessageOrAcl() }
+                    assertNull(
+                        leaked,
+                        "axis-2: a foreign (project-A) AclEvent must not leak over a /ws/comm switched to B (AclEvent projectId gate — the monolith residual)",
+                    )
+                }
+            }
+        }
+    }
+
     // ---- helpers (all through the real path) ----
+
+    /**
+     * Two projects that BOTH own a `po-frontend` channel (each seeds a `frontend` worker) so a channel id
+     * COLLIDES across the boundary and the held operator lingers as a member of B's same-id channel — the
+     * precondition that makes `canRead` alone unable to distinguish the projects (only the projectId gate can).
+     */
+    private fun collidingProjects() = e2ePlatform(
+        listOf(
+            SeedProject("alpha", "Alpha", listOf(SeedAgent("po", Role.PO), SeedAgent("frontend"))),
+            SeedProject("beta", "Beta", listOf(SeedAgent("po", Role.PO), SeedAgent("frontend"))),
+        ),
+    )
+
+    private suspend fun io.ktor.websocket.WebSocketSession.nextCommEvent(): CommWsServerEvent =
+        CommJson.decodeFromString((incoming.receive() as Frame.Text).readText())
+
+    /**
+     * Next MessageEvent or AclEvent, skipping the re-scope ChannelsEvent(s) a switch may push. Suspends until
+     * such an event arrives — wrap in `withTimeoutOrNull` to bound "nothing arrived" (= filtered fail-closed).
+     */
+    private suspend fun io.ktor.websocket.WebSocketSession.nextMessageOrAcl(): CommWsServerEvent {
+        while (true) {
+            val ev = nextCommEvent()
+            if (ev is MessageEvent || ev is AclEvent) return ev
+        }
+    }
+
+    /**
+     * The hub's private live event flow — the `/ws/comm` pump collects it. Reached reflectively so a foreign
+     * (non-active-project) event can be STAGED directly, the deterministic analogue of an in-flight event that
+     * reaches the pump AFTER an active switch. The write API is fail-closed to the active project (a switched
+     * connection cannot post a foreign-project event), exactly why [E2ePlatform.injectDroppedEvent] also stages
+     * its EventLog event out-of-band. Test-only, zero production change. (A monolith-time alternative: an
+     * `internal` test-emit seam on `Hub` — flagged to the coordinator.)
+     */
+    private fun E2ePlatform.hubEvents(): kotlinx.coroutines.flow.MutableSharedFlow<CommWsServerEvent> {
+        val field = com.tneff.cyppieagents.comm.Hub::class.java.getDeclaredField("_events").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        return field.get(booted.hub) as kotlinx.coroutines.flow.MutableSharedFlow<CommWsServerEvent>
+    }
+
+    private fun E2ePlatform.injectBufferedMessageEvent(projectId: String, channelId: String, from: String, body: String) {
+        hubEvents().tryEmit(
+            MessageEvent(Message(id = "m-$projectId-$channelId-$body", channelId = channelId, from = from, body = body, ts = 0L, projectId = projectId)),
+        )
+    }
+
+    private fun E2ePlatform.injectBufferedAclEvent(projectId: String, channelId: String, agentId: String) {
+        hubEvents().tryEmit(
+            AclEvent(AclEntry(channelId = channelId, agentId = agentId, canRead = true, canWrite = false, projectId = projectId)),
+        )
+    }
 
     /** Cold, stateless roster read — a NEW operator client per call (the browser-reload analogue). */
     private suspend fun E2ePlatform.agentIdSnapshot(): Set<String> =
