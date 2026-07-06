@@ -81,7 +81,7 @@ class ResumeStdinHangTest {
         val registry = SessionRegistry()
         val connector = ClaudeCodeConnector(
             spawner = ProcessBuilderSpawner(), // REAL process + real pipes
-            worktreesRoot = worktrees,
+            worktreesRoot = { worktrees },
             resolveApiKey = { null },
             registry = registry,
             router = MediationRouter(registry, hub),

@@ -55,7 +55,7 @@ class HubMcpSpawnWiringTest {
         val registry = SessionRegistry()
         return ClaudeCodeConnector(
             spawner = spawner,
-            worktreesRoot = Files.createTempDirectory("wt").toFile(),
+            worktreesRoot = Files.createTempDirectory("wt").toFile().let { d -> { d } },
             resolveApiKey = { null },
             registry = registry,
             router = MediationRouter(registry, hub),

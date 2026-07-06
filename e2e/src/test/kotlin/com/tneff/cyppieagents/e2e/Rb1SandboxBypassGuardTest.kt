@@ -108,7 +108,7 @@ class Rb1SandboxBypassGuardTest {
         // ClaudeCodeConnector ctor default null → SandboxBypassGrant.rb1Sandbox() (MUT2) reddens THIS test.
         ClaudeCodeConnector(
             spawner = spawner,
-            worktreesRoot = Files.createTempDirectory("wt").toFile(),
+            worktreesRoot = Files.createTempDirectory("wt").toFile().let { d -> { d } },
             resolveApiKey = { null },
             registry = registry,
             router = MediationRouter(registry, hub),

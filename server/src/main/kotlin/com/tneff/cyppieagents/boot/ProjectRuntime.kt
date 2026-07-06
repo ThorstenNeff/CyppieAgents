@@ -18,9 +18,13 @@ import com.tneff.cyppieagents.connector.ProviderRegistry
  *
  * The shared **comm** layer stays OUT of the runtime: [com.tneff.cyppieagents.comm.HubState] holds the
  * per-project agent slices (M) and the project-stamped channels / ACL matrix (CYP-81/102), already scoped
- * by the active project — only the lifecycle bundle needs per-project instancing. `WorktreeManager` is
- * added to the runtime in CYP-247.2 (its disk layout `projects/<projectId>/` is already per-project; only
- * the manager instance is boot-pinned today).
+ * by the active project — only the lifecycle bundle needs per-project instancing.
+ *
+ * CYP-247.2 added [worktrees]: the per-project [WorktreeManager] (its disk layout `projects/<projectId>/`
+ * is already per-project — CYP-82). The spawn path (connector cwd root + the ensure/delete-worktree
+ * lambdas) now resolves `runtimeRegistry.active().worktrees`, so a spawn lands in the ACTIVE project's
+ * worktree root; with one runtime this is the boot project's manager (unchanged), and per-project spawns
+ * become real when CYP-247.4/.5 create a runtime per project.
  */
 class ProjectRuntime(
     val projectId: String,
@@ -30,4 +34,5 @@ class ProjectRuntime(
     val capabilityRegistry: CapabilityRegistry,
     val providerRegistry: ProviderRegistry,
     val agentManagement: AgentManagement,
+    val worktrees: WorktreeManager,
 )

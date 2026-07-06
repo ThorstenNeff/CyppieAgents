@@ -56,7 +56,7 @@ class ConnectorSmokeManualTest {
             val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
             val connector = ClaudeCodeConnector(
                 spawner = ProcessBuilderSpawner(),
-                worktreesRoot = worktreesRoot,
+                worktreesRoot = { worktreesRoot },
                 resolveApiKey = { System.getenv("ANTHROPIC_API_KEY") },
                 registry = registry,
                 router = router,
