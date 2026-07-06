@@ -16,6 +16,18 @@ object WindowTestTags {
     /** The "fit windows" host affordance — a user-triggered one-shot re-tile (CYP-26 §2.3). */
     const val FIT: String = "window.host.fit"
 
+    // CYP-250: the desktop empty-state — shown on the canvas background ONLY while the active project has
+    // 0 AGENTS (managedAgents.isEmpty(), NOT 0 windows — the tool windows always coexist). String values are
+    // the `window.host.empty.*` family from the tags contract (CYP-7 re-sync with this slice).
+    /** Empty-state container (0-agent desktop) — presence == "0-agent empty-state visible". */
+    const val EMPTY: String = "window.host.empty"
+
+    /** Empty-state primary CTA ("add agent") — routes into the existing openAdd flow; operator-gated (`enabled`). */
+    const val EMPTY_ADD_BTN: String = "window.host.empty.addBtn"
+
+    /** Empty-state operator-gate hint (non-operator only) — reused `workspace_operator_only`. */
+    const val EMPTY_GATE_HINT: String = "window.host.empty.gateHint"
+
     /** Root of the floating window with the given [id]. */
     fun window(id: String): String = "window.$id"
 
