@@ -174,4 +174,44 @@ class AgentSpawnStartingTest {
         onNodeWithContentDescription("Starting", substring = true, useUnmergedTree = true).assertDoesNotExist()
         onNodeWithContentDescription("Stopped", substring = true, useUnmergedTree = true).assertExists()
     }
+
+    /**
+     * CYP-262 T1 robustness (client-timeout watchdog): if the server ACCEPTS a spawn (fire-and-forget POST returns)
+     * but never emits a `/ws/lifecycle` event, "Startet…" must not hang forever — a watchdog resolves it to the last
+     * state after [AgentViewModel]'s injected window. Honest: it never flips to "Läuft" (only STOPPED fallback), and
+     * §9-2 "always resolves, never hangs" holds even in the server-silent case.
+     *
+     * Mutation: drop the watchdog launch in `lifecycleAction` → the flag never clears without an event → the
+     * `waitUntil { !startPending }` times out → RED.
+     */
+    @Test
+    fun startPending_watchdog_resolvesToLastState_whenServerNeverEmits() = runComposeUiTest {
+        val src = PendingLifecycle(AgentLifecycleState.STOPPED) // start() records the request but emits NO event
+        lateinit var vm: AgentViewModel
+        setContent {
+            MaterialTheme {
+                val v = remember {
+                    AgentViewModel(
+                        emptySession(), agentId = "backend", lifecycle = src, lifecycleSource = src,
+                        canControl = true, startPendingTimeoutMs = 300L, // tiny window so the fallback is observable
+                    )
+                }
+                vm = v
+                AgentWindow(agentId = "backend", viewModel = v)
+            }
+        }
+        waitForIdle()
+
+        onNodeWithTag(AgentViewTags.startBtn("backend")).performClick()
+        waitForIdle()
+        assertTrue(vm.startPending.value, "an accepted Start arms the transient")
+        onNodeWithContentDescription("Starting", substring = true, useUnmergedTree = true).assertExists()
+
+        // No lifecycle event ever arrives → the watchdog fires and falls back to the last resolved state (STOPPED),
+        // never a fake "Läuft" (§9-1). The spinner cannot outlive the window.
+        waitUntil(timeoutMillis = 5_000L) { !vm.startPending.value }
+        assertFalse(vm.startPending.value, "the watchdog resolves a never-confirmed spawn — no stuck spinner")
+        onNodeWithContentDescription("Stopped", substring = true, useUnmergedTree = true).assertExists()
+        onNodeWithContentDescription("Running", substring = true, useUnmergedTree = true).assertDoesNotExist()
+    }
 }
