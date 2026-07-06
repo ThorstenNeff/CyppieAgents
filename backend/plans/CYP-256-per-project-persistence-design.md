@@ -125,6 +125,10 @@ With the agent set durable, the teardown UPGRADES from session-suspension to **f
   to B via real `POST /api/agents`; start the worker; assert it spawned in `projects/B/worker`; **simulate a
   restart** (re-`boot()` over the SAME store files) → B's agents are back (rehydrated), startable, in B's slice.
   Mutation: skip the `ProjectAgentStore.put` in `add` → after "restart" B is empty → RED.
+  - **D3 (ratified) — worktree reuse:** assert the rehydrate REUSES the existing `projects/B/worker` worktree —
+    no re-clone / re-`git worktree add` churn (`ensureWorktree` idempotent). E.g. the worktree dir + its inode /
+    a marker file created at the original `add` survive the "restart" untouched (the FakeGit records no second
+    `worktree add` for it), so rehydration is a pure metadata rebuild, not a disk re-provision.
 - **Full-eviction rehydration e2e:** 4 projects, K=3, switch to force-evict the LRU (`of(pid)==null`), switch
   back → rehydrated from the store + `--resume`; agents + config intact. Mutation: skip factory rehydrate →
   re-entered project is empty → RED.
@@ -140,22 +144,28 @@ the store; only agents ADDED to it at runtime persist there) — so the operator
 the single hand-authored source for the boot seed, non-invasive. `bootPlatform` supplies the out-of-repo,
 gitignored `.cyppie/project-agents.json` (File default); the Pg path is opt-in per the CYP-220 residency policy.
 
-## 9. Risks + open questions (PO)
+## 9. Ratified decisions (PO, 2026-07-06) + build gating
 
-- **D1 — edit persistence split:** config-seeded boot agents' edits currently go to `AgentOverrideStore`
-  (overlay). Runtime-added agents' full records go to `ProjectAgentStore`. An edit to a runtime-added agent
-  should write the store, not the overlay. Cleanest: `AgentManagement.edit` routes by "is this a stored agent?"
-  — OR (simpler) the store subsumes overrides for runtime-added agents and the overlay stays ONLY for
-  config-seeded ones. **PO to confirm the split** (I recommend: store = full truth for runtime-added; overlay
-  = boot-seed overlay only — no double-write).
-- **D2 — teardown model** (§6): full-eviction-beyond-K vs. a session-suspension intermediate band. Recommend
-  full-eviction (simpler, persistence makes it lossless).
-- **D3 — worktree on rehydrate:** a rehydrated agent's worktree already exists on disk (created at its original
-  `add`); `ensureWorktree` is idempotent, so re-spawn reuses it. Confirm no re-clone/re-add churn.
-- **Residency:** `ProjectAgentStore` is non-secret (identity/config only; tokens stay in `RemoteTokenStore`), so
-  it MAY live on a user-Postgres like the other non-secret stores — vs. staying home. Default: follow the
-  CYP-220 tier policy (non-secret → migratable). PO/residency confirm.
-- **Sizing:** M–L (a store slice + rehydration + write-through + the eviction upgrade + gates). Suggest cutting
-  **.5a = ProjectAgentStore + boot rehydration + write-through + per-project-spawn-survives-restart gate**
-  (the core "work in a new project durably"), **.5b = full runtime-eviction upgrade** (the Push 3 follow-up),
-  **.5c = Pg impl + migration parity** (rides the CYP-220 Postgres track). Build .5a first; .5b/.5c stack.
+- **D1 — edit persistence split ✅ RATIFIED (store = full truth for runtime-added; overlay = boot-seed only):**
+  `ProjectAgentStore` is the single source for runtime-added agents; `AgentOverrideStore` stays ONLY the overlay
+  for config-seeded boot agents. **No double-write.** `AgentManagement.edit` routes by "is this a stored
+  (runtime-added) agent?" → `ProjectAgentStore`, else → `AgentOverrideStore`. Single-source per agent class → no
+  drift. (Implementation seam: a `ProjectAgentStore.contains(projectId, agentId)` / `agentsFor` membership check
+  decides the route at edit time.)
+- **D2 — teardown model ✅ RATIFIED (straight full-eviction beyond K in .5b):** the LRU/cap core
+  (`RuntimeSuspensionPolicy`, unit-tested) is UNCHANGED — only its suspend/resume actions become evict/rehydrate.
+  The session-suspension intermediate band is a **documented tuning follow-up, ONLY IF** rapid toggling across K
+  shows visible switch-back churn (the expensive part — the process `--resume` — exists in both models). **Not
+  built now.**
+- **D3 — worktree on rehydrate ✅ RATIFIED (idempotent reuse):** confirmed; the .5a restart-gate asserts reuse of
+  the existing worktree (no re-clone / re-add churn) — see §7.
+- **Residency ✅ RATIFIED:** follow the CYP-220 tier policy — `ProjectAgentStore` is non-secret (identity/config;
+  tokens stay in `RemoteTokenStore`) → migratable, consistent with `ProjectConfig` / `AgentOverride`. No new
+  residency posture.
+- **Sizing ✅ RATIFIED:** **.5a** = `ProjectAgentStore` + boot rehydration + write-through + per-project-spawn-
+  survives-restart gate (the core "work in a new project durably") · **.5b** = full runtime-eviction upgrade
+  (the Push 3 follow-up) · **.5c** = Pg impl + migration parity (rides the CYP-220 Postgres track). Build .5a
+  first; .5b/.5c stack.
+
+**Build gating (both required before .5a):** (1) the .4b monolith is MERGED (the base) + (2) the PO-Assistant's
+design second opinion (PO fetches it once out of the monolith gate). Until both land, this stays design-only.
