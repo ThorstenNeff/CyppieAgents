@@ -116,7 +116,11 @@ class ReportGenerator(
     }
 
     private suspend fun query(since: Long?, until: Long?): List<Event> =
-        eventSink.query(EventFilter(since = since, until = until), Page(limit = 2000)).events
+        // CYP-255 ③ — scope the report aggregation to the ACTIVE project (the shared Event-Log is a
+        // multi-project store; an unscoped query aggregates over ALL projects → cross-project egress once
+        // non-boot projects are populated — today masked only by the fail-closed emptiness). Server-side
+        // from the hub's active pointer (never a caller param), like /api/events + /ws/events (CYP-102).
+        eventSink.query(EventFilter(since = since, until = until, projectId = state.activeProjectId), Page(limit = 2000)).events
 
     private fun window(since: Long?, until: Long?) =
         ReportWindow(sinceLabel = since?.let { "since=$it" } ?: "boot", untilLabel = until?.let { "until=$it" } ?: "now")

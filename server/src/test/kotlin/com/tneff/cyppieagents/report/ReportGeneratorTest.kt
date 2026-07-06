@@ -108,6 +108,22 @@ class ReportGeneratorTest {
     }
 
     @Test
+    fun report_scopedToActiveProject_doesNotAggregateForeignProjects() = runBlocking {
+        // CYP-255 ③ — the shared Event-Log is a multi-project store; the report must aggregate ONLY the
+        // ACTIVE project's events. Seed a defect in "default" (active) AND one in "other" → the report
+        // includes the active defect, never the foreign one. Mutation: drop projectId from the query's
+        // EventFilter → the "other" defect leaks into the active project's report → red.
+        val f = Fix() // active project = "default"
+        f.sink.appendBatch(listOf(
+            EventDraft("backend", "default", EventType.ERROR_TOOL, Severity.ERROR, correlationId = "defect-DEFAULT"),
+            EventDraft("backend", "other", EventType.ERROR_TOOL, Severity.ERROR, correlationId = "defect-OTHER"),
+        ))
+        val items = f.gen.build(ReportType.DEFECTS, null, null).sections.first { it.key == "defects" }.items
+        assertTrue(items.any { it.refLabel == "correlationId: defect-DEFAULT" }, "the active project's defect is aggregated")
+        assertFalse(items.any { it.refLabel == "correlationId: defect-OTHER" }, "a foreign project's defect must NOT leak into the report (③)")
+    }
+
+    @Test
     fun window_labels_honestBoundaries() = runBlocking {
         val f = Fix()
         assertEquals("boot", f.gen.build(ReportType.STATUS, null, null).window.sinceLabel)
