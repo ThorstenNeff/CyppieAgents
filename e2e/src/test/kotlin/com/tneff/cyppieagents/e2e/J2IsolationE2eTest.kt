@@ -2,9 +2,11 @@ package com.tneff.cyppieagents.e2e
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.AclEntry
+import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.ApiKeyRequest
 import com.tneff.cyppieagents.model.ApiKeyView
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.CreateProjectRequest
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.EventPushed
@@ -15,6 +17,7 @@ import com.tneff.cyppieagents.model.SubscribeEvents
 import io.ktor.client.call.body
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -166,7 +169,63 @@ class J2IsolationE2eTest {
         }
     }
 
+    /**
+     * CYP-107 × CYP-246 — the AGENT SET follows the active switch. This is the isolation dimension J2 did NOT
+     * cover: channels / ACL / events / config were each teethed over the switch above, but `/api/agents` was
+     * not — and the agent set (with the window set) was the reported cross-project leak. Full-stack coverage:
+     *  - a switch between two POPULATED projects shows each its OWN roster (alpha's worker never appears in beta);
+     *  - a FRESH project created through the REAL `POST /api/projects` is 0 agents (the "fresh = 0 windows" repro);
+     *  - switching back restores the stashed roster, and a repeat round-trip stays correct (re-stash-after-restore).
+     *
+     * Reload dimension (the part that slipped to prod on F5): a browser reload is a COLD, STATELESS `/api/agents`
+     * GET. Every assertion here re-reads through a FRESH operator client ([agentIdSnapshot] opens a new client
+     * per call), so a stale server-side roster would surface exactly as it did on reload — not hidden behind a
+     * warm client cache. Mutation: drop the [com.tneff.cyppieagents.comm.HubState.rescope] agent-slice swap →
+     * the boot roster stays live across every switch → the first post-switch assertion reddens.
+     */
+    @Test
+    fun agentSet_followsSwitch_freshProjectIsEmpty_switchBackRestores_reloadDurable() = runBlocking {
+        twoProjects().use { p ->
+            assertEquals(setOf("po", "frontend"), p.agentIdSnapshot(), "active=alpha → alpha's roster")
+
+            // switch to a DIFFERENT populated project → beta's OWN roster; alpha's worker never bleeds in
+            p.switchActive("beta")
+            val beta = p.agentIdSnapshot()
+            assertEquals(setOf("po", "backend"), beta, "active=beta → beta's roster (backend)")
+            assertFalse("frontend" in beta, "alpha's worker never leaks into beta across the switch")
+
+            // create a FRESH project through the REAL API → switching to it yields 0 agents (no stale carry-over)
+            p.createProject("gamma", "Gamma")
+            p.switchActive("gamma")
+            assertEquals(emptySet(), p.agentIdSnapshot(), "fresh project → 0 agents / 0 windows (the reported expectation)")
+
+            // switch back → alpha's stashed roster restored intact
+            p.switchActive("alpha")
+            assertEquals(setOf("po", "frontend"), p.agentIdSnapshot(), "switch back → alpha's roster restored from the stash")
+
+            // reload-durable across a REPEAT round-trip (lifecycle-aware, not a single happy switch): re-visit gamma
+            // (still 0 — alpha's stash never bleeds) and alpha (still its roster — the re-stash-after-restore path)
+            p.switchActive("gamma")
+            assertEquals(emptySet(), p.agentIdSnapshot(), "second visit to gamma → still 0, alpha's stash never bleeds")
+            p.switchActive("alpha")
+            assertEquals(setOf("po", "frontend"), p.agentIdSnapshot(), "reload after round-trip → alpha's roster, never stale gamma/beta")
+        }
+    }
+
     // ---- helpers (all through the real path) ----
+
+    /** Cold, stateless roster read — a NEW operator client per call (the browser-reload analogue). */
+    private suspend fun E2ePlatform.agentIdSnapshot(): Set<String> =
+        asOperator().use { it.get("$baseUrl/api/agents").body<List<Agent>>() }.map { it.id }.toSet()
+
+    /** Create a project through the REAL `POST /api/projects` (no production seam). */
+    private suspend fun E2ePlatform.createProject(id: String, name: String) {
+        asOperator().use { c ->
+            c.post("$baseUrl/api/projects") {
+                contentType(ContentType.Application.Json); setBody(CreateProjectRequest(id, name))
+            }
+        }
+    }
 
     private suspend fun E2ePlatform.apiKeyMasked(): String? =
         asOperator().use { it.get("$baseUrl/api/config/apikey").body<ApiKeyView>().masked }
