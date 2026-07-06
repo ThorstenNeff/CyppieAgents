@@ -2,20 +2,26 @@
   "$meta": {
     "owner": "UIUX-Designer",
     "ticket": "CYP-268 maritimes App-Redesign — [[design-language-maritime-m3]]",
-    "version": "1.1",
-    "status": "AUFTRAGGEBER-GO (2026-07-06): voll Day+Night, KRAEFTIGERE Saettigung (Override meiner dezent-Empfehlung → praesentere Marken-Signatur). Toggle=follow-system; Severity/SenderPalette semantisch behalten. Finalisiertes ColorScheme fuer R1 (App.kt-Seam-Injektion) → wartet PO-GO fuer Dev-Bau.",
-    "saturation_directive": "KRAEFTIG (Auftraggeber): sattere maritime Blaus/Akzente fuer primary/secondary/tertiary; Surfaces bleiben ueberwiegend hell/lesbar (Anti-Hype). Kontrast+Lesbarkeit MUESSEN halten → R2 verifiziert/tunt die grenzwertigen Paare (tertiary-auf-white als UI-Fill, secondary-auf-tertiaryContainer bei TonedHint-INFO).",
+    "version": "1.2",
+    "status": "AUFTRAGGEBER-GO (2026-07-06): voll Day+Night, KRAEFTIGERE Saettigung. v1.2 = R2-PALETTE-KONTRAST-AUDIT DURCH (WCAG AA light+dark, alle Rollen-Paare) — die eine Fail-Paarung (TonedHint-INFO secondary-auf-tertiaryContainer, 4.48 light/4.26 dark) durch Ton-Anpassung von secondary gefixt (AA gewinnt, Kontrast NICHT weggenommen). Finalisiertes ColorScheme fuer R1 → R1 injiziert DIESEN Commit (nicht a603e7b).",
+    "saturation_directive": "KRAEFTIG (Auftraggeber): sattere maritime Blaus/Akzente fuer primary/secondary/tertiary; Surfaces ueberwiegend hell/lesbar (Anti-Hype). AA IST HART (PO-Gate): wo satt-vs-AA kollidiert, gewinnt AA via Ton-Anpassung.",
+    "r2_contrast_audit": {
+      "status": "DURCH (Palette-Ebene) — WCAG AA verifiziert light+dark, alle Text-Paare >= 4.5, UI-Fill >= 3.0.",
+      "worst_text_pair": "LIGHT 4.69:1 / DARK 4.87:1 (>= 4.5 AA).",
+      "fix": "secondary light #12689F->#0F5B88 (INFO-auf-tertiaryContainer 4.48->5.48), dark #7FC0E4->#93CCEA (4.26->4.87). Ton dunkler(light)/heller(dark), Saettigung/Charakter erhalten; white-on-secondary + onSecondary-Paare unregrediert (mehr Headroom).",
+      "rendered_verify_pending": "Die App-gerenderte AA-Verifikation (bes. onSurfaceVariant 57x) folgt in R4-UX-QA nach R1/R3-Bau; die Palette-Ebene ist hier bereits AA-clean."
+    },
     "design_language": "maritime — blau/weiss, M3 (Anti-Hype/ruhig). Basis-Hues geteilt mit CYP-234 dev-api-docs-experience-tokens.json (eine Sprache, zwei Surfaces: Doku + App).",
     "grounded_against": "app/shared/.../App.kt (bare MaterialTheme{} = M3-Default heute); app-weite colorScheme.*-Nutzung; ui/TonedHint.kt (Rollen: tertiaryContainer/onTertiaryContainer/error/secondary/onSurfaceVariant); ui/SenderPalette.kt (9 slots); eventlog/EventVisuals.kt (4 severity); core/model/ColorDerivation.kt.",
     "usage": "Baut zu MaritimeTheme.kt: lightMaritime = lightColorScheme(<light-Werte>), darkMaritime = darkColorScheme(<dark-Werte>); App.kt MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkMaritime else lightMaritime).",
-    "contrast_note": "Werte sind Scope-Vorschlag. R2 (Kontrast-Audit) VERIFIZIERT + tunt jedes Text-auf-Hintergrund-Paar auf WCAG AA (Body 4.5:1 / UI 3:1) in BEIDEN Schemata — bes. onSurfaceVariant (57x) und die TonedHint-INFO-Kombi (secondary auf tertiaryContainer). Grenzwertige Paare werden in R2 nachgezogen."
+    "contrast_note": "v1.2: Palette-Ebene ist AA-clean (R2-Audit durch, s. r2_contrast_audit). Die App-gerenderte Verifikation folgt in R4."
   },
 
   "colorScheme_light": {
     "_note": "KRAEFTIG (v1.1): primary/secondary/tertiary sattere maritime Blaus/Teals; onPrimary/onSecondary/onTertiary = weiss (AA-Fill). Surfaces hell mit leichtem Blau-Tint. R2 verifiziert.",
     "primary": "#0A5AA0", "onPrimary": "#FFFFFF",
     "primaryContainer": "#BEE0FA", "onPrimaryContainer": "#04263F",
-    "secondary": "#12689F", "onSecondary": "#FFFFFF",
+    "secondary": "#0F5B88", "onSecondary": "#FFFFFF",
     "secondaryContainer": "#C4E2F5", "onSecondaryContainer": "#06283D",
     "tertiary": "#0B7E9C", "onTertiary": "#FFFFFF",
     "tertiaryContainer": "#B7E7F2", "onTertiaryContainer": "#022E3B",
@@ -31,7 +37,7 @@
     "_note": "KRAEFTIG (v1.1): sattere, hellere maritime Akzente auf tiefem Navy; onColor dunkel-navy (AA). R2 verifiziert.",
     "primary": "#6FBEEA", "onPrimary": "#02324E",
     "primaryContainer": "#0A4E7C", "onPrimaryContainer": "#C7E6FB",
-    "secondary": "#7FC0E4", "onSecondary": "#052A3F",
+    "secondary": "#93CCEA", "onSecondary": "#052A3F",
     "secondaryContainer": "#154F70", "onSecondaryContainer": "#C7E6FB",
     "tertiary": "#4FC6DE", "onTertiary": "#00333F",
     "tertiaryContainer": "#085468", "onTertiaryContainer": "#B7E7F2",
@@ -71,7 +77,7 @@
     "layout_flow_change": 0,
     "note_scope": "Reines Re-Coloring: 0 strings.xml / 0 testTag / 0 Layout-/Flow-Aenderung. Nur Theme-Seam + ColorScheme + Audit-Surface.",
     "semantics_preserved": "error bleibt rot; Severity-Ampel semantisch; Farbe nie alleiniger Traeger (WCAG 1.4.1).",
-    "wcag": "R2 verifiziert alle Rollen-Paare AA light+dark; grenzwertige (secondary-auf-tertiaryContainer, onSurfaceVariant-57x) explizit getunt.",
+    "wcag": "Palette-Ebene AA-clean verifiziert (light+dark, alle Text-Paare >= 4.5, UI-Fill >= 3.0); secondary getunt fuer die INFO-auf-tertiaryContainer-Paarung. App-gerenderte Verifikation = R4.",
     "no_secrets": "keine Token/Keys — reine Farb-/Theme-Werte.",
     "consistency": "Basis-Hues geteilt mit CYP-234-Doku-Theme → App + Doku visuell konsistent."
   }

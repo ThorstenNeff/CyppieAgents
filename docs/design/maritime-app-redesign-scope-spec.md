@@ -40,14 +40,14 @@ Basis-Hues aus `dev-api-docs-experience-tokens.json` (CYP-234), **kräftiger ges
 | M3-Rolle | Maritime-Quelle (kräftig, v1.1) | Anmerkung |
 |---|---|---|
 | `primary` / `onPrimary` | vivid ocean blue `#0A5AA0` / weiß | Haupt-Akzent (Buttons, aktive Marker) |
-| `secondary` / `onSecondary` | saturated mid-sea `#12689F` / weiß | **TonedHint INFO** hängt hier → R2 prüft Kontrast auf `tertiaryContainer` |
+| `secondary` / `onSecondary` | saturated mid-sea `#0F5B88` / weiß | **TonedHint INFO** hängt hier — für AA auf `tertiaryContainer` getunt (R2-Audit, s. u.) |
 | `tertiary` / `tertiaryContainer` / `on…` | vivid shoal-teal `#0B7E9C` / helles Foam `#B7E7F2` | **TonedHint EFFECT_DEFERRED + Chip-bg** hängt hier |
 | `error` / `onError` / `errorContainer` / `on…` | **semantisches Rot behalten** (`#B3261E`, unverändert) | Fehler bleibt als Fehler erkennbar — **keine** maritime Umfärbung der Fehler-Semantik |
 | `surface` / `background` / `onSurface` | weiß / navy-ink `#0C2635` | Dark: deep navy `#0A1922` / `#DCE7ED` |
 | `surfaceVariant` / `onSurfaceVariant` | leicht-blau Foam `#E4EFF8` / `#3A4E5A` | **57× genutzt** — häufigster Träger, Kontrast kritisch (R2) |
 | `outline` / `outlineVariant` | `#6E8C9E` / `#CBDCE7` | Ränder/Divider |
 
-> **Kräftig, aber lesbar:** die Sättigung steigt bei **primary/secondary/tertiary** (Marken-Signatur); **Surfaces bleiben überwiegend hell** (Anti-Hype, Lesbarkeit) mit leichtem Blau-Tint. **R2 verifiziert/tunt** die grenzwertigen Paare (`tertiary`-auf-weiß als UI-Fill ~3:1 UI-OK; `secondary`-auf-`tertiaryContainer` bei TonedHint-INFO).
+> **Kräftig, aber lesbar — R2-Palette-Kontrast-Audit DURCH (WCAG AA, light + dark):** die Sättigung steigt bei **primary/secondary/tertiary** (Marken-Signatur); **Surfaces bleiben überwiegend hell** (Anti-Hype). **Audit-Ergebnis:** alle Text-Paare ≥ AA (worst **4.69:1 light / 4.87:1 dark**), UI-Fill ≥ 3:1. **Eine** Fail-Paarung gefunden — TonedHint-INFO (`secondary`-auf-`tertiaryContainer`, 4.48 light / 4.26 dark) — durch **Ton-Anpassung von `secondary`** gefixt (light `#12689F`→`#0F5B88`, dark `#7FC0E4`→`#93CCEA`; **AA gewinnt, Sättigung/Charakter erhalten**, keine Regression der anderen `secondary`-Paare). *AA-hart = PO-Gate erfüllt auf Palette-Ebene; die App-gerenderte Verifikation (bes. `onSurfaceVariant` 57×) folgt in R4.*
 > **Ehrlichkeits-/Semantik-Anker:** **`error` bleibt rot** (Fehler-Bedeutung nicht verhandelbar); maritime Färbung betrifft **Marke/Neutrale**, nicht die **semantischen** Rollen. Gilt auch für Severity-/Status-Farben in §3.
 
 ---
@@ -70,7 +70,7 @@ Diese folgen dem Theme-Seam **nicht** automatisch → je eine bewusste Entscheid
 | Slice | Inhalt | Größe |
 |---|---|---|
 | **R1 — Maritime `ColorScheme` + Theme-Seam** | `MaritimeTheme.kt` (light + dark `ColorScheme` aus §2/Tokens); `App.kt`-Seam + `isSystemInDarkTheme()`; **kein** Komponenten-Touch | **S–M** |
-| **R2 — Kontrast-Audit + Fixes** | WCAG-Durchlauf aller Rollen-Paare (bes. `onSurfaceVariant`-57×) light+dark; Audit-Surface §3 (Severity/SenderPalette/ColorDerivation) verifizieren + nötige Nachjustierung | **M** |
+| **R2 — Kontrast-Audit + Fixes** | **Palette-Ebene: DURCH** (WCAG AA light+dark verifiziert, `secondary` für INFO-Paarung getunt — s. §2). **Rest in R4:** die App-**gerenderte** Verifikation (bes. `onSurfaceVariant`-57× in echten Komponenten) + Audit-Surface §3 (Severity/SenderPalette/ColorDerivation auf maritimer Surface) | **S** (Rest, da Palette schon AA-clean) |
 | **R3 — Day/Night-Verdrahtung + optionaler Toggle** | System-Folge default; optionaler In-App-Theme-Toggle (§5-Ask); Persistenz falls Toggle | **S** (ohne Toggle) / **M** (mit) |
 | **R4 — Visuelle Abnahme + UX-QA** | Screen-für-Screen visuelle Re-Verifikation light+dark; meine UX-QA gegen §6 | **M** |
 
