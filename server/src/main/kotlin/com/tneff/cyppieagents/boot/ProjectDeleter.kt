@@ -50,6 +50,9 @@ class ProjectDeleter(
     // CYP-215 (F2, closing a pre-existing CYP-210 gap): the durable name/color/persona/launch/avatar overlay —
     // its per-project entries were orphaned on cascade-delete (removeProject was defined but never wired here).
     private val agentOverrides: AgentOverrideStore? = null,
+    // CYP-256 (.5a): the durable per-project agent-set — cascade-purged with the project (its runtime-added
+    // agents' records must not be orphaned; rehydration would otherwise resurrect a deleted project's agents).
+    private val projectAgents: ProjectAgentStore? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.projectdeleter")
     private val mutex = Mutex()
@@ -62,13 +65,14 @@ class ProjectDeleter(
         agentEventStore?.deleteByProject(projectId) // CYP-198: purge the agent-window transcript too
         val avatarsRemoved = avatarBlobs?.deleteByProject(projectId) ?: 0 // CYP-215: purge the avatar blobs
         val overridesRemoved = agentOverrides?.removeProject(projectId) ?: 0 // CYP-215 F2: purge the override JSON
+        val agentsRemoved = projectAgents?.removeProject(projectId) ?: 0 // CYP-256 (.5a): purge the agent-set store
         // opt-in: only the warned path removes the worktree (uncommitted work); branches always kept.
         val worktreesRemoved = if (deleteWorktrees) worktrees.deleteProject(projectId) else 0
         registry.drop(projectId) // commit metadata removal last (no half-gone-but-listed project)
 
         log.info(
-            "project '{}' cascade-deleted: config={}, events={}, avatars={}, overrides={}, deleteWorktrees={}, worktrees={}",
-            projectId, configRemoved, eventsRemoved, avatarsRemoved, overridesRemoved, deleteWorktrees, worktreesRemoved,
+            "project '{}' cascade-deleted: config={}, events={}, avatars={}, overrides={}, agents={}, deleteWorktrees={}, worktrees={}",
+            projectId, configRemoved, eventsRemoved, avatarsRemoved, overridesRemoved, agentsRemoved, deleteWorktrees, worktreesRemoved,
         )
         ProjectDeleteReceipt(projectId, configRemoved, eventsRemoved, worktreesRemoved)
     }
