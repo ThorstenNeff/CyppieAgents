@@ -274,6 +274,11 @@
     <string name="project_switcher_single_hint">Create more projects via "Manage projects".</string>
     <string name="a11y_project_switcher_menu">Open project menu, active: %1$s</string>
     <string name="a11y_project_switch_to">Switch to project %1$s</string>
+    <!-- CYP-262 Teil 2: per-project runtime-session indicator in the switcher menu (server-authoritative
+         Project.runtimeState). INFO tone, never an error — normal states; HOT → no indicator; no LRU/K=3 jargon. -->
+    <string name="project_session_background">Running in the background</string>
+    <string name="project_session_suspended">Suspended — resumes on open</string>
+    <string name="a11y_project_session">Project session: %1$s</string>
     <string name="project_mgmt_title">Project management</string>
     <string name="project_mgmt_operator_required">Editable only with an operator token</string>
     <string name="project_add">Add project</string>

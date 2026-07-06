@@ -24,12 +24,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.auth.UserTier
+import com.tneff.cyppieagents.model.RuntimeState
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
 import com.tneff.cyppieagents.workspace.WorkspaceTags
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.a11y_project_session
 import kmpcyppieagents.app.shared.generated.resources.a11y_project_switch_to
 import kmpcyppieagents.app.shared.generated.resources.a11y_project_switcher_menu
+import kmpcyppieagents.app.shared.generated.resources.project_session_background
+import kmpcyppieagents.app.shared.generated.resources.project_session_suspended
 import kmpcyppieagents.app.shared.generated.resources.a11y_workspace_role
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_is
 import kmpcyppieagents.app.shared.generated.resources.workspace_role_indicator_member
@@ -152,17 +156,40 @@ fun ProjectSwitcherBar(
                     state.projects.forEach { project ->
                         val isActive = project.id == state.activeProjectId
                         val switchA11y = stringResource(Res.string.a11y_project_switch_to, project.name)
+                        // CYP-262 T2: the server-authoritative per-project runtime-session indicator. Bound 1:1 to
+                        // Project.runtimeState (§9-11) — NOT derived from activeProjectId. HOT (and a pre-Push-3 default
+                        // payload) → no indicator (fail-safe); only BACKGROUND/SUSPENDED show a TonedHint(INFO) — a
+                        // NORMAL state, never an error (§9-7). Copy carries no LRU/K=3 jargon (§9-9).
+                        val sessionText: String? = when (project.runtimeState) {
+                            RuntimeState.BACKGROUND -> stringResource(Res.string.project_session_background)
+                            RuntimeState.SUSPENDED -> stringResource(Res.string.project_session_suspended)
+                            RuntimeState.HOT -> null
+                        }
                         DropdownMenuItem(
                             text = {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    if (isActive) {
-                                        Text("●", modifier = Modifier.testTag(ProjectTags.itemActive(project.id)))
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        if (isActive) {
+                                            Text("●", modifier = Modifier.testTag(ProjectTags.itemActive(project.id)))
+                                        }
+                                        // CYP-159: a long project name must not re-stretch the (now capped) menu surface.
+                                        Text(project.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
-                                    // CYP-159: a long project name must not re-stretch the (now capped) menu surface.
-                                    Text(project.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    // §9-8/9/10: BACKGROUND "Läuft im Hintergrund" (real running agents, discoverable) vs
+                                    // SUSPENDED "Suspendiert — Resume beim Öffnen" (paused, resumes, no loss) — distinct in
+                                    // copy AND a11y (`a11y_project_session` carries the state, parity with a11y_agent_status).
+                                    sessionText?.let { s ->
+                                        val sessionA11y = stringResource(Res.string.a11y_project_session, s)
+                                        TonedHint(
+                                            s, HintTone.INFO, ProjectTags.itemSession(project.id),
+                                            modifier = Modifier
+                                                .widthIn(max = SWITCHER_HINT_MAX_WIDTH)
+                                                .semantics { contentDescription = sessionA11y },
+                                        )
+                                    }
                                 }
                             },
                             onClick = { viewModel.switchTo(project.id) },
