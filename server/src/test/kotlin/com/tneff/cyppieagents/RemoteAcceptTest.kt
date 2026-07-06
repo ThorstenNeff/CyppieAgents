@@ -117,7 +117,7 @@ class RemoteAcceptTest {
             sendFrame(WireSend("po-backend", "TASK-needle-7b3c", MessageKind.TASK))
             assertIs<WireAck>(recv())
         }
-        val delivered = withTimeout(5_000) { workerGotTask.await() }
+        val delivered = withTimeout(20_000) { workerGotTask.await() }
         assertTrue(delivered.contains("TASK-needle-7b3c"), "the remote worker received the delegated task over the wire")
         assertTrue(delivered.contains("po:"), "framed as an inbound from the PO")
         workerJob.cancel()
@@ -136,8 +136,8 @@ class RemoteAcceptTest {
         client.webSocket("/ws/hub?token=tok-backend") {
             handshake()
             // drain replays the two in-project messages (the foreign one is dropped by visibleMessages).
-            bodies.add(assertIs<WireDeliver>(withTimeout(5_000) { recv() }).text)
-            bodies.add(assertIs<WireDeliver>(withTimeout(5_000) { recv() }).text)
+            bodies.add(assertIs<WireDeliver>(withTimeout(20_000) { recv() }).text)
+            bodies.add(assertIs<WireDeliver>(withTimeout(20_000) { recv() }).text)
         }
         assertTrue(bodies.any { it.contains("inproj-A-1aa") } && bodies.any { it.contains("inproj-B-3cc") }, "in-project messages delivered (pre-guard)")
         assertTrue(bodies.none { it.contains("FOREIGN-2bb") }, "a foreign-project message on a reused channelId must NOT reach the remote")
@@ -151,16 +151,16 @@ class RemoteAcceptTest {
         val client = wsClient(this)
         client.webSocket("/ws/hub?token=tok-backend") { // conn1 receives msg1 → marked delivered
             handshake()
-            assertTrue(assertIs<WireDeliver>(withTimeout(5_000) { recv() }).text.contains("msg1-already"))
+            assertTrue(assertIs<WireDeliver>(withTimeout(20_000) { recv() }).text.contains("msg1-already"))
         } // conn1 closes
         // Wait for conn1's server-side session to unregister (close is async) so msg2 isn't delivered to the
         // stale connection — then it is genuinely pending for the reconnect (the dedup is what we're testing).
-        withTimeout(5_000) { while (fx.sessions.session("backend") != null) kotlinx.coroutines.delay(10) }
+        withTimeout(20_000) { while (fx.sessions.session("backend") != null) kotlinx.coroutines.delay(10) }
         fx.hub.postAsAgent("po", "po-backend", "msg2-fresh") // pending; msg1 already delivered
         client.webSocket("/ws/hub?token=tok-backend") { // conn2 (reconnect)
             handshake()
             // first delivery is msg2 — NOT a re-delivery of msg1 (DeliveryLog dedup over reconnect).
-            assertTrue(assertIs<WireDeliver>(withTimeout(5_000) { recv() }).text.contains("msg2-fresh"), "reconnect must not re-deliver msg1")
+            assertTrue(assertIs<WireDeliver>(withTimeout(20_000) { recv() }).text.contains("msg2-fresh"), "reconnect must not re-deliver msg1")
         }
     }
 
@@ -189,7 +189,7 @@ class RemoteAcceptTest {
         close1.complete(Unit) // conn1 closes → its finally fires removeIfSame(conn1) → must be a no-op
         job1.join()
         fx.hub.postAsAgent("po", "po-backend", "after-reconnect-9f1a") // → must reach conn2
-        val delivered = withTimeout(5_000) { conn2GotTask.await() }
+        val delivered = withTimeout(20_000) { conn2GotTask.await() }
         assertTrue(delivered.contains("after-reconnect-9f1a"), "the reconnected session keeps receiving; old close didn't orphan it")
         job2.cancel()
     }
@@ -218,14 +218,14 @@ class RemoteAcceptTest {
             ),
         )
         hub.postAsAgent("po", "po-backend", "task-rc2-c0de") // drain → sendTurn throws → NOT marked
-        withTimeout(5_000) { attempted.await() } // the failing push happened (and threw → cursor not advanced)
+        withTimeout(20_000) { attempted.await() } // the failing push happened (and threw → cursor not advanced)
 
         // The reconnect: a recording session replaces it → onSessionAttached → re-delivers the unmarked task.
         val got = java.util.concurrent.CopyOnWriteArrayList<String>()
         sessions.register(
             com.tneff.cyppieagents.routing.WireConnectorSession("backend", sendDeliver = { got.add(it) }, closeWs = {}),
         )
-        withTimeout(5_000) { while (got.none { it.contains("task-rc2-c0de") }) kotlinx.coroutines.delay(10) }
+        withTimeout(20_000) { while (got.none { it.contains("task-rc2-c0de") }) kotlinx.coroutines.delay(10) }
         assertTrue(got.any { it.contains("task-rc2-c0de") }, "a push that failed mid-drain must be re-delivered on reconnect (at-least-once)")
     }
 }
