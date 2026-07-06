@@ -55,7 +55,12 @@ class ProjectVmStoreManager(private val cap: Int = PROJECT_VM_LRU_CAP) {
         val evicted = mutableListOf<String>()
         while (stores.size > cap) {
             val lru = stores.keys.firstOrNull() ?: break
-            if (lru == activeProjectId) break // never evict the active project, even if (defensively) the eldest
+            // CYP-266 #3: redundant-by-construction defense-in-depth. The MRU-promote above moves the active
+            // project to the tail, and this loop evicts from the FRONT while size > cap — so `lru == active` can
+            // never actually occur (active is the tail, unreachable until size <= cap where the loop has stopped).
+            // The `activeProjectIsNeverEvicted` tooth guards the invariant; this break is a cheap belt-and-suspenders
+            // backstop in case a future refactor breaks the promote. Kept intentionally (not tooth-able on its own).
+            if (lru == activeProjectId) break
             stores.remove(lru)?.clear()
             owners.remove(lru)
             evicted += lru
