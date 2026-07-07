@@ -47,6 +47,17 @@ private fun labelOf(mode: ThemeMode): StringResource = when (mode) {
 }
 
 /**
+ * CYP-281: the mode's non-word marker for the COMPACT (narrow-width) icon-only rendering — a filled-fraction
+ * glyph (○ Light / ● Dark / ◐ System), never colour alone (WCAG 1.4.1). The button's contentDescription still
+ * names the current mode, so the a11y name is unchanged between the wide and compact forms.
+ */
+private fun glyphOf(mode: ThemeMode): String = when (mode) {
+    ThemeMode.SYSTEM -> "◐"
+    ThemeMode.LIGHT -> "○"
+    ThemeMode.DARK -> "●"
+}
+
+/**
  * CYP-268 R3 — the compact app-global theme switcher: a "Thema: <mode> ▾" button opening a menu of
  * System / Light / Dark, the active mode marked with the form marker ● (never colour alone — WCAG 1.4.1).
  *
@@ -55,7 +66,14 @@ private fun labelOf(mode: ThemeMode): StringResource = when (mode) {
  * the mode via [onChange] — the `App.kt` seam owns the persistence + the recolour (this adds no colour).
  */
 @Composable
-fun ThemeModeToggle(mode: ThemeMode, onChange: (ThemeMode) -> Unit, modifier: Modifier = Modifier) {
+fun ThemeModeToggle(
+    mode: ThemeMode,
+    onChange: (ThemeMode) -> Unit,
+    modifier: Modifier = Modifier,
+    // CYP-281: on a narrow bar (~<400dp) the button collapses to icon-only (glyph + ▾, no "Thema: <mode>" word)
+    // so it stops starving the active-project label. The dropdown/contentDescription/testTag are unchanged.
+    compact: Boolean = false,
+) {
     var open by remember { mutableStateOf(false) }
     val currentLabel = stringResource(labelOf(mode))
     // Resolved outside the semantics lambda (stringResource is @Composable) and captured: the button a11y names
@@ -69,7 +87,8 @@ fun ThemeModeToggle(mode: ThemeMode, onChange: (ThemeMode) -> Unit, modifier: Mo
                 .semantics { contentDescription = menuA11y },
         ) {
             Text(
-                text = "${stringResource(Res.string.theme_menu_label)}: $currentLabel ▾",
+                // Compact = glyph-only (the label lives in the contentDescription); wide = "Thema: <mode> ▾".
+                text = if (compact) "${glyphOf(mode)} ▾" else "${stringResource(Res.string.theme_menu_label)}: $currentLabel ▾",
                 style = MaterialTheme.typography.titleSmall,
             )
         }

@@ -265,7 +265,7 @@ fun AgentShell(
       // (NOT operator-gated, NOT project-scoped; it follows no project switch). Stays OUTSIDE the loading gate.
       ProjectSwitcherBar(
           projectVm, tier = tier, operatorName = null,
-          trailing = { ThemeModeToggle(mode = themeMode, onChange = onThemeModeChange) },
+          trailing = { compact -> ThemeModeToggle(mode = themeMode, onChange = onThemeModeChange, compact = compact) },
       )
       if (projectState.loading) {
         ProjectLoadingPlaceholder(modifier = Modifier.weight(1f).fillMaxWidth())
