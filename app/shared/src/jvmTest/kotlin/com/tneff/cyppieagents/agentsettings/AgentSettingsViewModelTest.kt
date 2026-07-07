@@ -37,24 +37,32 @@ class AgentSettingsViewModelTest {
         override suspend fun remove(id: String, worktree: WorktreeFate) {}
     }
 
-    /** Controllable live-CLAUDE.md fake: content/exists/version + optional throw codes for GET / POST. */
+    /**
+     * Controllable live-CLAUDE.md fake — a FAITHFUL model of the server's null-semantics + if-match guard: an
+     * ABSENT file reports `version=null` (not a fake "v0"), and a write enforces `expectedVersion == currentVersion`
+     * (absent ⇒ current=null ⇒ a first write MUST send `null`). `updateThrows` forces a specific error BEFORE the
+     * guard (for the non-stale S6 path). This enforcement is what makes the first-write conditional a real tooth:
+     * if the VM sent `""` for an absent file, the guard would 409 and the create test would go RED.
+     */
     private class FakeClaudeMd(
         var content: String = "",
         var exists: Boolean = false,
-        var version: String = "v0",
+        var version: String? = null,
         var getThrows: String? = null,
         var updateThrows: String? = null,
     ) : ClaudeMdApi {
-        val updates = mutableListOf<Triple<String, String, String>>() // (id, content, expectedVersion)
+        val updates = mutableListOf<Triple<String, String, String?>>() // (id, content, expectedVersion)
         var getCount = 0
+        private fun currentVersion(): String? = if (exists) version else null
         override suspend fun get(agentId: String): ClaudeMdView {
             getCount++
             getThrows?.let { throw ClaudeMdException(it) }
-            return ClaudeMdView(agentId, content, exists, version)
+            return ClaudeMdView(agentId, content, exists, currentVersion())
         }
-        override suspend fun update(agentId: String, content: String, expectedVersion: String): ClaudeMdView {
+        override suspend fun update(agentId: String, content: String, expectedVersion: String?): ClaudeMdView {
             updates.add(Triple(agentId, content, expectedVersion))
             updateThrows?.let { throw ClaudeMdException(it) }
+            if (expectedVersion != currentVersion()) throw ClaudeMdException("claude_md_stale")
             this.content = content; this.exists = true; this.version = "vNext"
             return ClaudeMdView(agentId, content, true, version)
         }
@@ -172,13 +180,17 @@ class AgentSettingsViewModelTest {
     fun emptyFile_isEmptyState_firstWriteCreates_noConflict() {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         try {
-            val claude = FakeClaudeMd(content = "", exists = false, version = "v0") // absent file
+            val claude = FakeClaudeMd(content = "", exists = false, version = null) // absent file → version=null
             val v = vm(scope, claude = claude)
             assertTrue(v.state.value.claudeMdEmpty, "settled-absent = the EMPTY state (S4), not an error")
             v.setClaudeMd("first persona")
             v.overwriteClaudeMd() // first write CREATES — no confirm, no stale
+            // CYP-310 first-write tooth: the POST for an absent file carries expectedVersion=NULL (not "") — the
+            // server's "expect absent" create-branch. Sending "" here 409-loops every new agent (the NO-GO bug).
+            assertNull(claude.updates.single().third, "first write on an absent file sends expectedVersion=null")
             val s = v.state.value
-            assertFalse(s.claudeMdStale); assertTrue(s.claudeMdFileExists); assertTrue(s.needsRestart)
+            assertFalse(s.claudeMdStale, "no 409 loop — a first write on absent creates, never conflicts")
+            assertTrue(s.claudeMdFileExists); assertTrue(s.needsRestart)
         } finally { scope.cancel() }
     }
 
