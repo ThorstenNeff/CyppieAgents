@@ -33,6 +33,10 @@ class AuthDeps(
     val audit: AuditSink = NoOpAuditSink,
     /** CYP-186 C.2 — deploy kill-switch (boot/env only). Effective ONLY once a role-OPERATOR exists (never lock out). */
     val operatorTokenDisabled: Boolean = false,
+    /** CYP-234b — the participant-scoped BYO-machine token class. Resolves a participant token to a read-SUBJECT
+     *  (like a human MEMBER's identityId — the ACL is the only authz). Default = an empty store (no participant
+     *  tokens → behavior unchanged) until the 234b-3 admin path mints them. */
+    val participantTokens: ParticipantTokenStore = ParticipantTokenStore(nowMs),
 ) {
     /**
      * Token-only convenience (tests + the operator-token-only mount default): the human-auth path is

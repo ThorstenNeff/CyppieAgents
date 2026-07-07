@@ -82,9 +82,15 @@ fun ApplicationCall.requireAgent(registry: TokenRegistry): String {
 fun TokenRegistry.participantFor(token: String?): String? =
     agentFor(token) ?: if (isOperator(token)) HubState.OPERATOR_ID else null
 
-/** Resolves the caller (agent OR operator) for the comm read/send endpoints, or throws 401. */
-fun ApplicationCall.requireParticipant(registry: TokenRegistry): String =
-    registry.participantFor(bearerToken()) ?: throw UnauthorizedException()
+/**
+ * Resolves the caller (agent / operator token, OR a CYP-234b participant token → its read-SUBJECT) for a
+ * participant-tier read, or throws 401. The participant token only widens WHO reaches the ACL check; the
+ * downstream `canRead` is fail-closed-empty for its subject until granted (never beyond read).
+ */
+fun ApplicationCall.requireParticipant(deps: AuthDeps): String =
+    deps.tokens.participantFor(bearerToken())
+        ?: deps.participantTokens.subjectFor(bearerToken()) // CYP-234b: BYO participant token → read-subject
+        ?: throw UnauthorizedException()
 
 /**
  * CYP-186 BE2 — resolve the comm-**READ** participant. Token axis first (agent / operator — unchanged), then a
@@ -96,6 +102,7 @@ fun ApplicationCall.requireParticipant(registry: TokenRegistry): String =
  */
 suspend fun ApplicationCall.requireCommReader(deps: AuthDeps, registry: TokenRegistry): String {
     registry.participantFor(bearerToken())?.let { return it } // agent / operator token — unchanged
+    deps.participantTokens.subjectFor(bearerToken())?.let { return it } // CYP-234b: BYO participant token → read-subject
     return when (val p = resolvePrincipal(deps)) {
         is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
         else -> throw UnauthorizedException()
@@ -114,6 +121,7 @@ suspend fun ApplicationCall.requireCommReader(deps: AuthDeps, registry: TokenReg
  */
 suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenRegistry): String {
     registry.participantFor(bearerToken())?.let { return it } // agent / operator token — unchanged
+    deps.participantTokens.subjectFor(bearerToken())?.let { return it } // CYP-234b: participant token → subject; canWrite still governs (deny w/o grant)
     return when (val p = resolvePrincipal(deps)) {
         is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
         else -> throw UnauthorizedException()
@@ -132,6 +140,7 @@ suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenReg
 suspend fun ApplicationCall.wsReaderOrNull(deps: AuthDeps, registry: TokenRegistry): String? {
     val token = bearerToken() ?: request.queryParameters["token"]
     registry.participantFor(token)?.let { return it }
+    deps.participantTokens.subjectFor(token)?.let { return it } // CYP-234b: participant token via ?token= (browser WS can't set Authorization)
     return when (val p = resolvePrincipal(deps)) {
         is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
         else -> null
