@@ -172,7 +172,10 @@ class AclViewModel(
 
     private fun toggle(channelId: String, agentId: String, dimension: AclDimension) {
         val s = _state.value
-        if (!s.editable) return
+        // CYP-296 defense-in-depth: after a terminal revoke the matrix is fail-closed read-only (the UI already
+        // renders chips, not switches) — reject any toggle even if one is somehow dispatched. Server 401 still
+        // enforces; this keeps client and server posture aligned.
+        if (!s.editable || s.accessRevoked) return
         // CYP-189 — a human subject (roster identityId in the agentId slot) is grantable but NEVER PO → no
         // hub-and-spoke lockout / self-blind guardrail applies (§7.2): apply directly. An unknown subject is
         // ignored (defensive). Agents keep the full PO-lockout path below.
