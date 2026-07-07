@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.ui.AgentAvatarView
 import com.tneff.cyppieagents.ui.SenderPalette
 import com.tneff.cyppieagents.ui.readableNameAccent
+import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
@@ -80,6 +81,8 @@ fun EventRow(
     /** CYP-94: render the per-row project identity (Text, never colour alone) — ONLY in the cross-project view. */
     showProject: Boolean = false,
     projectTag: String? = null,
+    /** CYP-224: id→Agent map (custom colour/avatar/role) for the event-log avatar; empty / no match → slot default. */
+    agents: Map<String, Agent> = emptyMap(),
 ) {
     if (event.type == EventType.LOG_DROPPED) {
         GapRow(event, rowTag, qualifierTag, byIdTag)
@@ -105,13 +108,13 @@ fun EventRow(
                     TriageCells(event, qualifierTag, byIdTag)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IdentityCells(event, showProject, projectTag)
+                    IdentityCells(event, showProject, projectTag, agents)
                 }
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TriageCells(event, qualifierTag, byIdTag)
-                IdentityCells(event, showProject, projectTag)
+                IdentityCells(event, showProject, projectTag, agents)
             }
         }
     }
@@ -141,13 +144,22 @@ private fun TriageCells(event: Event, qualifierTag: String, byIdTag: String) {
 
 /** Identity/meta cells (avatar+name, correlation, optional project) — line 2 narrow, trailing cells wide. */
 @Composable
-private fun IdentityCells(event: Event, showProject: Boolean, projectTag: String?) {
+private fun IdentityCells(event: Event, showProject: Boolean, projectTag: String?, agents: Map<String, Agent>) {
     val identity = SenderPalette.forSender(event.agentId)
-    // Identity: the shared AgentAvatar (CYP-216) — initials + CYP-14 hue + CYP-209 ring, never status (§1). The
-    // event stream carries only the agentId (no Agent/custom colour) → slot default; honouring a custom colour here
-    // is a follow-up (needs the agent colour map threaded into the log). Name accent keeps the CYP-14 slot HUE but
-    // is luminance-adapted per surface (CYP-275) so the agent-id TEXT stays AA-readable on light AND dark schemes.
-    AgentAvatarView(id = event.agentId, size = 22.dp)
+    // Identity: the shared AgentAvatar (CYP-216) — initials + CYP-14 hue + CYP-209 ring, never status (§1).
+    // CYP-224: the [agents] map (threaded from the shell's managedAgents) lets the log honour the sender's custom
+    // colour/avatar/role — comm/titlebar parity (§5, one resolver). Unknown sender / empty map → null → the
+    // deterministic slot default (unchanged fallback, no regression). displayName stays = id → initials stay
+    // id-based, consistent with the agent-id row text. Name accent keeps the CYP-14 slot HUE, luminance-adapted
+    // per surface (CYP-275) so the agent-id TEXT stays AA-readable on light AND dark schemes.
+    val agent = agents[event.agentId]
+    AgentAvatarView(
+        id = event.agentId,
+        size = 22.dp,
+        role = agent?.role,
+        colorHex = agent?.color,
+        avatar = agent?.avatar,
+    )
     Text(event.agentId, color = readableNameAccent(identity.nameAccent), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
     // Correlation chip — truncated correlationId; absent → "—", never guessed (§4).
     Text(

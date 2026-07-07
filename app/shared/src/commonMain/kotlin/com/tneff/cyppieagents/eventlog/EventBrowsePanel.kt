@@ -72,6 +72,8 @@ fun EventBrowsePanel(
     // CYP-94: the operator's projects + active id drive the cross-project filter axis + view indicator.
     projects: List<com.tneff.cyppieagents.model.Project> = emptyList(),
     activeProjectId: String = "",
+    // CYP-224: id→Agent map (from the shell's managedAgents) → the log avatar honours custom colour/avatar/role.
+    agents: Map<String, com.tneff.cyppieagents.model.Agent> = emptyMap(),
 ) {
     val state by viewModel.state.collectAsState()
     // Responsive layout (EVENT-LOG-UI §6.1): the table is wider than Comm, so a hard 300dp detail pane
@@ -97,6 +99,7 @@ fun EventBrowsePanel(
                     onApplyFilter = viewModel::applyFilter,
                     projects = projects,
                     activeProjectId = activeProjectId,
+                    agents = agents,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -111,6 +114,7 @@ fun EventBrowsePanel(
                     onApplyFilter = viewModel::applyFilter,
                     projects = projects,
                     activeProjectId = activeProjectId,
+                    agents = agents,
                     modifier = Modifier.weight(1.4f).fillMaxHeight(),
                 )
                 DetailPane(
@@ -138,6 +142,7 @@ private fun MasterPane(
     onApplyFilter: (EventFilter) -> Unit,
     projects: List<com.tneff.cyppieagents.model.Project>,
     activeProjectId: String,
+    agents: Map<String, com.tneff.cyppieagents.model.Agent>,
     modifier: Modifier = Modifier,
 ) {
     // CYP-94: a non-null project lens = a cross-project view (a concrete other project, or `all`).
@@ -145,7 +150,7 @@ private fun MasterPane(
     Column(modifier = modifier) {
         FilterBar(state, onApplyFilter, projects, activeProjectId)
         if (state.drilldown != null) {
-            DrilldownView(state, onClearDrilldown, modifier = Modifier.weight(1f).fillMaxWidth())
+            DrilldownView(state, onClearDrilldown, agents = agents, modifier = Modifier.weight(1f).fillMaxWidth())
         } else {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 if (state.error != null && state.events.isEmpty()) {
@@ -177,6 +182,7 @@ private fun MasterPane(
                                 onClick = { onSelect(event) },
                                 showProject = isCrossView,
                                 projectTag = EventBrowseTags.rowProject(index),
+                                agents = agents,
                             )
                         }
                     }
@@ -287,7 +293,7 @@ private val TYPE_CYCLE = listOf(
 )
 
 @Composable
-private fun DrilldownView(state: EventBrowseUiState, onClear: () -> Unit, modifier: Modifier = Modifier) {
+private fun DrilldownView(state: EventBrowseUiState, onClear: () -> Unit, agents: Map<String, com.tneff.cyppieagents.model.Agent>, modifier: Modifier = Modifier) {
     val axisValue = state.filter.correlationId ?: state.filter.sessionId ?: "—"
     Column(modifier = modifier.testTag(EventBrowseTags.DRILLDOWN)) {
         // Header names the axis + scope explicitly (§6.3) and clears the drilldown on click.
@@ -308,6 +314,7 @@ private fun DrilldownView(state: EventBrowseUiState, onClear: () -> Unit, modifi
                     rowTag = EventBrowseTags.drilldownRow(index),
                     qualifierTag = "${EventBrowseTags.drilldownRow(index)}.${rowQualifier(event)}",
                     byIdTag = "${EventBrowseTags.DRILLDOWN}.rowById.${event.id}",
+                    agents = agents,
                 )
             }
         }

@@ -711,8 +711,8 @@ fun AgentShell(
                         },
                     )
                     PRODUCT_LEAD_WINDOW_ID -> ProductLeadPanel(productLeadVm)
-                    EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
-                    EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId) }
+                    EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId, agents = agentById) }
+                    EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId, agents = agentById) }
                     ROSTER_WINDOW_ID -> rosterVm?.let { WorkspaceRosterPanel(it) }
                     else -> agentVms[window.id]?.let {
                         AgentWindow(

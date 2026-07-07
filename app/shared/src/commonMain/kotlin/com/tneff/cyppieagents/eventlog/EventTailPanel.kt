@@ -60,6 +60,8 @@ fun EventTailPanel(
     // CYP-94: the operator's projects + active id drive the cross-project lens (re-subscribes the tail).
     projects: List<com.tneff.cyppieagents.model.Project> = emptyList(),
     activeProjectId: String = "",
+    // CYP-224: id→Agent map (from the shell's managedAgents) → the log avatar honours custom colour/avatar/role.
+    agents: Map<String, com.tneff.cyppieagents.model.Agent> = emptyMap(),
 ) {
     val state by viewModel.state.collectAsState()
     val isCrossView = state.projectId != null
@@ -98,6 +100,7 @@ fun EventTailPanel(
                             byIdTag = EventTailTags.rowById(event.id),
                             showProject = isCrossView,
                             projectTag = EventTailTags.rowProject(index),
+                            agents = agents,
                         )
                     }
                 }
