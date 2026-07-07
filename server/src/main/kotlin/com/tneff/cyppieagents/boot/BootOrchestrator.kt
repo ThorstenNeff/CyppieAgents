@@ -272,6 +272,9 @@ class BootOrchestrator(
             bander,
             projectId = config.projectId,
             capabilities = { runtimeRegistry.active().capabilityRegistry.get(it) },
+            // CYP-316: feed the live context-token value to the ACTIVE project's tracker (the /ws/token-usage
+            // source) — same active()-routing as the capabilities resolver, since the projector is shared.
+            onContextTokens = { agentId, tokens -> runtimeRegistry.active().tokenUsage.onResult(agentId, tokens) },
         )
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
@@ -405,6 +408,9 @@ class BootOrchestrator(
         // Agent lifecycle (CYP-73): the spawn path is single-sourced here so boot-spawn and the runtime
         // start/restart controls can't drift. Boot fail-closed per agent (Reviewer #5): a failed spawn
         // → ERROR, no session, no /ws/agent; the hub and other agents are unaffected.
+        // CYP-316: the boot project's per-agent context-token feed (source of /ws/token-usage). Fed by the
+        // shared projector's onContextTokens (active-routed) and reset by this project's lifecycle stop/restart.
+        val tokenUsageTracker = AgentTokenUsageTracker()
         val lifecycle = LifecycleManager(
             initialWorktrees = config.agents.associate { it.id to it.worktreeName },
             sessions = sessions,
@@ -413,6 +419,8 @@ class BootOrchestrator(
             spawn = { id, worktree -> connector.open(id, worktree) },
             recorder = eventRecorder,
             projector = eventProjector,
+            onContextReset = { tokenUsageTracker.reset(it) },   // CYP-316: stop/restart → fresh context → null
+            onContextForget = { tokenUsageTracker.forget(it) }, // CYP-316: remove → drop the token entry
         )
 
         // CYP-122: the single, audited, server-enforced point that sets an agent's connector (opt-in).
@@ -462,6 +470,7 @@ class BootOrchestrator(
                 providerRegistry = providerRegistry,
                 agentManagement = agentManagement,
                 worktrees = worktrees,
+                tokenUsage = tokenUsageTracker, // CYP-316
             ),
         )
 
@@ -486,6 +495,7 @@ class BootOrchestrator(
             val pCaps = CapabilityRegistry()
             val pProvider = com.tneff.cyppieagents.connector.ProviderRegistry()
             val pWorktrees = worktrees.forProject(pid) // projects/<pid>/ — reuses the shared clone + runner
+            val pTokenUsage = AgentTokenUsageTracker() // CYP-316: this project's own token feed (per-runtime)
             val pLifecycle = LifecycleManager(
                 initialWorktrees = emptyMap(),
                 sessions = pSessions,
@@ -495,6 +505,8 @@ class BootOrchestrator(
                 spawn = { id, worktree -> connector.open(id, worktree) },
                 recorder = eventRecorder,
                 projector = eventProjector,
+                onContextReset = { pTokenUsage.reset(it) },   // CYP-316: this project's lifecycle → its own tracker
+                onContextForget = { pTokenUsage.forget(it) },
             )
             val pAgentManagement = AgentManagement(
                 state = state,
@@ -512,7 +524,7 @@ class BootOrchestrator(
                 worktreeDirOf = { runtimeRegistry.active().worktrees.worktreeDir(it) }, // CYP-310
                 // CYP-310: a non-boot project's agents are all runtime-added → remote ones are tracked on add().
             )
-            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees)
+            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage)
         }
 
         // CYP-255 (.4b) / CYP-247.4: the session-suspension teardown policy. suspend = stop a project's

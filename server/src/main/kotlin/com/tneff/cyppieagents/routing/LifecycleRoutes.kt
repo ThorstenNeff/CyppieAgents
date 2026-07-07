@@ -4,8 +4,10 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.authenticatedApi
+import com.tneff.cyppieagents.boot.AgentTokenUsageTracker
 import com.tneff.cyppieagents.boot.LifecycleManager
 import com.tneff.cyppieagents.model.AgentRunStateEvent
+import com.tneff.cyppieagents.model.AgentTokenUsageEvent
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -71,6 +73,31 @@ fun Route.lifecycleSocket(lifecycle: () -> LifecycleManager, registry: TokenRegi
             .onStart { lc.snapshot().forEach { emit(it) } }
             .collect { event ->
                 send(Frame.Text(CommJson.encodeToString(AgentRunStateEvent.serializer(), event)))
+            }
+    }
+}
+
+/**
+ * `/ws/token-usage` — CYP-316 per-agent context-window occupancy feed for the AgentWindow title bar.
+ * **Participant-gated** (read-tier, like `/ws/lifecycle`): the header is always visible and the payload is
+ * a content-free token *count* only. Deliberately its OWN socket, separate from `/ws/lifecycle` — the
+ * token value is per-turn higher-frequency than start/stop, so isolating it keeps the lifecycle feed's
+ * reconnect profile clean (CYP-115) and `AgentRunStateEvent` single-typed.
+ *
+ * **Latest-wins, idempotent:** on connect it streams a snapshot (one [AgentTokenUsageEvent] per agent)
+ * then live deltas; the client upserts by `agentId`, so a reconnect snapshot never duplicates or loses.
+ * Bound to the ACTIVE project's tracker at connect (per-view; a switch reopens the socket, like lifecycle).
+ */
+fun Route.tokenUsageSocket(tokenUsage: () -> AgentTokenUsageTracker, registry: TokenRegistry, deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry)) {
+    webSocket("/ws/token-usage") {
+        if (call.wsReaderOrNull(deps, registry) == null) {
+            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
+        }
+        val t = tokenUsage()
+        t.events
+            .onStart { t.snapshot().forEach { emit(it) } }
+            .collect { event ->
+                send(Frame.Text(CommJson.encodeToString(AgentTokenUsageEvent.serializer(), event)))
             }
     }
 }

@@ -50,7 +50,7 @@ class AsyncApiContractTest {
     @Test
     fun asyncApi_hasTheFrontendChannels_withMessagesRefencingGeneratedSchemas() {
         val ch = channels()
-        assertEquals(setOf("/ws/comm", "/ws/events", "/ws/lifecycle", "/ws/agent"), ch.keys, "exactly the frontend channels")
+        assertEquals(setOf("/ws/comm", "/ws/events", "/ws/lifecycle", "/ws/token-usage", "/ws/agent"), ch.keys, "exactly the frontend channels")
         val comm = ch["/ws/comm"] as JsonObject
         val sub = ((comm["subscribe"] as JsonObject)["message"] as JsonObject)["\$ref"] as JsonPrimitive
         assertEquals("#/components/messages/CommWsServerEvent", sub.content)
@@ -60,6 +60,7 @@ class AsyncApiContractTest {
             assertTrue(schemas().containsKey(ref.content.substringAfterLast('/')), "message payload resolves to a generated schema")
         }
         assertFalse((ch["/ws/lifecycle"] as JsonObject).containsKey("publish"), "lifecycle is a one-way status feed")
+        assertFalse((ch["/ws/token-usage"] as JsonObject).containsKey("publish"), "token-usage is a one-way status feed (CYP-316)")
     }
 
     @Test

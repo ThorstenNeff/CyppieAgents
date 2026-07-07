@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.contract
 
 import com.tneff.cyppieagents.model.AgentRunStateEvent
+import com.tneff.cyppieagents.model.AgentTokenUsageEvent
 import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
@@ -37,6 +38,7 @@ object ContractGenerator {
         WsChannel("/ws/comm", serializer<CommWsServerEvent>().descriptor, serializer<CommWsClientEvent>().descriptor),
         WsChannel("/ws/events", serializer<EventsWsServerEvent>().descriptor, serializer<EventsWsClientEvent>().descriptor),
         WsChannel("/ws/lifecycle", serializer<AgentRunStateEvent>().descriptor, null),
+        WsChannel("/ws/token-usage", serializer<AgentTokenUsageEvent>().descriptor, null), // CYP-316: one-way token feed
         WsChannel("/ws/agent", serializer<StreamJsonEvent>().descriptor, serializer<UserTurn>().descriptor),
     )
 

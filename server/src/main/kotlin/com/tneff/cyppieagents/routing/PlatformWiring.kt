@@ -76,6 +76,8 @@ fun Application.installPlatform(
         )
         // /ws/lifecycle — CYP-73/CYP-188 B: content-free status feed, read-tier. CYP-255 (.4b): active runtime.
         lifecycleSocket({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps)
+        // /ws/token-usage — CYP-316: content-free per-agent context-token feed, read-tier, active runtime.
+        tokenUsageSocket({ booted.runtimeRegistry.active().tokenUsage }, booted.tokenRegistry, authDeps)
         // CYP-234a-3: the hosted API docs (`/docs*`) — Redoc(REST)+AsyncAPI(WS) rendered from the generators,
         // Bearer-only hosted spec, fail-closed authenticated. NOT versioned (docs are not an /api resource) →
         // OUTSIDE the /api+/api/v1 loop, single-mount like the sockets.

@@ -39,6 +39,15 @@ class LifecycleManager(
     private val spawn: (agentId: String, worktreeName: String) -> ConnectorSession,
     private val recorder: EventRecorder? = null,
     private val projector: EventProjector? = null,
+    /**
+     * CYP-316 — invoked when an agent's standing context is cleared (stop / restart), so the token-usage
+     * feed drops that agent back to "unknown" (null) until its next turn. Wired to
+     * [AgentTokenUsageTracker.reset]; null = not wired (legacy/tests).
+     */
+    private val onContextReset: ((agentId: String) -> Unit)? = null,
+    /** CYP-316 — invoked when an agent is removed (CYP-97), so the token feed drops it entirely (no ghost
+     *  snapshot entry). Wired to [AgentTokenUsageTracker.forget]; null = not wired. */
+    private val onContextForget: ((agentId: String) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger("lifecycle")
     private val lock = Any()
@@ -65,6 +74,7 @@ class LifecycleManager(
     fun forget(agentId: String): Unit = synchronized(lock) {
         worktreeOf.remove(agentId)
         status.remove(agentId)
+        onContextForget?.invoke(agentId) // CYP-316: drop the token-usage entry too (no ghost snapshot)
     }
 
     fun runStateOf(agentId: String): AgentRunState? = synchronized(lock) { status[agentId] }
@@ -88,6 +98,7 @@ class LifecycleManager(
     suspend fun stop(agentId: String): AgentRunStateEvent {
         ensureKnown(agentId)
         sessions.removeAndAwait(agentId) // remove from registry + await real termination
+        onContextReset?.invoke(agentId) // CYP-316: a stopped agent has no standing context → token feed → null
         return setRunState(agentId, AgentRunState.STOPPED)
     }
 
@@ -104,6 +115,7 @@ class LifecycleManager(
     suspend fun restart(agentId: String): AgentRunStateEvent {
         ensureKnown(agentId)
         sessions.removeAndAwait(agentId) // no orphan: old session fully gone before respawn
+        onContextReset?.invoke(agentId) // CYP-316: respawn = fresh context → token feed resets to null until turn 1
         return spawnOrError(agentId, restart = true)
     }
 
