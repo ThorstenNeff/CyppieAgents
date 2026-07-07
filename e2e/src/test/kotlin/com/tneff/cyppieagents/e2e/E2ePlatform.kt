@@ -201,7 +201,11 @@ fun e2ePlatform(
         p.repo?.let { booted.projectConfig.setRepo(p.id, it, "main") }
         p.apiKey?.let { booted.projectConfig.setApiKey(p.id, it) }
     }
-    booted.state.rescope(active.id)
+    // CYP-308: restore to the boot-RESOLVED active project (the durable-active view the boot-sync settled on),
+    // NOT blindly the first SeedProject. Identical for a fresh boot (durableActive == config.projectId == the
+    // first SeedProject); differs only on a restart whose durable active ≠ config.projectId, where production
+    // leaves the durable-active as the active view — the harness must mirror that, not force config.projectId.
+    booted.state.rescope(booted.activeProjectId)
 
     val server = embeddedServerNetty(booted)
     server.start(wait = false)
