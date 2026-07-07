@@ -40,8 +40,13 @@ data class AgentSettingsUiState(
     val claudeMd: String = "",
     /** The last LOADED-or-WRITTEN file content (dirty baseline). */
     val claudeMdLoaded: String = "",
-    /** Content-hash of the loaded file — sent as `expectedVersion` on overwrite (optimistic concurrency, v3). */
-    val claudeMdVersion: String = "",
+    /**
+     * Content-hash of the loaded file — the `expectedVersion` base for an overwrite (optimistic concurrency, v3).
+     * **Nullable end-to-end** (mirrors `:core ClaudeMdView.version: String?`): `null` for an ABSENT file. The
+     * send-logic maps `exists=false → expectedVersion=null` (the server's "expect absent" first-write branch);
+     * narrowing this back to non-null (`""`) re-breaks the first-write path with a 409 loop (CYP-310 NO-GO).
+     */
+    val claudeMdVersion: String? = null,
     /** The live GET is in flight → fail-closed: field + overwrite not yet usable ([PERSONA_LOADING]). */
     val claudeMdLoading: Boolean = true,
     /** The live GET FAILED → **fail-closed** (no content, overwrite locked; distinct from a settled-empty file —
@@ -230,8 +235,16 @@ class AgentSettingsViewModel(
     fun overwriteClaudeMd() {
         val s = _state.value
         if (!s.canOverwriteClaudeMd) return
-        writeClaudeMd(s.claudeMd, s.claudeMdVersion)
+        writeClaudeMd(s.claudeMd, expectedVersionFor(s.claudeMdFileExists, s.claudeMdVersion))
     }
+
+    /**
+     * CYP-310 first-write fix: the write's `expectedVersion` is the live hash ONLY for a file that EXISTS; for an
+     * absent file it is **`null`** — the server's `null == currentVersion` create-branch. Binding it to `exists`
+     * (not just "whatever version we hold") is the guard: `null` must mean strictly "expect absent", never "force",
+     * so the if-match concurrency check stays sharp for existing files (a stale hash → 409, no silent clobber).
+     */
+    private fun expectedVersionFor(exists: Boolean, version: String?): String? = if (exists) version else null
 
     /** Layer-2 "[Trotzdem überschreiben]": force the write over the external change — re-fetch the CURRENT version,
      *  then overwrite with the LOCAL buffer against it (the user chose to discard the external edit). */
@@ -246,7 +259,8 @@ class AgentSettingsViewModel(
                 _state.update { it.copy(claudeMdWriting = false, claudeMdError = true) } // fail-closed: unknown base
                 return@launch
             }
-            doWrite(content, fresh.version)
+            // Same conditional as the direct path: an absent (deleted-since) file → expect-absent (`null`).
+            doWrite(content, expectedVersionFor(fresh.exists, fresh.version))
         }
     }
 
@@ -256,12 +270,12 @@ class AgentSettingsViewModel(
         loadClaudeMd()
     }
 
-    private fun writeClaudeMd(content: String, expectedVersion: String) {
+    private fun writeClaudeMd(content: String, expectedVersion: String?) {
         _state.update { it.copy(claudeMdWriting = true, claudeMdWriteError = false, claudeMdStale = false) }
         runScope.launch { doWrite(content, expectedVersion) }
     }
 
-    private suspend fun doWrite(content: String, expectedVersion: String) {
+    private suspend fun doWrite(content: String, expectedVersion: String?) {
         runCatching { claudeMdApi.update(agentId, content, expectedVersion) }
             .onSuccess { v ->
                 // dirty→clean: re-sync the buffer + baseline to the SERVER echo; arm the restart hint (Hop ②).

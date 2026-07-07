@@ -14,6 +14,7 @@ import io.ktor.http.contentType
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -36,8 +37,13 @@ data class ClaudeMdView(
     val content: String,
     /** false = the file/worktree does not exist yet (a first write CREATES it — not a destructive overwrite). */
     val exists: Boolean,
-    /** Content-hash for optimistic concurrency: echoed back as `expectedVersion` on write; a mismatch → 409 stale. */
-    val version: String,
+    /**
+     * Content-hash for optimistic concurrency: echoed back as `expectedVersion` on write; a mismatch → 409 stale.
+     * **Nullable, mirroring `:core ClaudeMdView.version: String?`:** the server OMITS it for an ABSENT file
+     * (`exists=false` ⇒ `currentVersion=null`). A first write MUST send `expectedVersion=null` (not `""`) so the
+     * server's `null == currentVersion` branch writes — coalescing `null→""` here re-breaks the first-write path.
+     */
+    val version: String?,
 )
 
 /** A CLAUDE.md call was rejected. [code] = the server reason: `agent_not_found`, `agent_not_local`, `claude_md_stale`. */
@@ -48,8 +54,12 @@ interface ClaudeMdApi {
     /** Read the live file. Throws [ClaudeMdException] on `agent_not_found` (404) / `agent_not_local` (409). */
     suspend fun get(agentId: String): ClaudeMdView
 
-    /** Hard-overwrite the file, guarded by [expectedVersion]. Throws `claude_md_stale` (409) on an external change. */
-    suspend fun update(agentId: String, content: String, expectedVersion: String): ClaudeMdView
+    /**
+     * Hard-overwrite the file, guarded by [expectedVersion]. Throws `claude_md_stale` (409) on an external change.
+     * [expectedVersion] is `null` **iff** the caller last read an ABSENT file (`exists=false`) — the first-write
+     * create-path; otherwise it is the read file's live hash. `null` means strictly "expect absent", NOT "force".
+     */
+    suspend fun update(agentId: String, content: String, expectedVersion: String?): ClaudeMdView
 }
 
 /** Ktor REST client. Token-agnostic: the caller injects the bearer (participant read; operator for the write). */
@@ -66,10 +76,13 @@ class ClaudeMdHttpApi(
         return parseOrThrow(response)
     }
 
-    override suspend fun update(agentId: String, content: String, expectedVersion: String): ClaudeMdView {
+    override suspend fun update(agentId: String, content: String, expectedVersion: String?): ClaudeMdView {
         val body = buildJsonObject {
             put("content", content)
-            put("expectedVersion", expectedVersion)
+            // OMIT when null (matches `:core ClaudeMdUpdate.expectedVersion: String? = null`, encodeDefaults=false):
+            // the server decodes an absent field as `null` → the first-write "expect absent" branch. Sending `""`
+            // instead would compare `"" != null` → a 409 loop on every new agent. Never coalesce null→"".
+            if (expectedVersion != null) put("expectedVersion", expectedVersion)
         }
         val response = client.post("$baseUrl/api/agents/$agentId/claude-md") {
             header(HttpHeaders.Authorization, "Bearer $token")
@@ -93,7 +106,9 @@ class ClaudeMdHttpApi(
             agentId = o["agentId"]?.jsonPrimitive?.content ?: "",
             content = o["content"]?.jsonPrimitive?.content ?: "",
             exists = o["exists"]?.jsonPrimitive?.boolean ?: false,
-            version = o["version"]?.jsonPrimitive?.content ?: "",
+            // `contentOrNull` keeps `null` for an omitted/JsonNull version (absent file) — NOT `?: ""`. The
+            // first-write path depends on this null surviving all the way to the send-logic conditional.
+            version = o["version"]?.jsonPrimitive?.contentOrNull,
         )
     }
 }
