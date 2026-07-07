@@ -17,6 +17,11 @@ sealed interface CommLiveEvent {
     /** The socket dropped — the timeline must stop claiming "live" (CYP-17 §5 honesty). */
     data object Disconnected : CommLiveEvent
 
+    /** CYP-291: the server closed `/ws/comm` with 1008 (VIOLATED_POLICY) — a revoked/invalid token. TERMINAL:
+     *  the timeline stops claiming "live" AND the VM must NOT reconnect (re-opening would re-send the revoked
+     *  token every backoff period). Distinct from a transient [Disconnected], which DOES reconnect. */
+    data object AccessRevoked : CommLiveEvent
+
     /** A new message pushed by the hub; deduped by [Message.id] downstream. */
     data class MessageReceived(val message: Message) : CommLiveEvent
 

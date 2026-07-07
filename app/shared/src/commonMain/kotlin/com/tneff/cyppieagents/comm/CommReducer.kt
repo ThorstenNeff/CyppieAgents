@@ -44,6 +44,7 @@ object CommReducer {
     fun statusOf(event: CommLiveEvent): ConnectionStatus? = when (event) {
         is CommLiveEvent.Connected -> ConnectionStatus.LIVE
         is CommLiveEvent.Disconnected -> ConnectionStatus.DISCONNECTED
+        is CommLiveEvent.AccessRevoked -> ConnectionStatus.DISCONNECTED // CYP-291: honest terminal (never "live")
         else -> null
     }
 }
