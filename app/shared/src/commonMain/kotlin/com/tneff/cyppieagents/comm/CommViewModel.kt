@@ -2,6 +2,8 @@ package com.tneff.cyppieagents.comm
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
@@ -21,11 +23,15 @@ data class CommUiState(
     /** CYP-279: channels-list load in flight — gate the "no channels" empty-state on `!loadingChannels` so it
      *  never FLASHES during the initial / project-switch load window (the CYP-270/276 flash class). */
     val loadingChannels: Boolean = true,
+    /** CYP-288: the channel-list load FAILED (distinct from a settled-empty list — error beats empty). */
+    val channelsError: Boolean = false,
     val agents: Map<String, Agent> = emptyMap(),
     val selectedChannelId: String? = null,
     val messages: List<MessageItem> = emptyList(),
     val connection: ConnectionStatus = ConnectionStatus.CONNECTING,
     val loadingHistory: Boolean = false,
+    /** CYP-288: the selected channel's history load FAILED (distinct from an empty channel — error beats empty). */
+    val historyError: Boolean = false,
     /** Operator viewer (CYP-17 PO decision): writable in MVP. Per-channel ACL is a later seam. */
     val canWrite: Boolean = true,
     val sendError: String? = null,
@@ -52,8 +58,11 @@ class CommViewModel(
     private val viewerId: String,
     /** Reconnect backoff for the live stream (CYP-73); injectable so tests can drive fast reconnects. */
     private val backoff: Backoff = Backoff(),
+    /** CYP-288: injectable so tests run the loads synchronously (Unconfined) → deterministic waitForIdle. */
+    scope: CoroutineScope? = null,
 ) : ViewModel() {
 
+    private val runScope: CoroutineScope = scope ?: viewModelScope
     private val _state = MutableStateFlow(CommUiState())
     val state: StateFlow<CommUiState> = _state.asStateFlow()
 
@@ -71,16 +80,27 @@ class CommViewModel(
     private var liveJob: Job? = null
 
     init {
-        viewModelScope.launch { loadChannelsAndAgents() }
-        liveJob = viewModelScope.launch { collectLive() }
+        // Merge (CYP-291 liveJob-capture + A2 runScope injection): both MUST survive — the terminal-revoke cancel
+        // needs liveJob, the deterministic tests need runScope. AccessRevoked→liveJob.cancel() is in collectLive().
+        runScope.launch { loadChannelsAndAgents() }
+        liveJob = runScope.launch { collectLive() }
     }
 
     private suspend fun loadChannelsAndAgents() {
-        val channels = runCatching { repository.channels() }.getOrDefault(emptyList())
+        val channelsResult = runCatching { repository.channels() }
+        channelsResult.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        val channels = channelsResult.getOrDefault(emptyList())
         val agents = runCatching { repository.agents() }.getOrDefault(emptyList()).associateBy { it.id }
-        _state.update { it.copy(channels = channels, agents = agents, loadingChannels = false) }
+        // CYP-288: carry a channel-list load failure instead of swallowing it to empty (failure ≠ "no channels").
+        _state.update { it.copy(channels = channels, agents = agents, loadingChannels = false, channelsError = channelsResult.isFailure) }
         // Auto-select the first readable channel for convenience.
         channels.firstOrNull()?.let { select(it.id) }
+    }
+
+    /** CYP-288: retry a failed channel-list load (driven by the LoadErrorRetry surface). */
+    fun reloadChannels() {
+        _state.update { it.copy(loadingChannels = true, channelsError = false) }
+        runScope.launch { loadChannelsAndAgents() }
     }
 
     private suspend fun collectLive() {
@@ -122,12 +142,18 @@ class CommViewModel(
     }
 
     fun select(channelId: String) {
-        _state.update { it.copy(selectedChannelId = channelId, messages = emptyList(), loadingHistory = true, sendError = null) }
-        viewModelScope.launch {
-            val history = runCatching { repository.messages(channelId) }.getOrDefault(emptyList())
+        _state.update { it.copy(selectedChannelId = channelId, messages = emptyList(), loadingHistory = true, sendError = null, historyError = false) }
+        runScope.launch {
+            val result = runCatching { repository.messages(channelId) }
+            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            // CYP-288: carry a history load failure instead of swallowing it to empty (failure ≠ "empty channel").
             _state.update {
                 if (it.selectedChannelId != channelId) it // selection changed while loading
-                else it.copy(messages = CommReducer.mergeAll(emptyList(), history), loadingHistory = false)
+                else it.copy(
+                    messages = CommReducer.mergeAll(emptyList(), result.getOrDefault(emptyList())),
+                    loadingHistory = false,
+                    historyError = result.isFailure,
+                )
             }
         }
     }
@@ -147,7 +173,7 @@ class CommViewModel(
         val optimistic = Message(id = tempId, channelId = channelId, from = viewerId, body = body, ts = lastTs + 1)
         _state.update { it.copy(messages = CommReducer.addOptimistic(it.messages, optimistic), sendError = null) }
 
-        viewModelScope.launch {
+        runScope.launch {
             runCatching { repository.send(channelId, body) }
                 .onSuccess { confirmed ->
                     _state.update {
