@@ -33,6 +33,7 @@ import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.LoadErrorRetry
 import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.event_filter_project
@@ -47,6 +48,7 @@ import kmpcyppieagents.app.shared.generated.resources.event_drilldown_correlated
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_show_run
 import kmpcyppieagents.app.shared.generated.resources.event_drilldown_show_session
 import kmpcyppieagents.app.shared.generated.resources.event_empty
+import kmpcyppieagents.app.shared.generated.resources.load_failed
 import kmpcyppieagents.app.shared.generated.resources.event_filter_active
 import kmpcyppieagents.app.shared.generated.resources.event_filter_agent
 import kmpcyppieagents.app.shared.generated.resources.event_filter_correlation
@@ -146,7 +148,18 @@ private fun MasterPane(
             DrilldownView(state, onClearDrilldown, modifier = Modifier.weight(1f).fillMaxWidth())
         } else {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                if (state.events.isEmpty() && !state.loading) {
+                if (state.error != null && state.events.isEmpty()) {
+                    // CYP-288: a failed FIRST-page load previously rendered as the "no events" empty state
+                    // (failure-as-empty, Sweep-#4 class A). Error beats empty; Retry re-runs the current filter.
+                    // A failed loadMore keeps the already-loaded table (events present → the content branch below;
+                    // data is never hidden behind the error surface).
+                    LoadErrorRetry(
+                        message = stringResource(Res.string.load_failed),
+                        onRetry = { onApplyFilter(state.filter) },
+                        containerTag = EventBrowseTags.ERROR,
+                        retryTag = EventBrowseTags.ERROR_RETRY,
+                    )
+                } else if (state.events.isEmpty() && !state.loading) {
                     Text(
                         text = stringResource(Res.string.event_empty),
                         style = MaterialTheme.typography.bodySmall,

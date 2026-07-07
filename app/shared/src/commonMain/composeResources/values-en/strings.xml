@@ -16,6 +16,10 @@
     <string name="event_severity_debug">Debug</string>
     <string name="event_title">Event log</string>
     <string name="event_empty">No events</string>
+    <!-- CYP-288: systemic load-error+retry copy (shared LoadErrorRetry, all REST panels; error != empty). -->
+    <string name="load_failed">Couldn't load.</string>
+    <string name="load_retry">Try again</string>
+    <string name="a11y_load_error">Load error</string>
     <string name="event_filter_active">Filter active – subset</string>
     <string name="event_filter_agent">Agent</string>
     <string name="event_filter_type">Type</string>

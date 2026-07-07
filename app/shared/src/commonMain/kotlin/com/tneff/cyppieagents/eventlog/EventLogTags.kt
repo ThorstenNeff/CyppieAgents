@@ -20,6 +20,10 @@ object EventBrowseTags {
 
     const val TABLE = "eventBrowse.table"
 
+    /** CYP-288 — load-error surface (shown INSTEAD of EMPTY when a first-page load failed) + its retry button. */
+    const val ERROR = "eventBrowse.error"
+    const val ERROR_RETRY = "eventBrowse.error.retry"
+
     /** n-th row (0-based, additive-stable render order). */
     fun row(index: Int) = "eventBrowse.row.$index"
 
