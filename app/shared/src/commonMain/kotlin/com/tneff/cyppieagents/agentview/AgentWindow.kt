@@ -219,7 +219,9 @@ private fun ReconnectingChip(agentId: String, connection: ConnectionStatus) {
     Text(
         text = label,
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.tertiary,
+        // CYP-300 (a0): reconnecting is transient in-progress → neutral onSurfaceVariant, never `tertiary`
+        // (E1 → green reads as "connected", the inverse). The label text carries the meaning.
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
             .testTag(AgentViewTags.reconnecting(agentId))
             .semantics { contentDescription = label },
@@ -231,14 +233,14 @@ private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPe
     // CYP-262 Teil 1: while a Start request is in flight (client-only, before the server's RUNNING event),
     // show the honest transient "Startet…" instead of the resolved state — NEVER "Läuft" before the server
     // confirms it (§9-1). The flag always resolves on the next lifecycle event, so this can't stick. Same
-    // node/tag (0 new tag) and the in-progress tertiary tone shared with the ReconnectingChip (0 new colour).
+    // node/tag (0 new tag) and the in-progress NEUTRAL tone (CYP-300 a0: onSurfaceVariant) shared with the ReconnectingChip.
     val label = if (startPending) stringResource(Res.string.agent_status_starting) else when (state) {
         AgentLifecycleState.RUNNING -> stringResource(Res.string.agent_status_running)
         AgentLifecycleState.STOPPED -> stringResource(Res.string.agent_status_stopped)
         AgentLifecycleState.ERROR -> stringResource(Res.string.agent_status_error)
         AgentLifecycleState.UNKNOWN -> stringResource(Res.string.agent_status_unknown)
     }
-    val dotColor = if (startPending) MaterialTheme.colorScheme.tertiary else when (state) {
+    val dotColor = if (startPending) MaterialTheme.colorScheme.onSurfaceVariant else when (state) { // a0: neutral, distinct from RUNNING=primary
         AgentLifecycleState.RUNNING -> MaterialTheme.colorScheme.primary
         AgentLifecycleState.STOPPED -> MaterialTheme.colorScheme.outline
         AgentLifecycleState.ERROR -> MaterialTheme.colorScheme.error
@@ -329,7 +331,7 @@ private fun AssistantTextRow(event: AgentEvent.AssistantText, modifier: Modifier
 @Composable
 private fun ToolCallRow(event: AgentEvent.ToolCall, modifier: Modifier = Modifier) {
     val (glyph, tint) = when (event.status) {
-        ToolStatus.RUNNING -> "⟳" to MaterialTheme.colorScheme.tertiary
+        ToolStatus.RUNNING -> "⟳" to MaterialTheme.colorScheme.onSurfaceVariant // a0: in-progress neutral; OK stays primary (blue)
         ToolStatus.OK -> "✓" to MaterialTheme.colorScheme.primary
         ToolStatus.ERROR -> "✗" to MaterialTheme.colorScheme.error
     }

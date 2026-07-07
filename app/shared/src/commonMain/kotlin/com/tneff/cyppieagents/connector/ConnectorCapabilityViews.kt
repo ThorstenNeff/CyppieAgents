@@ -87,7 +87,7 @@ fun capabilityGlyph(status: CapabilityStatus): String = when (status) {
 /** The content colour for a tri-state status, derived from its [HintTone] so the chip matches the tone palette. */
 @Composable
 private fun capabilityContentColor(status: CapabilityStatus): Color = when (capabilityTone(status)) {
-    HintTone.EFFECT_DEFERRED -> MaterialTheme.colorScheme.onTertiaryContainer
+    HintTone.EFFECT_DEFERRED -> MaterialTheme.colorScheme.onSecondaryContainer // CYP-300 (a0): parity w/ TonedHint
     HintTone.GATED -> MaterialTheme.colorScheme.onSurfaceVariant
     HintTone.INFO -> MaterialTheme.colorScheme.secondary
     HintTone.ERROR -> MaterialTheme.colorScheme.error
@@ -210,7 +210,7 @@ fun ConnectorCapabilityBadge(
     val color = if (unknown) {
         MaterialTheme.colorScheme.onSurfaceVariant // GATED — fail-closed, not yet reported (NOT error-red)
     } else {
-        MaterialTheme.colorScheme.onTertiaryContainer // EFFECT_DEFERRED — amber Attention
+        MaterialTheme.colorScheme.onSecondaryContainer // CYP-300 (a0): EFFECT_DEFERRED — secondary (blue) Attention, not tertiary
     }
     Row(
         modifier = modifier

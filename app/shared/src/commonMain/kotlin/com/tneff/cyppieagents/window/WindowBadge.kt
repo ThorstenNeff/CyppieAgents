@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.eventlog.severityContainer
 import com.tneff.cyppieagents.model.Severity
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_badge_error
@@ -95,12 +96,9 @@ private fun SeverityBadge(windowId: String, windowTitle: String, severity: Sever
         Severity.INFO -> "i"
         Severity.DEBUG -> "·"
     }
-    val color = when (severity) {
-        Severity.ERROR -> MaterialTheme.colorScheme.error to MaterialTheme.colorScheme.onError
-        Severity.WARN -> MaterialTheme.colorScheme.tertiary to MaterialTheme.colorScheme.onTertiary
-        Severity.INFO -> MaterialTheme.colorScheme.secondary to MaterialTheme.colorScheme.onSecondary
-        Severity.DEBUG -> MaterialTheme.colorScheme.outline to MaterialTheme.colorScheme.surface
-    }
+    // CYP-300 (a0): the WARN pill was `tertiary` (→ green at night); now the shared severity source (WARN = amber
+    // container). ERROR/INFO/DEBUG unchanged. One source for the WARN amber across all severity renderings.
+    val color = severityContainer(severity)
     val severityName = when (severity) {
         Severity.ERROR -> stringResource(Res.string.event_severity_error)
         Severity.WARN -> stringResource(Res.string.event_severity_warn)
