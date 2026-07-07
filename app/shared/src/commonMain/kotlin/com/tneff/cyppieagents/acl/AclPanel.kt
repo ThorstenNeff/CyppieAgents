@@ -52,6 +52,7 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_acl_pending
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_po_critical
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_toggle_read
 import kmpcyppieagents.app.shared.generated.resources.a11y_acl_toggle_write
+import kmpcyppieagents.app.shared.generated.resources.acl_access_revoked
 import kmpcyppieagents.app.shared.generated.resources.acl_cancel
 import kmpcyppieagents.app.shared.generated.resources.acl_change_failed
 import kmpcyppieagents.app.shared.generated.resources.acl_continue
@@ -104,8 +105,16 @@ fun AclPanel(viewModel: AclViewModel, modifier: Modifier = Modifier) {
             Banner(stringResource(Res.string.acl_partial_view), AclMatrixTags.PARTIAL_VIEW,
                 MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
         }
-        // Offline/stale = amber warning, not error-red (CYP-17 semantics) → tertiary container (A3).
-        if (state.connection == ConnectionStatus.DISCONNECTED) {
+        // CYP-296: a TERMINAL 1008 operator-token revoke (AccessRevoked, CYP-289) is fail-closed — show an honest
+        // "operators only" banner, NOT the transient offline banner (mirrors the EventTail twin). A terminal revoke
+        // must never read as a reconnectable drop; it supersedes the offline banner (suppressed just below).
+        if (state.accessRevoked) {
+            Banner(stringResource(Res.string.acl_access_revoked), AclMatrixTags.ACCESS_REVOKED,
+                MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
+        }
+        // Offline/stale = amber warning, not error-red (CYP-17 semantics) → tertiary container (A3). CYP-296:
+        // suppressed on a terminal revoke — that is NOT a transient, reconnectable drop (the revoke banner shows).
+        if (state.connection == ConnectionStatus.DISCONNECTED && !state.accessRevoked) {
             Banner(stringResource(Res.string.comm_status_offline), AclMatrixTags.CONNECTION,
                 MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
         }
@@ -299,12 +308,15 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
         val readCd = stringResource(Res.string.a11y_acl_toggle_read, subjectName, channelName)
         val writeCd = stringResource(Res.string.a11y_acl_toggle_write, subjectName, channelName)
         val poCriticalCd = stringResource(Res.string.a11y_acl_po_critical)
+        // CYP-296: after a terminal revoke the matrix must NOT stay editable — the grant controls degrade to
+        // read-only chips (no switches that fake editability). `editable` alone was stale-editable on revoke.
+        val grantsEditable = state.editable && !state.accessRevoked
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            GrantControl(stringResource(Res.string.acl_read), cell.canRead, state.editable, pending,
+            GrantControl(stringResource(Res.string.acl_read), cell.canRead, grantsEditable, pending,
                 AclMatrixTags.read(cell.channelId, cell.agentId), AclMatrixTags.readonly(cell.channelId, cell.agentId), readCd) {
                 viewModel.toggleRead(cell.channelId, cell.agentId)
             }
-            GrantControl(stringResource(Res.string.acl_write), cell.canWrite, state.editable, pending,
+            GrantControl(stringResource(Res.string.acl_write), cell.canWrite, grantsEditable, pending,
                 AclMatrixTags.write(cell.channelId, cell.agentId), AclMatrixTags.readonly(cell.channelId, cell.agentId), writeCd) {
                 viewModel.toggleWrite(cell.channelId, cell.agentId)
             }

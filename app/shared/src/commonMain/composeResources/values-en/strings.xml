@@ -72,6 +72,7 @@
     <string name="acl_title">Access rights (channel × participant)</string>
     <string name="acl_empty">No channels or participants</string>
     <string name="acl_partial_view">Partial view – only your channels. Full matrix requires operator.</string>
+    <string name="acl_access_revoked">Access revoked – operators only. Sign in again to continue.</string>
     <string name="acl_operator_required">Only the operator can change access rights</string>
     <string name="acl_unauthorized">Not authenticated</string>
     <string name="acl_read">Read</string>

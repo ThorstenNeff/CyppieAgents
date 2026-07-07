@@ -77,6 +77,7 @@
     <string name="acl_title">Zugriffsrechte (Kanal × Teilnehmer)</string>
     <string name="acl_empty">Keine Kanäle oder Teilnehmer</string>
     <string name="acl_partial_view">Teilansicht – nur deine Kanäle. Vollständige Matrix nur als Operator.</string>
+    <string name="acl_access_revoked">Zugriff entzogen – nur für Operatoren. Neu anmelden, um fortzufahren.</string>
     <string name="acl_operator_required">Nur der Operator darf Zugriffsrechte ändern</string>
     <string name="acl_unauthorized">Nicht angemeldet</string>
     <string name="acl_read">Lesen</string>
