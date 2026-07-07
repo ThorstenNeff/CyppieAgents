@@ -12,6 +12,10 @@ object AclMatrixTags {
 
     const val GRID = "aclMatrix.grid"
     const val EMPTY = "aclMatrix.empty"
+
+    /** CYP-288 — load-error surface (shown INSTEAD of EMPTY when a non-gated matrix read failed) + its retry button. */
+    const val ERROR = "aclMatrix.error"
+    const val ERROR_RETRY = "aclMatrix.error.retry"
     const val PARTIAL_VIEW = "aclMatrix.partialView"
     const val CONNECTION = "aclMatrix.connection"
     const val ACCESS_REVOKED = "aclMatrix.accessRevoked"

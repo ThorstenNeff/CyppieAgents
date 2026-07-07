@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.WorkspaceMember
 import com.tneff.cyppieagents.workspace.WorkspaceRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -45,6 +46,10 @@ data class AclUiState(
     val entries: List<AclEntry> = emptyList(),
     val connection: ConnectionStatus = ConnectionStatus.CONNECTING,
     val loading: Boolean = true,
+    /** CYP-288: a non-gated matrix read (channels/agents/entries) FAILED — distinct from a settled-empty matrix
+     *  (error beats empty). The operator-only members roster is NOT part of this (it fail-closes to empty by
+     *  design, CYP-189 Invariante E). */
+    val loadError: Boolean = false,
     /** Operator-token present → switches; else read-only chips + [acl_partial_view] banner (§4). */
     val editable: Boolean = true,
     /** Cell keys (channelId|agentId) with an in-flight PUT — rendered `acl_pending`, not enforced (§5.1). */
@@ -101,9 +106,18 @@ class AclViewModel(
     }
 
     private suspend fun load() {
-        val channels = runCatching { api.channels() }.getOrDefault(emptyList())
-        val agents = runCatching { api.agents() }.getOrDefault(emptyList())
-        val entries = runCatching { api.acl() }.getOrDefault(emptyList())
+        val channelsResult = runCatching { api.channels() }
+        val agentsResult = runCatching { api.agents() }
+        val entriesResult = runCatching { api.acl() }
+        listOf(channelsResult, agentsResult, entriesResult).forEach { r ->
+            r.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        }
+        // CYP-288: the non-gated reads carry a load failure instead of swallowing to empty — a failed matrix must
+        // be distinct from a genuinely-empty one (error beats empty).
+        val loadError = channelsResult.isFailure || agentsResult.isFailure || entriesResult.isFailure
+        val channels = channelsResult.getOrDefault(emptyList())
+        val agents = agentsResult.getOrDefault(emptyList())
+        val entries = entriesResult.getOrDefault(emptyList())
         // CYP-189 Invariante E: the human roster is operator-only. Fetch it ONLY when editable (operator) — a
         // non-operator never even requests GET /api/workspace/members (403 fail-closed server-side), so the
         // matrix cannot leak the roster. Fail-closed to empty on any error (never a partial/guessed list).
@@ -114,7 +128,13 @@ class AclViewModel(
             runCatching { repo.members() }.getOrDefault(emptyList())
                 .filterNot { it.tier.equals("OPERATOR", ignoreCase = true) }
         else emptyList()
-        _state.update { it.copy(channels = channels, agents = agents, entries = entries, members = members, loading = false) }
+        _state.update { it.copy(channels = channels, agents = agents, entries = entries, members = members, loading = false, loadError = loadError) }
+    }
+
+    /** CYP-288: retry a failed matrix load (from the LoadErrorRetry surface). */
+    fun retryLoad() {
+        _state.update { it.copy(loading = true, loadError = false) }
+        runScope.launch { load() }
     }
 
     private suspend fun collectLive() {

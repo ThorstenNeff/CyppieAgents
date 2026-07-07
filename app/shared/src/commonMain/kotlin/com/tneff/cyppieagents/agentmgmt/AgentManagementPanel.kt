@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.agentview.AgentViewTags
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.LoadErrorRetry
 import com.tneff.cyppieagents.ui.TonedHint
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState
@@ -57,6 +58,7 @@ import kmpcyppieagents.app.shared.generated.resources.agent_add_role_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_add_worktree_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_empty_body
 import kmpcyppieagents.app.shared.generated.resources.agent_empty_title
+import kmpcyppieagents.app.shared.generated.resources.load_failed
 import kmpcyppieagents.app.shared.generated.resources.agent_add_id_exists
 import kmpcyppieagents.app.shared.generated.resources.agent_add_id_label
 import kmpcyppieagents.app.shared.generated.resources.agent_add_launch_label
@@ -145,7 +147,16 @@ fun AgentManagementPanel(
 
         // CYP-276 (CYP-270 class): gate the onboarding empty-state on !loading so it never FLASHES during the
         // async load window (cold open / project switch) before the agent list arrives — only a settled-empty shows it.
-        if (!state.loading && state.agents.isEmpty()) {
+        if (state.listError) {
+            // CYP-288: a failed agent-list load previously rendered as the CYP-228 onboarding empty-state
+            // (failure-as-empty, Sweep-#4 class A). Error beats empty; Retry re-runs the load.
+            LoadErrorRetry(
+                message = stringResource(Res.string.load_failed),
+                onRetry = viewModel::refresh,
+                containerTag = AgentMgmtTags.ERROR,
+                retryTag = AgentMgmtTags.ERROR_RETRY,
+            )
+        } else if (!state.loading && state.agents.isEmpty()) {
             // CYP-228 B: onboarding empty-state instead of a blank list. CTA = the EXISTING add button above
             // (no second button); with no operator token the gate hint above stays + the button is disabled
             // (no dead CTA). Reuses the honest "creating ≠ running" framing.
