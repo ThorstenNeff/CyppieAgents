@@ -197,6 +197,16 @@
     <string name="agent_add_name_label">Name</string>
     <string name="agent_add_role_label">Rolle</string>
     <string name="agent_add_persona_label">Persona / CLAUDE.md</string>
+    <!-- CYP-310: live CLAUDE.md field — hard overwrite (Layer 1 always; Layer 2 confirm only on 409-stale). -->
+    <string name="agent_claudemd_overwrite">CLAUDE.md überschreiben</string>
+    <string name="agent_claudemd_overwrite_note">Ersetzt die Datei — kein Merge.</string>
+    <string name="agent_claudemd_unsaved">Ungespeicherte Änderung — erst mit „Überschreiben" in die Datei.</string>
+    <string name="agent_claudemd_empty">Noch keine CLAUDE.md. Persona schreiben; „Überschreiben" legt sie an.</string>
+    <string name="agent_claudemd_conflict_title">Datei extern geändert</string>
+    <string name="agent_claudemd_conflict_body">Die CLAUDE.md wurde extern geändert (evtl. vom Agenten). Überschreiben verwirft diese Änderung.</string>
+    <string name="agent_claudemd_overwrite_anyway">Trotzdem überschreiben</string>
+    <string name="agent_claudemd_reload_live">Live-Version laden</string>
+    <string name="agent_claudemd_save_failed">Überschreiben fehlgeschlagen.</string>
     <string name="agent_add_launch_label">Startkommando</string>
     <string name="agent_add_worktree_label">Worktree-Ordner</string>
     <string name="agent_add_confirm">Anlegen</string>

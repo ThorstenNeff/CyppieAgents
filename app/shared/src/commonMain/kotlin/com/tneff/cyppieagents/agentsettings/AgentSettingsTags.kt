@@ -20,8 +20,25 @@ object AgentSettingsTags {
     const val CONTRAST_ADVISORY = "agentSettings.contrastAdvisory"
     const val PREVIEW = "agentSettings.preview"
 
+    // CYP-310 — the persona field is now the LIVE worktree CLAUDE.md (live GET + explicit hard "Überschreiben").
+    // `PERSONA_INPUT` (the field) + `EFFECT_HINT` (restart) are REUSED; the rest are new (spec §8, QA/CYP-7-shared).
     const val PERSONA_INPUT = "agentSettings.persona.input"
-    /** EFFECT_DEFERRED restart hint — shown ONLY when the persona changed (name/colour are immediate). */
+    /** The "CLAUDE.md überschreiben" button (Layer-1 hard-overwrite affordance). */
+    const val PERSONA_OVERWRITE = "agentSettings.persona.overwrite"
+    /** Dirty disclosure — the buffer ≠ the file (Hop ① open, S2). */
+    const val PERSONA_UNSAVED = "agentSettings.persona.unsaved"
+    /** Settled-EMPTY — the file loaded OK but is absent (S4; distinct from a load error). */
+    const val PERSONA_EMPTY = "agentSettings.persona.empty"
+    /** Live-read FAILED (S5, fail-closed) — the shared LoadErrorRetry surface + its retry. */
+    const val PERSONA_LOAD_ERROR = "agentSettings.persona.loadError"
+    const val PERSONA_LOAD_ERROR_RETRY = "agentSettings.persona.loadError.retry"
+    /** Layer-2 409-stale conflict dialog + its two actions ([Trotzdem überschreiben] / [Live-Version laden]). */
+    const val PERSONA_CONFLICT = "agentSettings.persona.conflict"
+    const val PERSONA_CONFLICT_OVERWRITE = "agentSettings.persona.conflict.overwrite"
+    const val PERSONA_CONFLICT_RELOAD = "agentSettings.persona.conflict.reload"
+    /** Overwrite FAILED (S6, non-stale) — stays dirty, no restart hint. */
+    const val PERSONA_SAVE_ERROR = "agentSettings.persona.saveError"
+    /** EFFECT_DEFERRED restart hint — shown ONLY after a successful CLAUDE.md overwrite (Hop ②: file ≠ running agent). */
     const val EFFECT_HINT = "agentSettings.effectHint"
     const val GATE_HINT = "agentSettings.gateHint"
 

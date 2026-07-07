@@ -103,6 +103,7 @@ import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.agentsettings.AgentSettingsPanel
 import com.tneff.cyppieagents.agentsettings.AgentSettingsViewModel
+import com.tneff.cyppieagents.agentsettings.ClaudeMdHttpApi
 import com.tneff.cyppieagents.agentsettings.rememberImagePicker
 import com.tneff.cyppieagents.ui.AgentAvatarView
 import com.tneff.cyppieagents.ui.LocalAvatarBaseUrl
@@ -608,7 +609,12 @@ fun AgentShell(
             // the SERVER resolves scope to the now-active project) — a data-integrity leak, not just cosmetics. The
             // settingsAgentId reset above only closes the overlay across a switch; it does NOT clear the retained VM.
             val agentSettingsVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "agentSettings-$activeProjectId-$sid") {
-                AgentSettingsViewModel(sid, resolvedAgentMgmtRepo, editable = isOperator, initialName = a?.name ?: sid, initialColorHex = a?.color)
+                AgentSettingsViewModel(
+                    sid, resolvedAgentMgmtRepo, editable = isOperator, initialName = a?.name ?: sid, initialColorHex = a?.color,
+                    // CYP-310: the LIVE worktree CLAUDE.md port — GET is participant-read, POST operator-gated; the
+                    // operator token serves both (operator ⊇ participant), mirroring the comm REST wiring.
+                    claudeMdApi = ClaudeMdHttpApi(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: ""),
+                )
             }
             // CYP-216: the platform image picker (wasmJs/jvm real; android/ios stub) → the VM does the pre-check
             // + multipart upload + server-truth adopt. onRequestUpload launches the picker for THIS agent's VM.
