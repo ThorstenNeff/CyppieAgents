@@ -139,7 +139,10 @@ private fun SnapshotList(state: ProductLeadUiState, viewModel: ProductLeadViewMo
         modifier = modifier.fillMaxWidth().testTag(ProductLeadTags.LIST),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (state.metas.isEmpty()) {
+        // CYP-279 (CYP-270/276 class): the metas are async-fetched (ProductLeadViewModel.reloadList, loading=true);
+        // gate the empty-state on !loading so "no reports" never flashes during the initial / switch fetch window
+        // for a project that DOES have snapshots (corrects the earlier "B5 = pure honest emptiness" read).
+        if (!state.loading && state.metas.isEmpty()) {
             HintLine(stringResource(Res.string.report_empty), MaterialTheme.colorScheme.onSurfaceVariant, ProductLeadTags.EMPTY)
             return
         }

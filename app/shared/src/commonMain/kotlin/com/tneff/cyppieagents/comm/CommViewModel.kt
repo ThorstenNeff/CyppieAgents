@@ -17,6 +17,9 @@ import kotlinx.coroutines.launch
 /** Immutable UI state for the comm panel. */
 data class CommUiState(
     val channels: List<Channel> = emptyList(),
+    /** CYP-279: channels-list load in flight — gate the "no channels" empty-state on `!loadingChannels` so it
+     *  never FLASHES during the initial / project-switch load window (the CYP-270/276 flash class). */
+    val loadingChannels: Boolean = true,
     val agents: Map<String, Agent> = emptyMap(),
     val selectedChannelId: String? = null,
     val messages: List<MessageItem> = emptyList(),
@@ -71,7 +74,7 @@ class CommViewModel(
     private suspend fun loadChannelsAndAgents() {
         val channels = runCatching { repository.channels() }.getOrDefault(emptyList())
         val agents = runCatching { repository.agents() }.getOrDefault(emptyList()).associateBy { it.id }
-        _state.update { it.copy(channels = channels, agents = agents) }
+        _state.update { it.copy(channels = channels, agents = agents, loadingChannels = false) }
         // Auto-select the first readable channel for convenience.
         channels.firstOrNull()?.let { select(it.id) }
     }

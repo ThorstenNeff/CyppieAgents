@@ -88,6 +88,7 @@ fun CommPanel(
             if (state.selectedChannelId == null) {
                 ChannelListPane(
                     channels = state.channels,
+                    loadingChannels = state.loadingChannels,
                     selectedId = state.selectedChannelId,
                     onSelect = viewModel::select,
                     crossProjectSlot = crossProjectSlot,
@@ -106,6 +107,7 @@ fun CommPanel(
             Row(modifier = Modifier.fillMaxSize()) {
                 ChannelListPane(
                     channels = state.channels,
+                    loadingChannels = state.loadingChannels,
                     selectedId = state.selectedChannelId,
                     onSelect = viewModel::select,
                     crossProjectSlot = crossProjectSlot,
@@ -126,13 +128,16 @@ fun CommPanel(
 @Composable
 private fun ChannelListPane(
     channels: List<Channel>,
+    loadingChannels: Boolean,
     selectedId: String?,
     onSelect: (String) -> Unit,
     crossProjectSlot: @Composable (channelId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
-        if (channels.isEmpty()) {
+        // CYP-279 (CYP-270/276 class): gate the "no channels" message on !loadingChannels so it never flashes
+        // during the initial / project-switch load window — only a settled-empty channel set shows it.
+        if (!loadingChannels && channels.isEmpty()) {
             Text(
                 text = stringResource(Res.string.comm_channels_empty),
                 style = MaterialTheme.typography.bodySmall,
