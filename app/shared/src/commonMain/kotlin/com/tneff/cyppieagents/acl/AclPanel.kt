@@ -213,7 +213,11 @@ private fun HumanColHeader(member: WorkspaceMember) {
 
 @Composable
 private fun NarrowCards(state: AclUiState, viewModel: AclViewModel) {
-    var selected by remember { mutableStateOf<String?>(null) }
+    // CYP-283: key the selection on the VM instance so it RESETS on a project switch. The shell re-keys aclVm
+    // per activeProjectId (CYP-246), so a new VM = a new project; without this key the position-bound selection
+    // survives the switch and — because hub-and-spoke seeds same-id channels (po-<worker>) per project — silently
+    // maps to the WRONG channel's ACL card (an access-context correctness risk), self-healing only on next tap.
+    var selected by remember(viewModel) { mutableStateOf<String?>(null) }
     val channel = state.channels.firstOrNull { it.id == selected }
     if (channel == null) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTagA11y(AclMatrixTags.GRID)) {

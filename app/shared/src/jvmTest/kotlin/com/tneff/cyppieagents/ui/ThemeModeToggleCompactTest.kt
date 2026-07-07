@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
@@ -24,6 +25,10 @@ class ThemeModeToggleCompactTest {
         onNodeWithText("◐", substring = true).assertExists() // the SYSTEM glyph (icon-only)
         // The visible "Theme" word is gone (only the contentDescription still carries it — not matched by text).
         onNodeWithText("Theme", substring = true).assertDoesNotExist()
+        // CYP-281 core invariant (PO-Assistent nit): compact must NOT strip the a11y name — the button's
+        // contentDescription still names the current mode ("Theme selection, current: System"), so a screen
+        // reader hears the mode even without the visible word. Tooth-secures it against a future refactor.
+        onNodeWithContentDescription("System", substring = true).assertExists()
     }
 
     @Test
