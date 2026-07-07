@@ -1,0 +1,270 @@
+<!doctype html>
+<!--
+  ============================================================================
+  CYP-234 · 234a-3 — Maritime Shell-Template für die gehostete API-Doku
+  Owner: UIUX-Designer · Design-Deliverable (Template, kein Live-Build)
+  Grounding: dev-api-docs-experience-{spec,tokens} v1.2 (@ 80cc9dd) +
+             dev-api-docs-hosted-styling-prescope.md · [[design-language-maritime-m3]]
+  ----------------------------------------------------------------------------
+  DESIGN-GRENZE (PO-ratifiziert):
+    • UIUX = diese umgebende Chrome (Header / Nav / Tier-Legende / REST↔WS-Toggle /
+      Footer / --maritime-* CSS-Vars / Dark-Seam) — als Template mit FÜLL-SLOTS.
+    • Backend = füllt die Slots mit dem generierten Redoc(REST)/AsyncAPI(WS)-Render
+      + Route, wenn 234a-3 in der Sequenz ankommt.
+  Alle Füll-Slots sind mit  <!-- SLOT: <id> -->  markiert und tragen data-slot="<id>".
+  Sprache = EN (PO-§-Ask). 0 Compose-Theme/strings.xml/testTag — reine gehostete HTML-Surface.
+  Abnahme = §6=10 (Haupt-Spec) + §8=8 (Pre-Scope). WCAG AA light+dark (Token v1.2, verifiziert).
+  ============================================================================
+-->
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CyppieAgents — API Reference</title>
+  <style>
+    /* === Maritime tokens (v1.2) — brand roles BOLD, reading surfaces CALM ============ */
+    :root {
+      --maritime-primary:            #0A5AA0;  /* BOLD — brand = App CYP-268 */
+      --maritime-on-primary:         #FFFFFF;
+      --maritime-secondary:          #0F5B88;
+      --maritime-accent:             #0B7E9C;
+      --maritime-link:               #0A5AA0;
+      --maritime-surface:            #FFFFFF;
+      --maritime-surface-variant:    #EEF4F8;  /* foam */
+      --maritime-surface-container:  #F4F8FB;
+      --maritime-on-surface:         #0F2A38;  /* near-navy ink */
+      --maritime-on-surface-variant: #41535C;
+      --maritime-outline:            #B4C6D0;
+      --maritime-code-bg:            #0F2A38;   /* ocean-dark code panel — both modes */
+      --maritime-code-fg:            #E7F1F6;
+      --maritime-header-bg:          #0A5AA0;   /* bold brand bar */
+      --maritime-header-fg:          #FFFFFF;
+      --maritime-header-accent:      #FFFFFF;
+      /* tier-badge chips (label-bearing; operator ≠ alarm-red) */
+      --tier-public-fg: #3C4A50;  --tier-public-bg: #E7EDF0;
+      --tier-part-fg:   #1C5E93;  --tier-part-bg:   #DCEBF7;
+      --tier-oper-fg:   #1F3A66;  --tier-oper-bg:   #D9E2F2;
+      --tier-ws-fg:     #6A4A12;  --tier-ws-bg:     #F6E9CC;
+      --font-base: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
+    }
+    /* Dark scheme — brand accents lighten, reading surfaces deep navy (still calm) */
+    :root[data-theme="dark"] {
+      --maritime-primary:            #6FBEEA;
+      --maritime-on-primary:         #04283B;
+      --maritime-secondary:          #93CCEA;
+      --maritime-accent:             #4FC6DE;
+      --maritime-link:               #6FBEEA;
+      --maritime-surface:            #0D1B23;
+      --maritime-surface-variant:    #172A34;
+      --maritime-surface-container:  #12232C;
+      --maritime-on-surface:         #DCE7ED;
+      --maritime-on-surface-variant: #A9BCC6;
+      --maritime-outline:            #3A4E59;
+      --maritime-code-bg:            #06141C;
+      --maritime-code-fg:            #DCE7ED;
+      --maritime-header-bg:          #0A1922;   /* deep navy bar */
+      --maritime-header-fg:          #DCE7ED;
+      --maritime-header-accent:      #6FBEEA;   /* wordmark accent */
+    }
+    /* Default = follow-system (PO: toggle-default follow-system). data-theme="dark" wins if user toggles. */
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] {
+        --maritime-primary:#6FBEEA; --maritime-on-primary:#04283B; --maritime-secondary:#93CCEA;
+        --maritime-accent:#4FC6DE; --maritime-link:#6FBEEA;
+        --maritime-surface:#0D1B23; --maritime-surface-variant:#172A34; --maritime-surface-container:#12232C;
+        --maritime-on-surface:#DCE7ED; --maritime-on-surface-variant:#A9BCC6; --maritime-outline:#3A4E59;
+        --maritime-code-bg:#06141C; --maritime-code-fg:#DCE7ED;
+        --maritime-header-bg:#0A1922; --maritime-header-fg:#DCE7ED; --maritime-header-accent:#6FBEEA;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-base);
+      color: var(--maritime-on-surface);
+      background: var(--maritime-surface);
+      line-height: 1.6;
+    }
+    a { color: var(--maritime-link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* === Header (bold brand bar) ===================================================== */
+    .mar-header {
+      display: flex; align-items: center; gap: 24px;
+      padding: 0 20px; height: 56px;
+      background: var(--maritime-header-bg); color: var(--maritime-header-fg);
+    }
+    .mar-brand { display: flex; align-items: baseline; gap: 10px; font-weight: 700; font-size: 17px; }
+    .mar-brand .mar-wordmark { color: var(--maritime-header-accent); letter-spacing: 0.01em; }
+    .mar-brand .mar-version {
+      font-size: 12px; font-weight: 600; opacity: 0.85;
+      font-family: var(--font-mono);
+    }
+    .mar-topnav { display: flex; gap: 18px; margin-left: auto; font-size: 14px; }
+    .mar-topnav a { color: var(--maritime-header-fg); opacity: 0.92; }
+    .mar-theme-toggle {
+      background: transparent; border: 1px solid currentColor; color: var(--maritime-header-fg);
+      border-radius: 6px; padding: 5px 10px; font-size: 13px; cursor: pointer;
+    }
+
+    /* === Sub-bar: REST↔WS toggle + tier legend ====================================== */
+    .mar-subbar {
+      display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+      padding: 12px 20px;
+      background: var(--maritime-surface-container);
+      border-bottom: 1px solid var(--maritime-outline);
+    }
+    .mar-seg { display: inline-flex; border: 1px solid var(--maritime-outline); border-radius: 8px; overflow: hidden; }
+    .mar-seg button {
+      border: 0; background: transparent; color: var(--maritime-on-surface-variant);
+      padding: 7px 14px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .mar-seg button[aria-selected="true"] {
+      background: var(--maritime-primary); color: var(--maritime-on-primary);
+    }
+    .mar-tierlegend { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; align-items: center; }
+    .mar-tierlegend .mar-legend-label { font-size: 12px; color: var(--maritime-on-surface-variant); margin-right: 2px; }
+    .mar-badge {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+    }
+    .mar-badge.public { color: var(--tier-public-fg); background: var(--tier-public-bg); }
+    .mar-badge.participant { color: var(--tier-part-fg); background: var(--tier-part-bg); }
+    .mar-badge.operator { color: var(--tier-oper-fg); background: var(--tier-oper-bg); }
+    .mar-badge.wsonly { color: var(--tier-ws-fg); background: var(--tier-ws-bg); }
+
+    /* === Trust line (info/neutral — never error/warn) ================================ */
+    .mar-trust {
+      margin: 0; padding: 10px 20px;
+      font-size: 13px; color: var(--maritime-on-surface-variant);
+      background: var(--maritime-surface-variant);
+      border-bottom: 1px solid var(--maritime-outline);
+    }
+    .mar-trust::before { content: "ⓘ "; color: var(--maritime-accent); font-weight: 700; }
+
+    /* === Main render region (the fill-slots the backend mounts into) ================= */
+    .mar-main { min-height: 60vh; }
+    .mar-slot-placeholder {
+      margin: 40px auto; max-width: 720px; padding: 28px;
+      border: 1px dashed var(--maritime-outline); border-radius: 12px;
+      background: var(--maritime-surface-container); color: var(--maritime-on-surface-variant);
+    }
+    .mar-slot-placeholder h2 { color: var(--maritime-on-surface); margin-top: 0; font-size: 18px; }
+    .mar-slot-placeholder code { font-family: var(--font-mono); font-size: 13px;
+      background: var(--maritime-code-bg); color: var(--maritime-code-fg); padding: 2px 6px; border-radius: 4px; }
+    [hidden] { display: none !important; }
+
+    /* === Footer ====================================================================== */
+    .mar-footer {
+      padding: 20px; font-size: 13px; color: var(--maritime-on-surface-variant);
+      background: var(--maritime-surface-container);
+      border-top: 1px solid var(--maritime-outline);
+      display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    }
+    .mar-footer .mar-version { font-family: var(--font-mono); }
+    .mar-footer .mar-trust-inline::before { content: "ⓘ "; color: var(--maritime-accent); }
+  </style>
+</head>
+<body>
+
+  <!-- =========================== HEADER (brand chrome) ============================== -->
+  <header class="mar-header">
+    <div class="mar-brand">
+      <span class="mar-wordmark">CyppieAgents</span>
+      <span>API Reference</span>
+      <!-- SLOT: version — backend injects the canonical API version (e.g. "v1"). -->
+      <span class="mar-version" id="doc-version" data-slot="version">v1</span>
+    </div>
+    <nav class="mar-topnav" aria-label="Primary">
+      <!-- SLOT: guide-link — backend points this at the hosted 234c narrative guide. -->
+      <a href="#" data-slot="guide-link">Guide</a>
+      <a href="#rest">Reference</a>
+    </nav>
+    <button class="mar-theme-toggle" id="themeToggle" aria-label="Toggle color theme">◐ Theme</button>
+  </header>
+
+  <!-- =================== SUB-BAR: REST↔WS toggle + tier legend ====================== -->
+  <div class="mar-subbar">
+    <!-- One shell, two renderers (D1). This toggle swaps which render-slot is visible. -->
+    <div class="mar-seg" role="tablist" aria-label="API surface">
+      <button role="tab" id="tab-rest" aria-selected="true"  aria-controls="rest-render">REST API</button>
+      <button role="tab" id="tab-ws"   aria-selected="false" aria-controls="ws-render">WebSocket · Realtime</button>
+    </div>
+    <div class="mar-tierlegend" aria-label="Access tiers">
+      <span class="mar-legend-label">Access:</span>
+      <!-- Tier badges are label-bearing (WCAG 1.4.1); OPERATOR is "more access needed", never alarm-red. -->
+      <span class="mar-badge public"      title="No auth">Public</span>
+      <span class="mar-badge participant" title="Participant-scoped token (machine) or verified Kratos session (human) — read default">Participant</span>
+      <span class="mar-badge operator"    title="Operator token or OPERATOR session — control/write">Operator</span>
+      <span class="mar-badge wsonly"      title="/ws/agent — agent/operator credential; no read-only session access">Token-only WS</span>
+    </div>
+  </div>
+
+  <!-- =============================== TRUST LINE (D6) ================================= -->
+  <p class="mar-trust">
+    This reference is generated from the server's types and verified in CI — it cannot drift from the running API.
+  </p>
+
+  <!-- ============================ MAIN RENDER REGION ================================= -->
+  <main class="mar-main">
+    <!-- SLOT: rest-render — backend mounts the generated Redoc (REST) here. -->
+    <section id="rest-render" data-slot="rest-render" role="tabpanel" aria-labelledby="tab-rest">
+      <div class="mar-slot-placeholder">
+        <h2>REST reference mounts here</h2>
+        <p>Backend injects the generated <strong>Redoc</strong> render into
+           <code>#rest-render</code>. Theme via the Redoc <code>theme</code> object
+           (light + dark) per <code>dev-api-docs-hosted-styling-prescope.md §3</code>.</p>
+      </div>
+    </section>
+    <!-- SLOT: ws-render — backend mounts the AsyncAPI (WS) render here; hidden until selected. -->
+    <section id="ws-render" data-slot="ws-render" role="tabpanel" aria-labelledby="tab-ws" hidden>
+      <div class="mar-slot-placeholder">
+        <h2>WebSocket reference mounts here</h2>
+        <p>Backend injects the generated <strong>AsyncAPI</strong> render into
+           <code>#ws-render</code>, under the same maritime chrome (D1).</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================================= FOOTER ======================================= -->
+  <footer class="mar-footer">
+    <!-- SLOT: version (footer echo) -->
+    <span class="mar-version" data-slot="version">v1</span>
+    <span class="mar-trust-inline">Generated from server types · verified in CI</span>
+    <!-- SLOT: license-contact — backend fills license + contact/imprint line. -->
+    <span data-slot="license-contact" style="margin-left:auto;">© CyppieAgents</span>
+  </footer>
+
+  <script>
+    // Dark-toggle seam — default follows system (data-theme="auto"); user toggle overrides.
+    // Backend may persist the choice later; v1 = ephemeral (prefers-color-scheme drives auto).
+    (function () {
+      var root = document.documentElement;
+      var toggle = document.getElementById('themeToggle');
+      toggle.addEventListener('click', function () {
+        var mode = root.getAttribute('data-theme');
+        var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var effective = (mode === 'auto') ? (systemDark ? 'dark' : 'light') : mode;
+        root.setAttribute('data-theme', effective === 'dark' ? 'light' : 'dark');
+      });
+    })();
+
+    // REST↔WS render-slot toggle — one shell, two renderers (D1).
+    (function () {
+      var tabs = { rest: document.getElementById('tab-rest'), ws: document.getElementById('tab-ws') };
+      var panels = { rest: document.getElementById('rest-render'), ws: document.getElementById('ws-render') };
+      function select(which) {
+        var other = which === 'rest' ? 'ws' : 'rest';
+        tabs[which].setAttribute('aria-selected', 'true');
+        tabs[other].setAttribute('aria-selected', 'false');
+        panels[which].hidden = false;
+        panels[other].hidden = true;
+      }
+      tabs.rest.addEventListener('click', function () { select('rest'); });
+      tabs.ws.addEventListener('click', function () { select('ws'); });
+    })();
+  </script>
+</body>
+</html>

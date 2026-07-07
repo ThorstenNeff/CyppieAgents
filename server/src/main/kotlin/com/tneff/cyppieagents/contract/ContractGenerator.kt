@@ -112,16 +112,25 @@ object ContractGenerator {
     }
 
     /** Auth: PUBLIC → no requirement; else either the bearer token OR the session cookie satisfies. The
-     *  fine-grained authZ level (participant/operator/member) is documented per-op via `x-auth-tier`. */
-    private fun securityFor(tier: RestContract.Tier): JsonArray = when (tier) {
+     *  fine-grained authZ level (participant/operator/member) is documented per-op via `x-auth-tier`.
+     *  [externalHosted] (234a-3 / PO-Assistant exposure-audit): the EXTERNAL hosted docs present **Bearer-only**
+     *  — third-party BYO-frontend consumers authenticate via the participant Bearer token (ratified), not the
+     *  first-party Kratos session cookie; publishing the cookie NAME in public docs is mild IdP fingerprinting
+     *  with no value to that audience. NOT a contract change — the raw `/api` contract keeps BOTH paths; only
+     *  the hosted render filters to Bearer. */
+    private fun securityFor(tier: RestContract.Tier, externalHosted: Boolean): JsonArray = when (tier) {
         RestContract.Tier.PUBLIC -> JsonArray(emptyList())
         else -> buildJsonArray {
             add(buildJsonObject { putJsonArray("bearerAuth") {} })
-            add(buildJsonObject { putJsonArray("sessionCookie") {} })
+            if (!externalHosted) add(buildJsonObject { putJsonArray("sessionCookie") {} })
         }
     }
 
-    fun openApi(): JsonObject {
+    /** The Bearer-only variant served on the EXTERNAL hosted docs surface (234a-3). Still GENERATED (no
+     *  artifact) — a documented transform of [openApi], so single-source holds. */
+    fun hostedOpenApi(): JsonObject = openApi(externalHosted = true)
+
+    fun openApi(externalHosted: Boolean = false): JsonObject {
         val walker = SchemaWalker()
         val errorSchema = walker.schemaFor(serializer<ApiErrorBody>().descriptor)
         RestContract.REST_OPS.forEach { op ->
@@ -143,7 +152,7 @@ object ContractGenerator {
                             putJsonObject(op.method.lowercase()) {
                                 put("operationId", op.method.lowercase() + path.replace(Regex("[/{}]"), "_"))
                                 put("x-auth-tier", op.tier.name)
-                                put("security", securityFor(op.tier))
+                                put("security", securityFor(op.tier, externalHosted))
                                 bodyContent(op.request, walker)?.let { put("requestBody", it) }
                                 putJsonObject("responses") {
                                     val success = if (op.response == RestContract.Body.None) "204" else "200"
@@ -167,7 +176,8 @@ object ContractGenerator {
                 put("schemas", JsonObject(walker.components))
                 putJsonObject("securitySchemes") {
                     putJsonObject("bearerAuth") { put("type", "http"); put("scheme", "bearer") }
-                    putJsonObject("sessionCookie") { put("type", "apiKey"); put("in", "cookie"); put("name", "ory_kratos_session") }
+                    // 234a-3: the session-cookie scheme is OMITTED on the external hosted surface (Bearer-only).
+                    if (!externalHosted) putJsonObject("sessionCookie") { put("type", "apiKey"); put("in", "cookie"); put("name", "ory_kratos_session") }
                 }
             }
         }
