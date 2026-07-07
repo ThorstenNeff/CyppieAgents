@@ -14,12 +14,15 @@ import kotlinx.serialization.Serializable
  * deletes the worktree (the agent branch is never auto-deleted).
  */
 
-/** New-agent fields (CYP-86 / POST /api/agents). `persona` is written to the worktree's CLAUDE.md. */
+/** New-agent fields (CYP-86 / POST /api/agents). CYP-310: `persona` is DEPRECATED + IGNORED — a new agent
+ *  gets an EMPTY CLAUDE.md; manage it via `POST /api/agents/{id}/claude-md`. Kept for wire-compat (removal =
+ *  CYP-311). */
 @Serializable
 data class NewAgentSpec(
     val id: String,
     val name: String,
     val role: Role,
+    /** CYP-310: DEPRECATED + IGNORED (no CLAUDE.md write on add) — use the claude-md endpoints. Removal = CYP-311. */
     val persona: String? = null,
     val launch: String? = null,
     val worktree: String? = null,
@@ -73,6 +76,7 @@ data class ConnectorChoice(val connectorKind: ConnectorKind)
 @Serializable
 data class AgentEdit(
     val role: Role,
+    /** CYP-310: DEPRECATED + IGNORED (no longer drives CLAUDE.md) — use the claude-md endpoints. Removal = CYP-311. */
     val persona: String? = null,
     val launch: String? = null,
     /** CYP-210 — editable display name (blank/omitted → PRESERVE). The agent `id` stays immutable. */
@@ -106,6 +110,11 @@ data class AgentDetail(
     val role: Role,
     val worktree: String,
     val launch: String,
+    /**
+     * CYP-310: DEPRECATED — no longer the CLAUDE.md source. The stored (now vestigial) persona field; the live
+     * CLAUDE.md is read via `GET /api/agents/{id}/claude-md`. Kept for wire-compat; removal = CYP-311.
+     */
+    @Deprecated("CYP-310: not the CLAUDE.md source; read GET /api/agents/{id}/claude-md. Removal = CYP-311.")
     val persona: String? = null,
     /** CYP-210 — the stored display colour, so the edit dialog prefills it (see [Agent.color]). */
     val color: String? = null,
@@ -115,3 +124,24 @@ data class AgentDetail(
      */
     val avatar: AgentAvatar? = null,
 )
+
+/**
+ * CYP-310 — the live worktree `CLAUDE.md` of an agent (read: `GET /api/agents/{id}/claude-md`; the echo of a
+ * write: `POST`). [content] is the CURRENT file text ("" when absent); [exists] flags file presence; [version]
+ * is the content hash (sha-256 hex of the file bytes, `null` when absent) for optimistic concurrency — a `POST`
+ * must echo it back as [ClaudeMdUpdate.expectedVersion]. Read live each call, so it reflects external edits +
+ * the agent's own edits (there is no server-cached copy). NOT the stored `persona` — that field is deprecated.
+ */
+@Serializable
+data class ClaudeMdView(val agentId: String, val content: String, val exists: Boolean, val version: String? = null)
+
+/**
+ * CYP-310 — body of `POST /api/agents/{id}/claude-md`: a HARD overwrite (no merge) of the worktree `CLAUDE.md`.
+ * [expectedVersion] is optimistic concurrency: the [ClaudeMdView.version] the client last read. The server
+ * re-hashes the CURRENT file and, if it differs, rejects with 409 `claude_md_stale` (an unseen external/agent
+ * edit would be clobbered) — WITHOUT writing. `null` = the client expects no file yet (first create). A write
+ * is EFFECT_DEFERRED: the file changes immediately, but a running session already read its CLAUDE.md, so it
+ * takes effect on the next spawn/restart.
+ */
+@Serializable
+data class ClaudeMdUpdate(val content: String, val expectedVersion: String? = null)

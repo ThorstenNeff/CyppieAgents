@@ -352,9 +352,8 @@ class BootOrchestrator(
             recorder = eventRecorder,
             projector = eventProjector,
             agentEvents = agentEventRecorder, // CYP-198: persist the local agent's stream-json transcript
-            // CYP-255 (.4b): the connector is SHARED; it reads the ACTIVE project's persona at open() so a
-            // spawn in a switched-to project gets THAT project's persona — not the boot project's.
-            personaOf = { runtimeRegistry.active().agentConfigs.personaOf(it) },
+            // CYP-310: no personaOf — the connector no longer auto-writes CLAUDE.md at spawn (managed via
+            // the claude-md endpoints). The stored persona config field is deprecated (removal = CYP-311).
             mcpConfigWriter = mcpConfigWriter, // CYP-146: expose hub_send to the Connector-A spawn
             tokenFor = { tokenByAgent[it] },
             // CYP-163: null in prod (sharp, Gate #4); non-null ONLY via the RB1 sandbox harness path.
@@ -442,6 +441,10 @@ class BootOrchestrator(
             avatarBlobs = avatarBlobs,   // CYP-215: re-encoded avatar PNG store
             avatarPresets = avatarPresets, // CYP-215: self-hosted DiceBear preset resolver
             projectAgents = projectAgents, // CYP-256 (.5a): durable single source for runtime-added agents
+            // CYP-310: resolve the ACTIVE project's worktree dir for CLAUDE.md read/write; seed the remote-agent
+            // set from config (a remote/BYOA agent has no local worktree → agent_not_local).
+            worktreeDirOf = { runtimeRegistry.active().worktrees.worktreeDir(it) },
+            initialRemoteAgents = config.agents.filter { it.remote }.map { it.id }.toSet(),
         )
 
         // CYP-247.1/.2 (L): register the boot project's runtime in the per-project seam L de-singletonizes
@@ -506,6 +509,8 @@ class BootOrchestrator(
                 avatarBlobs = avatarBlobs,
                 avatarPresets = avatarPresets,
                 projectAgents = projectAgents, // CYP-256 (.5a): same durable single source for this project
+                worktreeDirOf = { runtimeRegistry.active().worktrees.worktreeDir(it) }, // CYP-310
+                // CYP-310: a non-boot project's agents are all runtime-added → remote ones are tracked on add().
             )
             ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees)
         }

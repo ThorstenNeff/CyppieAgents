@@ -71,8 +71,17 @@ class AgentManagement(
      * Null (tests / dev) = no durability → the pre-.5a overlay path is used unchanged.
      */
     private val projectAgents: ProjectAgentStore? = null,
+    /** CYP-310 — resolves an agent's worktree DIR (for reading/writing its live CLAUDE.md). Boot wires it to
+     *  the ACTIVE project's `WorktreeManager.worktreeDir`; tests inject a temp dir. */
+    private val worktreeDirOf: (worktreeName: String) -> java.io.File = { java.io.File(it) },
+    /** CYP-310 — the config-seeded remote/BYOA agent ids (this runtime's `config.agents.filter { remote }`). A
+     *  runtime-added remote agent is tracked on [add]. Remote agents have no local worktree → `agent_not_local`. */
+    initialRemoteAgents: Set<String> = emptySet(),
 ) {
     private val lock = Any()
+
+    // CYP-310 — remote/BYOA agent ids (no local worktree to manage). Seeded from config + grown on a remote add.
+    private val remoteAgents = java.util.concurrent.ConcurrentHashMap.newKeySet<String>().apply { addAll(initialRemoteAgents) }
 
     /**
      * CYP-256 (.5a) — D1 single-source route: persist a runtime-added agent's FULL record to [projectAgents]
@@ -93,11 +102,52 @@ class AgentManagement(
     fun list(): List<Agent> = state.agents.map { it.copy(runState = lifecycle.runStateOf(it.id) ?: it.runState) }
 
     /** Edit-prefill detail (CYP-101 / GET /api/agents/{id}) — the real launch + persona. */
+    @Suppress("DEPRECATION") // CYP-310: AgentDetail.persona is deprecated (removal = CYP-311); still surfaced for wire-compat.
     fun detail(id: String): AgentDetail {
         val a = state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
         val cfg = configs.configOf(id)
         return AgentDetail(a.id, a.name, a.role, a.worktree, cfg?.launch ?: "claude", cfg?.persona, color = a.color, avatar = a.avatar)
     }
+
+    // CYP-310 — CLAUDE.md management (LOCAL). The connector NO LONGER auto-writes CLAUDE.md at spawn; it is
+    // read/written explicitly here against the agent's live worktree file. Under [lock] so a read-compare-write
+    // is atomic vs other endpoint calls (the optimistic-concurrency guard closes the TOCTOU window).
+
+    private fun requireLocalAgent(id: String): Agent {
+        val a = state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
+        if (id in remoteAgents) throw com.tneff.cyppieagents.routing.ConflictException(
+            "agent '$id' is a remote/BYOA agent — it has no local worktree to manage (remote = CYP-197)",
+            code = "agent_not_local",
+        )
+        return a
+    }
+
+    private fun claudeMdFile(a: Agent): java.io.File = java.io.File(worktreeDirOf(a.worktree), "CLAUDE.md")
+
+    /** CYP-310 — the agent's LIVE worktree CLAUDE.md. Fail-closed empty (never the stored persona) on absent/unreadable. */
+    fun readClaudeMd(id: String): com.tneff.cyppieagents.model.ClaudeMdView = synchronized(lock) {
+        val a = requireLocalAgent(id)
+        val file = claudeMdFile(a)
+        val text: String? = if (file.isFile) runCatching { file.readText() }.getOrNull() else null
+        com.tneff.cyppieagents.model.ClaudeMdView(id, text ?: "", exists = text != null, version = text?.let(::sha256Hex))
+    }
+
+    /** CYP-310 — HARD overwrite the worktree CLAUDE.md, optimistic-concurrency guarded (409 `claude_md_stale`). */
+    fun writeClaudeMd(id: String, content: String, expectedVersion: String?): com.tneff.cyppieagents.model.ClaudeMdView = synchronized(lock) {
+        val a = requireLocalAgent(id)
+        val file = claudeMdFile(a)
+        // Re-hash the CURRENT file under the lock; a mismatch means an unseen external/agent edit → refuse (no write).
+        val currentVersion = if (file.isFile) runCatching { file.readText() }.getOrNull()?.let(::sha256Hex) else null
+        if (expectedVersion != currentVersion) throw com.tneff.cyppieagents.routing.ConflictException(
+            "the worktree CLAUDE.md changed since it was last read — re-read and retry", code = "claude_md_stale",
+        )
+        file.parentFile?.mkdirs()
+        file.writeText(content)
+        com.tneff.cyppieagents.model.ClaudeMdView(id, content, exists = true, version = sha256Hex(content))
+    }
+
+    private fun sha256Hex(s: String): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(s.encodeToByteArray()).joinToString("") { "%02x".format(it) }
 
     /** Register a new agent (NOT spawned). Throws the §2 4xx on a guard violation. Returns the agent and,
      *  for a remote create, the **once-disclosed** minted token (CYP-171). */
@@ -135,6 +185,7 @@ class AgentManagement(
         // CYP-171: a remote/BYOA agent gets a server-minted per-agent token, disclosed ONCE in this response
         // (SEC-OP1's reserved-id guard in validateAdd already rejected an id colliding with the operator).
         val token = if (spec.remote) remoteToken?.issue(agent.id) else null
+        if (spec.remote) remoteAgents.add(agent.id) // CYP-310: a remote agent has no local worktree (agent_not_local)
         CreatedAgent(agent, token)
     }
 
