@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -90,6 +91,10 @@ fun CrossProjectControls(
                 text = "${m.agentId} · ${stringResource(Res.string.crossproject_member_project, m.homeProjectId)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // CYP-284: this line sits in the hard 220dp comm channel column (two-pane) — a long agentId /
+                // home-project name must ellipsize to one line, never wrap/overflow the fixed-width column.
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.testTag(CrossProjectTags.member(m.agentId)),
             )
         }
