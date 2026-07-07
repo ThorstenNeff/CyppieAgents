@@ -5,7 +5,9 @@ import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.net.isAccessRevoked
 import com.tneff.cyppieagents.net.logWsError
+import com.tneff.cyppieagents.net.readCloseCode
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
@@ -34,6 +36,7 @@ class CommWsClient(
 ) : CommLiveSource {
 
     override fun events(): Flow<CommLiveEvent> = channelFlow {
+        var closeCode: Short? = null
         try {
             client.webSocket(
                 urlString = commUrl(),
@@ -44,15 +47,23 @@ class CommWsClient(
                 // the CYP-115 Darwin churn) but exactly what channelFlow allows. Element emissions go to
                 // this@channelFlow; `incoming` frames stay on the WebSocketSession.
                 this@channelFlow.send(CommLiveEvent.Connected)
-                for (frame in incoming) {
-                    if (frame is Frame.Text) {
-                        when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
-                            is MessageEvent -> this@channelFlow.send(CommLiveEvent.MessageReceived(event.message))
-                            is ChannelsEvent -> this@channelFlow.send(CommLiveEvent.ChannelsChanged(event.channels))
-                            is AclEvent -> Unit // consumed by the ACL-matrix UI (S7), not the timeline
+                try {
+                    for (frame in incoming) {
+                        if (frame is Frame.Text) {
+                            when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
+                                is MessageEvent -> this@channelFlow.send(CommLiveEvent.MessageReceived(event.message))
+                                is ChannelsEvent -> this@channelFlow.send(CommLiveEvent.ChannelsChanged(event.channels))
+                                is AclEvent -> Unit // consumed by the ACL-matrix UI (S7), not the timeline
+                            }
                         }
                     }
+                } catch (e: CancellationException) {
+                    // Ktor cancels the frame channel to tear down a closing socket; if a close reason is already
+                    // recorded (e.g. a 1008 reject) this is that teardown, not a real cancel — swallow and report
+                    // the close below. Otherwise it's a genuine collector cancel and must propagate.
+                    if (!closeReason.isCompleted) throw e
                 }
+                closeCode = readCloseCode()
             }
         } catch (e: CancellationException) {
             throw e
@@ -61,8 +72,11 @@ class CommWsClient(
             // not throw). The cross-context ISE that caused the churn was swallowed here before.
             logWsError("comm", e)
         }
-        // Always end honestly: the timeline stops claiming "live" once the socket is gone (CYP-17 §5).
-        this@channelFlow.send(CommLiveEvent.Disconnected)
+        // CYP-291: a 1008 (VIOLATED_POLICY) close = a revoked/invalid token → TERMINAL AccessRevoked (the VM
+        // cancels the collector; no reconnect). Any other close = a transient Disconnected (reconnects, CYP-73).
+        this@channelFlow.send(
+            if (isAccessRevoked(closeCode)) CommLiveEvent.AccessRevoked else CommLiveEvent.Disconnected,
+        )
     }
 
     private fun commUrl(): String {

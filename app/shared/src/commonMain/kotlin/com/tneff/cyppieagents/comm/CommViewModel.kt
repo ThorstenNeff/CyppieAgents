@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.comm
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.Message
@@ -66,9 +67,12 @@ class CommViewModel(
      */
     private val commFocused = MutableStateFlow(false)
 
+    /** CYP-291: the live-collect job, cancelled on a terminal AccessRevoked so the reconnect loop stops. */
+    private var liveJob: Job? = null
+
     init {
         viewModelScope.launch { loadChannelsAndAgents() }
-        viewModelScope.launch { collectLive() }
+        liveJob = viewModelScope.launch { collectLive() }
     }
 
     private suspend fun loadChannelsAndAgents() {
@@ -85,6 +89,11 @@ class CommViewModel(
         // is preserved because [CommReducer.merge] dedups by `message.id` — no duplicates, no visible loss.
         liveSource.events().reconnecting(backoff).collect { event ->
             CommReducer.statusOf(event)?.let { status -> _state.update { it.copy(connection = status) } }
+            if (event is CommLiveEvent.AccessRevoked) {
+                // CYP-291: a 1008 revoke is TERMINAL — cancel the collector so `.reconnecting()` does NOT re-open
+                // /ws/comm with the revoked token (the reconnect loop). The connection already reads DISCONNECTED.
+                liveJob?.cancel()
+            }
             if (event is CommLiveEvent.ChannelsChanged) {
                 _state.update { it.copy(channels = event.channels) }
             }
