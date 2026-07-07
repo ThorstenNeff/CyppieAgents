@@ -327,8 +327,13 @@ private fun ConnectionBanner(connection: ConnectionStatus) {
 }
 
 @Composable
-private fun Composer(canWrite: Boolean, sendError: String?, channelName: String, onSend: (String) -> Unit) {
-    if (!canWrite) {
+private fun Composer(canWrite: Boolean?, sendError: String?, channelName: String, onSend: (String) -> Unit) {
+    // CYP-273 tri-state (see CommUiState.canWrite):
+    //   false → known read-only → the proactive read-only hint (below).
+    //   null  → not yet known (loading / pre-seam) → the composer renders DISABLED, but NEVER the "no
+    //           permission" claim — an unknown is not a denial (honesty, the CYP-288 class). Fail-closed.
+    //   true  → writable → editable composer.
+    if (canWrite == false) {
         // Proactive read-only STATE (you may read, just not write) — distinct from a denied send attempt
         // (#6 comm_send_denied) and a generic failure (#7 comm_send_failed). Disclosure must stay separate.
         Text(
@@ -339,15 +344,18 @@ private fun Composer(canWrite: Boolean, sendError: String?, channelName: String,
         )
         return
     }
+    // true → interactive; null → disabled (fail-closed) until the seam resolves the right.
+    val enabled = canWrite == true
     var draft by remember { mutableStateOf("") }
     fun submit() {
-        if (draft.isNotBlank()) {
+        if (enabled && draft.isNotBlank()) {
             onSend(draft)
             draft = ""
         }
     }
     Column {
-        sendError?.let {
+        // A send error only ever exists on the writable path; never shown while fail-closed-disabled.
+        if (enabled) sendError?.let {
             // The VM emits a key (comm_send_denied = ACL-rejected attempt) vs the generic else
             // (comm_send_failed). Both distinct from the proactive read-only hint above (CYP-53 §1).
             val msg = if (it == "comm_send_denied") stringResource(Res.string.comm_send_denied) else stringResource(Res.string.comm_send_failed)
@@ -366,6 +374,7 @@ private fun Composer(canWrite: Boolean, sendError: String?, channelName: String,
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
+                    enabled = enabled, // CYP-273: fail-closed — disabled while writability is unknown (null)
                     modifier = Modifier.weight(1f).widthIn(min = COMPOSER_MIN_WIDTH.dp).testTag(CommTags.COMPOSER_INPUT),
                     placeholder = {
                         Text(
@@ -379,6 +388,7 @@ private fun Composer(canWrite: Boolean, sendError: String?, channelName: String,
                 )
                 Button(
                     onClick = { submit() },
+                    enabled = enabled, // CYP-273: fail-closed — no send until the seam grants write (true)
                     modifier = Modifier
                         .testTag(CommTags.COMPOSER_SEND)
                         .then(if (compact) Modifier.semantics { contentDescription = sendLabel } else Modifier),

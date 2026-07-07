@@ -26,8 +26,8 @@ import kotlinx.coroutines.flow.channelFlow
  * Contract (CYP-18): `GET {hubWsBaseUrl}/ws/comm?token=<t>` sends an initial [ChannelsEvent] snapshot
  * (readable channels) then live messages/ACL/channel updates, ACL-filtered server-side; idempotency
  * by `message.id` lives in [CommReducer]. The token also goes in the `?token=` query for the browser
- * (WS upgrade headers aren't settable there). [AclEvent] is for the ACL-matrix UI (S7), not the
- * timeline, so it is dropped here.
+ * (WS upgrade headers aren't settable there). [AclEvent] carries no timeline data, but CYP-273/S7 maps it
+ * to a content-free [CommLiveEvent.AclChanged] so the VM re-fetches the writable set (composer live).
  */
 class CommWsClient(
     private val client: HttpClient,
@@ -53,7 +53,10 @@ class CommWsClient(
                             when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
                                 is MessageEvent -> this@channelFlow.send(CommLiveEvent.MessageReceived(event.message))
                                 is ChannelsEvent -> this@channelFlow.send(CommLiveEvent.ChannelsChanged(event.channels))
-                                is AclEvent -> Unit // consumed by the ACL-matrix UI (S7), not the timeline
+                                // CYP-273/S7: surface a content-free ACL-changed signal so the VM re-fetches the
+                                // writable set (composer enable/disable live). The pushed row is NOT trusted as the
+                                // write authority — the VM asks the server (GET /api/channels/writable) instead.
+                                is AclEvent -> this@channelFlow.send(CommLiveEvent.AclChanged)
                             }
                         }
                     }

@@ -27,6 +27,15 @@ sealed interface CommLiveEvent {
 
     /** The set of channels the viewer may read changed (ACL/config). */
     data class ChannelsChanged(val channels: List<Channel>) : CommLiveEvent
+
+    /**
+     * CYP-273/S7: an ACL row changed on `/ws/comm` (the server pushes `AclEvent`s to readers, incl. the
+     * caller's own `(channel, self)` grant). Content-free by design — the VM does not trust the pushed row;
+     * it re-fetches the server-authoritative writable set (`GET /api/channels/writable`) in response, so a
+     * revoked/granted write disables/enables the composer live. Distinct from [ChannelsChanged] (readable set)
+     * and never a timeline event.
+     */
+    data object AclChanged : CommLiveEvent
 }
 
 /** Source of the live comm stream. The Ktor `/ws/comm` adapter (CYP-18) replaces the stub here. */
