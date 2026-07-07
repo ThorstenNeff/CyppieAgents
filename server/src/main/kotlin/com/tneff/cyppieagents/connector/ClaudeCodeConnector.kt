@@ -49,12 +49,6 @@ class ClaudeCodeConnector(
     // CYP-198: the durable per-agent transcript feeder. Null = no persistence (older callers/tests).
     private val agentEvents: com.tneff.cyppieagents.agentevents.AgentEventRecorder? = null,
     /**
-     * Resolves the agent's persona at spawn (S14 / CYP-97), written to `CLAUDE.md` in the worktree cwd
-     * so Claude-Code auto-discovers it (Doc 05 §5, no `--bare`). Resolved at `open()` so an operator
-     * edit takes effect on the next spawn (a CYP-73 restart). Default → no persona / no CLAUDE.md write.
-     */
-    private val personaOf: (agentId: String) -> String? = { null },
-    /**
      * CYP-146 / E1.7 — writes the per-agent `--mcp-config` exposing the in-process Hub MCP server, so the
      * agent has a callable `hub_send` tool (the emission half). Null → no hub tools (dev/tests). The config
      * carries the agent token and is written **out-of-repo, 0600** ([HubMcpConfigWriter]); F1.
@@ -113,12 +107,9 @@ class ClaudeCodeConnector(
     /** Spawn an agent session whose cwd is [worktreesRoot]/[worktreeName] (Spec §11 isolation). */
     override fun open(agentId: String, worktreeName: String): ConnectorSession {
         val cwd = File(worktreesRoot(), worktreeName)
-        // CYP-97: place the persona as CLAUDE.md before spawn (auto-discovery). Resolved here so the
-        // current (possibly edited) persona is used; null/blank → no file written.
-        personaOf(agentId)?.takeIf { it.isNotBlank() }?.let {
-            cwd.mkdirs()
-            File(cwd, "CLAUDE.md").writeText(it)
-        }
+        // CYP-310: the worktree CLAUDE.md is NEVER auto-written at spawn (the CYP-97 persona-auto-discovery is
+        // removed). A new agent starts with an empty CLAUDE.md; it is managed EXCLUSIVELY via the operator-gated
+        // `POST /api/agents/{id}/claude-md` (+ external/agent self-edits), read via `GET .../claude-md`.
         val env = buildMap {
             // D3 / CYP-96: resolve the key AT SPAWN (store override → env fallback) → injected into the
             // session ENV, never a CLI arg. A boot-frozen value would ignore an operator key change.

@@ -5,6 +5,8 @@ import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentDetail
 import com.tneff.cyppieagents.model.AgentEdit
+import com.tneff.cyppieagents.model.ClaudeMdUpdate
+import com.tneff.cyppieagents.model.ClaudeMdView
 import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.model.ApiKeyRequest
 import com.tneff.cyppieagents.model.ApiKeyView
@@ -98,6 +100,9 @@ object RestContract {
         Op("DELETE", "/api/agents/{id}", Tier.OPERATOR, response = Body.None),
         Op("POST", "/api/agents/{id}/avatar", Tier.OPERATOR, request = Body.Multipart, response = json<AgentDetail>()),
         Op("DELETE", "/api/agents/{id}/avatar", Tier.OPERATOR, response = Body.None),
+        // --- CYP-310 CLAUDE.md management (LOCAL) ---
+        Op("GET", "/api/agents/{id}/claude-md", Tier.PARTICIPANT, response = json<ClaudeMdView>()),
+        Op("POST", "/api/agents/{id}/claude-md", Tier.OPERATOR, request = json<ClaudeMdUpdate>(), response = json<ClaudeMdView>()),
         // --- LifecycleRoutes (/api/agents/{id}) ---
         Op("POST", "/api/agents/{id}/stop", Tier.OPERATOR, response = json<AgentRunStateEvent>()),
         Op("POST", "/api/agents/{id}/start", Tier.OPERATOR, response = json<AgentRunStateEvent>()),

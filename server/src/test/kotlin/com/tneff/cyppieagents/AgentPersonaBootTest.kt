@@ -2,7 +2,6 @@ package com.tneff.cyppieagents
 
 import com.tneff.cyppieagents.boot.AgentConfig
 import com.tneff.cyppieagents.boot.BootOrchestrator
-import com.tneff.cyppieagents.boot.Personas
 import com.tneff.cyppieagents.boot.PlatformConfig
 import com.tneff.cyppieagents.boot.RepoConfig
 import com.tneff.cyppieagents.boot.Secrets
@@ -21,15 +20,16 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 
 /**
- * CYP-133 — at boot, an agent with no explicit persona gets the ROLE default written to `CLAUDE.md`
- * in its worktree (the connector's CYP-97 auto-discovery placement). Closes the RB1 persona-gap where
- * a persona-less PO did the task itself instead of delegating.
+ * CYP-310 — the connector's CLAUDE.md AUTO-WRITE is REMOVED (supersedes CYP-133/CYP-97 auto-discovery). At
+ * spawn, NO CLAUDE.md is written to the worktree — a new agent starts with an empty (absent) CLAUDE.md, and a
+ * pre-existing CLAUDE.md (an external / agent self-edit) is left untouched. It is managed EXCLUSIVELY via the
+ * operator-gated `POST /api/agents/{id}/claude-md`.
  *
- * **Mutation (teeth):** drop the `?: Personas.forRole(...)` default in BootOrchestrator → personaOf is
- * null → no CLAUDE.md is written → [bootMaterializesRoleDefaultPersonaAsClaudeMd] reddens.
+ * **Mutation (teeth):** re-add `File(cwd,"CLAUDE.md").writeText(persona)` in ClaudeCodeConnector.open() → the
+ * spawn materialises/overwrites CLAUDE.md → both tests redden.
  */
 class AgentPersonaBootTest {
 
@@ -53,46 +53,46 @@ class AgentPersonaBootTest {
     )
 
     @Test
-    fun bootMaterializesRoleDefaultPersonaAsClaudeMd() {
+    fun spawn_doesNotAutoWriteClaudeMd_evenWithAPersonaConfig() {
         val root = Files.createTempDirectory("persona-boot").toFile()
         try {
             val config = PlatformConfig(
                 repo = RepoConfig("git@github.com:org/repo.git", "main"),
                 agents = listOf(
-                    AgentConfig("po", "PO", Role.PO),        // no claudeMd → coordinator default
-                    AgentConfig("backend", "BE", Role.WORKER), // no claudeMd → worker default
+                    AgentConfig("po", "PO", Role.PO),                               // role default (no explicit persona)
+                    AgentConfig("backend", "BE", Role.WORKER, claudeMd = "# explicit persona"), // explicit persona
                 ),
             )
             BootOrchestrator(config, secrets(), WorktreeManager(FakeGit(), root), FakeSpawner(), scope).boot()
 
-            val poMd = File(root, "projects/default/po/CLAUDE.md")
-            val beMd = File(root, "projects/default/backend/CLAUDE.md")
-            assertTrue(poMd.isFile, "PO worktree has a CLAUDE.md (role default written)")
-            assertTrue(beMd.isFile, "worker worktree has a CLAUDE.md (role default written)")
-            assertEquals(Personas.COORDINATOR, poMd.readText())
-            assertEquals(Personas.WORKER, beMd.readText())
+            // CYP-310: NO CLAUDE.md is auto-written — not from the role default, not from an explicit persona config.
+            assertFalse(File(root, "projects/default/po/CLAUDE.md").exists(), "PO worktree has NO auto-written CLAUDE.md")
+            assertFalse(
+                File(root, "projects/default/backend/CLAUDE.md").exists(),
+                "worker worktree has NO CLAUDE.md despite an explicit persona config (auto-write is gone)",
+            )
         } finally {
             root.deleteRecursively()
         }
     }
 
     @Test
-    fun explicitPersonaWinsOverRoleDefault() {
+    fun spawn_leavesAPreExistingClaudeMdUntouched() {
         val root = Files.createTempDirectory("persona-boot2").toFile()
         try {
+            // An external / agent self-edit exists in the PO worktree BEFORE boot.
+            val poMd = File(root, "projects/default/po/CLAUDE.md")
+            poMd.parentFile.mkdirs(); poMd.writeText("# EXISTING — an external edit that must survive spawn")
             val config = PlatformConfig(
                 repo = RepoConfig("git@github.com:org/repo.git", "main"),
-                agents = listOf(
-                    AgentConfig("po", "PO", Role.PO, claudeMd = "# custom PO persona"),
-                    AgentConfig("backend", "BE", Role.WORKER),
-                ),
+                agents = listOf(AgentConfig("po", "PO", Role.PO, claudeMd = "# role default that must NOT overwrite")),
             )
             BootOrchestrator(config, secrets(), WorktreeManager(FakeGit(), root), FakeSpawner(), scope).boot()
 
-            // Explicit persona is used verbatim — the role default does NOT override it.
-            val po = File(root, "projects/default/po/CLAUDE.md").readText()
-            assertEquals("# custom PO persona", po)
-            assertTrue(po != Personas.COORDINATOR, "explicit persona must win over the role default")
+            assertEquals(
+                "# EXISTING — an external edit that must survive spawn", poMd.readText(),
+                "spawn did NOT overwrite the pre-existing CLAUDE.md (auto-write is gone)",
+            )
         } finally {
             root.deleteRecursively()
         }
