@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentDetail
 import com.tneff.cyppieagents.model.AgentEdit
 import com.tneff.cyppieagents.model.ApiErrorBody
+import com.tneff.cyppieagents.model.CreatedAgent
 import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.WorktreeFate
 import io.ktor.client.HttpClient
@@ -58,7 +59,16 @@ class AgentManagementHttpRepository(
         }
         val text = response.bodyAsText()
         ensureSuccess(response, text)
-        return CommJson.decodeFromString(Agent.serializer(), text)
+        // CYP-312: POST /api/agents responds the [CreatedAgent] WRAPPER `{agent, token}` (RestContract §98 /
+        // AgentManagement.add → CreatedAgent) — NOT a bare [Agent]. Decoding it as `Agent` threw, surfacing a
+        // FALSE "Anlegen fehlgeschlagen" even though the server created the agent (a refresh showed it). Decode the
+        // wrapper and return `.agent`.
+        val created = CommJson.decodeFromString(CreatedAgent.serializer(), text)
+        // The `token` is the ONE-TIME bearer for a REMOTE-spawned agent (CYP-171/197). Local creates return
+        // token=null and the interface hands the UI only the [Agent], so we intentionally do not surface it here —
+        // but decode it consciously (not `ignoreUnknownKeys`-swallow) so the CYP-197 remote seam has a real field to
+        // plumb through when it lands, rather than silently dropping a value the server sent.
+        return created.agent
     }
 
     override suspend fun edit(id: String, edit: AgentEdit): Agent {
