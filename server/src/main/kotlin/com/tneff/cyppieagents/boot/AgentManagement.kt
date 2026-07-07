@@ -106,7 +106,11 @@ class AgentManagement(
     fun detail(id: String): AgentDetail {
         val a = state.agent(id) ?: throw NotFoundException("agent '$id' not found", code = "agent_not_found")
         val cfg = configs.configOf(id)
-        return AgentDetail(a.id, a.name, a.role, a.worktree, cfg?.launch ?: "claude", cfg?.persona, color = a.color, avatar = a.avatar)
+        // CYP-315: the agent's ABSOLUTE worktree path, resolved server-side via the (active/agent-project)
+        // WorktreeManager — the client can't build it (doesn't know the server git-root/CWD). A remote/BYOA
+        // agent has no local worktree → null (same remoteAgents seam the CLAUDE.md endpoints use).
+        val worktreePath = if (id in remoteAgents) null else worktreeDirOf(a.worktree).absolutePath
+        return AgentDetail(a.id, a.name, a.role, a.worktree, cfg?.launch ?: "claude", cfg?.persona, color = a.color, avatar = a.avatar, worktreePath = worktreePath)
     }
 
     // CYP-310 — CLAUDE.md management (LOCAL). The connector NO LONGER auto-writes CLAUDE.md at spawn; it is

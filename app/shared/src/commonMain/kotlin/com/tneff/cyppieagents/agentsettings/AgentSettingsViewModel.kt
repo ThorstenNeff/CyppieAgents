@@ -33,6 +33,20 @@ data class AgentSettingsUiState(
     val id: String = "",
     val name: String = "",
     val role: Role = Role.WORKER,
+    /**
+     * CYP-315 — the ABSOLUTE worktree path from `AgentDetail.worktreePath` (server-resolved, NEVER client-built).
+     * `null` alone is ambiguous (a remote agent OR a not-yet/failed detail load), so it is read ONLY together with
+     * [detailResolved]: `detailResolved && worktreePath == null` = genuinely remote (Z2); `!detailResolved` = unknown
+     * (Z4, never rendered as "not local").
+     */
+    val worktreePath: String? = null,
+    /**
+     * CYP-315 honesty signal (§7.2, the CYP-288 `failed ≠ empty` class): `true` ONLY after a SUCCESSFUL detail load
+     * (`d != null`). A FAILED load collapses to defaults with `worktreePath == null` too, so the "not local" hint must
+     * hang on this POSITIVE server signal — never on bare `worktreePath == null` — or a failed load would falsely
+     * claim the agent is remote (`failed ≠ remote`).
+     */
+    val detailResolved: Boolean = false,
     /** The custom `#RRGGBB` (or a picked swatch's hex); blank = no override → the deterministic slot default. */
     val colorHex: String = "",
     // --- CYP-310 live CLAUDE.md (replaces the stored-persona field; own GET/POST, decoupled from `save()`) ---
@@ -155,6 +169,11 @@ class AgentSettingsViewModel(
             } else {
                 it.copy(
                     loading = false,
+                    // CYP-315: a SUCCESSFUL detail load (`d != null`) → `detailResolved = true` is the positive signal
+                    // that lets the panel distinguish a genuinely remote agent (Z2, worktreePath == null) from an
+                    // unresolved/failed load (Z4, also null). Read the typed field straight off the DTO (no hand-parse).
+                    detailResolved = true,
+                    worktreePath = d.worktreePath,
                     name = d.name,
                     role = d.role,
                     colorHex = d.color?.takeIf { c -> c.isNotBlank() } ?: it.colorHex,

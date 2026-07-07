@@ -12,6 +12,16 @@ object AgentSettingsTags {
     const val NAME_INPUT = "agentSettings.name.input"
     const val ID_READONLY = "agentSettings.idReadonly"
 
+    // CYP-315 — read-only absolute worktree path (server-resolved) + copy affordance (spec §5, shared QA/CYP-7).
+    /** The rendered absolute path value (monospace, horizontally scrollable) — Z1 only. */
+    const val WORKTREE_PATH = "agentSettings.worktree.path"
+    /** The copy-to-clipboard icon-button — Z1 only. */
+    const val WORKTREE_COPY = "agentSettings.worktree.copy"
+    /** The transient INFO "path copied" confirmation (Z3). */
+    const val WORKTREE_COPIED = "agentSettings.worktree.copied"
+    /** The INFO "not local" hint — Z2 only (detail resolved AND `worktreePath == null`), NEVER on an unresolved load. */
+    const val WORKTREE_NOT_LOCAL = "agentSettings.worktree.notLocal"
+
     const val COLOR = "agentSettings.color"
     /** One per palette slot; [index] = 0..7 (punktfrei — the palette order). */
     fun swatch(index: Int) = "agentSettings.swatch.$index"

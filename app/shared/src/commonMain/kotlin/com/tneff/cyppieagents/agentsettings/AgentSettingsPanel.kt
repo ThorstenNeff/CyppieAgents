@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,8 +16,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -25,16 +28,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.ui.SenderPalette
@@ -71,8 +82,13 @@ import kmpcyppieagents.app.shared.generated.resources.agent_display_name_label
 import kmpcyppieagents.app.shared.generated.resources.agent_edit_effect_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_id_stable_label
 import kmpcyppieagents.app.shared.generated.resources.agent_save
+import kmpcyppieagents.app.shared.generated.resources.agent_worktree_copied
+import kmpcyppieagents.app.shared.generated.resources.agent_worktree_not_local
+import kmpcyppieagents.app.shared.generated.resources.agent_worktree_path_label
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_worktree_copy
 import kmpcyppieagents.app.shared.generated.resources.agent_settings_title
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 
 /** `#RRGGBB` for a Compose colour (the swatch/override wire form). */
@@ -141,6 +157,10 @@ fun AgentSettingsPanel(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag(AgentSettingsTags.ID_READONLY),
                 )
+
+                // CYP-315 — read-only absolute worktree path (identity block, directly under the ID line). Read-only
+                // for operator + non-operator alike (spec §9: display, not a privileged action → no operator gate).
+                WorktreePathSection(state)
 
                 // --- Colour: palette swatches + custom hex + guard + live preview (§4.2/§4.3) ---
                 Heading(stringResource(Res.string.agent_color_section))
@@ -306,6 +326,107 @@ private fun ClaudeMdConflictDialog(viewModel: AgentSettingsViewModel) {
             }
         },
     )
+}
+
+/** ~2 s transient window for the "path copied" receipt (§3). */
+private const val WORKTREE_COPIED_MS = 2_000L
+
+/**
+ * CYP-315 (spec §1/§2) — the read-only ABSOLUTE worktree path in the identity block (under the ID line). The client
+ * reads the typed [AgentSettingsUiState.worktreePath] straight off `AgentDetail` (server-resolved; never rebuilt).
+ * Exactly one status line, by precedence:
+ *  - **Z4** unresolved / failed detail load (`!detailResolved`) → render NOTHING. `worktreePath == null` is the client
+ *    default and a failed load collapses to it too, so "not local" must hang on the POSITIVE [AgentSettingsUiState.
+ *    detailResolved] signal — never bare `== null` (the CYP-288 `failed ≠ remote` honesty core, §2).
+ *  - **Z2** resolved + `worktreePath == null` → the INFO "not local" hint; no path field, no copy button.
+ *  - **Z1** resolved + a path → monospace, single-line, horizontally-scrollable value (unbroken) inside a
+ *    [SelectionContainer] (always-available manual copy) + a trailing copy icon-button → transient INFO "path copied"
+ *    (§3; `liveRegion=Polite` so the receipt is announced). Both hints are INFO/blue — no green SUCCESS (§6).
+ */
+// `internal` (not `private`) so the clipboard tooth can render the section directly — the full panel wraps it in an
+// AlertDialog (its own composition window) which does NOT inherit a test-provided `LocalClipboardManager`.
+@Composable
+internal fun WorktreePathSection(state: AgentSettingsUiState) {
+    // Z4: detail not resolved (still loading OR a failed load that silently collapsed to null) → stay silent; never
+    // claim "not local" from an unknown state (§2 honesty core; §8-3 invariant).
+    if (!state.detailResolved) return
+
+    val path = state.worktreePath
+    val clipboard = LocalClipboardManager.current
+    // Re-arm per agent (`state.id`) so a reused panel never carries a stale "copied" receipt across an agent switch.
+    var copied by remember(state.id) { mutableStateOf(false) }
+    var copyTick by remember(state.id) { mutableStateOf(0) }
+
+    // Label row: "Worktree-Pfad" + (Z1 only) the trailing copy icon-button.
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = stringResource(Res.string.agent_worktree_path_label),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        if (path != null) {
+            val copyCd = stringResource(Res.string.a11y_agent_worktree_copy)
+            IconButton(
+                // Truthful copy (§3/§6/§8-6): actually invoke the clipboard, THEN show the receipt. `setText` is
+                // synchronous on Desktop/Android; on Web the async/permission-gated API may no-op — the
+                // SelectionContainer below is the always-available manual fallback (never fake beyond "copy fired").
+                onClick = {
+                    clipboard.setText(AnnotatedString(path))
+                    copied = true
+                    copyTick++
+                },
+                modifier = Modifier
+                    .testTag(AgentSettingsTags.WORKTREE_COPY)
+                    .semantics { contentDescription = copyCd },
+            ) {
+                // No material-icons-extended in `:app` → a plain glyph is the visible affordance; the a11y name
+                // (contentDescription above) carries the meaning (colour/glyph never the sole carrier, §6 / WCAG 1.4.1).
+                Text("⧉", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+
+    if (path != null) {
+        // The value: monospace, ONE line, horizontally scrollable — a long path scrolls, never wraps/breaks layout,
+        // and stays an integral string (§1/§8-2). SelectionContainer keeps manual select-copy available everywhere.
+        SelectionContainer {
+            Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                Text(
+                    text = path,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.testTag(AgentSettingsTags.WORKTREE_PATH),
+                )
+            }
+        }
+    }
+
+    // EXACTLY ONE status line (§2/§8-4): Z2 "not local" (resolved + null path) XOR Z3 transient "copied" (Z1 after a
+    // copy). Mutually exclusive by construction (null vs non-null `path`); both INFO/blue — no green SUCCESS (§6).
+    when {
+        path == null ->
+            TonedHint(stringResource(Res.string.agent_worktree_not_local), HintTone.INFO, AgentSettingsTags.WORKTREE_NOT_LOCAL)
+        copied ->
+            TonedHint(
+                text = stringResource(Res.string.agent_worktree_copied),
+                tone = HintTone.INFO,
+                tag = AgentSettingsTags.WORKTREE_COPIED,
+                // Polite live-region so the transient receipt is announced to screen readers (§3 / §8-7).
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+    }
+
+    // Z3 self-clear: the receipt fades ~2 s after the copy; a re-copy bumps `copyTick` → cancels + restarts the timer.
+    if (copied) {
+        LaunchedEffect(copyTick) {
+            delay(WORKTREE_COPIED_MS)
+            copied = false
+        }
+    }
 }
 
 @Composable
