@@ -84,14 +84,21 @@ class EventTailViewModel(
     }
 
     private suspend fun collect() {
-        // CYP-289: auto-reconnect with backoff on a socket drop (CYP-73 pattern, same as Comm/AgentView). Each
-        // re-subscribe replays the source's `Connected` marker → statusOf() clears the DISCONNECTED banner; the
-        // seq-ordered id-deduped ring drops duplicate replays. AccessRevoked (1008) is still handled honestly.
+        // CYP-289: auto-reconnect with backoff on a TRANSIENT socket drop (CYP-73 pattern, same as Comm/AgentView) —
+        // each re-subscribe replays the source's `Connected` marker → statusOf() clears the DISCONNECTED banner; the
+        // seq-ordered id-deduped ring drops duplicate replays.
         source.events(currentFilter).reconnecting(backoff).collect { event ->
             EventReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
             when (event) {
                 is EventLiveEvent.Received -> onReceived(event.event)
-                is EventLiveEvent.AccessRevoked -> _state.update { it.copy(accessRevoked = true) }
+                is EventLiveEvent.AccessRevoked -> {
+                    // A 1008 revoke is TERMINAL — access won't return without re-auth. Cancel the collect so
+                    // `.reconnecting()` does NOT re-subscribe; otherwise a revoked client re-opens /ws/events every
+                    // backoff period forever, re-sending the revoked token (a reconnect hammer, security-adjacent).
+                    // Transient drops (Disconnected → the source completes without AccessRevoked) still reconnect.
+                    _state.update { it.copy(accessRevoked = true) }
+                    collectJob?.cancel()
+                }
                 else -> Unit
             }
         }
