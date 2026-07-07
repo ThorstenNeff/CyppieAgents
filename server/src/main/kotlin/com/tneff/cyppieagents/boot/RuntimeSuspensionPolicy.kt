@@ -10,12 +10,10 @@ import org.slf4j.LoggerFactory
  * projects whose agent SESSIONS run** (the expensive `claude` processes). Beyond [cap], the least-recently-
  * hot BACKGROUND project is **suspended** — its agents' sessions are killed ([suspendProject]); on re-entry
  * (the project is activated again) it is **resumed** ([resumeProject], `--resume` via the persisted session
- * ids, CYP-167). CYP-256 (.5b): when [evictRuntime] is wired, the suspend is followed by a **FULL runtime
- * eviction** — the runtime OBJECT is dropped (memory reclaimed), now safe because `.5a`'s durable
- * ProjectAgentStore survives the drop (re-entry re-mints via `getOrCreate` + rehydrates the agent set +
- * `--resume`s). With [evictRuntime] `null` it is `.4b` session-suspension only (object kept). The client-facing
- * contract is unchanged either way: a SUSPENDED project's processes are off + resumable; re-entry = reconnect
- * + `--resume` (CYP-198/204) — full-eviction is a transparent memory optimization, not a new client state.
+ * ids, CYP-167). It is **session-suspension, NOT full runtime eviction**: the cheap runtime object stays in
+ * memory (a full drop would lose the non-boot project's in-memory-only agent config — that reclaim is
+ * deferred to per-project persistence, CYP-247.5 / CYP-220). The client-facing contract is unchanged: a
+ * SUSPENDED project's processes are off + resumable; re-entry = reconnect + `--resume` (CYP-198/204).
  *
  * This class owns ONLY the LRU + cap decision (pure, lock-guarded, deterministically testable with injected
  * actions); the actual stop/spawn is delegated to [suspendProject] / [resumeProject], which run on [scope]
@@ -29,13 +27,6 @@ class RuntimeSuspensionPolicy(
     private val suspendProject: suspend (projectId: String) -> Set<String>,
     /** Resume a project: (re)start exactly the agents that were suspended (connector `--resume`s them). */
     private val resumeProject: suspend (projectId: String, agentIds: Set<String>) -> Unit,
-    /**
-     * CYP-256 (.5b) — FULL runtime eviction after a suspend: drop the runtime OBJECT (compare-and-remove) once
-     * its sessions are stopped, reclaiming its memory. `null` = `.4b` session-suspension only (object kept).
-     * Called under [lock], guarded by "still suspended" (a fast re-activation that removed the project from
-     * [suspended] first → the invoke is skipped, so a re-minted runtime is never dropped).
-     */
-    private val evictRuntime: ((projectId: String) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.suspension")
     private val lock = Any()
@@ -96,22 +87,7 @@ class RuntimeSuspensionPolicy(
                 val stopped = runCatching { suspendProject(victim) }.getOrDefault(emptySet())
                 // Only record the real stopped-set if the project is still suspended (a fast re-activation
                 // could have resumed it meanwhile — then leave it resumed, don't resurrect the suspended entry).
-                // CYP-256 (.5b): and — still under the SAME lock + guard — fully EVICT the runtime object (its
-                // sessions are now stopped; its config survives in the durable store). The "still suspended"
-                // guard is the race gate: a re-activation that already removed `victim` from `suspended` skips
-                // the evict, so its freshly re-minted runtime is never dropped. Belt-and-suspenders: the evict
-                // itself is a compare-and-remove ([RuntimeRegistry.evict]) — it only drops the EXACT suspended
-                // instance, so even a re-mint that slipped in is spared. Residual (out of MVP scope): a SECOND
-                // concurrent switch INTO `victim` between its getOrCreate and its onActivated could still see the
-                // instance evicted mid-switch → a transient 409 (ProjectNotRunnableException) that self-heals on
-                // retry (getOrCreate re-mints). Unreachable under sequential operator switches; a fuller fix
-                // (mark-activating before getOrCreate) is deferred until concurrent multi-switch is in scope.
-                synchronized(lock) {
-                    if (victim in suspended) {
-                        suspended[victim] = stopped
-                        evictRuntime?.invoke(victim)
-                    }
-                }
+                synchronized(lock) { if (victim in suspended) suspended[victim] = stopped }
             }
         }
     }

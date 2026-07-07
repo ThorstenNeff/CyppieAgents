@@ -151,22 +151,4 @@ class RuntimeRegistryTest {
         reg.register(runtime("alpha"))
         assertFailsWith<com.tneff.cyppieagents.routing.ProjectNotRunnableException> { reg.active() }
     }
-
-    @Test
-    fun evict_isCompareAndRemove_dropsTheExactInstance_sparesAReMint() {
-        // CYP-256 (.5b): full eviction is compare-and-remove — the race guard. It drops ONLY the exact
-        // instance it was told to; a concurrently re-minted runtime is never dropped.
-        val reg = RuntimeRegistry { "A" }
-        val original = reg.register(runtime("A"))
-        // evicting a STALE (different) instance is a no-op — the live runtime survives.
-        assertFalse(reg.evict("A", runtime("A")), "compare-and-remove must NOT drop a different instance")
-        assertSame(original, reg.of("A"), "the live runtime survives a stale-instance evict")
-        // evicting the EXACT current instance drops it → memory reclaimed.
-        assertTrue(reg.evict("A", original), "compare-and-remove drops the exact instance")
-        assertNull(reg.of("A"), "the evicted runtime is gone")
-        // re-mint, then evicting the OLD instance must be a no-op — the fast-reactivation-race guard.
-        val fresh = reg.getOrCreate("A", ProjectRuntimeFactory { runtime(it) })
-        assertFalse(reg.evict("A", original), "evicting the stale pre-evict instance must NOT drop the re-minted one")
-        assertSame(fresh, reg.of("A"), "the re-minted runtime survives a late evict of the old instance")
-    }
 }

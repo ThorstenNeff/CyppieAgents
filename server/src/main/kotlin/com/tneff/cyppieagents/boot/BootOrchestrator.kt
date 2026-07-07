@@ -521,58 +521,27 @@ class BootOrchestrator(
                 val rt = runtimeRegistry.of(pid)
                 if (rt != null) agents.forEach { runCatching { rt.lifecycle.start(it) } } // start → open --resume
             },
-            // CYP-256 (.5b): FULL runtime eviction — after the sessions are stopped, drop the runtime OBJECT
-            // (compare-and-remove the exact suspended instance, so a concurrent re-mint is never dropped),
-            // reclaiming its memory. Re-entry re-mints (getOrCreate) + rehydrates the agent set from the durable
-            // ProjectAgentStore + `--resume`s (CYP-167).
-            //
-            // OPTION-A GUARD (fail-safe, ratified): evict ONLY when the project's ENTIRE roster is recoverable
-            // from the durable store — i.e. every live agent has a persisted row. A **config-seeded** agent (the
-            // boot project's roster comes from `config.agents`, never written to [projectAgents]) is NOT in the
-            // store, so re-minting an evicted config-seeded project would rehydrate an EMPTY runtime and lose
-            // that agent (silent roster loss → `resume` fails "unknown agent"). Such a project stays `.4b`
-            // session-suspended with its OBJECT KEPT (cheap: the boot project is a singleton); the memory reclaim
-            // applies to the many runtime-created projects, whose agents all went through `agentManagement.add`
-            // → persisted. `roster ⊆ store` (empty roster ⇒ vacuously safe). Snapshot lists STOPPED agents too
-            // (stop keeps them registered), so post-suspend the roster is still the full set.
-            evictRuntime = { pid ->
-                runtimeRegistry.of(pid)?.let { rt ->
-                    val roster = rt.lifecycle.snapshot().map { it.agentId }.toSet()
-                    val stored = projectAgents.agentsFor(pid).map { it.id }.toSet()
-                    if (roster.all { it in stored }) runtimeRegistry.evict(pid, rt) // fully store-backed → reclaim
-                }
-            },
         )
 
         // CYP-256 (.5a) — LAZY rehydration (CR2): repopulate the ACTIVE project's runtime + HubState slice from
         // the durable [ProjectAgentStore]. Called at boot for the boot project (its runtime-added agents from a
         // prior session) and, per switch, AFTER rescope for the just-activated project (a non-boot project's
         // slice is empty after a restart → the store refills it). LAZY, consistent with .4b — no eager
-        // repopulate-every-project, no new boot-stash mechanism. Rehydrated agents are STOPPED; start is the
-        // CYP-73 lifecycle. Bypasses AgentManagement.add so it does NOT write back to the store (no
-        // rehydrate→persist loop).
-        //
-        // CYP-256 (.5b): the runtime repopulation is gated on the **RUNTIME's own lifecycle**, NOT the HubState
-        // slice — because .5b eviction drops the runtime lifecycle but LEAVES the slice. A slice-gated check
-        // would then see "slice already has the agent" and SKIP repopulating a re-minted (evicted-then-
-        // reactivated) runtime, leaving its lifecycle empty → the agent is "unknown" to its runtime (start fails,
-        // `--resume` never respawns). Gating on `rt.lifecycle` fixes the evict-desync while staying behaviour-
-        // preserving for boot-rehydrate (fresh runtime + empty slice → both branches fire, as before). The
-        // slice-add stays independently idempotent.
+        // repopulate-every-project, no new boot-stash mechanism. Idempotent: skips an agent already in the slice
+        // (config-seeded or previously rehydrated). Rehydrated agents are STOPPED; start is the CYP-73 lifecycle.
+        // Bypasses AgentManagement.add so it does NOT write back to the store (no rehydrate→persist loop).
         val rehydrateActiveProject: () -> Unit = {
             val pid = state.activeProjectId
             val rt = runtimeRegistry.active()
             for (stored in projectAgents.agentsFor(pid)) {
-                if (rt.lifecycle.snapshot().none { it.agentId == stored.id }) {
+                if (state.agent(stored.id) == null) {
                     // D3 (ratified): idempotent worktree reuse — the dir already exists from the original add, so
                     // this is a metadata rebuild, no re-clone / re-`git worktree add`.
                     rt.worktrees.ensureWorktree(stored.worktree, config.repo.branch)
                     rt.agentConfigs.put(stored.id, stored.launch, stored.persona, stored.connectorKind)
+                    state.addAgent(stored.toAgent()) // HubState slice + spoke + ACL (projectId-stamped)
                     rt.lifecycle.register(stored.id, stored.worktree) // known + STOPPED
                 }
-                // Slice repopulation is independently idempotent (a re-minted runtime may still carry the slice
-                // from before the evict — see the .5b desync note above): add only if the slice is missing it.
-                if (state.agent(stored.id) == null) state.addAgent(stored.toAgent()) // HubState slice + spoke + ACL
             }
         }
 

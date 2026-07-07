@@ -4,12 +4,9 @@ import com.tneff.cyppieagents.model.RuntimeState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 /**
  * CYP-255 (.4b) / CYP-247.4 — the [RuntimeSuspensionPolicy] LRU + cap decision, tested deterministically
@@ -23,17 +20,15 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class RuntimeSuspensionPolicyTest {
 
-    private class Fix(cap: Int, scope: CoroutineScope, evict: Boolean = true) {
+    private class Fix(cap: Int, scope: CoroutineScope) {
         val suspendedCalls = mutableListOf<String>()
         val resumedCalls = mutableListOf<Pair<String, Set<String>>>()
-        val evictedCalls = mutableListOf<String>() // CYP-256 (.5b): the runtimes fully evicted (object dropped)
         val runningAgentsOf = mutableMapOf<String, Set<String>>() // project → the "running" agents suspend stops
         val policy = RuntimeSuspensionPolicy(
             cap = cap,
             scope = scope,
             suspendProject = { pid -> suspendedCalls.add(pid); runningAgentsOf[pid] ?: emptySet() },
             resumeProject = { pid, agents -> resumedCalls.add(pid to agents) },
-            evictRuntime = if (evict) { pid -> evictedCalls.add(pid) } else null,
         )
     }
 
@@ -98,38 +93,5 @@ class RuntimeSuspensionPolicyTest {
         val f = Fix(cap = 3, backgroundScope)
         f.policy.onActivated("A")
         assertEquals(RuntimeState.HOT, f.policy.stateOf("fresh", "A"), "a never-activated project → HOT (no indicator), not SUSPENDED")
-    }
-
-    // ---- CYP-256 (.5b): full runtime eviction ----
-
-    @Test
-    fun beyondCap_fullyEvictsTheSuspendedVictim() = runTest(UnconfinedTestDispatcher()) {
-        val f = Fix(cap = 1, backgroundScope) // evict = true (default)
-        f.runningAgentsOf["A"] = setOf("a1")
-        f.policy.onActivated("A")
-        f.policy.onActivated("B") // A is the LRU victim → suspended AND its runtime evicted
-        assertEquals(listOf("A"), f.suspendedCalls, "A's sessions are stopped first")
-        assertEquals(listOf("A"), f.evictedCalls, ".5b: the suspended victim's runtime OBJECT is then fully evicted")
-    }
-
-    @Test
-    fun evictRuntimeNull_isSessionSuspensionOnly_objectKept() = runTest(UnconfinedTestDispatcher()) {
-        val f = Fix(cap = 1, backgroundScope, evict = false) // .4b posture
-        f.policy.onActivated("A")
-        f.policy.onActivated("B")
-        assertEquals(listOf("A"), f.suspendedCalls, "sessions still stopped")
-        assertEquals(emptyList(), f.evictedCalls, "evictRuntime=null → .4b session-suspension only, the runtime object is kept")
-    }
-
-    @Test
-    fun fastReactivationBeforeAsyncEvict_skipsEvict_keepsRuntime() = runTest { // StandardTestDispatcher: async is QUEUED, not eager
-        val f = Fix(cap = 1, this) // the TestScope itself → advanceUntilIdle drains its launches deterministically
-        f.runningAgentsOf["A"] = setOf("a1")
-        f.policy.onActivated("A")
-        f.policy.onActivated("B") // A → victim; the suspend+evict(A) is SCHEDULED, not yet run
-        f.policy.onActivated("A") // re-enter A BEFORE the scheduled evict runs → A removed from `suspended`
-        advanceUntilIdle() // now the queued suspend/evict blocks run
-        assertFalse("A" in f.evictedCalls, "A was re-activated before its async evict → the 'still suspended' guard skips it (its runtime is never dropped)")
-        assertTrue("B" in f.evictedCalls, "B (the new LRU victim after A refreshed) IS evicted")
     }
 }
