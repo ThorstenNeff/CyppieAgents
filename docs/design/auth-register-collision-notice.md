@@ -30,20 +30,22 @@ Die Enumeration-Sicherheit ist **architektonisch schon da** (auth-spec §-Ask 1 
 
 ## §3 — Copy (DE + EN) — enumeration-sicher, honest, dual-purpose
 
+> **✅ RATIFIZIERTER SPLIT (Dev-Vorschlag, PO 2026-07-07):** Der Body ist **rein neutral** (2 Sätze, 0 konditionale Sprache) = maximales Nicht-Orakel; die Dual-Purpose-**Hilfe wandert vollständig in die Affordance-Zeile** (Anmelden/Zurücksetzen, allen gezeigt). Stärker als die ursprüngliche 3-Satz-Body-Klausel: keine „falls du bereits ein Konto hast"-Aussage mehr im Body → die Affordance-Links sind unbedingte Navigation (keine Behauptung über die Konto-Existenz). **Bedingung:** die Affordance-Zeile ist jetzt der **alleinige Träger** der Bestandsnutzer-Hilfe — sie MUSS präsent + allen sichtbar sein.
+
 **Titel** (neutral — „bestätigen" ist verify-spezifisch, für die Kollision gibt es nichts zu bestätigen):
 
 | Key (neu) | DE | EN |
 |---|---|---|
 | `auth_register_notice_title` | **Prüfe deine E-Mail** | **Check your email** |
 
-**Body** (%1$s = eingegebene E-Mail):
+**Body** (%1$s = eingegebene E-Mail) — **neutral, identisch neu vs. Kollision:**
 
 | Key (neu) | Text |
 |---|---|
-| `auth_register_notice_body` (DE) | **Wir haben eine E-Mail an %1$s gesendet. Öffne den Link darin, um fortzufahren. Falls du hier bereits ein Konto hast, enthält sie stattdessen einen Link zum Anmelden oder zum Zurücksetzen deines Passworts.** |
-| `auth_register_notice_body` (EN) | **We've sent an email to %1$s. Open the link inside to continue. If you already have an account here, it instead contains a link to sign in or reset your password.** |
+| `auth_register_notice_body` (DE) | **Wir haben eine E-Mail an %1$s gesendet. Öffne den Link darin, um fortzufahren.** |
+| `auth_register_notice_body` (EN) | **We've sent an email to %1$s. Open the link inside to continue.** |
 
-**Affordance-Zeile** (immer sichtbar → keine Existenz verraten; hilft dem echten Bestandsnutzer, sofort zu handeln — **Reuse bestehender Keys, 0 neue**):
+**Affordance-Zeile — JETZT ALLEINIGER TRÄGER der Dual-Purpose-Hilfe** (immer sichtbar → keine Existenz verraten; hilft dem echten Bestandsnutzer sofort zu handeln — **Reuse bestehender Keys, 0 neue; MUSS präsent sein**):
 
 | Aktion | Reuse-Key | DE | Ziel |
 |---|---|---|---|
@@ -59,7 +61,7 @@ Die Enumeration-Sicherheit ist **architektonisch schon da** (auth-spec §-Ask 1 
 | Aussage | Status | Regel |
 |---|---|---|
 | „Wir haben eine E-Mail gesendet" | **garantiert** (bei valid submit sendet der Backend immer) | ehrlich als Fakt formulierbar |
-| „…zum Anmelden oder Zurücksetzen" | **advisory/konditional** (nur falls Konto existiert) | als „falls du bereits ein Konto hast" gerahmt — nie als Tatsachenbehauptung über DIESE Adresse |
+| Anmelden/Zurücksetzen-Hilfe | **unbedingte Navigation** (Affordance-Links, allen gezeigt) | nach dem Split KEINE Copy-Aussage mehr — reine UI-Navigation, behauptet nichts über die Konto-Existenz (noch ehrlicher/sicherer als die frühere gerahmte Body-Klausel) |
 | „Dein Konto wurde erstellt" | **NIE behaupten** | wäre bei Kollision falsch → Copy sagt „E-Mail gesendet", nicht „Konto erstellt" |
 | „Diese E-Mail existiert (nicht)" | **NIE** — weder Text noch Fehler noch Ton noch Timing | das ist das Orakel-Verbot (§5) |
 
