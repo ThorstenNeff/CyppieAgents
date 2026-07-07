@@ -57,7 +57,7 @@ class AgentSettingsPanelTest {
     )
 
     @Test
-    fun operator_nameEditable_idReadonly_present_and_effectHintOnlyPostPersonaSave() = runComposeUiTest {
+    fun operator_nameEditable_idReadonly_present_and_effectHintOnlyPostClaudeMdOverwrite() = runComposeUiTest {
         val v = vm(editable = true)
         setContent { MaterialTheme { AgentSettingsPanel(v, onDismiss = {}) } }
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AgentSettingsTags.PANEL).fetchSemanticsNodes().isNotEmpty() }
@@ -67,12 +67,16 @@ class AgentSettingsPanelTest {
         // Rename/recolour are immediate → NO restart hint, ever.
         v.setName("Renamed"); v.setColorHex("#3B82F6"); waitForIdle()
         onNodeWithTag(AgentSettingsTags.EFFECT_HINT).assertDoesNotExist()
-        // ⭐ UX-QA: editing the persona pre-save must NOT show the "Gespeichert…" hint (nothing saved yet).
-        v.setPersona("persona v2"); waitForIdle()
+        // CYP-310 §10-3: editing the CLAUDE.md buffer is DIRTY (unsaved) — NOT the restart hint; the two disclosures
+        // are sequential. Dirty shows PERSONA_UNSAVED; the restart hint stays absent until the file is written.
+        v.setClaudeMd("persona v2"); waitForIdle()
+        onNodeWithTag(AgentSettingsTags.PERSONA_UNSAVED).assertExists()
         onNodeWithTag(AgentSettingsTags.EFFECT_HINT).assertDoesNotExist()
-        // Only AFTER the save (saved ≠ active → restart) does the hint appear.
-        v.save(); waitForIdle()
+        // Only AFTER a successful OVERWRITE (file ≠ running agent → Hop ② open) does the restart hint appear —
+        // and the dirty hint is gone (clean now). §10-3 sequential disclosures.
+        v.overwriteClaudeMd(); waitForIdle()
         onNodeWithTag(AgentSettingsTags.EFFECT_HINT).assertExists()
+        onNodeWithTag(AgentSettingsTags.PERSONA_UNSAVED).assertDoesNotExist()
     }
 
     /**

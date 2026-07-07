@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
 import com.tneff.cyppieagents.model.Agent
@@ -82,7 +83,9 @@ class AgentAvatarSectionTest {
         val v = vm(editable = true)
         setContent { MaterialTheme { AgentSettingsPanel(v, onDismiss = {}) } }
         waitUntil(timeoutMillis = 5_000L) { onAllNodesWithTag(AgentSettingsTags.PANEL).fetchSemanticsNodes().isNotEmpty() }
-        onNodeWithTag(AgentSettingsTags.avatarPresetStyle("bottts")).performClick()
+        // CYP-310: the live-CLAUDE.md section (field + overwrite button + note) makes the dialog taller → the preset
+        // grid can sit below the fold; scroll it into view before clicking (the click must land on the real node).
+        onNodeWithTag(AgentSettingsTags.avatarPresetStyle("bottts")).performScrollTo().performClick()
         waitForIdle()
         onNodeWithTag(AgentSettingsTags.avatarPresetStyle("bottts")).assertIsSelected()
         onNodeWithTag(AgentSettingsTags.AVATAR_CURRENT).assert(stageIs("preset")) // now a Preset avatar

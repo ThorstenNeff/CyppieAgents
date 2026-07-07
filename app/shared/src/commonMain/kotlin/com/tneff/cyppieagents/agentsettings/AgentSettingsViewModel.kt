@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.parseHexColor
 import com.tneff.cyppieagents.ui.SenderPalette
 import kotlin.random.Random
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,12 +35,33 @@ data class AgentSettingsUiState(
     val role: Role = Role.WORKER,
     /** The custom `#RRGGBB` (or a picked swatch's hex); blank = no override → the deterministic slot default. */
     val colorHex: String = "",
-    val persona: String = "",
-    /** The persona ACTIVE in the running agent (baseline captured at open). A SAVE that moves [savedPersona]
-     *  away from this ⇒ saved ≠ active ⇒ restart needed (§4.4 / UX-QA fix: the hint is a POST-save state). */
-    val activePersona: String = "",
-    /** The persona persisted THIS session (starts == [activePersona]; set on a successful save). */
-    val savedPersona: String = "",
+    // --- CYP-310 live CLAUDE.md (replaces the stored-persona field; own GET/POST, decoupled from `save()`) ---
+    /** The editable field content (starts == the live file; dirty when it diverges → overwrite becomes enabled). */
+    val claudeMd: String = "",
+    /** The last LOADED-or-WRITTEN file content (dirty baseline). */
+    val claudeMdLoaded: String = "",
+    /**
+     * Content-hash of the loaded file — the `expectedVersion` base for an overwrite (optimistic concurrency, v3).
+     * **Nullable end-to-end** (mirrors `:core ClaudeMdView.version: String?`): `null` for an ABSENT file. The
+     * send-logic maps `exists=false → expectedVersion=null` (the server's "expect absent" first-write branch);
+     * narrowing this back to non-null (`""`) re-breaks the first-write path with a 409 loop (CYP-310 NO-GO).
+     */
+    val claudeMdVersion: String? = null,
+    /** The live GET is in flight → fail-closed: field + overwrite not yet usable ([PERSONA_LOADING]). */
+    val claudeMdLoading: Boolean = true,
+    /** The live GET FAILED → **fail-closed** (no content, overwrite locked; distinct from a settled-empty file —
+     *  the CYP-288 failed≠empty line; [PERSONA_UNAVAILABLE] LoadErrorRetry surface). */
+    val claudeMdError: Boolean = false,
+    /** The file exists on disk (from the GET). `false` = absent → a first write CREATES it (not destructive). */
+    val claudeMdFileExists: Boolean = false,
+    /** A hard overwrite (POST) is in flight. */
+    val claudeMdWriting: Boolean = false,
+    /** An overwrite succeeded THIS session → the running agent (which read the OLD file) needs a restart → the hint. */
+    val claudeMdWritten: Boolean = false,
+    /** A non-stale write failure (network/500) — surfaced honestly, distinct from the stale conflict. */
+    val claudeMdWriteError: Boolean = false,
+    /** 409 `claude_md_stale`: the file changed externally (maybe the agent) → the Layer-2 confirm ([PERSONA_CONFIRM]). */
+    val claudeMdStale: Boolean = false,
     // --- CYP-216 avatar ---
     /** The EFFECTIVE avatar (server truth): prefilled from detail, replaced ONLY by a server response (#3). */
     val avatar: AgentAvatar? = null,
@@ -55,12 +77,22 @@ data class AgentSettingsUiState(
     /** A non-blank custom hex that isn't `#RRGGBB` → format error (blocks Save; §4.2). */
     val hexError: Boolean get() = colorHex.isNotBlank() && parseHexColor(colorHex) == null
     /**
-     * The EFFECT_DEFERRED restart hint state: a persona was SAVED this session but the agent hasn't restarted, so
-     * the stored persona ≠ the active one. The key reads "Gespeichert. Wirkt erst beim nächsten Start" → it is
-     * true ONLY **after** a persona-changing save, never while merely editing (UX-QA: pre-save "Gespeichert" is a
-     * lie). Name/colour are immediate → never this hint.
+     * The EFFECT_DEFERRED restart hint state (CYP-310): a CLAUDE.md OVERWRITE succeeded this session but the running
+     * agent already read the OLD file, so it needs a restart to pick up the change ("Wirkt erst beim nächsten Start").
+     * True ONLY **after** a successful overwrite, never while merely editing the field. Name/colour stay immediate.
      */
-    val needsRestart: Boolean get() = savedPersona != activePersona
+    val needsRestart: Boolean get() = claudeMdWritten
+
+    // --- CYP-310 derived CLAUDE.md UI states (S1-S6) ---
+    /** The field diverges from the loaded file → an overwrite would change something. */
+    val claudeMdDirty: Boolean get() = claudeMd != claudeMdLoaded
+    /** Settled-EMPTY: the GET succeeded but the file is absent (`exists=false`) — valid, a write CREATES it. Distinct
+     *  from [claudeMdError] (load failed → fail-closed). The CYP-288 failed≠empty line ([PERSONA_EMPTY]). */
+    val claudeMdEmpty: Boolean get() = !claudeMdLoading && !claudeMdError && !claudeMdFileExists
+    /** The overwrite button is enabled ONLY when: operator, the live read settled OK, and the field is dirty.
+     *  Fail-closed: disabled while loading / on a read error / mid-write. */
+    val canOverwriteClaudeMd: Boolean get() =
+        editable && !claudeMdLoading && !claudeMdError && !claudeMdWriting && claudeMdDirty
     /** The effective base ARGB for the live preview + titlebar theming: valid custom hex, else the slot default. */
     val baseArgb: Int
         get() = colorHex.takeIf { it.isNotBlank() }?.let { parseHexColor(it) }
@@ -92,6 +124,9 @@ class AgentSettingsViewModel(
     editable: Boolean,
     initialName: String,
     initialColorHex: String?,
+    /** CYP-310: the live worktree CLAUDE.md port. Read on open (fail-closed), overwritten via the explicit button.
+     *  Defaults to the in-memory [StubClaudeMdApi]; production wires [ClaudeMdHttpApi] at the shell. */
+    private val claudeMdApi: ClaudeMdApi = StubClaudeMdApi(),
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -106,7 +141,11 @@ class AgentSettingsViewModel(
     )
     val state: StateFlow<AgentSettingsUiState> = _state.asStateFlow()
 
-    init { runScope.launch { load() } }
+    init {
+        runScope.launch { load() }
+        // CYP-310: the CLAUDE.md field is the LIVE worktree file (its own GET), no longer `d.persona` from detail.
+        loadClaudeMd()
+    }
 
     private suspend fun load() {
         val d = runCatching { repository.detail(agentId) }.getOrNull()
@@ -118,15 +157,37 @@ class AgentSettingsViewModel(
                     loading = false,
                     name = d.name,
                     role = d.role,
-                    persona = d.persona ?: "",
-                    activePersona = d.persona ?: "",
-                    savedPersona = d.persona ?: "",
                     colorHex = d.color?.takeIf { c -> c.isNotBlank() } ?: it.colorHex,
                     avatar = d.avatar,
                     // Read-only reflection for the grid selection ring; `as?` → null for an Upload (no style selected).
                     selectedStyle = (d.avatar as? AgentAvatar.Preset)?.style,
                 )
             }
+        }
+    }
+
+    /**
+     * CYP-310: read the LIVE worktree CLAUDE.md (`GET /api/agents/{id}/claude-md`). **Fail-closed** — a load
+     * failure leaves `claudeMdError = true` (no content shown, overwrite locked), NEVER a stale/guessed value; a
+     * settled-absent file is the distinct EMPTY state (`exists=false`). Also used by "Live neu laden" (reload).
+     */
+    fun loadClaudeMd() {
+        _state.update { it.copy(claudeMdLoading = true, claudeMdError = false, claudeMdStale = false, claudeMdWriteError = false) }
+        runScope.launch {
+            runCatching { claudeMdApi.get(agentId) }
+                .onSuccess { v ->
+                    _state.update {
+                        it.copy(
+                            claudeMdLoading = false, claudeMdError = false,
+                            claudeMd = v.content, claudeMdLoaded = v.content,
+                            claudeMdVersion = v.version, claudeMdFileExists = v.exists,
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    _state.update { it.copy(claudeMdLoading = false, claudeMdError = true) } // fail-closed
+                }
         }
     }
 
@@ -142,24 +203,100 @@ class AgentSettingsViewModel(
     fun setName(v: String) = ifEditable { _state.update { it.copy(name = v, saved = false) } }
     fun setColorHex(v: String) = ifEditable { _state.update { it.copy(colorHex = v, saved = false) } }
     fun pickSwatch(hex: String) = ifEditable { _state.update { it.copy(colorHex = hex, saved = false) } }
-    fun setPersona(v: String) = ifEditable { _state.update { it.copy(persona = v, saved = false) } }
+    /** CYP-310: edit the local CLAUDE.md buffer. Typing while dirty FREEZES the live-refresh (D1) — the buffer is
+     *  never clobbered by a background reload — and clears a prior save-error (a fresh attempt). Not auto-saved. */
+    fun setClaudeMd(v: String) = ifEditable { _state.update { it.copy(claudeMd = v, claudeMdWriteError = false) } }
 
     fun save() {
         val s = _state.value
         if (!s.editable || s.hexError) return
         _state.update { it.copy(saving = true, error = false) }
         runScope.launch {
+            // CYP-310: `save()` writes ONLY name+colour now — the CLAUDE.md moves to its own live GET + explicit
+            // "Überschreiben" (POST); persona is no longer part of the shared edit path (null → PRESERVE, decoupled).
             val edit = AgentEdit(
                 role = s.role,
                 name = s.name.ifBlank { null },
                 color = s.colorHex.ifBlank { null },
-                persona = s.persona.ifBlank { null },
             )
             runCatching { repository.edit(agentId, edit) }
-                // Record the persona as SAVED (not restarted) → needsRestart flips true iff it moved off active.
-                .onSuccess { _state.update { it.copy(saving = false, saved = true, savedPersona = s.persona) } }
+                .onSuccess { _state.update { it.copy(saving = false, saved = true) } }
                 .onFailure { _state.update { it.copy(saving = false, error = true) } }
         }
+    }
+
+    /**
+     * CYP-310: HARD-overwrite the live CLAUDE.md with the buffer (`POST …/claude-md`, `expectedVersion` = the read
+     * base). Fail-closed: no-op unless operator + settled read + dirty. On **200** → dirty→clean, re-sync to the
+     * server echo, and the restart hint (Hop ②: file ≠ running agent). On **409 stale** → the Layer-2 conflict
+     * dialog (§5). On any other failure → S6 (stays dirty, NO fake "saved"). First-write on an absent file just
+     * creates it (no confirm — nothing destroyed).
+     */
+    fun overwriteClaudeMd() {
+        val s = _state.value
+        if (!s.canOverwriteClaudeMd) return
+        writeClaudeMd(s.claudeMd, expectedVersionFor(s.claudeMdFileExists, s.claudeMdVersion))
+    }
+
+    /**
+     * CYP-310 first-write fix: the write's `expectedVersion` is the live hash ONLY for a file that EXISTS; for an
+     * absent file it is **`null`** — the server's `null == currentVersion` create-branch. Binding it to `exists`
+     * (not just "whatever version we hold") is the guard: `null` must mean strictly "expect absent", never "force",
+     * so the if-match concurrency check stays sharp for existing files (a stale hash → 409, no silent clobber).
+     */
+    private fun expectedVersionFor(exists: Boolean, version: String?): String? = if (exists) version else null
+
+    /** Layer-2 "[Trotzdem überschreiben]": force the write over the external change — re-fetch the CURRENT version,
+     *  then overwrite with the LOCAL buffer against it (the user chose to discard the external edit). */
+    fun forceOverwriteClaudeMd() {
+        val s = _state.value
+        if (!s.editable || s.claudeMdWriting) return
+        val content = s.claudeMd
+        _state.update { it.copy(claudeMdStale = false, claudeMdWriting = true) }
+        runScope.launch {
+            val fresh = runCatching { claudeMdApi.get(agentId) }.getOrNull()
+            if (fresh == null) {
+                _state.update { it.copy(claudeMdWriting = false, claudeMdError = true) } // fail-closed: unknown base
+                return@launch
+            }
+            // Same conditional as the direct path: an absent (deleted-since) file → expect-absent (`null`).
+            doWrite(content, expectedVersionFor(fresh.exists, fresh.version))
+        }
+    }
+
+    /** Layer-2 "[Live-Version laden]": discard the local buffer and reload the live file (dirty edits were flagged). */
+    fun reloadLiveClaudeMd() {
+        _state.update { it.copy(claudeMdStale = false) }
+        loadClaudeMd()
+    }
+
+    private fun writeClaudeMd(content: String, expectedVersion: String?) {
+        _state.update { it.copy(claudeMdWriting = true, claudeMdWriteError = false, claudeMdStale = false) }
+        runScope.launch { doWrite(content, expectedVersion) }
+    }
+
+    private suspend fun doWrite(content: String, expectedVersion: String?) {
+        runCatching { claudeMdApi.update(agentId, content, expectedVersion) }
+            .onSuccess { v ->
+                // dirty→clean: re-sync the buffer + baseline to the SERVER echo; arm the restart hint (Hop ②).
+                _state.update {
+                    it.copy(
+                        claudeMdWriting = false,
+                        claudeMd = v.content, claudeMdLoaded = v.content,
+                        claudeMdVersion = v.version, claudeMdFileExists = v.exists,
+                        claudeMdWritten = true, claudeMdWriteError = false, claudeMdStale = false,
+                    )
+                }
+            }
+            .onFailure { e ->
+                if (e is CancellationException) throw e
+                when {
+                    e is ClaudeMdException && e.code == "claude_md_stale" ->
+                        _state.update { it.copy(claudeMdWriting = false, claudeMdStale = true) } // → Layer-2 confirm
+                    else ->
+                        _state.update { it.copy(claudeMdWriting = false, claudeMdWriteError = true) } // S6: stays dirty
+                }
+            }
     }
 
     /** Pick a DiceBear preset — a FRESH Preset(style, seed = agentId), written via the Preset-only edit path. */

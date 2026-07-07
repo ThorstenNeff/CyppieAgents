@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -40,8 +41,20 @@ import com.tneff.cyppieagents.ui.SenderPalette
 import com.tneff.cyppieagents.model.deriveScheme
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.LoadErrorRetry
 import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.agent_add_persona_placeholder
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_conflict_body
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_conflict_title
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_empty
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_overwrite
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_overwrite_anyway
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_overwrite_note
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_reload_live
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_save_failed
+import kmpcyppieagents.app.shared.generated.resources.agent_claudemd_unsaved
+import kmpcyppieagents.app.shared.generated.resources.load_failed
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_color_custom
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_color_preview
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_color_swatch
@@ -188,23 +201,9 @@ fun AgentSettingsPanel(
                     }
                 }
 
-                // --- Persona (CLAUDE.md) — restart-deferred, reused effect hint (§4.4) ---
+                // --- Persona / CLAUDE.md — LIVE file field + hard "Überschreiben" (CYP-310, spec S1-S6) ---
                 Heading(stringResource(Res.string.agent_add_persona_label))
-                val personaCd = stringResource(Res.string.a11y_agent_add_persona)
-                OutlinedTextField(
-                    value = state.persona,
-                    onValueChange = viewModel::setPersona,
-                    label = { Text(stringResource(Res.string.agent_add_persona_label)) },
-                    singleLine = false,
-                    enabled = state.editable,
-                    modifier = Modifier.fillMaxWidth().testTag(AgentSettingsTags.PERSONA_INPUT)
-                        .semantics { contentDescription = personaCd },
-                )
-                // The restart hint is shown ONLY AFTER a persona SAVE (saved ≠ active → restart) — never while merely
-                // editing (the key says "Gespeichert…"; pre-save that would be a lie). Name/colour are immediate (§4.4/§7.3).
-                if (state.needsRestart) {
-                    TonedHint(stringResource(Res.string.agent_edit_effect_hint), HintTone.EFFECT_DEFERRED, AgentSettingsTags.EFFECT_HINT)
-                }
+                ClaudeMdSection(state, viewModel)
 
                 // CYP-216 §3: the avatar section (current + preset grid + upload/remove + credits).
                 AgentAvatarSection(viewModel, onRequestUpload)
@@ -220,6 +219,90 @@ fun AgentSettingsPanel(
         dismissButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.testTag(AgentSettingsTags.CANCEL)) {
                 Text(stringResource(Res.string.agent_cancel))
+            }
+        },
+    )
+    // CYP-310 Layer-2 (§5): the 409-stale conflict — a blocking confirm ONLY on a real, unseen external change.
+    if (state.claudeMdStale) ClaudeMdConflictDialog(viewModel)
+}
+
+/**
+ * CYP-310 — the live worktree CLAUDE.md (spec §2/§3, S1-S6): a live-file field + the Layer-1 hard-overwrite
+ * affordance ("CLAUDE.md überschreiben" + "kein Merge" micro-line) + EXACTLY ONE disclosure in the hint zone
+ * (§10-3). Fail-closed: a failed live read shows [LoadErrorRetry] (never an empty field — failed ≠ empty, §10-4)
+ * and the overwrite is locked (never write from an unknown base). Operator-gated (non-operator = read-only view).
+ */
+@Composable
+private fun ClaudeMdSection(state: AgentSettingsUiState, viewModel: AgentSettingsViewModel) {
+    // S5 fail-closed: the live read FAILED → the shared error+retry surface, NOT an empty field.
+    if (state.claudeMdError) {
+        LoadErrorRetry(
+            message = stringResource(Res.string.load_failed),
+            onRetry = viewModel::loadClaudeMd,
+            containerTag = AgentSettingsTags.PERSONA_LOAD_ERROR,
+            retryTag = AgentSettingsTags.PERSONA_LOAD_ERROR_RETRY,
+        )
+        return
+    }
+    val personaCd = stringResource(Res.string.a11y_agent_add_persona)
+    // The LIVE-file field. D1: while dirty the buffer is frozen (the VM only refreshes on load/reload) → typing is
+    // never clobbered. Disabled while the base is still loading — never overwrite from an unknown base.
+    OutlinedTextField(
+        value = state.claudeMd,
+        onValueChange = viewModel::setClaudeMd,
+        label = { Text(stringResource(Res.string.agent_add_persona_label)) },
+        placeholder = { Text(stringResource(Res.string.agent_add_persona_placeholder)) },
+        singleLine = false,
+        enabled = state.editable && !state.claudeMdLoading,
+        modifier = Modifier.fillMaxWidth().testTag(AgentSettingsTags.PERSONA_INPUT)
+            .semantics { contentDescription = personaCd },
+    )
+    // Layer 1 (ALWAYS, operator only): the hard-overwrite affordance carries the "replace, no merge" awareness
+    // before every click. Disabled unless the field is dirty and the base read settled (fail-closed).
+    if (state.editable) {
+        Button(
+            onClick = viewModel::overwriteClaudeMd,
+            enabled = state.canOverwriteClaudeMd,
+            modifier = Modifier.testTag(AgentSettingsTags.PERSONA_OVERWRITE),
+        ) { Text(stringResource(Res.string.agent_claudemd_overwrite)) }
+        Text(
+            text = stringResource(Res.string.agent_claudemd_overwrite_note),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    // Hint zone — EXACTLY ONE disclosure (§10-3), by precedence: overwrite-error (S6, stays dirty, no restart) →
+    // dirty (S2) → restart (S3/S4 post-success) → settled-empty (S4). Clean (S1) shows nothing.
+    when {
+        state.claudeMdWriteError ->
+            TonedHint(stringResource(Res.string.agent_claudemd_save_failed), HintTone.ERROR, AgentSettingsTags.PERSONA_SAVE_ERROR)
+        state.claudeMdDirty ->
+            TonedHint(stringResource(Res.string.agent_claudemd_unsaved), HintTone.EFFECT_DEFERRED, AgentSettingsTags.PERSONA_UNSAVED)
+        state.needsRestart ->
+            TonedHint(stringResource(Res.string.agent_edit_effect_hint), HintTone.EFFECT_DEFERRED, AgentSettingsTags.EFFECT_HINT)
+        state.claudeMdEmpty ->
+            TonedHint(stringResource(Res.string.agent_claudemd_empty), HintTone.INFO, AgentSettingsTags.PERSONA_EMPTY)
+    }
+}
+
+/** CYP-310 Layer-2 — the 409-stale conflict (§5): [Trotzdem überschreiben] (force with the fresh version) vs the
+ *  safe [Live-Version laden] (discard local, reload). Dismiss = the safe reload. */
+@Composable
+private fun ClaudeMdConflictDialog(viewModel: AgentSettingsViewModel) {
+    AlertDialog(
+        onDismissRequest = viewModel::reloadLiveClaudeMd,
+        // The dialog renders in its OWN window → re-apply so its testTags resolve as resource-ids for Maestro (F2).
+        modifier = Modifier.enableTestTagsAsResourceId().testTag(AgentSettingsTags.PERSONA_CONFLICT),
+        title = { Text(stringResource(Res.string.agent_claudemd_conflict_title)) },
+        text = { Text(stringResource(Res.string.agent_claudemd_conflict_body)) },
+        confirmButton = {
+            TextButton(onClick = viewModel::forceOverwriteClaudeMd, modifier = Modifier.testTag(AgentSettingsTags.PERSONA_CONFLICT_OVERWRITE)) {
+                Text(stringResource(Res.string.agent_claudemd_overwrite_anyway))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = viewModel::reloadLiveClaudeMd, modifier = Modifier.testTag(AgentSettingsTags.PERSONA_CONFLICT_RELOAD)) {
+                Text(stringResource(Res.string.agent_claudemd_reload_live))
             }
         },
     )
