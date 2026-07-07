@@ -33,6 +33,7 @@ fun Application.installRestrictedCors(allowedOrigins: List<String>) {
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Put)
+        allowMethod(HttpMethod.Delete) // CYP-234b-3: a cross-origin BYO frontend uses DELETE (revoke, agent/project delete)
         allowMethod(HttpMethod.Options)
         // Deliberately NO anyHost(); bearer/?token auth means no cookies, so allowCredentials stays false.
     }

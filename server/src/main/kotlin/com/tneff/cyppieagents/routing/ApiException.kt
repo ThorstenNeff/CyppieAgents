@@ -32,6 +32,10 @@ class BadRequestException(message: String, code: String = "bad_request") :
 class PayloadTooLargeException(message: String, code: String = "payload_too_large") :
     ApiException(HttpStatusCode.PayloadTooLarge, code, message)
 
+/** CYP-234b-3 (#7) — a participant token's per-subject rate-limit bucket is empty. 429, fail-closed. */
+class TooManyRequestsException(message: String = "rate limit exceeded", code: String = "rate_limited") :
+    ApiException(HttpStatusCode.TooManyRequests, code, message)
+
 /**
  * The request is well-formed and authorized but would violate a hub invariant that the server is
  * the source of truth for — e.g. locking the PO out of a channel it is the hub of (CYP-49).

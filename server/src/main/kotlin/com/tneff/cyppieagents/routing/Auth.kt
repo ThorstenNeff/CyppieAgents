@@ -83,13 +83,26 @@ fun TokenRegistry.participantFor(token: String?): String? =
     agentFor(token) ?: if (isOperator(token)) HubState.OPERATOR_ID else null
 
 /**
+ * CYP-234b — resolve a CYP-234b participant token to its read-SUBJECT, applying the per-subject rate-limit
+ * (#7). Returns null if [token] is not a participant token (the caller falls through to the session axis);
+ * throws [TooManyRequestsException] (429) if it IS a participant token whose per-subject bucket is empty. The
+ * bucket key is the RESOLVED subject (bounded, RC3-safe) — an invalid token resolves to null and never touches
+ * the limiter, so the limiter map cannot be grown by unauthenticated traffic.
+ */
+private fun ApplicationCall.participantSubject(deps: AuthDeps, token: String?): String? {
+    val subject = deps.participantTokens.subjectFor(token) ?: return null
+    if (!deps.participantRateLimiter.tryAcquire(subject)) throw TooManyRequestsException()
+    return subject
+}
+
+/**
  * Resolves the caller (agent / operator token, OR a CYP-234b participant token → its read-SUBJECT) for a
  * participant-tier read, or throws 401. The participant token only widens WHO reaches the ACL check; the
  * downstream `canRead` is fail-closed-empty for its subject until granted (never beyond read).
  */
 fun ApplicationCall.requireParticipant(deps: AuthDeps): String =
     deps.tokens.participantFor(bearerToken())
-        ?: deps.participantTokens.subjectFor(bearerToken()) // CYP-234b: BYO participant token → read-subject
+        ?: participantSubject(deps, bearerToken()) // CYP-234b: BYO participant token → read-subject (rate-limited)
         ?: throw UnauthorizedException()
 
 /**
@@ -102,7 +115,7 @@ fun ApplicationCall.requireParticipant(deps: AuthDeps): String =
  */
 suspend fun ApplicationCall.requireCommReader(deps: AuthDeps, registry: TokenRegistry): String {
     registry.participantFor(bearerToken())?.let { return it } // agent / operator token — unchanged
-    deps.participantTokens.subjectFor(bearerToken())?.let { return it } // CYP-234b: BYO participant token → read-subject
+    participantSubject(deps, bearerToken())?.let { return it } // CYP-234b: BYO participant token → read-subject
     return when (val p = resolvePrincipal(deps)) {
         is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
         else -> throw UnauthorizedException()
@@ -121,7 +134,7 @@ suspend fun ApplicationCall.requireCommReader(deps: AuthDeps, registry: TokenReg
  */
 suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenRegistry): String {
     registry.participantFor(bearerToken())?.let { return it } // agent / operator token — unchanged
-    deps.participantTokens.subjectFor(bearerToken())?.let { return it } // CYP-234b: participant token → subject; canWrite still governs (deny w/o grant)
+    participantSubject(deps, bearerToken())?.let { return it } // CYP-234b: participant token → subject; canWrite still governs (deny w/o grant)
     return when (val p = resolvePrincipal(deps)) {
         is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
         else -> throw UnauthorizedException()
@@ -140,7 +153,7 @@ suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenReg
 suspend fun ApplicationCall.wsReaderOrNull(deps: AuthDeps, registry: TokenRegistry): String? {
     val token = bearerToken() ?: request.queryParameters["token"]
     registry.participantFor(token)?.let { return it }
-    deps.participantTokens.subjectFor(token)?.let { return it } // CYP-234b: participant token via ?token= (browser WS can't set Authorization)
+    participantSubject(deps, token)?.let { return it } // CYP-234b: participant token via ?token= (browser WS can't set Authorization)
     return when (val p = resolvePrincipal(deps)) {
         is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
         else -> null
