@@ -1,5 +1,15 @@
 package com.tneff.cyppieagents.comm
 
+import com.tneff.cyppieagents.CommJson
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import io.ktor.http.isSuccess
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+
 /**
  * CYP-273 — the **narrow client seam** for the caller's OWN writable channel set.
  *
@@ -19,4 +29,24 @@ package com.tneff.cyppieagents.comm
 fun interface WritableChannelsApi {
     /** The channel ids the resolved caller may write to right now. Invariant: `writable ⊆ readable`. */
     suspend fun writableChannels(): List<String>
+}
+
+/**
+ * CYP-273 (wiring) — the live HTTP implementation: `GET {baseUrl}/api/channels/writable` → `List<String>`,
+ * bearer-authed like [CommRepository] (same participant read gate server-side). Decodes through the shared
+ * [CommJson] so the wire contract can't drift. A non-2xx (e.g. 401/500) throws [CommHttpException] → the VM's
+ * `refreshWritable` catches it and fail-closes `writable` to `null` (composer disabled), never optimistically
+ * open. Token-agnostic: the caller injects the bearer (the operator token in the shell).
+ */
+class HttpWritableChannelsApi(
+    private val client: HttpClient,
+    private val baseUrl: String,
+    private val token: String,
+) : WritableChannelsApi {
+    override suspend fun writableChannels(): List<String> {
+        val response = client.get("$baseUrl/api/channels/writable") { header(HttpHeaders.Authorization, "Bearer $token") }
+        val text = response.bodyAsText()
+        if (!response.status.isSuccess()) throw CommHttpException(response.status.value, text)
+        return CommJson.decodeFromString(ListSerializer(String.serializer()), text)
+    }
 }

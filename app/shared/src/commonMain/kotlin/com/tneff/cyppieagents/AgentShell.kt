@@ -67,6 +67,8 @@ import com.tneff.cyppieagents.comm.CommPanel
 import com.tneff.cyppieagents.comm.CommRepository
 import com.tneff.cyppieagents.comm.CommViewModel
 import com.tneff.cyppieagents.comm.CommWsClient
+import com.tneff.cyppieagents.comm.HttpWritableChannelsApi
+import com.tneff.cyppieagents.comm.WritableChannelsApi
 import com.tneff.cyppieagents.eventlog.EventBrowsePanel
 import com.tneff.cyppieagents.eventlog.EventBrowseViewModel
 import com.tneff.cyppieagents.eventlog.EventLiveSource
@@ -158,6 +160,9 @@ fun AgentShell(
     commApi: CommApi? = null,
     /** Override the comm live source (tests inject a stub); `null` → the live `/ws/comm` adapter. */
     commLiveSource: CommLiveSource? = null,
+    /** CYP-273: override the writable-channels port (tests inject a fake); `null` → the live
+     *  `GET /api/channels/writable` HTTP client ([HttpWritableChannelsApi]) that drives the composer enable/disable. */
+    writableChannelsApi: WritableChannelsApi? = null,
     /** Override the event-log REST port (tests/dev inject a stub); `null` → the stub until CYP-39. */
     eventsApi: EventsApi? = null,
     /** Override the event-log live source (tests/dev inject a stub); `null` → the stub until CYP-40. */
@@ -358,6 +363,13 @@ fun AgentShell(
     }
     val resolvedLiveSource = commLiveSource ?: defaultLiveSource
 
+    // CYP-273 (wiring): the live writable-channels port — same bearer/base as the comm REST. Drives the
+    // per-channel composer enable/disable (fail-closed to disabled while unknown/erroring).
+    val defaultWritable = remember(httpClient, cfg) {
+        HttpWritableChannelsApi(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedWritable = writableChannelsApi ?: defaultWritable
+
     // Event-Log read sources, now LIVE (CYP-39 `/api/events` REST + CYP-40 `/ws/events` WS) — Browse and
     // Live-Tail go live together, operator-only/fail-closed like comm. Injectable so tests stay hermetic;
     // `:app:webAppDemo` injects stubs for the Maestro flows. Windows exist only when operatorToken != null.
@@ -451,10 +463,10 @@ fun AgentShell(
     // loads channels+agents ONCE in init and the live `/ws/comm` only pushes ChannelsChanged — the selected
     // timeline + agents map never re-scope on switch. Re-key = a clean, deterministic reload in the new scope.
     val commVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$COMM_WINDOW_ID-$activeProjectId") {
-        // CYP-273: no `writableChannels` passed yet → the interim MVP posture applies (every readable channel is
-        // writable, CYP-17) → no regression. When Backend's `GET /api/channels/writable` (List<String>) lands,
-        // wire it here: `CommViewModel(..., writableChannels = HttpWritableChannelsApi(httpClient, base, token))`.
-        CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
+        // CYP-273 (wiring): the writable-channels port is now LIVE — the composer is disabled for channels the
+        // operator can't write to (and fail-closed while unknown/loading/erroring), no longer the interim
+        // "everything writable" posture. Re-keyed per project so each project's writable set is resolved fresh.
+        CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator", writableChannels = resolvedWritable)
     }
     // CYP-186 roster repo — OPERATOR-only reads (GET /api/workspace/members). Hoisted so the ACL matrix
     // (CYP-189 human-grant band) and the roster window share ONE instance; never fetched as a non-operator.
