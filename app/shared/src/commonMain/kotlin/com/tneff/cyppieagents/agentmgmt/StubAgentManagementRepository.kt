@@ -62,14 +62,18 @@ class StubAgentManagementRepository(
         val index = agents.indexOfFirst { it.id == id }
         if (index < 0) throw AgentMgmtException("agent_not_found")
         val current = agents[index]
-        // Role → PO guardrails: another PO already holds it, or this is the only PO being rolled away.
-        if (edit.role == Role.PO && agents.any { it.id != id && it.role == Role.PO }) {
-            throw AgentMgmtException("po_already_exists")
+        // CYP-313: role is nullable (null = PRESERVE). Only an EXPLICIT (non-null) role change hits the
+        // PO guardrails — a display-only edit omits role and preserves it (mirrors AgentMgmtGuard.validateEdit,
+        // the single source the server enforces). Another PO already holds it, or this is the only PO rolled away.
+        edit.role?.let { newRole ->
+            if (newRole == Role.PO && agents.any { it.id != id && it.role == Role.PO }) {
+                throw AgentMgmtException("po_already_exists")
+            }
+            if (current.role == Role.PO && newRole != Role.PO && agents.count { it.role == Role.PO } == 1) {
+                throw AgentMgmtException("last_po")
+            }
         }
-        if (current.role == Role.PO && edit.role != Role.PO && agents.count { it.role == Role.PO } == 1) {
-            throw AgentMgmtException("last_po")
-        }
-        val updated = current.copy(role = edit.role)
+        val updated = current.copy(role = edit.role ?: current.role)
         agents[index] = updated
         // CYP-101: omitted/blank persona/launch PRESERVE the stored value (no blank→null clear).
         val (curLaunch, curPersona) = config[id] ?: ("claude" to null)

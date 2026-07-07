@@ -32,7 +32,7 @@ class AgentSettingsViewModelTest {
         override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
         override suspend fun edit(id: String, edit: AgentEdit): Agent {
             edits.add(id to edit)
-            return Agent(id, edit.name ?: detail.name, edit.role, detail.worktree)
+            return Agent(id, edit.name ?: detail.name, edit.role ?: detail.role, detail.worktree) // CYP-313: null role = PRESERVE
         }
         override suspend fun remove(id: String, worktree: WorktreeFate) {}
     }

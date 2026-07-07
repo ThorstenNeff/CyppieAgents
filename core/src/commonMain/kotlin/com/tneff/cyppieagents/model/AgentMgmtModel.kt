@@ -68,14 +68,21 @@ data class ConnectorChoice(val connectorKind: ConnectorKind)
 
 /**
  * Editable agent config (CYP-88 / PUT /api/agents/{id}). **`id` and `worktree` are identity/path-defining
- * and intentionally absent (id is IMMUTABLE).** **Omitted/blank `name`/`persona`/`launch`/`color` PRESERVE
- * the stored value** (no blank→null clear — PO-confirmed, data-safety footgun closed); deliberate clearing
- * is a separate future ticket. CYP-210 added editable display `name` (was deliberately omitted) + `color`.
- * CYP-215 added [avatar] (Preset-only; upload + clear are their own endpoints — see below).
+ * and intentionally absent (id is IMMUTABLE).** **Omitted/blank `role`/`name`/`persona`/`launch`/`color`
+ * PRESERVE the stored value** (no blank→null clear — PO-confirmed, data-safety footgun closed); deliberate
+ * clearing is a separate future ticket. CYP-210 added editable display `name` (was deliberately omitted) +
+ * `color`. CYP-215 added [avatar] (Preset-only; upload + clear are their own endpoints — see below).
  */
 @Serializable
 data class AgentEdit(
-    val role: Role,
+    /**
+     * CYP-313 — the target role, now **nullable/omittable** (`null` = PRESERVE, consistent with
+     * `name`/`color`/`launch`). Only a NON-NULL role is an EXPLICIT role change that the guard checks
+     * against the PO topology (`po_already_exists`/`last_po`); a display-only edit (e.g. a colour change)
+     * omits `role` and can therefore never be mis-read as a demotion of the only PO (the CYP-313 bug). Role
+     * is otherwise guard-only — the edit apply path never rewrites the stored role.
+     */
+    val role: Role? = null,
     /** CYP-310: DEPRECATED + IGNORED (no longer drives CLAUDE.md) — use the claude-md endpoints. Removal = CYP-311. */
     val persona: String? = null,
     val launch: String? = null,

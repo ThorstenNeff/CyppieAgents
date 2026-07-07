@@ -35,9 +35,13 @@ object AgentMgmtGuard {
     /** `null` if [edit] may be applied to [id], else `agent_not_found` / `po_already_exists` / `last_po`. */
     fun validateEdit(existing: List<Agent>, id: String, edit: AgentEdit): String? {
         val current = existing.firstOrNull { it.id == id } ?: return "agent_not_found"
+        // CYP-313: role is nullable (null = PRESERVE, like name/color/launch). ONLY an explicit role change
+        // (edit.role != null) can touch the PO topology; a display-only edit (colour/name) omits role and
+        // must never be read as a demotion of the only PO. `po_already_exists`/`last_po` fire on non-null role.
+        val newRole = edit.role ?: return null
         // A second PO is never allowed; rolling the only PO away breaks hub-and-spoke.
-        if (edit.role == Role.PO && existing.any { it.id != id && it.role == Role.PO }) return "po_already_exists"
-        if (current.role == Role.PO && edit.role != Role.PO && existing.count { it.role == Role.PO } == 1) return "last_po"
+        if (newRole == Role.PO && existing.any { it.id != id && it.role == Role.PO }) return "po_already_exists"
+        if (current.role == Role.PO && newRole != Role.PO && existing.count { it.role == Role.PO } == 1) return "last_po"
         return null
     }
 

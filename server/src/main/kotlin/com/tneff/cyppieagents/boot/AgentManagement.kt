@@ -192,6 +192,9 @@ class AgentManagement(
     /** Write agent config (effective next spawn). Omitted/blank persona/launch PRESERVE the stored value. */
     fun edit(id: String, edit: AgentEdit): Agent = synchronized(lock) {
         AgentMgmtGuard.validateEdit(state.agents, id, edit)?.let { throw codeToException(it) }
+        // CYP-313: the stored role is NEVER rewritten here (state.editAgent below touches only name/color;
+        // the persisted StoredAgent.of(state.agent(id)) re-reads role from live state). So a null edit.role
+        // (a display-only edit) inherently PRESERVES the current role — no write, no reset.
         val cur = configs.configOf(id) ?: AgentRuntimeConfig("claude", null)
         val persona = edit.persona?.ifBlank { null } ?: cur.persona // PRESERVE (no blank→null clear)
         val launch = edit.launch?.ifBlank { null } ?: cur.launch

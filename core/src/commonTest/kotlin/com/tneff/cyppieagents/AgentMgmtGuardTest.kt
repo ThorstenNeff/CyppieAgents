@@ -69,6 +69,29 @@ class AgentMgmtGuardTest {
     @Test fun edit_rollOnlyPoAway_lastPo() =
         assertEquals("last_po", AgentMgmtGuard.validateEdit(agents, "po", AgentEdit(Role.WORKER)))
 
+    // ---- CYP-313: role is nullable (null = PRESERVE); only an EXPLICIT role change touches the topology ----
+
+    /**
+     * (c) THE BUG: a display-only edit of the only PO (colour/name changed, `role` OMITTED → null) must be
+     * ALLOWED. Before CYP-313 `role` was a required field, so a colour edit had to carry a role and a
+     * non-PO one was mis-read as demoting the only PO → false `last_po`. (Mutation: drop the `?: return
+     * null` short-circuit in validateEdit → this reds with `last_po`.)
+     */
+    @Test fun edit_nullRoleDisplayEditOfOnlyPo_ok() {
+        assertNull(AgentMgmtGuard.validateEdit(agents, "po", AgentEdit(role = null, color = "#123456")))
+        assertNull(AgentMgmtGuard.validateEdit(agents, "po", AgentEdit(role = null, name = "Product Owner")))
+        // and a null-role edit of a worker is likewise a no-op for the topology
+        assertNull(AgentMgmtGuard.validateEdit(agents, "frontend", AgentEdit(role = null, color = "#abcdef")))
+    }
+
+    /** (a) an EXPLICIT (non-null) demote of the only PO still reds `last_po` — the guard stays sharp. */
+    @Test fun edit_explicitDemoteOnlyPo_lastPoStaysSharp() =
+        assertEquals("last_po", AgentMgmtGuard.validateEdit(agents, "po", AgentEdit(role = Role.WORKER)))
+
+    /** (b) an EXPLICIT (non-null) second PO still reds `po_already_exists` — the guard stays sharp. */
+    @Test fun edit_explicitSecondPo_poAlreadyExistsStaysSharp() =
+        assertEquals("po_already_exists", AgentMgmtGuard.validateEdit(agents, "frontend", AgentEdit(role = Role.PO)))
+
     // ---- remove ----
 
     @Test fun remove_worker_ok() = assertNull(AgentMgmtGuard.validateRemove(agents, "frontend"))

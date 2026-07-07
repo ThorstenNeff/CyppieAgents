@@ -33,7 +33,7 @@ class AgentSettingsAvatarViewModelTest {
         override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
         override suspend fun edit(id: String, edit: AgentEdit): Agent {
             edits.add(edit)
-            return Agent(id, edit.name ?: detail.name, edit.role, detail.worktree, avatar = edit.avatar)
+            return Agent(id, edit.name ?: detail.name, edit.role ?: detail.role, detail.worktree, avatar = edit.avatar) // CYP-313: null role = PRESERVE
         }
         override suspend fun remove(id: String, worktree: WorktreeFate) {}
         override suspend fun uploadAvatar(id: String, bytes: ByteArray, filename: String, mimeType: String): AgentDetail {
