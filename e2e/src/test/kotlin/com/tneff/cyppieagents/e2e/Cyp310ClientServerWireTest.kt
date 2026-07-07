@@ -104,12 +104,13 @@ class Cyp310ClientServerWireTest {
                 assertTrue(v.exists, "the seeded file exists")
                 assertEquals("# seeded persona", v.content)
                 assertEquals("backend", v.agentId)
-                assertTrue(v.version.isNotEmpty(), "an existing file has a content-hash version")
+                // Post-fix: version is `String?` (null = absent); an EXISTING file must still carry a non-null hash.
+                assertFalse(v.version.isNullOrEmpty(), "an existing file has a non-null content-hash version")
 
                 // Matching update → 200 echo (hard overwrite).
                 val w = client.update("backend", "# rewritten", expectedVersion = v.version)
                 assertEquals("# rewritten", w.content)
-                assertTrue(w.version.isNotEmpty() && w.version != v.version, "the version tracks the change")
+                assertTrue(!w.version.isNullOrEmpty() && w.version != v.version, "the version tracks the change")
                 assertEquals("# rewritten", wtFile.readText())
 
                 // Stale base (v is now superseded) → 409 → ClaudeMdException("claude_md_stale"), NO write.
