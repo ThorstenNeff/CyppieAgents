@@ -5,19 +5,18 @@ import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.net.isAccessRevoked
 import com.tneff.cyppieagents.net.logWsError
+import com.tneff.cyppieagents.net.readCloseCode
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
-import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.withContext
 
 /**
  * Live `/ws/comm` adapter for the ACL-matrix UI (CYP-48) — same socket + frame contract as
@@ -59,8 +58,9 @@ class AclWsClient(
                     // and report the close below. Otherwise it's a genuine collector cancel and must propagate.
                     if (!closeReason.isCompleted) throw e
                 }
-                // Read the close code without cancellation so a 1008 is reported even while the socket tears down.
-                closeCode = withContext(NonCancellable) { closeReason.await()?.code }
+                // CYP-293: read the close code via the shared helper (NonCancellable, so a 1008 is reported even
+                // while the socket tears down) — one place for the close-code contract across all /ws/ clients.
+                closeCode = readCloseCode()
             }
         } catch (e: CancellationException) {
             throw e
@@ -72,7 +72,7 @@ class AclWsClient(
         // CYP-289: a 1008 (VIOLATED_POLICY) close = a revoked/invalid operator token → TERMINAL AccessRevoked
         // (the VM cancels the collector; no reconnect). Any other close = a transient Disconnected (reconnects).
         this@channelFlow.send(
-            if (closeCode == CloseReason.Codes.VIOLATED_POLICY.code) AclLiveEvent.AccessRevoked
+            if (isAccessRevoked(closeCode)) AclLiveEvent.AccessRevoked
             else AclLiveEvent.Disconnected,
         )
     }

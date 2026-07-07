@@ -6,20 +6,19 @@ import com.tneff.cyppieagents.model.EventPushed
 import com.tneff.cyppieagents.model.EventsWsClientEvent
 import com.tneff.cyppieagents.model.EventsWsServerEvent
 import com.tneff.cyppieagents.model.SubscribeEvents
+import com.tneff.cyppieagents.net.isAccessRevoked
 import com.tneff.cyppieagents.net.logWsError
+import com.tneff.cyppieagents.net.readCloseCode
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
-import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import io.ktor.websocket.send
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.withContext
 
 /**
  * Live `/ws/events` adapter (CYP-40), the drop-in for [StubEventsSource]. Decodes each `:core`
@@ -68,9 +67,9 @@ class EventsWsClient(
                     // it's a genuine cancel and must propagate.
                     if (!closeReason.isCompleted) throw e
                 }
-                // closeReason is completed here (normal close, or the swallowed close-teardown above);
-                // read it without cancellation so a 1008 is reported even while the socket tears down.
-                closeCode = withContext(NonCancellable) { closeReason.await()?.code }
+                // CYP-293: read the close code via the shared helper (NonCancellable, so a 1008 is reported even
+                // while the socket tears down) — one place for the close-code contract across all /ws/ clients.
+                closeCode = readCloseCode()
             }
         } catch (e: CancellationException) {
             throw e
@@ -81,7 +80,7 @@ class EventsWsClient(
         }
         // Always end honestly: a rejected operator token (1008) is a distinct, fail-closed state.
         this@channelFlow.send(
-            if (closeCode == CloseReason.Codes.VIOLATED_POLICY.code) EventLiveEvent.AccessRevoked
+            if (isAccessRevoked(closeCode)) EventLiveEvent.AccessRevoked
             else EventLiveEvent.Disconnected,
         )
     }
