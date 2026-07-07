@@ -87,7 +87,7 @@ class AgentManagementHttpRepositoryE2eTest {
                     val edit = CommJson.decodeFromString(AgentEdit.serializer(), call.receiveText())
                     val index = agents.indexOfFirst { it.id == id }
                     if (index < 0) { call.respondText(err("agent_not_found"), ContentType.Application.Json, HttpStatusCode.NotFound); return@put }
-                    val updated = agents[index].copy(role = edit.role)
+                    val updated = agents[index].copy(role = edit.role ?: agents[index].role) // CYP-313: null role = PRESERVE
                     agents[index] = updated
                     val (curLaunch, curPersona) = config[id] ?: ("claude" to null)
                     config[id] = (edit.launch ?: curLaunch) to (edit.persona ?: curPersona) // preserve on null
