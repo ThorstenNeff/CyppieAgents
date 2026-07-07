@@ -41,6 +41,21 @@ class RuntimeRegistry(private val activeProjectId: () -> String) {
     fun of(projectId: String): ProjectRuntime? = runtimes[projectId]
 
     /**
+     * CYP-256 (.5b) — full runtime EVICTION: atomically drop [projectId]'s runtime IFF the live instance is
+     * still [expected] (compare-and-remove). This guards the fast-reactivation race: if a concurrent activation
+     * already re-minted a FRESH runtime, [expected] no longer matches the map value → the fresh one is NOT
+     * dropped (returns false). Returns true iff the exact evicted instance was removed.
+     *
+     * The runtime's agent SESSIONS must already be stopped (the [RuntimeSuspensionPolicy] kills them via
+     * `suspendProject` BEFORE evicting); dropping the map reference lets the [ProjectRuntime] object + its
+     * per-project registries be GC'd — the full memory reclaim `.4b` deferred (it kept the object in memory to
+     * avoid losing the non-boot project's in-memory-only config). Now safe: `.5a`'s durable ProjectAgentStore
+     * survives the drop, so re-entry re-mints via [getOrCreate] + rehydrates the agent set + `--resume`s the
+     * persisted sessions (CYP-167) — no data loss.
+     */
+    fun evict(projectId: String, expected: ProjectRuntime): Boolean = runtimes.remove(projectId, expected)
+
+    /**
      * The active project's runtime. **Fail-closed:** throws if the active project has no live runtime — a
      * caller must never silently fall back to another project's lifecycle (that would be the very
      * cross-project bleed L exists to prevent). CYP-259: the switch mints the target's runtime (getOrCreate)
