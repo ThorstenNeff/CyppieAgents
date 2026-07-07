@@ -208,9 +208,25 @@ class BootOrchestrator(
         // S17 / CYP-93: the cross-project share gate. The hub consults it for the AclMatrix permit
         // (channels authorized to reach into the active project); revoke → immediate fail-closed.
         val channelShares = com.tneff.cyppieagents.comm.ChannelShareStore(channelShareFile)
+        // CYP-305: the EFFECTIVE active project = the durable ProjectRegistry pointer (restored from a prior
+        // switch, persisted in projects.json) if present, else config.projectId. Loaded up front so HubState +
+        // the boot runtime + the config-agent seed all key on the ACTIVE project. Else a durable active ≠
+        // config.projectId (a LEGITIMATE seed-vs-active mismatch) seeds the config bootstrap agents under
+        // config.projectId while the active project rehydrates EMPTY (its store never holds config's roster) →
+        // the switch-loss (CYP-305). config.projectId stays the fallback + config/seed identity.
+        val projectAgents = ProjectAgentStore(projectAgentFile)
+        val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
+        val durableActive = projectRegistry.activeProjectId()
+        // Adopt the durable active pointer as the effective boot project ONLY when it carries NO own (store-backed)
+        // agents — i.e. it is effectively the config project under a different active pointer (the deploy's
+        // taxidriver: seeded nowhere but config, no persisted roster). A durable active that HAS its own persisted
+        // agents (a distinct runtime-created project, e.g. J10's beta) keeps config.projectId as the effective boot
+        // project, so config's bootstrap agents never leak into that distinct project.
+        val effectiveActive = if (durableActive != config.projectId && projectAgents.agentsFor(durableActive).isEmpty())
+            durableActive else config.projectId
         // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
-        // S12 / CYP-81: single-source the active project from config into the hub (scopes channels/ACL/messages).
-        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID, config.projectId) { pid ->
+        // S12 / CYP-81: single-source the active project into the hub (scopes channels/ACL/messages).
+        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID, effectiveActive) { pid ->
             channelShares.sharedInboundChannelIds(pid)
         }
         // CYP-247.1/.2: the per-project runtime seam. Declared HERE (before the connector + the worktree
@@ -298,8 +314,8 @@ class BootOrchestrator(
         // CYP-210: apply the durable overlay OVER the platform.config.json seed (overlay wins per-field), so
         // operator edits of name/color/persona/launch survive a restart. Scoped to the active project.
         val agentOverrides = AgentOverrideStore(agentOverrideFile)
-        // CYP-256 (.5a): the durable per-project agent-set store (single source for runtime-added agents).
-        val projectAgents = ProjectAgentStore(projectAgentFile)
+        // CYP-256 (.5a): the durable per-project agent-set store — constructed EARLY (above, for the CYP-305
+        // effective-active seam); single source for runtime-added agents.
         // CYP-215: the avatar stores (blob bytes on disk + the self-hosted DiceBear preset resolver).
         val avatarBlobs = com.tneff.cyppieagents.avatar.AvatarBlobStore(avatarDir)
         val avatarPresets = com.tneff.cyppieagents.avatar.AvatarPresetResolver(avatarPresetsDir)
@@ -439,7 +455,7 @@ class BootOrchestrator(
         // the SAME instances built above (incl. the boot `worktrees`), so behavior is unchanged.
         runtimeRegistry.register(
             ProjectRuntime(
-                projectId = config.projectId,
+                projectId = effectiveActive, // CYP-305: the boot runtime backs the EFFECTIVE active project
                 lifecycle = lifecycle,
                 connectorSessions = sessions,
                 agentConfigs = agentConfigs,
@@ -616,7 +632,7 @@ class BootOrchestrator(
         // CYP-255 (.4b): seed the boot project as the first HOT project in the suspension policy's LRU (it
         // is the active project at boot). With one project this never suspends anything; the switch feeds
         // subsequent activations. Placed after the spawn loop so the boot project is genuinely live.
-        suspensionPolicy.onActivated(config.projectId)
+        suspensionPolicy.onActivated(effectiveActive) // CYP-305: seed the EFFECTIVE active project as HOT
         // CYP-256 (.5a): rehydrate the boot project's runtime-added agents (from a prior session) — the boot
         // project is already active here, so this fills its slice/runtime from the store, on top of the config seed.
         rehydrateActiveProject()
@@ -629,14 +645,13 @@ class BootOrchestrator(
             file = reportFile, // CYP-220 S6: File-durable when supplied (prod), in-memory when null (tests)
         )
 
-        // S13 / CYP-91: the multi-project registry (seeded with the boot project) + the cascade deleter
-        // composing the strictly-projectId-scoped teardown primitives — operator-gated at /api/projects.
-        val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
+        // S13 / CYP-91: the multi-project registry (loaded early, above, for the CYP-305 effective-active seam)
+        // + the cascade deleter composing the strictly-projectId-scoped teardown primitives — /api/projects.
         val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides, projectAgents)
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
-            projectConfig, config.projectId, agentManagement, reportStore, projectRegistry, projectDeleter,
+            projectConfig, effectiveActive, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
             agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory, suspensionPolicy,
             rehydrateActiveProject,
