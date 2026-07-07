@@ -77,6 +77,13 @@ class ParticipantTokenStore(private val now: () -> Long) {
 
     fun count(): Int = byHash.size
 
+    /**
+     * CYP-234b-3 — secret-free summaries for the admin list endpoint: the records (subject / tier / issuedAt /
+     * expiry) WITHOUT the map keys (hashes) or any raw token. A record carries no credential, so this discloses
+     * nothing usable — the operator sees WHO has a token + when it expires, never the token itself.
+     */
+    fun summaries(): List<ParticipantTokenRecord> = byHash.values.toList()
+
     /** Test-only: the stored KEYS (hashes). Lets a tooth prove the raw token is never a key (hashed-at-rest). */
     internal fun storedKeys(): Set<String> = byHash.keys.toSet()
 

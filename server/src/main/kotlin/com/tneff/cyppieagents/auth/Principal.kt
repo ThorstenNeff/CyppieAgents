@@ -37,6 +37,10 @@ class AuthDeps(
      *  (like a human MEMBER's identityId — the ACL is the only authz). Default = an empty store (no participant
      *  tokens → behavior unchanged) until the 234b-3 admin path mints them. */
     val participantTokens: ParticipantTokenStore = ParticipantTokenStore(nowMs),
+    /** CYP-234b-3 (#7) — per-participant-SUBJECT token-bucket (reuses the CYP-161 WireRateLimiter). Keyed by the
+     *  RESOLVED subject (a bounded, operator-assigned set — RC3: never an attacker-supplied value), so a flood on
+     *  one BYO consumer is throttled (429) without starving others. One shared instance across the server. */
+    val participantRateLimiter: com.tneff.cyppieagents.routing.WireRateLimiter = com.tneff.cyppieagents.routing.WireRateLimiter(),
 ) {
     /**
      * Token-only convenience (tests + the operator-token-only mount default): the human-auth path is

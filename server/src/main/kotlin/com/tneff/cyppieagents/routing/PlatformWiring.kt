@@ -136,6 +136,9 @@ fun Application.installPlatform(
             // CYP-182 / P3: the content-free client whoami read — PUBLIC (never a 401), no id/email/secrets.
             authMeRoutes(authDeps, apiBase = apiBase)
             workspaceRoutes(authDeps, apiBase = apiBase) // CYP-186 BE3a: OPERATOR-only workspace roster
+            // CYP-234b-3 (#8): operator-gated mint/revoke of the participant-token class (uses the shared
+            // authDeps.participantTokens the read-tier resolvers resolve from).
+            participantTokenRoutes(authDeps, apiBase = apiBase)
         }
     }
 }

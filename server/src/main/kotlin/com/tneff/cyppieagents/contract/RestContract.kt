@@ -29,7 +29,11 @@ import com.tneff.cyppieagents.model.SwitchActiveRequest
 import com.tneff.cyppieagents.model.WorkspaceMember
 import com.tneff.cyppieagents.routing.ChangeEmailRequest
 import com.tneff.cyppieagents.routing.ChangePasswordRequest
+import com.tneff.cyppieagents.routing.MintParticipantTokenRequest
+import com.tneff.cyppieagents.routing.MintedParticipantToken
+import com.tneff.cyppieagents.routing.ParticipantTokenSummary
 import com.tneff.cyppieagents.routing.RegisterRequest
+import com.tneff.cyppieagents.routing.RevokedParticipantTokens
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.serializer
 
@@ -121,6 +125,10 @@ object RestContract {
         Op("GET", "/api/reports", Tier.OPERATOR, response = arr<ReportSnapshot>()),
         Op("GET", "/api/reports/{id}", Tier.OPERATOR, response = json<ReportSnapshot>()),
         Op("POST", "/api/reports", Tier.OPERATOR, request = json<GenerateReportRequest>(), response = json<ReportSnapshot>()),
+        // --- ParticipantTokenRoutes (CYP-234b-3 #8: operator mint/revoke of the BYO-machine token class) ---
+        Op("POST", "/api/participant-tokens", Tier.OPERATOR, request = json<MintParticipantTokenRequest>(), response = json<MintedParticipantToken>()),
+        Op("GET", "/api/participant-tokens", Tier.OPERATOR, response = arr<ParticipantTokenSummary>()),
+        Op("DELETE", "/api/participant-tokens", Tier.OPERATOR, response = json<RevokedParticipantTokens>()),
         // --- WorkspaceRoutes ---
         Op("GET", "/api/workspace/members", Tier.OPERATOR, response = arr<WorkspaceMember>()),
         Op("GET", "/api/audit", Tier.OPERATOR, response = arr<OperatorAudit>()),
