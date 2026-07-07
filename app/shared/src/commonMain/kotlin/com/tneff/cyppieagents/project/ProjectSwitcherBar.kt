@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.project
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -74,9 +75,10 @@ fun ProjectSwitcherBar(
     /** The operator's display name shown to a MEMBER ("Operator: …"). null (e.g. BE1 not yet delivering it) omits
      *  that line — never an email/contact dump (§3.3). */
     operatorName: String? = null,
-    /** CYP-268 R3 — trailing slot for app-global chrome (the theme toggle) at the bar's trailing edge. Default
-     *  empty → the bar is unchanged for every existing call site/test; only AgentShell passes a non-empty slot. */
-    trailing: @Composable () -> Unit = {},
+    /** CYP-268 R3 / CYP-281 — trailing slot for app-global chrome (the theme toggle) at the bar's trailing edge.
+     *  Receives `compact` (true on a narrow bar, ~<400dp) so the toggle can render icon-only and stop starving the
+     *  active-project label. Default empty → the bar is unchanged for every existing call site/test. */
+    trailing: @Composable (compact: Boolean) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val activeName = state.projects.firstOrNull { it.id == state.activeProjectId }?.name ?: state.activeProjectId
@@ -114,6 +116,10 @@ fun ProjectSwitcherBar(
             }
         }
 
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // CYP-281: measure the bar width so the trailing theme toggle can go icon-only on a narrow bar
+        // (~<400dp, the CYP-156/158/159 responsive idiom), giving the active-project label its space back.
+        val compact = maxWidth < 400.dp
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -218,9 +224,10 @@ fun ProjectSwitcherBar(
                     )
                 }
             }
-            // CYP-268 R3: app-global trailing slot (the theme toggle) at the bar's trailing edge, after the
-            // "Projekte ▾" menu. Default-empty → zero change for existing call sites/tests.
-            trailing()
+            // CYP-268 R3 / CYP-281: app-global trailing slot (the theme toggle); it receives `compact` so it can
+            // render icon-only on a narrow bar. Default-empty → zero change for existing call sites/tests.
+            trailing(compact)
+        }
         }
         // Scope boundary disclosure (§1): all windows/data belong to the active project. Neutral.
         TonedHint(stringResource(Res.string.project_switcher_scope_hint), HintTone.INFO, ProjectTags.SCOPE_HINT)
