@@ -7,6 +7,7 @@ import com.tneff.cyppieagents.model.AgentEdit
 import com.tneff.cyppieagents.model.AgentRunState
 import com.tneff.cyppieagents.model.ApiError
 import com.tneff.cyppieagents.model.ApiErrorBody
+import com.tneff.cyppieagents.model.CreatedAgent
 import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.WorktreeFate
@@ -70,7 +71,14 @@ class AgentManagementHttpRepositoryE2eTest {
                             val created = Agent(spec.id, spec.name, spec.role, spec.worktree ?: spec.id, AgentRunState.STOPPED)
                             agents.add(created)
                             config[spec.id] = (spec.launch ?: "claude") to spec.persona
-                            call.respondText(CommJson.encodeToString(Agent.serializer(), created), ContentType.Application.Json, HttpStatusCode.Created)
+                            // CYP-312: SERVER-TRUTHFUL — the real server responds the CreatedAgent WRAPPER
+                            // `{agent, token}` (RestContract §98), NOT a bare Agent. The old fake returned bare
+                            // Agent, which masked the client's `Agent.serializer()` mis-decode (same fake-shape gap
+                            // class as CYP-310). A local create's token is null.
+                            call.respondText(
+                                CommJson.encodeToString(CreatedAgent.serializer(), CreatedAgent(created, token = null)),
+                                ContentType.Application.Json, HttpStatusCode.Created,
+                            )
                         }
                     }
                 }
@@ -100,8 +108,10 @@ class AgentManagementHttpRepositoryE2eTest {
             try {
                 val repo = AgentManagementHttpRepository(client, "http://127.0.0.1:$port", token = "op")
 
-                // Add (201) → STOPPED, not spawned.
+                // Add (201) → STOPPED, not spawned. Also proves the CreatedAgent WRAPPER is decoded + unwrapped
+                // (CYP-312): the old client decoded `Agent.serializer()` on `{agent,token}` → threw → false failure.
                 val created = repo.add(NewAgentSpec("fe", "Frontend", Role.WORKER, persona = "careful dev", launch = "claude --x"))
+                assertEquals("fe", created.id)
                 assertEquals(AgentRunState.STOPPED, created.runState)
 
                 // CYP-101 detail-prefill: persona/launch come back from GET /api/agents/{id}.
@@ -127,6 +137,46 @@ class AgentManagementHttpRepositoryE2eTest {
                 repo.remove("fe", WorktreeFate.DELETE)
                 assertEquals("delete", deletedWorktreeParam)
                 assertEquals(setOf("po"), repo.list().map { it.id }.toSet())
+            } finally {
+                client.close()
+            }
+        } finally {
+            server.stop(100, 200)
+        }
+    }
+
+    /**
+     * CYP-312 focused regression — `add()` decodes the [CreatedAgent] wrapper and returns `.agent`, and TOLERATES
+     * a **non-null `token`** (the CYP-171/197 remote seam) without choking. Isolated from the CRUD round-trip so the
+     * wrapper-decode is the single thing under test: RED with the old `Agent.serializer()` decode (a `{agent,token}`
+     * body has no top-level `id`/`role` → decode throws), GREEN with the wrapper decode.
+     */
+    @Test
+    fun add_decodesCreatedAgentWrapper_returnsAgent_toleratesRemoteToken() = runBlocking {
+        val server = embeddedServer(Netty, port = 0) {
+            routing {
+                post("/api/agents") {
+                    val spec = CommJson.decodeFromString(NewAgentSpec.serializer(), call.receiveText())
+                    val agent = Agent(spec.id, spec.name, spec.role, spec.worktree ?: spec.id, AgentRunState.STOPPED)
+                    // A non-null token models a REMOTE create (CYP-197) — the client must unwrap `.agent` and not
+                    // trip over the extra field.
+                    call.respondText(
+                        CommJson.encodeToString(CreatedAgent.serializer(), CreatedAgent(agent, token = "remote-one-time-bearer")),
+                        ContentType.Application.Json, HttpStatusCode.Created,
+                    )
+                }
+            }
+        }
+        server.start(wait = false)
+        try {
+            val port = server.engine.resolvedConnectors().first().port
+            val client = HttpClient(CIO)
+            try {
+                val repo = AgentManagementHttpRepository(client, "http://127.0.0.1:$port", token = "op")
+                val created = repo.add(NewAgentSpec("be", "Backend", Role.WORKER))
+                assertEquals("be", created.id)
+                assertEquals(Role.WORKER, created.role)
+                assertEquals(AgentRunState.STOPPED, created.runState)
             } finally {
                 client.close()
             }
