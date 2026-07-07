@@ -33,6 +33,10 @@ class AuthDeps(
     val audit: AuditSink = NoOpAuditSink,
     /** CYP-186 C.2 — deploy kill-switch (boot/env only). Effective ONLY once a role-OPERATOR exists (never lock out). */
     val operatorTokenDisabled: Boolean = false,
+    /** CYP-234b — the participant-scoped BYO-machine token class. Resolves a participant token to a read-SUBJECT
+     *  (like a human MEMBER's identityId — the ACL is the only authz). Default = an empty store (no participant
+     *  tokens → behavior unchanged) until the 234b-3 admin path mints them. */
+    val participantTokens: ParticipantTokenStore = ParticipantTokenStore(nowMs),
 ) {
     /**
      * Token-only convenience (tests + the operator-token-only mount default): the human-auth path is
@@ -68,9 +72,10 @@ fun ApplicationCall.sessionCredential(): SessionCredential? {
  * merely session-valid); any absent/invalid/error/timeout from the IdP → null (unauthenticated).
  */
 suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? {
-    // Machine axis first (a bearer token). A present bearer is an authenticated machine: operator → OPERATOR,
-    // anything else → a MEMBER MachineAgent (so an operator route is a 403, not a 401 — the pre-CYP-178
-    // `requireOperator` semantics). Only the ABSENCE of any credential is 401.
+    // Machine axis first (a bearer token). A KNOWN bearer is an authenticated machine: operator → OPERATOR,
+    // a registered agent token → a MEMBER MachineAgent (403, not 401, on operator routes — the pre-CYP-178
+    // `requireOperator` semantics; CYP-186 BE2: known agents read the MEMBER-tier event-log). Only the ABSENCE
+    // of any credential is 401.
     val bearer = bearerToken()
     if (bearer != null) {
         // CYP-186 C.2: the operator token is INERT when the deploy kill-switch is set AND a role-OPERATOR
@@ -79,7 +84,15 @@ suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? {
         if (deps.tokens.isOperator(bearer) && !(deps.operatorTokenDisabled && deps.roles.hasOperator())) {
             return AuthPrincipal.MachineOperator
         }
-        return AuthPrincipal.MachineAgent(deps.tokens.agentFor(bearer))
+        val agentId = deps.tokens.agentFor(bearer)
+        if (agentId != null) return AuthPrincipal.MachineAgent(agentId)
+        // CYP-186 C.2: the DISABLED operator token (isOperator, but inert by the kill-switch above) is a KNOWN
+        // credential deliberately DOWNGRADED to MEMBER ("collapses to A", never-lock-out) — NOT "unknown". Keep it.
+        if (deps.tokens.isOperator(bearer)) return AuthPrincipal.MachineAgent(null)
+        // CYP-234b-2 ①-fix: an UNKNOWN bearer (garbage, or a CYP-234b participant token) is NOT a role-bearing
+        // principal — it must NOT resolve to MEMBER (that let ANY bearer read the MEMBER-tier `/api/events`
+        // cross-agent metadata with no grant). Fall through: with no verified session it becomes 401; a
+        // participant token is instead accepted ONLY by the canRead-scoped resolvers (requireCommReader etc.).
     }
     // Human axis (a Kratos session). RC1: session-valid is NOT enough — the identity must be verified.
     val resolved = deps.idp.resolve(sessionCredential()) ?: return null
@@ -98,8 +111,12 @@ suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? {
 suspend fun ApplicationCall.resolveAuthState(deps: AuthDeps): com.tneff.cyppieagents.model.AuthMe {
     val bearer = bearerToken()
     if (bearer != null) {
-        val role = if (deps.tokens.isOperator(bearer)) AuthRole.OPERATOR else AuthRole.MEMBER
-        return com.tneff.cyppieagents.model.AuthMe(authenticated = true, role = role.name, verified = true)
+        // CYP-234b-2 ①-fix (2nd path): validate the bearer — only a KNOWN credential is authenticated here.
+        // An unknown bearer (garbage / a participant token) is NOT MEMBER (it used to report authenticated MEMBER
+        // for ANY bearer); it falls through to the session path → `authenticated:false` with no session.
+        if (deps.tokens.isOperator(bearer)) return com.tneff.cyppieagents.model.AuthMe(true, AuthRole.OPERATOR.name, true)
+        if (deps.tokens.agentFor(bearer) != null) return com.tneff.cyppieagents.model.AuthMe(true, AuthRole.MEMBER.name, true)
+        // unknown bearer → fall through (a participant token is not the human whoami subject)
     }
     // No session credential at all → not authenticated, WITHOUT an idp call (no-cred = zero whoami).
     val cred = sessionCredential() ?: return com.tneff.cyppieagents.model.AuthMe(authenticated = false)
@@ -140,7 +157,7 @@ private val UNSAFE_METHODS = setOf(HttpMethod.Post, HttpMethod.Put, HttpMethod.D
 private fun actorOf(p: AuthPrincipal): String = when (p) {
     is AuthPrincipal.Human -> "human:${p.identityId}"
     AuthPrincipal.MachineOperator -> "operator-token" // the machine / bootstrap / break-glass path
-    is AuthPrincipal.MachineAgent -> "agent:${p.agentId ?: "unknown"}" // never reaches an OPERATOR gate (403 first)
+    is AuthPrincipal.MachineAgent -> "agent:${p.agentId ?: "operator-disabled"}" // a known agent, or the CYP-186 C.2 downgraded operator; never reaches an OPERATOR gate (403 first)
 }
 
 class AuthGuardConfig {

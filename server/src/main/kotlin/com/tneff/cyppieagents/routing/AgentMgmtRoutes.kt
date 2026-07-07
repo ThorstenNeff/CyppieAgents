@@ -53,7 +53,7 @@ fun Route.agentMgmtRoutes(mgmt: () -> AgentManagement, registry: TokenRegistry, 
     route("$apiBase/agents") {
         // Detail = participant (the management list is read-only visible without an operator token).
         get("/{id}") {
-            call.requireParticipant(registry)
+            call.requireParticipant(deps) // CYP-234b: deps carries the participant-token axis alongside the registry
             call.respond(mgmt().detail(call.parameters.getOrFail("id"))) // 404 agent_not_found
         }
         // CYP-215: serve the agent's avatar PNG = participant-gated (same read posture as the detail/list).
