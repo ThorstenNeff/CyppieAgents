@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents.eventlog
 
 import androidx.lifecycle.ViewModel
+import com.tneff.cyppieagents.net.Backoff
+import com.tneff.cyppieagents.net.reconnecting
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.model.Event
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +46,9 @@ class EventTailViewModel(
     private val filter: EventFilter = EventFilter(),
     private val ringCapacity: Int = TAIL_RING_DEFAULT,
     private val pauseBufferCapacity: Int = PAUSE_BUFFER_DEFAULT,
+    /** CYP-289 — reconnect backoff for the live `/ws/events` tail; injectable so tests drive fast reconnects.
+     *  Mirrors CommViewModel so the tail auto-heals on a socket drop (was previously honest-but-inert). */
+    private val backoff: Backoff = Backoff(),
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -79,7 +84,10 @@ class EventTailViewModel(
     }
 
     private suspend fun collect() {
-        source.events(currentFilter).collect { event ->
+        // CYP-289: auto-reconnect with backoff on a socket drop (CYP-73 pattern, same as Comm/AgentView). Each
+        // re-subscribe replays the source's `Connected` marker → statusOf() clears the DISCONNECTED banner; the
+        // seq-ordered id-deduped ring drops duplicate replays. AccessRevoked (1008) is still handled honestly.
+        source.events(currentFilter).reconnecting(backoff).collect { event ->
             EventReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
             when (event) {
                 is EventLiveEvent.Received -> onReceived(event.event)

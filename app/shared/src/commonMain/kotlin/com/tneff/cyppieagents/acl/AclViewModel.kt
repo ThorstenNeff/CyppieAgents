@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents.acl
 
 import androidx.lifecycle.ViewModel
+import com.tneff.cyppieagents.net.Backoff
+import com.tneff.cyppieagents.net.reconnecting
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.model.AclEntry
@@ -79,6 +81,9 @@ class AclViewModel(
     /** CYP-189 — the operator-only human roster (`GET /api/workspace/members`, BE3a). Consulted ONLY when
      *  [editable]; null (or non-operator) → no human subjects (Invariante E: never fetched as a non-operator). */
     private val workspaceRepository: WorkspaceRepository? = null,
+    /** CYP-289 — reconnect backoff for the live `/ws/comm` ACL stream; injectable so tests drive fast reconnects.
+     *  Mirrors CommViewModel so ACL auto-heals on a socket drop (was previously honest-but-inert: stale forever). */
+    private val backoff: Backoff = Backoff(),
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -109,7 +114,10 @@ class AclViewModel(
     }
 
     private suspend fun collectLive() {
-        liveSource.events().collect { event ->
+        // CYP-289: auto-reconnect with backoff on a socket drop (CYP-73 pattern, same as Comm/AgentView). On each
+        // re-subscribe the source replays its `Connected` marker → statusOf() flips connection back off DISCONNECTED
+        // (banner recovers); EntryChanged is idempotent (upsert by key), ChannelsChanged replaces — no duplicates.
+        liveSource.events().reconnecting(backoff).collect { event ->
             AclReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
             when (event) {
                 // The AclEvent echo is the source of truth: it reconciles the entry AND clears pending →
