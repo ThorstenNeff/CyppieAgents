@@ -31,11 +31,26 @@ class MaritimeThemeTest {
     fun dark_hasRatifiedMaritimeRoleValues() {
         assertEquals(Color(0xFF6FBEEA), MaritimeDark.primary)
         assertEquals(Color(0xFF02324E), MaritimeDark.onPrimary)
-        assertEquals(Color(0xFF0A1922), MaritimeDark.surface)
+        assertEquals(Color(0xFF06121A), MaritimeDark.surface) // CYP-304 Night: blacker than CYP-268-Dark (#0A1922)
         assertEquals(Color(0xFFDCE7ED), MaritimeDark.onSurface)
         assertEquals(Color(0xFFF2B8B5), MaritimeDark.error)
-        assertEquals(Color(0xFF085468), MaritimeDark.tertiaryContainer)
+        assertEquals(Color(0xFF0C3D30), MaritimeDark.tertiaryContainer) // CYP-304 Night: signal-green container
         assertEquals(Color(0xFF93CCEA), MaritimeDark.secondary) // v1.2 AA-tuned
+    }
+
+    @Test
+    fun night_tertiaryIsSignalGreen_surfacesBlacker_cyp304() {
+        // CYP-304 — the Night accent is signal-GREEN (green-dominant), a BRAND-only identity hue-separated from
+        // primary-blue and error-red. §9-Inv.1 is now LOAD-BEARING: this green must never mean status — a0
+        // (CYP-300) de-overloaded every semantic `tertiary`, and the CYP-303 source-guard keeps it that way.
+        assertEquals(Color(0xFF40D6A0), MaritimeDark.tertiary)
+        val t = MaritimeDark.tertiary
+        assertTrue(t.green > t.red && t.green > t.blue, "night tertiary is green-dominant (signal green), not the old teal")
+        assertNotEquals(MaritimeDark.primary, MaritimeDark.tertiary, "the green accent is distinct from the blue primary")
+        assertTrue(MaritimeDark.error.red > MaritimeDark.error.green, "error stays red-dominant, hue-distinct from the green accent")
+        // Surfaces are BLACKER than the accepted CYP-268-Dark (#0A1922 → #06121A) — the deeper maritime night.
+        assertEquals(Color(0xFF06121A), MaritimeDark.surface)
+        assertEquals(Color(0xFF06121A), MaritimeDark.background)
     }
 
     @Test

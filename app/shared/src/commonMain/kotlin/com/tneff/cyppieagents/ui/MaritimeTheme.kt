@@ -39,19 +39,26 @@ val MaritimeLight: ColorScheme = lightColorScheme(
     outline = Color(0xFF6E8C9E), outlineVariant = Color(0xFFCBDCE7),
 )
 
+// CYP-304 (design-system pkg `a`): the maritime NIGHT scheme — Dunkelblau/Schwarz/Grün — from UIUX's ratified
+// `maritime-design-system-tokens.json` §3 Night. Replaces the accepted CYP-268 Dark (Auftraggeber-ratified E2).
+// Deltas vs CYP-268-Dark: surfaces blacker (`#0A1922`→`#06121A`); `tertiary` re-hued from harbour-teal to the
+// SIGNAL-GREEN maritime night accent `#40D6A0` (starboard lantern, hue ~158° — separated from primary-blue/error-
+// red/warn-amber; 10.2:1 AAA on surface). `primary` stays blue, `error` stays red. This green is a BRAND accent
+// ONLY, NEVER status (§9-Inv.1) — valid only because pkg a0 (CYP-300) de-overloaded every semantic `tertiary`
+// use (WARN→amber, in-progress→neutral, deferred→secondary); the CYP-303 source-guard keeps it that way.
 val MaritimeDark: ColorScheme = darkColorScheme(
     primary = Color(0xFF6FBEEA), onPrimary = Color(0xFF02324E),
     primaryContainer = Color(0xFF0A4E7C), onPrimaryContainer = Color(0xFFC7E6FB),
-    secondary = Color(0xFF93CCEA), onSecondary = Color(0xFF052A3F), // v1.2: lightened for AA (INFO on tertiaryContainer)
+    secondary = Color(0xFF93CCEA), onSecondary = Color(0xFF052A3F),
     secondaryContainer = Color(0xFF154F70), onSecondaryContainer = Color(0xFFC7E6FB),
-    tertiary = Color(0xFF4FC6DE), onTertiary = Color(0xFF00333F),
-    tertiaryContainer = Color(0xFF085468), onTertiaryContainer = Color(0xFFB7E7F2),
+    tertiary = Color(0xFF40D6A0), onTertiary = Color(0xFF04322A), // CYP-304: signal-green night accent (brand only)
+    tertiaryContainer = Color(0xFF0C3D30), onTertiaryContainer = Color(0xFF9EEAD0),
     error = Color(0xFFF2B8B5), onError = Color(0xFF601410),
     errorContainer = Color(0xFF8C1D18), onErrorContainer = Color(0xFFF9DEDC),
-    background = Color(0xFF0A1922), onBackground = Color(0xFFDCE7ED),
-    surface = Color(0xFF0A1922), onSurface = Color(0xFFDCE7ED),
-    surfaceVariant = Color(0xFF14293A), onSurfaceVariant = Color(0xFFA6BECD),
-    outline = Color(0xFF57707F), outlineVariant = Color(0xFF263946),
+    background = Color(0xFF06121A), onBackground = Color(0xFFDCE7ED),
+    surface = Color(0xFF06121A), onSurface = Color(0xFFDCE7ED),
+    surfaceVariant = Color(0xFF12242F), onSurfaceVariant = Color(0xFFA6BECD),
+    outline = Color(0xFF57707F), outlineVariant = Color(0xFF243642),
 )
 
 /** The maritime scheme for the current mode — the one decision the `App.kt` seam makes (follow-system in R1). */
