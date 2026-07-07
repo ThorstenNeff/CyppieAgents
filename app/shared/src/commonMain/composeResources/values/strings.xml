@@ -258,6 +258,8 @@
     <string name="agent_color_adjusted_hint">Für Lesbarkeit angepasst (Kontrast)</string>
     <string name="agent_color_status_like_hint">Ähnelt einer Status-Farbe – Farbe ist Identität, kein Status</string>
     <string name="a11y_agent_settings_open">Einstellungen für %1$s öffnen</string>
+    <!-- CYP-316: a11y-Name der Context-Token-Zahl in der Fenster-Titelzeile (%1$s = kompakter Wert, z. B. „137k"). -->
+    <string name="a11y_agent_context_tokens">Kontext-Tokens: %1$s</string>
     <string name="a11y_agent_display_name">Anzeigename eingeben</string>
     <string name="a11y_agent_color_custom">Eigenen Hex-Farbwert eingeben</string>
     <string name="a11y_agent_color_swatch">Farbe %1$s</string>

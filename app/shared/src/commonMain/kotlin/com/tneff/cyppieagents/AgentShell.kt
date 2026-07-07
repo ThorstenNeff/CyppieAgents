@@ -55,6 +55,9 @@ import com.tneff.cyppieagents.agentview.AgentLifecycleApi
 import com.tneff.cyppieagents.agentview.AgentLifecycleLiveSource
 import com.tneff.cyppieagents.agentview.AgentLifecycleRepository
 import com.tneff.cyppieagents.agentview.AgentLifecycleSource
+import com.tneff.cyppieagents.agentview.TokenUsageLiveSource
+import com.tneff.cyppieagents.agentview.TokenUsageSource
+import com.tneff.cyppieagents.agentview.TokenUsageViewModel
 import com.tneff.cyppieagents.agentview.AgentSession
 import com.tneff.cyppieagents.agentview.AgentStatus
 import com.tneff.cyppieagents.agentview.AgentViewModel
@@ -176,6 +179,8 @@ fun AgentShell(
     lifecycleApi: AgentLifecycleApi? = null,
     /** Override the agent lifecycle state source (CYP-73); `null` → the in-memory stub until `/ws/lifecycle` lands. */
     lifecycleSource: AgentLifecycleSource? = null,
+    /** Override the CYP-316 context-token source (`/ws/token-usage`); `null` → the live source. Tests inject a stub. */
+    tokenUsageSource: TokenUsageSource? = null,
     /** Override the project-settings data port (CYP-84/85); `null` → the in-memory stub until CYP-96 lands. */
     configRepository: ConfigRepository? = null,
     /** Override the agent-management data port (CYP-86/87/88); `null` → the in-memory stub until CYP-97 lands. */
@@ -436,6 +441,11 @@ fun AgentShell(
         AgentLifecycleLiveSource(httpClient, cfg.hubHttpBaseUrl, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedLifecycleSource = lifecycleSource ?: defaultLifecycleSource
+    // CYP-316: the per-agent context-token feed (`/ws/token-usage`, participant-gated like lifecycle → same bearer).
+    val defaultTokenUsageSource = remember(httpClient, cfg) {
+        TokenUsageLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedTokenUsageSource = tokenUsageSource ?: defaultTokenUsageSource
 
     // CYP-55: hoist the per-window VMs to the always-composed shell. Two reasons: (1) each VM opens
     // exactly ONE subscription — a separate badge collector would double-subscribe the cold WS flows
@@ -532,6 +542,15 @@ fun AgentShell(
     // Re-keying it would force a needless reload flash of the same data on every switch (the guardrail case).
     val rosterVm: WorkspaceRosterViewModel? =
         if (showRoster(tier)) viewModel(key = ROSTER_WINDOW_ID) { WorkspaceRosterViewModel(resolvedWorkspaceRepo) } else null
+
+    // CYP-316: the shell-level per-agent context-token map — ONE `/ws/token-usage` socket for all agents, upserted
+    // by agentId (latest-wins). Re-keyed on activeProjectId: the socket binds the ACTIVE project's tracker at
+    // connect, so a switch must reopen it (like the lifecycle sockets). Participant feature (NOT operator-gated —
+    // the title-bar number is participant-visible); default source is live, injectable for hermetic tests.
+    val tokenUsageVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "tokenUsage-$activeProjectId") {
+        TokenUsageViewModel(resolvedTokenUsageSource)
+    }
+    val contextTokens = tokenUsageVm.tokens.collectAsState().value
 
     // Collect the badge-relevant slices of the hoisted VM state (single subscription each).
     // B1: comm-wide unread (others, while unfocused). A1: per-agent ERROR status. C1: the highest
@@ -635,6 +654,9 @@ fun AgentShell(
             state = state,
             onFit = { state.fit(isRtl) },
             badgeFor = { id -> badges[id] },
+            // CYP-316: feed each window's live context-token count from the WS map (mirrors badgeFor). Absent
+            // key OR a null value → null → the title bar shows no number (unknown ≠ 0).
+            contextTokensFor = { id -> contextTokens[id] },
             // CYP-250: desktop empty-state for a 0-agent project (the tool windows still coexist, so this keys on
             // the agent list, NOT the window set). The CTA routes into the EXISTING add flow — bring the
             // agent-management window to front + open its add dialog — and is operator-gated (honest gate hint,
