@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.comm.ConnectionStatus
+import com.tneff.cyppieagents.ui.LoadErrorRetry
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.model.WorkspaceMember
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
@@ -57,6 +58,7 @@ import kmpcyppieagents.app.shared.generated.resources.acl_continue
 import kmpcyppieagents.app.shared.generated.resources.acl_conflict
 import kmpcyppieagents.app.shared.generated.resources.acl_denied
 import kmpcyppieagents.app.shared.generated.resources.acl_empty
+import kmpcyppieagents.app.shared.generated.resources.load_failed
 import kmpcyppieagents.app.shared.generated.resources.acl_enforced
 import kmpcyppieagents.app.shared.generated.resources.acl_granted
 import kmpcyppieagents.app.shared.generated.resources.acl_non_member
@@ -115,7 +117,16 @@ fun AclPanel(viewModel: AclViewModel, modifier: Modifier = Modifier) {
 
         // CYP-276 (CYP-270 class): gate the "no data" message on !loading so it never FLASHES during the async
         // load window (cold open / project switch) before the ACL matrix arrives — only a settled-empty shows it.
-        if (!state.loading && (state.channels.isEmpty() || state.agents.isEmpty())) {
+        if (state.loadError) {
+            // CYP-288: a failed non-gated matrix load previously rendered as the "empty matrix" state
+            // (failure-as-empty, Sweep-#4 class A). Error beats empty; Retry re-runs the load.
+            LoadErrorRetry(
+                message = stringResource(Res.string.load_failed),
+                onRetry = viewModel::retryLoad,
+                containerTag = AclMatrixTags.ERROR,
+                retryTag = AclMatrixTags.ERROR_RETRY,
+            )
+        } else if (!state.loading && (state.channels.isEmpty() || state.agents.isEmpty())) {
             Text(
                 text = stringResource(Res.string.acl_empty),
                 style = MaterialTheme.typography.bodySmall,
