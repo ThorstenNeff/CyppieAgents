@@ -719,6 +719,7 @@ fun AgentShell(
                             agentId = window.id,
                             viewModel = it,
                             capabilities = connectorCapState.capabilities[window.id],
+                            capabilitiesLoading = connectorCapState.loading,
                             provider = connectorCapState.providers[window.id],
                             onCapabilityBadgeClick = { connectorCapVm.openPanel(window.id) },
                         )

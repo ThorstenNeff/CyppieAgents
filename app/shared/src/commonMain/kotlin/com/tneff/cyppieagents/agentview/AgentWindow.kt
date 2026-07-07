@@ -86,6 +86,8 @@ fun AgentWindow(
     modifier: Modifier = Modifier,
     /** CYP-123 connector fidelity for this agent (`null` = not yet reported → fail-closed badge). */
     capabilities: Capabilities? = null,
+    /** CYP-280: caps read in flight → the fidelity badge is suppressed (no transient `○` on a switch). */
+    capabilitiesLoading: Boolean = false,
     /** CYP-137 provider for this agent (`null` = not yet reported → chip absent, fail-closed). */
     provider: ProviderInfo? = null,
     /** Opens the capability detail panel (CYP-123); no-op default keeps existing call sites/tests intact. */
@@ -108,6 +110,7 @@ fun AgentWindow(
             onStop = viewModel::stop,
             onRestart = viewModel::restart,
             capabilities = capabilities,
+            capabilitiesLoading = capabilitiesLoading,
             provider = provider,
             onCapabilityBadgeClick = onCapabilityBadgeClick,
         )
@@ -163,6 +166,7 @@ private fun AgentHeader(
     startPending: Boolean = false,
     connection: ConnectionStatus = ConnectionStatus.LIVE,
     capabilities: Capabilities? = null,
+    capabilitiesLoading: Boolean = false,
     provider: ProviderInfo? = null,
     onCapabilityBadgeClick: () -> Unit = {},
 ) {
@@ -184,7 +188,7 @@ private fun AgentHeader(
         ConnectorProviderChip(provider = provider, agentId = agentId)
         // Fidelity axis (CYP-123) — its own marker next to the lifecycle status, NOT mixed into it. Present
         // only when degraded / not-yet-reported (fail-closed by absence); opens the capability panel.
-        ConnectorCapabilityBadge(caps = capabilities, agentId = agentId, onClick = onCapabilityBadgeClick)
+        ConnectorCapabilityBadge(caps = capabilities, agentId = agentId, onClick = onCapabilityBadgeClick, loading = capabilitiesLoading)
         Spacer(Modifier.weight(1f))
         TextButton(
             onClick = onStart,
