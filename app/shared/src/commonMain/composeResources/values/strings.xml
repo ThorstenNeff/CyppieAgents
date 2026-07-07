@@ -246,6 +246,11 @@
     <string name="agent_settings_title">„%1$s" anpassen</string>
     <string name="agent_display_name_label">Anzeigename</string>
     <string name="agent_id_stable_label">ID (fest)</string>
+    <!-- CYP-315 Worktree-Pfad (read-only + Copy), UIUX-Spec §4. -->
+    <string name="agent_worktree_path_label">Worktree-Pfad</string>
+    <string name="agent_worktree_not_local">Nicht lokal — dieser Agent läuft remote; sein Worktree liegt nicht auf diesem Server.</string>
+    <string name="agent_worktree_copied">Pfad kopiert</string>
+    <string name="a11y_agent_worktree_copy">Worktree-Pfad kopieren</string>
     <string name="agent_color_section">Farbe</string>
     <string name="agent_color_palette_label">Palette</string>
     <string name="agent_color_custom_label">Eigener Farbwert (Hex)</string>
