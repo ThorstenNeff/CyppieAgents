@@ -15,7 +15,7 @@
     "wcag_policy": "Every fg/bg pair AA in BOTH schemes: text >= 4.5:1, non-text/UI (outline, focus, rail, icon-only) >= 3:1 (WCAG 1.4.11). Colour is NEVER the sole carrier of meaning (WCAG 1.4.1).",
     "honesty_invariants": [
       "GREEN is a brand/accent identity only (focus, active-selection, decorative chrome, landing accent). It NEVER signals success/ok/status and is never the sole carrier of a state.",
-      "No advisory/semantic component derives colour from tertiary*: TonedHint(INFO) and EFFECT_DEFERRED re-point to secondaryContainer (blue) in BOTH schemes so they never inherit the green.",
+      "tertiary is OVERLOADED as a semantic role today (WARN severity, pending/running status, EFFECT_DEFERRED banner, access-denied/generating hints) — verified against code 2026-07-07. HARD precondition (migration pkg a0): de-overload tertiary (WARN->severity palette, EFFECT_DEFERRED->secondaryContainer, denied->error/neutral, pending->neutral/secondary) BEFORE green is applied, else Night turns WARN warnings green. TonedHint(INFO) uses secondary (blue) — NO change.",
       "error stays a red hue in both schemes, hue-distinct from green.",
       "Severity ampel (EventVisuals) and the 9 SenderPalette identities stay semantic and scheme-independent."
     ]
@@ -30,7 +30,7 @@
       "secondaryContainer": "#C4E2F5", "onSecondaryContainer": "#06283D",
       "tertiary": "#0B7E9C", "onTertiary": "#FFFFFF",
       "tertiaryContainer": "#B7E7F2", "onTertiaryContainer": "#022E3B",
-      "_tertiary_note": "Day accent = harbour-teal (blue-green). Decorative/brand-accent ONLY — advisory components do not use it (see honesty_invariants).",
+      "_tertiary_note": "Day accent = harbour-teal (blue-green). TARGET state = decorative/brand-accent ONLY; TODAY tertiary is overloaded as a semantic role (see honesty_invariants + migration pkg a0). No change to Day hex.",
       "error": "#B3261E", "onError": "#FFFFFF",
       "errorContainer": "#F9DEDC", "onErrorContainer": "#410E0B",
       "background": "#FFFFFF", "onBackground": "#0C2635",
@@ -51,7 +51,7 @@
       "secondaryContainer": "#154F70", "onSecondaryContainer": "#C7E6FB",
       "tertiary": "#40D6A0", "onTertiary": "#04322A",
       "tertiaryContainer": "#0C3D30", "onTertiaryContainer": "#9EEAD0",
-      "_tertiary_note": "Night accent = signal-green (starboard/navigation lantern — the maritime night identity). hue ~158deg, deliberately separated from primary-blue (~205), error-red (~2), warn-amber (~45), info-grey. Brand/accent ONLY; NEVER success/status. On surface: 10.2:1 (AAA).",
+      "_tertiary_note": "Night accent = signal-green (starboard/navigation lantern — the maritime night identity). hue ~158deg, deliberately separated from primary-blue (~205), error-red (~2), warn-amber (~45), info-grey. Brand/accent ONLY; NEVER success/status — valid ONLY after pkg a0 de-overloads tertiary (else WARN/pending/deferred turn green). On surface: 10.2:1 (AAA).",
       "error": "#F2B8B5", "onError": "#601410",
       "errorContainer": "#8C1D18", "onErrorContainer": "#F9DEDC",
       "background": "#06121A", "onBackground": "#DCE7ED",

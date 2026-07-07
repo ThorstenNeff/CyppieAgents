@@ -74,12 +74,17 @@ Gegroundet auf `MaritimeDark`: **primary-/secondary-/error-Familien bleiben** (M
 Night geht **schwärzer** als die R4-Dark. Die tonale Elevations-Leiter (§6) hebt jede Ebene um einen Navy-Schritt an — höhere Elevation = **hellere** Fläche (M3-tonal), nicht nur Schatten:
 `Lowest #040D14 → Low #0A1922 (die alte Basis, jetzt eine Ebene) → #0F2029 → High #14293A → Highest #1B3242`.
 
-### §3.3 — ⚠️ Ehrlichkeits-Carve-out (harte §9-Invariante, mein Kern)
-**Grün auf `tertiary` heißt: kein Advisory-/Status-Element darf seine Farbe aus `tertiary*` ziehen** — sonst würde es nachts grün und **läse als Erfolg**. Betroffen (heute an `tertiaryContainer` gehängt):
-- `TonedHint(INFO)` (Content `secondary` auf `tertiaryContainer`)
-- `EFFECT_DEFERRED`-Banner (nutzt heute den Tertiär-Container — R4-[Info])
+### §3.3 — ⚠️ Ehrlichkeits-Carve-out (harte §9-Invariante, mein Kern) — **KORRIGIERT gg. Code (2026-07-07)**
+**Grounding gegen den echten Code korrigiert die frühere Annahme dieser Spec:** `tertiary`/`tertiaryContainer` ist heute **kein reiner Dekor-Akzent**, sondern eine **überladene Semantik-Rolle**. Tatsächliche Konsumenten:
+- **WARN-Severity** — `Severity.WARN -> colorScheme.tertiary` (`report/ProductLeadPanel.kt:301`, `window/WindowBadge.kt:100`)
+- **Pending/Running-Status** — `startPending`-Dot + `ToolStatus.RUNNING`-Spinner (`agentview/AgentWindow.kt:241,332,222`)
+- **EFFECT_DEFERRED-Banner** — Fläche = `tertiaryContainer` (`ui/TonedHint.kt:52`, `connector/ConnectorCapabilityViews.kt:90,213`)
+- **Access-denied / Generating-Hinweise** — (`report/ProductLeadPanel.kt:72,83`), ACL-Zellen-Fill (`acl/AclPanel.kt:110`), ein AgentMgmt-Label (`agentmgmt/AgentManagementPanel.kt:319`)
+- **`TonedHint(INFO)` nutzt `secondary` (blau), NICHT tertiary** → kein Re-Point nötig (die frühere „INFO auf tertiaryContainer"-Annahme war **falsch**, per `ui/TonedHint.kt:89`).
 
-→ **Beide werden auf `secondaryContainer` (blau) umgehängt, in BEIDEN Schemes.** Dann ist Grün **rein dekorativ/Marke** und kann **nie** einen informativen/aufgeschobenen Zustand als „ok/success" einfärben. Das ist der einzige strukturelle Delta des Farbteils (§8 enumeriert ihn). *Nebenwirkung Day:* der INFO-Chip wechselt Teal→Blau — eine winzige, kohärenz-stiftende Verschiebung (alle Advisory-Chips in EINER Familie = blau), gegated wie alles hier.
+**Konsequenz:** Grün einfach auf `tertiary` zu legen, würde **WARN-Warnungen nachts GRÜN** färben (schlimmster Fall — eine Warnung liest als Erfolg), ebenso Pending/Deferred/Denied. → **Harte Vorbedingung (§9-Inv.1): `tertiary` muss ZUERST ent-überladen werden** — jeder Semantik-Konsument auf seine korrekte Rolle umgehängt (**WARN → Severity-Palette** [CYP-274-Familie, amber], **EFFECT_DEFERRED → `secondaryContainer`**, **Denied → Fehler/neutral**, **Pending/Running → neutral/`secondary`**), **bevor** Grün angewandt wird. Erst dann ist `tertiary` ein echter Dekor/Marken-Akzent und Grün ehrlich. Per-Site-Aufschlüsselung = Migrations-Plan Paket **a0** (`maritime-design-system-migration-plan.md`).
+
+**Nebenbefund (latenter Ehrlichkeits-Bug, existiert schon heute):** WARN hängt an einer **Marken-Rolle** statt an der Severity-Semantik → Severity hat **zwei inkonsistente Darstellungen** (Event-Log-Rails via CYP-274 amber vs. diese Badges via `tertiary` teal/grün). Konsolidierung auf die Severity-Palette ist der richtige Fix und schließt den Bug — schon vor Night sichtbar.
 
 ### §3.4 — Konsequenz-Skizze **E1** (falls Auftraggeber Grün prominenter kippt)
 Wenn Grün **Marken-`primary` im Night** würde: aktive CTAs/Links/Nav wären nachts grün, tags blau — die **Marke wechselt die Farbe zwischen den Schemes** (Blau↔Grün). Kostet Marken-Konstanz (E1-Empfehlung hält Blau über beide). Zusätzlich müsste dann die Grün-vs-Status-Trennung noch strenger geführt werden (grüner Primary-Button neben grün-freier Erfolgs-Semantik). **Meine Empfehlung bleibt Grün=Akzent**; die Skizze ist da, damit der Auftraggeber es an einer Stelle sieht.
@@ -133,7 +138,7 @@ Volle Zeilen-Tabelle in `tokens.json → surface_mapping`. Prinzip:
 - `ui/SenderPalette` **9 Identitäten** — scheme-unabhängig; Light-Name-Accent via `readableAccentOn(…, surface)` (CYP-275). Auf der **schwärzeren** Night-Surface re-verifizieren (die Pastelle tragen auf `#06121A` mind. so gut wie auf `#0A1922`).
 - `core/model/ColorDerivation` (`:core`) — **⚠️ Dep:** `NEUTRAL_SURFACE` ist **hartcodiert dunkel** (`#1E1E1E`). Für die schwärzere Night-Surface (`#06121A`) sollte die Referenz **parameterisiert** werden (Surface-Param statt Konstante) — das ist die schon geflaggte „Border-on-light"/deriveScheme-Forward-Sorge (CYP-275 §5). Sonst driften abgeleitete Ränder/Kanten gegen die falsche Bezugsfläche. **Kein Blocker für den Farb-Teil**, aber Teil der Theme-Migration.
 
-**Struktureller Delta (der EINZIGE im Farb-Teil, §3.3):** `TonedHint(INFO)` + `EFFECT_DEFERRED` von `tertiaryContainer` → `secondaryContainer` umhängen (beide Schemes). Enumeriert, nicht implizit.
+**Struktureller Delta — `tertiary` ent-überladen (Paket a0, §3.3, harte Vorbedingung für Grün):** die Semantik-Konsumenten von `tertiary`/`tertiaryContainer` auf korrekte Rollen umhängen — WARN-Severity → Severity-Palette (CYP-274), EFFECT_DEFERRED → `secondaryContainer`, Denied → Fehler/neutral, Pending/Running → neutral/`secondary`. **`TonedHint(INFO)` bleibt unverändert** (nutzt `secondary`). Per-Site-Liste im Migrations-Plan a0. **Dies ist kein optionaler Feinschliff — ohne a0 verletzt die Night-Anwendung §9-Inv.1.**
 
 **Landing/Doku:** interim Graphit/Petrol-Teal-CSS → `--maritime-*`; Redoc-`theme` light+dark (CYP-234-Pre-Scope §3); Deploy-Re-Verify unter CYP-287.
 
@@ -141,7 +146,7 @@ Volle Zeilen-Tabelle in `tokens.json → surface_mapping`. Prinzip:
 
 ## §9 — Invarianten (= UX-QA-Abnahmekante, 10) — der Ehrlichkeits-Anker ist HART
 
-1. **Grün ist nie ein Status/Erfolgs-Signal** — nicht alleiniger Träger irgendeines Zustands; **nicht** an ein Advisory-/Semantik-Element gebunden (INFO + EFFECT_DEFERRED auf `secondaryContainer` gepinnt); nur Marke/Akzent/Fokus/Dekor (WCAG 1.4.1). *(HARTE Kante.)*
+1. **Grün ist nie ein Status/Erfolgs-Signal** — nicht alleiniger Träger irgendeines Zustands; **kein Semantik-Konsument zieht Farbe aus `tertiary*`** (Vorbedingung: `tertiary` ent-überladen, Paket a0 — WARN/Deferred/Denied/Pending umgehängt; `TonedHint(INFO)` bleibt `secondary`); Grün nur Marke/Akzent/Fokus/Dekor (WCAG 1.4.1). *(HARTE Kante — ohne a0 verletzt.)*
 2. **`error` bleibt rot** und **farbton-distinkt** von Grün in **beiden** Schemes.
 3. **Severity-Ampel + 9 Sender-Identitäten** bleiben semantisch und **scheme-unabhängig**; Semantik erhalten.
 4. **Day = CYP-268 `MaritimeLight` verbatim** — kein Drift eines abgenommenen AA-clean Themes.
