@@ -130,6 +130,15 @@ data class AgentDetail(
      * settings dialog prefills the current selection + resolves the preview. `null` = no override.
      */
     val avatar: AgentAvatar? = null,
+    /**
+     * CYP-315 — the agent's **absolute** worktree path (`<git-root>/projects/<projectId>/<worktree>`),
+     * resolved SERVER-side via [com.tneff.cyppieagents.boot.WorktreeManager] for the agent's project. The
+     * client MUST NOT rebuild it — it knows neither `PLATFORM_GIT_ROOT` nor the server CWD; the server is the
+     * source of truth. `null` = the agent has **no local worktree** (a remote/BYOA agent, CYP-197) → the
+     * settings panel shows a "not local" hint, never a fabricated path. Display-only; additive/nullable/
+     * defaulted → wire-compatible (declared LAST so existing positional constructions are unaffected).
+     */
+    val worktreePath: String? = null,
 )
 
 /**
