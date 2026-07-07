@@ -48,12 +48,14 @@ import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.testing.testTagA11y
 import com.tneff.cyppieagents.ui.AgentAvatarView
+import com.tneff.cyppieagents.ui.LoadErrorRetry
 import com.tneff.cyppieagents.ui.SenderPalette
 import com.tneff.cyppieagents.ui.readableNameAccent
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_role_po
 import kmpcyppieagents.app.shared.generated.resources.comm_back
 import kmpcyppieagents.app.shared.generated.resources.comm_channels_empty
+import kmpcyppieagents.app.shared.generated.resources.load_failed
 import kmpcyppieagents.app.shared.generated.resources.comm_composer_placeholder
 import kmpcyppieagents.app.shared.generated.resources.comm_composer_send
 import kmpcyppieagents.app.shared.generated.resources.comm_msg_pending
@@ -89,8 +91,10 @@ fun CommPanel(
                 ChannelListPane(
                     channels = state.channels,
                     loadingChannels = state.loadingChannels,
+                    channelsError = state.channelsError,
                     selectedId = state.selectedChannelId,
                     onSelect = viewModel::select,
+                    onReload = viewModel::reloadChannels,
                     crossProjectSlot = crossProjectSlot,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -99,6 +103,7 @@ fun CommPanel(
                     state = state,
                     agents = state.agents,
                     onSend = viewModel::send,
+                    onRetryHistory = { state.selectedChannelId?.let(viewModel::select) },
                     onBack = viewModel::clearSelection,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -108,8 +113,10 @@ fun CommPanel(
                 ChannelListPane(
                     channels = state.channels,
                     loadingChannels = state.loadingChannels,
+                    channelsError = state.channelsError,
                     selectedId = state.selectedChannelId,
                     onSelect = viewModel::select,
+                    onReload = viewModel::reloadChannels,
                     crossProjectSlot = crossProjectSlot,
                     modifier = Modifier.width(220.dp).fillMaxSize(),
                 )
@@ -117,6 +124,7 @@ fun CommPanel(
                     state = state,
                     agents = state.agents,
                     onSend = viewModel::send,
+                    onRetryHistory = { state.selectedChannelId?.let(viewModel::select) },
                     onBack = null,
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 )
@@ -129,15 +137,25 @@ fun CommPanel(
 private fun ChannelListPane(
     channels: List<Channel>,
     loadingChannels: Boolean,
+    channelsError: Boolean,
     selectedId: String?,
     onSelect: (String) -> Unit,
+    onReload: () -> Unit,
     crossProjectSlot: @Composable (channelId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
         // CYP-279 (CYP-270/276 class): gate the "no channels" message on !loadingChannels so it never flashes
         // during the initial / project-switch load window — only a settled-empty channel set shows it.
-        if (!loadingChannels && channels.isEmpty()) {
+        if (channelsError) {
+            // CYP-288: a failed channel-list load — error beats empty; Retry re-runs the load.
+            LoadErrorRetry(
+                message = stringResource(Res.string.load_failed),
+                onRetry = onReload,
+                containerTag = CommTags.ERROR_CHANNELS,
+                retryTag = CommTags.ERROR_CHANNELS_RETRY,
+            )
+        } else if (!loadingChannels && channels.isEmpty()) {
             Text(
                 text = stringResource(Res.string.comm_channels_empty),
                 style = MaterialTheme.typography.bodySmall,
@@ -189,6 +207,7 @@ private fun TimelinePane(
     state: CommUiState,
     agents: Map<String, Agent>,
     onSend: (String) -> Unit,
+    onRetryHistory: () -> Unit,
     // CYP-156: single-pane only — an explicit "back to channels" affordance. null in two-pane (no back).
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
@@ -209,6 +228,14 @@ private fun TimelinePane(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
                 state.selectedChannelId == null -> Unit
+                // CYP-288: a failed history load — error beats empty; Retry re-selects the channel.
+                state.historyError ->
+                    LoadErrorRetry(
+                        message = stringResource(Res.string.load_failed),
+                        onRetry = onRetryHistory,
+                        containerTag = CommTags.ERROR_TIMELINE,
+                        retryTag = CommTags.ERROR_TIMELINE_RETRY,
+                    )
                 state.messages.isEmpty() && !state.loadingHistory ->
                     Text(
                         text = stringResource(Res.string.comm_timeline_empty),

@@ -12,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -41,7 +43,10 @@ fun LoadErrorRetry(
 ) {
     val a11y = stringResource(Res.string.a11y_load_error)
     Column(
-        modifier = modifier.padding(12.dp).testTag(containerTag).semantics { contentDescription = a11y },
+        // CYP-288 (UIUX §10 fold): announce the error on APPEARANCE, not just on navigation — the shared component
+        // carries the Polite liveRegion once so all four REST panels (incl. A1/EventBrowse) inherit it.
+        modifier = modifier.padding(12.dp).testTag(containerTag)
+            .semantics { contentDescription = a11y; liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
