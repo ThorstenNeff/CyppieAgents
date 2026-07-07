@@ -188,7 +188,13 @@ fun ConnectorCapabilityBadge(
     agentId: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
+    /** CYP-280: caps read in flight → suppress the badge entirely. `null` caps during a load ("not loaded yet")
+     *  must NOT read as `○ not-reported`; the honest `○` is only for a SETTLED-null (genuinely unreported). */
+    loading: Boolean = false,
 ) {
+    // CYP-280: while the caps are still loading (e.g. a fresh project switch), show no fidelity claim at all —
+    // a transient `○` on a full-fidelity agent is actively wrong (worse than absence).
+    if (loading) return
     // Full fidelity → no badge (fail-closed by absence; absence == "all available").
     if (caps != null && !caps.isDegraded) return
 

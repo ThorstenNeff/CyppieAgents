@@ -23,6 +23,11 @@ data class ConnectorCapabilityUiState(
     val providers: Map<String, ProviderInfo> = emptyMap(),
     /** The agent whose detail panel is open (header-badge click → [openPanel]); `null` = none open. */
     val openPanelAgentId: String? = null,
+    /** CYP-280: the caps read is in flight → the fidelity badge is SUPPRESSED (not shown as `○ not-reported`)
+     *  during the load window. Distinguishes "not loaded yet" (empty map on init / project switch) from
+     *  "loaded but this agent is genuinely absent" — so a switch never transiently claims a full-fidelity agent
+     *  is "not yet reported". Flips false once the first read settles (success OR fail-closed). */
+    val loading: Boolean = true,
 )
 
 /**
@@ -44,8 +49,13 @@ class ConnectorCapabilityViewModel(
 
     private suspend fun reload() {
         runCatching { repository.read() }
-            .onSuccess { snap -> _state.update { it.copy(capabilities = snap.capabilities, providers = snap.providers) } }
-            .onFailure { e -> if (e is CancellationException) throw e } // keep prior; fail-closed (no invented caps/provider)
+            .onSuccess { snap -> _state.update { it.copy(capabilities = snap.capabilities, providers = snap.providers, loading = false) } }
+            .onFailure { e ->
+                if (e is CancellationException) throw e
+                // Keep prior caps; fail-closed (no invented caps/provider). CYP-280: the read settled (failed) →
+                // stop suppressing the badge, so a genuinely-unreported agent honestly shows `○`.
+                _state.update { it.copy(loading = false) }
+            }
     }
 
     /** The caps for [agentId], or `null` when not reported (fail-closed — never a faked "full" default). */
