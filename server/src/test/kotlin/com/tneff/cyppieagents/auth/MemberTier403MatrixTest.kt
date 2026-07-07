@@ -52,6 +52,9 @@ class MemberTier403MatrixTest {
         "POST /api/auth/settings/password", "POST /api/auth/settings/email",
         // CYP-186 BE2 — MEMBER-permitted READS (ACL-filtered / masked / secret-free metadata), not operator-deny:
         "GET /api/channels", "GET /api/channels/{id}/messages", "GET /api/inbox", "GET /api/acl",
+        // CYP-273 — the composer-enable seam: the WRITABLE-subset read is the same participant-read tier as
+        // `/api/channels` (ACL-filtered, content-free channel ids), so a MEMBER reaches it (200), not tier-denied.
+        "GET /api/channels/writable",
         "GET /api/config/repo", "GET /api/config/apikey", "GET /api/events",
         // CYP-232 — avatar serve + preset preview are READ-TIER (token OR verified human session), so the tokenless
         // SPA renders avatars; a MEMBER reaches them (200/404, not tier-denied) exactly like the other reads above.

@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.MessageMeta
+import com.tneff.cyppieagents.auth.ParticipantPrincipal
 import com.tneff.cyppieagents.routing.ConflictException
 import com.tneff.cyppieagents.routing.ForbiddenException
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -109,4 +110,21 @@ class Hub(
 
     /** Channels [readerId] may read (for GET /api/channels). */
     fun readableChannels(readerId: String): List<Channel> = state.acl.readableChannels(readerId)
+
+    /**
+     * CYP-273 — the channel ids [readerId] may currently WRITE (for GET /api/channels/writable, the composer-
+     * enable seam). Computed via the SAME [com.tneff.cyppieagents.model.AclMatrix.canWrite] the send chokepoint
+     * ([postAsAgent], above) enforces, so the client's composer-enable prediction == the server's write authz
+     * (single-source, no drift). A **subset of [readableChannels]**: content-free (only ids the caller already
+     * sees), correct (you never compose in a channel you can't read), and it never discloses a write-only-but-
+     * unreadable channel. The server-403 at the chokepoint stays the authority; this only drives the UI.
+     */
+    fun writableChannels(readerId: String): List<String> {
+        // CYP-273×297 — a participant token NEVER writes (CYP-297 Layer 3: requireCommWriter rejects it with 403
+        // regardless of canWrite). So it must NEVER appear in the writable set, even if its `participant:` principal
+        // was granted canWrite — else the seam's parity (id ∈ writable ⟺ POST 201) breaks and the enable-then-403
+        // UX returns for participants. Single-sourced on CYP-297's own reserved-namespace predicate.
+        if (ParticipantPrincipal.isParticipant(readerId)) return emptyList()
+        return state.acl.readableChannels(readerId).map { it.id }.filter { state.acl.canWrite(it, readerId) }
+    }
 }
