@@ -14,8 +14,13 @@ sealed interface AclLiveEvent {
     /** The socket is open — the matrix may honestly show "live". */
     data object Connected : AclLiveEvent
 
-    /** The socket dropped — the matrix must stop claiming "live". */
+    /** The socket dropped — the matrix must stop claiming "live". Transient → the VM reconnects (CYP-289). */
     data object Disconnected : AclLiveEvent
+
+    /** CYP-289: the server closed `/ws/comm` with 1008 (VIOLATED_POLICY) — a revoked/invalid operator token.
+     *  TERMINAL: the matrix must stop claiming "live" AND must NOT reconnect (a revoked token won't return
+     *  without re-auth); re-subscribing would re-open `/ws/comm` with the revoked token every backoff period. */
+    data object AccessRevoked : AclLiveEvent
 
     /** A single (channel, agent) ACL entry changed at the hub — the matrix reconciles by key. */
     data class EntryChanged(val entry: AclEntry) : AclLiveEvent

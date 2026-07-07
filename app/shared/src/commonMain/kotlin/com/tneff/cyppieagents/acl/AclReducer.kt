@@ -55,6 +55,7 @@ object AclReducer {
     fun statusOf(event: AclLiveEvent): ConnectionStatus? = when (event) {
         is AclLiveEvent.Connected -> ConnectionStatus.LIVE
         is AclLiveEvent.Disconnected -> ConnectionStatus.DISCONNECTED
+        is AclLiveEvent.AccessRevoked -> ConnectionStatus.DISCONNECTED // CYP-289: honest terminal (never "live")
         else -> null
     }
 

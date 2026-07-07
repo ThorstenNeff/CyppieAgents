@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents.eventlog
 
 import androidx.lifecycle.ViewModel
+import com.tneff.cyppieagents.net.Backoff
+import com.tneff.cyppieagents.net.reconnecting
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.model.Event
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +46,9 @@ class EventTailViewModel(
     private val filter: EventFilter = EventFilter(),
     private val ringCapacity: Int = TAIL_RING_DEFAULT,
     private val pauseBufferCapacity: Int = PAUSE_BUFFER_DEFAULT,
+    /** CYP-289 — reconnect backoff for the live `/ws/events` tail; injectable so tests drive fast reconnects.
+     *  Mirrors CommViewModel so the tail auto-heals on a socket drop (was previously honest-but-inert). */
+    private val backoff: Backoff = Backoff(),
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -79,11 +84,21 @@ class EventTailViewModel(
     }
 
     private suspend fun collect() {
-        source.events(currentFilter).collect { event ->
+        // CYP-289: auto-reconnect with backoff on a TRANSIENT socket drop (CYP-73 pattern, same as Comm/AgentView) —
+        // each re-subscribe replays the source's `Connected` marker → statusOf() clears the DISCONNECTED banner; the
+        // seq-ordered id-deduped ring drops duplicate replays.
+        source.events(currentFilter).reconnecting(backoff).collect { event ->
             EventReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
             when (event) {
                 is EventLiveEvent.Received -> onReceived(event.event)
-                is EventLiveEvent.AccessRevoked -> _state.update { it.copy(accessRevoked = true) }
+                is EventLiveEvent.AccessRevoked -> {
+                    // A 1008 revoke is TERMINAL — access won't return without re-auth. Cancel the collect so
+                    // `.reconnecting()` does NOT re-subscribe; otherwise a revoked client re-opens /ws/events every
+                    // backoff period forever, re-sending the revoked token (a reconnect hammer, security-adjacent).
+                    // Transient drops (Disconnected → the source completes without AccessRevoked) still reconnect.
+                    _state.update { it.copy(accessRevoked = true) }
+                    collectJob?.cancel()
+                }
                 else -> Unit
             }
         }

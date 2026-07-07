@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents.acl
 
 import androidx.lifecycle.ViewModel
+import com.tneff.cyppieagents.net.Backoff
+import com.tneff.cyppieagents.net.reconnecting
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.model.AclEntry
@@ -9,6 +11,7 @@ import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.WorkspaceMember
 import com.tneff.cyppieagents.workspace.WorkspaceRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +82,9 @@ class AclViewModel(
     /** CYP-189 — the operator-only human roster (`GET /api/workspace/members`, BE3a). Consulted ONLY when
      *  [editable]; null (or non-operator) → no human subjects (Invariante E: never fetched as a non-operator). */
     private val workspaceRepository: WorkspaceRepository? = null,
+    /** CYP-289 — reconnect backoff for the live `/ws/comm` ACL stream; injectable so tests drive fast reconnects.
+     *  Mirrors CommViewModel so ACL auto-heals on a socket drop (was previously honest-but-inert: stale forever). */
+    private val backoff: Backoff = Backoff(),
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -86,9 +92,12 @@ class AclViewModel(
     private val _state = MutableStateFlow(AclUiState(editable = editable))
     val state: StateFlow<AclUiState> = _state.asStateFlow()
 
+    /** CYP-289: the live-collect job, cancelled on a terminal AccessRevoked so the reconnect loop stops. */
+    private var liveJob: Job? = null
+
     init {
         runScope.launch { load() }
-        runScope.launch { collectLive() }
+        liveJob = runScope.launch { collectLive() }
     }
 
     private suspend fun load() {
@@ -109,7 +118,10 @@ class AclViewModel(
     }
 
     private suspend fun collectLive() {
-        liveSource.events().collect { event ->
+        // CYP-289: auto-reconnect with backoff on a socket drop (CYP-73 pattern, same as Comm/AgentView). On each
+        // re-subscribe the source replays its `Connected` marker → statusOf() flips connection back off DISCONNECTED
+        // (banner recovers); EntryChanged is idempotent (upsert by key), ChannelsChanged replaces — no duplicates.
+        liveSource.events().reconnecting(backoff).collect { event ->
             AclReducer.statusOf(event)?.let { s -> _state.update { it.copy(connection = s) } }
             when (event) {
                 // The AclEvent echo is the source of truth: it reconciles the entry AND clears pending →
@@ -123,6 +135,13 @@ class AclViewModel(
                     )
                 }
                 is AclLiveEvent.ChannelsChanged -> _state.update { it.copy(channels = event.channels) }
+                is AclLiveEvent.AccessRevoked -> {
+                    // CYP-289: a 1008 revoke is TERMINAL — flag it honestly and cancel the collector so
+                    // `.reconnecting()` does NOT re-open /ws/comm with the revoked token (the ACL reconnect loop).
+                    // Symmetric to EventTail's AccessRevoked handling.
+                    _state.update { it.copy(accessRevoked = true) }
+                    liveJob?.cancel()
+                }
                 else -> Unit
             }
         }
