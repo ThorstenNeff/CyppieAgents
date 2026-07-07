@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.routing
 import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.ParticipantPrincipal
 import com.tneff.cyppieagents.auth.resolvePrincipal
 import com.tneff.cyppieagents.comm.HubState
 import io.ktor.http.HttpHeaders
@@ -92,7 +93,12 @@ fun TokenRegistry.participantFor(token: String?): String? =
 private fun ApplicationCall.participantSubject(deps: AuthDeps, token: String?): String? {
     val subject = deps.participantTokens.subjectFor(token) ?: return null
     if (!deps.participantRateLimiter.tryAcquire(subject)) throw TooManyRequestsException()
-    return subject
+    // CYP-297 (Layer 1, load-bearing): carry the resolved principal under the reserved `participant:` namespace so
+    // it can NEVER equal an agentId / OPERATOR_ID / identityId. canRead/canWrite for it is then a distinct,
+    // fail-closed-empty row (inherits no foreign grant) — a token minted `subject="operator"`/`subject="<agentId>"`
+    // resolves to `participant:operator`/`participant:<agentId>`, not the privileged principal. Applied at THIS one
+    // chokepoint, so every read resolver (requireCommReader/requireParticipant/wsReaderOrNull) inherits it.
+    return ParticipantPrincipal.of(subject)
 }
 
 /**
@@ -134,7 +140,13 @@ suspend fun ApplicationCall.requireCommReader(deps: AuthDeps, registry: TokenReg
  */
 suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenRegistry): String {
     registry.participantFor(bearerToken())?.let { return it } // agent / operator token — unchanged
-    participantSubject(deps, bearerToken())?.let { return it } // CYP-234b: participant token → subject; canWrite still governs (deny w/o grant)
+    // CYP-297 (Layer 3): a participant token is READ-tier BY CONSTRUCTION — it NEVER writes, even if an operator
+    // mistakenly granted canWrite to its `participant:` principal (Layer 1 already makes accidental collision
+    // impossible; this makes tier=READ ENFORCED, not cosmetic). Reject at the WRITE gate before the chokepoint —
+    // the send path (POST + WS) is the ONLY writer, so this closes participant-writes everywhere.
+    if (deps.participantTokens.resolve(bearerToken()) != null) {
+        throw ForbiddenException("participant tokens are read-only", code = "participant_read_only")
+    }
     return when (val p = resolvePrincipal(deps)) {
         is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
         else -> throw UnauthorizedException()

@@ -95,7 +95,7 @@ class ParticipantTokenRoutesTest {
         // …it resolves as a read-SUBJECT through the canRead resolver…
         val read = client.get("/read") { header("Authorization", "Bearer $raw") }
         assertEquals(HttpStatusCode.OK, read.status)
-        assertEquals("byo-e2e", read.bodyAsText(), "the freshly minted token is a first-class read-subject")
+        assertEquals("participant:byo-e2e", read.bodyAsText(), "the freshly minted token is a first-class read-subject (CYP-297: under the reserved `participant:` namespace)")
         // …but is DENIED at the MEMBER-tier gate (the ①-fix: it never satisfies MEMBER / reads /api/events).
         assertEquals(HttpStatusCode.Unauthorized, client.get("/member") { header("Authorization", "Bearer $raw") }.status, "a minted participant token must 401 at the MEMBER gate (①-fix + mint, end-to-end)")
     }

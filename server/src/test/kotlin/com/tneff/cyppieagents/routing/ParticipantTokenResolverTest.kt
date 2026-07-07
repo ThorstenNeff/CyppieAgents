@@ -66,14 +66,19 @@ class ParticipantTokenResolverTest {
     private fun bearer(t: String) = "Bearer $t"
 
     @Test
-    fun participantToken_resolvesToItsSubject_throughEveryReadResolver() = app { client ->
-        for (path in listOf("/read", "/write", "/part")) {
+    fun participantToken_resolvesToItsNamespacedSubject_throughReadResolvers_andRejectedAtWrite() = app { client ->
+        // CYP-297 Layer 1: the READ resolvers admit the token but resolve it to the RESERVED `participant:`
+        // principal — NOT the bare subject, and never the operator id → its canRead/canWrite is a distinct
+        // fail-closed-empty row that inherits no foreign grant.
+        for (path in listOf("/read", "/part")) {
             val resp = client.get(path) { header("Authorization", bearer(raw)) }
             assertEquals(HttpStatusCode.OK, resp.status, "$path admits the participant token")
-            assertEquals("byo-consumer-1", resp.bodyAsText(), "$path resolves it to its read-SUBJECT")
-            // it is a PLAIN subject, NOT the operator id → the ACL (canRead/canWrite) is the only authz.
+            assertEquals("participant:byo-consumer-1", resp.bodyAsText(), "$path resolves it to its NAMESPACED read-subject")
             assertTrue(resp.bodyAsText() != HubState.OPERATOR_ID, "$path must NOT resolve a participant token to the operator")
         }
+        // CYP-297 Layer 3: the WRITE resolver (requireCommWriter) rejects a participant token outright — read-tier
+        // never writes, even before the ACL chokepoint.
+        assertEquals(HttpStatusCode.Forbidden, client.get("/write") { header("Authorization", bearer(raw)) }.status, "/write must reject a participant token (read-only tier)")
     }
 
     @Test

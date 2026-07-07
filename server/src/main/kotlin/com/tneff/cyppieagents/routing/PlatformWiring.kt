@@ -138,7 +138,12 @@ fun Application.installPlatform(
             workspaceRoutes(authDeps, apiBase = apiBase) // CYP-186 BE3a: OPERATOR-only workspace roster
             // CYP-234b-3 (#8): operator-gated mint/revoke of the participant-token class (uses the shared
             // authDeps.participantTokens the read-tier resolvers resolve from).
-            participantTokenRoutes(authDeps, apiBase = apiBase)
+            participantTokenRoutes(
+                authDeps,
+                apiBase = apiBase,
+                // CYP-297 Zahn 1 — the active project's agent ids for the mint collision guard.
+                activeAgentIds = { booted.state.agents.map { it.id }.toSet() },
+            )
         }
     }
 }
