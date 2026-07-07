@@ -19,6 +19,10 @@ object AgentMgmtTags {
     const val GATE_HINT = "agentMgmt.gateHint"
     const val EMPTY = "agentMgmt.empty" // CYP-228: empty-state onboarding when agents.isEmpty()
 
+    /** CYP-288 — load-error surface (shown INSTEAD of EMPTY when the agent-list load failed) + its retry button. */
+    const val ERROR = "agentMgmt.error"
+    const val ERROR_RETRY = "agentMgmt.error.retry"
+
     fun item(id: String) = "agentMgmt.item.$id"
     fun itemEdit(id: String) = "agentMgmt.item.$id.edit"
     fun itemRemove(id: String) = "agentMgmt.item.$id.remove"

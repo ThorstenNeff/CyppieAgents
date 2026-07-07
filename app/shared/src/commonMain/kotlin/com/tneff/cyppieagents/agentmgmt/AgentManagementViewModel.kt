@@ -46,6 +46,8 @@ data class EditForm(
  */
 data class AgentMgmtUiState(
     val loading: Boolean = true,
+    /** CYP-288: the agent-list load FAILED (distinct from a settled-empty list — error beats the onboarding empty). */
+    val listError: Boolean = false,
     /** Operator token present → mutations enabled; else read-only list + gate hint (fail-closed). */
     val editable: Boolean = false,
     val agents: List<Agent> = emptyList(),
@@ -125,8 +127,10 @@ class AgentManagementViewModel(
     init { runScope.launch { reload() } }
 
     private suspend fun reload() {
-        val agents = runCatching { repository.list() }.getOrDefault(emptyList())
-        _state.update { it.copy(agents = agents, loading = false) }
+        val result = runCatching { repository.list() }
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        // CYP-288: carry an agent-list load failure instead of swallowing it to empty (failure ≠ "no agents yet").
+        _state.update { it.copy(agents = result.getOrDefault(emptyList()), loading = false, listError = result.isFailure) }
     }
 
     /**
@@ -135,7 +139,10 @@ class AgentManagementViewModel(
      * name/colour/persona through the SHARED repo; calling this after a successful settings save makes the live
      * titlebar/window state reflect the change WITHOUT a page reload — the same re-fetch add/remove/edit already do.
      */
-    fun refresh() { runScope.launch { reload() } }
+    fun refresh() {
+        _state.update { it.copy(loading = true, listError = false) }
+        runScope.launch { reload() }
+    }
 
     // --- CYP-86 add ---
 
