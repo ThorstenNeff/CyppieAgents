@@ -10,11 +10,14 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
+import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.withContext
 
 /**
  * Live `/ws/comm` adapter for the ACL-matrix UI (CYP-48) — same socket + frame contract as
@@ -30,6 +33,7 @@ class AclWsClient(
 ) : AclLiveSource {
 
     override fun events(): Flow<AclLiveEvent> = channelFlow {
+        var closeCode: Short? = null
         try {
             client.webSocket(
                 urlString = commUrl(),
@@ -39,15 +43,24 @@ class AclWsClient(
                 // Native) — a cross-context emit, illegal in flow{} (the CYP-115 ISE/churn) but what channelFlow
                 // allows. Element emissions go to this@channelFlow; `incoming` frames stay on the session.
                 this@channelFlow.send(AclLiveEvent.Connected)
-                for (frame in incoming) {
-                    if (frame is Frame.Text) {
-                        when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
-                            is AclEvent -> this@channelFlow.send(AclLiveEvent.EntryChanged(event.entry))
-                            is ChannelsEvent -> this@channelFlow.send(AclLiveEvent.ChannelsChanged(event.channels))
-                            is MessageEvent -> Unit // consumed by the comm timeline, not the ACL matrix
+                try {
+                    for (frame in incoming) {
+                        if (frame is Frame.Text) {
+                            when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
+                                is AclEvent -> this@channelFlow.send(AclLiveEvent.EntryChanged(event.entry))
+                                is ChannelsEvent -> this@channelFlow.send(AclLiveEvent.ChannelsChanged(event.channels))
+                                is MessageEvent -> Unit // consumed by the comm timeline, not the ACL matrix
+                            }
                         }
                     }
+                } catch (e: CancellationException) {
+                    // Ktor tears a closing socket down by cancelling the frame channel; if a close reason is
+                    // already recorded (e.g. a 1008 reject) this is that teardown, not a real cancel — swallow
+                    // and report the close below. Otherwise it's a genuine collector cancel and must propagate.
+                    if (!closeReason.isCompleted) throw e
                 }
+                // Read the close code without cancellation so a 1008 is reported even while the socket tears down.
+                closeCode = withContext(NonCancellable) { closeReason.await()?.code }
             }
         } catch (e: CancellationException) {
             throw e
@@ -56,7 +69,12 @@ class AclWsClient(
             // not throw). The cross-context ISE that caused the churn was swallowed here before.
             logWsError("acl", e)
         }
-        this@channelFlow.send(AclLiveEvent.Disconnected)
+        // CYP-289: a 1008 (VIOLATED_POLICY) close = a revoked/invalid operator token → TERMINAL AccessRevoked
+        // (the VM cancels the collector; no reconnect). Any other close = a transient Disconnected (reconnects).
+        this@channelFlow.send(
+            if (closeCode == CloseReason.Codes.VIOLATED_POLICY.code) AclLiveEvent.AccessRevoked
+            else AclLiveEvent.Disconnected,
+        )
     }
 
     private fun commUrl(): String {

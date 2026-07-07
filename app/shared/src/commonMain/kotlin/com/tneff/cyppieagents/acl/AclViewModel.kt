@@ -11,6 +11,7 @@ import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.WorkspaceMember
 import com.tneff.cyppieagents.workspace.WorkspaceRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -91,9 +92,12 @@ class AclViewModel(
     private val _state = MutableStateFlow(AclUiState(editable = editable))
     val state: StateFlow<AclUiState> = _state.asStateFlow()
 
+    /** CYP-289: the live-collect job, cancelled on a terminal AccessRevoked so the reconnect loop stops. */
+    private var liveJob: Job? = null
+
     init {
         runScope.launch { load() }
-        runScope.launch { collectLive() }
+        liveJob = runScope.launch { collectLive() }
     }
 
     private suspend fun load() {
@@ -131,6 +135,13 @@ class AclViewModel(
                     )
                 }
                 is AclLiveEvent.ChannelsChanged -> _state.update { it.copy(channels = event.channels) }
+                is AclLiveEvent.AccessRevoked -> {
+                    // CYP-289: a 1008 revoke is TERMINAL — flag it honestly and cancel the collector so
+                    // `.reconnecting()` does NOT re-open /ws/comm with the revoked token (the ACL reconnect loop).
+                    // Symmetric to EventTail's AccessRevoked handling.
+                    _state.update { it.copy(accessRevoked = true) }
+                    liveJob?.cancel()
+                }
                 else -> Unit
             }
         }
