@@ -471,4 +471,8 @@
     <string name="theme_mode_dark">Dark</string>
     <string name="a11y_theme_menu">Theme selection, current: %1$s</string>
     <string name="a11y_theme_mode">Theme %1$s</string>
+    <!-- CYP-277: a11y contentDescription for 3 previously-unlabelled clickable elements (Sweep #2). -->
+    <string name="a11y_report_snapshot_select">Select report %1$s from %2$s</string>
+    <string name="a11y_event_filter_chip">Filter %1$s%2$s, tap to change</string>
+    <string name="a11y_event_drilldown_header">Correlated by %1$s, tap to clear</string>
 </resources>

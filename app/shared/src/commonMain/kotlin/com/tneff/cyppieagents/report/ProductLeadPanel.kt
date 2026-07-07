@@ -39,6 +39,7 @@ import kmpcyppieagents.app.shared.generated.resources.event_severity_info
 import kmpcyppieagents.app.shared.generated.resources.event_severity_warn
 import kmpcyppieagents.app.shared.generated.resources.report_access_denied
 import kmpcyppieagents.app.shared.generated.resources.report_advisory
+import kmpcyppieagents.app.shared.generated.resources.a11y_report_snapshot_select
 import kmpcyppieagents.app.shared.generated.resources.report_as_of
 import kmpcyppieagents.app.shared.generated.resources.report_empty
 import kmpcyppieagents.app.shared.generated.resources.report_error
@@ -144,11 +145,19 @@ private fun SnapshotList(state: ProductLeadUiState, viewModel: ProductLeadViewMo
         }
         state.metas.forEach { meta ->
             val selected = meta.id == state.selectedId
+            // CYP-277: name the selectable snapshot (type + as-of) so a screen reader announces the clickable
+            // row's purpose, not just its two child texts.
+            val snapshotA11y = stringResource(
+                Res.string.a11y_report_snapshot_select,
+                stringResource(reportTypeLabel(meta.type)),
+                formatTs(meta.generatedAt),
+            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(ProductLeadTags.snapshot(meta.id))
                     .clickable { viewModel.select(meta.id) }
+                    .semantics { contentDescription = snapshotA11y }
                     .padding(8.dp),
             ) {
                 Text(
