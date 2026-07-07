@@ -1,7 +1,11 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.FakeIdentityProvider
+import com.tneff.cyppieagents.auth.authenticatedApi
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
 import com.tneff.cyppieagents.auth.InMemoryRoleStore
 import com.tneff.cyppieagents.auth.ParticipantTokenStore
 import io.ktor.client.request.delete
@@ -47,7 +51,13 @@ class ParticipantTokenRoutesTest {
         application {
             install(ContentNegotiation) { json() }
             install(StatusPages) { exception<ApiException> { call, cause -> call.respondText(text = "", status = cause.status) } }
-            routing { participantTokenRoutes(deps) }
+            routing {
+                participantTokenRoutes(deps)
+                // end-to-end surface: a canRead-scoped read + the MEMBER-tier gate (like GET /api/events).
+                // (server routing `get` qualified — the client `get` is imported for the test's requests.)
+                get("/read") { call.respondText(call.requireCommReader(deps, reg)) }
+                authenticatedApi(deps, AuthRole.MEMBER) { get("/member") { call.respondText("member-ok") } }
+            }
         }
         block(client)
     }
@@ -74,6 +84,20 @@ class ParticipantTokenRoutesTest {
         val del = client.delete("/api/participant-tokens?subject=byo-1") { op() }
         assertEquals(HttpStatusCode.OK, del.status)
         assertEquals(null, store.subjectFor(raw), "revoked → the token no longer resolves")
+    }
+
+    @Test
+    fun mintedToken_endToEnd_readsViaCanRead_but401sAtMemberGate() = app { client ->
+        // #8 mint + ①-fix TOGETHER, end-to-end: mint a REAL token via the operator admin path…
+        val mint = client.post("/api/participant-tokens") { op(); contentType(ContentType.Application.Json); setBody("""{"subject":"byo-e2e"}""") }
+        assertEquals(HttpStatusCode.Created, mint.status)
+        val raw = Json.parseToJsonElement(mint.bodyAsText()).let { (it as kotlinx.serialization.json.JsonObject)["token"]!!.let { t -> (t as kotlinx.serialization.json.JsonPrimitive).content } }
+        // …it resolves as a read-SUBJECT through the canRead resolver…
+        val read = client.get("/read") { header("Authorization", "Bearer $raw") }
+        assertEquals(HttpStatusCode.OK, read.status)
+        assertEquals("byo-e2e", read.bodyAsText(), "the freshly minted token is a first-class read-subject")
+        // …but is DENIED at the MEMBER-tier gate (the ①-fix: it never satisfies MEMBER / reads /api/events).
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/member") { header("Authorization", "Bearer $raw") }.status, "a minted participant token must 401 at the MEMBER gate (①-fix + mint, end-to-end)")
     }
 
     @Test

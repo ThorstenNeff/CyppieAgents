@@ -151,6 +151,9 @@ suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenReg
  * guard. Returns null → the WS handler closes VIOLATED_POLICY (no app frame delivered).
  */
 suspend fun ApplicationCall.wsReaderOrNull(deps: AuthDeps, registry: TokenRegistry): String? {
+    // CYP-292 (deploy hygiene, human-gated): a `?token=` query is exposure-sensitive (CYP-190 class) — the
+    // reverse-proxy access log MUST strip/mask the query before the query-token WS surfaces go public. App-side
+    // is clean (no CallLogging; audit uses request.path() sans query), so this is a deploy-path condition only.
     val token = bearerToken() ?: request.queryParameters["token"]
     registry.participantFor(token)?.let { return it }
     participantSubject(deps, token)?.let { return it } // CYP-234b: participant token via ?token= (browser WS can't set Authorization)
