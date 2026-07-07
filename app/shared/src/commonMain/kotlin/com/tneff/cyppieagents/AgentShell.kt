@@ -451,6 +451,9 @@ fun AgentShell(
     // loads channels+agents ONCE in init and the live `/ws/comm` only pushes ChannelsChanged — the selected
     // timeline + agents map never re-scope on switch. Re-key = a clean, deterministic reload in the new scope.
     val commVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$COMM_WINDOW_ID-$activeProjectId") {
+        // CYP-273: no `writableChannels` passed yet → the interim MVP posture applies (every readable channel is
+        // writable, CYP-17) → no regression. When Backend's `GET /api/channels/writable` (List<String>) lands,
+        // wire it here: `CommViewModel(..., writableChannels = HttpWritableChannelsApi(httpClient, base, token))`.
         CommViewModel(resolvedCommApi, resolvedLiveSource, viewerId = "operator")
     }
     // CYP-186 roster repo — OPERATOR-only reads (GET /api/workspace/members). Hoisted so the ACL matrix
