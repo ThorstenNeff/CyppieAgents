@@ -1,14 +1,5 @@
 package com.tneff.cyppieagents.comm
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.runComposeUiTest
-import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.Message
@@ -18,22 +9,20 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
- * CYP-291 — the Comm `/ws/comm` live stream must TERMINATE on a 1008 revoke (AccessRevoked), not reconnect. Comm
- * shares `/ws/comm` with ACL and has used `.reconnecting()` since CYP-73, so a revoked token that the server
- * closes with 1008 previously masqueraded as a transient `Disconnected` → the client re-opened the socket with
- * the revoked token every backoff period forever (the CYP-289 loop class, latent here). The fix: `CommWsClient`
- * maps 1008 (via the shared `readCloseCode`/`isAccessRevoked` helper) to `AccessRevoked`, and the VM cancels the
- * collector on it. A TRANSIENT drop still reconnects.
+ * CYP-291 guard — the Comm `/ws/comm` live stream must TERMINATE on a 1008 revoke (AccessRevoked), not reconnect;
+ * a TRANSIENT drop still must. Twin of `acl.AclAccessRevokedTest` / `eventlog.EventTailAccessRevokedTest`.
  *
- * Mutation proof: drop the `liveJob?.cancel()` on AccessRevoked → [terminalRevoke_terminates_doesNotReconnect]
- * REDs (subs climbs as it re-subscribes). The transient test keeps the fix from over-terminating.
+ * CYP-294 de-flake: driven on an INJECTED scope + VIRTUAL time (testScheduler) like the ACL/EventTail guards. The
+ * previous runComposeUiTest + wall-clock waitUntil raced with `viewModelScope` + `Backoff(1ms)` under parallel-
+ * suite load (latent flake, no regression — the fix is real). Deterministic now; non-vacuity preserved: dropping
+ * `liveJob.cancel()` on AccessRevoked → [terminalRevoke_terminates_doesNotReconnect] REDs (subs climbs, ~1001/s).
  */
-@OptIn(ExperimentalTestApi::class)
 class CommRevokeTerminationTest {
 
     private class EmptyApi : CommApi {
@@ -44,7 +33,7 @@ class CommRevokeTerminationTest {
             Message("x", channelId, "operator", body, 1L)
     }
 
-    /** Emits Connected → AccessRevoked → completes, each subscription. The fix must cancel → subs stays 1. */
+    /** Connected → AccessRevoked → complete, each subscription. The fix cancels the collector → subs stays 1. */
     private class RevokingCommSource : CommLiveSource {
         val subscriptions = MutableStateFlow(0)
         override fun events(): Flow<CommLiveEvent> = flow {
@@ -54,7 +43,7 @@ class CommRevokeTerminationTest {
         }
     }
 
-    /** Transient drop on the 1st subscription; stays LIVE on re-subscribe. Must reconnect (subs ≥ 2). */
+    /** Transient drop on the 1st subscription; stays LIVE on re-subscribe → must reconnect (subs ≥ 2). */
     private class DropThenRecoverCommSource : CommLiveSource {
         val subscriptions = MutableStateFlow(0)
         override fun events(): Flow<CommLiveEvent> = flow {
@@ -65,22 +54,21 @@ class CommRevokeTerminationTest {
         }
     }
 
-    private fun vm(source: CommLiveSource) = CommViewModel(EmptyApi(), source, viewerId = "operator", backoff = Backoff(initialMs = 1, maxMs = 1))
-
     @Test
-    fun terminalRevoke_terminates_doesNotReconnect() = runComposeUiTest {
+    fun terminalRevoke_terminates_doesNotReconnect() = runTest {
         val source = RevokingCommSource()
-        setContent { MaterialTheme { Box(Modifier.width(700.dp).height(700.dp)) { CommPanel(remember { vm(source) }) } } }
-        var reconnected = false
-        try { waitUntil(timeoutMillis = 1500L) { source.subscriptions.value >= 2 }; reconnected = true } catch (_: Throwable) {}
-        assertFalse(reconnected, "a 1008 revoke must terminate the Comm collector, not reconnect")
-        assertEquals(1, source.subscriptions.value)
+        CommViewModel(EmptyApi(), source, viewerId = "operator", backoff = Backoff(initialMs = 1, maxMs = 1), scope = backgroundScope)
+        testScheduler.advanceTimeBy(1_000)
+        testScheduler.runCurrent()
+        assertEquals(1, source.subscriptions.value, "Comm AccessRevoked (1008) is terminal — subscriptions>1 means a reconnect LOOP on /ws/comm")
     }
 
     @Test
-    fun transientDrop_stillReconnects() = runComposeUiTest {
+    fun transientDrop_stillReconnects() = runTest {
         val source = DropThenRecoverCommSource()
-        setContent { MaterialTheme { Box(Modifier.width(700.dp).height(700.dp)) { CommPanel(remember { vm(source) }) } } }
-        waitUntil(timeoutMillis = 5_000L) { source.subscriptions.value >= 2 } // transient → reconnects (not terminated)
+        CommViewModel(EmptyApi(), source, viewerId = "operator", backoff = Backoff(initialMs = 1, maxMs = 1), scope = backgroundScope)
+        testScheduler.advanceTimeBy(100)
+        testScheduler.runCurrent()
+        assertTrue(source.subscriptions.value >= 2, "a transient drop (not AccessRevoked) must reconnect")
     }
 }
