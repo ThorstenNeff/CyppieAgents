@@ -253,6 +253,8 @@
     <string name="agent_color_adjusted_hint">Adjusted for readable contrast</string>
     <string name="agent_color_status_like_hint">Resembles a status color – color is identity, not status</string>
     <string name="a11y_agent_settings_open">Open settings for %1$s</string>
+    <!-- CYP-316: a11y name of the context-token count in the window title bar (%1$s = compact value, e.g. "137k"). -->
+    <string name="a11y_agent_context_tokens">Context tokens: %1$s</string>
     <string name="a11y_agent_display_name">Enter display name</string>
     <string name="a11y_agent_color_custom">Enter custom hex color</string>
     <string name="a11y_agent_color_swatch">Color %1$s</string>

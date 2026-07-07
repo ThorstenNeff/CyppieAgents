@@ -42,4 +42,8 @@ object WindowTestTags {
 
     /** CYP-211: the titlebar ⋮ settings button of the window with the given [id] (opens its settings panel). */
     fun settings(id: String): String = "window.$id.settings"
+
+    /** CYP-316: the live context-token count in the window [id]'s title bar. Present ONLY in Z1 (non-null value);
+     *  its ABSENCE is the test contract for Z2 (`contextTokens == null` → no node — the null ≠ 0 honesty invariant). */
+    fun contextTokens(id: String): String = "window.$id.contextTokens"
 }

@@ -41,6 +41,14 @@ class EventProjector(
      * coarse — compact-threshold only), only OFF/unknown suppresses.
      */
     private val capabilities: ((agentId: String) -> Capabilities?)? = null,
+    /**
+     * CYP-316 — live per-agent context-window occupancy sink (the `/ws/token-usage` feed). Invoked on
+     * every `ResultEvent` with the newest turn's context size, gated by the SAME `structuredUsage`
+     * decision that gates banding (single-sourced here, no second derivation path): only a full-fidelity
+     * (ENABLED / Connector-A) agent yields a number; a coarse (DEGRADED / Connector-B) or off/unknown one
+     * yields `null` (never a faked count). `null` param = not wired (tests/legacy).
+     */
+    private val onContextTokens: ((agentId: String, contextTokens: Int?) -> Unit)? = null,
 ) {
     private fun mode(agentId: String, capability: CapabilityGate.EnforcedCapability): CapabilityGate.CapabilityMode {
         val resolve = capabilities ?: return CapabilityGate.CapabilityMode.ENABLED // no system → enabled (legacy)
@@ -93,12 +101,23 @@ class EventProjector(
             // ENABLED → full banding; DEGRADED → coarse — only the compact-threshold crossing, not every
             // band step (Doc 10 §4 col B: B's token tracking is too coarse to trust the fine bands).
             val snapshot = UsageSnapshot.fromUsageJson(event.usage)
-            when (mode(agentId, CapabilityGate.EnforcedCapability.STRUCTURED_USAGE)) {
+            val usageMode = mode(agentId, CapabilityGate.EnforcedCapability.STRUCTURED_USAGE)
+            when (usageMode) {
                 CapabilityGate.CapabilityMode.OFF -> {}
                 CapabilityGate.CapabilityMode.ENABLED ->
                     addAll(bander.onUsage(agentId, projectId, snapshot, sessionId, correlationId))
                 CapabilityGate.CapabilityMode.DEGRADED ->
                     addAll(bander.onUsage(agentId, projectId, snapshot, sessionId, correlationId, coarse = true))
+            }
+            // CYP-316: live context-window occupancy (the title-bar feed), gated by the SAME structuredUsage
+            // decision as banding — only full-fidelity (ENABLED) yields a number; coarse (DEGRADED) or
+            // off/unknown yields null (never a faked count from B's coarse tracking). contextTokens is a
+            // Long occupancy (≤ the context window, well under Int.MAX) → clamp to the wire Int defensively.
+            onContextTokens?.let { sink ->
+                val tokens: Int? = if (usageMode == CapabilityGate.CapabilityMode.ENABLED)
+                    snapshot.contextTokens.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+                else null
+                sink(agentId, tokens)
             }
         }
 

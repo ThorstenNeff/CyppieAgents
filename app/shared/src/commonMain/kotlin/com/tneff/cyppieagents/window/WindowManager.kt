@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -68,6 +69,7 @@ import com.tneff.cyppieagents.ui.TitleBarColors
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_context_tokens
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_settings_open
 import kmpcyppieagents.app.shared.generated.resources.agent_add
 import kmpcyppieagents.app.shared.generated.resources.agent_empty_body
@@ -114,6 +116,12 @@ fun WindowHost(
      * it from the always-alive badge state. Canvas → title-bar badge; pager → indicator-dot badge.
      */
     badgeFor: (String) -> WindowBadge? = { null },
+    /**
+     * CYP-316: per-window live context-token count; `null` → no number (fail-closed, §8-8). Default `{ null }`
+     * keeps the host number-free for callers/tests that don't wire a source — never a regression. The shell feeds
+     * it from the `/ws/token-usage` map (mirrors [badgeFor]). Canvas title bar only — NOT the phone pager (v1, §5).
+     */
+    contextTokensFor: (String) -> Int? = { null },
     /** CYP-211: per-window derived titlebar colours (agent identity theming); `null` → default M3 (system windows). */
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     /** CYP-211: per-window settings opener for the titlebar ⋮ button; `null` → no button (system windows). */
@@ -148,7 +156,7 @@ fun WindowHost(
             PhonePager(state = state, badgeFor = badgeFor, windowContent = windowContent)
         } else {
             WindowCanvas(
-                state = state, onFit = onFit, badgeFor = badgeFor,
+                state = state, onFit = onFit, badgeFor = badgeFor, contextTokensFor = contextTokensFor,
                 titleBarColorsFor = titleBarColorsFor, settingsFor = settingsFor, titleBarLeadingFor = titleBarLeadingFor,
                 agentsEmpty = agentsEmpty, canAddAgent = canAddAgent, onAddFirstAgent = onAddFirstAgent,
                 windowContent = windowContent,
@@ -167,6 +175,7 @@ private fun WindowCanvas(
     state: WindowManagerState,
     onFit: () -> Unit,
     badgeFor: (String) -> WindowBadge?,
+    contextTokensFor: (String) -> Int? = { null },
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     settingsFor: (String) -> (() -> Unit)? = { null },
     // CYP-216: optional leading titlebar slot (the §5.1 inverted-disc avatar) — a host-injected composable so the
@@ -197,6 +206,7 @@ private fun WindowCanvas(
                     onToggleExpand = { state.toggleExpand(window.id) },
                     isExpanded = state.isExpanded(window.id),
                     badge = badgeFor(window.id),
+                    contextTokens = contextTokensFor(window.id),
                     titleBarColors = titleBarColorsFor(window.id),
                     onSettings = settingsFor(window.id),
                     titleBarLeading = titleBarLeadingFor(window.id),
@@ -513,6 +523,8 @@ fun FloatingWindow(
     /** CYP-241: this window is Expanded (a Restore anchor exists) → titlebar `stateDescription` = "enlarged & centered". */
     isExpanded: Boolean = false,
     badge: WindowBadge? = null,
+    /** CYP-316: this window's live context-token count; `null` → no number shown (unknown ≠ 0, §8-3). */
+    contextTokens: Int? = null,
     /** CYP-211: the agent's derived titlebar colours; `null` → the default M3 primary/surfaceVariant theming
      *  (system windows). Focused = full colour; unfocused = dimmed toward the surface (elevation still carries focus). */
     titleBarColors: TitleBarColors? = null,
@@ -671,6 +683,26 @@ fun FloatingWindow(
                             color = barContent,
                             modifier = Modifier.weight(1f, fill = false),
                         )
+                        // CYP-316: the live context-token count — compact, monospace (stable digit width → a live
+                        // tick causes NO reflow jitter, §8-6), `barContent` (full, no alpha → AA on `barBg`). Sits
+                        // AFTER the title (which ellipsizes first) and BEFORE the badge → `Avatar · Title · [137k] ·
+                        // Badge · ⋮`. Rendered ONLY when non-null (Z1); `null` (Connector-B / pre-first-turn / unknown)
+                        // shows NOTHING — never "0" (the §8-3 honesty core: null ≠ 0). The a11y label carries meaning.
+                        contextTokens?.let { n ->
+                            val compact = formatCompactTokens(n)
+                            val tokensCd = stringResource(Res.string.a11y_agent_context_tokens, compact)
+                            Text(
+                                text = compact,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = barContent,
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .testTag(WindowTestTags.contextTokens(window.id))
+                                    .semantics { contentDescription = tokensCd },
+                            )
+                        }
                         // CYP-55 activity badge at the title end (fail-closed: only when present).
                         if (badge != null) {
                             WindowBadgeView(

@@ -35,4 +35,6 @@ class ProjectRuntime(
     val providerRegistry: ProviderRegistry,
     val agentManagement: AgentManagement,
     val worktrees: WorktreeManager,
+    /** CYP-316 — this project's per-agent context-window token feed (the `/ws/token-usage` source). */
+    val tokenUsage: AgentTokenUsageTracker,
 )
