@@ -1,9 +1,15 @@
 # CYP-220 — Per-Store BYO-Postgres Migration: Architecture & Security Design
 
-> **Status: DESIGN / ratification artifact — NO CODE.** For Auftraggeber ratification before any implementation.
-> Verified against current docs (Context7): Tink Java (encryption), Flyway (migrations), HikariCP/PG-JDBC.
-> Compliance *classification* (controller/processor) is a legal question — this doc gives only the **technical
-> residual surface**.
+> **Status: AS-BUILT RECONCILIATION / ratification artifact.** Updated from the original DESIGN/no-code doc to
+> reflect what has ACTUALLY been built (Phases 1–6, all merged to `develop`). The sections below keep the
+> intended design; **inline `[AS-BUILT]` / `[DELTA]` / `[LATENT]` tags mark where reality differs**, and the new
+> **§0.5** gives the crisp ratification ask. Verified against the code at develop `c2ec3da` (§0.5 evidence).
+> Verified against current docs (Context7): Tink 1.15.0 (encryption), Flyway 10.17.0 (migrations), HikariCP
+> 5.1.0 / PG-JDBC 42.7.4. Compliance *classification* (controller/processor) is a legal question — this doc
+> gives only the **technical residual surface**.
+>
+> **The ratification question has changed** (verified): it is no longer *"should we build this?"* but
+> **"may the built-but-inert Postgres layer go LIVE?"** — see §0.5.
 
 ---
 
@@ -22,6 +28,90 @@ Not "all stores → one platform Postgres", but:
 
 Design principle throughout: **the seam is per-store, not global.** A store is the unit of binding, migration,
 encryption context, and residual-data classification.
+
+---
+
+## 0.5 Implementation status & the ratification ask  ⭐ (read first)
+
+Phases 1–6 are **built and merged**. The Postgres layer is a complete, tested-in-isolation, **fail-closed-by-
+construction** implementation that is **100% dark** — nothing routes to Postgres in production. The Auftraggeber
+ratifies three *consciously distinct* things:
+
+### (A) ALREADY LIVE — landed behaviour changes firing in prod TODAY
+These are not proposals; they are the current reality and the Auftraggeber should know what has already turned:
+
+- **ReportStore is now durable (File), no longer ephemeral.** `PlatformWiring.kt:225` supplies
+  `reportFile = <gitRoot>/.cyppie/reports.json` → `ReportStore(file = reportFile)` (`BootOrchestrator.kt:657`),
+  so operator reports now **survive a restart** (they were in-memory-only / lost on restart before). This is the
+  "persist the ReportStore" ask (§2) — **shipped**. It writes to a local box file (append-only snapshots,
+  content-free), NOT to Postgres.
+- **Store-seam interfaces extracted (CYP-223)** — each of the 6+ stores got an interface + `FileX` impl; a
+  **pure, no-behaviour-change refactor** (the live path is byte-identical). Active code, behaviourally neutral.
+
+**Nothing else from CYP-220 executes in prod.** The live stores remain the pre-CYP-220 File / SQLite / in-memory
+impls (`BootOrchestrator` still builds `JsonFileSessionStore`, the File config/token/override/share/registry
+stores, the sqlite/in-memory event + agent-event sinks). No cipher, DSN registry, connection pool, router,
+migrator, quota guard, or admin endpoint is constructed on the boot path.
+
+### (B) BUILT BUT INERT — behind `PgStoreRouting`, 0 prod callers, does NOT fire
+The whole Pg layer. **Verified inert:** `BootOrchestrator.kt` + `PlatformWiring.kt` contain **zero** references
+to `PgStoreRouting` / `StoreRouter` / `Pg*Store` / `DsnRegistry` / `BindingRegistry` / `ConnectionProvider` /
+`SecretCipher` / `CYPPIE_MASTER_KEY` / Tink / Hikari. The only construction sites are in `server/src/test`. The
+code self-declares it (`StoreRouter` KDoc: *"INERT by construction … every accessor returns its File fallback →
+zero behaviour change"*; `PgStoreRouting.activeDataSource`: *"Latent today — no prod bind path yet"*). Inventory:
+
+- **10 `Pg*` store impls** (project, project_config, remote_token, agent_override, channel_share, session,
+  delivery, event_log, agent_events, report) — the secret ones (project_config API key, remote_token) AEAD-
+  encrypted at rest. *(Delta: `avatar_blob` is classified user-DB-capable but has NO Pg impl yet — §2.)*
+- **Encryption spine** (`SecretCipher`, Tink 1.15.0) — envelope AEAD, master key `Box(CYPPIE_MASTER_KEY)` **or**
+  `Kms(kekUri)`, key-versioned, fail-closed. **[DELTA — better than design, §3]** AAD is **length-prefixed /
+  injective**, not the design's `"a|b|c"` delimiter-join (which was collision-prone).
+- **Connection layer** — `DsnRegistry` (DSN passwords AEAD-encrypted), `BindingRegistry` (per-(storeKey,
+  projectId), state ACTIVE|MIGRATING|READ_ONLY), `ConnectionProvider` (one HikariDataSource per DSN instance,
+  evict-orphan). Registries **start empty → always File fallback**.
+- **Migration engine** — `StoreMigrator` (bind MIGRATING → copy A→B → verify **row-count + SHA-256 checksum** →
+  atomic rebind → **rollback-retain-A**), `MigrationRowCodec` (injective), `FileMigrationAudit` (append-only,
+  0600, **no secrets**), `MigrationGate` decorators (writes → `409 store_migrating`).
+- **Residency + tier/quota** — `StoreResidencies` (fail-closed allow-list: 11 user-DB-capable + 8
+  MUST_STAY_HOME, disjoint-invariant), `TierPolicy`, `FreeQuota` (§7.2 values now concrete — see below),
+  `FreeFallbackToggle` (default-ON, fail-safe-ON), `AdminDbMetrics` + `GET /api/admin/db/metrics` (**also inert**
+  — only wired in tests).
+
+**[LATENT]** Every guard in (B) — residency (`activeDataSource` returns null for MUST_STAY_HOME), the migration
+read-only window (`409 store_migrating`), the free-quota `409` — is **enforced only through the `PgStoreRouting`
+accessors, which have no prod caller.** So the guards are correct-by-construction but do not run in production.
+
+### (C) STILL TO BUILD — the wiring that arms (B) [gated on this ratification]
+- **Live-Bind-Wiring (W1→W3)** — route every store access **per-op** through the `PgStoreRouting` accessors
+  (via a `(projectId)->Store` provider) instead of the boot-cached File handles, so residency + migration-window
+  actually fire. W1 = the `StoreRouter` seam + combined enforcement test (inert, no consumer rewiring); W2 =
+  secret stores (RemoteTokenIssuer, config PUTs, spawn key); W3 = non-secret + volume stores.
+- **Operator bind/migrate API + the actual File→Pg migration RUN** — the design's "UI-driven runtime switch"
+  (§1.3) has the *engine* but **no operator surface and no live run**. Deferred (explicitly "NOT this epic").
+- **Dual-write** in-flight model (§4.3) — deferred; the read-only window is the built MVP.
+- **KMS client registration** — `Kms(kekUri)` is coded but the `KmsClients.add(...)` wiring is a later phase;
+  `Box(CYPPIE_MASTER_KEY)` is the currently-usable master-key path.
+- **`avatar_blob` Pg impl** (§2) — the store is residency-classified capable but no `PgAvatarBlobStore` exists.
+
+### The open ratification decisions (for the Auftraggeber to sign)
+- **(RD-A) GO-LIVE of the inert layer — THE decision.** Ratification unblocks (C)/W1→W3. Once wired, real
+  production data can route to a bound Postgres and every guard fires. This is a **risk-posture + data-migration**
+  release — nothing routes today; this authorises that it *may*.
+- **(RD-B) Free-quota values** — as-built defaults: **~50 MB/account**, **keep-last-200 rows** (retention),
+  **0.8 soft-warn**, `409 free_quota_exceeded` on hard cap, **never delete-to-fit**, **fail-OPEN** on a usage-read
+  error. Confirm the numbers.
+- **(RD-C) Master-key placement in prod** — `Box(CYPPIE_MASTER_KEY)` (self-hosted, built) vs `Kms` (coded, needs
+  wiring). Access-critical: the master key gates every secret at rest. Confirm which is prod.
+- **(RD-D) Residency `MUST_STAY_HOME` set** — as-built: `roles, account, dsn_registry, store_binding,
+  migration_audit, mcp_config, free_fallback_toggle, quota_usage` (Kratos PII / authZ / bootstrap). Confirm this
+  boundary — it is the fail-closed default (anything unlisted stays home).
+- **(RD-E) Confirm deferrals stay out of scope** — avatar_blob Pg port, operator bind/migrate API + live
+  migration run, dual-write, KMS wiring.
+- **(RD-F) In-flight-write model** — read-only window (built) vs dual-write (deferred). Confirm read-only for MVP.
+
+> **The `[DELTA — better than design]` items (AAD injectivity §3, Pg concurrency §2) are hardenings discovered
+> during build, not regressions** — they make the as-built *stronger* than the ratified design; called out so the
+> Auftraggeber ratifies the improved reality. Details inline below.
 
 ---
 
@@ -63,6 +153,21 @@ Fail-closed: any step error → binding stays on A, B left provisioned-but-unbou
 pg-impl behind it — is the ratification ask. Today most are concrete classes: extract an interface, the existing
 JSON/atomic-move class becomes `FileX`, a new `PgX` implements the same interface. The boot factory picks the impl
 from the store's `StoreBinding` (file = "instance A"/fallback; pg = a bound DSN).)*
+
+> **[AS-BUILT]** The seam extraction shipped (CYP-223, no-behaviour-change) and **10 `Pg*` impls exist** (all
+> stores in the table + EventSink/AgentEventStore/ReportStore/Session/Delivery), each hand-written thin JDBC
+> behind the interface, selected by `PgStoreRouting` (inert — §0.5). Notes:
+> - **[DELTA] `AvatarBlobStore` has NO Pg impl.** It is residency-classified `USER_DB_CAPABLE` but there is no
+>   `PgAvatarBlobStore` — the avatar-blob→`bytea` port (this §2 row + §4.2) is **deferred**. Avatar blobs stay a
+>   local file store today.
+> - **[AS-BUILT — now LIVE, §0.5-A] ReportStore is no longer in-memory.** The ⚠️ below is stale: it is now
+>   File-durable in prod (net-new `FileReportStore`, boot flipped) AND has a `PgReportStore`.
+> - **[DELTA — better than design] The Pg impls are concurrency-hardened beyond the File originals.** A naive Pg
+>   port of File's single-lock read-modify-write loses updates under concurrency; as-built each RMW store folds
+>   the read+write into **one transaction / one statement**: `PgAgentOverrideStore.mutateInTx` (INSERT-ON-CONFLICT-
+>   DO-NOTHING → SELECT-FOR-UPDATE → merge → UPDATE), `PgSessionStore` (single `ON CONFLICT DO UPDATE` with a
+>   `CASE` preserving `createdAt` — no read-then-write window at all), `PgDeliveryLog` (INSERT-ON-CONFLICT-DO-
+>   NOTHING, append-only ⇒ RMW-immune). Ratify the hardened form.
 
 | Store (file) | Confirmed seam methods | Persisted shape | PG table sketch |
 |---|---|---|---|
@@ -112,10 +217,22 @@ Two supported placements, operator-selected:
   from the environment** (`CYPPIE_MASTER_KEY`, out-of-repo, box-scoped, 0600, injected like the existing
   `ANTHROPIC_API_KEY`/operator-token). Lives on OUR box only. Same "never in a user PG" guarantee.
 
+> **[AS-BUILT — RD-C]** Both placements are coded as `MasterKeySource.Box(serializedKeyset)` and
+> `MasterKeySource.Kms(kekUri)` (`SecretCipher.kt:104-118`). **`Box(CYPPIE_MASTER_KEY)` is the currently-usable
+> prod path**; `Kms` needs its `KmsClients.add(...)` registration wired in a later phase (§0.5-C). `fromConfig`
+> is **fail-closed**: Box mode without `CYPPIE_MASTER_KEY`, or Kms without a kekUri, throws — **no silent
+> plaintext fallback**. Confirm the prod placement (RD-C).
+
 ### 3.3 What is encrypted, and the AAD binding
 - **Encrypted at rest:** API keys, remote tokens, **and every stored DSN password/secret** (the DSN registry's own
-  secrets). AAD = a context string `"{storeKey}|{projectId}|{field}"` so a ciphertext **cannot be relocated** to a
+  secrets). AAD = a context of `(storeKey, projectId, field)` so a ciphertext **cannot be relocated** to a
   different row/store (Tink verifies AAD on decrypt → fail-closed).
+  > **[AS-BUILT / DELTA — better than design]** The design's `"{storeKey}|{projectId}|{field}"` **delimiter-join
+  > is NOT injective**: a component containing `|` collides two distinct triples onto identical bytes (e.g.
+  > `("s","p|x","f")` and `("s|p","x","f")` both → `"s|p|x|f"`) — which would let a ciphertext bound to one
+  > context decrypt under another, breaking the very "cannot-be-relocated" property. As-built (`SecretAad.bytes()`,
+  > `SecretCipher.kt:28-46`) uses a **length-prefixed injective encoding** (4-byte big-endian length + UTF-8 per
+  > component) = a bijection with the triple. Ratify the injective form.
 - **The `mcp/` config dir is also secret-bearing** (per-agent token-bearing `--mcp-config` files, 0600 today,
   written by `HubMcpConfigWriter`). It is consumed by a spawned *local* process from the filesystem, so it is NOT a
   natural PG-row store — it stays a **local, box-only artifact** (a token in a user PG that the user can read defeats
@@ -149,6 +266,12 @@ copies verbatim; DEKs stay valid). Blobs (`bytea`) copy as-is.
 - **MVP (simplest, honest):** a brief **read-only window** on that store during copy+verify (the store rejects
   writes with a typed `store_migrating` 409; reads continue from A). Small stores (config/registry/overrides) →
   sub-second. Blob/event stores → sized + surfaced in the UI ("Store X migrating, read-only ~Ns").
+  > **[AS-BUILT / LATENT]** The window is built — `MigrationGate` decorators throw `409 store_migrating` on writes
+  > while reads pass through to source A (`MigrationGatedRemoteTokenStore` et al.). The engine (`StoreMigrator`)
+  > and the `409` are implemented, **but the enforcement is reached ONLY through the `PgStoreRouting` accessors,
+  > which have no prod caller** — so no write is actually gated in production yet. This is the C/W1→W3 wiring
+  > (§0.5): the "combined enforcement test" that proves a post-flip write 409s runs today only against a
+  > test-constructed router. Dual-write remains the deferred alternative.
 - **Later option:** dual-write (writes go to A **and** B during copy) → no window, more complexity + a
   reconciliation edge. Documented as a trade-off (§8), not MVP.
 
@@ -195,6 +318,12 @@ The policy is **per store** (a Free user always needs the bootstrap stores on ou
 file — so it participates in the same seam/migration path (a Free user who later brings a DB just migrates A→B, §4).
 
 ### 7.2 Free-fallback quota — definition + enforcement
+> **[AS-BUILT]** The mechanics below are built (`FreeQuota` / `QuotaEnforcer` / `QuotaGuard`, inert per §0.5) with
+> **concrete defaults now in code** (RD-B to ratify): **~50 MB / account**, **keep-last-200 rows** (Free
+> retention), **0.8 soft-warn threshold**, hard cap → `409 free_quota_exceeded`, **never delete-to-fit**, and a
+> deliberate **fail-OPEN** on a usage-read error (a metering blip must not block a legitimate write; the periodic
+> sweep + hard cap backstop it). `FreeFallbackToggle` is default-ON and **fail-safe-ON** (a corrupt/absent flag
+> never locks onboarding out).
 - **"Minimal" =** a per-account (recommended) storage + row cap across the user-DB-capable stores on managed PG.
   Concretely (numbers to ratify): e.g. **≤ N MB total** and/or **per-store row caps** (events the dominant term →
   a tight event/transcript retention for Free, e.g. keep-last-K much lower than the paid 2000, + a hard row ceiling).
@@ -250,8 +379,9 @@ This is the **honest** offloading picture. Two classes:
   home (§3.3). Low volume.
 - **Routing/tier metadata** — which projectId belongs to which account/tier, minimal account record. Low volume.
 
-> Note: **ReportStore is ephemeral today** (in-memory) — it holds nothing at rest currently. Persisting it (§2) is
-> additive; classify it `USER_DB_CAPABLE` (content-free report snapshots, non-secret) so it offloads like the rest.
+> Note: **[AS-BUILT] ReportStore is now File-durable** (was ephemeral in-memory — the "persist it" ask shipped,
+> §0.5-A), classified `USER_DB_CAPABLE` (content-free report snapshots, non-secret) so it offloads like the rest
+> once a Pg binding + the live-wiring land.
 
 **(B) User-DB-capable (offloadable):** ProjectConfig, RemoteToken, AgentOverride, ChannelShare, ProjectRegistry
 (the tenant's own project list), AvatarBlob, EventSink (highest volume), AgentEventStore (high volume), ReportStore,
@@ -290,7 +420,15 @@ that residual = legal, out of scope here.)
 
 ---
 
-## 9. Recommended phasing (once ratified — NOT part of this doc's ask)
+## 9. Recommended phasing — **EXECUTED (Phases 1–6 built + merged)**
 Seam-interfaces first (no behavior change) → DSN registry + binding + KMS/encryption spine → one low-risk store as
 the vertical slice (e.g. ProjectRegistry) → migration engine + verify/rollback → tier policy + residency markers →
 remaining stores by volume. Each phase reviewer-gated + teeth, as usual.
+
+> **[AS-BUILT]** This phasing was carried out and merged (CYP-223 seams → 2a Tink cipher → 2b DSN/binding/pool →
+> 3 PG vertical on zonky embedded PG → 4 generic StoreMigrator → 5 tier/quota → 6 all store impls + MigrationGated
+> decorators + residency enforcement). Every phase was dual-gated (`:server:check` + `:e2e:test`) and
+> mutation-proven; the encryption AAD-injectivity, residency-fail-closed, and RMW-lost-update findings were caught
+> and fixed **during** these gates (§0.5, §2, §3). **What remains is NOT more store-building but the LIVE-WIRING
+> (§0.5-C / W1→W3)** that makes `PgStoreRouting` the per-op path so the built guards fire — hard-gated on this
+> ratification. A separate operator bind/migrate API + the first real File→Pg migration run come after that.
