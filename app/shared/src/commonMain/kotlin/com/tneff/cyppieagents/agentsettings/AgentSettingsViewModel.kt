@@ -214,8 +214,11 @@ class AgentSettingsViewModel(
         runScope.launch {
             // CYP-310: `save()` writes ONLY name+colour now — the CLAUDE.md moves to its own live GET + explicit
             // "Überschreiben" (POST); persona is no longer part of the shared edit path (null → PRESERVE, decoupled).
+            // CYP-313: `role = null` (PRESERVE) — this is a DISPLAY-ONLY edit (name/colour). Sending the current
+            // `s.role` made the guard read every save as an explicit role change, so a colour edit of the sole PO
+            // false-positived `last_po`. Only a real role-change UI would send a non-null role. `AgentEdit.role: Role?`.
             val edit = AgentEdit(
-                role = s.role,
+                role = null,
                 name = s.name.ifBlank { null },
                 color = s.colorHex.ifBlank { null },
             )
@@ -313,7 +316,10 @@ class AgentSettingsViewModel(
     private fun writeAvatarPreset(preset: AgentAvatar.Preset) {
         _state.update { it.copy(avatarBusy = true, avatarError = null) }
         runScope.launch {
-            runCatching { repository.edit(agentId, AgentEdit(role = _state.value.role, avatar = preset)) }
+            // CYP-313: an avatar change is a DISPLAY-ONLY edit → `role = null` (PRESERVE), never the current role.
+            // Sending `_state.value.role` here would trip the same guard false-positive as `save()` (a preset pick
+            // on the sole PO → `last_po`). The avatar path stays Preset-only (no Upload forge, CYP-215).
+            runCatching { repository.edit(agentId, AgentEdit(role = null, avatar = preset)) }
                 .onSuccess { agent -> applyServerAvatar(agent.avatar) }
                 .onFailure { _state.update { it.copy(avatarBusy = false, avatarError = AvatarUploadError.GENERIC) } }
         }

@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents.agentsettings
 
 import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
+import com.tneff.cyppieagents.agentmgmt.AgentMgmtException
+import com.tneff.cyppieagents.model.AgentMgmtGuard
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentDetail
 import com.tneff.cyppieagents.model.AgentEdit
@@ -86,9 +88,73 @@ class AgentSettingsViewModelTest {
             assertEquals("backend", id)
             assertEquals("Backend-2", edit.name)
             assertEquals("#3B82F6", edit.color)
-            assertEquals(Role.WORKER, edit.role)
+            assertNull(edit.role, "CYP-313: a display-only save sends role=null (PRESERVE) — never s.role, which the guard would read as an explicit role change")
             assertNull(edit.persona, "CYP-310: save() no longer sends persona — CLAUDE.md is its own endpoint")
             assertTrue(v.state.value.saved)
+        } finally { scope.cancel() }
+    }
+
+    /**
+     * CYP-313 — a colour edit of the SOLE PO succeeds against the REAL server guard ([AgentMgmtGuard], Backend's
+     * `Cyp313RoleOptionalEditE2eTest` is the server-side twin). The fix: a display-only [AgentSettingsViewModel.save]
+     * sends `role = null` (PRESERVE) → the guard SHORT-CIRCUITS (`edit.role ?: return null`) and never consults the
+     * PO-topology → no false `last_po`. The fake repo runs the real guard against a sole-PO world; `detail` returns
+     * WORKER, modelling the reported state-population gap (a fresh PO whose client role-state isn't yet PO — flagged
+     * to the PO). Mutation `role = s.role` (=WORKER) → guard `last_po` → error → RED (caught by the guard AND the
+     * `role == null` assertion).
+     */
+    @Test
+    fun save_soleP0_colourEdit_preservesRole_realGuard_noLastPo() {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        try {
+            val po = Agent("po", "PO", Role.PO, "po")
+            val recorded = mutableListOf<AgentEdit>()
+            val repo = object : AgentManagementRepository {
+                override suspend fun list(): List<Agent> = listOf(po)
+                override suspend fun detail(id: String): AgentDetail = AgentDetail("po", "PO", Role.WORKER, "po", "bash")
+                override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+                override suspend fun edit(id: String, edit: AgentEdit): Agent {
+                    recorded.add(edit)
+                    AgentMgmtGuard.validateEdit(listOf(po), id, edit)?.let { throw AgentMgmtException(it) } // REAL guard
+                    return Agent(id, edit.name ?: po.name, edit.role ?: po.role, po.worktree) // null role = PRESERVE
+                }
+                override suspend fun remove(id: String, worktree: WorktreeFate) {}
+            }
+            val v = AgentSettingsViewModel("po", repo, editable = true, "PO", null, claudeMdApi = FakeClaudeMd(), scope = scope)
+            v.setColorHex("#3B82F6")
+            v.save()
+            assertNull(recorded.single().role, "display-only save must send role=null (PRESERVE), not s.role")
+            assertFalse(v.state.value.error, "the sole PO's colour edit must NOT false-positive last_po")
+            assertTrue(v.state.value.saved)
+        } finally { scope.cancel() }
+    }
+
+    /**
+     * CYP-313 — the same PRESERVE guarantee for an AVATAR change (`writeAvatarPreset`): a preset pick on the sole PO
+     * sends `role = null` → real guard OK → no `last_po`. Mutation `role = _state.value.role` (=WORKER) → `last_po`
+     * → avatarError → RED.
+     */
+    @Test
+    fun avatarPreset_soleP0_sendsRoleNull_realGuard_noLastPo() {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        try {
+            val po = Agent("po", "PO", Role.PO, "po")
+            val recorded = mutableListOf<AgentEdit>()
+            val repo = object : AgentManagementRepository {
+                override suspend fun list(): List<Agent> = listOf(po)
+                override suspend fun detail(id: String): AgentDetail = AgentDetail("po", "PO", Role.WORKER, "po", "bash")
+                override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+                override suspend fun edit(id: String, edit: AgentEdit): Agent {
+                    recorded.add(edit)
+                    AgentMgmtGuard.validateEdit(listOf(po), id, edit)?.let { throw AgentMgmtException(it) }
+                    return Agent(id, edit.name ?: po.name, edit.role ?: po.role, po.worktree)
+                }
+                override suspend fun remove(id: String, worktree: WorktreeFate) {}
+            }
+            val v = AgentSettingsViewModel("po", repo, editable = true, "PO", null, claudeMdApi = FakeClaudeMd(), scope = scope)
+            v.selectPreset("bottts")
+            assertNull(recorded.single().role, "avatar edit must send role=null (PRESERVE)")
+            assertNull(v.state.value.avatarError, "the sole PO's avatar pick must NOT false-positive last_po")
         } finally { scope.cancel() }
     }
 
