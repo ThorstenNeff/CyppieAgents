@@ -1,6 +1,10 @@
 package com.tneff.cyppieagents.eventlog
 
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
@@ -52,6 +56,53 @@ fun Severity.railColor(dark: Boolean): Color = if (dark) {
         Severity.INFO -> Color(0xFF567083) // 5.2:1
         Severity.DEBUG -> Color(0xFFB8BCC4) // ~2.0:1 — deliberately dim (see KDoc)
     }
+}
+
+/**
+ * CYP-300 (a0) — the ONE shared severity-colour source. WARN was rendered via the brand `tertiary` role in 3–4
+ * duplicated `when(severity)` blocks (WindowBadge / ProductLeadPanel / AclPanel offline banner); E1 turns
+ * `tertiary` GREEN at night, so a warning/offline would read as "ok/connected" (inverted meaning). a0 hangs WARN
+ * on **amber** — the SAME CYP-274 [railColor] tone (foreground) plus an amber container variant — so every
+ * severity rendering draws its WARN from here and `tertiary` becomes a pure brand accent (§9-Inv.1). All other
+ * severities keep their established roles (error / secondary / outline) — a0 only de-overloads `tertiary`.
+ *
+ * The pure `*For(sev, scheme, dark)` cores are unit-testable (no composition); the `@Composable` wrappers read
+ * the active scheme + scheme-brightness. [dark] only selects the WARN amber tone (foreground/container).
+ */
+fun severityColorFor(severity: Severity, scheme: ColorScheme, dark: Boolean): Color = when (severity) {
+    Severity.ERROR -> scheme.error
+    Severity.WARN -> severity.railColor(dark) // amber (CYP-274) — de-overloaded from `tertiary`
+    Severity.INFO -> scheme.secondary
+    Severity.DEBUG -> scheme.outline
+}
+
+/** (container, onColor) severity pair for pills/banners. WARN = amber container; others keep their roles. */
+fun severityContainerFor(severity: Severity, scheme: ColorScheme, dark: Boolean): Pair<Color, Color> = when (severity) {
+    Severity.ERROR -> scheme.error to scheme.onError
+    Severity.WARN -> warnContainer(dark) // amber container — a0
+    Severity.INFO -> scheme.secondary to scheme.onSecondary
+    Severity.DEBUG -> scheme.outline to scheme.surface
+}
+
+/** Foreground severity colour at a render site (WARN = amber, never `tertiary`). */
+@Composable
+fun severityColor(severity: Severity): Color =
+    severityColorFor(severity, MaterialTheme.colorScheme, MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+
+/** (container, onColor) severity pair at a render site (WARN = amber container). */
+@Composable
+fun severityContainer(severity: Severity): Pair<Color, Color> =
+    severityContainerFor(severity, MaterialTheme.colorScheme, MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+
+/**
+ * The WARN amber CONTAINER (surface + AA onColor), scheme-adaptive. **a0: DERIVED** from the CYP-274 WARN tone
+ * (light `#9A6400` / dark `#FFC857`) — UIUX ratifies the exact hex at the §9 UX-QA; this helper is the SOLE seam,
+ * so a change is two values with **no call-site churn**. onColor ≥ AA (≥4.5:1) on the container in both schemes.
+ */
+private fun warnContainer(dark: Boolean): Pair<Color, Color> = if (dark) {
+    Color(0xFF4A3A10) to Color(0xFFFFC857) // dark amber-brown surface + bright-amber onColor
+} else {
+    Color(0xFFFFE7B0) to Color(0xFF5A3D00) // pale gold surface + dark-brown onColor
 }
 
 /** Severity glyph — icon stand-in so colour is never the sole carrier (§2). */

@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.eventlog.formatTs
+import com.tneff.cyppieagents.eventlog.severityColor
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -69,7 +70,9 @@ fun ProductLeadPanel(viewModel: ProductLeadViewModel, modifier: Modifier = Modif
     if (!state.accessible) {
         // Fail-closed: no report, no trigger — only the honest gate hint.
         Column(modifier = modifier.fillMaxSize().padding(16.dp).testTag(ProductLeadTags.PANEL)) {
-            HintLine(stringResource(Res.string.report_access_denied), MaterialTheme.colorScheme.tertiary, ProductLeadTags.GATE_HINT)
+            // CYP-300 (a0): denied = a gate, not a failure → neutral onSurfaceVariant (the GATED tone), never
+            // `tertiary` (which E1 turns green → reads as "ok"). Text carries the meaning.
+            HintLine(stringResource(Res.string.report_access_denied), MaterialTheme.colorScheme.onSurfaceVariant, ProductLeadTags.GATE_HINT)
         }
         return
     }
@@ -80,7 +83,8 @@ fun ProductLeadPanel(viewModel: ProductLeadViewModel, modifier: Modifier = Modif
     ) {
         TriggerBar(state, viewModel)
         if (state.generating) {
-            HintLine(stringResource(Res.string.report_generating), MaterialTheme.colorScheme.tertiary, ProductLeadTags.GENERATING)
+            // CYP-300 (a0): "generating" is in-progress → neutral onSurfaceVariant (in-progress is never green).
+            HintLine(stringResource(Res.string.report_generating), MaterialTheme.colorScheme.onSurfaceVariant, ProductLeadTags.GENERATING)
         }
         state.error?.let { HintLine(stringResource(errorRes(it)), MaterialTheme.colorScheme.error, ProductLeadTags.ERROR) }
 
@@ -293,14 +297,6 @@ private fun severityGlyph(s: Severity): String = when (s) {
     Severity.WARN -> "!"
     Severity.INFO -> "i"
     Severity.DEBUG -> "·"
-}
-
-@Composable
-private fun severityColor(s: Severity): Color = when (s) {
-    Severity.ERROR -> MaterialTheme.colorScheme.error
-    Severity.WARN -> MaterialTheme.colorScheme.tertiary
-    Severity.INFO -> MaterialTheme.colorScheme.secondary
-    Severity.DEBUG -> MaterialTheme.colorScheme.outline
 }
 
 @Composable

@@ -35,6 +35,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.comm.ConnectionStatus
+import com.tneff.cyppieagents.eventlog.severityContainer
+import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.ui.LoadErrorRetry
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.model.WorkspaceMember
@@ -112,11 +114,13 @@ fun AclPanel(viewModel: AclViewModel, modifier: Modifier = Modifier) {
             Banner(stringResource(Res.string.acl_access_revoked), AclMatrixTags.ACCESS_REVOKED,
                 MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
         }
-        // Offline/stale = amber warning, not error-red (CYP-17 semantics) → tertiary container (A3). CYP-296:
-        // suppressed on a terminal revoke — that is NOT a transient, reconnectable drop (the revoke banner shows).
+        // Offline/stale = amber WARNING (CYP-17 semantics). CYP-300 (a0): draw the amber from the shared severity
+        // source (WARN) instead of `tertiaryContainer` — E1 turns `tertiary` green → reads as "connected" (inverted).
+        // CYP-296: suppressed on a terminal revoke (`&& !accessRevoked`) — NOT a transient, reconnectable drop; the
+        // red revoke banner above supersedes it. (a0 + CYP-296 reconciled at the a0 rebase: amber colour AND the guard.)
         if (state.connection == ConnectionStatus.DISCONNECTED && !state.accessRevoked) {
-            Banner(stringResource(Res.string.comm_status_offline), AclMatrixTags.CONNECTION,
-                MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+            val (offlineBg, offlineFg) = severityContainer(Severity.WARN)
+            Banner(stringResource(Res.string.comm_status_offline), AclMatrixTags.CONNECTION, offlineBg, offlineFg)
         }
         // Actual error (operator-required / unauthorized / change-failed) → error tone.
         state.notice?.let {

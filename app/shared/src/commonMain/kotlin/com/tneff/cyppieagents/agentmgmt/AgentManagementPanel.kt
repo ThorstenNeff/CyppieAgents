@@ -316,7 +316,8 @@ private fun AddDialog(
                 if (state.addPoBlocked) {
                     Text(
                         stringResource(Res.string.agent_add_po_exists),
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary,
+                        // CYP-300 (a0): an informative constraint ("a PO already exists") = INFO → secondary, not `tertiary`.
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary,
                     )
                 }
                 val personaA11y = stringResource(Res.string.a11y_agent_add_persona)

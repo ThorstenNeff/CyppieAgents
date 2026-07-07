@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
  * The four hint **tones** shared by the Settings (CYP-85) and Agent-Management (CYP-86/87/88) panels
  * (CYP-99). One vocabulary so "saved ≠ active" reads as **Attention** everywhere, not as a neutral grey:
  *
- * - [EFFECT_DEFERRED] — "saved, not yet active" → an amber container (Attention), not plain text.
+ * - [EFFECT_DEFERRED] — "saved, not yet active" → a secondary/blue container (neutral Attention), not plain text.
  * - [GATED] — operator-gate explanation → neutral.
  * - [INFO] — a non-blocking informational note → secondary.
  * - [ERROR] — a real error / data-loss warning → error.
@@ -33,7 +33,7 @@ enum class HintTone { EFFECT_DEFERRED, GATED, INFO, ERROR }
 
 /**
  * A single toned hint line: a leading tone glyph + the [text]. [EFFECT_DEFERRED] additionally renders in a
- * filled amber container so it reads as Attention. [tag] is the node's testTag (the design's hint id); the
+ * filled secondary (blue) container so it reads as Attention. [tag] is the node's testTag (the design's hint id); the
  * glyph is a meaningful tone symbol kept in the a11y tree, while the message text still carries the full
  * meaning (so neither colour nor the glyph alone is the sole carrier — WCAG 1.4.1).
  */
@@ -49,7 +49,9 @@ fun TonedHint(text: String, tone: HintTone, tag: String, modifier: Modifier = Mo
                 if (banner) {
                     Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        // CYP-300 (a0): EFFECT_DEFERRED = neutral "saved, not yet active" attention → secondary (blue),
+                        // NOT `tertiaryContainer` (E1 → green = "success", wrong) and NOT amber (collides with WARN).
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
                         .padding(horizontal = 8.dp, vertical = 6.dp)
                 } else {
                     Modifier
@@ -84,7 +86,7 @@ fun hintGlyph(tone: HintTone): String = when (tone) {
 
 @Composable
 private fun hintContentColor(tone: HintTone): Color = when (tone) {
-    HintTone.EFFECT_DEFERRED -> MaterialTheme.colorScheme.onTertiaryContainer
+    HintTone.EFFECT_DEFERRED -> MaterialTheme.colorScheme.onSecondaryContainer // CYP-300 (a0): paired w/ secondaryContainer
     HintTone.ERROR -> MaterialTheme.colorScheme.error
     HintTone.INFO -> MaterialTheme.colorScheme.secondary
     HintTone.GATED -> MaterialTheme.colorScheme.onSurfaceVariant
