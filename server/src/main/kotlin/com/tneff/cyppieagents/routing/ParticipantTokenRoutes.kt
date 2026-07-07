@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.routing
 import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.authenticatedApi
+import com.tneff.cyppieagents.comm.HubState
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -33,12 +34,27 @@ data class ParticipantTokenSummary(val subject: String, val issuedAtMs: Long, va
  * read-tier resolvers resolve from (single shared store), so a minted token is immediately usable and a revoked
  * one immediately denied.
  */
-fun Route.participantTokenRoutes(deps: AuthDeps, apiBase: String = "/api") {
+fun Route.participantTokenRoutes(
+    deps: AuthDeps,
+    apiBase: String = "/api",
+    /** CYP-297 Zahn 1 — the live agentId set for the collision guard (see below). Default empty for the
+     *  token-only convenience/test path; PlatformWiring passes the active project's agent ids. */
+    activeAgentIds: suspend () -> Set<String> = { emptySet() },
+) {
     authenticatedApi(deps, AuthRole.OPERATOR) {
         route("$apiBase/participant-tokens") {
             post {
                 val req = call.receive<MintParticipantTokenRequest>()
-                val raw = deps.participantTokens.mint(req.subject, req.ttlMs)
+                // CYP-297 Zahn 1 — collision guard (belt atop the load-bearing `participant:` namespace): reject a
+                // subject that IS a privileged principal — the OPERATOR_ID, a live agentId, or an assigned human
+                // identityId. Without this an operator could mint a confusingly-named token (and, absent Layer 1,
+                // one that would resolve to that principal's ACL rows). Fail-closed BEFORE the token is created.
+                val subject = req.subject
+                val reserved = subject == HubState.OPERATOR_ID ||
+                    subject in activeAgentIds() ||
+                    subject in deps.roles.list().map { it.identityId }.toSet()
+                if (reserved) throw ConflictException("subject collides with a reserved principal", code = "reserved_subject")
+                val raw = deps.participantTokens.mint(subject, req.ttlMs)
                 val expiresAt = req.ttlMs?.let { deps.nowMs() + it }
                 call.respond(HttpStatusCode.Created, MintedParticipantToken(raw, req.subject, expiresAt))
             }

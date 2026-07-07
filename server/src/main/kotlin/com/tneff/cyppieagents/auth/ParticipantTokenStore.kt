@@ -24,6 +24,27 @@ import java.util.concurrent.ConcurrentHashMap
  */
 enum class ParticipantTier { READ }
 
+/**
+ * CYP-297 (Layer 1, load-bearing) — the **reserved ACL principal** a participant token resolves to. A participant
+ * token's operator-chosen `subject` is a free-form String living in the SAME namespace as agentIds, the
+ * [com.tneff.cyppieagents.comm.HubState.OPERATOR_ID] (`"operator"`), and Kratos identityIds. Resolving it VERBATIM
+ * (the pre-CYP-297 bug) let a token minted `subject="operator"`/`subject="<agentId>"` inherit that principal's
+ * canRead/canWrite rows → operator-write / agent-impersonation. Carrying it under the reserved [PREFIX] makes the
+ * resolved principal **structurally unable** to equal any bare id, so `canRead`/`canWrite` for it is always a
+ * DISTINCT, fail-closed-empty row (inherits no foreign grant). Single-sourced here; every read-resolver applies it
+ * at the one chokepoint ([com.tneff.cyppieagents.routing.participantSubject]). The bare [subject] stays the
+ * operator-facing label in mint/summaries — only the AUTHZ principal is namespaced.
+ */
+object ParticipantPrincipal {
+    const val PREFIX = "participant:"
+
+    /** The reserved principal for a participant token's raw [subject] — never equal to an agentId/OPERATOR_ID/identityId. */
+    fun of(subject: String): String = "$PREFIX$subject"
+
+    /** True if [principal] is a participant-scoped principal (carries the reserved namespace). */
+    fun isParticipant(principal: String): Boolean = principal.startsWith(PREFIX)
+}
+
 data class ParticipantTokenRecord(
     val subject: String,
     val tier: ParticipantTier,
