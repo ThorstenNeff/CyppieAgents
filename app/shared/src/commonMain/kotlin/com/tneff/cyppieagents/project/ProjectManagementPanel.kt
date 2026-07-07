@@ -1,8 +1,10 @@
 package com.tneff.cyppieagents.project
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.Project
+import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -103,39 +106,67 @@ fun ProjectManagementPanel(viewModel: ProjectViewModel, modifier: Modifier = Mod
 private fun ProjectRow(project: Project, state: ProjectUiState, viewModel: ProjectViewModel) {
     val blockedCode = state.deleteBlockedCode(project)
     Column(modifier = Modifier.fillMaxWidth().testTag(ProjectTags.row(project.id))) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Active marker = form/glyph, not colour (WCAG 1.4.1): a filled dot before the active project.
-            if (state.isActive(project)) {
-                Text("●", style = MaterialTheme.typography.labelMedium, modifier = Modifier.testTag(ProjectTags.rowActive(project.id)))
+        // CYP-282: mirror the CYP-156 AgentRow reflow — below PANE_COLLAPSE_WIDTH the name + two wide German
+        // action buttons ("Umbenennen"/"Löschen") squeeze the name to a few chars; split into a 2-line layout
+        // (identity line 1, actions line 2) so the name keeps full width. Same tags; wide keeps the single row.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth < PANE_COLLAPSE_WIDTH) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ProjectIdentity(project, state)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ProjectActions(project, state, viewModel)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ProjectIdentity(project, state)
+                    ProjectActions(project, state, viewModel)
+                }
             }
-            Text(
-                text = project.name,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(
-                onClick = { viewModel.openRename(project) },
-                enabled = state.editable,
-                modifier = Modifier.testTag(ProjectTags.rowRename(project.id)),
-            ) { Text(stringResource(Res.string.project_rename)) }
-            TextButton(
-                onClick = { viewModel.openDelete(project) },
-                // Delete-safety: active + last project are not deletable — disabled BEFORE the action.
-                enabled = state.canDelete(project),
-                modifier = Modifier.testTag(ProjectTags.rowDelete(project.id)),
-            ) { Text(stringResource(Res.string.project_delete)) }
         }
         // The reason is visible inline (not a post-hoc rejection); INFO — an instruction/system rule.
         if (blockedCode != null) {
             TonedHint(stringResource(deleteBlockedRes(blockedCode)), HintTone.INFO, ProjectTags.rowDeleteBlocked(project.id))
         }
     }
+}
+
+/** Identity cluster (active marker + name) — line 1 narrow, leading cells wide. Tags unchanged. */
+@Composable
+private fun RowScope.ProjectIdentity(project: Project, state: ProjectUiState) {
+    // Active marker = form/glyph, not colour (WCAG 1.4.1): a filled dot before the active project.
+    if (state.isActive(project)) {
+        Text("●", style = MaterialTheme.typography.labelMedium, modifier = Modifier.testTag(ProjectTags.rowActive(project.id)))
+    }
+    Text(
+        text = project.name,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f),
+    )
+}
+
+/** Action cluster (rename + delete) — line 2 narrow, trailing cells wide. Delete-safety guardrail stays disabled. */
+@Composable
+private fun RowScope.ProjectActions(project: Project, state: ProjectUiState, viewModel: ProjectViewModel) {
+    TextButton(
+        onClick = { viewModel.openRename(project) },
+        enabled = state.editable,
+        modifier = Modifier.testTag(ProjectTags.rowRename(project.id)),
+    ) { Text(stringResource(Res.string.project_rename)) }
+    TextButton(
+        onClick = { viewModel.openDelete(project) },
+        // Delete-safety: active + last project are not deletable — disabled BEFORE the action.
+        enabled = state.canDelete(project),
+        modifier = Modifier.testTag(ProjectTags.rowDelete(project.id)),
+    ) { Text(stringResource(Res.string.project_delete)) }
 }
 
 @Composable
