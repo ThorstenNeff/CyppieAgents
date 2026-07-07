@@ -1,0 +1,144 @@
+{
+  "$schema-note": "CyppieAgents maritime M3 design-system tokens. ONE canonical source; two render surfaces (Compose app ColorScheme + Landing/Doku CSS vars / Redoc theme). Docs-only design-pass — no build/merge before Auftraggeber sign-off.",
+  "meta": {
+    "name": "maritime-design-system",
+    "version": "1.0-draft",
+    "date": "2026-07-07",
+    "owner": "UIUX",
+    "status": "DESIGN-PASS (docs-only, awaiting Auftraggeber sign-off)",
+    "grounding": {
+      "day_source": "app/shared/.../ui/MaritimeTheme.kt MaritimeLight (CYP-268, accepted+merged, AA-clean) — adopted 1:1, marked CANONICAL",
+      "night_base": "MaritimeDark (CYP-268) — primary/secondary/error families kept; surfaces re-tinted blacker; tertiary re-hued to signal-green (NEW)",
+      "doc_surface": "dev-api-docs-experience-tokens.json v1.2 (CYP-234) — shares the brand hues; superset formalized here incl. Night",
+      "language_ref": "[[design-language-maritime-m3]]"
+    },
+    "wcag_policy": "Every fg/bg pair AA in BOTH schemes: text >= 4.5:1, non-text/UI (outline, focus, rail, icon-only) >= 3:1 (WCAG 1.4.11). Colour is NEVER the sole carrier of meaning (WCAG 1.4.1).",
+    "honesty_invariants": [
+      "GREEN is a brand/accent identity only (focus, active-selection, decorative chrome, landing accent). It NEVER signals success/ok/status and is never the sole carrier of a state.",
+      "No advisory/semantic component derives colour from tertiary*: TonedHint(INFO) and EFFECT_DEFERRED re-point to secondaryContainer (blue) in BOTH schemes so they never inherit the green.",
+      "error stays a red hue in both schemes, hue-distinct from green.",
+      "Severity ampel (EventVisuals) and the 9 SenderPalette identities stay semantic and scheme-independent."
+    ]
+  },
+
+  "color": {
+    "day": {
+      "_note": "= CYP-268 MaritimeLight, verbatim (canonical). Blue/white, calm. Contrast verified in spec.md §2.",
+      "primary": "#0A5AA0", "onPrimary": "#FFFFFF",
+      "primaryContainer": "#BEE0FA", "onPrimaryContainer": "#04263F",
+      "secondary": "#0F5B88", "onSecondary": "#FFFFFF",
+      "secondaryContainer": "#C4E2F5", "onSecondaryContainer": "#06283D",
+      "tertiary": "#0B7E9C", "onTertiary": "#FFFFFF",
+      "tertiaryContainer": "#B7E7F2", "onTertiaryContainer": "#022E3B",
+      "_tertiary_note": "Day accent = harbour-teal (blue-green). Decorative/brand-accent ONLY — advisory components do not use it (see honesty_invariants).",
+      "error": "#B3261E", "onError": "#FFFFFF",
+      "errorContainer": "#F9DEDC", "onErrorContainer": "#410E0B",
+      "background": "#FFFFFF", "onBackground": "#0C2635",
+      "surface": "#FFFFFF", "onSurface": "#0C2635",
+      "surfaceVariant": "#E4EFF8", "onSurfaceVariant": "#3A4E5A",
+      "outline": "#6E8C9E", "outlineVariant": "#CBDCE7",
+      "surfaceContainerLowest": "#FFFFFF",
+      "surfaceContainerLow": "#F3F8FC",
+      "surfaceContainer": "#EDF4FA",
+      "surfaceContainerHigh": "#E4EFF8",
+      "surfaceContainerHighest": "#DBE9F4"
+    },
+    "night": {
+      "_note": "NEW: Dunkelblau/Schwarz/Grün. Surfaces blacker than the accepted MaritimeDark; primary blue + error red kept; tertiary = signal-green. All pairs AA-verified in spec.md §3.",
+      "primary": "#6FBEEA", "onPrimary": "#02324E",
+      "primaryContainer": "#0A4E7C", "onPrimaryContainer": "#C7E6FB",
+      "secondary": "#93CCEA", "onSecondary": "#052A3F",
+      "secondaryContainer": "#154F70", "onSecondaryContainer": "#C7E6FB",
+      "tertiary": "#40D6A0", "onTertiary": "#04322A",
+      "tertiaryContainer": "#0C3D30", "onTertiaryContainer": "#9EEAD0",
+      "_tertiary_note": "Night accent = signal-green (starboard/navigation lantern — the maritime night identity). hue ~158deg, deliberately separated from primary-blue (~205), error-red (~2), warn-amber (~45), info-grey. Brand/accent ONLY; NEVER success/status. On surface: 10.2:1 (AAA).",
+      "error": "#F2B8B5", "onError": "#601410",
+      "errorContainer": "#8C1D18", "onErrorContainer": "#F9DEDC",
+      "background": "#06121A", "onBackground": "#DCE7ED",
+      "surface": "#06121A", "onSurface": "#DCE7ED",
+      "surfaceVariant": "#12242F", "onSurfaceVariant": "#A6BECD",
+      "outline": "#57707F", "outlineVariant": "#243642",
+      "surfaceContainerLowest": "#040D14",
+      "surfaceContainerLow": "#0A1922",
+      "surfaceContainer": "#0F2029",
+      "surfaceContainerHigh": "#14293A",
+      "surfaceContainerHighest": "#1B3242"
+    }
+  },
+
+  "typography": {
+    "_note": "M3 type scale (font-family-agnostic values). Font family = §-Ask in spec.md §4 (product/licensing call). Weights: Regular 400, Medium 500, Bold 700.",
+    "displayLarge":  { "sizeSp": 57, "lineHeightSp": 64, "weight": 400, "trackingSp": -0.25 },
+    "displayMedium": { "sizeSp": 45, "lineHeightSp": 52, "weight": 400, "trackingSp": 0 },
+    "displaySmall":  { "sizeSp": 36, "lineHeightSp": 44, "weight": 400, "trackingSp": 0 },
+    "headlineLarge": { "sizeSp": 32, "lineHeightSp": 40, "weight": 400, "trackingSp": 0 },
+    "headlineMedium":{ "sizeSp": 28, "lineHeightSp": 36, "weight": 400, "trackingSp": 0 },
+    "headlineSmall": { "sizeSp": 24, "lineHeightSp": 32, "weight": 400, "trackingSp": 0 },
+    "titleLarge":    { "sizeSp": 22, "lineHeightSp": 28, "weight": 400, "trackingSp": 0 },
+    "titleMedium":   { "sizeSp": 16, "lineHeightSp": 24, "weight": 500, "trackingSp": 0.15 },
+    "titleSmall":    { "sizeSp": 14, "lineHeightSp": 20, "weight": 500, "trackingSp": 0.1 },
+    "bodyLarge":     { "sizeSp": 16, "lineHeightSp": 24, "weight": 400, "trackingSp": 0.5 },
+    "bodyMedium":    { "sizeSp": 14, "lineHeightSp": 20, "weight": 400, "trackingSp": 0.25 },
+    "bodySmall":     { "sizeSp": 12, "lineHeightSp": 16, "weight": 400, "trackingSp": 0.4 },
+    "labelLarge":    { "sizeSp": 14, "lineHeightSp": 20, "weight": 500, "trackingSp": 0.1 },
+    "labelMedium":   { "sizeSp": 12, "lineHeightSp": 16, "weight": 500, "trackingSp": 0.5 },
+    "labelSmall":    { "sizeSp": 11, "lineHeightSp": 16, "weight": 500, "trackingSp": 0.5 }
+  },
+
+  "shape": {
+    "_note": "M3 corner radii (dp). Calm/anti-hype: M3 defaults, not over-rounded. `full` = pill (50%).",
+    "none": 0,
+    "extraSmall": 4,
+    "small": 8,
+    "medium": 12,
+    "large": 16,
+    "extraLarge": 28,
+    "full": "50%",
+    "component_defaults": {
+      "button": "full",
+      "chip": "small",
+      "textFieldContainer": "extraSmall",
+      "card": "medium",
+      "windowPanel": "medium",
+      "dialog": "extraLarge",
+      "bottomSheet": "extraLarge",
+      "menu": "extraSmall",
+      "tooltip": "extraSmall"
+    }
+  },
+
+  "elevation": {
+    "_note": "M3 tonal elevation. Colour is expressed by the surfaceContainer* ladder (above); dp is for shadow only. In Night, higher elevation = lighter navy (surfaceContainer ascends), NOT a shadow-only cue.",
+    "level0_dp": 0,
+    "level1_dp": 1,
+    "level2_dp": 3,
+    "level3_dp": 6,
+    "level4_dp": 8,
+    "level5_dp": 12,
+    "tonal_ladder": {
+      "level0": "surfaceContainerLowest",
+      "level1": "surfaceContainerLow",
+      "level2": "surfaceContainer",
+      "level3": "surfaceContainerHigh",
+      "level4": "surfaceContainerHigh",
+      "level5": "surfaceContainerHighest"
+    }
+  },
+
+  "surface_mapping": {
+    "_note": "How ONE token feeds BOTH surfaces. App reads MaterialTheme.colorScheme.<role> at the single App.kt seam. Landing/Doku reads --maritime-<var>; Redoc reads theme.<key>. 'Marke kräftig / Lesen ruhig' preserved: reading surfaces stay calm, brand roles stay bold.",
+    "rows": [
+      { "token": "primary",           "m3Role": "primary",          "cssVar": "--maritime-primary",        "redocKey": "colors.primary.main / sidebar.activeTextColor / typography.links.color" },
+      { "token": "onPrimary",         "m3Role": "onPrimary",        "cssVar": "--maritime-on-primary",     "redocKey": "—" },
+      { "token": "secondary",         "m3Role": "secondary",        "cssVar": "--maritime-secondary",      "redocKey": "colors.http.get (info accents)" },
+      { "token": "tertiary",          "m3Role": "tertiary",         "cssVar": "--maritime-accent",         "redocKey": "decorative accent only (NOT method/status colours)" },
+      { "token": "error",             "m3Role": "error",            "cssVar": "--maritime-error",          "redocKey": "colors.error.main / colors.http.delete" },
+      { "token": "background",        "m3Role": "background",       "cssVar": "--maritime-bg",             "redocKey": "colors.background / typography sidebar bg (light) " },
+      { "token": "surface",           "m3Role": "surface",          "cssVar": "--maritime-surface",        "redocKey": "sidebar.backgroundColor / rightPanel.backgroundColor" },
+      { "token": "onSurface",         "m3Role": "onSurface",        "cssVar": "--maritime-on-surface",     "redocKey": "colors.text.primary / sidebar.textColor / rightPanel.textColor" },
+      { "token": "onSurfaceVariant",  "m3Role": "onSurfaceVariant", "cssVar": "--maritime-on-surface-var", "redocKey": "colors.text.secondary" },
+      { "token": "outline",           "m3Role": "outline",          "cssVar": "--maritime-outline",        "redocKey": "colors.border.dark" },
+      { "token": "surfaceContainer",  "m3Role": "surfaceContainer", "cssVar": "--maritime-code-bg",        "redocKey": "typography.code.backgroundColor (ocean-dark BOTH modes — see CYP-234 pre-scope)" }
+    ]
+  }
+}
