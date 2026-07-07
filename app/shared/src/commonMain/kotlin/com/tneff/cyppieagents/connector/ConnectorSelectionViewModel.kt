@@ -170,7 +170,12 @@ class ConnectorSelectionViewModel(
             runCatching { repository.activate(agentId, selection) }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
-                    _state.update { it.copy(error = errorKey(e)) }
+                    // CYP-290: the A-path (selectKind STREAM_JSON) set draftKind OPTIMISTICALLY before this write.
+                    // On failure roll it back to initialKind (the server's truth) so the picker never shows a
+                    // connector the server never accepted — mirroring the B-path (confirmOptIn), which never sets
+                    // the draft before the server confirms. Without this, a failed A-downgrade of a B agent leaves
+                    // the picker showing A while the server still has B (fake success).
+                    _state.update { it.copy(draftKind = it.initialKind, error = errorKey(e)) }
                 }
         }
     }
