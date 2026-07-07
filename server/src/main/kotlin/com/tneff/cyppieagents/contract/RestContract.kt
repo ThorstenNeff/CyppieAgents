@@ -83,6 +83,7 @@ object RestContract {
         Op("GET", "/api/health", Tier.PUBLIC, response = Body.Text),
         Op("GET", "/api/agents", Tier.PARTICIPANT, response = arr<Agent>()),
         Op("GET", "/api/channels", Tier.PARTICIPANT, response = arr<Channel>()),
+        Op("GET", "/api/channels/writable", Tier.PARTICIPANT, response = arr<String>()), // CYP-273: composer-enable seam
         Op("GET", "/api/channels/{id}/messages", Tier.PARTICIPANT, response = arr<Message>()),
         Op("POST", "/api/channels/{id}/messages", Tier.PARTICIPANT_WRITE, request = json<SendMessageRequest>(), response = json<Message>()),
         Op("GET", "/api/inbox", Tier.PARTICIPANT, response = arr<Message>()),

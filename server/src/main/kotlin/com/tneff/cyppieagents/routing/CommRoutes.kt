@@ -162,6 +162,15 @@ fun Route.commRoutes(
             call.respond(hub.readableChannels(participant))
         }
 
+        // CYP-273 — the per-viewer WRITABLE subset (the composer-enable seam). Same participant-read gate as
+        // /channels (agent / operator / member / participant token all resolve); content-free (only channel ids
+        // the caller already sees); computed via the send-enforcing AclMatrix.canWrite → single-source with the
+        // POST. The client refreshes it on AclEvent for live enable/disable; the server-403 stays the authority.
+        get("/channels/writable") {
+            val participant = call.requireCommReader(deps, registry)
+            call.respond(hub.writableChannels(participant))
+        }
+
         route("/channels/{id}/messages") {
             get {
                 val participant = call.requireCommReader(deps, registry)
