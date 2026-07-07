@@ -55,6 +55,8 @@
 | `auth.verify.success` | Success-Container (nach Verify-Deep-Link) | — |
 | `auth.verify.continue` | „Weiter" → Desktop/Login | — |
 | `auth.verify.error` | Token ungültig/abgelaufen (`HintTone.ERROR`) | **Assertive** |
+| `auth.verify.toLogin` | „Zur Anmeldung"-Link (CYP-278 Register-Kollisions-Notice-Affordance) | — |
+| `auth.verify.toForgot` | „Passwort zurücksetzen"-Link (CYP-278 Register-Kollisions-Notice-Affordance) | — |
 
 ### Passwort vergessen (`scopeId = forgot`)
 | Tag | Element | liveRegion |
@@ -102,7 +104,7 @@ Knoten** über die Tags — der Announce ist damit test-verankert.
 
 ## Zähl-/Validierungs-Block (Selbst-Validierung)
 
-- **Neue Tags gesamt: 48** — Area `auth`. Aufschlüsselung: Gate/Boot 2 · login 10 · register 9 · verify 9 · forgot 6 ·
+- **Neue Tags gesamt: 50** — Area `auth`. Aufschlüsselung: Gate/Boot 2 · login 10 · register 9 · verify 11 · forgot 6 ·
   reset 9 · github 3. (Der GitHub-Button ist `auth.login.github`, unter Login geführt; die 3 `auth.github.*`-Tags sind
   die reinen OIDC-Zustände.)
 - **Announce-Knoten (liveRegion): 13.** **Assertive (10)** = `login.error`, `login.rateLimited`, `register.error`,
@@ -113,6 +115,10 @@ Knoten** über die Tags — der Announce ist damit test-verankert.
   `rateLimited`-Knoten — Inkonsistenz. Der ehrliche 429 (`EFFECT_DEFERRED` amber, **≠** rotes `ERROR`) braucht auf
   **allen vier** drosselbaren Aktionen einen eigenen Knoten, damit die 429-Honesty-Invariante überall gleich
   test-verankert ist. **Keine neuen Keys** (reused `auth_rate_limited`/`auth_rate_limited_wait`).
+- **Refine 2026-07-07 (CYP-278):** `auth.verify.toLogin` + `auth.verify.toForgot` ergänzt (48→50; verify 9→11). Grund:
+  die enumeration-sichere Register-Kollisions-Notice zeigt auf dem verify-Gate (register-Pfad) eine Affordance-Zeile
+  (Anmelden/Zurücksetzen) als alleinigen Träger der Bestandsnutzer-Hilfe. Kanonisches `to<Target>`-Idiom, verify-scope
+  (wo sie rendert). **Keine neuen Affordance-Keys** (reused `auth_link_to_login`/`auth_link_forgot`).
 - **0 Kollision:** Area `auth` existiert in keiner `*Tags.kt` (im Push-Schritt via `grep` gegengeprüft).
 - **Kein Secret in Tags:** kein Token/Passwort/Endpunkt als Segment (Deep-Link-Token werden **nie** zu Tags).
 - **Reuse:** keine bestehenden Tags reused (neue Fläche); die Reveal-Toggle-Tags folgen dem `SettingsTags`-Muster (eigener Tag, kein Reuse-Zwang).

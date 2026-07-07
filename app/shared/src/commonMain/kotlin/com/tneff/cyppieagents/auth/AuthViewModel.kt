@@ -65,6 +65,12 @@ sealed interface AuthUiState {
         val email: String,
         val phase: Phase = Phase.Idle,
         val resendResult: ResendResult? = null,
+        /** CYP-278 — true iff this hard gate was reached via the REGISTER path (as opposed to a login/session
+         *  that is unverified). Set identically for a fresh registration AND an email collision (both are the
+         *  single [RegisterResult.Pending]), so it discriminates the PATH, never account existence → it cannot
+         *  leak whether the email exists. Drives the dedicated, dual-purpose register-collision notice + the
+         *  sign-in/reset affordances; the login/session-unverified paths keep the existing verify copy. */
+        val fromRegister: Boolean = false,
     ) : AuthUiState
 
     /** Verify deep-link landing. [tokenInvalid] → honest error instead of a silent success. */
@@ -146,7 +152,9 @@ class AuthViewModel(
             val r = runCatching { repository.register(email, password) }
                 .getOrElse { e -> if (e is CancellationException) throw e; RegisterResult.InvalidInput }
             _state.value = when (r) {
-                is RegisterResult.Pending -> AuthUiState.AuthedUnverified(r.email) // neutral, hard gate
+                // CYP-278: fromRegister=true for BOTH a fresh registration AND an email collision (both are
+                // RegisterResult.Pending) → the render is byte-identical, so this can never be an existence oracle.
+                is RegisterResult.Pending -> AuthUiState.AuthedUnverified(r.email, fromRegister = true) // neutral, hard gate
                 is RegisterResult.RateLimited -> AuthUiState.Register(Phase.RateLimited(r.retryAfter))
                 RegisterResult.InvalidInput -> AuthUiState.Register(Phase.Error("auth_register_error_generic"))
             }

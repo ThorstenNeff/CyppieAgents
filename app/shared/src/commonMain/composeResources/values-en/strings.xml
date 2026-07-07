@@ -393,6 +393,12 @@
     <string name="auth_register_error_generic">Registration failed. Please try again.</string>
     <string name="auth_verify_title">Confirm your email</string>
     <string name="auth_verify_pending_body">If an account exists for %1$s, a confirmation email is on its way. Open the link in it to continue.</string>
+    <!-- CYP-278: dedicated, enumeration-safe register notice (UIUX-confirmed). PURE neutral body; the existing-
+         user help lives ONLY in the affordance line below (auth_link_to_login/auth_link_forgot, shown to all) —
+         never in the body, never "account created". Identical for new-vs-collision (no oracle). -->
+    <string name="auth_register_notice_title">Check your email</string>
+    <string name="auth_register_notice_body">We've sent an email to %1$s. Open the link inside to continue.</string>
+    <string name="auth_register_notice_have_account">Already registered?</string>
     <string name="auth_verify_gate_hint">Please confirm your email to continue.</string>
     <string name="auth_verify_resend">Resend email</string>
     <string name="auth_verify_resend_done">If needed, a new email is on its way.</string>
