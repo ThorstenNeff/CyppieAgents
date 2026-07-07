@@ -208,25 +208,21 @@ class BootOrchestrator(
         // S17 / CYP-93: the cross-project share gate. The hub consults it for the AclMatrix permit
         // (channels authorized to reach into the active project); revoke → immediate fail-closed.
         val channelShares = com.tneff.cyppieagents.comm.ChannelShareStore(channelShareFile)
-        // CYP-305: the EFFECTIVE active project = the durable ProjectRegistry pointer (restored from a prior
-        // switch, persisted in projects.json) if present, else config.projectId. Loaded up front so HubState +
-        // the boot runtime + the config-agent seed all key on the ACTIVE project. Else a durable active ≠
-        // config.projectId (a LEGITIMATE seed-vs-active mismatch) seeds the config bootstrap agents under
-        // config.projectId while the active project rehydrates EMPTY (its store never holds config's roster) →
-        // the switch-loss (CYP-305). config.projectId stays the fallback + config/seed identity.
+        // CYP-308 (Auftraggeber-confirmed OWNERSHIP model, supersedes the CYP-305 adopt-heuristic): the
+        // config-seeded bootstrap agents belong PERMANENTLY to config.projectId — re-seeded from
+        // platform.config.json EVERY boot (config.json is their durable source; NO store-persistence → no
+        // config↔store drift, the CYP-220 lesson). Every OTHER project owns its own agents in its store. The
+        // durable ProjectRegistry active pointer is pure VIEW (which project you see at boot), NOT ownership: it
+        // is synced onto HubState AFTER the config seed (see the boot-sync below the spawn loop), never seeded
+        // under. So a durable active ≠ config.projectId shows ITS OWN roster (empty for a fresh project); the
+        // config agents stay owned by — and visible under — config.projectId. Restart-stable by construction.
         val projectAgents = ProjectAgentStore(projectAgentFile)
         val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
         val durableActive = projectRegistry.activeProjectId()
-        // Adopt the durable active pointer as the effective boot project ONLY when it carries NO own (store-backed)
-        // agents — i.e. it is effectively the config project under a different active pointer (the deploy's
-        // taxidriver: seeded nowhere but config, no persisted roster). A durable active that HAS its own persisted
-        // agents (a distinct runtime-created project, e.g. J10's beta) keeps config.projectId as the effective boot
-        // project, so config's bootstrap agents never leak into that distinct project.
-        val effectiveActive = if (durableActive != config.projectId && projectAgents.agentsFor(durableActive).isEmpty())
-            durableActive else config.projectId
         // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
-        // S12 / CYP-81: single-source the active project into the hub (scopes channels/ACL/messages).
-        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID, effectiveActive) { pid ->
+        // S12 / CYP-81: single-source the active project into the hub (scopes channels/ACL/messages). The config
+        // agents ALWAYS seed under config.projectId (ownership); the view is switched to durableActive afterwards.
+        val state = HubState.hubAndSpoke(agents, HubState.OPERATOR_ID, config.projectId) { pid ->
             channelShares.sharedInboundChannelIds(pid)
         }
         // CYP-247.1/.2: the per-project runtime seam. Declared HERE (before the connector + the worktree
@@ -455,7 +451,7 @@ class BootOrchestrator(
         // the SAME instances built above (incl. the boot `worktrees`), so behavior is unchanged.
         runtimeRegistry.register(
             ProjectRuntime(
-                projectId = effectiveActive, // CYP-305: the boot runtime backs the EFFECTIVE active project
+                projectId = config.projectId, // CYP-308: the boot runtime backs config.projectId (owns config agents)
                 lifecycle = lifecycle,
                 connectorSessions = sessions,
                 agentConfigs = agentConfigs,
@@ -632,10 +628,24 @@ class BootOrchestrator(
         // CYP-255 (.4b): seed the boot project as the first HOT project in the suspension policy's LRU (it
         // is the active project at boot). With one project this never suspends anything; the switch feeds
         // subsequent activations. Placed after the spawn loop so the boot project is genuinely live.
-        suspensionPolicy.onActivated(effectiveActive) // CYP-305: seed the EFFECTIVE active project as HOT
-        // CYP-256 (.5a): rehydrate the boot project's runtime-added agents (from a prior session) — the boot
-        // project is already active here, so this fills its slice/runtime from the store, on top of the config seed.
+        suspensionPolicy.onActivated(config.projectId) // CYP-308: config.projectId is active during the config seed
+        // CYP-256 (.5a): rehydrate the boot project's runtime-added agents (from a prior session) — config.projectId
+        // is active here, so this fills its slice/runtime from the store, on top of the config seed (config.projectId
+        // owns config agents ∪ its own runtime-added agents).
         rehydrateActiveProject()
+
+        // CYP-308: the durable active pointer is pure VIEW. Now that config.projectId is fully seeded (config agents
+        // + its own store agents), switch the active view to the durable-active project — the SAME orchestration as a
+        // runtime switch (PlatformWiring.onActiveSwitch): mint its runtime, rescope the hub (the config agents stash
+        // under config.projectId → NO wandering), rehydrate ITS own store, mark it HOT. A fresh durable-active thus
+        // shows 0 (its own); config.projectId keeps the config agents. Skipped when the view already is
+        // config.projectId (the common no-mismatch boot). Restart-stable: every boot re-derives this deterministically.
+        if (durableActive != config.projectId) {
+            runtimeRegistry.getOrCreate(durableActive, projectRuntimeFactory)
+            state.rescope(durableActive)
+            rehydrateActiveProject()
+            suspensionPolicy.onActivated(durableActive)
+        }
 
         // S16 / CYP-89: Product-Lead reports fold READ sources (events/agents/channels/inbox) into
         // content-free, immutable snapshots — operator-gated at /api/reports.
@@ -651,7 +661,7 @@ class BootOrchestrator(
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
-            projectConfig, effectiveActive, agentManagement, reportStore, projectRegistry, projectDeleter,
+            projectConfig, durableActive, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
             agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory, suspensionPolicy,
             rehydrateActiveProject,
