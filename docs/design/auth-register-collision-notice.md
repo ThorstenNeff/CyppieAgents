@@ -45,12 +45,13 @@ Die Enumeration-Sicherheit ist **architektonisch schon da** (auth-spec §-Ask 1 
 | `auth_register_notice_body` (DE) | **Wir haben eine E-Mail an %1$s gesendet. Öffne den Link darin, um fortzufahren.** |
 | `auth_register_notice_body` (EN) | **We've sent an email to %1$s. Open the link inside to continue.** |
 
-**Affordance-Zeile — JETZT ALLEINIGER TRÄGER der Dual-Purpose-Hilfe** (immer sichtbar → keine Existenz verraten; hilft dem echten Bestandsnutzer sofort zu handeln — **Reuse bestehender Keys, 0 neue; MUSS präsent sein**):
+**Affordance-Zeile — JETZT ALLEINIGER TRÄGER der Dual-Purpose-Hilfe** (immer sichtbar → keine Existenz verraten; hilft dem echten Bestandsnutzer sofort zu handeln — **MUSS präsent sein**). PO-ratifiziert 2026-07-07 mit **Lead-in** (macht die Hilfe explizit, allen gezeigt = enumeration-safe):
 
-| Aktion | Reuse-Key | DE | Ziel |
+| Element | Key | DE | EN / Ziel |
 |---|---|---|---|
-| Anmelden | `auth_link_to_login` | „Zurück zur Anmeldung" | → Login-Sub-Screen |
-| Passwort zurücksetzen | `auth_link_forgot` | „Passwort vergessen?" | → Forgot-Sub-Screen |
+| **Lead-in** (neu) | `auth_register_notice_have_account` | **Bereits registriert?** | **Already registered?** |
+| Anmelden | `auth_link_to_login` (reuse) | „Zurück zur Anmeldung" | → Login-Sub-Screen |
+| Passwort zurücksetzen | `auth_link_forgot` (reuse) | „Passwort vergessen?" | → Forgot-Sub-Screen |
 
 > **Honesty-Kern (§4):** „Wir haben eine E-Mail gesendet" ist bei gültigem Register-Submit **in BEIDEN Fällen wahr** (neu → Verify-Mail; existierend → Recovery-Mail; CYP-193 = echtes SMTP-Relay jetzt live, Zustellung real). Daher ist die neutrale Aussage **ehrlicher** als die geteilte „falls ein Konto existiert"-Hedge (die anderswo korrekt ist, weil dort ein Send *nicht* garantiert ist — Forgot/Verify bei unbekannter Adresse). **Abhängigkeit:** die Wahrheit der Copy setzt voraus, dass der Backend bei Kollision *irgendeine* Mail sendet (Recovery/Sign-in) — heute so (PO bestätigt). Fällt das je weg → Copy MUSS auf die „falls ein Konto existiert"-Hedge zurück (§7-Dep).
 
@@ -84,7 +85,7 @@ Die Notice ist ein **neutraler Info/Erfolgs-Ton**, **nie ein Fehler** — ein Fe
 
 ## §6 — Reuse, Counts & Drift-Flags
 
-- **Neue Copy-Keys (2, DE+EN):** `auth_register_notice_title`, `auth_register_notice_body`.
+- **Neue Copy-Keys (3, DE+EN):** `auth_register_notice_title`, `auth_register_notice_body` (neutral, gesplittet), `auth_register_notice_have_account` (Lead-in „Bereits registriert?", PO-ratifiziert 2026-07-07).
 - **Reuse Copy (0 neu):** `auth_link_to_login`, `auth_link_forgot` (Affordances), `auth.verify.email` (Adress-Echo).
 - **Neue testTags (2):** `auth.verify.signIn`, `auth.verify.reset` (scopeId `verify`, nur bei Register-Ankunft gerendert; camelCase, Test-Contract v0.5 §2). **Reuse:** `auth.verify.pending` (Body-Node), `auth.verify.email`.
 - **⚠️ Shared-Key-/Tag-Drift (mein Mandat):** Copy-Keys (Area `auth`) **und** die 2 neuen Tags sind **mit QA/CYP-7 geteilt** (`AuthTags` = shared API). Landing dieser Keys/Tags erfordert **Re-Sync des Auth-Moduls + QA** — Timing mit dem konsumierenden Auth-Screen abstimmen (nicht isoliert landen). Kein Rename der bestehenden `auth.*`-Tags.
