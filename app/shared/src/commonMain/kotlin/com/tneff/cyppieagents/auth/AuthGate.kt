@@ -2,6 +2,8 @@ package com.tneff.cyppieagents.auth
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
@@ -41,6 +43,9 @@ import kmpcyppieagents.app.shared.generated.resources.auth_github_error
 import kmpcyppieagents.app.shared.generated.resources.auth_github_redirect
 import kmpcyppieagents.app.shared.generated.resources.auth_github_returning
 import kmpcyppieagents.app.shared.generated.resources.auth_link_forgot
+import kmpcyppieagents.app.shared.generated.resources.auth_register_notice_body
+import kmpcyppieagents.app.shared.generated.resources.auth_register_notice_have_account
+import kmpcyppieagents.app.shared.generated.resources.auth_register_notice_title
 import kmpcyppieagents.app.shared.generated.resources.auth_reset_code_hint
 import kmpcyppieagents.app.shared.generated.resources.auth_reset_code_label
 import kmpcyppieagents.app.shared.generated.resources.a11y_auth_reset_code
@@ -292,14 +297,44 @@ private fun RegisterScreen(state: AuthUiState.Register, vm: AuthViewModel) {
 private fun VerifyPendingScreen(state: AuthUiState.AuthedUnverified, vm: AuthViewModel) {
     val submitting = state.phase is Phase.Submitting
     AuthFormCard(AuthTags.VERIFY_PENDING) {
-        AuthTitle(stringResource(Res.string.auth_verify_title))
+        // CYP-278: the REGISTER path shows its own title ("Check your email") + a PURE-neutral body; the
+        // login/session-unverified path keeps the existing verify copy (anti-divergence). `fromRegister` is set
+        // identically for a fresh registration AND an email collision (both RegisterResult.Pending) → this render
+        // is byte-identical between them, so it can never be an account-existence oracle.
+        AuthTitle(stringResource(if (state.fromRegister) Res.string.auth_register_notice_title else Res.string.auth_verify_title))
         // Neutral body echoing the email for orientation — never an existence proof (§-Ask 1).
         Text(
-            text = stringResource(Res.string.auth_verify_pending_body, state.email),
+            text = if (state.fromRegister) {
+                stringResource(Res.string.auth_register_notice_body, state.email)
+            } else {
+                stringResource(Res.string.auth_verify_pending_body, state.email)
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.fillMaxWidth().testTag(AuthTags.VERIFY_EMAIL),
         )
+        if (state.fromRegister) {
+            // UIUX non-negotiable: on the register path the affordance line is the SOLE carrier of the
+            // existing-user help — a short lead-in + BOTH the sign-in and reset links, shown to ALL register
+            // outcomes (existence-independent → no oracle). Reuses the login/forgot copy + the same
+            // goToLogin/goToForgot the login screen uses; the body itself never hints at existence.
+            Text(
+                text = stringResource(Res.string.auth_register_notice_have_account),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = vm::goToLogin, enabled = !submitting,
+                    modifier = Modifier.testTag(AuthTags.VERIFY_TO_LOGIN),
+                ) { Text(stringResource(Res.string.auth_link_to_login)) }
+                TextButton(
+                    onClick = vm::goToForgot, enabled = !submitting,
+                    modifier = Modifier.testTag(AuthTags.VERIFY_TO_FORGOT),
+                ) { Text(stringResource(Res.string.auth_link_forgot)) }
+            }
+        }
         // Neutral gate note — unverified is not a user error (GATED, not ERROR).
         TonedHint(stringResource(Res.string.auth_verify_gate_hint), HintTone.GATED, AuthTags.VERIFY_GATE_HINT)
         Button(

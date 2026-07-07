@@ -51,6 +51,10 @@ object AuthTags {
     const val VERIFY_SUCCESS = "auth.verify.success"
     const val VERIFY_CONTINUE = "auth.verify.continue"
     const val VERIFY_ERROR = "auth.verify.error"
+    // CYP-278 — the register-collision notice's affordance line (shown only on the register-path verify gate;
+    // canonical `to<Target>` idiom, verify scope). Coordinated with QA/CYP-7; mirror in docs/design/auth-tags.md.
+    const val VERIFY_TO_LOGIN = "auth.verify.toLogin"
+    const val VERIFY_TO_FORGOT = "auth.verify.toForgot"
 
     // --- Forgot password (scopeId = forgot) ---
     const val FORGOT_FORM = "auth.forgot.form"

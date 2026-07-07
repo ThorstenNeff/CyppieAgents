@@ -399,6 +399,12 @@
     <string name="auth_register_error_generic">Registrierung fehlgeschlagen. Bitte erneut versuchen.</string>
     <string name="auth_verify_title">E-Mail bestätigen</string>
     <string name="auth_verify_pending_body">Falls ein Konto zu %1$s existiert, ist eine Bestätigungs-Mail unterwegs. Öffne den Link darin, um fortzufahren.</string>
+    <!-- CYP-278: dedizierte, enumeration-sichere Register-Notice (UIUX-bestätigt). REINER neutraler Body; die
+         Bestandsnutzer-Hilfe lebt NUR in der Affordance-Zeile darunter (auth_link_to_login/auth_link_forgot,
+         allen gezeigt) — nie im Body, nie „Konto erstellt". Identisch für neu-vs-Kollision (kein Orakel). -->
+    <string name="auth_register_notice_title">Prüfe deine E-Mail</string>
+    <string name="auth_register_notice_body">Wir haben eine E-Mail an %1$s gesendet. Öffne den Link darin, um fortzufahren.</string>
+    <string name="auth_register_notice_have_account">Bereits registriert?</string>
     <string name="auth_verify_gate_hint">Bitte bestätige deine E-Mail, um fortzufahren.</string>
     <string name="auth_verify_resend">Mail erneut senden</string>
     <string name="auth_verify_resend_done">Falls nötig, ist eine neue Mail unterwegs.</string>
