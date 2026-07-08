@@ -22,24 +22,39 @@ class WorktreeManagerS4Test {
 
     private fun gitRoot() = Files.createTempDirectory("wt-s4").toFile()
 
-    /** Records commands; a `remote get-url` returns [remoteUrl]; everything else exits 0. No clone/worktree side effects. */
-    private class RecordingGit(private val remoteUrl: String = "git@github.com:org/repo.git") : CommandRunner {
+    /**
+     * Records commands. Models the real git the adopt path depends on: `remote get-url` → [remoteUrl];
+     * `worktree list --porcelain` → the main clone (cwd) + the [registered] linked worktrees (NEVER an
+     * unregistered orphan dir); `worktree repair <paths>` → EXIT=1 if any target is an orphan (broken `.git`,
+     * as real git behaves), else EXIT=0. Everything else exits 0.
+     */
+    private class RecordingGit(
+        private val remoteUrl: String = "git@github.com:org/repo.git",
+        private val registered: List<File> = emptyList(),
+    ) : CommandRunner {
         val commands = CopyOnWriteArrayList<List<String>>()
         override fun run(command: List<String>, cwd: File): CommandResult {
             commands.add(command)
-            return if (command.getOrNull(1) == "remote" && command.getOrNull(2) == "get-url") CommandResult(0, remoteUrl)
-            else CommandResult(0, "")
+            return when {
+                command.getOrNull(1) == "remote" && command.getOrNull(2) == "get-url" -> CommandResult(0, remoteUrl)
+                command.getOrNull(1) == "worktree" && command.getOrNull(2) == "list" ->
+                    CommandResult(0, (listOf(cwd) + registered).joinToString("\n\n") { "worktree ${it.absolutePath}\nHEAD abc123" })
+                command.getOrNull(1) == "worktree" && command.getOrNull(2) == "repair" ->
+                    if (command.drop(3).any { it.contains("orphan") }) CommandResult(1, "fatal: not a valid worktree") else CommandResult(0, "")
+                else -> CommandResult(0, "")
+            }
         }
         fun issued(prefix: List<String>) = commands.any { it.size >= prefix.size && it.subList(0, prefix.size) == prefix }
+        fun repairTargets(): List<String> = commands.firstOrNull { it.getOrNull(1) == "worktree" && it.getOrNull(2) == "repair" }?.drop(3) ?: emptyList()
     }
 
     @Test
     fun adoptLegacyClone_movesRepoToPerProjectClone_repairsWorktrees_bytePreservesFiles() {
-        val git = RecordingGit()
         val root = gitRoot()
         File(root, "repo/.git").mkdirs()                              // the LEGACY shared clone
         File(root, "projects/default/backend").mkdirs()
         val claudeMd = File(root, "projects/default/backend/CLAUDE.md").apply { writeText("# Backend persona (Auftraggeber)") }
+        val git = RecordingGit(registered = listOf(File(root, "projects/default/backend")))
         val wm = WorktreeManager(git, root, "default")
 
         assertTrue(wm.adoptLegacyClone(), "a legacy repo with no per-project clone yet → adopted")
@@ -52,6 +67,28 @@ class WorktreeManagerS4Test {
         assertTrue(git.issued(listOf("git", "worktree", "repair")), "git worktree repair was issued after the move")
 
         assertFalse(wm.adoptLegacyClone(), "idempotent: a second adopt (clone already per-project) is a no-op")
+    }
+
+    @Test
+    fun adoptLegacyClone_registrationBased_skipsOrphanDirs_repairSucceeds_orphanUntouched() {
+        // CYP-247 S4b: the live box has stray/orphan dirs (broken .git, not registered worktrees) under
+        // projects/<pid>/. A filesystem-scan repair list would hand them to `git worktree repair` → EXIT=1 →
+        // adopt throws AFTER the move (half-migrated). The registration-based list must exclude the orphan.
+        val root = gitRoot()
+        File(root, "repo/.git").mkdirs()
+        File(root, "projects/default/backend").mkdirs()               // a REAL, registered worktree
+        val claudeMd = File(root, "projects/default/backend/CLAUDE.md").apply { writeText("# persona") }
+        val orphan = File(root, "projects/default/orphan").apply { mkdirs(); File(this, ".git").writeText("gitdir: /gone") }
+        // registered = only the real worktree (NOT the orphan) — exactly what `git worktree list --porcelain` returns.
+        val git = RecordingGit(registered = listOf(File(root, "projects/default/backend")))
+        val wm = WorktreeManager(git, root, "default")
+
+        assertTrue(wm.adoptLegacyClone(), "adopt succeeds despite the orphan dir (registration-based repair, EXIT=0)")
+        // the repair set is the registered worktree ONLY — the orphan never entered it (would have EXIT=1'd).
+        assertTrue(git.repairTargets().any { it.endsWith("projects/default/backend") }, "the real worktree was repaired")
+        assertFalse(git.repairTargets().any { it.contains("orphan") }, "the orphan dir was NOT passed to git worktree repair")
+        assertEquals("# persona", claudeMd.readText(), "the real worktree's CLAUDE.md is byte-preserved")
+        assertTrue(orphan.isDirectory, "the orphan dir is left untouched (prune is opt-in D5, not the adopt's job)")
     }
 
     @Test
