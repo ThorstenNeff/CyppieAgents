@@ -49,6 +49,14 @@ class EventProjector(
      * yields `null` (never a faked count). `null` param = not wired (tests/legacy).
      */
     private val onContextTokens: ((agentId: String, contextTokens: Int?) -> Unit)? = null,
+    /**
+     * CYP-324 — live per-agent busy/idle sink (the `/ws/busy-state` feed). Driven from REAL session state
+     * on the SAME mediator reader path as [onContextTokens]: `true` at [turnStart] (a turn was injected),
+     * `false` on a `ResultEvent` (turn done), [processExit] (died), and [agentStopped]/[agentRestarted]
+     * (stop/restart) — so a dead or stopped agent never hangs busy. UNGATED by capabilities (busy/idle is
+     * process-level, not usage-fidelity). `null` param = not wired (tests/legacy).
+     */
+    private val onBusy: ((agentId: String, busy: Boolean) -> Unit)? = null,
 ) {
     private fun mode(agentId: String, capability: CapabilityGate.EnforcedCapability): CapabilityGate.CapabilityMode {
         val resolve = capabilities ?: return CapabilityGate.CapabilityMode.ENABLED // no system → enabled (legacy)
@@ -80,6 +88,7 @@ class EventProjector(
         }
 
         is ResultEvent -> buildList {
+            onBusy?.invoke(agentId, false) // CYP-324: the turn's result arrived → idle (clears the `*`)
             add(
                 draft(agentId, sessionId, correlationId, EventType.RESULT_FINAL, if (event.isError) Severity.ERROR else Severity.INFO) {
                     event.subtype?.let { put("subtype", it) }
@@ -137,21 +146,24 @@ class EventProjector(
     /** A `turn.start` for an injected work-run; the caller mints [correlationId] and carries it forward. */
     fun turnStart(agentId: String, sessionId: String?, correlationId: String?) =
         draft(agentId, sessionId, correlationId, EventType.TURN_START, Severity.INFO) {}
+            .also { onBusy?.invoke(agentId, true) } // CYP-324: a turn is now in flight
 
     fun processExit(agentId: String, sessionId: String?, exitCode: Int?) =
         draft(agentId, sessionId, null, EventType.PROCESS_EXIT, if ((exitCode ?: 0) != 0) Severity.WARN else Severity.INFO) {
             exitCode?.let { put("exitCode", it) }
-        }
+        }.also { onBusy?.invoke(agentId, false) } // CYP-324: died → never hang busy
 
     fun agentSpawned(agentId: String, worktree: String) =
         draft(agentId, null, null, EventType.AGENT_SPAWNED, Severity.INFO) { put("worktree", worktree) }
 
     fun agentStopped(agentId: String) =
         draft(agentId, null, null, EventType.AGENT_STOPPED, Severity.INFO) {}
+            .also { onBusy?.invoke(agentId, false) } // CYP-324: stopped → idle
 
     /** `agent.restarted`: a lifecycle restart respawned the agent in its worktree (CYP-73). */
     fun agentRestarted(agentId: String) =
         draft(agentId, null, null, EventType.AGENT_RESTARTED, Severity.INFO) {}
+            .also { onBusy?.invoke(agentId, false) } // CYP-324: fresh respawn → idle until its next turn
 
     /** `comm.sent`: a message the router posted on the agent's behalf — metadata only, NO body. */
     fun commSent(agentId: String, channelId: String, kind: MessageKind?) =
