@@ -182,6 +182,11 @@ them. The fix is to **thread the owning `projectId` through the outbound path** 
   its `pid`; pass it into `connector.open(agentId, worktree, projectId)` and resolve `resolveApiKey(pid)` /
   `projectIdOf = pid` / `worktreesRoot(pid)` from **that**, not `config.projectId`/`active()`. (Even in a
   teardown-on-switch world this is needed: a just-activated non-boot project must spawn with **its** key + stamp.)
+  - **6th spawn seam (r3, precision 1): `HubMcpConfigWriter` is agentId-keyed.** It writes `<mcpConfigDir>/<agentId>.mcp.json`
+    (`HubMcpConfigWriter.kt:49`, under `mcpConfigDir` — NOT `worktreesRoot`) carrying the agent's hub token. **Benign under
+    cap=1** (each spawn rewrites it; only one agent of a given id is ever live). **Under background-live (S5) it is a
+    spawn-time TOCTOU / token-mixup**: two projects with the same agentId (`dev1`) both write/read `mcp/dev1.mcp.json` with
+    *their own* token. → **S5 D7 item: namespace it `mcp/<pid>/<agentId>.mcp.json`.** Not needed for the cap=1 MVP.
 - **Mouth + usage (leaks 1–2) — required only if sessions of non-active projects stay live.** The router must post as
   the session's **owner**: `SessionRegistry` gains the `(projectId, …)` dimension (the pattern §5 already uses), and
   `Hub.postAsAgent` / `spokeChannelFor` / `canWrite` must resolve the channel + ACL from the **owning project's slice**
@@ -208,14 +213,37 @@ fire real async outbound events.
 | **A — background-live (K>1, today's default)** | non-active projects keep running | **requires leaks 1–2 fixed** (HubState multi-slice post + `of(pid).tokenUsage` + `SessionRegistry` keying) — the big, risky slice | away-agents progress; N concurrent `claude` + N live worktrees = cost |
 | **B — teardown-on-switch (cap=1) (RECOMMEND for Axis-1 MVP)** | only the active project has live sessions → `active() == owner` always | leaks 1–2 **do not bite** (active-reads are correct); only leak 3 (spawn identity) must be fixed | away-agents stop; re-entry re-spawns (`--resume`) — bounded, safe |
 
-**Recommendation: B for the Axis-1 MVP.** Ship per-project clones with **cap=1** (teardown-on-switch), so the invariant
-`active() == owner` holds and the shared mouth/projector stay correct with only the spawn-identity fix (leak 3). This
-retires Axis-1 risk without re-architecting `HubState` into a concurrent multi-slice post target. **Background-live
-(Option A) becomes an explicit later slice** (S5) that lands the mouth-attribution work first — expose the cap as policy
-*then*, once posting-as-owner is real. Rationale: don't make non-boot projects concurrently-live until their outbound
-events can be correctly attributed; the alternative silently drops/mis-stamps cross-project turn-ends.
-(Note: cap=1 is a config value on the existing `RuntimeSuspensionPolicy` — no new mechanism; it does not preclude
-restoring K>1 later.)
+**Recommendation: B for the Axis-1 MVP** — per-project clones with **cap=1** (teardown-on-switch), so the shared
+mouth/projector stay correct with only the spawn-identity fix (leak 3), no `HubState` multi-slice re-architecture.
+Background-live (Option A) is a later slice (S5). **But cap=1 alone is NOT sufficient — see the switch-moment race below;
+the teardown must be reordered to run BEFORE the active flip.**
+
+#### r3 BLOCKER — the switch-moment race (my r2 "cap=1 → `active()==owner` always" was WRONG; verified)
+
+The switch orchestration (`PlatformWiring.kt:122-127`) flips active **before** it tears the old project down:
+`getOrCreate(B)` → **`state.rescope(pid)` — active := B (step 2, synchronous)** → `rehydrate` → `onActivated(B)`, whose
+suspend of the outgoing project runs `scope.launch { suspendProject(A) }` — **async** (the ratified "never inline on the
+switch response" contract, `RuntimeSuspensionPolicy.kt:20,86`). Under cap=1, `onActivated(B)` picks **A as the LRU victim**
+(`live={A,B}`, size 2 > 1 → victim A, `:74`) and suspends it **asynchronously**. → **Window: `active()==B` while A's
+sessions are still alive.** An A-agent **mid-turn** at switch emits its turn-end into that window → shared
+`router.onResult` → `hub.state` (active=B) → **dropped** (A's spoke stashed) or, on a `po`/`dev1` collision, **posted into
+B's channel stamped B**. cap=1 does **not** hold `active()==owner` across the teardown window because the guard runs
+**after** rescope and off-thread.
+
+**Fix (mandatory MVP, folded into S3 — the cap=1/teardown slice): drain the OUTGOING active project BEFORE rescope.**
+Reorder the switch to: `getOrCreate(B)` → **synchronously drain+stop A's sessions (await)** → `rescope(B)` → `rehydrate`
+→ `onActivated(B)`. Feasible + cheap: the switch handler is already a `suspend` endpoint, and `LifecycleManager.stop` is
+`suspend` + `removeAndAwait` ("await real termination · no zombie still writing to the bus", `LifecycleManager.kt:25-26,98`)
+— so awaiting the outgoing project's stop **flushes its emitted events under `active()==A`** (correct channel + stamp),
+then flips. This is a **distinct synchronous switch step**, not the async LRU eviction the "never inline" contract governs
+(that contract targets evicting a *background* project when cap>1, which stays async — no conflict). **Chosen over the
+alternative** (an owner-guard in the router that discards a `ResultEvent` whose session-owner ≠ active): that needs
+session→projectId knowledge = the S5 `SessionRegistry` keying (pulls S5 into the MVP) **and** it *drops* A's legitimate
+turn-end (data loss) instead of delivering it. Drain-before-rescope is the cheaper **correct** path (reuses the existing
+suspend-stop; no keying; no loss).
+
+(Note: cap=1 is a config value on the existing `RuntimeSuspensionPolicy`; the reorder is the only code change — it does
+not preclude restoring K>1 later behind S5.)
 
 ---
 
@@ -256,8 +284,14 @@ whose `.git` links point at that clone, residual agents. Plan:
 
 ## 7. Proposed slicing (for the gated build, after ratification)
 
-Each slice independently gated. For the **cap=1 MVP** (D3=B) the money-tooth is **switch to project B (different repo) →
-its agent spawns with B's key + B's clone/worktree + B's projectId stamp; switch back → A intact** (serial, `active()==owner`).
+Each slice independently gated. For the **cap=1 MVP** (D3=B) the money-tooth has **two** cases (r3, precision 2 — at-rest
+alone is insufficient):
+- **(d-i) at-rest switch:** switch to project B (different repo) → its agent spawns with B's key + B's clone/worktree +
+  B's projectId stamp; switch back → A intact.
+- **(d-ii) mid-turn switch (the race guard):** an A-agent is **mid-turn** when the operator switches to B → A's emitted
+  turn-end must land in **A's** channel **stamped A** (never dropped, never mis-stamped B). This fails without the
+  drain-before-rescope reorder (§4 r3 blocker) and passes with it — it is the load-bearing tooth for S3.
+
 The **concurrent** money-tooth (two projects live at once, no cross-attribution) is deferred to S5 with background-live.
 
 - **S1** — per-project clone: `WorktreeManager.repoDir` per-project + `ensureClone(pid)` on lazy first-need + per-project
@@ -266,7 +300,10 @@ The **concurrent** money-tooth (two projects live at once, no cross-attribution)
   `connector.open` → `resolveApiKey(pid)` / `projectIdOf=pid` / `worktreesRoot(pid)`. Without this a non-boot agent
   spawns with the boot key + boot-stamped transcript even when it IS active. Not optional — ships with S1.
 - **S2** — repo re-point as re-provision (setRepo → stale → re-clone) with the uncommitted-work warning.
-- **S3** — set the default to **cap=1 / teardown-on-switch** (D3=B) so `active()==owner` holds for the MVP.
+- **S3** — **cap=1 / teardown-on-switch (D3=B) + the switch reorder (r3 blocker):** default cap=1 AND drain+stop the
+  OUTGOING active project's sessions **synchronously before `rescope`** (not the current async post-rescope suspend), so
+  `active()==owner` holds across the whole switch, including a mid-turn switch (tooth d-ii). This is the load-bearing
+  correctness slice — mandatory MVP, not optional.
 - **S4** — legacy migration + boot reconciler + opt-in stale-prune.
 - **S5 (defer — background-live)** — the mouth-attribution re-architecture (leaks 1–2): `SessionRegistry` `(projectId,…)`
   keying + `HubState` posting to any project's slice by owner + `onContextTokens → of(pid).tokenUsage`; THEN expose the
@@ -280,11 +317,11 @@ The **concurrent** money-tooth (two projects live at once, no cross-attribution)
 |---|---|---|
 | **D1** | Clone/worktree layout | `clones/<pid>/` + keep worktrees at `projects/<pid>/<name>` (min ripple; preserves CYP-315 path) |
 | **D2** | Non-boot project with no own repo | **inherit boot repo** as fallback; diverge only on explicit `setRepo` |
-| **D3** | Left-project sessions **(now the fork, §3–§4)** | **Option B — teardown-on-switch (cap=1) for the Axis-1 MVP**; background-live (K>1) deferred to S5 behind the mouth-attribution fix |
+| **D3** | Left-project sessions **(the fork, §3–§4)** | **Option B — teardown-on-switch (cap=1)** for the MVP, **+ the r3 switch reorder: drain+stop the outgoing project synchronously BEFORE `rescope`** (cap=1 alone leaves a mid-switch race). Background-live (K>1) deferred to S5 |
 | **D4** | Repo re-point | **re-provision** (tear down + re-clone, with work-warning), not in-place remote swap |
 | **D5** | Stale-dir cleanup | **opt-in** (flag), default preserve + log |
 | **D6** | When to clone a non-boot project | **lazy** on first need (activation/add/start), not eager on create |
-| **D7** (new, r1) | Connector spawn-identity fix (leak 3) | **thread spawning `projectId` into `connector.open`** (key/stamp/cwd from the owner) — **mandatory with S1**, independent of D3 |
+| **D7** (r1, +r3) | Connector spawn-identity fix (leak 3) | **thread spawning `projectId` into `connector.open`** (key/stamp/cwd from the owner) — **mandatory with S1**, independent of D3. **r3:** `HubMcpConfigWriter` (`mcp/<agentId>.mcp.json`) is a 6th spawn seam — benign at cap=1, **S5 item** → `mcp/<pid>/<agentId>` |
 | **D8** (new, r1) | When to build the mouth-attribution re-architecture (leaks 1–2) | **only when background-live is wanted** (S5); the cap=1 MVP does not need it — confirm you accept "away-agents pause on switch" for now |
 
 Once D1–D8 are ratified, I slice per §7 and build risk-first: **S1 + S1b (clone + spawn-identity) with the serial
@@ -305,3 +342,13 @@ switch money-tooth first**; background-live + concurrent attribution stays behin
   commits silently. §2d defines the two checks (dirty tree; `git log @{u}..agent/<name>` non-empty / no upstream); §2c
   and §6.1/6.2/6.3 now all reference it. Confirmed the PO's (a)/(b)/(d) were already covered by r1. Doc-only, no
   architecture change.
+- **r3** (blocker + 2 precisions, all code-verified @ `53f7102`):
+  - **BLOCKER (verified):** my r2 "cap=1 → `active()==owner` always" was **wrong** — the switch flips active via
+    `rescope` (`PlatformWiring.kt:124`) **before** the async post-rescope suspend (`RuntimeSuspensionPolicy.kt:86`,
+    "never inline"), leaving a window where `active()==B` but A's sessions live → a mid-turn turn-end is dropped/mis-stamped.
+    **Fix folded into the mandatory MVP (S3): drain+stop the outgoing project synchronously BEFORE `rescope`** (§4). Chosen
+    over the router owner-guard (needs S5 keying + drops the event). D3 updated.
+  - **Precision 1:** `HubMcpConfigWriter` (`mcp/<agentId>.mcp.json`, `:49`) is a 6th agentId-keyed spawn seam — benign at
+    cap=1, an S5 D7 item (`mcp/<pid>/<agentId>`). §3 / D7 updated.
+  - **Precision 2:** the cap=1 money-tooth (d) now has a **mid-turn-switch** case (d-ii) alongside at-rest (d-i) — §7.
+  - No architecture change beyond the switch reorder (already implied by teardown-on-switch); direction + D1/D2/D4/D5/D6 unchanged.
