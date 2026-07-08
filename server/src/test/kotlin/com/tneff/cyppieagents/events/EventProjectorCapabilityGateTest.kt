@@ -26,8 +26,11 @@ class EventProjectorCapabilityGateTest {
         kind = ConnectorKind.MCP,
     )
 
+    // Band math here is over an EXPLICIT 200k window (the percentages in the fixtures below assume it); this
+    // test verifies banding LOGIC, not the production default, so pin it — isolated from the CYP-325 200k→1M
+    // default correction (the real 1M default is asserted in Cyp325TokenContextSizeTest).
     private fun projector(resolve: ((String) -> Capabilities?)?) =
-        EventProjector(ContextUsageBander(), projectId = "t", capabilities = resolve)
+        EventProjector(ContextUsageBander(contextWindowTokens = 200_000L), projectId = "t", capabilities = resolve)
 
     private val toolUse = CommJson.decodeFromString<StreamJsonEvent>(
         """{"type":"assistant","session_id":"s","message":{"role":"assistant",

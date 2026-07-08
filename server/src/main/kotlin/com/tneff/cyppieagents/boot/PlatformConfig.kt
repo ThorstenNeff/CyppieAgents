@@ -117,8 +117,13 @@ data class EventsConfig(
     val bandPct: Int = 10,
     /** extra `context.usage` threshold = `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (CYP-36). */
     val compactPct: Int = 75,
-    /** denominator turning usage token counts into a fill % (PO-signed-off MVP default). */
-    val contextWindowTokens: Long = 200_000,
+    /**
+     * Denominator turning usage token counts into a fill %. CYP-325: single-sourced on the ONE window
+     * constant [com.tneff.cyppieagents.events.ContextUsageBander.DEFAULT_CONTEXT_WINDOW_TOKENS] (the real
+     * ~1M window) so the PROD-wired bander and the title-bar clamp can't diverge — a `platform.config.json`
+     * may still override it, but the DEFAULT is no longer a stale second source (was 200_000).
+     */
+    val contextWindowTokens: Long = com.tneff.cyppieagents.events.ContextUsageBander.DEFAULT_CONTEXT_WINDOW_TOKENS,
     /** writer-coroutine batch-insert size (CYP-35). */
     val batchSize: Int = 64,
     /** bounded in-memory queue capacity; over it → drop-newest + `log.dropped` (CYP-35 §3.3). */

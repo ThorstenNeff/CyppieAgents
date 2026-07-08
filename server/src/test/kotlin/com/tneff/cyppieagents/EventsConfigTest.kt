@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
 /**
  * CYP-43 (ST9): the `events` config block. The load-bearing AC is **backward compatibility** — a
  * `platform.config.json` written before CYP-43 (no `events` key) must still load, with every knob
- * defaulted (`contextWindowTokens` = 200k etc.) — plus override parsing + round-trip.
+ * defaulted (`contextWindowTokens` = 1M etc.) — plus override parsing + round-trip.
  */
 class EventsConfigTest {
 
@@ -18,7 +18,7 @@ class EventsConfigTest {
         val json = """{"repo":{"url":"file:///r.git"},"agents":[{"id":"po","name":"PO","role":"PO"}]}"""
         val cfg = CommJson.decodeFromString<PlatformConfig>(json)
         assertEquals(EventsConfig(), cfg.events, "a pre-CYP-43 config must load with default events knobs")
-        assertEquals(200_000L, cfg.events.contextWindowTokens)
+        assertEquals(1_000_000L, cfg.events.contextWindowTokens) // CYP-325: default = the single 1M window constant (was 200k)
         assertEquals(10, cfg.events.bandPct)
         assertEquals(75, cfg.events.compactPct)
         assertEquals(4096, cfg.events.queueCapacity)
@@ -69,7 +69,7 @@ class EventsConfigTest {
             assertEquals(256, cfg.events.queueCapacity)
             assertEquals(16, cfg.events.batchSize)
             assertEquals(".cyppie/hooks.jsonl", cfg.events.spoolPath)
-            assertEquals(200_000L, cfg.events.contextWindowTokens) // unset → default
+            assertEquals(1_000_000L, cfg.events.contextWindowTokens) // unset → default (CYP-325: single 1M window constant)
         } finally {
             file.delete()
         }

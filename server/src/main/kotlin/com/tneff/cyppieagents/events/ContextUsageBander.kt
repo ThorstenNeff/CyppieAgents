@@ -18,8 +18,9 @@ import kotlinx.serialization.json.put
  * numbers (PRD §3.5).
  *
  * Denominator note (surfaced to PO): `ResultEvent.usage` gives token *counts*, not a percentage, so
- * fill% needs a context-window size. [contextWindowTokens] is that knob (default 200k); it will be
- * wired from the `events` config block in CYP-43. It is not in PRD §8's list — flagged, not invented.
+ * fill% needs a context-window size. [contextWindowTokens] is that knob (default ~1M, see
+ * [DEFAULT_CONTEXT_WINDOW_TOKENS]); it will be wired from the `events` config block in CYP-43. It is not
+ * in PRD §8's list — flagged, not invented.
  */
 class ContextUsageBander(
     private val contextWindowTokens: Long = DEFAULT_CONTEXT_WINDOW_TOKENS,
@@ -124,6 +125,12 @@ class ContextUsageBander(
     companion object {
         const val DEFAULT_BAND_PCT = 10
         const val DEFAULT_COMPACT_PCT = 75
-        const val DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000L
+        /**
+         * The model context window, in tokens — the single named source for BOTH the fill%% banding here
+         * and the CYP-316/325 title-bar display clamp (no scattered hard-codes; the tester parametrises the
+         * "never > window" tooth against this). CYP-325: corrected from a stale 200k to the real ~1M window
+         * (Auftraggeber target 0–1,000,000). If the dogfood model's exact window differs, change it here only.
+         */
+        const val DEFAULT_CONTEXT_WINDOW_TOKENS = 1_000_000L
     }
 }
