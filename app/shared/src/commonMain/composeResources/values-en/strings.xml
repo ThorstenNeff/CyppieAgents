@@ -80,6 +80,8 @@
     <string name="acl_granted">granted</string>
     <string name="acl_denied">denied</string>
     <string name="acl_non_member">not a member</string>
+    <!-- CYP-317: a11y addendum on grantable non-member cells — makes "grant ⇒ membership" explicit. -->
+    <string name="acl_grant_adds_member">Granting adds as a member.</string>
     <string name="acl_write_only_hint">Reply without read – unusual</string>
     <string name="acl_conflict">Duplicate entry – strictest value applies</string>
     <string name="acl_pending">applying…</string>

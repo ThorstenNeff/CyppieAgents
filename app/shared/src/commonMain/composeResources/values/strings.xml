@@ -85,6 +85,8 @@
     <string name="acl_granted">gewährt</string>
     <string name="acl_denied">gesperrt</string>
     <string name="acl_non_member">kein Mitglied</string>
+    <!-- CYP-317: a11y-Zusatz auf grantbaren Nicht-Member-Zellen — macht „Grant ⇒ Mitgliedschaft" explizit. -->
+    <string name="acl_grant_adds_member">Gewähren fügt als Mitglied hinzu.</string>
     <string name="acl_write_only_hint">Antworten ohne Lesen – ungewöhnlich</string>
     <string name="acl_conflict">Mehrfacheintrag – strengster Wert gilt</string>
     <string name="acl_pending">wird übernommen…</string>

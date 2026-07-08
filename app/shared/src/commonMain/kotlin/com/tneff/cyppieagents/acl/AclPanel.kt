@@ -27,7 +27,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -63,6 +67,7 @@ import kmpcyppieagents.app.shared.generated.resources.acl_denied
 import kmpcyppieagents.app.shared.generated.resources.acl_empty
 import kmpcyppieagents.app.shared.generated.resources.load_failed
 import kmpcyppieagents.app.shared.generated.resources.acl_enforced
+import kmpcyppieagents.app.shared.generated.resources.acl_grant_adds_member
 import kmpcyppieagents.app.shared.generated.resources.acl_granted
 import kmpcyppieagents.app.shared.generated.resources.acl_non_member
 import kmpcyppieagents.app.shared.generated.resources.acl_operator_required
@@ -94,9 +99,11 @@ private val AGENT_COL_WIDTH = 190.dp
 /**
  * ACL-matrix panel (CYP-48, design CYP-19): channel × participant grid of independent R/W grants, a
  * **live mirror of the enforced hub state**. Wide = grid; narrow = per-channel cards (reusing
- * `comm_back`). Disclosure-honest: pending ≠ enforced, non-member = N/A, conflict = deny-wins, the
- * PO-guardrail is advisory (server enforces, CYP-49). Renders the inner area only; window chrome is
- * the host's.
+ * `comm_back`). Disclosure-honest: pending ≠ enforced, conflict = deny-wins, the PO-guardrail is
+ * advisory (server enforces, CYP-49). CYP-317: EVERY agent×channel cell is grantable — a non-member is
+ * no longer inert ("—") but a grantable cell (dashed outline + "kein Mitglied" marker) whose grant adds
+ * membership server-side (Grant ⇒ Membership); it never claims a permission before the enforced echo.
+ * Renders the inner area only; window chrome is the host's.
  */
 @Composable
 fun AclPanel(viewModel: AclViewModel, modifier: Modifier = Modifier) {
@@ -286,6 +293,16 @@ private fun NarrowCards(state: AclUiState, viewModel: AclViewModel) {
     }
 }
 
+/** CYP-317 — the non-color grantable-non-member affordance: a dashed 1px cell outline (WCAG 1.4.1 form marker,
+ *  paired with the "kein Mitglied" text — colour is never the sole carrier). No built-in dashed border in Compose. */
+private fun Modifier.dashedGrantableBorder(color: Color): Modifier = drawBehind {
+    drawRoundRect(
+        color = color,
+        cornerRadius = CornerRadius(4.dp.toPx()),
+        style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f)),
+    )
+}
+
 @Composable
 private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewModel, modifier: Modifier = Modifier) {
     val key = AclReducer.cellKey(cell.channelId, cell.agentId)
@@ -297,17 +314,29 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
         ?: state.members.firstOrNull { it.identityId == cell.agentId }?.let { memberLabel(it) }
         ?: cell.agentId
     val channelName = state.channels.firstOrNull { it.id == cell.channelId }?.name ?: cell.channelId
-    Column(modifier = modifier.padding(4.dp).testTag(AclMatrixTags.cell(cell.channelId, cell.agentId))) {
+    // CYP-317: a non-member cell is now GRANTABLE (not inert "—"). The non-color affordance marker (WCAG 1.4.1) =
+    // a dashed 1px outline on the cell + the "kein Mitglied" text below; it renders the SAME read/write switches as a
+    // member cell. `isMember` is now purely the affordance discriminator, not a toggle block. Member cells unchanged.
+    val nonMemberOutline = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = modifier.padding(4.dp)
+            .then(if (!cell.isMember) Modifier.dashedGrantableBorder(nonMemberOutline) else Modifier)
+            .testTag(AclMatrixTags.cell(cell.channelId, cell.agentId)),
+    ) {
         if (!cell.isMember) {
-            val nonMemberCd = stringResource(Res.string.a11y_acl_cell_nonmember, subjectName, channelName)
+            // The affordance marker: "kein Mitglied" (reuse acl_non_member; was the inert "—") + the NON_MEMBER
+            // qualifier tag (§7 QA: a non-member cell now carries BOTH this AND the .read/.write switch nodes). The
+            // a11y appends acl_grant_adds_member so the "Grant ⇒ Membership" consequence is announced before toggling.
+            val nonMemberCd = stringResource(Res.string.a11y_acl_cell_nonmember, subjectName, channelName) +
+                " " + stringResource(Res.string.acl_grant_adds_member)
             Text(
-                text = "—",
+                text = stringResource(Res.string.acl_non_member),
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .testTag(AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.NON_MEMBER))
                     .semantics { contentDescription = nonMemberCd },
             )
-            return@Column
         }
         val readCd = stringResource(Res.string.a11y_acl_toggle_read, subjectName, channelName)
         val writeCd = stringResource(Res.string.a11y_acl_toggle_write, subjectName, channelName)
@@ -337,7 +366,9 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
             protectedNotice -> StateMarker(stringResource(Res.string.acl_po_protected), AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.PROTECTED))
             // Enforced = the settled hub state. A real-size (not zero-size) node so it surfaces in the
             // merged tree / on-device (F1) — visually negligible, carries the acl_enforced a11y (§8).
-            else -> {
+            // CYP-317 honesty (§9-3/§9-4): ONLY a MEMBER cell may claim "durchgesetzt" — a not-yet-granted
+            // non-member (no pending) carries its state via the NON_MEMBER marker above, never a fake "enforced".
+            cell.isMember -> {
                 val enforcedCd = stringResource(Res.string.acl_enforced)
                 Box(
                     Modifier.size(8.dp)
@@ -345,6 +376,7 @@ private fun AclCellView(cell: AclCell, state: AclUiState, viewModel: AclViewMode
                         .semantics { contentDescription = enforcedCd },
                 )
             }
+            else -> Unit
         }
         if (cell.conflict) StateMarker(stringResource(Res.string.acl_conflict), AclMatrixTags.cellQualifier(cell.channelId, cell.agentId, CellQualifier.CONFLICT))
         if (cell.canWrite && !cell.canRead) Text(stringResource(Res.string.acl_write_only_hint), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
