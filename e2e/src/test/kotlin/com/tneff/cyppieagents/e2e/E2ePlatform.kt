@@ -138,6 +138,9 @@ fun e2ePlatform(
     gitRootOverride: File? = null,
     fileBacked: Boolean = false,
     runner: CommandRunner? = null,
+    // CYP-247 S3: the LRU session-suspension cap. Default (null) → the production default = 1 (teardown-on-switch).
+    // A journey that exercises the cap>1 background-live state machine (J9) passes it explicitly.
+    runtimeSuspensionCap: Int? = null,
 ): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
@@ -168,6 +171,7 @@ fun e2ePlatform(
         projectRegistryFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/projects.json").toFile() else null,
         projectAgentFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/project-agents.json").toFile() else null,
         agentOverrideFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile() else null,
+        runtimeSuspensionCap = runtimeSuspensionCap ?: 1, // CYP-247 S3: default = teardown-on-switch (production default)
     ).boot()
 
     // Seed the remaining projects through REAL APIs (no production seam): create in the registry, rescope

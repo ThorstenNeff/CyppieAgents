@@ -31,12 +31,17 @@ import kotlin.test.assertTrue
  */
 class J8CollisionLeakE2eTest {
 
-    /** Two fully-populated projects that BOTH contain an agent id `backend` (and a `po`) — the collision. */
+    /** Two fully-populated projects that BOTH contain an agent id `backend` (and a `po`) — the collision.
+     *  CYP-247 S3: this journey pins RUNTIME ISOLATION (distinct per-project runtimes), which is cap-independent.
+     *  It runs under an explicit cap=3 (background-live) so a left project's session PERSISTS — keeping the
+     *  "alpha's session is untouched by beta's op" isolation signal clean. The cap=1 teardown-on-switch (the S3
+     *  default, which DOES drain the outgoing) is proven by the S3 switch-correctness money-tooth, not here. */
     private fun collidingProjects() = e2ePlatform(
         listOf(
             SeedProject("alpha", "Alpha", listOf(SeedAgent("po", Role.PO), SeedAgent("backend"))),
             SeedProject("beta", "Beta", listOf(SeedAgent("po", Role.PO), SeedAgent("backend"))),
         ),
+        runtimeSuspensionCap = 3,
     )
 
     @Test

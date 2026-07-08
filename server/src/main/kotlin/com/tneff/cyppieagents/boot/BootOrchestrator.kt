@@ -113,6 +113,9 @@ class BootedPlatform(
     val rehydrateActiveProject: () -> Unit,
     /** CYP-247 S2 — pending repo re-provisions (marked by the config route, consumed at agent (re)start). */
     val repoReprovision: RepoReprovision,
+    /** CYP-247 S3 — drain (stop, awaited) a project's running agent sessions; the switch calls it on the
+     *  OUTGOING project BEFORE `rescope` so `active()==owner` holds across the whole switch (r3 + r4). */
+    val drainProject: suspend (projectId: String) -> Unit,
 )
 
 /**
@@ -196,7 +199,11 @@ class BootOrchestrator(
     // CYP-255 (.4b) / CYP-247.4: the HARD LRU cap on projects whose agent SESSIONS run (the ratified
     // teardown — active + K-1 recent-hot stay live; beyond that the LRU project is session-suspended,
     // resumed via --resume on re-entry). Default 3 (ratified). ≤ 0 disables suspension (unbounded live).
-    private val runtimeSuspensionCap: Int = 3,
+    // CYP-247 S3 (D3=B): default cap = 1 → teardown-on-switch. Only the ACTIVE project has live agent
+    // sessions, so `active() == owner` holds and the shared mouth/projector attribute correctly (no S5
+    // background-live mouth-attribution needed). A policy value, not a new mechanism; cap>1 (background-live)
+    // is a later opt-in (S5). cap<=0 still disables suspension entirely (unbounded).
+    private val runtimeSuspensionCap: Int = 1,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -562,21 +569,22 @@ class BootOrchestrator(
         // RUNNING agents (kill the `claude` processes; session ids are already persisted by the connector,
         // CYP-167 — so start() re-spawns with --resume); resume = start exactly those agents again. The
         // runtime OBJECT is kept in memory either way (full reclaim = CYP-247.5). Runs on the boot scope.
+        // CYP-247 S3 — drain (stop, awaited) all of a project's RUNNING agent sessions; returns the set stopped.
+        // `lifecycle.stop` is removeAndAwait → `ClaudeCodeSession.closeAndAwait` which now cancelAndJoins the
+        // reader (r4), so on return NO in-flight `active()`-read outlives this call. Reused by BOTH the async LRU
+        // eviction (a cap>1 background victim) AND the synchronous drain-before-rescope on the switch (r3).
+        suspend fun drainProject(pid: String): Set<String> {
+            val rt = runtimeRegistry.of(pid) ?: return emptySet()
+            val running = rt.lifecycle.snapshot()
+                .filter { it.runState == com.tneff.cyppieagents.model.AgentRunState.RUNNING }
+                .map { it.agentId }.toSet()
+            running.forEach { rt.lifecycle.stop(it) }
+            return running
+        }
         val suspensionPolicy = RuntimeSuspensionPolicy(
             cap = runtimeSuspensionCap,
             scope = scope,
-            suspendProject = { pid ->
-                val rt = runtimeRegistry.of(pid)
-                if (rt == null) {
-                    emptySet()
-                } else {
-                    val running = rt.lifecycle.snapshot()
-                        .filter { it.runState == com.tneff.cyppieagents.model.AgentRunState.RUNNING }
-                        .map { it.agentId }.toSet()
-                    running.forEach { rt.lifecycle.stop(it) } // removeAndAwait → process gone, runState STOPPED
-                    running
-                }
-            },
+            suspendProject = { pid -> drainProject(pid) },
             resumeProject = { pid, agents ->
                 val rt = runtimeRegistry.of(pid)
                 if (rt != null) agents.forEach { runCatching { rt.lifecycle.start(it) } } // start → open --resume
@@ -714,6 +722,7 @@ class BootOrchestrator(
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
             agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory, suspensionPolicy,
             rehydrateActiveProject, repoReprovision,
+            drainProject = { pid -> drainProject(pid) },
         )
     }
 }

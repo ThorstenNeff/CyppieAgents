@@ -121,9 +121,18 @@ fun Application.installPlatform(
                 booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry,
                 onActiveSwitch = { pid ->
                     booted.runtimeRegistry.getOrCreate(pid, booted.projectRuntimeFactory)
+                    // CYP-247 S3 (r3): synchronously DRAIN + STOP the OUTGOING project's sessions (awaited) BEFORE
+                    // the flip, so any in-flight ResultEvent is attributed under active()==outgoing (correct channel
+                    // + projectId stamp + tokenUsage) and the reader is quiescent (r4 cancelAndJoin). This is a
+                    // distinct synchronous switch step — NOT the async LRU eviction below (which stays async for a
+                    // cap>1 background victim; the "never inline" contract is untouched).
+                    // Only in teardown-on-switch mode (cap==1, the S3 default): with cap>1 the outgoing project
+                    // stays background-live (its correct async attribution is the deferred S5 mouth work).
+                    val outgoing = booted.state.activeProjectId
+                    if (outgoing != pid && booted.suspensionPolicy.cap == 1) booted.drainProject(outgoing)
                     booted.state.rescope(pid)
                     booted.rehydrateActiveProject() // CYP-256 (.5a): rehydrate the target's durable agents
-                    booted.suspensionPolicy.onActivated(pid) // CYP-255 (.4b): HOT + resume + enforce K cap
+                    booted.suspensionPolicy.onActivated(pid) // CYP-255 (.4b): HOT + resume + enforce K cap (=1, S3)
                 },
                 runtimeStateOf = { booted.suspensionPolicy.stateOf(it, booted.state.activeProjectId) }, // CYP-255 (.4b)
                 deps = authDeps, // CYP-178
