@@ -121,12 +121,30 @@ Today a `PUT /api/config/repo` on a live project is a silent no-op against git. 
 
 - **Recommended (re-provision):** `setRepo(pid,…)` marks the project's clone **stale**; the next activation / agent
   (re)start **tears down** the project's worktrees + clone (reusing `deleteProject`'s worktree partition) and
-  **re-clones** into a fresh `clones/<pid>`. Guarded by the **same uncommitted/unpushed-work warning** the agent-remove
-  path uses (§AGENT-MANAGEMENT) — never silently discard work. `EFFECT_DEFERRED`: the UI shows a "re-provision on
-  restart" hint, mirroring CYP-310's CLAUDE.md restart hint.
+  **re-clones** into a fresh `clones/<pid>`. **Gated by the safe-teardown guard (§2d)** — never silently discard work.
+  `EFFECT_DEFERRED`: the UI shows a "re-provision on restart" hint, mirroring CYP-310's CLAUDE.md restart hint.
 - **Rejected (in-place remote swap):** `git remote set-url + fetch + reset` on a live clone with existing agent
   branches/worktrees is fragile (dirty trees, diverged `agent/<name>` branches). Re-provision is cleaner and reuses
   existing teardown code.
+
+### 2d. The safe-teardown guard (single-source; used by EVERY destructive path) — r2
+
+**Any teardown that force-removes a worktree or deletes a clone (§2c re-point, §6.1 legacy migration, §6.2 reconciler
+re-provision, §6.3 stale-prune) MUST run this one guard first.** A dirty working tree is **not** the only at-risk state:
+the branch-per-agent strategy (`agent/<name>`, `WorktreeManager.kt:83`) means an agent can **commit** locally and not
+have pushed — `git worktree remove --force` + branch deletion would then destroy **committed-but-unpushed** work
+**silently**. The guard checks **both**:
+
+- **(i) dirty working tree** — uncommitted changes in the worktree (`git status --porcelain` non-empty).
+- **(ii) unpushed commits on the agent branch** — `agent/<name>` has commits with **no pushed upstream equivalent**:
+  either no upstream is configured, or `git log @{u}..agent/<name>` (equivalently `git rev-list --count @{u}..`) is
+  non-empty. (Recall §5: `deleteWorktree`/`deleteProject` deliberately do **not** delete the `agent/<name>` branch, so
+  the commits survive a *worktree* removal — but a re-provision that also drops the clone loses the branch and its
+  commits.)
+
+**On a positive check → warn + block the destruction by default** (surface the exact worktrees/branches at risk); proceed
+only on the explicit opt-in (§6.3 / D5). This is the single definition of "unsafe to tear down"; §2c and §6 reference it
+rather than restating an ambiguous "unpushed work" (r2 precision — no architecture change).
 
 ---
 
@@ -224,12 +242,15 @@ whose `.git` links point at that clone, residual agents. Plan:
 
 1. **One-time legacy migration (first boot after CYP-247 ships):** detect the legacy single `gitRoot/repo`; for the boot
    project, re-provision into `clones/<config.projectId>` (re-clone fresh + prune the legacy worktree registrations).
-   Idempotent, logged.
+   **Runs the SAME safe-teardown guard (§2d) before any destruction** — the legacy `projects/*` worktrees + their
+   `agent/<name>` branches may hold committed-but-unpushed work; a blind re-clone would erase it silently. Idempotent,
+   logged; on a positive guard → block + report until the opt-in (§6.3).
 2. **Boot-time reconciler:** for each project in `ProjectRegistry`, ensure `clones/<pid>` matches `resolvedRepo(pid)`;
-   a URL mismatch → re-provision (§2c, D4). For residual `projects/<pid>/*` **not** in the registry → prune (reuse
-   `deleteProject`'s `git worktree remove --force` + `git worktree prune`).
-3. **Destructiveness (decision D5):** recommend the prune be **opt-in** (a flag mirroring `?deleteWorktrees=`), default
-   **preserve + log what WOULD be pruned** — never auto-delete a working tree that might hold unpushed work.
+   a URL mismatch → re-provision (§2c, D4) **through §2d**. For residual `projects/<pid>/*` **not** in the registry →
+   prune (`deleteProject`'s `git worktree remove --force` + `git worktree prune`), **also gated by §2d**.
+3. **Destructiveness (decision D5):** the §2d guard is the safety net; recommend the prune be **opt-in** (a flag
+   mirroring `?deleteWorktrees=`), default **preserve + log what WOULD be pruned AND what §2d flagged as at-risk**
+   (dirty tree and/or unpushed `agent/<name>` commits) — never auto-destroy either.
 
 ---
 
@@ -279,3 +300,8 @@ switch money-tooth first**; background-live + concurrent attribution stays behin
   spawn-identity fix) + D8 (background-live gate) and S1b/S5 in §7. Axis 1 direction + D1/D2/D4/D5/D6 unchanged.
   *(The second opinion's revision list (a)–(d) arrived truncated at (a); this pass addresses the verified gap in full —
   flag if (b)–(d) intended anything beyond the outbound-attribution axis.)*
+- **r2** (item (c)): the safe-teardown guard is now **single-sourced as §2d** and must cover **committed-but-unpushed
+  work on `agent/<name>` branches**, not just a dirty tree — else re-provision/legacy-migration destroy pushed-less
+  commits silently. §2d defines the two checks (dirty tree; `git log @{u}..agent/<name>` non-empty / no upstream); §2c
+  and §6.1/6.2/6.3 now all reference it. Confirmed the PO's (a)/(b)/(d) were already covered by r1. Doc-only, no
+  architecture change.
