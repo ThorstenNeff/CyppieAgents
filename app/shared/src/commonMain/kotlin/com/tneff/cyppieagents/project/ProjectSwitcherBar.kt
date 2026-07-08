@@ -131,10 +131,18 @@ fun ProjectSwitcherBar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("●", style = MaterialTheme.typography.titleSmall)
+                // CYP-322: bind the active-project indicator to a colorScheme role (was unstyled → inherited
+                // LocalContentColor, which defaulted to Black regardless of theme). onSurface = full emphasis
+                // for the *active* project (the onSurfaceVariant role row above is intentionally lower-emphasis).
+                Text(
+                    "●",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
                 Text(
                     text = stringResource(Res.string.project_switcher_active, activeName),
                     style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
