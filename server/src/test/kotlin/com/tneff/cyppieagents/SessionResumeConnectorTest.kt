@@ -107,7 +107,12 @@ class SessionResumeConnectorTest {
         val hub: Hub,
         val store: FakeSessionStore,
         val spawner: RecordingSpawner,
-    )
+        val projectId: String,
+    ) {
+        // CYP-247 S1b: the owning projectId is THREADED into open() (was the connector's projectIdOf field), so
+        // the session-store key is scoped by the spawning project — the M10 cross-project non-resume guard.
+        fun open(worktree: String = "backend") = connector.open("backend", worktree, projectId)
+    }
 
     private fun fixture(store: FakeSessionStore, projectId: String, vararg procs: FakeProc): Fixture {
         val hub = Hub(HubState.hubAndSpoke(agents()), InMemoryMessageStore())
@@ -123,10 +128,9 @@ class SessionResumeConnectorTest {
             turnQueue = SessionTurnQueue(),
             scope = scope,
             sessionStore = store,
-            projectIdOf = { projectId },
             clock = { 12345L },
         )
-        return Fixture(connector, hub, store, spawner)
+        return Fixture(connector, hub, store, spawner, projectId)
     }
 
     private fun spokeMsgs(hub: Hub) = hub.channelMessages("po", "po-backend")
@@ -138,7 +142,7 @@ class SessionResumeConnectorTest {
     @Test
     fun freshStart_noResumeFlag_writesAfterInit() = runBlocking {
         val fx = fixture(FakeSessionStore(), "default", boundProc("sess-new"))
-        val session = fx.connector.open("backend") // no entry → plain session, no facade
+        val session = fx.open() // no entry → plain session, no facade
         assertFalse(fx.spawner.hasResume(0), "M1: first start has no --resume")
         assertNull(fx.store.sessionId(), "M4: nothing persisted before the first turn binds")
 
@@ -149,7 +153,7 @@ class SessionResumeConnectorTest {
     @Test
     fun entryPresent_prependsResumeFlag() = runBlocking {
         val fx = fixture(FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L)), "default", boundProc("sess-1"))
-        val session = fx.connector.open("backend")
+        val session = fx.open()
         withTimeout(5000) { session.sendTurn(UserTurn("hi")) }
         assertTrue(fx.spawner.hasResume(0), "M2: an existing entry yields --resume on attempt #1")
     }
@@ -157,7 +161,7 @@ class SessionResumeConnectorTest {
     @Test
     fun differentProject_doesNotResume() = runBlocking {
         val fx = fixture(FakeSessionStore(SessionEntry("projA", "backend", "sess-A", 1L, 1L)), "projB", boundProc("x"))
-        fx.connector.open("backend") // find("projB",…) == null → plain, no --resume
+        fx.open() // find("projB",…) == null → plain, no --resume
         await { fx.spawner.count() == 1 }
         assertFalse(fx.spawner.hasResume(0), "M10: projectId scopes the key — projB must not resume projA")
     }
@@ -167,7 +171,7 @@ class SessionResumeConnectorTest {
     @Test
     fun resumeSucceeds_firstTurnBinds_noFallback_deliveredOnce() = runBlocking {
         val fx = fixture(FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L)), "default", boundProc("sess-1"))
-        val session = fx.connector.open("backend")
+        val session = fx.open()
         withTimeout(5000) { session.sendTurn(UserTurn("hi resumed")) } // binds during the turn → committed
         assertEquals(0, fx.store.clears.get(), "a successful resume never clears")
         assertEquals(1, fx.spawner.count(), "a successful resume never respawns")
@@ -180,7 +184,7 @@ class SessionResumeConnectorTest {
             FakeSessionStore(SessionEntry("default", "backend", "sess-stale", 1L, 1L)), "default",
             staleProc(), boundProc("fresh-sid"),
         )
-        val session = fx.connector.open("backend")
+        val session = fx.open()
         assertTrue(fx.spawner.hasResume(0), "attempt #1 carried --resume")
 
         withTimeout(8000) { session.sendTurn(UserTurn("important turn")) } // stale → fallback → re-inject
@@ -199,7 +203,7 @@ class SessionResumeConnectorTest {
             FakeSessionStore(SessionEntry("default", "backend", "sess-stale", 1L, 1L)), "default",
             staleProc(), staleProc(), // both attempts die unbound
         )
-        val session = fx.connector.open("backend")
+        val session = fx.open()
         // The fallback fires exactly once; the re-inject on the (also-dead) fresh session surfaces as a
         // dead session — but there is NO third spawn (RecordingSpawner only seeded 2 → a 3rd would throw).
         withTimeout(8000) { session.sendTurn(UserTurn("doomed turn")) }
@@ -212,7 +216,7 @@ class SessionResumeConnectorTest {
     fun postBindCrash_doesNotClearOrRespawn() = runBlocking {
         val p1 = boundProc("sess-1")
         val fx = fixture(FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L)), "default", p1, staleProc())
-        val session = fx.connector.open("backend")
+        val session = fx.open()
         withTimeout(5000) { session.sendTurn(UserTurn("hi")) } // first turn binds → committed
         assertEquals(0, fx.store.clears.get(), "BOUND on the first turn → no clear")
 
@@ -225,7 +229,7 @@ class SessionResumeConnectorTest {
     @Test
     fun preBindClose_noSpuriousClear_noHang() = runBlocking {
         val fx = fixture(FakeSessionStore(SessionEntry("default", "backend", "sess-1", 1L, 1L)), "default", boundProc("sess-1"), staleProc())
-        val session = fx.connector.open("backend")
+        val session = fx.open()
         session.close() // close BEFORE any turn — the resume question was never asked
         delay(150)
         assertEquals(0, fx.store.clears.get(), "R3: a pre-bind close must NOT clear")

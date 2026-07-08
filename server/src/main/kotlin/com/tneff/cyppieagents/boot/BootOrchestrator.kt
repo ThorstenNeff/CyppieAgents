@@ -342,12 +342,12 @@ class BootOrchestrator(
         val sessionStore = sessionStoreFile?.let { com.tneff.cyppieagents.connector.JsonFileSessionStore(it) }
         val defaultConnector = ClaudeCodeConnector(
             spawner = spawner,
-            // CYP-247.2: resolve the spawn cwd root through the ACTIVE project's runtime (lazy, per spawn),
-            // so a spawn lands in `projects/<activeProjectId>/` — one runtime today (boot), per-project later.
-            worktreesRoot = { runtimeRegistry.active().worktrees.worktreesRoot },
-            // S15 / CYP-96: resolve the key AT SPAWN per project — operator override (store) → env
-            // fallback (Secrets, CYP-82). Lazy so a CYP-73 restart picks up an operator key change.
-            resolveApiKey = { projectConfig.resolvedApiKey(config.projectId) },
+            // CYP-247 S1b: resolve the spawn cwd root for the SPAWNING project (threaded pid), not active() —
+            // so a non-boot agent lands in ITS `projects/<pid>/` root even when another project is active.
+            worktreesRoot = { pid -> worktrees.forProject(pid).worktreesRoot },
+            // S15 / CYP-96 + CYP-247 S1b: resolve the key AT SPAWN for the SPAWNING project (threaded pid) —
+            // operator override (store) → env fallback (Secrets) — never a boot-frozen config.projectId.
+            resolveApiKey = { pid -> projectConfig.resolvedApiKey(pid) },
             registry = registry,
             router = router,
             turnQueue = turnQueue,
@@ -361,10 +361,9 @@ class BootOrchestrator(
             tokenFor = { tokenByAgent[it] },
             // CYP-163: null in prod (sharp, Gate #4); non-null ONLY via the RB1 sandbox harness path.
             sandboxBypassGrant = sandboxBypassGrant,
-            // CYP-167: read-before-spawn / write-after-init persistence + the resume facade. projectId is
-            // the active project (boot-frozen; MVP-correct — an agent doesn't switch project mid-life).
+            // CYP-167 + CYP-247 S1b: read-before-spawn / write-after-init keyed by the THREADED owning projectId
+            // (passed to open(agentId, worktree, projectId) by the per-project spawn lambda), not a boot constant.
             sessionStore = sessionStore,
-            projectIdOf = { config.projectId },
         )
         // CYP-122: Connector B (MCP) + per-agent selection. The router picks A vs B by the agent's
         // declared connectorKind at spawn; it IS a Connector so the connectorFactory seam still wraps it.
@@ -411,12 +410,24 @@ class BootOrchestrator(
         // CYP-316: the boot project's per-agent context-token feed (source of /ws/token-usage). Fed by the
         // shared projector's onContextTokens (active-routed) and reset by this project's lifecycle stop/restart.
         val tokenUsageTracker = AgentTokenUsageTracker()
+        // CYP-247 S1: ensure the ACTIVE project's clone (LAZY, D6) THEN the agent worktree — single-sourced from
+        // `resolvedRepo(activePid)` so the clone URL/branch and the worktree base-branch cannot drift. Reused by
+        // every ensureWorktree seam (boot lifecycle + agent-CRUD + factory + rehydrate). ensureClone is idempotent
+        // (no-op once the per-project clone exists), so this is the lazy first-need clone for a non-boot project.
+        val ensureActiveWorktree: (String) -> Unit = { worktreeName ->
+            val repo = projectConfig.resolvedRepo(state.activeProjectId)
+            runtimeRegistry.active().worktrees.let { wt ->
+                wt.ensureClone(repo)
+                wt.ensureWorktree(worktreeName, repo.branch)
+            }
+        }
         val lifecycle = LifecycleManager(
             initialWorktrees = config.agents.associate { it.id to it.worktreeName },
             sessions = sessions,
             // CYP-247.2: ensure the worktree under the ACTIVE project's root (lazy via the runtime seam).
-            ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
-            spawn = { id, worktree -> connector.open(id, worktree) },
+            ensureWorktree = ensureActiveWorktree, // CYP-247 S1: lazy per-project clone + worktree off resolvedRepo(pid)
+            // CYP-247 S1b: thread the boot project's pid into the spawn (key/cwd/stamp from config.projectId, explicit).
+            spawn = { id, worktree -> connector.open(id, worktree, config.projectId) },
             recorder = eventRecorder,
             projector = eventProjector,
             onContextReset = { tokenUsageTracker.reset(it) },   // CYP-316: stop/restart → fresh context → null
@@ -437,7 +448,7 @@ class BootOrchestrator(
             lifecycle = lifecycle,
             configs = agentConfigs,
             // CYP-247.2: worktree create/delete on the ACTIVE project's manager (lazy via the runtime seam).
-            ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+            ensureWorktree = ensureActiveWorktree, // CYP-247 S1: lazy per-project clone + worktree off resolvedRepo(pid)
             deleteWorktree = { worktreeName -> runtimeRegistry.active().worktrees.deleteWorktree(worktreeName) },
             onConnectorOptIn = connectorOptIn::apply, // CYP-122: create-as-B audits like the dedicated opt-in
             remoteToken = remoteTokenIssuer, // CYP-171: mint/revoke the per-agent token for a remote create/remove
@@ -494,15 +505,14 @@ class BootOrchestrator(
             val pConfigs = AgentConfigRegistry(emptyList()) // empty: agents are added at runtime, not from config
             val pCaps = CapabilityRegistry()
             val pProvider = com.tneff.cyppieagents.connector.ProviderRegistry()
-            val pWorktrees = worktrees.forProject(pid) // projects/<pid>/ — reuses the shared clone + runner
+            val pWorktrees = worktrees.forProject(pid) // CYP-247 S1: this project's OWN clone (clones/<pid>) + worktrees
             val pTokenUsage = AgentTokenUsageTracker() // CYP-316: this project's own token feed (per-runtime)
             val pLifecycle = LifecycleManager(
                 initialWorktrees = emptyMap(),
                 sessions = pSessions,
-                // Resolves active().worktrees — identical to the boot lifecycle; this project's lifecycle is
-                // only invoked while it is active, so active().worktrees == pWorktrees (its own root).
-                ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
-                spawn = { id, worktree -> connector.open(id, worktree) },
+                ensureWorktree = ensureActiveWorktree, // CYP-247 S1: lazy per-project clone + worktree off resolvedRepo(pid)
+                // CYP-247 S1b: thread THIS project's pid into the spawn so key/cwd/stamp come from `pid`, not active()/boot.
+                spawn = { id, worktree -> connector.open(id, worktree, pid) },
                 recorder = eventRecorder,
                 projector = eventProjector,
                 onContextReset = { pTokenUsage.reset(it) },   // CYP-316: this project's lifecycle → its own tracker
@@ -512,7 +522,7 @@ class BootOrchestrator(
                 state = state,
                 lifecycle = pLifecycle,
                 configs = pConfigs,
-                ensureWorktree = { worktreeName -> runtimeRegistry.active().worktrees.ensureWorktree(worktreeName, config.repo.branch) },
+                ensureWorktree = ensureActiveWorktree, // CYP-247 S1: lazy per-project clone + worktree off resolvedRepo(pid)
                 deleteWorktree = { worktreeName -> runtimeRegistry.active().worktrees.deleteWorktree(worktreeName) },
                 onConnectorOptIn = connectorOptIn::apply,
                 remoteToken = remoteTokenIssuer,
@@ -564,9 +574,10 @@ class BootOrchestrator(
             val rt = runtimeRegistry.active()
             for (stored in projectAgents.agentsFor(pid)) {
                 if (state.agent(stored.id) == null) {
-                    // D3 (ratified): idempotent worktree reuse — the dir already exists from the original add, so
-                    // this is a metadata rebuild, no re-clone / re-`git worktree add`.
-                    rt.worktrees.ensureWorktree(stored.worktree, config.repo.branch)
+                    // D3 (ratified): idempotent worktree reuse — the dir already exists from the original add.
+                    // CYP-247 S1: via the shared seam so the project's clone is (lazily) present + base-branch is
+                    // single-sourced from resolvedRepo(pid); idempotent, so an existing clone/worktree is a no-op.
+                    ensureActiveWorktree(stored.worktree)
                     rt.agentConfigs.put(stored.id, stored.launch, stored.persona, stored.connectorKind)
                     state.addAgent(stored.toAgent()) // HubState slice + spoke + ACL (projectId-stamped)
                     rt.lifecycle.register(stored.id, stored.worktree) // known + STOPPED

@@ -25,11 +25,14 @@ class WorktreeManagerDeleteProjectTest {
         File(root, "projects/$project/$name").apply { mkdirs() }
 
     @Test
-    fun deleteProject_removesOnlyTargetProject_keepsBranches() {
+    fun deleteProject_removesOnlyTargetProject_inclItsOwnClone_keepsSiblings() {
         val git = FakeGit()
         val root = gitRoot()
         val wm = WorktreeManager(git, root)
-        wm.ensureClone(RepoConfig("u", "main"))
+        // CYP-247 S1: each project has its OWN clone (clones/<pid>) where its worktrees are registered. Seed
+        // per-project clones so deleteProject removes each project's worktrees in ITS clone, then the clone.
+        wm.forProject("alpha").ensureClone(RepoConfig("u", "main")) // → clones/alpha/.git (FakeGit)
+        wm.forProject("beta").ensureClone(RepoConfig("u", "main"))  // → clones/beta/.git
         val alphaPo = seedWorktree(root, "alpha", "po")
         val alphaBe = seedWorktree(root, "alpha", "backend")
         val betaPo = seedWorktree(root, "beta", "po")
@@ -37,16 +40,18 @@ class WorktreeManagerDeleteProjectTest {
         val removed = wm.deleteProject("alpha")
 
         assertEquals(2, removed, "return count = exactly alpha's worktrees removed")
-        // no-orphan: alpha's whole root is gone.
+        // no-orphan: alpha's whole worktree root AND its own clone are gone (CYP-247 S1: no dangling clone).
         assertFalse(File(root, "projects/alpha").exists(), "alpha project dir removed")
+        assertFalse(File(root, "clones/alpha").exists(), "alpha's own clone removed (no dangling-clone leak)")
         assertTrue(git.issued(listOf("git", "worktree", "remove", "--force", alphaPo.absolutePath)))
         assertTrue(git.issued(listOf("git", "worktree", "remove", "--force", alphaBe.absolutePath)))
-        // no-cross-project: beta is byte-for-byte intact.
+        // no-cross-project: beta's worktrees AND clone are byte-for-byte intact.
         assertTrue(betaPo.exists(), "no-cross-project: beta worktree untouched")
         assertTrue(File(root, "projects/beta").exists(), "no-cross-project: beta project dir untouched")
+        assertTrue(File(root, "clones/beta").exists(), "no-cross-project: beta clone untouched")
         assertFalse(git.issued(listOf("git", "worktree", "remove", "--force", betaPo.absolutePath)), "beta not removed")
-        // agent branches survive (PO §9.3): no `git branch -d` anywhere.
-        assertFalse(git.commands.any { it.take(2) == listOf("git", "branch") }, "agent branches kept")
+        // agent branches survive as `git branch -d` is never issued (the clone deletion is a dir op, not a branch op).
+        assertFalse(git.commands.any { it.take(2) == listOf("git", "branch") }, "no explicit branch delete")
     }
 
     @Test
