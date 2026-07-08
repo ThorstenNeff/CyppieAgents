@@ -48,6 +48,17 @@ sealed interface AgentEvent {
         override val id: String,
         val text: String,
     ) : AgentEvent
+
+    /**
+     * CYP-323: a human turn typed into the composer, echoed into the LOCAL transcript on send —
+     * chronologically before the agent's reply. The stream never replays it (the composer turn goes
+     * stdin-only, and [StreamJsonMapper] additionally drops any replayed user text), so this is the
+     * SINGLE source of the user-turn row; the stable [id] keeps [foldEvent] idempotent per turn.
+     */
+    data class UserTurn(
+        override val id: String,
+        val text: String,
+    ) : AgentEvent
 }
 
 enum class ToolStatus { RUNNING, OK, ERROR }

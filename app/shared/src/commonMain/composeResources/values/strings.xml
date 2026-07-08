@@ -9,6 +9,8 @@
     <string name="a11y_result_success">Ergebnis: Turn abgeschlossen</string>
     <string name="a11y_result_error">Ergebnis: fehlgeschlagen — %1$s</string>
     <string name="a11y_notice">Hinweis: %1$s</string>
+    <!-- CYP-323: unsichtbare SR-Kennzeichnung des menschlichen Turns (das visuelle „›" ist dekorativ/hidden). %1$s = Nachrichtentext. -->
+    <string name="a11y_user_turn">Deine Nachricht: %1$s</string>
     <string name="a11y_agent_status">Agentenstatus: %1$s</string>
 
     <!-- Observability Event-Log UI (CYP-41 Browse + CYP-42 Live-Tail), docs/design/event-log-keys.md.

@@ -57,6 +57,7 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_result_success
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_error
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_ok
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_running
+import kmpcyppieagents.app.shared.generated.resources.a11y_user_turn
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_already_running
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_generic
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_operator_required
@@ -302,6 +303,10 @@ private fun AgentTranscript(
                     event,
                     Modifier.testTag(AgentViewTags.event(agentId, index)),
                 )
+                is AgentEvent.UserTurn -> UserTurnRow(
+                    event,
+                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
+                )
             }
         }
     }
@@ -392,6 +397,32 @@ private fun ResultRow(event: AgentEvent.Result, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.clearAndSetSemantics { contentDescription = resultDescription },
+        )
+    }
+}
+
+@Composable
+private fun UserTurnRow(event: AgentEvent.UserTurn, modifier: Modifier = Modifier) {
+    // CYP-323: the human turn, set slightly apart with `colorScheme.secondary` text (role-bound, follows the theme).
+    // WCAG 1.4.1 — colour is never the sole discriminator: a subtle leading `›` marks EVERY user row (and no other
+    // turn). The `›` is purely visual → cleared from semantics (decorative/hidden); the row instead carries an
+    // invisible "Deine Nachricht: …" content description so a screen reader still distinguishes the human turn.
+    val userTurnDescription = stringResource(Res.string.a11y_user_turn, event.text)
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "›",
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.clearAndSetSemantics {}, // decorative second signal — hidden from the screen reader
+        )
+        Text(
+            text = event.text,
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.clearAndSetSemantics { contentDescription = userTurnDescription },
         )
     }
 }
