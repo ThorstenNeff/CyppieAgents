@@ -2,13 +2,17 @@ package com.tneff.cyppieagents.connector
 
 /**
  * Canonical, pinned spawn configuration for the Claude-Code connector (CYP-5 verified). Kept as
- * code (not just prose in a report) so the verified flag set is the single source and the
- * dangerous default can't be copy-pasted back in.
+ * code (not just prose in a report) so the verified flag set is the single source.
  *
- * Reviewer Gate #4: `bypassPermissions` must NOT leak into the connector default — the spike's
- * `system/init` showing `permissionMode: bypassPermissions` is a SCRATCH artifact. Production
- * spawns use a tight, explicit permission mode; the wide `--allowedTools` set is decided with the
- * reviewer before any agent works autonomously on the real repo (S8).
+ * **Gate #4 — RE-POINTED for the MVP (CYP-321, Auftraggeber-authorized 2026-07-08):** the former default
+ * ("`bypassPermissions` must NEVER be the connector default") is DELIBERATELY inverted for the MVP. Local
+ * agents run headless (stream-json) and cannot answer an interactive permission prompt, so the PO/worker
+ * agents stall on approvals during dogfood. The MVP decision is to spawn every local config agent with
+ * [DANGEROUS_FLAG] (`--dangerously-skip-permissions`) — see [MVP_SKIP_PERMISSIONS]. This is scoped to the
+ * MVP and **must be reverted before multi-tenant / public exposure** (the CYP-179 line): flip
+ * [MVP_SKIP_PERMISSIONS] to `false` and the tight permission-mode default returns. The guard on the
+ * `--permission-mode` value (Gate #4) is kept, not removed — the sanctioned MVP bypass is the FLAG, never
+ * the `bypassPermissions` MODE string, and the disjoint grant-gated sandbox path (CYP-163) is untouched.
  */
 object ConnectorDefaults {
 
@@ -34,11 +38,31 @@ object ConnectorDefaults {
     /** MVP default: tight (empty) tool allowlist — widened only with reviewer sign-off (S8). */
     val DEFAULT_ALLOWED_TOOLS: List<String> = emptyList()
 
-    /** Safe default permission mode. NEVER `bypassPermissions`. */
+    /** Post-MVP tight permission mode (used only when [MVP_SKIP_PERMISSIONS] is false). NEVER `bypassPermissions`. */
     const val DEFAULT_PERMISSION_MODE: String = "default"
 
     const val FORBIDDEN_PERMISSION_MODE: String = "bypassPermissions"
     const val DANGEROUS_FLAG: String = "--dangerously-skip-permissions"
+
+    /**
+     * CYP-321 — MVP-wide permission bypass for **LOCAL** agent spawns (**Auftraggeber-authorized 2026-07-08,
+     * MVP-scope**). This is the value the **local** [ClaudeCodeConnector] passes as `streamJsonArgs(skipPermissions=…)`
+     * so its headless config agents work autonomously without an interactive approval. **Revert to `false` before
+     * multi-tenant / public exposure (CYP-179 line)** → the tight [DEFAULT_PERMISSION_MODE] path returns.
+     *
+     * **Scoping (CYP-321 security review):** the flag lives on the `skipPermissions` PARAMETER, defaulted `false`,
+     * NOT baked into the shared [streamJsonArgs] default — so a direct caller like the remote `BridgeMain` (which
+     * spawns the USER's own Claude Code on the USER's machine) does NOT inherit the bypass. The Auftraggeber
+     * authorization covers the local connector's spawns only, never a foreign user machine (CYP-197/BYOA).
+     *
+     * Verified against the CLI docs (Context7 / code.claude.com): `--dangerously-skip-permissions` is
+     * **equivalent to and supersedes** `--permission-mode bypassPermissions`, so we emit ONLY the flag (no
+     * `--permission-mode` — no double directive); `--allowedTools` is moot under a full bypass but kept
+     * harmlessly (it still pre-registers `mcp__hub__hub_send`, no conflict). The flag **refuses to run as
+     * root/sudo** on Linux/macOS (skipped inside a sandbox) — staging runs as the non-root `customer` user,
+     * so it applies. Min CLI v2.1.142 ≤ pinned [PINNED_CLI_VERSION]. A non-const `val` so the reversal
+     * branch stays live (no dead-code fold). */
+    val MVP_SKIP_PERMISSIONS: Boolean = true
 
     /**
      * CYP-167 — `--resume <id>` single-source. Prepended (verified flag position: the spike resumed with
@@ -50,25 +74,35 @@ object ConnectorDefaults {
         if (resumeSessionId.isNullOrBlank()) args else listOf("--resume", resumeSessionId) + args
 
     /**
-     * Builds the spawn args for a production session. Fails closed if a caller tries to make
-     * `bypassPermissions` the mode. MVP keeps partial-messages OFF (no `--include-partial-messages`).
+     * Builds the spawn args for a production session. MVP keeps partial-messages OFF (no
+     * `--include-partial-messages`). CYP-167: [resumeSessionId] non-blank ⇒ `--resume <id>` is prepended.
      *
-     * CYP-167: [resumeSessionId] non-blank ⇒ `--resume <id>` is prepended (resume after restart).
+     * CYP-321 (MVP): [skipPermissions] `true` (passed ONLY by the local [ClaudeCodeConnector], value
+     * [MVP_SKIP_PERMISSIONS]) makes the args carry [DANGEROUS_FLAG] instead of a `--permission-mode` (the flag
+     * supersedes it — no double directive). It **defaults to `false`**, so the shared default and any direct
+     * caller (e.g. the remote `BridgeMain` on the user's machine) stay bypass-free (scoping, CYP-321 review).
+     * The `require` below is KEPT (Gate #4, re-pointed): passing `bypassPermissions` as the MODE value is still
+     * fail-closed rejected, so that vector can never re-appear via the `permissionMode` param.
      */
     fun streamJsonArgs(
         allowedTools: List<String> = DEFAULT_ALLOWED_TOOLS,
         permissionMode: String = DEFAULT_PERMISSION_MODE,
         resumeSessionId: String? = null,
+        skipPermissions: Boolean = false,
     ): List<String> {
         require(permissionMode != FORBIDDEN_PERMISSION_MODE) {
-            "bypassPermissions must not be the connector default (Gate #4)"
+            "bypassPermissions must not be passed as the --permission-mode value (Gate #4); the MVP bypass is DANGEROUS_FLAG"
         }
         val args = BASE_STREAM_JSON_FLAGS.toMutableList()
-        if (permissionMode.isNotBlank()) {
+        if (skipPermissions) {
+            // CYP-321: LOCAL-only bypass — one flag, supersedes --permission-mode (no double directive).
+            args += DANGEROUS_FLAG
+        } else if (permissionMode.isNotBlank()) {
             args += "--permission-mode"
             args += permissionMode
         }
         if (allowedTools.isNotEmpty()) {
+            // Moot under a full bypass, but kept: pre-registers mcp__hub__hub_send (no conflict with the flag).
             args += "--allowedTools"
             args += allowedTools.joinToString(",")
         }

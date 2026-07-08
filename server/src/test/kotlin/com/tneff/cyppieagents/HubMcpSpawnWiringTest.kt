@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.connector.AgentProcess
 import com.tneff.cyppieagents.connector.ClaudeCodeConnector
+import com.tneff.cyppieagents.connector.ConnectorDefaults
 import com.tneff.cyppieagents.connector.HubMcpConfigWriter
 import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.mediation.MediationRouter
@@ -80,9 +81,12 @@ class HubMcpSpawnWiringTest {
         assertTrue(cfg.isAbsolute && cfg.exists(), "mcp-config written at an absolute path")
         assertTrue(cfg.toPath().startsWith(mcpDir.toPath()), "written under the out-of-repo dir (F1)")
         assertTrue(cfg.readText().contains("tok-backend"), "carries the agent's bearer token")
-        // Tight allowlist: the hub tool is pre-approved, by its prefixed MCP name.
-        assertTrue("mcp__hub__hub_send" in cmd, "pre-approves only mcp__hub__hub_send (F3)")
-        // F3: never the dangerous mode.
-        assertTrue(cmd.none { it == "bypassPermissions" || it == "--dangerously-skip-permissions" }, "never bypassPermissions")
+        // The hub tool is still pre-registered by its prefixed MCP name (--allowedTools kept — moot under the
+        // MVP bypass but harmless, no conflict with the flag).
+        assertTrue("mcp__hub__hub_send" in cmd, "pre-registers mcp__hub__hub_send (F3)")
+        // CYP-321 (MVP, Auftraggeber-authorized): the spawn carries the skip-permissions FLAG (was: never).
+        // The bypass is via the FLAG, never the grant-only `bypassPermissions` MODE string.
+        assertTrue(ConnectorDefaults.DANGEROUS_FLAG in cmd, "MVP spawn carries --dangerously-skip-permissions (CYP-321)")
+        assertTrue(cmd.none { it == "bypassPermissions" }, "via the FLAG, never the grant-only MODE string")
     }
 }

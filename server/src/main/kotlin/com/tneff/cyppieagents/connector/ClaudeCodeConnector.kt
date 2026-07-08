@@ -137,7 +137,9 @@ class ClaudeCodeConnector(
         fun spawnSession(resume: String?): ClaudeCodeSession {
             val baseArgs = sandboxBypassGrant
                 ?.let { ConnectorDefaults.sandboxBypassStreamJsonArgs(it, effectiveAllowedTools, resume) }
-                ?: ConnectorDefaults.streamJsonArgs(effectiveAllowedTools, permissionMode, resume)
+                // CYP-321: the LOCAL connector spawn carries --dangerously-skip-permissions (MVP, Auftraggeber-
+                // authorized). Scoped HERE (not the shared streamJsonArgs default) so remote/BYOA spawns don't inherit it.
+                ?: ConnectorDefaults.streamJsonArgs(effectiveAllowedTools, permissionMode, resume, skipPermissions = ConnectorDefaults.MVP_SKIP_PERMISSIONS)
             val command = listOf(cliCommand) + baseArgs +
                 (mcpConfigPath?.let { listOf("--mcp-config", it) } ?: emptyList())
             val process = spawner.spawn(command, cwd, env)
