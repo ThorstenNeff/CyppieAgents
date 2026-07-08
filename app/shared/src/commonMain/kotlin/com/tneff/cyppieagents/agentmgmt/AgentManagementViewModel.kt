@@ -55,6 +55,12 @@ data class AgentMgmtUiState(
     val addOpen: Boolean = false,
     val addForm: AddForm = AddForm(),
     val addError: String? = null,
+    /**
+     * CYP-314 (follow-up CYP-312): display name of the just-created agent, surfaced as a panel-level INFO
+     * confirmation after the add-dialog closes. Set ONLY on a real repository success (never optimistically),
+     * cleared when a fresh add-dialog opens. null → no confirmation shown.
+     */
+    val addSuccessName: String? = null,
     // CYP-87 remove
     val removeTarget: Agent? = null,
     val removeWorktreeFate: WorktreeFate = WorktreeFate.KEEP,
@@ -148,7 +154,8 @@ class AgentManagementViewModel(
 
     fun openAdd() {
         if (!_state.value.editable) return
-        _state.update { it.copy(addOpen = true, addForm = AddForm(), addError = null) }
+        // Clear any prior success confirmation — a fresh add cycle starts clean (CYP-314).
+        _state.update { it.copy(addOpen = true, addForm = AddForm(), addError = null, addSuccessName = null) }
     }
 
     fun closeAdd() = _state.update { it.copy(addOpen = false, addError = null) }
@@ -184,7 +191,9 @@ class AgentManagementViewModel(
                 )
             }.onSuccess {
                 reload()
-                _state.update { it.copy(addOpen = false, addError = null) }
+                // CYP-314: confirm the create landed, naming the agent. Bound to the verified success (post-repo),
+                // never optimistic — a failure below sets addError instead and leaves addSuccessName untouched.
+                _state.update { it.copy(addOpen = false, addError = null, addSuccessName = f.name.trim()) }
             }.onFailure { e ->
                 if (e is CancellationException) throw e
                 _state.update { it.copy(addError = addErrorKey(e)) }

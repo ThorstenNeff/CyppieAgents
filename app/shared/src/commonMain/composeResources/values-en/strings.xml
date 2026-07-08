@@ -505,4 +505,6 @@
     <string name="a11y_report_snapshot_select">Select report %1$s from %2$s</string>
     <string name="a11y_event_filter_chip">Filter %1$s%2$s, tap to change</string>
     <string name="a11y_event_drilldown_header">Correlated by %1$s, tap to clear</string>
+    <!-- CYP-314 (Follow-up CYP-312): success message after "Create". Final copy from UIUX (placeholder). -->
+    <string name="agent_add_success">Agent "%1$s" created.</string>
 </resources>
