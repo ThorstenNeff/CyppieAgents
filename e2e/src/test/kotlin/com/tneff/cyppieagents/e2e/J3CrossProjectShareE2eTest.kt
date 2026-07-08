@@ -36,12 +36,13 @@ import kotlin.test.assertTrue
  * record level** (the owner's neighbor channel is NOT auto-shared), **no foreign AclEntry egress** into
  * the grantee scope, and **secret-needle absence** (a seeded key egresses masked only).
  *
- * **DEFERRED (blocked, reported to PO):** the grantee-READ axes (shared channel visible to a member /
- * neighbor NOT / non-member NOT / revoke→gone on the actual read) need a cross-project channel-membership
- * to exist. There is no endpoint to provision one, and `PUT /api/acl` (the only entry seam) is currently
- * unusable in any multi-project state — the PO-lockout guard 409s on an out-of-active-scope hub channel
- * (filed as a Bug). The permit DECISION itself is unit-proven in AclMatrixSharePermitTest /
- * ChannelSharePermitWiringTest. These E2E read-axes are added once the guard bug is fixed (re-verify).
+ * **Grantee-READ axes (UNBLOCKED — CYP-317 re-verify):** these need a cross-project channel-membership,
+ * provisioned via `PUT /api/acl` (the entry seam that atomically syncs `channel.members`, CYP-112). The
+ * earlier blocker — the PO-lockout guard 409ing on an out-of-active-scope hub channel — was fixed in CYP-111
+ * (`poHubChannelIds()` is now active-project-scoped), so `PUT /api/acl` IS usable in a multi-project state.
+ * The same-project non-member grant + enforcement is now proven end-to-end in Cyp317NonMemberGrantE2eTest;
+ * the cross-project grantee-READ axes (member sees / neighbor NOT / revoke→gone) can be added here as a J3
+ * follow-up. The permit DECISION itself stays unit-proven in AclMatrixSharePermitTest / ChannelSharePermitWiringTest.
  */
 class J3CrossProjectShareE2eTest {
 
