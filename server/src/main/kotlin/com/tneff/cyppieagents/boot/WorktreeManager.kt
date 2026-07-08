@@ -83,14 +83,35 @@ class WorktreeManager(
         if (File(repoDir, ".git").exists()) return false // this project already owns its clone → no-op
         repoDir.parentFile?.mkdirs()
         check(legacy.renameTo(repoDir)) { "failed to adopt legacy clone $legacy → $repoDir" }
-        // Repair the worktree admin links (the .git gitlinks under projects/<pid>/* now point at the moved clone).
-        val worktreePaths = worktreesDir.listFiles()?.filter { it.isDirectory }?.map { it.absolutePath } ?: emptyList()
+        // Repair the worktree admin links (the .git gitlinks under projects/<pid>/* now point at the moved
+        // clone). CYP-247 S4b — build the repair list REGISTRATION-based (the worktrees the moved clone actually
+        // knows, via `git worktree list --porcelain`), NOT a filesystem scan: a stray/orphan dir under
+        // projects/<pid>/ (a broken `.git` that is not a registered worktree) would make `git worktree repair`
+        // EXIT=1 and abort the boot in a half-migrated state (clone already moved). Orphans are left untouched
+        // (they are only removed via the opt-in prune, D5).
+        val worktreePaths = registeredWorktrees()
         if (worktreePaths.isNotEmpty()) {
             val res = runner.run(listOf("git", "worktree", "repair") + worktreePaths, repoDir)
             check(res.exitCode == 0) { "git worktree repair failed after adopt (exit ${res.exitCode})" }
         }
-        log.info("adopted legacy clone into {} + repaired {} worktree(s) — worktrees/CLAUDE.md byte-preserved", repoDir, worktreePaths.size)
+        log.info("adopted legacy clone into {} + repaired {} registered worktree(s) — worktrees/CLAUDE.md byte-preserved", repoDir, worktreePaths.size)
         return true
+    }
+
+    /**
+     * CYP-247 S4b — the worktree paths this clone actually REGISTERS (`git worktree list --porcelain`),
+     * excluding the main clone itself. Registration-based (not a filesystem scan) so an unregistered orphan
+     * dir under `projects/<pid>/` never enters a `git worktree repair` (which would fail on its broken `.git`).
+     * Empty if the listing fails.
+     */
+    private fun registeredWorktrees(): List<String> {
+        val res = runner.run(listOf("git", "worktree", "list", "--porcelain"), repoDir)
+        if (res.exitCode != 0) return emptyList()
+        return res.output.lineSequence()
+            .filter { it.startsWith("worktree ") }
+            .map { it.removePrefix("worktree ").trim() }
+            .filter { it.isNotBlank() && File(it).canonicalFile != repoDir.canonicalFile } // exclude the main clone
+            .toList()
     }
 
     /** CYP-247 S4 — the origin remote URL of this project's clone (for the boot reconciler's mismatch check),
