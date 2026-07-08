@@ -23,7 +23,9 @@ class EventProjectorTest {
     private fun corpusDrafts(): List<EventDraft> {
         val lines = javaClass.getResourceAsStream("/streamjson/corpus.ndjson")!!
             .bufferedReader().readLines().filter { it.isNotBlank() }
-        val projector = EventProjector(ContextUsageBander(), projectId = "team-1")
+        // Explicit 200k window: the corpus's 171k occupancy = 85% (band-80 + compact) assumes it. This asserts
+        // banding LOGIC over real shapes, not the production default (CYP-325 corrected it to 1M; asserted there).
+        val projector = EventProjector(ContextUsageBander(contextWindowTokens = 200_000L), projectId = "team-1")
         return lines.flatMap { line ->
             val masked = EventMasking.mask(CommJson.decodeFromString<StreamJsonEvent>(line))
             projector.project("backend", masked.sessionId, "corr-1", masked)

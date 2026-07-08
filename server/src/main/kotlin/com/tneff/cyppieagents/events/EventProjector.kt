@@ -13,6 +13,7 @@ import com.tneff.cyppieagents.model.SystemEvent
 import com.tneff.cyppieagents.model.ToolResultBlock
 import com.tneff.cyppieagents.model.ToolUseBlock
 import com.tneff.cyppieagents.model.UserEvent
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -53,6 +54,25 @@ class EventProjector(
     private fun mode(agentId: String, capability: CapabilityGate.EnforcedCapability): CapabilityGate.CapabilityMode {
         val resolve = capabilities ?: return CapabilityGate.CapabilityMode.ENABLED // no system → enabled (legacy)
         return CapabilityGate.mode(capability, resolve(agentId)) // resolve()==null → fail-closed OFF
+    }
+
+    /**
+     * CYP-325 — feed the live context-window occupancy to the [onContextTokens] sink from ONE [usage] object
+     * (a per-response `assistant.message.usage`, or a `result.usage` carrying `iterations[]`), via the
+     * wire-tolerant [UsageSnapshot.contextTokensFromUsage] seam. Gated by the SAME `structuredUsage` decision
+     * as banding: a non-fidelity agent (DEGRADED/OFF/unknown) yields `null` (never a faked count — CYP-316
+     * semantic); an ENABLED agent yields the last-iteration occupancy, sanity-clamped to the real context
+     * window ([ContextUsageBander.DEFAULT_CONTEXT_WINDOW_TOKENS], not a stale 200k or `Int.MAX`). Never fed
+     * the turn-aggregate top-level sum — that is the CYP-325 2–5M overcount.
+     */
+    private fun feedContextTokens(agentId: String, usage: JsonObject?) {
+        val sink = onContextTokens ?: return
+        if (mode(agentId, CapabilityGate.EnforcedCapability.STRUCTURED_USAGE) != CapabilityGate.CapabilityMode.ENABLED) {
+            sink(agentId, null) // no trustworthy number for a non-A / coarse / off agent
+            return
+        }
+        val tokens = UsageSnapshot.contextTokensFromUsage(usage) ?: return // enabled but nothing parseable → keep last
+        sink(agentId, tokens.coerceIn(0L, ContextUsageBander.DEFAULT_CONTEXT_WINDOW_TOKENS).toInt())
     }
     /** Stream events → drafts. May produce 0 (e.g. system/init, text-only assistant), 1, or many. */
     fun project(
@@ -100,7 +120,9 @@ class EventProjector(
             // gate (CYP-121/122): OFF/unknown → no context.usage (don't band on numbers we don't have);
             // ENABLED → full banding; DEGRADED → coarse — only the compact-threshold crossing, not every
             // band step (Doc 10 §4 col B: B's token tracking is too coarse to trust the fine bands).
-            val snapshot = UsageSnapshot.fromUsageJson(event.usage)
+            // CYP-325: band on the SAME last-iteration occupancy the title-bar number reads (not the summed
+            // top-level `usage`), so the visual band and the number can't disagree on a multi-tool-use turn.
+            val snapshot = UsageSnapshot.snapshotFromUsage(event.usage)
             val usageMode = mode(agentId, CapabilityGate.EnforcedCapability.STRUCTURED_USAGE)
             when (usageMode) {
                 CapabilityGate.CapabilityMode.OFF -> {}
@@ -109,16 +131,13 @@ class EventProjector(
                 CapabilityGate.CapabilityMode.DEGRADED ->
                     addAll(bander.onUsage(agentId, projectId, snapshot, sessionId, correlationId, coarse = true))
             }
-            // CYP-316: live context-window occupancy (the title-bar feed), gated by the SAME structuredUsage
-            // decision as banding — only full-fidelity (ENABLED) yields a number; coarse (DEGRADED) or
-            // off/unknown yields null (never a faked count from B's coarse tracking). contextTokens is a
-            // Long occupancy (≤ the context window, well under Int.MAX) → clamp to the wire Int defensively.
-            onContextTokens?.let { sink ->
-                val tokens: Int? = if (usageMode == CapabilityGate.CapabilityMode.ENABLED)
-                    snapshot.contextTokens.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-                else null
-                sink(agentId, tokens)
-            }
+            // CYP-316/325: live context-window occupancy (the title-bar feed). CYP-325 root fix — read the
+            // TRUE current context size (result.usage.iterations.last) via the wire-tolerant capsule, NOT the
+            // top-level `usage` counts, which SUM across the tool-use loop (2–5M). Gated by the same
+            // structuredUsage decision as banding (ENABLED → number, else → null) and sanity-clamped to the
+            // real 1M window inside feedContextTokens. (The bander above still consumes the top-level `snapshot`
+            // — same-root-cause overcount, flagged for CYP-325 follow-up / PO scope decision, not touched here.)
+            feedContextTokens(agentId, event.usage)
         }
 
         is RateLimitEvent -> listOf(
