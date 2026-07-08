@@ -29,4 +29,7 @@ fun deriveStatus(transcript: List<AgentEvent>): AgentStatus =
         }
         is AgentEvent.Result -> if (last.isError) AgentStatus.ERROR else AgentStatus.IDLE
         is AgentEvent.Notice -> AgentStatus.IDLE
+        // CYP-323: a human turn is not agent activity — status stays IDLE until the agent's first
+        // AssistantText/ToolCall flips it to RUNNING (honest: we've observed no agent work yet).
+        is AgentEvent.UserTurn -> AgentStatus.IDLE
     }

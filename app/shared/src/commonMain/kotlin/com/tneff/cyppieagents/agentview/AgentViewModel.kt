@@ -115,10 +115,21 @@ class AgentViewModel(
         }
     }
 
-    /** A human turn: posted to the agent's channel via the Hub-mediated session (never stdin). */
+    /** CYP-323: monotonic per-turn counter → a stable, unique id for each locally-echoed human turn (no wall
+     *  clock in commonMain). Uniqueness keeps [foldEvent]'s id-dedup honest and preserves chronological order. */
+    private var userTurnSeq = 0
+
+    /**
+     * A human turn: posted to the agent's channel via the Hub-mediated session (never stdin).
+     *
+     * CYP-323: the turn is echoed into the local transcript FIRST — chronologically before the agent's reply,
+     * which arrives asynchronously on [session.events]. The composer turn is stdin-only and the stream does not
+     * replay it, so this echo is the only source of the user-turn row (see [AgentEvent.UserTurn]).
+     */
     fun onSend(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
+        _transcript.update { foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed)) }
         session.sendMessage(trimmed)
     }
 

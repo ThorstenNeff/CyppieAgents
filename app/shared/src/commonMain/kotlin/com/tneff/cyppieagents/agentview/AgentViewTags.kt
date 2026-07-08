@@ -45,9 +45,11 @@ object AgentViewTags {
         "agent.$agentId.event.$index.${kind.tag}"
 }
 
-/** Event-kind qualifier vocabulary from Test-Contract v0.4 §2 (`assistantText` · `toolCall` · `toolResult`). */
+/** Event-kind qualifier vocabulary from Test-Contract v0.4 §2 (`assistantText` · `toolCall` · `toolResult`).
+ *  CYP-323 adds `userTurn` (the locally-echoed human turn) — additive, coordinate with QA before renaming. */
 enum class EventKind(val tag: String) {
     ASSISTANT_TEXT("assistantText"),
     TOOL_CALL("toolCall"),
     TOOL_RESULT("toolResult"),
+    USER_TURN("userTurn"),
 }
