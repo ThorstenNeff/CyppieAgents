@@ -25,8 +25,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,6 +46,7 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_agent_add_persona
 import kmpcyppieagents.app.shared.generated.resources.agent_add
 import kmpcyppieagents.app.shared.generated.resources.agent_add_autofields_note
 import kmpcyppieagents.app.shared.generated.resources.agent_add_confirm
+import kmpcyppieagents.app.shared.generated.resources.agent_add_success
 import kmpcyppieagents.app.shared.generated.resources.agent_add_error
 import kmpcyppieagents.app.shared.generated.resources.agent_add_id_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_add_id_placeholder
@@ -143,6 +146,19 @@ fun AgentManagementPanel(
             modifier = Modifier.testTag(AgentMgmtTags.ADD_BUTTON),
         ) {
             Text(stringResource(Res.string.agent_add))
+        }
+
+        // CYP-314 (follow-up CYP-312): panel-level INFO confirmation naming the just-created agent. Shown only
+        // when the VM carries a verified success (post-repo, never optimistic); cleared on the next add-open.
+        // liveRegion=Polite (UIUX §8): the hint appears async AFTER the add-dialog closes — focus has moved, so
+        // without a polite announce it never reaches screen-reader users. Mirrors the sibling AgentSettingsPanel.
+        state.addSuccessName?.let { name ->
+            TonedHint(
+                stringResource(Res.string.agent_add_success, name),
+                HintTone.INFO,
+                AgentMgmtTags.ADD_SUCCESS,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
 
         // CYP-276 (CYP-270 class): gate the onboarding empty-state on !loading so it never FLASHES during the

@@ -512,4 +512,6 @@
     <string name="a11y_report_snapshot_select">Report %1$s vom %2$s auswählen</string>
     <string name="a11y_event_filter_chip">Filter %1$s%2$s, tippen zum Wechseln</string>
     <string name="a11y_event_drilldown_header">Korreliert über %1$s, tippen zum Zurücksetzen</string>
+    <!-- CYP-314 (Follow-up CYP-312): Erfolgsmeldung nach „Anlegen". Copy final von UIUX (Platzhalter). -->
+    <string name="agent_add_success">Agent „%1$s" angelegt.</string>
 </resources>

@@ -41,6 +41,7 @@ object AgentMgmtTags {
     const val ADD_PROJECT_NOTE = "agentMgmt.add.projectNote" // CYP-228: "added to the active project <name>" (dialog head)
     const val ADD_AUTO_NOTE = "agentMgmt.add.autoNote" // CYP-228: "token/branch/channel are auto-assigned"
     const val ADD_ERROR = "agentMgmt.add.error"
+    const val ADD_SUCCESS = "agentMgmt.add.success" // CYP-314: panel-level INFO confirmation after a successful create
 
     // CYP-87 — remove (irreversible)
     const val REMOVE_DIALOG = "agentMgmt.remove.dialog"
