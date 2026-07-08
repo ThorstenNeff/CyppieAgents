@@ -190,8 +190,9 @@ object Rb1RealAgentHarness {
             // CYP-163 ⭐ — the RB1 throwaway-sandbox worker must write/commit/push autonomously, but headless
             // stream-json blocks tool use pending permission approval (RB1 Run #5 finding). The sandbox-ONLY,
             // human + reviewer-signed bypass grant routes the spawn through the SEPARATE bypass override so the
-            // disposable-sandbox worker can act. Prod/default stays sharp (Gate #4) — this grant lives ONLY on
-            // this disposable RB1 sandbox connector, never a product/S8-prod spawn.
+            // disposable-sandbox worker can act via the grant-gated `bypassPermissions` MODE. (Since CYP-321 the
+            // MVP default also bypasses, but via the FLAG — a distinct mechanism; this grant still lives ONLY on
+            // this disposable RB1 sandbox connector, never wired from the default path.)
             sandboxBypassGrant = SandboxBypassGrant.rb1Sandbox(),
         ).boot()
     }

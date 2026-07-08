@@ -40,8 +40,9 @@ class ConnectorDefaultsResumeTest {
 
     /**
      * M9 — the sandbox-bypass path emits `--resume` IDENTICALLY (both paths share `withResume`), and the
-     * resume flag does NOT disturb Gate #4: the bypass path still emits bypassPermissions, the prod path
-     * still does not. Mutation: thread resume into only one path → reds.
+     * resume flag does NOT disturb the permission mechanism: the sandbox path still emits the
+     * `bypassPermissions` MODE, and the MVP prod path (CYP-321) still emits the skip FLAG — resume or not.
+     * Mutation: thread resume into only one path → reds.
      */
     @Test
     fun m9_bothArgPathsEmitResumeConsistently_gate4Intact() {
@@ -53,7 +54,10 @@ class ConnectorDefaultsResumeTest {
         val bypassNoResume = ConnectorDefaults.sandboxBypassStreamJsonArgs(grant, resumeSessionId = null)
         assertFalse(bypassNoResume.contains("--resume"), "no id ⇒ no flag, even on the bypass path")
 
-        // Prod path with a resume id must NOT have become a bypass.
-        assertFalse(ConnectorDefaults.bypassesPermissions(ConnectorDefaults.streamJsonArgs(resumeSessionId = "sess-9")))
+        // CYP-321: the MVP prod path bypasses via the FLAG, and adding --resume does not disturb that (the
+        // resume single-source is orthogonal to the permission mechanism) — flag present, MODE string absent.
+        val prodResumed = ConnectorDefaults.streamJsonArgs(resumeSessionId = "sess-9")
+        assertTrue(ConnectorDefaults.bypassesPermissions(prodResumed), "MVP prod path bypasses via the flag, resume or not (CYP-321)")
+        assertTrue(prodResumed.contains(ConnectorDefaults.DANGEROUS_FLAG) && !prodResumed.contains("bypassPermissions"))
     }
 }

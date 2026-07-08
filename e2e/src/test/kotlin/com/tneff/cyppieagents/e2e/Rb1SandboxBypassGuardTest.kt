@@ -39,17 +39,19 @@ import kotlin.test.assertTrue
  *  - **(a) write-enabled:** the RB1 harness ([Rb1RealAgentHarness.bootRealAgentPlatform]) spawns the WORKER
  *    WITH `bypassPermissions` (RB1 Run #5's blocker: headless writes need a permission mode). Mutation: drop
  *    `sandboxBypassGrant = SandboxBypassGrant.rb1Sandbox()` in the harness → worker back to sharp → reddens.
- *  - **(b) non-leak (Gate #4) — closes the Reviewer-flagged gap:** Backend's connector test passes the grant
- *    arg EXPLICITLY (`grant = null`), so it pins neither the ctor DEFAULT nor the BOOT path. This guard pins
- *    BOTH, so the two leak mutations the Reviewer named redden:
- *      - **(b-i) ctor default:** a [ClaudeCodeConnector] built with the `sandboxBypassGrant` arg **OMITTED**
- *        (the production default) spawns sharp. Mutation `null → SandboxBypassGrant.rb1Sandbox()` (MUT2) reddens.
- *      - **(b-ii) boot default:** a [BootOrchestrator] built with NO grant (the production boot) spawns sharp.
- *        Mutation "boot reaches the grant through to the prod connector" reddens.
+ *  - **(b) grant-non-leak (Gate #4, CYP-321 re-point) — closes the Reviewer-flagged gap:** since CYP-321 the
+ *    default/boot spawn DOES bypass, but via the MVP FLAG (`--dangerously-skip-permissions`), NOT the grant-gated
+ *    `bypassPermissions` MODE. What (b) still pins is that **the grant MODE never leaks into the default/boot path**
+ *    (a distinct mechanism), so the two leak mutations the Reviewer named still redden:
+ *      - **(b-i) ctor default:** a [ClaudeCodeConnector] with `sandboxBypassGrant` **OMITTED** spawns via the FLAG,
+ *        never the MODE. Mutation `null → SandboxBypassGrant.rb1Sandbox()` (MUT2) → emits the MODE → reddens.
+ *      - **(b-ii) boot default:** a [BootOrchestrator] with NO grant spawns via the FLAG, never the MODE.
+ *        Mutation "boot reaches the grant through to the prod connector" → emits the MODE → reddens.
  *
  * SCOPE NOTE (honest): the grant is connector-level, so on the RB1 sandbox BOTH agents (po+backend) spawn with
- * bypass — within the disposable-sandbox envelope (no product/net). The invariant that matters, and that (b)
- * pins, is that PROD/DEFAULT never bypasses. Axis (a) asserts the WORKER (the one that writes/commits/pushes).
+ * the grant MODE — within the disposable-sandbox envelope. The invariant (b) pins is that the grant MODE never
+ * leaks into the default/boot path; the MVP FLAG bypass on that path is the CYP-321 decision. Axis (a) asserts
+ * the WORKER carries the grant MODE.
  */
 class Rb1SandboxBypassGuardTest {
 
@@ -94,9 +96,9 @@ class Rb1SandboxBypassGuardTest {
         assertTrue(workerCmd.contains("bypassPermissions"), "the bypass flag is inspectable in the captured worker command")
     }
 
-    // ---- Axis (b-i): the ClaudeCodeConnector ctor DEFAULT (no grant arg) is sharp — pins MUT2 ----
+    // ---- Axis (b-i): the ClaudeCodeConnector ctor DEFAULT (no grant arg) bypasses via the FLAG, not the grant MODE — pins MUT2 ----
     @Test
-    fun connectorDefault_noGrantArg_spawnsSharp() {
+    fun connectorDefault_noGrantArg_usesFlagNotGrantMode() {
         val spawner = CapturingSpawner()
         val hub = Hub(
             HubState.hubAndSpoke(listOf(Agent("po", "PO", Role.PO, "po"), Agent("backend", "BE", Role.WORKER, "backend"))),
@@ -116,14 +118,16 @@ class Rb1SandboxBypassGuardTest {
             scope = scope,
         ).open("backend")
         val cmd = spawner.byAgent.getValue("backend")
-        assertFalse(ConnectorDefaults.bypassesPermissions(cmd),
-            "(b-i) the connector ctor DEFAULT (no grant) must spawn sharp — bypass must never be the default (Gate #4)")
-        assertFalse(cmd.contains("bypassPermissions"))
+        // CYP-321: the ctor DEFAULT (no grant) bypasses via the FLAG (MVP), not the grant-gated MODE. MUT2
+        // (ctor grant default null → rb1Sandbox()) would route through the sandbox path → emit the MODE → redden.
+        assertTrue(cmd.contains(ConnectorDefaults.DANGEROUS_FLAG), "(b-i) the ctor default carries the MVP skip flag")
+        assertFalse(cmd.contains("bypassPermissions"),
+            "(b-i) the grant-gated MODE must never leak into the ctor default (Gate #4, grant-non-leak)")
     }
 
-    // ---- Axis (b-ii): a BootOrchestrator with NO grant (production boot) is sharp — pins the boot leak ----
+    // ---- Axis (b-ii): a BootOrchestrator with NO grant (production boot) bypasses via the FLAG, not the grant MODE — pins the boot leak ----
     @Test
-    fun bootDefault_noGrant_spawnsSharp() {
+    fun bootDefault_noGrant_usesFlagNotGrantMode() {
         val gitRoot = Files.createTempDirectory("rb1-bypass-guard-b").toFile()
         val spawner = CapturingSpawner()
         val config = Rb1RealAgentHarness.sandboxConfig("file://" + gitRoot.absolutePath)
@@ -144,9 +148,11 @@ class Rb1SandboxBypassGuardTest {
         ).boot()
         for (agent in listOf("po", "backend")) {
             val cmd = spawner.byAgent.getValue(agent)
-            assertFalse(ConnectorDefaults.bypassesPermissions(cmd),
-                "(b-ii) the prod BootOrchestrator (no grant) must spawn '$agent' sharp — the sandbox grant must not leak into boot")
-            assertFalse(cmd.contains("bypassPermissions"))
+            // CYP-321: the prod boot spawns via the MVP FLAG, not the grant MODE. The "boot leaks the grant"
+            // mutation would route through the sandbox path → emit the MODE → redden the MODE-absence assert.
+            assertTrue(cmd.contains(ConnectorDefaults.DANGEROUS_FLAG), "(b-ii) boot spawns '$agent' with the MVP skip flag")
+            assertFalse(cmd.contains("bypassPermissions"),
+                "(b-ii) the sandbox grant MODE must not leak into boot (Gate #4, grant-non-leak)")
         }
     }
 }

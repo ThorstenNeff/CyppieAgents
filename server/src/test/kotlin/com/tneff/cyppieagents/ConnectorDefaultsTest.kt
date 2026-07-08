@@ -8,15 +8,34 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Reviewer Gate #4: bypassPermissions must never be the connector default. */
+/**
+ * Gate #4 — RE-POINTED for the MVP (CYP-321, Auftraggeber-authorized 2026-07-08). The former invariant
+ * ("the connector default NEVER bypasses") is deliberately inverted: the MVP default now carries
+ * `--dangerously-skip-permissions` so headless agents work without an interactive approval. These tests are
+ * inverted/re-documented (NOT deleted): they now positively assert the MVP default carries the FLAG, that it
+ * does so via the flag (never the `bypassPermissions` MODE string / no double `--permission-mode`), and that
+ * the grant-gated sandbox path (CYP-163) stays a distinct mechanism. Revert = flip [MVP_SKIP_PERMISSIONS].
+ */
 class ConnectorDefaultsTest {
 
     @Test
-    fun defaultArgsNeverBypassPermissions() {
+    fun mvpDefault_carriesSkipFlag_viaTheFlagNotTheModeString() {
+        // CYP-321: the MVP default DOES bypass — via the flag (Auftraggeber-authorized), not `--permission-mode`.
         val args = ConnectorDefaults.streamJsonArgs()
-        assertFalse(ConnectorDefaults.bypassesPermissions(args))
-        assertFalse(args.contains(ConnectorDefaults.DANGEROUS_FLAG))
-        assertFalse(args.contains("bypassPermissions"))
+        assertTrue(ConnectorDefaults.bypassesPermissions(args), "MVP default bypasses (CYP-321)")
+        assertTrue(args.contains(ConnectorDefaults.DANGEROUS_FLAG), "the MVP default carries --dangerously-skip-permissions")
+        // supersede, not double: the flag REPLACES --permission-mode (Context7-verified equivalence).
+        assertFalse(args.contains("--permission-mode"), "no --permission-mode alongside the flag (no double directive)")
+        assertFalse(args.contains("bypassPermissions"), "bypass is via the FLAG, never the forbidden MODE string")
+    }
+
+    @Test
+    fun mvpDefault_carriesSkipFlag_onFreshAndResumePaths() {
+        assertTrue(ConnectorDefaults.streamJsonArgs().contains(ConnectorDefaults.DANGEROUS_FLAG), "fresh spawn carries the flag")
+        val resumed = ConnectorDefaults.streamJsonArgs(resumeSessionId = "sess-1")
+        assertTrue(resumed.contains(ConnectorDefaults.DANGEROUS_FLAG), "resume spawn also carries the flag")
+        assertEquals("--resume", resumed.first(), "--resume still prepended (position preserved)")
+        assertFalse(resumed.contains("--permission-mode"), "resume path also emits no --permission-mode")
     }
 
     @Test
@@ -45,12 +64,16 @@ class ConnectorDefaultsTest {
     }
 
     @Test
-    fun sandboxOverrideAndProdDefaultAreTwoDistinctPaths_nonLeak() {
-        // Guard axis (b) "non-leak": two STRUCTURALLY DISJOINT paths — the override bypasses, the default
-        // does NOT and fails closed on a bypass mode. (If they were one bent path, the leak mutation is moot.)
-        assertTrue(ConnectorDefaults.bypassesPermissions(ConnectorDefaults.sandboxBypassStreamJsonArgs(SandboxBypassGrant.rb1Sandbox())))
-        assertFalse(ConnectorDefaults.bypassesPermissions(ConnectorDefaults.streamJsonArgs()), "prod default never bypasses")
-        // and the prod default path stays sharp — it cannot be coaxed into bypass even if asked (Gate #4).
+    fun mvpDefaultAndSandboxOverride_bothBypass_viaDistinctMechanisms_guardStillSharp() {
+        // CYP-321 re-point: in the MVP BOTH paths bypass, but via DISTINCT mechanisms —
+        //  - the sandbox override (CYP-163): grant-gated, via the `bypassPermissions` MODE;
+        //  - the MVP default (CYP-321): via the FLAG (--dangerously-skip-permissions).
+        val sandbox = ConnectorDefaults.sandboxBypassStreamJsonArgs(SandboxBypassGrant.rb1Sandbox())
+        assertTrue(ConnectorDefaults.bypassesPermissions(sandbox) && sandbox.contains("bypassPermissions"), "sandbox = MODE mechanism")
+        val mvp = ConnectorDefaults.streamJsonArgs()
+        assertTrue(mvp.contains(ConnectorDefaults.DANGEROUS_FLAG) && !mvp.contains("bypassPermissions"), "MVP default = FLAG mechanism")
+        // Gate #4 stays sharp on the MODE vector: the forbidden `bypassPermissions` MODE is still rejected
+        // (the sanctioned MVP bypass is the flag, never the mode string re-appearing via the param).
         assertFailsWith<IllegalArgumentException> {
             ConnectorDefaults.streamJsonArgs(permissionMode = ConnectorDefaults.FORBIDDEN_PERMISSION_MODE)
         }

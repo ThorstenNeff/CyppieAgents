@@ -30,12 +30,14 @@ import kotlin.test.assertTrue
  * CYP-163 — the sandbox-only `bypassPermissions` grant, threaded through [ClaudeCodeConnector] to the
  * spawned command. The grant is **human (Auftraggeber) + reviewer signed**, RB1 throwaway-sandbox ONLY.
  * Pins the two guard axes at the connector level (the Tester re-pins them at the harness level):
- *  - **(a) write-enabled:** a connector WITH the grant spawns the worker WITH `bypassPermissions`.
- *  - **(b) non-leak:** the same connector WITHOUT the grant (the production default) spawns sharp — never bypass.
+ *  - **(a) write-enabled:** a connector WITH the grant spawns the worker WITH the `bypassPermissions` MODE.
+ *  - **(b) distinct mechanism (CYP-321 re-point):** the same connector WITHOUT the grant (the production
+ *    default) now bypasses too — but via the FLAG `--dangerously-skip-permissions` (MVP-wide, Auftraggeber-
+ *    authorized), NOT the grant-gated `bypassPermissions` MODE. The two mechanisms stay disjoint.
  *
  * **Mutation:** route the grant path through `streamJsonArgs` (the default) instead of the separate
- * `sandboxBypassStreamJsonArgs` override → the grant spawn would throw (Gate #4) / lose bypass → (a) reddens;
- * or drop the prod `require` → (b)'s non-leak guarantee evaporates (covered in [ConnectorDefaultsTest]).
+ * `sandboxBypassStreamJsonArgs` override → the grant spawn loses the MODE mechanism → (a) reddens. The MODE
+ * vector guard (`require`) is still covered in [ConnectorDefaultsTest].
  */
 class SandboxBypassConnectorTest {
 
@@ -83,10 +85,13 @@ class SandboxBypassConnectorTest {
     }
 
     @Test
-    fun connectorWithoutGrant_spawnsSharp_noLeak() {
+    fun connectorWithoutGrant_mvpSpawnsWithSkipFlag_notTheGrantMode() {
+        // CYP-321 re-point: the production default (no grant) now spawns WITH --dangerously-skip-permissions
+        // (MVP-wide, Auftraggeber-authorized) — via the FLAG, NOT the grant-gated `bypassPermissions` MODE.
         val spawner = CapturingSpawner()
-        connector(spawner, grant = null).open("backend") // the production default
-        assertFalse(ConnectorDefaults.bypassesPermissions(spawner.command), "the prod default never bypasses (Gate #4)")
-        assertFalse(spawner.command.contains("bypassPermissions"))
+        connector(spawner, grant = null).open("backend")
+        assertTrue(ConnectorDefaults.bypassesPermissions(spawner.command), "the MVP prod spawn bypasses via the flag (CYP-321)")
+        assertTrue(spawner.command.contains(ConnectorDefaults.DANGEROUS_FLAG), "the spawn carries --dangerously-skip-permissions")
+        assertFalse(spawner.command.contains("bypassPermissions"), "via the FLAG, not the grant-only MODE string")
     }
 }
