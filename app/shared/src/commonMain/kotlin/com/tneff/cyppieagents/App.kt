@@ -4,6 +4,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,24 +55,34 @@ fun App(
     val themePrefs = remember(themePreferences) { themePreferences ?: defaultThemePreferences() }
     var themeMode by remember { mutableStateOf(themePrefs.themeMode()) }
     MaterialTheme(colorScheme = maritimeColorScheme(themeMode.isDark(isSystemInDarkTheme()))) {
-        AuthGate(
-            viewModel = authViewModel,
-            modifier = Modifier
-                .enableTestTagsAsResourceId()
-                .safeContentPadding()
-                .fillMaxSize(),
-            onOpenExternalUrl = onOpenExternalUrl,
-        ) { tier ->
-            // CYP-186: the verified user's tier gates the desktop's operator surfaces (hybrid: role OR token).
-            // CYP-188: thread the session credential so a session-only user (Kratos login, no operator token)
-            // authenticates the shell's data reads/sockets (X-Session-Token native / same-origin cookie browser).
-            AgentShell(
-                modifier = Modifier.fillMaxSize(),
-                tier = tier,
-                sessionToken = authRepo::currentSessionToken,
-                themeMode = themeMode,
-                onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
-            )
+        // CYP-322: the ONE root backdrop. Before this, MaterialTheme supplied only colour *values* — nothing
+        // painted a background, so the platform window's white showed through in Dark mode; and unstyled Text
+        // inherited M3's default LocalContentColor = Black. A theme-bound Surface fixes BOTH: it paints
+        // colorScheme.background AND sets LocalContentColor = onBackground for the whole tree. Outermost (outside
+        // AuthGate's safeContentPadding) so the backdrop reaches edge-to-edge behind system insets.
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+        ) {
+            AuthGate(
+                viewModel = authViewModel,
+                modifier = Modifier
+                    .enableTestTagsAsResourceId()
+                    .safeContentPadding()
+                    .fillMaxSize(),
+                onOpenExternalUrl = onOpenExternalUrl,
+            ) { tier ->
+                // CYP-186: the verified user's tier gates the desktop's operator surfaces (hybrid: role OR token).
+                // CYP-188: thread the session credential so a session-only user (Kratos login, no operator token)
+                // authenticates the shell's data reads/sockets (X-Session-Token native / same-origin cookie browser).
+                AgentShell(
+                    modifier = Modifier.fillMaxSize(),
+                    tier = tier,
+                    sessionToken = authRepo::currentSessionToken,
+                    themeMode = themeMode,
+                    onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
+                )
+            }
         }
     }
 }
