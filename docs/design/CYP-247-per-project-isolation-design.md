@@ -8,19 +8,27 @@
 
 CYP-247 has **two axes**, and they are at very different maturity:
 
-- **Axis 2 — de-singletonisation of the runtime (the ticket's stated core): ~90 % already landed.** The per-agent
-  lifecycle bundle (`LifecycleManager`, `ConnectorSessions`, `AgentConfigRegistry`, `CapabilityRegistry`,
-  `ProviderRegistry`, `AgentTokenUsageTracker`, `WorktreeManager`, `AgentManagement`) is **already per-project** —
-  separate instances per `ProjectRuntime`, minted by `ProjectRuntimeFactory`, keyed by `projectId` in
-  `RuntimeRegistry` (CYP-247.1–.4 / CYP-255 .4b). **Do not rebuild it.** Exactly **one** residual singleton needs a
-  `projectId` dimension: `SessionRegistry.sessionToAgent` (§3).
 - **Axis 1 — per-project git CLONE isolation: the genuinely unbuilt gap.** Today there is **one shared clone**
   `gitRoot/repo`; every project's worktrees are `git worktree add` against it, always off the **boot** branch. The
   per-project repo URL/branch is *fully modelled as data* (`ProjectConfigStore`, `/api/config/repo`, PG
   `project_config`) but is **only ever read once, at boot, for the boot project**. Two projects cannot target
   different repos/branches. This is the staging fragility (default→flutterdriver re-point) and the real work of CYP-247.
+- **Axis 2 — de-singletonisation: the *inbound* lifecycle bundle is done; the *outbound/attribution* path is NOT.**
+  The per-agent lifecycle bundle (`LifecycleManager`, `ConnectorSessions`, `AgentConfigRegistry`,
+  `CapabilityRegistry`, `ProviderRegistry`, `AgentTokenUsageTracker`, `WorktreeManager`, `AgentManagement`) IS
+  per-project (`ProjectRuntime` / `ProjectRuntimeFactory` / `RuntimeRegistry`, CYP-247.1–.4 / CYP-255 .4b) — don't
+  rebuild it. **Revision (r1): my first pass under-counted here.** It called the comm spine "confirm-only, one
+  residual singleton (`SessionRegistry`)". A code-grounded second opinion is **correct**: the **outbound event path
+  reads `active()` / boot `config.projectId` at emit time**, which is only right while `active() == owner`. Axis 1 is
+  precisely what breaks that invariant (it makes non-boot projects runnable → the K=3 background-live sessions fire
+  **async while another project is active**). Three **code-verified** leaks (§3): the mediation "mouth"
+  (`Hub.postAsAgent` + `spokeChannelFor`), the projector (`onContextTokens → active().tokenUsage`), and the
+  boot-frozen connector spawn-identity (`resolveApiKey`/`projectIdOf`/`worktreesRoot`). `SessionRegistry` keying is
+  **necessary but not sufficient** — the leaks are downstream of it.
 
-**Six decisions need Auftraggeber sign-off before any build — collected in §8.** My recommendations are inlined.
+**This is a revision round (r1), not a build.** The direction (Axis 1, D1/D2/D6, CYP-220 reuse, §1a bundle) stands;
+§3–§4, §7–§8 are revised to fold in the outbound-attribution gap. **Decisions needing sign-off in §8** (now D1–D8);
+recommendations inlined.
 
 ---
 
@@ -122,41 +130,74 @@ Today a `PUT /api/config/repo` on a live project is a silent no-op against git. 
 
 ---
 
-## 3. Axis 2 — the ONE residual singleton to key
+## 3. Axis 2 (revised r1) — the outbound / attribution path leaks under concurrent-live sessions
 
-The lifecycle bundle is already per-project (§1a). The only in-memory map without a `projectId` dimension is:
+The **ear** (inbound: `MessageDeliverer` targets `active().connectorSessions` + replay-on-attach) is fine. The **mouth**
+(outbound: a session's turn-end → hub post; usage → tracker; spawn identity) is **not**: every outbound step reads
+`active()` or boot `config.projectId` at emit time. That is correct only while `active() == owner` — the invariant Axis 1
+breaks by making non-boot projects background-live (K=3), so their sessions emit **async while another project is active**.
 
-- **`SessionRegistry.sessionToAgent`** — a single global `ConcurrentHashMap<String,String>` session-id → agentId
-  (`mediation/SessionRegistry.kt:11`). Two projects with the same `agentId` (`po`, `dev1`) rely on session-id
-  uniqueness alone; there is no project dimension.
+**Three code-verified leaks** (@ develop `53f7102`):
 
-**Proposal:** key it `(projectId, agentId)` / `(projectId, sessionId)` — the **exact pattern**
-`AgentOverrideStore` and `ProjectAgentStore` already use (§5). Small, contained; no store, no schema. This closes the
-last cross-project collision surface in the mediation layer. Everything else stays shared-and-`active()`-resolved as
-designed. (Confirm-only: the switch ordering in `PlatformWiring.kt:122-126` remains the isolation guarantee for the
-shared spine.)
+1. **The mouth mis-attributes / drops.** One shared `MediationRouter` (`BootOrchestrator.kt:280`) on the one shared
+   connector. `router.onResult` resolves the agent, then `hub.state.spokeChannelFor(agentId)` (`MediationRouter.kt:45`)
+   + `hub.postAsAgent` (`:55`). `postAsAgent` gates `canWrite` against the **active** ACL slice (`Hub.kt:49`) and stamps
+   `projectId = state.activeProjectId` (`Hub.kt:64`); `spokeChannelFor` finds `po-<agent>` only in the **active**
+   `channels` (`HubState.kt:304`). So B's turn-end while A is active → **dropped** (403; B's spoke is stashed), or on an
+   agentId collision (`po`/`dev1`) **mis-routed into A's channel** and **stamped `projectId=A`**. *Keying
+   `SessionRegistry` does NOT fix this — the failure is entirely downstream of the agent-id resolution.*
+2. **The projector mis-attributes usage.** `onContextTokens = { agentId, tokens -> runtimeRegistry.active().tokenUsage
+   .onResult(...) }` (`BootOrchestrator.kt:277`) → B's context tokens land on **A's** `AgentTokenUsageTracker`.
+3. **The connector spawn-identity is boot-frozen.** `resolveApiKey = { projectConfig.resolvedApiKey(config.projectId) }`
+   (`:350`) and `projectIdOf = { config.projectId }` (`:367`) hard-read the **boot** projectId → a non-boot agent
+   spawns with the **boot API key** and its session-resume + `agentEvents` transcript are stamped **boot**. Corollary:
+   `worktreesRoot = { active().worktrees.worktreesRoot }` (`:347`) is already `active()`-resolved, so a background-live
+   **resume of a non-active** agent would even spawn in the **wrong project's worktree**. The connector's own comment
+   admits the frozen assumption ("MVP-correct — an agent doesn't switch project mid-life", `:364-365`) — Axis 1 voids it.
+
+### The root cause + the fix seam
+
+`active()` is a *point-in-time* answer; async outbound events need the **owning** projectId of the session that produced
+them. The fix is to **thread the owning `projectId` through the outbound path** instead of reading `active()`:
+
+- **Spawn identity (leak 3) — required for Axis 1 regardless of concurrency.** The per-project lifecycle already knows
+  its `pid`; pass it into `connector.open(agentId, worktree, projectId)` and resolve `resolveApiKey(pid)` /
+  `projectIdOf = pid` / `worktreesRoot(pid)` from **that**, not `config.projectId`/`active()`. (Even in a
+  teardown-on-switch world this is needed: a just-activated non-boot project must spawn with **its** key + stamp.)
+- **Mouth + usage (leaks 1–2) — required only if sessions of non-active projects stay live.** The router must post as
+  the session's **owner**: `SessionRegistry` gains the `(projectId, …)` dimension (the pattern §5 already uses), and
+  `Hub.postAsAgent` / `spokeChannelFor` / `canWrite` must resolve the channel + ACL from the **owning project's slice**
+  (active *or* stashed) and stamp the **owning** projectId — i.e. `HubState` must serve *any* project's slice by id, not
+  only the one active slice. `onContextTokens` must route to `runtimeRegistry.of(ownerPid).tokenUsage`, not `active()`.
+
+**This makes the left-project-session policy an *architectural fork*, not just a resource knob (see §4).**
 
 ---
 
-## 4. Left-project sessions — trade-off + recommendation (decision D3)
+## 4. Left-project sessions — now the architectural fork (decision D3)
 
-**Today:** background-live with a hard **LRU cap K = 3** (`RuntimeSuspensionPolicy`, `runtimeSuspensionCap`,
-`BootOrchestrator.kt:197`). On switch the left project **keeps running** unless it is the LRU victim beyond the cap;
-"suspend" = **kill the `claude` processes, keep the cheap runtime object** (session ids persisted CYP-167 →
-`--resume` on re-entry). Full runtime reclaim is deferred (CYP-247.5). CYP-306/".5b" full-eviction is **not implemented**
-(only CYP-256 .5a rehydration exists).
+§3 makes this **not** a pure resource knob: it decides whether the mouth-attribution re-architecture (leaks 1–2) is a
+**hard prerequisite** of the Axis-1 rollout.
 
-| Option | Behaviour | Pro | Con |
+**Today:** background-live, hard **LRU cap K = 3** (`RuntimeSuspensionPolicy`, `runtimeSuspensionCap`,
+`BootOrchestrator.kt:197`); "suspend" = kill the `claude` processes, keep the runtime object, `--resume` on re-entry
+(session ids persisted, CYP-167). Full runtime reclaim (CYP-247.5) + CYP-306/.5b full-eviction are **not implemented**.
+This "works" today only because non-boot projects are barely runnable (no per-project clone) — Axis 1 is what makes them
+fire real async outbound events.
+
+| Option | Behaviour | Attribution cost | Trade-off |
 |---|---|---|---|
-| **A — background-live (current)** | left projects run until LRU cap K | instant switch-back; away-agents keep progressing | N concurrent `claude` **and now N active clones/worktrees** → CPU / token / disk burn |
-| **B — teardown on switch** | suspend left project's sessions immediately (K=1) | bounded to the active project only | away-agents stop; re-entry re-spawns (`--resume`) |
-| **C — expose the cap as policy (RECOMMEND)** | keep A's machinery; make K + "suspend-on-switch" **config** (default K=3), add a per-project "keep hot" pin | operator owns the resource ceiling; teardown-on-switch is just `cap=1`; no new mechanism | needs a small settings surface |
+| **A — background-live (K>1, today's default)** | non-active projects keep running | **requires leaks 1–2 fixed** (HubState multi-slice post + `of(pid).tokenUsage` + `SessionRegistry` keying) — the big, risky slice | away-agents progress; N concurrent `claude` + N live worktrees = cost |
+| **B — teardown-on-switch (cap=1) (RECOMMEND for Axis-1 MVP)** | only the active project has live sessions → `active() == owner` always | leaks 1–2 **do not bite** (active-reads are correct); only leak 3 (spawn identity) must be fixed | away-agents stop; re-entry re-spawns (`--resume`) — bounded, safe |
 
-**Recommendation: C.** The suspension machinery already exists; we *expose* it rather than hard-code a policy. Default
-stays background-live K=3; an operator who wants strict isolation sets cap=1 (= Option B). This is the natural home for
-the CYP-306/CYP-247.5 resource governance later, without pre-committing it now. Per-project clones make the resource
-argument sharper (each hot project is a working tree + processes), which is exactly why the ceiling should be an
-operator decision.
+**Recommendation: B for the Axis-1 MVP.** Ship per-project clones with **cap=1** (teardown-on-switch), so the invariant
+`active() == owner` holds and the shared mouth/projector stay correct with only the spawn-identity fix (leak 3). This
+retires Axis-1 risk without re-architecting `HubState` into a concurrent multi-slice post target. **Background-live
+(Option A) becomes an explicit later slice** (S5) that lands the mouth-attribution work first — expose the cap as policy
+*then*, once posting-as-owner is real. Rationale: don't make non-boot projects concurrently-live until their outbound
+events can be correctly attributed; the alternative silently drops/mis-stamps cross-project turn-ends.
+(Note: cap=1 is a config value on the existing `RuntimeSuspensionPolicy` — no new mechanism; it does not preclude
+restoring K>1 later.)
 
 ---
 
@@ -194,16 +235,21 @@ whose `.git` links point at that clone, residual agents. Plan:
 
 ## 7. Proposed slicing (for the gated build, after ratification)
 
-Each slice independently gated; the **e2e money-tooth = two projects, different repos, activated concurrently, no
-collision** (worktree, session, config, clone).
+Each slice independently gated. For the **cap=1 MVP** (D3=B) the money-tooth is **switch to project B (different repo) →
+its agent spawns with B's key + B's clone/worktree + B's projectId stamp; switch back → A intact** (serial, `active()==owner`).
+The **concurrent** money-tooth (two projects live at once, no cross-attribution) is deferred to S5 with background-live.
 
 - **S1** — per-project clone: `WorktreeManager.repoDir` per-project + `ensureClone(pid)` on lazy first-need + per-project
   base branch. (Axis 1 core.)
+- **S1b (paired with S1) — spawn-identity fix (leak 3), MANDATORY.** Thread the spawning `projectId` into
+  `connector.open` → `resolveApiKey(pid)` / `projectIdOf=pid` / `worktreesRoot(pid)`. Without this a non-boot agent
+  spawns with the boot key + boot-stamped transcript even when it IS active. Not optional — ships with S1.
 - **S2** — repo re-point as re-provision (setRepo → stale → re-clone) with the uncommitted-work warning.
-- **S3** — `SessionRegistry` `(projectId, …)` keying (Axis 2 residual).
+- **S3** — set the default to **cap=1 / teardown-on-switch** (D3=B) so `active()==owner` holds for the MVP.
 - **S4** — legacy migration + boot reconciler + opt-in stale-prune.
-- **S5 (defer)** — CYP-247.5 full runtime reclaim + expose the suspension cap as policy (folds CYP-306/.5b resource
-  governance).
+- **S5 (defer — background-live)** — the mouth-attribution re-architecture (leaks 1–2): `SessionRegistry` `(projectId,…)`
+  keying + `HubState` posting to any project's slice by owner + `onContextTokens → of(pid).tokenUsage`; THEN expose the
+  suspension cap as policy (K>1) + CYP-247.5 runtime reclaim (folds CYP-306/.5b). Concurrent-live money-tooth lands here.
 
 ---
 
@@ -213,9 +259,23 @@ collision** (worktree, session, config, clone).
 |---|---|---|
 | **D1** | Clone/worktree layout | `clones/<pid>/` + keep worktrees at `projects/<pid>/<name>` (min ripple; preserves CYP-315 path) |
 | **D2** | Non-boot project with no own repo | **inherit boot repo** as fallback; diverge only on explicit `setRepo` |
-| **D3** | Left-project sessions | **Option C** — expose the LRU cap as policy, default background-live K=3 |
+| **D3** | Left-project sessions **(now the fork, §3–§4)** | **Option B — teardown-on-switch (cap=1) for the Axis-1 MVP**; background-live (K>1) deferred to S5 behind the mouth-attribution fix |
 | **D4** | Repo re-point | **re-provision** (tear down + re-clone, with work-warning), not in-place remote swap |
 | **D5** | Stale-dir cleanup | **opt-in** (flag), default preserve + log |
 | **D6** | When to clone a non-boot project | **lazy** on first need (activation/add/start), not eager on create |
+| **D7** (new, r1) | Connector spawn-identity fix (leak 3) | **thread spawning `projectId` into `connector.open`** (key/stamp/cwd from the owner) — **mandatory with S1**, independent of D3 |
+| **D8** (new, r1) | When to build the mouth-attribution re-architecture (leaks 1–2) | **only when background-live is wanted** (S5); the cap=1 MVP does not need it — confirm you accept "away-agents pause on switch" for now |
 
-Once D1–D6 are ratified, I slice per §7 and build risk-first (S1 + the concurrent-different-repos e2e money-tooth first).
+Once D1–D8 are ratified, I slice per §7 and build risk-first: **S1 + S1b (clone + spawn-identity) with the serial
+switch money-tooth first**; background-live + concurrent attribution stays behind D8/S5.
+
+---
+
+## 9. Revision log
+
+- **r1** (this pass): folded in the code-verified outbound-attribution gap from the second opinion (§3): three leaks
+  (mouth / projector / boot-frozen spawn-identity), verified @ `53f7102`. Corrected the §0 "confirm-only" under-count.
+  Reframed §4 as an architectural fork and flipped D3 → teardown-on-switch (cap=1) for the MVP. Added D7 (mandatory
+  spawn-identity fix) + D8 (background-live gate) and S1b/S5 in §7. Axis 1 direction + D1/D2/D4/D5/D6 unchanged.
+  *(The second opinion's revision list (a)–(d) arrived truncated at (a); this pass addresses the verified gap in full —
+  flag if (b)–(d) intended anything beyond the outbound-attribution axis.)*
