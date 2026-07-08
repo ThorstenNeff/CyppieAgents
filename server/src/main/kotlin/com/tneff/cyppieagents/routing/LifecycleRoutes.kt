@@ -4,9 +4,11 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.authenticatedApi
+import com.tneff.cyppieagents.boot.AgentBusyStateTracker
 import com.tneff.cyppieagents.boot.AgentTokenUsageTracker
 import com.tneff.cyppieagents.boot.LifecycleManager
 import com.tneff.cyppieagents.model.AgentRunStateEvent
+import com.tneff.cyppieagents.model.AgentBusyStateEvent
 import com.tneff.cyppieagents.model.AgentTokenUsageEvent
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
@@ -98,6 +100,25 @@ fun Route.tokenUsageSocket(tokenUsage: () -> AgentTokenUsageTracker, registry: T
             .onStart { t.snapshot().forEach { emit(it) } }
             .collect { event ->
                 send(Frame.Text(CommJson.encodeToString(AgentTokenUsageEvent.serializer(), event)))
+            }
+    }
+}
+
+/**
+ * CYP-324 — the per-agent busy/idle feed for the title-bar `*`. Same shape as [tokenUsageSocket]: one-way
+ * server→client, participant/read-tier gated (fail-closed WS close 1008), snapshot-then-deltas so a
+ * reconnect mid-turn re-delivers `busy = true`. Bound to the ACTIVE project's tracker at connect.
+ */
+fun Route.busyStateSocket(busyState: () -> AgentBusyStateTracker, registry: TokenRegistry, deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry)) {
+    webSocket("/ws/busy-state") {
+        if (call.wsReaderOrNull(deps, registry) == null) {
+            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
+        }
+        val t = busyState()
+        t.events
+            .onStart { t.snapshot().forEach { emit(it) } }
+            .collect { event ->
+                send(Frame.Text(CommJson.encodeToString(AgentBusyStateEvent.serializer(), event)))
             }
     }
 }

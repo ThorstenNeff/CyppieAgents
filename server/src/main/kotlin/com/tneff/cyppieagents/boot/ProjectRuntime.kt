@@ -37,4 +37,6 @@ class ProjectRuntime(
     val worktrees: WorktreeManager,
     /** CYP-316 — this project's per-agent context-window token feed (the `/ws/token-usage` source). */
     val tokenUsage: AgentTokenUsageTracker,
+    /** CYP-324 — this project's per-agent busy/idle feed (the `/ws/busy-state` source). */
+    val busyState: AgentBusyStateTracker,
 )

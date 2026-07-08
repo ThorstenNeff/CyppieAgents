@@ -292,6 +292,9 @@ class BootOrchestrator(
             // CYP-316: feed the live context-token value to the ACTIVE project's tracker (the /ws/token-usage
             // source) — same active()-routing as the capabilities resolver, since the projector is shared.
             onContextTokens = { agentId, tokens -> runtimeRegistry.active().tokenUsage.onResult(agentId, tokens) },
+            // CYP-324: feed busy/idle to the ACTIVE project's tracker (the /ws/busy-state source) — same
+            // active()-routing (shared projector); turn.start→true, result/exit/stop→false.
+            onBusy = { agentId, busy -> runtimeRegistry.active().busyState.set(agentId, busy) },
         )
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
@@ -427,6 +430,7 @@ class BootOrchestrator(
         // CYP-316: the boot project's per-agent context-token feed (source of /ws/token-usage). Fed by the
         // shared projector's onContextTokens (active-routed) and reset by this project's lifecycle stop/restart.
         val tokenUsageTracker = AgentTokenUsageTracker()
+        val busyStateTracker = AgentBusyStateTracker() // CYP-324: boot project's /ws/busy-state source
         val repoReprovision = RepoReprovision() // CYP-247 S2: pending repo-change → re-provision on next (re)start.
         // CYP-247 S4 (§6.2) — boot RECONCILER (idempotent, logged): for each registered project, a clone whose
         // remote no longer matches `resolvedRepo(pid)` is marked STALE → re-provisioned on the next agent
@@ -495,6 +499,8 @@ class BootOrchestrator(
             projector = eventProjector,
             onContextReset = { tokenUsageTracker.reset(it) },   // CYP-316: stop/restart → fresh context → null
             onContextForget = { tokenUsageTracker.forget(it) }, // CYP-316: remove → drop the token entry
+            onBusyReset = { busyStateTracker.reset(it) },   // CYP-324: stop/restart → clear the `*`
+            onBusyForget = { busyStateTracker.forget(it) }, // CYP-324: remove → drop the busy entry
         )
 
         // CYP-122: the single, audited, server-enforced point that sets an agent's connector (opt-in).
@@ -545,6 +551,7 @@ class BootOrchestrator(
                 agentManagement = agentManagement,
                 worktrees = worktrees,
                 tokenUsage = tokenUsageTracker, // CYP-316
+                busyState = busyStateTracker, // CYP-324
             ),
         )
 
@@ -570,6 +577,7 @@ class BootOrchestrator(
             val pProvider = com.tneff.cyppieagents.connector.ProviderRegistry()
             val pWorktrees = worktrees.forProject(pid) // CYP-247 S1: this project's OWN clone (clones/<pid>) + worktrees
             val pTokenUsage = AgentTokenUsageTracker() // CYP-316: this project's own token feed (per-runtime)
+            val pBusyState = AgentBusyStateTracker() // CYP-324: this project's own busy feed (per-runtime)
             val pLifecycle = LifecycleManager(
                 initialWorktrees = emptyMap(),
                 sessions = pSessions,
@@ -580,6 +588,8 @@ class BootOrchestrator(
                 projector = eventProjector,
                 onContextReset = { pTokenUsage.reset(it) },   // CYP-316: this project's lifecycle → its own tracker
                 onContextForget = { pTokenUsage.forget(it) },
+                onBusyReset = { pBusyState.reset(it) },   // CYP-324: this project's lifecycle → its own busy tracker
+                onBusyForget = { pBusyState.forget(it) },
             )
             val pAgentManagement = AgentManagement(
                 state = state,
@@ -597,7 +607,7 @@ class BootOrchestrator(
                 worktreeDirOf = { runtimeRegistry.active().worktrees.worktreeDir(it) }, // CYP-310
                 // CYP-310: a non-boot project's agents are all runtime-added → remote ones are tracked on add().
             )
-            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage)
+            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage, pBusyState)
         }
 
         // CYP-255 (.4b) / CYP-247.4: the session-suspension teardown policy. suspend = stop a project's
