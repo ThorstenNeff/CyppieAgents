@@ -35,13 +35,17 @@ fun Route.configRoutes(
     activeProjectId: () -> String,
     deps: AuthDeps = AuthDeps(registry),
     apiBase: String = "/api",
+    // CYP-247 S2: null (dev/tests) → the view never carries the pending flag and a PUT marks nothing.
+    reprovision: com.tneff.cyppieagents.boot.RepoReprovision? = null,
 ) {
     route("$apiBase/config") {
         // GET = any authenticated reader — agent/operator token OR a verified human (incl. a MEMBER session,
         // CYP-186 BE2): the MASKED status line only, never the key. The reveal/raw key is egressed by NO GET.
         get("/repo") {
             call.requireCommReader(deps, registry)
-            call.respond(store.repoView(activeProjectId()))
+            val pid = activeProjectId()
+            // CYP-247 S2: surface the pending-re-provision (EFFECT_DEFERRED) so the UI shows "takes effect on restart".
+            call.respond(store.repoView(pid).copy(reprovisionPending = reprovision?.pending(pid) != null))
         }
         get("/apikey") {
             call.requireCommReader(deps, registry)
@@ -52,7 +56,12 @@ fun Route.configRoutes(
         authenticatedApi(deps, AuthRole.OPERATOR) {
             put("/repo") {
                 val req = call.receive<RepoConfigRequest>()
-                call.respond(store.setRepo(activeProjectId(), req.url, req.branch)) // 400 invalid_repo_url
+                val pid = activeProjectId()
+                val view = store.setRepo(pid, req.url, req.branch) // 400 invalid_repo_url
+                // CYP-247 S2 (D4/D5): a repo change marks the clone STALE → re-provision on the next agent
+                // (re)start (guarded by §2d). The response signals EFFECT_DEFERRED so the UI can hint a restart.
+                reprovision?.markStale(pid, req.discardUnpushed)
+                call.respond(view.copy(reprovisionPending = reprovision != null))
             }
             put("/apikey") {
                 val req = call.receive<ApiKeyRequest>()

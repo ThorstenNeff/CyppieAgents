@@ -50,13 +50,16 @@ class ConfigRoutesTest {
         secrets = Secrets(mapOf("tok-fe" to "frontend"), operatorToken = "tok-op", apiKey = null),
     )
 
-    private fun io.ktor.server.testing.ApplicationTestBuilder.app(store: ProjectConfigStore) {
+    private fun io.ktor.server.testing.ApplicationTestBuilder.app(
+        store: ProjectConfigStore,
+        reprovision: com.tneff.cyppieagents.boot.RepoReprovision? = null, // CYP-247 S2
+    ) {
         application {
             install(ContentNegotiation) { json(CommJson) }
             install(StatusPages) {
                 exception<ApiException> { call, cause -> call.respond(cause.status, ApiErrorBody(com.tneff.cyppieagents.model.ApiError(cause.code, cause.message))) }
             }
-            routing { configRoutes(store, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op"), activeProjectId = { "default" }) }
+            routing { configRoutes(store, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op"), activeProjectId = { "default" }, reprovision = reprovision) }
         }
     }
 
@@ -86,6 +89,32 @@ class ConfigRoutesTest {
         val r = c.put("/api/config/repo") { bearerAuth("tok-fe"); contentType(ContentType.Application.Json); setBody(RepoConfigRequest("git@github.com:o/r.git", "dev")) }
         assertEquals(HttpStatusCode.Forbidden, r.status)
         assertEquals("operator_required", r.body<ApiErrorBody>().error.code)
+    }
+
+    // ---- CYP-247 S2: repoint marks the clone stale (re-provision pending) + threads the D5 opt-in ----
+
+    @Test
+    fun putRepo_marksStale_viewShowsPending_andThreadsDiscardOptIn() = testApplication {
+        val reprovision = com.tneff.cyppieagents.boot.RepoReprovision()
+        app(store(), reprovision); val c = jsonClient()
+
+        // Before any change: not pending.
+        assertEquals(false, c.get("/api/config/repo") { bearerAuth("tok-fe") }.body<com.tneff.cyppieagents.model.RepoConfigView>().reprovisionPending)
+
+        // PUT (operator) a new repo WITH the discard opt-in → response signals EFFECT_DEFERRED (pending).
+        val put = c.put("/api/config/repo") {
+            bearerAuth("tok-op"); contentType(ContentType.Application.Json)
+            setBody(RepoConfigRequest("git@github.com:o/new.git", "dev", discardUnpushed = true))
+        }
+        assertEquals(HttpStatusCode.OK, put.status)
+        assertEquals(true, put.body<com.tneff.cyppieagents.model.RepoConfigView>().reprovisionPending, "PUT signals the pending re-provision")
+
+        // The tracker carries the mark + the opt-in (consumed later at agent (re)start).
+        val pending = reprovision.pending("default")
+        assertEquals(true, pending?.discardUnpushed, "the D5 discardUnpushed opt-in threaded through to the tracker")
+
+        // And a subsequent GET still shows pending (until an agent (re)start re-provisions).
+        assertEquals(true, c.get("/api/config/repo") { bearerAuth("tok-fe") }.body<com.tneff.cyppieagents.model.RepoConfigView>().reprovisionPending)
     }
 
     // ---- needle-absence: the plaintext key never leaves the server ----

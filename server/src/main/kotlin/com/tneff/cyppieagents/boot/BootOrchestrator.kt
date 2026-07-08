@@ -111,6 +111,8 @@ class BootedPlatform(
      * agents (empty in-memory slice after a restart) are refilled from the store. Idempotent.
      */
     val rehydrateActiveProject: () -> Unit,
+    /** CYP-247 S2 — pending repo re-provisions (marked by the config route, consumed at agent (re)start). */
+    val repoReprovision: RepoReprovision,
 )
 
 /**
@@ -410,16 +412,35 @@ class BootOrchestrator(
         // CYP-316: the boot project's per-agent context-token feed (source of /ws/token-usage). Fed by the
         // shared projector's onContextTokens (active-routed) and reset by this project's lifecycle stop/restart.
         val tokenUsageTracker = AgentTokenUsageTracker()
+        val repoReprovision = RepoReprovision() // CYP-247 S2: pending repo-change → re-provision on next (re)start.
         // CYP-247 S1: ensure the ACTIVE project's clone (LAZY, D6) THEN the agent worktree — single-sourced from
         // `resolvedRepo(activePid)` so the clone URL/branch and the worktree base-branch cannot drift. Reused by
         // every ensureWorktree seam (boot lifecycle + agent-CRUD + factory + rehydrate). ensureClone is idempotent
         // (no-op once the per-project clone exists), so this is the lazy first-need clone for a non-boot project.
         val ensureActiveWorktree: (String) -> Unit = { worktreeName ->
-            val repo = projectConfig.resolvedRepo(state.activeProjectId)
-            runtimeRegistry.active().worktrees.let { wt ->
-                wt.ensureClone(repo)
-                wt.ensureWorktree(worktreeName, repo.branch)
+            val pid = state.activeProjectId
+            val wt = runtimeRegistry.active().worktrees
+            // CYP-247 S2 (D4): consume a pending repo re-provision BEFORE (re)creating the worktree. The §2d
+            // work-guard runs first: if any agent worktree has uncommitted/unpushed work AND there is no
+            // discard opt-in, BLOCK the teardown (leave the mark + the old clone; the (re)start proceeds on the
+            // current repo) — never a silent loss. Otherwise tear the old clone down (S1 deleteProject partition)
+            // and fall through to a FRESH clone from the new repo.
+            repoReprovision.pending(pid)?.let { req ->
+                val atRisk = if (req.discardUnpushed) emptyList() else wt.unpushedWork()
+                if (atRisk.isNotEmpty()) {
+                    log.warn(
+                        "repo re-provision of project '{}' BLOCKED — would destroy work in {}; push it or re-PUT the repo with discardUnpushed=true",
+                        pid, atRisk,
+                    )
+                } else {
+                    log.info("re-provisioning project '{}' onto its new repo (tearing down the old clone + worktrees)", pid)
+                    worktrees.deleteProject(pid) // reuse the S1 teardown: the project's worktrees + its OWN old clone
+                    repoReprovision.clear(pid)
+                }
             }
+            val repo = projectConfig.resolvedRepo(pid)
+            wt.ensureClone(repo)                         // fresh clone from the NEW repo if torn down; else idempotent
+            wt.ensureWorktree(worktreeName, repo.branch)
         }
         val lifecycle = LifecycleManager(
             initialWorktrees = config.agents.associate { it.id to it.worktreeName },
@@ -692,7 +713,7 @@ class BootOrchestrator(
             projectConfig, durableActive, agentManagement, reportStore, projectRegistry, projectDeleter,
             channelShares, capabilityRegistry, providerRegistry, agentConfigs, eventRecorder, connectorOptIn,
             agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory, suspensionPolicy,
-            rehydrateActiveProject,
+            rehydrateActiveProject, repoReprovision,
         )
     }
 }

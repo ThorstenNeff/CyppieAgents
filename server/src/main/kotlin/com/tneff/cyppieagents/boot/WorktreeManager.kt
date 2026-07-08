@@ -100,6 +100,38 @@ class WorktreeManager(
     fun worktreeDir(worktreeName: String): File = File(worktreesDir, worktreeName)
 
     /**
+     * CYP-247 S2 (§2d) — the **safe-teardown work-guard**: the list of this project's agent worktrees that
+     * hold work a destructive teardown (S2 re-provision, later S4 migration) would **silently destroy**.
+     * Checks BOTH, per worktree:
+     *  - **(i) dirty tree** — `git status --porcelain` in the worktree is non-empty (uncommitted changes).
+     *  - **(ii) unpushed commits** — the `agent/<name>` branch has commits present on NO remote:
+     *    `git log --oneline agent/<name> --not --remotes` is non-empty. This is upstream-agnostic, so a
+     *    fresh branch sitting at the (already-pushed) base branch is NOT falsely flagged, while any local
+     *    commit that was never pushed to any remote IS.
+     * Returns a human list (`"<name> (uncommitted changes + unpushed commits)"`); **empty = safe to tear
+     * down**. Single-sourced so S2 and S4 use the identical definition of "unsafe".
+     */
+    fun unpushedWork(): List<String> {
+        val worktrees = worktreesDir.listFiles()?.filter { it.isDirectory } ?: return emptyList()
+        val atRisk = mutableListOf<String>()
+        for (wt in worktrees) {
+            val dirty = runner.run(listOf("git", "status", "--porcelain"), wt).output.isNotBlank()
+            val unpushed = runner.run(
+                listOf("git", "log", "--oneline", "agent/${wt.name}", "--not", "--remotes"),
+                repoDir,
+            ).output.isNotBlank()
+            if (dirty || unpushed) {
+                val reasons = buildList {
+                    if (dirty) add("uncommitted changes")
+                    if (unpushed) add("unpushed commits")
+                }
+                atRisk += "${wt.name} (${reasons.joinToString(" + ")})"
+            }
+        }
+        return atRisk
+    }
+
+    /**
      * Remove an agent's worktree (S14 / CYP-97 — the destructive `?worktree=delete` path). Uses
      * `git worktree remove --force` so an unclean worktree is removed too (the UI warns about lost
      * uncommitted/unpushed work, AGENT-MANAGEMENT §5). The agent branch `agent/<name>` is **NOT**
