@@ -41,3 +41,25 @@ data class AgentTokenUsageEvent(
     val agentId: String,
     val contextTokens: Int? = null,
 )
+
+/**
+ * CYP-324 — the single message pushed over `/ws/busy-state`: whether an agent is currently **processing a
+ * turn**. Drives the `*` in the AgentWindow title bar (busy) vs. clear (idle).
+ *
+ * **Content-free by construction** — only [agentId] and a [busy] boolean, never any text/body. Like the
+ * lifecycle/token feeds it is a **momentary latest-wins value**, NOT an append log: [busy] is the newest
+ * state, derived from REAL session state (a turn is in flight between the connector's `turn.start` and its
+ * `result` / process-exit — not a heuristic).
+ *
+ * `busy == true` from turn injection until that turn's result (covering the whole tool-use loop); `false`
+ * on the result, on process-exit, and on stop/restart (so a dead or stopped agent never hangs busy).
+ *
+ * On connect the server emits one per agent (the current snapshot); thereafter one per change. Because it
+ * is latest-wins, a reconnect snapshot is **idempotent** — the client upserts by [agentId], never appends,
+ * so a reconnect mid-turn correctly re-delivers `busy = true` and neither duplicates nor loses.
+ */
+@Serializable
+data class AgentBusyStateEvent(
+    val agentId: String,
+    val busy: Boolean,
+)

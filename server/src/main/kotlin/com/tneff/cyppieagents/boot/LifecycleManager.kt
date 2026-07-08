@@ -48,6 +48,12 @@ class LifecycleManager(
     /** CYP-316 — invoked when an agent is removed (CYP-97), so the token feed drops it entirely (no ghost
      *  snapshot entry). Wired to [AgentTokenUsageTracker.forget]; null = not wired. */
     private val onContextForget: ((agentId: String) -> Unit)? = null,
+    /** CYP-324 — invoked on stop/restart so the busy feed drops the `*` even if the session died without a
+     *  final `result`. Wired to [AgentBusyStateTracker.reset]; null = not wired (legacy/tests). */
+    private val onBusyReset: ((agentId: String) -> Unit)? = null,
+    /** CYP-324 — invoked on remove (CYP-97), so the busy feed drops the agent entirely (no ghost snapshot).
+     *  Wired to [AgentBusyStateTracker.forget]; null = not wired. */
+    private val onBusyForget: ((agentId: String) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger("lifecycle")
     private val lock = Any()
@@ -75,6 +81,7 @@ class LifecycleManager(
         worktreeOf.remove(agentId)
         status.remove(agentId)
         onContextForget?.invoke(agentId) // CYP-316: drop the token-usage entry too (no ghost snapshot)
+        onBusyForget?.invoke(agentId) // CYP-324: drop the busy entry too
     }
 
     fun runStateOf(agentId: String): AgentRunState? = synchronized(lock) { status[agentId] }
@@ -99,6 +106,7 @@ class LifecycleManager(
         ensureKnown(agentId)
         sessions.removeAndAwait(agentId) // remove from registry + await real termination
         onContextReset?.invoke(agentId) // CYP-316: a stopped agent has no standing context → token feed → null
+        onBusyReset?.invoke(agentId) // CYP-324: a stopped agent is not processing → clear the `*`
         return setRunState(agentId, AgentRunState.STOPPED)
     }
 
@@ -116,6 +124,7 @@ class LifecycleManager(
         ensureKnown(agentId)
         sessions.removeAndAwait(agentId) // no orphan: old session fully gone before respawn
         onContextReset?.invoke(agentId) // CYP-316: respawn = fresh context → token feed resets to null until turn 1
+        onBusyReset?.invoke(agentId) // CYP-324: respawn = idle until its next turn
         return spawnOrError(agentId, restart = true)
     }
 
