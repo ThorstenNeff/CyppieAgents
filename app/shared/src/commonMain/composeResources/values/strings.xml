@@ -264,6 +264,8 @@
     <string name="a11y_agent_settings_open">Einstellungen für %1$s öffnen</string>
     <!-- CYP-316: a11y-Name der Context-Token-Zahl in der Fenster-Titelzeile (%1$s = kompakter Wert, z. B. „137k"). -->
     <string name="a11y_agent_context_tokens">Kontext-Tokens: %1$s</string>
+    <!-- CYP-324: a11y-Name des Busy-Markers („*") in der Fenster-Titelzeile (%1$s = Agent-/Fenstername). -->
+    <string name="a11y_agent_busy">%1$s arbeitet</string>
     <string name="a11y_agent_display_name">Anzeigename eingeben</string>
     <string name="a11y_agent_color_custom">Eigenen Hex-Farbwert eingeben</string>
     <string name="a11y_agent_color_swatch">Farbe %1$s</string>
