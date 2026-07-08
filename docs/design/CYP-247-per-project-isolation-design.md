@@ -233,17 +233,35 @@ B's channel stamped B**. cap=1 does **not** hold `active()==owner` across the te
 **Fix (mandatory MVP, folded into S3 — the cap=1/teardown slice): drain the OUTGOING active project BEFORE rescope.**
 Reorder the switch to: `getOrCreate(B)` → **synchronously drain+stop A's sessions (await)** → `rescope(B)` → `rehydrate`
 → `onActivated(B)`. Feasible + cheap: the switch handler is already a `suspend` endpoint, and `LifecycleManager.stop` is
-`suspend` + `removeAndAwait` ("await real termination · no zombie still writing to the bus", `LifecycleManager.kt:25-26,98`)
-— so awaiting the outgoing project's stop **flushes its emitted events under `active()==A`** (correct channel + stamp),
-then flips. This is a **distinct synchronous switch step**, not the async LRU eviction the "never inline" contract governs
+`suspend` + `removeAndAwait` (`LifecycleManager.kt:25-26,98`) — so awaiting the outgoing project's stop is meant to
+flush its emitted events under `active()==A` (correct channel + stamp) before the flip. **⚠️ But the current
+`closeAndAwait` does not actually enforce that "no zombie still writing to the bus" contract — see the r4 hardening
+below; the reorder needs it to be correct.** This is a **distinct synchronous switch step**, not the async LRU eviction the "never inline" contract governs
 (that contract targets evicting a *background* project when cap>1, which stays async — no conflict). **Chosen over the
 alternative** (an owner-guard in the router that discards a `ResultEvent` whose session-owner ≠ active): that needs
 session→projectId knowledge = the S5 `SessionRegistry` keying (pulls S5 into the MVP) **and** it *drops* A's legitimate
 turn-end (data loss) instead of delivering it. Drain-before-rescope is the cheaper **correct** path (reuses the existing
 suspend-stop; no keying; no loss).
 
-(Note: cap=1 is a config value on the existing `RuntimeSuspensionPolicy`; the reorder is the only code change — it does
-not preclude restoring K>1 later behind S5.)
+#### r4 — the drain must JOIN the reader, not just the OS process (verified; the reorder alone is insufficient)
+
+The call-site reorder alone still leaks, because `removeAndAwait → ClaudeCodeSession.closeAndAwait` (`ClaudeCodeSession.kt:142-145`)
+does **`readerJob?.cancel()` WITHOUT a join** (`:143`) and then `process.awaitTerminated()` (`:145`) which awaits the **OS
+process** (`AgentProcess.awaitTerminated` = `process.waitFor()`), **not the `readerJob`**. That `readerJob` (`:66`) runs
+**both** `active()`-reads inside one collect body — `observer.onEvent → EventProjector.onContextTokens → active().tokenUsage`
+(`:84`) **and** `onTurnResult → hub.postAsAgent` (`:99`) — and `_events.emit` between them is **non-suspending**
+(`MutableSharedFlow(extraBufferCapacity = 256)`, `:47`), so an **in-flight `ResultEvent` body has no cancellation
+checkpoint and runs to completion**. There is **no happens-before** between "`closeAndAwait` returns" and "the reader's
+attribution finished" → the body can execute **after** the barrier, concurrent with `rescope` → `active()==B` → the exact
+drop / mis-stamp the reorder was meant to close.
+
+**Fix (a one-liner, explicitly IN S3 scope): `closeAndAwait` → `readerJob?.cancelAndJoin()`** (instead of `cancel()`
+relying on `awaitTerminated()` alone). It flushes the in-flight turn **still under `active()==A`** (emit doesn't suspend →
+**no loss**) and returns **quiescent**, so `rescope` runs only after attribution is provably finished. **S3 must include
+this `cancelAndJoin` hardening** — the call-site reorder without it just moves a still-leaky barrier earlier.
+
+(Note: cap=1 is a config value on the existing `RuntimeSuspensionPolicy`; the switch reorder + the `cancelAndJoin`
+one-liner are the only code changes — they do not preclude restoring K>1 later behind S5.)
 
 ---
 
@@ -288,9 +306,12 @@ Each slice independently gated. For the **cap=1 MVP** (D3=B) the money-tooth has
 alone is insufficient):
 - **(d-i) at-rest switch:** switch to project B (different repo) → its agent spawns with B's key + B's clone/worktree +
   B's projectId stamp; switch back → A intact.
-- **(d-ii) mid-turn switch (the race guard):** an A-agent is **mid-turn** when the operator switches to B → A's emitted
-  turn-end must land in **A's** channel **stamped A** (never dropped, never mis-stamped B). This fails without the
-  drain-before-rescope reorder (§4 r3 blocker) and passes with it — it is the load-bearing tooth for S3.
+- **(d-ii) mid-turn switch (the race guard) — sharpened (r4):** the tooth must (a) trigger the switch **WHILE a
+  `ResultEvent` is in-flight / buffered in the reader** (NOT after an already-flushed turn — a naive `emit → await →
+  switch` masks the race and goes false-green), **and** (b) assert **BOTH** `active()`-read axes land in **A**, never B:
+  `hub.postAsAgent` (A's channel + `projectId=A` stamp) **AND** `onContextTokens → tokenUsage` (A's tracker) — both run in
+  the same `readerJob`, so a tooth that checks only the post would miss the usage leak. Reds without the §4 reorder **or**
+  without the `cancelAndJoin` hardening; green with both. Load-bearing for S3.
 
 The **concurrent** money-tooth (two projects live at once, no cross-attribution) is deferred to S5 with background-live.
 
@@ -300,10 +321,11 @@ The **concurrent** money-tooth (two projects live at once, no cross-attribution)
   `connector.open` → `resolveApiKey(pid)` / `projectIdOf=pid` / `worktreesRoot(pid)`. Without this a non-boot agent
   spawns with the boot key + boot-stamped transcript even when it IS active. Not optional — ships with S1.
 - **S2** — repo re-point as re-provision (setRepo → stale → re-clone) with the uncommitted-work warning.
-- **S3** — **cap=1 / teardown-on-switch (D3=B) + the switch reorder (r3 blocker):** default cap=1 AND drain+stop the
-  OUTGOING active project's sessions **synchronously before `rescope`** (not the current async post-rescope suspend), so
-  `active()==owner` holds across the whole switch, including a mid-turn switch (tooth d-ii). This is the load-bearing
-  correctness slice — mandatory MVP, not optional.
+- **S3** — **cap=1 / teardown-on-switch (D3=B) + the switch reorder (r3) + the `cancelAndJoin` hardening (r4):** default
+  cap=1 AND drain+stop the OUTGOING active project's sessions **synchronously before `rescope`** (not the async
+  post-rescope suspend), AND change `ClaudeCodeSession.closeAndAwait` to `readerJob?.cancelAndJoin()` so the drain is
+  actually quiescent (the reorder is a no-op without it — §4 r4). Together `active()==owner` holds across the whole
+  switch, including a mid-turn switch (tooth d-ii, both axes). Load-bearing correctness slice — mandatory MVP.
 - **S4** — legacy migration + boot reconciler + opt-in stale-prune.
 - **S5 (defer — background-live)** — the mouth-attribution re-architecture (leaks 1–2): `SessionRegistry` `(projectId,…)`
   keying + `HubState` posting to any project's slice by owner + `onContextTokens → of(pid).tokenUsage`; THEN expose the
@@ -352,3 +374,11 @@ switch money-tooth first**; background-live + concurrent attribution stays behin
     cap=1, an S5 D7 item (`mcp/<pid>/<agentId>`). §3 / D7 updated.
   - **Precision 2:** the cap=1 money-tooth (d) now has a **mid-turn-switch** case (d-ii) alongside at-rest (d-i) — §7.
   - No architecture change beyond the switch reorder (already implied by teardown-on-switch); direction + D1/D2/D4/D5/D6 unchanged.
+- **r4** (residual cancel-without-join, verified @ `53f7102`): the r3 switch reorder is **necessary but not sufficient**.
+  `removeAndAwait → ClaudeCodeSession.closeAndAwait` does `readerJob?.cancel()` **without join** (`:143`) + awaits the OS
+  process (`awaitTerminated`, `:145`), NOT the `readerJob` that runs both `active()`-reads (`onContextTokens → active().tokenUsage`
+  `:84`; `onTurnResult → hub.postAsAgent` `:99`); `_events.emit` is non-suspending (buffer 256, `:47`) so an in-flight
+  `ResultEvent` body completes with no cancellation checkpoint → can run after the barrier, concurrent with `rescope` →
+  `active()==B`. **Fix (in S3): `closeAndAwait` → `readerJob?.cancelAndJoin()`** — flushes the in-flight turn under
+  `active()==A` (no loss) and returns quiescent. Sharpened the d-ii tooth: switch WHILE a `ResultEvent` is in-flight, and
+  assert BOTH axes (post channel+stamp AND usage) land in A. D7-mcp-as-S5 confirmed. §4/§7/§8 + this log updated; doc-only.
