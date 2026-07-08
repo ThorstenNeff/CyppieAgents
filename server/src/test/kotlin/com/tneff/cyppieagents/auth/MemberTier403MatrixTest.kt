@@ -59,6 +59,11 @@ class MemberTier403MatrixTest {
         // CYP-232 — avatar serve + preset preview are READ-TIER (token OR verified human session), so the tokenless
         // SPA renders avatars; a MEMBER reaches them (200/404, not tier-denied) exactly like the other reads above.
         "GET /api/agents/{id}/avatar", "GET /api/agents/{id}/avatar/preview",
+        // CYP-320 — the by-id edit-prefill detail + the LIVE-CLAUDE.md read are READ-TIER (token OR verified human
+        // session), the SAME posture as the roster list / avatar reads: the token-only `requireParticipant` 401'd a
+        // browser on its Kratos session cookie (dead edit-panel fields). A MEMBER reaches them (200/404, not
+        // tier-denied); the operator-gated HARD-overwrite `POST /api/agents/{id}/claude-md` stays in the deny set.
+        "GET /api/agents/{id}", "GET /api/agents/{id}/claude-md",
         // CYP-242/244 — the channel-share GET is READ-TIER (token OR verified session) but per-channel
         // canRead-SCOPED (CYP-244): a reader gets 200, a non-reader a uniform 403. It is NOT a flat operator-tier
         // route, so it belongs on the allowlist — the matrix's tier deny-set is not the right net for it (the

@@ -52,16 +52,21 @@ fun Route.agentMgmtRoutes(mgmt: AgentManagement, registry: TokenRegistry, deps: 
 // agent in another project is untouched.
 fun Route.agentMgmtRoutes(mgmt: () -> AgentManagement, registry: TokenRegistry, deps: AuthDeps = AuthDeps(registry), apiBase: String = "/api") {
     route("$apiBase/agents") {
-        // Detail = participant (the management list is read-only visible without an operator token).
+        // Detail = read-tier (CYP-320): token OR a verified human OPERATOR/MEMBER session, the SAME posture as
+        // the roster list (`GET /api/agents`, CC1/CYP-179) and the avatar serve below. The token-only
+        // `requireParticipant` 401'd a browser authenticated by its Kratos session cookie (no bearer) → the
+        // edit-panel's by-id fields went dead while the session-readable list rendered (the CYP-320 bug). The
+        // tier is unchanged (participant-read); only the human-session axis is added — no over-grant.
         get("/{id}") {
-            call.requireParticipant(deps) // CYP-234b: deps carries the participant-token axis alongside the registry
+            call.requireCommReader(deps, registry)
             call.respond(mgmt().detail(call.parameters.getOrFail("id"))) // 404 agent_not_found
         }
-        // CYP-310: read the agent's LIVE worktree CLAUDE.md — participant-gated, the SAME read posture as the
-        // detail above. Read fresh each call (reflects external/agent self-edits); absent/unreadable → empty,
-        // never the stored persona (fail-closed). 404 agent_not_found · 409 agent_not_local (remote/BYOA).
+        // CYP-310/CYP-320: read the agent's LIVE worktree CLAUDE.md — read-tier (token OR verified human session),
+        // the SAME read posture as the detail above. Read fresh each call (reflects external/agent self-edits);
+        // absent/unreadable → empty, never the stored persona (fail-closed). 404 agent_not_found · 409
+        // agent_not_local (remote/BYOA). The operator-gated HARD-overwrite POST below is UNCHANGED (still operator).
         get("/{id}/claude-md") {
-            call.requireParticipant(deps)
+            call.requireCommReader(deps, registry)
             call.respond(mgmt().readClaudeMd(call.parameters.getOrFail("id")))
         }
         // CYP-215: serve the agent's avatar PNG = participant-gated (same read posture as the detail/list).
