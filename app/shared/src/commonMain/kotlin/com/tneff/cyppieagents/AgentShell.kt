@@ -55,6 +55,9 @@ import com.tneff.cyppieagents.agentview.AgentLifecycleApi
 import com.tneff.cyppieagents.agentview.AgentLifecycleLiveSource
 import com.tneff.cyppieagents.agentview.AgentLifecycleRepository
 import com.tneff.cyppieagents.agentview.AgentLifecycleSource
+import com.tneff.cyppieagents.agentview.BusyStateLiveSource
+import com.tneff.cyppieagents.agentview.BusyStateSource
+import com.tneff.cyppieagents.agentview.BusyStateViewModel
 import com.tneff.cyppieagents.agentview.TokenUsageLiveSource
 import com.tneff.cyppieagents.agentview.TokenUsageSource
 import com.tneff.cyppieagents.agentview.TokenUsageViewModel
@@ -181,6 +184,8 @@ fun AgentShell(
     lifecycleSource: AgentLifecycleSource? = null,
     /** Override the CYP-316 context-token source (`/ws/token-usage`); `null` → the live source. Tests inject a stub. */
     tokenUsageSource: TokenUsageSource? = null,
+    /** Override the CYP-324 busy-state source (`/ws/busy-state`); `null` → the live source. Tests inject a stub. */
+    busyStateSource: BusyStateSource? = null,
     /** Override the project-settings data port (CYP-84/85); `null` → the in-memory stub until CYP-96 lands. */
     configRepository: ConfigRepository? = null,
     /** Override the agent-management data port (CYP-86/87/88); `null` → the in-memory stub until CYP-97 lands. */
@@ -446,6 +451,11 @@ fun AgentShell(
         TokenUsageLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedTokenUsageSource = tokenUsageSource ?: defaultTokenUsageSource
+    // CYP-324: the per-agent busy feed (`/ws/busy-state`, participant-gated like lifecycle → same bearer).
+    val defaultBusyStateSource = remember(httpClient, cfg) {
+        BusyStateLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedBusyStateSource = busyStateSource ?: defaultBusyStateSource
 
     // CYP-55: hoist the per-window VMs to the always-composed shell. Two reasons: (1) each VM opens
     // exactly ONE subscription — a separate badge collector would double-subscribe the cold WS flows
@@ -552,6 +562,14 @@ fun AgentShell(
     }
     val contextTokens = tokenUsageVm.tokens.collectAsState().value
 
+    // CYP-324: the shell-level per-agent busy map — ONE `/ws/busy-state` socket for all agents, upserted by agentId
+    // (latest-wins). Re-keyed on activeProjectId: the socket binds the ACTIVE project's tracker at connect, so a
+    // switch must reopen it (like the lifecycle/token sockets). Participant feature (the `*` is participant-visible).
+    val busyStateVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "busyState-$activeProjectId") {
+        BusyStateViewModel(resolvedBusyStateSource)
+    }
+    val busy = busyStateVm.busy.collectAsState().value
+
     // Collect the badge-relevant slices of the hoisted VM state (single subscription each).
     // B1: comm-wide unread (others, while unfocused). A1: per-agent ERROR status. C1: the highest
     // severity currently in the operator-gated tail buffer — a content-free enum, never event content.
@@ -657,6 +675,9 @@ fun AgentShell(
             // CYP-316: feed each window's live context-token count from the WS map (mirrors badgeFor). Absent
             // key OR a null value → null → the title bar shows no number (unknown ≠ 0).
             contextTokensFor = { id -> contextTokens[id] },
+            // CYP-324: feed each window's busy flag from the WS map (mirrors contextTokensFor). Absent key → false →
+            // no `*` (unknown ≠ busy); only an explicit busy=true event lights it, an explicit false clears it.
+            busyFor = { id -> busy[id] ?: false },
             // CYP-250: desktop empty-state for a 0-agent project (the tool windows still coexist, so this keys on
             // the agent list, NOT the window set). The CTA routes into the EXISTING add flow — bring the
             // agent-management window to front + open its add dialog — and is operator-gated (honest gate hint,
