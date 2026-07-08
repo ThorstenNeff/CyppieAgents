@@ -24,18 +24,19 @@ import java.io.File
 class ClaudeCodeConnector(
     private val spawner: ProcessSpawner,
     /**
-     * Resolves the parent dir of the agent worktrees **at spawn time** (CYP-247.2), so a spawn lands in the
-     * ACTIVE project's `projects/<projectId>/` root rather than a boot-frozen one — boot wires it to
-     * `{ runtimeRegistry.active().worktrees.worktreesRoot }`. Lazy like [resolveApiKey], so a CYP-73 restart
-     * (and, once runtimes are per-project, a project switch) picks up the current root.
+     * Resolves the parent dir of the agent worktrees for a GIVEN project **at spawn time** (CYP-247 S1b):
+     * the spawn lands in the SPAWNING project's `projects/<projectId>/` root, resolved from the threaded
+     * `projectId` (not `active()`) — so a non-boot agent spawns in ITS own worktree even when another
+     * project is active. Boot wires it to `{ pid -> worktrees.forProject(pid).worktreesRoot }`.
      */
-    private val worktreesRoot: () -> File,
+    private val worktreesRoot: (projectId: String) -> File,
     /**
-     * Resolves the ANTHROPIC_API_KEY **at spawn time** (S15 / CYP-96), so an operator key change takes
-     * effect on the next `open()` (a CYP-73 restart) — there is no boot-frozen value. Backed by the
-     * per-project config store (override) → [com.tneff.cyppieagents.boot.Secrets] (env fallback).
+     * Resolves the ANTHROPIC_API_KEY for a GIVEN project **at spawn time** (S15 / CYP-96, CYP-247 S1b): the
+     * spawning project's key (store override → env fallback), resolved from the threaded `projectId` — NOT a
+     * boot-frozen `config.projectId`, so a non-boot agent spawns with ITS project's key. Boot wires it to
+     * `{ pid -> projectConfig.resolvedApiKey(pid) }`.
      */
-    private val resolveApiKey: () -> String?,
+    private val resolveApiKey: (projectId: String) -> String?,
     private val registry: SessionRegistry,
     private val router: MediationRouter,
     private val turnQueue: SessionTurnQueue,
@@ -71,12 +72,9 @@ class ClaudeCodeConnector(
      * [ResumingSession] stale-fallback (clear + fresh respawn once if the resumed id is dead).
      */
     private val sessionStore: SessionStore? = null,
-    /**
-     * Resolves the durable key's projectId at spawn. Boot wires `{ config.projectId }` (boot-frozen,
-     * MVP-correct: an agent doesn't change project mid-life — CYP-91 `setActive` is pointer-only). When a
-     * live project-switch lands, this would track the agent's owning project instead.
-     */
-    private val projectIdOf: (agentId: String) -> String = { DEFAULT_PROJECT_ID },
+    // CYP-247 S1b: the owning projectId is now THREADED into `open(agentId, worktreeName, projectId)` (the
+    // spawn lambda bakes the runtime's pid), so it stamps the session + keys the resume store + resolves the
+    // key/cwd — replacing the boot-frozen `projectIdOf`.
     /** Injectable clock for the entry timestamps (testable). */
     private val clock: () -> Long = System::currentTimeMillis,
 ) : Connector {
@@ -102,18 +100,24 @@ class ClaudeCodeConnector(
     // E2.1 / CYP-137: Connector A's provider (tool) — Claude (CLI / stream-json realization).
     override val provider: ProviderInfo = ProviderInfo.CLAUDE
 
-    override fun open(agentId: String): ConnectorSession = open(agentId, agentId)
+    override fun open(agentId: String): ConnectorSession = open(agentId, agentId, DEFAULT_PROJECT_ID)
 
-    /** Spawn an agent session whose cwd is [worktreesRoot]/[worktreeName] (Spec §11 isolation). */
-    override fun open(agentId: String, worktreeName: String): ConnectorSession {
-        val cwd = File(worktreesRoot(), worktreeName)
+    // CYP-247 S1b: the 2-arg form defaults the owning project to DEFAULT_PROJECT_ID (back-compat for callers
+    // with no project dimension — tests / the single-project path). The per-project spawn lambdas use the 3-arg.
+    override fun open(agentId: String, worktreeName: String): ConnectorSession =
+        open(agentId, worktreeName, DEFAULT_PROJECT_ID)
+
+    /** Spawn an agent session whose cwd is [worktreesRoot]([projectId])/[worktreeName] (Spec §11), keyed +
+     *  stamped with the owning [projectId] (CYP-247 S1b — cwd/key/stamp from the SPAWNING project, not active()/boot). */
+    override fun open(agentId: String, worktreeName: String, projectId: String): ConnectorSession {
+        val cwd = File(worktreesRoot(projectId), worktreeName)
         // CYP-310: the worktree CLAUDE.md is NEVER auto-written at spawn (the CYP-97 persona-auto-discovery is
         // removed). A new agent starts with an empty CLAUDE.md; it is managed EXCLUSIVELY via the operator-gated
         // `POST /api/agents/{id}/claude-md` (+ external/agent self-edits), read via `GET .../claude-md`.
         val env = buildMap {
             // D3 / CYP-96: resolve the key AT SPAWN (store override → env fallback) → injected into the
             // session ENV, never a CLI arg. A boot-frozen value would ignore an operator key change.
-            resolveApiKey()?.let { put("ANTHROPIC_API_KEY", it) }
+            resolveApiKey(projectId)?.let { put("ANTHROPIC_API_KEY", it) }
             put("HUB_AGENT_ID", agentId)
         }
         // CYP-146: expose `hub_send` by handing the agent an --mcp-config for the in-process Hub MCP server
@@ -127,7 +131,7 @@ class ClaudeCodeConnector(
 
         // CYP-167: write-after-init — persist the bound id ONCE `system/init` delivers it (the session
         // invokes this at its bind point). Null store (feature off) → null callback → no persistence.
-        val projectId = projectIdOf(agentId)
+        // CYP-247 S1b: keyed by the THREADED owning [projectId] (the spawning project), not a boot-frozen one.
         val onBound: ((String) -> Unit)? = sessionStore?.let { store ->
             { sessionId -> store.upsert(projectId, agentId, sessionId, clock()) }
         }

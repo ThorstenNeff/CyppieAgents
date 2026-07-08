@@ -51,6 +51,10 @@ class ConnectorRouter(
     override fun open(agentId: String, worktreeName: String): ConnectorSession =
         forAgent(agentId).open(agentId, worktreeName)
 
+    // CYP-247 S1b: forward the owning projectId to the serving connector (A threads it into the spawn identity).
+    override fun open(agentId: String, worktreeName: String, projectId: String): ConnectorSession =
+        forAgent(agentId).open(agentId, worktreeName, projectId)
+
     companion object {
         /** The declared capability profile for a [ConnectorKind] — single-sourced from the connector impls
          *  (A all-AVAILABLE, B column-B). Used by the opt-in to re-declare an agent's caps without a respawn. */

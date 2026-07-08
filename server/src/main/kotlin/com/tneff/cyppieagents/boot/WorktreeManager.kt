@@ -24,38 +24,40 @@ class ProcessCommandRunner : CommandRunner {
 }
 
 /**
- * Idempotent git-worktree orchestration (Spec 02 §11): clone the repo once into [gitRoot]/repo,
- * then add one worktree per agent under the **project-scoped** root [gitRoot]/projects/<projectId>/<name>
- * (S12 / CYP-82 — Doc 08 §3). Re-running is a no-op when the clone / worktree already exist. Each
- * agent gets an ISOLATED working folder (Reviewer #3); MVP=1 → projects/default/<name>.
+ * Idempotent git-worktree orchestration (Spec 02 §11): clone **each project's** repo into its own
+ * [gitRoot]/clones/<projectId> (CYP-247 S1), then add one worktree per agent under the project-scoped root
+ * [gitRoot]/projects/<projectId>/<name> (S12 / CYP-82 — Doc 08 §3). Re-running is a no-op when the clone /
+ * worktree already exist. Two projects can therefore target DIFFERENT repos/branches at once, each with its
+ * own clone + isolated agent worktrees (Reviewer #3); MVP=1 → clones/default + projects/default/<name>.
  */
 class WorktreeManager(
     private val runner: CommandRunner,
     private val gitRoot: File,
     /**
-     * Active project (S12 / CYP-82). Worktrees nest under projects/<projectId>/, single-sourced from
-     * `platform.config.json` (`projectId`). Defaulted so existing constructions resolve to the one MVP
-     * project. The repo clone itself stays project-agnostic at [gitRoot]/repo (one remote, many
-     * project-scoped worktrees).
+     * The project this manager is scoped to (S12 / CYP-82, CYP-247 S1). Both the clone
+     * ([gitRoot]/clones/<projectId>) AND the worktrees ([gitRoot]/projects/<projectId>/) nest under it, so
+     * [forProject] yields a fully-isolated per-project manager. Single-sourced from `platform.config.json`
+     * (`projectId`) at boot; defaulted so existing constructions resolve to the one MVP project.
      */
     private val activeProjectId: String = DEFAULT_PROJECT_ID,
 ) {
     private val log = LoggerFactory.getLogger("boot.worktree")
-    private val repoDir = File(gitRoot, "repo")
+    // CYP-247 S1: per-project clone (was the shared gitRoot/repo). forProject(pid) → clones/<pid>.
+    private val repoDir = File(gitRoot, "clones/$activeProjectId")
     private val worktreesDir = File(gitRoot, "projects/$activeProjectId")
 
     /** Parent dir of all agent worktrees (the connector's worktreesRoot). */
     val worktreesRoot: File get() = worktreesDir
 
     /**
-     * CYP-255 (.4a) — a sibling manager scoped to [projectId], reusing this one's shared clone
-     * ([runner] + [gitRoot], so `projects/<projectId>/`). The [ProjectRuntimeFactory] mints one per
-     * project runtime so a spawn lands in that project's worktree root; the shared `repo` clone
-     * ([ensureClone]) stays project-agnostic and is done once at boot on the base manager.
+     * CYP-255 (.4a) / CYP-247 S1 — a sibling manager fully scoped to [projectId] (its OWN clone
+     * `clones/<projectId>` + worktrees `projects/<projectId>/`), sharing only [runner] + [gitRoot]. The
+     * [ProjectRuntimeFactory] mints one per project runtime so a spawn lands in that project's clone+root;
+     * [ensureClone] is LAZY (D6) — called on first worktree need for a non-boot project.
      */
     fun forProject(projectId: String): WorktreeManager = WorktreeManager(runner, gitRoot, projectId)
 
-    /** Clone [repo] into [repoDir] if not already a git repo. */
+    /** Clone [repo] into this project's [repoDir] (`clones/<projectId>`) if not already a git repo. Idempotent. */
     fun ensureClone(repo: RepoConfig) {
         if (File(repoDir, ".git").exists()) {
             log.info("repo clone already present at {}", repoDir)
@@ -114,36 +116,51 @@ class WorktreeManager(
     }
 
     /**
-     * Remove an ENTIRE project's worktree root `projects/<projectId>/` — the worktree partition of the
-     * project cascade-delete (S13 / CYP-91). Unlike [deleteWorktree] this targets [projectId]
-     * explicitly (NOT the instance's [activeProjectId]), because delete always operates on a NON-active
-     * project. Each agent worktree under the project is `git worktree remove --force`d (so the shared
-     * clone's metadata is cleaned), then the dir is removed and `git worktree prune` clears any
-     * dangling registration. Agent branches `agent/<…>` are **kept** (PO decision §9.3) — commits
-     * survive. Returns the number of agent worktrees removed (for honest no-orphan reporting).
+     * Remove an ENTIRE project's worktree root `projects/<projectId>/` **and its own clone
+     * `clones/<projectId>/`** — the worktree partition of the project cascade-delete (S13 / CYP-91,
+     * extended by CYP-247 S1). Unlike [deleteWorktree] this targets [projectId] explicitly (NOT the
+     * instance's [activeProjectId]), because delete always operates on a NON-active project. Each agent
+     * worktree is `git worktree remove --force`d **in that project's OWN clone** (where it is registered —
+     * CYP-247 S1: worktrees are no longer registered in a shared clone), then `git worktree prune` clears
+     * dangling registrations, and finally BOTH the worktree dir and the per-project clone are removed (no
+     * dangling clone leak). Agent branches `agent/<…>` live in the clone that is now deleted, so their
+     * commits are gone with it (the clone WAS the project's checkout; a project delete is terminal — the
+     * §9.3 "keep the branch" applies to a single-agent remove, not a whole-project cascade). Returns the
+     * number of agent worktrees removed (for honest no-orphan reporting).
      *
      * **Fail-closed scoping (the no-cross-project guard):** a blank [projectId], or any value whose
-     * resolved dir is not STRICTLY below `projects/`, removes NOTHING — so the teardown can never walk
-     * up to the projects root and take out sibling projects. Idempotent: an absent project dir is a no-op.
+     * resolved dir is not STRICTLY below `projects/` (resp. `clones/`), removes NOTHING — so the teardown
+     * can never walk up to a root and take out siblings. Idempotent: absent dirs are a no-op.
      */
     fun deleteProject(projectId: String): Int {
-        if (projectId.isBlank()) return 0 // fail-closed: never resolve to the projects root
+        if (projectId.isBlank()) return 0 // fail-closed: never resolve to a root
         val projectsRoot = File(gitRoot, "projects").canonicalFile
         val projectDir = File(gitRoot, "projects/$projectId").canonicalFile
         // Defense-in-depth: the target must be a strict child of projects/ (guards against `..`/escape
         // even though SAFE_ID already rejected such ids at the registry boundary).
         if (projectDir == projectsRoot || projectDir.parentFile != projectsRoot) return 0
-        if (!projectDir.exists()) return 0
+
+        // CYP-247 S1: operate on the DELETED project's OWN clone (its worktrees register there), strict-child guarded.
+        val clonesRoot = File(gitRoot, "clones").canonicalFile
+        val projectClone = File(gitRoot, "clones/$projectId").canonicalFile
+        val cloneUsable = projectClone != clonesRoot && projectClone.parentFile == clonesRoot &&
+            File(projectClone, ".git").exists()
 
         var removed = 0
-        projectDir.listFiles()?.filter { it.isDirectory }?.forEach { worktree ->
-            val res = runner.run(listOf("git", "worktree", "remove", "--force", worktree.absolutePath), repoDir)
-            check(res.exitCode == 0) { "git worktree remove failed for '${worktree.name}' (exit ${res.exitCode})" }
-            removed++
+        if (projectDir.exists()) {
+            projectDir.listFiles()?.filter { it.isDirectory }?.forEach { worktree ->
+                if (cloneUsable) {
+                    val res = runner.run(listOf("git", "worktree", "remove", "--force", worktree.absolutePath), projectClone)
+                    check(res.exitCode == 0) { "git worktree remove failed for '${worktree.name}' (exit ${res.exitCode})" }
+                }
+                removed++
+            }
+            projectDir.deleteRecursively()
         }
-        projectDir.deleteRecursively()
-        // Clean any dangling worktree registration the remove didn't (e.g. a manually-deleted dir).
-        runner.run(listOf("git", "worktree", "prune"), repoDir)
+        if (cloneUsable) {
+            runner.run(listOf("git", "worktree", "prune"), projectClone) // clear any dangling registration
+            projectClone.deleteRecursively()                             // drop the per-project clone (no leak)
+        }
         return removed
     }
 }

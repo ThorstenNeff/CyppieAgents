@@ -71,6 +71,17 @@ interface Connector {
      * an MCP connector) need only implement the one-arg [open]. The live stream-json connector overrides it.
      */
     fun open(agentId: String, worktreeName: String): ConnectorSession = open(agentId)
+
+    /**
+     * CYP-247 S1b — open a session for [agentId] whose worktree cwd is [worktreeName] AND whose spawn
+     * identity (api key, session/transcript stamp, worktree root) is resolved from the owning [projectId],
+     * not `active()`/a boot-frozen constant. The default ignores [projectId] and falls back to the two-arg
+     * form — so connectors with no per-project spawn identity (an MCP connector, a test double) need not
+     * implement it. The live stream-json [ClaudeCodeConnector] overrides it (the per-project spawn lambda
+     * threads the runtime's pid); the per-agent [com.tneff.cyppieagents.boot.ConnectorRouter] forwards it.
+     */
+    fun open(agentId: String, worktreeName: String, projectId: String): ConnectorSession =
+        open(agentId, worktreeName)
 }
 
 /** Registry of currently-live sessions, looked up by the `/ws/agent` route by agentId. */

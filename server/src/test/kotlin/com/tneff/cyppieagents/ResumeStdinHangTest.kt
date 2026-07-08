@@ -88,11 +88,11 @@ class ResumeStdinHangTest {
             turnQueue = SessionTurnQueue(),
             scope = scope,
             sessionStore = store,
-            projectIdOf = { "default" },
             cliCommand = script.absolutePath,
         )
 
-        val session = connector.open("backend") // durable entry exists → the ResumingSession facade path
+        // CYP-247 S1b: projectId is threaded via open(); "default" == DEFAULT_PROJECT_ID keys the durable entry.
+        val session = connector.open("backend", "backend", "default") // durable entry exists → ResumingSession facade path
         val seen = CopyOnWriteArrayList<StreamJsonEvent>()
         scope.launch { session.events.collect { seen.add(it) } }
 
