@@ -25,7 +25,10 @@ import kotlin.test.assertNull
  */
 class J9RuntimeStateE2eTest {
 
-    // Four projects (K=3). alpha is active at boot (with a spawned `backend`); beta/gamma/delta are seeded.
+    // Four projects, EXPLICIT cap K=3. CYP-247 S3: the production DEFAULT is now cap=1 (teardown-on-switch, so a
+    // left project is SUSPENDED immediately, never BACKGROUND). This journey exercises the cap>1 background-live
+    // state machine as a MODE, so it sets the cap explicitly; it also confirms the S3 switch-reorder does NOT
+    // drain the outgoing when cap>1 (a left project stays live/BACKGROUND, not torn down).
     private fun fourProjects() = e2ePlatform(
         listOf(
             SeedProject("alpha", "Alpha", listOf(SeedAgent("po", Role.PO), SeedAgent("backend"))),
@@ -33,6 +36,7 @@ class J9RuntimeStateE2eTest {
             SeedProject("gamma", "Gamma", listOf(SeedAgent("po", Role.PO), SeedAgent("worker"))),
             SeedProject("delta", "Delta", listOf(SeedAgent("po", Role.PO), SeedAgent("worker"))),
         ),
+        runtimeSuspensionCap = 3,
     )
 
     @Test

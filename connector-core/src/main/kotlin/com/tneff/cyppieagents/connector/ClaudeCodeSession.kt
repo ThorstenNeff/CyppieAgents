@@ -9,6 +9,7 @@ import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
@@ -136,11 +137,16 @@ class ClaudeCodeSession(
 
     /**
      * Stop the session and **confirm the process is gone** before returning (CYP-73, no zombie). Same
-     * teardown as [close] — cancel the reader first so the stdout-completion path doesn't misfire as a
-     * crash exit — then `destroy()` and await actual termination.
+     * teardown as [close] — but cancel-AND-JOIN the reader first (CYP-247 S3 / r4): `removeAndAwait` awaits
+     * the OS process, NOT the [readerJob] that drives the `active()`-reads (`onContextTokens → tokenUsage`
+     * and `onTurnResult → hub.postAsAgent`), and `_events.emit` (buffer 256) does not suspend, so an
+     * in-flight `ResultEvent` body would otherwise run AFTER this returns — concurrent with a switch's
+     * `rescope`, mis-attributing to the newly-active project. [cancelAndJoin] flushes the in-flight turn
+     * still under `active() == this project` (no loss) and returns **quiescent**, so the switch's drain-
+     * before-rescope (PlatformWiring) is a real barrier.
      */
     override suspend fun closeAndAwait() {
-        readerJob?.cancel()
+        readerJob?.cancelAndJoin()
         process.destroy()
         process.awaitTerminated()
         boundSessionId?.let { onUnbind?.invoke(it) }

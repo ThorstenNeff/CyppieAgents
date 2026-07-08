@@ -51,7 +51,7 @@ fun Route.projectRoutes(
      * so the live comm hub re-scopes (`HubState.rescope`) to match the flipped pointer — keeping the
      * registry pointer and the hub's view consistent. Defaults to a no-op for the dev/standalone wiring.
      */
-    onActiveSwitch: (String) -> Unit = {},
+    onActiveSwitch: suspend (String) -> Unit = {}, // CYP-247 S3: suspend — the switch drains the outgoing project (awaited).
     // CYP-255 (.4b): fills each Project.runtimeState (server-derived from the live suspension policy). Default
     // HOT = no indicator (dev/standalone wiring with no policy). The route NEVER takes it from the caller.
     runtimeStateOf: (projectId: String) -> com.tneff.cyppieagents.model.RuntimeState = { com.tneff.cyppieagents.model.RuntimeState.HOT },
