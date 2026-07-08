@@ -54,10 +54,10 @@ class ConnectorDefaultsResumeTest {
         val bypassNoResume = ConnectorDefaults.sandboxBypassStreamJsonArgs(grant, resumeSessionId = null)
         assertFalse(bypassNoResume.contains("--resume"), "no id ⇒ no flag, even on the bypass path")
 
-        // CYP-321: the MVP prod path bypasses via the FLAG, and adding --resume does not disturb that (the
-        // resume single-source is orthogonal to the permission mechanism) — flag present, MODE string absent.
-        val prodResumed = ConnectorDefaults.streamJsonArgs(resumeSessionId = "sess-9")
-        assertTrue(ConnectorDefaults.bypassesPermissions(prodResumed), "MVP prod path bypasses via the flag, resume or not (CYP-321)")
-        assertTrue(prodResumed.contains(ConnectorDefaults.DANGEROUS_FLAG) && !prodResumed.contains("bypassPermissions"))
+        // CYP-321: the LOCAL spawn (skipPermissions=true) bypasses via the FLAG, and adding --resume does not
+        // disturb that (resume single-source is orthogonal to the permission mechanism) — flag present, MODE absent.
+        val localResumed = ConnectorDefaults.streamJsonArgs(resumeSessionId = "sess-9", skipPermissions = true)
+        assertTrue(ConnectorDefaults.bypassesPermissions(localResumed), "local spawn bypasses via the flag, resume or not (CYP-321)")
+        assertTrue(localResumed.contains(ConnectorDefaults.DANGEROUS_FLAG) && !localResumed.contains("bypassPermissions"))
     }
 }

@@ -45,10 +45,15 @@ object ConnectorDefaults {
     const val DANGEROUS_FLAG: String = "--dangerously-skip-permissions"
 
     /**
-     * CYP-321 — MVP-wide permission bypass (**Auftraggeber-authorized 2026-07-08, MVP-scope**). When true,
-     * [streamJsonArgs] emits [DANGEROUS_FLAG] for every local config-agent spawn (fresh AND resume) so the
-     * headless agents work autonomously without an interactive approval. **Revert to `false` before
+     * CYP-321 — MVP-wide permission bypass for **LOCAL** agent spawns (**Auftraggeber-authorized 2026-07-08,
+     * MVP-scope**). This is the value the **local** [ClaudeCodeConnector] passes as `streamJsonArgs(skipPermissions=…)`
+     * so its headless config agents work autonomously without an interactive approval. **Revert to `false` before
      * multi-tenant / public exposure (CYP-179 line)** → the tight [DEFAULT_PERMISSION_MODE] path returns.
+     *
+     * **Scoping (CYP-321 security review):** the flag lives on the `skipPermissions` PARAMETER, defaulted `false`,
+     * NOT baked into the shared [streamJsonArgs] default — so a direct caller like the remote `BridgeMain` (which
+     * spawns the USER's own Claude Code on the USER's machine) does NOT inherit the bypass. The Auftraggeber
+     * authorization covers the local connector's spawns only, never a foreign user machine (CYP-197/BYOA).
      *
      * Verified against the CLI docs (Context7 / code.claude.com): `--dangerously-skip-permissions` is
      * **equivalent to and supersedes** `--permission-mode bypassPermissions`, so we emit ONLY the flag (no
@@ -72,22 +77,25 @@ object ConnectorDefaults {
      * Builds the spawn args for a production session. MVP keeps partial-messages OFF (no
      * `--include-partial-messages`). CYP-167: [resumeSessionId] non-blank ⇒ `--resume <id>` is prepended.
      *
-     * CYP-321 (MVP): when [MVP_SKIP_PERMISSIONS] is true the args carry [DANGEROUS_FLAG] instead of a
-     * `--permission-mode` (the flag supersedes it — no double directive). The `require` below is KEPT
-     * (Gate #4, re-pointed): the sanctioned MVP bypass is the FLAG; passing `bypassPermissions` as the MODE
-     * value is still fail-closed rejected, so that vector can never re-appear via the `permissionMode` param.
+     * CYP-321 (MVP): [skipPermissions] `true` (passed ONLY by the local [ClaudeCodeConnector], value
+     * [MVP_SKIP_PERMISSIONS]) makes the args carry [DANGEROUS_FLAG] instead of a `--permission-mode` (the flag
+     * supersedes it — no double directive). It **defaults to `false`**, so the shared default and any direct
+     * caller (e.g. the remote `BridgeMain` on the user's machine) stay bypass-free (scoping, CYP-321 review).
+     * The `require` below is KEPT (Gate #4, re-pointed): passing `bypassPermissions` as the MODE value is still
+     * fail-closed rejected, so that vector can never re-appear via the `permissionMode` param.
      */
     fun streamJsonArgs(
         allowedTools: List<String> = DEFAULT_ALLOWED_TOOLS,
         permissionMode: String = DEFAULT_PERMISSION_MODE,
         resumeSessionId: String? = null,
+        skipPermissions: Boolean = false,
     ): List<String> {
         require(permissionMode != FORBIDDEN_PERMISSION_MODE) {
             "bypassPermissions must not be passed as the --permission-mode value (Gate #4); the MVP bypass is DANGEROUS_FLAG"
         }
         val args = BASE_STREAM_JSON_FLAGS.toMutableList()
-        if (MVP_SKIP_PERMISSIONS) {
-            // CYP-321: MVP-wide bypass — one flag, supersedes --permission-mode (no double directive).
+        if (skipPermissions) {
+            // CYP-321: LOCAL-only bypass — one flag, supersedes --permission-mode (no double directive).
             args += DANGEROUS_FLAG
         } else if (permissionMode.isNotBlank()) {
             args += "--permission-mode"
