@@ -204,13 +204,21 @@ class BootOrchestrator(
     // background-live mouth-attribution needed). A policy value, not a new mechanism; cap>1 (background-live)
     // is a later opt-in (S5). cap<=0 still disables suspension entirely (unbounded).
     private val runtimeSuspensionCap: Int = 1,
+    // CYP-247 S4 / D5: the residual-project prune is OPT-IN. Default false → the boot reconciler only LOGS which
+    // orphaned `projects/<pid>/*` dirs it WOULD prune (never auto-deletes a tree that may hold unpushed work).
+    private val pruneResidualProjects: Boolean = false,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
     fun boot(): BootedPlatform {
         // S15 / CYP-96: operator overrides for repo + API key, per project, fall back to boot config.
         val projectConfig = ProjectConfigStore(projectConfigFile, config.repo, secrets)
+        // CYP-247 S4 (§6.1, live-box migration, Rule ①): ADOPT a legacy shared `gitRoot/repo` clone into the
+        // boot project's `clones/<pid>` (move + `git worktree repair`), preserving the existing worktrees + the
+        // Auftraggeber's CLAUDE.md — NEVER a re-clone-fresh. No-op on a fresh install / once already per-project.
+        if (worktrees.adoptLegacyClone()) log.info("migrated legacy single-clone layout → per-project clones/{}", config.projectId)
         // Repo change takes effect at the next boot (design §3.2): clone the resolved (override→boot) repo.
+        // Idempotent: a no-op after an adopt (the boot clone now exists at clones/<pid>).
         worktrees.ensureClone(projectConfig.resolvedRepo(config.projectId))
 
         val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName, color = it.color?.ifBlank { null }) }
@@ -420,6 +428,33 @@ class BootOrchestrator(
         // shared projector's onContextTokens (active-routed) and reset by this project's lifecycle stop/restart.
         val tokenUsageTracker = AgentTokenUsageTracker()
         val repoReprovision = RepoReprovision() // CYP-247 S2: pending repo-change → re-provision on next (re)start.
+        // CYP-247 S4 (§6.2) — boot RECONCILER (idempotent, logged): for each registered project, a clone whose
+        // remote no longer matches `resolvedRepo(pid)` is marked STALE → re-provisioned on the next agent
+        // (re)start (S2 §2c, §2d work-guarded, never a silent wipe). Residual `projects/<pid>/*` dirs NOT in the
+        // registry are pruned ONLY on the opt-in (D5); by default they are PRESERVED + logged ("what WOULD prune").
+        run {
+            // CYP-247 S4 (Rule ① defense-in-depth): HARD-exclude config.projectId from the residual set. The boot
+            // project owns projects/<config.projectId> + the Auftraggeber's CLAUDE.md; if a loaded projects.json
+            // ever omits it (config drift / a deleted registry row) it must NEVER be pruned — not even on the opt-in.
+            val known = projectRegistry.projects().map { it.id }.toSet() + config.projectId
+            for (pid in known) {
+                val current = worktrees.forProject(pid).cloneRemoteUrl() ?: continue // no clone yet (lazy) → nothing to reconcile
+                val wanted = projectConfig.resolvedRepo(pid).url
+                if (current != wanted) {
+                    log.info("reconciler: project '{}' clone remote != configured repo → marked for re-provision on next (re)start", pid)
+                    repoReprovision.markStale(pid, discardUnpushed = false)
+                }
+            }
+            val residual = worktrees.residualProjectDirs(known)
+            if (residual.isNotEmpty()) {
+                if (pruneResidualProjects) {
+                    residual.forEach { worktrees.deleteProject(it) }
+                    log.info("reconciler: pruned {} residual project dir(s) (opt-in): {}", residual.size, residual)
+                } else {
+                    log.warn("reconciler: {} residual project dir(s) PRESERVED — would prune (opt-in pruneResidualProjects): {}", residual.size, residual)
+                }
+            }
+        }
         // CYP-247 S1: ensure the ACTIVE project's clone (LAZY, D6) THEN the agent worktree — single-sourced from
         // `resolvedRepo(activePid)` so the clone URL/branch and the worktree base-branch cannot drift. Reused by
         // every ensureWorktree seam (boot lifecycle + agent-CRUD + factory + rehydrate). ensureClone is idempotent

@@ -69,6 +69,44 @@ class WorktreeManager(
     }
 
     /**
+     * CYP-247 S4 — **ADOPT** a legacy shared clone into this project's per-project clone dir WITHOUT
+     * re-cloning (§6.1 refinement — Rule ①: NEVER wipe a project that has local worktrees; the
+     * Auftraggeber's `CLAUDE.md` lives in `projects/<pid>/<agent>`). If the legacy `gitRoot/repo` clone
+     * exists AND this project's `clones/<pid>` is still absent: **move** (not copy) `repo` → `clones/<pid>`
+     * (byte-preserved, atomic on the same filesystem), then `git worktree repair` the project's worktrees so
+     * their `.git` gitlinks re-point at the moved clone. Idempotent: no legacy clone, or the per-project
+     * clone already present → **no-op returns false**. Returns true iff an adoption happened.
+     */
+    fun adoptLegacyClone(): Boolean {
+        val legacy = File(gitRoot, "repo")
+        if (!File(legacy, ".git").exists()) return false // no legacy shared clone → nothing to adopt
+        if (File(repoDir, ".git").exists()) return false // this project already owns its clone → no-op
+        repoDir.parentFile?.mkdirs()
+        check(legacy.renameTo(repoDir)) { "failed to adopt legacy clone $legacy → $repoDir" }
+        // Repair the worktree admin links (the .git gitlinks under projects/<pid>/* now point at the moved clone).
+        val worktreePaths = worktreesDir.listFiles()?.filter { it.isDirectory }?.map { it.absolutePath } ?: emptyList()
+        if (worktreePaths.isNotEmpty()) {
+            val res = runner.run(listOf("git", "worktree", "repair") + worktreePaths, repoDir)
+            check(res.exitCode == 0) { "git worktree repair failed after adopt (exit ${res.exitCode})" }
+        }
+        log.info("adopted legacy clone into {} + repaired {} worktree(s) — worktrees/CLAUDE.md byte-preserved", repoDir, worktreePaths.size)
+        return true
+    }
+
+    /** CYP-247 S4 — the origin remote URL of this project's clone (for the boot reconciler's mismatch check),
+     *  or null if the clone is absent/unreadable. */
+    fun cloneRemoteUrl(): String? {
+        if (!File(repoDir, ".git").exists()) return null
+        val res = runner.run(listOf("git", "remote", "get-url", "origin"), repoDir)
+        return if (res.exitCode == 0) res.output.trim().ifBlank { null } else null
+    }
+
+    /** CYP-247 S4 — project dirs under `projects/` whose id is NOT in [knownProjectIds] (residual/orphaned,
+     *  e.g. a deleted project or a stale legacy layout). Fail-closed: empty if `projects/` is absent. */
+    fun residualProjectDirs(knownProjectIds: Set<String>): List<String> =
+        File(gitRoot, "projects").listFiles()?.filter { it.isDirectory && it.name !in knownProjectIds }?.map { it.name } ?: emptyList()
+
+    /**
      * Ensure a worktree exists for the agent and return its directory. Idempotent: an existing
      * worktree dir is reused. Each agent gets its OWN branch `agent/<name>` created off [baseBranch]
      * — you cannot `git worktree add` the base branch itself, since it is already checked out in the
