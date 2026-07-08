@@ -24,7 +24,7 @@ import kotlin.test.Test
 class AclPanelRenderTest {
 
     @Test
-    fun grid_rendersMemberSwitches_andNonMemberIsNA() = runComposeUiTest {
+    fun grid_rendersMemberSwitches_andNonMemberGrantable() = runComposeUiTest {
         val hub = StubAclHub()
         val vm = AclViewModel(hub, hub)
         setContent { MaterialTheme { Box(Modifier.width(900.dp)) { AclPanel(vm) } } }
@@ -33,9 +33,11 @@ class AclPanelRenderTest {
         // Member cell (po-frontend, frontend): both R/W switches present.
         onNodeWithTag(AclMatrixTags.read("po-frontend", "frontend"), useUnmergedTree = true).assertExists()
         onNodeWithTag(AclMatrixTags.write("po-frontend", "frontend"), useUnmergedTree = true).assertExists()
-        // Non-member (po-frontend, backend): N/A qualifier present AND no switches (CYP-19 §3).
+        // CYP-317: a non-member (po-frontend, backend) is now GRANTABLE — it carries BOTH the NON_MEMBER affordance
+        // marker AND the R/W switch nodes (§7 QA contract; previously mutually exclusive — no more inert "—").
         onNodeWithTag(AclMatrixTags.cellQualifier("po-frontend", "backend", CellQualifier.NON_MEMBER), useUnmergedTree = true).assertExists()
-        onNodeWithTag(AclMatrixTags.read("po-frontend", "backend"), useUnmergedTree = true).assertDoesNotExist()
+        onNodeWithTag(AclMatrixTags.read("po-frontend", "backend"), useUnmergedTree = true).assertExists()
+        onNodeWithTag(AclMatrixTags.write("po-frontend", "backend"), useUnmergedTree = true).assertExists()
     }
 
     @Test
