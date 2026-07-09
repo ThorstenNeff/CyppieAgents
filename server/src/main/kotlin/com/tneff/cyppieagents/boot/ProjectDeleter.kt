@@ -53,6 +53,9 @@ class ProjectDeleter(
     // CYP-256 (.5a): the durable per-project agent-set — cascade-purged with the project (its runtime-added
     // agents' records must not be orphaned; rehydration would otherwise resurrect a deleted project's agents).
     private val projectAgents: ProjectAgentStore? = null,
+    // CYP-325 (defect 2): the durable per-agent token-usage overlay — cascade-purged so a deleted project's
+    // last-context-token values don't linger (and can't rehydrate a resurrected id).
+    private val tokenUsage: TokenUsageStore? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.projectdeleter")
     private val mutex = Mutex()
@@ -66,6 +69,7 @@ class ProjectDeleter(
         val avatarsRemoved = avatarBlobs?.deleteByProject(projectId) ?: 0 // CYP-215: purge the avatar blobs
         val overridesRemoved = agentOverrides?.removeProject(projectId) ?: 0 // CYP-215 F2: purge the override JSON
         val agentsRemoved = projectAgents?.removeProject(projectId) ?: 0 // CYP-256 (.5a): purge the agent-set store
+        tokenUsage?.removeProject(projectId) // CYP-325 (defect 2): purge the persisted token-usage values
         // opt-in: only the warned path removes the worktree (uncommitted work); branches always kept.
         val worktreesRemoved = if (deleteWorktrees) worktrees.deleteProject(projectId) else 0
         registry.drop(projectId) // commit metadata removal last (no half-gone-but-listed project)

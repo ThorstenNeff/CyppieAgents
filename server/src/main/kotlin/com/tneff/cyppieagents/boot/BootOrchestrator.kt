@@ -173,6 +173,8 @@ class BootOrchestrator(
     // CYP-210: durable per-agent name/color/persona/launch overlay (`.cyppie/agent-overrides.json`), out-of-
     // repo under the gitRoot. Null (tests) = in-memory off-switch (no restart durability).
     private val agentOverrideFile: java.io.File? = null,
+    // CYP-325 (defect 2): durable per-agent last-context-token overlay (.cyppie/token-usage.json); null = in-memory.
+    private val tokenUsageFile: java.io.File? = null,
     // CYP-220 S6: durable report-snapshot store (`.cyppie/reports.json`), out-of-repo under the gitRoot. Null
     // (tests) = in-memory off-switch. Was in-memory-only before S6; now File-durable (reports survive a restart).
     private val reportFile: java.io.File? = null,
@@ -333,6 +335,7 @@ class BootOrchestrator(
         // CYP-210: apply the durable overlay OVER the platform.config.json seed (overlay wins per-field), so
         // operator edits of name/color/persona/launch survive a restart. Scoped to the active project.
         val agentOverrides = AgentOverrideStore(agentOverrideFile)
+        val tokenUsageStore = TokenUsageStore(tokenUsageFile) // CYP-325 (defect 2): shared, keyed by projectId
         // CYP-256 (.5a): the durable per-project agent-set store — constructed EARLY (above, for the CYP-305
         // effective-active seam); single source for runtime-added agents.
         // CYP-215: the avatar stores (blob bytes on disk + the self-hosted DiceBear preset resolver).
@@ -429,7 +432,7 @@ class BootOrchestrator(
         // → ERROR, no session, no /ws/agent; the hub and other agents are unaffected.
         // CYP-316: the boot project's per-agent context-token feed (source of /ws/token-usage). Fed by the
         // shared projector's onContextTokens (active-routed) and reset by this project's lifecycle stop/restart.
-        val tokenUsageTracker = AgentTokenUsageTracker()
+        val tokenUsageTracker = AgentTokenUsageTracker(config.projectId, tokenUsageStore) // CYP-325: rehydrate on boot
         val busyStateTracker = AgentBusyStateTracker() // CYP-324: boot project's /ws/busy-state source
         val repoReprovision = RepoReprovision() // CYP-247 S2: pending repo-change → re-provision on next (re)start.
         // CYP-247 S4 (§6.2) — boot RECONCILER (idempotent, logged): for each registered project, a clone whose
@@ -576,7 +579,7 @@ class BootOrchestrator(
             val pCaps = CapabilityRegistry()
             val pProvider = com.tneff.cyppieagents.connector.ProviderRegistry()
             val pWorktrees = worktrees.forProject(pid) // CYP-247 S1: this project's OWN clone (clones/<pid>) + worktrees
-            val pTokenUsage = AgentTokenUsageTracker() // CYP-316: this project's own token feed (per-runtime)
+            val pTokenUsage = AgentTokenUsageTracker(pid, tokenUsageStore) // CYP-316/325: per-project feed, persisted
             val pBusyState = AgentBusyStateTracker() // CYP-324: this project's own busy feed (per-runtime)
             val pLifecycle = LifecycleManager(
                 initialWorktrees = emptyMap(),
@@ -759,7 +762,7 @@ class BootOrchestrator(
 
         // S13 / CYP-91: the multi-project registry (loaded early, above, for the CYP-305 effective-active seam)
         // + the cascade deleter composing the strictly-projectId-scoped teardown primitives — /api/projects.
-        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides, projectAgents)
+        val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides, projectAgents, tokenUsageStore)
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
