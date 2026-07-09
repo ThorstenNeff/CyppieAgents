@@ -532,4 +532,6 @@
     <string name="a11y_compact_allow">Compact für das Team erlauben (globaler Schalter)</string>
     <!-- CYP-326 §2.5: lokalisierte X/N-Zusammenfassung im Event-Log-Detail (compact.orchestration.done). -->
     <string name="event_compact_done_summary">%1$d/%2$d Agenten compactet, %3$d Timeout</string>
+    <!-- CYP-326 Follow-up (kill switch): ein ABGEBROCHENER Lauf — distinkt von Timeout/clean, WARN, nie „Erfolg". -->
+    <string name="event_compact_done_aborted">Abgebrochen — %1$d von %2$d compactet</string>
 </resources>

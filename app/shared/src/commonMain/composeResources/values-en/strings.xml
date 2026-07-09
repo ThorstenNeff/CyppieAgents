@@ -525,4 +525,6 @@
     <string name="a11y_compact_allow">Allow team compaction (global switch)</string>
     <!-- CYP-326 §2.5: localized X/N summary in the event-log detail (compact.orchestration.done). -->
     <string name="event_compact_done_summary">%1$d/%2$d agents compacted, %3$d timed out</string>
+    <!-- CYP-326 Follow-up (kill switch): an ABORTED run — distinct from timeout/clean, WARN, never "success". -->
+    <string name="event_compact_done_aborted">Aborted — %1$d of %2$d compacted</string>
 </resources>
