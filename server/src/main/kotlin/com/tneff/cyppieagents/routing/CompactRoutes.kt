@@ -4,8 +4,11 @@ import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.boot.CompactConfigStore
+import com.tneff.cyppieagents.model.ApiError
+import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.CompactConfig
 import com.tneff.cyppieagents.model.CompactStatus
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -38,6 +41,13 @@ fun Route.compactRoutes(
         authenticatedApi(deps, AuthRole.OPERATOR) {
             post("/config") {
                 val req = call.receive<CompactConfig>()
+                // CYP-329 — range-validate the tunable timings against the SINGLE-SOURCED bounds BEFORE persist:
+                // out-of-range → 400 fail-closed, NO partial apply (the existing config is untouched), NO kill-switch.
+                val boundsError = req.timingBoundsError()
+                if (boundsError != null) {
+                    call.respond(HttpStatusCode.BadRequest, ApiErrorBody(ApiError("invalid_timing", boundsError)))
+                    return@post
+                }
                 configStore.set(activeProjectId(), req)
                 onConfigUpdated() // CYP-326: allowed→false aborts a running orchestration
                 call.respond(status())
