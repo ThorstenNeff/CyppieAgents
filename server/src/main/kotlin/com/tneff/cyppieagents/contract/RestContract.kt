@@ -114,6 +114,10 @@ object RestContract {
         Op("GET", "/api/config/apikey", Tier.PARTICIPANT, response = json<ApiKeyView>()),
         Op("PUT", "/api/config/repo", Tier.OPERATOR, request = json<RepoConfigRequest>(), response = json<RepoConfigView>()),
         Op("PUT", "/api/config/apikey", Tier.OPERATOR, request = json<ApiKeyRequest>(), response = json<ApiKeyView>()),
+
+        // --- CompactRoutes (/api/compact) — CYP-326 compact orchestration config/status ---
+        Op("GET", "/api/compact/status", Tier.PARTICIPANT, response = json<com.tneff.cyppieagents.model.CompactStatus>()),
+        Op("POST", "/api/compact/config", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.CompactConfig>(), response = json<com.tneff.cyppieagents.model.CompactStatus>()),
         // --- ProjectRoutes (/api/projects) ---
         Op("GET", "/api/projects", Tier.OPERATOR, response = json<ProjectsView>()),
         Op("POST", "/api/projects", Tier.OPERATOR, request = json<CreateProjectRequest>(), response = json<Project>()),

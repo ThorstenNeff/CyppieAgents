@@ -38,7 +38,12 @@ import com.tneff.cyppieagents.warden.StallPolicy
 import com.tneff.cyppieagents.warden.StallPolicyRunner
 import com.tneff.cyppieagents.warden.Warden
 import kotlinx.coroutines.CoroutineScope
+import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.model.CompactRunSummary
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.slf4j.LoggerFactory
 
@@ -116,6 +121,9 @@ class BootedPlatform(
     /** CYP-247 S3 — drain (stop, awaited) a project's running agent sessions; the switch calls it on the
      *  OUTGOING project BEFORE `rescope` so `active()==owner` holds across the whole switch (r3 + r4). */
     val drainProject: suspend (projectId: String) -> Unit,
+    // CYP-326 — compact-orchestration config store + a live status supplier (for /api/compact/*).
+    val compactConfigStore: CompactConfigStore,
+    val compactStatus: () -> com.tneff.cyppieagents.model.CompactStatus,
 )
 
 /**
@@ -175,6 +183,8 @@ class BootOrchestrator(
     private val agentOverrideFile: java.io.File? = null,
     // CYP-325 (defect 2): durable per-agent last-context-token overlay (.cyppie/token-usage.json); null = in-memory.
     private val tokenUsageFile: java.io.File? = null,
+    // CYP-326: persisted compact-orchestration config (.cyppie/compact-config.json); null = in-memory (tests).
+    private val compactConfigFile: java.io.File? = null,
     // CYP-220 S6: durable report-snapshot store (`.cyppie/reports.json`), out-of-repo under the gitRoot. Null
     // (tests) = in-memory off-switch. Was in-memory-only before S6; now File-durable (reports survive a restart).
     private val reportFile: java.io.File? = null,
@@ -769,6 +779,25 @@ class BootOrchestrator(
         // + the cascade deleter composing the strictly-projectId-scoped teardown primitives — /api/projects.
         val projectDeleter = ProjectDeleter(projectRegistry, projectConfig, eventSink, worktrees, agentEventStore, avatarBlobs, agentOverrides, projectAgents, tokenUsageStore)
 
+        // CYP-326 — the platform-side compact orchestrator (boot project; MVP single-project). Watches the PO's
+        // context (CYP-325 feed); on a >threshold up-crossing + "compact allowed" it runs the staggered team
+        // compaction. Idle-gate via CYP-324 busy; completion via the CYP-326 compact_result signal; honest X/N.
+        val compactConfigStore = CompactConfigStore(compactConfigFile)
+        val poId = config.agents.firstOrNull { it.role == com.tneff.cyppieagents.model.Role.PO }?.id
+        val compactOrchestrator = CompactOrchestrator(
+            scope = scope,
+            poContext = tokenUsageTracker.events
+                .filter { it.agentId == poId }
+                .map { it.contextTokens },
+            compactCompletions = compactSignal.events,
+            isBusy = { id -> busyStateTracker.snapshot().firstOrNull { it.agentId == id }?.busy ?: false },
+            send = { id, text -> sessions.session(id)?.let { it.sendTurn(com.tneff.cyppieagents.model.UserTurn(text)); true } ?: false },
+            emit = { ev -> eventSink.append(compactDraft(ev, poId, config.projectId)) },
+            agentsInOrder = { config.agents.sortedBy { if (it.role == com.tneff.cyppieagents.model.Role.PO) 0 else 1 }.map { it.id } },
+            config = { compactConfigStore.get(config.projectId) },
+        ).also { it.start() }
+        val compactStatus: () -> com.tneff.cyppieagents.model.CompactStatus = { compactOrchestrator.status() }
+
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, durableActive, agentManagement, reportStore, projectRegistry, projectDeleter,
@@ -776,6 +805,26 @@ class BootOrchestrator(
             agentEventStore, agentEventRecorder, runtimeRegistry, projectRuntimeFactory, suspensionPolicy,
             rehydrateActiveProject, repoReprovision,
             drainProject = { pid -> drainProject(pid) },
+            compactConfigStore = compactConfigStore,
+            compactStatus = compactStatus,
         )
     }
+}
+
+/**
+ * CYP-326 — map an orchestrator [CompactOrchestrator.CompactEvent] to a content-free [EventDraft]. The
+ * `orchestration.done` detail is the serialized [CompactRunSummary] (Dev renders the X/N summary against it):
+ * keys `completed`, `total`, `pendingAgentIds`, `startedTs`, `finishedTs`.
+ */
+private fun compactDraft(ev: CompactOrchestrator.CompactEvent, poId: String?, projectId: String): EventDraft = when (ev) {
+    is CompactOrchestrator.CompactEvent.PrepareSent -> EventDraft(ev.agentId, projectId, EventType.COMPACT_PREPARE_SENT, Severity.INFO)
+    is CompactOrchestrator.CompactEvent.RequestSent -> EventDraft(ev.agentId, projectId, EventType.COMPACT_REQUEST_SENT, Severity.INFO)
+    is CompactOrchestrator.CompactEvent.Completed -> EventDraft(ev.agentId, projectId, EventType.COMPACT_COMPLETED, Severity.INFO)
+    is CompactOrchestrator.CompactEvent.OrchestrationDone -> EventDraft(
+        agentId = poId ?: "",
+        projectId = projectId,
+        type = EventType.COMPACT_ORCHESTRATION_DONE,
+        severity = if (ev.summary.pendingAgentIds.isEmpty()) Severity.INFO else Severity.WARN,
+        detail = CommJson.encodeToJsonElement(CompactRunSummary.serializer(), ev.summary).jsonObject,
+    )
 }

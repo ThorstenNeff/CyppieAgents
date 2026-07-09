@@ -117,7 +117,9 @@ fun Severity.glyph(): String = when (this) {
 fun EventType.groupGlyph(): String = when (this) {
     EventType.TURN_START, EventType.TURN_END, EventType.TOOL_CALL, EventType.TOOL_RESULT,
     EventType.FILE_CHANGED, EventType.RESULT_FINAL -> "⚙"
-    EventType.CONTEXT_USAGE, EventType.COMPACT_TRIGGERED, EventType.COMPACT_COMPLETED -> "▦"
+    EventType.CONTEXT_USAGE, EventType.COMPACT_TRIGGERED, EventType.COMPACT_COMPLETED,
+    // CYP-326 compact-orchestration family (same compaction group; Dev/UIUX may refine the glyph).
+    EventType.COMPACT_PREPARE_SENT, EventType.COMPACT_REQUEST_SENT, EventType.COMPACT_ORCHESTRATION_DONE -> "▦"
     EventType.HOOK_FIRED -> "⤵"
     EventType.ERROR_MODEL, EventType.ERROR_TOOL, EventType.ERROR_RATELIMIT,
     EventType.PROCESS_EXIT, EventType.TIMEOUT, EventType.WS_DISCONNECT -> "⚠"
