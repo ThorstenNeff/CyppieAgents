@@ -125,6 +125,8 @@ class BootedPlatform(
     val compactConfigStore: CompactConfigStore,
     val compactStatus: () -> com.tneff.cyppieagents.model.CompactStatus,
     val compactOnConfigUpdated: () -> Unit, // CYP-326 kill-switch: abort a run when "compact allowed" → false
+    /** CYP-332 — the interactive-terminal PTY manager (one pty4j PTY per agent; `/ws/terminal`). */
+    val ptyManager: com.tneff.cyppieagents.pty.PtyManager,
 )
 
 /**
@@ -812,6 +814,18 @@ class BootOrchestrator(
         val compactStatus: () -> com.tneff.cyppieagents.model.CompactStatus = { compactOrchestrator.status() }
         val compactOnConfigUpdated: () -> Unit = { compactOrchestrator.onConfigUpdated() } // CYP-326 kill-switch
 
+        // CYP-332 — the interactive-terminal PTY manager (boot project; MVP single-project). One pty4j PTY per
+        // agent running interactive `claude` (NO --print/stream-json), cwd = the agent's worktree, key/env like
+        // the connector. Single-flight per agent (§4.1). Multi-project + PTY-survives-reconnect = follow-ups.
+        val ptyManager = com.tneff.cyppieagents.pty.PtyManager(
+            worktreeDirOf = { agentId ->
+                val wtName = state.agents.firstOrNull { it.id == agentId }?.worktree ?: agentId
+                runtimeRegistry.active().worktrees.worktreeDir(wtName)
+            },
+            resolveApiKey = { projectConfig.resolvedApiKey(state.activeProjectId) },
+            scope = scope,
+        )
+
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, durableActive, agentManagement, reportStore, projectRegistry, projectDeleter,
@@ -822,6 +836,7 @@ class BootOrchestrator(
             compactConfigStore = compactConfigStore,
             compactStatus = compactStatus,
             compactOnConfigUpdated = compactOnConfigUpdated,
+            ptyManager = ptyManager, // CYP-332
         )
     }
 }

@@ -58,6 +58,9 @@ dependencies {
     implementation(libs.ktor.serverCors)
     implementation(libs.ktor.serializationKotlinxJson)
     implementation(libs.ktor.serverWebsockets)
+    // CYP-332: pty4j — real pseudo-terminal per agent for the interactive `claude` TUI (reverses 05-D4
+    // piped-stdio; 02 §10 PTY-manager). Bundles its native helpers (Linux/macOS/Windows).
+    implementation(libs.pty4j)
     // CYP-215 (avatar backend): Thumbnailator — thin, no-native-deps, ImageIO-based resize/crop/re-encode.
     // We control the decode (header-dim gate ourselves, then hand it a bounded BufferedImage). png+jpg only;
     // no native webp decoder pulled in (smallest attack surface on the untrusted upload path).
