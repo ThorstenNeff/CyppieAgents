@@ -30,8 +30,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.eventlog.EventRow
 import com.tneff.cyppieagents.eventlog.formatTs
 import com.tneff.cyppieagents.eventlog.severityColor
+import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
@@ -39,6 +41,9 @@ import com.tneff.cyppieagents.window.formatCompactTokens
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_compact_allow
 import kmpcyppieagents.app.shared.generated.resources.compact_allow_hint
+import kmpcyppieagents.app.shared.generated.resources.compact_events_empty
+import kmpcyppieagents.app.shared.generated.resources.compact_run_current
+import kmpcyppieagents.app.shared.generated.resources.compact_run_last
 import kmpcyppieagents.app.shared.generated.resources.compact_allow_label
 import kmpcyppieagents.app.shared.generated.resources.compact_last_run_aborted
 import kmpcyppieagents.app.shared.generated.resources.compact_last_run_ok
@@ -66,7 +71,13 @@ import org.jetbrains.compose.resources.stringResource
  * when UNKNOWN the status/threshold rows are **absent**, never a defaulted "idle"/"off".
  */
 @Composable
-fun CompactPanel(viewModel: CompactViewModel, modifier: Modifier = Modifier) {
+fun CompactPanel(
+    viewModel: CompactViewModel,
+    modifier: Modifier = Modifier,
+    /** CYP-327 Feature B: ALL compact events (the 4 orchestration types) from the operator feed; `null` → no event
+     *  section (non-operator). The panel scopes them to the current/last run via `status.lastRun.correlationId`. */
+    compactEvents: List<Event>? = null,
+) {
     val state by viewModel.state.collectAsState()
     val status = state.status
     val allowed = status?.allowed ?: false // fail-closed default when the server state is unknown
@@ -169,6 +180,48 @@ fun CompactPanel(viewModel: CompactViewModel, modifier: Modifier = Modifier) {
                     color = color,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth().testTag(CompactTags.LAST_RUN),
+                )
+            }
+        }
+
+        // CYP-327 Feature B: the current/last run's compact events, scoped AUTHORITATIVELY by the run's
+        // correlationId (`status.lastRun.correlationId`, server-stamped on each event — no client heuristic). `null`
+        // → no section (non-operator). Dynamic honest header ("current" while running, else "last"); a run has a
+        // bounded event count so no panel-scroll rework is needed. Rolls to the next run automatically.
+        compactEvents?.let { all ->
+            HorizontalDivider()
+            val runId = status?.lastRun?.correlationId
+            val runEvents = if (runId != null) all.filter { it.correlationId == runId } else emptyList()
+            if (runId != null && runEvents.isNotEmpty()) {
+                val running = status?.running == true
+                Text(
+                    text = stringResource(if (running) Res.string.compact_run_current else Res.string.compact_run_last),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.fillMaxWidth().testTag(CompactTags.RUN_HEADER),
+                )
+                Column(
+                    modifier = Modifier.fillMaxWidth().testTag(CompactTags.EVENTS),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    runEvents.forEachIndexed { i, e ->
+                        val rowTag = CompactTags.eventRow(i)
+                        // rowTag = the index tag; qualifierTag carries the severity suffix (EventBrowse convention) so
+                        // the two testTags EventRow applies are DISTINCT (no duplicate-tag node).
+                        EventRow(
+                            event = e,
+                            rowTag = rowTag,
+                            qualifierTag = "$rowTag.${e.severity.name.lowercase()}",
+                            byIdTag = "compact.event.byId.${e.id}",
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = stringResource(Res.string.compact_events_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth().testTag(CompactTags.EVENTS_EMPTY),
                 )
             }
         }

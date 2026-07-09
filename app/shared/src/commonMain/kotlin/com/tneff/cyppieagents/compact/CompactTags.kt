@@ -42,4 +42,18 @@ object CompactTags {
 
     /** The last-run X/N row. Absent before the first run; WARN-toned on a timeout. */
     const val LAST_RUN = "compact.lastRun"
+
+    // --- CYP-327 Feature B: the per-sequence compact-event list (operator-only; the feed is gated) ---
+
+    /** The dynamic run header ("current run" while running, else "last run"). */
+    const val RUN_HEADER = "compact.runHeader"
+
+    /** The event-list container for the current/last run. */
+    const val EVENTS = "compact.events"
+
+    /** The honest empty state when the operator has no compact run yet. */
+    const val EVENTS_EMPTY = "compact.events.empty"
+
+    /** The N-th compact event row (rendered via the shared `EventRow`). */
+    fun eventRow(index: Int): String = "compact.event.$index"
 }

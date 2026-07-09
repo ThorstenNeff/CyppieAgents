@@ -14,6 +14,9 @@ import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.model.CompactConfig
 import com.tneff.cyppieagents.model.CompactRunSummary
 import com.tneff.cyppieagents.model.CompactStatus
+import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventType
+import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.ui.MaritimeDark
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -160,5 +163,50 @@ class CompactPanelTest {
         onNodeWithTag(CompactTags.THRESHOLD_SET).performClick()
         waitForIdle()
         onNodeWithTag(CompactTags.THRESHOLD_CONFIRM).assertExists() // transient INFO confirmation, post-server
+    }
+
+    // --- CYP-327 Feature B: per-sequence compact-event list (correlationId-scoped, EventRow reuse) ---
+
+    private fun ev(seq: Long, type: EventType, cid: String) = Event(
+        id = "e$seq", ts = 1_000 + seq, seq = seq, agentId = "po", projectId = "team-1",
+        type = type, severity = Severity.INFO, correlationId = cid, sessionId = null,
+    )
+
+    @Test
+    fun operatorEvents_scopeToLastRunCorrelationId_excludeOtherRun_withHeader() = runComposeUiTest {
+        val runId = "run-9"
+        val status = CompactStatus(
+            allowed = true, thresholdTokens = 500_000, armed = false, running = true,
+            lastRun = CompactRunSummary(completed = 1, total = 2, startedTs = 1, finishedTs = null, correlationId = runId),
+        )
+        // Two events for run-9 + one for a DIFFERENT run — the panel must show only run-9's, scoped by correlationId.
+        val all = listOf(
+            ev(2, EventType.COMPACT_PREPARE_SENT, runId),
+            ev(3, EventType.COMPACT_COMPLETED, runId),
+            ev(1, EventType.COMPACT_PREPARE_SENT, "other-run"),
+        )
+        val model = vm(StubCompactRepository(status), editable = true)
+        setContent { MaterialTheme { CompactPanel(model, compactEvents = all) } }
+        onNodeWithTag(CompactTags.EVENTS).assertExists()
+        onNodeWithTag(CompactTags.RUN_HEADER).assertExists() // running → "Current run"
+        onNodeWithTag(CompactTags.eventRow(0)).assertExists()
+        onNodeWithTag(CompactTags.eventRow(1)).assertExists()
+        onNodeWithTag(CompactTags.eventRow(2)).assertDoesNotExist() // only 2 events belong to run-9
+    }
+
+    @Test
+    fun operatorEvents_noRun_showsHonestEmptyState() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false, lastRun = null)), editable = true)
+        setContent { MaterialTheme { CompactPanel(model, compactEvents = emptyList()) } }
+        onNodeWithTag(CompactTags.EVENTS_EMPTY).assertExists()
+        onNodeWithTag(CompactTags.EVENTS).assertDoesNotExist()
+    }
+
+    @Test
+    fun nonOperator_hasNoEventSection() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = false)
+        setContent { MaterialTheme { CompactPanel(model) } } // compactEvents = null (member)
+        onNodeWithTag(CompactTags.EVENTS).assertDoesNotExist()
+        onNodeWithTag(CompactTags.EVENTS_EMPTY).assertDoesNotExist()
     }
 }
