@@ -72,6 +72,7 @@ import kmpcyppieagents.app.shared.generated.resources.agent_reconnecting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_error
 import kmpcyppieagents.app.shared.generated.resources.agent_status_running
 import kmpcyppieagents.app.shared.generated.resources.agent_status_starting
+import kmpcyppieagents.app.shared.generated.resources.agent_status_restarting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_stopped
 import kmpcyppieagents.app.shared.generated.resources.agent_status_unknown
 import org.jetbrains.compose.resources.stringResource
@@ -99,6 +100,7 @@ fun AgentWindow(
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
     val startPending by viewModel.startPending.collectAsState()
+    val restartPending by viewModel.restartPending.collectAsState()
     val lifecycleError by viewModel.lifecycleError.collectAsState()
     val connection by viewModel.connection.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
@@ -107,6 +109,7 @@ fun AgentWindow(
             agentId = agentId,
             state = lifecycle,
             startPending = startPending,
+            restartPending = restartPending,
             connection = connection,
             canControl = viewModel.canControl,
             onStart = viewModel::start,
@@ -167,6 +170,8 @@ private fun AgentHeader(
     modifier: Modifier = Modifier,
     /** CYP-262: a Start request is in flight → the status shows the transient "Startet…" (client-only). */
     startPending: Boolean = false,
+    /** CYP-330: a Restart request is in flight → the status shows the transient "Neustart…" (client-only). */
+    restartPending: Boolean = false,
     connection: ConnectionStatus = ConnectionStatus.LIVE,
     capabilities: Capabilities? = null,
     capabilitiesLoading: Boolean = false,
@@ -181,7 +186,7 @@ private fun AgentHeader(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatusIndicator(agentId, state, startPending)
+        StatusIndicator(agentId, state, startPending, restartPending)
         // CYP-204: reconnecting indicator — present ONLY while the per-agent WS is not LIVE (the adapter is
         // auto-reconnecting from the seq cursor; on reconnect the server replays the history gapless). Its OWN
         // axis, next to but distinct from the lifecycle status (process state ≠ socket state).
@@ -205,7 +210,10 @@ private fun AgentHeader(
         ) { Text(stringResource(Res.string.agent_ctl_stop)) }
         TextButton(
             onClick = onRestart,
-            enabled = canControl && (state == AgentLifecycleState.RUNNING || state == AgentLifecycleState.ERROR),
+            // CYP-330: enabled for any operator — Restart must not be hard-ineffective in UNKNOWN/STOPPED (a
+            // stopped/unknown agent is exactly when you want to bring it back). The server stays authoritative and
+            // surfaces an honest reason if the transition is invalid; the "Neustart…" transient acknowledges the click.
+            enabled = canControl,
             modifier = Modifier.testTag(AgentViewTags.restartBtn(agentId)),
         ) { Text(stringResource(Res.string.agent_ctl_restart)) }
     }
@@ -232,18 +240,24 @@ private fun ReconnectingChip(agentId: String, connection: ConnectionStatus) {
 }
 
 @Composable
-private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPending: Boolean = false) {
-    // CYP-262 Teil 1: while a Start request is in flight (client-only, before the server's RUNNING event),
-    // show the honest transient "Startet…" instead of the resolved state — NEVER "Läuft" before the server
-    // confirms it (§9-1). The flag always resolves on the next lifecycle event, so this can't stick. Same
-    // node/tag (0 new tag) and the in-progress NEUTRAL tone (CYP-300 a0: onSurfaceVariant) shared with the ReconnectingChip.
-    val label = if (startPending) stringResource(Res.string.agent_status_starting) else when (state) {
-        AgentLifecycleState.RUNNING -> stringResource(Res.string.agent_status_running)
-        AgentLifecycleState.STOPPED -> stringResource(Res.string.agent_status_stopped)
-        AgentLifecycleState.ERROR -> stringResource(Res.string.agent_status_error)
-        AgentLifecycleState.UNKNOWN -> stringResource(Res.string.agent_status_unknown)
+private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPending: Boolean = false, restartPending: Boolean = false) {
+    // CYP-262/330 Teil 1: while a Start/Restart request is in flight (client-only, before the server's event),
+    // show the honest transient "Startet…"/"Neustart…" instead of the resolved state — NEVER a resolved label
+    // before the server confirms it (§9-1). Both flags always resolve on the next lifecycle event, so neither can
+    // stick. Same node/tag (0 new tag) and the in-progress NEUTRAL tone (CYP-300 a0: onSurfaceVariant). The
+    // "Neustart…" flash is the visible acknowledgement of a RUNNING→RUNNING restart (the swallowed-click fix).
+    val pending = startPending || restartPending
+    val label = when {
+        startPending -> stringResource(Res.string.agent_status_starting)
+        restartPending -> stringResource(Res.string.agent_status_restarting)
+        else -> when (state) {
+            AgentLifecycleState.RUNNING -> stringResource(Res.string.agent_status_running)
+            AgentLifecycleState.STOPPED -> stringResource(Res.string.agent_status_stopped)
+            AgentLifecycleState.ERROR -> stringResource(Res.string.agent_status_error)
+            AgentLifecycleState.UNKNOWN -> stringResource(Res.string.agent_status_unknown)
+        }
     }
-    val dotColor = if (startPending) MaterialTheme.colorScheme.onSurfaceVariant else when (state) { // a0: neutral, distinct from RUNNING=primary
+    val dotColor = if (pending) MaterialTheme.colorScheme.onSurfaceVariant else when (state) { // a0: neutral, distinct from RUNNING=primary
         AgentLifecycleState.RUNNING -> MaterialTheme.colorScheme.primary
         AgentLifecycleState.STOPPED -> MaterialTheme.colorScheme.outline
         AgentLifecycleState.ERROR -> MaterialTheme.colorScheme.error
