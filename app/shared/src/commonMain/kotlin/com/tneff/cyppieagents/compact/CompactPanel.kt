@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.eventlog.EventRow
 import com.tneff.cyppieagents.eventlog.formatTs
 import com.tneff.cyppieagents.eventlog.severityColor
+import com.tneff.cyppieagents.model.CompactConfig
 import com.tneff.cyppieagents.model.CompactStatus
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.Severity
@@ -55,6 +56,12 @@ import kmpcyppieagents.app.shared.generated.resources.compact_status_label
 import kmpcyppieagents.app.shared.generated.resources.compact_status_off
 import kmpcyppieagents.app.shared.generated.resources.compact_status_running
 import kmpcyppieagents.app.shared.generated.resources.a11y_compact_threshold_input
+import kmpcyppieagents.app.shared.generated.resources.a11y_compact_stagger_input
+import kmpcyppieagents.app.shared.generated.resources.a11y_compact_round_gap_input
+import kmpcyppieagents.app.shared.generated.resources.compact_stagger_label
+import kmpcyppieagents.app.shared.generated.resources.compact_round_gap_label
+import kmpcyppieagents.app.shared.generated.resources.compact_timing_range_error
+import kmpcyppieagents.app.shared.generated.resources.compact_timing_set_confirm
 import kmpcyppieagents.app.shared.generated.resources.compact_threshold_label
 import kmpcyppieagents.app.shared.generated.resources.compact_threshold_range_error
 import kmpcyppieagents.app.shared.generated.resources.compact_threshold_set
@@ -149,6 +156,49 @@ fun CompactPanel(
                     label = stringResource(Res.string.compact_threshold_label),
                     value = formatCompactTokens(s.thresholdTokens),
                     tag = CompactTags.THRESHOLD,
+                )
+            }
+
+            // CYP-329: the two operator-tunable timings (Stagger + Round gap), minutes in the UI / ms on the wire.
+            // Same never-optimistic server-mirror discipline as the threshold: operator edits, member reads. Bounds
+            // come single-sourced from CompactConfig.companion — no hardcoded limits.
+            if (state.editable) {
+                TimingEditor(
+                    label = stringResource(Res.string.compact_stagger_label),
+                    a11y = stringResource(Res.string.a11y_compact_stagger_input),
+                    currentMs = s.staggerMs,
+                    minMs = CompactConfig.STAGGER_MIN_MS,
+                    maxMs = CompactConfig.STAGGER_MAX_MS,
+                    confirmMs = state.staggerSetConfirm,
+                    inputTag = CompactTags.STAGGER_INPUT,
+                    setTag = CompactTags.STAGGER_SET,
+                    errorTag = CompactTags.STAGGER_ERROR,
+                    confirmTag = CompactTags.STAGGER_CONFIRM,
+                    onSaveMs = viewModel::setStaggerMs,
+                )
+                TimingEditor(
+                    label = stringResource(Res.string.compact_round_gap_label),
+                    a11y = stringResource(Res.string.a11y_compact_round_gap_input),
+                    currentMs = s.roundGapMs,
+                    minMs = CompactConfig.ROUND_GAP_MIN_MS,
+                    maxMs = CompactConfig.ROUND_GAP_MAX_MS,
+                    confirmMs = state.roundGapSetConfirm,
+                    inputTag = CompactTags.ROUND_GAP_INPUT,
+                    setTag = CompactTags.ROUND_GAP_SET,
+                    errorTag = CompactTags.ROUND_GAP_ERROR,
+                    confirmTag = CompactTags.ROUND_GAP_CONFIRM,
+                    onSaveMs = viewModel::setRoundGapMs,
+                )
+            } else {
+                LabelValueRow(
+                    label = stringResource(Res.string.compact_stagger_label),
+                    value = formatCompactDuration(s.staggerMs),
+                    tag = CompactTags.STAGGER,
+                )
+                LabelValueRow(
+                    label = stringResource(Res.string.compact_round_gap_label),
+                    value = formatCompactDuration(s.roundGapMs),
+                    tag = CompactTags.ROUND_GAP,
                 )
             }
 
@@ -312,6 +362,82 @@ private fun ThresholdEditor(current: Int, confirmValue: Int?, onSave: (Int) -> U
                 stringResource(Res.string.compact_threshold_set_confirm, formatCompactTokens(it)),
                 HintTone.INFO,
                 CompactTags.THRESHOLD_CONFIRM,
+            )
+        }
+    }
+}
+
+/**
+ * CYP-329 — an operator's editable compact timing (Stagger / Round gap). Structurally identical to
+ * [ThresholdEditor], differing only in the UNIT: the field is **minutes** (re-seeded from the server ms value via
+ * `remember(currentMs)` so it mirrors the server, never an optimistic draft), the live preview and range-error
+ * echo the canonical duration, and Save is enabled only for a valid, changed value. Bounds [minMs]..[maxMs] are the
+ * SINGLE-SOURCED `CompactConfig` consts (passed in — no hardcoded limits); on save the drafted minutes convert to
+ * ms at [minutesFieldToMs] and go through the never-optimistic [onSaveMs].
+ */
+@Composable
+private fun TimingEditor(
+    label: String,
+    a11y: String,
+    currentMs: Long,
+    minMs: Long,
+    maxMs: Long,
+    confirmMs: Long?,
+    inputTag: String,
+    setTag: String,
+    errorTag: String,
+    confirmTag: String,
+    onSaveMs: (Long) -> Unit,
+) {
+    // Draft in minutes, RE-SEEDED from the server ms value whenever it changes — mirrors the server, never optimistic.
+    var draft by remember(currentMs) { mutableStateOf(msToMinutesField(currentMs)) }
+    val parsedMs = minutesFieldToMs(draft)
+    val valid = parsedMs != null && parsedMs in minMs..maxMs
+    val invalidDraft = draft.isNotEmpty() && !valid
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { new -> draft = sanitizeMinutesInput(new) },
+                singleLine = true,
+                isError = invalidDraft,
+                label = { Text(label) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(inputTag)
+                    .semantics { contentDescription = a11y },
+            )
+            // Live preview: the canonical duration the drafted minutes resolve to ("= 30 s" / "= 2 min").
+            if (parsedMs != null) {
+                Text(
+                    "= ${formatCompactDuration(parsedMs)}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Button(
+                onClick = { parsedMs?.let(onSaveMs) },
+                enabled = valid && parsedMs != currentMs, // valid AND changed — no invalid submit, no no-op write
+                modifier = Modifier.testTag(setTag),
+            ) {
+                Text(stringResource(Res.string.compact_threshold_set))
+            }
+        }
+        // Inline range validation from the single-sourced bounds (never colour alone — an ERROR-toned hint).
+        if (invalidDraft) {
+            TonedHint(
+                stringResource(Res.string.compact_timing_range_error, formatCompactDuration(minMs), formatCompactDuration(maxMs)),
+                HintTone.ERROR,
+                errorTag,
+            )
+        }
+        // Transient INFO confirmation on the SERVER-confirmed value — post-server, self-clearing, never green.
+        confirmMs?.let {
+            TonedHint(
+                stringResource(Res.string.compact_timing_set_confirm, formatCompactDuration(it)),
+                HintTone.INFO,
+                confirmTag,
             )
         }
     }
