@@ -92,10 +92,17 @@ content slot — both are Compose rows **outside** the content rectangle, so the
 2. On drag/resize the `SwingPanel` bounds follow the content-rectangle bounds in lockstep (couple to the existing
    `FloatingWindow` offset/size; reuse the CYP-26 clamp path). No separate terminal geometry state.
 3. Popups that would appear over the terminal (context menu) are **Swing popups** on the jvm side, or avoided.
-4. Terminal transport is Desktop-only: a `TerminalView(session)` `@Composable` in **`jvmMain`** wrapping JediTerm
-   with a `TtyConnector` bound to the terminal WS (doc 04 §4.1 `WsTtyConnector` sketch). **No `expect/actual`, no
-   `wasmJsMain` actual** — Option D. **⟂BE-4** — the terminal PTY + WS transport (`/ws/terminal?agentId=`) is new
-   backend (no PTY exists today); the client's `TerminalSession` binds to it.
+4. Terminal transport uses the **`expect/actual TerminalView` seam** (doc 04 §3), matching CYP-334 as built:
+   `expect fun TerminalView(session, modifier)` in **`commonMain`**. This is required, not optional — `AgentWindow`
+   lives in commonMain and **chooses the content rectangle there** (transcript vs. terminal at INTERACTIVE), so the
+   terminal must be **commonMain-callable**; a jvmMain-only widget would tear apart the commonMain window
+   composition. **Option D constrains the *actuals*, not the seam:** the **jvm actual = JediTerm** in a `SwingPanel`
+   with a `TtyConnector` bound to the terminal WS (doc 04 §4.1 `WsTtyConnector` sketch); the **`wasmJs`/`js`/
+   `android`/`ios` actuals are inert Stubs that never render a real terminal** in Option D (compile-completeness
+   only). This keeps doc-04's Kotlin/Wasm-HTML-interop risk **out of scope** exactly as Option D decided — the seam
+   is cross-target, but only the Desktop actual is real. **No UX consequence:** the rendered result is identical;
+   this is purely the code-seam mechanism. **⟂BE-4** — the terminal PTY + WS transport (`/ws/terminal?agentId=`) is
+   new backend (no PTY exists today = CYP-332); the client's `TerminalSession` binds to it.
 
 ---
 
