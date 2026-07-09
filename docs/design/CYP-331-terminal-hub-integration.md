@@ -134,7 +134,8 @@ are the hand-off token:
 
 1. **Stale boot-resume** → the CYP-330 proactive stale-resume probe (`ResumingSession.start()`) fires **also
    in the boot spawn path** → heals to fresh → **RUNNING but context-free** (no ERROR). This is exactly po's
-   observed symptom.
+   observed symptom — and precisely the state **seam #5 (§4.4)** surfaces to the UI as `CONTEXT_LOST` (the
+   `healToFresh` branch) rather than leaving the UI to guess from a near-zero token count.
 2. **Throwing boot-spawn (≠ stale-resume)** → `bootAgent`'s own catch → **ERROR**, and it has **no
    `spawnFresh` rollback** (only `start`/`restart`'s `spawnOrError` got it in CYP-330). **Design point:**
    extend the fresh rollback to `bootAgent` for a guaranteed-RUNNING boot, weighed against boot's
@@ -176,7 +177,7 @@ rules it out.
 
 The UX model is **one window per agent** with a `[Orchestration | Terminal]` toggle; **flipping the toggle
 *is* the §4.1 hand-off** (there is no split-screen — which is exactly right, since the two modes are
-mutually exclusive per session, §3). The backend must expose four seams so the UI can drive that flip
+mutually exclusive per session, §3). The backend must expose five seams so the UI can drive that flip
 safely:
 
 1. **Hand-off endpoint with explicit backend confirmation** — `POST /api/agents/{id}/mode`
@@ -197,9 +198,28 @@ safely:
    by construction and is not fanned out on this channel). This is the multi-operator coordination seam for
    the single-writer invariant.
 4. **Render z-order** — see §5 (UIUX confirms the 04-Doc z-order constraint is back).
+5. **Explicit `resumed-with-context` vs `context-free` signal (per session/resume)** — the UI has a
+   first-class **`CONTEXT-LOST`** state (a resumed session that comes back context-free — after a hand-back
+   *or* a restart; exactly po). The UI **cannot derive it**: a near-zero `contextTokens` is **ambiguous**
+   between an *intentional* compaction (CYP-326) and an *unintended* memory-loss resume. **Only the backend
+   knows**, and it knows it precisely at the **CYP-330 stale-resume seam** (`ResumingSession`):
+   - `--resume <id>` **bound** (BOUND / live-resume) → **`RESUMED_WITH_CONTEXT`**.
+   - `--resume <id>` **died unbound → `healToFresh`** (proactive probe *or* turn-path) → **`CONTEXT_LOST`**
+     (the unintended loss — po's `CONTEXT-LOST` state).
+   - **no durable id** (first start / intentionally cleared) → **`FRESH_NO_RESUME`** (not a loss — a new
+     agent by design).
+
+   The backend emits this per-agent/session (content-free: `{ agentId, resumeOutcome, sid?, ts }`) via the
+   **hand-off-state broadcast (seam #3)** and/or a dedicated Event, so the UI renders `CONTEXT-LOST`
+   **authoritatively** instead of a weaker "context possibly lost" guess. It is **orthogonal to CYP-326**:
+   an intentional compaction is its own signal (expected shrink); `CONTEXT_LOST` is unintended
+   resume-failure — the UI composes the two (compaction = expected; `CONTEXT_LOST` = memory loss).
+   *Source of truth:* the resume outcome is already computed in `ResumingSession` (CYP-330) — this seam only
+   **surfaces** it; no new detection logic.
 
 These seams are the same shapes the platform already ships (confirm-then-commit like CompactVM; idle-gate
-like CYP-326; content-free per-agent WS twin like CYP-324) — so they are **incremental, not novel**.
+like CYP-326; content-free per-agent WS twin like CYP-324; and seam #5 reuses the CYP-330 resume-outcome
+that already exists) — so they are **incremental, not novel**.
 
 ---
 
