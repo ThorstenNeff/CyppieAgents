@@ -46,6 +46,7 @@ import com.tneff.cyppieagents.workspace.WorkspaceRosterViewModel
 import com.tneff.cyppieagents.compact.CompactHttpRepository
 import com.tneff.cyppieagents.compact.CompactPanel
 import com.tneff.cyppieagents.compact.CompactRepository
+import com.tneff.cyppieagents.compact.CompactEventsViewModel
 import com.tneff.cyppieagents.compact.CompactViewModel
 import com.tneff.cyppieagents.workspace.isOperatorAccess
 import com.tneff.cyppieagents.workspace.showRoster
@@ -531,6 +532,12 @@ fun AgentShell(
     val compactVm = viewModel(key = "compact-global") {
         CompactViewModel(resolvedCompactRepository, editable = isOperator)
     }
+    // CYP-327 Feature B: the per-sequence compact-event list. Operator-only — it reads the operator-gated event
+    // feed (like the event-log windows), so a non-operator gets no list (the compact window's gate/status/threshold
+    // stay visible to all). Global (not re-keyed), matching the global compact window. The panel scopes these to the
+    // current/last run via `status.lastRun.correlationId` (authoritative, server-stamped).
+    val compactEventsVm =
+        if (isOperator) viewModel(key = "compactEvents-global") { CompactEventsViewModel(resolvedEventsApi, resolvedEventsLiveSource) } else null
     // Product-Lead reports (CYP-90): hoisted; accessible iff operator token (fail-closed — without it the
     // VM never loads a report). Aggregates operator-gated observability, so no token → no report at all.
     // CYP-246: re-keyed on activeProjectId. The Product-Lead report aggregates the active project's
@@ -757,7 +764,10 @@ fun AgentShell(
                     })
                     ACL_WINDOW_ID -> AclPanel(aclVm)
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
-                    COMPACT_WINDOW_ID -> CompactPanel(compactVm)
+                    COMPACT_WINDOW_ID -> CompactPanel(
+                        compactVm,
+                        compactEvents = compactEventsVm?.events?.collectAsState()?.value,
+                    )
                     AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(
                         agentMgmtVm,
                         // CYP-228: name the active project in the add-dialog scope note (server-authoritative pointer).

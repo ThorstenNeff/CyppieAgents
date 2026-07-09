@@ -57,4 +57,30 @@ class CompactViewModelTest {
         assertFalse(s.loading)
         assertNull(s.status, "a failed load holds UNKNOWN (null) — never a defaulted idle/off (§3-3)")
     }
+
+    // --- CYP-327 Feature A: editable threshold (server-mirror, operator-gated) ---
+
+    @Test
+    fun operatorSetThreshold_writesThroughRepo_keepsAllowed_serverMirror() {
+        val vm = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = true, running = false)), editable = true)
+        vm.setThreshold(750_000)
+        val s = vm.state.value.status
+        assertEquals(750_000, s?.thresholdTokens, "the server-returned new threshold is adopted")
+        assertEquals(true, s?.allowed, "a threshold write preserves the allowed gate (only the threshold changes)")
+    }
+
+    @Test
+    fun nonOperatorSetThreshold_isNoOp_failClosed() {
+        val vm = vm(StubCompactRepository(CompactStatus(false, 500_000, armed = false, running = false)), editable = false)
+        vm.setThreshold(750_000)
+        assertEquals(500_000, vm.state.value.status?.thresholdTokens, "a non-operator threshold write never applies (fail-closed)")
+    }
+
+    @Test
+    fun operatorSetThreshold_raisesTransientConfirm_onServerValue() {
+        val vm = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = true)
+        assertNull(vm.state.value.thresholdSetConfirm, "no confirmation before a set")
+        vm.setThreshold(750_000)
+        assertEquals(750_000, vm.state.value.thresholdSetConfirm, "a server-confirmed set raises the transient INFO confirmation on the server value")
+    }
 }

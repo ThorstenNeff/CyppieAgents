@@ -50,6 +50,14 @@ data class CompactRunSummary(
     /** null while the run is still in progress. */
     val finishedTs: Long? = null,
     /**
+     * CYP-327 — the run's `correlationId`: the AUTHORITATIVE join key for the per-sequence compact-event list.
+     * The orchestration stamps this same value onto every event of the run (`compact.prepare.sent` /
+     * `compact.request.sent` / `compact.completed` / `compact.orchestration.done`), so the UI filters the event
+     * list on `status.lastRun.correlationId` instead of a client heuristic (which could show the wrong run).
+     * Nullable/additive: null on a legacy/unstamped summary.
+     */
+    val correlationId: String? = null,
+    /**
      * CYP-326 kill-switch: true when the run was ABORTED mid-flight (operator turned "compact allowed" off).
      * [completed]/[pendingAgentIds] are the honest state at the abort — never re-labelled "all done". Already-sent
      * `/compact` commands are not retractable, so a compacted agent still counts in [completed].

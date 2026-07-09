@@ -827,14 +827,16 @@ class BootOrchestrator(
  * keys `completed`, `total`, `pendingAgentIds`, `startedTs`, `finishedTs`.
  */
 private fun compactDraft(ev: CompactOrchestrator.CompactEvent, poId: String?, projectId: String): EventDraft = when (ev) {
-    is CompactOrchestrator.CompactEvent.PrepareSent -> EventDraft(ev.agentId, projectId, EventType.COMPACT_PREPARE_SENT, Severity.INFO)
-    is CompactOrchestrator.CompactEvent.RequestSent -> EventDraft(ev.agentId, projectId, EventType.COMPACT_REQUEST_SENT, Severity.INFO)
-    is CompactOrchestrator.CompactEvent.Completed -> EventDraft(ev.agentId, projectId, EventType.COMPACT_COMPLETED, Severity.INFO)
+    // CYP-327: every event carries the run's correlationId — the UI's authoritative join key for the sequence list.
+    is CompactOrchestrator.CompactEvent.PrepareSent -> EventDraft(ev.agentId, projectId, EventType.COMPACT_PREPARE_SENT, Severity.INFO, correlationId = ev.correlationId)
+    is CompactOrchestrator.CompactEvent.RequestSent -> EventDraft(ev.agentId, projectId, EventType.COMPACT_REQUEST_SENT, Severity.INFO, correlationId = ev.correlationId)
+    is CompactOrchestrator.CompactEvent.Completed -> EventDraft(ev.agentId, projectId, EventType.COMPACT_COMPLETED, Severity.INFO, correlationId = ev.correlationId)
     is CompactOrchestrator.CompactEvent.OrchestrationDone -> EventDraft(
         agentId = poId ?: "",
         projectId = projectId,
         type = EventType.COMPACT_ORCHESTRATION_DONE,
         severity = if (ev.summary.pendingAgentIds.isEmpty()) Severity.INFO else Severity.WARN,
+        correlationId = ev.correlationId,
         detail = CommJson.encodeToJsonElement(CompactRunSummary.serializer(), ev.summary).jsonObject,
     )
 }

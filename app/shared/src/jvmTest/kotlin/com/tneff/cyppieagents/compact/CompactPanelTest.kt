@@ -3,17 +3,25 @@ package com.tneff.cyppieagents.compact
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.model.CompactConfig
 import com.tneff.cyppieagents.model.CompactRunSummary
 import com.tneff.cyppieagents.model.CompactStatus
+import com.tneff.cyppieagents.model.Event
+import com.tneff.cyppieagents.model.EventType
+import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.ui.MaritimeDark
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -42,7 +50,7 @@ class CompactPanelTest {
         onNodeWithTag(CompactTags.ALLOW_CHIP).assertDoesNotExist()
         onNodeWithTag(CompactTags.ALLOW_HINT).assertExists()   // disclosure always
         onNodeWithTag(CompactTags.GATE_HINT).assertDoesNotExist() // operator: no gate hint
-        onNodeWithTag(CompactTags.THRESHOLD).assertExists()
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).assertExists() // CYP-327: an operator edits the threshold (not the read-only row)
         onNodeWithTag(CompactTags.STATUS).assertExists()
     }
 
@@ -102,5 +110,103 @@ class CompactPanelTest {
             }
         }
         assertTrue(amber > 0, "a timeout last-run must render WARN amber (severityColor(WARN)), not neutral onSurfaceVariant")
+    }
+
+    // --- CYP-327 Feature A: editable threshold (operator input) vs read-only (member) ---
+
+    @Test
+    fun operator_threshold_isEditableInput_notReadOnlyRow() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = true)
+        setContent { MaterialTheme { CompactPanel(model) } }
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).assertExists()
+        onNodeWithTag(CompactTags.THRESHOLD_SET).assertExists()
+        onNodeWithTag(CompactTags.THRESHOLD).assertDoesNotExist() // the read-only row is replaced by the editor
+    }
+
+    @Test
+    fun nonOperator_threshold_isReadOnly_noInput() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = false)
+        setContent { MaterialTheme { CompactPanel(model) } }
+        onNodeWithTag(CompactTags.THRESHOLD).assertExists()
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).assertDoesNotExist() // no editable field for a non-operator
+        onNodeWithTag(CompactTags.THRESHOLD_SET).assertDoesNotExist()
+    }
+
+    @Test
+    fun operator_editThresholdAndSave_writesNewValue_serverMirror() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = true)
+        setContent { MaterialTheme { CompactPanel(model) } }
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).performTextClearance() // clear the prefilled current value
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).performTextInput("750000")
+        onNodeWithTag(CompactTags.THRESHOLD_SET).performClick()
+        waitForIdle()
+        assertEquals(750_000, model.state.value.status?.thresholdTokens, "save writes the new threshold (server mirror)")
+    }
+
+    @Test
+    fun operator_invalidThreshold_showsRangeError_disablesSet() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = true)
+        setContent { MaterialTheme { CompactPanel(model) } }
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).performTextClearance()
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).performTextInput("0") // 0 is outside 1..1,000,000
+        onNodeWithTag(CompactTags.THRESHOLD_ERROR).assertExists()
+        onNodeWithTag(CompactTags.THRESHOLD_SET).assertIsNotEnabled() // invalid → Set disabled
+    }
+
+    @Test
+    fun operator_setThreshold_showsTransientConfirm_afterServer() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = true)
+        setContent { MaterialTheme { CompactPanel(model) } }
+        onNodeWithTag(CompactTags.THRESHOLD_CONFIRM).assertDoesNotExist() // nothing before a set
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).performTextClearance()
+        onNodeWithTag(CompactTags.THRESHOLD_INPUT).performTextInput("750000")
+        onNodeWithTag(CompactTags.THRESHOLD_SET).performClick()
+        waitForIdle()
+        onNodeWithTag(CompactTags.THRESHOLD_CONFIRM).assertExists() // transient INFO confirmation, post-server
+    }
+
+    // --- CYP-327 Feature B: per-sequence compact-event list (correlationId-scoped, EventRow reuse) ---
+
+    private fun ev(seq: Long, type: EventType, cid: String) = Event(
+        id = "e$seq", ts = 1_000 + seq, seq = seq, agentId = "po", projectId = "team-1",
+        type = type, severity = Severity.INFO, correlationId = cid, sessionId = null,
+    )
+
+    @Test
+    fun operatorEvents_scopeToLastRunCorrelationId_excludeOtherRun_withHeader() = runComposeUiTest {
+        val runId = "run-9"
+        val status = CompactStatus(
+            allowed = true, thresholdTokens = 500_000, armed = false, running = true,
+            lastRun = CompactRunSummary(completed = 1, total = 2, startedTs = 1, finishedTs = null, correlationId = runId),
+        )
+        // Two events for run-9 + one for a DIFFERENT run — the panel must show only run-9's, scoped by correlationId.
+        val all = listOf(
+            ev(2, EventType.COMPACT_PREPARE_SENT, runId),
+            ev(3, EventType.COMPACT_COMPLETED, runId),
+            ev(1, EventType.COMPACT_PREPARE_SENT, "other-run"),
+        )
+        val model = vm(StubCompactRepository(status), editable = true)
+        setContent { MaterialTheme { CompactPanel(model, compactEvents = all) } }
+        onNodeWithTag(CompactTags.EVENTS).assertExists()
+        onNodeWithTag(CompactTags.RUN_HEADER).assertExists() // running → "Current run"
+        onNodeWithTag(CompactTags.eventRow(0)).assertExists()
+        onNodeWithTag(CompactTags.eventRow(1)).assertExists()
+        onNodeWithTag(CompactTags.eventRow(2)).assertDoesNotExist() // only 2 events belong to run-9
+    }
+
+    @Test
+    fun operatorEvents_noRun_showsHonestEmptyState() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false, lastRun = null)), editable = true)
+        setContent { MaterialTheme { CompactPanel(model, compactEvents = emptyList()) } }
+        onNodeWithTag(CompactTags.EVENTS_EMPTY).assertExists()
+        onNodeWithTag(CompactTags.EVENTS).assertDoesNotExist()
+    }
+
+    @Test
+    fun nonOperator_hasNoEventSection() = runComposeUiTest {
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = false)
+        setContent { MaterialTheme { CompactPanel(model) } } // compactEvents = null (member)
+        onNodeWithTag(CompactTags.EVENTS).assertDoesNotExist()
+        onNodeWithTag(CompactTags.EVENTS_EMPTY).assertDoesNotExist()
     }
 }

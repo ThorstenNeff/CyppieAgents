@@ -24,9 +24,36 @@ object CompactTags {
     /** The read-only threshold fact row. */
     const val THRESHOLD = "compact.threshold"
 
+    /** CYP-327 Feature A: the operator's editable threshold input (present only for an operator; the read-only
+     *  [THRESHOLD] row is shown to a non-operator). */
+    const val THRESHOLD_INPUT = "compact.thresholdInput"
+
+    /** CYP-327 Feature A: the operator's "set threshold" action (enabled only for a valid, changed value). */
+    const val THRESHOLD_SET = "compact.thresholdSet"
+
+    /** CYP-327 Feature A: the inline range-validation error (1..1,000,000) — shown while the draft is invalid. */
+    const val THRESHOLD_ERROR = "compact.thresholdError"
+
+    /** CYP-327 Feature A: the transient INFO confirmation after a server-confirmed set ("threshold set to X"). */
+    const val THRESHOLD_CONFIRM = "compact.thresholdConfirm"
+
     /** The server-mirror status row (liveRegion). Absent when the server state is unknown (§3-3). */
     const val STATUS = "compact.status"
 
     /** The last-run X/N row. Absent before the first run; WARN-toned on a timeout. */
     const val LAST_RUN = "compact.lastRun"
+
+    // --- CYP-327 Feature B: the per-sequence compact-event list (operator-only; the feed is gated) ---
+
+    /** The dynamic run header ("current run" while running, else "last run"). */
+    const val RUN_HEADER = "compact.runHeader"
+
+    /** The event-list container for the current/last run. */
+    const val EVENTS = "compact.events"
+
+    /** The honest empty state when the operator has no compact run yet. */
+    const val EVENTS_EMPTY = "compact.events.empty"
+
+    /** The N-th compact event row (rendered via the shared `EventRow`). */
+    fun eventRow(index: Int): String = "compact.event.$index"
 }
