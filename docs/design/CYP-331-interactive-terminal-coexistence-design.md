@@ -82,6 +82,7 @@ both modes all read from — never guessed, always the real backend fact.
 | **MEDIATED** (default) | stream-json session, hub is mouth+ears | platform + operators via composer | **yes** (full) | busy `*` when a turn runs (CYP-324) |
 | **INTERACTIVE** | a human is at the TUI on this session | one named human | **no — blind** | distinct **human-control** marker + owner identity + since-time |
 | **HANDING-OVER / -BACK** | transient: attaching/detaching the session between modes | platform | partial | GATED "wird übergeben…" spinner, no fake completion |
+| **CONTEXT-LOST** *(new — PO 2026-07-09)* | session resumed but came back **without prior memory** (after hand-back **or** any lifecycle restart) | platform | yes, but agent has **no history** | WARN-toned **"ohne vorherigen Kontext zurück"** marker + discontinuity line in the timeline |
 | *(SHELL — window kind iii)* | raw shell, no agent | any operator | n/a | plain shell window; no agent state at all |
 
 **Rules (my lane):**
@@ -95,6 +96,12 @@ both modes all read from — never guessed, always the real backend fact.
    the mediated event log for that agent gets a **gap marker** event *"Interaktiv übernommen — Hub blind ab HH:MM"*;
    hand-back writes *"Zurückgegeben HH:MM"*. Between them the timeline is **honestly empty with a reason**, not a
    suspiciously quiet live feed. (Same principle as filtering≠revoking, null≠0.)
+4. **A resume that lost its memory says so — never faked continuity (§4.5).** When the backend signals the resumed
+   session came back context-free, the agent enters **CONTEXT-LOST**: an honest *"Agent ohne vorherigen Kontext
+   zurück — Verlauf nicht wiederhergestellt"* — because the visible scrollback is **client history, not the agent's
+   memory**, and letting it *imply* the agent still remembers would be the exact continuity-overstatement §4.1
+   guards against. This holds identically after a **hand-back** and after a **deploy/crash restart** (the way the
+   PO agent lost its memory).
 
 ---
 
@@ -114,7 +121,9 @@ both modes all read from — never guessed, always the real backend fact.
 - **Continuity promise (honesty):** the banner says **"gleicher Agent, gleicher Kontext"** *only if* ⟂ARCH-S1
   confirms the interactive attach truly resumes the same session/context. If backend can only give a *fresh*
   interactive session, the copy must **not** claim continuity — it becomes "neues interaktives Terminal (frischer
-  Kontext)". **I will not ship the continuity claim until backend confirms it.**
+  Kontext)". **I will not ship the continuity claim until backend confirms it.** And even when S1 says *yes* at
+  design time, a resume can still come back **empty at runtime** — that flips the agent into CONTEXT-LOST (§4.5),
+  which withdraws the continuity copy on the spot.
 
 ### 4.2 Hand-back ("Zurückgeben")
 
@@ -146,6 +155,33 @@ Tone: **not** green, **not** the neutral INFO blue used for benign facts — thi
 is deaf), so it reads as WARN-amber (reuse `severityColor(WARN)`, the same weight CYP-326 gives aborted/timeout).
 It is **persistent** (not a toast) because the blind condition persists. It is **in the frame** (§5) so the
 real terminal never paints over it.
+
+### 4.5 Context-lost after hand-back or restart (PO 2026-07-09 — the continuity-honesty state)
+
+**The finding (from Backend's continuity result, PO-relayed):** a resumed session can come back **context-free** —
+the same agent id is live again, but its *memory of the prior conversation is gone*. This is exactly how the PO
+agent lost its memory on a deploy-restart. It can happen after a **hand-back** (the mediated re-attach resumed an
+emptied session) **or** after any **lifecycle restart** (deploy/crash/manual). It is the **runtime** counterpart
+of ⟂ARCH-S1's "no-continuity" branch — not a static design fork but a state the running system can enter at any
+time, so the UX must carry it as a first-class state, not an edge note.
+
+**The subtle honesty trap this defuses:** the client scrollback is **our** history — it survives even when the
+agent's context doesn't. If we just let the old transcript sit there looking live, the UI **implies the agent
+still remembers** everything above. It doesn't. So:
+
+- **Honest signal (WARN-toned, spirit of §4.4):** a marker/strip **"Agent ohne vorherigen Kontext zurück — Verlauf
+  nicht wiederhergestellt."** Not green, not neutral INFO — a *consequence* state, reuse `severityColor(WARN)`.
+- **A discontinuity line in the timeline** at the resume point: *"— Kontext verloren HH:MM · der Agent erinnert
+  sich ab hier nicht an das Darüberstehende —"*. The scrollback above it stays **visible as history** but is
+  **visually demoted** (e.g. dimmed / "Verlauf"-labelled) so it reads as *record*, not *agent memory*.
+- **No faked continuity anywhere:** the "gleicher Kontext" promise from §4.1 is **withdrawn the instant** this
+  state is entered; any "resumed"/"fortgesetzt" copy is replaced by the context-lost copy.
+- **Recovery is the agent's next real turn** — the state clears when the agent produces fresh context (new
+  contextTokens accrue from ~0); until then it stays honestly marked.
+
+**Depends on ⟂ARCH-S6** (below): the backend must **tell** the UI "resumed **with** context" vs "resumed
+**context-free**" — the client cannot infer it reliably (a near-zero contextTokens reading is ambiguous between an
+*intended* compaction (CYP-326) and an *unintended* memory-loss restart; only the backend knows which).
 
 ---
 
@@ -203,6 +239,7 @@ My UX above is honest *given* these; each is a place where the design bends to t
 | **⟂ARCH-S3** | During INTERACTIVE, is the hub **fully blind**, or can it keep a **read-only tail** of the PTY? Is the PTY **shareable** to a read-only observer window? | Fully blind → §3/§4.4 as written. Read-only tail → I can offer a truthful **"Hub beobachtet mit (read-only)"** variant instead of "blind" — different, more permissive disclosure; only if backend confirms. |
 | **⟂ARCH-S4** | Terminal transport = a **genuinely new primitive** — verified there is **no PTY/pty4j/JediTerm/TtyConnector/xterm anywhere** today; the whole stack is D4 piped-stdio headless stream-json (`ProcessBuilderSpawner`). Revive doc `04`'s `/ws/terminal` PTY (pty4j) → JediTerm (desktop) / xterm.js (web)? Likely a **new `ConnectorKind`** (today's enum = `STREAM_JSON`/`MCP`; note "Connector" here is the WS abstraction, **not** a JediTerm `TtyConnector`). | Confirms the frame/Z-order rules (§5) and **re-imports doc `04`'s biggest risk on web**: Kotlin/Wasm-HTML-interop is Beta (the very risk D6 had eliminated). I flag the **web interactive terminal** as the highest-risk target; desktop (JediTerm) is the safe first path — recommend desktop-first, exactly doc `04 §9`. |
 | **⟂ARCH-S5** | Can the platform **interrupt the current mediated turn** on demand (for a "seize now" take-over), and is the **CYP-324 IDLE signal** the take-over gate? | Yes → §4.1's "Turn unterbrechen & übernehmen" destructive path is buildable. No → take-over always waits for IDLE (safer, simpler; I'll drop the seize option). |
+| **⟂ARCH-S6** *(feeds §4.5)* | On a resume/restart (hand-back **or** lifecycle), can the backend emit **"resumed WITH context" vs "resumed context-free"**? The client can't infer it — a near-zero `contextTokens` reading is **ambiguous** between an *intended* compaction (CYP-326) and an *unintended* memory-loss restart. | Yes → §4.5 CONTEXT-LOST state fires only when truthfully context-free. No → I can only show a weaker, hedged "Kontext möglicherweise nicht wiederhergestellt" — I **flag that as a disclosure gap** and push for the explicit signal, because guessing here either fakes continuity or cries wolf. |
 
 ---
 
@@ -219,7 +256,10 @@ My UX above is honest *given* these; each is a place where the design bends to t
    Auftraggeber opt in.
 7. **The terminal interior is not ours to restyle** — maritime governs the frame, ANSI governs inside; we don't
    imply otherwise (§5).
-8. **Continuity is claimed only if true** — the "gleicher Kontext" promise ships only on ⟂ARCH-S1 = yes (§4.1).
+8. **Continuity is claimed only if true** — the "gleicher Kontext" promise ships only on ⟂ARCH-S1 = yes (§4.1);
+   and it is **withdrawn at runtime** the instant a resume comes back context-free (§4.5).
+9. **A memory-less resume says so** — CONTEXT-LOST (§4.5) is a first-class WARN state after hand-back *or* restart;
+   the visible scrollback is demoted to *history*, never left implying the agent still remembers (needs ⟂ARCH-S6).
 
 ---
 
