@@ -28,7 +28,7 @@ class AgentA11yTest {
         setContent {
             MaterialTheme {
                 val session = sessionEmitting(
-                    AgentEvent.ToolCall("t1", "read_file", "build.gradle.kts", ToolStatus.OK),
+                    AgentEvent.ToolCall("t1", "read_file", "build.gradle.kts", ToolStatus.OK, tsMs = 0L),
                 )
                 val viewModel = remember { AgentViewModel(session) }
                 AgentWindow(agentId = "backend", viewModel = viewModel)
@@ -48,7 +48,7 @@ class AgentA11yTest {
         setContent {
             MaterialTheme {
                 val session = sessionEmitting(
-                    AgentEvent.Result("r1", "42 Zeilen gelesen", isError = false),
+                    AgentEvent.Result("r1", "42 Zeilen gelesen", isError = false, tsMs = 0L),
                 )
                 val viewModel = remember { AgentViewModel(session) }
                 AgentWindow(agentId = "backend", viewModel = viewModel)

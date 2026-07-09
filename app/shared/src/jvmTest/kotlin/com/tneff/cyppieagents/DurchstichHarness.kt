@@ -47,7 +47,7 @@ class DurchstichHarness {
             log("== /ws/agent backend ==")
             val agentWs = AgentWsClient(client, cfg.hubWsBaseUrl, "backend", cfg.agentToken("backend"))
             val agentJob = launch {
-                agentWs.events.collect { log("agent: ${summarize(it)}") }
+                agentWs.events.collect { log("agent: ts=${it.tsMs} ${summarize(it.event)}") }
             }
             delay(2_000)
             log("--> sending turn")

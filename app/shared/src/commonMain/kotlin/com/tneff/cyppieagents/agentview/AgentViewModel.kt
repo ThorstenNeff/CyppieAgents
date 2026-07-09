@@ -51,6 +51,11 @@ class AgentViewModel(
     /** CYP-262 T1 robustness: watchdog window for the "Startet…" transient (see [START_PENDING_TIMEOUT_MS]).
      *  Injectable so tests can drive the fallback with a tiny value. */
     private val startPendingTimeoutMs: Long = START_PENDING_TIMEOUT_MS,
+    /** CYP-335: the wall clock for the two rows that are BORN here rather than arriving on the wire — the
+     *  composer's [AgentEvent.UserTurn] echo and the `conn-error` [AgentEvent.Notice]. Injected (never a clock
+     *  call inside the VM body) so a test can fake it and assert a deterministic timestamp. Every other row is
+     *  dated by the server (see [AgentEvent.tsMs]). */
+    private val nowMs: () -> Long = platformTranscriptClock()::nowMs,
 ) : ViewModel() {
 
     private val _transcript = MutableStateFlow<List<AgentEvent>>(emptyList())
@@ -153,6 +158,9 @@ class AgentViewModel(
         .map { deriveStatus(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AgentStatus.IDLE)
 
+    /** CYP-335: distinguishes successive connection-loss notices (see the `catch` below). */
+    private var connErrorSeq = 0
+
     init {
         viewModelScope.launch {
             try {
@@ -165,13 +173,26 @@ class AgentViewModel(
                 // CYP-204: transient WS drops are handled by the self-reconnecting [AgentSession] (cursor-resume
                 // + the [connection] indicator), so this catch is now only a last-resort safety net for a fatal,
                 // non-reconnecting stream error — stay alive and say so honestly instead of crashing the window.
-                _transcript.update { foldEvent(it, AgentEvent.Notice("conn-error", "Verbindung zum Agenten verloren")) }
+                //
+                // CYP-335: the id must be UNIQUE, not the constant "conn-error" it used to be. Notices are
+                // de-duplicated by id in [foldEvent]; a repeated notice would be swallowed and the surviving row
+                // would keep asserting the FIRST failure's time — a timestamp that lies. Unreachable as this
+                // `catch` sits outside the `collect` (the coroutine ends here, so there is no second pass today),
+                // but the row must not depend on that for its honesty: wrap this in a retry loop tomorrow and the
+                // constant id turns into a silently-wrong clock.
+                _transcript.update {
+                    foldEvent(
+                        it,
+                        AgentEvent.Notice("conn-error-${connErrorSeq++}", "Verbindung zum Agenten verloren", nowMs()),
+                    )
+                }
             }
         }
     }
 
-    /** CYP-323: monotonic per-turn counter → a stable, unique id for each locally-echoed human turn (no wall
-     *  clock in commonMain). Uniqueness keeps [foldEvent]'s id-dedup honest and preserves chronological order. */
+    /** CYP-323: monotonic per-turn counter → a stable, unique id for each locally-echoed human turn. The id stays
+     *  clock-free on purpose (CYP-335's [nowMs] dates the row but must never key it): a counter is collision-free
+     *  even within one millisecond, which keeps [foldEvent]'s id-dedup honest and preserves chronological order. */
     private var userTurnSeq = 0
 
     /**
@@ -184,7 +205,9 @@ class AgentViewModel(
     fun onSend(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
-        _transcript.update { foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed)) }
+        _transcript.update {
+            foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed, tsMs = nowMs()))
+        }
         session.sendMessage(trimmed)
     }
 

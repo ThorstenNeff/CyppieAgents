@@ -1,7 +1,7 @@
 package com.tneff.cyppieagents.agentview
 
 import com.tneff.cyppieagents.comm.ConnectionStatus
-import com.tneff.cyppieagents.model.StreamJsonEvent
+import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,11 +9,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 
 /**
- * The real [AgentSession]: maps a stream of frozen `:core` [StreamJsonEvent]s into UI [AgentEvent]s
+ * The real [AgentSession]: maps a stream of frozen `:core` [StoredAgentEvent]s into UI [AgentEvent]s
  * via [StreamJsonMapper], and turns a human message into a [UserTurn] for the outbound sink.
  *
  * Transport-agnostic on purpose. The Hub-WS adapter supplies:
- *  - [source]: the per-agent, already-masked [StreamJsonEvent] stream (server → client), and
+ *  - [source]: the per-agent, already-masked [StoredAgentEvent] stream (server → client), and
  *  - [sink]: a function that writes a [UserTurn] back (client → server; the mediator injects it
  *    on the CLI stdin).
  *
@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.flow
  * [StubAgentSession]. This class is the mapping seam that adapter will plug into.
  */
 class MappingAgentSession(
-    private val source: Flow<StreamJsonEvent>,
+    private val source: Flow<StoredAgentEvent>,
     private val sink: (UserTurn) -> Unit,
     /** CYP-204: the WS adapter's live connection state (default LIVE for tests that pass only a source). */
     override val connection: StateFlow<ConnectionStatus> = MutableStateFlow(ConnectionStatus.LIVE),
@@ -34,7 +34,8 @@ class MappingAgentSession(
     // Fresh mapper per collection so the tool-id linkage state is never shared across collectors.
     override val events: Flow<AgentEvent> = flow {
         val mapper = StreamJsonMapper()
-        source.collect { wire -> mapper.map(wire).forEach { emit(it) } }
+        // CYP-335: the envelope's server-stamped `tsMs` dates every row the wire event produces.
+        source.collect { stored -> mapper.map(stored.event, stored.tsMs).forEach { emit(it) } }
     }
 
     override fun sendMessage(text: String) = sink(UserTurn(text))

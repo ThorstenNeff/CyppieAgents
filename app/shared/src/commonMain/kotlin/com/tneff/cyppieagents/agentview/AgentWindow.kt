@@ -422,34 +422,74 @@ private fun AgentTranscript(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         itemsIndexed(events, key = { _, event -> event.id }) { index, event ->
-            when (event) {
-                is AgentEvent.AssistantText -> AssistantTextRow(
-                    event,
-                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
-                )
-                is AgentEvent.ToolCall -> ToolCallRow(
-                    event,
-                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
-                )
-                is AgentEvent.Result -> ResultRow(
-                    event,
-                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
-                )
-                // Notice has no kind in the v0.4 vocabulary → index tag only (kind qualifier is optional).
-                is AgentEvent.Notice -> NoticeRow(
-                    event,
-                    Modifier.testTag(AgentViewTags.event(agentId, index)),
-                )
-                is AgentEvent.UserTurn -> UserTurnRow(
-                    event,
-                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
-                )
-                is AgentEvent.IncomingSystem -> IncomingSystemRow(
-                    event,
-                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.INCOMING_SYSTEM)),
-                )
+            // CYP-335: the `HH:mm` gutter wraps EVERY line kind — one place, so no row type can be forgotten.
+            TranscriptLine(agentId = agentId, index = index, tsMs = event.tsMs) {
+                when (event) {
+                    is AgentEvent.AssistantText -> AssistantTextRow(
+                        event,
+                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
+                    )
+                    is AgentEvent.ToolCall -> ToolCallRow(
+                        event,
+                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
+                    )
+                    is AgentEvent.Result -> ResultRow(
+                        event,
+                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
+                    )
+                    // Notice has no kind in the v0.4 vocabulary → index tag only (kind qualifier is optional).
+                    is AgentEvent.Notice -> NoticeRow(
+                        event,
+                        Modifier.testTag(AgentViewTags.event(agentId, index)),
+                    )
+                    is AgentEvent.UserTurn -> UserTurnRow(
+                        event,
+                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
+                    )
+                    is AgentEvent.IncomingSystem -> IncomingSystemRow(
+                        event,
+                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.INCOMING_SYSTEM)),
+                    )
+                }
             }
         }
+    }
+}
+
+/**
+ * CYP-335: one transcript line — a fixed `HH:mm` gutter in local browser time, then the kind-specific row.
+ *
+ * Wrapping at the call site (rather than threading a timestamp into each of the six row composables) is what
+ * makes "every line kind shows a time" structurally true: a future [AgentEvent] subtype gets the gutter for
+ * free, and no row can silently opt out.
+ *
+ * Top-aligned, so a multi-line assistant turn keeps its time next to its FIRST line. Monospace keeps the
+ * digits on a common grid; the timestamp is deliberately left in the semantics tree (it is information a
+ * screen-reader user wants), unlike the decorative `›`/`⇥` markers the rows clear.
+ */
+@Composable
+private fun TranscriptLine(
+    agentId: String,
+    index: Int,
+    tsMs: Long,
+    content: @Composable () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            // The offset lookup crosses into JS on Wasm — remember it per instant, not per recomposition.
+            text = remember(tsMs) { formatLocalHhMm(tsMs) },
+            color = MaterialTheme.colorScheme.outline,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.testTag(AgentViewTags.eventTime(agentId, index)),
+        )
+        Box(Modifier.weight(1f)) { content() }
     }
 }
 
