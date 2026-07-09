@@ -37,6 +37,14 @@ class LifecycleManager(
     private val ensureWorktree: (worktreeName: String) -> Unit,
     /** The connector's spawn (`connector.open(id, worktree)`) — injected so it's testable with a fake. */
     private val spawn: (agentId: String, worktreeName: String) -> ConnectorSession,
+    /**
+     * CYP-330 — a FRESH (context-free) respawn seam: clears the durable resume entry, then spawns WITHOUT
+     * `--resume`. Used as the start/restart **rollback** so a respawn that throws (e.g. a wedged resume path)
+     * can't leave the agent dead in ERROR — it retries fresh ONCE and reaches RUNNING. Null (legacy/tests /
+     * no resume store) → no fallback, a spawn failure stays ERROR as before. Complements the connector-side
+     * proactive stale-resume heal ([com.tneff.cyppieagents.connector.ResumingSession]).
+     */
+    private val spawnFresh: ((agentId: String, worktreeName: String) -> ConnectorSession)? = null,
     private val recorder: EventRecorder? = null,
     private val projector: EventProjector? = null,
     /**
@@ -132,18 +140,40 @@ class LifecycleManager(
         if (!knows(agentId)) throw NotFoundException("unknown agent '$agentId'", code = "agent_not_found")
     }
 
-    private fun spawnOrError(agentId: String, restart: Boolean): AgentRunStateEvent = try {
-        doSpawn(agentId, restart)
-    } catch (e: Exception) {
-        setRunState(agentId, AgentRunState.ERROR)
-        log.error("agent '{}' failed to {} ({})", agentId, if (restart) "restart" else "start", e.message)
-        throw ServiceUnavailableException("agent '$agentId' failed to spawn", code = "spawn_failed")
+    private fun spawnOrError(agentId: String, restart: Boolean): AgentRunStateEvent {
+        try {
+            return doSpawn(agentId, restart)
+        } catch (e: Exception) {
+            // CYP-330 rollback: a failed respawn must not leave the agent dead in ERROR. If a fresh
+            // (context-free) spawn seam is wired, retry ONCE without `--resume` so it still reaches RUNNING.
+            val fresh = spawnFresh
+            if (fresh != null) {
+                try {
+                    log.warn(
+                        "agent '{}' {} respawn failed ({}); retrying FRESH (context-free rollback)",
+                        agentId, if (restart) "restart" else "start", e.message,
+                    )
+                    return doSpawn(agentId, restart, spawnFn = fresh)
+                } catch (e2: Exception) {
+                    setRunState(agentId, AgentRunState.ERROR)
+                    log.error("agent '{}' fresh fallback also failed ({})", agentId, e2.message)
+                    throw ServiceUnavailableException("agent '$agentId' failed to spawn", code = "spawn_failed")
+                }
+            }
+            setRunState(agentId, AgentRunState.ERROR)
+            log.error("agent '{}' failed to {} ({})", agentId, if (restart) "restart" else "start", e.message)
+            throw ServiceUnavailableException("agent '$agentId' failed to spawn", code = "spawn_failed")
+        }
     }
 
-    private fun doSpawn(agentId: String, restart: Boolean): AgentRunStateEvent {
+    private fun doSpawn(
+        agentId: String,
+        restart: Boolean,
+        spawnFn: (agentId: String, worktreeName: String) -> ConnectorSession = spawn,
+    ): AgentRunStateEvent {
         val worktreeName = worktreeOf.getValue(agentId)
         ensureWorktree(worktreeName) // idempotent — reuses the existing worktree
-        sessions.register(spawn(agentId, worktreeName))
+        sessions.register(spawnFn(agentId, worktreeName))
         if (recorder != null && projector != null) {
             recorder.record(
                 if (restart) projector.agentRestarted(agentId) else projector.agentSpawned(agentId, worktreeName),

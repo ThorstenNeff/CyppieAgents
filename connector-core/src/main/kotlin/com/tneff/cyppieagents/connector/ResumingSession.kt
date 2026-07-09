@@ -27,6 +27,13 @@ import org.slf4j.LoggerFactory
  *
  * No double-deliver: the stale attempt never binds, and [ClaudeCodeSession] only mediates a result from
  * a bound session, so the stale attempt's output never reaches the hub — only the committed attempt's.
+ *
+ * **CYP-330 — proactive stale-resume probe (the RESTART fix):** the turn-path heal above only fires when a
+ * turn is sent, so a **restart** (which sends no turn) left a dead `--resume` unhealed → the agent hung dead
+ * and the operator had to press START. [start] now launches a PROACTIVE probe of [awaitStartupOutcome]: a
+ * stale `--resume` dies unbound at startup (error result / stdout ends) WITHOUT a turn, so the probe runs the
+ * SAME clear+fresh-respawn — with no turn to re-inject. A LIVE resume stays pending (binds only on the first
+ * turn, CYP-170), so the probe never fires for it and the context is preserved (NO blanket clear on restart).
  */
 class ResumingSession(
     override val agentId: String,
@@ -43,10 +50,11 @@ class ResumingSession(
     override val events: Flow<StreamJsonEvent> = _events
 
     @Volatile private var inner: ClaudeCodeSession = firstAttempt
-    @Volatile private var committed = false        // set once the resume question is answered (first turn)
-    private val commitMutex = Mutex()              // serializes the one-time first-turn/commit transition
+    @Volatile private var committed = false        // set once the resume question is answered (first turn / probe)
+    private val commitMutex = Mutex()              // serializes the one-time commit transition (turn OR probe)
     @Volatile private var closed = false
     @Volatile private var forwardJob: Job? = null
+    @Volatile private var startupProbe: Job? = null // CYP-330: the proactive stale-resume probe
 
     private fun forward(session: ClaudeCodeSession): Job =
         scope.launch { session.events.collect { _events.emit(it) } }
@@ -54,6 +62,15 @@ class ResumingSession(
     fun start() {
         forwardJob = forward(firstAttempt)
         firstAttempt.start()
+        // CYP-330: proactively answer the resume question WITHOUT a turn. A stale `--resume` dies unbound at
+        // startup (error result / stdout ends), so this heals a restart to a fresh session; a LIVE resume never
+        // completes DIED_UNBOUND at startup (it binds only on the first turn, CYP-170), so this waits harmlessly
+        // and the turn path takes over — context preserved.
+        startupProbe = scope.launch {
+            if (firstAttempt.awaitStartupOutcome() == ClaudeCodeSession.StartupOutcome.DIED_UNBOUND) {
+                healToFresh(reInject = null)
+            }
+        }
     }
 
     override suspend fun sendTurn(turn: UserTurn) {
@@ -70,38 +87,57 @@ class ResumingSession(
                     committed = true // resume worked; the turn already succeeded on the resumed session
                 }
                 ClaudeCodeSession.StartupOutcome.DIED_UNBOUND -> {
-                    // Stale `--resume`: clear, respawn fresh, re-inject the SAME turn exactly once. R3: if a
-                    // close raced in before we got here, don't clear/respawn (no spurious clear, no work).
-                    if (closed) return
-                    log.info(
-                        "resume failed for agent={} (died unbound); clearing entry, respawning fresh + re-injecting the turn",
-                        agentId,
-                    )
-                    forwardJob?.cancel()
-                    firstAttempt.close()
-                    onResumeFailed()
-                    val fresh = respawnFresh()
-                    inner = fresh
-                    committed = true // set BEFORE the re-inject so no further turn can re-enter this path
-                    forwardJob = forward(fresh)
-                    fresh.start()
-                    // Re-inject the first turn onto the fresh session. The stale attempt never bound, so it
-                    // never mediated → the hub sees this turn's result EXACTLY once (from the fresh attempt).
-                    // No third attempt: if the fresh one also dies, the turn surfaces as a normal dead session.
-                    fresh.sendTurn(turn)
+                    // Stale `--resume`: clear, respawn fresh, re-inject the SAME turn exactly once. Shared with
+                    // the proactive probe via [healToFresh] (already holding commitMutex → non-locking form).
+                    healToFreshLocked(reInject = turn)
                 }
             }
         }
     }
 
+    /** CYP-330: acquire the commit lock then heal (the proactive-probe entry; the turn path is already locked). */
+    private suspend fun healToFresh(reInject: UserTurn?) {
+        if (committed || closed) return
+        commitMutex.withLock { healToFreshLocked(reInject) }
+    }
+
+    /**
+     * CYP-167/CYP-330 — the ONE stale-resume recovery, run under [commitMutex]: clear the durable entry,
+     * respawn fresh, and (turn path only) re-inject the SAME turn exactly once. [reInject] == null is the
+     * restart/proactive case (no turn to replay). Re-checks [committed]/[closed] so the turn path and the
+     * proactive probe can't both heal (whichever wins commits; the other returns a no-op). R3: a close that
+     * raced in wins → no spurious clear/respawn.
+     */
+    private suspend fun healToFreshLocked(reInject: UserTurn?) {
+        if (committed || closed) return
+        log.info(
+            "resume failed for agent={} (died unbound); clearing entry, respawning fresh{}",
+            agentId,
+            if (reInject != null) " + re-injecting the turn" else " (restart, no turn)",
+        )
+        forwardJob?.cancel()
+        firstAttempt.close()
+        onResumeFailed()
+        val fresh = respawnFresh()
+        inner = fresh
+        committed = true // set BEFORE any re-inject so no further turn/probe can re-enter this path
+        forwardJob = forward(fresh)
+        fresh.start()
+        // Re-inject the first turn onto the fresh session (turn path only). The stale attempt never bound, so it
+        // never mediated → the hub sees this turn's result EXACTLY once. No third attempt.
+        reInject?.let { fresh.sendTurn(it) }
+    }
+
     override fun close() {
         closed = true
+        startupProbe?.cancel()
         forwardJob?.cancel()
         inner.close()
     }
 
     override suspend fun closeAndAwait() {
         closed = true
+        startupProbe?.cancel()
         forwardJob?.cancel()
         inner.closeAndAwait()
     }
