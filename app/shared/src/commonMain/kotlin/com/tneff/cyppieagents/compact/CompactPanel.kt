@@ -33,6 +33,7 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_compact_allow
 import kmpcyppieagents.app.shared.generated.resources.compact_allow_hint
 import kmpcyppieagents.app.shared.generated.resources.compact_allow_label
+import kmpcyppieagents.app.shared.generated.resources.compact_last_run_aborted
 import kmpcyppieagents.app.shared.generated.resources.compact_last_run_ok
 import kmpcyppieagents.app.shared.generated.resources.compact_last_run_timeout
 import kmpcyppieagents.app.shared.generated.resources.compact_status_idle
@@ -129,14 +130,19 @@ fun CompactPanel(viewModel: CompactViewModel, modifier: Modifier = Modifier) {
             // §1.3 last run — only a FINISHED run (finishedTs != null); an in-flight run shows via the status row.
             s.lastRun?.takeIf { it.finishedTs != null }?.let { run ->
                 val timedOut = run.pendingAgentIds.isNotEmpty()
+                // CYP-326 kill switch: an ABORTED run (allowed→false mid-run) is DISTINCT from a timeout — labelled
+                // "abgebrochen", not "Timeout", never success. Both an abort and a timeout are incomplete → WARN amber;
+                // a clean full run stays neutral (never green). Abort takes precedence over the timeout phrasing.
                 val text =
-                    if (timedOut) {
+                    if (run.aborted) {
+                        stringResource(Res.string.compact_last_run_aborted, run.completed, run.total)
+                    } else if (timedOut) {
                         stringResource(Res.string.compact_last_run_timeout, run.completed, run.total, run.pendingAgentIds.size)
                     } else {
                         stringResource(Res.string.compact_last_run_ok, run.completed, run.total)
                     }
-                // §3-4 timeout ≠ success: WARN amber (shared severity role, no hardcode); a full run stays neutral.
-                val color = if (timedOut) severityColor(Severity.WARN) else MaterialTheme.colorScheme.onSurfaceVariant
+                // §3-4 incomplete ≠ success: WARN amber (shared severity role, no hardcode); a full run stays neutral.
+                val color = if (run.aborted || timedOut) severityColor(Severity.WARN) else MaterialTheme.colorScheme.onSurfaceVariant
                 Text(
                     text = text,
                     color = color,

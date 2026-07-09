@@ -96,8 +96,16 @@ class StreamJsonMapper {
             )
         }
 
-        // Replayed user input echo — dropped (the human turn is shown locally on send). Flagged.
-        is TextBlock -> emptyList()
+        // CYP-326 #1: a PLATFORM-injected incoming message (injectedSource names the injector, e.g. the compact
+        // orchestrator) → surface it as an IncomingSystem row so the operator sees the trigger. A plain replayed
+        // user echo (injectedSource == null) stays dropped — the composer turn is already echoed client-side
+        // (CYP-323), so this never double-echoes.
+        is TextBlock ->
+            if (e.injectedSource != null) {
+                listOf(AgentEvent.IncomingSystem(id = idOf(e.uuid), text = block.text))
+            } else {
+                emptyList()
+            }
 
         else -> emptyList()
     }

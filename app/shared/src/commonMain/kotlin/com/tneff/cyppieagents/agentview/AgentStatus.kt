@@ -32,4 +32,7 @@ fun deriveStatus(transcript: List<AgentEvent>): AgentStatus =
         // CYP-323: a human turn is not agent activity — status stays IDLE until the agent's first
         // AssistantText/ToolCall flips it to RUNNING (honest: we've observed no agent work yet).
         is AgentEvent.UserTurn -> AgentStatus.IDLE
+        // CYP-326 #1: an injected incoming/system message is not agent activity — the agent's reaction (its next
+        // AssistantText/ToolCall) flips the status to RUNNING; until then IDLE (honest).
+        is AgentEvent.IncomingSystem -> AgentStatus.IDLE
     }

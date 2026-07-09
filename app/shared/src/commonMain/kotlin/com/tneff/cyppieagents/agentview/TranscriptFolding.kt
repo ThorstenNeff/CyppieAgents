@@ -43,7 +43,10 @@ fun foldEvent(current: List<AgentEvent>, event: AgentEvent): List<AgentEvent> {
         is AgentEvent.Notice,
         // CYP-323: the human echo is append-only and de-duplicated by its stable turn id — idempotent
         // insurance if the same turn were ever re-applied (re-entrant send / a future Hub-echo path).
-        is AgentEvent.UserTurn -> {
+        is AgentEvent.UserTurn,
+        // CYP-326 #1: the injected incoming/system message — append-only, de-duplicated by id (a reconnect
+        // replay of the same synthetic event must not double it), rendered in stream order.
+        is AgentEvent.IncomingSystem -> {
             if (idx >= 0) current else current + event
         }
     }

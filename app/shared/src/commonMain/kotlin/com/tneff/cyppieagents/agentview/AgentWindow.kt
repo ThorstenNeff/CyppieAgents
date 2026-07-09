@@ -57,7 +57,9 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_result_success
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_error
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_ok
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_running
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_system
 import kmpcyppieagents.app.shared.generated.resources.a11y_user_turn
+import kmpcyppieagents.app.shared.generated.resources.transcript_system_label
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_already_running
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_generic
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_operator_required
@@ -307,6 +309,10 @@ private fun AgentTranscript(
                     event,
                     Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
                 )
+                is AgentEvent.IncomingSystem -> IncomingSystemRow(
+                    event,
+                    Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.INCOMING_SYSTEM)),
+                )
             }
         }
     }
@@ -397,6 +403,40 @@ private fun ResultRow(event: AgentEvent.Result, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.clearAndSetSemantics { contentDescription = resultDescription },
+        )
+    }
+}
+
+@Composable
+private fun IncomingSystemRow(event: AgentEvent.IncomingSystem, modifier: Modifier = Modifier) {
+    // CYP-326 #1: a PLATFORM-injected incoming message (e.g. the compact orchestrator's `/compact`), styled
+    // `onSurfaceVariant` with a visible "System" label + a decorative leading `⇥` — distinct from the assistant
+    // (`onSurface`) and from the operator's own composer turn (CYP-323 `secondary` + `›`). The raw injected text
+    // is shown verbatim (truthful — `/compact` reads as what was sent). The `⇥` and the "System" label are
+    // decorative/cleared; the row carries an invisible "System: …" content description for the screen reader.
+    val systemLabel = stringResource(Res.string.transcript_system_label)
+    val systemDescription = stringResource(Res.string.a11y_transcript_system, event.text)
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "⇥",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.clearAndSetSemantics {}, // decorative marker — hidden from the screen reader
+        )
+        Text(
+            text = systemLabel,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.clearAndSetSemantics {}, // visible label; SR meaning is carried by the row description
+        )
+        Text(
+            text = event.text,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.clearAndSetSemantics { contentDescription = systemDescription },
         )
     }
 }

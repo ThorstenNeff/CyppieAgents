@@ -59,6 +59,18 @@ sealed interface AgentEvent {
         override val id: String,
         val text: String,
     ) : AgentEvent
+
+    /**
+     * CYP-326 #1: an incoming message the PLATFORM injected into the agent's session (e.g. the compact
+     * orchestrator's `/compact` prepare text) — surfaced so the operator sees the trigger, not just the agent's
+     * reaction. Distinct from [UserTurn] (the operator's own composer turn): it is the SYSTEM speaking to the
+     * agent. Emitted by [StreamJsonMapper] only when the wire `UserEvent.injectedSource != null`; a plain replayed
+     * user echo stays dropped (never a composer double-echo). Rendered in stream order → before the reaction.
+     */
+    data class IncomingSystem(
+        override val id: String,
+        val text: String,
+    ) : AgentEvent
 }
 
 enum class ToolStatus { RUNNING, OK, ERROR }
