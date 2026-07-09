@@ -43,10 +43,10 @@ import com.tneff.cyppieagents.workspace.WorkspaceHttpRepository
 import com.tneff.cyppieagents.workspace.WorkspaceRepository
 import com.tneff.cyppieagents.workspace.WorkspaceRosterPanel
 import com.tneff.cyppieagents.workspace.WorkspaceRosterViewModel
+import com.tneff.cyppieagents.compact.CompactHttpRepository
 import com.tneff.cyppieagents.compact.CompactPanel
 import com.tneff.cyppieagents.compact.CompactRepository
 import com.tneff.cyppieagents.compact.CompactViewModel
-import com.tneff.cyppieagents.compact.StubCompactRepository
 import com.tneff.cyppieagents.workspace.isOperatorAccess
 import com.tneff.cyppieagents.workspace.showRoster
 import com.tneff.cyppieagents.acl.AclApi
@@ -522,8 +522,12 @@ fun AgentShell(
     // CYP-326: the compact-orchestration gate is GLOBAL/team-wide (server-owned state), NOT project-scoped —
     // so this VM is deliberately NOT re-keyed on activeProjectId (unlike settings/ACL above): one instance backs
     // the window for the app's lifetime. `editable = isOperator` (control operator-gated; the server also 403s).
-    // Repo defaults to the stub until Backend's Milestone-C endpoints land → then swap in CompactHttpRepository.
-    val resolvedCompactRepository = remember(compactRepository) { compactRepository ?: StubCompactRepository() }
+    // CYP-326 Milestone C: the live endpoints exist (`GET /api/compact/status` read-tier · `POST /api/compact/config`
+    // operator) → default to the live repo. Reads authenticate members via the shared client's session token
+    // (CYP-188); the operator Bearer gates the config write. Tests inject a stub.
+    val resolvedCompactRepository = remember(compactRepository, httpClient, cfg) {
+        compactRepository ?: CompactHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
     val compactVm = viewModel(key = "compact-global") {
         CompactViewModel(resolvedCompactRepository, editable = isOperator)
     }

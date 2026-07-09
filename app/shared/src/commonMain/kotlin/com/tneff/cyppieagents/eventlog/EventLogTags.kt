@@ -41,6 +41,8 @@ object EventBrowseTags {
 
     const val DETAIL = "eventBrowse.detail"
     const val DETAIL_JSON = "eventBrowse.detail.json"
+    /** CYP-326 §2.5: the localized X/N summary for a `compact.orchestration.done` event (above the raw JSON). */
+    const val DETAIL_COMPACT_SUMMARY = "eventBrowse.detail.compactSummary"
     const val DETAIL_SOURCE_TS = "eventBrowse.detail.sourceTs"
     const val DETAIL_SHOW_RUN = "eventBrowse.detail.showRun"
     const val DETAIL_SHOW_SESSION = "eventBrowse.detail.showSession"
