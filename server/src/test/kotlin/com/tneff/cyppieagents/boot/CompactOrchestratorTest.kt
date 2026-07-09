@@ -47,6 +47,7 @@ class CompactOrchestratorTest {
         emit = { h.events.add(it) },
         agentsInOrder = { h.order },
         config = { h.config },
+        correlationIdGen = { "cid-1" }, // CYP-327: deterministic run join key for the assertions
     )
 
     @Test
@@ -148,6 +149,19 @@ class CompactOrchestratorTest {
         assertTrue(h.sendsOf(CompactOrchestrator.COMPACT_COMMAND).none { it.second == "backend" }, "no /compact to backend after abort")
         assertEquals(1, done.summary.completed) // PO compacted before the abort — still counts (not retractable)
         assertTrue("backend" in done.summary.pendingAgentIds && "frontend" in done.summary.pendingAgentIds)
+    }
+
+    @Test
+    fun correlationId_stampedOnSummaryAndEveryEvent_theAuthoritativeJoinKey() = runTest {
+        val h = Harness(); val orch = buildOrch(h)
+        h.completions.tryEmit("po"); h.completions.tryEmit("frontend"); h.completions.tryEmit("backend")
+        orch.onPoContext(600_000); runCurrent(); advanceUntilIdle()
+
+        val done = h.done().single()
+        assertEquals("cid-1", done.summary.correlationId, "the run's correlationId is stamped into the summary (UI join key)")
+        assertEquals("cid-1", done.correlationId)
+        // EVERY event of the run carries the SAME correlationId, so the UI filters the sequence list authoritatively.
+        assertTrue(h.events.all { it.correlationId == "cid-1" }, "every compact event shares the run's correlationId")
     }
 
     @Test
