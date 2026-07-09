@@ -31,6 +31,10 @@ data class CompactUiState(
     /** CYP-327 Feature A: the server-CONFIRMED threshold just set (tokens), for a transient INFO confirmation.
      *  `null` = no confirmation showing. Set only after `onSuccess` (never optimistic); self-clears. */
     val thresholdSetConfirm: Int? = null,
+    /** CYP-329: the server-CONFIRMED stagger just set (ms), for a transient INFO confirmation (never optimistic). */
+    val staggerSetConfirm: Long? = null,
+    /** CYP-329: the server-CONFIRMED round-gap just set (ms), for a transient INFO confirmation (never optimistic). */
+    val roundGapSetConfirm: Long? = null,
 )
 
 /** CYP-327: how long the transient threshold-set confirmation stays visible before it self-clears. */
@@ -129,4 +133,57 @@ class CompactViewModel(
 
     // CYP-327: the self-clear watchdog for the transient threshold confirmation (cancelled if a newer set arrives).
     private var confirmJob: Job? = null
+
+    /**
+     * CYP-329 — operator-only server-mirror write of the **stagger** timing (ms), same discipline as [setThreshold]:
+     * fail-closed (no-op without [CompactUiState.editable]) and NEVER optimistic — the displayed value adopts the
+     * server's returned [CompactStatus.staggerMs]; on failure the mirror is unchanged. The write preserves every
+     * other field (allowed / threshold / the other timings) so only stagger changes. A locally out-of-range value
+     * is rejected before the write via the SINGLE-SOURCE [CompactConfig.timingBoundsError] (defence in depth — the
+     * server also 400s), so no fabricated/partial config is ever sent.
+     */
+    fun setStaggerMs(staggerMs: Long) {
+        writeTiming(isStagger = true) { s -> configOf(s).copy(staggerMs = staggerMs) }
+    }
+
+    /** CYP-329 — operator-only server-mirror write of the **round-gap** timing (ms); see [setStaggerMs]. */
+    fun setRoundGapMs(roundGapMs: Long) {
+        writeTiming(isStagger = false) { s -> configOf(s).copy(roundGapMs = roundGapMs) }
+    }
+
+    /** The current server status as a full [CompactConfig] — the base every single-field timing write preserves. */
+    private fun configOf(s: CompactStatus) = CompactConfig(
+        allowed = s.allowed, thresholdTokens = s.thresholdTokens,
+        staggerMs = s.staggerMs, roundGapMs = s.roundGapMs, roundWindowMs = s.roundWindowMs,
+    )
+
+    /**
+     * Shared never-optimistic write for a single timing field. Fail-closed on the operator flag and on the
+     * single-source [CompactConfig.timingBoundsError]; on success adopts the server status and raises the transient
+     * confirmation on the SERVER-returned value (not the drafted one). [isStagger] selects which field's
+     * confirmation to raise/clear (true = stagger, false = round-gap).
+     */
+    private fun writeTiming(isStagger: Boolean, build: (CompactStatus) -> CompactConfig) {
+        if (!_state.value.editable) return
+        val current = _state.value.status ?: return
+        val config = build(current)
+        if (config.timingBoundsError() != null) return // never send an out-of-range config
+        runScope.launch {
+            runCatching { repository.setConfig(config) }.onSuccess { s ->
+                if (isStagger) {
+                    _state.update { it.copy(status = s, staggerSetConfirm = s.staggerMs) }
+                    stagJob?.cancel()
+                    stagJob = runScope.launch { delay(CONFIRM_VISIBLE_MS); _state.update { it.copy(staggerSetConfirm = null) } }
+                } else {
+                    _state.update { it.copy(status = s, roundGapSetConfirm = s.roundGapMs) }
+                    gapJob?.cancel()
+                    gapJob = runScope.launch { delay(CONFIRM_VISIBLE_MS); _state.update { it.copy(roundGapSetConfirm = null) } }
+                }
+            }
+            // onFailure: keep the server-mirror unchanged — no optimistic change, no confirmation.
+        }
+    }
+
+    private var stagJob: Job? = null
+    private var gapJob: Job? = null
 }

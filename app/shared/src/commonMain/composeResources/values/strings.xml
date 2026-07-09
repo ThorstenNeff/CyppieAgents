@@ -534,6 +534,13 @@
     <string name="compact_threshold_range_error">1 bis 1.000.000 Tokens</string>
     <string name="compact_threshold_set_confirm">Schwelle auf %1$s gesetzt</string>
     <string name="a11y_compact_threshold_input">Compact-Schwelle in Tokens (1 bis 1.000.000)</string>
+    <!-- CYP-329: operator-einstellbare Compact-Timings (UI in Minuten, Wire in ms). -->
+    <string name="compact_stagger_label">Stagger (Min.)</string>
+    <string name="compact_round_gap_label">Runden-Pause (Min.)</string>
+    <string name="compact_timing_range_error">Zulässig: %1$s bis %2$s</string>
+    <string name="compact_timing_set_confirm">Auf %1$s gesetzt</string>
+    <string name="a11y_compact_stagger_input">Stagger zwischen Nachrichten innerhalb einer Runde, in Minuten</string>
+    <string name="a11y_compact_round_gap_input">Pause vor Runde 2, in Minuten</string>
     <!-- CYP-327 Feature B: per-Sequenz Compact-Event-Liste — dynamischer Header (läuft/vergangen) + ehrlicher Leerzustand. -->
     <string name="compact_run_current">Aktueller Lauf</string>
     <string name="compact_run_last">Letzter Lauf</string>

@@ -37,6 +37,31 @@ object CompactTags {
     /** CYP-327 Feature A: the transient INFO confirmation after a server-confirmed set ("threshold set to X"). */
     const val THRESHOLD_CONFIRM = "compact.thresholdConfirm"
 
+    // --- CYP-329: operator-tunable timings — Stagger + Round gap editors (minutes UI, ms wire). Each mirrors the
+    //     CYP-327 threshold editor: read-only row for a member, input/set/error/confirm for an operator. ---
+
+    /** Read-only stagger row (non-operator). */
+    const val STAGGER = "compact.stagger"
+    /** Operator stagger input (minutes). */
+    const val STAGGER_INPUT = "compact.staggerInput"
+    /** Operator "set stagger" action (enabled only for a valid, changed value). */
+    const val STAGGER_SET = "compact.staggerSet"
+    /** Inline stagger range error (single-sourced `CompactConfig.STAGGER_MIN_MS..STAGGER_MAX_MS`). */
+    const val STAGGER_ERROR = "compact.staggerError"
+    /** Transient INFO confirmation after a server-confirmed stagger set. */
+    const val STAGGER_CONFIRM = "compact.staggerConfirm"
+
+    /** Read-only round-gap row (non-operator). */
+    const val ROUND_GAP = "compact.roundGap"
+    /** Operator round-gap input (minutes). */
+    const val ROUND_GAP_INPUT = "compact.roundGapInput"
+    /** Operator "set round gap" action (enabled only for a valid, changed value). */
+    const val ROUND_GAP_SET = "compact.roundGapSet"
+    /** Inline round-gap range error (single-sourced `CompactConfig.ROUND_GAP_MIN_MS..ROUND_GAP_MAX_MS`). */
+    const val ROUND_GAP_ERROR = "compact.roundGapError"
+    /** Transient INFO confirmation after a server-confirmed round-gap set. */
+    const val ROUND_GAP_CONFIRM = "compact.roundGapConfirm"
+
     /** The server-mirror status row (liveRegion). Absent when the server state is unknown (§3-3). */
     const val STATUS = "compact.status"
 

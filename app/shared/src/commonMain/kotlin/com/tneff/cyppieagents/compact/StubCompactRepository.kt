@@ -34,6 +34,11 @@ class StubCompactRepository(
             thresholdTokens = config.thresholdTokens,
             // Armed = the gate is on and no run is in flight (the threshold-watch is live). Idle otherwise.
             armed = config.allowed && !status.running,
+            // CYP-329 — mirror the tunable timings back (faithful server mirror). A divergent server (e.g. clamping)
+            // is modelled by a dedicated test repo, not here — the honesty tooth uses that, not this echo.
+            staggerMs = config.staggerMs,
+            roundGapMs = config.roundGapMs,
+            roundWindowMs = config.roundWindowMs,
         )
         return status
     }

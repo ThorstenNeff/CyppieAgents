@@ -527,6 +527,13 @@
     <string name="compact_threshold_range_error">1 to 1,000,000 tokens</string>
     <string name="compact_threshold_set_confirm">Threshold set to %1$s</string>
     <string name="a11y_compact_threshold_input">Compaction threshold in tokens (1 to 1,000,000)</string>
+    <!-- CYP-329: operator-tunable compact timings (minutes in the UI, ms on the wire). -->
+    <string name="compact_stagger_label">Stagger (min)</string>
+    <string name="compact_round_gap_label">Round gap (min)</string>
+    <string name="compact_timing_range_error">Allowed: %1$s to %2$s</string>
+    <string name="compact_timing_set_confirm">Set to %1$s</string>
+    <string name="a11y_compact_stagger_input">Stagger between messages within a round, in minutes</string>
+    <string name="a11y_compact_round_gap_input">Pause before round 2, in minutes</string>
     <!-- CYP-327 Feature B: per-sequence compact-event list — dynamic header (running/past) + honest empty state. -->
     <string name="compact_run_current">Current run</string>
     <string name="compact_run_last">Last run</string>
