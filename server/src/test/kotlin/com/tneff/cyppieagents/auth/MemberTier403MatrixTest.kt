@@ -56,6 +56,9 @@ class MemberTier403MatrixTest {
         // `/api/channels` (ACL-filtered, content-free channel ids), so a MEMBER reaches it (200), not tier-denied.
         "GET /api/channels/writable",
         "GET /api/config/repo", "GET /api/config/apikey", "GET /api/events",
+        // CYP-326 — the compact-orchestration STATUS read is read-tier (token OR verified human session), like the
+        // config reads: a MEMBER reaches it (200), content-free. The operator write POST /api/compact/config stays denied.
+        "GET /api/compact/status",
         // CYP-232 — avatar serve + preset preview are READ-TIER (token OR verified human session), so the tokenless
         // SPA renders avatars; a MEMBER reaches them (200/404, not tier-denied) exactly like the other reads above.
         "GET /api/agents/{id}/avatar", "GET /api/agents/{id}/avatar/preview",

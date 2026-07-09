@@ -33,6 +33,15 @@ class NoSecretInReadResponseTest {
      *  CREATE (POST) op (never re-rendered on a read). `(schemaName, fieldName)` — tied to `POST` below. */
     private val allowlist = setOf("CreatedAgent" to "token", "MintedParticipantToken" to "token")
 
+    /** CYP-326 — deliberately allowlisted NON-credential fields whose name merely contains "token": a token
+     *  COUNT / threshold (the compact-orchestration context threshold), safe on reads. The guard's own note
+     *  (below) prescribes flag-and-allowlist for such names rather than a rename (which would break the
+     *  already-published Dev contract). */
+    private val readSafeTokenFields = setOf(
+        "CompactStatus" to "thresholdTokens",
+        "CompactConfig" to "thresholdTokens",
+    )
+
     private fun restBodyDescriptor(b: RestContract.Body): SerialDescriptor? = when (b) {
         is RestContract.Body.Json -> b.descriptor
         is RestContract.Body.JsonArray -> b.element
@@ -59,7 +68,8 @@ class NoSecretInReadResponseTest {
                 for ((schema, field) in responseFields(desc)) {
                     if (!isSensitive(field)) continue
                     // A sensitive response field is legit ONLY as a one-time-mint disclosure on a CREATE (POST) op.
-                    val allowed = op.method == "POST" && (schema to field) in allowlist
+                    val allowed = (op.method == "POST" && (schema to field) in allowlist) ||
+                        (schema to field) in readSafeTokenFields // CYP-326: a token COUNT threshold, not a credential
                     if (!allowed) add("${op.method} ${op.path} → $schema.$field")
                 }
             }

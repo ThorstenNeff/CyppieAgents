@@ -111,6 +111,8 @@ fun Application.installPlatform(
             lifecycleRoutes({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
             configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
+            // CYP-326: compact-orchestration config (operator) + status (read-tier).
+            compactRoutes(booted.compactConfigStore, booted.compactStatus, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase)
             // CYP-97/CYP-255 (.4b): agent CRUD lands in the ACTIVE project's runtime (resolver).
             agentMgmtRoutes({ booted.runtimeRegistry.active().agentManagement }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-122: connector opt-in (operator-gated, audited); CYP-255 (.4b) caps from the ACTIVE project.
@@ -231,6 +233,7 @@ fun Application.bootPlatform(
         // gitignored; overlaid over the platform.config.json seed at boot (operator edits survive restart).
         agentOverrideFile = gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile(),
         tokenUsageFile = gitRoot.toPath().resolve(".cyppie/token-usage.json").toFile(), // CYP-325 (defect 2)
+        compactConfigFile = gitRoot.toPath().resolve(".cyppie/compact-config.json").toFile(), // CYP-326
         // CYP-256 (.5a): the durable per-project agent-set store — out-of-repo under the gitRoot, gitignored,
         // next to the other .cyppie stores. Single source for runtime-added agents (non-boot agents survive restart).
         projectAgentFile = gitRoot.toPath().resolve(".cyppie/project-agents.json").toFile(),
