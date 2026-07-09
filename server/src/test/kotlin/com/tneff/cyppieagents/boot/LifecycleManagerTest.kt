@@ -137,6 +137,48 @@ class LifecycleManagerTest {
     }
 
     @Test
+    fun restart_spawnFailure_fallsBackToFresh_endsRunning_notError() = runBlocking {
+        // CYP-330 rollback: the resume-aware `spawn` throws (models a wedged --resume respawn), but a fresh
+        // (context-free) `spawnFresh` succeeds → restart must retry fresh ONCE and end RUNNING, never ERROR.
+        val freshWorktrees = CopyOnWriteArrayList<String>()
+        val manager = LifecycleManager(
+            initialWorktrees = mapOf("backend" to "backend"),
+            sessions = ConnectorSessions(),
+            ensureWorktree = {},
+            spawn = { _, _ -> throw RuntimeException("resume respawn boom") },
+            spawnFresh = { id, wt -> freshWorktrees.add(wt); FakeSession(id) },
+        )
+        val ev = manager.restart("backend")
+        assertEquals(AgentRunState.RUNNING, ev.runState, "restart reaches RUNNING via the fresh fallback")
+        assertEquals(AgentRunState.RUNNING, manager.runStateOf("backend"))
+        assertEquals(listOf("backend"), freshWorktrees, "the fresh fallback respawned into the same worktree")
+    }
+
+    @Test
+    fun restart_bothSpawnAndFreshFail_is503_andError() = runBlocking {
+        // If even the fresh fallback fails, the honest outcome is 503 + ERROR (genuinely un-spawnable).
+        val manager = LifecycleManager(
+            initialWorktrees = mapOf("backend" to "backend"),
+            sessions = ConnectorSessions(),
+            ensureWorktree = {},
+            spawn = { _, _ -> throw RuntimeException("resume boom") },
+            spawnFresh = { _, _ -> throw RuntimeException("fresh boom too") },
+        )
+        val e = assertFailsWith<ServiceUnavailableException> { manager.restart("backend") }
+        assertEquals("spawn_failed", e.code)
+        assertEquals(AgentRunState.ERROR, manager.runStateOf("backend"))
+    }
+
+    @Test
+    fun restart_noFreshSeam_spawnFailure_is503_andError_legacy() = runBlocking {
+        // With no spawnFresh wired (legacy/tests), a spawn failure stays the old 503 + ERROR — no silent change.
+        val f = Fix2(failSpawn = true)
+        val e = assertFailsWith<ServiceUnavailableException> { f.manager.restart("backend") }
+        assertEquals("spawn_failed", e.code)
+        assertEquals(AgentRunState.ERROR, f.manager.runStateOf("backend"))
+    }
+
+    @Test
     fun snapshot_coversAllAgents() = runBlocking {
         val f = Fix2()
         f.manager.bootAgent("backend")

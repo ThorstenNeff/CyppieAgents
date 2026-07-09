@@ -512,6 +512,9 @@ class BootOrchestrator(
             ensureWorktree = ensureActiveWorktree, // CYP-247 S1: lazy per-project clone + worktree off resolvedRepo(pid)
             // CYP-247 S1b: thread the boot project's pid into the spawn (key/cwd/stamp from config.projectId, explicit).
             spawn = { id, worktree -> connector.open(id, worktree, config.projectId) },
+            // CYP-330: the fresh (context-free) rollback — clear the durable resume entry, then open WITHOUT
+            // `--resume` so a failed resume-respawn still reaches RUNNING (never dead in ERROR).
+            spawnFresh = { id, worktree -> sessionStore?.clear(config.projectId, id); connector.open(id, worktree, config.projectId) },
             recorder = eventRecorder,
             projector = eventProjector,
             onContextReset = { tokenUsageTracker.reset(it) },   // CYP-316: stop/restart → fresh context → null
@@ -603,6 +606,8 @@ class BootOrchestrator(
                 ensureWorktree = ensureActiveWorktree, // CYP-247 S1: lazy per-project clone + worktree off resolvedRepo(pid)
                 // CYP-247 S1b: thread THIS project's pid into the spawn so key/cwd/stamp come from `pid`, not active()/boot.
                 spawn = { id, worktree -> connector.open(id, worktree, pid) },
+                // CYP-330: fresh (context-free) rollback for this project — clear the resume entry, open without --resume.
+                spawnFresh = { id, worktree -> sessionStore?.clear(pid, id); connector.open(id, worktree, pid) },
                 recorder = eventRecorder,
                 projector = eventProjector,
                 onContextReset = { pTokenUsage.reset(it) },   // CYP-316: this project's lifecycle → its own tracker
