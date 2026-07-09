@@ -11,6 +11,13 @@
 > authoritative Hooks/OTEL finding + Context7 on Claude Code session storage). Where a claim is
 > empirically unconfirmed it is flagged **[SPIKE]**. The **final option choice is the Auftraggeber's**;
 > §9 gives a reasoned lean, not a unilateral decision.
+>
+> **Companion UX doc (the UX half of this deliverable):**
+> `docs/design/CYP-331-interactive-terminal-coexistence-design.md` (UIUX, `f96ac9d`, branch
+> `feature/CYP-331-interactive-terminal-spec`). Its UX model — **one window per agent with a
+> `[Orchestration | Terminal]` mode toggle, where the toggle act *is* the hand-off** (no split-screen,
+> matching the protocol either/or of §3) — is **compatible with this architecture** and drives the
+> control seams in §4.4. Read the two together as one coherent deliverable.
 
 ---
 
@@ -165,6 +172,35 @@ Two **distinct** continuity risks — do **not** conflate; verify which actually
 (b) graceful-drain-before-deploy for the same-host now; do not ship (a) as *the* cause until the (b) spike
 rules it out.
 
+### 4.4 Hand-off control seams (driven by the UIUX one-window mode-toggle)
+
+The UX model is **one window per agent** with a `[Orchestration | Terminal]` toggle; **flipping the toggle
+*is* the §4.1 hand-off** (there is no split-screen — which is exactly right, since the two modes are
+mutually exclusive per session, §3). The backend must expose four seams so the UI can drive that flip
+safely:
+
+1. **Hand-off endpoint with explicit backend confirmation** — `POST /api/agents/{id}/mode`
+   `{ target: ORCHESTRATION | TERMINAL }` → the backend performs the sequential hand-off (graceful stop of
+   the current process → `--resume <sid>` spawn of the target mode → **confirm only after the target is
+   live/bound**), and the UI flips **non-optimistically** (state changes only on the backend's confirmation,
+   the CompactVM pattern — never an optimistic UI flip that could desync from a session that failed to
+   resume). Fail path returns an error and the UI stays in the prior mode.
+2. **IDLE-gate before takeover (reuse CYP-324 busy)** — the mode flip is **gated on the agent being idle**
+   (`AgentBusyStateTracker`): no silent turn-hijack. If a turn is in-flight, the default hand-off **defers**
+   (bounded-wait, exactly the CYP-326 idle-gate discipline). A **"Seize"** — taking the session mid-turn —
+   is available only as an **explicit + destructive** operator action (confirmed, flagged as
+   context-risking), never the default.
+3. **Hand-off-state broadcast** — a content-free WS channel (twin of `/ws/lifecycle` · `/ws/busy-state`)
+   publishing `{ agentId, mode, heldBy (operatorId), since (ts) }` to **all** operators, so a second
+   operator sees *who* holds a session interactively and *since when*. **State / identity / time only —
+   NEVER keystrokes or terminal content** (no keystroke leak; the interactive PTY stream is single-viewer
+   by construction and is not fanned out on this channel). This is the multi-operator coordination seam for
+   the single-writer invariant.
+4. **Render z-order** — see §5 (UIUX confirms the 04-Doc z-order constraint is back).
+
+These seams are the same shapes the platform already ships (confirm-then-commit like CompactVM; idle-gate
+like CYP-326; content-free per-agent WS twin like CYP-324) — so they are **incremental, not novel**.
+
 ---
 
 ## 5. Q4 — Terminal render per target (reverses 05-D6; re-activates the 04 risk)
@@ -179,6 +215,13 @@ that entire 04-Doc strategy — and its risks — **back**:
 | **Web (Wasm)** | **xterm.js DOM-overlay over the Compose canvas via HTML-interop** | ⚠️ **THE Angst-Stück** — 04 §7 "highest technical risk", Beta/experimental. Fallback: a **Kotlin/JS** web build |
 | Android | Compose-ANSI renderer *or* WebView+xterm | secondary; keyboard-in-WebView caveat |
 | iOS | stub (later `UIKitView` + SwiftTerm) | stub |
+
+**Z-order (UIUX-confirmed).** The 04-Doc constraint is **back**: a real terminal (SwingPanel on Desktop,
+DOM overlay on Web) renders **over** the Compose layer and cannot be drawn under Compose chrome. Design
+rule (04 §5): window **chrome = a frame around the terminal, never an overlay on top of it** — title bar,
+the `[Orchestration | Terminal]` toggle, resize handles, and the hand-off/held-by badge all live in the
+**frame**, and any popup that must appear over the terminal is a Swing/DOM popup, not a Compose overlay.
+This directly shapes the one-window design (§4.4) — the mode toggle sits in the frame chrome.
 
 **Server-side:** interactive agents need a **real PTY per agent** (pty4j, 02 §10) — this reverses 05-D4
 (piped-stdio default) and **brings back the PTY-manager that the MVP never built**. Non-trivial new
@@ -277,8 +320,10 @@ coexistence obligation via `--resume`. A full **Option A** is the end-state *if*
 > **[SPIKE] register:** (i) Wasm xterm.js-over-Compose interop; (ii) Agent-SDK mediated substrate + JVM
 > integration; (iii) mid-turn hard-kill → is the JSONL transcript still `--resume`-able. None block P0.
 >
-> **Cross-refs:** as-is code (`ClaudeCodeSession`/`RecordingSessionObserver`/`EventProjector`/
-> `LifecycleManager`/`ResumingSession`/`HubMcpConfigWriter`/`SessionStore`); CYP-316/324/325/326 (feeds),
-> CYP-330 (stale-resume heal + boot reconcile), CYP-146 (hub-MCP), CYP-167 (SessionStore/`--resume`),
-> CYP-247 S3 (drain-before-teardown); docs 02 §9/§10, 04 (all), 05 D4/D5/D6; Context7 Claude Code
-> session-storage + Agent-SDK hosting; PO Q1 Hooks/OTEL feasibility finding.
+> **Cross-refs:** **Companion UX doc** `CYP-331-interactive-terminal-coexistence-design.md` (UIUX,
+> `f96ac9d`) — the one-window mode-toggle model + the §4.4 control seams. As-is code
+> (`ClaudeCodeSession`/`RecordingSessionObserver`/`EventProjector`/`LifecycleManager`/`ResumingSession`/
+> `HubMcpConfigWriter`/`SessionStore`); CYP-316/324/325/326 (feeds), CYP-330 (stale-resume heal + boot
+> reconcile), CYP-146 (hub-MCP), CYP-167 (SessionStore/`--resume`), CYP-247 S3 (drain-before-teardown),
+> CompactVM (non-optimistic confirm-then-commit); docs 02 §9/§10, 04 (all), 05 D4/D5/D6; Context7 Claude
+> Code session-storage + Agent-SDK hosting; PO Q1 Hooks/OTEL feasibility finding.
