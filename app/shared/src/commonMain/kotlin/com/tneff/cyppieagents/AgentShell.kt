@@ -43,6 +43,10 @@ import com.tneff.cyppieagents.workspace.WorkspaceHttpRepository
 import com.tneff.cyppieagents.workspace.WorkspaceRepository
 import com.tneff.cyppieagents.workspace.WorkspaceRosterPanel
 import com.tneff.cyppieagents.workspace.WorkspaceRosterViewModel
+import com.tneff.cyppieagents.compact.CompactPanel
+import com.tneff.cyppieagents.compact.CompactRepository
+import com.tneff.cyppieagents.compact.CompactViewModel
+import com.tneff.cyppieagents.compact.StubCompactRepository
 import com.tneff.cyppieagents.workspace.isOperatorAccess
 import com.tneff.cyppieagents.workspace.showRoster
 import com.tneff.cyppieagents.acl.AclApi
@@ -129,6 +133,7 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_title
 import kmpcyppieagents.app.shared.generated.resources.report_title
 import kmpcyppieagents.app.shared.generated.resources.project_loading
+import kmpcyppieagents.app.shared.generated.resources.compact_window_title
 import kmpcyppieagents.app.shared.generated.resources.settings_title
 import kmpcyppieagents.app.shared.generated.resources.workspace_members_title
 import org.jetbrains.compose.resources.stringResource
@@ -141,6 +146,7 @@ private const val PRODUCT_LEAD_WINDOW_ID = "productLead"
 private const val EVENTLOG_BROWSE_WINDOW_ID = "eventlog"
 private const val EVENTLOG_TAIL_WINDOW_ID = "eventtail"
 private const val ROSTER_WINDOW_ID = "workspaceRoster"
+private const val COMPACT_WINDOW_ID = "compact"
 
 /**
  * The app shell (CYP-15): a "desktop" of floating windows. Marries the window manager (CYP-10) with
@@ -186,6 +192,9 @@ fun AgentShell(
     tokenUsageSource: TokenUsageSource? = null,
     /** Override the CYP-324 busy-state source (`/ws/busy-state`); `null` → the live source. Tests inject a stub. */
     busyStateSource: BusyStateSource? = null,
+    /** Override the CYP-326 compact-orchestration port; `null` → the in-memory stub until Backend's Milestone-C
+     *  endpoints land (`GET /api/compact/status` · `POST /api/compact/config`), then the live HTTP repo. */
+    compactRepository: CompactRepository? = null,
     /** Override the project-settings data port (CYP-84/85); `null` → the in-memory stub until CYP-96 lands. */
     configRepository: ConfigRepository? = null,
     /** Override the agent-management data port (CYP-86/87/88); `null` → the in-memory stub until CYP-97 lands. */
@@ -228,6 +237,7 @@ fun AgentShell(
     val agentMgmtTitle = stringResource(Res.string.agent_mgmt_title)
     val productLeadTitle = stringResource(Res.string.report_title)
     val rosterTitle = stringResource(Res.string.workspace_members_title)
+    val compactTitle = stringResource(Res.string.compact_window_title)
 
     // One shared WS+HTTP client (created here — the agent-management REST client below needs it). Closed
     // when the shell leaves composition. The JVM/desktop engine (CIO) is wired; other engines = CYP-27.
@@ -346,6 +356,9 @@ fun AgentShell(
         // Product-Lead reports (CYP-90): always present; operator-gated/fail-closed — without a token the
         // panel shows only the gate hint (no report), not an omission (PRODUCT-LEAD §3).
         add(PRODUCT_LEAD_WINDOW_ID to productLeadTitle)
+        // CYP-326: compact-orchestration gate — always present, VISIBLE TO ALL (§1.2), control operator-gated
+        // inside the panel (the auto-compaction effect is team-wide, so members have an honest right to see it).
+        add(COMPACT_WINDOW_ID to compactTitle)
         // Operator-only observability windows: offered ONLY with an operator token (omission, not a
         // dead "no access" window — EVENT-LOG-UI §5.6). Live sources swap in at CYP-39/40.
         if (isOperator) {
@@ -413,7 +426,7 @@ fun AgentShell(
                 it == ACL_WINDOW_ID || it == EVENTLOG_BROWSE_WINDOW_ID ||
                     it == EVENTLOG_TAIL_WINDOW_ID || it == SETTINGS_WINDOW_ID ||
                     it == AGENT_MGMT_WINDOW_ID || it == PRODUCT_LEAD_WINDOW_ID ||
-                    it == ROSTER_WINDOW_ID
+                    it == ROSTER_WINDOW_ID || it == COMPACT_WINDOW_ID
             }
             .toSet()
     }
@@ -505,6 +518,14 @@ fun AgentShell(
     // the VM loads once with no re-scope trigger → stale on switch.
     val settingsVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$SETTINGS_WINDOW_ID-$activeProjectId") {
         SettingsViewModel(resolvedConfigRepository, editable = isOperator)
+    }
+    // CYP-326: the compact-orchestration gate is GLOBAL/team-wide (server-owned state), NOT project-scoped —
+    // so this VM is deliberately NOT re-keyed on activeProjectId (unlike settings/ACL above): one instance backs
+    // the window for the app's lifetime. `editable = isOperator` (control operator-gated; the server also 403s).
+    // Repo defaults to the stub until Backend's Milestone-C endpoints land → then swap in CompactHttpRepository.
+    val resolvedCompactRepository = remember(compactRepository) { compactRepository ?: StubCompactRepository() }
+    val compactVm = viewModel(key = "compact-global") {
+        CompactViewModel(resolvedCompactRepository, editable = isOperator)
     }
     // Product-Lead reports (CYP-90): hoisted; accessible iff operator token (fail-closed — without it the
     // VM never loads a report). Aggregates operator-gated observability, so no token → no report at all.
@@ -732,6 +753,7 @@ fun AgentShell(
                     })
                     ACL_WINDOW_ID -> AclPanel(aclVm)
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
+                    COMPACT_WINDOW_ID -> CompactPanel(compactVm)
                     AGENT_MGMT_WINDOW_ID -> AgentManagementPanel(
                         agentMgmtVm,
                         // CYP-228: name the active project in the add-dialog scope note (server-authoritative pointer).

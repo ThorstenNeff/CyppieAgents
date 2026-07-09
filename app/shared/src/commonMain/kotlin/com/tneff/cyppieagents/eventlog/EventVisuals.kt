@@ -117,7 +117,10 @@ fun Severity.glyph(): String = when (this) {
 fun EventType.groupGlyph(): String = when (this) {
     EventType.TURN_START, EventType.TURN_END, EventType.TOOL_CALL, EventType.TOOL_RESULT,
     EventType.FILE_CHANGED, EventType.RESULT_FINAL -> "⚙"
-    EventType.CONTEXT_USAGE, EventType.COMPACT_TRIGGERED, EventType.COMPACT_COMPLETED -> "▦"
+    // CYP-326: the compaction family (incl. the 3 orchestration events) shares the ▦ scan glyph; severity
+    // (INFO sends/completed · WARN orchestration-timeout) carries the pass/partial signal, not this glyph.
+    EventType.CONTEXT_USAGE, EventType.COMPACT_TRIGGERED, EventType.COMPACT_COMPLETED,
+    EventType.COMPACT_PREPARE_SENT, EventType.COMPACT_REQUEST_SENT, EventType.COMPACT_ORCHESTRATION_DONE -> "▦"
     EventType.HOOK_FIRED -> "⤵"
     EventType.ERROR_MODEL, EventType.ERROR_TOOL, EventType.ERROR_RATELIMIT,
     EventType.PROCESS_EXIT, EventType.TIMEOUT, EventType.WS_DISCONNECT -> "⚠"
