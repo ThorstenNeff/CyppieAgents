@@ -37,6 +37,13 @@ data class CompactUiState(
 private const val CONFIRM_VISIBLE_MS = 3_000L
 
 /**
+ * CYP-328: how often the compact window re-polls the server-owned status while it is open. The status changes AS a
+ * sequence runs (idle→running→last-run), so an open window must re-poll to reflect it live. `internal` so the
+ * poll-while-open tooth can drive virtual time against the exact interval.
+ */
+internal const val STATUS_POLL_INTERVAL_MS = 3_000L
+
+/**
  * Drives the compact-orchestration window over a [CompactRepository] (stub today; the live
  * [CompactHttpRepository] after Backend's Milestone-C endpoints — no VM/UI change). **Global, not
  * project-scoped:** the gate is team-wide, so one instance backs the window (NOT re-keyed per project).
@@ -57,6 +64,21 @@ class CompactViewModel(
     val state: StateFlow<CompactUiState> = _state.asStateFlow()
 
     init { runScope.launch { load() } }
+
+    /**
+     * CYP-328 — refresh-on-open + poll-while-open. The server-owned facts the window mirrors (running / last-run /
+     * threshold / allowed) change AS a compact sequence runs, but [load] otherwise fires only at init and after a
+     * config write — so a sequence that STARTS while the window is open stayed invisible until an unrelated
+     * config-change refetched the status (the CYP-328 bug). The panel drives this for the lifetime of its
+     * composition: an immediate refetch (open-refresh), then a re-poll every [STATUS_POLL_INTERVAL_MS]; closing the
+     * window cancels the caller's coroutine and stops the poll. GET-only — no new contract.
+     */
+    suspend fun observeWhileOpen() {
+        while (true) {
+            load()
+            delay(STATUS_POLL_INTERVAL_MS)
+        }
+    }
 
     private suspend fun load() {
         // Fail-closed: a failed load leaves status == null (UNKNOWN) → the panel renders the server-mirror rows

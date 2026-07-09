@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.eventlog.EventRow
 import com.tneff.cyppieagents.eventlog.formatTs
 import com.tneff.cyppieagents.eventlog.severityColor
+import com.tneff.cyppieagents.model.CompactStatus
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.ui.HintTone
@@ -81,6 +83,10 @@ fun CompactPanel(
     val state by viewModel.state.collectAsState()
     val status = state.status
     val allowed = status?.allowed ?: false // fail-closed default when the server state is unknown
+
+    // CYP-328: while this window is open, re-poll the server-owned status so a sequence that STARTS mid-open goes
+    // live (running / last-run) without any config-change. Keyed on the VM; leaving composition cancels the poll.
+    LaunchedEffect(viewModel) { viewModel.observeWhileOpen() }
 
     Column(
         modifier = modifier
@@ -190,7 +196,9 @@ fun CompactPanel(
         // bounded event count so no panel-scroll rework is needed. Rolls to the next run automatically.
         compactEvents?.let { all ->
             HorizontalDivider()
-            val runId = status?.lastRun?.correlationId
+            // CYP-328: derive the current run's id from the LIVE feed first (see [currentRunId]) so the list appears
+            // the instant events stream — latency-free, without waiting for the status poll or a config POST.
+            val runId = currentRunId(all, status)
             val runEvents = if (runId != null) all.filter { it.correlationId == runId } else emptyList()
             if (runId != null && runEvents.isNotEmpty()) {
                 val running = status?.running == true
@@ -227,6 +235,20 @@ fun CompactPanel(
         }
     }
 }
+
+/**
+ * CYP-328 — the current/last run's correlationId, the seam the per-sequence event list scopes to. Derived from the
+ * LIVE feed FIRST (newest compact event by `seq` → its correlationId), falling back to the server status'
+ * `lastRun.correlationId` when no compact event has been seen. Two compact runs never overlap (CYP-326), so the
+ * newest-by-seq event belongs to the single active/last run — no decoy leak from an older finished run (lower seq)
+ * — and the list appears the instant events stream, without waiting for the status poll or a config POST.
+ *
+ * `internal` so the CYP-328 runId tooth (MUT-B) targets THIS exact derivation seam, not a panel line. The
+ * authoritative correlationId join (`filter { it.correlationId == runId }`) and the 4-type whitelist (the caller's
+ * feed excludes `COMPACT_TRIGGERED`) are unchanged.
+ */
+internal fun currentRunId(events: List<Event>, status: CompactStatus?): String? =
+    events.maxByOrNull { it.seq }?.correlationId ?: status?.lastRun?.correlationId
 
 /**
  * CYP-327 Feature A — the operator's editable threshold (raw PO-context token count). Prefilled from the
