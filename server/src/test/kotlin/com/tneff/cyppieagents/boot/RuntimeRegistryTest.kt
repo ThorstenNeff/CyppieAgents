@@ -45,7 +45,7 @@ class RuntimeRegistryTest {
         val mgmt = AgentManagement(state, lifecycle, configs, ensureWorktree = {}, deleteWorktree = {})
         // CYP-247.2: a WorktreeManager scoped to THIS project → worktreesRoot = <gitRoot>/projects/<projectId>.
         val worktrees = WorktreeManager(noopRunner, gitRoot, projectId)
-        return ProjectRuntime(projectId, lifecycle, sessions, configs, CapabilityRegistry(), ProviderRegistry(), mgmt, worktrees, AgentTokenUsageTracker(), AgentBusyStateTracker())
+        return ProjectRuntime(projectId, lifecycle, sessions, configs, CapabilityRegistry(), ProviderRegistry(), mgmt, worktrees, AgentTokenUsageTracker(), AgentBusyStateTracker(), CompactCompletionSignal())
     }
 
     @Test

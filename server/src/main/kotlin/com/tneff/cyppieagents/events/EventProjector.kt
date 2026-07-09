@@ -58,6 +58,13 @@ class EventProjector(
      * process-level, not usage-fidelity). `null` param = not wired (tests/legacy).
      */
     private val onBusy: ((agentId: String, busy: Boolean) -> Unit)? = null,
+    /**
+     * CYP-326 — the per-agent compaction-completed sink (the empirically-proven 2B signal). Fired on the SAME
+     * reader path as [onBusy]/[onContextTokens] when a `{"type":"system","subtype":"status",
+     * "compact_result":"success"}` event is seen — i.e. the agent's `/compact` (injected by the orchestrator)
+     * finished. UNGATED by capabilities (compaction is process-level). `null` = not wired (tests/legacy).
+     */
+    private val onCompactCompleted: ((agentId: String) -> Unit)? = null,
 ) {
     private fun mode(agentId: String, capability: CapabilityGate.EnforcedCapability): CapabilityGate.CapabilityMode {
         val resolve = capabilities ?: return CapabilityGate.CapabilityMode.ENABLED // no system → enabled (legacy)
@@ -167,7 +174,10 @@ class EventProjector(
             },
         )
 
-        is SystemEvent -> emptyList() // session binding is handled in the connector; no projected event
+        is SystemEvent -> { // session binding is handled in the connector; no projected event
+            if (event.compactCompleted) onCompactCompleted?.invoke(agentId) // CYP-326: /compact finished → 2B signal
+            emptyList()
+        }
     }
 
     /** A `turn.start` for an injected work-run; the caller mints [correlationId] and carries it forward. */

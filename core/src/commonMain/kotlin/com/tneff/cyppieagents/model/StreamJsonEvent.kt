@@ -46,8 +46,19 @@ data class SystemEvent(
     val tools: List<String>? = null,
     val permissionMode: String? = null,
     @SerialName("apiKeySource") val apiKeySource: String? = null,
+    /**
+     * CYP-326 — a `subtype:"status"` system event carries the compaction lifecycle: `status:"compacting"`
+     * while it runs, then `compact_result:"success"|"failed"` on completion. Empirically verified (real
+     * long-lived stream-json session): injecting `/compact` over the mediator emits this. Additive/tolerant
+     * (null on a non-status event); the completion seam ([compactCompleted]) is the CYP-326 2B signal.
+     */
+    val status: String? = null,
+    @SerialName("compact_result") val compactResult: String? = null,
 ) : StreamJsonEvent {
     val toolCount: Int? get() = tools?.size
+
+    /** CYP-326 — true iff this event marks a SUCCESSFUL compaction (the ratified per-agent completion signal). */
+    val compactCompleted: Boolean get() = compactResult == "success"
 }
 
 /** `{"type":"rate_limit_event", ...}` — observability/spend signal; not routed to the hub. */

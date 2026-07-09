@@ -297,6 +297,8 @@ class BootOrchestrator(
             // CYP-324: feed busy/idle to the ACTIVE project's tracker (the /ws/busy-state source) — same
             // active()-routing (shared projector); turn.start→true, result/exit/stop→false.
             onBusy = { agentId, busy -> runtimeRegistry.active().busyState.set(agentId, busy) },
+            // CYP-326: route a compaction-completed system event to the ACTIVE project's signal (same active()-routing).
+            onCompactCompleted = { agentId -> runtimeRegistry.active().compactSignal.onCompleted(agentId) },
         )
 
         val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
@@ -434,6 +436,7 @@ class BootOrchestrator(
         // shared projector's onContextTokens (active-routed) and reset by this project's lifecycle stop/restart.
         val tokenUsageTracker = AgentTokenUsageTracker(config.projectId, tokenUsageStore) // CYP-325: rehydrate on boot
         val busyStateTracker = AgentBusyStateTracker() // CYP-324: boot project's /ws/busy-state source
+        val compactSignal = CompactCompletionSignal() // CYP-326: boot project's compaction-completed source
         val repoReprovision = RepoReprovision() // CYP-247 S2: pending repo-change → re-provision on next (re)start.
         // CYP-247 S4 (§6.2) — boot RECONCILER (idempotent, logged): for each registered project, a clone whose
         // remote no longer matches `resolvedRepo(pid)` is marked STALE → re-provisioned on the next agent
@@ -555,6 +558,7 @@ class BootOrchestrator(
                 worktrees = worktrees,
                 tokenUsage = tokenUsageTracker, // CYP-316
                 busyState = busyStateTracker, // CYP-324
+                compactSignal = compactSignal, // CYP-326
             ),
         )
 
@@ -581,6 +585,7 @@ class BootOrchestrator(
             val pWorktrees = worktrees.forProject(pid) // CYP-247 S1: this project's OWN clone (clones/<pid>) + worktrees
             val pTokenUsage = AgentTokenUsageTracker(pid, tokenUsageStore) // CYP-316/325: per-project feed, persisted
             val pBusyState = AgentBusyStateTracker() // CYP-324: this project's own busy feed (per-runtime)
+            val pCompactSignal = CompactCompletionSignal() // CYP-326: this project's own compaction-completed signal
             val pLifecycle = LifecycleManager(
                 initialWorktrees = emptyMap(),
                 sessions = pSessions,
@@ -610,7 +615,7 @@ class BootOrchestrator(
                 worktreeDirOf = { runtimeRegistry.active().worktrees.worktreeDir(it) }, // CYP-310
                 // CYP-310: a non-boot project's agents are all runtime-added → remote ones are tracked on add().
             )
-            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage, pBusyState)
+            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage, pBusyState, pCompactSignal)
         }
 
         // CYP-255 (.4b) / CYP-247.4: the session-suspension teardown policy. suspend = stop a project's
