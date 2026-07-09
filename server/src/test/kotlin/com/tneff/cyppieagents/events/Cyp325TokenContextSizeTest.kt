@@ -157,4 +157,28 @@ class Cyp325TokenContextSizeTest {
         // empty iterations[] → fall back to the top-level occupancy (never throws).
         assertEquals(7L, UsageSnapshot.contextTokensFromUsage(usage("""{"input_tokens":7,"iterations":[]}""")))
     }
+
+    // ---- defect 1: null≠0 — a degenerate/absent-usage result must NOT clobber the last good value to 0 ----
+
+    @Test
+    fun degenerateUsageAfterRealValue_keepsLastValue_neverClobbersToZero() {
+        // A good turn sets 15500; a later result whose usage has NO input-side tokens (e.g. an error result)
+        // resolves to occupancy 0 — it must be SUPPRESSED (keep last), never pushed as 0.
+        val good = result("""{"input_tokens":12000,"cache_read_input_tokens":3000,"cache_creation_input_tokens":500,"output_tokens":9999}""")
+        val degenerate = result("""{"output_tokens":5}""") // input-side 0 → contextTokensFromUsage == 0
+        assertEquals(listOf<Int?>(15500), pushes(good, degenerate), "degenerate result keeps the last value, never writes 0")
+    }
+
+    @Test
+    fun resultWithNoUsageObject_keepsLastValue() {
+        val good = result("""{"input_tokens":10000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}""")
+        val noUsage = CommJson.decodeFromString<StreamJsonEvent>(
+            """{"type":"result","subtype":"success","is_error":false,"session_id":"s","uuid":"u"}""", // NO usage field
+        )
+        assertEquals(listOf<Int?>(10000), pushes(good, noUsage), "absent usage → no update (keep last)")
+    }
+
+    // The band-side guard (a degenerate 0 must not reset the band marker → no spurious climb-back re-emit) is
+    // covered by the LOAD-BEARING Cyp325BandGuardReEmitTest (QA-authored); the earlier lone-0 tooth here was
+    // vacuous for that guard and was removed.
 }

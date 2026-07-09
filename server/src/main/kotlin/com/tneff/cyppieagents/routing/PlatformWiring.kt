@@ -230,6 +230,7 @@ fun Application.bootPlatform(
         // CYP-210: durable per-agent name/color/persona/launch overlay — out-of-repo under the gitRoot,
         // gitignored; overlaid over the platform.config.json seed at boot (operator edits survive restart).
         agentOverrideFile = gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile(),
+        tokenUsageFile = gitRoot.toPath().resolve(".cyppie/token-usage.json").toFile(), // CYP-325 (defect 2)
         // CYP-256 (.5a): the durable per-project agent-set store — out-of-repo under the gitRoot, gitignored,
         // next to the other .cyppie stores. Single source for runtime-added agents (non-boot agents survive restart).
         projectAgentFile = gitRoot.toPath().resolve(".cyppie/project-agents.json").toFile(),

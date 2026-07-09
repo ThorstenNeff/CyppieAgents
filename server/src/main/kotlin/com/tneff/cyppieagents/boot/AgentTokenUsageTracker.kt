@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.model.AgentTokenUsageEvent
+import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -21,7 +22,16 @@ import java.util.concurrent.ConcurrentHashMap
  * `onContextTokens` hook) decides null-vs-number by the `structuredUsage` gate — this holder just stores
  * what it is told, de-duplicating unchanged values so a Connector-B agent doesn't re-emit `null` every turn.
  */
-class AgentTokenUsageTracker {
+class AgentTokenUsageTracker(
+    /** This tracker's project (the [store] key). One tracker per [ProjectRuntime]. */
+    private val projectId: String = DEFAULT_PROJECT_ID,
+    /**
+     * CYP-325 (defect 2) — durable per-agent last-context-token overlay. `null` = no persistence (the bare
+     * in-memory tracker, legacy/tests). When set: rehydrated into [current] on construction (so
+     * snapshot-on-connect survives a server restart) and written on every trustworthy change.
+     */
+    private val store: TokenUsageStore? = null,
+) {
 
     private val _events = MutableSharedFlow<AgentTokenUsageEvent>(
         extraBufferCapacity = 64,
@@ -35,6 +45,12 @@ class AgentTokenUsageTracker {
     // agent is stored as an event whose contextTokens is null — the event object is the (non-null) value.
     private val current = ConcurrentHashMap<String, AgentTokenUsageEvent>()
 
+    init {
+        // CYP-325 (defect 2): rehydrate persisted values so a restart/refresh keeps the number until the next
+        // turn refreshes it. Only stored (known) values exist in the store — no null is ever rehydrated.
+        store?.allFor(projectId)?.forEach { (agentId, tokens) -> current[agentId] = AgentTokenUsageEvent(agentId, tokens) }
+    }
+
     /**
      * Record the newest turn's context size for [agentId] ([contextTokens] = null when the connector has
      * no trustworthy count). Emits ONLY on a change (latest-wins de-dup), so an unchanged value — e.g. a
@@ -43,7 +59,10 @@ class AgentTokenUsageTracker {
     fun onResult(agentId: String, contextTokens: Int?) {
         val next = AgentTokenUsageEvent(agentId, contextTokens)
         val prev = current.put(agentId, next)
-        if (prev != next) _events.tryEmit(next)
+        if (prev != next) {
+            store?.put(projectId, agentId, contextTokens) // CYP-325: persist known; null (unknown/reset) → remove
+            _events.tryEmit(next)
+        }
     }
 
     /**
@@ -52,9 +71,10 @@ class AgentTokenUsageTracker {
      */
     fun reset(agentId: String) = onResult(agentId, null)
 
-    /** Drop an agent entirely (CYP-97 remove) — no further snapshot/delta for it. */
+    /** Drop an agent entirely (CYP-97 remove) — no further snapshot/delta for it, and drop its persisted value. */
     fun forget(agentId: String) {
         current.remove(agentId)
+        store?.removeAgent(projectId, agentId) // CYP-325: no ghost persisted value after removal
     }
 
     /** The current value of every known agent — the WS connect snapshot (one per agent, latest-wins). */

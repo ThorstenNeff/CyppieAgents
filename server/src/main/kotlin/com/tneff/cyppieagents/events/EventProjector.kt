@@ -79,7 +79,12 @@ class EventProjector(
             sink(agentId, null) // no trustworthy number for a non-A / coarse / off agent
             return
         }
-        val tokens = UsageSnapshot.contextTokensFromUsage(usage) ?: return // enabled but nothing parseable → keep last
+        // CYP-325 follow-up (defect 1, null≠0 invariant): an absent (`null`) OR degenerate usage — one with no
+        // input-side tokens, so a 0 occupancy — is NOT a real context measurement (a real turn always has
+        // input_tokens > 0; a 0 comes from a missing/error/degenerate `result.usage`). Do NOT write it: keep the
+        // last known value rather than clobbering the title bar to 0. (Only a fresh trustworthy number replaces it.)
+        val tokens = UsageSnapshot.contextTokensFromUsage(usage) ?: return // absent usage → keep last
+        if (tokens <= 0L) return // degenerate/error usage (0 input-side) → keep last, never write 0
         sink(agentId, tokens.coerceIn(0L, ContextUsageBander.DEFAULT_CONTEXT_WINDOW_TOKENS).toInt())
     }
     /** Stream events → drafts. May produce 0 (e.g. system/init, text-only assistant), 1, or many. */
@@ -133,7 +138,10 @@ class EventProjector(
             // top-level `usage`), so the visual band and the number can't disagree on a multi-tool-use turn.
             val snapshot = UsageSnapshot.snapshotFromUsage(event.usage)
             val usageMode = mode(agentId, CapabilityGate.EnforcedCapability.STRUCTURED_USAGE)
-            when (usageMode) {
+            // CYP-325 follow-up (defect 1): a degenerate/absent usage (0 occupancy) is not a real measurement,
+            // so it must NOT band — nor reset the band marker (a spurious "context shrank to 0"). Keeps the band
+            // consistent with the number, which now also keeps its last value on such a result.
+            if (snapshot.contextTokens > 0L) when (usageMode) {
                 CapabilityGate.CapabilityMode.OFF -> {}
                 CapabilityGate.CapabilityMode.ENABLED ->
                     addAll(bander.onUsage(agentId, projectId, snapshot, sessionId, correlationId))
