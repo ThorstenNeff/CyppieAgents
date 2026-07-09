@@ -139,6 +139,9 @@
     <!-- CYP-262 Teil 1: transienter, client-only Spawn-Feedback-Zustand ("Start angefragt, warte auf Server").
          Spiegelt die Anfrage in Flight, NIE "Läuft" vor Server-RUNNING; resolvet immer beim nächsten Lifecycle-Event. -->
     <string name="agent_status_starting">Startet…</string>
+    <!-- CYP-330 Teil 1: transienter, client-only Restart-Feedback ("Neustart angefragt, warte auf Server"). Macht
+         den 1. Klick sofort wahrnehmbar und quittiert einen erfolgreichen RUNNING→RUNNING-Restart sichtbar. -->
+    <string name="agent_status_restarting">Neustart…</string>
     <!-- CYP-204: per-agent WS reconnecting indicator (History wird bei Reconnect neu gespielt) -->
     <string name="agent_reconnecting">Verbindung wird wiederhergestellt…</string>
     <string name="agent_status_stopped">Gestoppt</string>

@@ -74,6 +74,28 @@ class AgentViewModel(
     }
 
     /**
+     * CYP-330 Teil 1: transient, client-only "restart requested — awaiting the server" flag driving the
+     * "Neustart…" label on the [StatusIndicator]. A restart is typically **RUNNING→RUNNING**, so without its OWN
+     * transient a *successful* restart produced no visible delta — the first click looked "swallowed" (the bug).
+     * Armed synchronously when the operator's Restart action is accepted (after the fail-closed gate, so a no-op
+     * shows nothing), cleared by the NEXT lifecycle event for this agent, a synchronous rejection, or the watchdog.
+     * Honest and self-resolving exactly like [startPending] — it mirrors a request in flight, never a server fact,
+     * and can't stick. Declared before [lifecycleState] because that eager flow clears it.
+     */
+    val restartPending: StateFlow<Boolean> get() = _restartPending
+    private val _restartPending = MutableStateFlow(false)
+
+    // CYP-330: the watchdog for an in-flight "Neustart…". Cancelled the moment the transient resolves.
+    private var restartTimeoutJob: Job? = null
+
+    /** Resolve an in-flight "Neustart…" (clear the flag) and cancel its watchdog — idempotent (see [clearStartPending]). */
+    private fun clearRestartPending() {
+        _restartPending.value = false
+        restartTimeoutJob?.cancel()
+        restartTimeoutJob = null
+    }
+
+    /**
      * Server-reported lifecycle state for THIS agent (CYP-73), non-gated display: seeded from the
      * public-agent-list snapshot, then refined live by `/ws/lifecycle` deltas. Starts [UNKNOWN] until
      * the snapshot lands (never guesses a server fact).
@@ -82,9 +104,11 @@ class AgentViewModel(
         flow {
             emit(lifecycleSource?.snapshot()?.get(agentId) ?: AgentLifecycleState.UNKNOWN)
             lifecycleSource?.events()?.filter { it.agentId == agentId }?.collect { event ->
-                // CYP-262: any terminal lifecycle event for this agent resolves an in-flight "Startet…" (and cancels
-                // its watchdog — the server confirmed, so the fallback isn't needed).
+                // CYP-262/330: any lifecycle event for this agent resolves an in-flight transient — "Startet…" AND
+                // "Neustart…" (and cancels its watchdog — the server confirmed, so the fallback isn't needed). A
+                // successful RUNNING→RUNNING restart still emits a lifecycle event, so the "Neustart…" flash resolves.
                 clearStartPending()
+                clearRestartPending()
                 emit(event.state)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, AgentLifecycleState.UNKNOWN)
@@ -141,36 +165,53 @@ class AgentViewModel(
     val lifecycleError: StateFlow<String?> get() = _lifecycleError
     private val _lifecycleError = MutableStateFlow<String?>(null)
 
-    /** Operator-only: (re)spawn / stop the agent's connector. Fail-closed — a no-op without control. */
-    fun start() = lifecycleAction(pending = true) { it.start(agentId) }
-    fun stop() = lifecycleAction { it.stop(agentId) }
-    fun restart() = lifecycleAction { it.restart(agentId) }
+    /** Which transient a lifecycle action arms: Start → "Startet…", Restart → "Neustart…", Stop → none. */
+    private enum class Pending { NONE, START, RESTART }
 
-    private fun lifecycleAction(pending: Boolean = false, block: suspend (AgentLifecycleApi) -> Unit) {
+    /** Operator-only: (re)spawn / stop the agent's connector. Fail-closed — a no-op without control. */
+    fun start() = lifecycleAction(Pending.START) { it.start(agentId) }
+    fun stop() = lifecycleAction(Pending.NONE) { it.stop(agentId) }
+    fun restart() = lifecycleAction(Pending.RESTART) { it.restart(agentId) }
+
+    private fun lifecycleAction(pending: Pending = Pending.NONE, block: suspend (AgentLifecycleApi) -> Unit) {
         // Fail-closed defence in depth: the server enforces the operator gate (403); the UI also
         // disables the controls and the VM refuses to act without [canControl] + a wired [lifecycle].
         if (!canControl) return
         val api = lifecycle ?: return
-        // CYP-262: arm the transient "Startet…" only for Start, and only AFTER the fail-closed gate — so a
-        // no-op (no control / no port) never shows spawn feedback. Set synchronously for instant feedback, and
-        // arm a watchdog so an accepted-but-never-confirmed spawn (POST 2xx, then no `/ws/lifecycle` event) can't
-        // leave "Startet…" stuck — after the window it falls back to the last resolved state (§9-2 "always resolves,
-        // never hangs"). A terminal event or a synchronous failure cancels the watchdog first (the normal paths).
-        if (pending) {
-            _startPending.value = true
-            startTimeoutJob?.cancel()
-            startTimeoutJob = viewModelScope.launch {
-                delay(startPendingTimeoutMs)
-                _startPending.value = false // fallback only; a resolved transient would have cancelled this job
+        // CYP-262/330: arm the transient ("Startet…" for Start, "Neustart…" for Restart) only AFTER the fail-closed
+        // gate — so a no-op (no control / no port) never shows feedback. Set synchronously for INSTANT feedback (so
+        // the first click is never "swallowed"), and arm a watchdog so an accepted-but-never-confirmed action (POST
+        // 2xx, then no `/ws/lifecycle` event) can't leave the transient stuck — after the window it falls back to the
+        // last resolved state (§9-2 "always resolves, never hangs"). A lifecycle event or a sync failure cancels the
+        // watchdog first (the normal paths). Restart is typically RUNNING→RUNNING, so the transient IS the visible
+        // acknowledgement of a successful restart.
+        when (pending) {
+            Pending.START -> {
+                _startPending.value = true
+                startTimeoutJob?.cancel()
+                startTimeoutJob = viewModelScope.launch {
+                    delay(startPendingTimeoutMs)
+                    _startPending.value = false // fallback only; a resolved transient would have cancelled this job
+                }
             }
+            Pending.RESTART -> {
+                _restartPending.value = true
+                restartTimeoutJob?.cancel()
+                restartTimeoutJob = viewModelScope.launch {
+                    delay(startPendingTimeoutMs)
+                    _restartPending.value = false // fallback only
+                }
+            }
+            Pending.NONE -> {}
         }
         viewModelScope.launch {
             _lifecycleError.value = null
             runCatching { block(api) }.onFailure { e ->
                 if (e is CancellationException) throw e
-                // A synchronous start rejection (e.g. spawn_failed 503) resolves the transient at once — never
-                // leave "Startet…" hanging on a request that already failed; the state stays STOPPED honestly.
+                // A synchronous rejection (e.g. spawn_failed 503) resolves the transient at once — never leave
+                // "Startet…"/"Neustart…" hanging on a request that already failed; the state stays honest.
                 clearStartPending()
+                clearRestartPending()
                 // Surface the server's reason code (409/403/503/404) honestly; generic fallback otherwise.
                 _lifecycleError.value = (e as? AgentLifecycleHttpException)?.code ?: "lifecycle_failed"
             }
