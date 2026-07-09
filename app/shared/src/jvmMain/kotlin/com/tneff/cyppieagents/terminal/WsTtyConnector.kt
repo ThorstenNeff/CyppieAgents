@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.terminal
 import com.jediterm.core.util.TermSize
 import com.jediterm.terminal.TtyConnector
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.InputStreamReader
@@ -23,8 +24,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - **Write side.** JediTerm hands us keystrokes as bytes (or a String); we forward them to [TerminalSession.send]
  *    (which Base64-encodes into `TerminalInput`). A viewport [resize] maps to [TerminalSession.resize].
  *
- * The collector runs in [scope] (the composable's scope); leaving the window cancels it and the `finally` closes
- * the pipe, so there is no leaked thread.
+ * The collector runs in [scope] (the composable's scope) but is dispatched on **[Dispatchers.IO]**, NOT the
+ * scope's own (Compose/EDT) dispatcher: [PipedOutputStream.write] BLOCKS once the reader falls behind and the
+ * 64 KB pipe fills (a `claude` TUI redraw / `cat` / `yes` burst), and blocking the EDT would freeze the UI. IO
+ * takes the blocking write; the JediTerm widget stays on the EDT. Leaving the window cancels [scope] and the
+ * `finally` closes the pipe, so there is no leaked thread.
  */
 class WsTtyConnector(
     private val session: TerminalSession,
@@ -39,10 +43,10 @@ class WsTtyConnector(
     private val connected = AtomicBoolean(true)
     private val exitLatch = CountDownLatch(1)
 
-    private val pump: Job = scope.launch {
+    private val pump: Job = scope.launch(Dispatchers.IO) {
         try {
             session.incoming.collect { bytes ->
-                pipeOut.write(bytes)
+                pipeOut.write(bytes) // blocks when the 64 KB pipe fills — on IO, never the EDT (UI-freeze fix)
                 pipeOut.flush()
             }
         } finally {

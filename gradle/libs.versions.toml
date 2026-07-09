@@ -35,6 +35,7 @@ zonkyEmbeddedPg = "2.0.7"
 [libraries]
 # CYP-334: JediTerm Desktop terminal widget (jvmMain only). jediterm-ui = Swing widget; jediterm-core = emulator
 # model + TtyConnector + TermSize. From JetBrains' intellij-dependencies repo (see settings.gradle.kts).
+# License: dual LGPLv3-or-Apache-2.0 — we elect **Apache-2.0** (no copyleft); see docs/THIRD-PARTY-LICENSES.md.
 jediterm-core = { module = "org.jetbrains.jediterm:jediterm-core", version.ref = "jediterm" }
 jediterm-ui = { module = "org.jetbrains.jediterm:jediterm-ui", version.ref = "jediterm" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
