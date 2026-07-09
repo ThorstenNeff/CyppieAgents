@@ -157,4 +157,32 @@ class Cyp325TokenContextSizeTest {
         // empty iterations[] → fall back to the top-level occupancy (never throws).
         assertEquals(7L, UsageSnapshot.contextTokensFromUsage(usage("""{"input_tokens":7,"iterations":[]}""")))
     }
+
+    // ---- defect 1: null≠0 — a degenerate/absent-usage result must NOT clobber the last good value to 0 ----
+
+    @Test
+    fun degenerateUsageAfterRealValue_keepsLastValue_neverClobbersToZero() {
+        // A good turn sets 15500; a later result whose usage has NO input-side tokens (e.g. an error result)
+        // resolves to occupancy 0 — it must be SUPPRESSED (keep last), never pushed as 0.
+        val good = result("""{"input_tokens":12000,"cache_read_input_tokens":3000,"cache_creation_input_tokens":500,"output_tokens":9999}""")
+        val degenerate = result("""{"output_tokens":5}""") // input-side 0 → contextTokensFromUsage == 0
+        assertEquals(listOf<Int?>(15500), pushes(good, degenerate), "degenerate result keeps the last value, never writes 0")
+    }
+
+    @Test
+    fun resultWithNoUsageObject_keepsLastValue() {
+        val good = result("""{"input_tokens":10000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}""")
+        val noUsage = CommJson.decodeFromString<StreamJsonEvent>(
+            """{"type":"result","subtype":"success","is_error":false,"session_id":"s","uuid":"u"}""", // NO usage field
+        )
+        assertEquals(listOf<Int?>(10000), pushes(good, noUsage), "absent usage → no update (keep last)")
+    }
+
+    @Test
+    fun degenerateUsage_producesNoBandEvent_soBandStaysConsistentWithTheNumber() {
+        val ctx = EventProjector(ContextUsageBander(), projectId = "t", capabilities = { caps(CapabilityStatus.AVAILABLE) })
+            .project("backend", "s", "c", result("""{"output_tokens":5}"""))
+            .filter { it.type == EventType.CONTEXT_USAGE }
+        assertEquals(emptyList(), ctx, "a degenerate (0-occupancy) result must not band (nor reset the marker)")
+    }
 }
