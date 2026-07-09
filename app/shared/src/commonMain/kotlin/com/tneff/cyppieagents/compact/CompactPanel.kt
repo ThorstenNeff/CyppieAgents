@@ -8,13 +8,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -40,7 +47,11 @@ import kmpcyppieagents.app.shared.generated.resources.compact_status_idle
 import kmpcyppieagents.app.shared.generated.resources.compact_status_label
 import kmpcyppieagents.app.shared.generated.resources.compact_status_off
 import kmpcyppieagents.app.shared.generated.resources.compact_status_running
+import kmpcyppieagents.app.shared.generated.resources.a11y_compact_threshold_input
 import kmpcyppieagents.app.shared.generated.resources.compact_threshold_label
+import kmpcyppieagents.app.shared.generated.resources.compact_threshold_range_error
+import kmpcyppieagents.app.shared.generated.resources.compact_threshold_set
+import kmpcyppieagents.app.shared.generated.resources.compact_threshold_set_confirm
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import org.jetbrains.compose.resources.stringResource
 
@@ -108,11 +119,21 @@ fun CompactPanel(viewModel: CompactViewModel, modifier: Modifier = Modifier) {
         // §3-3 server-mirror facts — rendered ONLY when the server state resolved (status != null). UNKNOWN →
         // these rows are absent (never a defaulted idle/off).
         status?.let { s ->
-            LabelValueRow(
-                label = stringResource(Res.string.compact_threshold_label),
-                value = formatCompactTokens(s.thresholdTokens),
-                tag = CompactTags.THRESHOLD,
-            )
+            // CYP-327 Feature A: an operator edits the threshold (server-mirror write); a non-operator sees the
+            // read-only value. The editable path reuses the same never-optimistic setConfig write as the checkbox.
+            if (state.editable) {
+                ThresholdEditor(
+                    current = s.thresholdTokens,
+                    confirmValue = state.thresholdSetConfirm,
+                    onSave = viewModel::setThreshold,
+                )
+            } else {
+                LabelValueRow(
+                    label = stringResource(Res.string.compact_threshold_label),
+                    value = formatCompactTokens(s.thresholdTokens),
+                    tag = CompactTags.THRESHOLD,
+                )
+            }
 
             val statusText = when {
                 !s.allowed -> stringResource(Res.string.compact_status_off)
@@ -150,6 +171,73 @@ fun CompactPanel(viewModel: CompactViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth().testTag(CompactTags.LAST_RUN),
                 )
             }
+        }
+    }
+}
+
+/**
+ * CYP-327 Feature A — the operator's editable threshold (raw PO-context token count). Prefilled from the
+ * server value and RE-SEEDED whenever it changes (`remember(current)`), so the field mirrors the server, never
+ * an optimistic local value. Save is enabled only for a valid (positive) AND changed value; on save the write
+ * goes through the same server-mirror [CompactViewModel.setThreshold]. Digits-only, bounded length.
+ *
+ * (Styling — plain number field + Save, house `SettingsPanel` idiom — is a placeholder pending the CYP-327 UIUX
+ * spec; a stepper / compact-format input would be a swap here, no VM/contract change.)
+ */
+@Composable
+private fun ThresholdEditor(current: Int, confirmValue: Int?, onSave: (Int) -> Unit) {
+    // Draft, RE-SEEDED from the server value whenever it changes (`remember(current)`) — the field mirrors the
+    // server after a confirmed set, never an optimistic local value. The drafted number is NOT live until Set +
+    // server confirmation.
+    var draft by remember(current) { mutableStateOf(current.toString()) }
+    val parsed = draft.toIntOrNull()
+    val valid = parsed != null && parsed in 1..1_000_000 // consistent with the ~1M formatCompactTokens window
+    val invalidDraft = draft.isNotEmpty() && !valid
+    val label = stringResource(Res.string.compact_threshold_label)
+    val inputA11y = stringResource(Res.string.a11y_compact_threshold_input)
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { new -> draft = new.filter { it.isDigit() }.take(7) }, // 1,000,000 = 7 digits
+                singleLine = true,
+                isError = invalidDraft,
+                label = { Text(label) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(CompactTags.THRESHOLD_INPUT)
+                    .semantics { contentDescription = inputA11y },
+            )
+            // Live preview: the exact formatted value (honest — "= 750K" while the raw number is typed). "=" is
+            // punctuation, not a localized string.
+            if (parsed != null) {
+                Text(
+                    "= ${formatCompactTokens(parsed)}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Button(
+                onClick = { parsed?.let(onSave) },
+                // Enabled only for a VALID (1..1M) AND CHANGED value — no invalid submit, no no-op write.
+                enabled = valid && parsed != current,
+                modifier = Modifier.testTag(CompactTags.THRESHOLD_SET),
+            ) {
+                Text(stringResource(Res.string.compact_threshold_set))
+            }
+        }
+        // Inline range validation (never colour alone — an ERROR-toned text hint).
+        if (invalidDraft) {
+            TonedHint(stringResource(Res.string.compact_threshold_range_error), HintTone.ERROR, CompactTags.THRESHOLD_ERROR)
+        }
+        // Transient INFO confirmation on the server-confirmed value — post-server, self-clearing, never green.
+        confirmValue?.let {
+            TonedHint(
+                stringResource(Res.string.compact_threshold_set_confirm, formatCompactTokens(it)),
+                HintTone.INFO,
+                CompactTags.THRESHOLD_CONFIRM,
+            )
         }
     }
 }

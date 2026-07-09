@@ -24,6 +24,19 @@ object CompactTags {
     /** The read-only threshold fact row. */
     const val THRESHOLD = "compact.threshold"
 
+    /** CYP-327 Feature A: the operator's editable threshold input (present only for an operator; the read-only
+     *  [THRESHOLD] row is shown to a non-operator). */
+    const val THRESHOLD_INPUT = "compact.thresholdInput"
+
+    /** CYP-327 Feature A: the operator's "set threshold" action (enabled only for a valid, changed value). */
+    const val THRESHOLD_SET = "compact.thresholdSet"
+
+    /** CYP-327 Feature A: the inline range-validation error (1..1,000,000) — shown while the draft is invalid. */
+    const val THRESHOLD_ERROR = "compact.thresholdError"
+
+    /** CYP-327 Feature A: the transient INFO confirmation after a server-confirmed set ("threshold set to X"). */
+    const val THRESHOLD_CONFIRM = "compact.thresholdConfirm"
+
     /** The server-mirror status row (liveRegion). Absent when the server state is unknown (§3-3). */
     const val STATUS = "compact.status"
 

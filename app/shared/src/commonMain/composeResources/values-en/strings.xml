@@ -519,6 +519,11 @@
     <string name="compact_allow_label">Allow team compaction</string>
     <string name="compact_allow_hint">When this is on and the PO context exceeds 500K tokens, the whole team is compacted automatically: the PO first, then the workers staggered one minute apart. Compaction condenses each agent's working context.</string>
     <string name="compact_threshold_label">Threshold</string>
+    <!-- CYP-327 Feature A: editable threshold (operator), UIUX spec §A.4. -->
+    <string name="compact_threshold_set">Set</string>
+    <string name="compact_threshold_range_error">1 to 1,000,000 tokens</string>
+    <string name="compact_threshold_set_confirm">Threshold set to %1$s</string>
+    <string name="a11y_compact_threshold_input">Compaction threshold in tokens (1 to 1,000,000)</string>
     <string name="compact_status_label">Status</string>
     <string name="compact_status_off">Disabled</string>
     <string name="compact_status_idle">Armed – waiting for threshold</string>

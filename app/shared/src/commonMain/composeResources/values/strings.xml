@@ -526,6 +526,11 @@
     <string name="compact_allow_label">Compact für das Team erlauben</string>
     <string name="compact_allow_hint">Ist dies aktiv und der PO-Context 500K Tokens überschreitet, wird das gesamte Team automatisch compactet: zuerst der PO, dann die Worker je 1 Minute versetzt. Compacten verdichtet den Arbeits-Context jedes Agenten.</string>
     <string name="compact_threshold_label">Schwelle</string>
+    <!-- CYP-327 Feature A: editierbare Schwelle (Operator), UIUX-Spec §A.4. -->
+    <string name="compact_threshold_set">Setzen</string>
+    <string name="compact_threshold_range_error">1 bis 1.000.000 Tokens</string>
+    <string name="compact_threshold_set_confirm">Schwelle auf %1$s gesetzt</string>
+    <string name="a11y_compact_threshold_input">Compact-Schwelle in Tokens (1 bis 1.000.000)</string>
     <string name="compact_status_label">Status</string>
     <string name="compact_status_off">Deaktiviert</string>
     <string name="compact_status_idle">Bereit – wartet auf Schwelle</string>

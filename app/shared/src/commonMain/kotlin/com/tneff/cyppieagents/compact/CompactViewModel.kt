@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.model.CompactConfig
 import com.tneff.cyppieagents.model.CompactStatus
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +28,13 @@ data class CompactUiState(
     val editable: Boolean = false,
     /** Server-owned status; `null` = UNKNOWN (unresolved / load failed) → honest absence, never a default. */
     val status: CompactStatus? = null,
+    /** CYP-327 Feature A: the server-CONFIRMED threshold just set (tokens), for a transient INFO confirmation.
+     *  `null` = no confirmation showing. Set only after `onSuccess` (never optimistic); self-clears. */
+    val thresholdSetConfirm: Int? = null,
 )
+
+/** CYP-327: how long the transient threshold-set confirmation stays visible before it self-clears. */
+private const val CONFIRM_VISIBLE_MS = 3_000L
 
 /**
  * Drives the compact-orchestration window over a [CompactRepository] (stub today; the live
@@ -71,4 +79,32 @@ class CompactViewModel(
             // onFailure: keep the server-mirror unchanged — no optimistic flip.
         }
     }
+
+    /**
+     * CYP-327 Feature A — operator-only server-mirror threshold write, same discipline as [setAllowed]:
+     * fail-closed (no-op without [CompactUiState.editable]) and NEVER optimistic — the displayed threshold
+     * adopts the server's returned [CompactStatus.thresholdTokens]; on failure the mirror is left unchanged.
+     * Only the threshold changes; the current [allowed] gate is preserved.
+     */
+    fun setThreshold(thresholdTokens: Int) {
+        if (!_state.value.editable) return
+        val allowed = _state.value.status?.allowed ?: false
+        runScope.launch {
+            runCatching { repository.setConfig(CompactConfig(allowed = allowed, thresholdTokens = thresholdTokens)) }
+                .onSuccess { s ->
+                    // Adopt the server-confirmed status AND raise the transient INFO confirmation on the
+                    // server-confirmed value (never the drafted one) — post-server, never optimistic.
+                    _state.update { it.copy(status = s, thresholdSetConfirm = s.thresholdTokens) }
+                    confirmJob?.cancel()
+                    confirmJob = runScope.launch {
+                        delay(CONFIRM_VISIBLE_MS)
+                        _state.update { it.copy(thresholdSetConfirm = null) }
+                    }
+                }
+            // onFailure: keep the server-mirror unchanged — no optimistic change, no confirmation.
+        }
+    }
+
+    // CYP-327: the self-clear watchdog for the transient threshold confirmation (cancelled if a newer set arrives).
+    private var confirmJob: Job? = null
 }
