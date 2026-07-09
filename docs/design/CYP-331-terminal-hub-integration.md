@@ -133,9 +133,10 @@ are the hand-off token:
 ### 4.2 Two boot cases (both must end well) — reconciled with CYP-330
 
 1. **Stale boot-resume** → the CYP-330 proactive stale-resume probe (`ResumingSession.start()`) fires **also
-   in the boot spawn path** → heals to fresh → **RUNNING but context-free** (no ERROR). This is exactly po's
-   observed symptom — and precisely the state **seam #5 (§4.4)** surfaces to the UI as `CONTEXT_LOST` (the
-   `healToFresh` branch) rather than leaving the UI to guess from a near-zero token count.
+   in the boot spawn path** → heals to fresh → **RUNNING but context-free** (no ERROR). This is the state
+   **seam #5 (§4.4)** surfaces to the UI as `CONTEXT_LOST` (the `healToFresh` branch) rather than leaving the
+   UI to guess from a near-zero token count. (This was **not** what po hit — po resumed cleanly with an
+   *intentional* compaction, §4.3 — but it is the exact case the signal exists for.)
 2. **Throwing boot-spawn (≠ stale-resume)** → `bootAgent`'s own catch → **ERROR**, and it has **no
    `spawnFresh` rollback** (only `start`/`restart`'s `spawnOrError` got it in CYP-330). **Design point:**
    extend the fresh rollback to `bootAgent` for a guaranteed-RUNNING boot, weighed against boot's
@@ -151,27 +152,34 @@ Context is stored by Claude Code itself, **not** by us. Verified (Context7, offi
 - Hook input carries **`transcript_path`** — so the platform can *locate* (and back up / checkpoint) the
   live transcript per session.
 
-Two **distinct** continuity risks — do **not** conflate; verify which actually hit po before writing a cause:
+**Empirical status (Auftraggeber-corrected): there is NO observed context-loss failure.** The
+537 520 → 58 228 token drop that first read as a loss was a **manually-commissioned compaction** shortly
+before shutdown (an *intended* shrink); **po resumed correctly with its compacted context, and so did
+`test1` — the deploy preserved context for both agents.** On the evidence so far, context preservation over
+a hub-restart is **solid**, not best-effort. The two risks below are therefore **forward-looking hygiene**,
+**not** fixes for an observed bug. (Tellingly, this very compaction-vs-loss confusion momentarily fooled a
+careful analysis — which is exactly what **seam #5 (§4.4)** exists to remove.)
+
+Two **distinct, hypothetical** continuity risks — keep them separate:
 
 - **(a) Transcript-durability** — Claude Code's own hosting doc: session transcripts, `CLAUDE.md`, and
   working-dir artifacts "**do not persist across container restarts, scale-downs, or moves to different
-  nodes**." Relevant to **future cloud/container/ephemeral-FS** deploys. **Mitigation:** mount
-  `~/.claude`/`CLAUDE_CONFIG_DIR` on the **same durable volume** as worktrees/`.cyppie` (persist the
-  transcript, not just the id).
-- **(b) Hard-kill-mid-turn corruption** — **the likely actual cause of po's incident** (PO correlation):
-  on *this* staging, deploy is a **jar-swap on the same macOS host, non-root `customer`, HOME passthrough
-  → `~/.claude/projects` survives** — so (a) is *not* the cause here. po was **hard-killed mid-turn** (its
-  active compact turn was `bootout`-terminated) → the session was left active/unclean → non-resumable →
-  stale → fresh-fallback (context-free). `test1`, not mid-critical-turn, resumed cleanly. **Mitigation:**
-  **graceful quiesce/drain** agents before `bootout` (finish or checkpoint the in-flight turn) instead of
-  hard-kill — reuse the CYP-247 S3 `cancelAndJoin` drain-before-teardown pattern at the deploy boundary.
-  - **[SPIKE] required:** confirm whether a mid-turn hard-kill actually leaves the JSONL transcript
-    non-resumable (a torn last line) — Context7 does not definitively cover `--resume` tolerance of a
-    truncated transcript. This decides how much of po's loss is (b) vs (a).
+  nodes**." Relevant to a **future cloud/container/ephemeral-FS** deploy — **not** this staging (current
+  deploy is a same-host jar-swap with HOME passthrough → `~/.claude/projects` survives). **Mitigation for
+  that future:** mount `~/.claude`/`CLAUDE_CONFIG_DIR` on the **same durable volume** as worktrees/`.cyppie`.
+- **(b) Hard-kill-mid-turn corruption** — an **unverified hypothesis** (NOT observed): a hard-kill of an
+  agent mid-turn (e.g. `bootout` during an active turn) *might* leave the JSONL transcript with a torn last
+  line → non-resumable → stale-resume → fresh fallback. **On the evidence this did not happen.** The
+  **[SPIKE]** decides whether it is even a real risk — confirm whether a mid-turn hard-kill leaves the
+  transcript `--resume`-able (Context7 does not cover torn-transcript tolerance). **If** the spike shows a
+  risk, the mitigation is cheap and sensible anyway: **graceful quiesce/drain** before `bootout` (reuse the
+  CYP-247 S3 `cancelAndJoin` drain-before-teardown pattern).
 
-**Design stance:** treat continuity as **first-class** in CYP-331 — (a) durable-mount for the cloud future,
-(b) graceful-drain-before-deploy for the same-host now; do not ship (a) as *the* cause until the (b) spike
-rules it out.
+**Design stance:** continuity is worth designing for, but as **forward-looking hygiene, not an urgent
+bug-fix** — there is no observed loss to chase. (a) durable-mount is a cloud-future item; (b) is
+spike-gated (establish the risk before building the drain). **Independently of both,** the boot
+`spawnFresh`-rollback gap (§4.2 case 2 — a *throwing* boot-spawn → ERROR with no fresh fallback) is a real,
+small robustness gap worth closing on its own, without any urgency framing.
 
 ### 4.4 Hand-off control seams (driven by the UIUX one-window mode-toggle)
 
@@ -198,11 +206,13 @@ safely:
    by construction and is not fanned out on this channel). This is the multi-operator coordination seam for
    the single-writer invariant.
 4. **Render z-order** — see §5 (UIUX confirms the 04-Doc z-order constraint is back).
-5. **Explicit `resumed-with-context` vs `context-free` signal (per session/resume)** — the UI has a
-   first-class **`CONTEXT-LOST`** state (a resumed session that comes back context-free — after a hand-back
-   *or* a restart; exactly po). The UI **cannot derive it**: a near-zero `contextTokens` is **ambiguous**
-   between an *intentional* compaction (CYP-326) and an *unintended* memory-loss resume. **Only the backend
-   knows**, and it knows it precisely at the **CYP-330 stale-resume seam** (`ResumingSession`):
+5. **Explicit `resumed-with-context` vs `context-free` signal (per session/resume)** — **[VALIDATED by this
+   very analysis]** the UI has a first-class **`CONTEXT-LOST`** state (a resumed session that comes back
+   context-free — after a hand-back *or* a restart). The UI **cannot derive it**: a near-zero `contextTokens`
+   is **ambiguous** between an *intentional* compaction (CYP-326) and an *unintended* memory-loss resume —
+   the **exact confusion that momentarily read po's intentional compaction as a context loss** (§4.3). If it
+   can fool a careful design analysis, the UI must not be left to guess. **Only the backend knows**, and it
+   knows it precisely at the **CYP-330 stale-resume seam** (`ResumingSession`):
    - `--resume <id>` **bound** (BOUND / live-resume) → **`RESUMED_WITH_CONTEXT`**.
    - `--resume <id>` **died unbound → `healToFresh`** (proactive probe *or* turn-path) → **`CONTEXT_LOST`**
      (the unintended loss — po's `CONTEXT-LOST` state).
@@ -258,9 +268,10 @@ path until/unless the Wasm-interop spike clears).
 The stream-json renderer windows are the **transition + coexistence surface**; `--resume` coexistence is
 the enabler (an agent is mediated *or* interactive on the same session). Phased:
 
-1. **P0 — continuity hardening (ship regardless of the option):** graceful-drain-before-deploy (Q3-b) +
-   boot `spawnFresh` rollback (Q3.2) + optional durable-mount of `CLAUDE_CONFIG_DIR` (Q3-a). Buys back po's
-   pain now, decoupled from the terminal work.
+1. **P0 — continuity hygiene (forward-looking; ship regardless of the option):** the boot `spawnFresh`
+   rollback (Q3.2 — a real, independent robustness gap) as a small standalone fix now; graceful-drain (Q3-b,
+   spike-gated) and durable-mount of `CLAUDE_CONFIG_DIR` (Q3-a, cloud-future) as forward-looking hygiene. No
+   observed context-loss bug drives these; decoupled from the terminal work.
 2. **P1 — hook-receiver spine:** stand up the `:server` hook endpoint feeding the existing
    CYP-316/324/326 trackers; run it **in parallel** with the pipe (dual-fed) to prove parity before cutover.
 3. **P2 — interactive Desktop (JediTerm):** the mature path; PTY-manager + hand-off state machine +
@@ -300,8 +311,9 @@ honest low-risk floor / interim.
   risk** on Web. Desktop (JediTerm) is mature and cheap by comparison.
 - **Biggest capability regression:** **live token/context (CYP-325)** in any interactive path → poll or
   boundary-only. Unavoidable per the feasibility finding; must be Auftraggeber-accepted.
-- **Independent quick win (do first, any option):** the **continuity hardening (P0)** — graceful-drain +
-  boot rollback — retires po's real pain now and is decoupled from the terminal rebuild.
+- **Independent small win (any option):** the **boot `spawnFresh` rollback** (P0) — a real, standalone
+  robustness gap — decoupled from the terminal rebuild. The broader continuity work (drain, durable-mount)
+  is **forward-looking hygiene, not an observed-bug fix** (no context-loss was actually seen).
 - **Two spikes gate the big commitments:** (1) **Wasm xterm.js-over-Compose interop** (gates Web in A/D);
   (2) **Agent-SDK mediated substrate** + **mid-turn-kill transcript resumability** (gates P4/P5 and confirms
   Q3-b). Neither should block P0–P2.
@@ -312,7 +324,9 @@ honest low-risk floor / interim.
 
 **Lean: Option D, delivered in the P0→P3 phasing** — i.e. **B's risk posture with A's Desktop ambition**:
 
-1. Ship **P0 continuity hardening** immediately (independent of the terminal choice; fixes po now).
+1. Ship the **P0 boot-rollback robustness** independently (small, decoupled); treat the rest of continuity
+   (drain, durable-mount) as **forward-looking hygiene, not an urgent fix** — there is no observed
+   context-loss bug.
 2. Build the **hook-receiver spine dual-fed** (P1) to prove observability parity before any cutover.
 3. Land **interactive Desktop via JediTerm** (P2) — the mature, low-risk comfort win, hub-MCP receive seam.
 4. **Gate Web on the Wasm spike** (P3): only pivot the Web terminal if the interop spike clears; otherwise
@@ -330,7 +344,8 @@ coexistence obligation via `--resume`. A full **Option A** is the end-state *if*
 1. **Option A / B / C / D** (§7) — and whether the **live-token downgrade** (§2) is acceptable.
 2. **Web terminal risk appetite** — fund the **Wasm-interop spike** now, or pre-commit to the Kotlin/JS
    fallback, or keep stream-json for Web indefinitely (§5).
-3. **Continuity scope** — approve **P0** (graceful-drain + boot rollback) as a standalone fast-follow now;
+3. **Continuity scope** — approve the **boot `spawnFresh` rollback** as a small standalone robustness fix;
+   graceful-drain gated on the mid-turn-kill spike (no observed loss to chase);
    approve the **durable-mount of `CLAUDE_CONFIG_DIR`** for the cloud future (§4.3).
 4. **Mediated substrate** — authorize the **Agent-SDK spike** (pipe→SDK) and the **mid-turn-kill
    resumability spike** (§4.1/§4.3), or keep pipe-parsing for the mediated default.
