@@ -178,11 +178,7 @@ class Cyp325TokenContextSizeTest {
         assertEquals(listOf<Int?>(10000), pushes(good, noUsage), "absent usage → no update (keep last)")
     }
 
-    @Test
-    fun degenerateUsage_producesNoBandEvent_soBandStaysConsistentWithTheNumber() {
-        val ctx = EventProjector(ContextUsageBander(), projectId = "t", capabilities = { caps(CapabilityStatus.AVAILABLE) })
-            .project("backend", "s", "c", result("""{"output_tokens":5}"""))
-            .filter { it.type == EventType.CONTEXT_USAGE }
-        assertEquals(emptyList(), ctx, "a degenerate (0-occupancy) result must not band (nor reset the marker)")
-    }
+    // The band-side guard (a degenerate 0 must not reset the band marker → no spurious climb-back re-emit) is
+    // covered by the LOAD-BEARING Cyp325BandGuardReEmitTest (QA-authored); the earlier lone-0 tooth here was
+    // vacuous for that guard and was removed.
 }
