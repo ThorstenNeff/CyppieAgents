@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.compact
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
@@ -62,6 +63,26 @@ class CompactPanelTest {
         onNodeWithTag(CompactTags.ALLOW_HINT).assertExists()        // disclosure always
         onNodeWithTag(CompactTags.THRESHOLD).assertDoesNotExist()   // §3-3: unknown → absent
         onNodeWithTag(CompactTags.STATUS).assertDoesNotExist()      // never a defaulted idle/off
+    }
+
+    @Test
+    fun lastRunAborted_showsDistinctAbortedLabel_warnAmber() = runComposeUiTest {
+        // A kill-switch abort: incomplete, pendingAgentIds non-empty — but the panel labels it "aborted", NOT
+        // "timeout", and never success. WARN amber like a timeout, distinct label. (jvmTest locale = EN.)
+        val aborted = CompactRunSummary(completed = 2, total = 5, pendingAgentIds = listOf("a", "b", "c"), startedTs = 1, finishedTs = 2, aborted = true)
+        val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false, lastRun = aborted)), editable = false)
+        setContent { MaterialTheme(colorScheme = MaritimeDark) { CompactPanel(model) } }
+        onNodeWithTag(CompactTags.LAST_RUN).assertExists()
+        onNodeWithTag(CompactTags.LAST_RUN).assertTextContains("aborted", substring = true)
+        val pm = onNodeWithTag(CompactTags.LAST_RUN, useUnmergedTree = true).captureToImage().toPixelMap()
+        var amber = 0
+        for (y in 0 until pm.height) {
+            for (x in 0 until pm.width) {
+                val c = pm[x, y]
+                if (c.red > 0.85f && c.green > 0.6f && c.blue < 0.5f) amber++
+            }
+        }
+        assertTrue(amber > 0, "an aborted last-run is incomplete → WARN amber (never neutral/green)")
     }
 
     @Test

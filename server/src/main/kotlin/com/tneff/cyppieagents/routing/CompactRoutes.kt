@@ -24,6 +24,9 @@ fun Route.compactRoutes(
     status: () -> CompactStatus,
     registry: TokenRegistry,
     activeProjectId: () -> String,
+    // CYP-326 kill-switch: invoked after a config write so the orchestrator can ABORT a running run if
+    // "compact allowed" was turned off. Null (dev/tests) = no orchestrator to notify.
+    onConfigUpdated: () -> Unit = {},
     deps: AuthDeps = AuthDeps(registry),
     apiBase: String = "/api",
 ) {
@@ -36,6 +39,7 @@ fun Route.compactRoutes(
             post("/config") {
                 val req = call.receive<CompactConfig>()
                 configStore.set(activeProjectId(), req)
+                onConfigUpdated() // CYP-326: allowed→false aborts a running orchestration
                 call.respond(status())
             }
         }

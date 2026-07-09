@@ -138,4 +138,38 @@ class StreamJsonMapperTest {
         val notice = rows.single() as AgentEvent.Notice
         assertTrue(notice.text.contains("error_max_turns"))
     }
+
+    // --- CYP-326 #1: injected incoming/system message visibility ---
+
+    @Test
+    fun injectedUserText_mapsToIncomingSystemRow() {
+        // The platform injected this incoming message (injectedSource names the injector) → it must surface as an
+        // IncomingSystem row so the operator sees the trigger, with the raw text verbatim.
+        val rows = pipeline(
+            listOf(
+                UserEvent(
+                    message = AgentMessage(role = "user", content = listOf(TextBlock("/compact"))),
+                    uuid = "u-inj", injectedSource = "compact-orchestrator",
+                ),
+            ),
+        )
+        val system = rows.single() as AgentEvent.IncomingSystem
+        assertEquals("/compact", system.text, "the raw injected text is shown verbatim")
+    }
+
+    @Test
+    fun plainUserText_stillDropped_noComposerDoubleEcho() {
+        // A plain replayed user echo (injectedSource == null) stays dropped — the operator composer already echoes
+        // client-side (CYP-323), so surfacing this would double it.
+        val rows = pipeline(
+            listOf(
+                UserEvent(
+                    message = AgentMessage(role = "user", content = listOf(TextBlock("hallo agent"))),
+                    uuid = "u-plain", injectedSource = null,
+                ),
+            ),
+        )
+        assertTrue(rows.none { it is AgentEvent.IncomingSystem }, "a non-injected user echo must not surface as a system row")
+        assertTrue(rows.isEmpty(), "a plain replayed user text yields no transcript row (dropped, as before)")
+    }
 }

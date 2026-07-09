@@ -3,9 +3,12 @@ package com.tneff.cyppieagents.boot
 import com.tneff.cyppieagents.model.CompactConfig
 import com.tneff.cyppieagents.model.CompactRunSummary
 import com.tneff.cyppieagents.model.CompactStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
@@ -52,6 +55,7 @@ class CompactOrchestrator(
     @Volatile private var armed = true
     @Volatile private var running = false
     @Volatile private var lastRun: CompactRunSummary? = null
+    @Volatile private var runJob: Job? = null // CYP-326 kill-switch: cancelled when "compact allowed" → false mid-run
 
     /** A content-free orchestration event for the caller to map onto EventTypes. */
     sealed interface CompactEvent {
@@ -73,9 +77,20 @@ class CompactOrchestrator(
             t <= cfg.thresholdTokens -> armed = true // re-arm on drop back below the threshold
             armed && cfg.allowed && !running && t > cfg.thresholdTokens -> {
                 armed = false
-                scope.launch { runOrchestration() }
+                runJob = scope.launch { runOrchestration() }
             }
         }
+    }
+
+    /**
+     * CYP-326 kill-switch: call when the compact config changes (from `POST /api/compact/config`). If "compact
+     * allowed" was turned OFF while a run is in progress, ABORT it — cancel the run job so no further `/compact`
+     * is sent to a not-yet-served agent and the completion-wait ends; the run emits an HONEST aborted
+     * `orchestration.done` (X of N so far, `aborted=true`, never re-labelled "all done"). Already-sent `/compact`
+     * commands are not retractable (a compacted agent still counts in `completed`).
+     */
+    fun onConfigUpdated() {
+        if (!config().allowed) runJob?.cancel()
     }
 
     private suspend fun runOrchestration() {
@@ -97,7 +112,10 @@ class CompactOrchestrator(
 
             // Round 2 — /compact, PO first then +1 min each; IDLE-gated (DEFER, bounded-wait), then completion window.
             // Detection + timeout hang on THIS round only; the window is anchored at the PO's /compact send moment.
-            collector = scope.launch { compactCompletions.collect { completed.add(it) } }
+            // The collector emits Completed live (so an abort already has the completed-so-far reported).
+            collector = scope.launch {
+                compactCompletions.collect { id -> if (id in order && completed.add(id)) emit(CompactEvent.Completed(id)) }
+            }
             val windowDeadline = clock() + roundWindowMs
             order.forEachIndexed { i, agentId ->
                 if (i > 0) delay(staggerMs)
@@ -112,11 +130,17 @@ class CompactOrchestrator(
             // Wait out the remaining window, then report the honest X/N.
             val remaining = (windowDeadline - clock()).coerceAtLeast(0)
             delay(remaining)
-            order.filter { it in completed }.forEach { emit(CompactEvent.Completed(it)) }
-            val pending = order.filter { it !in completed }
-            val summary = CompactRunSummary(order.size - pending.size, order.size, pending, startedTs, clock())
+            val summary = CompactRunSummary(completed.size, order.size, order.filter { it !in completed }, startedTs, clock())
             lastRun = summary
             emit(CompactEvent.OrchestrationDone(summary))
+        } catch (c: CancellationException) {
+            // CYP-326 kill-switch abort: emit an HONEST aborted summary (completed-so-far, never faked as N/N).
+            withContext(NonCancellable) {
+                val summary = CompactRunSummary(completed.size, order.size, order.filter { it !in completed }, startedTs, clock(), aborted = true)
+                lastRun = summary
+                emit(CompactEvent.OrchestrationDone(summary))
+            }
+            throw c
         } finally {
             collector?.cancel()
             running = false
@@ -132,5 +156,19 @@ class CompactOrchestrator(
         const val PREPARE_TEXT = "Bereite dich auf einen compact vor."
         /** The literal slash command the long-lived harness intercepts (spike-verified). */
         const val COMPACT_COMMAND = "/compact"
+        /** CYP-326 #1 — the [UserEvent.injectedSource] marker for the orchestrator's transcript-visible injects. */
+        const val INJECTED_SOURCE = "compact-orchestrator"
+
+        /**
+         * CYP-326 #1 — the synthetic transcript event for a platform-injected message ([text] = PREPARE_TEXT or
+         * `/compact`). Recorded into the AgentEventStore by the `send` seam (before the stdin write) so the
+         * operator sees the incoming trigger; [UserEvent.injectedSource] = [INJECTED_SOURCE] marks it so the
+         * client renders it (a plain replayed echo, injectedSource == null, stays dropped → no CYP-323 dup).
+         */
+        fun injectedUserEvent(text: String): com.tneff.cyppieagents.model.UserEvent =
+            com.tneff.cyppieagents.model.UserEvent(
+                com.tneff.cyppieagents.model.AgentMessage(role = "user", content = listOf(com.tneff.cyppieagents.model.TextBlock(text))),
+                injectedSource = INJECTED_SOURCE,
+            )
     }
 }

@@ -9,6 +9,9 @@
     <string name="a11y_notice">Notice: %1$s</string>
     <!-- CYP-323: invisible SR label for the human turn (the visual "›" is decorative/hidden). %1$s = message text. -->
     <string name="a11y_user_turn">Your message: %1$s</string>
+    <!-- CYP-326 #1: injected system/orchestrator message in the agent transcript (label + invisible SR marker). -->
+    <string name="transcript_system_label">System</string>
+    <string name="a11y_transcript_system">System: %1$s</string>
     <string name="a11y_agent_status">Agent status: %1$s</string>
 
     <!-- Observability Event-Log UI (CYP-41 Browse + CYP-42 Live-Tail), docs/design/event-log-keys.md. -->
@@ -522,7 +525,11 @@
     <string name="compact_status_running">Running – round since %1$s</string>
     <string name="compact_last_run_ok">Last: %1$d/%2$d agents compacted</string>
     <string name="compact_last_run_timeout">Last: %1$d/%2$d compacted, %3$d pending after timeout</string>
+    <!-- CYP-326 Follow-up (kill switch): last run ABORTED — distinct from timeout/clean, WARN, never "success". -->
+    <string name="compact_last_run_aborted">Last: aborted — %1$d/%2$d compacted</string>
     <string name="a11y_compact_allow">Allow team compaction (global switch)</string>
     <!-- CYP-326 §2.5: localized X/N summary in the event-log detail (compact.orchestration.done). -->
     <string name="event_compact_done_summary">%1$d/%2$d agents compacted, %3$d timed out</string>
+    <!-- CYP-326 Follow-up (kill switch): an ABORTED run — distinct from timeout/clean, WARN, never "success". -->
+    <string name="event_compact_done_aborted">Aborted — %1$d of %2$d compacted</string>
 </resources>

@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.eventlog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -28,13 +29,14 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class CompactDoneDetailSummaryTest {
 
-    private fun doneEvent(completed: Int, total: Int, pending: List<String>, sev: Severity) = Event(
+    private fun doneEvent(completed: Int, total: Int, pending: List<String>, sev: Severity, aborted: Boolean = false) = Event(
         id = "d1", ts = 2_000, seq = 1, agentId = "po", projectId = "team-1",
         type = EventType.COMPACT_ORCHESTRATION_DONE, severity = sev, correlationId = "run-9", sessionId = null,
         detail = buildJsonObject {
             put("completed", completed)
             put("total", total)
             putJsonArray("pendingAgentIds") { pending.forEach { add(it) } }
+            put("aborted", aborted)
         },
     )
 
@@ -72,6 +74,21 @@ class CompactDoneDetailSummaryTest {
         assertTrue(
             amberPixels(onNodeWithTag(EventBrowseTags.DETAIL_COMPACT_SUMMARY, useUnmergedTree = true)) == 0,
             "a full N/N run is neutral — never amber (and never green)",
+        )
+    }
+
+    @Test
+    fun aborted_showsDistinctAbortedLabel_warnAmber_notTimedOut() = runComposeUiTest {
+        // A kill-switch abort: incomplete, pendingAgentIds non-empty — but rendered DISTINCTLY as "aborted",
+        // never "timed out" and never success. WARN amber like a timeout, distinct label. (jvmTest locale = EN.)
+        val vm = vmWith(doneEvent(completed = 2, total = 5, pending = listOf("a", "b", "c"), sev = Severity.WARN, aborted = true))
+        setContent { MaterialTheme(colorScheme = MaritimeDark) { EventBrowsePanel(vm) } }
+        onNodeWithTag(EventBrowseTags.row(0)).performClick()
+        onNodeWithTag(EventBrowseTags.DETAIL_COMPACT_SUMMARY).assertExists()
+        onNodeWithTag(EventBrowseTags.DETAIL_COMPACT_SUMMARY).assertTextContains("Aborted", substring = true)
+        assertTrue(
+            amberPixels(onNodeWithTag(EventBrowseTags.DETAIL_COMPACT_SUMMARY, useUnmergedTree = true)) > 0,
+            "an aborted run is incomplete → WARN amber (never success)",
         )
     }
 

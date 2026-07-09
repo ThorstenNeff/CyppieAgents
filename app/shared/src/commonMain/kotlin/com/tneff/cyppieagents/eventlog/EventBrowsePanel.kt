@@ -31,7 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
+import kmpcyppieagents.app.shared.generated.resources.event_compact_done_aborted
 import kmpcyppieagents.app.shared.generated.resources.event_compact_done_summary
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -367,10 +369,20 @@ private fun DetailPane(
                 val total = sel.detail["total"]?.jsonPrimitive?.intOrNull
                 if (completed != null && total != null) {
                     val timedOut = sel.detail["pendingAgentIds"]?.jsonArray?.size ?: 0
+                    // CYP-326 follow-up (kill switch): an ABORTED run (allowed→false mid-run) is DISTINCT from a
+                    // clean N/N and from a timeout — labelled "aborted", not "timed out", never "success". Both an
+                    // abort and a timeout are incomplete → WARN amber; a clean full run is neutral (never green).
+                    val aborted = sel.detail["aborted"]?.jsonPrimitive?.booleanOrNull ?: false
+                    val summary =
+                        if (aborted) {
+                            stringResource(Res.string.event_compact_done_aborted, completed, total)
+                        } else {
+                            stringResource(Res.string.event_compact_done_summary, completed, total, timedOut)
+                        }
                     Text(
-                        text = stringResource(Res.string.event_compact_done_summary, completed, total, timedOut),
+                        text = summary,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (timedOut > 0) severityColor(Severity.WARN) else MaterialTheme.colorScheme.onSurface,
+                        color = if (aborted || timedOut > 0) severityColor(Severity.WARN) else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag(EventBrowseTags.DETAIL_COMPACT_SUMMARY),
                     )
                 }

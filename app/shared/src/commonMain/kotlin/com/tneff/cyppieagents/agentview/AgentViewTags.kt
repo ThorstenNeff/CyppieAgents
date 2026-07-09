@@ -46,10 +46,12 @@ object AgentViewTags {
 }
 
 /** Event-kind qualifier vocabulary from Test-Contract v0.4 §2 (`assistantText` · `toolCall` · `toolResult`).
- *  CYP-323 adds `userTurn` (the locally-echoed human turn) — additive, coordinate with QA before renaming. */
+ *  CYP-323 adds `userTurn` (the locally-echoed human turn); CYP-326 #1 adds `system` (the injected incoming/
+ *  system message) — additive, coordinate with QA before renaming. */
 enum class EventKind(val tag: String) {
     ASSISTANT_TEXT("assistantText"),
     TOOL_CALL("toolCall"),
     TOOL_RESULT("toolResult"),
     USER_TURN("userTurn"),
+    INCOMING_SYSTEM("system"),
 }

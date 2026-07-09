@@ -11,6 +11,9 @@
     <string name="a11y_notice">Hinweis: %1$s</string>
     <!-- CYP-323: unsichtbare SR-Kennzeichnung des menschlichen Turns (das visuelle „›" ist dekorativ/hidden). %1$s = Nachrichtentext. -->
     <string name="a11y_user_turn">Deine Nachricht: %1$s</string>
+    <!-- CYP-326 #1: injizierte System-/Orchestrator-Nachricht im Agenten-Verlauf (Label + unsichtbare SR-Kennzeichnung). -->
+    <string name="transcript_system_label">System</string>
+    <string name="a11y_transcript_system">System: %1$s</string>
     <string name="a11y_agent_status">Agentenstatus: %1$s</string>
 
     <!-- Observability Event-Log UI (CYP-41 Browse + CYP-42 Live-Tail), docs/design/event-log-keys.md.
@@ -529,7 +532,11 @@
     <string name="compact_status_running">Läuft – Runde seit %1$s</string>
     <string name="compact_last_run_ok">Zuletzt: %1$d/%2$d Agenten compactet</string>
     <string name="compact_last_run_timeout">Zuletzt: %1$d/%2$d compactet, %3$d nach Timeout ausstehend</string>
+    <!-- CYP-326 Follow-up (kill switch): letzter Lauf ABGEBROCHEN — distinkt von Timeout/clean, WARN, nie „Erfolg". -->
+    <string name="compact_last_run_aborted">Zuletzt: abgebrochen — %1$d/%2$d compactet</string>
     <string name="a11y_compact_allow">Compact für das Team erlauben (globaler Schalter)</string>
     <!-- CYP-326 §2.5: lokalisierte X/N-Zusammenfassung im Event-Log-Detail (compact.orchestration.done). -->
     <string name="event_compact_done_summary">%1$d/%2$d Agenten compactet, %3$d Timeout</string>
+    <!-- CYP-326 Follow-up (kill switch): ein ABGEBROCHENER Lauf — distinkt von Timeout/clean, WARN, nie „Erfolg". -->
+    <string name="event_compact_done_aborted">Abgebrochen — %1$d von %2$d compactet</string>
 </resources>

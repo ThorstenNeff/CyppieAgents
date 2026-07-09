@@ -112,7 +112,7 @@ fun Application.installPlatform(
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
             configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
             // CYP-326: compact-orchestration config (operator) + status (read-tier).
-            compactRoutes(booted.compactConfigStore, booted.compactStatus, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase)
+            compactRoutes(booted.compactConfigStore, booted.compactStatus, booted.tokenRegistry, booted.projectRegistry::activeProjectId, booted.compactOnConfigUpdated, authDeps, apiBase = apiBase)
             // CYP-97/CYP-255 (.4b): agent CRUD lands in the ACTIVE project's runtime (resolver).
             agentMgmtRoutes({ booted.runtimeRegistry.active().agentManagement }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-122: connector opt-in (operator-gated, audited); CYP-255 (.4b) caps from the ACTIVE project.
