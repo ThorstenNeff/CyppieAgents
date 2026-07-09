@@ -49,4 +49,10 @@ data class CompactRunSummary(
     val startedTs: Long,
     /** null while the run is still in progress. */
     val finishedTs: Long? = null,
+    /**
+     * CYP-326 kill-switch: true when the run was ABORTED mid-flight (operator turned "compact allowed" off).
+     * [completed]/[pendingAgentIds] are the honest state at the abort — never re-labelled "all done". Already-sent
+     * `/compact` commands are not retractable, so a compacted agent still counts in [completed].
+     */
+    val aborted: Boolean = false,
 )

@@ -5,7 +5,9 @@ import com.tneff.cyppieagents.model.CompactConfig
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
@@ -110,6 +112,42 @@ class CompactOrchestratorTest {
         orch.onPoContext(100_000) // drop below → re-arm
         orch.onPoContext(700_000); advanceUntilIdle() // cross again → fire #2
         assertEquals(2, h.done().size)
+    }
+
+    @Test
+    fun killSwitch_allowedFalseMidRun_abortsRun_honestAbortedSummary() = runTest {
+        val h = Harness(); val orch = buildOrch(h)
+        orch.onPoContext(600_000); runCurrent() // run fires; PO prepare sent, then parked in the sequence
+        // Operator turns "compact allowed" OFF mid-run → the POST /config seam notifies the orchestrator.
+        h.config = CompactConfig(allowed = false, thresholdTokens = 500_000)
+        orch.onConfigUpdated()
+        advanceUntilIdle()
+
+        val done = h.done().single()
+        assertTrue(done.summary.aborted, "the summary is HONESTLY marked aborted, never 'all done'")
+        assertTrue(h.sendsOf(CompactOrchestrator.COMPACT_COMMAND).isEmpty(), "no /compact sent to a not-yet-served agent after abort")
+        assertEquals(0, done.summary.completed)
+        assertEquals(listOf("po", "frontend", "backend"), done.summary.pendingAgentIds)
+    }
+
+    @Test
+    fun killSwitch_abortMidRound2_keepsAlreadySentCompacts_pendingIsHonest() = runTest {
+        val h = Harness(); val orch = buildOrch(h)
+        orch.onPoContext(600_000); runCurrent()
+        advanceTimeBy(660_001); runCurrent() // through Round 1 + gap + PO(600k) & frontend(660k) /compact sent; backend not yet
+        h.completions.tryEmit("po") // PO already compacted (not retractable)
+        runCurrent()
+        h.config = CompactConfig(allowed = false, thresholdTokens = 500_000)
+        orch.onConfigUpdated()
+        advanceUntilIdle()
+
+        val done = h.done().single()
+        assertTrue(done.summary.aborted)
+        // PO + frontend got /compact (kept); backend never did.
+        assertTrue(h.sendsOf(CompactOrchestrator.COMPACT_COMMAND).map { it.second }.containsAll(listOf("po", "frontend")))
+        assertTrue(h.sendsOf(CompactOrchestrator.COMPACT_COMMAND).none { it.second == "backend" }, "no /compact to backend after abort")
+        assertEquals(1, done.summary.completed) // PO compacted before the abort — still counts (not retractable)
+        assertTrue("backend" in done.summary.pendingAgentIds && "frontend" in done.summary.pendingAgentIds)
     }
 
     @Test

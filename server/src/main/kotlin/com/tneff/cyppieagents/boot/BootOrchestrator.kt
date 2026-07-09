@@ -124,6 +124,7 @@ class BootedPlatform(
     // CYP-326 — compact-orchestration config store + a live status supplier (for /api/compact/*).
     val compactConfigStore: CompactConfigStore,
     val compactStatus: () -> com.tneff.cyppieagents.model.CompactStatus,
+    val compactOnConfigUpdated: () -> Unit, // CYP-326 kill-switch: abort a run when "compact allowed" → false
 )
 
 /**
@@ -797,6 +798,7 @@ class BootOrchestrator(
             config = { compactConfigStore.get(config.projectId) },
         ).also { it.start() }
         val compactStatus: () -> com.tneff.cyppieagents.model.CompactStatus = { compactOrchestrator.status() }
+        val compactOnConfigUpdated: () -> Unit = { compactOrchestrator.onConfigUpdated() } // CYP-326 kill-switch
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
@@ -807,6 +809,7 @@ class BootOrchestrator(
             drainProject = { pid -> drainProject(pid) },
             compactConfigStore = compactConfigStore,
             compactStatus = compactStatus,
+            compactOnConfigUpdated = compactOnConfigUpdated,
         )
     }
 }
