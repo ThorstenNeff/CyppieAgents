@@ -18,6 +18,21 @@ sealed interface AgentEvent {
     val id: String
 
     /**
+     * CYP-335 — when this row came into being, epoch ms.
+     *
+     * For stream rows it is the server's [com.tneff.cyppieagents.model.StoredAgentEvent.tsMs], carried down
+     * the wire rather than stamped at render time: the server replays history on (re)connect, so a render
+     * stamp would re-date old rows after every reconnect. The two client-born rows ([UserTurn] and the
+     * `conn-error` [Notice]) take it from [AgentViewModel]'s injected clock.
+     *
+     * A row that grows or changes state ([AssistantText] deltas, [ToolCall] RUNNING → OK/ERROR) keeps the
+     * timestamp of its **first** event — see [foldEvent]. Rendered as local `HH:mm` via [formatLocalHhMm].
+     *
+     * No default value on purpose: every construction site must decide where its time comes from.
+     */
+    val tsMs: Long
+
+    /**
      * Assistant turn text. In the event *stream* [text] is the latest delta chunk; the
      * transcript folder ([foldEvents]) concatenates deltas sharing an [id] into one rendered
      * item. [complete] flips true on the final delta of the turn (renderer drops the cursor).
@@ -26,6 +41,7 @@ sealed interface AgentEvent {
         override val id: String,
         val text: String,
         val complete: Boolean,
+        override val tsMs: Long,
     ) : AgentEvent
 
     /** A tool invocation, shown as a single line. Re-emitted with the same [id] to update [status]. */
@@ -34,6 +50,7 @@ sealed interface AgentEvent {
         val tool: String,
         val summary: String,
         val status: ToolStatus,
+        override val tsMs: Long,
     ) : AgentEvent
 
     /** A tool/turn result, marked distinctly (error vs success). */
@@ -41,12 +58,14 @@ sealed interface AgentEvent {
         override val id: String,
         val label: String,
         val isError: Boolean,
+        override val tsMs: Long,
     ) : AgentEvent
 
     /** System / lifecycle notice (session started, agent stopped, key changed). */
     data class Notice(
         override val id: String,
         val text: String,
+        override val tsMs: Long,
     ) : AgentEvent
 
     /**
@@ -58,6 +77,7 @@ sealed interface AgentEvent {
     data class UserTurn(
         override val id: String,
         val text: String,
+        override val tsMs: Long,
     ) : AgentEvent
 
     /**
@@ -70,6 +90,7 @@ sealed interface AgentEvent {
     data class IncomingSystem(
         override val id: String,
         val text: String,
+        override val tsMs: Long,
     ) : AgentEvent
 }
 

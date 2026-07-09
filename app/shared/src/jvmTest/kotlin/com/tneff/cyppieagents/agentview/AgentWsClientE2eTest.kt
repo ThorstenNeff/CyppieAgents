@@ -37,9 +37,10 @@ class AgentWsClientE2eTest {
             routing {
                 serverWebSocket("/ws/agent") {
                     // CYP-198/204: frames are StoredAgentEvent wrappers ({seq, …, event}); the client reads the
-                    // wrapper, tracks seq, and surfaces `.event`.
-                    send(Frame.Text("""{"seq":1,"agentId":"backend","projectId":"p","tsMs":0,"event":{"type":"system","subtype":"init","uuid":"u1","model":"claude-opus-4-8"}}"""))
-                    send(Frame.Text("""{"seq":2,"agentId":"backend","projectId":"p","tsMs":0,"event":{"type":"assistant","uuid":"u2","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"hallo"}]}}}"""))
+                    // wrapper, tracks seq, and (CYP-335) surfaces the WHOLE wrapper so `tsMs` reaches the renderer.
+                    // The two frames carry DIFFERENT tsMs, so a client that dropped or confused them is visible.
+                    send(Frame.Text("""{"seq":1,"agentId":"backend","projectId":"p","tsMs":1000,"event":{"type":"system","subtype":"init","uuid":"u1","model":"claude-opus-4-8"}}"""))
+                    send(Frame.Text("""{"seq":2,"agentId":"backend","projectId":"p","tsMs":2000,"event":{"type":"assistant","uuid":"u2","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"hallo"}]}}}"""))
                     close()
                 }
             }
@@ -54,8 +55,11 @@ class AgentWsClientE2eTest {
                 // than toList(). The server close triggers a reconnect whose replay the client dedups by seq.
                 val events = withTimeout(10_000) { ws.events.take(2).toList() }
                 assertEquals(2, events.size, "expected the two pushed frames")
-                assertTrue(events[0] is SystemEvent)
-                assertTrue(events[1] is AssistantEvent)
+                assertTrue(events[0].event is SystemEvent)
+                assertTrue(events[1].event is AssistantEvent)
+                // CYP-335: the server's stamp survives decoding — it is not dropped with the envelope.
+                assertEquals(1_000L, events[0].tsMs)
+                assertEquals(2_000L, events[1].tsMs)
             } finally {
                 client.close()
             }

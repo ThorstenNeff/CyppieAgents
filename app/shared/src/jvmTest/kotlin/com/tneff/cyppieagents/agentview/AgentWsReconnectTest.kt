@@ -30,11 +30,15 @@ import kotlin.test.assertEquals
  *  - **Reconnect shows history (non-vacuous):** the window collects all 5 events across the drop.
  *  - **No dups:** the re-sent seq 3 is dropped by the client's cursor-dedup → 5 events, not 6.
  *  - **Auto-reconnect + cursor-resume:** exactly 2 connections; the 2nd carried `since=3` (first carried none).
+ *  - **CYP-335 — replay does not re-date history:** every surfaced event keeps the server's original `tsMs`, and
+ *    the re-sent seq 3 (deliberately served with a *different* stamp on the reconnect, as a re-stamping server
+ *    would) is dropped by the cursor-dedup, so the original time survives.
  */
 class AgentWsReconnectTest {
 
-    private fun frame(seq: Long): String =
-        """{"seq":$seq,"agentId":"backend","projectId":"p","tsMs":0,"event":{"type":"result","subtype":"success","is_error":false,"uuid":"u-$seq"}}"""
+    /** [tsMs] defaults to `seq * 1000` so each event has a distinct, checkable stamp. */
+    private fun frame(seq: Long, tsMs: Long = seq * 1_000L): String =
+        """{"seq":$seq,"agentId":"backend","projectId":"p","tsMs":$tsMs,"event":{"type":"result","subtype":"success","is_error":false,"uuid":"u-$seq"}}"""
 
     @Test
     fun reconnect_resumesFromCursor_replaysHistory_noDups() = runBlocking {
@@ -51,7 +55,10 @@ class AgentWsReconnectTest {
                         close(CloseReason(CloseReason.Codes.GOING_AWAY, "drop"))
                     } else {
                         // Reconnect: replay INCLUSIVE from the cursor (3,4,5) — the client must dedup the re-sent 3.
-                        for (s in 3..5) send(Frame.Text(frame(s.toLong())))
+                        // CYP-335: serve that re-sent 3 with a DIFFERENT tsMs, i.e. behave like a server that
+                        // re-stamps on replay. The cursor-dedup must drop it, so the row keeps its original time.
+                        send(Frame.Text(frame(3L, tsMs = 999_999L)))
+                        for (s in 4..5) send(Frame.Text(frame(s.toLong())))
                         for (frame in incoming) { /* keep the socket open (no further drop) */ }
                     }
                 }
@@ -67,6 +74,13 @@ class AgentWsReconnectTest {
                 )
                 val collected = withTimeout(15_000) { ws.events.take(5).toList() }
                 assertEquals(5, collected.size, "history replayed across the drop, cursor-dedup dropped the re-sent seq 3")
+                // CYP-335 (AC3): the transcript's times come from the wire and survive the replay unchanged —
+                // seq 3 keeps 3_000, NOT the 999_999 the reconnect served.
+                assertEquals(
+                    listOf(1_000L, 2_000L, 3_000L, 4_000L, 5_000L),
+                    collected.map { it.tsMs },
+                    "a reconnect must not re-date already-shown history",
+                )
                 assertEquals(2, sinces.size, "exactly one auto-reconnect")
                 assertEquals(null, sinces[0], "first connect omits ?since → the server replays the whole history")
                 assertEquals("3", sinces[1], "reconnect resumes from the seq cursor (?since=3)")

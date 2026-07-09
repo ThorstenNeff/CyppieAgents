@@ -34,22 +34,27 @@ class StreamJsonMapper {
     private val toolCalls = HashMap<String, AgentEvent.ToolCall>()
     private var seq = 0
 
-    fun map(event: StreamJsonEvent): List<AgentEvent> = when (event) {
+    /**
+     * CYP-335: [tsMs] is the server's stamp for [event] (`StoredAgentEvent.tsMs`) and dates every row this
+     * wire event produces. The mapper never reads a clock — the time comes from the wire, so a replayed
+     * history maps to the same times it did the first time.
+     */
+    fun map(event: StreamJsonEvent, tsMs: Long): List<AgentEvent> = when (event) {
         is SystemEvent ->
-            if (event.subtype == "init") listOf(AgentEvent.Notice(idOf(event.uuid), systemNotice(event)))
+            if (event.subtype == "init") listOf(AgentEvent.Notice(idOf(event.uuid), systemNotice(event), tsMs))
             else emptyList()
 
         // Observability/spend signal — never part of the transcript (REPORT.md §3, "nicht in den Hub").
         is RateLimitEvent -> emptyList()
 
-        is AssistantEvent -> event.message.content.flatMap { mapAssistantBlock(event, it) }
+        is AssistantEvent -> event.message.content.flatMap { mapAssistantBlock(event, it, tsMs) }
 
-        is UserEvent -> event.message.content.flatMap { mapUserBlock(event, it) }
+        is UserEvent -> event.message.content.flatMap { mapUserBlock(event, it, tsMs) }
 
-        is ResultEvent -> mapResult(event)
+        is ResultEvent -> mapResult(event, tsMs)
     }
 
-    private fun mapAssistantBlock(e: AssistantEvent, block: ContentBlock): List<AgentEvent> = when (block) {
+    private fun mapAssistantBlock(e: AssistantEvent, block: ContentBlock, tsMs: Long): List<AgentEvent> = when (block) {
         is TextBlock -> listOf(
             AgentEvent.AssistantText(
                 id = idOf(e.messageId ?: e.uuid),
@@ -57,6 +62,7 @@ class StreamJsonMapper {
                 // Partial-messages OFF (MVP): a turn arrives complete, so stopReason is set.
                 // When token-streaming lands, deltas share message.id and fold concatenates.
                 complete = e.message.stopReason != null,
+                tsMs = tsMs,
             )
         )
 
@@ -70,6 +76,7 @@ class StreamJsonMapper {
                 tool = block.name,
                 summary = summarizeToolInput(block.input),
                 status = ToolStatus.RUNNING,
+                tsMs = tsMs,
             )
             toolCalls[block.id] = call
             listOf(call)
@@ -78,11 +85,14 @@ class StreamJsonMapper {
         is ToolResultBlock -> emptyList() // tool_result normally arrives in a user event
     }
 
-    private fun mapUserBlock(e: UserEvent, block: ContentBlock): List<AgentEvent> = when (block) {
+    private fun mapUserBlock(e: UserEvent, block: ContentBlock, tsMs: Long): List<AgentEvent> = when (block) {
         is ToolResultBlock -> buildList {
             val toolId = block.toolUseId
             val prior = toolId?.let { toolCalls[it] }
             if (prior != null) {
+                // CYP-335: copying from `prior` carries the tool call's START time forward — this row is dated
+                // by when the tool was invoked, not by when its result arrived. (foldEvent enforces the same
+                // rule independently, for sources that don't go through this mapper.)
                 val resolved = prior.copy(status = if (block.isError) ToolStatus.ERROR else ToolStatus.OK)
                 toolCalls[toolId] = resolved
                 add(resolved) // same id → foldEvent updates the tool-call row in place
@@ -92,6 +102,8 @@ class StreamJsonMapper {
                     id = "result-" + idOf(toolId ?: e.uuid),
                     label = summarizeResult(block.content),
                     isError = block.isError,
+                    // The result row is its own row and is dated by its own arrival.
+                    tsMs = tsMs,
                 )
             )
         }
@@ -102,7 +114,7 @@ class StreamJsonMapper {
         // (CYP-323), so this never double-echoes.
         is TextBlock ->
             if (e.injectedSource != null) {
-                listOf(AgentEvent.IncomingSystem(id = idOf(e.uuid), text = block.text))
+                listOf(AgentEvent.IncomingSystem(id = idOf(e.uuid), text = block.text, tsMs = tsMs))
             } else {
                 emptyList()
             }
@@ -110,12 +122,12 @@ class StreamJsonMapper {
         else -> emptyList()
     }
 
-    private fun mapResult(e: ResultEvent): List<AgentEvent> =
+    private fun mapResult(e: ResultEvent, tsMs: Long): List<AgentEvent> =
         if (e.isSuccess) {
             // Turn end: the assistant text is already shown and complete; result.result duplicates it.
             emptyList()
         } else {
-            listOf(AgentEvent.Notice(idOf(e.uuid), "Turn-Fehler" + (e.subtype?.let { ": $it" } ?: "")))
+            listOf(AgentEvent.Notice(idOf(e.uuid), "Turn-Fehler" + (e.subtype?.let { ": $it" } ?: ""), tsMs))
         }
 
     private fun systemNotice(e: SystemEvent): String =

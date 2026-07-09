@@ -11,9 +11,9 @@ class TranscriptFoldingTest {
     fun assistantDeltas_sameId_concatenateIntoOneItem() {
         val folded = foldEvents(
             listOf(
-                AgentEvent.AssistantText("a-1", "Hallo ", complete = false),
-                AgentEvent.AssistantText("a-1", "Welt", complete = false),
-                AgentEvent.AssistantText("a-1", "!", complete = true),
+                AgentEvent.AssistantText("a-1", "Hallo ", complete = false, tsMs = 0L),
+                AgentEvent.AssistantText("a-1", "Welt", complete = false, tsMs = 0L),
+                AgentEvent.AssistantText("a-1", "!", complete = true, tsMs = 0L),
             )
         )
         assertEquals(1, folded.size, "deltas with one id must fold into a single item")
@@ -26,8 +26,8 @@ class TranscriptFoldingTest {
     fun assistantText_differentIds_areSeparateItems() {
         val folded = foldEvents(
             listOf(
-                AgentEvent.AssistantText("a-1", "erste", complete = true),
-                AgentEvent.AssistantText("a-2", "zweite", complete = false),
+                AgentEvent.AssistantText("a-1", "erste", complete = true, tsMs = 0L),
+                AgentEvent.AssistantText("a-2", "zweite", complete = false, tsMs = 0L),
             )
         )
         assertEquals(2, folded.size)
@@ -37,9 +37,9 @@ class TranscriptFoldingTest {
     fun toolCall_sameId_updatesInPlaceKeepingPosition() {
         val folded = foldEvents(
             listOf(
-                AgentEvent.ToolCall("t-1", "read_file", "build.gradle.kts", ToolStatus.RUNNING),
-                AgentEvent.Notice("n-1", "zwischendrin"),
-                AgentEvent.ToolCall("t-1", "read_file", "build.gradle.kts", ToolStatus.OK),
+                AgentEvent.ToolCall("t-1", "read_file", "build.gradle.kts", ToolStatus.RUNNING, tsMs = 0L),
+                AgentEvent.Notice("n-1", "zwischendrin", tsMs = 0L),
+                AgentEvent.ToolCall("t-1", "read_file", "build.gradle.kts", ToolStatus.OK, tsMs = 0L),
             )
         )
         assertEquals(2, folded.size, "the re-emitted tool call must update, not append")
@@ -52,10 +52,10 @@ class TranscriptFoldingTest {
     fun resultAndNotice_areDedupedById() {
         val folded = foldEvents(
             listOf(
-                AgentEvent.Result("r-1", "ok", isError = false),
-                AgentEvent.Result("r-1", "ok", isError = false), // reconnect replay
-                AgentEvent.Notice("n-1", "hi"),
-                AgentEvent.Notice("n-1", "hi"),                  // reconnect replay
+                AgentEvent.Result("r-1", "ok", isError = false, tsMs = 0L),
+                AgentEvent.Result("r-1", "ok", isError = false, tsMs = 0L), // reconnect replay
+                AgentEvent.Notice("n-1", "hi", tsMs = 0L),
+                AgentEvent.Notice("n-1", "hi", tsMs = 0L),                  // reconnect replay
             )
         )
         assertEquals(2, folded.size, "replayed terminal events must not duplicate")
@@ -65,12 +65,12 @@ class TranscriptFoldingTest {
     fun scriptedScenario_ordersAndMarksCorrectly() {
         val folded = foldEvents(
             listOf(
-                AgentEvent.Notice("sys-1", "Session gestartet"),
-                AgentEvent.AssistantText("a-1", "Ich prüfe ", complete = false),
-                AgentEvent.AssistantText("a-1", "den Build.", complete = true),
-                AgentEvent.ToolCall("t-1", "run_tests", ":app:shared:jvmTest", ToolStatus.RUNNING),
-                AgentEvent.ToolCall("t-1", "run_tests", ":app:shared:jvmTest", ToolStatus.ERROR),
-                AgentEvent.Result("r-1", "1 Test fehlgeschlagen", isError = true),
+                AgentEvent.Notice("sys-1", "Session gestartet", tsMs = 0L),
+                AgentEvent.AssistantText("a-1", "Ich prüfe ", complete = false, tsMs = 0L),
+                AgentEvent.AssistantText("a-1", "den Build.", complete = true, tsMs = 0L),
+                AgentEvent.ToolCall("t-1", "run_tests", ":app:shared:jvmTest", ToolStatus.RUNNING, tsMs = 0L),
+                AgentEvent.ToolCall("t-1", "run_tests", ":app:shared:jvmTest", ToolStatus.ERROR, tsMs = 0L),
+                AgentEvent.Result("r-1", "1 Test fehlgeschlagen", isError = true, tsMs = 0L),
             )
         )
         assertEquals(4, folded.size)
@@ -89,8 +89,79 @@ class TranscriptFoldingTest {
     @Test
     fun assistantText_notYetComplete_keepsStreamingFlag() {
         val folded = foldEvents(
-            listOf(AgentEvent.AssistantText("a-1", "teil", complete = false))
+            listOf(AgentEvent.AssistantText("a-1", "teil", complete = false, tsMs = 0L))
         )
         assertFalse((folded.single() as AgentEvent.AssistantText).complete)
+    }
+
+    // --- CYP-335: a row is dated by its BIRTH, never by its last update ---
+
+    @Test
+    fun assistantDeltas_keepFirstDeltaTimestamp() {
+        // The turn began at 1_000; later deltas of the same turn must not re-date the row.
+        val folded = foldEvents(
+            listOf(
+                AgentEvent.AssistantText("a-1", "Ich sehe mir ", complete = false, tsMs = 1_000L),
+                AgentEvent.AssistantText("a-1", "den Build ", complete = false, tsMs = 5_000L),
+                AgentEvent.AssistantText("a-1", "an.", complete = true, tsMs = 9_000L),
+            )
+        )
+        assertEquals(1_000L, folded.single().tsMs, "a growing assistant row keeps its FIRST delta's timestamp")
+    }
+
+    @Test
+    fun toolCall_runningToOk_keepsStartTimestamp() {
+        // The naive `it[idx] = event` re-dates the row to the moment the tool FINISHED. The end time is not
+        // lost — it lives in the Result row — but the tool-call row must say when the tool was invoked.
+        val folded = foldEvents(
+            listOf(
+                AgentEvent.ToolCall("t-1", "read_file", "b.kts", ToolStatus.RUNNING, tsMs = 1_000L),
+                AgentEvent.ToolCall("t-1", "read_file", "b.kts", ToolStatus.OK, tsMs = 90_000L),
+            )
+        )
+        val tool = folded.single() as AgentEvent.ToolCall
+        assertEquals(ToolStatus.OK, tool.status, "the payload is the resolved one")
+        assertEquals(1_000L, tool.tsMs, "but the row keeps the tool call's START timestamp")
+    }
+
+    @Test
+    fun toolCall_runningToError_keepsStartTimestamp() {
+        val folded = foldEvents(
+            listOf(
+                AgentEvent.ToolCall("t-2", "run_tests", ":x", ToolStatus.RUNNING, tsMs = 2_000L),
+                AgentEvent.ToolCall("t-2", "run_tests", ":x", ToolStatus.ERROR, tsMs = 80_000L),
+            )
+        )
+        val tool = folded.single() as AgentEvent.ToolCall
+        assertEquals(ToolStatus.ERROR, tool.status)
+        assertEquals(2_000L, tool.tsMs, "a failing tool call is dated by its start too")
+    }
+
+    @Test
+    fun parallelToolCalls_timeColumnDoesNotRunBackwards() {
+        // A starts first, B finishes first. Claude Code fires tool calls in parallel and foldEvent updates the
+        // row in place, so the list stays in first-appearance order. Start-dating reads 1_000 then 2_000;
+        // end-dating would read 9_000 then 3_000 — a clock running backwards down the transcript.
+        val folded = foldEvents(
+            listOf(
+                AgentEvent.ToolCall("a", "slow", "", ToolStatus.RUNNING, tsMs = 1_000L),
+                AgentEvent.ToolCall("b", "fast", "", ToolStatus.RUNNING, tsMs = 2_000L),
+                AgentEvent.ToolCall("b", "fast", "", ToolStatus.OK, tsMs = 3_000L),
+                AgentEvent.ToolCall("a", "slow", "", ToolStatus.OK, tsMs = 9_000L),
+            )
+        )
+        assertEquals(listOf(1_000L, 2_000L), folded.map { it.tsMs }, "rows keep start order AND start times")
+    }
+
+    @Test
+    fun replayedTerminalEvent_doesNotRedateTheSurvivingRow() {
+        // A reconnect replays the same Result under the same id; the deduped row keeps its original time.
+        val folded = foldEvents(
+            listOf(
+                AgentEvent.Result("r-1", "ok", isError = false, tsMs = 1_000L),
+                AgentEvent.Result("r-1", "ok", isError = false, tsMs = 50_000L),
+            )
+        )
+        assertEquals(1_000L, folded.single().tsMs, "the replayed duplicate must not overwrite the original time")
     }
 }

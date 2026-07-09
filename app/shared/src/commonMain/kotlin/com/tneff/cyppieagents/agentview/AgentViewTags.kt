@@ -43,6 +43,9 @@ object AgentViewTags {
     /** As [event], qualified by event kind for type-based assertions. */
     fun event(agentId: String, index: Int, kind: EventKind) =
         "agent.$agentId.event.$index.${kind.tag}"
+
+    /** CYP-335: the `HH:mm` gutter of the N-th event line. Additive — coordinate with QA before renaming. */
+    fun eventTime(agentId: String, index: Int) = "agent.$agentId.event.$index.time"
 }
 
 /** Event-kind qualifier vocabulary from Test-Contract v0.4 §2 (`assistantText` · `toolCall` · `toolResult`).
