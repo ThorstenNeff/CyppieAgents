@@ -83,6 +83,11 @@ enum class EventType(val wire: String) {
     COMPACT_TRIGGERED("compact.triggered"),
     COMPACT_COMPLETED("compact.completed"),
 
+    // CYP-326 — compact orchestration (content-free: agentId / round / X-of-N, never bodies)
+    COMPACT_PREPARE_SENT("compact.prepare.sent"),
+    COMPACT_REQUEST_SENT("compact.request.sent"),
+    COMPACT_ORCHESTRATION_DONE("compact.orchestration.done"),
+
     // Hooks (spool)
     HOOK_FIRED("hook.fired"),
 
