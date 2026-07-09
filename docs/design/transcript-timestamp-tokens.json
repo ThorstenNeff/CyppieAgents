@@ -1,0 +1,86 @@
+{
+  "$meta": {
+    "ticket": "CYP-335",
+    "owner": "UIUX-Designer",
+    "spec": "docs/design/transcript-timestamp-spec.md",
+    "base": "develop f8063c1",
+    "scope": "WASM app only",
+    "note": "10 Slots. Keine neue Farbe, keine neue Typo-Stufe — alle Werte referenzieren bestehende M3-Rollen bzw. die Zeitzellen-Behandlung des Event-Logs (EventRowUi.kt:135)."
+  },
+
+  "transcript.time.column.width": {
+    "value": 44,
+    "unit": "dp",
+    "spec": "§2.1",
+    "rationale": "HH:mm = 5 Glyphen; Monospace @ labelSmall (11sp) ~= 33dp. 11dp Reserve. IntrinsicSize.Min teilt sich nicht ueber LazyColumn-Items.",
+    "constraint": "WASM: dp und sp skalieren gemeinsam (Zoom) -> sicher. ANDROID: fontScale 1.5 -> 49.5dp -> Clipping. Bei Android-Portierung auf widthIn(min = 44.dp) wechseln."
+  },
+
+  "transcript.time.column.gap": {
+    "value": 8,
+    "unit": "dp",
+    "spec": "§2.1",
+    "rationale": "Reuse der bestehenden horizontalen Einheit in AgentWindow.kt (ToolCallRow: Arrangement.spacedBy(8.dp))."
+  },
+
+  "transcript.time.contentEdge": {
+    "value": 64,
+    "unit": "dp",
+    "spec": "§1",
+    "rationale": "Abgeleitet: contentPadding 12 + column.width 44 + column.gap 8. Linke Inhaltskante fuer ALLE sechs Zeilenarten. Nicht unabhaengig setzen."
+  },
+
+  "transcript.time.textAlign": {
+    "value": "TextAlign.End",
+    "spec": "§2.1",
+    "rationale": "Konstanter Abstand Ziffern->Inhalt; haelt die Inhaltskante auch bei proportionalem Font-Fallback. RTL-sicher (End zeigt in beiden Richtungen zum Inhalt)."
+  },
+
+  "transcript.time.verticalAlign": {
+    "value": "Modifier.alignByBaseline()",
+    "spec": "§2.2",
+    "rationale": "Zeit ist labelSmall (11sp/16sp), Inhalt bodyMedium (14sp/20sp). Alignment.Top richtet Boxen aus, nicht Grundlinien -> Ziffern schweben. Bei mehrzeiligem Inhalt haengt die Zeit an der ERSTEN Grundlinie.",
+    "fallback": "Falls die Baseline nicht durch ResultRows gepolsterten Container propagiert: Alignment.Top + padding(top = 4.dp) NUR fuer ResultRow (dokumentierte Ausnahme). Dev5 verifiziert."
+  },
+
+  "transcript.time.typography": {
+    "value": "MaterialTheme.typography.labelSmall",
+    "spec": "§3",
+    "rationale": "Etablierte Metadaten-Stufe: NoticeRow, LifecycleErrorRow, ReconnectingChip UND die Zeitzelle des Event-Logs (EventRowUi.kt:135). bodySmall laege im Inhalts-Band (ResultRow) -> falsches Signal."
+  },
+
+  "transcript.time.fontFamily": {
+    "value": "FontFamily.Monospace",
+    "spec": "§3",
+    "rationale": "Richtet Doppelpunkt und Ziffernpaare ZWISCHEN den Zeilen aus (Spaltenkante allein waere schon durch feste Breite stabil). Reuse: ToolCallRow:385, ResultRow:418, EventRowUi.kt:135."
+  },
+
+  "transcript.time.color": {
+    "value": "MaterialTheme.colorScheme.onSurfaceVariant",
+    "spec": "§4.1",
+    "contrast": {
+      "light": { "pair": "#3A4E5A on #FFFFFF", "ratio": "8.69:1", "wcag": "AAA" },
+      "dark": { "pair": "#A6BECD on #06121A", "ratio": "9.80:1", "wcag": "AAA" }
+    },
+    "forbidden": {
+      "outline": "Light 3.55:1 / Dark 3.63:1 -> FAIL AA-Fliesstext (4.5:1). outline ist eine UI-/Rahmen-Rolle (3:1), keine Textrolle.",
+      "semantic": "Nie error/primary/tertiary, nie Identitaets-Hue. Eine ERROR-Zeile bekommt keinen roten Zeitstempel - der Fehler gehoert der Zeile, nicht der Uhr (WCAG 1.4.1)."
+    },
+    "note": "Dank der Gutter-Architektur (§1.2) liegt die Zeit IMMER auf surface - nie auf errorContainer/surfaceVariant. Ein Kontrastpaar statt drei."
+  },
+
+  "transcript.time.alpha": {
+    "value": 1.0,
+    "floor": 0.8,
+    "spec": "§4.2",
+    "rationale": "Daempfung kommt aus Groesse und Farbrolle, nicht aus Alpha. Gemessen auf onSurfaceVariant/surface: a=0.80 -> 5.05:1 (hell) / 6.62:1 (dunkel) = AA-Boden. a=0.75 -> 4.43:1 hell = FAIL. a=0.60 -> 3.07:1 hell = FAIL.",
+    "warning": "Das HELLE Theme reisst zuerst. Ein Alpha-Nachweis, der nur im dunklen Theme gefuehrt wird, verdeckt den Fehler."
+  },
+
+  "transcript.time.maxLines": {
+    "value": 1,
+    "softWrap": false,
+    "spec": "§2.1",
+    "rationale": "HH:mm bricht nie um. Kein Ellipsis-Degradieren auf '09:...'."
+  }
+}
