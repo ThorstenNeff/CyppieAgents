@@ -25,9 +25,10 @@ import kotlin.test.assertTrue
  */
 class StreamJsonMapperTest {
 
+    /** CYP-335: each wire event is stamped 1_000 ms apart, so a row's time identifies which event bore it. */
     private fun pipeline(events: List<StreamJsonEvent>): List<AgentEvent> {
         val mapper = StreamJsonMapper()
-        return foldEvents(events.flatMap { mapper.map(it) })
+        return foldEvents(events.flatMapIndexed { i, e -> mapper.map(e, tsMs = (i + 1) * 1_000L) })
     }
 
     private val toolCallTurn: List<StreamJsonEvent> = listOf(
@@ -92,11 +93,55 @@ class StreamJsonMapperTest {
         assertTrue(text.complete, "end_turn stop reason marks the assistant text complete")
     }
 
+    // --- CYP-335: every row is dated by the wire event that bore it ---
+
+    @Test
+    fun everyRow_carriesTheStampOfItsWireEvent() {
+        // pipeline() stamps the Nth wire event with N*1_000. toolCallTurn is:
+        //   1_000 system · 2_000 rate_limit · 3_000 assistant(tool_use) · 4_000 user(tool_result)
+        //   5_000 assistant(text) · 6_000 result(success)
+        val transcript = pipeline(toolCallTurn)
+
+        assertEquals(1_000L, transcript[0].tsMs, "Notice is dated by the system/init event")
+        assertEquals(3_000L, transcript[1].tsMs, "the ToolCall keeps the tool_use event's time (its START)")
+        assertEquals(4_000L, transcript[2].tsMs, "the Result is dated by the tool_result event")
+        assertEquals(5_000L, transcript[3].tsMs, "the assistant text is dated by its own event")
+    }
+
+    @Test
+    fun toolResultFanOut_datesTheTwoRowsDifferently() {
+        // ONE tool_result wire event fans out into TWO rows (the resolved ToolCall + the Result). They must not
+        // share a timestamp: the tool call is dated by its start, the result by its arrival. The operator reads
+        // start AND end off the transcript — that only works if the fan-out rows are dated independently.
+        val mapper = StreamJsonMapper()
+        val toolUse = AssistantEvent(
+            message = AgentMessage(
+                id = "m", stopReason = "tool_use",
+                content = listOf(ToolUseBlock(id = "toolu_1", name = "Bash", input = buildJsonObject { put("command", "sleep") })),
+            ),
+            uuid = "a",
+        )
+        val toolResult = UserEvent(
+            message = AgentMessage(content = listOf(ToolResultBlock(toolUseId = "toolu_1", content = JsonPrimitive("done"), isError = false))),
+            uuid = "u",
+        )
+
+        mapper.map(toolUse, tsMs = 1_000L)
+        val fanOut = mapper.map(toolResult, tsMs = 90_000L)
+
+        assertEquals(2, fanOut.size, "one tool_result event produces the resolved ToolCall AND the Result")
+        val resolved = fanOut[0] as AgentEvent.ToolCall
+        val result = fanOut[1] as AgentEvent.Result
+        assertEquals(ToolStatus.OK, resolved.status)
+        assertEquals(1_000L, resolved.tsMs, "the resolved tool call still carries its START time")
+        assertEquals(90_000L, result.tsMs, "the result row carries the time the result arrived")
+    }
+
     @Test
     fun rateLimitAndSuccessResult_produceNoRows() {
         val mapper = StreamJsonMapper()
-        assertTrue(mapper.map(RateLimitEvent(uuid = "r")).isEmpty())
-        assertTrue(mapper.map(ResultEvent(subtype = "success", isError = false, uuid = "x")).isEmpty())
+        assertTrue(mapper.map(RateLimitEvent(uuid = "r"), tsMs = 0L).isEmpty())
+        assertTrue(mapper.map(ResultEvent(subtype = "success", isError = false, uuid = "x"), tsMs = 0L).isEmpty())
     }
 
     @Test
@@ -106,7 +151,7 @@ class StreamJsonMapperTest {
             message = AgentMessage(id = "m", stopReason = "tool_use", content = listOf(ThinkingBlock("nur denken"))),
             uuid = "u",
         )
-        assertTrue(mapper.map(ev).isEmpty())
+        assertTrue(mapper.map(ev, tsMs = 0L).isEmpty())
     }
 
     @Test
@@ -134,7 +179,7 @@ class StreamJsonMapperTest {
     @Test
     fun errorResult_emitsNotice() {
         val mapper = StreamJsonMapper()
-        val rows = mapper.map(ResultEvent(subtype = "error_max_turns", isError = true, uuid = "e"))
+        val rows = mapper.map(ResultEvent(subtype = "error_max_turns", isError = true, uuid = "e"), tsMs = 7_000L)
         val notice = rows.single() as AgentEvent.Notice
         assertTrue(notice.text.contains("error_max_turns"))
     }

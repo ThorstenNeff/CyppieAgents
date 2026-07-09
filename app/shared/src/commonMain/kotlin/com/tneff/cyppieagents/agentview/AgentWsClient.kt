@@ -32,6 +32,9 @@ import kotlinx.coroutines.launch
  *     monotonic, restart-surviving cursor; the server guarantees gapless + dedup on `?since`.
  *   - **Client→Server:** one frame == a [UserTurn] `{"text":"…"}`; the mediator injects it on stdin (Gate #5).
  *
+ * **CYP-335:** [events] surfaces the whole [StoredAgentEvent] envelope (not just its inner [StreamJsonEvent])
+ * so the server-stamped `tsMs` reaches the transcript renderer.
+ *
  * **CYP-204 reconnect (the CYP-115 follow-up):** [events] auto-reconnects. On the first connect `since` is
  * omitted → the server replays the WHOLE persisted history (window shows the transcript, not blank). On every
  * reconnect it resumes from [lastSeq] via `?since=<lastSeq>` → replay-then-live with no gap, and it drops any
@@ -68,7 +71,7 @@ class AgentWsClient(
      * CYP-115 churn is exactly what flow{} forbids). On any drop it waits an exponential [backoff] (status
      * DISCONNECTED), then re-opens from [lastSeq]. Cancellation propagates and ends the loop (never swallowed).
      */
-    val events: Flow<StreamJsonEvent> = channelFlow {
+    val events: Flow<StoredAgentEvent> = channelFlow {
         var attempt = 0
         while (true) {
             try {
@@ -89,7 +92,10 @@ class AgentWsClient(
                                 val stored = CommJson.decodeFromString(StoredAgentEvent.serializer(), frame.readText())
                                 if (stored.seq > lastSeq) { // dedup + advance cursor (idempotent replay)
                                     lastSeq = stored.seq
-                                    this@channelFlow.send(stored.event)
+                                    // CYP-335: forward the WHOLE envelope, not just `.event` — the server's `tsMs`
+                                    // is the transcript's only honest clock. Stamping at render time would re-date
+                                    // replayed history on every reconnect.
+                                    this@channelFlow.send(stored)
                                 }
                             }
                         }

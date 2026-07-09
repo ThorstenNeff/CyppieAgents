@@ -50,7 +50,7 @@ class AgentHumanTurnEchoTest {
         override val events: Flow<AgentEvent> = bus
         override fun sendMessage(text: String) {
             sent += text
-            bus.tryEmit(AgentEvent.AssistantText("reply-${sent.size}", "OK: $text", complete = true))
+            bus.tryEmit(AgentEvent.AssistantText("reply-${sent.size}", "OK: $text", complete = true, tsMs = 0L))
         }
     }
 
@@ -60,8 +60,8 @@ class AgentHumanTurnEchoTest {
     fun foldEvents_userTurn_precedesAgentReply_inOrder() {
         val folded = foldEvents(
             listOf(
-                AgentEvent.UserTurn("user-0", "Hallo"),
-                AgentEvent.AssistantText("a-1", "Antwort", complete = true),
+                AgentEvent.UserTurn("user-0", "Hallo", tsMs = 0L),
+                AgentEvent.AssistantText("a-1", "Antwort", complete = true, tsMs = 0L),
             )
         )
         assertEquals(2, folded.size)
@@ -72,7 +72,7 @@ class AgentHumanTurnEchoTest {
 
     @Test
     fun foldEvent_userTurn_dedupedByStableId() {
-        val turn = AgentEvent.UserTurn("user-0", "Hallo")
+        val turn = AgentEvent.UserTurn("user-0", "Hallo", tsMs = 0L)
         val twice = foldEvent(foldEvent(emptyList(), turn), turn) // same id re-applied → insurance
         assertEquals(1, twice.size, "a re-applied turn with the same id must not double")
     }
@@ -106,7 +106,7 @@ class AgentHumanTurnEchoTest {
         // Discriminator: a pure agent transcript carries no userTurn row and no "Deine Nachricht:" SR label.
         setContent {
             MaterialTheme {
-                val vm = remember { AgentViewModel(sessionEmitting(AgentEvent.AssistantText("a-1", "Nur Agent", complete = true)), agentId) }
+                val vm = remember { AgentViewModel(sessionEmitting(AgentEvent.AssistantText("a-1", "Nur Agent", complete = true, tsMs = 0L)), agentId) }
                 AgentWindow(agentId = agentId, viewModel = vm)
             }
         }

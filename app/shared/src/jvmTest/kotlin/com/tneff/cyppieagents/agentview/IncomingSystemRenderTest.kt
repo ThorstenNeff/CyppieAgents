@@ -31,7 +31,7 @@ class IncomingSystemRenderTest {
     fun incomingSystem_rendersDistinctSystemRow_withRawTextAndAria() = runComposeUiTest {
         setContent {
             MaterialTheme {
-                val vm = remember { AgentViewModel(sessionEmitting(AgentEvent.IncomingSystem("s1", "/compact")), "backend") }
+                val vm = remember { AgentViewModel(sessionEmitting(AgentEvent.IncomingSystem("s1", "/compact", tsMs = 0L)), "backend") }
                 AgentWindow(agentId = "backend", viewModel = vm)
             }
         }
