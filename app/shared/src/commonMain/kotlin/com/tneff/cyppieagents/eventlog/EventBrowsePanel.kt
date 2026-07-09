@@ -31,6 +31,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
+import kmpcyppieagents.app.shared.generated.resources.event_compact_done_summary
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.LoadErrorRetry
@@ -353,6 +357,23 @@ private fun DetailPane(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag(EventBrowseTags.DETAIL_SOURCE_TS),
                 )
+            }
+            // CYP-326 §2.5: a legible X/N summary for a `compact.orchestration.done` event, read from its
+            // content-free detail payload (the `CompactRunSummary` keys). WARN amber when any agent timed out
+            // (`pendingAgentIds` non-empty), else neutral — the honest partial/complete signal above the raw
+            // JSON (§3-4: a timeout is never rendered as success). Absent unless both counts are present.
+            if (sel.type == EventType.COMPACT_ORCHESTRATION_DONE) {
+                val completed = sel.detail["completed"]?.jsonPrimitive?.intOrNull
+                val total = sel.detail["total"]?.jsonPrimitive?.intOrNull
+                if (completed != null && total != null) {
+                    val timedOut = sel.detail["pendingAgentIds"]?.jsonArray?.size ?: 0
+                    Text(
+                        text = stringResource(Res.string.event_compact_done_summary, completed, total, timedOut),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (timedOut > 0) severityColor(Severity.WARN) else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag(EventBrowseTags.DETAIL_COMPACT_SUMMARY),
+                    )
+                }
             }
             // Content-free metadata payload, as-is (§5.5 — nothing fabricated).
             Text(

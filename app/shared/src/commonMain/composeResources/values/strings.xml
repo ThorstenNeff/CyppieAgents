@@ -518,4 +518,18 @@
     <string name="a11y_event_drilldown_header">Korreliert über %1$s, tippen zum Zurücksetzen</string>
     <!-- CYP-314 (Follow-up CYP-312): Erfolgsmeldung nach „Anlegen". Copy final von UIUX (Platzhalter). -->
     <string name="agent_add_success">Agent „%1$s" angelegt.</string>
+    <!-- CYP-326 Compact-Orchestration (UIUX-Spec §1.4). Disclosure-honest, kein grüner SUCCESS-Ton. -->
+    <string name="compact_window_title">Compact-Orchestrierung</string>
+    <string name="compact_allow_label">Compact für das Team erlauben</string>
+    <string name="compact_allow_hint">Ist dies aktiv und der PO-Context 500K Tokens überschreitet, wird das gesamte Team automatisch compactet: zuerst der PO, dann die Worker je 1 Minute versetzt. Compacten verdichtet den Arbeits-Context jedes Agenten.</string>
+    <string name="compact_threshold_label">Schwelle</string>
+    <string name="compact_status_label">Status</string>
+    <string name="compact_status_off">Deaktiviert</string>
+    <string name="compact_status_idle">Bereit – wartet auf Schwelle</string>
+    <string name="compact_status_running">Läuft – Runde seit %1$s</string>
+    <string name="compact_last_run_ok">Zuletzt: %1$d/%2$d Agenten compactet</string>
+    <string name="compact_last_run_timeout">Zuletzt: %1$d/%2$d compactet, %3$d nach Timeout ausstehend</string>
+    <string name="a11y_compact_allow">Compact für das Team erlauben (globaler Schalter)</string>
+    <!-- CYP-326 §2.5: lokalisierte X/N-Zusammenfassung im Event-Log-Detail (compact.orchestration.done). -->
+    <string name="event_compact_done_summary">%1$d/%2$d Agenten compactet, %3$d Timeout</string>
 </resources>
