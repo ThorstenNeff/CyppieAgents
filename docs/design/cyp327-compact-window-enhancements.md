@@ -66,19 +66,19 @@ Reuse (kein neuer Key): `compact_threshold_label`, `workspace_operator_only`. **
 
 Unter Gate/Status/Schwelle, nach `HorizontalDivider`, **dynamischer Header (Honesty):** `compact_run_current` „Aktueller Lauf" wenn `status.running`, sonst `compact_run_last` „Letzter Lauf" — ein **beendeter** Lauf ist nicht „aktuell"; der Header sagt ehrlich, ob **live** oder **vergangen** (verfeinert die PO-Vorgabe „aktueller Lauf").
 
-**Scroll:** Ein Lauf hat eine **beschränkte** Event-Zahl (~`2·N+2`: 1 `triggered` + je `prepare.sent`/`request.sent`/`completed` pro Agent + 1 `orchestration.done`) — die Liste ist **kurz**, kein unbegrenzter Verlauf. `LazyColumn` mit `heightIn(max = …)`; bei kleiner Zahl schrumpft sie. Das Nested-Scroll-Risiko im bestehenden `Column(verticalScroll)` (`CompactPanel.kt:63-70`) ist **gering**, weil der Inhalt klein/beschränkt ist → **kein Panel-Umbau nötig** (anders als bei globaler Historie).
+**Scroll:** Ein Lauf hat eine **beschränkte** Event-Zahl (~`2·N+1`: je `prepare.sent`/`request.sent`/`completed` pro Agent + 1 `orchestration.done`) — die Liste ist **kurz**, kein unbegrenzter Verlauf. `LazyColumn` mit `heightIn(max = …)`; bei kleiner Zahl schrumpft sie. Das Nested-Scroll-Risiko im bestehenden `Column(verticalScroll)` (`CompactPanel.kt:63-70`) ist **gering**, weil der Inhalt klein/beschränkt ist → **kein Panel-Umbau nötig** (anders als bei globaler Historie).
 
 ### §B.2 Rendering — **`EventRow`-Reuse, 0 neue Row-UI**
 
 Jede Zeile = das geteilte `EventRow` (`eventlog/EventRowUi.kt`) — **identische** Glyphen/Severity/Identität/Monospace-Wire wie im EventLog. Die Compact-Event-Severity/Honesty ist in CYP-326 §2.2 + §7.2 festgelegt und wird hier **nur gerendert**:
 - `▦` Gruppen-Glyph · Severity-Rail+Glyph · `compact.<typ>`-Wire (un-lokalisiert) · Identität.
 - **`compact.completed` neutral (INFO, kein Grün)** · **Timeout / `aborted` = WARN-Amber `▲`** · clean N/N = INFO. Keine Sonderfarbe, kein Hardcode.
-- **Seq-geordnet innerhalb des Laufs** → liest als die **geordnete Lauf-Timeline**: `triggered → prepare.sent(×) → request.sent(×) → completed(×) → orchestration.done`.
+- **Seq-geordnet innerhalb des Laufs** → liest als die **geordnete Lauf-Timeline**: `prepare.sent(×) → request.sent(×) → completed(×) → orchestration.done` (Lauf-Opener = das **erste `prepare.sent`** des PO).
 - Row-Tags via `EventRow`-Parameter, Scope `compact.run.row.<i>` (+ Qualifier/byId), analog `eventTail.row.<i>`.
 
 ### §B.3 Daten & Scope (per-Sequenz)
 
-Quelle = der **Event-Stream** (derselbe wie EventLog), gescopt auf **eine `correlationId`** = die des **aktuellen/letzten** Laufs; innerhalb seq-geordnet.
+Quelle = der **Event-Stream** (derselbe wie EventLog), gescopt auf **eine `correlationId`** = die des **aktuellen/letzten** Laufs; innerhalb seq-geordnet. **Filter-Typen (Q4 entschieden, nur 4):** `COMPACT_PREPARE_SENT`, `COMPACT_REQUEST_SENT`, `COMPACT_COMPLETED`, `COMPACT_ORCHESTRATION_DONE`. **KEIN `COMPACT_TRIGGERED`** — die Orchestrierung emittiert es nicht (Trigger/Armen ist im **Status** sichtbar, nicht als Event); `COMPACT_TRIGGERED` ist der **native-Compaction-Beobachtungs-Typ** (andere Semantik) → im per-Lauf-Filter würde er entweder nichts zeigen (Orchestrator sendet ihn nie) oder **fremde native-Compaction-Events** in die Lauf-Liste ziehen (unehrlich). Lauf-Opener = das erste `prepare.sent`.
 
 **Scope-Schlüssel (Dev/Backend-Naht):** **Empfehlung** — `CompactRunSummary` (`:core/CompactModel.kt:42-58`) um **`correlationId: String`** erweitern (1 Feld). Dann ist `status.lastRun?.correlationId` der **autoritative** Join-Schlüssel (`lastRun` = der jüngste Lauf, laufend **oder** beendet; `finishedTs == null` = laufend), und der Client filtert `event.correlationId == status.lastRun?.correlationId`. *Zero-Backend-Alternative:* Client leitet den jüngsten Lauf aus dem Stream ab (Compact-Events nach `correlationId` gruppieren, den mit max `seq` nehmen) — mehr Client-Logik, aber kein Feld. **Empfehlung: das Feld** — autoritativer Server↔Events-Join statt Client-Rateschluss = ehrlicher (nie den falschen Lauf zeigen). → Frage §F-3.
 
@@ -139,6 +139,4 @@ Reuse `a11y_event_row` (komponiert Severity+Typ+Agent+ts) → **kein neuer a11y-
 - **1 (Set-Quittung):** transienter INFO-Confirm „Schwelle auf %1$s gesetzt" (Empfehlung) vs. still (nur Wert-spiegelt, konsistent mit `setAllowed`)?
 - **2 (Header):** dynamisch „Aktueller Lauf" / „Letzter Lauf" (Empfehlung, ehrlich live-vs-vergangen) vs. ein neutrales statisches „Compact-Lauf" (1 Key weniger)?
 - **3 (Scope-Schlüssel):** `CompactRunSummary.correlationId`-Feld (Empfehlung, autoritativer Join) vs. Client-Ableitung des jüngsten Laufs (0 Backend)?
-- **4 (Umfang Filter):** Lauf-Events inkl. `COMPACT_TRIGGERED` als Lauf-Opener (Empfehlung) vs. nur die vier `prepare/request/completed/done`?
-
-> **Erledigt (Auftraggeber):** Feature B = **per-Sequenz** (aktueller/letzter Lauf), nicht globale Historie.
+> **Alle §F erledigt (Auftraggeber):** Feature B = **per-Sequenz** (aktueller/letzter Lauf, nicht global) · Scope-Key = `CompactRunSummary.correlationId`-Feld (additiv) · Set-Quittung = INFO-transient · Header = dynamisch „Aktueller/Letzter Lauf" · **Q4 Filter = genau die 4 Orchestrierungs-Events, KEIN `COMPACT_TRIGGERED`** (§B.3 — anderer, native-Compaction-Typ; Orchestrator emittiert kein `triggered`, Lauf-Opener = erstes `prepare.sent`). **→ Spec vollständig geschlossen, gate-fertig.**
