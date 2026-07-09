@@ -792,7 +792,14 @@ class BootOrchestrator(
                 .map { it.contextTokens },
             compactCompletions = compactSignal.events,
             isBusy = { id -> busyStateTracker.snapshot().firstOrNull { it.agentId == id }?.busy ?: false },
-            send = { id, text -> sessions.session(id)?.let { it.sendTurn(com.tneff.cyppieagents.model.UserTurn(text)); true } ?: false },
+            send = { id, text ->
+                // CYP-326 #1 (visibility): record the platform-injected message into the transcript FIRST —
+                // chronologically before the reaction — marked injectedSource so the client renders it as an
+                // incoming/system row (the trigger the operator must see); no CYP-323 double-echo (this path has
+                // no client composer echo). Then inject on stdin.
+                agentEventRecorder.record(id, config.projectId, CompactOrchestrator.injectedUserEvent(text))
+                sessions.session(id)?.let { it.sendTurn(com.tneff.cyppieagents.model.UserTurn(text)); true } ?: false
+            },
             emit = { ev -> eventSink.append(compactDraft(ev, poId, config.projectId)) },
             agentsInOrder = { config.agents.sortedBy { if (it.role == com.tneff.cyppieagents.model.Role.PO) 0 else 1 }.map { it.id } },
             config = { compactConfigStore.get(config.projectId) },

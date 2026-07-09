@@ -94,6 +94,14 @@ data class UserEvent(
     val message: AgentMessage,
     @SerialName("session_id") override val sessionId: String? = null,
     override val uuid: String? = null,
+    /**
+     * CYP-326 — non-null when the PLATFORM itself injected this incoming message into the agent's session (the
+     * orchestrator's `PREPARE_TEXT` / `/compact`), recorded synthetically into the transcript so the operator
+     * sees the trigger. The value names the injector (e.g. `"compact-orchestrator"`). The client renders such a
+     * message as an incoming/system row; a plain replayed user echo (`injectedSource == null`) stays dropped, so
+     * this NEVER double-echoes the operator composer (which already echoes client-side, CYP-323). Additive.
+     */
+    @SerialName("injected_source") val injectedSource: String? = null,
 ) : StreamJsonEvent
 
 /**

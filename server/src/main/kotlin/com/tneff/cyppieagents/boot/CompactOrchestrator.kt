@@ -156,5 +156,19 @@ class CompactOrchestrator(
         const val PREPARE_TEXT = "Bereite dich auf einen compact vor."
         /** The literal slash command the long-lived harness intercepts (spike-verified). */
         const val COMPACT_COMMAND = "/compact"
+        /** CYP-326 #1 — the [UserEvent.injectedSource] marker for the orchestrator's transcript-visible injects. */
+        const val INJECTED_SOURCE = "compact-orchestrator"
+
+        /**
+         * CYP-326 #1 — the synthetic transcript event for a platform-injected message ([text] = PREPARE_TEXT or
+         * `/compact`). Recorded into the AgentEventStore by the `send` seam (before the stdin write) so the
+         * operator sees the incoming trigger; [UserEvent.injectedSource] = [INJECTED_SOURCE] marks it so the
+         * client renders it (a plain replayed echo, injectedSource == null, stays dropped → no CYP-323 dup).
+         */
+        fun injectedUserEvent(text: String): com.tneff.cyppieagents.model.UserEvent =
+            com.tneff.cyppieagents.model.UserEvent(
+                com.tneff.cyppieagents.model.AgentMessage(role = "user", content = listOf(com.tneff.cyppieagents.model.TextBlock(text))),
+                injectedSource = INJECTED_SOURCE,
+            )
     }
 }
