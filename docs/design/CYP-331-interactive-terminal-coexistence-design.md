@@ -187,6 +187,12 @@ still remembers** everything above. It doesn't. So:
 
 ## 5. Integration with the window manager + maritime/M3 (UX-Frage 3)
 
+> **Ratified (2026-07-09, supersedes the web/seam-open framing below):** Option D = **Desktop + JediTerm only, no
+> Web/Wasm**; the terminal uses the **`expect/actual TerminalView` seam in commonMain** (jvm actual = JediTerm real;
+> `wasmJs`/`js`/`android`/`ios` actuals = inert stubs that never render) — so doc-04's Wasm-HTML-interop risk and the
+> xterm.js/web references in this section and in ⟂ARCH-S4 are **out of scope**. Implementation-ready detail:
+> `docs/design/CYP-333-terminal-toggle-desktop-spec.md` §3.4.
+
 **Reuse, don't reinvent** (verified conventions): `FloatingWindow`/`WindowHost`/`WindowCanvas`
 (`WindowManager.kt`), drag/resize/focus/z-index + `WindowReducer.tile()` (`WindowManagerState.kt`),
 `WindowTestTags` (`window.host`/`window.<id>`/`.titlebar`/`.content`/resize-handle), per-window badges
