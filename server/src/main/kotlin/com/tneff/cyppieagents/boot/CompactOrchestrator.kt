@@ -43,6 +43,8 @@ class CompactOrchestrator(
     /** The run roster, **PO first** then workers (locked decision (c)). */
     private val agentsInOrder: () -> List<String>,
     private val config: () -> CompactConfig,
+    /** CYP-327 — the per-run correlationId source (injectable for deterministic tests). */
+    private val correlationIdGen: () -> String = { java.util.UUID.randomUUID().toString() },
     // Timings (locked): 1 min/agent stagger, +10 min between rounds, 10-min round completion window.
     private val staggerMs: Long = 60_000,
     private val roundGapMs: Long = 600_000,
@@ -57,12 +59,14 @@ class CompactOrchestrator(
     @Volatile private var lastRun: CompactRunSummary? = null
     @Volatile private var runJob: Job? = null // CYP-326 kill-switch: cancelled when "compact allowed" → false mid-run
 
-    /** A content-free orchestration event for the caller to map onto EventTypes. */
+    /** A content-free orchestration event for the caller to map onto EventTypes. CYP-327: every event of a run
+     *  carries the run's [correlationId] (the authoritative join key the caller stamps onto the EventDraft). */
     sealed interface CompactEvent {
-        data class PrepareSent(val agentId: String) : CompactEvent
-        data class RequestSent(val agentId: String) : CompactEvent
-        data class Completed(val agentId: String) : CompactEvent
-        data class OrchestrationDone(val summary: CompactRunSummary) : CompactEvent
+        val correlationId: String
+        data class PrepareSent(val agentId: String, override val correlationId: String) : CompactEvent
+        data class RequestSent(val agentId: String, override val correlationId: String) : CompactEvent
+        data class Completed(val agentId: String, override val correlationId: String) : CompactEvent
+        data class OrchestrationDone(val summary: CompactRunSummary, override val correlationId: String) : CompactEvent
     }
 
     fun start() {
@@ -97,7 +101,8 @@ class CompactOrchestrator(
         running = true
         val order = agentsInOrder()
         val startedTs = clock()
-        lastRun = CompactRunSummary(0, order.size, order, startedTs, null) // in-progress snapshot
+        val cid = correlationIdGen() // CYP-327: the run's authoritative join key, stamped onto every event + the summary
+        lastRun = CompactRunSummary(0, order.size, order, startedTs, null, correlationId = cid) // in-progress snapshot
         val completed = ConcurrentHashMap.newKeySet<String>()
         var collector: Job? = null
         try {
@@ -105,7 +110,7 @@ class CompactOrchestrator(
             order.forEachIndexed { i, agentId ->
                 if (i > 0) delay(staggerMs)
                 send(agentId, PREPARE_TEXT)
-                emit(CompactEvent.PrepareSent(agentId))
+                emit(CompactEvent.PrepareSent(agentId, cid))
             }
             // +10 min from Round 1 START to Round 2 START (subtract the stagger already elapsed in round 1).
             delay((roundGapMs - staggerMs * (order.size - 1)).coerceAtLeast(0))
@@ -114,7 +119,7 @@ class CompactOrchestrator(
             // Detection + timeout hang on THIS round only; the window is anchored at the PO's /compact send moment.
             // The collector emits Completed live (so an abort already has the completed-so-far reported).
             collector = scope.launch {
-                compactCompletions.collect { id -> if (id in order && completed.add(id)) emit(CompactEvent.Completed(id)) }
+                compactCompletions.collect { id -> if (id in order && completed.add(id)) emit(CompactEvent.Completed(id, cid)) }
             }
             val windowDeadline = clock() + roundWindowMs
             order.forEachIndexed { i, agentId ->
@@ -125,20 +130,20 @@ class CompactOrchestrator(
                     log.warn("compact: agent '{}' never idle within the round window → pending/WARN", agentId)
                     return@forEachIndexed
                 }
-                if (send(agentId, COMPACT_COMMAND)) emit(CompactEvent.RequestSent(agentId))
+                if (send(agentId, COMPACT_COMMAND)) emit(CompactEvent.RequestSent(agentId, cid))
             }
             // Wait out the remaining window, then report the honest X/N.
             val remaining = (windowDeadline - clock()).coerceAtLeast(0)
             delay(remaining)
-            val summary = CompactRunSummary(completed.size, order.size, order.filter { it !in completed }, startedTs, clock())
+            val summary = CompactRunSummary(completed.size, order.size, order.filter { it !in completed }, startedTs, clock(), correlationId = cid)
             lastRun = summary
-            emit(CompactEvent.OrchestrationDone(summary))
+            emit(CompactEvent.OrchestrationDone(summary, cid))
         } catch (c: CancellationException) {
             // CYP-326 kill-switch abort: emit an HONEST aborted summary (completed-so-far, never faked as N/N).
             withContext(NonCancellable) {
-                val summary = CompactRunSummary(completed.size, order.size, order.filter { it !in completed }, startedTs, clock(), aborted = true)
+                val summary = CompactRunSummary(completed.size, order.size, order.filter { it !in completed }, startedTs, clock(), aborted = true, correlationId = cid)
                 lastRun = summary
-                emit(CompactEvent.OrchestrationDone(summary))
+                emit(CompactEvent.OrchestrationDone(summary, cid))
             }
             throw c
         } finally {
