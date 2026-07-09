@@ -231,3 +231,58 @@ Das ehrliche Ergebnis (z. B. „3/5, 2 Timeout") lebt in `Event.detail: JsonObje
 - **B (Gruppierung):** `correlationId`-Run-Drilldown als Sequenz (Reuse, meine Empfehlung) **vs. net-new inline-Threading** im Log (eigener Story-Scope)?
 - **C (Schwelle):** 500K **fix** vs. operator-konfigurierbar (dann eine zusätzliche Zahl-Eingabe im Fenster; Server liefert `thresholdTokens` ohnehin)?
 - **D (Control):** `Checkbox` (PO-Wortlaut) vs. `Switch`+Thumb-Glyph (ACL-Haus-Muster) — beide 1.4.1-konform.
+
+---
+
+## §7 — Dogfood-Follow-ups (post-Ratifikation, Design — kein Bau)
+
+> Zwei kleine Spec-Punkte, vom PO nach der Ratifikation (`7b51350`) angefordert. Ändern die ratifizierten Kern-Entscheidungen nicht; ergänzen Transcript-Sichtbarkeit + `aborted`-Ausgang.
+
+### §7.1 Eingehende System-/Orchestrator-Nachricht im Agenten-Transcript (Sichtbarkeits-Fix)
+
+**Problem:** Orchestrator-injizierte Nachrichten (`„Bereite dich auf einen compact vor."`, `/compact`) sind heute im Agenten-Fenster **unsichtbar** — der Transcript speist sich nur aus `foldEvent` auf eingehende Stream-Events; injizierte/user-Echos werden gedroppt (`StreamJsonMapper` / `onSend` schreiben nicht ins `_transcript` — **dieselbe Wurzel wie CYP-323**). Sie sollen **sichtbar**, **chronologisch vor** der Agenten-Reaktion, **distinkt** von Assistant-Text **und** vom Operator-Composer-Turn (CYP-323).
+
+**Voraussetzung (Backend/Dev — der eigentliche Fix):** Die injizierte Nachricht muss als **Transcript-Event** emittiert werden (aus dem synthetischen Marker, den Backend definiert) und in Stream-Reihenfolge ins `_transcript` → dann steht sie **automatisch vor** den dadurch ausgelösten Assistant-Events. Neuer Kind `AgentEvent.IncomingSystem` (oder `Notice`-Variante mit Quelle=orchestrator).
+
+**Drei-Wege-Autorenschaftsmodell im Transcript (nach CYP-323 + diesem Punkt):**
+
+| Autor | Farb-Rolle | Marker | Label | Font |
+|---|---|---|---|---|
+| Assistant (Agent, eigene Stimme) | `onSurface` | Cursor `▌` (`primary`) | — | body |
+| Operator (Mensch, Composer — CYP-323) | `secondary` | `›` | SR „Deine Nachricht" | body |
+| **System/Orchestrator (eingehend — NEU)** | **`onSurfaceVariant`** | **`⇥`** | **sichtbar „System"** | body |
+| Tool/Result | `onSurfaceVariant` + Monospace/Container | Tool-Glyph | — | mono |
+| Notice/Lifecycle | `outline` | — | — | labelSmall |
+
+**Styling-Entscheidung (maritime/M3, Honesty):**
+- **Autorenschafts-Label „System"** = **primäres Ehrlichkeits-Signal**: sichtbarer führender Label-Chip (`labelSmall`), **klar als System-/Orchestrator-Nachricht ausgewiesen, nie als Agenten-Output**. Liegt zugleich in der Semantik-Ebene → SR liest die Autorenschaft. (*Alt:* „Orchestrator" — präziser, aber Jargon; „System" generalisiert auf spätere Plattform-Injektionen.)
+- **Marker `⇥`** (eingehend/injiziert) — distinkt vom Operator-`›` (CYP-323) und vom Cursor `▌`; dekorativ/`hidden` (Label trägt die Bedeutung).
+- **Farbe `onSurfaceVariant`** — gedämpft, **klar nicht** die Assistant-`onSurface`-Stimme, **ruhiger** als der Operator-`secondary`-Turn (automatisiert/klerikal < menschlicher Turn), maritime-Rolle, AA. **NICHT `tertiary`** (nachts grün `#40D6A0` → falsche Erfolgs-Konnotation), **NICHT `onSurface`** (läse als Agenten-Output), **≠ `secondary`** (Operator-Turn).
+- **Keine Bubble/Container** (konsistent mit der minimalen Transcript-Sprache; nur Label-Chip + Marker + gedämpfte Farbe). *Optional:* dünne führende Rail statt Chip — Design-Call beim Bau.
+- **Distinktheit vs. Tool-Rows** (auch `onSurfaceVariant`): body-Font (nicht Monospace) + „System"-Label + `⇥` vs. Tool-Glyph + Monospace-Summary.
+
+**Honesty-Invarianten:**
+1. Liest **eindeutig als System/Orchestrator-Autorenschaft**, nie als Agenten-Output (Label + gedämpfte Nicht-`onSurface`-Farbe).
+2. **Distinkt vom Operator-Composer-Turn** (Label „System"+`⇥`+`onSurfaceVariant` vs. CYP-323 SR-Label+`›`+`secondary`).
+3. **Chronologisch vor** der Reaktion (Stream-Order; setzt Emission ins `_transcript` voraus — der Sichtbarkeits-Fix).
+4. Zeigt den **rohen injizierten Text** wahrheitsgetreu (kein Umformulieren); `/compact` erscheint als das, was gesendet wurde.
+
+**Keys/Tags:** `transcript_system_label` „System"/„System"; `a11y_transcript_system` „Systemnachricht: %1$s"/„System message: %1$s"; testTag `agentView.turn.system` (Geschwister zu CYP-323 `agentView.turn.user`). DE+EN atomar.
+
+### §7.2 `aborted`-Render im Event-Log (`orchestration.done`, `aborted=true`)
+
+**Dein Vorschlag bestätigt + verfeinert:** WARN-Amber „Abgebrochen — X/N" ist **richtig** — mit einer Honesty-Präzisierung zur Distinktheit.
+
+**Severity (Ergänzung zum §2.2-Contract):** `orchestration.done` = **INFO** (clean N/N) | **WARN** (Timeout X/N) | **WARN** (`aborted=true`). Abgebrochen ist **unvollständig, kein Crash** → **WARN-Amber `▲`, NICHT ERROR-Rot** (Abort ist oft intentional: Operator-Abbruch / Gate mitten im Lauf aus). **Nie INFO/grün** (kein Erfolg). `aborted=true` rendert **immer WARN**, unabhängig von X/N (der Lauf endete nicht auf eigenen Bedingungen).
+
+**⭐ Distinktheit — NICHT über Farbe.** Aborted und Timeout teilen **beide** das ehrliche „unvollständig"=Amber. Die Unterscheidung **aborted vs. Timeout** trägt das **Label**, nicht die Rail-Farbe (sonst wäre Farbe der alleinige Träger zweier Zustände → WCAG-1.4.1-Bruch):
+- clean → `event_compact_done_summary` „%1$d/%2$d Agenten compactet" (INFO).
+- Timeout → „…, %3$d nach Timeout ausstehend" (WARN).
+- **aborted → `event_compact_done_aborted` „Abgebrochen — %1$d/%2$d compactet" (WARN).**
+- **Abbruch-Grund** (falls Backend liefert): im Detail ehrlich benennen (z. B. „vom Operator abgebrochen" / „Gate deaktiviert") — ehrlich **warum** unvollständig, nicht nur **dass**.
+
+**Keys:** +1 `event_compact_done_aborted` (DE+EN). Rendering weiter Reuse `EventRow` (▦ + Amber-Rail + roher Wire); die drei Ausgänge unterscheiden sich in der lokalisierten Detail-Summary (Browse-Detail), nicht im Row-Typ.
+
+### §7.3 Count-Update Follow-ups
+
++3 neue Keys ×2 Sprachen (`transcript_system_label`, `a11y_transcript_system`, `event_compact_done_aborted`) + 1 Tag `agentView.turn.system`. Kein neuer Fenstertyp, kein Grün, nur colorScheme/severity-Rollen (AA). Shared-Key-Drift-Flag (§4) gilt unverändert.
