@@ -37,7 +37,6 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.project.StubProjectRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * CYP-363 — **the chrome floor is re-derived from the composition, never maintained by hand.**
@@ -84,23 +83,57 @@ class ContentWindowChromeFloorGuardTest {
     private val width = TILED_CONTENT_WINDOW_MIN_WIDTH
 
     // ---------------------------------------------------------------------------------------------------------
-    // The four shipped chrome states. `canControl` changes the toggle row (an operator gets a real switch);
-    // `terminalGatedNote` adds the honest "available once the worktree-shell backend lands" note under it.
-    // The shipped combination is BOTH true (`WORKTREE_SHELL_LIVE_ENABLED = false` + an operator token) — the
-    // floor must know the tallest state, not the convenient one. `lifecycleError` is a fifth, deliberately
-    // unmeasured row: see [lifecycleErrorRow_isAFifthChromeRow_theFloorMakesNoPromiseAbout].
+    // Every chrome state the composition can render. The floor is cut to the TALLEST of them.
+    //
+    //  · `canControl`        — a non-operator gets the read-only `workspace_operator_only` disclosure.
+    //  · `terminalAvailable` — a wired terminal (`terminalContent != null`) enables the Shell segment and, today,
+    //                          suppresses every note. NOT shipped yet (`WORKTREE_SHELL_LIVE_ENABLED = false`);
+    //                          enumerated because CYP-333's live-flip makes it the shipped state and adds a
+    //                          `labelSmall` line to it. A floor that only knows today's states would go stale on
+    //                          that merge exactly as it went stale on CYP-333's first half. This is the state the
+    //                          guard exists for.
+    //  · `terminalGatedNote` — the honest "available once the worktree-shell backend lands" note. Only rendered
+    //                          for an operator with no terminal wired (`terminalGatedNote && !terminalAvailable`).
+    //  · `lifecycleError`    — `LifecycleErrorRow`, prepended when a lifecycle action fails.
+    //
+    // CYP-363 follow-up: `lifecycleError` was first enumerated WITHOUT a number, on the argument that it is
+    // transient and sizing every window for it costs an error most operators never see. Measured, that argument
+    // does not survive: at the old floor the row squeezed the composer from 57 dp to 37 dp — and the composer
+    // still reported `assertIsDisplayed`. The floor's own name is `theFloorIsExactlyTheTallestShippedChrome`;
+    // an exception for the state in which an agent FAILED TO START is an exception for the moment the operator
+    // most needs to type. `301` was a floor that carried most states. Coordinator ruled: carry this one too.
+    // The 20 dp it costs are 20 dp of minimum WINDOW height, not of transcript — at the floor the transcript is
+    // 0 dp either way, and the tiled minimum still renders its full three lines.
     // ---------------------------------------------------------------------------------------------------------
 
-    private data class ChromeState(val canControl: Boolean, val terminalGatedNote: Boolean) {
-        override fun toString() = "canControl=$canControl, terminalGatedNote=$terminalGatedNote"
+    private data class ChromeState(
+        val canControl: Boolean,
+        val terminalAvailable: Boolean,
+        val terminalGatedNote: Boolean,
+        val lifecycleError: Boolean,
+    ) {
+        override fun toString() =
+            "canControl=$canControl, terminalAvailable=$terminalAvailable, " +
+                "terminalGatedNote=$terminalGatedNote, lifecycleError=$lifecycleError"
     }
 
-    private val shippedStates = listOf(
-        ChromeState(canControl = false, terminalGatedNote = false),
-        ChromeState(canControl = false, terminalGatedNote = true),
-        ChromeState(canControl = true, terminalGatedNote = false),
-        ChromeState(canControl = true, terminalGatedNote = true),
-    )
+    /**
+     * The full cross-product, minus the one combination the composition **cannot** reach. Enumerated, not
+     * sampled: a state left out is a state the floor lies about.
+     *
+     * `lifecycleError && !canControl` is impossible, and not merely untested — `AgentViewModel`'s lifecycle
+     * actions open with `if (!canControl) return` (fail-closed, CYP-317). A non-operator has no action that can
+     * fail, so the row can never appear for one. Rendering it does not yield a shorter window; it yields a test
+     * that waits five seconds for a row that will never come. The exclusion is a **property of the production
+     * code**, read there, not an accommodation of a timeout.
+     */
+    private val shippedStates: List<ChromeState> = listOf(false, true).flatMap { control ->
+        listOf(false, true).flatMap { available ->
+            listOf(false, true).flatMap { gated ->
+                listOf(false, true).map { error -> ChromeState(control, available, gated, error) }
+            }
+        }
+    }.filterNot { it.lifecycleError && !it.canControl }
 
     // --- G1 ---------------------------------------------------------------------------------------------------
 
@@ -193,35 +226,6 @@ class ContentWindowChromeFloorGuardTest {
         }
     }
 
-    // --- G3: the state nobody measured -------------------------------------------------------------------------
-
-    /**
-     * `lifecycleError` prepends a **fifth** chrome row (`LifecycleErrorRow`). It is deliberately **not** in the
-     * floor: it is transient (cleared by the next lifecycle action), and sizing every window for a row that is
-     * absent almost always would cost every operator permanent transcript height for an error most never see.
-     *
-     * This test does not give it a number. It pins the *consequence* — while the row is up, a window sitting at
-     * the floor loses transcript it does not have, so the composer is what pays. If someone ever makes that row
-     * permanent chrome, this test tells them the floor was never measured for it, and
-     * [theFloorIsExactlyTheTallestShippedChrome] is where the number then has to appear.
-     */
-    @Test
-    fun lifecycleErrorRow_isAFifthChromeRow_theFloorMakesNoPromiseAbout() {
-        val titleBar = measureTitleBarOnTheRealShell()
-        val natural = measureAgentWindow(ChromeState(canControl = true, terminalGatedNote = true), GENEROUS)
-        val withError = measureAgentWindow(
-            ChromeState(canControl = true, terminalGatedNote = true),
-            availableHeight = CONTENT_WINDOW_MIN_HEIGHT - titleBar,
-            lifecycleError = true,
-        )
-        assertTrue(
-            withError.inputHeight < natural.inputHeight,
-            "The floor is measured WITHOUT LifecycleErrorRow. If the error row now fits at the floor " +
-                "(input ${withError.inputHeight} dp = natural ${natural.inputHeight} dp), either the row " +
-                "vanished or the floor grew: enumerate it in `shippedStates` and let the constant follow.",
-        )
-    }
-
     // --- measurement ------------------------------------------------------------------------------------------
 
     private data class Measured(val transcriptHeight: Float, val inputHeight: Float, val chromeSum: Float)
@@ -244,17 +248,13 @@ class ContentWindowChromeFloorGuardTest {
     }
 
     /** `AgentWindow` alone, in a host of exactly [availableHeight] — the height the window frame leaves it. */
-    private fun measureAgentWindow(
-        state: ChromeState,
-        availableHeight: Float,
-        lifecycleError: Boolean = false,
-    ): Measured {
+    private fun measureAgentWindow(state: ChromeState, availableHeight: Float): Measured {
         lateinit var measured: Measured
         runComposeUiTest {
             val vm = AgentViewModel(
                 session = StubAgentSession(),
                 agentId = AGENT_ID,
-                lifecycle = if (lifecycleError) FailingLifecycleApi else null,
+                lifecycle = if (state.lifecycleError) FailingLifecycleApi else null,
                 canControl = state.canControl,
             )
             setContent {
@@ -263,13 +263,19 @@ class ContentWindowChromeFloorGuardTest {
                         AgentWindow(
                             agentId = AGENT_ID,
                             viewModel = vm,
+                            // A wired terminal is a SLOT, not a session: an empty box is enough to flip
+                            // `terminalAvailable`. The default mode stays ORCHESTRATION, so the composer — the
+                            // row this floor exists to protect — is still the one being measured.
+                            terminalContent = if (state.terminalAvailable) ({ _, m -> Box(m) }) else null,
                             terminalGatedNote = state.terminalGatedNote,
                         )
                     }
                 }
             }
             awaitTag(AgentViewTags.header(AGENT_ID))
-            if (lifecycleError) {
+            if (state.lifecycleError) {
+                // The row is driven by a REAL failing action, not by a flag a test sets: the guard measures the
+                // composition an operator gets, not one it invents.
                 vm.start()
                 awaitTag(AgentViewTags.lifecycleError(AGENT_ID))
             }

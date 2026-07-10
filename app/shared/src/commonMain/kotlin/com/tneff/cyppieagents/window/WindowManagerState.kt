@@ -44,10 +44,11 @@ const val MIN_WINDOW_HEIGHT: Float = 120f
 
 /**
  * **Invariant** floor for **content** windows (Agent/Comm), in dp: their fixed chrome, **measured on the real
- * rendered shell** at the [TILED_CONTENT_WINDOW_MIN_WIDTH] of 320 dp, in the **worst shipped state**:
+ * rendered shell** at the [TILED_CONTENT_WINDOW_MIN_WIDTH] of 320 dp, in the **worst shipped state** — an
+ * operator, the worktree shell still gated, and a failed lifecycle action showing its reason:
  *
  * ```
- * title bar 64 + agent header 164 + ModeToggleRow 84 + composer row 73 = 385
+ * title bar 64 + LifecycleErrorRow 20 + agent header 164 + ModeToggleRow 84 + composer row 73 = 405
  * ```
  *
  * Below this the composer — the last unweighted child of the column — cannot be laid out at all; a content
@@ -66,20 +67,28 @@ const val MIN_WINDOW_HEIGHT: Float = 120f
  *  - 84 dp is the **operator + gated-note** state, which is what ships (`WORKTREE_SHELL_LIVE_ENABLED = false`).
  *    A non-operator's row is 68 dp. The floor must know the tallest state, not the convenient one.
  *
+ * **The `LifecycleErrorRow` is chrome too (20 dp), and it is in the sum on purpose.** It is transient, so the
+ * first cut of this ticket left it out and merely *named* the gap. Measured, that position did not survive: at a
+ * 385 dp floor the row squeezed the composer from 57 dp to 37 dp — while the composer still reported
+ * `assertIsDisplayed`. A floor that carries *most* states is what `301` was. The state it would have excluded is
+ * the one where an agent failed to start, i.e. the moment the operator most needs to type. The 20 dp are 20 dp
+ * of minimum **window** height, not of transcript: at the floor the transcript is 0 dp either way, and
+ * [TILED_CONTENT_WINDOW_MIN_HEIGHT] still renders its full three lines.
+ *
  * Do not maintain this by hand: `ContentWindowChromeFloorGuardTest` re-measures the composition and fails if a
  * chrome row appears or disappears without this constant following. It contains no chrome number of its own.
  */
-const val CONTENT_WINDOW_MIN_HEIGHT: Float = 385f
+const val CONTENT_WINDOW_MIN_HEIGHT: Float = 405f
 
 /**
  * Min height for **content** windows (Agent/Comm), the height twin of [TILED_CONTENT_WINDOW_MIN_WIDTH]
  * (CYP-338). [CONTENT_WINDOW_MIN_HEIGHT] of chrome plus 90 dp of transcript — three text lines, the smallest
  * view in which a wrapped answer coexists with a neighbouring row rather than being the whole window
- * (`min-window-height-spec.md` §2.2/§2.3).
+ * (`min-window-height-spec.md` §2.2/§2.3). `405 + 90 = 495`.
  *
  * Rendered, not computed: the chrome summand comes from a measurement of the real composition, not from Material
  * token arithmetic, because the header wraps at this class's own minimum width (see [CONTENT_WINDOW_MIN_HEIGHT]).
- * `385 + 90 = 475`. The 90 dp is a promise, and `ContentWindowChromeFloorGuardTest` asserts it **exactly**: a
+ * The 90 dp is a promise, and `ContentWindowChromeFloorGuardTest` asserts it **exactly**: a
  * `>=` would let any future chrome growth pass as long as *something* was left over, which is precisely the
  * give of the `weight(1f)` transcript that hid the CYP-363 defect.
  *
@@ -91,7 +100,7 @@ const val CONTENT_WINDOW_MIN_HEIGHT: Float = 385f
  * than re-derived: the new value belongs to CYP-350, measured on the composition that ticket produces. A number
  * about a composition that does not exist yet is exactly the defect this ticket repairs.
  */
-const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 475f
+const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 495f
 
 /**
  * How much of a window must remain inside the host on every edge, in dp, so it can never be dragged
