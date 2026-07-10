@@ -1,0 +1,130 @@
+{
+  "substrate": {
+    "HOME": "/home/thorsten",
+    "CLAUDE_CONFIG_DIR": "(unset->~/.claude)",
+    "projects_root": "/home/thorsten/.claude/projects",
+    "cwd": "/tmp/claude-1002/-home-thorsten-cyppie-agents-backend/934d0a83-c71a-42e1-b3fe-5810cc37e98c/scratchpad/cyp344-proof2-wt",
+    "fs": "tmpfs"
+  },
+  "cli_version": "2.1.206 (Claude Code)",
+  "cycles": [
+    {
+      "cycle": 0,
+      "mediated_resumed_bound": true,
+      "sid_reported": "a9648906-63fb-422b-802d-d6bc4c2b0a9b",
+      "sid_stable": true,
+      "handback_tool_uses": [],
+      "sees_prev_mediated_needle": true,
+      "sees_interactive_needle": false,
+      "assistant": "MED0-d094644\nMED0-d094644"
+    },
+    {
+      "cycle": 1,
+      "mediated_resumed_bound": true,
+      "sid_reported": "a9648906-63fb-422b-802d-d6bc4c2b0a9b",
+      "sid_stable": true,
+      "handback_tool_uses": [],
+      "sees_prev_mediated_needle": true,
+      "sees_interactive_needle": false,
+      "assistant": "MED0-d094644 MED1-d094644\nMED0-d094644 MED1-d094644"
+    }
+  ],
+  "exit_paths": [
+    {
+      "mode": "exit_mid",
+      "reresume_bound": true,
+      "sid_reported": "a9648906-63fb-422b-802d-d6bc4c2b0a9b",
+      "sid_stable": true,
+      "recalls_pre_needle": true,
+      "tool_uses": [],
+      "assistant": "There was no ocean paragraph in our conversation. The only PRE codeword is PREEXITMID-d094644.\nThere was no ocean paragraph in our conversation. The only PRE codeword is PREEXITMID-d094644."
+    },
+    {
+      "mode": "hardkill",
+      "reresume_bound": true,
+      "sid_reported": "a9648906-63fb-422b-802d-d6bc4c2b0a9b",
+      "sid_stable": true,
+      "recalls_pre_needle": true,
+      "tool_uses": [],
+      "assistant": "There's still no ocean paragraph in our conversation, and by now there are two PRE codewords, not one: PREEXITMID-d094644 and PREHARDKILL-d094644.\nThere's still no ocean paragraph in our conversation,"
+    }
+  ],
+  "held_reports": [
+    {
+      "exit_mode": "clean",
+      "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-proof2-wt/a9648906-63fb-422b-802d-d6bc4c2b0a9b.jsonl",
+      "ino_before": 9094930,
+      "size_before": 14842,
+      "ino_after": 9094930,
+      "size_after": 14842,
+      "ino_stable": true,
+      "size_monotonic_grew": false,
+      "held_fd_saw_appended_bytes": false,
+      "interactive_recalled_needle": false
+    },
+    {
+      "exit_mode": "clean",
+      "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-proof2-wt/a9648906-63fb-422b-802d-d6bc4c2b0a9b.jsonl",
+      "ino_before": 9094930,
+      "size_before": 31145,
+      "ino_after": 9094930,
+      "size_after": 31145,
+      "ino_stable": true,
+      "size_monotonic_grew": false,
+      "held_fd_saw_appended_bytes": false,
+      "interactive_recalled_needle": false
+    },
+    {
+      "exit_mode": "exit_mid",
+      "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-proof2-wt/a9648906-63fb-422b-802d-d6bc4c2b0a9b.jsonl",
+      "ino_before": 9094930,
+      "size_before": 49842,
+      "ino_after": 9094930,
+      "size_after": 49842,
+      "ino_stable": true,
+      "size_monotonic_grew": false,
+      "held_fd_saw_appended_bytes": false,
+      "interactive_recalled_needle": false
+    },
+    {
+      "exit_mode": "hardkill",
+      "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-proof2-wt/a9648906-63fb-422b-802d-d6bc4c2b0a9b.jsonl",
+      "ino_before": 9094930,
+      "size_before": 63048,
+      "ino_after": 9094930,
+      "size_after": 63048,
+      "ino_stable": true,
+      "size_monotonic_grew": false,
+      "held_fd_saw_appended_bytes": false,
+      "interactive_recalled_needle": false
+    }
+  ],
+  "session_sid": "a9648906-63fb-422b-802d-d6bc4c2b0a9b",
+  "leg_create_bound": true,
+  "create_tool_uses": [],
+  "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-proof2-wt/a9648906-63fb-422b-802d-d6bc4c2b0a9b.jsonl",
+  "path_is_cwd_derived": true,
+  "fork_accretion_files": [
+    "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-proof2-wt/a9648906-63fb-422b-802d-d6bc4c2b0a9b.jsonl"
+  ],
+  "single_transcript_no_fork": true,
+  "confound_no_scratch_files": true,
+  "confound_leftover_files": [],
+  "confound_no_tool_ran": true,
+  "confound_tool_uses_seen": [],
+  "CLAIM_A_shared_transcript_true_append": false,
+  "CLAIM_B_sid_stable_carries_context": false,
+  "FP_B5_two_cycles_stable": false,
+  "EXIT_clean_reresumable": true,
+  "EXIT_paths_summary": {
+    "exit_mid": {
+      "bound": true,
+      "recall": true
+    },
+    "hardkill": {
+      "bound": true,
+      "recall": true
+    }
+  },
+  "VERDICT": "NOT a clean yes -> see per-claim flags; escalate the failing claim(s) before BE-2"
+}

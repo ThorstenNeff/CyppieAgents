@@ -1,0 +1,132 @@
+{
+  "substrate": {
+    "HOME": "/home/thorsten",
+    "CLAUDE_CONFIG_DIR": "(unset->~/.claude)",
+    "projects_root": "/home/thorsten/.claude/projects",
+    "cwd": "/tmp/claude-1002/-home-thorsten-cyppie-agents-backend/934d0a83-c71a-42e1-b3fe-5810cc37e98c/scratchpad/cyp344-clean-wt",
+    "fs": "tmpfs"
+  },
+  "cli_version": "2.1.206 (Claude Code)",
+  "cycles": [
+    {
+      "cycle": 0,
+      "mediated_resumed_bound": true,
+      "sid_reported": "793e3aae-cde8-4d76-b4be-cdb3d2538499",
+      "sid_stable": true,
+      "handback_tool_uses": [],
+      "sees_prev_mediated_needle": true,
+      "sees_interactive_needle": true,
+      "assistant": "MED0-e101529 INT0-e101529\nMED0-e101529 INT0-e101529"
+    },
+    {
+      "cycle": 1,
+      "mediated_resumed_bound": true,
+      "sid_reported": "793e3aae-cde8-4d76-b4be-cdb3d2538499",
+      "sid_stable": true,
+      "handback_tool_uses": [],
+      "sees_prev_mediated_needle": true,
+      "sees_interactive_needle": true,
+      "assistant": "MED0-e101529 INT0-e101529 MED1-e101529 INT1-e101529\nMED0-e101529 INT0-e101529 MED1-e101529 INT1-e101529"
+    }
+  ],
+  "exit_paths": [
+    {
+      "mode": "exit_mid",
+      "reresume_bound": true,
+      "sid_reported": "793e3aae-cde8-4d76-b4be-cdb3d2538499",
+      "sid_stable": true,
+      "recalls_pre_needle": true,
+      "tool_uses": [],
+      "assistant": "PREEXITMID-e101529\nPREEXITMID-e101529"
+    },
+    {
+      "mode": "hardkill",
+      "reresume_bound": true,
+      "sid_reported": "793e3aae-cde8-4d76-b4be-cdb3d2538499",
+      "sid_stable": true,
+      "recalls_pre_needle": true,
+      "tool_uses": [],
+      "assistant": "PREHARDKILL-e101529\nPREHARDKILL-e101529"
+    }
+  ],
+  "held_reports": [
+    {
+      "exit_mode": "clean",
+      "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-clean-wt/793e3aae-cde8-4d76-b4be-cdb3d2538499.jsonl",
+      "ino_before": 9098851,
+      "size_before": 14838,
+      "ino_after": 9098851,
+      "size_after": 32628,
+      "ino_stable": true,
+      "size_monotonic_grew": true,
+      "held_fd_saw_appended_bytes": true,
+      "interactive_recalled_needle": true
+    },
+    {
+      "exit_mode": "clean",
+      "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-clean-wt/793e3aae-cde8-4d76-b4be-cdb3d2538499.jsonl",
+      "ino_before": 9098851,
+      "size_before": 41936,
+      "ino_after": 9098851,
+      "size_after": 56361,
+      "ino_stable": true,
+      "size_monotonic_grew": true,
+      "held_fd_saw_appended_bytes": true,
+      "interactive_recalled_needle": true
+    },
+    {
+      "exit_mode": "exit_mid",
+      "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-clean-wt/793e3aae-cde8-4d76-b4be-cdb3d2538499.jsonl",
+      "ino_before": 9098851,
+      "size_before": 69741,
+      "exit_mid_fired": true,
+      "ino_after": 9098851,
+      "size_after": 84651,
+      "ino_stable": true,
+      "size_monotonic_grew": true,
+      "held_fd_saw_appended_bytes": true,
+      "interactive_recalled_needle": false
+    },
+    {
+      "exit_mode": "hardkill",
+      "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-clean-wt/793e3aae-cde8-4d76-b4be-cdb3d2538499.jsonl",
+      "ino_before": 9098851,
+      "size_before": 99560,
+      "hardkill_fired": true,
+      "ino_after": 9098851,
+      "size_after": 112189,
+      "ino_stable": true,
+      "size_monotonic_grew": true,
+      "held_fd_saw_appended_bytes": true,
+      "interactive_recalled_needle": false
+    }
+  ],
+  "session_sid": "793e3aae-cde8-4d76-b4be-cdb3d2538499",
+  "leg_create_bound": true,
+  "create_tool_uses": [],
+  "transcript_path": "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-clean-wt/793e3aae-cde8-4d76-b4be-cdb3d2538499.jsonl",
+  "path_is_cwd_derived": true,
+  "fork_accretion_files": [
+    "/home/thorsten/.claude/projects/-tmp-claude-1002--home-thorsten-cyppie-agents-backend-934d0a83-c71a-42e1-b3fe-5810cc37e98c-scratchpad-cyp344-clean-wt/793e3aae-cde8-4d76-b4be-cdb3d2538499.jsonl"
+  ],
+  "single_transcript_no_fork": true,
+  "confound_no_scratch_files": true,
+  "confound_leftover_files": [],
+  "confound_no_tool_ran": true,
+  "confound_tool_uses_seen": [],
+  "CLAIM_A_shared_transcript_true_append": true,
+  "CLAIM_B_sid_stable_carries_context": true,
+  "FP_B5_two_cycles_stable": true,
+  "EXIT_clean_reresumable": true,
+  "EXIT_paths_summary": {
+    "exit_mid": {
+      "bound": true,
+      "recall": true
+    },
+    "hardkill": {
+      "bound": true,
+      "recall": true
+    }
+  },
+  "VERDICT": "COEXISTENCE HOLDS -> BE-2 trivial via --resume (no transcript-bridge)"
+}
