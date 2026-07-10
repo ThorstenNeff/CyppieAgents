@@ -86,6 +86,7 @@ import kmpcyppieagents.app.shared.generated.resources.agent_status_stopped
 import kmpcyppieagents.app.shared.generated.resources.agent_status_unknown
 import kmpcyppieagents.app.shared.generated.resources.terminal_mode_orchestration
 import kmpcyppieagents.app.shared.generated.resources.terminal_mode_shell
+import kmpcyppieagents.app.shared.generated.resources.terminal_shell_note
 import kmpcyppieagents.app.shared.generated.resources.terminal_gated_pending
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
@@ -126,10 +127,10 @@ fun AgentWindow(
     terminalContent: (@Composable (agentId: String, modifier: Modifier) -> Unit)? = null,
     /**
      * CYP-333: when `true` AND no [terminalContent] is wired, the Shell segment is disabled with an honest
-     * "available once the worktree-shell backend lands" note (for an operator). The interim shell is safe (a bash
-     * shell in the worktree, not a second `claude`), so this is **not** a risk gate — it only reflects that the
-     * backend bash mode (CYP-348) hasn't landed yet; the two merge together and the connection then goes live.
-     * The switch is one line at the shell: `terminalContent` present = live; `terminalGatedNote` = gated.
+     * "available once the worktree-shell backend lands" note (for an operator). With CYP-348 landed the shell is
+     * normally **live** (a safe `bash -l` worktree shell, not a second `claude`); this gated state is the
+     * exceptional case — a non-Desktop target or the [WORKTREE_SHELL_LIVE_ENABLED] kill-switch turned off.
+     * `terminalContent` present = live; `terminalGatedNote` = honestly gated.
      */
     terminalGatedNote: Boolean = false,
 ) {
@@ -247,8 +248,16 @@ private fun ModeToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag(AgentViewTags.modeToggleGateHint(agentId)),
             )
-            // Operator, but the worktree-shell backend (CYP-348) hasn't landed yet → say WHY the Shell segment is
-            // off, rather than a silently-disabled control. Neutral tone (a deferral, not an error).
+            // Live Shell view active → honest descriptor: this is a bash worktree shell, NOT the agent's session
+            // (the claude same-session terminal reuses the slot later, BE-2). Prevents mistaking it for the agent.
+            mode == AgentContentMode.TERMINAL && terminalAvailable -> Text(
+                text = stringResource(Res.string.terminal_shell_note),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag(AgentViewTags.modeToggleShellNote(agentId)),
+            )
+            // Operator, but no live shell backend (non-Desktop target / kill-switch off) → say WHY the Shell
+            // segment is off, rather than a silently-disabled control. Neutral tone (a deferral, not an error).
             terminalGatedNote && !terminalAvailable -> Text(
                 text = stringResource(Res.string.terminal_gated_pending),
                 style = MaterialTheme.typography.labelSmall,

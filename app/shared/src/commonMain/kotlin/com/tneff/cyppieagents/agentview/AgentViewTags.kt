@@ -45,9 +45,13 @@ object AgentViewTags {
     /** CYP-333: non-operator gate hint under the read-only toggle (reused `workspace_operator_only` copy). */
     fun modeToggleGateHint(agentId: String) = "agent.$agentId.modeToggle.gateHint"
 
-    /** CYP-333: operator note when the live worktree-shell connection is gated because the backend bash mode
-     *  (CYP-348) hasn't landed yet — the Shell segment is disabled with an honest reason (not a risk gate). */
+    /** CYP-333: operator note when the live worktree-shell connection is gated (bash backend absent — e.g. a
+     *  non-Desktop target / the kill-switch off). The Shell segment is disabled with an honest reason. */
     fun modeToggleTerminalGated(agentId: String) = "agent.$agentId.modeToggle.terminalGated"
+
+    /** CYP-333 live flip: honest descriptor shown while the live Shell view is active — it is a bash worktree
+     *  shell, not the agent's session (the claude same-session terminal reuses the slot later, BE-2). */
+    fun modeToggleShellNote(agentId: String) = "agent.$agentId.modeToggle.shellNote"
 
     /** CYP-333: the content rectangle that swaps between the transcript and the terminal. */
     fun content(agentId: String) = "agent.$agentId.content"

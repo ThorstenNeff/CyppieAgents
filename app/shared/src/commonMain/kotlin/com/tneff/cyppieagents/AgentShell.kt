@@ -163,14 +163,15 @@ private const val COMPACT_WINDOW_ID = "compact"
  * hermetic without touching the network.
  */
 /**
- * CYP-333: gate for the worktree-shell connection going **live**. The interim second view is an honest bash shell
- * in the worktree (Auftraggeber ruling — `git status`/`ls`/inspect), NOT a second `claude`, so it is **safe**;
- * this is not a risk gate. It is off only because the backend bash mode (**CYP-348**) hasn't landed yet — the
- * `/ws/terminal` mode parameter is the one new edge, reconciled with Backend. CYP-348 and this scaffold merge
- * together; flip to `true` (or promote to a [ShellConfig] field) at that integration point and the Shell segment
- * goes live. Until then the segment is honestly gated. The rest of the CYP-333 scaffold is identical either way.
+ * CYP-333: the worktree-shell connection is **live**. The interim second view is an honest bash worktree shell
+ * (Auftraggeber ruling — `git status`/`ls`/inspect), NOT a second `claude`, so it is safe. CYP-348 landed the
+ * backend bash mode: `/ws/terminal` runs `bash -l` in the worktree **by default** (BootOrchestrator→PtyManager),
+ * so **no client mode parameter is needed** — the flagged "one new edge" is resolved (bash IS the default).
+ * The Shell segment now binds a real [WsTerminalSession] to the Desktop `TerminalView`. Bundles with CYP-361
+ * (PtyManager ctor hardening: no command-less 2-claude vector). The same-session `claude` terminal reuses this
+ * slot later with the hand-off (BE-2). Left as a const kill-switch (flip to `false` to gate) for operability.
  */
-private const val WORKTREE_SHELL_LIVE_ENABLED = false
+private const val WORKTREE_SHELL_LIVE_ENABLED = true
 
 @Composable
 fun AgentShell(
@@ -838,13 +839,12 @@ fun AgentShell(
                             capabilitiesLoading = connectorCapState.loading,
                             provider = connectorCapState.providers[window.id],
                             onCapabilityBadgeClick = { connectorCapVm.openPanel(window.id) },
-                            // CYP-333: the content-view worktree shell. LIVE only behind [WORKTREE_SHELL_LIVE_ENABLED]
-                            // (off until the CYP-348 bash backend lands — see its doc). When live, bind a fresh
-                            // WsTerminalSession to the Desktop TerminalView, remembered per agent so it stays stable
-                            // while shown and is torn down (TerminalView DisposableEffect) on switch-away. When gated,
-                            // pass no slot + the honest "available once the shell backend lands" note.
-                            // NOTE (CYP-348 edge): the shell mode parameter on /ws/terminal is reconciled with Backend
-                            // before this goes live; WsTerminalSession here uses the plain CYP-332 contract.
+                            // CYP-333: the content-view worktree shell, LIVE (see [WORKTREE_SHELL_LIVE_ENABLED]).
+                            // Bind a fresh WsTerminalSession to the Desktop TerminalView against /ws/terminal (CYP-332
+                            // contract; CYP-348 makes it a `bash -l` worktree shell by default — no mode param). It is
+                            // remembered per agent so it stays stable while shown and is torn down (TerminalView
+                            // DisposableEffect) on switch-away. The session connects lazily on first collect, so the
+                            // flag being on does NOT eagerly spawn shells — only opening the Shell view does.
                             terminalContent = if (WORKTREE_SHELL_LIVE_ENABLED) {
                                 { id, m ->
                                     val session = remember(id) {
