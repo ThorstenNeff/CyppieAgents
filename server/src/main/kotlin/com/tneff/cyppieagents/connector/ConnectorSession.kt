@@ -103,6 +103,26 @@ class ConnectorSessions {
 
     fun session(agentId: String): ConnectorSession? = byAgent[agentId]
 
+    /**
+     * Remove and [ConnectorSession.close] the session — **without waiting for its reader to finish.**
+     *
+     * ⚠️ **CYP-351 invariant, and this method is the hole in it.** The run state is safe from a stale exit only
+     * because *every path that removes a session joins its reader first*:
+     *
+     *  - `ClaudeCodeSession`'s exit tail — the code that observes the death and notifies
+     *    `LifecycleManager.onObservedExit` — lives **inside** the `readerJob`;
+     *  - `onObservedExit` does not suspend, so once the tail starts it runs to completion;
+     *  - [removeAndAwait] → `closeAndAwait()` → `readerJob.cancelAndJoin()` therefore returns only when that
+     *    tail is **finished or cancelled**, and `stop`/`restart` call it *before* writing the next state.
+     *
+     * So there is no second writer, and no need for the manager to check *which* session an exit came from.
+     *
+     * [close] only **cancels** the reader; it does not join it. The moment a production caller in `:server`
+     * uses this method (today there is none — only two tests), a session's tail can still be running while
+     * `doSpawn` publishes RUNNING for its successor. Then a dead session can move a live agent's state, and the
+     * identity guard (`currentSession[agentId] !== session`) becomes necessary — together with the test that
+     * can finally make it red. **Do not add such a caller without restoring that guard.**
+     */
     fun remove(agentId: String) {
         byAgent.remove(agentId)?.close()
     }

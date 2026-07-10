@@ -124,13 +124,27 @@ class LifecycleManager(
      * [status] is a command memory: a crashed agent kept answering RUNNING, `/ws/lifecycle` never emitted, and
      * the operator's Start button stayed disabled on a dead agent — the one control that would have fixed it.
      *
-     * Called from the session observer when stdout completes on its own. A deliberate `stop`/`restart` cannot
-     * reach here: [ConnectorSessions.removeAndAwait] → `closeAndAwait()` cancels **and joins** the reader
-     * before destroying the process, so the observer's exit tail has either already run or never runs, and it
-     * always finishes before [doSpawn] sets RUNNING again. No generation counter is needed for that ordering.
+     * **Why this needs no session identity — and what would break that.** This method never asks *which* session
+     * died, only whether the agent is still RUNNING. That is sound because of exactly one invariant:
+     *
+     * > Every path that removes a session **joins its reader first.**
+     *
+     * The exit tail that calls this lives **inside** `ClaudeCodeSession`'s `readerJob`, and this method does not
+     * suspend. `stop`/`restart` go through [ConnectorSessions.removeAndAwait] → `closeAndAwait()` →
+     * `readerJob.cancelAndJoin()`, which returns only once that tail has finished or been cancelled — and only
+     * then do they write the next state. There is no second writer: a race with one runner. A replaced session
+     * therefore cannot speak for its successor, and a generation counter would be ballast that reads as proof.
+     *
+     * [ConnectorSessions.remove] does **not** join — it only `close()`s, which cancels. It has no production
+     * caller today, and that absence is what holds this up. The first such caller makes a stale exit reachable:
+     * an old tail could still be running while [doSpawn] publishes RUNNING for its successor. **Then this method
+     * must take the session that died and ignore it unless it is still the agent's current one** — the guard
+     * [com.tneff.cyppieagents.connector.ResumingSession] already applies one level down (`session !== inner`) —
+     * and only then can a test make that guard red. Do not weaken the join without adding it.
      *
      * Guards, in order:
-     *  - an unknown agent (already removed via [forget]) is ignored — nothing to say about it;
+     *  - an unknown agent (already removed via [forget]) is ignored — nothing to say about it. The death is
+     *    still recorded: the observer writes the event log **before** the exit listeners run;
      *  - a **`null` [exitCode] changes nothing**. `null` means the process could not report a status, and an
      *    unreadable status is **not evidence of death**: a stdout pipe can break, or be closed, while the
      *    process lives on (measured). Flipping the state here would trade a missing observation for an invented
