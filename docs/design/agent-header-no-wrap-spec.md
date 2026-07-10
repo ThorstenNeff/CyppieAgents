@@ -1,6 +1,11 @@
 # Agent-Header darf nicht umbrechen — UX/UI-Spec (CYP-350)
 
-> Owner: UIUX-Designer · Ticket **CYP-350** · Stand 2026-07-10 · Basis **develop `5c79a79`** · Scope **WASM-App**
+> Owner: UIUX-Designer · Ticket **CYP-350** · Stand 2026-07-10 · Basis **develop `b3a5870`** · Scope **WASM-App**
+>
+> **Basiswechsel gegenüber der ersten Fassung (`5c79a79`).** CYP-333 hat eine unbedingte vierte Chrome-Zeile
+> eingezogen (`ModeToggleRow`). Alle Chrome-Summen dieses Dokuments — und die bereits gemergte Konstante
+> `CONTENT_WINDOW_MIN_HEIGHT = 301` — beziehen sich auf die Komposition **davor**. Siehe **§5.1**: das ist kein
+> Schönheitsfehler, sondern der Boden, auf dem CYP-338 steht.
 > Docs-only. Adressat: Implementierung + Test.
 > Ursache-Ticket zu **CYP-338** (Mindesthöhe): der Header wächst bei schmaler Breite von 56 dp auf 164 dp und
 > drückt die Eingabezeile aus dem Fenster.
@@ -165,9 +170,13 @@ fester, inhaltsblinder Breakpoint ist damit falsch, sobald der Header seinen Inh
 Glyph bleibt, der gesprochene Name bleibt, der `testTag` bleibt. Der Wechsel ist eine **lesbare
 Zustandsänderung** und kehrt sich um, sobald die Verbindung steht — kein Flackern ohne Ursache.
 
-> Die Arithmetik und die Regel stimmen überein: `520 + 195 ≈ 715 dp` liegt über jeder üblichen Fensterbreite.
-> Ein zweiter Breakpoint wäre also eine Zahl, die praktisch **immer** greift — und eine Regel, die immer
-> greift, schreibt man als Regel, nicht als Zahl.
+> **Korrektur an mir selbst.** Die erste Fassung dieses Absatzes rechnete `520 + 195 ≈ 715 dp` und nannte das
+> „die Arithmetik stimmt mit der Regel überein". Das ist **meine eigene Regel verletzt**: `520` ist gemessen,
+> `195` ist aus der Zeichenzahl geschätzt — **gemessen und gerechnet in derselben Summe**. Die Zahl fällt
+> ersatzlos weg. Sie wurde ohnehin nicht gebraucht: die Regel steht auf ihrer Begründung (Ausnahmezustand,
+> der Chip-Text trägt die Bedeutung), nicht auf einem Schwellwert. Was ich behaupten kann, ist die **Richtung**
+> — der Chip verbraucht Breite in derselben `Row`, also verschiebt er die Schwelle nach oben. Um **wie viel**,
+> weiß ich nicht, und deshalb schreibe ich keine Zahl hin.
 
 ### 4.2 Warum ein falscher Breakpoint trotzdem nicht gefährlich ist
 
@@ -183,23 +192,105 @@ Struktur trägt, der Breakpoint poliert.
 
 ---
 
-## 5. Wirkung auf CYP-338
+## 5. Wirkung auf CYP-338 — und ein Befund, der CYP-338 **heute schon** bricht
+
+### 5.1 Die 301 misst eine Komposition, die es nicht mehr gibt
+
+`CONTENT_WINDOW_MIN_HEIGHT = 301f` trägt im KDoc den Satz *„measured on the rendered composition … title bar
+64 + agent header 164 + composer 73"*. **Diese Komposition existiert seit `5cdf89b` nicht mehr.** CYP-333 hat
+zwischen Header und Inhaltsrechteck eine **unbedingte** vierte Chrome-Zeile eingezogen:
+
+```kotlin
+// AgentWindow.kt (develop) — kein `if`, kein Flag: sie ist immer da
+AgentHeader(…)
+ModeToggleRow(…)          // ← CYP-333, neu
+Box(Modifier.weight(1f))  // Inhaltsrechteck
+if (contentMode == ORCHESTRATION) MessageComposer(…)
+```
+
+Die Chronologie zeigt, wie es unbemerkt bleiben konnte — **niemand hat etwas übersehen, die Basis ist unter der
+Messung weggewandert**:
+
+| | |
+|---|---|
+| `2ff05a9` 09:28 | CYP-333 fügt `ModeToggleRow` hinzu |
+| `5cdf89b` | CYP-333 **nach `develop` gemergt** |
+| `de11582` 09:55 | CYP-338 misst `64 + 164 + 73 = 301` — auf einer Basis, die `ModeToggleRow` **nicht enthielt** (`git show de11582:…AgentWindow.kt \| grep -c ModeToggleRow` → **0**) |
+| `b436412` | CYP-338 nach `develop` gemergt — die Zahl trifft auf die Komposition, die sie nie gesehen hat |
+
+Zwei Zweige, beide grün, beide korrekt für sich. Der Fehler entsteht **im Merge**, wo keiner von beiden hinsah.
+
+**Die Konsequenz ist nicht kosmetisch.** `CONTENT_WINDOW_MIN_HEIGHT` ist der harte Boden — *„No path —
+placement, resize, clamp, tile, fallback — may ever produce less."* Ist das feste Chrome heute **höher** als
+301, dann wird bei exakt 301 dp genau das wieder herausgedrückt, wofür CYP-338 existiert: **die Eingabezeile.**
+
+### 5.2 Warum kein Test rot wurde
+
+`WindowSyncTest` ist reine Geometrie — er sieht Komposition nicht. `AgentWindowMinHeightTest` rendert die echte
+Komposition, aber bei **`TILED_CONTENT_WINDOW_MIN_HEIGHT` = 391**, und er prüft `assertIsDisplayed` auf den
+Composer. Bei 391 bleibt nach dem gewachsenen Chrome noch Platz; das Transkript (`weight(1f)`) schrumpft
+lautlos, der Composer wird gerendert, der Test ist grün.
+
+> **Der Boden, der bricht, ist der, den kein gerenderter Test je anfasst.** Die 301 wird nirgends gerendert
+> geprüft — nur die 391. Und die 391 überlebt, weil das gewichtete Kind nachgibt, nicht das ungewichtete.
+>
+> Es ist mein eigener Satz, in der Prüfung statt in der Anzeige: *ein Test, dessen Erwartungswert die
+> plausiblen falschen Implementierungen nicht trennt, beweist nichts.* Er kann nicht rot werden für „das
+> Chrome ist gewachsen" — er kann nur rot werden für „der Composer fehlt ganz".
+
+**Der fehlende Test ist damit benannt:** die Komposition bei **`CONTENT_WINDOW_MIN_HEIGHT`** rendern (nicht bei
+`TILED_…`) und den Composer fordern. Und zusätzlich: bei `TILED_…` **die versprochenen 90 dp Transkript**
+fordern, nicht nur seine Anwesenheit — sonst deckt die Nachgiebigkeit des gewichteten Kindes jedes künftige
+Chrome-Wachstum zu.
+
+### 5.3 Was ich beziffern darf — und was nicht
+
+Sei `T` die Höhe der `ModeToggleRow`. Dann ist, mit **ausschließlich gemessenen** Summanden:
 
 | | vor CYP-350 | nach CYP-350 |
 |---|---|---|
-| Header (320 dp) | 164 dp | **56 dp** |
-| Header (520 dp) | 56 dp | 56 dp |
-| Festes Chrome (Titelleiste **64** + Header + Composer **73**) | **301 dp** @ 320 dp | **193 dp**, breitenunabhängig |
-| Mindesthöhe (+ 90 dp Transkript, CYP-338 §2.2) | 391 dp | **283 dp** |
+| Header (320 dp) | 164 dp *(gemessen)* | **56 dp** *(gemessen bei 520 dp, §0)* |
+| Header (520 dp) | 56 dp *(gemessen)* | 56 dp |
+| Festes Chrome (64 + Header + **`T`** + 73) | **`301 + T`** @ 320 dp | **`193 + T`**, breitenunabhängig |
+| Mindesthöhe (+ 90 dp Transkript, CYP-338 §2.2) | `391 + T` | **`283 + T`** |
 
-> **Achtung, hier steckt schon wieder derselbe Fehler.** Der KDoc von `CONTENT_WINDOW_MIN_HEIGHT`
-> (`de11582`) projiziert `56 + 56 + 72 = 184` — und importiert dabei stillschweigend die **arithmetischen**
-> Werte für Titelleiste (56) und Composer (72) zurück, die *derselbe KDoc einen Satz zuvor* durch die
-> **gemessenen** 64 und 73 ersetzt hat. Konsistent, nur mit gemessenen Summanden:
-> **`64 + 56 + 73 = 193`**, Mindesthöhe **`283`** — nicht `184 / 274`.
->
-> Gemessenes und Gerechnetes dürfen nicht in derselben Summe stehen. Es ist dieselbe Fehlerklasse wie in §7,
-> nur eine Datei weiter.
+**`T` ist keine Zahl, die ich liefern kann.** Ich kann sie *rechnen* — `OutlinedSegmentedButtonTokens.
+ContainerHeight` steht mit **40 dp** im gebauten `material3`-Artefakt (per `javap` gelesen, nicht erinnert),
+dazu die `Column`-Polsterung `2 × 2 dp` ⇒ **≈ 44 dp**. Aber genau das ist eine **Ableitung unter stiller
+Annahme**, und sie in dieselbe Summe zu schreiben wie die gemessenen 64/73 wäre der Fehler aus §7, ein drittes
+Mal. **`T` muss an der echten Komposition gemessen werden**, so wie 64, 164 und 73 gemessen wurden. Bis dahin
+steht in den Konstanten `T`, nicht `44`.
+
+> Wenn `T ≈ 44` stimmt, ist der heutige Boden **345**, nicht 301 — **44 dp zu niedrig**.
+
+Der Composer zählt nur in der **Orchestrierungs**-Ansicht mit (`AgentWindow.kt:185`); in der Shell-Ansicht
+fehlt er. Der Boden muss den **höheren** der beiden Fälle tragen, also den mit Composer — die Tabelle ist der
+ungünstige Fall, richtig herum.
+
+### 5.4 `T` ist nicht einmal konstant — dieselbe Krankheit, eine Zeile tiefer
+
+Die `ModeToggleRow` trägt unter den Segmenten einen **bedingten** Hinweistext, und **er hat kein `maxLines`**:
+
+```kotlin
+!canControl              -> Text(stringResource(Res.string.workspace_operator_only), …)    // Nicht-Operator: IMMER da
+terminalGatedNote && …   -> Text(stringResource(Res.string.terminal_gated_pending), …)
+```
+
+Damit ist `T` eine Funktion von **Rolle** und **Breite** — exakt die Struktur, die CYP-350 im Header beseitigt.
+Für einen Nicht-Operator liegt der Hinweis immer an; wird er schmal, bricht er um und `T` wächst. Dieselbe
+Diagnose gilt für `LifecycleErrorRow` (`AgentWindow.kt:144`, bedingt, ohne `maxLines`): im Fehlerfall wächst
+das Chrome — also gerade dann, wenn der Operator die Eingabezeile am dringendsten braucht.
+
+**Deshalb erweitere ich die Invariante aus §1.1 auf das gesamte feste Chrome:**
+
+> **Jedes `Text` im festen Chrome eines Inhaltsfensters trägt `maxLines` und `overflow = Ellipsis`.**
+> Ein Chrome-Element darf in der Höhe nicht von seinem Inhalt abhängen. Wer wachsen will, sitzt im
+> `weight(1f)`-Rechteck.
+
+Nur die Segment-Labels der `ModeToggleRow` erfüllen das heute schon (`Text(orchLabel, maxLines = 1)`) — die
+zwei Hinweistexte und `LifecycleErrorRow` nicht. Das ist **kein neues Ticket von mir**, sondern der Vorschlag,
+CYP-350 um diese drei `Text`-Knoten zu erweitern: derselbe Fix, dieselbe Mutationsprobe, kein zweiter
+Mechanismus.
 
 ---
 
@@ -227,6 +318,13 @@ Der PO verlangt Messung bei **mehreren Breiten** — zu Recht: *an einer einzige
    Knöpfe Glyphen, der `ReconnectingChip` ist **vollständig sichtbar**, und die Header-Höhe ist unverändert
    **56 dp**. Ohne diesen Fall bleibt der Test blind für die längste Zeichenkette des Headers — und die steht
    ausgerechnet im **deutschen** Default-Locale.
+8. **Der Boden selbst wird gerendert** (§5.2): die Komposition bei `CONTENT_WINDOW_MIN_HEIGHT` — **nicht** nur
+   bei `TILED_…` — zeigt den Composer. Heute existiert dieser Test nicht, und deshalb ist §5.1 unbemerkt
+   geblieben. **Mutationsprobe:** eine Chrome-Zeile einziehen ⇒ rot. Der bestehende Test bei 391 bleibt dabei
+   grün — das ist der Beweis, dass er den Boden nie geprüft hat.
+9. **Chrome-Höhe ist rollen- und breitenunabhängig** (§5.4): die Chrome-Höhe bei `canControl = false` ist gleich
+   der bei `canControl = true`, und bei 320 dp gleich der bei 640 dp — für beide Werte von `lifecycleError`.
+   **Mutationsprobe:** `maxLines` an *einem* Chrome-`Text` entfernen ⇒ bei 320 dp rot.
 
 ---
 
@@ -292,7 +390,13 @@ Reuse**, eigenes kleines Ticket. Die Glyph-Knöpfe dieser Spec ziehen ihre Namen
 - **WCAG:** Farbe nie alleiniger Träger (Status-Label bleibt); Zielgröße ≥ 24 dp; jeder Glyph-Knopf benannt.
 - **Beide PO-Auflagen erfüllt:** Aktionen erreichbar **und** benannt (§1.2, §6.4); Test misst **mehrere**
   Breiten (§6.1) und ist gegen die bequeme Tautologie abgesichert (§6.2/§6.3).
-- **Zwei eigene Fehler benannt, nicht weggeschrieben:** die Breitenbedingung der 48 dp und das höchste Kind
-  der Row (§7, §1.1) — und der **inhaltsblinde Breakpoint** (§4.1), gefunden beim Selbst-Review, nachdem der
-  PO die Spec ohne zweite Meinung freigegeben hat. Genau dann steigt die Sorgfaltspflicht, sie sinkt nicht.
+- **Keine gemischte Summe mehr.** `T` bleibt als Symbol stehen, obwohl ich `≈ 44 dp` rechnen kann (§5.3). Eine
+  Zahl, die ich nicht gemessen habe, gehört nicht in eine Konstante, die „gemessen" behauptet.
+- **Vier eigene Fehler benannt, nicht weggeschrieben:** die Breitenbedingung der 48 dp und das höchste Kind der
+  Row (§7, §1.1); der **inhaltsblinde Breakpoint** (§4.1); und die Summe `520 + 195 ≈ 715` (§4.1), in der ich
+  Gemessenes mit Geschätztem addiert habe — meine eigene Regel, an mir selbst gerissen. Drei davon fand ich
+  beim Selbst-Review, nachdem der PO die Spec **ohne zweite Meinung** freigegeben hatte. Genau dann steigt die
+  Sorgfaltspflicht, sie sinkt nicht.
+- **Der Befund in §5.1 ist wichtiger als dieses Ticket.** Er betrifft eine bereits **gemergte** Konstante, und
+  er entsteht nicht aus Nachlässigkeit, sondern aus zwei grünen Zweigen, die sich im Merge nicht sahen.
 - **Docs-only.** Kein Code geändert.
