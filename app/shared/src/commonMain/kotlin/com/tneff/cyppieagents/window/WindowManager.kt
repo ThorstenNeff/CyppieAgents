@@ -62,6 +62,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
+import com.tneff.cyppieagents.eventlog.severityColor
+import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.model.TerminalControlState
 import com.tneff.cyppieagents.testing.testTagA11y
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
@@ -70,6 +73,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_busy
+import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_ctl
+import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_context_lost
+import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_handing_back
+import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_handing_over
+import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_interactive
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_context_tokens
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_settings_open
 import kmpcyppieagents.app.shared.generated.resources.agent_add
@@ -129,6 +137,12 @@ fun WindowHost(
      * it from the `/ws/busy-state` map (mirrors [contextTokensFor]). Canvas title bar only — NOT the phone pager.
      */
     busyFor: (String) -> Boolean = { false },
+    /**
+     * CYP-354 (client mirror): per-window terminal-control mode; `null`/MEDIATED → no marker (fail-closed,
+     * absent == MEDIATED). Default `{ null }` keeps the host marker-free for callers/tests. The shell feeds it
+     * from the `/ws/terminal-state` map (mirrors [busyFor]/[contextTokensFor]). Read-only; no action here.
+     */
+    controlStateFor: (String) -> TerminalControlState? = { null },
     /** CYP-211: per-window derived titlebar colours (agent identity theming); `null` → default M3 (system windows). */
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     /** CYP-211: per-window settings opener for the titlebar ⋮ button; `null` → no button (system windows). */
@@ -164,6 +178,7 @@ fun WindowHost(
         } else {
             WindowCanvas(
                 state = state, onFit = onFit, badgeFor = badgeFor, contextTokensFor = contextTokensFor, busyFor = busyFor,
+                controlStateFor = controlStateFor,
                 titleBarColorsFor = titleBarColorsFor, settingsFor = settingsFor, titleBarLeadingFor = titleBarLeadingFor,
                 agentsEmpty = agentsEmpty, canAddAgent = canAddAgent, onAddFirstAgent = onAddFirstAgent,
                 windowContent = windowContent,
@@ -184,6 +199,7 @@ private fun WindowCanvas(
     badgeFor: (String) -> WindowBadge?,
     contextTokensFor: (String) -> Int? = { null },
     busyFor: (String) -> Boolean = { false },
+    controlStateFor: (String) -> TerminalControlState? = { null },
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     settingsFor: (String) -> (() -> Unit)? = { null },
     // CYP-216: optional leading titlebar slot (the §5.1 inverted-disc avatar) — a host-injected composable so the
@@ -216,6 +232,7 @@ private fun WindowCanvas(
                     badge = badgeFor(window.id),
                     contextTokens = contextTokensFor(window.id),
                     busy = busyFor(window.id),
+                    mode = controlStateFor(window.id),
                     titleBarColors = titleBarColorsFor(window.id),
                     onSettings = settingsFor(window.id),
                     titleBarLeading = titleBarLeadingFor(window.id),
@@ -536,6 +553,9 @@ fun FloatingWindow(
     contextTokens: Int? = null,
     /** CYP-324: this window's agent is busy (a turn in flight) → a `*` in the title bar; `false` → nothing (unknown ≠ busy). */
     busy: Boolean = false,
+    /** CYP-354 (client mirror): this window's terminal-control mode; `null`/MEDIATED → NO marker (absent == MEDIATED,
+     *  the default). Only a non-MEDIATED state shows the read-only §5.1 mode marker. */
+    mode: TerminalControlState? = null,
     /** CYP-211: the agent's derived titlebar colours; `null` → the default M3 primary/surfaceVariant theming
      *  (system windows). Focused = full colour; unfocused = dimmed toward the surface (elevation still carries focus). */
     titleBarColors: TitleBarColors? = null,
@@ -694,6 +714,41 @@ fun FloatingWindow(
                             color = barContent,
                             modifier = Modifier.weight(1f, fill = false),
                         )
+                        // CYP-354 §5.1 (client mirror): the read-only terminal-control mode marker — LEADS the status
+                        // cluster (after the title, BEFORE busy `*`/token). Rendered ONLY for a non-MEDIATED state
+                        // (absent == MEDIATED = the default, shown without chrome — the CYP-324 busy pattern). The
+                        // form (◉/→/←/∅) + the label carry the meaning (WCAG 1.4.1); colour only reinforces (WARN-amber
+                        // for INTERACTIVE/CONTEXT_LOST, neutral onSurfaceVariant for the transients — never green). The
+                        // meaning-bearing label uses `barContent` (AA on the themed title-bar bg, like busy/token); the
+                        // glyph carries the severity colour. Content-free (state only — never keystrokes/output).
+                        mode?.let { state ->
+                            val marker: Triple<String, String, Color>? = when (state) {
+                                TerminalControlState.MEDIATED -> null
+                                TerminalControlState.INTERACTIVE ->
+                                    Triple("◉", stringResource(Res.string.terminal_ctl_interactive), severityColor(Severity.WARN))
+                                TerminalControlState.HANDING_OVER ->
+                                    Triple("→", stringResource(Res.string.terminal_ctl_handing_over), MaterialTheme.colorScheme.onSurfaceVariant)
+                                TerminalControlState.HANDING_BACK ->
+                                    Triple("←", stringResource(Res.string.terminal_ctl_handing_back), MaterialTheme.colorScheme.onSurfaceVariant)
+                                TerminalControlState.CONTEXT_LOST ->
+                                    Triple("∅", stringResource(Res.string.terminal_ctl_context_lost), severityColor(Severity.WARN))
+                            }
+                            marker?.let { (glyph, label, glyphColor) ->
+                                val modeCd = stringResource(Res.string.a11y_terminal_ctl, label)
+                                Row(
+                                    modifier = Modifier
+                                        .padding(start = 8.dp)
+                                        .testTag(WindowTestTags.mode(window.id))
+                                        // One merged SR node ("Terminal-Modus: …"); the glyph + label stay visual.
+                                        .semantics(mergeDescendants = true) { contentDescription = modeCd },
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(glyph, maxLines = 1, style = MaterialTheme.typography.labelSmall, color = glyphColor)
+                                    Text(label, maxLines = 1, style = MaterialTheme.typography.labelMedium, color = barContent)
+                                }
+                            }
+                        }
                         // CYP-324: the live busy marker — a `*` while the agent has a turn in flight (`/ws/busy-state`),
                         // in `barContent` (full, no alpha → AA on `barBg`). Sits AFTER the title (which ellipsizes first)
                         // and coexists with the token count. Rendered ONLY when busy (Z1); `false`/no-event (idle / pre-

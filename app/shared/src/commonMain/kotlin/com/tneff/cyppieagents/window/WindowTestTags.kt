@@ -50,4 +50,9 @@ object WindowTestTags {
     /** CYP-324: the busy `*` marker in the window [id]'s title bar. Present ONLY while `busy == true`; its ABSENCE
      *  is the test contract for idle/unknown (`false`/no-event → no node — the unknown ≠ busy honesty invariant). */
     fun busy(id: String): String = "window.$id.busy"
+
+    /** CYP-354 §5.1 (client mirror): the read-only terminal-control mode marker in the window [id]'s title bar.
+     *  Present ONLY for a non-MEDIATED state; its ABSENCE is the test contract for MEDIATED/unknown (absent ==
+     *  MEDIATED — the default, no marker). */
+    fun mode(id: String): String = "window.$id.mode"
 }

@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.contract
 
 import com.tneff.cyppieagents.model.AgentBusyStateEvent
+import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.model.AgentTokenUsageEvent
 import com.tneff.cyppieagents.model.ApiErrorBody
@@ -43,6 +44,7 @@ object ContractGenerator {
         WsChannel("/ws/lifecycle", serializer<AgentRunStateEvent>().descriptor, null),
         WsChannel("/ws/token-usage", serializer<AgentTokenUsageEvent>().descriptor, null), // CYP-316: one-way token feed
         WsChannel("/ws/busy-state", serializer<AgentBusyStateEvent>().descriptor, null), // CYP-324: one-way busy/idle feed
+        WsChannel("/ws/terminal-state", serializer<AgentTerminalControlEvent>().descriptor, null), // CYP-354 (BE-1): one-way terminal-control-mode feed
         WsChannel("/ws/agent", serializer<StreamJsonEvent>().descriptor, serializer<UserTurn>().descriptor),
         // CYP-332: bidirectional PTY-over-WS terminal transport (Base64 byte frames + resize/exit).
         WsChannel("/ws/terminal", serializer<TerminalServerFrame>().descriptor, serializer<TerminalClientFrame>().descriptor),

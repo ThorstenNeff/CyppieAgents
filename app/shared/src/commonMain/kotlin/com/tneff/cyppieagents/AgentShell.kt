@@ -63,6 +63,9 @@ import com.tneff.cyppieagents.agentview.AgentLifecycleSource
 import com.tneff.cyppieagents.agentview.BusyStateLiveSource
 import com.tneff.cyppieagents.agentview.BusyStateSource
 import com.tneff.cyppieagents.agentview.BusyStateViewModel
+import com.tneff.cyppieagents.agentview.TerminalControlLiveSource
+import com.tneff.cyppieagents.agentview.TerminalControlSource
+import com.tneff.cyppieagents.agentview.TerminalControlStateViewModel
 import com.tneff.cyppieagents.agentview.TokenUsageLiveSource
 import com.tneff.cyppieagents.agentview.TokenUsageSource
 import com.tneff.cyppieagents.agentview.TokenUsageViewModel
@@ -206,6 +209,9 @@ fun AgentShell(
     tokenUsageSource: TokenUsageSource? = null,
     /** Override the CYP-324 busy-state source (`/ws/busy-state`); `null` → the live source. Tests inject a stub. */
     busyStateSource: BusyStateSource? = null,
+    /** Override the CYP-354 terminal-control source (`/ws/terminal-state`, read-only mirror); `null` → the live
+     *  source. Tests inject a stub. */
+    terminalControlSource: TerminalControlSource? = null,
     /** Override the CYP-326 compact-orchestration port; `null` → the in-memory stub until Backend's Milestone-C
      *  endpoints land (`GET /api/compact/status` · `POST /api/compact/config`), then the live HTTP repo. */
     compactRepository: CompactRepository? = null,
@@ -487,6 +493,11 @@ fun AgentShell(
         BusyStateLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedBusyStateSource = busyStateSource ?: defaultBusyStateSource
+    // CYP-354: the per-agent terminal-control mode feed (`/ws/terminal-state`, participant-gated like busy → same bearer).
+    val defaultTerminalControlSource = remember(httpClient, cfg) {
+        TerminalControlLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedTerminalControlSource = terminalControlSource ?: defaultTerminalControlSource
 
     // CYP-55: hoist the per-window VMs to the always-composed shell. Two reasons: (1) each VM opens
     // exactly ONE subscription — a separate badge collector would double-subscribe the cold WS flows
@@ -619,6 +630,14 @@ fun AgentShell(
     }
     val busy = busyStateVm.busy.collectAsState().value
 
+    // CYP-354: the shell-level per-agent terminal-control map — ONE `/ws/terminal-state` socket for all agents,
+    // upserted by agentId (latest-wins). Re-keyed on activeProjectId like the busy/lifecycle sockets (the socket
+    // binds the ACTIVE project's tracker at connect). Read-only mirror; feeds the title-bar mode marker only.
+    val terminalControlVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "terminalControl-$activeProjectId") {
+        TerminalControlStateViewModel(resolvedTerminalControlSource)
+    }
+    val controlStates = terminalControlVm.states.collectAsState().value
+
     // Collect the badge-relevant slices of the hoisted VM state (single subscription each).
     // B1: comm-wide unread (others, while unfocused). A1: per-agent ERROR status. C1: the highest
     // severity currently in the operator-gated tail buffer — a content-free enum, never event content.
@@ -727,6 +746,9 @@ fun AgentShell(
             // CYP-324: feed each window's busy flag from the WS map (mirrors contextTokensFor). Absent key → false →
             // no `*` (unknown ≠ busy); only an explicit busy=true event lights it, an explicit false clears it.
             busyFor = { id -> busy[id] ?: false },
+            // CYP-354 §5.1: feed each window's terminal-control mode from the WS map (mirrors busyFor). Absent key →
+            // null → the marker treats it as MEDIATED (the default) → NO marker (absent == MEDIATED). Read-only.
+            controlStateFor = { id -> controlStates[id]?.state },
             // CYP-250: desktop empty-state for a 0-agent project (the tool windows still coexist, so this keys on
             // the agent list, NOT the window set). The CTA routes into the EXISTING add flow — bring the
             // agent-management window to front + open its add dialog — and is operator-gated (honest gate hint,
