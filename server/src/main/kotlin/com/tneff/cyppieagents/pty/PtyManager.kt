@@ -21,9 +21,13 @@ import org.slf4j.LoggerFactory
  * (The mode hand-off mediated↔interactive and PTY-survives-reconnect are follow-up stories; this manager
  * only guarantees the invariant.)
  *
- * **Testability:** the launch [command] is injectable — production passes interactive `claude`; tests pass a
- * fake interactive script, so the teeth exercise a REAL pty4j PTY end-to-end (spawn → I/O → resize → exit),
- * not a mock (mirrors the real-`ProcessBuilderSpawner` approach of the resume tests).
+ * **Launch-mode seam (CYP-348):** the launch [command] is the shared, boot-configured seam. The default is
+ * set by `BootOrchestrator` — the CYP-333 interim terminal is a **`bash` login-shell in the worktree**
+ * (Auftraggeber 2026-07-10: NO second interactive `claude` beside the mediated session — two auto-approving
+ * agents in one worktree = edit-conflict risk). The BE-2 hand-off (CYP-355) reuses the same seam via the
+ * per-open [open] `command` override to spawn `claude --resume <sid>` for the SAME session. Also injectable
+ * for tests (a fake TUI) and the full-boot E2E — the teeth exercise a REAL pty4j PTY end-to-end (spawn → I/O
+ * → resize → exit), not a mock (mirrors the real-`ProcessBuilderSpawner` approach of the resume tests).
  */
 class PtyManager(
     /** cwd for the agent's PTY = its git worktree (Spec §11). */
@@ -31,7 +35,8 @@ class PtyManager(
     /** ANTHROPIC_API_KEY for the spawn (store override → env fallback, CYP-96), or null. */
     private val resolveApiKey: (agentId: String) -> String?,
     private val scope: CoroutineScope,
-    /** The interactive launch command — `["claude"]` in prod (NO `--print`/stream-json); a fake TUI in tests. */
+    /** Default launch command (CYP-348: `["bash","-l"]` interim worktree-shell, set by boot); a fake TUI in
+     *  tests. A single [open] may override it (BE-2: `claude --resume <sid>`). */
     private val command: List<String> = listOf("claude"),
     /** Extra PATH-whitelisted env; TERM/HUB_AGENT_ID/PATH/API-key are added by [open]. */
     private val baseEnv: Map<String, String> = emptyMap(),
@@ -53,6 +58,9 @@ class PtyManager(
         rows: Int,
         onOutput: (ByteArray) -> Unit,
         onExit: (Int) -> Unit,
+        /** Per-open launch override (CYP-348 seam). Default = the boot-configured [command] (bash interim);
+         *  BE-2/CYP-355 passes `claude --resume <sid>` here for the hand-off, same session. */
+        command: List<String> = this.command,
     ): PtyHandle {
         val cwd = worktreeDirOf(agentId)
         val env = buildMap {

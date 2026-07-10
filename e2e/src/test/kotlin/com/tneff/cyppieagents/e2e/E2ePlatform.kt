@@ -141,6 +141,10 @@ fun e2ePlatform(
     // CYP-247 S3: the LRU session-suspension cap. Default (null) → the production default = 1 (teardown-on-switch).
     // A journey that exercises the cap>1 background-live state machine (J9) passes it explicitly.
     runtimeSuspensionCap: Int? = null,
+    // CYP-348: the terminal launch-command seam. Null → prod default (`bash -l` interim worktree-shell,
+    // resolved in BootOrchestrator). A full-boot terminal journey injects a fake command here to drive the
+    // real boot→PtyManager wiring deterministically (no real `claude`/`bash` dependency).
+    terminalLaunchCommand: List<String>? = null,
 ): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
@@ -172,6 +176,7 @@ fun e2ePlatform(
         projectAgentFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/project-agents.json").toFile() else null,
         agentOverrideFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile() else null,
         runtimeSuspensionCap = runtimeSuspensionCap ?: 1, // CYP-247 S3: default = teardown-on-switch (production default)
+        terminalLaunchCommand = terminalLaunchCommand, // CYP-348: null → prod bash-l default; a fake command drives the boot→PtyManager wiring
     ).boot()
 
     // Seed the remaining projects through REAL APIs (no production seam): create in the registry, rescope
