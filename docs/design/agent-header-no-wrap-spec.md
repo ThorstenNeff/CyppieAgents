@@ -2,7 +2,7 @@
 
 > Owner: UIUX-Designer · Ticket **CYP-350** · Stand 2026-07-10 · Basis **develop `5c79a79`** · Scope **WASM-App**
 > Docs-only. Adressat: Implementierung + Test.
-> Ursache-Ticket zu **CYP-338** (Mindesthöhe): der Header wächst bei schmaler Breite von 48 dp auf 164 dp und
+> Ursache-Ticket zu **CYP-338** (Mindesthöhe): der Header wächst bei schmaler Breite von 56 dp auf 164 dp und
 > drückt die Eingabezeile aus dem Fenster.
 > Reuse-Anker: `MessageComposer` (CYP-26 §2.2) — das bereits ausgelieferte Label-→-Glyph-Muster.
 
@@ -39,12 +39,26 @@ Fensterbreite, die niemand getestet hat.
 
 > **Jedes `Text` im Header trägt `maxLines = 1` und `softWrap = false`.**
 
-Damit ist die Header-Höhe **breitenunabhängig**: sie ist die Höhe ihres höchsten Kindes — des `TextButton`s
-(`ButtonDefaults.MinHeight = 40 dp`) — plus die `Row`-Polsterung `2 × 4 dp`:
+Damit ist die Header-Höhe **breitenunabhängig**: sie ist die Höhe ihres höchsten Kindes plus die
+`Row`-Polsterung `2 × 4 dp`.
+
+**Das höchste Kind ist nicht der Knopf.** Es ist der **Fidelity-Badge**:
+
+```kotlin
+// connector/ConnectorCapabilityViews.kt:219
+.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)   // WCAG 2.5.8 Zielgröße
+```
+
+`48 dp` schlägt die `ButtonDefaults.MinHeight` von `40 dp`. Also:
 
 ```
-Header-Höhe = 40 + 8 = 48 dp   ·   für JEDE Breite ≥ 320 dp
+Header-Höhe = 48 + 2×4 = 56 dp   ·   für JEDE Breite ≥ 320 dp
 ```
+
+Das deckt sich **exakt** mit Backend2s Messung des ungebrochenen Headers bei 520 dp (§0: `520 → 56`) — und es
+erklärt sie. **`56 dp`, nicht `48 dp`:** eine frühere Fassung dieses Dokuments rechnete `40 + 8` und übersah
+den Badge. Der Badge darf **nicht** verkleinert werden, um die 48 zu erreichen — er ist eine Zielgröße, kein
+Schmuck. CYP-350 macht die Höhe **konstant**, es macht sie nicht **kleiner**.
 
 Das ist die Zusage, die der Regressionstest festnagelt. Selbst wenn jede andere Entscheidung dieses Dokuments
 falsch wäre, **kann die Eingabezeile nie wieder aus dem Fenster gedrückt werden.**
@@ -144,13 +158,19 @@ Struktur trägt, der Breakpoint poliert.
 
 | | vor CYP-350 | nach CYP-350 |
 |---|---|---|
-| Header (320 dp) | 164 dp | **48 dp** |
-| Header (520 dp) | 56 dp | 48 dp |
-| Festes Chrome (Titelleiste 64 + Header + Composer 73) | **301 dp** @ 320 dp | **185 dp**, breitenunabhängig |
-| Mindesthöhe (+ 90 dp Transkript, CYP-338 §2.2) | 391 dp | **275 dp** |
+| Header (320 dp) | 164 dp | **56 dp** |
+| Header (520 dp) | 56 dp | 56 dp |
+| Festes Chrome (Titelleiste **64** + Header + Composer **73**) | **301 dp** @ 320 dp | **193 dp**, breitenunabhängig |
+| Mindesthöhe (+ 90 dp Transkript, CYP-338 §2.2) | 391 dp | **283 dp** |
 
-> Die genauen Summen gehören Backend2s Messung, nicht meiner Arithmetik (§7). Meine Zusage ist die
-> **Invariante**: die Header-Höhe ist konstant und gleich einer `TextButton`-Zeile.
+> **Achtung, hier steckt schon wieder derselbe Fehler.** Der KDoc von `CONTENT_WINDOW_MIN_HEIGHT`
+> (`de11582`) projiziert `56 + 56 + 72 = 184` — und importiert dabei stillschweigend die **arithmetischen**
+> Werte für Titelleiste (56) und Composer (72) zurück, die *derselbe KDoc einen Satz zuvor* durch die
+> **gemessenen** 64 und 73 ersetzt hat. Konsistent, nur mit gemessenen Summanden:
+> **`64 + 56 + 73 = 193`**, Mindesthöhe **`283`** — nicht `184 / 274`.
+>
+> Gemessenes und Gerechnetes dürfen nicht in derselben Summe stehen. Es ist dieselbe Fehlerklasse wie in §7,
+> nur eine Datei weiter.
 
 ---
 
@@ -160,8 +180,9 @@ Der PO verlangt Messung bei **mehreren Breiten** — zu Recht: *an einer einzige
 (bei 520 dp wäre das heutige Verhalten grün).
 
 1. **Höhen-Invariante:** Header-Höhe bei **320 · 400 · 480 · 519 · 520 · 560 · 640 dp** — alle **gleich**, und
-   gleich einer `TextButton`-Zeile (48 dp). Nicht „≤ 48", sondern **gleich**: ein zu *kleiner* Wert hieße, ein
-   Knopf ist unter die WCAG-2.5.8-Zielgröße gefallen.
+   gleich der ungebrochenen Höhe (**56 dp** = Badge-Zielgröße 48 + `2 × 4` Polsterung). Nicht „≤ 56", sondern
+   **gleich**: ein zu *kleiner* Wert hieße, der Fidelity-Badge oder ein Knopf ist unter die
+   WCAG-2.5.8-Zielgröße gefallen.
 2. **Mutationsprobe A:** `maxLines = 1` an **einem** Header-`Text` entfernen ⇒ Test bei 320 dp **rot**. Wird er
    das nicht, misst er die falsche Breite.
 3. **Mutationsprobe B:** Breakpoint auf `0.dp` setzen (nie kompakt) ⇒ Test bei 320 dp **rot**. Belegt, dass die
@@ -194,6 +215,10 @@ Es ist exakt die Fehlerklasse, die ich zwei Stunden vorher beschrieben habe:
 Mindestbreite, ab der ein Label einzeilig bleibt — beim Schichtwechsel verloren ging. Genau wie `formatTs` die
 Zone verlor und `eventTs − now` den Bezugspunkt.
 
+**Und sie war doppelt falsch:** selbst ohne Umbruch sind es nicht 48, sondern **56 dp** — weil der
+Fidelity-Badge mit seiner 48-dp-Zielgröße höher ist als der Knopf (§1.1). Ich hatte das höchste Kind der Row
+nicht gesucht, sondern geraten.
+
 **Konsequenz für dieses Dokument, und die Regel, die ich mir daraus gebe:**
 Eine Komponentenhöhe ist erst dann eine Zahl, wenn dabei steht, **unter welcher Breite sie gilt**. Steht es
 nicht dabei, ist es keine Höhe, sondern eine Hoffnung. CYP-350 macht die Höhe unbedingt — und beseitigt damit
@@ -223,8 +248,8 @@ Reuse**, eigenes kleines Ticket. Die Glyph-Knöpfe dieser Spec ziehen ihre Namen
 
 ## 9. Self-Validation
 
-- **Die Zusage ist eine Invariante, keine Zahl:** Header-Höhe = eine `TextButton`-Zeile, bei **jeder** Breite
-  ≥ 320 dp. Der Breakpoint darf falsch sein, ohne die Zusage zu brechen (§4).
+- **Die Zusage ist eine Invariante, keine Zahl:** Header-Höhe konstant (= 56 dp, gesetzt vom Fidelity-Badge)
+  bei **jeder** Breite ≥ 320 dp. Der Breakpoint darf falsch sein, ohne die Zusage zu brechen (§4).
 - **0 neue Keys, 0 neue Tags, 0 neue Areas.** Die a11y-Namen sind die bestehenden `agent_ctl_*`-Strings.
 - **Glyphen kollisionsfrei verifiziert** (`▶ ■ ↺` = 0 Treffer in `commonMain`), und die zwei naheliegenden
   Fehlgriffe (`⟳` = Tool-RUNNING im selben Fenster, `⏻` = Lifecycle-*Ereignis* im Event-Log) sind namentlich
