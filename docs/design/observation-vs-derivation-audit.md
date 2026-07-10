@@ -9,7 +9,7 @@
 
 ## 0. Ergebnis vorweg
 
-**Die dritte Instanz ist gefunden, und sie ist schwerer als die beiden ersten.**
+**Die dritte und die vierte Instanz sind gefunden. Die dritte ist die schwerste.**
 
 > **Der Lifecycle-Status eines Agenten — der grüne Punkt und „Läuft" — ist keine Beobachtung des Prozesses,
 > sondern ein gemerkter Eintrag in einer Map, der beim erfolgreichen Spawn geschrieben wurde.**
@@ -25,7 +25,8 @@ Genau **eine** tragende Anzeige weicht ab.
 
 | | Befund | Schaden | Einstufung |
 |---|---|---|---|
-| **B1** | Lifecycle „Läuft" ist ein Flag, keine Beobachtung | Operator wartet auf einen toten Agenten — **und der Start-Knopf ist deshalb ausgegraut** | 🔴 **Ticket** |
+| **B1** | Lifecycle „Läuft" ist ein Flag, keine Beobachtung | Operator wartet auf einen toten Agenten — **und der Start-Knopf ist deshalb ausgegraut** | 🔴 **Ticket** (CYP-351) |
+| **B2** | Der Report zählt `log.dropped`-**Meldungen** statt verworfener **Ereignisse** | 47 verlorene Ereignisse lesen sich als „1 Event verworfen" — und zwar **am stärksten untertrieben, wenn die Lücke am größten ist** | 🔴 **Ticket** |
 | N1 | `formatCompactTokens`-KDoc verspricht einen exakten Wert, den es nirgends gibt | keiner (die Kürzung rundet nach unten) | Notiz |
 | N2 | `crossproject_status_shared` erfindet `1970` statt „unbekannt" | heute unerreichbar (Server garantiert den Wert) | Notiz |
 | N3 | Correlation-Chip zeigt 8 von 36 Zeichen ohne Auslassungszeichen | keiner (der Drilldown nutzt die volle ID) | Notiz |
@@ -190,7 +191,73 @@ Server behauptet `RUNNING` (§2.1). Zwei Konsequenzen:
 
 ---
 
-## 3. Notizen — geprüft, Schaden **nicht** benennbar (kein Ticket)
+## 3. 🔴 B2 — Die Telemetrie-Lücke zählt **Berichte**, nicht **Ereignisse**
+
+### 3.1 Der Beleg
+
+Der Product-Lead-Report ist das **Defekt-Register**. Sein eigener Kommentar nennt den Anspruch:
+
+```kotlin
+// server/…/report/ReportGenerator.kt:102–105
+// log.dropped is itself an observation gap — surface it honestly, not as a clean bill.
+val dropped = events.count { it.type == EventType.LOG_DROPPED }
+listOf(ReportItem("Telemetrie-Lücke: $dropped Event(s) verworfen (log.dropped)", …))
+```
+
+`events.count { … }` zählt die **`log.dropped`-Ereignisse**, also die *Meldungen über einen Verlust* — nicht
+die **verworfenen Ereignisse**. Die Abbildung ist **1 : N**, nicht 1 : 1: der `EventRecorder` verwirft bei
+voller Warteschlange beliebig viele Events und schreibt **eine** Meldung, die das Delta mitführt:
+
+```kotlin
+// server/…/events/EventRecorder.kt:107–110
+detail = buildJsonObject { put("dropped", delta); put("total", total) }
+```
+
+Der Text wird gerendert (`ProductLeadPanel.kt:270` (bzw. `:239`), `item.text`).
+
+**47 verworfene Ereignisse in einem Schwall ⇒ eine Meldung ⇒ der Report sagt: „Telemetrie-Lücke: 1 Event(s)
+verworfen".**
+
+### 3.2 Der Schaden
+
+Der Product Lead liest ein Register, das ausdrücklich beansprucht, **kein Persilschein** zu sein, und findet
+darin eine Lücke von **einem** Ereignis. Er schließt: „Das Log ist praktisch vollständig, die Defektliste
+darunter ist belastbar." Tatsächlich fehlt der ganze Schwall.
+
+**Und es untertreibt genau dann am stärksten, wenn es am meisten darauf ankommt.** Der Recorder verwirft,
+wenn die Warteschlange **voll** ist — also unter Last, im Störungsfall, wenn Fehlerereignisse in Serie
+auflaufen. Je größer die echte Lücke, desto größer die Untertreibung. Ein einzelner Ausfall mit 500
+verlorenen Ereignissen liest sich wie ein Rundungsfehler.
+
+**Was der Operator fälschlich glaubt:** „Ein Ereignis ging verloren."
+**Was er deshalb tut:** hält die Defektliste für erschöpfend und stellt keine weiteren Fragen.
+
+### 3.3 Die richtige Zahl ist da — und wird anderswo schon korrekt gelesen
+
+- Sie steht **im selben Payload**: `detail["dropped"]` (Delta) und `detail["total"]` (kumulativ).
+- Eine **andere Oberfläche desselben Repos liest sie korrekt**: die Gap-Zeile im Event-Log
+  (`EventRowUi.kt:210`, `droppedCount`) nimmt `detail["dropped"]`.
+- Der **Stub ist ehrlicher als der Generator**: `StubReportRepository.kt:95` schreibt
+  „Telemetrie-Lücke: Events verworfen (log.dropped)" — **ohne Zahl**. Wer keine Zahl hat, nennt keine.
+
+> **Der Einwand, den ich ernst nehme:** Der Generator liest `e.detail` bewusst **nie** („NEVER `e.detail`",
+> `ReportGenerator.kt:99`) — die Report-Einträge sind **inhaltsfrei** (PRD §3.5). Das ist eine Datenschutz-Leitplanke, kein
+> Versehen. Sie steht dem Fix aber nicht entgegen: `detail` eines `log.dropped` ist **per Konstruktion**
+> inhaltsfrei — zwei Zahlen, vom `EventRecorder` selbst gebaut, nie aus einer Agenten-Nachricht.
+
+**Fix (Design-Sicht):** die Deltas **summieren** statt die Meldungen zu zählen. Fehlt `detail` (alter
+Payload), dann **keine Zahl nennen** — „Telemetrie-Lücke: Events verworfen", wie der Stub. **Nie** eine Zahl,
+die untertreibt.
+
+### 3.4 Die Form
+
+| | Behauptung der Oberfläche | Tatsächlicher Inhalt |
+|---|---|---|
+| **B2** | „so viele Ereignisse gingen verloren" | „so oft haben wir *gemeldet*, dass etwas verlorenging" |
+
+---
+
+## 4. Notizen — geprüft, Schaden **nicht** benennbar (kein Ticket)
 
 Diese drei hielt ich beim Sichten für Funde. Sie sind keine. Ich führe sie mit Begründung, damit der nächste
 Sweep sie nicht ein zweites Mal „findet" — dieselbe Buchführung wie beim DEBUG-Rail im `outline`-Audit.
@@ -224,9 +291,9 @@ und verworfen.)* Ein `…` wäre trotzdem freundlich.
 
 ---
 
-## 4. Geprüft und **ehrlich** — damit es nicht erneut aufgerollt wird
+## 5. Geprüft und **ehrlich** — damit es nicht erneut aufgerollt wird
 
-Diese Anzeigen sind Ableitungen und sagen es. Sie sind der Grund, warum B1 auffällt.
+Diese Anzeigen sind Ableitungen und sagen es. Sie sind der Grund, warum B1 und B2 auffallen.
 
 | Anzeige | Ableitung | Warum ehrlich |
 |---|---|---|
@@ -248,34 +315,90 @@ Diese Anzeigen sind Ableitungen und sagen es. Sie sind der Grund, warum B1 auff�
 
 ---
 
-## 5. Wo die Klasse strukturell sitzt
+## 6. Die Wurzeln — und warum es **nicht** ein Muster mit vier Symptomen ist
 
-Alle drei Instanzen entstehen an derselben Stelle: **dort, wo ein Wert die Schicht wechselt, ohne dass sein
-Bezugsrahmen mitwandert.**
+Der PO hat die richtige Frage gestellt: *dieselbe Wurzel im Code, oder nur dieselbe Form?*
+Die ehrliche Antwort ist **zwei Wurzeln, je zwei Symptome** — und das ist die nützlichere Antwort, weil die
+beiden **verschiedene Reparaturen** brauchen. „Ein Muster" wäre schöner formuliert und falsch.
 
-- `formatTs` wechselte von *epoch ms* nach *Wanduhr* — und ließ die **Zone** zurück.
-- `eventTs − now` wechselte von *Zeitpunkt* nach *Differenz* — und ließ den **Bezugspunkt** zurück.
-- `status[id]` wechselt von *„ich habe gespawnt"* nach *„er läuft"* — und lässt die **Beobachtung** zurück.
+### 6.1 Wurzel A — der Bezugsrahmen passt nicht in den Typ (Instanzen 1 + 2)
 
-Jedes Mal überlebt der Bezugsrahmen im KDoc und stirbt auf der Oberfläche.
+| | Wert | Typ | Was der Typ **nicht** sagt |
+|---|---|---|---|
+| CYP-336 | `formatTs(ts)` | `Long` | in **welcher Zone** die Wanduhr steht |
+| CYP-346 | `eventTs − now` | `Long` | ob es ein **Zeitpunkt** oder eine **Dauer** ist |
 
-**Zwei billige, prüfbare Leitplanken** (Vorschlag, kein Ticket-Anspruch):
+**Gemeinsame Wurzel, im Code nachweisbar:** epoch-ms ist in dieser Codebasis ein **nacktes `Long`**, und es
+bezeichnet **beides** — Zeitpunkt (`Event.ts`, `AgentEvent.tsMs`, `sharedAt`, `generatedAt`) *und* Dauer
+(Skew, verstrichene Zeit). Es gibt **keine** `value class`, kein `typealias`, das sie trennt (geprüft über
+`core`, `app/shared`, `server`: null Treffer). Deshalb kompiliert `eventTs − now` klaglos und ergibt wieder
+ein `Long`, das man in `formatTs` stecken kann. Der Compiler kann den Fehler nicht sehen, also muss ihn ein
+KDoc sehen — und KDocs werden nicht mitkompiliert.
 
-1. **Benenne den Bezugsrahmen im Typ, nicht im Kommentar.** `formatTs(ts): String` verrät nichts;
-   `formatUtcClock(ts)` hätte den Fehler nicht überlebt. Genauso `AgentRunState.RUNNING` vs. ein ehrliches
-   `SPAWNED_NOT_OBSERVED`. Ein Name, den man beim Rendern liest, schlägt jeden KDoc.
-2. **Ein Zustand, der eine Bedienung sperrt, braucht eine Quelle.** Der Start-Knopf hängt an `RUNNING`. Hätte
-   jemand gefragt „woher weiß dieser Zustand das?", wäre B1 beim Schreiben von CYP-73 aufgefallen.
+**Reparatur:** den Rahmen in den **Namen oder Typ** heben. `formatUtcClock(...)` hätte CYP-336 nie überlebt.
+Ein `value class Instant(val epochMs: Long)` neben `value class Millis(val value: Long)` hätte CYP-346 zur
+Compilezeit erledigt.
 
----
+### 6.2 Wurzel B — ein **Stellvertreter** wird als die Sache gerendert (Instanzen 3 + 4)
 
-## 6. Self-Validation
+| | Angezeigt als | Tatsächlich | Abbildung |
+|---|---|---|---|
+| **B1** | „der Prozess läuft" | „wir haben ihn gestartet und hier nicht gestoppt" | 1 : **vielleicht** |
+| **B2** | „so viele Ereignisse gingen verloren" | „so oft haben wir Verlust *gemeldet*" | 1 : **N** |
+
+Beide Stellvertreter sind **billiger** zu bekommen als die Sache selbst: ein Map-Eintrag ist billiger als
+Prozess-Überwachung; `count { … }` ist billiger als das Summieren eines Deltas aus dem Payload.
+
+**Und beide irren in dieselbe Richtung.** Das ist die eigentliche Entdeckung:
+
+> **Ein Stellvertreter, der aus dem eigenen Handeln abgeleitet ist, irrt immer zugunsten der Beruhigung.**
+> `RUNNING` überschätzt die Gesundheit. `1 Event verworfen` unterschätzt den Verlust. Beide erzählen, was
+> **wir getan haben** (gestartet; gemeldet), nicht, was **die Welt getan hat** (gestorben; 47 Ereignisse
+> verschluckt). Aus der eigenen Perspektive gelingt jede eigene Handlung.
+
+Deshalb sind Wurzel-B-Fehler gefährlicher als Wurzel-A-Fehler: eine falsche Zone fällt irgendwann jemandem
+auf, weil sie *auffällig* falsch ist (zwei Stunden). Ein optimistischer Stellvertreter ist **unauffällig**
+richtig — er sagt genau das, was man erwartet.
+
+**Reparatur:** die Beobachtung dort anschließen, wo sie verworfen wird (`onProcessExit` → `LifecycleManager`;
+`detail["dropped"]` summieren). **Nicht** die Anzeige umformulieren.
+
+### 6.3 Die fünfte Ausprägung: Dokumentation als Stellvertreter für Code
+
+`AgentShell.kt:188/190` — *„`null` → the in-memory stub until `/ws/lifecycle` lands"* — beschreibt eine Naht,
+die **drei Zeilen weiter unten geschlossen** ist (§2.4). Das ist Wurzel B, eine Ebene höher: der Kommentar
+berichtet die **Absicht zum Zeitpunkt des Schreibens** als wäre sie der heutige Zustand. Er hat den PO und
+mich in die falsche Schicht geführt.
+
+**Die ersten vier Instanzen zeigen einen falschen Wert. Die fünfte zeigt einen falschen Ort** — und ist damit
+die teuerste, weil sie die Reparatur der anderen fehlleitet.
+
+### 6.4 Was daraus folgt (Vorschlag, kein Ticket-Anspruch)
+
+1. **Ein Wert, der einen fremden Prozess oder eine fremde Uhr behauptet, braucht eine Quelle** — oder er muss
+   sagen, dass er keine hat. (Beides Wurzel B.)
+2. **Ein Wert, der eine Bedienung sperrt, trägt Bedienlast** und darf nicht auf einem Stellvertreter ruhen.
+   Der Start-Knopf ist der Prüfstein: hätte jemand gefragt „woher weiß dieser Zustand das?", wäre B1 beim
+   Schreiben von CYP-73 aufgefallen.
+3. **Wo der Compiler den Rahmen tragen kann, soll er ihn tragen** (Wurzel A). Ein KDoc ist der Ort, an dem ein
+   Bezugsrahmen **stirbt**, nicht der, an dem er überlebt.
+4. **Wer keine Zahl hat, nennt keine.** `StubReportRepository` macht es vor.
+
+## 7. Self-Validation
 
 - **Leitplanke 1 (nur angezeigte Werte) eingehalten:** `bandPct` und `contextWindowTokens` sind **nicht**
   angezeigt → als adjazentes Risiko benannt, **nicht** als Befund gezählt.
 - **Leitplanke 2 (Schaden benennen) gegen mich selbst angewandt:** drei Kandidaten (N1–N3) sind zu Notizen
   degradiert, weil ich keinen Schaden belegen konnte. Eine falsche ULID-Hypothese ist geprüft und **verworfen**
   im Dokument protokolliert.
+- **Zwei Wurzeln, nicht ein Muster** (§6): A = Bezugsrahmen passt nicht in den Typ (nachgewiesen: **kein**
+  `value class`/`typealias` für epoch-ms in `core`/`app/shared`/`server`); B = optimistischer Stellvertreter.
+  Sie brauchen **verschiedene** Reparaturen — Typen bzw. Verdrahtung der Beobachtung. Die bequeme Antwort
+  („ein Muster, vier Symptome") wäre falsch gewesen.
+- **B2 erfüllt beide Leitplanken:** der Text wird gerendert (`ProductLeadPanel.kt:270` (bzw. `:239`)), und der Schaden ist
+  benannt und **richtungsgebunden** (Untertreibung wächst mit der Lücke). Der Datenschutz-Einwand gegen
+  `e.detail` ist geprüft und trägt hier nicht (das `detail` von `log.dropped` ist per Konstruktion
+  inhaltsfrei).
 - **Der Befund ist am Code verifiziert, nicht am KDoc:** alle fünf `setRunState`-Aufrufstellen gelistet;
   `onProcessExit` bis zum einzigen Empfänger verfolgt; das Fehlen eines zweiten Observers und eines Watchdogs
   geprüft; die Schadenskette bis zum ausgegrauten Start-Knopf durchgezogen (`AgentWindow.kt:203`).
