@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
@@ -91,6 +92,24 @@ import kmpcyppieagents.app.shared.generated.resources.terminal_gated_pending
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import org.jetbrains.compose.resources.stringResource
+
+/**
+ * CYP-350 — the width at which the agent header can render its three lifecycle controls with WORDS on them,
+ * measured on the rendered composition at the shipped state (status + fidelity badge present):
+ *
+ * ```
+ * status 74 + badge 199 + controls (59 + 58 + 76) + 4 gaps of 8 = 498, plus 16 dp of header padding = 514
+ * ```
+ *
+ * Below it the `Row` cannot lay the labels out side by side. What it did instead was NOT "shrink the text": it
+ * gave the first control 15 dp and the next two **zero** (CYP-369), then stacked the surviving label's letters
+ * into a 116 dp column, which is where the header's 164 dp height at 320 dp came from.
+ *
+ * 520 rather than 514: the two extra dp per control keep the labels off the padding, and a floor derived to the
+ * last dp of one font would move with the next one. `AgentHeaderControlsGuardTest` measures the real composition
+ * on both sides of this line, so it cannot drift silently.
+ */
+const val HEADER_LABELLED_CONTROLS_MIN_WIDTH: Float = 520f
 
 /**
  * The agent window: a scrolling transcript of [AgentEvent]s over a "message to the agent" composer, with a
@@ -313,44 +332,142 @@ private fun AgentHeader(
     provider: ProviderInfo? = null,
     onCapabilityBadgeClick: () -> Unit = {},
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag(AgentViewTags.header(agentId))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StatusIndicator(agentId, state, startPending, restartPending)
-        // CYP-204: reconnecting indicator — present ONLY while the per-agent WS is not LIVE (the adapter is
-        // auto-reconnecting from the seq cursor; on reconnect the server replays the history gapless). Its OWN
-        // axis, next to but distinct from the lifecycle status (process state ≠ socket state).
-        ReconnectingChip(agentId, connection)
-        // Provider axis (CYP-137) — the subordinate "(Claude)" qualifier next to the identity/status, its OWN
-        // marker (≠ fidelity, ≠ lifecycle). Present only when known (fail-closed by absence); neutral, no hue.
-        ConnectorProviderChip(provider = provider, agentId = agentId)
-        // Fidelity axis (CYP-123) — its own marker next to the lifecycle status, NOT mixed into it. Present
-        // only when degraded / not-yet-reported (fail-closed by absence); opens the capability panel.
-        ConnectorCapabilityBadge(caps = capabilities, agentId = agentId, onClick = onCapabilityBadgeClick, loading = capabilitiesLoading)
-        Spacer(Modifier.weight(1f))
-        TextButton(
-            onClick = onStart,
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        // CYP-350: below this width the labelled controls cannot be laid out at their intrinsic size, so they are
+        // rendered as glyph buttons instead. Measured, not chosen: at 480 dp the three `TextButton`s still need
+        // more room than the row has and it wraps (header 104 dp at 480, 164 dp at 320); at 520 dp everything sits
+        // on one 56 dp line. `AgentHeaderControlsGuardTest` re-derives the switch from the rendered composition
+        // rather than trusting this number.
+        val compact = maxWidth < HEADER_LABELLED_CONTROLS_MIN_WIDTH.dp
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(AgentViewTags.header(agentId))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // CYP-369 — **the distribution rule.** A `Row` measures its UNWEIGHTED children first, in order, each
+            // against what the previous ones left over. The controls used to come last, behind a
+            // `Spacer(Modifier.weight(1f))`, so at 320 dp the identity cluster (status 74 + fidelity badge 199)
+            // consumed the row and Stop and Restart were measured with `maxWidth = 0`: `w = 0 dp`,
+            // `displayed = false`. The operator could neither stop nor restart an agent in a tiled window, and
+            // nothing said so — a control that is absent and a control that is 0 dp wide look the same from
+            // outside.
+            //
+            // The weight belongs on the part that may YIELD, not on a spacer between them. The identity cluster is
+            // now the weighted child: measured LAST, with whatever the controls did not need. Its members are
+            // markers, and a marker may shrink; a control may not.
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StatusIndicator(agentId, state, startPending, restartPending)
+                // CYP-204: reconnecting indicator — present ONLY while the per-agent WS is not LIVE (the adapter is
+                // auto-reconnecting from the seq cursor; on reconnect the server replays the history gapless). Its OWN
+                // axis, next to but distinct from the lifecycle status (process state ≠ socket state).
+                ReconnectingChip(agentId, connection)
+                // Provider axis (CYP-137) — the subordinate "(Claude)" qualifier next to the identity/status, its OWN
+                // marker (≠ fidelity, ≠ lifecycle). Present only when known (fail-closed by absence); neutral, no hue.
+                ConnectorProviderChip(provider = provider, agentId = agentId)
+                // Fidelity axis (CYP-123) — its own marker next to the lifecycle status, NOT mixed into it. Present
+                // only when degraded / not-yet-reported (fail-closed by absence); opens the capability panel.
+                //
+                // CYP-350: `compact` drops the badge's WORD, never its meaning. The glyph stays, and the badge's
+                // `contentDescription` is unchanged, so a screen reader reads the same sentence at every width.
+                // This is not a shortened disclosure — the disclosure itself lives in the panel the badge opens.
+                ConnectorCapabilityBadge(
+                    caps = capabilities,
+                    agentId = agentId,
+                    onClick = onCapabilityBadgeClick,
+                    loading = capabilitiesLoading,
+                    compact = compact,
+                )
+            }
+            AgentLifecycleControls(
+                agentId = agentId,
+                state = state,
+                canControl = canControl,
+                compact = compact,
+                onStart = onStart,
+                onStop = onStop,
+                onRestart = onRestart,
+            )
+        }
+    }
+}
+
+/**
+ * CYP-350/369 — the three lifecycle controls: labelled when the header can afford it, glyph-only when it cannot.
+ * **Unweighted on purpose** (see the distribution rule in [AgentHeader]): they are measured before the identity
+ * cluster and therefore always get their intrinsic width.
+ *
+ * The glyph form is not a smaller label, it is a different control: an `IconButton` is 48 dp square, comfortably
+ * past the 24 dp WCAG 2.5.8 target, where the squeezed `TextButton` was 15 dp wide and 116 dp tall — a column of
+ * stacked letters. `maxLines = 1` would have stopped the stacking and left the width at zero: **wrapping was the
+ * symptom, not the cause.** The accessible name stays the string the label would have shown, so a screen reader
+ * loses nothing — only the eye does, and only where there was no room for it anyway.
+ *
+ * There is no material-icons artifact in `:app:shared`, so the glyph is plain text carrying an a11y name — the
+ * same pattern as `WindowManager`'s window controls and `AgentSettingsPanel`.
+ */
+@Composable
+private fun AgentLifecycleControls(
+    agentId: String,
+    state: AgentLifecycleState,
+    canControl: Boolean,
+    compact: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onRestart: () -> Unit,
+) {
+    data class Control(val label: String, val glyph: String, val tag: String, val enabled: Boolean, val onClick: () -> Unit)
+    val controls = listOf(
+        Control(
+            label = stringResource(Res.string.agent_ctl_start),
+            glyph = "▶",
+            tag = AgentViewTags.startBtn(agentId),
             enabled = canControl && state != AgentLifecycleState.RUNNING,
-            modifier = Modifier.testTag(AgentViewTags.startBtn(agentId)),
-        ) { Text(stringResource(Res.string.agent_ctl_start)) }
-        TextButton(
-            onClick = onStop,
+            onClick = onStart,
+        ),
+        Control(
+            label = stringResource(Res.string.agent_ctl_stop),
+            glyph = "■",
+            tag = AgentViewTags.stopBtn(agentId),
             enabled = canControl && state == AgentLifecycleState.RUNNING,
-            modifier = Modifier.testTag(AgentViewTags.stopBtn(agentId)),
-        ) { Text(stringResource(Res.string.agent_ctl_stop)) }
-        TextButton(
-            onClick = onRestart,
+            onClick = onStop,
+        ),
+        Control(
+            label = stringResource(Res.string.agent_ctl_restart),
+            glyph = "↻",
+            tag = AgentViewTags.restartBtn(agentId),
             // CYP-330: enabled for any operator — Restart must not be hard-ineffective in UNKNOWN/STOPPED (a
             // stopped/unknown agent is exactly when you want to bring it back). The server stays authoritative and
             // surfaces an honest reason if the transition is invalid; the "Neustart…" transient acknowledges the click.
             enabled = canControl,
-            modifier = Modifier.testTag(AgentViewTags.restartBtn(agentId)),
-        ) { Text(stringResource(Res.string.agent_ctl_restart)) }
+            onClick = onRestart,
+        ),
+    )
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        controls.forEach { control ->
+            if (compact) {
+                IconButton(
+                    onClick = control.onClick,
+                    enabled = control.enabled,
+                    modifier = Modifier.testTag(control.tag).semantics { contentDescription = control.label },
+                ) { Text(control.glyph, maxLines = 1) }
+            } else {
+                TextButton(
+                    onClick = control.onClick,
+                    enabled = control.enabled,
+                    modifier = Modifier.testTag(control.tag),
+                ) { Text(control.label, maxLines = 1) }
+            }
+        }
     }
 }
 

@@ -48,7 +48,7 @@ const val MIN_WINDOW_HEIGHT: Float = 120f
  * operator, the worktree shell still gated, and a failed lifecycle action showing its reason:
  *
  * ```
- * title bar 64 + LifecycleErrorRow 20 + agent header 164 + ModeToggleRow 84 + composer row 73 = 405
+ * title bar 64 + LifecycleErrorRow 20 + agent header 56 + ModeToggleRow 84 + composer row 73 = 297
  * ```
  *
  * Below this the composer — the last unweighted child of the column — cannot be laid out at all; a content
@@ -61,11 +61,16 @@ const val MIN_WINDOW_HEIGHT: Float = 120f
  * not because a number changed but because the composition did.
  *
  * **Two traps this number is measured around, both fallen into first:**
- *  - The `ModeToggleRow` measures **84 dp** naturally, but only **73 dp** *at the old floor* — the `Column`
- *    hands its unweighted children what is left, so a height read at the floor is a **remainder, not a height**.
- *    Using it would have written the defect into the constant meant to prevent it.
+ *  - The `ModeToggleRow` measures **84 dp** naturally, but only **73 dp** *at a floor it does not fit* — the
+ *    `Column` hands its unweighted children what is left, so a height read at the floor is a **remainder, not a
+ *    height**. Using it would have written the defect into the constant meant to prevent it.
  *  - 84 dp is the **operator + gated-note** state, which is what ships (`WORKTREE_SHELL_LIVE_ENABLED = false`).
  *    A non-operator's row is 68 dp. The floor must know the tallest state, not the convenient one.
+ *
+ * **CYP-350 took the header from 164 dp to 56 dp** and this constant followed — automatically, because the guard
+ * measures rather than remembers. The 164 dp was the header WRAPPING: three `TextButton` labels that could not be
+ * laid out side by side at 320 dp, one of them stacked into a 116 dp column of letters. With glyph controls the
+ * header is a single 56 dp line at every width, and the floor fell 405 -> 297. Nobody had to notice.
  *
  * **The `LifecycleErrorRow` is chrome too (20 dp), and it is in the sum on purpose.** It is transient, so the
  * first cut of this ticket left it out and merely *named* the gap. Measured, that position did not survive: at a
@@ -78,13 +83,13 @@ const val MIN_WINDOW_HEIGHT: Float = 120f
  * Do not maintain this by hand: `ContentWindowChromeFloorGuardTest` re-measures the composition and fails if a
  * chrome row appears or disappears without this constant following. It contains no chrome number of its own.
  */
-const val CONTENT_WINDOW_MIN_HEIGHT: Float = 405f
+const val CONTENT_WINDOW_MIN_HEIGHT: Float = 297f
 
 /**
  * Min height for **content** windows (Agent/Comm), the height twin of [TILED_CONTENT_WINDOW_MIN_WIDTH]
  * (CYP-338). [CONTENT_WINDOW_MIN_HEIGHT] of chrome plus 90 dp of transcript — three text lines, the smallest
  * view in which a wrapped answer coexists with a neighbouring row rather than being the whole window
- * (`min-window-height-spec.md` §2.2/§2.3). `405 + 90 = 495`.
+ * (`min-window-height-spec.md` §2.2/§2.3). `297 + 90 = 387`.
  *
  * Rendered, not computed: the chrome summand comes from a measurement of the real composition, not from Material
  * token arithmetic, because the header wraps at this class's own minimum width (see [CONTENT_WINDOW_MIN_HEIGHT]).
@@ -95,12 +100,12 @@ const val CONTENT_WINDOW_MIN_HEIGHT: Float = 405f
  * `tile` may squeeze a content window *below* this, never below [CONTENT_WINDOW_MIN_HEIGHT] (spec §5). Does
  * **not** replace the 120 dp floor for other window types — they have no composer to lose.
  *
- * **CYP-363:** the former KDoc promised this "falls to 283 once the header stops wrapping". That number came
- * from a composition without the `ModeToggleRow` and was already dead when it was written. It is removed rather
- * than re-derived: the new value belongs to CYP-350, measured on the composition that ticket produces. A number
- * about a composition that does not exist yet is exactly the defect this ticket repairs.
+ * **CYP-363/350:** the old KDoc promised this "falls to 283 once the header stops wrapping". CYP-363 struck that
+ * number rather than re-deriving it — it came from a composition without the `ModeToggleRow` and was dead when
+ * written. CYP-350 has since stopped the wrapping, and the real value is **387**, measured on the composition
+ * that actually exists. A promise about a composition that does not exist yet is not a promise; it is the defect.
  */
-const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 495f
+const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 387f
 
 /**
  * How much of a window must remain inside the host on every edge, in dp, so it can never be dragged
