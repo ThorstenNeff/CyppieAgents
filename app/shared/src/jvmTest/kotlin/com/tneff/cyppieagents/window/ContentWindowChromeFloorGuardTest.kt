@@ -38,6 +38,7 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.project.StubProjectRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * CYP-363 — **the chrome floor is re-derived from the composition, never maintained by hand.**
@@ -231,36 +232,46 @@ class ContentWindowChromeFloorGuardTest {
     }
 
     /**
-     * The exemption above is an assumption about production, so it gets a tripwire rather than a comment.
+     * **The state space must contain the chrome the real shell actually renders.**
      *
-     * `terminalGatedNote` was dropped from [shippedStates] because the live-flip made its row unreachable. If
-     * someone sets `WORKTREE_SHELL_LIVE_ENABLED = false` again — a kill-switch is exactly the sort of thing that
-     * gets flipped back in a hurry — the gated note returns, the `ModeToggleRow` grows from 52 dp to 84 dp, and
-     * the floor is stale again. **The state space would no longer contain the state that decides the floor, and
-     * the guard would be green while being wrong.**
+     * [shippedStates] no longer enumerates `terminalGatedNote`, because the live-flip made its row unreachable.
+     * That removal is an *assumption about production*, and an assumption without a tripwire is how `301` was
+     * born — only in reverse: not a row added without the constant following, but a row **removed from the state
+     * space** that production can still bring back. Flip `WORKTREE_SHELL_LIVE_ENABLED` to `false` (a rollback, an
+     * emergency, a per-environment flag) and the note returns, the `ModeToggleRow` grows 52 dp -> 84 dp, it is
+     * the tallest chrome again — and a guard that no longer measures it stays **green while being too low.**
      *
-     * This renders the REAL shell and fails the moment that row can be seen, naming what to restore. It is the
-     * only assertion here that would rather be about production than about geometry.
+     * The obvious tripwire is "assert the gated note is absent". This is deliberately **not** that assertion. It
+     * would name the flag, and so it would only ever catch the flag: a constant renamed, a note moved, a fifth
+     * row nobody told this test about, and it is silent. Instead this measures the `ModeToggleRow` **as the real
+     * shell composes it** and demands that *some* enumerated state reproduce that height. The guard is then bound
+     * to the shipped composition rather than to the reason it looks the way it does — the same discipline as the
+     * floor itself, which compares measurements rather than remembering numbers.
      */
     @Test
-    fun theGatedShellNote_isUnreachable_whichIsWhyItIsAbsentFromTheStateSpace() {
-        runComposeUiTest {
-            setContent { MaterialTheme { Box(Modifier.size(700.dp, 3_000.dp)) { RealShell() } } }
-            awaitTag(AgentViewTags.input(AGENT_ID))
-            val gated = onAllNodesWithTag(AgentViewTags.modeToggleTerminalGated(AGENT_ID)).fetchSemanticsNodes()
-            assertEquals(
-                0,
-                gated.size,
-                "CYP-363/333: the gated-shell note is rendering again, so `WORKTREE_SHELL_LIVE_ENABLED` was turned " +
-                    "off. That row makes the ModeToggleRow 84 dp instead of 52 dp and it is then the TALLEST " +
-                    "shipped chrome. Put `terminalGatedNote` back into `shippedStates` and let the floor follow.",
-            )
-        }
+    fun theRealShellsToggleRow_isAHeightThisGuardActuallyMeasures() {
+        val real = measureRealShellToggleRow()
+        val enumerated = shippedStates.associateWith { measureAgentWindow(it, GENEROUS).toggleRowHeight }
+        assertTrue(
+            enumerated.values.any { it == real },
+            "CYP-363: the real shell renders a ModeToggleRow of $real dp, and no state this guard enumerates " +
+                "produces that height (measured: ${enumerated.values.distinct().sorted()}).\n" +
+                "Some chrome variant is shipping that `shippedStates` does not know about — most likely the " +
+                "gated-shell note came back (`WORKTREE_SHELL_LIVE_ENABLED = false`), which makes the row 84 dp " +
+                "and the TALLEST shipped chrome. Enumerate the state, then let the floor follow the measurement.\n" +
+                "Enumerated states:\n" + enumerated.entries.joinToString("\n") { "  ${it.value} dp  ${it.key}" },
+        )
     }
 
     // --- measurement ------------------------------------------------------------------------------------------
 
-    private data class Measured(val transcriptHeight: Float, val inputHeight: Float, val chromeSum: Float)
+    private data class Measured(
+        val transcriptHeight: Float,
+        val inputHeight: Float,
+        val chromeSum: Float,
+        /** Distance between the header's bottom and the content rectangle's top — the ModeToggleRow, whatever it holds. */
+        val toggleRowHeight: Float,
+    )
 
     /**
      * The title bar belongs to the window frame, not to `AgentWindow`, so it is read off the **real shell** —
@@ -277,6 +288,19 @@ class ContentWindowChromeFloorGuardTest {
             titleBar = height(bounds(WindowTestTags.titleBar(AGENT_ID)))
         }
         return titleBar
+    }
+
+    /** The `ModeToggleRow` as the REAL shell composes it — the composition an operator gets, not one we invent. */
+    private fun measureRealShellToggleRow(): Float {
+        var toggle = Float.NaN
+        runComposeUiTest {
+            setContent { MaterialTheme { Box(Modifier.size(700.dp, 3_000.dp)) { RealShell() } } }
+            awaitTag(AgentViewTags.input(AGENT_ID))
+            val header = bounds(AgentViewTags.header(AGENT_ID))
+            val content = bounds(AgentViewTags.content(AGENT_ID))
+            toggle = (content.top - header.bottom).value
+        }
+        return toggle
     }
 
     /** `AgentWindow` alone, in a host of exactly [availableHeight] — the height the window frame leaves it. */
@@ -321,7 +345,9 @@ class ContentWindowChromeFloorGuardTest {
             // sum by the clipped remainder — the same "a number I wrote down, not one the composition gave me"
             // mistake this whole ticket is about. Measured: a 2000 dp request renders ~500 dp.
             val hostHeight = height(bounds(HOST))
+            val hdr = bounds(AgentViewTags.header(AGENT_ID))
             measured = Measured(
+                toggleRowHeight = (content.top - hdr.bottom).value,
                 transcriptHeight = height(content),
                 // The composer disappears entirely (not merely shrinks) if the column runs out — 0 dp, not absent.
                 inputHeight = if (input.isEmpty()) 0f else height(bounds(AgentViewTags.input(AGENT_ID))),
