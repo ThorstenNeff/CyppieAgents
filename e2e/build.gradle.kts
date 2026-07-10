@@ -14,6 +14,11 @@ dependencies {
     testImplementation(projects.core)
     testImplementation(projects.server)
     testImplementation(projects.app.shared)
+    // CYP-334 client-stack E2E: WsTtyConnector (the JediTerm bridge, jvmMain of :app:shared) implements
+    // com.jediterm.terminal.TtyConnector — a jvmMain `implementation` dep, so not transitive here. Add jediterm-core
+    // (TtyConnector + TermSize) test-only so the E2E can drive the REAL bridge against a live PTY. Repo is the
+    // JetBrains intellij-dependencies (group-scoped) already declared in settings.gradle.kts (CYP-334).
+    testImplementation(libs.jediterm.core)
 
     testImplementation(libs.kotlinx.coroutinesCore)
     testImplementation(libs.kotlinx.coroutinesTest)
