@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -41,7 +40,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.Agent
-import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
+import com.tneff.cyppieagents.window.COMPOSER_COMPACT_INPUT_THRESHOLD
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
@@ -368,7 +367,7 @@ private fun Composer(canWrite: Boolean?, sendError: String?, channelName: String
         // CYP-26 §2.2: input holds a min width; below a threshold "Senden" degrades to a glyph (a11y
         // label kept) and the placeholder ellipsizes rather than character-wrapping.
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val compact = maxWidth < COMPOSER_MIN_WIDTH.dp + 96.dp
+            val compact = maxWidth < COMPOSER_COMPACT_INPUT_THRESHOLD.dp + 96.dp
             val sendLabel = stringResource(Res.string.comm_composer_send)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(8.dp),
@@ -379,7 +378,7 @@ private fun Composer(canWrite: Boolean?, sendError: String?, channelName: String
                     value = draft,
                     onValueChange = { draft = it },
                     enabled = enabled, // CYP-273: fail-closed — disabled while writability is unknown (null)
-                    modifier = Modifier.weight(1f).widthIn(min = COMPOSER_MIN_WIDTH.dp).testTag(CommTags.COMPOSER_INPUT),
+                    modifier = Modifier.weight(1f).testTag(CommTags.COMPOSER_INPUT),
                     placeholder = {
                         Text(
                             stringResource(Res.string.comm_composer_placeholder, channelName),
