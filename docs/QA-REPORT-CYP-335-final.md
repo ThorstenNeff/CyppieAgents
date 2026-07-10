@@ -151,9 +151,15 @@ Aber CYP-346 ist der Bug, den **ich** angelegt habe: „Skew-Schätzer verwechse
 Historie". **Dieser Defekt ist mit `a52bb4d` behoben.** Wer CYP-346 daraufhin auf `Fertig` setzt, reißt drei
 Anker heraus:
 
-* den KDoc in `AgentViewModel` („Tracked as **CYP-346** (`:core` + server)"),
-* `cyp346_fastBrowser_invertsTheColumn_…` („When CYP-346 lands …"),
-* `cyp346_bootstrapTurn_…` (dito).
+* `AgentViewModel.kt:156` — der Klassen-KDoc („Tracked as **CYP-346** (`:core` + server)"),
+* `AgentWindow.kt:374` — derselbe Verweis am `TranscriptRow`-KDoc,
+* `AgentClientStampTest.kt` — **20 Zeilen**, darunter die **zwei Testnamen**
+  `cyp346_fastBrowser_invertsTheColumn_…` und `cyp346_bootstrapTurn_…`.
+
+**22 Fundstellen, nicht drei** (gezählt gegen `d1bcf24`; ich hatte `AgentWindow.kt` übersehen und die
+Test-Datei mit einer Zeile veranschlagt). **Testnamen sind die teuersten Anker:** sie stehen in jedem
+Mutationslog, jedem JUnit-Report und jeder Abnahme — dieser Bericht zitiert sie viermal. Ein Testname, der auf
+ein geschlossenes Ticket zeigt, verrottet lauter als jeder Kommentar.
 
 Dann zeigen zwei Charakterisierungstests und ein Klassen-Kommentar auf ein geschlossenes Ticket, und der
 **akzeptierte** Defekt (schnelle Browser-Uhr invertiert die Spalte) hat keinen Tracker mehr.
