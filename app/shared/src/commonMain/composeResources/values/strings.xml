@@ -568,7 +568,10 @@
     <string name="terminal_mode_orchestration">Orchestrierung</string>
     <string name="terminal_mode_shell">Shell</string>
     <string name="a11y_terminal_mode">Ansicht: %1$s</string>
-    <!-- CYP-333: Shell-Segment gated, bis das Worktree-Shell-Backend (CYP-348, bash-Modus) steht; dann geht die
-         Verbindung live (die Shell ist sicher — keine Zwei-Agenten-Frage mehr). -->
+    <!-- CYP-333: Shell-Segment gated, falls das Worktree-Shell-Backend (CYP-348, bash-Modus) fehlt (z. B. Nicht-
+         Desktop-Ziel / abgeschalteter Kill-Switch). Im Normalfall ist die Shell live. -->
     <string name="terminal_gated_pending">Shell verfügbar, sobald das Worktree-Shell-Backend steht</string>
+    <!-- CYP-333 Live-Flip (CYP-348): ehrlicher Deskriptor im aktiven Shell-View — es ist eine bash-Worktree-Shell
+         (git status/ls/reinschauen), NICHT die Agenten-Sitzung; das claude-Same-Session-Terminal kommt mit BE-2. -->
+    <string name="terminal_shell_note">bash-Worktree-Shell</string>
 </resources>

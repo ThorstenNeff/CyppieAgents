@@ -134,4 +134,27 @@ class Cyp333ModeToggleTest {
         onNodeWithTag(AgentViewTags.modeToggleOrchestration("backend"), useUnmergedTree = true).assertIsEnabled()
         onNodeWithTag(AgentViewTags.modeToggleGateHint("backend"), useUnmergedTree = true).assertDoesNotExist()
     }
+
+    // --- live flip: the active Shell view shows the honest "bash worktree shell" note, never the gated note ---
+
+    @Test
+    fun operator_liveShellView_showsHonestShellNote_notGatedNote() = runComposeUiTest {
+        lateinit var vm: AgentViewModel
+        setContent {
+            MaterialTheme {
+                vm = remember { AgentViewModel(emptySession(), agentId = "backend", canControl = true) }
+                AgentWindow(agentId = "backend", viewModel = vm, terminalContent = fakeTerminal)
+            }
+        }
+        waitForIdle()
+        // Orchestrierung: no shell note yet (not looking at the shell), and never the gated note (backend is live).
+        onNodeWithTag(AgentViewTags.modeToggleShellNote("backend"), useUnmergedTree = true).assertDoesNotExist()
+        onNodeWithTag(AgentViewTags.modeToggleTerminalGated("backend"), useUnmergedTree = true).assertDoesNotExist()
+
+        // Switch to the live Shell view → honest "bash worktree shell" descriptor appears, gated note stays absent.
+        onNodeWithTag(AgentViewTags.modeToggleTerminal("backend"), useUnmergedTree = true).performClick()
+        waitForIdle()
+        onNodeWithTag(AgentViewTags.modeToggleShellNote("backend"), useUnmergedTree = true).assertExists()
+        onNodeWithTag(AgentViewTags.modeToggleTerminalGated("backend"), useUnmergedTree = true).assertDoesNotExist()
+    }
 }
