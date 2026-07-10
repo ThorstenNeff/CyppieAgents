@@ -52,7 +52,8 @@ const val MIN_WINDOW_HEIGHT: Float = 120f
  * The 164 dp header is **width-dependent**: the Start/Stop/Restart `TextButton` labels wrap below ~520 dp of
  * window width and the header Row grows with them (measured 320→164, 480→104, 520→56). `min-window-height-
  * spec.md` §2.1 derives 48 dp from the unwrapped Row, which only holds at >=520 dp. Stop the header from
- * wrapping (icon buttons / overflow, CYP-350) and this drops to 56 + 56 + 72 = 184.
+ * wrapping (icon buttons / overflow, CYP-350) and the header becomes its unwrapped 56 dp, taking this to
+ * 64 + 56 + 73 = 193 — every summand still measured; a measured and an arithmetic value must never share a sum.
  */
 const val CONTENT_WINDOW_MIN_HEIGHT: Float = 301f
 
@@ -64,10 +65,10 @@ const val CONTENT_WINDOW_MIN_HEIGHT: Float = 301f
  *
  * Rendered, not computed: the chrome summand comes from a measurement of the real composition, not from the
  * Material token arithmetic, because the header wraps at this class's own minimum width (see
- * [CONTENT_WINDOW_MIN_HEIGHT]). **This number falls to 274 once the header stops wrapping (CYP-350)** — it is
- * a measured consequence, not a chosen size, so do not round it. `tile` may squeeze a content window *below*
- * this, never below [CONTENT_WINDOW_MIN_HEIGHT] (spec §5). Does **not** replace the 120 dp floor for other
- * window types — they have no composer to lose.
+ * [CONTENT_WINDOW_MIN_HEIGHT]). **This number falls to 283 once the header stops wrapping (CYP-350)** —
+ * `193 + 90`, both summands measured. It is a measured consequence, not a chosen size, so do not round it.
+ * `tile` may squeeze a content window *below* this, never below [CONTENT_WINDOW_MIN_HEIGHT] (spec §5). Does
+ * **not** replace the 120 dp floor for other window types — they have no composer to lose.
  */
 const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 391f
 
