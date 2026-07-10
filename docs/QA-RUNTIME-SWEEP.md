@@ -28,7 +28,8 @@ enthielt **eine einzige** Datei (Rest meiner gefilterten Läufe), und die 217 `s
 Also einmal frisch: `--rerun-tasks --continue` über `server · connector-core · core · app:shared ·
 remote-runtime · e2e` auf sauberem `ec9c537`.
 
-**1972 Testfälle, 169,7 s gesamt. 39 über 1 s, einer über 3 s.**
+**1972 Testfälle, 169,7 s gesamt. 43 über 1 s, einer über 3 s.**
+*(Ein Zwischenstand nannte 39, ein weiterer 28. Beide waren Artefakte meiner eigenen Sondenläufe — siehe §10.)*
 
 ---
 
