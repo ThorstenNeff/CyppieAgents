@@ -130,10 +130,79 @@ class AgentViewModel(
     /** CYP-335: distinguishes successive connection-loss notices (see the `catch` below). */
     private var connErrorSeq = 0
 
+    /**
+     * CYP-335 — **the second clock.** Stream rows are stamped by the *server*; [AgentEvent.UserTurn] and the
+     * `conn-error` [AgentEvent.Notice] are born here and can only read the *client's* clock. Two clocks feeding
+     * one ascending column is the [foldEvent] re-dating bug again, one level up: if the browser runs five
+     * minutes fast, your own message renders at `14:08` and the agent's reply beneath it at `14:03` — the agent
+     * answered before you asked.
+     *
+     * So client-born rows are stamped on the **server's** time base. At each fresh server event we record
+     * `skew = serverTs − clientNow`; a client-born row then takes `clientNow + skew`, i.e. the last server
+     * instant plus the wall time elapsed since. This corrects **both** directions — a clamp like
+     * `maxOf(now, lastServerTs)` only catches a browser running *slow*, and leaves the fast-browser case (the
+     * one that inverts the column) untouched.
+     *
+     * Only a **strictly newer** server timestamp updates the estimate. That guard is load-bearing, not
+     * paranoia: [StreamJsonMapper] re-emits a resolved `ToolCall` carrying its *start* time, and a reconnect
+     * replays history — either would otherwise drag the skew back to an old instant.
+     *
+     * **Bootstrap** is the case a skew alone cannot fix. The very first turn in a window happens before any
+     * server event exists, so there is nothing to anchor to and the row takes the raw client clock. The event
+     * that *establishes* the skew arrives afterwards — and lands below it. So the rows stamped while unanchored
+     * are recorded, and the first anchor re-expresses them on the server base (`ts + skew`). That is a change of
+     * time base, not a re-dating: their stamp was always a local estimate awaiting an anchor. Server rows are
+     * never touched.
+     *
+     * [clientStampMs] additionally clamps against the last rendered row, so a skew that shifts between two
+     * client rows still cannot make the column dip. Skew *and* clamp — the clamp alone catches only a slow
+     * browser, the skew alone leaves bootstrap open.
+     */
+    private var serverSkewMs: Long = 0L
+    private var lastServerTsMs: Long = Long.MIN_VALUE
+    private var clockAnchored: Boolean = false
+
+    /** Ids of client-born rows stamped before the first server event — re-based once the anchor arrives. */
+    private val unanchoredClientRows = mutableSetOf<String>()
+
+    /** Fold a freshly observed server timestamp into the skew estimate (monotonic; older stamps are ignored). */
+    private fun observeServerClock(eventTsMs: Long) {
+        if (eventTsMs <= lastServerTsMs) return
+        lastServerTsMs = eventTsMs
+        val skew = eventTsMs - nowMs()
+        serverSkewMs = skew
+        if (clockAnchored) return
+        clockAnchored = true
+        if (unanchoredClientRows.isEmpty()) return
+        // First anchor: lift the provisional client rows onto the server's time base. `now_turn + skew` is by
+        // construction ≤ this server event's stamp, so the column cannot dip at the hand-over.
+        _transcript.update { rows ->
+            rows.map { row -> if (row.id in unanchoredClientRows) row.shiftedBy(skew) else row }
+        }
+        unanchoredClientRows.clear()
+    }
+
+    /** The stamp for a row born in this client, on the server's time base, never below the row above it. */
+    private fun clientStampMs(): Long {
+        val onServerBase = nowMs() + serverSkewMs
+        val previous = _transcript.value.lastOrNull()?.tsMs ?: return onServerBase
+        // The clamp earns its keep when the CLIENT clock moves backwards (an NTP correction: wall-clock time is
+        // not monotonic — cf. doc 06 §6). The skew is only re-estimated on a server event, so between two client
+        // rows a backwards jump would otherwise sink the second one below the first.
+        return maxOf(onServerBase, previous)
+    }
+
+    /** Records a row born here so the first server event can re-base it (no-op once anchored). */
+    private fun clientBornRow(row: AgentEvent): AgentEvent {
+        if (!clockAnchored) unanchoredClientRows += row.id
+        return row
+    }
+
     init {
         viewModelScope.launch {
             try {
                 session.events.collect { event ->
+                    observeServerClock(event.tsMs)
                     _transcript.update { foldEvent(it, event) }
                 }
             } catch (e: CancellationException) {
@@ -150,10 +219,7 @@ class AgentViewModel(
                 // but the row must not depend on that for its honesty: wrap this in a retry loop tomorrow and the
                 // constant id turns into a silently-wrong clock.
                 _transcript.update {
-                    foldEvent(
-                        it,
-                        AgentEvent.Notice("conn-error-${connErrorSeq++}", "Verbindung zum Agenten verloren", nowMs()),
-                    )
+                    foldEvent(it, clientBornRow(AgentEvent.Notice("conn-error-${connErrorSeq++}", "Verbindung zum Agenten verloren", clientStampMs())))
                 }
             }
         }
@@ -175,7 +241,7 @@ class AgentViewModel(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         _transcript.update {
-            foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed, tsMs = nowMs()))
+            foldEvent(it, clientBornRow(AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed, tsMs = clientStampMs())))
         }
         session.sendMessage(trimmed)
     }

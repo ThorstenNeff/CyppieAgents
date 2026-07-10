@@ -3,7 +3,8 @@ package com.tneff.cyppieagents.agentview
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -34,8 +35,8 @@ class TranscriptTimeWasmTest {
     fun browserOffset_isAWholeMinuteAndWithinTheRangeOfRealZones() {
         val offset = clock.utcOffsetMs(clock.nowMs())
         assertEquals(0L, offset % 60_000L, "getTimezoneOffset() is in minutes; the conversion must stay whole")
-        // Real zones span UTC-12:00 … UTC+14:00. A sign error (the `-` on getTimezoneOffset) still lands inside
-        // this window, so the sign is pinned separately below.
+        // Real zones span UTC-12:00 … UTC+14:00. A sign error still lands inside this window, so the sign is
+        // pinned separately below.
         assertTrue(offset in -12 * 3_600_000L..14 * 3_600_000L, "offset out of the range of real zones: $offset")
     }
 
@@ -44,6 +45,10 @@ class TranscriptTimeWasmTest {
         // `getTimezoneOffset()` counts minutes BEHIND UTC, so it must be negated. Karma runs the browser in the
         // host's zone; whichever it is, `local = utc + offset` must reproduce the browser's own local hour.
         // Both readings use the SAME instant, so this cannot flake across an hour boundary.
+        //
+        // The acceptance zone is pinned to `America/St_Johns` (−03:30): under `TZ=UTC` this assertion is VACUOUS
+        // (`-0 == 0`), a whole-hour zone would not catch a half-hour bug, and a positive zone would not catch the
+        // sign. −03:30 catches both in one value.
         val nowMs = clock.nowMs()
         val fromOurSeam = formatLocalHhMm(nowMs, clock).substringBefore(':').toInt()
         assertEquals(browserLocalHours(nowMs), fromOurSeam, "our offset sign must agree with the browser's own hour")
@@ -56,11 +61,15 @@ class TranscriptTimeWasmTest {
     }
 
     @Test
-    fun transcriptRow_rendersItsTimestampInTheBrowser() = runComposeUiTest {
-        // 2026-07-09T20:19:46Z. The row must show whatever THIS browser's zone makes of it — computed through the
-        // same seam, so the assertion holds in CI (UTC) and on a developer's machine (Berlin) alike.
+    fun transcriptRow_rendersItsTimeCellInTheBrowser() = runComposeUiTest {
+        // A REAL Compose/skiko render of the transcript in headless Chrome — the CYP-216 class of failure that
+        // compiles cleanly and dies at runtime. Addressed by tag, because the cell's semantics are cleared.
+        //
+        // What this canNOT assert here: the labelled `contentDescription`. Compose resources do not resolve under
+        // the karma runner (see [composeResourcesDoNotResolveUnderKarma] — every `stringResource` reads as ""),
+        // so the announcement is pinned on the JVM instead (`TranscriptTimestampRenderTest`). Asserting it here
+        // would fail for the environment, not for the code.
         val stamp = 1_783_628_386_000L
-        val expected = formatLocalHhMm(stamp, clock)
         val session = object : AgentSession {
             override val events: Flow<AgentEvent> =
                 flowOf(AgentEvent.AssistantText("a-1", "hallo", complete = true, tsMs = stamp))
@@ -72,7 +81,32 @@ class TranscriptTimeWasmTest {
                 AgentWindow(agentId = "backend", viewModel = vm)
             }
         }
-        onNodeWithText(expected).assertExists()
+        onNodeWithTag(AgentViewTags.eventTime("backend", 0), useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun composeResourcesDoNotResolveUnderKarma() = runComposeUiTest {
+        // Pins the environment limitation above so it is a KNOWN fact, not a mystery for the next person: the
+        // agent header renders `a11y_agent_status` through `stringResource`, and NO node carries it here. If this
+        // test ever starts failing, resources DID become available — then the row above should assert its
+        // labelled description in the browser too, and this test should be deleted.
+        val session = object : AgentSession {
+            override val events: Flow<AgentEvent> = flowOf()
+            override fun sendMessage(text: String) {}
+        }
+        setContent {
+            MaterialTheme {
+                val vm = remember { AgentViewModel(session, "backend") }
+                AgentWindow(agentId = "backend", viewModel = vm)
+            }
+        }
+        val resourceBacked = onAllNodesWithContentDescription("status", substring = true, ignoreCase = true)
+            .fetchSemanticsNodes().size
+        assertEquals(
+            0,
+            resourceBacked,
+            "compose resources now resolve under karma — assert the labelled time announcement here and drop this test",
+        )
     }
 }
 
