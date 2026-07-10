@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -56,7 +55,7 @@ import com.tneff.cyppieagents.connector.ConnectorProviderChip
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.testing.testTagA11y
-import com.tneff.cyppieagents.window.COMPOSER_MIN_WIDTH
+import com.tneff.cyppieagents.window.COMPOSER_COMPACT_INPUT_THRESHOLD
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_status
 import kmpcyppieagents.app.shared.generated.resources.a11y_assistant_streaming
@@ -858,7 +857,7 @@ private fun MessageComposer(
     // CYP-26 §2.2: keep the input usable when the window is narrow. The input holds a min width; below
     // a threshold the "Senden" label degrades to a glyph (a11y label preserved) so nothing is truncated.
     BoxWithConstraints(modifier = modifier) {
-        val compact = maxWidth < COMPOSER_MIN_WIDTH.dp + 96.dp
+        val compact = maxWidth < COMPOSER_COMPACT_INPUT_THRESHOLD.dp + 96.dp
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -867,7 +866,7 @@ private fun MessageComposer(
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it },
-                modifier = Modifier.weight(1f).widthIn(min = COMPOSER_MIN_WIDTH.dp).testTag(AgentViewTags.input(agentId)),
+                modifier = Modifier.weight(1f).testTag(AgentViewTags.input(agentId)),
                 // Placeholder degrades by ellipsis, never character-wrap, in a narrow field.
                 placeholder = { Text("Nachricht an den Agenten…", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),

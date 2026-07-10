@@ -28,16 +28,29 @@ const val MIN_WINDOW_WIDTH: Float = 160f
 
 /**
  * Min width for tiled **content** windows (Agent/Comm) so the composer + send button stay usable
- * (CYP-26 §2.2; `COMPOSER_MIN_WIDTH` + send + padding). Does **not** replace the 160 dp floor for other
- * window types. Applied by [WindowReducer.tile] only when room allows — "fully visible" wins over it.
+ * (CYP-26 §2.2; [COMPOSER_COMPACT_INPUT_THRESHOLD] + send + padding). Does **not** replace the 160 dp floor for
+ * other window types. Applied by [WindowReducer.tile] only when room allows — "fully visible" wins over it.
  */
 const val TILED_CONTENT_WINDOW_MIN_WIDTH: Float = 320f
 
 /**
- * Content guarantee of the composer input field, in dp (CYP-26 §2.2). Below a window width that can't
- * fit input + send label, the send control degrades to an icon button rather than truncating.
+ * The composer input width **below which the send control degrades to a glyph**, in dp (CYP-26 §2.2).
+ *
+ * **CYP-370: the old name and KDoc lied.** This was `COMPOSER_MIN_WIDTH`, *"Content guarantee of the composer
+ * input field"* — but it guaranteed nothing. It was applied as `Modifier.weight(1f).widthIn(min = …)` on the
+ * input, where `weight(1f)` (fill=true) hands the field a **fixed** remaining width that `widthIn(min)` cannot
+ * exceed: below the value it was silently ignored, above it was redundant. Measured byte-identical at five widths
+ * with the `widthIn` present and removed. It could not even *be* a guarantee — 280 dp does not fit the 320 dp
+ * [TILED_CONTENT_WINDOW_MIN_WIDTH] floor (320 − padding − send button leaves ~236 dp), so enforcing it would have
+ * meant raising that floor to ~364 dp and undoing CYP-369/373.
+ *
+ * Its one live use is the **compact breakpoint**: a composer narrower than this plus ~96 dp of send-button chrome
+ * (`maxWidth < THRESHOLD + 96.dp`) switches "Senden" to a glyph with its a11y label kept, and the placeholder
+ * ellipsizes instead of wrapping. That is the real "usable when narrow" promise, and
+ * `Cyp370ComposerCompactBreakpointGuardTest` pins it. Renamed so the name states what it does, not what it failed
+ * to do.
  */
-const val COMPOSER_MIN_WIDTH: Float = 280f
+const val COMPOSER_COMPACT_INPUT_THRESHOLD: Float = 280f
 
 /** Smallest height a window may be resized to, in dp. */
 const val MIN_WINDOW_HEIGHT: Float = 120f
