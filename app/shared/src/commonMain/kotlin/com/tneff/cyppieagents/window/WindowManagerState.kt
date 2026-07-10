@@ -137,6 +137,26 @@ object WindowReducer {
     fun invariantMinHeight(isContent: Boolean): Float =
         if (isContent) CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
 
+    /**
+     * CYP-373 — the width floor a window may never sink below, by window class. **The twin of
+     * [invariantMinHeight], and it did not exist.**
+     *
+     * Every *placement* path asked `minWidthFor(id)` and got 320 dp for a content window. Every *mutating* path
+     * (`resizeBy`, the host-shrink clamp, the Expand→Restore clamp) passed `minHeight` and let `minWidth` fall
+     * through to its `MIN_WINDOW_WIDTH = 160` default. **The width was protected when a window was created and
+     * unprotected the moment anyone touched it** — CYP-338's asymmetry, mirrored onto the other axis. Measured on
+     * untouched `develop`: `resizeBy(id, -10_000, 0)` on a content window returned **160 dp**.
+     *
+     * That is not cosmetic. At 320 dp the agent header has 6 dp of slack (CYP-369 measured 298 dp of content in
+     * 304 dp of usable width). At 160 dp only 144 dp are usable: **one drag of the resize grip undoes CYP-369**
+     * and the operator loses Stop and Restart again.
+     *
+     * `isContent` is the Agent/Comm class (they carry a composer). ACL, Event-Log, Settings, Roster and the other
+     * reading surfaces keep the plain floor: a window with nothing to type into does not need room to type.
+     */
+    fun invariantMinWidth(isContent: Boolean): Float =
+        if (isContent) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+
     /** Moves the window with [id] to the front (end) of the stack. No-op if absent or already front. */
     fun bringToFront(windows: List<WindowState>, id: String): List<WindowState> {
         val index = windows.indexOfFirst { it.id == id }
@@ -246,7 +266,7 @@ object WindowReducer {
         val usableH = hostHeight - HOST_AFFORDANCE_BAND - 2f * EXPAND_MARGIN
         val prefW = if (isContent) EXPAND_PREFERRED_CONTENT_W else EXPAND_PREFERRED_DEFAULT_W
         val prefH = if (isContent) EXPAND_PREFERRED_CONTENT_H else EXPAND_PREFERRED_DEFAULT_H
-        val typeMinW = if (isContent) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        val typeMinW = invariantMinWidth(isContent) // CYP-373: one source, not a fourth hand-inlined copy
         // CYP-338: the height had MIN_WINDOW_HEIGHT one line below the width's typeMinW — the same asymmetry.
         val typeMinH = if (isContent) TILED_CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
         val width = minOf(prefW, usableW).coerceAtLeast(typeMinW)
@@ -297,7 +317,7 @@ object WindowReducer {
         // min-width — on a narrow Medium host (2 × min > host) fall to a single column instead of
         // placing overlapping "fully-visible" windows. Uses the content floor when any content window is
         // present (its 320 dp dominates), else the 160 dp floor; ignored until the host is measured.
-        val widestMinWidth = if (items.any { it.first in contentWindowIds }) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        val widestMinWidth = invariantMinWidth(items.any { it.first in contentWindowIds }) // CYP-373
         // Non-overlap criterion: N columns need N·min + (N−1)·gap ≤ host (edge-to-edge, no outer margin)
         // → N ≤ (host + gap) / (min + gap). So two 320 dp content windows drop to one column once the
         // host can't hold them without overlap (≈ 656 dp), but a roomier Medium keeps two.
@@ -323,7 +343,7 @@ object WindowReducer {
             val col = i % columns
             val row = i / columns
             val isContent = id in contentWindowIds
-            val minWidth = if (isContent) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+            val minWidth = invariantMinWidth(isContent) // CYP-373
             val width = cellWidth.coerceAtLeast(minWidth)
             // CYP-338 (spec §5): "fully visible wins" — a crowded grid may squeeze a content window BELOW
             // TILED_CONTENT_WINDOW_MIN_HEIGHT, but never below the composer invariant. Flooring the cell at the
@@ -413,7 +433,10 @@ class WindowManagerState(
             // CYP-338: the same class-scoped floor on the clamp path — a host resize must not squeeze a
             // content window below its composer.
             val resized = WindowReducer.clampSizeToBounds(
-                it, width, height, minHeight = WindowReducer.invariantMinHeight(it.id in contentWindowIds),
+                it, width, height,
+                // CYP-373: BOTH axes. Passing only `minHeight` let the width fall to the 160 dp default.
+                minWidth = WindowReducer.invariantMinWidth(it.id in contentWindowIds),
+                minHeight = WindowReducer.invariantMinHeight(it.id in contentWindowIds),
             )
             WindowReducer.clampToBounds(resized, width, height)
         }
@@ -444,7 +467,7 @@ class WindowManagerState(
      *  is how [resetTo]'s fallback came to disagree with [placeNewWindow] on the width while agreeing on the
      *  height. */
     private fun minWidthFor(id: String): Float =
-        if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        WindowReducer.invariantMinWidth(id in contentWindowIds)
 
     /** The height twin of [minWidthFor] (CYP-338). */
     private fun minHeightFor(id: String): Float =
@@ -461,8 +484,16 @@ class WindowManagerState(
      * kept correct anyway because the next change to the call order makes it reachable, and because a second,
      * divergent sizing rule beside [placeNewWindow] is the actual defect: it is why this branch was right on the
      * height (CYP-338 fixed it here) and wrong on the width (160 dp for a content window) at the same time.
-     * Both axes now come from [minWidthFor]/[minHeightFor], so a future third dimension cannot go stale in one
-     * place and not the other.
+     * Both axes here come from [minWidthFor]/[minHeightFor].
+     *
+     * **CYP-373: that used to read "so a future third dimension cannot go stale in one place and not the other",
+     * and it was already false when it was written.** It described the *placement* paths. The *mutating* paths —
+     * `resizeBy`, the host-shrink clamp, the Expand->Restore clamp — passed `minHeight` and let `minWidth` fall
+     * through to its 160 dp default, so a content window was 320 dp wide right up until anyone dragged it. A
+     * sentence that generalises from the paths it inspected to the ones it did not is exactly how the defect it
+     * warns about survives. The single source is now [WindowReducer.invariantMinWidth] /
+     * [WindowReducer.invariantMinHeight], and `Cyp373InvariantMinWidthGuardTest` enumerates the shrinking paths
+     * instead of trusting this paragraph.
      */
     fun resetTo(
         desired: List<Pair<String, String>>,
@@ -583,6 +614,8 @@ class WindowManagerState(
             dWidth = dWidth,
             dHeight = dHeight,
             // CYP-338: without this the user simply drags the composer back out of an agent window.
+            // CYP-373: and without the width twin, the same drag takes Stop/Restart out of the header.
+            minWidth = WindowReducer.invariantMinWidth(id in contentWindowIds),
             minHeight = WindowReducer.invariantMinHeight(id in contentWindowIds),
             maxWidth = maxWidth,
             maxHeight = maxHeight,
@@ -613,6 +646,7 @@ class WindowManagerState(
             val restored = WindowReducer.clampToBounds(
                 WindowReducer.clampSizeToBounds(
                     anchor, hostWidth, hostHeight,
+                    minWidth = WindowReducer.invariantMinWidth(id in contentWindowIds), // CYP-373
                     minHeight = WindowReducer.invariantMinHeight(id in contentWindowIds), // CYP-338
                 ),
                 hostWidth, hostHeight,
