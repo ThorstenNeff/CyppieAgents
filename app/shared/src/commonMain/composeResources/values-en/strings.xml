@@ -567,4 +567,11 @@
     <!-- CYP-333 live flip (CYP-348): honest descriptor in the active shell view — it is a bash worktree shell
          (git status/ls/inspect), NOT the agent session; the claude same-session terminal arrives with BE-2. -->
     <string name="terminal_shell_note">bash worktree shell</string>
+    <!-- CYP-354 §5.1 (client mirror): read-only terminal-control mode marker in the title bar. MEDIATED = no marker.
+         Form+label carry the meaning (WCAG 1.4.1); content-free (state only). -->
+    <string name="terminal_ctl_interactive">Interactive</string>
+    <string name="terminal_ctl_handing_over">Handing over…</string>
+    <string name="terminal_ctl_handing_back">Handing back…</string>
+    <string name="terminal_ctl_context_lost">Context lost</string>
+    <string name="a11y_terminal_ctl">Terminal mode: %1$s</string>
 </resources>
