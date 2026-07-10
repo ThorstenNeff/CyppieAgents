@@ -273,6 +273,60 @@ redundant sichtbar; die Ausnahme trägt über die Zahl, nicht über Redundanz. W
 
 **Eine Ausnahme ohne Grund verrottet** — der Nächste liest sie als „DEBUG darf alles".
 
+### 5.3 Der Pill-Satz, wörtlich
+
+Zum Einsetzen in Spec und Test-KDoc:
+
+> **Die Regel gilt dem Farbpaar, nicht der Rolle.**
+> `outline` als **Container** hinter `surface`-farbenem Inhalt ist **dasselbe Paar** wie `outline`-Inhalt auf
+> `surface` — identischer Kontrast (**3,55:1** hell / **3,63:1** dunkel), nur mit vertauschten Seiten. Eine
+> Prüfung, die `outline` als **Vordergrund** sucht, ist gegen diesen Fall **strukturell blind**: dort ist
+> `outline` der Hintergrund. Geprüft wird deshalb der **Kontrast des Paares**, gleich aus welcher Rolle es
+> entsteht — `Text(color = …)` über `background(…)`, `(container, onColor)`-Paare, `BorderStroke` gegen seinen
+> Untergrund.
+
+### 5.4 **Erfassen statt benennen** — und warum das kein Stilwunsch ist
+
+Der PO fragt, ob die Regel den Fall erfassen soll, statt ihn im KDoc zu benennen. **Ja. Und die Begründung
+steht in unserem eigenen Audit:**
+
+> Eine Grenze, die nur im Kommentar lebt, ist **Wurzel B, fünfte Ausprägung** — Dokumentation als
+> Stellvertreter für Code (`observation-vs-derivation-audit.md` §6.3). Sie berichtet die Absicht zum Zeitpunkt
+> des Schreibens, nicht den heutigen Zustand. Genau so hat uns `AgentShell.kt:188` in die falsche Schicht
+> geführt.
+
+**Zwei Prüfungen, komplementär, weil die Klauseln verschiedene Naturen haben:**
+
+| Klausel | Prüfung | Art |
+|---|---|---|
+| **(1)** „färbt keinen Text (menschliche Sprache)" | **Quell-Guard** (`OutlineTextGuardTest`, Muster CYP-303): `outline*` darf nicht `color =` eines `Text` sein. Ausnahmen **an der Renderstelle**, Grund = die Zahl. | bezeichnerbasiert — *muss* es sein: nur der Mensch sieht, ob eine Zeichenfolge Sprache ist |
+| **(2)+(3)** „≥ 3:1 **oder** redundant · Paar, nicht Rolle" | **Paar-Test** (`SeverityContrastTest`, neu): berechnet den **Kontrast**, statt nach Namen zu suchen | wertbasiert — **rollenblind, farbblind, zukunftssicher** |
+
+**Der Paar-Test ist billig und total.** `severityColorFor(sev, scheme, dark)` und `severityContainerFor(...)`
+sind **reine** Funktionen (`EventVisuals.kt:72/80`) — keine Composition nötig. Der Test iteriert **4 Severities
+× 2 Schemes** und prüft drei Paare je Zelle: Vordergrund gegen `surface`, `onColor` gegen `container`,
+`container` gegen `surface`. Schwelle **3:1** (Grafikobjekt), Ausnahme **DEBUG-Rail** (1,90:1) mit
+**benanntem** Träger (`·`-Glyph + Typtext daneben, `EventRowUi.kt:134`).
+
+**Er hätte die Pill gefunden, ohne `outline` je zu erwähnen.** Und er findet den Fall von übermorgen, in dem
+jemand eine ganz andere Farbe einsetzt.
+
+**Mutationsprobe:** `severityContainerFor(DEBUG)` von `outline` (3,55:1) auf `outlineVariant` (**1,41:1**)
+ziehen ⇒ **rot**. Wird er das nicht, prüft er die Rolle statt das Paar.
+
+> **Was der Automat nicht kann:** Klausel **(2b)** — „wird redundant getragen" — ist eine Aussage über die
+> *danebenstehende* Oberfläche. Sie bleibt eine **geprüfte, benannte** Ausnahmeliste mit dem **Träger** je
+> Eintrag: UNKNOWN-Punkt → Statuslabel + `a11y_agent_status`; Avatar-Rahmen → `primary` + `3.dp` +
+> `selected`-Semantics; DEBUG-Rail → Glyph + Typtext. **Wer einen Träger entfernt, muss den Eintrag streichen.**
+> Das ist der einzige Teil der Regel, der ein Mensch bleibt — und deshalb der einzige, der aufgeschrieben
+> gehört.
+
+**Und zum Namen:** dass Developer5 `certifiedDecorativeUses` in `permittedOutlineUses` umbenannt hat, ist mehr
+als Kosmetik. Der alte Name **behauptete** „dekorativ" — und genau das sind die zwei DEBUG-Fälle **nicht**:
+sie sind visuell erforderlich und bestehen über die Zahl. Ein Feldname, der eine falsche Begründung mitführt,
+ist dieselbe Falle wie eine Ausnahme ohne Grund. Jeder Eintrag sollte seinen Grund als Text tragen, z. B.
+`reason = "· ist keine menschliche Sprache → 1.4.11 → 3,55:1 ≥ 3:1; NICHT redundant"`.
+
 ### 5.3 Was der Guard **nicht** anfassen darf
 
 Fundstellen 6–8 (Statuspunkte, Avatar-Rahmen) sind Dekor und tragen über Klausel (2b). Ein Guard, der sie
