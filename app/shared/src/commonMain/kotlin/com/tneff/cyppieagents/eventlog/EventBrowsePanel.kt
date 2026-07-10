@@ -350,11 +350,11 @@ private fun DetailPane(
         if (sel == null) return@Column
         Column(modifier = Modifier.fillMaxWidth().testTag(EventBrowseTags.DETAIL)) {
             Text("${sel.typeText()} · ${severityLabel(sel.severity)}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
-            Text("${formatTs(sel.ts)} · seq ${sel.seq} · ${sel.agentId}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${formatLocalHhMmSsMillis(sel.ts)} · seq ${sel.seq} · ${sel.agentId}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // sourceTs is "observed", never authoritative (§5.2).
             sel.sourceTs?.let {
                 Text(
-                    text = stringResource(Res.string.event_detail_source_ts, formatTs(it)),
+                    text = stringResource(Res.string.event_detail_source_ts, formatLocalHhMmSsMillis(it)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag(EventBrowseTags.DETAIL_SOURCE_TS),

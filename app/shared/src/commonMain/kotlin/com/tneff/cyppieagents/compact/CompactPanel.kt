@@ -32,7 +32,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.eventlog.EventRow
-import com.tneff.cyppieagents.eventlog.formatTs
+import com.tneff.cyppieagents.eventlog.formatLocalHhMmSsMillis
 import com.tneff.cyppieagents.eventlog.severityColor
 import com.tneff.cyppieagents.model.CompactConfig
 import com.tneff.cyppieagents.model.CompactStatus
@@ -204,7 +204,7 @@ fun CompactPanel(
 
             val statusText = when {
                 !s.allowed -> stringResource(Res.string.compact_status_off)
-                s.running -> stringResource(Res.string.compact_status_running, s.lastRun?.startedTs?.let { formatTs(it) } ?: "—")
+                s.running -> stringResource(Res.string.compact_status_running, s.lastRun?.startedTs?.let { formatLocalHhMmSsMillis(it) } ?: "—")
                 else -> stringResource(Res.string.compact_status_idle)
             }
             LabelValueRow(

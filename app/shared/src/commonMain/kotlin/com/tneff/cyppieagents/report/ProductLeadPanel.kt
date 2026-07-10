@@ -28,7 +28,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.tneff.cyppieagents.eventlog.formatTs
+import com.tneff.cyppieagents.eventlog.formatLocalHhMmSsMillis
 import com.tneff.cyppieagents.eventlog.severityColor
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
@@ -157,7 +157,7 @@ private fun SnapshotList(state: ProductLeadUiState, viewModel: ProductLeadViewMo
             val snapshotA11y = stringResource(
                 Res.string.a11y_report_snapshot_select,
                 stringResource(reportTypeLabel(meta.type)),
-                formatTs(meta.generatedAt),
+                formatLocalHhMmSsMillis(meta.generatedAt),
             )
             Column(
                 modifier = Modifier
@@ -174,7 +174,7 @@ private fun SnapshotList(state: ProductLeadUiState, viewModel: ProductLeadViewMo
                 )
                 // "As of: <ts>" on the row — a snapshot, not a live status.
                 Text(
-                    text = stringResource(Res.string.report_as_of, formatTs(meta.generatedAt)),
+                    text = stringResource(Res.string.report_as_of, formatLocalHhMmSsMillis(meta.generatedAt)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag(ProductLeadTags.snapshotTs(meta.id)),
@@ -210,7 +210,7 @@ private fun DetailPane(
         if (snap == null) return
         // Prominent "As of" — snapshot ≠ live, restated with the may-be-outdated hint.
         Text(
-            text = stringResource(Res.string.report_as_of, formatTs(snap.generatedAt)),
+            text = stringResource(Res.string.report_as_of, formatLocalHhMmSsMillis(snap.generatedAt)),
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.testTag(ProductLeadTags.DETAIL_AS_OF).semantics { heading() },
         )

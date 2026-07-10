@@ -21,7 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.tneff.cyppieagents.eventlog.formatTs
+import com.tneff.cyppieagents.eventlog.formatLocalHhMmSsMillis
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -79,7 +79,7 @@ fun CrossProjectControls(
 
         // Status line: shared (when + concrete reach) or the explicit fail-closed default. Both neutral INFO.
         val statusText = if (state.shared) {
-            stringResource(Res.string.crossproject_status_shared, formatTs(state.sharedAt ?: 0L), membersSummary(state.reachableMembers))
+            stringResource(Res.string.crossproject_status_shared, formatLocalHhMmSsMillis(state.sharedAt ?: 0L), membersSummary(state.reachableMembers))
         } else {
             stringResource(Res.string.crossproject_status_not_shared)
         }
