@@ -37,11 +37,31 @@ live processes on one session. For hand-back to preserve context, the **interact
 - **X1 substrate / X2 CLI version:** logged (tmpfs, `~/.claude`, `2.1.206`). ✅
 - **X3 read-only tail:** the concurrent observer is a **read-only fd**; interactive and mediated never run
   concurrently on one sid (single-flight honored). ✅
-- **B(iii) real bind seam:** proven at the **CLI/observable** level — the resume re-emits the sid at
-  `system/init` (exactly what `ClaudeCodeSession.onBind` / `awaitStartupOutcome` consume ⇒ BOUND) **and**
-  recalls context. The dedicated JVM proof through `ResumingSession.awaitStartupOutcome()` +
-  `PtyManager` is available on request (`coexistence_proof.py` mirrors the observable contract); the
-  CYP-330 #11 **negative** misclassification is a separate concern already covered by CYP-330's own teeth.
+- **B(iii) real seam — DONE (not just CLI-level):** `Cyp344PtyManagerCoexistenceProofTest` drives the
+  interactive turn through the **actual `PtyManager.open()`** (pty4j, `TERM=xterm-256color` + initial
+  `WinSize`, real TUI argv, no `--print`) and passes: liveness proven (the TUI recalls the mediated needle),
+  graceful `exit=0`, the interactive needle **persists to the same cwd-derived `<sid>.jsonl`** (whole-tree
+  file-content scan), and the mediated `--resume` recalls both. The resume re-emits the sid at `system/init`
+  (= what `ClaudeCodeSession.onBind`/`awaitStartupOutcome` consume ⇒ BOUND). CYP-330 #11's **negative**
+  misclassification is a separate concern already covered by CYP-330's own teeth.
+
+## Reviewer false-negative hardening (FN-1..5) — all cleared through the real seam
+`Cyp344PtyManagerCoexistenceProofTest` (gated `RUN_CYP344=1`, billed; NOT in the normal gate):
+- **FN-1** real `PtyManager.open` seam (not a hand-rolled `PtyProcessBuilder`) + **proven interactive
+  liveness** (TUI recalls the mediated needle). ✅
+- **FN-2** file check **post-exit + `sync`** (no same-second race). ✅
+- **FN-3** "nowhere vs elsewhere": scan the **whole `~/.claude/projects` tree** by content, cwd/HOME/
+  `CONFIG_DIR` identity logged (interactive == mediated) — needle lands in the expected cwd-derived
+  `<sid>.jsonl`, nowhere else. ✅
+- **FN-4** oracle = **direct transcript file-content** (needle bytes in `<sid>.jsonl`), resume-recall only
+  as secondary. ✅
+- **FN-5** CLI `2.1.206`, real TUI argv (no `--print`/stream-json). ✅
+
+**Env-hygiene confirmed empirically here too:** the test JVM's own environment carried `CLAUDE_CODE_*`, yet
+the PtyManager-spawned interactive claude **persisted** — so `PtyProcessBuilder.setEnvironment(minimal-map)`
+**replaces** the child env (pty4j does not merge the parent's), and production `PtyManager` does **not**
+propagate the nested vars. The explicit-strip recommendation below is therefore **optional defense-in-depth**,
+not required.
 
 ## The one real finding for BE-2/CYP-332 (env hygiene)
 The spike first returned a **false negative** ("interactive never persists"). Root cause (Context7,
