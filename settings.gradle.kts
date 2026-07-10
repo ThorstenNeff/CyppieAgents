@@ -25,6 +25,11 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
+        // CYP-334: JediTerm (Desktop terminal widget) is distributed via JetBrains' intellij-dependencies repo,
+        // not Maven Central. Scoped to the jediterm group so it never intercepts other artifacts' resolution.
+        maven("https://cache-redirector.jetbrains.com/intellij-dependencies") {
+            mavenContent { includeGroup("org.jetbrains.jediterm") }
+        }
     }
 }
 

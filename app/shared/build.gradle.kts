@@ -56,6 +56,13 @@ kotlin {
             // Desktop/JVM Ktor engine so the agent WS (CYP-6 swap) actually connects at runtime.
             // Other targets now provide their own engine per source set (android=okhttp, ios=Darwin, web=js).
             implementation(libs.ktor.clientCio)
+            // CYP-334: JediTerm terminal widget for the Desktop `TerminalView` actual (Swing, jvm-only). We feed it
+            // a WsTtyConnector over PTY-over-WS — NOT pty4j (that is the server's PTY). coroutines-swing supplies the
+            // Compose-Desktop Main/EDT dispatcher backing `rememberCoroutineScope()`; the byte-pump itself runs on
+            // Dispatchers.IO (never the EDT — a full-pipe blocking write on the UI thread would freeze it).
+            implementation(libs.jediterm.core)
+            implementation(libs.jediterm.ui)
+            implementation(libs.kotlinx.coroutinesSwing)
         }
         iosMain.dependencies {
             // iOS Ktor client engine (Darwin) so the engine-less HttpClient {} in AgentShell can
