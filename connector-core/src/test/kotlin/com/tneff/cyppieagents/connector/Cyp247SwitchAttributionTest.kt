@@ -24,8 +24,9 @@ import kotlin.test.assertEquals
  * collect body: [SessionObserver.onEvent] (→ `onContextTokens → tokenUsage`) and [onTurnResult] (→
  * `hub.postAsAgent`). Both read "the active project" at the moment they fire. A switch A→B must, per S3:
  *  - **drain the outgoing session BEFORE `rescope`** (the r3 reorder), and
- *  - `closeAndAwait` must **`cancelAndJoin`** the reader (r4) so an in-flight `ResultEvent` body completes
- *    still under `active()==A` before the drain returns.
+ *  - `closeAndAwait` must **join the reader to quiescence** (r4) so an in-flight `ResultEvent` body completes
+ *    still under `active()==A` before the drain returns. (Since CYP-371 it reaches that by `destroy()` then
+ *    `join()`, not the old `cancelAndJoin` — a cancel would sever the very body this waits for.)
  *
  * We simulate the switch with a controllable [active] flag (the "rescope") and hold the reader body in-flight
  * with a non-suspending sleep (faithful: the real body has no suspension point between reading the line and
@@ -89,7 +90,8 @@ class Cyp247SwitchAttributionTest {
         proc.feed(resultLine("s1"))  // triggers the in-flight ResultEvent body (observer sleep)
         withTimeout(5_000) { bodyStarted.await() } // the body is now in-flight, under active()==A
 
-        // The switch, done RIGHT: drain (closeAndAwait → cancelAndJoin waits for the body) THEN rescope.
+        // The switch, done RIGHT: drain (closeAndAwait destroys then JOINS the reader, waiting for the body —
+        // CYP-371, not cancelAndJoin) THEN rescope.
         session.closeAndAwait()
         active = "B" // rescope — only AFTER the outgoing session is quiescent
 

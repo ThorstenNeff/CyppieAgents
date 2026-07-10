@@ -15,7 +15,8 @@ import kotlin.test.assertNull
  * Scope note (honest): this pins the end-to-end teardown-on-switch outcome, NOT the *synchronous-before-rescope
  * ordering* — a liveness check cannot distinguish the r3 synchronous drain from the async `onActivated` eviction
  * (which also stops alpha, just after `rescope`). The ordering that makes in-flight attribution correct (drain
- * BEFORE rescope + `cancelAndJoin`) is the load-bearing, mutation-verified [com.tneff.cyppieagents.connector
+ * BEFORE rescope, joining the reader to quiescence — `destroy()` then `join()` since CYP-371, not the old
+ * `cancelAndJoin`) is the load-bearing, mutation-verified [com.tneff.cyppieagents.connector
  * .Cyp247SwitchAttributionTest] (both `active()`-read axes attribute to the OUTGOING project).
  */
 class Cyp247TeardownOnSwitchE2eTest {

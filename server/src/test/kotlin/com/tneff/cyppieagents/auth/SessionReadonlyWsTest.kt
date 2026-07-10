@@ -25,9 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import io.ktor.client.request.post
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -167,15 +168,22 @@ class SessionReadonlyWsTest {
     /**
      * CYP-372: Der Fake spricht **eine** Zeile. Ein Agenten-Socket ohne jede Ausgabe kann seine Zulassung nur
      * durch *ausbleibendes Schliessen* belegen — also durch Abwesenheit. Mit einer Zeile belegt er sie durch
-     * einen ausgelieferten Frame. Danach bleibt der Flow offen (kein EOF: das waere ein Prozessende).
+     * einen ausgelieferten Frame. Der Kanal bleibt offen, solange der Prozess lebt.
+     *
+     * CYP-371: `destroy()` schliesst den stdout-Kanal — wie ein echter Prozess unter SIGTERM. Seit CYP-371 wartet
+     * `closeAndAwait` (destroy → JOIN, kein cancel) darauf, dass der Reader **EOF** erreicht, statt ihn hart zu
+     * canceln. Der frühere `flow { emit(…); delay(MAX) }` mit `destroy(){}`-No-op modellierte einen Prozess, der
+     * SIGTERM ignoriert und nie EOF liefert — der Join lief dann in seinen 5s-Backstop und riss CYP-372s
+     * 1000ms-Liveness-Frist (`restart` → `removeAndAwait` → `closeAndAwait`). Ein bei `destroy()` geschlossener
+     * Channel modelliert das echte Prozessende und ist das Muster jedes anderen Channel-Fakes im Repo.
      */
     private class FakeProcess : AgentProcess {
-        override val stdoutLines: Flow<String> = flow {
-            emit("""{"type":"system","subtype":"init","session_id":"probe-1"}""")
-            kotlinx.coroutines.delay(Long.MAX_VALUE)
+        private val lines = Channel<String>(Channel.UNLIMITED).apply {
+            trySend("""{"type":"system","subtype":"init","session_id":"probe-1"}""")
         }
+        override val stdoutLines: Flow<String> = lines.receiveAsFlow()
         override suspend fun writeLine(line: String) {}
-        override fun destroy() {}
+        override fun destroy() { lines.close() } // real destroy closes stdout → the reader reaches EOF (CYP-371)
     }
 
     private fun bootFake(): BootedPlatform {

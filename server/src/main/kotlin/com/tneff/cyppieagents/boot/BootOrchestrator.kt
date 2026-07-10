@@ -653,8 +653,9 @@ class BootOrchestrator(
         // CYP-167 — so start() re-spawns with --resume); resume = start exactly those agents again. The
         // runtime OBJECT is kept in memory either way (full reclaim = CYP-247.5). Runs on the boot scope.
         // CYP-247 S3 — drain (stop, awaited) all of a project's RUNNING agent sessions; returns the set stopped.
-        // `lifecycle.stop` is removeAndAwait → `ClaudeCodeSession.closeAndAwait` which now cancelAndJoins the
-        // reader (r4), so on return NO in-flight `active()`-read outlives this call. Reused by BOTH the async LRU
+        // `lifecycle.stop` is removeAndAwait → `ClaudeCodeSession.closeAndAwait`, which destroys the process then
+        // JOINS the reader (r4; CYP-371 — not the old cancelAndJoin), so on return NO in-flight `active()`-read
+        // outlives this call (bar the 5 s flush-timeout backstop, CYP-374). Reused by BOTH the async LRU
         // eviction (a cap>1 background victim) AND the synchronous drain-before-rescope on the switch (r3).
         suspend fun drainProject(pid: String): Set<String> {
             val rt = runtimeRegistry.of(pid) ?: return emptySet()
