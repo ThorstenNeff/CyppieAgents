@@ -14,11 +14,14 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
 import com.tneff.cyppieagents.model.UserTurn
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -112,7 +115,18 @@ class Cyp330RestartRobustnessTest {
         // The restart scenario: open the resume-facade session and start it, but send NO turn.
         val session = connector.open("backend", "backend", "default")
         val seen = CopyOnWriteArrayList<StreamJsonEvent>()
-        scope.launch { session.events.collect { seen.add(it) } }
+        // CYP-341: attach the collector DETERMINISTICALLY. `session.events` is a replay=0 SharedFlow, so a
+        // collector coroutine that (under a host-load spike, e.g. compact-orchestration) subscribes LATE would
+        // miss the fresh session's `system/init` emitted by `sendTurn` below and red this test — a false
+        // negative on the merge-gate path. Await confirmed subscription (via `onSubscription`) BEFORE the emit,
+        // so the guarantee is by construction, not a widened timeout.
+        val subscribed = CompletableDeferred<Unit>()
+        scope.launch {
+            (session.events as SharedFlow<StreamJsonEvent>)
+                .onSubscription { subscribed.complete(Unit) }
+                .collect { seen.add(it) }
+        }
+        subscribed.await()
 
         // The PROACTIVE probe must detect the stale resume died unbound and clear the durable entry — with NO
         // turn. Before the fix (turn-only heal) the entry stays "STALE" and this times out → RED.
