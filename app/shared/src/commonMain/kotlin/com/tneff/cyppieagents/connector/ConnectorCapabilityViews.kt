@@ -191,6 +191,14 @@ fun ConnectorCapabilityBadge(
     /** CYP-280: caps read in flight → suppress the badge entirely. `null` caps during a load ("not loaded yet")
      *  must NOT read as `○ not-reported`; the honest `○` is only for a SETTLED-null (genuinely unreported). */
     loading: Boolean = false,
+    /**
+     * CYP-350: glyph-only. The badge's word is 199 dp wide with its label and 48 dp without — in a 320 dp window
+     * that difference is the whole reason Stop and Restart had no width left (CYP-369). Dropping the WORD is not
+     * dropping the disclosure: the glyph still marks the axis, the [contentDescription] is unchanged (a screen
+     * reader reads the same sentence at every width), and the sentence itself lives in the panel this badge opens.
+     * The badge stays a 48 dp target either way.
+     */
+    compact: Boolean = false,
 ) {
     // CYP-280: while the caps are still loading (e.g. a fresh project switch), show no fidelity claim at all —
     // a transient `○` on a full-fidelity agent is actively wrong (worse than absence).
@@ -222,7 +230,7 @@ fun ConnectorCapabilityBadge(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(glyph, color = color, style = MaterialTheme.typography.bodySmall)
-        Text(label, color = color, style = MaterialTheme.typography.bodySmall)
+        if (!compact) Text(label, color = color, style = MaterialTheme.typography.bodySmall, maxLines = 1)
     }
 }
 
