@@ -137,7 +137,9 @@ fun Application.installPlatform(
                     booted.runtimeRegistry.getOrCreate(pid, booted.projectRuntimeFactory)
                     // CYP-247 S3 (r3): synchronously DRAIN + STOP the OUTGOING project's sessions (awaited) BEFORE
                     // the flip, so any in-flight ResultEvent is attributed under active()==outgoing (correct channel
-                    // + projectId stamp + tokenUsage) and the reader is quiescent (r4 cancelAndJoin). This is a
+                    // + projectId stamp + tokenUsage) and the reader is quiescent (r4): closeAndAwait destroys
+                    // then JOINS the reader (CYP-371 — not the old cancelAndJoin), so no active()-read outlives
+                    // the drain, UNLESS the 5 s flush timeout fires (the one residual hole, CYP-374). This is a
                     // distinct synchronous switch step — NOT the async LRU eviction below (which stays async for a
                     // cap>1 background victim; the "never inline" contract is untouched).
                     // Only in teardown-on-switch mode (cap==1, the S3 default): with cap>1 the outgoing project
