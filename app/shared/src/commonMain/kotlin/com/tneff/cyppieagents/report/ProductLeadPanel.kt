@@ -256,7 +256,10 @@ private fun DefectRow(index: Int, item: ReportItem) {
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Severity rail: symbol (not colour alone) + the reused severity label, tagged with the qualifier.
+        // Severity rail: the symbol carries the meaning, never colour alone. The severity label is the glyph's
+        // `contentDescription` — it is NOT rendered beside it (CYP-345: the false premise that a visible label
+        // backs this glyph up is exactly what made its contrast exemption look redundancy-based; it is not —
+        // `severityColor(DEBUG)` = `outline` passes on the number, 3.55:1 ≥ 3:1, WCAG 1.4.11).
         val label = stringResource(severityLabel(severity))
         Text(
             text = severityGlyph(severity),
