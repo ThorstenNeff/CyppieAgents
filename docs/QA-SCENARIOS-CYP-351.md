@@ -61,6 +61,27 @@ observer?.onProcessExit(agentId, boundSessionId)   // :113 — ohne waitFor(), o
 Der Kommentar behauptet, was der Code nicht weiß — dieselbe Signatur-lügt-Beobachtung wie bei
 `processExit(exitCode: Int?)`.
 
+**Und der Vertrag lügt mit.** `AgentProcess.stdoutLines`, KDoc:
+
+> *„NDJSON lines from the agent's stdout. **The flow completes when the process ends.**"*
+
+Er endet, wenn der **Stream** endet.
+
+### In Kotlin nachgemessen, nicht nur in Python erschlossen
+
+Die python-Sonde belegt POSIX-Semantik. Sie belegt **nicht**, dass `AgentProcess` sich so verhält. Also habe ich
+den echten Spawner (`AgentProcess.kt:66-86`) Zeile für Zeile nachgebaut — `ProcessBuilder("sh","-c", …)`,
+`redirectError(DISCARD)`, `inputStream.bufferedReader().useLines { … }`, `flowOn(Dispatchers.IO)` — und den Flow
+gegen `exec 1>&-; sleep 3` gefahren:
+
+```
+assertTrue(proc.isAlive)                       // nach dem collect  → BESTANDEN
+assertTrue(afterWait - afterCollect > 1000)    // lebte > 1 s weiter → BESTANDEN
+```
+
+`:connector-core:test` → **1 Test, 0 Fehler.** Der Flow endet, der Prozess lebt. *(Wegwerf-Sonde, wieder entfernt
+— sie gehört, falls gewünscht, in Backend2s Modul, nicht in meinen Testplan.)*
+
 *(Nebenbei, gegen Backend2s Werkzeug-Hinweis: Auf diesem Host beendet `sh -c "sleep 2"` die Pipe sofort nach
 `kill` — die eingebaute `exec`-Optimierung von `dash` greift. Der Hinweis bleibt richtig, ist aber
 shell-abhängig. **`exec` gehört trotzdem in jeden Testbefehl** — man verlässt sich nicht auf eine Optimierung.)*
