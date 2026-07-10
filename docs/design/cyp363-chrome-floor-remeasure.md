@@ -17,7 +17,7 @@ sondern weil CYP-333 eine vierte Chrome-Zeile eingezogen hat und die Zahl ihr ni
 
 ## 1. Wie gemessen wurde
 
-Vier Compose-UI-Testsonden gegen `origin/develop` (`f04b372`), JVM, `runComposeUiTest` — **kein Browser, kein
+Sechs Compose-UI-Testsonden gegen `origin/develop` (`f04b372`), JVM, `runComposeUiTest` — **kein Browser, kein
 Emulator** (Auftraggeber-Regel). Bounds über `getUnclippedBoundsInRoot()`; Zeilen, die keinen eigenen `testTag`
 tragen, wurden aus der **Lücke zwischen zwei getaggten Kanten** gemessen, nicht aus ihren Kindern. Quelle im
 Anhang (§7), damit niemand sie nachrechnen muss.
@@ -91,7 +91,53 @@ transcriptHeight=0   inputHeight=5.0   assertIsDisplayed=true
 hier **grün**. Das ist kein hypothetischer Einwand, es ist die gemessene Ausgabe — und der Grund, warum der
 Guard in §4 die **Höhe** vergleicht, nicht die Sichtbarkeit.
 
-### 2.4 Zwei Pfade, zwei verschiedene Defekte
+### 2.4 Der fünfte Zustand ist gemessen: `lifecycleError` = **+20 dp**
+
+In der ersten Fassung ließ ich `lifecycleError` ungemessen und nannte deshalb keine Zahl. Auf die Auflage des
+PO („der Boden muss ihre höchste Form kennen") habe ich nachgemessen:
+
+| Fehlercode | Breite | Zeilenhöhe | Chrome wächst um |
+|---|---|---|---|
+| `already_running` („Läuft bereits") | 320 | 16 dp | **20 dp** |
+| `operator_required` („Nur der Operator darf den Agenten steuern") | 320 | 16 dp | **20 dp** |
+| `operator_required` | 640 | 16 dp | **20 dp** |
+
+**Der lange Text bricht bei 320 dp nicht um** — gemessen, nicht angenommen: er passt in eine `labelSmall`-Zeile.
+`16 + 2 × 2 dp` Polsterung = **20 dp**.
+
+> **Empfehlung, mit ihrem Preis:** Die Fehlerzeile **gehört in den Boden budgetiert**. Sie erscheint genau dann,
+> wenn der Operator handeln muss — und drückt heute in eben diesem Moment die Eingabezeile heraus, mit der er
+> handeln würde. **Der Preis: jedes Inhaltsfenster wird dauerhaft 20 dp höher, für einen seltenen Zustand.**
+> Ich halte den Handel für richtig; die Alternative (den Fehler ins scrollbare Rechteck legen) macht ihn
+> wegscrollbar und ist dann keine Offenlegung mehr. **Es ist eine Produktentscheidung — sag Nein, dann rechne
+> ich ohne die 20.**
+
+### 2.5 Der Nebenbefund, der schwerer wiegt als das Ticket: **bei 320 dp sind Stopp und Neustart nicht bedienbar**
+
+Meine `lifecycleError`-Sonde lief bei 320 dp in einen Timeout — der Klick auf `restartBtn` erreichte das
+ViewModel nie. Das war **kein Sondenfehler**. Gemessen:
+
+| Breite | Start | Stopp | Neustart |
+|---|---|---|---|
+| **320 dp** | `w = 15 dp`, `h = 116 dp`, displayed | **`w = 0 dp`, `displayed = false`** | **`w = 0 dp`, `displayed = false`** |
+| 640 dp | `w = 59`, `h = 40` ✓ | `w = 58`, `h = 40` ✓ | `w = 76`, `h = 40` ✓ |
+
+Die `Row` misst ihre ungewichteten Kinder der Reihe nach. Nach den Chips und dem `Spacer(weight(1f))` bleibt für
+die drei Knöpfe fast nichts: **Start** bekommt 15 dp und stapelt seine Buchstaben zu einer 116 dp hohen Säule;
+**Stopp** und **Neustart** bekommen **null**. (Die 156 dp des Neustart-Knopfs plus `2 × 4 dp` Polsterung sind
+exakt die gemessenen 164 dp Header-Höhe — die Zahl erklärt sich selbst.)
+
+> **In einem gekachelten Agentenfenster kann der Operator den Agenten heute weder stoppen noch neu starten.**
+> Die einzigen Genesungs-Affordanzen des Fensters sind unerreichbar, und **Start** verletzt mit 15 dp Breite die
+> Zielgröße aus **WCAG 2.5.8** (24 dp).
+
+Damit ist **CYP-350 keine Layout-Hygiene, sondern die Reparatur eines Bedienbarkeits-Defekts.** Meine eigene
+CYP-350-Spec behauptete nur, der Header *wachse*; dass die Knöpfe dabei *verschwinden*, stand nirgends.
+
+**Und die gescheiterte Sonde war der Beweis:** ein Klick, der nicht ankommt, ist eine Messung. Ich habe die
+Fehlerzeile danach am Knopf vorbei ausgelöst (`vm.restart()`) — sonst hätte ich §2.4 nie messen können.
+
+### 2.6 Zwei Pfade, zwei verschiedene Defekte
 
 | Pfad | Fenster | was gemessen wurde | Test heute |
 |---|---|---|---|
@@ -109,15 +155,28 @@ Und die **Kachel-Zusage** ist trotzdem gebrochen: der KDoc verspricht bei `TILED
 
 ## 3. Die neuen Zahlen
 
-Alle Summanden **natürlich gemessen**, ungünstigster **ausgelieferter** Zustand (Operator + Hinweis, 320 dp):
+Alle Summanden **natürlich gemessen**, bei 320 dp. Zwei Fassungen, weil §2.4 eine **Produktentscheidung**
+verlangt: zählt die Fehlerzeile in den Boden oder nicht?
+
+**A — ohne Fehlerzeile** (Zustand: Operator + Hinweis, ausgeliefert):
 
 | Konstante | heute | **neu (gemessen)** | nach CYP-350 |
 |---|---|---|---|
-| `CONTENT_WINDOW_MIN_HEIGHT` = 64 + Header + `ModeToggleRow` + 73 | `301` | **`385`** | **`277`** |
+| `CONTENT_WINDOW_MIN_HEIGHT` = 64 + Header + 84 + 73 | `301` | **`385`** | **`277`** |
 | `TILED_CONTENT_WINDOW_MIN_HEIGHT` = obiges + 90 | `391` | **`475`** | **`367`** |
 
-- heute: `64 + 164 + 84 + 73 = 385`, `+ 90 = 475`
-- nach CYP-350 (Header unbedingt 56 dp): `64 + 56 + 84 + 73 = 277`, `+ 90 = 367`
+**B — mit Fehlerzeile** (die *höchste* Form, `+ 20 dp`) — **meine Empfehlung:**
+
+| Konstante | heute | **neu (gemessen)** | nach CYP-350 |
+|---|---|---|---|
+| `CONTENT_WINDOW_MIN_HEIGHT` = 20 + 64 + Header + 84 + 73 | `301` | **`405`** | **`297`** |
+| `TILED_CONTENT_WINDOW_MIN_HEIGHT` | `391` | **`495`** | **`387`** |
+
+- A heute: `64 + 164 + 84 + 73 = 385`, `+ 90 = 475` · nach CYP-350: `64 + 56 + 84 + 73 = 277`, `+ 90 = 367`
+- B heute: `385 + 20 = 405`, `+ 90 = 495` · nach CYP-350: `277 + 20 = 297`, `+ 90 = 387`
+
+> **Ein Minimum, das nur die günstigste Form trägt, ist kein Minimum.** Deshalb B. Aber die 20 dp kosten jedes
+> Fenster Höhe, dauerhaft — deshalb steht die Entscheidung beim PO, nicht bei mir.
 
 > **Die `283` im KDoc (`:68`) ist zu streichen.** Sie stammt aus derselben toten Komposition (ohne
 > Toggle-Zeile). Ersatz wäre **`367`** — aber **erst, wenn CYP-350 gelandet ist**. Bis dahin gehört dort **keine
@@ -132,17 +191,22 @@ Eine korrigierte Zahl hält bis zur nächsten Chrome-Zeile. Der Guard hält län
 zwei Renderings miteinander, nicht ein Rendering gegen eine hartkodierte Zahl.** Damit steht in ihm **keine
 einzige Chrome-Konstante** — er kann nicht veralten, so wie die 301 veraltet ist.
 
-### G1 — Der Boden ist *exakt* das Chrome (bidirektional)
+### G1 — Der Boden ist *exakt* das Chrome der **höchsten** Form (bidirektional)
 
-Zwei Renderings derselben Komposition bei 320 dp Breite:
+Zwei Renderings derselben Komposition bei 320 dp Breite, **beide im maximalen Chrome-Zustand** (Operator +
+Hinweis + Fehlerzeile — der Zustand, den §3-B budgetiert):
 
 1. **großzügig** (z. B. 700 dp hoch) → misst die **natürliche** Höhe der Eingabezeile `hᵢ`.
 2. **am Boden** (`CONTENT_WINDOW_MIN_HEIGHT`) → dort muss gelten:
 
 ```
-assert inputHeight   == hᵢ     // nicht gestaucht — NICHT bloss assertIsDisplayed (§2.3)
+assert inputHeight      == hᵢ   // nicht gestaucht — NICHT bloss assertIsDisplayed (§2.3)
 assert transcriptHeight == 0    // kein Rest: der Boden ist das Chrome, nichts darüber
 ```
+
+> **Der maximale Zustand ist der einzige, in dem `transcriptHeight == 0` gelten darf.** In jedem *kleineren*
+> Zustand bleibt Rest übrig — das ist kein Fehler, das ist der Sinn eines Bodens, der die höchste Form trägt.
+> Ein Guard, der `== 0` in *irgendeinem* Zustand fordert, würde die Budgetierung aus §2.4 wieder verbieten.
 
 **Warum beide Richtungen rot werden:**
 
@@ -166,11 +230,22 @@ künftige Chrome-Wachstum durch, solange nur *irgendetwas* übrig bleibt — gen
 
 Die Chrome-Höhe hängt vom Zustand ab. Der Guard misst das Kreuzprodukt bei 320 dp
 
-`{Operator, Nicht-Operator} × {Shell gegattert, Shell live}`
+`{Operator, Nicht-Operator} × {Shell gegattert, Shell live} × {kein Fehler, Fehler}`
 
-und fordert, dass der Boden dem **Maximum** entspricht. Kommt ein Zustand hinzu, der höher ist, wird er rot.
-`lifecycleError` ist ein **fünfter, ungemessener Zustand** (bedingte Zeile über dem Header, `AgentWindow.kt:144`)
-— ich habe ihn nicht gemessen und nenne deshalb **keine Zahl** für ihn. Der Guard muss ihn aufzählen.
+und fordert zweierlei:
+
+```
+assert  chromeHeight(zustand) <= CONTENT_WINDOW_MIN_HEIGHT   // für JEDEN Zustand
+assert  max(chromeHeight)     == CONTENT_WINDOW_MIN_HEIGHT   // der Boden ist die höchste Form, nicht mehr
+```
+
+Die erste Zeile fängt einen neuen, höheren Zustand. Die zweite fängt einen Boden, der über der höchsten Form
+steht — sonst wüchse er unbemerkt weiter.
+
+> **Ich habe die Bestandteile gemessen, nicht jede der acht Zellen.** Die drei Formen der `ModeToggleRow`
+> (52 / 68 / 84) und die Fehlerzeile (+20) stammen aus getrennten Messungen. Dass eine `Column` ihre Kinder
+> stapelt, ist Struktur und keine Vermutung — **trotzdem addiere ich die Kombinationen nicht, sondern verlange,
+> dass der Guard sie rendert.** Genau diese Abkürzung („die Summe wird schon stimmen") hat die `301` erzeugt.
 
 ### Mutationsproben (Abnahme = welche rot wurde, nicht „grün")
 
@@ -178,6 +253,7 @@ und fordert, dass der Boden dem **Maximum** entspricht. Kommt ein Zustand hinzu,
 |---|---|---|
 | MUT-1 | `Spacer(Modifier.height(8.dp))` ins feste Chrome | **G1 rot** (`inputHeight = hᵢ − 8`) |
 | MUT-2 | `ModeToggleRow(…)`-Aufruf entfernen | **G1 rot** (`transcriptHeight = 84`) |
+| MUT-2b | `LifecycleErrorRow`-Aufruf entfernen | **G1 rot** (`transcriptHeight = 20`) — nur unter §3-B |
 | MUT-3 | `CONTENT_WINDOW_MIN_HEIGHT += 1`, Chrome unverändert | **G1 rot** (`transcriptHeight = 1`) |
 | MUT-4 | `TILED_CONTENT_WINDOW_MIN_HEIGHT −= 1` | **G2 rot** (`transcriptHeight = 89`) |
 | MUT-5 | in G1 `assertIsDisplayed` statt `inputHeight == hᵢ` | **bleibt grün** — der Nachweis, dass die alte Assertion nicht trägt (§2.3) |
@@ -219,8 +295,12 @@ Die Höhen-Invariante des Headers (CYP-350 §1.1) bleibt davon unberührt: dort 
   wie die 301 veraltet ist.
 - **Der Guard ist bidirektional** und hat für jede Richtung eine benannte Mutation. MUT-5 beweist, dass die
   bestehende Assertion nicht ausreicht.
-- **Kein ungemessener Zustand wird beziffert:** `lifecycleError` bleibt ohne Zahl und wird stattdessen im Guard
-  aufgezählt.
+- **Kein ungemessener Zustand wird beziffert.** `lifecycleError` war in der ersten Fassung ohne Zahl; auf die
+  Auflage des PO ist er jetzt **gemessen** (+20 dp, §2.4). Die **Kombinationen** der Zustände addiere ich
+  weiterhin nicht — der Guard rendert sie (§4 G3).
+- **Der Nebenbefund in §2.5 ist schwerer als das Ticket:** bei 320 dp sind Stopp und Neustart `0 dp` breit und
+  nicht bedienbar, Start misst 15 dp (WCAG 2.5.8 fordert 24). Er kam aus einer **gescheiterten** Sonde — ein
+  Klick, der nicht ankommt, ist eine Messung.
 - **Eine eigene frühere Regel wurde eingeschränkt, nicht verteidigt** (§5).
 - **Docs-only.** Die Sonden aus §7 waren Messinstrumente und sind wieder entfernt; der Guard ist Lieferung der
   Entwicklung/des Testers, nicht meine.
