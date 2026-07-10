@@ -439,10 +439,30 @@ class WindowManagerState(
         expandAnchors = emptyMap()
     }
 
+    /** CYP-349: the ONE per-window minimum. Content windows (Agent/Comm) carry a composer and earn the wider
+     *  floor; everything else keeps the plain one. Every placement path asks this — a second, hand-inlined copy
+     *  is how [resetTo]'s fallback came to disagree with [placeNewWindow] on the width while agreeing on the
+     *  height. */
+    private fun minWidthFor(id: String): Float =
+        if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+
+    /** The height twin of [minWidthFor] (CYP-338). */
+    private fun minHeightFor(id: String): Float =
+        if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
+
     /**
      * Replaces the whole window set and lays it out as a fresh full tile (CYP-100). Used for the **first**
      * layout once the host is measured — every window is new, so there is nothing to preserve. Membership
      * and [windowOrder] are set from [desired] (registration order).
+     *
+     * **The unmeasured-host branch is unreachable today, and must still be correct.** `AgentShell` only calls
+     * `resetTo` from inside `if (hostWidth > 0f && hostHeight > 0f)`, so nothing renders these placeholders —
+     * measured by replacing the branch body with `error(…)` and running the whole suite green (CYP-349). It is
+     * kept correct anyway because the next change to the call order makes it reachable, and because a second,
+     * divergent sizing rule beside [placeNewWindow] is the actual defect: it is why this branch was right on the
+     * height (CYP-338 fixed it here) and wrong on the width (160 dp for a content window) at the same time.
+     * Both axes now come from [minWidthFor]/[minHeightFor], so a future third dimension cannot go stale in one
+     * place and not the other.
      */
     fun resetTo(
         desired: List<Pair<String, String>>,
@@ -455,13 +475,9 @@ class WindowManagerState(
             WindowReducer.tile(desired, hostWidth, hostHeight, isRtl = isRtl, contentWindowIds = contentWindowIds)
         } else {
             // Host not measured yet: stack at the band so they are at least valid; resetTo runs again on measure.
-            // CYP-338: even this placeholder honours the content floor — a window that renders before the first
-            // measure must not do so without its composer. (The matching WIDTH gap here — 160 dp for content
-            // windows instead of 320 — is spec §6's side-finding and a separate ticket; left untouched.)
+            // A window that renders before the first measure must not do so without its transcript or composer.
             desired.map { (id, title) ->
-                val isContent = id in contentWindowIds
-                val h = if (isContent) TILED_CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
-                WindowState(id, title, 0f, HOST_AFFORDANCE_BAND, MIN_WINDOW_WIDTH, h)
+                WindowState(id, title, 0f, HOST_AFFORDANCE_BAND, minWidthFor(id), minHeightFor(id))
             }
         }
     }
@@ -514,10 +530,10 @@ class WindowManagerState(
 
     /** First non-overlapping, fully-visible slot below the affordance band for a new window (CYP-100). */
     private fun placeNewWindow(existing: List<WindowState>, id: String, title: String, isRtl: Boolean): WindowState {
-        val minWidth = if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        val minWidth = minWidthFor(id)
         // CYP-338: the height twin of minWidth, and the reported bug. An agent window that arrives after the
         // first layout lands here; at the plain 120 dp floor it renders without transcript and without composer.
-        val minHeight = if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
+        val minHeight = minHeightFor(id)
         val w = if (hostWidth > 0f) minWidth.coerceAtMost(maxOf(minWidth, hostWidth)) else minWidth
         val h = if (hostHeight > 0f) minHeight.coerceAtMost(maxOf(minHeight, hostHeight - HOST_AFFORDANCE_BAND)) else minHeight
         if (hostWidth <= 0f || hostHeight <= 0f) return WindowState(id, title, 0f, HOST_AFFORDANCE_BAND, w, h)
