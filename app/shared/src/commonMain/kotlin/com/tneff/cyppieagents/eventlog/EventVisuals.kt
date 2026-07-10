@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import com.tneff.cyppieagents.agentview.TranscriptClock
+import com.tneff.cyppieagents.agentview.platformTranscriptClock
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
@@ -138,12 +140,16 @@ fun EventType.groupGlyph(): String = when (this) {
     EventType.UNKNOWN -> "ⓘ"
 }
 
+private const val DAY_MS = 86_400_000L
+
 /**
- * UTC wall-clock `HH:MM:SS.mmm` from epoch ms — millisecond-precise (§4 needs resolution for the load
- * test). No timezone lib in `commonMain`; display only — ordering is always by `seq`, never this (§5).
+ * CYP-336 — pure: the 24-hour `HH:MM:SS.mmm` of [tsMs] as seen from a zone [offsetMs] east of UTC.
+ *
+ * Floor-mod on the day, so a negative offset that pushes the instant back across midnight (or a pre-1970
+ * [tsMs]) wraps to the previous day's clock rather than producing a negative hour.
  */
-fun formatTs(ts: Long): String {
-    val dayMs = ((ts % 86_400_000L) + 86_400_000L) % 86_400_000L
+fun formatHhMmSsMillis(tsMs: Long, offsetMs: Long): String {
+    val dayMs = (((tsMs + offsetMs) % DAY_MS) + DAY_MS) % DAY_MS
     val h = dayMs / 3_600_000L
     val m = (dayMs / 60_000L) % 60L
     val s = (dayMs / 1_000L) % 60L
@@ -151,3 +157,22 @@ fun formatTs(ts: Long): String {
     fun p2(v: Long) = v.toString().padStart(2, '0')
     return "${p2(h)}:${p2(m)}:${p2(s)}.${millis.toString().padStart(3, '0')}"
 }
+
+/**
+ * CYP-336 — the operator's **local** wall clock, millisecond-precise: `HH:MM:SS.mmm`.
+ *
+ * **The name carries the frame of reference, not the KDoc.** Its predecessor was `formatTs`, which rendered
+ * **UTC** and said so only in a comment. Every caller read it as local time, and an operator in `Europe/Berlin`
+ * saw every event two hours off with nothing on screen to reveal it — a disclosure defect, shipped. A comment is
+ * where a frame of reference goes to die; a name is where it survives.
+ *
+ * Millisecond resolution is kept on purpose (§4: correlation and load-test need it). It is **not** replaced by
+ * [com.tneff.cyppieagents.agentview.formatLocalHhMm] — two resolutions for two audiences, but now **one clock**:
+ * both resolve their offset through the same per-instant [TranscriptClock] seam (CYP-335). The transcript row and
+ * the event that describes it can finally be read side by side.
+ *
+ * Display only. Ordering is always by `seq`, never by this string (§5) — see
+ * `Cyp336LocalTimestampTest.renderingDoesNotDecideOrder`.
+ */
+fun formatLocalHhMmSsMillis(tsMs: Long, clock: TranscriptClock = platformTranscriptClock()): String =
+    formatHhMmSsMillis(tsMs, clock.utcOffsetMs(tsMs))

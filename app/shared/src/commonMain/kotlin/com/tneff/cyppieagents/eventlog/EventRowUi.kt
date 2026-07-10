@@ -89,7 +89,7 @@ fun EventRow(
         return
     }
     val sevLabel = severityLabel(event.severity)
-    val desc = stringResource(Res.string.a11y_event_row, sevLabel, event.typeText(), event.agentId, formatTs(event.ts))
+    val desc = stringResource(Res.string.a11y_event_row, sevLabel, event.typeText(), event.agentId, formatLocalHhMmSsMillis(event.ts))
     // rowTag + contentDescription + click live on the OUTER container (Box) so they are unchanged whether
     // the row renders as 1 visual line (≥ EVENT_ROW_REFLOW_WIDTH) or 2 (CYP-158 §2.2). Same child nodes
     // and tags either way — only their grouping changes.
@@ -132,7 +132,7 @@ private fun TriageCells(event: Event, qualifierTag: String, byIdTag: String) {
             .background(event.severity.railColor(dark)).testTag(qualifierTag),
     )
     Text(event.severity.glyph(), style = MaterialTheme.typography.labelSmall)
-    Text(formatTs(event.ts), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
+    Text(formatLocalHhMmSsMillis(event.ts), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
     // Type: group glyph + monospace exact enum wire (aggregatable). Carries the id-stable tag.
     Text(
         text = "${event.type.groupGlyph()} ${event.typeText()}",
