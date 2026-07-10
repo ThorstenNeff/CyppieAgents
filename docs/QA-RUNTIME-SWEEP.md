@@ -151,3 +151,63 @@ Wartekonstante.** Der Name verspricht *synchron*. Ob die Zeit der Server-Boot is
 | 3 | Zeit-gefensterte Abwesenheits-Assertions (`doesNotChurn`) | **Fragilität** |
 
 **Der Produktionscode ist von 2 und 3 nicht betroffen** — betroffen ist, was wir über ihn zu wissen glauben.
+
+---
+
+## 9. Nachtrag: die zwei Sorten, getrennt
+
+**Zahl zuerst.** Von **43** Testfällen über 1,0 s haben **9** eine passende Konstante (Einzelwert, Summe **oder
+Vielfaches**), **34** nicht. Die 34 sind ganz überwiegend Postgres-/Container-Tests und Shell-Renderer —
+Infrastruktur.
+
+| Test | Laufzeit | Konstante | Sorte |
+|---|---:|---|---|
+| `SessionReadonlyWsTest.memberSession_admittedOnReadWs_…` | 4,546 s | 3 × `withTimeoutOrNull(1_500)` | **(a)** `null` ⇒ „zugelassen" |
+| `SessionReadonlyWsTest.cyp230_operatorSessionAdmitted_…` | 1,536 s | `withTimeoutOrNull(1_500)` | **(a)** derselbe Helfer |
+| `CommWsChurnReproTest.idleHeldOpenSocket_doesNotChurn` | 1,716 s | `delay(1_500)` | **(b) Zusicherung** — Abwesenheit von Churn |
+| `Cyp330RestartRobustnessTest.restartWithLiveResume_…` | 1,505 s | `delay(1_500)` | **(b) Zusicherung** — „wird nicht proaktiv gelöscht" |
+| `ResumingSessionExitTest.deathOfAStaleResumeAttempt_…` | 1,520 s | `withTimeoutOrNull(1_500)` | **(a′) korrekt** — mit positiver Kontrolle |
+| `J2IsolationE2eTest.heldCommConn_afterSwitch_dropsForeign` | 1,012 s | 4 × `delay(250)` | **(a′) korrekt** — expliziter *„positive control"* |
+| `J7ObservabilityE2eTest.metadataOnly_…` | 2,348 s | `withTimeout(2000)` | **(b′)** Timeout als **Schleifenende** eines `while(true) receive()` |
+| `J6AgentLifecycleE2eTest.wsLifecycle_snapshot_…` | 1,645 s | `withTimeout(1500)` | **(b′)** dito |
+| `AgentEventStoreTest.subscribe_concurrentAppendBurst_…` | 1,818 s | Stress-Konstanten | **ungeprüft** |
+
+### (a) — wo `null` zur Zusicherung wird
+
+`SessionReadonlyWsTest.memberAdmitted()` wartet auf ein `closeReason`, das bei Erfolg **nie kommt**, und liest
+das Ausbleiben als „zugelassen". **Ein Hang ist dort nicht nur unsichtbar — er ist das erwartete Ergebnis.**
+
+**Die Alternative steht bereits im Repo**, in `WireHandshakeTimeoutTest.handshookInTime_isNotReaped`:
+
+```kotlin
+delay(500)                                  // weit über der 200-ms-Frist
+sendFrame(WireSend("po-backend", "still alive"))
+assertIs<WireAck>(recv())                   // "a response proves the connection was not reaped"
+```
+
+**Er tut etwas, statt nichts zu beobachten.** Ein Frame hin, ein `Ack` zurück — der Socket ist *positiv* als
+lebend belegt, in Millisekunden statt in 1,5 Sekunden. Genau das braucht `memberAdmitted()`.
+
+### (b) — Zusicherung oder Bequemlichkeit?
+
+* `CommWsChurnReproTest`: **Zusicherung.** `assertEquals(1, connectedCount)` belegt, dass **einmal** verbunden
+  wurde — **nicht**, dass der Socket die 1,5 s überlebt hat. Stirbt er still und verbindet nie neu, bleibt der
+  Zähler 1 und der Test ist grün. **Die Vorbedingung, die fehlt, ist die Lebendigkeit am Ende des Fensters.**
+* `Cyp330RestartRobustnessTest`: **Zusicherung**, aber mit positiver Beobachtung (`assertNotNull(entry)`). Das
+  Fenster bleibt willkürlich: ein Löschen bei 1,6 s bestünde den Test.
+* `J7`/`J6`: **Bequemlichkeit** — der Timeout beendet eine `while(true) receive()`-Schleife. Der Test *zahlt*
+  die Konstante immer; sie misst nichts.
+
+---
+
+## 10. Zwei weitere Fehler von mir
+
+**Mein Abgleich kannte keine Vielfachen.** `SessionReadonlyWsTest` (4,546 s) hat eine Konstante von 1,5 s — der
+Helfer wird **dreimal** gerufen. Mein erster Lauf sortierte den wichtigsten Treffer des Sweeps unter „langsam
+ohne Erklärung" ein.
+
+**Und ich habe meine eigene Datenbasis zerstört.** Meine Wegwerf-Sonde lief mit `--tests '*ZzProbe*'` und hat
+`app/shared/jvmTest` von **193 Reports auf 1** reduziert. Die Zahl „über 1 s" fiel dadurch von 39 auf 28 — kein
+Befund, ein Artefakt. Wiederhergestellt, neu gerechnet: **43**.
+
+> **Ein gefilterter Testlauf ist ein Löschbefehl für den Rest des Reports.**
