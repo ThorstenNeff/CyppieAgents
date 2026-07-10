@@ -22,8 +22,9 @@ Zwei gemessene Gründe:
 
 ## 2. Die Messungen
 
-Alle am **echten** Stapel (`FloatingWindow` + `AgentWindow`), nicht an Konstantenarithmetik.
-Berichte je 0 s alt, `--rerun-tasks`.
+Alle am **gerenderten** Stapel (`FloatingWindow` + `AgentWindow`), nicht an Konstantenarithmetik — aber, wie
+sich unten zeigt, an einer **vereinfachten Komposition**. Die Zahlen aus §2.3 sind deshalb **obere Schranken**;
+lies sie zusammen mit „Die Abweichung 33 dp ↔ 0 dp". Berichte je 0 s alt, `--rerun-tasks`.
 
 ### 2.1 Was `assertIsDisplayed()` sieht
 
