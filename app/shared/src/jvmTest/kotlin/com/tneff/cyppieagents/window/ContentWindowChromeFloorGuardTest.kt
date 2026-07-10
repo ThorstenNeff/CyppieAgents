@@ -238,28 +238,64 @@ class ContentWindowChromeFloorGuardTest {
      * That removal is an *assumption about production*, and an assumption without a tripwire is how `301` was
      * born — only in reverse: not a row added without the constant following, but a row **removed from the state
      * space** that production can still bring back. Flip `WORKTREE_SHELL_LIVE_ENABLED` to `false` (a rollback, an
-     * emergency, a per-environment flag) and the note returns, the `ModeToggleRow` grows 52 dp -> 84 dp, it is
-     * the tallest chrome again — and a guard that no longer measures it stays **green while being too low.**
+     * emergency, a per-environment flag) and the note returns, the chrome grows 32 dp, it is the tallest chrome
+     * again — and a guard that no longer measures it stays **green while being too low.**
      *
-     * The obvious tripwire is "assert the gated note is absent". This is deliberately **not** that assertion. It
-     * would name the flag, and so it would only ever catch the flag: a constant renamed, a note moved, a fifth
-     * row nobody told this test about, and it is silent. Instead this measures the `ModeToggleRow` **as the real
-     * shell composes it** and demands that *some* enumerated state reproduce that height. The guard is then bound
-     * to the shipped composition rather than to the reason it looks the way it does — the same discipline as the
-     * floor itself, which compares measurements rather than remembering numbers.
+     * **Three shapes were considered, and two of them lie.**
+     *
+     *  1. *"Assert the gated note is absent, by tag."* Names the reason, not the property. A tag query for tag `X`
+     *     cannot see a node tagged `Y`: rename the note, move it, add a fifth row this test never heard of, and it
+     *     is silent. Silent means green.
+     *  2. *"Compare the real shell's full chrome sum, `window.height - content.height`, against the model."*
+     *     **This one saturates, and the shipped window is exactly where it saturates.** Measured: the agent window
+     *     renders at `winH = 265` — its floor, to the dp — with only `content = 20 dp` left. Add 32 dp of chrome
+     *     and the content rectangle clamps to `0`; the difference reports `+20`, not `+32`. Add 200 dp and it
+     *     still reports `+20`. **A guard that goes red at 20 dp and equally red at 200 dp has stopped measuring
+     *     and is only alarming** — and once someone lifts the floor above the window height it goes quiet. This is
+     *     the same sentence as the one at the top of this file: *a height read at the floor is a remainder, not a
+     *     height.* It was proposed as an obligation, and it fails its own test.
+     *  3. **Positions.** `content.top - window.top` is the chrome ABOVE the content rectangle — title bar, error
+     *     row, header, toggle row. It is a difference of two positions, so the `weight(1f)` rectangle collapsing
+     *     to zero does not touch it. It grows by exactly what the chrome grows by, and it keeps doing so long
+     *     after a remainder would have flatlined.
+     *
+     * So this measures the real shell's **upper chrome** and demands that *some* enumerated state reproduce it.
+     * The guard is bound to the shipped composition rather than to the reason it looks the way it does.
+     *
+     * [saturationWitness] guards the guard: positions stop being exact once the upper chrome alone exceeds the
+     * window, which shows up as a fully-squeezed composer. Rather than under-report, this fails and says so.
      */
     @Test
-    fun theRealShellsToggleRow_isAHeightThisGuardActuallyMeasures() {
-        val real = measureRealShellToggleRow()
-        val enumerated = shippedStates.associateWith { measureAgentWindow(it, GENEROUS).toggleRowHeight }
+    fun theRealShellsUpperChrome_isAHeightThisGuardActuallyMeasures() {
+        val real = measureRealShellChrome()
+        saturationWitness(real)
+
+        val titleBar = measureTitleBarOnTheRealShell()
+        val enumerated = shippedStates.associateWith { titleBar + measureAgentWindow(it, GENEROUS).upperChromeHeight }
         assertTrue(
-            enumerated.values.any { it == real },
-            "CYP-363: the real shell renders a ModeToggleRow of $real dp, and no state this guard enumerates " +
-                "produces that height (measured: ${enumerated.values.distinct().sorted()}).\n" +
+            enumerated.values.any { it == real.upperChrome },
+            "CYP-363: the real shell renders ${real.upperChrome} dp of chrome above its content rectangle, and no " +
+                "state this guard enumerates reproduces it (measured: ${enumerated.values.distinct().sorted()}).\n" +
                 "Some chrome variant is shipping that `shippedStates` does not know about — most likely the " +
-                "gated-shell note came back (`WORKTREE_SHELL_LIVE_ENABLED = false`), which makes the row 84 dp " +
-                "and the TALLEST shipped chrome. Enumerate the state, then let the floor follow the measurement.\n" +
+                "gated-shell note came back (`WORKTREE_SHELL_LIVE_ENABLED = false`), which adds 32 dp and is then " +
+                "the TALLEST shipped chrome. Enumerate the state, then let the floor follow the measurement.\n" +
                 "Enumerated states:\n" + enumerated.entries.joinToString("\n") { "  ${it.value} dp  ${it.key}" },
+        )
+    }
+
+    /**
+     * The window sits ON its floor (measured: 265 dp, `content = 20 dp`). Upper chrome stays exact while the
+     * composer still has height; once the composer is squeezed to nothing, the rows above it start absorbing the
+     * shortfall and the position difference stops tracking the chrome. That is the regime where shape (2) above
+     * lives permanently — this refuses to report from inside it.
+     */
+    private fun saturationWitness(real: RealShellChrome) {
+        assertTrue(
+            real.lowerChrome > 0f,
+            "CYP-363: the real shell's composer row has been squeezed to ${real.lowerChrome} dp, so this window " +
+                "has no slack left and `content.top` no longer tracks the chrome above it. The measurement below " +
+                "would under-report. Something has grown the chrome past the floor: fix the floor first — " +
+                "`theFloorIsExactlyTheTallestShippedChrome` is the test that knows by how much.",
         )
     }
 
@@ -269,8 +305,12 @@ class ContentWindowChromeFloorGuardTest {
         val transcriptHeight: Float,
         val inputHeight: Float,
         val chromeSum: Float,
-        /** Distance between the header's bottom and the content rectangle's top — the ModeToggleRow, whatever it holds. */
-        val toggleRowHeight: Float,
+        /**
+         * `content.top - host.top`: every chrome row ABOVE the content rectangle (error row + header + toggle
+         * row), expressed as a **position difference**, not as `host - content`. A remainder saturates the moment
+         * the content rectangle clamps to 0 dp; a position does not.
+         */
+        val upperChromeHeight: Float,
     )
 
     /**
@@ -290,17 +330,23 @@ class ContentWindowChromeFloorGuardTest {
         return titleBar
     }
 
-    /** The `ModeToggleRow` as the REAL shell composes it — the composition an operator gets, not one we invent. */
-    private fun measureRealShellToggleRow(): Float {
-        var toggle = Float.NaN
+    /** What the REAL shell composes above its content rectangle, plus the witness that the measurement still means something. */
+    private data class RealShellChrome(val upperChrome: Float, val lowerChrome: Float, val contentHeight: Float)
+
+    private fun measureRealShellChrome(): RealShellChrome {
+        lateinit var chrome: RealShellChrome
         runComposeUiTest {
             setContent { MaterialTheme { Box(Modifier.size(700.dp, 3_000.dp)) { RealShell() } } }
             awaitTag(AgentViewTags.input(AGENT_ID))
-            val header = bounds(AgentViewTags.header(AGENT_ID))
+            val window = bounds(WindowTestTags.window(AGENT_ID))
             val content = bounds(AgentViewTags.content(AGENT_ID))
-            toggle = (content.top - header.bottom).value
+            chrome = RealShellChrome(
+                upperChrome = (content.top - window.top).value,
+                lowerChrome = (window.bottom - content.bottom).value,
+                contentHeight = height(content),
+            )
         }
-        return toggle
+        return chrome
     }
 
     /** `AgentWindow` alone, in a host of exactly [availableHeight] — the height the window frame leaves it. */
@@ -345,9 +391,9 @@ class ContentWindowChromeFloorGuardTest {
             // sum by the clipped remainder — the same "a number I wrote down, not one the composition gave me"
             // mistake this whole ticket is about. Measured: a 2000 dp request renders ~500 dp.
             val hostHeight = height(bounds(HOST))
-            val hdr = bounds(AgentViewTags.header(AGENT_ID))
+            val host = bounds(HOST)
             measured = Measured(
-                toggleRowHeight = (content.top - hdr.bottom).value,
+                upperChromeHeight = (content.top - host.top).value,
                 transcriptHeight = height(content),
                 // The composer disappears entirely (not merely shrinks) if the column runs out — 0 dp, not absent.
                 inputHeight = if (input.isEmpty()) 0f else height(bounds(AgentViewTags.input(AGENT_ID))),
