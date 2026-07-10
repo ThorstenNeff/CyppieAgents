@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.connector.AgentProcess
 import com.tneff.cyppieagents.connector.ClaudeCodeSession
+import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.ProcessBuilderSpawner
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
@@ -165,6 +166,41 @@ class LifecycleObservedExitTest {
             AgentRunState.RUNNING, manager.runStateOf("backend"),
             "an unreadable exit status must not be read as a death",
         )
+    }
+
+    /**
+     * The handover window, closed deterministically instead of hoped away.
+     *
+     * The connector starts the process before `spawn` returns, so the agent can already be dead when the manager
+     * gets it. Two orderings both lost that death: subscribing too late dropped it into an empty listener list;
+     * subscribing before RUNNING was published let the "only a RUNNING agent transitions" guard discard it, and
+     * RUNNING was then written over a corpse. The session double here is **already ended** when handed over —
+     * no timing, no sleep — so `doSpawn` must end in ERROR and must not report RUNNING to its caller.
+     *
+     * Mutation: move `setRunState(RUNNING)` back after `addExitListener`, or drop the sticky replay in
+     * `ClaudeCodeSession`/`ResumingSession` → red.
+     */
+    @Test
+    fun agentThatDiesDuringTheHandover_isNeverPublishedAsRunning() = runBlocking {
+        /** A session that is over before anyone can subscribe: the sticky contract of `addExitListener`. */
+        val alreadyDead = object : ConnectorSession {
+            override val agentId = "backend"
+            override val events = kotlinx.coroutines.flow.emptyFlow<com.tneff.cyppieagents.model.StreamJsonEvent>()
+            override suspend fun sendTurn(turn: com.tneff.cyppieagents.model.UserTurn) {}
+            override fun close() {}
+            override fun addExitListener(listener: (exitCode: Int?) -> Unit) = listener(3) // replays the end it missed
+        }
+        val manager = LifecycleManager(
+            initialWorktrees = mapOf("backend" to "backend"),
+            sessions = ConnectorSessions(),
+            ensureWorktree = {},
+            spawn = { _, _ -> alreadyDead },
+        )
+
+        val reported = manager.start("backend")
+
+        assertEquals(AgentRunState.ERROR, manager.runStateOf("backend"), "a corpse must not hold a green dot")
+        assertNotEquals(AgentRunState.RUNNING, reported.runState, "start() must not report RUNNING about a dead agent")
     }
 
     @Test

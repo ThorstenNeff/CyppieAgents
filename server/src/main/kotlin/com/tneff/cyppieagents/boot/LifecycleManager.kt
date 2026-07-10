@@ -259,21 +259,33 @@ class LifecycleManager(
         // session keeps running: an unregistered `claude`, unreaped, still burning tokens. With the per-agent
         // mutex this can never happen — so if it ever does, we learn it here instead of in a token bill. (The
         // check lives here, not in `register()`, because the wire path displaces ON PURPOSE on reconnect,
-        // CYP-141/RC3.)
+        // CYP-141/RC3.) It runs BEFORE register (below, after RUNNING is published) so it sees the pre-spawn state.
         check(sessions.session(agentId) == null) {
             "agent '$agentId' already has a live session at spawn time — the per-agent lock was bypassed"
         }
-        // CYP-351: the spawner subscribes to its own session's death. Routing by construction — one connector
-        // serves every project, but each project has its OWN LifecycleManager, so only the manager that
-        // spawned this session knows it owns this agent's run state.
-        session.addExitListener { exitCode -> onObservedExit(agentId, exitCode) }
-        sessions.register(session)
         if (recorder != null && projector != null) {
             recorder.record(
                 if (restart) projector.agentRestarted(agentId) else projector.agentSpawned(agentId, worktreeName),
             )
         }
-        return setRunState(agentId, AgentRunState.RUNNING)
+        // CYP-351 — ORDER IS THE INVARIANT. The connector starts the process before it returns, so the agent can
+        // already be dead on this line. Publish RUNNING **first**, then subscribe: `addExitListener` is sticky,
+        // so the subscription replays an end that already happened. An observed death can therefore only
+        // overwrite RUNNING — never the reverse.
+        //
+        // Both orderings of the naive version lost that death. Subscribing after the process could die dropped it
+        // into an empty listener list — the observation never existed. Subscribing before RUNNING was published
+        // let `onObservedExit`'s "only a RUNNING agent may transition" guard discard it, and RUNNING was then
+        // written over a corpse. A spawn that dies instantly must end in ERROR, never in a green dot.
+        val running = setRunState(agentId, AgentRunState.RUNNING)
+        // Routing by construction: one connector serves every project, but each project has its OWN
+        // LifecycleManager, so only the manager that spawned this session owns this agent's run state.
+        session.addExitListener { exitCode -> onObservedExit(agentId, exitCode) } // may fire synchronously
+        sessions.register(session)
+        // Report what is true now, not what we intended: a session that died during the handover has already
+        // moved the state, and start/restart/boot must not be told RUNNING about a dead agent.
+        val settled = synchronized(lock) { status[agentId] }
+        return if (settled != null && settled != AgentRunState.RUNNING) AgentRunStateEvent(agentId, settled) else running
     }
 
     private fun setRunState(agentId: String, next: AgentRunState): AgentRunStateEvent {

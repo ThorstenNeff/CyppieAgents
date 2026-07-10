@@ -84,6 +84,40 @@ class ResumingSessionExitTest {
         assertEquals(Unit, withTimeoutOrNull(5_000) { heard.await() }, "the facade must forward its session's end")
     }
 
+    /**
+     * CYP-351 — a subscription that arrives **after** the session already ended must be handed the end, not
+     * silence. The connector starts the process before returning the session, so the run-state authority always
+     * subscribes late; an agent that dies inside that handover would otherwise die into an empty listener list.
+     * The observation would not be delayed, it would never exist.
+     *
+     * Mutation: drop the sticky replay in `addExitListener` (both here and in `ClaudeCodeSession`) → red.
+     */
+    @Test
+    fun aSubscriptionAfterTheEnd_replaysIt_insteadOfHearingSilence() = runBlocking {
+        val process = FakeProcess()
+        val live = session(process)
+        val facade = ResumingSession(
+            agentId = "backend", scope = scope, firstAttempt = live,
+            onResumeFailed = {}, respawnFresh = { error("not reached") },
+        )
+        // An early probe on the inner session tells us when the end has been published, without peeking at
+        // private state and without a sleep.
+        val published = CompletableDeferred<Unit>()
+        live.addExitListener { published.complete(Unit) }
+
+        facade.start()
+        process.bind("sess-live")
+        withTimeoutOrNull(2_000) { while (!live.everBound) delay(10) }
+
+        process.end()
+        assertEquals(Unit, withTimeoutOrNull(5_000) { published.await() }, "the session must have ended first")
+
+        val heard = CompletableDeferred<Unit>()
+        facade.addExitListener { heard.complete(Unit) } // the late subscriber
+
+        assertEquals(Unit, withTimeoutOrNull(2_000) { heard.await() }, "a late subscriber must be told the end")
+    }
+
     @Test
     fun deathOfAStaleResumeAttempt_isNotReported_becauseTheAgentDidNotDie() = runBlocking {
         // The first attempt ends unbound (no system/init) → the CYP-330 probe heals to a fresh session. The
