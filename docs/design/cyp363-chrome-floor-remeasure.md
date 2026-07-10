@@ -112,6 +112,39 @@ PO („der Boden muss ihre höchste Form kennen") habe ich nachgemessen:
 > wegscrollbar und ist dann keine Offenlegung mehr. **Es ist eine Produktentscheidung — sag Nein, dann rechne
 > ich ohne die 20.**
 
+### 2.4.1 Und am Boden **mit** Fehlerzeile? Gemessen — die Frage war falsch gestellt
+
+Gefragt war: *„Bei Bodenhöhe plus `LifecycleErrorRow` (+20 dp): ist die Eingabezeile noch sichtbar?"*
+Echte Shell, Fenster auf `CONTENT_WINDOW_MIN_HEIGHT = 301`, Fehlerzeile über den Semantik-`OnClick` ausgelöst
+(der Neustart-Knopf ist bei 320 dp nicht klickbar, §2.5):
+
+```
+ohne Fehlerzeile:  errorRow=0   header=164  toggleRow=73  transcript=0  composer=0  inputDisplayed=false
+MIT  Fehlerzeile:  errorRow=16  header=164  toggleRow=53  transcript=0  composer=0  inputDisplayed=false
+```
+
+> **Nein — aber sie war es vorher auch nicht.** Die Fehlerzeile *tötet* die Eingabezeile nicht; die war am
+> Boden bereits tot. Was die 20 dp bezahlen, ist die **Toggle-Zeile**: sie fällt von 73 auf **53**.
+
+**Die Fehlerzeile selbst überlebt vollständig (16 dp + 2×2 Polsterung).** Und das ist der eigentliche Befund:
+
+> **Die Reihenfolge der `Column` ist die Prioritätenliste — und sie steht genau verkehrt.**
+> Ganz oben, unantastbar: die **Fehlermeldung**. Ganz unten, als Erstes geopfert: die **Eingabezeile**, mit der
+> man auf den Fehler reagieren würde. Ein ungewichtetes Kind stirbt in Leserichtung von hinten.
+
+Es ist dieselbe Umkehrung wie im Header (CYP-369): *was nie verschwinden darf, wird zuletzt gemessen.* Zum
+dritten Mal heute steht die **Diagnose** sichtbar und die **Therapie** nicht. Der Guard-Name von Developer5
+(`…theFloorMakesNoPromiseAbout`) beschreibt den Zustand korrekt — Fassung **B** (§3) macht daraus eine Zusage.
+
+**Die Sonde prüfte sich selbst, bevor sie etwas behauptete:**
+
+```kotlin
+assertEquals(64f, titleBarH, "Titelleiste != 64 -> vereinfachte Komposition, Messung wertlos")
+assertEquals(1, gatedHint,  "gated hint fehlt   -> vereinfachte Komposition, Messung wertlos")
+```
+
+Ohne diese zwei Zeilen hätte ich wieder 36 dp gemessen und es nicht bemerkt.
+
 ### 2.5 Der Nebenbefund, der schwerer wiegt als das Ticket: **bei 320 dp sind Stopp und Neustart nicht bedienbar**
 
 Meine `lifecycleError`-Sonde lief bei 320 dp in einen Timeout — der Klick auf `restartBtn` erreichte das
