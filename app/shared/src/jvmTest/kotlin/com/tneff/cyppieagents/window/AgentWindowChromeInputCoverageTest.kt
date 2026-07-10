@@ -76,9 +76,9 @@ class AgentWindowChromeInputCoverageTest {
     )
 
     /**
-     * Inert, and **measured** so in [theInertBucketIsMeasuredNotBelieved]. The value is the chrome-provoking
-     * value used to prove the header height does not move — a value that makes the parameter render *the most* it
-     * can, so "unchanged height" is evidence and not luck. `null` means the default already is the provoking one.
+     * Inert, and **measured** so in [theInertBucketIsMeasuredNotBelieved]: each is rendered at a chrome-provoking
+     * value — the value that makes it render *the most* it can — and the upper chrome (header + toggle row) must
+     * be unchanged, so "unchanged" is evidence and not luck.
      */
     private val chromeInertByMeasurement: Map<String, String> = mapOf(
         "modifier" to "outer layout supplied by the window manager; padding/offset move the window, not its header",
@@ -153,13 +153,27 @@ class AgentWindowChromeInputCoverageTest {
     }
 
     /**
-     * The inert claim, measured. For each parameter in [chromeInertByMeasurement], render the header once at its
-     * default and once at a chrome-provoking value; the header height must be identical. An entry that actually
-     * shifts the header — the exact bug the coverage buckets exist to prevent someone hiding here — fails.
+     * The inert claim, measured. For each parameter in [chromeInertByMeasurement], render the window once at its
+     * default and once at a chrome-provoking value; the **upper inner chrome** — `content.top − header.top`,
+     * i.e. the header plus the mode-toggle row — must be identical.
+     *
+     * **Why `content.top − header.top` and not the header's own height, nor `content.top − window.top`.** The
+     * header-height probe (this file's first cut) proved only that the header does not grow; it would miss an
+     * inert parameter that rendered a **sibling row** between the header and the content rectangle — a row that
+     * moves chrome without touching the header. The floor guard's `content.top − window.top` catches that and
+     * more, but it is a *position* from the window's top, so `modifier = padding(20.dp)` shifts it and reports a
+     * false 20 dp of chrome. `content.top − header.top` is the span between two rows that padding moves *together*,
+     * so it is modifier-invariant and still grows for a header that gets taller or a row inserted below it. It
+     * carries all five inert parameters with no per-parameter special case — the same "positions, not remainders"
+     * discipline the floor tripwire uses, one corner over.
+     *
+     * Residual, named: a row rendered *above* the header (where only the `varied` `lifecycleError` lives today)
+     * shifts header and content together and would not be caught. No inert parameter renders there, and a new one
+     * cannot arrive unclassified — [everyAgentWindowParameter_isClassifiedForItsChromeEffect] forces the choice.
      */
     @Test
     fun theInertBucketIsMeasuredNotBelieved() {
-        val baseline = headerHeight { agentId, m -> AgentWindow(agentId, vm(), modifier = m) }
+        val baseline = upperInnerChrome { agentId, m -> AgentWindow(agentId, vm(), modifier = m) }
         val degraded = Capabilities(
             CapabilityStatus.UNAVAILABLE, CapabilityStatus.UNAVAILABLE, CapabilityStatus.LIMITED,
             CapabilityStatus.UNAVAILABLE, CapabilityStatus.AVAILABLE, ConnectorKind.STREAM_JSON,
@@ -180,10 +194,10 @@ class AgentWindowChromeInputCoverageTest {
         provoked.forEach { (name, content) ->
             assertEquals(
                 baseline,
-                headerHeight(content),
-                "CYP-363 [$name]: setting this parameter to a chrome-provoking value changed the header height " +
-                    "from $baseline dp. It is not inert — move it out of chromeInertByMeasurement into the bucket " +
-                    "that varies it, and give ChromeState a dimension for it.",
+                upperInnerChrome(content),
+                "CYP-363 [$name]: setting this parameter to a chrome-provoking value changed the upper chrome " +
+                    "(header + toggle row) from $baseline dp. It is not inert — move it out of " +
+                    "chromeInertByMeasurement into the bucket that varies it, and give ChromeState a dimension for it.",
             )
         }
     }
@@ -192,18 +206,22 @@ class AgentWindowChromeInputCoverageTest {
 
     private fun vm() = AgentViewModel(StubAgentSession(), AGENT_ID, canControl = true)
 
-    /** Header height of `AgentWindow`, rendered at a fixed size wide enough that the header is its stable line. */
-    private fun headerHeight(content: @Composable (String, Modifier) -> Unit): Float {
-        var h = Float.NaN
+    /**
+     * `content.top − header.top`: the header plus the mode-toggle row, measured as the gap between two internal
+     * rows so it is invariant to any outer `modifier`. Rendered wide enough (400 dp) that the header is its
+     * stable single line, and tall enough (900 dp) that the weighted content rectangle is not squeezed.
+     */
+    private fun upperInnerChrome(content: @Composable (String, Modifier) -> Unit): Float {
+        var span = Float.NaN
         runComposeUiTest {
             setContent { MaterialTheme { Box(Modifier.size(400.dp, 900.dp)) { content(AGENT_ID, Modifier) } } }
             waitUntil(timeoutMillis = 5_000) {
-                onAllNodesWithTag(AgentViewTags.header(AGENT_ID)).fetchSemanticsNodes().isNotEmpty()
+                onAllNodesWithTag(AgentViewTags.content(AGENT_ID)).fetchSemanticsNodes().isNotEmpty()
             }
-            val r = onNodeWithTag(AgentViewTags.header(AGENT_ID), useUnmergedTree = true).getUnclippedBoundsInRoot()
-            h = (r.bottom - r.top).value
+            fun top(tag: String) = onNodeWithTag(tag, useUnmergedTree = true).getUnclippedBoundsInRoot().top.value
+            span = top(AgentViewTags.content(AGENT_ID)) - top(AgentViewTags.header(AGENT_ID))
         }
-        return h
+        return span
     }
 
     // --- source scan ------------------------------------------------------------------------------------------
