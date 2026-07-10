@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.targets.js.testing.KotlinJsTest
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -120,4 +121,19 @@ kotlin {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
+}
+
+// CYP-342 — make the browser timezone a REPRODUCIBLE part of the build, not an ambient env var.
+//
+// `TZ=… ./gradlew wasmJsBrowserTest` is not a gate: TZ is not a task input, so an UP-TO-DATE task replays a
+// result recorded under a different zone. `karma.config.d/timezone.js` sets the zone the browser actually runs
+// in (karma launches Chrome as a child process, which inherits its `process.env`) — but Gradle does not track
+// that directory for the test task by default. Measured: editing the zone left the task UP-TO-DATE.
+//
+// Declaring it as an input closes the loop: change the zone, the tests re-run. The gate command then needs no
+// environment variable and no `--rerun-tasks`.
+tasks.withType<KotlinJsTest>().configureEach {
+    inputs.dir(layout.projectDirectory.dir("karma.config.d"))
+        .withPropertyName("karmaConfigD")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }

@@ -41,17 +41,24 @@ class TranscriptTimeWasmTest {
     }
 
     @Test
-    fun browserOffset_hasTheSignConventionCommonMainExpects() {
-        // `getTimezoneOffset()` counts minutes BEHIND UTC, so it must be negated. Karma runs the browser in the
-        // host's zone; whichever it is, `local = utc + offset` must reproduce the browser's own local hour.
-        // Both readings use the SAME instant, so this cannot flake across an hour boundary.
+    fun browserOffset_matchesTheBrowsersOwnWallClock_toTheMinute() {
+        // `getTimezoneOffset()` counts minutes BEHIND UTC, so it must be negated, and it is expressed in MINUTES.
+        // Whatever zone karma runs in, `local = utc + offset` must reproduce the browser's own wall clock.
         //
-        // The acceptance zone is pinned to `America/St_Johns` (−03:30): under `TZ=UTC` this assertion is VACUOUS
-        // (`-0 == 0`), a whole-hour zone would not catch a half-hour bug, and a positive zone would not catch the
-        // sign. −03:30 catches both in one value.
+        // CYP-343: compare the full `HH:mm`, not just the hour. An hour-only assertion is blind to a half-hour
+        // error for most of the day — a dropped 30-minute component only crosses an hour boundary part of the
+        // time, so the same mutation passes at 08:56 and fails at 08:26. No choice of timezone repairs that;
+        // only the assertion does. The zone is pinned in the build (see `karma.config.d/timezone.js`) so this
+        // runs at a NEGATIVE, HALF-HOUR offset that also exercises the floor-mod across the day boundary.
+        //
+        // Both readings use the SAME instant, so this cannot flake across a minute boundary.
         val nowMs = clock.nowMs()
-        val fromOurSeam = formatLocalHhMm(nowMs, clock).substringBefore(':').toInt()
-        assertEquals(browserLocalHours(nowMs), fromOurSeam, "our offset sign must agree with the browser's own hour")
+        val browserClock = "${pad2(browserLocalHours(nowMs))}:${pad2(browserLocalMinutes(nowMs))}"
+        assertEquals(
+            browserClock,
+            formatLocalHhMm(nowMs, clock),
+            "our seam must reproduce the browser's own local wall clock, to the minute",
+        )
     }
 
     @Test
@@ -110,7 +117,13 @@ class TranscriptTimeWasmTest {
     }
 }
 
-/** The browser's own local hour at [atEpochMs], read independently of [TranscriptClock] to cross-check the sign. */
+/** The browser's own local wall clock at [atEpochMs], read independently of [TranscriptClock] to cross-check it. */
 private fun browserLocalHours(atEpochMs: Long): Int = jsLocalHours(atEpochMs.toDouble())
 
+private fun browserLocalMinutes(atEpochMs: Long): Int = jsLocalMinutes(atEpochMs.toDouble())
+
+private fun pad2(value: Int): String = value.toString().padStart(2, '0')
+
 private fun jsLocalHours(atEpochMs: Double): Int = js("new Date(atEpochMs).getHours()")
+
+private fun jsLocalMinutes(atEpochMs: Double): Int = js("new Date(atEpochMs).getMinutes()")
