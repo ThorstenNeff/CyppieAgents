@@ -93,7 +93,7 @@ content slot — both are Compose rows **outside** the content rectangle, so the
 
 ```
 ┌ window.<id> (FloatingWindow frame — Compose) ──────────────────────────────┐
-│  window.<id>.titlebar : drag · «Name» · [P2 human-control marker] ·         │  ← frame (safe)
+│  window.<id>.titlebar : drag · «Name» · [P2 mode-marker §5.1] · busy * ·    │  ← frame (safe)
 │                          token(P1 live · P2 frozen/greyed) · badge · ⋮      │
 ├────────────────────────────────────────────────────────────────────────────┤
 │  agent.<id>.header : status · [ Orchestrierung | Shell ]  (P1)              │  ← frame (safe)
@@ -216,15 +216,56 @@ A persistent, full-width strip in the frame (above the content rectangle):
 ## 5. What other operators & the roster see (INTERACTIVE) **[P2]**
 
 The hub is blind, so cross-operator signal = **state + identity + time, never guessed status:**
-- Frame titlebar: the busy `*` (`window.<id>.busy`) is **suppressed**; a distinct **human-control marker** appears
-  instead — a **new `WindowBadge.Control`** sealed variant (glyph e.g. `☺`/hand, a11y by **form+label** not colour,
-  CYP-55 rule), tag via `WindowBadgeTags` (`window.<id>` badge node, `.control` selector). Fail-closed: absent
-  unless truly `INTERACTIVE`; no phantom.
+- Frame titlebar: the busy `*` (`window.<id>.busy`) is **suppressed** and the **mode-marker** (`window.<id>.mode`,
+  fully specified in **§5.1**) shows **INTERACTIVE** instead. *(Supersedes the earlier `WindowBadge.Control` idea:
+  the mode-marker is a **titlebar element twin to busy-`*`/token**, not a badge — badges are the single-slot count/
+  severity/attention axis, not shaped for a 4-state control axis. §5.1 is the single source.)*
 - Token count (`window.<id>.contextTokens`): **frozen + greyed** with a11y `a11y_terminal_token_frozen` "seit
   Übernahme eingefroren" (Auftraggeber picked *grey-frozen* over *hidden*, Q-B) — showing a live number would lie
   while the hub isn't counting.
 - **No content leak:** other operators see the marker + "@{name} · seit {HH:MM}", **never** the human's keystrokes/
   terminal output (Option D single-operator desktop; a read-only observer view is out of scope, ⟂BE deferred).
+
+### 5.1 Titlebar mode-marker `window.<id>.mode` — twin to busy-`*`/token **[P2]** (per PO 2026-07-10)
+
+The per-window marker for `TerminalControlState` — a **host-injected titlebar element**, the **twin of** busy-`*`
+(CYP-324) and the token count (CYP-316): same `FloatingWindow` titlebar seam, fed by a `controlStateFor(id)` host
+map (twin of `busyFor`/`contextTokensFor` in `AgentShell`). **Not** a `WindowBadge`.
+
+**Principles (align with Dev's):** **absent == MEDIATED** — no marker in the default, exactly like `busy == idle`
+(fail-closed; its absence is the test contract for MEDIATED). **Form + label, never colour alone** (WCAG 1.4.1 —
+the *label text* carries the meaning; glyph and tone only reinforce). **Content-free** — never keystrokes/terminal
+output, only the state.
+
+| State | Glyph | Label (DE / EN) | Tone (reinforcement only) |
+|---|---|---|---|
+| `MEDIATED` | — (absent) | — | — (no node) |
+| `INTERACTIVE` | `◉` | **Interaktiv** / Interactive | WARN-amber (`severityColor(WARN)`) — hub blind = consequence |
+| `HANDING_OVER` | `→` | **Übergabe…** / Handing over… | neutral `onSurfaceVariant` (a0: in-progress, never `tertiary`/green) |
+| `HANDING_BACK` | `←` | **Rückgabe…** / Handing back… | neutral `onSurfaceVariant` |
+| `CONTEXT_LOST` | `∅` | **Kontext verloren** / Context lost | WARN-amber — consequence (twin of §6) |
+
+> Glyphs are distinct **forms** (and distinct from the titlebar's only other glyphs: busy `*`, token digits); Dev
+> may swap to a house glyph **iff** the four forms stay mutually distinct and the label still carries the meaning.
+> The transient `…` on HANDING_OVER/_BACK reads as in-progress (like "Startet…"/"Neustart…", CYP-262/330).
+
+**Placement (order/spacing):** the mode-marker **leads the status cluster**, immediately after the title and
+**before** busy-`*`/token — because the control-state governs how the rest reads (in `INTERACTIVE` busy is
+suppressed; in `CONTEXT_LOST` the token accrues from ~0). Titlebar order:
+
+```
+[avatar] · «title» · [MODE-MARKER] · busy * · token · badge · ⋮
+```
+
+Same spacing as the existing markers (the titlebar's `spacedBy(8.dp)` cluster); monospace `labelSmall` glyph +
+`labelMedium` label, matching busy-`*`/token typography. **testTag `window.<id>.mode`** (twin of `window.<id>.busy`
+/ `.contextTokens`) — present only in a visible (non-MEDIATED) state; **absent == MEDIATED** (fail-closed, no
+phantom). a11y: the node carries `a11y_terminal_mode_marker` "Sitzungszustand: %1$s" (Session state: %1$s) so a
+screen reader announces the state even where the glyph is decorative.
+
+**Phase:** all of this is **[P2]** — it is fed by ⟂BE-1 (`TerminalControlState`). In Phase 1 the agent is always
+MEDIATED → the marker is **absent** (nothing to build for the CYP-334 scaffold; the [P1] fail-closed-absence tooth
+already asserts no `window.<id>.mode` node exists).
 
 ---
 
@@ -276,7 +317,7 @@ object. **New entries** (Dev adds to `AgentViewTags`; frame marker to `WindowBad
 | P2 | Hand-off banner | `agent.<id>.handoffBanner` | **present iff `INTERACTIVE`** (fail-closed absence otherwise) |
 | P2 | Context-lost banner | `agent.<id>.contextLostBanner` | **present iff `CONTEXT_LOST`** |
 | P2 | Discontinuity line | `agent.<id>.event.<index>.contextBreak` | present iff a context break exists in the stream |
-| P2 | Human-control marker | `window.<id>` badge, `WindowBadge.Control` | **present iff `INTERACTIVE`**; busy `*` absent then |
+| P2 | Mode-marker (§5.1) | `window.<id>.mode` | present iff a **visible** state (INTERACTIVE/HANDING_OVER/HANDING_BACK/CONTEXT_LOST); **absent == MEDIATED**; busy `*` absent in INTERACTIVE |
 
 **QA anchors — [P1] fail-closed absence (what CYP-334 §-QA checks):** while the Shell view is open, **none** of the
 [P2] nodes exist — no `takeover`/`handback`/`seize`, no `handoffBanner`, no `contextLostBanner`, no
@@ -295,6 +336,11 @@ no `handoffBanner` unless `INTERACTIVE`; no `contextLostBanner` unless `CONTEXT_
 | P1 | a11y `a11y_terminal_mode` | Ansicht: %1$s | View: %1$s |
 | P1 | a11y `a11y_terminal_shell` | Worktree-Shell (nicht die Agenten-Sitzung): %1$s | Worktree shell (not the agent session): %1$s |
 | P2 | `terminal_mode_terminal` | Terminal | Terminal |
+| P2 | `terminal_marker_interactive` (§5.1) | Interaktiv | Interactive |
+| P2 | `terminal_marker_handing_over` (§5.1) | Übergabe… | Handing over… |
+| P2 | `terminal_marker_handing_back` (§5.1) | Rückgabe… | Handing back… |
+| P2 | `terminal_marker_context_lost` (§5.1) | Kontext verloren | Context lost |
+| P2 | a11y `a11y_terminal_mode_marker` (§5.1) | Sitzungszustand: %1$s | Session state: %1$s |
 | P2 | `terminal_takeover` | Übernehmen | Take over |
 | P2 | `terminal_handback` | Zurückgeben | Hand back |
 | P2 | `terminal_seize` *(opt)* | Turn unterbrechen & übernehmen | Interrupt turn & take over |
