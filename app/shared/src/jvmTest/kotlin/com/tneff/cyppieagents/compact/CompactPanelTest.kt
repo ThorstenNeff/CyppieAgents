@@ -206,6 +206,14 @@ class CompactPanelTest {
     fun nonOperator_hasNoEventSection() = runComposeUiTest {
         val model = vm(StubCompactRepository(CompactStatus(true, 500_000, armed = false, running = false)), editable = false)
         setContent { MaterialTheme { CompactPanel(model) } } // compactEvents = null (member)
+
+        // GUARD (load-bearing), DO NOT DELETE — CYP-340. The two absences below are a gating claim, and an
+        // absence proves nothing on its own: a panel that composed NOTHING satisfies both. Measured, in this
+        // very file: with `CompactPanel` short-circuited to render nothing, 12 of 13 tests went red and this
+        // one stayed GREEN. So the panel is proven present first, together with a member-visible element.
+        onNodeWithTag(CompactTags.PANEL).assertExists()
+        onNodeWithTag(CompactTags.GATE_HINT).assertExists() // a member sees the gate hint
+
         onNodeWithTag(CompactTags.EVENTS).assertDoesNotExist()
         onNodeWithTag(CompactTags.EVENTS_EMPTY).assertDoesNotExist()
     }
