@@ -170,13 +170,23 @@ class ClaudeCodeSession(
             // a death. (CYP-351 refines this further: even an unbidden EOF is not a death unless the process is
             // actually gone — death OBSERVED via the exit status, not inferred from EOF.)
             if (closing) return@launch
-            observer?.onProcessExit(agentId, boundSessionId)
-            // CYP-360: the same end, reported to whoever owns this session's identity (the resume facade, and
-            // through it the run-state authority). The exit status is not available at this seam yet — CYP-351
-            // supplies it — so listeners are told `null`, which means "unknown", never "clean".
-            // A throwing listener must not swallow the others.
+            // CYP-351: confirm the death by OBSERVING the exit status. `awaitExitCode()` is `Process.waitFor()` —
+            // it BLOCKS until the process is really gone and yields its true status, so a death is never inferred
+            // from a silent or broken pipe (a process can close stdout and keep running). Cancellation while
+            // parked here is a deliberate stop and must propagate, not be swallowed into a fabricated exit.
+            val exitCode = try {
+                process.awaitExitCode()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (unreadable: Throwable) {
+                null // the process is gone but its status is not readable: unknown, never a fabricated clean 0
+            }
+            // Observed, unbidden death → report it with the REAL status (CYP-351). `onProcessExit` is now 3-arg;
+            // the run-state authority hears it from the session it spawned (see ConnectorSession.addExitListener).
+            // A throwing listener must not swallow the others, nor kill this tail.
+            observer?.onProcessExit(agentId, boundSessionId, exitCode)
             exitListeners.forEach { l ->
-                runCatching { l(null) }
+                runCatching { l(exitCode) }
                     .onFailure { log.warn("exit listener failed for agent={}: {}", agentId, it.message) }
             }
         }

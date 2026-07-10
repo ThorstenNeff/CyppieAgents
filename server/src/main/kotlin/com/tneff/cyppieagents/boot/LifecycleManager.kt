@@ -118,6 +118,46 @@ class LifecycleManager(
 
     fun runStateOf(agentId: String): AgentRunState? = synchronized(lock) { status[agentId] }
 
+    /**
+     * CYP-351 — the agent's process died **without being told to**. This is the only writer of [status] that
+     * reports an *observation* rather than a *command*; every other one records what we asked for. Without it
+     * [status] is a command memory: a crashed agent kept answering RUNNING, `/ws/lifecycle` never emitted, and
+     * the operator's Start button stayed disabled on a dead agent — the one control that would have fixed it.
+     *
+     * Called from the session observer when stdout completes on its own. A deliberate `stop`/`restart` cannot
+     * reach here: [ConnectorSessions.removeAndAwait] → `closeAndAwait()` cancels **and joins** the reader
+     * before destroying the process, so the observer's exit tail has either already run or never runs, and it
+     * always finishes before [doSpawn] sets RUNNING again. No generation counter is needed for that ordering.
+     *
+     * Guards, in order:
+     *  - an unknown agent (already removed via [forget]) is ignored — nothing to say about it;
+     *  - a **`null` [exitCode] changes nothing**. `null` means the process could not report a status, and an
+     *    unreadable status is **not evidence of death**: a stdout pipe can break, or be closed, while the
+     *    process lives on (measured). Flipping the state here would trade a missing observation for an invented
+     *    one — the very error this ticket is about. A real process always answers (`waitFor` blocks until it
+     *    does), so this path is only ever taken by a session with no observable process at all;
+     *  - only a **RUNNING** agent may be transitioned. A `stop()` that already wrote STOPPED, or an ERROR from
+     *    a failed spawn, is a *later* truth than a straggling exit signal from the process it replaced.
+     *
+     * [exitCode] `0` → [AgentRunState.STOPPED] (it finished, unbidden). Anything else → [AgentRunState.ERROR].
+     * The event log still records the death in both cases, and grades an unknown status fail-closed.
+     */
+    fun onObservedExit(agentId: String, exitCode: Int?): AgentRunStateEvent? {
+        if (exitCode == null) {
+            log.warn("agent '{}' reader ended without a readable exit status — run state left untouched", agentId)
+            return null
+        }
+        synchronized(lock) {
+            if (!worktreeOf.containsKey(agentId)) return null
+            if (status[agentId] != AgentRunState.RUNNING) return null
+        }
+        val next = if (exitCode == 0) AgentRunState.STOPPED else AgentRunState.ERROR
+        log.warn("agent '{}' exited on its own (exitCode={}) → {}", agentId, exitCode, next)
+        onBusyReset?.invoke(agentId) // a dead agent is not processing — never hang the busy `*`
+        onContextReset?.invoke(agentId) // and it holds no standing context any more
+        return setRunState(agentId, next)
+    }
+
     /** Current status of every known agent (the WS connect snapshot + `GET /api/agents` fill). */
     fun snapshot(): List<AgentRunStateEvent> = synchronized(lock) {
         worktreeOf.keys.map { AgentRunStateEvent(it, status[it] ?: AgentRunState.STOPPED) }
@@ -223,6 +263,10 @@ class LifecycleManager(
         check(sessions.session(agentId) == null) {
             "agent '$agentId' already has a live session at spawn time — the per-agent lock was bypassed"
         }
+        // CYP-351: the spawner subscribes to its own session's death. Routing by construction — one connector
+        // serves every project, but each project has its OWN LifecycleManager, so only the manager that
+        // spawned this session knows it owns this agent's run state.
+        session.addExitListener { exitCode -> onObservedExit(agentId, exitCode) }
         sessions.register(session)
         if (recorder != null && projector != null) {
             recorder.record(

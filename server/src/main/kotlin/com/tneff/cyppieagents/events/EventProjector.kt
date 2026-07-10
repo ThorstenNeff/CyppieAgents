@@ -185,8 +185,28 @@ class EventProjector(
         draft(agentId, sessionId, correlationId, EventType.TURN_START, Severity.INFO) {}
             .also { onBusy?.invoke(agentId, true) } // CYP-324: a turn is now in flight
 
+    /**
+     * A `process.exit` — an **observed, unbidden** death (CYP-351). A deliberate stop cancels the session's
+     * reader before the exit tail, so this event cannot be produced by `stop`/`restart`.
+     *
+     * The arithmetic here was always right; it never got an argument. The one defect was the fail-open
+     * `if ((exitCode ?: 0) != 0)`: `null ?: 0` read **unknown** as **exited cleanly**, so a crash with an
+     * unreadable status, an OOM-kill (137) or a SIGTERM (143) were all filed as a harmless INFO. Doc 06 §3
+     * makes `severity` the quick filter under load, so an operator filtering `severity >= warn` saw **no
+     * process death at all**: the register reported calm precisely when it was burning.
+     *
+     *  - `0` → [Severity.INFO]: a confirmed clean exit.
+     *  - anything else, **including `null`** → [Severity.WARN]. Unknown is the case with the least evidence and
+     *    fails **closed**; it is never read as clean.
+     *
+     * `exitCode` is recorded only when it is actually known — an absent code is the honest record of a status
+     * we never observed, never a fabricated `0`.
+     */
     fun processExit(agentId: String, sessionId: String?, exitCode: Int?) =
-        draft(agentId, sessionId, null, EventType.PROCESS_EXIT, if ((exitCode ?: 0) != 0) Severity.WARN else Severity.INFO) {
+        draft(
+            agentId, sessionId, null, EventType.PROCESS_EXIT,
+            if (exitCode != 0) Severity.WARN else Severity.INFO,
+        ) {
             exitCode?.let { put("exitCode", it) }
         }.also { onBusy?.invoke(agentId, false) } // CYP-324: died → never hang busy
 
