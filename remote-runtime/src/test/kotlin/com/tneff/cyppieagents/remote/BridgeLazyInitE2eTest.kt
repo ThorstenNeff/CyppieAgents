@@ -88,6 +88,10 @@ class BridgeLazyInitE2eTest {
         withTimeout(15000) {
             while (link.sent.none { it is WireSend && it.channel == "po-backend" && it.text == "ack" }) delay(10)
         }
-        relay.close()
+        // CYP-362: this was the one step outside every `withTimeout`, and it is where the test hung — the whole
+        // build with it, for a defect that never once reported red. A test may fail; it may not stall. The
+        // termination invariant itself is the subject of `BridgeCloseTerminationTest`; here the bound only
+        // guarantees that if it ever breaks again, we learn it from a red test and not from a stuck CI job.
+        withTimeout(20_000) { relay.close() }
     }
 }

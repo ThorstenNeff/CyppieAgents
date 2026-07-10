@@ -34,7 +34,7 @@ class BridgeRelay(
     private val spokeChannel: String,
     private val capabilities: Capabilities,
     private val provider: ProviderInfo,
-    process: AgentProcess,
+    private val process: AgentProcess,
     private val link: WireLink,
     private val scope: CoroutineScope,
     turnQueue: SessionTurnQueue = SessionTurnQueue(),
@@ -80,8 +80,31 @@ class BridgeRelay(
         }
     }
 
+    /**
+     * CYP-362 — **destroy the child BEFORE awaiting the session.**
+     *
+     * [ClaudeCodeSession.closeAndAwait] does `readerJob.cancelAndJoin()` first and `process.destroy()` second
+     * (deliberately: CYP-247 wants an in-flight `ResultEvent` body to finish before the call returns). Against
+     * the **real** [com.tneff.cyppieagents.connector.ProcessBuilderSpawner] that ordering cannot complete: its
+     * `stdoutLines` is a `flow {}` around a **blocking** `BufferedReader.readLine()`, and coroutine cancellation
+     * does not interrupt a thread parked in a blocking read. The reader only returns on EOF, and the child only
+     * sees EOF when `destroy()` closes its stdin. So `cancelAndJoin()` waits for a reader that is waiting for the
+     * `destroy()` on the next line. Neither is a timeout; both wait forever.
+     *
+     * Measured on `BridgeLazyInitE2eTest`: the test body never left `close()`, the Gradle worker never exited,
+     * and the whole build hung — `BUILD` never came back, no test ever reported red. `destroy()` is idempotent
+     * (`closeAndAwait` calls it again), so calling it here only changes the ORDER, never the effect: the child's
+     * stdin closes, the reader hits EOF, `cancelAndJoin()` returns, and CYP-247's guarantee still holds because
+     * the reader is still joined before this function returns.
+     *
+     * **This is a workaround at the seam, not the fix.** The defect is in `:connector-core` — either the reader
+     * ordering in `closeAndAwait`, or `stdoutLines` being an uncancellable blocking flow — and it is on the
+     * server's Stop path too (`ConnectorSession.removeAndAwait`). Owner: Backend2. Reported, not silently
+     * patched here. [BridgeCloseTerminationTest] goes red if this line is removed.
+     */
     suspend fun close() {
         loop?.cancel()
+        process.destroy()
         session.closeAndAwait()
         link.close()
     }
