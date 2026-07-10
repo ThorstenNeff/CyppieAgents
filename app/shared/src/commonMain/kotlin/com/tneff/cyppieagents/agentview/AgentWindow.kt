@@ -705,7 +705,12 @@ private fun NoticeRow(event: AgentEvent.Notice, modifier: Modifier = Modifier) {
     val noticeDescription = stringResource(Res.string.a11y_notice, event.text)
     Text(
         text = event.text,
-        color = MaterialTheme.colorScheme.outline,
+        // CYP-337: NOT `outline`. Against `surface` it measures 3.55:1 (light) / 3.63:1 (dark) — above WCAG
+        // 1.4.11's 3:1 for graphical objects, below 1.4.3's 4.5:1 for text. The same colour is correct as a
+        // border and wrong as text. This notice carries its meaning in its wording alone (no glyph, no label),
+        // so it is text. `onSurfaceVariant` measures 8.69:1 / 9.80:1 and still reads quieter than the content
+        // colour `onSurface` (15.6:1) — `outline` was never needed to sound soft.
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.labelSmall,
         modifier = modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = noticeDescription },
     )

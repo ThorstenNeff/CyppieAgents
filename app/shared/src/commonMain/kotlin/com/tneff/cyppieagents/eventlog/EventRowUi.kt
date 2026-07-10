@@ -165,7 +165,10 @@ private fun IdentityCells(event: Event, showProject: Boolean, projectTag: String
     Text(
         text = event.correlationId?.let { "· ${it.take(8)}" } ?: "· —",
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.outline,
+        // CYP-337: `onSurfaceVariant`, not `outline`. A correlation id is readable-only information — you look
+        // it up, character by character — so 11 sp at 3.55:1 / 3.63:1 (WCAG 1.4.3 wants 4.5:1) is exactly where
+        // it must not be. `outline` stays right for borders (1.4.11, 3:1). Here: 8.69:1 / 9.80:1.
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     // CYP-94: project identity — only in the cross-project view, as TEXT (identity ≠ severity ≠ right).
     if (showProject && projectTag != null) {

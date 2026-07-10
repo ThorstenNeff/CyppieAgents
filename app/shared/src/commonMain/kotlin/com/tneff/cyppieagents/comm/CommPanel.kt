@@ -286,7 +286,11 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
                 Text(displayName, color = nameColor, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 if (agent?.role == Role.PO) KindBadge(stringResource(Res.string.agent_role_po))
                 item.message.meta?.kind?.let { KindBadge(it.name) }
-                if (item.pending) Text("· " + stringResource(Res.string.comm_msg_pending), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                // CYP-337: `onSurfaceVariant`, not `outline`. "ausstehend" is a state that exists ONLY in this
+                // word — the leading `·` is a separator, not a symbol carrying the meaning — so it is text and
+                // owes WCAG 1.4.3's 4.5:1. `outline` measures 3.55:1 / 3.63:1 against `surface`: fine for a
+                // border (1.4.11, 3:1), a fail for text. `onSurfaceVariant` gives 8.69:1 / 9.80:1.
+                if (item.pending) Text("· " + stringResource(Res.string.comm_msg_pending), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(item.message.body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
         }
