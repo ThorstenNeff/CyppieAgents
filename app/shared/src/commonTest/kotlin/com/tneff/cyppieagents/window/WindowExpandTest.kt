@@ -70,12 +70,27 @@ class WindowExpandTest {
         // there. A host below the pager/canvas breakpoint DOES bind it: [WindowHost] switches to the phone
         // PAGER under ~600 dp (the expand-canvas is hidden), but [WindowReducer.expandCentered] is pure with
         // no such gate, so calling it directly exercises the floor the live UI can't reach.
-        // host 360×220 → usableW 312 < 320 AND usableH 116 < MIN_WINDOW_HEIGHT 120 → both floors bite.
+        // CYP-338: a CONTENT window's height floor is now TILED_CONTENT_WINDOW_MIN_HEIGHT, the twin of its 320
+        // width floor — the old expectation (MIN_WINDOW_HEIGHT) encoded the very asymmetry that collapsed the
+        // agent transcript, one line below the width's typeMinW. Host height raised 220 → 440 so the FLOOR is
+        // what binds: on a host shorter than the floor, clampSizeToBounds caps the result and the assertion
+        // would prove the clamp instead. host 360×440 → usableW 312 < 320 AND usableH 336 < 391 → both bite.
         val target = WindowReducer.expandCentered(
-            WindowState("comm", "C", 0f, 0f, 300f, 200f), 360f, 220f, isContent = true,
+            WindowState("comm", "C", 0f, 0f, 300f, 200f), 360f, 440f, isContent = true,
         )
-        assertEquals(TILED_CONTENT_WINDOW_MIN_WIDTH, target.width)  // floored to 320, not the 312 usable
-        assertEquals(MIN_WINDOW_HEIGHT, target.height)             // floored to 120, not the 116 usable
+        assertEquals(TILED_CONTENT_WINDOW_MIN_WIDTH, target.width)   // floored to 320, not the 312 usable
+        assertEquals(TILED_CONTENT_WINDOW_MIN_HEIGHT, target.height) // floored to the type min, not the usable
+    }
+
+    /** CYP-338 guard: a NON-content window keeps the plain 120 dp floor — the taller floor is type-scoped. */
+    @Test
+    fun expandCentered_nonContentWindow_keepsPlainMinHeight() {
+        // host 360×300 → usableH 196; a reading window prefers 380 → min(380, 196) = 196, above the 120 floor.
+        // Shrink the host until the plain floor binds: usableH 100 < 120 → height == MIN_WINDOW_HEIGHT.
+        val target = WindowReducer.expandCentered(
+            WindowState("acl", "A", 0f, 0f, 300f, 200f), 360f, 204f, isContent = false,
+        )
+        assertEquals(MIN_WINDOW_HEIGHT, target.height)
     }
 
     @Test
