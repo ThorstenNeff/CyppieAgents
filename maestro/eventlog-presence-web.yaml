@@ -10,6 +10,12 @@
 # nobody can run is not a gate. The dev/demo default (`StubAuthRepository`) verifies any credentials, so a
 # throwaway login reaches the surface under test. Against a live auth stack this flow needs a real account.
 #
+# ⚠ NOT VERIFIED — CYP-352. This flow has never been observed to pass, and cannot be: Maestro drives Chromium
+# through Selenium and reads the DOM, while Compose on wasmJs paints into a `<canvas>` and exposes no DOM node
+# per composable. Measured: the same Maestro sees a plain HTML page (exit 0) and sees NOTHING here — neither the
+# testTag nor the visible text, with 30 s of patience. The login below is the right step and remains unproven.
+# Do not read a red run of this flow as a regression until CYP-352 is resolved.
+#
 # Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
 #
 # PREREQUISITES (tester CYP-7 runtime):
