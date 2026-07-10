@@ -31,25 +31,27 @@ import kotlin.test.assertTrue
  *
  * ---
  *
- * **What this guard does NOT cover. Read this before trusting it.**
+ * **This guard carries exactly one clause: "colours no text in human language."** That clause has to be
+ * identifier-based — only a human can see whether a character sequence is language, and no number can. The
+ * complementary clause ("≥ 3:1, or exempt with a named redundancy carrier") is value-based and lives in
+ * [ContrastPairGuardTest], which measures the colour **pair** and is therefore blind to which side a colour
+ * stands on. Neither test can do the other's job; together they cover the rule.
  *
- * 1. **Foreground only.** It asks "does `outline` appear here", and the rule it defends is about `outline` as a
- *    *text* colour. It is structurally blind to `outline` as a **container** behind text: `WindowBadge`'s DEBUG
- *    pill paints `surface`-coloured text ON an `outline` container — the same 3.55:1 pair, roles swapped. No
- *    rule phrased as "`outline` must not be a text colour" can find that. Naming the limit here so the next
- *    reader does not mistake this guard for a complete contrast check.
- * 2. **`outlineVariant` is not protected.** It measures **1.41:1 / 1.52:1** — far below even the 3:1 graphical
+ * **What this guard still does NOT cover.**
+ *
+ * 1. **`outlineVariant` is not protected.** It measures **1.41:1 / 1.52:1** — far below even the 3:1 graphical
  *    threshold. Its two uses (the UNKNOWN status dot, the unselected avatar border) are sound only because
  *    their meaning is carried redundantly, in text and semantics. The allowlist merely records them; the guard
  *    asserts nothing about whether a *new* `outlineVariant` use would be acceptable.
- * 3. **`commonMain` only**, like its sibling. Every Compose colour in this app lives there — `wasmJsMain` and
+ * 2. **`commonMain` only**, like its sibling. Every Compose colour in this app lives there — `wasmJsMain` and
  *    `jsMain` contain no `colorScheme` reference at all (checked, not assumed) — but a colour introduced in a
  *    platform source set would slip past. Widen the scan when that day comes.
- * 4. **No indirection.** `val c = colorScheme.outline` in one file and `Text(color = c)` in another passes. It
+ * 3. **No indirection.** `val c = colorScheme.outline` in one file and `Text(color = c)` in another passes. It
  *    catches the mistake people actually make, not an adversary.
  *
- * The guard is not wrong. It is **narrower than its name promises**, and that gap is where the next defect will
- * live.
+ * (The former limit #1 — "blind to `outline` as a **container** behind text" — is **gone**: CYP-359's pair test
+ * measures that case, and `WindowBadge`'s DEBUG pill is pinned there by name. A limit that has been lifted and
+ * left standing is the next lie.)
  *
  * Mutation proof (run, not assumed): each of the three CYP-337 sites recoloured back to `outline` → RED, naming
  * file, line, the offending source and the rule. Removing a certified use without its allowlist entry → RED on
@@ -98,8 +100,9 @@ class OutlineTextColorGuardTest {
             "Severity.DEBUG -> scheme.outline to scheme.surface" to
                 "DECIDED (UIUX-Designer2, audit 085e02a): the WindowBadge DEBUG pill — `outline` is the CONTAINER, " +
                     "`surface` the glyph on it. Graphical object, 1.4.11, 3:1, passes on the NUMBER. The pill " +
-                    "renders the glyph ALONE (no visible label), so redundancy is not what saves it. Note this is " +
-                    "the roles-swapped case this guard cannot see by construction (class KDoc, limit 1).",
+                    "renders the glyph ALONE (no visible label), so redundancy is not what saves it. This is the " +
+                    "roles-swapped case: invisible to THIS guard, but measured by ContrastPairGuardTest (CYP-359), " +
+                    "which asserts the pair and would go red the day it stops passing.",
         ),
         "AgentWindow.kt" to mapOf(
             "AgentLifecycleState.STOPPED -> MaterialTheme.colorScheme.outline" to
@@ -145,9 +148,11 @@ class OutlineTextColorGuardTest {
                 appendLine("  WCAG 1.4.3  text             = 4.5:1 -> FAIL  (any Text(color = …))")
                 appendLine("Metadata text uses `onSurfaceVariant` (8.69:1 / 9.80:1).")
                 appendLine()
-                appendLine("These references are not in the certified-decorative allowlist of this test.")
+                appendLine("These references are not in this test's permitted-uses allowlist.")
                 appendLine("If a use really is a border/divider/dot, add its exact line to `permittedOutlineUses`")
-                appendLine("with a reason. If it colours text, use `onSurfaceVariant` instead.")
+                appendLine("with the reason. If it colours text, use `onSurfaceVariant` instead.")
+                appendLine("This guard carries ONE clause — `outline` colours no text in human language. The")
+                appendLine("contrast of the colour PAIR (either role) is measured by ContrastPairGuardTest.")
                 appendLine()
                 offenders.forEach { appendLine("  ${it.file}:${it.line}  ${it.text}") }
             },
