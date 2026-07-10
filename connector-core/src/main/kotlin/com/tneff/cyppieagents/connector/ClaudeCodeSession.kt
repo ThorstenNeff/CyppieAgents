@@ -116,7 +116,15 @@ class ClaudeCodeSession(
                 if (masked is SystemEvent && boundSessionId == null && !masked.sessionId.isNullOrBlank()) {
                     boundSessionId = masked.sessionId
                     // Gate #1 + CYP-167 write-after-init, via the seam (server: registry.bind + durable store).
-                    onBind?.invoke(masked.sessionId!!)
+                    // CYP-377 hardening: contain the durable-store write at its source. A JsonFileSessionStore
+                    // upsert can throw IOException (disk full / permissions — `writeText`, or the non-atomic
+                    // `Files.move` fallback). Un-contained it would escape into this reader's broad IOException
+                    // catch and be MISREAD as a reader death → a false DIED_UNBOUND + onProcessExit + CYP-360 heal
+                    // → respawn of a LIVE, just-bound session (context loss on a disk hiccup). Same shape as
+                    // `onTurnResult` below: log and carry on — the bind stays BOUND in-memory, only the durable
+                    // resume entry is missing.
+                    runCatching { onBind?.invoke(masked.sessionId!!) }
+                        .onFailure { log.warn("durable bind persistence failed for agent={}: {}", agentId, it.message) }
                     if (!startupOutcome.isCompleted) startupOutcome.complete(StartupOutcome.BOUND)
                 }
 

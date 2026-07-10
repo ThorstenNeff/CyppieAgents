@@ -3,12 +3,14 @@ package com.tneff.cyppieagents.connector
 import com.tneff.cyppieagents.connector.ClaudeCodeSession.StartupOutcome
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.StreamJsonEvent
+import com.tneff.cyppieagents.model.SystemEvent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -100,6 +102,69 @@ class Cyp377ReaderIoExceptionTest {
         // (c) FULL tail = BE-3/CYP-356 heal compat, indistinguishable from an EOF death:
         assertTrue(exitListenerCode.isCompleted, "the CYP-360 exit listeners must fire — the full death tail runs")
         assertEquals(StartupOutcome.DIED_UNBOUND, outcome, "the reader-death runs DIED_UNBOUND, same shape as an EOF death")
+        scope.cancel()
+    }
+
+    /**
+     * CYP-380 (Team1's third eye, PROD-reachable): the durable-store write inside `onBind`
+     * (JsonFileSessionStore.upsert → writeText / Files.move fallback) can throw IOException on a disk hiccup.
+     * Un-contained it escapes into the reader's broad IOException catch and is MISREAD as a reader death → a
+     * false DIED_UNBOUND + onProcessExit + CYP-360 heal → respawn of a LIVE, just-bound session (context loss on
+     * a full disk). The fix wraps `onBind` in `runCatching` (same shape as `onTurnResult`): the bind stays BOUND
+     * in-memory, the durable-resume entry is just missing.
+     *
+     * Asserts ALL FOUR (a green suite must not be able to pass a swallowed OR a death-signalled onBind), driven
+     * at the `ClaudeCodeSession` seam where the wrap sits (a thrown ctor `onBind`, not the whole file store):
+     *  (a) startupOutcome == BOUND (L120 runs after the wrapped onBind);
+     *  (b) onProcessExit NOT fired;
+     *  (c) no CYP-360 exit listener / no heal;
+     *  (d) the reader LIVES ON — a SUBSEQUENT line is still processed (the real "not deaf" proof).
+     * Mutation (drop the runCatching around onBind) MUST redden a/b/c/d: the IOException escapes → CYP-377 catch →
+     * tail → DIED_UNBOUND, onProcessExit fires, listeners fire, and the reader ends before the 2nd line.
+     */
+    @Test
+    fun onBindThrowsIOException_duringBind_staysBound_readerLivesOn() = runBlocking {
+        val uncaught = AtomicReference<Throwable?>(null)
+        val scope = CoroutineScope(SupervisorJob() + CoroutineExceptionHandler { _, e -> uncaught.set(e) })
+        val processExits = AtomicInteger(0)
+        val exitListenerFired = AtomicInteger(0)
+        val systemEventsSeen = java.util.concurrent.CopyOnWriteArrayList<String?>()
+        val observer = object : SessionObserver {
+            override fun onEvent(agentId: String, sessionId: String?, correlationId: String?, event: StreamJsonEvent) {
+                if (event is SystemEvent) systemEventsSeen.add(event.sessionId)
+            }
+            override fun onTurnStart(agentId: String, sessionId: String?, correlationId: String) {}
+            override fun onProcessExit(agentId: String, sessionId: String?) { processExits.incrementAndGet() }
+            override fun onStopped(agentId: String) {}
+        }
+        val lines = Channel<String>(Channel.UNLIMITED)
+        val proc = object : AgentProcess {
+            override val stdoutLines: Flow<String> = lines.receiveAsFlow()
+            override suspend fun writeLine(line: String) {}
+            override fun destroy() { lines.close() }
+        }
+        val session = ClaudeCodeSession(
+            "backend", proc, SessionTurnQueue(), scope, observer = observer,
+            onBind = { throw IOException("disk full during durable session-store upsert") },
+        )
+        session.addExitListener { exitListenerFired.incrementAndGet() }
+        session.start()
+
+        // Bind: the first SystemEvent triggers onBind, which throws (the store write failed). The wrap contains it.
+        lines.send("""{"type":"system","subtype":"init","session_id":"s-bind"}""")
+        val outcome = withTimeoutOrNull(3_000) { session.awaitStartupOutcome() }
+        // (d) reader-lives-on: a SUBSEQUENT line must still be processed — the session is not deaf.
+        lines.send("""{"type":"system","subtype":"other","session_id":"s-after"}""")
+        val sawSecond = withTimeoutOrNull(2_000) {
+            while (systemEventsSeen.none { it == "s-after" }) delay(20)
+            true
+        } ?: false
+
+        assertEquals(StartupOutcome.BOUND, outcome, "(a) the bind survives the store IOException — BOUND, not DIED_UNBOUND")
+        assertEquals(0, processExits.get(), "(b) no false onProcessExit — a disk hiccup is not a process death")
+        assertEquals(0, exitListenerFired.get(), "(c) no CYP-360 exit listener / no heal fires on a store hiccup")
+        assertTrue(sawSecond, "(d) the reader LIVES ON — a subsequent line is still processed (the session is not deaf)")
+        assertNull(uncaught.get(), "the store failure is contained + logged, not uncaught — got: ${uncaught.get()}")
         scope.cancel()
     }
 
