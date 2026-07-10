@@ -145,7 +145,50 @@ Defekt beim nächsten Mal als Layout-Hygiene abgetan.
 
 ---
 
-## 6. Self-Validation
+## 6. Nebenbefund: `COMPOSER_MIN_WIDTH` ist eine Zusage, die **nirgends durchgesetzt** wird
+
+Der PO nennt `defaultMinSize` „ein Minimum, das gelesen wird wie eine Größe". Ich habe gesucht, ob es der
+einzige ist. **Es ist er nicht** — und der zweite Fall trägt das Wort *guarantee* im KDoc:
+
+```kotlin
+// WindowManagerState.kt:36-40
+/** Content guarantee of the composer input field, in dp (CYP-26 §2.2). … */
+const val COMPOSER_MIN_WIDTH: Float = 280f
+
+// AgentWindow.kt:732 (Kommentar) — „The input holds a min width"
+// AgentWindow.kt:744  ·  CommPanel.kt:382
+Modifier.weight(1f).widthIn(min = COMPOSER_MIN_WIDTH.dp)
+```
+
+**Gemessen** (Eingabefeld des Agentenfensters):
+
+| Fensterbreite | Feldbreite | Senden-Knopf |
+|---|---|---|
+| **320** | **236 dp** ⟵ *nicht 280* | 60 × 40, sichtbar |
+| 360 | **276 dp** ⟵ *nicht 280* | 60 × 40, sichtbar |
+| 400 | 274 dp | 102 × 40, sichtbar |
+| 640 | 514 dp | 102 × 40, sichtbar |
+
+`Modifier.weight(1f)` gibt dem Kind **feste** Breiten-Constraints (seinen Anteil). Ein danach angehängtes
+`widthIn(min = 280)` wird an der eingehenden `maxWidth` gekappt. **Die Mindestbreite bindet also genau dann
+nicht, wenn sie gebraucht würde.** Sie ist tot.
+
+> **Der Composer ist trotzdem in Ordnung** — aber aus einem anderen Grund, als der Code behauptet. Was ihn
+> rettet, ist der **Breakpoint** (`maxWidth < COMPOSER_MIN_WIDTH.dp + 96.dp` ⇒ „Senden" wird zu `➤`), nicht die
+> Mindestbreite. Gemessen: der Knopf springt zwischen 360 und 400 dp von 60 auf 102 dp.
+
+**Kein Nutzerschaden heute.** Aber: eine Konstante namens `MIN`, deren KDoc *„guarantee"* sagt, die nichts
+garantiert, und ein Kommentar, der behauptet *„the input holds a min width"*. Wer diesen Zeilen glaubt und den
+Breakpoint entfernt, verliert genau die Eigenschaft, die er verbürgt glaubte. **Das ist die Familie von
+`CONTENT_WINDOW_MIN_HEIGHT` und `defaultMinSize(48)`: eine Zahl, die aussieht, als kontrolliere sie etwas.**
+
+**Vorschlag (eigenes, kleines Ticket — ich fasse nichts an):** entweder das `widthIn(min = …)` **entfernen**
+und den Breakpoint als das benennen, was trägt; oder es **durchsetzen** (`weight(1f, fill = false)` + Prüfung).
+**Nicht** beides so stehen lassen. Und den KDoc auf das ändern, was gilt.
+
+---
+
+## 7. Self-Validation
 
 - **Der Mechanismus ist gemessen, nicht übernommen.** Die Lücke, in die der Spacer fällt, misst bei 320 dp
   **9 dp** und bei 640 dp **134 dp** — er bekommt Überschuss, er nimmt nichts. Die **199 dp** des Badge stehen
@@ -161,4 +204,8 @@ Defekt beim nächsten Mal als Layout-Hygiene abgetan.
   keine Arithmetik von mir.
 - **Die Disclosure-Regel ist geschärft, nicht gebeugt:** Kürzen verboten, **Substitution durch eine
   vollständige Alternativform** erlaubt. Das trennt den Glyph-Badge sauber vom Ellipsen-Badge.
-- **Docs-only.** Die Sonde war ein Messinstrument und ist entfernt; `:app:shared:jvmTest` unverändert grün.
+- **Der Nebenbefund in §6 ist gesucht, nicht gestolpert.** Der PO nannte `defaultMinSize` „ein Minimum, das
+  gelesen wird wie eine Größe"; ich habe `commonMain` nach der Familie durchsucht und einen zweiten Fall
+  gefunden, dessen KDoc das Wort *guarantee* trägt. **Und ich habe gemessen, dass der Composer trotzdem
+  funktioniert** — die tote Zusage als Defekt zu verkaufen wäre so unehrlich wie die Zusage selbst.
+- **Docs-only.** Die Sonden waren Messinstrumente und sind entfernt; `:app:shared:jvmTest` unverändert grün.
