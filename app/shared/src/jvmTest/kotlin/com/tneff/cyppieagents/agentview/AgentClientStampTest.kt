@@ -82,6 +82,13 @@ class AgentClientStampTest {
         // is only a LOWER BOUND on the server's now: from the client, "browser 5 min fast" and "last event 5 min
         // old" are the same observation. The error grows with idle time — and the column still ascends, so a
         // monotonicity assertion never notices.
+        //
+        // **This test is one half of a pair, and only the pair is unambiguous.** Its partner,
+        // [cyp346_fastBrowser_invertsTheColumn_replyRendersAboveTheQuestion], also goes red if someone
+        // re-introduces the skew — but for the *wrong reason*: the skew removes the dip it characterises, so it
+        // cannot tell "CYP-346 landed cleanly" from "a skew crept back in". THIS test is what separates the two:
+        // a re-derived skew backdates the turn here, a server-anchored stamp does not. Delete either one and the
+        // other becomes ambiguous. Keep them together.
         val yesterdayEvening = serverBase
         val thisMorning = serverBase + 11 * 60 * minute
         val rig = Rig(clientNowMs = thisMorning)
@@ -172,8 +179,13 @@ class AgentClientStampTest {
         // error is bounded by the clock skew instead of by the agent's idle time.
         //
         // When CYP-346 lands (`serverNowMs` at attach), the dip disappears and this test fails. That is the
-        // point: it forces an update instead of rotting. Check the new stamping is CYP-346's way, not a
-        // re-derived skew — [replayedOldHistory_doesNotBackdateANewTurn] guards that side.
+        // point: it forces an update instead of rotting.
+        //
+        // **But it fails for the same reason if someone re-introduces the event-derived skew** — that also
+        // removes the dip. This test alone therefore CANNOT tell a clean CYP-346 from a smuggled-back estimate.
+        // Its partner [replayedOldHistory_doesNotBackdateANewTurn] is what separates them: a re-derived skew
+        // backdates a turn typed after a stale replay, a server-anchored stamp does not. Read both red/green
+        // results together, and do not delete one without the other — alone, each is ambiguous.
         val rig = Rig(clientNowMs = serverBase + 5 * minute)
         withVm(rig) { vm ->
             rig.bus.tryEmit(AgentEvent.Notice("s-1", "start", tsMs = serverBase))
