@@ -122,7 +122,14 @@ class AgentClientStampTest {
                 }
             }
             waitUntil(timeoutMillis = 5_000L) { vm.transcript.value.isNotEmpty() }
-            assertEquals(thisMorning, vm.transcript.value.single().tsMs)
+            // Same tolerance as [replayedOldHistory_doesNotBackdateANewTurn], for the same reason: this is a
+            // CLIENT-BORN stamp, and an exact equality would fight CYP-346's server-anchored one over a few ms.
+            val notice = vm.transcript.value.single()
+            assertTrue(
+                notice.tsMs >= thisMorning - minute,
+                "the connection-loss notice must be dated ~now (${formatLocalHhMm(thisMorning)}), " +
+                    "but carries ${formatLocalHhMm(notice.tsMs)}",
+            )
         }
     }
 
@@ -179,13 +186,26 @@ class AgentClientStampTest {
             rig.bus.tryEmit(AgentEvent.AssistantText("a-1", "antwort", complete = true, tsMs = serverBase + minute))
             awaitRows(vm, 3)
 
+            // The hint belongs on the FIRST assertion that CYP-346 will break, not the last: the ones after it
+            // never run, so their message is never printed. Whoever reads the red result in three months must see
+            // what to do, not two bare numbers.
             val stamps = vm.transcript.value.map { it.tsMs }
-            assertEquals(serverBase + 5 * minute, stamps[1], "the turn carries the (fast) client clock")
-            assertEquals(serverBase + minute, stamps[2], "the reply carries the server stamp, unclamped — a fact")
+            val cyp346Hint = "If this now fails, CYP-346 probably landed (the client stamp is server-anchored): " +
+                "delete this characterisation test and assert the column ascends instead. If it did NOT land, " +
+                "someone re-derived a skew from event timestamps — see replayedOldHistory_doesNotBackdateANewTurn."
+            assertEquals(
+                serverBase + 5 * minute,
+                stamps[1],
+                "the turn carries the (fast) client clock. $cyp346Hint",
+            )
+            assertEquals(
+                serverBase + minute,
+                stamps[2],
+                "the reply carries the server stamp, unclamped — a fact. $cyp346Hint",
+            )
             assertTrue(
                 stamps[2] < stamps[1],
-                "CYP-346 characterisation: the reply still renders below the question it answers ($stamps). " +
-                    "If this now fails, CYP-346 landed — delete this test and assert monotonicity instead.",
+                "CYP-346 characterisation: the reply still renders below the question it answers ($stamps). $cyp346Hint",
             )
         }
     }
@@ -207,7 +227,9 @@ class AgentClientStampTest {
             val stamps = vm.transcript.value.map { it.tsMs }
             assertTrue(
                 stamps[1] < stamps[0],
-                "CYP-346 characterisation: the bootstrap turn still sits above the first server row ($stamps)",
+                "CYP-346 characterisation: the bootstrap turn still sits above the first server row ($stamps). " +
+                    "If this now fails, CYP-346 probably landed (the client stamp is server-anchored): delete " +
+                    "this characterisation test and assert the column ascends instead.",
             )
         }
     }
