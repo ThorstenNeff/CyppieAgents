@@ -71,6 +71,7 @@ drei Lifecycle-Knöpfe statt ihres Labels einen Glyphen** — mit unverändertem
 ```kotlin
 // AgentWindow.kt — BoxWithConstraints um die Header-Row, exakt wie MessageComposer es tut
 val compact = maxWidth < AGENT_HEADER_LABELS_MIN_WIDTH      // 520.dp, gemessen (§0)
+           || connection != ConnectionStatus.LIVE           // Reconnect-Chip belegt die Breite (§4.1)
 ```
 
 | Aktion | Label (≥ 520 dp) | Glyph (< 520 dp) | Gesprochener Name (beide) |
@@ -142,6 +143,34 @@ Ausnahme-Marker, und seine Abwesenheit bedeutet „Socket ist live".
 
 ## 4. Der Breakpoint ist gemessen — und darf trotzdem falsch sein
 
+### 4.1 Ein Loch in meiner ersten Fassung: der Breakpoint war **inhaltsblind**
+
+Backend2 hat bei **gesundem Socket** gemessen — also **ohne** den `ReconnectingChip`. Der ist aber Teil
+derselben `Row`, und im Deutschen ist er lang:
+
+| Locale | Text | Länge | ≈ Breite (`labelSmall`) |
+|---|---|---|---|
+| DE | „Verbindung wird wiederhergestellt…" | 34 Zeichen | **≈ 187 dp** |
+| EN | „Reconnecting…" | 13 Zeichen | ≈ 72 dp |
+
+Liegt der Chip an, verschöbe sich die Schwelle auf ≈ **715 dp** — die Labels passten also **selbst in einem
+640-dp-Fenster nicht mehr**. Die Höhen-Invariante (§1.1) hielte, aber die Labels würden **beschnitten**. Ein
+fester, inhaltsblinder Breakpoint ist damit falsch, sobald der Header seinen Inhalt ändert.
+
+**Entscheidung:** Der Reconnect-Chip **erzwingt** den Glyph-Modus, unabhängig von der Breite.
+
+**Begründung, nicht Bequemlichkeit:** Der Chip erscheint **nur**, wenn der Socket nicht `LIVE` ist — ein
+**Ausnahmezustand**. In ihm gehört die Aufmerksamkeit auf den Chip, dessen **Text** die Bedeutung trägt
+(§3: er darf nie verschwinden). Die drei Aktionen verlieren dabei nur ihr Wort, nicht ihre Bedeutung: der
+Glyph bleibt, der gesprochene Name bleibt, der `testTag` bleibt. Der Wechsel ist eine **lesbare
+Zustandsänderung** und kehrt sich um, sobald die Verbindung steht — kein Flackern ohne Ursache.
+
+> Die Arithmetik und die Regel stimmen überein: `520 + 195 ≈ 715 dp` liegt über jeder üblichen Fensterbreite.
+> Ein zweiter Breakpoint wäre also eine Zahl, die praktisch **immer** greift — und eine Regel, die immer
+> greift, schreibt man als Regel, nicht als Zahl.
+
+### 4.2 Warum ein falscher Breakpoint trotzdem nicht gefährlich ist
+
 `AGENT_HEADER_LABELS_MIN_WIDTH = 520.dp`, aus Backend2s Messreihe (§0: bei 480 dp noch zwei Zeilen, bei 520 dp
 eine).
 
@@ -194,6 +223,10 @@ Der PO verlangt Messung bei **mehreren Breiten** — zu Recht: *an einer einzige
    aber zu prüfen, weil ein `Modifier.size` es kippen könnte.
 6. **Kein Chip verschwindet wegen Breite** (§3): bei 320 dp sind Provider-Chip und Fidelity-Badge genau dann
    vorhanden, wenn sie es bei 640 dp sind.
+7. **Reconnect erzwingt den Glyph-Modus** (§4.1): bei **640 dp** und `connection != LIVE` tragen die drei
+   Knöpfe Glyphen, der `ReconnectingChip` ist **vollständig sichtbar**, und die Header-Höhe ist unverändert
+   **56 dp**. Ohne diesen Fall bleibt der Test blind für die längste Zeichenkette des Headers — und die steht
+   ausgerechnet im **deutschen** Default-Locale.
 
 ---
 
@@ -259,5 +292,7 @@ Reuse**, eigenes kleines Ticket. Die Glyph-Knöpfe dieser Spec ziehen ihre Namen
 - **WCAG:** Farbe nie alleiniger Träger (Status-Label bleibt); Zielgröße ≥ 24 dp; jeder Glyph-Knopf benannt.
 - **Beide PO-Auflagen erfüllt:** Aktionen erreichbar **und** benannt (§1.2, §6.4); Test misst **mehrere**
   Breiten (§6.1) und ist gegen die bequeme Tautologie abgesichert (§6.2/§6.3).
-- **Mein eigener Messfehler ist benannt, nicht weggeschrieben** (§7).
+- **Zwei eigene Fehler benannt, nicht weggeschrieben:** die Breitenbedingung der 48 dp und das höchste Kind
+  der Row (§7, §1.1) — und der **inhaltsblinde Breakpoint** (§4.1), gefunden beim Selbst-Review, nachdem der
+  PO die Spec ohne zweite Meinung freigegeben hat. Genau dann steigt die Sorgfaltspflicht, sie sinkt nicht.
 - **Docs-only.** Kein Code geändert.
