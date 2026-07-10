@@ -35,9 +35,12 @@ class PtyManager(
     /** ANTHROPIC_API_KEY for the spawn (store override → env fallback, CYP-96), or null. */
     private val resolveApiKey: (agentId: String) -> String?,
     private val scope: CoroutineScope,
-    /** Default launch command (CYP-348: `["bash","-l"]` interim worktree-shell, set by boot); a fake TUI in
-     *  tests. A single [open] may override it (BE-2: `claude --resume <sid>`). */
-    private val command: List<String> = listOf("claude"),
+    /** Default launch command. **CYP-361 fail-closed default = `["bash","-l"]`** (the CYP-348 interim
+     *  worktree-shell), NOT `claude`: a construction site that forgets to pass a command must spawn a plain
+     *  shell, never a SECOND auto-approving `claude` in the worktree (CYP-321 skip-permissions → edit-conflict
+     *  vector once `/ws/terminal` goes live). Boot passes it explicitly; a single [open] may override it
+     *  (BE-2: `claude --resume <sid>`); tests pass a fake TUI. */
+    private val command: List<String> = listOf("bash", "-l"),
     /** Extra PATH-whitelisted env; TERM/HUB_AGENT_ID/PATH/API-key are added by [open]. */
     private val baseEnv: Map<String, String> = emptyMap(),
 ) {

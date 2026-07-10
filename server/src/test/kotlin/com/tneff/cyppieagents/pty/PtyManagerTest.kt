@@ -120,4 +120,24 @@ class PtyManagerTest {
         assertEquals(7, code, "the child's real exit code is reported")
         assertFalse(mgr.isLive("backend"), "an on-its-own exit frees the slot too")
     }
+
+    @Test
+    fun ctorDefaultCommand_isABashShell_notClaude() = runBlocking {
+        // CYP-361 fail-closed: a PtyManager built WITHOUT a `command` must default to a bash shell, NEVER
+        // `claude` — so a construction site that forgets `command=` can't spawn a 2nd auto-approving claude in
+        // the worktree (CYP-321 skip-permissions vector once /ws/terminal goes live). Proven via a REAL pty4j
+        // PTY: the default child evaluates `$((6*7))` (a shell), which claude never would.
+        val mgr = PtyManager(
+            worktreeDirOf = { Files.createTempDirectory("cyp361-wt").toFile() },
+            resolveApiKey = { null },
+            scope = scope,
+            // NO `command` argument → exercise the ctor DEFAULT (must be bash -l).
+        )
+        val sink = Sink()
+        val handle = mgr.open("backend", 80, 24, onOutput = sink.append, onExit = {})
+        handle.write("echo CYP361-\$((6*7))\n".toByteArray())
+        awaitContains(sink, "CYP361-42") // bash arithmetic expansion → 42; claude/cat would not evaluate it
+        assertTrue(sink.text().contains("CYP361-42"), "the ctor default spawns a bash shell (\$((6*7))=42), not claude")
+        mgr.close("backend")
+    }
 }
