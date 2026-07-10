@@ -1,12 +1,18 @@
 package com.tneff.cyppieagents.connector
 
 import com.tneff.cyppieagents.events.EventProjector
+import com.tneff.cyppieagents.events.EventDraft
 import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.mediation.MediationRouter
 import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
+import com.tneff.cyppieagents.model.EventType
+import com.tneff.cyppieagents.model.ResumeOutcome
+import com.tneff.cyppieagents.model.Severity
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import com.tneff.cyppieagents.model.ConnectorKind
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.ProviderInfo
@@ -152,10 +158,27 @@ class ClaudeCodeConnector(
             return claudeCodeServerSession(agentId, process, registry, router, turnQueue, scope, recorder, projector, onBound, agentEvents, projectId)
         }
 
+        // CYP-356 (BE-3): surface the resume outcome as a content-free Event-Log event, emitted via the
+        // [EventRecorder] DIRECTLY (NOT the EventProjector — that file is under CYP-351), reusing `/ws/events`
+        // + its ACL. A discrete audit point-event: sid → `sessionId`, outcome → `detail` (only the enum name).
+        fun recordResumeOutcome(outcome: ResumeOutcome, sid: String?) {
+            recorder?.record(
+                EventDraft(
+                    agentId = agentId,
+                    projectId = projectId,
+                    type = EventType.RESUME_OUTCOME,
+                    severity = if (outcome == ResumeOutcome.CONTEXT_LOST) Severity.WARN else Severity.INFO,
+                    sessionId = sid,
+                    detail = JsonObject(mapOf("outcome" to JsonPrimitive(outcome.name))),
+                ),
+            )
+        }
+
         // CYP-167: read-before-spawn. No durable entry (first start, or feature off) ⇒ fresh, no `--resume`,
         // no facade — structurally nothing to resume.
         val resumeId = sessionStore?.find(projectId, agentId)?.sessionId?.takeIf { it.isNotBlank() }
         if (resumeId == null) {
+            recordResumeOutcome(ResumeOutcome.FRESH_NO_RESUME, null) // CYP-356: no durable id → fresh by design (NOT a loss)
             return spawnSession(null).also { it.start() }
         }
         // An entry exists → attempt `--resume` behind the E4 facade, which self-heals a STALE id: clear the
@@ -166,6 +189,7 @@ class ClaudeCodeConnector(
             firstAttempt = spawnSession(resumeId),
             onResumeFailed = { sessionStore.clear(projectId, agentId) },
             respawnFresh = { spawnSession(null) },
+            onResumeOutcome = { recordResumeOutcome(it, resumeId) }, // CYP-356: bound→WITH_CONTEXT / heal→CONTEXT_LOST
         ).also { it.start() }
     }
 

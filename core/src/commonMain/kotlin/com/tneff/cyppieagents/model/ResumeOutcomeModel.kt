@@ -22,15 +22,8 @@ enum class ResumeOutcome {
     FRESH_NO_RESUME,
 }
 
-/**
- * CYP-356 — the content-free message announcing a resume/restart [outcome] per agent, on EVERY resume/restart
- * (hand-back AND lifecycle restart). **State / identity / time only — never any conversation content.** [sid]
- * is the durable session id involved, or null for [ResumeOutcome.FRESH_NO_RESUME]; [ts] is epoch-ms.
- */
-@Serializable
-data class AgentResumeOutcomeEvent(
-    val agentId: String,
-    val outcome: ResumeOutcome,
-    val sid: String? = null,
-    val ts: Long,
-)
+// NOTE (CYP-356, feed-shape = (b) Event-Log, PO 2026-07-10): the wire is the GENERIC Event-Log `Event`
+// (type `resume.outcome`, `agentId`, `sessionId` = the sid, `detail = {outcome}`, `ts`) over the existing
+// `/ws/events` (reusing its ACL — a discrete audit point-event, NOT a continuous state; the persistent
+// CONTEXT_LOST *state* is BE-1's [TerminalControlState]). So there is NO dedicated wire DTO here — only
+// [ResumeOutcome], which the emitter writes into the event detail and the client reads back.

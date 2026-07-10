@@ -104,6 +104,10 @@ enum class EventType(val wire: String) {
     AGENT_RESTARTED("agent.restarted"),
     AGENT_STOPPED("agent.stopped"),
     SESSION_RECYCLED("session.recycled"),
+    // CYP-356 (BE-3): the outcome of a `--resume`/restart — surfaces the existing CYP-330 detection so the
+    // near-zero-contextTokens ambiguity (intended CYP-326 compaction vs unintended memory loss) is resolved
+    // authoritatively. Content-free: detail carries only `{outcome}` (+ the session id in `sessionId`).
+    RESUME_OUTCOME("resume.outcome"),
 
     // Communication metadata (Mediator/Router) — from/to/channel/kind, NO content
     COMM_SENT("comm.sent"),
