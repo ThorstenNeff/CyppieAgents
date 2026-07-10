@@ -18,6 +18,7 @@ import com.tneff.cyppieagents.AgentShell
 import com.tneff.cyppieagents.ShellConfig
 import com.tneff.cyppieagents.agentmgmt.StubAgentManagementRepository
 import com.tneff.cyppieagents.agentview.AgentLifecycleApi
+import com.tneff.cyppieagents.agentview.AgentContentMode
 import com.tneff.cyppieagents.agentview.AgentViewModel
 import com.tneff.cyppieagents.agentview.AgentViewTags
 import com.tneff.cyppieagents.agentview.AgentWindow
@@ -86,54 +87,57 @@ class ContentWindowChromeFloorGuardTest {
     // Every chrome state the composition can render. The floor is cut to the TALLEST of them.
     //
     //  · `canControl`        — a non-operator gets the read-only `workspace_operator_only` disclosure.
-    //  · `terminalAvailable` — a wired terminal (`terminalContent != null`) enables the Shell segment and, today,
-    //                          suppresses every note. NOT shipped yet (`WORKTREE_SHELL_LIVE_ENABLED = false`);
-    //                          enumerated because CYP-333's live-flip makes it the shipped state and adds a
-    //                          `labelSmall` line to it. A floor that only knows today's states would go stale on
-    //                          that merge exactly as it went stale on CYP-333's first half. This is the state the
-    //                          guard exists for.
-    //  · `terminalGatedNote` — the honest "available once the worktree-shell backend lands" note. Only rendered
-    //                          for an operator with no terminal wired (`terminalGatedNote && !terminalAvailable`).
+    //  · `terminalAvailable` — a wired terminal (`terminalContent != null`) enables the Shell segment.
+    //  · `contentMode`       — TERMINAL swaps the composer for the terminal and, since CYP-333's live-flip, adds
+    //                          the honest `terminal_shell_note` line ("bash worktree shell, NOT the agent's
+    //                          session") under the toggle. It is chrome that only exists in one mode.
     //  · `lifecycleError`    — `LifecycleErrorRow`, prepended when a lifecycle action fails.
     //
-    // CYP-363 follow-up: `lifecycleError` was first enumerated WITHOUT a number, on the argument that it is
-    // transient and sizing every window for it costs an error most operators never see. Measured, that argument
-    // does not survive: at the old floor the row squeezed the composer from 57 dp to 37 dp — and the composer
-    // still reported `assertIsDisplayed`. The floor's own name is `theFloorIsExactlyTheTallestShippedChrome`;
-    // an exception for the state in which an agent FAILED TO START is an exception for the moment the operator
-    // most needs to type. `301` was a floor that carried most states. Coordinator ruled: carry this one too.
-    // The 20 dp it costs are 20 dp of minimum WINDOW height, not of transcript — at the floor the transcript is
-    // 0 dp either way, and the tiled minimum still renders its full three lines.
+    // **`terminalGatedNote` is gone from this set, and that is a finding, not a simplification.** It rendered only
+    // for `terminalGatedNote && !terminalAvailable`. Since `WORKTREE_SHELL_LIVE_ENABLED = true` (CYP-333-flip,
+    // `bc38cbe`) the shell passes `terminalGatedNote = !WORKTREE_SHELL_LIVE_ENABLED` = false AND a non-null
+    // `terminalContent` on every target — so **both** conjuncts are false in production and the branch is dead.
+    // A dead state in the cross-product is a dead exemption: it costs a measurement and proves nothing. It was
+    // the tallest state yesterday (the floor was 405 because of it); keeping it would have pinned the floor to a
+    // row no operator can ever see. Removed with its reason, not silently.
+    //
+    // CYP-363 history: `lifecycleError` was first enumerated WITHOUT a number, on the argument that it is
+    // transient. Measured, that did not survive: at a floor without it the row squeezed the composer from 57 dp
+    // to 37 dp while still reporting `assertIsDisplayed`. A floor that carries *most* states is what `301` was.
     // ---------------------------------------------------------------------------------------------------------
+
+    private enum class Mode { ORCHESTRATION, TERMINAL }
 
     private data class ChromeState(
         val canControl: Boolean,
         val terminalAvailable: Boolean,
-        val terminalGatedNote: Boolean,
+        val mode: Mode,
         val lifecycleError: Boolean,
     ) {
         override fun toString() =
-            "canControl=$canControl, terminalAvailable=$terminalAvailable, " +
-                "terminalGatedNote=$terminalGatedNote, lifecycleError=$lifecycleError"
+            "canControl=$canControl, terminalAvailable=$terminalAvailable, mode=$mode, lifecycleError=$lifecycleError"
     }
 
     /**
-     * The full cross-product, minus the one combination the composition **cannot** reach. Enumerated, not
-     * sampled: a state left out is a state the floor lies about.
+     * The full cross-product, minus the combinations the composition **cannot** reach. Enumerated, not sampled:
+     * a state left out is a state the floor lies about.
      *
-     * `lifecycleError && !canControl` is impossible, and not merely untested — `AgentViewModel`'s lifecycle
-     * actions open with `if (!canControl) return` (fail-closed, CYP-317). A non-operator has no action that can
-     * fail, so the row can never appear for one. Rendering it does not yield a shorter window; it yields a test
-     * that waits five seconds for a row that will never come. The exclusion is a **property of the production
-     * code**, read there, not an accommodation of a timeout.
+     * Both exclusions are properties of the production code, read there rather than inferred from a red test:
+     *  - `lifecycleError && !canControl` — `AgentViewModel`'s lifecycle actions open with `if (!canControl) return`
+     *    (fail-closed, CYP-317). A non-operator has no action that can fail.
+     *  - `TERMINAL && !canControl` — `showContentMode` opens with the same guard. A non-operator cannot reach the
+     *    terminal view at all.
+     *
+     * Rendering either would not produce a shorter window; it would produce a test that waits five seconds for a
+     * row that never comes.
      */
     private val shippedStates: List<ChromeState> = listOf(false, true).flatMap { control ->
         listOf(false, true).flatMap { available ->
-            listOf(false, true).flatMap { gated ->
-                listOf(false, true).map { error -> ChromeState(control, available, gated, error) }
+            Mode.entries.flatMap { mode ->
+                listOf(false, true).map { error -> ChromeState(control, available, mode, error) }
             }
         }
-    }.filterNot { it.lifecycleError && !it.canControl }
+    }.filterNot { (it.lifecycleError || it.mode == Mode.TERMINAL) && !it.canControl }
 
     // --- G1 ---------------------------------------------------------------------------------------------------
 
@@ -226,6 +230,34 @@ class ContentWindowChromeFloorGuardTest {
         }
     }
 
+    /**
+     * The exemption above is an assumption about production, so it gets a tripwire rather than a comment.
+     *
+     * `terminalGatedNote` was dropped from [shippedStates] because the live-flip made its row unreachable. If
+     * someone sets `WORKTREE_SHELL_LIVE_ENABLED = false` again — a kill-switch is exactly the sort of thing that
+     * gets flipped back in a hurry — the gated note returns, the `ModeToggleRow` grows from 52 dp to 84 dp, and
+     * the floor is stale again. **The state space would no longer contain the state that decides the floor, and
+     * the guard would be green while being wrong.**
+     *
+     * This renders the REAL shell and fails the moment that row can be seen, naming what to restore. It is the
+     * only assertion here that would rather be about production than about geometry.
+     */
+    @Test
+    fun theGatedShellNote_isUnreachable_whichIsWhyItIsAbsentFromTheStateSpace() {
+        runComposeUiTest {
+            setContent { MaterialTheme { Box(Modifier.size(700.dp, 3_000.dp)) { RealShell() } } }
+            awaitTag(AgentViewTags.input(AGENT_ID))
+            val gated = onAllNodesWithTag(AgentViewTags.modeToggleTerminalGated(AGENT_ID)).fetchSemanticsNodes()
+            assertEquals(
+                0,
+                gated.size,
+                "CYP-363/333: the gated-shell note is rendering again, so `WORKTREE_SHELL_LIVE_ENABLED` was turned " +
+                    "off. That row makes the ModeToggleRow 84 dp instead of 52 dp and it is then the TALLEST " +
+                    "shipped chrome. Put `terminalGatedNote` back into `shippedStates` and let the floor follow.",
+            )
+        }
+    }
+
     // --- measurement ------------------------------------------------------------------------------------------
 
     private data class Measured(val transcriptHeight: Float, val inputHeight: Float, val chromeSum: Float)
@@ -264,15 +296,18 @@ class ContentWindowChromeFloorGuardTest {
                             agentId = AGENT_ID,
                             viewModel = vm,
                             // A wired terminal is a SLOT, not a session: an empty box is enough to flip
-                            // `terminalAvailable`. The default mode stays ORCHESTRATION, so the composer — the
-                            // row this floor exists to protect — is still the one being measured.
+                            // `terminalAvailable` and to fill the content rectangle in TERMINAL mode.
                             terminalContent = if (state.terminalAvailable) ({ _, m -> Box(m) }) else null,
-                            terminalGatedNote = state.terminalGatedNote,
                         )
                     }
                 }
             }
             awaitTag(AgentViewTags.header(AGENT_ID))
+            if (state.mode == Mode.TERMINAL) {
+                // Through the VM, not a parameter: `showContentMode` is the only door, and it is fail-closed.
+                vm.showContentMode(AgentContentMode.TERMINAL)
+                waitForIdle()
+            }
             if (state.lifecycleError) {
                 // The row is driven by a REAL failing action, not by a flag a test sets: the guard measures the
                 // composition an operator gets, not one it invents.
