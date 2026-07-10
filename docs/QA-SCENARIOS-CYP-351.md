@@ -153,6 +153,33 @@ Erwartet: **solange der Prozess lebt, kein `process.exit`, kein Zustandswechsel.
 **Dieser Test ist die Trennprobe zwischen Beobachtung und Ableitung.** Er wird rot, wenn jemand den Tail wieder
 an `collect` hängt — egal ob an sein normales Ende oder an seinen Fehler.
 
+### T4b — **Der harte Tod muss gemeldet werden** (AC 8) — das Gegenstück zu T7
+
+`sh -c 'exec sleep 30'`, `SIGKILL`. Erwartet: **genau ein** `onProcessExit`, und der Prozess ist dabei **tot**.
+
+Beide Tests stellen dieselbe Frage — *lebt der Prozess, wenn sein Tod gemeldet wird?* — und verlangen die
+entgegengesetzte Antwort. **T4b ist heute grün, und zwar aus dem falschen Grund:** der kaputte Mechanismus
+liefert beim harten Tod zufällig das richtige Ergebnis, weil der Kill den Stream ohnehin beendet. Über den
+heutigen Code belegt er nichts.
+
+**Sein Zweck ist die Über-Korrektur** — und das ist gemessen, nicht behauptet. Mutation: den Tail in
+`ClaudeCodeSession.kt:113` entfernen (so „repariert" man T7 am schnellsten):
+
+| | ohne Mutation | Tail entfernt |
+|---|---|---|
+| T7 — EOF ist kein Tod | **ROT** | grün |
+| T4b — harter Tod wird gemeldet | grün | **ROT** |
+
+*(Beide Reports 0 s alt, `:connector-core:test`, Mutation danach zurückgenommen.)*
+
+**Kein einzelner Test sichert diese Naht.** Es gibt keine Änderung, die beide grün macht, außer der richtigen:
+den Tod aus `waitFor()` **beobachten**, statt ihn aus dem Streamende zu **erschließen**. Ein Test kann eine
+Ableitung nicht von ihrer Beobachtung unterscheiden; ein Paar mit entgegengesetzter Erwartung kann es.
+
+> **Was T4b nicht prüfen kann:** ob der Exit-Code ankommt. `SessionObserver.onProcessExit` hat keinen Parameter
+> dafür — **die Signatur kann die Beobachtung nicht tragen.** Das ist kein Testproblem, das ist der Befund.
+> Der Exit-Code wird erst prüfbar, wenn der Vertrag ihn führt (AC 5/6).
+
 ### T8 — Der Start-Knopf ist in jedem Nicht-`RUNNING`-Zustand bedienbar (AC 2)
 
 `RUNNING` / `STOPPED` / `ERROR` / `UNKNOWN` durchspielen, `enabled` prüfen.
