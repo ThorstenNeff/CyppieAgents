@@ -96,6 +96,15 @@ class ConnectorSessions {
         onRegister.add(listener)
     }
 
+    /**
+     * ⚠️ **Displaces any session already registered for this agent, without closing it (CYP-368).** The evicted
+     * session keeps running — an unregistered `claude` process, still burning tokens, still holding its exit
+     * listener, and when it dies it moves the run state of the session that replaced it. Nothing here notices.
+     *
+     * It is reachable through the front door: `LifecycleManager.start` is check-then-act with no mutual
+     * exclusion, so two concurrent starts both spawn. Until the spawn is serialised, this method is where the
+     * server loses a process.
+     */
     fun register(session: ConnectorSession) {
         byAgent[session.agentId] = session
         onRegister.forEach { it(session.agentId) }
@@ -104,24 +113,13 @@ class ConnectorSessions {
     fun session(agentId: String): ConnectorSession? = byAgent[agentId]
 
     /**
-     * Remove and [ConnectorSession.close] the session — **without waiting for its reader to finish.**
+     * Remove and [ConnectorSession.close] the session — **without waiting for its reader to finish.** [close]
+     * only *cancels* the reader; it does not join it, so the session's exit tail may still be running when this
+     * returns. `stop`/`restart` deliberately use [removeAndAwait] instead, which joins.
      *
-     * ⚠️ **CYP-351 invariant, and this method is the hole in it.** The run state is safe from a stale exit only
-     * because *every path that removes a session joins its reader first*:
-     *
-     *  - `ClaudeCodeSession`'s exit tail — the code that observes the death and notifies
-     *    `LifecycleManager.onObservedExit` — lives **inside** the `readerJob`;
-     *  - `onObservedExit` does not suspend, so once the tail starts it runs to completion;
-     *  - [removeAndAwait] → `closeAndAwait()` → `readerJob.cancelAndJoin()` therefore returns only when that
-     *    tail is **finished or cancelled**, and `stop`/`restart` call it *before* writing the next state.
-     *
-     * So there is no second writer, and no need for the manager to check *which* session an exit came from.
-     *
-     * [close] only **cancels** the reader; it does not join it. The moment a production caller in `:server`
-     * uses this method (today there is none — only two tests), a session's tail can still be running while
-     * `doSpawn` publishes RUNNING for its successor. Then a dead session can move a live agent's state, and the
-     * identity guard (`currentSession[agentId] !== session`) becomes necessary — together with the test that
-     * can finally make it red. **Do not add such a caller without restoring that guard.**
+     * No production caller in `:server` today (two tests use it). Adding one lets a cancelled-but-unfinished
+     * exit tail write a run state after its agent has been respawned — see `LifecycleManager.onObservedExit`,
+     * which cannot tell *which* session an exit came from (CYP-368).
      */
     fun remove(agentId: String) {
         byAgent.remove(agentId)?.close()

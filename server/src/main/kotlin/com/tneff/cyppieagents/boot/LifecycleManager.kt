@@ -124,23 +124,27 @@ class LifecycleManager(
      * [status] is a command memory: a crashed agent kept answering RUNNING, `/ws/lifecycle` never emitted, and
      * the operator's Start button stayed disabled on a dead agent — the one control that would have fixed it.
      *
-     * **Why this needs no session identity — and what would break that.** This method never asks *which* session
-     * died, only whether the agent is still RUNNING. That is sound because of exactly one invariant:
+     * **This method does not ask *which* session died, and that is a known hole — CYP-368.** It checks only that
+     * the agent is still RUNNING, which cannot distinguish "the current session died" from "some earlier session
+     * of this agent died". The teardown paths are safe: `stop`/`restart` go through
+     * [ConnectorSessions.removeAndAwait] → `closeAndAwait()` → `readerJob.cancelAndJoin()`, and the exit tail
+     * lives inside that `readerJob`, so it is finished or cancelled before the next state is written.
      *
-     * > Every path that removes a session **joins its reader first.**
+     * The **spawn** path is not. [start] is check-then-act with no mutual exclusion, and its window is a whole
+     * `fork/exec`: two concurrent `POST /api/agents/{id}/start` both read "not RUNNING" and both spawn.
+     * [ConnectorSessions.register] then displaces the first session **without closing it** — so it keeps running,
+     * unregistered, with its exit listener still bound. When it dies it moves the run state of the *live* one.
+     * Measured by the reviewer: 11 of 12 rounds produced two live sessions, and killing the displaced one flipped
+     * the survivor to ERROR.
      *
-     * The exit tail that calls this lives **inside** `ClaudeCodeSession`'s `readerJob`, and this method does not
-     * suspend. `stop`/`restart` go through [ConnectorSessions.removeAndAwait] → `closeAndAwait()` →
-     * `readerJob.cancelAndJoin()`, which returns only once that tail has finished or been cancelled — and only
-     * then do they write the next state. There is no second writer: a race with one runner. A replaced session
-     * therefore cannot speak for its successor, and a generation counter would be ballast that reads as proof.
+     * **An earlier version of this comment claimed there was "no second writer". That was wrong**, and a wrong
+     * comment is worse than none: it carries the authority of a check that did happen, and stops the next reader
+     * from looking. The search was thorough in the wrong place (`remove`/`stop`/`restart`); the second writer
+     * comes through the front door.
      *
-     * [ConnectorSessions.remove] does **not** join — it only `close()`s, which cancels. It has no production
-     * caller today, and that absence is what holds this up. The first such caller makes a stale exit reachable:
-     * an old tail could still be running while [doSpawn] publishes RUNNING for its successor. **Then this method
-     * must take the session that died and ignore it unless it is still the agent's current one** — the guard
-     * [com.tneff.cyppieagents.connector.ResumingSession] already applies one level down (`session !== inner`) —
-     * and only then can a test make that guard red. Do not weaken the join without adding it.
+     * **The fix is not a guard here.** Ignoring the displaced session's exit would restore a correct green dot on
+     * top of two live `claude` processes burning tokens for one agent. CYP-368 serialises the spawn so only one
+     * session can exist; a session-identity guard is worth adding *after* that, as depth, never instead of it.
      *
      * Guards, in order:
      *  - an unknown agent (already removed via [forget]) is ignored — nothing to say about it. The death is
