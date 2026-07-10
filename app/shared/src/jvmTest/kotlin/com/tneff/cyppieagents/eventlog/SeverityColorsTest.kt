@@ -1,7 +1,9 @@
 package com.tneff.cyppieagents.eventlog
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.model.contrastRatio
 import com.tneff.cyppieagents.ui.maritimeColorScheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,15 +21,17 @@ import kotlin.test.assertTrue
  */
 class SeverityColorsTest {
 
-    /** WCAG relative luminance (sRGB linearised). */
-    private fun relLum(c: Color): Double {
-        fun lin(v: Float): Double { val d = v.toDouble(); return if (d <= 0.03928) d / 12.92 else Math.pow((d + 0.055) / 1.055, 2.4) }
-        return 0.2126 * lin(c.red) + 0.7152 * lin(c.green) + 0.0722 * lin(c.blue)
-    }
-    private fun contrast(a: Color, b: Color): Double {
-        val la = relLum(a); val lb = relLum(b); val hi = maxOf(la, lb); val lo = minOf(la, lb)
-        return (hi + 0.05) / (lo + 0.05)
-    }
+    /**
+     * CYP-358: the WCAG contrast ratio comes from `:core` — the single definition the severity-rail, name-accent
+     * and metadata-contrast tests all measure with. This file used to carry a private twin of the same formula.
+     * It agreed with `:core` on the day it was written, and would have kept agreeing with *itself* forever:
+     * measured, before the fix, an inverted `:core.contrastRatio` turned `SeverityRailSchemeTest`,
+     * `NameAccentReadabilityTest` and `Cyp337MetadataTextContrastTest` red — and left this file **green**.
+     *
+     * A test that draws its expected value from a second implementation of the formula does not check the
+     * formula. It checks that the copy still equals the copy.
+     */
+    private fun contrast(a: Color, b: Color): Double = contrastRatio(a.toArgb(), b.toArgb())
 
     @Test
     fun warnIsAmber_notTertiary_aaCompliant_bothSchemes() {
