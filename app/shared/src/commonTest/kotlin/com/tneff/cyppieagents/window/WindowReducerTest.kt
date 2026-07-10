@@ -223,6 +223,25 @@ class WindowReducerTest {
         assertTrue(acl.width < TILED_CONTENT_WINDOW_MIN_WIDTH, "reading window keeps the narrower cell")
     }
 
+    /**
+     * CYP-338 spec §5 — "fully visible wins" on the height axis too: a crowded grid may squeeze a content
+     * window below [TILED_CONTENT_WINDOW_MIN_HEIGHT], but never below [CONTENT_WINDOW_MIN_HEIGHT], where the
+     * composer stops existing. Flooring the tiled cell at the full 266 would instead make the DEFAULT layout
+     * overlap (3 rows x 266 + gaps > a 1000 dp host's 944 usable).
+     * Mutation: floor the tiled height at MIN_WINDOW_HEIGHT again → RED.
+     */
+    @Test
+    fun tile_contentWindow_maySqueezeBelowPreferred_neverBelowComposerInvariant() {
+        val items = listOf("comm" to "Comm", "acl" to "ACL")
+        // Two rows on a short host → raw cell height ≈ 150 dp: below the 176 invariant AND below 266.
+        val result = WindowReducer.tile(items, hostWidth = 400f, hostHeight = 420f, contentWindowIds = setOf("comm"))
+        val comm = result.first { it.id == "comm" }
+        val acl = result.first { it.id == "acl" }
+        assertEquals(CONTENT_WINDOW_MIN_HEIGHT, comm.height, "content window clamped at the composer invariant")
+        assertTrue(comm.height < TILED_CONTENT_WINDOW_MIN_HEIGHT, "but squeezed below the preferred minimum")
+        assertTrue(acl.height < CONTENT_WINDOW_MIN_HEIGHT, "a reading window keeps the shorter cell")
+    }
+
     @Test
     fun tile_narrowMedium_twoContentWindowsFallToOneColumn_noOverlap() {
         // CYP-95 [Low]: a Medium host too narrow for two 320 dp content windows side-by-side

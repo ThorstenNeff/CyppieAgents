@@ -43,6 +43,35 @@ const val COMPOSER_MIN_WIDTH: Float = 280f
 const val MIN_WINDOW_HEIGHT: Float = 120f
 
 /**
+ * **Invariant** floor for **content** windows (Agent/Comm), in dp: their fixed chrome, **measured on the
+ * rendered composition** at the [TILED_CONTENT_WINDOW_MIN_WIDTH] of 320 dp — title bar 64 + agent header 164
+ * + composer 73. Below this the composer, the last unweighted child of the column, cannot be laid out at all;
+ * a content window without its input row has stopped being one. No path — placement, resize, clamp, tile,
+ * fallback — may ever produce less.
+ *
+ * The 164 dp header is **width-dependent**: the Start/Stop/Restart `TextButton` labels wrap below ~520 dp of
+ * window width and the header Row grows with them (measured 320→164, 480→104, 520→56). `min-window-height-
+ * spec.md` §2.1 derives 48 dp from the unwrapped Row, which only holds at >=520 dp. Stop the header from
+ * wrapping (icon buttons / overflow, CYP-350) and this drops to 56 + 56 + 72 = 184.
+ */
+const val CONTENT_WINDOW_MIN_HEIGHT: Float = 301f
+
+/**
+ * Min height for **content** windows (Agent/Comm), the height twin of [TILED_CONTENT_WINDOW_MIN_WIDTH]
+ * (CYP-338). [CONTENT_WINDOW_MIN_HEIGHT] of chrome plus 90 dp of transcript — three text lines, the smallest
+ * view in which a wrapped answer coexists with a neighbouring row rather than being the whole window
+ * (`min-window-height-spec.md` §2.2/§2.3).
+ *
+ * Rendered, not computed: the chrome summand comes from a measurement of the real composition, not from the
+ * Material token arithmetic, because the header wraps at this class's own minimum width (see
+ * [CONTENT_WINDOW_MIN_HEIGHT]). **This number falls to 274 once the header stops wrapping (CYP-350)** — it is
+ * a measured consequence, not a chosen size, so do not round it. `tile` may squeeze a content window *below*
+ * this, never below [CONTENT_WINDOW_MIN_HEIGHT] (spec §5). Does **not** replace the 120 dp floor for other
+ * window types — they have no composer to lose.
+ */
+const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 391f
+
+/**
  * How much of a window must remain inside the host on every edge, in dp, so it can never be dragged
  * completely out of the visible area.
  */
@@ -97,6 +126,15 @@ const val EXPAND_MARGIN: Float = 24f
  * the top-most (focused) window. Giving a window focus therefore moves it to the end of the list.
  */
 object WindowReducer {
+
+    /**
+     * CYP-338 — the height floor a window may never sink below, by window class. Content windows keep their
+     * composer ([CONTENT_WINDOW_MIN_HEIGHT]); everything else keeps the plain [MIN_WINDOW_HEIGHT]. This is the
+     * height twin of the `contentWindowIds ? TILED_CONTENT_WINDOW_MIN_WIDTH : MIN_WINDOW_WIDTH` choice, and the
+     * single place that decision is made.
+     */
+    fun invariantMinHeight(isContent: Boolean): Float =
+        if (isContent) CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
 
     /** Moves the window with [id] to the front (end) of the stack. No-op if absent or already front. */
     fun bringToFront(windows: List<WindowState>, id: String): List<WindowState> {
@@ -208,8 +246,10 @@ object WindowReducer {
         val prefW = if (isContent) EXPAND_PREFERRED_CONTENT_W else EXPAND_PREFERRED_DEFAULT_W
         val prefH = if (isContent) EXPAND_PREFERRED_CONTENT_H else EXPAND_PREFERRED_DEFAULT_H
         val typeMinW = if (isContent) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        // CYP-338: the height had MIN_WINDOW_HEIGHT one line below the width's typeMinW — the same asymmetry.
+        val typeMinH = if (isContent) TILED_CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
         val width = minOf(prefW, usableW).coerceAtLeast(typeMinW)
-        val height = minOf(prefH, usableH).coerceAtLeast(MIN_WINDOW_HEIGHT)
+        val height = minOf(prefH, usableH).coerceAtLeast(typeMinH)
         // Window centre = usable-area centre (top band reserved, exactly like tile()).
         val x = (hostWidth - width) / 2f
         val y = HOST_AFFORDANCE_BAND + (hostHeight - HOST_AFFORDANCE_BAND - height) / 2f
@@ -281,9 +321,15 @@ object WindowReducer {
         return items.mapIndexed { i, (id, title) ->
             val col = i % columns
             val row = i / columns
-            val minWidth = if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+            val isContent = id in contentWindowIds
+            val minWidth = if (isContent) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
             val width = cellWidth.coerceAtLeast(minWidth)
-            val height = cellHeight.coerceAtLeast(MIN_WINDOW_HEIGHT)
+            // CYP-338 (spec §5): "fully visible wins" — a crowded grid may squeeze a content window BELOW
+            // TILED_CONTENT_WINDOW_MIN_HEIGHT, but never below the composer invariant. Flooring the cell at the
+            // full preferred minimum would instead make the DEFAULT layout overlap: three rows of 391 dp plus
+            // gaps need 1237 dp of the 944 dp a 1000 dp host leaves below the affordance band. The width axis
+            // escapes this only because `columnsThatFit` can drop a column; rows have no such escape.
+            val height = cellHeight.coerceAtLeast(invariantMinHeight(isContent))
             val xLtr = gap + col * (cellWidth + gap)
             val rawX = if (isRtl) usableWidth - xLtr - width else xLtr
             val rawY = topBand + gap + row * (cellHeight + gap)
@@ -363,7 +409,11 @@ class WindowManagerState(
         hostWidth = width
         hostHeight = height
         windows = windows.map {
-            val resized = WindowReducer.clampSizeToBounds(it, width, height)
+            // CYP-338: the same class-scoped floor on the clamp path — a host resize must not squeeze a
+            // content window below its composer.
+            val resized = WindowReducer.clampSizeToBounds(
+                it, width, height, minHeight = WindowReducer.invariantMinHeight(it.id in contentWindowIds),
+            )
             WindowReducer.clampToBounds(resized, width, height)
         }
     }
@@ -404,7 +454,14 @@ class WindowManagerState(
             WindowReducer.tile(desired, hostWidth, hostHeight, isRtl = isRtl, contentWindowIds = contentWindowIds)
         } else {
             // Host not measured yet: stack at the band so they are at least valid; resetTo runs again on measure.
-            desired.map { (id, title) -> WindowState(id, title, 0f, HOST_AFFORDANCE_BAND, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT) }
+            // CYP-338: even this placeholder honours the content floor — a window that renders before the first
+            // measure must not do so without its composer. (The matching WIDTH gap here — 160 dp for content
+            // windows instead of 320 — is spec §6's side-finding and a separate ticket; left untouched.)
+            desired.map { (id, title) ->
+                val isContent = id in contentWindowIds
+                val h = if (isContent) TILED_CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
+                WindowState(id, title, 0f, HOST_AFFORDANCE_BAND, MIN_WINDOW_WIDTH, h)
+            }
         }
     }
 
@@ -457,8 +514,11 @@ class WindowManagerState(
     /** First non-overlapping, fully-visible slot below the affordance band for a new window (CYP-100). */
     private fun placeNewWindow(existing: List<WindowState>, id: String, title: String, isRtl: Boolean): WindowState {
         val minWidth = if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_WIDTH else MIN_WINDOW_WIDTH
+        // CYP-338: the height twin of minWidth, and the reported bug. An agent window that arrives after the
+        // first layout lands here; at the plain 120 dp floor it renders without transcript and without composer.
+        val minHeight = if (id in contentWindowIds) TILED_CONTENT_WINDOW_MIN_HEIGHT else MIN_WINDOW_HEIGHT
         val w = if (hostWidth > 0f) minWidth.coerceAtMost(maxOf(minWidth, hostWidth)) else minWidth
-        val h = if (hostHeight > 0f) MIN_WINDOW_HEIGHT.coerceAtMost(maxOf(MIN_WINDOW_HEIGHT, hostHeight - HOST_AFFORDANCE_BAND)) else MIN_WINDOW_HEIGHT
+        val h = if (hostHeight > 0f) minHeight.coerceAtMost(maxOf(minHeight, hostHeight - HOST_AFFORDANCE_BAND)) else minHeight
         if (hostWidth <= 0f || hostHeight <= 0f) return WindowState(id, title, 0f, HOST_AFFORDANCE_BAND, w, h)
 
         val gap = 16f
@@ -505,6 +565,8 @@ class WindowManagerState(
             id = id,
             dWidth = dWidth,
             dHeight = dHeight,
+            // CYP-338: without this the user simply drags the composer back out of an agent window.
+            minHeight = WindowReducer.invariantMinHeight(id in contentWindowIds),
             maxWidth = maxWidth,
             maxHeight = maxHeight,
         )
@@ -532,7 +594,11 @@ class WindowManagerState(
             windows = windows.map { if (it.id == id) target else it }
         } else {
             val restored = WindowReducer.clampToBounds(
-                WindowReducer.clampSizeToBounds(anchor, hostWidth, hostHeight), hostWidth, hostHeight,
+                WindowReducer.clampSizeToBounds(
+                    anchor, hostWidth, hostHeight,
+                    minHeight = WindowReducer.invariantMinHeight(id in contentWindowIds), // CYP-338
+                ),
+                hostWidth, hostHeight,
             )
             expandAnchors = expandAnchors - id
             windows = windows.map { if (it.id == id) restored else it }
