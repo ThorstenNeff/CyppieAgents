@@ -95,3 +95,19 @@ sealed interface AgentEvent {
 }
 
 enum class ToolStatus { RUNNING, OK, ERROR }
+
+/**
+ * CYP-335: the same row, moved by [deltaMs] on the time axis.
+ *
+ * Used for exactly one thing ([AgentViewModel]'s clock anchor): lifting a client-born row that was stamped
+ * before any server event onto the server's time base. Never applied to a row that came off the wire — a
+ * server timestamp is a fact, not an estimate.
+ */
+internal fun AgentEvent.shiftedBy(deltaMs: Long): AgentEvent = when (this) {
+    is AgentEvent.AssistantText -> copy(tsMs = tsMs + deltaMs)
+    is AgentEvent.ToolCall -> copy(tsMs = tsMs + deltaMs)
+    is AgentEvent.Result -> copy(tsMs = tsMs + deltaMs)
+    is AgentEvent.Notice -> copy(tsMs = tsMs + deltaMs)
+    is AgentEvent.UserTurn -> copy(tsMs = tsMs + deltaMs)
+    is AgentEvent.IncomingSystem -> copy(tsMs = tsMs + deltaMs)
+}

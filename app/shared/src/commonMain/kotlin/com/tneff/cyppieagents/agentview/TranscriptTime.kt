@@ -13,9 +13,13 @@ package com.tneff.cyppieagents.agentview
  * the bundle. That is why [TranscriptClock.utcOffsetMs] is parameterised **per instant** — an offset asked for
  * "now" and applied to an old event is precisely the bug this avoids.
  *
- * Deliberately NOT `eventlog.formatTs`, which renders **UTC** `HH:MM:SS.mmm` for the operator's event log
- * (ordering there is by `seq`, and a load-test timeline wants UTC + millis). The transcript is a human
- * conversation view, so it shows *local* time to the minute. Two audiences, two formats — no sharing.
+ * **This does not share `eventlog.formatTs` — and that divergence is a defect being closed, not a design.**
+ * `formatTs` renders **UTC** `HH:MM:SS.mmm`. Its callers (event log, Product-Lead, compact panel, cross-project)
+ * therefore show an operator in Berlin a time two hours off, unlabelled, and nothing on the surface says so.
+ * CYP-336 pulls the whole product onto **one clock**: those surfaces move to local time through this
+ * [TranscriptClock] seam, while `formatTs` keeps its seconds/millis resolution (needed there) and only changes
+ * zone. Until that lands, the two formatters coexist — do not "unify" them by pulling the transcript back onto
+ * the UTC one. See CYP-336.
  */
 interface TranscriptClock {
     /** Wall clock, epoch ms. */
