@@ -143,10 +143,13 @@ A 2-segment control in `agent.<id>.header` (reuse M3 `SegmentedButton`). Tag `ag
   keeps running, still observed). No non-optimistic gating is needed — there is no backend state to confirm; the
   view flips immediately.
 - **a11y:** the toggle announces `a11y_terminal_mode` "Ansicht: %1$s" (View: %1$s) with the current segment label.
-- **Operator-gating of the Shell:** a bash shell runs commands in the agent's worktree, so **opening the Shell is
-  operator-gated** (`canControl`); a non-operator sees a **read-only** toggle (`enabled=false`) + the reused
-  `workspace_operator_only` hint (CYP-317 "no fake switch"). *(Design call — confirm gating level with the PO/
-  Auftraggeber; my honest default is operator-gated because the surface can mutate the worktree.)*
+- **Operator-gating of the Shell (confirmed, PO 2026-07-10):** a bash worktree-shell is **fully mutating**
+  (`git commit`/`rm`/file-edit/`push` into the repo worktree) — there is **no "read-only shell" without a sandbox we
+  don't have. So **opening the Shell is operator-gated** (`canControl`); a non-operator with a full worktree shell
+  would be a **privilege escalation** (sharper with CYP-321 skip-permissions on). Non-operator → **read-only** toggle
+  (`enabled=false`) + the reused `workspace_operator_only` hint (CYP-317 "no fake switch"), **fail-closed**. This
+  matches Dev's impl (the VM refuses the Shell/Terminal without `canControl`). Loosening this later (Shell for
+  non-operators) is the **risk-increasing** direction → an explicit Auftraggeber decision; the default stays tight.
 
 ### 4.1b The Shell view (`agent.<id>.shell`) **[P1]**
 
