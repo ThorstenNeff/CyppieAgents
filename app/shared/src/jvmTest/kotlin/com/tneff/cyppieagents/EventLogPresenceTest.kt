@@ -50,6 +50,7 @@ class EventLogPresenceTest {
     @Test
     fun withOperatorToken_offersEventLogWindows() = runComposeUiTest {
         setContent { MaterialTheme { Shell("op-token") } }
+        onNodeWithTag(WindowTestTags.HOST).assertExists() // GUARD: the shell really composed
         onNodeWithTag(WindowTestTags.window("eventlog")).assertExists()
         onNodeWithTag(WindowTestTags.window("eventtail")).assertExists()
     }
@@ -57,6 +58,15 @@ class EventLogPresenceTest {
     @Test
     fun withoutOperatorToken_omitsEventLogWindows() = runComposeUiTest {
         setContent { MaterialTheme { Shell(null) } }
+
+        // GUARD (load-bearing), DO NOT DELETE — CYP-340/CYP-352. An absence proves nothing on its own: a screen
+        // that composed NOTHING satisfies both assertions below. Measured, in this very framework: a throwaway
+        // test that rendered `Box {}` and asserted the two absences passed green. So the shell is proven present
+        // first, together with a NON-operator window; only then does the missing Event-Log window mean
+        // "operator-gated" rather than "nothing rendered".
+        onNodeWithTag(WindowTestTags.HOST).assertExists()
+        onNodeWithTag(WindowTestTags.window("comm")).assertExists()
+
         onNodeWithTag(WindowTestTags.window("eventlog")).assertDoesNotExist()
         onNodeWithTag(WindowTestTags.window("eventtail")).assertDoesNotExist()
     }
