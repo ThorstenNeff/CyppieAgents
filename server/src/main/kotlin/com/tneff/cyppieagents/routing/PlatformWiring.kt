@@ -80,6 +80,14 @@ fun Application.installPlatform(
         tokenUsageSocket({ booted.runtimeRegistry.active().tokenUsage }, booted.tokenRegistry, authDeps)
         // /ws/busy-state — CYP-324: content-free per-agent busy/idle feed (title-bar `*`), read-tier, active runtime.
         busyStateSocket({ booted.runtimeRegistry.active().busyState }, booted.tokenRegistry, authDeps)
+        // /ws/terminal — CYP-332: PTY-over-WS transport for the Desktop interactive terminal (one pty4j PTY per
+        // agent; single-flight §4.1). Reader-gated like /ws/agent; agentId must be in the active project.
+        terminalSocket(
+            { booted.ptyManager },
+            knowsAgent = { id -> booted.state.agents.any { it.id == id } },
+            registry = booted.tokenRegistry,
+            deps = authDeps,
+        )
         // CYP-234a-3: the hosted API docs (`/docs*`) — Redoc(REST)+AsyncAPI(WS) rendered from the generators,
         // Bearer-only hosted spec, fail-closed authenticated. NOT versioned (docs are not an /api resource) →
         // OUTSIDE the /api+/api/v1 loop, single-mount like the sockets.

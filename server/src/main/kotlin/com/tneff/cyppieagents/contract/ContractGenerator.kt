@@ -9,6 +9,8 @@ import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.EventsWsClientEvent
 import com.tneff.cyppieagents.model.EventsWsServerEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
+import com.tneff.cyppieagents.model.TerminalClientFrame
+import com.tneff.cyppieagents.model.TerminalServerFrame
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.json.JsonArray
@@ -42,6 +44,8 @@ object ContractGenerator {
         WsChannel("/ws/token-usage", serializer<AgentTokenUsageEvent>().descriptor, null), // CYP-316: one-way token feed
         WsChannel("/ws/busy-state", serializer<AgentBusyStateEvent>().descriptor, null), // CYP-324: one-way busy/idle feed
         WsChannel("/ws/agent", serializer<StreamJsonEvent>().descriptor, serializer<UserTurn>().descriptor),
+        // CYP-332: bidirectional PTY-over-WS terminal transport (Base64 byte frames + resize/exit).
+        WsChannel("/ws/terminal", serializer<TerminalServerFrame>().descriptor, serializer<TerminalClientFrame>().descriptor),
     )
 
     /** WS paths intentionally NOT in the frontend AsyncAPI (asserted by the drift-test as known exclusions). */
