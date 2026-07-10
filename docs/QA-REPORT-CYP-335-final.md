@@ -10,7 +10,7 @@
 an der sie rot werden soll. Der Produktivcode ist nach meiner Prüfung korrekt. Meine beiden offenen Befunde
 (CYP-342, CYP-343) sind verifiziert geschlossen; der dritte (CYP-346) ist durch den Ausbau behoben.
 
-**Ein Buchführungs-Befund bleibt offen** und ist keine Kleinigkeit — siehe §5.
+**Der Buchführungs-Befund aus §5 ist gemeldet und vom PO entschieden** — CYP-346 bleibt als Tracker des akzeptierten Defekts offen.
 
 ---
 
@@ -118,9 +118,12 @@ Zeit"), nicht den Mechanismus.
 
 `Cyp335TranscriptTimeColumnTest` (Fan-out + Monotonie über die ganze Spalte) ist unverändert grün.
 
-**Empfehlung:** Beide in den Feature-Branch übernehmen. Sie überschneiden sich mit Developer5s Tests, decken
-aber jeweils eine Achse, die dessen Tests nicht messen — die gerenderte Spalte bzw. den Stempel bei nachgespielter
-Historie.
+**Beide sind mit `d1bcf24` in den Feature-Branch übernommen.** Sie überschneiden sich mit Developer5s Tests,
+decken aber jeweils eine Achse, die dessen Tests nicht messen — die gerenderte Spalte bzw. den Stempel bei
+nachgespielter Historie. Developer5 hat sie dabei **nicht übernommen, sondern nachgeprüft**: mit wieder
+eingebauter Schätzung werden beide `Cyp335SkewReplayTest`-Fälle auch auf *seinem* Code rot. Das ist die richtige
+Prüfung — ein Test, der auf dem Code beißt, gegen den er geschrieben wurde, beweist nichts über den Code, in den
+er gemergt wird.
 
 ---
 
@@ -139,7 +142,7 @@ charakterisiert, hätten sie CYP-346 bekämpft — genau die Sorte Test, die den
 
 ---
 
-## 5. Offener Befund: der Ticket-Anker verrottet
+## 5. Der Ticket-Anker — gemeldet, entschieden, geschlossen
 
 `CYP-347` („serverNowMs beim Attach") ist als **Duplikat von CYP-346** geschlossen. Damit ist **CYP-346** der
 Tracker für den Server-seitigen Fix.
@@ -155,13 +158,14 @@ Anker heraus:
 Dann zeigen zwei Charakterisierungstests und ein Klassen-Kommentar auf ein geschlossenes Ticket, und der
 **akzeptierte** Defekt (schnelle Browser-Uhr invertiert die Spalte) hat keinen Tracker mehr.
 
-**Konkreter Vorschlag — PO-Entscheidung, ich rate nicht:**
+Ich habe CYP-346 kommentiert und **nichts transitioniert** — die Transition gehört dem PO.
 
-1. **CYP-346 bleibt offen** und wird auf den Server-Fix umgewidmet (Titel: „`serverNowMs` beim Attach"), oder
-2. CYP-346 wird geschlossen und ein **neues** Ticket trägt den Server-Fix; dann müssen KDoc und die zwei
-   Test-Kommentare auf dessen Key umgezogen werden — im selben Commit, sonst ist der Verweis tot.
+**Entschieden (PO, 2026-07-10):** CYP-346 **bleibt offen** und ist auf den Server-Fix umgewidmet
+(`serverNowMs` beim Attach, `:core` + Server, Team1), mit einem Warnhinweis, dass es nicht geschlossen werden
+darf, solange der akzeptierte Defekt besteht. Die drei Anker im Code bleiben damit gültig.
 
-Ich habe CYP-346 entsprechend kommentiert, aber **nichts transitioniert**.
+**Der Befund ist damit geschlossen.** Er steht hier, weil er die teuerste Sorte war: kein Code, kein roter Test,
+kein Werkzeug hätte ihn gefunden. Nur das Lesen dessen, worauf ein Kommentar zeigt.
 
 ---
 
