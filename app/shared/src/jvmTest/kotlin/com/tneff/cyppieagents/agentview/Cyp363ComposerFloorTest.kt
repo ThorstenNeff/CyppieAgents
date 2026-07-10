@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -75,7 +76,27 @@ class Cyp363ComposerFloorTest {
     }
 
     /** Rendert den ECHTEN Stapel: Fenster-Chrome (Titelleiste) + AgentWindow — genau das sieht der Operator. */
-    private fun ComposeUiTest.renderWindow(width: Float, height: Float) {
+    /**
+     * **Dieser Stapel ist von Hand zusammengesetzt und damit eine *vereinfachte* Komposition.** Die echte
+     * `AgentShell` liefert mehr Chrome: Avatar, Busy-Marker, Token-Zähler und `⋮` machen die Titelleiste
+     * **64 dp statt 56**, und `WORKTREE_SHELL_LIVE_ENABLED = false` rendert den `terminal_gated_pending`-Hinweis,
+     * der die Toggle-Zeile von 48 auf 84 dp treibt.
+     *
+     * ```
+     * Titelleiste 56 (schlank)      -> composer 33 dp     <- was DIESER Test rendert
+     * Titelleiste 64 (echte Shell)  -> composer  0 dp     <- was der Operator sieht (UIUX, Developer5)
+     * ```
+     *
+     * **Deshalb ist [full] = `false` der Default, und das ist kein Mangel, sondern die Beweisrichtung:**
+     * der schlanke Stapel hat *weniger* Chrome, also gilt `composer(schlank) >= composer(echt)`.
+     *
+     * * Ein **rotes** Ergebnis hier ist ein **Beweis für die echte Shell** (dort ist es nur schlimmer).
+     * * Ein **grünes** Ergebnis hier beweist **nichts** über die echte Shell.
+     *
+     * Die Zahlen in den Fehlermeldungen sind entsprechend **obere Schranken** für das, was der Operator hat.
+     * Wer eine belastbare *positive* Aussage braucht, misst gegen `AgentShell` — so wie Developer5s Guard.
+     */
+    private fun ComposeUiTest.renderWindow(width: Float, height: Float, full: Boolean = false) {
         val src = Lc()
         setContent {
             MaterialTheme {
@@ -83,11 +104,15 @@ class Cyp363ComposerFloorTest {
                     FloatingWindow(
                         window = WindowState("backend", "Backend", 0f, 0f, width, height),
                         isFocused = true, zOrder = 0f, onFocus = {}, onMove = { _, _ -> }, onResize = { _, _ -> },
+                        contextTokens = if (full) 12_345 else null,
+                        busy = full,
+                        titleBarLeading = if (full) ({ Text("BE") }) else null,
+                        onSettings = if (full) ({}) else null,
                     ) {
                         val v = remember {
                             AgentViewModel(emptySession(), "backend", lifecycle = src, lifecycleSource = src, canControl = true)
                         }
-                        AgentWindow(agentId = "backend", viewModel = v)
+                        AgentWindow(agentId = "backend", viewModel = v, terminalGatedNote = full)
                     }
                 }
             }
@@ -127,6 +152,35 @@ class Cyp363ComposerFloorTest {
             "Das Transkript misst $transcript. Das Chrome füllt das Fenster, bevor der `weight(1f)`-Bereich " +
                 "irgendetwas bekommt. Ein Fenster ohne Transkript ist kein Agentenfenster.",
         )
+    }
+
+    /**
+     * **Hält die Schranke fest, gegen die alle anderen Assertions hier zu lesen sind.**
+     *
+     * Zwei Messungen widersprachen sich — 33 dp (dieser Stapel) gegen 0 dp (die echte Shell). **Keine war
+     * falsch; sie maßen verschiedene Kompositionen.** Mit voller Titelleisten-Bestückung und dem
+     * `gated`-Hinweis misst derselbe Aufbau hier ebenfalls 0 dp. Die Differenz ist der Befund, nicht der
+     * Fehler: **ein von Hand zusammengesetzter Stapel ist eine Ableitung mit Extraschritten.**
+     */
+    @Test
+    fun theLeanStackIsAnUpperBound_theRealShellIsAlwaysWorse() {
+        var lean = 0.dp
+        var full = 0.dp
+        runComposeUiTest {
+            renderWindow(TILED_CONTENT_WINDOW_MIN_WIDTH, CONTENT_WINDOW_MIN_HEIGHT, full = false)
+            lean = heightOf(AgentViewTags.input("backend"))
+        }
+        runComposeUiTest {
+            renderWindow(TILED_CONTENT_WINDOW_MIN_WIDTH, CONTENT_WINDOW_MIN_HEIGHT, full = true)
+            full = heightOf(AgentViewTags.input("backend"))
+        }
+        assertTrue(
+            lean >= full,
+            "Der schlanke Stapel muss mindestens so viel Composer übrig lassen wie der voll bestückte " +
+                "(schlank=$lean, voll=$full). Trägt diese Ungleichung nicht, trägt die Beweisrichtung " +
+                "der anderen Tests hier nicht — dann ist ein rotes Ergebnis kein Beweis für die echte Shell.",
+        )
+        assertTrue(full == 0.dp, "Voll bestückt stirbt der Composer ganz (gemessen: $full) — die Zahl von UIUX und Developer5.")
     }
 
     /**
