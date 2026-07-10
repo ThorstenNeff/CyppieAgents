@@ -14,6 +14,10 @@
     <!-- CYP-326 #1: injizierte System-/Orchestrator-Nachricht im Agenten-Verlauf (Label + unsichtbare SR-Kennzeichnung). -->
     <string name="transcript_system_label">System</string>
     <string name="a11y_transcript_system">System: %1$s</string>
+    <!-- CYP-335: gelabelte Ansage der Zeitzelle jeder Transkriptzeile (sichtbar bleibt „09:14"). Nackte Ziffern
+         wären für einen Screenreader wertlos, und ohne Label endete die Ansage nach beliebigem Nutzertext auf
+         einer Zahl. %1$s = die formatierte Uhrzeit (HH:mm, 24 h, lokale Zone). -->
+    <string name="a11y_transcript_time">um %1$s Uhr</string>
     <string name="a11y_agent_status">Agentenstatus: %1$s</string>
 
     <!-- Observability Event-Log UI (CYP-41 Browse + CYP-42 Live-Tail), docs/design/event-log-keys.md.

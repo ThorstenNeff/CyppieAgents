@@ -7,11 +7,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -42,8 +44,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.connector.ConnectorCapabilityBadge
@@ -62,6 +66,7 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_tool_error
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_ok
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_running
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_system
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_time
 import kmpcyppieagents.app.shared.generated.resources.a11y_user_turn
 import kmpcyppieagents.app.shared.generated.resources.transcript_system_label
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_already_running
@@ -423,7 +428,7 @@ private fun AgentTranscript(
     ) {
         itemsIndexed(events, key = { _, event -> event.id }) { index, event ->
             // CYP-335: the `HH:mm` gutter wraps EVERY line kind — one place, so no row type can be forgotten.
-            TranscriptLine(agentId = agentId, index = index, tsMs = event.tsMs) {
+            TranscriptRow(agentId = agentId, index = index, tsMs = event.tsMs) {
                 when (event) {
                     is AgentEvent.AssistantText -> AssistantTextRow(
                         event,
@@ -456,41 +461,88 @@ private fun AgentTranscript(
     }
 }
 
+/** CYP-335 (`transcript.time.column.width`): fixed, not intrinsic — an `IntrinsicSize.Min` would be
+ *  re-measured per recycled `LazyColumn` item instead of shared across them. 5 monospace glyphs at
+ *  `labelSmall` ≈ 33 dp, so ~33 % reserve. */
+private val TRANSCRIPT_TIME_COLUMN_WIDTH = 44.dp
+
+/** CYP-335 (`transcript.time.column.gap`): reuses the row's existing 8 dp horizontal unit. */
+private val TRANSCRIPT_TIME_COLUMN_GAP = 8.dp
+
 /**
- * CYP-335: one transcript line — a fixed `HH:mm` gutter in local browser time, then the kind-specific row.
+ * CYP-335: one transcript line — the `HH:mm` gutter in local time, then the kind-specific row.
  *
- * Wrapping at the call site (rather than threading a timestamp into each of the six row composables) is what
- * makes "every line kind shows a time" structurally true: a future [AgentEvent] subtype gets the gutter for
- * free, and no row can silently opt out.
+ * The gutter belongs to the *transcript*, not to the six rows. Wrapping them (rather than threading a
+ * timestamp into each) is what makes "every line kind shows a time" structurally true — a future
+ * [AgentEvent] subtype gets the gutter for free, and no row can silently opt out. It also keeps all six row
+ * bodies bit-identical: their indents, markers and test tags never move.
  *
- * Top-aligned, so a multi-line assistant turn keeps its time next to its FIRST line. Monospace keeps the
- * digits on a common grid; the timestamp is deliberately left in the semantics tree (it is information a
- * screen-reader user wants), unlike the decorative `›`/`⇥` markers the rows clear.
+ * Two consequences worth naming, because they are the design (spec §1):
+ *  - The content edge is the same for all six kinds (`contentPadding 12 + 44 + 8 = 64 dp`).
+ *  - [ResultRow]'s tinted container starts **after** the gutter, so the time always sits on `surface` and
+ *    never on `errorContainer`/`surfaceVariant`. One contrast pair to prove instead of three.
+ *
+ * **Two clocks feed this one column.** Stream rows carry the *server's* `tsMs`; [AgentEvent.UserTurn] and the
+ * `conn-error` [AgentEvent.Notice] carry the *client's* (see [AgentViewModel]'s injected clock). If the two
+ * drift, the column runs backwards — the same failure class as re-dating a row in [foldEvent], only across
+ * processes instead of across updates. In the MVP the server binds `localhost`, so drift is ~0. This turns real
+ * with the first remote connector: the client-born rows would then need a server-anchored stamp, not a local one.
  */
 @Composable
-private fun TranscriptLine(
+private fun TranscriptRow(
     agentId: String,
     index: Int,
     tsMs: Long,
     content: @Composable () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Text(
-            // The offset lookup crosses into JS on Wasm — remember it per instant, not per recomposition.
-            text = remember(tsMs) { formatLocalHhMm(tsMs) },
-            color = MaterialTheme.colorScheme.outline,
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.testTag(AgentViewTags.eventTime(agentId, index)),
-        )
-        Box(Modifier.weight(1f)) { content() }
+    Row(modifier = Modifier.fillMaxWidth()) {
+        TimeCell(agentId = agentId, index = index, tsMs = tsMs)
+        Spacer(Modifier.width(TRANSCRIPT_TIME_COLUMN_GAP))
+        // alignByBaseline on BOTH children: the time is labelSmall (11 sp) and the content bodyMedium (14 sp),
+        // so aligning the *boxes* (Alignment.Top) would leave the smaller digits visibly floating above the
+        // content's baseline — and drift differently per row kind, which run three typography steps.
+        Box(Modifier.weight(1f).alignByBaseline()) { content() }
     }
+}
+
+/**
+ * The `HH:mm` cell. Visible text ≠ spoken text (the file's idiom, cf. [ResultRow]/[UserTurnRow]): the eye sees
+ * `09:14`, the screen reader hears "um 09:14 Uhr" — bare digits at the end of an arbitrary user message would
+ * be meaningless.
+ *
+ * `colorScheme.outline` is deliberately NOT used here despite being the muted role next door in [NoticeRow]:
+ * against `surface` it measures 3.55:1 (light) / 3.63:1 (dark) and fails WCAG AA for text. It is a border role.
+ * `onSurfaceVariant` measures 8.69:1 / 9.80:1 (AAA) and needs no alpha — damping comes from size and role.
+ *
+ * The test tag lives INSIDE `clearAndSetSemantics` because that is what the design spec's tag contract asks for,
+ * and because it is order-independent. Measured, not assumed: on Compose 1.9 / Kotlin 2.4 a `Modifier.testTag(…)`
+ * placed *before* the block **survives** it — the documented "the clearing swallows the tag" failure mode did not
+ * reproduce here (`TranscriptTimestampRenderTest` stays green either way). So the placement is insurance against a
+ * behaviour we do not control, not a fix for an observed break. What the test does pin is that the cell is
+ * addressable by tag AND announces the labelled description rather than bare digits.
+ */
+@Composable
+private fun RowScope.TimeCell(agentId: String, index: Int, tsMs: Long) {
+    // The offset lookup crosses into JS on Wasm — resolve it per instant, not per recomposition.
+    val clock = remember(tsMs) { formatLocalHhMm(tsMs) }
+    val spoken = stringResource(Res.string.a11y_transcript_time, clock)
+    val tag = AgentViewTags.eventTime(agentId, index)
+    Text(
+        text = clock,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.labelSmall,
+        fontFamily = FontFamily.Monospace,
+        textAlign = TextAlign.End,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier
+            .width(TRANSCRIPT_TIME_COLUMN_WIDTH)
+            .alignByBaseline()
+            .clearAndSetSemantics {
+                contentDescription = spoken
+                testTag = tag
+            },
+    )
 }
 
 @Composable

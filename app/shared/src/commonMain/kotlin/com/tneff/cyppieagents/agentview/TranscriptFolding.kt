@@ -39,8 +39,13 @@ fun foldEvent(current: List<AgentEvent>, event: AgentEvent): List<AgentEvent> {
         is AgentEvent.ToolCall -> {
             val existing = current.getOrNull(idx) as? AgentEvent.ToolCall
             if (existing != null) {
-                // The incoming event carries the RESULT's time, so take its payload but keep the start time —
-                // a plain `it[idx] = event` would re-date the row to the moment the tool finished.
+                // Take the incoming payload (RUNNING → OK/ERROR) but keep the row's own start time: a plain
+                // `it[idx] = event` re-dates the row to the moment the tool FINISHED.
+                //
+                // Precisely: an event coming through [StreamJsonMapper] already carries the start time here (its
+                // `prior.copy(...)` preserves it), so for that source this is a second line of defence. It is the
+                // ONLY line of defence for sources that do NOT go through the mapper — [StubAgentSession], tests,
+                // and any future session emitting [AgentEvent]s directly. Not redundant; do not delete.
                 current.toMutableList().also { it[idx] = event.copy(tsMs = existing.tsMs) }
             } else {
                 current + event
