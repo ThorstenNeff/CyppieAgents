@@ -196,9 +196,13 @@ fun AgentShell(
     /** Override the CYP-326 compact-orchestration port; `null` → the in-memory stub until Backend's Milestone-C
      *  endpoints land (`GET /api/compact/status` · `POST /api/compact/config`), then the live HTTP repo. */
     compactRepository: CompactRepository? = null,
-    /** Override the project-settings data port (CYP-84/85); `null` → the in-memory stub until CYP-96 lands. */
+    /** Override the project-settings data port (CYP-84/85); `null` → the `ConfigHttpRepository` (CYP-96 landed). */
     configRepository: ConfigRepository? = null,
-    /** Override the agent-management data port (CYP-86/87/88); `null` → the in-memory stub until CYP-97 lands. */
+    /**
+     * Override the agent-management data port (CYP-86/87/88); `null` → the `AgentManagementHttpRepository`
+     * (CYP-97 landed). It also drives the **dynamic agent-window list**, so a backendless caller that leaves
+     * this `null` renders no agent windows at all rather than failing loudly (CYP-339).
+     */
     agentManagementRepository: AgentManagementRepository? = null,
     /** Override the Product-Lead report data port (CYP-90); `null` → the in-memory stub until CYP-89 lands. */
     reportRepository: ReportRepository? = null,
