@@ -62,6 +62,15 @@ class LifecycleManager(
     /** CYP-324 — invoked on remove (CYP-97), so the busy feed drops the agent entirely (no ghost snapshot).
      *  Wired to [AgentBusyStateTracker.forget]; null = not wired. */
     private val onBusyForget: ((agentId: String) -> Unit)? = null,
+    /**
+     * CYP-368 — the per-agent transition lock, **shared** with every other component that participates in an
+     * agent's transition (BE-2: `PtyManager`). Owned by neither: see [AgentTransitionLock], which also carries
+     * the deadlock rule this class depends on (the reader's exit tail must never take it).
+     *
+     * Defaulted so existing construction sites and tests are unchanged; the wiring passes one instance per
+     * runtime, because an `agentId` is only unique within a project.
+     */
+    private val transitions: AgentTransitionLock = AgentTransitionLock(),
 ) {
     private val log = LoggerFactory.getLogger("lifecycle")
     private val lock = Any()
@@ -99,41 +108,56 @@ class LifecycleManager(
         worktreeOf.keys.map { AgentRunStateEvent(it, status[it] ?: AgentRunState.STOPPED) }
     }
 
-    /** Boot path: spawn fail-closed (a failure → ERROR, never aborts the boot). Returns true if RUNNING. */
-    fun bootAgent(agentId: String): Boolean = try {
-        doSpawn(agentId, restart = false)
-        true
-    } catch (e: Exception) {
-        log.error("agent '{}' failed to boot ({})", agentId, e.message)
-        setRunState(agentId, AgentRunState.ERROR)
-        false
+    /**
+     * Boot path: spawn fail-closed (a failure → ERROR, never aborts the boot). Returns true if RUNNING.
+     *
+     * CYP-368: takes the same per-agent mutex as the runtime controls, via `runBlocking`. Boot runs on the
+     * startup thread before Ktor serves a request, so there is nothing to contend with and nothing to block —
+     * but the lock must cover **every** writer, or the rule has an exception a reader has to remember.
+     * `bootAgent` stays non-suspend so `BootOrchestrator.boot()` keeps its signature.
+     */
+    fun bootAgent(agentId: String): Boolean = transitions.withAgentBlocking(agentId) {
+        try {
+            doSpawn(agentId, restart = false)
+            true
+        } catch (e: Exception) {
+            log.error("agent '{}' failed to boot ({})", agentId, e.message)
+            setRunState(agentId, AgentRunState.ERROR)
+            false
+        }
     }
 
     /** Stop the agent and **confirm its process is gone** before reporting STOPPED (no zombie). */
-    suspend fun stop(agentId: String): AgentRunStateEvent {
+    suspend fun stop(agentId: String): AgentRunStateEvent = transitions.withAgent(agentId) {
         ensureKnown(agentId)
         sessions.removeAndAwait(agentId) // remove from registry + await real termination
         onContextReset?.invoke(agentId) // CYP-316: a stopped agent has no standing context → token feed → null
         onBusyReset?.invoke(agentId) // CYP-324: a stopped agent is not processing → clear the `*`
-        return setRunState(agentId, AgentRunState.STOPPED)
+        setRunState(agentId, AgentRunState.STOPPED)
     }
 
     /** Start a stopped agent in its SAME worktree. 409 if already running; 503 + ERROR on spawn failure. */
-    suspend fun start(agentId: String): AgentRunStateEvent {
+    suspend fun start(agentId: String): AgentRunStateEvent = transitions.withAgent(agentId) {
         ensureKnown(agentId)
+        // CYP-368: check-then-act, now atomic per agent. The loser of two concurrent starts enters here AFTER
+        // the winner published RUNNING, so it fails on this existing guard — before it can spawn. The 409 is not
+        // new behaviour bolted on; it falls out of the serialisation.
         if (runStateOf(agentId) == AgentRunState.RUNNING) {
             throw ConflictException("agent '$agentId' is already running", code = "already_running")
         }
-        return spawnOrError(agentId, restart = false)
+        // A crashed agent leaves its dead session in the registry (nothing removes it). Clear it before the
+        // respawn, so doSpawn never has to displace one — displacement is how a live process becomes an orphan.
+        sessions.removeAndAwait(agentId)
+        spawnOrError(agentId, restart = false)
     }
 
     /** Restart = stop→start as ONE op: await the old process's death, then respawn into the same worktree. */
-    suspend fun restart(agentId: String): AgentRunStateEvent {
+    suspend fun restart(agentId: String): AgentRunStateEvent = transitions.withAgent(agentId) {
         ensureKnown(agentId)
         sessions.removeAndAwait(agentId) // no orphan: old session fully gone before respawn
         onContextReset?.invoke(agentId) // CYP-316: respawn = fresh context → token feed resets to null until turn 1
         onBusyReset?.invoke(agentId) // CYP-324: respawn = idle until its next turn
-        return spawnOrError(agentId, restart = true)
+        spawnOrError(agentId, restart = true)
     }
 
     private fun ensureKnown(agentId: String) {
@@ -173,7 +197,16 @@ class LifecycleManager(
     ): AgentRunStateEvent {
         val worktreeName = worktreeOf.getValue(agentId)
         ensureWorktree(worktreeName) // idempotent — reuses the existing worktree
-        sessions.register(spawnFn(agentId, worktreeName))
+        val session = spawnFn(agentId, worktreeName)
+        // CYP-368 tripwire, fail-loud. `ConnectorSessions.register` displaces silently, and a displaced local
+        // session keeps running: an unregistered `claude`, unreaped, still burning tokens. With the per-agent
+        // mutex this can never happen — so if it ever does, we learn it here instead of in a token bill. (The
+        // check lives here, not in `register()`, because the wire path displaces ON PURPOSE on reconnect,
+        // CYP-141/RC3.)
+        check(sessions.session(agentId) == null) {
+            "agent '$agentId' already has a live session at spawn time — the per-agent lock was bypassed"
+        }
+        sessions.register(session)
         if (recorder != null && projector != null) {
             recorder.record(
                 if (restart) projector.agentRestarted(agentId) else projector.agentSpawned(agentId, worktreeName),

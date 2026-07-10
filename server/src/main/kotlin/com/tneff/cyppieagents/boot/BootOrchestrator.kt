@@ -514,6 +514,9 @@ class BootOrchestrator(
             wt.ensureClone(repo)                         // fresh clone from the NEW repo if torn down; else idempotent
             wt.ensureWorktree(worktreeName, repo.branch)
         }
+        // CYP-368: ONE per-agent transition lock per runtime, shared by every component that participates in a
+        // transition. BE-2 hands the same instance to the PtyManager, so a hand-off cannot straddle two locks.
+        val transitions = AgentTransitionLock()
         val lifecycle = LifecycleManager(
             initialWorktrees = config.agents.associate { it.id to it.worktreeName },
             sessions = sessions,
@@ -533,6 +536,7 @@ class BootOrchestrator(
             // remove → drop the entry. This deliberately avoids touching LifecycleManager (CYP-351 rebuilds it).
             onBusyReset = { busyStateTracker.reset(it); terminalControlTracker.reset(it) },   // CYP-324/354: stop/restart → clear `*` + mode→MEDIATED
             onBusyForget = { busyStateTracker.forget(it); terminalControlTracker.forget(it) }, // CYP-324/354: remove → drop both entries
+            transitions = transitions, // CYP-368
         )
 
         // CYP-122: the single, audited, server-enforced point that sets an agent's connector (opt-in).
@@ -614,6 +618,7 @@ class BootOrchestrator(
             val pBusyState = AgentBusyStateTracker() // CYP-324: this project's own busy feed (per-runtime)
             val pTerminalControl = TerminalControlStateTracker() // CYP-354 (BE-1): this project's own terminal-state feed
             val pCompactSignal = CompactCompletionSignal() // CYP-326: this project's own compaction-completed signal
+            val pTransitions = AgentTransitionLock() // CYP-368: this project's transition lock (agentIds are per-project)
             val pLifecycle = LifecycleManager(
                 initialWorktrees = emptyMap(),
                 sessions = pSessions,
@@ -628,6 +633,7 @@ class BootOrchestrator(
                 onContextForget = { pTokenUsage.forget(it) },
                 onBusyReset = { pBusyState.reset(it); pTerminalControl.reset(it) },   // CYP-324/354: this project's lifecycle → its own busy + terminal-state trackers
                 onBusyForget = { pBusyState.forget(it); pTerminalControl.forget(it) },
+                transitions = pTransitions, // CYP-368
             )
             val pAgentManagement = AgentManagement(
                 state = state,
