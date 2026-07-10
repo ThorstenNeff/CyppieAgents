@@ -63,6 +63,20 @@ class ClaudeCodeSession(
     @Volatile private var pendingTurn: CompletableDeferred<Unit>? = null
     private var readerJob: Job? = null
 
+    /**
+     * CYP-360 — did this attempt ever bind a session id? Read by [ResumingSession] at the moment the session
+     * ends, to tell the agent's session from a stale `--resume` attempt that never came up. Non-suspending on
+     * purpose: `boundSessionId` is set during the stream, long before the end, so it is already settled.
+     */
+    val everBound: Boolean get() = boundSessionId != null
+
+    /** CYP-360 — notified when this session's stream ends on its own (never on a deliberate [close]). */
+    private val exitListeners = java.util.concurrent.CopyOnWriteArrayList<(Int?) -> Unit>()
+
+    override fun addExitListener(listener: (exitCode: Int?) -> Unit) {
+        exitListeners.add(listener)
+    }
+
     fun start() {
         readerJob = scope.launch {
             process.stdoutLines.collect { line ->
@@ -111,6 +125,14 @@ class ClaudeCodeSession(
             pendingTurn?.complete(Unit)
             pendingTurn = null
             observer?.onProcessExit(agentId, boundSessionId)
+            // CYP-360: the same end, reported to whoever owns this session's identity (the resume facade, and
+            // through it the run-state authority). The exit status is not available at this seam yet — CYP-351
+            // supplies it — so listeners are told `null`, which means "unknown", never "clean".
+            // A throwing listener must not swallow the others.
+            exitListeners.forEach { l ->
+                runCatching { l(null) }
+                    .onFailure { log.warn("exit listener failed for agent={}: {}", agentId, it.message) }
+            }
         }
     }
 
