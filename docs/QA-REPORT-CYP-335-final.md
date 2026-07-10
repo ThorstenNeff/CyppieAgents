@@ -1,6 +1,6 @@
-# QA-Abnahme CYP-335 — Endstand `a52bb4d`
+# QA-Abnahme CYP-335 — Endstand `d1bcf24`
 
-> Prüfling: `feature/CYP-335-agent-transcript-timestamps` @ **`a52bb4d`** (rebased auf `develop` `5c79a79`)
+> Prüfling: `feature/CYP-335-agent-transcript-timestamps` @ **`d1bcf24`** (Branch-Spitze; Mutationsbefunde gegen `a52bb4d`)
 > Prüfer: QA / Test Engineer (Team2) · 2026-07-10
 > Vorgänger-Bericht: `docs/QA-REPORT-CYP-335.md` (gegen `6ab6e08`) — inhaltlich weiterhin gültig.
 
@@ -10,23 +10,31 @@
 an der sie rot werden soll. Der Produktivcode ist nach meiner Prüfung korrekt. Meine beiden offenen Befunde
 (CYP-342, CYP-343) sind verifiziert geschlossen; der dritte (CYP-346) ist durch den Ausbau behoben.
 
-**Ein Buchführungs-Befund bleibt offen** und ist keine Kleinigkeit — siehe §5.
+**Der Buchführungs-Befund aus §5 ist gemeldet und vom PO entschieden** — CYP-346 bleibt als Tracker des akzeptierten Defekts offen.
 
 ---
 
 ## 1. Gate — die Kommandos, nicht „Tests grün"
 
-Alle gegen `a52bb4d`, plus meine zwei Zähne (`Cyp335TranscriptTimeColumnTest`, `Cyp335SkewReplayTest`).
+Das Gate, abschließend, **nackt gefahren**: ohne `TZ=`-Präfix, ohne `--rerun-tasks`. Zahlen gegen **`d1bcf24`**
+(Branch-Spitze inkl. `jsTest`-Quellsatz und meiner zwei übernommenen Zähne).
 
 | Kommando | Ergebnis |
 |---|---|
-| `./gradlew :app:shared:jvmTest` | **765 Tests · 0 rot** |
 | `./gradlew :core:jvmTest` | **119 Tests · 0 rot** |
-| `./gradlew :app:shared:wasmJsBrowserTest` — **ohne** `TZ=`, **ohne** `--rerun-tasks` | **172 Tests · 0 rot** |
-| `./gradlew :app:shared:jsBrowserTest` | grün |
-| `./gradlew :app:shared:compileKotlinIosSimulatorArm64` | grün |
+| `./gradlew :app:shared:jvmTest` | **765 Tests · 0 rot** |
+| `./gradlew :app:shared:wasmJsBrowserTest` | **172 Tests · 0 rot** |
+| `./gradlew :app:shared:jsBrowserTest` | **164 Tests · 0 rot** |
+| | **1101 Tests · 0 rot** |
 
-**Das Gate braucht keinen Krückstock mehr.** Der nackte Befehl belegt, was er behauptet.
+**Der nackte Befehl belegt, was er behauptet** — kein `--rerun-tasks`, keine Umgebungsvariable.
+
+*(Zusätzlich, nicht Teil des Gates: `compileKotlinIosSimulatorArm64` grün — das Target darf nicht brechen,
+ausgeführt wird es nicht, siehe §6.1.)*
+
+> Die Mutations- und Ausbau-Befunde in §2 wurden gegen **`a52bb4d`** erhoben; `d1bcf24` fügt nur Tests und
+> Kommentare hinzu, keinen Produktivcode außer dem `jsTest`-Quellsatz und dem iOS-KDoc. Die Zahlen für
+> `jvmTest`/`wasmJsBrowserTest` sind auf beiden Ständen identisch.
 
 ### Zone als Build-Input (CYP-342)
 
@@ -52,6 +60,21 @@ als CYP-342 forderte.
 
 Die zweite ist die Gegenprobe, die zählt: **dieselbe Mutation entwischte vor dem Fix unter `America/St_Johns`
 vollständig** (167 Tests, 0 rot). Der Test hängt nicht mehr an der Tageszeit.
+
+### CYP-343-Analogon am `js`-`actual` (gegen `d1bcf24`)
+
+Die Lücke, die ich in meiner **eigenen** Abnahme übersehen hatte (§7): `jsBrowserTest` war grün, ohne das
+js-`actual` je auszuführen. Developer5 hat einen `jsTest`-Quellsatz angelegt; ich habe ihn nicht gelesen,
+sondern mutiert.
+
+| Zustand von `TranscriptTime.js.kt` | js-Tests | rot |
+|---|---|---|
+| unmutiert | 164 | **0** |
+| Vorzeichen entfernt | 164 | **1** — `browserOffset_matchesTheBrowsersOwnWallClock_toTheMinute` |
+| Halbstunde abgeschnitten | 164 | **1** — derselbe Test |
+
+**Ein Test, der eine Mutation im `actual` fängt, führt es aus.** Und nebenbei belegt: die Zone ist auch im
+js-Karma gepinnt — unter UTC hätte die Vorzeichen-Mutation `-0 == 0` gerechnet und wäre grün geblieben.
 
 ### Ausbau der Skew-Schätzung (jvm)
 
@@ -95,9 +118,12 @@ Zeit"), nicht den Mechanismus.
 
 `Cyp335TranscriptTimeColumnTest` (Fan-out + Monotonie über die ganze Spalte) ist unverändert grün.
 
-**Empfehlung:** Beide in den Feature-Branch übernehmen. Sie überschneiden sich mit Developer5s Tests, decken
-aber jeweils eine Achse, die dessen Tests nicht messen — die gerenderte Spalte bzw. den Stempel bei nachgespielter
-Historie.
+**Beide sind mit `d1bcf24` in den Feature-Branch übernommen.** Sie überschneiden sich mit Developer5s Tests,
+decken aber jeweils eine Achse, die dessen Tests nicht messen — die gerenderte Spalte bzw. den Stempel bei
+nachgespielter Historie. Developer5 hat sie dabei **nicht übernommen, sondern nachgeprüft**: mit wieder
+eingebauter Schätzung werden beide `Cyp335SkewReplayTest`-Fälle auch auf *seinem* Code rot. Das ist die richtige
+Prüfung — ein Test, der auf dem Code beißt, gegen den er geschrieben wurde, beweist nichts über den Code, in den
+er gemergt wird.
 
 ---
 
@@ -116,7 +142,7 @@ charakterisiert, hätten sie CYP-346 bekämpft — genau die Sorte Test, die den
 
 ---
 
-## 5. Offener Befund: der Ticket-Anker verrottet
+## 5. Der Ticket-Anker — gemeldet, entschieden, geschlossen
 
 `CYP-347` („serverNowMs beim Attach") ist als **Duplikat von CYP-346** geschlossen. Damit ist **CYP-346** der
 Tracker für den Server-seitigen Fix.
@@ -132,27 +158,60 @@ Anker heraus:
 Dann zeigen zwei Charakterisierungstests und ein Klassen-Kommentar auf ein geschlossenes Ticket, und der
 **akzeptierte** Defekt (schnelle Browser-Uhr invertiert die Spalte) hat keinen Tracker mehr.
 
-**Konkreter Vorschlag — PO-Entscheidung, ich rate nicht:**
+Ich habe CYP-346 kommentiert und **nichts transitioniert** — die Transition gehört dem PO.
 
-1. **CYP-346 bleibt offen** und wird auf den Server-Fix umgewidmet (Titel: „`serverNowMs` beim Attach"), oder
-2. CYP-346 wird geschlossen und ein **neues** Ticket trägt den Server-Fix; dann müssen KDoc und die zwei
-   Test-Kommentare auf dessen Key umgezogen werden — im selben Commit, sonst ist der Verweis tot.
+**Entschieden (PO, 2026-07-10):** CYP-346 **bleibt offen** und ist auf den Server-Fix umgewidmet
+(`serverNowMs` beim Attach, `:core` + Server, Team1), mit einem Warnhinweis, dass es nicht geschlossen werden
+darf, solange der akzeptierte Defekt besteht. Die drei Anker im Code bleiben damit gültig.
 
-Ich habe CYP-346 entsprechend kommentiert, aber **nichts transitioniert**.
+**Der Befund ist damit geschlossen.** Er steht hier, weil er die teuerste Sorte war: kein Code, kein roter Test,
+kein Werkzeug hätte ihn gefunden. Nur das Lesen dessen, worauf ein Kommentar zeigt.
 
 ---
 
-## 6. Lücken — unverändert benannt
+## 6. Scope und Lücken — getrennt geführt
+
+**Team2 arbeitet für den Browser** (Entscheidung des Auftraggebers, 2026-07-10). Das Gate lautet abschließend:
+
+```
+:core:jvmTest · :app:shared:jvmTest · :app:shared:wasmJsBrowserTest · :app:shared:jsBrowserTest
+```
+
+Es wird kein Emulator, kein Simulator und nichts KVM-gestütztes gestartet.
+
+### 6.1 Außerhalb des Scopes — per Entscheidung, nicht aus Versäumnis
+
+Das sind **keine Lücken**. Sie stehen hier, damit belegt ist, *was* nicht geprüft wird und *warum es unkritisch
+ist*. Einmal genannt, nicht als Schuld geführt.
+
+| Target | Status | Warum unkritisch |
+|---|---|---|
+| **Android** | nicht getestet, außerhalb des Scopes | `TranscriptTime.android.kt` ist — Kommentare und Objektnamen abgezogen — **zeichengleich** mit `TranscriptTime.jvm.kt` (per `diff` verifiziert): dieselbe `TimeZone.getDefault().getOffset(atEpochMs)`, dasselbe `System.currentTimeMillis()`. Der ausgeführte JVM-`actual` deckt denselben Code. |
+| **iOS** | kompiliert, `actual` nie ausgeführt | Der `iosTest`-Quellsatz ist da, das Target kompiliert, ausgeführt wurde das `actual` nie — und auf diesem Host kann es niemand. **Host-Mangel, keine fehlende Infrastruktur.** Der iOS-KDoc benennt die Falle explizit: `getTimezoneOffset()` (js/wasm) zählt **hinter** UTC und muss negiert werden, `secondsFromGMTForDate` ist **ost-positiv** und darf es nicht. Gegenläufige Konventionen, gleich aussehender Code. |
+
+**Drei `actual`s werden ausgeführt: `jvm`, `wasmJs`, `js`.** Jedes ist per **Mutation im `actual`** belegt
+(Vorzeichen entfernt → rot; Halbstunde abgeschnitten → rot), nicht per Lektüre.
+
+### 6.2 Echte Lücken — innerhalb des Scopes
 
 | ID | Lücke |
 |---|---|
 | L1 | Der **zweite** Verbindungsverlust ist live nicht reproduzierbar (`catch` außerhalb der `collect`-Schleife). Belegt nur auf Fold-Ebene. |
 | L2 | AC 3 (Reconnect) ist nur auf der **JVM** bewiesen — embedded Ktor ist `jvmTest`-only. Analogie, kein Browser-Beweis. |
 | L3 | Der `eventTime`-Tag ist nur auf der JVM per `onNodeWithTag` belegt; der Browser-Render-Test nutzt `onNodeWithText`. |
-| L4 | **Android bleibt unkompiliert und ungetestet** (kein Android SDK auf diesem Host; auf `develop` identisch). |
-| L5 | iOS ist nur **kompiliert**, nicht ausgeführt. |
 | L6 | **DST-Wechsel** ist per Ticket außerhalb des Scopes und ungetestet. |
-| L7 | **Akzeptierter Defekt:** eine vorgehende Browser-Uhr invertiert die Spalte (Antwort unter der Frage, mit früherer Zeit). Bewusst in Kauf genommen, charakterisiert, getrackt (§5). |
+| L7 | **Akzeptierter Defekt:** eine vorgehende Browser-Uhr invertiert die Spalte (Antwort unter der Frage, mit früherer Zeit). Bewusst in Kauf genommen, charakterisiert, getrackt (CYP-346, §5). |
+
+### 6.3 Was hier stand — und warum es weg ist
+
+Ich hatte „Android unkompiliert und ungetestet" und „iOS nur kompiliert" als **Lücken** geführt: als Schulden,
+die jemand mit dem richtigen SDK begleichen müsste. Das war zweimal falsch — in der **Gewichtung** (Android
+teilt sich den Code mit dem ausgeführten JVM-`actual`) und in der **Rahmung** (beides liegt außerhalb des
+Scopes).
+
+**Das `js`-`actual` war die einzige echte Lücke dieser Liste — und sie ist geschlossen.** Geschlossen, weil eine
+Mutation *im `actual`* den Test rot macht, nicht weil ein Target grün war. Genau dieser Unterschied ist der
+Gegenstand des ganzen Tickets.
 
 ---
 
@@ -167,5 +226,15 @@ Spalte brav, während jede client-geborene Zeile um Stunden zurückdatiert war.
 
 Derselbe Fehler in anderer Kleidung: eine `assertNotVisible` prüft Abwesenheit, nicht den Grund der Abwesenheit
 (CYP-340). Und ein Test, dessen Erwartungswert durch dieselbe Naht läuft, die er prüft, prüft nichts
-(`transcriptRow_rendersItsTimestampInTheBrowser`). Drei Gestalten einer Sache: **eine grüne Zusicherung ist so
-viel wert wie die Frage, die sie beantwortet.**
+(`transcriptRow_rendersItsTimestampInTheBrowser`).
+
+**Und eine vierte, die ich in meiner eigenen Abnahme übersehen habe:** `jsBrowserTest` war grün, ohne das
+js-`actual` je auszuführen. `platformTranscriptClock()` wurde in genau *einem* Testquellsatz aufgerufen
+(`wasmJsTest`); `commonTest` injiziert überall eine Fake-Uhr. Ich habe „Target grün" gelesen und „`actual`
+bewiesen" verstanden — und das Target im Gate geführt, als beweise es das `actual`.
+
+Geschlossen ist die Lücke nicht dadurch, dass ein `jsTest`-Quellsatz existiert, sondern dadurch, dass eine
+**Mutation im `actual`** den Test rot macht (§2). Der Unterschied ist der ganze Gegenstand dieses Tickets.
+
+Vier Gestalten einer Sache: **eine grüne Zusicherung ist so viel wert wie die Frage, die sie beantwortet.**
+Die vierte fand ich an der Stelle, an der sie am unangenehmsten ist — in der eigenen Abnahme.
