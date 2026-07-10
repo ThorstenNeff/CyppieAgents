@@ -43,6 +43,11 @@ import kotlin.test.assertTrue
 /**
  * CYP-363 — **the chrome floor is re-derived from the composition, never maintained by hand.**
  *
+ * This guard measures the **Agent** window, the taller of the two content-window types, so the floor is derived
+ * from its chrome. The **Comm** window is the other content window and shares the same [CONTENT_WINDOW_MIN_HEIGHT];
+ * that it fits under this Agent-derived floor is proven separately in `Cyp377CommWindowFloorFitTest`. Together
+ * they are the "content window" floor — measuring only one is the one-leg blindness CYP-377 closed.
+ *
  * [CONTENT_WINDOW_MIN_HEIGHT] said 301 dp: title bar 64 + header 164 + composer 73. CYP-333 then inserted a
  * fourth chrome row (`ModeToggleRow`) and the constant did not follow. At 301 dp the real shell rendered a window
  * that was **100 % chrome**: `transcript = 0 dp`, `input = 0 dp`. The invariant CYP-338 closed had reopened —
