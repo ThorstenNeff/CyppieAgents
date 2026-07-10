@@ -66,6 +66,35 @@ Zweck ist der faule Fix: `cancel()` ohne Join kehrt zurück, bevor der Body fert
 ⇒ ROT. Ohne diese Backe würde Backend2 T-Term „reparieren", indem er den Reader abschneidet, und CYP-247 fiele
 still.
 
+## 4b. Welchen Zweig T-Term trifft — und welchen ausdrücklich **nicht**
+
+Der Fix wird (voraussichtlich) drei Zweige haben:
+
+1. **Happy-path:** `destroy()` → Prozess stirbt → `readLine()` bekommt EOF → der Reader läuft aus → Join kehrt
+   zurück.
+2. **Flush:** die letzte Zeile wird vor dem Auslaufen noch geliefert (T-Flush).
+3. **Timeout-Fallback:** ein Prozess, der `destroy()` (SIGTERM) **ignoriert**, muss nach `withTimeoutOrNull(…)`
+   per `cancel()` / `destroyForcibly()` losgelassen werden — **das ist `CYP-374`, eine benannte Restschwäche,
+   keine Regression.**
+
+**T-Term trifft Zweig 1, nicht Zweig 3.** `sh -c 'while read _; do :; done'` **reagiert** auf `destroy()` —
+gemessen: `awaitTerminated()` kehrt **40 ms** nach `destroy()` zurück. Der Beweis steckt schon in der Matrix:
+der „destroy vor join"-Fix macht T-Term in **0,37 s** grün; wäre der Prozess SIGTERM-taub, würde **auch diese
+Zeile hängen**, weil `destroy()` den Read nie EOFt. Sie tut es nicht → der Prozess ist nicht taub → T-Term
+prüft den happy-path.
+
+> **Der Timeout-Zweig (CYP-374) ist NICHT abgedeckt.** Wer einen SIGTERM-tauben Zeugen braucht, muss einen
+> Prozess bauen, der SIGTERM **trappt** (`trap '' TERM; while read _; do :; done`) — dann fällt der happy-path
+> aus und der `withTimeoutOrNull`-Fallback wird geprüft. Das gehört zu CYP-374, nicht hierher. Ich sage es, damit
+> niemand aus „T-Term grün" schließt, der Timeout-Pfad sei bewiesen.
+
+## 4c. Wenn der Merge CYP-351 bündelt
+
+Backend2 bündelt womöglich den CYP-351-Fix (`onProcessExit`-Ableitung) mit CYP-371 in **einem** Merge. Ist das
+so, gehört die **CYP-351-Zange daneben** — `qa/CYP-351-testplan` (T7 „EOF ist kein Tod" + T4b „harter Tod wird
+gemeldet"). Zwei Zangen am selben Merge, beide mit eigener Matrix. Scope liegt bei Backend2; sobald bestätigt,
+fahre ich beide Pläne zusammen und melde **eine** kombinierte Matrix.
+
 ## 5. Was der Plan **nicht** prüft
 
 - **Den echten `claude`-Prozess.** Kein API-Key im Test; T-Term benutzt `sh`. Die **Mechanik** des Deadlocks ist
