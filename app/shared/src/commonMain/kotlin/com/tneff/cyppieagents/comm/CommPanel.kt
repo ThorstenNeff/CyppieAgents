@@ -364,8 +364,9 @@ private fun Composer(canWrite: Boolean?, sendError: String?, channelName: String
             val msg = if (it == "comm_send_denied") stringResource(Res.string.comm_send_denied) else stringResource(Res.string.comm_send_failed)
             Text(msg, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp))
         }
-        // CYP-26 §2.2: input holds a min width; below a threshold "Senden" degrades to a glyph (a11y
-        // label kept) and the placeholder ellipsizes rather than character-wrapping.
+        // CYP-26 §2.2 / CYP-370: below the compact threshold "Senden" degrades to a glyph (a11y name kept) and
+        // the placeholder ellipsizes rather than character-wrapping. (The old widthIn(min) on the input was dead
+        // and removed in CYP-370; the breakpoint, not a min width, keeps the field usable — same as AgentWindow.)
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val compact = maxWidth < COMPOSER_COMPACT_INPUT_THRESHOLD.dp + 96.dp
             val sendLabel = stringResource(Res.string.comm_composer_send)
