@@ -6,6 +6,11 @@
 > eingezogen (`ModeToggleRow`). Alle Chrome-Summen dieses Dokuments — und die bereits gemergte Konstante
 > `CONTENT_WINDOW_MIN_HEIGHT = 301` — beziehen sich auf die Komposition **davor**. Siehe **§5.1**: das ist kein
 > Schönheitsfehler, sondern der Boden, auf dem CYP-338 steht.
+>
+> Daraus wurde **CYP-363** (eigenes Ticket, `cyp363-chrome-floor-remeasure.md`): dort sind alle Chrome-Höhen
+> **gemessen** und der Guard entworfen. **CYP-350 ändert die Konstanten nicht** — es macht die Header-Höhe
+> unbedingt; CYP-363 zieht die Zahlen nach. **Reihenfolge: erst CYP-350, dann die Konstanten** (`277 / 367`
+> statt `385 / 475`), sonst wird zweimal korrigiert.
 > Docs-only. Adressat: Implementierung + Test.
 > Ursache-Ticket zu **CYP-338** (Mindesthöhe): der Header wächst bei schmaler Breite von 56 dp auf 164 dp und
 > drückt die Eingabezeile aus dem Fenster.
@@ -243,29 +248,33 @@ lautlos, der Composer wird gerendert, der Test ist grün.
 fordern, nicht nur seine Anwesenheit — sonst deckt die Nachgiebigkeit des gewichteten Kindes jedes künftige
 Chrome-Wachstum zu.
 
-### 5.3 Was ich beziffern darf — und was nicht
+### 5.3 `T` ist inzwischen gemessen — und meine Schätzung war fast um die Hälfte daneben
 
-Sei `T` die Höhe der `ModeToggleRow`. Dann ist, mit **ausschließlich gemessenen** Summanden:
+Die erste Fassung dieses Abschnitts ließ `T` (die Höhe der `ModeToggleRow`) als **Symbol** stehen und weigerte
+sich, die gerechneten **≈ 44 dp** in eine Summe zu schreiben, die „gemessen" behauptet. **CYP-363 hat `T`
+gemessen: 84 dp** im ausgelieferten Zustand (Operator + Hinweis `terminal_gated_pending`, 320 dp Breite).
+
+> Die Weigerung war richtig. `44` gegen `84` — die Ableitung lag **fast um die Hälfte** daneben.
+> Hätte sie in der Konstanten gestanden, wäre der Boden um 40 dp zu niedrig geblieben und der Defekt
+> unbemerkt. **Eine Zahl, die man nicht gemessen hat, ist nicht „ungefähr richtig". Sie ist unbekannt.**
+
+Mit ausschließlich **natürlich gemessenen** Summanden (CYP-363 §2, 320 dp, ausgelieferter Zustand):
 
 | | vor CYP-350 | nach CYP-350 |
 |---|---|---|
-| Header (320 dp) | 164 dp *(gemessen)* | **56 dp** *(gemessen bei 520 dp, §0)* |
-| Header (520 dp) | 56 dp *(gemessen)* | 56 dp |
-| Festes Chrome (64 + Header + **`T`** + 73) | **`301 + T`** @ 320 dp | **`193 + T`**, breitenunabhängig |
-| Mindesthöhe (+ 90 dp Transkript, CYP-338 §2.2) | `391 + T` | **`283 + T`** |
-
-**`T` ist keine Zahl, die ich liefern kann.** Ich kann sie *rechnen* — `OutlinedSegmentedButtonTokens.
-ContainerHeight` steht mit **40 dp** im gebauten `material3`-Artefakt (per `javap` gelesen, nicht erinnert),
-dazu die `Column`-Polsterung `2 × 2 dp` ⇒ **≈ 44 dp**. Aber genau das ist eine **Ableitung unter stiller
-Annahme**, und sie in dieselbe Summe zu schreiben wie die gemessenen 64/73 wäre der Fehler aus §7, ein drittes
-Mal. **`T` muss an der echten Komposition gemessen werden**, so wie 64, 164 und 73 gemessen wurden. Bis dahin
-steht in den Konstanten `T`, nicht `44`.
-
-> Wenn `T ≈ 44` stimmt, ist der heutige Boden **345**, nicht 301 — **44 dp zu niedrig**.
+| Header (320 dp) | 164 dp | **56 dp**, breitenunabhängig |
+| Header (520 dp) | 56 dp | 56 dp |
+| `ModeToggleRow` | 84 dp | 84 dp *(unberührt von CYP-350)* |
+| Festes Chrome (64 + Header + 84 + 73) | **385** @ 320 dp | **277**, breitenunabhängig |
+| Mindesthöhe (+ 90 dp Transkript) | 475 | **367** |
 
 Der Composer zählt nur in der **Orchestrierungs**-Ansicht mit (`AgentWindow.kt:185`); in der Shell-Ansicht
 fehlt er. Der Boden muss den **höheren** der beiden Fälle tragen, also den mit Composer — die Tabelle ist der
 ungünstige Fall, richtig herum.
+
+> **Achtung bei der Umsetzung:** Der Composer ist **kein Rest**, er ist festes Chrome (ungewichtet, 73 dp).
+> Der einzige *Rest* ist das Transkript — `0 dp` an der Invariante, `90 dp` an der Kachel-Mindesthöhe.
+> Details, Guard und Mutationsproben in `cyp363-chrome-floor-remeasure.md`.
 
 ### 5.4 `T` ist nicht einmal konstant — dieselbe Krankheit, eine Zeile tiefer
 
@@ -281,16 +290,28 @@ Für einen Nicht-Operator liegt der Hinweis immer an; wird er schmal, bricht er 
 Diagnose gilt für `LifecycleErrorRow` (`AgentWindow.kt:144`, bedingt, ohne `maxLines`): im Fehlerfall wächst
 das Chrome — also gerade dann, wenn der Operator die Eingabezeile am dringendsten braucht.
 
-**Deshalb erweitere ich die Invariante aus §1.1 auf das gesamte feste Chrome:**
+**Meine erste Verallgemeinerung war falsch, und ich nehme sie zurück.** Sie lautete: *„Jedes `Text` im festen
+Chrome trägt `maxLines` und `overflow = Ellipsis`."* Das hätte den Hinweis `workspace_operator_only` und die
+Fehlermeldung der `LifecycleErrorRow` **abgeschnitten, um eine Zahl zu retten** — unehrliche Offenlegung, genau
+der Handel, den ich in jedem QA-Pass ablehne. Das feste Chrome enthält **zwei Sorten Text**:
 
-> **Jedes `Text` im festen Chrome eines Inhaltsfensters trägt `maxLines` und `overflow = Ellipsis`.**
-> Ein Chrome-Element darf in der Höhe nicht von seinem Inhalt abhängen. Wer wachsen will, sitzt im
-> `weight(1f)`-Rechteck.
+| Sorte | Beispiel | Regel |
+|---|---|---|
+| **Aktionsbeschriftung** | „Start" · „Stopp" · „Neustart" | `maxLines = 1`; die Bedeutung überlebt als Glyph + gesprochener Name (§1.2) |
+| **Offenlegungssatz** | `workspace_operator_only` · `terminal_gated_pending` · `LifecycleErrorRow` | **darf umbrechen** — Kürzen zerstört die Aussage |
 
-Nur die Segment-Labels der `ModeToggleRow` erfüllen das heute schon (`Text(orchLabel, maxLines = 1)`) — die
-zwei Hinweistexte und `LifecycleErrorRow` nicht. Das ist **kein neues Ticket von mir**, sondern der Vorschlag,
-CYP-350 um diese drei `Text`-Knoten zu erweitern: derselbe Fix, dieselbe Mutationsprobe, kein zweiter
-Mechanismus.
+> **Aktionsbeschriftungen dürfen nicht wachsen, weil ihre Bedeutung woanders getragen wird.
+> Offenlegungssätze dürfen wachsen, weil ihre Bedeutung *im Text selbst* liegt — und dann muss der Boden
+> ihre höchste Form kennen: gemessen, je Zustand, bei der Mindestbreite ihrer Klasse.**
+
+Für den **Header** ändert das nichts: dort steht kein Offenlegungssatz. Die Höhen-Invariante aus §1.1 bleibt
+unberührt. Für die `ModeToggleRow` und die `LifecycleErrorRow` gilt die zweite Zeile — und deshalb zählt der
+Guard in `cyp363-chrome-floor-remeasure.md` §4 die **Zustände** auf, statt Text zu beschneiden.
+
+Die Segment-Labels der `ModeToggleRow` tragen bereits `maxLines = 1` (`Text(orchLabel, maxLines = 1)`) — sie
+sind Aktionsbeschriftungen und damit auf der richtigen Seite der Tabelle. Die zwei Hinweistexte und
+`LifecycleErrorRow` bleiben **absichtlich ohne `maxLines`**. **CYP-350 fasst sie nicht an.** Ihr Beitrag zur
+Chrome-Höhe wird nicht weggekürzt, sondern **gemessen und im Boden budgetiert** (CYP-363).
 
 ---
 
@@ -318,13 +339,13 @@ Der PO verlangt Messung bei **mehreren Breiten** — zu Recht: *an einer einzige
    Knöpfe Glyphen, der `ReconnectingChip` ist **vollständig sichtbar**, und die Header-Höhe ist unverändert
    **56 dp**. Ohne diesen Fall bleibt der Test blind für die längste Zeichenkette des Headers — und die steht
    ausgerechnet im **deutschen** Default-Locale.
-8. **Der Boden selbst wird gerendert** (§5.2): die Komposition bei `CONTENT_WINDOW_MIN_HEIGHT` — **nicht** nur
-   bei `TILED_…` — zeigt den Composer. Heute existiert dieser Test nicht, und deshalb ist §5.1 unbemerkt
-   geblieben. **Mutationsprobe:** eine Chrome-Zeile einziehen ⇒ rot. Der bestehende Test bei 391 bleibt dabei
-   grün — das ist der Beweis, dass er den Boden nie geprüft hat.
-9. **Chrome-Höhe ist rollen- und breitenunabhängig** (§5.4): die Chrome-Höhe bei `canControl = false` ist gleich
-   der bei `canControl = true`, und bei 320 dp gleich der bei 640 dp — für beide Werte von `lifecycleError`.
-   **Mutationsprobe:** `maxLines` an *einem* Chrome-`Text` entfernen ⇒ bei 320 dp rot.
+8. **Der Boden selbst wird gerendert:** Guard und Mutationsproben stehen in
+   `cyp363-chrome-floor-remeasure.md` §4 — sie gehören zu CYP-363, nicht hierher. Für CYP-350 zählt nur:
+   **die Header-Höhe darf in keiner der obigen Breiten von der Breite abhängen.**
+9. **Die Header-Höhe ist zustandsunabhängig:** gleich bei `canControl = false` wie `true`, gleich mit und ohne
+   `ReconnectingChip`, gleich in jeder der sieben Breiten aus (1). **Mutationsprobe:** `maxLines` an *einem*
+   Header-`Text` entfernen ⇒ bei 320 dp rot. *(Für die `ModeToggleRow` gilt das ausdrücklich **nicht** — ihre
+   Höhe ist zustandsabhängig, mit Absicht: §5.4.)*
 
 ---
 
@@ -390,8 +411,11 @@ Reuse**, eigenes kleines Ticket. Die Glyph-Knöpfe dieser Spec ziehen ihre Namen
 - **WCAG:** Farbe nie alleiniger Träger (Status-Label bleibt); Zielgröße ≥ 24 dp; jeder Glyph-Knopf benannt.
 - **Beide PO-Auflagen erfüllt:** Aktionen erreichbar **und** benannt (§1.2, §6.4); Test misst **mehrere**
   Breiten (§6.1) und ist gegen die bequeme Tautologie abgesichert (§6.2/§6.3).
-- **Keine gemischte Summe mehr.** `T` bleibt als Symbol stehen, obwohl ich `≈ 44 dp` rechnen kann (§5.3). Eine
-  Zahl, die ich nicht gemessen habe, gehört nicht in eine Konstante, die „gemessen" behauptet.
+- **Keine gemischte Summe.** `T` stand als Symbol da, obwohl ich `≈ 44 dp` rechnen konnte. **CYP-363 hat es
+  gemessen: 84 dp** — die Ableitung lag fast um die Hälfte daneben (§5.3). Die Weigerung, sie hinzuschreiben,
+  war der einzige Grund, warum der Fehler nicht in eine Konstante gewandert ist.
+- **Eine eigene Regel zurückgenommen, nicht verteidigt** (§5.4): „jedes `Text` trägt `maxLines`" hätte einen
+  **Offenlegungssatz gekürzt, um eine Zahl zu retten**. Aktionsbeschriftung und Offenlegung sind zwei Sorten.
 - **Vier eigene Fehler benannt, nicht weggeschrieben:** die Breitenbedingung der 48 dp und das höchste Kind der
   Row (§7, §1.1); der **inhaltsblinde Breakpoint** (§4.1); und die Summe `520 + 195 ≈ 715` (§4.1), in der ich
   Gemessenes mit Geschätztem addiert habe — meine eigene Regel, an mir selbst gerissen. Drei davon fand ich
