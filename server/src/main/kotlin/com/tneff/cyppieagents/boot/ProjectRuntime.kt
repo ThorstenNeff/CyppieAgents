@@ -39,6 +39,8 @@ class ProjectRuntime(
     val tokenUsage: AgentTokenUsageTracker,
     /** CYP-324 — this project's per-agent busy/idle feed (the `/ws/busy-state` source). */
     val busyState: AgentBusyStateTracker,
+    /** CYP-354 (BE-1) — this project's per-agent terminal-control-mode feed (the `/ws/terminal-state` source). */
+    val terminalControl: TerminalControlStateTracker,
     /** CYP-326 — this project's per-agent compaction-completed signal (the orchestrator's 2B source). */
     val compactSignal: CompactCompletionSignal,
 )

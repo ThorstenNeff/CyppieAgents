@@ -7,8 +7,10 @@ import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.boot.AgentBusyStateTracker
 import com.tneff.cyppieagents.boot.AgentTokenUsageTracker
 import com.tneff.cyppieagents.boot.LifecycleManager
+import com.tneff.cyppieagents.boot.TerminalControlStateTracker
 import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.model.AgentBusyStateEvent
+import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.AgentTokenUsageEvent
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
@@ -119,6 +121,26 @@ fun Route.busyStateSocket(busyState: () -> AgentBusyStateTracker, registry: Toke
             .onStart { t.snapshot().forEach { emit(it) } }
             .collect { event ->
                 send(Frame.Text(CommJson.encodeToString(AgentBusyStateEvent.serializer(), event)))
+            }
+    }
+}
+
+/**
+ * CYP-354 (BE-1) — the per-agent terminal-control-mode feed (the CYP-333 toggle mirrors this, never infers).
+ * Same shape as [busyStateSocket]: one-way server→client, participant/read-tier gated (fail-closed WS close
+ * 1008), snapshot-then-deltas so a reconnect re-delivers the current mode + holder. Bound to the ACTIVE
+ * project's tracker at connect. **Content-free — state/identity/time only, NEVER keystrokes/terminal content.**
+ */
+fun Route.terminalControlSocket(terminalControl: () -> TerminalControlStateTracker, registry: TokenRegistry, deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry)) {
+    webSocket("/ws/terminal-state") {
+        if (call.wsReaderOrNull(deps, registry) == null) {
+            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
+        }
+        val t = terminalControl()
+        t.events
+            .onStart { t.snapshot().forEach { emit(it) } }
+            .collect { event ->
+                send(Frame.Text(CommJson.encodeToString(AgentTerminalControlEvent.serializer(), event)))
             }
     }
 }

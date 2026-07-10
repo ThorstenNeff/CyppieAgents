@@ -455,6 +455,7 @@ class BootOrchestrator(
         // shared projector's onContextTokens (active-routed) and reset by this project's lifecycle stop/restart.
         val tokenUsageTracker = AgentTokenUsageTracker(config.projectId, tokenUsageStore) // CYP-325: rehydrate on boot
         val busyStateTracker = AgentBusyStateTracker() // CYP-324: boot project's /ws/busy-state source
+        val terminalControlTracker = TerminalControlStateTracker() // CYP-354 (BE-1): boot project's /ws/terminal-state source
         val compactSignal = CompactCompletionSignal() // CYP-326: boot project's compaction-completed source
         val repoReprovision = RepoReprovision() // CYP-247 S2: pending repo-change → re-provision on next (re)start.
         // CYP-247 S4 (§6.2) — boot RECONCILER (idempotent, logged): for each registered project, a clone whose
@@ -527,8 +528,11 @@ class BootOrchestrator(
             projector = eventProjector,
             onContextReset = { tokenUsageTracker.reset(it) },   // CYP-316: stop/restart → fresh context → null
             onContextForget = { tokenUsageTracker.forget(it) }, // CYP-316: remove → drop the token entry
-            onBusyReset = { busyStateTracker.reset(it) },   // CYP-324: stop/restart → clear the `*`
-            onBusyForget = { busyStateTracker.forget(it) }, // CYP-324: remove → drop the busy entry
+            // CYP-354 (BE-1): fan out the SAME lifecycle callbacks to the terminal-control tracker — reusing the
+            // existing seam (no new LifecycleManager param). Stop/restart ends any hand-off → back to MEDIATED;
+            // remove → drop the entry. This deliberately avoids touching LifecycleManager (CYP-351 rebuilds it).
+            onBusyReset = { busyStateTracker.reset(it); terminalControlTracker.reset(it) },   // CYP-324/354: stop/restart → clear `*` + mode→MEDIATED
+            onBusyForget = { busyStateTracker.forget(it); terminalControlTracker.forget(it) }, // CYP-324/354: remove → drop both entries
         )
 
         // CYP-122: the single, audited, server-enforced point that sets an agent's connector (opt-in).
@@ -580,6 +584,7 @@ class BootOrchestrator(
                 worktrees = worktrees,
                 tokenUsage = tokenUsageTracker, // CYP-316
                 busyState = busyStateTracker, // CYP-324
+                terminalControl = terminalControlTracker, // CYP-354 (BE-1)
                 compactSignal = compactSignal, // CYP-326
             ),
         )
@@ -607,6 +612,7 @@ class BootOrchestrator(
             val pWorktrees = worktrees.forProject(pid) // CYP-247 S1: this project's OWN clone (clones/<pid>) + worktrees
             val pTokenUsage = AgentTokenUsageTracker(pid, tokenUsageStore) // CYP-316/325: per-project feed, persisted
             val pBusyState = AgentBusyStateTracker() // CYP-324: this project's own busy feed (per-runtime)
+            val pTerminalControl = TerminalControlStateTracker() // CYP-354 (BE-1): this project's own terminal-state feed
             val pCompactSignal = CompactCompletionSignal() // CYP-326: this project's own compaction-completed signal
             val pLifecycle = LifecycleManager(
                 initialWorktrees = emptyMap(),
@@ -620,8 +626,8 @@ class BootOrchestrator(
                 projector = eventProjector,
                 onContextReset = { pTokenUsage.reset(it) },   // CYP-316: this project's lifecycle → its own tracker
                 onContextForget = { pTokenUsage.forget(it) },
-                onBusyReset = { pBusyState.reset(it) },   // CYP-324: this project's lifecycle → its own busy tracker
-                onBusyForget = { pBusyState.forget(it) },
+                onBusyReset = { pBusyState.reset(it); pTerminalControl.reset(it) },   // CYP-324/354: this project's lifecycle → its own busy + terminal-state trackers
+                onBusyForget = { pBusyState.forget(it); pTerminalControl.forget(it) },
             )
             val pAgentManagement = AgentManagement(
                 state = state,
@@ -639,7 +645,7 @@ class BootOrchestrator(
                 worktreeDirOf = { runtimeRegistry.active().worktrees.worktreeDir(it) }, // CYP-310
                 // CYP-310: a non-boot project's agents are all runtime-added → remote ones are tracked on add().
             )
-            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage, pBusyState, pCompactSignal)
+            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage, pBusyState, pTerminalControl, pCompactSignal)
         }
 
         // CYP-255 (.4b) / CYP-247.4: the session-suspension teardown policy. suspend = stop a project's

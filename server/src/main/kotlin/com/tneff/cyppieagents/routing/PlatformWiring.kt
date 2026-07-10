@@ -80,6 +80,8 @@ fun Application.installPlatform(
         tokenUsageSocket({ booted.runtimeRegistry.active().tokenUsage }, booted.tokenRegistry, authDeps)
         // /ws/busy-state — CYP-324: content-free per-agent busy/idle feed (title-bar `*`), read-tier, active runtime.
         busyStateSocket({ booted.runtimeRegistry.active().busyState }, booted.tokenRegistry, authDeps)
+        // /ws/terminal-state — CYP-354 (BE-1): content-free per-agent terminal-control-mode feed, read-tier, active runtime.
+        terminalControlSocket({ booted.runtimeRegistry.active().terminalControl }, booted.tokenRegistry, authDeps)
         // /ws/terminal — CYP-332: PTY-over-WS transport for the Desktop interactive terminal (one pty4j PTY per
         // agent; single-flight §4.1). Reader-gated like /ws/agent; agentId must be in the active project.
         terminalSocket(
