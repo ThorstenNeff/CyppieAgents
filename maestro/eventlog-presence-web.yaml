@@ -4,12 +4,26 @@
 # NOT offered (omission — not a dead "no access" window). QA proves this by the ABSENCE of the window
 # tags, exactly as the JVM render test (EventLogPresenceTest) does — same property, web target.
 #
+# CYP-340 — THE FLOW NOW LOGS IN. `App()` wraps `AgentShell` in `AuthGate` (`App.kt:67`), so the prod build
+# boots into the LOGIN SCREEN, not the desktop. Before this change the flow died on `assertVisible window.host`
+# and its security assertions were NEVER EVALUATED — red, not silently green, but equally worthless: a flow
+# nobody can run is not a gate. The dev/demo default (`StubAuthRepository`) verifies any credentials, so a
+# throwaway login reaches the surface under test. Against a live auth stack this flow needs a real account.
+#
+# ⚠ NOT VERIFIED — CYP-352. This flow has never been observed to pass, and cannot be: Maestro drives Chromium
+# through Selenium and reads the DOM, while Compose on wasmJs paints into a `<canvas>` and exposes no DOM node
+# per composable. Measured: the same Maestro sees a plain HTML page (exit 0) and sees NOTHING here — neither the
+# testTag nor the visible text, with 30 s of patience. The login below is the right step and remains unproven.
+# Do not read a red run of this flow as a regression until CYP-352 is resolved.
+#
 # Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
 #
 # PREREQUISITES (tester CYP-7 runtime):
 #   * Serve the PROD `:app:webApp` build at APP_URL_NOOP — its default is a NON-operator context
-#     (cfg.operatorToken == null). The agent + comm windows still render; the two Event-Log windows
-#     must be omitted entirely. (This is the real prod build — the omission proof is genuine.)
+#     (cfg.operatorToken == null). VERIFY WHAT IS SERVED before trusting the result:
+#         curl -s http://localhost:8080/ | grep -oE 'src="webApp[A-Za-z]*\.js"'    # webApp.js = PROD
+#     The demo build (`webAppDemo.js`) has no AuthGate and carries a stub operator token — against it this
+#     flow would assert the opposite of what it claims, and say nothing about the gate.
 #   * testTags exposed as resource-ids — Modifier.enableTestTagsAsResourceId() at the root (CYP-15).
 url: "http://localhost:8080"
 name: "CYP-41/42 Event-Log presence — windows omitted without operator token"
@@ -21,15 +35,33 @@ env:
 ---
 - openLink: ${APP_URL_NOOP}
 
-# The shell is up (host + a non-Event-Log window prove the app rendered) ...
+# ── PRECONDITION 1 (load-bearing) — the app booted, and it booted into the auth gate. ───────────────────
+# A page that never rendered looks exactly like a page whose Event-Log windows are "omitted".
+- assertVisible:
+    id: '^auth\.login\.form$'
+    label: "PRECONDITION: prod boots into the login form (AuthGate). If this fails: wrong build served, or the app did not boot."
+
+# Log in. The dev/demo StubAuthRepository verifies any credentials; the value is a throwaway, never a secret.
+- tapOn:
+    id: '^auth\.login\.email$'
+- inputText: "qa@cyppie.test"
+- tapOn:
+    id: '^auth\.login\.password$'
+- inputText: "not-a-secret"
+- tapOn:
+    id: '^auth\.login\.submit$'
+
+# ── PRECONDITION 2 (load-bearing) — the desktop mounted and a NON-operator window is really present. ────
+# GUARD, DO NOT DELETE. These two assertions are what make the `assertNotVisible` below a proof rather than a
+# tautology: they exclude "the windows are missing because we are on the login screen / nothing rendered".
 - assertVisible:
     id: '^window\.host$'
-    label: "Window host rendered"
+    label: "GUARD (load-bearing): desktop mounted after login — NOT the login screen"
 - assertVisible:
     id: '^window\.comm$'
-    label: "Comm window present in non-operator context (shell is functional)"
+    label: "GUARD (load-bearing): a non-operator window is present — the shell is functional"
 
-# ... but NEITHER Event-Log window exists — operator-gated omission, asserted via absence.
+# ── THE SECURITY CLAIM. Only now does absence mean 'operator-gated', and nothing else. ──────────────────
 - assertNotVisible:
     id: '^window\.eventlog$'
     label: "Browse window omitted without operator token"
