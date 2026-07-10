@@ -144,15 +144,29 @@ Ich habe CYP-346 entsprechend kommentiert, aber **nichts transitioniert**.
 
 ## 6. Lücken — unverändert benannt
 
+> **Korrektur an meiner eigenen Liste (nach PO-Einwand — nachgeprüft, nicht übernommen).**
+> Ich hatte „Android unkompiliert und ungetestet" als eigene Lücke geführt. Faktisch stimmt das (kein Android
+> SDK auf diesem Host), **aber ich habe das Risiko falsch gewichtet.** `TranscriptTime.android.kt` ist,
+> Kommentare und Objektnamen abgezogen, **zeichengleich** mit `TranscriptTime.jvm.kt` (per `diff` verifiziert):
+> dieselbe `java.util.TimeZone.getDefault().getOffset(atEpochMs)`, dasselbe `System.currentTimeMillis()`. Das
+> Android-`actual` wird durch die **765 grünen JVM-Tests** faktisch mitbewiesen. Risiko ≈ 0.
+>
+> **Die echte Lücke liegt woanders, und ich habe sie übersehen:** `js` und `ios` haben **eigenen** Code mit
+> **eigener Vorzeichenkonvention** — und **kein Test ruft sie je auf.** `platformTranscriptClock()` wird in
+> genau *einem* Testquellsatz benutzt (`wasmJsTest`); `commonTest` injiziert überall eine Fake-Uhr.
+> **`jsBrowserTest` war grün, ohne das js-`actual` ein einziges Mal auszuführen.** Grün aus dem falschen Grund —
+> exakt die Klasse, die ich in CYP-340 untersuche, in meiner eigenen Abnahme.
+
 | ID | Lücke |
 |---|---|
 | L1 | Der **zweite** Verbindungsverlust ist live nicht reproduzierbar (`catch` außerhalb der `collect`-Schleife). Belegt nur auf Fold-Ebene. |
 | L2 | AC 3 (Reconnect) ist nur auf der **JVM** bewiesen — embedded Ktor ist `jvmTest`-only. Analogie, kein Browser-Beweis. |
 | L3 | Der `eventTime`-Tag ist nur auf der JVM per `onNodeWithTag` belegt; der Browser-Render-Test nutzt `onNodeWithText`. |
-| L4 | **Android bleibt unkompiliert und ungetestet** (kein Android SDK auf diesem Host; auf `develop` identisch). |
-| L5 | iOS ist nur **kompiliert**, nicht ausgeführt. |
-| L6 | **DST-Wechsel** ist per Ticket außerhalb des Scopes und ungetestet. |
-| L7 | **Akzeptierter Defekt:** eine vorgehende Browser-Uhr invertiert die Spalte (Antwort unter der Frage, mit früherer Zeit). Bewusst in Kauf genommen, charakterisiert, getrackt (§5). |
+| **L4** | **Das `js`-`actual` wird nie ausgeführt.** Eigener Code, eigene Vorzeichenkonvention (`-(Date(t).getTimezoneOffset() * 60_000)`). Developer5 schließt das (neuer `jsTest`-Quellsatz, Kreuzvergleich gegen die Browser-Wanduhr). |
+| **L5** | **Das `ios`-`actual` wird nie ausgeführt.** `NSTimeZone.localTimeZone.secondsFromGMTForDate` — anderer Code, anderes Vorzeichen-Idiom. Der `iosTest`-Quellsatz **existiert** (`SharedLogicIOSTest.kt`); der Task `iosSimulatorArm64Test` braucht macOS, dieser Host ist Linux. **Einzige verbleibende, benannte Lücke der Merge-Anfrage.** |
+| L6 | **Android:** nur kompiliert, nicht ausgeführt — Risiko ≈ 0, weil zeichengleich zum JVM-`actual` (Kasten oben). Notiz, keine eigene Lücke. |
+| L7 | **DST-Wechsel** ist per Ticket außerhalb des Scopes und ungetestet. |
+| L8 | **Akzeptierter Defekt:** eine vorgehende Browser-Uhr invertiert die Spalte (Antwort unter der Frage, mit früherer Zeit). Bewusst in Kauf genommen, charakterisiert, getrackt (§5). |
 
 ---
 
@@ -167,5 +181,10 @@ Spalte brav, während jede client-geborene Zeile um Stunden zurückdatiert war.
 
 Derselbe Fehler in anderer Kleidung: eine `assertNotVisible` prüft Abwesenheit, nicht den Grund der Abwesenheit
 (CYP-340). Und ein Test, dessen Erwartungswert durch dieselbe Naht läuft, die er prüft, prüft nichts
-(`transcriptRow_rendersItsTimestampInTheBrowser`). Drei Gestalten einer Sache: **eine grüne Zusicherung ist so
-viel wert wie die Frage, die sie beantwortet.**
+(`transcriptRow_rendersItsTimestampInTheBrowser`).
+
+**Und eine vierte, die ich in meiner eigenen Abnahme übersehen habe:** `jsBrowserTest` war grün, ohne das
+js-`actual` je auszuführen (§6). Ich habe „Target grün" gelesen und „`actual` bewiesen" verstanden. Genau die
+Verwechslung, die dieses Ticket seit dem ersten Testplan begleitet.
+
+Vier Gestalten einer Sache: **eine grüne Zusicherung ist so viel wert wie die Frage, die sie beantwortet.**
