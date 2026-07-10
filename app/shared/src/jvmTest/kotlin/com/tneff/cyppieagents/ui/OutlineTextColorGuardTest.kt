@@ -70,21 +70,36 @@ class OutlineTextColorGuardTest {
      * **Not all of these are "decorative", and saying so was wrong.** The two DEBUG entries feed real rendering
      * paths: `severityColorFor(DEBUG)` is consumed as a **text colour** in `ProductLeadPanel` (the severity
      * glyph), and `severityContainerFor(DEBUG)` paints an `outline` **container** under `surface` text in
-     * `WindowBadge`. Whether a meaning-bearing glyph owes 4.5:1 (WCAG 1.4.3, text) or 3:1 (1.4.11, non-text) is a
-     * genuine interpretation, and it is **open** — UIUX-Designer2 is deciding it. Until then these two are listed
-     * as *pending*, not as certified. An exemption whose reason is a guess is an exemption that rots.
+     * `WindowBadge`.
+     *
+     * **Decided (UIUX-Designer2, audit `085e02a`): both are graphical objects, WCAG 1.4.11, 3:1 — both pass.**
+     * Not by the rule-of-thumb "glyph, not prose", but by the norm: WCAG defines text as a *"sequence of
+     * characters expressing something in human language"*. A `·` is an icon that happens to come from a font; the
+     * norm attaches to the character sequence, not to the `Text` composable.
+     *
+     * **They pass on the NUMBER (3.55:1 ≥ 3:1), not on redundancy** — and that distinction is load-bearing. The
+     * assumption that a visible severity label sits beside each glyph is false: in `ProductLeadPanel` the label is
+     * only a `contentDescription`, and the `WindowBadge` pill renders the glyph alone (verified in source). The
+     * DEBUG *rail* has that redundancy; the DEBUG *glyph* does not. Anyone who dims these further, reasoning "it's
+     * redundant anyway", breaks them. A correct exemption with a wrong reason is a trap with an expiry date.
+     *
+     * The same colour from the same source WOULD violate 1.4.3 the moment it coloured a **word**:
+     * `Text(severityLabel(sev), color = severityColor(sev))` — "Debug" in `outline` — owes 4.5:1 and fails. This
+     * guard would catch that, because there `outline` is the foreground.
      */
     private val permittedOutlineUses: Map<String, Map<String, String>> = mapOf(
         "EventVisuals.kt" to mapOf(
             "Severity.DEBUG -> scheme.outline" to
-                "PENDING WCAG interpretation (UIUX-Designer2): consumed as a TEXT colour for the DEBUG severity " +
-                    "glyph in ProductLeadPanel. Passes 1.4.11 (3:1) as a symbol, fails 1.4.3 (4.5:1) as text. Its " +
-                    "meaning is announced via contentDescription + label, never colour — which is the argument for " +
-                    "reading it as a symbol. Do not treat this line as settled.",
+                "DECIDED (UIUX-Designer2, audit 085e02a): the DEBUG severity GLYPH `·` in ProductLeadPanel. A " +
+                    "graphical object under WCAG 1.4.11 (3:1) — the norm attaches to the character sequence, not " +
+                    "to the `Text` composable. It passes on the NUMBER (3.55:1 / 3.63:1 ≥ 3:1), NOT on redundancy: " +
+                    "the severity label beside it is a contentDescription only, never rendered. Do not dim it " +
+                    "further on the assumption that a visible label backs it up.",
             "Severity.DEBUG -> scheme.outline to scheme.surface" to
-                "PENDING WCAG interpretation (UIUX-Designer2): `outline` is the CONTAINER here, `surface` the text " +
-                    "on it (WindowBadge DEBUG pill) — the same 3.55:1 pair with the roles swapped, which this " +
-                    "guard cannot detect by construction (see the class KDoc, limit 1).",
+                "DECIDED (UIUX-Designer2, audit 085e02a): the WindowBadge DEBUG pill — `outline` is the CONTAINER, " +
+                    "`surface` the glyph on it. Graphical object, 1.4.11, 3:1, passes on the NUMBER. The pill " +
+                    "renders the glyph ALONE (no visible label), so redundancy is not what saves it. Note this is " +
+                    "the roles-swapped case this guard cannot see by construction (class KDoc, limit 1).",
         ),
         "AgentWindow.kt" to mapOf(
             "AgentLifecycleState.STOPPED -> MaterialTheme.colorScheme.outline" to
