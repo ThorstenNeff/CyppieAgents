@@ -14,7 +14,7 @@ class AgentStatusTest {
     fun streamingAssistant_isRunning() {
         assertEquals(
             AgentStatus.RUNNING,
-            deriveStatus(listOf(AgentEvent.AssistantText("a", "teil", complete = false))),
+            deriveStatus(listOf(AgentEvent.AssistantText("a", "teil", complete = false, tsMs = 0L))),
         )
     }
 
@@ -22,7 +22,7 @@ class AgentStatusTest {
     fun completeAssistant_isIdle() {
         assertEquals(
             AgentStatus.IDLE,
-            deriveStatus(listOf(AgentEvent.AssistantText("a", "fertig", complete = true))),
+            deriveStatus(listOf(AgentEvent.AssistantText("a", "fertig", complete = true, tsMs = 0L))),
         )
     }
 
@@ -30,7 +30,7 @@ class AgentStatusTest {
     fun runningTool_isRunning() {
         assertEquals(
             AgentStatus.RUNNING,
-            deriveStatus(listOf(AgentEvent.ToolCall("t", "Bash", "x", ToolStatus.RUNNING))),
+            deriveStatus(listOf(AgentEvent.ToolCall("t", "Bash", "x", ToolStatus.RUNNING, tsMs = 0L))),
         )
     }
 
@@ -38,7 +38,7 @@ class AgentStatusTest {
     fun errorTool_isError() {
         assertEquals(
             AgentStatus.ERROR,
-            deriveStatus(listOf(AgentEvent.ToolCall("t", "Bash", "x", ToolStatus.ERROR))),
+            deriveStatus(listOf(AgentEvent.ToolCall("t", "Bash", "x", ToolStatus.ERROR, tsMs = 0L))),
         )
     }
 
@@ -47,7 +47,7 @@ class AgentStatusTest {
         // The honesty core: a finished successful turn is IDLE, never guessed as WAITING_FOR_INPUT.
         assertEquals(
             AgentStatus.IDLE,
-            deriveStatus(listOf(AgentEvent.Result("r", "Turn abgeschlossen", isError = false))),
+            deriveStatus(listOf(AgentEvent.Result("r", "Turn abgeschlossen", isError = false, tsMs = 0L))),
         )
     }
 
@@ -55,15 +55,15 @@ class AgentStatusTest {
     fun errorResult_isError() {
         assertEquals(
             AgentStatus.ERROR,
-            deriveStatus(listOf(AgentEvent.Result("r", "fehlgeschlagen", isError = true))),
+            deriveStatus(listOf(AgentEvent.Result("r", "fehlgeschlagen", isError = true, tsMs = 0L))),
         )
     }
 
     @Test
     fun statusReflectsLatestEvent() {
         val transcript = listOf(
-            AgentEvent.ToolCall("t", "Bash", "x", ToolStatus.RUNNING),
-            AgentEvent.Result("r", "ok", isError = false),
+            AgentEvent.ToolCall("t", "Bash", "x", ToolStatus.RUNNING, tsMs = 0L),
+            AgentEvent.Result("r", "ok", isError = false, tsMs = 0L),
         )
         assertEquals(AgentStatus.IDLE, deriveStatus(transcript))
     }

@@ -12,6 +12,10 @@
     <!-- CYP-326 #1: injected system/orchestrator message in the agent transcript (label + invisible SR marker). -->
     <string name="transcript_system_label">System</string>
     <string name="a11y_transcript_system">System: %1$s</string>
+    <!-- CYP-335: labelled announcement of each transcript row's time cell (the visible text stays "09:14").
+         Bare digits are worthless to a screen reader, and without the label the announcement would end on a
+         number after arbitrary user text. %1$s = the formatted time (HH:mm, 24h, local zone). -->
+    <string name="a11y_transcript_time">at %1$s</string>
     <string name="a11y_agent_status">Agent status: %1$s</string>
 
     <!-- Observability Event-Log UI (CYP-41 Browse + CYP-42 Live-Tail), docs/design/event-log-keys.md. -->

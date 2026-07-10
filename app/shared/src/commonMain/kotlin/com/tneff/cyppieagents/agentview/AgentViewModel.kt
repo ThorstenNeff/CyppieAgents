@@ -51,6 +51,11 @@ class AgentViewModel(
     /** CYP-262 T1 robustness: watchdog window for the "Startet…" transient (see [START_PENDING_TIMEOUT_MS]).
      *  Injectable so tests can drive the fallback with a tiny value. */
     private val startPendingTimeoutMs: Long = START_PENDING_TIMEOUT_MS,
+    /** CYP-335: the wall clock for the two rows that are BORN here rather than arriving on the wire — the
+     *  composer's [AgentEvent.UserTurn] echo and the `conn-error` [AgentEvent.Notice]. Injected (never a clock
+     *  call inside the VM body) so a test can fake it and assert a deterministic timestamp. Every other row is
+     *  dated by the server (see [AgentEvent.tsMs]). */
+    private val nowMs: () -> Long = platformTranscriptClock()::nowMs,
 ) : ViewModel() {
 
     private val _transcript = MutableStateFlow<List<AgentEvent>>(emptyList())
@@ -153,6 +158,41 @@ class AgentViewModel(
         .map { deriveStatus(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AgentStatus.IDLE)
 
+    /** CYP-335: distinguishes successive connection-loss notices (see the `catch` below). */
+    private var connErrorSeq = 0
+
+    /**
+     * CYP-335 — **the second clock.** Stream rows are stamped by the *server*; [AgentEvent.UserTurn] and the
+     * `conn-error` [AgentEvent.Notice] are born here and can only read the *client's* clock.
+     *
+     * The tempting fix — estimate `skew = lastEventTs − clientNow` and stamp client rows on the server's base —
+     * **is wrong, and wrong in the normal case.** An event timestamp is only a *lower bound* on `serverNow`:
+     * from the client, "the browser runs 5 minutes fast" and "the last event is 5 minutes old" are the same
+     * observation. So an agent that has been idle since yesterday 22:14 makes the estimate 11 hours negative,
+     * and a turn typed at 09:02 this morning renders as `22:14` — with a **perfectly correct** browser clock.
+     * The error grows with idle time, and the monotonicity invariant stays green throughout, because the column
+     * does still ascend. That invariant is necessary, not sufficient; it says nothing about whether the stamp is
+     * *true*. Measured, then removed — see `AgentClientStampTest.replayedOldHistory_doesNotBackdateANewTurn`.
+     *
+     * What remains is the clamp: a client row never renders below the row above it. It costs nothing and it
+     * catches the one thing the client *can* observe — its own clock moving backwards (an NTP correction; wall
+     * clock time is not monotonic, cf. doc 06 §6).
+     *
+     * **Known, accepted defect — state it plainly.** Without the estimate, a fast browser does not merely date a
+     * turn imprecisely: it **inverts the column**. The agent's reply renders *beneath* your question carrying an
+     * *earlier* time (`14:08` question, `14:03` reply), because a server stamp is a fact and is never clamped.
+     * The trade is deliberate: the error is now bounded by the clock skew (minutes) instead of by the agent's
+     * idle time (hours), and it needs a wrong clock instead of striking the normal case. Closing it needs the
+     * server to state its own `serverNowMs` when the client attaches — only the *send* instant is replay-immune,
+     * an event's own timestamp is not. Tracked as **CYP-346** (`:core` + server). Do not re-derive a skew from
+     * event timestamps here; that is exactly the defect above.
+     */
+    private fun clientStampMs(): Long {
+        val now = nowMs()
+        val previous = _transcript.value.lastOrNull()?.tsMs ?: return now
+        return maxOf(now, previous)
+    }
+
     init {
         viewModelScope.launch {
             try {
@@ -165,13 +205,23 @@ class AgentViewModel(
                 // CYP-204: transient WS drops are handled by the self-reconnecting [AgentSession] (cursor-resume
                 // + the [connection] indicator), so this catch is now only a last-resort safety net for a fatal,
                 // non-reconnecting stream error — stay alive and say so honestly instead of crashing the window.
-                _transcript.update { foldEvent(it, AgentEvent.Notice("conn-error", "Verbindung zum Agenten verloren")) }
+                //
+                // CYP-335: the id must be UNIQUE, not the constant "conn-error" it used to be. Notices are
+                // de-duplicated by id in [foldEvent]; a repeated notice would be swallowed and the surviving row
+                // would keep asserting the FIRST failure's time — a timestamp that lies. Unreachable as this
+                // `catch` sits outside the `collect` (the coroutine ends here, so there is no second pass today),
+                // but the row must not depend on that for its honesty: wrap this in a retry loop tomorrow and the
+                // constant id turns into a silently-wrong clock.
+                _transcript.update {
+                    foldEvent(it, AgentEvent.Notice("conn-error-${connErrorSeq++}", "Verbindung zum Agenten verloren", clientStampMs()))
+                }
             }
         }
     }
 
-    /** CYP-323: monotonic per-turn counter → a stable, unique id for each locally-echoed human turn (no wall
-     *  clock in commonMain). Uniqueness keeps [foldEvent]'s id-dedup honest and preserves chronological order. */
+    /** CYP-323: monotonic per-turn counter → a stable, unique id for each locally-echoed human turn. The id stays
+     *  clock-free on purpose (CYP-335's [nowMs] dates the row but must never key it): a counter is collision-free
+     *  even within one millisecond, which keeps [foldEvent]'s id-dedup honest and preserves chronological order. */
     private var userTurnSeq = 0
 
     /**
@@ -184,7 +234,9 @@ class AgentViewModel(
     fun onSend(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
-        _transcript.update { foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed)) }
+        _transcript.update {
+            foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed, tsMs = clientStampMs()))
+        }
         session.sendMessage(trimmed)
     }
 
