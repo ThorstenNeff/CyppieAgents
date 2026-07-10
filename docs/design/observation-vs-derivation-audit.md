@@ -136,7 +136,44 @@ Angezeigt wird es als „**er läuft**". Das ist derselbe Kategoriewechsel wie b
 | CYP-346 | „so weit gehen die Uhren auseinander" | „so lange ist das Ereignis her" |
 | **B1** | „der Prozess läuft" | „der Prozess wurde gestartet und hier nicht gestoppt" |
 
-### 2.4 Zwei Wege (Design-Sicht; ich implementiere nicht)
+### 2.4 Nicht verwechseln: der Client-**Stub** ist nicht der Produktionspfad
+
+Es gibt eine zweite, sehr ähnlich aussehende Stelle, und sie führt in die Irre:
+
+```kotlin
+// agentview/AgentLifecycleApi.kt:63–65 — StubAgentLifecycle
+override suspend fun start(agentId: String)   = set(agentId, AgentLifecycleState.RUNNING)
+override suspend fun stop(agentId: String)    = set(agentId, AgentLifecycleState.STOPPED)
+override suspend fun restart(agentId: String) = set(agentId, AgentLifecycleState.RUNNING)
+```
+
+Hier ist der Zustand **wörtlich das zuletzt Befohlene**. Aber `StubAgentLifecycle` wird **nur von drei
+Tests** benutzt (`AgentSpawnStartingTest`, `AgentWindowCapabilityBadgeTest`, `AgentLifecycleHeaderTest`) —
+**nirgends produktiv**. `app/webApp` übergibt keine Lifecycle-Quelle, also greift der Default aus
+`AgentShell.kt:459–462`:
+
+```kotlin
+val defaultLifecycleSource = remember(httpClient, cfg) { AgentLifecycleLiveSource(…) }   // /ws/lifecycle + GET /api/agents
+```
+
+**Die WASM-App liest den echten Server.** Der Client rendert damit *treu*, was der Server behauptet — und der
+Server behauptet `RUNNING` (§2.1). Zwei Konsequenzen:
+
+1. **Der Fix gehört auf den Server.** Repariert man nur den Client, meldet der Server weiterhin `RUNNING` für
+   einen toten Agenten, und die Oberfläche zeigt es gewissenhaft an.
+2. **Eine Fail-closed-Regel „im Zweifel `UNKNOWN`, Start entsperrt" ist richtig, aber allein nicht
+   hinreichend** — denn der Client hat **keinen Zweifel**: der Server sagt `RUNNING`, ohne Vorbehalt. Der
+   Zweifel muss dort entstehen, wo die Beobachtung verworfen wird (`onProcessExit`). Als *zusätzliche*
+   Leitplanke bleibt die Regel wertvoll: ein fälschlich anklickbarer Start ist harmlos, ein gesperrter Start
+   bei totem Agenten nicht.
+
+> **Und die Zeile, die diese Verwechslung erzeugt, ist selbst ein Fall dieser Fehlerklasse:**
+> `AgentShell.kt:188` und `:190` sagen *„`null` → the in-memory stub until the REST client lands"* bzw.
+> *„… until `/ws/lifecycle` lands"*. **Beide sind gelandet** — drei Zeilen weiter unten wird der Live-Client
+> gebaut. Der Kommentar beschreibt einen Zustand, den es nicht mehr gibt, und schickt jeden Leser auf die
+> falsche Fährte. Zwei Sätze KDoc, keine Verhaltensänderung.
+
+### 2.5 Zwei Wege (Design-Sicht; ich implementiere nicht)
 
 1. **Die Beobachtung anschließen** — richtig, und der ganze Weg: `onProcessExit` muss den `LifecycleManager`
    erreichen (`STOPPED` bei Exit-Code 0, sonst `ERROR`). Dann stimmt der Punkt, der Start-Knopf wird frei, und
