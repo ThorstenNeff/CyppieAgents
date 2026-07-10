@@ -316,6 +316,22 @@ Fix in `foldEvent`: `it[idx] = event.copy(ts = (current[idx] as AgentEvent.ToolC
 > die Zeile sagt, wann der Turn **begann**, nicht wann das letzte Zeichen ankam. Sonst wanderte die Zeit
 > während des Streamens.
 
+#### Nachtrag (CYP-335-Impl @ `dcbcaf9`): die Invariante ist **eine Ebene feiner**, als ich sie geschrieben habe
+
+Oben steht „`ts` ist first-seen und **unveränderlich**". Für Zeilen **von der Leitung** stimmt das
+uneingeschränkt. Für die zwei **im Client geborenen** Zeilen (`UserTurn`, `conn-error`-`Notice`) ist es zu
+absolut: sie tragen zunächst die Browser-Uhr, und der erste Server-Stempel hebt sie **einmalig** auf die
+Server-Zeitbasis (`AgentViewModel.observeServerClock` → `shiftedBy`). Das ist ein **Wechsel der Zeitbasis**,
+kein Um-Datieren auf ein späteres Ereignis — ihr Stempel war immer eine lokale Schätzung, die auf einen Anker
+wartete. Präzise Fassung:
+
+> Die Zeit einer Zeile ist die ihrer **Entstehung**, nie die ihrer Aktualisierung. Zeilen von der Leitung sind
+> ab dem ersten Rendern unveränderlich; im Client geborene Zeilen sind **vorläufig**, bis der erste
+> Server-Stempel sie **einmal** verankert.
+
+Sichtbare Folge, offen benannt: die Uhrzeit einer selbst gesendeten Nachricht kann sich **einmal** ändern.
+Bei `localhost` (MVP) liegt die Verschiebung unter einer Sekunde und bleibt in `HH:mm` fast immer unsichtbar.
+
 ### 7.2 🔴 „Lokale Browser-Zeit" ist mit dem vorhandenen Formatter nicht erreichbar — er ist **UTC**
 
 `eventlog/EventVisuals.kt:141–153`:

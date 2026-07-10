@@ -77,19 +77,26 @@ unverändert.
 Die Zeitzelle bekommt eine gelabelte `contentDescription` (Spec §6.1), damit der Screenreader nicht nackte
 Ziffern liest. Sie folgt dem Idiom der Datei: `Modifier.clearAndSetSemantics { … }`.
 
-> ⚠️ **`clearAndSetSemantics` ersetzt die Semantik-Konfiguration des Knotens.** Ein davor angehängtes
-> `Modifier.testTag(...)` kann dabei verloren gehen — und mit ihm die Maestro-/Compose-Test-Adressierbarkeit.
->
-> **Der Tag gehört deshalb *in* den Block:**
+> **Der Tag gehört *in* den Block:**
 > ```kotlin
 > Modifier.clearAndSetSemantics {
 >     contentDescription = timeDescription            // "um 09:14 Uhr"
 >     testTag = AgentViewTags.eventTime(agentId, index)
 > }
 > ```
-> **Dev5 belegt das mit einem `onNodeWithTag(...)`-Test**, nicht per Annahme. Schlägt es fehl: `Modifier
-> .testTag(tag).semantics { contentDescription = … }` (Knoten trägt dann `text` **und** `contentDescription`;
-> Screenreader bevorzugt letztere) — dokumentierte Alternative, kein stiller Wechsel.
+>
+> **Nachgemessen (Dev5, CYP-335 @ `dcbcaf9`) — der ursprünglich hier behauptete Gotcha reproduziert sich
+> nicht.** Auf **Compose 1.9 / Kotlin 2.4** überlebt ein *vor* dem Block gesetztes `Modifier.testTag(…)` das
+> Clearing; `TranscriptTimestampRenderTest` bleibt in beiden Varianten grün. Ich hatte den Verlust als
+> wahrscheinlich beschrieben — er ist es auf diesem Stand nicht.
+>
+> Die Platzierung im Block bleibt trotzdem die Vorgabe: sie ist **reihenfolge-unabhängig** und damit
+> Versicherung gegen ein Verhalten, das wir nicht kontrollieren (die Semantik-Merge-Regeln sind kein
+> zugesichertes API) — **nicht** die Behebung eines beobachteten Bruchs. Der Test soll die
+> **Adressierbarkeit** festnageln, nicht den Gotcha.
+
+> **Regel, die daraus folgt:** Diese Spec sagt „mit `onNodeWithTag` belegen, nicht annehmen" — das galt auch
+> für ihre eigene Warnung. Der Befund ist hier festgehalten, statt als Gerücht weiterzuwandern.
 
 `testTagsAsResourceId` ist auf Wasm der Mechanismus, über den Maestro den Tag sieht
 (`testing/TestTagsResourceId.kt`) — er wird einmalig am App-Root gesetzt und ist hier nicht anzufassen.
