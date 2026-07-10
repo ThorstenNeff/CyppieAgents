@@ -9,6 +9,8 @@
 #   1. `/` liefert 200 und referenziert ein `.js`-Bundle.
 #   2. Jedes vom Dokument referenzierte Skript-Asset liefert 200.
 #   3. Die Seite lädt in echtem Chrome ohne JS-Exception und ohne fehlendes Asset der EIGENEN Herkunft.
+#   4. Auf dem Bildschirm wurde etwas GEMALT (mehr als eine Farbe). Compose malt in ein Canvas -- der DOM
+#      verrät darüber nichts, das Bild schon. Fängt den Fall "bootet sauber, rendert nichts".
 #
 # Bewusst NICHT rot: fehlgeschlagene Aufrufe an das Backend (`ERR_CONNECTION_REFUSED` gegen den Hub-Port).
 # Die Demo ist NICHT backendlos — gemessen: sie ruft /api/agents, /api/channels, /api/acl und drei WebSockets
@@ -105,5 +107,55 @@ if errors:
     print("BOOT-SMOKE ROT: JS-Fehler beim Boot", file=sys.stderr)
     for e in errors[:5]: print("   "+e, file=sys.stderr)
     sys.exit(1)
-print("BOOT-SMOKE GRUEN: Dokument, Assets und Boot ohne JS-Fehler")
+# 4. Wurde ueberhaupt etwas gemalt? Ein Bildschirm mit EINER Farbe ist kein gerenderter Bildschirm.
+#    (Compose malt in ein Canvas; der DOM verraet nichts darueber. Das Bild schon.)
+send({"id":9,"method":"Page.captureScreenshot","params":{}})
+png=None
+end2=time.time()+20
+while time.time()<end2:
+    s.settimeout(max(0.5,end2-time.time()))
+    try: m=recv()
+    except Exception: break
+    if m and m.get("id")==9:
+        png=base64.b64decode(m["result"]["data"]); break
+if png is None:
+    print("BOOT-SMOKE ROT: kein Screenshot erhalten", file=sys.stderr); sys.exit(1)
+
+import zlib
+def png_colors(data):
+    pos=8; w=h=None; idat=b""; bpp=4
+    while pos < len(data):
+        ln=struct.unpack(">I",data[pos:pos+4])[0]; typ=data[pos+4:pos+8]
+        chunk=data[pos+8:pos+8+ln]; pos+=12+ln
+        if typ==b"IHDR":
+            w,h,depth,ctype=struct.unpack(">IIBB",chunk[:10])
+            bpp={0:1,2:3,4:2,6:4}[ctype]
+        elif typ==b"IDAT": idat+=chunk
+        elif typ==b"IEND": break
+    raw=zlib.decompress(idat); stride=w*bpp; out=bytearray(); prev=bytearray(stride); i=0
+    for _ in range(h):
+        f=raw[i]; i+=1; line=bytearray(raw[i:i+stride]); i+=stride
+        for x in range(stride):
+            a=line[x-bpp] if x>=bpp else 0
+            b=prev[x]; c=prev[x-bpp] if x>=bpp else 0
+            if f==1: line[x]=(line[x]+a)&255
+            elif f==2: line[x]=(line[x]+b)&255
+            elif f==3: line[x]=(line[x]+((a+b)>>1))&255
+            elif f==4:
+                pp=a+b-c; pa=abs(pp-a); pb=abs(pp-b); pc=abs(pp-c)
+                pr=a if (pa<=pb and pa<=pc) else (b if pb<=pc else c)
+                line[x]=(line[x]+pr)&255
+        out+=line; prev=line
+    cols=set()
+    for px in range(0,len(out),bpp*37):   # Stichprobe, nicht jedes Pixel
+        cols.add(bytes(out[px:px+3]))
+        if len(cols)>8: break
+    return len(cols)
+
+n=png_colors(png)
+if n < 3:
+    print(f"BOOT-SMOKE ROT: Bildschirm zeigt nur {n} Farbe(n) — es wurde nichts gerendert", file=sys.stderr)
+    sys.exit(1)
+
+print(f"BOOT-SMOKE GRUEN: Dokument, Assets, Boot ohne JS-Fehler, und es wurde gerendert ({n}+ Farben)")
 PY

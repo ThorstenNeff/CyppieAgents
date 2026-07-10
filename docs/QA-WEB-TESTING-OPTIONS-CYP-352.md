@@ -138,10 +138,58 @@ Ohne Beschwichtigung. Dass die Flows nie liefen, macht diese Fähigkeiten nicht 
 ein Verlust an *Möglichkeit*, nicht an Deckung. Wer sie zurückwill, braucht ein DOM-fähiges Werkzeug **und**
 Option C — oder einen Smoke-Test, der nur den Boot prüft (siehe unten).
 
-**Der billigste Ersatz für den größten Posten:** ein einziger, nicht-Compose-abhängiger Boot-Smoke gegen das
-servierte Artefakt — „lade `/`, warte, bis `document.title` steht und kein Konsolenfehler auftrat". Das prüft
-Artefakt, Assets und Wasm-Ladepfad, braucht **keinen** Zugriff auf Compose-Interna und ist mit dem vorhandenen
-Chrome + einem 20-Zeilen-Skript machbar. Es ersetzt Zeile 1 und 2 der Tabelle, nicht mehr.
+---
+
+## 3.1 Der Boot-Smoke: was er von Zeile 1 wirklich deckt — und was übrig bleibt
+
+Ich hatte ihn oben **vorgeschlagen**. Ein Vorschlag ist keine Deckung. Er ist jetzt gebaut
+(`scripts/web-boot-smoke.sh`) und **an Mutationen geprüft**, denn ein Skript, das immer grün ist, deckt nichts.
+
+| Fall | Ergebnis |
+|---|---|
+| intaktes Artefakt, **kein Backend** | **grün**, exit 0 |
+| ein `.wasm`-Asset fehlt | **rot** — `RuntimeError: Aborted(both async and sync fetching of the wasm failed)` + 404 |
+| `index.html` referenziert kein Bundle | **rot** |
+| Seite bootet sauber, **rendert aber nichts** | **rot** — „Bildschirm zeigt nur 1 Farbe" |
+
+Der letzte Fall ist der wichtigste und der Grund, warum das Skript einen Screenshot macht: **Compose malt in ein
+Canvas, der DOM verrät darüber nichts.** Genau das war Maestros weißer Screenshot. Ein Boot-Smoke, der nur auf
+Konsolenfehler schaut, hätte eine leere Seite grün gemeldet — die fünfte Gestalt derselben Krankheit.
+(Der Nachweis ist die Sonde: gegen eine Seite, die sauber lädt und nichts zeichnet, wird er rot.)
+
+**Was von Zeile 1 gedeckt ist:**
+* Dokument erreichbar, Bundle referenziert, referenzierte Skripte laden.
+* Fehlende Assets **derselben Herkunft** (auch lazy nachgeladene `.wasm`), inkl. der daraus folgenden
+  JS-Exception.
+* Der Wasm-Ladepfad bis zum ersten gemalten Bild.
+* **Neu, über Zeile 1 hinaus:** der Fall „lädt fehlerfrei, zeigt nichts".
+
+**Was von Zeile 1 übrig bleibt — benannt, nicht beschwichtigt:**
+
+| Rest | Warum |
+|---|---|
+| **Was gemalt wurde, prüft er nicht** | „mehr als eine Farbe" ist kein Inhalt. Ein falsches, aber buntes Bild besteht. Inhalt prüft Option A. |
+| **Nur das 25-Sekunden-Fenster** | Ein Asset, das später nachgeladen wird (Schriften, Bilder in einem selten geöffneten Panel), fällt heraus. |
+| **Nur der Demo-/Dev-Serve** | Gegen echtes Hosting kämen MIME-Typ für `.wasm`, CSP-Header, Kompression und Caching hinzu. Ungeprüft. |
+| **Nicht, WELCHES Bundle serviert wird** | Genau die Falle, in die ich heute selbst getappt bin (`webAppDemo.js` statt `webApp.js`). Der Handlauf verlangt den `curl`-Check; das Skript erzwingt ihn **nicht**. |
+| **Der Prod-Boot hinter dem Auth-Gate** | Der Login-Screen ist ein gültiger, bunter Boot. Der Smoke sagt nichts darüber, ob dahinter etwas ist. |
+
+**Die Zeilen 2–6 der Verlustliste deckt er nicht** und soll es nicht.
+
+### Und ein Befund, der Backend2s Wächter-Verlust neu ordnet
+
+Beim Boot des intakten Demo-Artefakts meldet der Smoke **51 fehlgeschlagene Backend-Aufrufe**: `/api/agents`,
+`/api/channels`, `/api/acl` und drei WebSockets gegen `:8787`, alle `ERR_CONNECTION_REFUSED`. Die Demo degradiert
+sichtbar zu „Couldn't load"-Zuständen.
+
+**Die Demo ist also nicht backendlos.** Damit ist der Wächter-Verlust doppelt wahr, und beides gehört hin:
+
+1. `smoke-web.yaml` **konnte** die Eigenschaft nie prüfen — es sah die Oberfläche nicht.
+2. **Die Eigenschaft existiert so nicht** — die Demo *ruft* das Backend, sie *kommt ohne aus*.
+
+Was verlorengeht, ist nicht der Wächter, sondern **die Absicht, einen zu haben**. Der Boot-Smoke ersetzt sie
+ehrlich: er meldet die 51 Fehler als **Hinweis** und macht sie nicht rot — sonst wäre er der nächste Test, der
+aus dem falschen Grund die Farbe wechselt.
 
 ---
 
