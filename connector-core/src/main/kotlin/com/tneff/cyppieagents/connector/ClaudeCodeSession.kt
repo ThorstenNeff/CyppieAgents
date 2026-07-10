@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.util.UUID
 
 /**
@@ -92,6 +93,17 @@ class ClaudeCodeSession(
 
     fun start() {
         readerJob = scope.launch {
+          // CYP-377: `AgentProcess.stdoutLines` reads via `readLine()` with no catch. Our own `destroy()` closes
+          // the stream under a reader parked in `readLine()`, which throws `IOException: Stream closed`. Whatever
+          // the cause, once the stream throws the reader has ENDED — so we catch it and fall through to the tail
+          // (below), which ALREADY tells the two cases apart and needs no second discriminator here:
+          //   • `closing == true`  (WE tore it down): the tail returns at its `closing` guard → a stop is not a
+          //     death, and the last line was already flushed. No false `onProcessExit`.
+          //   • `closing == false` (a LIVE process failed): the tail runs in FULL — DIED_UNBOUND + onProcessExit
+          //     + the CYP-360 exit listeners — reporting an OBSERVED death, INDISTINGUISHABLE from an EOF death so
+          //     BE-3's heal transition (CYP-356) sees a single shape. Not swallowed (that would go deaf on a dead
+          //     process), not rethrown (an uncaught IOException would redden the gate and noise the dogfood logs).
+          try {
             process.stdoutLines.collect { line ->
                 val parsed = runCatching { CommJson.decodeFromString<StreamJsonEvent>(line) }.getOrNull()
                 if (parsed == null) {
@@ -131,6 +143,11 @@ class ClaudeCodeSession(
                     pendingTurn = null
                 }
             }
+          } catch (readerEnded: IOException) {
+            // The stream ended by throwing; fall through to the tail (see above). Debug-logged, never re-raised:
+            // the tail is the one place that reports the death (or silences the stop).
+            log.debug("reader for agent={} ended via {} (closing={})", agentId, readerEnded.message, closing)
+          }
             // stdout completion. Since CYP-371 this is reached on a deliberate `closeAndAwait()` too — it no
             // longer cancels the reader, it destroys the process and lets the reader run out on EOF (the flush),
             // so the reader ends on a stop as well as on an unbidden death. These first two steps run either way:
