@@ -137,3 +137,33 @@ tasks.withType<KotlinJsTest>().configureEach {
         .withPropertyName("karmaConfigD")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
+
+// CYP-365 — the same disease, one level up: a check whose real input the build cannot see.
+//
+// Five `jvmTest` tests READ FILES FROM THE WORKING TREE at runtime, not from the classpath:
+//   · OutlineTextColorGuardTest      — scans commonMain sources for `outline` used as a text colour
+//   · TertiarySourceGuardTest        — scans commonMain sources for semantic `tertiary` uses
+//   · Cyp336NoUnlabelledUtcGuardTest — scans commonMain sources for unlabelled-UTC timestamp rendering
+//   · CommI18nDisclosureTest         — reads the composeResources `strings.xml`
+//   · I18nKeyParityTest              — reads both `strings.xml` and compares the key sets
+//
+// Gradle's input for a test task is the compiled classpath. A source edit that leaves the classes
+// byte-identical is therefore INVISIBLE to it, and the task is served UP-TO-DATE / FROM-CACHE — the guard does
+// not run, and `BUILD SUCCESSFUL` is indistinguishable from a passing guard. Measured, both directions:
+//   · swapping two imports in `EventVisuals.kt`            → `:app:shared:jvmTest UP-TO-DATE`
+//   · inserting an XML comment into `values/strings.xml`   → `:app:shared:jvmTest UP-TO-DATE`
+//
+// A real violation always changes bytecode and does re-run the task, so the guards' main direction held. What
+// slipped through was the *stale* direction — a permit or exemption entry left behind after its use changed.
+// That assertion is the one keeping a guard from passing vacuously, so it was the least protected of all.
+//
+// Declaring the scanned directories closes it. This does NOT change what the guards check; it makes the build
+// see what they read.
+tasks.named("jvmTest") {
+    inputs.dir(layout.projectDirectory.dir("src/commonMain/kotlin"))
+        .withPropertyName("guardScannedCommonMainSources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(layout.projectDirectory.dir("src/commonMain/composeResources"))
+        .withPropertyName("i18nScannedComposeResources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
