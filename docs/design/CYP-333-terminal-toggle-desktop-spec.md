@@ -237,6 +237,16 @@ map (twin of `busyFor`/`contextTokensFor` in `AgentShell`). **Not** a `WindowBad
 the *label text* carries the meaning; glyph and tone only reinforce). **Content-free** — never keystrokes/terminal
 output, only the state.
 
+**Rendering / WCAG (confirmed with Dev 2026-07-10):** the **label** renders in **`barContent`** — the AA-guaranteed
+content colour on the agent-toned titlebar BG, exactly like busy-`*`/token — so the meaning is legible on **any**
+bar. The **glyph carries the WARN-amber/neutral tone as reinforcement only.** Because the meaning lives in the
+label **and** in the glyph's distinct *form* (`◉`/`→`/`←`/`∅`), the amber **never needs to meet contrast** on an
+exotic bar BG — a washed-out amber loses no information (the WARN vs neutral distinction is already in the labels
+"Interaktiv"/"Kontext verloren" vs "Übergabe…"/"Rückgabe…"). **So: no amber-on-barBg token, and the label is not
+tinted amber** (that would fight the agent identity BG and can't be AA-guaranteed across arbitrary bar colours).
+**QA criterion:** the marker's meaning is AA-legible via the `barContent` label regardless of bar colour; the tone
+is decorative reinforcement, not a contrast-bearing element.
+
 | State | Glyph | Label (DE / EN) | Tone (reinforcement only) |
 |---|---|---|---|
 | `MEDIATED` | — (absent) | — | — (no node) |
