@@ -25,10 +25,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.flow
+import io.ktor.client.request.post
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.fail
 import kotlin.test.assertTrue
 
 /**
@@ -56,35 +63,68 @@ class SessionReadonlyWsTest {
         client.get("/api/auth/me") { header("X-Session-Token", "sess-carol") }
     }
 
-    /** true = the MEMBER session is ADMITTED (the socket stays open); false = closed VIOLATED_POLICY / rejected. */
-    private suspend fun ApplicationTestBuilder.memberAdmitted(path: String): Boolean {
+    /**
+     * CYP-372 — **Zulassung wird bewiesen, nicht ausgesessen.**
+     *
+     * Die frühere Fassung wartete mit `withTimeoutOrNull(1_500)` auf ein `closeReason`, das bei Erfolg **nie
+     * kommt**, und las das Ausbleiben als „zugelassen". Das positive Ergebnis entstand dadurch, dass der Test
+     * die Zeit **überlebte** — 4,5 s Laufzeit. Ein Socket, der erst bei 1,6 s geschlossen wird, hieß dort
+     * weiterhin „zugelassen"; genau das konnte der alte Test nicht sehen.
+     *
+     * Nach dem Muster von `WireHandshakeTimeoutTest.handshookInTime_isNotReaped`: **etwas tun, statt nichts zu
+     * beobachten.** Gemessen liefert der Server auf den Lese-Sockets von sich aus:
+     *
+     * ```
+     * /ws/comm       TEXT nach 1 ms   (Kanal-Snapshot)
+     * /ws/lifecycle  TEXT nach 1 ms   (Status-Snapshot)
+     * /ws/events     nichts           -> braucht einen echten Reiz
+     * /ws/agent, /ws/hub (abgelehnt)  ClosedReceiveChannelException, sofort
+     * ```
+     *
+     * Drei Ausgänge, und **keiner ist ein Timeout**: `ADMITTED` = ein Frame kam an · `REJECTED` = der Kanal war
+     * zu · **Frist gerissen = `fail()`**, nie ein Ergebnis.
+     *
+     * > `withTimeout` **wirft**. `withTimeoutOrNull` liefert `null` und verwandelt einen Hang in eine Antwort.
+     */
+    private enum class WsOutcome { ADMITTED, REJECTED }
+
+    /** Der Beweis kommt in Millisekunden. Wer diese Frist reißt, hängt — das ist ein Fehler, kein Ergebnis. */
+    private val livenessDeadlineMs = 1_000L
+
+    private suspend fun ApplicationTestBuilder.wsOutcome(path: String, sessionToken: String?): WsOutcome {
         val wsClient = createClient { install(ClientWebSockets) }
-        return try {
-            var rejected = false
-            wsClient.webSocket(path, request = { header("X-Session-Token", "sess-carol") }) {
-                val reason = withTimeoutOrNull(1_500) { closeReason.await() }
-                rejected = reason?.code == CloseReason.Codes.VIOLATED_POLICY.code
+        var outcome: WsOutcome? = null
+        try {
+            wsClient.webSocket(path, request = { if (sessionToken != null) header("X-Session-Token", sessionToken) }) {
+                // /ws/events pusht nichts von selbst: einen echten Server-Event ausloesen (Operator, REST), den ein
+                // zugelassener Lese-Socket ausliefern MUSS. Der ausgelieferte Frame ist der Beweis, nicht das Schweigen.
+                if (path.startsWith("/ws/events")) {
+                    launch { client.post("/api/agents/backend/restart") { header("Authorization", "Bearer tok-op") } }
+                }
+                outcome = try {
+                    withTimeout(livenessDeadlineMs) { incoming.receive() }
+                    WsOutcome.ADMITTED
+                } catch (e: ClosedReceiveChannelException) {
+                    WsOutcome.REJECTED
+                }
             }
-            !rejected
+        } catch (e: TimeoutCancellationException) {
+            fail("$path: weder ein Frame noch ein Schliessen innerhalb $livenessDeadlineMs ms — der Socket haengt. " +
+                "Ein Hang darf nie als 'zugelassen' durchgehen (CYP-372).")
+        } catch (e: ClosedReceiveChannelException) {
+            return WsOutcome.REJECTED
         } catch (e: Exception) {
-            false // handshake rejected / closed → not admitted
+            return WsOutcome.REJECTED // Handshake abgelehnt (1008 vor dem Upgrade)
         }
+        return outcome ?: fail("$path: kein Ausgang bestimmt")
     }
 
-    /** true = admitted (authorize passed — not closed VIOLATED_POLICY); optional session token + query token. */
-    private suspend fun ApplicationTestBuilder.wsAdmitted(path: String, sessionToken: String? = null): Boolean {
-        val wsClient = createClient { install(ClientWebSockets) }
-        return try {
-            var rejected = false
-            wsClient.webSocket(path, request = { if (sessionToken != null) header("X-Session-Token", sessionToken) }) {
-                val reason = withTimeoutOrNull(1_500) { closeReason.await() }
-                rejected = reason?.code == CloseReason.Codes.VIOLATED_POLICY.code
-            }
-            !rejected
-        } catch (e: Exception) {
-            false
-        }
-    }
+    /** ZUGELASSEN wird **positiv belegt** — durch einen ausgelieferten Frame, nicht durch ausbleibendes Schliessen. */
+    private suspend fun ApplicationTestBuilder.memberAdmitted(path: String): WsOutcome =
+        wsOutcome(path, sessionToken = "sess-carol")
+
+    private suspend fun ApplicationTestBuilder.wsAdmitted(path: String, sessionToken: String? = null): WsOutcome =
+        wsOutcome(path, sessionToken)
 
     @Test
     fun cyp230_operatorSessionAdmitted_memberAndInvalidTokenRejected_onWsAgent() = testApplication {
@@ -96,11 +136,11 @@ class SessionReadonlyWsTest {
 
         // CYP-230: the tokenless public SPA's verified OPERATOR session opens /ws/agent (the same-origin cookie
         // path — no agent secret ships to the public client).
-        assertTrue(wsAdmitted("/ws/agent?agentId=backend", sessionToken = "sess-alice"), "OPERATOR session must open /ws/agent")
+        assertEquals(WsOutcome.ADMITTED, wsAdmitted("/ws/agent?agentId=backend", sessionToken = "sess-alice"), "OPERATOR session must open /ws/agent")
         // A verified MEMBER session must NOT (only an operator watches another agent's stream).
-        assertFalse(wsAdmitted("/ws/agent?agentId=backend", sessionToken = "sess-carol"), "MEMBER session must not open /ws/agent")
+        assertEquals(WsOutcome.REJECTED, wsAdmitted("/ws/agent?agentId=backend", sessionToken = "sess-carol"), "MEMBER session must not open /ws/agent")
         // The pre-fix public-SPA failure: a dev-placeholder/invalid token with NO session → 1008 (VIOLATED_POLICY).
-        assertFalse(wsAdmitted("/ws/agent?agentId=backend&token=dev-token-bogus"), "invalid token + no session must be rejected")
+        assertEquals(WsOutcome.REJECTED, wsAdmitted("/ws/agent?agentId=backend&token=dev-token-bogus"), "invalid token + no session must be rejected")
 
         store.close(); Files.deleteIfExists(db)
     }
@@ -113,19 +153,27 @@ class SessionReadonlyWsTest {
         bootstrapOperatorThenMember() // alice → OPERATOR, carol → MEMBER
 
         // Read-only sockets: a verified MEMBER session is ADMITTED (same tier as the REST reads).
-        assertTrue(memberAdmitted("/ws/comm"), "MEMBER session must be admitted on /ws/comm (ACL-filtered)")
-        assertTrue(memberAdmitted("/ws/events"), "MEMBER session must be admitted on /ws/events (MEMBER-tier)")
-        assertTrue(memberAdmitted("/ws/lifecycle"), "MEMBER session must be admitted on /ws/lifecycle (content-free status)")
+        assertEquals(WsOutcome.ADMITTED, memberAdmitted("/ws/comm"), "MEMBER session must be admitted on /ws/comm (ACL-filtered)")
+        assertEquals(WsOutcome.ADMITTED, memberAdmitted("/ws/events"), "MEMBER session must be admitted on /ws/events (MEMBER-tier)")
+        assertEquals(WsOutcome.ADMITTED, memberAdmitted("/ws/lifecycle"), "MEMBER session must be admitted on /ws/lifecycle (content-free status)")
 
         // Machine-only sockets: a MEMBER session is REJECTED (no session path weaker than the /api guard).
-        assertFalse(memberAdmitted("/ws/agent?agentId=backend"), "MEMBER session must NOT open /ws/agent (operator/agent-self)")
-        assertFalse(memberAdmitted("/ws/hub"), "MEMBER session must NOT open /ws/hub (agent-only)")
+        assertEquals(WsOutcome.REJECTED, memberAdmitted("/ws/agent?agentId=backend"), "MEMBER session must NOT open /ws/agent (operator/agent-self)")
+        assertEquals(WsOutcome.REJECTED, memberAdmitted("/ws/hub"), "MEMBER session must NOT open /ws/hub (agent-only)")
 
         store.close(); Files.deleteIfExists(db)
     }
 
+    /**
+     * CYP-372: Der Fake spricht **eine** Zeile. Ein Agenten-Socket ohne jede Ausgabe kann seine Zulassung nur
+     * durch *ausbleibendes Schliessen* belegen — also durch Abwesenheit. Mit einer Zeile belegt er sie durch
+     * einen ausgelieferten Frame. Danach bleibt der Flow offen (kein EOF: das waere ein Prozessende).
+     */
     private class FakeProcess : AgentProcess {
-        override val stdoutLines: Flow<String> = emptyFlow()
+        override val stdoutLines: Flow<String> = flow {
+            emit("""{"type":"system","subtype":"init","session_id":"probe-1"}""")
+            kotlinx.coroutines.delay(Long.MAX_VALUE)
+        }
         override suspend fun writeLine(line: String) {}
         override fun destroy() {}
     }
