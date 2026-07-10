@@ -20,8 +20,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,13 +79,24 @@ import kmpcyppieagents.app.shared.generated.resources.agent_status_starting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_restarting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_stopped
 import kmpcyppieagents.app.shared.generated.resources.agent_status_unknown
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_orchestration
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_shell
+import kmpcyppieagents.app.shared.generated.resources.terminal_gated_pending
+import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
+import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * The agent window: a scrolling transcript of [AgentEvent]s over a "message to the agent" composer.
- * 100% commonMain Compose — no platform-specific terminal, no expect/actual (D6, 05 §4).
+ * The agent window: a scrolling transcript of [AgentEvent]s over a "message to the agent" composer, with a
+ * CYP-333 content-view toggle to a real Terminal (a fresh PTY over `/ws/terminal`, CYP-332/334).
  *
  * [agentId] parameterizes the test tags per the v0.2 Test-Contract (`agent.<agentId>.stream` etc.).
+ *
+ * **CYP-333 scope (honest):** the toggle is a *client view-selection* (Orchestrierung ↔ Shell) — NOT the spec's
+ * backend hand-off. The mediated stream-json session keeps running while the shell is shown, so no hub-blind
+ * banner / frozen token / CONTEXT_LOST is claimed here (that is the Backend follow-up, ⟂BE-1..3). The interim
+ * second view (Auftraggeber ruling) is an honest **worktree bash shell** (CYP-348), not a second `claude`; the
+ * same-session claude terminal arrives later with the hand-off (BE-2).
  */
 @Composable
 fun AgentWindow(
@@ -96,6 +111,22 @@ fun AgentWindow(
     provider: ProviderInfo? = null,
     /** Opens the capability detail panel (CYP-123); no-op default keeps existing call sites/tests intact. */
     onCapabilityBadgeClick: () -> Unit = {},
+    /**
+     * CYP-333: renders the Terminal into the content rectangle when the view is [AgentContentMode.TERMINAL].
+     * `null` (default) = no terminal wired (pure-render / test call sites) → the Terminal segment is disabled.
+     * The shell supplies a lambda that binds a fresh [com.tneff.cyppieagents.terminal.WsTerminalSession] to the
+     * Desktop `TerminalView`. Passed as a slot (not a session factory) so tests can exercise the swap without a
+     * headless `SwingPanel`.
+     */
+    terminalContent: (@Composable (agentId: String, modifier: Modifier) -> Unit)? = null,
+    /**
+     * CYP-333: when `true` AND no [terminalContent] is wired, the Shell segment is disabled with an honest
+     * "available once the worktree-shell backend lands" note (for an operator). The interim shell is safe (a bash
+     * shell in the worktree, not a second `claude`), so this is **not** a risk gate — it only reflects that the
+     * backend bash mode (CYP-348) hasn't landed yet; the two merge together and the connection then goes live.
+     * The switch is one line at the shell: `terminalContent` present = live; `terminalGatedNote` = gated.
+     */
+    terminalGatedNote: Boolean = false,
 ) {
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
@@ -103,6 +134,7 @@ fun AgentWindow(
     val restartPending by viewModel.restartPending.collectAsState()
     val lifecycleError by viewModel.lifecycleError.collectAsState()
     val connection by viewModel.connection.collectAsState()
+    val contentMode by viewModel.contentMode.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
         lifecycleError?.let { code -> LifecycleErrorRow(agentId, code) }
         AgentHeader(
@@ -120,16 +152,105 @@ fun AgentWindow(
             provider = provider,
             onCapabilityBadgeClick = onCapabilityBadgeClick,
         )
-        AgentTranscript(
+        // CYP-333: the mode toggle lives in a FRAME row above the content rectangle. Z-order (04 §5): the Desktop
+        // terminal is a `SwingPanel` that renders OVER the Compose layer, so chrome must frame it, never overlay it.
+        ModeToggleRow(
             agentId = agentId,
-            events = transcript,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            mode = contentMode,
+            canControl = viewModel.canControl,
+            terminalAvailable = terminalContent != null,
+            terminalGatedNote = terminalGatedNote,
+            onModeChange = viewModel::showContentMode,
         )
-        MessageComposer(
-            agentId = agentId,
-            onSend = viewModel::onSend,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        // The content rectangle (04 §5): transcript OR terminal, weight 1f. The terminal occupies ONLY this
+        // rectangle — no Compose chrome is z-stacked over it.
+        Box(modifier = Modifier.weight(1f).fillMaxWidth().testTag(AgentViewTags.content(agentId))) {
+            when (contentMode) {
+                AgentContentMode.ORCHESTRATION ->
+                    AgentTranscript(agentId = agentId, events = transcript, modifier = Modifier.fillMaxSize())
+                AgentContentMode.TERMINAL ->
+                    // Defensive: the toggle disables the Terminal segment when no terminal is wired, so this
+                    // branch is normally unreachable without [terminalContent]; fall back to the transcript.
+                    terminalContent?.invoke(agentId, Modifier.fillMaxSize())
+                        ?: AgentTranscript(agentId = agentId, events = transcript, modifier = Modifier.fillMaxSize())
+            }
+        }
+        // The mediated composer belongs to the Orchestrierung view only — the terminal has its own input. It is
+        // NOT a "mediation is off" claim (the session runs); it just isn't shown while you look at the terminal.
+        if (contentMode == AgentContentMode.ORCHESTRATION) {
+            MessageComposer(
+                agentId = agentId,
+                onSend = viewModel::onSend,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/**
+ * CYP-333 §4.1 — the `[ Orchestrierung | Terminal ]` content-view toggle. **Operator-gated + fail-closed**
+ * (CYP-317 "no fake switch"): a non-operator sees the live mode read-only plus the reused
+ * `workspace_operator_only` hint, never a switch that lies. The Terminal segment also disables when no terminal
+ * is wired ([terminalAvailable]). The Orchestrierung segment stays reachable for an operator (returning to it
+ * claims nothing). Intent, not backend state — this slice has no hand-off to confirm.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModeToggleRow(
+    agentId: String,
+    mode: AgentContentMode,
+    canControl: Boolean,
+    terminalAvailable: Boolean,
+    terminalGatedNote: Boolean,
+    onModeChange: (AgentContentMode) -> Unit,
+) {
+    val orchLabel = stringResource(Res.string.terminal_mode_orchestration)
+    // Interim (Auftraggeber ruling): the second view is an honest worktree SHELL (bash), not the agent's claude
+    // terminal — so the segment reads "Shell". The claude "Terminal" meaning arrives with the hand-off (BE-2).
+    val termLabel = stringResource(Res.string.terminal_mode_shell)
+    val currentLabel = if (mode == AgentContentMode.TERMINAL) termLabel else orchLabel
+    val viewDescription = stringResource(Res.string.a11y_terminal_mode, currentLabel)
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .testTag(AgentViewTags.modeToggle(agentId))
+                // Announces the current view (spec §8 `a11y_terminal_mode`); a plain description does not merge
+                // the child segments, so each SegmentedButton still speaks its own label + selected state.
+                .semantics { contentDescription = viewDescription },
+        ) {
+            SegmentedButton(
+                selected = mode == AgentContentMode.ORCHESTRATION,
+                onClick = { onModeChange(AgentContentMode.ORCHESTRATION) },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                enabled = canControl,
+                modifier = Modifier.testTag(AgentViewTags.modeToggleOrchestration(agentId)),
+            ) { Text(orchLabel, maxLines = 1) }
+            SegmentedButton(
+                selected = mode == AgentContentMode.TERMINAL,
+                onClick = { onModeChange(AgentContentMode.TERMINAL) },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                // Fail-closed: never openable by a non-operator (CYP-317), nor when no terminal is wired.
+                enabled = canControl && terminalAvailable,
+                modifier = Modifier.testTag(AgentViewTags.modeToggleTerminal(agentId)),
+            ) { Text(termLabel, maxLines = 1) }
+        }
+        when {
+            // Non-operator: honest read-only disclosure (reuse `workspace_operator_only`, CYP-317 no-fake-switch).
+            !canControl -> Text(
+                text = stringResource(Res.string.workspace_operator_only),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag(AgentViewTags.modeToggleGateHint(agentId)),
+            )
+            // Operator, but the worktree-shell backend (CYP-348) hasn't landed yet → say WHY the Shell segment is
+            // off, rather than a silently-disabled control. Neutral tone (a deferral, not an error).
+            terminalGatedNote && !terminalAvailable -> Text(
+                text = stringResource(Res.string.terminal_gated_pending),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag(AgentViewTags.modeToggleTerminalGated(agentId)),
+            )
+        }
     }
 }
 

@@ -558,4 +558,13 @@
     <string name="event_compact_done_summary">%1$d/%2$d Agenten compactet, %3$d Timeout</string>
     <!-- CYP-326 Follow-up (kill switch): ein ABGEBROCHENER Lauf — distinkt von Timeout/clean, WARN, nie „Erfolg". -->
     <string name="event_compact_done_aborted">Abgebrochen — %1$d von %2$d compactet</string>
+    <!-- CYP-333: Content-View-Umschalter (Orchestrierung | Shell). Interim (Auftraggeber-Entscheidung): der zweite
+         View ist eine EHRLICHE Worktree-Shell (bash: git status/ls/reinschauen), KEIN Agenten-Terminal — das
+         claude-Terminal (Hand-off) kommt erst mit BE-2. Spec-§8 sagt „Terminal"; hier wahrheitsgemäß „Shell". -->
+    <string name="terminal_mode_orchestration">Orchestrierung</string>
+    <string name="terminal_mode_shell">Shell</string>
+    <string name="a11y_terminal_mode">Ansicht: %1$s</string>
+    <!-- CYP-333: Shell-Segment gated, bis das Worktree-Shell-Backend (CYP-348, bash-Modus) steht; dann geht die
+         Verbindung live (die Shell ist sicher — keine Zwei-Agenten-Frage mehr). -->
+    <string name="terminal_gated_pending">Shell verfügbar, sobald das Worktree-Shell-Backend steht</string>
 </resources>

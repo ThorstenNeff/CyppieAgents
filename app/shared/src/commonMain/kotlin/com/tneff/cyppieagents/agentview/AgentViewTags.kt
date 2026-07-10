@@ -37,6 +37,21 @@ object AgentViewTags {
     /** Honest surfacing of a lifecycle-control failure (409/403/503/404). */
     fun lifecycleError(agentId: String) = "agent.$agentId.lifecycleError"
 
+    /** CYP-333: the content-view mode toggle `[ Orchestrierung | Terminal ]` (operator-gated). */
+    fun modeToggle(agentId: String) = "agent.$agentId.modeToggle"
+    fun modeToggleOrchestration(agentId: String) = "agent.$agentId.modeToggle.orch"
+    fun modeToggleTerminal(agentId: String) = "agent.$agentId.modeToggle.term"
+
+    /** CYP-333: non-operator gate hint under the read-only toggle (reused `workspace_operator_only` copy). */
+    fun modeToggleGateHint(agentId: String) = "agent.$agentId.modeToggle.gateHint"
+
+    /** CYP-333: operator note when the live worktree-shell connection is gated because the backend bash mode
+     *  (CYP-348) hasn't landed yet — the Shell segment is disabled with an honest reason (not a risk gate). */
+    fun modeToggleTerminalGated(agentId: String) = "agent.$agentId.modeToggle.terminalGated"
+
+    /** CYP-333: the content rectangle that swaps between the transcript and the terminal. */
+    fun content(agentId: String) = "agent.$agentId.content"
+
     /** The N-th event line in the stream. [index] is the 0-based, additive-stable render order. */
     fun event(agentId: String, index: Int) = "agent.$agentId.event.$index"
 
