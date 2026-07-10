@@ -22,6 +22,18 @@ import kotlinx.coroutines.launch
 const val START_PENDING_TIMEOUT_MS: Long = 30_000L
 
 /**
+ * CYP-333: which view the agent window renders in its content rectangle. A **client view-selection** — NOT the
+ * backend hand-off state machine (the spec's `TerminalControlState`). In this slice the mediated stream-json
+ * session keeps running while [TERMINAL] is shown, so no hand-off / hub-blind / frozen-token / CONTEXT_LOST is
+ * claimed — that is the Backend follow-up (⟂BE-1..3).
+ *
+ * [TERMINAL] is the structural "second view" slot. In the interim (Auftraggeber ruling) it holds an honest
+ * **worktree bash shell** (a fresh PTY over `/ws/terminal`, CYP-332/348 — `git status`/`ls`/inspect), NOT a
+ * second `claude`; the same-session claude terminal fills the same slot later, with the hand-off (BE-2).
+ */
+enum class AgentContentMode { ORCHESTRATION, TERMINAL }
+
+/**
  * Drives the agent window: collects the [AgentSession] event stream, folds it into the rendered
  * transcript via [foldEvent], and forwards human turns to the session.
  *
@@ -93,6 +105,25 @@ class AgentViewModel(
         _restartPending.value = false
         restartTimeoutJob?.cancel()
         restartTimeoutJob = null
+    }
+
+    /**
+     * CYP-333: the window's content view — the structured Orchestrierung transcript (default) or a real Terminal.
+     * Client view-selection ONLY (see [AgentContentMode]); the mediated session is untouched by the choice. When
+     * the backend exposes a per-agent `TerminalControlState` (⟂BE-1), this becomes a mirror of that truth.
+     */
+    val contentMode: StateFlow<AgentContentMode> get() = _contentMode
+    private val _contentMode = MutableStateFlow(AgentContentMode.ORCHESTRATION)
+
+    /**
+     * Switch the window's content view. **Fail-closed:** opening the terminal is an operator control surface (it
+     * spawns a shell in the agent's worktree), so a non-operator cannot switch to [AgentContentMode.TERMINAL] —
+     * the UI also disables the segment and the server admits the socket on its own bar (defence in depth).
+     * Returning to Orchestrierung is always allowed (it only changes the local view, claims nothing).
+     */
+    fun showContentMode(mode: AgentContentMode) {
+        if (mode == AgentContentMode.TERMINAL && !canControl) return // fail-closed
+        _contentMode.value = mode
     }
 
     /**

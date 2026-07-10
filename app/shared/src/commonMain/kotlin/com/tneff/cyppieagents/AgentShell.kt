@@ -128,6 +128,8 @@ import coil3.ImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.tneff.cyppieagents.net.sharedWsHttpClient
+import com.tneff.cyppieagents.terminal.TerminalView
+import com.tneff.cyppieagents.terminal.WsTerminalSession
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -160,6 +162,16 @@ private const val COMPACT_WINDOW_ID = "compact"
  * agent WebSockets and the comm REST calls. Agent session and comm data are injectable so tests stay
  * hermetic without touching the network.
  */
+/**
+ * CYP-333: gate for the worktree-shell connection going **live**. The interim second view is an honest bash shell
+ * in the worktree (Auftraggeber ruling — `git status`/`ls`/inspect), NOT a second `claude`, so it is **safe**;
+ * this is not a risk gate. It is off only because the backend bash mode (**CYP-348**) hasn't landed yet — the
+ * `/ws/terminal` mode parameter is the one new edge, reconciled with Backend. CYP-348 and this scaffold merge
+ * together; flip to `true` (or promote to a [ShellConfig] field) at that integration point and the Shell segment
+ * goes live. Until then the segment is honestly gated. The rest of the CYP-333 scaffold is identical either way.
+ */
+private const val WORKTREE_SHELL_LIVE_ENABLED = false
+
 @Composable
 fun AgentShell(
     modifier: Modifier = Modifier,
@@ -822,6 +834,22 @@ fun AgentShell(
                             capabilitiesLoading = connectorCapState.loading,
                             provider = connectorCapState.providers[window.id],
                             onCapabilityBadgeClick = { connectorCapVm.openPanel(window.id) },
+                            // CYP-333: the content-view worktree shell. LIVE only behind [WORKTREE_SHELL_LIVE_ENABLED]
+                            // (off until the CYP-348 bash backend lands — see its doc). When live, bind a fresh
+                            // WsTerminalSession to the Desktop TerminalView, remembered per agent so it stays stable
+                            // while shown and is torn down (TerminalView DisposableEffect) on switch-away. When gated,
+                            // pass no slot + the honest "available once the shell backend lands" note.
+                            // NOTE (CYP-348 edge): the shell mode parameter on /ws/terminal is reconciled with Backend
+                            // before this goes live; WsTerminalSession here uses the plain CYP-332 contract.
+                            terminalContent = if (WORKTREE_SHELL_LIVE_ENABLED) {
+                                { id, m ->
+                                    val session = remember(id) {
+                                        WsTerminalSession(httpClient, cfg.hubWsBaseUrl, id, cfg.operatorToken ?: "")
+                                    }
+                                    TerminalView(session, m)
+                                }
+                            } else null,
+                            terminalGatedNote = !WORKTREE_SHELL_LIVE_ENABLED,
                         )
                     }
                 }
