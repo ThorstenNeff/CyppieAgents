@@ -239,6 +239,9 @@ curl -s http://localhost:8080/ | grep -oE 'src="webApp[A-Za-z]*\.js"'
 Ohne diesen Schritt fährt man den Flow gegen den falschen Build und liest ein Ergebnis, das nichts bedeutet.
 (Mir genau so passiert, §3.1.)
 
+> **Nachtrag:** `scripts/web-boot-smoke.sh` **erzwingt** diesen Check inzwischen — das erwartete Bundle ist ein
+> Pflichtargument, fail-closed. Ein Handlauf, der auf Disziplin baut, ist der schwächste Teil eines Wächters.
+
 ### 5.4 Flow fahren
 
 ```bash

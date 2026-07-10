@@ -159,6 +159,8 @@ Konsolenfehler schaut, hätte eine leere Seite grün gemeldet — die fünfte Ge
 
 **Was von Zeile 1 gedeckt ist:**
 * Dokument erreichbar, Bundle referenziert, referenzierte Skripte laden.
+* **Dass der ERWARTETE Build serviert wird** (Pflichtargument, fail-closed) — belegt: ohne Angabe rot, `webApp.js`
+  gegen den Demo-Build rot, `webAppDemo.js` gegen den Demo-Build grün.
 * Fehlende Assets **derselben Herkunft** (auch lazy nachgeladene `.wasm`), inkl. der daraus folgenden
   JS-Exception.
 * Der Wasm-Ladepfad bis zum ersten gemalten Bild.
@@ -168,10 +170,10 @@ Konsolenfehler schaut, hätte eine leere Seite grün gemeldet — die fünfte Ge
 
 | Rest | Warum |
 |---|---|
-| **Was gemalt wurde, prüft er nicht** | „mehr als eine Farbe" ist kein Inhalt. Ein falsches, aber buntes Bild besteht. Inhalt prüft Option A. |
+| **Was gemalt wurde, prüft er nicht** | „mehr als eine Farbe" ist kein Inhalt. **Ein falsches, aber buntes Bild besteht.** Das ist die ehrliche Obergrenze eines Pixel-Wächters — er darf nie für einen Inhaltstest gehalten werden. Inhalt prüft Option A. |
 | **Nur das 25-Sekunden-Fenster** | Ein Asset, das später nachgeladen wird (Schriften, Bilder in einem selten geöffneten Panel), fällt heraus. |
 | **Nur der Demo-/Dev-Serve** | Gegen echtes Hosting kämen MIME-Typ für `.wasm`, CSP-Header, Kompression und Caching hinzu. Ungeprüft. |
-| **Nicht, WELCHES Bundle serviert wird** | Genau die Falle, in die ich heute selbst getappt bin (`webAppDemo.js` statt `webApp.js`). Der Handlauf verlangt den `curl`-Check; das Skript erzwingt ihn **nicht**. |
+| ~~Nicht, WELCHES Bundle serviert wird~~ | **Geschlossen.** Das erwartete Bundle ist jetzt ein **Pflichtargument**, fail-closed. Ohne Angabe: rot. Falsches Bundle serviert: rot. Ein Handlauf, der auf Disziplin baut, ist der schwächste Teil eines Wächters — und die Disziplin hat heute bei dem versagt, der die Falle untersucht hat. |
 | **Der Prod-Boot hinter dem Auth-Gate** | Der Login-Screen ist ein gültiger, bunter Boot. Der Smoke sagt nichts darüber, ob dahinter etwas ist. |
 
 **Die Zeilen 2–6 der Verlustliste deckt er nicht** und soll es nicht.

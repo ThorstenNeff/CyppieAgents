@@ -20,15 +20,26 @@
 # Was es NICHT prüft: irgendetwas über den Inhalt der UI. Dafür ist `:app:shared:wasmJsBrowserTest` zuständig.
 # Dieses Skript kennt Compose nicht und soll es nicht kennen.
 #
-# Aufruf:  scripts/web-boot-smoke.sh [URL]        (Default: http://localhost:8080)
+# Aufruf:  scripts/web-boot-smoke.sh <URL> <erwartetes-Bundle>
+#          z. B.  scripts/web-boot-smoke.sh http://localhost:8080 webApp.js      (PROD)
+#                 scripts/web-boot-smoke.sh http://localhost:8080 webAppDemo.js  (DEMO)
 # Exit:    0 = Boot sauber · 1 = Boot kaputt (mit Grund auf stderr)
+#
+# Das erwartete Bundle ist PFLICHT, fail-closed. Grund: prod und demo binden denselben Port 8080, und der
+# zweite Serve-Task bindet ihn nicht -- er scheitert NICHT laut. Wer dann misst, misst den falschen Build und
+# liest ein Ergebnis, das nichts bedeutet. (Genau so passiert, CYP-340 §3.1.) Ein Handlauf, der auf Disziplin
+# baut, ist der schwaechste Teil eines Waechters; also erzwingt das Skript, was der Handlauf nur verlangte.
 
 set -uo pipefail
-URL="${1:-http://localhost:8080}"
+URL="${1:-}"
+EXPECT="${2:-}"
 CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
 [ -n "$CHROME" ] || { echo "FEHLER: kein Chrome/Chromium im PATH" >&2; exit 1; }
 
 fail() { echo "BOOT-SMOKE ROT: $*" >&2; exit 1; }
+
+[ -n "$URL" ]    || fail "erstes Argument fehlt: URL"
+[ -n "$EXPECT" ] || fail "zweites Argument fehlt: erwartetes Bundle (z. B. webApp.js oder webAppDemo.js). Fail-closed — ohne diese Angabe sagt ein gruener Lauf nicht, WAS geprueft wurde."
 
 # 1. Dokument erreichbar?
 html="$(curl -fsS "$URL/" 2>/dev/null)" || fail "GET $URL/ liefert kein 200"
@@ -36,6 +47,10 @@ html="$(curl -fsS "$URL/" 2>/dev/null)" || fail "GET $URL/ liefert kein 200"
 # 2. Referenzierte Skripte erreichbar?
 scripts="$(printf '%s' "$html" | grep -oE 'src="[^"]+\.js"' | sed 's/src="//;s/"$//')"
 [ -n "$scripts" ] || fail "index.html referenziert kein .js-Bundle"
+
+# 2a. Wird das ERWARTETE Bundle serviert? Sonst misst der Rest den falschen Build.
+printf '%s\n' $scripts | grep -qx ".*/\?$EXPECT" || printf '%s\n' $scripts | grep -q "^$EXPECT$" \
+  || fail "falscher Build serviert: erwartet '$EXPECT', gefunden: $(printf '%s ' $scripts)"
 for s in $scripts; do
   case "$s" in http*) u="$s";; /*) u="$URL$s";; *) u="$URL/$s";; esac
   curl -fsS -o /dev/null "$u" || fail "Asset nicht ladbar: $u"
