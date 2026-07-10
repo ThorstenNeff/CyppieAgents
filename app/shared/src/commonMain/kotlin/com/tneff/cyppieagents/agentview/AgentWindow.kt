@@ -363,9 +363,15 @@ private val TRANSCRIPT_TIME_COLUMN_GAP = 8.dp
  *
  * **Two clocks feed this one column.** Stream rows carry the *server's* `tsMs`; [AgentEvent.UserTurn] and the
  * `conn-error` [AgentEvent.Notice] carry the *client's* (see [AgentViewModel]'s injected clock). If the two
- * drift, the column runs backwards — the same failure class as re-dating a row in [foldEvent], only across
- * processes instead of across updates. In the MVP the server binds `localhost`, so drift is ~0. This turns real
- * with the first remote connector: the client-born rows would then need a server-anchored stamp, not a local one.
+ * drift, the column can run backwards — the same failure class as re-dating a row in [foldEvent], only across
+ * processes instead of across updates. In the MVP the server binds `localhost`, so drift is ~0; it turns real
+ * with the first remote connector.
+ *
+ * The fix is **not** an estimate. Event timestamps only *lower-bound* the server's now, so deriving a skew from
+ * them mis-dates a turn by the agent's idle time — hours wrong on a perfectly correct clock (measured; see
+ * [AgentViewModel]). Today a fast browser therefore inverts the column: the reply renders below the question
+ * with an earlier time. It needs the server to state its own `serverNowMs` when the client attaches — only the
+ * *send* instant is replay-immune. Tracked as CYP-346, in `:core` + server, not in this module.
  */
 @Composable
 private fun TranscriptRow(
