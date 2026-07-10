@@ -1136,8 +1136,18 @@ private fun MessageComposer(
         }
     }
 
-    // CYP-26 §2.2: keep the input usable when the window is narrow. The input holds a min width; below
-    // a threshold the "Senden" label degrades to a glyph (a11y label preserved) so nothing is truncated.
+    // CYP-26 §2.2 / CYP-370: keep the input usable when the window is narrow. Below the compact threshold the
+    // "Senden" label degrades to a glyph (a11y name preserved) so nothing truncates. (The old widthIn(min) on the
+    // input was dead and removed in CYP-370; the breakpoint, not a min width, is what keeps the field usable.)
+    //
+    // CYP-375 — ACCEPTED non-monotonicity, documented not smoothed. As the window widens past the breakpoint the
+    // input field briefly SHRINKS (measured 288 -> 250 dp at 376), because the send button reclaims ~42 dp to
+    // render "Senden" as a WORD instead of the glyph. It cannot be tuned away: at any switch width W the
+    // glyph-input (W-60) and the word-input (W-102) differ by the send-button delta no matter where the threshold
+    // sits — moving it relocates the drop, never removes it. Reserving the word width always would take those
+    // 42 dp from the input in exactly the narrow band the breakpoint exists to protect. So the input's SHARE
+    // jumps; the composer's total content (input + send) stays monotonic — nothing is lost, only re-split, and
+    // `Cyp375ComposerContentMonotonicityTest` pins that. (CommPanel's composer carries the identical structure.)
     BoxWithConstraints(modifier = modifier) {
         val compact = maxWidth < COMPOSER_COMPACT_INPUT_THRESHOLD.dp + 96.dp
         Row(
