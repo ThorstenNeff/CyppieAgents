@@ -33,13 +33,19 @@ tasks.named<JavaExec>("run") {
     workingDir = rootProject.projectDir
 }
 
-// CYP-178 CC2 (teeth-hygiene): Rc2ConfigAssertionTest reads deploy/kratos/kratos.reference.yml at RUNTIME
-// (a repoFile() walk), so Gradle can't see the yml as a test input. Without this, editing ONLY the yml
-// leaves the `test` task UP-TO-DATE → the config-drift guard is stale-green on a pure-yml change (a false
-// green on the exact surface RC2 guards). Declaring it as a task input makes a yml change re-run the tests.
+// CYP-178 CC2 / CYP-366 (teeth-hygiene): two tests read shipped deploy/kratos files at RUNTIME via a
+// repoFile() walk, so Gradle cannot see them as test inputs. Without declaring them, editing (or deleting)
+// ONLY such a file leaves the `test` task UP-TO-DATE → the guard is stale-green on the exact surface it
+// guards. Rc2ConfigAssertionTest reads kratos.reference.yml; OidcProviderConfigTest also asserts the
+// oidc.github.jsonnet mapper ships — that file was UNDECLARED (CYP-366), so a probe change to it recycled a
+// stale green (measured: the task went UP-TO-DATE on a real content change). Declaring both makes a change
+// to EITHER re-run the tests.
 tasks.named<Test>("test") {
     inputs.file(rootProject.file("deploy/kratos/kratos.reference.yml"))
         .withPropertyName("kratosReferenceConfig")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.file("deploy/kratos/oidc.github.jsonnet"))
+        .withPropertyName("oidcGithubMapper")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
