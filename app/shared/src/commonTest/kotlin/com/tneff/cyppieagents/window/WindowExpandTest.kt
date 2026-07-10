@@ -72,11 +72,16 @@ class WindowExpandTest {
         // no such gate, so calling it directly exercises the floor the live UI can't reach.
         // CYP-338: a CONTENT window's height floor is now TILED_CONTENT_WINDOW_MIN_HEIGHT, the twin of its 320
         // width floor — the old expectation (MIN_WINDOW_HEIGHT) encoded the very asymmetry that collapsed the
-        // agent transcript, one line below the width's typeMinW. Host height raised 220 → 440 so the FLOOR is
-        // what binds: on a host shorter than the floor, clampSizeToBounds caps the result and the assertion
-        // would prove the clamp instead. host 360×440 → usableW 312 < 320 AND usableH 336 < 391 → both bite.
+        // agent transcript, one line below the width's typeMinW. The FLOOR must be what binds: on a host shorter
+        // than the floor, clampSizeToBounds caps the result and the assertion would prove the clamp instead.
+        //
+        // CYP-363: that is exactly what happened when the floor rose 391 → 475 and this host stayed at a
+        // hard-coded 440 — the test went red for the right reason. The host is now DERIVED, so it follows the
+        // constant: `usableH = hostH - 104`, and `+40` keeps it in the band `floor <= hostH < floor + 104`, i.e.
+        // usable below the floor (the floor bites) while the host itself stays above it (the clamp does not).
+        val hostH = TILED_CONTENT_WINDOW_MIN_HEIGHT + 40f
         val target = WindowReducer.expandCentered(
-            WindowState("comm", "C", 0f, 0f, 300f, 200f), 360f, 440f, isContent = true,
+            WindowState("comm", "C", 0f, 0f, 300f, 200f), 360f, hostH, isContent = true,
         )
         assertEquals(TILED_CONTENT_WINDOW_MIN_WIDTH, target.width)   // floored to 320, not the 312 usable
         assertEquals(TILED_CONTENT_WINDOW_MIN_HEIGHT, target.height) // floored to the type min, not the usable

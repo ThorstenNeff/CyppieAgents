@@ -43,19 +43,33 @@ const val COMPOSER_MIN_WIDTH: Float = 280f
 const val MIN_WINDOW_HEIGHT: Float = 120f
 
 /**
- * **Invariant** floor for **content** windows (Agent/Comm), in dp: their fixed chrome, **measured on the
- * rendered composition** at the [TILED_CONTENT_WINDOW_MIN_WIDTH] of 320 dp — title bar 64 + agent header 164
- * + composer 73. Below this the composer, the last unweighted child of the column, cannot be laid out at all;
- * a content window without its input row has stopped being one. No path — placement, resize, clamp, tile,
- * fallback — may ever produce less.
+ * **Invariant** floor for **content** windows (Agent/Comm), in dp: their fixed chrome, **measured on the real
+ * rendered shell** at the [TILED_CONTENT_WINDOW_MIN_WIDTH] of 320 dp, in the **worst shipped state**:
  *
- * The 164 dp header is **width-dependent**: the Start/Stop/Restart `TextButton` labels wrap below ~520 dp of
- * window width and the header Row grows with them (measured 320→164, 480→104, 520→56). `min-window-height-
- * spec.md` §2.1 derives 48 dp from the unwrapped Row, which only holds at >=520 dp. Stop the header from
- * wrapping (icon buttons / overflow, CYP-350) and the header becomes its unwrapped 56 dp, taking this to
- * 64 + 56 + 73 = 193 — every summand still measured; a measured and an arithmetic value must never share a sum.
+ * ```
+ * title bar 64 + agent header 164 + ModeToggleRow 84 + composer row 73 = 385
+ * ```
+ *
+ * Below this the composer — the last unweighted child of the column — cannot be laid out at all; a content
+ * window without its input row has stopped being one. No path (placement, resize, clamp, tile, fallback) may
+ * ever produce less.
+ *
+ * **CYP-363: this number was 301 and had gone stale.** CYP-333 added a fourth chrome row (`ModeToggleRow`) and
+ * the constant did not follow. At 301 the real shell rendered `transcript = 0 dp`, `input = 0 dp` — a window
+ * that is 100 % chrome, with neither transcript nor composer visible. The defect CYP-338 closed had reopened,
+ * not because a number changed but because the composition did.
+ *
+ * **Two traps this number is measured around, both fallen into first:**
+ *  - The `ModeToggleRow` measures **84 dp** naturally, but only **73 dp** *at the old floor* — the `Column`
+ *    hands its unweighted children what is left, so a height read at the floor is a **remainder, not a height**.
+ *    Using it would have written the defect into the constant meant to prevent it.
+ *  - 84 dp is the **operator + gated-note** state, which is what ships (`WORKTREE_SHELL_LIVE_ENABLED = false`).
+ *    A non-operator's row is 68 dp. The floor must know the tallest state, not the convenient one.
+ *
+ * Do not maintain this by hand: `ContentWindowChromeFloorGuardTest` re-measures the composition and fails if a
+ * chrome row appears or disappears without this constant following. It contains no chrome number of its own.
  */
-const val CONTENT_WINDOW_MIN_HEIGHT: Float = 301f
+const val CONTENT_WINDOW_MIN_HEIGHT: Float = 385f
 
 /**
  * Min height for **content** windows (Agent/Comm), the height twin of [TILED_CONTENT_WINDOW_MIN_WIDTH]
@@ -63,14 +77,21 @@ const val CONTENT_WINDOW_MIN_HEIGHT: Float = 301f
  * view in which a wrapped answer coexists with a neighbouring row rather than being the whole window
  * (`min-window-height-spec.md` §2.2/§2.3).
  *
- * Rendered, not computed: the chrome summand comes from a measurement of the real composition, not from the
- * Material token arithmetic, because the header wraps at this class's own minimum width (see
- * [CONTENT_WINDOW_MIN_HEIGHT]). **This number falls to 283 once the header stops wrapping (CYP-350)** —
- * `193 + 90`, both summands measured. It is a measured consequence, not a chosen size, so do not round it.
+ * Rendered, not computed: the chrome summand comes from a measurement of the real composition, not from Material
+ * token arithmetic, because the header wraps at this class's own minimum width (see [CONTENT_WINDOW_MIN_HEIGHT]).
+ * `385 + 90 = 475`. The 90 dp is a promise, and `ContentWindowChromeFloorGuardTest` asserts it **exactly**: a
+ * `>=` would let any future chrome growth pass as long as *something* was left over, which is precisely the
+ * give of the `weight(1f)` transcript that hid the CYP-363 defect.
+ *
  * `tile` may squeeze a content window *below* this, never below [CONTENT_WINDOW_MIN_HEIGHT] (spec §5). Does
  * **not** replace the 120 dp floor for other window types — they have no composer to lose.
+ *
+ * **CYP-363:** the former KDoc promised this "falls to 283 once the header stops wrapping". That number came
+ * from a composition without the `ModeToggleRow` and was already dead when it was written. It is removed rather
+ * than re-derived: the new value belongs to CYP-350, measured on the composition that ticket produces. A number
+ * about a composition that does not exist yet is exactly the defect this ticket repairs.
  */
-const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 391f
+const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 475f
 
 /**
  * How much of a window must remain inside the host on every edge, in dp, so it can never be dragged
