@@ -11,6 +11,16 @@
 
 > **Metadaten-Textfarbe ist `onSurfaceVariant`. `outline` ist für Rahmen und Trenner.**
 
+Diese Kurzform trägt nicht. Die Fassung, die trägt (§2.3, entschieden 2026-07-10):
+
+> Eine Verwendung von `outline`/`outlineVariant` ist **korrekt**, wenn sie
+> **(1) keinen Text färbt** — Text im Sinne der WCAG-Definition: *eine Zeichenfolge, die etwas in
+> **menschlicher Sprache** ausdrückt* — **und (2)** entweder **≥ 3:1** gegen ihren Untergrund misst
+> **oder** ihre Information **redundant** von Text/`contentDescription` getragen wird.
+>
+> **(3)** Die Regel gilt dem **Paar**, nicht der Rolle: `outline` als *Hintergrund* hinter
+> `surface`-farbenem Inhalt ist **dasselbe 3,55:1-Paar mit vertauschten Seiten**.
+
 Diese Behauptung ist erst dann eine Regel, wenn sie **jede** Aufrufstelle entweder bestätigt oder als Verstoß
 ausweist. Deshalb sind unten **alle acht** Fundstellen klassifiziert — auch und gerade die korrekten. Der PO
 hat ausdrücklich verlangt, dass eine Bereinigung keine richtigen Verwendungen mitreißt; die **§3-Tabelle
@@ -37,22 +47,45 @@ Definitionsstelle `ui/MaritimeTheme.kt:39/61` (setzt die Tokens) ist keine Aufru
 
 ## 2. Klassifikation & Schwellen
 
-Nicht jede Farbverwendung schuldet 4,5:1. Drei Kategorien, drei Schwellen — sonst produziert ein Audit
-Falschmeldungen:
+### 2.1 Nicht jede Farbverwendung schuldet 4,5:1
 
 | Kat. | Was | WCAG | Schwelle |
 |---|---|---|---|
-| **T — Text** | Ein `Text(color = …)`, dessen **Wortlaut** die Information trägt | 1.4.3 Contrast (Minimum) | **4,5:1** (< 18 pt / 14 pt bold) |
-| **S — Symbol/Glyph** | Ein Zeichen, dessen Bedeutung **zusätzlich** durch Label/`contentDescription` getragen wird | 1.4.11 Non-text Contrast | **3:1** |
-| **D — Dekor** | Rahmen, Punkt, Trenner; Bedeutung liegt **vollständig** im begleitenden Text | 1.4.1 / 1.4.11 (Ausnahme: rein dekorativ) | **keine** |
+| **T — Text** | eine Zeichenfolge, die etwas in **menschlicher Sprache** ausdrückt | 1.4.3 Contrast (Minimum) | **4,5:1** |
+| **S — Symbol/Grafikobjekt** | ein Zeichen oder eine Form, die **keine** Sprache ist (Glyph, Punkt, Balken, Pill) | 1.4.11 Non-text Contrast | **3:1** |
+| **D — Dekor** | Bedeutung liegt **vollständig** im begleitenden Text | 1.4.3 „incidental" / 1.4.11 „required to understand" | **keine** |
 
-> **Warum das zählt:** `outline` liegt in beiden Themes bei ≈ 3,6:1. Das ist **oberhalb** der Symbol-/Dekor-
-> Schwelle und **unterhalb** der Textschwelle. Genau deshalb ist `outline` als Rahmenfarbe richtig **und** als
-> Textfarbe falsch — es ist dieselbe Farbe, die eine Anforderung erfüllt und die andere nicht. Die Regel ist
-> keine Stilpräferenz, sie ist die Konsequenz aus dieser einen Zahl.
+### 2.2 Das Kriterium ist **nicht** „Glyph oder Prosa", sondern WCAG's eigene Text-Definition
 
-Alle Werte gegen `MaritimeLight` / `MaritimeDark` (`ui/MaritimeTheme.kt` @ `461a0ce`) nach der
-WCAG-2.1-Kontrastformel gerechnet.
+Ein `Text`-Composable macht noch keinen Text im Sinne der Norm. WCAG definiert **text** als
+
+> *„sequence of characters … **expressing something in human language**"*
+
+und 1.4.3 nimmt „incidental" Zeichen ausdrücklich aus. Ein `·`, ein `⚠`, ein `✓` sind **Icons, die zufällig
+aus einer Schrift stammen** — sie drücken nichts in menschlicher Sprache aus. Sie fallen unter **1.4.11**.
+
+**Das ist die einzige Trennlinie, die hält.** „Glyph vs. Prosa" wäre eine Faustregel; die Sprach-Definition
+ist die Norm und entscheidet auch die Fälle, die uns morgen begegnen — etwa ein `Text(severityLabel(sev),
+color = severityColor(sev))`, das das **Wort** „Debug" in `outline` malte: eine Zeichenfolge in menschlicher
+Sprache, also **1.4.3**, also **4,5:1**, also ein Verstoß.
+
+### 2.3 Die Regel, verbindlich formuliert
+
+> Eine Verwendung von `outline`/`outlineVariant` ist **korrekt**, wenn:
+>
+> **(1) sie färbt keinen Text** (menschliche Sprache, s. §2.2), **und**
+> **(2)** sie misst **≥ 3:1** gegen ihren Untergrund **oder** ihre Information wird **redundant** getragen
+> (sichtbarer Text bzw. `contentDescription` daneben — dann greift 1.4.11 „required to understand" nicht).
+>
+> **(3) Die Regel gilt dem Paar, nicht der Rolle.** Ob `outline` vorn oder hinten steht, ändert den Kontrast
+> nicht: `surface`-Inhalt auf `outline`-Container misst **exakt dieselben 3,55:1 / 3,63:1**.
+
+**Warum die drei Klauseln nicht kürzbar sind:**
+- Ohne **(1)** wäre `NoticeRow` erlaubt (3,55:1 ≥ 3, aber es ist Prosa).
+- Ohne **(2b)** wären der UNKNOWN-Punkt (1,41:1) und der Avatar-Rahmen (1,21:1) Verstöße — sie sind es nicht.
+- Ohne **(3)** ist die Pill (§3.2) **unauffindbar**: dort ist `outline` der Hintergrund.
+
+Alle Werte gegen `MaritimeLight` / `MaritimeDark` (`ui/MaritimeTheme.kt` @ `461a0ce`), WCAG-2.1-Formel.
 
 | Rolle | hell | dunkel |
 |---|---|---|
@@ -85,24 +118,37 @@ Kategorie **T**, Schwelle 4,5:1, beide Themes **darunter**.
 → **8,69:1 / 9,80:1 (AAA)**. Die Metadaten bleiben zurückgenommen (`onSurface` liegt bei 15,6:1 / 15,1:1);
 `outline` war nie nötig, um „leise" zu wirken.
 
-### 3.2 🟠 Grenzfälle — DEBUG-Severity, **eine Entscheidung des POs**
+### 3.2 ✅ **Entschieden:** die zwei DEBUG-Fälle sind **Grafikobjekte** — korrekt, unverändert
 
-Beide entspringen **derselben Quelle**, `eventlog/EventVisuals.kt`:
+Beide entspringen `eventlog/EventVisuals.kt`:
 
-| # | Fundstelle | Was | gerendert als | hell | dunkel |
+| # | Quelle | Renderstelle | Was steht auf was | hell | dunkel |
 |---|---|---|---|---|---|
-| 4 | `EventVisuals.kt:76` → `report/ProductLeadPanel.kt:263` | `severityColorFor(DEBUG) = scheme.outline` | Severity-**Glyph** (`labelMedium`) auf `surface`, mit `contentDescription` = Severity-Label | 3,55:1 | 3,63:1 |
-| 5 | `EventVisuals.kt:84` → `window/WindowBadge.kt:101` | `severityContainerFor(DEBUG) = outline to surface` | **Pill**: `·`-Glyph in `surface`-Farbe auf `outline`-Container, mit `a11y_badge_severity` | 3,55:1 | 3,63:1 |
+| 4 | `:76` `severityColorFor(DEBUG) = scheme.outline` | `report/ProductLeadPanel.kt:262` | `outline`-Glyph `·` auf `surface` | 3,55:1 | 3,63:1 |
+| 5 | `:84` `severityContainerFor(DEBUG) = outline to surface` | `window/WindowBadge.kt:101` → `Pill` | `surface`-Glyph `·` auf `outline`-Container | 3,55:1 | 3,63:1 |
 
-**Beides ist Kategorie S**, wenn man den Glyphen als Symbol liest — und dann **bestehen sie** (≥ 3:1). Beide
-Stellen tragen die Bedeutung nachweislich im Text (`contentDescription`), nicht in der Farbe; das entspricht
-der WCAG-1.4.1-Disziplin, die dieses Projekt konsequent fährt.
+**Entscheidung: 1.4.11 (Grafikobjekt, 3:1). Beide bestehen. Keine Änderung.**
 
-Sie sind trotzdem gelistet, weil beide technisch `Text`-Composables sind: ein Prüfer, der stur nach
-`Text(color = …)` greift, wird sie als Verstoß melden. **Meine Einschätzung: kein Verstoß, keine Änderung** —
-`3,55:1` für einen `·`-Glyph, dessen Bedeutung ohnehin angesagt wird, ist normkonform und optisch gewollt
-(DEBUG ist die leiseste Severity, §3.4). **PO-Ask 1:** bestätigen, dann sind sie in einem Guard (§5)
-namentlich auszunehmen.
+**Begründung:** Ein `·` drückt nichts in **menschlicher Sprache** aus (§2.2). Es ist ein Icon, das zufällig
+aus einer Schrift stammt und in einem `Text`-Composable landet. Die Norm knüpft an die **Zeichenfolge**, nicht
+an den Composable.
+
+> **Eine Prämisse muss ich korrigieren — meine eigene wie die im Ticket.** Es hieß, „in beiden Fällen steht
+> ein sichtbares Textlabel daneben". **Das stimmt nicht.** In `DefectRow` ist `severityLabel(…)` **nur**
+> `contentDescription` (`ProductLeadPanel.kt:267`); sichtbar sind der Glyph und `item.text`. In der `Pill`
+> ist der Glyph der **einzige** sichtbare Inhalt (`WindowBadge.kt:133`, `Text(text = glyph, …)`), die Severity
+> steckt sonst nur in `a11y_badge_severity`.
+>
+> **Beide Glyphen sind also visuell erforderlich, um den Inhalt zu verstehen** — Klausel (2b) trägt sie
+> **nicht**. Sie bestehen über die **Zahl**: `3,55:1 ≥ 3:1`. Das ist ein Unterschied mit Folgen: **wer sie
+> künftig dimmt und sich dabei auf „ist ja redundant" beruft, bricht sie.** Sie haben die Redundanz nicht,
+> die man ihnen unterstellt hat.
+
+**Was die Ausnahme im Guard begrenzt (§5):** Sie gilt der **Renderstelle**, die einen sprachlosen Glyphen
+malt — **nicht** der Farbquelle `severityColorFor`/`severityContainerFor`. Eine Ausnahme an der *Quelle*
+segnete jeden künftigen Konsumenten mit, auch einen, der `Text(severityLabel(sev), color =
+severityColor(sev))` schriebe: das **Wort** „Debug" in `outline` — menschliche Sprache, 1.4.3, **4,5:1**,
+Verstoß. Die Ausnahme muss also **dort** stehen, wo bewiesen ist, dass ein Icon gerendert wird.
 
 ### 3.3 ✅ Korrekte Verwendungen — **ausdrücklich als korrekt ausgewiesen, nicht anfassen**
 
@@ -133,15 +179,21 @@ als eine rote Zahl:
 
 ### 3.4 Zusammenfassung
 
-| Kategorie | Anzahl | Fundstellen |
-|---|---|---|
-| 🔴 Verstoß (Text unter 4,5:1) | **3** | 1 · 2 · 3 |
-| 🟠 Grenzfall (Symbol, ≥ 3:1, PO bestätigt) | **2** | 4 · 5 |
-| ✅ Korrekt (Rahmen/Dekor) | **3** | 6 · 7 · 8 |
-| | **8** | |
+| Kategorie | Anzahl | Fundstellen | trägt über |
+|---|---|---|---|
+| 🔴 Verstoß — **Text** (menschliche Sprache) unter 4,5:1 | **3** | 1 · 2 · 3 | — |
+| ✅ Korrekt — **Grafikobjekt**, besteht 3:1 | **2** | 4 · 5 | Klausel (2a) |
+| ✅ Korrekt — **Grafikobjekt/Dekor**, unter 3:1, aber redundant | **2** | 7 · 8 | Klausel (2b) |
+| ✅ Korrekt — **Dekor**, besteht ohnehin 3:1 | **1** | 6 | (2a) **und** (2b) |
+| | **8** | | |
 
 **`outlineVariant` wird nirgends für Text verwendet** (Fundstellen 7, 8 sind Punkt und Rahmen) — für diese
 Rolle ist die Regel heute schon lückenlos eingehalten.
+
+> **Der Satz „fünf `outline`-Verwendungen bleiben, keine färbt Text" ist falsch** und gehört korrigiert:
+> **zwei von ihnen färben sehr wohl einen `Text`-Knoten** (Fundstellen 4 und 5). Sie sind trotzdem korrekt —
+> aber aus dem Grund in §2.2, nicht weil sie „keinen Text färben". Der Unterschied ist genau der, der einen
+> Guard baubar macht.
 
 ---
 
@@ -182,22 +234,52 @@ korrigiert. Das ist bereits ein Guard, kein offener Punkt.
 
 ---
 
-## 5. Empfehlung: die Regel selbst-durchsetzend machen
+## 5. Der Guard — und warum er **zweiseitig** suchen muss
 
-Ein Audit verfällt. Das Projekt hat für **genau dieses Problem** bereits ein Muster —
+Ein Audit verfällt. Das Projekt hat für genau dieses Problem bereits ein Muster:
 `ui/TertiarySourceGuardTest.kt` (CYP-303) scannt `commonMain` und wird rot, sobald `colorScheme.tertiary*`
 außerhalb von `MaritimeTheme.kt` wieder auftaucht.
 
-**Vorschlag (Umsetzung, nicht dieser Branch):** ein `OutlineTextGuardTest` nach demselben Bauplan, der auf
-`outline` **als Textfarbe** anschlägt statt auf jede Verwendung:
+### 5.1 Die Pill braucht einen eigenen Satz — sie ist sonst unauffindbar
 
-- Rot bei `color = MaterialTheme.colorScheme.outline` (bzw. `outlineVariant`) an einem `Text(…)`.
-- Grün für `background(…)`, `BorderStroke(…)`, `Box`-Punktfarben — die Kategorien D.
-- Die zwei Grenzfälle aus §3.2 (`EventVisuals.kt`) werden **namentlich ausgenommen**, mit dem Grund im
-  Test-KDoc — wie der `tertiary`-Guard `MaritimeTheme.kt` ausnimmt.
+Ein Guard, der nach **`outline` als Textfarbe** sucht, findet Fundstelle 5 **prinzipiell nicht**: dort ist
+`outline` der **Hintergrund** (`severityContainerFor(DEBUG) = outline to surface`, `Pill` malt
+`background(container)` + `Text(color = content)`). Es ist **dasselbe Farbpaar mit vertauschten Seiten** und
+**exakt derselbe Kontrast** — 3,55:1 / 3,63:1, nachgerechnet in beiden Richtungen.
 
-So wird aus „wir haben es einmal aufgeräumt" ein Invariant. **PO-Ask 2:** eigenes kleines Ticket für Dev oder
-Tester2, sinnvoll **nach** dem CYP-337-Fix (vorher wäre er per Konstruktion rot).
+> **Deshalb ja: der Pill-Fall braucht einen eigenen Satz.** Nicht weil er anders zu bewerten wäre, sondern
+> weil eine **rollenbasierte** Suche ihn nicht sieht. Die Regel muss dem **Paar** gelten (§2.3 Klausel 3),
+> und der Guard muss **beide Seiten** abtasten:
+>
+> 1. `outline*` als **Vordergrund** eines `Text(color = …)`
+> 2. `outline*` als **Hintergrund** (`background(…)`, `BorderStroke(…)`, `(container, onColor)`-Paare wie
+>    `severityContainerFor`), **hinter** dem Text oder ein Icon liegt
+
+Ohne (2) ist die Regel eine Regel über Kotlin-Bezeichner, nicht über Kontrast.
+
+### 5.2 Die Ausnahme braucht eine **Grenze**, sonst verrottet sie
+
+Developer5 hat die zwei DEBUG-Fälle als namentliche Ausnahmen eingetragen. **Richtig — aber sie müssen an der
+Renderstelle hängen, nicht an der Farbquelle.**
+
+| Anker | Wirkung |
+|---|---|
+| ❌ `EventVisuals.severityColorFor` / `severityContainerFor` | segnet **jeden künftigen Konsumenten** mit — auch `Text(severityLabel(sev), color = severityColor(sev))`, also das **Wort** „Debug" in `outline`: 1.4.3, 4,5:1, **Verstoß** |
+| ✅ `ProductLeadPanel.kt:262` und `WindowBadge.kt` (`Pill`) | segnet genau die zwei Stellen, an denen bewiesen ein **sprachloses Icon** gerendert wird |
+
+Im Test-KDoc gehört der **Grund** neben die Ausnahme, nicht nur die Zeilennummer:
+*„`·` ist keine menschliche Sprache → 1.4.11 → 3:1 → 3,55:1 besteht. Die Severity ist hier **nicht**
+redundant sichtbar; die Ausnahme trägt über die Zahl, nicht über Redundanz. Wer die Farbe dimmt, bricht sie."*
+
+**Eine Ausnahme ohne Grund verrottet** — der Nächste liest sie als „DEBUG darf alles".
+
+### 5.3 Was der Guard **nicht** anfassen darf
+
+Fundstellen 6–8 (Statuspunkte, Avatar-Rahmen) sind Dekor und tragen über Klausel (2b). Ein Guard, der sie
+mitreißt, macht einen leisen Punkt laut und zerstört die Zustands-Hierarchie. **Die Regel sagt nicht
+„`outline` ist schlecht", sie sagt „`outline` ist keine Sprache".**
+
+**Timing:** sinnvoll **nach** dem CYP-337-Fix — vorher wäre der Guard per Konstruktion rot.
 
 ---
 
@@ -205,7 +287,7 @@ Tester2, sinnvoll **nach** dem CYP-337-Fix (vorher wäre er per Konstruktion rot
 
 | # | Frage | Meine Empfehlung |
 |---|---|---|
-| 1 | **Grenzfälle §3.2** (DEBUG-Glyph + DEBUG-Pill, je 3,55:1 / 3,63:1): Symbol (≥ 3:1, bestehen) oder Text (4,5:1, fallen durch)? | **Symbol → unverändert lassen.** Bedeutung wird in beiden Fällen angesagt; die Farbe ist Verstärkung. |
+| 1 | **Grenzfälle §3.2** — Symbol oder Text? | **Entschieden (2026-07-10): Grafikobjekt (1.4.11).** Ein `·` ist keine menschliche Sprache. Beide bestehen mit 3,55:1 **über die Zahl**, nicht über Redundanz (§3.2). Unverändert lassen, im Guard **an der Renderstelle** ausnehmen. |
 | 2 | **Source-Guard** (§5) — eigenes Ticket nach dem Fix? | **Ja.** Muster liegt mit `TertiarySourceGuardTest` bereits im Repo. |
 | 3 | **CYP-337-Scope:** Das Ticket nennt eine Fundstelle, es sind **drei** (§3.1). Alle drei im selben Fix? | **Ja** — identische Ursache, identische Korrektur, ein Commit. Sonst bleiben zwei AA-Verstöße stehen, die dieses Audit namentlich kennt. |
 
@@ -213,7 +295,12 @@ Tester2, sinnvoll **nach** dem CYP-337-Fix (vorher wäre er per Konstruktion rot
 
 ## 7. Self-Validation
 
-- **8 Fundstellen gesucht, 8 klassifiziert**, Summe der Kategorien (3 + 2 + 3) = 8. Keine Fundstelle ohne Urteil.
+- **8 Fundstellen gesucht, 8 klassifiziert**, Summe der Kategorien (3 + 2 + 2 + 1) = 8. Keine Fundstelle ohne
+  Urteil, und **jede** trägt über eine **benannte Klausel** der Regel (§2.3) statt über eine Behauptung.
+- **Zwei Prämissen korrigiert, eine davon meine:** „keine der verbleibenden Verwendungen färbt Text" ist
+  falsch (zwei färben einen `Text`-Knoten, §3.4), und „neben beiden Glyphen steht ein sichtbares Label" ist
+  ebenfalls falsch (es ist nur `contentDescription`, §3.2) — die zwei bestehen über die **Zahl**, nicht über
+  Redundanz. Wer das verwechselt, dimmt sie später mit gutem Gewissen kaputt.
 - **Jede Text-Verwendung** hat gemessenen Kontrast in **beiden** Themes, Schriftgröße und AA-Urteil (§3.1).
 - **Jede Rahmen-/Dekor-Verwendung ist ausdrücklich als korrekt ausgewiesen** (§3.3), mit Begründung, warum
   auch die zwei sub-3:1-Fälle keine Verstöße sind — damit eine Bereinigung sie nicht mitreißt.
