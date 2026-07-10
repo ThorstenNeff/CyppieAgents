@@ -316,21 +316,43 @@ Fix in `foldEvent`: `it[idx] = event.copy(ts = (current[idx] as AgentEvent.ToolC
 > die Zeile sagt, wann der Turn **begann**, nicht wann das letzte Zeichen ankam. Sonst wanderte die Zeit
 > während des Streamens.
 
-#### Nachtrag (CYP-335-Impl @ `dcbcaf9`): die Invariante ist **eine Ebene feiner**, als ich sie geschrieben habe
+#### Nachtrag: die Invariante bleibt **einfach** — und die Zusage über die Spalte ist **verengt**
 
-Oben steht „`ts` ist first-seen und **unveränderlich**". Für Zeilen **von der Leitung** stimmt das
-uneingeschränkt. Für die zwei **im Client geborenen** Zeilen (`UserTurn`, `conn-error`-`Notice`) ist es zu
-absolut: sie tragen zunächst die Browser-Uhr, und der erste Server-Stempel hebt sie **einmalig** auf die
-Server-Zeitbasis (`AgentViewModel.observeServerClock` → `shiftedBy`). Das ist ein **Wechsel der Zeitbasis**,
-kein Um-Datieren auf ein späteres Ereignis — ihr Stempel war immer eine lokale Schätzung, die auf einen Anker
-wartete. Präzise Fassung:
+> **Zurückgerollt (2026-07-10, PO-Entscheid).** Eine Zwischenfassung dieser Spec verfeinerte die Invariante zu
+> „im Client geborene Zeilen sind vorläufig, bis ein Server-Stempel sie verankert". Der Mechanismus, den sie
+> beschrieb (Skew-Korrektur + `shiftedBy` + Anker-Buchführung, CYP-335 @ `dcbcaf9`), **wurde wieder entfernt**
+> — er war fehlerhaft (s. u.). Es gilt wieder die einfache Fassung.
 
-> Die Zeit einer Zeile ist die ihrer **Entstehung**, nie die ihrer Aktualisierung. Zeilen von der Leitung sind
-> ab dem ersten Rendern unveränderlich; im Client geborene Zeilen sind **vorläufig**, bis der erste
-> Server-Stempel sie **einmal** verankert.
+**Invariante (unverändert gültig):**
 
-Sichtbare Folge, offen benannt: die Uhrzeit einer selbst gesendeten Nachricht kann sich **einmal** ändern.
-Bei `localhost` (MVP) liegt die Verschiebung unter einer Sekunde und bleibt in `HH:mm` fast immer unsichtbar.
+> Die Zeit einer Zeile ist die ihrer **ersten Beobachtung** und danach **unveränderlich** — nie die ihrer
+> Aktualisierung. Die zwei im Client geborenen Zeilen (`UserTurn`, `conn-error`-`Notice`) tragen die **rohe
+> Browser-Uhr**.
+
+**Warum die Skew-Korrektur scheiterte — ein Kategorienfehler, festgehalten, damit ihn CYP-347 nicht wiederholt:**
+
+`skew = eventTs − now` lief über **jedes** Event, auch über die beim Erstconnect nachgespielte **Historie**
+(`AgentViewModel.kt:205`, `observeServerClock` im `collect`; der Guard verwarf nur *ältere* Stempel). Der
+jüngste historische Stempel wurde damit zum Anker. Ein Agent, der seit gestern 22:14 still ist, verankert den
+Skew auf ≈ −10 h 48 min; der Operator tippt um 09:02 und seine Zeile trägt **22:14** — **bei völlig richtiger
+Browser-Uhr**. Die Ursache: `eventTs` sagt, **wann etwas geschah**, nicht, **wie spät es auf dem Server ist**.
+Die Differenz beider Uhren lässt sich aus einem Ereigniszeitpunkt nicht ableiten — dafür muss der Server seine
+**aktuelle** Zeit nennen. Genau das holt **CYP-347** nach (Server sagt beim Verbinden seine Zeit).
+
+**Verengte Zusage über die Spalte (ersetzt jedes „die Spalte fällt nie"):**
+
+> Die Spalte fällt nie, **solange der Uhrenfehler des Clients gegenüber dem Server zwischen einer Client-Zeile
+> und der nächsten Server-Zeile nicht wächst.**
+
+Ohne Skew-Korrektur ist der Bruchfall der **dokumentierte Normalfall** einer vorgehenden Browser-Uhr: die
+eigene Frage steht mit einer späteren Uhrzeit über der früheren Antwort des Agenten. Struktureller Grund, und
+er ist **richtig so**: ein Server-Stempel ist eine **Tatsache** und wird nicht geklemmt (`AgentViewModel.kt:206`
+foldet ihn roh). Nur die Behauptung darf nicht weiter reichen als der Code.
+
+**Disclosure-Regel, die daraus folgt:** Die **Reihenfolge** der Zeilen ist verbindlich (Stream-Reihenfolge,
+append-only). Die **absolute Uhrzeit** ist eine Anzeige, keine Zusicherung — sie ist nie Sortierschlüssel
+(vgl. `EventVisuals.kt:143`: *„ordering is always by `seq`, never this"*). Eine Oberfläche, die aus der
+Zeitspalte auf Kausalität schließen lässt, würde mehr behaupten, als die Daten hergeben.
 
 ### 7.2 🔴 „Lokale Browser-Zeit" ist mit dem vorhandenen Formatter nicht erreichbar — er ist **UTC**
 
