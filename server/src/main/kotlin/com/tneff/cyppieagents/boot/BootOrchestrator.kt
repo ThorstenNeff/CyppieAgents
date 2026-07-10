@@ -222,6 +222,12 @@ class BootOrchestrator(
     // CYP-247 S4 / D5: the residual-project prune is OPT-IN. Default false → the boot reconciler only LOGS which
     // orphaned `projects/<pid>/*` dirs it WOULD prune (never auto-deletes a tree that may hold unpushed work).
     private val pruneResidualProjects: Boolean = false,
+    // CYP-348: the shared launch-command seam threaded into the terminal [PtyManager]. Null → the default
+    // `["bash","-l"]` (resolved in [boot]) — the CYP-333 interim terminal is a bash login-shell in the
+    // agent's worktree, NOT a second interactive `claude` (Auftraggeber 2026-07-10: two auto-approving agents
+    // in one worktree = edit-conflict risk). Injectable so the full-boot E2E rides the real wiring with a fake
+    // command; BE-2 (CYP-355) reuses the same seam per-open for `claude --resume <sid>`.
+    private val terminalLaunchCommand: List<String>? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -814,9 +820,10 @@ class BootOrchestrator(
         val compactStatus: () -> com.tneff.cyppieagents.model.CompactStatus = { compactOrchestrator.status() }
         val compactOnConfigUpdated: () -> Unit = { compactOrchestrator.onConfigUpdated() } // CYP-326 kill-switch
 
-        // CYP-332 — the interactive-terminal PTY manager (boot project; MVP single-project). One pty4j PTY per
-        // agent running interactive `claude` (NO --print/stream-json), cwd = the agent's worktree, key/env like
-        // the connector. Single-flight per agent (§4.1). Multi-project + PTY-survives-reconnect = follow-ups.
+        // CYP-332/CYP-348 — the terminal PTY manager (boot project; MVP single-project). One pty4j PTY per
+        // agent, cwd = the agent's worktree, key/env like the connector. The launch command is the CYP-348
+        // seam: [terminalLaunchCommand] (default `bash -l` interim worktree-shell). Single-flight per agent
+        // (§4.1). Multi-project + PTY-survives-reconnect + the BE-2 `claude --resume` per-open mode = follow-ups.
         val ptyManager = com.tneff.cyppieagents.pty.PtyManager(
             worktreeDirOf = { agentId ->
                 val wtName = state.agents.firstOrNull { it.id == agentId }?.worktree ?: agentId
@@ -824,6 +831,7 @@ class BootOrchestrator(
             },
             resolveApiKey = { projectConfig.resolvedApiKey(state.activeProjectId) },
             scope = scope,
+            command = terminalLaunchCommand ?: listOf("bash", "-l"), // CYP-348: bash interim (default); injectable for E2E/BE-2
         )
 
         return BootedPlatform(
