@@ -149,6 +149,46 @@ kennzeichne sie so.
 
 ---
 
+## 3.3 Der Befund, der alles darüber neu rahmt: **kein Web-Flow kann irgendetwas adressieren**
+
+Beim Bearbeiten von AC 2/AC 3 habe ich die zwei Flows gefahren, die das Ticket als **„unbeschädigt"** führt.
+Beide sind **rot — an ihrer ersten Assertion**.
+
+| # | Versuch | Ergebnis |
+|---|---|---|
+| 1 | `eventlog-tail-web.yaml` gegen `:app:webAppDemo` (Build per `curl` verifiziert) | **exit 1** · `eventTail.stream` nicht sichtbar |
+| 2 | `eventlog-browse-web.yaml`, derselbe Build | **exit 1** · `eventBrowse.table` nicht sichtbar |
+| 3 | Sonde: `extendedWaitUntil` auf den Tag, **30 s** Geduld | nicht sichtbar |
+| 4 | Sonde: `extendedWaitUntil` auf den **Text** „Live-Tail", 30 s | nicht sichtbar |
+| 5 | Maestros Fehler-Screenshot | **2942 Bytes, weiß** |
+| 6 | Derselbe URL in `google-chrome --headless=new` **und** `--headless` (alt) | **38090 Bytes**, App gerendert, WebGL OK |
+| 7 | Derselbe Maestro gegen eine **reine HTML-Seite** | **exit 0**, Text sichtbar |
+
+**Punkt 7 gegen Punkt 4 ist der Schnitt: Maestro-Web funktioniert — es sieht nur Compose nicht.** Maestro treibt
+Chromium über Selenium und liest den **DOM**; Compose malt auf wasmJs in ein `<canvas>` und legt keine DOM-Knoten
+je Composable an. `enableTestTagsAsResourceId()` ist eine Android-Semantik-Property.
+
+**Konsequenzen:**
+
+* Die Rahmung „drei Flows tot, zwei unbeschädigt" trifft **nicht** zu. **Alle fünf Web-Flows sind unlauffähig.**
+* Die Sicherheitsaussage in `eventlog-presence-web` wird nicht deshalb nicht ausgewertet, weil Prod in den Login
+  bootet — **auch ihre Deckung** (`window.host`) kann nie sichtbar werden. Der Auth-Gate ist die **zweite**
+  Hürde, nicht die erste. §3.1 bleibt richtig und war unvollständig.
+* `smoke-web.yaml` behauptet im Kopf: *„a testTag is addressable on the Wasm canvas … Wasm mechanism verified in
+  the tester's spike."* **In dieser Umgebung nicht reproduzierbar** — und das ist die Grundannahme des ganzen
+  Satzes.
+
+**Was ich nicht behaupte:** dass es *keine* Konfiguration gibt, die es doch ermöglicht (Accessibility-DOM in CMP,
+anderer Treiber, andere Maestro-Version). Punkt 5 zeigt zusätzlich, dass in Maestros Browser **gar nichts gemalt**
+wurde — vertäglich mit der DOM-Erklärung, aber nicht identisch mit ihr. Das sauber zu trennen braucht einen
+Spike. Angelegt als **CYP-352** (blockiert CYP-340).
+
+**Der Ersatz existiert und ist bewiesen:** `runComposeUiTest` unter `wasmJsBrowserTest` (`AvatarWasmRenderSmokeTest`,
+CYP-216) läuft in echtem Headless-Chrome mit echter Compose-Semantik; `onNodeWithTag` funktioniert dort. Die
+Präsenz-/Omissions-Aussage lässt sich dort **stärker** ausdrücken als per Maestro.
+
+---
+
 ## 4. Empfehlung zu AC 1–3
 
 1. **Regel dokumentieren** (Text aus §1) — in `maestro/README.md` und im Test-Contract, damit sie eine API ist
