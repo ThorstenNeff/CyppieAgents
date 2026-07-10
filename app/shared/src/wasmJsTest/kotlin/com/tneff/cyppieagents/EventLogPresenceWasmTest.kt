@@ -20,10 +20,11 @@ import kotlin.test.Test
 /**
  * CYP-352 — **the operator-gating security claim, proven in a real browser.**
  *
- * This test is the replacement for `maestro/eventlog-presence-web.yaml`, and it must exist *before* that file is
- * removed. The Maestro flow could never have proven anything: Maestro drives Chromium through Selenium and reads
- * the DOM, while Compose on wasmJs paints into a canvas. Measured: the same Maestro sees a plain HTML page and
- * sees nothing at all of this app — neither testTag nor visible text, with 30 s of patience.
+ * This test replaced `maestro/eventlog-presence-web.yaml` (removed in CYP-352) — and it had to exist, green and
+ * mutation-proven, *before* that file was allowed to disappear. The Maestro flow could never have proven
+ * anything: Maestro drives Chromium through Selenium and reads the DOM, while Compose on wasmJs paints into a
+ * canvas. Measured: the same Maestro sees a plain HTML page and sees nothing at all of this app — neither
+ * testTag nor visible text, with 30 s of patience. Background: `docs/QA-WEB-FLOW-ROLLBACK-CYP-352.md`.
  *
  * `runComposeUiTest` under `wasmJsBrowserTest` has none of that problem: it runs in headless Chrome (the CYP-216
  * gate) against the real Compose semantics tree, so `onNodeWithTag` addresses what the operator would see.

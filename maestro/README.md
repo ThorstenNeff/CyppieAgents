@@ -1,7 +1,25 @@
 # Maestro flows (CYP-11)
 
-UI-gating for UI slices runs on **Maestro against the Web (Wasm) build** (Test-Contract v0.5 §0/§4).
-This directory holds one `*.yaml` per flow. `smoke-web.yaml` is the first smoke/gating flow.
+UI-gating for UI slices runs on **Maestro against the native builds (Android/iOS)**.
+This directory holds one `*.yaml` per flow.
+
+> ## ⚠ Es gibt keine Web-Flows mehr — und es kann keine geben (CYP-352)
+>
+> Die fünf `*-web.yaml`-Flows wurden entfernt. **Maestro kann auf dem Compose-Wasm-Canvas nichts adressieren:**
+> es treibt Chromium über Selenium und liest den DOM, während Compose in ein `<canvas>` malt und keinen
+> DOM-Knoten je Composable anlegt. Gemessen — derselbe Maestro sieht eine reine HTML-Seite (`exit 0`) und von
+> unserer App **nichts**, weder testTag noch sichtbaren Text, mit 30 s Geduld.
+>
+> Der Satz „the Wasm mechanism is still to be confirmed … **not** wired yet", der früher weiter unten in dieser
+> README stand, war die ganze Zeit richtig. Der Kopf von `smoke-web.yaml` behauptete gleichzeitig, der
+> Mechanismus sei „verified in the tester's spike". **Er war es nie.**
+>
+> **Was stattdessen prüft:**
+> * Oberfläche und Sicherheitsaussagen → `runComposeUiTest` unter `./gradlew :app:shared:wasmJsBrowserTest`
+>   (echtes Headless-Chrome, echte Compose-Semantik). Beispiel: `EventLogPresenceWasmTest`.
+> * Das **ausgelieferte Artefakt** → `scripts/web-boot-smoke.sh <URL> <erwartetes-Bundle>`.
+>
+> Vollständige Begründung, Verlustliste und Restposten: `docs/QA-WEB-FLOW-ROLLBACK-CYP-352.md`.
 
 ## Conventions (from Test-Contract v0.5 §4)
 - **Web flow:** `appId`-free in spirit (placeholder `web`); the target is a URL opened via `openLink`.
@@ -9,21 +27,19 @@ This directory holds one `*.yaml` per flow. `smoke-web.yaml` is the first smoke/
   so tag selectors are **escaped (`\.`) and anchored (`^…$`)** — e.g. `^agent\.backend\.input$`.
 - **Tags (bare, no `@`):** `smoke`, `gating`, `security`, plus slice tags.
 
-## Prerequisites to run `smoke-web.yaml`
-1. A served Wasm/Web build at `APP_URL` (default `http://localhost:8080`):
-   `./gradlew :app:webApp:wasmJsBrowserDevelopmentRun` (or a static `wasmJsBrowserDistribution` host).
-2. **testTags exposed as resource-ids:** enable `testTagsAsResourceId` at the app/window root.
-   This is platform-specific (not commonMain — Android has it directly; the Wasm mechanism is still
-   to be confirmed with the frontend, matching Test-Contract v0.5 §0 "Wasm-Gating unter Vorbehalt").
-   A flagged CYP-11 follow-up, coordinated with the root owner (CYP-10); **not** wired yet.
-3. A screen rendering the agent stream for `agentId = "backend"` with enough event rows that
-   `agent.backend.event.5` starts **off-screen** (the CYP-6 renderer on a scripted scenario, or a harness).
-
 ## Running (tester environment)
 ```bash
-maestro test maestro/smoke-web.yaml -e APP_URL=http://localhost:8080
+# Native flows only (Android/iOS). Web-Flows gibt es nicht mehr, siehe oben.
+maestro test maestro/eventlog-browse-android.yaml
 # filter by tag:
 maestro test maestro/ --include-tags smoke
+```
+
+## Web statt Maestro
+```bash
+./gradlew :app:shared:wasmJsBrowserTest                       # Oberflaeche + Sicherheitsaussagen
+./gradlew :app:webAppDemo:wasmJsBrowserDistribution           # Artefakt bauen
+scripts/web-boot-smoke.sh http://localhost:8080 webAppDemo.js # Artefakt, Assets, Boot, "es wurde gemalt"
 ```
 
 ## Status / ownership
