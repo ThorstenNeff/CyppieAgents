@@ -56,11 +56,56 @@ class ResumingSession(
     @Volatile private var forwardJob: Job? = null
     @Volatile private var startupProbe: Job? = null // CYP-330: the proactive stale-resume probe
 
+    /**
+     * CYP-360 — the facade OWNS the exit listeners, because it owns which session *is* the agent.
+     *
+     * `ConnectorSession.addExitListener` has a no-op default, and this facade is what
+     * [ClaudeCodeConnector.open] hands to the `LifecycleManager` whenever a durable session id exists. Left
+     * inherited, the run-state authority would have subscribed to a stub and never heard a single death —
+     * green unit tests over an unwired path.
+     *
+     * Forwarding blindly to [inner] would be just as wrong in the other direction: a stale `--resume` attempt
+     * is *supposed* to die, and [healToFreshLocked] replaces it with a fresh session. Reporting that death
+     * would flip a successfully-healed agent to ERROR — an invented observation, produced by the very fix that
+     * exists to stop inventing them.
+     *
+     * Retiring the attempt when it is replaced is **too late**: its exit tail is already running by then (the
+     * death is what triggered the heal), so it races the swap. The race-free rule is semantic, not temporal —
+     * and the discriminator is **whether the attempt ever bound**, not whether the facade has committed:
+     *
+     *  - [firstAttempt] dying **without ever binding** *is* the stale-resume signal; the facade replaces it.
+     *    Not the agent's death — never reported.
+     *  - A **bound** attempt is the agent, even before [committed] (a live `--resume` only commits on the first
+     *    turn, CYP-170 — gating on `committed` would swallow the real death of a resumed agent that dies before
+     *    anyone talks to it).
+     *  - Any death of the session that is currently [inner] is the agent's death — always reported.
+     */
+    private val exitListeners = java.util.concurrent.CopyOnWriteArrayList<(Int?) -> Unit>()
+
+    override fun addExitListener(listener: (exitCode: Int?) -> Unit) {
+        exitListeners.add(listener)
+    }
+
+    /** Subscribe to one attempt's death, reported only if that attempt is the agent when it dies. */
+    private fun observeExitOf(session: ClaudeCodeSession) {
+        session.addExitListener { exitCode ->
+            if (closed) return@addExitListener
+            if (session !== inner) return@addExitListener // already replaced by the heal
+            // The stale-resume signal: the first attempt died without ever binding. The facade heals it.
+            if (session === firstAttempt && !session.everBound) return@addExitListener
+            exitListeners.forEach { l ->
+                runCatching { l(exitCode) }
+                    .onFailure { log.warn("exit listener failed for agent={}: {}", agentId, it.message) }
+            }
+        }
+    }
+
     private fun forward(session: ClaudeCodeSession): Job =
         scope.launch { session.events.collect { _events.emit(it) } }
 
     fun start() {
         forwardJob = forward(firstAttempt)
+        observeExitOf(firstAttempt) // CYP-360: before start, so a fast end cannot outrun the subscription
         firstAttempt.start()
         // CYP-330: proactively answer the resume question WITHOUT a turn. A stale `--resume` dies unbound at
         // startup (error result / stdout ends), so this heals a restart to a fresh session; a LIVE resume never
@@ -122,6 +167,7 @@ class ResumingSession(
         inner = fresh
         committed = true // set BEFORE any re-inject so no further turn/probe can re-enter this path
         forwardJob = forward(fresh)
+        observeExitOf(fresh) // CYP-360: the fresh session is now the agent; its end is the one that counts
         fresh.start()
         // Re-inject the first turn onto the fresh session (turn path only). The stale attempt never bound, so it
         // never mediated → the hub sees this turn's result EXACTLY once. No third attempt.
