@@ -1,4 +1,4 @@
-# CYP-333 — Single-Window Mode-Toggle Desktop UX-Spec (Orchestrierung | Terminal)
+# CYP-333 — Single-Window Mode-Toggle Desktop UX-Spec (Orchestrierung ⇄ Shell → Terminal)
 
 > Status: **IMPLEMENTATION-READY for Dev.** Story under Epic **CYP-331** (Option D ratified: **Desktop + JediTerm
 > only — no Web/Wasm**). Owner: UIUX. Builds on the ratified companion `docs/design/
@@ -7,7 +7,7 @@
 > **Shared-key/tag drift:** the new `:app:shared` string keys + `AgentViewTags` entries below must land **with**
 > Dev's implementation slice (and be re-synced with the tester, CYP-7) — I flag the drift, Dev times the landing.
 
-Grounded against the real code (develop `f8063c1`): `agentview/AgentWindow.kt` (the content slot:
+Grounded against the real code (develop `8abc2ed`): `agentview/AgentWindow.kt` (the content slot:
 `AgentHeader` + `AgentTranscript` weight-1f + `MessageComposer`), `window/WindowManager.kt` (`FloatingWindow`
 frame: titlebar drag, busy `*`, token, badge, ⋮), `AgentViewTags`/`WindowTestTags`, `compact/CompactViewModel`
 (the non-optimistic adopt pattern), `MaritimeTheme.kt`.
@@ -16,21 +16,45 @@ frame: titlebar drag, busy `*`, token, badge, ⋮), `AgentViewTags`/`WindowTestT
 
 ## 1. Scope & the one rule that shapes everything
 
-**In scope (Desktop):** one per-agent window that **toggles** between the existing structured **Orchestrierung**
-renderer and a real **Terminal** (JediTerm in a `SwingPanel`); the take-over / hand-back hand-off; the WARN
-"Hub blind" banner; the `CONTEXT-LOST` state; the Z-order frame layout; frame-titlebar behaviour in INTERACTIVE.
+**In scope (Desktop):** one per-agent window that **toggles** its content between the existing structured
+**Orchestrierung** renderer and a **second view** — which comes in **two honestly-distinct phases** (§1.1): a
+**bash worktree-Shell** now, and the true hub-mediated **Terminal hand-off** later. The Z-order frame layout; and —
+for the Terminal phase — the take-over / hand-back, the WARN "Hub blind" banner, the `CONTEXT-LOST` state, and the
+INTERACTIVE frame-titlebar behaviour.
 
-**Out of scope:** Web/Wasm terminal (Option D dropped it), the raw worktree-shell window (CYP-331 kind iii,
-reserved), the backend orchestrator/session mechanics (⟂BE seams only).
+**Out of scope:** Web/Wasm terminal (Option D dropped it); the backend orchestrator/session mechanics (⟂BE seams
+only); a **second interactive `claude`** in the worktree — the Auftraggeber **rejected** it (two auto-approving
+agents in one worktree = worst-case risk), which is exactly why the interim view is a plain **Shell** (§1.1).
 
-**The rule (from CYP-331 §1, ratified):** a `claude` process runs in **exactly one** I/O mode — headless
-stream-json (mediated) **or** interactive TUI. The toggle is therefore a **hand-off on one continuous session, not
-a split-screen**. At most one mode is live; the window always shows what is actually true. The UI **never guesses**
-continuity — the backend tells it (§6, ⟂BE-3).
+### 1.1 Two honest phases (Auftraggeber ruling 2026-07-10) — the honesty spine
+
+The window's second view means **two different things at two times**, and the UI must never blur them:
+
+| | **Phase 1 — Interim `Shell`** *(ships now, CYP-334 scaffold)* | **Phase 2 — `Terminal` hand-off** *(later, needs ⟂BE-1..3)* |
+|---|---|---|
+| What it is | a **bash worktree-shell** — a read/work *Einblick* into the agent's git worktree | the **same `claude` session**, re-attached interactively, hub-mediated hand-off |
+| Process | a **separate `bash` PTY** in the worktree cwd — **not** the agent's session | the agent's own long-lived session (CYP-331 §1) |
+| Is it a hand-off? | **No.** The mediated `claude` session **keeps running**; the hub is **not** blind | **Yes.** The human takes the wheel; the hub is blind for the stretch |
+| Hand-off chrome | **MUST be absent** — no take-over/hand-back, no "Hub blind" banner, no frozen token, no `CONTEXT_LOST`, no human-control marker. Showing any of it would be a **fabricated statement** (the hub is *not* blind) | present — that is the whole of §2, §4.2–4.5, §5, §6 |
+| Toggle label | `[ Orchestrierung \| Shell ]` (truthful; Dev already renamed "Terminal"→"Shell") | the **Terminal** meaning returns with the hand-off (BE-2) |
+
+> **Load-bearing honesty:** the interim `Shell` is a **different process next to** the agent, not the agent's
+> conversation. During Phase 1 the frame's busy `*` / token keep reflecting the **still-live, still-observed**
+> mediated session — truthful. Every hand-off surface below is tagged **[P2]**; nothing tagged **[P2]** may render
+> in Phase 1. What ships and gets §-QA'd first is the **[P1]** set (§11).
+
+**The rule for Phase 2 (from CYP-331 §1, ratified):** a `claude` process runs in **exactly one** I/O mode — headless
+stream-json (mediated) **or** interactive TUI. The Terminal toggle is therefore a **hand-off on one continuous
+session, not a split-screen**. The UI **never guesses** continuity — the backend tells it (§6, ⟂BE-3). *(Phase 1 is
+unaffected by this rule: the Shell is a separate `bash` process, so it genuinely coexists with the live session.)*
 
 ---
 
-## 2. Control-state model (client mirror of backend truth — §9-1 spine)
+## 2. Control-state model (client mirror of backend truth — §9-1 spine) · **[P2]**
+
+> **Phase 1 has no control-state to speak of:** the agent is always effectively `MEDIATED` while the Shell view is
+> open — switching to the Shell does **not** change the agent's state (it's a separate `bash` process). The state
+> machine below is **Phase 2 only** and requires ⟂BE-1..3.
 
 One `TerminalControlState` per agent, **mirrored from the backend, never inferred** (adopt-on-confirm exactly like
 `CompactViewModel.setAllowed`: the client value moves **only** after the server event; a failed request leaves the
@@ -61,66 +85,88 @@ return a confirm/reject; the client flips only on confirm.
 
 ## 3. Window anatomy & the Z-order frame layout (Z-Order-Regel, 04 §5)
 
-The JediTerm `SwingPanel` **renders above** the Compose layer (JetBrains Z-order limit). Therefore **all chrome is
-a frame around the terminal rectangle, never drawn over it.** Verified anchor: today `AgentWindow` is a `Column`
+The JediTerm `SwingPanel` (**both** the Phase-1 Shell **and** the Phase-2 Terminal are PTY widgets) **renders above**
+the Compose layer (JetBrains Z-order limit). Therefore **all chrome is a frame around the content rectangle, never
+drawn over it** — this rule holds in **both phases**. Verified anchor: today `AgentWindow` is a `Column`
 (`AgentHeader` → `AgentTranscript` → `MessageComposer`), and the `FloatingWindow` frame titlebar sits above the
 content slot — both are Compose rows **outside** the content rectangle, so they are safe frame regions.
 
 ```
 ┌ window.<id> (FloatingWindow frame — Compose) ──────────────────────────────┐
-│  window.<id>.titlebar : drag · «Name» · [human-control marker] ·            │  ← frame (safe)
-│                          token(frozen/greyed) · badge · ⋮                   │
+│  window.<id>.titlebar : drag · «Name» · [P2 human-control marker] ·         │  ← frame (safe)
+│                          token(P1 live · P2 frozen/greyed) · badge · ⋮      │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  agent.<id>.header : status · [ Orchestrierung | Terminal ] · Übernehmen/   │  ← frame (safe)
-│                       Zurückgeben (operator)                                 │
-│  agent.<id>.handoffBanner  (INTERACTIVE only) ⚠ "Hub vermittelt nicht…"     │  ← frame (safe)
-│  agent.<id>.contextLostBanner (CONTEXT_LOST only) ⚠ "ohne vorherigen Kontext"│ ← frame (safe)
+│  agent.<id>.header : status · [ Orchestrierung | Shell ]  (P1)              │  ← frame (safe)
+│                      · [P2] Übernehmen / Zurückgeben (operator)             │
+│  [P2] agent.<id>.handoffBanner  (INTERACTIVE only) ⚠ "Hub vermittelt nicht…"│  ← frame (safe)
+│  [P2] agent.<id>.contextLostBanner (CONTEXT_LOST only) ⚠ "ohne …Kontext"    │  ← frame (safe)
 ├────────────────────────────────────────────────────────────────────────────┤
 │                                                                            │
 │   CONTENT RECTANGLE  (window.<id>.content)                                 │
-│   • MEDIATED / CONTEXT_LOST → AgentTranscript (Compose, today's renderer)  │
-│   • INTERACTIVE            → TerminalView (SwingPanel + JediTerm)  ← OVER   │
+│   • Orchestrierung        → AgentTranscript (Compose, today's renderer)    │
+│   • P1 Shell              → TerminalView(bash-worktree session)   ← OVER   │
+│   • P2 Terminal/INTERACTIVE → TerminalView(claude session)       ← OVER   │
 │                                                                            │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  agent.<id>.input  composer  — SUPPRESSED in INTERACTIVE (see §4.4)         │  ← frame (safe)
+│  composer : Orchestrierung → claude input · Shell → the shell's own input  │  ← frame (safe)
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Rules for Dev:**
-1. The terminal occupies **only** the content rectangle; every interactive chrome element (toggle, buttons,
+**Rules for Dev (both phases):**
+1. The PTY view occupies **only** the content rectangle; every interactive chrome element (toggle, buttons,
    banners, titlebar) lives in a Compose row **above or below** it — never in an `overlay`/`Box` z-stacked on top.
 2. On drag/resize the `SwingPanel` bounds follow the content-rectangle bounds in lockstep (couple to the existing
    `FloatingWindow` offset/size; reuse the CYP-26 clamp path). No separate terminal geometry state.
-3. Popups that would appear over the terminal (context menu) are **Swing popups** on the jvm side, or avoided.
-4. Terminal transport uses the **`expect/actual TerminalView` seam** (doc 04 §3), matching CYP-334 as built:
+3. Popups that would appear over the PTY (context menu) are **Swing popups** on the jvm side, or avoided.
+4. The PTY view uses the **`expect/actual TerminalView` seam** (doc 04 §3), matching CYP-334 as built:
    `expect fun TerminalView(session, modifier)` in **`commonMain`**. This is required, not optional — `AgentWindow`
-   lives in commonMain and **chooses the content rectangle there** (transcript vs. terminal at INTERACTIVE), so the
-   terminal must be **commonMain-callable**; a jvmMain-only widget would tear apart the commonMain window
-   composition. **Option D constrains the *actuals*, not the seam:** the **jvm actual = JediTerm** in a `SwingPanel`
-   with a `TtyConnector` bound to the terminal WS (doc 04 §4.1 `WsTtyConnector` sketch); the **`wasmJs`/`js`/
-   `android`/`ios` actuals are inert Stubs that never render a real terminal** in Option D (compile-completeness
-   only). This keeps doc-04's Kotlin/Wasm-HTML-interop risk **out of scope** exactly as Option D decided — the seam
-   is cross-target, but only the Desktop actual is real. **No UX consequence:** the rendered result is identical;
-   this is purely the code-seam mechanism. **⟂BE-4** — the terminal PTY + WS transport (`/ws/terminal?agentId=`) is
-   new backend (no PTY exists today = CYP-332); the client's `TerminalSession` binds to it.
+   lives in commonMain and **chooses the content rectangle there** (transcript vs. PTY), so the PTY must be
+   **commonMain-callable**; a jvmMain-only widget would tear apart the commonMain window composition. **Option D
+   constrains the *actuals*, not the seam:** the **jvm actual = JediTerm** in a `SwingPanel` with a `TtyConnector`
+   bound to the terminal WS (doc 04 §4.1 `WsTtyConnector` sketch); the **`wasmJs`/`js`/`android`/`ios` actuals are
+   inert Stubs that never render** in Option D (compile-completeness only). Keeps doc-04's Kotlin/Wasm-HTML-interop
+   risk **out of scope** — cross-target seam, Desktop-only real actual. **The same `TerminalView` seam serves both
+   the Phase-1 bash session and the Phase-2 claude session** — only the bound `TerminalSession` differs. **⟂BE-4** —
+   the PTY + WS transport `/ws/terminal?agentId=` is CYP-332 (no PTY existed under D4 piped-stdio); the Phase-1 Shell
+   binds a **bash-worktree** session, Phase-2 the **claude** session.
 
 ---
 
-## 4. The mode toggle & hand-off
+## 4. The mode toggle, the Shell view, & the hand-off
 
-### 4.1 The toggle `[ Orchestrierung | Terminal ]`
+### 4.1 The toggle — Phase 1 `[ Orchestrierung | Shell ]` **[P1]**
 
 A 2-segment control in `agent.<id>.header` (reuse M3 `SegmentedButton`). Tag `agent.<id>.modeToggle`; segments
-`…modeToggle.orch` / `…modeToggle.term`. **The toggle expresses intent, the state machine decides:**
-- **Orchestrierung → Terminal** = the take-over request (§4.2). The segment does **not** visually select "Terminal"
-  until the backend confirms INTERACTIVE (non-optimistic; during `HANDING_OVER` the segment shows a pending
-  spinner, the live selection stays "Orchestrierung").
-- **Terminal → Orchestrierung** = the hand-back request (§4.3), same non-optimistic rule.
-- **Non-operator:** the toggle is **read-only** (shows the live mode, `enabled=false`) + the reused
-  `workspace_operator_only` hint — the CYP-317 "no fake switch" pattern. A non-operator can *see* which mode is
-  live, never drive the hand-off.
+`…modeToggle.orch` / `…modeToggle.shell`. In Phase 1 the toggle is a **pure view switch**, **not** a hand-off:
+- **Orchestrierung → Shell** just changes which content the window shows (transcript ↔ bash PTY). It does **not**
+  change the agent's control-state, does **not** take the hub blind, does **not** touch the `claude` session (which
+  keeps running, still observed). No non-optimistic gating is needed — there is no backend state to confirm; the
+  view flips immediately.
+- **a11y:** the toggle announces `a11y_terminal_mode` "Ansicht: %1$s" (View: %1$s) with the current segment label.
+- **Operator-gating of the Shell:** a bash shell runs commands in the agent's worktree, so **opening the Shell is
+  operator-gated** (`canControl`); a non-operator sees a **read-only** toggle (`enabled=false`) + the reused
+  `workspace_operator_only` hint (CYP-317 "no fake switch"). *(Design call — confirm gating level with the PO/
+  Auftraggeber; my honest default is operator-gated because the surface can mutate the worktree.)*
 
-### 4.2 Take-over ("Übernehmen")
+### 4.1b The Shell view (`agent.<id>.shell`) **[P1]**
+
+The content rectangle hosts a **bash worktree-shell** — a `TerminalView` bound to a bash-`TerminalSession` in the
+agent's worktree cwd (CYP-332 PTY/WS). **Honesty:** it is labelled and understood as a **shell into the worktree**,
+**not** the agent's conversation — so **none** of the Phase-2 hand-off chrome appears while it is open (see §1.1;
+the fail-closed absence is a §11 [P1] tooth). The shell has **its own input** (bash); the mediated `claude` composer
+belongs to the Orchestrierung view — no separate claude composer is drawn under the shell. The frame busy `*` /
+token continue to reflect the **still-live** mediated session (truthful, not frozen).
+
+### 4.1c The toggle — Phase 2 adds `Terminal` (hand-off) **[P2]**
+
+When ⟂BE-1..3 land, the hub-mediated **Terminal** (the same `claude` session, taken over interactively) returns as
+the second meaning. Whether it is a third segment `[ Orchestrierung | Shell | Terminal ]` or is entered via the
+take-over affordance is a Phase-2 decision to settle when BE-1/2 are specced; **the take-over/hand-back model,
+non-optimistic flip, and all INTERACTIVE chrome (§2, §4.2–4.5, §5, §6) are Phase 2.** In Phase 2 the toggle
+**expresses intent, the state machine decides** (the segment does not select "Terminal" until the backend confirms
+`INTERACTIVE`).
+
+### 4.2 Take-over ("Übernehmen") **[P2]**
 
 - Button `agent.<id>.takeover`, **operator-gated** (`canControl`), **IDLE-gated** (CYP-324 busy signal): `enabled`
   only when the agent is **not** mid-turn. While a turn runs, the button is disabled with the hint
@@ -131,7 +177,7 @@ A 2-segment control in `agent.<id>.header` (reuse M3 `SegmentedButton`). Tag `ag
   content swaps to the terminal). On reject/fail → stay `MEDIATED` + inline error `terminal_takeover_failed` on
   `agent.<id>.lifecycleError` (reuse the existing error row).
 
-### 4.3 Hand-back ("Zurückgeben")
+### 4.3 Hand-back ("Zurückgeben") **[P2]**
 
 - Button `agent.<id>.handback` in the frame (never overlaid on the terminal), operator-gated. On click →
   `HANDING_BACK`; on backend `resume-result` → `MEDIATED` **or** `CONTEXT_LOST` (§6). Banner clears; content swaps
@@ -139,13 +185,15 @@ A 2-segment control in `agent.<id>.header` (reuse M3 `SegmentedButton`). Tag `ag
 - **The gap is disclosed:** a transcript notice (reuse `AgentEvent.Notice`, `outline` tone) —
   `terminal_handback_gap` "Verlauf während der interaktiven Phase liegt im Terminal, nicht im Orchestrierungs-Log."
 
-### 4.4 Composer in INTERACTIVE
+### 4.4 Composer in INTERACTIVE **[P2]**
 
 The mediated composer (`agent.<id>.input`) is **suppressed** while `INTERACTIVE` — injecting a stream-json user
 turn is exactly the mediated path that is off during a human take-over; leaving it live would let two inputs race
-one session. The terminal's own input **is** the input. On hand-back the composer returns.
+one session. The terminal's own input **is** the input. On hand-back the composer returns. *(Distinct from Phase 1:
+there the composer is not "suppressed" — it simply belongs to the Orchestrierung view, and the still-live session
+is untouched.)*
 
-### 4.5 The WARN hand-off banner (`agent.<id>.handoffBanner`, INTERACTIVE only)
+### 4.5 The WARN hand-off banner (`agent.<id>.handoffBanner`, INTERACTIVE only) **[P2]**
 
 A persistent, full-width strip in the frame (above the content rectangle):
 
@@ -162,7 +210,7 @@ A persistent, full-width strip in the frame (above the content rectangle):
 
 ---
 
-## 5. What other operators & the roster see (INTERACTIVE)
+## 5. What other operators & the roster see (INTERACTIVE) **[P2]**
 
 The hub is blind, so cross-operator signal = **state + identity + time, never guessed status:**
 - Frame titlebar: the busy `*` (`window.<id>.busy`) is **suppressed**; a distinct **human-control marker** appears
@@ -177,7 +225,7 @@ The hub is blind, so cross-operator signal = **state + identity + time, never gu
 
 ---
 
-## 6. `CONTEXT-LOST` — the memory-less resume (⟂BE-3, the ratified tri-state)
+## 6. `CONTEXT-LOST` — the memory-less resume (⟂BE-3, the ratified tri-state) **[P2]**
 
 **Backend delivers an explicit classification on every resume/restart — the UI does NOT guess** (this is the
 ratified answer to CYP-331 ⟂ARCH-S6):
@@ -213,51 +261,59 @@ Fires after **hand-back** *and* after any **lifecycle restart** (deploy/crash �
 Prefixless `agent.<agentId>.<element>` (segment values `[A-Za-z0-9-]+`, no dots), consistent with the existing
 object. **New entries** (Dev adds to `AgentViewTags`; frame marker to `WindowBadgeTags`):
 
-| Element | testTag | Presence contract |
-|---|---|---|
-| Mode toggle | `agent.<id>.modeToggle` (+ `.orch` / `.term`) | always on an agent window; `enabled` only for operator |
-| Take-over | `agent.<id>.takeover` | present; `enabled` = operator ∧ IDLE ∧ `MEDIATED` |
-| Seize (opt, ⟂BE-5) | `agent.<id>.seize` | present only if backend turn-interrupt exists |
-| Hand-back | `agent.<id>.handback` | present only in `INTERACTIVE`/`HANDING_BACK` |
-| Hand-off banner | `agent.<id>.handoffBanner` | **present iff `INTERACTIVE`** (fail-closed absence otherwise) |
-| Context-lost banner | `agent.<id>.contextLostBanner` | **present iff `CONTEXT_LOST`** |
-| Discontinuity line | `agent.<id>.event.<index>.contextBreak` | present iff a context break exists in the stream |
-| Operator gate hint | `agent.<id>.modeToggle.gateHint` | non-operator only (reused copy) |
-| Human-control marker | `window.<id>` badge, `WindowBadge.Control` | **present iff `INTERACTIVE`**; busy `*` absent then |
+| Phase | Element | testTag | Presence contract |
+|---|---|---|---|
+| P1 | Mode toggle | `agent.<id>.modeToggle` (+ `.orch` / `.shell`) | always on an agent window; `enabled` only for operator |
+| P1 | Shell view | `agent.<id>.shell` | present iff the Shell segment is selected (content rectangle) |
+| P1 | Operator gate hint | `agent.<id>.modeToggle.gateHint` | non-operator only (reused copy) |
+| P2 | Terminal segment | `agent.<id>.modeToggle.term` | present only once Phase 2 lands (⟂BE-1..3) |
+| P2 | Take-over | `agent.<id>.takeover` | present; `enabled` = operator ∧ IDLE ∧ `MEDIATED` |
+| P2 | Seize (opt, ⟂BE-5) | `agent.<id>.seize` | present only if backend turn-interrupt exists |
+| P2 | Hand-back | `agent.<id>.handback` | present only in `INTERACTIVE`/`HANDING_BACK` |
+| P2 | Hand-off banner | `agent.<id>.handoffBanner` | **present iff `INTERACTIVE`** (fail-closed absence otherwise) |
+| P2 | Context-lost banner | `agent.<id>.contextLostBanner` | **present iff `CONTEXT_LOST`** |
+| P2 | Discontinuity line | `agent.<id>.event.<index>.contextBreak` | present iff a context break exists in the stream |
+| P2 | Human-control marker | `window.<id>` badge, `WindowBadge.Control` | **present iff `INTERACTIVE`**; busy `*` absent then |
 
-QA anchors (fail-closed absence): no `handoffBanner` unless `INTERACTIVE`; no `contextLostBanner` unless
-`CONTEXT_LOST`; busy `*` and the composer **absent** in `INTERACTIVE`; token node present-but-frozen (not removed).
+**QA anchors — [P1] fail-closed absence (what CYP-334 §-QA checks):** while the Shell view is open, **none** of the
+[P2] nodes exist — no `takeover`/`handback`/`seize`, no `handoffBanner`, no `contextLostBanner`, no
+`WindowBadge.Control`; busy `*` and token **remain live** (the session is not blind). **[P2] fail-closed absence:**
+no `handoffBanner` unless `INTERACTIVE`; no `contextLostBanner` unless `CONTEXT_LOST`; busy `*` and composer
+**absent** in `INTERACTIVE`; token node present-but-frozen (not removed).
 
 ---
 
 ## 8. i18n keys (all NEW; DE default + EN parity mandatory; land with Dev's slice)
 
-| Key | DE | EN |
-|---|---|---|
-| `terminal_mode_orchestration` | Orchestrierung | Orchestration |
-| `terminal_mode_terminal` | Terminal | Terminal |
-| `terminal_takeover` | Übernehmen | Take over |
-| `terminal_handback` | Zurückgeben | Hand back |
-| `terminal_seize` *(opt)* | Turn unterbrechen & übernehmen | Interrupt turn & take over |
-| `terminal_seize_confirm` *(opt)* | Der laufende Turn wird unterbrochen. Fortfahren? | The running turn will be interrupted. Continue? |
-| `terminal_takeover_wait` | Warte, bis der aktuelle Turn fertig ist | Wait for the current turn to finish |
-| `terminal_takeover_failed` | Übernahme fehlgeschlagen — Sitzung bleibt vermittelt | Take-over failed — session stays mediated |
-| `terminal_handoff_banner` | Interaktiv übernommen — der Hub vermittelt nicht. · %1$s · seit %2$s | Taken over interactively — the hub is not mediating. · %1$s · since %2$s |
-| `terminal_gap_takeover` | — Interaktiv übernommen · Hub blind ab %1$s — | — Taken over interactively · hub blind from %1$s — |
-| `terminal_gap_handback` | — Zurückgegeben %1$s — | — Handed back %1$s — |
-| `terminal_handback_gap` | Verlauf während der interaktiven Phase liegt im Terminal, nicht im Orchestrierungs-Log. | The interactive-phase history lives in the terminal, not in the orchestration log. |
-| `terminal_context_lost` | Agent ohne vorherigen Kontext zurück — Verlauf nicht wiederhergestellt. | Agent back without prior context — history not restored. |
-| `terminal_context_break` | — Kontext verloren %1$s · der Agent erinnert sich ab hier nicht an das Darüberstehende — | — Context lost %1$s · the agent does not remember anything above this point — |
-| `terminal_fresh_session` | Neue Sitzung (kein Vorlauf). | New session (no prior context). |
-| `terminal_token_frozen` | eingefroren | frozen |
-| a11y `a11y_terminal_handoff` | Interaktiv übernommen von %1$s seit %2$s. Der Hub vermittelt nicht. | Taken over interactively by %1$s since %2$s. The hub is not mediating. |
-| a11y `a11y_terminal_context_lost` | Agent ohne vorherigen Kontext zurück. Verlauf nicht wiederhergestellt. | Agent returned without prior context. History not restored. |
-| a11y `a11y_terminal_history_prefix` | Historie, nicht im Agenten-Gedächtnis: %1$s | History, not in the agent's memory: %1$s |
-| a11y `a11y_terminal_token_frozen` | Kontext-Tokens seit Übernahme eingefroren: %1$s | Context tokens frozen since take-over: %1$s |
-| a11y `a11y_terminal_mode` | Ansicht: %1$s | View: %1$s |
+| P | Key | DE | EN |
+|---|---|---|---|
+| P1 | `terminal_mode_orchestration` | Orchestrierung | Orchestration |
+| P1 | `terminal_mode_shell` | Shell | Shell |
+| P1 | a11y `a11y_terminal_mode` | Ansicht: %1$s | View: %1$s |
+| P1 | a11y `a11y_terminal_shell` | Worktree-Shell (nicht die Agenten-Sitzung): %1$s | Worktree shell (not the agent session): %1$s |
+| P2 | `terminal_mode_terminal` | Terminal | Terminal |
+| P2 | `terminal_takeover` | Übernehmen | Take over |
+| P2 | `terminal_handback` | Zurückgeben | Hand back |
+| P2 | `terminal_seize` *(opt)* | Turn unterbrechen & übernehmen | Interrupt turn & take over |
+| P2 | `terminal_seize_confirm` *(opt)* | Der laufende Turn wird unterbrochen. Fortfahren? | The running turn will be interrupted. Continue? |
+| P2 | `terminal_takeover_wait` | Warte, bis der aktuelle Turn fertig ist | Wait for the current turn to finish |
+| P2 | `terminal_takeover_failed` | Übernahme fehlgeschlagen — Sitzung bleibt vermittelt | Take-over failed — session stays mediated |
+| P2 | `terminal_handoff_banner` | Interaktiv übernommen — der Hub vermittelt nicht. · %1$s · seit %2$s | Taken over interactively — the hub is not mediating. · %1$s · since %2$s |
+| P2 | `terminal_gap_takeover` | — Interaktiv übernommen · Hub blind ab %1$s — | — Taken over interactively · hub blind from %1$s — |
+| P2 | `terminal_gap_handback` | — Zurückgegeben %1$s — | — Handed back %1$s — |
+| P2 | `terminal_handback_gap` | Verlauf während der interaktiven Phase liegt im Terminal, nicht im Orchestrierungs-Log. | The interactive-phase history lives in the terminal, not in the orchestration log. |
+| P2 | `terminal_context_lost` | Agent ohne vorherigen Kontext zurück — Verlauf nicht wiederhergestellt. | Agent back without prior context — history not restored. |
+| P2 | `terminal_context_break` | — Kontext verloren %1$s · der Agent erinnert sich ab hier nicht an das Darüberstehende — | — Context lost %1$s · the agent does not remember anything above this point — |
+| P2 | `terminal_fresh_session` | Neue Sitzung (kein Vorlauf). | New session (no prior context). |
+| P2 | `terminal_token_frozen` | eingefroren | frozen |
+| P2 | a11y `a11y_terminal_handoff` | Interaktiv übernommen von %1$s seit %2$s. Der Hub vermittelt nicht. | Taken over interactively by %1$s since %2$s. The hub is not mediating. |
+| P2 | a11y `a11y_terminal_context_lost` | Agent ohne vorherigen Kontext zurück. Verlauf nicht wiederhergestellt. | Agent returned without prior context. History not restored. |
+| P2 | a11y `a11y_terminal_history_prefix` | Historie, nicht im Agenten-Gedächtnis: %1$s | History, not in the agent's memory: %1$s |
+| P2 | a11y `a11y_terminal_token_frozen` | Kontext-Tokens seit Übernahme eingefroren: %1$s | Context tokens frozen since take-over: %1$s |
 
-**Reused (no new key):** `workspace_operator_only` (mode-toggle gate hint), the error row (`lifecycleError`), the
-`AgentEvent.Notice` row for gap/discontinuity notices.
+**Reused (no new key):** `workspace_operator_only` (mode-toggle gate hint, both phases), the error row
+(`lifecycleError`), the `AgentEvent.Notice` row for gap/discontinuity notices. **Only the [P1] keys are needed for
+the CYP-334 scaffold**; the [P2] keys land with the Phase-2 hand-off slice.
 
 ---
 
@@ -277,31 +333,42 @@ QA anchors (fail-closed absence): no `handoffBanner` unless `INTERACTIVE`; no `c
 
 ## 10. Backend seams (marked — PO relays; client builds against these)
 
-| Seam | What the client needs |
-|---|---|
-| **⟂BE-1** | Per-agent `TerminalControlState` (MEDIATED/HANDING_OVER/INTERACTIVE/HANDING_BACK/CONTEXT_LOST) pushed like the CYP-324 busy feed, so the client **mirrors** it (never infers). |
-| **⟂BE-2** | `Übernehmen`/`Zurückgeben` operations returning **confirm/reject** (non-optimistic flip); include the holder identity + since-time for the banner. |
-| **⟂BE-3** | `ResumeOutcome` = `RESUMED_WITH_CONTEXT` / `CONTEXT_LOST` / `FRESH_NO_RESUME` on every resume/restart (§6). The client cannot infer it. |
-| **⟂BE-4** | Terminal PTY + WS transport `/ws/terminal?agentId=` (JediTerm `TtyConnector` binds to it). New backend — no PTY exists today (D4 piped-stdio). |
-| **⟂BE-5** | *(optional)* turn-interrupt for the "Seize" path; without it, take-over is IDLE-wait only. |
+| Seam | Phase | What the client needs |
+|---|---|---|
+| **⟂BE-4** | **P1** | PTY + WS transport `/ws/terminal?agentId=` (JediTerm `TtyConnector` binds to it) = **CYP-332** (running). In Phase 1 it serves a **bash-worktree** session. |
+| **⟂BE-1** | P2 | Per-agent `TerminalControlState` (MEDIATED/HANDING_OVER/INTERACTIVE/HANDING_BACK/CONTEXT_LOST) pushed like the CYP-324 busy feed, so the client **mirrors** it (never infers). |
+| **⟂BE-2** | P2 | `Übernehmen`/`Zurückgeben` operations returning **confirm/reject** (non-optimistic flip); include the holder identity + since-time for the banner. |
+| **⟂BE-3** | P2 | `ResumeOutcome` = `RESUMED_WITH_CONTEXT` / `CONTEXT_LOST` / `FRESH_NO_RESUME` on every resume/restart (§6). The client cannot infer it. |
+| **⟂BE-5** | P2 | *(optional)* turn-interrupt for the "Seize" path; without it, take-over is IDLE-wait only. |
 
 ---
 
 ## 11. Acceptance teeth (for §-QA after build)
 
-1. Toggle/flip is **non-optimistic** — mode changes only after backend confirm; reject leaves the prior state +
-   error (adopt-on-confirm, `CompactViewModel` twin). ⭐
-2. Take-over is **operator-gated ∧ IDLE-gated**; non-operator sees a read-only toggle + `workspace_operator_only`,
-   never a fake switch.
-3. `INTERACTIVE` shows **no fabricated status** — busy `*` suppressed, composer suppressed, token frozen+greyed,
-   human-control marker present with identity+since.
-4. WARN banner is **WARN-amber, persistent, in the frame** (never green, never overlaid on the terminal).
-5. Z-order: the terminal occupies only the content rectangle; **no** Compose chrome is z-stacked over it.
-6. `CONTEXT_LOST` fires **only** on the backend `CONTEXT_LOST` outcome; scrollback above the break is **dimmed to
-   history** (a11y prefix), the break line is present, continuity copy withdrawn; recovers on the next real turn.
-7. Timeline **gap markers** on take-over/hand-back; hand-back emits the honest gap notice.
-8. DE+EN parity for all new keys; new tags synced with QA (CYP-7); no green SUCCESS anywhere.
-9. Fail-closed absence: `handoffBanner`/`contextLostBanner`/human-control marker exist **iff** their state holds.
+**[P1] — the CYP-334 scaffold §-QA (what ships now; the PO triggers this pass first):**
+1. **Z-order:** the Shell PTY occupies only the content rectangle; **no** Compose chrome (toggle, titlebar) is
+   z-stacked over it — chrome is a frame above/below. ⭐
+2. **No fabricated hand-off statement:** while the Shell view is open, **none** of the [P2] chrome renders — no
+   take-over/hand-back, no "Hub blind" banner, no frozen token, no `CONTEXT_LOST`, no human-control marker. Busy `*`
+   and token stay **live** (the mediated session is not blind). ⭐ *(the core honesty tooth of the ruling)*
+3. **Honest label:** the second segment reads **"Shell"** (not "Terminal"); the view is a bash **worktree**-shell,
+   not the agent's session (a11y `a11y_terminal_shell`).
+4. **Operator-gating:** opening the Shell is operator-gated; non-operator sees a read-only toggle +
+   `workspace_operator_only`, never a fake switch.
+5. **a11y:** the toggle announces `a11y_terminal_mode` "Ansicht: %1$s"; DE+EN parity for the [P1] keys; tags
+   (`agent.<id>.modeToggle`/`.orch`/`.shell`, `agent.<id>.shell`) synced with QA (CYP-7).
+
+**[P2] — the hand-off §-QA (after ⟂BE-1..3 + the Phase-2 slice):**
+6. Toggle/flip is **non-optimistic** — the Terminal selects only after backend confirm; reject leaves the prior
+   state + error (adopt-on-confirm, `CompactViewModel` twin). ⭐
+7. Take-over is **operator-gated ∧ IDLE-gated**; `INTERACTIVE` shows **no fabricated status** — busy `*` suppressed,
+   composer suppressed, token frozen+greyed, human-control marker with identity+since; WARN banner **WARN-amber,
+   persistent, in the frame** (never green/overlaid).
+8. `CONTEXT_LOST` fires **only** on the backend `CONTEXT_LOST` outcome; scrollback above the break is **dimmed to
+   history** (a11y prefix), the break line present, continuity copy withdrawn; recovers on the next real turn.
+   Timeline **gap markers** on take-over/hand-back.
+9. DE+EN parity for [P2] keys; no green SUCCESS anywhere; fail-closed absence of `handoffBanner`/
+   `contextLostBanner`/human-control marker unless their state holds.
 
 ---
 
