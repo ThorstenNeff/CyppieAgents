@@ -329,7 +329,7 @@ Fix in `foldEvent`: `it[idx] = event.copy(ts = (current[idx] as AgentEvent.ToolC
 > Aktualisierung. Die zwei im Client geborenen Zeilen (`UserTurn`, `conn-error`-`Notice`) tragen die **rohe
 > Browser-Uhr**.
 
-**Warum die Skew-Korrektur scheiterte — ein Kategorienfehler, festgehalten, damit ihn CYP-347 nicht wiederholt:**
+**Warum die Skew-Korrektur scheiterte — ein Kategorienfehler, festgehalten, damit ihn CYP-346 nicht wiederholt:**
 
 `skew = eventTs − now` lief über **jedes** Event, auch über die beim Erstconnect nachgespielte **Historie**
 (`AgentViewModel.kt:205`, `observeServerClock` im `collect`; der Guard verwarf nur *ältere* Stempel). Der
@@ -337,7 +337,8 @@ jüngste historische Stempel wurde damit zum Anker. Ein Agent, der seit gestern 
 Skew auf ≈ −10 h 48 min; der Operator tippt um 09:02 und seine Zeile trägt **22:14** — **bei völlig richtiger
 Browser-Uhr**. Die Ursache: `eventTs` sagt, **wann etwas geschah**, nicht, **wie spät es auf dem Server ist**.
 Die Differenz beider Uhren lässt sich aus einem Ereigniszeitpunkt nicht ableiten — dafür muss der Server seine
-**aktuelle** Zeit nennen. Genau das holt **CYP-347** nach (Server sagt beim Verbinden seine Zeit).
+**aktuelle** Zeit nennen. Genau das holt **CYP-346** nach (Server sagt beim Verbinden seine Zeit) — der Defekt
+wurde von Tester2 unabhängig gefunden und mit roten Tests belegt; CYP-347 ist als Duplikat geschlossen.
 
 **Verengte Zusage über die Spalte (ersetzt jedes „die Spalte fällt nie"):**
 
