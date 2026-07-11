@@ -279,7 +279,9 @@ class BootOrchestrator(
         val tokenRegistry = TokenRegistry(secrets.agentTokens, secrets.operatorToken)
         // CYP-171: restore persisted remote-agent tokens into the registry (a pre-provisioned remote agent
         // reconnects after a restart), and compose the mint+persist / revoke issuer for AgentManagement.
-        val remoteTokenStore = RemoteTokenStore(remoteTokensFile)
+        // CYP-415 (D2): embedded-SQLite in prod (a real file), in-memory File impl for tests (null). Benign
+        // switch — remote tokens are runtime-minted (no first-boot import).
+        val remoteTokenStore = remoteTokensFile?.let { SqliteRemoteTokenStore(it.toPath()) } ?: RemoteTokenStore(null)
         remoteTokenStore.all().forEach { (agentId, token) -> tokenRegistry.bind(token, agentId) }
         val remoteTokenIssuer = RemoteTokenIssuer(tokenRegistry, remoteTokenStore)
 
@@ -359,7 +361,8 @@ class BootOrchestrator(
         // CYP-210: apply the durable overlay OVER the platform.config.json seed (overlay wins per-field), so
         // operator edits of name/color/persona/launch survive a restart. Scoped to the active project.
         val agentOverrides = AgentOverrideStore(agentOverrideFile)
-        val tokenUsageStore = TokenUsageStore(tokenUsageFile) // CYP-325 (defect 2): shared, keyed by projectId
+        // CYP-415 (D2): embedded-SQLite in prod, in-memory for tests. Benign — token-usage re-derives per turn.
+        val tokenUsageStore = tokenUsageFile?.let { SqliteTokenUsageStore(it.toPath()) } ?: TokenUsageStore(null) // CYP-325
         // CYP-256 (.5a): the durable per-project agent-set store — constructed EARLY (above, for the CYP-305
         // effective-active seam); single source for runtime-added agents.
         // CYP-215: the avatar stores (blob bytes on disk + the self-hosted DiceBear preset resolver).
@@ -861,7 +864,8 @@ class BootOrchestrator(
         // CYP-326 — the platform-side compact orchestrator (boot project; MVP single-project). Watches the PO's
         // context (CYP-325 feed); on a >threshold up-crossing + "compact allowed" it runs the staggered team
         // compaction. Idle-gate via CYP-324 busy; completion via the CYP-326 compact_result signal; honest X/N.
-        val compactConfigStore = CompactConfigStore(compactConfigFile)
+        // CYP-415 (D2): embedded-SQLite in prod, in-memory for tests. Benign — fail-closed default re-applies.
+        val compactConfigStore = compactConfigFile?.let { SqliteCompactConfigStore(it.toPath()) } ?: CompactConfigStore(null)
         val poId = config.agents.firstOrNull { it.role == com.tneff.cyppieagents.model.Role.PO }?.id
         val compactOrchestrator = CompactOrchestrator(
             scope = scope,
