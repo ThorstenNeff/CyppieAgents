@@ -572,18 +572,18 @@
     <string name="event_resume_context_lost">Kontext verloren — Sitzung ohne vorherigen Verlauf</string>
     <string name="event_resume_with_context">Sitzung mit Kontext fortgesetzt</string>
     <string name="event_resume_fresh">Neue Sitzung (kein Vorlauf)</string>
-    <!-- CYP-333: Content-View-Umschalter (Orchestrierung | Shell). Interim (Auftraggeber-Entscheidung): der zweite
-         View ist eine EHRLICHE Worktree-Shell (bash: git status/ls/reinschauen), KEIN Agenten-Terminal — das
-         claude-Terminal (Hand-off) kommt erst mit BE-2. Spec-§8 sagt „Terminal"; hier wahrheitsgemäß „Shell". -->
+    <!-- CYP-381 (§8-Rename): Content-View-Umschalter (Orchestrierung | Terminal). Der zweite View ist jetzt die
+         ECHTE, interaktive Agenten-Sitzung (claude resume über den Hand-off-Motor, CYP-355) — NICHT mehr die
+         bash-Interims-Shell. Der §8-Rename ist vollzogen und die Honesty-Flag aufgelöst: die reale Sitzung existiert. -->
     <string name="terminal_mode_orchestration">Orchestrierung</string>
-    <string name="terminal_mode_shell">Shell</string>
+    <string name="terminal_mode_terminal">Terminal</string>
     <string name="a11y_terminal_mode">Ansicht: %1$s</string>
-    <!-- CYP-333: Shell-Segment gated, falls das Worktree-Shell-Backend (CYP-348, bash-Modus) fehlt (z. B. Nicht-
-         Desktop-Ziel / abgeschalteter Kill-Switch). Im Normalfall ist die Shell live. -->
-    <string name="terminal_gated_pending">Shell verfügbar, sobald das Worktree-Shell-Backend steht</string>
-    <!-- CYP-333 Live-Flip (CYP-348): ehrlicher Deskriptor im aktiven Shell-View — es ist eine bash-Worktree-Shell
-         (git status/ls/reinschauen), NICHT die Agenten-Sitzung; das claude-Same-Session-Terminal kommt mit BE-2. -->
-    <string name="terminal_shell_note">bash-Worktree-Shell</string>
+    <!-- CYP-381: Terminal-Segment gated, falls der Hand-off-Motor / die interaktive Sitzung nicht verfügbar ist
+         (z. B. Nicht-Desktop-Ziel / abgeschalteter Kill-Switch). Im Normalfall ist das Terminal live. -->
+    <string name="terminal_gated_pending">Terminal verfügbar, sobald der Hand-off-Motor steht</string>
+    <!-- CYP-381: ehrlicher Deskriptor im aktiven Terminal-View — es ist die ECHTE, interaktive Agenten-Sitzung
+         (claude resume, dieselbe Session); Tippen geht an den Agenten, der Hub vermittelt in diesem Modus NICHT. -->
+    <string name="terminal_session_note">Terminal — die echte, interaktive Agenten-Sitzung; der Hub vermittelt in diesem Modus nicht.</string>
     <!-- CYP-381 (UIUX-Spec 915867a9): non-optimistischer Hand-off. §3.2 in-flight, §4 IDLE-defer, §3.4 Reject. -->
     <string name="terminal_mode_switching">Wird umgeschaltet…</string>
     <!-- §4 IDLE-defer: Toggle im laufenden Turn → bounded-wait, kein Hijack (eigener Node .deferHint). -->
@@ -600,6 +600,10 @@
     <!-- §7b CONTEXT_LOST-Banner (persistenter State via CYP-354-Feed). -->
     <string name="terminal_context_lost">Agent ohne vorherigen Kontext zurück — Verlauf nicht wiederhergestellt.</string>
     <string name="a11y_terminal_context_lost">Agent ohne vorherigen Kontext zurück. Verlauf nicht wiederhergestellt.</string>
+    <!-- §7.1 CONTEXT_LOST-Transcript-Chrome (durable landmark, am resume.outcome-ts verankert, überlebt Recovery):
+         WARN-Band + zurückgenommene Historie. Transkript-scoped (distinkt vom Fenster-Banner terminal_context_lost). -->
+    <string name="transcript_context_lost">Kontext verloren — der Agent hat den vorherigen Verlauf nicht im Gedächtnis.</string>
+    <string name="a11y_transcript_context_lost">Verlaufsbruch: Kontext verloren — der obige Verlauf ist nicht im Gedächtnis des Agenten.</string>
     <!-- CYP-354 §5.1 (client mirror): read-only Terminal-Control-Mode-Marker in der Titlebar. MEDIATED = kein Marker.
          Form+Label tragen die Bedeutung (WCAG 1.4.1); content-frei (nur Zustand). -->
     <string name="terminal_ctl_interactive">Interaktiv</string>

@@ -64,7 +64,7 @@ import com.tneff.cyppieagents.agentview.BusyStateLiveSource
 import com.tneff.cyppieagents.agentview.BusyStateSource
 import com.tneff.cyppieagents.agentview.BusyStateViewModel
 import com.tneff.cyppieagents.agentview.ModeRepository
-import com.tneff.cyppieagents.agentview.StubModeRepository
+import com.tneff.cyppieagents.agentview.ModeHttpRepository
 import com.tneff.cyppieagents.agentview.TerminalControlLiveSource
 import com.tneff.cyppieagents.agentview.TerminalControlSource
 import com.tneff.cyppieagents.agentview.TerminalControlStateViewModel
@@ -215,9 +215,9 @@ fun AgentShell(
     /** Override the CYP-354 terminal-control source (`/ws/terminal-state`, read-only mirror); `null` → the live
      *  source. Tests inject a stub. */
     terminalControlSource: TerminalControlSource? = null,
-    /** Override the CYP-381 hand-off command port (`POST /api/agents/{id}/mode`); `null` → [StubModeRepository]
-     *  (local always-confirm — the gate that preserves the live CYP-333 view-flip until the CYP-355 motor lands).
-     *  Tests inject rejecting / holding variants to exercise the reject + IDLE-gate paths. */
+    /** Override the CYP-381 hand-off command port (`POST /api/agents/{id}/mode`); `null` → the live
+     *  [ModeHttpRepository] (CYP-355 motor). Tests inject a stub / rejecting / holding variant to exercise the
+     *  confirm + reject + IDLE-gate paths without a live server; `:app:webAppDemo` injects [StubModeRepository]. */
     modeRepository: ModeRepository? = null,
     /** Override the CYP-326 compact-orchestration port; `null` → the in-memory stub until Backend's Milestone-C
      *  endpoints land (`GET /api/compact/status` · `POST /api/compact/config`), then the live HTTP repo. */
@@ -510,11 +510,14 @@ fun AgentShell(
         TerminalControlLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedTerminalControlSource = terminalControlSource ?: defaultTerminalControlSource
-    // CYP-381: the hand-off command port. Default = StubModeRepository (local always-confirm, NO server call) — the
-    // gate that keeps the live CYP-333 interim view-flip working until the CYP-355 motor + DTO land; the real HTTP
-    // impl swaps in HERE (one line) at the real-swap. Routing the toggle through it now exercises the exact
-    // non-optimistic confirm path the real endpoint will use.
-    val resolvedModeRepository = remember(modeRepository) { modeRepository ?: StubModeRepository() }
+    // CYP-381: the hand-off command port. **Real swap done** (CYP-355 motor merged): default = ModeHttpRepository,
+    // the live `POST /api/agents/{id}/mode` against BE-2. Non-optimistic by contract — the VM flips only on the
+    // server's CONFIRMED (a REJECTED 200 body throws → stay in the old mode). Operator-gated route; a session with
+    // no operator token 403s → ModeChangeException → honest error row (fail-closed). Tests inject a stub/rejecting
+    // variant via the [modeRepository] override to exercise the reject + IDLE-defer paths without a live server.
+    val resolvedModeRepository = remember(modeRepository, httpClient, cfg) {
+        modeRepository ?: ModeHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
 
     // CYP-55: hoist the per-window VMs to the always-composed shell. Two reasons: (1) each VM opens
     // exactly ONE subscription — a separate badge collector would double-subscribe the cold WS flows
@@ -536,9 +539,9 @@ fun AgentShell(
                 lifecycle = resolvedLifecycleApi,
                 lifecycleSource = resolvedLifecycleSource,
                 // CYP-381: route the toggle through the non-optimistic hand-off command. `resolvedModeRepository` is
-                // the StubModeRepository (local always-confirm) until the CYP-355 motor lands — it preserves the live
-                // CYP-333 interim view-flip with NO server round-trip (the gate), and the real HTTP impl swaps in here
-                // at the CYP-355 real-swap. The IDLE-gate observes the same busy feed the title-bar `*` uses.
+                // the live ModeHttpRepository (`POST /api/agents/{id}/mode`, CYP-355 motor) — the view flips only on
+                // the server's CONFIRMED, never optimistically. The IDLE-gate observes the same busy feed the
+                // title-bar `*` uses (a take-over issued mid-turn shows "wartet bis Turn fertig", no hijack).
                 modeRepository = resolvedModeRepository,
                 busySource = resolvedBusyStateSource,
                 canControl = isOperator,

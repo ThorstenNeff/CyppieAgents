@@ -12,11 +12,11 @@ package com.tneff.cyppieagents.agentview
  * accepted", so the VM can flip the view **non-optimistically** (only after the confirm, never before). Separating
  * command (this) from truth (the feed) keeps the client a mirror: it never *infers* the mode from its own action.
  *
- * **Provisional shape (⚑ CYP-355 DTO pending).** The BE-2 motor (CYP-355) is not built yet; the exact
- * request/response DTO is being fixed by Backend. This interface is the etablished "build against a stub, swap in
- * the real HTTP impl when the endpoint lands" seam — [StubModeRepository] is the default (a local, always-confirm
- * ack that preserves the live CYP-333 interim view-flip with no server round-trip), replaced by an HTTP impl once
- * the motor + DTO are frozen. Reconcile [ModeConfirm] / [ModeChangeException] with the real DTO at that swap.
+ * **Real impl (CYP-355 motor merged).** The default is now [ModeHttpRepository] — the live `POST /api/agents/{id}/mode`
+ * against the frozen BE-2 DTO ([com.tneff.cyppieagents.model.ModeChangeRequest] / [com.tneff.cyppieagents.model.ModeChangeResponse]).
+ * [StubModeRepository] is retained as the **test-only** always-confirm stand-in (and the `:app:webAppDemo` Maestro
+ * fixture); production wires the HTTP impl at [com.tneff.cyppieagents.AgentShell]. Tests inject rejecting / holding
+ * variants to exercise the reject + IDLE-defer paths without a live server.
  */
 interface ModeRepository {
     /**
@@ -40,21 +40,21 @@ data class ModeConfirm(
 )
 
 /**
- * An explicit hand-off reject or transport failure. [code] is the server's reason code (provisional set, to be
- * reconciled with the CYP-355 DTO): `agent_busy` (a turn is in flight — the IDLE-gate normally defers before this),
- * `operator_required` (403), `agent_not_found` (404), `mode_unavailable` (no interactive session possible), or the
- * generic `mode_change_failed`. The VM maps it to an honest, non-optimistic error surface (stay in the old mode).
+ * An explicit hand-off reject or transport failure. [code] is the reason ([ModeHttpRepository] maps it from the
+ * CYP-355 DTO): the business rejects `agent_busy` (BUSY_TIMEOUT — the IDLE-gate normally defers before this),
+ * `mode_unavailable` (SPAWN_FAILED), `already_in_target`, `in_transition`; the structural failures `operator_required`
+ * (403), `unauthorized` (401), `agent_not_found` (404); or the generic `mode_change_failed`. The VM maps any of them
+ * to an honest, non-optimistic error surface (stay in the old mode).
  */
 class ModeChangeException(val code: String, cause: Throwable? = null) :
     RuntimeException("mode change rejected: $code", cause)
 
 /**
- * The default, offline stand-in for [ModeRepository] until the CYP-355 motor lands: it **confirms the requested
- * target locally** with no server call — preserving the live CYP-333 interim behaviour (the toggle flips the
- * content view to the bash worktree shell / back) while routing it through the exact non-optimistic confirm path
- * the real HTTP impl will use. No hand-off is claimed: the mediated session keeps running, the CYP-354 feed stays
- * MEDIATED (so no marker), and the honest "Shell = worktree bash" note still applies. Swapped for the HTTP impl at
- * the CYP-355 real-swap; tests inject rejecting / holding variants to exercise reject + IDLE-gate paths.
+ * The **test-only / demo** offline stand-in for [ModeRepository]: it **confirms the requested target locally** with
+ * no server call, routing through the exact non-optimistic confirm path the real [ModeHttpRepository] uses. It
+ * claims no hand-off (no holder/since), so a window driven by it shows no marker. Production wires the HTTP impl
+ * (see [com.tneff.cyppieagents.AgentShell]); tests inject rejecting / holding variants to exercise reject + IDLE-gate
+ * paths without a live server, and `:app:webAppDemo` uses it for the Maestro flows.
  */
 class StubModeRepository : ModeRepository {
     override suspend fun setMode(agentId: String, target: AgentContentMode): ModeConfirm =

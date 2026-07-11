@@ -110,6 +110,10 @@ class OutlineTextColorGuardTest {
             "AgentLifecycleState.UNKNOWN -> MaterialTheme.colorScheme.outlineVariant" to
                 "8dp status DOT for the quietest state; `outlineVariant` is 1.41:1 / 1.52:1 — sound ONLY because " +
                     "the state is spelled out beside it and the row carries a11y_agent_status. Decorative, redundant.",
+            "val railColor = MaterialTheme.colorScheme.outlineVariant" to
+                "CYP-381 §7.1 receded-history gutter RAIL — a 2dp vertical RULE (drawBehind, decorative, " +
+                    "clearAndSetSemantics) marking the forgotten-history block; a border/divider role, never text " +
+                    "(the receded rows keep their own AA text colours — role-demotion, not alpha). Spec-mandated.",
         ),
         "AgentAvatarSection.kt" to mapOf(
             "BorderStroke(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)," to

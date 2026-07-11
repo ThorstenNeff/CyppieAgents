@@ -563,18 +563,18 @@
     <string name="event_resume_context_lost">Context lost — session without prior history</string>
     <string name="event_resume_with_context">Session resumed with context</string>
     <string name="event_resume_fresh">New session (no prior context)</string>
-    <!-- CYP-333: content-view mode toggle (Orchestration | Shell). Interim (Auftraggeber ruling): the second view
-         is an HONEST worktree shell (bash: git status/ls/inspect), NOT an agent terminal — the claude terminal
-         (hand-off) arrives with BE-2. Spec §8 says "Terminal"; here truthfully "Shell". -->
+    <!-- CYP-381 (§8 rename): content-view mode toggle (Orchestration | Terminal). The second view is now the REAL,
+         interactive agent session (claude resume via the hand-off motor, CYP-355) — no longer the bash interim
+         shell. The §8 rename is done and the honesty flag resolved: the real session exists. -->
     <string name="terminal_mode_orchestration">Orchestration</string>
-    <string name="terminal_mode_shell">Shell</string>
+    <string name="terminal_mode_terminal">Terminal</string>
     <string name="a11y_terminal_mode">View: %1$s</string>
-    <!-- CYP-333: Shell segment gated if the worktree-shell backend (CYP-348, bash mode) is absent (e.g. a non-
-         Desktop target / the kill-switch turned off). Normally the shell is live. -->
-    <string name="terminal_gated_pending">Shell available once the worktree-shell backend lands</string>
-    <!-- CYP-333 live flip (CYP-348): honest descriptor in the active shell view — it is a bash worktree shell
-         (git status/ls/inspect), NOT the agent session; the claude same-session terminal arrives with BE-2. -->
-    <string name="terminal_shell_note">bash worktree shell</string>
+    <!-- CYP-381: Terminal segment gated if the hand-off motor / interactive session is unavailable (e.g. a non-
+         Desktop target / the kill-switch turned off). Normally the terminal is live. -->
+    <string name="terminal_gated_pending">Terminal available once the hand-off motor is up</string>
+    <!-- CYP-381: honest descriptor in the active terminal view — it is the REAL, interactive agent session
+         (claude resume, the same session); typing goes to the agent, the hub does not mediate in this mode. -->
+    <string name="terminal_session_note">Terminal — the agent's real, interactive session; the hub does not mediate in this mode.</string>
     <!-- CYP-381 (provisional, refined by UIUX CYP-381-Design): non-optimistic hand-off. Switch command in flight
          (view flips only AFTER confirm); take-over waits until the running turn finishes (no hijack); reject. -->
     <string name="terminal_mode_switching">Switching…</string>
@@ -587,6 +587,10 @@
     <string name="a11y_terminal_handoff">Taken over interactively by %1$s since %2$s. The hub is not mediating.</string>
     <string name="terminal_context_lost">Agent back without prior context — history not restored.</string>
     <string name="a11y_terminal_context_lost">Agent returned without prior context. History not restored.</string>
+    <!-- §7.1 CONTEXT_LOST transcript chrome (durable landmark, anchored to the resume.outcome ts, survives recovery):
+         WARN band + receded history. Transcript-scoped (distinct from the window banner terminal_context_lost). -->
+    <string name="transcript_context_lost">Context lost — the agent does not remember the previous history.</string>
+    <string name="a11y_transcript_context_lost">History discontinuity: context lost — the agent does not remember the history above.</string>
     <!-- CYP-354 §5.1 (client mirror): read-only terminal-control mode marker in the title bar. MEDIATED = no marker.
          Form+label carry the meaning (WCAG 1.4.1); content-free (state only). -->
     <string name="terminal_ctl_interactive">Interactive</string>

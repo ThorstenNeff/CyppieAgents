@@ -11,6 +11,7 @@ import androidx.compose.ui.window.ComposeViewport
 import com.tneff.cyppieagents.acl.StubAclHub
 import com.tneff.cyppieagents.agentmgmt.StubAgentManagementRepository
 import com.tneff.cyppieagents.agentview.StubAgentSession
+import com.tneff.cyppieagents.agentview.StubModeRepository
 import com.tneff.cyppieagents.comm.CommApi
 import com.tneff.cyppieagents.comm.StubCommLiveSource
 import com.tneff.cyppieagents.eventlog.EventFilter
@@ -73,6 +74,9 @@ fun EventLogDemoApp() {
             agentManagementRepository = remember { StubAgentManagementRepository() },
             aclApi = aclHub,
             aclLiveSource = aclHub,
+            // CYP-381: the demo has no server, so inject the local always-confirm stub for the hand-off command —
+            // the mode toggle flips offline (matching every other stubbed surface) instead of erroring on the POST.
+            modeRepository = StubModeRepository(),
         )
     }
 }

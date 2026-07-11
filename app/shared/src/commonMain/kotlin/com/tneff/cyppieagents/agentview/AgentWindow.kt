@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -40,12 +41,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.connector.ConnectorCapabilityBadge
 import com.tneff.cyppieagents.connector.ConnectorProviderChip
 import com.tneff.cyppieagents.eventlog.severityColor
+import com.tneff.cyppieagents.eventlog.severityContainer
 import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.ProviderInfo
@@ -89,8 +95,8 @@ import kmpcyppieagents.app.shared.generated.resources.agent_status_restarting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_stopped
 import kmpcyppieagents.app.shared.generated.resources.agent_status_unknown
 import kmpcyppieagents.app.shared.generated.resources.terminal_mode_orchestration
-import kmpcyppieagents.app.shared.generated.resources.terminal_mode_shell
-import kmpcyppieagents.app.shared.generated.resources.terminal_shell_note
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_terminal
+import kmpcyppieagents.app.shared.generated.resources.terminal_session_note
 import kmpcyppieagents.app.shared.generated.resources.terminal_gated_pending
 import kmpcyppieagents.app.shared.generated.resources.terminal_mode_switching
 import kmpcyppieagents.app.shared.generated.resources.terminal_idle_defer
@@ -100,6 +106,8 @@ import kmpcyppieagents.app.shared.generated.resources.terminal_handoff_banner
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_handoff
 import kmpcyppieagents.app.shared.generated.resources.terminal_context_lost
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_context_lost
+import kmpcyppieagents.app.shared.generated.resources.transcript_context_lost
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_context_lost
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import org.jetbrains.compose.resources.stringResource
@@ -180,6 +188,22 @@ fun AgentWindow(
     val contentMode by viewModel.contentMode.collectAsState()
     val modeSwitching by viewModel.modeSwitching.collectAsState()
     val agentBusy by viewModel.busy.collectAsState()
+    // CYP-381 §7.1: the DURABLE CONTEXT_LOST landmark. The live control-state is momentary (CONTEXT_LOST → MEDIATED
+    // on the next real turn), but "the agent does not remember the scrollback above the loss" is permanent for that
+    // buffer. So latch the loss instant here and NEVER clear it — anchored to the loss ts, it survives recovery, so
+    // the transcript discontinuity + receded history stay put while the titlebar ∅ / banner (live) clear. Keeps the
+    // ONE momentary→durable split honest (cf. HandoffBanners, which are the live half).
+    val contextLostAt = remember(agentId) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(control) {
+        // `since` is bound to a LOCAL val: it is a `:core` property (a different module), which Kotlin will not
+        // smart-cast — so compare the local, not `control.since`.
+        val since = control?.since
+        if (control?.state == TerminalControlState.CONTEXT_LOST &&
+            since != null && since > (contextLostAt.value ?: Long.MIN_VALUE)
+        ) {
+            contextLostAt.value = since
+        }
+    }
     Column(modifier = modifier.fillMaxSize()) {
         lifecycleError?.let { code -> LifecycleErrorRow(agentId, code) }
         // CYP-381 §6/§7b: persistent WARN frame strips, driven by the CYP-354 control-state (fail-closed — absent
@@ -218,12 +242,12 @@ fun AgentWindow(
         Box(modifier = Modifier.weight(1f).fillMaxWidth().testTag(AgentViewTags.content(agentId))) {
             when (contentMode) {
                 AgentContentMode.ORCHESTRATION ->
-                    AgentTranscript(agentId = agentId, events = transcript, modifier = Modifier.fillMaxSize())
+                    AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, modifier = Modifier.fillMaxSize())
                 AgentContentMode.TERMINAL ->
                     // Defensive: the toggle disables the Terminal segment when no terminal is wired, so this
                     // branch is normally unreachable without [terminalContent]; fall back to the transcript.
                     terminalContent?.invoke(agentId, Modifier.fillMaxSize())
-                        ?: AgentTranscript(agentId = agentId, events = transcript, modifier = Modifier.fillMaxSize())
+                        ?: AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, modifier = Modifier.fillMaxSize())
             }
         }
         // The mediated composer belongs to the Orchestrierung view only — the terminal has its own input. It is
@@ -261,9 +285,9 @@ private fun ModeToggleRow(
     busy: Boolean = false,
 ) {
     val orchLabel = stringResource(Res.string.terminal_mode_orchestration)
-    // Interim (Auftraggeber ruling): the second view is an honest worktree SHELL (bash), not the agent's claude
-    // terminal — so the segment reads "Shell". The claude "Terminal" meaning arrives with the hand-off (BE-2).
-    val termLabel = stringResource(Res.string.terminal_mode_shell)
+    // CYP-381 (§8 rename): the second view is now the agent's REAL, interactive session (claude --resume via the
+    // hand-off motor) — so the segment reads "Terminal". The honesty flag is resolved: the real session exists.
+    val termLabel = stringResource(Res.string.terminal_mode_terminal)
     val currentLabel = if (mode == AgentContentMode.TERMINAL) termLabel else orchLabel
     val viewDescription = stringResource(Res.string.a11y_terminal_mode, currentLabel)
     val idleDeferA11y = stringResource(Res.string.a11y_terminal_idle_defer)
@@ -316,16 +340,16 @@ private fun ModeToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag(AgentViewTags.modeToggleGateHint(agentId)),
             )
-            // Live Shell view active → honest descriptor: this is a bash worktree shell, NOT the agent's session
-            // (the claude same-session terminal reuses the slot later, BE-2). Prevents mistaking it for the agent.
+            // CYP-381 (§8 rename): Terminal view active → honest descriptor: this IS the agent's real, interactive
+            // session (claude --resume, same session); typing goes to the agent, the hub does not mediate here.
             mode == AgentContentMode.TERMINAL && terminalAvailable -> Text(
-                text = stringResource(Res.string.terminal_shell_note),
+                text = stringResource(Res.string.terminal_session_note),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.testTag(AgentViewTags.modeToggleShellNote(agentId)),
+                modifier = Modifier.testTag(AgentViewTags.modeToggleTerminalNote(agentId)),
             )
-            // Operator, but no live shell backend (non-Desktop target / kill-switch off) → say WHY the Shell
-            // segment is off, rather than a silently-disabled control. Neutral tone (a deferral, not an error).
+            // Operator, but no live interactive backend (non-Desktop target / kill-switch off) → say WHY the
+            // Terminal segment is off, rather than a silently-disabled control. Neutral tone (deferral, not error).
             terminalGatedNote && !terminalAvailable -> Text(
                 text = stringResource(Res.string.terminal_gated_pending),
                 style = MaterialTheme.typography.labelSmall,
@@ -636,12 +660,21 @@ private fun AgentTranscript(
     agentId: String,
     events: List<AgentEvent>,
     modifier: Modifier = Modifier,
+    /** CYP-381 §7.1: the DURABLE CONTEXT_LOST loss instant (epoch-ms), or null for no landmark. Events before it are
+     *  the agent's forgotten history (receded, role-demoted + gutter rail); a WARN discontinuity band marks the
+     *  boundary. Anchored to the loss ts, NOT the live control-state — so the boundary persists after recovery. */
+    contextLostAt: Long? = null,
 ) {
     val listState = rememberLazyListState()
     // Pin to bottom as new events arrive (streaming feel). A more refined version would release
     // the pin while the user scrolls up; deferred until the window manager (CYP-3) lands.
     LaunchedEffect(events.size) {
         if (events.isNotEmpty()) listState.animateScrollToItem(events.lastIndex)
+    }
+    // §7.1: the boundary = the first event at/after the loss (events are time-ascending); if no fresh row exists yet,
+    // the band tails the buffer. ts-positioned so it survives buffer trims and generalizes past a single loss.
+    val boundary = contextLostAt?.let { ts ->
+        events.indexOfFirst { it.tsMs >= ts }.let { if (it < 0) events.size else it }
     }
     LazyColumn(
         state = listState,
@@ -650,37 +683,92 @@ private fun AgentTranscript(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         itemsIndexed(events, key = { _, event -> event.id }) { index, event ->
-            // CYP-335: the `HH:mm` gutter wraps EVERY line kind — one place, so no row type can be forgotten.
-            TranscriptRow(agentId = agentId, index = index, tsMs = event.tsMs) {
-                when (event) {
-                    is AgentEvent.AssistantText -> AssistantTextRow(
-                        event,
-                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
-                    )
-                    is AgentEvent.ToolCall -> ToolCallRow(
-                        event,
-                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
-                    )
-                    is AgentEvent.Result -> ResultRow(
-                        event,
-                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
-                    )
-                    // Notice has no kind in the v0.4 vocabulary → index tag only (kind qualifier is optional).
-                    is AgentEvent.Notice -> NoticeRow(
-                        event,
-                        Modifier.testTag(AgentViewTags.event(agentId, index)),
-                    )
-                    is AgentEvent.UserTurn -> UserTurnRow(
-                        event,
-                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
-                    )
-                    is AgentEvent.IncomingSystem -> IncomingSystemRow(
-                        event,
-                        Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.INCOMING_SYSTEM)),
-                    )
+            val receded = boundary != null && index < boundary // §7.1: forgotten history, above the landmark
+            val row: @Composable () -> Unit = {
+                // CYP-335: the `HH:mm` gutter wraps EVERY line kind — one place, so no row type can be forgotten.
+                TranscriptRow(agentId = agentId, index = index, tsMs = event.tsMs, receded = receded) {
+                    when (event) {
+                        is AgentEvent.AssistantText -> AssistantTextRow(
+                            event,
+                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
+                            receded = receded,
+                        )
+                        is AgentEvent.ToolCall -> ToolCallRow(
+                            event,
+                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
+                        )
+                        is AgentEvent.Result -> ResultRow(
+                            event,
+                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
+                        )
+                        // Notice has no kind in the v0.4 vocabulary → index tag only (kind qualifier is optional).
+                        is AgentEvent.Notice -> NoticeRow(
+                            event,
+                            Modifier.testTag(AgentViewTags.event(agentId, index)),
+                        )
+                        is AgentEvent.UserTurn -> UserTurnRow(
+                            event,
+                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
+                        )
+                        is AgentEvent.IncomingSystem -> IncomingSystemRow(
+                            event,
+                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.INCOMING_SYSTEM)),
+                        )
+                    }
                 }
             }
+            // §7.1: the durable discontinuity band sits ATOP the first fresh (post-loss) row.
+            if (boundary != null && index == boundary) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TranscriptDiscontinuityRow(agentId)
+                    row()
+                }
+            } else {
+                row()
+            }
         }
+        // §7.1: loss just happened, no fresh row yet → the band is the tail landmark (history all above it).
+        if (boundary != null && boundary >= events.size) {
+            item(key = "ctx-lost-divider-$agentId") { TranscriptDiscontinuityRow(agentId) }
+        }
+    }
+}
+
+/**
+ * CYP-381 §7.1 — the DURABLE transcript discontinuity band: a full-width WARN landmark that marks where the agent's
+ * memory begins. Reuses the Event-Log `GapRow` idiom (leading rail + glyph + label on a container) but **WARN, not
+ * error** — the session is fine, only its memory isn't. The glyph is the SAME `∅` as the titlebar CONTEXT_LOST
+ * marker (one vocabulary across title bar and transcript). Rail + glyph are decorative (`clearAndSetSemantics`); the
+ * band is one static a11y landmark (`a11y_transcript_context_lost`, merged, NO `liveRegion` — the live announcement
+ * is the window banner, once). Persists after the live state recovers to MEDIATED (§7.1.2 recovery-persistence).
+ */
+@Composable
+private fun TranscriptDiscontinuityRow(agentId: String) {
+    val (container, onContainer) = severityContainer(Severity.WARN)
+    val landmark = stringResource(Res.string.a11y_transcript_context_lost)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(AgentViewTags.contextLostDivider(agentId))
+            .background(container)
+            .semantics(mergeDescendants = true) { contentDescription = landmark }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp).height(22.dp)
+                .background(severityColor(Severity.WARN))
+                .clearAndSetSemantics {},
+        )
+        Text("∅", style = MaterialTheme.typography.labelMedium, color = onContainer, modifier = Modifier.clearAndSetSemantics {})
+        Text(
+            text = stringResource(Res.string.transcript_context_lost),
+            style = MaterialTheme.typography.labelMedium,
+            color = onContainer,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -722,9 +810,23 @@ private fun TranscriptRow(
     agentId: String,
     index: Int,
     tsMs: Long,
+    /** CYP-381 §7.1: this row is forgotten history (above the CONTEXT_LOST landmark). Draws a 2.dp `outlineVariant`
+     *  gutter rail (decorative, `drawBehind` — no layout shift, no text-contrast change; the row's own colours stay
+     *  AA — "recede, stay legible", the codebase's no-text-alpha rule). The role-demotion is inside [AssistantTextRow]. */
+    receded: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth()) {
+    val railColor = MaterialTheme.colorScheme.outlineVariant
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (receded) Modifier.drawBehind {
+                    // A 2.dp vertical rule at the left of the gutter lane, spanning the row height (decorative rail).
+                    drawRect(color = railColor, topLeft = Offset.Zero, size = Size(2.dp.toPx(), size.height))
+                } else Modifier,
+            ),
+    ) {
         TimeCell(agentId = agentId, index = index, tsMs = tsMs)
         Spacer(Modifier.width(TRANSCRIPT_TIME_COLUMN_GAP))
         // alignByBaseline on BOTH children: the time is labelSmall (11 sp) and the content bodyMedium (14 sp),
@@ -775,11 +877,18 @@ private fun RowScope.TimeCell(agentId: String, index: Int, tsMs: Long) {
 }
 
 @Composable
-private fun AssistantTextRow(event: AgentEvent.AssistantText, modifier: Modifier = Modifier) {
+private fun AssistantTextRow(
+    event: AgentEvent.AssistantText,
+    modifier: Modifier = Modifier,
+    /** CYP-381 §7.1: forgotten history → demote the loudest role `onSurface` (15.6:1) to `onSurfaceVariant`
+     *  (8.7:1, still comfortably AA) — "quiet = role, never text-alpha". Other row kinds are already quiet
+     *  (`onSurfaceVariant`/`secondary`) and stay as-is (demoting further risks AA). */
+    receded: Boolean = false,
+) {
     Row(modifier = modifier.fillMaxWidth()) {
         Text(
             text = event.text,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (receded) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodyMedium,
         )
         if (!event.complete) {
