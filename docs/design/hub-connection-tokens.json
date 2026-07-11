@@ -1,0 +1,99 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-395 (Epic) — Hub-Verbindungs-/Modus-UX, Phase 1 Lokal-Modus",
+    "version": "1.0-spec-closure",
+    "status": "Spec-Closure (Q1-Q8 geruled, PO 2026-07-11). Eingefroren als Vorlage fuer Devs connect_*-Screens (S-L). docs-only, nichts gebaut.",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop a2f66ae8",
+    "reuse_first": "KEINE neue Farbe. Alle Toene sind MaritimeTheme-Rollen (ui/MaritimeTheme.kt) + Severity-Helpers (eventlog/EventVisuals.kt). Maskiertes Feld = ApiKeySection-Muster (settings/SettingsPanel.kt, Secrets.mask() server-seitig). Connect-Status = bestehendes ConnectionStatus-Idiom (LIVE=●+primary, connecting=neutral onSurfaceVariant, offline=errorContainer). Login = AuthGate (CYP-176).",
+    "color_is_never_sole_signal": "Jeder Zustand traegt Form + Label + a11y (WCAG 1.4.1). Presence=Punkt+Label, Modus-disabled=Label+GATED, Connect-Zustaende=Text+Idiom. Text-Kontrast >=4.5:1, Nicht-Text-UI >=3:1.",
+    "tertiary_invariant": "#40D6A0 (MaritimeDark tertiary) ist BRAND-Akzent, NIE Status. Presence/'verbunden'/'gueltig' benutzen es NICHT (deckt sich mit Krypto-Reviewer F8).",
+    "code_anchor": "Neue commonMain connect_*-Screens (S-L). Vorbilder: settings/SettingsPanel.kt (ApiKeySection), auth/AuthComponents.kt (AuthFormCard/AuthPasswordField), agentview/AgentWindow.kt ReconnectingChip (neutral connecting), eventlog/EventTailPanel.kt (LIVE/offline Idiom)."
+  },
+  "semantic": {
+    "presence.online": {
+      "role": "Registry-Presence 'online' in der Hub-Zeile (connect.hubs.row.<id>.presence). ADVISORY = Control-Plane-Behauptung, KEIN Verbindungs-Versprechen (H1/Q2). Sagt im Lokal-Modus nichts ueber LAN-Erreichbarkeit.",
+      "marker": "gefuellter Punkt + Label 'online' (connect_presence_online)",
+      "color": "onSurface (zurueckhaltend/neutral) — NICHT tertiary/#40D6A0, NICHT primary-als-Erfolg. Bewusst gedaempft, damit es nie als etablierte Sitzung liest.",
+      "a11y_key": "a11y_connect_presence",
+      "never": "kein Erfolgs-Gruen, nie als 'verbunden' lesbar"
+    },
+    "presence.offline": {
+      "role": "Registry-Presence 'offline' + relative lastSeen (connect_presence_offline).",
+      "marker": "hohler/gedaempfter Punkt + Label 'offline · zuletzt gesehen %1$s'",
+      "color": "onSurfaceVariant (gedaempft)",
+      "a11y_key": "a11y_connect_presence"
+    },
+    "connect.state.attempting": {
+      "role": "Lokal-Connect Verbindungsversuch (connect.state.attempting). Bodenwahrheit-Achse, GETRENNT von Registry-Presence (H1).",
+      "color": "onSurfaceVariant (neutral) — REUSE ReconnectingChip-Idiom (AgentWindow.kt:611-629), NIE gruen, NIE LIVE vorzeitig",
+      "label_key": "connect_state_attempting"
+    },
+    "connect.state.handshake": {
+      "role": "Lokal-Connect JWT-Handshake gg. gecachten CP-Public-Key (connect.state.handshake).",
+      "color": "onSurfaceVariant (neutral)",
+      "label_key": "connect_state_handshake"
+    },
+    "connect.state.connected": {
+      "role": "Sitzung etabliert (connect.state.connected). Erscheint NIE vor echtem LIVE; Registry-'online' allein rechtfertigt es nicht (H1).",
+      "marker": "● + Label 'Verbunden'",
+      "color": "primary — REUSE LIVE-Idiom (EventTailPanel.kt:143-148)",
+      "label_key": "connect_state_connected"
+    },
+    "connect.state.error": {
+      "role": "Connect-Fehler mit TYPISIERTER Ursache (connect.state.error.<cause>): hubOffline/portUnreachable/handshakeFailed/neverOnline. Ursache vom Backend (S-2), Client raet nicht.",
+      "color": "onErrorContainer auf errorContainer — REUSE offline-Banner-Idiom (EventTailPanel.kt:183-191)",
+      "label_keys": ["connect_error_hub_offline", "connect_error_port", "connect_error_handshake", "connect_error_never_online"],
+      "note": "neverOnline (H5/Q6): erste Anmeldung braucht einmal Internet — ehrlicher Fehler, kein stiller Haenger, kein Offline-Cache-Fake."
+    },
+    "creds.masked": {
+      "role": "read-only maskierte Credential-Statuszeile ***<letzte4> (connect.creds.masked). Server maskiert (Secrets.mask()); Client rendert NIE Klartext.",
+      "color": "onSurface (neutraler Text)",
+      "label_key": "connect_creds_masked",
+      "reuse": "settings_apikey_masked-Muster (SettingsPanel.kt:154-164)"
+    },
+    "creds.validated": {
+      "role": "Credential-Testcall bestanden (connect.creds.validated). INFO, KEIN Erfolgs-Gruen (Haus-Regel 'gruen nie Status').",
+      "marker": "Glyph ⓘ + Label",
+      "color": "secondary / onSurface (INFO) — NICHT tertiary/#40D6A0",
+      "label_key": "connect_creds_validated"
+    },
+    "creds.invalid": {
+      "role": "Credential ungueltig (connect.creds.invalid). FEHLER, distinkt von unreachable (H3).",
+      "color": "error / errorContainer",
+      "label_key": "connect_creds_invalid"
+    },
+    "creds.unreachable": {
+      "role": "Credential nicht pruefbar, Anthropic nicht erreichbar (connect.creds.unreachable). WARN-Amber, distinkt von invalid (H3) — 'Key falsch' != 'Anthropic down'. Q5: mit WARN fortfahren erlaubt.",
+      "color": "warnContainer (dark #4A3A10/#FFC857, light #FFE7B0/#5A3D00) — REUSE severityContainer(WARN) (EventVisuals.kt:104-108)",
+      "marker": "Glyph ▲ (Severity.WARN)",
+      "label_key": "connect_creds_unreachable"
+    },
+    "creds.disclosure": {
+      "role": "Zero-Knowledge-Zeile (connect_creds_privacy, H4/Q8) + optionale Keystore-Zeile (connect_creds_keystore, H6/Q8). BEIDE zurueckhaltend, informativ.",
+      "color": "onSurfaceVariant (dezent, kein Marketing-Gruen)",
+      "scope": "connect_creds_privacy STRIKT auf Credentials begrenzt (keine pauschale 'wir sehen nichts'); connect_creds_keystore ohne Hardware-/Secure-Enclave-Zusage",
+      "label_keys": ["connect_creds_privacy", "connect_creds_keystore"]
+    },
+    "mode.local": {
+      "role": "Modus 'Lokal' (connect.mode.local), aktiv, Default-Fokus (Q3 eigener Schritt).",
+      "color": "aktiver M3-Segment-Stil (Standard); kein Sonder-Token",
+      "label_keys": ["connect_mode_local", "connect_mode_local_sub"]
+    },
+    "mode.remote": {
+      "role": "Modus 'Remote' (connect.mode.remote) — EHRLICH DEAKTIVIERT in Phase 1 (H2/Q3): non-interaktiv, 'kommt bald', nicht vorausgewaehlt, kein Fake-Klick.",
+      "color": "disabled/GATED-Stil (onSurfaceVariant, gedaempft) — REUSE TonedHint(GATED)-Idiom",
+      "label_keys": ["connect_mode_remote", "connect_mode_remote_soon"],
+      "a11y_key": "a11y_connect_mode_remote_disabled"
+    }
+  },
+  "axes_separation": {
+    "role": "VERBINDLICH: getrennte Bedeutungsachsen, nie ineinander gefaerbt.",
+    "registry_presence": "Control-Plane-Behauptung online/offline — ADVISORY, neutral/gedaempft, nie gruen, nie 'verbunden' (H1).",
+    "my_connection": "Bodenwahrheit CONNECTING/LIVE/DISCONNECTED — attempting/handshake neutral, connected=● primary, error=errorContainer typisiert.",
+    "credential_state": "hinterlegt (maskiert onSurface) != validiert (INFO) != invalid (Fehler) != unreachable (WARN-Amber) (H3).",
+    "mode": "Lokal (aktiv) vs Remote (ehrlich deaktiviert).",
+    "rule": "Farbe nie alleiniger Traeger (WCAG 1.4.1); jede Achse traegt Text+Form. tertiary/#40D6A0 NIE Status."
+  }
+}

@@ -1,8 +1,9 @@
 # Hub-Verbindungs- & Modus-UX — Design-Spec (Epic CYP-395, Phase 1: Lokal-Modus)
 
-> Status: **Erster Design-Aufschlag** · docs-only, kein Bau · Owner: UX/UI · Begleitkonzept: `../../13-cyppie-hub-architektur.md`
+> Status: **Spec-Closure — ratifiziert 2026-07-11 (Q1–Q8 geruled)** · docs-only, kein Bau · Owner: UX/UI · Begleitkonzept: `../../13-cyppie-hub-architektur.md`
+> Eingefrorene Companion-Files (Haus-Konvention, Vorlage für Devs `connect_*`-Screens = S-L): `hub-connection-keys.md` · `hub-connection-tags.md` · `hub-connection-tokens.json`.
 > Client-Architektur parallel beim Developer — **Nahtstellen über den PO** (siehe §12).
-> Reihenfolge dieses Dokuments: **Screens/Zustände/Copy** zuerst, dann **offene UX-Entscheidungen** (§11) und **Nahtstellen** (§12).
+> Reihenfolge dieses Dokuments: **Screens/Zustände/Copy** zuerst, dann **ratifizierte Entscheidungen** (§11) und **Nahtstellen** (§12).
 
 Diese Spec deckt **meinen Strang** ab: Erststart-Flow (Konzept-Sequenz A), Login→Hub-Auswahl→Modus (Sequenz B),
 Lokal-Connect-Zustände und die maskierte Credential-Eingabe. Sie ist gegen den **echten heutigen Code** gegroundet
@@ -121,9 +122,10 @@ Der Hub tauscht Device-Code + Public-Key gegen die CP; die CP registriert `{hubI
 - **Hub-Name:** die CP verlangt einen `name`. **Offene Entscheidung Q1** (§11): Auto-Name (Hostname) vs. Nutzereingabe.
   Default-Vorschlag der Spec: **vorbefülltes, editierbares Namensfeld** (Hostname als Default), damit Mehr-Hub-Listen
   später unterscheidbar sind. Feld `connect.register.name`, Copy `connect_register_name_label` „Name dieses Hubs".
-- **Device-Code:** Bei Desktop (Frontend+Hub co-lokal) läuft der Austausch i. d. R. **automatisch** (kein getippter
-  Code). Ob je ein Code angezeigt/eingegeben werden muss, ist **Q7/Nahtstelle S-4** — die Spec hält den Screen offen
-  für einen optionalen `connect_register_devicecode`-Zustand.
+- **Device-Code (ratifiziert R6/Q7):** Bei Desktop (Frontend+Hub co-lokal) läuft der Austausch **automatisch** —
+  **kein getippter Code**, kein sichtbarer Device-Code-Zustand in Phase 1. Die **Screen-Naht bleibt offen** für einen
+  späteren sichtbaren Code (Remote-Hub, headless-startend): optionaler `connect_register_devicecode`-Zustand ist
+  vorgesehen, aber **nicht gebaut/gerendert** in Phase 1.
 - **Fehler:** CP nicht erreichbar → `connect_register_error_offline` „Registrierung braucht Internet. Erneut versuchen."
   (errorContainer, Retry). Bereits registriert (Re-Run) → idempotent weiter zu A3/Workspace.
 
@@ -173,8 +175,9 @@ Bestehender `AuthGate` (§3.2). Nach verifizierter Session → B2. Erst-Login-oh
 **Leerer Zustand:** keine Hubs für dieses Konto → Hinweis + primäre Aktion „Hub registrieren" (→ Seq A ab A2). Copy
 `connect_hubs_empty` „Noch kein Hub registriert." + `connect_hubs_register` „Hub registrieren".
 **Fehler:** `GET /hubs` scheitert (CP nicht erreichbar) → errorContainer-Banner `connect_hubs_error` „Hub-Liste nicht
-erreichbar. Erneut versuchen." (**H5**). **Q6/Nahtstelle S-1:** ob eine **gecachte** Hub-Liste einen Offline-Lokal-Connect
-erlaubt, hängt an der Client-Architektur — als offener Zustand markiert, nicht erfunden.
+erreichbar. Erneut versuchen." (**H5**). **Q6 ratifiziert = DEFERRED:** **kein** Offline-Lokal-Connect über eine gecachte
+Hub-Liste in Phase 1. **H5 bleibt verbindlich** — die erste Anmeldung/Hub-Liste braucht die CP erreichbar; CP-nicht-erreichbar
+ist ein **ehrlicher Fehlerzustand**, kein stiller Hänger und kein aus dem Cache vorgetäuschter „online"-Zustand.
 
 ### B3 — Modus-Wahl (Lokal | Remote)
 Segmentierte Auswahl **nach** der Hub-Wahl (ein Hub kann perspektivisch über beide Wege erreichbar sein):
@@ -227,9 +230,10 @@ Zwei Wahrheiten getrennt beschriften: die maskierte Zeile sagt **hinterlegt** (`
 zurückgezogener Zustand sagt **validiert** (letzter erfolgreicher Testcall). Nie „validiert" behaupten ohne echten
 bestandenen Testcall.
 
-### 7.4 Keystore-Disclosure (H6, optional, zurückhaltend)
-Höchstens **eine** plattformbewusste Zeile („im Schlüsselbund dieses Geräts gesichert") — keine pauschale
-Hardware-Sicherheitszusage. **Q8 (§11)** ob diese Zeile mitgeliefert wird.
+### 7.4 Keystore-Disclosure (H6, ratifiziert Q8 = ja, zurückhaltend)
+**Q8 ratifiziert:** die optionale Keystore-Zeile wird **mitgeliefert**, aber **zurückhaltend und plattformbewusst** —
+höchstens **eine** Zeile („im Schlüsselbund dieses Geräts gesichert", Key `connect_creds_keystore`, `onSurfaceVariant`),
+**keine** pauschale Hardware-Sicherheitszusage (kein „Secure Enclave" überall). Formulierung neutral, kein Marketing.
 
 ---
 
@@ -244,9 +248,9 @@ Hardware-Sicherheitszusage. **Q8 (§11)** ob diese Zeile mitgeliefert wird.
 
 ---
 
-## 9. testTag-Kontrakt (provisorisch — friert mit Spec-Closure)
+## 9. testTag-Kontrakt (Übersicht — maßgeblich: `hub-connection-tags.md`)
 
-Neue Area `connect` (mit QA/CYP-7 abstimmen). Provisorisch, weil §11-Entscheidungen Struktur noch bewegen können:
+Neue Area `connect` (mit QA/CYP-7 abstimmen). Diese Übersicht spiegelt den **eingefrorenen** `hub-connection-tags.md`:
 
 ```
 connect.onboarding.stepper            connect.hubs.list
@@ -268,9 +272,10 @@ erscheint **nie** vor echtem LIVE; Presence-Tag trägt kein Erfolgs-Grün.
 
 ---
 
-## 10. Copy (provisorisch, DE-Default + EN — friert mit Spec-Closure)
+## 10. Copy (Übersicht — maßgeblich: `hub-connection-keys.md`)
 
-Key-Familie `connect_*` / `a11y_connect_*`. Maskiertes Feld spiegelt `settings_apikey_*`.
+Key-Familie `connect_*` / `a11y_connect_*`. Maskiertes Feld spiegelt `settings_apikey_*`. Diese Tabelle spiegelt den
+**eingefrorenen** `hub-connection-keys.md`:
 
 | Key | DE | EN |
 |---|---|---|
@@ -281,6 +286,7 @@ Key-Familie `connect_*` / `a11y_connect_*`. Maskiertes Feld spiegelt `settings_a
 | `connect_creds_title` | Hinterlege deine Anthropic-Credentials | Add your Anthropic credentials |
 | `connect_creds_placeholder` | sk-ant-… | sk-ant-… |
 | `connect_creds_privacy` | Bleibt auf diesem Gerät (Keystore) — geht nie an cyppie-agents.com. | Stays on this device (keystore) — never sent to cyppie-agents.com. |
+| `connect_creds_keystore` | Im Schlüsselbund dieses Geräts gesichert. | Secured in this device's keychain. |
 | `connect_creds_masked` | Hinterlegt: %1$s | Stored: %1$s |
 | `connect_creds_validating` | Credentials werden geprüft… | Checking credentials… |
 | `connect_creds_validated` | Credentials gültig — hinterlegt. | Credentials valid — stored. |
@@ -314,24 +320,27 @@ Nahtstelle zur vorhandenen Zeitformatierung, konsistent halten.)*
 
 ---
 
-## 11. Offene UX-Entscheidungen (für PO/Auftraggeber)
+## 11. Ratifizierte Entscheidungen (Q1–Q8, PO 2026-07-11)
 
-1. **Q1 — Hub-Benennung:** Auto-Name (Hostname) vs. editierbares Namensfeld bei A2? *Spec-Default: vorbefülltes,
-   editierbares Feld* (Mehr-Hub-Unterscheidbarkeit). Wo umbenennen (später in Settings)?
-2. **Q2 — Presence-Vertrauen:** Bestätigung, dass Registry-`online` **gedämpft/advisory** dargestellt wird (nie
-   Erfolgs-Grün, nie als „verbunden" lesbar) — die zwei Wahrheiten (H1) getrennt.
-3. **Q3 — Modus-Platzierung:** eigener Schritt (Spec-Default) vs. Toggle in der Hub-Zeile. Und: Remote in Phase 1
-   **sichtbar-deaktiviert** bestätigt (so vom PO vorgegeben).
-4. **Q4 — Erststart-Erkennung & Einstiege:** leere Hub-Liste nach Login → Register-Flow; nicht-leer → Auswahl. „Hub
-   registrieren" auch später als „weiteren Hub hinzufügen" (Mehr-Hub) — Einstiegspunkte bestätigen.
-5. **Q5 — Credential-Validierungs-Policy:** „Hub bereit" setzt **hinterlegt** voraus; bei `unreachable` mit **WARN**
-   fortfahren erlaubt, bei `invalid` blockieren. Bestätigen.
-6. **Q6 — Offline-Lokal / gecachte Hub-Liste:** Soll ein Offline-Lokal-Connect über eine **gecachte** Hub-Liste möglich
-   sein (H5)? Hängt an Client-Arch (Nahtstelle S-1) — jetzt designen oder deferren?
-7. **Q7 — Device-Code-Sichtbarkeit:** Läuft die Hub-Registrierung bei Desktop **automatisch** (kein getippter Code),
-   oder braucht es je einen sichtbaren Device-Code-Zustand? (Nahtstelle S-4.)
-8. **Q8 — Disclosure-Copy:** Zero-Knowledge-Zeile bei Credentials (H4) mitliefern (Spec-Default: ja, auf Credentials
-   begrenzt)? Optionale Keystore-Zeile (H6) ja/nein?
+Alle acht Punkte sind geruled → **Spec-Closure**. Keys/Tags/Tokens sind damit eingefroren (Companion-Files).
+
+1. **Q1 — Hub-Benennung: editierbares Feld, Hostname vorbefüllt** (A2). Umbenennen später in Settings (Folge-Story,
+   nicht Phase-1-Screen). Feld `connect.register.name`, Key `connect_register_name_label`.
+2. **Q2 — Presence advisory/gedämpft, als Prinzip bestätigt:** Registry-`online` nie Erfolgs-Grün, nie als „verbunden"
+   lesbar; die zwei Wahrheiten (H1) bleiben getrennt. Deckt sich mit Krypto-Reviewer-Befund F8.
+3. **Q3 — Modus = eigener Schritt** (B3), **Remote sichtbar-deaktiviert** („kommt bald"), nicht vorausgewählt.
+4. **Q4 — Erststart-Erkennung:** leere Hub-Liste nach Login → **Register-Flow**; nicht-leer → **Auswahl**. „Hub
+   registrieren" ist auch der spätere „weiteren Hub hinzufügen"-Einstieg (Mehr-Hub).
+5. **Q5 — Credential-Policy:** „Hub bereit" setzt **hinterlegt** voraus; `unreachable` → **mit WARN fortfahren**
+   erlaubt; `invalid` → **blockieren** bis Korrektur.
+6. **Q6 — DEFERRED:** **kein** Offline-Lokal-Connect über gecachte Hub-Liste in Phase 1. **H5 bleibt** — erste
+   Anmeldung braucht einmal Internet, CP-nicht-erreichbar = ehrlicher Fehlerzustand (↔ Reviewer-F1 Offline-Auth).
+7. **Q7 — ratifiziert R6: Device-Code automatisch** auf Desktop (kein getippter Code, kein sichtbarer Zustand in
+   Phase 1). **Screen-Naht für sichtbaren Code offen gehalten** (Remote-Hub später) — Slot vorgesehen, nicht gebaut
+   (↔ Reviewer-F7).
+8. **Q8 — Disclosure-Copy: JA.** Zero-Knowledge-Zeile bei Credentials (`connect_creds_privacy`) — **auf Credentials
+   begrenzt**, keine pauschale „wir sehen nichts"-Aussage (↔ Reviewer-F4). **Optionale Keystore-Zeile: JA**, aber
+   zurückhaltend/plattformbewusst (`connect_creds_keystore`, keine Hardware-Zusage).
 
 ---
 
@@ -382,6 +391,8 @@ darstellen:
 
 ---
 
-*Provisorisch bis Spec-Closure: die endgültigen `hub-connection-keys.md` / `-tags.md` / `-tokens.json` (Haus-Konvention)
-landen, sobald die §11-Entscheidungen geruled sind — vorher würden Keys/Tags bei jeder Entscheidung driften. Nichts an
-diesem Deliverable ist gebaut; es ist Design-Input für den parallelen Client-Strang (Nahtstellen über den PO).*
+*Spec-Closure erreicht (Q1–Q8 geruled): die eingefrorenen Companion-Files `hub-connection-keys.md` / `-tags.md` /
+`-tokens.json` (Haus-Konvention) sind die Vorlage, gegen die Dev **S-L** (die `connect_*`-Screens) baut. testTag-Area
+`connect` mit Tester (CYP-7) abstimmen. Nichts an diesem Deliverable ist gebaut; es ist Design-Input für den parallelen
+Client-Strang (Nahtstellen über den PO). Provisorische §9/§10-Blöcke im Spec-Doc = Übersicht; **maßgeblich sind die
+eingefrorenen Companion-Files**.*
