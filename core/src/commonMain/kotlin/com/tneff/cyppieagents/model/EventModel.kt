@@ -142,6 +142,15 @@ enum class EventType(val wire: String) {
      */
     LOG_DROPPED("log.dropped"),
 
+    /**
+     * CYP-417 (S-G) — the hub's [ResourceGovernor] **fail-closed rejected a spawn** that would overload the
+     * machine (productized OOM protection). A real fact: the spawn did NOT happen. Content-free (H6): detail
+     * carries only `{current, estimatedMax}` counters (`estimatedMax` may be absent when the hub has no reliable
+     * capacity estimate, `null≠0`), plus the target `agentId` metadata — never agent output/secrets. `Severity.WARN`
+     * (H3: the system correctly protecting the machine, NOT an error). The UI's overload banner reads this feed.
+     */
+    SPAWN_REJECTED("spawn.rejected"),
+
     /** Fallback for any wire string not modelled here (tolerant decode). */
     UNKNOWN("unknown");
 
