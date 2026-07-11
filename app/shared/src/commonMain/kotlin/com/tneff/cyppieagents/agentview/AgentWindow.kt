@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -70,6 +71,7 @@ import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.model.TerminalControlState
 import com.tneff.cyppieagents.testing.testTagA11y
+import com.tneff.cyppieagents.ui.ThinVerticalScrollbar
 import com.tneff.cyppieagents.window.COMPOSER_COMPACT_INPUT_THRESHOLD
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_status
@@ -682,12 +684,15 @@ private fun AgentTranscript(
     val boundary = contextLostAt?.let { ts ->
         events.indexOfFirst { it.tsMs >= ts }.let { if (it < 0) events.size else it }
     }
-    LazyColumn(
+    // CYP-392: the transcript scrolls; overlay a vertical scrollbar on the right edge (Desktop + Web — the seam
+    // is a no-op on Android/iOS). Only shown when the content actually overflows the viewport (`canScroll*`).
+    Box(modifier = modifier) {
+      LazyColumn(
         state = listState,
-        modifier = modifier.testTagA11y(AgentViewTags.stream(agentId)),
+        modifier = Modifier.fillMaxSize().testTagA11y(AgentViewTags.stream(agentId)),
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
+      ) {
         itemsIndexed(events, key = { _, event -> event.id }) { index, event ->
             val receded = boundary != null && index < boundary // §7.1: forgotten history, above the landmark
             val row: @Composable () -> Unit = {
@@ -737,6 +742,15 @@ private fun AgentTranscript(
         if (boundary != null && boundary >= events.size) {
             item(key = "ctx-lost-divider-$agentId") { TranscriptDiscontinuityRow(agentId) }
         }
+      }
+      // CYP-392: the vertical scrollbar, overlaid on the transcript's right edge — only when the content
+      // overflows (canScroll*), so a short transcript shows none. No-op on Android/iOS (see ThinVerticalScrollbar).
+      if (listState.canScrollForward || listState.canScrollBackward) {
+          ThinVerticalScrollbar(
+              listState = listState,
+              modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().testTag(AgentViewTags.scrollbar(agentId)),
+          )
+      }
     }
 }
 
