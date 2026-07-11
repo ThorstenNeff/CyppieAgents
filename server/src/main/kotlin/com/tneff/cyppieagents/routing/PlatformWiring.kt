@@ -83,12 +83,15 @@ fun Application.installPlatform(
         // /ws/terminal-state — CYP-354 (BE-1): content-free per-agent terminal-control-mode feed, read-tier, active runtime.
         terminalControlSocket({ booted.runtimeRegistry.active().terminalControl }, booted.tokenRegistry, authDeps)
         // /ws/terminal — CYP-332: PTY-over-WS transport for the Desktop interactive terminal (one pty4j PTY per
-        // agent; single-flight §4.1). Reader-gated like /ws/agent; agentId must be in the active project.
+        // agent; single-flight §4.1). CYP-394: WRITE-tier gated (code-exec in the worktree) → operator-only today
+        // via the empty [NoTerminalGrants] store; a per-agent member-grant slots in here additively (a real store
+        // + operator-only grant endpoint), no gate rewrite. agentId must be in the active project.
         terminalSocket(
             { booted.ptyManager },
             knowsAgent = { id -> booted.state.agents.any { it.id == id } },
             registry = booted.tokenRegistry,
             deps = authDeps,
+            grants = NoTerminalGrants,
         )
         // CYP-234a-3: the hosted API docs (`/docs*`) — Redoc(REST)+AsyncAPI(WS) rendered from the generators,
         // Bearer-only hosted spec, fail-closed authenticated. NOT versioned (docs are not an /api resource) →
