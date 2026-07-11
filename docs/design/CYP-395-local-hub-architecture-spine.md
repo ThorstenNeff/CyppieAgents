@@ -1,6 +1,11 @@
 # CYP-395 — Local-Mode Hub: Architektur-Spine (Design-Pass)
 
-> **Status:** Entwurf v1 · **DESIGN-PASS — kein Bau** · Autor: Backend-Strang
+> **Status:** Entwurf **v2** · **DESIGN-PASS — kein Bau** · Autor: Backend-Strang
+> **v2-Δ:** Krypto-/Auth-Nahtstellen an den Reviewer-Threat-Model-Strang (`14-threat-model-auth-krypto.md`
+> §8) angeglichen — **entscheidungs-agnostisch, aber anker-korrekt**: die Nähte tragen beide F1-Varianten,
+> trennen Signing-/DH-Schlüssel (F2), machen Register-PoP zum Pflichtfeld (F3), Master-Key-Custody zur
+> injizierten Policy (F5), und verankern die BYOA-/E2E-Egress-Invariante (F4). Präjudiziert **keine** der
+> offenen [RATIFIKATION]-Punkte.
 > **Epic:** CYP-395 (High) · **Konzept:** `13-cyppie-hub-architektur.md` (Auftraggeber, 2026-07-11)
 > **Branch:** `feature/CYP-395-arch-spine-design` (von develop `a2f66ae8`)
 > **Auftraggeber-Entscheidungen:** Phase 1 = **Lokal-Modus**; **bestehenden `:server` additiv evolvieren** (kein Greenfield);
@@ -18,10 +23,11 @@ per-Projekt-Runtime-Isolation — sind **schon transport-agnostisch und mehr-Imp
 überwiegend **Formalisierung + wenige additive Nähte**, kein Neubau.
 
 Die vier größten *neuen* Flächen sind: (1) eine explizite **Session-Manager-Naht** vor die heute Ktor-inline
-liegende Projekt-Switch-Orchestrierung; (2) **JWT-Verifikation als neue `IdentityProvider`-Impl** (heute
-existiert 0 JWT-Code); (3) **Hub-Keypair + native Keystore** für Credentials (heute Klartext-0600); (4) ein
-**Ressourcen-Governor** (heute komplett greenfield). Alle vier sind **additiv** und hängen an bereits sauberen
-Nähten.
+liegende Projekt-Switch-Orchestrierung; (2) eine **`IdentityToken`-Verifier-Naht**, die **beide** Auftraggeber-
+Optionen trägt (online Kratos-Opaque **oder** offline CP-JWT — F1, nicht vorwegnehmen; heute existiert 0
+JWT-Code); (3) **getrennte Hub-Schlüssel** (`signingKey` Ed25519 + `dhKey` X25519, F2) + ein **headless-fähiger,
+fail-closed `SecretStore`** für Credentials (heute Klartext-0600); (4) ein **Ressourcen-Governor** (heute
+komplett greenfield). Alle vier sind **additiv** und hängen an bereits sauberen Nähten.
 
 > **★ Sofort-Flag an PO (verify-don't-trust):** Die Prämisse „**7 Default-Agenten**" deckt sich **nicht** mit
 > dem Ist-Stand. Der ausgelieferte Default (`platform.config.example.json`) ist **exakt 3**: `po` (PO),
@@ -77,7 +83,11 @@ Eine dünne **`SessionManager`**-Naht extrahieren, die den Transport nicht kennt
   Service; die Routen bleiben dünn.
 - **Phase 2 (nur benennen):** der **Control-Plane-Connector** ist ein **zweiter Transport** (Outbound-WS,
   E2E-Tunnel) → mündet in **denselben** `SessionManager`. In Phase 1 als **`interface ControlPlaneConnector` +
-  No-Op-Stub** anlegen, nicht implementieren.
+  No-Op-Stub** anlegen, nicht implementieren. **Egress-Invariante schon in der Naht verankern (F4/BYOA):** es gibt
+  **genau einen** CP-gebundenen Ausgang, geführt durch `SecretMasker` (inkl. Fehler-/Crash-/Telemetrie-Pfade);
+  die Regel **„kein Nutzdaten-/Credential-Byte verlässt den Hub ohne E2E"** wird als **Test** verankert (das
+  Anthropic-Credential überquert den CP-Connector nie). So kann die Phase-2-Impl die Invariante nicht später
+  verletzen.
 - **Principal-Naht:** `resolvePrincipal(deps)` hängt heute an `ApplicationCall`. Für den zweiten Transport später
   eine **transport-neutrale `Credential`** vorsehen; `SessionCredential.Source{HEADER,COOKIE}` modelliert das
   Token-im-Header schon. Phase 1: unverändert lassen, nur die Naht dokumentieren.
@@ -170,20 +180,41 @@ Nachrichten überleben künftig Neustart (heute: weg) — strikt besser, aber pr
    **offline** (gecacht) verifizieren kann.
 
 **Hub-seitige neue Komponenten (Phase 1, additiv):**
-- **`HubIdentity`** — erzeugt beim Erststart ein **Ed25519-Keypair**; privat → Keystore (§6), public → Registrar.
-  Idempotent (einmal erzeugen, danach wiederverwenden).
-- **`ControlPlaneRegistrar`** — tauscht Device-Code + Hub-PublicKey → Registry-Eintrag/Hub-Zertifikat. **Der
-  Device-Code-Flow (headless startender Hub) ist der sicherheitskritischste Teil → Reviewer-Strang.**
-- **`JwksCache`** — holt + cached den CP-Verifikationsschlüssel für den Offline-Local-Handshake.
+- **`HubIdentity`** — erzeugt beim Erststart **zwei getrennte Schlüssel** (F2): `signingKey` (**Ed25519**,
+  Identität/Registrierungs-PoP/JWT-Sig-Kontext) **und** `dhKey` (**X25519**, DH-Basis für Phase-2-Noise). Ed25519
+  ist **kein** DH-Schlüssel — ein einzelner Ed25519-Key hätte in Phase-2-Noise keinen brauchbaren DH-Anteil. Beide
+  **privat → `SecretStore` (§6)**; beide **PublicKeys** werden registriert, im **Noise-fertigen Rohformat**
+  (32-Byte, klar kodiert) — das ist der Phase-1-Anker, der sonst Phase-2 bricht. Idempotent.
+- **`ControlPlaneRegistrar`** — `register(hubId, ownerId, name, defaultPort, signingPubKey, dhPubKey, pop)`.
+  **`pop` ist Pflichtfeld (F3, NO-GO ohne):** Proof-of-Possession = Hub signiert einen **CP-ausgegebenen Nonce**
+  mit `signingKey`, gebunden an die approbierte **Device-Code-Sitzung**. Ohne PoP kann ein untergeschobener
+  PublicKey den gesamten Phase-2-E2E-Anker unbemerkt vergiften. Der Device-Code-Flow (headless) + „Hub-Zertifikat"
+  (unter-spezifiziert) = **Reviewer-Strang**.
+- **`IdentityToken`-Verifier + optionaler `JwksCache`** — siehe Auth-Naht unten.
 
-**Auth-Naht (die zentrale Cross-Strang-Stelle → über PO):** Heute existiert **0 JWT-Code** (kein `auth-jwt`,
-kein JWKS, keine PublicKey-Verifikation; Identität = opake Kratos-Session via whoami-HTTP). Der **saubere Hook**
-für „CP-ausgestelltes JWT gegen gecachten PublicKey verifizieren" ist eine **dritte `IdentityProvider`-Impl**
-(`auth/IdentityProvider.kt`): `resolve(SessionCredential)` verifiziert JWT-Signatur gegen `JwksCache` statt
-Kratos-whoami und liefert `ResolvedIdentity(identityId, verified=true)`. **Alles darunter**
-(`AuthPrincipal.Human`, `RoleStore`, `AuthGuard`, `requireCommReader/Writer`) ist **signatur-agnostisch** und
-bleibt unverändert; einzige Verdrahtungsänderung: `AuthDeps.idp`-Konstruktion in `bootPlatform`. → **Auth-Kontrakt
-(Token-Format, Claims, JWKS-Rotation) mit Reviewer über PO klären.**
+**Auth-Naht (die zentrale Cross-Strang-Stelle → über PO; F1 offen):** Heute existiert **0 JWT-Code** (kein
+`auth-jwt`/JWKS/PublicKey-Verifikation; Identität = opake Kratos-Session via whoami-HTTP). **F1 ist eine
+Auftraggeber-[RATIFIKATION]** und wird hier **nicht vorweggenommen** — der Lokal-Modus kann (A) einen offline
+verifizierbaren **CP-JWT** (neue Signier-+Verifier-Achse) **oder** (B) den online-`whoami` gegen die CP nutzen.
+Die Spine baut die **variant-agnostische `IdentityToken`-Naht**:
+
+> `interface IdentityToken { suspend fun verify(token, hub): Principal? }` — **fail-closed**, mit **Pflicht-Checks
+> unabhängig von der Variante**: `aud == dieser Hub` **UND** `sub == hub.ownerId` (F6; ein gültig CP-signierter
+> Token eines **anderen** Nutzers darf **diesen** Hub nicht öffnen), plus `iss==CP`/`exp`/`nbf`. Zwei Impls hinter
+> der Naht: **`KratosOpaqueVerifier`** (F1-B, = der bestehende `KratosIdentityProvider`, online whoami) und
+> **`CpJwtVerifier`** (F1-A, offline gegen `JwksCache`, mit **alg-Pinning** — kein `alg:none`, keine
+> RS/HS-Confusion — und `kid`-basierter Rotation + hartem Offline-Fenster/TTL). **Offline-JWT NICHT fest
+> verdrahten.**
+
+Die Naht wickelt sich um den bestehenden **`IdentityProvider`-Seam** (`auth/IdentityProvider.kt`): F1-B ist
+`KratosIdentityProvider` unverändert; F1-A ist eine **zweite Impl**, die JWT gegen `JwksCache` verifiziert.
+**Alles darunter** (`AuthPrincipal.Human`, `RoleStore`, `AuthGuard`, `requireCommReader/Writer`) ist
+**verifikations-agnostisch** und bleibt unverändert; einzige Verdrahtungsänderung: `AuthDeps.idp` in
+`bootPlatform`. → **Token-Format/Claims/JWKS-Rotation + F1-Entscheidung mit Reviewer über PO.**
+
+**Device-Code-Redaktion (F7, CYP-190-Klasse):** `device_code`/`user_code` sind **neue** Secret-Shapes; die
+bestehenden Redaktoren (`TokenRedactor`, `SecretMasker`) kennen sie nicht → **vor** Live-Gang erweitern. Naht:
+die Redaktions-Muster sind eine zentrale, testbare Liste.
 
 ---
 
@@ -196,23 +227,31 @@ bleibt unverändert; einzige Verdrahtungsänderung: `AuthDeps.idp`-Konstruktion 
 - **Verschlüsselungspfad existiert, ist aber dark:** `PgProjectConfigStore` verschlüsselt via Tink-`SecretCipher`
   (AAD `project_config|{pid}|api_key`) — nur aktiv, wenn ein Pg-Store geroutet wird (nie in Prod).
 
-### Design-Δ (Keystore-vs-Tink sauber aufgelöst — Open Decision D3)
-Der Konzept-Keystore (macOS Keychain / Linux libsecret / Android Keystore / iOS Keychain) ist **KMP-expect/actual**
-— aber **der Hub ist JVM-only** (der Client hat *seine eigenen* Session-Keys, ein Developer/UIUX-Anliegen). Für
-den **Hub-Credential-Store** empfehle ich die **Hybrid-Auflösung, die die vorhandene Tink-Spine wiederverwendet
-statt sie zu doppeln:**
+### Design-Δ (`SecretStore`-Naht — F5, entscheidungs-agnostisch)
+> **★ Reviewer-Korrektur an meiner v1:** Native Keychains (libsecret/Keychain) brauchen eine **interaktive**
+> entsperrte Sitzung — ein **headless startender Server-Hub** hat die oft **nicht** (libsecret = D-Bus/Login-
+> Session). „OS-Keystore hält den KEK" ist also **nicht** die sichere Default-Antwort, sondern **eine** Custody-
+> Option unter mehreren. **F5 ist [RATIFIKATION].**
 
-> **OS-Keystore hält den KEK (Master-Key); Tink-AEAD (CYP-220, schon gebaut) macht die Envelope-Verschlüsselung
-> der At-Rest-Blobs.** Heute kommt der Master-Key aus `CYPPIE_MASTER_KEY` (env, BOX-Modus) — ersetze/ergänze das
-> durch **libsecret/Keychain als KEK-Quelle** (`SecretCipherFactory` bekommt eine dritte Key-Quelle neben env/KMS).
+Die Spine baut daher die **`SecretStore` (expect/actual)** als Naht mit fixen Invarianten, ohne die Custody
+vorwegzunehmen:
+- **Default-Impl = die bestehende Tink-`SecretCipher`-Spine** (CYP-220, schon an Token-at-rest verdrahtet:
+  AEAD-Envelope, key-versioniert/Rotation, injektive AAD-Bindung `(storeKey, projectId, field)`, **fail-closed
+  Decrypt**). **Nicht neu bauen.**
+- **Master-Key-Custody = explizit injizierte Policy**, nicht hardcoded: `interface MasterKeyCustody`, Impls
+  wählbar per F5-Ratifikation — **KMS** / **TPM/Secure-Enclave-gebunden** / **Operator-Passphrase (KDF beim
+  Hub-Start)** / **OS-Keychain (nur wo interaktiv verfügbar)** / heutiger `CYPPIE_MASTER_KEY` (env, BOX). Es gibt
+  auf fremder Hardware **keinen „umsonst"-Weg** — die Wahl gehört dem Auftraggeber.
+- **Headless fail-closed, nie silent-plaintext:** fehlt die Custody-Quelle, wirft der `SecretStore` (Boot bricht,
+  wie `Secrets.fromEnv`) — er degradiert **niemals** stillschweigend auf Klartext-on-disk (**genau die
+  `local.properties`-/CYP-190-Klasse, die NICHT geerbt werden darf**).
+- Verwahrt **beide Hub-Private-Keys (`signingKey`/`dhKey`, §5) + das Anthropic-Credential** at rest. **Credentials
+  gehen nie an die CP** (BYOA) — nur die At-Rest-Verwahrung härtet.
 
-Vorteile: kein selbstgebauter Krypto-Blob; Tink liefert misuse-resistant AEAD + Key-Rotation schon; der
-OS-Keystore liefert hardware-gestützte KEK-Verwahrung. **Reuse statt Doppel.** Alternativen (für PO): (a) reiner
-OS-Keystore pro Secret ohne Tink; (b) Status-quo Klartext-0600 beibehalten (nur wenn Keystore Phase 2 wird).
-**Credentials gehen nie an die CP** — bleibt so (BYOA), nur die At-Rest-Verwahrung härtet.
-
-Naht: eine **`expect/actual`-`KeyVault`**-Abstraktion **nur für die JVM-Seite** (libsecret via JNA / Keychain via
-Security.framework) als KEK-Provider für `SecretCipherFactory`. Android/iOS-`actual` = Client-Strang.
+`expect/actual` gilt für die JVM-Hub-Seite (Custody-Provider); Android/iOS-`actual` = Client-Strang. Die
+Cloud-Zukunft (Managed-Worker) verschiebt „Custody auf Nutzer-Hardware" zu „Custody in unserer Cloud" und
+**schwächt die BYOA-Garantie strukturell** — die Naht darf das nicht verbauen, aber es ist eine **separate**
+Vertrauensentscheidung (kommunikativ trennen).
 
 ---
 
@@ -277,8 +316,9 @@ android/ios), byte-identisch in **Server** (`api(projects.core)`) **und Client**
 
 **Neu & preserve-relevant (flaggen):**
 - `SqliteMessageStore` ändert Neustart-Verhalten (Messages künftig durabel) — Δ, aber Verbesserung (D4).
-- Keypair-Erststart ist idempotent; Keystore-KEK-Migration von `CYPPIE_MASTER_KEY`→OS-Keystore muss den
-  bestehenden Klartext-At-Rest **einmalig migrieren** (Reviewer-Strang für die Krypto-Prozedur).
+- Keypair-Erststart ist idempotent; die Umstellung des bestehenden **Klartext-At-Rest** (`project-config.json`/
+  `remote-tokens.json`) auf den `SecretStore` (Tink-Envelope, §6) braucht eine **einmalige Migration** (Prozedur +
+  Master-Key-Custody-Wahl = Reviewer-Strang/F5).
 - `port`/`host` müssen **config-getrieben** werden (heute Compile-Konstanten `8787`/`127.0.0.1` in
   `main`/`PlatformWiring`) — Hub-Packaging braucht das (D6).
 
@@ -292,15 +332,15 @@ Additive Schritte in **fett**; alles andere ist die bestehende `BootOrchestrator
 main(): host/port AUS CONFIG (statt const)                         ← D6
  └─ bootPlatform:
     1. PlatformConfig.load
-    2. **HubIdentity.ensure()**  → Ed25519-Keypair (idempotent, priv→KeyVault)   §5/§6
-    3. **KeyVault/SecretCipherFactory(KEK aus OS-Keystore)**                        §6
-    4. **ControlPlaneRegistrar.ensureRegistered(pubKey)** + **JwksCache.warm()**   §5
+    2. **SecretStore(SecretCipher + injizierte MasterKeyCustody)** — fail-closed     §6/F5
+    3. **HubIdentity.ensure()** → signingKey(Ed25519)+dhKey(X25519), priv→SecretStore §5/F2
+    4. **ControlPlaneRegistrar.ensureRegistered(bothPubKeys, pop=sig(CP-Nonce))** + **JwksCache.warm()** (nur F1-A) §5/F3
     5. Secrets.fromEnv · WorktreeManager
     6. BootOrchestrator.boot():
          … (unverändert) … ABER:
          - MessageStore = **SqliteMessageStore** statt InMemory                     §4/D4
          - **ResourceGovernor** konstruieren; admitSpawn vor der Spawn-Schleife      §7
-    7. AuthDeps: idp = **JwtIdentityProvider(JwksCache)** ODER Kratos (Naht)         §5
+    7. AuthDeps: idp = **IdentityToken**-Naht → CpJwtVerifier(F1-A) ODER KratosOpaque(F1-B) §5/F1
     8. installPlatform: Routen rufen **SessionManager** statt Inline-Switch-Lambda   §2
 ```
 
@@ -315,10 +355,10 @@ PtyManager → `BootedPlatform`.
 
 | Entität | Speicherort | Felder | Zone |
 |---|---|---|---|
-| **HubIdentity** | KeyVault (priv) + `.cyppie/hub-identity.json` (pub/meta) | `hubId`, `ed25519PubKey`, `createdAt` | Hub-only |
-| **Registrierung** | `.cyppie/hub-registration.json` | `hubId`, `ownerId`, `hubCert`, `registeredAt` | Hub-Cache CP-Eintrag |
-| **CP-JWKS-Cache** | `.cyppie/cp-jwks.json` | `keys[]`, `fetchedAt`, `ttl` | Hub-Cache |
-| **Credential (Anthropic)** | Tink-Envelope in `project-config.json`; KEK im OS-Keystore | `apiKey`(enc), AAD `project_config|{pid}|api_key` | Hub-only, nie CP |
+| **HubIdentity** | `SecretStore` (priv) + `.cyppie/hub-identity.json` (pub/meta) | `hubId`, `signingPubKey`(Ed25519), `dhPubKey`(X25519, Noise-Rohformat), `createdAt` | Hub-only |
+| **Registrierung** | `.cyppie/hub-registration.json` | `hubId`, `ownerId`, `hubCert`(unter-spez.→Reviewer), `pop`(Sig über CP-Nonce, Pflicht F3), `registeredAt` | Hub-Cache CP-Eintrag |
+| **CP-JWKS-Cache** | `.cyppie/cp-jwks.json` | `keys[]`(mit `kid`), `fetchedAt`, `ttl`/Offline-Fenster | Hub-Cache (nur F1-A) |
+| **Credential (Anthropic)** | Tink-Envelope via `SecretStore`; Master-Key-Custody = injizierte Policy (F5) | `apiKey`(enc), AAD `project_config|{pid}|api_key` | Hub-only, nie CP |
 | **Ressourcen-Budget** | Laufzeit (aus `Runtime`), kein Persistenz-Bedarf | `maxAgents`, `usedAgents` | Hub-only |
 
 Alles unter `gitRoot/.cyppie/`, 0600, gitignored — konsistent mit dem Ist-Layout.
@@ -331,9 +371,9 @@ Alles unter `gitRoot/.cyppie/`, 0600, gitignored — konsistent mit dem Ist-Layo
 |---|---|---|
 | **D1** | **3 vs 7 Default-Agenten** — Repo liefert **3** (`po`/`frontend`/`backend`); „7" ist nicht im Code. Was ist das Preserve-Ziel? | Preserve = der **Invariant** (§9), nicht die Zahl. Bitte reale `platform.config.json` bestätigen. |
 | **D2** | Lokales SQLite **direkt in BootOrchestrator** (wie die 3 Live-Sqlite-Stores) vs. durch `StoreRouter`/`PgStoreRouting` | **Direkt-Wiring** (Router bleibt der Cloud-Strang; preserve-sicher). |
-| **D3** | Secret-at-rest: **OS-Keystore-KEK + Tink-Envelope** (Reuse) vs. reiner OS-Keystore vs. Status-quo Klartext-0600 | **OS-Keystore-KEK + Tink** (kein Doppel, Rotation gratis). |
+| **D3** | **Master-Key-Custody (F5)** für den `SecretStore`: KMS / TPM-Enclave / Operator-Passphrase / OS-Keychain(interaktiv) / env-`CYPPIE_MASTER_KEY` | **Auftraggeber-[RATIFIKATION]** — kein „umsonst"-Weg auf fremder Hardware. Spine baut die injizierte Policy-Naht (Default-Impl Tink), präjudiziert die Wahl **nicht**. |
 | **D4** | **`SqliteMessageStore`** jetzt einführen (schließt In-Memory-Message-Lücke; Neustart-Durabilität) | **Ja** — echte Lücke, additiv. |
-| **D5** | **JWT-`IdentityProvider`** als neue Auth-Achse neben Kratos-Session (CP stellt JWT/JWKS) | Ja; Format/Claims/Rotation = Reviewer über PO. |
+| **D5** | **F1 — Offline-Verifikation:** (A) CP-signierter JWT (neue Sig-/Verifier-Achse) **oder** (B) online-`whoami` | **Auftraggeber-[RATIFIKATION]** — Spine baut die variant-agnostische `IdentityToken`-Naht (aud+sub==ownerId Pflicht), verdrahtet Offline-JWT **nicht** fest. Format/Claims/JWKS = Reviewer über PO. |
 | **D6** | `port`/`host` **config-getrieben** machen (heute Compile-Konstanten) | Ja — Packaging-Voraussetzung. |
 | **D7** | `SessionManager`-Extraktion jetzt vs. später | **Jetzt** (klein, entkoppelt Phase-2-Transport). |
 | **D8** | `-Xmx`/gebundener Dispatcher als Teil des `ResourceGovernor` | Ja — heute unbegrenzt = reales OOM-Risiko. |
@@ -345,30 +385,46 @@ Alles unter `gitRoot/.cyppie/`, 0600, gitignored — konsistent mit dem Ist-Layo
 
 | # | Risiko | Schwere | Mitigation |
 |---|---|---|---|
-| R1 | **Auth/JWT ist sicherheitskritisch** (Device-Code, Offline-Verify, Rotation) | Hoch | **Reviewer-Strang** gated die Krypto; mein Beitrag = nur die saubere `IdentityProvider`-Naht. Go für die Naht, No-Go für Bau vor Threat-Model. |
+| R1 | **Auth-Anker sicherheitskritisch** (F1 Token-Modell, F6 Verifier-Härtung, Device-Code) | Hoch | **Reviewer-Strang** gated die Krypto; mein Beitrag = die variant-agnostische `IdentityToken`-Naht (aud+sub==ownerId Pflicht). GO für die Naht, **NO-GO für Bau vor F1/F6**. |
 | R2 | `BootOrchestrator.boot()` = **900-Zeilen-Monolith**; Session-Manager-Extraktion fasst ihn an | Mittel | Additive Extraktion hinter Contract-Drift- + e2e-Boot-Tests; kein Verhaltens-Δ. |
 | R3 | `SqliteMessageStore` ändert Neustart-Semantik (Messages künftig durabel) | Niedrig | Bewusst geflaggt (D4); Migration = leer (neue DB). |
-| R4 | **Keystore-KEK-Migration** von Klartext/env → OS-Keystore | Mittel | Einmal-Migration; Prozedur = Reviewer-Strang. |
-| R5 | `EVENT_SCOPE_ALL == null` → Cross-Tenant-Event-Leak (S18-Flag im Code) | Niedrig (Lokal=single-tenant) | Für Lokal-Hub effektiv moot (ein Hub = ein Nutzer); vor echtem Multi-Tenant schließen. |
-| R6 | `StoreRouter`/`PgStoreRouting` dark — Versuchung, ihn für SQLite „anzuschalten" | Niedrig | D2: **nicht** anfassen; Cloud-Strang. |
-| R7 | Unbegrenzter `Dispatchers.IO`-Scope | Mittel | `ResourceGovernor` (§7/D8). |
+| R4 | **Klartext-At-Rest → `SecretStore`-Migration** + Master-Key-Custody auf fremder Hardware (F5) | Hoch | Headless fail-closed, **nie silent-plaintext**; Custody = injizierte Policy (D3); Prozedur = Reviewer-Strang. |
+| R5 | **Falsches Schlüsselmaterial / fehlender PoP** vergiftet den Phase-2-Noise-Anker **irreparabel** (F2/F3) | Hoch | Getrennte `signingKey`/`dhKey` + PoP-Pflichtfeld **schon in Phase-1-Registrierung** (§5/§11); Anker jetzt korrekt legen. |
+| R6 | **CP = Pubkey-Autorität** → kompromittierte CP kann Remote-MITM (F4); ZK-Aussage nur für Nutzdaten, nicht Metadaten | Hoch (Phase 2) | Frontend-Pinning (TOFU) + OOB-Fingerprint = Reviewer/Client-Strang; Registry-Format **pin-fähig/Noise-fertig** jetzt festlegen. |
+| R7 | **Lokal-Modus im LAN** (nicht echtem Loopback) → Bearer/JWT + Stream mitschneidbar (F8) | Mittel–Hoch | Anker heute = `bootHost=127.0.0.1` (Loopback); LAN ⇒ Remote/E2E erzwingen **oder** lokal TLS/Noise = [RATIFIKATION]. |
+| R8 | `EVENT_SCOPE_ALL == null` → Cross-Tenant-Event-Leak (S18-Flag im Code) | Niedrig (Lokal=single-tenant) | Für Lokal-Hub effektiv moot (ein Hub = ein Nutzer); vor echtem Multi-Tenant schließen. |
+| R9 | Unbegrenzter `Dispatchers.IO`-Scope / `StoreRouter` dark-Versuchung | Mittel/Niedrig | `ResourceGovernor` (§7/D8); Router **nicht** anfassen (D2). |
 
 **Go/No-Go-Empfehlung:** **GO** für den Spine-Entwurf — die Evolution ist überwiegend Formalisierung an bereits
-sauberen Nähten und **additiv/preserve-sicher.** **Gating-Unbekannte vor Bau:** (a) **D1** (3-vs-7 Klärung), (b)
-der **Auth-/Krypto-Threat-Model** des Reviewer-Strangs (R1/R4), (c) Ratifikation der `:core`-Kontrakt-Ergänzungen
-(§8). Kein Bau vor Auftraggeber-Ratifikation.
+sauberen Nähten und **additiv/preserve-sicher**; die Nähte abstrahieren die offenen Ratifikationen sauber statt
+sie vorwegzunehmen. **Gating-Unbekannte vor Bau (kein Bau vor Auftraggeber-Ratifikation):** (a) **D1** (3-vs-7
+Klärung); (b) der **Krypto-/Auth-Threat-Model** des Reviewer-Strangs — insb. **F1** (Token-Modell) + **F2**
+(Schlüssel) entschieden, **F3** (Register-PoP) + **F6** (Verifier-Härtung) zugesichert (§8/§9 dort); (c)
+Ratifikation der `:core`-Kontrakt-Ergänzungen (§8).
 
 ---
 
 ## 14. Cross-Strang-Nahtstellen (Synthese über PO)
 
-1. **`:core`/`:protocol`-Kontrakt** (→ Developer/UIUX): additive DTOs `HubDescriptor`/`HubList`/Connect-Metadaten/
-   JWT-Handshake — müssen durch CYP-234-Gates. **Wer besitzt `GET /hubs`-DTOs?** (CP-Fläche, Frontend-konsumiert.)
-2. **Auth-Kontrakt** (→ Reviewer): JWT-Format/Claims/JWKS-Rotation, Device-Code-Flow, KEK-Migrationsprozedur.
-   Meine Naht: `JwtIdentityProvider` + `JwksCache` + `KeyVault`-KEK-Quelle — **Formen, nicht Krypto.**
-3. **Keystore expect/actual** (→ Developer für Android/iOS-`actual`): meine JVM-`actual` (libsecret/Keychain) ist
-   Hub-seitig; Client-Session-Keys sind separater Strang.
-4. **Ressourcen-/Modus-UX** (→ UIUX): Kapazitäts-/Überlast-Events + Hub-/Modus-Auswahl konsumieren meine
-   `EventSink`-/`HubDescriptor`-Flächen.
+Deckungsgleich mit den **fünf Kontrakt-Nahtstellen** des Reviewer-Threat-Models (`14-…` §8) — als Interfaces mit
+fixen Invarianten gebaut, **ohne** die offenen Ratifikationen vorwegzunehmen:
 
-*— Ende Entwurf v1. Melde mich zur Synthese/Ratifikation.*
+1. **`IdentityToken`-Naht** (→ Reviewer): `verify(token, hub): Principal?`, **fail-closed**, **Pflicht** `aud` +
+   `sub==hub.ownerId` variantenunabhängig; trägt F1-A (CP-JWT, alg-Pin/`kid`/Offline-Fenster) **und** F1-B
+   (Kratos-Opaque online). Offline-JWT nicht fest verdrahtet. (§5) — Token-Format/JWKS/F1-Entscheidung = Reviewer.
+2. **`HubKeypair`/`HubIdentity`** (→ Reviewer): getrennt `signingKey`(Ed25519) + `dhKey`(X25519); Registry
+   persistiert **beide** PublicKeys **Noise-fertig** (§5/§11). F2-Anker.
+3. **`Register(hub)`-Call** (→ Reviewer/CP): **`pop` als Pflichtfeld** (Sig über CP-Nonce, Device-Code-gebunden) —
+   ohne PoP unvollständig (F3, NO-GO). (§5/§11)
+4. **`SecretStore` (expect/actual)** (→ Reviewer für Custody, Developer für Android/iOS-`actual`): headless,
+   fail-closed, **nie silent-plaintext**; Default = Tink-`SecretCipher`; **Master-Key-Custody = injizierte Policy**
+   (D3/F5). Client-Session-Keys = separater Strang. (§6)
+5. **CP-Egress-Grenze** (→ Reviewer/Developer): **ein** CP-Connector-Ausgang durch `SecretMasker`; Invariante
+   „kein Nutzdaten-/Credential-Byte ohne E2E" **testbar** (BYOA). (§2/Phase-2-Stub)
+
+Zusätzlich: **`:core`/`:protocol`-Kontrakt** (→ Developer/UIUX): additive DTOs `HubDescriptor`/`HubList`/
+Connect-Metadaten/Handshake-Frames — durch CYP-234-Gates. **Wer besitzt `GET /hubs`-DTOs?** (CP-Fläche,
+Frontend-konsumiert.) · **Ressourcen-/Modus-UX** (→ UIUX): Kapazitäts-/Überlast-Events konsumieren meine
+`EventSink`-/`HubDescriptor`-Flächen.
+
+*— Ende Entwurf v2 (Krypto/Auth an Reviewer-Strang angeglichen). Melde mich zur Synthese/Ratifikation.*
