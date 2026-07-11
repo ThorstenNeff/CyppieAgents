@@ -236,7 +236,12 @@ class BootOrchestrator(
 
     fun boot(): BootedPlatform {
         // S15 / CYP-96: operator overrides for repo + API key, per project, fall back to boot config.
-        val projectConfig = ProjectConfigStore(projectConfigFile, config.repo, secrets)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite, secret-at-rest (0600). The .db sits next to the
+        // legacy .json, which it imports ONCE (empty-table guard) so the GUI-set API key survives the switch (no
+        // "agents can't spawn" regression). In-memory File impl for tests (null).
+        val projectConfig = projectConfigFile?.let {
+            SqliteProjectConfigStore(it.toPath().resolveSibling("project-config.db"), config.repo, secrets, it.toPath())
+        } ?: ProjectConfigStore(null, config.repo, secrets)
         // CYP-247 S4 (§6.1, live-box migration, Rule ①): ADOPT a legacy shared `gitRoot/repo` clone into the
         // boot project's `clones/<pid>` (move + `git worktree repair`), preserving the existing worktrees + the
         // Auftraggeber's CLAUDE.md — NEVER a re-clone-fresh. No-op on a fresh install / once already per-project.
@@ -248,7 +253,10 @@ class BootOrchestrator(
         val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName, color = it.color?.ifBlank { null }) }
         // S17 / CYP-93: the cross-project share gate. The hub consults it for the AclMatrix permit
         // (channels authorized to reach into the active project); revoke → immediate fail-closed.
-        val channelShares = com.tneff.cyppieagents.comm.ChannelShareStore(channelShareFile)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite; .db next to the legacy .json, imported ONCE.
+        val channelShares = channelShareFile?.let {
+            com.tneff.cyppieagents.comm.SqliteChannelShareStore(it.toPath().resolveSibling("channel-shares.db"), legacyJson = it.toPath())
+        } ?: com.tneff.cyppieagents.comm.ChannelShareStore(null)
         // CYP-308 (Auftraggeber-confirmed OWNERSHIP model, supersedes the CYP-305 adopt-heuristic): the
         // config-seeded bootstrap agents belong PERMANENTLY to config.projectId — re-seeded from
         // platform.config.json EVERY boot (config.json is their durable source; NO store-persistence → no
@@ -257,8 +265,16 @@ class BootOrchestrator(
         // is synced onto HubState AFTER the config seed (see the boot-sync below the spawn loop), never seeded
         // under. So a durable active ≠ config.projectId shows ITS OWN roster (empty for a fresh project); the
         // config agents stay owned by — and visible under — config.projectId. Restart-stable by construction.
-        val projectAgents = ProjectAgentStore(projectAgentFile)
-        val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite; .db next to the legacy .json, imported ONCE
+        // (preserves an operator deploy's runtime-added agents).
+        val projectAgents = projectAgentFile?.let {
+            SqliteProjectAgentStore(it.toPath().resolveSibling("project-agents.db"), it.toPath())
+        } ?: ProjectAgentStore(null)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite; .db next to the legacy .json, imported ONCE
+        // (preserves a multi-project deploy's registry). In-memory File impl for tests (null).
+        val projectRegistry = projectRegistryFile?.let {
+            SqliteProjectRegistry(it.toPath().resolveSibling("projects.db"), config.projectId, legacyJson = it.toPath())
+        } ?: ProjectRegistry(projectRegistryFile, config.projectId)
         val durableActive = projectRegistry.activeProjectId()
         // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
         // S12 / CYP-81: single-source the active project into the hub (scopes channels/ACL/messages). The config
@@ -279,7 +295,9 @@ class BootOrchestrator(
         val tokenRegistry = TokenRegistry(secrets.agentTokens, secrets.operatorToken)
         // CYP-171: restore persisted remote-agent tokens into the registry (a pre-provisioned remote agent
         // reconnects after a restart), and compose the mint+persist / revoke issuer for AgentManagement.
-        val remoteTokenStore = RemoteTokenStore(remoteTokensFile)
+        // CYP-415 (D2): embedded-SQLite in prod (a real file), in-memory File impl for tests (null). Benign
+        // switch — remote tokens are runtime-minted (no first-boot import).
+        val remoteTokenStore = remoteTokensFile?.let { SqliteRemoteTokenStore(it.toPath()) } ?: RemoteTokenStore(null)
         remoteTokenStore.all().forEach { (agentId, token) -> tokenRegistry.bind(token, agentId) }
         val remoteTokenIssuer = RemoteTokenIssuer(tokenRegistry, remoteTokenStore)
 
@@ -358,12 +376,23 @@ class BootOrchestrator(
 
         // CYP-210: apply the durable overlay OVER the platform.config.json seed (overlay wins per-field), so
         // operator edits of name/color/persona/launch survive a restart. Scoped to the active project.
-        val agentOverrides = AgentOverrideStore(agentOverrideFile)
-        val tokenUsageStore = TokenUsageStore(tokenUsageFile) // CYP-325 (defect 2): shared, keyed by projectId
+        // CYP-415 (D2 + first-boot import): embedded-SQLite; the .db lives next to the legacy .json, which it
+        // imports ONCE (empty-table guard) so operator customizations (dev2 #B5419A, avatars) survive the switch
+        // ([[default-agents-no-reset]]). In-memory File impl for tests (null).
+        val agentOverrides = agentOverrideFile?.let {
+            SqliteAgentOverrideStore(it.toPath().resolveSibling("agent-overrides.db"), it.toPath())
+        } ?: AgentOverrideStore(null)
+        // CYP-415 (D2): embedded-SQLite in prod, in-memory for tests. Benign — token-usage re-derives per turn.
+        val tokenUsageStore = tokenUsageFile?.let { SqliteTokenUsageStore(it.toPath()) } ?: TokenUsageStore(null) // CYP-325
         // CYP-256 (.5a): the durable per-project agent-set store — constructed EARLY (above, for the CYP-305
         // effective-active seam); single source for runtime-added agents.
         // CYP-215: the avatar stores (blob bytes on disk + the self-hosted DiceBear preset resolver).
-        val avatarBlobs = com.tneff.cyppieagents.avatar.AvatarBlobStore(avatarDir)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite BLOBs; the .db sits next to the legacy avatars dir,
+        // whose PNG uploads it imports ONCE (empty-table guard) so operator avatar bytes survive the switch
+        // ([[default-agents-no-reset]]). In-memory File impl for tests (null).
+        val avatarBlobs = avatarDir?.let {
+            com.tneff.cyppieagents.avatar.SqliteAvatarBlobStore(it.toPath().resolveSibling("avatars.db"), it.toPath())
+        } ?: com.tneff.cyppieagents.avatar.AvatarBlobStore(null)
         val avatarPresets = com.tneff.cyppieagents.avatar.AvatarPresetResolver(avatarPresetsDir)
         agentOverrides.allFor(config.projectId).forEach { (agentId, ov) ->
             if (ov.name != null || ov.color != null) state.editAgent(agentId, ov.name, ov.color)
@@ -386,7 +415,8 @@ class BootOrchestrator(
         }
         val tokenByAgent = secrets.agentTokens.entries.associate { (token, agent) -> agent to token }
         // CYP-167: durable session-resume binding store. Null file → in-memory off-switch (tests/dev).
-        val sessionStore = sessionStoreFile?.let { com.tneff.cyppieagents.connector.JsonFileSessionStore(it) }
+        // CYP-415 (D2): embedded-SQLite in prod; in-memory (null) for tests. Benign — session ids re-derive.
+        val sessionStore = sessionStoreFile?.let { com.tneff.cyppieagents.connector.SqliteSessionStore(it.toPath().resolveSibling("session-store.db")) }
         // CYP-355 (BE-2): the shared resume-outcome signal (keyed by projectId+agentId), and a late-bound holder
         // for the single host PtyManager (constructed after the runtimes, below) so the per-runtime hand-off
         // motors + LifecycleManager.onTeardown can reach it. Every hand-off/stop happens post-boot, once set.
@@ -848,10 +878,17 @@ class BootOrchestrator(
 
         // S16 / CYP-89: Product-Lead reports fold READ sources (events/agents/channels/inbox) into
         // content-free, immutable snapshots — operator-gated at /api/reports.
-        val reportStore = com.tneff.cyppieagents.report.ReportStore(
+        // CYP-415 (D2): embedded-SQLite in prod, in-memory when null (tests). Benign — reports re-generatable.
+        val reportStore = reportFile?.let {
+            com.tneff.cyppieagents.report.SqliteReportStore(
+                generator = com.tneff.cyppieagents.report.ReportGenerator(eventSink, state, hub),
+                projectId = config.projectId,
+                dbPath = it.toPath().resolveSibling("reports.db"),
+            )
+        } ?: com.tneff.cyppieagents.report.ReportStore(
             generator = com.tneff.cyppieagents.report.ReportGenerator(eventSink, state, hub),
             projectId = config.projectId,
-            file = reportFile, // CYP-220 S6: File-durable when supplied (prod), in-memory when null (tests)
+            file = null,
         )
 
         // S13 / CYP-91: the multi-project registry (loaded early, above, for the CYP-305 effective-active seam)
@@ -861,7 +898,8 @@ class BootOrchestrator(
         // CYP-326 — the platform-side compact orchestrator (boot project; MVP single-project). Watches the PO's
         // context (CYP-325 feed); on a >threshold up-crossing + "compact allowed" it runs the staggered team
         // compaction. Idle-gate via CYP-324 busy; completion via the CYP-326 compact_result signal; honest X/N.
-        val compactConfigStore = CompactConfigStore(compactConfigFile)
+        // CYP-415 (D2): embedded-SQLite in prod, in-memory for tests. Benign — fail-closed default re-applies.
+        val compactConfigStore = compactConfigFile?.let { SqliteCompactConfigStore(it.toPath()) } ?: CompactConfigStore(null)
         val poId = config.agents.firstOrNull { it.role == com.tneff.cyppieagents.model.Role.PO }?.id
         val compactOrchestrator = CompactOrchestrator(
             scope = scope,

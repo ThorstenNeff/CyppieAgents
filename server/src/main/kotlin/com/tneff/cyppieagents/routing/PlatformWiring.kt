@@ -200,10 +200,17 @@ fun Application.bootPlatform(
         worktrees = worktrees,
         spawner = com.tneff.cyppieagents.connector.ProcessBuilderSpawner(),
         scope = scope,
+        // CYP-415 (D4): embedded-SQLite message store — messages survive restart (was InMemory-hardcoded → lost
+        // on every boot). Out-of-repo under the gitRoot, WAL, gitignored; one local impl behind the store seam.
+        storeFactory = {
+            com.tneff.cyppieagents.comm.SqliteMessageStore(gitRoot.toPath().resolve(".cyppie/messages.db"))
+        },
         // CYP-132: durable per-recipient delivered-id log — out-of-repo under the gitRoot, gitignored
         // (newline-separated keys, atomic-move flush). Survives restart so re-attach replays correctly.
-        deliveryLog = com.tneff.cyppieagents.comm.JsonFileDeliveryLog(
-            gitRoot.toPath().resolve("delivery-log.txt").toFile(),
+        // CYP-415 (D2): embedded-SQLite delivered-id set (composite-PK, set-idempotent). Benign switch — dedup
+        // is over message.id, so a fresh log never skips a new message (CYP-132 R3).
+        deliveryLog = com.tneff.cyppieagents.comm.SqliteDeliveryLog(
+            gitRoot.toPath().resolve(".cyppie/delivery-log.db"),
         ),
         // CYP-43: persistent SQLite sink (WAL/batch) + hook spool, both resolved from the events
         // config under the git root (not in the repo). Default in-memory only for tests.
@@ -237,12 +244,12 @@ fun Application.bootPlatform(
         sessionStoreFile = gitRoot.toPath().resolve("session-store.json").toFile(),
         // CYP-171: runtime-minted remote-agent tokens — out-of-repo under the gitRoot, 0600, gitignored,
         // NEVER logged (a committed token would leak into the shared remote). Secret-at-rest.
-        remoteTokensFile = gitRoot.toPath().resolve("remote-tokens.json").toFile(),
+        remoteTokensFile = gitRoot.toPath().resolve(".cyppie/remote-tokens.db").toFile(), // CYP-415 (D2)
         // CYP-210: durable per-agent name/color/persona/launch overlay — out-of-repo under the gitRoot,
         // gitignored; overlaid over the platform.config.json seed at boot (operator edits survive restart).
         agentOverrideFile = gitRoot.toPath().resolve(".cyppie/agent-overrides.json").toFile(),
-        tokenUsageFile = gitRoot.toPath().resolve(".cyppie/token-usage.json").toFile(), // CYP-325 (defect 2)
-        compactConfigFile = gitRoot.toPath().resolve(".cyppie/compact-config.json").toFile(), // CYP-326
+        tokenUsageFile = gitRoot.toPath().resolve(".cyppie/token-usage.db").toFile(), // CYP-325 → CYP-415 (D2)
+        compactConfigFile = gitRoot.toPath().resolve(".cyppie/compact-config.db").toFile(), // CYP-326 → CYP-415 (D2)
         // CYP-256 (.5a): the durable per-project agent-set store — out-of-repo under the gitRoot, gitignored,
         // next to the other .cyppie stores. Single source for runtime-added agents (non-boot agents survive restart).
         projectAgentFile = gitRoot.toPath().resolve(".cyppie/project-agents.json").toFile(),

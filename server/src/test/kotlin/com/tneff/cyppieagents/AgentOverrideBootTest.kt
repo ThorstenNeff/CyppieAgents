@@ -74,7 +74,9 @@ class AgentOverrideBootTest {
             b1.agentManagement.edit("backend", AgentEdit(role = Role.WORKER, name = "Backend Bob", color = "#3B82F6", persona = "# custom persona"))
             assertEquals("Backend Bob", b1.state.agent("backend")!!.name, "name is live after edit")
             assertEquals("#3B82F6", b1.state.agent("backend")!!.color, "color is live after edit")
-            assertTrue(ovFile.isFile, "the edit persisted to the overlay file")
+            // CYP-415 (D2): the overlay is now embedded-SQLite (agent-overrides.db, sibling of the legacy .json),
+            // not the .json file. The behavior (edits survive restart) is proven by boot #2 below.
+            assertTrue(File(root, ".cyppie/agent-overrides.db").isFile, "the edit persisted to the embedded-SQLite overlay")
 
             // Boot #2 (RESTART) — same config seed + same overlay file → the overlay WINS per field.
             val b2 = boot(root, ovFile)
