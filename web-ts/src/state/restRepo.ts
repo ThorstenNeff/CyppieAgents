@@ -3,7 +3,7 @@
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
 import { RestClient } from '../net/rest'
-import type { AclEntry, Channel, Message1 } from '../types/generated/contract'
+import type { AclEntry, Channel, Message1, AgentRunStateEvent } from '../types/generated/contract'
 
 /** CYP-426 interim: `:core` TerminalMode. The server maps this to the terminal-control state machine. */
 export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
@@ -20,6 +20,9 @@ export interface HubRepo {
   getMessages(channelId: string, since?: number): Promise<Message1[]>
   /** POST /api/channels/{id}/messages — returns the server Message; the same message also echoes over /ws/comm. */
   postMessage(channelId: string, body: string): Promise<Message1>
+  /** POST /api/agents/{id}/{start|stop|restart} (operator). Returns the server run-state; the same state also
+   *  arrives on /ws/lifecycle — non-optimistic, so the header flips on that event, not the click (CYP-431). */
+  setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -48,5 +51,8 @@ export class RestHubRepo implements HubRepo {
   postMessage(channelId: string, body: string): Promise<Message1> {
     // SendMessageRequest { body } — hand-modeled (REST-only DTO, not in the asyncapi export; CYP-426).
     return this.rest.post<Message1>(`/api/channels/${encodeURIComponent(channelId)}/messages`, { body })
+  }
+  setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent> {
+    return this.rest.post<AgentRunStateEvent>(`/api/agents/${encodeURIComponent(agentId)}/${action}`)
   }
 }

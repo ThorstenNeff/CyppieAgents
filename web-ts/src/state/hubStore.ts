@@ -11,10 +11,21 @@ import {
   setAclPending,
   clearAclPending,
   ingestMessages,
+  applyRunState,
+  setLifecyclePending,
+  clearLifecyclePending,
   type HubState,
   type CommConnection,
+  type LifecycleAction,
 } from './hubReducers'
-import type { AclEntry, Channel, Message1, CommWsServerEvent, AgentTerminalControlEvent } from '../types/generated/contract'
+import type {
+  AclEntry,
+  Channel,
+  Message1,
+  CommWsServerEvent,
+  AgentTerminalControlEvent,
+  AgentRunStateEvent,
+} from '../types/generated/contract'
 import type { AclDimension } from '../comm/aclModel'
 
 export interface HubStore extends HubState {
@@ -26,6 +37,9 @@ export interface HubStore extends HubState {
   clearAclPending: (channelId: string, agentId: string, dim: AclDimension) => void
   ingestMessages: (msgs: readonly Message1[]) => void
   setCommConnection: (connection: CommConnection) => void
+  onRunState: (event: AgentRunStateEvent) => void
+  markLifecyclePending: (agentId: string, action: LifecycleAction) => void
+  clearLifecyclePending: (agentId: string) => void
 }
 
 export const useHubStore = create<HubStore>((set) => ({
@@ -38,4 +52,7 @@ export const useHubStore = create<HubStore>((set) => ({
   clearAclPending: (channelId, agentId, dim) => set((s) => clearAclPending(s, channelId, agentId, dim)),
   ingestMessages: (msgs) => set((s) => ingestMessages(s, msgs)),
   setCommConnection: (commConnection) => set({ commConnection }),
+  onRunState: (event) => set((s) => applyRunState(s, event)),
+  markLifecyclePending: (agentId, action) => set((s) => setLifecyclePending(s, agentId, action)),
+  clearLifecyclePending: (agentId) => set((s) => clearLifecyclePending(s, agentId)),
 }))

@@ -11,6 +11,9 @@ import {
   ingestMessages,
   applyCommEvent,
   applyTerminalControl,
+  applyRunState,
+  setLifecyclePending,
+  clearLifecyclePending,
   type HubState,
 } from './hubReducers'
 import { pendingKey, enforcedValue } from '../comm/aclModel'
@@ -110,6 +113,27 @@ describe('applyCommEvent — the three server variants', () => {
     expect(enforcedValue(s.aclEntries, 'po-frontend', 'frontend')).toEqual({ canRead: true, canWrite: false })
     s = applyCommEvent(s, { type: 'message', message: msg('m1', 'po-frontend', 'hi') })
     expect(s.messagesByChannel.get('po-frontend')).toHaveLength(1)
+  })
+})
+
+describe('lifecycle run-state (CYP-431 — non-optimistic)', () => {
+  it('setLifecyclePending marks a request in flight WITHOUT changing the run-state', () => {
+    const s = setLifecyclePending(emptyHubState, 'backend', 'start')
+    expect(s.lifecyclePending.get('backend')).toBe('start')
+    expect(s.runStateByAgent.has('backend')).toBe(false) // no optimistic state
+  })
+
+  it('applyRunState sets the server-confirmed state AND resolves the pending for that agent', () => {
+    const pending = setLifecyclePending(emptyHubState, 'backend', 'start')
+    const confirmed = applyRunState(pending, { agentId: 'backend', runState: 'RUNNING' })
+    expect(confirmed.runStateByAgent.get('backend')).toBe('RUNNING')
+    expect(confirmed.lifecyclePending.has('backend')).toBe(false)
+  })
+
+  it('clearLifecyclePending drops a request that got no event (rejected); no-op ref when none pending', () => {
+    const pending = setLifecyclePending(emptyHubState, 'backend', 'stop')
+    expect(clearLifecyclePending(pending, 'backend').lifecyclePending.has('backend')).toBe(false)
+    expect(clearLifecyclePending(emptyHubState, 'backend')).toBe(emptyHubState)
   })
 })
 

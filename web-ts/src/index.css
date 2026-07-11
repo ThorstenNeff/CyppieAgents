@@ -60,3 +60,29 @@ body,
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
 }
+
+/* CYP-431 (P2-a) — the agent lifecycle header. CYP-369 distribution: the controls cluster is flex-shrink:0 (every
+   control keeps width>0 at a narrow window); the status cluster (min-width:0) shrinks and the label ellipsises. */
+.lifecycle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lifecycle-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0; /* allow the label to shrink/ellipsise before the controls do */
+}
+.lifecycle-label {
+  color: var(--md-sys-color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lifecycle-controls {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0; /* CYP-369: controls never shrink to zero-width */
+}

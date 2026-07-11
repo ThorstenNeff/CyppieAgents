@@ -10,9 +10,12 @@ import { Composer } from './agentview/Composer'
 import { terminalModeSelection, type TerminalControlState, type SelectedView } from './agentview/terminalModeSelection'
 import { useAgentTranscript } from './agentview/useAgentTranscript'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
+import { LifecycleHeader } from './agentview/LifecycleHeader'
+import type { LifecycleState } from './agentview/lifecycleStatus'
 import { ShellGate } from './terminal/ShellGate'
 import { XtermView } from './terminal/XtermView'
 import type { SocketDeps } from './state/hubConfig'
+import type { LifecycleAction } from './state/hubReducers'
 
 /** The localized agent-ready line (parity with the Kotlin default; web-ts has no i18n yet). */
 const READY_NOTICE = 'Agent bereit'
@@ -24,10 +27,24 @@ export interface AgentWindowProps {
   operator: boolean
   terminalState: TerminalControlState
   onRequestMode: (agentId: string, mode: SelectedView) => void
+  lifecycleState: LifecycleState
+  lifecyclePending: LifecycleAction | undefined
+  onLifecycle: (agentId: string, action: LifecycleAction) => void
   socketDeps?: SocketDeps
 }
 
-export function AgentWindow({ agentId, wsBase, token, operator, terminalState, onRequestMode, socketDeps }: AgentWindowProps) {
+export function AgentWindow({
+  agentId,
+  wsBase,
+  token,
+  operator,
+  terminalState,
+  onRequestMode,
+  lifecycleState,
+  lifecyclePending,
+  onLifecycle,
+  socketDeps,
+}: AgentWindowProps) {
   const { rows, send } = useAgentTranscript({
     baseUrl: wsBase,
     agentId,
@@ -41,6 +58,15 @@ export function AgentWindow({ agentId, wsBase, token, operator, terminalState, o
 
   return (
     <div className="agent-window" data-testid={`agent-window.${agentId}`}>
+      <LifecycleHeader
+        agentId={agentId}
+        state={lifecycleState}
+        pending={lifecyclePending}
+        operator={operator}
+        onStart={(id) => onLifecycle(id, 'start')}
+        onStop={(id) => onLifecycle(id, 'stop')}
+        onRestart={(id) => onLifecycle(id, 'restart')}
+      />
       <ModeToggle state={terminalState} operator={operator} onRequestMode={(mode) => onRequestMode(agentId, mode)} />
       <ContentViewSwitch
         active={active}

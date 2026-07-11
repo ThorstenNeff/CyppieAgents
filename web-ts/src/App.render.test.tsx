@@ -25,6 +25,7 @@ const fakeRepo = (): HubRepo => ({
   requestMode: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn().mockResolvedValue([]),
   postMessage: vi.fn().mockResolvedValue({ id: 'x', channelId: '', from: '', body: '', ts: 0 }),
+  setLifecycle: vi.fn().mockResolvedValue({ agentId: 'backend', runState: 'RUNNING' }),
 })
 
 beforeEach(() => {
@@ -122,5 +123,30 @@ describe('App assembly (CYP-425)', () => {
     })
     expect(getByTestId('comm-status').className).toContain('comm-status-revoked')
     expect(await findByTestId('comm-revoked-lock')).toBeTruthy() // composer locked on revoke
+  })
+
+  it('each agent window carries a lifecycle header driven by the /ws/lifecycle feed (CYP-431)', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    // before any lifecycle event → UNKNOWN
+    expect((await findByTestId('lifecycle.status.backend')).textContent).toContain('Unbekannt')
+    const feed = hub.sockets.find((s) => s.url.includes('/ws/lifecycle'))!
+    await act(async () => {
+      feed.emitOpen()
+      feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'RUNNING' }))
+    })
+    expect(getByTestId('lifecycle.status.backend').textContent).toContain('Aktiv') // feed drives state (non-optimistic)
+  })
+
+  it('an operator start posts the lifecycle request to the repo (CYP-431)', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    const { findByTestId } = render(
+      <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    fireEvent.click(await findByTestId('lifecycle.start.backend'))
+    expect(repo.setLifecycle).toHaveBeenCalledWith('backend', 'start')
   })
 })
