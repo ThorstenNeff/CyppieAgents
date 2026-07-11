@@ -6,6 +6,7 @@ import {
   applyAcl,
   applyAclEntry,
   setAclPending,
+  clearAclPending,
   applyMessage,
   applyCommEvent,
   applyTerminalControl,
@@ -56,6 +57,19 @@ describe('ACL — non-optimistic (Spec §W9.2)', () => {
     const echoed = applyAclEntry(pending, acl('po-frontend', 'frontend', true, false))
     expect(enforcedValue(echoed.aclEntries, 'po-frontend', 'frontend')).toEqual({ canRead: true, canWrite: false })
     expect(echoed.pendingAcl.has(pendingKey('po-frontend', 'frontend', 'write'))).toBe(false)
+  })
+
+  it('clearAclPending removes a pending flag with no echo — the reject path (CYP-435)', () => {
+    const pending = setAclPending(base, 'po-frontend', 'frontend', 'write', false)
+    expect(pending.pendingAcl.has(pendingKey('po-frontend', 'frontend', 'write'))).toBe(true)
+    const cleared = clearAclPending(pending, 'po-frontend', 'frontend', 'write')
+    expect(cleared.pendingAcl.has(pendingKey('po-frontend', 'frontend', 'write'))).toBe(false)
+    // enforced value untouched — a reject changes nothing, it just stops the spinner
+    expect(enforcedValue(cleared.aclEntries, 'po-frontend', 'frontend')).toEqual({ canRead: true, canWrite: true })
+  })
+
+  it('clearAclPending is a no-op (same reference) when nothing is pending', () => {
+    expect(clearAclPending(base, 'po-frontend', 'frontend', 'read')).toBe(base)
   })
 
   it('upsert replaces the cell rather than accumulating duplicates', () => {

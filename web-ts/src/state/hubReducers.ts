@@ -70,6 +70,17 @@ export function setAclPending(state: HubState, channelId: string, agentId: strin
   return { ...state, pendingAcl }
 }
 
+/** Clear an in-flight PUT that will NOT be echoed — i.e. the server REJECTED it (409 po_lockout_protected, 4xx).
+ *  Without this the switch stays aria-busy forever, because applyAclEntry only clears pending on the AclEvent echo,
+ *  which a rejected PUT never sends (CYP-435). */
+export function clearAclPending(state: HubState, channelId: string, agentId: string, dim: AclDimension): HubState {
+  const key = pendingKey(channelId, agentId, dim)
+  if (!state.pendingAcl.has(key)) return state
+  const pendingAcl = new Map(state.pendingAcl)
+  pendingAcl.delete(key)
+  return { ...state, pendingAcl }
+}
+
 /** Append a comm message, deduped by id (reconnect replay is idempotent). */
 export function applyMessage(state: HubState, msg: Message1): HubState {
   const existing = state.messagesByChannel.get(msg.channelId) ?? []
