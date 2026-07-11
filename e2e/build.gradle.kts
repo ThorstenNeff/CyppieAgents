@@ -39,3 +39,20 @@ dependencies {
 
     testImplementation(libs.kotlin.testJunit)
 }
+
+// web-e2e (§8 test infra) — boot the hermetic platform (FakeSpawner/FakeGit, no real claude/key/repo) on a
+// FIXED port for Playwright's `webServer` to start and drive a real browser against. Runs the boot main from
+// the TEST source set (where the CYP-106 harness lives), NOT the default `check` path. workingDir = repo root
+// so the boot main can read the reference fixture at `web-e2e/fixture/index.html`. Stop with Ctrl-C / process kill.
+tasks.register<JavaExec>("webE2eServer") {
+    group = "verification"
+    description = "web-e2e: boot the hermetic E2E platform on \$WEB_E2E_PORT (default 8791) for Playwright."
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.tneff.cyppieagents.e2e.WebE2eServerMainKt")
+    workingDir = rootProject.projectDir
+    System.getenv("WEB_E2E_PORT")?.let { environment("WEB_E2E_PORT", it) }
+    standardOutput = System.out
+    errorOutput = System.err
+}
+

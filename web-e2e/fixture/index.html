@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>web-e2e reference client (test fixture)</title>
+</head>
+<body>
+  <h1>web-e2e reference client</h1>
+  <p><strong>Test fixture — NOT the product SPA.</strong> It is the executable contract the TS SPA must
+  satisfy: dedup (agent-events by gapless <code>seq&nbsp;&gt;&nbsp;cursor</code>, comm by <code>Message.id</code>)
+  and <em>inert</em> rendering (<code>textContent</code>, never <code>innerHTML</code>). Served same-origin by the
+  hermetic Ktor harness so the WebSocket handshake is same-origin (no CORS variable). When the real SPA lands,
+  the DOM-level teeth re-point at it with the same assertions.</p>
+
+  <h2>Agent events — <code>/ws/agent</code></h2>
+  <ul id="agent-events"></ul>
+
+  <h2>Comm messages — <code>/ws/comm</code> + REST history</h2>
+  <ul id="comm-messages"></ul>
+
+  <script>
+  (function () {
+    var wsBase = 'ws://' + location.host;
+    var httpBase = location.origin;
+    var agentList = document.getElementById('agent-events');
+    var commList = document.getElementById('comm-messages');
+
+    var state = {
+      agentWs: null, agentId: null, token: null,
+      seenSeq: new Set(), lastSeq: 0,
+      agentFrames: 0,           // raw frames the server sent since the last reset (isolates the server seq-guard)
+      seenCommId: new Set(),
+    };
+
+    function renderAgent(stored) {
+      state.agentFrames += 1;
+      if (state.seenSeq.has(stored.seq)) return;          // client-side dedup (mirrors seq>cursor)
+      state.seenSeq.add(stored.seq);
+      if (stored.seq > state.lastSeq) state.lastSeq = stored.seq;
+      var li = document.createElement('li');
+      li.className = 'agent-event';
+      li.setAttribute('data-seq', String(stored.seq));
+      li.textContent = 'seq=' + stored.seq + ' type=' + (stored.event && stored.event.type);
+      agentList.appendChild(li);
+    }
+
+    function renderComm(msg) {
+      if (state.seenCommId.has(msg.id)) return;            // dedup by Message.id
+      state.seenCommId.add(msg.id);
+      var li = document.createElement('li');
+      li.className = 'comm-msg';
+      li.setAttribute('data-id', msg.id);
+      var from = document.createElement('span');
+      from.className = 'comm-from';
+      from.textContent = msg.from;
+      var body = document.createElement('span');
+      body.className = 'comm-body';
+      body.textContent = msg.body;                          // INERT: a payload is literal text, never parsed HTML
+      li.appendChild(from);
+      li.appendChild(body);
+      commList.appendChild(li);
+    }
+
+    function openAgent(agentId, since, token) {
+      var url = wsBase + '/ws/agent?agentId=' + encodeURIComponent(agentId) +
+        '&since=' + encodeURIComponent(since) + '&token=' + encodeURIComponent(token);
+      var ws = new WebSocket(url);
+      ws.onmessage = function (ev) { try { renderAgent(JSON.parse(ev.data)); } catch (e) {} };
+      state.agentWs = ws;
+      return ws;
+    }
+
+    window.cyppie = {
+      connectAgent: function (agentId, since, token) {
+        state.agentId = agentId; state.token = token;
+        return new Promise(function (resolve) { openAgent(agentId, since, token).onopen = function () { resolve(true); }; });
+      },
+      // Reconnect with the LAST cursor — the exact reconnect a client does after a socket drop. The server's
+      // `seq > cursor` guard (CYP-198) must then send nothing already seen.
+      reconnectAgent: function () {
+        state.agentFrames = 0;
+        return new Promise(function (resolve) {
+          var old = state.agentWs;
+          var reopen = function () { openAgent(state.agentId, state.lastSeq, state.token).onopen = function () { resolve(true); }; };
+          if (old && old.readyState === WebSocket.OPEN) { old.onclose = reopen; old.close(); } else { reopen(); }
+        });
+      },
+      connectComm: function (token) {
+        var ws = new WebSocket(wsBase + '/ws/comm?token=' + encodeURIComponent(token));
+        ws.onmessage = function (ev) { try { var f = JSON.parse(ev.data); if (f.type === 'message') renderComm(f.message); } catch (e) {} };
+        return new Promise(function (resolve) { ws.onopen = function () { resolve(true); }; });
+      },
+      // REST history render (the reconnect/history path) — used by the XSS tooth to prove inert rendering
+      // through the REAL comm feed without depending on live-WS timing.
+      loadComm: function (channel, token) {
+        return fetch(httpBase + '/api/channels/' + encodeURIComponent(channel) + '/messages',
+          { headers: { Authorization: 'Bearer ' + token } })
+          .then(function (r) { return r.json(); })
+          .then(function (msgs) { msgs.forEach(renderComm); return msgs.length; });
+      },
+    };
+
+    // Live getters the teeth read.
+    Object.defineProperty(window.cyppie, 'agentSeqs', { get: function () {
+      return Array.prototype.map.call(agentList.querySelectorAll('.agent-event'), function (li) { return Number(li.getAttribute('data-seq')); });
+    }});
+    Object.defineProperty(window.cyppie, 'agentFrames', { get: function () { return state.agentFrames; }});
+    Object.defineProperty(window.cyppie, 'commIds', { get: function () {
+      return Array.prototype.map.call(commList.querySelectorAll('.comm-msg'), function (li) { return li.getAttribute('data-id'); });
+    }});
+  })();
+  </script>
+</body>
+</html>

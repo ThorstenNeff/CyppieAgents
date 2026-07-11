@@ -21,6 +21,7 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.model.SwitchActiveRequest
 import com.tneff.cyppieagents.routing.installPlatform
+import io.ktor.server.routing.routing
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
@@ -145,6 +146,13 @@ fun e2ePlatform(
     // resolved in BootOrchestrator). A full-boot terminal journey injects a fake command here to drive the
     // real boot→PtyManager wiring deterministically (no real `claude`/`bash` dependency).
     terminalLaunchCommand: List<String>? = null,
+    // web-e2e (§8 test infra): bind a FIXED port (default 0 = ephemeral, unchanged for every existing journey)
+    // so a long-lived boot main can advertise a stable URL to Playwright's `webServer`.
+    port: Int = 0,
+    // web-e2e: extra routes mounted ALONGSIDE installPlatform on the SAME server — used only by the web-e2e boot
+    // main to serve the reference DOM fixture same-origin (no WS cross-origin/CORS). Null → nothing extra (prod
+    // path / every existing journey unchanged).
+    extraRoutes: (io.ktor.server.routing.Routing.() -> Unit)? = null,
 ): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
@@ -216,14 +224,20 @@ fun e2ePlatform(
     // leaves the durable-active as the active view — the harness must mirror that, not force config.projectId.
     booted.state.rescope(booted.activeProjectId)
 
-    val server = embeddedServerNetty(booted)
+    val server = embeddedServerNetty(booted, port, extraRoutes)
     server.start(wait = false)
-    val port = runBlocking { server.engine.resolvedConnectors().first().port }
-    return E2ePlatform(booted, server, "http://127.0.0.1:$port", now, scope, gitRoot, deleteGitRootOnClose = gitRootOverride == null)
+    val resolvedPort = runBlocking { server.engine.resolvedConnectors().first().port }
+    return E2ePlatform(booted, server, "http://127.0.0.1:$resolvedPort", now, scope, gitRoot, deleteGitRootOnClose = gitRootOverride == null)
 }
 
-private fun embeddedServerNetty(booted: BootedPlatform) =
-    io.ktor.server.engine.embeddedServer(Netty, port = 0) { installPlatform(booted) }
+private fun embeddedServerNetty(
+    booted: BootedPlatform,
+    port: Int = 0,
+    extraRoutes: (io.ktor.server.routing.Routing.() -> Unit)? = null,
+) = io.ktor.server.engine.embeddedServer(Netty, port = port) {
+    installPlatform(booted)
+    if (extraRoutes != null) routing { extraRoutes() }
+}
 
 /** Faked git CommandRunner — exit 0, creates clone/worktree dirs; rev-parse "absent" so add uses `-b`. */
 private class FakeGit : CommandRunner {
