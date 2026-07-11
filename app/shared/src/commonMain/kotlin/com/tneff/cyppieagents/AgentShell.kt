@@ -135,7 +135,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import coil3.ImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.network.ktor3.KtorNetworkFetcherFactory
-import com.tneff.cyppieagents.net.sharedWsHttpClient
+import com.tneff.cyppieagents.net.hub.HubTransport
+import com.tneff.cyppieagents.net.hub.TransportModeResolver
 import com.tneff.cyppieagents.terminal.TerminalView
 import com.tneff.cyppieagents.terminal.WsTerminalSession
 import io.ktor.client.HttpClient
@@ -251,6 +252,11 @@ fun AgentShell(
      *  so a session-only user (no operator token) authenticates its reads/sockets. `null`/absent → none (a browser
      *  session rides its same-origin `ory_kratos_session` cookie; the operator token stays break-glass). */
     sessionToken: () -> String? = { null },
+    /** CYP-411 — the hub connection transport (Epic CYP-395 S-H). `null` → the Phase-1 [LocalHubTransport] built
+     *  from [config]'s [ShellConfig.hubEndpoint] (behaviour-identical to the pre-seam direct-connect). Tests inject
+     *  a stub/local transport (the mode-flip Stub path); every REST repo + WS live-source below reads its
+     *  `httpBaseUrl`/`wsBaseUrl`/`httpClient` from here, so they are mode-blind. */
+    transport: HubTransport? = null,
     /** CYP-268 R3 — the current app theme mode (owned + persisted by the App.kt seam). Default SYSTEM keeps the
      *  R1 follow-system behaviour and leaves every existing call site/test unchanged (the toggle is opt-in chrome). */
     themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -277,11 +283,17 @@ fun AgentShell(
     val rosterTitle = stringResource(Res.string.workspace_members_title)
     val compactTitle = stringResource(Res.string.compact_window_title)
 
-    // One shared WS+HTTP client (created here — the agent-management REST client below needs it). Closed
-    // when the shell leaves composition. The JVM/desktop engine (CIO) is wired; other engines = CYP-27.
-    // CYP-115: keep-alive pinging (sharedWsHttpClient) so idle comm/lifecycle sockets aren't Darwin-idle-closed.
-    val httpClient = remember { sharedWsHttpClient(sessionToken) }
-    DisposableEffect(Unit) { onDispose { httpClient.close() } }
+    // CYP-411 (Epic CYP-395 S-H) — the hub connection transport seam. Phase 1 = LocalHubTransport (direct HTTP/WS
+    // on the hub's endpoint, from ShellConfig), which OWNS + builds the one shared WS+HTTP client exactly as before
+    // (sharedWsHttpClient(sessionToken): CYP-115 keep-alive + X-Session-Token + same-origin credentials). Every repo
+    // / live-source below reads httpBaseUrl/wsBaseUrl/httpClient from the transport, so it is mode-blind. Closed when
+    // the shell leaves composition. `httpClient` stays a local alias so the ~25 call sites + remember-keys are
+    // unchanged (pure refactor). TransportModeResolver.defaultMode() = LOCAL in Phase 1; S-J drives the choice.
+    val resolvedTransport = remember {
+        transport ?: TransportModeResolver.create(TransportModeResolver.defaultMode(), cfg.hubEndpoint(), sessionToken)
+    }
+    val httpClient = resolvedTransport.httpClient
+    DisposableEffect(Unit) { onDispose { resolvedTransport.close() } }
 
     // CYP-216: an authed Coil ImageLoader over the SHARED client — the avatar serve endpoint
     // (GET /api/agents/{id}/avatar) is participant-gated, so image GETs must carry the same
@@ -306,7 +318,7 @@ fun AgentShell(
     // the workspace-scoped roster VM (team-wide, project-independent) stays constant-keyed — re-keying it
     // would be a pointless reload of identical data.
     val resolvedProjectRepo = remember(projectRepository, httpClient, cfg) {
-        projectRepository ?: HttpProjectRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        projectRepository ?: HttpProjectRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val projectVm = viewModel(key = "projectSwitcher") {
         ProjectViewModel(resolvedProjectRepo, editable = isOperator)
@@ -367,7 +379,7 @@ fun AgentShell(
     // resolves scope from the registry pointer — no client projectId), so only the VM re-instances.
     val resolvedAgentMgmtRepo = remember(agentManagementRepository, httpClient, cfg) {
         agentManagementRepository
-            ?: AgentManagementHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+            ?: AgentManagementHttpRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val agentMgmtVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "$AGENT_MGMT_WINDOW_ID-$activeProjectId") {
         AgentManagementViewModel(resolvedAgentMgmtRepo, editable = isOperator)
@@ -380,7 +392,7 @@ fun AgentShell(
     // per-agent ACL-gated server-side → no over-widen); read live from the project VM so it isn't stale.
     val resolvedCrossProjectRepo = remember(crossProjectRepository, httpClient, cfg, projectVm) {
         crossProjectRepository ?: HttpCrossProjectRepository(
-            httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "",
+            httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "",
             granteeProjects = {
                 val s = projectVm.state.value
                 s.projects.map { it.id }.toSet() - s.activeProjectId
@@ -421,7 +433,7 @@ fun AgentShell(
     // factory — the mapper is pure Kotlin and cannot call stringResource itself (spec §2, §5).
     val readyNotice = stringResource(Res.string.agent_ready_notice)
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
-        val ws = AgentWsClient(httpClient, cfg.hubWsBaseUrl, agentId, cfg.agentToken(agentId))
+        val ws = AgentWsClient(httpClient, resolvedTransport.wsBaseUrl, agentId, cfg.agentToken(agentId))
         MappingAgentSession(
             source = ws.events, sink = ws::send, connection = ws.connection, readyNoticeText = readyNotice,
         )
@@ -430,19 +442,19 @@ fun AgentShell(
     // Operator viewer (CYP-17). The operator token comes from config (runtime), not baked; without it
     // the comm REST / `/ws/comm` calls return 401 (→ empty / Disconnected banner) until one is set.
     val defaultCommApi = remember(httpClient, cfg) {
-        CommRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        CommRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedCommApi = commApi ?: defaultCommApi
 
     val defaultLiveSource = remember(httpClient, cfg) {
-        CommWsClient(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+        CommWsClient(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedLiveSource = commLiveSource ?: defaultLiveSource
 
     // CYP-273 (wiring): the live writable-channels port — same bearer/base as the comm REST. Drives the
     // per-channel composer enable/disable (fail-closed to disabled while unknown/erroring).
     val defaultWritable = remember(httpClient, cfg) {
-        HttpWritableChannelsApi(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        HttpWritableChannelsApi(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedWritable = writableChannelsApi ?: defaultWritable
 
@@ -450,11 +462,11 @@ fun AgentShell(
     // Live-Tail go live together, operator-only/fail-closed like comm. Injectable so tests stay hermetic;
     // `:app:webAppDemo` injects stubs for the Maestro flows. Windows exist only when operatorToken != null.
     val defaultEventsApi = remember(httpClient, cfg) {
-        EventsApiClient(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        EventsApiClient(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedEventsApi = eventsApi ?: defaultEventsApi
     val defaultEventsLiveSource = remember(httpClient, cfg) {
-        EventsWsClient(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+        EventsWsClient(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedEventsLiveSource = eventsLiveSource ?: defaultEventsLiveSource
 
@@ -462,11 +474,11 @@ fun AgentShell(
     // GET returns the operator's full view or the agent's partial view. Editable iff an operator token
     // is present (the agent-token read-only repo is a tracked follow-up — see AclViewModel KDoc).
     val defaultAclApi = remember(httpClient, cfg) {
-        AclRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        AclRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedAclApi = aclApi ?: defaultAclApi
     val defaultAclLiveSource = remember(httpClient, cfg) {
-        AclWsClient(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+        AclWsClient(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedAclLiveSource = aclLiveSource ?: defaultAclLiveSource
 
@@ -488,14 +500,14 @@ fun AgentShell(
     // (CYP-85 stub→real swap — no UI/VM change). Injectable so tests stay hermetic. Operator token drives
     // editability + the operator-only PUTs (server enforces 403 too; fail-closed UI; key write-only).
     val defaultConfigRepository = remember(httpClient, cfg) {
-        ConfigHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        ConfigHttpRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedConfigRepository = configRepository ?: defaultConfigRepository
     // Product-Lead report port (CYP-90): now the LIVE REST client against the CYP-89 endpoints (stub→real
     // swap, no UI/VM change). Injectable so tests stay hermetic. Accessible iff an operator token is present
     // (server enforces 401/403 too; fail-closed — no token → no list, no report, never a partial).
     val defaultReportRepository = remember(httpClient, cfg) {
-        ReportHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        ReportHttpRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedReportRepository = reportRepository ?: defaultReportRepository
 
@@ -504,26 +516,26 @@ fun AgentShell(
     // token drives both the action auth and the participant-gated lifecycle socket. Injectable so tests
     // stay hermetic. Controls are enabled only with an operator token (fail-closed) in the VM/header.
     val defaultLifecycleApi = remember(httpClient, cfg) {
-        AgentLifecycleRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        AgentLifecycleRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedLifecycleApi = lifecycleApi ?: defaultLifecycleApi
     val defaultLifecycleSource = remember(httpClient, cfg) {
-        AgentLifecycleLiveSource(httpClient, cfg.hubHttpBaseUrl, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+        AgentLifecycleLiveSource(httpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedLifecycleSource = lifecycleSource ?: defaultLifecycleSource
     // CYP-316: the per-agent context-token feed (`/ws/token-usage`, participant-gated like lifecycle → same bearer).
     val defaultTokenUsageSource = remember(httpClient, cfg) {
-        TokenUsageLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+        TokenUsageLiveSource(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedTokenUsageSource = tokenUsageSource ?: defaultTokenUsageSource
     // CYP-324: the per-agent busy feed (`/ws/busy-state`, participant-gated like lifecycle → same bearer).
     val defaultBusyStateSource = remember(httpClient, cfg) {
-        BusyStateLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+        BusyStateLiveSource(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedBusyStateSource = busyStateSource ?: defaultBusyStateSource
     // CYP-354: the per-agent terminal-control mode feed (`/ws/terminal-state`, participant-gated like busy → same bearer).
     val defaultTerminalControlSource = remember(httpClient, cfg) {
-        TerminalControlLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
+        TerminalControlLiveSource(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedTerminalControlSource = terminalControlSource ?: defaultTerminalControlSource
     // CYP-381: the hand-off command port. **Real swap done** (CYP-355 motor merged): default = ModeHttpRepository,
@@ -532,7 +544,7 @@ fun AgentShell(
     // no operator token 403s → ModeChangeException → honest error row (fail-closed). Tests inject a stub/rejecting
     // variant via the [modeRepository] override to exercise the reject + IDLE-defer paths without a live server.
     val resolvedModeRepository = remember(modeRepository, httpClient, cfg) {
-        modeRepository ?: ModeHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        modeRepository ?: ModeHttpRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
 
     // CYP-55: hoist the per-window VMs to the always-composed shell. Two reasons: (1) each VM opens
@@ -580,7 +592,7 @@ fun AgentShell(
     // CYP-186 roster repo — OPERATOR-only reads (GET /api/workspace/members). Hoisted so the ACL matrix
     // (CYP-189 human-grant band) and the roster window share ONE instance; never fetched as a non-operator.
     val resolvedWorkspaceRepo = workspaceRepository
-        ?: WorkspaceHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        ?: WorkspaceHttpRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     // CYP-246: re-keyed on activeProjectId. ACL channels/entries/agents are project-scoped; the VM loads once
     // and the live stream only upserts single entries (old-project entries never prune) → stale on switch.
     // (The `members` human-roster is workspace-scoped, so the reload re-fetches identical members — harmless.)
@@ -601,7 +613,7 @@ fun AgentShell(
     // operator) → default to the live repo. Reads authenticate members via the shared client's session token
     // (CYP-188); the operator Bearer gates the config write. Tests inject a stub.
     val resolvedCompactRepository = remember(compactRepository, httpClient, cfg) {
-        compactRepository ?: CompactHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        compactRepository ?: CompactHttpRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val compactVm = viewModel(key = "compact-global") {
         CompactViewModel(resolvedCompactRepository, editable = isOperator)
@@ -624,7 +636,7 @@ fun AgentShell(
     // faked full). Non-gated display (the truth is shown to anyone) — the connector write/opt-in is a separate
     // operator-gated seam (stub until CYP-122).
     val resolvedConnectorCapRepo = remember(connectorCapabilityRepository, httpClient, cfg) {
-        connectorCapabilityRepository ?: ConnectorCapabilityHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+        connectorCapabilityRepository ?: ConnectorCapabilityHttpRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     // CYP-246: re-keyed on activeProjectId — the caps are read per-agent (project-scoped via the agent set)
     // and the VM loads once, so a switch must re-instance it to reflect the new project's agents.
@@ -640,7 +652,7 @@ fun AgentShell(
     // (no second gate, §3.3). The per-dialog picker VMs are created agent-bound inside the add/edit slots below.
     val resolvedConnectorSelRepo = remember(connectorSelectionRepository, httpClient, cfg) {
         connectorSelectionRepository
-            ?: ConnectorSelectionHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+            ?: ConnectorSelectionHttpRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     // Operator-gated VMs exist only with an operator token — the windows themselves are omitted
     // otherwise, so C1 has no source and no badge can appear (fail-closed omission, WINDOW-BADGES §5).
@@ -749,7 +761,7 @@ fun AgentShell(
         // event-log, settings panel). Locals default null → those sites render stages 3-4 when not wrapped.
         CompositionLocalProvider(
             LocalAvatarImageLoader provides avatarImageLoader,
-            LocalAvatarBaseUrl provides cfg.hubHttpBaseUrl,
+            LocalAvatarBaseUrl provides resolvedTransport.httpBaseUrl,
         ) {
         settingsAgentId?.let { sid ->
             val a = agentById[sid]
@@ -764,7 +776,7 @@ fun AgentShell(
                     sid, resolvedAgentMgmtRepo, editable = isOperator, initialName = a?.name ?: sid, initialColorHex = a?.color,
                     // CYP-310: the LIVE worktree CLAUDE.md port — GET is participant-read, POST operator-gated; the
                     // operator token serves both (operator ⊇ participant), mirroring the comm REST wiring.
-                    claudeMdApi = ClaudeMdHttpApi(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: ""),
+                    claudeMdApi = ClaudeMdHttpApi(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: ""),
                 )
             }
             // CYP-216: the platform image picker (wasmJs/jvm real; android/ios stub) → the VM does the pre-check
@@ -923,7 +935,7 @@ fun AgentShell(
                             terminalContent = if (WORKTREE_SHELL_LIVE_ENABLED) {
                                 { id, m ->
                                     val session = remember(id) {
-                                        WsTerminalSession(httpClient, cfg.hubWsBaseUrl, id, cfg.operatorToken ?: "")
+                                        WsTerminalSession(httpClient, resolvedTransport.wsBaseUrl, id, cfg.operatorToken ?: "")
                                     }
                                     TerminalView(session, m)
                                 }
