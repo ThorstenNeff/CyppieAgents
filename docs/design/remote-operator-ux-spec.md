@@ -1,11 +1,10 @@
 # Remote-Modus Operator-UX — Design-Spec (CYP-429, Epic CYP-427 „Phase 2: Remote-Modus")
 
-> Status: **Design-Aufschlag · Q1 (Auth-Schritt) ratifiziert 2026-07-11; Q2 vorgezeichnet; Q3–Q5 PO-Ruling ausstehend** ·
-> docs-only, **kein Bau vor Ratifikation** · Owner: UX/UI
+> Status: **Spec-Closure — Q1–Q5 ratifiziert 2026-07-11** · docs-only, **kein Bau vor Ratifikation** · Owner: UX/UI
 > Baut auf der **gebauten Phase-1-`hubConnect`-UX** (CYP-419, meine Spec CYP-395) auf — jetzt für **Remote**.
-> **✅ Auth-Schritt ratifiziert (Q1/RR2-B = nativer Passkey/WebAuthn-PoP, §5); Ziel = Desktop-Native (Team-1 zuerst).**
-> Naht-Konsistenz (Keys/Tags/Auth-Flow) über den PO. Companion-Files (`remote-operator-keys/-tags/-tokens`) werden nach
-> den restlichen Rulings (Q2–Q5) eingefroren (jetzt würden Keys/Tags noch driften).
+> **✅ Auth-Schritt = nativer Passkey/WebAuthn-PoP (Q1/RR2-B, §5); Ziel = Desktop-Native (Team-1 zuerst).**
+> Eingefrorene Companion-Files (Haus-Konvention): `remote-operator-keys.md` · `-tags.md` · `-tokens.json`.
+> Naht-Konsistenz (Keys/Tags/Auth-Flow, Passkey → Backend `OperatorAssertionVerifier`) über den PO.
 > Begleit-Konzept: `13-cyppie-hub-architektur.md` (Remote-Modus, Sequenz B REMOTE, E2E/Noise, Vertrauenszonen).
 
 Der Operator loggt sich **zentral** ein, sieht seine registrierten Hubs, **„wechselt" auf einen** und bedient ihn **voll**
@@ -147,9 +146,12 @@ Erweitert die Phase-1-`hubConnect`-Hub-Liste + Modus-Wahl.
   nicht Garantie — H1; die Bodenwahrheit ist der Connect §7).
 - **Modus-Wahl:** `mode.local | mode.remote` — **Remote jetzt AKTIV** (Phase-1-„kommt bald"/disabled entfällt für Remote-fähige
   Builds). Beide ehrlich: Lokal = „im selben Netz"; Remote = „über die Control Plane, E2E".
-- **„Auf Hub X wechseln" = non-optimistisch** (Vorbild `ProjectViewModel.switchTo`): der aktive Remote-Hub flippt **erst
-  nach** etablierter Session (§7), reject → bleib beim aktuellen Zustand + ehrlicher Fehler. **Nicht-destruktiver
-  Kontext-Wechsel** (wie Projekt-Switch: „nichts wird gelöscht"). Ein bereits aktiver Remote-Hub ist **kein** Wechselziel.
+- **„Auf Hub X wechseln" = non-optimistisch + expliziter, sauberer Teardown (Q5 ratifiziert), EIN aktiver Hub.** Der
+  Wechsel **reißt die aktuelle Noise-Session vollständig ab** und **räumt pending/in-flight-State** — **nichts wird über
+  Hubs getragen** (kein stiller Zwei-Hub-Multiplex im MVP). Kurze Transition „**Trenne von Hub X … verbinde mit Hub Y**",
+  dann **TOFU-Check für den neuen Hub** (§8.1). Der aktive Remote-Hub flippt **erst nach** etablierter neuer Session (§7),
+  reject → bleib beim alten Zustand + ehrlicher Fehler. **In-flight-Aktionen am alten Hub zum Wechsel-Zeitpunkt = ehrlich
+  ungewiss** (nie still als erledigt). Ein bereits aktiver Remote-Hub ist **kein** Wechselziel.
 - **Laufender-Zustand:** wie `runtimeState` je Projekt — der Hub kann `online/offline/lastSeen` (Registry) tragen; der
   **eigene** Verbindungszustand (§7) ist getrennt (H1: Registry-Presence ≠ meine Session).
 
@@ -177,8 +179,11 @@ workspace-scoped Zustand („Remote-Verbindung zu Hub X unterbrochen — verbind
 Kontext-Strip §9) **statt** N per-Agent-Chips. Reconnect nutzt `Reconnect.kt`-Backoff + Cursor-Resume (gapless). Solange
 getrennt: **in-flight-Aktionen ehrlich ungewiss** (§10), keine vorgetäuschte Kontinuität.
 
-**Latenz (advisory, H7):** optionaler neutraler RTT-Hinweis im Kontext-Strip (§9) — **Hinweis**, keine Garantie; hohe
-Latenz **≠** getrennt; kein Alarm-Ton. (Offene Entscheidung Q3, §14 — ob überhaupt sichtbar.)
+**Latenz (advisory, H7, Q3 ratifiziert = JA/subtil):** ein **kleiner neutraler** Latenz-Hinweis **im Kontext-Banner**
+(§9) — **Hinweis**, keine Garantie; **kein** Dauer-Zahlenflackern (gedämpft/gerundet, nicht sekündlich springend). Hohe
+Latenz **≠** getrennt; **kein Alarm**. **Nur bei echter Degradation** eskaliert der Banner in einen sichtbaren Zustand
+**„Verbindung langsam/instabil"** (neutral `onSurfaceVariant`, kein Rot/Amber). Ehrlich: Latenz **nicht verstecken**, aber
+**nicht alarmieren**.
 
 ---
 
@@ -187,9 +192,14 @@ Latenz **≠** getrennt; kein Alarm-Ton. (Offene Entscheidung Q3, §14 — ob ü
 Die **zwei getrennten Trust-Wahrheiten** (H1) bekommen **zwei getrennte** Affordances.
 
 ### 8.1 Hub-Authentizität — TOFU-Pin (H2)
-- **Erstverbindung** zu einem Hub: **Trust-Prompt** mit dem **Fingerprint** des Hub-Schlüssels + ehrlicher Copy: „Du
-  verbindest dich zum ersten Mal mit Hub X. Prüfe den Fingerprint, wenn Sicherheit zählt (out-of-band), und bestätige,
-  um ihn zu pinnen." Bestätigung **pinnt** den Schlüssel. Fingerprint als lesbare Gruppen (nicht roher Hash-Blob).
+- **Erstverbindung** zu einem Hub: **Trust-Prompt** + ehrliche Copy: „Du verbindest dich zum ersten Mal mit Hub X.
+  Bestätige die Identität **über einen anderen Kanal**, wenn Sicherheit zählt, und pinne sie." Bestätigung **pinnt** den
+  Schlüssel.
+- **Fingerprint-Hilfe (Q4 ratifiziert = mehrschichtig):**
+  - **Primär: menschen-vergleichbare Wort-/Emoji-Sequenz** (PGP-Wordlist-Stil) — vorlesbar/vergleichbar, macht den
+    Out-of-Band-Abgleich **fehlerarm** (weniger übersprungene Verifikationen). Der Haupt-Abgleich-Pfad.
+  - **Sekundär: volle Hex-Fingerprint** (kopierbar, lesbare Gruppen — kein roher Blob) **+ QR** für den starken Scan-Pfad.
+  - **Ehrlich als TOFU gelabelt:** „über einen anderen Kanal bestätigen" — nie als „automatisch sicher" dargestellt.
 - **Spätere** Verbindungen: **still verifiziert** gegen den Pin; ein kleiner **neutraler** „Identität gepinnt"-Indikator
   im Kontext-Strip (§9) genügt (kein Prompt).
 - **Schlüssel-Änderung** (`trust_changed`, §7): **harter Block** (Q2 vorgezeichnet, Threat-Model RR6/RR7) — „Die
@@ -214,8 +224,9 @@ Persistente, **neutrale** Erinnerung, dass die Session remote läuft.
 
 - **Platzierung:** als Geschwister der Rollen-Indikator-Zeile (`WorkspaceTags.ROLE_INDICATOR`) im `ProjectSwitcherBar` —
   identitäts-/kontext-Ton, **kein** Alarm. „● Fern-Betrieb: Hub X" (neutral `onSurfaceVariant` ●, INFO-Register).
-- **Inhalt (gestaffelt, alle neutral):** Hub-Name · „E2E via Relay" (§8.2) · „Identität gepinnt" (§8.1) · optional Latenz
-  (§7/Q3) · bei Drop → „Verbindung unterbrochen — verbinde neu…" (§7).
+- **Inhalt (gestaffelt, alle neutral):** Hub-Name · „E2E via Relay" (§8.2) · „Identität gepinnt" (§8.1) · **subtiler
+  Latenz-Hinweis** (§7/Q3, gedämpft, kein Zahlenflackern) · bei echter Degradation → **„Verbindung langsam/instabil"**
+  (neutral, kein Alarm) · bei Drop → „Verbindung unterbrochen — verbinde neu…" (§7).
 - **Presence ≠ connected** (H6): der Strip zeigt **meine** Remote-Session (Bodenwahrheit), **nicht** Registry-Presence;
   nie `tertiary`-Grün.
 - **Lokal-Modus:** der Strip ist **absent** (kein „Fern-Betrieb" wenn lokal) — fail-closed, kein Phantom.
@@ -254,27 +265,25 @@ Persistente, **neutrale** Erinnerung, dass die Session remote läuft.
 
 ---
 
-## 12. testTag-Kontrakt (provisorisch — friert nach den Q3–Q5-Rulings)
+## 12. testTag-Kontrakt (Übersicht — maßgeblich: `remote-operator-tags.md`)
 
-Erweitert Area `hubConnect` (Connect-Flow) + neue Area `remote` (aktive Remote-Session-Chrome). Provisorisch:
+Neue Area `remote` (aktive Remote-Session-Chrome) + Aktivierung `hubConnect.mode.remote`. Diese Übersicht spiegelt den
+**eingefrorenen** `remote-operator-tags.md`:
 ```
-remote.authStep.popPrompt         (§5, Passkey)    remote.trust.fingerprint        (§8.1)
-remote.authStep.enroll            (§5)             remote.trust.pinPrompt          (§8.1)
-remote.authStep.error             (§5)             remote.trust.changedAlarm       (§8.1, WARN)
-hubConnect.mode.remote            (aktiviert)      remote.trust.e2eIndicator       (§8.2)
-remote.connect.relayDialing       (§7)             remote.context.banner           (§9)
-remote.connect.e2eHandshake       (§7)             remote.context.hub              (§9)
-remote.connect.trustCheck         (§7)             remote.context.latency          (§7/§9, opt)
-remote.connect.connected          (§7)             remote.context.reconnecting     (§7)
-remote.connect.error.<cause>      (§7)
-remote.relayDrop                  (§7/H4)
+Auth (§5):     remote.authStep.popPrompt · .enroll · .error
+Connect (§7):  remote.connect.{relayDialing,e2eHandshake,trustCheck,connected} · .error.<cause> · remote.relayDrop
+Trust (§8):    remote.trust.{fingerprint,wordlist,hex,qr} · .pinPrompt · .changedAlarm(WARN) · .e2eIndicator
+Switch (§6):   remote.switch.transition
+Kontext (§9):  remote.context.{banner,hub,latency,degraded,reconnecting}
+hubConnect:    hubConnect.mode.remote  (Phase-1 disabled → Remote aktiviert)
 ```
 **Fail-closed-Anker:** `remote.context.banner` absent im Lokal-Modus; `remote.connect.connected` nie vor echtem LIVE;
 `remote.trust.changedAlarm` bei Schlüssel-Änderung (nie still); `remote.trust.e2eIndicator` nie grün/nie als Hub-Vertrauen.
 
-## 13. Copy (provisorisch, DE-Default + EN — Auswahl)
+## 13. Copy (Übersicht — maßgeblich: `remote-operator-keys.md`)
 
-Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu verifizieren).
+Key-Familie `remote_*` / `a11y_remote_*` (greenfield, 0 Kollision verifiziert). Diese Tabelle spiegelt den
+**eingefrorenen** `remote-operator-keys.md` (Auszug der Kern-Copy):
 | Key | DE | EN |
 |---|---|---|
 | `remote_authstep_title` | Bestätige mit deinem Passkey | Confirm with your passkey |
@@ -290,6 +299,12 @@ Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu ve
 | `remote_connect_relay` | Verbinde über die Control Plane… | Connecting via the control plane… |
 | `remote_connect_e2e` | Sichere Verbindung (E2E) wird aufgebaut… | Establishing a secure (E2E) connection… |
 | `remote_connect_trustcheck` | Hub-Identität wird geprüft… | Verifying hub identity… |
+| `remote_conn_degraded` | Verbindung langsam/instabil | Connection slow/unstable |
+| `remote_trust_wordlist_label` | Vergleichs-Wörter | Comparison words |
+| `remote_trust_hex_label` | Fingerprint (Hex) | Fingerprint (hex) |
+| `remote_trust_qr_label` | QR scannen | Scan QR |
+| `remote_trust_oob` | Über einen anderen Kanal bestätigen | Confirm via another channel |
+| `remote_switch_transition` | Trenne von %1$s … verbinde mit %2$s | Disconnecting from %1$s … connecting to %2$s |
 | `remote_relay_dropped` | Remote-Verbindung zu %1$s unterbrochen — verbinde neu… | Remote connection to %1$s lost — reconnecting… |
 | `remote_error_relay` | Control Plane / Relay nicht erreichbar. | Control plane / relay not reachable. |
 | `a11y_remote_context` | Fern-Betrieb über Relay: Hub %1$s, E2E-verschlüsselt. | Remote session via relay: hub %1$s, E2E-encrypted. |
@@ -297,19 +312,18 @@ Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu ve
 
 *(Auth-Schritt-Copy §5 jetzt drin — Q1 ratifiziert. Latenz-Copy §7/Q3 bei Entscheid.)*
 
-## 14. Entscheidungen (Q1 ratifiziert · Q2 vorgezeichnet · Q3–Q5 PO-Ruling ausstehend)
+## 14. Ratifizierte Entscheidungen (Q1–Q5, PO 2026-07-11) → Spec-Closure
 
-1. **Q1 — Auth-Schritt: ✅ RATIFIZIERT (RR2-B, 2026-07-11) = verpflichtender nativer Passkey/WebAuthn-PoP.** Ziel
-   Desktop-Native (Team-1 zuerst), Device-Key nativ/außerhalb CP-Origin; non-optimistisch, fail-closed. Enroll davor;
-   Recovery = Threat-Model-Detail (§5). **In die Spec gefolded.**
-2. **Q2 — Trust-Änderung: vorgezeichnet (Threat-Model RR6/RR7) = harter Block + expliziter Out-of-Band-Re-Pin, nie
-   still.** In §8.1 gefolded; **formales Ruling folgt** (Richtung bestätigt).
-3. **Q3 — Latenz sichtbar? (offen)** RTT-Hinweis im Kontext-Strip (advisory) oder weglassen? Empfehlung: dezent/optional,
-   nur wenn hoch — nie Alarm.
-4. **Q4 — Fingerprint-Verifikations-Hilfe? (offen)** nur Anzeige, oder Vergleichs-Wort/QR (out-of-band)? Empfehlung:
-   lesbare Fingerprint-Gruppen jetzt; QR/Vergleich später.
-5. **Q5 — „Auf Hub wechseln" bei aktiver Remote-Session? (offen)** sauberer Teardown der alten Session vor der neuen
-   (non-optimistisch) — Übergangs-UX bestätigen (analog Projekt-Switch „nichts wird gelöscht").
+1. **Q1 — Auth-Schritt = verpflichtender nativer Passkey/WebAuthn-PoP** (RR2-B). Desktop-Native (Team-1), Device-Key
+   nativ/außerhalb CP-Origin; non-optimistisch, fail-closed; Enroll davor; Recovery = Threat-Model-Detail (§5).
+2. **Q2 — Trust-Änderung = harter Block + expliziter Out-of-Band-Re-Pin, nie still** (Threat-Model RR6/RR7; §8.1).
+3. **Q3 — Latenz sichtbar = JA, advisory/subtil** im Kontext-Banner (kein Zahlenflackern); Eskalation auf sichtbar
+   „langsam/instabil" **nur bei echter Degradation**, nie Alarm (§7/§9).
+4. **Q4 — Fingerprint-Hilfe = mehrschichtig:** primär menschen-vergleichbare Wort-/Emoji-Sequenz (PGP-Wordlist-Stil),
+   sekundär volle Hex (kopierbar) + QR; ehrlich als TOFU/OOB gelabelt (§8.1).
+5. **Q5 — Hub-Wechsel = expliziter, sauberer Teardown, EIN aktiver Hub:** volle Noise-Session-Teardown + pending/in-flight
+   räumen (nichts über Hubs getragen), Transition „Trenne von X … verbinde mit Y", TOFU-Check für neuen Hub, in-flight am
+   alten Hub ehrlich ungewiss, kein Zwei-Hub-Multiplex im MVP (§6).
 
 ## 15. Nahtstellen zu Backend/Dev (über den PO)
 
@@ -320,8 +334,10 @@ Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu ve
 - **S-3 — Globaler Relay-Verbindungs-Zustand:** ein workspace-scoped „Remote-Link up/down/reconnecting"-Signal (H4) —
   neu ggü. den per-Stream-`ConnectionStatus`. Speist §7/§9.
 - **S-4 — Auth-Schritt / Ticket-JWT (S-K, RR2-B ratifiziert):** `HubTransport.sessionToken()` → CP-issued hub-scoped
-  Ticket-JWT, **gebunden an einen nativen Passkey/WebAuthn-PoP** (Besitznachweis, außerhalb CP-Origin). Enroll- +
-  Recovery-Pfad = Threat-Model-Detail.
+  Ticket-JWT, **gebunden an einen nativen Passkey/WebAuthn-PoP** (Besitznachweis, außerhalb CP-Origin); Backend-Verifikation
+  über **`OperatorAssertionVerifier`** (PO-Nahtstelle). Enroll- + Recovery-Pfad = Threat-Model-Detail.
+- **S-6 — Fingerprint-Darstellung (Q4):** Backend/Krypto liefert den Hub-Schlüssel-Fingerprint; Client leitet daraus die
+  **Wort-/Emoji-Sequenz** (deterministische Wordlist-Abbildung) + Hex + QR ab. Latenz-Quelle (Q3) = RTT aus dem Relay-Transport.
 - **S-5 — Latenz-Quelle (opt, Q3):** RTT aus dem Relay-Transport, falls sichtbar gemacht.
 - **Drift-Hinweis:** neue `remote_*`-Keys + `remote.*`/`hubConnect.*`-Tags landen mit Devs Slice → Re-Sync Tester (CYP-7).
 
@@ -346,7 +362,7 @@ Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu ve
 
 ---
 
-*Design-Aufschlag, nichts gebaut. **Auth-Schritt (§5, Q1/RR2-B) ratifiziert = nativer Passkey/WebAuthn-PoP** (gefolded);
-**Q2 vorgezeichnet** (Block+OOB-Re-Pin, §8.1); **Q3–Q5 offen**. Companion-Files (`remote-operator-keys/-tags/-tokens`)
-werden nach den Q3–Q5-Rulings eingefroren; vorher würden Keys/Tags driften. Naht-Konsistenz (Keys/Tags/Auth-Flow) über
-den PO; Backend-Nahtstellen §15 relay über den PO.*
+*Spec-Closure (Q1–Q5 ratifiziert 2026-07-11), nichts gebaut. Die eingefrorenen Companion-Files
+(`remote-operator-keys.md` / `-tags.md` / `-tokens.json`) sind die UI-Vorlage; §12/§13 sind Übersicht — maßgeblich sind
+die Companion-Files. Naht-Konsistenz (Keys/Tags/Auth-Flow, Passkey → Backend `OperatorAssertionVerifier`) über den PO;
+Backend-Nahtstellen §15 relay über den PO.*

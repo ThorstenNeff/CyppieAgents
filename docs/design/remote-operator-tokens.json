@@ -1,0 +1,83 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-429 (Story unter Epic CYP-427) — Remote-Modus Operator-UX, Phase 2",
+    "version": "1.0-spec-closure",
+    "status": "Spec-Closure (Q1-Q5 geruled, PO 2026-07-11). Eingefroren als UI-Vorlage. docs-only, nichts gebaut. Baut auf Phase-1 hubConnect (CYP-419).",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop 4466ca20",
+    "reuse_first": "KEINE neue Farbe. Neutral = onSurfaceVariant / TonedHint(INFO=secondary, GATED=onSurfaceVariant). WARN-Amber NUR aus EventVisuals (severityColor/severityContainer(WARN)) fuer den Trust-Aenderungs-Alarm. errorContainer-Rot nur fuer harte Connect-Fehler. Login=AuthGate, Hub-Liste=ControlPlaneClient.hubs(), Connect-Idiom + Presence-H1 = hubConnect (CYP-395/419), Wechsel = ProjectViewModel.switchTo-Muster, Kontext-Strip = WorkspaceTags.ROLE_INDICATOR.",
+    "color_is_never_sole_signal": "Jeder Zustand Form + Label + a11y (WCAG 1.4.1). Presence != connected: neutral, NIE tertiary/#40D6A0-gruen.",
+    "tertiary_invariant": "tertiary/#40D6A0 = BRAND, NIE Status. Weder 'E2E' noch 'gepinnt' noch 'verbunden' benutzen es.",
+    "code_anchor": "Erweitert connect/ (HubConnect*) + net/hub/RemoteHubTransport (Noise-E2E, heute fail-loud Stub) + ProjectSwitcherBar (Kontext-Strip). Toene: ui/TonedHint.kt, eventlog/EventVisuals.kt."
+  },
+  "semantic": {
+    "authStep.pop": {
+      "role": "Passkey/WebAuthn-PoP-Checkpoint zwischen zentralem Login und Hub-Liste (Q1/RR2-B). Nativer Device-Key ausserhalb CP-Origin.",
+      "behavior": "non-optimistisch, FAIL-CLOSED bei PoP-Fehler (Hub-Liste erst nach Erfolg); Enroll davor.",
+      "color": "neutraler Login-/Dialog-Stil (kein Sonder-Token); Fehler = TonedHint(ERROR)/errorContainer",
+      "label_keys": ["remote_authstep_title", "remote_authstep_body", "remote_authstep_error"]
+    },
+    "connect.progress": {
+      "role": "Relay-Connect-Progression relayDialing->e2eHandshake->trustCheck->connected (erbt hubConnect-Idiom).",
+      "color": "neutral onSurfaceVariant fuer in-progress; connected = ● + primary (NUR bei echtem LIVE, nie vorzeitig)",
+      "label_keys": ["remote_connect_relay", "remote_connect_e2e", "remote_connect_trustcheck"],
+      "errors": "errorContainer + typisierte Ursache (remote_error_relay etc.); trust_changed -> overload.trust.changed (WARN, nicht bloss Fehler)"
+    },
+    "relay.drop": {
+      "role": "EIN globales Relay-Drop-Surface (H4) statt N per-Agent-Chips.",
+      "color": "neutral onSurfaceVariant im Kontext-Banner (reconnecting) — kein Alarm-Rot fuer einen erwarteten Reconnect",
+      "label_key": "remote_relay_dropped",
+      "honesty": "in-flight-Aktionen bei Drop EHRLICH ungewiss, nie still als erledigt (H4/H5)"
+    },
+    "trust.pin": {
+      "role": "Hub-Authentizitaet / TOFU (H1/H2). Erstverbindung = Vertrauen-auf-Treu-und-Glauben + Fingerprint-Pin.",
+      "color": "neutral (Dialog); 'gepinnt'-Indikator onSurfaceVariant — NIE gruen",
+      "fingerprint_help": "mehrschichtig (Q4): primaer Wort-/Emoji-Sequenz (PGP-Wordlist-Stil, fehlerarmer OOB-Abgleich), sekundaer Hex (kopierbar) + QR",
+      "label_keys": ["remote_trust_first_title", "remote_trust_first_body", "remote_trust_wordlist_label", "remote_trust_hex_label", "remote_trust_qr_label", "remote_trust_oob", "remote_trust_pinned"]
+    },
+    "trust.changed": {
+      "role": "Hub-Schluessel != Pin = potenzielles MITM (H2/Q2, Threat-Model RR6/RR7).",
+      "behavior": "HARTER BLOCK — nie still akzeptiert; Fortfahren nur nach explizitem Out-of-Band-Re-Pin (kein Ein-Klick-Weiter, neuer Fingerprint ueber anderen Kanal)",
+      "color": "WARN-Amber (severityColor/severityContainer(WARN), Glyph ▲, EventVisuals) — NICHT tertiary-gruen, NICHT als legitim dargestellt",
+      "label_keys": ["remote_trust_changed_title", "remote_trust_changed_body"],
+      "a11y_key": "a11y_remote_trust_changed"
+    },
+    "trust.e2e": {
+      "role": "'E2E via Relay'-Indikator (H3) — NUR Transport-Vertraulichkeit (CP sieht nur Ciphertext).",
+      "color": "neutral onSurfaceVariant — NIE gruen-als-Erfolg, NIE als Hub-Vertrauen lesbar (das ist trust.pin)",
+      "label_key": "remote_e2e_indicator",
+      "honesty": "getrennt von trust.pin — Verschluesselung != Authentizitaet (H1)"
+    },
+    "context.banner": {
+      "role": "'Fern-Betrieb: Hub X'-Kontext-Banner (H6), Geschwister der Rollen-Indikator-Zeile (WorkspaceTags.ROLE_INDICATOR).",
+      "color": "neutral onSurfaceVariant ● / INFO-Register — nie tertiary-gruen; zeigt MEINE Session, nicht Registry-Presence",
+      "render": "ABSENT im Lokal-Modus (fail-closed, kein Phantom)",
+      "label_keys": ["remote_context_operating"],
+      "a11y_key": "a11y_remote_context",
+      "content": "Hub-Name · E2E-Indikator · gepinnt · subtile Latenz (Q3) · degraded (nur bei echter Degradation) · reconnecting"
+    },
+    "context.latency": {
+      "role": "subtiler Latenz-Hinweis im Banner (Q3, advisory).",
+      "color": "neutral/gedaempft — kein Dauer-Zahlenflackern (gerundet/gedaempft), kein Alarm-Ton",
+      "escalation": "NUR bei echter Degradation -> sichtbarer 'langsam/instabil'-Zustand (remote_conn_degraded), neutral onSurfaceVariant, KEIN Rot/Amber",
+      "label_key": "remote_conn_degraded",
+      "honesty": "H7 — Latenz nicht verstecken, aber nicht alarmieren; hohe Latenz != getrennt"
+    },
+    "switch.transition": {
+      "role": "Hub-Wechsel (Q5) — expliziter, sauberer Teardown, EIN aktiver Hub.",
+      "behavior": "volle Noise-Session-Teardown + pending/in-flight raeumen (nichts ueber Hubs getragen); Transition 'Trenne von X ... verbinde mit Y'; TOFU-Check fuer neuen Hub; non-optimistisch (flippt erst nach neuer Session); in-flight am alten Hub ehrlich ungewiss; KEIN Zwei-Hub-Multiplex im MVP",
+      "color": "neutral (Transition), kein Sonder-Token",
+      "label_key": "remote_switch_transition"
+    }
+  },
+  "axes_separation": {
+    "role": "VERBINDLICH: getrennte Wahrheiten, nie ineinander gefaerbt/gelesen.",
+    "transport_confidentiality": "'E2E via Relay' (CP=Ciphertext) — neutral, garantiert, NUR Transport (H3).",
+    "hub_authenticity": "TOFU-Pin (spreche ich mit MEINEM Hub?) — neutral gepinnt / WARN-Amber bei Aenderung (H1/H2). NIE mit Transport konflatiert.",
+    "my_connection": "Relay-Verbindungszustand (attempting/handshake/connected/drop) — Bodenwahrheit, neutral, connected=primary nur bei LIVE.",
+    "registry_presence": "hubConnect Presence online/offline — advisory (H1, Phase-1), nie als meine-Session lesbar.",
+    "auth_possession": "Passkey/WebAuthn-PoP (Besitznachweis, nativ ausserhalb CP-Origin) — fail-closed Gate (Q1).",
+    "rule": "Farbe nie alleiniger Traeger (WCAG 1.4.1); tertiary/#40D6A0 NIE Status; korrekter Reconnect/Latenz nie error-Rot; nur Trust-Aenderung ist WARN-Amber."
+  }
+}
