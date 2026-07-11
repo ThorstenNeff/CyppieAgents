@@ -64,8 +64,16 @@ describe('CommPanel (CYP-407 W9 part 2)', () => {
     expect(failed.queryByTestId('comm-send-denied')).toBeNull()
   })
 
-  it('the connection banner reflects the socket state', () => {
-    const { getByTestId } = render(<CommPanel {...base} connection="revoked" />)
-    expect(getByTestId('comm-status').className).toContain('comm-status-revoked')
+  it('the connection banner distinguishes revoked from offline by TEXT, not just colour', () => {
+    const revoked = render(<CommPanel {...base} connection="revoked" />)
+    const revokedStatus = revoked.getByTestId('comm-status')
+    expect(revokedStatus.className).toContain('comm-status-revoked')
+    const revokedText = revokedStatus.textContent
+    cleanup()
+    const offlineText = render(<CommPanel {...base} connection="offline" />).getByTestId('comm-status').textContent
+    // A terminal revoke must not read as a reconnectable blip: the copy itself carries the difference (the CSS
+    // class/colour is structural and never fails). Mutating CONNECTION_TEXT.revoked to the offline text reds this.
+    expect(revokedText).toBe('Zugriff entzogen')
+    expect(revokedText).not.toBe(offlineText)
   })
 })
