@@ -32,6 +32,17 @@ describe('SettingsPanel (CYP-453)', () => {
     expect(getByTestId('settings.apiKey.masked').textContent).toContain('***k999')
   })
 
+  it('the API-key effect-hint has exactly ONE render source (framed CYP-433), never a 2nd P2-f node (§9.6, tooth 6)', async () => {
+    const { getByTestId, findAllByTestId } = renderPanel()
+    // trigger the framed ApiKeyPanel's own effect-hint (its save flow) …
+    fireEvent.change(getByTestId('settings.apiKey.input'), { target: { value: 'sk-newkey-123456' } })
+    await act(async () => {
+      fireEvent.click(getByTestId('settings.apiKey.save'))
+    })
+    // … and assert it appears exactly once — a P2-f second instance would be a duplicate testid (forbidden).
+    expect(await findAllByTestId('settings.apiKey.effectHint')).toHaveLength(1)
+  })
+
   it('project config is operator-gated present-but-disabled — inputs present but disabled + gate hint (teeth 2/8)', () => {
     const { getByTestId } = renderPanel({ operator: false })
     // present, not omitted:
