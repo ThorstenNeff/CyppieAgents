@@ -93,10 +93,12 @@ class Cyp443NoiseTransportTest {
     }
 
     @Test
-    fun badSizedPin_failsClosed_beforeTouchingRelay() = runBlocking {
-        val (clientRelay, _) = InMemoryRelayChannel.pair()
-        assertFailsWith<NoiseHandshakeException> {
-            NoiseJavaClientTransport().connect(ByteArray(16), clientRelay) // 16B ≠ 32B X25519
+    fun badSizedPin_failsClosed_beforeTouchingRelay() {
+        runBlocking {
+            val (clientRelay, _) = InMemoryRelayChannel.pair()
+            assertFailsWith<NoiseHandshakeException> {
+                NoiseJavaClientTransport().connect(ByteArray(16), clientRelay) // 16B ≠ 32B X25519
+            }
         }
     }
 }
