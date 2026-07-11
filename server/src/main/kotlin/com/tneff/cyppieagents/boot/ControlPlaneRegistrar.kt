@@ -49,17 +49,21 @@ class ControlPlaneRegistrar(
         require(cpNonce.isNotEmpty()) {
             "hub registration requires a CP-issued nonce — PoP is mandatory (R3/F3); refusing to register unproven"
         }
-        val pop = Base64.getEncoder().encodeToString(signer.sign(cpNonce))
-        val reg = HubRegistration(
+        // CYP-451 (DESIGN-3 carry-forward): the PoP signs the whole TRANSCRIPT (cpNonce + every registered field,
+        // incl. dhPubKey), not just the nonce — so a valid PoP cannot cover a SUBSTITUTED dhPubKey (which would
+        // otherwise poison the Phase-2 Noise anchor, R5). Build the fields first, then sign their transcript.
+        val fields = HubRegistration(
             hubId = identity.hubId,
             ownerId = ownerId,
             name = name,
             defaultPort = defaultPort,
             signingPubKey = identity.signingPubKey,
             dhPubKey = identity.dhPubKey,
-            pop = pop,
+            pop = "", // placeholder — the PoP is over the OTHER fields + nonce, never over itself
         )
-        // Phase-1: the single masked egress (CYP-410 F4) — no live CP yet (S-D). The anchor is what we're laying.
+        val pop = Base64.getEncoder().encodeToString(signer.sign(RegistrationTranscript.bytes(fields, cpNonce)))
+        val reg = fields.copy(pop = pop)
+        // Phase-1 legacy path kept for the S-C stub; S-D's live CP admission is [com.tneff.cyppieagents.controlplane.HubRegistrar].
         connector.egress(JSON.encodeToString(HubRegistration.serializer(), reg))
         return reg
     }
@@ -68,16 +72,43 @@ class ControlPlaneRegistrar(
         private val JSON = Json { ignoreUnknownKeys = true }
 
         /**
-         * The CP-side admission check (modeled for S-C so PoP is a real gate): a registration is admitted ONLY if
-         * [HubRegistration.pop] is a valid Ed25519 signature by the claimed [HubRegistration.signingPubKey] over
-         * the exact nonce the CP issued. A blank/forged/wrong-nonce PoP → rejected. This is the check the Reviewer
-         * strand hardens + wires into the real CP (S-D); here it makes the mandatory-PoP tooth non-vacuous.
+         * The PoP admission check: [HubRegistration.pop] must be a valid Ed25519 signature by the claimed
+         * [HubRegistration.signingPubKey] over the **transcript** (`cpNonce` + all registered fields). A blank /
+         * forged / wrong-nonce PoP — OR a substituted dhPubKey (any field change alters the transcript) — is
+         * rejected. This is the real CP-side gate; the S-D [com.tneff.cyppieagents.controlplane.HubRegistrar]
+         * composes it with the `hubId == deriveHubId` check.
          */
         fun verifyPop(reg: HubRegistration, cpNonce: ByteArray): Boolean {
             if (reg.pop.isBlank() || cpNonce.isEmpty()) return false
             val sig = runCatching { Base64.getDecoder().decode(reg.pop) }.getOrNull() ?: return false
             val pub = runCatching { Base64.getDecoder().decode(reg.signingPubKey) }.getOrNull() ?: return false
-            return RawKeys.ed25519Verify(pub, cpNonce, sig)
+            return RawKeys.ed25519Verify(pub, RegistrationTranscript.bytes(reg, cpNonce), sig)
         }
+    }
+}
+
+/**
+ * CYP-451 — the canonical, **injective** registration transcript the PoP is computed over. Length-prefixed
+ * encoding (4-byte BE length + UTF-8 bytes per component), so no two distinct registrations can collide onto the
+ * same bytes (the same non-injectivity trap [com.tneff.cyppieagents.crypto.SecretAad] avoids). The `pop` field is
+ * excluded (it signs the rest). Every field is bound — a substituted dhPubKey yields a different transcript, so a
+ * PoP made for the real dhPubKey does not verify against the substituted one.
+ */
+object RegistrationTranscript {
+    fun bytes(reg: HubRegistration, cpNonce: ByteArray): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        fun lp(b: ByteArray) {
+            out.write(byteArrayOf((b.size ushr 24).toByte(), (b.size ushr 16).toByte(), (b.size ushr 8).toByte(), b.size.toByte()))
+            out.write(b)
+        }
+        lp("cyppie-hub-registration-v1".encodeToByteArray()) // domain-separation tag
+        lp(cpNonce)
+        lp(reg.hubId.encodeToByteArray())
+        lp(reg.ownerId.encodeToByteArray())
+        lp(reg.name.encodeToByteArray())
+        lp(reg.defaultPort.toString().encodeToByteArray())
+        lp(reg.signingPubKey.encodeToByteArray())
+        lp(reg.dhPubKey.encodeToByteArray())
+        return out.toByteArray()
     }
 }
