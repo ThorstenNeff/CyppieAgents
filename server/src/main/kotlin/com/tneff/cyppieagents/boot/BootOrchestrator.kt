@@ -547,7 +547,7 @@ class BootOrchestrator(
             onBusyReset = { busyStateTracker.reset(it); terminalControlTracker.reset(it) },   // CYP-324/354: stop/restart → clear `*` + mode→MEDIATED
             onBusyForget = { busyStateTracker.forget(it); terminalControlTracker.forget(it) }, // CYP-324/354: remove → drop both entries
             transitions = transitions, // CYP-368
-            onTeardown = { ptyManagerOf().close(it) }, // CYP-355: stop/restart also tears down an INTERACTIVE agent's PTY
+            onTeardown = { ptyManagerOf().closeAndAwait(it) }, // CYP-355: stop/restart also tears down an INTERACTIVE agent's PTY
         )
         // CYP-355 (BE-2): the boot project's hand-off motor — the single-writer over `lifecycle` + the host PTY,
         // sharing THIS runtime's `transitions` lock (never straddles two locks).
@@ -661,7 +661,7 @@ class BootOrchestrator(
                 onBusyReset = { pBusyState.reset(it); pTerminalControl.reset(it) },   // CYP-324/354: this project's lifecycle → its own busy + terminal-state trackers
                 onBusyForget = { pBusyState.forget(it); pTerminalControl.forget(it) },
                 transitions = pTransitions, // CYP-368
-                onTeardown = { ptyManagerOf().close(it) }, // CYP-355: this project's stop/restart tears down its INTERACTIVE PTY
+                onTeardown = { ptyManagerOf().closeAndAwait(it) }, // CYP-355: this project's stop/restart tears down its INTERACTIVE PTY
             )
             val pHandoff = HandoffMotor(
                 projectId = pid,

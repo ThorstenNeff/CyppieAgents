@@ -65,11 +65,14 @@ class LifecycleManager(
     /**
      * CYP-355 — invoked on stop/restart so a lifecycle op that lands while the agent is **INTERACTIVE** also
      * tears down its interactive PTY (else a stop would leave an orphaned `claude --resume` alive — the very
-     * two-process violation the hand-off exists to prevent). Wired to `PtyManager.close`; runs under the SAME
-     * shared [transitions] lock as the hand-off motor, and `close` is non-blocking (destroy-only, it never
-     * takes the lock), so it respects [AgentTransitionLock]'s deadlock rule. Null = not wired (legacy/tests).
+     * two-process violation the hand-off exists to prevent). **Suspend + awaits** (wired to
+     * `PtyManager.closeAndAwait`): a restart re-spawns the mediated `--resume <sid>` right after, so the PTY
+     * must be truly DEAD first — not merely destroy-requested — or the two `--resume`s straddle the same sid.
+     * It runs under the SAME shared [transitions] lock as the hand-off motor; the awaited pump `onExit` never
+     * takes that lock, so it respects [AgentTransitionLock]'s deadlock rule (a masked hang would surface as a
+     * bounded-timeout red in the cross-manager-stop tooth, never a silent deadlock). Null = not wired (tests).
      */
-    private val onTeardown: ((agentId: String) -> Unit)? = null,
+    private val onTeardown: (suspend (agentId: String) -> Unit)? = null,
     /**
      * CYP-368 — the per-agent transition lock, **shared** with every other component that participates in an
      * agent's transition (BE-2: `PtyManager`). Owned by neither: see [AgentTransitionLock], which also carries

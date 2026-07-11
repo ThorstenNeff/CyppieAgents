@@ -7,7 +7,9 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 
 /**
@@ -134,9 +136,17 @@ class PtyManager(
         live[agentId]?.resize(cols, rows)
     }
 
-    /** Tear the agent's PTY down (destroy + stop the reader), if any. Idempotent. */
+    /** Tear the agent's PTY down (destroy + stop the reader), if any. Idempotent, non-blocking. */
     fun close(agentId: String) {
         live.remove(agentId)?.close()
+    }
+
+    /**
+     * CYP-355 — like [close] but **awaits the process's termination** (no zombie, and no sid-overlap with a
+     * mediated respawn). Idempotent; a no-op if nothing is live.
+     */
+    suspend fun closeAndAwait(agentId: String) {
+        live.remove(agentId)?.closeAndAwait()
     }
 
     companion object {
@@ -161,8 +171,16 @@ interface PtyHandle {
     fun write(bytes: ByteArray)
     /** Resize the PTY (raises SIGWINCH so the TUI reflows). */
     fun resize(cols: Int, rows: Int)
-    /** Destroy the process and stop streaming. Idempotent. */
+    /** Destroy the process and stop streaming. Idempotent, **non-blocking** (returns before the process is gone). */
     fun close()
+
+    /**
+     * CYP-355 — destroy the PTY and **suspend until the process has actually terminated** (the pump ran out on
+     * EOF and reported `onExit`), so the hand-off motor can enforce "the interactive `--resume` is dead BEFORE
+     * the mediated `--resume` spawns" — no two-process-same-sid overlap. Lock-safe: the pump's `onExit` never
+     * takes the transition lock, so a lock-holder may await this. Default delegates to [close] for fakes.
+     */
+    suspend fun closeAndAwait() = close()
 }
 
 /** CYP-355 — a single viewer's attachment to a live PTY; [close] detaches only this viewer, not the PTY. */
@@ -183,6 +201,7 @@ internal class PtyHandleImpl(
     private val log = LoggerFactory.getLogger("pty.handle")
     @Volatile private var process: PtyProcess? = null
     @Volatile private var closed = false
+    @Volatile private var pumpJob: Job? = null // CYP-355: joined by [closeAndAwait] to confirm the process is gone
 
     // CYP-355 output fan-out. `bufferLock` makes buffer-append+subscriber-snapshot (pump) atomic against
     // replay+add (subscribe), so a chunk arriving during an attach is delivered EXACTLY once — never lost
@@ -207,7 +226,7 @@ internal class PtyHandleImpl(
             .start()
         process = proc
         // One IO coroutine pumps stdout → the fan-out until EOF, then waits for the exit code and reports once.
-        scope.launch(Dispatchers.IO) {
+        pumpJob = scope.launch(Dispatchers.IO) {
             val stdout = proc.inputStream
             val buf = ByteArray(8192)
             try {
@@ -270,5 +289,24 @@ internal class PtyHandleImpl(
         // source of "process gone"). We deliberately do NOT cancel the pump here — cancelling would race
         // out that final onExit. The pump completes on its own once the destroyed process closes the PTY.
         runCatching { process?.destroy() }
+    }
+
+    /**
+     * CYP-355 — destroy, then **join the pump** so we return only once the process is truly gone (the pump ends
+     * on EOF + `waitFor` + `onExit`). Mirrors [ClaudeCodeSession.closeAndAwait] (CYP-371): destroy FIRST, then
+     * await — never cancel (which would sever the final `onExit`). The pump's `onExit` completes a local deferred
+     * and never takes the transition lock, so a lock-holder may await this (Deadlock rule). The timeout is a
+     * belt: a process that ignores SIGTERM and holds its PTY open would otherwise park us forever — if it fires
+     * we log and return rather than hang (a stop that degrades loudly beats one that never returns).
+     */
+    override suspend fun closeAndAwait() {
+        close()
+        val joined = withTimeoutOrNull(CLOSE_AWAIT_TIMEOUT_MS) { pumpJob?.join() } != null
+        if (!joined) log.warn("pty did not terminate within {} ms for agent={}; returning anyway", CLOSE_AWAIT_TIMEOUT_MS, agentId)
+    }
+
+    private companion object {
+        /** CYP-355 — how long [closeAndAwait] waits for a destroyed PTY process to actually die before giving up. */
+        const val CLOSE_AWAIT_TIMEOUT_MS = 5_000L
     }
 }

@@ -34,9 +34,10 @@ import org.slf4j.LoggerFactory
  * transition — the SAME per-agent lock [LifecycleManager] takes (CYP-368). That is why the motor drives the
  * primitives directly (`sessions.removeAndAwait`, `ptyManager.spawnInteractive`) rather than calling
  * `LifecycleManager.stop()`, which would re-enter the non-reentrant lock and deadlock. Under the lock the two
- * sides are **strictly sequenced**: the source is torn down to completion (`removeAndAwait` awaits the process's
- * death; `ptyManager.close` destroys the PTY) BEFORE the target is spawned — so there is never a window in which
- * both a mediated session and a PTY are live for one agent (the two-process violation from the CYP-344 spike).
+ * sides are **strictly sequenced**: the source is torn down to completion — `removeAndAwait` awaits the mediated
+ * process's death, and `ptyManager.closeAndAwait` awaits the interactive PTY's death — BEFORE the target spawns,
+ * so a mediated session and a PTY (both `--resume <sid>` on the SAME sid) are never live at once (the two-process
+ * violation from the CYP-344 spike). Both directions await; the invariant is symmetric, not half-enforced.
  *
  * ## Non-optimistic confirm
  *
@@ -131,7 +132,7 @@ class HandoffMotor(
         }
         if (spawned.isFailure || !settledAlive(exit)) {
             spawned.exceptionOrNull()?.let { log.error("→TERMINAL spawn threw for agent={}: {}", agentId, it.message) }
-            ptyManager().close(agentId) // ensure no half-spawned PTY lingers
+            ptyManager().closeAndAwait(agentId) // await the dying PTY's death BEFORE the mediated respawn (no sid-overlap)
             restoreMediated(agentId, worktree)
             return reject(ModeChangeRejection.SPAWN_FAILED, mediated(agentId))
         }
@@ -160,10 +161,11 @@ class HandoffMotor(
         // Arm the resume-outcome await BEFORE respawning, so the proactive CYP-330 probe's outcome isn't missed.
         val outcome: Deferred<ResumeOutcome?> = scope.async { resumeSignal.await(projectId, agentId, resumeOutcomeWaitMs) }
 
-        // Invariant: destroy the PTY TO COMPLETION before the mediated session exists. (`close` destroys → the
-        // TUI's `claude --resume` saves its transcript under the SAME sid — the coexistence proof — so the
-        // respawn below resumes it.)
-        ptyManager().close(agentId)
+        // Invariant: destroy the PTY AND AWAIT ITS DEATH before the mediated session exists — else the dying
+        // interactive `--resume <sid>` and the new mediated `--resume <sid>` briefly straddle the SAME sid (the
+        // two-process-same-sid violation this ticket exists to close; `close` alone is non-blocking). The TUI
+        // saves its transcript under that sid on exit (the coexistence proof), so the respawn below resumes it.
+        ptyManager().closeAndAwait(agentId)
 
         val respawn = runCatching { spawnMediated(agentId, worktree) }
         if (respawn.isFailure) {

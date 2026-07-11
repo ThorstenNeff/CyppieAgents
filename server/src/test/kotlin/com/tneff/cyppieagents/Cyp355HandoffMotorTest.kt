@@ -3,8 +3,10 @@ package com.tneff.cyppieagents
 import com.tneff.cyppieagents.boot.AgentBusyStateTracker
 import com.tneff.cyppieagents.boot.AgentTransitionLock
 import com.tneff.cyppieagents.boot.HandoffMotor
+import com.tneff.cyppieagents.boot.LifecycleManager
 import com.tneff.cyppieagents.boot.ResumeOutcomeSignal
 import com.tneff.cyppieagents.boot.TerminalControlStateTracker
+import com.tneff.cyppieagents.model.ResumeOutcome
 import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.connector.InMemorySessionStore
@@ -74,12 +76,14 @@ class Cyp355HandoffMotorTest {
         val sessions = ConnectorSessions()
         val busy = AgentBusyStateTracker()
         val terminalControl = TerminalControlStateTracker()
+        val transitions = AgentTransitionLock()
+        val resumeSignal = ResumeOutcomeSignal()
         val store = InMemorySessionStore().apply { upsert("default", "backend", "sid-1", now = 1L) }
         var spawnMediated: (String, String) -> ConnectorSession = { id, _ -> FakeMediated(id) }
         val motor = HandoffMotor(
             projectId = "default",
             scope = scope,
-            transitions = AgentTransitionLock(),
+            transitions = transitions,
             sessions = sessions,
             ptyManager = { pty },
             spawnMediated = { id, wt -> spawnMediated(id, wt) },
@@ -87,14 +91,21 @@ class Cyp355HandoffMotorTest {
             sessionStore = store,
             busyState = busy,
             terminalControl = terminalControl,
-            resumeSignal = ResumeOutcomeSignal(),
+            resumeSignal = resumeSignal,
             idleDeferBoundMs = { idleBoundMs },
             now = { 1_000L },
             interactiveCommand = { listOf(tui.absolutePath) }, // fake TUI, not real `claude`
             livenessSettleMs = 300L,
-            resumeOutcomeWaitMs = 300L,
+            resumeOutcomeWaitMs = 500L,
         )
         fun stateOf(agentId: String) = terminalControl.snapshot().firstOrNull { it.agentId == agentId }?.state
+        /** Put [agentId] into INTERACTIVE with a live PTY (the pre-state for a →ORCHESTRATION hand-back).
+         *  [onExit] fires when the interactive PROCESS actually terminates — the true "PTY dead" signal (the
+         *  `isLive` map is cleared synchronously by both close and closeAndAwait, so it can't tell them apart). */
+        fun makeInteractive(agentId: String, onExit: (Int) -> Unit = {}) {
+            pty.spawnInteractive(agentId, 80, 24, listOf(tui.absolutePath), onExit)
+            terminalControl.set(agentId, TerminalControlState.INTERACTIVE, heldBy = "op", since = 1L)
+        }
     }
 
     // ── Tooth 1: the invariant — the mediated session is torn down BEFORE the PTY exists ──────────────────
@@ -209,5 +220,115 @@ class Cyp355HandoffMotorTest {
         assertTrue(PtyManager.isNestedClaudeCodeVar("CLAUDECODE"))
         assertFalse(PtyManager.isNestedClaudeCodeVar("PATH"))
         assertFalse(PtyManager.isNestedClaudeCodeVar("ANTHROPIC_API_KEY"))
+    }
+
+    // ══ →ORCHESTRATION (hand-back) — the correctness half, symmetric to →TERMINAL ═════════════════════════
+
+    // Tooth B1: the SYMMETRIC invariant — the interactive PROCESS is DEAD before the mediated one spawns (no
+    // two-process-same-sid overlap). `isLive` (map) can't prove this — closeAndAwait must have AWAITED the exit.
+    @Test
+    fun toOrchestration_interactivePtyDead_beforeMediatedSpawns() = runBlocking {
+        val rig = Rig(scope, stayAlive)
+        val ptyExited = java.util.concurrent.atomic.AtomicBoolean(false)
+        rig.makeInteractive("backend") { ptyExited.set(true) }
+        var ptyDeadAtMediatedSpawn: Boolean? = null
+        rig.spawnMediated = { id, _ -> ptyDeadAtMediatedSpawn = ptyExited.get(); FakeMediated(id) }
+
+        val resp = withTimeout(15_000) { rig.motor.requestMode("backend", TerminalMode.ORCHESTRATION, "op") }
+
+        assertEquals(ModeChangeOutcome.CONFIRMED, resp.outcome)
+        assertEquals(true, ptyDeadAtMediatedSpawn, "the interactive --resume must be DEAD (awaited), not just destroy-requested, before the mediated --resume spawns")
+        assertFalse(rig.pty.isLive("backend"), "no PTY after hand-back")
+        assertNotNull(rig.sessions.session("backend"), "the mediated session is live after hand-back")
+        assertEquals(TerminalControlState.MEDIATED, rig.stateOf("backend"))
+    }
+
+    // Tooth B2: rollback — a mediated respawn that throws rolls back to the prior INTERACTIVE mode.
+    @Test
+    fun toOrchestration_mediatedRespawnThrows_rollsBackToInteractive() = runBlocking {
+        val rig = Rig(scope, stayAlive)
+        rig.makeInteractive("backend")
+        rig.spawnMediated = { _, _ -> throw RuntimeException("mediated spawn failed") }
+
+        val resp = withTimeout(15_000) { rig.motor.requestMode("backend", TerminalMode.ORCHESTRATION, "op") }
+
+        assertEquals(ModeChangeOutcome.REJECTED, resp.outcome)
+        assertEquals(ModeChangeRejection.SPAWN_FAILED, resp.reason)
+        assertEquals(TerminalControlState.INTERACTIVE, rig.stateOf("backend"), "REJECTED rolls back to the prior INTERACTIVE mode")
+        assertTrue(rig.pty.isLive("backend"), "the interactive PTY is restored on rollback")
+        rig.pty.close("backend")
+    }
+
+    // Tooth B3: classification — a stale resume (CONTEXT_LOST signalled during the wait) → control.state=CONTEXT_LOST.
+    @Test
+    fun toOrchestration_staleResume_classifiesContextLost() = runBlocking {
+        val rig = Rig(scope, stayAlive)
+        rig.makeInteractive("backend")
+        // Faithful to production: the CONTEXT_LOST outcome arrives from the proactive CYP-330 probe AFTER the
+        // mediated respawn (spawn → error → heal), i.e. after the motor has armed+subscribed its await — never
+        // synchronously. A small delay models that (a synchronous poke would race the SharedFlow subscription).
+        rig.spawnMediated = { id, _ -> scope.launch { delay(50); rig.resumeSignal.signal("default", id, ResumeOutcome.CONTEXT_LOST) }; FakeMediated(id) }
+
+        val resp = withTimeout(15_000) { rig.motor.requestMode("backend", TerminalMode.ORCHESTRATION, "op") }
+
+        assertEquals(ModeChangeOutcome.CONFIRMED, resp.outcome, "the mode DID move to mediated — CONFIRMED")
+        assertEquals(TerminalControlState.CONTEXT_LOST, resp.control.state, "a healed stale --resume surfaces as CONTEXT_LOST")
+    }
+
+    // Tooth B4: classification — a live resume (no CONTEXT_LOST signal) → control.state=MEDIATED.
+    @Test
+    fun toOrchestration_liveResume_classifiesMediated() = runBlocking {
+        val rig = Rig(scope, stayAlive)
+        rig.makeInteractive("backend") // no resumeSignal poke → the await times out → MEDIATED
+
+        val resp = withTimeout(15_000) { rig.motor.requestMode("backend", TerminalMode.ORCHESTRATION, "op") }
+
+        assertEquals(ModeChangeOutcome.CONFIRMED, resp.outcome)
+        assertEquals(TerminalControlState.MEDIATED, rig.stateOf("backend"), "a resume that kept context is plain MEDIATED")
+    }
+
+    // Tooth B5: already-in-target + in-transition rejections.
+    @Test
+    fun toOrchestration_alreadyMediated_rejectsAlreadyInTarget() = runBlocking {
+        val rig = Rig(scope, stayAlive) // no entry → default MEDIATED
+        val resp = withTimeout(15_000) { rig.motor.requestMode("backend", TerminalMode.ORCHESTRATION, "op") }
+        assertEquals(ModeChangeOutcome.REJECTED, resp.outcome)
+        assertEquals(ModeChangeRejection.ALREADY_IN_TARGET, resp.reason)
+    }
+
+    @Test
+    fun mode_whileHandingOver_rejectsInTransition() = runBlocking {
+        val rig = Rig(scope, stayAlive)
+        rig.terminalControl.set("backend", TerminalControlState.HANDING_OVER, heldBy = "op", since = 1L)
+        val resp = withTimeout(15_000) { rig.motor.requestMode("backend", TerminalMode.TERMINAL, "op") }
+        assertEquals(ModeChangeOutcome.REJECTED, resp.outcome)
+        assertEquals(ModeChangeRejection.IN_TRANSITION, resp.reason)
+    }
+
+    // ── Tooth C: cross-manager stop — restart during INTERACTIVE tears down the PTY, BOUNDED (no deadlock) ──
+    // The onTeardown → closeAndAwait runs under the shared transition lock and the restart RE-SPAWNS right
+    // after: exactly the CYP-371 deadlock surface. The test READS RUNTIME (elapsed under a hard bound) so a
+    // masked hang surfaces as a failure, never as green (the CYP-371 lesson).
+    @Test
+    fun restartDuringInteractive_tearsDownPty_bounded_noDeadlock() = runBlocking {
+        val rig = Rig(scope, stayAlive)
+        val lifecycle = LifecycleManager(
+            initialWorktrees = mapOf("backend" to "backend"),
+            sessions = rig.sessions,
+            ensureWorktree = {},
+            spawn = { id, _ -> FakeMediated(id) }, // the respawn-after-teardown
+            transitions = rig.transitions, // the SAME shared lock — the deadlock surface
+            onTeardown = { rig.pty.closeAndAwait(it) }, // suspend, awaits under the lock
+        )
+        rig.makeInteractive("backend")
+        assertTrue(rig.pty.isLive("backend"))
+
+        val t0 = System.nanoTime()
+        withTimeout(4_000) { lifecycle.restart("backend") } // a deadlock/hang → TimeoutCancellationException → RED
+        val elapsedMs = (System.nanoTime() - t0) / 1_000_000
+
+        assertNotNull(rig.sessions.session("backend"), "the mediated session is respawned")
+        assertFalse(rig.pty.isLive("backend"), "restart during INTERACTIVE tears the PTY down (no orphan)")
+        assertTrue(elapsedMs < 3_000, "restart returned bounded (${elapsedMs}ms) — no masked near-hang under the lock")
     }
 }
