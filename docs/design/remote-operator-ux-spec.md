@@ -1,11 +1,11 @@
 # Remote-Modus Operator-UX — Design-Spec (CYP-429, Epic CYP-427 „Phase 2: Remote-Modus")
 
-> Status: **Design-Aufschlag** · docs-only, **kein Bau vor Ratifikation** · Owner: UX/UI
+> Status: **Design-Aufschlag · Q1 (Auth-Schritt) ratifiziert 2026-07-11; Q2 vorgezeichnet; Q3–Q5 PO-Ruling ausstehend** ·
+> docs-only, **kein Bau vor Ratifikation** · Owner: UX/UI
 > Baut auf der **gebauten Phase-1-`hubConnect`-UX** (CYP-419, meine Spec CYP-395) auf — jetzt für **Remote**.
-> **⚠ Auth-Schritt NICHT finalisiert** (RR2-B, offene Auftraggeber-Entscheidung — §5); Flow trägt einen **flexiblen
-> Auth-Schritt-Seam**. Rest läuft unabhängig.
+> **✅ Auth-Schritt ratifiziert (Q1/RR2-B = nativer Passkey/WebAuthn-PoP, §5); Ziel = Desktop-Native (Team-1 zuerst).**
 > Naht-Konsistenz (Keys/Tags/Auth-Flow) über den PO. Companion-Files (`remote-operator-keys/-tags/-tokens`) werden nach
-> Ratifikation **+ Auth-Schritt-Entscheid** eingefroren (jetzt würden sie driften).
+> den restlichen Rulings (Q2–Q5) eingefroren (jetzt würden Keys/Tags noch driften).
 > Begleit-Konzept: `13-cyppie-hub-architektur.md` (Remote-Modus, Sequenz B REMOTE, E2E/Noise, Vertrauenszonen).
 
 Der Operator loggt sich **zentral** ein, sieht seine registrierten Hubs, **„wechselt" auf einen** und bedient ihn **voll**
@@ -43,9 +43,10 @@ Aktion wirklich angekommen. Diese Punkte sind die Wirbelsäule; die Screens (§4
   **kein** Alarm — und folgt der Phase-1-Regel **Presence ≠ connected** (neutral, **nie** `tertiary`-Grün).
 - **H7 — Latenz ist advisory.** Eine RTT-Anzeige ist ein **Hinweis**, keine Garantie; **hohe Latenz ≠ getrennt**; nicht
   alarmieren (kein Rot/Amber für „langsam"). Neutral, „nie grün vorzeitig".
-- **H8 — Auth-Schritt-Seam offen (RR2-B).** Der Flow trägt einen **flexiblen Schritt** zwischen zentralem Login und
-  Hub-Liste, der **ggf.** eine **Passkey/WebAuthn-PoP-Bestätigung** verlangt (Härtung gegen CP-Operator-Seizure). Details
-  sind eine **offene Auftraggeber-Entscheidung** — die Spec hält den **Slot**, **finalisiert ihn nicht** (§5).
+- **H8 — Auth-Schritt = nativer Passkey/WebAuthn-PoP (Q1/RR2-B ratifiziert).** Zwischen zentralem Login und Hub-Liste
+  ein **verpflichtender** PoP-Schritt (Härtung gegen CP-Operator-Seizure); der Passkey liegt **nativ, außerhalb der
+  CP-Origin** (Desktop-Native), sodass ein kompromittiertes zentrales Login allein **nicht** genügt. Non-optimistisch,
+  **fail-closed** bei PoP-Fehler (§5).
 
 ---
 
@@ -97,7 +98,7 @@ Aktion wirklich angekommen. Diese Punkte sind die Wirbelsäule; die Screens (§4
 Zentraler Login (OIDC, Operator-Account)
         │  [AuthGate → Verified(OPERATOR)]
         ▼
-[Auth-Schritt-Seam]  ← §5, OFFEN (RR2-B): ggf. Passkey/WebAuthn-PoP-Bestätigung; sonst durchgereicht
+Passkey/WebAuthn-PoP  ← §5 (Q1/RR2-B ratifiziert): nativer Device-Key, non-optimistisch, fail-closed
         ▼
 Hub-Liste (deine registrierten Hubs)  ← reuse ControlPlaneClient.hubs(), Presence advisory/H1
         │  Auswahl eines Hubs
@@ -114,22 +115,26 @@ Remote-Session: voller Operator-Surface  ← §10, mit „Fern-Betrieb: Hub X"-K
 
 ---
 
-## 5. Auth-Schritt-Seam (OFFEN, RR2-B — nicht finalisiert)
+## 5. Auth-Schritt — Passkey/WebAuthn-PoP (RR2-B, ratifiziert 2026-07-11)
 
-Zwischen zentralem Login und Hub-Liste sitzt ein **flexibler Auth-Schritt**. Der Auftraggeber entscheidet (RR2-B, gegen
-**CP-Operator-Seizure**), ob Remote-Operator-Login **zusätzlich** eine **Passkey/WebAuthn-PoP**-Bestätigung verlangt.
+**Q1 ratifiziert: JA.** Zwischen zentralem Login und Hub-Liste sitzt ein **verpflichtender** Passkey/WebAuthn-**Proof-of-Possession**-Schritt
+(Härtung gegen **CP-Operator-Seizure**). Der Slot ist **nicht mehr offen** — er ist ein konkreter Screen.
 
-- **Design-Regel:** der Flow trägt einen **Slot** (`auth-step`), der **null-oder-eins** Bestätigungs-Screen aufnimmt.
-  Ist er leer → Login reicht direkt zur Hub-Liste durch (kein Phantom-Screen). Ist er belegt → ein **Trust-Checkpoint**
-  (Passkey-PoP) **vor** der Hub-Liste.
-- **Ehrliche Rahmung (falls belegt):** der Schritt ist ein **Sicherheits-Checkpoint** für die höher-privilegierte
-  Remote-Operator-Aktion — **kein** Reibungs-Gate ohne Grund. Copy sagt *warum* (z. B. „Bestätige mit deinem Passkey,
-  um remote auf Hubs zuzugreifen"), nicht nur *dass*.
-- **NICHT finalisiert:** Screen-Details, Pflicht-vs-optional, Enroll-Flow, Recovery — **deferred** bis Auftraggeber-Entscheid.
-  Die Spec **fixiert nur den Seam** (der Slot existiert, ist non-optimistisch, und blockt fail-closed bei
-  fehlgeschlagener PoP). testTag-Platzhalter `remote.authStep.*` (provisorisch, friert später).
-- **Nahtstelle:** knüpft an `HubTransport.sessionToken()` → Ticket-JWT (S-K); eine PoP würde das Ticket an einen
-  Passkey binden. Backend/Threat-Model-Nahtstelle (§15).
+- **Ziel-Frontend = Desktop-Native (Team-1 zuerst; Web-UI zieht Team-2 nach).** Der Passkey/Device-Key wird **nativ**
+  gehalten — **außerhalb der CP-Origin** — sodass ein kompromittiertes zentrales Login **nicht** genügt, um remote auf
+  Hubs zuzugreifen. Das trägt den **TOFU-Pin (§8.1)** und diesen PoP-Schritt voll.
+- **Screen:** nach `AuthGate → Verified(OPERATOR)` erscheint der **PoP-Checkpoint**: „Bestätige mit deinem Passkey, um
+  remote auf deine Hubs zuzugreifen." Ehrliche Rahmung — sagt **warum** (Remote-Operator ist höher-privilegiert), nicht
+  nur *dass*. Native Passkey-Aufforderung (OS-Prompt); Erfolg → Hub-Liste.
+- **Non-optimistisch, fail-closed:** die Hub-Liste erscheint **erst nach** erfolgreichem PoP; **PoP-Fehler/Abbruch →
+  blockiert** (kein Durchreichen zur Hub-Liste), ehrlicher Fehler + Retry. Kein optimistisches Vorblenden.
+- **Enroll / Recovery (Erst-Setup):** hat der Operator noch keinen Passkey registriert, führt ein **Enroll-Schritt**
+  (native Passkey-Registrierung) davor. Recovery-Pfad (verlorener Device-Key) = **Sicherheits-sensibel** → Detail-Frage
+  an das Threat-Model/Auftraggeber (nicht im Aufschlag ausgestaltet, aber der Pfad ist markiert, damit kein
+  Aussperr-Sackgasse entsteht).
+- **testTags:** `remote.authStep.popPrompt` · `remote.authStep.enroll` · `remote.authStep.error` (provisorisch bis Freeze).
+- **Nahtstelle S-4:** knüpft an `HubTransport.sessionToken()` → **CP-issued, hub-scoped Ticket-JWT** (S-K); die PoP
+  **bindet** das Ticket an den **nativen** Passkey (Besitznachweis). Backend/Threat-Model-Nahtstelle (§15).
 
 ---
 
@@ -187,10 +192,11 @@ Die **zwei getrennten Trust-Wahrheiten** (H1) bekommen **zwei getrennte** Afford
   um ihn zu pinnen." Bestätigung **pinnt** den Schlüssel. Fingerprint als lesbare Gruppen (nicht roher Hash-Blob).
 - **Spätere** Verbindungen: **still verifiziert** gegen den Pin; ein kleiner **neutraler** „Identität gepinnt"-Indikator
   im Kontext-Strip (§9) genügt (kein Prompt).
-- **Schlüssel-Änderung** (`trust_changed`, §7): **harter WARN/Block** — „Die Identität von Hub X hat sich geändert. Das
-  kann ein Angriff (MITM) oder eine legitime Neuinstallation sein. **Nicht** fortfahren, bis geklärt." **Nie** still
-  akzeptiert; Fortfahren nur nach expliziter, gewarnter Re-Pin-Bestätigung. WARN-Amber (`EventVisuals`), **nicht**
-  `tertiary`-Grün. (Level Block-vs-warn = Q2, §14.)
+- **Schlüssel-Änderung** (`trust_changed`, §7): **harter Block** (Q2 vorgezeichnet, Threat-Model RR6/RR7) — „Die
+  Identität von Hub X hat sich geändert. Das kann ein Angriff (MITM) oder eine legitime Neuinstallation sein. **Nicht**
+  fortfahren, bis geklärt." **Nie** still akzeptiert; Fortfahren **nur** nach **explizitem Out-of-Band-Re-Pin** (der neue
+  Fingerprint muss über einen **anderen Kanal** bestätigt werden — kein Ein-Klick-Weiter). WARN-Amber (`EventVisuals`),
+  **nicht** `tertiary`-Grün. (Formales Q2-Ruling folgt, Richtung bestätigt.)
 - **Platzierung:** Fingerprint-Zeile im `HubRow` (unter `localhost:${defaultPort}`); Trust-Prompt im `trustCheck`-Zustand;
   Pin-Indikator + Änderungs-Alarm im Kontext-Strip.
 
@@ -248,18 +254,20 @@ Persistente, **neutrale** Erinnerung, dass die Session remote läuft.
 
 ---
 
-## 12. testTag-Kontrakt (provisorisch — friert nach Ratifikation + Auth-Entscheid)
+## 12. testTag-Kontrakt (provisorisch — friert nach den Q3–Q5-Rulings)
 
 Erweitert Area `hubConnect` (Connect-Flow) + neue Area `remote` (aktive Remote-Session-Chrome). Provisorisch:
 ```
-remote.authStep.<slot>            (§5, OFFEN)      remote.trust.fingerprint        (§8.1)
-hubConnect.mode.remote            (aktiviert)      remote.trust.pinPrompt          (§8.1)
-remote.connect.relayDialing       (§7)             remote.trust.changedAlarm       (§8.1, WARN)
-remote.connect.e2eHandshake       (§7)             remote.trust.e2eIndicator       (§8.2)
-remote.connect.trustCheck         (§7)             remote.context.banner           (§9)
-remote.connect.connected          (§7)             remote.context.hub              (§9)
-remote.connect.error.<cause>      (§7)             remote.context.latency          (§7/§9, opt)
-remote.relayDrop                  (§7/H4)          remote.context.reconnecting     (§7)
+remote.authStep.popPrompt         (§5, Passkey)    remote.trust.fingerprint        (§8.1)
+remote.authStep.enroll            (§5)             remote.trust.pinPrompt          (§8.1)
+remote.authStep.error             (§5)             remote.trust.changedAlarm       (§8.1, WARN)
+hubConnect.mode.remote            (aktiviert)      remote.trust.e2eIndicator       (§8.2)
+remote.connect.relayDialing       (§7)             remote.context.banner           (§9)
+remote.connect.e2eHandshake       (§7)             remote.context.hub              (§9)
+remote.connect.trustCheck         (§7)             remote.context.latency          (§7/§9, opt)
+remote.connect.connected          (§7)             remote.context.reconnecting     (§7)
+remote.connect.error.<cause>      (§7)
+remote.relayDrop                  (§7/H4)
 ```
 **Fail-closed-Anker:** `remote.context.banner` absent im Lokal-Modus; `remote.connect.connected` nie vor echtem LIVE;
 `remote.trust.changedAlarm` bei Schlüssel-Änderung (nie still); `remote.trust.e2eIndicator` nie grün/nie als Hub-Vertrauen.
@@ -269,6 +277,9 @@ remote.relayDrop                  (§7/H4)          remote.context.reconnecting 
 Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu verifizieren).
 | Key | DE | EN |
 |---|---|---|
+| `remote_authstep_title` | Bestätige mit deinem Passkey | Confirm with your passkey |
+| `remote_authstep_body` | Bestätige mit deinem Passkey, um remote auf deine Hubs zuzugreifen. | Confirm with your passkey to access your hubs remotely. |
+| `remote_authstep_error` | Passkey-Bestätigung fehlgeschlagen. Erneut versuchen. | Passkey confirmation failed. Try again. |
 | `remote_context_operating` | Fern-Betrieb: %1$s | Remote session: %1$s |
 | `remote_e2e_indicator` | E2E-verschlüsselt via Relay | E2E-encrypted via relay |
 | `remote_trust_pinned` | Identität gepinnt | Identity pinned |
@@ -284,20 +295,21 @@ Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu ve
 | `a11y_remote_context` | Fern-Betrieb über Relay: Hub %1$s, E2E-verschlüsselt. | Remote session via relay: hub %1$s, E2E-encrypted. |
 | `a11y_remote_trust_changed` | Warnung: Hub-Identität geändert — mögliches MITM, nicht fortfahren. | Warning: hub identity changed — possible MITM, do not proceed. |
 
-*(Auth-Schritt-Copy §5 bewusst ausgelassen — nicht finalisiert. Latenz-Copy §7/Q3 bei Entscheid.)*
+*(Auth-Schritt-Copy §5 jetzt drin — Q1 ratifiziert. Latenz-Copy §7/Q3 bei Entscheid.)*
 
-## 14. Offene Entscheidungen
+## 14. Entscheidungen (Q1 ratifiziert · Q2 vorgezeichnet · Q3–Q5 PO-Ruling ausstehend)
 
-1. **Q1 — Auth-Schritt (RR2-B, Auftraggeber):** Passkey/WebAuthn-PoP verpflichtend / optional / gar nicht; Enroll- +
-   Recovery-Flow. **Spec hält nur den Seam** (§5), finalisiert nicht. → **PO/Auftraggeber**.
-2. **Q2 — Trust-Änderung: harter Block vs. gewarnter Re-Pin?** Empfehlung: **Block mit expliziter, gewarnter
-   Re-Pin-Bestätigung** (kein Ein-Klick-Weiter). Sicherheits-Abwägung → Auftraggeber/Threat-Model.
-3. **Q3 — Latenz sichtbar?** RTT-Hinweis im Kontext-Strip anzeigen (advisory) oder weglassen? Empfehlung: dezent/optional,
+1. **Q1 — Auth-Schritt: ✅ RATIFIZIERT (RR2-B, 2026-07-11) = verpflichtender nativer Passkey/WebAuthn-PoP.** Ziel
+   Desktop-Native (Team-1 zuerst), Device-Key nativ/außerhalb CP-Origin; non-optimistisch, fail-closed. Enroll davor;
+   Recovery = Threat-Model-Detail (§5). **In die Spec gefolded.**
+2. **Q2 — Trust-Änderung: vorgezeichnet (Threat-Model RR6/RR7) = harter Block + expliziter Out-of-Band-Re-Pin, nie
+   still.** In §8.1 gefolded; **formales Ruling folgt** (Richtung bestätigt).
+3. **Q3 — Latenz sichtbar? (offen)** RTT-Hinweis im Kontext-Strip (advisory) oder weglassen? Empfehlung: dezent/optional,
    nur wenn hoch — nie Alarm.
-4. **Q4 — Fingerprint-Verifikations-Hilfe:** nur Anzeige, oder ein Vergleichs-Wort/QR (out-of-band-Kanal)? Empfehlung:
+4. **Q4 — Fingerprint-Verifikations-Hilfe? (offen)** nur Anzeige, oder Vergleichs-Wort/QR (out-of-band)? Empfehlung:
    lesbare Fingerprint-Gruppen jetzt; QR/Vergleich später.
-5. **Q5 — „Auf Hub wechseln" bei aktiver Remote-Session:** sauberer Teardown der alten Session vor der neuen (non-optimistisch)
-   — Bestätigung des Übergangs-UX (analog Projekt-Switch „nichts wird gelöscht").
+5. **Q5 — „Auf Hub wechseln" bei aktiver Remote-Session? (offen)** sauberer Teardown der alten Session vor der neuen
+   (non-optimistisch) — Übergangs-UX bestätigen (analog Projekt-Switch „nichts wird gelöscht").
 
 ## 15. Nahtstellen zu Backend/Dev (über den PO)
 
@@ -307,8 +319,9 @@ Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu ve
   im sicheren Client-Storage (`SecureSessionStore`-Linie, CYP-413). Client zeigt, Backend/Krypto entscheidet „changed".
 - **S-3 — Globaler Relay-Verbindungs-Zustand:** ein workspace-scoped „Remote-Link up/down/reconnecting"-Signal (H4) —
   neu ggü. den per-Stream-`ConnectionStatus`. Speist §7/§9.
-- **S-4 — Auth-Schritt / Ticket-JWT (S-K, RR2-B):** `HubTransport.sessionToken()` → CP-issued hub-scoped Ticket-JWT;
-  optionale Passkey-PoP-Bindung. **Nicht finalisiert** — Threat-Model-Nahtstelle.
+- **S-4 — Auth-Schritt / Ticket-JWT (S-K, RR2-B ratifiziert):** `HubTransport.sessionToken()` → CP-issued hub-scoped
+  Ticket-JWT, **gebunden an einen nativen Passkey/WebAuthn-PoP** (Besitznachweis, außerhalb CP-Origin). Enroll- +
+  Recovery-Pfad = Threat-Model-Detail.
 - **S-5 — Latenz-Quelle (opt, Q3):** RTT aus dem Relay-Transport, falls sichtbar gemacht.
 - **Drift-Hinweis:** neue `remote_*`-Keys + `remote.*`/`hubConnect.*`-Tags landen mit Devs Slice → Re-Sync Tester (CYP-7).
 
@@ -325,14 +338,15 @@ Key-Familie `remote_*` / `a11y_remote_*` (greenfield, Kollision bei Freeze zu ve
 5. **Kontext-Banner (H6):** persistent, neutral/INFO, „Fern-Betrieb: Hub X", nie `tertiary`-Grün, absent im Lokal-Modus;
    zeigt **meine** Session nicht Registry-Presence.
 6. **Latenz advisory (H7):** wenn sichtbar, neutral, kein Alarm; hohe Latenz ≠ getrennt.
-7. **Auth-Schritt-Seam (H8):** Slot existiert, non-optimistisch, fail-closed bei PoP-Fehler; **Details nicht
-   vorweggenommen** (kein finalisierter Screen bis Auftraggeber-Entscheid).
+7. **Auth-Schritt (H8, Q1 ratifiziert):** verpflichtender nativer Passkey/WebAuthn-PoP **vor** der Hub-Liste;
+   non-optimistisch, **fail-closed** bei PoP-Fehler (kein Durchreichen); Device-Key nativ/außerhalb CP-Origin.
 8. **Reuse:** Login=`AuthGate`, Hub-Liste=`ControlPlaneClient.hubs()`, Wechsel=`switchTo`-Muster, Surfaces=bestehend,
    Töne=`TonedHint`/`EventVisuals` — keine divergenten Einmal-Teile.
 9. **Presence ≠ connected & Farbe nie allein (1.4.1):** durchgängig; Dark/Light über `maritimeColorScheme`.
 
 ---
 
-*Design-Aufschlag, nichts gebaut. **Auth-Schritt (§5, RR2-B) bewusst nicht finalisiert** — Seam gehalten. Companion-Files
-(`remote-operator-keys/-tags/-tokens`) werden nach Ratifikation **+ Auth-Schritt-Entscheid** eingefroren; vorher würden
-Keys/Tags driften. Naht-Konsistenz (Keys/Tags/Auth-Flow) über den PO; Backend-Nahtstellen §15 relay über den PO.*
+*Design-Aufschlag, nichts gebaut. **Auth-Schritt (§5, Q1/RR2-B) ratifiziert = nativer Passkey/WebAuthn-PoP** (gefolded);
+**Q2 vorgezeichnet** (Block+OOB-Re-Pin, §8.1); **Q3–Q5 offen**. Companion-Files (`remote-operator-keys/-tags/-tokens`)
+werden nach den Q3–Q5-Rulings eingefroren; vorher würden Keys/Tags driften. Naht-Konsistenz (Keys/Tags/Auth-Flow) über
+den PO; Backend-Nahtstellen §15 relay über den PO.*
