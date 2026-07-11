@@ -65,6 +65,7 @@ body,
    control keeps width>0 at a narrow window); the status cluster (min-width:0) shrinks and the label ellipsises. */
 .lifecycle-header {
   display: flex;
+  flex-wrap: wrap; /* CYP-445: the action-reject notice drops to its own line below status + controls */
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -85,4 +86,10 @@ body,
   display: flex;
   gap: 4px;
   flex-shrink: 0; /* CYP-369: controls never shrink to zero-width */
+}
+/* CYP-445 §6: the action-reject notice (409/503/…), distinct from the agent's own ERROR run-state. */
+.lifecycle-error {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  color: var(--md-sys-color-error);
 }

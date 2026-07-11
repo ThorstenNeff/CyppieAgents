@@ -157,4 +157,16 @@ describe('App assembly (CYP-425)', () => {
     fireEvent.click(await findByTestId('lifecycle.start.backend'))
     expect(repo.setLifecycle).toHaveBeenCalledWith('backend', 'start')
   })
+
+  it('a rejected lifecycle action shows the lifecycle.error line + clears the spinner (CYP-445 §6)', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    repo.setLifecycle = vi.fn().mockRejectedValue(new RestError(409, 'POST', '/api/agents/backend/restart', 'transition'))
+    const { findByTestId } = render(
+      <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    fireEvent.click(await findByTestId('lifecycle.restart.backend')) // restart is operator-enabled in any state
+    const err = await findByTestId('lifecycle.error.backend')
+    expect(err.textContent).toContain('Übergang')
+  })
 })
