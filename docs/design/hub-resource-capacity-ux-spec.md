@@ -82,7 +82,8 @@ kompakter Readout, kein Graph.
 **Zustände (Gradient H4):**
 | Zustand | Bedingung | Darstellung |
 |---|---|---|
-| **unbekannt** | Kapazität noch nicht geschätzt | **nichts** anzeigen (`null≠0`, H1) — kein „0/0", kein Platzhalter-Alarm |
+| **unbekannt** | `current` selbst unbekannt | **nichts** anzeigen (`null≠0`, H1/Q3) — kein „0/0", kein Platzhalter-Alarm |
+| **kein Max** (Fold-in CYP-417) | `current` bekannt, `estimatedMax` **null** | neutraler `Pill` „N aktiv" (`hubcap_readout_nomax`) — die bekannte Tatsache **ohne erfundenes Max**; **nicht** der Q3-Fall |
 | **Headroom** | N < M | neutraler `Pill` „N/M Agenten" (`primaryContainer`, **nicht** grün, **nicht** amber) |
 | **voll** | N == M | Readout tönt **WARN-Amber** (`severityColor(WARN)`) + Label „voll" — ehrlich „kein Headroom", **nicht** Fehler |
 
@@ -155,10 +156,12 @@ Key-Familie `hubcap_*` / `a11y_hubcap_*` (greenfield, 0 Kollision verifiziert). 
 | Key | DE | EN |
 |---|---|---|
 | `hubcap_readout` | %1$s/%2$s Agenten | %1$s/%2$s agents |
+| `hubcap_readout_nomax` | %1$s aktiv | %1$s active |
 | `hubcap_full` | voll | full |
 | `hubcap_overload_title` | Ein weiteres Team würde diese Maschine überlasten — Spawn abgelehnt. | Another team would overload this machine — spawn rejected. |
 | `hubcap_overload_dismiss` | Verstanden | Got it |
 | `a11y_hubcap_readout` | Hub-Kapazität: %1$s von %2$s Agenten (geschätzt) | Hub capacity: %1$s of %2$s agents (estimated) |
+| `a11y_hubcap_readout_nomax` | Hub-Kapazität: %1$s Agenten aktiv (Maximum nicht geschätzt) | Hub capacity: %1$s agents active (maximum not estimated) |
 | `a11y_hubcap_overload` | Überlast-Schutz: Spawn abgelehnt — ein weiteres Team würde die Maschine überlasten. | Overload protection: spawn rejected — another team would overload the machine. |
 
 *(Reuse: `event_severity_warn` für das Event-Severity-Label; `badge_count_overflow` „9+" falls N/M je >9.)*

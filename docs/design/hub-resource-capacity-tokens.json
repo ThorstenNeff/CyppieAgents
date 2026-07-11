@@ -28,8 +28,16 @@
       "label_keys": ["hubcap_readout", "hubcap_full"],
       "tag_qualifier": "workspace.capacity.full"
     },
+    "capacity.readout.nomax": {
+      "role": "Fold-in CYP-417: current BEKANNT, estimatedMax NULL (Ceiling nicht geschaetzt). Readout 'N aktiv' — die bekannte Tatsache OHNE erfundenes Max.",
+      "marker": "neutraler Pill 'N aktiv'",
+      "color": "primaryContainer/onPrimaryContainer (neutral) — wie Headroom, NICHT WARN, NICHT gruen",
+      "label_key": "hubcap_readout_nomax",
+      "a11y_key": "a11y_hubcap_readout_nomax",
+      "honesty": "H1-Verfeinerung — NICHT der Q3-Fall (Q3 'nichts' gilt nur wenn current selbst unbekannt). Zeigt den bekannten Zaehler, erfindet aber KEINE Obergrenze."
+    },
     "capacity.unknown": {
-      "role": "Kapazitaet noch nicht geschaetzt/unbekannt (Q3).",
+      "role": "current SELBST unbekannt (Q3) — nicht zu verwechseln mit capacity.readout.nomax (current bekannt, nur Max null).",
       "render": "NICHTS — Readout absent (null!=0-Disziplin, mirror AgentTokenUsageEvent contextTokens null). Kein '0/0', kein '—', kein Platzhalter-Alarm.",
       "honesty": "H1 — nie eine erfundene Zahl; Abwesenheit ist die ehrliche Anzeige."
     },
