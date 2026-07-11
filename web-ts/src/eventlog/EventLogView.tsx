@@ -1,13 +1,14 @@
-// CYP-432 (P2-c) — the event-log window: the /ws/events stream as rows. Three colour axes stay separate
-// (event-log-tokens.json): severity (glyph + colour + label), type (monospace enum text, NO hue), identity
-// (agentId text). Colour is never the sole signal — severity rides the glyph + the readable label (in onSurface),
-// the coloured glyph is decorative reinforcement. A seq GAP is an explicit amber row, never a silent skip
-// ("no silent caps"). Unknown types show their raw string (never swallowed). XSS: all fields are React text
-// children (escaped), no innerHTML.
+// CYP-432 (P2-c) / CYP-448 (P2-c.2) — the event-log live-tail window: the /ws/events stream as rows. Three colour
+// axes stay separate (event-log-tokens.json / spec §6): severity (glyph + colour + label), type (group glyph +
+// monospace enum text, NO hue), identity (agentId text). Colour is never the sole signal — severity rides the glyph
+// + the readable label (in onSurface), the coloured glyph is decorative reinforcement. A seq GAP is an explicit
+// amber row, never a silent skip; the bounded-ring trim is disclosed at the head (`event_tail_trimmed`) — "no
+// silent caps" (spec §5.2). Unknown types show their raw string with the ⓘ group glyph (never swallowed, CYP-37).
+// XSS: all fields are React text children (escaped), no innerHTML.
 //
-// ⚠ Pending UIUX (spec 8b679eec): the per-TYPE group icons (the `▤`-family) are not finalized — this renders the
-// type as monospace text only (which honestly carries it); the decorative group icon lands once UIUX signs it off.
-import { eventRows, severityGlyph, severityLabel, type EventLogState } from './eventLog'
+// CYP-448: PAUSE freezes the visible tail (App passes the frozen `events` + `bufferedCount`); while paused the
+// `liveIndicator` is ABSENT and `pausedIndicator` is present — a frozen view is never shown as live (spec §5.6).
+import { eventRows, severityGlyph, severityLabel, typeGlyph, type EventLogState } from './eventLog'
 import { formatLocalHhMm } from '../agentview/transcriptTime'
 import { useAutoscrollPin } from '../agentview/useAutoscrollPin'
 import type { EventSurrogate } from '../types/generated/contract'
@@ -19,25 +20,75 @@ const detailSummary = (detail: unknown): string => {
 }
 
 export interface EventLogViewProps {
+  /** the VISIBLE tail (frozen at the pause point when paused, else the full ring). */
   events: EventLogState['events']
   caughtUp: boolean
+  /** CYP-448: oldest events dropped by the bounded ring — disclosed as a head marker, never silent. */
+  trimmed?: number
+  /** CYP-448: the tail is frozen. `liveIndicator` is suppressed; `pausedIndicator` shown. */
+  paused?: boolean
+  /** CYP-448: events buffered since pause (arrived beyond the frozen tip). */
+  bufferedCount?: number
+  onTogglePause?: () => void
 }
 
-export function EventLogView({ events, caughtUp }: EventLogViewProps) {
+export function EventLogView({
+  events,
+  caughtUp,
+  trimmed = 0,
+  paused = false,
+  bufferedCount = 0,
+  onTogglePause,
+}: EventLogViewProps) {
   const rows = eventRows(events)
-  const tail = events.length === 0 ? '' : `${events.length}|${events[events.length - 1].id}`
+  // pin key includes pause so a frozen view stops autoscrolling to a tip it isn't showing.
+  const tail = events.length === 0 ? `p${paused}` : `${events.length}|${events[events.length - 1].id}|p${paused}`
   const { ref, onScroll } = useAutoscrollPin(tail)
+  // "Live" ONLY when caught up AND not paused (spec §5.6: a frozen view is never live).
+  const live = caughtUp && !paused
 
   return (
     <div className="event-log" data-testid="event-log">
-      <div
-        className={`event-log-status ${caughtUp ? 'live' : 'replaying'}`}
-        role="status"
-        aria-live="polite"
-        data-testid="event-log-status"
-      >
-        {caughtUp ? 'Live' : 'Verlauf lädt…'}
+      <div className="event-log-toolbar">
+        <div
+          className={`event-log-status ${live ? 'live' : paused ? 'paused' : 'replaying'}`}
+          role="status"
+          aria-live="polite"
+          data-testid="event-log-status"
+        >
+          {live ? (
+            <span data-testid="event-log-live">● Live</span>
+          ) : paused ? (
+            <span data-testid="event-log-paused">⏸ Pausiert</span>
+          ) : (
+            'Verlauf lädt…'
+          )}
+          {paused && bufferedCount > 0 && (
+            <span className="event-log-buffered" data-testid="event-log-buffered">
+              {' '}
+              {bufferedCount} neue (pausiert)
+            </span>
+          )}
+        </div>
+        {onTogglePause && (
+          <button
+            type="button"
+            className="event-log-pause"
+            onClick={onTogglePause}
+            data-testid="event-log-pause"
+            aria-pressed={paused}
+            title={paused ? 'Fortsetzen' : 'Pausieren'}
+          >
+            {paused ? '▶' : '⏸'}
+          </button>
+        )}
       </div>
+
+      {trimmed > 0 && (
+        <p className="event-log-trimmed" role="status" data-testid="event-log-trimmed">
+          ⤒ {trimmed} ältere {trimmed === 1 ? 'Ereignis' : 'Ereignisse'} verworfen (Puffer voll)
+        </p>
+      )}
 
       <div className="event-log-rows transcript-scroll" ref={ref} onScroll={onScroll} data-testid="event-log-rows">
         {rows.length === 0 ? (
@@ -77,7 +128,12 @@ function EventRow({ event }: { event: EventSurrogate }) {
         </span>
         <span className="event-sev-label">{severityLabel(event.severity)}</span>
       </span>
-      <span className="event-type">{event.type}</span>
+      <span className="event-type" data-testid={`event.type.${event.id}`}>
+        <span className="event-type-glyph" aria-hidden="true">
+          {typeGlyph(event.type)}
+        </span>
+        <span className="event-type-text">{event.type}</span>
+      </span>
       <span className="event-agent">{event.agentId}</span>
       {detailSummary(event.detail) !== '' && <span className="event-detail">{detailSummary(event.detail)}</span>}
     </li>

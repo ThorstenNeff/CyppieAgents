@@ -29,6 +29,7 @@ import { CommPanel } from './comm/CommPanel'
 import { EventLogView } from './eventlog/EventLogView'
 import { useEventLogStore } from './eventlog/eventLogStore'
 import { ApiKeyPanel } from './settings/ApiKeyPanel'
+import { tailView } from './eventlog/eventLog'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
 import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
@@ -108,6 +109,10 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const eventLog = useEventLogStore((s) => s.events)
   const eventsCaughtUp = useEventLogStore((s) => s.caughtUp)
   const eventsAccessRevoked = useEventLogStore((s) => s.accessRevoked)
+  const eventsTrimmed = useEventLogStore((s) => s.trimmed)
+  const eventsPaused = useEventLogStore((s) => s.paused)
+  const eventsPausedAtSeq = useEventLogStore((s) => s.pausedAtSeq)
+  const toggleEventsPause = useEventLogStore((s) => s.togglePause)
 
   const historySize = useMemo(() => () => loadHistorySize(browserStore()), [])
   // CYP-444: the PO identity is the roster's role==PO, not a config guess. Null until the roster loads (the W9
@@ -249,7 +254,18 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           </p>
         )
       }
-      return <EventLogView events={eventLog} caughtUp={eventsCaughtUp} />
+      // CYP-448: pause freezes the visible tail at the pause tip; newer events keep buffering (bufferedCount).
+      const tail = tailView(eventLog, eventsPaused, eventsPausedAtSeq)
+      return (
+        <EventLogView
+          events={tail.visible}
+          caughtUp={eventsCaughtUp}
+          trimmed={eventsTrimmed}
+          paused={eventsPaused}
+          bufferedCount={tail.bufferedCount}
+          onTogglePause={toggleEventsPause}
+        />
+      )
     }
     if (win.id === COMM_WINDOW_ID) {
       const messages = [...(messagesByChannel.get(selectedChannelId ?? '') ?? [])].sort(byTs)

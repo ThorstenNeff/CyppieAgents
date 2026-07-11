@@ -95,14 +95,16 @@ body,
 }
 
 
-/* CYP-432 (P2-c) — event-log severity hues (CYP-12 palette, ported from event-log-tokens.json; dark default +
-   light). Colour is never alone: the glyph shape + the readable label carry severity, this only tints the glyph.
-   The four theme blocks mirror the token layer (light base + prefers-color-scheme + explicit [data-theme]). */
+/* CYP-448 (P2-c.2) — event-log severity hues, ported to the AUDITED CYP-274 palette (spec §6, identical ratios).
+   Light: ERROR #B3261E (6.5:1) · WARN #9A6400 (5.0:1, amber — never `tertiary`, CYP-300-a0) · INFO #567083 (5.2:1)
+   · DEBUG #B8BCC4 (~2.0:1, deliberately dim — the quietest severity rides its `·` glyph + label, not a ≥3:1 rail).
+   Dark: the CYP-12 night palette. Colour is never alone: the glyph shape + the readable label carry severity, this
+   only tints the glyph. The four theme blocks mirror the token layer (light base + prefers-color-scheme + [data-theme]). */
 :root {
-  --event-sev-error: #c5221f;
-  --event-sev-warn: #b26a00;
-  --event-sev-info: #5f6368;
-  --event-sev-debug: #9aa0a6;
+  --event-sev-error: #b3261e;
+  --event-sev-warn: #9a6400;
+  --event-sev-info: #567083;
+  --event-sev-debug: #b8bcc4;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
@@ -119,10 +121,10 @@ body,
   --event-sev-debug: #5a5e66;
 }
 :root[data-theme='light'] {
-  --event-sev-error: #c5221f;
-  --event-sev-warn: #b26a00;
-  --event-sev-info: #5f6368;
-  --event-sev-debug: #9aa0a6;
+  --event-sev-error: #b3261e;
+  --event-sev-warn: #9a6400;
+  --event-sev-info: #567083;
+  --event-sev-debug: #b8bcc4;
 }
 
 .event-log {
@@ -156,11 +158,48 @@ body,
 }
 .event-type {
   font-family: ui-monospace, monospace;
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+}
+/* CYP-448: the per-type group glyph is a scan aid only — no hue (the type axis never carries colour). */
+.event-type-glyph {
+  color: var(--md-sys-color-on-surface-variant);
 }
 /* the log.dropped gap line — amber container (reuses the CYP-437 WARN tokens), never a silent skip. */
 .event-gap {
   background: var(--md-sys-color-warn-container);
   color: var(--md-sys-color-on-warn-container);
+}
+/* CYP-448 — live-tail toolbar: status + pause toggle. */
+.event-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.event-log-status.paused {
+  color: var(--md-sys-color-on-warn-container);
+}
+.event-log-buffered {
+  color: var(--md-sys-color-on-surface-variant);
+}
+/* ≥24px target (spec §7). */
+.event-log-pause {
+  min-width: 24px;
+  min-height: 24px;
+  cursor: pointer;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 4px;
+}
+/* CYP-448: bounded-ring trim marker — a disclosed cap, amber like the gap row (never silent). */
+.event-log-trimmed {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+  padding: 2px 6px;
 }
 
 /* CYP-433 (P2-e) — API-key section. Effect-hint = AMBER ("saved ≠ active", reuses the CYP-437 WARN tokens), NEVER

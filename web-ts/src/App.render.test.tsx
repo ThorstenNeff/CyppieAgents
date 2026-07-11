@@ -44,7 +44,7 @@ beforeEach(() => {
   // module-singleton stores persist across tests → reset the data (actions are kept by the merge).
   useWindowStore.setState({ windows: [], contentIds: new Set(), host: { width: 0, height: 0 } })
   useHubStore.setState({ ...emptyHubState })
-  useEventLogStore.setState({ ...emptyEventLog })
+  useEventLogStore.setState({ ...emptyEventLog, paused: false, pausedAtSeq: null })
 })
 afterEach(cleanup)
 
@@ -190,6 +190,34 @@ describe('App assembly (CYP-425)', () => {
     })
     expect(await findByTestId('event.row.e1')).toBeTruthy()
     expect(getByTestId('event-log-status').textContent).toContain('Live')
+  })
+
+  it('CYP-448: pausing the tail freezes it (pausedIndicator, no liveIndicator) + buffers the newer events', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId, queryByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    const feed = hub.sockets.find((s) => s.url.includes('/ws/events'))!
+    await act(async () => {
+      feed.emitOpen()
+      feed.emitMessage(JSON.stringify({ type: 'event', event: { id: 'p1', seq: 1, ts: 0, agentId: 'backend', projectId: 'p', type: 'tool.call', severity: 'info' } }))
+      feed.emitMessage(JSON.stringify({ type: 'caughtup' }))
+    })
+    expect(await findByTestId('event-log-live')).toBeTruthy()
+    // pause, then a new event arrives while frozen
+    fireEvent.click(getByTestId('event-log-pause'))
+    await act(async () => {
+      feed.emitMessage(JSON.stringify({ type: 'event', event: { id: 'p2', seq: 2, ts: 1, agentId: 'backend', projectId: 'p', type: 'tool.result', severity: 'info' } }))
+    })
+    expect(getByTestId('event-log-paused')).toBeTruthy()
+    expect(queryByTestId('event-log-live')).toBeNull() // frozen view is NEVER shown as live (spec §5.6)
+    expect(queryByTestId('event.row.p2')).toBeNull() // the newer event is frozen out of view…
+    expect(getByTestId('event-log-buffered').textContent).toContain('1 neue') // …and disclosed as buffered
+    // resume → live again, the buffered event shows
+    fireEvent.click(getByTestId('event-log-pause'))
+    expect(await findByTestId('event.row.p2')).toBeTruthy()
+    expect(getByTestId('event-log-live')).toBeTruthy()
   })
 
   it('CYP-432 fail-closed: a NON-operator gets NO event window and NEVER opens the /ws/events (bodies) socket', async () => {

@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { emptyEventLog, applyEventsEvent, eventRows, severityGlyph, revokeEventAccess } from './eventLog'
+import {
+  emptyEventLog,
+  applyEventsEvent,
+  eventRows,
+  severityGlyph,
+  revokeEventAccess,
+  tailView,
+  typeGlyph,
+  MAX_LIVE_EVENTS,
+} from './eventLog'
 import type { EventSurrogate } from '../types/generated/contract'
 
 const ev = (id: string, seq: number, over: Partial<EventSurrogate> = {}): EventSurrogate => ({
@@ -53,6 +62,61 @@ describe('severityGlyph — colour never the sole signal (port of EventVisuals.g
       'ⓘ',
       '·',
     ])
+  })
+})
+
+describe('bounded ring (CYP-448 — no silent caps, spec §5.2)', () => {
+  it('drops the OLDEST when over MAX_LIVE_EVENTS and counts them into `trimmed` (disclosed, not silent)', () => {
+    let s = emptyEventLog
+    const total = MAX_LIVE_EVENTS + 5
+    for (let i = 1; i <= total; i++) s = applyEventsEvent(s, { type: 'event', event: ev(`e${i}`, i) })
+    expect(s.events).toHaveLength(MAX_LIVE_EVENTS)
+    expect(s.trimmed).toBe(5) // the 5 overflow drops are surfaced, never hidden
+    expect(s.events[0].seq).toBe(6) // oldest 5 (seq 1..5) dropped; the newest kept
+    expect(s.events[s.events.length - 1].seq).toBe(total)
+  })
+
+  it('does not trim below the cap', () => {
+    let s = emptyEventLog
+    for (let i = 1; i <= 3; i++) s = applyEventsEvent(s, { type: 'event', event: ev(`e${i}`, i) })
+    expect(s.trimmed).toBe(0)
+  })
+})
+
+describe('tailView — pause freezes the visible tail (CYP-448, spec §3/§5.6)', () => {
+  const events = [ev('a', 1), ev('b', 2), ev('c', 3)]
+
+  it('live: shows all events, zero buffered', () => {
+    expect(tailView(events, false, null)).toEqual({ visible: events, bufferedCount: 0 })
+  })
+
+  it('paused at the tip: freezes what was shown, counts the newer arrivals as buffered', () => {
+    // paused after seq 2 → seq 3 arrived while paused
+    const v = tailView(events, true, 2)
+    expect(v.visible.map((e) => e.id)).toEqual(['a', 'b']) // frozen — c not shown
+    expect(v.bufferedCount).toBe(1) // c is buffered, not silently shown
+  })
+})
+
+describe('typeGlyph — the per-type group glyph, 1:1 from Compose groupGlyph (CYP-448)', () => {
+  it('maps each wire-type family to its group glyph', () => {
+    expect(typeGlyph('tool.call')).toBe('⚙')
+    expect(typeGlyph('context.usage')).toBe('▦')
+    expect(typeGlyph('hook.fired')).toBe('⤵')
+    expect(typeGlyph('error.model')).toBe('⚠')
+    expect(typeGlyph('log.dropped')).toBe('⚠')
+    expect(typeGlyph('agent.restarted')).toBe('⏻')
+    expect(typeGlyph('comm.sent')).toBe('⇄')
+    expect(typeGlyph('stall.escalated')).toBe('☂') // warden family (07/S11)
+    expect(typeGlyph('capability.degraded')).toBe('▽')
+    expect(typeGlyph('connector.optin')).toBe('⇆')
+    expect(typeGlyph('capacity.changed')).toBe('▤')
+    expect(typeGlyph('spawn.rejected')).toBe('▤')
+  })
+
+  it('an unmapped/newer wire string falls to the UNKNOWN group glyph (never crashes, never a wrong family)', () => {
+    expect(typeGlyph('unknown')).toBe('ⓘ')
+    expect(typeGlyph('some.future.type')).toBe('ⓘ')
   })
 })
 
