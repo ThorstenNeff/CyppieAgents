@@ -1,5 +1,6 @@
-// CYP-425 (App-Assembly) — the runtime config bundle the assembly needs: where the API/WS live, the operator
-// posture, and the PO identity. Injectable socket deps let the whole app be driven by fake sockets in tests.
+// CYP-425 (App-Assembly) — the runtime config bundle the assembly needs: where the API/WS live and the operator
+// posture. Injectable socket deps let the whole app be driven by fake sockets in tests. (CYP-444: the PO identity
+// is no longer here — it comes from the typed roster's role==PO, not a CYPPIE_PO_AGENT_ID config guess.)
 import { apiBaseUrl, wsBaseUrl, operatorToken, isOperatorServe } from '../platform/appConfig'
 import type { SocketFactory, Scheduler } from '../net/reconnectingSocket'
 
@@ -12,17 +13,6 @@ export interface HubConfig {
   token: string
   /** operator serve (operator-token global present) → operator surfaces (shell, ACL writes, mode toggle) are live. */
   operator: boolean
-  /**
-   * The PO agent id, for the W9 lockout advisory (isPoLockoutChange needs role==PO, which a Channel does NOT
-   * carry). Read from the explicit `CYPPIE_PO_AGENT_ID` deploy global — NEVER inferred from a `po-<worker>`
-   * channel name. Null until injected (or until CYP-426 lands the real typed roster and we read role there).
-   */
-  poAgentId: string | null
-}
-
-/** The PO id the deploy injects alongside the operator token (interim; superseded by the CYP-426 roster's role==PO). */
-export function configuredPoAgentId(): string | null {
-  return (globalThis as { CYPPIE_PO_AGENT_ID?: string }).CYPPIE_PO_AGENT_ID ?? null
 }
 
 export function readHubConfig(): HubConfig {
@@ -31,7 +21,6 @@ export function readHubConfig(): HubConfig {
     wsBase: wsBaseUrl(),
     token: operatorToken() ?? '',
     operator: isOperatorServe(),
-    poAgentId: configuredPoAgentId(),
   }
 }
 

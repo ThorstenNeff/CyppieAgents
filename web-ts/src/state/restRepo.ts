@@ -3,12 +3,15 @@
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
 import { RestClient } from '../net/rest'
-import type { AclEntry, Channel, Message1, AgentRunStateEvent } from '../types/generated/contract'
+import type { AclEntry, Agent, Channel, Message1, AgentRunStateEvent } from '../types/generated/contract'
 
 /** CYP-426 interim: `:core` TerminalMode. The server maps this to the terminal-control state machine. */
 export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
 
 export interface HubRepo {
+  /** GET /api/agents — the typed roster (id/name/role/…). The real source of the agent list + PO identity (CYP-444),
+   *  replacing the channel-derived interim + the CYPPIE_PO_AGENT_ID config guess. */
+  fetchAgents(): Promise<Agent[]>
   fetchChannels(): Promise<Channel[]>
   fetchAcl(): Promise<AclEntry[]>
   /** PUT /api/acl (operator). Returns the server-authoritative entry; the enforced flip also arrives as an AclEvent. */
@@ -29,6 +32,9 @@ export class RestHubRepo implements HubRepo {
   private readonly rest: RestClient
   constructor(apiBase: string) {
     this.rest = new RestClient(apiBase)
+  }
+  fetchAgents(): Promise<Agent[]> {
+    return this.rest.get<Agent[]>('/api/agents')
   }
   fetchChannels(): Promise<Channel[]> {
     return this.rest.get<Channel[]>('/api/channels')

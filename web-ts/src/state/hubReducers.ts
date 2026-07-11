@@ -7,6 +7,7 @@
 // the AclEvent echo arrives (applyAclEntry), which also clears that cell's pending — never the optimistic click.
 import type {
   AclEntry,
+  Agent,
   Channel,
   Message1,
   CommWsServerEvent,
@@ -27,7 +28,10 @@ export type LifecycleAction = 'start' | 'stop' | 'restart'
 
 export interface HubState {
   channels: readonly Channel[]
-  /** derived from channels' members (sorted, deduped) — the ACL columns + which agent windows to open. */
+  /** the typed roster (GET /api/agents) — the real source of agent identity + roles (CYP-444). */
+  roster: readonly Agent[]
+  /** the agent id set for windows/ACL columns: the roster's ids ∪ any live channel member (so a runtime-added
+   *  agent still surfaces before a roster refetch). Sorted, deduped. */
   agents: readonly string[]
   aclEntries: readonly AclEntry[]
   /** cells with an in-flight PUT awaiting the AclEvent echo (keyed channel|agent|dim → requested value). */
@@ -48,6 +52,7 @@ export interface HubState {
 
 export const emptyHubState: HubState = {
   channels: [],
+  roster: [],
   agents: [],
   aclEntries: [],
   pendingAcl: new Map(),
@@ -88,17 +93,29 @@ export function ingestMessages(state: HubState, msgs: readonly Message1[]): HubS
   return msgs.reduce((s, m) => applyMessage(s, m), state)
 }
 
-/** The agent roster derived from channel membership (interim until CYP-426 exports the real Agent roster). The
- *  PO identity is NOT derivable here (role isn't on a Channel) — poAgentId comes from explicit config, never a
- *  `po-<worker>` name guess. */
-export function deriveAgents(channels: readonly Channel[]): string[] {
+/** The agent id set for windows/ACL columns: the typed roster's ids ∪ every channel member (CYP-444). The roster
+ *  is the real source; channel members are unioned in so a runtime-added agent still surfaces before a roster
+ *  refetch (and keeps the CYP-438 live-channels→new-window behaviour). Sorted, deduped. */
+export function deriveAgents(channels: readonly Channel[], roster: readonly Agent[] = []): string[] {
   const set = new Set<string>()
+  for (const a of roster) set.add(a.id)
   for (const ch of channels) for (const m of ch.members) set.add(m)
   return [...set].sort()
 }
 
+/** The PO's agent id from the typed roster (role === 'PO') — the real PO identity for the W9 lockout advisory,
+ *  replacing the CYPPIE_PO_AGENT_ID config guess (CYP-444). Null until the roster loads (advisory just won't fire). */
+export function rosterPoAgentId(roster: readonly Agent[]): string | null {
+  return roster.find((a) => a.role === 'PO')?.id ?? null
+}
+
 export function applyChannels(state: HubState, channels: readonly Channel[]): HubState {
-  return { ...state, channels, agents: deriveAgents(channels) }
+  return { ...state, channels, agents: deriveAgents(channels, state.roster) }
+}
+
+/** Fold the typed roster (GET /api/agents) — recomputes the agent id set (roster ∪ channel members). */
+export function applyRoster(state: HubState, roster: readonly Agent[]): HubState {
+  return { ...state, roster, agents: deriveAgents(state.channels, roster) }
 }
 
 export function applyAcl(state: HubState, entries: readonly AclEntry[]): HubState {
