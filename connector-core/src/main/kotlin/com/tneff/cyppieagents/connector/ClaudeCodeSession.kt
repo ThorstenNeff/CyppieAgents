@@ -302,7 +302,24 @@ class ClaudeCodeSession(
                 readerJob?.cancel()
             }
         }
-        process.awaitTerminated()
+        // CYP-362 — `awaitTerminated()` = `Process.waitFor()` with NO timeout. The flush escalation above only
+        // fires when the reader CAN'T drain (SIGTERM ignored + stdout held OPEN). A process that CLOSED its
+        // stdout (so the reader drained → the flush join SUCCEEDED, no SIGKILL fired) but stays ALIVE
+        // (`sh -c 'exec 1>&-; sleep infinity'`) would still park us HERE forever — an unbounded wait 374's
+        // reader-flush-SIGKILL does not cover. Bound it: on timeout escalate to `destroyForcibly()` (SIGKILL),
+        // wait once more bounded, then abandon the wait LOUDLY — the same "a stop that returns beats one that
+        // hangs" contract as the flush. (This unbounded `waitFor()` is what hung `BridgeLazyInitE2eTest`
+        // indefinitely and threatened PO1's serial gate.) If the flush block already SIGKILLed (reader couldn't
+        // drain), the process is dying and the first wait returns at once — no double-kill.
+        var terminated = withTimeoutOrNull(readerFlushTimeoutMs) { process.awaitTerminated() } != null
+        if (!terminated) {
+            log.warn("process still alive {} ms after destroy for agent={}; hard-killing (SIGKILL)", readerFlushTimeoutMs, agentId)
+            process.destroyForcibly()
+            terminated = withTimeoutOrNull(readerFlushTimeoutMs) { process.awaitTerminated() } != null
+            if (!terminated) {
+                log.error("process not terminated {} ms after SIGKILL for agent={}; abandoning the termination wait", readerFlushTimeoutMs, agentId)
+            }
+        }
         boundSessionId?.let { onUnbind?.invoke(it) }
         pendingTurn?.cancel()
         observer?.onStopped(agentId)

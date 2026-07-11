@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Rule
+import org.junit.rules.Timeout
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
@@ -34,6 +36,14 @@ import kotlin.test.Test
  * (CYP-170: first turn ungated), the inbound `WireDeliver` flows to the CC and the result flows back out.
  */
 class BridgeLazyInitE2eTest {
+
+    // CYP-362 — a gate-safe belt. This REAL-process E2E has no overall bound: its `relay.close()` reaches
+    // `ClaudeCodeSession.closeAndAwait`, whose (pre-fix) unbounded `awaitTerminated()` = `Process.waitFor()` hung
+    // the test indefinitely under load and could block PO1's serial gate forever. JUnit's Timeout rule runs the
+    // test on its own thread and ABANDONS it at the deadline (interrupting a parked `waitFor()`) — something a
+    // coroutine `withTimeout` cannot do for a non-cancellable blocking read. The root fix (bounded
+    // `awaitTerminated`) keeps the happy path far under this; the rule only reddens a FUTURE regression.
+    @get:Rule val globalTimeout: Timeout = Timeout.seconds(30)
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     @AfterTest fun tearDown() = scope.cancel()
@@ -88,6 +98,9 @@ class BridgeLazyInitE2eTest {
         withTimeout(15000) {
             while (link.sent.none { it is WireSend && it.channel == "po-backend" && it.text == "ack" }) delay(10)
         }
-        relay.close()
+        // CYP-362 — bound the teardown explicitly: `relay.close()` reaches `closeAndAwait` → the (now bounded)
+        // process-termination wait. A cancellable regression reddens here fast with a clear message; a
+        // non-cancellable one is caught by the class Timeout rule above.
+        withTimeout(10_000) { relay.close() }
     }
 }
