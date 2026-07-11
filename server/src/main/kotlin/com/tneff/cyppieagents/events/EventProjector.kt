@@ -234,6 +234,19 @@ class EventProjector(
             estimatedMax?.let { put("estimatedMax", it) }
         }
 
+    /**
+     * CYP-417 (S-G): `capacity.changed` — the hub's estimated capacity moved (a spawn/exit changed `current`).
+     * `Severity.INFO` (headroom is not a warning). Content-free (H6): the SAME `{current, estimatedMax}` the
+     * governor gates on (`estimatedMax` omitted when unknown, `null≠0`). Drives the capacity pill (server-
+     * authoritative — the persisted last event is the pill's snapshot; live events update it). [agentId] is the
+     * change's trigger (metadata only).
+     */
+    fun capacityChanged(agentId: String, current: Int, estimatedMax: Int?) =
+        draft(agentId, null, null, EventType.CAPACITY_CHANGED, Severity.INFO) {
+            put("current", current)
+            estimatedMax?.let { put("estimatedMax", it) }
+        }
+
     /** `comm.sent`: a message the router posted on the agent's behalf — metadata only, NO body. */
     fun commSent(agentId: String, channelId: String, kind: MessageKind?) =
         draft(agentId, null, null, EventType.COMM_SENT, Severity.INFO) {

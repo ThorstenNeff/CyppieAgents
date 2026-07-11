@@ -151,6 +151,16 @@ enum class EventType(val wire: String) {
      */
     SPAWN_REJECTED("spawn.rejected"),
 
+    /**
+     * CYP-417 (S-G): the hub's estimated **capacity changed** (a spawn/exit shifted `current`, or the estimate
+     * moved). `Severity.INFO` — headroom is NOT a warning (the UI derives the amber "full" tint purely from
+     * `current==estimatedMax`; the WARN tone belongs to [SPAWN_REJECTED]). Content-free (H6): the SAME
+     * `{current, estimatedMax}` counters `admitSpawn` enforces on (`estimatedMax` absent when the hub has no
+     * reliable estimate, `null≠0`). Server-authoritative — the UI's capacity pill reads this feed, never a
+     * client-derived count.
+     */
+    CAPACITY_CHANGED("capacity.changed"),
+
     /** Fallback for any wire string not modelled here (tolerant decode). */
     UNKNOWN("unknown");
 

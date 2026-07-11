@@ -198,6 +198,7 @@ class LifecycleManager(
         if (rejectIfOverCapacity(agentId)) return@withAgentBlocking false
         try {
             doSpawn(agentId, restart = false)
+            emitCapacity(agentId) // CYP-417: a spawn changed the running count
             true
         } catch (e: Exception) {
             log.error("agent '{}' failed to boot ({})", agentId, e.message)
@@ -213,7 +214,7 @@ class LifecycleManager(
         onTeardown?.invoke(agentId) // CYP-355: also tear down an interactive PTY if the agent was INTERACTIVE
         onContextReset?.invoke(agentId) // CYP-316: a stopped agent has no standing context → token feed → null
         onBusyReset?.invoke(agentId) // CYP-324: a stopped agent is not processing → clear the `*` (+ mode→MEDIATED)
-        setRunState(agentId, AgentRunState.STOPPED)
+        setRunState(agentId, AgentRunState.STOPPED).also { emitCapacity(agentId) } // CYP-417: an exit freed capacity
     }
 
     /** Start a stopped agent in its SAME worktree. 409 if already running; 503 + ERROR on spawn failure. */
@@ -232,7 +233,7 @@ class LifecycleManager(
         // A crashed agent leaves its dead session in the registry (nothing removes it). Clear it before the
         // respawn, so doSpawn never has to displace one — displacement is how a live process becomes an orphan.
         sessions.removeAndAwait(agentId)
-        spawnOrError(agentId, restart = false)
+        spawnOrError(agentId, restart = false).also { emitCapacity(agentId) } // CYP-417: a start changed the count
     }
 
     /** Restart = stop→start as ONE op: await the old process's death, then respawn into the same worktree. */
@@ -263,6 +264,15 @@ class LifecycleManager(
             }
             SpawnDecision.Admit -> false
         }
+    }
+
+    /** CYP-417 (S-G): emit the content-free `capacity.changed` INFO event (current RUNNING count + the governor's
+     *  estimate) so the capacity pill stays server-authoritative. No-op without a governor (tests). */
+    private fun emitCapacity(triggerAgentId: String) {
+        val gov = governor ?: return
+        if (recorder == null || projector == null) return
+        val current = snapshot().count { it.runState == AgentRunState.RUNNING }
+        recorder.record(projector.capacityChanged(triggerAgentId, current, gov.estimatedMax()))
     }
 
     private fun ensureKnown(agentId: String) {
