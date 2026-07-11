@@ -13,7 +13,9 @@ import kotlin.test.fail
  * env-override (secret box-local, never in file/log). Omitting it here also fails CLOSED if the env is missing.
  *
  * **(E) teeth:** no active `client_secret` key (no plaintext, no `${}`); the whole-config no-`${` teeth lives in
- * `SmtpCourierConfigTest`. Covered by the `inputs.file` wiring (CYP-178 CC2) — a yml-only edit re-runs.
+ * `SmtpCourierConfigTest`. BOTH runtime-read files are declared `inputs.file` in `server/build.gradle.kts` — a
+ * `kratos.reference.yml` edit (CYP-178 CC2) OR an `oidc.github.jsonnet` edit (CYP-366) re-runs this test instead
+ * of leaving it stale-green (the jsonnet was undeclared until CYP-366).
  *
  * NB: this asserts the CONFIG shape only. The load-bearing **linking-takeover** safety (S1) is Kratos v1.3.0
  * RUNTIME behavior — proven by the deploy-coordinated spike, not by this test.
