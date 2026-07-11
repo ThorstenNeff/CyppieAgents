@@ -38,6 +38,26 @@ enum class AgentRunState {
     @SerialName("ERROR") ERROR,
 }
 
+/**
+ * CYP-421 (b) — WHY an agent's run-state is [AgentRunState.ERROR], as a **finite code**, never free text.
+ * Carried on [AgentRunStateEvent.errorCode] (non-null ONLY when runState == ERROR). A code — not a stderr
+ * string or an exit-signal message — keeps the content-free `/ws/lifecycle` boundary intact (the always-visible
+ * AgentWindow header must not leak operator-gated detail). Authoritativeness is normalized: an authoritative
+ * observed OS exit code maps to [SIGNALLED]/[CRASHED]; a best-effort spawn failure to [SPAWN_FAILED]; anything
+ * unmapped to [UNKNOWN] (never a fabricated specific cause).
+ */
+@Serializable
+enum class AgentErrorCode {
+    /** Died on a signal — exit code 128 < c ≤ 192 (e.g. 137 = SIGKILL/OOM, 143 = SIGTERM). */
+    @SerialName("SIGNALLED") SIGNALLED,
+    /** Exited non-zero for a non-signal reason (a crash / error exit). */
+    @SerialName("CRASHED") CRASHED,
+    /** Never started — a spawn attempt threw (best-effort; the exception message stays in the server log only). */
+    @SerialName("SPAWN_FAILED") SPAWN_FAILED,
+    /** ERROR with no classifiable cause — the normalizing fallback (an ERROR frame is never code-less). */
+    @SerialName("UNKNOWN") UNKNOWN,
+}
+
 /** A participant in the hub. Hub role drives the default ACL (PO = hub of the spokes). */
 @Serializable
 data class Agent(

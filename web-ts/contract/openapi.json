@@ -835,6 +835,128 @@
                 }
             }
         },
+        "/api/agents/{id}/terminal-grants": {
+            "get": {
+                "operationId": "get_api_agents__id__terminal-grants",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TerminalGrants"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "operationId": "put_api_agents__id__terminal-grants",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TerminalGrantRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TerminalGrants"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "delete_api_agents__id__terminal-grants",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TerminalGrantRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TerminalGrants"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/agents/{id}/mode": {
             "post": {
                 "operationId": "post_api_agents__id__mode",
@@ -1519,6 +1641,42 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/Capacity"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/server-now": {
+            "get": {
+                "operationId": "get_api_server-now",
+                "x-auth-tier": "PARTICIPANT",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServerNow"
                                 }
                             }
                         }
@@ -2603,11 +2761,52 @@
                             "STOPPED",
                             "ERROR"
                         ]
+                    },
+                    "errorCode": {
+                        "enum": [
+                            "SIGNALLED",
+                            "CRASHED",
+                            "SPAWN_FAILED",
+                            "UNKNOWN"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
                     "agentId",
                     "runState"
+                ]
+            },
+            "TerminalGrants": {
+                "type": "object",
+                "properties": {
+                    "agentId": {
+                        "type": "string"
+                    },
+                    "subjects": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "agentId",
+                    "subjects"
+                ]
+            },
+            "TerminalGrantRequest": {
+                "type": "object",
+                "properties": {
+                    "subject": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "subject"
                 ]
             },
             "ModeChangeRequest": {
@@ -3100,6 +3299,17 @@
                 },
                 "required": [
                     "current"
+                ]
+            },
+            "ServerNow": {
+                "type": "object",
+                "properties": {
+                    "serverNowMs": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "serverNowMs"
                 ]
             },
             "ReportSnapshot": {

@@ -17,6 +17,15 @@ import kotlinx.serialization.Serializable
 data class AgentRunStateEvent(
     val agentId: String,
     val runState: AgentRunState,
+    /**
+     * CYP-421 (b) — WHY, when [runState] == [AgentRunState.ERROR]: a finite [AgentErrorCode], never free text
+     * (the content-free boundary above holds — a code is not a body). **Non-null ONLY on ERROR**, single-sourced
+     * in `LifecycleManager.setRunState`; null for RUNNING/STOPPED and omitted on the wire (CommJson
+     * `explicitNulls = false`), so non-ERROR frames keep the exact `{agentId, runState}` shape. Additive +
+     * defaulted so older payloads still decode (CommJson `ignoreUnknownKeys = true`) — an un-updated consumer
+     * ignores it, never throws.
+     */
+    val errorCode: AgentErrorCode? = null,
 )
 
 /**
