@@ -1,0 +1,20 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+#root {
+  display: grid;
+  place-items: center;
+}
