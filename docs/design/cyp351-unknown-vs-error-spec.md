@@ -2,6 +2,12 @@
 
 > Owner: UIUX-Designer · Ticket **CYP-351** · Stand 2026-07-10 · Basis **`origin/develop` = `ec9c537`** · Scope **WASM-App**
 > Docs-only. Adressat: Implementierung + Test. **0 neue Keys, 0 neue Tags.**
+>
+> **Adoptiert 2026-07-11 als eigenständiges Frontend-Design-Item** (aus CYP-351 rausgehängt, unabhängig vom
+> Backend-Fix). **Verifiziert gegen `origin/develop` nach dem Merge von CYP-350+CYP-369** (`1e3e3da0`/`384007c5`):
+> der Mangel besteht fort — `AgentWindow.kt:653` mappt `UNKNOWN → outlineVariant` (der 1,41:1-Punkt), abgesichert
+> nur durch die Redundanz-Ausnahme im `OutlineTextColorGuardTest`. `StatusIndicator` liegt in `commonMain`
+> (`AgentWindow.kt:632`). **Design gilt medien-unabhängig für Compose-Desktop UND die neue Web/DOM-UI** (§7).
 
 ---
 
@@ -147,9 +153,44 @@ Alle Werte sind **gerechnet** (kein Bild-Vergleich), gegen `MaritimeLight` und `
   Bedeutung („nicht gemeldet"). Kein dritter Mechanismus, kein neuer Farbton.
 - **0 neue Keys, 0 neue Tags.** `agent_status_unknown` / `_error` und `a11y_agent_status` existieren; DE **und**
   EN sind gepflegt.
-- **Der Preis benannt:** die Formänderung greift in `StatusIndicator` ein — eine Codestelle, die CYP-350 und
-  CYP-369 ebenfalls anfassen. **Sie gehört in denselben Zug**, sonst kollidieren drei Bäume auf derselben Row.
+- **Der Preis benannt — und die Kopplung korrigiert (2026-07-11):** die Formänderung greift in `StatusIndicator`
+  ein. Meine ursprüngliche Auflage „gehört in denselben Zug wie CYP-350/CYP-369" ist **überholt** — beide sind
+  bereits **allein** nach develop gemergt (`1e3e3da0`, `384007c5`), ohne diesen Ring-Fix. Der Zug ist abgefahren;
+  die Kollision wurde durch **Verpassen**, nicht durch Mitfahren vermieden. Der Fix landet jetzt **eigenständig**
+  auf dem post-350/369-`StatusIndicator` (`AgentWindow.kt:632`) — eine lokale, konfliktarme Änderung an genau
+  einer Codestelle. (Lektion: eine Kopplungs-Auflage altert im Merge, nicht im Kopf.)
 - **Keine Größenänderung:** 8 dp bleiben 8 dp, weil der Header bei 320 dp um jeden dp kämpft (CYP-369).
 - **Eine Frage offen gelassen** (§4), statt sie zu erfinden: den Grund eines `ERROR` liefert der Server oder
   niemand.
 - **Docs-only.**
+
+---
+
+## 7. Triage & Adoption (2026-07-11) — zwei Implementierungsflächen
+
+Adoptiert als eigenständiges Frontend-Design-Item. Empfehlung zur Ticket-Reife (PO entscheidet und legt an):
+
+**Es sollte ein Implementierungs-Ticket werden** — es ist ein **gerechneter A11y-Mangel** (unsichtbarer
+1,41:1-Punkt), nicht kosmetisch, und der Fix ist klein und in sich geschlossen (Form statt Farbton, **0 Keys,
+0 Tags, 0 Breitenänderung**, eine Codestelle).
+
+**Zwei Teile, unterschiedlich abhängig — trennen:**
+- **7.1 Der Ring-Fix (§2) — backend-unabhängig, jetzt schedulebar.** `UNKNOWN` = Ring (`outline`, 3,55:1) statt
+  gefüllter `outlineVariant`-Scheibe. Hängt an nichts; kann sofort ein Ticket werden.
+- **7.2 Der `ERROR`-Grund (§4) — hält an einer Backend-Naht.** Braucht die Vertragsantwort (liefert der Server
+  einen Grund zum `ERROR`-Zustand?). Bis dahin fail-closed: „Fehler — Grund nicht gemeldet". **Nicht** an 7.1
+  koppeln — sonst blockiert die offene Frage den fertigen Fix.
+
+**Zwei Implementierungsflächen (die Web→TS/DOM-Umstellung):** das Design ist medien-unabhängig — Ring vs.
+gefüllte Scheibe, eine Farbrolle, ein Wort, eine Stimme.
+- **Compose-Desktop / heutige WASM-App:** `StatusIndicator` (`AgentWindow.kt:632`), Ring via `Canvas`/Border,
+  Größe bleibt 8 dp.
+- **Neue Web/DOM-UI:** derselbe Zustand als CSS — `border: 2px solid var(--md-sys-color-outline)` mit offener
+  Mitte statt `background`. Trivial und **correct-by-construction**, wenn die Status-Indicator-Komponente der
+  neuen UI dieses Design von Anfang an trägt, statt es später nachzurüsten.
+
+**Sequenzierungs-Frage an den PO (out-of-band):** Compose-Fix **jetzt** (der Mangel ist live auf develop, der
+Fix ist billig) — **oder** nur einmal in der neuen DOM-UI umsetzen, falls diese Fläche ohnehin bald neu gebaut
+wird? Design-seitig ist beides identisch; die Wahl ist reine Aufwand-/Timing-Abwägung. Meine Neigung: den
+Compose-Fix nehmen (ein live A11y-Mangel sollte nicht auf eine Umstellung warten) **und** das Design in die neue
+UI mitnehmen — die zwei Umsetzungen teilen eine Design-Quelle, kein zweiter Entwurf.
