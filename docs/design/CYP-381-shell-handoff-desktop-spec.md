@@ -150,9 +150,130 @@ UI — a new `EventType`/`type` string `resume.outcome` + the 3 copies. It is **
 **(b) The persistent state — in the agent window** (carried by CYP-354 `CONTEXT_LOST`, my CYP-333 §6, some already
 built): the titlebar marker `∅ Kontext verloren` (WARN-amber, live), the WARN banner
 `agent.<id>.contextLostBanner` ("Agent ohne vorherigen Kontext zurück — Verlauf nicht wiederhergestellt"), the
-transcript **discontinuity line** + **dimmed scrollback as history** (a11y "nicht im Agenten-Gedächtnis"),
+transcript **discontinuity line** + **receded scrollback as history** (a11y "nicht im Agenten-Gedächtnis"),
 recovery on the next real turn. The UI **never guesses** — both the event and the state come from the backend
-(seam #5); a near-zero token count is *not* used to infer loss (ambiguous vs a CYP-326 compaction).
+(seam #5); a near-zero token count is *not* used to infer loss (ambiguous vs a CYP-326 compaction). **The exact
+transcript chrome is §7.1.**
+
+---
+
+## 7.1 CONTEXT_LOST transcript chrome — Dev-ready (#3, grounded on `AgentWindow.kt`)
+
+> Motor is live (`768c072d`) → this was the "deferred-with-motor" piece; now due. Grounded on `AgentWindow.kt`
+> `AgentTranscript` (L536-587) — a `LazyColumn` tagged `agent.<id>.stream` (L550), `itemsIndexed(events, key=id)`
+> (L554), rows via `TranscriptRow` (L622-637), **no dividers**, `Arrangement.spacedBy(6.dp)` only (L552). The
+> content rectangle is `agent.<id>.content` (L191); `ORCHESTRATION` selects `AgentTranscript` (L192-200).
+
+### 7.1.0 The split that makes this honest — **live-state chrome vs durable landmark**
+
+`CONTEXT_LOST` is a *momentary* control-state: `CONTEXT_LOST ──next real turn──▶ MEDIATED` (`TerminalControlModel.kt`
+L15). But the fact *"the agent does not remember the scrollback above the loss point"* is **permanent** for that
+buffer — it never becomes false. So the chrome is **two-tier**, driven by two different sources:
+
+| Tier | Driven by | Lifetime | Elements |
+|---|---|---|---|
+| **Live-state** (transient) | CYP-354 `TerminalControlState == CONTEXT_LOST` (momentary) | clears when state leaves `CONTEXT_LOST` (next real turn) | titlebar `∅` marker (**built**, WindowManager L724-751) · window WARN banner `agent.<id>.contextLostBanner` (§7b/§10) |
+| **Durable landmark** (permanent) | the **`resume.outcome` Event** `outcome==CONTEXT_LOST` + its `ts` (§7a, Event-Log stream) | **persists** as long as the pre-loss rows are in the buffer — survives recovery to MEDIATED | the transcript **discontinuity row** + the **receded history** above it |
+
+⭐ **Decision (my lane): the discontinuity line is anchored to the `resume.outcome:CONTEXT_LOST` event `ts`, NOT to
+the live control-state.** Tying it to the momentary state would make the boundary *vanish the instant the agent
+produces its first fresh turn* — dishonest, because the "not in memory" fact is still true. The Event-Log event is
+the durable record (it already exists for §7a); reuse its `ts` as the transcript anchor. This mirrors my §7
+two-surface split exactly: **event = durable record, state = momentary flag.**
+
+### 7.1.1 The discontinuity row — new `TranscriptDiscontinuityRow` (sibling of `NoticeRow`)
+
+**Placement.** Insert one boundary item into the `AgentTranscript` `LazyColumn`, positioned by `ts`: **before the
+first event whose `ts >= lossTs`**, else at the **tail** (loss just happened, no fresh turn yet). Chronology:
+`[ historic rows ] → [ ∅ discontinuity row ] → [ fresh rows ]`. Each `resume.outcome:CONTEXT_LOST` event = **one**
+durable landmark; the ts-insertion generalizes to multiple losses without special-casing (rare; MVP norm = one).
+
+**Visual — a full-width WARN *landmark band*, reusing the Event-Log `GapRow` idiom** (`eventlog/EventRowUi.kt`
+L185-210) but **WARN, not error** (this is a warning, the session is fine — its memory isn't; `GapRow` is `error`
+because dropped-events is data-integrity loss):
+- Container: `warnContainer` background (**existing token**, `EventVisuals.kt` L104-108 — dark `0xFF4A3A10`/text
+  `0xFFFFC857`, light `0xFFFFE7B0`/text `0xFF5A3D00`), full-width, `padding(horizontal=10.dp, vertical=6.dp)`.
+- Leading **rail** 4.dp × height, `severityColor(Severity.WARN)` (reuse `GapRow`'s rail; `EventVisuals` `railColor`).
+- Glyph **`∅`** — *deliberately the same glyph as the titlebar marker* (`terminal_ctl_context_lost`), so "context
+  lost" reads as one vocabulary across title bar and transcript. **Not** `GapRow`'s generic `⚠`. Glyph is
+  decorative → `clearAndSetSemantics {}` (empty), the house pattern (AgentWindow L719-724 etc.).
+- Label: `transcript_context_lost` (below), `FontWeight.SemiBold` on `warnContainer`-text, `labelMedium`.
+
+**Copy is robust to a trimmed buffer** — it does **not** say "above" (history rows may have aged out), it states
+the fact: `transcript_context_lost` DE **"Kontext verloren — der Agent hat den vorherigen Verlauf nicht im
+Gedächtnis."** / EN "Context lost — the agent does not remember the previous history."
+
+**a11y.** The band is a **static landmark**, not a live announcement — the *live* announcement is the window
+banner (`a11y_terminal_context_lost`, `liveRegion=Polite`, already speced §7b/§10) which fires **once** on the
+state transition. The band therefore carries only a static `contentDescription` = `a11y_transcript_context_lost`
+DE **"Verlaufsbruch: Kontext verloren — der obige Verlauf ist nicht im Gedächtnis des Agenten."** (merged node,
+`semantics(mergeDescendants=true)`, the WindowManager marker idiom L742-743). **Do not** put a `liveRegion` on the
+band — it must not re-announce every recomposition/scroll.
+
+### 7.1.2 The receded history — role-demotion + gutter rail, **NOT text-alpha** ⚠
+
+> **Honesty/WCAG flag (my lane) — you asked for "gedimmte Historie *(alpha)*". The codebase explicitly forbids
+> alpha on text**, and documents why in two places: `NoticeRow` (AgentWindow L833-838: `onSurfaceVariant` is used
+> *instead of* alpha because it "still reads quieter than `onSurface` … `outline` was never needed to sound soft")
+> and `TimeCell` (L645-646: "needs no alpha — damping comes from size and role"). The one `copy(alpha=)` in the
+> shared UI is a **decorative pager dot**, never text (WindowManager L481). An alpha multiplier on the historic
+> rows would drag their carefully-tuned contrast (assistant `onSurface` 15.6:1; user `secondary`; tool
+> `onSurfaceVariant`) **below AA** and, worse, make the human's own reference scrollback **hard to read** — but the
+> human still needs to *read* it (it's their record of what happened; only the *agent* forgot it). So "dim" here
+> means **recede, stay legible**, achieved the house way:
+
+- **Demote the loudest historic rows by role, not alpha:** historic `AssistantTextRow` body `onSurface` (15.6:1)
+  → **`onSurfaceVariant`** (8.69:1 / 9.80:1 — still comfortably AA, measurably quieter). Rows already at
+  `onSurfaceVariant`/`secondary` (tool, system, notice, user) **stay as-is** — already quiet, and demoting further
+  risks AA. This is the exact "quiet = role + type, never alpha" pattern the two comments above establish.
+- **A continuous gutter rail** down the historic block: a 2.dp vertical rule in the `TimeCell` gutter lane,
+  `outlineVariant` (border role, decorative — `clearAndSetSemantics {}`), signalling "this whole run is set-apart
+  history" **without touching any text contrast**. (Rail = structure; `outline`/`outlineVariant` are legitimate as
+  a *rule*, only forbidden as *text*.)
+- **No background wash by default.** A `surfaceVariant` fill behind the historic rows would re-seat every row's
+  text on a new background and require re-verifying each role's AA on `surfaceVariant` — out of proportion for the
+  signal. **If** the Auftraggeber wants a literal "alpha" look, it may only be a **non-text scrim** (a low-alpha
+  `surfaceVariant` layer *behind* the block) **and Dev must re-verify each historic row's text AA on the resulting
+  background at build-review** (as CYP-322/323). Flag to me if desired; my honest default is rail + role-demotion,
+  which needs no re-verification.
+
+**Recovery persistence.** When the live state leaves `CONTEXT_LOST` (next real turn → `MEDIATED`), the **live-state
+chrome clears** (titlebar `∅`, window banner) but the **discontinuity row + receded history stay** — they are
+anchored to the durable `resume.outcome` event, not the state. Fresh post-loss rows render **below** the band at
+**full** emphasis (`onSurface`), visually confirming "from here on, this *is* the agent's memory." This contrast
+(receded above / full below) is the honest payload — the human sees exactly where the agent's memory begins.
+
+### 7.1.3 testTags (add to `AgentViewTags`; shared with QA CYP-7)
+
+| Element | testTag | State |
+|---|---|---|
+| Discontinuity band (net-new) | `agent.<id>.contextLostDivider` | present iff a `resume.outcome:CONTEXT_LOST` landmark is in the buffer |
+| Receded-history block (net-new, optional QA anchor) | `agent.<id>.priorHistory` | wraps the rows above the divider; absent when no landmark |
+
+The gutter rail and glyph are **decorative** (no tag, `clearAndSetSemantics {}`). QA anchors on the divider +
+(optionally) the receded block; the durable/transient split is testable — the divider **persists** after the state
+flips back to `MEDIATED`, the titlebar `∅`/banner **clear**.
+
+### 7.1.4 i18n (net-new; DE default + EN parity; land with Dev's slice)
+
+| Key | DE | EN |
+|---|---|---|
+| `transcript_context_lost` | Kontext verloren — der Agent hat den vorherigen Verlauf nicht im Gedächtnis. | Context lost — the agent does not remember the previous history. |
+| `a11y_transcript_context_lost` | Verlaufsbruch: Kontext verloren — der obige Verlauf ist nicht im Gedächtnis des Agenten. | History discontinuity: context lost — the agent does not remember the history above. |
+
+*(The window-level banner keys `terminal_context_lost` / `a11y_terminal_context_lost` from §10 are unchanged — the
+band's copy is transcript-scoped and distinct, so the SR hears "der obige Verlauf" in the timeline where the break
+is, and the banner's live "Agent ohne vorherigen Kontext zurück" once at the top. No duplication of announcement.)*
+
+### 7.1.5 Tone / teeth
+
+- **WARN, never error, never green.** `warnContainer` + `severityColor(WARN)`; not `errorContainer` (that is
+  `GapRow`'s data-loss red), not `tertiary` (night-green = false success, §11).
+- **Durable ≠ live** — the divider persists after recovery; the marker/banner clear. This *is* the honesty test.
+- **Legible recede** — history stays AA-readable (role-demotion, no text-alpha); only a non-text scrim may carry a
+  literal alpha, AA-re-verified.
+- **Anchored, never guessed** — the divider comes from the `resume.outcome:CONTEXT_LOST` event `ts`; a low token
+  count never conjures one.
 
 ---
 
@@ -195,7 +316,9 @@ the `Shell`-bearing keys/testTags. Checklist (grounded on strings.xml L565-576 +
 | Mode-marker (built, §5.1) | `window.<id>.mode` | present iff non-MEDIATED |
 | **Holder + since** (net-new) | `window.<id>.mode.holder` | present iff `heldBy != null` |
 | **Hand-off banner** (CYP-333 §4.5) | `agent.<id>.handoffBanner` | present iff `INTERACTIVE` |
-| **Context-lost banner** (CYP-333 §6) | `agent.<id>.contextLostBanner` | present iff `CONTEXT_LOST` |
+| **Context-lost banner** (CYP-333 §6, live-state) | `agent.<id>.contextLostBanner` | present iff `CONTEXT_LOST` (clears on recovery) |
+| **Context-lost divider** (net-new §7.1, durable) | `agent.<id>.contextLostDivider` | present iff a `resume.outcome:CONTEXT_LOST` landmark is in the buffer (**persists** after recovery) |
+| **Receded-history block** (net-new §7.1, optional) | `agent.<id>.priorHistory` | wraps rows above the divider |
 | Mode-swap error (net-new, reuses row) | `agent.<id>.lifecycleError` | present on motor reject |
 
 **Fail-closed anchors:** marker/holder/banner absent unless their state holds; no optimistic mode change (the
@@ -229,8 +352,11 @@ hand-off-motor gate.
 | `event_resume_with_context` | Sitzung mit Kontext fortgesetzt | Session resumed with context |
 | `event_resume_context_lost` | Kontext verloren — Sitzung ohne vorherigen Verlauf | Context lost — session without prior history |
 | `event_resume_fresh` | Neue Sitzung (kein Vorlauf) | New session (no prior context) |
+| `transcript_context_lost` *(§7.1 divider)* | Kontext verloren — der Agent hat den vorherigen Verlauf nicht im Gedächtnis. | Context lost — the agent does not remember the previous history. |
+| `a11y_transcript_context_lost` *(§7.1 divider)* | Verlaufsbruch: Kontext verloren — der obige Verlauf ist nicht im Gedächtnis des Agenten. | History discontinuity: context lost — the agent does not remember the history above. |
 
-*(The CYP-333 §6 discontinuity-line / dimmed-history a11y keys apply if not yet landed; reuse if already present.)*
+*(The §7.1 transcript-divider keys are distinct from the window-banner `terminal_context_lost` — banner = live
+announcement once at the top, divider = durable landmark in the timeline. No duplicated announcement.)*
 
 ---
 
@@ -251,7 +377,8 @@ hand-off-motor gate.
 2. **IDLE-defer** — a flip during a running turn defers (bounded-wait), never aborts; the defer hint shows; no silent seize.
 3. **Holder honesty** — `heldBy`+`since` shown when present; **no keystroke/PTY content** ever on the state channel.
 4. **Hub-blind stated** — `INTERACTIVE` shows the WARN "Hub vermittelt nicht" (never green); marker `◉` present.
-5. **ResumeOutcome 3-level** — `CONTEXT_LOST`=WARN, the other two INFO (no green); rendered as an Event-Log event; the persistent `CONTEXT_LOST` state lights marker+banner+dimmed-history; never inferred from token count.
+5. **ResumeOutcome 3-level** — `CONTEXT_LOST`=WARN, the other two INFO (no green); rendered as an Event-Log event; the persistent `CONTEXT_LOST` state lights marker+banner (live) and the **durable transcript divider + receded history** (§7.1); never inferred from token count.
+   - **Transcript chrome (§7.1) teeth:** the discontinuity divider is **WARN not error** (`warnContainer`, `∅`), **anchored to the `resume.outcome:CONTEXT_LOST` event ts** (durable) so it **persists after the state recovers to MEDIATED** (the marker/banner clear, the divider stays); history recedes by **role-demotion + gutter rail, never text-alpha** (AA-preserved, still human-legible); fresh post-loss rows render below at full emphasis.
 6. **Clean rename `Shell→Terminal`** — label, note (`terminal_session_note` reads the real-session truth, not "bash"), keys, and the `.terminalNote` tag are renamed together; the stale source comment inverted; no orphan "shell" in the terminal path.
 7. Fail-closed absence (marker/holder/banner/deferHint iff their state); DE+EN parity; tags synced with QA (CYP-7); no green SUCCESS.
 
@@ -270,3 +397,8 @@ the tester. **Nothing built here — spec only.**
 **Label decided (PO 2026-07-11): `Shell` → `Terminal`** (§1/§8). No open UX decisions remain. Dev builds §3–§12
 against the CYP-355/356 stubs now and carries the clean `Shell→Terminal` rename (labels + note + keys + testTags,
 §8). Real-swap when CYP-355/356 land; §-QA on the PO's trigger after build. Dual-gate, merge via PO.
+
+**#3 CONTEXT_LOST transcript chrome delivered (2026-07-11, motor live `768c072d`): §7.1** — Dev-ready, grounded on
+`AgentWindow.kt` `AgentTranscript`. Durable `resume.outcome`-anchored discontinuity divider (WARN not error, `∅`,
+persists past recovery) + role-demotion/gutter-rail recede (no text-alpha, AA-preserved). One open flag for the
+Auftraggeber only: literal "alpha" is reserved for a non-text scrim, AA-re-verified — my honest default needs none.
