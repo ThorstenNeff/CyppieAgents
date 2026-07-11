@@ -142,3 +142,25 @@ web-ts/
     comm/               # channels, timeline, ACL matrix (W9)
     state/              # Zustand store
 ```
+
+## App assembly (CYP-425)
+
+`App.tsx` is no longer the W0 skeleton — it assembles the finished modules into a running desktop:
+
+- **`state/`** — the live-socket VM. Pure reducers (`hubReducers.ts`, fully unit-tested: id-dedup, non-optimistic
+  ACL echo, channel-derived roster, per-agent terminal state) behind a thin Zustand shell (`hubStore.ts`).
+  `liveHub.ts` opens `/ws/comm` + `/ws/terminal-state` and folds every event into the store; `restRepo.ts` is the
+  REST side behind a `HubRepo` interface (injectable in tests). Socket factory/scheduler are injectable, so the
+  whole app renders under jsdom with no real WebSocket.
+- **Windows** — one per agent (`AgentWindow`: mode toggle over the retained transcript+composer / operator-gated
+  shell) plus the ACL window (`comm/AclPanel`: the W9 matrix + the **PO-lockout confirm** dialog and the
+  **Hub-and-Spoke preset** — advisory/​non-atomic, `isPoLockoutChange`/`presetDiff`). Each agent window owns its
+  own `/ws/agent` socket; the composer sends a `UserTurn` on it.
+
+**Interim seams (flagged; swap when the deps land):**
+- Agent roster + ACL columns are derived from `GET /api/channels` membership, and **`poAgentId` is the explicit
+  `CYPPIE_PO_AGENT_ID` deploy global** — never a `po-<worker>` name guess. Both swap to the real typed roster when
+  **CYP-426** exports the REST/`openapi.json` contract (`Agent.role == PO`).
+- The **Comm timeline** (`CommPanel`) integrates when **CYP-424** merges; the VM already keeps + dedups messages,
+  so it is a render, not a re-plumb.
+- `ModeChangeRequest` is hand-modeled (REST-only DTO, not in the asyncapi export) until CYP-426.

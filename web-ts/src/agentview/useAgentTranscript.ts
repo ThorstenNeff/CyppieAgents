@@ -1,22 +1,34 @@
-// CYP-401 (W3) — wires /ws/agent -> mapper -> fold -> React state. One mapper per mount (its readySessions /
-// toolCalls persist across reconnects within the mount); the socket auto-reconnects with `?since=` replay and
-// seq-idempotency (W2), so the folded rows stay correct across a drop. Mounted per agent window by W4.
-import { useEffect, useState } from 'react'
+// CYP-401 (W3) / CYP-425 (App-Assembly) — wires /ws/agent -> mapper -> fold -> React state, and exposes `send`
+// so the composer can post a human/operator turn on the SAME socket (one socket per agent window). One mapper per
+// mount (its readySessions / toolCalls persist across reconnects within the mount); the socket auto-reconnects
+// with `?since=` replay and seq-idempotency (W2), so the folded rows stay correct across a drop. The socket
+// factory/scheduler are injectable so an agent window renders under jsdom without a real WebSocket (CYP-425 tests).
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AgentSocket } from '../net/agentSocket'
 import { StreamJsonMapper } from './streamJsonMapper'
 import { foldEvent } from './transcriptFolding'
 import type { AgentEvent } from './agentEvent'
+import type { SocketFactory, Scheduler } from '../net/reconnectingSocket'
 
 export interface UseAgentTranscriptOptions {
   baseUrl: string
   agentId: string
   token: string
   readyNoticeText: string
+  factory?: SocketFactory
+  schedule?: Scheduler
 }
 
-export function useAgentTranscript(opts: UseAgentTranscriptOptions): readonly AgentEvent[] {
-  const { baseUrl, agentId, token, readyNoticeText } = opts
+export interface AgentTranscriptHandle {
+  rows: readonly AgentEvent[]
+  /** Send a human/operator turn to the agent (the mediator injects it on stdin). Returns false if the socket is down. */
+  send: (text: string) => boolean
+}
+
+export function useAgentTranscript(opts: UseAgentTranscriptOptions): AgentTranscriptHandle {
+  const { baseUrl, agentId, token, readyNoticeText, factory, schedule } = opts
   const [rows, setRows] = useState<readonly AgentEvent[]>([])
+  const socketRef = useRef<AgentSocket | null>(null)
 
   useEffect(() => {
     setRows([])
@@ -25,14 +37,21 @@ export function useAgentTranscript(opts: UseAgentTranscriptOptions): readonly Ag
       baseUrl,
       agentId,
       token,
+      factory,
+      schedule,
       onEvent: (stored) => {
         const mapped = mapper.map(stored.event, stored.tsMs)
         if (mapped.length > 0) setRows((prev) => mapped.reduce<readonly AgentEvent[]>((acc, e) => foldEvent([...acc], e), prev))
       },
     })
+    socketRef.current = socket
     socket.start()
-    return () => socket.close()
-  }, [baseUrl, agentId, token, readyNoticeText])
+    return () => {
+      socket.close()
+      socketRef.current = null
+    }
+  }, [baseUrl, agentId, token, readyNoticeText, factory, schedule])
 
-  return rows
+  const send = useCallback((text: string) => socketRef.current?.send({ text }) ?? false, [])
+  return { rows, send }
 }
