@@ -270,7 +270,11 @@ class BootOrchestrator(
         val projectAgents = projectAgentFile?.let {
             SqliteProjectAgentStore(it.toPath().resolveSibling("project-agents.db"), it.toPath())
         } ?: ProjectAgentStore(null)
-        val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite; .db next to the legacy .json, imported ONCE
+        // (preserves a multi-project deploy's registry). In-memory File impl for tests (null).
+        val projectRegistry = projectRegistryFile?.let {
+            SqliteProjectRegistry(it.toPath().resolveSibling("projects.db"), config.projectId, legacyJson = it.toPath())
+        } ?: ProjectRegistry(projectRegistryFile, config.projectId)
         val durableActive = projectRegistry.activeProjectId()
         // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
         // S12 / CYP-81: single-source the active project into the hub (scopes channels/ACL/messages). The config
@@ -874,10 +878,17 @@ class BootOrchestrator(
 
         // S16 / CYP-89: Product-Lead reports fold READ sources (events/agents/channels/inbox) into
         // content-free, immutable snapshots — operator-gated at /api/reports.
-        val reportStore = com.tneff.cyppieagents.report.ReportStore(
+        // CYP-415 (D2): embedded-SQLite in prod, in-memory when null (tests). Benign — reports re-generatable.
+        val reportStore = reportFile?.let {
+            com.tneff.cyppieagents.report.SqliteReportStore(
+                generator = com.tneff.cyppieagents.report.ReportGenerator(eventSink, state, hub),
+                projectId = config.projectId,
+                dbPath = it.toPath().resolveSibling("reports.db"),
+            )
+        } ?: com.tneff.cyppieagents.report.ReportStore(
             generator = com.tneff.cyppieagents.report.ReportGenerator(eventSink, state, hub),
             projectId = config.projectId,
-            file = reportFile, // CYP-220 S6: File-durable when supplied (prod), in-memory when null (tests)
+            file = null,
         )
 
         // S13 / CYP-91: the multi-project registry (loaded early, above, for the CYP-305 effective-active seam)
