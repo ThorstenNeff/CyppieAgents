@@ -79,6 +79,12 @@ fun ProjectSwitcherBar(
      *  Receives `compact` (true on a narrow bar, ~<400dp) so the toggle can render icon-only and stop starving the
      *  active-project label. Default empty → the bar is unchanged for every existing call site/test. */
     trailing: @Composable (compact: Boolean) -> Unit = {},
+    /** CYP-417 — the hub-capacity readout (workspace-scoped), rendered at the bar's trailing edge. Default empty →
+     *  zero change for existing call sites/tests (and honestly absent while capacity is unknown). */
+    capacityReadout: @Composable () -> Unit = {},
+    /** CYP-417 — the hub-scoped overload-reject WARN banner, rendered full-width below the bar. Default empty →
+     *  present only on a real server reject. */
+    overloadBanner: @Composable () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val activeName = state.projects.firstOrNull { it.id == state.activeProjectId }?.name ?: state.activeProjectId
@@ -232,6 +238,9 @@ fun ProjectSwitcherBar(
                     )
                 }
             }
+            // CYP-417: the workspace-scoped hub-capacity readout at the trailing edge (next to the theme toggle).
+            // Absent while capacity is unknown (H1/Q3) → no layout impact by default.
+            capacityReadout()
             // CYP-268 R3 / CYP-281: app-global trailing slot (the theme toggle); it receives `compact` so it can
             // render icon-only on a narrow bar. Default-empty → zero change for existing call sites/tests.
             trailing(compact)
@@ -239,6 +248,9 @@ fun ProjectSwitcherBar(
         }
         // Scope boundary disclosure (§1): all windows/data belong to the active project. Neutral.
         TonedHint(stringResource(Res.string.project_switcher_scope_hint), HintTone.INFO, ProjectTags.SCOPE_HINT)
+        // CYP-417: the hub-scoped overload-reject WARN banner, full-width below the bar. Present ONLY on a real
+        // server reject (advisory surface; the server owns the hard gate, H5).
+        overloadBanner()
     }
 
     if (state.manageOpen) {

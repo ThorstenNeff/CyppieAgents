@@ -654,4 +654,14 @@
     <string name="hubconnect_error_handshake">Sichere Verbindung fehlgeschlagen. Melde dich neu an.</string>
     <string name="hubconnect_error_never_online">Diese erste Anmeldung braucht einmal Internet.</string>
     <string name="a11y_hubconnect_presence">Presence laut Registry: %1$s</string>
+    <!-- CYP-417 (S-G ResourceGovernor): Hub-Kapazitaets-/Ueberlast-Copy (eingefrorene hub-resource-capacity-keys.md). -->
+    <string name="hubcap_readout">%1$s/%2$s Agenten</string>
+    <string name="hubcap_full">voll</string>
+    <string name="hubcap_overload_title">Ein weiteres Team würde diese Maschine überlasten — Spawn abgelehnt.</string>
+    <string name="hubcap_overload_dismiss">Verstanden</string>
+    <string name="a11y_hubcap_readout">Hub-Kapazität: %1$s von %2$s Agenten (geschätzt)</string>
+    <!-- CYP-417 A2 (PO 2026-07-11): estimatedMax noch nicht geschaetzt → "N aktiv" ohne Max (nicht absent). Neuer Key. -->
+    <string name="hubcap_readout_nomax">%1$s aktiv</string>
+    <string name="a11y_hubcap_readout_nomax">Hub-Kapazität: %1$s Agenten aktiv (Höchstzahl noch nicht geschätzt)</string>
+    <string name="a11y_hubcap_overload">Überlast-Schutz: Spawn abgelehnt — ein weiteres Team würde die Maschine überlasten.</string>
 </resources>

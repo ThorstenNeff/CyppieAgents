@@ -14,6 +14,7 @@ import com.tneff.cyppieagents.agentview.StubAgentSession
 import com.tneff.cyppieagents.agentview.StubModeRepository
 import com.tneff.cyppieagents.comm.CommApi
 import com.tneff.cyppieagents.comm.StubCommLiveSource
+import com.tneff.cyppieagents.workspace.StubHubCapacitySource
 import com.tneff.cyppieagents.eventlog.EventFilter
 import com.tneff.cyppieagents.eventlog.EventLiveEvent
 import com.tneff.cyppieagents.eventlog.EventLiveSource
@@ -70,6 +71,9 @@ fun EventLogDemoApp() {
             commLiveSource = StubCommLiveSource(),
             eventsApi = StubEventsApi(),
             eventsLiveSource = SteadyDemoEventsSource(),
+            // CYP-417: no server in the demo → the stub capacity source (default flows: no capacity, no rejects) so
+            // the pill is honestly absent + no overload banner, instead of the live source hitting a dead socket.
+            capacitySource = StubHubCapacitySource(),
             // Seeds po/frontend/backend — the agents the Maestro web flows address by id.
             agentManagementRepository = remember { StubAgentManagementRepository() },
             aclApi = aclHub,

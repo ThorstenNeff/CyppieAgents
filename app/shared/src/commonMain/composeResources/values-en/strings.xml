@@ -641,4 +641,14 @@
     <string name="hubconnect_error_handshake">Secure connection failed. Please sign in again.</string>
     <string name="hubconnect_error_never_online">This first sign-in needs an internet connection once.</string>
     <string name="a11y_hubconnect_presence">Registry presence: %1$s</string>
+    <!-- CYP-417 (S-G ResourceGovernor): hub capacity + overload copy (frozen hub-resource-capacity-keys.md). -->
+    <string name="hubcap_readout">%1$s/%2$s agents</string>
+    <string name="hubcap_full">full</string>
+    <string name="hubcap_overload_title">Another team would overload this machine — spawn rejected.</string>
+    <string name="hubcap_overload_dismiss">Got it</string>
+    <string name="a11y_hubcap_readout">Hub capacity: %1$s of %2$s agents (estimated)</string>
+    <!-- CYP-417 A2 (PO 2026-07-11): estimatedMax not yet estimated → "N active" without a max (not absent). New key. -->
+    <string name="hubcap_readout_nomax">%1$s active</string>
+    <string name="a11y_hubcap_readout_nomax">Hub capacity: %1$s agents active (max not yet estimated)</string>
+    <string name="a11y_hubcap_overload">Overload protection: spawn rejected — another team would overload the machine.</string>
 </resources>
