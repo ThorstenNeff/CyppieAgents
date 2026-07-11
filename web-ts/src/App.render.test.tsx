@@ -36,6 +36,8 @@ const fakeRepo = (): HubRepo => ({
   getMessages: vi.fn().mockResolvedValue([]),
   postMessage: vi.fn().mockResolvedValue({ id: 'x', channelId: '', from: '', body: '', ts: 0 }),
   setLifecycle: vi.fn().mockResolvedValue({ agentId: 'backend', runState: 'RUNNING' }),
+  getApiKey: vi.fn().mockResolvedValue({ set: true, masked: '***k999' }),
+  putApiKey: vi.fn().mockResolvedValue({ set: true, masked: '***new4' }),
 })
 
 beforeEach(() => {
@@ -214,5 +216,15 @@ describe('App assembly (CYP-425)', () => {
     })
     expect(await findByTestId('event-log-revoked')).toBeTruthy()
     expect(evSockets().length).toBe(before) // terminal — no reconnect after revoke
+  })
+
+  it('the Settings window renders the API-key panel with the fetched masked view (CYP-433)', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(getByTestId('settings.section.apiKey')).toBeTruthy()
+    expect((await findByTestId('settings.apiKey.masked')).textContent).toContain('***k999') // from getApiKey
   })
 })

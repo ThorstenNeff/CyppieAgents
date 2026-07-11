@@ -16,6 +16,8 @@ const repoWith = (putAcl: HubRepo['putAcl']): HubRepo => ({
   getMessages: vi.fn(),
   postMessage: vi.fn(),
   setLifecycle: vi.fn(),
+  getApiKey: vi.fn(),
+  putApiKey: vi.fn(),
 })
 
 describe('commitAclChange (CYP-435 — pending lifecycle)', () => {

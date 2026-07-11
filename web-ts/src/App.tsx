@@ -28,17 +28,19 @@ import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
 import { EventLogView } from './eventlog/EventLogView'
 import { useEventLogStore } from './eventlog/eventLogStore'
+import { ApiKeyPanel } from './settings/ApiKeyPanel'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
 import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
 import type { LifecycleAction } from './state/hubReducers'
-import type { AclEntry, Message1 } from './types/generated/contract'
+import type { AclEntry, ApiKeyView, Message1 } from './types/generated/contract'
 
 const AGENT_PREFIX = 'agent:'
 const ACL_WINDOW_ID = 'acl'
 const COMM_WINDOW_ID = 'comm'
 const EVENT_WINDOW_ID = 'events'
+const SETTINGS_WINDOW_ID = 'settings'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -74,6 +76,8 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const [aclError, setAclError] = useState<string | null>(null)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [commSendError, setCommSendError] = useState<string | null>(null)
+  // CYP-433: the API-key MASKED view (never the plaintext — the server only ever sends {set, masked:"***last4"}).
+  const [apiKeyView, setApiKeyView] = useState<ApiKeyView | null>(null)
   // CYP-445: per-agent transient lifecycle-action reject notice (separate from the agent's ERROR run-state).
   const [lifecycleError, setLifecycleError] = useState<ReadonlyMap<string, string>>(new Map())
   const setAgentLifecycleError = (agentId: string, message: string | null) =>
@@ -114,6 +118,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     hubRepo.fetchAgents().then(setRoster).catch(() => undefined)
     hubRepo.fetchChannels().then(setChannels).catch(() => undefined)
     hubRepo.fetchAcl().then(setAcl).catch(() => undefined)
+    hubRepo.getApiKey().then(setApiKeyView).catch(() => undefined) // masked view; plaintext never comes back
     const live = startLiveHub(
       cfg,
       {
@@ -161,6 +166,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     if (agents.length > 0 && !present.has(ACL_WINDOW_ID)) wm.add(tiledWindow(ACL_WINDOW_ID, 'Zugriffsrechte (ACL)', index++), false)
     // CYP-432: the event log is OPERATOR-ONLY — a non-operator gets no event window at all (no bodies surface).
     if (agents.length > 0 && cfg.operator && !present.has(EVENT_WINDOW_ID)) wm.add(tiledWindow(EVENT_WINDOW_ID, 'Ereignis-Protokoll', index++), true)
+    // CYP-433: the settings/API-key window is present for EVERYONE (present-but-disabled) — the masked status leaks
+    // nothing; the panel gates editing on operator internally.
+    if (agents.length > 0 && !present.has(SETTINGS_WINDOW_ID)) wm.add(tiledWindow(SETTINGS_WINDOW_ID, 'Einstellungen', index++), false)
   }, [agents, cfg.operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
@@ -206,7 +214,17 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     void commitAclChange(hubRepo, { markPending: markAclPending, clearPending: clearAclPending, setError: setAclError }, entry, dims)
   }
 
+  // CYP-433 write-only save: send the plaintext up, keep only the MASKED view the server returns. The plaintext
+  // lives only in this call's argument (the panel's transient input) — never stored, never logged. Rejects surface
+  // in the panel as a GENERIC message (never the value).
+  const onSaveApiKey = (apiKey: string): Promise<void> => hubRepo.putApiKey(apiKey).then((v) => setApiKeyView(v))
+
   const renderContent = (win: WindowState) => {
+    if (win.id === SETTINGS_WINDOW_ID) {
+      // present-but-disabled (NOT omitted, unlike the event log): the masked status leaks nothing, so the screen is
+      // shown to everyone; ApiKeyPanel disables the inputs for a non-operator and shows the gate hint.
+      return <ApiKeyPanel view={apiKeyView} operator={cfg.operator} onSave={onSaveApiKey} />
+    }
     if (win.id === EVENT_WINDOW_ID) {
       // CYP-432 defence-in-depth: never render bodies for a non-operator (even if a window somehow exists), and
       // fail closed to a locked placeholder when access was revoked (WS 1008) — never leave stale bodies showing.

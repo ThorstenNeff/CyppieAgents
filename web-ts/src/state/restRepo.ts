@@ -3,7 +3,7 @@
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
 import { RestClient } from '../net/rest'
-import type { AclEntry, Agent, Channel, Message1, AgentRunStateEvent } from '../types/generated/contract'
+import type { AclEntry, Agent, ApiKeyView, Channel, Message1, AgentRunStateEvent } from '../types/generated/contract'
 
 /** CYP-426 interim: `:core` TerminalMode. The server maps this to the terminal-control state machine. */
 export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
@@ -26,6 +26,12 @@ export interface HubRepo {
   /** POST /api/agents/{id}/{start|stop|restart} (operator). Returns the server run-state; the same state also
    *  arrives on /ws/lifecycle — non-optimistic, so the header flips on that event, not the click (CYP-431). */
   setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent>
+  /** GET /api/config/apikey — the MASKED key view ({set, masked:"***last4"}). The plaintext key NEVER round-trips
+   *  to the client — there is no field on ApiKeyView that could carry it (CYP-433). */
+  getApiKey(): Promise<ApiKeyView>
+  /** PUT /api/config/apikey (operator) — write-only: sends the new plaintext key, gets back only the MASKED view.
+   *  The response carries no plaintext, so nothing to leak on the way back (CYP-433). */
+  putApiKey(apiKey: string): Promise<ApiKeyView>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -60,5 +66,12 @@ export class RestHubRepo implements HubRepo {
   }
   setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent> {
     return this.rest.post<AgentRunStateEvent>(`/api/agents/${encodeURIComponent(agentId)}/${action}`)
+  }
+  getApiKey(): Promise<ApiKeyView> {
+    return this.rest.get<ApiKeyView>('/api/config/apikey')
+  }
+  putApiKey(apiKey: string): Promise<ApiKeyView> {
+    // write-only: the plaintext goes up in the body; the response is the MASKED view (no plaintext back).
+    return this.rest.put<ApiKeyView>('/api/config/apikey', { apiKey })
   }
 }
