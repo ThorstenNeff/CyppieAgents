@@ -227,4 +227,35 @@ describe('App assembly (CYP-425)', () => {
     expect(getByTestId('settings.section.apiKey')).toBeTruthy()
     expect((await findByTestId('settings.apiKey.masked')).textContent).toContain('***k999') // from getApiKey
   })
+
+  it('an ERROR run-state shows the curated reason in its OWN node (CYP-446), fail-closed for none', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    const feed = hub.sockets.find((s) => s.url.includes('/ws/lifecycle'))!
+    await act(async () => {
+      feed.emitOpen()
+      feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'ERROR', errorCode: 'CRASHED' }))
+    })
+    expect((await findByTestId('lifecycle.errorReason.backend')).textContent).toContain('abgestürzt')
+  })
+
+  it('a run-state feed event clears the transient lifecycle action-error (CYP-445-QA / CYP-446)', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    repo.setLifecycle = vi.fn().mockRejectedValue(new RestError(409, 'POST', '/api/agents/backend/restart', 'x'))
+    const { findByTestId, queryByTestId } = render(
+      <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    fireEvent.click(await findByTestId('lifecycle.restart.backend'))
+    expect(await findByTestId('lifecycle.error.backend')).toBeTruthy() // reject notice shown
+    const feed = hub.sockets.find((s) => s.url.includes('/ws/lifecycle'))!
+    await act(async () => {
+      feed.emitOpen()
+      feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'RUNNING' }))
+    })
+    expect(queryByTestId('lifecycle.error.backend')).toBeNull() // a confirmed state clears the stale reject
+  })
 })

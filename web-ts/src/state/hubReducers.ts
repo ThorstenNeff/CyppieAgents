@@ -23,6 +23,8 @@ export type CommConnection = 'live' | 'connecting' | 'offline' | 'revoked'
 
 /** Server-confirmed process run-state (from the /ws/lifecycle feed). */
 export type AgentRunState = AgentRunStateEvent['runState']
+/** The ERROR-state reason CODE (CYP-446/CYP-421 wave) — a curated reason, not the raw code, is shown. */
+export type AgentErrorCode = NonNullable<AgentRunStateEvent['errorCode']>
 /** An in-flight lifecycle request (client-only, transient — resolved by the next AgentRunStateEvent). */
 export type LifecycleAction = 'start' | 'stop' | 'restart'
 
@@ -45,6 +47,8 @@ export interface HubState {
   commConnection: CommConnection
   /** server-confirmed process run-state per agent (CYP-431 lifecycle header); absent → UNKNOWN until the feed. */
   runStateByAgent: ReadonlyMap<string, AgentRunState>
+  /** the ERROR reason code per agent (CYP-446), when the feed supplies one; drives the errorReason node. */
+  errorCodeByAgent: ReadonlyMap<string, AgentErrorCode>
   /** a lifecycle request in flight per agent (CYP-431) — transient "Startet…/Neustart…", cleared by the next
    *  AgentRunStateEvent. Non-optimistic: the STATE flips only on that event, never on the click. */
   lifecyclePending: ReadonlyMap<string, LifecycleAction>
@@ -60,6 +64,7 @@ export const emptyHubState: HubState = {
   terminalStateByAgent: new Map(),
   commConnection: 'connecting',
   runStateByAgent: new Map(),
+  errorCodeByAgent: new Map(),
   lifecyclePending: new Map(),
 }
 
@@ -68,9 +73,15 @@ export const emptyHubState: HubState = {
 export function applyRunState(state: HubState, ev: AgentRunStateEvent): HubState {
   const runStateByAgent = new Map(state.runStateByAgent)
   runStateByAgent.set(ev.agentId, ev.runState)
+  // CYP-446: track the ERROR reason code — set it in ERROR, clear it on any other state (ERROR is never resolved,
+  // but a fresh ERROR event without a code must not keep a stale reason). null/undefined code in ERROR → cleared →
+  // the display falls to the fail-closed "reason not reported".
+  const errorCodeByAgent = new Map(state.errorCodeByAgent)
+  if (ev.runState === 'ERROR' && ev.errorCode != null) errorCodeByAgent.set(ev.agentId, ev.errorCode)
+  else errorCodeByAgent.delete(ev.agentId)
   const lifecyclePending = new Map(state.lifecyclePending)
   lifecyclePending.delete(ev.agentId)
-  return { ...state, runStateByAgent, lifecyclePending }
+  return { ...state, runStateByAgent, errorCodeByAgent, lifecyclePending }
 }
 
 /** Mark a lifecycle request in flight (transient label + neutral dot); the STATE stays put until the feed. */

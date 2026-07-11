@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { statusDotSpec, dotRoleVar, lifecycleLabel, lifecycleControlEnabled, lifecycleRejectMessage } from './lifecycleStatus'
+import { statusDotSpec, dotRoleVar, lifecycleLabel, lifecycleControlEnabled, lifecycleRejectMessage, errorReasonText } from './lifecycleStatus'
 import { RestError } from '../net/rest'
 
 describe('statusDotSpec (CYP-431, port of CYP-396)', () => {
@@ -71,5 +71,18 @@ describe('lifecycleRejectMessage (CYP-445 §6 — distinct 409/503, separate fro
     expect(lifecycleRejectMessage(new RestError(409, 'POST', '/api/agents/x/start', ''))).toContain('Übergang')
     expect(lifecycleRejectMessage(new RestError(503, 'POST', '/api/agents/x/start', ''))).toContain('nicht verfügbar')
     expect(lifecycleRejectMessage(new Error('network'))).toContain('fehlgeschlagen')
+  })
+})
+
+describe('errorReasonText (CYP-446 — curated ERROR reason, fail-closed)', () => {
+  it('maps a known code to a curated sentence (never the raw code)', () => {
+    expect(errorReasonText('SIGNALLED')).toContain('Signal')
+    expect(errorReasonText('CRASHED')).toContain('abgestürzt')
+    expect(errorReasonText('SPAWN_FAILED')).toContain('Start fehlgeschlagen')
+  })
+  it('an unknown/absent code falls to the fail-closed "reason not reported" — never fabricated, never the raw code', () => {
+    expect(errorReasonText('UNKNOWN')).toBe('Fehler — Grund nicht gemeldet.')
+    expect(errorReasonText(undefined)).toBe('Fehler — Grund nicht gemeldet.')
+    expect(errorReasonText('UNKNOWN')).not.toContain('UNKNOWN')
   })
 })

@@ -15,7 +15,7 @@ import type { LifecycleState } from './agentview/lifecycleStatus'
 import { ShellGate } from './terminal/ShellGate'
 import { XtermView } from './terminal/XtermView'
 import type { SocketDeps } from './state/hubConfig'
-import type { LifecycleAction } from './state/hubReducers'
+import type { LifecycleAction, AgentErrorCode } from './state/hubReducers'
 
 /** The localized agent-ready line (parity with the Kotlin default; web-ts has no i18n yet). */
 const READY_NOTICE = 'Agent bereit'
@@ -30,6 +30,7 @@ export interface AgentWindowProps {
   lifecycleState: LifecycleState
   lifecyclePending: LifecycleAction | undefined
   lifecycleError: string | null
+  lifecycleErrorCode: AgentErrorCode | undefined
   onLifecycle: (agentId: string, action: LifecycleAction) => void
   socketDeps?: SocketDeps
 }
@@ -44,6 +45,7 @@ export function AgentWindow({
   lifecycleState,
   lifecyclePending,
   lifecycleError,
+  lifecycleErrorCode,
   onLifecycle,
   socketDeps,
 }: AgentWindowProps) {
@@ -66,6 +68,7 @@ export function AgentWindow({
         pending={lifecyclePending}
         operator={operator}
         error={lifecycleError}
+        errorCode={lifecycleErrorCode}
         onStart={(id) => onLifecycle(id, 'start')}
         onStop={(id) => onLifecycle(id, 'stop')}
         onRestart={(id) => onLifecycle(id, 'restart')}

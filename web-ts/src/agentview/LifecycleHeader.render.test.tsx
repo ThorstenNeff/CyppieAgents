@@ -84,4 +84,20 @@ describe('LifecycleHeader (CYP-431)', () => {
     expect(line.textContent).toContain('Übergang')
     expect(line.getAttribute('role')).toBe('alert')
   })
+
+  it('CYP-446: the ERROR-reason node shows ONLY in ERROR, curated per code, fail-closed for none — separate from the action-error', () => {
+    const running = render(<LifecycleHeader {...base({ state: 'RUNNING' })} />)
+    expect(running.queryByTestId('lifecycle.errorReason.backend')).toBeNull()
+    cleanup()
+    const crashed = render(<LifecycleHeader {...base({ state: 'ERROR', errorCode: 'CRASHED' })} />)
+    expect(crashed.getByTestId('lifecycle.errorReason.backend').textContent).toContain('abgestürzt')
+    cleanup()
+    const noCode = render(<LifecycleHeader {...base({ state: 'ERROR' })} />)
+    expect(noCode.getByTestId('lifecycle.errorReason.backend').textContent).toContain('Grund nicht gemeldet')
+    // separate node from the transient action-error (CYP-445) — both can coexist, never merged
+    cleanup()
+    const both = render(<LifecycleHeader {...base({ state: 'ERROR', errorCode: 'CRASHED', error: 'Aktion fehlgeschlagen' })} />)
+    expect(both.getByTestId('lifecycle.errorReason.backend')).toBeTruthy()
+    expect(both.getByTestId('lifecycle.error.backend')).toBeTruthy()
+  })
 })

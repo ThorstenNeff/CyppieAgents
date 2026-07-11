@@ -97,6 +97,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const messagesByChannel = useHubStore((s) => s.messagesByChannel)
   const commConnection = useHubStore((s) => s.commConnection)
   const runStateByAgent = useHubStore((s) => s.runStateByAgent)
+  const errorCodeByAgent = useHubStore((s) => s.errorCodeByAgent)
   const lifecyclePending = useHubStore((s) => s.lifecyclePending)
 
   // CYP-432: the event log is its own store (separate from the hub state). OPERATOR-ONLY: it carries message
@@ -127,7 +128,13 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
         onCommOpen: () => setCommConnection('live'),
         // CYP-437(b): an unexpected drop flips the banner off 'live'; a 1008 (auth revoked) is terminal → 'revoked'.
         onCommClose: (code) => setCommConnection(code === 1008 ? 'revoked' : 'offline'),
-        onRunState,
+        // CYP-445-QA minor (folded into CYP-446): a server run-state event also RESOLVES the transient action-reject
+        // notice for that agent — a new confirmed state makes the last reject stale, so clear it here (not only on
+        // the next action attempt), consistent with how the feed clears the pending flag.
+        onRunState: (ev) => {
+          onRunState(ev)
+          setAgentLifecycleError(ev.agentId, null)
+        },
         // CYP-432 fail-closed: wire the /ws/events handlers ONLY for an operator → a non-operator never opens the
         // bodies-carrying socket (liveHub skips it when onEventsEvent is absent).
         onEventsEvent: cfg.operator ? onEventsEvent : undefined,
@@ -288,6 +295,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           lifecycleState={runStateByAgent.get(agentId) ?? 'UNKNOWN'}
           lifecyclePending={lifecyclePending.get(agentId)}
           lifecycleError={lifecycleError.get(agentId) ?? null}
+          lifecycleErrorCode={errorCodeByAgent.get(agentId)}
           onLifecycle={onLifecycle}
           socketDeps={socketDeps}
         />

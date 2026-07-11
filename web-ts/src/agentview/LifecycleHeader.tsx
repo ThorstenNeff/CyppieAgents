@@ -3,8 +3,15 @@
 // state + a transient pending); colour is never the sole signal (the text label carries it). Operator gate: for a
 // non-operator the controls are PRESENT but DISABLED (no fake affordance, CYP-317), never hidden. Layout (CYP-369):
 // the controls cluster is flex-shrink:0 so every control keeps width>0 at a narrow window; the label cluster shrinks.
-import { statusDotSpec, dotRoleVar, lifecycleLabel, lifecycleControlEnabled, type LifecycleState } from './lifecycleStatus'
-import type { LifecycleAction } from '../state/hubReducers'
+import {
+  statusDotSpec,
+  dotRoleVar,
+  lifecycleLabel,
+  lifecycleControlEnabled,
+  errorReasonText,
+  type LifecycleState,
+} from './lifecycleStatus'
+import type { LifecycleAction, AgentErrorCode } from '../state/hubReducers'
 
 export interface LifecycleHeaderProps {
   agentId: string
@@ -13,12 +20,14 @@ export interface LifecycleHeaderProps {
   operator: boolean
   /** CYP-445: a transient reject notice for the last action (409/503/…), separate from the agent's own ERROR state. */
   error?: string | null
+  /** CYP-446: the durable ERROR-state reason code; shown as a curated sentence ONLY in ERROR, its own node. */
+  errorCode?: AgentErrorCode
   onStart: (agentId: string) => void
   onStop: (agentId: string) => void
   onRestart: (agentId: string) => void
 }
 
-export function LifecycleHeader({ agentId, state, pending, operator, error = null, onStart, onStop, onRestart }: LifecycleHeaderProps) {
+export function LifecycleHeader({ agentId, state, pending, operator, error = null, errorCode, onStart, onStop, onRestart }: LifecycleHeaderProps) {
   const spec = statusDotSpec(state, pending !== undefined)
   const label = lifecycleLabel(state, pending)
   const color = dotRoleVar(spec.role)
@@ -90,6 +99,14 @@ export function LifecycleHeader({ agentId, state, pending, operator, error = nul
       {error !== null && (
         <p className="lifecycle-error" role="alert" data-testid={`lifecycle.error.${agentId}`}>
           {error}
+        </p>
+      )}
+
+      {/* CYP-446: the durable ERROR-state reason — its OWN node, present iff ERROR (never merged with the transient
+          action-error above). Curated sentence per code, fail-closed to "reason not reported" for unknown/absent. */}
+      {state === 'ERROR' && (
+        <p className="lifecycle-error-reason" role="note" data-testid={`lifecycle.errorReason.${agentId}`}>
+          {errorReasonText(errorCode)}
         </p>
       )}
     </header>

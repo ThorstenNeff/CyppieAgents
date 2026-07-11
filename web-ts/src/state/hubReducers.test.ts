@@ -149,6 +149,19 @@ describe('lifecycle run-state (CYP-431 — non-optimistic)', () => {
     expect(confirmed.lifecyclePending.has('backend')).toBe(false)
   })
 
+  it('applyRunState stores the ERROR code and clears it when the state leaves ERROR (CYP-446)', () => {
+    let s = applyRunState(emptyHubState, { agentId: 'backend', runState: 'ERROR', errorCode: 'CRASHED' })
+    expect(s.errorCodeByAgent.get('backend')).toBe('CRASHED')
+    s = applyRunState(s, { agentId: 'backend', runState: 'RUNNING' })
+    expect(s.errorCodeByAgent.has('backend')).toBe(false)
+  })
+
+  it('a fresh ERROR without a code clears any stale reason (fail-closed, no invented reason)', () => {
+    let s = applyRunState(emptyHubState, { agentId: 'backend', runState: 'ERROR', errorCode: 'CRASHED' })
+    s = applyRunState(s, { agentId: 'backend', runState: 'ERROR' })
+    expect(s.errorCodeByAgent.has('backend')).toBe(false)
+  })
+
   it('clearLifecyclePending drops a request that got no event (rejected); no-op ref when none pending', () => {
     const pending = setLifecyclePending(emptyHubState, 'backend', 'stop')
     expect(clearLifecyclePending(pending, 'backend').lifecyclePending.has('backend')).toBe(false)

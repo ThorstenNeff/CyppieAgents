@@ -3,7 +3,7 @@
 // carries the meaning, the dot only reinforces it. UNKNOWN (no lifecycle event yet) is a RING (a different AXIS
 // from STOPPED's filled disc), role `outline` (≥3:1, not the near-invisible outlineVariant). Pure & tested.
 import { RestError } from '../net/rest'
-import type { AgentRunState, LifecycleAction } from '../state/hubReducers'
+import type { AgentRunState, AgentErrorCode, LifecycleAction } from '../state/hubReducers'
 
 /** RUNNING/STOPPED/ERROR from the feed, plus UNKNOWN before the first event. */
 export type LifecycleState = AgentRunState | 'UNKNOWN'
@@ -64,6 +64,24 @@ export function lifecycleControlEnabled(
       return state === 'RUNNING'
     case 'restart':
       return true
+  }
+}
+
+/** CYP-446 — the ERROR-state reason: a CURATED localized sentence per code (error-reason-disclosure-spec §3, case
+ *  (a)), NEVER the raw code. An unknown/absent code falls to the fail-closed (b) "reason not reported" — never a
+ *  fabricated reason, never a raw enum. This is the durable STATE reason; keep it separate from the transient
+ *  action-reject (lifecycleRejectMessage / CYP-445), which is a different lifecycle and meaning. */
+export function errorReasonText(code: AgentErrorCode | undefined): string {
+  switch (code) {
+    case 'SIGNALLED':
+      return 'Prozess durch Signal beendet.'
+    case 'CRASHED':
+      return 'Prozess abgestürzt.'
+    case 'SPAWN_FAILED':
+      return 'Start fehlgeschlagen — der Prozess ließ sich nicht starten.'
+    case 'UNKNOWN':
+    case undefined:
+      return 'Fehler — Grund nicht gemeldet.' // fail-closed (b): never invent, never show the raw code
   }
 }
 
