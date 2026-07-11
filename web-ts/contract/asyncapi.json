@@ -1,0 +1,983 @@
+{
+    "asyncapi": "2.6.0",
+    "info": {
+        "title": "Cyppie Agents — WebSocket API",
+        "version": "1.0.0",
+        "description": "Frontend WS channels. Generated from :core (kotlinx.serialization) — accurate by construction. /ws/hub is the remote-agent wire (connector contract), not a frontend transport."
+    },
+    "channels": {
+        "/ws/comm": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/CommWsServerEvent"
+                }
+            },
+            "publish": {
+                "description": "client → server (the client publishes to send)",
+                "message": {
+                    "$ref": "#/components/messages/CommWsClientEvent"
+                }
+            }
+        },
+        "/ws/events": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/EventsWsServerEvent"
+                }
+            },
+            "publish": {
+                "description": "client → server (the client publishes to send)",
+                "message": {
+                    "$ref": "#/components/messages/EventsWsClientEvent"
+                }
+            }
+        },
+        "/ws/lifecycle": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/AgentRunStateEvent"
+                }
+            }
+        },
+        "/ws/token-usage": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/AgentTokenUsageEvent"
+                }
+            }
+        },
+        "/ws/busy-state": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/AgentBusyStateEvent"
+                }
+            }
+        },
+        "/ws/terminal-state": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/AgentTerminalControlEvent"
+                }
+            }
+        },
+        "/ws/agent": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/StreamJsonEvent"
+                }
+            },
+            "publish": {
+                "description": "client → server (the client publishes to send)",
+                "message": {
+                    "$ref": "#/components/messages/UserTurn"
+                }
+            }
+        },
+        "/ws/terminal": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/TerminalServerFrame"
+                }
+            },
+            "publish": {
+                "description": "client → server (the client publishes to send)",
+                "message": {
+                    "$ref": "#/components/messages/TerminalClientFrame"
+                }
+            }
+        }
+    },
+    "components": {
+        "messages": {
+            "CommWsServerEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/CommWsServerEvent"
+                }
+            },
+            "CommWsClientEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/CommWsClientEvent"
+                }
+            },
+            "EventsWsServerEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/EventsWsServerEvent"
+                }
+            },
+            "EventsWsClientEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/EventsWsClientEvent"
+                }
+            },
+            "AgentRunStateEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/AgentRunStateEvent"
+                }
+            },
+            "AgentTokenUsageEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/AgentTokenUsageEvent"
+                }
+            },
+            "AgentBusyStateEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/AgentBusyStateEvent"
+                }
+            },
+            "AgentTerminalControlEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/AgentTerminalControlEvent"
+                }
+            },
+            "StreamJsonEvent": {
+                "payload": {
+                    "$ref": "#/components/schemas/StreamJsonEvent"
+                }
+            },
+            "UserTurn": {
+                "payload": {
+                    "$ref": "#/components/schemas/UserTurn"
+                }
+            },
+            "TerminalServerFrame": {
+                "payload": {
+                    "$ref": "#/components/schemas/TerminalServerFrame"
+                }
+            },
+            "TerminalClientFrame": {
+                "payload": {
+                    "$ref": "#/components/schemas/TerminalClientFrame"
+                }
+            }
+        },
+        "schemas": {
+            "CommWsServerEvent": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/acl"
+                    },
+                    {
+                        "$ref": "#/components/schemas/channels"
+                    },
+                    {
+                        "$ref": "#/components/schemas/message"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "acl": "#/components/schemas/acl",
+                        "channels": "#/components/schemas/channels",
+                        "message": "#/components/schemas/message"
+                    }
+                }
+            },
+            "acl": {
+                "type": "object",
+                "properties": {
+                    "entry": {
+                        "$ref": "#/components/schemas/AclEntry"
+                    }
+                },
+                "required": [
+                    "entry"
+                ]
+            },
+            "AclEntry": {
+                "type": "object",
+                "properties": {
+                    "channelId": {
+                        "type": "string"
+                    },
+                    "agentId": {
+                        "type": "string"
+                    },
+                    "canRead": {
+                        "type": "boolean"
+                    },
+                    "canWrite": {
+                        "type": "boolean"
+                    },
+                    "projectId": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "channelId",
+                    "agentId",
+                    "canRead",
+                    "canWrite"
+                ]
+            },
+            "channels": {
+                "type": "object",
+                "properties": {
+                    "channels": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Channel"
+                        }
+                    }
+                },
+                "required": [
+                    "channels"
+                ]
+            },
+            "Channel": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "DIRECT",
+                            "GROUP",
+                            "HUB"
+                        ]
+                    },
+                    "members": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "projectId": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "members"
+                ]
+            },
+            "message": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "$ref": "#/components/schemas/Message"
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
+            "Message": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "channelId": {
+                        "type": "string"
+                    },
+                    "from": {
+                        "type": "string"
+                    },
+                    "body": {
+                        "type": "string"
+                    },
+                    "ts": {
+                        "type": "integer"
+                    },
+                    "meta": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/MessageMeta"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "projectId": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "channelId",
+                    "from",
+                    "body",
+                    "ts"
+                ]
+            },
+            "MessageMeta": {
+                "type": "object",
+                "properties": {
+                    "inReplyTo": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "kind": {
+                        "enum": [
+                            "TASK",
+                            "STATUS",
+                            "NOTE"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "CommWsClientEvent": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/subscribe"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "subscribe": "#/components/schemas/subscribe"
+                    }
+                }
+            },
+            "subscribe": {
+                "type": "object",
+                "properties": {
+                    "channelIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "channelIds"
+                ]
+            },
+            "EventsWsServerEvent": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/caughtup"
+                    },
+                    {
+                        "$ref": "#/components/schemas/event"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "caughtup": "#/components/schemas/caughtup",
+                        "event": "#/components/schemas/event"
+                    }
+                }
+            },
+            "caughtup": {
+                "type": "object",
+                "properties": {}
+            },
+            "event": {
+                "type": "object",
+                "properties": {
+                    "event": {
+                        "$ref": "#/components/schemas/EventSurrogate"
+                    }
+                },
+                "required": [
+                    "event"
+                ]
+            },
+            "EventSurrogate": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "ts": {
+                        "type": "integer"
+                    },
+                    "seq": {
+                        "type": "integer"
+                    },
+                    "sourceTs": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "agentId": {
+                        "type": "string"
+                    },
+                    "projectId": {
+                        "type": "string"
+                    },
+                    "sessionId": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "correlationId": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "severity": {
+                        "type": "string",
+                        "enum": [
+                            "debug",
+                            "info",
+                            "warn",
+                            "error"
+                        ]
+                    },
+                    "detail": {}
+                },
+                "required": [
+                    "id",
+                    "ts",
+                    "seq",
+                    "agentId",
+                    "projectId",
+                    "type",
+                    "severity"
+                ]
+            },
+            "EventsWsClientEvent": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/subscribe"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "subscribe": "#/components/schemas/subscribe"
+                    }
+                }
+            },
+            "AgentRunStateEvent": {
+                "type": "object",
+                "properties": {
+                    "agentId": {
+                        "type": "string"
+                    },
+                    "runState": {
+                        "type": "string",
+                        "enum": [
+                            "RUNNING",
+                            "STOPPED",
+                            "ERROR"
+                        ]
+                    }
+                },
+                "required": [
+                    "agentId",
+                    "runState"
+                ]
+            },
+            "AgentTokenUsageEvent": {
+                "type": "object",
+                "properties": {
+                    "agentId": {
+                        "type": "string"
+                    },
+                    "contextTokens": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "agentId"
+                ]
+            },
+            "AgentBusyStateEvent": {
+                "type": "object",
+                "properties": {
+                    "agentId": {
+                        "type": "string"
+                    },
+                    "busy": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "agentId",
+                    "busy"
+                ]
+            },
+            "AgentTerminalControlEvent": {
+                "type": "object",
+                "properties": {
+                    "agentId": {
+                        "type": "string"
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "MEDIATED",
+                            "HANDING_OVER",
+                            "INTERACTIVE",
+                            "HANDING_BACK",
+                            "CONTEXT_LOST"
+                        ]
+                    },
+                    "heldBy": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "since": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "agentId",
+                    "state"
+                ]
+            },
+            "StreamJsonEvent": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/assistant"
+                    },
+                    {
+                        "$ref": "#/components/schemas/rate_limit_event"
+                    },
+                    {
+                        "$ref": "#/components/schemas/result"
+                    },
+                    {
+                        "$ref": "#/components/schemas/system"
+                    },
+                    {
+                        "$ref": "#/components/schemas/user"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "assistant": "#/components/schemas/assistant",
+                        "rate_limit_event": "#/components/schemas/rate_limit_event",
+                        "result": "#/components/schemas/result",
+                        "system": "#/components/schemas/system",
+                        "user": "#/components/schemas/user"
+                    }
+                }
+            },
+            "assistant": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "$ref": "#/components/schemas/AgentMessage"
+                    },
+                    "session_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "parent_tool_use_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
+            "AgentMessage": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "role": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "content": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ContentBlock"
+                        }
+                    },
+                    "model": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "stop_reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "ContentBlock": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/text"
+                    },
+                    {
+                        "$ref": "#/components/schemas/thinking"
+                    },
+                    {
+                        "$ref": "#/components/schemas/tool_result"
+                    },
+                    {
+                        "$ref": "#/components/schemas/tool_use"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "text": "#/components/schemas/text",
+                        "thinking": "#/components/schemas/thinking",
+                        "tool_result": "#/components/schemas/tool_result",
+                        "tool_use": "#/components/schemas/tool_use"
+                    }
+                }
+            },
+            "text": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "text"
+                ]
+            },
+            "thinking": {
+                "type": "object",
+                "properties": {
+                    "thinking": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "tool_result": {
+                "type": "object",
+                "properties": {
+                    "tool_use_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "content": {},
+                    "is_error": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "tool_use": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "input": {}
+                },
+                "required": [
+                    "id",
+                    "name"
+                ]
+            },
+            "rate_limit_event": {
+                "type": "object",
+                "properties": {
+                    "rate_limit_info": {},
+                    "session_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "result": {
+                "type": "object",
+                "properties": {
+                    "subtype": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "is_error": {
+                        "type": "boolean"
+                    },
+                    "duration_ms": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "num_turns": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "total_cost_usd": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "usage": {},
+                    "result": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "session_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "system": {
+                "type": "object",
+                "properties": {
+                    "subtype": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "session_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "model": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "cwd": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "tools": {},
+                    "permissionMode": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "apiKeySource": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "compact_result": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "user": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "$ref": "#/components/schemas/AgentMessage"
+                    },
+                    "session_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "injected_source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
+            "UserTurn": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "text"
+                ]
+            },
+            "TerminalServerFrame": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/exit"
+                    },
+                    {
+                        "$ref": "#/components/schemas/output"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "exit": "#/components/schemas/exit",
+                        "output": "#/components/schemas/output"
+                    }
+                }
+            },
+            "exit": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "code"
+                ]
+            },
+            "output": {
+                "type": "object",
+                "properties": {
+                    "dataBase64": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "dataBase64"
+                ]
+            },
+            "TerminalClientFrame": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/input"
+                    },
+                    {
+                        "$ref": "#/components/schemas/resize"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "input": "#/components/schemas/input",
+                        "resize": "#/components/schemas/resize"
+                    }
+                }
+            },
+            "input": {
+                "type": "object",
+                "properties": {
+                    "dataBase64": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "dataBase64"
+                ]
+            },
+            "resize": {
+                "type": "object",
+                "properties": {
+                    "cols": {
+                        "type": "integer"
+                    },
+                    "rows": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "cols",
+                    "rows"
+                ]
+            }
+        }
+    }
+}

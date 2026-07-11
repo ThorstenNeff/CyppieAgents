@@ -41,6 +41,28 @@ tasks.named<Test>("test") {
     inputs.file(rootProject.file("deploy/kratos/kratos.reference.yml"))
         .withPropertyName("kratosReferenceConfig")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+    // CYP-409: the committed AsyncAPI export is read at RUNTIME by ContractExportDriftTest (a repoFile walk), so
+    // Gradle can't otherwise see it as a test input — without this, editing ONLY the export leaves `test`
+    // UP-TO-DATE and the drift guard is stale-green on the exact surface it exists to catch. Optional so a
+    // pre-export checkout still configures (the drift test itself reports the missing file).
+    inputs.file(rootProject.file("web-ts/contract/asyncapi.json"))
+        .withPropertyName("asyncApiContractExport")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .optional(true)
+}
+
+// CYP-409 (W1 producer): export the AsyncAPI contract (generated from :core via ContractGenerator) to a
+// committed file the TS consumer (Dev5) reads. OFFLINE + secret-free — it runs the generator DIRECTLY, not the
+// auth-gated `/docs/asyncapi.json` route, so the build needs no live server, no network, no token. The bytes are
+// single-sourced with the `/docs` serialization (docsJson) and guarded against drift by ContractExportDriftTest.
+tasks.register<JavaExec>("exportContract") {
+    group = "contract"
+    description = "Generate web-ts/contract/asyncapi.json from :core via ContractGenerator (offline, no live server)."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.tneff.cyppieagents.contract.ContractExportKt")
+    workingDir = rootProject.projectDir
+    args(rootProject.file("web-ts/contract/asyncapi.json").absolutePath)
+    outputs.file(rootProject.file("web-ts/contract/asyncapi.json"))
 }
 
 dependencies {
