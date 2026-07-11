@@ -17,6 +17,7 @@ import { WindowFrame } from './windowmgr/WindowFrame'
 import { useWindowStore } from './windowmgr/windowStore'
 import type { WindowState } from './windowmgr/windowState'
 import { useHubStore } from './state/hubStore'
+import { rosterPoAgentId } from './state/hubReducers'
 import { readHubConfig, type HubConfig, type SocketDeps } from './state/hubConfig'
 import { RestHubRepo, type HubRepo } from './state/restRepo'
 import { RestError } from './net/rest'
@@ -54,6 +55,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const cfg = config ?? readHubConfig()
   const hubRepo = repo ?? new RestHubRepo(cfg.apiBase)
 
+  const setRoster = useHubStore((s) => s.setRoster)
   const setChannels = useHubStore((s) => s.setChannels)
   const setAcl = useHubStore((s) => s.setAcl)
   const onCommEvent = useHubStore((s) => s.onCommEvent)
@@ -70,6 +72,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const [commSendError, setCommSendError] = useState<string | null>(null)
 
   const channels = useHubStore((s) => s.channels)
+  const roster = useHubStore((s) => s.roster)
   const agents = useHubStore((s) => s.agents)
   const aclEntries = useHubStore((s) => s.aclEntries)
   const pendingAcl = useHubStore((s) => s.pendingAcl)
@@ -80,9 +83,13 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const lifecyclePending = useHubStore((s) => s.lifecyclePending)
 
   const historySize = useMemo(() => () => loadHistorySize(browserStore()), [])
+  // CYP-444: the PO identity is the roster's role==PO, not a config guess. Null until the roster loads (the W9
+  // lockout advisory simply won't fire until we truly know who the PO is).
+  const poAgentId = rosterPoAgentId(roster)
 
   // Bootstrap: REST snapshot + the live-socket VM. Runs once; the VM stops on unmount.
   useEffect(() => {
+    hubRepo.fetchAgents().then(setRoster).catch(() => undefined)
     hubRepo.fetchChannels().then(setChannels).catch(() => undefined)
     hubRepo.fetchAcl().then(setAcl).catch(() => undefined)
     const live = startLiveHub(
@@ -158,7 +165,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
 
   // PO identity for the reserved sender accent comes from explicit config, never a `po-<worker>` guess (CYP-426
   // will supply the typed roster's role). Everyone else falls to the hashed worker palette.
-  const senderRole = (agentId: string): string | null => (cfg.poAgentId !== null && agentId === cfg.poAgentId ? 'PO' : null)
+  const senderRole = (agentId: string): string | null => (poAgentId !== null && agentId === poAgentId ? 'PO' : null)
 
   const commitAcl = (entry: AclEntry, dims: readonly AclDimension[]) => {
     // CYP-435: on success the AclEvent echo flips + clears pending; on reject (409 lockout / any 4xx) there is no
@@ -191,7 +198,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           agents={agents}
           entries={aclEntries}
           pending={pendingAcl}
-          poAgentId={cfg.poAgentId}
+          poAgentId={poAgentId}
           operator={cfg.operator}
           onCommit={commitAcl}
           error={aclError}

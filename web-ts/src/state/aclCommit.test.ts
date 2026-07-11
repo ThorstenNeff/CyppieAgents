@@ -9,6 +9,7 @@ const entry: AclEntry = { channelId: 'po-frontend', agentId: 'po', canRead: fals
 const hooks = (): AclCommitHooks => ({ markPending: vi.fn(), clearPending: vi.fn(), setError: vi.fn() })
 const repoWith = (putAcl: HubRepo['putAcl']): HubRepo => ({
   putAcl,
+  fetchAgents: vi.fn(),
   fetchChannels: vi.fn(),
   fetchAcl: vi.fn(),
   requestMode: vi.fn(),

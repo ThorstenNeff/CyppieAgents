@@ -9,16 +9,24 @@ import { FakeSocketHub } from './net/testing/fakeSocket'
 import { RestError } from './net/rest'
 import type { HubConfig } from './state/hubConfig'
 import type { HubRepo } from './state/restRepo'
-import type { Channel } from './types/generated/contract'
+import type { Agent, Channel } from './types/generated/contract'
 
-const config: HubConfig = { apiBase: 'http://x', wsBase: 'ws://x', token: 'tok', operator: true, poAgentId: 'po' }
+const config: HubConfig = { apiBase: 'http://x', wsBase: 'ws://x', token: 'tok', operator: true }
 
 const channels: Channel[] = [
   { id: 'po-frontend', name: 'PO ↔ FE', kind: 'DIRECT', members: ['po', 'frontend'] },
   { id: 'po-backend', name: 'PO ↔ BE', kind: 'DIRECT', members: ['po', 'backend'] },
 ]
 
+// CYP-444: the roster (with roles) is the real source of the PO identity + agent list.
+const roster: Agent[] = [
+  { id: 'po', name: 'PO', role: 'PO', worktree: 'po' },
+  { id: 'frontend', name: 'Frontend', role: 'WORKER', worktree: 'frontend' },
+  { id: 'backend', name: 'Backend', role: 'WORKER', worktree: 'backend' },
+]
+
 const fakeRepo = (): HubRepo => ({
+  fetchAgents: vi.fn().mockResolvedValue(roster),
   fetchChannels: vi.fn().mockResolvedValue(channels),
   fetchAcl: vi.fn().mockResolvedValue([]),
   putAcl: vi.fn().mockResolvedValue({ channelId: '', agentId: '', canRead: false, canWrite: false }),

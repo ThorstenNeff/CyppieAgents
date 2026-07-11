@@ -175,10 +175,11 @@ web-ts/
   **Hub-and-Spoke preset** — advisory/​non-atomic, `isPoLockoutChange`/`presetDiff`). Each agent window owns its
   own `/ws/agent` socket; the composer sends a `UserTurn` on it.
 
-**Interim seams (flagged; swap when the deps land):**
-- Agent roster + ACL columns are derived from `GET /api/channels` membership, and **`poAgentId` is the explicit
-  `CYPPIE_PO_AGENT_ID` deploy global** — never a `po-<worker>` name guess. Both swap to the real typed roster when
-  **CYP-426** exports the REST/`openapi.json` contract (`Agent.role == PO`).
-- The **Comm timeline** (`CommPanel`) integrates when **CYP-424** merges; the VM already keeps + dedups messages,
-  so it is a render, not a re-plumb.
-- `ModeChangeRequest` is hand-modeled (REST-only DTO, not in the asyncapi export) until CYP-426.
+**Roster + PO identity (CYP-444, swapped off the interim):** the agent roster comes from the typed `GET /api/agents`
+(`Agent{role}`, generated from the `openapi.json` REST export — the codegen merges the openapi-only schemas), and
+**`poAgentId` is the roster's `role == PO`**, not a `CYPPIE_PO_AGENT_ID` config guess. The agent id set is the
+roster's ids ∪ live channel members (so a runtime-added agent still surfaces before a roster refetch). The Comm
+timeline (`CommPanel`) is integrated (CYP-438).
+
+**Remaining interim:** `ModeChangeRequest`/`SendMessageRequest` request bodies are still hand-modeled (small
+REST-only DTOs) — a follow-up can read them from the generated openapi types now that they're available.

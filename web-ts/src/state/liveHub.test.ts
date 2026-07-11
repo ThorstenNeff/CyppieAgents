@@ -8,7 +8,6 @@ const config: HubConfig = {
   wsBase: 'ws://x',
   token: 'tok',
   operator: true,
-  poAgentId: 'po',
 }
 
 const socketFor = (hub: FakeSocketHub, pathFragment: string) => {

@@ -14,11 +14,14 @@ import {
   applyRunState,
   setLifecyclePending,
   clearLifecyclePending,
+  applyRoster,
+  rosterPoAgentId,
   type HubState,
 } from './hubReducers'
 import { pendingKey, enforcedValue } from '../comm/aclModel'
-import type { AclEntry, Channel, Message1 } from '../types/generated/contract'
+import type { AclEntry, Agent, Channel, Message1 } from '../types/generated/contract'
 
+const agent = (id: string, role: Agent['role']): Agent => ({ id, name: id, role, worktree: id })
 const ch = (id: string, members: string[]): Channel => ({ id, name: id, kind: 'DIRECT', members })
 const acl = (channelId: string, agentId: string, canRead: boolean, canWrite: boolean): AclEntry => ({ channelId, agentId, canRead, canWrite })
 const msg = (id: string, channelId: string, body: string): Message1 => ({ id, channelId, from: 'x', body, ts: 0 })
@@ -41,6 +44,22 @@ describe('applyChannels', () => {
     const s = applyChannels(emptyHubState, [ch('po-frontend', ['po', 'frontend'])])
     expect(s.channels).toHaveLength(1)
     expect(s.agents).toEqual(['frontend', 'po'])
+  })
+})
+
+describe('roster swap (CYP-444 — typed roster is the real source of agents + PO identity)', () => {
+  it('applyRoster stores the roster and folds its ids into the agent set (∪ channel members)', () => {
+    let s = applyChannels(emptyHubState, [ch('po-qa', ['po', 'qa'])]) // qa is only in a channel, not the roster
+    s = applyRoster(s, [agent('po', 'PO'), agent('frontend', 'WORKER'), agent('backend', 'WORKER')])
+    expect(s.roster).toHaveLength(3)
+    // union: roster ids {po,frontend,backend} ∪ channel member {qa} → a runtime-added agent still surfaces
+    expect(s.agents).toEqual(['backend', 'frontend', 'po', 'qa'])
+  })
+
+  it('rosterPoAgentId is the role==PO id (real identity), null when no PO / empty roster', () => {
+    expect(rosterPoAgentId([agent('frontend', 'WORKER'), agent('po', 'PO')])).toBe('po')
+    expect(rosterPoAgentId([agent('frontend', 'WORKER')])).toBeNull()
+    expect(rosterPoAgentId([])).toBeNull()
   })
 })
 

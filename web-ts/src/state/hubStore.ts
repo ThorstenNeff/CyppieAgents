@@ -5,6 +5,7 @@ import { create } from 'zustand'
 import {
   emptyHubState,
   applyChannels,
+  applyRoster,
   applyAcl,
   applyCommEvent,
   applyTerminalControl,
@@ -20,6 +21,7 @@ import {
 } from './hubReducers'
 import type {
   AclEntry,
+  Agent,
   Channel,
   Message1,
   CommWsServerEvent,
@@ -29,6 +31,7 @@ import type {
 import type { AclDimension } from '../comm/aclModel'
 
 export interface HubStore extends HubState {
+  setRoster: (roster: readonly Agent[]) => void
   setChannels: (channels: readonly Channel[]) => void
   setAcl: (entries: readonly AclEntry[]) => void
   onCommEvent: (event: CommWsServerEvent) => void
@@ -44,6 +47,7 @@ export interface HubStore extends HubState {
 
 export const useHubStore = create<HubStore>((set) => ({
   ...emptyHubState,
+  setRoster: (roster) => set((s) => applyRoster(s, roster)),
   setChannels: (channels) => set((s) => applyChannels(s, channels)),
   setAcl: (entries) => set((s) => applyAcl(s, entries)),
   onCommEvent: (event) => set((s) => applyCommEvent(s, event)),

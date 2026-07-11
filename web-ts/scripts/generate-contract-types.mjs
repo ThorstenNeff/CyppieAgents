@@ -24,6 +24,9 @@ const root = resolve(here, '..')
 
 const REAL = resolve(root, 'contract/asyncapi.json')
 const PROVISIONAL = resolve(root, 'contract/asyncapi.provisional.json')
+// CYP-444: the REST contract (openapi.json, Backend2 build-export via CYP-426). It carries the REST-only DTOs the
+// WS asyncapi doesn't — Agent (roster + role), AgentDetail, mode/send request bodies, etc. Merged below.
+const REAL_OPENAPI = resolve(root, 'contract/openapi.json')
 const OUT = resolve(root, 'src/types/generated/contract.ts')
 
 // CYP-400: fail-closed flip — with CONTRACT_REQUIRE_REAL set (CI/release), a missing real export throws (exit 1).
@@ -43,8 +46,22 @@ if (schemas === undefined || schemas === null) {
   throw new Error(`[CYP-399] no components.schemas in ${inputPath} — not a ContractGenerator schema doc?`)
 }
 
+// CYP-444: merge the REST (openapi) schemas so the roster + other REST DTOs are typed too. We keep the WS asyncapi
+// schemas EXACTLY (values AND key order) and append only the openapi-ONLY names (Agent, AgentDetail, …). Appending
+// only new keys is deliberate: (a) asyncapi keeps its discriminated-union `discriminator`/`mapping` the injection
+// step needs, and (b) json-schema-to-typescript's collision numbering (e.g. Message vs the `message` event wrapper)
+// stays stable — a shared DTO is byte-identical in both docs (:core source), so dropping openapi's copy loses nothing.
+let restOnly = {}
+if (existsSync(REAL_OPENAPI)) {
+  const openapiDoc = JSON.parse(readFileSync(REAL_OPENAPI, 'utf8'))
+  const restSchemas = openapiDoc?.components?.schemas ?? {}
+  restOnly = Object.fromEntries(Object.entries(restSchemas).filter(([name]) => !(name in schemas)))
+} else if (!isProvisional) {
+  console.warn('[CYP-444] ⚠  contract/openapi.json not found — REST-only types (Agent roster, …) will be missing.')
+}
+
 // Deep clone so we never mutate the source doc on disk.
-const defs = structuredClone(schemas)
+const defs = structuredClone({ ...schemas, ...restOnly })
 
 // --- inject the discriminant literal into each union member (the CYP-399 core step) ------------------------
 const refName = (ref) => {
