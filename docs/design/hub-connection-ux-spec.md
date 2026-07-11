@@ -260,12 +260,12 @@ hubConnect.register.submit               hubConnect.hubs.empty
 hubConnect.register.error                hubConnect.hubs.error
 hubConnect.creds.input                   hubConnect.mode.local
 hubConnect.creds.reveal                  hubConnect.mode.remote            (disabled)
-hubConnect.creds.masked                  hubConnect.mode.connect
-hubConnect.creds.validating              hubConnect.state.attempting
-hubConnect.creds.validated               hubConnect.state.handshake
-hubConnect.creds.invalid                 hubConnect.state.connected
-hubConnect.creds.unreachable             hubConnect.state.error.<cause>
-hubConnect.ready.enter
+hubConnect.creds.masked                  hubConnect.mode.remote.soon      („kommt bald"-Marker)
+hubConnect.creds.validating              hubConnect.mode.connect
+hubConnect.creds.validated               hubConnect.state.attempting
+hubConnect.creds.invalid                 hubConnect.state.handshake
+hubConnect.creds.unreachable             hubConnect.state.connected
+hubConnect.ready.toWorkspace             hubConnect.state.error.<cause>
 ```
 **Fail-closed-Anker (für §-QA):** `hubConnect.mode.remote` existiert, ist aber non-interaktiv; `hubConnect.state.connected`
 erscheint **nie** vor echtem LIVE; Presence-Tag trägt kein Erfolgs-Grün.

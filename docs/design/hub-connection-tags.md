@@ -19,7 +19,11 @@
 | `registerName` | `hubConnect.register.name` | A2 editierbares Hub-Namensfeld (Hostname vorbefüllt, Q1). |
 | `registerSubmit` | `hubConnect.register.submit` | A2 Registrieren-Aktion. |
 | `registerError` | `hubConnect.register.error` | A2 Registrierungsfehler (CP nicht erreichbar), errorContainer. |
-| `readyEnter` | `hubConnect.ready.enter` | A4 „Loslegen" → Hub-Workspace. |
+| `readyToWorkspace` | `hubConnect.ready.toWorkspace` | A4 „Loslegen" → Hub-Workspace (Nav; folgt CYP-7-`to<Target>`-Konvention). |
+
+> **Bedeutungs-Klarstellung `hubConnect.register.*`:** hier = einen **Hub** bei der Control Plane registrieren (Seq A2) —
+> **nicht** User-Signup. Das ist ein **anderes** „register" als `auth.register.*` (CYP-176, End-User-Registrierung); die
+> beiden „register"-Bedeutungen nicht verwechseln (für künftige Test-Autoren).
 
 ## Credentials (Seq A / §7) — Muster `settings.apiKey.*`
 | Tag | Wert | Zweck |
@@ -49,6 +53,7 @@
 |---|---|---|
 | `modeLocal` | `hubConnect.mode.local` | Lokal-Option (aktiv, Default-Fokus). |
 | `modeRemote` | `hubConnect.mode.remote` | **Remote-Option — non-interaktiv/disabled** („kommt bald", H2/Q3); nicht vorausgewählt; a11y `a11y_hubconnect_mode_remote_disabled`. |
+| `modeRemoteSoon` | `hubConnect.mode.remote.soon` | „kommt bald"-Marker der Remote-Option (assertierbares distinktes Element; `hubconnect_mode_remote_soon`). |
 | `modeConnect` | `hubConnect.mode.connect` | „Verbinden" → Lokal-Connect (§6). |
 
 ## Lokal-Connect-Zustände (§6) — Idiom `ConnectionStatus`
@@ -77,9 +82,9 @@
   automatisch** → in Phase 1 **nicht** angelegt/gerendert; vorgemerkt für die spätere Remote-Registrierung.
 
 ## Self-Validation
-- **25 neue Tags** in Area `hubConnect` (7 Onboarding/Ready + 7 Creds + 5 Hub-Auswahl inkl. `presence` + 3 Modus +
-  4 Connect-Zustände inkl. `stateError(cause)`). Instanz-scoped: `hubRow`/`hubPresence` embedden `<hubId>`;
-  `stateError` trägt Qualifier `<cause>`.
+- **26 neue Tags** in Area `hubConnect` (7 Onboarding/Ready inkl. `ready.toWorkspace` + 7 Creds + 5 Hub-Auswahl inkl.
+  `presence` + 4 Modus inkl. `mode.remote.soon` + 4 Connect-Zustände inkl. `stateError(cause)`). Instanz-scoped:
+  `hubRow`/`hubPresence` embedden `<hubId>`; `stateError` trägt Qualifier `<cause>`.
 - **0 Kollision:** Area `hubConnect` ist neu und **bewusst distanziert** von Area `connector` (ConnectorTags) — Distanz-Notiz oben (PO-Ruling 2026-07-11).
 - **Geteilte API mit QA (CYP-7):** Area + Werte über den PO mit dem Tester abstimmen, bevor Dev sie fest verdrahtet
   (frozen-Contract-Konvention wie `AuthTags`).
