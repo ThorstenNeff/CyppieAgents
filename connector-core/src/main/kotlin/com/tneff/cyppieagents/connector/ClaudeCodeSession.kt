@@ -302,21 +302,23 @@ class ClaudeCodeSession(
                 readerJob?.cancel()
             }
         }
-        // CYP-362 — `awaitTerminated()` = `Process.waitFor()` with NO timeout. The flush escalation above only
-        // fires when the reader CAN'T drain (SIGTERM ignored + stdout held OPEN). A process that CLOSED its
-        // stdout (so the reader drained → the flush join SUCCEEDED, no SIGKILL fired) but stays ALIVE
-        // (`sh -c 'exec 1>&-; sleep infinity'`) would still park us HERE forever — an unbounded wait 374's
-        // reader-flush-SIGKILL does not cover. Bound it: on timeout escalate to `destroyForcibly()` (SIGKILL),
-        // wait once more bounded, then abandon the wait LOUDLY — the same "a stop that returns beats one that
-        // hangs" contract as the flush. (This unbounded `waitFor()` is what hung `BridgeLazyInitE2eTest`
-        // indefinitely and threatened PO1's serial gate.) If the flush block already SIGKILLed (reader couldn't
-        // drain), the process is dying and the first wait returns at once — no double-kill.
-        var terminated = withTimeoutOrNull(readerFlushTimeoutMs) { process.awaitTerminated() } != null
-        if (!terminated) {
+        // CYP-362 — the no-arg `awaitTerminated()` = `Process.waitFor()` with NO timeout. The flush escalation
+        // above only fires when the reader CAN'T drain (SIGTERM ignored + stdout held OPEN). A process that
+        // CLOSED its stdout (so the reader drained → the flush join SUCCEEDED, no SIGKILL fired) but stays ALIVE
+        // (`sh -c 'exec 1>&-; sleep infinity'`) would still park us HERE forever — the gap 374's reader-flush
+        // SIGKILL does not cover, and what hung `BridgeLazyInitE2eTest` indefinitely (via `relay.close()`).
+        //
+        // Bound it with a REAL deadline: `awaitTerminated(t)` = `Process.waitFor(t, MS)`, the JDK's own bounded
+        // wait. It must NOT be `withTimeoutOrNull { awaitTerminated() }` — `awaitTerminated()` is a
+        // non-cancellable blocking call, so cooperative cancellation never unblocks it and the escalation below
+        // would be UNREACHABLE (the false-green Assist caught). On timeout escalate to `destroyForcibly()`
+        // (SIGKILL) and wait once more bounded; if it STILL hasn't terminated, abandon the wait LOUDLY — the same
+        // "a stop that returns beats one that hangs" contract as the flush. (If the flush already SIGKILLed, the
+        // process is dying and the first bounded wait returns at once — no double-kill.)
+        if (!process.awaitTerminated(readerFlushTimeoutMs)) {
             log.warn("process still alive {} ms after destroy for agent={}; hard-killing (SIGKILL)", readerFlushTimeoutMs, agentId)
             process.destroyForcibly()
-            terminated = withTimeoutOrNull(readerFlushTimeoutMs) { process.awaitTerminated() } != null
-            if (!terminated) {
+            if (!process.awaitTerminated(readerFlushTimeoutMs)) {
                 log.error("process not terminated {} ms after SIGKILL for agent={}; abandoning the termination wait", readerFlushTimeoutMs, agentId)
             }
         }

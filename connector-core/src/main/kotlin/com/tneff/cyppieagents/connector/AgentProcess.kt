@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * A running agent OS process, abstracted so the connector is testable without spawning a real
@@ -36,6 +37,23 @@ interface AgentProcess {
      * test doubles that have no real process; the real spawner overrides it with `Process.waitFor`.
      */
     suspend fun awaitTerminated() {}
+
+    /**
+     * CYP-362 — a **genuinely time-bounded** termination confirm: suspend until the process terminates OR
+     * [timeoutMs] elapses, returning `true` iff it actually terminated within the deadline.
+     *
+     * This exists because a coroutine `withTimeoutOrNull` around [awaitTerminated] does NOT bound it: the real
+     * impl is `withContext(IO) { Process.waitFor() }`, a **non-cancellable blocking** call that ignores
+     * cooperative cancellation, so `withTimeoutOrNull` would park forever (and never reach an escalation after
+     * it). The real spawner overrides this with `Process.waitFor(timeout, MILLISECONDS)` — a real OS deadline.
+     * The default delegates to the unbounded [awaitTerminated] (in-memory doubles have no real process to time
+     * out, so they "terminate" as soon as their own model says so); a fake that models a slow-dying process
+     * must override THIS to model the bound faithfully — otherwise a test of the bounded path is false-green.
+     */
+    suspend fun awaitTerminated(timeoutMs: Long): Boolean {
+        awaitTerminated()
+        return true
+    }
 
     /**
      * Suspend until the process has terminated and report **how** it ended (CYP-351): `0` = clean exit,
@@ -126,6 +144,11 @@ class ProcessBuilderSpawner(
                 // Block the IO dispatcher (not the caller's thread) until the process is really gone.
                 withContext(Dispatchers.IO) { process.waitFor() }
             }
+
+            // CYP-362: a REAL time-bounded wait — the JDK's own deadline, NOT a coroutine timeout. waitFor(t)
+            // returns false at the deadline even though it is a blocking call, which withTimeoutOrNull cannot do.
+            override suspend fun awaitTerminated(timeoutMs: Long): Boolean =
+                withContext(Dispatchers.IO) { process.waitFor(timeoutMs, TimeUnit.MILLISECONDS) }
 
             // CYP-351: the same waitFor, but the status is kept instead of dropped. 0 = clean, non-zero =
             // crash or signal (a SIGTERM'd `claude` reports 143), which is what tells RUNNING from dead.
