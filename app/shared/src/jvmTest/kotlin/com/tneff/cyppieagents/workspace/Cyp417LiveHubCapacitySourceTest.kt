@@ -90,6 +90,19 @@ class Cyp417LiveHubCapacitySourceTest {
     }
 
     @Test
+    fun capacity_throwingSnapshot_degradesToAbsent_neverPropagates() = runTest {
+        // A connect refusal / transport throw (no server — e.g. a render harness) must NOT propagate out of the
+        // flow (it failed every AgentShell render test); it degrades to absent (H1). The `fetchCapacity` non-2xx
+        // guard only covers a RESPONSE — a ConnectException throws before that, so `capacity()` catches it.
+        val src = LiveHubCapacitySource(
+            events = FakeEvents(mapOf(EventType.CAPACITY_CHANGED to listOf(EventLiveEvent.AccessRevoked))),
+            snapshot = { throw java.net.ConnectException("connection refused") },
+            backoff = zeroBackoff,
+        )
+        assertEquals(listOf(null), src.capacity().toList())
+    }
+
+    @Test
     fun rejections_emitOnePerSpawnRejected() = runTest {
         val src = source(
             rejectStream = listOf(

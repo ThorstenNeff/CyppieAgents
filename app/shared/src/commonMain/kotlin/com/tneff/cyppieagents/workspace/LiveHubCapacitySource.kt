@@ -58,7 +58,9 @@ class LiveHubCapacitySource(
 
     override fun capacity(): Flow<HubCapacity?> = flow {
         // Snapshot first so the pill is honest from mount (before the first spawn/exit moves capacity.changed).
-        emit(snapshot())
+        // A connect refusal / transport throw (no server, e.g. a render harness) ⇒ null ⇒ absent (H1) — the
+        // `fetchCapacity` non-2xx guard only covers a RESPONSE; a ConnectException throws before that, so catch here.
+        emit(runCatching { snapshot() }.getOrNull())
         events.events(EventFilter(type = EventType.CAPACITY_CHANGED))
             .reconnecting(backoff)
             .takeWhile { it !is EventLiveEvent.AccessRevoked } // 1008 is terminal — no reconnect hammer
