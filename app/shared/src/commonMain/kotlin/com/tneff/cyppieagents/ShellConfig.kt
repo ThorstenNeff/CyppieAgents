@@ -16,6 +16,15 @@ data class ShellConfig(
     val agentToken: (agentId: String) -> String,
     val operatorToken: String? = null,
 ) {
+    /**
+     * CYP-411 — this config as a [com.tneff.cyppieagents.net.hub.HubEndpoint] for the [HubTransport] seam.
+     * Preserves the **exact** resolved URLs ([hubHttpBaseUrl]/[hubWsBaseUrl]) rather than reconstructing from
+     * `(host, port)` — the web `forOrigin` base has no explicit port and a page-fixed scheme, so a rebuild would
+     * change the string and break the same-origin session cookie. `ShellConfig` thus becomes the endpoint *source*.
+     */
+    fun hubEndpoint(): com.tneff.cyppieagents.net.hub.HubEndpoint =
+        com.tneff.cyppieagents.net.hub.HubEndpoint(httpBaseUrl = hubHttpBaseUrl, wsBaseUrl = hubWsBaseUrl)
+
     companion object {
         /** Dev default: a local server on the CYP-24 port (8787). No operator token baked. */
         fun dev(host: String = "localhost", port: Int = 8787) = ShellConfig(
