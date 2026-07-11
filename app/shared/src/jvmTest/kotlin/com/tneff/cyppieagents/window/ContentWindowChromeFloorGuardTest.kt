@@ -31,10 +31,12 @@ import com.tneff.cyppieagents.eventlog.StubEventsApi
 import com.tneff.cyppieagents.eventlog.StubEventsSource
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState
+import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageMeta
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.model.TerminalControlState
 import com.tneff.cyppieagents.project.StubProjectRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -93,6 +95,13 @@ class ContentWindowChromeFloorGuardTest {
     //                          the honest `terminal_session_note` line ("the agent's real, interactive session;
     //                          the hub does not mediate") under the toggle. Chrome that only exists in one mode.
     //  · `lifecycleError`    — `LifecycleErrorRow`, prepended when a lifecycle action fails.
+    //  · `banner`            — CYP-389: the CYP-381 §6/§7b WARN frame strip (`HandoffBanners`), a chrome row ABOVE
+    //                          the header driven by the CYP-354 control-state. Post-CYP-355 a live motor CAN drive
+    //                          the feed to INTERACTIVE / CONTEXT_LOST, so the strip is SHIPPED chrome (a `null`/
+    //                          MEDIATED feed = NONE, the banner-free majority the real shell still renders). It sits
+    //                          ABOVE the header like `lifecycleError`, so at the floor a shown banner squeezed the
+    //                          composer — the CYP-363 defect one row up. Which of the two banners is TALLER is a
+    //                          wrapping question this guard MEASURES at the min width, never a number.
     //
     // **`terminalGatedNote` is gone from this set, and that is a finding, not a simplification.** It rendered only
     // for `terminalGatedNote && !terminalAvailable`. Since `WORKTREE_SHELL_LIVE_ENABLED = true` (CYP-333-flip,
@@ -109,14 +118,32 @@ class ContentWindowChromeFloorGuardTest {
 
     private enum class Mode { ORCHESTRATION, TERMINAL }
 
+    /**
+     * CYP-389 — the `HandoffBanners` WARN strip (§6/§7b) as a chrome dimension. [toControl] maps each to the
+     * read-only [AgentTerminalControlEvent] `AgentWindow` renders the banner from; NONE = the fail-closed
+     * `null` feed (no banner). The two banner variants differ only in TEXT, so their relative height is left to
+     * the measurement, not asserted here.
+     */
+    private enum class Banner { NONE, INTERACTIVE, CONTEXT_LOST }
+
+    private fun Banner.toControl(agentId: String): AgentTerminalControlEvent? = when (this) {
+        Banner.NONE -> null
+        // heldBy + since populate the "@holder · seit HH:MM" strip; a fixed ts keeps the render deterministic.
+        Banner.INTERACTIVE ->
+            AgentTerminalControlEvent(agentId, TerminalControlState.INTERACTIVE, heldBy = "op", since = BANNER_SINCE)
+        Banner.CONTEXT_LOST -> AgentTerminalControlEvent(agentId, TerminalControlState.CONTEXT_LOST, since = BANNER_SINCE)
+    }
+
     private data class ChromeState(
         val canControl: Boolean,
         val terminalAvailable: Boolean,
         val mode: Mode,
         val lifecycleError: Boolean,
+        val banner: Banner,
     ) {
         override fun toString() =
-            "canControl=$canControl, terminalAvailable=$terminalAvailable, mode=$mode, lifecycleError=$lifecycleError"
+            "canControl=$canControl, terminalAvailable=$terminalAvailable, mode=$mode, " +
+                "lifecycleError=$lifecycleError, banner=$banner"
     }
 
     /**
@@ -131,11 +158,19 @@ class ContentWindowChromeFloorGuardTest {
      *
      * Rendering either would not produce a shorter window; it would produce a test that waits five seconds for a
      * row that never comes.
+     *
+     * **`banner` (CYP-389) adds NO exclusion.** The `HandoffBanners` strip is driven by the CYP-354 control-feed,
+     * which is orthogonal to `canControl` (a non-operator viewer still sees a hub-blind session), to `mode` (the
+     * feed says who holds the session, not which view YOU picked) and to `lifecycleError`. Every banner value is
+     * reachable in every surviving base combination, so the cross-product carries it in full — one banner variant
+     * sets the floor (the tallest), and every banner+composer combination must still keep its composer whole.
      */
     private val shippedStates: List<ChromeState> = listOf(false, true).flatMap { control ->
         listOf(false, true).flatMap { available ->
             Mode.entries.flatMap { mode ->
-                listOf(false, true).map { error -> ChromeState(control, available, mode, error) }
+                listOf(false, true).flatMap { error ->
+                    Banner.entries.map { banner -> ChromeState(control, available, mode, error, banner) }
+                }
             }
         }
     }.filterNot { (it.lifecycleError || it.mode == Mode.TERMINAL) && !it.canControl }
@@ -196,6 +231,42 @@ class ContentWindowChromeFloorGuardTest {
         }
     }
 
+    /**
+     * CYP-389 — **the named tooth.** At the floor, with the hub-blind INTERACTIVE banner shown, the composer keeps
+     * its full natural height. The `HandoffBanners` WARN strip (§6) sits ABOVE the header, and a live CYP-355 motor
+     * CAN drive the CYP-354 feed to INTERACTIVE, so it is shipped chrome; before this ticket [ChromeState] did not
+     * enumerate it, the floor did not reserve its height, and a shown banner squeezed the composer below the
+     * CYP-338 invariant — the CYP-363 defect one row up.
+     *
+     * [atTheFloor_everyStateKeepsItsComposer_andTheTallestIsChromeOnly] now covers this too (the banner is a
+     * [ChromeState] dimension), but this isolates and names the specific INTERACTIVE case the follow-up called for.
+     * **Base = the tallest banner-free chrome** (operator + error row + ORCHESTRATION, where the transcript is
+     * already 0 dp at the floor); adding the banner on top can therefore only come out of the composer unless the
+     * floor grew to reserve it — which makes the RED direction unambiguous.
+     *
+     * RED without the fix: revert [CONTENT_WINDOW_MIN_HEIGHT] to its pre-banner value and the atFloor input drops
+     * below its natural height — the WARN strip steals it (mutation-verified).
+     */
+    @Test
+    fun atTheFloor_theHubBlindBannerNeverStealsComposerHeight() {
+        val titleBar = measureTitleBarOnTheRealShell()
+        val floor = CONTENT_WINDOW_MIN_HEIGHT - titleBar
+        val state = ChromeState(
+            canControl = true, terminalAvailable = true, mode = Mode.ORCHESTRATION,
+            lifecycleError = true, banner = Banner.INTERACTIVE,
+        )
+        val natural = measureAgentWindow(state, availableHeight = GENEROUS)
+        val atFloor = measureAgentWindow(state, availableHeight = floor)
+        assertEquals(
+            natural.inputHeight,
+            atFloor.inputHeight,
+            "CYP-389: at the floor, with the hub-blind INTERACTIVE banner shown, the composer must keep its full " +
+                "natural height (${natural.inputHeight} dp). It measured ${atFloor.inputHeight} dp — the WARN strip " +
+                "above the header is stealing composer height because CONTENT_WINDOW_MIN_HEIGHT does not reserve it. " +
+                "Let the floor follow the measurement (theFloorIsExactlyTheTallestShippedChrome prints the number).",
+        )
+    }
+
     // --- G2 ---------------------------------------------------------------------------------------------------
 
     /**
@@ -248,9 +319,9 @@ class ContentWindowChromeFloorGuardTest {
      *     is silent. Silent means green.
      *  2. *"Compare the real shell's full chrome sum, `window.height - content.height`, against the model."*
      *     **This one saturates, and the shipped window is exactly where it saturates.** Measured: the agent window
-     *     renders at `winH = 265` — its floor, to the dp — with only `content = 20 dp` left. Add 32 dp of chrome
-     *     and the content rectangle clamps to `0`; the difference reports `+20`, not `+32`. Add 200 dp and it
-     *     still reports `+20`. **A guard that goes red at 20 dp and equally red at 200 dp has stopped measuring
+     *     renders at `winH = 303` — its floor, to the dp — with only `content = 58 dp` left. Add 70 dp of chrome
+     *     and the content rectangle clamps to `0`; the difference reports `+58`, not `+70`. Add 200 dp and it
+     *     still reports `+58`. **A guard that goes red at 58 dp and equally red at 200 dp has stopped measuring
      *     and is only alarming** — and once someone lifts the floor above the window height it goes quiet. This is
      *     the same sentence as the one at the top of this file: *a height read at the floor is a remainder, not a
      *     height.* It was proposed as an obligation, and it fails its own test.
@@ -284,7 +355,7 @@ class ContentWindowChromeFloorGuardTest {
     }
 
     /**
-     * The window sits ON its floor (measured: 265 dp, `content = 20 dp`). Upper chrome stays exact while the
+     * The window sits ON its floor (measured: 303 dp, `content = 58 dp`). Upper chrome stays exact while the
      * composer still has height; once the composer is squeezed to nothing, the rows above it start absorbing the
      * shortfall and the position difference stops tracking the chrome. That is the regime where shape (2) above
      * lives permanently — this refuses to report from inside it.
@@ -368,6 +439,9 @@ class ContentWindowChromeFloorGuardTest {
                             // A wired terminal is a SLOT, not a session: an empty box is enough to flip
                             // `terminalAvailable` and to fill the content rectangle in TERMINAL mode.
                             terminalContent = if (state.terminalAvailable) ({ _, m -> Box(m) }) else null,
+                            // CYP-389: the read-only control-feed drives the `HandoffBanners` WARN strip above the
+                            // header. NONE → `null` (fail-closed, no banner), else INTERACTIVE / CONTEXT_LOST.
+                            control = state.banner.toControl(AGENT_ID),
                         )
                     }
                 }
@@ -454,5 +528,12 @@ class ContentWindowChromeFloorGuardTest {
 
         /** Any height with slack for the `weight(1f)` transcript; the host is measured, never assumed (see below). */
         const val GENEROUS = 2_000f
+
+        /**
+         * CYP-389 — a fixed take-over instant for the banner fixtures. The INTERACTIVE strip renders "seit HH:MM",
+         * so it needs a non-null `since`, but the value is irrelevant to the strip's HEIGHT; pinned so the render
+         * is deterministic (no wall-clock in the measured composition).
+         */
+        const val BANNER_SINCE = 1_700_000_000_000L
     }
 }
