@@ -163,7 +163,15 @@ class LifecycleManager(
      * [exitCode] `0` → [AgentRunState.STOPPED] (it finished, unbidden). Anything else → [AgentRunState.ERROR].
      * The event log still records the death in both cases, and grades an unknown status fail-closed.
      */
-    fun onObservedExit(agentId: String, exitCode: Int?): AgentRunStateEvent? {
+    fun onObservedExit(agentId: String, session: ConnectorSession, exitCode: Int?): AgentRunStateEvent? {
+        // CYP-367 — the session-identity guard, AT THE CORE (not the caller). onObservedExit is agentId-keyed and
+        // otherwise cannot tell WHICH session died (the open CYP-368 seam). A session that was DISPLACED
+        // (ConnectorSessions.register, CYP-368) or REMOVED-without-join (ConnectorSessions.remove cancels the
+        // reader but does not join it, CYP-351) keeps a live exit tail; when that OLD session finally dies its
+        // exit must NOT move the run state of the NEW session that replaced it. Only the CURRENTLY-registered
+        // session may transition. (doSpawn registers this session BEFORE wiring the listener, so a sticky
+        // SYNCHRONOUS death of the just-spawned session still passes this guard — see doSpawn.)
+        if (sessions.session(agentId) !== session) return null
         if (exitCode == null) {
             log.warn("agent '{}' reader ended without a readable exit status — run state left untouched", agentId)
             return null
@@ -338,8 +346,14 @@ class LifecycleManager(
         val running = setRunState(agentId, AgentRunState.RUNNING)
         // Routing by construction: one connector serves every project, but each project has its OWN
         // LifecycleManager, so only the manager that spawned this session owns this agent's run state.
-        session.addExitListener { exitCode -> onObservedExit(agentId, exitCode) } // may fire synchronously
+        //
+        // CYP-367: register BEFORE wiring the exit listener. onObservedExit's session-identity guard admits only
+        // the CURRENTLY-registered session's exit; the sticky `addExitListener` can fire a death SYNCHRONOUSLY
+        // right here, so this session must already BE the registered one or the guard would discard its own
+        // corpse — regressing CYP-351's "a spawn that dies instantly ends in ERROR". RUNNING is still published
+        // before the listener (the CYP-351 order), so a sticky death can only overwrite RUNNING, never the reverse.
         sessions.register(session)
+        session.addExitListener { exitCode -> onObservedExit(agentId, session, exitCode) } // may fire synchronously
         // Report what is true now, not what we intended: a session that died during the handover has already
         // moved the state, and start/restart/boot must not be told RUNNING about a dead agent.
         val settled = synchronized(lock) { status[agentId] }
