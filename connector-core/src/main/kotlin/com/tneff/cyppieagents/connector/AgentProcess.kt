@@ -50,6 +50,16 @@ interface AgentProcess {
      * unknown status must never be read as a clean exit.
      */
     suspend fun awaitExitCode(): Int? = null
+
+    /**
+     * CYP-374 — a HARD kill (SIGKILL) for [ClaudeCodeSession.closeAndAwait]'s escalation. When [destroy] (SIGTERM)
+     * is ignored and the process holds its stdout open past the flush timeout, this closes the pipe
+     * UNCONDITIONALLY so the reader can drain and closeAndAwait can reach true quiescence (join) — instead of
+     * severing the reader mid-turn, which breaks CYP-247's switch-attribution barrier. Defaults to [destroy] for
+     * in-memory doubles / the remote bridge (no real local process to hard-kill); the real spawner overrides it
+     * with `Process.destroyForcibly()`.
+     */
+    fun destroyForcibly() = destroy()
 }
 
 fun interface ProcessSpawner {
@@ -103,6 +113,13 @@ class ProcessBuilderSpawner(
             override fun destroy() {
                 runCatching { writer.close() }
                 process.destroy()
+            }
+
+            // CYP-374: SIGKILL — closes the pipe unconditionally (a SIGTERM-ignoring process can't hold it open),
+            // so closeAndAwait's reader can drain and reach quiescence instead of being severed mid-turn.
+            override fun destroyForcibly() {
+                runCatching { writer.close() }
+                process.destroyForcibly()
             }
 
             override suspend fun awaitTerminated() {

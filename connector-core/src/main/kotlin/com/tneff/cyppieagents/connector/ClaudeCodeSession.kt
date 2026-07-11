@@ -41,6 +41,9 @@ class ClaudeCodeSession(
     /** Invoked with a turn-end result from a BOUND session. Server: `MediationRouter.onResult` (Gate #6 via
      *  [MediationGate]); Bridge: `WireSend` of [MediationGate.classify]'s result. */
     private val onTurnResult: ((ResultEvent) -> Unit)? = null,
+    /** CYP-374 — how long a destroyed process gets to flush its last stdout before [closeAndAwait] escalates
+     *  SIGTERM→SIGKILL to reach quiescence. Injectable so a test can shorten it; default 5 s (the CYP-371 belt). */
+    private val readerFlushTimeoutMs: Long = 5_000L,
 ) : ConnectorSession {
 
     /** CYP-167 — did this spawn ever bind a session id, or did it die unbound (e.g. a stale `--resume`)? */
@@ -279,10 +282,25 @@ class ClaudeCodeSession(
         // would otherwise park us forever. If it fires we cancel, log, and continue — a stop that degrades
         // loudly beats a stop that never returns.
         process.destroy()
-        val flushed = withTimeoutOrNull(READER_FLUSH_TIMEOUT_MS) { readerJob?.join() } != null
+        var flushed = withTimeoutOrNull(readerFlushTimeoutMs) { readerJob?.join() } != null
         if (!flushed) {
-            log.warn("reader did not flush within {} ms for agent={}; cancelling", READER_FLUSH_TIMEOUT_MS, agentId)
-            readerJob?.cancel()
+            // CYP-374: SIGTERM was ignored and stdout held open, so the reader can't drain — and a plain
+            // `readerJob?.cancel()` here is EXACTLY the mis-attribution CYP-247's switch barrier forbids (an
+            // in-flight ResultEvent body's `active()`-read would survive this return). Escalate to a HARD kill:
+            // `destroyForcibly()` (SIGKILL) closes the pipe UNCONDITIONALLY, so the reader CAN end; then JOIN it
+            // (bounded) to reach true quiescence — the barrier holds; the turn is just truncated (a process that
+            // ignores SIGTERM was going to be killed anyway).
+            log.warn("reader did not flush within {} ms for agent={}; hard-killing (SIGKILL) to reach quiescence", readerFlushTimeoutMs, agentId)
+            process.destroyForcibly()
+            flushed = withTimeoutOrNull(readerFlushTimeoutMs) { readerJob?.join() } != null
+            if (!flushed) {
+                // SIGKILL closes the pipe, so the reader should always drain now. If it STILL didn't (a
+                // kernel-unkillable process, or a reader wedged off the pipe), sever as a last resort and log
+                // LOUDLY: CYP-247's barrier did not hold for this turn — but a stop that returns beats one that
+                // hangs forever.
+                log.error("reader still not quiescent {} ms after SIGKILL for agent={}; severing — CYP-247 barrier not held", readerFlushTimeoutMs, agentId)
+                readerJob?.cancel()
+            }
         }
         process.awaitTerminated()
         boundSessionId?.let { onUnbind?.invoke(it) }
@@ -290,8 +308,4 @@ class ClaudeCodeSession(
         observer?.onStopped(agentId)
     }
 
-    private companion object {
-        /** CYP-371 — how long a destroyed process gets to flush its last stdout before we sever the reader. */
-        const val READER_FLUSH_TIMEOUT_MS = 5_000L
-    }
 }
