@@ -122,9 +122,16 @@ class PtyManager(
      * CYP-355 — **attach a viewer** to the agent's live PTY: replays the bounded scrollback, then streams live.
      * Returns null if no PTY is live (the caller falls back to spawn — the `terminalSocket` attach-vs-spawn
      * rule). [PtySubscription.close] detaches ONLY this viewer; the PTY lives on for the others and the motor.
+     *
+     * CYP-391 — [onExit] fires **once**, on THIS viewer, if the PTY process dies while it is attached — mirroring
+     * the bash-spawn path's [open] `onExit` so a viewer of a motor-owned `claude --resume` session that crashes
+     * gets a `TerminalExit` + a closed socket instead of a frozen terminal. A viewer detach ([PtySubscription.close])
+     * does NOT fire it (the process lives on for the motor); only actual process death does. If the process has
+     * already exited by the time the attach lands (the race before the owner frees the `live` slot), [onExit]
+     * fires immediately rather than never.
      */
-    fun attach(agentId: String, onOutput: (ByteArray) -> Unit): PtySubscription? =
-        live[agentId]?.subscribe(onOutput)
+    fun attach(agentId: String, onOutput: (ByteArray) -> Unit, onExit: (Int) -> Unit): PtySubscription? =
+        live[agentId]?.subscribe(onOutput, onExit)
 
     /** Write bytes to the live PTY's stdin (any viewer's keystrokes → the one process). No-op if not live. */
     fun write(agentId: String, bytes: ByteArray) {
@@ -210,6 +217,12 @@ internal class PtyHandleImpl(
     private val subscribers = java.util.concurrent.CopyOnWriteArrayList<(ByteArray) -> Unit>()
     private val replay = ArrayDeque<ByteArray>()
     private var replayBytes = 0
+    // CYP-391 exit fan-out: attach-registered viewers that want a one-shot notification when the PROCESS dies
+    // (as opposed to a viewer detach). `exitCode` (guarded by `bufferLock`, same as the output fan-out) makes
+    // the notification fire EXACTLY once and closes the late-attach race: an attach that lands after the pump
+    // reported exit but before the owner freed the `live` slot sees `exitCode` set and is notified immediately.
+    private val exitListeners = java.util.concurrent.CopyOnWriteArrayList<(Int) -> Unit>()
+    private var exitCode: Int? = null
 
     fun start(
         cwd: File,
@@ -239,8 +252,24 @@ internal class PtyHandleImpl(
                 if (!closed) log.debug("pty read ended for agent={}: {}", agentId, e.message)
             }
             val code = runCatching { proc.waitFor() }.getOrDefault(-1)
-            onExit(code)
+            fireExit(code) // CYP-391: notify attached viewers BEFORE the owner frees the slot (see [fireExit])
+            onExit(code)   // owner: motor lifecycle, or the bash-spawn socket's own TerminalExit
         }
+    }
+
+    /** CYP-391 — fan the process's death out to attach-registered viewers, exactly once. Snapshots the listeners
+     *  and stamps [exitCode] atomically (same lock as the output fan-out) so a concurrent [subscribe] either is in
+     *  this snapshot or sees [exitCode] set and fires itself — never both, never neither. Delivered outside the
+     *  lock (a listener must not re-enter [subscribe]); the owner `onExit` runs after so `live` is still populated
+     *  for a viewer that attaches during the wind-down. */
+    private fun fireExit(code: Int) {
+        val targets: List<(Int) -> Unit>
+        synchronized(bufferLock) {
+            if (exitCode != null) return
+            exitCode = code
+            targets = exitListeners.toList()
+        }
+        targets.forEach { runCatching { it(code) }.onFailure { log.debug("pty exit listener failed for agent={}: {}", agentId, it.message) } }
     }
 
     /** Append to the bounded replay buffer and snapshot subscribers **atomically**, then deliver outside the
@@ -259,13 +288,24 @@ internal class PtyHandleImpl(
     }
 
     /** Attach a viewer: replay the buffered scrollback, then add it — atomically, so it neither misses a chunk
-     *  arriving mid-attach nor sees one twice (the [fanOut] lock is the counterpart). */
-    fun subscribe(onOutput: (ByteArray) -> Unit): PtySubscription {
+     *  arriving mid-attach nor sees one twice (the [fanOut] lock is the counterpart). CYP-391: an optional
+     *  [onExit] is fired once if the process dies while attached (never on a plain detach); if the process has
+     *  already exited by the time we register, it fires immediately so the viewer is never left frozen. */
+    fun subscribe(onOutput: (ByteArray) -> Unit, onExit: ((Int) -> Unit)? = null): PtySubscription {
+        val alreadyExited: Int?
         synchronized(bufferLock) {
             replay.forEach { runCatching { onOutput(it) } }
             subscribers.add(onOutput)
+            alreadyExited = exitCode
+            if (onExit != null && alreadyExited == null) exitListeners.add(onExit)
         }
-        return PtySubscription { subscribers.remove(onOutput) }
+        if (onExit != null && alreadyExited != null) runCatching { onExit(alreadyExited) }
+        return PtySubscription {
+            synchronized(bufferLock) {
+                subscribers.remove(onOutput)
+                if (onExit != null) exitListeners.remove(onExit)
+            }
+        }
     }
 
     override fun write(bytes: ByteArray) {
