@@ -312,6 +312,10 @@ fun Application.bootPlatform(
         hubIdentityFile = gitRoot.toPath().resolve(".cyppie/hub-identity.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
+    // CYP-31: an EXPLICIT WS-origin gate on TOP of CORS — CORS is a no-op when allowedOrigins is empty (WS then
+    // has no origin protection) and only spot-tests 2 of 8 ws routes. This holds for every /ws/* upgrade,
+    // empty allowlist included (defense-in-depth vs CSWSH; permits no-Origin native clients + same-origin).
+    installWsOriginGuard(config.web.allowedOrigins)
     // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;
     // otherwise fail-closed to token-only (human path deny-all). The role store is durable + out-of-repo.
     val authDeps = config.auth?.let { authCfg ->
