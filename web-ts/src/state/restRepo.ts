@@ -13,6 +13,8 @@ import type {
   AgentRunStateEvent,
   NewAgentSpec,
   AgentEdit,
+  RepoConfigView,
+  RepoConfigRequest,
 } from '../types/generated/contract'
 
 /** CYP-426 interim: `:core` TerminalMode. The server maps this to the terminal-control state machine. */
@@ -46,13 +48,13 @@ export interface HubRepo {
   /** PUT /api/config/apikey (operator) — write-only: sends the new plaintext key, gets back only the MASKED view.
    *  The response carries no plaintext, so nothing to leak on the way back (CYP-433). */
   putApiKey(apiKey: string): Promise<ApiKeyView>
+  /** CYP-450. GET /api/agents/{id} — the full config (incl. persona + launch, which the roster Agent omits) so the
+   *  edit dialog can PREFILL current values rather than blank them out. */
+  fetchAgentDetail(id: string): Promise<AgentDetail>
   /** CYP-450 (operator). POST /api/agents — create a config-only agent (NOT started; the caller shows the spawnHint
    *  and starts it via the P2-a lifecycle controls). Returns void: the server's CreatedAgent body carries the new
    *  agent's TOKEN (a secret) — never surfaced; the list refetches instead (non-optimistic). Rejects (agent_exists /
    *  po_already_exists / invalid_agent) are server-authoritative — surfaced from the RestError, never pre-guessed. */
-  /** CYP-450. GET /api/agents/{id} — the full config (incl. persona + launch, which the roster Agent omits) so the
-   *  edit dialog can PREFILL current values rather than blank them out. */
-  fetchAgentDetail(id: string): Promise<AgentDetail>
   createAgent(spec: NewAgentSpec): Promise<void>
   /** CYP-450 (operator). PUT /api/agents/{id} — edit role/persona/launch/name (id + worktree are fixed). Takes
    *  effect on next start (the caller shows the amber restart hint). Rejects: po_already_exists / last_po. */
@@ -60,6 +62,12 @@ export interface HubRepo {
   /** CYP-450 (operator). DELETE /api/agents/{id}[?worktree=delete] — stop + remove. `fate` defaults to keep
    *  (non-destructive); 'delete' is the warned, destructive path. Reject: last_po (the only PO is undeletable). */
   removeAgent(id: string, fate: WorktreeFate): Promise<void>
+  /** CYP-453. GET /api/config/repo (participant) — the project repo config { configured, url?, branch?, … }. Drives
+   *  the honest "unset → agents can't start" status + prefills the operator-only inputs. */
+  getRepoConfig(): Promise<RepoConfigView>
+  /** CYP-453. PUT /api/config/repo (operator) — save url/branch. Non-optimistic: takes effect on new worktrees / next
+   *  boot (the caller shows the amber effect-hint). Reject: invalid_repo_url — surfaced from the RestError. */
+  putRepoConfig(req: RepoConfigRequest): Promise<RepoConfigView>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -116,5 +124,11 @@ export class RestHubRepo implements HubRepo {
     // Default fate = keep (safe); only an explicit ?worktree=delete is destructive (server default is keep).
     const q = fate === 'delete' ? '?worktree=delete' : ''
     await this.rest.delete<void>(`/api/agents/${encodeURIComponent(id)}${q}`)
+  }
+  getRepoConfig(): Promise<RepoConfigView> {
+    return this.rest.get<RepoConfigView>('/api/config/repo')
+  }
+  putRepoConfig(req: RepoConfigRequest): Promise<RepoConfigView> {
+    return this.rest.put<RepoConfigView>('/api/config/repo', req)
   }
 }
