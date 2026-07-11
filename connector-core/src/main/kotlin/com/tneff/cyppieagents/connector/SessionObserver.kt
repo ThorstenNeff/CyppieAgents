@@ -18,8 +18,22 @@ interface SessionObserver {
     /** A new work-run starts (a turn was injected). */
     fun onTurnStart(agentId: String, sessionId: String?, correlationId: String)
 
-    /** The process exited on its own (stdout completed). */
-    fun onProcessExit(agentId: String, sessionId: String?)
+    /**
+     * The process has terminated, **observed** — the caller has awaited `AgentProcess.awaitExitCode()` before
+     * calling this. Never on a deliberate [ClaudeCodeSession.close]; that path cancels the reader first and
+     * reports [onStopped] instead. Every call here is therefore an unbidden death.
+     *
+     * The old KDoc read *"The process exited on its own (stdout completed)"* — the parenthesis admitted the
+     * inference the name denied. Stdout completing is the end of the **stream**, not of the process; a process
+     * can close stdout and keep running. Since CYP-351 the caller confirms with `waitFor()` before speaking, so
+     * the name `onProcessExit` finally says what it does. It never did before.
+     *
+     * [exitCode] is `0` for a clean exit, non-zero for a crash or signal, and `null` when the process has no
+     * observable status (a test double, a remote self-report). `null` means **unknown**, never "clean": a
+     * consumer that reads it as `0` cannot tell a finished agent from a dead one, and will file a crash as
+     * routine.
+     */
+    fun onProcessExit(agentId: String, sessionId: String?, exitCode: Int?)
 
     /** The session was deliberately closed/stopped. */
     fun onStopped(agentId: String)

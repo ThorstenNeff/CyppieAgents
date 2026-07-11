@@ -68,7 +68,7 @@ class Cyp247SwitchAttributionTest {
                 }
             }
             override fun onTurnStart(agentId: String, sessionId: String?, correlationId: String) {}
-            override fun onProcessExit(agentId: String, sessionId: String?) {}
+            override fun onProcessExit(agentId: String, sessionId: String?, exitCode: Int?) {} // CYP-351
             override fun onStopped(agentId: String) {}
         }
         return ClaudeCodeSession(

@@ -12,7 +12,18 @@ import java.io.File
  * `claude` (tests inject a fake that feeds canned stdout lines and captures stdin).
  */
 interface AgentProcess {
-    /** NDJSON lines from the agent's stdout. The flow completes when the process ends. */
+    /**
+     * NDJSON lines from the agent's stdout.
+     *
+     * The flow completes when the **stream** ends — which is **not** the process ending (CYP-351). A process can
+     * close its stdout and keep running: `sh -c 'exec 1>&-; sleep 3'` completes this flow at once and lives for
+     * three more seconds. The old wording, *"completes when the process ends"*, is why the exit path inferred a
+     * death from an EOF, and why in-memory doubles that complete immediately looked like they modelled a live
+     * agent while, by the contract, they were claiming an instant death.
+     *
+     * The only observation of the **process** is [awaitExitCode] / [awaitTerminated]. This flow ending is only
+     * the end of our hearing.
+     */
     val stdoutLines: Flow<String>
     /** Write one NDJSON line (plus newline) to the agent's stdin. */
     suspend fun writeLine(line: String)
@@ -25,6 +36,20 @@ interface AgentProcess {
      * test doubles that have no real process; the real spawner overrides it with `Process.waitFor`.
      */
     suspend fun awaitTerminated() {}
+
+    /**
+     * Suspend until the process has terminated and report **how** it ended (CYP-351): `0` = clean exit,
+     * non-zero = crash/signal, `null` = this process has no observable exit status.
+     *
+     * [awaitTerminated] already blocks on `Process.waitFor()` and throws the returned `Int` away, which is
+     * why the server could never distinguish "the agent finished" from "the agent died": the exit status was
+     * observed and discarded at the same instruction. This is the same observation, kept.
+     *
+     * Defaults to `null` so the in-memory doubles and the remote bridge (whose process lives in the user's
+     * infrastructure and is only ever self-reported) inherit "unknown" rather than a fabricated `0` — an
+     * unknown status must never be read as a clean exit.
+     */
+    suspend fun awaitExitCode(): Int? = null
 }
 
 fun interface ProcessSpawner {
@@ -84,6 +109,10 @@ class ProcessBuilderSpawner(
                 // Block the IO dispatcher (not the caller's thread) until the process is really gone.
                 withContext(Dispatchers.IO) { process.waitFor() }
             }
+
+            // CYP-351: the same waitFor, but the status is kept instead of dropped. 0 = clean, non-zero =
+            // crash or signal (a SIGTERM'd `claude` reports 143), which is what tells RUNNING from dead.
+            override suspend fun awaitExitCode(): Int = withContext(Dispatchers.IO) { process.waitFor() }
         }
     }
 }

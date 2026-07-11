@@ -46,8 +46,10 @@ class WireReportingObserver(
     }
 
     // The bridge doesn't self-report turn lifecycle / process exit for caps — only rate-limit + tool depth.
+    // CYP-351: the exit status of a process in the user's infrastructure is only ever what the bridge chooses
+    // to report; the hub must not infer a run state from a signal that never crosses the trust boundary.
     override fun onTurnStart(agentId: String, sessionId: String?, correlationId: String) {}
-    override fun onProcessExit(agentId: String, sessionId: String?) {}
+    override fun onProcessExit(agentId: String, sessionId: String?, exitCode: Int?) {}
     override fun onStopped(agentId: String) {}
 
     /** Flatten a JSON object's primitive fields to `Map<String,String>` for the wire; the server whitelists. */

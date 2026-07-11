@@ -89,10 +89,27 @@ class ResumingSession(
      *    anyone talks to it).
      *  - Any death of the session that is currently [inner] is the agent's death — always reported.
      */
+    private val exitLock = Any()
     private val exitListeners = java.util.concurrent.CopyOnWriteArrayList<(Int?) -> Unit>()
+    private var ended = false
+    private var endedWith: Int? = null
 
+    /**
+     * CYP-351 — the end is **sticky** here too. The connector starts the session before handing this facade to
+     * the run-state authority, so an agent that dies inside that handover would die into an empty listener
+     * list: the observation would not be late, it would never exist. A subscription that arrives after the end
+     * replays it instead of hearing silence.
+     */
     override fun addExitListener(listener: (exitCode: Int?) -> Unit) {
-        exitListeners.add(listener)
+        val replayWith = synchronized(exitLock) {
+            if (!ended) {
+                exitListeners.add(listener)
+                return
+            }
+            endedWith
+        }
+        runCatching { listener(replayWith) }
+            .onFailure { log.warn("exit listener failed for agent={}: {}", agentId, it.message) }
     }
 
     /** Subscribe to one attempt's death, reported only if that attempt is the agent when it dies. */
@@ -102,7 +119,13 @@ class ResumingSession(
             if (session !== inner) return@addExitListener // already replaced by the heal
             // The stale-resume signal: the first attempt died without ever binding. The facade heals it.
             if (session === firstAttempt && !session.everBound) return@addExitListener
-            exitListeners.forEach { l ->
+            val listeners = synchronized(exitLock) {
+                if (ended) return@addExitListener
+                ended = true
+                endedWith = exitCode
+                exitListeners.toList()
+            }
+            listeners.forEach { l ->
                 runCatching { l(exitCode) }
                     .onFailure { log.warn("exit listener failed for agent={}: {}", agentId, it.message) }
             }

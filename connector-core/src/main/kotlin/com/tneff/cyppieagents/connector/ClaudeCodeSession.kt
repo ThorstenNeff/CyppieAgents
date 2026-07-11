@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.model.ResultEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
 import com.tneff.cyppieagents.model.UserTurn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -84,11 +85,44 @@ class ClaudeCodeSession(
      */
     val everBound: Boolean get() = boundSessionId != null
 
-    /** CYP-360 — notified when this session's stream ends on its own (never on a deliberate [close]). */
+    /**
+     * CYP-351 — notified with the exit status when the process ends on its own (never on a deliberate close).
+     *
+     * The end is **sticky**: a session is started by the connector before it is handed to whoever will watch
+     * it, so a process that dies inside that handover would otherwise die into an empty listener list — the
+     * observation would not be late, it would never exist. A subscription that arrives after the end replays
+     * it immediately, with the status that was actually observed.
+     */
+    private val exitLock = Any()
     private val exitListeners = java.util.concurrent.CopyOnWriteArrayList<(Int?) -> Unit>()
+    private var ended = false
+    private var endedWith: Int? = null
 
     override fun addExitListener(listener: (exitCode: Int?) -> Unit) {
-        exitListeners.add(listener)
+        val replayWith = synchronized(exitLock) {
+            if (!ended) {
+                exitListeners.add(listener)
+                return
+            }
+            endedWith
+        }
+        // Already over: hand the subscriber the end it missed rather than silence.
+        runCatching { listener(replayWith) }
+            .onFailure { log.warn("exit listener failed for agent={}: {}", agentId, it.message) }
+    }
+
+    /** Record the end once, then notify everyone subscribed at that instant. */
+    private fun publishExit(exitCode: Int?) {
+        val listeners = synchronized(exitLock) {
+            if (ended) return
+            ended = true
+            endedWith = exitCode
+            exitListeners.toList()
+        }
+        listeners.forEach { l ->
+            runCatching { l(exitCode) }
+                .onFailure { log.warn("exit listener failed for agent={}: {}", agentId, it.message) }
+        }
     }
 
     fun start() {
@@ -99,12 +133,13 @@ class ClaudeCodeSession(
           // (below), which ALREADY tells the two cases apart and needs no second discriminator here:
           //   • `closing == true`  (WE tore it down): the tail returns at its `closing` guard → a stop is not a
           //     death, and the last line was already flushed. No false `onProcessExit`.
-          //   • `closing == false` (a LIVE process failed): the tail runs in FULL — DIED_UNBOUND + onProcessExit
-          //     + the CYP-360 exit listeners — reporting an OBSERVED death, INDISTINGUISHABLE from an EOF death so
-          //     BE-3's heal transition (CYP-356) sees a single shape. Not swallowed (that would go deaf on a dead
-          //     process), not rethrown (an uncaught IOException would redden the gate and noise the dogfood logs).
+          //   • `closing == false` (a LIVE process failed): the tail runs in FULL — DIED_UNBOUND + observed exit
+          //     + publishExit — reporting an OBSERVED death, INDISTINGUISHABLE from an EOF death so BE-3's heal
+          //     transition (CYP-356) sees a single shape. Not swallowed (that would go deaf on a dead process),
+          //     not rethrown (an uncaught IOException would redden the gate and noise the dogfood logs).
           try {
             process.stdoutLines.collect { line ->
+
                 val parsed = runCatching { CommJson.decodeFromString<StreamJsonEvent>(line) }.getOrNull()
                 if (parsed == null) {
                     // Version drift / partial line: skip rather than crash the reader (CYP-5 note).
@@ -170,15 +205,23 @@ class ClaudeCodeSession(
             // a death. (CYP-351 refines this further: even an unbidden EOF is not a death unless the process is
             // actually gone — death OBSERVED via the exit status, not inferred from EOF.)
             if (closing) return@launch
-            observer?.onProcessExit(agentId, boundSessionId)
-            // CYP-360: the same end, reported to whoever owns this session's identity (the resume facade, and
-            // through it the run-state authority). The exit status is not available at this seam yet — CYP-351
-            // supplies it — so listeners are told `null`, which means "unknown", never "clean".
-            // A throwing listener must not swallow the others.
-            exitListeners.forEach { l ->
-                runCatching { l(null) }
-                    .onFailure { log.warn("exit listener failed for agent={}: {}", agentId, it.message) }
+            // CYP-351: confirm the death by OBSERVING the exit status. `awaitExitCode()` is `Process.waitFor()` —
+            // it BLOCKS until the process is really gone and yields its true status, so a death is never inferred
+            // from a silent or broken pipe (a process can close stdout and keep running). Cancellation while
+            // parked here is a deliberate stop and must propagate, not be swallowed into a fabricated exit.
+            val exitCode = try {
+                process.awaitExitCode()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (unreadable: Throwable) {
+                null // the process is gone but its status is not readable: unknown, never a fabricated clean 0
             }
+            // Observed, unbidden death → report it with the REAL status (CYP-351). `onProcessExit` is now 3-arg;
+            // the run-state authority hears it from the session it spawned (see ConnectorSession.addExitListener).
+            observer?.onProcessExit(agentId, boundSessionId, exitCode)
+            // CYP-351 (e24529fb): publish the end STICKILY — a subscriber that arrives after this still gets it
+            // (the spawn-handover window). A throwing listener must not swallow the others, nor kill this tail.
+            publishExit(exitCode)
         }
     }
 

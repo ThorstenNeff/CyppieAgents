@@ -114,7 +114,7 @@ class Cyp371StopDoesNotHangTest {
                 if (event is SystemEvent) seen.complete(event.sessionId ?: "")
             }
             override fun onTurnStart(agentId: String, sessionId: String?, correlationId: String) {}
-            override fun onProcessExit(agentId: String, sessionId: String?) {}
+            override fun onProcessExit(agentId: String, sessionId: String?, exitCode: Int?) {}
             override fun onStopped(agentId: String) {}
         }
         /** Writes one last line at `destroy()`, then EOFs — a process that speaks as it dies. */
@@ -158,7 +158,7 @@ class Cyp371StopDoesNotHangTest {
         val observer = object : SessionObserver {
             override fun onEvent(agentId: String, sessionId: String?, correlationId: String?, event: StreamJsonEvent) {}
             override fun onTurnStart(agentId: String, sessionId: String?, correlationId: String) {}
-            override fun onProcessExit(agentId: String, sessionId: String?) { processExits.incrementAndGet() }
+            override fun onProcessExit(agentId: String, sessionId: String?, exitCode: Int?) { processExits.incrementAndGet() }
             override fun onStopped(agentId: String) {}
         }
         /** A silent process that EOFs when destroyed — the ordinary case: a `claude` idling with nothing to say. */

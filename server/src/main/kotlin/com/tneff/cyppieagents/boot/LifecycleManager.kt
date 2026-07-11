@@ -118,6 +118,64 @@ class LifecycleManager(
 
     fun runStateOf(agentId: String): AgentRunState? = synchronized(lock) { status[agentId] }
 
+    /**
+     * CYP-351 — the agent's process died **without being told to**. This is the only writer of [status] that
+     * reports an *observation* rather than a *command*; every other one records what we asked for. Without it
+     * [status] is a command memory: a crashed agent kept answering RUNNING, `/ws/lifecycle` never emitted, and
+     * the operator's Start button stayed disabled on a dead agent — the one control that would have fixed it.
+     *
+     * **This method does not ask *which* session died, and that is a known hole — CYP-368.** It checks only that
+     * the agent is still RUNNING, which cannot distinguish "the current session died" from "some earlier session
+     * of this agent died". The teardown paths are safe: `stop`/`restart` go through
+     * [ConnectorSessions.removeAndAwait] → `closeAndAwait()` → `readerJob.cancelAndJoin()`, and the exit tail
+     * lives inside that `readerJob`, so it is finished or cancelled before the next state is written.
+     *
+     * The **spawn** path is not. [start] is check-then-act with no mutual exclusion, and its window is a whole
+     * `fork/exec`: two concurrent `POST /api/agents/{id}/start` both read "not RUNNING" and both spawn.
+     * [ConnectorSessions.register] then displaces the first session **without closing it** — so it keeps running,
+     * unregistered, with its exit listener still bound. When it dies it moves the run state of the *live* one.
+     * Measured by the reviewer: 11 of 12 rounds produced two live sessions, and killing the displaced one flipped
+     * the survivor to ERROR.
+     *
+     * **An earlier version of this comment claimed there was "no second writer". That was wrong**, and a wrong
+     * comment is worse than none: it carries the authority of a check that did happen, and stops the next reader
+     * from looking. The search was thorough in the wrong place (`remove`/`stop`/`restart`); the second writer
+     * comes through the front door.
+     *
+     * **The fix is not a guard here.** Ignoring the displaced session's exit would restore a correct green dot on
+     * top of two live `claude` processes burning tokens for one agent. CYP-368 serialises the spawn so only one
+     * session can exist; a session-identity guard is worth adding *after* that, as depth, never instead of it.
+     *
+     * Guards, in order:
+     *  - an unknown agent (already removed via [forget]) is ignored — nothing to say about it. The death is
+     *    still recorded: the observer writes the event log **before** the exit listeners run;
+     *  - a **`null` [exitCode] changes nothing**. `null` means the process could not report a status, and an
+     *    unreadable status is **not evidence of death**: a stdout pipe can break, or be closed, while the
+     *    process lives on (measured). Flipping the state here would trade a missing observation for an invented
+     *    one — the very error this ticket is about. A real process always answers (`waitFor` blocks until it
+     *    does), so this path is only ever taken by a session with no observable process at all;
+     *  - only a **RUNNING** agent may be transitioned. A `stop()` that already wrote STOPPED, or an ERROR from
+     *    a failed spawn, is a *later* truth than a straggling exit signal from the process it replaced.
+     *
+     * [exitCode] `0` → [AgentRunState.STOPPED] (it finished, unbidden). Anything else → [AgentRunState.ERROR].
+     * The event log still records the death in both cases, and grades an unknown status fail-closed.
+     */
+    fun onObservedExit(agentId: String, exitCode: Int?): AgentRunStateEvent? {
+        if (exitCode == null) {
+            log.warn("agent '{}' reader ended without a readable exit status — run state left untouched", agentId)
+            return null
+        }
+        synchronized(lock) {
+            if (!worktreeOf.containsKey(agentId)) return null
+            if (status[agentId] != AgentRunState.RUNNING) return null
+        }
+        val next = if (exitCode == 0) AgentRunState.STOPPED else AgentRunState.ERROR
+        log.warn("agent '{}' exited on its own (exitCode={}) → {}", agentId, exitCode, next)
+        onBusyReset?.invoke(agentId) // a dead agent is not processing — never hang the busy `*`
+        onContextReset?.invoke(agentId) // and it holds no standing context any more
+        return setRunState(agentId, next)
+    }
+
     /** Current status of every known agent (the WS connect snapshot + `GET /api/agents` fill). */
     fun snapshot(): List<AgentRunStateEvent> = synchronized(lock) {
         worktreeOf.keys.map { AgentRunStateEvent(it, status[it] ?: AgentRunState.STOPPED) }
@@ -219,17 +277,33 @@ class LifecycleManager(
         // session keeps running: an unregistered `claude`, unreaped, still burning tokens. With the per-agent
         // mutex this can never happen — so if it ever does, we learn it here instead of in a token bill. (The
         // check lives here, not in `register()`, because the wire path displaces ON PURPOSE on reconnect,
-        // CYP-141/RC3.)
+        // CYP-141/RC3.) It runs BEFORE register (below, after RUNNING is published) so it sees the pre-spawn state.
         check(sessions.session(agentId) == null) {
             "agent '$agentId' already has a live session at spawn time — the per-agent lock was bypassed"
         }
-        sessions.register(session)
         if (recorder != null && projector != null) {
             recorder.record(
                 if (restart) projector.agentRestarted(agentId) else projector.agentSpawned(agentId, worktreeName),
             )
         }
-        return setRunState(agentId, AgentRunState.RUNNING)
+        // CYP-351 — ORDER IS THE INVARIANT. The connector starts the process before it returns, so the agent can
+        // already be dead on this line. Publish RUNNING **first**, then subscribe: `addExitListener` is sticky,
+        // so the subscription replays an end that already happened. An observed death can therefore only
+        // overwrite RUNNING — never the reverse.
+        //
+        // Both orderings of the naive version lost that death. Subscribing after the process could die dropped it
+        // into an empty listener list — the observation never existed. Subscribing before RUNNING was published
+        // let `onObservedExit`'s "only a RUNNING agent may transition" guard discard it, and RUNNING was then
+        // written over a corpse. A spawn that dies instantly must end in ERROR, never in a green dot.
+        val running = setRunState(agentId, AgentRunState.RUNNING)
+        // Routing by construction: one connector serves every project, but each project has its OWN
+        // LifecycleManager, so only the manager that spawned this session owns this agent's run state.
+        session.addExitListener { exitCode -> onObservedExit(agentId, exitCode) } // may fire synchronously
+        sessions.register(session)
+        // Report what is true now, not what we intended: a session that died during the handover has already
+        // moved the state, and start/restart/boot must not be told RUNNING about a dead agent.
+        val settled = synchronized(lock) { status[agentId] }
+        return if (settled != null && settled != AgentRunState.RUNNING) AgentRunStateEvent(agentId, settled) else running
     }
 
     private fun setRunState(agentId: String, next: AgentRunState): AgentRunStateEvent {

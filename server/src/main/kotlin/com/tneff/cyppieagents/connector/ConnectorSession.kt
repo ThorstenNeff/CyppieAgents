@@ -96,6 +96,15 @@ class ConnectorSessions {
         onRegister.add(listener)
     }
 
+    /**
+     * ⚠️ **Displaces any session already registered for this agent, without closing it (CYP-368).** The evicted
+     * session keeps running — an unregistered `claude` process, still burning tokens, still holding its exit
+     * listener, and when it dies it moves the run state of the session that replaced it. Nothing here notices.
+     *
+     * It is reachable through the front door: `LifecycleManager.start` is check-then-act with no mutual
+     * exclusion, so two concurrent starts both spawn. Until the spawn is serialised, this method is where the
+     * server loses a process.
+     */
     fun register(session: ConnectorSession) {
         byAgent[session.agentId] = session
         onRegister.forEach { it(session.agentId) }
@@ -103,6 +112,15 @@ class ConnectorSessions {
 
     fun session(agentId: String): ConnectorSession? = byAgent[agentId]
 
+    /**
+     * Remove and [ConnectorSession.close] the session — **without waiting for its reader to finish.** [close]
+     * only *cancels* the reader; it does not join it, so the session's exit tail may still be running when this
+     * returns. `stop`/`restart` deliberately use [removeAndAwait] instead, which joins.
+     *
+     * No production caller in `:server` today (two tests use it). Adding one lets a cancelled-but-unfinished
+     * exit tail write a run state after its agent has been respawned — see `LifecycleManager.onObservedExit`,
+     * which cannot tell *which* session an exit came from (CYP-368).
+     */
     fun remove(agentId: String) {
         byAgent.remove(agentId)?.close()
     }

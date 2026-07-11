@@ -74,8 +74,11 @@ class RecordingSessionObserver(
         if (recorder != null && projector != null) recorder.record(projector.turnStart(agentId, sessionId, correlationId))
     }
 
-    override fun onProcessExit(agentId: String, sessionId: String?) {
-        if (recorder != null && projector != null) recorder.record(projector.processExit(agentId, sessionId, null))
+    override fun onProcessExit(agentId: String, sessionId: String?, exitCode: Int?) {
+        // CYP-351: the Event-Log finally gets the real status. EventProjector.processExit already grades a
+        // non-zero exit as WARN and puts `exitCode` into the detail — both were unreachable while this call
+        // site passed a hard-coded null, so every crash was logged as an INFO with no code (Doc 06 §4).
+        if (recorder != null && projector != null) recorder.record(projector.processExit(agentId, sessionId, exitCode))
     }
 
     override fun onStopped(agentId: String) {
