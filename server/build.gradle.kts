@@ -41,6 +41,14 @@ tasks.named<Test>("test") {
     inputs.file(rootProject.file("deploy/kratos/kratos.reference.yml"))
         .withPropertyName("kratosReferenceConfig")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+    // CYP-366: OidcProviderConfigTest also reads deploy/kratos/oidc.github.jsonnet at RUNTIME (the repoFile walk
+    // asserts the shipped GitHub OIDC mapper is present), but it was NOT a declared input — so editing/removing
+    // ONLY the jsonnet left `test` UP-TO-DATE and the guard stale-green on the exact file it exists to catch.
+    // Declaring it re-runs the test on a jsonnet change, closing the same gap the kratos.reference.yml wiring
+    // above closes for the yml (CYP-178 CC2).
+    inputs.file(rootProject.file("deploy/kratos/oidc.github.jsonnet"))
+        .withPropertyName("oidcGithubMapperJsonnet")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     // CYP-409: the committed AsyncAPI export is read at RUNTIME by ContractExportDriftTest (a repoFile walk), so
     // Gradle can't otherwise see it as a test input — without this, editing ONLY the export leaves `test`
     // UP-TO-DATE and the drift guard is stale-green on the exact surface it exists to catch. Optional so a
