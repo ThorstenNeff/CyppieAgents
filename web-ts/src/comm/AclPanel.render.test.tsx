@@ -66,6 +66,15 @@ describe('AclPanel — W9 dialog wiring (CYP-425)', () => {
     expect(onCommit).toHaveBeenCalledWith({ channelId: 'po-frontend', agentId: 'frontend', canRead: true, canWrite: true }, ['write'])
   })
 
+  it('surfaces a transient reject notice when error is set (CYP-435), and hides it otherwise', () => {
+    const none = render(<AclPanel {...base()} />)
+    expect(none.queryByTestId('acl-error')).toBeNull()
+    cleanup()
+    const rejected = render(<AclPanel {...base()} error="Vom Hub abgelehnt (PO-Aussperrschutz aktiv)." />)
+    expect(rejected.getByTestId('acl-error').textContent).toContain('PO-Aussperrschutz')
+    expect(rejected.getByTestId('acl-error').getAttribute('role')).toBe('alert')
+  })
+
   it('read-only (non-operator) shows chips and no operator actions', () => {
     const { queryByTestId, getByTestId } = render(<AclPanel {...base({ operator: false })} />)
     expect(queryByTestId('acl-preset-open')).toBeNull()

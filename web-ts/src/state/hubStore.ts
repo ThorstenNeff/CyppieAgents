@@ -9,6 +9,7 @@ import {
   applyCommEvent,
   applyTerminalControl,
   setAclPending,
+  clearAclPending,
   type HubState,
 } from './hubReducers'
 import type { AclEntry, Channel, CommWsServerEvent, AgentTerminalControlEvent } from '../types/generated/contract'
@@ -20,6 +21,7 @@ export interface HubStore extends HubState {
   onCommEvent: (event: CommWsServerEvent) => void
   onTerminalControl: (event: AgentTerminalControlEvent) => void
   markAclPending: (channelId: string, agentId: string, dim: AclDimension, requested: boolean) => void
+  clearAclPending: (channelId: string, agentId: string, dim: AclDimension) => void
 }
 
 export const useHubStore = create<HubStore>((set) => ({
@@ -29,4 +31,5 @@ export const useHubStore = create<HubStore>((set) => ({
   onCommEvent: (event) => set((s) => applyCommEvent(s, event)),
   onTerminalControl: (event) => set((s) => applyTerminalControl(s, event)),
   markAclPending: (channelId, agentId, dim, requested) => set((s) => setAclPending(s, channelId, agentId, dim, requested)),
+  clearAclPending: (channelId, agentId, dim) => set((s) => clearAclPending(s, channelId, agentId, dim)),
 }))

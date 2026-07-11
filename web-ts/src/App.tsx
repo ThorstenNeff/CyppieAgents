@@ -7,7 +7,7 @@
 // identity comes from the explicit CYPPIE_PO_AGENT_ID config (never a `po-<worker>` guess) — both swap to the real
 // typed roster when CYP-426 lands. The Comm timeline (CommPanel) integrates when CYP-424 merges; the VM already
 // keeps + dedups messages, so that is a render, not a re-plumb.
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { WindowHost } from './windowmgr/WindowHost'
 import { WindowFrame } from './windowmgr/WindowFrame'
 import { useWindowStore } from './windowmgr/windowStore'
@@ -15,6 +15,7 @@ import type { WindowState } from './windowmgr/windowState'
 import { useHubStore } from './state/hubStore'
 import { readHubConfig, type HubConfig, type SocketDeps } from './state/hubConfig'
 import { RestHubRepo, type HubRepo } from './state/restRepo'
+import { commitAclChange } from './state/aclCommit'
 import { startLiveHub } from './state/liveHub'
 import { AgentWindow } from './AgentWindow'
 import { AclPanel } from './comm/AclPanel'
@@ -47,6 +48,8 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const onCommEvent = useHubStore((s) => s.onCommEvent)
   const onTerminalControl = useHubStore((s) => s.onTerminalControl)
   const markAclPending = useHubStore((s) => s.markAclPending)
+  const clearAclPending = useHubStore((s) => s.clearAclPending)
+  const [aclError, setAclError] = useState<string | null>(null)
 
   const channels = useHubStore((s) => s.channels)
   const agents = useHubStore((s) => s.agents)
@@ -81,8 +84,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   }
 
   const commitAcl = (entry: AclEntry, dims: readonly AclDimension[]) => {
-    for (const dim of dims) markAclPending(entry.channelId, entry.agentId, dim, dim === 'read' ? entry.canRead : entry.canWrite)
-    hubRepo.putAcl(entry).catch(() => undefined) // the enforced flip arrives as an AclEvent echo (non-optimistic)
+    // CYP-435: on success the AclEvent echo flips + clears pending; on reject (409 lockout / any 4xx) there is no
+    // echo, so commitAclChange clears the pending itself (else the switch spins forever) and surfaces the reason.
+    void commitAclChange(hubRepo, { markPending: markAclPending, clearPending: clearAclPending, setError: setAclError }, entry, dims)
   }
 
   const renderContent = (win: WindowState) => {
@@ -96,6 +100,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           poAgentId={cfg.poAgentId}
           operator={cfg.operator}
           onCommit={commitAcl}
+          error={aclError}
         />
       )
     }

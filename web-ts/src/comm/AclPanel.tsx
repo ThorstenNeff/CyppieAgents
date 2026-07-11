@@ -21,6 +21,8 @@ export interface AclPanelProps {
   operator: boolean
   /** Commit one enforced cell: mark [dims] pending + PUT the entry. The parent owns pending + repo. */
   onCommit: (entry: AclEntry, dims: readonly AclDimension[]) => void
+  /** transient reject notice (CYP-435) — a rejected PUT (e.g. 409 lockout) surfaces here instead of a stuck switch. */
+  error?: string | null
 }
 
 interface LockoutPrompt {
@@ -46,7 +48,7 @@ const changedDims = (entries: readonly AclEntry[], change: AclChange): AclDimens
   return dims
 }
 
-export function AclPanel({ channels, agents, entries, pending, poAgentId, operator, onCommit }: AclPanelProps) {
+export function AclPanel({ channels, agents, entries, pending, poAgentId, operator, onCommit, error = null }: AclPanelProps) {
   const [lockout, setLockout] = useState<LockoutPrompt | null>(null)
   const [preset, setPreset] = useState<AclChange[] | null>(null)
 
@@ -75,6 +77,11 @@ export function AclPanel({ channels, agents, entries, pending, poAgentId, operat
 
   return (
     <div className="acl-panel" data-testid="acl-panel">
+      {error !== null && (
+        <p className="acl-error" role="alert" data-testid="acl-error">
+          {error}
+        </p>
+      )}
       {operator && (
         <div className="acl-actions">
           <button type="button" className="acl-preset" data-testid="acl-preset-open" onClick={openPreset}>
