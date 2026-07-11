@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -125,6 +126,7 @@ import com.tneff.cyppieagents.ui.AgentAvatarView
 import com.tneff.cyppieagents.ui.LocalAvatarBaseUrl
 import com.tneff.cyppieagents.ui.LocalAvatarImageLoader
 import com.tneff.cyppieagents.ui.SenderPalette
+import com.tneff.cyppieagents.ui.ComposerHistorySizeStepper
 import com.tneff.cyppieagents.ui.DEFAULT_COMPOSER_HISTORY_SIZE
 import com.tneff.cyppieagents.ui.ThemeMode
 import com.tneff.cyppieagents.ui.ThemeModeToggle
@@ -328,7 +330,16 @@ fun AgentShell(
       // (NOT operator-gated, NOT project-scoped; it follows no project switch). Stays OUTSIDE the loading gate.
       ProjectSwitcherBar(
           projectVm, tier = tier, operatorName = null,
-          trailing = { compact -> ThemeModeToggle(mode = themeMode, onChange = onThemeModeChange, compact = compact) },
+          // CYP-268 R3 theme toggle + CYP-387 input-history size stepper — both personal, ungated, non-project
+          // preferences ride the bar's trailing slot together.
+          trailing = { compact ->
+              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                  ComposerHistorySizeStepper(
+                      size = composerHistorySize, onChange = onComposerHistorySizeChange, compact = compact,
+                  )
+                  ThemeModeToggle(mode = themeMode, onChange = onThemeModeChange, compact = compact)
+              }
+          },
       )
       if (projectState.loading) {
         ProjectLoadingPlaceholder(modifier = Modifier.weight(1f).fillMaxWidth())

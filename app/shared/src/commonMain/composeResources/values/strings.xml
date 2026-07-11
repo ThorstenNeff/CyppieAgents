@@ -153,6 +153,10 @@
          Modellname wird vom Mapper als " · <model>" angehängt. Löst das hartkodierte deutsche Literal
          „Session gestartet" ab; der stringResource-Lookup kommt aus der UI-Schicht (AgentShell). -->
     <string name="agent_ready_notice">Agent bereit</string>
+    <!-- CYP-387: persönliche, ungegatete Einstellung (ThemePreferences-Familie) — Anzahl der im Composer-
+         Eingabeverlauf gehaltenen gesendeten Nachrichten (↑/↓-Recall). Stepper 0..200, Default 20, 0 = aus. -->
+    <string name="composer_history_size_label">Nachrichten im Eingabeverlauf</string>
+    <string name="composer_history_size_help">Mit ↑/↓ im Eingabefeld durchblättern. 0 schaltet den Verlauf aus.</string>
     <string name="agent_status_stopped">Gestoppt</string>
     <string name="agent_status_error">Fehler</string>
     <string name="agent_status_unknown">Unbekannt</string>
