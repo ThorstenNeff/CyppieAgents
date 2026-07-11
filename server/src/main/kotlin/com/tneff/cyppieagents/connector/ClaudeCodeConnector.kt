@@ -83,6 +83,12 @@ class ClaudeCodeConnector(
     // key/cwd — replacing the boot-frozen `projectIdOf`.
     /** Injectable clock for the entry timestamps (testable). */
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * CYP-355 (BE-2) — a decoupled sink poked with EVERY resume outcome (projectId, agentId, outcome), so the
+     * hand-off motor's `ResumeOutcomeSignal` can classify a hand-back's context-survival synchronously. Null
+     * (default) → not wired (tests/dev); the CYP-356 Event-Log recording is unaffected either way.
+     */
+    private val resumeOutcomeSink: ((projectId: String, agentId: String, outcome: ResumeOutcome) -> Unit)? = null,
 ) : Connector {
 
     /**
@@ -172,6 +178,7 @@ class ClaudeCodeConnector(
                     detail = JsonObject(mapOf("outcome" to JsonPrimitive(outcome.name))),
                 ),
             )
+            resumeOutcomeSink?.invoke(projectId, agentId, outcome) // CYP-355: feed the hand-off motor's ResumeOutcomeSignal
         }
 
         // CYP-167: read-before-spawn. No durable entry (first start, or feature off) ⇒ fresh, no `--resume`,

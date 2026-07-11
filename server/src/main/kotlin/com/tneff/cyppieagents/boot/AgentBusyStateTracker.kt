@@ -57,4 +57,10 @@ class AgentBusyStateTracker {
 
     /** The current state of every known agent — the WS connect snapshot (one per agent, latest-wins). */
     fun snapshot(): List<AgentBusyStateEvent> = current.values.toList()
+
+    /**
+     * CYP-355 — the IDLE-gate query. A hand-off must not hijack a turn mid-flight, so the motor checks this and,
+     * if busy, bounded-defers on the [events] flow. Absent == idle (an agent that never turned isn't busy).
+     */
+    fun isBusy(agentId: String): Boolean = current[agentId]?.busy ?: false
 }

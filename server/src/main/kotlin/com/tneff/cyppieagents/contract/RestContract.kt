@@ -107,6 +107,8 @@ object RestContract {
         Op("POST", "/api/agents/{id}/stop", Tier.OPERATOR, response = json<AgentRunStateEvent>()),
         Op("POST", "/api/agents/{id}/start", Tier.OPERATOR, response = json<AgentRunStateEvent>()),
         Op("POST", "/api/agents/{id}/restart", Tier.OPERATOR, response = json<AgentRunStateEvent>()),
+        // CYP-355 (BE-2): the hand-off trigger (mediated ↔ interactive). REJECTED is a 200 body (non-optimistic).
+        Op("POST", "/api/agents/{id}/mode", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.ModeChangeRequest>(), response = json<com.tneff.cyppieagents.model.ModeChangeResponse>()),
         // --- ConnectorRoutes ---
         Op("POST", "/api/agents/{id}/connector", Tier.OPERATOR, request = json<ConnectorChoice>(), response = json<Agent>()),
         // --- ConfigRoutes (/api/config) — masked at rest, never re-rendered ---
