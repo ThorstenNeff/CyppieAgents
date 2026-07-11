@@ -1,6 +1,7 @@
-# Cutover Parity & Security Gates — web-ts
+# Cutover Parity & Security Gates — web-ts (CYP-422)
 
-> Status: Prep-plan v0.1 (QA/Team2) · Owner-GO erteilt für den Web-ts-Cutover-Gate.
+> Status: Prep-plan v0.2 (QA/Team2) · Ticket: **CYP-422** (Cutover-Ausführung / Gate) · Owner-GO erteilt.
+> **Auftraggeber-Entscheid: voller Ersatz** — Baseline = der GANZE 09-Katalog (siehe §A).
 > Begleitend: `09-UI-Funktionskatalog`, `05-MVP-Scope-Entscheidungen` (D6/D7 stream-json-Renderer),
 > `web-ts/contract/README.md` (CONTRACT_REQUIRE_REAL), `docs/E2E-TEST-PLAN.md`,
 > `docs/QA-WEB-TESTING-OPTIONS-CYP-352.md` + `docs/QA-WEB-FLOW-ROLLBACK-CYP-352.md` (Vor-Arbeit Web-Test),
@@ -33,11 +34,14 @@ Ein grüner Haken zählt nur so viel wie die Frage, die er beantwortet: wo mögl
 
 ## A. Funktionaler Paritäts-Pass (09-Katalog × web-ts)
 
-**Cutover-Baseline = die [K]-Funktionen** (Kern-MVP-Grundbetrieb). [MP]/[MU] sind gestaffelt — im Pass als
-*staged* markiert; ein [MP]-Punkt wird nur zum Pflicht-Haken, wenn er in der abzulösenden Compose-UI bereits
-lebt (PO bestätigt den Cutover-Scope, siehe §D). Jede Zeile: **Funktion → Parität-Check (am web-ts-DOM, via
-CYP-418 gegen den echten Server) → Zustände → Guardrail**. Pflicht-Zustände überall: **empty / loading /
-error / reconnect** (09-Querschnitt + S6-Risiko Dedup-über-`id`).
+**Auftraggeber-Entscheid: VOLLER ERSATZ** → die Cutover-Baseline ist der **GANZE 09-Katalog**, nicht nur die
+Kern-MVP-Fläche. Jede Katalog-Zeile ist ein Pflicht-Haken, **sobald ihre Fläche portiert ist**; die
+Tier-Marker **[K]/[MP]/[MU]** sagen jetzt nur noch die **Reihenfolge des Hineinwachsens** (K zuerst, dann die
+Phase-2-Flächen), **nicht** „optional vs. Pflicht" — am Ende müssen alle grün sein. Der Pass wächst mit den
+portierten Flächen; bis eine Fläche assembliert ist, steht ihre Zeile als **pending** (kein grüner Haken, aber
+auch nicht gestrichen). Jede Zeile: **Funktion → Parität-Check (am web-ts-DOM, via CYP-418 gegen den echten
+Server) → Zustände → Guardrail**. Pflicht-Zustände überall: **empty / loading / error / reconnect**
+(09-Querschnitt + S6-Risiko Dedup-über-`id`).
 
 ### A1 · Projekt-Verwaltung — Spec: `docs/PROJECT-MANAGEMENT.md`, `docs/CROSS-PROJECT.md`
 - [ ] **Repo konfigurieren (URL, Branch)** [K] — Form absenden → `POST`/`PUT` am echten Server, Persistenz
@@ -151,8 +155,8 @@ gedriftet, kein Stub":
 
 ## D. Offene Punkte (PO zu entscheiden, vor Ausführung)
 
-1. **Cutover-Scope:** nur [K] (Kern-MVP) als Pflicht-Parität, oder auch die bereits gebauten [MP]-Funktionen
-   (Projekt-CRUD/Switcher, Cross-Projekt, Projekt-Filter)? Bestimmt, welche A-Zeilen Pflicht-Haken sind.
+1. ~~**Cutover-Scope**~~ **ENTSCHIEDEN (Auftraggeber): voller Ersatz** → der ganze 09-Katalog ist Pflicht-
+   Parität, jede Zeile grün sobald ihre Fläche portiert ist (§A). Kein „nur [K]".
 2. **CSP-Owner:** setzt der Ktor-Server den CSP-Header (SPA same-origin ausgeliefert) oder das Hosting?
    (Gate B-2 hängt daran.)
 3. **CONTRACT_REQUIRE_REAL-Wiring:** wo wird `=1` im Cutover-Build gesetzt (Dev5s `contract:gen`-Aufruf)?
