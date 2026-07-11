@@ -98,6 +98,34 @@ npm run contract:check  # regenerate + tsc typecheck (fail-closed)
 > of ours, no `eval`); the authoritative CSP (`default-src 'self'; connect-src 'self' ws: wss:; object-src
 > 'none'; base-uri 'none'; script-src 'self' 'nonce-…'`) is set at the proxy — coordinated with Backend2/deploy.
 
+## Coexistence & cutover (W10 / CYP-408)
+
+Port-based coexistence (Spec 14 §6), no big-bang. Both UIs run as **separate origins on separate ports**, one
+Ktor API server (unchanged) behind the deploy/proxy serves both.
+
+**Client-owned (here):**
+- `src/platform/appConfig.ts` — the API/WS base is read from deploy globals (`CYPPIE_API_BASE`, optional
+  `CYPPIE_WS_BASE`), since the SPA origin may differ from the API origin (cross-origin → CORS). Falls back to
+  same-origin if no global (so a same-origin proxy also works). Operator token stays a separate global (W0).
+- The build is proxy-servable (hashed assets under `/assets`, tokenless `index.html`).
+
+**Deploy/server-owned (coordinate with Backend2/deploy — NOT in this repo's web-ts):**
+- New TS UI → the former **primary port**; old WASM UI (`app/webApp`) → **:8085**.
+- **`config.web.allowedOrigins`**: exactly the **two** origins, never a wildcard (server CORS).
+- Per-origin **operator-token global** injected at serve time; WS `?token=` proxy-masked (CYP-292).
+- Authoritative **CSP** at the proxy (nonce for the token global); the app is kept CSP-friendly.
+
+**Cutover checklist (gated; PO2 approves):**
+1. Functional **parity** proven against `09-UI-Funktionskatalog`.
+2. **XSS/CSP gate** green (no `innerHTML`; CSP live) and the **contract-drift guard** green (`CONTRACT_REQUIRE_REAL`
+   in CI — the real `:core` export, not the fixture).
+3. Flip the web **default to the TS UI**.
+4. **Retire the WASM web** — stop the `:8085` instance AND remove its origin from `config.web.allowedOrigins`
+   (a dead-but-allowed origin is a leftover attack surface). Desktop/Android Compose are untouched.
+
+> **Open (Anhang A, backend contract):** the `ERROR`-state *reason* is a Backend2 question; until answered the UI
+> says "Fehler — Grund nicht gemeldet" (fail-closed), inventing nothing. Not coupled to the CYP-396 ring fix.
+
 ## Layout (grows over the epic — Spec 14 §2.2)
 
 ```
