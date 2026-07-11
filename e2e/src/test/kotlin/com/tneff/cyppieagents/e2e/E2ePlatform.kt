@@ -22,6 +22,7 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.model.SwitchActiveRequest
 import com.tneff.cyppieagents.routing.installPlatform
+import io.ktor.server.application.install
 import io.ktor.server.routing.routing
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -230,7 +231,7 @@ fun e2ePlatform(
     // leaves the durable-active as the active view — the harness must mirror that, not force config.projectId.
     booted.state.rescope(booted.activeProjectId)
 
-    val server = embeddedServerNetty(booted, port, extraRoutes)
+    val server = embeddedServerNetty(booted, port, extraRoutes, webAllowedOrigins)
     server.start(wait = false)
     val resolvedPort = runBlocking { server.engine.resolvedConnectors().first().port }
     return E2ePlatform(booted, server, "http://127.0.0.1:$resolvedPort", now, scope, gitRoot, deleteGitRootOnClose = gitRootOverride == null)
@@ -240,7 +241,30 @@ private fun embeddedServerNetty(
     booted: BootedPlatform,
     port: Int = 0,
     extraRoutes: (io.ktor.server.routing.Routing.() -> Unit)? = null,
+    webAllowedOrigins: List<String> = emptyList(),
 ) = io.ktor.server.engine.embeddedServer(Netty, port = port) {
+    // The installPlatform(booted) overload (E2E path) does NOT install CORS — only the production boot-and-
+    // install path does. So a cross-origin browser (the web-ts SPA) would have every REST call blocked. Install
+    // it here from the harness allowlist (empty → no-op, every existing same-origin journey unchanged).
+    //
+    // allowCredentials=true (NOT installRestrictedCors's false): web-ts's REST client (net/rest.ts) sends
+    // `credentials:'include'` on EVERY call, so a cross-origin credentialed request is browser-blocked unless the
+    // response carries `Access-Control-Allow-Credentials: true` with a specific (non-wildcard) origin. This
+    // deviation is the harness modelling the deploy-proxy's same-origin credentials, so the parity run can reach
+    // the real REST surface — the client↔server credentials/CORS mismatch itself is reported as a P2 finding.
+    if (webAllowedOrigins.isNotEmpty()) {
+        install(io.ktor.server.plugins.cors.routing.CORS) {
+            webAllowedOrigins.forEach { origin ->
+                val idx = origin.indexOf("://")
+                allowHost(origin.substring(idx + 3), schemes = listOf(origin.substring(0, idx)))
+            }
+            allowHeader(io.ktor.http.HttpHeaders.Authorization)
+            allowHeader(io.ktor.http.HttpHeaders.ContentType)
+            listOf(io.ktor.http.HttpMethod.Get, io.ktor.http.HttpMethod.Post, io.ktor.http.HttpMethod.Put, io.ktor.http.HttpMethod.Delete, io.ktor.http.HttpMethod.Options)
+                .forEach { allowMethod(it) }
+            allowCredentials = true
+        }
+    }
     installPlatform(booted)
     if (extraRoutes != null) routing { extraRoutes() }
 }
