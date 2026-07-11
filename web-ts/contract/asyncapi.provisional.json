@@ -1,15 +1,17 @@
 {
-  "_provisional": "CYP-399 — PROVISIONAL fixture, faithfully modelled on ContractGenerator.asyncApi() / SchemaWalker output (server/.../contract/). Replace with Backend2's build-export of the real :core schema (Gradle task -> file) when it lands. Kept small; it exercises the hard shapes: a sealed union (oneOf + discriminator, members WITHOUT a `type` literal — exactly how SchemaWalker emits them), a nested union inside a List, $ref reuse, and JSON-Schema-2020-12 nullability (type union with null).",
+  "_provisional": "CYP-399/401 — PROVISIONAL fixture, faithfully modelled on ContractGenerator.asyncApi() / SchemaWalker (server/.../contract/) and the :core StreamJsonEvent hierarchy (core/.../model/StreamJsonEvent.kt). Replace with Backend2's build-export (CYP-409) of the real :core schema when it lands; the diff-guard verifies or reds. This covers the /ws/agent payload in full (the W3 mapper consumes the whole StreamJsonEvent + ContentBlock set) — NOT the other 7 channels (those wait for the real export, per PO). Opaque JSON fields (JsonObject/JsonElement: input/content/usage/rate_limit_info) are carved to {} (any JSON), exactly as SchemaWalker emits them.",
   "asyncapi": "2.6.0",
   "info": { "title": "Cyppie Agents — WebSocket API (PROVISIONAL fixture)", "version": "0.0.0-provisional" },
   "channels": {
     "/ws/agent": {
-      "subscribe": { "message": { "$ref": "#/components/messages/StreamJsonEvent" } }
+      "subscribe": { "message": { "$ref": "#/components/messages/StoredAgentEvent" } },
+      "publish": { "message": { "$ref": "#/components/messages/UserTurn" } }
     }
   },
   "components": {
     "messages": {
-      "StreamJsonEvent": { "payload": { "$ref": "#/components/schemas/StreamJsonEvent" } }
+      "StoredAgentEvent": { "payload": { "$ref": "#/components/schemas/StoredAgentEvent" } },
+      "UserTurn": { "payload": { "$ref": "#/components/schemas/UserTurn" } }
     },
     "schemas": {
       "StoredAgentEvent": {
@@ -31,48 +33,102 @@
       "StreamJsonEvent": {
         "oneOf": [
           { "$ref": "#/components/schemas/SystemEvent" },
-          { "$ref": "#/components/schemas/AssistantEvent" }
+          { "$ref": "#/components/schemas/RateLimitEvent" },
+          { "$ref": "#/components/schemas/AssistantEvent" },
+          { "$ref": "#/components/schemas/UserEvent" },
+          { "$ref": "#/components/schemas/ResultEvent" }
         ],
         "discriminator": {
           "propertyName": "type",
           "mapping": {
             "system": "#/components/schemas/SystemEvent",
-            "assistant": "#/components/schemas/AssistantEvent"
+            "rate_limit_event": "#/components/schemas/RateLimitEvent",
+            "assistant": "#/components/schemas/AssistantEvent",
+            "user": "#/components/schemas/UserEvent",
+            "result": "#/components/schemas/ResultEvent"
           }
         }
       },
       "SystemEvent": {
         "type": "object",
         "properties": {
+          "subtype": { "type": ["string", "null"] },
           "session_id": { "type": ["string", "null"] },
-          "model": { "type": ["string", "null"] }
+          "uuid": { "type": ["string", "null"] },
+          "model": { "type": ["string", "null"] },
+          "cwd": { "type": ["string", "null"] },
+          "permissionMode": { "type": ["string", "null"] },
+          "apiKeySource": { "type": ["string", "null"] },
+          "status": { "type": ["string", "null"] },
+          "compact_result": { "type": ["string", "null"] }
+        }
+      },
+      "RateLimitEvent": {
+        "type": "object",
+        "properties": {
+          "rate_limit_info": {},
+          "session_id": { "type": ["string", "null"] },
+          "uuid": { "type": ["string", "null"] }
         }
       },
       "AssistantEvent": {
         "type": "object",
         "properties": {
           "message": { "$ref": "#/components/schemas/AgentMessage" },
-          "session_id": { "type": ["string", "null"] }
+          "session_id": { "type": ["string", "null"] },
+          "uuid": { "type": ["string", "null"] },
+          "parent_tool_use_id": { "type": ["string", "null"] }
         },
         "required": ["message"]
+      },
+      "UserEvent": {
+        "type": "object",
+        "properties": {
+          "message": { "$ref": "#/components/schemas/AgentMessage" },
+          "session_id": { "type": ["string", "null"] },
+          "uuid": { "type": ["string", "null"] },
+          "injected_source": { "type": ["string", "null"] }
+        },
+        "required": ["message"]
+      },
+      "ResultEvent": {
+        "type": "object",
+        "properties": {
+          "subtype": { "type": ["string", "null"] },
+          "is_error": { "type": "boolean" },
+          "duration_ms": { "type": ["integer", "null"] },
+          "num_turns": { "type": ["integer", "null"] },
+          "total_cost_usd": { "type": ["number", "null"] },
+          "usage": {},
+          "result": { "type": ["string", "null"] },
+          "session_id": { "type": ["string", "null"] },
+          "uuid": { "type": ["string", "null"] }
+        }
       },
       "AgentMessage": {
         "type": "object",
         "properties": {
           "id": { "type": ["string", "null"] },
-          "content": { "type": "array", "items": { "$ref": "#/components/schemas/ContentBlock" } }
+          "role": { "type": ["string", "null"] },
+          "content": { "type": "array", "items": { "$ref": "#/components/schemas/ContentBlock" } },
+          "model": { "type": ["string", "null"] },
+          "stop_reason": { "type": ["string", "null"] }
         }
       },
       "ContentBlock": {
         "oneOf": [
           { "$ref": "#/components/schemas/TextBlock" },
-          { "$ref": "#/components/schemas/ToolUseBlock" }
+          { "$ref": "#/components/schemas/ThinkingBlock" },
+          { "$ref": "#/components/schemas/ToolUseBlock" },
+          { "$ref": "#/components/schemas/ToolResultBlock" }
         ],
         "discriminator": {
           "propertyName": "type",
           "mapping": {
             "text": "#/components/schemas/TextBlock",
-            "tool_use": "#/components/schemas/ToolUseBlock"
+            "thinking": "#/components/schemas/ThinkingBlock",
+            "tool_use": "#/components/schemas/ToolUseBlock",
+            "tool_result": "#/components/schemas/ToolResultBlock"
           }
         }
       },
@@ -81,13 +137,26 @@
         "properties": { "text": { "type": "string" } },
         "required": ["text"]
       },
+      "ThinkingBlock": {
+        "type": "object",
+        "properties": { "thinking": { "type": ["string", "null"] } }
+      },
       "ToolUseBlock": {
         "type": "object",
         "properties": {
           "id": { "type": "string" },
-          "name": { "type": "string" }
+          "name": { "type": "string" },
+          "input": {}
         },
         "required": ["id", "name"]
+      },
+      "ToolResultBlock": {
+        "type": "object",
+        "properties": {
+          "tool_use_id": { "type": ["string", "null"] },
+          "content": {},
+          "is_error": { "type": "boolean" }
+        }
       }
     }
   }
