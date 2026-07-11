@@ -125,6 +125,7 @@ import com.tneff.cyppieagents.ui.AgentAvatarView
 import com.tneff.cyppieagents.ui.LocalAvatarBaseUrl
 import com.tneff.cyppieagents.ui.LocalAvatarImageLoader
 import com.tneff.cyppieagents.ui.SenderPalette
+import com.tneff.cyppieagents.ui.DEFAULT_COMPOSER_HISTORY_SIZE
 import com.tneff.cyppieagents.ui.ThemeMode
 import com.tneff.cyppieagents.ui.ThemeModeToggle
 import com.tneff.cyppieagents.ui.TitleBarColors
@@ -254,6 +255,11 @@ fun AgentShell(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** CYP-268 R3 — invoked when the user picks a mode from the switcher-bar toggle; the seam persists + recolours. */
     onThemeModeChange: (ThemeMode) -> Unit = {},
+    /** CYP-387 — the ONE global composer input-history size N (owned + persisted by the App.kt seam). Default 20;
+     *  `0` = off. Mirrored live onto every open agent VM so a change takes effect without wiping content. */
+    composerHistorySize: Int = DEFAULT_COMPOSER_HISTORY_SIZE,
+    /** CYP-387 — invoked when the user changes N in the settings stepper; the seam clamps (0..200) + persists. */
+    onComposerHistorySizeChange: (Int) -> Unit = {},
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -548,6 +554,10 @@ fun AgentShell(
             )
         }
     }
+    // CYP-387: mirror the ONE global history size N onto every open agent VM on each recomposition. The VM is
+    // NOT re-keyed on N (that would rebuild it and wipe its per-agent content) — instead it reads this live var,
+    // so raising/lowering N (or `0`=off) takes effect immediately on already-open windows.
+    for (vm in agentVms.values) vm.historyCapacity = composerHistorySize
     // CYP-246: re-keyed on activeProjectId. Comm data (channels/timeline/agents) is project-scoped; the VM
     // loads channels+agents ONCE in init and the live `/ws/comm` only pushes ChannelsChanged — the selected
     // timeline + agents map never re-scope on switch. Re-key = a clean, deterministic reload in the new scope.

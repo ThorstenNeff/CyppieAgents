@@ -62,7 +62,22 @@ class AgentViewModel(
      *  call inside the VM body) so a test can fake it and assert a deterministic timestamp. Every other row is
      *  dated by the server (see [AgentEvent.tsMs]). */
     private val nowMs: () -> Long = platformTranscriptClock()::nowMs,
+    /**
+     * CYP-387: capacity of the sent-message input history (arrow-up/down recall). This is the ONE global personal
+     * preference (spec §3), so it is a live `var` — [AgentShell] mirrors the current global N onto every open
+     * agent VM, and the store reads it through a supplier (see [inputHistory]). `0` = recall off. Default 20.
+     */
+    var historyCapacity: Int = InputHistory.DEFAULT_CAPACITY,
 ) : ViewModel() {
+
+    // CYP-387 (layer A, data): per-agent session-scoped ring buffer of SENT messages, appended in [onSend].
+    // Capacity is read live via the [historyCapacity] supplier so a global-N change (or `0`=off) takes effect on
+    // this open agent WITHOUT rebuilding the store (which would wipe its content). The arrow-key binding + cursor
+    // semantics (layer B) live in the composer against the interaction spec, not here.
+    private val inputHistory = InputHistory { historyCapacity }
+
+    /** CYP-387: newest-last snapshot of messages sent to this agent, for the composer's recall navigation. */
+    fun inputHistorySnapshot(): List<String> = inputHistory.entries
 
     private val _transcript = MutableStateFlow<List<AgentEvent>>(emptyList())
     val transcript: StateFlow<List<AgentEvent>> = _transcript.asStateFlow()
@@ -295,6 +310,8 @@ class AgentViewModel(
     fun onSend(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
+        // CYP-387: record the actually-sent message for arrow-up/down recall (the sole sent-message choke point).
+        inputHistory.record(trimmed)
         _transcript.update {
             foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed, tsMs = clientStampMs()))
         }
