@@ -162,3 +162,32 @@ body,
   background: var(--md-sys-color-warn-container);
   color: var(--md-sys-color-on-warn-container);
 }
+
+/* CYP-433 (P2-e) — API-key section. Effect-hint = AMBER ("saved ≠ active", reuses the CYP-437 WARN tokens), NEVER
+   success-green; error = error role; gate-hint = neutral. Colour never alone (text carries each). */
+.settings-section.apikey {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.apikey-entry {
+  display: flex;
+  gap: 4px;
+}
+.apikey-input {
+  flex: 1;
+  min-width: 0;
+}
+.apikey-effect-hint {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+}
+.apikey-error {
+  color: var(--md-sys-color-error);
+  margin: 0;
+}
+.apikey-gate-hint {
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 0;
+}
