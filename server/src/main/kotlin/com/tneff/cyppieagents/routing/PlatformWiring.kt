@@ -200,6 +200,11 @@ fun Application.bootPlatform(
         worktrees = worktrees,
         spawner = com.tneff.cyppieagents.connector.ProcessBuilderSpawner(),
         scope = scope,
+        // CYP-415 (D4): embedded-SQLite message store — messages survive restart (was InMemory-hardcoded → lost
+        // on every boot). Out-of-repo under the gitRoot, WAL, gitignored; one local impl behind the store seam.
+        storeFactory = {
+            com.tneff.cyppieagents.comm.SqliteMessageStore(gitRoot.toPath().resolve(".cyppie/messages.db"))
+        },
         // CYP-132: durable per-recipient delivered-id log — out-of-repo under the gitRoot, gitignored
         // (newline-separated keys, atomic-move flush). Survives restart so re-attach replays correctly.
         deliveryLog = com.tneff.cyppieagents.comm.JsonFileDeliveryLog(
