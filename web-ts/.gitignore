@@ -7,3 +7,6 @@ dist-ssr
 
 # CYP-399 — generated contract types ("generate, don't commit"; produced by `npm run contract:gen`)
 src/types/generated/
+
+# CYP-423 — generated maritime token CSS ("generate, don't commit"; produced by `npm run tokens:gen`)
+src/ui/tokens.generated.css

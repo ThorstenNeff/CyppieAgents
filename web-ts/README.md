@@ -98,6 +98,24 @@ npm run contract:check  # regenerate + tsc typecheck (fail-closed)
 > of ours, no `eval`); the authoritative CSP (`default-src 'self'; connect-src 'self' ws: wss:; object-src
 > 'none'; base-uri 'none'; script-src 'self' 'nonce-…'`) is set at the proxy — coordinated with Backend2/deploy.
 
+## Design tokens (CYP-423)
+
+The maritime M3 palette is ported **1:1** from the Compose scheme (`app/shared/.../ui/MaritimeTheme.kt`) into a
+CSS `--md-sys-color-*` layer — "port tokens, not optics". Single source, generated CSS (like the contract):
+
+```bash
+npm run tokens:gen   # src/ui/maritimeTokens.data.mjs -> src/ui/tokens.generated.css (gitignored)
+```
+
+- **Source of truth:** `src/ui/maritimeTokens.data.mjs` (24 roles × light/dark). The generator emits all four
+  theme blocks (light base + `prefers-color-scheme: dark` + explicit `[data-theme]` overrides both ways) from that
+  one source, so light/dark can't drift. `src/ui/maritimeTokens.ts` is the typed TS view + the WCAG contrast util.
+- **a11y is MEASURED, not assumed** (`maritimeTokens.test.ts`): the transcript scrollbar thumb binds to the
+  `outline` token — measured **3.55:1 / 3.63:1** on the surface (WCAG 1.4.11 ≥3:1). This replaces the W6
+  `rgba(128,128,128,0.7)` thumb, which *composited* to ~2.35:1 and only looked fine — the code comment measured the
+  solid colour, not the alpha (assumption-as-measurement). Thumb is a **solid** colour + `min-height: 24px`
+  (WCAG 2.5.8); Firefox `scrollbar-width: thin` has no min-size hook (known UA limit; webkit carries it).
+
 ## Coexistence & cutover (W10 / CYP-408)
 
 Port-based coexistence (Spec 14 §6), no big-bang. Both UIs run as **separate origins on separate ports**, one
