@@ -8,9 +8,15 @@
 > (MP/MU).
 >
 > **PREP-Status:** Diese Map ist **jetzt** gebaut und mit dem **heutigen** Coverage-Stand gefüllt; die
-> `◑ Pending`-Zellen fülle ich final, sobald die Slices mergen (W8/W9) — dann ist die Map das ausführbare Gate.
-> **Ehrlichkeit:** Ich behaupte **keine** Deckung, die ich im Baum nicht sehe; „keine bekannte Slice" ist eine
+> `◑ Pending`/`◐ Spec`-Zellen fülle ich final auf `✓`, sobald die Slices mergen — dann ist die Map das ausführbare Gate.
+> **Ehrlichkeit:** Ich behaupte **keine** Deckung, die ich im Baum nicht sehe; „keine Spec, keine Slice" ist eine
 > **Lücke**, kein „wird schon".
+>
+> **UPDATE 2026-07-11 — Phase 2 = VOLLER ERSATZ (Epic CYP-430, Auftraggeber-Entscheid).** Die Scope-Frage aus §3
+> (voll vs. partiell) ist **beantwortet**: voll → die K-Lücken sind **echte Blocker**. Fortschritt: **3 der Blocker
+> jetzt UIUX-spec'd (◐)** — **CYP-431** (P2-a Lifecycle-Header), **CYP-432** (P2-c Event-Log+Warden), **CYP-433**
+> (P2-e API-Key). Impl vom PO gepaced. **Noch offene K-GAPs (keine Spec):** §1 Repo-Config, §2 Agenten-Verwaltung
+> (3), §8 Product-Lead (2), §10 Auth (P2-i, mit PO nach Team1-Kratos-Naht).
 
 ---
 
@@ -23,7 +29,8 @@ schlechter, nie stiller Verlust. Gemessen an der bestehenden Compose-Implementie
 |---|---|
 | **✓ Wx** | in web-ts vorhanden (Slice Wx / CYP-40x), UX-Verdikt in der Notiz |
 | **◑ Pending Wx** | Slice geplant/spezifiziert, noch nicht auf develop → Verdikt bei Merge |
-| **✗ GAP** | **keine bekannte web-ts-Slice** — Cutover-Blocker (K) bzw. Nachzieh (MP/MU) |
+| **◐ Spec CYPx** | **UIUX-Spec geliefert**, Impl vom PO gepaced (Phase-2-Blocker in Arbeit) → Verdikt bei Impl-QA |
+| **✗ GAP** | **keine Spec, keine Slice** — Cutover-Blocker (K) bzw. Nachzieh (MP/MU) |
 | **— (Stufe)** | MP/MU — außerhalb des K-Cutover-Scopes, erwartet später |
 
 **Wichtiger Gesamtbefund vorweg:** `web-ts/App.tsx` ist **heute noch der W0-Walking-Skeleton** — die portierten
@@ -57,7 +64,7 @@ W6 Scrollbar/Autoscroll (CYP-404) · W7 xterm-Shell (CYP-405). **Pending:** W8 T
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
 |---|---|---|---|---|
 | Fenster anordnen (verschieben/Größe/Fokus) | K | `window/` | **✓ W4** (CYP-402) | DOM-Fenster-Manager (Reducer+Zustand-Store, Pointer-Drag/Resize/Fokus, CYP-26-Clamp). Verdikt **=** (bei Merge-QA verifizieren) |
-| **Agent starten / stoppen / neu starten** | **K** | `agentview/` (AgentWindow-Header) | **✗ GAP** | Header mit StatusIndicator + Lifecycle-Controls **nicht** portiert → Blocker. (Ring-Fix CYP-396 gilt dann 1:1: border statt background.) |
+| **Agent starten / stoppen / neu starten** | **K** | `agentview/` (AgentWindow-Header) | **◐ Spec CYP-431** (P2-a) | Lifecycle-Header spec'd `8fff4191`: CYP-369-Verteilung, statusDotSpec, nicht-optimistisch aus `/ws/lifecycle`. Dep CYP-425. |
 | Strukturiertes Terminal (stream-json-Renderer) | K | `agentview/` | **✓ W3** (CYP-401) | Renderer + XSS-Guard (JSX-Escape, kein innerHTML). Verdikt **=** |
 | Nachricht an Agenten senden | K | `agentview/` | **✓ W5** (CYP-403) | Composer + Input-History (QA'd GO). Eingabe = „Nachricht", kein Shell-Prompt (Querschnitt §4) ✓. Verdikt **=** |
 | (später) rohe Shell im worktree | später | `terminal/` | **✓ W7** (CYP-405) | **voraus** — xterm-Shell + operator-only + Öffnen-Warnung. Verdikt **+** (früher als geplant) |
@@ -80,15 +87,15 @@ W6 Scrollbar/Autoscroll (CYP-404) · W7 xterm-Shell (CYP-405). **Pending:** W8 T
 ### §6 Observability (Event-Log)
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
 |---|---|---|---|---|
-| **Event-Log browsen** (Master-Detail, Filter) | **K** | `eventlog/` | **✗ GAP** | keine web-ts-Slice → Blocker (gepaged/virtualisiert) |
-| **Korrelations-Drilldown** | **K** | `eventlog/` | **✗ GAP** | Blocker |
-| **Live-Tail (mit Pause)** | **K** | `eventlog/` | **✗ GAP** | Blocker; eigene Oberfläche |
+| **Event-Log browsen** (Master-Detail, Filter) | **K** | `eventlog/` | **◐ Spec CYP-432** (P2-c) | spec'd `8b679eec`: Gating am Mount (Bodies), virtualisiert, Absence≠all-clear |
+| **Korrelations-Drilldown** | **K** | `eventlog/` | **◐ Spec CYP-432** | keine erfundene Korrelation (showRun/showSession nur bei vorhandenem Feld) |
+| **Live-Tail (mit Pause)** | **K** | `eventlog/` | **◐ Spec CYP-432** | pausiert≠live; eigene Oberfläche |
 | Projekt-Filter im Event-Log | MP | `eventlog/` | — (MP) | nach K-Cutover |
 
 ### §7 Aufsicht (Scanner / Warden)
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
 |---|---|---|---|---|
-| **Warden-Eskalationen sichtbar** | **K** (leicht) | `eventlog/` (`stall.escalated`) | **✗ GAP** | hängt am Event-Log (§6) → mit dessen Lücke offen |
+| **Warden-Eskalationen sichtbar** | **K** (leicht) | `eventlog/` (`stall.escalated`) | **◐ Spec CYP-432** | in CYP-432 mit-spec'd: `stall.*` als filterbare/sichtbare Event-Typen, **nicht steuerbar** |
 
 ### §8 Product Lead
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
@@ -99,7 +106,7 @@ W6 Scrollbar/Autoscroll (CYP-404) · W7 xterm-Shell (CYP-405). **Pending:** W8 T
 ### §9 Schlüssel & Einstellungen
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
 |---|---|---|---|---|
-| **API-Key hinterlegen/ändern (pro Projekt)** | **K** | `settings/` | **✗ GAP** | keine web-ts-Slice → Blocker. **maskiert, nie zurückgerendert, operator-geschützt** (Querschnitt §2/§3) — genau ein Bildschirm, an dem eine schlampige Portierung leakt |
+| **API-Key hinterlegen/ändern (pro Projekt)** | **K** | `settings/` | **◐ Spec CYP-433** (P2-e) | spec'd `39864a57`: Klartext nie im DOM (server-`***last4`), present-but-disabled (≠ Omission), Effect-Hint amber → P2-a-restartBtn |
 | Monitoring-/Compact-Parameter | später (opt) | `settings/`,`compact/` | — (später) | nicht MVP-Pflicht |
 
 ### §10 Multi-User (Auth & Mandanten)
@@ -123,25 +130,26 @@ Aus `09` Querschnitt + den Rollen-Regeln; diese sind das UX-Ehrlichkeits-Raster 
 
 ---
 
-## 3. Headline — die K-Stufe-Lücken = die Cutover-Blocker (für den PO)
+## 3. Headline — die K-Stufe-Blocker (Scope beantwortet: VOLLER ERSATZ, CYP-430)
 
-Damit die web-ts-UI **Default** werden kann, müssen **diese K-Funktionen** gedeckt sein. Heute **ohne bekannte
-web-ts-Slice** (✗ GAP):
+Die Scope-Frage ist **beantwortet** (Epic CYP-430, Auftraggeber): voller Ersatz → jede K-Funktion muss gedeckt
+sein, die Lücken sind **echte Blocker**. Stand der Blocker:
 
-- **§3 Agent starten/stoppen/neu starten** + der **Status-/Lifecycle-Header** des Agentenfensters (inkl. CYP-396-Ring).
-- **§6 Event-Log:** browsen + Korrelations-Drilldown + Live-Tail (3 Funktionen) — und §7 **Warden-Eskalationen** hängt dran.
-- **§8 Product Lead:** auslösen + Berichte ansehen.
-- **§9 API-Key** hinterlegen/ändern (maskiert, operator-geschützt).
+**◐ UIUX-spec'd (Impl vom PO gepaced):**
+- **§3 Agent starten/stoppen/neu starten** + Status-/Lifecycle-Header → **CYP-431** (`8fff4191`).
+- **§6 Event-Log** (browsen + Drilldown + Live-Tail) **+ §7 Warden** → **CYP-432** (`8b679eec`).
+- **§9 API-Key** hinterlegen/ändern → **CYP-433** (`39864a57`).
+
+**✗ Noch offen (keine Spec):**
 - **§2 Agenten-Verwaltung:** hinzufügen / entfernen / Konfig ändern.
 - **§1 Repo konfigurieren** (URL/Branch).
+- **§8 Product Lead:** auslösen + Berichte ansehen.
+- **§10 Auth** (§P2-i) — spec ich mit dem PO, sobald die Team1-Kratos-Naht geklärt ist (cross-team).
 
 **◑ Pending (spezifiziert, kommt mit W8/W9):** Comm-Panel (§4) + ACL-Matrix (§5) + Toggle (§3).
 
-**Die eine Frage an den PO (Scope, nicht UX):** ist der Cutover als **vollständiger Ersatz** der Compose-UI
-gedacht (dann sind obige ✗ echte Blocker und brauchen W-Slices), **oder** ein **partieller** Cutover (web-ts wird
-Default nur für die gedeckten Bereiche — Agentenfenster/Comm/ACL —, Compose bleibt für Event-Log/Product-Lead/
-Settings/Agenten-Verwaltung, bis nachgezogen)? **Das entscheidet, ob die Liste oben Blocker oder Roadmap ist.**
-Ich rate das nicht — es ist eine Cutover-Scope-Entscheidung.
+**✓ Modul da (End-to-End erst nach Assembly CYP-425 verifizierbar):** Fenster (W4), Transcript (W3), Composer (W5),
+Scrollbar (W6, Styling-Findings offen), Shell (W7).
 
 ---
 
