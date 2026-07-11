@@ -20,9 +20,23 @@ Das Transcript ist **reines Compose** (`LazyColumn` + `rememberLazyListState`, `
 aus `04 §5` (SwingPanel/DOM-Overlay über dem Compose-Layer) gilt hier **nicht** — der war für das
 **Terminal**-Overlay. Ein Compose-Overlay-Scrollbalken über dem `LazyColumn` ist unbedenklich.
 
-**Targets:** `app:shared` baut **iOS + jvm + wasmJs** (kein Android). `VerticalScrollbar` /
-`rememberScrollbarAdapter` sind skiko-gestützt und auf **allen dreien** verfügbar — kein Target-Seam nötig,
-`commonMain` genügt.
+**Targets — korrigiert (Developer5s Compile schlägt meinen Grep):** `app:shared` baut **iOS + jvm + wasmJs
+*und Android*** (`build.gradle.kts:34`, `androidLibrary { }` — die neue AGP-KMP-DSL; mein erster Grep suchte
+`androidTarget`/`android {` und verfehlte sie). `VerticalScrollbar` / `rememberScrollbarAdapter` sind
+**skiko**-gestützt und im **`commonMain`-API-Schnitt inklusive Android nicht vorhanden** →
+`compileCommonMainKotlinMetadata` scheitert an *„Unresolved reference 'VerticalScrollbar'"*. **Ein
+`expect`/`actual`-Seam ist damit PFLICHT**, nicht optional.
+
+> **Mein Fehler, offen benannt:** Ich habe einen Build-Fakt aus einem **Grep** behauptet statt aus einem
+> **Compile** — „gemessen, nicht angenommen" an mir selbst gerissen. Der Grep war die Annahme (mein Muster sei
+> vollständig), die Kompilierung ist die Messung. Dieselbe Fehlerklasse wie den ganzen Strang: ein Wert, der wie
+> eine Beobachtung aussieht und eine Ableitung unter stiller Annahme ist.
+>
+> **Der Stil-Intent bleibt unberührt:** Farben, Maße und `ScrollbarStyle` liegen in **`commonMain`** (eine
+> Quelle, §1/§2); nur das **skiko-`draw`** wird pro Target hinter dem `expect fun ThinVerticalScrollbar`
+> delegiert (jvm/wasmJs/ios = echter Balken; Android = leerer `actual` bzw. Plattform-Default, da außerhalb
+> unseres Scope). `ThinVerticalScrollbar` bleibt der **eine** wiederverwendbare Baustein — der Seam ist eine
+> Verdrahtungs-Naht, kein zweiter Stil.
 
 ---
 
