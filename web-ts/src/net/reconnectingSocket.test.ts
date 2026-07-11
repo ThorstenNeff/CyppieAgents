@@ -80,4 +80,20 @@ describe('ReconnectingSocket', () => {
     rs.close()
     expect(codes).toEqual([1008])
   })
+
+  it('a 1008 (access revoked) close is TERMINAL — no reconnect (CYP-432 fail-closed)', () => {
+    const hub = new FakeSocketHub()
+    const rs = new ReconnectingSocket({
+      url: () => 'ws://host/ws/events',
+      onText: () => {},
+      factory: hub.factory,
+      schedule: hub.runNow,
+      backoff: zeroBackoff(),
+    })
+    rs.connect()
+    hub.last().emitOpen()
+    const before = hub.sockets.length
+    hub.last().emitClose(1008) // access revoked
+    expect(hub.sockets.length).toBe(before) // NO new socket — reconnect suppressed
+  })
 })

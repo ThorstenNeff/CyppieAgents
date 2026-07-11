@@ -3,9 +3,14 @@
 // The socket factory/scheduler are injectable (SocketDeps) so tests drive the whole VM with fake sockets — no
 // real WebSocket. Returns a stop() that closes both sockets (called on App unmount). Per-agent /ws/agent and
 // /ws/terminal sockets are owned by the agent windows themselves (one socket per mounted window), not here.
-import { commSocket, terminalStateFeed, lifecycleFeed } from '../net/channels'
+import { commSocket, terminalStateFeed, lifecycleFeed, eventsSocket } from '../net/channels'
 import type { HubConfig, SocketDeps } from './hubConfig'
-import type { CommWsServerEvent, AgentTerminalControlEvent, AgentRunStateEvent } from '../types/generated/contract'
+import type {
+  CommWsServerEvent,
+  AgentTerminalControlEvent,
+  AgentRunStateEvent,
+  EventsWsServerEvent,
+} from '../types/generated/contract'
 
 export interface HubActions {
   onCommEvent: (event: CommWsServerEvent) => void
@@ -16,6 +21,11 @@ export interface HubActions {
   onCommClose?: (code?: number) => void
   /** server-confirmed per-agent run-state — drives the CYP-431 lifecycle header (non-optimistic). */
   onRunState?: (event: AgentRunStateEvent) => void
+  /** /ws/events feed (replay + Caughtup) — drives the CYP-432 event log. Provided ONLY for an operator: the event
+   *  log carries message bodies (operator-only egress), so a non-operator must never open this socket (CYP-432). */
+  onEventsEvent?: (event: EventsWsServerEvent) => void
+  /** /ws/events dropped (code 1008 = access revoked) → fail-closed event log (CYP-432). */
+  onEventsClose?: (code?: number) => void
 }
 
 export interface LiveHubHandle {
@@ -30,11 +40,21 @@ export function startLiveHub(config: HubConfig, actions: HubActions, deps: Socke
   comm.start()
   terminal.start()
   lifecycle.start()
+
+  // CYP-432 fail-closed: only OPEN /ws/events when the caller wired onEventsEvent (operator). A non-operator never
+  // starts the bodies-carrying socket at all — the client mount-gate is load-bearing defence-in-depth.
+  const onEventsEvent = actions.onEventsEvent
+  const events = onEventsEvent
+    ? eventsSocket({ ...common, onEvent: onEventsEvent, onClose: actions.onEventsClose })
+    : null
+  events?.start()
+
   return {
     stop: () => {
       comm.close()
       terminal.close()
       lifecycle.close()
+      events?.close()
     },
   }
 }

@@ -93,3 +93,72 @@ body,
   margin: 2px 0 0;
   color: var(--md-sys-color-error);
 }
+
+
+/* CYP-432 (P2-c) — event-log severity hues (CYP-12 palette, ported from event-log-tokens.json; dark default +
+   light). Colour is never alone: the glyph shape + the readable label carry severity, this only tints the glyph.
+   The four theme blocks mirror the token layer (light base + prefers-color-scheme + explicit [data-theme]). */
+:root {
+  --event-sev-error: #c5221f;
+  --event-sev-warn: #b26a00;
+  --event-sev-info: #5f6368;
+  --event-sev-debug: #9aa0a6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --event-sev-error: #ff6b6b;
+    --event-sev-warn: #ffc857;
+    --event-sev-info: #a0a4ad;
+    --event-sev-debug: #5a5e66;
+  }
+}
+:root[data-theme='dark'] {
+  --event-sev-error: #ff6b6b;
+  --event-sev-warn: #ffc857;
+  --event-sev-info: #a0a4ad;
+  --event-sev-debug: #5a5e66;
+}
+:root[data-theme='light'] {
+  --event-sev-error: #c5221f;
+  --event-sev-warn: #b26a00;
+  --event-sev-info: #5f6368;
+  --event-sev-debug: #9aa0a6;
+}
+
+.event-log {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.event-log-rows {
+  flex: 1;
+}
+.event-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.event-row .event-sev-label,
+.event-row .event-agent {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.event-sev-error .event-sev-glyph {
+  color: var(--event-sev-error);
+}
+.event-sev-warn .event-sev-glyph {
+  color: var(--event-sev-warn);
+}
+.event-sev-info .event-sev-glyph {
+  color: var(--event-sev-info);
+}
+.event-sev-debug .event-sev-glyph {
+  color: var(--event-sev-debug);
+}
+.event-type {
+  font-family: ui-monospace, monospace;
+}
+/* the log.dropped gap line — amber container (reuses the CYP-437 WARN tokens), never a silent skip. */
+.event-gap {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+}

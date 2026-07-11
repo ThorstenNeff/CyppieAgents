@@ -69,9 +69,13 @@ export class ReconnectingSocket {
       this.open = false
       this.sock = null
       if (!this.closed) {
-        // unexpected drop → tell the view (offline/revoked banner), then reconnect with backoff
-        this.opts.onClose?.((ev as { code?: number } | undefined)?.code)
-        this.schedule(() => this.connect(), this.backoff.next())
+        const code = (ev as { code?: number } | undefined)?.code
+        // 1008 = policy violation = auth revoked → TERMINAL: reconnecting with a dead token is a useless (and, for
+        // an egress channel, unsafe) loop. Mark closed so we never reconnect; the view fails closed (CYP-432).
+        if (code === 1008) this.closed = true
+        // unexpected drop → tell the view (offline/revoked banner); reconnect only if not terminal
+        this.opts.onClose?.(code)
+        if (!this.closed) this.schedule(() => this.connect(), this.backoff.next())
       }
     }
     sock.onerror = () => {

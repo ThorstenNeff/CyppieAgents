@@ -5,6 +5,8 @@ import { App } from './App'
 import { useWindowStore } from './windowmgr/windowStore'
 import { useHubStore } from './state/hubStore'
 import { emptyHubState } from './state/hubReducers'
+import { useEventLogStore } from './eventlog/eventLogStore'
+import { emptyEventLog } from './eventlog/eventLog'
 import { FakeSocketHub } from './net/testing/fakeSocket'
 import { RestError } from './net/rest'
 import type { HubConfig } from './state/hubConfig'
@@ -40,6 +42,7 @@ beforeEach(() => {
   // module-singleton stores persist across tests → reset the data (actions are kept by the merge).
   useWindowStore.setState({ windows: [], contentIds: new Set(), host: { width: 0, height: 0 } })
   useHubStore.setState({ ...emptyHubState })
+  useEventLogStore.setState({ ...emptyEventLog })
 })
 afterEach(cleanup)
 
@@ -168,5 +171,48 @@ describe('App assembly (CYP-425)', () => {
     fireEvent.click(await findByTestId('lifecycle.restart.backend')) // restart is operator-enabled in any state
     const err = await findByTestId('lifecycle.error.backend')
     expect(err.textContent).toContain('Übergang')
+  })
+
+  it('the Event window renders the /ws/events feed with a live marker (CYP-432)', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(getByTestId('event-log')).toBeTruthy()
+    const feed = hub.sockets.find((s) => s.url.includes('/ws/events'))!
+    await act(async () => {
+      feed.emitOpen()
+      feed.emitMessage(JSON.stringify({ type: 'event', event: { id: 'e1', seq: 1, ts: 0, agentId: 'backend', projectId: 'p', type: 'agent.activity', severity: 'info' } }))
+      feed.emitMessage(JSON.stringify({ type: 'caughtup' }))
+    })
+    expect(await findByTestId('event.row.e1')).toBeTruthy()
+    expect(getByTestId('event-log-status').textContent).toContain('Live')
+  })
+
+  it('CYP-432 fail-closed: a NON-operator gets NO event window and NEVER opens the /ws/events (bodies) socket', async () => {
+    const hub = new FakeSocketHub()
+    const { queryByTestId } = render(
+      <App config={{ ...config, operator: false }} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(hub.sockets.find((s) => s.url.includes('/ws/events'))).toBeUndefined() // the bodies socket is never opened
+    expect(queryByTestId('event-log')).toBeNull() // no event-log data surface for a non-operator
+  })
+
+  it('CYP-432 fail-closed: a 1008 on /ws/events locks the log (revoked placeholder) and does NOT reconnect', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    const evSockets = () => hub.sockets.filter((s) => s.url.includes('/ws/events'))
+    const before = evSockets().length
+    await act(async () => {
+      evSockets()[before - 1].emitOpen()
+      evSockets()[before - 1].emitClose(1008) // access revoked
+    })
+    expect(await findByTestId('event-log-revoked')).toBeTruthy()
+    expect(evSockets().length).toBe(before) // terminal — no reconnect after revoke
   })
 })
