@@ -126,7 +126,8 @@ fun EventType.groupGlyph(): String = when (this) {
     EventType.HOOK_FIRED -> "⤵"
     EventType.ERROR_MODEL, EventType.ERROR_TOOL, EventType.ERROR_RATELIMIT,
     EventType.PROCESS_EXIT, EventType.TIMEOUT, EventType.WS_DISCONNECT -> "⚠"
-    EventType.AGENT_SPAWNED, EventType.AGENT_RESTARTED, EventType.AGENT_STOPPED, EventType.SESSION_RECYCLED -> "⏻"
+    EventType.AGENT_SPAWNED, EventType.AGENT_RESTARTED, EventType.AGENT_STOPPED, EventType.SESSION_RECYCLED,
+    EventType.RESUME_OUTCOME -> "⏻" // CYP-356 (BE-3): resume/restart-outcome (RESUMED_WITH_CONTEXT/CONTEXT_LOST/FRESH); provisional glyph, UIUX/Dev may refine
     EventType.COMM_SENT, EventType.COMM_RECEIVED -> "⇄"
     // Mediator-Aufsicht supervision family (07/S11, CYP-64). Provisional glyph — a non-blocking
     // UIUX/Dev polish may refine it; severity (warn/info/error) still carries the alarm, not this.

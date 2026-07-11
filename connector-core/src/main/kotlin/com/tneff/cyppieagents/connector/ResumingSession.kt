@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.connector
 
+import com.tneff.cyppieagents.model.ResumeOutcome
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +44,14 @@ class ResumingSession(
     private val onResumeFailed: () -> Unit,
     /** Spawn a fresh session WITHOUT `--resume` (the durable entry has just been cleared). */
     private val respawnFresh: () -> ClaudeCodeSession,
+    /**
+     * CYP-356 (BE-3) — surfaces the resume outcome AUTHORITATIVELY, emitted **intrinsically from the resume
+     * logic** (NOT via [addExitListener], so it is orthogonal to CYP-360's run-state exit path and cannot
+     * mis-attribute a stale/orphan attempt): `RESUMED_WITH_CONTEXT` when the `--resume` binds,
+     * `CONTEXT_LOST` when it dies unbound and heals to fresh. Reuses the EXISTING [awaitStartupOutcome]
+     * detection — no new detection. Null = not wired (bridge/tests).
+     */
+    private val onResumeOutcome: ((ResumeOutcome) -> Unit)? = null,
 ) : ConnectorSession {
 
     private val log = LoggerFactory.getLogger("connector.resume")
@@ -130,6 +139,7 @@ class ResumingSession(
             when (firstAttempt.awaitStartupOutcome()) {
                 ClaudeCodeSession.StartupOutcome.BOUND -> {
                     committed = true // resume worked; the turn already succeeded on the resumed session
+                    onResumeOutcome?.invoke(ResumeOutcome.RESUMED_WITH_CONTEXT) // CYP-356: the resume kept its context
                 }
                 ClaudeCodeSession.StartupOutcome.DIED_UNBOUND -> {
                     // Stale `--resume`: clear, respawn fresh, re-inject the SAME turn exactly once. Shared with
@@ -166,6 +176,7 @@ class ResumingSession(
         val fresh = respawnFresh()
         inner = fresh
         committed = true // set BEFORE any re-inject so no further turn/probe can re-enter this path
+        onResumeOutcome?.invoke(ResumeOutcome.CONTEXT_LOST) // CYP-356: the stale --resume died → fresh → context lost
         forwardJob = forward(fresh)
         observeExitOf(fresh) // CYP-360: the fresh session is now the agent; its end is the one that counts
         fresh.start()
