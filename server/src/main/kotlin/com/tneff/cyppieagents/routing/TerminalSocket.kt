@@ -72,7 +72,11 @@ fun Route.terminalSocket(
 
         // CYP-381: atomically attach if the motor already owns a live PTY (replay + live, multi-viewer). A null
         // return means nothing is live → spawn the interim bash worktree-shell (the regression-guarded fallback).
-        val viewer: PtySubscription? = mgr.attach(agentId, onOutput)
+        // CYP-391: pass an onExit so that if the motor's `claude --resume` process dies WHILE we're viewing, this
+        // viewer gets a TerminalExit + a closed socket — mirroring the spawn path's onExit, not a frozen terminal.
+        val viewer: PtySubscription? = mgr.attach(agentId, onOutput) { code ->
+            outbound.trySend(TerminalExit(code)); outbound.close()
+        }
         // ownsProcess = this socket spawned the PTY (bash interim) → it also tears it down on disconnect. A viewer
         // never owns the motor's session; detaching leaves it running for the motor and the other viewers.
         val ownsProcess = viewer == null
