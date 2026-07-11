@@ -360,7 +360,12 @@ class BootOrchestrator(
 
         // CYP-210: apply the durable overlay OVER the platform.config.json seed (overlay wins per-field), so
         // operator edits of name/color/persona/launch survive a restart. Scoped to the active project.
-        val agentOverrides = AgentOverrideStore(agentOverrideFile)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite; the .db lives next to the legacy .json, which it
+        // imports ONCE (empty-table guard) so operator customizations (dev2 #B5419A, avatars) survive the switch
+        // ([[default-agents-no-reset]]). In-memory File impl for tests (null).
+        val agentOverrides = agentOverrideFile?.let {
+            SqliteAgentOverrideStore(it.toPath().resolveSibling("agent-overrides.db"), it.toPath())
+        } ?: AgentOverrideStore(null)
         // CYP-415 (D2): embedded-SQLite in prod, in-memory for tests. Benign — token-usage re-derives per turn.
         val tokenUsageStore = tokenUsageFile?.let { SqliteTokenUsageStore(it.toPath()) } ?: TokenUsageStore(null) // CYP-325
         // CYP-256 (.5a): the durable per-project agent-set store — constructed EARLY (above, for the CYP-305
