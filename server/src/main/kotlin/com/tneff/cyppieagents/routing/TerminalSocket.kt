@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.pty.PtyBusyException
 import com.tneff.cyppieagents.pty.PtyManager
+import com.tneff.cyppieagents.pty.PtySubscription
 import com.tneff.cyppieagents.model.TerminalClientFrame
 import com.tneff.cyppieagents.model.TerminalExit
 import com.tneff.cyppieagents.model.TerminalInput
@@ -30,10 +31,19 @@ import kotlinx.coroutines.launch
  * ([wsReaderOrNull]); operator-gated take-over / IDLE-gate / Seize are the CYP-333 hand-off follow-up
  * (BE-1..3/5), not this through-line.
  *
- * **Single-flight (§4.1):** [PtyManager.open] rejects a second live PTY for the same agent → the socket
- * closes `1008 pty_busy` (never two rival interactive processes on one session). **Lifecycle:** this story
- * scopes the PTY to the socket — spawn on connect, teardown on disconnect; a PTY that survives reconnect is
- * a follow-up.
+ * **Attach-vs-spawn (CYP-381, Dev).** Two roles behind one route, chosen by whether the hand-off motor already
+ * owns a live interactive PTY for this agent:
+ *  - **Attach (motor owns it):** when the agent is in TERMINAL mode the motor spawned a `claude --resume` PTY via
+ *    [PtyManager.spawnInteractive] with **no viewer**. This socket [PtyManager.attach]es as an **extra viewer** —
+ *    replay the bounded scrollback, then stream live; **multi-viewer**. The process **outlives** the window, so a
+ *    disconnect detaches ONLY this viewer, never the motor's session.
+ *  - **Spawn (nothing live):** the CYP-333 interim — [PtyManager.open] spawns the `bash -l` worktree shell,
+ *    WS-scoped (spawn on connect, teardown on disconnect). This is the **bash-fallback regression path**.
+ *
+ * The choice is a single atomic [PtyManager.attach] probe (a non-null return == live, no `isLive`-then-attach
+ * TOCTOU). A genuine spawn-race (two connects both find nothing live and both [PtyManager.open]) is still rejected
+ * by the per-agent single-flight → `1008 pty_busy` (never two rival PROCESSES; the process-level invariant is
+ * covered by `PtyManagerTest`). Note a second connect to an ALREADY-live agent no longer 1008s — it attaches.
  *
  * **Ordering:** PTY stdout is drained on a pty4j IO thread; frames go through an **unbounded [Channel]** to a
  * single WS-side sender so terminal bytes are delivered **in order** (a `launch`-per-frame could reorder them).
@@ -58,38 +68,55 @@ fun Route.terminalSocket(
         // Unbounded so a burst of PTY output never blocks the IO thread and never drops bytes; a single
         // consumer preserves order.
         val outbound = Channel<TerminalServerFrame>(Channel.UNLIMITED)
+        val onOutput: (ByteArray) -> Unit = { bytes -> outbound.trySend(TerminalOutput(b64.encodeToString(bytes))) }
 
-        val handle = try {
-            mgr.open(
-                agentId = agentId,
-                cols = 80, rows = 24, // initial; the client's first Resize corrects it
-                onOutput = { bytes -> outbound.trySend(TerminalOutput(b64.encodeToString(bytes))) },
-                onExit = { code -> outbound.trySend(TerminalExit(code)); outbound.close() },
-            )
-        } catch (_: PtyBusyException) {
-            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "pty_busy"))
-        } catch (_: Exception) {
-            return@webSocket close(CloseReason(CloseReason.Codes.INTERNAL_ERROR, "pty_spawn_failed"))
+        // CYP-381: atomically attach if the motor already owns a live PTY (replay + live, multi-viewer). A null
+        // return means nothing is live → spawn the interim bash worktree-shell (the regression-guarded fallback).
+        val viewer: PtySubscription? = mgr.attach(agentId, onOutput)
+        // ownsProcess = this socket spawned the PTY (bash interim) → it also tears it down on disconnect. A viewer
+        // never owns the motor's session; detaching leaves it running for the motor and the other viewers.
+        val ownsProcess = viewer == null
+        if (ownsProcess) {
+            try {
+                mgr.open(
+                    agentId = agentId,
+                    cols = 80, rows = 24, // initial; the client's first Resize corrects it
+                    onOutput = onOutput,
+                    onExit = { code -> outbound.trySend(TerminalExit(code)); outbound.close() },
+                )
+            } catch (_: PtyBusyException) {
+                // A motor/rival spawn raced in between attach() and open() → single-flight rejects us. Fail closed.
+                return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "pty_busy"))
+            } catch (_: Exception) {
+                return@webSocket close(CloseReason(CloseReason.Codes.INTERNAL_ERROR, "pty_spawn_failed"))
+            }
         }
 
         val sender = launch {
             for (frame in outbound) send(Frame.Text(CommJson.encodeToString(TerminalServerFrame.serializer(), frame)))
-            // outbound closed by onExit → the process is gone → close the socket after the final Exit frame.
+            // outbound closed by onExit (spawn path) or disconnect (attach path) → close the socket after draining.
             close(CloseReason(CloseReason.Codes.NORMAL, "pty exited"))
         }
 
         try {
             for (frame in incoming) {
                 if (frame !is Frame.Text) continue
+                // Input/resize address the live PTY by agentId — the SAME process whether we spawned it (bash) or
+                // attached to the motor's session (so multiple viewers' keystrokes all reach the one process).
                 when (val msg = runCatching { CommJson.decodeFromString<TerminalClientFrame>(frame.readText()) }.getOrNull()) {
-                    is TerminalInput -> handle.write(Base64.getDecoder().decode(msg.dataBase64))
-                    is TerminalResize -> handle.resize(msg.cols, msg.rows)
+                    is TerminalInput -> mgr.write(agentId, Base64.getDecoder().decode(msg.dataBase64))
+                    is TerminalResize -> mgr.resize(agentId, msg.cols, msg.rows)
                     null -> {} // version drift / garbage: skip, don't kill the session
                 }
             }
         } finally {
-            // WS disconnect → tear the PTY down (this story's WS-scoped lifecycle) and stop the sender.
-            mgr.close(agentId)
+            if (ownsProcess) {
+                // Bash interim: WS-scoped lifecycle — tear the PTY down on disconnect.
+                mgr.close(agentId)
+            } else {
+                // Viewer of the motor-owned session: detach ONLY this viewer; the motor owns teardown at hand-back.
+                viewer?.close()
+            }
             outbound.close()
             sender.cancel()
         }

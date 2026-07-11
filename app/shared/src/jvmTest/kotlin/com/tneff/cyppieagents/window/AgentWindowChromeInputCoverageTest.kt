@@ -73,6 +73,15 @@ class AgentWindowChromeInputCoverageTest {
         "terminalGatedNote" to "renders the gated-shell note only when `terminalGatedNote && !terminalAvailable`; " +
             "the shipped shell passes `!WORKTREE_SHELL_LIVE_ENABLED` = false AND a non-null terminalContent, so " +
             "both conjuncts are false. Reachability is guarded by theRealShellsUpperChrome…, not assumed here",
+        "control" to "CYP-381 §6/§7b: renders the hub-blind / context-lost frame banners ONLY when the CYP-354 " +
+            "feed reports INTERACTIVE / CONTEXT_LOST. Post-motor (CYP-355 merged) a LIVE server+motor CAN drive the " +
+            "feed to those states, so production CAN now reach the banner — but the floor guard's `RealShell` (and " +
+            "`measureAgentWindow`) fixtures inject STUB sources with no live `/ws/terminal-state`, so the feed stays " +
+            "empty → `control=null` → banner-free; theRealShellsUpperChrome… still measures banner-free chrome and " +
+            "stays green. KNOWN GAP (flagged to PO, follow-up): the WARN banner is a chrome row above the header " +
+            "that `ChromeState` does not yet enumerate — at minimum window height a shown banner could squeeze the " +
+            "composer, so a follow-up should add a banner dimension and let CONTENT_WINDOW_MIN_HEIGHT follow the " +
+            "measurement. Kept here (not moved to the varied set) because the floor guard does not yet DRIVE it.",
     )
 
     /**

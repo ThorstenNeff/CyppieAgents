@@ -110,7 +110,11 @@ class Cyp332TerminalSocketTest {
     }
 
     @Test
-    fun secondConcurrentConnect_forSameAgent_closesPtyBusy_singleFlight() = testApplication {
+    fun secondConnect_toLiveAgent_attachesAsViewer_replaysSharedOutput() = testApplication {
+        // CYP-381 (Dev): a second connect to an ALREADY-live agent no longer 1008s — it ATTACHES as an extra
+        // viewer (replay + live, multi-viewer). Proof it shares the ONE process: it replays the scrollback the
+        // FIRST viewer's input produced ("GOT:x"), which a fresh bash spawn would not contain. The process-level
+        // single-flight (a second SPAWN → PtyBusyException) is asserted where it lives, in PtyManagerTest.
         installTerminal(fakeTui())
         val client = wsClient(this)
         val firstLive = CompletableDeferred<Unit>()
@@ -124,15 +128,24 @@ class Cyp332TerminalSocketTest {
                         if (f is TerminalOutput && String(Base64.getDecoder().decode(f.dataBase64)).contains("GOT:x")) break
                     }
                 }
-                firstLive.complete(Unit) // the first PTY is definitely spawned + live
-                release.await()          // hold the connection so the second races a LIVE session
+                firstLive.complete(Unit) // the first PTY is spawned + live and has produced "GOT:x" (now in replay)
+                release.await()          // hold the connection so the second attaches to a LIVE session
             }
         }
         firstLive.await()
         client.webSocket("/ws/terminal?agentId=backend&token=tok-op") {
-            val reason = withTimeout(10_000) { closeReason.await() }
-            assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, reason?.code, "a second live PTY for the agent → 1008")
-            assertEquals("pty_busy", reason?.message, "…specifically pty_busy (single-flight §4.1)")
+            val seen = StringBuilder()
+            withTimeout(15_000) {
+                for (frame in incoming) {
+                    val f = decode(frame)
+                    if (f is TerminalOutput) seen.append(String(Base64.getDecoder().decode(f.dataBase64)))
+                    if (seen.contains("GOT:x")) break
+                }
+            }
+            assertTrue(
+                seen.contains("GOT:x"),
+                "the second connect attached to the live PTY and replayed its scrollback (multi-viewer), not a fresh spawn",
+            )
         }
         release.complete(Unit); first.cancel()
     }

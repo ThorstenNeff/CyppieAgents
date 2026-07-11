@@ -46,6 +46,12 @@ class AgentViewModel(
     private val lifecycle: AgentLifecycleApi? = null,
     /** Non-gated lifecycle-state source (snapshot + `/ws/lifecycle` deltas); `null` → state stays UNKNOWN. */
     lifecycleSource: AgentLifecycleSource? = null,
+    /** CYP-381: the hand-off command port (`POST /api/agents/{id}/mode`). `null` → [requestMode] falls back to the
+     *  pure client view-selection ([showContentMode]) — the pre-CYP-381 behaviour, used in pure-render tests. */
+    private val modeRepository: ModeRepository? = null,
+    /** CYP-381 IDLE-gate: the per-agent busy feed (CYP-324 `/ws/busy-state`), so a take-over requested mid-turn can
+     *  bounded-defer instead of hijacking a running mediated turn. `null` → busy stays `false` (no gate). */
+    busySource: BusyStateSource? = null,
     /** Whether the operator token is present → Start/Stop/Restart controls are enabled (fail-closed). */
     val canControl: Boolean = false,
     /** CYP-262 T1 robustness: watchdog window for the "Startet…" transient (see [START_PENDING_TIMEOUT_MS]).
@@ -121,14 +127,69 @@ class AgentViewModel(
     private val _contentMode = MutableStateFlow(AgentContentMode.ORCHESTRATION)
 
     /**
-     * Switch the window's content view. **Fail-closed:** opening the terminal is an operator control surface (it
-     * spawns a shell in the agent's worktree), so a non-operator cannot switch to [AgentContentMode.TERMINAL] —
-     * the UI also disables the segment and the server admits the socket on its own bar (defence in depth).
-     * Returning to Orchestrierung is always allowed (it only changes the local view, claims nothing).
+     * Switch the window's content view **locally** (no server round-trip). **Fail-closed:** opening the terminal
+     * is an operator control surface (it spawns a shell in the agent's worktree), so a non-operator cannot switch
+     * to [AgentContentMode.TERMINAL] — the UI also disables the segment and the server admits the socket on its own
+     * bar (defence in depth). Returning to Orchestrierung is always allowed (it only changes the local view).
+     *
+     * The direct local-flip path, kept for the pre-CYP-381 view-selection (and pure-render tests with no wired
+     * [modeRepository]). Production routes the toggle through [requestMode] (non-optimistic, IDLE-gated).
      */
     fun showContentMode(mode: AgentContentMode) {
         if (mode == AgentContentMode.TERMINAL && !canControl) return // fail-closed
         _contentMode.value = mode
+    }
+
+    /**
+     * CYP-381 IDLE-gate — this agent's live busy signal (CYP-324 `/ws/busy-state`), used to bounded-defer a
+     * take-over requested mid-turn. Absent event == idle (unknown ≠ busy, exactly as the title-bar `*`), so it
+     * seeds `false` and never fabricates a busy state that would wrongly block a switch.
+     */
+    val busy: StateFlow<Boolean> =
+        flow {
+            emit(false)
+            busySource?.events()?.filter { it.agentId == agentId }?.collect { emit(it.busy) }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /**
+     * CYP-381 — a hand-off command is in flight (POST issued, awaiting the server's confirm/reject). Drives a
+     * transient "wird umgeschaltet…" affordance; the view does NOT flip until the confirm lands (non-optimistic).
+     */
+    val modeSwitching: StateFlow<Boolean> get() = _modeSwitching
+    private val _modeSwitching = MutableStateFlow(false)
+
+    /**
+     * CYP-381 — request a mode transition **non-optimistically** through the [modeRepository] (`POST
+     * /api/agents/{id}/mode`). The view flips **only after** the server confirms (`outcome==CONFIRMED`); a reject
+     * leaves the mode unchanged and surfaces `mode_swap_failed` on the shared [lifecycleError] row (UIUX spec §3.4 —
+     * the CompactVM never-optimistic discipline). Fail-closed on TERMINAL without [canControl]. Falls back to the
+     * local [showContentMode] when no [modeRepository] is wired.
+     *
+     * **IDLE-gate (CYP-355 settled contract):** the bounded-wait is **server-side** — the POST is held synchronously
+     * until the running turn settles, returning CONFIRMED (switched) or REJECTED(`BUSY_TIMEOUT`) after ~30s. So the
+     * client does NOT defer the POST; it fires at once and shows a *waiting* state ([modeSwitching]) — the UI reads
+     * [busy] to say "wartet bis Turn fertig" instead of a generic "switching…". The switch only completes when the
+     * server settles → never a silent mid-turn hijack, with the bound owned by the server.
+     */
+    fun requestMode(target: AgentContentMode) {
+        if (target == AgentContentMode.TERMINAL && !canControl) return // fail-closed (defence in depth)
+        val repo = modeRepository ?: run { showContentMode(target); return } // pre-CYP-381 local view-selection
+        // Arm the waiting UI SYNCHRONOUSLY (instant "switching…"/"wartet…" feedback, like CYP-330's restartPending) —
+        // but do NOT flip the view: that waits for the server confirm below (non-optimistic). Clear any prior error.
+        _lifecycleError.value = null
+        _modeSwitching.value = true
+        viewModelScope.launch {
+            // The POST is held by the server through its bounded-wait (up to ~30s); modeSwitching == the waiting UI.
+            runCatching { repo.setMode(agentId, target) }
+                .onSuccess { confirm -> _contentMode.value = confirm.confirmed } // flip AFTER confirm (non-optimistic)
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    // REJECTED / transport failure → stay in the current mode; surface `mode_swap_failed` on the
+                    // shared lifecycleError row (UIUX §3.4, §9 — reuses the row, no separate error node).
+                    _lifecycleError.value = "mode_swap_failed"
+                }
+            _modeSwitching.value = false
+        }
     }
 
     /**

@@ -62,8 +62,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
+import com.tneff.cyppieagents.agentview.formatLocalHhMm
 import com.tneff.cyppieagents.eventlog.severityColor
 import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.TerminalControlState
 import com.tneff.cyppieagents.testing.testTagA11y
 import com.tneff.cyppieagents.ui.HintTone
@@ -74,6 +76,9 @@ import androidx.compose.ui.zIndex
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_busy
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_ctl
+import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_ctl_held
+import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_held_by
+import kmpcyppieagents.app.shared.generated.resources.terminal_held_by
 import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_context_lost
 import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_handing_back
 import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_handing_over
@@ -138,11 +143,12 @@ fun WindowHost(
      */
     busyFor: (String) -> Boolean = { false },
     /**
-     * CYP-354 (client mirror): per-window terminal-control mode; `null`/MEDIATED → no marker (fail-closed,
+     * CYP-354 (client mirror): per-window terminal-control event; `null`/MEDIATED-state → no marker (fail-closed,
      * absent == MEDIATED). Default `{ null }` keeps the host marker-free for callers/tests. The shell feeds it
-     * from the `/ws/terminal-state` map (mirrors [busyFor]/[contextTokensFor]). Read-only; no action here.
+     * from the `/ws/terminal-state` map (mirrors [busyFor]/[contextTokensFor]). CYP-381: the WHOLE event (not just
+     * the enum) so the marker can render holder-identity + since. Read-only mirror; no action here.
      */
-    controlStateFor: (String) -> TerminalControlState? = { null },
+    controlEventFor: (String) -> AgentTerminalControlEvent? = { null },
     /** CYP-211: per-window derived titlebar colours (agent identity theming); `null` → default M3 (system windows). */
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     /** CYP-211: per-window settings opener for the titlebar ⋮ button; `null` → no button (system windows). */
@@ -178,7 +184,7 @@ fun WindowHost(
         } else {
             WindowCanvas(
                 state = state, onFit = onFit, badgeFor = badgeFor, contextTokensFor = contextTokensFor, busyFor = busyFor,
-                controlStateFor = controlStateFor,
+                controlEventFor = controlEventFor,
                 titleBarColorsFor = titleBarColorsFor, settingsFor = settingsFor, titleBarLeadingFor = titleBarLeadingFor,
                 agentsEmpty = agentsEmpty, canAddAgent = canAddAgent, onAddFirstAgent = onAddFirstAgent,
                 windowContent = windowContent,
@@ -199,7 +205,7 @@ private fun WindowCanvas(
     badgeFor: (String) -> WindowBadge?,
     contextTokensFor: (String) -> Int? = { null },
     busyFor: (String) -> Boolean = { false },
-    controlStateFor: (String) -> TerminalControlState? = { null },
+    controlEventFor: (String) -> AgentTerminalControlEvent? = { null },
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     settingsFor: (String) -> (() -> Unit)? = { null },
     // CYP-216: optional leading titlebar slot (the §5.1 inverted-disc avatar) — a host-injected composable so the
@@ -232,7 +238,7 @@ private fun WindowCanvas(
                     badge = badgeFor(window.id),
                     contextTokens = contextTokensFor(window.id),
                     busy = busyFor(window.id),
-                    mode = controlStateFor(window.id),
+                    control = controlEventFor(window.id),
                     titleBarColors = titleBarColorsFor(window.id),
                     onSettings = settingsFor(window.id),
                     titleBarLeading = titleBarLeadingFor(window.id),
@@ -553,9 +559,10 @@ fun FloatingWindow(
     contextTokens: Int? = null,
     /** CYP-324: this window's agent is busy (a turn in flight) → a `*` in the title bar; `false` → nothing (unknown ≠ busy). */
     busy: Boolean = false,
-    /** CYP-354 (client mirror): this window's terminal-control mode; `null`/MEDIATED → NO marker (absent == MEDIATED,
-     *  the default). Only a non-MEDIATED state shows the read-only §5.1 mode marker. */
-    mode: TerminalControlState? = null,
+    /** CYP-354 (client mirror): this window's terminal-control event; `null`/MEDIATED-state → NO marker (absent ==
+     *  MEDIATED, the default). Only a non-MEDIATED state shows the read-only §5.1 mode marker. CYP-381: carries
+     *  holder-identity ([AgentTerminalControlEvent.heldBy]) + since so the marker can surface who + since when. */
+    control: AgentTerminalControlEvent? = null,
     /** CYP-211: the agent's derived titlebar colours; `null` → the default M3 primary/surfaceVariant theming
      *  (system windows). Focused = full colour; unfocused = dimmed toward the surface (elevation still carries focus). */
     titleBarColors: TitleBarColors? = null,
@@ -721,8 +728,8 @@ fun FloatingWindow(
                         // for INTERACTIVE/CONTEXT_LOST, neutral onSurfaceVariant for the transients — never green). The
                         // meaning-bearing label uses `barContent` (AA on the themed title-bar bg, like busy/token); the
                         // glyph carries the severity colour. Content-free (state only — never keystrokes/output).
-                        mode?.let { state ->
-                            val marker: Triple<String, String, Color>? = when (state) {
+                        control?.let { ev ->
+                            val marker: Triple<String, String, Color>? = when (ev.state) {
                                 TerminalControlState.MEDIATED -> null
                                 TerminalControlState.INTERACTIVE ->
                                     Triple("◉", stringResource(Res.string.terminal_ctl_interactive), severityColor(Severity.WARN))
@@ -734,18 +741,40 @@ fun FloatingWindow(
                                     Triple("∅", stringResource(Res.string.terminal_ctl_context_lost), severityColor(Severity.WARN))
                             }
                             marker?.let { (glyph, label, glyphColor) ->
-                                val modeCd = stringResource(Res.string.a11y_terminal_ctl, label)
+                                // CYP-381 §5: holder-identity + since from the SAME AgentTerminalControlEvent (also the
+                                // CYP-355 response echo). Rendered as the spec "@{heldBy} · seit {HH:MM}" chip AND the
+                                // merged a11y label (meaning-bearing, WCAG 1.4.1). since = local HH:MM (formatLocalHhMm).
+                                val holder = ev.heldBy
+                                val sinceHhMm = ev.since?.let { formatLocalHhMm(it) }
+                                val holderChip = holder?.let { h -> // "@alice · seit 14:03" (or "@alice" if no since)
+                                    if (sinceHhMm != null) stringResource(Res.string.terminal_held_by, "@$h", sinceHhMm) else "@$h"
+                                }
+                                val modeCd = when {
+                                    holder != null && sinceHhMm != null ->
+                                        stringResource(Res.string.a11y_terminal_held_by, holder, sinceHhMm)
+                                    holder != null -> stringResource(Res.string.a11y_terminal_ctl_held, label, holder)
+                                    else -> stringResource(Res.string.a11y_terminal_ctl, label)
+                                }
                                 Row(
                                     modifier = Modifier
                                         .padding(start = 8.dp)
                                         .testTag(WindowTestTags.mode(window.id))
-                                        // One merged SR node ("Terminal-Modus: …"); the glyph + label stay visual.
+                                        // One merged SR node; glyph + label + holder chip stay visual.
                                         .semantics(mergeDescendants = true) { contentDescription = modeCd },
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
                                     Text(glyph, maxLines = 1, style = MaterialTheme.typography.labelSmall, color = glyphColor)
                                     Text(label, maxLines = 1, style = MaterialTheme.typography.labelMedium, color = barContent)
+                                    if (holderChip != null) {
+                                        Text(
+                                            holderChip,
+                                            maxLines = 1,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = barContent,
+                                            modifier = Modifier.testTag(WindowTestTags.modeHolder(window.id)),
+                                        )
+                                    }
                                 }
                             }
                         }

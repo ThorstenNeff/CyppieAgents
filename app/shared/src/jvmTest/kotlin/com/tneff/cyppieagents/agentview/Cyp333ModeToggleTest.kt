@@ -135,10 +135,10 @@ class Cyp333ModeToggleTest {
         onNodeWithTag(AgentViewTags.modeToggleGateHint("backend"), useUnmergedTree = true).assertDoesNotExist()
     }
 
-    // --- live flip: the active Shell view shows the honest "bash worktree shell" note, never the gated note ---
+    // --- live flip: the active Terminal view shows the honest "real interactive session" note, never gated ---
 
     @Test
-    fun operator_liveShellView_showsHonestShellNote_notGatedNote() = runComposeUiTest {
+    fun operator_liveTerminalView_showsHonestSessionNote_notGatedNote() = runComposeUiTest {
         lateinit var vm: AgentViewModel
         setContent {
             MaterialTheme {
@@ -147,14 +147,14 @@ class Cyp333ModeToggleTest {
             }
         }
         waitForIdle()
-        // Orchestrierung: no shell note yet (not looking at the shell), and never the gated note (backend is live).
-        onNodeWithTag(AgentViewTags.modeToggleShellNote("backend"), useUnmergedTree = true).assertDoesNotExist()
+        // Orchestrierung: no session note yet (not looking at the terminal), and never the gated note (backend live).
+        onNodeWithTag(AgentViewTags.modeToggleTerminalNote("backend"), useUnmergedTree = true).assertDoesNotExist()
         onNodeWithTag(AgentViewTags.modeToggleTerminalGated("backend"), useUnmergedTree = true).assertDoesNotExist()
 
-        // Switch to the live Shell view → honest "bash worktree shell" descriptor appears, gated note stays absent.
+        // Switch to the live Terminal view → honest "real interactive session" descriptor appears, gated note absent.
         onNodeWithTag(AgentViewTags.modeToggleTerminal("backend"), useUnmergedTree = true).performClick()
         waitForIdle()
-        onNodeWithTag(AgentViewTags.modeToggleShellNote("backend"), useUnmergedTree = true).assertExists()
+        onNodeWithTag(AgentViewTags.modeToggleTerminalNote("backend"), useUnmergedTree = true).assertExists()
         onNodeWithTag(AgentViewTags.modeToggleTerminalGated("backend"), useUnmergedTree = true).assertDoesNotExist()
     }
 }

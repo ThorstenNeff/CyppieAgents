@@ -88,10 +88,10 @@ class ContentWindowChromeFloorGuardTest {
     // Every chrome state the composition can render. The floor is cut to the TALLEST of them.
     //
     //  · `canControl`        — a non-operator gets the read-only `workspace_operator_only` disclosure.
-    //  · `terminalAvailable` — a wired terminal (`terminalContent != null`) enables the Shell segment.
-    //  · `contentMode`       — TERMINAL swaps the composer for the terminal and, since CYP-333's live-flip, adds
-    //                          the honest `terminal_shell_note` line ("bash worktree shell, NOT the agent's
-    //                          session") under the toggle. It is chrome that only exists in one mode.
+    //  · `terminalAvailable` — a wired terminal (`terminalContent != null`) enables the Terminal segment.
+    //  · `contentMode`       — TERMINAL swaps the composer for the terminal and, since the CYP-381 §8 rename, adds
+    //                          the honest `terminal_session_note` line ("the agent's real, interactive session;
+    //                          the hub does not mediate") under the toggle. Chrome that only exists in one mode.
     //  · `lifecycleError`    — `LifecycleErrorRow`, prepended when a lifecycle action fails.
     //
     // **`terminalGatedNote` is gone from this set, and that is a finding, not a simplification.** It rendered only

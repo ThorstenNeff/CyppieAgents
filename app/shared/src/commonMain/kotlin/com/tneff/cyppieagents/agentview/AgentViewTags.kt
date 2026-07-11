@@ -45,13 +45,30 @@ object AgentViewTags {
     /** CYP-333: non-operator gate hint under the read-only toggle (reused `workspace_operator_only` copy). */
     fun modeToggleGateHint(agentId: String) = "agent.$agentId.modeToggle.gateHint"
 
-    /** CYP-333: operator note when the live worktree-shell connection is gated (bash backend absent — e.g. a
-     *  non-Desktop target / the kill-switch off). The Shell segment is disabled with an honest reason. */
+    /** CYP-333/381: operator note when the interactive session is gated (hand-off motor / bash backend absent —
+     *  e.g. a non-Desktop target / the kill-switch off). The Terminal segment is disabled with an honest reason. */
     fun modeToggleTerminalGated(agentId: String) = "agent.$agentId.modeToggle.terminalGated"
 
-    /** CYP-333 live flip: honest descriptor shown while the live Shell view is active — it is a bash worktree
-     *  shell, not the agent's session (the claude same-session terminal reuses the slot later, BE-2). */
-    fun modeToggleShellNote(agentId: String) = "agent.$agentId.modeToggle.shellNote"
+    /** CYP-381 (§8 rename): honest descriptor shown while the Terminal view is active — it is the agent's REAL,
+     *  interactive session (claude --resume, the same session); typing goes to the agent, the hub does not mediate. */
+    fun modeToggleTerminalNote(agentId: String) = "agent.$agentId.modeToggle.terminalNote"
+
+    /** CYP-381: the hand-off command is in flight (POST issued, view NOT yet flipped — non-optimistic). */
+    fun modeSwitching(agentId: String) = "agent.$agentId.modeToggle.switching"
+
+    /** CYP-381 §4 IDLE-defer: a take-over is deferred (bounded-wait) until the running turn finishes (no hijack). */
+    fun modeDeferHint(agentId: String) = "agent.$agentId.modeToggle.deferHint"
+
+    /** CYP-381 §6: the persistent WARN "Hub vermittelt nicht" strip while the agent is INTERACTIVE (hub-blind). */
+    fun handoffBanner(agentId: String) = "agent.$agentId.handoffBanner"
+
+    /** CYP-381 §7b: the persistent WARN strip while the agent is CONTEXT_LOST (returned without prior context). */
+    fun contextLostBanner(agentId: String) = "agent.$agentId.contextLostBanner"
+
+    /** CYP-381 §7.1: the DURABLE transcript discontinuity band — present iff a CONTEXT_LOST landmark is anchored in
+     *  the buffer. Unlike the live [contextLostBanner], it PERSISTS after the state recovers to MEDIATED (the
+     *  memory boundary stays visible); QA asserts exactly that split. */
+    fun contextLostDivider(agentId: String) = "agent.$agentId.contextLostDivider"
 
     /** CYP-333: the content rectangle that swaps between the transcript and the terminal. */
     fun content(agentId: String) = "agent.$agentId.content"

@@ -63,6 +63,8 @@ import com.tneff.cyppieagents.agentview.AgentLifecycleSource
 import com.tneff.cyppieagents.agentview.BusyStateLiveSource
 import com.tneff.cyppieagents.agentview.BusyStateSource
 import com.tneff.cyppieagents.agentview.BusyStateViewModel
+import com.tneff.cyppieagents.agentview.ModeRepository
+import com.tneff.cyppieagents.agentview.ModeHttpRepository
 import com.tneff.cyppieagents.agentview.TerminalControlLiveSource
 import com.tneff.cyppieagents.agentview.TerminalControlSource
 import com.tneff.cyppieagents.agentview.TerminalControlStateViewModel
@@ -213,6 +215,10 @@ fun AgentShell(
     /** Override the CYP-354 terminal-control source (`/ws/terminal-state`, read-only mirror); `null` → the live
      *  source. Tests inject a stub. */
     terminalControlSource: TerminalControlSource? = null,
+    /** Override the CYP-381 hand-off command port (`POST /api/agents/{id}/mode`); `null` → the live
+     *  [ModeHttpRepository] (CYP-355 motor). Tests inject a stub / rejecting / holding variant to exercise the
+     *  confirm + reject + IDLE-gate paths without a live server; `:app:webAppDemo` injects [StubModeRepository]. */
+    modeRepository: ModeRepository? = null,
     /** Override the CYP-326 compact-orchestration port; `null` → the in-memory stub until Backend's Milestone-C
      *  endpoints land (`GET /api/compact/status` · `POST /api/compact/config`), then the live HTTP repo. */
     compactRepository: CompactRepository? = null,
@@ -504,6 +510,14 @@ fun AgentShell(
         TerminalControlLiveSource(httpClient, cfg.hubWsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedTerminalControlSource = terminalControlSource ?: defaultTerminalControlSource
+    // CYP-381: the hand-off command port. **Real swap done** (CYP-355 motor merged): default = ModeHttpRepository,
+    // the live `POST /api/agents/{id}/mode` against BE-2. Non-optimistic by contract — the VM flips only on the
+    // server's CONFIRMED (a REJECTED 200 body throws → stay in the old mode). Operator-gated route; a session with
+    // no operator token 403s → ModeChangeException → honest error row (fail-closed). Tests inject a stub/rejecting
+    // variant via the [modeRepository] override to exercise the reject + IDLE-defer paths without a live server.
+    val resolvedModeRepository = remember(modeRepository, httpClient, cfg) {
+        modeRepository ?: ModeHttpRepository(httpClient, cfg.hubHttpBaseUrl, cfg.operatorToken ?: "")
+    }
 
     // CYP-55: hoist the per-window VMs to the always-composed shell. Two reasons: (1) each VM opens
     // exactly ONE subscription — a separate badge collector would double-subscribe the cold WS flows
@@ -524,6 +538,12 @@ fun AgentShell(
                 agentId = id,
                 lifecycle = resolvedLifecycleApi,
                 lifecycleSource = resolvedLifecycleSource,
+                // CYP-381: route the toggle through the non-optimistic hand-off command. `resolvedModeRepository` is
+                // the live ModeHttpRepository (`POST /api/agents/{id}/mode`, CYP-355 motor) — the view flips only on
+                // the server's CONFIRMED, never optimistically. The IDLE-gate observes the same busy feed the
+                // title-bar `*` uses (a take-over issued mid-turn shows "wartet bis Turn fertig", no hijack).
+                modeRepository = resolvedModeRepository,
+                busySource = resolvedBusyStateSource,
                 canControl = isOperator,
             )
         }
@@ -752,9 +772,10 @@ fun AgentShell(
             // CYP-324: feed each window's busy flag from the WS map (mirrors contextTokensFor). Absent key → false →
             // no `*` (unknown ≠ busy); only an explicit busy=true event lights it, an explicit false clears it.
             busyFor = { id -> busy[id] ?: false },
-            // CYP-354 §5.1: feed each window's terminal-control mode from the WS map (mirrors busyFor). Absent key →
-            // null → the marker treats it as MEDIATED (the default) → NO marker (absent == MEDIATED). Read-only.
-            controlStateFor = { id -> controlStates[id]?.state },
+            // CYP-354 §5.1: feed each window's terminal-control event from the WS map (mirrors busyFor). Absent key →
+            // null → the marker treats it as MEDIATED (the default) → NO marker (absent == MEDIATED). CYP-381: the
+            // WHOLE event (holder-identity + since), not just the enum. Read-only mirror.
+            controlEventFor = { id -> controlStates[id] },
             // CYP-250: desktop empty-state for a 0-agent project (the tool windows still coexist, so this keys on
             // the agent list, NOT the window set). The CTA routes into the EXISTING add flow — bring the
             // agent-management window to front + open its add dialog — and is operator-gated (honest gate hint,
@@ -867,6 +888,10 @@ fun AgentShell(
                             capabilitiesLoading = connectorCapState.loading,
                             provider = connectorCapState.providers[window.id],
                             onCapabilityBadgeClick = { connectorCapVm.openPanel(window.id) },
+                            // CYP-381 §6/§7b: this agent's CYP-354 control-state (same map the titlebar marker uses)
+                            // → the window frame renders the hub-blind / context-lost banners. Absent key → null →
+                            // no banner (fail-closed; the stub reports none of these so they stay absent — honest).
+                            control = controlStates[window.id],
                             // CYP-333: the content-view worktree shell, LIVE (see [WORKTREE_SHELL_LIVE_ENABLED]).
                             // Bind a fresh WsTerminalSession to the Desktop TerminalView against /ws/terminal (CYP-332
                             // contract; CYP-348 makes it a `bash -l` worktree shell by default — no mode param). It is

@@ -11,16 +11,18 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.TerminalControlState
 import kotlin.test.Test
 
 /**
  * CYP-354 §5.1 (client mirror) — the read-only terminal-control mode marker rendered through the REAL [WindowHost]
- * (mirrors the CYP-324 busy / CYP-316 token host tests). `controlStateFor` is the shell's fail-closed map. Proves:
+ * (mirrors the CYP-324 busy / CYP-316 token host tests). `controlEventFor` is the shell's fail-closed map. Proves:
  *  - a non-MEDIATED state renders the marker under `window.<id>.mode` (glyph + label + a11y);
  *  - **honesty (absent == MEDIATED):** MEDIATED / an absent key render **no node at all** — never a fabricated marker;
- *  - the four states are visually **distinct** (◉ / → / ← / ∅) and carry the localized label.
- *  jvmTest render locale = EN.
+ *  - the four states are visually **distinct** (◉ / → / ← / ∅) and carry the localized label;
+ *  - **CYP-381:** the marker surfaces holder-identity (a chip + the "held by" a11y label) from the SAME event; a
+ *    holder-less state shows the plain marker (no chip). jvmTest render locale = EN.
  */
 @OptIn(ExperimentalTestApi::class)
 class WindowModeMarkerRenderTest {
@@ -29,16 +31,19 @@ class WindowModeMarkerRenderTest {
         ids.mapIndexed { i, (id, title) -> WindowState(id, title, (i * 400).toFloat(), 0f, 380f, 240f) },
     )
 
+    private fun ev(state: TerminalControlState, heldBy: String? = null, since: Long? = null) =
+        AgentTerminalControlEvent(agentId = "x", state = state, heldBy = heldBy, since = since)
+
     @Test
     fun modeMarker_presentForInteractive_absentForMediatedAndUnknown() = runComposeUiTest {
         val state = windows("backend" to "Backend", "frontend" to "Frontend", "db" to "DB")
-        val modes = mapOf("backend" to TerminalControlState.INTERACTIVE, "frontend" to TerminalControlState.MEDIATED)
+        val modes = mapOf("backend" to ev(TerminalControlState.INTERACTIVE), "frontend" to ev(TerminalControlState.MEDIATED))
         setContent {
             MaterialTheme {
                 Box(Modifier.size(1400.dp, 700.dp)) { // both axes ≥ Medium → canvas (not the pager)
                     WindowHost(
                         state = state,
-                        controlStateFor = { id -> modes[id] }, // db absent → null
+                        controlEventFor = { id -> modes[id] }, // db absent → null
                         windowContent = { Text("c ${it.id}") },
                     )
                 }
@@ -60,15 +65,15 @@ class WindowModeMarkerRenderTest {
     fun modeMarker_fourStates_areVisuallyDistinct_withLocalizedLabels() = runComposeUiTest {
         val state = windows("a" to "A", "b" to "B", "c" to "C", "d" to "D")
         val modes = mapOf(
-            "a" to TerminalControlState.INTERACTIVE,
-            "b" to TerminalControlState.HANDING_OVER,
-            "c" to TerminalControlState.HANDING_BACK,
-            "d" to TerminalControlState.CONTEXT_LOST,
+            "a" to ev(TerminalControlState.INTERACTIVE),
+            "b" to ev(TerminalControlState.HANDING_OVER),
+            "c" to ev(TerminalControlState.HANDING_BACK),
+            "d" to ev(TerminalControlState.CONTEXT_LOST),
         )
         setContent {
             MaterialTheme {
                 Box(Modifier.size(1800.dp, 700.dp)) {
-                    WindowHost(state = state, controlStateFor = { id -> modes[id] }, windowContent = { Text("c ${it.id}") })
+                    WindowHost(state = state, controlEventFor = { id -> modes[id] }, windowContent = { Text("c ${it.id}") })
                 }
             }
         }
@@ -82,5 +87,32 @@ class WindowModeMarkerRenderTest {
         onNodeWithText("Context lost", useUnmergedTree = true).assertExists()
         // All four markers are present (each a non-MEDIATED state).
         listOf("a", "b", "c", "d").forEach { onNodeWithTag(WindowTestTags.mode(it)).assertExists() }
+    }
+
+    @Test
+    fun modeMarker_surfacesHolderIdentity_whenHeld_andHidesChip_whenHolderless() = runComposeUiTest {
+        val state = windows("held" to "Held", "plain" to "Plain")
+        val modes = mapOf(
+            // INTERACTIVE held by an operator → holder chip + "held by" a11y (since is available but not visibly formatted yet).
+            "held" to ev(TerminalControlState.INTERACTIVE, heldBy = "alice", since = 1_700_000_000_000L),
+            // HANDING_OVER with no holder → the plain marker, NO holder chip (honest: nothing to attribute yet).
+            "plain" to ev(TerminalControlState.HANDING_OVER, heldBy = null),
+        )
+        setContent {
+            MaterialTheme {
+                Box(Modifier.size(1400.dp, 700.dp)) {
+                    WindowHost(state = state, controlEventFor = { id -> modes[id] }, windowContent = { Text("c ${it.id}") })
+                }
+            }
+        }
+        // Holder present → the visible "@{holder} · seit {HH:MM}" chip + the holder-bearing merged a11y label (§5).
+        // Mutation: drop the `if (holderChip != null)` chip / use `a11y_terminal_ctl` unconditionally → RED. The exact
+        // HH:MM is the runner's local zone, so assert the tz-independent substrings (holder + "seit"/"since").
+        onNodeWithTag(WindowTestTags.modeHolder("held"), useUnmergedTree = true).assertExists()
+        onNodeWithText("@alice", substring = true, useUnmergedTree = true).assertExists()
+        onNodeWithContentDescription("Held interactively by alice since", substring = true).assertExists()
+        // Holder-less → the marker exists but WITHOUT a holder chip (never a fabricated holder).
+        onNodeWithTag(WindowTestTags.mode("plain")).assertExists()
+        onNodeWithTag(WindowTestTags.modeHolder("plain"), useUnmergedTree = true).assertDoesNotExist()
     }
 }
