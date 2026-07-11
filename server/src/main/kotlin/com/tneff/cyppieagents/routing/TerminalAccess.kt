@@ -79,6 +79,76 @@ object NoTerminalGrants : TerminalGrantStore {
 }
 
 /**
+ * CYP-421 (c) — the operator-only ADMIN side of the grant store (behind PUT/DELETE/GET
+ * `/api/agents/{id}/terminal-grants`), separate from the [TerminalGrantStore] READ side ([mayOpen]/[track]) that
+ * the socket uses. A **null** admin at the route means the delegation flag is OFF → the endpoint denies
+ * (fail-closed). Only the real [InMemoryTerminalGrants] implements it.
+ */
+interface TerminalGrantAdmin {
+    /** Grant [subject] a terminal on [agentId] (idempotent). Returns the agent's full granted-subject set after. */
+    fun grant(agentId: String, subject: String): List<String>
+    /** Revoke [subject]'s grant on [agentId] AND end any live shell it holds (kill-on-revoke). Returns the set after. */
+    fun revoke(agentId: String, subject: String): List<String>
+    /** The subjects currently granted a terminal on [agentId] (sorted, stable). */
+    fun listGrants(agentId: String): List<String>
+}
+
+/**
+ * CYP-421 (c) — the real in-memory grant store: default-DENY [mayOpen], live-session [track], and the operator
+ * [TerminalGrantAdmin] side. Wired ONLY when `CYPPIE_TERMINAL_DELEGATION_ENABLED` is on (c2); otherwise the
+ * platform keeps [NoTerminalGrants] and this is never constructed.
+ *
+ * **c1 — the CYP-394 admit→track TOCTOU, closed.** A revoke landing in the window between the socket's admit
+ * ([mayOpenTerminal] → [mayOpen] == true) and its [track] registration would naively fire NO kill (the kill isn't
+ * registered yet) → the just-opened shell survives a revoke. Closed under ONE [lock]: [track] registers the kill
+ * AND re-checks the grant atomically — if the grant is already gone (revoke won the race) it does NOT register and
+ * signals the caller to kill NOW; [revoke] removes the grant AND snapshots the live kills atomically. Either
+ * interleaving ends the shell (no lost revoke).
+ */
+class InMemoryTerminalGrants : TerminalGrantStore, TerminalGrantAdmin {
+    private val lock = Any()
+    private val granted = HashMap<String, MutableSet<String>>()               // agentId -> granted subjects
+    private val live = HashMap<Pair<String, String>, MutableList<() -> Unit>>() // (agentId,subject) -> live kills
+
+    override fun mayOpen(agentId: String, subject: String): Boolean =
+        synchronized(lock) { granted[agentId]?.contains(subject) == true }
+
+    override fun track(agentId: String, subject: String, kill: () -> Unit): AutoCloseable {
+        val registered = synchronized(lock) {
+            if (granted[agentId]?.contains(subject) == true) {
+                live.getOrPut(agentId to subject) { mutableListOf() }.add(kill)
+                true
+            } else {
+                false // revoke won the admit→track race: the grant is already gone — do NOT register
+            }
+        }
+        if (!registered) {
+            kill() // c1: end the shell the in-window revoke could not yet see
+            return AutoCloseable {}
+        }
+        return AutoCloseable { synchronized(lock) { live[agentId to subject]?.remove(kill) } }
+    }
+
+    override fun grant(agentId: String, subject: String): List<String> = synchronized(lock) {
+        granted.getOrPut(agentId) { sortedSetOf() }.add(subject)
+        granted[agentId]!!.sorted()
+    }
+
+    override fun revoke(agentId: String, subject: String): List<String> {
+        val kills = synchronized(lock) {
+            granted[agentId]?.remove(subject)
+            if (granted[agentId]?.isEmpty() == true) granted.remove(agentId)
+            live.remove(agentId to subject).orEmpty().toList()
+        }
+        kills.forEach { it() } // fire OUTSIDE the lock — a kill's close() re-enters track's deregister (lock)
+        return listGrants(agentId)
+    }
+
+    override fun listGrants(agentId: String): List<String> =
+        synchronized(lock) { granted[agentId]?.sorted() ?: emptyList() }
+}
+
+/**
  * The `/ws/terminal` capability check (CYP-394). **Operator ⇒ always allowed, independent of [grants]** (an empty
  * store must never lock the operator out); every other principal is allowed **only** with an explicit per-agent
  * grant (default-DENY). Single-sourced so the gate and its tooth read the same predicate.

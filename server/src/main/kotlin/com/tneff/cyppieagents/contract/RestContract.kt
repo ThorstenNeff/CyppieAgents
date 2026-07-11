@@ -107,6 +107,10 @@ object RestContract {
         Op("POST", "/api/agents/{id}/stop", Tier.OPERATOR, response = json<AgentRunStateEvent>()),
         Op("POST", "/api/agents/{id}/start", Tier.OPERATOR, response = json<AgentRunStateEvent>()),
         Op("POST", "/api/agents/{id}/restart", Tier.OPERATOR, response = json<AgentRunStateEvent>()),
+        // --- TerminalGrantRoutes (CYP-421 c: operator-only per-agent terminal-delegation; MOUNTED but INERT unless CYPPIE_TERMINAL_DELEGATION_ENABLED) ---
+        Op("GET", "/api/agents/{id}/terminal-grants", Tier.OPERATOR, response = json<com.tneff.cyppieagents.model.TerminalGrants>()),
+        Op("PUT", "/api/agents/{id}/terminal-grants", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.TerminalGrantRequest>(), response = json<com.tneff.cyppieagents.model.TerminalGrants>()),
+        Op("DELETE", "/api/agents/{id}/terminal-grants", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.TerminalGrantRequest>(), response = json<com.tneff.cyppieagents.model.TerminalGrants>()),
         // CYP-355 (BE-2): the hand-off trigger (mediated ↔ interactive). REJECTED is a 200 body (non-optimistic).
         Op("POST", "/api/agents/{id}/mode", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.ModeChangeRequest>(), response = json<com.tneff.cyppieagents.model.ModeChangeResponse>()),
         // --- ConnectorRoutes ---
@@ -134,6 +138,7 @@ object RestContract {
         //     cross-project override stays operator-only, but the read tier itself is MEMBER, matching settings) ---
         Op("GET", "/api/events", Tier.MEMBER, response = json<EventPage>()),
         Op("GET", "/api/capacity", Tier.MEMBER, response = json<com.tneff.cyppieagents.model.Capacity>()), // CYP-417 (S-G)
+        Op("GET", "/api/server-now", Tier.PARTICIPANT, response = json<com.tneff.cyppieagents.model.ServerNow>()), // CYP-421 (a)
         // --- ReportRoutes (/api/reports) ---
         Op("GET", "/api/reports", Tier.OPERATOR, response = arr<ReportSnapshot>()),
         Op("GET", "/api/reports/{id}", Tier.OPERATOR, response = json<ReportSnapshot>()),

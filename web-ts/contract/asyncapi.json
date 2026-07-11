@@ -483,6 +483,18 @@
                             "STOPPED",
                             "ERROR"
                         ]
+                    },
+                    "errorCode": {
+                        "enum": [
+                            "SIGNALLED",
+                            "CRASHED",
+                            "SPAWN_FAILED",
+                            "UNKNOWN"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [

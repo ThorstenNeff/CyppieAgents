@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.events.EventProjector
 import com.tneff.cyppieagents.events.EventRecorder
+import com.tneff.cyppieagents.model.AgentErrorCode
 import com.tneff.cyppieagents.model.AgentRunState
 import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.routing.ConflictException
@@ -90,6 +91,10 @@ class LifecycleManager(
     private val lock = Any()
     private val worktreeOf = java.util.concurrent.ConcurrentHashMap(initialWorktrees)
     private val status = HashMap<String, AgentRunState>()
+    // CYP-421 (b): WHY each ERROR agent is in ERROR, kept in lock-step with [status] so the connect-time
+    // [snapshot] re-delivers the code (latest-wins idempotency). ONLY ERROR agents have an entry; a transition
+    // to any non-ERROR state removes it, so the "code IFF ERROR" invariant holds on snapshots too.
+    private val errorCodes = HashMap<String, AgentErrorCode>()
     private val _events = MutableSharedFlow<AgentRunStateEvent>(
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST, // never block a control op on a slow WS client
@@ -108,6 +113,7 @@ class LifecycleManager(
     fun register(agentId: String, worktreeName: String): Unit = synchronized(lock) {
         worktreeOf[agentId] = worktreeName
         status[agentId] = AgentRunState.STOPPED
+        errorCodes.remove(agentId) // a (re)registered agent is STOPPED, not ERROR — no stale code
         _events.tryEmit(AgentRunStateEvent(agentId, AgentRunState.STOPPED))
     }
 
@@ -184,12 +190,15 @@ class LifecycleManager(
         log.warn("agent '{}' exited on its own (exitCode={}) → {}", agentId, exitCode, next)
         onBusyReset?.invoke(agentId) // a dead agent is not processing — never hang the busy `*`
         onContextReset?.invoke(agentId) // and it holds no standing context any more
-        return setRunState(agentId, next)
+        // CYP-421 (b): an UNBIDDEN non-zero exit carries WHY (SIGNALLED/CRASHED); a clean self-exit → STOPPED, no
+        // code. (A deliberate SIGTERM stop never reaches here — the session's `closing` path returns before the
+        // exit listener fires, CYP-351/371 — so a bidden stop stays STOPPED and is never given an errorCode.)
+        return setRunState(agentId, next, if (next == AgentRunState.ERROR) errorCodeForExit(exitCode) else null)
     }
 
     /** Current status of every known agent (the WS connect snapshot + `GET /api/agents` fill). */
     fun snapshot(): List<AgentRunStateEvent> = synchronized(lock) {
-        worktreeOf.keys.map { AgentRunStateEvent(it, status[it] ?: AgentRunState.STOPPED) }
+        worktreeOf.keys.map { AgentRunStateEvent(it, status[it] ?: AgentRunState.STOPPED, errorCodes[it]) }
     }
 
     /**
@@ -210,7 +219,7 @@ class LifecycleManager(
             true
         } catch (e: Exception) {
             log.error("agent '{}' failed to boot ({})", agentId, e.message)
-            setRunState(agentId, AgentRunState.ERROR)
+            setRunState(agentId, AgentRunState.ERROR, AgentErrorCode.SPAWN_FAILED)
             false
         }
     }
@@ -302,12 +311,12 @@ class LifecycleManager(
                     )
                     return doSpawn(agentId, restart, spawnFn = fresh)
                 } catch (e2: Exception) {
-                    setRunState(agentId, AgentRunState.ERROR)
+                    setRunState(agentId, AgentRunState.ERROR, AgentErrorCode.SPAWN_FAILED)
                     log.error("agent '{}' fresh fallback also failed ({})", agentId, e2.message)
                     throw ServiceUnavailableException("agent '$agentId' failed to spawn", code = "spawn_failed")
                 }
             }
-            setRunState(agentId, AgentRunState.ERROR)
+            setRunState(agentId, AgentRunState.ERROR, AgentErrorCode.SPAWN_FAILED)
             log.error("agent '{}' failed to {} ({})", agentId, if (restart) "restart" else "start", e.message)
             throw ServiceUnavailableException("agent '$agentId' failed to spawn", code = "spawn_failed")
         }
@@ -360,10 +369,30 @@ class LifecycleManager(
         return if (settled != null && settled != AgentRunState.RUNNING) AgentRunStateEvent(agentId, settled) else running
     }
 
-    private fun setRunState(agentId: String, next: AgentRunState): AgentRunStateEvent {
-        synchronized(lock) { status[agentId] = next }
-        val event = AgentRunStateEvent(agentId, next)
+    /**
+     * CYP-421 (b) — the single writer of run-state AND the single constructor of the emitted event, so the
+     * errorCode invariant lives in ONE place: a code is carried IFF [next] == ERROR, and an ERROR is never
+     * code-less (an unclassified one normalizes to [AgentErrorCode.UNKNOWN]). Callers pass the specific cause
+     * (exit-derived SIGNALLED/CRASHED via [errorCodeForExit], or SPAWN_FAILED); a non-ERROR transition can never
+     * carry a code, and it clears any stale one so [snapshot] stays consistent.
+     */
+    private fun setRunState(agentId: String, next: AgentRunState, errorCode: AgentErrorCode? = null): AgentRunStateEvent {
+        val code = if (next == AgentRunState.ERROR) (errorCode ?: AgentErrorCode.UNKNOWN) else null
+        synchronized(lock) {
+            status[agentId] = next
+            if (code != null) errorCodes[agentId] = code else errorCodes.remove(agentId)
+        }
+        val event = AgentRunStateEvent(agentId, next, code)
         _events.tryEmit(event)
         return event
     }
+
+    /**
+     * CYP-421 (b) — the exit-code → [AgentErrorCode] mapping, single-sourced. Only reached on the ERROR branch
+     * (a non-zero observed exit): a signal death (128 < c ≤ 192, e.g. 137 = SIGKILL/OOM, 143 = SIGTERM) →
+     * [AgentErrorCode.SIGNALLED]; any other non-zero → [AgentErrorCode.CRASHED]. (A `null` exit never reaches
+     * ERROR — [onObservedExit] treats an unreadable status as "unknown, not death" and leaves run state as-is.)
+     */
+    private fun errorCodeForExit(exitCode: Int): AgentErrorCode =
+        if (exitCode in 129..192) AgentErrorCode.SIGNALLED else AgentErrorCode.CRASHED
 }

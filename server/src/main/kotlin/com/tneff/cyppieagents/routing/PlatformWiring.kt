@@ -55,6 +55,15 @@ fun Application.installPlatform(
     // CYP-410 (S-A): the transport-agnostic Session Manager seam. The Local-API routes below are ONE transport
     // driving it; the Phase-2 Control-Plane transport mounts behind the same facade. Holds no Ktor type.
     val sessionManager = com.tneff.cyppieagents.boot.SessionManager(booted, authDeps)
+    // CYP-421 (c2) — terminal member-delegation behind a boot-time env FLAG, fail-closed OFF. THE FLAG IS THE
+    // ACCESS GATE IN CODE: a WORKING PUT …/terminal-grants IS the ungated member-delegation past the Auftraggeber
+    // Access-Go, so the whole grant surface sits behind it. Read ONCE here (boot-time, never runtime-settable).
+    // OFF (default) → NoTerminalGrants (operator-only, CYP-394 behaviour) + a null admin → the endpoint denies, so
+    // merging (c) changes NOTHING observable. The Auftraggeber-Go flips the env; member ACTIVATION stays a
+    // separate Access-Go even then. (Same env-flag pattern as CYPPIE_OPERATOR_TOKEN_DISABLED.)
+    val terminalDelegationEnabled = System.getenv("CYPPIE_TERMINAL_DELEGATION_ENABLED")?.toBooleanStrictOrNull() ?: false
+    val terminalGrantsAdmin: InMemoryTerminalGrants? = if (terminalDelegationEnabled) InMemoryTerminalGrants() else null
+    val terminalGrants: TerminalGrantStore = terminalGrantsAdmin ?: NoTerminalGrants
     routing {
         // ── WS + MCP transports — NOT versioned; single-mount, OUTSIDE the /api-prefix loop (they are not
         //    `/api` REST resources: `/ws/*` are sockets, `/mcp/hub` is the connector wire, design §2.5). ──
@@ -94,7 +103,7 @@ fun Application.installPlatform(
             knowsAgent = { id -> booted.state.agents.any { it.id == id } },
             registry = booted.tokenRegistry,
             deps = authDeps,
-            grants = NoTerminalGrants,
+            grants = terminalGrants,
         )
         // CYP-234a-3: the hosted API docs (`/docs*`) — Redoc(REST)+AsyncAPI(WS) rendered from the generators,
         // Bearer-only hosted spec, fail-closed authenticated. NOT versioned (docs are not an /api resource) →
@@ -135,8 +144,20 @@ fun Application.installPlatform(
                 deps = authDeps,
                 apiBase = apiBase,
             )
+            // CYP-421 (a): GET /api/server-now — the server's own clock at attach, so the client stamps its
+            // client-BORN transcript rows against server time (CYP-346), not the browser clock. PARTICIPANT-tier.
+            serverNowRoutes(
+                now = { System.currentTimeMillis() },
+                registry = booted.tokenRegistry,
+                deps = authDeps,
+                apiBase = apiBase,
+            )
             // CYP-73/CYP-255 (.4b): agent lifecycle controls act on the ACTIVE project's runtime (resolver).
             lifecycleRoutes({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps, apiBase = apiBase)
+            // CYP-421 (c): operator-only per-agent terminal-grant management. MOUNTED always (contract honesty) but
+            // INERT when the delegation flag is OFF (null admin → 403 terminal_delegation_disabled). The CYP-394
+            // socket gate + kill-on-revoke already exist; this is the additive grant surface, not a gate rewrite.
+            terminalGrantRoutes(terminalGrantsAdmin, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-355 (BE-2): the hand-off trigger — POST /api/agents/{id}/mode on the ACTIVE project's motor.
             modeRoutes({ booted.runtimeRegistry.active().handoff }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
