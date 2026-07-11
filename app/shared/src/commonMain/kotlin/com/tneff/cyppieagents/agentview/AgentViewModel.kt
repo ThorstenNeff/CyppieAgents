@@ -152,14 +152,6 @@ class AgentViewModel(
         }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
-     * CYP-381 — the hand-off command's honest error surface: the server reject code from the last [requestMode]
-     * ([ModeChangeException.code]) or `mode_change_failed`; `null` when the last request succeeded / none ran.
-     * Never optimistic — set only on an actual reject, cleared when a request starts or confirms.
-     */
-    val modeError: StateFlow<String?> get() = _modeError
-    private val _modeError = MutableStateFlow<String?>(null)
-
-    /**
      * CYP-381 — a hand-off command is in flight (POST issued, awaiting the server's confirm/reject). Drives a
      * transient "wird umgeschaltet…" affordance; the view does NOT flip until the confirm lands (non-optimistic).
      */
@@ -169,8 +161,9 @@ class AgentViewModel(
     /**
      * CYP-381 — request a mode transition **non-optimistically** through the [modeRepository] (`POST
      * /api/agents/{id}/mode`). The view flips **only after** the server confirms (`outcome==CONFIRMED`); a reject
-     * leaves the mode unchanged and surfaces [modeError] (the CompactVM never-optimistic discipline). Fail-closed
-     * on TERMINAL without [canControl]. Falls back to the local [showContentMode] when no [modeRepository] is wired.
+     * leaves the mode unchanged and surfaces `mode_swap_failed` on the shared [lifecycleError] row (UIUX spec §3.4 —
+     * the CompactVM never-optimistic discipline). Fail-closed on TERMINAL without [canControl]. Falls back to the
+     * local [showContentMode] when no [modeRepository] is wired.
      *
      * **IDLE-gate (CYP-355 settled contract):** the bounded-wait is **server-side** — the POST is held synchronously
      * until the running turn settles, returning CONFIRMED (switched) or REJECTED(`BUSY_TIMEOUT`) after ~30s. So the
@@ -182,8 +175,8 @@ class AgentViewModel(
         if (target == AgentContentMode.TERMINAL && !canControl) return // fail-closed (defence in depth)
         val repo = modeRepository ?: run { showContentMode(target); return } // pre-CYP-381 local view-selection
         // Arm the waiting UI SYNCHRONOUSLY (instant "switching…"/"wartet…" feedback, like CYP-330's restartPending) —
-        // but do NOT flip the view: that waits for the server confirm below (non-optimistic).
-        _modeError.value = null
+        // but do NOT flip the view: that waits for the server confirm below (non-optimistic). Clear any prior error.
+        _lifecycleError.value = null
         _modeSwitching.value = true
         viewModelScope.launch {
             // The POST is held by the server through its bounded-wait (up to ~30s); modeSwitching == the waiting UI.
@@ -191,8 +184,9 @@ class AgentViewModel(
                 .onSuccess { confirm -> _contentMode.value = confirm.confirmed } // flip AFTER confirm (non-optimistic)
                 .onFailure { e ->
                     if (e is CancellationException) throw e
-                    // REJECTED / transport failure → stay in the current mode, surface the server's reason honestly.
-                    _modeError.value = (e as? ModeChangeException)?.code ?: "mode_change_failed"
+                    // REJECTED / transport failure → stay in the current mode; surface `mode_swap_failed` on the
+                    // shared lifecycleError row (UIUX §3.4, §9 — reuses the row, no separate error node).
+                    _lifecycleError.value = "mode_swap_failed"
                 }
             _modeSwitching.value = false
         }

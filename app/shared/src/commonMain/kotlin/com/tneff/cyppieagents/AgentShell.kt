@@ -885,6 +885,10 @@ fun AgentShell(
                             capabilitiesLoading = connectorCapState.loading,
                             provider = connectorCapState.providers[window.id],
                             onCapabilityBadgeClick = { connectorCapVm.openPanel(window.id) },
+                            // CYP-381 §6/§7b: this agent's CYP-354 control-state (same map the titlebar marker uses)
+                            // → the window frame renders the hub-blind / context-lost banners. Absent key → null →
+                            // no banner (fail-closed; the stub reports none of these so they stay absent — honest).
+                            control = controlStates[window.id],
                             // CYP-333: the content-view worktree shell, LIVE (see [WORKTREE_SHELL_LIVE_ENABLED]).
                             // Bind a fresh WsTerminalSession to the Desktop TerminalView against /ws/terminal (CYP-332
                             // contract; CYP-348 makes it a `bash -l` worktree shell by default — no mode param). It is

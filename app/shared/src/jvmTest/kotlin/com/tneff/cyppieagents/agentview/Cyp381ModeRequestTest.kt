@@ -112,11 +112,12 @@ class Cyp381ModeRequestTest {
         }
         waitForIdle()
         onNodeWithTag(AgentViewTags.modeToggleTerminal("backend"), useUnmergedTree = true).performClick()
-        waitUntil(timeoutMillis = 3_000L) { vm.modeError.value != null }
+        waitUntil(timeoutMillis = 3_000L) { vm.lifecycleError.value != null }
         // Mutation: adopt the target on failure (drop the onFailure guard) → contentMode would be TERMINAL → RED.
         assertEquals(AgentContentMode.ORCHESTRATION, vm.contentMode.value, "a reject never flips the view")
-        assertEquals("BUSY_TIMEOUT", vm.modeError.value)
-        onNodeWithTag(AgentViewTags.modeError("backend"), useUnmergedTree = true).assertExists()
+        // §3.4: the reject surfaces `mode_swap_failed` on the SHARED lifecycleError row (not a separate node).
+        assertEquals("mode_swap_failed", vm.lifecycleError.value)
+        onNodeWithTag(AgentViewTags.lifecycleError("backend"), useUnmergedTree = true).assertExists()
         onNodeWithTag(fakeTerminalTag("backend"), useUnmergedTree = true).assertDoesNotExist()
     }
 
@@ -145,7 +146,7 @@ class Cyp381ModeRequestTest {
         waitForIdle()
         // Busy + in-flight → the honest "waiting for the turn" hint, NOT the plain "switching…" (no silent hijack).
         // Mutation: drop `busy` from the branch (`switching && busy` → `switching`) → the plain hint shows → RED.
-        onNodeWithTag(AgentViewTags.modeDeferred("backend"), useUnmergedTree = true).assertExists()
+        onNodeWithTag(AgentViewTags.modeDeferHint("backend"), useUnmergedTree = true).assertExists()
         onNodeWithTag(AgentViewTags.modeSwitching("backend"), useUnmergedTree = true).assertDoesNotExist()
         runOnUiThread { gate.complete(Unit) } // let the (server-held) command settle so the scope ends cleanly
         waitForIdle()

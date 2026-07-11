@@ -34,9 +34,9 @@ import com.tneff.cyppieagents.model.ResumeOutcome
 import com.tneff.cyppieagents.model.Severity
 import kmpcyppieagents.app.shared.generated.resources.event_compact_done_aborted
 import kmpcyppieagents.app.shared.generated.resources.event_compact_done_summary
-import kmpcyppieagents.app.shared.generated.resources.event_resume_outcome_context_lost
-import kmpcyppieagents.app.shared.generated.resources.event_resume_outcome_fresh
-import kmpcyppieagents.app.shared.generated.resources.event_resume_outcome_resumed
+import kmpcyppieagents.app.shared.generated.resources.event_resume_context_lost
+import kmpcyppieagents.app.shared.generated.resources.event_resume_fresh
+import kmpcyppieagents.app.shared.generated.resources.event_resume_with_context
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -402,9 +402,9 @@ private fun DetailPane(
                     ?.let { runCatching { ResumeOutcome.valueOf(it) }.getOrNull() }
                 if (outcome != null) {
                     val (labelRes, warn) = when (outcome) {
-                        ResumeOutcome.CONTEXT_LOST -> Res.string.event_resume_outcome_context_lost to true
-                        ResumeOutcome.RESUMED_WITH_CONTEXT -> Res.string.event_resume_outcome_resumed to false
-                        ResumeOutcome.FRESH_NO_RESUME -> Res.string.event_resume_outcome_fresh to false
+                        ResumeOutcome.CONTEXT_LOST -> Res.string.event_resume_context_lost to true
+                        ResumeOutcome.RESUMED_WITH_CONTEXT -> Res.string.event_resume_with_context to false
+                        ResumeOutcome.FRESH_NO_RESUME -> Res.string.event_resume_fresh to false
                     }
                     Text(
                         text = stringResource(labelRes),

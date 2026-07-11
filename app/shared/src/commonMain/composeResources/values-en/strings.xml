@@ -560,9 +560,9 @@
     <string name="event_compact_done_aborted">Aborted — %1$d of %2$d compacted</string>
     <!-- CYP-381 (CYP-356): 3-stage ResumeOutcome in the event-log detail. CONTEXT_LOST = warning (unintended
          memory loss); the other two are neutral (not a failure, never rendered as success or warning). -->
-    <string name="event_resume_outcome_context_lost">Context lost — session resumed without memory</string>
-    <string name="event_resume_outcome_resumed">Session resumed with context</string>
-    <string name="event_resume_outcome_fresh">Fresh session (no resume)</string>
+    <string name="event_resume_context_lost">Context lost — session without prior history</string>
+    <string name="event_resume_with_context">Session resumed with context</string>
+    <string name="event_resume_fresh">New session (no prior context)</string>
     <!-- CYP-333: content-view mode toggle (Orchestration | Shell). Interim (Auftraggeber ruling): the second view
          is an HONEST worktree shell (bash: git status/ls/inspect), NOT an agent terminal — the claude terminal
          (hand-off) arrives with BE-2. Spec §8 says "Terminal"; here truthfully "Shell". -->
@@ -578,10 +578,15 @@
     <!-- CYP-381 (provisional, refined by UIUX CYP-381-Design): non-optimistic hand-off. Switch command in flight
          (view flips only AFTER confirm); take-over waits until the running turn finishes (no hijack); reject. -->
     <string name="terminal_mode_switching">Switching…</string>
-    <string name="terminal_mode_deferred">Waiting for the current turn to finish…</string>
-    <string name="terminal_mode_err_busy">Agent busy — the switch waited too long</string>
-    <string name="terminal_mode_err_transition">Mode change in progress — please wait</string>
-    <string name="terminal_mode_err_generic">Switch failed</string>
+    <string name="terminal_idle_defer">Waiting for the current turn to finish</string>
+    <string name="a11y_terminal_idle_defer">Mode switch is waiting for the current turn to finish</string>
+    <string name="terminal_mode_swap_failed">Mode switch failed — session stays in the previous mode</string>
+    <string name="terminal_held_by">%1$s · since %2$s</string>
+    <string name="a11y_terminal_held_by">Held interactively by %1$s since %2$s</string>
+    <string name="terminal_handoff_banner">Taken over interactively — the hub is not mediating. · %1$s · since %2$s</string>
+    <string name="a11y_terminal_handoff">Taken over interactively by %1$s since %2$s. The hub is not mediating.</string>
+    <string name="terminal_context_lost">Agent back without prior context — history not restored.</string>
+    <string name="a11y_terminal_context_lost">Agent returned without prior context. History not restored.</string>
     <!-- CYP-354 §5.1 (client mirror): read-only terminal-control mode marker in the title bar. MEDIATED = no marker.
          Form+label carry the meaning (WCAG 1.4.1); content-free (state only). -->
     <string name="terminal_ctl_interactive">Interactive</string>

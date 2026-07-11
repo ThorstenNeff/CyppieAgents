@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
+import com.tneff.cyppieagents.agentview.formatLocalHhMm
 import com.tneff.cyppieagents.eventlog.severityColor
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.model.AgentTerminalControlEvent
@@ -76,6 +77,8 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_busy
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_ctl
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_ctl_held
+import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_held_by
+import kmpcyppieagents.app.shared.generated.resources.terminal_held_by
 import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_context_lost
 import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_handing_back
 import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_handing_over
@@ -738,30 +741,34 @@ fun FloatingWindow(
                                     Triple("∅", stringResource(Res.string.terminal_ctl_context_lost), severityColor(Severity.WARN))
                             }
                             marker?.let { (glyph, label, glyphColor) ->
-                                // CYP-381: holder-identity + since from the SAME AgentTerminalControlEvent the CYP-355
-                                // response echoes. The holder id is surfaced as a small visible chip AND in the merged
-                                // a11y label (meaning-bearing, WCAG 1.4.1). `ev.since` (epoch-ms) is available here; its
-                                // visible time-FORMAT is left to UIUX CYP-381-Design (raw ms is not user-facing).
+                                // CYP-381 §5: holder-identity + since from the SAME AgentTerminalControlEvent (also the
+                                // CYP-355 response echo). Rendered as the spec "@{heldBy} · seit {HH:MM}" chip AND the
+                                // merged a11y label (meaning-bearing, WCAG 1.4.1). since = local HH:MM (formatLocalHhMm).
                                 val holder = ev.heldBy
-                                val modeCd = if (holder != null) {
-                                    stringResource(Res.string.a11y_terminal_ctl_held, label, holder)
-                                } else {
-                                    stringResource(Res.string.a11y_terminal_ctl, label)
+                                val sinceHhMm = ev.since?.let { formatLocalHhMm(it) }
+                                val holderChip = holder?.let { h -> // "@alice · seit 14:03" (or "@alice" if no since)
+                                    if (sinceHhMm != null) stringResource(Res.string.terminal_held_by, "@$h", sinceHhMm) else "@$h"
+                                }
+                                val modeCd = when {
+                                    holder != null && sinceHhMm != null ->
+                                        stringResource(Res.string.a11y_terminal_held_by, holder, sinceHhMm)
+                                    holder != null -> stringResource(Res.string.a11y_terminal_ctl_held, label, holder)
+                                    else -> stringResource(Res.string.a11y_terminal_ctl, label)
                                 }
                                 Row(
                                     modifier = Modifier
                                         .padding(start = 8.dp)
                                         .testTag(WindowTestTags.mode(window.id))
-                                        // One merged SR node ("Terminal-Modus: … · gehalten von …"); glyph+label+holder stay visual.
+                                        // One merged SR node; glyph + label + holder chip stay visual.
                                         .semantics(mergeDescendants = true) { contentDescription = modeCd },
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
                                     Text(glyph, maxLines = 1, style = MaterialTheme.typography.labelSmall, color = glyphColor)
                                     Text(label, maxLines = 1, style = MaterialTheme.typography.labelMedium, color = barContent)
-                                    if (holder != null) {
+                                    if (holderChip != null) {
                                         Text(
-                                            "· $holder",
+                                            holderChip,
                                             maxLines = 1,
                                             style = MaterialTheme.typography.labelMedium,
                                             color = barContent,

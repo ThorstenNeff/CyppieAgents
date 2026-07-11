@@ -52,8 +52,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.connector.ConnectorCapabilityBadge
 import com.tneff.cyppieagents.connector.ConnectorProviderChip
+import com.tneff.cyppieagents.eventlog.severityColor
+import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.ProviderInfo
+import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.model.TerminalControlState
 import com.tneff.cyppieagents.testing.testTagA11y
 import com.tneff.cyppieagents.window.COMPOSER_COMPACT_INPUT_THRESHOLD
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -89,10 +93,13 @@ import kmpcyppieagents.app.shared.generated.resources.terminal_mode_shell
 import kmpcyppieagents.app.shared.generated.resources.terminal_shell_note
 import kmpcyppieagents.app.shared.generated.resources.terminal_gated_pending
 import kmpcyppieagents.app.shared.generated.resources.terminal_mode_switching
-import kmpcyppieagents.app.shared.generated.resources.terminal_mode_deferred
-import kmpcyppieagents.app.shared.generated.resources.terminal_mode_err_busy
-import kmpcyppieagents.app.shared.generated.resources.terminal_mode_err_transition
-import kmpcyppieagents.app.shared.generated.resources.terminal_mode_err_generic
+import kmpcyppieagents.app.shared.generated.resources.terminal_idle_defer
+import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_idle_defer
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_swap_failed
+import kmpcyppieagents.app.shared.generated.resources.terminal_handoff_banner
+import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_handoff
+import kmpcyppieagents.app.shared.generated.resources.terminal_context_lost
+import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_context_lost
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import org.jetbrains.compose.resources.stringResource
@@ -156,6 +163,13 @@ fun AgentWindow(
      * `terminalContent` present = live; `terminalGatedNote` = honestly gated.
      */
     terminalGatedNote: Boolean = false,
+    /**
+     * CYP-381 §6/§7b: this agent's read-only CYP-354 terminal-control event (the same `/ws/terminal-state` truth the
+     * titlebar marker mirrors), threaded so the window frame can render the **hub-blind** banner (INTERACTIVE) and
+     * the **context-lost** banner (CONTEXT_LOST). `null`/MEDIATED → no banner (fail-closed, absent == MEDIATED). The
+     * stub never reports these states, so with the interim shell both banners stay absent — honest.
+     */
+    control: AgentTerminalControlEvent? = null,
 ) {
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
@@ -166,9 +180,11 @@ fun AgentWindow(
     val contentMode by viewModel.contentMode.collectAsState()
     val modeSwitching by viewModel.modeSwitching.collectAsState()
     val agentBusy by viewModel.busy.collectAsState()
-    val modeError by viewModel.modeError.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
         lifecycleError?.let { code -> LifecycleErrorRow(agentId, code) }
+        // CYP-381 §6/§7b: persistent WARN frame strips, driven by the CYP-354 control-state (fail-closed — absent
+        // unless the backend reports INTERACTIVE / CONTEXT_LOST; the stub never does → honestly absent).
+        HandoffBanners(agentId, control)
         AgentHeader(
             agentId = agentId,
             state = lifecycle,
@@ -196,7 +212,6 @@ fun AgentWindow(
             onModeChange = viewModel::requestMode,
             switching = modeSwitching,
             busy = agentBusy,
-            error = modeError,
         )
         // The content rectangle (04 §5): transcript OR terminal, weight 1f. The terminal occupies ONLY this
         // rectangle — no Compose chrome is z-stacked over it.
@@ -239,12 +254,11 @@ private fun ModeToggleRow(
     terminalAvailable: Boolean,
     terminalGatedNote: Boolean,
     onModeChange: (AgentContentMode) -> Unit,
-    // CYP-381 (provisional visuals — UIUX CYP-381-Design refines): a hand-off command in flight ([switching]) while
-    // the server holds it through its bounded-wait; [busy] distinguishes "wartet bis Turn fertig" (a take-over
-    // issued mid-turn) from a plain "switching…"; [error] is the last reject code.
+    // CYP-381: a hand-off command in flight ([switching]) while the server holds it through its bounded-wait; [busy]
+    // distinguishes the §4 IDLE-defer hint ("wartet bis Turn fertig", a take-over issued mid-turn) from a plain
+    // "switching…". A reject renders on the shared lifecycleError row (§3.4), not here.
     switching: Boolean = false,
     busy: Boolean = false,
-    error: String? = null,
 ) {
     val orchLabel = stringResource(Res.string.terminal_mode_orchestration)
     // Interim (Auftraggeber ruling): the second view is an honest worktree SHELL (bash), not the agent's claude
@@ -252,6 +266,7 @@ private fun ModeToggleRow(
     val termLabel = stringResource(Res.string.terminal_mode_shell)
     val currentLabel = if (mode == AgentContentMode.TERMINAL) termLabel else orchLabel
     val viewDescription = stringResource(Res.string.a11y_terminal_mode, currentLabel)
+    val idleDeferA11y = stringResource(Res.string.a11y_terminal_idle_defer)
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier
@@ -277,20 +292,15 @@ private fun ModeToggleRow(
             ) { Text(termLabel, maxLines = 1) }
         }
         when {
-            // CYP-381 (provisional): a hand-off reject just happened → honest, non-optimistic error (stayed put).
-            error != null -> Text(
-                text = modeErrorText(error),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag(AgentViewTags.modeError(agentId)),
-            )
-            // CYP-381 IDLE-gate (provisional): a take-over issued mid-turn — the server holds the POST until the
-            // turn settles (bounded-wait); the honest waiting hint, distinct from a plain switch (no silent hijack).
+            // CYP-381 §4 IDLE-defer: a take-over issued mid-turn — the server holds the POST until the turn settles
+            // (bounded-wait); the honest waiting hint, distinct from a plain switch (no silent hijack). Own node.
             switching && busy -> Text(
-                text = stringResource(Res.string.terminal_mode_deferred),
+                text = stringResource(Res.string.terminal_idle_defer),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.testTag(AgentViewTags.modeDeferred(agentId)),
+                modifier = Modifier
+                    .testTag(AgentViewTags.modeDeferHint(agentId))
+                    .semantics { contentDescription = idleDeferA11y },
             )
             // CYP-381 (provisional): the command is in flight — the view has NOT flipped yet (non-optimistic).
             switching -> Text(
@@ -326,24 +336,15 @@ private fun ModeToggleRow(
     }
 }
 
-/** CYP-381 — map a [ModeChangeException] reject code to an honest message. Codes are the settled CYP-355
- *  `ModeChangeRejection` set (`BUSY_TIMEOUT`/`IN_TRANSITION`/`SPAWN_FAILED`/`ALREADY_IN_TARGET`) plus the HTTP
- *  `operator_required` (403, defence-in-depth); anything else → a generic honest fallback. */
-@Composable
-private fun modeErrorText(code: String): String = when (code) {
-    "BUSY_TIMEOUT" -> stringResource(Res.string.terminal_mode_err_busy)
-    "IN_TRANSITION" -> stringResource(Res.string.terminal_mode_err_transition)
-    "operator_required" -> stringResource(Res.string.agent_ctl_err_operator_required)
-    else -> stringResource(Res.string.terminal_mode_err_generic) // SPAWN_FAILED / ALREADY_IN_TARGET / mode_change_failed
-}
-
-/** Honest surfacing of a lifecycle-control failure (CYP-73) — the server's reason, not a generic blur. */
+/** Honest surfacing of a lifecycle-control failure (CYP-73) — the server's reason, not a generic blur. CYP-381 §3.4:
+ *  a mode-swap reject reuses THIS row (`mode_swap_failed` → `terminal_mode_swap_failed`), not a separate node. */
 @Composable
 private fun LifecycleErrorRow(agentId: String, code: String) {
     val text = when (code) {
         "already_running" -> stringResource(Res.string.agent_ctl_err_already_running)
         "spawn_failed" -> stringResource(Res.string.agent_ctl_err_spawn_failed)
         "operator_required" -> stringResource(Res.string.agent_ctl_err_operator_required)
+        "mode_swap_failed" -> stringResource(Res.string.terminal_mode_swap_failed) // CYP-381 §3.4
         else -> stringResource(Res.string.agent_ctl_err_generic)
     }
     Text(
@@ -354,6 +355,52 @@ private fun LifecycleErrorRow(agentId: String, code: String) {
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .testTag(AgentViewTags.lifecycleError(agentId)),
+    )
+}
+
+/**
+ * CYP-381 §6/§7b — the persistent WARN frame strips driven by the CYP-354 control-state (never keystrokes/PTV
+ * content, state/identity/time only). **INTERACTIVE** → the **hub-blind** banner ("der Hub vermittelt nicht" +
+ * holder + since): the honest "you are driving the real session" consequence, complementary to the titlebar
+ * marker. **CONTEXT_LOST** → the context-lost banner (returned without prior history). Both WARN-amber
+ * ([severityColor]) — never green. **Fail-closed:** absent for MEDIATED / transient / `null` — the stub reports
+ * none of these, so with the interim shell no banner shows (honest). The CONTEXT_LOST transcript chrome
+ * (dimmed history + discontinuity line, spec §7b) is deferred to the motor bundle (PO scope-ruling).
+ */
+@Composable
+private fun HandoffBanners(agentId: String, control: AgentTerminalControlEvent?) {
+    when (control?.state) {
+        TerminalControlState.INTERACTIVE -> {
+            val holder = control.heldBy?.let { "@$it" } ?: "?"
+            val since = control.since?.let { formatLocalHhMm(it) } ?: "—"
+            FrameBanner(
+                text = stringResource(Res.string.terminal_handoff_banner, holder, since),
+                a11y = stringResource(Res.string.a11y_terminal_handoff, control.heldBy ?: "?", since),
+                tag = AgentViewTags.handoffBanner(agentId),
+            )
+        }
+        TerminalControlState.CONTEXT_LOST -> FrameBanner(
+            text = stringResource(Res.string.terminal_context_lost),
+            a11y = stringResource(Res.string.a11y_terminal_context_lost),
+            tag = AgentViewTags.contextLostBanner(agentId),
+        )
+        else -> Unit // MEDIATED / HANDING_* / null → no banner (fail-closed, absent == MEDIATED)
+    }
+}
+
+/** A persistent WARN-amber frame strip (§6/§7b). WARN carried by `severityColor(WARN)` (never green); the a11y
+ *  description carries the full meaning (WCAG 1.4.1 — tone is reinforcement). */
+@Composable
+private fun FrameBanner(text: String, a11y: String, tag: String) {
+    Text(
+        text = text,
+        color = severityColor(Severity.WARN),
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .testTag(tag)
+            .semantics { contentDescription = a11y },
     )
 }
 

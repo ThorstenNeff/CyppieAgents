@@ -105,11 +105,12 @@ class WindowModeMarkerRenderTest {
                 }
             }
         }
-        // Holder present → the visible chip + the holder-bearing merged a11y label.
-        // Mutation: drop the `if (holder != null)` chip / use `a11y_terminal_ctl` unconditionally → RED.
+        // Holder present → the visible "@{holder} · seit {HH:MM}" chip + the holder-bearing merged a11y label (§5).
+        // Mutation: drop the `if (holderChip != null)` chip / use `a11y_terminal_ctl` unconditionally → RED. The exact
+        // HH:MM is the runner's local zone, so assert the tz-independent substrings (holder + "seit"/"since").
         onNodeWithTag(WindowTestTags.modeHolder("held"), useUnmergedTree = true).assertExists()
-        onNodeWithText("· alice", useUnmergedTree = true).assertExists()
-        onNodeWithContentDescription("Terminal mode: Interactive · held by alice").assertExists()
+        onNodeWithText("@alice", substring = true, useUnmergedTree = true).assertExists()
+        onNodeWithContentDescription("Held interactively by alice since", substring = true).assertExists()
         // Holder-less → the marker exists but WITHOUT a holder chip (never a fabricated holder).
         onNodeWithTag(WindowTestTags.mode("plain")).assertExists()
         onNodeWithTag(WindowTestTags.modeHolder("plain"), useUnmergedTree = true).assertDoesNotExist()

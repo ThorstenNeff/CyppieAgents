@@ -73,6 +73,12 @@ class AgentWindowChromeInputCoverageTest {
         "terminalGatedNote" to "renders the gated-shell note only when `terminalGatedNote && !terminalAvailable`; " +
             "the shipped shell passes `!WORKTREE_SHELL_LIVE_ENABLED` = false AND a non-null terminalContent, so " +
             "both conjuncts are false. Reachability is guarded by theRealShellsUpperChrome…, not assumed here",
+        "control" to "CYP-381 §6/§7b: renders the hub-blind / context-lost frame banners ONLY when the CYP-354 " +
+            "feed reports INTERACTIVE / CONTEXT_LOST. The interim shipped shell drives the feed through the " +
+            "StubModeRepository (motor CYP-355 not landed), which never reaches those states, so production cannot " +
+            "reach the banner pre-motor — the shipped shell passes the default `control=null`. theRealShellsUpperChrome… " +
+            "measures the shipped (banner-free) chrome. WHEN THE MOTOR LANDS this must move to the floor-guard's " +
+            "varied set (the banner then becomes a reachable ChromeState dimension).",
     )
 
     /**
