@@ -33,7 +33,6 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -102,51 +101,63 @@ class Cyp355MotorConcurrencyAndGapsTest {
         }
     }
 
-    // ── FINDING: concurrency is block-and-queue via the shared lock — IN_TRANSITION is NOT the concurrent
-    //    reject reason (the whole requestMode runs inside transitions.withAgent, and reads the settled state). ──
-    // ⚠ CYP-388-FLIP: when Backend's tryLock fast-path lands, this test flips to assert a prompt
-    //    REJECTED(IN_TRANSITION) for the concurrent 2nd request. Until CYP-388 merges it asserts block-and-queue.
+    // ── CYP-388 (fast-path LANDED — flipped from the original block-and-queue assertion; the behavior change
+    //    owns its test update): a concurrent 2nd request that arrives while #1 HOLDS the transition lock
+    //    mid-hand-off gets a PROMPT REJECTED(IN_TRANSITION) via tryLock, instead of blocking on the lock and then
+    //    reading the settled INTERACTIVE state (→ the old ALREADY_IN_TARGET). Mutation-proof: reverting the
+    //    fast-path to a blocking acquire makes r2 block through #1's ~300ms settle and read INTERACTIVE →
+    //    ALREADY_IN_TARGET, reding the IN_TRANSITION assertion. ──
     @Test
-    fun concurrentSameAgent_serializes_secondSeesSettledState_neverInTransition() = runBlocking {
+    fun concurrentSameAgent_secondGetsPromptInTransition() = runBlocking {
         val rig = Rig(stayAlive)
         rig.sessions.register(FakeMediated("backend"))
 
         val d1 = scope.async { rig.motor.requestMode("backend", TerminalMode.TERMINAL, "op1") }
-        delay(40) // let d1 grab the transition lock first
+        // Poll until #1 PROVABLY holds the lock mid-hand-off (state==HANDING_OVER, held through its ~300ms settle)
+        // before firing #2 — NOT a fixed delay, else #1 could release first and #2 would read INTERACTIVE →
+        // ALREADY_IN_TARGET (spurious red).
+        withTimeout(5_000) { while (rig.stateOf("backend") != TerminalControlState.HANDING_OVER) delay(10) }
         val d2 = scope.async { rig.motor.requestMode("backend", TerminalMode.TERMINAL, "op2") }
         val r1 = withTimeout(15_000) { d1.await() }
         val r2 = withTimeout(15_000) { d2.await() }
 
-        // Exactly one confirms INTERACTIVE; the other, having BLOCKED on the lock, reads the SETTLED state.
+        // d1 confirms INTERACTIVE; d2, arriving while d1 holds the lock, is rejected IN_TRANSITION by the fast-path.
         assertEquals(ModeChangeOutcome.CONFIRMED, r1.outcome)
         assertEquals(TerminalControlState.INTERACTIVE, r1.control.state)
         assertEquals(ModeChangeOutcome.REJECTED, r2.outcome)
-        assertEquals(ModeChangeRejection.ALREADY_IN_TARGET, r2.reason,
-            "the concurrent request serializes behind the lock and reads INTERACTIVE → ALREADY_IN_TARGET")
-        assertNotEquals(ModeChangeRejection.IN_TRANSITION, r2.reason,
-            "FINDING: IN_TRANSITION is unreachable via the route — withAgent() serialises, transient HANDING_* is never observed")
+        assertEquals(ModeChangeRejection.IN_TRANSITION, r2.reason,
+            "the concurrent request hits the held lock → prompt IN_TRANSITION (no block-and-queue into ALREADY_IN_TARGET)")
         rig.pty.close("backend")
     }
 
-    // ⚠ CYP-388-FLIP: same as above — flips to a prompt REJECTED(IN_TRANSITION) once the tryLock fast-path
-    //    lands; until CYP-388 merges a concurrent request during an IDLE-defer correctly BLOCKS (block-and-queue).
+    // ── CYP-388 (fast-path LANDED — flipped from the original block-and-queue assertion): a concurrent
+    //    request during #1's IDLE-defer returns a PROMPT REJECTED(IN_TRANSITION) via tryLock instead of blocking
+    //    on the lock until #1's defer bound. READS RUNTIME (elapsed « bound, under a hard withTimeout) so a
+    //    regression to block-and-queue reds — the concurrent call would block through #1's 10s defer and the
+    //    withTimeout(2s) would throw. ──
     @Test
-    fun concurrentRequest_duringIdleDefer_blocks_notPromptInTransitionReject() = runBlocking {
-        val rig = Rig(stayAlive, idleBoundMs = 2_000L)
+    fun concurrentRequest_duringIdleDefer_getsPromptInTransition() = runBlocking {
+        val rig = Rig(stayAlive, idleBoundMs = 10_000L) // long defer bound → #1 parks in awaitIdle, holding the lock
         rig.sessions.register(FakeMediated("backend"))
         rig.busy.set("backend", true) // #1 will bounded-defer, HOLDING the lock the whole time
 
         val d1 = scope.async { rig.motor.requestMode("backend", TerminalMode.TERMINAL, "op1") }
-        delay(120) // #1 is now inside awaitIdle, holding the lock
-        val d2 = scope.async { rig.motor.requestMode("backend", TerminalMode.ORCHESTRATION, "op2") }
-        delay(500) // well within #1's 2s defer window
+        // Poll until #1 PROVABLY holds the lock parked in awaitIdle (state==HANDING_OVER) before firing #2 — NOT a
+        // fixed delay. #1 stays HANDING_OVER for the whole 10s defer (busy), so this can't race to a release.
+        withTimeout(5_000) { while (rig.stateOf("backend") != TerminalControlState.HANDING_OVER) delay(10) }
 
-        assertFalse(d2.isCompleted,
-            "FINDING: a concurrent request during an IDLE-defer BLOCKS on the lock (up to the defer bound, " +
-            "default 30s) instead of a prompt IN_TRANSITION reject — the concurrency discipline is block-and-queue")
+        // #2 must return PROMPTLY via the fast-path — not block on the lock until #1's 10s defer bound.
+        val t0 = System.nanoTime()
+        val r2 = withTimeout(2_000) { rig.motor.requestMode("backend", TerminalMode.ORCHESTRATION, "op2") }
+        val elapsedMs = (System.nanoTime() - t0) / 1_000_000
 
-        rig.busy.set("backend", false) // let #1 idle → proceed → INTERACTIVE, then #2 unblocks
-        withTimeout(15_000) { d1.await(); d2.await() }
+        assertEquals(ModeChangeOutcome.REJECTED, r2.outcome)
+        assertEquals(ModeChangeRejection.IN_TRANSITION, r2.reason,
+            "the fast-path returns IN_TRANSITION immediately, not block-and-queue")
+        assertTrue(elapsedMs < 1_000, "the fast-path returned in ${elapsedMs}ms — not blocked until #1's 10000ms defer bound")
+
+        rig.busy.set("backend", false) // let #1 idle → proceed → INTERACTIVE
+        withTimeout(15_000) { d1.await() }
         rig.pty.close("backend")
     }
 
