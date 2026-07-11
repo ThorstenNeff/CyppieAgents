@@ -1,0 +1,55 @@
+import { describe, it, expect, vi } from 'vitest'
+import { startLiveHub } from './liveHub'
+import type { HubConfig } from './hubConfig'
+import { FakeSocketHub } from '../net/testing/fakeSocket'
+
+const config: HubConfig = {
+  apiBase: 'http://x',
+  wsBase: 'ws://x',
+  token: 'tok',
+  operator: true,
+  poAgentId: 'po',
+}
+
+const socketFor = (hub: FakeSocketHub, pathFragment: string) => {
+  const s = hub.sockets.find((s) => s.url.includes(pathFragment))
+  if (s === undefined) throw new Error(`no socket for ${pathFragment}`)
+  return s
+}
+
+describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
+  it('opens /ws/comm and /ws/terminal-state with the token', () => {
+    const hub = new FakeSocketHub()
+    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
+    expect(socketFor(hub, '/ws/comm').url).toContain('token=tok')
+    expect(socketFor(hub, '/ws/terminal-state').url).toContain('token=tok')
+  })
+
+  it('folds an inbound /ws/comm event into onCommEvent (parsed, typed)', () => {
+    const hub = new FakeSocketHub()
+    const onCommEvent = vi.fn()
+    startLiveHub(config, { onCommEvent, onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
+    const comm = socketFor(hub, '/ws/comm')
+    comm.emitOpen()
+    comm.emitMessage(JSON.stringify({ type: 'acl', entry: { channelId: 'po-frontend', agentId: 'frontend', canRead: true, canWrite: false } }))
+    expect(onCommEvent).toHaveBeenCalledWith({ type: 'acl', entry: { channelId: 'po-frontend', agentId: 'frontend', canRead: true, canWrite: false } })
+  })
+
+  it('folds an inbound /ws/terminal-state event into onTerminalControl', () => {
+    const hub = new FakeSocketHub()
+    const onTerminalControl = vi.fn()
+    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl }, { factory: hub.factory, schedule: hub.runNow })
+    const term = socketFor(hub, '/ws/terminal-state')
+    term.emitOpen()
+    term.emitMessage(JSON.stringify({ agentId: 'backend', state: 'INTERACTIVE' }))
+    expect(onTerminalControl).toHaveBeenCalledWith({ agentId: 'backend', state: 'INTERACTIVE' })
+  })
+
+  it('stop() closes both sockets', () => {
+    const hub = new FakeSocketHub()
+    const handle = startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
+    handle.stop()
+    expect(socketFor(hub, '/ws/comm').closed).toBe(true)
+    expect(socketFor(hub, '/ws/terminal-state').closed).toBe(true)
+  })
+})
