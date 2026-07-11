@@ -134,7 +134,7 @@ class Cyp377ReaderIoExceptionTest {
                 if (event is SystemEvent) systemEventsSeen.add(event.sessionId)
             }
             override fun onTurnStart(agentId: String, sessionId: String?, correlationId: String) {}
-            override fun onProcessExit(agentId: String, sessionId: String?) { processExits.incrementAndGet() }
+            override fun onProcessExit(agentId: String, sessionId: String?, exitCode: Int?) { processExits.incrementAndGet() }
             override fun onStopped(agentId: String) {}
         }
         val lines = Channel<String>(Channel.UNLIMITED)
@@ -171,7 +171,7 @@ class Cyp377ReaderIoExceptionTest {
     private fun recordingObserver(processExits: AtomicInteger) = object : SessionObserver {
         override fun onEvent(agentId: String, sessionId: String?, correlationId: String?, event: StreamJsonEvent) {}
         override fun onTurnStart(agentId: String, sessionId: String?, correlationId: String) {}
-        override fun onProcessExit(agentId: String, sessionId: String?) { processExits.incrementAndGet() }
+        override fun onProcessExit(agentId: String, sessionId: String?, exitCode: Int?) { processExits.incrementAndGet() }
         override fun onStopped(agentId: String) {}
     }
 }
