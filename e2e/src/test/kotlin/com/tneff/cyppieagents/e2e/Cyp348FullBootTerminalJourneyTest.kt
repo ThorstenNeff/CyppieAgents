@@ -63,7 +63,8 @@ class Cyp348FullBootTerminalJourneyTest {
         e2ePlatform(projects, terminalLaunchCommand = listOf(fakeTui().absolutePath)).use { p ->
             val client = HttpClient(CIO) { install(ClientWebSockets) }
             try {
-                client.webSocket("${p.wsBaseUrl}/ws/terminal?agentId=backend&token=${E2ePlatform.agentToken("backend")}") {
+                // CYP-414: /ws/terminal is write-tier (operator-only) since CYP-394 — operator token, faithful to AgentShell.
+                client.webSocket("${p.wsBaseUrl}/ws/terminal?agentId=backend&token=${E2ePlatform.OPERATOR_TOKEN}") {
                     // Frame order is preserved server-side: resize applies before the SIZE input.
                     send(input("hello\n")); send(resize(120, 40)); send(input("SIZE\n"))
                     val seen = StringBuilder(); var exit: Int? = null; var quit = false

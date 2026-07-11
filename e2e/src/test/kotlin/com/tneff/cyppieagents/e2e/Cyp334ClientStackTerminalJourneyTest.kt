@@ -58,7 +58,9 @@ class Cyp334ClientStackTerminalJourneyTest {
             val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
             // The REAL client stack — not a raw socket. Constructing the connector starts its byte-pump, which
             // lazily connects the session to /ws/terminal.
-            val session = WsTerminalSession(client, p.wsBaseUrl, agentId = "backend", token = E2ePlatform.agentToken("backend"))
+            // CYP-414: /ws/terminal is write-tier (operator-only) since CYP-394 — use the operator token, faithful
+            // to AgentShell (which opens the terminal with the operator token). An agent token now 1008s (correct).
+            val session = WsTerminalSession(client, p.wsBaseUrl, agentId = "backend", token = E2ePlatform.OPERATOR_TOKEN)
             val connector = WsTtyConnector(session, name = "cyp334-e2e", scope)
 
             val seen = StringBuilder()
