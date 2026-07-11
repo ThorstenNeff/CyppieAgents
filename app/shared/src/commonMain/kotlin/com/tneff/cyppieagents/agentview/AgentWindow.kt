@@ -88,6 +88,11 @@ import kmpcyppieagents.app.shared.generated.resources.terminal_mode_orchestratio
 import kmpcyppieagents.app.shared.generated.resources.terminal_mode_shell
 import kmpcyppieagents.app.shared.generated.resources.terminal_shell_note
 import kmpcyppieagents.app.shared.generated.resources.terminal_gated_pending
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_switching
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_deferred
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_err_busy
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_err_transition
+import kmpcyppieagents.app.shared.generated.resources.terminal_mode_err_generic
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import org.jetbrains.compose.resources.stringResource
@@ -159,6 +164,9 @@ fun AgentWindow(
     val lifecycleError by viewModel.lifecycleError.collectAsState()
     val connection by viewModel.connection.collectAsState()
     val contentMode by viewModel.contentMode.collectAsState()
+    val modeSwitching by viewModel.modeSwitching.collectAsState()
+    val agentBusy by viewModel.busy.collectAsState()
+    val modeError by viewModel.modeError.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
         lifecycleError?.let { code -> LifecycleErrorRow(agentId, code) }
         AgentHeader(
@@ -184,7 +192,11 @@ fun AgentWindow(
             canControl = viewModel.canControl,
             terminalAvailable = terminalContent != null,
             terminalGatedNote = terminalGatedNote,
-            onModeChange = viewModel::showContentMode,
+            // CYP-381: non-optimistic hand-off command (flip only after the server confirm; IDLE-gated take-over).
+            onModeChange = viewModel::requestMode,
+            switching = modeSwitching,
+            busy = agentBusy,
+            error = modeError,
         )
         // The content rectangle (04 §5): transcript OR terminal, weight 1f. The terminal occupies ONLY this
         // rectangle — no Compose chrome is z-stacked over it.
@@ -227,6 +239,12 @@ private fun ModeToggleRow(
     terminalAvailable: Boolean,
     terminalGatedNote: Boolean,
     onModeChange: (AgentContentMode) -> Unit,
+    // CYP-381 (provisional visuals — UIUX CYP-381-Design refines): a hand-off command in flight ([switching]) while
+    // the server holds it through its bounded-wait; [busy] distinguishes "wartet bis Turn fertig" (a take-over
+    // issued mid-turn) from a plain "switching…"; [error] is the last reject code.
+    switching: Boolean = false,
+    busy: Boolean = false,
+    error: String? = null,
 ) {
     val orchLabel = stringResource(Res.string.terminal_mode_orchestration)
     // Interim (Auftraggeber ruling): the second view is an honest worktree SHELL (bash), not the agent's claude
@@ -259,6 +277,28 @@ private fun ModeToggleRow(
             ) { Text(termLabel, maxLines = 1) }
         }
         when {
+            // CYP-381 (provisional): a hand-off reject just happened → honest, non-optimistic error (stayed put).
+            error != null -> Text(
+                text = modeErrorText(error),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(AgentViewTags.modeError(agentId)),
+            )
+            // CYP-381 IDLE-gate (provisional): a take-over issued mid-turn — the server holds the POST until the
+            // turn settles (bounded-wait); the honest waiting hint, distinct from a plain switch (no silent hijack).
+            switching && busy -> Text(
+                text = stringResource(Res.string.terminal_mode_deferred),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag(AgentViewTags.modeDeferred(agentId)),
+            )
+            // CYP-381 (provisional): the command is in flight — the view has NOT flipped yet (non-optimistic).
+            switching -> Text(
+                text = stringResource(Res.string.terminal_mode_switching),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag(AgentViewTags.modeSwitching(agentId)),
+            )
             // Non-operator: honest read-only disclosure (reuse `workspace_operator_only`, CYP-317 no-fake-switch).
             !canControl -> Text(
                 text = stringResource(Res.string.workspace_operator_only),
@@ -284,6 +324,17 @@ private fun ModeToggleRow(
             )
         }
     }
+}
+
+/** CYP-381 — map a [ModeChangeException] reject code to an honest message. Codes are the settled CYP-355
+ *  `ModeChangeRejection` set (`BUSY_TIMEOUT`/`IN_TRANSITION`/`SPAWN_FAILED`/`ALREADY_IN_TARGET`) plus the HTTP
+ *  `operator_required` (403, defence-in-depth); anything else → a generic honest fallback. */
+@Composable
+private fun modeErrorText(code: String): String = when (code) {
+    "BUSY_TIMEOUT" -> stringResource(Res.string.terminal_mode_err_busy)
+    "IN_TRANSITION" -> stringResource(Res.string.terminal_mode_err_transition)
+    "operator_required" -> stringResource(Res.string.agent_ctl_err_operator_required)
+    else -> stringResource(Res.string.terminal_mode_err_generic) // SPAWN_FAILED / ALREADY_IN_TARGET / mode_change_failed
 }
 
 /** Honest surfacing of a lifecycle-control failure (CYP-73) — the server's reason, not a generic blur. */

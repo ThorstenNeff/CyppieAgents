@@ -53,6 +53,15 @@ object AgentViewTags {
      *  shell, not the agent's session (the claude same-session terminal reuses the slot later, BE-2). */
     fun modeToggleShellNote(agentId: String) = "agent.$agentId.modeToggle.shellNote"
 
+    /** CYP-381: the hand-off command is in flight (POST issued, view NOT yet flipped — non-optimistic). */
+    fun modeSwitching(agentId: String) = "agent.$agentId.modeToggle.switching"
+
+    /** CYP-381 IDLE-gate: a take-over is deferred until the running turn finishes (no hijack). */
+    fun modeDeferred(agentId: String) = "agent.$agentId.modeToggle.deferred"
+
+    /** CYP-381: an honest, non-optimistic hand-off reject (stayed in the old mode). */
+    fun modeError(agentId: String) = "agent.$agentId.modeToggle.error"
+
     /** CYP-333: the content rectangle that swaps between the transcript and the terminal. */
     fun content(agentId: String) = "agent.$agentId.content"
 

@@ -55,4 +55,8 @@ object WindowTestTags {
      *  Present ONLY for a non-MEDIATED state; its ABSENCE is the test contract for MEDIATED/unknown (absent ==
      *  MEDIATED — the default, no marker). */
     fun mode(id: String): String = "window.$id.mode"
+
+    /** CYP-381: the holder-identity chip inside the §5.1 mode marker (present only when an interactive session is
+     *  held — [AgentTerminalControlEvent.heldBy] != null). Absent for MEDIATED / a holder-less state. */
+    fun modeHolder(id: String): String = "window.$id.mode.holder"
 }

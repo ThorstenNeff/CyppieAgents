@@ -570,6 +570,13 @@
     <!-- CYP-333 live flip (CYP-348): honest descriptor in the active shell view — it is a bash worktree shell
          (git status/ls/inspect), NOT the agent session; the claude same-session terminal arrives with BE-2. -->
     <string name="terminal_shell_note">bash worktree shell</string>
+    <!-- CYP-381 (provisional, refined by UIUX CYP-381-Design): non-optimistic hand-off. Switch command in flight
+         (view flips only AFTER confirm); take-over waits until the running turn finishes (no hijack); reject. -->
+    <string name="terminal_mode_switching">Switching…</string>
+    <string name="terminal_mode_deferred">Waiting for the current turn to finish…</string>
+    <string name="terminal_mode_err_busy">Agent busy — the switch waited too long</string>
+    <string name="terminal_mode_err_transition">Mode change in progress — please wait</string>
+    <string name="terminal_mode_err_generic">Switch failed</string>
     <!-- CYP-354 §5.1 (client mirror): read-only terminal-control mode marker in the title bar. MEDIATED = no marker.
          Form+label carry the meaning (WCAG 1.4.1); content-free (state only). -->
     <string name="terminal_ctl_interactive">Interactive</string>
@@ -577,4 +584,6 @@
     <string name="terminal_ctl_handing_back">Handing back…</string>
     <string name="terminal_ctl_context_lost">Context lost</string>
     <string name="a11y_terminal_ctl">Terminal mode: %1$s</string>
+    <!-- CYP-381: marker a11y with holder-identity when an interactive session is held. -->
+    <string name="a11y_terminal_ctl_held">Terminal mode: %1$s · held by %2$s</string>
 </resources>
