@@ -18,3 +18,22 @@ body,
   display: grid;
   place-items: center;
 }
+
+/* CYP-404 (W6) — the transcript's native-scrolling container + a thin scrollbar (parity of CYP-392). The thumb
+   is a graphical object (WCAG 1.4.11, 3:1): a mid-grey that clears 3:1 on both light and dark surfaces. */
+.transcript-scroll {
+  overflow-y: auto;
+  max-height: 100%;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--transcript-scrollbar-thumb, rgba(128, 128, 128, 0.7)) transparent;
+}
+.transcript-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.transcript-scroll::-webkit-scrollbar-thumb {
+  background: var(--transcript-scrollbar-thumb, rgba(128, 128, 128, 0.7));
+  border-radius: 4px;
+}
+.transcript-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -4,15 +4,31 @@
 // escaped by AgentTranscript.render.test.tsx). The mapper already truncates/flattens summaries; this only escapes.
 import type { AgentEvent } from './agentEvent'
 import { formatLocalHhMm } from './transcriptTime'
+import { useAutoscrollPin } from './useAutoscrollPin'
 
 export function AgentTranscript({ rows }: { rows: readonly AgentEvent[] }) {
+  // CYP-404: native-scrolling container with auto-follow/pin (a thin scrollbar via .transcript-scroll CSS).
+  const { ref, onScroll } = useAutoscrollPin(tailSignature(rows))
   return (
-    <ol className="transcript" data-testid="transcript">
-      {rows.map((row) => (
-        <TranscriptRow key={row.id} row={row} />
-      ))}
-    </ol>
+    <div className="transcript-scroll" ref={ref} onScroll={onScroll} data-testid="transcript-scroll">
+      <ol className="transcript" data-testid="transcript">
+        {rows.map((row) => (
+          <TranscriptRow key={row.id} row={row} />
+        ))}
+      </ol>
+    </div>
   )
+}
+
+/** CYP-404: changes when the tail changes — including a streaming assistant row growing in place (same count,
+ *  longer text). Keys the follow effect so streaming deltas re-stick to the bottom while pinned. Exported +
+ *  unit-tested (tailSignature.test.ts): the `grow` term IS the streaming-follow behaviour, so dropping it must
+ *  turn a test red (M2), not pass silently. */
+export function tailSignature(rows: readonly AgentEvent[]): string {
+  if (rows.length === 0) return ''
+  const last = rows[rows.length - 1]
+  const grow = last.kind === 'assistantText' ? last.text.length : 0
+  return `${rows.length}|${last.id}|${last.kind}|${grow}`
 }
 
 function TranscriptRow({ row }: { row: AgentEvent }) {
