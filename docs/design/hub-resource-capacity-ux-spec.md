@@ -161,7 +161,7 @@ Key-Familie `hubcap_*` / `a11y_hubcap_*` (greenfield, 0 Kollision verifiziert). 
 | `hubcap_overload_title` | Ein weiteres Team würde diese Maschine überlasten — Spawn abgelehnt. | Another team would overload this machine — spawn rejected. |
 | `hubcap_overload_dismiss` | Verstanden | Got it |
 | `a11y_hubcap_readout` | Hub-Kapazität: %1$s von %2$s Agenten (geschätzt) | Hub capacity: %1$s of %2$s agents (estimated) |
-| `a11y_hubcap_readout_nomax` | Hub-Kapazität: %1$s Agenten aktiv (Maximum nicht geschätzt) | Hub capacity: %1$s agents active (maximum not estimated) |
+| `a11y_hubcap_readout_nomax` | Hub-Kapazität: %1$s Agenten aktiv (Höchstzahl noch nicht geschätzt) | Hub capacity: %1$s agents active (max not yet estimated) |
 | `a11y_hubcap_overload` | Überlast-Schutz: Spawn abgelehnt — ein weiteres Team würde die Maschine überlasten. | Overload protection: spawn rejected — another team would overload the machine. |
 
 *(Reuse: `event_severity_warn` für das Event-Severity-Label; `badge_count_overflow` „9+" falls N/M je >9.)*

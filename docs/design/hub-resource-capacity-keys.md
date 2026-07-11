@@ -19,7 +19,7 @@
 | Key | DE | EN |
 |---|---|---|
 | `a11y_hubcap_readout` | Hub-Kapazität: %1$s von %2$s Agenten (geschätzt) | Hub capacity: %1$s of %2$s agents (estimated) |
-| `a11y_hubcap_readout_nomax` | Hub-Kapazität: %1$s Agenten aktiv (Maximum nicht geschätzt) | Hub capacity: %1$s agents active (maximum not estimated) |
+| `a11y_hubcap_readout_nomax` | Hub-Kapazität: %1$s Agenten aktiv (Höchstzahl noch nicht geschätzt) | Hub capacity: %1$s agents active (max not yet estimated) |
 | `a11y_hubcap_overload` | Überlast-Schutz: Spawn abgelehnt — ein weiteres Team würde die Maschine überlasten. | Overload protection: spawn rejected — another team would overload the machine. |
 
 > **`hubcap_readout` / `a11y_hubcap_readout` (H1):** `%1$s`=aktuell, `%2$s`=**geschätztes** Max; das Wort „geschätzt"
