@@ -1,0 +1,63 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-417 (Story unter Epic CYP-395) — Hub-Ressourcen-/Ueberlast-UX, Slice S-G ResourceGovernor",
+    "version": "1.0-spec-closure",
+    "status": "Spec-Closure (Q1-Q5 geruled, PO 2026-07-11). Eingefroren als UI-Vorlage fuer den S-G-Bau. docs-only, nichts gebaut.",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop 2877fc8c",
+    "reuse_first": "KEINE neue Farbe. WARN-Amber ausschliesslich aus EventVisuals.kt (severityContainer/severityColor(WARN), warnContainer). Neutraler Zaehler = Pill (window/WindowBadge.kt). null!=0-Disziplin = WindowManager.kt:805 / AgentTokenUsageEvent. Banner = FrameBanner-Muster (AgentWindow.kt HandoffBanners) hub-scoped gehoben. Content-freies Event = EventSink/EventDraft + additiver EventType (EventModel.kt) Severity.WARN aus LifecycleManager-Spawn-Chokepoint.",
+    "color_is_never_sole_signal": "Jeder Zustand traegt Form + Zahl/Label + a11y (WCAG 1.4.1). Readout=Zahl+Label, Banner=Glyph ▲+Text+a11y, Event=▲+Rail+Severity-Label.",
+    "tertiary_invariant": "tertiary/#40D6A0 ist BRAND-Akzent, NIE Status. Weder Kapazitaet noch 'Schutz' benutzen es. CYP-300: WARN bewusst von tertiary entkoppelt (das nachts gruen wird).",
+    "not_error_red": "Ein fail-closed Ueberlast-Abweis ist das System, das KORREKT schuetzt (erreichte Grenze) — WARN-Amber, NICHT error-Rot (nichts ist abgestuerzt). error-Rot bleibt echten Fehlern vorbehalten.",
+    "code_anchor": "Neue workspace-scoped Composable in/neben ProjectSwitcherBar (project/ProjectSwitcherBar.kt). Vorbilder: WindowBadge.kt Pill (neutraler Zaehler), EventVisuals.kt (WARN), AgentWindow.kt HandoffBanners/FrameBanner (WARN-Banner-Muster)."
+  },
+  "semantic": {
+    "capacity.readout.headroom": {
+      "role": "Hub-Kapazitaets-Readout 'N/M Agenten' solange Headroom (current < estimatedMax). NEUTRAL — kein Erfolgs-Gruen, kein Alarm-Amber (H4).",
+      "marker": "neutraler Pill + monospace-Zahl 'N/M Agenten'",
+      "color": "primaryContainer/onPrimaryContainer (Pill, WindowBadge.kt:133 'neutral — NICHT Severity') bzw. onSurface — NICHT tertiary/#40D6A0",
+      "label_key": "hubcap_readout",
+      "a11y_key": "a11y_hubcap_readout",
+      "honesty": "M = GESCHAETZTES Max (H1), kein SLA; 'geschaetzt' im a11y. Kein Fortschrittsbalken der Praezision vortaeuscht."
+    },
+    "capacity.readout.full": {
+      "role": "Readout im Voll-Zustand (current == estimatedMax, Q2). Kein Headroom — ehrlich 'voll'.",
+      "marker": "Readout + Label 'voll'",
+      "color": "severityColor(WARN) Amber (EventVisuals.kt:91/47) — WARN-Ton, NICHT error-Rot, NIE tertiary-Gruen",
+      "label_keys": ["hubcap_readout", "hubcap_full"],
+      "tag_qualifier": "workspace.capacity.full"
+    },
+    "capacity.unknown": {
+      "role": "Kapazitaet noch nicht geschaetzt/unbekannt (Q3).",
+      "render": "NICHTS — Readout absent (null!=0-Disziplin, mirror AgentTokenUsageEvent contextTokens null). Kein '0/0', kein '—', kein Platzhalter-Alarm.",
+      "honesty": "H1 — nie eine erfundene Zahl; Abwesenheit ist die ehrliche Anzeige."
+    },
+    "overload.banner": {
+      "role": "Hub-scoped WARN-Banner bei echtem fail-closed Spawn-Abweis (§5). Workspace-Ebene (ProjectSwitcherBar), NICHT per-Agent.",
+      "marker": "voll-breiter Streifen, Glyph ▲, Text + Quittier-Aktion",
+      "color": "severityContainer(WARN) Amber (warnContainer: light #FFE7B0/#5A3D00, dark #4A3A10/#FFC857, EventVisuals.kt:104) — NICHT errorContainer-Rot, NIE tertiary-Gruen",
+      "label_keys": ["hubcap_overload_title", "hubcap_overload_dismiss"],
+      "a11y_key": "a11y_hubcap_overload",
+      "honesty_split": "H2 — 'Spawn abgelehnt' = harte Tatsache; 'wuerde ueberlasten' = geschaetzter Grund.",
+      "lifespan": "Q5 — persistent solange Ueberlast besteht, klaert selbst bei Headroom, jederzeit dismissbar; KEIN vorzeitiger Auto-Dismiss (keine falsche Entwarnung).",
+      "tag": "workspace.overloadBanner (+ .dismiss)",
+      "reuse": "FrameBanner-Muster (AgentWindow.kt HandoffBanners) auf workspace-scoped gehoben (Nahtstelle S-3)"
+    },
+    "overload.event": {
+      "role": "Content-freier Durable-Record des Abweises im Event-Log (§6). Der Banner ist die Live-Flaeche, das Event die Historie.",
+      "type": "neuer additiver EventType (z.B. HUB_CAPACITY/SPAWN_REJECTED, EventModel.kt:72 offenes Vokabular) Severity.WARN, emittiert aus LifecycleManager-Spawn-Chokepoint via EventProjector.draft(...)",
+      "detail": "content-frei: nur {current, estimatedMax} (Zahlen) + optional Ziel-agentId/Rolle (Identitaets-Metadatum) — KEIN Agenten-Output, kein Secret (H6)",
+      "render": "automatisch als Event-Zeile mit Glyph ▲ + Amber-Rail (EventRowUi); Severity-Label reused event_severity_warn",
+      "color": "severityColor/severityContainer(WARN) — wie alle WARN-Events"
+    }
+  },
+  "axes_separation": {
+    "role": "VERBINDLICH: getrennte Wahrheiten, nie ineinander gefaerbt/gelesen.",
+    "capacity_estimate": "geschaetzte Kapazitaet (current/estimatedMax) — ADVISORY, Headroom neutral, voll WARN, unbekannt absent. Nie SLA, nie gruen (H1/H4).",
+    "rejection_fact": "der fail-closed Abweis — harte TATSACHE (Spawn NICHT passiert), WARN-Amber Banner + content-freies Event (H2/H3).",
+    "estimated_reason": "'wuerde ueberlasten' — geschaetzter Grund, advisory, getrennt von der Tatsache.",
+    "ownership": "Client zeigt Advisory, Server besitzt den fail-closed Gate — kein Client-Vor-Disable (H5).",
+    "rule": "Farbe nie alleiniger Traeger (WCAG 1.4.1); WARN nie tertiary-Gruen, korrekter Abweis nie error-Rot."
+  }
+}
