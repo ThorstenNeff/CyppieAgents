@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,10 +35,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -49,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -70,6 +75,7 @@ import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.model.TerminalControlState
 import com.tneff.cyppieagents.testing.testTagA11y
+import com.tneff.cyppieagents.ui.ThinVerticalScrollbar
 import com.tneff.cyppieagents.window.COMPOSER_COMPACT_INPUT_THRESHOLD
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_status
@@ -672,22 +678,62 @@ private fun AgentTranscript(
     contextLostAt: Long? = null,
 ) {
     val listState = rememberLazyListState()
-    // Pin to bottom as new events arrive (streaming feel). A more refined version would release
-    // the pin while the user scrolls up; deferred until the window manager (CYP-3) lands.
-    LaunchedEffect(events.size) {
-        if (events.isNotEmpty()) listState.animateScrollToItem(events.lastIndex)
+    // CYP-393 — pin the transcript to the live end, but RELEASE when the user scrolls up to read back and RESUME
+    // when they return to the bottom. Three deliberate choices, from the UIUX note:
+    //  1. Follow the tail's GROWTH, not `events.size`: a streaming AssistantText delta grows ONE item in-place
+    //     (TranscriptFolding), so the list size is constant while streaming — the follow keys on a tail SIGNATURE
+    //     (size + last-event identity), which changes on every delta.
+    //  2. "At bottom" is a ~48dp TOLERANCE (`transcriptAtBottom`), not exact `!canScrollForward` — streaming and
+    //     the scroll landing sit a few px off exact and would flicker the pin.
+    //  3. Release only on a USER scroll, never on our own follow or the agent's typing (CYP-351: never infer
+    //     intent from our own action). The follow uses the INSTANT `scrollToItem` (never `animateScrollToItem`),
+    //     so `isScrollInProgress` is a clean "the USER is scrolling" signal here — our scrolls never set it, and
+    //     content growth (instant follow) never trips it. It covers drag, wheel AND keyboard uniformly.
+    val tolerancePx = with(LocalDensity.current) { TRANSCRIPT_BOTTOM_TOLERANCE_DP.dp.roundToPx() }
+    val atBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()
+            transcriptAtBottom(
+                totalItems = info.totalItemsCount,
+                lastVisibleIndex = last?.index,
+                lastVisibleItemBottom = (last?.offset ?: 0) + (last?.size ?: 0),
+                viewportEndOffset = info.viewportEndOffset,
+                tolerancePx = tolerancePx,
+            )
+        }
+    }
+    var pinned by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow { atBottom to listState.isScrollInProgress }.collect { (bottom, scrolling) ->
+            when {
+                scrolling && !bottom -> pinned = false // §4 eager release: the user is scrolling away from the end
+                bottom -> pinned = true                // §4 resume: settled back within the bottom tolerance
+            }
+        }
+    }
+    LaunchedEffect(events.size, events.lastOrNull(), pinned) {
+        if (pinned && events.isNotEmpty()) {
+            // `scrollToItem` forces a synchronous remeasure; yield past the current measure/layout pass first, or
+            // an effect that fires during the initial composition throws "performMeasureAndLayout during measure".
+            withFrameNanos {}
+            listState.scrollToItem(events.lastIndex)
+        }
     }
     // §7.1: the boundary = the first event at/after the loss (events are time-ascending); if no fresh row exists yet,
     // the band tails the buffer. ts-positioned so it survives buffer trims and generalizes past a single loss.
     val boundary = contextLostAt?.let { ts ->
         events.indexOfFirst { it.tsMs >= ts }.let { if (it < 0) events.size else it }
     }
-    LazyColumn(
+    // CYP-392: the transcript scrolls; overlay a vertical scrollbar on the right edge (Desktop + Web — the seam
+    // is a no-op on Android/iOS). Only shown when the content actually overflows the viewport (`canScroll*`).
+    Box(modifier = modifier) {
+      LazyColumn(
         state = listState,
-        modifier = modifier.testTagA11y(AgentViewTags.stream(agentId)),
+        modifier = Modifier.fillMaxSize().testTagA11y(AgentViewTags.stream(agentId)),
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
+      ) {
         itemsIndexed(events, key = { _, event -> event.id }) { index, event ->
             val receded = boundary != null && index < boundary // §7.1: forgotten history, above the landmark
             val row: @Composable () -> Unit = {
@@ -737,6 +783,15 @@ private fun AgentTranscript(
         if (boundary != null && boundary >= events.size) {
             item(key = "ctx-lost-divider-$agentId") { TranscriptDiscontinuityRow(agentId) }
         }
+      }
+      // CYP-392: the vertical scrollbar, overlaid on the transcript's right edge — only when the content
+      // overflows (canScroll*), so a short transcript shows none. No-op on Android/iOS (see ThinVerticalScrollbar).
+      if (listState.canScrollForward || listState.canScrollBackward) {
+          ThinVerticalScrollbar(
+              listState = listState,
+              modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().testTag(AgentViewTags.scrollbar(agentId)),
+          )
+      }
     }
 }
 

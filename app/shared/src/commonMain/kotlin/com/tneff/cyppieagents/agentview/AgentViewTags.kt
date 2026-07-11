@@ -14,6 +14,9 @@ object AgentViewTags {
     /** The scrolling stream-json transcript (LazyColumn) for the given agent. */
     fun stream(agentId: String) = "agent.$agentId.stream"
 
+    /** CYP-392: the transcript's vertical scrollbar (Desktop/Web only; absent when the transcript fits). */
+    fun scrollbar(agentId: String) = "agent.$agentId.scrollbar"
+
     /** The "message to the agent" input field. */
     fun input(agentId: String) = "agent.$agentId.input"
 

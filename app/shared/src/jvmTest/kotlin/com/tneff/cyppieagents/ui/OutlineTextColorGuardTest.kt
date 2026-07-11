@@ -119,6 +119,12 @@ class OutlineTextColorGuardTest {
             "BorderStroke(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)," to
                 "1dp BORDER of an unselected preset; selection is carried by primary + 3dp + the `selected` semantics flag",
         ),
+        "ThinVerticalScrollbar.kt" to mapOf(
+            "restColor = MaterialTheme.colorScheme.outline," to
+                "CYP-392: the RESTING scrollbar thumb — a graphical object (WCAG 1.4.11, 3:1), never text. Passes on " +
+                    "the NUMBER (outline↔surface 3.55:1 / 3.63:1 ≥ 3:1), pinned by Cyp392ScrollbarStyleTest. NO alpha " +
+                    "(outline sits near the 3:1 floor — the CYP-337 lesson); the active/hover colour is onSurfaceVariant.",
+        ),
     )
 
     private data class Hit(val file: String, val line: Int, val text: String)
