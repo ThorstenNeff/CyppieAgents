@@ -1,0 +1,63 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-449 (Story unter Epic CYP-427) — Phase-2 Desktop-App-Shell / Operator-Surface",
+    "version": "1.0-spec-closure",
+    "status": "Spec-Closure (Q1-Q4 geruled, PO 2026-07-11). Eingefroren als UI-Vorlage. Volle §14-Durchsicht + Build-GO durch PO. docs-only, nichts gebaut. Baut auf CYP-429.",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop 8816d406",
+    "reuse_first": "KEINE neue Farbe, KEIN neues Surface. Die Shell VERDRAHTET + RAHMT bestehende Teile: gemounteter connect/-Hub-Flow (CYP-419), CYP-429-Remote-Chrome (Fern-Betrieb/Relay/TOFU/PoP), bestehende Floating-Window-Surfaces (WindowHost/CYP-26), ProjectSwitcherBar. Neutral = onSurfaceVariant/TonedHint(INFO). WARN-Amber nur CYP-429-Trust-Aenderung. Kein tertiary/#40D6A0 als Status.",
+    "color_is_never_sole_signal": "Jeder Zustand Form + Label + a11y (WCAG 1.4.1). Presence != connected: neutral, nie tertiary-gruen.",
+    "structural_note": "CYP-449 ist ueberwiegend STRUKTUR/LAYOUT, nicht Farbe: die Scope-Hierarchie (Hub->Projekt->Fenster), die Mount-Verdrahtung (AuthGate->PoP->HubConnect->AgentShell), der Hub-Switch-Teardown, die eine globale Relay-Flaeche. Die semantischen Farb-Tokens sind fast alle Reuse.",
+    "code_anchor": "App.kt (AuthGate->AgentShell), AgentShell.kt:346 (root Column) + :301 (resolvedTransport Re-Point), window/WindowManager.kt (WindowHost/Canvas/FloatingWindow), project/ProjectSwitcherBar.kt (Hubs-Switcher-Vorbild), connect/ (gemounteter Hub-Flow)."
+  },
+  "semantic": {
+    "shell.hubContext": {
+      "role": "Hub-Kontext-Zeile ① (§5) — oberste Shell-Zeile ueber ProjectSwitcherBar. Traegt Fern-Betrieb-Banner + E2E + gepinnt + Latenz + Hubs-Switcher (alles CYP-429-Reuse).",
+      "color": "neutral onSurfaceVariant / INFO-Register (WorkspaceTags.ROLE_INDICATOR-Nachbar) — NIE tertiary-gruen; zeigt MEINE Session, nicht Registry-Presence",
+      "render": "ABSENT im Lokal-Modus (fail-closed, H4 — kein Phantom)",
+      "reuse": "remote_context_operating / remote_e2e_indicator / remote_trust_pinned (CYP-429)",
+      "a11y_key": "a11y_shell_hub_context",
+      "tag": "shell.hubContext"
+    },
+    "shell.hubSwitch": {
+      "role": "Hubs-Switcher (§5) — Vorbild Projekte-DropdownMenu (ProjectSwitcherBar:157). Listet registrierte Hubs (ControlPlaneClient.hubs, Presence advisory/H1).",
+      "color": "bestehender DropdownMenu-Stil, kein Sonder-Token",
+      "label_key": "shell_hub_switcher",
+      "tag": "shell.hubContext.switch"
+    },
+    "shell.hubSwitchConfirm": {
+      "role": "Confirm-Dialog vor dem Hub-Wechsel (§6.0, Q3). Ehrliche Konsequenz-Rahmung, weil Switch = voller Teardown + potenzieller in-flight-Verlust (H2).",
+      "color": "bestehender Dialog-Stil; Abbrechen reused connector_optin_cancel-Muster",
+      "label_keys": ["shell_hub_switch_confirm_title", "shell_hub_switch_confirm_body", "shell_hub_switch_confirm_action"],
+      "tag": "shell.hubContext.switchConfirm",
+      "honesty": "nennt 'laufende Aktionen werden ungewiss' — verhindert versehentliches Aussteigen"
+    },
+    "shell.relayDrop": {
+      "role": "EINE globale Relay-Drop-Flaeche ③ (§7, H3) ueber dem WindowHost — statt N per-Fenster-Chips.",
+      "color": "neutral onSurfaceVariant (erwarteter Reconnect, KEIN Alarm-Rot) — reused remote_relay_dropped (CYP-429)",
+      "render": "erscheint NUR bei Drop; ABSENT im Lokal-Modus; Host darunter bleibt sichtbar mit ehrlicher in-flight-Ungewissheit",
+      "tag": "shell.relayDrop"
+    },
+    "shell.switchTransition": {
+      "role": "Hub-Wechsel-Transition (§6) 'Trenne von X ... verbinde mit Y' waehrend des Teardowns.",
+      "color": "neutral, kein Sonder-Token — reused remote_switch_transition (CYP-429)",
+      "render": "WindowHost leer/neutral waehrend Transition (kein stehendes altes Layout, H2)",
+      "tag": "shell.switchTransition"
+    }
+  },
+  "structure": {
+    "chrome_stack": "① shell.hubContext (Hub, absent lokal) -> ② projectSwitcher.bar (Projekt) -> ③ shell.relayDrop (nur bei Drop, absent lokal) -> ④ window.host (Fenster). Scope-Hierarchie Hub->Projekt->Fenster von aussen nach innen legibel (H1).",
+    "mount_wiring": "App: AuthGate(Verified) -> [Passkey-PoP nur Remote, CYP-429 §5] -> HubConnect (gemountet, CYP-419) -> hub-scoped AgentShell. Heute fehlt die Hub-Schicht (App geht AuthGate->AgentShell direkt) — CYP-449 verdrahtet sie.",
+    "hub_switch": "Confirm -> voller Teardown (alle Windows/Overlays schliessen + pending/in-flight raeumen, Noise-Session ab) -> Transition -> Connect+TOFU (non-optimistisch) -> WindowHost frisch abgeleitet (resetTo je Hub) -> Transport-Re-Point resolvedTransport (AgentShell.kt:301). EIN aktiver Hub, kein Multiplex.",
+    "local_remote_parity": "EIN Code-Pfad (Q4); Lokal laesst ① + ③ weg (konditional, fail-closed), kein separates Layout, kein Modus-Bluten.",
+    "responsive": "Desktop-Native zuerst (WindowCanvas/CYP-26); ① kompakt bei <400 (ProjectSwitcherBar-Breakpoint); Host-Floor nie unterschritten (CYP-389); PhonePager bleibt (Team-2 spaeter)."
+  },
+  "reused_axes": {
+    "hub_scope": "welcher Hub (① shell.hubContext + Hubs-Switcher) — CYP-429/hubConnect.",
+    "project_scope": "welches Projekt (② ProjectSwitcherBar) — bestehend.",
+    "window_scope": "welche Fenster (④ WindowHost) — CYP-26.",
+    "connection_truth": "Relay-Verbindungszustand (③ + CYP-429 §7) — Bodenwahrheit, neutral, connected=primary nur bei LIVE.",
+    "rule": "Farbe nie alleiniger Traeger (1.4.1); tertiary/#40D6A0 NIE Status; Relay-Drop neutral nicht error-Rot; nur CYP-429-Trust-Aenderung ist WARN-Amber. Presence != connected."
+  }
+}

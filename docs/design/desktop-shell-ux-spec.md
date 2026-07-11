@@ -1,10 +1,11 @@
 # Phase-2 Desktop-App-Shell / Operator-Surface UX — Design-Spec (CYP-449, Epic CYP-427)
 
-> Status: **Design-Aufschlag** · docs-only, **kein Bau vor Build-GO** · Owner: UX/UI
+> Status: **Spec-Closure — Q1–Q4 ratifiziert 2026-07-11** (volle §14-Durchsicht macht der PO vor Build-GO; ganzer
+> Phase-2-Desktop-Build = ein zusammenhängender ratifizierter Slice) · docs-only, **kein Bau vor Build-GO** · Owner: UX/UI
 > Baut auf **CYP-429 (Remote-Operator-Flow)** auf — jetzt die **Desktop-Fenster-Shell** für den Remote-Operator
 > (RR6-ii, **Team-1-Desktop zuerst**). Naht-Konsistenz zu CYP-429 + **CYP-443-Client-Zuständen** über den PO.
 > Begleit-Specs: `remote-operator-ux-spec.md` (CYP-429), `hub-connection-ux-spec.md` (CYP-395/419), `WINDOW-RESPONSIVE.md` (CYP-26).
-> Companion-Files werden nach Ratifikation eingefroren (jetzt würden Keys/Tags noch driften).
+> Eingefrorene Companion-Files (Haus-Konvention): `desktop-shell-keys.md` · `-tags.md` · `-tokens.json`.
 
 ⭐**Struktureller Kern-Befund (Grounding):** die gebaute `connect/`-Hub-Flow-UX (CYP-419, meine CYP-395-Spec) ist
 **gebaut, aber NICHT gemountet** — `App` geht heute `AuthGate → AgentShell` direkt. **CYP-449 ist der Slice, der die
@@ -103,11 +104,11 @@ Die Fern-Betrieb-Chrome (CYP-429 §9) wird zur **obersten Shell-Zeile** und trä
   subtile Latenz · **`[Hubs ▾]`**-Switcher. Nie `tertiary`-Grün; zeigt **meine** Session, nicht Registry-Presence.
 - **Hub-Switcher = `Hubs ▾`** (Vorbild `Projekte ▾`-DropdownMenu, `ProjectSwitcherBar.kt:157`): listet die registrierten
   Hubs (`ControlPlaneClient.hubs()`, Presence advisory/H1), aktiver Hub ist **kein** Ziel. Auswahl → Hub-Wechsel (§6).
-- **Platzierung (Q1, §14):** Spec-Default = **eigene erste Shell-Zeile** (Hub scoped über Projekt, H1). Alternative =
-  Sibling-Control **in** der `ProjectSwitcherBar`-Row (`Hubs ▾` neben `Projekte ▾`). Empfehlung: eigene Zeile — hält die
-  Hub→Projekt-Hierarchie visuell sauber; die `ProjectSwitcherBar` bleibt projekt-scoped.
-- **Mid-Session-Switch (Q2, §14):** ist der Hub-Wechsel **jederzeit** aus dem aktiven Workspace erreichbar (Default: ja,
-  über `Hubs ▾`) — mit dem vollen Teardown (§6). Bestätigen.
+- **Platzierung (Q1 ratifiziert): eigene erste Shell-Zeile** (Hub scoped über Projekt, H1) — die
+  `ProjectSwitcherBar` bleibt projekt-scoped, die Hub→Projekt-Hierarchie visuell sauber.
+- **Mid-Session-Switch (Q2 ratifiziert): erlaubt** — der Hub-Wechsel ist **jederzeit** aus dem aktiven Workspace über
+  `Hubs ▾` erreichbar, **aber immer durch den vollen Teardown** (§6): kein Fenster/State des alten Hubs überlebt,
+  in-flight ehrlich ungewiss.
 - **Lokal-Modus:** die ganze Zeile ① ist **absent** (kein „Fern-Betrieb", kein `Hubs ▾` wenn nur ein lokaler Hub); der
   Einstieg bleibt der HubConnect-Flow (§4).
 
@@ -117,6 +118,10 @@ Die Fern-Betrieb-Chrome (CYP-429 §9) wird zur **obersten Shell-Zeile** und trä
 
 Ein Hub-Wechsel ist ein **voller, ehrlicher Shell-Teardown** — kein Fenster des alten Hubs überlebt.
 
+0. **Confirm-Dialog (Q3 ratifiziert):** **vor** dem Teardown ein Bestätigungsdialog — „**Von Hub X trennen? Laufende
+   Aktionen werden ungewiss.**" (`shell_hub_switch_confirm_*`) + der aktuelle Hub-Workspace wird geschlossen. Weil der
+   Switch ein **voller Teardown + potenzieller in-flight-Verlust** ist, verhindert der Dialog **versehentliches
+   Aussteigen**. Abbruch → bleib beim aktuellen Hub, nichts passiert.
 1. **Teardown:** alle Floating-Windows/Overlays des aktiven-Hub-Workspace **schließen**; pending/in-flight-State räumen
    (CYP-429 Q5 — nichts wird über Hubs getragen); die alte Noise-Session/`HubTransport` **abreißen**.
 2. **Transition:** Shell zeigt „**Trenne von Hub X … verbinde mit Hub Y**" (`remote_switch_transition`); der WindowHost
@@ -163,7 +168,9 @@ Die bestehenden Floating-Windows **sind** der Workspace — **kein Neubau**, nur
 
 ## 9. Lokal/Remote-Shell-Parität (H4)
 
-- **Eine Shell, zwei Modi.** Lokal (heute) und Remote (Team-1) teilen `AgentShell` + WindowHost + Surfaces.
+- **Eine Shell, EIN Code-Pfad, zwei Modi (Q4 ratifiziert).** Lokal (heute) und Remote (Team-1) teilen **dieselbe
+  Shell-Struktur** `AgentShell` + WindowHost + Surfaces — **kein separates Layout**. Die Remote-Chrome ist rein
+  **konditional** (①+③ nur im Remote-Modus), nicht ein zweiter Aufbau.
 - **Unterschied ehrlich:** Remote **fügt** die Hub-Kontext-Zeile ① (Fern-Betrieb/E2E/gepinnt/Latenz/`Hubs ▾`) + die
   Relay-Drop-Fläche ③ **hinzu**; Lokal **hat beide nicht** (fail-closed absent, kein Phantom). Der PoP-Schritt (§4) gilt
   nur für Remote-Zielbuilds.
@@ -193,43 +200,50 @@ Die bestehenden Floating-Windows **sind** der Workspace — **kein Neubau**, nur
 
 ---
 
-## 12. testTag-Kontrakt (provisorisch — friert nach Ratifikation)
+## 12. testTag-Kontrakt (Übersicht — maßgeblich: `desktop-shell-tags.md`)
 
 Fast **reine Reuse** — die Surfaces + der Remote-Flow tragen ihre Tags schon (`window.*`, `project*`, `workspace.*`,
-`remote.*`, `hubConnect.*`). Net-new = die **Shell-Regionen**:
+`remote.*`, `hubConnect.*`). Net-new = die **Shell-Regionen** (eingefroren in `desktop-shell-tags.md`):
 ```
-shell.hubContext            (§5, Zeile ①; absent im Lokal-Modus)
-shell.hubContext.switch     (§5, `Hubs ▾`)
-shell.relayDrop             (§7, Zeile ③; global, nur bei Drop)
-shell.switchTransition      (§6, „Trenne … verbinde")
+shell.hubContext                  (§5, Zeile ①; absent im Lokal-Modus)
+shell.hubContext.switch           (§5, `Hubs ▾`)
+shell.hubContext.switchConfirm    (§6.0, Confirm-Dialog)
+shell.relayDrop                   (§7, Zeile ③; global, nur bei Drop)
+shell.switchTransition            (§6, „Trenne … verbinde")
 ```
 **Reuse:** `remote.context.banner/.hub/.latency/.reconnecting`, `remote.trust.*`, `hubConnect.*` (Liste/Connect),
 `window.host`/`window.<id>.*`, `projectSwitcher.*`, `workspace.roleIndicator`.
 **Fail-closed-Anker:** `shell.hubContext` + `shell.relayDrop` **absent im Lokal-Modus**; nach Hub-Wechsel **kein**
 `window.<altId>` des alten Hubs; `remote.connect.connected` nie vor echtem LIVE.
 
-## 13. Copy (provisorisch — meist Reuse)
+## 13. Copy (Übersicht — maßgeblich: `desktop-shell-keys.md`)
 
-Fast alles reused CYP-429 (`remote_*`) + hubConnect (`hubconnect_*`) + bestehend (`project_*`, `window_*`). Net-new (Shell):
+Fast alles reused CYP-429 (`remote_*`) + hubConnect (`hubconnect_*`) + bestehend (`project_*`, `window_*`). Net-new (Shell,
+eingefroren in `desktop-shell-keys.md`):
 | Key | DE | EN |
 |---|---|---|
 | `shell_hub_switcher` | Hubs | Hubs |
-| `shell_hub_switch_confirm` | Auf Hub %1$s wechseln? Der aktuelle Hub-Workspace wird geschlossen. | Switch to hub %1$s? The current hub workspace will close. |
+| `shell_hub_switch_confirm_title` | Von Hub %1$s trennen? | Disconnect from hub %1$s? |
+| `shell_hub_switch_confirm_body` | Laufende Aktionen werden ungewiss. Der aktuelle Hub-Workspace wird geschlossen. | In-flight actions become uncertain. The current hub workspace will close. |
+| `shell_hub_switch_confirm_action` | Trennen & wechseln | Disconnect & switch |
 | `a11y_shell_hub_context` | Hub-Kontext: Fern-Betrieb auf %1$s | Hub context: remote session on %1$s |
 
 *(Reuse: `remote_switch_transition`, `remote_relay_dropped`, `remote_context_operating`, `remote_e2e_indicator`,
-`remote_trust_pinned`, `hubconnect_*`-Liste/Connect, `project_switcher_active`, `window_fit_action`.)*
+`remote_trust_pinned`, `hubconnect_*`-Liste/Connect, `project_switcher_active`, `window_fit_action`; Confirm-Abbrechen
+reused den bestehenden Dialog-Abbrechen (`connector_optin_cancel`-Muster).)*
 
-## 14. Offene Entscheidungen
+## 14. Ratifizierte Entscheidungen (Q1–Q4, PO 2026-07-11) → Spec-Closure
 
-1. **Q1 — Hub-Kontext-Zeile: eigene erste Shell-Zeile (Default) vs. Sibling in `ProjectSwitcherBar`?** Empfehlung:
-   **eigene Zeile** (Hub scoped über Projekt, saubere Hierarchie).
-2. **Q2 — Mid-Session-Hub-Switch erreichbar?** Default: **ja** (aus `Hubs ▾`, voller Teardown §6). Bestätigen.
-3. **Q3 — Hub-Switch-Bestätigung:** ein Confirm-Dialog vor dem Teardown (`shell_hub_switch_confirm`) — Default **ja**
-   (Teardown ist konsequenzenreich), analog Projekt-Switch-Semantik. Bestätigen.
-4. **Q4 — Lokal-Modus-Einstieg mit Hub-Layer:** wird der HubConnect-Flow (§4) auch für **rein lokale** Team-1-Builds
-   gemountet (dann Hub-Liste mit einem lokalen Hub), oder bleibt Lokal der direkte `AgentShell` (kein Hub-Layer)?
-   Empfehlung: Hub-Layer **einheitlich** mounten (ein Pfad), Lokal = Hub-Liste mit dem lokalen Hub, ① absent.
+*(Volle §14-Ratifikations-Durchsicht macht der PO vor Build-GO; der ganze Phase-2-Desktop-Build ist ein zusammenhängender
+ratifizierter Slice. Keys/Tags/Tokens sind mit diesen Rulings eingefroren.)*
+
+1. **Q1 — Hub-Kontext = eigene erste Shell-Zeile** (Chrome-Stapel ①→②→③→④; Scope-Hierarchie Hub→Projekt→Fenster legibel).
+2. **Q2 — Mid-Session-Switch erlaubt**, aber **immer durch den vollen Teardown** (Q5): kein Alt-Hub-Fenster/State
+   überlebt, in-flight ehrlich ungewiss (§5/§6).
+3. **Q3 — Switch-Confirm = JA:** Bestätigungsdialog vor dem Wechsel („Von Hub X trennen? Laufende Aktionen werden
+   ungewiss."), weil Switch = voller Teardown + potenzieller in-flight-Verlust; verhindert versehentliches Aussteigen (§6.0).
+4. **Q4 — Einheitliche Shell-Struktur, Remote-Chrome konditional:** **EIN Code-Pfad**; Lokal-Modus **lässt** Hub-Kontext-Zeile
+   ① + Relay-Fläche ③ **weg** (fail-closed, kein Phantom), **kein** separates Layout — uniform, kein Modus-Bluten (§4/§9).
 
 ## 15. Nahtstellen (über den PO)
 
@@ -261,6 +275,7 @@ Fast alles reused CYP-429 (`remote_*`) + hubConnect (`hubconnect_*`) + bestehend
 
 ---
 
-*Design-Aufschlag, nichts gebaut, kein Bau vor Build-GO. Baut auf CYP-429; Naht-Konsistenz zu CYP-429 + CYP-443-Client-
-Zuständen über den PO. Companion-Files (`desktop-shell-keys/-tags/-tokens`) nach Ratifikation der §14-Entscheidungen
-eingefroren; vorher würden sie driften.*
+*Spec-Closure (Q1–Q4 ratifiziert 2026-07-11), nichts gebaut, **kein Bau vor Build-GO** (volle §14-Durchsicht macht der PO
+vor dem Build; ganzer Phase-2-Desktop-Build = ein ratifizierter Slice). Die eingefrorenen Companion-Files
+(`desktop-shell-keys.md` / `-tags.md` / `-tokens.json`) sind die UI-Vorlage; §12/§13 sind Übersicht. Baut auf CYP-429;
+Naht-Konsistenz zu CYP-429 + CYP-443-Client-Zuständen über den PO.*
