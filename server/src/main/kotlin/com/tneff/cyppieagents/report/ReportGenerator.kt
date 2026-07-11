@@ -3,8 +3,11 @@ package com.tneff.cyppieagents.report
 import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.events.EventFilter
+import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.events.Page
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import com.tneff.cyppieagents.model.Event
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.MessageKind
@@ -99,8 +102,22 @@ class ReportGenerator(
             // Composed from the type + severity + a non-sensitive ref — NEVER e.detail.
             ReportItem("${labelOf(e.type)} beobachtet", severity = e.severity, refLabel = refOf(e))
         }
-        // log.dropped is itself an observation gap — surface it honestly, not as a clean bill.
-        val dropped = events.count { it.type == EventType.LOG_DROPPED }
+        // CYP-364 (Root-C): `log.dropped` is PLATFORM telemetry — EventRecorder emits it with
+        // projectId=[EventRecorder.PLATFORM] (a server-wide back-pressure counter), NOT under any user
+        // project. So the active-project [query] above FILTERED IT OUT, and the gap line never appeared:
+        // an observation GAP silently read as an all-clear. Query the platform telemetry lane directly so
+        // the drops surface regardless of which project is active. (No ③ cross-project leak: PLATFORM is not
+        // a user project, and only a COUNT crosses — never project content.)
+        val dropEvents = eventSink.query(
+            EventFilter(since = since, until = until, type = EventType.LOG_DROPPED, projectId = EventRecorder.PLATFORM),
+            Page(limit = 2000),
+        ).events
+        // CYP-353 (Root-B): SUM the discarded-EVENT deltas — do NOT count the `log.dropped` REPORTS. One
+        // report carries a whole batch's `dropped` delta (EventRecorder.reportDropsIfAny), so counting reports
+        // under-states the gap (a single report can mean thousands of dropped events). The `dropped` field is a
+        // numeric telemetry COUNT — not a body/free-text/content — so reading it is the ONE narrow, justified
+        // read of `detail` here: the content-free rule guards CONTENT egress, and a count is not content.
+        val dropped = dropEvents.sumOf { (it.detail["dropped"] as? JsonPrimitive)?.longOrNull ?: 0L }
         val gapItems = if (dropped > 0) {
             listOf(ReportItem("Telemetrie-Lücke: $dropped Event(s) verworfen (log.dropped)", severity = Severity.INFO, refLabel = "log.dropped"))
         } else {

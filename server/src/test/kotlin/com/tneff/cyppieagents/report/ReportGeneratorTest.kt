@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.comm.Hub
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.events.EventDraft
+import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.events.InMemoryEventSink
 import com.tneff.cyppieagents.events.SystemTimeSource
 import com.tneff.cyppieagents.model.Agent
@@ -82,19 +83,29 @@ class ReportGeneratorTest {
     }
 
     @Test
-    fun defects_foldsBySeverityType_andSurfacesLogDroppedGap() = runBlocking {
-        val f = Fix()
+    fun defects_foldsBySeverityType_andSurfacesServerWideDiscardGap_summedByDelta() = runBlocking {
+        val f = Fix() // active project = "default"
         f.sink.appendBatch(listOf(
             EventDraft("backend", "default", EventType.ERROR_TOOL, Severity.ERROR, correlationId = "c-1"),
             EventDraft("backend", "default", EventType.ERROR_RATELIMIT, Severity.WARN),
-            EventDraft("backend", "default", EventType.LOG_DROPPED, Severity.INFO),
+            // CYP-364: the discard telemetry is PLATFORM-scoped (server-wide back-pressure), NOT under the
+            // active "default" project — it must STILL surface. CYP-353: two REPORTS carrying deltas 3 and 5
+            // = 8 discarded EVENTS, not 2 reports; the gap line must read 8.
+            EventDraft(EventRecorder.PLATFORM, EventRecorder.PLATFORM, EventType.LOG_DROPPED, Severity.WARN, detail = buildJsonObject { put("dropped", 3); put("total", 3) }),
+            EventDraft(EventRecorder.PLATFORM, EventRecorder.PLATFORM, EventType.LOG_DROPPED, Severity.WARN, detail = buildJsonObject { put("dropped", 5); put("total", 8) }),
             EventDraft("frontend", "default", EventType.TURN_START, Severity.INFO), // NOT a defect → excluded
         ))
         val items = f.gen.build(ReportType.DEFECTS, null, null).sections.first { it.key == "defects" }.items
         assertTrue(items.any { it.severity == Severity.ERROR && it.refLabel == "correlationId: c-1" })
         assertTrue(items.any { it.severity == Severity.WARN })
-        // log.dropped is surfaced as an honest observation gap, not swallowed.
-        assertTrue(items.any { it.refLabel == "log.dropped" }, "telemetry gap is reported, not hidden")
+        // CYP-364 + CYP-353: the PLATFORM-scoped gap surfaces DESPITE active="default" (364), and the number is
+        // the SUMMED discarded-event delta 3+5=8, not the 2 reports (353). Mutations: project-scope the drop
+        // query → the line vanishes (364 red); count reports instead of summing → "2 Event" (353 red).
+        assertTrue(
+            items.any { it.refLabel == "log.dropped" && it.text.contains("8 Event") },
+            "server-wide telemetry gap surfaces with the SUMMED discarded-event count (8), not the report-count",
+        )
+        assertFalse(items.any { it.refLabel == "log.dropped" && it.text.contains("2 Event") }, "must not report the 2 report-count (353)")
         // a turn.start is not a defect
         assertFalse(items.any { it.text.contains("turn") })
     }
