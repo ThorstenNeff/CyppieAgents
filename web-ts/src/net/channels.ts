@@ -26,6 +26,8 @@ interface ChannelBase {
   backoff?: Backoff
   factory?: SocketFactory
   schedule?: Scheduler
+  /** fired on each (re)connect open — the view layer uses it for a connection banner (CYP-438). */
+  onOpen?: () => void
 }
 
 // --- bidirectional channels -------------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
 import { RestClient } from '../net/rest'
-import type { AclEntry, Channel } from '../types/generated/contract'
+import type { AclEntry, Channel, Message1 } from '../types/generated/contract'
 
 /** CYP-426 interim: `:core` TerminalMode. The server maps this to the terminal-control state machine. */
 export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
@@ -16,6 +16,10 @@ export interface HubRepo {
   /** POST /api/agents/{id}/mode (operator). Non-optimistic: the confirmed flip arrives via /ws/terminal-state,
    *  not this response — callers await it only to surface a hard failure. */
   requestMode(agentId: string, target: TerminalMode): Promise<void>
+  /** GET /api/channels/{id}/messages — ACL-filtered history; folded into the store (deduped by id, overlaps live). */
+  getMessages(channelId: string, since?: number): Promise<Message1[]>
+  /** POST /api/channels/{id}/messages — returns the server Message; the same message also echoes over /ws/comm. */
+  postMessage(channelId: string, body: string): Promise<Message1>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -36,5 +40,13 @@ export class RestHubRepo implements HubRepo {
     // ModeChangeRequest { target } — hand-modeled (CYP-426). We ignore the ModeChangeResponse body on purpose:
     // the view flips only on the /ws/terminal-state echo (non-optimistic), so this just proves the POST was accepted.
     await this.rest.post<unknown>(`/api/agents/${encodeURIComponent(agentId)}/mode`, { target })
+  }
+  getMessages(channelId: string, since?: number): Promise<Message1[]> {
+    const q = since !== undefined ? `?since=${since}` : ''
+    return this.rest.get<Message1[]>(`/api/channels/${encodeURIComponent(channelId)}/messages${q}`)
+  }
+  postMessage(channelId: string, body: string): Promise<Message1> {
+    // SendMessageRequest { body } — hand-modeled (REST-only DTO, not in the asyncapi export; CYP-426).
+    return this.rest.post<Message1>(`/api/channels/${encodeURIComponent(channelId)}/messages`, { body })
   }
 }

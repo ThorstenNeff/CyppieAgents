@@ -22,6 +22,8 @@ const fakeRepo = (): HubRepo => ({
   fetchAcl: vi.fn().mockResolvedValue([]),
   putAcl: vi.fn().mockResolvedValue({ channelId: '', agentId: '', canRead: false, canWrite: false }),
   requestMode: vi.fn().mockResolvedValue(undefined),
+  getMessages: vi.fn().mockResolvedValue([]),
+  postMessage: vi.fn().mockResolvedValue({ id: 'x', channelId: '', from: '', body: '', ts: 0 }),
 })
 
 beforeEach(() => {
@@ -51,6 +53,27 @@ describe('App assembly (CYP-425)', () => {
     expect(getByTestId('agent-window.frontend')).toBeTruthy()
     expect(getByTestId('agent-window.backend')).toBeTruthy()
     expect(getByTestId('acl-panel')).toBeTruthy()
+  })
+
+  it('renders the Comm window with channels, folds fetched history, and shows a live message (CYP-438)', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    repo.getMessages = vi.fn().mockResolvedValue([{ id: 'hist1', channelId: 'po-frontend', from: 'po', body: 'history line', ts: 1 }])
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(getByTestId('comm-panel')).toBeTruthy()
+    expect(getByTestId('comm.channel.po-frontend')).toBeTruthy()
+    // history for the default-selected channel (po-frontend) is fetched + folded in
+    expect(await findByTestId('comm.message.hist1')).toBeTruthy()
+    // a live /ws/comm message on the selected channel appears too
+    const comm = hub.sockets.find((s) => s.url.includes('/ws/comm'))!
+    await act(async () => {
+      comm.emitOpen()
+      comm.emitMessage(JSON.stringify({ type: 'message', message: { id: 'live1', channelId: 'po-frontend', from: 'frontend', body: 'live line', ts: 2 } }))
+    })
+    expect(await findByTestId('comm.message.live1')).toBeTruthy()
   })
 
   it('a live /ws/comm channels event that reveals a new agent opens a new window (VM → store → windows)', async () => {

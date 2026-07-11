@@ -9,6 +9,10 @@ import type { AclEntry, Channel, Message1, CommWsServerEvent, AgentTerminalContr
 import { pendingKey, type AclDimension, type PendingAcl } from '../comm/aclModel'
 import type { TerminalControlState } from '../agentview/terminalModeSelection'
 
+/** The /ws/comm connection posture the CommPanel banner reflects (CYP-438 wires connecting→live via onOpen; the
+ *  offline/revoked distinction is CYP-437's banner work). */
+export type CommConnection = 'live' | 'connecting' | 'offline' | 'revoked'
+
 export interface HubState {
   channels: readonly Channel[]
   /** derived from channels' members (sorted, deduped) — the ACL columns + which agent windows to open. */
@@ -21,6 +25,8 @@ export interface HubState {
   messagesByChannel: ReadonlyMap<string, readonly Message1[]>
   /** the server-confirmed per-agent terminal-control state (drives the non-optimistic mode toggle). */
   terminalStateByAgent: ReadonlyMap<string, TerminalControlState>
+  /** the /ws/comm connection posture (CommPanel banner). */
+  commConnection: CommConnection
 }
 
 export const emptyHubState: HubState = {
@@ -30,6 +36,12 @@ export const emptyHubState: HubState = {
   pendingAcl: new Map(),
   messagesByChannel: new Map(),
   terminalStateByAgent: new Map(),
+  commConnection: 'connecting',
+}
+
+/** Fold a batch of fetched history messages into state (each deduped by id — safe to overlap with live). */
+export function ingestMessages(state: HubState, msgs: readonly Message1[]): HubState {
+  return msgs.reduce((s, m) => applyMessage(s, m), state)
 }
 
 /** The agent roster derived from channel membership (interim until CYP-426 exports the real Agent roster). The

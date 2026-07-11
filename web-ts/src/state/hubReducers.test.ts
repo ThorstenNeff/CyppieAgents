@@ -8,6 +8,7 @@ import {
   setAclPending,
   clearAclPending,
   applyMessage,
+  ingestMessages,
   applyCommEvent,
   applyTerminalControl,
   type HubState,
@@ -90,6 +91,14 @@ describe('comm messages — id-dedup idempotency (reconnect replay adds no dupli
     expect(after).toHaveLength(2)
     expect(after).toBe(before) // unchanged reference — a true no-op on duplicate
     expect(after?.map((m) => m.id)).toEqual(['m1', 'm2'])
+  })
+})
+
+describe('ingestMessages — fold fetched history, deduped against live (CYP-438)', () => {
+  it('adds new ids and drops ones already present', () => {
+    let s = applyMessage(emptyHubState, msg('live1', 'po-frontend', 'live'))
+    s = ingestMessages(s, [msg('hist1', 'po-frontend', 'h1'), msg('live1', 'po-frontend', 'live'), msg('hist2', 'po-frontend', 'h2')])
+    expect(s.messagesByChannel.get('po-frontend')?.map((m) => m.id)).toEqual(['live1', 'hist1', 'hist2'])
   })
 })
 

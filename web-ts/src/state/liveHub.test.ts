@@ -45,6 +45,14 @@ describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
     expect(onTerminalControl).toHaveBeenCalledWith({ agentId: 'backend', state: 'INTERACTIVE' })
   })
 
+  it('fires onCommOpen when /ws/comm (re)connects — drives the connection banner (CYP-438)', () => {
+    const hub = new FakeSocketHub()
+    const onCommOpen = vi.fn()
+    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onCommOpen }, { factory: hub.factory, schedule: hub.runNow })
+    socketFor(hub, '/ws/comm').emitOpen()
+    expect(onCommOpen).toHaveBeenCalledTimes(1)
+  })
+
   it('stop() closes both sockets', () => {
     const hub = new FakeSocketHub()
     const handle = startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })

@@ -10,6 +10,8 @@ import type { CommWsServerEvent, AgentTerminalControlEvent } from '../types/gene
 export interface HubActions {
   onCommEvent: (event: CommWsServerEvent) => void
   onTerminalControl: (event: AgentTerminalControlEvent) => void
+  /** fired when /ws/comm (re)connects — drives the CommPanel connection banner (CYP-438). */
+  onCommOpen?: () => void
 }
 
 export interface LiveHubHandle {
@@ -18,7 +20,7 @@ export interface LiveHubHandle {
 
 export function startLiveHub(config: HubConfig, actions: HubActions, deps: SocketDeps = {}): LiveHubHandle {
   const common = { baseUrl: config.wsBase, token: config.token, factory: deps.factory, schedule: deps.schedule }
-  const comm = commSocket({ ...common, onEvent: actions.onCommEvent })
+  const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen })
   const terminal = terminalStateFeed({ ...common, onEvent: actions.onTerminalControl })
   comm.start()
   terminal.start()
