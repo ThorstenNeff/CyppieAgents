@@ -70,7 +70,7 @@
             "subscribe": {
                 "description": "server → client (the client subscribes to receive)",
                 "message": {
-                    "$ref": "#/components/messages/StreamJsonEvent"
+                    "$ref": "#/components/messages/StoredAgentEvent"
                 }
             },
             "publish": {
@@ -137,9 +137,9 @@
                     "$ref": "#/components/schemas/AgentTerminalControlEvent"
                 }
             },
-            "StreamJsonEvent": {
+            "StoredAgentEvent": {
                 "payload": {
-                    "$ref": "#/components/schemas/StreamJsonEvent"
+                    "$ref": "#/components/schemas/StoredAgentEvent"
                 }
             },
             "UserTurn": {
@@ -554,6 +554,33 @@
                 "required": [
                     "agentId",
                     "state"
+                ]
+            },
+            "StoredAgentEvent": {
+                "type": "object",
+                "properties": {
+                    "seq": {
+                        "type": "integer"
+                    },
+                    "agentId": {
+                        "type": "string"
+                    },
+                    "projectId": {
+                        "type": "string"
+                    },
+                    "tsMs": {
+                        "type": "integer"
+                    },
+                    "event": {
+                        "$ref": "#/components/schemas/StreamJsonEvent"
+                    }
+                },
+                "required": [
+                    "seq",
+                    "agentId",
+                    "projectId",
+                    "tsMs",
+                    "event"
                 ]
             },
             "StreamJsonEvent": {
