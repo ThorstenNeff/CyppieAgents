@@ -28,6 +28,7 @@ pty4j = "0.13.4"
 material3 = "1.10.0-alpha05"
 thumbnailator = "0.4.20"
 tink = "1.15.0"
+noiseJava = "0.1.1"
 hikaricp = "5.1.0"
 postgresql = "42.7.4"
 flyway = "10.17.0"
@@ -39,6 +40,10 @@ zonkyEmbeddedPg = "2.0.7"
 # License: dual LGPLv3-or-Apache-2.0 — we elect **Apache-2.0** (no copyleft); see docs/THIRD-PARTY-LICENSES.md.
 jediterm-core = { module = "org.jetbrains.jediterm:jediterm-core", version.ref = "jediterm" }
 jediterm-ui = { module = "org.jetbrains.jediterm:jediterm-ui", version.ref = "jediterm" }
+# CYP-443 (Phase-2 remote): Noise Protocol Framework for the JVM ClientNoiseTransport actual (jvmMain only).
+# Signal's Maven-Central fork of the reference southernstorm/noise-java — pure-Java, MIT, no runtime deps
+# (jaxb-api in its POM is test-only). CR1-spike-verified: Noise_NK_25519_ChaChaPoly_BLAKE2s + getHandshakeHash().
+noise-java = { module = "org.signal.forks:noise-java", version.ref = "noiseJava" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { module = "junit:junit", version.ref = "junit" }

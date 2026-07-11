@@ -64,6 +64,8 @@ kotlin {
             implementation(libs.jediterm.core)
             implementation(libs.jediterm.ui)
             implementation(libs.kotlinx.coroutinesSwing)
+            // CYP-443 (Phase-2 remote): Noise_NK transport for the ClientNoiseTransport JVM actual (Desktop first).
+            implementation(libs.noise.java)
         }
         iosMain.dependencies {
             // iOS Ktor client engine (Darwin) so the engine-less HttpClient {} in AgentShell can
