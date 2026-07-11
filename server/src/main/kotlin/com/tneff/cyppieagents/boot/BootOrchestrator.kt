@@ -236,7 +236,12 @@ class BootOrchestrator(
 
     fun boot(): BootedPlatform {
         // S15 / CYP-96: operator overrides for repo + API key, per project, fall back to boot config.
-        val projectConfig = ProjectConfigStore(projectConfigFile, config.repo, secrets)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite, secret-at-rest (0600). The .db sits next to the
+        // legacy .json, which it imports ONCE (empty-table guard) so the GUI-set API key survives the switch (no
+        // "agents can't spawn" regression). In-memory File impl for tests (null).
+        val projectConfig = projectConfigFile?.let {
+            SqliteProjectConfigStore(it.toPath().resolveSibling("project-config.db"), config.repo, secrets, it.toPath())
+        } ?: ProjectConfigStore(null, config.repo, secrets)
         // CYP-247 S4 (§6.1, live-box migration, Rule ①): ADOPT a legacy shared `gitRoot/repo` clone into the
         // boot project's `clones/<pid>` (move + `git worktree repair`), preserving the existing worktrees + the
         // Auftraggeber's CLAUDE.md — NEVER a re-clone-fresh. No-op on a fresh install / once already per-project.
