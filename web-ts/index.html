@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cyppie Agents</title>
+    <!-- CYP-398 / CYP-152 / CYP-188 — PUBLIC build: this file is TOKENLESS by construction and MUST stay so.
+         The operator token is supplied ONLY by the DEPLOY/PROXY as a host-injected global, at serve time,
+         BEFORE the bundle loads — never committed here, never part of the compiled bundle. The public/MEMBER
+         serve injects nothing -> globalThis.CYPPIE_OPERATOR_TOKEN is absent -> fail-closed MEMBER view.
+         The deploy injects it HERE (in <head>, before the bundle), as a CLASSIC inline script, e.g.
+         (NOT present in this build):
+             <script>globalThis.CYPPIE_OPERATOR_TOKEN = "…from the deploy/serve env…";</script>
+         Vite hoists the module bundle into <head>; module scripts are deferred, so a classic inline token
+         script runs first regardless of order — but keeping the injection point in <head> makes that explicit. -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

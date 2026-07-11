@@ -1,0 +1,6 @@
+# CYP-398 — web-ts (Node/Vite) build artifacts. node_modules is already ignored repo-wide.
+node_modules
+dist
+dist-ssr
+*.local
+.vite
