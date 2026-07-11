@@ -59,6 +59,14 @@ class MemberTier403MatrixTest {
         // CYP-417 (S-G): the capacity read is MEMBER-tier (content-free counters, secret-free) — a MEMBER reaches
         // it (200), like the other reads above; the hard capacity GATE is server-side in the spawn path, not here.
         "GET /api/capacity",
+        // CYP-286: the WS-ticket mint is READ-TIER by construction (gated by `requireCommReader`, which admits a
+        // verified MEMBER session by design). It mints a short-lived, single-use ticket bound to the caller's OWN
+        // resolved read-subject (carol's identityId — she cannot mint for another subject), consumed only by the
+        // read sockets' `wsReaderOrNull` → the SAME ACL-filtered, fail-closed-empty read access her Kratos cookie
+        // already grants. NO escalation (alternate transport for the identity she has), NO write path (the send +
+        // `/ws/agent` gates don't consume tickets). So a MEMBER reaches it (201), member-permitted — exactly the
+        // CYP-417 shape (own-subject / read-only / no-escalation), NOT an operator-tier route.
+        "POST /api/ws-ticket",
         // CYP-326 — the compact-orchestration STATUS read is read-tier (token OR verified human session), like the
         // config reads: a MEMBER reaches it (200), content-free. The operator write POST /api/compact/config stays denied.
         "GET /api/compact/status",

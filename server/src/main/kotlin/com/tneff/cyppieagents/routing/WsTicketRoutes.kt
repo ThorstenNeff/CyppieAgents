@@ -23,7 +23,16 @@ fun Route.wsTicketRoutes(
 ) {
     route("$apiBase/ws-ticket") {
         post {
+            // BINDING (the load-bearing property, PO1 re-gate): the ticket is bound to the caller's OWN resolved
+            // read-principal and NOTHING the client sends. [requireCommReader] resolves `subject` from the caller's
+            // OWN credential (agent/operator token, participant token, or verified human session → its identityId);
+            // there is NO request field that could set it, so a member CANNOT mint a ticket for the operator or
+            // another agent (no privilege escalation). [mint] carries THAT subject verbatim.
             val subject = call.requireCommReader(deps, registry) // 401 (UnauthorizedException) if unauthenticated
+            // The minted ticket therefore unlocks ONLY what `subject` already may read: [wsReaderOrNull] resolves it
+            // to the SAME subject the caller's credential would, so a read WS stays ACL-scoped to the minter (never
+            // wider). The drive/operator socket `/ws/agent` uses [tokenAuthorize], which does NOT consume tickets —
+            // so a ticket can never unlock a foreign/operator WS. (Proven end-to-end in Cyp286WsTicketRoutesTest.)
             val ticket = deps.wsTickets.mint(subject)
             call.respond(HttpStatusCode.Created, WsTicket(ticket = ticket, expiresInMs = deps.wsTickets.ttlMs))
         }
