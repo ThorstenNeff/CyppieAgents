@@ -52,6 +52,9 @@ fun Application.installPlatform(
             call.respond(HttpStatusCode.InternalServerError, ApiErrorBody(ApiError("internal", "internal error")))
         }
     }
+    // CYP-410 (S-A): the transport-agnostic Session Manager seam. The Local-API routes below are ONE transport
+    // driving it; the Phase-2 Control-Plane transport mounts behind the same facade. Holds no Ktor type.
+    val sessionManager = com.tneff.cyppieagents.boot.SessionManager(booted, authDeps)
     routing {
         // ── WS + MCP transports — NOT versioned; single-mount, OUTSIDE the /api-prefix loop (they are not
         //    `/api` REST resources: `/ws/*` are sockets, `/mcp/hub` is the connector wire, design §2.5). ──
@@ -138,23 +141,12 @@ fun Application.installPlatform(
             // (getOrCreate the target runtime BEFORE it becomes active, rescope the hub, rehydrate, LRU cap).
             projectRoutes(
                 booted.projectRegistry, booted.projectDeleter, booted.tokenRegistry,
-                onActiveSwitch = { pid ->
-                    booted.runtimeRegistry.getOrCreate(pid, booted.projectRuntimeFactory)
-                    // CYP-247 S3 (r3): synchronously DRAIN + STOP the OUTGOING project's sessions (awaited) BEFORE
-                    // the flip, so any in-flight ResultEvent is attributed under active()==outgoing (correct channel
-                    // + projectId stamp + tokenUsage) and the reader is quiescent (r4): closeAndAwait destroys
-                    // then JOINS the reader (CYP-371 — not the old cancelAndJoin), so no active()-read outlives
-                    // the drain, UNLESS the 5 s flush timeout fires (the one residual hole, CYP-374). This is a
-                    // distinct synchronous switch step — NOT the async LRU eviction below (which stays async for a
-                    // cap>1 background victim; the "never inline" contract is untouched).
-                    // Only in teardown-on-switch mode (cap==1, the S3 default): with cap>1 the outgoing project
-                    // stays background-live (its correct async attribution is the deferred S5 mouth work).
-                    val outgoing = booted.state.activeProjectId
-                    if (outgoing != pid && booted.suspensionPolicy.cap == 1) booted.drainProject(outgoing)
-                    booted.state.rescope(pid)
-                    booted.rehydrateActiveProject() // CYP-256 (.5a): rehydrate the target's durable agents
-                    booted.suspensionPolicy.onActivated(pid) // CYP-255 (.4b): HOT + resume + enforce K cap (=1, S3)
-                },
+                // CYP-410 (S-A): the switch orchestration moved into the transport-agnostic SessionManager seam
+                // (single-sourced in ProjectSwitcher.switch — the SAME steps the boot view-switch drives): mint the
+                // target runtime → synchronously DRAIN+STOP the outgoing project's sessions (awaited, cap==1) BEFORE
+                // the flip so any in-flight ResultEvent is attributed under active()==outgoing → rescope → rehydrate
+                // → mark HOT. The route stays thin; the sequence lives in one place now.
+                onActiveSwitch = { pid -> sessionManager.switchProject(pid) },
                 runtimeStateOf = { booted.suspensionPolicy.stateOf(it, booted.state.activeProjectId) }, // CYP-255 (.4b)
                 deps = authDeps, // CYP-178
                 apiBase = apiBase,

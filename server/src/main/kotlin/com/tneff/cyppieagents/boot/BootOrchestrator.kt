@@ -127,6 +127,9 @@ class BootedPlatform(
     val compactOnConfigUpdated: () -> Unit, // CYP-326 kill-switch: abort a run when "compact allowed" → false
     /** CYP-332 — the interactive-terminal PTY manager (one pty4j PTY per agent; `/ws/terminal`). */
     val ptyManager: com.tneff.cyppieagents.pty.PtyManager,
+    /** CYP-410 (S-A) — the single-sourced project-switch orchestration. The `SessionManager` seam wraps its
+     *  [ProjectSwitcher.switch] for the runtime switch; boot uses [ProjectSwitcher.switchAtBoot]. */
+    val projectSwitcher: ProjectSwitcher,
 )
 
 /**
@@ -828,11 +831,19 @@ class BootOrchestrator(
         // under config.projectId → NO wandering), rehydrate ITS own store, mark it HOT. A fresh durable-active thus
         // shows 0 (its own); config.projectId keeps the config agents. Skipped when the view already is
         // config.projectId (the common no-mismatch boot). Restart-stable: every boot re-derives this deterministically.
+        // CYP-410 (S-A): the project-switch orchestration is single-sourced in [ProjectSwitcher] — the boot view
+        // switch and the runtime `onActiveSwitch` route now drive the identical steps. Boot uses `switchAtBoot`
+        // (no outgoing drain — `rescope` stashes the just-seeded config agents), byte-identical to the prior inline.
+        val projectSwitcher = ProjectSwitcher(
+            runtimeRegistry = runtimeRegistry,
+            projectRuntimeFactory = projectRuntimeFactory,
+            state = state,
+            suspensionPolicy = suspensionPolicy,
+            rehydrateActiveProject = rehydrateActiveProject,
+            drainProject = { pid -> drainProject(pid) },
+        )
         if (durableActive != config.projectId) {
-            runtimeRegistry.getOrCreate(durableActive, projectRuntimeFactory)
-            state.rescope(durableActive)
-            rehydrateActiveProject()
-            suspensionPolicy.onActivated(durableActive)
+            projectSwitcher.switchAtBoot(durableActive)
         }
 
         // S16 / CYP-89: Product-Lead reports fold READ sources (events/agents/channels/inbox) into
@@ -900,6 +911,7 @@ class BootOrchestrator(
             compactStatus = compactStatus,
             compactOnConfigUpdated = compactOnConfigUpdated,
             ptyManager = ptyManager, // CYP-332
+            projectSwitcher = projectSwitcher, // CYP-410 (S-A)
         )
     }
 }
