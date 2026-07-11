@@ -76,4 +76,14 @@ describe('CommPanel (CYP-407 W9 part 2)', () => {
     expect(revokedText).toBe('Zugriff entzogen')
     expect(revokedText).not.toBe(offlineText)
   })
+
+  it('a revoked connection LOCKS the composer, even with canWrite true (CYP-437 #4)', () => {
+    const live = render(<CommPanel {...base} />)
+    expect(live.queryByTestId('composer-input')).not.toBeNull() // baseline: composer present when live
+    cleanup()
+    // canWrite stays true → proves the revoke overrides disclosure, not just a canWrite=false path
+    const revoked = render(<CommPanel {...base} connection="revoked" canWrite={true} />)
+    expect(revoked.queryByTestId('comm-revoked-lock')).not.toBeNull()
+    expect(revoked.queryByTestId('composer-input')).toBeNull()
+  })
 })

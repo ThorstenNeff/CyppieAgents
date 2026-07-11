@@ -28,6 +28,8 @@ interface ChannelBase {
   schedule?: Scheduler
   /** fired on each (re)connect open — the view layer uses it for a connection banner (CYP-438). */
   onOpen?: () => void
+  /** fired on an unexpected drop (code 1008 = auth revoked) — offline/revoked banner (CYP-437). */
+  onClose?: (code?: number) => void
 }
 
 // --- bidirectional channels -------------------------------------------------------------------------------

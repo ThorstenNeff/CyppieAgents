@@ -19,6 +19,7 @@ import type { WindowState } from './windowmgr/windowState'
 import { useHubStore } from './state/hubStore'
 import { readHubConfig, type HubConfig, type SocketDeps } from './state/hubConfig'
 import { RestHubRepo, type HubRepo } from './state/restRepo'
+import { RestError } from './net/rest'
 import { commitAclChange } from './state/aclCommit'
 import { startLiveHub } from './state/liveHub'
 import { AgentWindow } from './AgentWindow'
@@ -78,7 +79,17 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   useEffect(() => {
     hubRepo.fetchChannels().then(setChannels).catch(() => undefined)
     hubRepo.fetchAcl().then(setAcl).catch(() => undefined)
-    const live = startLiveHub(cfg, { onCommEvent, onTerminalControl, onCommOpen: () => setCommConnection('live') }, socketDeps)
+    const live = startLiveHub(
+      cfg,
+      {
+        onCommEvent,
+        onTerminalControl,
+        onCommOpen: () => setCommConnection('live'),
+        // CYP-437(b): an unexpected drop flips the banner off 'live'; a 1008 (auth revoked) is terminal → 'revoked'.
+        onCommClose: (code) => setCommConnection(code === 1008 ? 'revoked' : 'offline'),
+      },
+      socketDeps,
+    )
     return () => live.stop()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -122,7 +133,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     hubRepo
       .postMessage(selectedChannelId, text)
       .then((msg) => ingestMessages([msg]))
-      .catch(() => setCommSendError('comm_send_failed'))
+      // CYP-437(a): a 403 is an ACL denial → the distinct "denied" disclosure (like CYP-435's 409 for ACL PUT),
+      // not the generic failure. Anything else stays the generic retryable failure.
+      .catch((err) => setCommSendError(err instanceof RestError && err.status === 403 ? 'comm_send_denied' : 'comm_send_failed'))
   }
 
   // PO identity for the reserved sender accent comes from explicit config, never a `po-<worker>` guess (CYP-426

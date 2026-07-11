@@ -53,6 +53,16 @@ describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
     expect(onCommOpen).toHaveBeenCalledTimes(1)
   })
 
+  it('fires onCommClose(code) when /ws/comm drops unexpectedly (CYP-437 offline/revoked banner)', () => {
+    const hub = new FakeSocketHub()
+    const onCommClose = vi.fn()
+    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onCommClose }, { factory: hub.factory, schedule: hub.runNow })
+    const comm = socketFor(hub, '/ws/comm')
+    comm.emitOpen()
+    comm.emitClose(1008)
+    expect(onCommClose).toHaveBeenCalledWith(1008)
+  })
+
   it('stop() closes both sockets', () => {
     const hub = new FakeSocketHub()
     const handle = startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
