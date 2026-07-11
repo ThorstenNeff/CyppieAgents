@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.agentview
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -628,6 +629,28 @@ private fun ReconnectingChip(agentId: String, connection: ConnectionStatus) {
     )
 }
 
+/** CYP-396: the status dot's drawn form. UNKNOWN is a RING (a different axis than STOPPED), all else a filled disc. */
+internal enum class StatusDotShape { FILL, RING }
+
+/** CYP-396: the status dot's colour ROLE (resolved to a `colorScheme` colour by the composable). NEUTRAL = onSurfaceVariant (pending). */
+internal enum class StatusDotRole { PRIMARY, OUTLINE, ERROR, NEUTRAL }
+
+/**
+ * CYP-396 — form + colour-role for the status dot, as a PURE decision so both are unit-testable without a pixel
+ * compare (pattern: Cyp392ScrollbarStyleTest pins the style as a value). UNKNOWN = RING/OUTLINE — never a pale
+ * disc that collapses onto STOPPED's look; "unknown" is a different axis, not weaker certainty. `pending`
+ * (Start…/Neustart…) wins for every state.
+ */
+internal fun statusDotSpec(state: AgentLifecycleState, pending: Boolean): Pair<StatusDotShape, StatusDotRole> {
+    if (pending) return StatusDotShape.FILL to StatusDotRole.NEUTRAL
+    return when (state) {
+        AgentLifecycleState.RUNNING -> StatusDotShape.FILL to StatusDotRole.PRIMARY
+        AgentLifecycleState.STOPPED -> StatusDotShape.FILL to StatusDotRole.OUTLINE
+        AgentLifecycleState.ERROR -> StatusDotShape.FILL to StatusDotRole.ERROR
+        AgentLifecycleState.UNKNOWN -> StatusDotShape.RING to StatusDotRole.OUTLINE // ← the fix
+    }
+}
+
 @Composable
 private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPending: Boolean = false, restartPending: Boolean = false) {
     // CYP-262/330 Teil 1: while a Start/Restart request is in flight (client-only, before the server's event),
@@ -646,11 +669,19 @@ private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPe
             AgentLifecycleState.UNKNOWN -> stringResource(Res.string.agent_status_unknown)
         }
     }
-    val dotColor = if (pending) MaterialTheme.colorScheme.onSurfaceVariant else when (state) { // a0: neutral, distinct from RUNNING=primary
-        AgentLifecycleState.RUNNING -> MaterialTheme.colorScheme.primary
-        AgentLifecycleState.STOPPED -> MaterialTheme.colorScheme.outline
-        AgentLifecycleState.ERROR -> MaterialTheme.colorScheme.error
-        AgentLifecycleState.UNKNOWN -> MaterialTheme.colorScheme.outlineVariant
+    // CYP-396: form + colour-role are a pure decision (see statusDotSpec) so both are testable without a pixel
+    // compare. UNKNOWN becomes a RING (a different AXIS from STOPPED), never a pale disc — role `outline` (3.55/
+    // 3.63 ≥ 3:1 on its own, WCAG 1.4.11) instead of the near-invisible `outlineVariant` (1.41/1.52).
+    val (dotShape, dotRole) = statusDotSpec(state, pending)
+    val dotColor = when (dotRole) {
+        StatusDotRole.PRIMARY -> MaterialTheme.colorScheme.primary
+        StatusDotRole.OUTLINE -> MaterialTheme.colorScheme.outline
+        StatusDotRole.ERROR -> MaterialTheme.colorScheme.error
+        StatusDotRole.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant // a0: neutral, distinct from RUNNING=primary
+    }
+    val dotModifier = when (dotShape) {
+        StatusDotShape.FILL -> Modifier.size(8.dp).clip(CircleShape).background(dotColor)
+        StatusDotShape.RING -> Modifier.size(8.dp).border(2.dp, dotColor, CircleShape) // open centre, still 8 dp
     }
     val description = stringResource(Res.string.a11y_agent_status, label)
     Row(
@@ -661,8 +692,8 @@ private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPe
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Colour is never the sole signal (WCAG 1.4.1): the text label carries the meaning; the dot
-        // only reinforces it.
-        Box(Modifier.size(8.dp).clip(CircleShape).background(dotColor))
+        // only reinforces it. CYP-396: UNKNOWN is a RING, every other state a filled disc (see statusDotSpec).
+        Box(dotModifier)
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,

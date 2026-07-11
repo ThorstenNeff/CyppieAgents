@@ -105,11 +105,11 @@ class OutlineTextColorGuardTest {
                     "which asserts the pair and would go red the day it stops passing.",
         ),
         "AgentWindow.kt" to mapOf(
-            "AgentLifecycleState.STOPPED -> MaterialTheme.colorScheme.outline" to
-                "8dp status DOT; the state is spelled out beside it (StatusIndicator: colour is never the sole signal)",
-            "AgentLifecycleState.UNKNOWN -> MaterialTheme.colorScheme.outlineVariant" to
-                "8dp status DOT for the quietest state; `outlineVariant` is 1.41:1 / 1.52:1 — sound ONLY because " +
-                    "the state is spelled out beside it and the row carries a11y_agent_status. Decorative, redundant.",
+            "StatusDotRole.OUTLINE -> MaterialTheme.colorScheme.outline" to
+                "CYP-396: the 8dp status DOT — STOPPED (filled disc) and UNKNOWN (RING) both resolve the OUTLINE " +
+                    "role. Graphical object, WCAG 1.4.11 3:1: passes on the NUMBER (outline↔surface 3.55:1 / 3.63:1 " +
+                    "≥ 3:1), not on redundancy. No alpha (outline sits near the 3:1 floor — the CYP-337 lesson). " +
+                    "Replaces the old per-state lines; UNKNOWN no longer uses the near-invisible outlineVariant (1.41/1.52).",
             "val railColor = MaterialTheme.colorScheme.outlineVariant" to
                 "CYP-381 §7.1 receded-history gutter RAIL — a 2dp vertical RULE (drawBehind, decorative, " +
                     "clearAndSetSemantics) marking the forgotten-history block; a border/divider role, never text " +
