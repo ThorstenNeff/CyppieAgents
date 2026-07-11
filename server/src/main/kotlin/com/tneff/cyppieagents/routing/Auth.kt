@@ -163,6 +163,11 @@ suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenReg
  * guard. Returns null → the WS handler closes VIOLATED_POLICY (no app frame delivered).
  */
 suspend fun ApplicationCall.wsReaderOrNull(deps: AuthDeps, registry: TokenRegistry): String? {
+    // CYP-286: a short-lived, single-use `?ticket=` (minted at POST /api/ws-ticket by an already-authenticated
+    // caller, bound to its OWN read subject) — consumed ATOMICALLY here so a browser need not carry a long-lived
+    // bearer in the loggable `?token=` query. No escalation: it resolves to the subject the minter already had.
+    // Tried first (the preferred, exposure-minimising path); an invalid/expired/spent ticket falls through.
+    request.queryParameters["ticket"]?.let { deps.wsTickets.consume(it) }?.let { return it }
     // CYP-292 (deploy hygiene, human-gated): a `?token=` query is exposure-sensitive (CYP-190 class) — the
     // reverse-proxy access log MUST strip/mask the query before the query-token WS surfaces go public. App-side
     // is clean (no CallLogging; audit uses request.path() sans query), so this is a deploy-path condition only.

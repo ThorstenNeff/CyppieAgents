@@ -41,6 +41,11 @@ class AuthDeps(
      *  RESOLVED subject (a bounded, operator-assigned set — RC3: never an attacker-supplied value), so a flood on
      *  one BYO consumer is throttled (429) without starving others. One shared instance across the server. */
     val participantRateLimiter: com.tneff.cyppieagents.routing.WireRateLimiter = com.tneff.cyppieagents.routing.WireRateLimiter(),
+    /** CYP-286 — the short-lived, single-use WS-ticket store. Default = an in-memory store on [nowMs]; a minted
+     *  ticket is consumable ONCE at the WS handshake ([com.tneff.cyppieagents.routing.wsReaderOrNull]), moving a
+     *  browser's read identity out of the long-lived, loggable `?token=` query. No escalation — it resolves to
+     *  the SAME read subject the (already-authenticated) minter had. */
+    val wsTickets: WsTicketStore = WsTicketStore(nowMs),
 ) {
     /**
      * Token-only convenience (tests + the operator-token-only mount default): the human-auth path is
