@@ -6,7 +6,9 @@
 //
 // Masking: events are expected ALREADY masked by the server mediator; the summaries here are presentation-only
 // and additionally truncate.
-import type { StreamJsonEvent, ContentBlock, AssistantEvent, UserEvent, ResultEvent, SystemEvent } from '../types/generated/contract'
+// CYP-412 (A): the generated contract names union members by @SerialName (System/Assistant/User/Result), not by
+// the Kotlin class name — import the real names.
+import type { StreamJsonEvent, ContentBlock, Assistant, User, Result, System } from '../types/generated/contract'
 import type { AgentEvent, ToolCallRow } from './agentEvent'
 
 const SUMMARY_MAX = 80
@@ -37,7 +39,7 @@ export class StreamJsonMapper {
     }
   }
 
-  private mapSystem(event: SystemEvent, tsMs: number): AgentEvent[] {
+  private mapSystem(event: System, tsMs: number): AgentEvent[] {
     // CYP-383: fire the "ready" Notice on the FIRST SystemEvent of a session with a non-blank session_id, exactly
     // once per session — a later same-session event (e.g. a subtype:"status" compaction) never re-fires.
     const sid = event.session_id
@@ -48,7 +50,7 @@ export class StreamJsonMapper {
     return []
   }
 
-  private mapAssistantBlock(event: AssistantEvent, block: ContentBlock, tsMs: number): AgentEvent[] {
+  private mapAssistantBlock(event: Assistant, block: ContentBlock, tsMs: number): AgentEvent[] {
     switch (block.type) {
       case 'text':
         return [
@@ -80,7 +82,7 @@ export class StreamJsonMapper {
     }
   }
 
-  private mapUserBlock(event: UserEvent, block: ContentBlock, tsMs: number): AgentEvent[] {
+  private mapUserBlock(event: User, block: ContentBlock, tsMs: number): AgentEvent[] {
     switch (block.type) {
       case 'tool_result': {
         const out: AgentEvent[] = []
@@ -112,7 +114,7 @@ export class StreamJsonMapper {
     }
   }
 
-  private mapResult(event: ResultEvent, tsMs: number): AgentEvent[] {
+  private mapResult(event: Result, tsMs: number): AgentEvent[] {
     const isSuccess = !event.is_error && (event.subtype === null || event.subtype === undefined || event.subtype === 'success')
     if (isSuccess) return [] // the assistant text already showed the turn; result.result duplicates it
     const suffix = event.subtype !== null && event.subtype !== undefined ? `: ${event.subtype}` : ''
@@ -120,7 +122,7 @@ export class StreamJsonMapper {
   }
 
   // CYP-383: the ready label is injected (localized by the caller); only the model suffix is composed here.
-  private systemNotice(event: SystemEvent): string {
+  private systemNotice(event: System): string {
     return this.readyNoticeText + (event.model !== null && event.model !== undefined ? ` · ${event.model}` : '')
   }
 

@@ -28,8 +28,10 @@ import kotlinx.coroutines.launch
  *
  *   GET /ws/agent?agentId=<id>
  *
- * **Server → Client:** one masked [StreamJsonEvent] per text frame, serialized with [CommJson]
- *   (`classDiscriminator="type"`), streamed 1:1 from the agent's [ConnectorSession.events].
+ * **Server → Client:** one [com.tneff.cyppieagents.model.StoredAgentEvent] per text frame — the durable
+ *   envelope `{seq, agentId, projectId, tsMs, event}` where `event` is the masked [StreamJsonEvent] — serialized
+ *   with [CommJson] (`classDiscriminator="type"`), replayed-then-live from the agentId-keyed transcript store.
+ *   The `seq` is load-bearing: the `?since` cursor replay + client-side seq de-dup depend on it (CYP-198/409).
  * **Client → Server:** one [UserTurn] (`{"text":"…"}`) per text frame → injected via
  *   [ConnectorSession.sendTurn] (single-flight per session).
  *
