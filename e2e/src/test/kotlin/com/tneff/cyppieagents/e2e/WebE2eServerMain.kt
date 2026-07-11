@@ -50,6 +50,11 @@ fun main() {
             ),
         ),
         port = port,
+        // CYP-422 Phase-1 parity: allow the web-ts product SPA's dev/preview origin (Vite :8080) to reach the
+        // API/WS cross-origin (the production topology: SPA origin ≠ API origin + CORS). Both host spellings so
+        // a browser navigating to either resolves. Overridable via WEB_TS_ORIGINS (comma-separated).
+        webAllowedOrigins = (System.getenv("WEB_TS_ORIGINS")
+            ?: "http://127.0.0.1:8080,http://localhost:8080").split(",").map { it.trim() }.filter { it.isNotEmpty() },
         extraRoutes = {
             get("/") { call.respondText(fixture, ContentType.Text.Html) }
         },

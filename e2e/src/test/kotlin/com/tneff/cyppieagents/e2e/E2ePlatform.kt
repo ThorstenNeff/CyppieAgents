@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.boot.CommandRunner
 import com.tneff.cyppieagents.boot.PlatformConfig
 import com.tneff.cyppieagents.boot.RepoConfig
 import com.tneff.cyppieagents.boot.Secrets
+import com.tneff.cyppieagents.boot.WebConfig
 import com.tneff.cyppieagents.boot.WorktreeManager
 import com.tneff.cyppieagents.connector.AgentProcess
 import com.tneff.cyppieagents.connector.Connector
@@ -153,6 +154,10 @@ fun e2ePlatform(
     // main to serve the reference DOM fixture same-origin (no WS cross-origin/CORS). Null → nothing extra (prod
     // path / every existing journey unchanged).
     extraRoutes: (io.ktor.server.routing.Routing.() -> Unit)? = null,
+    // web-ts parity (CYP-422): CORS allowlist for the REAL product SPA served cross-origin (its own Vite/deploy
+    // origin ≠ the API origin — the production topology, Spec §14). Empty (default) → no CORS installed, every
+    // existing journey unchanged (they use same-origin Ktor clients, not a browser).
+    webAllowedOrigins: List<String> = emptyList(),
 ): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
@@ -170,6 +175,7 @@ fun e2ePlatform(
         repo = RepoConfig(active.repo ?: "git@github.com:org/repo.git", "main"),
         agents = active.agents.map { AgentConfig(it.id, it.id, it.role) },
         projectId = active.id,
+        web = WebConfig(webAllowedOrigins),
     )
     val booted = BootOrchestrator(
         config = config,
