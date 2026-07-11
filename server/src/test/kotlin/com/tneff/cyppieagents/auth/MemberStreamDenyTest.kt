@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.auth
 
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.routing.TokenRegistry
+import com.tneff.cyppieagents.agentevents.InMemoryAgentEventStore
 import com.tneff.cyppieagents.routing.installAgentSocket
 import com.tneff.cyppieagents.routing.tokenAuthorize
 import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
@@ -27,7 +28,7 @@ class MemberStreamDenyTest {
     @Test
     fun memberSession_cannotOpenAgentStream_failClosed() = testApplication {
         val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
-        application { installAgentSocket(ConnectorSessions(), authorize = tokenAuthorize(registry, AuthDeps(registry))) }
+        application { installAgentSocket(ConnectorSessions(), authorize = tokenAuthorize(registry, AuthDeps(registry)), agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
 
         // A human MEMBER carries a valid Kratos session header — but NO operator/agent token. The stream gate

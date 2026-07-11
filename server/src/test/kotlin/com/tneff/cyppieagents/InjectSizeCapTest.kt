@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import com.tneff.cyppieagents.routing.CommConfig
 import com.tneff.cyppieagents.routing.MessageInput
+import com.tneff.cyppieagents.agentevents.InMemoryAgentEventStore
 import com.tneff.cyppieagents.routing.installAgentSocket
 import com.tneff.cyppieagents.routing.installComm
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
@@ -107,7 +108,7 @@ class InjectSizeCapTest {
         val sessions = ConnectorSessions()
         val fake = RecordingSession("backend")
         sessions.register(fake)
-        application { installAgentSocket(sessions, authorize = { true }) }
+        application { installAgentSocket(sessions, authorize = { true }, agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
 
         client.webSocket("/ws/agent?agentId=backend") {
