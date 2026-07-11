@@ -47,6 +47,9 @@ class LifecycleManager(
     private val spawnFresh: ((agentId: String, worktreeName: String) -> ConnectorSession)? = null,
     private val recorder: EventRecorder? = null,
     private val projector: EventProjector? = null,
+    /** CYP-417 (S-G) — the hub's resource governor. Non-null in prod (the fail-closed capacity gate at the spawn
+     *  chokepoint); null in tests/legacy → no gating (spawn as before). */
+    private val governor: ResourceGovernor? = null,
     /**
      * CYP-316 — invoked when an agent's standing context is cleared (stop / restart), so the token-usage
      * feed drops that agent back to "unknown" (null) until its next turn. Wired to
@@ -190,8 +193,12 @@ class LifecycleManager(
      * `bootAgent` stays non-suspend so `BootOrchestrator.boot()` keeps its signature.
      */
     fun bootAgent(agentId: String): Boolean = transitions.withAgentBlocking(agentId) {
+        // CYP-417 (S-G): fail-closed capacity gate — a spawn that would overload the machine does NOT happen
+        // (the agent stays registered + not-RUNNING; NOT an ERROR — it's correct protection). Emits WARN.
+        if (rejectIfOverCapacity(agentId)) return@withAgentBlocking false
         try {
             doSpawn(agentId, restart = false)
+            emitCapacity(agentId) // CYP-417: a spawn changed the running count
             true
         } catch (e: Exception) {
             log.error("agent '{}' failed to boot ({})", agentId, e.message)
@@ -207,7 +214,7 @@ class LifecycleManager(
         onTeardown?.invoke(agentId) // CYP-355: also tear down an interactive PTY if the agent was INTERACTIVE
         onContextReset?.invoke(agentId) // CYP-316: a stopped agent has no standing context → token feed → null
         onBusyReset?.invoke(agentId) // CYP-324: a stopped agent is not processing → clear the `*` (+ mode→MEDIATED)
-        setRunState(agentId, AgentRunState.STOPPED)
+        setRunState(agentId, AgentRunState.STOPPED).also { emitCapacity(agentId) } // CYP-417: an exit freed capacity
     }
 
     /** Start a stopped agent in its SAME worktree. 409 if already running; 503 + ERROR on spawn failure. */
@@ -219,10 +226,14 @@ class LifecycleManager(
         if (runStateOf(agentId) == AgentRunState.RUNNING) {
             throw ConflictException("agent '$agentId' is already running", code = "already_running")
         }
+        // CYP-417 (S-G): fail-closed capacity gate for a runtime start — reject (503) rather than risk an OOM.
+        if (rejectIfOverCapacity(agentId)) {
+            throw ServiceUnavailableException("hub at estimated capacity", code = "capacity_exceeded")
+        }
         // A crashed agent leaves its dead session in the registry (nothing removes it). Clear it before the
         // respawn, so doSpawn never has to displace one — displacement is how a live process becomes an orphan.
         sessions.removeAndAwait(agentId)
-        spawnOrError(agentId, restart = false)
+        spawnOrError(agentId, restart = false).also { emitCapacity(agentId) } // CYP-417: a start changed the count
     }
 
     /** Restart = stop→start as ONE op: await the old process's death, then respawn into the same worktree. */
@@ -233,6 +244,35 @@ class LifecycleManager(
         onContextReset?.invoke(agentId) // CYP-316: respawn = fresh context → token feed resets to null until turn 1
         onBusyReset?.invoke(agentId) // CYP-324: respawn = idle until its next turn
         spawnOrError(agentId, restart = true)
+    }
+
+    /**
+     * CYP-417 (S-G): true iff the [governor] fail-closed rejects a spawn at the current live-agent count — and
+     * then it has already emitted the content-free `spawn.rejected` WARN event + logged. `current` = the RUNNING
+     * agents (the one being spawned is not yet RUNNING). No governor (tests/legacy) → never rejects.
+     */
+    private fun rejectIfOverCapacity(agentId: String): Boolean {
+        val gov = governor ?: return false
+        val current = snapshot().count { it.runState == AgentRunState.RUNNING }
+        return when (val d = gov.admitSpawn(current)) {
+            is SpawnDecision.Reject -> {
+                if (recorder != null && projector != null) {
+                    recorder.record(projector.spawnRejected(agentId, d.current, d.estimatedMax))
+                }
+                log.warn("spawn of agent '{}' rejected — hub at estimated capacity ({}/{})", agentId, d.current, d.estimatedMax)
+                true
+            }
+            SpawnDecision.Admit -> false
+        }
+    }
+
+    /** CYP-417 (S-G): emit the content-free `capacity.changed` INFO event (current RUNNING count + the governor's
+     *  estimate) so the capacity pill stays server-authoritative. No-op without a governor (tests). */
+    private fun emitCapacity(triggerAgentId: String) {
+        val gov = governor ?: return
+        if (recorder == null || projector == null) return
+        val current = snapshot().count { it.runState == AgentRunState.RUNNING }
+        recorder.record(projector.capacityChanged(triggerAgentId, current, gov.estimatedMax()))
     }
 
     private fun ensureKnown(agentId: String) {

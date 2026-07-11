@@ -130,6 +130,8 @@ class BootedPlatform(
     /** CYP-410 (S-A) — the single-sourced project-switch orchestration. The `SessionManager` seam wraps its
      *  [ProjectSwitcher.switch] for the runtime switch; boot uses [ProjectSwitcher.switchAtBoot]. */
     val projectSwitcher: ProjectSwitcher,
+    /** CYP-417 (S-G) — the resource governor (null in tests); `GET /api/capacity` reads its estimate. */
+    val resourceGovernor: ResourceGovernor?,
 )
 
 /**
@@ -231,6 +233,9 @@ class BootOrchestrator(
     // in one worktree = edit-conflict risk). Injectable so the full-boot E2E rides the real wiring with a fake
     // command; BE-2 (CYP-355) reuses the same seam per-open for `claude --resume <sid>`.
     private val terminalLaunchCommand: List<String>? = null,
+    /** CYP-417 (S-G) — the fail-closed capacity gate. Default null (tests spawn ungated, no behavior change);
+     *  bootPlatform wires a real [ResourceGovernor] so prod respects the machine's estimated capacity. */
+    private val resourceGovernor: ResourceGovernor? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -572,6 +577,7 @@ class BootOrchestrator(
             spawnFresh = { id, worktree -> sessionStore?.clear(config.projectId, id); connector.open(id, worktree, config.projectId) },
             recorder = eventRecorder,
             projector = eventProjector,
+            governor = resourceGovernor, // CYP-417 (S-G): fail-closed capacity gate at the spawn chokepoint
             onContextReset = { tokenUsageTracker.reset(it) },   // CYP-316: stop/restart → fresh context → null
             onContextForget = { tokenUsageTracker.forget(it) }, // CYP-316: remove → drop the token entry
             // CYP-354 (BE-1): fan out the SAME lifecycle callbacks to the terminal-control tracker — reusing the
@@ -689,6 +695,7 @@ class BootOrchestrator(
                 spawnFresh = { id, worktree -> sessionStore?.clear(pid, id); connector.open(id, worktree, pid) },
                 recorder = eventRecorder,
                 projector = eventProjector,
+                governor = resourceGovernor, // CYP-417 (S-G): fail-closed capacity gate (shared across projects)
                 onContextReset = { pTokenUsage.reset(it) },   // CYP-316: this project's lifecycle → its own tracker
                 onContextForget = { pTokenUsage.forget(it) },
                 onBusyReset = { pBusyState.reset(it); pTerminalControl.reset(it) },   // CYP-324/354: this project's lifecycle → its own busy + terminal-state trackers
@@ -950,6 +957,7 @@ class BootOrchestrator(
             compactOnConfigUpdated = compactOnConfigUpdated,
             ptyManager = ptyManager, // CYP-332
             projectSwitcher = projectSwitcher, // CYP-410 (S-A)
+            resourceGovernor = resourceGovernor, // CYP-417 (S-G)
         )
     }
 }

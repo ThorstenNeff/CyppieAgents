@@ -56,6 +56,9 @@ class MemberTier403MatrixTest {
         // `/api/channels` (ACL-filtered, content-free channel ids), so a MEMBER reaches it (200), not tier-denied.
         "GET /api/channels/writable",
         "GET /api/config/repo", "GET /api/config/apikey", "GET /api/events",
+        // CYP-417 (S-G): the capacity read is MEMBER-tier (content-free counters, secret-free) — a MEMBER reaches
+        // it (200), like the other reads above; the hard capacity GATE is server-side in the spawn path, not here.
+        "GET /api/capacity",
         // CYP-326 — the compact-orchestration STATUS read is read-tier (token OR verified human session), like the
         // config reads: a MEMBER reaches it (200), content-free. The operator write POST /api/compact/config stays denied.
         "GET /api/compact/status",

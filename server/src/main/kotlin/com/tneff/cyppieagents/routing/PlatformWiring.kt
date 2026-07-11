@@ -123,6 +123,18 @@ fun Application.installPlatform(
                 deps = authDeps,
                 apiBase = apiBase,
             )
+            // CYP-417 (S-G): GET /api/capacity — server-authoritative capacity read (MEMBER). Same source as the
+            // capacity.changed event: the ACTIVE runtime's RUNNING count + the governor estimate.
+            capacityRoutes(
+                governor = { booted.resourceGovernor },
+                runningCount = {
+                    booted.runtimeRegistry.active().lifecycle.snapshot()
+                        .count { it.runState == com.tneff.cyppieagents.model.AgentRunState.RUNNING }
+                },
+                registry = booted.tokenRegistry,
+                deps = authDeps,
+                apiBase = apiBase,
+            )
             // CYP-73/CYP-255 (.4b): agent lifecycle controls act on the ACTIVE project's runtime (resolver).
             lifecycleRoutes({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-355 (BE-2): the hand-off trigger — POST /api/agents/{id}/mode on the ACTIVE project's motor.
@@ -260,6 +272,9 @@ fun Application.bootPlatform(
         // asset set (`<style>/*.png`, populated offline via the DiceBear CLI) — out-of-repo, gitignored.
         avatarDir = gitRoot.toPath().resolve(".cyppie/avatars").toFile(),
         avatarPresetsDir = gitRoot.toPath().resolve(".cyppie/avatar-presets").toFile(),
+        // CYP-417 (S-G): the fail-closed capacity gate — prod estimates from this JVM's -Xmx/CPUs. Tests
+        // construct BootOrchestrator without it (null → ungated), so only prod respects the estimate.
+        resourceGovernor = com.tneff.cyppieagents.boot.ResourceGovernor(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;

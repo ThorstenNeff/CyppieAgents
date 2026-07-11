@@ -21,7 +21,13 @@ application {
     // generated distribution start scripts + `:server:run`. (NOT a netty version/transitive issue — single
     // 4.2.13.Final; the in-code guard stays as belt-and-suspenders.) The deploy launch must carry the same arg
     // if it does not use the generated start script (java -jar / custom command) — flagged to deploy.
-    applicationDefaultJvmArgs = listOf("-Dio.netty.jfr.enabled=false")
+    applicationDefaultJvmArgs = listOf(
+        "-Dio.netty.jfr.enabled=false",
+        // CYP-417 (S-G / D8): a real, bounded heap so the JVM has a knowable ceiling (the ResourceGovernor's
+        // capacity estimate needs a non-unbounded maxMemory()) AND the OOM lesson is enforced at the JVM level,
+        // not just at the spawn gate. 75% of container RAM (deploy may override with an explicit -Xmx).
+        "-XX:MaxRAMPercentage=75.0",
+    )
 }
 
 // CYP-157 (onboarding): the application plugin's `run` task otherwise uses the module dir as its

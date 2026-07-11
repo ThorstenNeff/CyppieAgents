@@ -222,6 +222,31 @@ class EventProjector(
         draft(agentId, null, null, EventType.AGENT_RESTARTED, Severity.INFO) {}
             .also { onBusy?.invoke(agentId, false) } // CYP-324: fresh respawn → idle until its next turn
 
+    /**
+     * CYP-417 (S-G): `spawn.rejected` — the [com.tneff.cyppieagents.boot.ResourceGovernor] fail-closed rejected a
+     * spawn that would overload the machine. WARN (H3: correct protection, not an error). Content-free (H6):
+     * only the `{current, estimatedMax}` counters (`estimatedMax` omitted when the hub has no reliable estimate,
+     * `null≠0`) + the target agentId metadata — never agent output.
+     */
+    fun spawnRejected(agentId: String, current: Int, estimatedMax: Int?) =
+        draft(agentId, null, null, EventType.SPAWN_REJECTED, Severity.WARN) {
+            put("current", current)
+            estimatedMax?.let { put("estimatedMax", it) }
+        }
+
+    /**
+     * CYP-417 (S-G): `capacity.changed` — the hub's estimated capacity moved (a spawn/exit changed `current`).
+     * `Severity.INFO` (headroom is not a warning). Content-free (H6): the SAME `{current, estimatedMax}` the
+     * governor gates on (`estimatedMax` omitted when unknown, `null≠0`). Drives the capacity pill (server-
+     * authoritative — the persisted last event is the pill's snapshot; live events update it). [agentId] is the
+     * change's trigger (metadata only).
+     */
+    fun capacityChanged(agentId: String, current: Int, estimatedMax: Int?) =
+        draft(agentId, null, null, EventType.CAPACITY_CHANGED, Severity.INFO) {
+            put("current", current)
+            estimatedMax?.let { put("estimatedMax", it) }
+        }
+
     /** `comm.sent`: a message the router posted on the agent's behalf — metadata only, NO body. */
     fun commSent(agentId: String, channelId: String, kind: MessageKind?) =
         draft(agentId, null, null, EventType.COMM_SENT, Severity.INFO) {

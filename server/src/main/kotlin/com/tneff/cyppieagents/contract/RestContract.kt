@@ -133,6 +133,7 @@ object RestContract {
         // --- EventRoutes (CYP-186 BE2: event-log is secret-free metadata → MEMBER-readable; the ?projectId
         //     cross-project override stays operator-only, but the read tier itself is MEMBER, matching settings) ---
         Op("GET", "/api/events", Tier.MEMBER, response = json<EventPage>()),
+        Op("GET", "/api/capacity", Tier.MEMBER, response = json<com.tneff.cyppieagents.model.Capacity>()), // CYP-417 (S-G)
         // --- ReportRoutes (/api/reports) ---
         Op("GET", "/api/reports", Tier.OPERATOR, response = arr<ReportSnapshot>()),
         Op("GET", "/api/reports/{id}", Tier.OPERATOR, response = json<ReportSnapshot>()),
