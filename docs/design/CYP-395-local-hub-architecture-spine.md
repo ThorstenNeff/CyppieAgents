@@ -32,9 +32,24 @@ komplett greenfield). Alle vier sind **additiv** und hängen an bereits sauberen
 > **★ Sofort-Flag an PO (verify-don't-trust):** Die Prämisse „**7 Default-Agenten**" deckt sich **nicht** mit
 > dem Ist-Stand. Der ausgelieferte Default (`platform.config.example.json`) ist **exakt 3**: `po` (PO),
 > `frontend`/`backend` (WORKER). `platform.config.json` ist **gitignored** — die reale Agenten-Menge liegt nur
-> unversioniert auf der Betreiber-Box. Das `Role`-Enum kennt nur `PO`/`WORKER`/`PRODUCT_LEAD`. **Preserve-sicher
-> ist NICHT die Zahl**, sondern der kodifizierte Invariant (§9). Das Design ist bewusst zahl-agnostisch. → **Bitte
-> Preserve-Ziel bestätigen** (Open Decision D1).
+> unversioniert auf der Betreiber-Box (die „7" = Live-Staging-Roster). Das `Role`-Enum kennt nur
+> `PO`/`WORKER`/`PRODUCT_LEAD`. **Preserve-sicher ist NICHT die Zahl**, sondern der kodifizierte Invariant (§9);
+> Deploy preserved die Live-`config.json` byte-identisch. Das Design ist bewusst zahl-agnostisch (D1 = Klarstellung,
+> keine Auftraggeber-Entscheidung).
+
+### 0.1 Bewegliche Nähte (Design-Awareness — gegen den Post-Merge-Stand entwerfen)
+Zwei Team-2-Merges bewegen **genau** zwei meiner Spine-Nähte; der Entwurf ist bewusst robust gegen ihre Bewegung
+(der PO merged sie **vor** jedem 395-Bau):
+- **CYP-394** stellt `/ws/terminal` von read-tier (`wsReaderOrNull`) auf **write-tier-Gating** um: neue
+  `routing/TerminalAccess.kt` (`mayOpenTerminal`, MEMBER/participant→1008, operator-only), Edits in
+  `TerminalSocket.kt`+`PlatformWiring.kt`. **Das ist die konkrete Ausprägung meiner `IdentityToken`/Principal-Naht
+  (§5)** — `mayOpenTerminal` ist der Ist-Stand, an den die variant-agnostische Verifikation andockt. (Der
+  `TerminalGrantStore` darin ist prod-no-op und **nicht** die Store-/CYP-220-Naht §4.)
+- **CYP-351** landet `LifecycleManager`/`ClaudeCodeSession`/`ResumingSession`/`ConnectorSession`/`EventProjector`
+  — **genau die Naht, die mein Hub-Split/Session-Manager (§2) evolviert.** Die Extraktion setzt auf dem
+  Post-351-Stand auf.
+
+Beide noch nicht auf develop (kommen mit gepinnten SHAs); Bau erst danach + nach Ratifikation.
 
 ---
 
