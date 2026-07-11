@@ -28,4 +28,18 @@ object WorkspaceTags {
 
     /** The row's tier label (Operator/Member); `.you` qualifier marks the own entry. Operator-only. */
     fun memberRole(id: String) = "workspace.member.$id.role"
+
+    // --- CYP-417 (S-G ResourceGovernor UI) — hub capacity + overload, workspace-scoped (ProjectSwitcherBar) ---
+
+    /** Hub capacity readout "N/M agents". **Present ⇔ capacity estimated**; unknown ⇒ **absent** (null≠0, Q3). */
+    const val CAPACITY = "workspace.capacity"
+
+    /** The **full**-state qualifier (`current == estimatedMax`, Q2) — the readout tones WARN-amber. */
+    const val CAPACITY_FULL = "workspace.capacity.full"
+
+    /** The hub-scoped WARN overload banner — appears **only** on a real server-side fail-closed reject (H5). */
+    const val OVERLOAD_BANNER = "workspace.overloadBanner"
+
+    /** The banner's dismiss action ("Got it"); persistent-until-clears **and** dismissable (Q5). */
+    const val OVERLOAD_BANNER_DISMISS = "workspace.overloadBanner.dismiss"
 }

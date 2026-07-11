@@ -39,6 +39,11 @@ import com.tneff.cyppieagents.model.ConnectorKind
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tneff.cyppieagents.workspace.CapacityReadout
+import com.tneff.cyppieagents.workspace.CapacityViewModel
+import com.tneff.cyppieagents.workspace.HubCapacitySource
+import com.tneff.cyppieagents.workspace.OverloadBanner
+import com.tneff.cyppieagents.workspace.StubHubCapacitySource
 import com.tneff.cyppieagents.auth.UserTier
 import com.tneff.cyppieagents.workspace.WorkspaceHttpRepository
 import com.tneff.cyppieagents.workspace.WorkspaceRepository
@@ -245,6 +250,9 @@ fun AgentShell(
     connectorSelectionRepository: ConnectorSelectionRepository? = null,
     /** Override the workspace-roster read port (CYP-186 BE3a); `null` → the live `GET /api/workspace/members`. */
     workspaceRepository: WorkspaceRepository? = null,
+    /** CYP-417 — the content-free hub-capacity feed (S-G ResourceGovernor); `null` → the [StubHubCapacitySource]
+     *  (unknown capacity ⇒ readout absent, no banner) until Backend's `CAPACITY_CHANGED`/`SPAWN_REJECTED` seam lands. */
+    capacitySource: HubCapacitySource? = null,
     /** CYP-249 — injectable per-project ViewModelStore LRU (test seam: observe warm/evicted projects). `null` → the
      *  shell owns one (K=3). Prod never injects; tests pass one to assert the K-cap + eviction across switches. */
     projectVmStores: ProjectVmStoreManager? = null,
@@ -339,8 +347,16 @@ fun AgentShell(
       // CYP-186: the persistent role indicator rides here; operatorName is BE1-pending (null omits the "Operator:" line).
       // CYP-268 R3: the app-global theme toggle rides the bar's trailing slot — a client-local, per-user preference
       // (NOT operator-gated, NOT project-scoped; it follows no project switch). Stays OUTSIDE the loading gate.
+      // CYP-417: the workspace-scoped hub-capacity VM (shell store, like projectVm). Stub-backed until Backend's
+      // ResourceGovernor event seam lands → readout absent + no banner by default (honest cold-start; advisory-only,
+      // the server owns the hard gate, H5).
+      val capacityVm = viewModel(key = "hubCapacity") { CapacityViewModel(capacitySource ?: StubHubCapacitySource()) }
       ProjectSwitcherBar(
           projectVm, tier = tier, operatorName = null,
+          capacityReadout = { CapacityReadout(capacityVm.capacity.collectAsState().value) },
+          overloadBanner = {
+              if (capacityVm.overloadVisible.collectAsState().value) OverloadBanner(onDismiss = capacityVm::dismissOverload)
+          },
           // CYP-268 R3 theme toggle + CYP-387 input-history size stepper — both personal, ungated, non-project
           // preferences ride the bar's trailing slot together.
           trailing = { compact ->
