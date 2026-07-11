@@ -10,9 +10,11 @@ import {
   applyTerminalControl,
   setAclPending,
   clearAclPending,
+  ingestMessages,
   type HubState,
+  type CommConnection,
 } from './hubReducers'
-import type { AclEntry, Channel, CommWsServerEvent, AgentTerminalControlEvent } from '../types/generated/contract'
+import type { AclEntry, Channel, Message1, CommWsServerEvent, AgentTerminalControlEvent } from '../types/generated/contract'
 import type { AclDimension } from '../comm/aclModel'
 
 export interface HubStore extends HubState {
@@ -22,6 +24,8 @@ export interface HubStore extends HubState {
   onTerminalControl: (event: AgentTerminalControlEvent) => void
   markAclPending: (channelId: string, agentId: string, dim: AclDimension, requested: boolean) => void
   clearAclPending: (channelId: string, agentId: string, dim: AclDimension) => void
+  ingestMessages: (msgs: readonly Message1[]) => void
+  setCommConnection: (connection: CommConnection) => void
 }
 
 export const useHubStore = create<HubStore>((set) => ({
@@ -32,4 +36,6 @@ export const useHubStore = create<HubStore>((set) => ({
   onTerminalControl: (event) => set((s) => applyTerminalControl(s, event)),
   markAclPending: (channelId, agentId, dim, requested) => set((s) => setAclPending(s, channelId, agentId, dim, requested)),
   clearAclPending: (channelId, agentId, dim) => set((s) => clearAclPending(s, channelId, agentId, dim)),
+  ingestMessages: (msgs) => set((s) => ingestMessages(s, msgs)),
+  setCommConnection: (commConnection) => set({ commConnection }),
 }))
