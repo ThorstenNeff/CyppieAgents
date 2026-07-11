@@ -305,6 +305,36 @@ class Cyp355HandoffMotorTest {
         assertEquals(ModeChangeRejection.IN_TRANSITION, resp.reason)
     }
 
+    // ── CYP-388: fast-path — a concurrent request WHILE a transition holds the lock (IDLE-deferring up to the
+    // bound) is REJECTED(IN_TRANSITION) IMMEDIATELY, not blocked until the bound. Unlike `whileHandingOver`
+    // (stale state, lock free), here the lock is genuinely HELD by a parked transition — the case the tryLock
+    // fast-path exists for. The test READS RUNTIME (elapsed « bound, under a hard withTimeout) so reverting to
+    // the blocking acquire — where the concurrent request would wait out the 10 s defer — reds, not greens. ──
+    @Test
+    fun concurrentRequest_whileTransitionHoldsLock_rejectsInTransition_immediately() = runBlocking {
+        val rig = Rig(scope, stayAlive, idleBoundMs = 10_000L) // long defer bound → the holder parks in awaitIdle
+        rig.sessions.register(FakeMediated("backend"))
+        rig.busy.set("backend", true) // transition #1 bounded-defers on this busy turn, holding the lock the whole time
+
+        // Transition #1 acquires the lock and parks in the IDLE-defer (state → HANDING_OVER while it holds the lock).
+        val first = scope.launch { rig.motor.requestMode("backend", TerminalMode.TERMINAL, "op") }
+        withTimeout(5_000) { while (rig.stateOf("backend") != TerminalControlState.HANDING_OVER) delay(10) }
+
+        // Transition #2 for the SAME agent must return IMMEDIATELY — not wait out the 10 s bound the holder is under.
+        val t0 = System.nanoTime()
+        val resp = withTimeout(2_000) { rig.motor.requestMode("backend", TerminalMode.ORCHESTRATION, "op") }
+        val elapsedMs = (System.nanoTime() - t0) / 1_000_000
+
+        assertEquals(ModeChangeOutcome.REJECTED, resp.outcome)
+        assertEquals(ModeChangeRejection.IN_TRANSITION, resp.reason, "a request while a transition holds the lock is IN_TRANSITION")
+        assertEquals(TerminalControlState.HANDING_OVER, resp.control.state, "the rejection reports the in-flight transition's state")
+        assertTrue(elapsedMs < 1_000, "the fast-path returned in ${elapsedMs}ms — not after the 10000ms defer bound the holder is under")
+
+        rig.busy.set("backend", false) // let #1 go idle, proceed, and release
+        first.join()
+        rig.pty.close("backend")
+    }
+
     // ── Tooth C: cross-manager stop — restart during INTERACTIVE tears down the PTY, BOUNDED (no deadlock) ──
     // The onTeardown → closeAndAwait runs under the shared transition lock and the restart RE-SPAWNS right
     // after: exactly the CYP-371 deadlock surface. The test READS RUNTIME (elapsed under a hard bound) so a

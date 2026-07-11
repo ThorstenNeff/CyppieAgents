@@ -67,6 +67,27 @@ class AgentTransitionLock {
     suspend fun <T> withAgent(agentId: String, block: suspend () -> T): T = mutexFor(agentId).withLock { block() }
 
     /**
+     * CYP-388 — **non-blocking fast-path.** If a transition for [agentId] is already in flight, returns `null`
+     * IMMEDIATELY instead of suspending on [withAgent] until that transition releases — which, while it
+     * bounded-defers on a busy mediated turn, can be up to the IDLE-defer bound (30 s). The caller maps `null`
+     * to `IN_TRANSITION`, so a concurrent `POST /mode` gets an instant answer rather than a request that hangs
+     * for most of a minute.
+     *
+     * On an **uncontended** lock this runs [block] as the transition, identical to [withAgent]: `tryLock` still
+     * grants exclusive ownership to exactly one caller, so the single-writer invariant is unchanged — only the
+     * contended case differs (block → instant `null`). The `try`/`finally` mirrors [withLock]'s unlock guarantee.
+     */
+    suspend fun <T> tryWithAgent(agentId: String, block: suspend () -> T): T? {
+        val mutex = mutexFor(agentId)
+        if (!mutex.tryLock()) return null
+        return try {
+            block()
+        } finally {
+            mutex.unlock()
+        }
+    }
+
+    /**
      * Blocking variant for the boot path, which is not `suspend` and runs on the startup thread before any
      * request is served — nothing to contend with, nothing to block. It exists so that **every** writer takes
      * the lock: a rule with an exception is a rule someone has to remember.

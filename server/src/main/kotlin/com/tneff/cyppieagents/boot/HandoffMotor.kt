@@ -90,7 +90,12 @@ class HandoffMotor(
     suspend fun requestMode(agentId: String, target: TerminalMode, requestedBy: String): ModeChangeResponse {
         val worktree = worktreeOf(agentId)
             ?: throw NotFoundException("unknown agent '$agentId'", code = "agent_not_found")
-        return transitions.withAgent(agentId) {
+        // CYP-388 — fast-path: a request that arrives while a transition for this agent is already in flight (a
+        // →TERMINAL hand-off can hold the lock for up to idleDeferBoundMs while it bounded-defers on a busy turn)
+        // is REJECTED(IN_TRANSITION) IMMEDIATELY rather than blocking on the lock until that transition releases.
+        // The safety invariant is unchanged — tryWithAgent still grants the lock to exactly one writer; only the
+        // CONTENDED case changes (block → instant reject).
+        val response = transitions.tryWithAgent(agentId) {
             val current = terminalControl.snapshot().firstOrNull { it.agentId == agentId }
                 ?: AgentTerminalControlEvent(agentId, TerminalControlState.MEDIATED)
             when (target) {
@@ -98,7 +103,15 @@ class HandoffMotor(
                 TerminalMode.ORCHESTRATION -> toOrchestration(agentId, worktree, requestedBy, current)
             }
         }
+        return response ?: reject(ModeChangeRejection.IN_TRANSITION, inFlightControl(agentId))
     }
+
+    /** The best-effort control to report with a fast-path IN_TRANSITION rejection: the in-flight transition has
+     *  set HANDING_OVER/HANDING_BACK, so the snapshot reflects it; the fallback covers the microsecond window
+     *  between the holder taking the lock and setting that state. The authoritative signal is the reason field. */
+    private fun inFlightControl(agentId: String): AgentTerminalControlEvent =
+        terminalControl.snapshot().firstOrNull { it.agentId == agentId }
+            ?: AgentTerminalControlEvent(agentId, TerminalControlState.MEDIATED)
 
     private suspend fun toTerminal(
         agentId: String,
