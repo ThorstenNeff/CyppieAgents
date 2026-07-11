@@ -42,6 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tneff.cyppieagents.workspace.CapacityReadout
 import com.tneff.cyppieagents.workspace.CapacityViewModel
 import com.tneff.cyppieagents.workspace.HubCapacitySource
+import com.tneff.cyppieagents.workspace.LiveHubCapacitySource
 import com.tneff.cyppieagents.workspace.OverloadBanner
 import com.tneff.cyppieagents.workspace.StubHubCapacitySource
 import com.tneff.cyppieagents.auth.UserTier
@@ -347,10 +348,15 @@ fun AgentShell(
       // CYP-186: the persistent role indicator rides here; operatorName is BE1-pending (null omits the "Operator:" line).
       // CYP-268 R3: the app-global theme toggle rides the bar's trailing slot — a client-local, per-user preference
       // (NOT operator-gated, NOT project-scoped; it follows no project switch). Stays OUTSIDE the loading gate.
-      // CYP-417: the workspace-scoped hub-capacity VM (shell store, like projectVm). Stub-backed until Backend's
-      // ResourceGovernor event seam lands → readout absent + no banner by default (honest cold-start; advisory-only,
-      // the server owns the hard gate, H5).
-      val capacityVm = viewModel(key = "hubCapacity") { CapacityViewModel(capacitySource ?: StubHubCapacitySource()) }
+      // CYP-417: the workspace-scoped hub-capacity VM (shell store, like projectVm). LIVE against Backend's
+      // ResourceGovernor seam (Stub→real swap, no UI/VM change): GET /api/capacity snapshot ⊕ CAPACITY_CHANGED /
+      // SPAWN_REJECTED off /ws/events. Advisory-only — the server owns the hard fail-closed gate (H5); the pill/
+      // banner just reflect it. Operator-token-bound like every sibling live source. `:app:webAppDemo` injects a
+      // StubHubCapacitySource for the Maestro flows (readout absent + no banner = honest cold-start).
+      val defaultCapacitySource = remember(httpClient, cfg) {
+          LiveHubCapacitySource(httpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+      }
+      val capacityVm = viewModel(key = "hubCapacity") { CapacityViewModel(capacitySource ?: defaultCapacitySource) }
       ProjectSwitcherBar(
           projectVm, tier = tier, operatorName = null,
           capacityReadout = { CapacityReadout(capacityVm.capacity.collectAsState().value) },

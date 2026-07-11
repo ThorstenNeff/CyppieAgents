@@ -138,6 +138,10 @@ fun EventType.groupGlyph(): String = when (this) {
     // Connector opt-in (Doc 10 §5, CYP-122) — an operator chose a connector (e.g. Connector B). Provisional.
     EventType.CONNECTOR_OPTIN -> "⇆"
     EventType.LOG_DROPPED -> "⚠"
+    // CYP-417 (S-G): the hub-capacity family — a spawn/exit moved the estimate (CAPACITY_CHANGED, INFO) or the
+    // governor fail-closed rejected a spawn (SPAWN_REJECTED, WARN). Severity carries the info/warn signal; this is
+    // the scan aid only. Provisional glyph — a non-blocking UIUX polish may refine it.
+    EventType.CAPACITY_CHANGED, EventType.SPAWN_REJECTED -> "▤"
     EventType.UNKNOWN -> "ⓘ"
 }
 
