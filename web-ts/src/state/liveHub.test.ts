@@ -79,4 +79,14 @@ describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
     expect(socketFor(hub, '/ws/comm').closed).toBe(true)
     expect(socketFor(hub, '/ws/terminal-state').closed).toBe(true)
   })
+
+  it('folds an inbound /ws/events event into onEventsEvent (CYP-432)', () => {
+    const hub = new FakeSocketHub()
+    const onEventsEvent = vi.fn()
+    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onEventsEvent }, { factory: hub.factory, schedule: hub.runNow })
+    const feed = socketFor(hub, '/ws/events')
+    feed.emitOpen()
+    feed.emitMessage(JSON.stringify({ type: 'caughtup' }))
+    expect(onEventsEvent).toHaveBeenCalledWith({ type: 'caughtup' })
+  })
 })

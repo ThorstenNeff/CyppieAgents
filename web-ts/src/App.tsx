@@ -26,6 +26,8 @@ import { startLiveHub } from './state/liveHub'
 import { AgentWindow } from './AgentWindow'
 import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
+import { EventLogView } from './eventlog/EventLogView'
+import { useEventLogStore } from './eventlog/eventLogStore'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
 import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
@@ -36,6 +38,7 @@ import type { AclEntry, Message1 } from './types/generated/contract'
 const AGENT_PREFIX = 'agent:'
 const ACL_WINDOW_ID = 'acl'
 const COMM_WINDOW_ID = 'comm'
+const EVENT_WINDOW_ID = 'events'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -92,6 +95,15 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const runStateByAgent = useHubStore((s) => s.runStateByAgent)
   const lifecyclePending = useHubStore((s) => s.lifecyclePending)
 
+  // CYP-432: the event log is its own store (separate from the hub state). OPERATOR-ONLY: it carries message
+  // bodies, so the whole surface (window + socket + data) is gated on cfg.operator — defence-in-depth, not just
+  // the server tier (mirrors ShellGate/AclPanel; a W10 backstop if the proxy ever leaks the operator token).
+  const onEventsEvent = useEventLogStore((s) => s.onEventsEvent)
+  const onEventsClose = useEventLogStore((s) => s.onEventsClose)
+  const eventLog = useEventLogStore((s) => s.events)
+  const eventsCaughtUp = useEventLogStore((s) => s.caughtUp)
+  const eventsAccessRevoked = useEventLogStore((s) => s.accessRevoked)
+
   const historySize = useMemo(() => () => loadHistorySize(browserStore()), [])
   // CYP-444: the PO identity is the roster's role==PO, not a config guess. Null until the roster loads (the W9
   // lockout advisory simply won't fire until we truly know who the PO is).
@@ -111,6 +123,10 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
         // CYP-437(b): an unexpected drop flips the banner off 'live'; a 1008 (auth revoked) is terminal → 'revoked'.
         onCommClose: (code) => setCommConnection(code === 1008 ? 'revoked' : 'offline'),
         onRunState,
+        // CYP-432 fail-closed: wire the /ws/events handlers ONLY for an operator → a non-operator never opens the
+        // bodies-carrying socket (liveHub skips it when onEventsEvent is absent).
+        onEventsEvent: cfg.operator ? onEventsEvent : undefined,
+        onEventsClose: cfg.operator ? onEventsClose : undefined,
       },
       socketDeps,
     )
@@ -143,7 +159,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     }
     if (agents.length > 0 && !present.has(COMM_WINDOW_ID)) wm.add(tiledWindow(COMM_WINDOW_ID, 'Kommunikation', index++), true)
     if (agents.length > 0 && !present.has(ACL_WINDOW_ID)) wm.add(tiledWindow(ACL_WINDOW_ID, 'Zugriffsrechte (ACL)', index++), false)
-  }, [agents])
+    // CYP-432: the event log is OPERATOR-ONLY — a non-operator gets no event window at all (no bodies surface).
+    if (agents.length > 0 && cfg.operator && !present.has(EVENT_WINDOW_ID)) wm.add(tiledWindow(EVENT_WINDOW_ID, 'Ereignis-Protokoll', index++), true)
+  }, [agents, cfg.operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
     hubRepo.requestMode(agentId, mode === 'shell' ? 'TERMINAL' : 'ORCHESTRATION').catch(() => undefined)
@@ -189,6 +207,25 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   }
 
   const renderContent = (win: WindowState) => {
+    if (win.id === EVENT_WINDOW_ID) {
+      // CYP-432 defence-in-depth: never render bodies for a non-operator (even if a window somehow exists), and
+      // fail closed to a locked placeholder when access was revoked (WS 1008) — never leave stale bodies showing.
+      if (!cfg.operator) {
+        return (
+          <p className="event-log-operator-only" data-testid="event-log-operator-only">
+            Das Ereignis-Protokoll ist nur für Operatoren verfügbar.
+          </p>
+        )
+      }
+      if (eventsAccessRevoked) {
+        return (
+          <p className="event-log-revoked" role="alert" data-testid="event-log-revoked">
+            Zugriff entzogen — das Ereignis-Protokoll ist gesperrt.
+          </p>
+        )
+      }
+      return <EventLogView events={eventLog} caughtUp={eventsCaughtUp} />
+    }
     if (win.id === COMM_WINDOW_ID) {
       const messages = [...(messagesByChannel.get(selectedChannelId ?? '') ?? [])].sort(byTs)
       return (
