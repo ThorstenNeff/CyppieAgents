@@ -1,21 +1,45 @@
 import { describe, it, expect } from 'vitest'
 import { senderAccent } from './senderAccent'
+import { PO_ACCENT_RAW, WORKER_ACCENTS_RAW } from '../ui/senderAccents.data.mjs'
+import { readableAccentOn, contrastRatio } from '../ui/colorAdapt.mjs'
+import { MARITIME_TOKENS } from '../ui/maritimeTokens'
 
-const WORKER_ACCENTS = ['#5FD0BE', '#B9A4F2', '#E693D2', '#8FAAEF', '#D9AE6E', '#F0A0B3', '#9EB8D6', '#BFC97E']
+const LIGHT = MARITIME_TOKENS.light.surface
+const DARK = MARITIME_TOKENS.dark.surface
+const TEXT_MIN = 4.5
 
-describe('senderAccent (CYP-407)', () => {
-  it('the PO/hub gets the reserved accent (by role or by id)', () => {
-    expect(senderAccent('po')).toBe('#A6A9F0')
-    expect(senderAccent('whoever', 'PO')).toBe('#A6A9F0')
+describe('senderAccent (CYP-407/CYP-436) — theme-adaptive CSS var', () => {
+  it('the PO/hub gets the reserved slot var (by role or by id)', () => {
+    expect(senderAccent('po')).toBe('var(--sender-accent-po)')
+    expect(senderAccent('whoever', 'PO')).toBe('var(--sender-accent-po)')
   })
 
-  it('is deterministic and stable for a given id', () => {
+  it('non-PO ids map deterministically into a worker slot var, never the PO slot', () => {
     expect(senderAccent('frontend')).toBe(senderAccent('frontend'))
+    expect(senderAccent('frontend')).toMatch(/^var\(--sender-accent-[0-7]\)$/)
+    expect(senderAccent('frontend')).not.toBe('var(--sender-accent-po)')
+    expect(senderAccent('backend')).toMatch(/^var\(--sender-accent-[0-7]\)$/)
+  })
+})
+
+describe('sender accent contrast (CYP-436 — WCAG 1.4.3 as TEXT, MEASURED in BOTH themes)', () => {
+  const all = [PO_ACCENT_RAW, ...WORKER_ACCENTS_RAW]
+
+  it('every accent, adapted per theme, clears the 4.5:1 text floor on its surface', () => {
+    for (const raw of all) {
+      expect(contrastRatio(readableAccentOn(raw, LIGHT), LIGHT), `light ${raw}`).toBeGreaterThanOrEqual(TEXT_MIN)
+      expect(contrastRatio(readableAccentOn(raw, DARK), DARK), `dark ${raw}`).toBeGreaterThanOrEqual(TEXT_MIN)
+    }
   })
 
-  it('non-PO ids map into the worker palette, never the PO accent', () => {
-    expect(senderAccent('frontend')).not.toBe('#A6A9F0')
-    expect(WORKER_ACCENTS).toContain(senderAccent('frontend'))
-    expect(WORKER_ACCENTS).toContain(senderAccent('backend'))
+  it('the adaptation actually bites: the RAW pastels fail as text on the light surface (the CYP-436 bug)', () => {
+    // If any raw pastel already cleared 4.5:1 on white, the regression this guards wouldn't exist.
+    for (const raw of all) {
+      expect(contrastRatio(raw, LIGHT), `raw ${raw} on light`).toBeLessThan(TEXT_MIN)
+    }
+    // …and on the dark surface they already clear, so readableAccentOn leaves them unchanged there.
+    for (const raw of all) {
+      expect(readableAccentOn(raw, DARK)).toBe(raw)
+    }
   })
 })
