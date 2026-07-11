@@ -604,4 +604,11 @@
     <string name="a11y_terminal_ctl">Terminal mode: %1$s</string>
     <!-- CYP-381: marker a11y with holder-identity when an interactive session is held. -->
     <string name="a11y_terminal_ctl_held">Terminal mode: %1$s · held by %2$s</string>
+    <!-- CYP-416 (S-M): hubConnect §B3 mode-chooser (frozen UIUX spec 8265e4fc). Remote honestly disabled. -->
+    <string name="hubconnect_mode_local">Local</string>
+    <string name="hubconnect_mode_local_sub">Direct on the same network — private and fast.</string>
+    <string name="hubconnect_mode_remote">Remote</string>
+    <string name="hubconnect_mode_remote_soon">coming soon</string>
+    <string name="hubconnect_mode_connect">Connect</string>
+    <string name="a11y_hubconnect_mode_remote_disabled">Remote mode — coming soon, not available yet.</string>
 </resources>
