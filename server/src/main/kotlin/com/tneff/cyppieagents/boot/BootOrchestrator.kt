@@ -383,7 +383,12 @@ class BootOrchestrator(
         // CYP-256 (.5a): the durable per-project agent-set store — constructed EARLY (above, for the CYP-305
         // effective-active seam); single source for runtime-added agents.
         // CYP-215: the avatar stores (blob bytes on disk + the self-hosted DiceBear preset resolver).
-        val avatarBlobs = com.tneff.cyppieagents.avatar.AvatarBlobStore(avatarDir)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite BLOBs; the .db sits next to the legacy avatars dir,
+        // whose PNG uploads it imports ONCE (empty-table guard) so operator avatar bytes survive the switch
+        // ([[default-agents-no-reset]]). In-memory File impl for tests (null).
+        val avatarBlobs = avatarDir?.let {
+            com.tneff.cyppieagents.avatar.SqliteAvatarBlobStore(it.toPath().resolveSibling("avatars.db"), it.toPath())
+        } ?: com.tneff.cyppieagents.avatar.AvatarBlobStore(null)
         val avatarPresets = com.tneff.cyppieagents.avatar.AvatarPresetResolver(avatarPresetsDir)
         agentOverrides.allFor(config.projectId).forEach { (agentId, ov) ->
             if (ov.name != null || ov.color != null) state.editAgent(agentId, ov.name, ov.color)
@@ -406,7 +411,8 @@ class BootOrchestrator(
         }
         val tokenByAgent = secrets.agentTokens.entries.associate { (token, agent) -> agent to token }
         // CYP-167: durable session-resume binding store. Null file → in-memory off-switch (tests/dev).
-        val sessionStore = sessionStoreFile?.let { com.tneff.cyppieagents.connector.JsonFileSessionStore(it) }
+        // CYP-415 (D2): embedded-SQLite in prod; in-memory (null) for tests. Benign — session ids re-derive.
+        val sessionStore = sessionStoreFile?.let { com.tneff.cyppieagents.connector.SqliteSessionStore(it.toPath().resolveSibling("session-store.db")) }
         // CYP-355 (BE-2): the shared resume-outcome signal (keyed by projectId+agentId), and a late-bound holder
         // for the single host PtyManager (constructed after the runtimes, below) so the per-runtime hand-off
         // motors + LifecycleManager.onTeardown can reach it. Every hand-off/stop happens post-boot, once set.
