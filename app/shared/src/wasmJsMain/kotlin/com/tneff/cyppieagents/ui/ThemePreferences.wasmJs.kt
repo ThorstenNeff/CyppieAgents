@@ -1,20 +1,20 @@
 package com.tneff.cyppieagents.ui
 
 /**
- * Web (Kotlin/Wasm): the theme mode persists in `window.localStorage`, a synchronous browser KV. Mirrors the
+ * Web (Kotlin/Wasm): the preferences persist in `window.localStorage`, a synchronous browser KV. Mirrors the
  * `ShellConfig.wasmJs` `js("… .toString()")` interop idiom (a `js()` function references its parameters by
- * name). The mapping + fail-safe default live in commonMain ([PersistentThemePreferences]).
+ * name). The mappings + fail-safe defaults live in commonMain ([PersistentThemePreferences]).
  *
- * [rawThemeMode] returns `""` when the key is unset (undefined-safe via `|| ''`), which the commonMain parse
- * treats as "unknown" → [ThemeMode.SYSTEM] (the follow-system default) — never a crash.
+ * [rawGet] returns `""` when the key is unset (undefined-safe via `|| ''`), which the commonMain parses treat
+ * as "unknown" → the follow-system theme / the default history size — never a crash.
  */
-private fun rawThemeMode(): String = js("(window.localStorage.getItem('cyppie.themeMode') || '').toString()")
+private fun rawGet(key: String): String = js("(window.localStorage.getItem('cyppie.' + key) || '').toString()")
 
-private fun storeThemeMode(value: String): String =
-    js("(window.localStorage.setItem('cyppie.themeMode', value), '')")
+private fun rawSet(key: String, value: String): String =
+    js("(window.localStorage.setItem('cyppie.' + key, value), '')")
 
 actual fun defaultThemePreferences(): ThemePreferences =
     PersistentThemePreferences(
-        load = { rawThemeMode() },
-        store = { storeThemeMode(it) },
+        load = { key -> rawGet(key) },
+        store = { key, value -> rawSet(key, value) },
     )

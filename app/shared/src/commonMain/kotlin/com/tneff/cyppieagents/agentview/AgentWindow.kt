@@ -40,6 +40,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -256,6 +261,7 @@ fun AgentWindow(
             MessageComposer(
                 agentId = agentId,
                 onSend = viewModel::onSend,
+                history = viewModel::inputHistorySnapshot,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -1052,15 +1058,25 @@ private fun NoticeRow(event: AgentEvent.Notice, modifier: Modifier = Modifier) {
 private fun MessageComposer(
     agentId: String,
     onSend: (String) -> Unit,
+    // CYP-387: newest-last snapshot of messages sent to this agent (the immutable store), read lazily on each
+    // arrow press. Default empty keeps existing call sites / tests unchanged (no recall = the old behaviour).
+    history: () -> List<String> = { emptyList() },
     modifier: Modifier = Modifier,
 ) {
     var draft by remember { mutableStateOf("") }
+    // CYP-387 §2 — the recall cursor (pure state machine; see ComposerRecall). Per agent window.
+    val recall = remember { ComposerRecall() }
+
     fun submit() {
         if (draft.isNotBlank()) {
+            // §2.2: a sent recall-edit is captured as a new NEWEST entry (via onSend → InputHistory.record); the
+            // original stays. Then leave history: draft cleared, cursor back at the (now empty) live draft.
             onSend(draft)
             draft = ""
+            recall.reset()
         }
     }
+
     // CYP-26 §2.2: keep the input usable when the window is narrow. The input holds a min width; below
     // a threshold the "Senden" label degrades to a glyph (a11y label preserved) so nothing is truncated.
     BoxWithConstraints(modifier = modifier) {
@@ -1072,8 +1088,20 @@ private fun MessageComposer(
         ) {
             OutlinedTextField(
                 value = draft,
+                // Typing while navIndex != null is a transient working copy (spec §2.2) — the store is untouched.
                 onValueChange = { draft = it },
-                modifier = Modifier.weight(1f).testTag(AgentViewTags.input(agentId)),
+                modifier = Modifier.weight(1f).testTag(AgentViewTags.input(agentId))
+                    // §0/§2.1: single-line field → ↑/↓ are pure history nav (WindowManager.kt:604 pattern). Preview
+                    // so the field's own key handling never swallows them first; only a real recall consumes it.
+                    .onPreviewKeyEvent { e ->
+                        if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        val recalled = when (e.key) {
+                            Key.DirectionUp -> recall.older(history(), draft)
+                            Key.DirectionDown -> recall.newer(history(), draft)
+                            else -> return@onPreviewKeyEvent false
+                        }
+                        if (recalled != null) { draft = recalled; true } else false
+                    },
                 // Placeholder degrades by ellipsis, never character-wrap, in a narrow field.
                 placeholder = { Text("Nachricht an den Agenten…", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),

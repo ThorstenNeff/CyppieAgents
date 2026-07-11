@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.tneff.cyppieagents.auth.AuthGate
 import com.tneff.cyppieagents.ui.ThemePreferences
+import com.tneff.cyppieagents.ui.clampComposerHistorySize
 import com.tneff.cyppieagents.ui.defaultThemePreferences
 import com.tneff.cyppieagents.ui.isDark
 import com.tneff.cyppieagents.ui.maritimeColorScheme
@@ -54,6 +55,9 @@ fun App(
     // recompose-driving state AND persists. M3 roles stay the single colour source — no colour is added here.
     val themePrefs = remember(themePreferences) { themePreferences ?: defaultThemePreferences() }
     var themeMode by remember { mutableStateOf(themePrefs.themeMode()) }
+    // CYP-387: the ONE global, personal composer input-history size N (spec §3). Hoisted beside themeMode — a
+    // change drives recomposition (AgentShell mirrors it live onto every open agent VM) AND persists durably.
+    var composerHistorySize by remember { mutableStateOf(themePrefs.composerHistorySize()) }
     MaterialTheme(colorScheme = maritimeColorScheme(themeMode.isDark(isSystemInDarkTheme()))) {
         // CYP-322: the ONE root backdrop. Before this, MaterialTheme supplied only colour *values* — nothing
         // painted a background, so the platform window's white showed through in Dark mode; and unstyled Text
@@ -81,6 +85,12 @@ fun App(
                     sessionToken = authRepo::currentSessionToken,
                     themeMode = themeMode,
                     onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
+                    composerHistorySize = composerHistorySize,
+                    onComposerHistorySizeChange = { n ->
+                        val clamped = clampComposerHistorySize(n)
+                        composerHistorySize = clamped
+                        themePrefs.setComposerHistorySize(clamped)
+                    },
                 )
             }
         }
