@@ -57,6 +57,24 @@ npm run contract:check  # regenerate + tsc typecheck (fail-closed)
 > (ContractGenerator AsyncAPI 2.6 + JSON-Schema components), and whether the schema-vs-`:core` **regen-diff**
 > lives in a Gradle test (extending `AsyncApiContractTest`) are the export-seam details to confirm.
 
+## Net layer (W2 / CYP-400)
+
+`src/net/` — the WS/REST clients (Spec 14 §2.2). `npm test` runs the vitest suite.
+
+- `reconnectingSocket.ts` — the channel-agnostic reconnecting WebSocket all 8 channels share: `?token=` auth
+  (browser WS can't set headers; proxy-masks the query, CYP-292), backoff reconnect, clean teardown. Socket
+  factory + scheduler are injectable so reconnect/idempotency are deterministically unit-tested.
+- `agentSocket.ts` — `/ws/agent`: `StoredAgentEvent` stream, `?since=<seq>` replay on reconnect, **`seq`
+  idempotency** (drops `seq <= cursor` → no reconnect duplicates, the CYP-400 AC), sends `UserTurn`.
+- `oneWayFeed.ts` — generic server→client feed for the read-only channels (lifecycle/token-usage/busy-state/
+  terminal-state); concrete instances are one-liners once each channel's type is generated.
+- `rest.ts` — `/api/*` base: Bearer operator-token (when present) OR session cookie (`credentials:"include"`).
+
+> **Scope note:** this increment lands the shared infra + the `/ws/agent` client + REST base, fully typed
+> against W1's generated types and tested (backoff, reconnect, dedup). The remaining channels (comm/events bidi;
+> the 4 one-way feeds) wire on top trivially, but their *types* need either the fixture expanded per channel
+> (hand-modelling — the thing W1 avoids) or Backend2's real export — see the report/flag.
+
 ## Layout (grows over the epic — Spec 14 §2.2)
 
 ```

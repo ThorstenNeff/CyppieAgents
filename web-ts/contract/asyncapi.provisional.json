@@ -12,6 +12,22 @@
       "StreamJsonEvent": { "payload": { "$ref": "#/components/schemas/StreamJsonEvent" } }
     },
     "schemas": {
+      "StoredAgentEvent": {
+        "type": "object",
+        "properties": {
+          "seq": { "type": "integer" },
+          "agentId": { "type": "string" },
+          "projectId": { "type": "string" },
+          "tsMs": { "type": "integer" },
+          "event": { "$ref": "#/components/schemas/StreamJsonEvent" }
+        },
+        "required": ["seq", "agentId", "projectId", "tsMs", "event"]
+      },
+      "UserTurn": {
+        "type": "object",
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"]
+      },
       "StreamJsonEvent": {
         "oneOf": [
           { "$ref": "#/components/schemas/SystemEvent" },
