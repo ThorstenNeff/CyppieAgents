@@ -28,8 +28,8 @@ export class FakeSocket implements SocketLike {
   emitMessage(data: string): void {
     this.onmessage?.({ data })
   }
-  emitClose(): void {
-    this.onclose?.(undefined)
+  emitClose(code?: number): void {
+    this.onclose?.(code === undefined ? undefined : { code })
   }
 }
 

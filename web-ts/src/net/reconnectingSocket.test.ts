@@ -59,4 +59,25 @@ describe('ReconnectingSocket', () => {
     expect(rs.send('now')).toBe(true)
     expect(hub.last().sent).toEqual(['now'])
   })
+
+  it('fires onClose(code) on an UNEXPECTED drop, but NOT on a deliberate close() (CYP-437)', () => {
+    const hub = new FakeSocketHub()
+    const codes: (number | undefined)[] = []
+    const rs = new ReconnectingSocket({
+      url: () => 'ws://host/ws/x',
+      onText: () => {},
+      onClose: (code) => codes.push(code),
+      factory: hub.factory,
+      schedule: hub.runNow,
+      backoff: zeroBackoff(),
+    })
+    rs.connect()
+    hub.last().emitOpen()
+    hub.last().emitClose(1008) // server drop, policy violation (revoked)
+    expect(codes).toEqual([1008])
+    // a deliberate close() must be silent (no offline banner for a teardown we asked for)
+    hub.last().emitOpen()
+    rs.close()
+    expect(codes).toEqual([1008])
+  })
 })

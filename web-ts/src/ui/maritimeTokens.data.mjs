@@ -29,6 +29,10 @@ export const MARITIME_TOKENS = {
     onSurfaceVariant: '#3A4E5A',
     outline: '#6E8C9E',
     outlineVariant: '#CBDCE7',
+    // CYP-437: WARN amber container (severity, de-overloaded from `tertiary` — a0/CYP-300). Ported 1:1 from
+    // EventVisuals.warnContainer; the offline banner uses it (reconnectable ≠ the red `error` terminal revoke).
+    warnContainer: '#FFE7B0',
+    onWarnContainer: '#5A3D00',
   },
   dark: {
     primary: '#6FBEEA',
@@ -55,5 +59,8 @@ export const MARITIME_TOKENS = {
     onSurfaceVariant: '#A6BECD',
     outline: '#57707F',
     outlineVariant: '#243642',
+    // CYP-437: WARN amber container (dark) — EventVisuals.warnContainer(dark).
+    warnContainer: '#4A3A10',
+    onWarnContainer: '#FFC857',
   },
 }

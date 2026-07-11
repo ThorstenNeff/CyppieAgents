@@ -11,6 +11,13 @@ describe('maritime token contrast (CYP-423 — WCAG 1.4.11, MEASURED not assumed
     expect(darkRatio).toBeGreaterThanOrEqual(WCAG_NON_TEXT_MIN)
   })
 
+  it('the WARN + error container banner pairs are AA-readable (onColor on container) in both themes (CYP-437)', () => {
+    for (const scheme of [MARITIME_TOKENS.light, MARITIME_TOKENS.dark]) {
+      expect(contrastRatio(scheme.onWarnContainer, scheme.warnContainer)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(scheme.onErrorContainer, scheme.errorContainer)).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
   it('the contrast measure actually bites: the old alpha composite would FAIL 3:1', () => {
     // rgba(128,128,128,0.7) over white composites to ~#A9A9A9; the point is a sub-3 pair is reported as sub-3.
     expect(contrastRatio('#A9A9A9', '#FFFFFF')).toBeLessThan(WCAG_NON_TEXT_MIN)
@@ -21,7 +28,7 @@ describe('maritime token contrast (CYP-423 — WCAG 1.4.11, MEASURED not assumed
 
 describe('maritime token completeness (port tokens, not optics)', () => {
   it('both schemes define all 24 roles as valid #rrggbb', () => {
-    expect(MARITIME_ROLES).toHaveLength(24)
+    expect(MARITIME_ROLES).toHaveLength(26) // 24 M3 roles + CYP-437 warn container pair
     for (const scheme of [MARITIME_TOKENS.light, MARITIME_TOKENS.dark]) {
       for (const role of MARITIME_ROLES) {
         expect(scheme[role], role).toMatch(/^#[0-9A-Fa-f]{6}$/)

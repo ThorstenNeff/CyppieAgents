@@ -42,3 +42,21 @@ body,
 .transcript-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* CYP-437 (#3) — the comm connection banner TONES, on tokens (the a0/CYP-300 lesson: `offline` is a
+   reconnectable WARN, `revoked` is a terminal error — NEVER `tertiary`, which goes GREEN at night and would read
+   as "ok"). live/connecting stay a quiet neutral. The distinction also lives in the banner TEXT (colour never
+   alone, WCAG 1.4.1); these tones reinforce it. onColor is AA on its container in both themes (measured guard). */
+.comm-status-live,
+.comm-status-connecting {
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.comm-status-offline {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+}
+.comm-status-revoked {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}

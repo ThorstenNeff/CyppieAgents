@@ -32,6 +32,9 @@ const CONNECTION_TEXT: Record<CommPanelProps['connection'], string> = {
 
 export function CommPanel(props: CommPanelProps) {
   const { channels, selectedChannelId, onSelectChannel, messages, senderRole, connection } = props
+  // CYP-437(#4): a terminal revoke (WS 1008) closes the write affordance entirely — don't leave a composer that
+  // only fails server-side. This overrides the disclosure (a revoked socket can't write, whatever canWrite said).
+  const revoked = connection === 'revoked'
   const disclosure = composerDisclosure(props.canWrite, props.sendError)
   const tail = messages.length === 0 ? '' : `${messages.length}|${messages[messages.length - 1].id}`
   const { ref, onScroll } = useAutoscrollPin(tail)
@@ -84,7 +87,11 @@ export function CommPanel(props: CommPanelProps) {
           )}
         </div>
 
-        {disclosure === 'readonly' ? (
+        {revoked ? (
+          <p className="comm-revoked-lock" data-testid="comm-revoked-lock">
+            Zugriff entzogen — Senden ist gesperrt.
+          </p>
+        ) : disclosure === 'readonly' ? (
           <p className="comm-readonly-hint" data-testid="comm-readonly-hint">
             Nur Lesen — du darfst in diesem Kanal nicht antworten.
           </p>

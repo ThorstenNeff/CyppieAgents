@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, cleanup, act } from '@testing-library/react'
+import { render, cleanup, act, fireEvent, within } from '@testing-library/react'
 import { App } from './App'
 import { useWindowStore } from './windowmgr/windowStore'
 import { useHubStore } from './state/hubStore'
 import { emptyHubState } from './state/hubReducers'
 import { FakeSocketHub } from './net/testing/fakeSocket'
+import { RestError } from './net/rest'
 import type { HubConfig } from './state/hubConfig'
 import type { HubRepo } from './state/restRepo'
 import type { Channel } from './types/generated/contract'
@@ -91,5 +92,35 @@ describe('App assembly (CYP-425)', () => {
       )
     })
     expect(await findByTestId('agent-window.qa')).toBeTruthy()
+  })
+
+  it('a 403 on send shows the distinct "denied" disclosure, not the generic failure (CYP-437a)', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    repo.postMessage = vi.fn().mockRejectedValue(new RestError(403, 'POST', '/api/channels/po-frontend/messages', 'acl'))
+    const { findByTestId, queryByTestId } = render(
+      <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    // the agent windows also have composers → scope to the comm panel's input
+    const input = within(await findByTestId('comm-panel')).getByTestId('composer-input')
+    fireEvent.change(input, { target: { value: 'hi' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await findByTestId('comm-send-denied')).toBeTruthy()
+    expect(queryByTestId('comm-send-failed')).toBeNull()
+  })
+
+  it('an unexpected /ws/comm drop flips the banner off live: 1008 → revoked (+ composer lock), else offline (CYP-437b)', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    const comm = hub.sockets.find((s) => s.url.includes('/ws/comm'))!
+    await act(async () => {
+      comm.emitOpen() // → live
+      comm.emitClose(1008) // policy violation → revoked (terminal)
+    })
+    expect(getByTestId('comm-status').className).toContain('comm-status-revoked')
+    expect(await findByTestId('comm-revoked-lock')).toBeTruthy() // composer locked on revoke
   })
 })

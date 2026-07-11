@@ -17,6 +17,7 @@ export interface BidiFeedOptions<TServer> {
   /** Untrusted-frame boundary: validate/parse the raw inbound object. Throws to reject; returns the typed frame. */
   validate?: (raw: unknown) => TServer
   onOpen?: () => void
+  onClose?: (code?: number) => void
   backoff?: Backoff
   factory?: SocketFactory
   schedule?: Scheduler
@@ -34,6 +35,7 @@ export class BidiFeed<TServer, TClient> {
       },
       onText: (data) => opts.onEvent(validate(JSON.parse(data))),
       onOpen: opts.onOpen,
+      onClose: opts.onClose,
       backoff: opts.backoff,
       factory: opts.factory,
       schedule: opts.schedule,

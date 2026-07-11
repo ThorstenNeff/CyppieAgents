@@ -24,6 +24,8 @@ export type MaritimeRole =
   | 'onSurfaceVariant'
   | 'outline'
   | 'outlineVariant'
+  | 'warnContainer'
+  | 'onWarnContainer'
 
 export type MaritimeScheme = Record<MaritimeRole, string>
 

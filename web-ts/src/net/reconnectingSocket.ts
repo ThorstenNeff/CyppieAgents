@@ -26,6 +26,9 @@ export interface ReconnectingSocketOptions {
   /** One inbound text frame. */
   onText: (data: string) => void
   onOpen?: () => void
+  /** An UNEXPECTED close (not a deliberate close()) — the view layer flips to an offline/revoked banner (CYP-437).
+   *  `code` is the WebSocket close code when the transport supplies one (1008 = policy violation = auth revoked). */
+  onClose?: (code?: number) => void
   backoff?: Backoff
   factory?: SocketFactory
   schedule?: Scheduler
@@ -62,10 +65,14 @@ export class ReconnectingSocket {
     sock.onmessage = (ev) => {
       if (typeof ev.data === 'string') this.opts.onText(ev.data)
     }
-    sock.onclose = () => {
+    sock.onclose = (ev) => {
       this.open = false
       this.sock = null
-      if (!this.closed) this.schedule(() => this.connect(), this.backoff.next())
+      if (!this.closed) {
+        // unexpected drop → tell the view (offline/revoked banner), then reconnect with backoff
+        this.opts.onClose?.((ev as { code?: number } | undefined)?.code)
+        this.schedule(() => this.connect(), this.backoff.next())
+      }
     }
     sock.onerror = () => {
       // Let onclose drive reconnect; some implementations fire error then close.

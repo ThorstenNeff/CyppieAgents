@@ -12,6 +12,8 @@ export interface HubActions {
   onTerminalControl: (event: AgentTerminalControlEvent) => void
   /** fired when /ws/comm (re)connects — drives the CommPanel connection banner (CYP-438). */
   onCommOpen?: () => void
+  /** fired on an unexpected /ws/comm drop (code 1008 = revoked) — offline/revoked banner (CYP-437). */
+  onCommClose?: (code?: number) => void
 }
 
 export interface LiveHubHandle {
@@ -20,7 +22,7 @@ export interface LiveHubHandle {
 
 export function startLiveHub(config: HubConfig, actions: HubActions, deps: SocketDeps = {}): LiveHubHandle {
   const common = { baseUrl: config.wsBase, token: config.token, factory: deps.factory, schedule: deps.schedule }
-  const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen })
+  const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen, onClose: actions.onCommClose })
   const terminal = terminalStateFeed({ ...common, onEvent: actions.onTerminalControl })
   comm.start()
   terminal.start()
