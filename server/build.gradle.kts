@@ -63,20 +63,26 @@ tasks.named<Test>("test") {
         .withPropertyName("asyncApiContractExport")
         .withPathSensitivity(PathSensitivity.RELATIVE)
         .optional(true)
+    // CYP-426: the committed OpenAPI (REST) export, same stale-green wiring as the asyncapi one above.
+    inputs.file(rootProject.file("web-ts/contract/openapi.json"))
+        .withPropertyName("openApiContractExport")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .optional(true)
 }
 
-// CYP-409 (W1 producer): export the AsyncAPI contract (generated from :core via ContractGenerator) to a
-// committed file the TS consumer (Dev5) reads. OFFLINE + secret-free — it runs the generator DIRECTLY, not the
-// auth-gated `/docs/asyncapi.json` route, so the build needs no live server, no network, no token. The bytes are
-// single-sourced with the `/docs` serialization (docsJson) and guarded against drift by ContractExportDriftTest.
+// CYP-409/CYP-426 (W1 producer): export the AsyncAPI (WS) + OpenAPI (REST) contracts (generated from :core via
+// ContractGenerator) to committed files the TS consumer (Dev5) reads. OFFLINE + secret-free — it runs the
+// generators DIRECTLY, not the auth-gated `/docs/*.json` routes, so the build needs no live server, no network,
+// no token. The bytes are single-sourced with the `/docs` serialization (docsJson) and guarded against drift by
+// ContractExportDriftTest. Writes both files relative to workingDir (the repo root).
 tasks.register<JavaExec>("exportContract") {
     group = "contract"
-    description = "Generate web-ts/contract/asyncapi.json from :core via ContractGenerator (offline, no live server)."
+    description = "Generate web-ts/contract/{asyncapi,openapi}.json from :core via ContractGenerator (offline, no live server)."
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.tneff.cyppieagents.contract.ContractExportKt")
     workingDir = rootProject.projectDir
-    args(rootProject.file("web-ts/contract/asyncapi.json").absolutePath)
     outputs.file(rootProject.file("web-ts/contract/asyncapi.json"))
+    outputs.file(rootProject.file("web-ts/contract/openapi.json"))
 }
 
 dependencies {

@@ -31,6 +31,22 @@ class ContractExportDriftTest {
         )
     }
 
+    /** CYP-426 — the same regen-diff guard for the OpenAPI (REST) export: a `:core` DTO or a `RestContract` op
+     *  changed without a re-run reddens here, so the roster/Phase-2 TS types can't drift from the server. */
+    @Test
+    fun committedOpenApiExport_matchesFreshlyGenerated() {
+        val f = File(repoRoot(), ContractExport.OPENAPI_RELATIVE_PATH)
+        if (!f.exists()) {
+            fail("missing '${ContractExport.OPENAPI_RELATIVE_PATH}' — run `./gradlew :server:exportContract` and commit it")
+        }
+        assertEquals(
+            openApiExportText(),
+            f.readText(),
+            "'${ContractExport.OPENAPI_RELATIVE_PATH}' is STALE — a :core DTO or a RestContract op changed; " +
+                "re-run `./gradlew :server:exportContract` and commit the result",
+        )
+    }
+
     /** Locate the repo root by walking up for `settings.gradle.kts` — same runtime-file strategy as Rc2ConfigAssertionTest. */
     private fun repoRoot(): File {
         var dir: File? = File(System.getProperty("user.dir")).absoluteFile
