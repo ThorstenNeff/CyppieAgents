@@ -147,11 +147,13 @@ const val HEADER_LABELLED_CONTROLS_MIN_WIDTH: Float = 520f
  *
  * [agentId] parameterizes the test tags per the v0.2 Test-Contract (`agent.<agentId>.stream` etc.).
  *
- * **CYP-333 scope (honest):** the toggle is a *client view-selection* (Orchestrierung ↔ Shell) — NOT the spec's
- * backend hand-off. The mediated stream-json session keeps running while the shell is shown, so no hub-blind
- * banner / frozen token / CONTEXT_LOST is claimed here (that is the Backend follow-up, ⟂BE-1..3). The interim
- * second view (Auftraggeber ruling) is an honest **worktree bash shell** (CYP-348), not a second `claude`; the
- * same-session claude terminal arrives later with the hand-off (BE-2).
+ * **CYP-381 hand-off (delivered):** the toggle now drives the real backend hand-off — [AgentViewModel.requestMode]
+ * issues the non-optimistic `POST /api/agents/{id}/mode` against the CYP-355 motor, and the view flips only on the
+ * server confirm. In TERMINAL mode the motor holds an interactive `claude --resume` session (the agent's real, same
+ * session) that this window attaches to as a viewer; the mediated stream-json reader steps aside, so the **hub-blind**
+ * banner (INTERACTIVE) and the CONTEXT_LOST landmark ARE surfaced here (§6/§7b), mirrored from the read-only CYP-354
+ * [control] state. The `bash -l` worktree shell (CYP-348) remains as the interim fallback for when no motor session
+ * is live (see [terminalGatedNote]).
  */
 @Composable
 fun AgentWindow(
@@ -175,18 +177,20 @@ fun AgentWindow(
      */
     terminalContent: (@Composable (agentId: String, modifier: Modifier) -> Unit)? = null,
     /**
-     * CYP-333: when `true` AND no [terminalContent] is wired, the Shell segment is disabled with an honest
-     * "available once the worktree-shell backend lands" note (for an operator). With CYP-348 landed the shell is
-     * normally **live** (a safe `bash -l` worktree shell, not a second `claude`); this gated state is the
-     * exceptional case — a non-Desktop target or the [WORKTREE_SHELL_LIVE_ENABLED] kill-switch turned off.
+     * CYP-333: when `true` AND no [terminalContent] is wired, the Terminal segment is disabled with an honest
+     * "available once the terminal backend lands" note (for an operator). Normally the terminal is **live**: in
+     * TERMINAL mode the CYP-355 motor holds the agent's interactive `claude --resume` session (with a `bash -l`
+     * worktree shell as the interim fallback when no motor session is live). This gated state is the exceptional
+     * case — a non-Desktop target or the [WORKTREE_SHELL_LIVE_ENABLED] kill-switch turned off.
      * `terminalContent` present = live; `terminalGatedNote` = honestly gated.
      */
     terminalGatedNote: Boolean = false,
     /**
      * CYP-381 §6/§7b: this agent's read-only CYP-354 terminal-control event (the same `/ws/terminal-state` truth the
      * titlebar marker mirrors), threaded so the window frame can render the **hub-blind** banner (INTERACTIVE) and
-     * the **context-lost** banner (CONTEXT_LOST). `null`/MEDIATED → no banner (fail-closed, absent == MEDIATED). The
-     * stub never reports these states, so with the interim shell both banners stay absent — honest.
+     * the **context-lost** banner (CONTEXT_LOST). `null`/MEDIATED → no banner (fail-closed, absent == MEDIATED). With
+     * the live motor these states are reached and the banners render; a test/demo injecting a stub feed that reports
+     * only MEDIATED sees no banner — honest either way.
      */
     control: AgentTerminalControlEvent? = null,
 ) {

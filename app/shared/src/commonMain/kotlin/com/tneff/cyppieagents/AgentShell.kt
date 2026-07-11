@@ -172,13 +172,12 @@ private const val COMPACT_WINDOW_ID = "compact"
  * hermetic without touching the network.
  */
 /**
- * CYP-333: the worktree-shell connection is **live**. The interim second view is an honest bash worktree shell
- * (Auftraggeber ruling — `git status`/`ls`/inspect), NOT a second `claude`, so it is safe. CYP-348 landed the
- * backend bash mode: `/ws/terminal` runs `bash -l` in the worktree **by default** (BootOrchestrator→PtyManager),
- * so **no client mode parameter is needed** — the flagged "one new edge" is resolved (bash IS the default).
- * The Shell segment now binds a real [WsTerminalSession] to the Desktop `TerminalView`. Bundles with CYP-361
- * (PtyManager ctor hardening: no command-less 2-claude vector). The same-session `claude` terminal reuses this
- * slot later with the hand-off (BE-2). Left as a const kill-switch (flip to `false` to gate) for operability.
+ * CYP-333/381: the Terminal connection is **live**. With the CYP-355 hand-off motor merged, TERMINAL mode attaches
+ * this window to the motor's interactive `claude --resume` session (the agent's real, same session) over
+ * `/ws/terminal`. The `bash -l` worktree shell (CYP-348 — `git status`/`ls`/inspect, BootOrchestrator→PtyManager
+ * default) remains the interim fallback for when no motor session is live, so **no client mode parameter is needed**.
+ * The Shell segment binds a real [WsTerminalSession] to the Desktop `TerminalView`. Bundles with CYP-361 (PtyManager
+ * ctor hardening: no command-less 2-claude vector). Left as a const kill-switch (flip to `false` to gate) for operability.
  */
 private const val WORKTREE_SHELL_LIVE_ENABLED = true
 
@@ -913,12 +912,14 @@ fun AgentShell(
                             // → the window frame renders the hub-blind / context-lost banners. Absent key → null →
                             // no banner (fail-closed; the stub reports none of these so they stay absent — honest).
                             control = controlStates[window.id],
-                            // CYP-333: the content-view worktree shell, LIVE (see [WORKTREE_SHELL_LIVE_ENABLED]).
+                            // CYP-333/381: the content-view Terminal, LIVE (see [WORKTREE_SHELL_LIVE_ENABLED]).
                             // Bind a fresh WsTerminalSession to the Desktop TerminalView against /ws/terminal (CYP-332
-                            // contract; CYP-348 makes it a `bash -l` worktree shell by default — no mode param). It is
-                            // remembered per agent so it stays stable while shown and is torn down (TerminalView
-                            // DisposableEffect) on switch-away. The session connects lazily on first collect, so the
-                            // flag being on does NOT eagerly spawn shells — only opening the Shell view does.
+                            // contract). In TERMINAL mode the CYP-355 motor owns an interactive `claude --resume` PTY and
+                            // this socket attaches as a viewer; with no live motor session it falls back to the `bash -l`
+                            // worktree shell (CYP-348). It is remembered per agent so it stays stable while shown and is
+                            // torn down (TerminalView DisposableEffect) on switch-away. The session connects lazily on
+                            // first collect, so the flag being on does NOT eagerly spawn anything — only opening the
+                            // Terminal view does.
                             terminalContent = if (WORKTREE_SHELL_LIVE_ENABLED) {
                                 { id, m ->
                                     val session = remember(id) {
