@@ -1,7 +1,7 @@
 # Hub-Verbindungs- & Modus-UX — Design-Spec (Epic CYP-395, Phase 1: Lokal-Modus)
 
 > Status: **Spec-Closure — ratifiziert 2026-07-11 (Q1–Q8 geruled)** · docs-only, kein Bau · Owner: UX/UI · Begleitkonzept: `../../13-cyppie-hub-architektur.md`
-> Eingefrorene Companion-Files (Haus-Konvention, Vorlage für Devs `connect_*`-Screens = S-L): `hub-connection-keys.md` · `hub-connection-tags.md` · `hub-connection-tokens.json`.
+> Eingefrorene Companion-Files (Haus-Konvention, Vorlage für Devs `hubconnect_*`-Screens = S-L): `hub-connection-keys.md` · `hub-connection-tags.md` · `hub-connection-tokens.json`.
 > Client-Architektur parallel beim Developer — **Nahtstellen über den PO** (siehe §12).
 > Reihenfolge dieses Dokuments: **Screens/Zustände/Copy** zuerst, dann **ratifizierte Entscheidungen** (§11) und **Nahtstellen** (§12).
 
@@ -95,9 +95,9 @@ primary `#0A5AA0`/`#6FBEEA` · secondary `#0F5B88`/`#93CCEA` · **tertiary `#0B7
 
 ### 3.5 testTag-Konvention & i18n
 Prefixlos, gepunktet `<area>[.<scopeId>].<element>[.<qualifier>]` (`docs/TEST-CONTRACT.md`, `AuthTags.kt:5`). Neue
-**Area** nötig — Vorschlag `connect` (0 Kollision, wie `auth` sie einführte); Rename/Frozen-Contract mit QA (CYP-7)
+**Area** nötig — Vorschlag `hubConnect` (0 Kollision, wie `auth` sie einführte); Rename/Frozen-Contract mit QA (CYP-7)
 abstimmen. i18n: DE-Default `values/strings.xml`, EN `values-en/strings.xml`, flache `snake_case`-Keys je Feature,
-a11y-Strings `a11y_*`. Neue Key-Familie **`connect_*`**, maskiertes Feld spiegelt `settings_apikey_*`.
+a11y-Strings `a11y_*`. Neue Key-Familie **`hubconnect_*`**, maskiertes Feld spiegelt `settings_apikey_*`.
 
 ---
 
@@ -108,12 +108,12 @@ maritim). Fortschritt sichtbar (z. B. „Schritt 2 von 4"), damit der Nutzer wei
 
 ### A0 — Hub-Vorbereitung (kurz, systemseitig)
 Beim Erststart erzeugt der Hub sein Ed25519-Keypair (privat bleibt lokal). UI: knapper Lade-/Willkommens-Zustand,
-**kein** Fortschrittsbalken der etwas verspricht. Copy `connect_prepare_title` „Cyppie wird vorbereitet…". Sofort weiter,
+**kein** Fortschrittsbalken der etwas verspricht. Copy `hubconnect_prepare_title` „Cyppie wird vorbereitet…". Sofort weiter,
 sobald der Hub bereit ist. Reuse `LoadingScreen` (`auth/AuthGate.kt`).
 
 ### A1 — „Melde dich an, um diesen Hub zu registrieren"
 Route in den **bestehenden** `AuthGate` (Login **oder** Register + OIDC). **Kontext-Copy oben** macht klar, *warum* die
-Anmeldung: `connect_register_intro` „Melde dich an, um diesen Hub deinem Konto zuzuordnen." Kein Neubau der Auth-Form;
+Anmeldung: `hubconnect_register_intro` „Melde dich an, um diesen Hub deinem Konto zuzuordnen." Kein Neubau der Auth-Form;
 nur die Intro-Zeile ist neu. Nach erfolgreichem Login (verifizierte `UserTier`) → A2.
 
 ### A2 — Hub-Registrierung
@@ -121,19 +121,19 @@ Der Hub tauscht Device-Code + Public-Key gegen die CP; die CP registriert `{hubI
 - **Zustände:** `registering` („Hub wird registriert…", neutral `onSurfaceVariant`) → `registered` (kurzes „Hub registriert").
 - **Hub-Name:** die CP verlangt einen `name`. **Offene Entscheidung Q1** (§11): Auto-Name (Hostname) vs. Nutzereingabe.
   Default-Vorschlag der Spec: **vorbefülltes, editierbares Namensfeld** (Hostname als Default), damit Mehr-Hub-Listen
-  später unterscheidbar sind. Feld `connect.register.name`, Copy `connect_register_name_label` „Name dieses Hubs".
+  später unterscheidbar sind. Feld `hubConnect.register.name`, Copy `hubconnect_register_name_label` „Name dieses Hubs".
 - **Device-Code (ratifiziert R6/Q7):** Bei Desktop (Frontend+Hub co-lokal) läuft der Austausch **automatisch** —
   **kein getippter Code**, kein sichtbarer Device-Code-Zustand in Phase 1. Die **Screen-Naht bleibt offen** für einen
-  späteren sichtbaren Code (Remote-Hub, headless-startend): optionaler `connect_register_devicecode`-Zustand ist
+  späteren sichtbaren Code (Remote-Hub, headless-startend): optionaler `hubconnect_register_devicecode`-Zustand ist
   vorgesehen, aber **nicht gebaut/gerendert** in Phase 1.
-- **Fehler:** CP nicht erreichbar → `connect_register_error_offline` „Registrierung braucht Internet. Erneut versuchen."
+- **Fehler:** CP nicht erreichbar → `hubconnect_register_error_offline` „Registrierung braucht Internet. Erneut versuchen."
   (errorContainer, Retry). Bereits registriert (Re-Run) → idempotent weiter zu A3/Workspace.
 
 ### A3 — „Hinterlege deine Anthropic-Credentials"
 **Wiederverwendung §3.1** (maskiertes Feld), aber als Erststart-Variante. Ablauf:
-1. **Eingabe** — write-only Feld, `PasswordVisualTransformation`, Text-Label-Reveal. Copy `connect_creds_title`
-   „Hinterlege deine Anthropic-Credentials", Feld-Placeholder `connect_creds_placeholder` „sk-ant-…".
-2. **Zero-Knowledge-Zeile (H4)** — dezente Micro-Copy unter dem Feld: `connect_creds_privacy` „Bleibt auf diesem Gerät
+1. **Eingabe** — write-only Feld, `PasswordVisualTransformation`, Text-Label-Reveal. Copy `hubconnect_creds_title`
+   „Hinterlege deine Anthropic-Credentials", Feld-Placeholder `hubconnect_creds_placeholder` „sk-ant-…".
+2. **Zero-Knowledge-Zeile (H4)** — dezente Micro-Copy unter dem Feld: `hubconnect_creds_privacy` „Bleibt auf diesem Gerät
    (Keystore) — geht nie an cyppie-agents.com." (onSurfaceVariant, informativ, **kein** Marketing-Grün).
 3. **Validierung** — nach „Speichern & prüfen" ein Testcall gegen Anthropic:
    - `validating` „Credentials werden geprüft…" (neutral).
@@ -141,11 +141,11 @@ Der Hub tauscht Device-Code + Public-Key gegen die CP; die CP registriert `{hubI
    - `invalid` „Key ungültig — bitte prüfen." (**Fehler**, errorContainer).
    - `unreachable` „Konnte nicht geprüft werden (Anthropic nicht erreichbar) — gespeichert, später erneut prüfen."
      (**WARN-Amber**, `warnContainer`, distinkt von `invalid`). → **H3**.
-4. **Maskierte Bestätigung** danach: Statuszeile `***<letzte4>` (`connect_creds_masked` „Hinterlegt: %1$s"), Feld leert.
+4. **Maskierte Bestätigung** danach: Statuszeile `***<letzte4>` (`hubconnect_creds_masked` „Hinterlegt: %1$s"), Feld leert.
 
 ### A4 — „Hub bereit"
-Erfolgs-Abschluss → Übergang in den Hub-Workspace. Copy `connect_ready_title` „Hub bereit", Button
-`connect_ready_enter` „Loslegen". **Gating (Q5, §11):** Übergang setzt **mindestens hinterlegte** Credentials voraus;
+Erfolgs-Abschluss → Übergang in den Hub-Workspace. Copy `hubconnect_ready_title` „Hub bereit", Button
+`hubconnect_ready_enter` „Loslegen". **Gating (Q5, §11):** Übergang setzt **mindestens hinterlegte** Credentials voraus;
 bei `unreachable`-Validierung darf man mit **WARN** fortfahren (Key kann gültig sein, Anthropic transient down); bei
 `invalid` blockiert der Screen bis Korrektur.
 
@@ -161,11 +161,11 @@ Bestehender `AuthGate` (§3.2). Nach verifizierter Session → B2. Erst-Login-oh
 (maritim). **Pro Hub-Zeile:**
 - **Name** (`onSurface`, prominent), sekundär `hubId`/Port-Metadaten gedämpft (`onSurfaceVariant`).
 - **Registry-Presence (H1, advisory, gedämpft):**
-  - `online` → gefüllter Punkt **neutral** (nicht grün!) + Label `connect_presence_online` „online". Ton: `onSurface`
+  - `online` → gefüllter Punkt **neutral** (nicht grün!) + Label `hubconnect_presence_online` „online". Ton: `onSurface`
     zurückhaltend; bewusst **kein** `tertiary`-Grün (Brand-Akzent, würde Erfolg/Verbindung überzeichnen).
-  - `offline` → hohler/gedämpfter Punkt + `connect_presence_offline` „offline · zuletzt gesehen %1$s" mit **relativer**
+  - `offline` → hohler/gedämpfter Punkt + `hubconnect_presence_offline` „offline · zuletzt gesehen %1$s" mit **relativer**
     Zeit (`vor 3 Min`, `gestern`), `onSurfaceVariant`.
-  - Presence-Punkt **immer mit Label** (1.4.1), nie Farbe allein; a11y `a11y_connect_presence` „Presence laut Registry:
+  - Presence-Punkt **immer mit Label** (1.4.1), nie Farbe allein; a11y `a11y_hubconnect_presence` „Presence laut Registry:
     %1$s".
 - **Auswahl** → öffnet B3 (Modus) für diese Zeile. Ein `online`-Hub ist **nicht** garantiert lokal erreichbar — die
   Wahrheit ist der Connect (§6).
@@ -173,19 +173,19 @@ Bestehender `AuthGate` (§3.2). Nach verifizierter Session → B2. Erst-Login-oh
   der Presence (siehe §6), damit H1 sichtbar bleibt.
 
 **Leerer Zustand:** keine Hubs für dieses Konto → Hinweis + primäre Aktion „Hub registrieren" (→ Seq A ab A2). Copy
-`connect_hubs_empty` „Noch kein Hub registriert." + `connect_hubs_register` „Hub registrieren".
-**Fehler:** `GET /hubs` scheitert (CP nicht erreichbar) → errorContainer-Banner `connect_hubs_error` „Hub-Liste nicht
+`hubconnect_hubs_empty` „Noch kein Hub registriert." + `hubconnect_hubs_register` „Hub registrieren".
+**Fehler:** `GET /hubs` scheitert (CP nicht erreichbar) → errorContainer-Banner `hubconnect_hubs_error` „Hub-Liste nicht
 erreichbar. Erneut versuchen." (**H5**). **Q6 ratifiziert = DEFERRED:** **kein** Offline-Lokal-Connect über eine gecachte
 Hub-Liste in Phase 1. **H5 bleibt verbindlich** — die erste Anmeldung/Hub-Liste braucht die CP erreichbar; CP-nicht-erreichbar
 ist ein **ehrlicher Fehlerzustand**, kein stiller Hänger und kein aus dem Cache vorgetäuschter „online"-Zustand.
 
 ### B3 — Modus-Wahl (Lokal | Remote)
 Segmentierte Auswahl **nach** der Hub-Wahl (ein Hub kann perspektivisch über beide Wege erreichbar sein):
-- **Lokal** — aktiv, Default-Fokus. `connect_mode_local` „Lokal", Subtext `connect_mode_local_sub` „Direkt im selben
+- **Lokal** — aktiv, Default-Fokus. `hubconnect_mode_local` „Lokal", Subtext `hubconnect_mode_local_sub` „Direkt im selben
   Netz — privat und schnell."
-- **Remote** — **deaktiviert (H2)**, nicht klickbar, Reuse `TonedHint(GATED)`-Idiom. `connect_mode_remote` „Remote",
-  Badge/Subtext `connect_mode_remote_soon` „kommt bald". **Nicht** vorausgewählt, **kein** Fake-Klick.
-- Primäre Aktion `connect_mode_connect` „Verbinden" → §6 (nur Lokal handlungsfähig in Phase 1).
+- **Remote** — **deaktiviert (H2)**, nicht klickbar, Reuse `TonedHint(GATED)`-Idiom. `hubconnect_mode_remote` „Remote",
+  Badge/Subtext `hubconnect_mode_remote_soon` „kommt bald". **Nicht** vorausgewählt, **kein** Fake-Klick.
+- Primäre Aktion `hubconnect_mode_connect` „Verbinden" → §6 (nur Lokal handlungsfähig in Phase 1).
 - **Q3 (§11):** Platzierung (eigener Schritt vs. Toggle in der Hub-Zeile) — Spec-Default = eigener kompakter Schritt.
 
 ---
@@ -197,14 +197,14 @@ Ein einziger, ehrlicher Fortschritt vom Klick „Verbinden" bis zur Sitzung. **E
 
 | Zustand | Bedeutung | Darstellung | Copy-Key |
 |---|---|---|---|
-| `attempting` | Verbindungsversuch `localhost:<port>` | neutral `onSurfaceVariant`, Spinner/`●`-neutral | `connect_state_attempting` „Verbinde mit deinem Hub…" |
-| `handshake` | JWT-Vorlage, Hub verifiziert gg. gecachten CP-Public-Key | neutral `onSurfaceVariant` | `connect_state_handshake` „Sichere Verbindung wird aufgebaut…" |
-| `connected` (LIVE) | Sitzung etabliert | LIVE-Idiom `●` + `primary` (§3.3) | `connect_state_connected` „Verbunden" |
+| `attempting` | Verbindungsversuch `localhost:<port>` | neutral `onSurfaceVariant`, Spinner/`●`-neutral | `hubconnect_state_attempting` „Verbinde mit deinem Hub…" |
+| `handshake` | JWT-Vorlage, Hub verifiziert gg. gecachten CP-Public-Key | neutral `onSurfaceVariant` | `hubconnect_state_handshake` „Sichere Verbindung wird aufgebaut…" |
+| `connected` (LIVE) | Sitzung etabliert | LIVE-Idiom `●` + `primary` (§3.3) | `hubconnect_state_connected` „Verbunden" |
 | Fehler ↓ | | errorContainer-Banner + **typisierte Ursache** + Retry | |
-| `hub_offline` | Registry sagt offline / kein Prozess | errorContainer | `connect_error_hub_offline` „Hub ist offline. Starte den Hub und versuche es erneut." |
-| `port_unreachable` | Port/Host nicht erreichbar | errorContainer | `connect_error_port` „Hub unter %1$s nicht erreichbar. Läuft er in diesem Netz?" |
-| `handshake_failed` | JWT-Verify scheitert (Key-Mismatch) | errorContainer | `connect_error_handshake` „Sichere Verbindung fehlgeschlagen. Melde dich neu an." |
-| `never_online` | Nie online authentifiziert → kein gecachter CP-Key | errorContainer/WARN | `connect_error_never_online` „Diese erste Anmeldung braucht einmal Internet." (**H5**) |
+| `hub_offline` | Registry sagt offline / kein Prozess | errorContainer | `hubconnect_error_hub_offline` „Hub ist offline. Starte den Hub und versuche es erneut." |
+| `port_unreachable` | Port/Host nicht erreichbar | errorContainer | `hubconnect_error_port` „Hub unter %1$s nicht erreichbar. Läuft er in diesem Netz?" |
+| `handshake_failed` | JWT-Verify scheitert (Key-Mismatch) | errorContainer | `hubconnect_error_handshake` „Sichere Verbindung fehlgeschlagen. Melde dich neu an." |
+| `never_online` | Nie online authentifiziert → kein gecachter CP-Key | errorContainer/WARN | `hubconnect_error_never_online` „Diese erste Anmeldung braucht einmal Internet." (**H5**) |
 
 **Ehrlichkeits-Regel:** `attempting`/`handshake` dürfen **nie** so aussehen, als wäre schon verbunden (kein Grün, kein
 LIVE-`●` vorzeitig). „Verbunden" erscheint **erst** bei tatsächlichem LIVE. Registry-`online` allein rechtfertigt kein
@@ -232,7 +232,7 @@ bestandenen Testcall.
 
 ### 7.4 Keystore-Disclosure (H6, ratifiziert Q8 = ja, zurückhaltend)
 **Q8 ratifiziert:** die optionale Keystore-Zeile wird **mitgeliefert**, aber **zurückhaltend und plattformbewusst** —
-höchstens **eine** Zeile („im Schlüsselbund dieses Geräts gesichert", Key `connect_creds_keystore`, `onSurfaceVariant`),
+höchstens **eine** Zeile („im Schlüsselbund dieses Geräts gesichert", Key `hubconnect_creds_keystore`, `onSurfaceVariant`),
 **keine** pauschale Hardware-Sicherheitszusage (kein „Secure Enclave" überall). Formulierung neutral, kein Marketing.
 
 ---
@@ -250,70 +250,70 @@ höchstens **eine** Zeile („im Schlüsselbund dieses Geräts gesichert", Key `
 
 ## 9. testTag-Kontrakt (Übersicht — maßgeblich: `hub-connection-tags.md`)
 
-Neue Area `connect` (mit QA/CYP-7 abstimmen). Diese Übersicht spiegelt den **eingefrorenen** `hub-connection-tags.md`:
+Neue Area `hubConnect` (mit QA/CYP-7 abstimmen). Diese Übersicht spiegelt den **eingefrorenen** `hub-connection-tags.md`:
 
 ```
-connect.onboarding.stepper            connect.hubs.list
-connect.prepare                       connect.hubs.row.<hubId>
-connect.register.name                 connect.hubs.row.<hubId>.presence
-connect.register.submit               connect.hubs.empty
-connect.register.error                connect.hubs.error
-connect.creds.input                   connect.mode.local
-connect.creds.reveal                  connect.mode.remote            (disabled)
-connect.creds.masked                  connect.mode.connect
-connect.creds.validating              connect.state.attempting
-connect.creds.validated               connect.state.handshake
-connect.creds.invalid                 connect.state.connected
-connect.creds.unreachable             connect.state.error.<cause>
-connect.ready.enter
+hubConnect.onboarding.stepper            hubConnect.hubs.list
+hubConnect.prepare                       hubConnect.hubs.row.<hubId>
+hubConnect.register.name                 hubConnect.hubs.row.<hubId>.presence
+hubConnect.register.submit               hubConnect.hubs.empty
+hubConnect.register.error                hubConnect.hubs.error
+hubConnect.creds.input                   hubConnect.mode.local
+hubConnect.creds.reveal                  hubConnect.mode.remote            (disabled)
+hubConnect.creds.masked                  hubConnect.mode.connect
+hubConnect.creds.validating              hubConnect.state.attempting
+hubConnect.creds.validated               hubConnect.state.handshake
+hubConnect.creds.invalid                 hubConnect.state.connected
+hubConnect.creds.unreachable             hubConnect.state.error.<cause>
+hubConnect.ready.enter
 ```
-**Fail-closed-Anker (für §-QA):** `connect.mode.remote` existiert, ist aber non-interaktiv; `connect.state.connected`
+**Fail-closed-Anker (für §-QA):** `hubConnect.mode.remote` existiert, ist aber non-interaktiv; `hubConnect.state.connected`
 erscheint **nie** vor echtem LIVE; Presence-Tag trägt kein Erfolgs-Grün.
 
 ---
 
 ## 10. Copy (Übersicht — maßgeblich: `hub-connection-keys.md`)
 
-Key-Familie `connect_*` / `a11y_connect_*`. Maskiertes Feld spiegelt `settings_apikey_*`. Diese Tabelle spiegelt den
+Key-Familie `hubconnect_*` / `a11y_hubconnect_*`. Maskiertes Feld spiegelt `settings_apikey_*`. Diese Tabelle spiegelt den
 **eingefrorenen** `hub-connection-keys.md`:
 
 | Key | DE | EN |
 |---|---|---|
-| `connect_prepare_title` | Cyppie wird vorbereitet… | Setting up Cyppie… |
-| `connect_register_intro` | Melde dich an, um diesen Hub deinem Konto zuzuordnen. | Sign in to link this hub to your account. |
-| `connect_register_name_label` | Name dieses Hubs | This hub's name |
-| `connect_register_error_offline` | Registrierung braucht Internet. Erneut versuchen. | Registration needs an internet connection. Try again. |
-| `connect_creds_title` | Hinterlege deine Anthropic-Credentials | Add your Anthropic credentials |
-| `connect_creds_placeholder` | sk-ant-… | sk-ant-… |
-| `connect_creds_privacy` | Bleibt auf diesem Gerät (Keystore) — geht nie an cyppie-agents.com. | Stays on this device (keystore) — never sent to cyppie-agents.com. |
-| `connect_creds_keystore` | Im Schlüsselbund dieses Geräts gesichert. | Secured in this device's keychain. |
-| `connect_creds_masked` | Hinterlegt: %1$s | Stored: %1$s |
-| `connect_creds_validating` | Credentials werden geprüft… | Checking credentials… |
-| `connect_creds_validated` | Credentials gültig — hinterlegt. | Credentials valid — stored. |
-| `connect_creds_invalid` | Key ungültig — bitte prüfen. | Key invalid — please check. |
-| `connect_creds_unreachable` | Konnte nicht geprüft werden (Anthropic nicht erreichbar) — gespeichert, später erneut prüfen. | Couldn't verify (Anthropic unreachable) — saved, check again later. |
-| `connect_ready_title` | Hub bereit | Hub ready |
-| `connect_ready_enter` | Loslegen | Get started |
-| `connect_hubs_title` | Wähle deinen Hub | Choose your hub |
-| `connect_hubs_empty` | Noch kein Hub registriert. | No hub registered yet. |
-| `connect_hubs_register` | Hub registrieren | Register a hub |
-| `connect_hubs_error` | Hub-Liste nicht erreichbar. Erneut versuchen. | Can't reach the hub list. Try again. |
-| `connect_presence_online` | online | online |
-| `connect_presence_offline` | offline · zuletzt gesehen %1$s | offline · last seen %1$s |
-| `connect_mode_local` | Lokal | Local |
-| `connect_mode_local_sub` | Direkt im selben Netz — privat und schnell. | Direct on the same network — private and fast. |
-| `connect_mode_remote` | Remote | Remote |
-| `connect_mode_remote_soon` | kommt bald | coming soon |
-| `connect_mode_connect` | Verbinden | Connect |
-| `connect_state_attempting` | Verbinde mit deinem Hub… | Connecting to your hub… |
-| `connect_state_handshake` | Sichere Verbindung wird aufgebaut… | Establishing a secure connection… |
-| `connect_state_connected` | Verbunden | Connected |
-| `connect_error_hub_offline` | Hub ist offline. Starte den Hub und versuche es erneut. | Hub is offline. Start the hub and try again. |
-| `connect_error_port` | Hub unter %1$s nicht erreichbar. Läuft er in diesem Netz? | Hub not reachable at %1$s. Is it running on this network? |
-| `connect_error_handshake` | Sichere Verbindung fehlgeschlagen. Melde dich neu an. | Secure connection failed. Please sign in again. |
-| `connect_error_never_online` | Diese erste Anmeldung braucht einmal Internet. | This first sign-in needs an internet connection once. |
-| `a11y_connect_presence` | Presence laut Registry: %1$s | Registry presence: %1$s |
-| `a11y_connect_mode_remote_disabled` | Remote-Modus — kommt bald, noch nicht verfügbar. | Remote mode — coming soon, not available yet. |
+| `hubconnect_prepare_title` | Cyppie wird vorbereitet… | Setting up Cyppie… |
+| `hubconnect_register_intro` | Melde dich an, um diesen Hub deinem Konto zuzuordnen. | Sign in to link this hub to your account. |
+| `hubconnect_register_name_label` | Name dieses Hubs | This hub's name |
+| `hubconnect_register_error_offline` | Registrierung braucht Internet. Erneut versuchen. | Registration needs an internet connection. Try again. |
+| `hubconnect_creds_title` | Hinterlege deine Anthropic-Credentials | Add your Anthropic credentials |
+| `hubconnect_creds_placeholder` | sk-ant-… | sk-ant-… |
+| `hubconnect_creds_privacy` | Bleibt auf diesem Gerät (Keystore) — geht nie an cyppie-agents.com. | Stays on this device (keystore) — never sent to cyppie-agents.com. |
+| `hubconnect_creds_keystore` | Im Schlüsselbund dieses Geräts gesichert. | Secured in this device's keychain. |
+| `hubconnect_creds_masked` | Hinterlegt: %1$s | Stored: %1$s |
+| `hubconnect_creds_validating` | Credentials werden geprüft… | Checking credentials… |
+| `hubconnect_creds_validated` | Credentials gültig — hinterlegt. | Credentials valid — stored. |
+| `hubconnect_creds_invalid` | Key ungültig — bitte prüfen. | Key invalid — please check. |
+| `hubconnect_creds_unreachable` | Konnte nicht geprüft werden (Anthropic nicht erreichbar) — gespeichert, später erneut prüfen. | Couldn't verify (Anthropic unreachable) — saved, check again later. |
+| `hubconnect_ready_title` | Hub bereit | Hub ready |
+| `hubconnect_ready_enter` | Loslegen | Get started |
+| `hubconnect_hubs_title` | Wähle deinen Hub | Choose your hub |
+| `hubconnect_hubs_empty` | Noch kein Hub registriert. | No hub registered yet. |
+| `hubconnect_hubs_register` | Hub registrieren | Register a hub |
+| `hubconnect_hubs_error` | Hub-Liste nicht erreichbar. Erneut versuchen. | Can't reach the hub list. Try again. |
+| `hubconnect_presence_online` | online | online |
+| `hubconnect_presence_offline` | offline · zuletzt gesehen %1$s | offline · last seen %1$s |
+| `hubconnect_mode_local` | Lokal | Local |
+| `hubconnect_mode_local_sub` | Direkt im selben Netz — privat und schnell. | Direct on the same network — private and fast. |
+| `hubconnect_mode_remote` | Remote | Remote |
+| `hubconnect_mode_remote_soon` | kommt bald | coming soon |
+| `hubconnect_mode_connect` | Verbinden | Connect |
+| `hubconnect_state_attempting` | Verbinde mit deinem Hub… | Connecting to your hub… |
+| `hubconnect_state_handshake` | Sichere Verbindung wird aufgebaut… | Establishing a secure connection… |
+| `hubconnect_state_connected` | Verbunden | Connected |
+| `hubconnect_error_hub_offline` | Hub ist offline. Starte den Hub und versuche es erneut. | Hub is offline. Start the hub and try again. |
+| `hubconnect_error_port` | Hub unter %1$s nicht erreichbar. Läuft er in diesem Netz? | Hub not reachable at %1$s. Is it running on this network? |
+| `hubconnect_error_handshake` | Sichere Verbindung fehlgeschlagen. Melde dich neu an. | Secure connection failed. Please sign in again. |
+| `hubconnect_error_never_online` | Diese erste Anmeldung braucht einmal Internet. | This first sign-in needs an internet connection once. |
+| `a11y_hubconnect_presence` | Presence laut Registry: %1$s | Registry presence: %1$s |
+| `a11y_hubconnect_mode_remote_disabled` | Remote-Modus — kommt bald, noch nicht verfügbar. | Remote mode — coming soon, not available yet. |
 
 *(Relative-Zeit-Formatierung für `%1$s` in offline/lastSeen: Hausformat wie bei bestehenden Zeitstempeln —
 Nahtstelle zur vorhandenen Zeitformatierung, konsistent halten.)*
@@ -325,7 +325,7 @@ Nahtstelle zur vorhandenen Zeitformatierung, konsistent halten.)*
 Alle acht Punkte sind geruled → **Spec-Closure**. Keys/Tags/Tokens sind damit eingefroren (Companion-Files).
 
 1. **Q1 — Hub-Benennung: editierbares Feld, Hostname vorbefüllt** (A2). Umbenennen später in Settings (Folge-Story,
-   nicht Phase-1-Screen). Feld `connect.register.name`, Key `connect_register_name_label`.
+   nicht Phase-1-Screen). Feld `hubConnect.register.name`, Key `hubconnect_register_name_label`.
 2. **Q2 — Presence advisory/gedämpft, als Prinzip bestätigt:** Registry-`online` nie Erfolgs-Grün, nie als „verbunden"
    lesbar; die zwei Wahrheiten (H1) bleiben getrennt. Deckt sich mit Krypto-Reviewer-Befund F8.
 3. **Q3 — Modus = eigener Schritt** (B3), **Remote sichtbar-deaktiviert** („kommt bald"), nicht vorausgewählt.
@@ -338,9 +338,9 @@ Alle acht Punkte sind geruled → **Spec-Closure**. Keys/Tags/Tokens sind damit 
 7. **Q7 — ratifiziert R6: Device-Code automatisch** auf Desktop (kein getippter Code, kein sichtbarer Zustand in
    Phase 1). **Screen-Naht für sichtbaren Code offen gehalten** (Remote-Hub später) — Slot vorgesehen, nicht gebaut
    (↔ Reviewer-F7).
-8. **Q8 — Disclosure-Copy: JA.** Zero-Knowledge-Zeile bei Credentials (`connect_creds_privacy`) — **auf Credentials
+8. **Q8 — Disclosure-Copy: JA.** Zero-Knowledge-Zeile bei Credentials (`hubconnect_creds_privacy`) — **auf Credentials
    begrenzt**, keine pauschale „wir sehen nichts"-Aussage (↔ Reviewer-F4). **Optionale Keystore-Zeile: JA**, aber
-   zurückhaltend/plattformbewusst (`connect_creds_keystore`, keine Hardware-Zusage).
+   zurückhaltend/plattformbewusst (`hubconnect_creds_keystore`, keine Hardware-Zusage).
 
 ---
 
@@ -362,7 +362,7 @@ darstellen:
   Device-Code an die UI muss (Q7).
 - **S-5 — Maskierungs-Contract bleibt server-seitig:** `Secrets.mask()` + `ApiKeyState{set, masked}` **1:1
   wiederverwenden** — Client maskiert nie selbst. Der Erststart-Credential-Screen ist eine Variante desselben Contracts.
-- **Drift-Hinweis:** neue `connect_*`-Keys + `connect.*`-Tags landen mit Devs Slice → **Re-Sync mit Tester (CYP-7)**;
+- **Drift-Hinweis:** neue `hubconnect_*`-Keys + `hubConnect.*`-Tags landen mit Devs Slice → **Re-Sync mit Tester (CYP-7)**;
   Key/Tag-Timing mit dem konsumierenden Modul abstimmen.
 
 ---
@@ -373,8 +373,8 @@ darstellen:
    relativ sichtbar bei offline; Registry-Presence nie als „verbunden" lesbar.
 2. **Zwei Wahrheiten getrennt:** während Connect zeigt die UI **meine Verbindung** (CONNECTING/LIVE) getrennt von der
    Registry-Presence; „Verbunden" erst bei echtem LIVE.
-3. **Remote ehrlich deaktiviert (H2):** `connect.mode.remote` non-interaktiv, „kommt bald", nicht vorausgewählt, kein
-   Fake-Klick; a11y `a11y_connect_mode_remote_disabled`.
+3. **Remote ehrlich deaktiviert (H2):** `hubConnect.mode.remote` non-interaktiv, „kommt bald", nicht vorausgewählt, kein
+   Fake-Klick; a11y `a11y_hubconnect_mode_remote_disabled`.
 4. **Credentials (H3):** Feld rendert nie Klartext zurück; nur `***<letzte4>`; `hinterlegt` ≠ `validiert` sichtbar
    getrennt; `unreachable` = WARN-Amber, `invalid` = Fehler-Rot, `validated` = INFO **kein Grün**.
 5. **Zero-Knowledge-Copy (H4):** falls geliefert, exakt auf Credentials begrenzt, deckt sich mit der Architektur-Garantie
@@ -385,14 +385,14 @@ darstellen:
    vorzeitig; Fehler auf errorContainer mit **typisierter** Ursache-Copy.
 8. **Farbe nie allein (1.4.1) & Maritim:** alle Zustände Form+Label+a11y; keine hartkodierten Farben; Dark/Light über
    `maritimeColorScheme`.
-9. **DE/EN-Parität:** jeder `connect_*`-Key in beiden Sprachdateien; a11y-Strings vorhanden.
+9. **DE/EN-Parität:** jeder `hubconnect_*`-Key in beiden Sprachdateien; a11y-Strings vorhanden.
 10. **Reuse statt Divergenz:** maskiertes Feld = `ApiKeySection`-Muster; Login = bestehender `AuthGate`; Connect-Status
     = bestehendes `ConnectionStatus`-Idiom — keine divergenten Einmal-Teile.
 
 ---
 
 *Spec-Closure erreicht (Q1–Q8 geruled): die eingefrorenen Companion-Files `hub-connection-keys.md` / `-tags.md` /
-`-tokens.json` (Haus-Konvention) sind die Vorlage, gegen die Dev **S-L** (die `connect_*`-Screens) baut. testTag-Area
-`connect` mit Tester (CYP-7) abstimmen. Nichts an diesem Deliverable ist gebaut; es ist Design-Input für den parallelen
+`-tokens.json` (Haus-Konvention) sind die Vorlage, gegen die Dev **S-L** (die `hubconnect_*`-Screens) baut. testTag-Area
+`hubConnect` mit Tester (CYP-7) abstimmen. Nichts an diesem Deliverable ist gebaut; es ist Design-Input für den parallelen
 Client-Strang (Nahtstellen über den PO). Provisorische §9/§10-Blöcke im Spec-Doc = Übersicht; **maßgeblich sind die
 eingefrorenen Companion-Files**.*

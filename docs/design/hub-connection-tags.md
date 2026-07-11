@@ -1,35 +1,36 @@
 # Hub-Verbindungs-UX — testTag-Vertrag (Epic CYP-395, Phase 1 Lokal-Modus)
 
 > Owner: UIUX-Designer · Epic CYP-395 · Stand 2026-07-11 · Status: **Spec-Closure (Q1–Q8 geruled)**; eingefroren als
-> Vorlage für Devs `connect_*`-Screens (S-L). Begleit-Spec: `hub-connection-ux-spec.md`.
+> Vorlage für Devs `hubconnect_*`-Screens (S-L). Begleit-Spec: `hub-connection-ux-spec.md`.
 > Test-Contract v0.5 §2 (`docs/TEST-CONTRACT.md`): **prefixless** `<area>[.<scopeId>].<element>[.<selectorId>][.<qualifier>]`,
 > Segment-Werte `[A-Za-z0-9-]+` (camelCase, **keine Punkte** im Wert). **Geteilte API mit QA (CYP-7) — nicht still
 > umbenennen, über den PO koordinieren.**
-> **Neue Area `connect`** (0 Kollision gg. bestehende `*Tags.kt` @ develop `a2f66ae8` — wie `auth` sie einführte).
-> ⚠**Lesbarkeits-Notiz:** Area `connect` steht **nah** an der bestehenden Area `connector` (ConnectorTags, CYP-119) —
-> tooling-disjunkt, vom PO als `connect` benannt; bewusst gehalten (Alt: `hubConnect` = PO-Entscheid, nicht still ändern).
-> Vorschlag: eigenes `ConnectTags`-Objekt (analog `AuthTags`).
+> **Neue Area `hubConnect`** (0 Kollision gg. bestehende `*Tags.kt` @ develop `a2f66ae8` — wie `auth` sie einführte).
+> ✅**Distanz zur Area `connector` (ConnectorTags, CYP-119, Agenten-Connector) bewusst hergestellt** — PO-Ruling
+> 2026-07-11: Area `hubConnect` gewählt, damit ein `grep connect` **nicht** zwei Domänen fängt (der Agenten-`connector`
+> ist ein anderes, **sicherheitsrelevantes** Konzept) und „Hub" der definierende CYP-395-Begriff bleibt.
+> Vorschlag: eigenes `HubConnectTags`-Objekt (analog `AuthTags`).
 
 ## Onboarding / Erststart (Seq A)
 | Tag (Funktion/Konstante) | Wert | Zweck |
 |---|---|---|
-| `stepper` | `connect.onboarding.stepper` | Host-Anchor des Onboarding-Steppers (Schritt-Fortschritt). |
-| `prepare` | `connect.prepare` | A0 Hub-Vorbereitungs-/Ladezustand. |
-| `registerName` | `connect.register.name` | A2 editierbares Hub-Namensfeld (Hostname vorbefüllt, Q1). |
-| `registerSubmit` | `connect.register.submit` | A2 Registrieren-Aktion. |
-| `registerError` | `connect.register.error` | A2 Registrierungsfehler (CP nicht erreichbar), errorContainer. |
-| `readyEnter` | `connect.ready.enter` | A4 „Loslegen" → Hub-Workspace. |
+| `stepper` | `hubConnect.onboarding.stepper` | Host-Anchor des Onboarding-Steppers (Schritt-Fortschritt). |
+| `prepare` | `hubConnect.prepare` | A0 Hub-Vorbereitungs-/Ladezustand. |
+| `registerName` | `hubConnect.register.name` | A2 editierbares Hub-Namensfeld (Hostname vorbefüllt, Q1). |
+| `registerSubmit` | `hubConnect.register.submit` | A2 Registrieren-Aktion. |
+| `registerError` | `hubConnect.register.error` | A2 Registrierungsfehler (CP nicht erreichbar), errorContainer. |
+| `readyEnter` | `hubConnect.ready.enter` | A4 „Loslegen" → Hub-Workspace. |
 
 ## Credentials (Seq A / §7) — Muster `settings.apiKey.*`
 | Tag | Wert | Zweck |
 |---|---|---|
-| `credsInput` | `connect.creds.input` | write-only Credential-Feld (PasswordVisualTransformation). |
-| `credsReveal` | `connect.creds.reveal` | Reveal-Toggle (Text-Label, kein Emoji) — entmaskiert nur die aktuelle Eingabe. |
-| `credsMasked` | `connect.creds.masked` | read-only maskierte Statuszeile `***<letzte4>` (server-maskiert). |
-| `credsValidating` | `connect.creds.validating` | Validierungs-Zwischenzustand (neutral). |
-| `credsValidated` | `connect.creds.validated` | **INFO** „gültig — hinterlegt" (nie Erfolgs-Grün). |
-| `credsInvalid` | `connect.creds.invalid` | **Fehler** „Key ungültig" (errorContainer). |
-| `credsUnreachable` | `connect.creds.unreachable` | **WARN** „nicht geprüft (Anthropic down)" — distinkt von `credsInvalid` (H3). |
+| `credsInput` | `hubConnect.creds.input` | write-only Credential-Feld (PasswordVisualTransformation). |
+| `credsReveal` | `hubConnect.creds.reveal` | Reveal-Toggle (Text-Label, kein Emoji) — entmaskiert nur die aktuelle Eingabe. |
+| `credsMasked` | `hubConnect.creds.masked` | read-only maskierte Statuszeile `***<letzte4>` (server-maskiert). |
+| `credsValidating` | `hubConnect.creds.validating` | Validierungs-Zwischenzustand (neutral). |
+| `credsValidated` | `hubConnect.creds.validated` | **INFO** „gültig — hinterlegt" (nie Erfolgs-Grün). |
+| `credsInvalid` | `hubConnect.creds.invalid` | **Fehler** „Key ungültig" (errorContainer). |
+| `credsUnreachable` | `hubConnect.creds.unreachable` | **WARN** „nicht geprüft (Anthropic down)" — distinkt von `credsInvalid` (H3). |
 
 > **a11y:** Credential-Feld/Reveal tragen die bestehenden `a11y_settings_apikey_input` / `a11y_settings_apikey_reveal`
 > (Reuse, kein neuer a11y-Key). **Fail-closed:** `credsMasked` rendert **nie** Klartext, nur `***<letzte4>`.
@@ -37,49 +38,49 @@
 ## Hub-Auswahl (Seq B)
 | Tag (Funktion) | Wert | Zweck |
 |---|---|---|
-| `hubsList` | `connect.hubs.list` | Container der Hub-Liste. |
-| `hubRow(hubId)` | `connect.hubs.row.<hubId>` | eine Hub-Zeile (Name + Metadaten + Presence). |
-| `hubPresence(hubId)` | `connect.hubs.row.<hubId>.presence` | **Registry-Presence** der Zeile (advisory, H1) — trägt Punkt **+ Label**, nie `tertiary`-Grün, nie als „verbunden" lesbar; a11y `a11y_connect_presence`. |
-| `hubsEmpty` | `connect.hubs.empty` | Leerer Zustand → primäre Aktion „Hub registrieren". |
-| `hubsError` | `connect.hubs.error` | `GET /hubs` fehlgeschlagen (CP nicht erreichbar), errorContainer (H5). |
+| `hubsList` | `hubConnect.hubs.list` | Container der Hub-Liste. |
+| `hubRow(hubId)` | `hubConnect.hubs.row.<hubId>` | eine Hub-Zeile (Name + Metadaten + Presence). |
+| `hubPresence(hubId)` | `hubConnect.hubs.row.<hubId>.presence` | **Registry-Presence** der Zeile (advisory, H1) — trägt Punkt **+ Label**, nie `tertiary`-Grün, nie als „verbunden" lesbar; a11y `a11y_hubconnect_presence`. |
+| `hubsEmpty` | `hubConnect.hubs.empty` | Leerer Zustand → primäre Aktion „Hub registrieren". |
+| `hubsError` | `hubConnect.hubs.error` | `GET /hubs` fehlgeschlagen (CP nicht erreichbar), errorContainer (H5). |
 
 ## Modus-Wahl (Seq B / §5)
 | Tag | Wert | Zweck |
 |---|---|---|
-| `modeLocal` | `connect.mode.local` | Lokal-Option (aktiv, Default-Fokus). |
-| `modeRemote` | `connect.mode.remote` | **Remote-Option — non-interaktiv/disabled** („kommt bald", H2/Q3); nicht vorausgewählt; a11y `a11y_connect_mode_remote_disabled`. |
-| `modeConnect` | `connect.mode.connect` | „Verbinden" → Lokal-Connect (§6). |
+| `modeLocal` | `hubConnect.mode.local` | Lokal-Option (aktiv, Default-Fokus). |
+| `modeRemote` | `hubConnect.mode.remote` | **Remote-Option — non-interaktiv/disabled** („kommt bald", H2/Q3); nicht vorausgewählt; a11y `a11y_hubconnect_mode_remote_disabled`. |
+| `modeConnect` | `hubConnect.mode.connect` | „Verbinden" → Lokal-Connect (§6). |
 
 ## Lokal-Connect-Zustände (§6) — Idiom `ConnectionStatus`
 | Tag (Funktion) | Wert | Zweck |
 |---|---|---|
-| `stateAttempting` | `connect.state.attempting` | Verbindungsversuch (neutral `onSurfaceVariant`, nie grün). |
-| `stateHandshake` | `connect.state.handshake` | Handshake (neutral). |
-| `stateConnected` | `connect.state.connected` | **LIVE** `●`+`primary` — erscheint **nie** vor echtem LIVE. |
-| `stateError(cause)` | `connect.state.error.<cause>` | Connect-Fehler mit **typisierter** Ursache. `<cause>` ∈ `hubOffline` / `portUnreachable` / `handshakeFailed` / `neverOnline` (vom Backend, Nahtstelle S-2 — **Client rät nicht**). errorContainer. |
+| `stateAttempting` | `hubConnect.state.attempting` | Verbindungsversuch (neutral `onSurfaceVariant`, nie grün). |
+| `stateHandshake` | `hubConnect.state.handshake` | Handshake (neutral). |
+| `stateConnected` | `hubConnect.state.connected` | **LIVE** `●`+`primary` — erscheint **nie** vor echtem LIVE. |
+| `stateError(cause)` | `hubConnect.state.error.<cause>` | Connect-Fehler mit **typisierter** Ursache. `<cause>` ∈ `hubOffline` / `portUnreachable` / `handshakeFailed` / `neverOnline` (vom Backend, Nahtstelle S-2 — **Client rät nicht**). errorContainer. |
 
 ## Fail-closed-Anker (für §-QA)
-- `connect.mode.remote` **existiert**, ist aber **non-interaktiv** (kein Klick-Durchgriff) → Remote ehrlich deaktiviert.
-- `connect.state.connected` erscheint **nie** vor echtem LIVE; `connect.hubs.row.<id>.presence` (Registry) ist **getrennt**
-  von `connect.state.*` (meine Verbindung) → zwei Wahrheiten nie vermischt (H1).
-- `connect.creds.masked` rendert **nie** Klartext; `connect.creds.unreachable` ≠ `connect.creds.invalid` (WARN vs Fehler).
+- `hubConnect.mode.remote` **existiert**, ist aber **non-interaktiv** (kein Klick-Durchgriff) → Remote ehrlich deaktiviert.
+- `hubConnect.state.connected` erscheint **nie** vor echtem LIVE; `hubConnect.hubs.row.<id>.presence` (Registry) ist **getrennt**
+  von `hubConnect.state.*` (meine Verbindung) → zwei Wahrheiten nie vermischt (H1).
+- `hubConnect.creds.masked` rendert **nie** Klartext; `hubConnect.creds.unreachable` ≠ `hubConnect.creds.invalid` (WARN vs Fehler).
 - Presence-Tag trägt **kein** Erfolgs-Grün; alle Zustände Form+Label (WCAG 1.4.1).
 
 ## Reuse (bestehende Tags/Areas — NICHT neu anlegen; verifiziert @ `a2f66ae8`)
 | Reuse-Tag/Area | Quelle | Rolle hier |
 |---|---|---|
 | Area `auth` (`AuthTags` — `auth.login.*`/`auth.register.*`/`auth.login.github`) | CYP-176 | **kompletter** Login/Register/OIDC-Screen in Seq A1/B1 — Hub-Registrierung setzt darauf auf, kein neuer Login-Tag |
-| Area `settings` (`SettingsTags` — `settings.apiKey.input/reveal/masked`) | CYP-D3 | **Muster/Vorbild** für `connect.creds.*` (identisches maskiertes-Feld-Verhalten; neue Render-Stelle ⇒ eigene `connect.creds.*`-Tags, kein Wert-Reuse) |
+| Area `settings` (`SettingsTags` — `settings.apiKey.input/reveal/masked`) | CYP-D3 | **Muster/Vorbild** für `hubConnect.creds.*` (identisches maskiertes-Feld-Verhalten; neue Render-Stelle ⇒ eigene `hubConnect.creds.*`-Tags, kein Wert-Reuse) |
 
 ## Gehalten / deferred (kein Phantom-Tag in Phase 1)
-- **`connect.register.devicecode`** — Slot für einen **sichtbaren** Device-Code (Remote-Hub). **Q7/R6: Desktop
+- **`hubConnect.register.devicecode`** — Slot für einen **sichtbaren** Device-Code (Remote-Hub). **Q7/R6: Desktop
   automatisch** → in Phase 1 **nicht** angelegt/gerendert; vorgemerkt für die spätere Remote-Registrierung.
 
 ## Self-Validation
-- **25 neue Tags** in Area `connect` (7 Onboarding/Ready + 7 Creds + 5 Hub-Auswahl inkl. `presence` + 3 Modus +
+- **25 neue Tags** in Area `hubConnect` (7 Onboarding/Ready + 7 Creds + 5 Hub-Auswahl inkl. `presence` + 3 Modus +
   4 Connect-Zustände inkl. `stateError(cause)`). Instanz-scoped: `hubRow`/`hubPresence` embedden `<hubId>`;
   `stateError` trägt Qualifier `<cause>`.
-- **0 Kollision:** Area `connect` ist neu; `grep`-disjunkt von Area `connector` (ConnectorTags). Lesbarkeits-Notiz oben.
+- **0 Kollision:** Area `hubConnect` ist neu und **bewusst distanziert** von Area `connector` (ConnectorTags) — Distanz-Notiz oben (PO-Ruling 2026-07-11).
 - **Geteilte API mit QA (CYP-7):** Area + Werte über den PO mit dem Tester abstimmen, bevor Dev sie fest verdrahtet
   (frozen-Contract-Konvention wie `AuthTags`).
 - Jeder Tag ist in `hub-connection-ux-spec.md` (§9) verankert und trägt einen Copy-/a11y-Key aus `hub-connection-keys.md`.
