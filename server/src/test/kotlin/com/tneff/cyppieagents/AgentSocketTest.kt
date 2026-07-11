@@ -1,9 +1,11 @@
 package com.tneff.cyppieagents
 
+import com.tneff.cyppieagents.agentevents.InMemoryAgentEventStore
 import com.tneff.cyppieagents.connector.ConnectorSession
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.model.AgentMessage
 import com.tneff.cyppieagents.model.AssistantEvent
+import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
 import com.tneff.cyppieagents.model.TextBlock
@@ -17,10 +19,11 @@ import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.server.testing.testApplication
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
-import io.ktor.websocket.close
 import io.ktor.websocket.readText
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.withTimeout
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -28,45 +31,38 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Verifies the /ws/agent frame contract end-to-end over a real WebSocket against a fake session
- * (no live `claude` process). This is the endpoint Dev wires his MappingAgentSession against.
+ * Verifies the /ws/agent frame contract end-to-end over a real WebSocket. Since CYP-384 the transcript store
+ * ([InMemoryAgentEventStore]) is the SINGLE output source (the live-connector fallback that held a stale
+ * session ref across restarts is gone), so output tests feed the store and read [StoredAgentEvent] frames;
+ * inject tests assert on the session's recorded turns (no captured session ref exists any more).
  */
 class AgentSocketTest {
 
-    /** In-memory session: replay buffer makes event delivery deterministic regardless of timing. */
+    /** In-memory session that records injected turns (output now flows through the durable store, not here). */
     private class FakeConnectorSession(override val agentId: String) : ConnectorSession {
         private val _events = MutableSharedFlow<StreamJsonEvent>(replay = 16, extraBufferCapacity = 64)
         override val events: Flow<StreamJsonEvent> = _events
         val receivedTurns = CopyOnWriteArrayList<UserTurn>()
-
-        suspend fun emit(event: StreamJsonEvent) = _events.emit(event)
-
-        override suspend fun sendTurn(turn: UserTurn) {
-            receivedTurns.add(turn)
-            // Echo an assistant ack so a client can observe the round-trip deterministically.
-            _events.emit(AssistantEvent(message = AgentMessage(content = listOf(TextBlock("ack:${turn.text}"))), sessionId = "fake"))
-        }
-
+        override suspend fun sendTurn(turn: UserTurn) { receivedTurns.add(turn) }
         override fun close() {}
     }
 
+    private suspend fun awaitTurn(fake: FakeConnectorSession, text: String) =
+        withTimeout(3_000) { while (fake.receivedTurns.none { it.text == text }) delay(10) }
+
     @Test
-    fun serverStreamsEventsAsStreamJsonFrames() = testApplication {
-        val sessions = ConnectorSessions()
-        val fake = FakeConnectorSession("backend")
-        sessions.register(fake)
-        application { installAgentSocket(sessions, authorize = { true }) }
+    fun serverStreamsDurableTranscriptFrames() = testApplication {
+        val store = InMemoryAgentEventStore()
+        store.append("backend", "default", 1L, SystemEvent(subtype = "init", sessionId = "s1"))
+        store.append("backend", "default", 2L, AssistantEvent(message = AgentMessage(content = listOf(TextBlock("hello"))), sessionId = "s1"))
+        application { installAgentSocket(ConnectorSessions(), authorize = { true }, agentEvents = store) }
         val client = createClient { install(ClientWebSockets) }
 
-        // Buffered (replay) before the client connects → delivered on subscribe.
-        fake.emit(SystemEvent(subtype = "init", sessionId = "s1"))
-        fake.emit(AssistantEvent(message = AgentMessage(content = listOf(TextBlock("hello"))), sessionId = "s1"))
-
         client.webSocket("/ws/agent?agentId=backend") {
-            val first = CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText())
-            assertIs<SystemEvent>(first)
-            val second = CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText())
-            val assistant = assertIs<AssistantEvent>(second)
+            val first = CommJson.decodeFromString<StoredAgentEvent>((incoming.receive() as Frame.Text).readText())
+            assertIs<SystemEvent>(first.event)
+            val second = CommJson.decodeFromString<StoredAgentEvent>((incoming.receive() as Frame.Text).readText())
+            val assistant = assertIs<AssistantEvent>(second.event)
             assertEquals("hello", assertIs<TextBlock>(assistant.message.content.single()).text)
         }
     }
@@ -76,17 +72,12 @@ class AgentSocketTest {
         val sessions = ConnectorSessions()
         val fake = FakeConnectorSession("backend")
         sessions.register(fake)
-        application { installAgentSocket(sessions, authorize = { true }) }
+        application { installAgentSocket(sessions, authorize = { true }, agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
 
         client.webSocket("/ws/agent?agentId=backend") {
-            // Client → Server: a UserTurn frame ({"text":"…"}).
             send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), UserTurn("do the thing"))))
-            // Read the ack echo to synchronize on the server having processed it.
-            val ack = assertIs<AssistantEvent>(
-                CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText()),
-            )
-            assertTrue(assertIs<TextBlock>(ack.message.content.single()).text.contains("do the thing"))
+            awaitTurn(fake, "do the thing")
         }
         assertEquals(listOf("do the thing"), fake.receivedTurns.map { it.text })
     }
@@ -96,7 +87,7 @@ class AgentSocketTest {
         // No authorize predicate → deny everything (F-B): an open socket could otherwise drive an agent.
         val sessions = ConnectorSessions()
         sessions.register(FakeConnectorSession("backend"))
-        application { installAgentSocket(sessions) }
+        application { installAgentSocket(sessions, agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
         client.webSocket("/ws/agent?agentId=backend") {
             assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, closeReason.await()?.code)
@@ -106,36 +97,34 @@ class AgentSocketTest {
     @Test
     fun tokenAuthorizeAllowsOperatorAndRejectsNoToken() = testApplication {
         val sessions = ConnectorSessions()
-        sessions.register(FakeConnectorSession("backend"))
+        val fake = FakeConnectorSession("backend")
+        sessions.register(fake)
         val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
-        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry, AuthDeps(registry))) }
+        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry, AuthDeps(registry)), agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
 
         // No token → fail-closed.
         client.webSocket("/ws/agent?agentId=backend") {
             assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, closeReason.await()?.code)
         }
-        // Operator token via ?token= → allowed (connection stays open; we can send a turn).
+        // Operator token via ?token= → allowed (the turn reaches the session).
         client.webSocket("/ws/agent?agentId=backend&token=tok-op") {
             send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), UserTurn("hi"))))
-            val ack = assertIs<AssistantEvent>(
-                CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText()),
-            )
-            assertTrue(assertIs<TextBlock>(ack.message.content.single()).text.contains("hi"))
+            awaitTurn(fake, "hi")
         }
     }
 
     @Test
     fun tokenAuthorizeDeniesAgentTokenForForeignAgent() = testApplication {
-        // CYP-25 (security branch): an agent token may watch ONLY its own session. frontend's token
-        // requesting backend's stream must be denied — otherwise one agent could drive another.
+        // CYP-25 (security branch): an agent token may drive ONLY its own session.
         val sessions = ConnectorSessions()
-        sessions.register(FakeConnectorSession("backend"))
+        val fake = FakeConnectorSession("backend")
+        sessions.register(fake)
         val registry = TokenRegistry(
             mapOf("tok-backend" to "backend", "tok-frontend" to "frontend"),
             operatorToken = "tok-op",
         )
-        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry, AuthDeps(registry))) }
+        application { installAgentSocket(sessions, authorize = tokenAuthorize(registry, AuthDeps(registry)), agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
 
         // Cross-agent: frontend's token on backend's socket → deny.
@@ -145,23 +134,17 @@ class AgentSocketTest {
         // Own agent: backend's token on backend's socket → allowed.
         client.webSocket("/ws/agent?agentId=backend&token=tok-backend") {
             send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), UserTurn("self"))))
-            val ack = assertIs<AssistantEvent>(
-                CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText()),
-            )
-            assertTrue(assertIs<TextBlock>(ack.message.content.single()).text.contains("self"))
+            awaitTurn(fake, "self")
         }
     }
 
     @Test
     fun agentNotInActiveProjectSliceIsRejected_evenWithLiveSession() = testApplication {
         // CYP-255 ② — a LIVE session exists for "backend", but "backend" is NOT in the active project's
-        // slice → the connection is rejected fail-closed (a same-id agent in another project must not
-        // attach cross-project: foreign terminal / stdin / stdout). Non-vacuous partner below admits the
-        // same live session once the slice includes it. Mutation: drop the `activeAgentIds` guard → the
-        // live session admits this and the socket stays open → this reds.
+        // slice → rejected fail-closed (a same-id agent in another project must not attach cross-project).
         val sessions = ConnectorSessions()
         sessions.register(FakeConnectorSession("backend"))
-        application { installAgentSocket(sessions, authorize = { true }, activeAgentIds = { setOf("frontend") }) }
+        application { installAgentSocket(sessions, authorize = { true }, agentEvents = InMemoryAgentEventStore(), activeAgentIds = { setOf("frontend") }) }
         val client = createClient { install(ClientWebSockets) }
         client.webSocket("/ws/agent?agentId=backend") {
             assertEquals(CloseReason.Codes.CANNOT_ACCEPT.code, closeReason.await()?.code)
@@ -170,38 +153,38 @@ class AgentSocketTest {
 
     @Test
     fun agentInActiveProjectSliceWithSessionIsAdmitted() = testApplication {
-        // Non-vacuous partner to the reject above: same live session, but the active slice INCLUDES backend
-        // → admitted (proves the reject is the slice gate, not a blanket deny).
+        // Non-vacuous partner to the reject above: same live session, but the active slice INCLUDES backend.
         val sessions = ConnectorSessions()
-        sessions.register(FakeConnectorSession("backend"))
-        application { installAgentSocket(sessions, authorize = { true }, activeAgentIds = { setOf("backend") }) }
+        val fake = FakeConnectorSession("backend")
+        sessions.register(fake)
+        application { installAgentSocket(sessions, authorize = { true }, agentEvents = InMemoryAgentEventStore(), activeAgentIds = { setOf("backend") }) }
         val client = createClient { install(ClientWebSockets) }
         client.webSocket("/ws/agent?agentId=backend") {
             send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), UserTurn("hi"))))
-            val ack = assertIs<AssistantEvent>(
-                CommJson.decodeFromString<StreamJsonEvent>((incoming.receive() as Frame.Text).readText()),
-            )
-            assertTrue(assertIs<TextBlock>(ack.message.content.single()).text.contains("hi"))
+            awaitTurn(fake, "hi")
         }
     }
 
     @Test
     fun unknownAgentIsRejected() = testApplication {
-        application { installAgentSocket(ConnectorSessions(), authorize = { true }) }
+        // CYP-384: the connect-time "no live session" gate is gone (output is the agentId-keyed durable stream).
+        // The unknown-agent rejection now runs through the SAME guard production uses — `activeAgentIds`: an
+        // agentId not in the active project's slice is rejected fail-closed. (Same live behavior, real mechanism.)
+        application {
+            installAgentSocket(ConnectorSessions(), authorize = { true }, agentEvents = InMemoryAgentEventStore(), activeAgentIds = { setOf("backend") })
+        }
         val client = createClient { install(ClientWebSockets) }
         client.webSocket("/ws/agent?agentId=ghost") {
-            val reason = closeReason.await()
-            assertEquals(CloseReason.Codes.CANNOT_ACCEPT.code, reason?.code)
+            assertEquals(CloseReason.Codes.CANNOT_ACCEPT.code, closeReason.await()?.code)
         }
     }
 
     @Test
     fun missingAgentIdIsRejected() = testApplication {
-        application { installAgentSocket(ConnectorSessions(), authorize = { true }) }
+        application { installAgentSocket(ConnectorSessions(), authorize = { true }, agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
         client.webSocket("/ws/agent") {
-            val reason = closeReason.await()
-            assertEquals(CloseReason.Codes.CANNOT_ACCEPT.code, reason?.code)
+            assertEquals(CloseReason.Codes.CANNOT_ACCEPT.code, closeReason.await()?.code)
         }
     }
 }

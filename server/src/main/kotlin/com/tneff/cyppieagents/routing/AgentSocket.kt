@@ -8,7 +8,6 @@ import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.resolvePrincipal
 import com.tneff.cyppieagents.connector.ConnectorSessions
 import com.tneff.cyppieagents.model.StoredAgentEvent
-import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
@@ -63,8 +62,10 @@ fun tokenAuthorize(registry: TokenRegistry, deps: AuthDeps): suspend (Applicatio
 fun Application.installAgentSocket(
     sessions: ConnectorSessions,
     authorize: suspend (ApplicationCall) -> Boolean = { false },
-    // CYP-198: the durable transcript store — when wired, /ws/agent replays history-then-live from it.
-    agentEvents: AgentEventStore? = null,
+    // CYP-198 / CYP-384: the durable transcript store — REQUIRED. `/ws/agent` output is always the durable
+    // replay-then-live stream keyed by agentId; there is no live-connector fallback (which held a stale session
+    // ref across restarts — the CYP-382 defect class). Production always wires it (PlatformWiring).
+    agentEvents: AgentEventStore,
     // CYP-255 ②: the ACTIVE project's agent slice — see [agentSocket]. Null (dev/test) → no membership filter.
     activeAgentIds: (() -> Set<String>)? = null,
 ) {
@@ -81,7 +82,8 @@ fun Route.agentSocket(
     // an open socket lets anyone inject user-messages into an agent (i.e. drive it). Production
     // passes [tokenAuthorize]; tests opt in explicitly.
     authorize: suspend (ApplicationCall) -> Boolean = { false },
-    agentEvents: AgentEventStore? = null,
+    // CYP-198 / CYP-384: REQUIRED durable transcript store — the single output source (no captured-session fallback).
+    agentEvents: AgentEventStore,
     // CYP-255 ②: the ACTIVE project's agent ids. Non-null (production) → a bare agentId that is NOT in the
     // active project's slice is rejected fail-closed, BEFORE any session/transcript resolution — else a
     // same-id agent in ANOTHER project (its session lives under that project's runtime) could attach
@@ -104,35 +106,28 @@ fun Route.agentSocket(
             close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "no such agent in the active project"))
             return@webSocket
         }
-        val session = sessions().session(agentId)
-        // A local session enables live inject; a wired [agentEvents] store enables durable transcript replay
-        // (also for a REMOTE agent that has no local session — its window is read-only, driven over the wire).
-        if (session == null && agentEvents == null) {
-            close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "no live session for agent '$agentId'"))
-            return@webSocket
-        }
-
-        // Server → Client: CYP-198 — replay durable history since the client's cursor, then live (gapless,
-        // deduped by seq — the AgentEventStore is the single source). Falls back to the live-only connector
-        // stream when no durable store is wired (backward-compatible).
+        // Server → Client: CYP-198 — replay durable transcript history since the client's cursor, then live
+        // (gapless, deduped by seq). CYP-384: this durable [agentEvents] stream, keyed by agentId, is the SINGLE
+        // output source. There is NO captured-session fallback and no session ref is taken at connect — the old
+        // fallback pump froze on a dead session across a restart (the CYP-382 defect class); the agentId-keyed
+        // stream follows a respawn for free. A REMOTE/STOPPED agent with no live session still gets its (possibly
+        // empty) read-only transcript here; `activeAgentIds` above is the guard against an unknown agent.
         val since = call.request.queryParameters["since"]?.toLongOrNull()
         val pump = launch {
-            if (agentEvents != null) {
-                agentEvents.subscribe(agentId, since).collect { stored ->
-                    send(Frame.Text(CommJson.encodeToString(StoredAgentEvent.serializer(), stored)))
-                }
-            } else {
-                session!!.events.collect { event ->
-                    send(Frame.Text(CommJson.encodeToString(StreamJsonEvent.serializer(), event)))
-                }
+            agentEvents.subscribe(agentId, since).collect { stored ->
+                send(Frame.Text(CommJson.encodeToString(StoredAgentEvent.serializer(), stored)))
             }
         }
         try {
-            // Client → Server: each text frame is a UserTurn; validate (CYP-143) then inject it. Only a LOCAL
-            // session can be driven this way — a remote agent's window is read-only here (it's driven over the wire).
+            // Client → Server: each text frame is a UserTurn; validate (CYP-143) then inject it into the CURRENT
+            // session, resolved PER FRAME (CYP-382). A restart swaps the registry entry (LifecycleManager.doSpawn:
+            // remove old + register new) while this WS stays open, so a ref captured at connect would inject into
+            // the dead session and the turn would be lost — the "first turn after restart is ignored" defect. No
+            // live session (a remote/STOPPED agent's read-only view, or the transient remove→register window) →
+            // skip this frame (the operator resends; hub messages are delivered durably by MessageDeliverer,
+            // which likewise resolves the session fresh per drain). No captured ref exists to go stale.
             for (frame in incoming) {
                 if (frame is Frame.Text) {
-                    if (session == null) continue // read-only transcript view (remote agent)
                     val turn = CommJson.decodeFromString<UserTurn>(frame.readText())
                     try {
                         MessageInput.requireValidBody(turn.text)
@@ -141,14 +136,6 @@ fun Route.agentSocket(
                         close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, e.message))
                         return@webSocket
                     }
-                    // CYP-382: resolve the CURRENT session PER FRAME — never inject through the ref captured at
-                    // connect (above). A restart swaps the registry entry (LifecycleManager.doSpawn: remove the
-                    // old session + register the new one) while this WS stays open; the captured ref then points
-                    // at the dead, removed session, and its `sendTurn` writes to a destroyed process (throws /
-                    // silently lost) — the "first turn after restart is ignored" defect. The output pump follows
-                    // the agentId via `agentEvents`, so ONLY this inject path held a stale ref. A transient null
-                    // during the swap window → skip this frame (the operator resends; hub messages are delivered
-                    // durably by MessageDeliverer, which already resolves the session fresh per drain).
                     val live = sessions().session(agentId) ?: continue
                     live.sendTurn(turn)
                 }
