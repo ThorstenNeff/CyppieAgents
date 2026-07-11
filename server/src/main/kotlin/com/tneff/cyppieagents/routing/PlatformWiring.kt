@@ -274,7 +274,11 @@ fun Application.bootPlatform(
         avatarPresetsDir = gitRoot.toPath().resolve(".cyppie/avatar-presets").toFile(),
         // CYP-417 (S-G): the fail-closed capacity gate — prod estimates from this JVM's -Xmx/CPUs. Tests
         // construct BootOrchestrator without it (null → ungated), so only prod respects the estimate.
-        resourceGovernor = com.tneff.cyppieagents.boot.ResourceGovernor(),
+        // CYP-442: the boot roster (local, non-remote) is the gate FLOOR — a deploy+restart never loses a seeded
+        // agent to the estimate. Single-sourced from the SAME config.agents the boot loop spawns (self-adjusting).
+        resourceGovernor = com.tneff.cyppieagents.boot.ResourceGovernor(
+            rosterFloor = { config.agents.count { !it.remote } },
+        ),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;
