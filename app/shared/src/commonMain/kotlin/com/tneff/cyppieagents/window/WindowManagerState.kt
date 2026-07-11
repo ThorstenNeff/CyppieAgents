@@ -98,16 +98,25 @@ const val MIN_WINDOW_HEIGHT: Float = 120f
  * of minimum **window** height, not of transcript: at the floor the transcript is 0 dp either way, and
  * [TILED_CONTENT_WINDOW_MIN_HEIGHT] still renders its full three lines.
  *
+ * **CYP-389: the `HandoffBanners` WARN strip is chrome too (38 dp), reserved on the same principle as the error
+ * row.** Post-CYP-355 a live motor can drive the CYP-354 control-feed to INTERACTIVE (hub-blind) or CONTEXT_LOST,
+ * and `AgentWindow` renders a persistent WARN strip ABOVE the header for either — a chrome row the state space did
+ * not enumerate. At 265 dp a shown banner squeezed the composer from 57 dp to 19 dp while it still reported
+ * `assertIsDisplayed` — the CYP-363 defect one row up. It is transient like the error row and reserved for the
+ * same reason: the moment you are driving the real session (or just lost your history) is a moment you may need
+ * to type. Enumerating the banner in `ChromeState` moved the tallest state and the guard printed the new number.
+ * Floor 265 -> 303.
+ *
  * Do not maintain this by hand: `ContentWindowChromeFloorGuardTest` re-measures the composition and fails if a
  * chrome row appears or disappears without this constant following. It contains no chrome number of its own.
  */
-const val CONTENT_WINDOW_MIN_HEIGHT: Float = 265f
+const val CONTENT_WINDOW_MIN_HEIGHT: Float = 303f
 
 /**
  * Min height for **content** windows (Agent/Comm), the height twin of [TILED_CONTENT_WINDOW_MIN_WIDTH]
  * (CYP-338). [CONTENT_WINDOW_MIN_HEIGHT] of chrome plus 90 dp of transcript — three text lines, the smallest
  * view in which a wrapped answer coexists with a neighbouring row rather than being the whole window
- * (`min-window-height-spec.md` §2.2/§2.3). `265 + 90 = 355`.
+ * (`min-window-height-spec.md` §2.2/§2.3). `303 + 90 = 393`.
  *
  * Rendered, not computed: the chrome summand comes from a measurement of the real composition, not from Material
  * token arithmetic, because the header wraps at this class's own minimum width (see [CONTENT_WINDOW_MIN_HEIGHT]).
@@ -120,10 +129,11 @@ const val CONTENT_WINDOW_MIN_HEIGHT: Float = 265f
  *
  * **CYP-363/350:** the old KDoc promised this "falls to 283 once the header stops wrapping". CYP-363 struck that
  * number rather than re-deriving it — it came from a composition without the `ModeToggleRow` and was dead when
- * written. CYP-350 has since stopped the wrapping and the live-flip removed the gated note; the real
- * value is **355**, measured on the composition that actually exists. A promise about a composition that does not exist yet is not a promise; it is the defect.
+ * written. CYP-350 has since stopped the wrapping and the live-flip removed the gated note; CYP-389 then reserved
+ * the hub-blind / context-lost WARN strip (see [CONTENT_WINDOW_MIN_HEIGHT]); the real
+ * value is **393**, measured on the composition that actually exists. A promise about a composition that does not exist yet is not a promise; it is the defect.
  */
-const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 355f
+const val TILED_CONTENT_WINDOW_MIN_HEIGHT: Float = 393f
 
 /**
  * How much of a window must remain inside the host on every edge, in dp, so it can never be dragged

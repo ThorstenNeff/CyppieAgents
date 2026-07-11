@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
  * list a test author remembered to write.**
  *
  * `ContentWindowChromeFloorGuardTest` enumerates `ChromeState` = `{canControl, terminalAvailable, mode,
- * lifecycleError}` and measures the window at each point. But those are the inputs *I thought of*. `AgentWindow`
+ * lifecycleError, banner}` and measures the window at each point. But those are the inputs *I thought of*. `AgentWindow`
  * also takes `terminalGatedNote`, which the measurement let default to `false` — an input that moves chrome and
  * that the state space did not vary. A parameter added next year that shifts the **header** height (not the
  * toggle row) would default the same way and escape the floor guard (which measures only enumerated states) *and*
@@ -64,24 +64,21 @@ class AgentWindowChromeInputCoverageTest {
 
     private val chromeInputsVariedByTheFloorGuard: Map<String, String> = mapOf(
         "viewModel" to "carries canControl (toggle-row hint), contentMode (composer present + shell note), and " +
-            "lifecycleError (the error row) — three of the four ChromeState dimensions enter through it",
+            "lifecycleError (the error row) — three of the five ChromeState dimensions enter through it",
         "terminalContent" to "its null-ness IS ChromeState.terminalAvailable: enables the Shell segment and " +
             "fills the content rectangle in TERMINAL mode",
+        "control" to "CYP-389: the CYP-354 control-feed drives the HandoffBanners WARN strip (§6/§7b) — a chrome " +
+            "row ABOVE the header. Now the ChromeState.banner dimension (NONE / INTERACTIVE / CONTEXT_LOST) that the " +
+            "floor guard DRIVES directly: post-CYP-355 a live motor CAN reach INTERACTIVE / CONTEXT_LOST, so the " +
+            "banner is SHIPPED chrome and CONTENT_WINDOW_MIN_HEIGHT now reserves the tallest banner. (Was the " +
+            "CYP-381 KNOWN GAP in the gated bucket — the floor did NOT reserve the strip and a shown banner could " +
+            "squeeze the composer; closed here, so it moves to the set the guard varies.)",
     )
 
     private val chromeInputProductionGatedAndTripwired: Map<String, String> = mapOf(
         "terminalGatedNote" to "renders the gated-shell note only when `terminalGatedNote && !terminalAvailable`; " +
             "the shipped shell passes `!WORKTREE_SHELL_LIVE_ENABLED` = false AND a non-null terminalContent, so " +
             "both conjuncts are false. Reachability is guarded by theRealShellsUpperChrome…, not assumed here",
-        "control" to "CYP-381 §6/§7b: renders the hub-blind / context-lost frame banners ONLY when the CYP-354 " +
-            "feed reports INTERACTIVE / CONTEXT_LOST. Post-motor (CYP-355 merged) a LIVE server+motor CAN drive the " +
-            "feed to those states, so production CAN now reach the banner — but the floor guard's `RealShell` (and " +
-            "`measureAgentWindow`) fixtures inject STUB sources with no live `/ws/terminal-state`, so the feed stays " +
-            "empty → `control=null` → banner-free; theRealShellsUpperChrome… still measures banner-free chrome and " +
-            "stays green. KNOWN GAP (flagged to PO, follow-up): the WARN banner is a chrome row above the header " +
-            "that `ChromeState` does not yet enumerate — at minimum window height a shown banner could squeeze the " +
-            "composer, so a follow-up should add a banner dimension and let CONTENT_WINDOW_MIN_HEIGHT follow the " +
-            "measurement. Kept here (not moved to the varied set) because the floor guard does not yet DRIVE it.",
     )
 
     /**
@@ -176,8 +173,9 @@ class AgentWindowChromeInputCoverageTest {
      * carries all five inert parameters with no per-parameter special case — the same "positions, not remainders"
      * discipline the floor tripwire uses, one corner over.
      *
-     * Residual, named: a row rendered *above* the header (where only the `varied` `lifecycleError` lives today)
-     * shifts header and content together and would not be caught. No inert parameter renders there, and a new one
+     * Residual, named: a row rendered *above* the header (where the `varied` `lifecycleError` and the `control`
+     * banner live today) shifts header and content together and would not be caught. No inert parameter renders
+     * there, and a new one
      * cannot arrive unclassified — [everyAgentWindowParameter_isClassifiedForItsChromeEffect] forces the choice.
      */
     @Test
