@@ -75,6 +75,29 @@ npm run contract:check  # regenerate + tsc typecheck (fail-closed)
 > the 4 one-way feeds) wire on top trivially, but their *types* need either the fixture expanded per channel
 > (hand-modelling — the thing W1 avoids) or Backend2's real export — see the report/flag.
 
+## Agent transcript (W3 / CYP-401)
+
+`src/agentview/` — the `/ws/agent` stream as **structured DOM** (not xterm; §4). Pure logic is a faithful port of
+`:app:shared` with a **behavioral golden corpus** (`streamJsonMapper.test.ts`) pinning it against the Kotlin
+`StreamJsonMapper`:
+
+- `streamJsonMapper.ts` — wire `StreamJsonEvent` → UI `AgentEvent` rows (stateful tool_use→tool_result
+  resolution, fire-once ready notice, injected-message surfacing, start-time carry-forward, summary truncation).
+- `transcriptFolding.ts` — folds the stream (assistant deltas concatenate; tool calls update in place; terminal
+  rows de-dup by id → reconnect-replay safe).
+- `transcriptTime.ts` — pure `HH:mm` formatter (DST-correct per-instant offset).
+- `AgentTranscript.tsx` — the renderer, one row per event kind. `useAgentTranscript.ts` wires socket→mapper→fold.
+
+**XSS (security AC):** all agent-supplied text renders as React text children (escaped). **No `innerHTML` /
+`dangerouslySetInnerHTML`** — enforced by `noInnerHtml.test.ts` (source guard) and proven escaped by
+`AgentTranscript.render.test.tsx` (a `<script>`/`<img onerror>` payload renders as literal text, no live element).
+
+> **CSP is a proxy concern, on purpose.** The only inline script in production is the deploy's operator-token
+> global (`index.html`), so a correct `script-src` needs a **nonce the proxy owns** — a meta CSP here would
+> intersect with (and fight) the proxy's header. The app is kept CSP-friendly (external bundle, no inline scripts
+> of ours, no `eval`); the authoritative CSP (`default-src 'self'; connect-src 'self' ws: wss:; object-src
+> 'none'; base-uri 'none'; script-src 'self' 'nonce-…'`) is set at the proxy — coordinated with Backend2/deploy.
+
 ## Layout (grows over the epic — Spec 14 §2.2)
 
 ```
