@@ -29,9 +29,29 @@ import kotlinx.serialization.json.JsonPrimitive
  * before reaching the client. The compact summaries here are presentation only and additionally
  * truncate — they do not assume raw, secret-bearing payloads.
  */
-class StreamJsonMapper {
+class StreamJsonMapper(
+    /**
+     * CYP-383: the localized "agent ready" label (e.g. "Agent bereit" / "Agent ready"), resolved by the UI
+     * caller via `stringResource(Res.string.agent_ready_notice)` — the mapper is pure Kotlin and holds NO
+     * user-facing literal (the EN build must not show German). The wire model name, when present, is appended
+     * as a " · <model>" suffix. See [systemNotice].
+     */
+    private val readyNoticeText: String,
+) {
 
     private val toolCalls = HashMap<String, AgentEvent.ToolCall>()
+
+    /**
+     * CYP-383: session_ids for which the once-per-session "ready" Notice has already fired. The UIUX-signed
+     * predicate is the **first** `SystemEvent` of a session bearing a **non-blank** `session_id` — an
+     * OBSERVATION that stdin is served (BOUND), NOT the RUNNING command, and subtype-agnostic so it also
+     * catches the resume-bind (which need not carry `subtype:"init"`). "session_id present" ALONE over-fires:
+     * a `subtype:"status"` compaction event (CYP-326) is ALSO a `SystemEvent` with the session's id, mid-session
+     * — and `foldEvent`'s id-dedup can't suppress it (own uuid). So fire-once-per-session is mandatory here.
+     * Replay across a reconnect is a SEPARATE concern, handled by `foldEvent`'s id-dedup (same uuid → one line);
+     * this set only stops the within-stream over-fire.
+     */
+    private val readySessions = HashSet<String>()
     private var seq = 0
 
     /**
@@ -40,9 +60,17 @@ class StreamJsonMapper {
      * history maps to the same times it did the first time.
      */
     fun map(event: StreamJsonEvent, tsMs: Long): List<AgentEvent> = when (event) {
-        is SystemEvent ->
-            if (event.subtype == "init") listOf(AgentEvent.Notice(idOf(event.uuid), systemNotice(event), tsMs))
-            else emptyList()
+        is SystemEvent -> {
+            // CYP-383: fire the "ready" Notice on the FIRST SystemEvent of a session with a non-blank session_id,
+            // exactly once per session (see [readySessions]). `add` returns true only for a not-yet-seen sid, so a
+            // later same-session event (e.g. a `subtype:"status"` compaction) never re-fires.
+            val sid = event.sessionId
+            if (!sid.isNullOrBlank() && readySessions.add(sid)) {
+                listOf(AgentEvent.Notice(idOf(event.uuid), systemNotice(event), tsMs))
+            } else {
+                emptyList()
+            }
+        }
 
         // Observability/spend signal — never part of the transcript (REPORT.md §3, "nicht in den Hub").
         is RateLimitEvent -> emptyList()
@@ -130,8 +158,9 @@ class StreamJsonMapper {
             listOf(AgentEvent.Notice(idOf(e.uuid), "Turn-Fehler" + (e.subtype?.let { ": $it" } ?: ""), tsMs))
         }
 
+    // CYP-383: the ready label is injected (localized by the caller); only the model suffix is composed here.
     private fun systemNotice(e: SystemEvent): String =
-        "Session gestartet" + (e.model?.let { " · $it" } ?: "")
+        readyNoticeText + (e.model?.let { " · $it" } ?: "")
 
     /** Stable id, falling back to a deterministic per-mapper sequence when the wire id is absent. */
     private fun idOf(id: String?): String = id ?: "ev-${seq++}"

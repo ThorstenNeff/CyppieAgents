@@ -29,11 +29,16 @@ class MappingAgentSession(
     private val sink: (UserTurn) -> Unit,
     /** CYP-204: the WS adapter's live connection state (default LIVE for tests that pass only a source). */
     override val connection: StateFlow<ConnectionStatus> = MutableStateFlow(ConnectionStatus.LIVE),
+    /**
+     * CYP-383: the localized "agent ready" label, resolved by the composable caller (AgentShell) via
+     * `stringResource` and threaded into each fresh [StreamJsonMapper] — the mapper holds no user-facing literal.
+     */
+    private val readyNoticeText: String,
 ) : AgentSession {
 
-    // Fresh mapper per collection so the tool-id linkage state is never shared across collectors.
+    // Fresh mapper per collection so the tool-id linkage (and once-per-session ready) state is never shared.
     override val events: Flow<AgentEvent> = flow {
-        val mapper = StreamJsonMapper()
+        val mapper = StreamJsonMapper(readyNoticeText)
         // CYP-335: the envelope's server-stamped `tsMs` dates every row the wire event produces.
         source.collect { stored -> mapper.map(stored.event, stored.tsMs).forEach { emit(it) } }
     }

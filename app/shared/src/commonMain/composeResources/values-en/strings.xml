@@ -143,6 +143,9 @@
     <string name="agent_status_restarting">Restarting…</string>
     <!-- CYP-204: per-agent WS reconnecting indicator (history replays on reconnect) -->
     <string name="agent_reconnecting">Reconnecting…</string>
+    <!-- CYP-383: transcript "ready" notice — fired once per session at the first stream-json SystemEvent with a
+         session_id (an observation that stdin is served, not the RUNNING command). See values/strings.xml. -->
+    <string name="agent_ready_notice">Agent ready</string>
     <string name="agent_status_stopped">Stopped</string>
     <string name="agent_status_error">Error</string>
     <string name="agent_status_unknown">Unknown</string>
