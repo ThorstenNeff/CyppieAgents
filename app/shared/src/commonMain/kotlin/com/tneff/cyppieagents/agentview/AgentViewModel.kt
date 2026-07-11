@@ -134,9 +134,11 @@ class AgentViewModel(
     }
 
     /**
-     * CYP-333: the window's content view — the structured Orchestrierung transcript (default) or a real Terminal.
-     * Client view-selection ONLY (see [AgentContentMode]); the mediated session is untouched by the choice. When
-     * the backend exposes a per-agent `TerminalControlState` (⟂BE-1), this becomes a mirror of that truth.
+     * CYP-333/381: the window's content view — the structured Orchestrierung transcript (default) or the real
+     * Terminal. In production the toggle routes through [requestMode] (non-optimistic, CYP-355 motor): choosing
+     * TERMINAL hands off to the agent's interactive `claude --resume` session (the mediated reader steps aside) and
+     * this flips **only** on the server confirm. This is the local VIEW selection; the authoritative per-agent
+     * `TerminalControlState` is mirrored separately over `/ws/terminal-state` (CYP-354) and drives the banners.
      */
     val contentMode: StateFlow<AgentContentMode> get() = _contentMode
     private val _contentMode = MutableStateFlow(AgentContentMode.ORCHESTRATION)
