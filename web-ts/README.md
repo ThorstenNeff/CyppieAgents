@@ -35,6 +35,28 @@ npm run preview    # serve the built dist/ on :8080
 > The concrete proxy/origin/port wiring (allowlist entries, token-global injection, moving WASM to :8085) is
 > the **closing step of W0** and lives in the deploy config — coordinated with Backend2, not committed here yet.
 
+## Contract types (W1 / CYP-399)
+
+TS types are **generated from the `:core` contract schema, never hand-written** (Spec 14 §3):
+
+```bash
+npm run contract:gen    # schema -> src/types/generated/contract.ts (gitignored, "generate don't commit")
+npm run contract:check  # regenerate + tsc typecheck (fail-closed)
+```
+
+- **Input:** the real `:core` build-export at `contract/asyncapi.json` (Backend2's Gradle task — `/docs/*` is
+  auth-gated, so the schema is a deterministic build artifact, never fetched from a live server). Until that
+  lands, the generator falls back to `contract/asyncapi.provisional.json` (a faithful fixture) with a loud warning.
+- **Discriminated unions:** `SchemaWalker` emits sealed unions as `oneOf` + `discriminator{propertyName:"type"}`,
+  but the subtype schemas carry **no** `type` literal. So `scripts/generate-contract-types.mjs` injects the
+  discriminant from `discriminator.mapping` into each member → real TS discriminated unions (`type: "system"` …).
+  The wire already carries `type`; `:core`/the server are unchanged. Fail-closed: an unresolvable mapping, or a
+  literal that doesn't survive codegen, errors the generator.
+
+> **Seam to reconcile with Backend2:** the export **path** (`web-ts/contract/asyncapi.json`), **format**
+> (ContractGenerator AsyncAPI 2.6 + JSON-Schema components), and whether the schema-vs-`:core` **regen-diff**
+> lives in a Gradle test (extending `AsyncApiContractTest`) are the export-seam details to confirm.
+
 ## Layout (grows over the epic — Spec 14 §2.2)
 
 ```

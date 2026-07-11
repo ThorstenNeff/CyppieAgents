@@ -4,3 +4,6 @@ dist
 dist-ssr
 *.local
 .vite
+
+# CYP-399 — generated contract types ("generate, don't commit"; produced by `npm run contract:gen`)
+src/types/generated/

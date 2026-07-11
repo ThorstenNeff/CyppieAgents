@@ -1,0 +1,78 @@
+{
+  "_provisional": "CYP-399 — PROVISIONAL fixture, faithfully modelled on ContractGenerator.asyncApi() / SchemaWalker output (server/.../contract/). Replace with Backend2's build-export of the real :core schema (Gradle task -> file) when it lands. Kept small; it exercises the hard shapes: a sealed union (oneOf + discriminator, members WITHOUT a `type` literal — exactly how SchemaWalker emits them), a nested union inside a List, $ref reuse, and JSON-Schema-2020-12 nullability (type union with null).",
+  "asyncapi": "2.6.0",
+  "info": { "title": "Cyppie Agents — WebSocket API (PROVISIONAL fixture)", "version": "0.0.0-provisional" },
+  "channels": {
+    "/ws/agent": {
+      "subscribe": { "message": { "$ref": "#/components/messages/StreamJsonEvent" } }
+    }
+  },
+  "components": {
+    "messages": {
+      "StreamJsonEvent": { "payload": { "$ref": "#/components/schemas/StreamJsonEvent" } }
+    },
+    "schemas": {
+      "StreamJsonEvent": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/SystemEvent" },
+          { "$ref": "#/components/schemas/AssistantEvent" }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "system": "#/components/schemas/SystemEvent",
+            "assistant": "#/components/schemas/AssistantEvent"
+          }
+        }
+      },
+      "SystemEvent": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": ["string", "null"] },
+          "model": { "type": ["string", "null"] }
+        }
+      },
+      "AssistantEvent": {
+        "type": "object",
+        "properties": {
+          "message": { "$ref": "#/components/schemas/AgentMessage" },
+          "session_id": { "type": ["string", "null"] }
+        },
+        "required": ["message"]
+      },
+      "AgentMessage": {
+        "type": "object",
+        "properties": {
+          "id": { "type": ["string", "null"] },
+          "content": { "type": "array", "items": { "$ref": "#/components/schemas/ContentBlock" } }
+        }
+      },
+      "ContentBlock": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/TextBlock" },
+          { "$ref": "#/components/schemas/ToolUseBlock" }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "text": "#/components/schemas/TextBlock",
+            "tool_use": "#/components/schemas/ToolUseBlock"
+          }
+        }
+      },
+      "TextBlock": {
+        "type": "object",
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"]
+      },
+      "ToolUseBlock": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" }
+        },
+        "required": ["id", "name"]
+      }
+    }
+  }
+}

@@ -6,8 +6,10 @@
   "description": "CyppieAgents Web frontend — TypeScript/DOM rewrite (Epic CYP-397). Coexists with the WASM :app:webApp until cutover (W10).",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run contract:gen && tsc -b && vite build",
     "typecheck": "tsc -b",
+    "contract:gen": "node scripts/generate-contract-types.mjs",
+    "contract:check": "node scripts/generate-contract-types.mjs && tsc -b",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -18,6 +20,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.0",
+    "json-schema-to-typescript": "^15.0.0",
     "typescript": "^5.8.0",
     "vite": "^6.3.0"
   }
