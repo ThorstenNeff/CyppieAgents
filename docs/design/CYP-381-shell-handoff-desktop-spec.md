@@ -23,18 +23,19 @@ Agenten-Terminal**"*. CYP-381 flips it to the **real hand-off**: "Shell" now att
 (mutually-exclusive I/O) — **the hub goes blind** for that stretch.
 
 > ⚠ **Honesty flag (my lane) — the label `Shell` now means the *opposite* of what it was taught.** The interim
-> UI explicitly told operators "Shell = bash, **not** the agent." CYP-381 makes "Shell" = **driving the agent's
-> real session, hub blind.** The same word now carries an inverted risk profile — and it still *reads* as "a bash
-> prompt," so an operator's muscle memory (type `ls`/`git status`) would misfire: input now goes to the agent's
-> interactive session, not a shell.
+> UI explicitly told operators "Shell = bash, **not** the agent." CYP-381 makes it = **driving the agent's real
+> session, hub blind.** The same word carried an inverted risk profile and still *read* as "a bash prompt," so an
+> operator's muscle memory (type `ls`/`git status`) would misfire: input now goes to the agent's interactive
+> session, not a shell.
 >
-> **Recommendation (Auftraggeber to decide):** **revert the segment label to `Terminal`** — which is exactly what
-> CYP-333 [P2] called this real-session hand-off before the interim borrowed "Shell" for the bash placeholder.
-> That restores an honest, non-inverted meaning. **Baseline I will ship if you keep "Shell":** the PO-directed
-> note `Shell = echte Session` (§8), made unmissable, plus the blind-consequence note (§6). But my honest
-> preference is the relabel — "Shell" actively implies the thing it is explicitly *not*. **One short OK settles it.**
+> **✅ RULING (PO 2026-07-11): relabel the segment `Shell` → `Terminal`.** The toggle is **`[ Orchestrierung |
+> Terminal ]`** — "Terminal" matches the `INTERACTIVE` control-state and the CYP-333 [P2] name for exactly this
+> real-session hand-off, and drops the misleading bash-prompt cue. **The rename is clean, not cosmetic:** Dev
+> renames the existing `Shell` strings **and** testTags, not just the display label (§8 checklist). The old
+> "bash / KEIN Agenten-Terminal" note is rewritten to the real-session truth (§8). *(PO reports the naming to the
+> Auftraggeber as an FYI — he had used "Shell".)*
 
-Everything else in this spec is the same regardless of the label choice.
+Everything else in this spec was already label-independent.
 
 ---
 
@@ -155,22 +156,30 @@ recovery on the next real turn. The UI **never guesses** — both the event and 
 
 ---
 
-## 8. The honest note flip — `Shell = echte Session` (+ the interim comment must invert)
+## 8. The `Shell → Terminal` clean rename + the honest note flip (PO ruling 2026-07-11)
 
-`terminal_shell_note` today = **"bash-Worktree-Shell"** (and the source comment says *"EHRLICHE Worktree-Shell …
-KEIN Agenten-Terminal"*). CYP-381 **replaces both** with the real-session truth:
+The rename is **clean, not cosmetic** — Dev renames the display label, the honest note, the source comment, **and**
+the `Shell`-bearing keys/testTags. Checklist (grounded on strings.xml L565-576 + `AgentViewTags`):
 
-| Key | DE (new) | EN (new) |
-|---|---|---|
-| `terminal_shell_note` *(replace value)* | Echte Agenten-Sitzung — du steuerst sie direkt (der Hub vermittelt nicht) | The agent's real session — you drive it directly (the hub does not mediate) |
+**Label + note copy (values):**
 
-- **The source comment at strings.xml L565-576 must invert too** (Dev): it currently asserts "bash, NOT the agent
-  terminal" — after CYP-381 it is exactly the agent's session. Leaving the old comment would be a stale
-  false-honest note.
-- The note renders in/near the terminal content (frame, tag `agent.<id>.modeToggle.shellNote`, already exists).
-- **If the label is relabeled to `Terminal` (§1 recommendation):** `terminal_mode_shell` value → "Terminal", and
-  `terminal_shell_note` still carries the "real session, hub blind" truth. Either way, the note's job is to make
-  clear **typing goes to the agent's live session, not a bash prompt.**
+| Key (after rename) | Was | DE (new) | EN (new) |
+|---|---|---|---|
+| `terminal_mode_terminal` *(rename from `terminal_mode_shell`)* | "Shell" | **Terminal** | **Terminal** |
+| `terminal_session_note` *(rename from `terminal_shell_note`)* | "bash-Worktree-Shell" | **Terminal — die echte, interaktive Agenten-Sitzung; der Hub vermittelt in diesem Modus nicht.** | Terminal — the agent's real, interactive session; the hub does not mediate in this mode. |
+| `terminal_gated_pending` *(re-copy)* | "Shell verfügbar, sobald das Worktree-Shell-Backend steht" | **Terminal verfügbar, sobald der Hand-off-Motor steht** | Terminal available once the hand-off motor is up |
+
+- **The source comment at strings.xml L565-576 must invert too** — it currently asserts "EHRLICHE Worktree-Shell …
+  bash: git status/ls … **KEIN Agenten-Terminal**." After CYP-381 it is exactly the agent's session; leaving the
+  old comment would be a stale false-honest note.
+- The note renders in/near the terminal content (frame), on the tag renamed below.
+
+**Keys/testTags that still say `shell` → rename (no orphan "shell" in the terminal path):**
+- string key `terminal_mode_shell` → `terminal_mode_terminal`; `terminal_shell_note` → `terminal_session_note`.
+- testTag `agent.<id>.modeToggle.shellNote` → **`agent.<id>.modeToggle.terminalNote`** (rename the tag constant
+  `modeToggleShellNote` → `modeToggleTerminalNote`; re-sync QA CYP-7). *(The segment tag `…modeToggle.term` and
+  `…modeToggle.terminalGated`/`.gateHint` already carry no "shell" — leave them.)*
+- The note's job: make crystal-clear **typing goes to the agent's live session, not a bash prompt.**
 
 ---
 
@@ -178,8 +187,8 @@ KEIN Agenten-Terminal"*). CYP-381 **replaces both** with the real-session truth:
 
 | Element | testTag | State |
 |---|---|---|
-| Mode toggle (built) | `agent.<id>.modeToggle` (+ `.orch` / `.term`) | reuse |
-| Shell/real-session note (built, value flips) | `agent.<id>.modeToggle.shellNote` | reuse |
+| Mode toggle (built) | `agent.<id>.modeToggle` (+ `.orch` / `.term`) | reuse (label "Terminal") |
+| Real-session note (built, **tag renamed** `.shellNote`→`.terminalNote`, §8) | `agent.<id>.modeToggle.terminalNote` | rename + re-copy |
 | Operator gate hint (built) | `agent.<id>.modeToggle.gateHint` | reuse |
 | Backend-absent note (built) | `agent.<id>.modeToggle.terminalGated` | reuse |
 | **IDLE-defer hint** (net-new) | `agent.<id>.modeToggle.deferHint` | present iff a flip is deferred on a running turn |
@@ -196,12 +205,13 @@ segment never shows a mode the backend didn't confirm).
 
 ## 10. i18n keys (reuse + net-new; DE default + EN parity; land with Dev's slice)
 
-**Reuse (already in strings.xml, no new key):** `terminal_mode_orchestration`, `terminal_mode_shell` (value may
-flip to "Terminal" per §1), `a11y_terminal_mode`, `terminal_gated_pending`, `terminal_ctl_interactive`,
-`terminal_ctl_handing_over`, `terminal_ctl_handing_back`, `terminal_ctl_context_lost`, `a11y_terminal_ctl`,
-`workspace_operator_only`, the `lifecycleError` row.
+**Reuse (already in strings.xml, no new key):** `terminal_mode_orchestration`, `a11y_terminal_mode`,
+`terminal_ctl_interactive`, `terminal_ctl_handing_over`, `terminal_ctl_handing_back`, `terminal_ctl_context_lost`,
+`a11y_terminal_ctl`, `workspace_operator_only`, the `lifecycleError` row.
 
-**Value change:** `terminal_shell_note` (§8).
+**Rename + re-copy (§8, PO ruling):** `terminal_mode_shell` → `terminal_mode_terminal` ("Terminal");
+`terminal_shell_note` → `terminal_session_note` (real-session note); `terminal_gated_pending` re-copied to the
+hand-off-motor gate.
 
 **Net-new:**
 
@@ -242,7 +252,7 @@ flip to "Terminal" per §1), `a11y_terminal_mode`, `terminal_gated_pending`, `te
 3. **Holder honesty** — `heldBy`+`since` shown when present; **no keystroke/PTY content** ever on the state channel.
 4. **Hub-blind stated** — `INTERACTIVE` shows the WARN "Hub vermittelt nicht" (never green); marker `◉` present.
 5. **ResumeOutcome 3-level** — `CONTEXT_LOST`=WARN, the other two INFO (no green); rendered as an Event-Log event; the persistent `CONTEXT_LOST` state lights marker+banner+dimmed-history; never inferred from token count.
-6. **Honest note flip** — `terminal_shell_note` reads the real-session truth (not "bash"); the stale source comment inverted.
+6. **Clean rename `Shell→Terminal`** — label, note (`terminal_session_note` reads the real-session truth, not "bash"), keys, and the `.terminalNote` tag are renamed together; the stale source comment inverted; no orphan "shell" in the terminal path.
 7. Fail-closed absence (marker/holder/banner/deferHint iff their state); DE+EN parity; tags synced with QA (CYP-7); no green SUCCESS.
 
 **Backend contracts (PO relays):**
@@ -255,8 +265,8 @@ the tester. **Nothing built here — spec only.**
 
 ---
 
-## 13. One decision needed from you (PO/Auftraggeber)
+## 13. Status — settled
 
-**§1 label:** keep **`Shell`** (I ship the "echte Session" note, made unmissable) **or** revert to **`Terminal`**
-(my honest recommendation — "Shell" now means the opposite of what it was defined as). Everything else is settled;
-Dev can build §3–§12 against the stubs immediately. One short OK on the label unblocks the note copy.
+**Label decided (PO 2026-07-11): `Shell` → `Terminal`** (§1/§8). No open UX decisions remain. Dev builds §3–§12
+against the CYP-355/356 stubs now and carries the clean `Shell→Terminal` rename (labels + note + keys + testTags,
+§8). Real-swap when CYP-355/356 land; §-QA on the PO's trigger after build. Dual-gate, merge via PO.
