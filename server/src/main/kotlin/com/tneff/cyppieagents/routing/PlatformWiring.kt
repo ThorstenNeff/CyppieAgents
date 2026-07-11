@@ -260,6 +260,9 @@ fun Application.bootPlatform(
         // asset set (`<style>/*.png`, populated offline via the DiceBear CLI) — out-of-repo, gitignored.
         avatarDir = gitRoot.toPath().resolve(".cyppie/avatars").toFile(),
         avatarPresetsDir = gitRoot.toPath().resolve(".cyppie/avatar-presets").toFile(),
+        // CYP-417 (S-G): the fail-closed capacity gate — prod estimates from this JVM's -Xmx/CPUs. Tests
+        // construct BootOrchestrator without it (null → ungated), so only prod respects the estimate.
+        resourceGovernor = com.tneff.cyppieagents.boot.ResourceGovernor(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;

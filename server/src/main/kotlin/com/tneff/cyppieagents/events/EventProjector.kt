@@ -222,6 +222,18 @@ class EventProjector(
         draft(agentId, null, null, EventType.AGENT_RESTARTED, Severity.INFO) {}
             .also { onBusy?.invoke(agentId, false) } // CYP-324: fresh respawn → idle until its next turn
 
+    /**
+     * CYP-417 (S-G): `spawn.rejected` — the [com.tneff.cyppieagents.boot.ResourceGovernor] fail-closed rejected a
+     * spawn that would overload the machine. WARN (H3: correct protection, not an error). Content-free (H6):
+     * only the `{current, estimatedMax}` counters (`estimatedMax` omitted when the hub has no reliable estimate,
+     * `null≠0`) + the target agentId metadata — never agent output.
+     */
+    fun spawnRejected(agentId: String, current: Int, estimatedMax: Int?) =
+        draft(agentId, null, null, EventType.SPAWN_REJECTED, Severity.WARN) {
+            put("current", current)
+            estimatedMax?.let { put("estimatedMax", it) }
+        }
+
     /** `comm.sent`: a message the router posted on the agent's behalf — metadata only, NO body. */
     fun commSent(agentId: String, channelId: String, kind: MessageKind?) =
         draft(agentId, null, null, EventType.COMM_SENT, Severity.INFO) {
