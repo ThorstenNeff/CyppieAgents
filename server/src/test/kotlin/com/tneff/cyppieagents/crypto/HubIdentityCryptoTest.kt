@@ -23,9 +23,14 @@ import kotlin.test.assertTrue
  */
 class HubIdentityCryptoTest {
 
+    // ONE stable master key per test instance (JUnit4 makes a fresh instance per method), so a store REOPENED over
+    // the same db decrypts with the SAME key. A fresh keyset per construction would make the CYP-434 canary
+    // correctly reject the reopen (wrong key) → the idempotent-reload / partial-state teeth would red or pass for
+    // the WRONG reason (Reviewer CYP-441 blocker-2). The reopen must fail (or not) for the reason under test.
+    private val masterKeyset = SecretCipherFactory.newBoxKeyset()
     private fun tempDir(): Path = Files.createTempDirectory("cyp441")
     private fun store(dir: Path) =
-        SqliteSecretStore(dir.resolve("secrets.db"), MasterKeyCustody { SecretCipherFactory.newBoxKeyset() })
+        SqliteSecretStore(dir.resolve("secrets.db"), MasterKeyCustody { masterKeyset })
 
     // ---- RawKeys: Ed25519 ----
 

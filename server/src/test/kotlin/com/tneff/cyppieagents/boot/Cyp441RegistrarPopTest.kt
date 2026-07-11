@@ -29,48 +29,62 @@ class Cyp441RegistrarPopTest {
         override suspend fun egress(payload: String) { sent.add(payload) }
     }
 
+    // A stable master key per test instance (JUnit4 = fresh instance per method) — parity with the crypto test;
+    // keeps the SecretStore decryptable if reopened, and never a fresh-key canary-reject for the wrong reason.
+    private val masterKeyset = SecretCipherFactory.newBoxKeyset()
+
     private fun registrar(dir: java.nio.file.Path, connector: ControlPlaneConnector): Pair<ControlPlaneRegistrar, HubIdentityProvisioner> {
-        val store = SqliteSecretStore(dir.resolve("secrets.db"), MasterKeyCustody { SecretCipherFactory.newBoxKeyset() })
+        val store = SqliteSecretStore(dir.resolve("secrets.db"), MasterKeyCustody { masterKeyset })
         val prov = HubIdentityProvisioner(store, dir.resolve(".cyppie/hub-identity.json"))
         val identity = prov.ensure()
         return ControlPlaneRegistrar(identity, prov, connector, ownerId = "owner-1", name = "hub-1", defaultPort = 8787) to prov
     }
 
-    @Test fun register_producesValidPoP_accepted_andEgressed() = runBlocking {
-        val dir = Files.createTempDirectory("cyp441-reg")
-        val connector = CapturingConnector()
-        val (reg, _) = registrar(dir, connector)
-        val nonce = "cp-nonce-42".encodeToByteArray()
+    // Block (Unit-returning) bodies: an expression body `= runBlocking { assertFailsWith { … } }` returns the
+    // exception (non-Unit), which JUnit4 rejects as an invalid test method — failing the WHOLE class at init and
+    // silently skipping every tooth here (Reviewer CYP-441 blocker-1). Block bodies keep each method `void`/Unit.
 
-        val registration = reg.register(nonce)
-        assertTrue(ControlPlaneRegistrar.verifyPop(registration, nonce), "a genuine PoP over the nonce is accepted")
-        assertEquals(1, connector.sent.size, "the registration is egressed through the (masked) CP connector")
-        assertTrue(connector.sent.first().contains(registration.hubId))
+    @Test fun register_producesValidPoP_accepted_andEgressed() {
+        runBlocking {
+            val dir = Files.createTempDirectory("cyp441-reg")
+            val connector = CapturingConnector()
+            val (reg, _) = registrar(dir, connector)
+            val nonce = "cp-nonce-42".encodeToByteArray()
+
+            val registration = reg.register(nonce)
+            assertTrue(ControlPlaneRegistrar.verifyPop(registration, nonce), "a genuine PoP over the nonce is accepted")
+            assertEquals(1, connector.sent.size, "the registration is egressed through the (masked) CP connector")
+            assertTrue(connector.sent.first().contains(registration.hubId))
+        }
     }
 
-    @Test fun verifyPop_rejects_missing_wrongNonce_forged() = runBlocking {
-        val dir = Files.createTempDirectory("cyp441-reg")
-        val (reg, _) = registrar(dir, CapturingConnector())
-        val nonce = "cp-nonce-42".encodeToByteArray()
-        val registration = reg.register(nonce)
+    @Test fun verifyPop_rejects_missing_wrongNonce_forged() {
+        runBlocking {
+            val dir = Files.createTempDirectory("cyp441-reg")
+            val (reg, _) = registrar(dir, CapturingConnector())
+            val nonce = "cp-nonce-42".encodeToByteArray()
+            val registration = reg.register(nonce)
 
-        // genuine → accepted
-        assertTrue(ControlPlaneRegistrar.verifyPop(registration, nonce))
-        // blank PoP → rejected (PoP is mandatory)
-        assertFalse(ControlPlaneRegistrar.verifyPop(registration.copy(pop = ""), nonce))
-        // wrong nonce → rejected (the signature is bound to the exact CP-issued nonce)
-        assertFalse(ControlPlaneRegistrar.verifyPop(registration, "different-nonce".encodeToByteArray()))
-        // forged PoP (a valid signature by a DIFFERENT key over the same nonce) → rejected
-        val attacker = RawKeys.generateEd25519()
-        val forged = registration.copy(pop = Base64.getEncoder().encodeToString(RawKeys.ed25519Sign(attacker.privateRaw, nonce)))
-        assertFalse(ControlPlaneRegistrar.verifyPop(forged, nonce), "a PoP by a key other than signingPubKey is rejected")
-        // empty nonce on the verify side → rejected
-        assertFalse(ControlPlaneRegistrar.verifyPop(registration, ByteArray(0)))
+            // genuine → accepted
+            assertTrue(ControlPlaneRegistrar.verifyPop(registration, nonce))
+            // blank PoP → rejected (PoP is mandatory)
+            assertFalse(ControlPlaneRegistrar.verifyPop(registration.copy(pop = ""), nonce))
+            // wrong nonce → rejected (the signature is bound to the exact CP-issued nonce)
+            assertFalse(ControlPlaneRegistrar.verifyPop(registration, "different-nonce".encodeToByteArray()))
+            // forged PoP (a valid signature by a DIFFERENT key over the same nonce) → rejected
+            val attacker = RawKeys.generateEd25519()
+            val forged = registration.copy(pop = Base64.getEncoder().encodeToString(RawKeys.ed25519Sign(attacker.privateRaw, nonce)))
+            assertFalse(ControlPlaneRegistrar.verifyPop(forged, nonce), "a PoP by a key other than signingPubKey is rejected")
+            // empty nonce on the verify side → rejected
+            assertFalse(ControlPlaneRegistrar.verifyPop(registration, ByteArray(0)))
+        }
     }
 
-    @Test fun register_emptyNonce_failsClosed() = runBlocking {
-        val dir = Files.createTempDirectory("cyp441-reg")
-        val (reg, _) = registrar(dir, CapturingConnector())
-        assertFailsWith<IllegalArgumentException> { reg.register(ByteArray(0)) }
+    @Test fun register_emptyNonce_failsClosed() {
+        runBlocking {
+            val dir = Files.createTempDirectory("cyp441-reg")
+            val (reg, _) = registrar(dir, CapturingConnector())
+            assertFailsWith<IllegalArgumentException> { reg.register(ByteArray(0)) }
+        }
     }
 }
