@@ -27,7 +27,7 @@ class StreamJsonMapperTest {
 
     /** CYP-335: each wire event is stamped 1_000 ms apart, so a row's time identifies which event bore it. */
     private fun pipeline(events: List<StreamJsonEvent>): List<AgentEvent> {
-        val mapper = StreamJsonMapper()
+        val mapper = StreamJsonMapper(readyNoticeText = "READY")
         return foldEvents(events.flatMapIndexed { i, e -> mapper.map(e, tsMs = (i + 1) * 1_000L) })
     }
 
@@ -113,7 +113,7 @@ class StreamJsonMapperTest {
         // ONE tool_result wire event fans out into TWO rows (the resolved ToolCall + the Result). They must not
         // share a timestamp: the tool call is dated by its start, the result by its arrival. The operator reads
         // start AND end off the transcript — that only works if the fan-out rows are dated independently.
-        val mapper = StreamJsonMapper()
+        val mapper = StreamJsonMapper(readyNoticeText = "READY")
         val toolUse = AssistantEvent(
             message = AgentMessage(
                 id = "m", stopReason = "tool_use",
@@ -139,14 +139,14 @@ class StreamJsonMapperTest {
 
     @Test
     fun rateLimitAndSuccessResult_produceNoRows() {
-        val mapper = StreamJsonMapper()
+        val mapper = StreamJsonMapper(readyNoticeText = "READY")
         assertTrue(mapper.map(RateLimitEvent(uuid = "r"), tsMs = 0L).isEmpty())
         assertTrue(mapper.map(ResultEvent(subtype = "success", isError = false, uuid = "x"), tsMs = 0L).isEmpty())
     }
 
     @Test
     fun thinkingOnlyAssistant_isDropped() {
-        val mapper = StreamJsonMapper()
+        val mapper = StreamJsonMapper(readyNoticeText = "READY")
         val ev = AssistantEvent(
             message = AgentMessage(id = "m", stopReason = "tool_use", content = listOf(ThinkingBlock("nur denken"))),
             uuid = "u",
@@ -178,7 +178,7 @@ class StreamJsonMapperTest {
 
     @Test
     fun errorResult_emitsNotice() {
-        val mapper = StreamJsonMapper()
+        val mapper = StreamJsonMapper(readyNoticeText = "READY")
         val rows = mapper.map(ResultEvent(subtype = "error_max_turns", isError = true, uuid = "e"), tsMs = 7_000L)
         val notice = rows.single() as AgentEvent.Notice
         assertTrue(notice.text.contains("error_max_turns"))

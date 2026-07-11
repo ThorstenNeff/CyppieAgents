@@ -148,6 +148,11 @@
     <string name="agent_status_restarting">Neustart…</string>
     <!-- CYP-204: per-agent WS reconnecting indicator (History wird bei Reconnect neu gespielt) -->
     <string name="agent_reconnecting">Verbindung wird wiederhergestellt…</string>
+    <!-- CYP-383: Transkript-„bereit"-Hinweis, EINMAL pro Session emittiert beim ERSTEN stream-json-SystemEvent
+         mit nicht-leerer session_id (stdin wird bedient / BOUND — eine BEOBACHTUNG, nicht das RUNNING-Kommando).
+         Modellname wird vom Mapper als " · <model>" angehängt. Löst das hartkodierte deutsche Literal
+         „Session gestartet" ab; der stringResource-Lookup kommt aus der UI-Schicht (AgentShell). -->
+    <string name="agent_ready_notice">Agent bereit</string>
     <string name="agent_status_stopped">Gestoppt</string>
     <string name="agent_status_error">Fehler</string>
     <string name="agent_status_unknown">Unbekannt</string>

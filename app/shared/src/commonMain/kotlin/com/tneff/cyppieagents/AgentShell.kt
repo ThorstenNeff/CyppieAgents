@@ -137,6 +137,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_title
+import kmpcyppieagents.app.shared.generated.resources.agent_ready_notice
 import kmpcyppieagents.app.shared.generated.resources.report_title
 import kmpcyppieagents.app.shared.generated.resources.project_loading
 import kmpcyppieagents.app.shared.generated.resources.compact_window_title
@@ -394,9 +395,14 @@ fun AgentShell(
         if (showRoster(tier)) add(ROSTER_WINDOW_ID to rosterTitle)
     }
 
+    // CYP-383: resolve the localized "ready" label here, in composition, and capture it into the session
+    // factory — the mapper is pure Kotlin and cannot call stringResource itself (spec §2, §5).
+    val readyNotice = stringResource(Res.string.agent_ready_notice)
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
         val ws = AgentWsClient(httpClient, cfg.hubWsBaseUrl, agentId, cfg.agentToken(agentId))
-        MappingAgentSession(source = ws.events, sink = ws::send, connection = ws.connection)
+        MappingAgentSession(
+            source = ws.events, sink = ws::send, connection = ws.connection, readyNoticeText = readyNotice,
+        )
     }
 
     // Operator viewer (CYP-17). The operator token comes from config (runtime), not baked; without it
