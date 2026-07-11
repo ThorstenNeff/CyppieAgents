@@ -141,7 +141,16 @@ fun Route.agentSocket(
                         close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, e.message))
                         return@webSocket
                     }
-                    session.sendTurn(turn)
+                    // CYP-382: resolve the CURRENT session PER FRAME — never inject through the ref captured at
+                    // connect (above). A restart swaps the registry entry (LifecycleManager.doSpawn: remove the
+                    // old session + register the new one) while this WS stays open; the captured ref then points
+                    // at the dead, removed session, and its `sendTurn` writes to a destroyed process (throws /
+                    // silently lost) — the "first turn after restart is ignored" defect. The output pump follows
+                    // the agentId via `agentEvents`, so ONLY this inject path held a stale ref. A transient null
+                    // during the swap window → skip this frame (the operator resends; hub messages are delivered
+                    // durably by MessageDeliverer, which already resolves the session fresh per drain).
+                    val live = sessions().session(agentId) ?: continue
+                    live.sendTurn(turn)
                 }
             }
         } finally {
