@@ -78,7 +78,7 @@ window.settings                              (Fenster im Manager; id = "settings
       └─ settings.section.apiKey             ← §4  gerahmt → CYP-433 (Leak-Modell dort)
            «API-Schlüssel» (heading)
            …Interna = CYP-433/P2-e (masked/input/reveal/save/error) …
-           settings.apiKey.effectHint        (AMBER, §5 — Instanz desselben Musters)
+           settings.apiKey.effectHint        (AMBER, §5-Muster — GERENDERT von CYP-433, nicht von P2-f)
 ```
 
 Fenster-Titel = `settings_title` „Projekt-Einstellungen / Project settings" — der Titel selbst sagt schon **Projekt**,
@@ -122,8 +122,12 @@ Genuiner P2-f-Inhalt (kein eigener Slice). Die Reihenfolge und Töne 1:1 aus `Re
 1. **Heading + Platzierung** — `settings.section.apiKey` als zweite Section unter der Repo-Section im selben Panel.
 2. **Gemeinsames Gate** — dieselbe `editable`-Logik wie Repo (§0/§3): Operator ⇒ editierbar, sonst present-but-disabled
    + Gate-Hint.
-3. **Effect-Hint als Instanz des §5-Musters** — `settings.apiKey.effectHint` / `settings_apikey_effect_hint` ist **das**
-   Beispiel, für das P2-f der „maßgebliche Ort" ist (§5).
+3. **Effect-Hint als Instanz des §5-Musters — aber P2-f rendert ihn NICHT.** Den API-Key-Effect-Hint
+   (`settings.apiKey.effectHint` / `settings_apikey_effect_hint`) **rendert die CYP-433-Komponente** (ein Render-Ort:
+   `ApiKeyPanel.tsx:106`, `role="status"`, schon gemergt + getestet). P2-f besitzt hier **nur die Muster-Definition
+   (§5)** — Ton, Wortlaut-Struktur, Restart-Bezug — plus die **Repo-Instanz** (`settings.repo.effectHint`, §3).
+   **Keine zweite Render-Logik, kein zweiter `settings.apiKey.effectHint`-Knoten** (das wäre ein Duplicate-Testid /
+   doppelter Hinweis, verboten durch §9.6/§9.7).
 
 > **Nahtstellen-Notiz an Dev5:** P2-e und P2-f landen dieselbe Fläche. Wenn CYP-433 aus der Security-Review kommt, ist
 > die api-key Section-Komponente **die** Implementierung; P2-f montiert sie in `settings.panel` und liefert Repo-Section
@@ -136,6 +140,12 @@ Genuiner P2-f-Inhalt (kein eigener Slice). Die Reihenfolge und Töne 1:1 aus `Re
 Der PO-Auftrag benennt P2-f als **den maßgeblichen Ort für den API-Key-Effect-Hint** (`settings_apikey_effect_hint`, den
 P2-a/P2-e nur *referenzieren*). Das löst sich sauber, wenn man erkennt: **beide** Effect-Hints (Repo §3, API-Key §4)
 sind **eine** Disclosure-Regel, hier definiert:
+
+**Muster-Ownership ≠ Render-Ownership (die Naht, die scharf bleiben muss).** „Maßgeblicher Ort" heißt hier: P2-f
+**definiert das Muster** (Ton, Struktur, Restart-Bezug) und **rendert die Repo-Instanz** (`settings.repo.effectHint`).
+Die **API-Key-Instanz rendert die CYP-433-Komponente** (`ApiKeyPanel.tsx:106`, `settings.apiKey.effectHint`) — **ein**
+Render-Ort, schon gemergt. P2-f rendert für den API-Key **keinen** zweiten Hint. So referenzieren P2-a/P2-e das
+Muster, ohne dass es doppelt gebaut wird.
 
 **Regel „gespeichert ≠ aktiv":** Ein gespeicherter Wert der Projekt-Config wirkt **nicht sofort**. Die UI muss das
 **ehrlich offenlegen** — sonst liest sich „Speichern OK" wie „ist jetzt live", was falsch ist.
@@ -232,8 +242,10 @@ den Key impl-nah (Landung mit der Impl, [[shared-key-landing]]).
    Restart-Button in Settings ⇒ rot (falsche Aktivierungsquelle).
 5. **Repo-unset ehrlich (nennt die Folge).** **Mutation:** stumm leer / neutrales „OK" statt „Agenten können nicht
    starten" ⇒ rot.
-6. **API-Key-Section gerahmt, nicht dupliziert.** Die Section-Interna kommen aus **einer** Quelle (CYP-433).
-   **Mutation:** P2-f re-implementiert das Leak-Modell / weicht von CYP-433 ab (zweite Masking-/Reveal-Logik) ⇒ rot.
+6. **API-Key-Section gerahmt, nicht dupliziert.** Die Section-Interna **und** der API-Key-Effect-Hint kommen aus
+   **einer** Quelle (CYP-433, `ApiKeyPanel.tsx:106`). **Mutation:** P2-f re-implementiert das Leak-Modell / weicht ab
+   (zweite Masking-/Reveal-Logik) **oder** rendert einen zweiten `settings.apiKey.effectHint`-Knoten (Duplicate-Testid)
+   ⇒ rot.
 7. **Effect-Hint = ein Muster, konsistent Repo↔API-Key.** **Mutation:** die beiden Hints divergieren in Ton oder
    Struktur (einer amber, einer grün; einer „saved ≠ active", einer „gespeichert") ⇒ rot.
 8. **Kein `ellipsis` auf Offenlegung/Fehler/Gate.** **Mutation:** `text-overflow: ellipsis` (oder Zeilen-Clamp) auf
