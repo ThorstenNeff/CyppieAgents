@@ -95,8 +95,21 @@ data class AuthConfig(
     val bootstrapOperatorIdentityId: String? = null,
 )
 
+/**
+ * Hub network config. [url] is the callback URL agents use for the in-process Hub MCP server (kept
+ * consistent with [port]). CYP-415 (D6): [port]/[host] drive the HTTP/WS bind (were compile-time
+ * constants `8787`/`127.0.0.1`); both defaulted so pre-D6 configs load unchanged.
+ *
+ * **[host] defaults to loopback (`127.0.0.1`) and should stay there** while the `?token=` WS query
+ * fallback exists (Reviewer #4, see `bootHost`): binding off-loopback makes the socket reachable off-box
+ * and weakens that guard — an operator opts into that risk explicitly by overriding it.
+ */
 @Serializable
-data class HubConfig(val url: String = "http://localhost:8787")
+data class HubConfig(
+    val url: String = "http://localhost:8787",
+    val port: Int = 8787,
+    val host: String = "127.0.0.1",
+)
 
 /**
  * Web-client settings (Spec 02 §14). [allowedOrigins] are the exact frontend origins permitted by

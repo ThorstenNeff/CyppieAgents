@@ -1,7 +1,7 @@
 package com.tneff.cyppieagents
 
+import com.tneff.cyppieagents.boot.PlatformConfig
 import com.tneff.cyppieagents.routing.CommConfig
-import com.tneff.cyppieagents.routing.bootHost
 import com.tneff.cyppieagents.routing.bootPlatform
 import com.tneff.cyppieagents.routing.installComm
 import io.ktor.server.application.*
@@ -36,7 +36,11 @@ fun main() {
     val configFile = File(System.getenv("PLATFORM_CONFIG") ?: "platform.config.json")
     val gitRoot = File(System.getenv("PLATFORM_GIT_ROOT") ?: ".cyppie")
     val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    embeddedServer(Netty, port = 8787, host = bootHost) {
+    // CYP-415 (D6): the HTTP/WS bind is config-driven (`hub.port`/`hub.host`, defaults 8787/127.0.0.1) instead
+    // of compile-time constants. Loaded here so `embeddedServer` can read them before it binds; `bootPlatform`
+    // re-loads the same file for the rest of the wiring (cheap, single source of truth = the file).
+    val config = PlatformConfig.load(configFile)
+    embeddedServer(Netty, port = config.hub.port, host = config.hub.host) {
         bootPlatform(configFile, gitRoot, scope)
     }.start(wait = true)
 }
