@@ -70,17 +70,29 @@ fun ApplicationCall.sessionCredential(): SessionCredential? {
 }
 
 /**
+ * CYP-410 (S-A) — a **transport-neutral credential**: the machine bearer token and/or the Kratos session,
+ * as extracted by whatever transport carried them. Lets the ONE principal resolution ([resolvePrincipal])
+ * run without a Ktor [ApplicationCall], so the [com.tneff.cyppieagents.boot.SessionManager] seam (and the
+ * Phase-2 Control-Plane transport that mounts behind it) resolves principals through the SAME logic the
+ * Local-API `/api` routes use.
+ */
+data class Credential(val bearer: String?, val session: SessionCredential?)
+
+/**
  * CYP-178 / P1 — the ONE principal resolution (fail-closed). Two mutually-exclusive paths, exactly one
  * auth per caller: (1) the static **operator token** → [AuthPrincipal.MachineOperator]; (2) a **verified**
  * Kratos session → [AuthPrincipal.Human] with its platform role. RC1: `verified==true` is required (not
  * merely session-valid); any absent/invalid/error/timeout from the IdP → null (unauthenticated).
+ *
+ * CYP-410 (S-A): the body is now transport-neutral (reads a [Credential], not an [ApplicationCall]); the
+ * [ApplicationCall] overload below extracts the credential and delegates — byte-identical behavior.
  */
-suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? {
+suspend fun resolvePrincipal(cred: Credential, deps: AuthDeps): AuthPrincipal? {
     // Machine axis first (a bearer token). A KNOWN bearer is an authenticated machine: operator → OPERATOR,
     // a registered agent token → a MEMBER MachineAgent (403, not 401, on operator routes — the pre-CYP-178
     // `requireOperator` semantics; CYP-186 BE2: known agents read the MEMBER-tier event-log). Only the ABSENCE
     // of any credential is 401.
-    val bearer = bearerToken()
+    val bearer = cred.bearer
     if (bearer != null) {
         // CYP-186 C.2: the operator token is INERT when the deploy kill-switch is set AND a role-OPERATOR
         // already exists (never-lock-out: it carries until the first human bootstraps OPERATOR). Inert →
@@ -99,10 +111,14 @@ suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? {
         // participant token is instead accepted ONLY by the canRead-scoped resolvers (requireCommReader etc.).
     }
     // Human axis (a Kratos session). RC1: session-valid is NOT enough — the identity must be verified.
-    val resolved = deps.idp.resolve(sessionCredential()) ?: return null
+    val resolved = deps.idp.resolve(cred.session) ?: return null
     if (!resolved.verified) return null
     return AuthPrincipal.Human(resolved.identityId, deps.roles.ensureAssigned(resolved.identityId, deps.nowMs()))
 }
+
+/** CYP-410: the Ktor overload — extract the transport-neutral [Credential] from the call, then resolve. */
+suspend fun ApplicationCall.resolvePrincipal(deps: AuthDeps): AuthPrincipal? =
+    resolvePrincipal(Credential(bearerToken(), sessionCredential()), deps)
 
 /**
  * CYP-182 — the `/api/auth/me` projection of the caller's auth STATE in a **single** `idp.resolve`. Unlike
