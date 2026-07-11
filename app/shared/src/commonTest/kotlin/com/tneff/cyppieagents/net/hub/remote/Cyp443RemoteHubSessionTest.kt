@@ -48,7 +48,10 @@ class Cyp443RemoteHubSessionTest {
 
     private val pinned = HubTrust { TrustResolution.Pinned(ByteArray(32)) }
     private val grant = OperatorAuthenticator { _, _ -> true }
-    private val zeroBackoff = Backoff(initialMs = 0, maxMs = 0)
+    // A non-zero backoff so a reconnect delay actually suspends in virtual time → the transient RECONNECTING /
+    // inFlightUncertain state is observable before advanceUntilIdle() drives the reconnect (delay(0) returns
+    // immediately, which would make the reconnect synchronous and the transient state unobservable).
+    private val slowBackoff = Backoff(initialMs = 1_000, maxMs = 1_000)
 
     private fun session(
         scope: CoroutineScope,
@@ -56,7 +59,7 @@ class Cyp443RemoteHubSessionTest {
         dialer: RelayDialer = RelayDialer { NoopRelay() },
         trust: HubTrust = pinned,
         auth: OperatorAuthenticator = grant,
-    ) = RemoteHubSession("hub-1", transport, dialer, trust, auth, scope, zeroBackoff)
+    ) = RemoteHubSession("hub-1", transport, dialer, trust, auth, scope, slowBackoff)
 
     @Test
     fun happyPath_reachesConnected_withTunnel() = runTest {

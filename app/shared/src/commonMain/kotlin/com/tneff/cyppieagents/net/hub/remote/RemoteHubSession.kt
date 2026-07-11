@@ -72,7 +72,7 @@ class RemoteHubSession(
                 Outcome.DROPPED -> {
                     if (closed) break
                     _state.update { it.copy(conn = RemoteConnState.RECONNECTING, inFlightUncertain = true) } // H4
-                    attempt = 0 // was connected → reconnect promptly, then escalate only on repeated failure
+                    attempt = 1 // was connected → start a fresh (small) backoff, escalating only on repeated failure
                 }
                 Outcome.TRANSIENT -> {
                     if (closed) break
