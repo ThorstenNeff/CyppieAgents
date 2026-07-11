@@ -279,6 +279,16 @@ fun Application.bootPlatform(
         resourceGovernor = com.tneff.cyppieagents.boot.ResourceGovernor(
             rosterFloor = { config.agents.count { !it.remote } },
         ),
+        // CYP-441 (S-C): opt-in local-hub identity custody. ONLY when CYPPIE_MASTER_KEY is configured do we back
+        // the hub's private keys with the S-B SecretStore (SqliteSecretStore + env-keyset custody) and provision
+        // HubIdentity at boot; otherwise off → the current server / tests are unchanged (no master key required).
+        hubSecretStore = System.getenv("CYPPIE_MASTER_KEY")?.takeIf { it.isNotBlank() }?.let {
+            com.tneff.cyppieagents.crypto.SqliteSecretStore(
+                gitRoot.toPath().resolve(".cyppie/hub-secrets.db"),
+                com.tneff.cyppieagents.crypto.EnvKeysetMasterKeyCustody(),
+            )
+        },
+        hubIdentityFile = gitRoot.toPath().resolve(".cyppie/hub-identity.json").toFile(),
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;

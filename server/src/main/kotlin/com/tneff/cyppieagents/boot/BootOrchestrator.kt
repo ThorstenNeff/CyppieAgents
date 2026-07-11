@@ -132,6 +132,10 @@ class BootedPlatform(
     val projectSwitcher: ProjectSwitcher,
     /** CYP-417 (S-G) — the resource governor (null in tests); `GET /api/capacity` reads its estimate. */
     val resourceGovernor: ResourceGovernor?,
+    /** CYP-441 (S-C) — the hub's cryptographic identity (Ed25519 signing + X25519 Noise-ready static),
+     *  provisioned at boot from the S-B SecretStore when local-hub custody is configured; null otherwise
+     *  (tests/legacy). Consumed by S-D/S-E (Control Plane + Noise); laid as the anchor here. */
+    val hubIdentity: com.tneff.cyppieagents.crypto.HubIdentity? = null,
 )
 
 /**
@@ -236,6 +240,11 @@ class BootOrchestrator(
     /** CYP-417 (S-G) — the fail-closed capacity gate. Default null (tests spawn ungated, no behavior change);
      *  bootPlatform wires a real [ResourceGovernor] so prod respects the machine's estimated capacity. */
     private val resourceGovernor: ResourceGovernor? = null,
+    /** CYP-441 (S-C) — the S-B SecretStore custody backing the hub identity's private keys, plus the pub-meta
+     *  file. Both null (tests/legacy) → no HubIdentity provisioned (no behavior change); bootPlatform wires them
+     *  only when local-hub custody is configured (`CYPPIE_MASTER_KEY` present). */
+    private val hubSecretStore: com.tneff.cyppieagents.crypto.SecretStore? = null,
+    private val hubIdentityFile: java.io.File? = null,
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -945,6 +954,14 @@ class BootOrchestrator(
         )
         ptyManagerHolder.set(ptyManager) // CYP-355: publish it to the hand-off motors + LifecycleManager.onTeardown
 
+        // CYP-441 (S-C): provision/load the hub's crypto identity from the S-B SecretStore — opt-in (only when
+        // local-hub custody is wired). Idempotent + rotation-safe; nothing consumes it yet (S-D/S-E do).
+        val hubIdentity = if (hubSecretStore != null && hubIdentityFile != null) {
+            com.tneff.cyppieagents.crypto.HubIdentityProvisioner(hubSecretStore, hubIdentityFile.toPath()).ensure()
+        } else {
+            null
+        }
+
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, durableActive, agentManagement, reportStore, projectRegistry, projectDeleter,
@@ -958,6 +975,7 @@ class BootOrchestrator(
             ptyManager = ptyManager, // CYP-332
             projectSwitcher = projectSwitcher, // CYP-410 (S-A)
             resourceGovernor = resourceGovernor, // CYP-417 (S-G)
+            hubIdentity = hubIdentity, // CYP-441 (S-C)
         )
     }
 }
