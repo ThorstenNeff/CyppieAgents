@@ -1,0 +1,86 @@
+// CYP-431 (P2-a) — the agent-window status/lifecycle header: a status dot (CYP-396 spec) + label + operator-gated
+// start/stop/restart controls. Honesty: the status is server-confirmed (non-optimistic — the caller passes the feed
+// state + a transient pending); colour is never the sole signal (the text label carries it). Operator gate: for a
+// non-operator the controls are PRESENT but DISABLED (no fake affordance, CYP-317), never hidden. Layout (CYP-369):
+// the controls cluster is flex-shrink:0 so every control keeps width>0 at a narrow window; the label cluster shrinks.
+import { statusDotSpec, dotRoleVar, lifecycleLabel, type LifecycleState } from './lifecycleStatus'
+import type { LifecycleAction } from '../state/hubReducers'
+
+export interface LifecycleHeaderProps {
+  agentId: string
+  state: LifecycleState
+  pending: LifecycleAction | undefined
+  operator: boolean
+  onStart: (agentId: string) => void
+  onStop: (agentId: string) => void
+  onRestart: (agentId: string) => void
+}
+
+export function LifecycleHeader({ agentId, state, pending, operator, onStart, onStop, onRestart }: LifecycleHeaderProps) {
+  const spec = statusDotSpec(state, pending !== undefined)
+  const label = lifecycleLabel(state, pending)
+  const color = dotRoleVar(spec.role)
+  const dotStyle =
+    spec.shape === 'fill'
+      ? { width: 8, height: 8, borderRadius: '50%', background: color }
+      : { width: 8, height: 8, borderRadius: '50%', border: `2px solid ${color}`, boxSizing: 'border-box' as const }
+
+  // Disabled for a non-operator (server-authoritative gate mirror) or while a request is in flight (no stacking).
+  const disabled = !operator || pending !== undefined
+
+  return (
+    <header className="lifecycle-header" data-testid={`lifecycle.header.${agentId}`}>
+      <span className="lifecycle-status" role="status" aria-label={`Status: ${label}`} data-testid={`lifecycle.status.${agentId}`}>
+        <span
+          className="lifecycle-dot"
+          aria-hidden="true"
+          data-testid={`lifecycle.dot.${agentId}`}
+          data-shape={spec.shape}
+          data-role={spec.role}
+          style={dotStyle}
+        />
+        <span className="lifecycle-label">{label}</span>
+      </span>
+
+      <div className="lifecycle-controls" data-testid={`lifecycle.controls.${agentId}`}>
+        <button
+          type="button"
+          className="lifecycle-btn"
+          data-testid={`lifecycle.start.${agentId}`}
+          disabled={disabled}
+          aria-disabled={disabled}
+          onClick={() => onStart(agentId)}
+        >
+          Start
+        </button>
+        <button
+          type="button"
+          className="lifecycle-btn"
+          data-testid={`lifecycle.stop.${agentId}`}
+          disabled={disabled}
+          aria-disabled={disabled}
+          onClick={() => onStop(agentId)}
+        >
+          Stopp
+        </button>
+        <button
+          type="button"
+          className="lifecycle-btn"
+          data-testid={`lifecycle.restart.${agentId}`}
+          disabled={disabled}
+          aria-disabled={disabled}
+          // Restart-on-key-change: a persona/API-key change takes effect on the NEXT spawn (restart to apply it).
+          title="Neustart übernimmt geänderte Persona/API-Key beim nächsten Spawn"
+          onClick={() => onRestart(agentId)}
+        >
+          Neustart
+        </button>
+        {!operator && (
+          <span className="lifecycle-operator-only" data-testid={`lifecycle.operatorOnly.${agentId}`}>
+            Nur Operatoren steuern den Lebenszyklus.
+          </span>
+        )}
+      </div>
+    </header>
+  )
+}

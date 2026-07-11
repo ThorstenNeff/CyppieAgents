@@ -63,6 +63,16 @@ describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
     expect(onCommClose).toHaveBeenCalledWith(1008)
   })
 
+  it('folds an inbound /ws/lifecycle event into onRunState (CYP-431)', () => {
+    const hub = new FakeSocketHub()
+    const onRunState = vi.fn()
+    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onRunState }, { factory: hub.factory, schedule: hub.runNow })
+    const feed = socketFor(hub, '/ws/lifecycle')
+    feed.emitOpen()
+    feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'RUNNING' }))
+    expect(onRunState).toHaveBeenCalledWith({ agentId: 'backend', runState: 'RUNNING' })
+  })
+
   it('stop() closes both sockets', () => {
     const hub = new FakeSocketHub()
     const handle = startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })

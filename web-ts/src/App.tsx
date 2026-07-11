@@ -28,6 +28,7 @@ import { CommPanel } from './comm/CommPanel'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
 import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
+import type { LifecycleAction } from './state/hubReducers'
 import type { AclEntry, Message1 } from './types/generated/contract'
 
 const AGENT_PREFIX = 'agent:'
@@ -61,6 +62,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const clearAclPending = useHubStore((s) => s.clearAclPending)
   const ingestMessages = useHubStore((s) => s.ingestMessages)
   const setCommConnection = useHubStore((s) => s.setCommConnection)
+  const onRunState = useHubStore((s) => s.onRunState)
+  const markLifecyclePending = useHubStore((s) => s.markLifecyclePending)
+  const clearLifecyclePending = useHubStore((s) => s.clearLifecyclePending)
   const [aclError, setAclError] = useState<string | null>(null)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [commSendError, setCommSendError] = useState<string | null>(null)
@@ -72,6 +76,8 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const terminalStateByAgent = useHubStore((s) => s.terminalStateByAgent)
   const messagesByChannel = useHubStore((s) => s.messagesByChannel)
   const commConnection = useHubStore((s) => s.commConnection)
+  const runStateByAgent = useHubStore((s) => s.runStateByAgent)
+  const lifecyclePending = useHubStore((s) => s.lifecyclePending)
 
   const historySize = useMemo(() => () => loadHistorySize(browserStore()), [])
 
@@ -87,6 +93,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
         onCommOpen: () => setCommConnection('live'),
         // CYP-437(b): an unexpected drop flips the banner off 'live'; a 1008 (auth revoked) is terminal → 'revoked'.
         onCommClose: (code) => setCommConnection(code === 1008 ? 'revoked' : 'offline'),
+        onRunState,
       },
       socketDeps,
     )
@@ -123,6 +130,17 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
     hubRepo.requestMode(agentId, mode === 'shell' ? 'TERMINAL' : 'ORCHESTRATION').catch(() => undefined)
+  }
+
+  // CYP-431: non-optimistic lifecycle. The click marks a transient pending; the run-state flips only on the
+  // server's AgentRunStateEvent (the POST response, mirrored by /ws/lifecycle) — both resolve the pending. A
+  // rejected request clears the pending (no event will come) so the transient label can't stick.
+  const onLifecycle = (agentId: string, action: LifecycleAction) => {
+    markLifecyclePending(agentId, action)
+    hubRepo
+      .setLifecycle(agentId, action)
+      .then(onRunState)
+      .catch(() => clearLifecyclePending(agentId))
   }
 
   const onSendComm = (text: string) => {
@@ -190,6 +208,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           operator={cfg.operator}
           terminalState={terminalStateByAgent.get(agentId) ?? 'MEDIATED'}
           onRequestMode={onRequestMode}
+          lifecycleState={runStateByAgent.get(agentId) ?? 'UNKNOWN'}
+          lifecyclePending={lifecyclePending.get(agentId)}
+          onLifecycle={onLifecycle}
           socketDeps={socketDeps}
         />
       )

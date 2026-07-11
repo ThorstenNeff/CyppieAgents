@@ -5,13 +5,25 @@
 // Idempotency (Spec 14 §2/§8 tooth 3): comm messages dedup by Message.id, so a /ws/comm reconnect replay adds
 // no duplicates. Non-optimistic ACL (§W9.2): a PUT records a *pending* flag; the ENFORCED value flips only when
 // the AclEvent echo arrives (applyAclEntry), which also clears that cell's pending — never the optimistic click.
-import type { AclEntry, Channel, Message1, CommWsServerEvent, AgentTerminalControlEvent } from '../types/generated/contract'
+import type {
+  AclEntry,
+  Channel,
+  Message1,
+  CommWsServerEvent,
+  AgentTerminalControlEvent,
+  AgentRunStateEvent,
+} from '../types/generated/contract'
 import { pendingKey, type AclDimension, type PendingAcl } from '../comm/aclModel'
 import type { TerminalControlState } from '../agentview/terminalModeSelection'
 
 /** The /ws/comm connection posture the CommPanel banner reflects (CYP-438 wires connecting→live via onOpen; the
  *  offline/revoked distinction is CYP-437's banner work). */
 export type CommConnection = 'live' | 'connecting' | 'offline' | 'revoked'
+
+/** Server-confirmed process run-state (from the /ws/lifecycle feed). */
+export type AgentRunState = AgentRunStateEvent['runState']
+/** An in-flight lifecycle request (client-only, transient — resolved by the next AgentRunStateEvent). */
+export type LifecycleAction = 'start' | 'stop' | 'restart'
 
 export interface HubState {
   channels: readonly Channel[]
@@ -27,6 +39,11 @@ export interface HubState {
   terminalStateByAgent: ReadonlyMap<string, TerminalControlState>
   /** the /ws/comm connection posture (CommPanel banner). */
   commConnection: CommConnection
+  /** server-confirmed process run-state per agent (CYP-431 lifecycle header); absent → UNKNOWN until the feed. */
+  runStateByAgent: ReadonlyMap<string, AgentRunState>
+  /** a lifecycle request in flight per agent (CYP-431) — transient "Startet…/Neustart…", cleared by the next
+   *  AgentRunStateEvent. Non-optimistic: the STATE flips only on that event, never on the click. */
+  lifecyclePending: ReadonlyMap<string, LifecycleAction>
 }
 
 export const emptyHubState: HubState = {
@@ -37,6 +54,33 @@ export const emptyHubState: HubState = {
   messagesByChannel: new Map(),
   terminalStateByAgent: new Map(),
   commConnection: 'connecting',
+  runStateByAgent: new Map(),
+  lifecyclePending: new Map(),
+}
+
+/** Fold a /ws/lifecycle event: the server-confirmed run-state for one agent, which also RESOLVES any pending
+ *  lifecycle request for it (the click's transient label ends when the server confirms — CYP-431 non-optimistic). */
+export function applyRunState(state: HubState, ev: AgentRunStateEvent): HubState {
+  const runStateByAgent = new Map(state.runStateByAgent)
+  runStateByAgent.set(ev.agentId, ev.runState)
+  const lifecyclePending = new Map(state.lifecyclePending)
+  lifecyclePending.delete(ev.agentId)
+  return { ...state, runStateByAgent, lifecyclePending }
+}
+
+/** Mark a lifecycle request in flight (transient label + neutral dot); the STATE stays put until the feed. */
+export function setLifecyclePending(state: HubState, agentId: string, action: LifecycleAction): HubState {
+  const lifecyclePending = new Map(state.lifecyclePending)
+  lifecyclePending.set(agentId, action)
+  return { ...state, lifecyclePending }
+}
+
+/** Clear a lifecycle request that will NOT be confirmed by a feed event (the REST call was rejected). */
+export function clearLifecyclePending(state: HubState, agentId: string): HubState {
+  if (!state.lifecyclePending.has(agentId)) return state
+  const lifecyclePending = new Map(state.lifecyclePending)
+  lifecyclePending.delete(agentId)
+  return { ...state, lifecyclePending }
 }
 
 /** Fold a batch of fetched history messages into state (each deduped by id — safe to overlap with live). */
