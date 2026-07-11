@@ -63,6 +63,17 @@ class LifecycleManager(
      *  Wired to [AgentBusyStateTracker.forget]; null = not wired. */
     private val onBusyForget: ((agentId: String) -> Unit)? = null,
     /**
+     * CYP-355 — invoked on stop/restart so a lifecycle op that lands while the agent is **INTERACTIVE** also
+     * tears down its interactive PTY (else a stop would leave an orphaned `claude --resume` alive — the very
+     * two-process violation the hand-off exists to prevent). **Suspend + awaits** (wired to
+     * `PtyManager.closeAndAwait`): a restart re-spawns the mediated `--resume <sid>` right after, so the PTY
+     * must be truly DEAD first — not merely destroy-requested — or the two `--resume`s straddle the same sid.
+     * It runs under the SAME shared [transitions] lock as the hand-off motor; the awaited pump `onExit` never
+     * takes that lock, so it respects [AgentTransitionLock]'s deadlock rule (a masked hang would surface as a
+     * bounded-timeout red in the cross-manager-stop tooth, never a silent deadlock). Null = not wired (tests).
+     */
+    private val onTeardown: (suspend (agentId: String) -> Unit)? = null,
+    /**
      * CYP-368 — the per-agent transition lock, **shared** with every other component that participates in an
      * agent's transition (BE-2: `PtyManager`). Owned by neither: see [AgentTransitionLock], which also carries
      * the deadlock rule this class depends on (the reader's exit tail must never take it).
@@ -85,6 +96,10 @@ class LifecycleManager(
     val events: Flow<AgentRunStateEvent> = _events.asSharedFlow()
 
     fun knows(agentId: String): Boolean = worktreeOf.containsKey(agentId)
+
+    /** CYP-355 — the agent's worktree sub-folder, so the hand-off motor respawns the mediated session into the
+     *  SAME worktree this manager uses (one source, no drift). Null == unknown agent. */
+    fun worktreeNameOf(agentId: String): String? = worktreeOf[agentId]
 
     /** Register a newly-added agent (CYP-97) as known + STOPPED, without spawning (start is a separate op). */
     fun register(agentId: String, worktreeName: String): Unit = synchronized(lock) {
@@ -131,8 +146,9 @@ class LifecycleManager(
     suspend fun stop(agentId: String): AgentRunStateEvent = transitions.withAgent(agentId) {
         ensureKnown(agentId)
         sessions.removeAndAwait(agentId) // remove from registry + await real termination
+        onTeardown?.invoke(agentId) // CYP-355: also tear down an interactive PTY if the agent was INTERACTIVE
         onContextReset?.invoke(agentId) // CYP-316: a stopped agent has no standing context → token feed → null
-        onBusyReset?.invoke(agentId) // CYP-324: a stopped agent is not processing → clear the `*`
+        onBusyReset?.invoke(agentId) // CYP-324: a stopped agent is not processing → clear the `*` (+ mode→MEDIATED)
         setRunState(agentId, AgentRunState.STOPPED)
     }
 
@@ -155,6 +171,7 @@ class LifecycleManager(
     suspend fun restart(agentId: String): AgentRunStateEvent = transitions.withAgent(agentId) {
         ensureKnown(agentId)
         sessions.removeAndAwait(agentId) // no orphan: old session fully gone before respawn
+        onTeardown?.invoke(agentId) // CYP-355: an INTERACTIVE agent restarting must also lose its PTY (no orphan)
         onContextReset?.invoke(agentId) // CYP-316: respawn = fresh context → token feed resets to null until turn 1
         onBusyReset?.invoke(agentId) // CYP-324: respawn = idle until its next turn
         spawnOrError(agentId, restart = true)

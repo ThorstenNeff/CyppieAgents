@@ -45,7 +45,22 @@ class RuntimeRegistryTest {
         val mgmt = AgentManagement(state, lifecycle, configs, ensureWorktree = {}, deleteWorktree = {})
         // CYP-247.2: a WorktreeManager scoped to THIS project → worktreesRoot = <gitRoot>/projects/<projectId>.
         val worktrees = WorktreeManager(noopRunner, gitRoot, projectId)
-        return ProjectRuntime(projectId, lifecycle, sessions, configs, CapabilityRegistry(), ProviderRegistry(), mgmt, worktrees, AgentTokenUsageTracker(), AgentBusyStateTracker(), TerminalControlStateTracker(), CompactCompletionSignal())
+        val busy = AgentBusyStateTracker()
+        val terminalControl = TerminalControlStateTracker()
+        val handoff = HandoffMotor(
+            projectId = projectId,
+            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+            transitions = AgentTransitionLock(),
+            sessions = sessions,
+            ptyManager = { error("no pty in test") },
+            spawnMediated = { _, _ -> error("no spawn in test") },
+            worktreeOf = { null },
+            sessionStore = null,
+            busyState = busy,
+            terminalControl = terminalControl,
+            resumeSignal = ResumeOutcomeSignal(),
+        )
+        return ProjectRuntime(projectId, lifecycle, sessions, configs, CapabilityRegistry(), ProviderRegistry(), mgmt, worktrees, AgentTokenUsageTracker(), busy, terminalControl, CompactCompletionSignal(), handoff)
     }
 
     @Test

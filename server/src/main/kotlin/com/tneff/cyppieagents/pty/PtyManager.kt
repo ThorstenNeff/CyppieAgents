@@ -7,7 +7,9 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 
 /**
@@ -41,19 +43,35 @@ class PtyManager(
      *  vector once `/ws/terminal` goes live). Boot passes it explicitly; a single [open] may override it
      *  (BE-2: `claude --resume <sid>`); tests pass a fake TUI. */
     private val command: List<String> = listOf("bash", "-l"),
-    /** Extra PATH-whitelisted env; TERM/HUB_AGENT_ID/PATH/API-key are added by [open]. */
+    /** Extra PATH-whitelisted env; TERM/HUB_AGENT_ID/PATH/API-key are added by the spawn. */
     private val baseEnv: Map<String, String> = emptyMap(),
+    /** CYP-355 — bounded scrollback replayed to a late [attach] so a viewer/E2E sees the session's recent
+     *  output (the `--resume` history), not only bytes that arrive after it connects. */
+    private val replayBufferBytes: Int = 64 * 1024,
 ) {
     private val log = LoggerFactory.getLogger("pty")
-    private val live = ConcurrentHashMap<String, PtyHandle>()
+    private val live = ConcurrentHashMap<String, PtyHandleImpl>()
 
-    /** True iff [agentId] currently has a live PTY (single-flight probe). */
+    /** True iff [agentId] currently has a live PTY (single-flight probe / [terminalSocket] attach-vs-spawn). */
     fun isLive(agentId: String): Boolean = live.containsKey(agentId)
 
     /**
-     * Spawn the agent's interactive PTY and start streaming. [onOutput] receives raw stdout byte-runs;
-     * [onExit] fires once with the exit code after the process ends (then the handle is auto-removed).
-     * Throws [PtyBusyException] if a PTY is already live for [agentId] (single-flight).
+     * CYP-355 — **spawn + own** the agent's interactive PTY (the hand-off motor's seam), with **no viewer
+     * required**. The process outlives any single terminal window: viewers [attach]/detach independently, and
+     * the motor tears it down at hand-back. [onExit] fires once after the process ends (then the slot frees).
+     * Throws [PtyBusyException] if one is already live (single-flight — never two rival interactive processes).
+     */
+    fun spawnInteractive(
+        agentId: String,
+        cols: Int,
+        rows: Int,
+        command: List<String>,
+        onExit: (Int) -> Unit,
+    ): PtyHandle = spawn(agentId, cols, rows, command, initialOutput = null, onExit)
+
+    /**
+     * CYP-332 bash-interim path (unchanged signature): spawn the PTY and stream to the single [onOutput]. Kept
+     * for the current `terminalSocket` spawn-on-connect; internally it is `spawnInteractive` + one [attach].
      */
     fun open(
         agentId: String,
@@ -61,9 +79,17 @@ class PtyManager(
         rows: Int,
         onOutput: (ByteArray) -> Unit,
         onExit: (Int) -> Unit,
-        /** Per-open launch override (CYP-348 seam). Default = the boot-configured [command] (bash interim);
-         *  BE-2/CYP-355 passes `claude --resume <sid>` here for the hand-off, same session. */
+        /** Per-open launch override (CYP-348 seam). Default = the boot-configured [command] (bash interim). */
         command: List<String> = this.command,
+    ): PtyHandle = spawn(agentId, cols, rows, command, initialOutput = onOutput, onExit)
+
+    private fun spawn(
+        agentId: String,
+        cols: Int,
+        rows: Int,
+        command: List<String>,
+        initialOutput: ((ByteArray) -> Unit)?,
+        onExit: (Int) -> Unit,
     ): PtyHandle {
         val cwd = worktreeDirOf(agentId)
         val env = buildMap {
@@ -72,15 +98,15 @@ class PtyManager(
             putAll(baseEnv)
             put("HUB_AGENT_ID", agentId)
             resolveApiKey(agentId)?.let { put("ANTHROPIC_API_KEY", it) }
-        }
-        // Single-flight: claim the slot BEFORE spawning; a rival open sees the slot and is rejected. A
-        // placeholder can't be used (no handle yet), so we build the handle then compareAndSet-style guard.
-        val handle = PtyHandleImpl(agentId, cols.coerceAtLeast(1), rows.coerceAtLeast(1))
+        }.filterKeys { !isNestedClaudeCodeVar(it) } // CYP-355 (b): strip nested-agent markers (see companion KDoc)
+        // Single-flight: claim the slot BEFORE spawning; a rival spawn sees the slot and is rejected.
+        val handle = PtyHandleImpl(agentId, cols.coerceAtLeast(1), rows.coerceAtLeast(1), replayBufferBytes)
+        initialOutput?.let { handle.subscribe(it) } // subscribe BEFORE start so the first byte isn't missed
         if (live.putIfAbsent(agentId, handle) != null) {
             throw PtyBusyException(agentId)
         }
         try {
-            handle.start(cwd, env, command, scope, onOutput) { code ->
+            handle.start(cwd, env, command, scope) { code ->
                 live.remove(agentId, handle)
                 onExit(code)
             }
@@ -92,9 +118,49 @@ class PtyManager(
         return handle
     }
 
-    /** Tear the agent's PTY down (destroy + stop the reader), if any. Idempotent. */
+    /**
+     * CYP-355 — **attach a viewer** to the agent's live PTY: replays the bounded scrollback, then streams live.
+     * Returns null if no PTY is live (the caller falls back to spawn — the `terminalSocket` attach-vs-spawn
+     * rule). [PtySubscription.close] detaches ONLY this viewer; the PTY lives on for the others and the motor.
+     */
+    fun attach(agentId: String, onOutput: (ByteArray) -> Unit): PtySubscription? =
+        live[agentId]?.subscribe(onOutput)
+
+    /** Write bytes to the live PTY's stdin (any viewer's keystrokes → the one process). No-op if not live. */
+    fun write(agentId: String, bytes: ByteArray) {
+        live[agentId]?.write(bytes)
+    }
+
+    /** Resize the live PTY. No-op if not live. */
+    fun resize(agentId: String, cols: Int, rows: Int) {
+        live[agentId]?.resize(cols, rows)
+    }
+
+    /** Tear the agent's PTY down (destroy + stop the reader), if any. Idempotent, non-blocking. */
     fun close(agentId: String) {
         live.remove(agentId)?.close()
+    }
+
+    /**
+     * CYP-355 — like [close] but **awaits the process's termination** (no zombie, and no sid-overlap with a
+     * mediated respawn). Idempotent; a no-op if nothing is live.
+     */
+    suspend fun closeAndAwait(agentId: String) {
+        live.remove(agentId)?.closeAndAwait()
+    }
+
+    companion object {
+        /**
+         * CYP-355 (b) — the interactive PTY's env is **clean by construction**: `PtyProcessBuilder.setEnvironment`
+         * REPLACES the child env (it does not inherit the server's), so [open] builds a minimal whitelist. This
+         * strip is the belt against that whitelist ever carrying a nested-agent marker: `CLAUDE_CODE_*` /
+         * `CLAUDECODE`. Per the CYP-344 spike, a `claude` that inherits those from a PARENT claude session treats
+         * itself as nested and **stops persisting its transcript** (changelog 2.1.170) — which would silently break
+         * the resume-round-trip the whole hand-off rests on. Today [baseEnv] is empty, so nothing matches; the
+         * strip makes the invariant survive a future [baseEnv] change instead of resting on "it happens to be empty".
+         * Single-sourced here so the strip and its tooth read the same predicate.
+         */
+        fun isNestedClaudeCodeVar(key: String): Boolean = key == "CLAUDECODE" || key.startsWith("CLAUDE_CODE_")
     }
 }
 
@@ -105,29 +171,51 @@ interface PtyHandle {
     fun write(bytes: ByteArray)
     /** Resize the PTY (raises SIGWINCH so the TUI reflows). */
     fun resize(cols: Int, rows: Int)
-    /** Destroy the process and stop streaming. Idempotent. */
+    /** Destroy the process and stop streaming. Idempotent, **non-blocking** (returns before the process is gone). */
+    fun close()
+
+    /**
+     * CYP-355 — destroy the PTY and **suspend until the process has actually terminated** (the pump ran out on
+     * EOF and reported `onExit`), so the hand-off motor can enforce "the interactive `--resume` is dead BEFORE
+     * the mediated `--resume` spawns" — no two-process-same-sid overlap. Lock-safe: the pump's `onExit` never
+     * takes the transition lock, so a lock-holder may await this. Default delegates to [close] for fakes.
+     */
+    suspend fun closeAndAwait() = close()
+}
+
+/** CYP-355 — a single viewer's attachment to a live PTY; [close] detaches only this viewer, not the PTY. */
+fun interface PtySubscription {
     fun close()
 }
 
-/** Thrown by [PtyManager.open] when a PTY is already live for the agent (single-flight §4.1). */
+/** Thrown by [PtyManager.spawnInteractive]/[PtyManager.open] when a PTY is already live (single-flight §4.1). */
 class PtyBusyException(agentId: String) :
     IllegalStateException("agent '$agentId' already has a live interactive PTY")
 
-private class PtyHandleImpl(
+internal class PtyHandleImpl(
     override val agentId: String,
     private var cols: Int,
     private var rows: Int,
+    private val replayBufferBytes: Int = 64 * 1024,
 ) : PtyHandle {
     private val log = LoggerFactory.getLogger("pty.handle")
     @Volatile private var process: PtyProcess? = null
     @Volatile private var closed = false
+    @Volatile private var pumpJob: Job? = null // CYP-355: joined by [closeAndAwait] to confirm the process is gone
+
+    // CYP-355 output fan-out. `bufferLock` makes buffer-append+subscriber-snapshot (pump) atomic against
+    // replay+add (subscribe), so a chunk arriving during an attach is delivered EXACTLY once — never lost
+    // between the replay and the add, never doubled by being both replayed and fanned out (see [subscribe]).
+    private val bufferLock = Any()
+    private val subscribers = java.util.concurrent.CopyOnWriteArrayList<(ByteArray) -> Unit>()
+    private val replay = ArrayDeque<ByteArray>()
+    private var replayBytes = 0
 
     fun start(
         cwd: File,
         env: Map<String, String>,
         command: List<String>,
         scope: CoroutineScope,
-        onOutput: (ByteArray) -> Unit,
         onExit: (Int) -> Unit,
     ) {
         val proc = PtyProcessBuilder(command.toTypedArray())
@@ -137,15 +225,15 @@ private class PtyHandleImpl(
             .setInitialRows(rows)
             .start()
         process = proc
-        // One IO coroutine pumps stdout→onOutput until EOF, then waits for the exit code and reports it once.
-        scope.launch(Dispatchers.IO) {
+        // One IO coroutine pumps stdout → the fan-out until EOF, then waits for the exit code and reports once.
+        pumpJob = scope.launch(Dispatchers.IO) {
             val stdout = proc.inputStream
             val buf = ByteArray(8192)
             try {
                 while (true) {
                     val n = stdout.read(buf) // blocking; returns -1 at EOF (process closed its PTY)
                     if (n < 0) break
-                    if (n > 0) onOutput(buf.copyOf(n))
+                    if (n > 0) fanOut(buf.copyOf(n))
                 }
             } catch (e: Exception) {
                 if (!closed) log.debug("pty read ended for agent={}: {}", agentId, e.message)
@@ -153,6 +241,31 @@ private class PtyHandleImpl(
             val code = runCatching { proc.waitFor() }.getOrDefault(-1)
             onExit(code)
         }
+    }
+
+    /** Append to the bounded replay buffer and snapshot subscribers **atomically**, then deliver outside the
+     *  lock (a subscriber callback must never re-enter [subscribe]). */
+    private fun fanOut(chunk: ByteArray) {
+        val targets: List<(ByteArray) -> Unit>
+        synchronized(bufferLock) {
+            replay.addLast(chunk)
+            replayBytes += chunk.size
+            while (replayBytes > replayBufferBytes && replay.size > 1) {
+                replayBytes -= replay.removeFirst().size
+            }
+            targets = subscribers.toList()
+        }
+        targets.forEach { runCatching { it(chunk) }.onFailure { log.debug("pty subscriber failed for agent={}: {}", agentId, it.message) } }
+    }
+
+    /** Attach a viewer: replay the buffered scrollback, then add it — atomically, so it neither misses a chunk
+     *  arriving mid-attach nor sees one twice (the [fanOut] lock is the counterpart). */
+    fun subscribe(onOutput: (ByteArray) -> Unit): PtySubscription {
+        synchronized(bufferLock) {
+            replay.forEach { runCatching { onOutput(it) } }
+            subscribers.add(onOutput)
+        }
+        return PtySubscription { subscribers.remove(onOutput) }
     }
 
     override fun write(bytes: ByteArray) {
@@ -173,8 +286,27 @@ private class PtyHandleImpl(
         if (closed) return
         closed = true
         // destroy() → the PTY's stdout EOFs → the pump loop ends → `waitFor` → onExit fires (the SINGLE
-        // source of "process gone"). We deliberately do NOT cancel [pumpJob] here — cancelling would race
+        // source of "process gone"). We deliberately do NOT cancel the pump here — cancelling would race
         // out that final onExit. The pump completes on its own once the destroyed process closes the PTY.
         runCatching { process?.destroy() }
+    }
+
+    /**
+     * CYP-355 — destroy, then **join the pump** so we return only once the process is truly gone (the pump ends
+     * on EOF + `waitFor` + `onExit`). Mirrors [ClaudeCodeSession.closeAndAwait] (CYP-371): destroy FIRST, then
+     * await — never cancel (which would sever the final `onExit`). The pump's `onExit` completes a local deferred
+     * and never takes the transition lock, so a lock-holder may await this (Deadlock rule). The timeout is a
+     * belt: a process that ignores SIGTERM and holds its PTY open would otherwise park us forever — if it fires
+     * we log and return rather than hang (a stop that degrades loudly beats one that never returns).
+     */
+    override suspend fun closeAndAwait() {
+        close()
+        val joined = withTimeoutOrNull(CLOSE_AWAIT_TIMEOUT_MS) { pumpJob?.join() } != null
+        if (!joined) log.warn("pty did not terminate within {} ms for agent={}; returning anyway", CLOSE_AWAIT_TIMEOUT_MS, agentId)
+    }
+
+    private companion object {
+        /** CYP-355 — how long [closeAndAwait] waits for a destroyed PTY process to actually die before giving up. */
+        const val CLOSE_AWAIT_TIMEOUT_MS = 5_000L
     }
 }

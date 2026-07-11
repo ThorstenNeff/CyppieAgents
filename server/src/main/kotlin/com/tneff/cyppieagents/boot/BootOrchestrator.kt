@@ -384,6 +384,14 @@ class BootOrchestrator(
         val tokenByAgent = secrets.agentTokens.entries.associate { (token, agent) -> agent to token }
         // CYP-167: durable session-resume binding store. Null file → in-memory off-switch (tests/dev).
         val sessionStore = sessionStoreFile?.let { com.tneff.cyppieagents.connector.JsonFileSessionStore(it) }
+        // CYP-355 (BE-2): the shared resume-outcome signal (keyed by projectId+agentId), and a late-bound holder
+        // for the single host PtyManager (constructed after the runtimes, below) so the per-runtime hand-off
+        // motors + LifecycleManager.onTeardown can reach it. Every hand-off/stop happens post-boot, once set.
+        val resumeSignal = ResumeOutcomeSignal()
+        val ptyManagerHolder = java.util.concurrent.atomic.AtomicReference<com.tneff.cyppieagents.pty.PtyManager?>(null)
+        val ptyManagerOf: () -> com.tneff.cyppieagents.pty.PtyManager = {
+            ptyManagerHolder.get() ?: error("PtyManager not yet wired (hand-off before boot completed)")
+        }
         val defaultConnector = ClaudeCodeConnector(
             spawner = spawner,
             // CYP-247 S1b: resolve the spawn cwd root for the SPAWNING project (threaded pid), not active() —
@@ -408,6 +416,8 @@ class BootOrchestrator(
             // CYP-167 + CYP-247 S1b: read-before-spawn / write-after-init keyed by the THREADED owning projectId
             // (passed to open(agentId, worktree, projectId) by the per-project spawn lambda), not a boot constant.
             sessionStore = sessionStore,
+            // CYP-355: feed every resume outcome to the shared signal the hand-off motor awaits (context-survival).
+            resumeOutcomeSink = { pid, aid, outcome -> resumeSignal.signal(pid, aid, outcome) },
         )
         // CYP-122: Connector B (MCP) + per-agent selection. The router picks A vs B by the agent's
         // declared connectorKind at spawn; it IS a Connector so the connectorFactory seam still wraps it.
@@ -537,6 +547,22 @@ class BootOrchestrator(
             onBusyReset = { busyStateTracker.reset(it); terminalControlTracker.reset(it) },   // CYP-324/354: stop/restart → clear `*` + mode→MEDIATED
             onBusyForget = { busyStateTracker.forget(it); terminalControlTracker.forget(it) }, // CYP-324/354: remove → drop both entries
             transitions = transitions, // CYP-368
+            onTeardown = { ptyManagerOf().closeAndAwait(it) }, // CYP-355: stop/restart also tears down an INTERACTIVE agent's PTY
+        )
+        // CYP-355 (BE-2): the boot project's hand-off motor — the single-writer over `lifecycle` + the host PTY,
+        // sharing THIS runtime's `transitions` lock (never straddles two locks).
+        val handoffMotor = HandoffMotor(
+            projectId = config.projectId,
+            scope = scope,
+            transitions = transitions,
+            sessions = sessions,
+            ptyManager = ptyManagerOf,
+            spawnMediated = { id, worktree -> connector.open(id, worktree, config.projectId) },
+            worktreeOf = { lifecycle.worktreeNameOf(it) },
+            sessionStore = sessionStore,
+            busyState = busyStateTracker,
+            terminalControl = terminalControlTracker,
+            resumeSignal = resumeSignal,
         )
 
         // CYP-122: the single, audited, server-enforced point that sets an agent's connector (opt-in).
@@ -590,6 +616,7 @@ class BootOrchestrator(
                 busyState = busyStateTracker, // CYP-324
                 terminalControl = terminalControlTracker, // CYP-354 (BE-1)
                 compactSignal = compactSignal, // CYP-326
+                handoff = handoffMotor, // CYP-355 (BE-2)
             ),
         )
 
@@ -634,6 +661,20 @@ class BootOrchestrator(
                 onBusyReset = { pBusyState.reset(it); pTerminalControl.reset(it) },   // CYP-324/354: this project's lifecycle → its own busy + terminal-state trackers
                 onBusyForget = { pBusyState.forget(it); pTerminalControl.forget(it) },
                 transitions = pTransitions, // CYP-368
+                onTeardown = { ptyManagerOf().closeAndAwait(it) }, // CYP-355: this project's stop/restart tears down its INTERACTIVE PTY
+            )
+            val pHandoff = HandoffMotor(
+                projectId = pid,
+                scope = scope,
+                transitions = pTransitions,
+                sessions = pSessions,
+                ptyManager = ptyManagerOf,
+                spawnMediated = { id, worktree -> connector.open(id, worktree, pid) },
+                worktreeOf = { pLifecycle.worktreeNameOf(it) },
+                sessionStore = sessionStore,
+                busyState = pBusyState,
+                terminalControl = pTerminalControl,
+                resumeSignal = resumeSignal,
             )
             val pAgentManagement = AgentManagement(
                 state = state,
@@ -651,7 +692,7 @@ class BootOrchestrator(
                 worktreeDirOf = { runtimeRegistry.active().worktrees.worktreeDir(it) }, // CYP-310
                 // CYP-310: a non-boot project's agents are all runtime-added → remote ones are tracked on add().
             )
-            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage, pBusyState, pTerminalControl, pCompactSignal)
+            ProjectRuntime(pid, pLifecycle, pSessions, pConfigs, pCaps, pProvider, pAgentManagement, pWorktrees, pTokenUsage, pBusyState, pTerminalControl, pCompactSignal, pHandoff)
         }
 
         // CYP-255 (.4b) / CYP-247.4: the session-suspension teardown policy. suspend = stop a project's
@@ -846,6 +887,7 @@ class BootOrchestrator(
             scope = scope,
             command = terminalLaunchCommand ?: listOf("bash", "-l"), // CYP-348: bash interim (default); injectable for E2E/BE-2
         )
+        ptyManagerHolder.set(ptyManager) // CYP-355: publish it to the hand-off motors + LifecycleManager.onTeardown
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,

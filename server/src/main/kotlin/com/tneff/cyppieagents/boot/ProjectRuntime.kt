@@ -43,4 +43,7 @@ class ProjectRuntime(
     val terminalControl: TerminalControlStateTracker,
     /** CYP-326 — this project's per-agent compaction-completed signal (the orchestrator's 2B source). */
     val compactSignal: CompactCompletionSignal,
+    /** CYP-355 (BE-2) — this project's hand-off motor (drives `POST /api/agents/{id}/mode`); the single-writer
+     *  over its lifecycle + the host PTY, sharing this runtime's transition lock. */
+    val handoff: HandoffMotor,
 )
