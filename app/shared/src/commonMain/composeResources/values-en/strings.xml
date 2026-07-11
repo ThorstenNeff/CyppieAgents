@@ -558,6 +558,11 @@
     <string name="event_compact_done_summary">%1$d/%2$d agents compacted, %3$d timed out</string>
     <!-- CYP-326 Follow-up (kill switch): an ABORTED run — distinct from timeout/clean, WARN, never "success". -->
     <string name="event_compact_done_aborted">Aborted — %1$d of %2$d compacted</string>
+    <!-- CYP-381 (CYP-356): 3-stage ResumeOutcome in the event-log detail. CONTEXT_LOST = warning (unintended
+         memory loss); the other two are neutral (not a failure, never rendered as success or warning). -->
+    <string name="event_resume_outcome_context_lost">Context lost — session resumed without memory</string>
+    <string name="event_resume_outcome_resumed">Session resumed with context</string>
+    <string name="event_resume_outcome_fresh">Fresh session (no resume)</string>
     <!-- CYP-333: content-view mode toggle (Orchestration | Shell). Interim (Auftraggeber ruling): the second view
          is an HONEST worktree shell (bash: git status/ls/inspect), NOT an agent terminal — the claude terminal
          (hand-off) arrives with BE-2. Spec §8 says "Terminal"; here truthfully "Shell". -->

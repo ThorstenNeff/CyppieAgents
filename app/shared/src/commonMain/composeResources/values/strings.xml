@@ -567,6 +567,11 @@
     <string name="event_compact_done_summary">%1$d/%2$d Agenten compactet, %3$d Timeout</string>
     <!-- CYP-326 Follow-up (kill switch): ein ABGEBROCHENER Lauf — distinkt von Timeout/clean, WARN, nie „Erfolg". -->
     <string name="event_compact_done_aborted">Abgebrochen — %1$d von %2$d compactet</string>
+    <!-- CYP-381 (CYP-356): 3-Stufen-ResumeOutcome im Event-Log-Detail. CONTEXT_LOST = Warnung (unbeabsichtigter
+         Gedächtnisverlust); die anderen beiden sind neutral (kein Fehler, nie als Erfolg/Warnung gerendert). -->
+    <string name="event_resume_outcome_context_lost">Kontext verloren — Sitzung ohne Gedächtnis fortgesetzt</string>
+    <string name="event_resume_outcome_resumed">Sitzung mit Kontext fortgesetzt</string>
+    <string name="event_resume_outcome_fresh">Neue Sitzung (kein Resume)</string>
     <!-- CYP-333: Content-View-Umschalter (Orchestrierung | Shell). Interim (Auftraggeber-Entscheidung): der zweite
          View ist eine EHRLICHE Worktree-Shell (bash: git status/ls/reinschauen), KEIN Agenten-Terminal — das
          claude-Terminal (Hand-off) kommt erst mit BE-2. Spec-§8 sagt „Terminal"; hier wahrheitsgemäß „Shell". -->
