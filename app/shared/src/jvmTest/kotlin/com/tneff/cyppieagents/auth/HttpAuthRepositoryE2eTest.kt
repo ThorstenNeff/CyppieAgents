@@ -21,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 /**
  * CYP-182 — hermetic end-to-end for the live [HttpAuthRepository] against an **embedded Ktor** faking the
@@ -171,6 +172,21 @@ class HttpAuthRepositoryE2eTest {
     fun session_notAuthenticated_mapsNone() = withFixture({ me = AuthMe(authenticated = false) }) { _, repo, _ ->
         assertEquals(SessionState.None, repo.session())
     }
+
+    /**
+     * CYP-413 (S-I) **leak tooth:** a DEFINITIVE session end — `session()`/whoami reports unauthenticated (server
+     * logout/expiry/revocation) — must clear the stale local credential so it is never replayed. Non-vacuous: the
+     * token is seeded first, so a passing assertion requires the clear to actually run. Mutation-proof: remove the
+     * `sessionStore.clear()` in `session()`'s `!authenticated` branch → the token lingers → this reddens.
+     */
+    @Test
+    fun session_serverReportsUnauthenticated_clearsStaleTokenAtSessionEnd() =
+        withFixture({ me = AuthMe(authenticated = false) }) { _, repo, store ->
+            store.setSessionToken("stale-tok")
+            assertEquals("stale-tok", store.sessionToken())
+            assertEquals(SessionState.None, repo.session())
+            assertNull(store.sessionToken(), "a definitive session end must drop the stale token (leak guard)")
+        }
 
     @Test
     fun session_verified_member_mapsVerifiedMember() =

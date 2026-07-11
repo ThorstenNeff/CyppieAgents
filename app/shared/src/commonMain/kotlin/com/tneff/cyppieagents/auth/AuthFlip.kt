@@ -80,5 +80,10 @@ fun authRepositoryFor(
 private fun buildLiveAuthRepository(live: AuthMode.Live): AuthRepository {
     val cookieStorage = AcceptAllCookiesStorage()
     val client = HttpClient { install(HttpCookies) { storage = cookieStorage } }
-    return HttpAuthRepository(client, live.platformBaseUrl, live.kratosProxyUrl, cookieStorage = cookieStorage)
+    // CYP-413 (S-I): back the Kratos session token with the SecureSessionStore seam (Phase 1 in-memory, R7) —
+    // behaviour-identical, but the token now lives in the one session-secret store (S-K adds the CP ticket there).
+    val sessionStore = SecureBackedAuthSessionStore(SecureSessionStore())
+    return HttpAuthRepository(
+        client, live.platformBaseUrl, live.kratosProxyUrl, sessionStore = sessionStore, cookieStorage = cookieStorage,
+    )
 }

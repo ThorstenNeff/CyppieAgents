@@ -82,7 +82,14 @@ class HttpAuthRepository(
     override suspend fun session(): SessionState = failClosed(SessionState.None) {
         val me = authMe()
         when {
-            !me.authenticated -> SessionState.None
+            !me.authenticated -> {
+                // CYP-413 (S-I): a DEFINITIVE session end — the server no longer recognizes the session (logout
+                // elsewhere, expiry, revocation). Drop the stale local credential so it is never replayed. This is
+                // the session-end leak guard complementary to logout()'s clear; it fires only on a successful
+                // whoami reporting unauthenticated, NOT on the failClosed fallback (a transient error ≠ session end).
+                sessionStore.clear()
+                SessionState.None
+            }
             me.verified -> SessionState.Verified(tierOf(me.role))
             else -> SessionState.Unverified(whoamiEmailOrBlank()) // unverified: self-reflecting email echo
         }
