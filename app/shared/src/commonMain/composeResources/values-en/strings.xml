@@ -611,4 +611,34 @@
     <string name="hubconnect_mode_remote_soon">coming soon</string>
     <string name="hubconnect_mode_connect">Connect</string>
     <string name="a11y_hubconnect_mode_remote_disabled">Remote mode — coming soon, not available yet.</string>
+    <!-- CYP-419 (S-L): hubConnect screens copy (frozen hub-connection-keys.md). -->
+    <string name="hubconnect_prepare_title">Setting up Cyppie…</string>
+    <string name="hubconnect_register_intro">Sign in to link this hub to your account.</string>
+    <string name="hubconnect_register_name_label">This hub's name</string>
+    <string name="hubconnect_register_error_offline">Registration needs an internet connection. Try again.</string>
+    <string name="hubconnect_creds_title">Add your Anthropic credentials</string>
+    <string name="hubconnect_creds_placeholder">sk-ant-…</string>
+    <string name="hubconnect_creds_privacy">Stays on this device (keystore) — never sent to cyppie-agents.com.</string>
+    <string name="hubconnect_creds_keystore">Secured in this device's keychain.</string>
+    <string name="hubconnect_creds_masked">Stored: %1$s</string>
+    <string name="hubconnect_creds_validating">Checking credentials…</string>
+    <string name="hubconnect_creds_validated">Credentials valid — stored.</string>
+    <string name="hubconnect_creds_invalid">Key invalid — please check.</string>
+    <string name="hubconnect_creds_unreachable">Couldn't verify (Anthropic unreachable) — saved, check again later.</string>
+    <string name="hubconnect_ready_title">Hub ready</string>
+    <string name="hubconnect_ready_enter">Get started</string>
+    <string name="hubconnect_hubs_title">Choose your hub</string>
+    <string name="hubconnect_hubs_empty">No hub registered yet.</string>
+    <string name="hubconnect_hubs_register">Register a hub</string>
+    <string name="hubconnect_hubs_error">Can't reach the hub list. Try again.</string>
+    <string name="hubconnect_presence_online">online</string>
+    <string name="hubconnect_presence_offline">offline · last seen %1$s</string>
+    <string name="hubconnect_state_attempting">Connecting to your hub…</string>
+    <string name="hubconnect_state_handshake">Establishing a secure connection…</string>
+    <string name="hubconnect_state_connected">Connected</string>
+    <string name="hubconnect_error_hub_offline">Hub is offline. Start the hub and try again.</string>
+    <string name="hubconnect_error_port">Hub not reachable at %1$s. Is it running on this network?</string>
+    <string name="hubconnect_error_handshake">Secure connection failed. Please sign in again.</string>
+    <string name="hubconnect_error_never_online">This first sign-in needs an internet connection once.</string>
+    <string name="a11y_hubconnect_presence">Registry presence: %1$s</string>
 </resources>
