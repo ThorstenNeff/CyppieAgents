@@ -253,7 +253,10 @@ class BootOrchestrator(
         val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName, color = it.color?.ifBlank { null }) }
         // S17 / CYP-93: the cross-project share gate. The hub consults it for the AclMatrix permit
         // (channels authorized to reach into the active project); revoke → immediate fail-closed.
-        val channelShares = com.tneff.cyppieagents.comm.ChannelShareStore(channelShareFile)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite; .db next to the legacy .json, imported ONCE.
+        val channelShares = channelShareFile?.let {
+            com.tneff.cyppieagents.comm.SqliteChannelShareStore(it.toPath().resolveSibling("channel-shares.db"), legacyJson = it.toPath())
+        } ?: com.tneff.cyppieagents.comm.ChannelShareStore(null)
         // CYP-308 (Auftraggeber-confirmed OWNERSHIP model, supersedes the CYP-305 adopt-heuristic): the
         // config-seeded bootstrap agents belong PERMANENTLY to config.projectId — re-seeded from
         // platform.config.json EVERY boot (config.json is their durable source; NO store-persistence → no
@@ -262,7 +265,11 @@ class BootOrchestrator(
         // is synced onto HubState AFTER the config seed (see the boot-sync below the spawn loop), never seeded
         // under. So a durable active ≠ config.projectId shows ITS OWN roster (empty for a fresh project); the
         // config agents stay owned by — and visible under — config.projectId. Restart-stable by construction.
-        val projectAgents = ProjectAgentStore(projectAgentFile)
+        // CYP-415 (D2 + first-boot import): embedded-SQLite; .db next to the legacy .json, imported ONCE
+        // (preserves an operator deploy's runtime-added agents).
+        val projectAgents = projectAgentFile?.let {
+            SqliteProjectAgentStore(it.toPath().resolveSibling("project-agents.db"), it.toPath())
+        } ?: ProjectAgentStore(null)
         val projectRegistry = ProjectRegistry(projectRegistryFile, config.projectId)
         val durableActive = projectRegistry.activeProjectId()
         // Operator is a privileged ACL participant (member of every channel) — the human/UI viewer.
