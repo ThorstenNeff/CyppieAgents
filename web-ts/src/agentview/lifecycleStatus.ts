@@ -2,6 +2,7 @@
 // statusDotSpec) + labels + the dot role→token map. Colour is never the sole signal (WCAG 1.4.1): the text label
 // carries the meaning, the dot only reinforces it. UNKNOWN (no lifecycle event yet) is a RING (a different AXIS
 // from STOPPED's filled disc), role `outline` (≥3:1, not the near-invisible outlineVariant). Pure & tested.
+import { RestError } from '../net/rest'
 import type { AgentRunState, LifecycleAction } from '../state/hubReducers'
 
 /** RUNNING/STOPPED/ERROR from the feed, plus UNKNOWN before the first event. */
@@ -43,6 +44,36 @@ export function dotRoleVar(role: StatusDotRole): string {
     case 'neutral':
       return 'var(--md-sys-color-on-surface-variant)'
   }
+}
+
+/** CYP-445 (§5 enablement matrix): which control is enabled for a given state. Operator-gated (server-authoritative
+ *  mirror) and never while a request is in flight. Start only when NOT running; Stop only when running; Restart
+ *  whenever an operator can act. The §8.4 tooth: Start must be DISABLED while RUNNING (the old `!operator||pending`
+ *  left it clickable). */
+export function lifecycleControlEnabled(
+  action: LifecycleAction,
+  state: LifecycleState,
+  operator: boolean,
+  pending: boolean,
+): boolean {
+  if (!operator || pending) return false
+  switch (action) {
+    case 'start':
+      return state !== 'RUNNING'
+    case 'stop':
+      return state === 'RUNNING'
+    case 'restart':
+      return true
+  }
+}
+
+/** CYP-445 (§6): a user-facing reason for a rejected lifecycle action — 409 (conflict/transition) and 503
+ *  (unavailable) get distinct copy; anything else is a generic retryable failure. Kept SEPARATE from the CYP-421
+ *  ERROR-state reason (that's the agent's own error, not the action's rejection). */
+export function lifecycleRejectMessage(err: unknown): string {
+  if (err instanceof RestError && err.status === 409) return 'Konflikt — der Agent ist gerade in einem Übergang.'
+  if (err instanceof RestError && err.status === 503) return 'Dienst nicht verfügbar — bitte später erneut versuchen.'
+  return 'Aktion fehlgeschlagen — bitte erneut versuchen.'
 }
 
 /** The honest status label: a transient in-flight label while pending (never a resolved state before the server

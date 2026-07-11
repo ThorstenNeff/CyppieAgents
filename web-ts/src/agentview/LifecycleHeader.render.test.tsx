@@ -62,4 +62,26 @@ describe('LifecycleHeader (CYP-431)', () => {
       expect(controls.contains(getByTestId(id))).toBe(true)
     }
   })
+
+  it('CYP-445 §5: Start is disabled while RUNNING, Stopp enabled; inverted when STOPPED (§8.4 tooth)', () => {
+    const running = render(<LifecycleHeader {...base({ state: 'RUNNING' })} />)
+    expect((running.getByTestId('lifecycle.start.backend') as HTMLButtonElement).disabled).toBe(true)
+    expect((running.getByTestId('lifecycle.stop.backend') as HTMLButtonElement).disabled).toBe(false)
+    cleanup()
+    const stopped = render(<LifecycleHeader {...base({ state: 'STOPPED' })} />)
+    expect((stopped.getByTestId('lifecycle.start.backend') as HTMLButtonElement).disabled).toBe(false)
+    expect((stopped.getByTestId('lifecycle.stop.backend') as HTMLButtonElement).disabled).toBe(true)
+    // Neustart stays operator-gated in both states
+    expect((stopped.getByTestId('lifecycle.restart.backend') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('CYP-445 §6: a reject error renders the lifecycle.error line (role=alert), absent otherwise', () => {
+    const none = render(<LifecycleHeader {...base()} />)
+    expect(none.queryByTestId('lifecycle.error.backend')).toBeNull()
+    cleanup()
+    const errored = render(<LifecycleHeader {...base({ error: 'Konflikt — der Agent ist gerade in einem Übergang.' })} />)
+    const line = errored.getByTestId('lifecycle.error.backend')
+    expect(line.textContent).toContain('Übergang')
+    expect(line.getAttribute('role')).toBe('alert')
+  })
 })

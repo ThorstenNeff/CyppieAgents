@@ -29,6 +29,7 @@ export interface AgentWindowProps {
   onRequestMode: (agentId: string, mode: SelectedView) => void
   lifecycleState: LifecycleState
   lifecyclePending: LifecycleAction | undefined
+  lifecycleError: string | null
   onLifecycle: (agentId: string, action: LifecycleAction) => void
   socketDeps?: SocketDeps
 }
@@ -42,6 +43,7 @@ export function AgentWindow({
   onRequestMode,
   lifecycleState,
   lifecyclePending,
+  lifecycleError,
   onLifecycle,
   socketDeps,
 }: AgentWindowProps) {
@@ -63,6 +65,7 @@ export function AgentWindow({
         state={lifecycleState}
         pending={lifecyclePending}
         operator={operator}
+        error={lifecycleError}
         onStart={(id) => onLifecycle(id, 'start')}
         onStop={(id) => onLifecycle(id, 'stop')}
         onRestart={(id) => onLifecycle(id, 'restart')}

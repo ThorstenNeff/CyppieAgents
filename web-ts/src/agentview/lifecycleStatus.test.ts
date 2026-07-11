@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { statusDotSpec, dotRoleVar, lifecycleLabel } from './lifecycleStatus'
+import { statusDotSpec, dotRoleVar, lifecycleLabel, lifecycleControlEnabled, lifecycleRejectMessage } from './lifecycleStatus'
+import { RestError } from '../net/rest'
 
 describe('statusDotSpec (CYP-431, port of CYP-396)', () => {
   it('a pending request is the NEUTRAL filled dot, never a resolved colour', () => {
@@ -39,5 +40,36 @@ describe('lifecycleLabel — honest text (pending shows a transient, never a res
     expect(lifecycleLabel('STOPPED', undefined)).toBe('Gestoppt')
     expect(lifecycleLabel('ERROR', undefined)).toBe('Fehler')
     expect(lifecycleLabel('UNKNOWN', undefined)).toBe('Unbekannt')
+  })
+})
+
+describe('lifecycleControlEnabled (CYP-445 §5 enablement matrix)', () => {
+  it('Start ⇔ NOT running (the §8.4 tooth: disabled while RUNNING, even for an idle operator)', () => {
+    expect(lifecycleControlEnabled('start', 'RUNNING', true, false)).toBe(false)
+    expect(lifecycleControlEnabled('start', 'STOPPED', true, false)).toBe(true)
+    expect(lifecycleControlEnabled('start', 'ERROR', true, false)).toBe(true)
+    expect(lifecycleControlEnabled('start', 'UNKNOWN', true, false)).toBe(true)
+  })
+  it('Stopp ⇔ running', () => {
+    expect(lifecycleControlEnabled('stop', 'RUNNING', true, false)).toBe(true)
+    expect(lifecycleControlEnabled('stop', 'STOPPED', true, false)).toBe(false)
+  })
+  it('Neustart ⇔ operator (any state)', () => {
+    expect(lifecycleControlEnabled('restart', 'RUNNING', true, false)).toBe(true)
+    expect(lifecycleControlEnabled('restart', 'STOPPED', true, false)).toBe(true)
+  })
+  it('a non-operator or an in-flight request disables every control', () => {
+    for (const a of ['start', 'stop', 'restart'] as const) {
+      expect(lifecycleControlEnabled(a, 'STOPPED', false, false), `${a} non-operator`).toBe(false)
+      expect(lifecycleControlEnabled(a, 'STOPPED', true, true), `${a} pending`).toBe(false)
+    }
+  })
+})
+
+describe('lifecycleRejectMessage (CYP-445 §6 — distinct 409/503, separate from CYP-421 ERROR reason)', () => {
+  it('409 = conflict/transition, 503 = unavailable, else generic', () => {
+    expect(lifecycleRejectMessage(new RestError(409, 'POST', '/api/agents/x/start', ''))).toContain('Übergang')
+    expect(lifecycleRejectMessage(new RestError(503, 'POST', '/api/agents/x/start', ''))).toContain('nicht verfügbar')
+    expect(lifecycleRejectMessage(new Error('network'))).toContain('fehlgeschlagen')
   })
 })

@@ -29,6 +29,7 @@ import { CommPanel } from './comm/CommPanel'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
 import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
+import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
 import type { LifecycleAction } from './state/hubReducers'
 import type { AclEntry, Message1 } from './types/generated/contract'
 
@@ -70,6 +71,15 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const [aclError, setAclError] = useState<string | null>(null)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [commSendError, setCommSendError] = useState<string | null>(null)
+  // CYP-445: per-agent transient lifecycle-action reject notice (separate from the agent's ERROR run-state).
+  const [lifecycleError, setLifecycleError] = useState<ReadonlyMap<string, string>>(new Map())
+  const setAgentLifecycleError = (agentId: string, message: string | null) =>
+    setLifecycleError((prev) => {
+      const next = new Map(prev)
+      if (message === null) next.delete(agentId)
+      else next.set(agentId, message)
+      return next
+    })
 
   const channels = useHubStore((s) => s.channels)
   const roster = useHubStore((s) => s.roster)
@@ -143,11 +153,16 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   // server's AgentRunStateEvent (the POST response, mirrored by /ws/lifecycle) — both resolve the pending. A
   // rejected request clears the pending (no event will come) so the transient label can't stick.
   const onLifecycle = (agentId: string, action: LifecycleAction) => {
+    setAgentLifecycleError(agentId, null) // clear any prior reject notice for this agent
     markLifecyclePending(agentId, action)
     hubRepo
       .setLifecycle(agentId, action)
       .then(onRunState)
-      .catch(() => clearLifecyclePending(agentId))
+      // CYP-445 §6: a rejected action clears the pending (no feed event will come) AND surfaces why (409/503/…).
+      .catch((err) => {
+        clearLifecyclePending(agentId)
+        setAgentLifecycleError(agentId, lifecycleRejectMessage(err))
+      })
   }
 
   const onSendComm = (text: string) => {
@@ -217,6 +232,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           onRequestMode={onRequestMode}
           lifecycleState={runStateByAgent.get(agentId) ?? 'UNKNOWN'}
           lifecyclePending={lifecyclePending.get(agentId)}
+          lifecycleError={lifecycleError.get(agentId) ?? null}
           onLifecycle={onLifecycle}
           socketDeps={socketDeps}
         />
