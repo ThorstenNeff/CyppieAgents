@@ -130,6 +130,8 @@ class BootedPlatform(
     /** CYP-410 (S-A) — the single-sourced project-switch orchestration. The `SessionManager` seam wraps its
      *  [ProjectSwitcher.switch] for the runtime switch; boot uses [ProjectSwitcher.switchAtBoot]. */
     val projectSwitcher: ProjectSwitcher,
+    /** CYP-417 (S-G) — the resource governor (null in tests); `GET /api/capacity` reads its estimate. */
+    val resourceGovernor: ResourceGovernor?,
 )
 
 /**
@@ -955,6 +957,7 @@ class BootOrchestrator(
             compactOnConfigUpdated = compactOnConfigUpdated,
             ptyManager = ptyManager, // CYP-332
             projectSwitcher = projectSwitcher, // CYP-410 (S-A)
+            resourceGovernor = resourceGovernor, // CYP-417 (S-G)
         )
     }
 }

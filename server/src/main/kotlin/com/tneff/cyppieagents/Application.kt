@@ -35,7 +35,12 @@ fun main() {
 
     val configFile = File(System.getenv("PLATFORM_CONFIG") ?: "platform.config.json")
     val gitRoot = File(System.getenv("PLATFORM_GIT_ROOT") ?: ".cyppie")
-    val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // CYP-417 (S-G / D8): a BOUNDED dispatcher for the app scope (was the unbounded Dispatchers.IO) — caps
+    // concurrent parallelism so a runaway can't explode threads/memory (productizes the OOM lesson at the scope
+    // level, complementing the ResourceGovernor's spawn gate). 64 = Dispatchers.IO's own default ceiling, made
+    // explicit; deploy can retune. @OptIn: limitedParallelism.
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(64) + SupervisorJob())
     // CYP-415 (D6): the HTTP/WS bind is config-driven (`hub.port`/`hub.host`, defaults 8787/127.0.0.1) instead
     // of compile-time constants. Loaded here so `embeddedServer` can read them before it binds; `bootPlatform`
     // re-loads the same file for the rest of the wiring (cheap, single source of truth = the file).
