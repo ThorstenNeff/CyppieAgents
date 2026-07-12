@@ -4,3 +4,6 @@ package com.tneff.cyppieagents.connect
 actual fun remoteHubEnabled(): Boolean = false
 
 actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? = null
+
+/** Remote mode is jvm-only in the MVP → no live components on iOS. */
+actual fun defaultRemoteComponentsFactory(operatorToken: () -> String?): RemoteConnectComponentsFactory? = null

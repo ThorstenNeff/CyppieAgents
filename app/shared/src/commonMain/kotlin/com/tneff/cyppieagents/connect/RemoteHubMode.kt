@@ -27,6 +27,14 @@ expect fun remoteHubEnabled(): Boolean
 expect fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory?
 
 /**
+ * CYP-513 — the LIVE [RemoteConnectComponentsFactory] (activation): the jvm impl composes the real remote-connect
+ * stack from env config (CP base URL + relay URL), or `null` where remote isn't available / not configured
+ * (INERT). App.kt passes it flag-gated ([remoteHubEnabled]); the user-reachable flip (config + a relay server +
+ * a deploy) stays an Auftraggeber GO. [operatorToken] is the app session token (`Bearer`, same-origin CP auth).
+ */
+expect fun defaultRemoteComponentsFactory(operatorToken: () -> String?): RemoteConnectComponentsFactory?
+
+/**
  * The production [RemoteConnectFeed]: the live [RemoteHubSessionConnectFeed] where a real (inert-seamed)
  * factory exists, else [StubRemoteConnectFeed]. Selected once; only ever reached when [remoteHubEnabled].
  */

@@ -15,6 +15,7 @@ import com.tneff.cyppieagents.net.hub.relay.HttpRendezvousResolver
 import com.tneff.cyppieagents.net.hub.relay.KtorWsRelayConnector
 import com.tneff.cyppieagents.net.hub.relay.RendezvousRelayDialer
 import com.tneff.cyppieagents.net.hub.remote.RelayDialer
+import com.tneff.cyppieagents.net.sharedWsHttpClient
 import com.tneff.cyppieagents.net.hub.trust.RegistryPresentedHubKeySource
 import com.tneff.cyppieagents.net.hub.trust.PendingOobConfirmations
 import com.tneff.cyppieagents.net.hub.trust.TofuHubTrust
@@ -25,6 +26,19 @@ import java.security.SecureRandom
 /** jvm: the remote-mode flag reads `CYP_REMOTE_HUB` (off unless explicitly `true`). Off-default. */
 actual fun remoteHubEnabled(): Boolean =
     System.getenv("CYP_REMOTE_HUB")?.equals("true", ignoreCase = true) == true
+
+/**
+ * jvm: the LIVE components factory — composed from env config, **fail-closed to INERT** when unconfigured. Needs
+ * BOTH `CYPPIE_CP_BASE_URL` (the same-origin CP) and `CYPPIE_REMOTE_RELAY_URL` (the relay-server activation gate);
+ * absent ⇒ `null` ⇒ the connect path stays the stub feed. The operator-authed client is [sharedWsHttpClient]
+ * ([operatorToken] rides as the same-origin session; the resolver/cpJwt also send it as `Bearer`).
+ */
+actual fun defaultRemoteComponentsFactory(operatorToken: () -> String?): RemoteConnectComponentsFactory? {
+    val cpBaseUrl = System.getenv("CYPPIE_CP_BASE_URL")?.takeIf { it.isNotBlank() } ?: return null
+    if (System.getenv("CYPPIE_REMOTE_RELAY_URL").isNullOrBlank()) return null // no relay server ⇒ INERT (fail-closed)
+    val client = sharedWsHttpClient(operatorToken)
+    return liveRemoteConnectComponentsFactory(cpBaseUrl, client, { operatorToken() }, client)
+}
 
 /**
  * jvm: the **real but INERT** remote assembly — the honest wiring topology. The real Noise transport, TOFU
