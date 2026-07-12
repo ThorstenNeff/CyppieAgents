@@ -466,3 +466,87 @@ body,
   display: flex;
   gap: 8px;
 }
+
+/* CYP-464 (P2-d) — Product-Lead report. Snapshot≠live: prominent "As of" + hint. Reuse the list+detail shape (two-pane
+   on wide, stacks narrow). GATED/generating = neutral (never green — a gate/in-progress is not success/ok); error =
+   error role; severity rail reuses the event severity hues. Colour never alone (severity = glyph+label). No ellipsis on
+   provenance/advisory/as-of/gate text. Targets ≥24px. */
+.product-lead {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 6px;
+}
+.product-lead-gate,
+.product-lead-generating {
+  color: var(--md-sys-color-on-surface-variant); /* neutral — a gate / in-progress, never green */
+  margin: 0;
+  white-space: normal;
+}
+.product-lead-error {
+  color: var(--md-sys-color-error);
+  white-space: normal;
+}
+.product-lead-trigger {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.product-lead-trigger button {
+  min-height: 24px;
+}
+.product-lead-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+.product-lead-list {
+  flex: 0.4 1 200px;
+  min-width: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.product-lead-snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  min-height: 24px;
+  padding: 4px 0;
+}
+.product-lead-snapshot.selected {
+  background: var(--md-sys-color-surface-variant);
+}
+.product-lead-snapshot-ts {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.product-lead-detail {
+  flex: 0.6 1 240px;
+  min-width: 0;
+  border-left: 1px solid var(--md-sys-color-outline);
+  padding-left: 8px;
+  overflow: auto;
+}
+.product-lead-snapshot-hint,
+.product-lead-provenance,
+.product-lead-advisory {
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: normal; /* disclosure text wraps, never ellipsis */
+}
+.product-lead-item {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.product-lead-sev.event-sev-error { color: var(--event-sev-error); }
+.product-lead-sev.event-sev-warn { color: var(--event-sev-warn); }
+.product-lead-sev.event-sev-info { color: var(--event-sev-info); }
+.product-lead-sev.event-sev-debug { color: var(--event-sev-debug); }
+.product-lead-back {
+  min-height: 24px;
+  align-self: flex-start;
+}

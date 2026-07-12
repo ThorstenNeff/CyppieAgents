@@ -32,6 +32,8 @@ import { useEventLogStore } from './eventlog/eventLogStore'
 import { tailView } from './eventlog/eventLog'
 import { AgentManagementPanel } from './agentmgmt/AgentManagementPanel'
 import type { ConnectorKind } from './connector/connectorModel'
+import { ProductLeadPanel } from './report/ProductLeadPanel'
+import type { ReportType } from './report/productLeadModel'
 // CYP-453: App renders SettingsPanel (which frames the CYP-433 ApiKeyPanel internally) — no direct ApiKeyPanel here.
 import { SettingsPanel } from './settings/SettingsPanel'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
@@ -48,6 +50,7 @@ const EVENT_WINDOW_ID = 'events'
 const EVENT_BROWSE_WINDOW_ID = 'eventBrowse'
 const SETTINGS_WINDOW_ID = 'settings'
 const AGENT_MGMT_WINDOW_ID = 'agentMgmt'
+const PRODUCT_LEAD_WINDOW_ID = 'productLead'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -196,6 +199,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     // CYP-450: the agent-management window is present for EVERYONE — the roster/list is ungated display; the panel
     // gates add/edit/remove on operator internally (present-but-disabled), never omission.
     if (agents.length > 0 && !present.has(AGENT_MGMT_WINDOW_ID)) wm.add(tiledWindow(AGENT_MGMT_WINDOW_ID, 'Agenten-Verwaltung', index++), false)
+    // CYP-464: Product-Lead report window is present for everyone; the panel fail-closes to the gate-hint (no trigger/
+    // list/fetch) for a non-operator — reports are content-free, so this is present-but-gate-hint, not omission (§3).
+    if (agents.length > 0 && !present.has(PRODUCT_LEAD_WINDOW_ID)) wm.add(tiledWindow(PRODUCT_LEAD_WINDOW_ID, 'Product-Lead', index++), false)
   }, [agents, cfg.operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
@@ -285,6 +291,17 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           fetchDetail={fetchAgentDetailForEdit}
           getConnectors={() => hubRepo.getConnectors()}
           onSetConnector={onSetConnector}
+        />
+      )
+    }
+    if (win.id === PRODUCT_LEAD_WINDOW_ID) {
+      // CYP-464: operator-gated report surface. The panel itself fail-closes to the gate-hint for a non-operator
+      // (no trigger/list/fetch); for an operator it lists snapshots + triggers new ones.
+      return (
+        <ProductLeadPanel
+          operator={cfg.operator}
+          fetchReports={() => hubRepo.fetchReports()}
+          generateReport={(type: ReportType) => hubRepo.generateReport({ type })}
         />
       )
     }
