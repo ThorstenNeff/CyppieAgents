@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.net.hub.operator.ui.OperatorAuthTags
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -50,6 +51,8 @@ import kmpcyppieagents.app.shared.generated.resources.auth_reset_code_hint
 import kmpcyppieagents.app.shared.generated.resources.auth_reset_code_label
 import kmpcyppieagents.app.shared.generated.resources.a11y_auth_reset_code
 import kmpcyppieagents.app.shared.generated.resources.auth_or_divider
+import kmpcyppieagents.app.shared.generated.resources.remote_login_browser_handoff
+import kmpcyppieagents.app.shared.generated.resources.remote_login_browser_return
 import kmpcyppieagents.app.shared.generated.resources.auth_link_to_login
 import kmpcyppieagents.app.shared.generated.resources.auth_link_to_register
 import kmpcyppieagents.app.shared.generated.resources.auth_loading
@@ -99,6 +102,9 @@ fun AuthGate(
     /** Platform hook to open the GitHub OIDC redirect URL externally (browser/custom-tab) — §6 keeps the
      *  OAuth dance out of commonMain. Default no-op; the platform entry points wire the real open. */
     onOpenExternalUrl: (String) -> Unit = {},
+    /** CYP-474 §4: Desktop-native loopback hook — the host arms a localhost (RFC 8252) redirect listener and calls
+     *  [onReturn] (= `viewModel.onGithubReturn`) when the OAuth callback arrives. Default no-op (web uses the redirect). */
+    onAwaitLoopbackReturn: (onReturn: () -> Unit) -> Unit = {},
     /** The verified desktop — receives the session's [UserTier] (CYP-186) so it can gate operator surfaces. */
     content: @Composable (UserTier) -> Unit,
 ) {
@@ -106,7 +112,7 @@ fun AuthGate(
     Box(modifier = modifier.testTag(AuthTags.GATE)) {
         when (val s = state) {
             AuthUiState.Loading -> LoadingScreen()
-            is AuthUiState.Unauthenticated -> LoginScreen(s, viewModel, onOpenExternalUrl)
+            is AuthUiState.Unauthenticated -> LoginScreen(s, viewModel, onOpenExternalUrl, onAwaitLoopbackReturn)
             is AuthUiState.Register -> RegisterScreen(s, viewModel)
             is AuthUiState.ForgotRequest -> ForgotScreen(s, viewModel)
             is AuthUiState.ResetSetNew -> ResetScreen(s, viewModel)
@@ -138,6 +144,7 @@ private fun LoginScreen(
     state: AuthUiState.Unauthenticated,
     vm: AuthViewModel,
     onOpenExternalUrl: (String) -> Unit = {},
+    onAwaitLoopbackReturn: (onReturn: () -> Unit) -> Unit = {},
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -185,7 +192,8 @@ private fun LoginScreen(
 
         // --- P4 (auth-spec §6): "or" divider + GitHub OIDC (CYP-185) ---
         val github = state.github
-        val githubBusy = github is GithubUiState.Redirecting || github is GithubUiState.Returning
+        val githubBusy = github is GithubUiState.Redirecting || github is GithubUiState.BrowserHandoff ||
+            github is GithubUiState.Returning
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
         Text(
             text = stringResource(Res.string.auth_or_divider),
@@ -208,11 +216,27 @@ private fun LoginScreen(
                 )
                 LaunchedEffect(github.url) { onOpenExternalUrl(github.url) }
             }
-            GithubUiState.Returning -> Text(
-                text = stringResource(Res.string.auth_github_returning),
+            is GithubUiState.BrowserHandoff -> {
+                // CYP-474 §4: the honest, user-visible native handoff — "Weiter im Browser …" (H3, no webview);
+                // open the OS browser AND arm the loopback (RFC 8252) return listener → onGithubReturn.
+                Text(
+                    text = stringResource(Res.string.remote_login_browser_handoff),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().testTag(OperatorAuthTags.LOGIN_BROWSER_HANDOFF),
+                )
+                LaunchedEffect(github.url) {
+                    onOpenExternalUrl(github.url)
+                    onAwaitLoopbackReturn(vm::onGithubReturn)
+                }
+            }
+            is GithubUiState.Returning -> Text(
+                // §4 "Zurück zur App …" on the native flavor; the web flavor keeps its own returning copy.
+                text = stringResource(if (github.native) Res.string.remote_login_browser_return else Res.string.auth_github_returning),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().testTag(AuthTags.GITHUB_RETURNING),
+                modifier = Modifier.fillMaxWidth()
+                    .testTag(if (github.native) OperatorAuthTags.LOGIN_BROWSER_RETURN else AuthTags.GITHUB_RETURNING),
             )
             GithubUiState.Error -> AnnouncingHint(
                 stringResource(Res.string.auth_github_error), HintTone.ERROR,

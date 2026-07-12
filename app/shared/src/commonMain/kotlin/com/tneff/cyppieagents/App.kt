@@ -32,6 +32,11 @@ fun App(
     // CYP-185: platform hook to open the GitHub OIDC redirect URL externally (§6 — the OAuth dance stays out
     // of commonMain). Default no-op; a platform entry point wires the real open (Desktop.browse / window nav).
     onOpenExternalUrl: (String) -> Unit = {},
+    // CYP-474 §4: Desktop-native OIDC loopback (RFC 8252) — `nativeOidcLoopback=true` switches GitHub login to the
+    // system-browser+localhost-return handoff, and `onAwaitLoopbackReturn` is the host that arms the localhost
+    // redirect listener → `onGithubReturn`. Web keeps the redirect flavor (both default off/no-op).
+    nativeOidcLoopback: Boolean = false,
+    onAwaitLoopbackReturn: (onReturn: () -> Unit) -> Unit = {},
     // CYP-268 R3: the persisted theme-mode store; tests inject a fake (e.g. InMemoryThemePreferences(DARK)).
     // null → the platform default ([defaultThemePreferences]): durable on Web/Desktop, in-memory on Android/iOS.
     themePreferences: ThemePreferences? = null,
@@ -48,7 +53,7 @@ fun App(
     val authRepo = remember(authRepository) {
         authRepository ?: authRepositoryFor(resolveAuthMode(defaultAuthLiveEnv()))
     }
-    val authViewModel = remember(authRepo) { AuthViewModel(authRepo) }
+    val authViewModel = remember(authRepo, nativeOidcLoopback) { AuthViewModel(authRepo, nativeOidcLoopback) }
     // CYP-268 R1/R3: the ONE theme seam — inject the maritime ColorScheme (Light + Dark). R1 followed the system;
     // R3 makes it user-switchable via a persisted [ThemeMode] (default SYSTEM → still follow-system). The mode is
     // read synchronously here (this seam sits above AuthGate, no coroutine scope) and the toggle both updates the
@@ -75,6 +80,7 @@ fun App(
                     .safeContentPadding()
                     .fillMaxSize(),
                 onOpenExternalUrl = onOpenExternalUrl,
+                onAwaitLoopbackReturn = onAwaitLoopbackReturn,
             ) { tier ->
                 // CYP-186: the verified user's tier gates the desktop's operator surfaces (hybrid: role OR token).
                 // CYP-188: thread the session credential so a session-only user (Kratos login, no operator token)
