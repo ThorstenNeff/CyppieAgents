@@ -19,6 +19,7 @@
 | `remote_connect_relay` | Verbinde über die Control Plane… | Connecting via the control plane… |
 | `remote_connect_e2e` | Sichere Verbindung (E2E) wird aufgebaut… | Establishing a secure (E2E) connection… |
 | `remote_connect_trustcheck` | Hub-Identität wird geprüft… | Verifying hub identity… |
+| `remote_connect_trust_provisional` | Vertrauensprüfung vorläufig — echtes Pinnen folgt. | Trust check provisional — real pinning to come. |
 | `remote_error_relay` | Control Plane / Relay nicht erreichbar. | Control plane / relay not reachable. |
 | `remote_relay_dropped` | Remote-Verbindung zu %1$s unterbrochen — verbinde neu… | Remote connection to %1$s lost — reconnecting… |
 | `remote_conn_degraded` | Verbindung langsam/instabil | Connection slow/unstable |
@@ -53,6 +54,10 @@
 > getrennt von `remote_trust_pinned` (Hub-Authentizität/TOFU, H1). `remote_trust_changed_*` = **harter Block + OOB-Re-Pin,
 > nie still** (H2/Q2). `remote_trust_first_*` + Wordlist/Hex/QR = mehrschichtige TOFU-Hilfe (Q4). `remote_conn_degraded` =
 > **nur bei echter Degradation**, neutral, kein Alarm (Q3). `remote_switch_transition` = expliziter Teardown, ein Hub (Q5).
+> **`remote_connect_trust_provisional` (CYP-475, §-QA-Befund ①):** am Trust-Check gerendert, solange echtes Pinnen
+> (`dhPubKey`) RR5-nachgelagert ist — sagt **ehrlich „vorläufig"**, damit die Trust-Check-Zeile **nicht** echte
+> Krypto-Verifikation impliziert (Übersagen-durch-Auslassung vermeiden; Präzedenz `remote_pop_enroll_session_only`).
+> **Kein „RR5"-Jargon in der User-Copy** — nur „vorläufig / echtes Pinnen folgt".
 
 ## Reuse (bestehende Keys/Muster — NICHT neu anlegen; verifiziert @ `4466ca20`)
 | Reuse | Quelle | Rolle hier |
@@ -63,7 +68,8 @@
 | `event_severity_warn` / `EventVisuals` WARN | CYP-300 | Trust-Änderungs-Alarm-Ton (§8.1) |
 
 ## Self-Validation
-- **23 neue Keys**, alle DE+EN befüllt, gleiche Argument-Anzahl je Sprache: 21 `remote_*` + 2 `a11y_remote_*` = **23**.
+- **24 neue Keys** (inkl. CYP-475 `remote_connect_trust_provisional`), alle DE+EN befüllt, gleiche Argument-Anzahl je
+  Sprache: 22 `remote_*` + 2 `a11y_remote_*` = **24**.
 - **Argument-Keys:** 1-Arg (`%1$s`): `remote_relay_dropped`, `remote_trust_first_title`, `remote_trust_changed_title`,
   `remote_context_operating`, `a11y_remote_context` = **5**; 2-Arg (`%1$s`/`%2$s`): `remote_switch_transition` = **1**;
   alle übrigen **0 Arg**. DE/EN-Argument-Anzahl identisch.

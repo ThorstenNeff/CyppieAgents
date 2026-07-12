@@ -167,6 +167,7 @@ Erweitert das Phase-1-`ConnectingView`-Idiom (`Attempting→Handshake→Connecte
 | `relayDialing` | Verbindung zur Control Plane / Relay-Vermittlung | neutral `onSurfaceVariant` |
 | `e2eHandshake` | Noise-Handshake Frontend ⟷ Hub (CP sieht nur Ciphertext) | neutral |
 | `trustCheck` | TOFU-Prüfung des Hub-Schlüssels (§8) — Erstverbindung ⇒ Bestätigung | neutral (bzw. Trust-Prompt §8) |
+| `trustProvisional` | **Disclosure (CYP-475/§-QA①):** solange echtes Pinnen (`dhPubKey`) RR5-nachgelagert → `remote_connect_trust_provisional` „vorläufig — echtes Pinnen folgt"; verhindert Übersagen (Trust-Check impliziert sonst echte Verifikation) | neutral `onSurfaceVariant` |
 | `authenticating` | DevicePoP-Bestätigung (`RemoteConnState.AUTHENTICATING`) — Operator bestätigt Besitz (CYP-460) | neutral |
 | `connected` (LIVE) | Remote-Session etabliert | `●` + `primary` (erst bei echtem LIVE) |
 | `retry` | Reconnect-Versuch nach Drop (Backoff, §7-Drop) | neutral `onSurfaceVariant` |
