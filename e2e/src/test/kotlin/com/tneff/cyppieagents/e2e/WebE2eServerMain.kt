@@ -127,6 +127,12 @@ fun main() {
             EventDraft("po", WebE2eSeed.PROJECT, EventType.ERROR_TOOL, Severity.ERROR,
                 detail = buildJsonObject { put("browseSeed", "BROWSE-SEED-C") }),
         )
+        // CYP-422 §A7 warden-family: a stall.escalated event (07/S11) → the Event-Log renders it via the shared
+        // EventRow (type text "stall.escalated" + the ☂ warden glyph). Seeded into the REST-history path (Browse).
+        platform.booted.eventSink.append(
+            EventDraft(WebE2eSeed.SEED_AGENT, WebE2eSeed.PROJECT, EventType.STALL_ESCALATED, Severity.WARN,
+                detail = buildJsonObject { put("wardenSeed", "WARDEN-SEED") }),
+        )
         // CYP-422 §A3 transcript corpus for `po` (agentEventStore / /ws/agent): ROW-producing AssistantEvents so the
         // seq-`?since`/reconnect tooth can assert rendered transcript rows. (backend's success-ResultEvent corpus is
         // frame-only — the streamJsonMapper suppresses a success result, so it yields 0 rows.)
