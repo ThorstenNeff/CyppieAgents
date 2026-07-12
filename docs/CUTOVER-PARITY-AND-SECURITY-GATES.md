@@ -273,6 +273,39 @@ gedriftet, kein Stub":
 
 ---
 
+## B-C. Completeness-Pass (09-Katalog × Rig — welche Zeile hat KEINEN Zahn?)
+
+Ehrlichkeits-Kreuzung des Parity-Rigs (`assembly-smoke`, `phase1-parity`, `phase2-parity`, `a6-browse-parity`,
+`seq-reconnect-parity`, `comm-timeline-parity`) gegen den GANZEN §A/§B-Katalog. **Kern-grün mit benannten,
+getrackten Lücken — nicht „voll grün".** Kein stiller Skip; jede unbedeckte Zeile ist hier itemisiert.
+
+**✅ Bedeckt (Zahn grün am DOM):** A3 start/stop/restart · A3 stream-json-Transkript (seq-`?since`/Reconnect) ·
+A4 Kanalliste+Timeline (Historie/Dedup-by-id) · A4 Operator-Senden · A5 ACL-Matrix+Preset · A6 Browsen ·
+A6 Live-Tail (Mount/Status) · A9 API-Key · Assembly (Agent-/Comm-/ACL-Fenster) · B-1 Event-Log-Detail-XSS ·
+B-3 CONTRACT_REQUIRE_REAL.
+
+**❌ [K]-Kern, Fläche in web-ts GELANDET, aber KEIN Zahn (echte Lücken — Zähne offen):**
+- **A1 Repo konfigurieren** (`settings/SettingsPanel.tsx`) — Form → `POST/PUT`, Persistenz über Reload; kein Zahn.
+- **A2 Agent hinzufügen / entfernen / Konfig ändern** (`agentmgmt/AgentManagementPanel.tsx`) — kein Zahn (3 Zeilen);
+  inkl. „Neustart nötig"-Transparenz + Entfernen-Bestätigung/Folgenanzeige (→ B-4-Irreversibilität).
+- **A3 Fenster-Manager** (Drag/Resize/Fokus/Z-Index, `windowmgr/WindowFrame.tsx`) — kein Zahn (nur Occlusion-Workaround genutzt, nie Verhalten assertiert).
+- **A3 Nachricht an Agenten senden** (Composer → `UserTurn` auf `/ws/agent`) — Composer sichtbar (phase1), aber **Sende-Verhalten ungetestet** (kommt am Session an / Echo).
+- **A6 Live-Tail „mit Pause"** — Mount/Status ✓, aber der **Autoscroll-Pin/Pause** (wegscrollen löst Follow) ungetestet.
+- **B-1 XSS an weiteren Sinks** — Event-Log-Detail ✓, aber **Agent-Transkript / Comm-Body / Agent-/Kanal-/Projekt-Namen** ungetestet.
+
+**🎫 Getrackt/deferred (Fläche NICHT gelandet oder eigenes Ticket — „kein Zahn" ist korrekt):**
+- **A6 Korrelations-Drilldown** (`showRun`/`showSession`) → **CYP-467** (Impl+Seed landen dort; Zahn als QA-on-Merge, feld-präsenz-gated).
+- **A7 Warden-Eskalationen** · **A8 Product-Lead (On-demand + Berichte)** — in web-ts **nicht gefunden** (nicht gelandet; Zahn deferred wie A6-Drilldown).
+- **[MP, staged]:** A1 Projekt-CRUD/Switcher · A4 Cross-Projekt-Kanal · A6 Projekt-Filter — spätere Tier / nicht gelandet.
+
+**🔓 Bekannte Gate-Lücken (schon benannt):** **B-2 CSP** (nicht gesetzt, Vorab-1) · **B-4 Negativ-Operator-Schutz**
+(403 ohne Operator-Token = Member-Coverage-Split) · Irreversibilität-Bestätigung (an A1/A2 gekoppelt, ungetestet).
+
+> **Gate-Aussage:** Parity-Seite = **Kern-grün mit den obigen benannten Lücken**. Die ❌-[K]-Zeilen sind der
+> nächste Zahn-Batch; A6-Drilldown/A7/A8 warten auf ihre Impl-Merges. Speist Assists Parity-Tail-Synthese.
+
+---
+
 ## C. Wie es läuft (Mechanik)
 
 - **E2E** über die CYP-418-Harness (Playwright, echter Ktor-Server, keine Mocks). Der Seed der Harness wird
