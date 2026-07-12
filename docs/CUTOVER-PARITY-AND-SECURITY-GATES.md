@@ -105,9 +105,11 @@ Server) → Zustände → Guardrail**. Pflicht-Zustände überall: **empty / loa
   via CYP-452 (`GET /api/events`) am DOM — die geseedeten Events erscheinen in Browse, **nicht** im live-only Tail
   (Zwei-Pfad-Diskriminator); Master-Detail öffnet das rohe content-free `detail`-JSON; **server-seitiger** Filter
   (Severity-Tap → neuer `GET /api/events?…severity=…`, netzwerk-belegt — **kein** Client-Post-Filter) + Subset-Cue.
-- [ ] **Korrelations-Drilldown** („ganzer Lauf") [K] — über `correlationId`/`sessionId` (CYP-452-Pfad). **Offen:**
-  braucht geseedete Events mit `correlationId`/`sessionId`, um `showRun`/`showSession` + die Zwei-Achsen-Drilldown
-  zu treiben (Detail-Pane-Buttons sind da; die Cross-Run-Query noch nicht exerziert).
+- [x] **Korrelations-Drilldown** („ganzer Lauf") [K] — **grün** (`drilldown-parity.spec.ts`): ein Event MIT
+  `correlationId`/`sessionId` → Detail-`showRun`/`showSession` **enabled**; `showRun` → **server-seitiger** Drilldown
+  (`GET /api/events?correlationId=…`, netzwerk-belegt) + Drilldown-Header. Diskriminator: ein Event OHNE das Feld hält
+  `showRun` **disabled** (no-invented-correlation). **Belegt blockierendes [K]:** die alte WASM-UI hatte es
+  (`app/shared EventBrowseViewModel.showRun/showSession`, gleiche Testids) → CYP-452 = Port; aus CYP-467 herausgezogen.
 - [ ] **Live-Tail mit Pause** [K] — getrennt vom Browsen; `/ws/events` (live-only by design).
 - [ ] Projekt-Filter [MP, staged] — der Bericht zählt Projekt-gefiltert (CYP-353/364-Klasse).
 
@@ -220,7 +222,7 @@ Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **p
   Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
   **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
 
-**Lauf-Stand (same-origin, reale Harness, rebased auf aktuelles develop, 33 passed / 4 skipped) — ALLE [K]-Zeilen grün (inkl. ❌-Batch + finaler A8/A7/A2-Edit-Batch):**
+**Lauf-Stand (same-origin, reale Harness, rebased auf aktuelles develop, 35 passed / 4 skipped) — ALLE [K]-Zeilen grün (inkl. ❌-Batch + finaler A8/A7/A2-Edit-Batch):**
 Zusätzlich **A3 seq-`?since`/Reconnect** (§A3) **und A4 Comm-Timeline** (§A4 Historie/REST + Dedup-by-id) **grün**.
 Verbleibend zur vollen Parity-Seite: **A6 Korrelations-Drilldown** (`showRun`/`showSession`, faltet in CYP-467).
 Zusätzlich **A6-Browse grün** (CYP-452 REST-History, §A6 oben).
@@ -297,8 +299,6 @@ B-3 CONTRACT_REQUIRE_REAL. **[❌-Batch + finaler Batch durch — alle [K] grün
 Warden-Familie · A2-Edit-Achse alle grün, siehe ✅ oben.)
 
 **🎫 Getrackt/deferred (nicht-blockierend, itemisiert — „kein Zahn jetzt" ist korrekt):**
-- **A6 Korrelations-Drilldown** (`showRun`/`showSession`, Impl gelandet `eventlog/eventBrowse.ts`/CYP-452) — nur der
-  `correlationId`/`sessionId`-Rig-Seed fehlt; feld-präsenz-gated. Landet als QA-on-Merge mit **CYP-467**.
 - **A6 Live-Tail „live"-Indicator** — `event-log-live` nie erreichbar (Server sendet kein `CaughtUp`) → **Finding
   CYP-499** (Backend2/CYP-498); der Pause/Puffer/Resume-Zahn trägt trotzdem.
 - **A6 Pause-Revoke (Zahn 4)** — staged skipped-mit-Grund (braucht Harness-1008-Seam; unit-covered in `eventLogStore`).
@@ -307,9 +307,9 @@ Warden-Familie · A2-Edit-Achse alle grün, siehe ✅ oben.)
 **🔓 Bekannte Gate-Lücken (schon benannt):** **B-2 CSP** (nicht gesetzt, Vorab-1) · **B-4 Negativ-Operator-Schutz**
 (403 ohne Operator-Token = Member-Coverage-Split) · Irreversibilität-Bestätigung (an A1/A2 gekoppelt, ungetestet).
 
-> **Gate-Aussage:** Parity-Seite = **alle [K]-Zeilen am DOM grün** (33 passed / 4 skipped) — der finale Batch
+> **Gate-Aussage:** Parity-Seite = **alle [K]-Zeilen am DOM grün** (35 passed / 4 skipped) — der finale Batch
 > (A8/A7/A2-Edit) schließt die letzten landed-but-untested-Lücken. Verbleibend nur **tracked-deferred**
-> (A6-Drilldown→CYP-467 · A6-live-Indicator→CYP-499 · A6-Pause-Revoke staged) + die bekannten Gate-Lücken (B-2/B-4)
+> (A6-live-Indicator→CYP-499 · A6-Pause-Revoke staged) + die bekannten Gate-Lücken (B-2/B-4)
 > + [MP]-Tier — nicht-blockierend, weil itemisiert (kein stiller Skip). **Bereit für Assists finalen 4-Quadranten-Sweep.**
 
 ---
