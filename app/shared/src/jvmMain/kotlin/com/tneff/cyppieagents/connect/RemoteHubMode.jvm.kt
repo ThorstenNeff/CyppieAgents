@@ -50,7 +50,7 @@ actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? =
                     ),
                     nonceGenerator = secureRandomNonceGenerator,
                 ),
-                cpJwtProvider = CpJwtProvider { null }, // runway #4: no hubTicket yet ⇒ fail-closed
+                cpJwtProvider = CpJwtProvider { _, _ -> null }, // runway #4: HttpCpJwtProvider wires at S-J/CYP-514 ⇒ fail-closed until then
             ),
             scope = scope,
         )

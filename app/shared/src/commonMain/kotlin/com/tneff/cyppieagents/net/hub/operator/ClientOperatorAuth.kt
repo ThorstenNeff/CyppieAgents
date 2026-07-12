@@ -29,8 +29,9 @@ class ClientOperatorAuth(
 ) : OperatorAuthenticator {
 
     override suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): Boolean {
-        // Ticket first (cheap): no ticket ⇒ fail closed WITHOUT prompting the operator to sign.
-        val jwt = cpJwtProvider.cpJwt() ?: return false
+        // Ticket first (cheap): no ticket ⇒ fail closed WITHOUT prompting the operator to sign. CYP-496: the
+        // provider needs the live `h` + hubId to compute the channel-binding `cb` bound to THIS session.
+        val jwt = cpJwtProvider.cpJwt(tunnel.handshakeHash, hubId) ?: return false
 
         // PoP bound to the LIVE handshake hash. Any local failure ⇒ fail closed, no request sent.
         val ready = popBuilder.buildPop(tunnel.handshakeHash, hubId) as? PopBuildOutcome.Ready ?: return false
@@ -51,7 +52,12 @@ class ClientOperatorAuth(
  * when it lands. `null` ⇒ fail-closed. Never fabricate a ticket.
  */
 fun interface CpJwtProvider {
-    suspend fun cpJwt(): String?
+    /**
+     * The CP-minted hub ticket for THIS session, or `null` (fail-closed). CYP-496: the real provider requests it
+     * from the CP after the Noise handshake, binding it to the live [handshakeHash] `h` + [hubId] via the
+     * channel-binding `cb`. `null` on any failure (no session / typed CP rejection / unreachable) — never invented.
+     */
+    suspend fun cpJwt(handshakeHash: ByteArray, hubId: String): String?
 }
 
 /** Map the app-internal [DevicePoP] onto the `:core` [OperatorPoPWire] wire form — 1:1, no re-shaping. */
