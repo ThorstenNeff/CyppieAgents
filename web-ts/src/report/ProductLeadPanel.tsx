@@ -5,7 +5,7 @@
 // Operator-gated fail-closed: no operator token ⇒ only the gate-hint (NO trigger, NO list, NO fetch) — reports
 // aggregate operator-gated observability, so a non-operator gets no report data at all (content-free items either way).
 // Severity reuses the one house source (glyph + label, colour never alone). Empty is gated on !loading (no flash).
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReportSnapshot } from '../types/generated/contract'
 import {
   REPORT_TYPES,
@@ -32,12 +32,18 @@ export function ProductLeadPanel({ operator, fetchReports, generateReport }: Pro
   const [error, setError] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
+  // CYP-489: hold the fetch fn in a ref so a parent re-render (which hands a NEW inline-closure prop) does NOT
+  // re-key this effect and refetch. The effect keys ONLY on the stable `operator`; the ref keeps the callback current
+  // for the next real trigger. Pure network hygiene — the gate/scope is unchanged (still operator-only).
+  const fetchReportsRef = useRef(fetchReports)
+  fetchReportsRef.current = fetchReports
+
   // fail-closed: only an operator fetches/sees report data (§3). A non-operator never triggers the query.
   useEffect(() => {
     if (!operator) return
     let live = true
     setLoading(true)
-    fetchReports()
+    fetchReportsRef.current()
       .then((r) => {
         if (!live) return
         setReports(r)
@@ -47,7 +53,7 @@ export function ProductLeadPanel({ operator, fetchReports, generateReport }: Pro
     return () => {
       live = false
     }
-  }, [operator, fetchReports])
+  }, [operator])
 
   if (!operator) {
     // GATED neutral (not green, not error): a gate, not a failure — no trigger, no list (§3, tooth 4).

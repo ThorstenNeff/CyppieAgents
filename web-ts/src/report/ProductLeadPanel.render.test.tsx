@@ -95,4 +95,17 @@ describe('ProductLeadPanel (CYP-464)', () => {
     })
     expect(await findByTestId('productLead.empty')).toBeTruthy() // loaded AND empty → honest empty
   })
+
+  it('CYP-489: a parent re-render (new inline fetchReports identity) does NOT refetch', async () => {
+    const fetchReports1 = vi.fn().mockResolvedValue([snap({ id: 'r1' })])
+    const { rerender, findByTestId } = render(<ProductLeadPanel operator fetchReports={fetchReports1} generateReport={vi.fn()} />)
+    await findByTestId('productLead.snapshot.r1')
+    const callsAfterLoad = fetchReports1.mock.calls.length
+    const fetchReports2 = vi.fn().mockResolvedValue([snap({ id: 'r1' })])
+    await act(async () => {
+      rerender(<ProductLeadPanel operator fetchReports={fetchReports2} generateReport={vi.fn()} />)
+    })
+    expect(fetchReports1.mock.calls.length).toBe(callsAfterLoad) // the effect did not re-run on the old fn
+    expect(fetchReports2).not.toHaveBeenCalled() // …nor on the new inline closure — no refetch on re-render
+  })
 })
