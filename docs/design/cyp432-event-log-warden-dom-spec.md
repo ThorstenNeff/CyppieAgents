@@ -145,8 +145,10 @@ Die vom PO benannten Grenzen, portiert aus den Keys (verbindlich, nicht ohne UX-
 
 ## 8. Abnahme-Zähne (diskriminierend) — je mit der falschen Impl, die er ablehnt
 
-1. **Omission ohne Token.** Kein Operator → **kein** `eventBrowse.table`/`eventTail.stream` im DOM; **kein**
-   `detail.json`-Body im Baum. **Mutation:** Fläche gemountet-aber-`hidden` (Bodies im DOM) ⇒ rot (Leak).
+1. **Omission ohne Token** (Client-Gate = defence-in-depth + Produkt-Scoping, §0). Kein Operator → **kein**
+   `eventBrowse.table`/`eventTail.stream` im DOM; die Operator-Fläche wird **nicht ausgeliefert**. **Mutation:** Fläche
+   gemountet-aber-`hidden` ⇒ rot (Operator-Fläche an Nicht-Operator ausgeliefert — defence-in-depth verletzt; die
+   Metadaten-Payload ist zwar server-maskiert/member-tier, aber der Client-Gate bleibt die bewusste zweite Schicht).
 2. **Laufzeit-Entzug fail-closed.** WS 1008 → `accessRevoked`, `liveIndicator` weg, keine Teildaten. **Mutation:**
    nach Entzug weiter „live"/Restdaten ⇒ rot.
 3. **Absence ≠ all-clear.** Gefilterte Teilmenge trägt `filterActive`; leere Liste `event_empty` (≠ „ok").
