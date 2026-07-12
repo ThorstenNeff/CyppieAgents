@@ -133,6 +133,16 @@ fun main() {
             EventDraft(WebE2eSeed.SEED_AGENT, WebE2eSeed.PROJECT, EventType.STALL_ESCALATED, Severity.WARN,
                 detail = buildJsonObject { put("wardenSeed", "WARDEN-SEED") }),
         )
+        // CYP-422 §A6 Korrelations-Drilldown (CYP-452, a PORT of the old WASM showRun/showSession feature): one event
+        // WITH correlationId + sessionId → in the Browse detail, showRun/showSession are ENABLED (field-presence-gated);
+        // the other BROWSE-SEED events (no such fields) keep them DISABLED (no-invented-correlation).
+        platform.booted.eventSink.append(
+            EventDraft(
+                WebE2eSeed.SEED_AGENT, WebE2eSeed.PROJECT, EventType.TOOL_CALL, Severity.INFO,
+                correlationId = "run-alpha", sessionId = "sess-alpha",
+                detail = buildJsonObject { put("browseSeed", "CORRELATED-SEED") },
+            ),
+        )
         // CYP-422 §A3 transcript corpus for `po` (agentEventStore / /ws/agent): ROW-producing AssistantEvents so the
         // seq-`?since`/reconnect tooth can assert rendered transcript rows. (backend's success-ResultEvent corpus is
         // frame-only — the streamJsonMapper suppresses a success result, so it yields 0 rows.)
