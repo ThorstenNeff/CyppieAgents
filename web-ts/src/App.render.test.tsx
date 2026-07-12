@@ -50,6 +50,7 @@ const fakeRepo = (): HubRepo => ({
   setConnector: vi.fn().mockResolvedValue(undefined),
   fetchReports: vi.fn().mockResolvedValue([]),
   generateReport: vi.fn().mockResolvedValue({ id: 'r1', type: 'status', generatedAt: 0, projectId: 'p', sources: ['events'], window: {}, sections: [] }),
+  fetchAuthMe: vi.fn().mockResolvedValue({ authenticated: true, role: 'OPERATOR', verified: true }),
 })
 
 beforeEach(() => {
@@ -240,6 +241,17 @@ describe('App assembly (CYP-425)', () => {
     await flush()
     expect(hub.sockets.find((s) => s.url.includes('/ws/events'))).toBeUndefined() // the bodies socket is never opened
     expect(queryByTestId('event-log')).toBeNull() // no event-log data surface for a non-operator
+  })
+
+  it('CYP-470: operatorOverride (from whoami) drives the operator gate, overriding cfg.operator', async () => {
+    const hub = new FakeSocketHub()
+    // config says operator:true, but whoami resolved MEMBER → the override wins → no operator-only event window.
+    const { queryByTestId } = render(
+      <App config={config} operatorOverride={false} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(hub.sockets.find((s) => s.url.includes('/ws/events'))).toBeUndefined()
+    expect(queryByTestId('event-log')).toBeNull() // whoami=MEMBER → operator-gated surfaces closed despite cfg.operator=true
   })
 
   it('CYP-432 fail-closed: a 1008 on /ws/events locks the log (revoked placeholder) and does NOT reconnect', async () => {

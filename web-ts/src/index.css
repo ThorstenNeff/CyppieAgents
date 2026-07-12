@@ -600,3 +600,24 @@ body,
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
 }
+/* CYP-470 (P2-i) — auth gate screens + session indicator. Neutral, content-free; role = text + label (never colour). */
+.auth-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 16px;
+  text-align: center;
+  white-space: normal;
+}
+.auth-session-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 8px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.auth-logout {
+  min-height: 24px;
+}
