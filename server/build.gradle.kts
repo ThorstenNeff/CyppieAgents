@@ -85,6 +85,16 @@ tasks.register<JavaExec>("exportContract") {
     outputs.file(rootProject.file("web-ts/contract/openapi.json"))
 }
 
+// CYP-506 (Epic CYP-427 activation): the untrusted relay-server is a SEPARATE deployable process (its own main,
+// co-located on OakHost, stood up by `deploy`). It links no hub store/secret — a dumb opaque-frame pipe. Binds
+// CYPPIE_RELAY_HOST:CYPPIE_RELAY_PORT (defaults 0.0.0.0:8788); public exposure/reverse-proxy posture is deploy-owned.
+tasks.register<JavaExec>("relayRun") {
+    group = "application"
+    description = "Run the CYP-506 untrusted rendezvous relay-server (register/pair/forward opaque Noise frames)."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.tneff.cyppieagents.relay.RelayServerKt")
+}
+
 dependencies {
     api(projects.core)
     api(projects.connectorCore)
