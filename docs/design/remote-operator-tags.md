@@ -20,8 +20,10 @@
 | `connectRelay` | `remote.connect.relayDialing` | Relay-Vermittlung (neutral). |
 | `connectE2e` | `remote.connect.e2eHandshake` | Noise-Handshake (CP=Ciphertext, neutral). |
 | `connectTrust` | `remote.connect.trustCheck` | TOFU-Prüfung (§8.1). |
+| `connectAuth` | `remote.connect.authenticating` | DevicePoP-Bestätigung (`RemoteConnState.AUTHENTICATING`, CYP-460). |
 | `connectLive` | `remote.connect.connected` | LIVE `●`+primary — **nie** vor echtem LIVE. |
-| `connectError(cause)` | `remote.connect.error.<cause>` | typisierte Ursache (`relay_unreachable`/`hub_offline`/`handshake_failed`/`trust_changed`), Backend-geliefert. |
+| `connectRetry` | `remote.connect.retry` | Reconnect-Versuch nach Drop (Backoff, §7). |
+| `connectError(cause)` | `remote.connect.error.<cause>` | typisierte Ursache **camelCase** (`relayUnreachable`/`hubOffline`/`handshakeFailed`/`trustChanged`/`authRejected`), Backend-geliefert. **Angeglichen an CYP-471-Impl** (Tag-Charset `[A-Za-z0-9-]+` ohne Underscore → snake_case war der Doc-Bug; camelCase konsistent mit CYP-460 `pinWrong`). |
 | `relayDrop` | `remote.relayDrop` | **EIN globales** Relay-Drop-Surface (H4), nicht N per-Agent-Chips. |
 
 ## Trust-Affordances (§8)
@@ -61,7 +63,7 @@
 | `ProjectViewModel.switchTo`-Muster | Project | Vorbild für non-optimistischen Hub-Wechsel (§6) |
 
 ## Self-Validation
-- **19 neue Tags** in Area `remote` (3 Auth + 6 Connect inkl. `error.<cause>`/`relayDrop` + 7 Trust + 3 Wechsel/Kontext-Kern
+- **21 neue Tags** in Area `remote` (3 Auth + 8 Connect inkl. `authenticating`/`retry`/`error.<cause>`(5 camelCase Causes)/`relayDrop` + 7 Trust + 3 Wechsel/Kontext-Kern
   + Kontext-Sub) + Aktivierung `hubConnect.mode.remote`. `connectError` trägt Qualifier `<cause>`.
 - **0 Kollision:** Area `remote` neu, greenfield gg. bestehende `*Tags.kt`.
 - **Geteilte API mit QA (CYP-7):** Area + Werte über den PO mit dem Tester abstimmen (Frozen-Contract).

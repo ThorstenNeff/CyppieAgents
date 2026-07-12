@@ -167,12 +167,15 @@ Erweitert das Phase-1-`ConnectingView`-Idiom (`Attempting→Handshake→Connecte
 | `relayDialing` | Verbindung zur Control Plane / Relay-Vermittlung | neutral `onSurfaceVariant` |
 | `e2eHandshake` | Noise-Handshake Frontend ⟷ Hub (CP sieht nur Ciphertext) | neutral |
 | `trustCheck` | TOFU-Prüfung des Hub-Schlüssels (§8) — Erstverbindung ⇒ Bestätigung | neutral (bzw. Trust-Prompt §8) |
+| `authenticating` | DevicePoP-Bestätigung (`RemoteConnState.AUTHENTICATING`) — Operator bestätigt Besitz (CYP-460) | neutral |
 | `connected` (LIVE) | Remote-Session etabliert | `●` + `primary` (erst bei echtem LIVE) |
-| Fehler ↓ | | errorContainer + **typisierte Ursache** |
-| `relay_unreachable` | CP/Relay nicht erreichbar | errorContainer |
-| `hub_offline` | Hub bei der CP nicht präsent | errorContainer |
-| `handshake_failed` | Noise-Handshake gescheitert | errorContainer |
-| `trust_changed` | **Hub-Schlüssel ≠ Pin** — potenzielles MITM | **WARN/Block §8** (nicht bloß Fehler) |
+| `retry` | Reconnect-Versuch nach Drop (Backoff, §7-Drop) | neutral `onSurfaceVariant` |
+| Fehler ↓ (`remote.connect.error.<cause>`, camelCase) | | errorContainer + **typisierte Ursache** |
+| `relayUnreachable` | CP/Relay nicht erreichbar | errorContainer |
+| `hubOffline` | Hub bei der CP nicht präsent | errorContainer |
+| `handshakeFailed` | Noise-Handshake gescheitert | errorContainer |
+| `trustChanged` | **Hub-Schlüssel ≠ Pin** — potenzielles MITM | **WARN/Block §8** (nicht bloß Fehler) |
+| `authRejected` | Hub lehnt die PoP ab (`RemoteFailure.AuthRejected`) — **terminal** | errorContainer (terminal) |
 
 **Globales Relay-Drop-Surface (H4 — die Lücke):** fällt das Relay während der Session, erscheint **ein** globaler,
 workspace-scoped Zustand („Remote-Verbindung zu Hub X unterbrochen — verbinde neu…", neutral `onSurfaceVariant`, im
@@ -202,7 +205,7 @@ Die **zwei getrennten Trust-Wahrheiten** (H1) bekommen **zwei getrennte** Afford
   - **Ehrlich als TOFU gelabelt:** „über einen anderen Kanal bestätigen" — nie als „automatisch sicher" dargestellt.
 - **Spätere** Verbindungen: **still verifiziert** gegen den Pin; ein kleiner **neutraler** „Identität gepinnt"-Indikator
   im Kontext-Strip (§9) genügt (kein Prompt).
-- **Schlüssel-Änderung** (`trust_changed`, §7): **harter Block** (Q2 vorgezeichnet, Threat-Model RR6/RR7) — „Die
+- **Schlüssel-Änderung** (`trustChanged`, §7): **harter Block** (Q2 vorgezeichnet, Threat-Model RR6/RR7) — „Die
   Identität von Hub X hat sich geändert. Das kann ein Angriff (MITM) oder eine legitime Neuinstallation sein. **Nicht**
   fortfahren, bis geklärt." **Nie** still akzeptiert; Fortfahren **nur** nach **explizitem Out-of-Band-Re-Pin** (der neue
   Fingerprint muss über einen **anderen Kanal** bestätigt werden — kein Ein-Klick-Weiter). WARN-Amber (`EventVisuals`),
@@ -271,7 +274,7 @@ Neue Area `remote` (aktive Remote-Session-Chrome) + Aktivierung `hubConnect.mode
 **eingefrorenen** `remote-operator-tags.md`:
 ```
 Auth (§5):     remote.authStep.popPrompt · .enroll · .error
-Connect (§7):  remote.connect.{relayDialing,e2eHandshake,trustCheck,connected} · .error.<cause> · remote.relayDrop
+Connect (§7):  remote.connect.{relayDialing,e2eHandshake,trustCheck,authenticating,connected,retry} · .error.<cause>(camelCase: relayUnreachable/hubOffline/handshakeFailed/trustChanged/authRejected) · remote.relayDrop
 Trust (§8):    remote.trust.{fingerprint,wordlist,hex,qr} · .pinPrompt · .changedAlarm(WARN) · .e2eIndicator
 Switch (§6):   remote.switch.transition
 Kontext (§9):  remote.context.{banner,hub,latency,degraded,reconnecting}

@@ -22,7 +22,7 @@
       "role": "Relay-Connect-Progression relayDialing->e2eHandshake->trustCheck->connected (erbt hubConnect-Idiom).",
       "color": "neutral onSurfaceVariant fuer in-progress; connected = ● + primary (NUR bei echtem LIVE, nie vorzeitig)",
       "label_keys": ["remote_connect_relay", "remote_connect_e2e", "remote_connect_trustcheck"],
-      "errors": "errorContainer + typisierte Ursache (remote_error_relay etc.); trust_changed -> overload.trust.changed (WARN, nicht bloss Fehler)"
+      "errors": "errorContainer + typisierte Ursache remote.connect.error.<cause> (camelCase: relayUnreachable/hubOffline/handshakeFailed/trustChanged/authRejected); trustChanged -> trust.changed (WARN, nicht bloss Fehler); authRejected terminal"
     },
     "relay.drop": {
       "role": "EIN globales Relay-Drop-Surface (H4) statt N per-Agent-Chips.",
