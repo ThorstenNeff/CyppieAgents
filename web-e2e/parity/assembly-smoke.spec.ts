@@ -6,9 +6,10 @@ import { test, expect, SEED } from './fixtures';
  * (CORS/globals/auth), nothing downstream is real.
  *
  * It also pins the Phase-1 SCOPE boundary empirically: the merged assembly (CYP-425) opens per-agent windows
- * (transcript + Orchestration↔Shell toggle) and the ACL window; the Comm timeline (CommPanel) is NOT yet
- * mounted — App.tsx says it "integrates when CYP-424 merges". So Comm-timeline parity is a pending row, not a
- * failing one.
+ * (transcript + Orchestration↔Shell toggle) and the ACL window. As of develop 7accf768 the Comm window is now
+ * mounted too — CYP-424 (Comm-Panel/Timeline) + CYP-438 (CommPanel integrated into App) have landed since this
+ * rig was built. The former "Comm not yet mounted" boundary guard has therefore become a positive assembly
+ * assertion; deeper Comm-timeline parity (history/live dedup, byTs-sort, send/403) is the next row to add.
  */
 test('the SPA boots against the real harness and assembles agent windows + ACL', async ({ page }) => {
   await page.goto('/');
@@ -22,10 +23,21 @@ test('the SPA boots against the real harness and assembles agent windows + ACL',
   await expect(page.locator('[data-testid="acl-panel"]')).toBeVisible();
 });
 
-test('SCOPE (empirical): the Comm timeline is not yet in the assembly (CYP-424 pending)', async ({ page }) => {
+test('the Comm window is now assembled (CYP-424 + CYP-438 landed) and its feed is distinct from agent-events', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('[data-testid="app-root"]')).toBeAttached();
-  // Documents the Phase-1 boundary at the object: CommPanel is not mounted until CYP-424.
-  await expect(page.locator('[data-testid="comm-panel"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="comm-timeline"]')).toHaveCount(0);
+
+  // The Comm window is mounted. What was a "not yet mounted" boundary guard is now a positive assembly assertion.
+  const comm = page.locator('[data-testid="comm-panel"]');
+  await expect(comm).toBeVisible();
+
+  // Channels are SERVER-filtered (only ACL-readable arrive, never client-filtered) → the seeded po-backend spoke
+  // is present in the operator's channel list.
+  await expect(comm.locator(`[data-testid="comm.channel.${SEED.CHANNEL}"]`)).toBeVisible();
+
+  // The timeline is mounted; the harness seeds NO comm messages (it seeds agent-EVENTS seq 1..5), so the comm feed
+  // renders empty. This is the discriminating check: the two feeds are distinct — the 5 seeded agent-events never
+  // leak into the comm timeline.
+  await expect(comm.locator('[data-testid="comm-timeline"]')).toBeAttached();
+  await expect(comm.locator('[data-testid="comm-empty"]')).toBeVisible();
 });
