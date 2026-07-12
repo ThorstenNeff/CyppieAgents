@@ -64,6 +64,32 @@ Unverified-Email fürs Gate). `SessionState`: `None` / `Unverified(email)` / `Ac
 **Fail-closed:** whoami-Netzwerkfehler → `None` → unauth-Redirect. **Nie** optimistisch „authenticated/operator"
 rendern, **nie** App-Inhalt vor der whoami-Auflösung flashen (erst Session klären, dann rendern).
 
+### 2.1 Flow-Return-Guard (CYP-515 — der Loop-Fix, credential-grenze-erhaltend)
+
+**Nachtrag nach dem Live-`[BLOCK]` (2026-07-12):** der Kratos-Browser-Flow gibt nach dem Login-Redirect an die
+**App-Root zurück** (`GET …/login/browser` → `303 → /?flow=<id>`, am Live-Stand per curl belegt). Die ursprüngliche
+§2-Regel „None → redirect zum Login" hat den **Return-Fall nicht ausbuchstabiert** → der `AuthGate` sah auf `/?flow=<id>`
+weiter `authenticated=false`, feuerte erneut `redirectToLogin()` → `/?flow=<neu>` → **Endlos-Loop** (CYP-515).
+
+**Guard (bindend):** ist ein **`?flow=`-Param präsent** (Kratos-Browser-Flow-Return), darf der `AuthGate` **NICHT
+erneut zu login redirecten**. Stattdessen:
+
+> **Die Weiche — immer (b), NIE (a):**
+> - **(b) Kratos-hosted-UI-Handoff = der einzige zulässige Fix:** web-ts leitet den `?flow=<id>` an die **separate
+>   Kratos-hosted Login-UI** weiter (Kratos-`ui_url` ≠ web-ts) — web-ts rendert **nie** ein Credential-Formular. Die
+>   Redirect-only-Credential-Grenze (§1) bleibt intakt.
+> - **(a) Flow headless in der SPA rendern = VERBOTEN:** web-ts holte die Flow-UI-Nodes aus Kratos' API und rendert
+>   Passwort/Email-Felder **selbst** → **Credential-Touch im DOM** → bricht §1, den Sicherheits-Kern der ganzen Fläche.
+>   Ein Loop-Fix, der die Credential-Grenze opfert, ist **kein** gültiger Fix.
+>
+> **Root-Verdacht (Deploy/Config):** der Loop deutet darauf, dass web-ts (fälschlich) als Kratos-`ui_url` konfiguriert
+> war — es ist aber keine Login-UI, also re-redirectet es. **Sauberer Fix: `ui_url` zeigt auf eine separate hosted
+> Login-Seite; web-ts guardt `?flow=` und übergibt dorthin.** (Config-Naht → Backend/Deploy; die UX-Invariante ist (b).)
+
+**Abnahme-Zahn (blockierend, Re-Cut zuerst):** `/?flow=<id>` → **kein** Re-Redirect, **kein** Loop, **kein** von web-ts
+gerendertes Credential-Formular. **Mutation:** Re-Redirect trotz `?flow=` (Loop) **oder** web-ts rendert die Flow-Felder
+selbst (Credential-Grenze gebrochen) ⇒ rot.
+
 ---
 
 ## 3. `whoami` treibt Operator/Member (ersetzt den injizierten Token als Wahrheit)
