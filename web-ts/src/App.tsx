@@ -316,6 +316,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           onSaveRepo={onSaveRepo}
           apiKeyView={apiKeyView}
           onSaveApiKey={onSaveApiKey}
+          getReprovisionPreview={() => hubRepo.getReprovisionPreview()}
         />
       )
     }

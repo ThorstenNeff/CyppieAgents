@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { RestError } from '../net/rest'
-import { canSaveRepo, repoSaveRejectMessage } from './settingsModel'
+import { canSaveRepo, repoSaveRejectMessage, atRiskLabel } from './settingsModel'
+import type { AtRiskAgent } from '../types/generated/contract'
 
 const rejectWith = (code: string) =>
   new RestError(400, 'PUT', '/api/config/repo', JSON.stringify({ error: { code, message: 'x' } }))
@@ -25,5 +26,14 @@ describe('repoSaveRejectMessage (CYP-453 — server-authoritative)', () => {
   it('any other code / non-RestError → the generic failure (never a wrong specific claim)', () => {
     expect(repoSaveRejectMessage(rejectWith('boom'))).toBe('Speichern fehlgeschlagen')
     expect(repoSaveRejectMessage(new Error('network'))).toBe('Speichern fehlgeschlagen')
+  })
+})
+
+describe('atRiskLabel (CYP-465 — concrete at-risk disclosure, names WHY)', () => {
+  const a = (over: Partial<AtRiskAgent> = {}): AtRiskAgent => ({ worktree: 'backend', uncommitted: false, unpushed: false, ...over })
+  it('names uncommitted + unpushed reasons per worktree', () => {
+    expect(atRiskLabel(a({ uncommitted: true, unpushed: true }))).toBe('backend — nicht committet + nicht gepusht')
+    expect(atRiskLabel(a({ uncommitted: true }))).toBe('backend — nicht committet')
+    expect(atRiskLabel(a({ unpushed: true }))).toBe('backend — nicht gepusht')
   })
 })
