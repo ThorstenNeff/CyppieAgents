@@ -16,13 +16,19 @@
 ## Verbindungszustand (§7)
 | Key | DE | EN |
 |---|---|---|
-| `remote_connect_relay` | Verbinde über die Control Plane… | Connecting via the control plane… |
-| `remote_connect_e2e` | Sichere Verbindung (E2E) wird aufgebaut… | Establishing a secure (E2E) connection… |
-| `remote_connect_trustcheck` | Hub-Identität wird geprüft… | Verifying hub identity… |
+| `remote_connect_relay_dialing` | Relay wird gewählt … | Dialing the relay… |
+| `remote_connect_e2e_handshake` | E2E-Handshake … | E2E handshake… |
+| `remote_connect_trust_check` | Hub-Vertrauen wird geprüft … | Checking hub trust… |
 | `remote_connect_trust_provisional` | Vertrauensprüfung vorläufig — echtes Pinnen folgt. | Trust check provisional — real pinning to come. |
-| `remote_error_relay` | Control Plane / Relay nicht erreichbar. | Control plane / relay not reachable. |
-| `remote_relay_dropped` | Remote-Verbindung zu %1$s unterbrochen — verbinde neu… | Remote connection to %1$s lost — reconnecting… |
+| `remote_connect_relay_unreachable` | Relay nicht erreichbar. | Relay unreachable. |
+| `remote_connect_relay_dropped` | Verbindung unterbrochen — verbinde neu … | Connection dropped — reconnecting… |
 | `remote_conn_degraded` | Verbindung langsam/instabil | Connection slow/unstable |
+
+> **Doc-Align an shipped CYP-471-Impl (2026-07-12, PO-geroutet):** die 5 Connect-Keys tragen jetzt die **shipped Namen +
+> Werte** (Impl deskriptiver = Wahrheit, Doc zieht nach): `_relay`→`_relay_dialing`, `_e2e`→`_e2e_handshake`,
+> `_trustcheck`→`_trust_check`, `remote_error_relay`→`remote_connect_relay_unreachable`, `remote_relay_dropped`→
+> `remote_connect_relay_dropped`. **Arg-Change:** `remote_connect_relay_dropped` **ohne `%1$s`** (shipped terser, ein
+> Hub im Connect-Flow). `remote_conn_degraded` bleibt (Q3-Latenz, noch nicht shipped).
 
 ## Trust-Affordances (§8)
 | Key | DE | EN |
@@ -70,9 +76,9 @@
 ## Self-Validation
 - **24 neue Keys** (inkl. CYP-475 `remote_connect_trust_provisional`), alle DE+EN befüllt, gleiche Argument-Anzahl je
   Sprache: 22 `remote_*` + 2 `a11y_remote_*` = **24**.
-- **Argument-Keys:** 1-Arg (`%1$s`): `remote_relay_dropped`, `remote_trust_first_title`, `remote_trust_changed_title`,
-  `remote_context_operating`, `a11y_remote_context` = **5**; 2-Arg (`%1$s`/`%2$s`): `remote_switch_transition` = **1**;
-  alle übrigen **0 Arg**. DE/EN-Argument-Anzahl identisch.
+- **Argument-Keys:** 1-Arg (`%1$s`): `remote_trust_first_title`, `remote_trust_changed_title`, `remote_context_operating`,
+  `a11y_remote_context` = **4** (⚠`remote_connect_relay_dropped` ist nach dem Doc-Align **0-Arg**, shipped ohne `%1$s`);
+  2-Arg (`%1$s`/`%2$s`): `remote_switch_transition` = **1**; alle übrigen **0 Arg**. DE/EN-Argument-Anzahl identisch.
 - **Kein content-tragender/sensibler Klartext** — `%1$s`/`%2$s` sind nur Hub-Name (Anzeige) — **kein Secret/Key/Fingerprint-Rohwert**
   in einer Copy (Fingerprint/Wordlist/QR sind gerenderte Werte, keine Copy-Strings).
 - **Kollision:** **0** — `remote_*` greenfield (`grep name="remote_"` @ `4466ca20` liefert nichts).

@@ -300,17 +300,17 @@ Key-Familie `remote_*` / `a11y_remote_*` (greenfield, 0 Kollision verifiziert). 
 | `remote_trust_first_body` | Prüfe den Fingerprint (out-of-band), wenn Sicherheit zählt, und bestätige, um ihn zu pinnen. | Verify the fingerprint (out-of-band) if security matters, then confirm to pin it. |
 | `remote_trust_changed_title` | Identität von %1$s hat sich geändert | %1$s's identity has changed |
 | `remote_trust_changed_body` | Das kann ein Angriff (MITM) oder eine legitime Neuinstallation sein. Nicht fortfahren, bis geklärt. | This could be an attack (MITM) or a legitimate reinstall. Don't proceed until you've confirmed. |
-| `remote_connect_relay` | Verbinde über die Control Plane… | Connecting via the control plane… |
-| `remote_connect_e2e` | Sichere Verbindung (E2E) wird aufgebaut… | Establishing a secure (E2E) connection… |
-| `remote_connect_trustcheck` | Hub-Identität wird geprüft… | Verifying hub identity… |
+| `remote_connect_relay_dialing` | Relay wird gewählt … | Dialing the relay… |
+| `remote_connect_e2e_handshake` | E2E-Handshake … | E2E handshake… |
+| `remote_connect_trust_check` | Hub-Vertrauen wird geprüft … | Checking hub trust… |
 | `remote_conn_degraded` | Verbindung langsam/instabil | Connection slow/unstable |
 | `remote_trust_wordlist_label` | Vergleichs-Wörter | Comparison words |
 | `remote_trust_hex_label` | Fingerprint (Hex) | Fingerprint (hex) |
 | `remote_trust_qr_label` | QR scannen | Scan QR |
 | `remote_trust_oob` | Über einen anderen Kanal bestätigen | Confirm via another channel |
 | `remote_switch_transition` | Trenne von %1$s … verbinde mit %2$s | Disconnecting from %1$s … connecting to %2$s |
-| `remote_relay_dropped` | Remote-Verbindung zu %1$s unterbrochen — verbinde neu… | Remote connection to %1$s lost — reconnecting… |
-| `remote_error_relay` | Control Plane / Relay nicht erreichbar. | Control plane / relay not reachable. |
+| `remote_connect_relay_dropped` | Verbindung unterbrochen — verbinde neu … | Connection dropped — reconnecting… |
+| `remote_connect_relay_unreachable` | Relay nicht erreichbar. | Relay unreachable. |
 | `a11y_remote_context` | Fern-Betrieb über Relay: Hub %1$s, E2E-verschlüsselt. | Remote session via relay: hub %1$s, E2E-encrypted. |
 | `a11y_remote_trust_changed` | Warnung: Hub-Identität geändert — mögliches MITM, nicht fortfahren. | Warning: hub identity changed — possible MITM, do not proceed. |
 
