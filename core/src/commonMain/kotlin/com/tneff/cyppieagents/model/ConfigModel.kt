@@ -43,6 +43,41 @@ data class RepoConfigRequest(
 )
 
 /**
+ * CYP-466 — one agent whose worktree holds work a repo re-provision would DESTROY: [uncommitted] (a dirty tree)
+ * and/or [unpushed] (commits on `agent/<worktree>` not on any remote). [worktree] is the worktree/agent name.
+ * Typed (not a display string) so the discard-confirm renders "these agents lose X" from structured flags.
+ */
+@Serializable
+data class AtRiskAgent(
+    val worktree: String,
+    val uncommitted: Boolean,
+    val unpushed: Boolean,
+)
+
+/** Human string for logs (`"<name> (uncommitted changes + unpushed commits)"`) — the display the pre-CYP-466
+ *  `unpushedWork()` returned, kept as a rendering of the typed [AtRiskAgent] so logs and the API single-source. */
+fun AtRiskAgent.display(): String {
+    val reasons = buildList {
+        if (uncommitted) add("uncommitted changes")
+        if (unpushed) add("unpushed commits")
+    }
+    return "$worktree (${reasons.joinToString(" + ")})"
+}
+
+/**
+ * CYP-466 — `GET /api/config/repo/reprovision-preview`: the HONEST discard-confirm feed ("confirm the loss you
+ * SEE"). [reprovisionPending] mirrors [RepoConfigView.reprovisionPending] (a repo change is staged, awaiting the
+ * next (re)start's teardown); [atRisk] is the LIVE per-agent losable work — computed on demand from the SAME
+ * `WorktreeManager.unpushedWork()` the re-provision block decision uses, so what the operator confirms is EXACTLY
+ * what would (or wouldn't) block. Empty [atRisk] = a re-provision would destroy nothing (safe to discard/restart).
+ */
+@Serializable
+data class ReprovisionPreview(
+    val reprovisionPending: Boolean,
+    val atRisk: List<AtRiskAgent>,
+)
+
+/**
  * GET /api/config/apikey response — the ONLY outbound shape for the key. `set` = a key is stored;
  * `masked` = `***<last4>` (or null when unset). The plaintext key is never present here.
  */

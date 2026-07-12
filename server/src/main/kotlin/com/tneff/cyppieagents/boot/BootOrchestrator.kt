@@ -24,6 +24,7 @@ import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.CapabilityGate
+import com.tneff.cyppieagents.model.display
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.routing.TokenRegistry
@@ -559,7 +560,7 @@ class BootOrchestrator(
                 if (atRisk.isNotEmpty()) {
                     log.warn(
                         "repo re-provision of project '{}' BLOCKED — would destroy work in {}; push it or re-PUT the repo with discardUnpushed=true",
-                        pid, atRisk,
+                        pid, atRisk.map { it.display() },
                     )
                 } else {
                     log.info("re-provisioning project '{}' onto its new repo (tearing down the old clone + worktrees)", pid)
