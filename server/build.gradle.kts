@@ -126,10 +126,11 @@ dependencies {
     // CYP-178: an HTTP client to validate Kratos sessions (GET /sessions/whoami).
     implementation(libs.ktor.clientCore)
     implementation(libs.ktor.clientCio)
+    // CYP-458: the hub DIALS the relay WS outbound (reverse tunnel) — client WebSockets on the JVM engine (CIO).
+    implementation(libs.ktor.clientWebsockets)
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.ktor.clientMock) // CYP-179 C2: hermetic wiring assertion for the register-backend seam
     testImplementation(libs.ktor.clientContentNegotiation)
-    testImplementation(libs.ktor.clientWebsockets)
     testImplementation(libs.kotlinx.coroutinesTest)
     testImplementation(libs.kotlin.testJunit)
 }
