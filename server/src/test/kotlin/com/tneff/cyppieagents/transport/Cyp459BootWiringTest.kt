@@ -74,7 +74,9 @@ class Cyp459BootWiringTest {
         "CYPPIE_CP_KID" to "kid1",
         "CYPPIE_CP_PUBKEY" to Base64.getEncoder().encodeToString(ByteArray(32) { 1 }),
         "CYPPIE_OPERATOR_RP_ID" to "hub.example",
-        "CYPPIE_REMOTE_RENDEZVOUS" to "rzv-abc",
+        // CYP-521: the hub-dial rendezvous id now comes from the CP register (not a static env) → needs the CP URL + operator bearer.
+        "CYPPIE_CP_URL" to "https://cp.example",
+        "CYPPIE_CP_OPERATOR_TOKEN" to "op-bearer",
     )
 
     @Test
@@ -118,5 +120,20 @@ class Cyp459BootWiringTest {
         val env = completeEnv() - "CYPPIE_OPERATOR_ID"
         val c = buildRemoteTransport(8787, hubIdentity(), secretStoreWithDhKey(), InMemoryOperatorDeviceStore(), scope, env = { env[it] })
         assertSame(InertRelayConnector, c, "an incomplete CP-pin config fails closed to Inert")
+    }
+
+    @Test
+    fun buildRemoteTransport_missingCpUrl_failsClosedToInert() {
+        // CYP-521: the dial-side rendezvous register needs the CP URL — absent → Inert (no static-env fallback).
+        val env = completeEnv() - "CYPPIE_CP_URL"
+        val c = buildRemoteTransport(8787, hubIdentity(), secretStoreWithDhKey(), InMemoryOperatorDeviceStore(), scope, env = { env[it] })
+        assertSame(InertRelayConnector, c, "no CYPPIE_CP_URL (register target) → fails closed to Inert")
+    }
+
+    @Test
+    fun buildRemoteTransport_missingCpOperatorToken_failsClosedToInert() {
+        val env = completeEnv() - "CYPPIE_CP_OPERATOR_TOKEN"
+        val c = buildRemoteTransport(8787, hubIdentity(), secretStoreWithDhKey(), InMemoryOperatorDeviceStore(), scope, env = { env[it] })
+        assertSame(InertRelayConnector, c, "no CYPPIE_CP_OPERATOR_TOKEN (register auth) → fails closed to Inert")
     }
 }

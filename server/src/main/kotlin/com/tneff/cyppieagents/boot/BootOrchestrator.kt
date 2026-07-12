@@ -1002,12 +1002,16 @@ class BootOrchestrator(
         // InertRelayConnector unless bootPlatform wired the live one behind the Phase-2-Remote-GO gate → no dial,
         // current server unchanged. `start()` is launched on the app scope (a no-op for the Inert default).
         val remoteTransport = remoteTransportFactory(hubIdentity, hubSecretStore, operatorDeviceStore, scope)
-        scope.launch { runCatching { remoteTransport.start() } }
-        // CYP-512 — attempt live hub-admission into the CP once at boot. INERT (null) unless CYPPIE_CP_URL +
-        // CYPPIE_CP_OPERATOR_TOKEN + CYPPIE_OPERATOR_ID + local-hub custody are all present → then the hub self-admits
-        // (fail-closed: any failure is logged, never crashes boot; the mint/resolve owner-check stay gated meanwhile).
-        hubAdmissionFactory(hubIdentity, hubSecretStore)?.let { admit ->
-            scope.launch { runCatching { admit() }.onFailure { log.warn("CYP-512 hub admission at boot failed: {}", it.message) } }
+        // CYP-521 — the hub's remote activation is a SEQUENCE: admit → (register+dial). The dial registers the
+        // rendezvous (owner-gated), which REQUIRES the hub already admitted into the CP registrar → so admit MUST
+        // complete BEFORE the dial's register runs. One chained launch enforces the ordering. Both legs INERT-safe:
+        // admit=null (CYP-512 gate off) and remoteTransport=Inert (CYP-459 gate off) each no-op. Fail-closed: any
+        // failure is logged, never crashes boot; the mint/resolve owner-check stay gated meanwhile.
+        scope.launch {
+            hubAdmissionFactory(hubIdentity, hubSecretStore)?.let { admit ->
+                runCatching { admit() }.onFailure { log.warn("CYP-512 hub admission at boot failed: {}", it.message) }
+            }
+            runCatching { remoteTransport.start() }.onFailure { log.warn("CYP-459/521 remote dial at boot failed: {}", it.message) }
         }
 
         return BootedPlatform(
