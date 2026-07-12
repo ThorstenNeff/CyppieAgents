@@ -110,8 +110,53 @@
 - **F1** — Gate-Hint-Rolle einheitlich `role="note"` (AgentMgmt/Settings vs. ApiKey `status` vs. Lifecycle/ModeToggle keine Rolle → alle `note`).
 - **F2** — Severity-Palette aus der Token-Gen abgeleitet, nicht `--event-sev-*` hand-hardcodiert; AclPanel-inline-`⚠` `aria-hidden`.
 - **F3 (aus CYP-461-QA)** — `.connector-risk`/`.connector-effect-hint`/`.connector-optin-error`/`.connector-cap-*` **getönt**: risk/effect = **amber** (`--md-sys-color-warn-container`/`-on-warn-container`), error = **`--md-sys-color-error`**, Chips getönt — **wie `.agent-mgmt-effect-hint`:280 / `.apikey-effect-hint`:220**. Assert: `grep -c connector web-ts/src/index.css` > 0; risk-Ton = warn-container (nicht error, nicht grün); Effect-Hint amber; Kontrast on-warn-container ≥ AA beide Schemata.
+- **F4 (Framing-Kommentar-Sweep, aus Event-Log/Auth-QA)** — stale „CYP-432 leak boundary/leak parity"-Kommentare an operator-gated **Metadaten**-Flächen → auf „**defence-in-depth / Produkt-Scoping**" angleichen (Event-Log = server-maskierte Metadaten, echte Grenze server-seitig, §2 der Map). Sweep-Sites: `EventBrowsePanel.tsx:2`, `App.tsx:199` + `git grep -n 'leak' web-ts/src` für weitere. Assert: kein „leak boundary/parity"-Kommentar mehr an diesen Flächen; Verhalten unverändert (Mount-Gate bleibt).
 - **Effect-Hints amber** (`--md-sys-color-warn-container`), nie grün · **`aria-checked`=enforced** (nie Klick-Echo) ·
   **Farbe nie alleiniger Träger** · **kein `ellipsis`** auf Offenlegung/Fehler · Ziele ≥ 24px.
+
+---
+
+## Fast-Follow-Batch — vorgestagte Rezepte (2026-07-12, PO-Auftrag; noch nicht gemergt → beim Merge fahren)
+
+### CYP-488 — Fidelity-Badge (P2-a Lifecycle-Header-Visual, **beobachtete** Fidelity)
+**Quelle:** Compose `connector/ConnectorCapabilityViews.kt` (observed-Seite, `caps != null && !isDegraded → return`) · `Agent.capabilities` (nullable).
+
+| # | Check (assert) | Falsche Impl, die er ablehnt |
+|---|---|---|
+| **1 ★schärfster** | Badge present **⇔** `isDegraded ∨ capabilities==null`; **absent** bei voller Fidelity (fail-closed durch Abwesenheit) | Badge bei voller Fidelity sichtbar / immer da |
+| 2 | `capabilities==null` = „noch nicht gemeldet" — **neutral GATED** (`○`, `onSurfaceVariant`, **NICHT** error-rot), jede Dimension UNAVAILABLE, **nie** als voll gefälscht | `null` als voll / `null` im Error-Ton |
+| 3 | degraded = **amber** Attention (`!`), nie error-rot, nie grün | degraded rot/grün |
+| 4 | Farbe nie allein — Glyph (`○`/`!`) + Text-Label + Ton | Severity/Status nur über Farbe |
+| 5 | Capability-Panel: 5 Dimensionen tri-state (AVAILABLE/LIMITED/UNAVAILABLE), Text + Chip | Dimension nur Farbe / fehlt |
+
+**Am Objekt:** grep die Badge-Bedingung (`isDegraded || caps==null`); `null`-Ton = `onSurfaceVariant` (nicht error); vitest.
+
+### CYP-467 — Event-Log-Detail-Politur
+**Quelle:** mein CYP-452 §5 (Detail-Pane) · `EventBrowsePanel` DetailPane.
+
+| # | Check (assert) | Falsche Impl, die er ablehnt |
+|---|---|---|
+| **1 ★schärfster** | Getippte Summaries **WARN-amber, nie grün:** `COMPACT_ORCHESTRATION_DONE` timeout/aborted = amber; `RESUME_OUTCOME` CONTEXT_LOST = amber; sauberes N/N + übrige neutral | Timeout/context-lost grün/„success" |
+| 2 | `sourceTs` = „Beobachtet", nie autoritativ; Ordering = `seq` | sourceTs autoritativ / sort by Zeitstring |
+| 3 | content-free `detail`-JSON **as-is** (`—` wenn null), nichts erfunden | erfundenes Feld / geplättetes „unknown" |
+| 4 | Farbe nie allein; **kein `ellipsis`** auf Detail-/Offenlegungs-Text | nur Farbe / ellipsis |
+
+**Am Objekt:** compact/resume-Summary-Ton = amber via warn-Token (nicht grün); vitest.
+
+### CYP-489 — Cross-Panel-Refetch
+**Quelle:** `App.tsx` roster (`useHubStore`) · Mutation→Refetch-Pfad.
+
+| # | Check (assert) | Falsche Impl, die er ablehnt |
+|---|---|---|
+| **1 ★schärfster** | Nach einer Mutation (Agent add/remove/connector-change) spiegeln **alle** Panels den **Server-Stand** (Roster-Refetch **server-autoritativ**), nicht optimistisch lokal | optimistische lokale Mutation ohne Server-Refetch (**Race-Lüge**) |
+| 2 | Refetch-Ladezustand ehrlich: **kein** „keine Daten"/stale-Flash während des Refetch (empty-gated-on-loading) | „leer"/stale flasht während Refetch |
+| 3 | Refetch-**Fehler** = Fehler-Ton, nicht stilles Behalten stale Daten als „aktuell" | Fehler geschluckt, stale als aktuell |
+
+**Am Objekt:** der Refetch-Trigger nach Mutation; server-autoritativ; loading-gate; vitest.
+
+*(CYP-468 = der Querschnitt-Sweep oben, F1–F4.)*
+
+---
 
 **Nichts gebaut — QA-Vorlauf.** Bei Merge: das jeweilige Rezept fahren, schärfsten Zahn zuerst; Befunde als
 priorisierte Liste (Severity + konkreter Fix), **je Finding eine Nachricht** (Discord-Schwanz-Regel).
