@@ -1,14 +1,22 @@
 package com.tneff.cyppieagents.controlplane
 
+import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.boot.ControlPlaneRegistrar
+import com.tneff.cyppieagents.boot.NoOpControlPlaneConnector
+import com.tneff.cyppieagents.crypto.HubIdentity
+import com.tneff.cyppieagents.crypto.HubIdentityProvisioner
+import com.tneff.cyppieagents.crypto.SecretStore
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
 import java.util.Base64
 
 /**
@@ -41,4 +49,35 @@ class HubAdmissionClient(
             setBody(HubAdmissionRequest(reg, challenge.nonce))
         }.body()
     }
+}
+
+/**
+ * CYP-512 — the env-gated **boot factory** (PO GO env-A, fail-closed → INERT, mirror of `buildRemoteTransport`).
+ * Returns a boot-time admission runnable ONLY when `CYPPIE_CP_URL` + `CYPPIE_CP_OPERATOR_TOKEN` (the hub's operator
+ * bearer for the CP — custody like the other `CYPPIE_CP_*`/`CYPPIE_MASTER_KEY` secrets) + `CYPPIE_OPERATOR_ID` (the
+ * `ownerId` the hub claims, which the CP re-checks equals the authenticated operator) are ALL present AND local-hub
+ * custody exists; else `null` (INERT — the hub does not self-admit). The boot CALLS this once. `httpClientFactory` /
+ * `env` are injectable for tests.
+ *
+ * ★ Custody note (into the flip-authorization package): a compromised hub would hold operator power on the CP as this
+ * operator — MVP-acceptable because the hub + operator are the SAME trust domain (the operator runs their own hub);
+ * `operator-drives-admission` (central-UI admit, no hub-held operator secret) is the future BYOA ticket, not MVP.
+ */
+fun buildHubAdmission(
+    hubIdentity: HubIdentity?,
+    hubSecretStore: SecretStore?,
+    hubIdentityFile: java.io.File?,
+    hubName: String,
+    hubPort: Int,
+    env: (String) -> String? = System::getenv,
+    httpClientFactory: () -> HttpClient = { HttpClient(CIO) { install(ContentNegotiation) { json(CommJson) } } },
+): (suspend () -> HubAdmissionResult)? {
+    val cpUrl = env("CYPPIE_CP_URL")?.takeIf { it.isNotBlank() } ?: return null
+    val opToken = env("CYPPIE_CP_OPERATOR_TOKEN")?.takeIf { it.isNotBlank() } ?: return null
+    val ownerId = env("CYPPIE_OPERATOR_ID")?.takeIf { it.isNotBlank() } ?: return null
+    if (hubIdentity == null || hubSecretStore == null || hubIdentityFile == null) return null
+    val provisioner = HubIdentityProvisioner(hubSecretStore, hubIdentityFile.toPath())
+    val registrar = ControlPlaneRegistrar(hubIdentity, provisioner, NoOpControlPlaneConnector, ownerId, hubName, hubPort)
+    val client = HubAdmissionClient(cpUrl, httpClientFactory(), registrar, { opToken })
+    return { client.admit() }
 }
