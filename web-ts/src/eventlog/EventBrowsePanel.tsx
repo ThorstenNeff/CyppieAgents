@@ -85,13 +85,19 @@ export function EventBrowsePanel({ getEvents, agentIds, projects = [], activePro
   // The effective query = the drilldown's single-axis filter when drilled in, else the filter bar.
   const effectiveFilter = useMemo(() => (drilldown ? drilldownFilter(drilldown) : filter), [drilldown, filter])
 
+  // CYP-489: hold getEvents in a ref so a parent re-render (which hands a NEW inline-closure prop) does NOT re-key the
+  // first-page effect and refetch. The effect keys ONLY on the effective query; the ref keeps the fetch fn current for
+  // the next real query (a filter/drilldown tap). Pure network hygiene — the server-side query/scope is unchanged.
+  const getEventsRef = useRef(getEvents)
+  getEventsRef.current = getEvents
+
   // Load the FIRST page whenever the effective query changes (a filter/drilldown tap → a new server query).
   const reqSeq = useRef(0)
   useEffect(() => {
     const req = ++reqSeq.current
     setLoading(true)
     setFirstPageError(false)
-    getEvents(effectiveFilter, null, PAGE_LIMIT)
+    getEventsRef.current(effectiveFilter, null, PAGE_LIMIT)
       .then((page) => {
         if (req !== reqSeq.current) return // a newer query superseded this one
         setEvents(page.events)
@@ -112,13 +118,13 @@ export function EventBrowsePanel({ getEvents, agentIds, projects = [], activePro
         }
         setLoading(false)
       })
-  }, [effectiveFilter, getEvents])
+  }, [effectiveFilter])
 
   const loadMore = () => {
     if (nextAfterSeq === null || loading) return
     setLoading(true)
     const req = reqSeq.current // loadMore belongs to the current query
-    getEvents(effectiveFilter, nextAfterSeq, PAGE_LIMIT)
+    getEventsRef.current(effectiveFilter, nextAfterSeq, PAGE_LIMIT)
       .then((page) => {
         if (req !== reqSeq.current) return
         setEvents((prev) => appendPage(prev, page.events)) // a failed loadMore keeps the loaded table (no wipe)

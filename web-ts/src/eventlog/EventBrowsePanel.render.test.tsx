@@ -93,6 +93,25 @@ describe('EventBrowsePanel (CYP-452)', () => {
     const { findByTestId } = render(<EventBrowsePanel getEvents={getEvents} agentIds={[]} />)
     expect(await findByTestId('eventBrowse.empty')).toBeTruthy()
   })
+
+  it('CYP-489: a parent re-render (new inline getEvents) does NOT refetch; a later filter change uses the latest fn', async () => {
+    const getEvents1 = vi.fn().mockResolvedValue(page([ev('a', 1)]))
+    const { rerender, getByTestId, findByTestId } = render(<EventBrowsePanel getEvents={getEvents1} agentIds={['backend']} />)
+    await findByTestId('eventBrowse.row.0')
+    const callsAfterLoad = getEvents1.mock.calls.length // first page load
+    // parent re-renders, handing a brand-new closure with the same behaviour → must NOT re-key the effect / refetch
+    const getEvents2 = vi.fn().mockResolvedValue(page([ev('a', 1)]))
+    await act(async () => {
+      rerender(<EventBrowsePanel getEvents={getEvents2} agentIds={['backend']} />)
+    })
+    expect(getEvents1.mock.calls.length).toBe(callsAfterLoad)
+    expect(getEvents2).not.toHaveBeenCalled()
+    // …but a real query change now uses the LATEST fn (the ref stayed current)
+    await act(async () => {
+      fireEvent.click(getByTestId('eventBrowse.filter.severity'))
+    })
+    await waitFor(() => expect(getEvents2).toHaveBeenCalled())
+  })
 })
 
 describe('EventBrowsePanel — CYP-467 parity (type/project/timeWindow chips + typed summaries + single-pane)', () => {
