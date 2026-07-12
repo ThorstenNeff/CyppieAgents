@@ -106,7 +106,10 @@
 ---
 
 ## Querschnitt — auf **jeder** Fläche (aus dem Konsistenz-Pass / CYP-468)
-- **Gate-Hint-Rolle** einheitlich `role="note"` (CYP-468-F1) · **Severity-Palette** aus der Token-Gen abgeleitet, nicht `--event-sev-*` hand-hardcodiert (F2) · **inline-Glyphen** `aria-hidden`.
+**CYP-468 Re-Verify-Rezept (wenn der CSS-Pass landet):**
+- **F1** — Gate-Hint-Rolle einheitlich `role="note"` (AgentMgmt/Settings vs. ApiKey `status` vs. Lifecycle/ModeToggle keine Rolle → alle `note`).
+- **F2** — Severity-Palette aus der Token-Gen abgeleitet, nicht `--event-sev-*` hand-hardcodiert; AclPanel-inline-`⚠` `aria-hidden`.
+- **F3 (aus CYP-461-QA)** — `.connector-risk`/`.connector-effect-hint`/`.connector-optin-error`/`.connector-cap-*` **getönt**: risk/effect = **amber** (`--md-sys-color-warn-container`/`-on-warn-container`), error = **`--md-sys-color-error`**, Chips getönt — **wie `.agent-mgmt-effect-hint`:280 / `.apikey-effect-hint`:220**. Assert: `grep -c connector web-ts/src/index.css` > 0; risk-Ton = warn-container (nicht error, nicht grün); Effect-Hint amber; Kontrast on-warn-container ≥ AA beide Schemata.
 - **Effect-Hints amber** (`--md-sys-color-warn-container`), nie grün · **`aria-checked`=enforced** (nie Klick-Echo) ·
   **Farbe nie alleiniger Träger** · **kein `ellipsis`** auf Offenlegung/Fehler · Ziele ≥ 24px.
 
