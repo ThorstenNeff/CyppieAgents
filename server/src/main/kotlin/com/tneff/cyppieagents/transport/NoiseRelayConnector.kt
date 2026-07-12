@@ -27,13 +27,16 @@ interface RelayDialer {
  */
 class WebSocketRelayDialer(
     private val client: HttpClient,
-    private val rendezvousId: String,
+    /** CYP-521: the rendezvous id is obtained FRESH at dial-time from the CP register (the epoch-derived id), NOT a
+     *  static env value — a static id can never match `LiveRelayRendezvous.register`'s per-registration epoch id, so
+     *  the relay would never pair. `null` (registration failed / not owned / INERT) → fail-closed, no dial. */
+    private val rendezvousId: suspend () -> String?,
 ) : RelayDialer {
     override suspend fun dial(relayUrl: String): ServerRelayChannel {
-        // CYP-509: register at the relay as role=hub under the opaque rendezvous id — the CYP-506 relay pairs this
-        // with a role=client (Dev CYP-494). Headers single-sourced from the relay's own constants (no drift).
+        // CYP-521: register with the CP → the CURRENT epoch id, then CYP-509: dial the relay as role=hub under it.
+        val id = rendezvousId() ?: error("CYP-521: hub rendezvous registration failed — cannot dial the relay")
         val session = client.webSocketSession(relayUrl) {
-            header(RENDEZVOUS_HEADER, rendezvousId)
+            header(RENDEZVOUS_HEADER, id)
             header(ROLE_HEADER, HUB_ROLE)
         }
         return RelayChannelOverWebSocket(session)

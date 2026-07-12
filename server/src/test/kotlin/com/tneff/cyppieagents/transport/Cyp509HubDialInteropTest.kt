@@ -38,7 +38,7 @@ class Cyp509HubDialInteropTest {
                 }
             }
             // the HUB end via the PRODUCTION dialer — it stamps role=hub itself.
-            val channel = WebSocketRelayDialer(ws, rendezvousId = "rzv1").dial("/relay")
+            val channel = WebSocketRelayDialer(ws, rendezvousId = { "rzv1" }).dial("/relay")
             channel.send(byteArrayOf(4, 2)) // hub → relay → client
             assertContentEquals(byteArrayOf(4, 2), withTimeout(5_000) { clientGot.await() }, "the role=hub dialer pairs with the relay and forwards to the client")
             channel.close(); clientJob.cancel()

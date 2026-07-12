@@ -1,14 +1,18 @@
 package com.tneff.cyppieagents.transport
 
+import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.CpJwtVerifier
 import com.tneff.cyppieagents.auth.operator.OperatorAssertionVerifier
 import com.tneff.cyppieagents.auth.operator.OperatorDeviceStore
+import com.tneff.cyppieagents.controlplane.HubRendezvousRegistrar
 import com.tneff.cyppieagents.crypto.HubIdentity
 import com.tneff.cyppieagents.crypto.HubIdentityProvisioner
 import com.tneff.cyppieagents.crypto.SecretStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
 import java.util.Base64
 
@@ -26,7 +30,8 @@ object RemoteRelayWiring {
     fun build(
         config: RemoteTransportConfig,
         httpClient: HttpClient,
-        rendezvousId: String,
+        /** CYP-521: obtains the rendezvous id fresh from the CP register at dial-time (the epoch id), not a static env. */
+        rendezvousId: suspend () -> String?,
         /** The hub's X25519 static PRIVATE scalar (S-C `hub.dhKey` from the SecretStore) — the NK responder static. */
         dhStaticPrivate: ByteArray,
         loopbackPort: Int,
@@ -65,7 +70,8 @@ fun buildRemoteTransport(
     operatorDeviceStore: OperatorDeviceStore?,
     scope: CoroutineScope,
     env: (String) -> String? = System::getenv,
-    httpClientFactory: () -> HttpClient = { HttpClient(CIO) { install(WebSockets) } },
+    // CYP-521: one client for BOTH the outbound relay WS dial AND the CP rendezvous-register POST (JSON).
+    httpClientFactory: () -> HttpClient = { HttpClient(CIO) { install(WebSockets); install(ContentNegotiation) { json(CommJson) } } },
 ): RelayConnector {
     val relayUrl = env("CYPPIE_REMOTE_RELAY_URL")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
     // The live path REQUIRES local-hub custody + the full CP-pin config; any gap → INERT (fail-closed).
@@ -76,7 +82,10 @@ fun buildRemoteTransport(
     val cpPub = env("CYPPIE_CP_PUBKEY")?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
         ?: return InertRelayConnector
     val rpId = env("CYPPIE_OPERATOR_RP_ID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
-    val rendezvous = env("CYPPIE_REMOTE_RENDEZVOUS")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
+    // CYP-521: the hub dial-side rendezvous id is now obtained from the CP register (the epoch id), NOT a static env.
+    // Needs the CP URL + the operator bearer (like the CYP-512 admit) — a static CYPPIE_REMOTE_RENDEZVOUS is GONE.
+    val cpUrl = env("CYPPIE_CP_URL")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
+    val cpOperatorToken = env("CYPPIE_CP_OPERATOR_TOKEN")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
     val dhPriv = hubSecretStore.get(HubIdentityProvisioner.DH_KEY)
         ?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
         ?: return InertRelayConnector
@@ -96,10 +105,12 @@ fun buildRemoteTransport(
             expectedRpId = rpId,
         ),
     )
+    val httpClient = httpClientFactory() // shared: the relay WS dial AND the CP rendezvous-register POST
+    val registrar = HubRendezvousRegistrar(cpBaseUrl = cpUrl, http = httpClient, hubId = hubIdentity.hubId, operatorBearer = { cpOperatorToken })
     return RemoteRelayWiring.build(
         config = RemoteTransportConfig(enabled = true, relayUrl = relayUrl),
-        httpClient = httpClientFactory(),
-        rendezvousId = rendezvous,
+        httpClient = httpClient,
+        rendezvousId = { registrar.register() }, // CYP-521: fresh epoch id from the CP register, at dial-time
         dhStaticPrivate = dhPriv,
         loopbackPort = loopbackPort,
         gate = gate,
