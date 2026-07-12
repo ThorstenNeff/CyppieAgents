@@ -27,11 +27,11 @@ Session-Gate**. Der **Verlust**: die branded in-app Login/Register/Reset-UX (der
 ein Kontext-/Brand-Wechsel). Der **Gewinn**: web-ts fasst **nie** Credentials an — kleinere Angriffsfläche, keine
 Enumeration-Safety-/Rate-Limit-Last im DOM.
 
-> **Meine Empfehlung: redirect-only behalten** (PO1s Wahl — sicherer + server-supported). **STATUS 2026-07-12:**
-> redirect-only ist der **PO-Arbeits-Default** (diese Spec läuft darauf); der branded-vs-redirect-Trade-off (deliberate
-> Divergenz vom „voller Ersatz") ist **an den Auftraggeber eskaliert** (me + PO1 + PO empfehlen redirect-only). Fällt
-> die Auftraggeber-Entscheidung auf branded Web-Login, ist das ein **anderer Scope** (Credential-Touch) — dann liefere
-> ich den nach.
+> **ENTSCHEIDUNG FINAL (PO 2026-07-12): redirect-only STEHT.** Die Auftraggeber-Antwort war unklar → der PO fährt auf
+> der **einstimmigen** Empfehlung (me + PO1 + PO). Diese Spec ist damit der **verbindliche** Auth-Scope. Sollte später
+> doch **branded Web-Login** gefordert werden, ist das ein **anderer Scope** (Credential-Touch) — den liefere ich dann
+> **additiv** nach; die redirect-only-Fläche hier bleibt korrekt (der Session-Gate/whoami/Logout/401-Teil trägt in
+> beiden Welten).
 > **Sub-Frage GELÖST (PO 2026-07-12):** der Verify-Email-Zustand = **dünner web-ts-Verify-Gate** (meine Empfehlung —
 > ehrlicher als ein stiller Redirect-Loop), **nicht** Kratos-Redirect. Siehe §2.
 
