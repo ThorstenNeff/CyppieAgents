@@ -42,6 +42,15 @@ class Cyp471RemoteConnectRenderTest {
     }
 
     @Test
+    fun trustCheck_showsProvisionalDisclosure() = runComposeUiTest {
+        // CYP-475 §-QA①: the trust-check must NOT over-say "verified" while real pinning is RR5-downstream —
+        // the honest "provisional" disclosure is USER-VISIBLE (not just KDoc).
+        setContent { MaterialTheme { RemoteConnectingView(hub, rs(RemoteConnState.TRUST_CHECK), vm()) } }
+        onNodeWithTag(RemoteConnectTags.TRUST_CHECK, useUnmergedTree = true).assertExists()
+        onNodeWithTag(RemoteConnectTags.TRUST_PROVISIONAL, useUnmergedTree = true).assertExists()
+    }
+
+    @Test
     fun trustChanged_isTerminal_noRetry() = runComposeUiTest {
         setContent { MaterialTheme { RemoteConnectingView(hub, rs(RemoteConnState.LOST, RemoteFailure.TrustChanged("ab:cd")), vm()) } }
         onNodeWithTag(RemoteConnectTags.error("trustChanged"), useUnmergedTree = true).assertExists()
