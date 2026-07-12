@@ -159,5 +159,26 @@
 
 ---
 
+## Live Guided Session (Auftraggeber-Login, `api.cyppie-agents.com`) — Runtime/Pixel-Checkliste
+
+> **Kontext:** die Netzwerk/Contract-Ebene ist per curl belegt (Shell 200, Bundle lädt, kein In-App-Form, config=member-fail-closed, whoami content-free, CSP-kompatibel). **Diese Liste = der Runtime/Pixel-Teil, den nur ein JS-Browser sieht** — ich **leite** (via PO-Relay), der Mensch **beobachtet** (Browser + DevTools offen). Jeder `[BLOCK]` (weiße Seite / kaputte Fläche / Console-Bruch) → **sofort**, Session nicht weiterlaufen lassen.
+
+**A — Erster Load (unauth → Login), Reihenfolge:**
+1. Root öffnen → **SPA rendert nicht-weiß** (nicht nur der leere `#root`; React mountet). `[BLOCK]` wenn weiße Seite.
+2. **Login-Redirect feuert sichtbar** → Kratos-Self-Service-Login (`/.ory/kratos/.../login/browser` → `/?flow=<id>`) rendert eine echte Seite (kein 429 mehr, kein Loop).
+3. **DevTools → Console: clean.** Keine roten Errors, kein Uncaught. **★ Mein script-src-Check:** keine `Refused to evaluate a string as JavaScript because 'unsafe-eval'…` / `Refused to … 'blob:'`-CSP-Violation (das Prod-Bundle darf **kein** `eval`/`new Function`/`blob:`-Worker zur Laufzeit brauchen).
+4. **DevTools → Network:** Bundle/CSS/config `200`; **keine** geblockten Requests (rot/`(blocked:csp)`); kein externer Font/Asset-Request (App nutzt System-Fonts — 0 externe).
+5. **Fonts/Layout/Theme:** Text lesbar (System-Font-Stack greift), Layout nicht kaputt, Theme (light/dark `[data-theme]`) korrekt.
+
+**B — Nach Login (auth-gated UX), je Fläche visuell + die diskriminierenden Zähne oben:**
+- **Operator-Login:** Panels rendern (Lifecycle-Header, Event-Log-Fenster **vorhanden** = operator, Agenten-Verwaltung, Settings, Comm/ACL). Effect-Hints **amber nicht grün**; `aria-checked`=enforced (ACL/Toggle); Fidelity-Badge nur bei degraded/unknown; Gate-Hints `role=note`.
+- **Member-Login (falls testbar):** **kein** Event-Log-Fenster (Omission), Config-Flächen present-but-disabled + Gate-Hint — nicht als Fake-Control.
+- **Session-Achse:** Logout → Kratos-Logout-Redirect (kein client-cookie-clear); ein forcierter 401 (Session-Ablauf) → Re-Auth-Redirect, **kein** stale Operator-UI.
+- Pro sichtbarer Fläche: rendert-nicht-weiß + die Fläche-spezifischen Zähne (Abschnitte oben CYP-452/461/464/465/470/488).
+
+**Was ich melde:** GO je Achse (A/B) oder priorisierte `[BLOCK]`/Findings — je Finding eine Nachricht (Discord-Schwanz-Regel). Ich behaupte **nichts**, was der Mensch nicht im Browser bestätigt hat.
+
+---
+
 **Nichts gebaut — QA-Vorlauf.** Bei Merge: das jeweilige Rezept fahren, schärfsten Zahn zuerst; Befunde als
 priorisierte Liste (Severity + konkreter Fix), **je Finding eine Nachricht** (Discord-Schwanz-Regel).
