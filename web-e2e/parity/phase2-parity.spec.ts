@@ -75,6 +75,39 @@ test.describe('A-P2-e · API-Key — masked-only status + write-only input, oper
     await expect(input).toBeEnabled(); // operator
     await expect(page.locator('[data-testid="settings.apiKey.gateHint"]')).toHaveCount(0);
   });
+
+  test('operator: save round-trip → the typed plaintext CLEARS and never lands in the DOM (§0.2 discriminating)', async ({ page }) => {
+    await page.goto('/');
+    const KEY = 'sk-ant-parity-clearaftersave-7777'; // >12 chars (CYP-104 plausibility); last-4 = 7777
+    const input = page.locator('[data-testid="settings.apiKey.input"]');
+    await expect(input).toBeVisible();
+
+    // the typed plaintext is transiently in the input value — that is the ONLY place §0.2 permits it.
+    await input.fill(KEY);
+    await expect(input).toHaveJSProperty('value', KEY);
+    // The settings window tiles UNDER others in the headless viewport, so its Save button is pointer-occluded (a
+    // window-manager artifact, not a product bug). Dispatch the click DOM event directly on the button — it fires
+    // React's onClick regardless of occlusion, exercising the real save→PUT→clear-after-save→leak path (the tooth's
+    // subject), without depending on window focus mechanics.
+    await page.locator('[data-testid="settings.apiKey.save"]').dispatchEvent('click');
+
+    // success → the honest saved≠active effect hint appears, and §0.2 clear-after-save empties the input.
+    await expect(page.locator('[data-testid="settings.apiKey.effectHint"]')).toBeVisible();
+    await expect(input).toHaveJSProperty('value', '');
+
+    // §0.1 the stored key now shows ONLY the server mask (***last4) — the last-4 confirms it is THIS key's mask,
+    // and the full plaintext is never rendered.
+    const masked = page.locator('[data-testid="settings.apiKey.masked"]');
+    await expect(masked).toContainText('Hinterlegt:');
+    await expect(masked).toContainText('7777');
+    await expect(masked).not.toContainText(KEY);
+
+    // The discriminating leak check: the ENTIRE api-key section's serialized HTML must not contain the plaintext
+    // anywhere — no text node, no attribute (data-*/aria-*/title), no lingering value. (Drop clear-after-save →
+    // the input still holds KEY → this fails.)
+    const html = await page.locator('[data-testid="settings.section.apiKey"]').evaluate((el) => el.outerHTML);
+    expect(html).not.toContain(KEY);
+  });
 });
 
 memberTest.describe('A-P2-e · API-Key — operator gate present-but-disabled (NOT omitted, unlike the event-log)', () => {
