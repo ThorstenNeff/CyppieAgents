@@ -120,6 +120,10 @@ object RestContract {
         // --- HubTicketRoutes (CYP-508, Phase-2 activation) — CP mint of the hub hubTicket (operator-gated).
         //     INERT (NOT_AUTHORIZED_FOR_HUB) until the §3 swap gate; business outcome = 200 + typed body. ---
         Op("POST", "/api/cp/hubticket", Tier.OPERATOR, request = json<com.tneff.cyppieagents.controlplane.HubTicketRequest>(), response = json<com.tneff.cyppieagents.controlplane.HubTicketResponse>()),
+        // --- HubAdmissionRoutes (CYP-512, Phase-2 activation) — live hub admission into the CP (operator-authed;
+        //     ownerId bound to the authenticated operator; nonce single-use). Empty registry → fail-closed. ---
+        Op("GET", "/api/cp/challenge", Tier.OPERATOR, response = json<com.tneff.cyppieagents.controlplane.HubChallenge>()),
+        Op("POST", "/api/cp/admit", Tier.OPERATOR, request = json<com.tneff.cyppieagents.controlplane.HubAdmissionRequest>(), response = json<com.tneff.cyppieagents.controlplane.HubAdmissionResult>()),
         // --- ConnectorRoutes ---
         Op("POST", "/api/agents/{id}/connector", Tier.OPERATOR, request = json<ConnectorChoice>(), response = json<Agent>()),
         // --- ConfigRoutes (/api/config) — masked at rest, never re-rendered ---

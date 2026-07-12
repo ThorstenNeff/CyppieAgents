@@ -82,6 +82,10 @@ fun Application.installPlatform(
             registrar = cpHubRegistrar,
             operatorAuthenticate = { it.sessionToken.ifBlank { null } },
         )
+    // CYP-512 (activation): the live hub-admission challenge-nonce store. The admission endpoint admits hubs into the
+    // SAME shared [cpHubRegistrar] the mint + resolve owner-check read — so an admitted hub's ownerId (= the
+    // authenticated operator) is what those checks match against. Constructed ONCE (outstanding challenges).
+    val hubAdmissionNonce = com.tneff.cyppieagents.controlplane.HubAdmissionNonce()
     routing {
         // ── WS + MCP transports — NOT versioned; single-mount, OUTSIDE the /api-prefix loop (they are not
         //    `/api` REST resources: `/ws/*` are sockets, `/mcp/hub` is the connector wire, design §2.5). ──
@@ -188,6 +192,10 @@ fun Application.installPlatform(
             // CYP-508 (activation): CP hubTicket mint route. Operator-gated; INERT (NOT_AUTHORIZED) until the §3 swap
             // gate. Reviewer re-gates the 4 enforcement points LIVE here.
             hubTicketRoutes({ hubTicketMinter }, booted.tokenRegistry, authDeps, apiBase = apiBase, machineOperatorId = System.getenv("CYPPIE_OPERATOR_ID"))
+            // CYP-512 (activation): the live hub-admission endpoint (GET challenge + POST admit). Operator-authed;
+            // ownerId bound to the authenticated operator; admits into the shared cpHubRegistrar. Empty until a hub
+            // registers → mint/resolve owner-check stay fail-closed.
+            hubAdmissionRoutes({ cpHubRegistrar }, hubAdmissionNonce, booted.tokenRegistry, authDeps, apiBase = apiBase, machineOperatorId = System.getenv("CYPPIE_OPERATOR_ID"))
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
             configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
             // CYP-466: GET /api/config/repo/reprovision-preview — the honest discard-confirm feed. Operator-tier,
