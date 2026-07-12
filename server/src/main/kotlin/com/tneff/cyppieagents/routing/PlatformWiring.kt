@@ -74,8 +74,8 @@ fun Application.installPlatform(
             ?: com.tneff.cyppieagents.controlplane.InertRelayRendezvous
     // CYP-508 (activation): the CP hubTicket minter. INERT (InertHubTicketMinter → NOT_AUTHORIZED_FOR_HUB) until the
     // §3 swap gate (CYPPIE_REMOTE_RELAY_URL + CYPPIE_CP_SIGNING_SEED/KID/ISSUER); fail-closed. The CP hub-identity
-    // registry (populated by the CYP-451 admission flow — separate) backs the owner-check; the operator id is the
-    // route's authenticated principal, carried via CpOperatorSession (never the request body).
+    // registry (populated by the CYP-451/CYP-512 admission flow — separate) backs the owner-check. CYP-511: the SAME
+    // shared [cpHubRegistrar] also backs the resolve OWNER-gate — one registry, one source of truth for both.
     val cpHubRegistrar = com.tneff.cyppieagents.controlplane.HubRegistrar()
     val hubTicketMinter: com.tneff.cyppieagents.controlplane.HubTicketMinter =
         com.tneff.cyppieagents.controlplane.buildHubTicketMinter(
@@ -183,7 +183,8 @@ fun Application.installPlatform(
             modeRoutes({ booted.runtimeRegistry.active().handoff }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-507 (activation): CP rendezvous register/resolve over the RelayRendezvous seam. INERT (404/503)
             // until CYPPIE_REMOTE_RELAY_URL is set. Operator-gated (register-auth envelope flagged for sign-off).
-            rendezvousRoutes({ relayRendezvous }, booted.tokenRegistry, authDeps, apiBase = apiBase)
+            // CYP-511: resolve is owner-gated (RegisteredHub.ownerId == operatorId) over the shared cpHubRegistrar.
+            rendezvousRoutes({ relayRendezvous }, { cpHubRegistrar }, booted.tokenRegistry, authDeps, apiBase = apiBase, machineOperatorId = System.getenv("CYPPIE_OPERATOR_ID"))
             // CYP-508 (activation): CP hubTicket mint route. Operator-gated; INERT (NOT_AUTHORIZED) until the §3 swap
             // gate. Reviewer re-gates the 4 enforcement points LIVE here.
             hubTicketRoutes({ hubTicketMinter }, booted.tokenRegistry, authDeps, apiBase = apiBase, machineOperatorId = System.getenv("CYPPIE_OPERATOR_ID"))

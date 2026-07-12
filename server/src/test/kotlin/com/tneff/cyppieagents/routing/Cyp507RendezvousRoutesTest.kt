@@ -4,11 +4,14 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.FakeIdentityProvider
 import com.tneff.cyppieagents.auth.InMemoryRoleStore
+import com.tneff.cyppieagents.controlplane.HubRegistrar
 import com.tneff.cyppieagents.controlplane.InertRelayRendezvous
 import com.tneff.cyppieagents.controlplane.LiveRelayRendezvous
+import com.tneff.cyppieagents.controlplane.RegisteredHub
 import com.tneff.cyppieagents.controlplane.RelayRendezvous
 import com.tneff.cyppieagents.controlplane.RendezvousFailure
 import com.tneff.cyppieagents.controlplane.RendezvousResolveResponse
+import java.util.concurrent.ConcurrentHashMap
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
 import io.ktor.client.request.get
@@ -35,12 +38,19 @@ class Cyp507RendezvousRoutesTest {
     private val opToken = "tok-op"
     private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
 
-    private fun ApplicationTestBuilder.app(rendezvous: RelayRendezvous) {
+    // CYP-511: the resolve tests own their hubs by op-1 (the operator-token principal), so the owner-gate admits them.
+    private fun ownedRegistrar(vararg hubIds: String, ownerId: String = "op-1") =
+        HubRegistrar(ConcurrentHashMap(hubIds.associateWith { RegisteredHub(it, ownerId, "hub", 8787, "s", "d") }))
+
+    private fun ApplicationTestBuilder.app(
+        rendezvous: RelayRendezvous,
+        registrar: HubRegistrar = ownedRegistrar("hub_x", "hub_y", "never_registered"),
+    ) {
         val d = deps()
         application {
             install(ContentNegotiation) { json(CommJson) }
             install(StatusPages) { exception<ApiException> { call, cause -> call.respond(cause.status) } }
-            routing { rendezvousRoutes({ rendezvous }, d.tokens, d) }
+            routing { rendezvousRoutes({ rendezvous }, { registrar }, d.tokens, d, machineOperatorId = "op-1") }
         }
     }
 
