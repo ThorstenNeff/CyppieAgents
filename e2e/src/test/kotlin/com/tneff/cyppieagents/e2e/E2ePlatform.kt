@@ -302,7 +302,7 @@ internal class ControllableSpawner : ProcessSpawner {
     @Volatile var failSpawns: Boolean = false
     override fun spawn(command: List<String>, cwd: File, env: Map<String, String>): AgentProcess {
         if (failSpawns) throw java.io.IOException("parity ERROR probe: spawn forced to fail")
-        return FakeProcess()
+        return OpenFakeProcess()
     }
 }
 
@@ -310,4 +310,17 @@ private class FakeProcess : AgentProcess {
     override val stdoutLines: Flow<String> = emptyFlow()
     override suspend fun writeLine(line: String) {}
     override fun destroy() {}
+}
+
+/**
+ * A [FakeProcess] whose stdout STAYS OPEN until [destroy] — so the mediated /ws/agent socket does NOT close right
+ * after replay (as `emptyFlow` would), avoiding a reconnect storm, yet a STOP still completes: the reader suspends
+ * on [closed] and [destroy] completes it (the flow ends, so `closeAndAwait`'s reader-join returns — CYP-371).
+ * Mirrors a live agent holding its stream open, letting the transcript seq-`?since`/reconnect teeth run stably.
+ */
+private class OpenFakeProcess : AgentProcess {
+    private val closed = kotlinx.coroutines.CompletableDeferred<Unit>()
+    override val stdoutLines: Flow<String> = kotlinx.coroutines.flow.flow { closed.await() } // open until destroy(), emits nothing
+    override suspend fun writeLine(line: String) {}
+    override fun destroy() { closed.complete(Unit) }
 }

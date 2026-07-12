@@ -2,10 +2,13 @@ package com.tneff.cyppieagents.e2e
 
 import com.tneff.cyppieagents.events.EventDraft
 import com.tneff.cyppieagents.events.EventSink
+import com.tneff.cyppieagents.model.AgentMessage
+import com.tneff.cyppieagents.model.AssistantEvent
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.ResultEvent
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.Severity
+import com.tneff.cyppieagents.model.TextBlock
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
 import io.ktor.server.response.respondText
@@ -41,6 +44,10 @@ object WebE2eSeed {
     // CYP-422 §A-P2-c XSS-at-detail probe: an HTML/JS payload placed in an Event-Log event's `detail`, so the
     // parity tooth can prove the Event-Log renders `detail` INERT (escaped text, no element injected, no onerror).
     const val XSS_PROBE = "<img src=x onerror=\"window.__xssFired=true\">"
+    // CYP-422 §A3 agent-transcript corpus: ROW-producing AssistantEvents seeded for `po` (the /ws/agent seq-?since
+    // + reconnect-idempotency tooth). Kept off `backend` so its frame-only success-corpus (reference fixture) is intact.
+    const val TRANSCRIPT_AGENT = "po"
+    const val TRANSCRIPT_ROWS = 3
 }
 
 fun main() {
@@ -120,6 +127,19 @@ fun main() {
             EventDraft("po", WebE2eSeed.PROJECT, EventType.ERROR_TOOL, Severity.ERROR,
                 detail = buildJsonObject { put("browseSeed", "BROWSE-SEED-C") }),
         )
+        // CYP-422 §A3 transcript corpus for `po` (agentEventStore / /ws/agent): ROW-producing AssistantEvents so the
+        // seq-`?since`/reconnect tooth can assert rendered transcript rows. (backend's success-ResultEvent corpus is
+        // frame-only — the streamJsonMapper suppresses a success result, so it yields 0 rows.)
+        repeat(WebE2eSeed.TRANSCRIPT_ROWS) { i ->
+            platform.booted.agentEventStore.append(
+                agentId = WebE2eSeed.TRANSCRIPT_AGENT,
+                projectId = WebE2eSeed.PROJECT,
+                tsMs = (i + 1).toLong(),
+                event = AssistantEvent(
+                    message = AgentMessage(id = "m$i", role = "assistant", content = listOf(TextBlock("TRANSCRIPT-SEED-$i"))),
+                ),
+            )
+        }
     }
 
     Runtime.getRuntime().addShutdownHook(Thread { runCatching { platform.close() } })

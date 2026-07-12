@@ -14,6 +14,12 @@ import react from '@vitejs/plugin-react'
  * (web-e2e/parity/fixtures.ts), appConfig falls back to location.origin (:8080): the SPA and its API share an origin.
  */
 const KTOR = 'http://127.0.0.1:8791'
+// The operator token (E2ePlatform.OPERATOR_TOKEN). In production /ws/agent authenticates via the same-origin
+// Kratos session COOKIE (CYP-454) — the token-based hermetic harness has no Kratos, so the reverse proxy here
+// injects the operator's upstream auth as a Bearer token (an auth mode /ws/agent also accepts: operator token via
+// Authorization/?token=). This is orthogonal to what the seq-?since/reconnect tooth tests (the transcript FEED);
+// it just lets the real feed authenticate against the hermetic harness — the reverse proxy's job.
+const OPERATOR_TOKEN = 'e2e-operator-token'
 
 export default defineConfig({
   plugins: [react()],
@@ -23,7 +29,20 @@ export default defineConfig({
     proxy: {
       // REST + WS forwarded server-side to the harness → the browser sees a single origin (no CORS).
       '/api': { target: KTOR, changeOrigin: false },
-      '/ws': { target: KTOR, ws: true, changeOrigin: false },
+      // Inject the operator Bearer on the WS UPGRADE upstream: /ws/agent (CYP-454) sends no ?token= from the
+      // client, so the hermetic harness (no Kratos cookie) would else reject the handshake. The `headers` option
+      // does NOT apply to WS upgrades (http-proxy limitation), so set it on the proxyReqWs event. Harmless for
+      // /ws/comm|terminal (they also carry ?token=). Models the reverse proxy forwarding the operator's auth.
+      '/ws': {
+        target: KTOR,
+        ws: true,
+        changeOrigin: false,
+        configure: (proxy) => {
+          proxy.on('proxyReqWs', (proxyReq) => {
+            proxyReq.setHeader('Authorization', `Bearer ${OPERATOR_TOKEN}`)
+          })
+        },
+      },
     },
   },
 })
