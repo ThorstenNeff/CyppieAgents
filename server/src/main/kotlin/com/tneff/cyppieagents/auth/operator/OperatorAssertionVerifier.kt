@@ -108,6 +108,33 @@ class OperatorAssertionVerifier(
         return validity
     }
 
+    /**
+     * CYP-485 (③ multi-device) — verify [pop] against **ANY** of the enrolled [devices] (a PoP need match only one).
+     * The signature/branch checks run against each device FIRST; the nonce is consumed **once, only when some device
+     * verifies** — so a garbage PoP matching no device never burns the nonce (the CYP-477 grief guard is preserved).
+     */
+    fun verifyAny(
+        pop: OperatorDevicePoP,
+        devices: List<EnrolledOperatorDevice>,
+        handshakeHash: ByteArray,
+        hubId: String,
+        nonce: ByteArray,
+        expectedRpId: String,
+    ): AssertionResult {
+        if (devices.isEmpty()) return AssertionResult.Rejected("no_enrolled_device")
+        val challenge = operatorAuthChallenge(handshakeHash, hubId, nonce)
+        val match: AssertionResult.Verified = devices.firstNotNullOfOrNull { device ->
+            when (pop) {
+                is OperatorDevicePoP.Raw ->
+                    if (verifySig(device, challenge, pop.signature)) AssertionResult.Verified(device.deviceId) else null
+                is OperatorDevicePoP.Fido2 ->
+                    verifyFido2(pop, device, challenge, expectedRpId) as? AssertionResult.Verified
+            }
+        } ?: return AssertionResult.Rejected("bad_signature")
+        if (!nonces.useOnce(nonce)) return AssertionResult.Rejected("nonce_replayed")
+        return match
+    }
+
     private fun verifyFido2(
         pop: OperatorDevicePoP.Fido2,
         device: EnrolledOperatorDevice,

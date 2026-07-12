@@ -8,10 +8,21 @@ sealed interface EnrollResult {
     data class Rejected(val reason: String) : EnrollResult
 }
 
-/** Stores the enrolled operator device (the PoP anchor). One device in this slice (first-device). */
+/**
+ * Stores the enrolled operator device(s) — the PoP anchor(s) the [OperatorAssertionVerifier] checks against.
+ * CYP-469 was single-device; CYP-485 (③) adds **multi-device** ([devices] / [add]) as **additive defaults** so the
+ * existing single-device stores (and their consumers) are unchanged — a multi-device store overrides them.
+ */
 interface OperatorDeviceStore {
     fun enrolled(): EnrolledOperatorDevice?
     fun save(device: EnrolledOperatorDevice)
+
+    /** CYP-485 — ALL enrolled devices (a PoP may match ANY). Default: the single anchor (backward-compat). */
+    fun devices(): List<EnrolledOperatorDevice> = listOfNotNull(enrolled())
+
+    /** CYP-485 — add a device (multi-device enroll / recovery). Default (single-device store): replace the anchor;
+     *  a multi-device store overrides to append. */
+    fun add(device: EnrolledOperatorDevice) = save(device)
 }
 
 /** In-memory store (tests / pre-persistence). Thread-safe single-slot. */
@@ -19,6 +30,20 @@ class InMemoryOperatorDeviceStore : OperatorDeviceStore {
     private val ref = AtomicReference<EnrolledOperatorDevice?>(null)
     override fun enrolled(): EnrolledOperatorDevice? = ref.get()
     override fun save(device: EnrolledOperatorDevice) = ref.set(device)
+}
+
+/**
+ * CYP-485 (③) — an in-memory **multi-device** store: N enrolled devices. [save] sets the single first anchor
+ * (clear + add), [add] appends an additional device, [remove] drops one. Thread-safe.
+ */
+class InMemoryMultiOperatorDeviceStore : OperatorDeviceStore {
+    private val list = java.util.concurrent.CopyOnWriteArrayList<EnrolledOperatorDevice>()
+    override fun enrolled(): EnrolledOperatorDevice? = list.firstOrNull()
+    override fun save(device: EnrolledOperatorDevice) { list.clear(); list.add(device) }
+    override fun devices(): List<EnrolledOperatorDevice> = list.toList()
+    override fun add(device: EnrolledOperatorDevice) { list.add(device) }
+    fun remove(deviceId: String) { list.removeIf { it.deviceId == deviceId } }
+    fun count(): Int = list.size
 }
 
 /**
