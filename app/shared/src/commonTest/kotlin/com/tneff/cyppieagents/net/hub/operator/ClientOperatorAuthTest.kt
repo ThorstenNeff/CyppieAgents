@@ -51,7 +51,7 @@ class ClientOperatorAuthTest {
         OperatorPopBuilder(FakeStore(result, sink), NonceGenerator { nonce })
 
     private fun auth(result: PopResult, jwt: String?, sink: (ByteArray) -> Unit = {}) =
-        ClientOperatorAuth(builder(result, sink), CpJwtProvider { jwt })
+        ClientOperatorAuth(builder(result, sink), CpJwtProvider { _, _ -> jwt })
 
     @Test
     fun granted_returnsTrue_andSendsChannelBoundRequest() = runTest {
