@@ -1,0 +1,114 @@
+# P2-Impl — diskriminierende QA-Rezepte (QA-on-Merge, vorgestaged)
+
+> Owner: UIUX-Designer · Stand 2026-07-12 · **Vorlauf für QA-on-Merge** der pending P2-Impls · für **mich + Tester2**.
+> Der PO reicht das jeweilige Rezept mit dem Merge weiter. Docs-only.
+>
+> **Methode (verbindlich):** Jeder Check nennt die **falsche Impl, die er ablehnt** (nicht „wird's grün?", sondern
+> „welche plausible Fehl-Impl ließe er durch?"). **Am Objekt messen** — testID assert, Kontrast rechnen (fg über der
+> realen surface, **mit** Alpha, **hell UND dunkel**), Grep = Annahme / vitest+Code-Read = Messung. Ordnung: der
+> **schärfste Zahn** je Fläche fängt den wahrscheinlichsten Slip.
+>
+> **Toolchain:** `git checkout origin/develop -- web-ts && cd web-ts && npm install && npx vitest run <pfad>` — danach
+> **aggressiv aufräumen** (`git reset HEAD web-ts; git checkout -- web-ts; git clean -fdxq web-ts`), sonst Disk-Quota.
+> **CWD-Falle:** git-Inspektion **immer vom Repo-Root**, nie aus `web-ts/` (sonst path-scoped-Fehlschluss).
+
+---
+
+## CYP-452 (P2-c.2) — Event-Log Browse + Drilldown · Spec `feature/CYP-452-…` @ `9eb7059e`
+**Merged-Quelle lesen:** `web-ts/src/eventlog/EventBrowse*.tsx` + `eventBrowse*.ts` · reuse `eventLog.ts` (severityGlyph/typeGlyph/eventRows).
+
+| # | Check (assert) | Falsche Impl, die er ablehnt |
+|---|---|---|
+| **1 ★schärfster** | Event mit `correlationId≠null, sessionId=null` → `eventBrowse.detail.showRun` **enabled**, `.showSession` **disabled** (und umgekehrt) | Buttons immer aktiv **oder** einer als Fallback für den anderen → **erfundene Korrelation** |
+| 2 | Filter-Chip-Tap feuert **neue Query** (applyFilter→REST/store-refetch) | client-seitiger Post-Filter über schon geladenen Daten |
+| 3 | Fehlgeschlagener **First-Page**-Load → `eventBrowse.error`+`.error.retry`, **nicht** `eventBrowse.empty` | failure-as-empty (CYP-288) |
+| 4 | `filter≠default` → `eventBrowse.filterActive` präsent | gefiltertes Empty ununterscheidbar vom echten Empty |
+| 5 | **Nicht-Operator:** kein `eventBrowse.table`/Socket im DOM (Route **nicht gemountet**) | mounted+hidden / Bodies im DOM / CSS-hidden |
+| 6 | `sourceTs` als „beobachtet" gelabelt; Zeilen-Ordnung = `seq` | sourceTs autoritativ / Sortierung nach Zeitstring |
+| 7 | **Shared Row (PO-Architektur-Auflage):** Browse-Zeile importiert **dieselbe** `EventRow`/`eventLog.ts`-Helfer wie der Tail | Browse re-inlined eine eigene, driftende Zeile/Severity/Glyph |
+| 8 | compact-timeout/aborted + resume-context-lost = **WARN-amber**, nie grün | grün/„success" |
+
+**Am Objekt:** `grep` dass Browse+Tail **eine** Row-Quelle teilen (Zahn 7 = PO-Steuerung); vitest `src/eventlog/`.
+**Honesty-Blick:** UNKNOWN=rawType (nicht „unknown"), Gap-Zeile nie stiller seq-Sprung, content-free detail as-is.
+
+---
+
+## CYP-461 (P2-g) — Connector-Auswahl · Spec `feature/CYP-461-…` @ `72d1c718`
+**Merged-Quelle lesen:** `web-ts/src/connector/*.tsx` + `GET /api/connectors` · reuse `AuthMe`-frei; `defaultCapabilitiesFor`↔Endpoint.
+
+| # | Check (assert) | Falsche Impl, die er ablehnt |
+|---|---|---|
+| **1 ★schärfster (Security)** | **Code-Read:** die **einzigen** Connector-Aktivierer sind `selectKind`/`confirmOptIn` (Operator-UI); Agent-PATCH **lässt `connectorKind` aus** | ein Pfad (Route/Methode/PATCH-Feld/Channel-Handler) flippt den Connector aus non-operator/externem Input → **Anti-Injection-Bruch** |
+| 2 | `connector.picker.mcp` beim Öffnen **nicht** checked; `draftKind` startet `streamJson` | B pre-selected |
+| 3 | `connector.optInDialog.confirm` enabled **⇔** operator ∧ `riskAcknowledged` ∧ **Preview geladen** | B-Radio setzt Connector sofort / confirm ohne ack / confirm aktiv bei **Preview-Load-Fail** |
+| 4 | `optInDialog.capabilityPreview` präsent (advisory MCP-Profil, scope `preview`); **distinct** von beobachtetem `connector.<agentId>.capability.*` | kein Preview / Preview als **garantiert/aktiv** / mit `Agent.capabilities` in **denselben** Knoten vermischt |
+| 5 | `optInDialog.risk*` = **amber** (warn-container), nicht error-rot | Risiko-Zeilen im Error-Ton |
+| 6 | `fidelityBadge` present **⇔** degraded ∨ `capabilities==null`; `null` = „nicht gemeldet", nie still voll | `null`=voll / Badge fehlt bei unknown |
+| 7 | **Add:** Kind reitet `NewAgentSpec.connectorKind` (kein `/connector`-Call, kein Restart-Hint); **Edit:** `POST /connector` + amber Restart-Hint bei Änderung | add ruft Endpoint / edit ohne Hint |
+
+**Am Objekt:** Code-Read Zahn 1 (Aktivierer-Inventar); vitest connector; Kontrast risk-amber (warn-container beide Schemata); Preview-scope-Tag = `preview`.
+**Honesty-Blick:** advisory Vorhersage ≠ beobachtet, räumlich getrennt (Dialog vs. Agent).
+
+---
+
+## CYP-464 (P2-d) — Product-Lead · Spec `feature/CYP-464-…` @ `42510319`
+**Merged-Quelle lesen:** `web-ts/src/report/*.tsx` · reuse `severityColor`/`event_severity_*` + **eine report-lokale** `reportDefectGlyph`.
+
+| # | Check (assert) | Falsche Impl, die er ablehnt |
+|---|---|---|
+| **1 ★schärfster** | Jeder Snapshot zeigt `productLead.detail.asOf` (+ Zeile `.snapshot.<id>.ts`) + „kann veraltet"-Hint | Report ohne As-of / als „aktueller Stand" |
+| 2 | `productLead.gateHint`-Ton = **neutral** (`onSurfaceVariant`), **nie** `tertiary`/grün | denied im tertiary/grünen Ton (a0-Falle) |
+| 3 | **Nicht-Operator:** nur `productLead.gateHint`, **kein** `.trigger`/`.list` | Trigger/Liste ohne Operator sichtbar |
+| 4 | DEFECTS-Report → `productLead.detail.advisory` präsent | Defekt-Register als vollständig/autoritativ |
+| 5 | `productLead.detail.provenance` = benannte Quellen + Fenster | erfundene Vollständigkeit (kein Provenance) |
+| 6 | `productLead.empty` **nur** wenn `!loading ∧ leer` | „keine Reports" flasht während Fetch |
+| 7 | Severity = **Glyph + Farbe + Label**; report-Glyph ist **eine** Fn (nicht inline dupliziert, nicht Event-Log-Satz) | Severity nur Farbe / Event-Log-Glyph reused / inline-Duplikat |
+| 8 | Trigger-Buttons `disabled` während `generating` | Doppel-Erzeugung |
+
+**Am Objekt:** grep report-Glyph = **eine** Fn; verify gate-hint-Token = onSurfaceVariant (nicht tertiary); empty-on-!loading-Guard; vitest report.
+**Honesty-Blick:** generating/denied/in-progress **neutral, nie grün**.
+
+---
+
+## CYP-465 (P2-h) — Repo-Reprovision-Work-Guard + Discard · Spec `feature/CYP-465-…` @ `8121c98d`… (aktuell `995334db`) · **braucht CYP-466**
+**Merged-Quelle lesen:** `web-ts/src/settings/*` (Repo-Section-Erweiterung) + `GET …/reprovision-preview` (CYP-466, `AtRiskAgent`).
+
+| # | Check (assert) | Falsche Impl, die er ablehnt |
+|---|---|---|
+| **1 ★schärfster** | Discard-Dialog zeigt die `AtRiskAgent`-Liste aus `reprovision-preview`, **frisch beim Öffnen geladen**; leere Liste → **kein** Discard (`settings_repo_discard_cleared`) | zum Save-Zeitpunkt **eingefrorene/gestashte** Liste / verschweigt betroffene Arbeit / bietet Discard bei leerer Liste |
+| 2 | `reprovisionPending` = „steht an, nächster Neustart", **nicht** „Repo aktiv" | pending als applied gerendert |
+| 3 | pending-**blockiert** → Grund („Agenten haben unpushte Arbeit") **offengelegt** | blockiert als „steht an"/„ok" ohne Grund |
+| 4 | Discard-Toggle startet **false** | startet true / vorausgewählt |
+| 5 | Discard = `role="alertdialog"`, **cancel-erstfokussiert**, benennt den Verlust | schlichte Checkbox ohne Dialog / ohne Verlust-Nennung |
+| 6 | blockiert/Warn = **amber**, nicht error-rot | Error-Ton (als App-Fehler) |
+
+**Am Objekt:** verify die At-Risk-Liste wird **beim Dialog-Öffnen** gefetcht (nicht bei Save gestasht) — der Live-Kern; alertdialog+cancel-first-focus; amber-Ton; vitest settings.
+**Honesty-Blick:** default-sicher (keep, kein stiller Verlust); „confirm the loss you see" = jetzt-aktuell.
+
+---
+
+## CYP-470 (P2-i) — Auth Redirect-Session-Gate · Spec `feature/CYP-470-…` @ `8121c98d`
+**Merged-Quelle lesen:** `web-ts/src/auth/*` + `GET /api/auth/me` (`AuthMe`) + der App.tsx-`cfg.operator`-Pfad.
+
+| # | Check (assert) | Falsche Impl, die er ablehnt |
+|---|---|---|
+| **1 ★schärfster (Credential-Grenze)** | **Grep:** web-ts rendert **kein** `input[type=password]`/Email-Login-Formular; Login = Redirect | eine Credential-Fläche im DOM (Passwort/Login-Formular) |
+| 2 | `ory_kratos_session`/Session-Token **nie** in DOM/JS/`localStorage`/Log/`data-*` | Token im DOM/localStorage/Log |
+| 3 | `cfg.operator` = `AuthMe.role==="OPERATOR"`; whoami-Fehler → **Member/unauth** (fail-closed) | Operator-UI aus injiziertem Token trotz `role=MEMBER` / optimistisch bei whoami-Fehler |
+| 4 | Logout → **Kratos-Logout-Redirect** (server-autoritativ) | client-seitiges Cookie-Clear (Session bleibt server-gültig) |
+| 5 | API-/WS-**401** → Re-Auth-Redirect; kein stale-Operator-UI, keine Retry-Schleife | 401 still geschluckt / stale UI bleibt / Endlos-Retry |
+| 6 | `verified=false` (`role=null`) → Verify-Gate, **kein** App-Zugang | unverifizierte Session bekommt Zugang |
+| 7 | App-Inhalt rendert **erst nach** whoami-Auflösung | unauth-Flash: Operator-Fenster vor Session-Auflösung gemountet |
+
+**Am Objekt:** grep `type="password"`/`localStorage`/`document.cookie` in `web-ts/src/auth` (Zähne 1/2); Code-Read `cfg.operator`-Ableitung (Zahn 3); 401-Interceptor → Redirect (Zahn 5).
+**Honesty-Blick:** AuthMe content-free (nur role/verified, keine id/email außer Unverified-Email im Gate); role = Text+Label, Farbe nie allein.
+
+---
+
+## Querschnitt — auf **jeder** Fläche (aus dem Konsistenz-Pass / CYP-468)
+- **Gate-Hint-Rolle** einheitlich `role="note"` (CYP-468-F1) · **Severity-Palette** aus der Token-Gen abgeleitet, nicht `--event-sev-*` hand-hardcodiert (F2) · **inline-Glyphen** `aria-hidden`.
+- **Effect-Hints amber** (`--md-sys-color-warn-container`), nie grün · **`aria-checked`=enforced** (nie Klick-Echo) ·
+  **Farbe nie alleiniger Träger** · **kein `ellipsis`** auf Offenlegung/Fehler · Ziele ≥ 24px.
+
+**Nichts gebaut — QA-Vorlauf.** Bei Merge: das jeweilige Rezept fahren, schärfsten Zahn zuerst; Befunde als
+priorisierte Liste (Severity + konkreter Fix), **je Finding eine Nachricht** (Discord-Schwanz-Regel).
