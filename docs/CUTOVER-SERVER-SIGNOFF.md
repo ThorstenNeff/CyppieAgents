@@ -46,7 +46,8 @@ flag-conditional (inert-but-mounted). Corroborated by `RestContractDriftTest` (b
 
 These are cutover preconditions the `:server` module does **not** own; they live in the edge / reverse-proxy /
 identity-provider / consumer-CI layers. Listed so the gate is complete, and to make explicit that their absence
-is **not** a `:server` gap.
+is **not** a `:server` gap. Each has a **post-deploy verification gate in §4** — the acceptance criterion that
+must pass at cutover, so "deploy-owned" is a checked gate, not a trust gap.
 
 | Item | Owner layer | Note |
 |---|---|---|
@@ -54,16 +55,40 @@ is **not** a `:server` gap.
 | **`CONTRACT_REQUIRE_REAL=1` wiring** | web-ts consumer CI (Dev5) | Consumer-side fail-closed flag: a missing real export becomes fatal (exit 1) instead of silently falling back to the fixture. Evidence: `web-ts/scripts/generate-contract-types.mjs`, `web-ts/contract/README.md`. Not `:server` code. |
 | **Same-origin reverse-proxy** | deploy topology | Serves the SPA and `:server` under one origin so the Kratos cookie and same-origin `/ws/agent` work and `?token=` is stripped from queries at the edge. |
 | **Kratos HttpOnly session cookie** | Ory Kratos config | The browser identity the session-aware gates resolve; `HttpOnly`/`Secure`/`SameSite` are IdP/deploy config, not `:server`. |
+| **`X-Content-Type-Options: nosniff`** | reverse-proxy / edge | The `:server` half is proven — every read sets a correct explicit Content-Type (JSON reads `application/json`, avatars `image/png`, no user-data HTML; see the XSS-sink second-axis note). `nosniff` is the edge belt that forecloses content-type sniffing; not `:server` code. |
 
 ---
 
 ## 3. Status
 
 - **`:server` verdict: READY** for the tokenless-browser cutover, verified on `develop @ d9a94daa`.
-- **One merge pending — CYP-487** (`7158df19`, `GET /api/server-now`: `requireParticipant` → `requireCommReader`).
-  It is the last CYP-320-class landmine: the *sole* frontend read still on a token-only gate, so a cookie-SPA
-  would 401 when CYP-346 wires it. Fix is mutation-verified (session→200 / bearer→200 / no-cred→401; tier stays
-  PARTICIPANT so no contract change) and in review. Merging it makes row 1 unconditional.
-- Everything else `:server`-side is cutover-ready; the rest is deploy-owned (§2).
+- **One merge pending — CYP-487** (`c6c9cf69`, rebased onto the current develop tip past CYP-484/482M; was
+  `7158df19`), `GET /api/server-now`: `requireParticipant` → `requireCommReader`. It is the last CYP-320-class
+  landmine: the *sole* frontend read still on a token-only gate, so a cookie-SPA would 401 when CYP-346 wires it.
+  Fix is mutation-verified (session→200 / bearer→200 / no-cred→401; tier stays PARTICIPANT so no contract change)
+  and in PO1's re-gate. Merging it makes row 1 unconditional.
+- Everything else `:server`-side is cutover-ready; the rest is deploy-owned (§2), each with a §4 verification gate.
+
+---
+
+## 4. Deploy-gate verification checklist (Team-2 acceptance criteria)
+
+Turns each §2 deploy-owned item into a **verifiable gate**: a concrete post-deploy probe and its pass condition.
+**Scope = what Team-2 must be able to verify at cutover** (the acceptance criteria) — **not** the infra config that
+satisfies it (PO1/Deploy owns the *how*). Run these against the deployed origin before declaring the cutover done.
+Where the `:server` half is already proven it is noted; the probe verifies the **edge/deploy half**.
+
+| # | Deploy-owned item | Post-deploy probe | Pass condition |
+|---|---|---|---|
+| 1 | **CSP + per-response nonce** | `curl -sI https://<origin>/` — inspect the `Content-Security-Policy` header on two separate responses | Header present; `script-src` carries a `'nonce-<b64>'`; the nonce **differs** between the two responses (per-response, not static); `'unsafe-inline'` **absent** from `script-src`; the served inline `<script nonce=…>` matches the header nonce. |
+| 2 | **`CONTRACT_REQUIRE_REAL=1`** | Inspect the release/CI env; negative-control run with the real `:core` export absent | `CONTRACT_REQUIRE_REAL=1` set in the CI/release env; `contract:gen` **exits 1** (build red) when `contract/asyncapi.json` is missing — never silently falls back to the fixture. Anchor: `web-ts/scripts/generate-contract-types.mjs` (CYP-400). |
+| 3 | **Same-origin reverse-proxy** | `curl -sI https://<origin>/api/auth/me` vs the SPA index; browser Network panel on `/api`+`/ws`; a request carrying `?token=` to a WS route | SPA + `/api` + `/ws` share one `scheme://host:port`; **no CORS preflight** on same-origin calls; `?token=` is **stripped at the edge** (absent from backend access logs). `:server` half proven: the WS-origin allowlist guard (CYP-31). |
+| 4 | **Kratos HttpOnly cookie** | `curl -sI` the session-establishing response, or browser → Application → Cookies | The Kratos session `Set-Cookie` has `HttpOnly` **and** `Secure` **and** `SameSite=Lax\|Strict`; `document.cookie` in the console does **not** reveal the session cookie. |
+| 5 | **`X-Content-Type-Options: nosniff`** | `curl -sI` a JSON read (`/api/agents`), the avatar endpoint, and the SPA index | Each response carries `X-Content-Type-Options: nosniff`. `:server` half proven: every read sets a correct explicit Content-Type (JSON `application/json`, avatars `image/png`, no user-data HTML — the XSS-sink second-axis note); `nosniff` is the edge belt. |
+
+**Outcome:** all five green → "deploy-owned" is a **passed gate**, not a trust gap. A red on any row blocks the
+cutover with a concrete, named failure — closing the "sign-off HAVE ≠ ENFORCED" gap.
+
+---
 
 **Companion quadrants:** Reviewer security-ledger · Tester parity-plan · UIUX ux-map · **this** `:server` sign-off.
