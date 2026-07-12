@@ -152,6 +152,9 @@ fun Application.installPlatform(
                 deps = authDeps,
                 apiBase = apiBase,
             )
+            // CYP-286: POST /api/ws-ticket — mint a short-lived single-use WS ticket bound to the caller's own
+            // read subject, so a browser opens `/ws?ticket=` instead of carrying a long-lived, loggable `?token=`.
+            wsTicketRoutes(booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-73/CYP-255 (.4b): agent lifecycle controls act on the ACTIVE project's runtime (resolver).
             lifecycleRoutes({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-421 (c): operator-only per-agent terminal-grant management. MOUNTED always (contract honesty) but

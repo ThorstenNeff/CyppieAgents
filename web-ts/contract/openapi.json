@@ -1694,6 +1694,42 @@
                 }
             }
         },
+        "/api/ws-ticket": {
+            "post": {
+                "operationId": "post_api_ws-ticket",
+                "x-auth-tier": "PARTICIPANT",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WsTicket"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/reports": {
             "get": {
                 "operationId": "get_api_reports",
@@ -3310,6 +3346,21 @@
                 },
                 "required": [
                     "serverNowMs"
+                ]
+            },
+            "WsTicket": {
+                "type": "object",
+                "properties": {
+                    "ticket": {
+                        "type": "string"
+                    },
+                    "expiresInMs": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "ticket",
+                    "expiresInMs"
                 ]
             },
             "ReportSnapshot": {
