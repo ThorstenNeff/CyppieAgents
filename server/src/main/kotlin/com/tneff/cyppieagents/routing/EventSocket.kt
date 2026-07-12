@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.EventSink
+import com.tneff.cyppieagents.model.CaughtUp
 import com.tneff.cyppieagents.model.EventPushed
 import com.tneff.cyppieagents.model.EventsWsClientEvent
 import com.tneff.cyppieagents.model.EventsWsServerEvent
@@ -66,7 +67,16 @@ fun Route.eventSocket(
         suspend fun emit(event: EventsWsServerEvent) =
             send(Frame.Text(CommJson.encodeToString(EventsWsServerEvent.serializer(), event)))
 
+        // CYP-499: announce CaughtUp once the live subscription is established so the client flips
+        // "Verlauf lädt…" → "Live". The live-tail carries only the LIVE stream (`subscribe` is a hot, no-replay
+        // SharedFlow; history is the Browse window / GET /api/events), so "the stream is live" holds as soon as we
+        // subscribe. The marker is already in the EventsWsServerEvent contract and the web-ts client already
+        // consumes it (App.tsx `caughtUp`) — the server simply never sent it, so the live indicator never
+        // activated. `emit` is the single sender (this one coroutine), so CaughtUp can't interleave a frame; the
+        // client folds the marker independently (order-agnostic) and is idempotent on reconnect (fresh socket →
+        // fresh CaughtUp).
         val pump = launch {
+            emit(CaughtUp)
             sink.subscribe(EventFilter.ALL).collect { event ->
                 if (filter.matches(event)) emit(EventPushed(event))
             }

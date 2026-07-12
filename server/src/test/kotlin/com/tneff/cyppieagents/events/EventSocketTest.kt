@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.events
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.model.CaughtUp
 import com.tneff.cyppieagents.model.EventPushed
 import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.EventsWsClientEvent
@@ -65,6 +66,23 @@ class EventSocketTest {
     }
 
     @Test
+    fun emitsCaughtUp_onConnect_soClientFlipsToLive() = testApplication {
+        // CYP-499: the server MUST send CaughtUp once the live stream is established — the marker was in the
+        // EventsWsServerEvent contract and the web-ts client consumes it (App.tsx `caughtUp` → "Live"), but the
+        // server sent it zero times, so the live indicator hung on "Verlauf lädt…". With no append at all, the
+        // FIRST frame is the marker. Mutation: remove `emit(CaughtUp)` → this receive times out / is an EventPushed.
+        val sink = InMemoryEventSink(SystemTimeSource())
+        serve(sink)
+        wsClient().webSocket("/ws/events?token=tok-op") {
+            val first = withTimeout(5_000) {
+                CommJson.decodeFromString<EventsWsServerEvent>((incoming.receive() as Frame.Text).readText())
+            }
+            assertEquals(CaughtUp, first, "the first /ws/events frame must be the CaughtUp live-boundary marker")
+            close()
+        }
+    }
+
+    @Test
     fun subscribeNarrowsByEventType() = testApplication {
         val sink = InMemoryEventSink(SystemTimeSource())
         serve(sink)
@@ -79,7 +97,8 @@ class EventSocketTest {
                     sink.append(draft(agent = "backend", type = EventType.TOOL_CALL)) // passes
                     val f = withTimeoutOrNull(50) { incoming.receive() }
                     if (f is Frame.Text) {
-                        seen += (CommJson.decodeFromString<EventsWsServerEvent>(f.readText()) as EventPushed).event.type
+                        // CYP-499: skip the CaughtUp marker (now the first frame) — only collect EventPushed types.
+                        (CommJson.decodeFromString<EventsWsServerEvent>(f.readText()) as? EventPushed)?.let { seen += it.event.type }
                     }
                 }
                 seen
