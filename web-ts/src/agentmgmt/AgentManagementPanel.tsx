@@ -7,9 +7,11 @@
 // list stays visible (display is ungated; mutation is gated). create ≠ start (spawnHint → P2-a); edit takes effect on
 // restart (amber effectHint → P2-a restartBtn, no restart control here); id + worktree are locked in edit.
 import { useEffect, useState } from 'react'
-import type { Agent, AgentEdit, NewAgentSpec } from '../types/generated/contract'
+import type { Agent, AgentEdit, NewAgentSpec, ConnectorsView } from '../types/generated/contract'
 import type { AgentRunState } from '../state/hubReducers'
 import type { WorktreeFate } from '../state/restRepo'
+import { ConnectorPicker } from '../connector/ConnectorPicker'
+import type { ConnectorKind } from '../connector/connectorModel'
 import { lifecycleLabel } from '../agentview/lifecycleStatus'
 import {
   ROLE_OPTIONS,
@@ -35,6 +37,10 @@ export interface AgentManagementPanelProps {
   onRemove: (id: string, fate: WorktreeFate) => Promise<void>
   /** For the edit dialog to PREFILL current persona/launch (not on the roster Agent). */
   fetchDetail: (id: string) => Promise<{ role: Role; persona?: string | null; launch?: string | null }>
+  /** CYP-461: the advisory connector preview source (GET /api/connectors) — passed to the picker. */
+  getConnectors: () => Promise<ConnectorsView>
+  /** CYP-461 (edit): commit a connector change (POST /api/agents/{id}/connector) — the ONLY path that changes it. */
+  onSetConnector: (id: string, kind: ConnectorKind) => Promise<void>
 }
 
 type Dialog = null | { kind: 'add' } | { kind: 'edit'; agent: Agent } | { kind: 'remove'; agent: Agent }
@@ -48,6 +54,8 @@ export function AgentManagementPanel({
   onUpdate,
   onRemove,
   fetchDetail,
+  getConnectors,
+  onSetConnector,
 }: AgentManagementPanelProps) {
   const [dialog, setDialog] = useState<Dialog>(null)
   const [notice, setNotice] = useState<Notice>(null)
@@ -128,6 +136,7 @@ export function AgentManagementPanel({
         <AddDialog
           onCancel={() => setDialog(null)}
           onCreate={onCreate}
+          getConnectors={getConnectors}
           onDone={() => {
             setDialog(null)
             setNotice({ kind: 'spawn' }) // create ≠ start (spec §2)
@@ -140,6 +149,8 @@ export function AgentManagementPanel({
           fetchDetail={fetchDetail}
           onCancel={() => setDialog(null)}
           onUpdate={onUpdate}
+          getConnectors={getConnectors}
+          onSetConnector={onSetConnector}
           onDone={() => {
             setDialog(null)
             setNotice({ kind: 'effect' }) // saved ≠ active — restart (spec §4)
@@ -174,10 +185,12 @@ function RoleRadioGroup({ testid, value, onChange }: { testid: string; value: Ro
 function AddDialog({
   onCancel,
   onCreate,
+  getConnectors,
   onDone,
 }: {
   onCancel: () => void
   onCreate: (spec: NewAgentSpec) => Promise<void>
+  getConnectors: () => Promise<ConnectorsView>
   onDone: () => void
 }) {
   const [id, setId] = useState('')
@@ -186,6 +199,9 @@ function AddDialog({
   const [persona, setPersona] = useState('')
   const [launch, setLaunch] = useState('')
   const [worktree, setWorktree] = useState('')
+  // CYP-461: A (stream_json) is the first-class default; the kind rides NewAgentSpec.connectorKind on the create
+  // (no /connector endpoint call for a fresh spawn). B still passes through the ack-gated opt-in in the picker.
+  const [connectorKind, setConnectorKind] = useState<ConnectorKind>('stream_json')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -201,6 +217,7 @@ function AddDialog({
         persona: persona.trim() || null,
         launch: launch.trim() || null,
         worktree: worktree.trim() || null,
+        connectorKind,
       })
       onDone()
     } catch (e) {
@@ -240,6 +257,19 @@ function AddDialog({
           onChange={(e) => setWorktree(e.target.value)}
         />
       </label>
+      {/* CYP-461: connector picker — add carries the kind on the spec; B goes through the ack-gated opt-in but here
+          onConfirm just settles the draft (no /connector call for a fresh spawn, §5). Dialog is operator-gated → editable. */}
+      <ConnectorPicker
+        kind={connectorKind}
+        initialKind="stream_json"
+        mode="add"
+        editable
+        getConnectors={getConnectors}
+        onConfirm={(k) => {
+          setConnectorKind(k)
+          return Promise.resolve()
+        }}
+      />
       {error !== null && (
         <p className="agent-mgmt-error" role="alert" data-testid="agentMgmt.add.error">
           {error}
@@ -262,17 +292,24 @@ function EditDialog({
   fetchDetail,
   onCancel,
   onUpdate,
+  getConnectors,
+  onSetConnector,
   onDone,
 }: {
   agent: Agent
   fetchDetail: (id: string) => Promise<{ role: Role; persona?: string | null; launch?: string | null }>
   onCancel: () => void
   onUpdate: (id: string, edit: AgentEdit) => Promise<void>
+  getConnectors: () => Promise<ConnectorsView>
+  onSetConnector: (id: string, kind: ConnectorKind) => Promise<void>
   onDone: () => void
 }) {
   const [role, setRole] = useState<Role>(agent.role as Role)
   const [persona, setPersona] = useState('')
   const [launch, setLaunch] = useState('')
+  // CYP-461: the server-side kind is the truth (initialKind); the draft settles via the picker → POST /connector.
+  const initialKind = (agent.connectorKind ?? 'stream_json') as ConnectorKind
+  const [connectorKind, setConnectorKind] = useState<ConnectorKind>(initialKind)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -327,6 +364,16 @@ function EditDialog({
         {T.labelLaunch}
         <input data-testid="agentMgmt.edit.launch.input" value={launch} onChange={(e) => setLaunch(e.target.value)} />
       </label>
+      {/* CYP-461: connector picker — EDIT commits a change via POST /connector (the ONLY connector-change path, §5/§6),
+          separate from the role/persona save (connectorKind is NOT in AgentEdit). A settles immediately; B is ack-gated. */}
+      <ConnectorPicker
+        kind={connectorKind}
+        initialKind={initialKind}
+        mode="edit"
+        editable
+        getConnectors={getConnectors}
+        onConfirm={(k) => onSetConnector(agent.id, k).then(() => setConnectorKind(k))}
+      />
       {error !== null && (
         <p className="agent-mgmt-error" role="alert" data-testid="agentMgmt.edit.error">
           {error}

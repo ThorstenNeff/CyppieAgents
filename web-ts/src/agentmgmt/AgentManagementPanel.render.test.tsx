@@ -23,6 +23,14 @@ const renderPanel = (over: Partial<AgentManagementPanelProps> = {}) => {
     onUpdate: vi.fn().mockResolvedValue(undefined),
     onRemove: vi.fn().mockResolvedValue(undefined),
     fetchDetail: vi.fn().mockResolvedValue({ role: 'WORKER', persona: 'be persona', launch: 'bash' }),
+    getConnectors: vi.fn().mockResolvedValue({
+      connectors: [
+        { kind: 'stream_json', capabilities: { structuredUsage: 'available', toolGranularity: 'available', reliableResult: 'available', rateLimitSignal: 'available', coordination: 'available', kind: 'stream_json' } },
+        { kind: 'mcp', capabilities: { structuredUsage: 'limited', toolGranularity: 'limited', reliableResult: 'limited', rateLimitSignal: 'unavailable', coordination: 'limited', kind: 'mcp' } },
+      ],
+      default: 'stream_json',
+    }),
+    onSetConnector: vi.fn().mockResolvedValue(undefined),
     ...over,
   }
   return { props, ...render(<AgentManagementPanel {...props} />) }
@@ -45,6 +53,7 @@ describe('AgentManagementPanel (CYP-450)', () => {
   it('create ≠ start: on success the spawnHint shows ("noch nicht gestartet") and the dialog closes (tooth 1)', async () => {
     const { getByTestId, findByTestId, queryByTestId } = renderPanel()
     fireEvent.click(getByTestId('agentMgmt.addButton'))
+    expect(getByTestId('connector.picker')).toBeTruthy() // CYP-461: connector picker wired into the add dialog
     fireEvent.change(getByTestId('agentMgmt.add.id.input'), { target: { value: 'qa' } })
     fireEvent.change(getByTestId('agentMgmt.add.name.input'), { target: { value: 'QA' } })
     await act(async () => {

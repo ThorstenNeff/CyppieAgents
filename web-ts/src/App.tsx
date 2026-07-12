@@ -31,6 +31,7 @@ import { EventBrowsePanel } from './eventlog/EventBrowsePanel'
 import { useEventLogStore } from './eventlog/eventLogStore'
 import { tailView } from './eventlog/eventLog'
 import { AgentManagementPanel } from './agentmgmt/AgentManagementPanel'
+import type { ConnectorKind } from './connector/connectorModel'
 // CYP-453: App renders SettingsPanel (which frames the CYP-433 ApiKeyPanel internally) — no direct ApiKeyPanel here.
 import { SettingsPanel } from './settings/SettingsPanel'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
@@ -262,6 +263,13 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   // promise so the RepoSection surfaces the server code (invalid_repo_url) on its error line.
   const onSaveRepo = (req: RepoConfigRequest): Promise<void> => hubRepo.putRepoConfig(req).then((v) => setRepoConfig(v))
 
+  // CYP-461: connector change (edit) → POST /connector, then refetch the roster so the settled kind reflects the
+  // server (non-optimistic). The advisory preview source (getConnectors) is passed straight to the picker.
+  const onSetConnector = (id: string, kind: ConnectorKind): Promise<void> =>
+    hubRepo.setConnector(id, kind).then(() => {
+      void refreshRoster()
+    })
+
   const renderContent = (win: WindowState) => {
     if (win.id === AGENT_MGMT_WINDOW_ID) {
       // present for everyone; the panel gates add/edit/remove on operator (present-but-disabled). The roster is the
@@ -275,6 +283,8 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           onUpdate={onUpdateAgent}
           onRemove={onRemoveAgent}
           fetchDetail={fetchAgentDetailForEdit}
+          getConnectors={() => hubRepo.getConnectors()}
+          onSetConnector={onSetConnector}
         />
       )
     }

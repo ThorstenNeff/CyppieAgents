@@ -16,8 +16,10 @@ import type {
   RepoConfigView,
   RepoConfigRequest,
   EventPage,
+  ConnectorsView,
 } from '../types/generated/contract'
 import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
+import type { ConnectorKind } from '../connector/connectorModel'
 
 /** CYP-426 interim: `:core` TerminalMode. The server maps this to the terminal-control state machine. */
 export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
@@ -73,6 +75,14 @@ export interface HubRepo {
   /** CYP-452. GET /api/events?<filter>&afterSeq&limit — seq-paged historical Browse. The filter is applied
    *  SERVER-side (never a client post-filter); returns EventPage { events, nextAfterSeq?, hasMore }. */
   getEvents(filter: EventFilter, afterSeq: number | null, limit: number): Promise<EventPage>
+  /** CYP-461/462. GET /api/connectors — the single source for the ADVISORY pre-choice capability preview per kind
+   *  ({ connectors:[{kind, capabilities}], default? }). A load failure fails the opt-in closed (§4): no visible
+   *  preview → no confirm. The preview is advisory, never a guarantee (§2). */
+  getConnectors(): Promise<ConnectorsView>
+  /** CYP-461 (operator). POST /api/agents/{id}/connector {connectorKind} — the ONLY path that changes an agent's
+   *  connector (server re-checks + audits as connector.optin; anti-injection §6). connectorKind is deliberately NOT
+   *  in AgentEdit/PATCH. Used only for EDIT; ADD carries the kind on NewAgentSpec.connectorKind. */
+  setConnector(agentId: string, connectorKind: ConnectorKind): Promise<void>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -138,5 +148,12 @@ export class RestHubRepo implements HubRepo {
   }
   getEvents(filter: EventFilter, afterSeq: number | null, limit: number): Promise<EventPage> {
     return this.rest.get<EventPage>(`/api/events${buildEventsQuery(filter, afterSeq, limit)}`)
+  }
+  getConnectors(): Promise<ConnectorsView> {
+    return this.rest.get<ConnectorsView>('/api/connectors')
+  }
+  async setConnector(agentId: string, connectorKind: ConnectorKind): Promise<void> {
+    // ConnectorChoice { connectorKind } — the audited, operator-only connector change (never via PATCH; §6).
+    await this.rest.post<unknown>(`/api/agents/${encodeURIComponent(agentId)}/connector`, { connectorKind })
   }
 }
