@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub.operator
 
+import com.tneff.cyppieagents.operator.operatorAuthChallenge
 import kotlinx.coroutines.test.runTest
 import java.security.KeyPair
 import java.security.Signature

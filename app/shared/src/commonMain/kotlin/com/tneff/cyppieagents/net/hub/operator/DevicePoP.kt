@@ -27,32 +27,6 @@ sealed interface DevicePoP {
     ) : DevicePoP
 }
 
-/** The PoP purpose tag (doc 16 §7) — domain-separates this signature from any other use of the device-key. */
-const val OPERATOR_AUTH_PURPOSE = "operator-auth"
-
-/**
- * The channel-bound challenge the device-key attests: each field **4-byte-BE length-prefixed** then concatenated
- * (`len‖h · len‖hubId · len‖nonce · len‖purpose`) so no field boundary is ambiguous (a bare `a‖b` concat could
- * collide). Bound to the **live tunnel `h`** (CI-2): a PoP built for one session's `h` cannot be replayed onto
- * another — the hub recomputes this from its own `h`/`hubId`/purpose + the carried nonce and rejects a mismatch.
- * The Raw branch EdDSA-signs these bytes directly; the Fido2 branch uses `SHA-256(these)` as the CTAP clientDataHash.
- */
-fun operatorAuthChallenge(handshakeHash: ByteArray, hubId: String, nonce: ByteArray): ByteArray {
-    val fields = listOf(
-        handshakeHash,
-        hubId.encodeToByteArray(),
-        nonce,
-        OPERATOR_AUTH_PURPOSE.encodeToByteArray(),
-    )
-    val out = ByteArray(fields.sumOf { 4 + it.size })
-    var i = 0
-    for (f in fields) {
-        out[i++] = (f.size ushr 24).toByte()
-        out[i++] = (f.size ushr 16).toByte()
-        out[i++] = (f.size ushr 8).toByte()
-        out[i++] = f.size.toByte()
-        f.copyInto(out, i)
-        i += f.size
-    }
-    return out
-}
+// CYP-473 H2: `operatorAuthChallenge` + `OPERATOR_AUTH_PURPOSE` moved to the SINGLE `:core`
+// `com.tneff.cyppieagents.operator` source — shared byte-identically by client (PoP build) and server (verify),
+// so a field-reorder/delimiter change can no longer drift the two hand-mirrored copies. Import it from `:core`.

@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.auth.operator
 
 import com.tneff.cyppieagents.crypto.RawKeys
+import com.tneff.cyppieagents.operator.operatorAuthChallenge
 import java.math.BigInteger
 import java.security.AlgorithmParameters
 import java.security.KeyFactory
@@ -53,6 +54,8 @@ class OperatorAssertionVerifier(
         handshakeHash: ByteArray,
         hubId: String,
         nonce: ByteArray,
+        /** CYP-473 H1 — the expected WebAuthn RP ID; the Fido2 `authData.rpIdHash` MUST equal `SHA-256(this)`. Unused by the Raw branch (no authData). */
+        expectedRpId: String,
     ): AssertionResult {
         if (!nonces.useOnce(nonce)) return AssertionResult.Rejected("nonce_replayed")
         val challenge = operatorAuthChallenge(handshakeHash, hubId, nonce)
@@ -60,7 +63,7 @@ class OperatorAssertionVerifier(
             is OperatorDevicePoP.Raw ->
                 if (verifySig(device, challenge, pop.signature)) AssertionResult.Verified(device.deviceId)
                 else AssertionResult.Rejected("bad_signature")
-            is OperatorDevicePoP.Fido2 -> verifyFido2(pop, device, challenge)
+            is OperatorDevicePoP.Fido2 -> verifyFido2(pop, device, challenge, expectedRpId)
         }
     }
 
@@ -68,12 +71,18 @@ class OperatorAssertionVerifier(
         pop: OperatorDevicePoP.Fido2,
         device: EnrolledOperatorDevice,
         challenge: ByteArray,
+        expectedRpId: String,
     ): AssertionResult {
         val credId = device.credentialId
         if (credId == null || !pop.credentialId.contentEquals(credId)) return AssertionResult.Rejected("credential_mismatch")
         val authData = pop.authenticatorData
         // authenticatorData = rpIdHash[32] ‖ flags[1] ‖ signCount[4] ‖ …
         if (authData.size < 37) return AssertionResult.Rejected("authdata_malformed")
+        // ★ CYP-473 H1 (WebAuthn §7.2 step 13): rpIdHash MUST equal SHA-256(expectedRpId) — an assertion from a
+        // credential scoped to another RP does not authenticate here (defence-in-depth beside the channel-binding).
+        if (!authData.copyOfRange(0, 32).contentEquals(sha256(expectedRpId.encodeToByteArray()))) {
+            return AssertionResult.Rejected("rpid_mismatch")
+        }
         // ★ UV flag (bit 2, 0x04) MANDATORY — user verification is required, not merely user presence.
         if (authData[32].toInt() and 0x04 == 0) return AssertionResult.Rejected("uv_required")
         // signCount = authData[33..36] — LENIENT (many authenticators keep it 0); deliberately not enforced.

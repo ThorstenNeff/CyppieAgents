@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.net.hub.operator
 
+import com.tneff.cyppieagents.operator.operatorAuthChallenge
+
 /**
  * CYP-443 Slice 2 — the **transport-independent** operator-auth seams + PoP-result taxonomy. Builds the PoP; the
  * tunnel send + hub-grant round-trip (the `OperatorAuthenticator` that plugs into `RemoteHubSession`) is the

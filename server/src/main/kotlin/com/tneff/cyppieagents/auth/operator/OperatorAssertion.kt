@@ -1,48 +1,19 @@
 package com.tneff.cyppieagents.auth.operator
 
 /**
- * CYP-469 (Phase-2 Operator-Auth, server) — the **server mirror** of Dev's client CYP-443 Slice-2 operator PoP
- * contract (`app/shared/.../net/hub/operator/DevicePoP.kt`). The verifier ([OperatorAssertionVerifier]) recomputes
- * the channel-bound challenge from ITS OWN live Noise `h` + `hubId` + the carried nonce and checks the operator's
- * device signature — the CP forges the identity token but **never** this (RR2-B; the operator holds the key).
+ * CYP-469 (Phase-2 Operator-Auth, server) — the server verify-side PoP types. The verifier
+ * ([OperatorAssertionVerifier]) recomputes the channel-bound challenge from ITS OWN live Noise `h` + `hubId` + the
+ * carried nonce and checks the operator's device signature — the CP forges the identity token but **never** this
+ * (RR2-B; the operator holds the key).
  *
- * **These bytes MUST stay byte-identical to the client's [operatorAuthChallenge]** (they are not in `:core` yet — a
- * mirror, locked by [OperatorAssertionVerifierTest]'s golden vector). Transport-independent: verified with a stub
- * `h` in tests; the live-`h`-from-the-tunnel wiring is RR5-gated (CYP-458/459).
+ * **CYP-473 H2:** the challenge derivation is now the SINGLE `:core`
+ * [com.tneff.cyppieagents.operator.operatorAuthChallenge] shared with the client (was hand-mirrored here) — no more
+ * drift. Transport-independent: verified with a stub `h` in tests; the live-`h` tunnel wiring is RR5-gated.
  */
-
-/** The PoP purpose tag (doc 16 §7) — domain-separates this signature from any other use of the device-key. */
-const val OPERATOR_AUTH_PURPOSE = "operator-auth"
-
-/**
- * The channel-bound challenge the device-key attests — **byte-identical to the client** `operatorAuthChallenge`:
- * each field 4-byte-BE length-prefixed then concatenated (`len‖h · len‖hubId · len‖nonce · len‖purpose`), injective
- * so no field boundary is ambiguous. Bound to the **live tunnel `h`** (CI-2): a PoP for one session's `h` cannot be
- * replayed onto another — the server recomputes this from its own `h`/`hubId`/purpose + the carried nonce.
- */
-fun operatorAuthChallenge(handshakeHash: ByteArray, hubId: String, nonce: ByteArray): ByteArray {
-    val fields = listOf(
-        handshakeHash,
-        hubId.encodeToByteArray(),
-        nonce,
-        OPERATOR_AUTH_PURPOSE.encodeToByteArray(),
-    )
-    val out = ByteArray(fields.sumOf { 4 + it.size })
-    var i = 0
-    for (f in fields) {
-        out[i++] = (f.size ushr 24).toByte()
-        out[i++] = (f.size ushr 16).toByte()
-        out[i++] = (f.size ushr 8).toByte()
-        out[i++] = f.size.toByte()
-        f.copyInto(out, i)
-        i += f.size
-    }
-    return out
-}
 
 /**
  * The operator PoP as it arrives at the server — the wire mirror of the client `DevicePoP` (server-authoritative,
- * no client downgrade). Two OS-selected branches, both channel-bound via [operatorAuthChallenge].
+ * no client downgrade). Two OS-selected branches, both channel-bound via the `:core` `operatorAuthChallenge`.
  */
 sealed interface OperatorDevicePoP {
     /** Cross-platform base: a raw Ed25519 signature by the software device-key over the challenge (verifier = plain
