@@ -113,5 +113,10 @@ The four CYP-443 §7 `[RECONCILE]` points, resolved from the Backend/hub-termina
 - Untrusted relay: ciphertext + metadata (sizes/timing) only; ZK scoped to payload (not padded — not over-promised).
 - Truncation attack → §4 guard (CYP-458 AC2). Replay/reorder → sequential nonce (CYP-457 AC2). MITM → NK pins the
   responder static (the client knows `dhPubKey` from the CP registry; a wrong static fails the handshake).
+- **MITM resistance against a MALICIOUS CP** (one that swaps the registry `dhPubKey`, F4/RR6): this hangs on the
+  **client-side Slice-3 TOFU-pinning** (`HubTrust.Pinned` against the client's pin, **never** the CP-registry key) —
+  the server transport itself is correct (it proves possession of ITS `dhKey` via the NK handshake), but a client
+  that trusts a CP-supplied key over its own pin is the residual attack surface. **The client pins; the server can't
+  fix a client that doesn't** (Reviewer AC-sharpening, 2026-07-12).
 - Loopback-as-auth-bypass → T1/T2/T3 (the bridge is a byte pipe, never an authz claim).
 - The CP-chain closes here: S-C `dhKey` static → CYP-457 `h` → S-E `cb` → RR3 auth.
