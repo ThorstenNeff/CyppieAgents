@@ -20,6 +20,7 @@
 | `connectRelay` | `remote.connect.relayDialing` | Relay-Vermittlung (neutral). |
 | `connectE2e` | `remote.connect.e2eHandshake` | Noise-Handshake (CP=Ciphertext, neutral). |
 | `connectTrust` | `remote.connect.trustCheck` | TOFU-Prüfung (§8.1). |
+| `connectTrustProvisional` | `remote.connect.trustProvisional` | Provisorische Trust-Disclosure am Trust-Check (`remote_connect_trust_provisional`, CYP-475/§-QA①) — solange echtes Pinnen (`dhPubKey`) RR5-nachgelagert. |
 | `connectAuth` | `remote.connect.authenticating` | DevicePoP-Bestätigung (`RemoteConnState.AUTHENTICATING`, CYP-460). |
 | `connectLive` | `remote.connect.connected` | LIVE `●`+primary — **nie** vor echtem LIVE. |
 | `connectRetry` | `remote.connect.retry` | Reconnect-Versuch nach Drop (Backoff, §7). |
@@ -63,7 +64,7 @@
 | `ProjectViewModel.switchTo`-Muster | Project | Vorbild für non-optimistischen Hub-Wechsel (§6) |
 
 ## Self-Validation
-- **21 neue Tags** in Area `remote` (3 Auth + 8 Connect inkl. `authenticating`/`retry`/`error.<cause>`(5 camelCase Causes)/`relayDrop` + 7 Trust + 3 Wechsel/Kontext-Kern
+- **22 neue Tags** in Area `remote` (3 Auth + 9 Connect inkl. `trustProvisional`(CYP-475)/`authenticating`/`retry`/`error.<cause>`(5 camelCase Causes)/`relayDrop` + 7 Trust + 3 Wechsel/Kontext-Kern
   + Kontext-Sub) + Aktivierung `hubConnect.mode.remote`. `connectError` trägt Qualifier `<cause>`.
 - **0 Kollision:** Area `remote` neu, greenfield gg. bestehende `*Tags.kt`.
 - **Geteilte API mit QA (CYP-7):** Area + Werte über den PO mit dem Tester abstimmen (Frozen-Contract).
