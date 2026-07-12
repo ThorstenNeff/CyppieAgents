@@ -664,4 +664,19 @@
     <string name="hubcap_readout_nomax">%1$s aktiv</string>
     <string name="a11y_hubcap_readout_nomax">Hub-Kapazität: %1$s Agenten aktiv (Höchstzahl noch nicht geschätzt)</string>
     <string name="a11y_hubcap_overload">Überlast-Schutz: Spawn abgelehnt — ein weiteres Team würde die Maschine überlasten.</string>
+    <!-- CYP-460 Desktop-Native Remote-Operator-UX (frozen desktop-remote-operator-keys.md). remote_pop_*/remote_login_* greenfield. -->
+    <string name="remote_login_browser_handoff">Weiter im Browser …</string>
+    <string name="remote_login_browser_return">Zurück zur App …</string>
+    <string name="remote_pop_path_hint">Bestätigung über %1$s</string>
+    <string name="remote_pop_pin_title">App-PIN eingeben</string>
+    <string name="remote_pop_pin_body">Bestätige mit deiner App-PIN, um remote auf deine Hubs zuzugreifen.</string>
+    <string name="remote_pop_biometric_title">Mit %1$s bestätigen</string>
+    <string name="remote_pop_wrong_pin">Falsche PIN. Noch %1$s Versuche.</string>
+    <string name="remote_pop_locked">Zu viele Fehlversuche. Erneut in %1$s.</string>
+    <string name="remote_pop_biometric_failed">Biometrie fehlgeschlagen — nutze deine App-PIN.</string>
+    <string name="remote_pop_rejected">Vom Hub abgelehnt. Bitte neu anmelden.</string>
+    <string name="remote_pop_keystore_unavailable">Schlüsselbund nicht verfügbar.</string>
+    <string name="remote_pop_enroll_title">Dieses Gerät einrichten</string>
+    <string name="remote_pop_enroll_pin">App-PIN festlegen</string>
+    <string name="remote_pop_enroll_session_only">Gilt nur für diese Sitzung — sicherer Geräte-Schlüsselbund folgt.</string>
 </resources>

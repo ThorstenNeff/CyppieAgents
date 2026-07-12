@@ -651,4 +651,19 @@
     <string name="hubcap_readout_nomax">%1$s active</string>
     <string name="a11y_hubcap_readout_nomax">Hub capacity: %1$s agents active (max not yet estimated)</string>
     <string name="a11y_hubcap_overload">Overload protection: spawn rejected — another team would overload the machine.</string>
+    <!-- CYP-460 Desktop-Native Remote-Operator-UX (frozen desktop-remote-operator-keys.md). remote_pop_*/remote_login_* greenfield. -->
+    <string name="remote_login_browser_handoff">Continuing in your browser…</string>
+    <string name="remote_login_browser_return">Returning to the app…</string>
+    <string name="remote_pop_path_hint">Confirming via %1$s</string>
+    <string name="remote_pop_pin_title">Enter your app PIN</string>
+    <string name="remote_pop_pin_body">Confirm with your app PIN to access your hubs remotely.</string>
+    <string name="remote_pop_biometric_title">Confirm with %1$s</string>
+    <string name="remote_pop_wrong_pin">Wrong PIN. %1$s attempts left.</string>
+    <string name="remote_pop_locked">Too many attempts. Try again in %1$s.</string>
+    <string name="remote_pop_biometric_failed">Biometrics failed — use your app PIN.</string>
+    <string name="remote_pop_rejected">Rejected by the hub. Please sign in again.</string>
+    <string name="remote_pop_keystore_unavailable">Keychain not available.</string>
+    <string name="remote_pop_enroll_title">Set up this device</string>
+    <string name="remote_pop_enroll_pin">Set an app PIN</string>
+    <string name="remote_pop_enroll_session_only">Applies to this session only — secure device keychain to come.</string>
 </resources>
