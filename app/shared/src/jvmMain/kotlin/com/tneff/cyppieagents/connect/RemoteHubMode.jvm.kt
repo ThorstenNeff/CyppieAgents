@@ -9,7 +9,6 @@ import com.tneff.cyppieagents.net.hub.operator.OperatorPopBuilder
 import com.tneff.cyppieagents.net.hub.operator.UserVerification
 import com.tneff.cyppieagents.net.hub.operator.UvOutcome
 import com.tneff.cyppieagents.net.hub.remote.RelayDialer
-import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
 import com.tneff.cyppieagents.net.hub.trust.RegistryPresentedHubKeySource
 import com.tneff.cyppieagents.net.hub.trust.PendingOobConfirmations
 import com.tneff.cyppieagents.net.hub.trust.TofuHubTrust
@@ -32,7 +31,9 @@ actual fun remoteHubEnabled(): Boolean =
  */
 actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? =
     RemoteHubSessionFactory { hub, scope ->
-        RemoteHubSession(
+        // CYP-504: delegate to the seam-injectable builder with the GATED prod seams (per-hub TOFU trust stays
+        // in this closure). Behaviour is byte-identical to the previous inline assembly — still fails closed at dial.
+        buildRemoteHubSession(
             hubId = hub.hubId,
             transport = NoiseJavaClientTransport(),
             dialer = gatedRelayDialer,
