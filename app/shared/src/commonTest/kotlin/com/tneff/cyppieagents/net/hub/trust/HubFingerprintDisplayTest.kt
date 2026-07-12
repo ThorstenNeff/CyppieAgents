@@ -8,10 +8,11 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
- * CYP-482 S-A — the fingerprint-derivation teeth. The **mechanism** ([HubFingerprintDisplay.indices]) is
- * hard-vector-pinned (content-independent, like [Sha256]); word/emoji assertions pin the *relationship* to the
- * digest (robust to a DS list swap); hex reuses the merged CYP-478 primitive; the QR payload round-trips to the
- * raw key. All representations fold the same digest, so they agree and are key-sensitive.
+ * CYP-482 — the fingerprint-derivation teeth. The **mechanism** ([HubFingerprintDisplay.indices]) is
+ * hard-vector-pinned (content-independent, like [Sha256]); the word sequence pins the **PGP even/odd
+ * position-parity alternation** + the **88-bit** length (Reviewer threat-model AC); hex reuses the merged
+ * CYP-478 primitive; the QR payload round-trips to the raw key; and the vendored [PgpWordList] is pinned by
+ * checksum (drift/typo guard) + canonical anchors.
  */
 class HubFingerprintDisplayTest {
 
@@ -22,7 +23,6 @@ class HubFingerprintDisplayTest {
     @Test
     fun indices_areVectorPinned_andBounded() {
         assertEquals(zerosIndices6, HubFingerprintDisplay.indices(zeros, 6))
-        // every index is a byte value 0..255, count honoured
         val all = HubFingerprintDisplay.indices(ByteArray(32) { it.toByte() }, 12)
         assertEquals(12, all.size)
         assertTrue(all.all { it in 0..255 })
@@ -42,25 +42,22 @@ class HubFingerprintDisplayTest {
         assertContentEquals(key, decoded, "the QR payload must carry the raw hub key, scannable+re-derivable")
     }
 
+    /**
+     * The mandatory even/odd tooth: tokens at EVEN positions come from [PgpWordList.EVEN] and ODD positions
+     * from [PgpWordList.ODD] — from **different** lists (a mutation using only the even list turns this RED) —
+     * plus the 88-bit count (11 tokens × 8 bit).
+     */
     @Test
-    fun words_followTheDigest_correctCount_allInList() {
-        val wl = HubFingerprintDisplay.DEFAULT_FINGERPRINT_WORDS
-        val words = HubFingerprintDisplay.words(zeros)
+    fun words_alternateEvenOddPgpLists_byPosition_88bit() {
+        val key = ByteArray(32) { (it * 5 + 1).toByte() }
+        val words = HubFingerprintDisplay.words(key)
+        assertEquals(11, words.size)                                   // 11 × 8 bit = 88 bit ≥ 80-bit floor
         assertEquals(HubFingerprintDisplay.DEFAULT_TOKEN_COUNT, words.size)
-        assertTrue(words.all { it in wl })
-        // relationship (robust to a DS list swap): word[i] == wordlist[digestByte[i] mod size]
-        val expected = HubFingerprintDisplay.indices(zeros, HubFingerprintDisplay.DEFAULT_TOKEN_COUNT).map { wl[it % wl.size] }
-        assertEquals(expected, words)
-    }
-
-    @Test
-    fun emoji_followTheDigest_sameMechanism() {
-        val el = HubFingerprintDisplay.DEFAULT_FINGERPRINT_EMOJI
-        val emoji = HubFingerprintDisplay.emoji(zeros)
-        assertEquals(HubFingerprintDisplay.DEFAULT_TOKEN_COUNT, emoji.size)
-        assertTrue(emoji.all { it in el })
-        val expected = HubFingerprintDisplay.indices(zeros, HubFingerprintDisplay.DEFAULT_TOKEN_COUNT).map { el[it % el.size] }
-        assertEquals(expected, emoji)
+        val idx = HubFingerprintDisplay.indices(key, 11)
+        for (i in 0 until 11) {
+            val list = if (i % 2 == 0) PgpWordList.EVEN else PgpWordList.ODD
+            assertEquals(list[idx[i]], words[i], "position $i must come from the ${if (i % 2 == 0) "EVEN" else "ODD"} list")
+        }
     }
 
     @Test
@@ -74,18 +71,18 @@ class HubFingerprintDisplayTest {
     }
 
     @Test
-    fun customListAndCount_areHonoured() {
-        val list = listOf("x", "y", "z")
-        val out = HubFingerprintDisplay.words(zeros, list, count = 4)
-        assertEquals(4, out.size)
-        assertTrue(out.all { it in list })
-    }
-
-    @Test
-    fun defaultLists_haveNoDuplicates() {
-        val wl = HubFingerprintDisplay.DEFAULT_FINGERPRINT_WORDS
-        val el = HubFingerprintDisplay.DEFAULT_FINGERPRINT_EMOJI
-        assertEquals(wl.size, wl.toSet().size, "word list must be distinct")
-        assertEquals(el.size, el.toSet().size, "emoji list must be distinct")
+    fun pgpWordList_isCanonical_distinct_disjoint_checksumPinned() {
+        assertEquals(256, PgpWordList.EVEN.size)
+        assertEquals(256, PgpWordList.ODD.size)
+        assertEquals(256, PgpWordList.EVEN.toSet().size, "EVEN must be distinct")
+        assertEquals(256, PgpWordList.ODD.toSet().size, "ODD must be distinct")
+        assertTrue(PgpWordList.ODD.none { it in PgpWordList.EVEN.toSet() }, "EVEN/ODD must be disjoint (position guard)")
+        // canonical anchors (byte 0x00 / 0xFF)
+        assertEquals("aardvark", PgpWordList.EVEN.first()); assertEquals("Zulu", PgpWordList.EVEN.last())
+        assertEquals("adroitness", PgpWordList.ODD.first()); assertEquals("Yucatan", PgpWordList.ODD.last())
+        // regression guard: recompute the pinned checksum over the embedded lists (a typo/drift turns this RED).
+        val serialized = (PgpWordList.EVEN.joinToString("\n") + "\n" + PgpWordList.ODD.joinToString("\n")).encodeToByteArray()
+        val hex = Sha256.digest(serialized).joinToString("") { ((it.toInt() and 0xff) + 0x100).toString(16).substring(1) }
+        assertEquals(PgpWordList.PGP_LIST_SHA256, hex)
     }
 }
