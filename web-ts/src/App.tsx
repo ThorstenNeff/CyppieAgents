@@ -198,8 +198,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     if (agents.length > 0 && !present.has(ACL_WINDOW_ID)) wm.add(tiledWindow(ACL_WINDOW_ID, 'Zugriffsrechte (ACL)', index++), false)
     // CYP-432: the event log is OPERATOR-ONLY — a non-operator gets no event window at all (no bodies surface).
     if (agents.length > 0 && operator && !present.has(EVENT_WINDOW_ID)) wm.add(tiledWindow(EVENT_WINDOW_ID, 'Ereignis-Protokoll', index++), true)
-    // CYP-452: Browse is the same operator-gated bodies as the live-tail → OPERATOR-ONLY window (omission for a
-    // non-operator; no Browse route, no /api/events query, no bodies in the DOM — CYP-432 leak parity).
+    // CYP-452: Browse is the same operator-gated, content-free metadata as the live-tail → OPERATOR-ONLY window
+    // (omission for a non-operator; no Browse route, no /api/events query, no bodies in the DOM). The real scope
+    // boundary is server-side (resolveEventScope + masking); this client gate is defence-in-depth + product-scoping.
     if (agents.length > 0 && operator && !present.has(EVENT_BROWSE_WINDOW_ID)) wm.add(tiledWindow(EVENT_BROWSE_WINDOW_ID, 'Ereignis-Browser', index++), false)
     // CYP-433: the settings/API-key window is present for EVERYONE (present-but-disabled) — the masked status leaks
     // nothing; the panel gates editing on operator internally.

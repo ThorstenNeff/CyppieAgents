@@ -47,7 +47,7 @@ export function ModeToggle({
         </span>
       )}
       {!operator && (
-        <p className="operator-only" data-testid="mode-operator-only">
+        <p className="operator-only" role="note" data-testid="mode-operator-only">
           Nur Operatoren können die Ansicht umschalten.
         </p>
       )}

@@ -51,7 +51,9 @@ describe('LifecycleHeader (CYP-431)', () => {
     expect(start.disabled).toBe(true)
     fireEvent.click(start)
     expect(onStart).not.toHaveBeenCalled()
-    expect(getByTestId('lifecycle.operatorOnly.backend')).toBeTruthy()
+    const note = getByTestId('lifecycle.operatorOnly.backend')
+    expect(note).toBeTruthy()
+    expect(note.getAttribute('role')).toBe('note') // CYP-468 F1: persistent gate hint = role=note (not status/none)
   })
 
   it('CYP-369: all three controls are rendered and live in the non-shrinking controls cluster', () => {

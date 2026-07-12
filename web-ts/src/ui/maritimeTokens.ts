@@ -3,10 +3,17 @@
 // css.mjs → src/ui/tokens.generated.css, "generate, don't commit") so the shipped `--md-sys-color-*` values and the
 // values this guard measures cannot drift. `cssVarName` is the ONE place the camelCase role → M3 kebab var name
 // mapping lives (shared conceptually with the generator, which mirrors it).
-import { MARITIME_TOKENS, type MaritimeRole, type MaritimeScheme } from './maritimeTokens.data.mjs'
+import {
+  MARITIME_TOKENS,
+  EVENT_SEVERITY,
+  type MaritimeRole,
+  type MaritimeScheme,
+  type EventSeverityKey,
+  type EventSeverityScheme,
+} from './maritimeTokens.data.mjs'
 
-export { MARITIME_TOKENS }
-export type { MaritimeRole, MaritimeScheme }
+export { MARITIME_TOKENS, EVENT_SEVERITY }
+export type { MaritimeRole, MaritimeScheme, EventSeverityKey, EventSeverityScheme }
 
 export const MARITIME_ROLES = Object.keys(MARITIME_TOKENS.light) as MaritimeRole[]
 

@@ -87,7 +87,7 @@ export function ApiKeyPanel({ view, operator, onSave }: ApiKeyPanelProps) {
       </div>
 
       {!operator && (
-        <p className="apikey-gate-hint" role="status" data-testid="settings.apiKey.gateHint">
+        <p className="apikey-gate-hint" role="note" data-testid="settings.apiKey.gateHint">
           Nur mit Operator-Token änderbar.
         </p>
       )}

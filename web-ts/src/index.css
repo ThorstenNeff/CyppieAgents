@@ -95,37 +95,10 @@ body,
 }
 
 
-/* CYP-448 (P2-c.2) — event-log severity hues, ported to the AUDITED CYP-274 palette (spec §6, identical ratios).
-   Light: ERROR #B3261E (6.5:1) · WARN #9A6400 (5.0:1, amber — never `tertiary`, CYP-300-a0) · INFO #567083 (5.2:1)
-   · DEBUG #B8BCC4 (~2.0:1, deliberately dim — the quietest severity rides its `·` glyph + label, not a ≥3:1 rail).
-   Dark: the CYP-12 night palette. Colour is never alone: the glyph shape + the readable label carry severity, this
-   only tints the glyph. The four theme blocks mirror the token layer (light base + prefers-color-scheme + [data-theme]). */
-:root {
-  --event-sev-error: #b3261e;
-  --event-sev-warn: #9a6400;
-  --event-sev-info: #567083;
-  --event-sev-debug: #b8bcc4;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --event-sev-error: #ff6b6b;
-    --event-sev-warn: #ffc857;
-    --event-sev-info: #a0a4ad;
-    --event-sev-debug: #5a5e66;
-  }
-}
-:root[data-theme='dark'] {
-  --event-sev-error: #ff6b6b;
-  --event-sev-warn: #ffc857;
-  --event-sev-info: #a0a4ad;
-  --event-sev-debug: #5a5e66;
-}
-:root[data-theme='light'] {
-  --event-sev-error: #b3261e;
-  --event-sev-warn: #9a6400;
-  --event-sev-info: #567083;
-  --event-sev-debug: #b8bcc4;
-}
+/* CYP-448/468 — event-log severity hues (AUDITED CYP-274 palette, spec §6). The `--event-sev-*` vars are now
+   GENERATED from the single token source (src/ui/maritimeTokens.data.mjs → tokens.generated.css) instead of being
+   hand-hardcoded here (CYP-468 F2: no drift, inside the gen guard). Colour is never alone: the glyph shape + the
+   readable label carry severity, this only tints the glyph (DEBUG stays deliberately dim by design). */
 
 .event-log {
   display: flex;
@@ -229,6 +202,49 @@ body,
 .apikey-gate-hint {
   color: var(--md-sys-color-on-surface-variant);
   margin: 0;
+}
+
+/* CYP-468 (F3) — connector picker + opt-in tones (CYP-461 shipped the markup + a11y hooks unstyled). Same tokens as
+   agent-mgmt/apikey: the bypass/account/fragile risks + the effect-hint = AMBER hazard-attention (warn-container,
+   never success-green); the opt-in / preview-load errors = error-red; the ADVISORY capability chips are toned
+   (available = neutral, NOT success-green — Anti-Hype; limited = amber; unavailable = gated), with the status LABEL
+   carrying the meaning so colour is never the sole signal (unavailable also gets a strike as a non-colour cue). */
+.connector-risk {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 2px 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.connector-effect-hint {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+}
+.connector-default-note,
+.connector-human-only {
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 2px 0;
+}
+.connector-optin-error,
+.connector-preview-failed {
+  color: var(--md-sys-color-error);
+  margin: 0;
+}
+.connector-cap-chip {
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.connector-cap-available {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.connector-cap-limited {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+}
+.connector-cap-unavailable {
+  color: var(--md-sys-color-on-surface-variant);
+  text-decoration: line-through;
 }
 
 /* CYP-450 (P2-b) — Agenten-Verwaltung. Colour is never the sole signal (text carries each state). Gate hint =

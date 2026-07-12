@@ -30,6 +30,7 @@ describe('ModeToggle (CYP-406)', () => {
     rerender(<ModeToggle state="MEDIATED" operator={false} onRequestMode={onReq} />)
     expect(getByTestId('mode-shell').getAttribute('aria-disabled')).toBe('true')
     expect(queryByTestId('mode-operator-only')).not.toBeNull()
+    expect(getByTestId('mode-operator-only').getAttribute('role')).toBe('note') // CYP-468 F1: unified gate-hint role
     fireEvent.click(getByTestId('mode-shell'))
     expect(onReq).toHaveBeenCalledTimes(1) // the non-operator click was ignored
   })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MARITIME_TOKENS, MARITIME_ROLES, cssVarName, contrastRatio, WCAG_NON_TEXT_MIN } from './maritimeTokens'
+import { MARITIME_TOKENS, EVENT_SEVERITY, MARITIME_ROLES, cssVarName, contrastRatio, WCAG_NON_TEXT_MIN } from './maritimeTokens'
 
 describe('maritime token contrast (CYP-423 — WCAG 1.4.11, MEASURED not assumed)', () => {
   // The W6 bug was measuring the SOLID colour while shipping an ALPHA composite (~2.35:1). This guard measures the
@@ -34,6 +34,25 @@ describe('maritime token completeness (port tokens, not optics)', () => {
         expect(scheme[role], role).toMatch(/^#[0-9A-Fa-f]{6}$/)
       }
     }
+  })
+
+  it('the event-severity palette is single-sourced (CYP-468 F2) — 4 valid hex tones per scheme', () => {
+    for (const scheme of [EVENT_SEVERITY.light, EVENT_SEVERITY.dark]) {
+      for (const key of ['error', 'warn', 'info', 'debug'] as const) {
+        expect(scheme[key], key).toMatch(/^#[0-9A-Fa-f]{6}$/)
+      }
+    }
+  })
+
+  it('the alarm severities (error/warn) clear 4.5:1 as glyph text on the surface, both themes (MEASURED)', () => {
+    for (const [sev, sur] of [
+      [EVENT_SEVERITY.light, MARITIME_TOKENS.light.surface],
+      [EVENT_SEVERITY.dark, MARITIME_TOKENS.dark.surface],
+    ] as const) {
+      expect(contrastRatio(sev.error, sur)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(sev.warn, sur)).toBeGreaterThanOrEqual(4.5)
+    }
+    // debug is deliberately quiet (rides its `·` glyph + label, not a contrast rail) — never asserted as readable.
   })
 
   it('cssVarName maps camelCase roles to M3 kebab custom properties', () => {

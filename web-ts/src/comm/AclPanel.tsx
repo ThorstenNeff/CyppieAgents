@@ -103,7 +103,9 @@ export function AclPanel({ channels, agents, entries, pending, poAgentId, operat
       {lockout !== null && (
         <div className="acl-dialog acl-lockout" role="alertdialog" aria-label="PO-Aussperrung bestätigen" data-testid="acl-lockout-dialog">
           <p>
-            ⚠ Das entzieht dem PO (<strong>{lockout.entry.agentId}</strong>) die Leseberechtigung in Kanal{' '}
+            {/* CYP-468 micro: this is a WARN (a hazardous-but-allowed action), so use the WARN glyph ▲ (not the
+                ERROR glyph ⚠ from the event-log severity language) and aria-hide it — the text carries the meaning. */}
+            <span aria-hidden="true">▲ </span>Das entzieht dem PO (<strong>{lockout.entry.agentId}</strong>) die Leseberechtigung in Kanal{' '}
             <strong>{lockout.entry.channelId}</strong>. Der Hub kann das ablehnen. Trotzdem fortfahren?
           </p>
           <button type="button" className="acl-lockout-cancel" data-testid="acl-lockout-cancel" onClick={() => setLockout(null)}>
