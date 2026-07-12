@@ -2,7 +2,10 @@ package com.tneff.cyppieagents.connect
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
+import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +26,8 @@ class HubConnectViewModel(
     private val controlPlane: ControlPlaneClient,
     private val credentials: HubCredentialRepository,
     private val connectFeed: LocalConnectFeed,
+    /** CYP-471 §7 — the remote (Noise-E2E) connect feed. Stub-driven until RR5 (defaulted so existing callers are unaffected). */
+    private val remoteConnectFeed: RemoteConnectFeed = StubRemoteConnectFeed(),
     /** Hostname default for the editable hub-name field (Q1); the host injects the real device hostname. */
     private val defaultHubName: String = "mein-hub",
     scope: CoroutineScope? = null,
@@ -134,6 +139,49 @@ class HubConnectViewModel(
             connectFeed.connect(hub).collect { progress ->
                 _state.value = HubConnectUiState.Connecting(hub, progress)
             }
+        }
+    }
+
+    // --- CYP-471 §7: remote (Noise-E2E) connect + Q5 hub-switch ---
+
+    /** The active remote collect job — held so a hub switch (Q5) tears it down before starting a new one. */
+    private var remoteJob: Job? = null
+
+    /**
+     * B3 Remote "Verbinden" / Q5 "auf Hub wechseln" → the honest §7 remote progress against
+     * [RemoteConnectFeed]. **Exactly one hub (Q5, CI-6):** any active remote session is torn down first
+     * (its collect is cancelled → the live feed closes the Noise session on cancellation) — nothing is carried
+     * across. `connected` is reached ONLY on `RemoteConnState.CONNECTED`; the cause on failure is the feed's
+     * `RemoteFailure`, never guessed.
+     */
+    fun connectRemote() {
+        val hub = (_state.value as? HubConnectUiState.ChoosingMode)?.hub
+            ?: (_state.value as? HubConnectUiState.RemoteConnecting)?.hub
+            ?: return
+        remoteJob?.cancel() // Q5: exactly-one-hub — tear the current remote session down before the new one.
+        _state.value = HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.RELAY_DIALING))
+        remoteJob = runScope.launch {
+            remoteConnectFeed.connect(hub).collect { rs ->
+                _state.value = HubConnectUiState.RemoteConnecting(hub, rs)
+            }
+        }
+    }
+
+    /**
+     * Q5 "auf Hub wechseln" step 1 — leave the current (remote) connection to pick another hub. **Tears the active
+     * remote session down FIRST** (exactly-one-hub, CI-6 — nothing carried across) and returns to the hub list;
+     * the subsequent [selectHub] + [connectRemote] establishes the new one.
+     */
+    fun backToHubList() {
+        remoteJob?.cancel()
+        remoteJob = null
+        _state.value = HubConnectUiState.LoadingHubs
+        runScope.launch {
+            val hubs = runCatching { controlPlane.hubs() }.getOrElse {
+                _state.value = HubConnectUiState.HubsUnreachable
+                return@launch
+            }
+            _state.value = HubConnectUiState.HubList(hubs)
         }
     }
 }

@@ -12,20 +12,19 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.tneff.cyppieagents.ui.HintTone
-import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
-import kmpcyppieagents.app.shared.generated.resources.a11y_hubconnect_mode_remote_disabled
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_mode_connect
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_mode_local
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_mode_local_sub
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_mode_remote
-import kmpcyppieagents.app.shared.generated.resources.hubconnect_mode_remote_soon
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_mode_sub
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -44,47 +43,41 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun HubConnectModeChooser(
     onConnectLocal: () -> Unit,
+    onConnectRemote: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val remoteDisabledA11y = stringResource(Res.string.a11y_hubconnect_mode_remote_disabled)
+    // CYP-471: Remote is now LIVE (Phase 2). Neither mode is preselected onto the other's surface — the user
+    // chooses, and the Connect button routes by the selection (no fake click, no mode confusion).
+    var remoteSelected by remember { mutableStateOf(false) }
     Column(
         modifier = modifier.fillMaxWidth().padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             SegmentedButton(
-                // Local is the ONLY actionable option and the default selection — Remote is never preselected.
-                selected = true,
-                onClick = {}, // already selected; the explicit action is the Connect button below.
+                selected = !remoteSelected,
+                onClick = { remoteSelected = false },
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
                 enabled = true,
                 modifier = Modifier.testTag(HubConnectTags.MODE_LOCAL),
             ) { Text(stringResource(Res.string.hubconnect_mode_local), maxLines = 1) }
             SegmentedButton(
-                selected = false, // H2: NEVER preselected on Remote.
-                onClick = {}, // unreachable — the segment is disabled (no fake click).
+                selected = remoteSelected,
+                onClick = { remoteSelected = true },
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                enabled = false, // honestly disabled ("kommt bald"), not clickable.
-                modifier = Modifier
-                    .testTag(HubConnectTags.MODE_REMOTE)
-                    .semantics { contentDescription = remoteDisabledA11y },
+                enabled = true, // CYP-471: Remote (Noise-E2E via the Control Plane) is now selectable.
+                modifier = Modifier.testTag(HubConnectTags.MODE_REMOTE),
             ) { Text(stringResource(Res.string.hubconnect_mode_remote), maxLines = 1) }
         }
-        // Local sub — describes the active option (private + fast, same network).
+        // Sub for the selected mode — Local = private+fast same-network; Remote = Noise-E2E via the Control Plane.
         Text(
-            text = stringResource(Res.string.hubconnect_mode_local_sub),
+            text = stringResource(if (remoteSelected) Res.string.remote_connect_mode_sub else Res.string.hubconnect_mode_local_sub),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        // Remote "kommt bald" — the honest disabled explanation (GATED idiom; form + label + a11y, never colour-alone).
-        TonedHint(
-            text = stringResource(Res.string.hubconnect_mode_remote_soon),
-            tone = HintTone.GATED,
-            tag = HubConnectTags.MODE_REMOTE_SOON,
-        )
-        // Primary action — only Local is actionable in Phase 1 (§6 local-connect flow lands in S-L).
+        // Primary action — routes to the SELECTED mode's connect (Local §6 / Remote §7).
         Button(
-            onClick = onConnectLocal,
+            onClick = { if (remoteSelected) onConnectRemote() else onConnectLocal() },
             modifier = Modifier.testTag(HubConnectTags.MODE_CONNECT),
         ) { Text(stringResource(Res.string.hubconnect_mode_connect)) }
     }

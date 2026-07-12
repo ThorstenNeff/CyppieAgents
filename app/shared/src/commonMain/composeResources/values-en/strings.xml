@@ -666,4 +666,17 @@
     <string name="remote_pop_enroll_title">Set up this device</string>
     <string name="remote_pop_enroll_pin">Set an app PIN</string>
     <string name="remote_pop_enroll_session_only">Applies to this session only — secure device keychain to come.</string>
+    <!-- CYP-471 Desktop Hub-Connect-Flow (remote/Noise-E2E). remote.connect.* tags = CYP-429 §7, shared API w/ Tester CYP-7. -->
+    <string name="remote_connect_mode_sub">Noise-E2E via the Control Plane.</string>
+    <string name="remote_connect_relay_dialing">Dialing the relay…</string>
+    <string name="remote_connect_e2e_handshake">E2E handshake…</string>
+    <string name="remote_connect_trust_check">Checking hub trust…</string>
+    <string name="remote_connect_authenticating">Confirming operator…</string>
+    <string name="remote_connect_connected">Connected</string>
+    <string name="remote_connect_relay_dropped">Connection dropped — reconnecting…</string>
+    <string name="remote_connect_trust_changed">Hub key changed — connection blocked. Re-pin required.</string>
+    <string name="remote_connect_auth_rejected">Rejected by the hub. Please sign in again.</string>
+    <string name="remote_connect_relay_unreachable">Relay unreachable.</string>
+    <string name="remote_connect_hub_offline">The hub is offline.</string>
+    <string name="remote_connect_handshake_failed">E2E handshake failed.</string>
 </resources>
