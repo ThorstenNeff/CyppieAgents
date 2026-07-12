@@ -54,6 +54,8 @@ fun main() {
     // Assigned after the platform boots (below); the emit-xss route reads it at REQUEST time, by which point it is
     // set (the route handler body never runs during setup).
     var sinkHolder: EventSink? = null
+    // CYP-446: a spawner whose spawns can be toggled to fail, so the ERROR-state tooth can drive spawn-failed → ERROR.
+    val spawner = ControllableSpawner()
     val platform = e2ePlatform(
         projects = listOf(
             SeedProject(
@@ -62,6 +64,7 @@ fun main() {
             ),
         ),
         port = port,
+        spawner = spawner,
         // CYP-422 Phase-1 parity: allow the web-ts product SPA's dev/preview origin (Vite :8080) to reach the
         // API/WS cross-origin (the production topology: SPA origin ≠ API origin + CORS). Both host spellings so
         // a browser navigating to either resolves. Overridable via WEB_TS_ORIGINS (comma-separated).
@@ -84,6 +87,9 @@ fun main() {
                 )
                 call.respondText("ok")
             }
+            // CYP-446: toggle the spawner's fail mode so the ERROR tooth can drive spawn-failed → ERROR then restore.
+            get("/test/spawn-fail-on") { spawner.failSpawns = true; call.respondText("ok") }
+            get("/test/spawn-fail-off") { spawner.failSpawns = false; call.respondText("ok") }
         },
     )
     sinkHolder = platform.booted.eventSink

@@ -69,6 +69,43 @@ test.describe('A-P2-a · Lifecycle-Header — non-optimistic status + operator e
     await expect(start).toHaveAttribute('aria-disabled', 'true');
     await expect(stop).toHaveAttribute('aria-disabled', 'false');
   });
+
+  test('operator: a spawn failure drives the agent to ERROR with a CURATED errorReason, then restores (CYP-446)', async ({ page }) => {
+    await page.goto('/');
+    const status = page.locator(`[data-testid="lifecycle.status.${SEED.AGENT}"]`);
+    const start = page.locator(`[data-testid="lifecycle.start.${SEED.AGENT}"]`);
+    const stop = page.locator(`[data-testid="lifecycle.stop.${SEED.AGENT}"]`);
+    const restart = page.locator(`[data-testid="lifecycle.restart.${SEED.AGENT}"]`);
+    const dot = page.locator(`[data-testid="lifecycle.dot.${SEED.AGENT}"]`);
+    const reason = page.locator(`[data-testid="lifecycle.errorReason.${SEED.AGENT}"]`);
+    await expect(status).toContainText('Aktiv');
+
+    // Arm the spawner to fail (server-side), then Stop → Start: the (re)spawn fails → the agent lands in ERROR
+    // (the CYP-330 fresh-retry rollback also fails while armed, so it stays ERROR, not silently recovered).
+    expect((await page.request.get('http://127.0.0.1:8791/test/spawn-fail-on')).ok()).toBeTruthy();
+    await stop.dispatchEvent('click');
+    await expect(status).toContainText('Gestoppt');
+    await start.dispatchEvent('click');
+    await expect(status).toContainText('Fehler');
+
+    // dot = error role; ERROR enablement row (= STOPPED's): Start on, Stopp OFF, Neustart on.
+    await expect(dot).toHaveAttribute('data-role', 'error');
+    await expect(start).toHaveAttribute('aria-disabled', 'false');
+    await expect(stop).toHaveAttribute('aria-disabled', 'true');
+    await expect(restart).toHaveAttribute('aria-disabled', 'false');
+
+    // CYP-446: errorReason is its OWN node, present ONLY in ERROR, a CURATED localized sentence — NEVER the raw
+    // enum, never empty (fail-closed to "Grund nicht gemeldet" for an unknown/absent code).
+    await expect(reason).toBeVisible();
+    await expect(reason).toContainText(/Start fehlgeschlagen|Prozess|Grund nicht gemeldet/);
+    await expect(reason).not.toContainText(/SPAWN_FAILED|CRASHED|SIGNALLED|UNKNOWN/);
+
+    // Restore RUNNING (clear the fail mode + Start) — leave the shared harness as found.
+    expect((await page.request.get('http://127.0.0.1:8791/test/spawn-fail-off')).ok()).toBeTruthy();
+    await start.dispatchEvent('click');
+    await expect(status).toContainText('Aktiv');
+    await expect(reason).toHaveCount(0); // errorReason present IFF ERROR — gone once RUNNING
+  });
 });
 
 memberTest.describe('A-P2-a · Lifecycle-Header — operator gate (present-but-disabled, CYP-317)', () => {

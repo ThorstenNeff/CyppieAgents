@@ -159,6 +159,9 @@ fun e2ePlatform(
     // origin ≠ the API origin — the production topology, Spec §14). Empty (default) → no CORS installed, every
     // existing journey unchanged (they use same-origin Ktor clients, not a browser).
     webAllowedOrigins: List<String> = emptyList(),
+    // web-ts parity (CYP-422 / CYP-446): inject a spawner so a tooth can drive the spawn-failed → ERROR axis (the
+    // default FakeSpawner always succeeds, so that axis was harness-deferred — J6). Null → the always-succeed default.
+    spawner: ProcessSpawner? = null,
 ): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
@@ -182,7 +185,7 @@ fun e2ePlatform(
         config = config,
         secrets = secrets,
         worktrees = WorktreeManager(runner ?: FakeGit(), gitRoot, active.id),
-        spawner = FakeSpawner(),
+        spawner = spawner ?: FakeSpawner(),
         scope = scope,
         connectorFactory = connectorFactory,
         // CYP-256 (.5a): when file-backed, the durable stores live under the (reused) gitRoot so they survive a
@@ -288,6 +291,19 @@ private class FakeGit : CommandRunner {
 /** Faked connector spawner — a no-op AgentProcess, so a session opens with NO real `claude`. */
 private class FakeSpawner : ProcessSpawner {
     override fun spawn(command: List<String>, cwd: File, env: Map<String, String>): AgentProcess = FakeProcess()
+}
+
+/**
+ * A [ProcessSpawner] whose spawns can be toggled to FAIL at runtime — for the CYP-446 spawn-failed → ERROR parity
+ * tooth. While [failSpawns] is set, EVERY spawn throws (so the CYP-330 fresh-retry rollback also fails and the agent
+ * stays ERROR/SPAWN_FAILED, not silently recovered). Cleared → the always-succeed default, so RUNNING is restorable.
+ */
+internal class ControllableSpawner : ProcessSpawner {
+    @Volatile var failSpawns: Boolean = false
+    override fun spawn(command: List<String>, cwd: File, env: Map<String, String>): AgentProcess {
+        if (failSpawns) throw java.io.IOException("parity ERROR probe: spawn forced to fail")
+        return FakeProcess()
+    }
 }
 
 private class FakeProcess : AgentProcess {
