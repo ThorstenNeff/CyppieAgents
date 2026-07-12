@@ -366,6 +366,17 @@ fun Application.bootPlatform(
                 scope = scope,
             )
         },
+        // CYP-512 (activation): the live hub-admission boot invocation. Fail-closed to null (INERT) unless
+        // CYPPIE_CP_URL + CYPPIE_CP_OPERATOR_TOKEN + CYPPIE_OPERATOR_ID are set → then the hub self-admits at boot.
+        hubAdmissionFactory = { hubIdentity, secretStore ->
+            com.tneff.cyppieagents.controlplane.buildHubAdmission(
+                hubIdentity = hubIdentity,
+                hubSecretStore = secretStore,
+                hubIdentityFile = gitRoot.toPath().resolve(".cyppie/hub-identity.json").toFile(),
+                hubName = config.projectId,
+                hubPort = config.hub.port,
+            )
+        },
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-31: an EXPLICIT WS-origin gate on TOP of CORS — CORS is a no-op when allowedOrigins is empty (WS then

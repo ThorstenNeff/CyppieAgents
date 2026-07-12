@@ -138,6 +138,8 @@ dependencies {
     implementation(libs.ktor.clientCio)
     // CYP-458: the hub DIALS the relay WS outbound (reverse tunnel) — client WebSockets on the JVM engine (CIO).
     implementation(libs.ktor.clientWebsockets)
+    // CYP-512: the hub's outbound admission client (HubAdmissionClient) speaks JSON to the CP /api/cp/* endpoints.
+    implementation(libs.ktor.clientContentNegotiation)
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.ktor.clientMock) // CYP-179 C2: hermetic wiring assertion for the register-backend seam
     testImplementation(libs.ktor.clientContentNegotiation)

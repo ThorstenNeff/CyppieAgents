@@ -267,6 +267,13 @@ class BootOrchestrator(
         scope: CoroutineScope,
     ) -> com.tneff.cyppieagents.transport.RelayConnector =
         { _, _, _, _ -> com.tneff.cyppieagents.transport.InertRelayConnector },
+    /** CYP-512 — the env-gated hub-admission boot invocation (mirror of [remoteTransportFactory]). Default returns
+     *  null → the hub NEVER self-admits (INERT); bootPlatform passes the live [buildHubAdmission] factory, which is
+     *  itself fail-closed to null unless CYPPIE_CP_URL + CYPPIE_CP_OPERATOR_TOKEN + CYPPIE_OPERATOR_ID are all set. */
+    private val hubAdmissionFactory: (
+        hubIdentity: com.tneff.cyppieagents.crypto.HubIdentity?,
+        hubSecretStore: com.tneff.cyppieagents.crypto.SecretStore?,
+    ) -> (suspend () -> com.tneff.cyppieagents.controlplane.HubAdmissionResult)? = { _, _ -> null },
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -996,6 +1003,12 @@ class BootOrchestrator(
         // current server unchanged. `start()` is launched on the app scope (a no-op for the Inert default).
         val remoteTransport = remoteTransportFactory(hubIdentity, hubSecretStore, operatorDeviceStore, scope)
         scope.launch { runCatching { remoteTransport.start() } }
+        // CYP-512 — attempt live hub-admission into the CP once at boot. INERT (null) unless CYPPIE_CP_URL +
+        // CYPPIE_CP_OPERATOR_TOKEN + CYPPIE_OPERATOR_ID + local-hub custody are all present → then the hub self-admits
+        // (fail-closed: any failure is logged, never crashes boot; the mint/resolve owner-check stay gated meanwhile).
+        hubAdmissionFactory(hubIdentity, hubSecretStore)?.let { admit ->
+            scope.launch { runCatching { admit() }.onFailure { log.warn("CYP-512 hub admission at boot failed: {}", it.message) } }
+        }
 
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
