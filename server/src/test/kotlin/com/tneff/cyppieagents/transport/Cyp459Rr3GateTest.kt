@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -166,5 +167,17 @@ class Cyp459Rr3GateTest {
             run(gate(), h, request("not.a.jwt", validPopSig(nonce = nonce), nonce)).first,
             "AND (not OR): a valid PoP with an invalid CpJwt is still rejected",
         )
+    }
+
+    @Test
+    fun t4_successfulAuthorize_isReadOnly_notLaunderedIntoWebAuthnEnrollment() {
+        // ★ T4: the RR3 tunnel authorization is a transport-scoped Boolean — it produces NO re-presentable credential
+        // and NEVER enrolls/mutates the operator device store. So the in-process tunnel principal cannot be laundered
+        // into the WebAuthn operator-auth surface (an enrolled device / a replayable op-session). Mutation (the gate
+        // enrolls the operator as a device) → the store changes = RED.
+        val before = deviceStore.enrolled()
+        val nonce = byteArrayOf(13)
+        assertTrue(run(gate(), h, request(validCpJwt(), validPopSig(nonce = nonce), nonce)).first, "precondition: authorized")
+        assertSame(before, deviceStore.enrolled(), "a successful RR3 authorize leaves the operator device store untouched")
     }
 }

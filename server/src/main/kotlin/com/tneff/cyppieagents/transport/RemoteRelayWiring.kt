@@ -1,0 +1,92 @@
+package com.tneff.cyppieagents.transport
+
+import com.tneff.cyppieagents.auth.CpJwtVerifier
+import com.tneff.cyppieagents.auth.operator.OperatorAssertionVerifier
+import com.tneff.cyppieagents.auth.operator.OperatorDeviceStore
+import com.tneff.cyppieagents.crypto.HubIdentity
+import com.tneff.cyppieagents.crypto.HubIdentityProvisioner
+import com.tneff.cyppieagents.crypto.SecretStore
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.websocket.WebSockets
+import kotlinx.coroutines.CoroutineScope
+import java.util.Base64
+
+/**
+ * CYP-459 (S3) — assembles the **live** RR3-authenticated remote relay connector from the boot pieces. Used ONLY
+ * behind the Phase-2-Remote-GO gate in `bootPlatform`; the default boot passes [InertRelayConnector] (INERT — the
+ * hub never dials, the current server is unchanged). The composite `tunnelHandler` = [Rr3AuthenticatedTunnelHandler]
+ * (the RR3 gate → the loopback bridge), so a tunnelled connection is authenticated (CpJwt + PoP vs live `h`) before
+ * any byte reaches a route, while the bridge stays a dumb byte-pump (T2).
+ */
+object RemoteRelayWiring {
+    fun build(
+        config: RemoteTransportConfig,
+        httpClient: HttpClient,
+        rendezvousId: String,
+        /** The hub's X25519 static PRIVATE scalar (S-C `hub.dhKey` from the SecretStore) — the NK responder static. */
+        dhStaticPrivate: ByteArray,
+        loopbackPort: Int,
+        gate: Rr3TunnelGate,
+        scope: CoroutineScope,
+    ): RelayConnector = NoiseRelayConnector(
+        config = config,
+        dialer = WebSocketRelayDialer(httpClient, rendezvousId),
+        terminator = NoiseJavaServerTerminator(dhStaticPrivate),
+        tunnelHandler = Rr3AuthenticatedTunnelHandler(gate, LoopbackBridge(loopbackPort))::handle,
+        scope = scope,
+    )
+}
+
+/**
+ * CYP-459 (S3) — the Phase-2-Remote-GO boot gate: build the LIVE [NoiseRelayConnector] (with the RR3 gate) **only**
+ * when the gate env (`CYPPIE_REMOTE_RELAY_URL`) is set AND local-hub custody ([hubIdentity] / [hubSecretStore] /
+ * [operatorDeviceStore]) plus the CP-pin config are ALL present; **fail-closed to [InertRelayConnector] on ANY gap**
+ * (never a half-configured remote dial). INERT by default → the current server is unchanged. [env] and
+ * [httpClientFactory] are injectable so the wiring is unit-testable without real env/network.
+ */
+fun buildRemoteTransport(
+    loopbackPort: Int,
+    hubIdentity: HubIdentity?,
+    hubSecretStore: SecretStore?,
+    operatorDeviceStore: OperatorDeviceStore?,
+    scope: CoroutineScope,
+    env: (String) -> String? = System::getenv,
+    httpClientFactory: () -> HttpClient = { HttpClient(CIO) { install(WebSockets) } },
+): RelayConnector {
+    val relayUrl = env("CYPPIE_REMOTE_RELAY_URL")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
+    // The live path REQUIRES local-hub custody + the full CP-pin config; any gap → INERT (fail-closed).
+    if (hubIdentity == null || hubSecretStore == null || operatorDeviceStore == null) return InertRelayConnector
+    val operatorId = env("CYPPIE_OPERATOR_ID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
+    val cpIssuer = env("CYPPIE_CP_ISSUER")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
+    val cpKid = env("CYPPIE_CP_KID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
+    val cpPub = env("CYPPIE_CP_PUBKEY")?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
+        ?: return InertRelayConnector
+    val rpId = env("CYPPIE_OPERATOR_RP_ID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
+    val rendezvous = env("CYPPIE_REMOTE_RENDEZVOUS")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
+    val dhPriv = hubSecretStore.get(HubIdentityProvisioner.DH_KEY)
+        ?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
+        ?: return InertRelayConnector
+
+    val gate = Rr3TunnelGate(
+        cpJwtVerifier = CpJwtVerifier(),
+        operatorVerifier = OperatorAssertionVerifier(),
+        deviceStore = operatorDeviceStore,
+        config = Rr3Config(
+            hubId = hubIdentity.hubId,
+            pinnedOperatorId = operatorId,
+            expectedIssuer = cpIssuer,
+            cpPublicKey = { k -> if (k == cpKid) cpPub else null },
+            expectedRpId = rpId,
+        ),
+    )
+    return RemoteRelayWiring.build(
+        config = RemoteTransportConfig(enabled = true, relayUrl = relayUrl),
+        httpClient = httpClientFactory(),
+        rendezvousId = rendezvous,
+        dhStaticPrivate = dhPriv,
+        loopbackPort = loopbackPort,
+        gate = gate,
+        scope = scope,
+    )
+}
