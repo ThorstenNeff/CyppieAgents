@@ -4,7 +4,8 @@
 > Basis `origin/develop` `69a14a3a` · CYP-247 S2 (D4/D5) · Docs-only → **Dev5-Referenz**. **Kein Cutover-Blocker** (keine Parity-Regression — die alte Compose-UI hatte den Flow **auch nicht**), aber billig + schließt eine echte **destruktive** Safety-Lücke.
 >
 > **Kein Port — neuer Flow.** Es gibt **keine bestehende Compose-UI** dafür (das Feld ist heute rein backend-erzwungen). Design **gegen die bestehenden Backend-Felder** + das etablierte **„irreversibel = Bestätigung + Folgen"-Muster** (CYP-450 Remove, CYP-461 Opt-in).
-> **Quelle (nur Modell/Route, keine UI):** `core/model/ConfigModel.kt` (`RepoConfigRequest.discardUnpushed` · `RepoConfigView.reprovisionPending`) · `server/boot/RepoReprovision.kt` · `server/routing/ConfigRoutes.kt`.
+> **Quelle (nur Modell/Route, keine UI):** `core/model/ConfigModel.kt` (`RepoConfigRequest.discardUnpushed` · `RepoConfigView.reprovisionPending`) · `server/boot/RepoReprovision.kt` (`WorktreeManager.unpushedWork()`) · `server/routing/ConfigRoutes.kt`.
+> **Backend-Naht (bestätigt 2026-07-12):** das **HONEST-END** wird gebaut — Server-Add **CYP-466** liefert `GET …/reprovision-preview` (live/on-demand) als **`AtRiskAgent(worktree, uncommitted, unpushed)`**-Liste. Der advisory-Fallback ist **deprecated** (§3).
 > **Host:** die **Repo-Section** in **CYP-453 Settings** (ich erweitere sie **nicht** — CYP-453 ist in der Merge-Kaskade; CYP-465 ist der eigene Flow, der in derselben Section-Fläche landet, wenn beide gebaut sind).
 
 ---
@@ -63,18 +64,25 @@ Effect-Hint, hier mit einem **zweiten** Grund (blockiert), der nie verschluckt w
   (`role="alertdialog"`, Muster CYP-450 Remove): benennt die **unwiderrufliche Folge** — „nicht committete/gepushte
   Arbeit in Agenten-Worktrees geht **verloren**, wenn die Repo-Änderung greift" — **cancel-erstfokussiert**,
   Confirm ist die benannte, destruktive Aktion.
-- **„Kann keine Folge autorisieren, die man nicht sieht" (CYP-461-Prinzip):** wenn das Backend die **betroffene
-  Arbeit** kennt (welche Agenten, dirty vs. unpushed), zeigt der Dialog sie **konkret** — nicht nur generisch. Kennt es
-  sie zum Bestätigungs-Zeitpunkt **nicht** (der Guard läuft erst bei der Re-Provision), ist die Warnung **advisory**
-  formuliert („**falls** Agenten dann unpushte Arbeit haben, geht sie verloren") — nie als sichere Aussage getarnt.
+- **„Kann keine Folge autorisieren, die man nicht sieht" (CYP-461-Prinzip) — HONEST-END, jetzt buildbar/aktiv:** der
+  Dialog zeigt die **konkret betroffenen Agenten** (nicht generisch). Backend2 hat am Objekt bestätigt: die At-Risk-Daten
+  existieren (`WorktreeManager.unpushedWork()`) und werden über **CYP-466** (`reprovision-preview`, live/on-demand) als
+  **`AtRiskAgent(worktree, uncommitted, unpushed)`**-Liste an die API gehoben.
 
-> **Die eine Backend-Scope-Frage (⟂Backend2, entscheidet den ehrlichsten Ort der Bestätigung):** kann der
-> *pending/blocked*-Zustand die **betroffenen Agenten** tragen (z. B. `reprovisionPending` angereichert um
-> `blockedAgents: [id…]` bzw. ein `GET …/reprovision-status`)? **Wenn ja** — der ehrlichste Flow ist: Speichern setzt
-> `discardUnpushed=false` (sicher), und die **Discard-Bestätigung erscheint erst, wenn die Re-Provision real blockiert**,
-> mit der **konkreten** betroffenen Arbeit (mein Empfehlung — man bestätigt den Verlust, den man **sieht**). **Wenn nein**
-> — Fallback: Discard-Opt-in beim Speichern mit **advisory** Warnung (§3), default-sicher. Ich spezifiziere **beide**
-> Enden; der finale Ort hängt an deiner/Backend2s Antwort.
+> **Backend-Frage GELÖST (Backend2 2026-07-12): das HONEST-END wird gebaut, der advisory-Fallback ist DEPRECATED.**
+> **Aktiver Flow:** Speichern setzt `discardUnpushed=false` (sicher) + markiert stale; die **Discard-Bestätigung erscheint
+> erst, wenn die Re-Provision real blockiert** — mit der **konkreten** `AtRiskAgent`-Liste aus `GET …/reprovision-preview`
+> (CYP-466). Man bestätigt **den Verlust, den man sieht.**
+>
+> **Die Liste ist LIVE — nie gestasht (spec-final, Backend2-Auflage):** ein Agent kann **nach** dem Save noch pushen und
+> damit **sein eigenes Risiko räumen**. Also wird die At-Risk-Liste **beim Öffnen des Bestätigungs-Dialogs frisch
+> geladen** (und idealerweise beim Fokus/Retry erneut), **nie** eine zum Save-Zeitpunkt eingefrorene Kopie gezeigt.
+> „Confirm the loss you see" heißt **jetzt-aktuell**: verschwindet das Risiko eines Agenten (er hat gepusht), verschwindet
+> er aus der Liste; ist die Liste leer geworden, ist **kein Discard mehr nötig** (die Re-Provision kann sauber laufen) —
+> der Dialog sagt das ehrlich, statt einen Verlust zu bestätigen, den es nicht mehr gibt.
+>
+> **Der advisory-Zweig (Discard-Opt-in beim Speichern mit generischer „falls…"-Warnung) ist DEPRECATED** — nur als
+> historische Notiz behalten, **nicht** bauen.
 
 ---
 
@@ -88,7 +96,9 @@ EN), alle als Text + Ton + a11y, **Farbe nie allein**, **kein `ellipsis`** (Offe
 | `settings_repo_reprovision_pending` | Repo-Änderung steht an – wirkt beim nächsten (Neu-)Start der Agenten. | Repo change pending — applies on the agents' next (re)start. |
 | `settings_repo_reprovision_blocked` | Re-Provision blockiert: Agenten haben nicht gepushte Arbeit. Pushen/committen – oder Verwerfen bestätigen. | Re-provision blocked: agents have unpushed work. Push/commit — or confirm discard. |
 | `settings_repo_discard_label` | Nicht gepushte Agenten-Arbeit beim Re-Provisionieren verwerfen | Discard unpushed agent work on re-provision |
-| `settings_repo_discard_warning` | Unwiderruflich: nicht committete/gepushte Arbeit in den Agenten-Worktrees geht verloren, wenn die Repo-Änderung greift. | Irreversible: uncommitted/unpushed work in the agent worktrees is lost when the repo change applies. |
+| `settings_repo_discard_warning` | Unwiderruflich: die Arbeit dieser Agenten geht verloren, wenn die Repo-Änderung greift. | Irreversible: these agents' work is lost when the repo change applies. |
+| `settings_repo_discard_atrisk_row` | %1$s (%2$s): %3$d uncommittet, %4$d nicht gepusht | %1$s (%2$s): %3$d uncommitted, %4$d unpushed |
+| `settings_repo_discard_cleared` | Keine gefährdete Arbeit mehr – die Re-Provision kann sauber laufen. | No work at risk anymore — the re-provision can run cleanly. |
 | `settings_repo_discard_confirm` | Arbeit verwerfen & re-provisionieren | Discard work & re-provision |
 
 **Reuse:** `settings_repo_effect_hint` bleibt der statische „wirkt auf neue Worktrees / nächster Boot"-Hint; die neuen
@@ -108,8 +118,9 @@ additive unter `settings.repo.*` (`settings.repo.reprovisionPending`/`.reprovisi
    bestätigter, benannter Akt.
 4. **Irreversibel = Bestätigung + Folgen** (CYP-450): der Discard-Dialog benennt die unwiderrufliche Folge,
    cancel-erstfokussiert.
-5. **Folge sichtbar vor der Autorisierung** (CYP-461): betroffene Arbeit konkret zeigen, wenn bekannt; sonst **advisory**
-   formulieren, nie als sichere Aussage.
+5. **Folge sichtbar vor der Autorisierung** (CYP-461): die betroffenen Agenten **konkret + live** zeigen (CYP-466
+   `AtRiskAgent`, beim Dialog-Öffnen frisch geladen, **nie gestasht**); ist die Liste leer geworden (Agent hat gepusht),
+   **kein Discard** — der Dialog sagt es (`settings_repo_discard_cleared`).
 6. **Gefahr ≠ Fehler:** die blockiert-/Warn-Zeilen sind **amber Attention**, nicht error-rot (a0/CYP-385); ein echter
    Request-Fehler bleibt error-rot.
 7. **Operator-gated fail-closed** (geerbt von der Repo-Section, CYP-453 §0): kein zweiter Gate.
@@ -126,8 +137,9 @@ additive unter `settings.repo.*` (`settings.repo.reprovisionPending`/`.reprovisi
 3. **Discard default-sicher.** **Mutation:** `discardUnpushed` startet `true` / ist vorausgewählt ⇒ rot.
 4. **Discard = bestätigter, benannter, irreversibler Akt.** **Mutation:** Discard als schlichte Checkbox ohne
    Bestätigungs-Dialog / ohne Nennung des Verlusts ⇒ rot.
-5. **Folge sichtbar/advisory.** **Mutation:** der Dialog behauptet konkret verlorene Arbeit, die er nicht kennt (statt
-   advisory), **oder** verschweigt die betroffene Arbeit, die das Backend liefert ⇒ rot.
+5. **Folge konkret + live.** Der Dialog zeigt die `AtRiskAgent`-Liste aus `reprovision-preview` (CYP-466), **beim Öffnen
+   frisch geladen**. **Mutation:** eine zum Save-Zeitpunkt eingefrorene/gestashte Liste **oder** verschweigt die vom
+   Backend gelieferte betroffene Arbeit **oder** bietet Discard an, obwohl die Liste leer ist (kein Risiko mehr) ⇒ rot.
 6. **Gefahr amber, nicht error-rot.** **Mutation:** blockiert/Warn im Error-Ton (als App-Fehler) ⇒ rot.
 
 ---
