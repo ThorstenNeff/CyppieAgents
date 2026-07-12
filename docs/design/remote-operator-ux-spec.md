@@ -275,7 +275,7 @@ Neue Area `remote` (aktive Remote-Session-Chrome) + Aktivierung `hubConnect.mode
 **eingefrorenen** `remote-operator-tags.md`:
 ```
 Auth (§5):     remote.authStep.popPrompt · .enroll · .error
-Connect (§7):  remote.connect.{relayDialing,e2eHandshake,trustCheck,authenticating,connected,retry} · .error.<cause>(camelCase: relayUnreachable/hubOffline/handshakeFailed/trustChanged/authRejected) · remote.relayDrop
+Connect (§7):  remote.connect.{relayDialing,e2eHandshake,trustCheck,trustProvisional,authenticating,connected,retry} · .error.<cause>(camelCase: relayUnreachable/hubOffline/handshakeFailed/trustChanged/authRejected) · remote.relayDrop
 Trust (§8):    remote.trust.{fingerprint,wordlist,hex,qr} · .pinPrompt · .changedAlarm(WARN) · .e2eIndicator
 Switch (§6):   remote.switch.transition
 Kontext (§9):  remote.context.{banner,hub,latency,degraded,reconnecting}
