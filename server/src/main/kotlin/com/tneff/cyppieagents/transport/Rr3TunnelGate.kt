@@ -39,12 +39,20 @@ class Rr3TunnelGate(
     /** Read → verify against live `h` → reply → return true iff authorized (the caller bridges). Fail-closed. */
     suspend fun authorize(tunnel: ServerNoiseTunnel): Boolean {
         val h = tunnel.handshakeHash
-        // ★ CB-d1 (PO-mandatory): enforce the fixed-32B `h` the raw-concat `cb` relies on. A malformed `h` would make
-        // `SHA-256(h ‖ hubId)` ambiguous → fail-closed here, at the live-`h` wiring point, before any verify.
+        // CB-d1 (CYP-490): a **load-bearing fail-early short-circuit** — a non-32-byte `h` is rejected HERE, before
+        // any verify runs (the CpJwt verify is never reached: proven by the short-circuit spy tooth). It is NOT the
+        // sole `h`-guard — the downstream `cb` channel-binding (`SHA-256(h ‖ hubId)`) is redundant defence-in-depth —
+        // but short-circuiting keeps a malformed `h` out of the `cb` computation entirely (`h` is always 32 B from
+        // BLAKE2s, so a bad size is a bug, not an attack; this fails it closed without processing it).
         if (h.size != 32) return reject(tunnel)
 
         val req = readRequest(tunnel) ?: return reject(tunnel) // tunnel closed / malformed → uniform reject
 
+        // ★ CB-and-b (CYP-490 fix): short-circuit on a FAILED CpJwt **before** the operator PoP verify. Otherwise the
+        // PoP verify (which consumes the single-use nonce on a valid signature) runs even when the CpJwt is invalid —
+        // a bad-CpJwt + valid-PoP would pre-burn the operator's nonce (a grief/DoS, CYP-477-class: the operator's
+        // legitimate retry with that nonce is then rejected as a replay). The nonce must be consumed ONLY once the
+        // CpJwt is valid AND the PoP is genuinely processed. a∧b stays a∧b — this only orders the evaluation.
         val principal = cpJwtVerifier.verify(
             req.cpJwt,
             VerifierContext(
@@ -56,12 +64,14 @@ class Rr3TunnelGate(
                 nowMs = now(),
             ),
         )
+        if (principal == null) return reject(tunnel) // a failed → reject; the PoP verify (and its nonce) is NOT reached
+
         val device = deviceStore.enrolled()
         val popVerified = device != null && operatorVerifier.verify(
             req.pop.toOperatorDevicePoP(), device, h, config.hubId, req.nonce, config.expectedRpId,
         ) is AssertionResult.Verified
 
-        return if (principal != null && popVerified) grant(tunnel) else reject(tunnel)
+        return if (popVerified) grant(tunnel) else reject(tunnel)
     }
 
     private suspend fun readRequest(tunnel: ServerNoiseTunnel): TunnelAuthRequest? = runCatching {
