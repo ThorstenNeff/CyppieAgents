@@ -1,8 +1,11 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
+import com.tneff.cyppieagents.auth.PrincipalKey
 import com.tneff.cyppieagents.auth.authenticatedApi
+import com.tneff.cyppieagents.controlplane.HubRegistrar
 import com.tneff.cyppieagents.controlplane.RelayRendezvous
 import com.tneff.cyppieagents.controlplane.RendezvousFailure
 import com.tneff.cyppieagents.controlplane.RendezvousResolveResponse
@@ -21,21 +24,26 @@ import io.ktor.server.routing.route
  * a 503 — mounting this changes nothing observable until `CYPPIE_REMOTE_RELAY_URL` is set (then the seam is
  * [com.tneff.cyppieagents.controlplane.LiveRelayRendezvous]).
  *
- * ★ **ENVELOPE FLAG — Reviewer MUST-ASSESS (operator-gate vs per-hub-owner-gate on resolve):** both verbs are
- * **operator-gated** ([authenticatedApi] `OPERATOR`) — the conservative fail-closed default. resolve reveals
- * `hubId ↔ rendezvous` to ANY operator, so a non-owner operator could learn the id + pull unauthenticated Noise
- * handshakes against the hub (a **minor hub-liveness info-leak + a minor DoS surface**) — but they fail downstream at
- * the CYP-508 mint owner-check (`RegisteredHub.ownerId`) + the client dhPubKey TOFU-pin, so they never reach
- * CONNECTED. MVP-acceptable (authz is enforced at the mint), but the Reviewer weighs **defense-in-depth (owner-gate
- * resolve too)** EXPLICITLY — not silently. The **register** side (a hub publishing its OWN rendezvous) has a parallel
- * open question: hub-admitted-CP-identity (CYP-451 `HubRegistrar`) vs operator session. Both are envelope decisions,
- * flagged not invented; operator-gating can only over-restrict, never under-gate, so it is safe as the placeholder.
+ * ★ **CYP-511 (Defense-in-Depth, closes the CYP-507 envelope flag): resolve is OWNER-gated.** Both verbs are
+ * operator-gated ([authenticatedApi] `OPERATOR`); additionally **resolve requires the operator to OWN the hub**
+ * (`RegisteredHub.ownerId == operatorId`, the same check the CYP-508 mint applies). This closes the residual a
+ * non-owner operator otherwise had (learning `hubId ↔ rendezvous` + pulling unauthenticated Noise handshakes = a
+ * minor liveness-leak + DoS surface); a non-owner is now `NOT_REGISTERED` (non-leaky) **before** the id is derived.
+ * Owner ⊆ operator, so this only tightens — it never breaks a legitimate resolution.
+ *
+ * The **register** side (a hub publishing its OWN rendezvous) keeps operator-gating: its auth model (hub-admitted
+ * CP-identity via CYP-451 `HubRegistrar` vs operator session) is a **separate DEFERRED envelope decision**, not this
+ * ticket — flagged, not invented; operator-gating can only over-restrict, never under-gate.
  */
 fun Route.rendezvousRoutes(
     rendezvous: () -> RelayRendezvous,
+    registrar: () -> HubRegistrar,
     registry: TokenRegistry,
     deps: AuthDeps = AuthDeps(registry),
     apiBase: String = "/api",
+    /** The operator-token (machine) principal's identity for the owner-check — the configured operator id
+     *  (`CYPPIE_OPERATOR_ID`), or null when unset (→ non-owner, fail-closed). A Kratos Human uses its `identityId`. */
+    machineOperatorId: String? = null,
 ) {
     authenticatedApi(deps, AuthRole.OPERATOR) {
         route("$apiBase/cp/rendezvous/{hubId}") {
@@ -44,9 +52,24 @@ fun Route.rendezvousRoutes(
             get {
                 val hubId = call.parameters["hubId"] ?: throw BadRequestException("missing hubId")
                 val rz = rendezvous()
-                val response = when {
-                    !rz.isLive() -> RendezvousResolveResponse(failure = RendezvousFailure.RELAY_UNAVAILABLE)
-                    else -> rz.resolve(hubId)?.let { RendezvousResolveResponse(binding = it) }
+                if (!rz.isLive()) {
+                    call.respond(RendezvousResolveResponse(failure = RendezvousFailure.RELAY_UNAVAILABLE))
+                    return@get
+                }
+                // CYP-511 owner-gate (Defense-in-Depth): ONLY the hub's owner may resolve. A non-owner operator (or an
+                // unknown hub) is NOT_REGISTERED — **non-leaky** (indistinguishable from "no rendezvous") and decided
+                // BEFORE the opaque id is derived, so it never leaks the hubId↔rendezvous mapping nor a liveness probe.
+                // Same `RegisteredHub.ownerId == operatorId` check the CYP-508 mint applies; owner ⊆ operator → only tightens.
+                val opId = when (val p = call.attributes[PrincipalKey]) {
+                    is AuthPrincipal.Human -> p.identityId
+                    AuthPrincipal.MachineOperator -> machineOperatorId
+                    is AuthPrincipal.MachineAgent -> null // never reaches an OPERATOR gate (403 first) — defensive
+                }
+                val owns = opId != null && registrar().lookup(hubId)?.ownerId == opId
+                val response = if (!owns) {
+                    RendezvousResolveResponse(failure = RendezvousFailure.NOT_REGISTERED)
+                } else {
+                    rz.resolve(hubId)?.let { RendezvousResolveResponse(binding = it) }
                         ?: RendezvousResolveResponse(failure = RendezvousFailure.NOT_REGISTERED)
                 }
                 call.respond(response)
