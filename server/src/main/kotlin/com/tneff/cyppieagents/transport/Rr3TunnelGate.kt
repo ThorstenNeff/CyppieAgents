@@ -64,11 +64,15 @@ class Rr3TunnelGate(
                 nowMs = now(),
             ),
         )
-        if (principal == null) return reject(tunnel) // a failed → reject; the PoP verify (and its nonce) is NOT reached
+        // ★ CB-and-b (CYP-490): a failed CpJwt → reject BEFORE the PoP verify, so a bad-CpJwt attempt never consumes
+        // the operator's single-use nonce (grief pre-burn, CYP-477-class). The nonce is consumed only once the CpJwt
+        // is valid AND the PoP is genuinely processed.
+        if (principal == null) return reject(tunnel)
 
-        val device = deviceStore.enrolled()
-        val popVerified = device != null && operatorVerifier.verify(
-            req.pop.toOperatorDevicePoP(), device, h, config.hubId, req.nonce, config.expectedRpId,
+        // CYP-485 (③ multi-device): the PoP may match ANY enrolled device (verifyAny handles the empty-store case);
+        // the nonce is consumed once, only on a match (the verifyAny grief-guard). Both guards held together (CYP-490 ∧ CYP-485).
+        val popVerified = operatorVerifier.verifyAny(
+            req.pop.toOperatorDevicePoP(), deviceStore.devices(), h, config.hubId, req.nonce, config.expectedRpId,
         ) is AssertionResult.Verified
 
         return if (popVerified) grant(tunnel) else reject(tunnel)
