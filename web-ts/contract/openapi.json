@@ -1205,6 +1205,42 @@
                 }
             }
         },
+        "/api/config/repo/reprovision-preview": {
+            "get": {
+                "operationId": "get_api_config_repo_reprovision-preview",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReprovisionPreview"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/compact/status": {
             "get": {
                 "operationId": "get_api_compact_status",
@@ -2998,6 +3034,43 @@
                 },
                 "required": [
                     "url"
+                ]
+            },
+            "ReprovisionPreview": {
+                "type": "object",
+                "properties": {
+                    "reprovisionPending": {
+                        "type": "boolean"
+                    },
+                    "atRisk": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AtRiskAgent"
+                        }
+                    }
+                },
+                "required": [
+                    "reprovisionPending",
+                    "atRisk"
+                ]
+            },
+            "AtRiskAgent": {
+                "type": "object",
+                "properties": {
+                    "worktree": {
+                        "type": "string"
+                    },
+                    "uncommitted": {
+                        "type": "boolean"
+                    },
+                    "unpushed": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "worktree",
+                    "uncommitted",
+                    "unpushed"
                 ]
             },
             "ApiKeyRequest": {

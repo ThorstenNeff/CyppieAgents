@@ -165,6 +165,10 @@ fun Application.installPlatform(
             modeRoutes({ booted.runtimeRegistry.active().handoff }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
             configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
+            // CYP-466: GET /api/config/repo/reprovision-preview — the honest discard-confirm feed. Operator-tier,
+            // LIVE per-agent at-risk work, single-sourced from the ACTIVE project's WorktreeManager.unpushedWork()
+            // (the SAME function the re-provision block decision uses → confirm == block).
+            reprovisionPreviewRoutes({ booted.runtimeRegistry.active().worktrees }, booted.projectRegistry::activeProjectId, booted.tokenRegistry, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
             // CYP-326: compact-orchestration config (operator) + status (read-tier).
             compactRoutes(booted.compactConfigStore, booted.compactStatus, booted.tokenRegistry, booted.projectRegistry::activeProjectId, booted.compactOnConfigUpdated, authDeps, apiBase = apiBase)
             // CYP-97/CYP-255 (.4b): agent CRUD lands in the ACTIVE project's runtime (resolver).

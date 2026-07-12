@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.boot
 
+import com.tneff.cyppieagents.model.AtRiskAgent
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -167,25 +168,20 @@ class WorktreeManager(
      *    `git log --oneline agent/<name> --not --remotes` is non-empty. This is upstream-agnostic, so a
      *    fresh branch sitting at the (already-pushed) base branch is NOT falsely flagged, while any local
      *    commit that was never pushed to any remote IS.
-     * Returns a human list (`"<name> (uncommitted changes + unpushed commits)"`); **empty = safe to tear
-     * down**. Single-sourced so S2 and S4 use the identical definition of "unsafe".
+     * Returns a typed per-agent list ([AtRiskAgent], CYP-466); **empty = safe to tear down**. Single-sourced so
+     * the S2 re-provision block decision AND the `reprovision-preview` discard-confirm read the IDENTICAL
+     * definition of "unsafe" (confirm == block, no drift). [AtRiskAgent.display] renders the human string for logs.
      */
-    fun unpushedWork(): List<String> {
+    fun unpushedWork(): List<AtRiskAgent> {
         val worktrees = worktreesDir.listFiles()?.filter { it.isDirectory } ?: return emptyList()
-        val atRisk = mutableListOf<String>()
+        val atRisk = mutableListOf<AtRiskAgent>()
         for (wt in worktrees) {
             val dirty = runner.run(listOf("git", "status", "--porcelain"), wt).output.isNotBlank()
             val unpushed = runner.run(
                 listOf("git", "log", "--oneline", "agent/${wt.name}", "--not", "--remotes"),
                 repoDir,
             ).output.isNotBlank()
-            if (dirty || unpushed) {
-                val reasons = buildList {
-                    if (dirty) add("uncommitted changes")
-                    if (unpushed) add("unpushed commits")
-                }
-                atRisk += "${wt.name} (${reasons.joinToString(" + ")})"
-            }
+            if (dirty || unpushed) atRisk += AtRiskAgent(worktree = wt.name, uncommitted = dirty, unpushed = unpushed)
         }
         return atRisk
     }

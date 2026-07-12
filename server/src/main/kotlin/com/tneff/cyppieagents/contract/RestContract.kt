@@ -119,6 +119,7 @@ object RestContract {
         Op("GET", "/api/config/repo", Tier.PARTICIPANT, response = json<RepoConfigView>()),
         Op("GET", "/api/config/apikey", Tier.PARTICIPANT, response = json<ApiKeyView>()),
         Op("PUT", "/api/config/repo", Tier.OPERATOR, request = json<RepoConfigRequest>(), response = json<RepoConfigView>()),
+        Op("GET", "/api/config/repo/reprovision-preview", Tier.OPERATOR, response = json<com.tneff.cyppieagents.model.ReprovisionPreview>()), // CYP-466: honest discard-confirm (live at-risk agents)
         Op("PUT", "/api/config/apikey", Tier.OPERATOR, request = json<ApiKeyRequest>(), response = json<ApiKeyView>()),
 
         // --- CompactRoutes (/api/compact) — CYP-326 compact orchestration config/status ---
