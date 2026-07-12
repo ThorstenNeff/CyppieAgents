@@ -106,4 +106,36 @@ class SecretStoreBackedOperatorDeviceStoreTest {
             assertEquals("already_enrolled_recovery_is_q6_seam", second.reason)
         }
     }
+
+    /**
+     * ★ CYP-473 H3 (seizure-detection path) — a tampered `operator.device` ciphertext row (CANARY untouched, so the
+     * store OPENS) makes `enrolled()` fail at the READ, never a silent `null` (= a false "not enrolled" on a seizure
+     * attempt). Distinct from [wrongMasterKey_failsClosed] (which throws at CONSTRUCTION via the canary) — this hits
+     * the `get()`-propagation path. Anti-vacuity: RED under MUT-SWALLOW-GET (`get()` in `runCatching{}.getOrNull()`).
+     */
+    @Test fun tamperedDeviceRow_failsClosed_atRead_notNull() {
+        val dir = tempDir()
+        val device = edDevice()
+        secretStore(dir).use { s -> SecretStoreBackedOperatorDeviceStore(s).save(device) }
+        // Positive precondition (non-vacuity): the SAME store, UNtampered, loads the device.
+        secretStore(dir).use { s -> assertSameDevice(device, SecretStoreBackedOperatorDeviceStore(s).enrolled()) }
+        // Tamper ONLY the operator.device ciphertext row — the canary row is untouched, so the store still OPENS.
+        corruptCiphertextRow(dir.resolve("secrets.db"), "operator.device")
+        secretStore(dir).use { s ->
+            assertFailsWith<SecretCipherException> { SecretStoreBackedOperatorDeviceStore(s).enrolled() }
+        }
+    }
+
+    /** Flip one byte in the named row's ciphertext (CYP-434 pattern), leaving the canary row untouched. */
+    private fun corruptCiphertextRow(db: Path, rowName: String) {
+        java.sql.DriverManager.getConnection("jdbc:sqlite:${db.toAbsolutePath()}").use { c ->
+            val ct = c.prepareStatement("SELECT ciphertext FROM hub_secret WHERE name=?").use { ps ->
+                ps.setString(1, rowName); ps.executeQuery().use { it.next(); it.getBytes(1) }
+            }
+            ct[ct.size / 2] = (ct[ct.size / 2].toInt() xor 0x7F).toByte()
+            c.prepareStatement("UPDATE hub_secret SET ciphertext=? WHERE name=?").use { ps ->
+                ps.setBytes(1, ct); ps.setString(2, rowName); ps.executeUpdate()
+            }
+        }
+    }
 }
