@@ -90,14 +90,22 @@ class OperatorAssertionVerifier(
         /** CYP-473 H1 — the expected WebAuthn RP ID; the Fido2 `authData.rpIdHash` MUST equal `SHA-256(this)`. Unused by the Raw branch (no authData). */
         expectedRpId: String,
     ): AssertionResult {
-        if (!nonces.useOnce(nonce)) return AssertionResult.Rejected("nonce_replayed")
         val challenge = operatorAuthChallenge(handshakeHash, hubId, nonce)
-        return when (pop) {
+        // CYP-477: validate the assertion (signature + branch checks) BEFORE touching the nonce ledger. An
+        // invalid/garbage-sig PoP must NOT consume a ledger slot — otherwise an attacker who knows only a fresh
+        // nonce (no device key) can (1) pre-BURN a victim's nonce → the victim's legit PoP is then rejected as a
+        // replay (grief/DoS), and (2) flood garbage to evict real nonces past the cap → replay-after-flood. Only a
+        // fully-valid assertion is allowed to consume its nonce.
+        val validity = when (pop) {
             is OperatorDevicePoP.Raw ->
                 if (verifySig(device, challenge, pop.signature)) AssertionResult.Verified(device.deviceId)
                 else AssertionResult.Rejected("bad_signature")
             is OperatorDevicePoP.Fido2 -> verifyFido2(pop, device, challenge, expectedRpId)
         }
+        if (validity is AssertionResult.Rejected) return validity // invalid → reject, the nonce is left untouched
+        // Valid assertion → NOW consume the nonce (single-use). A replay of a valid nonce is rejected here.
+        if (!nonces.useOnce(nonce)) return AssertionResult.Rejected("nonce_replayed")
+        return validity
     }
 
     private fun verifyFido2(

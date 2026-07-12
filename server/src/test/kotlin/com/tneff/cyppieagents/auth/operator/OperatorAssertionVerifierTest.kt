@@ -86,6 +86,29 @@ class OperatorAssertionVerifierTest {
         assertEquals("nonce_replayed", replay.reason)
     }
 
+    /**
+     * ★ CYP-477 — a garbage-signature PoP (attacker knows only the nonce, no device key) must NOT consume the nonce:
+     * the victim's LEGIT PoP with the same nonce still verifies. `useOnce` runs only AFTER a valid signature.
+     * Mutation (nonce `useOnce` BEFORE the sig-verify) → the garbage PoP burns the nonce → the legit PoP is rejected
+     * as a replay = RED (the grief/DoS + flood-evict-replay vector).
+     */
+    @Test fun garbageSig_doesNotBurnNonce_legitStillVerifies() {
+        val d = enrollRawDevice()
+        val v = OperatorAssertionVerifier()
+        val nonce = byteArrayOf(0x42, 0x43)
+        // attacker floods with the victim's fresh nonce but garbage (invalid) signatures — each rejected, nonce untouched.
+        repeat(5) {
+            val garbage = OperatorDevicePoP.Raw(ByteArray(64))
+            assertIs<AssertionResult.Rejected>(v.verify(garbage, d.device, hA, hubId, nonce, rpId))
+        }
+        // the victim's legit PoP with the SAME nonce still verifies (the nonce was never burned).
+        assertIs<AssertionResult.Verified>(v.verify(rawPop(d.seed, hA, nonce), d.device, hA, hubId, nonce, rpId))
+        // and single-use still holds: a genuine replay of the now-consumed nonce is rejected.
+        val replay = v.verify(rawPop(d.seed, hA, nonce), d.device, hA, hubId, nonce, rpId)
+        assertIs<AssertionResult.Rejected>(replay)
+        assertEquals("nonce_replayed", replay.reason)
+    }
+
     // ---- Fido2 branch ----
 
     @Test fun fido2_uvSet_verifies() {
