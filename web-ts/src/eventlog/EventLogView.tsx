@@ -8,16 +8,9 @@
 //
 // CYP-448: PAUSE freezes the visible tail (App passes the frozen `events` + `bufferedCount`); while paused the
 // `liveIndicator` is ABSENT and `pausedIndicator` is present — a frozen view is never shown as live (spec §5.6).
-import { eventRows, severityGlyph, severityLabel, typeGlyph, type EventLogState } from './eventLog'
-import { formatLocalHhMm } from '../agentview/transcriptTime'
+import { eventRows, type EventLogState } from './eventLog'
+import { EventRow } from './EventRow'
 import { useAutoscrollPin } from '../agentview/useAutoscrollPin'
-import type { EventSurrogate } from '../types/generated/contract'
-
-const detailSummary = (detail: unknown): string => {
-  if (detail === undefined || detail === null) return ''
-  const s = typeof detail === 'string' ? detail : JSON.stringify(detail)
-  return s.length > 120 ? `${s.slice(0, 117)}…` : s
-}
 
 export interface EventLogViewProps {
   /** the VISIBLE tail (frozen at the pause point when paused, else the full ring). */
@@ -108,34 +101,12 @@ export function EventLogView({
                   ⚠ {row.count} {row.count === 1 ? 'Ereignis' : 'Ereignisse'} verworfen (Lücke im Protokoll)
                 </li>
               ) : (
-                <EventRow key={row.event.id} event={row.event} />
+                <EventRow key={row.event.id} event={row.event} testid={`event.row.${row.event.id}`} />
               ),
             )}
           </ol>
         )}
       </div>
     </div>
-  )
-}
-
-function EventRow({ event }: { event: EventSurrogate }) {
-  return (
-    <li className="event-row" data-testid={`event.row.${event.id}`}>
-      <time>{formatLocalHhMm(event.ts)}</time>
-      <span className={`event-sev event-sev-${event.severity}`} data-severity={event.severity} title={severityLabel(event.severity)}>
-        <span className="event-sev-glyph" aria-hidden="true">
-          {severityGlyph(event.severity)}
-        </span>
-        <span className="event-sev-label">{severityLabel(event.severity)}</span>
-      </span>
-      <span className="event-type" data-testid={`event.type.${event.id}`}>
-        <span className="event-type-glyph" aria-hidden="true">
-          {typeGlyph(event.type)}
-        </span>
-        <span className="event-type-text">{event.type}</span>
-      </span>
-      <span className="event-agent">{event.agentId}</span>
-      {detailSummary(event.detail) !== '' && <span className="event-detail">{detailSummary(event.detail)}</span>}
-    </li>
   )
 }

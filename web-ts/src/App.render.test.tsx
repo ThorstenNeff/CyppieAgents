@@ -44,6 +44,7 @@ const fakeRepo = (): HubRepo => ({
   removeAgent: vi.fn().mockResolvedValue(undefined),
   getRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false }),
   putRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false }),
+  getEvents: vi.fn().mockResolvedValue({ events: [], hasMore: false }),
 })
 
 beforeEach(() => {
@@ -314,5 +315,27 @@ describe('App assembly (CYP-425)', () => {
     expect(getByTestId('settings.section.repo')).toBeTruthy() // CYP-453 repo section
     expect(getByTestId('settings.section.apiKey')).toBeTruthy() // framed CYP-433 section
     expect(getByTestId('settings.repo.url.input')).toBeTruthy()
+  })
+
+  it('CYP-452: an operator gets the Event-Browse window; the panel queries /api/events', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    const { findByTestId } = render(
+      <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(await findByTestId('eventBrowse')).toBeTruthy()
+    expect(repo.getEvents).toHaveBeenCalled() // the Browse panel ran its first-page query
+  })
+
+  it('CYP-452 leak-mount-gate: a NON-operator gets NO Event-Browse window and NEVER queries /api/events', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    const { queryByTestId } = render(
+      <App config={{ ...config, operator: false }} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(queryByTestId('eventBrowse')).toBeNull() // omission — no bodies surface for a non-operator
+    expect(repo.getEvents).not.toHaveBeenCalled() // and no /api/events query at all
   })
 })
