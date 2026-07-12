@@ -51,6 +51,7 @@ const fakeRepo = (): HubRepo => ({
   fetchReports: vi.fn().mockResolvedValue([]),
   generateReport: vi.fn().mockResolvedValue({ id: 'r1', type: 'status', generatedAt: 0, projectId: 'p', sources: ['events'], window: {}, sections: [] }),
   fetchAuthMe: vi.fn().mockResolvedValue({ authenticated: true, role: 'OPERATOR', verified: true }),
+  getProjects: vi.fn().mockResolvedValue({ activeProjectId: 'team-1', projects: [] }),
 })
 
 beforeEach(() => {

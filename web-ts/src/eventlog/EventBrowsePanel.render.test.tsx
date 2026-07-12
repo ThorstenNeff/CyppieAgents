@@ -94,3 +94,157 @@ describe('EventBrowsePanel (CYP-452)', () => {
     expect(await findByTestId('eventBrowse.empty')).toBeTruthy()
   })
 })
+
+describe('EventBrowsePanel — CYP-467 parity (type/project/timeWindow chips + typed summaries + single-pane)', () => {
+  const lastFilter = (getEvents: ReturnType<typeof vi.fn>): EventFilter =>
+    getEvents.mock.calls[getEvents.mock.calls.length - 1][0] as EventFilter
+
+  it('the type chip tap runs a NEW server query carrying the type axis (same rule as agent/severity)', async () => {
+    const getEvents = vi.fn().mockResolvedValue(page([ev('a', 1)]))
+    const { getByTestId, findByTestId } = render(<EventBrowsePanel getEvents={getEvents} agentIds={['backend']} />)
+    await findByTestId('eventBrowse.row.0')
+    await act(async () => {
+      fireEvent.click(getByTestId('eventBrowse.filter.type')) // null → first curated type
+    })
+    await waitFor(() => expect(lastFilter(getEvents).type).toBe('turn.start'))
+  })
+
+  it('the timeWindow parity marker is present but non-interactive (discoverable axis, no fabricated control)', async () => {
+    const getEvents = vi.fn().mockResolvedValue(page([]))
+    const { findByTestId } = render(<EventBrowsePanel getEvents={getEvents} agentIds={[]} />)
+    const marker = await findByTestId('eventBrowse.filter.timeWindow')
+    expect(marker.tagName).toBe('SPAN') // not a button — deliberately no picker yet
+  })
+
+  it('no project chip when the operator has no project list; present + cycling to the cross-project query when they do', async () => {
+    const noProj = vi.fn().mockResolvedValue(page([]))
+    const { queryByTestId, unmount } = render(<EventBrowsePanel getEvents={noProj} agentIds={[]} />)
+    await waitFor(() => expect(noProj).toHaveBeenCalled())
+    expect(queryByTestId('eventBrowse.filter.project')).toBeNull() // no list → no chip
+    unmount()
+
+    const getEvents = vi.fn().mockResolvedValue(page([ev('a', 1)]))
+    const { getByTestId, findByTestId } = render(
+      <EventBrowsePanel
+        getEvents={getEvents}
+        agentIds={['backend']}
+        projects={[{ id: 'team-1', name: 'Team One' }, { id: 'team-2', name: 'Team Two' }]}
+        activeProjectId="team-1"
+      />,
+    )
+    await findByTestId('eventBrowse.row.0')
+    // null(active) → the OTHER project (team-2), server-side query carries it
+    await act(async () => {
+      fireEvent.click(getByTestId('eventBrowse.filter.project'))
+    })
+    await waitFor(() => expect(lastFilter(getEvents).projectId).toBe('team-2'))
+    expect(await findByTestId('eventBrowse.crossProjectView')).toBeTruthy() // never misread as the active project
+  })
+
+  it('a compact.orchestration.done detail shows the X/N summary — WARN amber on a timeout, neutral on a full run', async () => {
+    const timeout = ev('t', 1, { type: 'compact.orchestration.done', detail: { completed: 3, total: 5, pendingAgentIds: ['a', 'b'] } })
+    const full = ev('f', 2, { type: 'compact.orchestration.done', detail: { completed: 5, total: 5, pendingAgentIds: [] } })
+    const getEvents = vi.fn().mockResolvedValue(page([timeout, full]))
+    const { getByTestId, findByTestId } = render(<EventBrowsePanel getEvents={getEvents} agentIds={['backend']} />)
+    await findByTestId('eventBrowse.row.0')
+    await act(async () => {
+      fireEvent.click(getByTestId('eventBrowse.row.0'))
+    })
+    const s1 = await findByTestId('eventBrowse.detail.compactSummary')
+    expect(s1.textContent).toContain('3/5')
+    expect(s1.textContent).toContain('Timeout')
+    expect(s1.className).toContain('event-browse-summary-warn') // amber (and text carries the meaning)
+
+    await act(async () => {
+      fireEvent.click(getByTestId('eventBrowse.row.1'))
+    })
+    const s2 = await findByTestId('eventBrowse.detail.compactSummary')
+    expect(s2.textContent).toContain('5/5')
+    expect(s2.className).not.toContain('event-browse-summary-warn') // a full run is neutral — never amber, never green
+  })
+
+  it('a resume.outcome detail shows CONTEXT_LOST as WARN amber; an unknown outcome shows no fabricated summary', async () => {
+    const lost = ev('l', 1, { type: 'resume.outcome', detail: { outcome: 'CONTEXT_LOST' } })
+    const unknown = ev('u', 2, { type: 'resume.outcome', detail: { outcome: 'SOMETHING_NEW' } })
+    const getEvents = vi.fn().mockResolvedValue(page([lost, unknown]))
+    const { getByTestId, findByTestId, queryByTestId } = render(<EventBrowsePanel getEvents={getEvents} agentIds={['backend']} />)
+    await findByTestId('eventBrowse.row.0')
+    await act(async () => {
+      fireEvent.click(getByTestId('eventBrowse.row.0'))
+    })
+    const s = await findByTestId('eventBrowse.detail.resumeOutcome')
+    expect(s.textContent).toContain('Kontext verloren')
+    expect(s.className).toContain('event-browse-summary-warn')
+
+    await act(async () => {
+      fireEvent.click(getByTestId('eventBrowse.row.1'))
+    })
+    await findByTestId('eventBrowse.detail')
+    expect(queryByTestId('eventBrowse.detail.resumeOutcome')).toBeNull() // unknown → no summary
+  })
+
+  it('single-pane (< PANE_COLLAPSE_WIDTH): a selected event REPLACES the master; Back returns to it', async () => {
+    const cbs: Array<(e: unknown) => void> = []
+    class FakeRO {
+      constructor(cb: (e: unknown) => void) {
+        cbs.push(cb)
+      }
+      observe() {}
+      disconnect() {}
+    }
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeRO
+    try {
+      const getEvents = vi.fn().mockResolvedValue(page([ev('a', 1, { correlationId: 'run-1' })]))
+      const { getByTestId, findByTestId, queryByTestId } = render(<EventBrowsePanel getEvents={getEvents} agentIds={['backend']} />)
+      await findByTestId('eventBrowse.row.0')
+      // go narrow — but with nothing selected the master + filter bar still show
+      await act(async () => {
+        cbs.forEach((cb) => cb([{ contentRect: { width: 400 } }]))
+      })
+      expect(getByTestId('eventBrowse.filterBar')).toBeTruthy()
+      // select → detail REPLACES the master (filter bar + table gone), only the detail remains
+      await act(async () => {
+        fireEvent.click(getByTestId('eventBrowse.row.0'))
+      })
+      expect(await findByTestId('eventBrowse.detail')).toBeTruthy()
+      expect(queryByTestId('eventBrowse.filterBar')).toBeNull()
+      expect(queryByTestId('eventBrowse.table')).toBeNull()
+      // Back returns to the master
+      await act(async () => {
+        fireEvent.click(getByTestId('eventBrowse.back'))
+      })
+      expect(await findByTestId('eventBrowse.filterBar')).toBeTruthy()
+      expect(await findByTestId('eventBrowse.table')).toBeTruthy()
+    } finally {
+      delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver
+    }
+  })
+
+  it('two-pane (wide): a selected event sits BESIDE the master, both present', async () => {
+    const cbs: Array<(e: unknown) => void> = []
+    class FakeRO {
+      constructor(cb: (e: unknown) => void) {
+        cbs.push(cb)
+      }
+      observe() {}
+      disconnect() {}
+    }
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeRO
+    try {
+      const getEvents = vi.fn().mockResolvedValue(page([ev('a', 1)]))
+      const { getByTestId, findByTestId } = render(<EventBrowsePanel getEvents={getEvents} agentIds={['backend']} />)
+      await findByTestId('eventBrowse.row.0')
+      await act(async () => {
+        cbs.forEach((cb) => cb([{ contentRect: { width: 900 } }]))
+      })
+      await act(async () => {
+        fireEvent.click(getByTestId('eventBrowse.row.0'))
+      })
+      expect(getByTestId('eventBrowse.filterBar')).toBeTruthy() // master chrome stays
+      expect(getByTestId('eventBrowse.table')).toBeTruthy()
+      expect(getByTestId('eventBrowse.detail')).toBeTruthy() // detail beside it
+    } finally {
+      delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver
+    }
+  })
+})

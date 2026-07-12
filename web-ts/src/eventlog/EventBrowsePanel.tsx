@@ -8,12 +8,13 @@
 //   - no invented correlation: showRun/showSession enabled ONLY when the event carries the field, two axes never
 //     conflated (spec §5/§6/tooth 1);
 //   - sourceTs = "observed" (informative), ordering is seq (tooth 6); content-free detail JSON as-is (tooth 8).
-// Deferred (flagged): typed compact/resume WARN-amber detail summaries + full single-pane back-nav — fast-follow.
+// CYP-467 (fast-follow) adds the deferred parity items — typed compact/resume WARN-amber detail summaries, the
+// type/project/timeWindow filter axes, and the <600px single-pane back-nav — no new honesty tooth (polish/parity).
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { EventPage, EventSurrogate } from '../types/generated/contract'
+import type { EventPage, EventSurrogate, Project } from '../types/generated/contract'
 import { RestError } from '../net/rest'
 import { EventRow } from './EventRow'
-import { severityLabel, type Severity } from './eventLog'
+import { severityLabel, typeGlyph, type Severity } from './eventLog'
 import { formatLocalHhMm } from '../agentview/transcriptTime'
 import {
   EMPTY_FILTER,
@@ -26,6 +27,12 @@ import {
   sessionDrilldown,
   drilldownFilter,
   appendPage,
+  isSinglePane,
+  TYPE_CYCLE,
+  PROJECT_ALL,
+  projectCycleOptions,
+  compactDoneSummary,
+  resumeOutcomeSummary,
   type EventFilter,
   type DrilldownAxis,
 } from './eventBrowse'
@@ -37,9 +44,12 @@ export interface EventBrowsePanelProps {
   getEvents: (filter: EventFilter, afterSeq: number | null, limit: number) => Promise<EventPage>
   /** agent-chip options (the roster ids). */
   agentIds: readonly string[]
+  /** CYP-467/94: the operator's projects + active id drive the cross-project axis. Empty (default) → no project chip. */
+  projects?: readonly Project[]
+  activeProjectId?: string
 }
 
-export function EventBrowsePanel({ getEvents, agentIds }: EventBrowsePanelProps) {
+export function EventBrowsePanel({ getEvents, agentIds, projects = [], activeProjectId = '' }: EventBrowsePanelProps) {
   const [filter, setFilter] = useState<EventFilter>(EMPTY_FILTER)
   const [drilldown, setDrilldown] = useState<DrilldownAxis | null>(null)
   const [events, setEvents] = useState<readonly EventSurrogate[]>([])
@@ -49,6 +59,27 @@ export function EventBrowsePanel({ getEvents, agentIds }: EventBrowsePanelProps)
   const [firstPageError, setFirstPageError] = useState(false)
   const [accessRevoked, setAccessRevoked] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  // CYP-467: measure the panel's own width so master+detail collapse to a single pane below PANE_COLLAPSE_WIDTH.
+  // A width of 0 (unmeasured, e.g. jsdom) stays two-pane — never collapse before we know the size.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [paneWidth, setPaneWidth] = useState(0)
+  useEffect(() => {
+    const el = rootRef.current
+    if (el === null) return
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver((entries) => {
+        for (const e of entries) setPaneWidth(e.contentRect.width)
+      })
+      ro.observe(el)
+      return () => ro.disconnect()
+    }
+    const measure = () => setPaneWidth(el.clientWidth)
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+  const singlePane = isSinglePane(paneWidth)
 
   // The effective query = the drilldown's single-axis filter when drilled in, else the filter bar.
   const effectiveFilter = useMemo(() => (drilldown ? drilldownFilter(drilldown) : filter), [drilldown, filter])
@@ -111,76 +142,115 @@ export function EventBrowsePanel({ getEvents, agentIds }: EventBrowsePanelProps)
     )
   }
 
+  // CYP-467 single-pane: below PANE_COLLAPSE_WIDTH a selected event REPLACES the master (its Back returns to it).
+  const detailPane =
+    selected !== null ? <DetailPane event={selected} onBack={() => setSelectedId(null)} onDrill={setDrilldown} /> : null
+  const showDetailOnly = singlePane && detailPane !== null
+
   return (
-    <div className="event-browse" data-testid="eventBrowse">
-      <FilterBar
-        filter={filter}
-        agentIds={agentIds}
-        drilldown={drilldown}
-        onCycle={setAxis}
-        onClearDrilldown={() => setDrilldown(null)}
-      />
+    <div
+      className="event-browse"
+      ref={rootRef}
+      data-testid="eventBrowse"
+      data-single-pane={singlePane ? 'true' : undefined}
+    >
+      {showDetailOnly ? (
+        detailPane
+      ) : (
+        <>
+          <FilterBar
+            filter={filter}
+            agentIds={agentIds}
+            projects={projects}
+            activeProjectId={activeProjectId}
+            drilldown={drilldown}
+            onCycle={setAxis}
+            onClearDrilldown={() => setDrilldown(null)}
+          />
 
-      <div className="event-browse-body">
-        <div className="event-browse-master">
-          {firstPageError ? (
-            <div className="event-browse-error" role="alert" data-testid="eventBrowse.error">
-              <span>Laden fehlgeschlagen.</span>
-              <button
-                type="button"
-                data-testid="eventBrowse.error.retry"
-                onClick={() => setFilter((f) => ({ ...f }))} // re-run the current query (new object → effect)
-              >
-                Erneut versuchen
-              </button>
+          <div className="event-browse-body">
+            <div className="event-browse-master">
+              {firstPageError ? (
+                <div className="event-browse-error" role="alert" data-testid="eventBrowse.error">
+                  <span>Laden fehlgeschlagen.</span>
+                  <button
+                    type="button"
+                    data-testid="eventBrowse.error.retry"
+                    onClick={() => setFilter((f) => ({ ...f }))} // re-run the current query (new object → effect)
+                  >
+                    Erneut versuchen
+                  </button>
+                </div>
+              ) : events.length === 0 && !loading ? (
+                <p className="event-browse-empty" role="status" data-testid="eventBrowse.empty">
+                  Keine Events.
+                </p>
+              ) : (
+                <ol className="event-browse-table transcript-scroll" data-testid="eventBrowse.table">
+                  {events.map((e, i) => (
+                    <EventRow
+                      key={e.id}
+                      event={e}
+                      testid={`eventBrowse.row.${i}`}
+                      showProject={isCrossProjectView(filter)}
+                      onSelect={() => setSelectedId(e.id)}
+                    />
+                  ))}
+                </ol>
+              )}
+              {hasMore && !firstPageError && (
+                <button type="button" className="event-browse-more" data-testid="eventBrowse.loadMore" onClick={loadMore} disabled={loading}>
+                  Mehr laden
+                </button>
+              )}
             </div>
-          ) : events.length === 0 && !loading ? (
-            <p className="event-browse-empty" role="status" data-testid="eventBrowse.empty">
-              Keine Events.
-            </p>
-          ) : (
-            <ol className="event-browse-table transcript-scroll" data-testid="eventBrowse.table">
-              {events.map((e, i) => (
-                <EventRow
-                  key={e.id}
-                  event={e}
-                  testid={`eventBrowse.row.${i}`}
-                  showProject={isCrossProjectView(filter)}
-                  onSelect={() => setSelectedId(e.id)}
-                />
-              ))}
-            </ol>
-          )}
-          {hasMore && !firstPageError && (
-            <button type="button" className="event-browse-more" data-testid="eventBrowse.loadMore" onClick={loadMore} disabled={loading}>
-              Mehr laden
-            </button>
-          )}
-        </div>
 
-        {selected !== null && (
-          <DetailPane event={selected} onBack={() => setSelectedId(null)} onDrill={setDrilldown} />
-        )}
-      </div>
+            {/* two-pane: detail sits beside the master. single-pane handles it above (detailPane replaces master). */}
+            {!singlePane && detailPane}
+          </div>
+        </>
+      )}
     </div>
   )
+}
+
+function projectChipLabel(projectId: string | null, projects: readonly Project[]): string {
+  if (projectId === null) return '—'
+  if (projectId === PROJECT_ALL) return 'Alle Projekte'
+  return projects.find((p) => p.id === projectId)?.name ?? projectId
 }
 
 function FilterBar({
   filter,
   agentIds,
+  projects,
+  activeProjectId,
   drilldown,
   onCycle,
   onClearDrilldown,
 }: {
   filter: EventFilter
   agentIds: readonly string[]
+  projects: readonly Project[]
+  activeProjectId: string
   drilldown: DrilldownAxis | null
   onCycle: <K extends keyof EventFilter>(key: K, value: EventFilter[K]) => void
   onClearDrilldown: () => void
 }) {
+  const projectCycle = projectCycleOptions(projects.map((p) => p.id), activeProjectId)
   return (
     <div className="event-browse-filterbar" data-testid="eventBrowse.filterBar">
+      {/* CYP-94 cross-project axis (operator-only) — only shown when the operator has a project list to cycle. */}
+      {projects.length > 0 && (
+        <button
+          type="button"
+          data-testid="eventBrowse.filter.project"
+          aria-label={`Filter Projekt: ${projectChipLabel(filter.projectId, projects)}`}
+          onClick={() => onCycle('projectId', cycleAxis(filter.projectId, projectCycle))}
+        >
+          Projekt: {projectChipLabel(filter.projectId, projects)}
+        </button>
+      )}
       <button
         type="button"
         data-testid="eventBrowse.filter.agent"
@@ -188,6 +258,16 @@ function FilterBar({
         onClick={() => onCycle('agentId', cycleAxis(filter.agentId, agentIds))}
       >
         Agent: {filter.agentId ?? '—'}
+      </button>
+      {/* type axis: cycles the curated families through the SAME server-side query (never a client post-filter). The
+          glyph is a scan aid; the wire type text carries the meaning (colour/glyph never alone). */}
+      <button
+        type="button"
+        data-testid="eventBrowse.filter.type"
+        aria-label={`Filter Typ: ${filter.type ?? 'alle'}`}
+        onClick={() => onCycle('type', cycleAxis(filter.type, TYPE_CYCLE))}
+      >
+        Typ: {filter.type ? `${typeGlyph(filter.type)} ${filter.type}` : '—'}
       </button>
       <button
         type="button"
@@ -197,6 +277,11 @@ function FilterBar({
       >
         Severity: {filter.severity ? severityLabel(filter.severity) : '—'}
       </button>
+      {/* timeWindow: a present parity marker (the since/until axes exist in the query but have no picker yet, mirroring
+          :app:shared) — shown so the axis is discoverable, deliberately non-interactive (no fabricated control). */}
+      <span className="event-browse-time-window" data-testid="eventBrowse.filter.timeWindow">
+        Zeitfenster: —
+      </span>
 
       {/* subset-cue: a filtered view is NEVER read as "nothing happened" (spec §3, tooth 3). */}
       {isFilterActive(filter) && (
@@ -235,6 +320,8 @@ function DetailPane({
 }) {
   const run = runDrilldown(event)
   const session = sessionDrilldown(event)
+  const compact = compactDoneSummary(event)
+  const resume = resumeOutcomeSummary(event)
   return (
     <div className="event-browse-detail" role="region" aria-label="Ereignis-Detail" data-testid="eventBrowse.detail">
       <button type="button" className="event-browse-back" data-testid="eventBrowse.back" onClick={onBack} aria-label="Zurück">
@@ -253,6 +340,27 @@ function DetailPane({
       {event.sourceTs != null && (
         <p className="event-browse-source-ts" data-testid="eventBrowse.detail.sourceTs">
           Beobachtet: {formatLocalHhMm(event.sourceTs)}
+        </p>
+      )}
+      {/* CYP-326 §2.5: the typed X/N compact summary above the raw JSON — WARN amber on timeout/abort, neutral on a
+          clean full run (never green). The count/"Timeout"/"Abgebrochen" text carries it; colour is never alone. */}
+      {compact !== null && (
+        <p
+          className={`event-browse-summary${compact.warn ? ' event-browse-summary-warn' : ''}`}
+          data-testid="eventBrowse.detail.compactSummary"
+        >
+          {compact.warn && <span aria-hidden="true">▲ </span>}
+          {compact.text}
+        </p>
+      )}
+      {/* CYP-356: the resume outcome — CONTEXT_LOST is WARN amber (unintended loss); resumed/fresh are neutral. */}
+      {resume !== null && (
+        <p
+          className={`event-browse-summary${resume.warn ? ' event-browse-summary-warn' : ''}`}
+          data-testid="eventBrowse.detail.resumeOutcome"
+        >
+          {resume.warn && <span aria-hidden="true">▲ </span>}
+          {resume.text}
         </p>
       )}
       {/* content-free detail payload, raw/as-is — nothing fabricated (spec §5.5/tooth 8). */}

@@ -108,3 +108,87 @@ export function appendPage(existing: readonly EventSurrogate[], page: readonly E
   for (const e of page) if (!seen.has(e.id)) merged.push(e)
   return merged.sort((a, b) => a.seq - b.seq)
 }
+
+// ── CYP-467 (P2-c.2 fast-follow) — parity items deferred from CYP-452. No new honesty tooth; the honest carry is the
+// amber-never-green polarity of the typed summaries and the "type" axis reaching the SAME server-side query. ──────────
+
+/** Below this panel width the master + detail can't sit side by side → single-pane with back-nav (mirror :app:shared
+ *  PANE_COLLAPSE_WIDTH). A width of 0 (unmeasured) is treated as wide (two-pane) — never collapse before we know. */
+export const PANE_COLLAPSE_WIDTH = 600
+export function isSinglePane(width: number): boolean {
+  return width > 0 && width < PANE_COLLAPSE_WIDTH
+}
+
+/** The curated type-filter cycle (mirror :app:shared TYPE_CYCLE) — the event families an operator inspects in Browse.
+ *  Each tap cycles the axis and re-runs the SERVER-side query (never a client post-filter — same rule as agent/severity). */
+export const TYPE_CYCLE: readonly string[] = [
+  'turn.start',
+  'tool.call',
+  'result.final',
+  'error.ratelimit',
+  'stall.suspected',
+  'nudge.sent',
+  'stall.recovered',
+  'stall.escalated',
+  'capability.degraded',
+  'connector.optin',
+]
+
+/** CYP-94 cross-project axis sentinel (mirror :core EventFilter.PROJECT_ALL) — all authorized projects (operator-only). */
+export const PROJECT_ALL = 'all'
+
+/** The operator's project cycle: null(active, server-forced default) → each OTHER project id → 'all' → null. The
+ *  active project is omitted (null already means "active") so a tap never no-ops on it. */
+export function projectCycleOptions(projectIds: readonly string[], activeProjectId: string): string[] {
+  return [...projectIds.filter((id) => id !== activeProjectId), PROJECT_ALL]
+}
+
+function detailRecord(detail: unknown): Record<string, unknown> | null {
+  return typeof detail === 'object' && detail !== null && !Array.isArray(detail) ? (detail as Record<string, unknown>) : null
+}
+function intOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isInteger(v) ? v : null
+}
+
+/** A typed one-line detail summary above the raw JSON. `warn` ⇒ amber (incomplete / unintended loss); a complete,
+ *  by-design outcome is neutral — NEVER rendered green (an event log reports, it does not congratulate). */
+export interface DetailSummary {
+  text: string
+  warn: boolean
+}
+
+/** CYP-326 §2.5 — the `compact.orchestration.done` X/N summary from its content-free CompactRunSummary detail. A
+ *  timeout (`pendingAgentIds` non-empty) OR an abort renders WARN amber; a clean full run is neutral (never green).
+ *  Aborted is labelled DISTINCTLY (never "timed out", never success). Absent unless both counts are present. */
+export function compactDoneSummary(event: EventSurrogate): DetailSummary | null {
+  if (event.type !== 'compact.orchestration.done') return null
+  const d = detailRecord(event.detail)
+  if (d === null) return null
+  const completed = intOrNull(d.completed)
+  const total = intOrNull(d.total)
+  if (completed === null || total === null) return null
+  const timedOut = Array.isArray(d.pendingAgentIds) ? d.pendingAgentIds.length : 0
+  const aborted = d.aborted === true
+  const text = aborted
+    ? `Abgebrochen — ${completed} von ${total} compactet`
+    : `${completed}/${total} Agenten compactet, ${timedOut} Timeout`
+  return { text, warn: aborted || timedOut > 0 }
+}
+
+/** CYP-356 — the `resume.outcome` 3-stage summary from its content-free `{outcome}` detail. CONTEXT_LOST = WARN amber
+ *  (an UNINTENDED memory loss — the authoritative signal, not guessed from a near-zero token count). A resume that
+ *  kept context or a by-design fresh start are neutral (never warnings, never success). Absent unless `outcome`
+ *  parses to a KNOWN ResumeOutcome (an unknown/newer value → no summary, never a fabricated one). */
+export type ResumeOutcome = 'CONTEXT_LOST' | 'RESUMED_WITH_CONTEXT' | 'FRESH_NO_RESUME'
+const KNOWN_RESUME_OUTCOMES: readonly ResumeOutcome[] = ['CONTEXT_LOST', 'RESUMED_WITH_CONTEXT', 'FRESH_NO_RESUME']
+const RESUME_TEXT: Record<ResumeOutcome, DetailSummary> = {
+  CONTEXT_LOST: { text: 'Kontext verloren — Sitzung ohne vorherigen Verlauf', warn: true },
+  RESUMED_WITH_CONTEXT: { text: 'Sitzung mit Kontext fortgesetzt', warn: false },
+  FRESH_NO_RESUME: { text: 'Neue Sitzung (kein Vorlauf)', warn: false },
+}
+export function resumeOutcomeSummary(event: EventSurrogate): DetailSummary | null {
+  if (event.type !== 'resume.outcome') return null
+  const outcome = detailRecord(event.detail)?.outcome
+  if (typeof outcome !== 'string' || !KNOWN_RESUME_OUTCOMES.includes(outcome as ResumeOutcome)) return null
+  return RESUME_TEXT[outcome as ResumeOutcome]
+}
