@@ -12,21 +12,28 @@
 
 ---
 
-## 0. Die Leak-Grenze zuerst — CYP-432-Erbe, nicht neu verhandelt
+## 0. Zugriffs-Rahmung zuerst — CYP-432-Erbe (präzisiert 2026-07-12)
 
-Browse ist **derselbe** operator-gated Egress **mit Bodies** wie der Live-Tail (die `detail`-JSON-Payload jedes Events +
-die REST-Seite `GET /api/events?…`). Also **gilt dieselbe Grenze**, unverändert:
+Browse liest **dieselbe** Fläche wie der Live-Tail (`GET /api/events?…` + `detail` je Event). **PRÄZISIERUNG
+(Reviewer/Tester 4-Quadranten-Check, am Objekt bestätigt — ersetzt die frühere „mit Bodies"-Rahmung):** das ist
+**secret-free METADATA**, **keine** Bodies — `EventModel.detail` ist **content-free** (PRD §3.5), server-seitig **vor
+Egress maskiert** (Gate #3), und `/api/events` ist **MEMBER-tier** lesbar (CYP-186). Die **echte** Secret-/Scope-Grenze
+sitzt **server-seitig** (`resolveEventScope` cross-project-Enum-Block + Masking).
 
-- **Gating am MOUNT (Omission), NICHT present-but-disabled.** Kein Operator-Token ⇒ die Browse-Route/das Fenster wird
-  **gar nicht gemountet** — kein Socket, keine REST-Query, **keine Bodies im DOM**, nichts CSS-hidden. (Vgl. CYP-433
-  API-Key = present-but-disabled, **weil der Screen nichts leakt**; Browse leakt Bodies → Omission. Der Kontrast ist
-  bewusst — nicht falsch übertragen.)
-- **Laufzeit-Entzug fail-closed.** Wird der Zugriff live entzogen (WS 1008 / REST 403), räumt die UI und zeigt
-  `eventBrowse.accessRevoked` — der Puffer wird verworfen, keine stale Bodies bleiben stehen.
-- Leak-Ketten-Einordnung: CYP-421 content-free → **CYP-432/CYP-452 gated-Bodies** → CYP-433 Klartext-Secret.
+- **Client-Gating am MOUNT (Omission) BLEIBT — als Produkt-Scoping (Event-Log = Operator-/Observability-Feature) +
+  defence-in-depth, NICHT als Leak-Barriere.** Kein Operator-Token ⇒ die Browse-Route/das Fenster wird **gar nicht
+  gemountet** (kein Socket, keine REST-Query, **kein** `eventBrowse.*`-Knoten, nichts CSS-hidden). **Nicht entfernen:**
+  der Server ist die autoritative Barriere, der Client die **bewusste zweite Schicht**.
+- **Abgrenzung zu CYP-433 API-Key = present-but-disabled:** dort ist die **Datenklasse** anders (der maskierte Status
+  leakt nichts, das Feld ist write-only) — beides sind Client-UX-Entscheidungen über schon-server-gesicherten Daten, nur
+  mit verschiedener Darstellung (Omission als Produkt-Scoping vs. sichtbar-disabled).
+- **Laufzeit-Entzug fail-closed** (WS 1008 / REST 403): die UI räumt und zeigt `eventBrowse.accessRevoked`; der Puffer
+  wird verworfen.
+- **Stufen-Einordnung korrigiert:** CYP-421 Lifecycle **und** CYP-432/CYP-452 Event-Log sind **beide content-free
+  Metadata** (server-maskiert) — **keine** „gated-Bodies"-Mittelsprosse; CYP-433 ist das **eigentliche Klartext-Secret**.
 
-> Diese Grenze ist **schon** durch das gemergte CYP-432 etabliert (§0 dort, 4-schichtig fail-closed). Browse **erbt** sie
-> über denselben Mount-Gate; sie wird hier nur als bindende Voraussetzung wiederholt, nicht neu erfunden.
+> Das gemergte CYP-432 (§0 dort, jetzt gleich präzisiert) trägt denselben Client-Mount-Gate; Browse übernimmt ihn als
+> **bewusste zweite Schicht**, nicht als neu erfundene Leak-Barriere.
 
 ---
 
@@ -38,7 +45,7 @@ die REST-Seite `GET /api/events?…`). Also **gilt dieselbe Grenze**, unverände
 | Zweck | Under-Load live zusehen | offline inspizieren, filtern, korrelieren |
 | Zeit-Achse | anhängend, Pause/Puffer/Trim | `Page(afterSeq, limit)`, LoadMore |
 | Eigene Mechanik | Pause-Toggle, buffered-count, overflow/trim | **Filter-Bar, Detail-Pane, Drilldown**, Two-/Single-Pane |
-| **Gemeinsam** | **die Zeile (3 Achsen), Severity/Glyph, Gap-Zeile, Leak-Gate — EINE Quelle (§7)** | ← |
+| **Gemeinsam** | **die Zeile (3 Achsen), Severity/Glyph, Gap-Zeile, Client-Mount-Gate — EINE Quelle (§7)** | ← |
 
 P2-c.2 portiert `EventBrowsePanel`: **Master-Tabelle + Detail-Pane + Drilldown + Filter-Bar**, responsiv.
 
@@ -211,8 +218,9 @@ a11y: `a11y_event_row/_gap/_filter_chip/_drilldown_header`.
 3. **Subset-Cue.** `filter≠default` ⇒ sichtbarer `filterActive`. **Mutation:** ein gefiltertes Empty ist von einem
    echten Empty ununterscheidbar ⇒ rot.
 4. **Error schlägt Empty.** **Mutation:** fehlgeschlagener First-Page-Load rendert „keine Events" statt Error+Retry ⇒ rot.
-5. **Leak-Mount-Gating.** **Mutation:** Browse ohne Operator gemountet / Bodies im DOM / CSS-hidden statt un-mounted /
-   Entzug lässt stale Bodies stehen ⇒ rot.
+5. **Client-Mount-Gating (defence-in-depth + Produkt-Scoping, §0).** **Mutation:** Browse-Operator-Fläche ohne Operator
+   gemountet / gemountet-aber-CSS-hidden statt un-mounted / Entzug lässt stale Ansicht stehen ⇒ rot. *(Die Payload ist
+   server-maskiert/member-tier; der Client-Gate bleibt trotzdem die bewusste zweite Schicht.)*
 6. **`sourceTs` beobachtet, Ordering `seq`.** **Mutation:** `sourceTs` als autoritativ gerendert **oder** Sortierung
    nach Zeitstring ⇒ rot.
 7. **WARN amber, nie grün.** **Mutation:** compact-timeout/aborted oder resume-context-lost grün/`tertiary`/„success" ⇒ rot.
@@ -232,7 +240,7 @@ a11y: `a11y_event_row/_gap/_filter_chip/_drilldown_header`.
 - Zielgröße interaktiver Elemente ≥ 24px (Chips, LoadMore, showRun/showSession, Back). **Farbe nie alleiniger Träger.**
   **Kein `text-overflow: ellipsis`** auf Offenlegungs-/Fehler-Text (Aktionslabels/IDs dürfen kürzen).
 
-**Nichts gebaut — Spec + Dev5-Referenz.** Browse ist die Offline-Inspektions-Fläche über **denselben** operator-gated,
-mount-gegateten Bodies wie der Live-Tail, mit **derselben** Zeile und **derselben** Severity/Glyph-Quelle — und der
-schärfste Zahn ist die **nie erfundene Korrelation**: zwei explizite Drilldown-Achsen, jede nur so weit klickbar, wie das
+**Nichts gebaut — Spec + Dev5-Referenz.** Browse ist die Offline-Inspektions-Fläche über **dieselbe** server-maskierte
+Metadaten-Fläche wie der Live-Tail (Client-Mount-Gate = defence-in-depth, §0), mit **derselben** Zeile und **derselben**
+Severity/Glyph-Quelle — und der schärfste Zahn ist die **nie erfundene Korrelation**: zwei explizite Drilldown-Achsen, jede nur so weit klickbar, wie das
 Feld wirklich da ist.
