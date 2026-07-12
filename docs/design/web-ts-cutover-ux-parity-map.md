@@ -86,8 +86,8 @@ die früheren W6-Styling-Findings (Thumb-Alpha/senderAccent) sind **behoben + re
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
 |---|---|---|---|---|
 | **Live-Tail (mit Pause)** | **K** | `eventlog/` | **✓ merged (CYP-432/448)** | `EventLogView.tsx`: Mount-Gating (defence-in-depth, Secret-Grenze server-seitig §2), Gap-Zeilen, Severity 3-Achsen. **Pause = K-Funktion, IMPLEMENTIERT** (CYP-448: `pausedAtSeq`-Freeze + Buffer, `paused≠live` §5.6, revoke-clears-pause fail-closed) → **braucht Parity-QA-Zahn (blockierend), NICHT Politur**. QA offen. |
-| **Event-Log browsen** (Master-Detail, Filter) | **K** | `eventlog/` | **✓ merged (CYP-452)** | `EventBrowsePanel.tsx` gemergt: Master/Detail/Filter, server-Query, Error-schlägt-Empty. **`EventRow.tsx` als geteilte Zeile extrahiert** (Browse+Tail eine Quelle — meine Architektur-Auflage umgesetzt). **QA offen** (Rezept in `p2-impl-qa-recipes.md`). |
-| **Korrelations-Drilldown** | **K** | `eventlog/` | **✓ merged (CYP-452)** | keine erfundene Korrelation (showRun⇔correlationId / showSession⇔sessionId). **QA offen**. |
+| **Event-Log browsen** (Master-Detail, Filter) | **K** | `eventlog/` | **✓ merged (CYP-452)** | **QA'd 2026-07-12: GO** (33/33 vitest, Zähne am Objekt): Error-schlägt-Empty, Subset-Cue, sourceTs=beobachtet/Ordering=seq, content-free-as-is, Mount-Gating. **`EventRow.tsx` geteilt** (Browse+Tail eine Quelle — Architektur-Auflage **verifiziert**). Verdikt **=** |
+| **Korrelations-Drilldown** | **K** | `eventlog/` | **✓ merged (CYP-452)** | **QA'd GO:** keine erfundene Korrelation belegt (`canShowRun`=correlationId, `canShowSession`=sessionId; nie konflatiert). Verdikt **=** |
 | Projekt-Filter im Event-Log | MP | `eventlog/` | — (MP) | nach K-Cutover |
 
 ### §7 Aufsicht (Scanner / Warden)
