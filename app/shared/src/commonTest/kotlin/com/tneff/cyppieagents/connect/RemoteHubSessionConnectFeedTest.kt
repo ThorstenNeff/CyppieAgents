@@ -11,6 +11,7 @@ import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
 import com.tneff.cyppieagents.net.hub.remote.TrustResolution
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -45,7 +46,12 @@ class RemoteHubSessionConnectFeedTest {
     }
 
     private fun okSession(hub: HubDescriptor, scope: CoroutineScope, onTunnelClose: () -> Unit = {}): RemoteHubSession {
-        val transport = ClientNoiseTransport { _, _, _ -> FakeTunnel(onTunnelClose) }
+        // ClientNoiseTransport is a plain interface (its connect() has a default `prologue`, so it can't be a
+        // `fun interface`) → an explicit object, not a SAM lambda.
+        val transport = object : ClientNoiseTransport {
+            override suspend fun connect(pinnedHubStatic: ByteArray, relay: RelayChannel, prologue: ByteArray): NoiseTunnel =
+                FakeTunnel(onTunnelClose)
+        }
         return RemoteHubSession(
             hubId = hub.hubId,
             transport = transport,

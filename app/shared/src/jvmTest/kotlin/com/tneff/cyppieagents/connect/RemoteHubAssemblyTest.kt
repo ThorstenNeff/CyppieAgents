@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
