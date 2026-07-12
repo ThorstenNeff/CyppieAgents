@@ -91,9 +91,13 @@ Server) → Zustände → Guardrail**. Pflicht-Zustände überall: **empty / loa
 > **live**, nicht per Seed). (2) **Browsen / Korrelations-Drilldown** ist **verdrahtet via CYP-452** über
 > `GET /api/events` (server-paged History: `afterSeq`/`since`/`until`) — ein **separater** REST-History-Pfad, **kein**
 > pending/unwired. Beide nach dem Rig-Rebase auf develop `d0144f47` testbar.
-- [ ] **Browsen** (Master-Detail, Filter Agent/Typ/Severity/Zeit) [K] — gepaged/virtualisiert; REST-History via
-  CYP-452 (`GET /api/events`). **Parity-Zahn offen** (nach Rig-Rebase): server-paged Historie + Filter am DOM.
-- [ ] **Korrelations-Drilldown** („ganzer Lauf") [K] — über `correlationId`/`sessionId` (CYP-452-Pfad).
+- [x] **Browsen** (Master-Detail, Filter) [K] — **grün** (`a6-browse-parity.spec.ts`): server-paged REST-History
+  via CYP-452 (`GET /api/events`) am DOM — die geseedeten Events erscheinen in Browse, **nicht** im live-only Tail
+  (Zwei-Pfad-Diskriminator); Master-Detail öffnet das rohe content-free `detail`-JSON; **server-seitiger** Filter
+  (Severity-Tap → neuer `GET /api/events?…severity=…`, netzwerk-belegt — **kein** Client-Post-Filter) + Subset-Cue.
+- [ ] **Korrelations-Drilldown** („ganzer Lauf") [K] — über `correlationId`/`sessionId` (CYP-452-Pfad). **Offen:**
+  braucht geseedete Events mit `correlationId`/`sessionId`, um `showRun`/`showSession` + die Zwei-Achsen-Drilldown
+  zu treiben (Detail-Pane-Buttons sind da; die Cross-Run-Query noch nicht exerziert).
 - [ ] **Live-Tail mit Pause** [K] — getrennt vom Browsen; `/ws/events` (live-only by design).
 - [ ] Projekt-Filter [MP, staged] — der Bericht zählt Projekt-gefiltert (CYP-353/364-Klasse).
 
@@ -204,7 +208,8 @@ Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **p
   Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
   **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
 
-**Lauf-Stand §A-P2 (same-origin, gegen die reale Harness auf develop `d0144f47`, 12 passed / 3 skipped):**
+**Lauf-Stand §A-P2 + A6-Browse (same-origin, gegen die reale Harness auf develop `d0144f47`, 15 passed / 3 skipped):**
+Zusätzlich **A6-Browse grün** (CYP-452 REST-History, §A6 oben).
 Operator-Positiv-Zähne **grün** — Lifecycle **RUNNING + §8.4 Start-off** **und** eine **echte Stop→Start-
 Transition** (STOPPED-Zeile → RUNNING restauriert, non-optimistisch) · API-Key **maskiert/write-only + clear-
 after-save-Round-Trip** (stärkster Klartext-nie-DOM-Diskriminator) · Event-Log **operator-mounted + XSS-at-detail
