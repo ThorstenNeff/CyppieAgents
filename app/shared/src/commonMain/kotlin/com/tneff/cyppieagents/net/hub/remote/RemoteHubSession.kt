@@ -93,7 +93,9 @@ class RemoteHubSession(
         } catch (c: CancellationException) {
             throw c
         } catch (e: Exception) {
-            _state.update { it.copy(failure = RemoteFailure.RelayUnreachable) }
+            // CYP-494: a typed dial failure (RelayDialException) surfaces its own cause (e.g. HubOffline vs
+            // RelayUnreachable); any other dial error falls back to the generic RelayUnreachable. Still transient.
+            _state.update { it.copy(failure = (e as? RelayDialException)?.failure ?: RemoteFailure.RelayUnreachable) }
             return Outcome.TRANSIENT
         }
 
