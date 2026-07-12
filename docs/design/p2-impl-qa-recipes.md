@@ -166,6 +166,7 @@
 **A — Erster Load (unauth → Login), Reihenfolge:**
 1. Root öffnen → **SPA rendert nicht-weiß** (nicht nur der leere `#root`; React mountet). `[BLOCK]` wenn weiße Seite.
 2. **Login-Redirect feuert sichtbar** → Kratos-Self-Service-Login (`/.ory/kratos/.../login/browser` → `/?flow=<id>`) rendert eine echte Seite (kein 429 mehr, kein Loop).
+2a. **★ Flow-Return-Guard (CYP-515-Regression-Zahn, blockierend):** Kratos gibt den Browser-Flow an die App-Root zurück (`/?flow=<id>`, curl-belegt `303`). Auf dieser Return-URL darf der `AuthGate` **NICHT** erneut zu login redirecten — sonst `whoami=none → redirect → /?flow=<neu> → …` = **Endlos-Loop** (der ursprüngliche `[BLOCK]`). **Prüfen:** `/?flow=<id>` rendert die Login-Fläche/übergibt an Kratos, **kein** wiederholter Redirect (Network-Tab: kein Redirect-Sturm auf `/?flow=`). **Mutation:** Re-Redirect trotz präsentem `?flow=` ⇒ Loop ⇒ `[BLOCK]`.
 3. **DevTools → Console: clean.** Keine roten Errors, kein Uncaught. **★ Mein script-src-Check:** keine `Refused to evaluate a string as JavaScript because 'unsafe-eval'…` / `Refused to … 'blob:'`-CSP-Violation (das Prod-Bundle darf **kein** `eval`/`new Function`/`blob:`-Worker zur Laufzeit brauchen).
 4. **DevTools → Network:** Bundle/CSS/config `200`; **keine** geblockten Requests (rot/`(blocked:csp)`); kein externer Font/Asset-Request (App nutzt System-Fonts — 0 externe).
 5. **Fonts/Layout/Theme:** Text lesbar (System-Font-Stack greift), Layout nicht kaputt, Theme (light/dark `[data-theme]`) korrekt.
