@@ -8,11 +8,19 @@
          The operator token is supplied ONLY by the DEPLOY/PROXY as a host-injected global, at serve time,
          BEFORE the bundle loads — never committed here, never part of the compiled bundle. The public/MEMBER
          serve injects nothing -> globalThis.CYPPIE_OPERATOR_TOKEN is absent -> fail-closed MEMBER view.
-         The deploy injects it HERE (in <head>, before the bundle), as a CLASSIC inline script, e.g.
-         (NOT present in this build):
-             <script>globalThis.CYPPIE_OPERATOR_TOKEN = "…from the deploy/serve env…";</script>
+         The deploy injects it HERE (in <head>, before the bundle), as a CLASSIC inline script.
          Vite hoists the module bundle into <head>; module scripts are deferred, so a classic inline token
-         script runs first regardless of order — but keeping the injection point in <head> makes that explicit. -->
+         script runs first regardless of order — but keeping the injection point in <head> makes that explicit.
+
+         CYP-455 (CSP nonce seam) — for a STRICT `script-src` (no `unsafe-inline`) at cutover, this ONE remaining
+         inline script MUST carry the per-response nonce the deploy also puts in the CSP header. The deploy stamps
+         the SAME nonce on both. Injection form (NOT present in this build):
+             <script nonce="__CSP_NONCE__">globalThis.CYPPIE_OPERATOR_TOKEN = "…from the deploy/serve env…";</script>
+         `__CSP_NONCE__` is the deploy's per-response placeholder → `Content-Security-Policy: script-src 'self'
+         'nonce-<same>'`. The module bundle's `<script type="module" src>` is 'self' (no nonce needed). The CSP
+         header + nonce stamp are DEPLOY-owned and go live at cutover under Auftraggeber-GO; web-ts only holds the
+         seam (this comment + `build.modulePreload.polyfill=false`, which removes Vite's only other prod inline
+         script → the token script is then the sole nonce target). -->
   </head>
   <body>
     <div id="root"></div>
