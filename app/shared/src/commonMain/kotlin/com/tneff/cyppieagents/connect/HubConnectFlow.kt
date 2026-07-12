@@ -89,6 +89,7 @@ fun HubConnectFlow(
             is HubConnectUiState.HubList -> HubListView(s.hubs, viewModel)
             is HubConnectUiState.ChoosingMode -> ModeView(s.hub, viewModel)
             is HubConnectUiState.Connecting -> ConnectingView(s.hub, s.progress, viewModel)
+            is HubConnectUiState.RemoteConnecting -> RemoteConnectingView(s.hub, s.remote, viewModel)
         }
     }
 }

@@ -2,7 +2,7 @@ package com.tneff.cyppieagents.connect
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import kotlinx.coroutines.Dispatchers
@@ -79,9 +79,10 @@ class Cyp419HubConnectRenderTest {
     }
 
     @Test
-    fun mode_remoteStaysHonestlyDisabled_throughTheWiredChooser() = runComposeUiTest {
+    fun mode_remoteIsLive_throughTheWiredChooser() = runComposeUiTest {
+        // CYP-471: through the wired ModeView, Remote is now a live, selectable option (was disabled in CYP-416).
         setContent { MaterialTheme { ModeView(hub, vm()) } }
         onNodeWithTag(HubConnectTags.MODE_LOCAL, useUnmergedTree = true).assertExists()
-        onNodeWithTag(HubConnectTags.MODE_REMOTE, useUnmergedTree = true).assertIsNotEnabled()
+        onNodeWithTag(HubConnectTags.MODE_REMOTE, useUnmergedTree = true).assertIsEnabled()
     }
 }

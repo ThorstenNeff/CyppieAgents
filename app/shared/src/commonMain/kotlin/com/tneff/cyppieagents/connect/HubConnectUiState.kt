@@ -33,6 +33,16 @@ sealed interface HubConnectUiState {
 
     /** §6 — the honest local-connect progress for [hub]. [progress] is the feed's truth (cause never guessed). */
     data class Connecting(val hub: HubDescriptor, val progress: ConnectProgress) : HubConnectUiState
+
+    /**
+     * CYP-471 §7 — the honest REMOTE (Noise-E2E) connect progress for [hub]. [remote] is the
+     * [com.tneff.cyppieagents.net.hub.remote.RemoteSessionState] truth (relayDialing→…→connected, reconnect,
+     * terminal trust-changed/auth-rejected) — `connected` is reached ONLY on `RemoteConnState.CONNECTED`, never before.
+     */
+    data class RemoteConnecting(
+        val hub: HubDescriptor,
+        val remote: com.tneff.cyppieagents.net.hub.remote.RemoteSessionState,
+    ) : HubConnectUiState
 }
 
 /** A2 registration sub-phase. */

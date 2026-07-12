@@ -28,8 +28,22 @@ import com.tneff.cyppieagents.agentview.formatLocalHhMm
 import com.tneff.cyppieagents.agentview.platformTranscriptClock
 import com.tneff.cyppieagents.auth.AuthFormCard
 import com.tneff.cyppieagents.auth.AuthTitle
+import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
+import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
+import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_authenticating
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_auth_rejected
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_connected
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_e2e_handshake
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_handshake_failed
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_hub_offline
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dialing
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dropped
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_unreachable
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_changed
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_check
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_hubconnect_presence
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_error_handshake
@@ -129,12 +143,15 @@ private fun PresenceRow(hub: HubDescriptor, clock: TranscriptClock) {
     }
 }
 
-// --- B3 — mode choice (wire the CYP-416 chooser; Remote stays honestly disabled there) ---
+// --- B3 — mode choice (CYP-471: Remote now LIVE, routes to the §7 remote connect) ---
 @Composable
 internal fun ModeView(hub: HubDescriptor, viewModel: HubConnectViewModel) {
     HubCard {
         AuthTitle(hub.name)
-        HubConnectModeChooser(onConnectLocal = viewModel::connectLocal)
+        HubConnectModeChooser(
+            onConnectLocal = viewModel::connectLocal,
+            onConnectRemote = viewModel::connectRemote,
+        )
     }
 }
 
@@ -173,6 +190,67 @@ internal fun ConnectingView(hub: HubDescriptor, progress: ConnectProgress, viewM
                 }
             }
         }
+    }
+}
+
+// --- CYP-471 §7 — remote (Noise-E2E) connect states; renders RemoteSessionState (LIVE only on real CONNECTED) ---
+@Composable
+internal fun RemoteConnectingView(hub: HubDescriptor, remote: RemoteSessionState, viewModel: HubConnectViewModel) {
+    HubCard {
+        when (remote.conn) {
+            RemoteConnState.RELAY_DIALING ->
+                InProgress(stringResource(Res.string.remote_connect_relay_dialing), RemoteConnectTags.RELAY_DIALING)
+            RemoteConnState.E2E_HANDSHAKE ->
+                InProgress(stringResource(Res.string.remote_connect_e2e_handshake), RemoteConnectTags.E2E_HANDSHAKE)
+            RemoteConnState.TRUST_CHECK ->
+                InProgress(stringResource(Res.string.remote_connect_trust_check), RemoteConnectTags.TRUST_CHECK)
+            RemoteConnState.AUTHENTICATING ->
+                InProgress(stringResource(Res.string.remote_connect_authenticating), RemoteConnectTags.AUTHENTICATING)
+            RemoteConnState.RECONNECTING ->
+                // H4: ONE neutral relay-drop/reconnect surface (never alarm-red); in-flight honestly uncertain.
+                InProgress(stringResource(Res.string.remote_connect_relay_dropped), RemoteConnectTags.RELAY_DROP)
+            RemoteConnState.CONNECTED -> Row(
+                modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.CONNECTED),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // LIVE only — `●`+`primary`, reached ONLY on RemoteConnState.CONNECTED (never before).
+                Text("● ", color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(Res.string.remote_connect_connected), color = MaterialTheme.colorScheme.onSurface)
+            }
+            RemoteConnState.LOST -> RemoteFailureView(remote.failure, viewModel)
+        }
+    }
+}
+
+/** §7 failure render: terminal (TrustChanged/AuthRejected) = **no retry** (fail-closed); transport failures = retry. */
+@Composable
+private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectViewModel) {
+    when (failure) {
+        is RemoteFailure.TrustChanged -> TonedHint(
+            stringResource(Res.string.remote_connect_trust_changed), HintTone.ERROR, RemoteConnectTags.error("trustChanged"),
+        )
+        RemoteFailure.AuthRejected -> TonedHint(
+            stringResource(Res.string.remote_connect_auth_rejected), HintTone.ERROR, RemoteConnectTags.error("authRejected"),
+        )
+        RemoteFailure.RelayUnreachable -> RetryableRemoteFailure(
+            stringResource(Res.string.remote_connect_relay_unreachable), RemoteConnectTags.error("relayUnreachable"), viewModel,
+        )
+        RemoteFailure.HubOffline -> RetryableRemoteFailure(
+            stringResource(Res.string.remote_connect_hub_offline), RemoteConnectTags.error("hubOffline"), viewModel,
+        )
+        RemoteFailure.HandshakeFailed -> RetryableRemoteFailure(
+            stringResource(Res.string.remote_connect_handshake_failed), RemoteConnectTags.error("handshakeFailed"), viewModel,
+        )
+        null -> Unit // clean teardown (Q5 switch) — nothing to render
+    }
+}
+
+@Composable
+private fun RetryableRemoteFailure(text: String, tag: String, viewModel: HubConnectViewModel) {
+    TonedHint(text, HintTone.ERROR, tag)
+    Button(onClick = viewModel::connectRemote, modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.RETRY)) {
+        Text(stringResource(Res.string.load_retry))
     }
 }
 
