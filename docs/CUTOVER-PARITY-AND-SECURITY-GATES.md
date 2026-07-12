@@ -220,7 +220,7 @@ Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **p
   Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
   **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
 
-**Lauf-Stand (same-origin, reale Harness auf develop `947eea0d`, 30 passed / 4 skipped) — inkl. ❌-Batch (A1/A2/B-1/A6-Pause/A3-Fenster/A3-Composer):**
+**Lauf-Stand (same-origin, reale Harness, rebased auf aktuelles develop, 33 passed / 4 skipped) — ALLE [K]-Zeilen grün (inkl. ❌-Batch + finaler A8/A7/A2-Edit-Batch):**
 Zusätzlich **A3 seq-`?since`/Reconnect** (§A3) **und A4 Comm-Timeline** (§A4 Historie/REST + Dedup-by-id) **grün**.
 Verbleibend zur vollen Parity-Seite: **A6 Korrelations-Drilldown** (`showRun`/`showSession`, faltet in CYP-467).
 Zusätzlich **A6-Browse grün** (CYP-452 REST-History, §A6 oben).
@@ -285,35 +285,32 @@ A4 Kanalliste+Timeline (Historie/Dedup-by-id) · A4 Operator-Senden · A5 ACL-Ma
 A6 Live-Tail (Mount/Status **+ Pause/Puffer/Resume**) · **A1 Repo-Config (Save+Persistenz-über-Reload)** ·
 **A2 Agent-Mgmt (Roster/Add-non-optimistic-persistiert/Remove-Irreversibilitäts-Guardrail)** · A9 API-Key ·
 Assembly (Agent-/Comm-/ACL-Fenster) · **B-1 XSS an 4 Client-Render-Sinks** (Event-Log-Detail/Comm-Body/Transkript/
-Agent-Name, mutation-diskriminierend) · B-3 CONTRACT_REQUIRE_REAL. **[❌-Batch durch]**
+Agent-Name, mutation-diskriminierend) · **A8 Product-Lead** (On-demand-Snapshot-nicht-Live + Provenance) ·
+**A7 Warden-Familie** (`stall.escalated`→☂ im Event-Log) · **A2 Edit-Achse** (`edit.effectHint` saved≠active) ·
+B-3 CONTRACT_REQUIRE_REAL. **[❌-Batch + finaler Batch durch — alle [K] grün]**
 
 > **Korrektur (PO, am Objekt gegen `origin/develop` `947eea0d` verifiziert):** meine ersten „nicht gelandet"-
 > Funde für A7/A8/A6-Drilldown waren **Stale-Base-Ableitungen** (Rig lag hinter Merges), keine Observationen —
 > re-gescannt auf dem aktuellen Baum. Sie kippen zu **landed-needs-tooth** (unten korrigiert).
 
-**❌ [K]-Kern, GELANDET, noch offen (verbleibend nach dem ❌-Batch):**
-- **A8 Product-Lead** (`report/ProductLeadPanel.tsx` + `productLeadModel.ts`, gelandet CYP-464) — On-demand
-  auslösen + Berichte ansehen; **kein Zahn** (nicht im A1/A2→B-1→A3/A6-Batch — nächste Fläche).
-- **A7 Warden-Eskalationen** — Event-**Familie** im gelandeten Event-Log (`stall.escalated`→☂, 07/S11); Zahn =
-  warden-Familie rendert korrekt im Event-Log. **Kein Zahn** (nächste Fläche; braucht warden-Event-Seed).
-- **A2 „Konfig ändern" (Edit)** — Add/Remove sind grün; die **Edit-Dialog-Achse** (`agentMgmt.item.<id>.edit` →
-  Persona/Launch/Rolle → `agentMgmt.edit.effectHint` „Neustart nötig") ist noch **ungetestet** (Teil-Lücke).
-- **A6 Live-Tail „live"-Indicator** — der `event-log-live`-Zustand ist **nie erreichbar** (Server sendet kein
-  `CaughtUp` → **Finding CYP-499**); der Pause/Puffer/Resume-Zahn trägt trotzdem. Nicht mein Fix (Backend2/CYP-498).
+**❌ [K]-Kern GELANDET & ungetestet: KEINE mehr — der finale Batch ist durch.** (A8 Product-Lead · A7
+Warden-Familie · A2-Edit-Achse alle grün, siehe ✅ oben.)
+
+**🎫 Getrackt/deferred (nicht-blockierend, itemisiert — „kein Zahn jetzt" ist korrekt):**
 - **A6 Korrelations-Drilldown** (`showRun`/`showSession`, Impl gelandet `eventlog/eventBrowse.ts`/CYP-452) — nur der
   `correlationId`/`sessionId`-Rig-Seed fehlt; feld-präsenz-gated. Landet als QA-on-Merge mit **CYP-467**.
+- **A6 Live-Tail „live"-Indicator** — `event-log-live` nie erreichbar (Server sendet kein `CaughtUp`) → **Finding
+  CYP-499** (Backend2/CYP-498); der Pause/Puffer/Resume-Zahn trägt trotzdem.
 - **A6 Pause-Revoke (Zahn 4)** — staged skipped-mit-Grund (braucht Harness-1008-Seam; unit-covered in `eventLogStore`).
-
-**🎫 Getrackt/deferred (echt nicht gelandet / spätere Tier — „kein Zahn" ist korrekt):**
 - **[MP, staged]:** A1 Projekt-CRUD/Switcher · A4 Cross-Projekt-Kanal · A6 Projekt-Filter — spätere Tier / nicht gelandet.
 
 **🔓 Bekannte Gate-Lücken (schon benannt):** **B-2 CSP** (nicht gesetzt, Vorab-1) · **B-4 Negativ-Operator-Schutz**
 (403 ohne Operator-Token = Member-Coverage-Split) · Irreversibilität-Bestätigung (an A1/A2 gekoppelt, ungetestet).
 
-> **Gate-Aussage:** Parity-Seite = **Kern-grün + ❌-Batch durch** (30 passed / 4 skipped), mit den obigen
-> benannten Rest-Lücken: **A8 Product-Lead · A7 Warden-Familie · A2-Edit-Achse** (nächster Batch) sowie
-> A6-Drilldown→CYP-467, A6-live-Indicator→CYP-499, A6-Pause-Revoke (staged). Kein stiller Skip; alles itemisiert.
-> Speist Assists Parity-Tail-Synthese.
+> **Gate-Aussage:** Parity-Seite = **alle [K]-Zeilen am DOM grün** (33 passed / 4 skipped) — der finale Batch
+> (A8/A7/A2-Edit) schließt die letzten landed-but-untested-Lücken. Verbleibend nur **tracked-deferred**
+> (A6-Drilldown→CYP-467 · A6-live-Indicator→CYP-499 · A6-Pause-Revoke staged) + die bekannten Gate-Lücken (B-2/B-4)
+> + [MP]-Tier — nicht-blockierend, weil itemisiert (kein stiller Skip). **Bereit für Assists finalen 4-Quadranten-Sweep.**
 
 ---
 
