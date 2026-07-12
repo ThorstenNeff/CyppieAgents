@@ -89,8 +89,20 @@ sealed interface AuthUiState {
  */
 sealed interface GithubUiState {
     data object Idle : GithubUiState
+
+    /** Web flavor (§6): the SPA navigates the browser to [url] and returns via `window.location`. */
     data class Redirecting(val url: String) : GithubUiState
-    data object Returning : GithubUiState
+
+    /**
+     * CYP-474 §4 — the **Desktop-native loopback** flavor (RFC 8252 §7.3): the OS system browser is opened at
+     * [url] (H3 — no embedded webview) and the app **waits for the localhost redirect** to return. Honest,
+     * user-visible handoff ("Weiter im Browser …"); the host arms a loopback listener → [onGithubReturn].
+     */
+    data class BrowserHandoff(val url: String) : GithubUiState
+
+    /** The callback returned; completing via the normal gate. [native] = the §4 "Zurück zur App …" copy vs the web copy. */
+    data class Returning(val native: Boolean = false) : GithubUiState
+
     data object Error : GithubUiState
 }
 
@@ -104,6 +116,8 @@ sealed interface GithubUiState {
  */
 class AuthViewModel(
     private val repository: AuthRepository,
+    /** CYP-474 §4: Desktop-native uses the RFC-8252 loopback flavor (system-browser + localhost return); web = false. */
+    private val nativeOidcLoopback: Boolean = false,
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -252,7 +266,9 @@ class AuthViewModel(
             val r = runCatching { repository.githubStart() }
                 .getOrElse { e -> if (e is CancellationException) throw e; GithubStart.Error }
             val github = when (r) {
-                is GithubStart.Redirect -> GithubUiState.Redirecting(r.url)
+                // CYP-474 §4: Desktop-native → the loopback handoff (system-browser + localhost return); web → redirect.
+                is GithubStart.Redirect ->
+                    if (nativeOidcLoopback) GithubUiState.BrowserHandoff(r.url) else GithubUiState.Redirecting(r.url)
                 // S1b: existing-email collision → Kratos requires login-first; surface (route to sign-in), NEVER merge.
                 GithubStart.LoginRequired, GithubStart.Error -> GithubUiState.Error
             }
@@ -266,7 +282,7 @@ class AuthViewModel(
      * not one-click). Called by the platform's callback handler (deep-link / redirect return).
      */
     fun onGithubReturn() {
-        _state.value = AuthUiState.Unauthenticated(github = GithubUiState.Returning)
+        _state.value = AuthUiState.Unauthenticated(github = GithubUiState.Returning(native = nativeOidcLoopback))
         runScope.launch {
             val s = runCatching { repository.session() }
                 .getOrElse { e -> if (e is CancellationException) throw e; SessionState.None }
