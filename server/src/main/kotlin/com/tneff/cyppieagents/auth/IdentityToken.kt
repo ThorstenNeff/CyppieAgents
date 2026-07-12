@@ -83,9 +83,11 @@ object TokenPredicates {
 
     /** `base64url(SHA-256(h ‖ hubId))` — forward-compatible with the Phase-2 WebAuthn `challenge==H(h‖hubId‖…)`. */
     fun expectedChannelBinding(handshakeHash: ByteArray, hubId: String): String {
+        // CYP-514: the INPUT bytes (`h ‖ hubId`, h-first, raw) are single-sourced in :core (channelBindingInput) so
+        // the client (CpJwtProvider) derives cb from the SAME definition; the SHA-256 + base64url-no-pad stay here on
+        // the platform primitive. Byte-identical to the prior inline derivation (Cyp514ChannelBindingTest proves it).
         val md = MessageDigest.getInstance("SHA-256")
-        md.update(handshakeHash)
-        md.update(hubId.encodeToByteArray())
+        md.update(com.tneff.cyppieagents.operator.channelBindingInput(handshakeHash, hubId))
         return Base64.getUrlEncoder().withoutPadding().encodeToString(md.digest())
     }
 }
