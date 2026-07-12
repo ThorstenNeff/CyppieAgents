@@ -39,6 +39,22 @@ else
   echo "NOTE  1.4 no Set-Cookie on the landing response — verify at the Kratos login/callback step (guided)"
 fi
 
+# §1.1b login-redirect TERMINATES (no loop) — CYP-515 regression guard. A healthy unauth open makes a
+# BOUNDED number of hops to the Kratos-hosted login and SETTLES (final 200 login page). A redirect LOOP
+# (a fresh flow-id every hop) exhausts the follow cap → curl reports num_redirects at the cap and a non-2xx
+# final. This is exactly the [BLOCK] the Auftraggeber hit MANUALLY at the CYP-515 cutover — automated here so
+# a re-cut fails the gate before a human loops. (HTTP-level; a purely client/JS redirect loop needs the
+# browser step — see csp-probe.spec.ts / the guided §1.1.)
+redir="$(curl -sS -o /dev/null -L --max-redirs 12 -w '%{num_redirects} %{http_code}' "$URL" 2>/dev/null)"
+nred="${redir%% *}"; fcode="${redir##* }"
+if [ "${nred:-0}" -ge 12 ]; then
+  no "1.1b login-redirect LOOP — >=12 hops (CYP-515), final=$fcode"
+elif [ "$fcode" = "200" ]; then
+  ok "1.1b login-redirect terminates (${nred} hops → 200)"
+else
+  no "1.1b login-redirect did not settle at 200 (${nred} hops → $fcode)"
+fi
+
 # §4.2 same-origin /api/health reachable (2xx)
 code="$(curl -sS -o /dev/null -w '%{http_code}' "${URL%/}/api/health" 2>/dev/null)"
 [ "$code" = "200" ] && ok "4.2 /api/health 200 (same-origin)" || no "4.2 /api/health ($code)"
