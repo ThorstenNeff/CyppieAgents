@@ -4,6 +4,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -46,6 +49,22 @@ class Cyp484SessionLifetimeTest {
         assertTrue(tunnel.closed.isCompleted, "the passive Op-Session-TTL tears the tunnel down when it elapses")
         job.join()
         assertEquals(0, registry.activeCount(), "the session is unregistered after teardown")
+    }
+
+    @Test
+    fun cyp492_opSessionTtl_aliveBeforeTtl_thenTornDownAtTtl_virtualClock() = runTest {
+        // CYP-492 — the missing **alive-BEFORE-TTL** half of the boundary pair, on a **virtual clock** (non-flaky,
+        // brackets the boundary exactly at the TTL). The composite's `launch { delay(ttlMs) }` runs on the test
+        // dispatcher's virtual time (it uses `delay`, not `System.currentTimeMillis`), so `advanceTimeBy` drives it.
+        val registry = TunnelSessionRegistry()
+        val tunnel = SignalTunnel()
+        val job = launch { handler(registry, authorize = true, ttlMs = 200).handle(tunnel) }
+        runCurrent() // let the handler authorize, register, and arm the TTL
+        advanceTimeBy(199); runCurrent() // t = ttl - 1
+        assertFalse(tunnel.closed.isCompleted, "the session is NOT torn down before the TTL (alive-before)")
+        advanceTimeBy(2); runCurrent() // t = ttl + 1
+        assertTrue(tunnel.closed.isCompleted, "the session IS torn down exactly when the TTL elapses")
+        job.join()
     }
 
     @Test
