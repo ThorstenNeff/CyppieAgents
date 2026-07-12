@@ -1,25 +1,40 @@
-// CYP-470 (P2-i) — the redirect-only auth session-gate. Wraps the whole app: it resolves whoami (GET /api/auth/me)
-// BEFORE rendering any app content (resolve-then-render — no unauth/operator flash, tooth 7), then:
-//   - None (unauth / whoami error, fail-closed) → a redirect status screen + window redirect to the Kratos login flow;
-//   - Unverified (authenticated, verified=false) → a verify-gate, NO app access (tooth 5);
+// CYP-515 (a) — the in-app auth session-gate. REVERSES CYP-470's redirect-only posture (ratified (a) decision, PO1):
+// web-ts now renders the credential surface itself (hardened, LoginScreen), matching the live WASM API-flow. Wraps the
+// whole app: it resolves whoami (GET /api/auth/me) BEFORE rendering any app content (resolve-then-render — no
+// unauth/operator flash), then:
+//   - None (unauth / whoami error, fail-closed) → the in-app LoginScreen (NOT a redirect → the CYP-515 flow-return
+//     loop is impossible by construction; the ?flow= guard is deferred to the OIDC-P2 screen per spec §5);
+//   - Unverified (authenticated, verified=false) → a verify-gate, NO app access;
 //   - Active → a content-free session indicator (role + logout) + the app, with operator = role==='OPERATOR'.
-// web-ts NEVER renders a credential surface (login/register/reset/verify live Kratos-hosted, §1). Logout = the Kratos
-// logout flow (server-authoritative, §4), never a client cookie-clear. A global 401 (net/rest setOnUnauthorized) is a
-// re-auth redirect. break-glass (injected operator token) bypasses the whoami gate — that path authenticates by Bearer.
+// A global /api 401 (net/rest setOnUnauthorized) flips the gate back to None → the in-app LoginScreen (re-auth stays,
+// but IN-APP — no window redirect, so a session-expiry can't re-introduce the redirect loop). break-glass (injected
+// operator token) bypasses the whoami gate — that path authenticates by Bearer.
 import { useEffect, useState, type ReactNode } from 'react'
 import type { AuthMe } from '../types/generated/contract'
-import { resolveAuthState, signedInAs, AUTH_TEXT, type AuthState } from './authModel'
+import { setOnUnauthorized } from '../net/rest'
+import { resolveAuthState, signedInAs, AUTH_TEXT, type AuthState, type LoginResult } from './authModel'
+import { LoginScreen } from './LoginScreen'
 
 export interface AuthGateProps {
   fetchAuthMe: () => Promise<AuthMe>
-  redirectToLogin: () => void
+  /** Submits the in-app login credentials (loginFlow.createLogin). */
+  login: (email: string, password: string) => Promise<LoginResult>
   redirectToLogout: () => void
   /** injected operator token (isOperatorServe) → skip the whoami gate; the Bearer authenticates every request. */
   breakGlass?: boolean
+  /** Install seam for the global 401 handler (defaults to net/rest setOnUnauthorized; injectable for tests). */
+  onInstallUnauthorized?: (handler: (() => void) | null) => void
   children: (operator: boolean) => ReactNode
 }
 
-export function AuthGate({ fetchAuthMe, redirectToLogin, redirectToLogout, breakGlass = false, children }: AuthGateProps) {
+export function AuthGate({
+  fetchAuthMe,
+  login,
+  redirectToLogout,
+  breakGlass = false,
+  onInstallUnauthorized = setOnUnauthorized,
+  children,
+}: AuthGateProps) {
   const [state, setState] = useState<AuthState>(breakGlass ? { kind: 'active', operator: true } : { kind: 'resolving' })
 
   // resolve-then-render: fetch whoami first; only then decide what to mount. Fail-closed to None on any error.
@@ -34,13 +49,17 @@ export function AuthGate({ fetchAuthMe, redirectToLogin, redirectToLogout, break
     }
   }, [breakGlass, fetchAuthMe])
 
-  // None → bounce to the Kratos login flow (the screen below shows the honest "redirecting" status meanwhile).
+  // A protected /api 401 (session expired/revoked mid-session) → back to the in-app LoginScreen. IN-APP re-auth (no
+  // window redirect), so this can never re-introduce the CYP-515 redirect loop. Login-submit 401s never reach here —
+  // loginFlow uses a direct fetch that bypasses this hook (spec §2.3④).
   useEffect(() => {
-    if (state.kind === 'none') redirectToLogin()
-  }, [state.kind, redirectToLogin])
+    if (breakGlass) return
+    onInstallUnauthorized(() => setState({ kind: 'none' }))
+    return () => onInstallUnauthorized(null)
+  }, [breakGlass, onInstallUnauthorized])
 
   if (state.kind === 'resolving') {
-    // NOTHING of the app renders yet — no window, no operator control (anti-flash, tooth 7).
+    // NOTHING of the app renders yet — no window, no operator control, no login flash (anti-flash).
     return (
       <div className="auth-screen" role="status" data-testid="auth.loading">
         {AUTH_TEXT.loading}
@@ -49,15 +68,19 @@ export function AuthGate({ fetchAuthMe, redirectToLogin, redirectToLogout, break
   }
 
   if (state.kind === 'none') {
+    // In-app login (hardened credential surface). Success mounts the app at the whoami-resolved tier; unverified goes
+    // to the verify-gate. No redirect anywhere → no loop.
     return (
-      <div className="auth-screen" role="status" data-testid="auth.redirect">
-        {AUTH_TEXT.redirectingSignin}
-      </div>
+      <LoginScreen
+        login={login}
+        onVerified={(operator) => setState({ kind: 'active', operator })}
+        onUnverified={() => setState({ kind: 'unverified' })}
+      />
     )
   }
 
   if (state.kind === 'unverified') {
-    // an honest state screen — NOT a silent redirect loop; NO app access (guarded routes still 401).
+    // an honest state screen — NO app access (guarded routes still 401).
     return (
       <div className="auth-screen auth-verify" role="region" aria-label={AUTH_TEXT.verifyTitle} data-testid="auth.verifyGate">
         <h2>{AUTH_TEXT.verifyTitle}</h2>

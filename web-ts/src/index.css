@@ -663,6 +663,56 @@ body,
   min-height: 24px;
 }
 
+/* CYP-515 (a) — the in-app login-core form. Centred, width-capped card (~400px; phone full+padding, desktop capped).
+   Error = error role; rate-limit = AMBER (reuses the CYP-437 WARN tokens — "throttled ≠ failed", NEVER error-red,
+   NEVER success-green). Colour never alone: each state carries its own text. ≥24px targets (submit/reveal). */
+.auth-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 400px;
+  text-align: start;
+}
+.auth-title {
+  margin: 0;
+  color: var(--md-sys-color-on-surface);
+}
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.auth-field > input {
+  min-height: 24px;
+  width: 100%;
+}
+.auth-password-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.auth-password-row > input {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+}
+.auth-password-reveal,
+.auth-login-submit {
+  min-height: 24px;
+}
+.auth-login-error {
+  color: var(--md-sys-color-error);
+  margin: 0;
+}
+.auth-login-rate-limited {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 /* CYP-488 (P2-a follow) — observed fidelity badge + capability panel. Badge = amber attention (limited) / neutral
    (unknown) — never error-red, never a green "all good" seal. Tri-state chips: available=neutral (INFO, NOT saturated
    success-green, Anti-Hype), limited=amber (attention), unavailable=gated neutral. Colour never alone (glyph+label). */
