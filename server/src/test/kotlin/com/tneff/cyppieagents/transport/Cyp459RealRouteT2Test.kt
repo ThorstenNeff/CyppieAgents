@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -122,5 +123,61 @@ class Cyp459RealRouteT2Test {
         // positive (non-vacuous): a REAL bearer over the SAME loopback path IS served by the real route.
         val authed = driveHttp(port, httpGet("/api/agents", listOf("Authorization: Bearer $token")))
         assertTrue("200" in statusLine(authed), "a real agent bearer over the SAME loopback is served: '${statusLine(authed)}'")
+    }
+
+    // ---- family G: the WS-upgrade surface (/ws/agent) ----
+
+    /** Drive one raw WS-upgrade through the bridge; collect the response bytes within [windowMs] (or until the server
+     *  closes), then tear down. An unauthorized upgrade → 101 then a `close(VIOLATED_POLICY=1008)` frame. */
+    private fun driveWs(port: Int, request: String, windowMs: Long = 3_000): ByteArray = runBlocking {
+        val tunnel = ControllableTunnel()
+        val job = launch(Dispatchers.IO) { LoopbackBridge(port).bridge(tunnel) }
+        tunnel.deliver(request.encodeToByteArray())
+        val buf = ArrayList<Byte>()
+        withTimeoutOrNull(windowMs) {
+            while (true) {
+                val chunk = tunnel.outbound.receiveCatching().getOrNull() ?: break // server closed → bridge done
+                chunk.forEach { buf.add(it) }
+            }
+        }
+        tunnel.close()
+        job.cancel()
+        buf.toByteArray()
+    }
+
+    private fun wsUpgrade(path: String, headers: List<String>): String =
+        (listOf(
+            "GET $path HTTP/1.1", "Host: 127.0.0.1", "Upgrade: websocket", "Connection: Upgrade",
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version: 13",
+        ) + headers).joinToString("\r\n") + "\r\n\r\n"
+
+    /** A server-sent WS `close` frame carrying code 1008 (VIOLATED_POLICY): opcode 0x88, then the 2-byte code 0x03F0. */
+    private fun containsClose1008(bytes: ByteArray): Boolean {
+        for (i in 0..bytes.size - 4) {
+            if (bytes[i] == 0x88.toByte() && bytes[i + 2] == 0x03.toByte() && bytes[i + 3] == 0xF0.toByte()) return true
+        }
+        return false
+    }
+    private fun switchedProtocols(bytes: ByteArray) = "101" in bytes.decodeToString().lineSequence().firstOrNull().orEmpty()
+
+    @Test
+    fun t2_familyG_wsUpgrade_forgedSession_rejectedByRealWsAuth() {
+        val (port, token) = startRealPlatform()
+
+        // family G (session/token forgery over the WS-upgrade): a forged already-auth marker, NO token → the REAL
+        // WS authorizer (tokenAuthorize) rejects post-handshake with close(1008). The upgrade reaches 101 (so this is
+        // the AUTH layer rejecting, not the origin guard) then closes.
+        val forged = driveWs(port, wsUpgrade("/ws/agent?agentId=backend", listOf("X-Already-Authenticated: true", "X-Local-Request: true")))
+        assertTrue(switchedProtocols(forged), "the WS handshake reaches 101 (auth runs post-upgrade)")
+        assertTrue(containsClose1008(forged), "a forged already-auth WS-upgrade with no token is rejected: close(1008 VIOLATED_POLICY)")
+
+        // ★ differential: NO markers, no token → the SAME close(1008) — the marker grants nothing on the WS surface.
+        val bare = driveWs(port, wsUpgrade("/ws/agent?agentId=backend", emptyList()))
+        assertTrue(containsClose1008(bare), "a bare no-token WS-upgrade is closed 1008 too — identical reject, no oracle")
+
+        // positive (non-vacuous): a REAL agent token over the SAME WS surface is NOT rejected with 1008 (auth passed).
+        val authed = driveWs(port, wsUpgrade("/ws/agent?agentId=backend", listOf("Authorization: Bearer $token")))
+        assertTrue(switchedProtocols(authed), "the authed WS handshake reaches 101")
+        assertTrue(!containsClose1008(authed), "a real agent token over the SAME WS surface is NOT closed 1008 (auth accepted)")
     }
 }
