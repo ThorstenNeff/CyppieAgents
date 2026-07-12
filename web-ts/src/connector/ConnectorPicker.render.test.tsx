@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, cleanup, fireEvent, act, waitFor } from '@testing-library/react'
+import { render, cleanup, fireEvent, act } from '@testing-library/react'
 import { ConnectorPicker } from './ConnectorPicker'
 import type { ConnectorsView } from '../types/generated/contract'
 
