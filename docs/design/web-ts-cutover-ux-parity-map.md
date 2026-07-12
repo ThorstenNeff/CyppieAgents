@@ -1,6 +1,6 @@
 # Web→TS-Cutover — UX-Paritäts-Map (gegen `09-UI-Funktionskatalog`)
 
-> Owner: UIUX-Designer · **Stand 2026-07-12 (Refresh)** · Basis `origin/develop` `947eea0d` · **UX-Teil des Cutover-Gates**
+> Owner: UIUX-Designer · **Stand 2026-07-12 (Refresh)** · Basis `origin/develop` `2128ea62` · **UX-Teil des Cutover-Gates**
 > (der Tester macht den funktionalen e2e-Teil). Docs-only.
 >
 > **Gate-Frage:** Bevor die web-ts-UI **Default** wird — deckt sie **jede** K-Funktion aus `09-UI-Funktionskatalog`
@@ -8,9 +8,9 @@
 >
 > **Was sich seit `3213a1b3` geändert hat (groß):** die App ist **assembliert** — `App.tsx` ist die **laufende App**
 > (CYP-425), **nicht** mehr der W0-Skeleton. Damit ist End-to-End-Parität je Bildschirm **jetzt verifizierbar**. Die
-> meisten K-Blocker sind **gemergt** (Lifecycle, Agenten-Verwaltung, Comm, ACL, Event-Log-Tail, API-Key, Settings) und
-> im **UX-Konsistenz-Pass** (2026-07-12) geprüft. Vier K-Flächen sind **spec'd, Impl pending**; **eine** echte GAP ohne
-> Spec bleibt: **§10 Auth (P2-i)**.
+> im **UX-Konsistenz-Pass** (2026-07-12) geprüft. **Stand `2128ea62`: die volle P2-Ersatz-Fläche steht — KEINE ○-Lücke
+> mehr.** Event-Log (Browse/Drilldown/Live-Tail+Pause, CYP-452/448), Connector (CYP-461) **und Auth (CYP-470)** sind
+> gemergt **+ UX-QA'd GO**. Rest = QA-on-Merge (Product-Lead CYP-464, Work-Guard CYP-465) + Politur CYP-468.
 
 ---
 
@@ -28,11 +28,11 @@ nie stiller Verlust. Gemessen an der Compose-Implementierung + den Rollen-/Spec-
 | **— (Stufe)** | MP/MU — außerhalb des K-Cutover-Scopes, erwartet später |
 
 **Ehrlichkeit:** Ich behaupte **keine** Deckung, die ich im Baum nicht sehe. „merged" = die Komponente ist auf develop;
-„◐ spec'd" = nur die Spec, **kein** Code. **Stand `947eea0d`:** Browse (CYP-452), Connector (CYP-461) + Live-Tail-Pause
+„◐ spec'd" = nur die Spec, **kein** Code. **Stand `2128ea62`:** Browse (CYP-452), Connector (CYP-461) + Live-Tail-Pause
 (CYP-448) sind **inzwischen gemergt** (QA offen/erledigt); **noch ◐ spec-only:** Product-Lead (CYP-464), Work-Guard
 (CYP-465). Auth (CYP-470) spec'd. Verifiziert am Baum.
 
-**web-ts-Coverage (develop `947eea0d`):** W0–W7 (CYP-398..405) + **W8 Toggle**, **W9 Comm/ACL**, **CYP-425 Assembly**,
+**web-ts-Coverage (develop `2128ea62`):** W0–W7 (CYP-398..405) + **W8 Toggle**, **W9 Comm/ACL**, **CYP-425 Assembly**,
 **P2-a Lifecycle (CYP-431/445)**, **P2-b Agenten-Verwaltung (CYP-450)**, **P2-c Event-Log-Tail (CYP-432)**,
 **P2-e API-Key (CYP-433)**, **P2-f Settings (CYP-453)** — alle gemergt. **Token-Ebene** (CYP-423/436/437) gemergt →
 die früheren W6-Styling-Findings (Thumb-Alpha/senderAccent) sind **behoben + re-QA'd grün**.
@@ -111,7 +111,7 @@ die früheren W6-Styling-Findings (Thumb-Alpha/senderAccent) sind **behoben + re
 ### §10 Multi-User (Auth & Mandanten)
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
 |---|---|---|---|---|
-| **Login / Auth · Session-Status · Logout · unauth-Redirect** | **K→P2-i** | `auth/` | **○ offen (P2-i)** | **die eine echte GAP ohne Spec.** Scope hängt an der **Kratos↔web-ts-Grenze** (Kratos hostet Login; web-ts rendert Session-Status/Logout/unauth-Redirect) — PO zieht die Naht mit PO1, **dann** spec ich. Cross-Team |
+| **Login / Auth · Session-Status · Logout · unauth-Redirect** | **K→P2-i** | `auth/` | **✓ merged (CYP-470)** | **QA'd 2026-07-12: GO** (14/14 vitest): **redirect-only** (kein Credential-Formular — Test erzwingt `input[password/email]=null`; kein Session-Token im DOM), vier Zustände (None→Login-Redirect · Unverified→Verify-Gate · OPERATOR/MEMBER content-free Indikator role-only), **whoami treibt operator** (App.tsx-Override, fail-closed), Logout=Kratos-Flow, 401→Re-Auth-Redirect, kein unauth-Flash. Verdikt **=** (verify-body strenger content-free als Spec). |
 | Nutzer-/Mandanten · bilaterale Freigabe | MU | `workspace/` | — (MU) | außerhalb K-Cutover; erwartet später |
 
 ---
@@ -155,9 +155,8 @@ Aus `09` Querschnitt + Rollen-Regeln; das UX-Ehrlichkeits-Raster des Gates. **De
 - §2 **Connector-Auswahl** → **CYP-461** (+ Backend `GET /api/connectors`).
 - §1 **Repo-Work-Guard + Discard** → **CYP-465** (+ Backend `CYP-466 reprovision-preview`).
 
-**○ offen — keine Spec (DER Cutover-Rest):**
-- §10 **Auth (P2-i)** — Scope an der Kratos↔web-ts-Grenze; PO zieht die Naht mit PO1, dann spec ich. **Einzige echte
-  Spec-Lücke.**
+**○ offen — keine Spec:** **KEINE mehr.** §10 Auth (CYP-470) war die letzte ○-Lücke → spec'd, gemergt **+ UX-QA'd GO**
+(2128ea62). **Die volle P2-Ersatz-Fläche steht.**
 
 **Nachzieh-QA (kein Blocker, an gemergten Flächen):**
 - **CYP-448 (Rest)** — Severity-Palette-Bindung + Ring/Trim (Politur). **Pause ist HERAUSGEZOGEN** → gemergte K-Funktion, blockierender Parity-QA-Zahn (oben).
@@ -177,4 +176,4 @@ Aus `09` Querschnitt + Rollen-Regeln; das UX-Ehrlichkeits-Raster des Gates. **De
   nicht nur je Funktion.
 - **Ergebnis** = die priorisierte UX-Gate-Liste an den PO (Severity + konkreter Fix).
 
-**Nichts hier gebaut — Cutover-Gate-Sicht. Coverage-Stand = develop `947eea0d`; nachgezogen bei jedem Merge.**
+**Nichts hier gebaut — Cutover-Gate-Sicht. Coverage-Stand = develop `2128ea62`; nachgezogen bei jedem Merge.**
