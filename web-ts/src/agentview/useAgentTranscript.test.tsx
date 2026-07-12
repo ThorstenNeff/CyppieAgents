@@ -7,14 +7,14 @@ import { FakeSocketHub } from '../net/testing/fakeSocket'
 afterEach(cleanup)
 
 describe('useAgentTranscript.send (CYP-425 — composer posts on the same /ws/agent socket)', () => {
-  it('opens /ws/agent for the agent with the token, and send posts a UserTurn', () => {
+  it('opens /ws/agent for the agent (cookie-auth, no token), and send posts a UserTurn', () => {
     const hub = new FakeSocketHub()
     const { result } = renderHook(() =>
-      useAgentTranscript({ baseUrl: 'ws://x', agentId: 'backend', token: 'tok', readyNoticeText: 'ready', factory: hub.factory, schedule: hub.runNow }),
+      useAgentTranscript({ baseUrl: 'ws://x', agentId: 'backend', readyNoticeText: 'ready', factory: hub.factory, schedule: hub.runNow }),
     )
     const sock = hub.sockets.find((s) => s.url.includes('/ws/agent'))!
     expect(sock.url).toContain('agentId=backend')
-    expect(sock.url).toContain('token=tok')
+    expect(sock.url).not.toContain('token=') // CYP-454: same-origin cookie authenticates /ws/agent, no query token
     sock.emitOpen()
     act(() => {
       result.current.send('hallo agent')

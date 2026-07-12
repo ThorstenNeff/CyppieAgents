@@ -3,6 +3,11 @@
 // omits `since` (full replay); every reconnect resumes `?since=<lastSeq>` and DROPS any frame with seq <= lastSeq,
 // so a replay is idempotent (no reconnect duplicates) — the CYP-400 AC. Mirrors the Kotlin AgentWsClient (CYP-204).
 // Types come from W1's generated contract (never hand-written).
+//
+// CYP-454 (PO1 2026-07-11): /ws/agent authenticates via the SAME-ORIGIN Kratos session cookie (CYP-230/413), which
+// rides the WSS handshake automatically — NO `?token=` on the query (proxy-log-clean; CYP-31 WS-origin-guard is the
+// CSRF defense-in-depth for this cookie handshake). The ticket-token `?token=` path (CYP-286) stays scoped to
+// cross-origin (desktop-remote) + /ws/terminal + /ws/comm — those wrappers are unchanged.
 import type { StoredAgentEvent, UserTurn } from '../types/generated/contract'
 import { ReconnectingSocket, type SocketFactory, type Scheduler } from './reconnectingSocket'
 import { Backoff } from './backoff'
@@ -10,8 +15,6 @@ import { Backoff } from './backoff'
 export interface AgentSocketOptions {
   baseUrl: string
   agentId: string
-  /** Browser WS can't set headers → auth via `?token=` (proxy-masked, CYP-292). */
-  token: string
   onEvent: (event: StoredAgentEvent) => void
   onOpen?: () => void
   backoff?: Backoff
@@ -26,7 +29,8 @@ export class AgentSocket {
   constructor(opts: AgentSocketOptions) {
     this.rs = new ReconnectingSocket({
       url: () => {
-        const p = new URLSearchParams({ agentId: opts.agentId, token: opts.token })
+        // No token in the query — the same-origin session cookie authenticates the WSS handshake (CYP-454).
+        const p = new URLSearchParams({ agentId: opts.agentId })
         if (this.lastSeq !== null) p.set('since', String(this.lastSeq))
         return `${opts.baseUrl}/ws/agent?${p.toString()}`
       },

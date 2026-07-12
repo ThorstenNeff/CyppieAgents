@@ -52,7 +52,7 @@ export function AgentWindow({
   const { rows, send } = useAgentTranscript({
     baseUrl: wsBase,
     agentId,
-    token,
+    // CYP-454: /ws/agent uses the same-origin cookie, not a token. `token` stays for XtermView (/ws/terminal, CYP-286).
     readyNoticeText: READY_NOTICE,
     factory: socketDeps?.factory,
     schedule: socketDeps?.schedule,
