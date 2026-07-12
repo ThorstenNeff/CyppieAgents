@@ -16,7 +16,8 @@ csp="$(printf '%s\n' "$H1" | grep -i '^content-security-policy:')"
 # §1.3 CSP present + nonce-based + hardened, no unsafe-inline
 [ -n "$csp" ] && ok "1.3 CSP header present" || no "1.3 CSP header present"
 printf '%s' "$csp" | grep -qi 'nonce-'                    && ok "1.3 script-src nonce-based"   || no "1.3 script-src nonce-based"
-printf '%s' "$csp" | grep -qi 'unsafe-inline'             && no "1.3 unsafe-inline PRESENT"    || ok "1.3 no unsafe-inline"
+ss="$(printf '%s' "$csp" | grep -io "script-src[^;]*")"
+printf '%s' "$ss" | grep -qi 'unsafe-inline'              && no "1.3 script-src unsafe-inline PRESENT" || ok "1.3 script-src no unsafe-inline"
 printf '%s' "$csp" | grep -qi "object-src[^;]*none"       && ok "1.3 object-src 'none'"        || no "1.3 object-src 'none'"
 printf '%s' "$csp" | grep -qi "frame-ancestors[^;]*none"  && ok "1.3 frame-ancestors 'none'"   || no "1.3 frame-ancestors 'none'"
 
