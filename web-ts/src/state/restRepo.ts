@@ -3,10 +3,24 @@
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
 import { RestClient } from '../net/rest'
-import type { AclEntry, Agent, ApiKeyView, Channel, Message1, AgentRunStateEvent } from '../types/generated/contract'
+import type {
+  AclEntry,
+  Agent,
+  AgentDetail,
+  ApiKeyView,
+  Channel,
+  Message1,
+  AgentRunStateEvent,
+  NewAgentSpec,
+  AgentEdit,
+} from '../types/generated/contract'
 
 /** CYP-426 interim: `:core` TerminalMode. The server maps this to the terminal-control state machine. */
 export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
+
+/** CYP-450: the removed agent's worktree fate. Default KEEP (non-destructive); DELETE is the explicit, warned path
+ *  → maps to the server's `?worktree=delete` query (default keep). */
+export type WorktreeFate = 'keep' | 'delete'
 
 export interface HubRepo {
   /** GET /api/agents — the typed roster (id/name/role/…). The real source of the agent list + PO identity (CYP-444),
@@ -32,6 +46,20 @@ export interface HubRepo {
   /** PUT /api/config/apikey (operator) — write-only: sends the new plaintext key, gets back only the MASKED view.
    *  The response carries no plaintext, so nothing to leak on the way back (CYP-433). */
   putApiKey(apiKey: string): Promise<ApiKeyView>
+  /** CYP-450 (operator). POST /api/agents — create a config-only agent (NOT started; the caller shows the spawnHint
+   *  and starts it via the P2-a lifecycle controls). Returns void: the server's CreatedAgent body carries the new
+   *  agent's TOKEN (a secret) — never surfaced; the list refetches instead (non-optimistic). Rejects (agent_exists /
+   *  po_already_exists / invalid_agent) are server-authoritative — surfaced from the RestError, never pre-guessed. */
+  /** CYP-450. GET /api/agents/{id} — the full config (incl. persona + launch, which the roster Agent omits) so the
+   *  edit dialog can PREFILL current values rather than blank them out. */
+  fetchAgentDetail(id: string): Promise<AgentDetail>
+  createAgent(spec: NewAgentSpec): Promise<void>
+  /** CYP-450 (operator). PUT /api/agents/{id} — edit role/persona/launch/name (id + worktree are fixed). Takes
+   *  effect on next start (the caller shows the amber restart hint). Rejects: po_already_exists / last_po. */
+  updateAgent(id: string, edit: AgentEdit): Promise<void>
+  /** CYP-450 (operator). DELETE /api/agents/{id}[?worktree=delete] — stop + remove. `fate` defaults to keep
+   *  (non-destructive); 'delete' is the warned, destructive path. Reject: last_po (the only PO is undeletable). */
+  removeAgent(id: string, fate: WorktreeFate): Promise<void>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -73,5 +101,20 @@ export class RestHubRepo implements HubRepo {
   putApiKey(apiKey: string): Promise<ApiKeyView> {
     // write-only: the plaintext goes up in the body; the response is the MASKED view (no plaintext back).
     return this.rest.put<ApiKeyView>('/api/config/apikey', { apiKey })
+  }
+  fetchAgentDetail(id: string): Promise<AgentDetail> {
+    return this.rest.get<AgentDetail>(`/api/agents/${encodeURIComponent(id)}`)
+  }
+  async createAgent(spec: NewAgentSpec): Promise<void> {
+    // ignore the CreatedAgent body (it carries the new agent's token — a secret); the list refetches instead.
+    await this.rest.post<unknown>('/api/agents', spec)
+  }
+  async updateAgent(id: string, edit: AgentEdit): Promise<void> {
+    await this.rest.put<unknown>(`/api/agents/${encodeURIComponent(id)}`, edit)
+  }
+  async removeAgent(id: string, fate: WorktreeFate): Promise<void> {
+    // Default fate = keep (safe); only an explicit ?worktree=delete is destructive (server default is keep).
+    const q = fate === 'delete' ? '?worktree=delete' : ''
+    await this.rest.delete<void>(`/api/agents/${encodeURIComponent(id)}${q}`)
   }
 }

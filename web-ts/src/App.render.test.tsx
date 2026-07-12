@@ -38,6 +38,10 @@ const fakeRepo = (): HubRepo => ({
   setLifecycle: vi.fn().mockResolvedValue({ agentId: 'backend', runState: 'RUNNING' }),
   getApiKey: vi.fn().mockResolvedValue({ set: true, masked: '***k999' }),
   putApiKey: vi.fn().mockResolvedValue({ set: true, masked: '***new4' }),
+  fetchAgentDetail: vi.fn().mockResolvedValue({ id: 'backend', name: 'Backend', role: 'WORKER', worktree: 'backend', launch: 'bash', persona: null }),
+  createAgent: vi.fn().mockResolvedValue(undefined),
+  updateAgent: vi.fn().mockResolvedValue(undefined),
+  removeAgent: vi.fn().mockResolvedValue(undefined),
 })
 
 beforeEach(() => {
@@ -285,5 +289,16 @@ describe('App assembly (CYP-425)', () => {
       feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'RUNNING' }))
     })
     expect(queryByTestId('lifecycle.error.backend')).toBeNull() // a confirmed state clears the stale reject
+  })
+
+  it('the Agent-Management window renders the roster with per-agent edit/remove (CYP-450)', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(await findByTestId('agentMgmt.panel')).toBeTruthy()
+    expect(getByTestId('agentMgmt.item.backend')).toBeTruthy()
+    expect(getByTestId('agentMgmt.item.backend.remove')).toBeTruthy()
   })
 })

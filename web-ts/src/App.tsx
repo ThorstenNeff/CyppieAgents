@@ -30,6 +30,7 @@ import { EventLogView } from './eventlog/EventLogView'
 import { useEventLogStore } from './eventlog/eventLogStore'
 import { ApiKeyPanel } from './settings/ApiKeyPanel'
 import { tailView } from './eventlog/eventLog'
+import { AgentManagementPanel } from './agentmgmt/AgentManagementPanel'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
 import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
@@ -42,6 +43,7 @@ const ACL_WINDOW_ID = 'acl'
 const COMM_WINDOW_ID = 'comm'
 const EVENT_WINDOW_ID = 'events'
 const SETTINGS_WINDOW_ID = 'settings'
+const AGENT_MGMT_WINDOW_ID = 'agentMgmt'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -181,6 +183,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     // CYP-433: the settings/API-key window is present for EVERYONE (present-but-disabled) — the masked status leaks
     // nothing; the panel gates editing on operator internally.
     if (agents.length > 0 && !present.has(SETTINGS_WINDOW_ID)) wm.add(tiledWindow(SETTINGS_WINDOW_ID, 'Einstellungen', index++), false)
+    // CYP-450: the agent-management window is present for EVERYONE — the roster/list is ungated display; the panel
+    // gates add/edit/remove on operator internally (present-but-disabled), never omission.
+    if (agents.length > 0 && !present.has(AGENT_MGMT_WINDOW_ID)) wm.add(tiledWindow(AGENT_MGMT_WINDOW_ID, 'Agenten-Verwaltung', index++), false)
   }, [agents, cfg.operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
@@ -231,7 +236,35 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   // in the panel as a GENERIC message (never the value).
   const onSaveApiKey = (apiKey: string): Promise<void> => hubRepo.putApiKey(apiKey).then((v) => setApiKeyView(v))
 
+  // CYP-450 non-optimistic agent CRUD: on server-confirm, REFETCH the roster (the list reflects the server, never a
+  // guessed local mutation); a reject rejects the promise so the dialog surfaces the server code. The panel's own
+  // onDone (spawnHint / effectHint) fires only after these resolve.
+  const refreshRoster = () => hubRepo.fetchAgents().then(setRoster)
+  const onCreateAgent = (spec: Parameters<HubRepo['createAgent']>[0]): Promise<void> =>
+    hubRepo.createAgent(spec).then(refreshRoster)
+  const onUpdateAgent = (id: string, edit: Parameters<HubRepo['updateAgent']>[1]): Promise<void> =>
+    hubRepo.updateAgent(id, edit).then(refreshRoster)
+  const onRemoveAgent = (id: string, fate: Parameters<HubRepo['removeAgent']>[1]): Promise<void> =>
+    hubRepo.removeAgent(id, fate).then(refreshRoster)
+  const fetchAgentDetailForEdit = (id: string) =>
+    hubRepo.fetchAgentDetail(id).then((d) => ({ role: d.role, persona: d.persona, launch: d.launch }))
+
   const renderContent = (win: WindowState) => {
+    if (win.id === AGENT_MGMT_WINDOW_ID) {
+      // present for everyone; the panel gates add/edit/remove on operator (present-but-disabled). The roster is the
+      // typed Agent[] source (CYP-444), not the id-union `agents`.
+      return (
+        <AgentManagementPanel
+          agents={roster}
+          operator={cfg.operator}
+          runStateByAgent={runStateByAgent}
+          onCreate={onCreateAgent}
+          onUpdate={onUpdateAgent}
+          onRemove={onRemoveAgent}
+          fetchDetail={fetchAgentDetailForEdit}
+        />
+      )
+    }
     if (win.id === SETTINGS_WINDOW_ID) {
       // present-but-disabled (NOT omitted, unlike the event log): the masked status leaks nothing, so the screen is
       // shown to everyone; ApiKeyPanel disables the inputs for a non-operator and shows the gate hint.

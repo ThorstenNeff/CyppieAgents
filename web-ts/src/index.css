@@ -230,3 +230,100 @@ body,
   color: var(--md-sys-color-on-surface-variant);
   margin: 0;
 }
+
+/* CYP-450 (P2-b) — Agenten-Verwaltung. Colour is never the sole signal (text carries each state). Gate hint =
+   neutral; effect hint = AMBER ("saved ≠ active" → restart, reuses CYP-437 WARN tokens, never success-green);
+   worktree-delete warning = amber alert; destructive confirm = error-toned. Targets ≥24px (spec §7). */
+.agent-mgmt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-mgmt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.agent-mgmt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agent-mgmt-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-mgmt-status,
+.agent-mgmt-role {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.agent-mgmt-name {
+  flex: 1;
+  min-width: 0;
+}
+.agent-mgmt button {
+  min-height: 24px; /* WCAG 2.5.8 target size */
+  min-width: 24px;
+}
+.agent-mgmt-gate {
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 0;
+}
+/* create ≠ start — neutral/info, no success-green (it's an intermediate, not "running"). */
+.agent-mgmt-spawn-hint {
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 0;
+}
+/* saved ≠ active → amber, points at the P2-a restart (never green). */
+.agent-mgmt-effect-hint {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+  padding: 2px 6px;
+}
+.agent-mgmt-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 6px;
+  padding: 8px;
+}
+.agent-mgmt-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.agent-mgmt-roles {
+  display: flex;
+  gap: 12px;
+}
+.agent-mgmt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.agent-mgmt-locked,
+.agent-mgmt-locked-vals {
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 0;
+}
+.agent-mgmt-error {
+  color: var(--md-sys-color-error);
+  margin: 0;
+}
+/* data-loss warning — amber alert; MUST wrap, never ellipsis (spec §9). */
+.agent-mgmt-worktree-warning {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+  padding: 2px 6px;
+  white-space: normal;
+}
+/* destructive confirm — error-toned + clearly named. */
+.agent-mgmt-destructive {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}

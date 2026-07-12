@@ -8,10 +8,22 @@ export class RestError extends Error {
     readonly status: number,
     readonly method: string,
     readonly path: string,
-    body: string,
+    readonly body: string,
   ) {
     super(`${method} ${path} -> ${status}${body ? `: ${body}` : ''}`)
     this.name = 'RestError'
+  }
+}
+
+/** The server's error envelope is `{ error: { code, message } }` (Spec 02 §7). Parse the machine `code` out of a
+ *  RestError body so callers can map a specific reject to its curated message — never string-match the message. */
+export function restErrorCode(err: unknown): string | null {
+  if (!(err instanceof RestError) || err.body === '') return null
+  try {
+    const parsed = JSON.parse(err.body) as { error?: { code?: unknown } }
+    return typeof parsed.error?.code === 'string' ? parsed.error.code : null
+  } catch {
+    return null
   }
 }
 
@@ -28,6 +40,10 @@ export class RestClient {
 
   put<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>('PUT', path, body)
+  }
+
+  delete<T>(path: string): Promise<T> {
+    return this.request<T>('DELETE', path)
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
