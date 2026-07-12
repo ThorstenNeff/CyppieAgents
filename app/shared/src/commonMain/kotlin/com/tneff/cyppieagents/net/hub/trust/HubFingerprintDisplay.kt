@@ -3,21 +3,23 @@ package com.tneff.cyppieagents.net.hub.trust
 import kotlin.io.encoding.Base64
 
 /**
- * CYP-482 S-A — the **transport-independent** derivation of a hub key's human-comparable fingerprint in three
- * representations (CYP-480 §2.1), for the OOB trust confirmation:
- *  - a **word / emoji** sequence — the *primary*, error-resistant compare an operator reads aloud;
+ * CYP-482 — the **transport-independent** derivation of a hub key's human-comparable fingerprint (CYP-480
+ * §2.1), for the OOB trust confirmation:
+ *  - a **word sequence** (the canonical PGP biometric word list) — the *primary*, **security-bearing** form an
+ *    operator reads aloud / compares against the hub console;
  *  - **hex** — the *secondary*, copyable form (reuses the merged CYP-478 [HubKeyFingerprint]);
  *  - a **QR payload** — the machine-readable scan path.
  *
- * All three fold the **same** `SHA-256(hubStatic)` digest, so word/emoji/hex/QR always agree. Pure +
- * deterministic + identical on every target → **vector-pinnable** (like [Sha256]); **no RR5 / live-fingerprint
- * dependency**. The S-B confirm/reject screen renders these once the real `dhPubKey` flows (HA: never a
- * placeholder fingerprint) — this is only the derivation.
+ * All fold the **same** `SHA-256(hubStatic)` digest → word/hex/QR always agree; pure + deterministic +
+ * identical on every target → **vector-pinnable** (like [Sha256]); **no RR5 / live-fingerprint dependency**
+ * (the S-B confirm/reject screen renders these once the real `dhPubKey` flows — HA: never a placeholder).
  *
- * The word/emoji **content** and the **sequence length** are a **DS / security parameter** (list size sets the
- * bits-per-token, hence the OOB collision resistance). [DEFAULT_FINGERPRINT_WORDS] / [DEFAULT_FINGERPRINT_EMOJI]
- * / [DEFAULT_TOKEN_COUNT] are **functional placeholders** — DS finalizes them. The derivation *mechanism*
- * ([indices], digest→byte-indices) is content-independent and is what the vector teeth pin.
+ * **Entropy (Reviewer threat-model AC).** Each token is one digest byte (8 bit) → one word from a 256-word
+ * list; [DEFAULT_TOKEN_COUNT] = **11 tokens × 8 bit = 88 bit**, comfortably over the ≥80-bit
+ * OOB-substitution-resistance floor (never below 6/66). A ≥2048-word list would NOT help — a byte only reaches
+ * `0..255` (8 bit/token) regardless — so the PGP **256**-word lists (which divide 256 exactly → zero modulo
+ * bias) are used, alternating [PgpWordList.EVEN]/[PgpWordList.ODD] by position (the PGP transposition guard).
+ * **Emoji is not a fingerprint form** (too few bits to be bit-bearing).
  */
 object HubFingerprintDisplay {
 
@@ -25,8 +27,8 @@ object HubFingerprintDisplay {
     fun hex(hubStatic: ByteArray): String = HubKeyFingerprint.of(hubStatic)
 
     /**
-     * The [count] leading digest bytes as indices `0..255` — the content-independent mapping the word/emoji
-     * sequences look up. Deterministic: identical inputs → identical indices on every target.
+     * The [count] leading digest bytes as indices `0..255` — the content-independent mapping the word sequence
+     * looks up. Deterministic: identical inputs → identical indices on every target.
      */
     fun indices(hubStatic: ByteArray, count: Int): List<Int> {
         require(count in 1..32) { "count must be 1..32 (SHA-256 is 32 bytes)" }
@@ -34,25 +36,17 @@ object HubFingerprintDisplay {
         return (0 until count).map { digest[it].toInt() and 0xff }
     }
 
-    /** The word sequence: each of the first [count] digest bytes mapped into [wordlist] (index mod list size). */
-    fun words(
-        hubStatic: ByteArray,
-        wordlist: List<String> = DEFAULT_FINGERPRINT_WORDS,
-        count: Int = DEFAULT_TOKEN_COUNT,
-    ): List<String> {
-        require(wordlist.isNotEmpty()) { "wordlist must not be empty" }
-        return indices(hubStatic, count).map { wordlist[it % wordlist.size] }
-    }
-
-    /** The emoji sequence — the same mechanism as [words], over an emoji list. */
-    fun emoji(
-        hubStatic: ByteArray,
-        emojiList: List<String> = DEFAULT_FINGERPRINT_EMOJI,
-        count: Int = DEFAULT_TOKEN_COUNT,
-    ): List<String> {
-        require(emojiList.isNotEmpty()) { "emojiList must not be empty" }
-        return indices(hubStatic, count).map { emojiList[it % emojiList.size] }
-    }
+    /**
+     * The PGP-word fingerprint sequence: each of the first [count] digest bytes selects a word, **alternating
+     * the [PgpWordList.EVEN] (even position) and [PgpWordList.ODD] (odd position) 256-word lists** —
+     * `token[i] = (i even ? EVEN : ODD)[byte]`. The position-parity alternation is the PGP
+     * transposition/duplication/omission guard (a swapped pair lands a word in the wrong list). No modulo bias:
+     * each list has exactly 256 entries, one per byte value.
+     */
+    fun words(hubStatic: ByteArray, count: Int = DEFAULT_TOKEN_COUNT): List<String> =
+        indices(hubStatic, count).mapIndexed { i, b ->
+            (if (i % 2 == 0) PgpWordList.EVEN else PgpWordList.ODD)[b]
+        }
 
     /**
      * The canonical, machine-readable QR **payload**: `"$QR_SCHEME:<base64(hubStatic)>"`. A scanner re-derives
@@ -62,26 +56,6 @@ object HubFingerprintDisplay {
 
     const val QR_SCHEME: String = "cyppie-hub-key"
 
-    /** Placeholder default sequence length — DS/security owns the final count (with the list size). */
-    const val DEFAULT_TOKEN_COUNT: Int = 6
-
-    /**
-     * Placeholder word list (32 distinct maritime nouns, echoing the app theme) — **DS/security owns the
-     * production content + size**. The mechanism is content-independent; swapping this list changes only the
-     * rendered words, not the underlying (hex/QR-anchored) fingerprint.
-     */
-    val DEFAULT_FINGERPRINT_WORDS: List<String> = listOf(
-        "anchor", "harbor", "compass", "beacon", "tide", "coral", "marlin", "breeze",
-        "cargo", "lantern", "mariner", "current", "dolphin", "sextant", "ballast", "pier",
-        "galley", "rudder", "plankton", "sonar", "keel", "buoy", "fathom", "seagull",
-        "lagoon", "mast", "reef", "sail", "storm", "wharf", "kelp", "nautilus",
-    )
-
-    /** Placeholder emoji list (32 distinct) — **DS/security owns the production content + size**. */
-    val DEFAULT_FINGERPRINT_EMOJI: List<String> = listOf(
-        "⚓", "🧭", "🌊", "🐬", "🐟", "🦈", "🐚", "🦀",
-        "🐙", "⛵", "🚢", "🛟", "🪝", "🌅", "🌙", "⭐",
-        "🔱", "🦭", "🐋", "🌴", "🦩", "🪸", "🌀", "⚡",
-        "🧊", "🔔", "📡", "🦑", "🏝", "🌧", "🐡", "🐳",
-    )
+    /** 11 tokens × 8 bit = **88 bit** ≥ the 80-bit OOB floor (Reviewer threat-model AC). Never below 6/66. */
+    const val DEFAULT_TOKEN_COUNT: Int = 11
 }
