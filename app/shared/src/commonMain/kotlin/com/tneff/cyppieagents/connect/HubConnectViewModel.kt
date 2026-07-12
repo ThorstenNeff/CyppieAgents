@@ -9,8 +9,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * CYP-419 (Epic CYP-395 S-L) — the hubConnect flow state, modelled on the [AuthViewModel]/`AuthGate` idiom (one
@@ -32,6 +34,10 @@ class HubConnectViewModel(
     /** CYP-510 — the live OOB-confirm source (trust layer's OobConfirmState + approve/reject + presented key).
      *  `null` ⇒ INERT: the remote connect path is byte-identical to today (no live FirstUse screen). */
     private val oobConfirm: OobConfirmCoordinator? = null,
+    /** CYP-513 — the LIVE per-connect components factory (activation): produces the session + its ①²-shared OOB
+     *  coordinator together (display == pinned). When present it takes precedence over [remoteConnectFeed] +
+     *  [oobConfirm] (the flag-gated App.kt wiring); `null` ⇒ INERT (the CYP-510/471 feed path). */
+    private val remoteComponentsFactory: RemoteConnectComponentsFactory? = null,
     /** Hostname default for the editable hub-name field (Q1); the host injects the real device hostname. */
     private val defaultHubName: String = "mein-hub",
     scope: CoroutineScope? = null,
@@ -151,6 +157,9 @@ class HubConnectViewModel(
     /** The active remote collect job — held so a hub switch (Q5) tears it down before starting a new one. */
     private var remoteJob: Job? = null
 
+    /** CYP-513 — the active LIVE components (Q5): closed on a hub switch / leave so the old Noise session tears down. */
+    private var activeComponents: RemoteConnectComponents? = null
+
     /**
      * B3 Remote "Verbinden" / Q5 "auf Hub wechseln" → the honest §7 remote progress against
      * [RemoteConnectFeed]. **Exactly one hub (Q5, CI-6):** any active remote session is torn down first
@@ -163,31 +172,55 @@ class HubConnectViewModel(
             ?: (_state.value as? HubConnectUiState.RemoteConnecting)?.hub
             ?: return
         remoteJob?.cancel() // Q5: exactly-one-hub — tear the current remote session down before the new one.
+        closeActiveComponents() // CYP-513: close the previous LIVE Noise session (Q5, nothing carried across)
         _state.value = HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.RELAY_DIALING))
+        val factory = remoteComponentsFactory
         val coordinator = oobConfirm
         remoteJob = runScope.launch {
-            if (coordinator == null) {
-                // INERT (CYP-510): no live OOB source ⇒ byte-identical to the CYP-471 path.
-                remoteConnectFeed.connect(hub).collect { rs ->
-                    _state.value = HubConnectUiState.RemoteConnecting(hub, rs)
-                }
-            } else {
-                // CYP-510: combine the session feed with the live OobConfirmState. While a FirstUse confirm is
-                // Awaiting (the session is suspended in trust.resolve), surface the mandatory OOB screen at
-                // TRUST_CHECK regardless of the underlying dial state; otherwise reflect the feed's truth.
-                combine(remoteConnectFeed.connect(hub), coordinator.state) { rs, oob -> rs to oob }
-                    .collect { (rs, oob) ->
-                        val mount = buildLiveOobMount(coordinator, hub, oob)
-                        _state.value = if (mount != null) {
-                            HubConnectUiState.RemoteConnecting(
-                                hub, RemoteSessionState(hub.hubId, RemoteConnState.TRUST_CHECK), oobConfirm = mount,
-                            )
-                        } else {
-                            HubConnectUiState.RemoteConnecting(hub, rs)
-                        }
+            when {
+                factory != null -> {
+                    // CYP-513 LIVE: per-connect components — the session's TofuHubTrust and this OOB coordinator
+                    // share ONE of(hub)+PendingOobConfirmations (①②, display == pinned; approve/reject wake the
+                    // trust's own waiter). Drive the session; surface the FirstUse confirm at TRUST_CHECK while Awaiting.
+                    val comps = factory.create(hub, this)
+                    activeComponents = comps
+                    comps.session.start()
+                    try {
+                        combine(comps.session.state, comps.oobConfirm.state) { rs, oob -> rs to oob }
+                            .collect { (rs, oob) -> surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob)) }
+                    } finally {
+                        withContext(NonCancellable) { comps.session.close() } // Q5 teardown on cancel / switch
                     }
+                }
+                coordinator != null -> {
+                    // CYP-510: the fake/stub feed + a live OOB coordinator (tests / pre-activation).
+                    combine(remoteConnectFeed.connect(hub), coordinator.state) { rs, oob -> rs to oob }
+                        .collect { (rs, oob) -> surfaceRemote(hub, rs, buildLiveOobMount(coordinator, hub, oob)) }
+                }
+                else -> {
+                    // INERT (CYP-471): no OOB source ⇒ byte-identical to the stub feed path.
+                    remoteConnectFeed.connect(hub).collect { rs ->
+                        _state.value = HubConnectUiState.RemoteConnecting(hub, rs)
+                    }
+                }
             }
         }
+    }
+
+    /** Surface: an Awaiting OOB mount ⇒ the mandatory confirm screen at TRUST_CHECK; else the session's truth. */
+    private fun surfaceRemote(hub: HubDescriptor, rs: RemoteSessionState, mount: OobConfirmMount?) {
+        _state.value = if (mount != null) {
+            HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.TRUST_CHECK), oobConfirm = mount)
+        } else {
+            HubConnectUiState.RemoteConnecting(hub, rs)
+        }
+    }
+
+    /** Q5/CYP-513: close + drop the active LIVE components so the old Noise session tears down (nothing carried). */
+    private fun closeActiveComponents() {
+        val previous = activeComponents ?: return
+        activeComponents = null
+        runScope.launch { withContext(NonCancellable) { previous.session.close() } }
     }
 
     /**
@@ -198,6 +231,7 @@ class HubConnectViewModel(
     fun backToHubList() {
         remoteJob?.cancel()
         remoteJob = null
+        closeActiveComponents() // CYP-513: tear down the LIVE Noise session before returning to the list (Q5)
         _state.value = HubConnectUiState.LoadingHubs
         runScope.launch {
             val hubs = runCatching { controlPlane.hubs() }.getOrElse {
