@@ -1,9 +1,7 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.auth.AuthDeps
-import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
-import com.tneff.cyppieagents.auth.PrincipalKey
 import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.controlplane.HubRegistrar
 import com.tneff.cyppieagents.controlplane.RelayRendezvous
@@ -59,14 +57,9 @@ fun Route.rendezvousRoutes(
                 // CYP-511 owner-gate (Defense-in-Depth): ONLY the hub's owner may resolve. A non-owner operator (or an
                 // unknown hub) is NOT_REGISTERED — **non-leaky** (indistinguishable from "no rendezvous") and decided
                 // BEFORE the opaque id is derived, so it never leaks the hubId↔rendezvous mapping nor a liveness probe.
-                // Same `RegisteredHub.ownerId == operatorId` check the CYP-508 mint applies; owner ⊆ operator → only tightens.
-                val opId = when (val p = call.attributes[PrincipalKey]) {
-                    is AuthPrincipal.Human -> p.identityId
-                    AuthPrincipal.MachineOperator -> machineOperatorId
-                    is AuthPrincipal.MachineAgent -> null // never reaches an OPERATOR gate (403 first) — defensive
-                }
-                val owns = opId != null && registrar().lookup(hubId)?.ownerId == opId
-                val response = if (!owns) {
+                // Same `RegisteredHub.ownerId == operatorId` check the CYP-508 mint applies; owner ⊆ operator → only
+                // tightens. CYP-516: via the shared [cpOperatorId] / [ownedBy] helper (one definition, no drift).
+                val response = if (!registrar().ownedBy(hubId, call.cpOperatorId(machineOperatorId))) {
                     RendezvousResolveResponse(failure = RendezvousFailure.NOT_REGISTERED)
                 } else {
                     rz.resolve(hubId)?.let { RendezvousResolveResponse(binding = it) }
@@ -74,11 +67,23 @@ fun Route.rendezvousRoutes(
                 }
                 call.respond(response)
             }
-            // register (hub publishes its rendezvous): rotate the CP-secret epoch, return the opaque id. Same
-            // typed-body idiom — register yields null ONLY when INERT (a live relay always mints a binding).
+            // register (hub publishes its rendezvous): rotate the CP-secret epoch, return the opaque id.
             post {
                 val hubId = call.parameters["hubId"] ?: throw BadRequestException("missing hubId")
-                val response = rendezvous().register(hubId)?.let { RendezvousResolveResponse(binding = it) }
+                val rz = rendezvous()
+                if (!rz.isLive()) {
+                    call.respond(RendezvousResolveResponse(failure = RendezvousFailure.RELAY_UNAVAILABLE))
+                    return@post
+                }
+                // CYP-516 owner-gate (symmetric to the CYP-511 resolve gate): ONLY the hub's owner may register/rotate
+                // its rendezvous. Otherwise ANY operator could epoch-rotate ANY hub as a DoS (the hub keeps dialing the
+                // stale id while the owner resolves the new one → no pairing). A non-owner is NOT_REGISTERED — non-leaky
+                // and decided BEFORE any rotation, so it neither rotates nor reveals the hubId↔rendezvous mapping.
+                if (!registrar().ownedBy(hubId, call.cpOperatorId(machineOperatorId))) {
+                    call.respond(RendezvousResolveResponse(failure = RendezvousFailure.NOT_REGISTERED))
+                    return@post
+                }
+                val response = rz.register(hubId)?.let { RendezvousResolveResponse(binding = it) }
                     ?: RendezvousResolveResponse(failure = RendezvousFailure.RELAY_UNAVAILABLE)
                 call.respond(response)
             }

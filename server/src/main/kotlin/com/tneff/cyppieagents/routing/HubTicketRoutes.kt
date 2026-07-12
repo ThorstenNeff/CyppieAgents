@@ -1,9 +1,7 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.auth.AuthDeps
-import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
-import com.tneff.cyppieagents.auth.PrincipalKey
 import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.controlplane.CpOperatorSession
 import com.tneff.cyppieagents.controlplane.HubTicketMinter
@@ -40,11 +38,9 @@ fun Route.hubTicketRoutes(
 ) {
     authenticatedApi(deps, AuthRole.OPERATOR) {
         post("$apiBase/cp/hubticket") {
-            val opId = when (val p = call.attributes[PrincipalKey]) {
-                is AuthPrincipal.Human -> p.identityId
-                AuthPrincipal.MachineOperator -> machineOperatorId
-                is AuthPrincipal.MachineAgent -> null // never reaches an OPERATOR gate (403 first) — defensive
-            } ?: return@post call.respond(HubTicketResponse(failure = HubTicketFailure.CP_SESSION_EXPIRED))
+            // CYP-516: the operator id via the shared [cpOperatorId] helper (one definition across mint/resolve/register).
+            val opId = call.cpOperatorId(machineOperatorId)
+                ?: return@post call.respond(HubTicketResponse(failure = HubTicketFailure.CP_SESSION_EXPIRED))
             val req = call.receive<HubTicketRequest>()
             // sub = the AUTHENTICATED operator (carried via CpOperatorSession from the principal), never the request.
             call.respond(minter().mint(req, CpOperatorSession(opId)))
