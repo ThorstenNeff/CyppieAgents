@@ -284,18 +284,29 @@ A4 Kanalliste+Timeline (Historie/Dedup-by-id) · A4 Operator-Senden · A5 ACL-Ma
 A6 Live-Tail (Mount/Status) · A9 API-Key · Assembly (Agent-/Comm-/ACL-Fenster) · B-1 Event-Log-Detail-XSS ·
 B-3 CONTRACT_REQUIRE_REAL.
 
+> **Korrektur (PO, am Objekt gegen `origin/develop` `947eea0d` verifiziert):** meine ersten „nicht gelandet"-
+> Funde für A7/A8/A6-Drilldown waren **Stale-Base-Ableitungen** (Rig lag hinter Merges), keine Observationen —
+> re-gescannt auf dem aktuellen Baum. Sie kippen zu **landed-needs-tooth** (unten korrigiert).
+
 **❌ [K]-Kern, Fläche in web-ts GELANDET, aber KEIN Zahn (echte Lücken — Zähne offen):**
-- **A1 Repo konfigurieren** (`settings/SettingsPanel.tsx`) — Form → `POST/PUT`, Persistenz über Reload; kein Zahn.
-- **A2 Agent hinzufügen / entfernen / Konfig ändern** (`agentmgmt/AgentManagementPanel.tsx`) — kein Zahn (3 Zeilen);
-  inkl. „Neustart nötig"-Transparenz + Entfernen-Bestätigung/Folgenanzeige (→ B-4-Irreversibilität).
+- **A1 Repo konfigurieren** (`settings/SettingsPanel.tsx`; Testids `settings.repo.url.input`/`branch.input`/`save`/
+  `status`/`effectHint`/`error`/`gateHint`) — Form → `POST/PUT`, Persistenz über Reload; kein Zahn. **State-mutierend.**
+- **A2 Agent hinzufügen / entfernen / Konfig ändern** (`agentmgmt/AgentManagementPanel.tsx`; `agentMgmt.addButton`/
+  `list`/`item.<id>.edit|remove|status`/`add.spawnHint`/`edit.effectHint`/`gateHint`) — kein Zahn (3 Zeilen); inkl.
+  „Neustart nötig"-Transparenz + Entfernen-Bestätigung/Folgenanzeige (→ B-4-Irreversibilität). **State-mutierend.**
+- **A8 Product-Lead** (`report/ProductLeadPanel.tsx` + `productLeadModel.ts`, **gelandet CYP-464 `885cf5f6`**) —
+  On-demand auslösen + Berichte ansehen; kein Zahn. **[korrigiert von „nicht gelandet"]**
+- **A7 Warden-Eskalationen** — **KEINE eigene Fläche**, sondern eine **Event-Familie** im gelandeten Event-Log
+  (`stall.escalated`→☂, 07/S11). Zahn = warden-Familie-Events rendern korrekt im Event-Log. **[korrigiert]**
+- **A6 Korrelations-Drilldown** (`showRun`/`showSession`, **Impl gelandet** in `eventlog/eventBrowse.ts`/CYP-452) —
+  nur der **Rig-Seed** (Events mit `correlationId`/`sessionId`) fehlt; Zahn feld-präsenz-gated. Landet als QA-on-
+  Merge mit **CYP-467**. **[korrigiert von „nicht gelandet"]**
 - **A3 Fenster-Manager** (Drag/Resize/Fokus/Z-Index, `windowmgr/WindowFrame.tsx`) — kein Zahn (nur Occlusion-Workaround genutzt, nie Verhalten assertiert).
 - **A3 Nachricht an Agenten senden** (Composer → `UserTurn` auf `/ws/agent`) — Composer sichtbar (phase1), aber **Sende-Verhalten ungetestet** (kommt am Session an / Echo).
 - **A6 Live-Tail „mit Pause"** — Mount/Status ✓, aber der **Autoscroll-Pin/Pause** (wegscrollen löst Follow) ungetestet.
 - **B-1 XSS an weiteren Sinks** — Event-Log-Detail ✓, aber **Agent-Transkript / Comm-Body / Agent-/Kanal-/Projekt-Namen** ungetestet.
 
-**🎫 Getrackt/deferred (Fläche NICHT gelandet oder eigenes Ticket — „kein Zahn" ist korrekt):**
-- **A6 Korrelations-Drilldown** (`showRun`/`showSession`) → **CYP-467** (Impl+Seed landen dort; Zahn als QA-on-Merge, feld-präsenz-gated).
-- **A7 Warden-Eskalationen** · **A8 Product-Lead (On-demand + Berichte)** — in web-ts **nicht gefunden** (nicht gelandet; Zahn deferred wie A6-Drilldown).
+**🎫 Getrackt/deferred (echt nicht gelandet / spätere Tier — „kein Zahn" ist korrekt):**
 - **[MP, staged]:** A1 Projekt-CRUD/Switcher · A4 Cross-Projekt-Kanal · A6 Projekt-Filter — spätere Tier / nicht gelandet.
 
 **🔓 Bekannte Gate-Lücken (schon benannt):** **B-2 CSP** (nicht gesetzt, Vorab-1) · **B-4 Negativ-Operator-Schutz**
