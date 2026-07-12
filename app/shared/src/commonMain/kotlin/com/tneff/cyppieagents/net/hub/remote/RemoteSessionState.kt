@@ -48,6 +48,14 @@ fun interface RelayDialer {
     suspend fun dial(hubId: String): RelayChannel
 }
 
+/**
+ * CYP-494 — a dial failure that carries the [RemoteFailure] the session should surface. A plain dial exception
+ * maps to the generic [RemoteFailure.RelayUnreachable]; a dialer that knows the typed cause (e.g. the CP said the
+ * hub is NOT_REGISTERED vs the relay is RELAY_UNAVAILABLE) throws this so the operator sees the RIGHT reason.
+ * Not a [kotlin.coroutines.cancellation.CancellationException] → it flows through the session's transient path.
+ */
+class RelayDialException(val failure: RemoteFailure) : Exception("relay dial failed: $failure")
+
 /** Resolves which hub static to handshake against — the TOFU decision (Slice 3 `HubKeyPin`, CI-1/CI-5). */
 fun interface HubTrust {
     suspend fun resolve(hubId: String): TrustResolution
