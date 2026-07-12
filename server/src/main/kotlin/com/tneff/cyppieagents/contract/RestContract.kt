@@ -113,6 +113,10 @@ object RestContract {
         Op("DELETE", "/api/agents/{id}/terminal-grants", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.TerminalGrantRequest>(), response = json<com.tneff.cyppieagents.model.TerminalGrants>()),
         // CYP-355 (BE-2): the hand-off trigger (mediated ↔ interactive). REJECTED is a 200 body (non-optimistic).
         Op("POST", "/api/agents/{id}/mode", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.ModeChangeRequest>(), response = json<com.tneff.cyppieagents.model.ModeChangeResponse>()),
+        // --- RendezvousRoutes (CYP-507, Phase-2 activation) — CP resolve/register of a hub's OPAQUE rendezvous.
+        //     INERT (typed failure) until CYPPIE_REMOTE_RELAY_URL; business outcome = 200 + typed body (mint idiom). ---
+        Op("GET", "/api/cp/rendezvous/{hubId}", Tier.OPERATOR, response = json<com.tneff.cyppieagents.controlplane.RendezvousResolveResponse>()),
+        Op("POST", "/api/cp/rendezvous/{hubId}", Tier.OPERATOR, response = json<com.tneff.cyppieagents.controlplane.RendezvousResolveResponse>()),
         // --- ConnectorRoutes ---
         Op("POST", "/api/agents/{id}/connector", Tier.OPERATOR, request = json<ConnectorChoice>(), response = json<Agent>()),
         // --- ConfigRoutes (/api/config) — masked at rest, never re-rendered ---
