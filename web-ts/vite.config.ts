@@ -10,4 +10,10 @@ export default defineConfig({
   plugins: [react()],
   server: { port: 8080, strictPort: true },
   preview: { port: 8080, strictPort: true },
+  // CYP-455 (CYP-422-prep) — CSP nonce seam. `modulePreload.polyfill=false` removes Vite's one PROD inline
+  // `<script>` (the module-preload polyfill), so the cutover CSP can keep `script-src` STRICT (no
+  // `unsafe-inline`) — the actual XSS defense. The only remaining inline script is the deploy-injected operator
+  // token in index.html, which carries a per-response `nonce` (seam documented there). The CSP header + nonce
+  // stamp are DEPLOY-owned and activated at cutover under Auftraggeber-GO — this is only the web-ts-side prep.
+  build: { modulePreload: { polyfill: false } },
 })
