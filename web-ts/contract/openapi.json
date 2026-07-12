@@ -1730,6 +1730,42 @@
                 }
             }
         },
+        "/api/connectors": {
+            "get": {
+                "operationId": "get_api_connectors",
+                "x-auth-tier": "PARTICIPANT",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConnectorsView"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/reports": {
             "get": {
                 "operationId": "get_api_reports",
@@ -3361,6 +3397,46 @@
                 "required": [
                     "ticket",
                     "expiresInMs"
+                ]
+            },
+            "ConnectorsView": {
+                "type": "object",
+                "properties": {
+                    "connectors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ConnectorDescriptor"
+                        }
+                    },
+                    "default": {
+                        "type": "string",
+                        "enum": [
+                            "stream_json",
+                            "mcp"
+                        ]
+                    }
+                },
+                "required": [
+                    "connectors"
+                ]
+            },
+            "ConnectorDescriptor": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "stream_json",
+                            "mcp"
+                        ]
+                    },
+                    "capabilities": {
+                        "$ref": "#/components/schemas/Capabilities"
+                    }
+                },
+                "required": [
+                    "kind",
+                    "capabilities"
                 ]
             },
             "ReportSnapshot": {

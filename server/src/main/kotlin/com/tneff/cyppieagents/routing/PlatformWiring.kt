@@ -171,6 +171,9 @@ fun Application.installPlatform(
             agentMgmtRoutes({ booted.runtimeRegistry.active().agentManagement }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-122: connector opt-in (operator-gated, audited); CYP-255 (.4b) caps from the ACTIVE project.
             connectorRoutes(booted.state, booted.tokenRegistry, { booted.runtimeRegistry.active().capabilityRegistry }, booted.connectorOptIn, authDeps, apiBase = apiBase)
+            // CYP-462: GET /api/connectors — the connector catalog + each kind's declared fidelity for the picker
+            // preview. PARTICIPANT read-tier, static, single-sourced from ConnectorRouter.capabilitiesForKind.
+            connectorCatalogRoutes(booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-89: Product-Lead reports — operator-gated/fail-closed, content-free.
             reportRoutes(booted.reportStore, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-91/CYP-102/CYP-255/CYP-259 (.4b): multi-project lifecycle + the switch ORCHESTRATION
