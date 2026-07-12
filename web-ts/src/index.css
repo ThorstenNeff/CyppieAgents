@@ -327,3 +327,50 @@ body,
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
 }
+
+/* CYP-453 (P2-f) — Settings level. TWO gate classes never mixed (§0): this panel holds only project config (repo +
+   framed API-key), both operator-gated present-but-disabled. Amber effect-hint = "saved ≠ active" (WARN role, never a
+   success-green — no green role exists); error = error role; gate/status = neutral. Colour never alone; no ellipsis on
+   disclosure/error/gate/status text (they wrap). Targets ≥24px. */
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-section label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-section input {
+  min-height: 24px; /* WCAG 2.5.8 */
+}
+.settings-repo-status,
+.settings-gate-hint {
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 0;
+  white-space: normal; /* disclosure/gate text wraps, never ellipsis */
+}
+.settings-error {
+  color: var(--md-sys-color-error);
+  margin: 0;
+  white-space: normal;
+}
+/* the shared "saved ≠ active" disclosure — amber (WARN tokens), points at the P2-a restart, never green. */
+.settings-effect-hint {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+  padding: 2px 6px;
+  white-space: normal;
+}
+.settings-repo-save,
+.settings-section button {
+  min-height: 24px;
+  align-self: flex-start;
+}

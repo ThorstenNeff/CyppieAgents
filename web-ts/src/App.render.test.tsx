@@ -42,6 +42,8 @@ const fakeRepo = (): HubRepo => ({
   createAgent: vi.fn().mockResolvedValue(undefined),
   updateAgent: vi.fn().mockResolvedValue(undefined),
   removeAgent: vi.fn().mockResolvedValue(undefined),
+  getRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false }),
+  putRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false }),
 })
 
 beforeEach(() => {
@@ -300,5 +302,17 @@ describe('App assembly (CYP-425)', () => {
     expect(await findByTestId('agentMgmt.panel')).toBeTruthy()
     expect(getByTestId('agentMgmt.item.backend')).toBeTruthy()
     expect(getByTestId('agentMgmt.item.backend.remove')).toBeTruthy()
+  })
+
+  it('the Settings window frames the repo section beside the API-key section (CYP-453)', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(await findByTestId('settings.panel')).toBeTruthy()
+    expect(getByTestId('settings.section.repo')).toBeTruthy() // CYP-453 repo section
+    expect(getByTestId('settings.section.apiKey')).toBeTruthy() // framed CYP-433 section
+    expect(getByTestId('settings.repo.url.input')).toBeTruthy()
   })
 })
