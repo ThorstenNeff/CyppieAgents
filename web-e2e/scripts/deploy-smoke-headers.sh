@@ -39,12 +39,13 @@ else
   echo "NOTE  1.4 no Set-Cookie on the landing response — verify at the Kratos login/callback step (guided)"
 fi
 
-# §1.1b login-redirect TERMINATES (no loop) — CYP-515 regression guard. A healthy unauth open makes a
-# BOUNDED number of hops to the Kratos-hosted login and SETTLES (final 200 login page). A redirect LOOP
-# (a fresh flow-id every hop) exhausts the follow cap → curl reports num_redirects at the cap and a non-2xx
-# final. This is exactly the [BLOCK] the Auftraggeber hit MANUALLY at the CYP-515 cutover — automated here so
-# a re-cut fails the gate before a human loops. (HTTP-level; a purely client/JS redirect loop needs the
-# browser step — see csp-probe.spec.ts / the guided §1.1.)
+# §1.1b login-redirect TERMINATES (no HTTP loop) — CYP-515 guard, HTTP-LOOP CLASS ONLY. A healthy unauth
+# open makes a BOUNDED number of HTTP hops to the Kratos login and SETTLES (final 200). An HTTP redirect
+# LOOP (a fresh flow-id every 30x hop) exhausts the follow cap → num_redirects at the cap + non-2xx final.
+# ⚠️ CYP-515 itself is a JS-level loop (`redirectToLogin()` via window.location, NOT a 30x chain): curl -L
+# follows the one 303 to `/?flow=`, gets SPA HTML (200), sees no HTTP loop → this check ALONE would pass
+# CYP-515 through. The JS-loop class is caught by the Playwright tooth §1.1c (deploy-smoke/login-loop.spec.ts).
+# Keep BOTH: §1.1b = HTTP-loop class · §1.1c = JS-navigation-loop class.
 redir="$(curl -sS -o /dev/null -L --max-redirs 12 -w '%{num_redirects} %{http_code}' "$URL" 2>/dev/null)"
 nred="${redir%% *}"; fcode="${redir##* }"
 if [ "${nred:-0}" -ge 12 ]; then
