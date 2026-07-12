@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.transport
 
+import com.tneff.cyppieagents.relay.RENDEZVOUS_HEADER
+import com.tneff.cyppieagents.relay.ROLE_HEADER
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.header
@@ -28,12 +30,18 @@ class WebSocketRelayDialer(
     private val rendezvousId: String,
 ) : RelayDialer {
     override suspend fun dial(relayUrl: String): ServerRelayChannel {
-        val session = client.webSocketSession(relayUrl) { header(RENDEZVOUS_HEADER, rendezvousId) }
+        // CYP-509: register at the relay as role=hub under the opaque rendezvous id — the CYP-506 relay pairs this
+        // with a role=client (Dev CYP-494). Headers single-sourced from the relay's own constants (no drift).
+        val session = client.webSocketSession(relayUrl) {
+            header(RENDEZVOUS_HEADER, rendezvousId)
+            header(ROLE_HEADER, HUB_ROLE)
+        }
         return RelayChannelOverWebSocket(session)
     }
 
     private companion object {
-        const val RENDEZVOUS_HEADER = "X-Cyppie-Rendezvous"
+        /** The relay parses `X-Cyppie-Role` as `hub`|`client`; the hub end is always `hub`. */
+        const val HUB_ROLE = "hub"
     }
 }
 
