@@ -1,12 +1,18 @@
 package com.tneff.cyppieagents.e2e
 
+import com.tneff.cyppieagents.events.EventDraft
+import com.tneff.cyppieagents.events.EventSink
+import com.tneff.cyppieagents.model.EventType
 import com.tneff.cyppieagents.model.ResultEvent
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.model.Severity
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 
 /**
@@ -32,6 +38,9 @@ object WebE2eSeed {
     const val SEED_EVENT_COUNT = 5
     const val DEFAULT_PORT = 8791
     const val PROJECT = "alpha"
+    // CYP-422 §A-P2-c XSS-at-detail probe: an HTML/JS payload placed in an Event-Log event's `detail`, so the
+    // parity tooth can prove the Event-Log renders `detail` INERT (escaped text, no element injected, no onerror).
+    const val XSS_PROBE = "<img src=x onerror=\"window.__xssFired=true\">"
 }
 
 fun main() {
@@ -42,6 +51,9 @@ fun main() {
     val fixture = if (fixtureFile.exists()) fixtureFile.readText()
     else "<!doctype html><meta charset=utf-8><title>web-e2e fixture missing</title><body>fixture not found at ${fixtureFile.absolutePath}"
 
+    // Assigned after the platform boots (below); the emit-xss route reads it at REQUEST time, by which point it is
+    // set (the route handler body never runs during setup).
+    var sinkHolder: EventSink? = null
     val platform = e2ePlatform(
         projects = listOf(
             SeedProject(
@@ -57,8 +69,24 @@ fun main() {
             ?: "http://127.0.0.1:8080,http://localhost:8080").split(",").map { it.trim() }.filter { it.isNotEmpty() },
         extraRoutes = {
             get("/") { call.respondText(fixture, ContentType.Text.Html) }
+            // CYP-422 §A-P2-c: emit the XSS-probe Event-Log event LIVE on demand. /ws/events streams live (no
+            // history replay), so the parity tooth connects first, then triggers this, then asserts inert render.
+            get("/test/emit-xss") {
+                sinkHolder?.append(
+                    EventDraft(
+                        agentId = WebE2eSeed.SEED_AGENT,
+                        projectId = WebE2eSeed.PROJECT,
+                        type = EventType.TOOL_RESULT,
+                        severity = Severity.INFO,
+                        sourceTs = 10L,
+                        detail = buildJsonObject { put("xssProbe", WebE2eSeed.XSS_PROBE) },
+                    ),
+                )
+                call.respondText("ok")
+            }
         },
     )
+    sinkHolder = platform.booted.eventSink
 
     // Deterministic seq corpus for the agent-events feed. Fixed content + increasing ts so the teeth can
     // assert exact seq ranges on `?since`. seq is assigned by the store (gapless, 1-based).

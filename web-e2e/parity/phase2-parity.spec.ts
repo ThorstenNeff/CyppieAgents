@@ -127,6 +127,28 @@ test.describe('A-P2-c · Event-Log — operator-only mount-gating', () => {
     await expect(page.locator('[data-testid="event-log"]')).toBeVisible();
     await expect(page.locator('[data-testid="event-log-status"]')).toBeVisible();
   });
+
+  test('operator: a detail-borne XSS payload renders INERT (B-1 sink — text, no element, no onerror)', async ({ page }) => {
+    // /ws/events streams LIVE (no history replay), so connect first, then emit the probe event live.
+    const eventsWs = page.waitForEvent('websocket', (ws) => ws.url().includes('/ws/events'));
+    await page.goto('/');
+    const log = page.locator('[data-testid="event-log"]');
+    await expect(log).toBeVisible();
+    await eventsWs; // the operator's /ws/events socket is open
+    await page.waitForTimeout(300); // let the server-side subscribe attach before we emit
+    // Trigger the harness to append one Event-Log event whose `detail` carries the XSS payload (server-side, direct
+    // to :8791 — not through the proxy, which only forwards /api + /ws).
+    const emit = await page.request.get('http://127.0.0.1:8791/test/emit-xss');
+    expect(emit.ok()).toBe(true);
+
+    // the live event arrives → a row; the payload is rendered as escaped TEXT (never swallowed → "onerror" present).
+    await expect(log.locator('[data-testid="event-log-rows"]')).toContainText('onerror');
+
+    // INERT (the discriminating pair): the payload's <img> was NOT parsed into a real element (escaped text only),
+    // and its onerror never ran. A `detail` rendered via innerHTML instead of a text child would fail BOTH.
+    await expect(log.locator('img')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as { __xssFired?: boolean }).__xssFired ?? false)).toBe(false);
+  });
 });
 
 memberTest.describe('A-P2-c · Event-Log — operator-only mount-gating (member gets NOTHING)', () => {
