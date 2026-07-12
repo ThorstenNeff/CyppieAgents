@@ -84,7 +84,7 @@ die früheren W6-Styling-Findings (Thumb-Alpha/senderAccent) sind **behoben + re
 ### §6 Observability (Event-Log)
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
 |---|---|---|---|---|
-| **Live-Tail (mit Pause)** | **K** | `eventlog/` | **✓ merged (CYP-432)** | `EventLogView.tsx`: Mount-Gating 4-schichtig fail-closed, Gap-Zeilen, Severity 3-Achsen. **QA-Rest CYP-448:** Pause + Palette-Bindung + Ring/Trim (deferred). Verdikt **=** (mit Nachzug) |
+| **Live-Tail (mit Pause)** | **K** | `eventlog/` | **✓ merged (CYP-432)** | `EventLogView.tsx`: Mount-Gating 4-schichtig fail-closed (= **Produkt-UX-Sichtbarkeit + defence-in-depth**, NICHT Secret-Grenze — die sitzt server-seitig, §2), Gap-Zeilen, Severity 3-Achsen. **QA-Rest CYP-448:** Pause + Palette-Bindung + Ring/Trim (deferred). Verdikt **=** (mit Nachzug) |
 | **Event-Log browsen** (Master-Detail, Filter) | **K** | `eventlog/` | **◐ spec'd CYP-452** | Browse-Fläche noch **nicht** gemergt: Master/Detail/Filter, server-Query, Error-schlägt-Empty. Impl pending |
 | **Korrelations-Drilldown** | **K** | `eventlog/` | **◐ spec'd CYP-452** | keine erfundene Korrelation (showRun⇔correlationId / showSession⇔sessionId). Impl pending |
 | Projekt-Filter im Event-Log | MP | `eventlog/` | — (MP) | nach K-Cutover |
@@ -120,8 +120,14 @@ die früheren W6-Styling-Findings (Thumb-Alpha/senderAccent) sind **behoben + re
 Aus `09` Querschnitt + Rollen-Regeln; das UX-Ehrlichkeits-Raster des Gates. **Der UX-Konsistenz-Pass (2026-07-12) hat 1–6
 über die 5 gemergten P2-Flächen geprüft** — Muster tragen surface-übergreifend; offene Politur → **CYP-468**.
 1. **Irreversibel = Bestätigung + klare Folgenanzeige** (Agent löschen: *was genau*; Repo-Discard: welche Agenten-Arbeit).
-2. **Operator-geschützt = present-but-disabled** (`aria-disabled` + Hinweis, kein Fake-Switch, CYP-317) **bzw. Omission
-   am Mount** wenn die Fläche Bodies trägt (Event-Log) — **je Datenbesitzer** (Konsistenz-Pass ✓).
+2. **Operator-geschützt = present-but-disabled** (`aria-disabled` + Hinweis, kein Fake-Switch, CYP-317).
+   **PRÄZISIERUNG (Reviewer/Tester 4-Quadranten-Check 2026-07-12, am Objekt bestätigt):** das **Event-Log** ist
+   **secret-free METADATA**, **keine** Operator-only-Bodies — `EventModel.detail` ist content-free (PRD §3.5), jedes
+   Event **vor Egress maskiert** (Gate #3, `EventProjector`), und `/api/events` ist **MEMBER-tier lesbar** (CYP-186,
+   `EventRoutes.kt:31`). Die **echte** Secret-/Scope-Grenze sitzt **server-seitig** (`resolveEventScope`
+   cross-project-Enum-Block + Masking-Gates). Der **client-seitige** Event-Log-Operator-Gate (App.tsx-Mount-Omission)
+   ist damit **Produkt-UX-Sichtbarkeit + defence-in-depth**, **NICHT** die Leak-Barriere. „Omission" bleibt korrektes
+   Client-Verhalten (Produkt-Scoping: Event-Log ist ein Operator-Feature), aber **nicht** als Secret-Boundary gerahmt.
 3. **API-Key nie im Klartext** (maskiert, letzte 4; auch nicht im `value`/DOM-Baum) — CYP-433 ✓.
 4. **Eingabe an Agenten = „Nachricht", keine Shell** — W5 ✓.
 5. **„Wirkt erst nach Neustart" transparent** — Effect-Hints **amber, nie grün** (Konsistenz-Pass ✓, eine WARN-Quelle).
