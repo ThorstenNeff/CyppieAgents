@@ -10,6 +10,8 @@ object RemoteConnectTags {
     const val RELAY_DIALING = "remote.connect.relayDialing"
     const val E2E_HANDSHAKE = "remote.connect.e2eHandshake"
     const val TRUST_CHECK = "remote.connect.trustCheck"
+    /** CYP-475 §-QA①: the provisional-trust disclosure at trust-check while real pinning (dhPubKey) is RR5-downstream. */
+    const val TRUST_PROVISIONAL = "remote.connect.trustProvisional"
     const val AUTHENTICATING = "remote.connect.authenticating"
     const val CONNECTED = "remote.connect.connected"
     /** The single workspace-scoped relay-drop / reconnecting surface (H4) — not N per-agent chips. */

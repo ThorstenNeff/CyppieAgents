@@ -28,6 +28,8 @@ import com.tneff.cyppieagents.agentview.formatLocalHhMm
 import com.tneff.cyppieagents.agentview.platformTranscriptClock
 import com.tneff.cyppieagents.auth.AuthFormCard
 import com.tneff.cyppieagents.auth.AuthTitle
+import com.tneff.cyppieagents.eventlog.severityColor
+import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
@@ -43,6 +45,7 @@ import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_diali
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dropped
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_unreachable
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_changed
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_provisional
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_check
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_hubconnect_presence
@@ -202,8 +205,17 @@ internal fun RemoteConnectingView(hub: HubDescriptor, remote: RemoteSessionState
                 InProgress(stringResource(Res.string.remote_connect_relay_dialing), RemoteConnectTags.RELAY_DIALING)
             RemoteConnState.E2E_HANDSHAKE ->
                 InProgress(stringResource(Res.string.remote_connect_e2e_handshake), RemoteConnectTags.E2E_HANDSHAKE)
-            RemoteConnState.TRUST_CHECK ->
+            RemoteConnState.TRUST_CHECK -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 InProgress(stringResource(Res.string.remote_connect_trust_check), RemoteConnectTags.TRUST_CHECK)
+                // CYP-475 §-QA①: honest, USER-VISIBLE provisional disclosure — the trust-check does NOT yet do real
+                // pinning (dhPubKey is RR5-downstream), so it must not over-say "verified". Neutral onSurfaceVariant.
+                Text(
+                    stringResource(Res.string.remote_connect_trust_provisional),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag(RemoteConnectTags.TRUST_PROVISIONAL),
+                )
+            }
             RemoteConnState.AUTHENTICATING ->
                 InProgress(stringResource(Res.string.remote_connect_authenticating), RemoteConnectTags.AUTHENTICATING)
             RemoteConnState.RECONNECTING ->
@@ -227,9 +239,20 @@ internal fun RemoteConnectingView(hub: HubDescriptor, remote: RemoteSessionState
 @Composable
 private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectViewModel) {
     when (failure) {
-        is RemoteFailure.TrustChanged -> TonedHint(
-            stringResource(Res.string.remote_connect_trust_changed), HintTone.ERROR, RemoteConnectTags.error("trustChanged"),
-        )
+        is RemoteFailure.TrustChanged -> Row(
+            modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.error("trustChanged")),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // CYP-475 §-QA②: a key change is a verify-OOB ALARM (WARN-amber), NOT "broken" (error-red) — form (▲) +
+            // colour + label (WCAG 1.4.1). Terminal / no-retry stays (no retry button here — the fail-closed hard block).
+            Text("▲ ", color = severityColor(Severity.WARN))
+            Text(
+                stringResource(Res.string.remote_connect_trust_changed),
+                color = severityColor(Severity.WARN),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         RemoteFailure.AuthRejected -> TonedHint(
             stringResource(Res.string.remote_connect_auth_rejected), HintTone.ERROR, RemoteConnectTags.error("authRejected"),
         )

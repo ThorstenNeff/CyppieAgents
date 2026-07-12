@@ -692,4 +692,5 @@
     <string name="remote_connect_relay_unreachable">Relay nicht erreichbar.</string>
     <string name="remote_connect_hub_offline">Hub ist offline.</string>
     <string name="remote_connect_handshake_failed">E2E-Handshake fehlgeschlagen.</string>
+    <string name="remote_connect_trust_provisional">Vertrauensprüfung vorläufig — echtes Pinnen folgt.</string>
 </resources>
