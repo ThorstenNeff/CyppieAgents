@@ -20,5 +20,13 @@ export const test = base.extend({
   },
 });
 
+/**
+ * Member/public posture — NO operator token injected, so `isOperatorServe()` is false (fail-closed member serve).
+ * Same-origin still applies (the Vite proxy; no API/WS global needed). Used for the operator-gating discriminators
+ * (event-log omitted, lifecycle/api-key present-but-disabled) — without this the operator-positive tests don't
+ * prove the gate.
+ */
+export const memberTest = base;
+
 export { expect };
 export const SEED = { OPERATOR_TOKEN, AGENT: 'backend', CHANNEL: 'po-backend' };
