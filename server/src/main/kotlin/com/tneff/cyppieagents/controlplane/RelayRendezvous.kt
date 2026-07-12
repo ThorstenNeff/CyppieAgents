@@ -17,6 +17,10 @@ interface RelayRendezvous {
     /** Client side (by `hubId`): resolve this hub's current rendezvous; null when there is none. */
     fun resolve(hubId: String): RendezvousBinding?
 
+    /** Whether a live relay is configured (the Phase-2 activation gate is on). Lets the endpoint tell
+     *  `RELAY_UNAVAILABLE` (INERT) apart from `NOT_REGISTERED` (live, but this hub has no rendezvous). */
+    fun isLive(): Boolean
+
     companion object {
         /** RR4 opaque id: `base64url(SHA-256(hubId ‖ epoch))` — the relay sees only this, never `hubId`. The
          *  [rendezvousEpoch] is **per-registration**: a new registration rotates the id (unlinkable across
@@ -31,11 +35,11 @@ interface RelayRendezvous {
     }
 }
 
-/** The opaque rendezvous binding both ends receive from the CP (the relay never sees [RelayRendezvous]'s `hubId`). */
-data class RendezvousBinding(val rendezvousId: String, val relayUrl: String)
+// [RendezvousBinding] is the :core client↔CP wire contract (CYP-507) — same package, single-sourced there.
 
 /** INERT default: no live rendezvous (register/resolve yield null). The current server is unchanged. */
 object InertRelayRendezvous : RelayRendezvous {
     override fun register(hubId: String): RendezvousBinding? = null
     override fun resolve(hubId: String): RendezvousBinding? = null
+    override fun isLive(): Boolean = false
 }

@@ -64,6 +64,14 @@ fun Application.installPlatform(
     val terminalDelegationEnabled = System.getenv("CYPPIE_TERMINAL_DELEGATION_ENABLED")?.toBooleanStrictOrNull() ?: false
     val terminalGrantsAdmin: InMemoryTerminalGrants? = if (terminalDelegationEnabled) InMemoryTerminalGrants() else null
     val terminalGrants: TerminalGrantStore = terminalGrantsAdmin ?: NoTerminalGrants
+    // CYP-507 (Epic CYP-427 activation): the CP-side rendezvous seam. INERT (InertRelayRendezvous → resolve 404 /
+    // register 503) until the SAME activation gate as the transport (CYPPIE_REMOTE_RELAY_URL) is set, then
+    // LiveRelayRendezvous (per-registration CP-secret epoch → opaque id). Constructed ONCE — one shared epoch store
+    // so register→resolve round-trips.
+    val relayRendezvous: com.tneff.cyppieagents.controlplane.RelayRendezvous =
+        System.getenv("CYPPIE_REMOTE_RELAY_URL")?.takeIf { it.isNotBlank() }
+            ?.let { com.tneff.cyppieagents.controlplane.LiveRelayRendezvous(it) }
+            ?: com.tneff.cyppieagents.controlplane.InertRelayRendezvous
     routing {
         // ── WS + MCP transports — NOT versioned; single-mount, OUTSIDE the /api-prefix loop (they are not
         //    `/api` REST resources: `/ws/*` are sockets, `/mcp/hub` is the connector wire, design §2.5). ──
@@ -163,6 +171,9 @@ fun Application.installPlatform(
             terminalGrantRoutes(terminalGrantsAdmin, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-355 (BE-2): the hand-off trigger — POST /api/agents/{id}/mode on the ACTIVE project's motor.
             modeRoutes({ booted.runtimeRegistry.active().handoff }, booted.tokenRegistry, authDeps, apiBase = apiBase)
+            // CYP-507 (activation): CP rendezvous register/resolve over the RelayRendezvous seam. INERT (404/503)
+            // until CYPPIE_REMOTE_RELAY_URL is set. Operator-gated (register-auth envelope flagged for sign-off).
+            rendezvousRoutes({ relayRendezvous }, booted.tokenRegistry, authDeps, apiBase = apiBase)
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
             configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
             // CYP-466: GET /api/config/repo/reprovision-preview — the honest discard-confirm feed. Operator-tier,

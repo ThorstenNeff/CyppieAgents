@@ -1002,6 +1002,76 @@
                 }
             }
         },
+        "/api/cp/rendezvous/{hubId}": {
+            "get": {
+                "operationId": "get_api_cp_rendezvous__hubId_",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RendezvousResolveResponse"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "operationId": "post_api_cp_rendezvous__hubId_",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RendezvousResolveResponse"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/agents/{id}/connector": {
             "post": {
                 "operationId": "post_api_agents__id__connector",
@@ -2995,6 +3065,46 @@
                 "required": [
                     "agentId",
                     "state"
+                ]
+            },
+            "RendezvousResolveResponse": {
+                "type": "object",
+                "properties": {
+                    "binding": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/RendezvousBinding"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "failure": {
+                        "enum": [
+                            "NOT_REGISTERED",
+                            "RELAY_UNAVAILABLE"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "RendezvousBinding": {
+                "type": "object",
+                "properties": {
+                    "rendezvousId": {
+                        "type": "string"
+                    },
+                    "relayUrl": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "rendezvousId",
+                    "relayUrl"
                 ]
             },
             "ConnectorChoice": {
