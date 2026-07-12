@@ -27,6 +27,7 @@ import { AgentWindow } from './AgentWindow'
 import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
 import { EventLogView } from './eventlog/EventLogView'
+import { EventBrowsePanel } from './eventlog/EventBrowsePanel'
 import { useEventLogStore } from './eventlog/eventLogStore'
 import { tailView } from './eventlog/eventLog'
 import { AgentManagementPanel } from './agentmgmt/AgentManagementPanel'
@@ -43,6 +44,7 @@ const AGENT_PREFIX = 'agent:'
 const ACL_WINDOW_ID = 'acl'
 const COMM_WINDOW_ID = 'comm'
 const EVENT_WINDOW_ID = 'events'
+const EVENT_BROWSE_WINDOW_ID = 'eventBrowse'
 const SETTINGS_WINDOW_ID = 'settings'
 const AGENT_MGMT_WINDOW_ID = 'agentMgmt'
 
@@ -184,6 +186,9 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     if (agents.length > 0 && !present.has(ACL_WINDOW_ID)) wm.add(tiledWindow(ACL_WINDOW_ID, 'Zugriffsrechte (ACL)', index++), false)
     // CYP-432: the event log is OPERATOR-ONLY — a non-operator gets no event window at all (no bodies surface).
     if (agents.length > 0 && cfg.operator && !present.has(EVENT_WINDOW_ID)) wm.add(tiledWindow(EVENT_WINDOW_ID, 'Ereignis-Protokoll', index++), true)
+    // CYP-452: Browse is the same operator-gated bodies as the live-tail → OPERATOR-ONLY window (omission for a
+    // non-operator; no Browse route, no /api/events query, no bodies in the DOM — CYP-432 leak parity).
+    if (agents.length > 0 && cfg.operator && !present.has(EVENT_BROWSE_WINDOW_ID)) wm.add(tiledWindow(EVENT_BROWSE_WINDOW_ID, 'Ereignis-Browser', index++), false)
     // CYP-433: the settings/API-key window is present for EVERYONE (present-but-disabled) — the masked status leaks
     // nothing; the panel gates editing on operator internally.
     if (agents.length > 0 && !present.has(SETTINGS_WINDOW_ID)) wm.add(tiledWindow(SETTINGS_WINDOW_ID, 'Einstellungen', index++), false)
@@ -316,6 +321,17 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           onTogglePause={toggleEventsPause}
         />
       )
+    }
+    if (win.id === EVENT_BROWSE_WINDOW_ID) {
+      // CYP-452 defence-in-depth: like the event log, never render the bodies-carrying Browse for a non-operator.
+      if (!cfg.operator) {
+        return (
+          <p className="event-log-operator-only" data-testid="event-browse-operator-only">
+            Der Ereignis-Browser ist nur für Operatoren verfügbar.
+          </p>
+        )
+      }
+      return <EventBrowsePanel getEvents={(f, after, limit) => hubRepo.getEvents(f, after, limit)} agentIds={roster.map((a) => a.id)} />
     }
     if (win.id === COMM_WINDOW_ID) {
       const messages = [...(messagesByChannel.get(selectedChannelId ?? '') ?? [])].sort(byTs)

@@ -24,6 +24,7 @@ const repoWith = (putAcl: HubRepo['putAcl']): HubRepo => ({
   removeAgent: vi.fn(),
   getRepoConfig: vi.fn(),
   putRepoConfig: vi.fn(),
+  getEvents: vi.fn(),
 })
 
 describe('commitAclChange (CYP-435 — pending lifecycle)', () => {

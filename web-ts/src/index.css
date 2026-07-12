@@ -374,3 +374,95 @@ body,
   min-height: 24px;
   align-self: flex-start;
 }
+
+/* CYP-452 (P2-c.2) — Event-Log Browse. Two-pane on wide, stacks on narrow (native flex-wrap, no skiko seam). Reuses
+   the shared .event-row + severity tokens (one source, spec §7). Cues (filterActive/crossProject) = text+role, colour
+   never alone; error/revoked = error role; no ellipsis on disclosure text. Targets ≥24px. */
+.event-browse {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 6px;
+}
+.event-browse-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.event-browse-filterbar button {
+  min-height: 24px;
+}
+.event-browse-filter-active,
+.event-browse-cross-project {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: normal;
+}
+.event-browse-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+.event-browse-master {
+  flex: 1.4 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.event-browse-table {
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.event-browse-detail {
+  flex: 1 1 240px;
+  min-width: 0;
+  border-left: 1px solid var(--md-sys-color-outline);
+  padding-left: 8px;
+  overflow: auto;
+}
+.event-row-selectable {
+  cursor: pointer;
+}
+.event-browse-json {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 6px;
+  border-radius: 4px;
+  max-height: 40%;
+  overflow: auto;
+}
+.event-browse-source-ts,
+.event-browse-detail-meta {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.event-browse-error {
+  color: var(--md-sys-color-error);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  white-space: normal;
+}
+.event-browse-revoked {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  padding: 4px 8px;
+  white-space: normal;
+}
+.event-browse-drill-actions,
+.event-browse-more,
+.event-browse-back {
+  min-height: 24px;
+}
+.event-browse-drill-actions {
+  display: flex;
+  gap: 8px;
+}

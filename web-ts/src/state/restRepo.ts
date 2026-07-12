@@ -15,7 +15,9 @@ import type {
   AgentEdit,
   RepoConfigView,
   RepoConfigRequest,
+  EventPage,
 } from '../types/generated/contract'
+import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
 
 /** CYP-426 interim: `:core` TerminalMode. The server maps this to the terminal-control state machine. */
 export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
@@ -68,6 +70,9 @@ export interface HubRepo {
   /** CYP-453. PUT /api/config/repo (operator) — save url/branch. Non-optimistic: takes effect on new worktrees / next
    *  boot (the caller shows the amber effect-hint). Reject: invalid_repo_url — surfaced from the RestError. */
   putRepoConfig(req: RepoConfigRequest): Promise<RepoConfigView>
+  /** CYP-452. GET /api/events?<filter>&afterSeq&limit — seq-paged historical Browse. The filter is applied
+   *  SERVER-side (never a client post-filter); returns EventPage { events, nextAfterSeq?, hasMore }. */
+  getEvents(filter: EventFilter, afterSeq: number | null, limit: number): Promise<EventPage>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -130,5 +135,8 @@ export class RestHubRepo implements HubRepo {
   }
   putRepoConfig(req: RepoConfigRequest): Promise<RepoConfigView> {
     return this.rest.put<RepoConfigView>('/api/config/repo', req)
+  }
+  getEvents(filter: EventFilter, afterSeq: number | null, limit: number): Promise<EventPage> {
+    return this.rest.get<EventPage>(`/api/events${buildEventsQuery(filter, afterSeq, limit)}`)
   }
 }
