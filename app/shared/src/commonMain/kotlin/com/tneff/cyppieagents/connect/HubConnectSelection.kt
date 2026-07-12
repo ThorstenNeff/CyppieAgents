@@ -196,39 +196,74 @@ internal fun ConnectingView(hub: HubDescriptor, progress: ConnectProgress, viewM
     }
 }
 
-// --- CYP-471 §7 — remote (Noise-E2E) connect states; renders RemoteSessionState (LIVE only on real CONNECTED) ---
+/**
+ * CYP-482 S-B §9 mount data for the FirstUse OOB-confirm screen at TRUST_CHECK. **Seam-gated:** the real
+ * [hubDhPubKey] (CYP-495 `HubDescriptor.dhPubKey`) + [onConfirm]/[onReject] (→ `PendingOobConfirmations`
+ * approve/reject over the live feed / trust layer) come from the RR5 live-feed; `null` ⇒ the provisional
+ * spinner (INERT, byte-identical to today) until the runway lands.
+ */
+class OobConfirmMount(
+    val hubDhPubKey: ByteArray,
+    val onConfirm: () -> Unit,
+    val onReject: () -> Unit,
+)
+
+// --- CYP-471 §7 — remote (Noise-E2E) connect states; renders RemoteSessionState (LIVE only on real CONNECTED).
+//     CYP-482 S-B §9: the 3 screen mounts (OOB-confirm @ TRUST_CHECK / PoP @ AUTHENTICATING / revoke @ CONNECTED)
+//     ride as OPTIONAL seam params — null (the current callers) ⇒ INERT, byte-identical; the RR5 live-feed
+//     provides the real data. Render-at-state is testable now; the real state sources stay seams. ---
 @Composable
-internal fun RemoteConnectingView(hub: HubDescriptor, remote: RemoteSessionState, viewModel: HubConnectViewModel) {
+internal fun RemoteConnectingView(
+    hub: HubDescriptor,
+    remote: RemoteSessionState,
+    viewModel: HubConnectViewModel,
+    oobConfirm: OobConfirmMount? = null,
+    popPrompt: (@Composable () -> Unit)? = null,
+    onEndSession: (() -> Unit)? = null,
+) {
     HubCard {
         when (remote.conn) {
             RemoteConnState.RELAY_DIALING ->
                 InProgress(stringResource(Res.string.remote_connect_relay_dialing), RemoteConnectTags.RELAY_DIALING)
             RemoteConnState.E2E_HANDSHAKE ->
                 InProgress(stringResource(Res.string.remote_connect_e2e_handshake), RemoteConnectTags.E2E_HANDSHAKE)
-            RemoteConnState.TRUST_CHECK -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                InProgress(stringResource(Res.string.remote_connect_trust_check), RemoteConnectTags.TRUST_CHECK)
-                // CYP-475 §-QA①: honest, USER-VISIBLE provisional disclosure — the trust-check does NOT yet do real
-                // pinning (dhPubKey is RR5-downstream), so it must not over-say "verified". Neutral onSurfaceVariant.
-                Text(
-                    stringResource(Res.string.remote_connect_trust_provisional),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.testTag(RemoteConnectTags.TRUST_PROVISIONAL),
-                )
-            }
+            RemoteConnState.TRUST_CHECK ->
+                // CYP-482 S-B §9: FirstUse ⇒ the mandatory OOB-confirm screen (real fingerprint). Seam null ⇒ the
+                // provisional spinner (INERT) — the trust-check doesn't yet do real pinning until the live feed lands.
+                if (oobConfirm != null) {
+                    OobFingerprintConfirmScreen(hub.name, oobConfirm.hubDhPubKey, oobConfirm.onConfirm, oobConfirm.onReject)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        InProgress(stringResource(Res.string.remote_connect_trust_check), RemoteConnectTags.TRUST_CHECK)
+                        // CYP-475 §-QA①: honest, USER-VISIBLE provisional disclosure — must not over-say "verified".
+                        Text(
+                            stringResource(Res.string.remote_connect_trust_provisional),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag(RemoteConnectTags.TRUST_PROVISIONAL),
+                        )
+                    }
+                }
             RemoteConnState.AUTHENTICATING ->
-                InProgress(stringResource(Res.string.remote_connect_authenticating), RemoteConnectTags.AUTHENTICATING)
+                // CYP-482 S-B §4: the PoP prompt inline. Seam null ⇒ the neutral spinner (INERT); the a∧b∧c
+                // enforcement (CpJwt ∧ DevicePoP) lands with CYP-459, so this only PRESENTS the prompt for now.
+                if (popPrompt != null) popPrompt() else InProgress(stringResource(Res.string.remote_connect_authenticating), RemoteConnectTags.AUTHENTICATING)
             RemoteConnState.RECONNECTING ->
                 // H4: ONE neutral relay-drop/reconnect surface (never alarm-red); in-flight honestly uncertain.
                 InProgress(stringResource(Res.string.remote_connect_relay_dropped), RemoteConnectTags.RELAY_DROP)
-            RemoteConnState.CONNECTED -> Row(
-                modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.CONNECTED),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // LIVE only — `●`+`primary`, reached ONLY on RemoteConnState.CONNECTED (never before).
-                Text("● ", color = MaterialTheme.colorScheme.primary)
-                Text(stringResource(Res.string.remote_connect_connected), color = MaterialTheme.colorScheme.onSurface)
+            RemoteConnState.CONNECTED -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.CONNECTED),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // LIVE only — `●`+`primary`, reached ONLY on RemoteConnState.CONNECTED (never before).
+                    Text("● ", color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(Res.string.remote_connect_connected), color = MaterialTheme.colorScheme.onSurface)
+                }
+                // CYP-482 S-B §6: the "end remote session" control (guaranteed local teardown). Seam null ⇒ absent
+                // (INERT) — the live wiring passes `viewModel::backToHubList` when a real session is connected.
+                onEndSession?.let { RemoteRevokeControl(onEndSession = it) }
             }
             RemoteConnState.LOST -> RemoteFailureView(remote.failure, viewModel)
         }
