@@ -1117,6 +1117,87 @@
                 }
             }
         },
+        "/api/cp/challenge": {
+            "get": {
+                "operationId": "get_api_cp_challenge",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HubChallenge"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/cp/admit": {
+            "post": {
+                "operationId": "post_api_cp_admit",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HubAdmissionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HubAdmissionResult"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/agents/{id}/connector": {
             "post": {
                 "operationId": "post_api_agents__id__connector",
@@ -3187,6 +3268,90 @@
                         ]
                     }
                 }
+            },
+            "HubChallenge": {
+                "type": "object",
+                "properties": {
+                    "nonce": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "nonce"
+                ]
+            },
+            "HubAdmissionRequest": {
+                "type": "object",
+                "properties": {
+                    "registration": {
+                        "$ref": "#/components/schemas/HubRegistration"
+                    },
+                    "nonce": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "registration",
+                    "nonce"
+                ]
+            },
+            "HubRegistration": {
+                "type": "object",
+                "properties": {
+                    "hubId": {
+                        "type": "string"
+                    },
+                    "ownerId": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "defaultPort": {
+                        "type": "integer"
+                    },
+                    "signingPubKey": {
+                        "type": "string"
+                    },
+                    "dhPubKey": {
+                        "type": "string"
+                    },
+                    "pop": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "hubId",
+                    "ownerId",
+                    "name",
+                    "defaultPort",
+                    "signingPubKey",
+                    "dhPubKey",
+                    "pop"
+                ]
+            },
+            "HubAdmissionResult": {
+                "type": "object",
+                "properties": {
+                    "admitted": {
+                        "type": "boolean"
+                    },
+                    "hubId": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "admitted"
+                ]
             },
             "ConnectorChoice": {
                 "type": "object",
