@@ -550,3 +550,53 @@ body,
   min-height: 24px;
   align-self: flex-start;
 }
+
+/* CYP-465 (P2-h) — repo re-provision work-guard + discard confirmation. pending ≠ applied (amber "steht an"); the
+   discard danger is AMBER attention (WARN role), never error-red (a0/CYP-385) — a real request error stays error-red.
+   Discard is never a plain checkbox: arming opens the alertdialog. No ellipsis on pending/warn/at-risk text. ≥24px. */
+.settings-reprovision-pending {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+  padding: 2px 6px;
+  white-space: normal;
+}
+.settings-discard-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.settings-discard-toggle input {
+  min-width: 24px;
+  min-height: 24px;
+}
+.settings-discard-dialog {
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* danger disclosure = amber attention, NOT error-red (it's a chosen thing's consequence). */
+.settings-discard-warning,
+.settings-discard-advisory {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  margin: 0;
+  padding: 2px 6px;
+  white-space: normal;
+}
+.settings-discard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-discard-actions button {
+  min-height: 24px;
+}
+/* the destructive confirm — error-toned + clearly named. */
+.settings-discard-confirm {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}

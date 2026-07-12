@@ -15,6 +15,7 @@ import type {
   AgentEdit,
   RepoConfigView,
   RepoConfigRequest,
+  ReprovisionPreview,
   EventPage,
   ConnectorsView,
   ReportSnapshot,
@@ -71,9 +72,13 @@ export interface HubRepo {
   /** CYP-453. GET /api/config/repo (participant) — the project repo config { configured, url?, branch?, … }. Drives
    *  the honest "unset → agents can't start" status + prefills the operator-only inputs. */
   getRepoConfig(): Promise<RepoConfigView>
-  /** CYP-453. PUT /api/config/repo (operator) — save url/branch. Non-optimistic: takes effect on new worktrees / next
-   *  boot (the caller shows the amber effect-hint). Reject: invalid_repo_url — surfaced from the RestError. */
+  /** CYP-453. PUT /api/config/repo (operator) — save url/branch (+ CYP-465 discardUnpushed). Non-optimistic: takes
+   *  effect on new worktrees / next boot (the caller shows the amber effect-hint). Reject: invalid_repo_url. */
   putRepoConfig(req: RepoConfigRequest): Promise<RepoConfigView>
+  /** CYP-465/466 (operator). GET /api/config/repo/reprovision-preview — the LIVE at-risk agents ({ reprovisionPending,
+   *  atRisk:[{worktree,uncommitted,unpushed}] }). Fetched FRESH each time the discard dialog opens, NEVER cached — the
+   *  operator confirms the loss they can SEE at that moment (§3). */
+  getReprovisionPreview(): Promise<ReprovisionPreview>
   /** CYP-452. GET /api/events?<filter>&afterSeq&limit — seq-paged historical Browse. The filter is applied
    *  SERVER-side (never a client post-filter); returns EventPage { events, nextAfterSeq?, hasMore }. */
   getEvents(filter: EventFilter, afterSeq: number | null, limit: number): Promise<EventPage>
@@ -153,6 +158,9 @@ export class RestHubRepo implements HubRepo {
   }
   putRepoConfig(req: RepoConfigRequest): Promise<RepoConfigView> {
     return this.rest.put<RepoConfigView>('/api/config/repo', req)
+  }
+  getReprovisionPreview(): Promise<ReprovisionPreview> {
+    return this.rest.get<ReprovisionPreview>('/api/config/repo/reprovision-preview')
   }
   getEvents(filter: EventFilter, afterSeq: number | null, limit: number): Promise<EventPage> {
     return this.rest.get<EventPage>(`/api/events${buildEventsQuery(filter, afterSeq, limit)}`)

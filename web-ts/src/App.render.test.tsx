@@ -44,6 +44,7 @@ const fakeRepo = (): HubRepo => ({
   removeAgent: vi.fn().mockResolvedValue(undefined),
   getRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false }),
   putRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false }),
+  getReprovisionPreview: vi.fn().mockResolvedValue({ reprovisionPending: false, atRisk: [] }),
   getEvents: vi.fn().mockResolvedValue({ events: [], hasMore: false }),
   getConnectors: vi.fn().mockResolvedValue({ connectors: [{ kind: 'stream_json', capabilities: { structuredUsage: 'available', toolGranularity: 'available', reliableResult: 'available', rateLimitSignal: 'available', coordination: 'available', kind: 'stream_json' } }, { kind: 'mcp', capabilities: { structuredUsage: 'limited', toolGranularity: 'limited', reliableResult: 'limited', rateLimitSignal: 'unavailable', coordination: 'limited', kind: 'mcp' } }], default: 'stream_json' }),
   setConnector: vi.fn().mockResolvedValue(undefined),

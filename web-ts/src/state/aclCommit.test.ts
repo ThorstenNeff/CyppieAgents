@@ -24,6 +24,7 @@ const repoWith = (putAcl: HubRepo['putAcl']): HubRepo => ({
   removeAgent: vi.fn(),
   getRepoConfig: vi.fn(),
   putRepoConfig: vi.fn(),
+  getReprovisionPreview: vi.fn(),
   getEvents: vi.fn(),
   getConnectors: vi.fn(),
   setConnector: vi.fn(),
