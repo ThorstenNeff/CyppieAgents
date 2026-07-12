@@ -10,7 +10,7 @@ import com.tneff.cyppieagents.net.hub.operator.UserVerification
 import com.tneff.cyppieagents.net.hub.operator.UvOutcome
 import com.tneff.cyppieagents.net.hub.remote.RelayDialer
 import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
-import com.tneff.cyppieagents.net.hub.trust.MapPresentedHubKeySource
+import com.tneff.cyppieagents.net.hub.trust.RegistryPresentedHubKeySource
 import com.tneff.cyppieagents.net.hub.trust.PendingOobConfirmations
 import com.tneff.cyppieagents.net.hub.trust.TofuHubTrust
 import com.tneff.cyppieagents.net.hub.trust.defaultPinnedHubStore
@@ -25,7 +25,8 @@ actual fun remoteHubEnabled(): Boolean =
  * trust, and operator-auth are all constructed; the still-gated pieces are explicit **fail-closed seams** (the
  * CYP-486 Client-Remote-Runway), so even a flipped flag connects to **nothing**:
  *  - runway #1 [RelayDialer] → throws (no client rendezvous yet) ⇒ every connect fails at dial (RelayUnreachable);
- *  - runway #2 presented-key → empty [MapPresentedHubKeySource] (client `HubDescriptor` has no `dhPubKey`) ⇒ trust fail-closed;
+ *  - runway #2 presented-key → **FILLED (CYP-495)**: [RegistryPresentedHubKeySource] decodes the hub's `dhPubKey`
+ *    (base64→32B, fail-safe → null on absent/malformed) ⇒ trust pins/compares a real key;
  *  - runway #4 [CpJwtProvider] → `null` (S-K hubTicket deferred) ⇒ operator-auth fail-closed.
  * The nonce source (runway #3) IS built here (jvm `SecureRandom`). Never a fake success — real only when the runway lands.
  */
@@ -36,7 +37,7 @@ actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? =
             transport = NoiseJavaClientTransport(),
             dialer = gatedRelayDialer,
             trust = TofuHubTrust(
-                presentedKeys = MapPresentedHubKeySource(), // runway #2: no client dhPubKey yet
+                presentedKeys = RegistryPresentedHubKeySource.of(hub), // CYP-495: real dhPubKey (runway #2 filled)
                 store = defaultPinnedHubStore(),
                 confirmer = PendingOobConfirmations(),
             ),
