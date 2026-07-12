@@ -27,11 +27,13 @@ Session-Gate**. Der **Verlust**: die branded in-app Login/Register/Reset-UX (der
 ein Kontext-/Brand-Wechsel). Der **Gewinn**: web-ts fasst **nie** Credentials an — kleinere Angriffsfläche, keine
 Enumeration-Safety-/Rate-Limit-Last im DOM.
 
-> **Meine Empfehlung: redirect-only behalten** (PO1s Wahl — sicherer + server-supported). **Eskalations-Frage:** ist
-> **branded in-app Login/Signup** ein Produkt-Muss für die Web-Fläche? Dann *braucht* es Credential-Touch (anderer
-> Scope). Default dieser Spec = redirect-only. **Eine Sub-Frage** (§2): der Verify-Email-Zustand — Kratos-hosted-Redirect
-> **oder** ein dünner web-ts-„E-Mail bestätigen"-Gate? Ich empfehle den dünnen web-ts-Gate (ehrlicher als ein stiller
-> Redirect-Loop).
+> **Meine Empfehlung: redirect-only behalten** (PO1s Wahl — sicherer + server-supported). **STATUS 2026-07-12:**
+> redirect-only ist der **PO-Arbeits-Default** (diese Spec läuft darauf); der branded-vs-redirect-Trade-off (deliberate
+> Divergenz vom „voller Ersatz") ist **an den Auftraggeber eskaliert** (me + PO1 + PO empfehlen redirect-only). Fällt
+> die Auftraggeber-Entscheidung auf branded Web-Login, ist das ein **anderer Scope** (Credential-Touch) — dann liefere
+> ich den nach.
+> **Sub-Frage GELÖST (PO 2026-07-12):** der Verify-Email-Zustand = **dünner web-ts-Verify-Gate** (meine Empfehlung —
+> ehrlicher als ein stiller Redirect-Loop), **nicht** Kratos-Redirect. Siehe §2.
 
 ---
 
@@ -55,7 +57,7 @@ Unverified-Email fürs Gate). `SessionState`: `None` / `Unverified(email)` / `Ac
 | Zustand | Bedingung | web-ts-UX |
 |---|---|---|
 | **None** (unauth) | kein gültiges Cookie / `authenticated=false` | **Redirect zum Kratos-Login-Flow** (self-service Login-URL, CYP-176-Config). Zwischenschirm „Weiterleitung zur Anmeldung…" (**kein Formular**), dann bounce. |
-| **Unverified(email)** | `authenticated=true, verified=false` | **Verify-Gate:** „Bitte bestätige deine E-Mail: `<email>`" + Resend (Kratos-Flow). **Kein App-Zugang** (guarded routes 401 weiterhin). *(Sub-Frage §0: dünner web-ts-Gate vs. Kratos-Redirect — Empfehlung dünner Gate.)* |
+| **Unverified(email)** | `authenticated=true, verified=false`, `role=null` | **dünner web-ts-Verify-Gate** (PO-entschieden 2026-07-12): „Bitte bestätige deine E-Mail: `<email>`" + Resend (Kratos-Flow). **Kein App-Zugang** (guarded routes 401 weiterhin). Ein ehrlicher Zustand-Screen, **kein** stiller Redirect-Loop. |
 | **Active + role=OPERATOR** | authenticated+verified, `role="OPERATOR"` | voller Zugang; Operator-Gates **offen** (aus whoami, §3). |
 | **Active + role=MEMBER** | authenticated+verified, `role="MEMBER"` | Zugang; Operator-Flächen present-but-disabled/omitted (unverändert, aber jetzt aus whoami). |
 
