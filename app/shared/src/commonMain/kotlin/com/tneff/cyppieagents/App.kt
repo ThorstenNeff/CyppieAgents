@@ -26,6 +26,7 @@ import com.tneff.cyppieagents.auth.resolveAuthMode
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 import com.tneff.cyppieagents.connect.HubConnectViewModel
 import com.tneff.cyppieagents.connect.RemoteHubConnectGate
+import com.tneff.cyppieagents.connect.defaultRemoteComponentsFactory
 import com.tneff.cyppieagents.connect.StubControlPlaneClient
 import com.tneff.cyppieagents.connect.StubHubCredentialRepository
 import com.tneff.cyppieagents.connect.StubLocalConnectFeed
@@ -106,6 +107,10 @@ fun App(
                             credentials = StubHubCredentialRepository(),
                             connectFeed = StubLocalConnectFeed(),
                             remoteConnectFeed = defaultRemoteConnectFeed(),
+                            // CYP-513: the LIVE components factory (flag-gated; null/INERT unless env-configured +
+                            // Auftraggeber-GO). Present ⇒ connectRemote drives the real Noise session + the ①²
+                            // per-connect OOB coordinator (display == pinned); absent ⇒ the stub feed path.
+                            remoteComponentsFactory = defaultRemoteComponentsFactory(authRepo::currentSessionToken),
                         )
                     },
                 ) {
