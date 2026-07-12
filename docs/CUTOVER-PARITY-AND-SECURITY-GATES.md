@@ -220,7 +220,7 @@ Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **p
   Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
   **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
 
-**Lauf-Stand §A-P2 + A6-Browse + A3-Transkript + A4-Comm (same-origin, reale Harness auf develop `d0144f47`, 20 passed / 3 skipped):**
+**Lauf-Stand (same-origin, reale Harness auf develop `947eea0d`, 30 passed / 4 skipped) — inkl. ❌-Batch (A1/A2/B-1/A6-Pause/A3-Fenster/A3-Composer):**
 Zusätzlich **A3 seq-`?since`/Reconnect** (§A3) **und A4 Comm-Timeline** (§A4 Historie/REST + Dedup-by-id) **grün**.
 Verbleibend zur vollen Parity-Seite: **A6 Korrelations-Drilldown** (`showRun`/`showSession`, faltet in CYP-467).
 Zusätzlich **A6-Browse grün** (CYP-452 REST-History, §A6 oben).
@@ -280,31 +280,29 @@ Ehrlichkeits-Kreuzung des Parity-Rigs (`assembly-smoke`, `phase1-parity`, `phase
 getrackten Lücken — nicht „voll grün".** Kein stiller Skip; jede unbedeckte Zeile ist hier itemisiert.
 
 **✅ Bedeckt (Zahn grün am DOM):** A3 start/stop/restart · A3 stream-json-Transkript (seq-`?since`/Reconnect) ·
+**A3 Nachricht senden (Composer→`UserTurn`/`/ws/agent`)** · **A3 Fenster-Manager (Fokus/Z-Order + Drag)** ·
 A4 Kanalliste+Timeline (Historie/Dedup-by-id) · A4 Operator-Senden · A5 ACL-Matrix+Preset · A6 Browsen ·
-A6 Live-Tail (Mount/Status) · A9 API-Key · Assembly (Agent-/Comm-/ACL-Fenster) · B-1 Event-Log-Detail-XSS ·
-B-3 CONTRACT_REQUIRE_REAL.
+A6 Live-Tail (Mount/Status **+ Pause/Puffer/Resume**) · **A1 Repo-Config (Save+Persistenz-über-Reload)** ·
+**A2 Agent-Mgmt (Roster/Add-non-optimistic-persistiert/Remove-Irreversibilitäts-Guardrail)** · A9 API-Key ·
+Assembly (Agent-/Comm-/ACL-Fenster) · **B-1 XSS an 4 Client-Render-Sinks** (Event-Log-Detail/Comm-Body/Transkript/
+Agent-Name, mutation-diskriminierend) · B-3 CONTRACT_REQUIRE_REAL. **[❌-Batch durch]**
 
 > **Korrektur (PO, am Objekt gegen `origin/develop` `947eea0d` verifiziert):** meine ersten „nicht gelandet"-
 > Funde für A7/A8/A6-Drilldown waren **Stale-Base-Ableitungen** (Rig lag hinter Merges), keine Observationen —
 > re-gescannt auf dem aktuellen Baum. Sie kippen zu **landed-needs-tooth** (unten korrigiert).
 
-**❌ [K]-Kern, Fläche in web-ts GELANDET, aber KEIN Zahn (echte Lücken — Zähne offen):**
-- **A1 Repo konfigurieren** (`settings/SettingsPanel.tsx`; Testids `settings.repo.url.input`/`branch.input`/`save`/
-  `status`/`effectHint`/`error`/`gateHint`) — Form → `POST/PUT`, Persistenz über Reload; kein Zahn. **State-mutierend.**
-- **A2 Agent hinzufügen / entfernen / Konfig ändern** (`agentmgmt/AgentManagementPanel.tsx`; `agentMgmt.addButton`/
-  `list`/`item.<id>.edit|remove|status`/`add.spawnHint`/`edit.effectHint`/`gateHint`) — kein Zahn (3 Zeilen); inkl.
-  „Neustart nötig"-Transparenz + Entfernen-Bestätigung/Folgenanzeige (→ B-4-Irreversibilität). **State-mutierend.**
-- **A8 Product-Lead** (`report/ProductLeadPanel.tsx` + `productLeadModel.ts`, **gelandet CYP-464 `885cf5f6`**) —
-  On-demand auslösen + Berichte ansehen; kein Zahn. **[korrigiert von „nicht gelandet"]**
-- **A7 Warden-Eskalationen** — **KEINE eigene Fläche**, sondern eine **Event-Familie** im gelandeten Event-Log
-  (`stall.escalated`→☂, 07/S11). Zahn = warden-Familie-Events rendern korrekt im Event-Log. **[korrigiert]**
-- **A6 Korrelations-Drilldown** (`showRun`/`showSession`, **Impl gelandet** in `eventlog/eventBrowse.ts`/CYP-452) —
-  nur der **Rig-Seed** (Events mit `correlationId`/`sessionId`) fehlt; Zahn feld-präsenz-gated. Landet als QA-on-
-  Merge mit **CYP-467**. **[korrigiert von „nicht gelandet"]**
-- **A3 Fenster-Manager** (Drag/Resize/Fokus/Z-Index, `windowmgr/WindowFrame.tsx`) — kein Zahn (nur Occlusion-Workaround genutzt, nie Verhalten assertiert).
-- **A3 Nachricht an Agenten senden** (Composer → `UserTurn` auf `/ws/agent`) — Composer sichtbar (phase1), aber **Sende-Verhalten ungetestet** (kommt am Session an / Echo).
-- **A6 Live-Tail „mit Pause"** — Mount/Status ✓, aber der **Autoscroll-Pin/Pause** (wegscrollen löst Follow) ungetestet.
-- **B-1 XSS an weiteren Sinks** — Event-Log-Detail ✓, aber **Agent-Transkript / Comm-Body / Agent-/Kanal-/Projekt-Namen** ungetestet.
+**❌ [K]-Kern, GELANDET, noch offen (verbleibend nach dem ❌-Batch):**
+- **A8 Product-Lead** (`report/ProductLeadPanel.tsx` + `productLeadModel.ts`, gelandet CYP-464) — On-demand
+  auslösen + Berichte ansehen; **kein Zahn** (nicht im A1/A2→B-1→A3/A6-Batch — nächste Fläche).
+- **A7 Warden-Eskalationen** — Event-**Familie** im gelandeten Event-Log (`stall.escalated`→☂, 07/S11); Zahn =
+  warden-Familie rendert korrekt im Event-Log. **Kein Zahn** (nächste Fläche; braucht warden-Event-Seed).
+- **A2 „Konfig ändern" (Edit)** — Add/Remove sind grün; die **Edit-Dialog-Achse** (`agentMgmt.item.<id>.edit` →
+  Persona/Launch/Rolle → `agentMgmt.edit.effectHint` „Neustart nötig") ist noch **ungetestet** (Teil-Lücke).
+- **A6 Live-Tail „live"-Indicator** — der `event-log-live`-Zustand ist **nie erreichbar** (Server sendet kein
+  `CaughtUp` → **Finding CYP-499**); der Pause/Puffer/Resume-Zahn trägt trotzdem. Nicht mein Fix (Backend2/CYP-498).
+- **A6 Korrelations-Drilldown** (`showRun`/`showSession`, Impl gelandet `eventlog/eventBrowse.ts`/CYP-452) — nur der
+  `correlationId`/`sessionId`-Rig-Seed fehlt; feld-präsenz-gated. Landet als QA-on-Merge mit **CYP-467**.
+- **A6 Pause-Revoke (Zahn 4)** — staged skipped-mit-Grund (braucht Harness-1008-Seam; unit-covered in `eventLogStore`).
 
 **🎫 Getrackt/deferred (echt nicht gelandet / spätere Tier — „kein Zahn" ist korrekt):**
 - **[MP, staged]:** A1 Projekt-CRUD/Switcher · A4 Cross-Projekt-Kanal · A6 Projekt-Filter — spätere Tier / nicht gelandet.
@@ -312,8 +310,10 @@ B-3 CONTRACT_REQUIRE_REAL.
 **🔓 Bekannte Gate-Lücken (schon benannt):** **B-2 CSP** (nicht gesetzt, Vorab-1) · **B-4 Negativ-Operator-Schutz**
 (403 ohne Operator-Token = Member-Coverage-Split) · Irreversibilität-Bestätigung (an A1/A2 gekoppelt, ungetestet).
 
-> **Gate-Aussage:** Parity-Seite = **Kern-grün mit den obigen benannten Lücken**. Die ❌-[K]-Zeilen sind der
-> nächste Zahn-Batch; A6-Drilldown/A7/A8 warten auf ihre Impl-Merges. Speist Assists Parity-Tail-Synthese.
+> **Gate-Aussage:** Parity-Seite = **Kern-grün + ❌-Batch durch** (30 passed / 4 skipped), mit den obigen
+> benannten Rest-Lücken: **A8 Product-Lead · A7 Warden-Familie · A2-Edit-Achse** (nächster Batch) sowie
+> A6-Drilldown→CYP-467, A6-live-Indicator→CYP-499, A6-Pause-Revoke (staged). Kein stiller Skip; alles itemisiert.
+> Speist Assists Parity-Tail-Synthese.
 
 ---
 
