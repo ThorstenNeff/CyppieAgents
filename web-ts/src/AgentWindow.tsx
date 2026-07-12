@@ -12,6 +12,8 @@ import { useAgentTranscript } from './agentview/useAgentTranscript'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
 import { LifecycleHeader } from './agentview/LifecycleHeader'
 import type { LifecycleState } from './agentview/lifecycleStatus'
+import { FidelityBadge } from './connector/FidelityBadge'
+import { useHubStore } from './state/hubStore'
 import { ShellGate } from './terminal/ShellGate'
 import { XtermView } from './terminal/XtermView'
 import type { SocketDeps } from './state/hubConfig'
@@ -59,6 +61,9 @@ export function AgentWindow({
   })
   const active = terminalModeSelection(terminalState).selected
   const historySize = useMemo(() => () => loadHistorySize(browserStore()), [])
+  // CYP-488: the OBSERVED fidelity comes from the roster Agent.capabilities (store) — read here so no App.tsx prop
+  // threading is needed. The badge is fail-closed by absence (present only when degraded / not-yet-reported).
+  const agent = useHubStore((s) => s.roster.find((a) => a.id === agentId))
 
   return (
     <div className="agent-window" data-testid={`agent-window.${agentId}`}>
@@ -73,6 +78,8 @@ export function AgentWindow({
         onStop={(id) => onLifecycle(id, 'stop')}
         onRestart={(id) => onLifecycle(id, 'restart')}
       />
+      {/* CYP-488: observed fidelity badge (own axis, beside the lifecycle status) — present only when degraded/unknown. */}
+      <FidelityBadge agentId={agentId} capabilities={agent?.capabilities} connectorKind={agent?.connectorKind} />
       <ModeToggle state={terminalState} operator={operator} onRequestMode={(mode) => onRequestMode(agentId, mode)} />
       <ContentViewSwitch
         active={active}

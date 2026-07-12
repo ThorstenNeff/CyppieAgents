@@ -621,3 +621,55 @@ body,
 .auth-logout {
   min-height: 24px;
 }
+
+/* CYP-488 (P2-a follow) — observed fidelity badge + capability panel. Badge = amber attention (limited) / neutral
+   (unknown) — never error-red, never a green "all good" seal. Tri-state chips: available=neutral (INFO, NOT saturated
+   success-green, Anti-Hype), limited=amber (attention), unavailable=gated neutral. Colour never alone (glyph+label). */
+.fidelity {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fidelity-badge {
+  min-height: 24px;
+  cursor: pointer;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 4px;
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+}
+.fidelity-badge.fidelity-unknown {
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant); /* not-reported = gated neutral, never "full"/green */
+}
+.fidelity-panel {
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 6px;
+  padding: 8px;
+}
+.fidelity-dims {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fidelity-dim {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.fidelity-cap-available {
+  color: var(--md-sys-color-on-surface-variant); /* neutral fact — NOT saturated success-green (Anti-Hype) */
+}
+.fidelity-cap-limited {
+  color: var(--md-sys-color-on-warn-container); /* amber attention */
+}
+.fidelity-cap-unavailable {
+  color: var(--md-sys-color-on-surface-variant); /* gated neutral — "off", visible, not ERROR-red */
+}
+.fidelity-active,
+.fidelity-note,
+.fidelity-not-reported {
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: normal;
+}
