@@ -110,6 +110,10 @@ dependencies {
     // CYP-220 Phase 2a: Google Tink — misuse-resistant AEAD + KMS envelope encryption for secrets at rest
     // (API keys / remote tokens / DSN secrets). Master key (KEK) never in a user PG; AAD-bound ciphertext.
     implementation(libs.tink)
+    // CYP-457 (Phase-2 remote): Noise Protocol Framework for the JVM — the hub-side Noise_NK **responder**
+    // terminator (mirror of the client's INITIATOR in :app:shared). Same pinned suite
+    // (Noise_NK_25519_ChaChaPoly_BLAKE2s), consuming the S-C `dhKey` X25519 static. Pure-Java, MIT, no runtime deps.
+    implementation(libs.noise.java)
     // CYP-220 Phase 2b: per-instance JDBC connection pools + the Postgres driver (the pools the ConnectionProvider
     // hands per bound store; one HikariDataSource per DSN instance). No store is wired to a pool yet.
     implementation(libs.hikaricp)
