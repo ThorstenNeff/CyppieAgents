@@ -100,6 +100,14 @@ nur Farbe) + **Logout** (`auth_logout`). **Keine** Identität/Email/Secrets im K
 content-free; die Unverified-Email erscheint **nur** im Verify-Gate §2, nirgends sonst). Der Indikator ist die ehrliche
 Antwort auf „wer bin ich / wie komme ich raus", nicht mehr.
 
+> **Scope-Entscheidung GESETZT (PO-Frage 2026-07-12) — Identitäts-Anzeige = (a) nur Rolle+verified.** Der Kern-Flow
+> braucht funktional **nur** `role` (Operator-Gates) + `verified` (Verify-Gate) + Logout. Das hält den CYP-182-`AuthMe`
+> **content-free intakt** → **NULL Server-Arbeit**. **Deferred-additiv (nicht jetzt):** (b) eigene `identityId`
+> (Self-Attribution „du bist X") = sauberer Späterschritt, falls je eine Multi-Account-Verwechslungs-Not entsteht
+> (geteilte Maschine); im redirect-only-Single-Operator-MVP marginal (die Rolle ist das handlungsleitende Signal,
+> Logout die Escape). (c) Display-Name (Kratos-Traits) erst recht später. Kein Assist-Sign-off nötig, weil content-free
+> unangetastet bleibt.
+
 ---
 
 ## 7. Reuse vs. NICHT-Port
