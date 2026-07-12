@@ -35,9 +35,12 @@ test('the Comm window is now assembled (CYP-424 + CYP-438 landed) and its feed i
   // is present in the operator's channel list.
   await expect(comm.locator(`[data-testid="comm.channel.${SEED.CHANNEL}"]`)).toBeVisible();
 
-  // The timeline is mounted; the harness seeds NO comm messages (it seeds agent-EVENTS seq 1..5), so the comm feed
-  // renders empty. This is the discriminating check: the two feeds are distinct — the 5 seeded agent-events never
-  // leak into the comm timeline.
-  await expect(comm.locator('[data-testid="comm-timeline"]')).toBeAttached();
-  await expect(comm.locator('[data-testid="comm-empty"]')).toBeVisible();
+  // The timeline shows the comm-seeded messages (COMM-SEED) — and NOT the agent-transcript seeds (TRANSCRIPT-SEED)
+  // nor the Event-Log markers (BROWSE-SEED). The discriminating check: the feeds are distinct — agent-events and
+  // event-log content never leak into the comm timeline.
+  const timeline = comm.locator('[data-testid="comm-timeline"]');
+  await expect(timeline).toBeVisible();
+  await expect(timeline).toContainText('COMM-SEED');
+  await expect(timeline).not.toContainText('TRANSCRIPT-SEED');
+  await expect(timeline).not.toContainText('BROWSE-SEED');
 });

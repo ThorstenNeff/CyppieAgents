@@ -140,6 +140,10 @@ fun main() {
                 ),
             )
         }
+        // CYP-422 Comm-Timeline corpus: seed messages in the po-backend spoke (both members can write). History
+        // loads via GET /api/channels/{id}/messages; live + dedup-by-Message.id over /ws/comm (the reconnect tooth).
+        platform.booted.hub.postAsAgent("po", WebE2eSeed.SEED_CHANNEL, "COMM-SEED from po")
+        platform.booted.hub.postAsAgent(WebE2eSeed.SEED_AGENT, WebE2eSeed.SEED_CHANNEL, "COMM-SEED from backend")
     }
 
     Runtime.getRuntime().addShutdownHook(Thread { runCatching { platform.close() } })
