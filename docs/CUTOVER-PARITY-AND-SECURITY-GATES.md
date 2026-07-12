@@ -81,8 +81,11 @@ Server) → Zustände → Guardrail**. Pflicht-Zustände überall: **empty / loa
   Beschriftung, 09-Querschnitt) → `UserTurn` auf `/ws/agent`; kommt am (Fake-)Session an.
 
 ### A4 · Kommunikation & Kanäle — Spec: `docs/COMM-PANEL.md`, `docs/COLOR-CODING.md`
-- [ ] **Kanalliste** [K] · **Timeline pro Kanal (Historie + live)** [K] — Historie via REST, live via
-  `/ws/comm`; **Dedup über `Message.id`** beim Reconnect (kein Dup-Row). Absender/Kanal-Farbcodierung.
+- [x] **Kanalliste** · **Timeline pro Kanal (Historie + live)** [K] — **grün** (`comm-timeline-parity.spec.ts`):
+  Historie via **REST** (`GET /api/channels/{id}/messages` → beide geseedeten Messages, je einmal); **Dedup über
+  `Message.id`** direkt belegt — eine gesendete Nachricht wird aus **POST-Response UND `/ws/comm`-Echo** (gleiche
+  id) gefaltet → **genau eine** neue Zeile (2→3, nie eine 4.). `/ws/comm` nutzt weiter `?token=` (CYP-454) → keine
+  Cookie-Lücke. Absender/Kanal-Farbcodierung: Follow-up.
 - [ ] Als Operator/Mensch senden [K optional] — PO-Entscheidung; wenn an: Operator-Token-geschützt.
 - [ ] Cross-Projekt-Kanal freigeben [MP, staged] — **Autorisierungsakt** (Eigentümer-Zustimmung), nicht bloß
   „Mitglied hinzufügen". Guardrail (siehe B-4).
@@ -217,8 +220,9 @@ Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **p
   Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
   **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
 
-**Lauf-Stand §A-P2 + A6-Browse + A3-Transkript (same-origin, reale Harness auf develop `d0144f47`, 18 passed / 3 skipped):**
-Zusätzlich **A3 seq-`?since`/Reconnect grün** (§A3 „Gerendertes stream-json-Terminal" oben).
+**Lauf-Stand §A-P2 + A6-Browse + A3-Transkript + A4-Comm (same-origin, reale Harness auf develop `d0144f47`, 20 passed / 3 skipped):**
+Zusätzlich **A3 seq-`?since`/Reconnect** (§A3) **und A4 Comm-Timeline** (§A4 Historie/REST + Dedup-by-id) **grün**.
+Verbleibend zur vollen Parity-Seite: **A6 Korrelations-Drilldown** (`showRun`/`showSession`, faltet in CYP-467).
 Zusätzlich **A6-Browse grün** (CYP-452 REST-History, §A6 oben).
 Operator-Positiv-Zähne **grün** — Lifecycle **RUNNING + §8.4 Start-off**, eine **echte Stop→Start-Transition**
 (STOPPED-Zeile → RUNNING restauriert, non-optimistisch) **und ERROR + errorReason** (Spawn-Fail-Naht, CYP-446 —
