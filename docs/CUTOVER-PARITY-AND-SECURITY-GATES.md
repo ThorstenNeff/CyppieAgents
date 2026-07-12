@@ -13,7 +13,9 @@ Security-Gates** (XSS/CSP + Contract-Real-Drift). **Stand develop `7accf768`: W8
 jetzt lauffähig. Der **Phase-1-Kern läuft grün** (6/6, `web-e2e/parity/` gegen den echten Ktor-Harness:
 Assembly · Comm-Fenster · Orchestration↔Shell-Toggle · stream-json-Transkript · ACL-Matrix · Preset). Die
 **Phase-2-Flächen sind gelandet** (Lifecycle-Header CYP-431/445/446, API-Key CYP-433, Event-Log CYP-432) und
-unten in **§A-P2** zu konkreten, am DOM assertierbaren Zähnen ausbuchstabiert (noch zu-laufen, nicht grün).
+unten in **§A-P2** ausbuchstabiert; **Operator-Positiv-Zähne laufen grün** (same-origin, 9 passed / 3 skipped —
+Member-Posture skipped-by-design, Coverage-Split in §A-P2). **Topologie = SAME-ORIGIN** (PO1-bestätigt,
+Reverse-Proxy = ein Origin) → `allowCredentials=false` korrekt; der cross-origin-Pass ist **zurückgehalten**.
 E2E-Basis ist die **CYP-418-Harness** (`web-e2e/`, Playwright gegen den echten Ktor-Server via der
 hermetischen CYP-106-Plattform — kein claude/Key/Repo), auf `develop`.
 
@@ -181,6 +183,25 @@ Testids: `event-log` · `event-log-status` (`Live`/`Verlauf lädt…`) · `event
   `innerHTML`; `detail` über `JSON.stringify`+Slice als Text. Unbekannte Typen zeigen ihren **rohen** String (nie
   geschluckt). Konkretisiert den B-1-Sink „Event-Log-Detail".
 
+### A-P2 · Member-Posture-Gate — Coverage-Split (PO-entschieden: **kein** Cutover-Blocker)
+
+Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **present-but-disabled**) ist
+**bewusst kein E2E-Zahn in diesem Rig** und **kein Cutover-Blocker**. Begründung = ein definierter Coverage-Split:
+
+- **Leak-Grenze (die eigentliche Sicherheit) = server-autoritativ + E2E-bewiesen.** Assists **Auth-Tier-Matrix** +
+  **`MemberStreamDenyTest`** + `/ws/events` **operator-content-inside** belegen: ein Member kommt **server-seitig
+  nie** an operator-only Daten — der Server verweigert die Daten, nicht bloß die UI.
+- **Client-Gating (Omission / present-but-disabled) = Unit-Render-abgedeckt** (`EventLogView`/`App` `.render.test.tsx`).
+- **⇒ Client-E2E-Member-Posture = akzeptierte Lücke.** Ein Client-Gating-Bug wäre damit **kosmetisch** (Member
+  sähe eine leere/disabled Fläche), **kein Leak** — die Daten kommen server-seitig gar nicht erst an.
+- **Rig-Status:** die 3 Member-Tests (`phase2-parity.spec.ts`) bleiben **skipped-mit-Grund** (Harness ist
+  Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
+  **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
+
+**Lauf-Stand §A-P2 (same-origin, gegen die reale Harness):** Operator-Positiv-Zähne **grün** — Lifecycle RUNNING
++ §8.4 Start-off · API-Key maskiert/write-only · Event-Log operator-mounted (9 passed / 3 skipped). Die
+Operator-Positiv-Zähne beweisen die **Fläche**, nicht das **Gate** — das Gate trägt der Coverage-Split oben.
+
 ---
 
 ## B. Cutover-Security-Gates
@@ -245,10 +266,10 @@ gedriftet, kein Stub":
 3. **CONTRACT_REQUIRE_REAL-Wiring:** wo wird `=1` im Cutover-Build gesetzt (Dev5s `contract:gen`-Aufruf)?
 4. **Report-Fixtures:** Product-Lead-Berichte (A8) brauchen einen deterministischen Seed — reicht ein
    injizierter Report, oder wird der echte Generator gefahren?
-5. **Cross-Origin-Deploy-Topologie (aus dem Phase-1-Lauf).** Wenn die SPA cross-origin zum Server ausgeliefert
-   wird (SPA-Herkunft ≠ API-Herkunft, wofür die CORS-Allowlist da ist), bricht der aktuelle Stand **jeden**
-   `/api/*`-Call: `web-ts/src/net/rest.ts` sendet `credentials:'include'` auf jedem Fetch, während
-   `installRestrictedCors` (`server/.../routing/Cors.kt`) `allowCredentials=false` setzt → Browser blockt
-   (`net::ERR_FAILED`). Same-origin (Proxy) verdeckt es. **Entscheidung vor Cutover:** entweder Client droppt
-   `credentials:'include'` bei Bearer-Auth, **oder** Server setzt `allowCredentials=true` für Allowlist-Herkünfte —
-   und der Cutover-Pass fährt dann **cross-origin** (nicht nur same-origin), damit dieser Pfad real geprüft ist.
+5. ~~**Cross-Origin-Deploy-Topologie**~~ **GEKLÄRT (PO1): Topologie = SAME-ORIGIN** (Reverse-Proxy = ein Origin).
+   Die Auth-Architektur (CYP-230-Cookie-Session, CYP-31-Origin-Guard, `/ws/agent`-Cookie) ist same-origin
+   ausgelegt → `allowCredentials=false` + `credentials:'include'` ist **korrekt** (stärkere CSRF-Posture), und der
+   im Phase-1-Lauf beobachtete cross-origin `net::ERR_FAILED` ist **korrektes fail-closed CORS**, kein Defekt. Der
+   frühere „Fund" war ein **Rig-Artefakt** (cross-origin + eine `allowCredentials=true`-Harness-Abweichung), beides
+   zurückgedreht: der Pass fährt **same-origin** (Vite-Proxy = ein Origin), der cross-origin-Pass bleibt
+   **zurückgehalten** (nicht-Prod-Topologie).
