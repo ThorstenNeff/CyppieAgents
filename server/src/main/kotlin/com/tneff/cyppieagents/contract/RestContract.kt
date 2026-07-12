@@ -140,6 +140,7 @@ object RestContract {
         Op("GET", "/api/capacity", Tier.MEMBER, response = json<com.tneff.cyppieagents.model.Capacity>()), // CYP-417 (S-G)
         Op("GET", "/api/server-now", Tier.PARTICIPANT, response = json<com.tneff.cyppieagents.model.ServerNow>()), // CYP-421 (a)
         Op("POST", "/api/ws-ticket", Tier.PARTICIPANT, response = json<com.tneff.cyppieagents.model.WsTicket>()), // CYP-286: short-lived single-use WS ticket
+        Op("GET", "/api/connectors", Tier.PARTICIPANT, response = json<com.tneff.cyppieagents.model.ConnectorsView>()), // CYP-462: connector catalog + declared fidelity (picker preview)
         // --- ReportRoutes (/api/reports) ---
         Op("GET", "/api/reports", Tier.OPERATOR, response = arr<ReportSnapshot>()),
         Op("GET", "/api/reports/{id}", Tier.OPERATOR, response = json<ReportSnapshot>()),

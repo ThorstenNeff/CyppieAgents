@@ -67,6 +67,11 @@ class MemberTier403MatrixTest {
         // `/ws/agent` gates don't consume tickets). So a MEMBER reaches it (201), member-permitted — exactly the
         // CYP-417 shape (own-subject / read-only / no-escalation), NOT an operator-tier route.
         "POST /api/ws-ticket",
+        // CYP-462: the connector CATALOG is a READ-TIER (PARTICIPANT) fidelity preview — 100% static, secret-free,
+        // tenant-free connector vocabulary (kinds + declared capabilities), the same authenticated read line as
+        // GET /api/agents/server-now. A MEMBER reaches it (200), member-permitted; the connector *mutation*
+        // (POST /api/agents/{id}/connector) stays operator-only. NOT an operator-tier route.
+        "GET /api/connectors",
         // CYP-326 — the compact-orchestration STATUS read is read-tier (token OR verified human session), like the
         // config reads: a MEMBER reaches it (200), content-free. The operator write POST /api/compact/config stays denied.
         "GET /api/compact/status",
