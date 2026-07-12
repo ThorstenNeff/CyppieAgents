@@ -59,6 +59,10 @@ class MemberTier403MatrixTest {
         // CYP-417 (S-G): the capacity read is MEMBER-tier (content-free counters, secret-free) — a MEMBER reaches
         // it (200), like the other reads above; the hard capacity GATE is server-side in the spawn path, not here.
         "GET /api/capacity",
+        // CYP-487: the server-clock read is now READ-TIER (requireCommReader, was token-only requireParticipant —
+        // the CYP-320-class cutover 401 for a cookie-session browser). Content-free (only serverNowMs), member-
+        // reachable like GET /api/agents; a MEMBER reaches it (200), member-permitted. NOT an operator-tier route.
+        "GET /api/server-now",
         // CYP-286: the WS-ticket mint is READ-TIER by construction (gated by `requireCommReader`, which admits a
         // verified MEMBER session by design). It mints a short-lived, single-use ticket bound to the caller's OWN
         // resolved read-subject (carol's identityId — she cannot mint for another subject), consumed only by the
