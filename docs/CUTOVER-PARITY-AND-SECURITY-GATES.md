@@ -9,9 +9,13 @@
 
 **Zweck.** Die **funktionale Evidenz fürs Cutover-Gate**: bevor die neue TS-UI (`web-ts/`, Dev5) Default
 wird, beweisen wir (A) **funktionale Parität** gegen `09-UI-Funktionskatalog` und (B) **grüne Cutover-
-Security-Gates** (XSS/CSP + Contract-Real-Drift). **Prep jetzt; laufen lassen, sobald W8/W9/W10 gemergt
-sind.** E2E-Basis ist die **CYP-418-Harness** (`web-e2e/`, Playwright gegen den echten Ktor-Server via der
-hermetischen CYP-106-Plattform — kein claude/Key/Repo), sobald sie gemergt ist.
+Security-Gates** (XSS/CSP + Contract-Real-Drift). **Stand develop `7accf768`: W8/W9/W10 sind gemergt** — der Pass ist
+jetzt lauffähig. Der **Phase-1-Kern läuft grün** (6/6, `web-e2e/parity/` gegen den echten Ktor-Harness:
+Assembly · Comm-Fenster · Orchestration↔Shell-Toggle · stream-json-Transkript · ACL-Matrix · Preset). Die
+**Phase-2-Flächen sind gelandet** (Lifecycle-Header CYP-431/445/446, API-Key CYP-433, Event-Log CYP-432) und
+unten in **§A-P2** zu konkreten, am DOM assertierbaren Zähnen ausbuchstabiert (noch zu-laufen, nicht grün).
+E2E-Basis ist die **CYP-418-Harness** (`web-e2e/`, Playwright gegen den echten Ktor-Server via der
+hermetischen CYP-106-Plattform — kein claude/Key/Repo), auf `develop`.
 
 **Leitprinzip (stehende QA-Linie).** Jeder Zahn läuft **gegen die echte Quelle** (realer Ktor-Server, reale
 Wire-Typen), **nicht gegen Mocks** — genau die Lücke, die die typ-gestrippten `vitest`-Units nicht fangen.
@@ -100,6 +104,85 @@ Server) → Zustände → Guardrail**. Pflicht-Zustände überall: **empty / loa
 
 ---
 
+## A-P2 · Phase-2-Flächen jetzt gelandet — konkrete Zähne (Stand `7accf768`)
+
+Drei §A-Zeilen sind auf `develop` assembliert und damit von **pending** zu **lauffähig** gewechselt. Hier die
+konkreten, am web-ts-DOM (via CYP-418 gegen den echten Server) assertierbaren Zähne — mit **echten Testids** und
+den Ehrlichkeits-/Leak-Zähnen. Noch **zu-laufen** (Design steht; Playwright-Specs folgen), daher `[ ]`.
+
+### A-P2-a · Lifecycle-Header → realisiert **A3 · start/stop/restart** — gelandet: CYP-431 + CYP-445 + CYP-446
+Testids: `lifecycle.header.<id>` · `lifecycle.status.<id>` · `lifecycle.dot.<id>` (`data-shape`/`data-role`) ·
+`lifecycle.start|stop|restart.<id>` · `lifecycle.operatorOnly.<id>` · `lifecycle.error.<id>` (transienter
+Reject) · `lifecycle.errorReason.<id>` (durable ERROR-Grund).
+- [ ] **Non-optimistisch (CYP-351-Klasse).** Der Status folgt der **server-bestätigten** Feed-State, nicht dem
+  Klick. Während `pending` zeigt das Label die transiente Form (`Startet…`/`Stoppt…`/`Neustart…`) und der Dot
+  `data-role="neutral"` (nie eine aufgelöste Farbe); erst der bestätigte Run-State setzt `Aktiv`/`Gestoppt`/
+  `Fehler`. **Diskriminierend:** eine gependete Aktion ohne Server-Antwort darf NIE zu `Aktiv` auflösen — Label
+  bleibt `Startet…`, Dot bleibt neutral (Mutation: optimistisch auflösen → ROT).
+- [ ] **Enablement-Matrix (`lifecycleControlEnabled`, CYP-445 §5)** — genau die Matrix assertieren, nicht ein
+  Flag: `+pending` ⇒ alle aus; `!operator` ⇒ alle aus (present-but-disabled, `lifecycle.operatorOnly` sichtbar).
+
+  | State | Start | Stopp | Neustart |
+  |---|---|---|---|
+  | RUNNING | **aus** | an | an |
+  | STOPPED | an | **aus** | an |
+  | ERROR | an | **aus** | an |
+  | UNKNOWN | an | **aus** | an |
+
+  **Zahn (CYP-445 §8.4):** Start MUSS `aria-disabled=true` sein während RUNNING (die alte `!operator||pending`-
+  Logik ließ ihn klickbar) — der diskriminierende Punkt gegen ein Ein-Flag-Gate.
+- [ ] **ERROR-Reason getrennt & fail-closed (CYP-446).** `lifecycle.errorReason` existiert **nur** in ERROR, ist
+  ein **eigener** Knoten (nie mit dem transienten `lifecycle.error` verschmolzen), zeigt einen kuratierten Satz je
+  Code und fällt bei unbekanntem/fehlendem Code auf „Fehler — Grund nicht gemeldet." — **nie der rohe Enum, nie
+  leer, nie erfunden**.
+- [ ] **Farbe nie alleiniges Signal (WCAG 1.4.1):** das Text-Label trägt die Bedeutung, der Dot verstärkt nur.
+
+### A-P2-e · API-Key → realisiert **A9** — gelandet: CYP-433 (Leak-MOST-sensitive Fläche)
+Testids: `settings.section.apiKey` · `settings.apiKey.masked` · `settings.apiKey.input` · `settings.apiKey.reveal`
+· `settings.apiKey.gateHint` · `settings.apiKey.save` · `settings.apiKey.error` · `settings.apiKey.effectHint`.
+- [ ] **Klartext nie persistent im DOM (§0.1).** Der gespeicherte Key erscheint NUR als server-maskiertes
+  `***last4` in `settings.apiKey.masked` (der Client hat nie den Klartext — Server sendet nur `masked`); das Input
+  startet **leer** (der gespeicherte Key wird nie hineingeladen). **Zahn:** kein DOM-Knoten enthält je mehr als die
+  letzten 4; über einen Reload bleibt das Input leer.
+- [ ] **Getippter Klartext transient & write-only (§0.2).** Die einzige Klartext-Stelle ist der neu getippte Key
+  im Input-`value`: `type="password"` (default), `autocomplete="new-password"`, kein persistierender `name`, der
+  Wert wird **NIE** in `data-*`/`aria-*`/`title` reflektiert, und das Feld wird nach erfolgreichem Save **geleert**.
+  **Diskriminierend:** Key tippen → speichern → Input-`value === ''` **und** kein Attribut/Textknoten unter
+  `settings.section.apiKey` enthält den getippten Wert (Mutation: clear-after-save entfernen → ROT). `reveal`
+  un-maskiert NUR das Input, nie den gespeicherten Status.
+- [ ] **Nie geloggt, Fehler generisch (§0.3).** `settings.apiKey.error` trägt nur generische Copy, **nie** den
+  Wert; kein `console.*`. (→ B-4 „Key nie im Klartext".)
+- [ ] **Operator-Gate present-but-disabled (nicht Omission).** Der maskierte Status leckt nichts → Nicht-Operator
+  sieht die Sektion + `settings.apiKey.gateHint`, aber Input/Save sind `disabled`. **Negativ-Zahn (B-4):** Save
+  ohne Operator-Token → serverseitig 403, UI zeigt generischen Fehler, nie den Key.
+- [ ] **Effekt-Hinweis ehrlich (saved ≠ active).** `settings.apiKey.effectHint` (amber) sagt „wirkt erst beim
+  nächsten Start" und zeigt auf den A-P2-a-Restart — **kein** Restart-Control hier (kein stiller Nicht-Effekt,
+  09-Querschnitt).
+
+### A-P2-c · Event-Log Live-Tail → realisiert **A6 · Live-Tail + Browsen** — gelandet: CYP-432
+Testids: `event-log` · `event-log-status` (`Live`/`Verlauf lädt…`) · `event-log-rows` · `event-log-empty` ·
+`event.row.<id>` · `event.gap.<afterSeq>` · `event-log-operator-only` · `event-log-revoked`.
+- [ ] **Operator-only Mount-Gating — Defence-in-Depth, DREI Schichten.** (1) **Fenster** nur bei `cfg.operator`
+  gemountet (App.tsx:175) — ein Nicht-Operator bekommt gar kein Event-Fenster; (2) **Socket** `/ws/events`-Handler
+  nur für Operator verdrahtet (App.tsx:138–140) → ein Nicht-Operator öffnet den Socket **nie** (fail-closed);
+  (3) **Bodies** selbst wenn ein Fenster existierte, nie für Nicht-Operator gerendert → `event-log-operator-only`-
+  Platzhalter (der W10-Backstop, falls der Proxy je das Operator-Token leakt). **Zahn:** ohne Operator-Token →
+  kein `event-log`-Fenster **und** keine `/ws/events`-Verbindung (Netzwerk-Assert) **und**, falls forciert
+  gemountet, nur `event-log-operator-only`.
+- [ ] **Revoke fail-closed.** `/ws/events`-Close `1008` → gepufferte Events verworfen + `event-log-revoked`
+  (keine alten Bodies nach Entzug weiterzeigen).
+- [ ] **Live-Tail vs. Verlauf getrennt.** `event-log-status` = `Live` erst wenn `caughtUp`, sonst `Verlauf lädt…`;
+  der Autoscroll-Pin folgt dem Tail — **Pause** = wegscrollen löst den Pin (der DOM-Assert für „Live-Tail mit
+  Pause" der A6-Zeile).
+- [ ] **Seq-Gap laut, nie stumm („no silent caps").** Eine Lücke in der monotonen `seq` erscheint als **amber
+  Alert-Zeile** `event.gap.<afterSeq>` mit korrekter Anzahl, nie stumm übersprungen — verankert den gapless-`seq`-
+  Kontrakt (CYP-198-Klasse) am DOM. **Diskriminierend:** ein absichtlich gedroppter `seq` → Gap-Zeile erscheint.
+- [ ] **XSS-inert (→ B-1).** Alle Felder (`detail`, `type`, `agentId`) sind React-Text-Kinder (escaped), kein
+  `innerHTML`; `detail` über `JSON.stringify`+Slice als Text. Unbekannte Typen zeigen ihren **rohen** String (nie
+  geschluckt). Konkretisiert den B-1-Sink „Event-Log-Detail".
+
+---
+
 ## B. Cutover-Security-Gates
 
 ### B-1 · XSS-Inertness an JEDEM Render-Sink (nicht nur Message-Body)
@@ -162,3 +245,10 @@ gedriftet, kein Stub":
 3. **CONTRACT_REQUIRE_REAL-Wiring:** wo wird `=1` im Cutover-Build gesetzt (Dev5s `contract:gen`-Aufruf)?
 4. **Report-Fixtures:** Product-Lead-Berichte (A8) brauchen einen deterministischen Seed — reicht ein
    injizierter Report, oder wird der echte Generator gefahren?
+5. **Cross-Origin-Deploy-Topologie (aus dem Phase-1-Lauf).** Wenn die SPA cross-origin zum Server ausgeliefert
+   wird (SPA-Herkunft ≠ API-Herkunft, wofür die CORS-Allowlist da ist), bricht der aktuelle Stand **jeden**
+   `/api/*`-Call: `web-ts/src/net/rest.ts` sendet `credentials:'include'` auf jedem Fetch, während
+   `installRestrictedCors` (`server/.../routing/Cors.kt`) `allowCredentials=false` setzt → Browser blockt
+   (`net::ERR_FAILED`). Same-origin (Proxy) verdeckt es. **Entscheidung vor Cutover:** entweder Client droppt
+   `credentials:'include'` bei Bearer-Auth, **oder** Server setzt `allowCredentials=true` für Allowlist-Herkünfte —
+   und der Cutover-Pass fährt dann **cross-origin** (nicht nur same-origin), damit dieser Pfad real geprüft ist.
