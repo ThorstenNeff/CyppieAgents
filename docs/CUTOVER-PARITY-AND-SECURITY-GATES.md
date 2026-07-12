@@ -284,7 +284,7 @@ getrackten Lücken — nicht „voll grün".** Kein stiller Skip; jede unbedeckt
 **✅ Bedeckt (Zahn grün am DOM):** A3 start/stop/restart · A3 stream-json-Transkript (seq-`?since`/Reconnect) ·
 **A3 Nachricht senden (Composer→`UserTurn`/`/ws/agent`)** · **A3 Fenster-Manager (Fokus/Z-Order + Drag)** ·
 A4 Kanalliste+Timeline (Historie/Dedup-by-id) · A4 Operator-Senden · A5 ACL-Matrix+Preset · A6 Browsen ·
-A6 Live-Tail (Mount/Status **+ Pause/Puffer/Resume**) · **A1 Repo-Config (Save+Persistenz-über-Reload)** ·
+A6 Live-Tail (Mount/Status **+ Pause/Puffer/Resume + Loading→Live-Flip**, CYP-499 verifiziert) · **A1 Repo-Config (Save+Persistenz-über-Reload)** ·
 **A2 Agent-Mgmt (Roster/Add-non-optimistic-persistiert/Remove-Irreversibilitäts-Guardrail)** · A9 API-Key ·
 Assembly (Agent-/Comm-/ACL-Fenster) · **B-1 XSS an 4 Client-Render-Sinks** (Event-Log-Detail/Comm-Body/Transkript/
 Agent-Name, mutation-diskriminierend) · **A8 Product-Lead** (On-demand-Snapshot-nicht-Live + Provenance) ·
@@ -299,8 +299,6 @@ B-3 CONTRACT_REQUIRE_REAL. **[❌-Batch + finaler Batch durch — alle [K] grün
 Warden-Familie · A2-Edit-Achse alle grün, siehe ✅ oben.)
 
 **🎫 Getrackt/deferred (nicht-blockierend, itemisiert — „kein Zahn jetzt" ist korrekt):**
-- **A6 Live-Tail „live"-Indicator** — `event-log-live` nie erreichbar (Server sendet kein `CaughtUp`) → **Finding
-  CYP-499** (Backend2/CYP-498); der Pause/Puffer/Resume-Zahn trägt trotzdem.
 - **A6 Pause-Revoke (Zahn 4)** — staged skipped-mit-Grund (braucht Harness-1008-Seam; unit-covered in `eventLogStore`).
 - **[MP, staged]:** A1 Projekt-CRUD/Switcher · A4 Cross-Projekt-Kanal · A6 Projekt-Filter — spätere Tier / nicht gelandet.
 
@@ -309,7 +307,7 @@ Warden-Familie · A2-Edit-Achse alle grün, siehe ✅ oben.)
 
 > **Gate-Aussage:** Parity-Seite = **alle [K]-Zeilen am DOM grün** (35 passed / 4 skipped) — der finale Batch
 > (A8/A7/A2-Edit) schließt die letzten landed-but-untested-Lücken. Verbleibend nur **tracked-deferred**
-> (A6-live-Indicator→CYP-499 · A6-Pause-Revoke staged) + die bekannten Gate-Lücken (B-2/B-4)
+> (A6-Pause-Revoke staged) + die bekannten Gate-Lücken (B-2/B-4)
 > + [MP]-Tier — nicht-blockierend, weil itemisiert (kein stiller Skip). **Bereit für Assists finalen 4-Quadranten-Sweep.**
 
 ---
