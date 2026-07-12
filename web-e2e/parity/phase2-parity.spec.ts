@@ -41,6 +41,34 @@ test.describe('A-P2-a · Lifecycle-Header — non-optimistic status + operator e
     await expect(page.locator(`[data-testid="lifecycle.restart.${SEED.AGENT}"]`)).toHaveAttribute('aria-disabled', 'false');
     await expect(page.locator(`[data-testid="lifecycle.operatorOnly.${SEED.AGENT}"]`)).toHaveCount(0);
   });
+
+  test('operator: a REAL Stop→Start transition drives the STOPPED row then restores RUNNING (non-optimistic)', async ({ page }) => {
+    await page.goto('/');
+    const status = page.locator(`[data-testid="lifecycle.status.${SEED.AGENT}"]`);
+    const start = page.locator(`[data-testid="lifecycle.start.${SEED.AGENT}"]`);
+    const stop = page.locator(`[data-testid="lifecycle.stop.${SEED.AGENT}"]`);
+    const restart = page.locator(`[data-testid="lifecycle.restart.${SEED.AGENT}"]`);
+    const dot = page.locator(`[data-testid="lifecycle.dot.${SEED.AGENT}"]`);
+    await expect(status).toContainText('Aktiv'); // boot RUNNING
+
+    // REAL Stop (dispatch click — the agent window may tile under others; occlusion is a WM artifact, not a bug).
+    // Non-optimistic: the label flips to STOPPED only because the server (FakeSpawner) actually stopped the agent
+    // and emitted the run-state — not on the click.
+    await stop.dispatchEvent('click');
+    await expect(status).toContainText('Gestoppt');
+    // STOPPED enablement row: Start on, Stopp OFF (not RUNNING), Neustart on; dot = filled/outline.
+    await expect(start).toHaveAttribute('aria-disabled', 'false');
+    await expect(stop).toHaveAttribute('aria-disabled', 'true');
+    await expect(restart).toHaveAttribute('aria-disabled', 'false');
+    await expect(dot).toHaveAttribute('data-shape', 'fill');
+    await expect(dot).toHaveAttribute('data-role', 'outline');
+
+    // Restore RUNNING (real Start) — leave the shared harness as we found it; also re-proves the §8.4 Start-off row.
+    await start.dispatchEvent('click');
+    await expect(status).toContainText('Aktiv');
+    await expect(start).toHaveAttribute('aria-disabled', 'true');
+    await expect(stop).toHaveAttribute('aria-disabled', 'false');
+  });
 });
 
 memberTest.describe('A-P2-a · Lifecycle-Header — operator gate (present-but-disabled, CYP-317)', () => {
