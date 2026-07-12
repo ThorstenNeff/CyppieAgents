@@ -67,9 +67,16 @@ Server) → Zustände → Guardrail**. Pflicht-Zustände überall: **empty / loa
 - [ ] **Fenster-Manager** (verschieben / Größe / Fokus/Z-Index) [K] — DOM-Interaktionen assertierbar.
 - [ ] **start / stop / restart** [K] — am echten Lebenszyklus (`/ws/lifecycle`-Status folgt der Beobachtung,
   CYP-351) → Button-Zustände + Statuspunkt korrekt (RUNNING/STOPPED/ERROR). Zustand error = spawn-fail.
-- [ ] **Gerendertes stream-json-Terminal** [K] — Assistant-Text streamt, Tool-Call-Zeilen, Ergebnis-Marker
-  (kein rohes xterm). Feed: `/ws/agent` (seq-Transkript). **Reconnect-Idempotenz** (CYP-418-Zahn) + **seq-
-  `?since`-Replay** hier verankert. Zustände: leer/streamend/reconnect.
+- [x] **Gerendertes stream-json-Terminal** [K] — **seq-`?since`/Reconnect grün** (`seq-reconnect-parity.spec.ts`,
+  am `po`-Transkript): 3 geseedete AssistantEvents → 3 Zeilen (escaped Text, kein rohes xterm); Offline→Online →
+  frischer `/ws/agent`-Open (WS-Zähler) + Transkript **bleibt 3 Zeilen** = `seq>cursor`-Guard + Dedup, keine
+  Dubletten. **Rig-Deviation ① (akzeptiert, PO):** `/ws/agent` auth in Prod per same-origin **Kratos-Cookie**
+  (CYP-454); die token-Harness kann kein Cookie → der Parity-Proxy injiziert das **Operator-Bearer** auf dem
+  WS-Upgrade (eine Auth-Mode, die `tokenAuthorize` **auch** akzeptiert — orthogonal zur Feed/Dedup-Prüfung). Der
+  **E2E-Cookie-Auth-Pfad** ist eine **akzeptierte Lücke** (wie die Member-Session-Naht; Cookie-Auth object-
+  verifiziert via Assist-Review + Auth-Tier-Matrix); Harness-Cookie-Session-Naht = **optionales Post-Cutover-
+  Hardening**. Rig-Mechanik ②(`OpenFakeProcess`, Socket offen bis `destroy()`) + ③(row-producing `po`-Seed, da
+  Success-Result mapper-suppressed) — kein Produkt-Concern.
 - [ ] **Nachricht an Agenten senden** [K] — Eingabefeld ist **„Nachricht"**, kein Shell-Prompt (durchgängige
   Beschriftung, 09-Querschnitt) → `UserTurn` auf `/ws/agent`; kommt am (Fake-)Session an.
 
@@ -210,7 +217,8 @@ Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **p
   Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
   **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
 
-**Lauf-Stand §A-P2 + A6-Browse (same-origin, gegen die reale Harness auf develop `d0144f47`, 16 passed / 3 skipped):**
+**Lauf-Stand §A-P2 + A6-Browse + A3-Transkript (same-origin, reale Harness auf develop `d0144f47`, 18 passed / 3 skipped):**
+Zusätzlich **A3 seq-`?since`/Reconnect grün** (§A3 „Gerendertes stream-json-Terminal" oben).
 Zusätzlich **A6-Browse grün** (CYP-452 REST-History, §A6 oben).
 Operator-Positiv-Zähne **grün** — Lifecycle **RUNNING + §8.4 Start-off**, eine **echte Stop→Start-Transition**
 (STOPPED-Zeile → RUNNING restauriert, non-optimistisch) **und ERROR + errorReason** (Spawn-Fail-Naht, CYP-446 —
