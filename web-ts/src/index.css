@@ -466,6 +466,31 @@ body,
   display: flex;
   gap: 8px;
 }
+/* CYP-467: a present, non-interactive parity marker for the time-window axis (no picker yet, mirroring Compose). */
+.event-browse-time-window {
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 1px 4px;
+}
+/* CYP-467: typed detail summary. Neutral by default (a complete/by-design outcome is NEVER green); WARN amber only
+   for an incomplete run / unintended context loss — and the text ("Timeout"/"Abgebrochen"/"Kontext verloren") plus
+   the ▲ glyph carry the meaning, so colour is never the sole signal. */
+.event-browse-summary {
+  color: var(--md-sys-color-on-surface);
+  margin: 4px 0 0;
+  white-space: normal;
+}
+.event-browse-summary-warn {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+/* CYP-467 single-pane: below PANE_COLLAPSE_WIDTH the selected detail replaces the master (JS drives which renders);
+   the detail then spans the full width with no left border/inset. */
+.event-browse[data-single-pane='true'] .event-browse-detail {
+  border-left: none;
+  padding-left: 0;
+}
 
 /* CYP-464 (P2-d) — Product-Lead report. Snapshot≠live: prominent "As of" + hint. Reuse the list+detail shape (two-pane
    on wide, stacks narrow). GATED/generating = neutral (never green — a gate/in-progress is not success/ok); error =

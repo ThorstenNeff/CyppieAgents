@@ -21,6 +21,7 @@ import type {
   ReportSnapshot,
   GenerateReportRequest,
   AuthMe,
+  ProjectsView,
 } from '../types/generated/contract'
 import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
 import type { ConnectorKind } from '../connector/connectorModel'
@@ -100,6 +101,9 @@ export interface HubRepo {
   /** CYP-470. GET /api/auth/me (PUBLIC) — the content-free whoami {authenticated, role?, verified}. Drives the
    *  resolve-then-render session gate + operator/member (fail-closed to none/member). */
   fetchAuthMe(): Promise<AuthMe>
+  /** CYP-467/94. GET /api/projects — the registry + active pointer ({activeProjectId, projects}). Drives the Event-
+   *  Browse cross-project axis (operator-only): null=active(server-forced) → other project → 'all'. */
+  getProjects(): Promise<ProjectsView>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -184,5 +188,8 @@ export class RestHubRepo implements HubRepo {
   }
   fetchAuthMe(): Promise<AuthMe> {
     return this.rest.get<AuthMe>('/api/auth/me')
+  }
+  getProjects(): Promise<ProjectsView> {
+    return this.rest.get<ProjectsView>('/api/projects')
   }
 }

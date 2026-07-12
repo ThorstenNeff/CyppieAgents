@@ -41,7 +41,7 @@ import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
 import type { LifecycleAction } from './state/hubReducers'
-import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest } from './types/generated/contract'
+import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest, ProjectsView } from './types/generated/contract'
 
 const AGENT_PREFIX = 'agent:'
 const ACL_WINDOW_ID = 'acl'
@@ -95,6 +95,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const [apiKeyView, setApiKeyView] = useState<ApiKeyView | null>(null)
   // CYP-453: the project repo config ({ configured, url?, branch? }) — drives the honest unset status + prefills.
   const [repoConfig, setRepoConfig] = useState<RepoConfigView | null>(null)
+  // CYP-467/94: the project registry + active pointer drive the Event-Browse cross-project axis (operator-only view).
+  const [projectsView, setProjectsView] = useState<ProjectsView | null>(null)
   // CYP-445: per-agent transient lifecycle-action reject notice (separate from the agent's ERROR run-state).
   const [lifecycleError, setLifecycleError] = useState<ReadonlyMap<string, string>>(new Map())
   const setAgentLifecycleError = (agentId: string, message: string | null) =>
@@ -142,6 +144,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     hubRepo.fetchAcl().then(setAcl).catch(() => undefined)
     hubRepo.getApiKey().then(setApiKeyView).catch(() => undefined) // masked view; plaintext never comes back
     hubRepo.getRepoConfig().then(setRepoConfig).catch(() => undefined) // CYP-453 project repo config
+    hubRepo.getProjects().then(setProjectsView).catch(() => undefined) // CYP-467 cross-project Event-Browse axis
     const live = startLiveHub(
       cfg,
       {
@@ -364,7 +367,14 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           </p>
         )
       }
-      return <EventBrowsePanel getEvents={(f, after, limit) => hubRepo.getEvents(f, after, limit)} agentIds={roster.map((a) => a.id)} />
+      return (
+        <EventBrowsePanel
+          getEvents={(f, after, limit) => hubRepo.getEvents(f, after, limit)}
+          agentIds={roster.map((a) => a.id)}
+          projects={projectsView?.projects ?? []}
+          activeProjectId={projectsView?.activeProjectId ?? ''}
+        />
+      )
     }
     if (win.id === COMM_WINDOW_ID) {
       const messages = [...(messagesByChannel.get(selectedChannelId ?? '') ?? [])].sort(byTs)
