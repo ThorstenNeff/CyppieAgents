@@ -143,10 +143,12 @@ Reject) · `lifecycle.errorReason.<id>` (durable ERROR-Grund).
 
   **Zahn (CYP-445 §8.4):** Start MUSS `aria-disabled=true` sein während RUNNING (die alte `!operator||pending`-
   Logik ließ ihn klickbar) — der diskriminierende Punkt gegen ein Ein-Flag-Gate.
-- [ ] **ERROR-Reason getrennt & fail-closed (CYP-446).** `lifecycle.errorReason` existiert **nur** in ERROR, ist
-  ein **eigener** Knoten (nie mit dem transienten `lifecycle.error` verschmolzen), zeigt einen kuratierten Satz je
-  Code und fällt bei unbekanntem/fehlendem Code auf „Fehler — Grund nicht gemeldet." — **nie der rohe Enum, nie
-  leer, nie erfunden**.
+- [x] **ERROR-Reason getrennt & fail-closed (CYP-446)** — **grün** (Spawn-Fail-Naht: `ControllableSpawner` +
+  `/test/spawn-fail-on|off`). Ein armierter Spawn-Fail treibt via Stop→Start den Agenten in **ERROR** („Fehler",
+  Dot `data-role=error`, ERROR-Enablement = STOPPED-Zeile); `lifecycle.errorReason` ist ein **eigener** Knoten,
+  **nur** in ERROR sichtbar, ein **kuratierter** Satz (assertiert `Start fehlgeschlagen…`), **nie** der rohe Enum
+  (assertiert NICHT `SPAWN_FAILED/CRASHED/SIGNALLED/UNKNOWN`), nie leer. Restore (Fail off + Start) → RUNNING, und
+  der errorReason-Knoten ist weg (present IFF ERROR).
 - [ ] **Farbe nie alleiniges Signal (WCAG 1.4.1):** das Text-Label trägt die Bedeutung, der Dot verstärkt nur.
 
 ### A-P2-e · API-Key → realisiert **A9** — gelandet: CYP-433 (Leak-MOST-sensitive Fläche)
@@ -208,14 +210,15 @@ Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **p
   Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
   **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
 
-**Lauf-Stand §A-P2 + A6-Browse (same-origin, gegen die reale Harness auf develop `d0144f47`, 15 passed / 3 skipped):**
+**Lauf-Stand §A-P2 + A6-Browse (same-origin, gegen die reale Harness auf develop `d0144f47`, 16 passed / 3 skipped):**
 Zusätzlich **A6-Browse grün** (CYP-452 REST-History, §A6 oben).
-Operator-Positiv-Zähne **grün** — Lifecycle **RUNNING + §8.4 Start-off** **und** eine **echte Stop→Start-
-Transition** (STOPPED-Zeile → RUNNING restauriert, non-optimistisch) · API-Key **maskiert/write-only + clear-
-after-save-Round-Trip** (stärkster Klartext-nie-DOM-Diskriminator) · Event-Log **operator-mounted + XSS-at-detail
-inert** (B-1-Sink: escaped-Text/kein-`<img>`/kein-`onerror`). Die Operator-Positiv-Zähne beweisen die **Fläche**,
-nicht das **Gate** — das Gate trägt der Coverage-Split oben. Offen (Follow-ups): Lifecycle **ERROR + errorReason**
-(braucht FakeSpawner-Fail-Naht) · A6 **Browsen/REST-History** (CYP-452, nach Rig-Rebase) · seq-`?since`/Reconnect.
+Operator-Positiv-Zähne **grün** — Lifecycle **RUNNING + §8.4 Start-off**, eine **echte Stop→Start-Transition**
+(STOPPED-Zeile → RUNNING restauriert, non-optimistisch) **und ERROR + errorReason** (Spawn-Fail-Naht, CYP-446 —
+kuratierter Grund, nie roher Enum) · API-Key **maskiert/write-only + clear-after-save-Round-Trip** (stärkster
+Klartext-nie-DOM-Diskriminator) · Event-Log **operator-mounted + XSS-at-detail inert** (B-1-Sink: escaped-Text/
+kein-`<img>`/kein-`onerror`). Die Operator-Positiv-Zähne beweisen die **Fläche**, nicht das **Gate** — das Gate
+trägt der Coverage-Split oben. Offen (Follow-ups): A6 **Korrelations-Drilldown** (correlationId/sessionId-Seed) ·
+seq-`?since`/Reconnect · Comm-Timeline-Parität.
 
 ---
 
