@@ -29,7 +29,7 @@ class Cyp482SbMountsRenderTest {
 
     @Test
     fun trustCheck_withOobMount_rendersOobConfirmScreen_notProvisional() = runComposeUiTest {
-        val mount = OobConfirmMount(dhPubKey, onConfirm = {}, onReject = {})
+        val mount = OobConfirmMount(dhPubKey, provisional = true, onConfirm = {}, onReject = {})
         setContent { MaterialTheme { RemoteConnectingView(hub, rs(RemoteConnState.TRUST_CHECK), vm(), oobConfirm = mount) } }
         onNodeWithTag(RemoteConnectTags.TRUST_FIRST, useUnmergedTree = true).assertExists() // the OOB-confirm screen
         onNodeWithTag(RemoteConnectTags.TRUST_CONFIRM, useUnmergedTree = true).assertExists()

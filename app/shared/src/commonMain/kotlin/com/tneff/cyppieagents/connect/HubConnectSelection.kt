@@ -204,6 +204,13 @@ internal fun ConnectingView(hub: HubDescriptor, progress: ConnectProgress, viewM
  */
 class OobConfirmMount(
     val hubDhPubKey: ByteArray,
+    /**
+     * CYP-505 (activation criterion, §5/Q3): `true` for a stub / pre-live mount (the provisional disclosure
+     * "vorläufig — echtes Pinnen folgt" stays); **`false` once the live feed does REAL pinning** (`TofuHubTrust`
+     * @ approve) ⇒ the disclosure **RETIRES**. Required (no default) so the activation wiring must decide live-vs-
+     * stub explicitly — a forgotten default is exactly the over-say this ticket prevents.
+     */
+    val provisional: Boolean,
     val onConfirm: () -> Unit,
     val onReject: () -> Unit,
 )
@@ -231,7 +238,11 @@ internal fun RemoteConnectingView(
                 // CYP-482 S-B §9: FirstUse ⇒ the mandatory OOB-confirm screen (real fingerprint). Seam null ⇒ the
                 // provisional spinner (INERT) — the trust-check doesn't yet do real pinning until the live feed lands.
                 if (oobConfirm != null) {
-                    OobFingerprintConfirmScreen(hub.name, oobConfirm.hubDhPubKey, oobConfirm.onConfirm, oobConfirm.onReject)
+                    // CYP-505: the live wiring sets provisional=false once pinning is real ⇒ the disclosure retires.
+                    OobFingerprintConfirmScreen(
+                        hub.name, oobConfirm.hubDhPubKey, oobConfirm.onConfirm, oobConfirm.onReject,
+                        provisional = oobConfirm.provisional,
+                    )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         InProgress(stringResource(Res.string.remote_connect_trust_check), RemoteConnectTags.TRUST_CHECK)
