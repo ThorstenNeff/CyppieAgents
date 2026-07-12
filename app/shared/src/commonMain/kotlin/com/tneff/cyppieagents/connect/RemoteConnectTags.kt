@@ -19,6 +19,31 @@ object RemoteConnectTags {
     /** Retry affordance — present ONLY for retryable transport failures, NEVER for a terminal trust-changed/auth-rejected. */
     const val RETRY = "remote.connect.retry"
 
+    // CYP-482 S-B (§3) — the FirstUse OOB-fingerprint-confirm screen (frozen CYP-480 §① contract; shared API w/ QA).
+    /** FirstUse OOB-confirm screen container (§2.1) — the mandatory-blocking First-Use gate. */
+    const val TRUST_FIRST = "remote.connect.trustFirst"
+    /** Fingerprint block container (only ever a REAL derived fingerprint, never a placeholder — HB). */
+    const val TRUST_FINGERPRINT = "remote.connect.trustFingerprint"
+    /** PGP word sequence — primary, human OOB compare (11 numbered even/odd tokens). */
+    const val TRUST_WORDLIST = "remote.connect.trustWordlist"
+    /** Hex fingerprint — secondary, copyable. */
+    const val TRUST_HEX = "remote.connect.trustHex"
+    /** QR (scan path) — the `cyppie-hub-key:` payload. */
+    const val TRUST_QR = "remote.connect.trustQr"
+    const val TRUST_OOB = "remote.connect.trustOob"
+    /** OOB compare against the hub console (Option X). */
+    const val TRUST_OOB_CONSOLE = "remote.connect.trustOobConsole"
+    /** Neutral "identity pinned" indicator (§2.2) — never green. */
+    const val TRUST_PINNED = "remote.connect.trustPinned"
+    /** "Matches — pin it" → approve() → pin → continue to AUTHENTICATING. */
+    const val TRUST_CONFIRM = "remote.connect.trustConfirm"
+    /** "Doesn't match — abort" → reject() → **fail-closed**, no pin, teardown (HB/HC). */
+    const val TRUST_REJECT = "remote.connect.trustReject"
+    /** Result "not connected — identity not confirmed" (the Rejected state). */
+    const val TRUST_ABORTED = "remote.connect.trustAborted"
+    /** Purely informational "re-pin only OOB" hint at the TrustChanged alarm (HC/①b) — NOT an action button. */
+    const val TRUST_CHANGED_REPIN = "remote.connect.trustChangedRepin"
+
     /** `remote.connect.error.<cause>`, cause ∈ relayUnreachable / hubOffline / handshakeFailed / trustChanged / authRejected. */
     fun error(cause: String) = "remote.connect.error.$cause"
 }

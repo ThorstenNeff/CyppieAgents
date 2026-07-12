@@ -714,4 +714,17 @@
     <string name="remote_revoke_ended">Fern-Sitzung beendet.</string>
     <string name="a11y_remote_recovery_codes">Wiederherstellungs-Codes, einmalig angezeigt — sicher speichern.</string>
     <string name="a11y_remote_revoke_ended">Fern-Sitzung beendet, Verbindung getrennt.</string>
+    <!-- CYP-482 S-B (§3): FirstUse OOB-fingerprint-confirm screen (frozen CYP-480 §①) -->
+    <string name="remote_connect_trust_first_title">Erstverbindung mit %1$s</string>
+    <string name="remote_connect_trust_first_body">Bestätige die Identität über einen anderen Kanal, wenn Sicherheit zählt, und pinne sie.</string>
+    <string name="remote_connect_trust_wordlist_label">Vergleichs-Wörter</string>
+    <string name="remote_connect_trust_hex_label">Fingerprint (Hex)</string>
+    <string name="remote_connect_trust_qr_label">QR scannen</string>
+    <string name="remote_connect_trust_oob">Über einen anderen Kanal bestätigen</string>
+    <string name="remote_connect_trust_oob_console">Vergleiche mit der Anzeige in der Hub-Konsole.</string>
+    <string name="remote_connect_trust_pinned">Identität gepinnt</string>
+    <string name="remote_connect_trust_confirm">Stimmt überein — pinnen</string>
+    <string name="remote_connect_trust_reject">Stimmt nicht — abbrechen</string>
+    <string name="remote_connect_trust_aborted">Nicht verbunden — Identität nicht bestätigt.</string>
+    <string name="remote_connect_trust_changed_repin">Neu pinnen nur nach Out-of-Band-Abgleich des neuen Fingerprints.</string>
 </resources>
