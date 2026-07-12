@@ -47,6 +47,8 @@ const fakeRepo = (): HubRepo => ({
   getEvents: vi.fn().mockResolvedValue({ events: [], hasMore: false }),
   getConnectors: vi.fn().mockResolvedValue({ connectors: [{ kind: 'stream_json', capabilities: { structuredUsage: 'available', toolGranularity: 'available', reliableResult: 'available', rateLimitSignal: 'available', coordination: 'available', kind: 'stream_json' } }, { kind: 'mcp', capabilities: { structuredUsage: 'limited', toolGranularity: 'limited', reliableResult: 'limited', rateLimitSignal: 'unavailable', coordination: 'limited', kind: 'mcp' } }], default: 'stream_json' }),
   setConnector: vi.fn().mockResolvedValue(undefined),
+  fetchReports: vi.fn().mockResolvedValue([]),
+  generateReport: vi.fn().mockResolvedValue({ id: 'r1', type: 'status', generatedAt: 0, projectId: 'p', sources: ['events'], window: {}, sections: [] }),
 })
 
 beforeEach(() => {
@@ -305,6 +307,18 @@ describe('App assembly (CYP-425)', () => {
     expect(await findByTestId('agentMgmt.panel')).toBeTruthy()
     expect(getByTestId('agentMgmt.item.backend')).toBeTruthy()
     expect(getByTestId('agentMgmt.item.backend.remove')).toBeTruthy()
+  })
+
+  it('the Product-Lead window renders; an operator triggers the report list fetch (CYP-464)', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(await findByTestId('productLead.panel')).toBeTruthy()
+    expect(getByTestId('productLead.trigger')).toBeTruthy() // operator → trigger present
+    expect(repo.fetchReports).toHaveBeenCalled()
   })
 
   it('the Settings window frames the repo section beside the API-key section (CYP-453)', async () => {

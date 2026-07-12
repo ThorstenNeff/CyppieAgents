@@ -17,6 +17,8 @@ import type {
   RepoConfigRequest,
   EventPage,
   ConnectorsView,
+  ReportSnapshot,
+  GenerateReportRequest,
 } from '../types/generated/contract'
 import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
 import type { ConnectorKind } from '../connector/connectorModel'
@@ -83,6 +85,12 @@ export interface HubRepo {
    *  connector (server re-checks + audits as connector.optin; anti-injection §6). connectorKind is deliberately NOT
    *  in AgentEdit/PATCH. Used only for EDIT; ADD carries the kind on NewAgentSpec.connectorKind. */
   setConnector(agentId: string, connectorKind: ConnectorKind): Promise<void>
+  /** CYP-464 (operator). GET /api/reports — the newest-first snapshot list (full ReportSnapshots). Reports aggregate
+   *  operator-gated observability → operator-only; content-free items. */
+  fetchReports(): Promise<ReportSnapshot[]>
+  /** CYP-464 (operator). POST /api/reports {type, since?, until?} — generate a NEW immutable snapshot (per-run, never
+   *  mutated). Returns the new snapshot. */
+  generateReport(req: GenerateReportRequest): Promise<ReportSnapshot>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -155,5 +163,11 @@ export class RestHubRepo implements HubRepo {
   async setConnector(agentId: string, connectorKind: ConnectorKind): Promise<void> {
     // ConnectorChoice { connectorKind } — the audited, operator-only connector change (never via PATCH; §6).
     await this.rest.post<unknown>(`/api/agents/${encodeURIComponent(agentId)}/connector`, { connectorKind })
+  }
+  fetchReports(): Promise<ReportSnapshot[]> {
+    return this.rest.get<ReportSnapshot[]>('/api/reports')
+  }
+  generateReport(req: GenerateReportRequest): Promise<ReportSnapshot> {
+    return this.rest.post<ReportSnapshot>('/api/reports', req)
   }
 }
