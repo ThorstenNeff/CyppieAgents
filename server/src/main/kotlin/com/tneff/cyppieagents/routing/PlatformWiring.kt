@@ -72,6 +72,16 @@ fun Application.installPlatform(
         System.getenv("CYPPIE_REMOTE_RELAY_URL")?.takeIf { it.isNotBlank() }
             ?.let { com.tneff.cyppieagents.controlplane.LiveRelayRendezvous(it) }
             ?: com.tneff.cyppieagents.controlplane.InertRelayRendezvous
+    // CYP-508 (activation): the CP hubTicket minter. INERT (InertHubTicketMinter → NOT_AUTHORIZED_FOR_HUB) until the
+    // §3 swap gate (CYPPIE_REMOTE_RELAY_URL + CYPPIE_CP_SIGNING_SEED/KID/ISSUER); fail-closed. The CP hub-identity
+    // registry (populated by the CYP-451 admission flow — separate) backs the owner-check; the operator id is the
+    // route's authenticated principal, carried via CpOperatorSession (never the request body).
+    val cpHubRegistrar = com.tneff.cyppieagents.controlplane.HubRegistrar()
+    val hubTicketMinter: com.tneff.cyppieagents.controlplane.HubTicketMinter =
+        com.tneff.cyppieagents.controlplane.buildHubTicketMinter(
+            registrar = cpHubRegistrar,
+            operatorAuthenticate = { it.sessionToken.ifBlank { null } },
+        )
     routing {
         // ── WS + MCP transports — NOT versioned; single-mount, OUTSIDE the /api-prefix loop (they are not
         //    `/api` REST resources: `/ws/*` are sockets, `/mcp/hub` is the connector wire, design §2.5). ──
@@ -174,6 +184,9 @@ fun Application.installPlatform(
             // CYP-507 (activation): CP rendezvous register/resolve over the RelayRendezvous seam. INERT (404/503)
             // until CYPPIE_REMOTE_RELAY_URL is set. Operator-gated (register-auth envelope flagged for sign-off).
             rendezvousRoutes({ relayRendezvous }, booted.tokenRegistry, authDeps, apiBase = apiBase)
+            // CYP-508 (activation): CP hubTicket mint route. Operator-gated; INERT (NOT_AUTHORIZED) until the §3 swap
+            // gate. Reviewer re-gates the 4 enforcement points LIVE here.
+            hubTicketRoutes({ hubTicketMinter }, booted.tokenRegistry, authDeps, apiBase = apiBase, machineOperatorId = System.getenv("CYPPIE_OPERATOR_ID"))
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
             configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
             // CYP-466: GET /api/config/repo/reprovision-preview — the honest discard-confirm feed. Operator-tier,
