@@ -3789,7 +3789,8 @@
                     }
                 },
                 "required": [
-                    "authenticated"
+                    "authenticated",
+                    "verified"
                 ]
             },
             "RegisterRequest": {

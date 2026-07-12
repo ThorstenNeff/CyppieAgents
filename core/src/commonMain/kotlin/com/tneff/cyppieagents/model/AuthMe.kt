@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.model
 
+import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
 
 /**
@@ -18,5 +19,11 @@ import kotlinx.serialization.Serializable
 data class AuthMe(
     val authenticated: Boolean,
     val role: String? = null,
-    val verified: Boolean = false,
+    // CYP-498 — @Required makes `verified` ALWAYS present on the wire (even when false, independent of any
+    // serializer's encodeDefaults) AND flips it non-optional in the descriptor, which is what the OpenAPI
+    // generator (SchemaWalker) reads to mark it contract-`required`. Single-sourced: this one annotation drives
+    // both the wire invariant and the schema `required` flag, so they can't drift. Closes the liveness edge where
+    // an omitted `verified` would fail-closed a legitimate operator at the verify gate. Default stays → no call
+    // site changes. Locked by AuthMeVerifiedRequiredTest.
+    @Required val verified: Boolean = false,
 )
