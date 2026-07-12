@@ -662,6 +662,11 @@ body,
 .auth-logout {
   min-height: 24px;
 }
+/* CYP-515 — the neutral continue-to-login action on a stranded `?flow=` return (no auto-redirect, no dead-end). */
+.auth-retry-signin {
+  min-height: 24px;
+  margin-top: 8px;
+}
 
 /* CYP-488 (P2-a follow) — observed fidelity badge + capability panel. Badge = amber attention (limited) / neutral
    (unknown) — never error-red, never a green "all good" seal. Tri-state chips: available=neutral (INFO, NOT saturated

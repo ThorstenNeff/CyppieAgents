@@ -16,10 +16,14 @@ export interface AuthGateProps {
   redirectToLogout: () => void
   /** injected operator token (isOperatorServe) → skip the whoami gate; the Bearer authenticates every request. */
   breakGlass?: boolean
+  /** CYP-515 — the URL carries a Kratos flow return (`?flow=`). When None, DON'T auto re-redirect (that loops and
+   *  self-DoSes the rate limit); show a neutral continue-to-login state instead. Does NOT relax the gate — state is
+   *  still None, children never render (a crafted `?flow=` reaches no app content without a session). */
+  flowReturnPresent?: boolean
   children: (operator: boolean) => ReactNode
 }
 
-export function AuthGate({ fetchAuthMe, redirectToLogin, redirectToLogout, breakGlass = false, children }: AuthGateProps) {
+export function AuthGate({ fetchAuthMe, redirectToLogin, redirectToLogout, breakGlass = false, flowReturnPresent = false, children }: AuthGateProps) {
   const [state, setState] = useState<AuthState>(breakGlass ? { kind: 'active', operator: true } : { kind: 'resolving' })
 
   // resolve-then-render: fetch whoami first; only then decide what to mount. Fail-closed to None on any error.
@@ -35,9 +39,11 @@ export function AuthGate({ fetchAuthMe, redirectToLogin, redirectToLogout, break
   }, [breakGlass, fetchAuthMe])
 
   // None → bounce to the Kratos login flow (the screen below shows the honest "redirecting" status meanwhile).
+  // CYP-515: but NOT when a `?flow=` return is present — re-initiating the flow-init on a flow return loops endlessly
+  // and self-DoSes the rate limit (429). That case fails closed to a neutral, manual continue-to-login screen instead.
   useEffect(() => {
-    if (state.kind === 'none') redirectToLogin()
-  }, [state.kind, redirectToLogin])
+    if (state.kind === 'none' && !flowReturnPresent) redirectToLogin()
+  }, [state.kind, redirectToLogin, flowReturnPresent])
 
   if (state.kind === 'resolving') {
     // NOTHING of the app renders yet — no window, no operator control (anti-flash, tooth 7).
@@ -49,6 +55,19 @@ export function AuthGate({ fetchAuthMe, redirectToLogin, redirectToLogout, break
   }
 
   if (state.kind === 'none') {
+    // CYP-515: Kratos handed the login flow back to the app (misconfigured ui_url → SPA). DON'T re-init the flow
+    // (loops, self-DoSes); render a NEUTRAL continue-to-login state — never a credential form (§1), never blank.
+    // App content stays gated: state is still None, so children never render regardless of the `?flow=` param.
+    if (flowReturnPresent) {
+      return (
+        <div className="auth-screen" role="status" data-testid="auth.flowStranded">
+          <p>{AUTH_TEXT.flowStrandedBody}</p>
+          <button type="button" className="auth-retry-signin" data-testid="auth.retrySignin" onClick={redirectToLogin}>
+            {AUTH_TEXT.retrySignin}
+          </button>
+        </div>
+      )
+    }
     return (
       <div className="auth-screen" role="status" data-testid="auth.redirect">
         {AUTH_TEXT.redirectingSignin}

@@ -21,6 +21,11 @@ export const AUTH_TEXT = {
   loading: 'Wird geladen…', // auth_loading
   redirectingSignin: 'Weiterleitung zur Anmeldung…', // auth_redirecting_signin
   sessionExpired: 'Sitzung abgelaufen – neue Anmeldung…', // auth_session_expired
+  // CYP-515: Kratos returned the login flow to the app (`?flow=`) but there is no session — a misconfigured ui_url
+  // pointing at the SPA. A NEUTRAL, non-looping "continue to login" (no auto-redirect → no rate-limit loop; no
+  // credential field → §1 redirect-only boundary holds). Not a blank/dead-end: it offers the manual login handoff.
+  flowStrandedBody: 'Bitte melde dich an, um fortzufahren.', // auth_flow_stranded_body
+  retrySignin: 'Zur Anmeldung', // auth_retry_signin
   verifyTitle: 'E-Mail bestätigen', // auth_verify_pending_title
   // AuthMe is content-free (no email field) → generic body, no interpolation (the email would be a server-work add,
   // deferred per spec §6). Honest: it names the required action without rendering an identity/secret.

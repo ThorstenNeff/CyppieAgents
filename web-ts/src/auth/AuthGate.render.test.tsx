@@ -10,6 +10,7 @@ const setup = (over: {
   authMe?: AuthMe | Promise<AuthMe>
   reject?: boolean
   breakGlass?: boolean
+  flowReturnPresent?: boolean
 } = {}) => {
   const redirectToLogin = vi.fn()
   const redirectToLogout = vi.fn()
@@ -23,6 +24,7 @@ const setup = (over: {
       redirectToLogin={redirectToLogin}
       redirectToLogout={redirectToLogout}
       breakGlass={over.breakGlass}
+      flowReturnPresent={over.flowReturnPresent}
     >
       {(operator) => {
         childOperator(operator)
@@ -69,6 +71,33 @@ describe('AuthGate (CYP-470)', () => {
     expect(await findByTestId('auth.redirect')).toBeTruthy()
     await waitFor(() => expect(redirectToLogin).toHaveBeenCalled()) // redirect fires in an effect after the state flips
     expect(queryByTestId('app-content')).toBeNull()
+  })
+
+  it('none + ?flow= return → does NOT auto re-redirect (CYP-515 loop guard, UIUX tooth: no re-redirect, no loop)', async () => {
+    const { findByTestId, redirectToLogin } = setup({ reject: true, flowReturnPresent: true })
+    expect(await findByTestId('auth.flowStranded')).toBeTruthy() // neutral continue-to-login, not the redirect screen
+    await flush()
+    expect(redirectToLogin).not.toHaveBeenCalled() // the loop driver is suppressed — no rate-limit hammering
+  })
+
+  it('none + ?flow= → a crafted flow return reaches NO app content and NO credential field (fail-closed, no bypass)', async () => {
+    const { container, queryByTestId } = setup({ reject: true, flowReturnPresent: true })
+    await flush()
+    expect(queryByTestId('app-content')).toBeNull() // still gated: no session → no app, even with ?flow= present
+    expect(container.querySelector('input')).toBeNull() // §1 boundary: never a credential field
+  })
+
+  it('none + ?flow= → the continue-to-login action re-initiates login MANUALLY (user-driven, one hop, no auto-loop)', async () => {
+    const { findByTestId, getByTestId, redirectToLogin } = setup({ reject: true, flowReturnPresent: true })
+    await findByTestId('auth.flowStranded')
+    fireEvent.click(getByTestId('auth.retrySignin'))
+    expect(redirectToLogin).toHaveBeenCalledTimes(1)
+  })
+
+  it('none WITHOUT a flow return → still auto-redirects (normal login path unaffected, regression guard)', async () => {
+    const { findByTestId, redirectToLogin } = setup({ reject: true, flowReturnPresent: false })
+    expect(await findByTestId('auth.redirect')).toBeTruthy()
+    await waitFor(() => expect(redirectToLogin).toHaveBeenCalled())
   })
 
   it('logout → the Kratos logout flow (server-authoritative, no client cookie-clear) (tooth 3)', async () => {

@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { AuthGate } from './auth/AuthGate'
-import { loginUrl, logoutUrl } from './auth/authConfig'
+import { loginUrl, logoutUrl, hasLoginFlowReturn } from './auth/authConfig'
 import { RestHubRepo } from './state/restRepo'
 import { readHubConfig } from './state/hubConfig'
 import { isOperatorServe } from './platform/operatorToken'
@@ -27,6 +27,7 @@ createRoot(root).render(
       redirectToLogin={redirectToLogin}
       redirectToLogout={() => window.location.assign(logoutUrl())}
       breakGlass={isOperatorServe()}
+      flowReturnPresent={hasLoginFlowReturn(window.location.search)} // CYP-515: don't re-init a Kratos flow return → loop
     >
       {(operator) => <App operatorOverride={operator} />}
     </AuthGate>

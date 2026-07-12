@@ -18,3 +18,12 @@ export function logoutUrl(): string {
   const injected = g().CYPPIE_LOGOUT_URL
   return injected !== undefined && injected !== '' ? injected : '/self-service/logout/browser'
 }
+
+/** CYP-515 — true when the URL carries a Kratos self-service flow return (`?flow=<id>`). In the ratified redirect-only
+ *  design (§1, Kratos-hosted login UI) the SPA is NEVER the login `ui_url`, so it should never receive this. If a
+ *  misconfigured `ui_url` points back at the app, re-initiating the flow-init on this return would loop endlessly and
+ *  self-DoS the rate limit (429). The AuthGate reads this to FAIL CLOSED (no auto re-redirect) instead of hammering. */
+export function hasLoginFlowReturn(search: string): boolean {
+  const flow = new URLSearchParams(search).get('flow')
+  return flow !== null && flow !== '' // present-but-empty is not a real flow return → normal login redirect stands
+}
