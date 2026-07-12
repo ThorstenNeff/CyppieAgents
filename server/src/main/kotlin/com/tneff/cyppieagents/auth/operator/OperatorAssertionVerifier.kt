@@ -11,7 +11,6 @@ import java.security.spec.ECGenParameterSpec
 import java.security.spec.ECParameterSpec
 import java.security.spec.ECPoint
 import java.security.spec.ECPublicKeySpec
-import java.util.concurrent.ConcurrentHashMap
 
 /** The verdict of an operator assertion check — fail-closed: anything not [Verified] is a reject with a stable code. */
 sealed interface AssertionResult {
@@ -25,10 +24,44 @@ fun interface NonceLedger {
     fun useOnce(nonce: ByteArray): Boolean
 }
 
-/** In-memory single-use ledger (unbounded is fine for tests; prod bounds/expires it). Thread-safe. */
-class InMemoryNonceLedger : NonceLedger {
-    private val seen = ConcurrentHashMap.newKeySet<String>()
-    override fun useOnce(nonce: ByteArray): Boolean = seen.add(nonce.toHex())
+/**
+ * CYP-476 — a **bounded, single-use** nonce ledger with a TTL, so the operator-auth replay guard cannot leak memory
+ * in prod (the previous unbounded set grew per-nonce forever). A nonce is a replay only while it is BOTH present AND
+ * within [ttlMs]; expired entries are purged and don't count. Size is HARD-capped at [maxEntries] (oldest evicted) —
+ * the memory guarantee. **Durability is deliberately NOT needed:** the PoP is also channel-bound to the live Noise
+ * `h`, so a cross-restart replay already fails (a new session = a new `h`); this ledger is in-session defence-in-depth.
+ * Thread-safe (one lock; the [useOnce] path is short).
+ */
+class BoundedNonceLedger(
+    private val maxEntries: Int = 100_000,
+    private val ttlMs: Long = 5 * 60_000L,
+    private val now: () -> Long = { System.currentTimeMillis() },
+) : NonceLedger {
+    private val lock = Any()
+    private val seen = object : LinkedHashMap<String, Long>(16, 0.75f, false) {
+        override fun removeEldestEntry(eldest: Map.Entry<String, Long>): Boolean = size > maxEntries
+    }
+
+    override fun useOnce(nonce: ByteArray): Boolean = synchronized(lock) {
+        val key = nonce.toHex()
+        val t = now()
+        val prev = seen[key]
+        val fresh = prev == null || t - prev > ttlMs // present AND within TTL == replay; else fresh
+        if (fresh) {
+            seen[key] = t // record (or re-record an expired nonce); removeEldestEntry hard-caps the size
+            purgeExpiredHead(t)
+        }
+        fresh
+    }
+
+    /** Drop expired entries from the OLDEST end (insertion-order ≈ time-order); [maxEntries] is the hard bound. */
+    private fun purgeExpiredHead(t: Long) {
+        val it = seen.entries.iterator()
+        while (it.hasNext()) {
+            if (t - it.next().value > ttlMs) it.remove() else break
+        }
+    }
+
     private fun ByteArray.toHex() = joinToString("") { "%02x".format(it.toInt() and 0xFF) }
 }
 
@@ -46,7 +79,7 @@ class InMemoryNonceLedger : NonceLedger {
  *     credential (Ed25519 or ES256), with a matching credential id.
  */
 class OperatorAssertionVerifier(
-    private val nonces: NonceLedger = InMemoryNonceLedger(),
+    private val nonces: NonceLedger = BoundedNonceLedger(),
 ) {
     fun verify(
         pop: OperatorDevicePoP,

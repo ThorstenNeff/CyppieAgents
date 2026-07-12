@@ -137,6 +137,10 @@ class BootedPlatform(
      *  provisioned at boot from the S-B SecretStore when local-hub custody is configured; null otherwise
      *  (tests/legacy). Consumed by S-D/S-E (Control Plane + Noise); laid as the anchor here. */
     val hubIdentity: com.tneff.cyppieagents.crypto.HubIdentity? = null,
+    /** CYP-476 — the durable, S-B-backed operator device store (the Phase-2 operator-auth PoP anchor), constructed
+     *  at boot from the same S-B SecretStore when local-hub custody is configured; null otherwise (tests/legacy).
+     *  Opt-in-off → the current server is unchanged (health 200). Consumed by the RR5-gated operator-auth path. */
+    val operatorDeviceStore: com.tneff.cyppieagents.auth.operator.OperatorDeviceStore? = null,
 )
 
 /**
@@ -963,6 +967,13 @@ class BootOrchestrator(
             null
         }
 
+        // CYP-476 (②): construct the durable operator device store from the SAME S-B SecretStore — opt-in-off (only
+        // when local-hub custody is wired). Without it the CYP-472 store is dead code; with it the Phase-2 First-Enroll
+        // anchor is restart-durable. Nothing consumes it in the live local path yet (RR5-gated operator-auth does).
+        val operatorDeviceStore = hubSecretStore?.let {
+            com.tneff.cyppieagents.auth.operator.SecretStoreBackedOperatorDeviceStore(it)
+        }
+
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, durableActive, agentManagement, reportStore, projectRegistry, projectDeleter,
@@ -977,6 +988,7 @@ class BootOrchestrator(
             projectSwitcher = projectSwitcher, // CYP-410 (S-A)
             resourceGovernor = resourceGovernor, // CYP-417 (S-G)
             hubIdentity = hubIdentity, // CYP-441 (S-C)
+            operatorDeviceStore = operatorDeviceStore, // CYP-476 (②)
         )
     }
 }
