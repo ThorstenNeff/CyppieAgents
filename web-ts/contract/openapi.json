@@ -1072,6 +1072,51 @@
                 }
             }
         },
+        "/api/cp/hubticket": {
+            "post": {
+                "operationId": "post_api_cp_hubticket",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HubTicketRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HubTicketResponse"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/agents/{id}/connector": {
             "post": {
                 "operationId": "post_api_agents__id__connector",
@@ -3106,6 +3151,42 @@
                     "rendezvousId",
                     "relayUrl"
                 ]
+            },
+            "HubTicketRequest": {
+                "type": "object",
+                "properties": {
+                    "hubId": {
+                        "type": "string"
+                    },
+                    "cb": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "hubId",
+                    "cb"
+                ]
+            },
+            "HubTicketResponse": {
+                "type": "object",
+                "properties": {
+                    "cpJwt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "failure": {
+                        "enum": [
+                            "CP_SESSION_EXPIRED",
+                            "NOT_AUTHORIZED_FOR_HUB"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
             },
             "ConnectorChoice": {
                 "type": "object",

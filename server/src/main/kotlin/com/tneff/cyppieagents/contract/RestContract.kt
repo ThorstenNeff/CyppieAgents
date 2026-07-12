@@ -117,6 +117,9 @@ object RestContract {
         //     INERT (typed failure) until CYPPIE_REMOTE_RELAY_URL; business outcome = 200 + typed body (mint idiom). ---
         Op("GET", "/api/cp/rendezvous/{hubId}", Tier.OPERATOR, response = json<com.tneff.cyppieagents.controlplane.RendezvousResolveResponse>()),
         Op("POST", "/api/cp/rendezvous/{hubId}", Tier.OPERATOR, response = json<com.tneff.cyppieagents.controlplane.RendezvousResolveResponse>()),
+        // --- HubTicketRoutes (CYP-508, Phase-2 activation) — CP mint of the hub hubTicket (operator-gated).
+        //     INERT (NOT_AUTHORIZED_FOR_HUB) until the §3 swap gate; business outcome = 200 + typed body. ---
+        Op("POST", "/api/cp/hubticket", Tier.OPERATOR, request = json<com.tneff.cyppieagents.controlplane.HubTicketRequest>(), response = json<com.tneff.cyppieagents.controlplane.HubTicketResponse>()),
         // --- ConnectorRoutes ---
         Op("POST", "/api/agents/{id}/connector", Tier.OPERATOR, request = json<ConnectorChoice>(), response = json<Agent>()),
         // --- ConfigRoutes (/api/config) — masked at rest, never re-rendered ---
