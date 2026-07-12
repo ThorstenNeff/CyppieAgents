@@ -1,9 +1,7 @@
 package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.auth.AuthDeps
-import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
-import com.tneff.cyppieagents.auth.PrincipalKey
 import com.tneff.cyppieagents.auth.authenticatedApi
 import com.tneff.cyppieagents.controlplane.AdmitResult
 import com.tneff.cyppieagents.controlplane.HubAdmissionNonce
@@ -50,11 +48,10 @@ fun Route.hubAdmissionRoutes(
             call.respond(HubChallenge(Base64.getEncoder().encodeToString(nonces.issue())))
         }
         post("$apiBase/cp/admit") {
-            val opId = when (val p = call.attributes[PrincipalKey]) {
-                is AuthPrincipal.Human -> p.identityId
-                AuthPrincipal.MachineOperator -> machineOperatorId
-                is AuthPrincipal.MachineAgent -> null // never reaches an OPERATOR gate (403 first) — defensive
-            } ?: return@post call.respond(HubAdmissionResult(admitted = false, reason = "no_operator"))
+            // CYP-520: the shared [cpOperatorId] helper (CYP-516) — the 4th and last un-centralized opId copy at the
+            // owner-chain root, now single-sourced across mint/resolve/register/admit (no drift).
+            val opId = call.cpOperatorId(machineOperatorId)
+                ?: return@post call.respond(HubAdmissionResult(admitted = false, reason = "no_operator"))
             val req = call.receive<HubAdmissionRequest>()
             val nonce = runCatching { Base64.getDecoder().decode(req.nonce) }.getOrNull()
                 ?: return@post call.respond(HubAdmissionResult(admitted = false, reason = "nonce_invalid"))
