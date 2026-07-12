@@ -24,6 +24,13 @@ import com.tneff.cyppieagents.auth.authRepositoryFor
 import com.tneff.cyppieagents.auth.defaultAuthLiveEnv
 import com.tneff.cyppieagents.auth.resolveAuthMode
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
+import com.tneff.cyppieagents.connect.HubConnectViewModel
+import com.tneff.cyppieagents.connect.RemoteHubConnectGate
+import com.tneff.cyppieagents.connect.StubControlPlaneClient
+import com.tneff.cyppieagents.connect.StubHubCredentialRepository
+import com.tneff.cyppieagents.connect.StubLocalConnectFeed
+import com.tneff.cyppieagents.connect.defaultRemoteConnectFeed
+import com.tneff.cyppieagents.connect.remoteHubEnabled
 
 @Composable
 @Preview
@@ -40,6 +47,10 @@ fun App(
     // CYP-268 R3: the persisted theme-mode store; tests inject a fake (e.g. InMemoryThemePreferences(DARK)).
     // null → the platform default ([defaultThemePreferences]): durable on Web/Desktop, in-memory on Android/iOS.
     themePreferences: ThemePreferences? = null,
+    // CYP-486 live-wiring: the hard off-default remote-hub flag. OFF (default) ⇒ the hub-connect flow is NOT
+    // constructed ([RemoteHubConnectGate]) → byte-identical to today; ON ⇒ mounts HubConnectFlow before the
+    // workspace, INERT until the relay runway lands (a flipped flag connects to nothing). Tests inject `true`.
+    remoteConnectEnabled: Boolean = remoteHubEnabled(),
 ) {
     // CYP-176: the login gate wraps the existing desktop (auth-spec §8.1) — it renders the auth screens
     // until AuthState == Verified, then mounts AgentShell unchanged (CYP-15). enableTestTagsAsResourceId()
@@ -85,19 +96,33 @@ fun App(
                 // CYP-186: the verified user's tier gates the desktop's operator surfaces (hybrid: role OR token).
                 // CYP-188: thread the session credential so a session-only user (Kratos login, no operator token)
                 // authenticates the shell's data reads/sockets (X-Session-Token native / same-origin cookie browser).
-                AgentShell(
-                    modifier = Modifier.fillMaxSize(),
-                    tier = tier,
-                    sessionToken = authRepo::currentSessionToken,
-                    themeMode = themeMode,
-                    onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
-                    composerHistorySize = composerHistorySize,
-                    onComposerHistorySizeChange = { n ->
-                        val clamped = clampComposerHistorySize(n)
-                        composerHistorySize = clamped
-                        themePrefs.setComposerHistorySize(clamped)
+                // CYP-486 live-wiring: gate the (INERT) remote hub-connect flow. OFF (default) ⇒ createViewModel
+                // is never invoked and AgentShell renders directly — byte-identical to today.
+                RemoteHubConnectGate(
+                    enabled = remoteConnectEnabled,
+                    createViewModel = {
+                        HubConnectViewModel(
+                            controlPlane = StubControlPlaneClient(),
+                            credentials = StubHubCredentialRepository(),
+                            connectFeed = StubLocalConnectFeed(),
+                            remoteConnectFeed = defaultRemoteConnectFeed(),
+                        )
                     },
-                )
+                ) {
+                    AgentShell(
+                        modifier = Modifier.fillMaxSize(),
+                        tier = tier,
+                        sessionToken = authRepo::currentSessionToken,
+                        themeMode = themeMode,
+                        onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
+                        composerHistorySize = composerHistorySize,
+                        onComposerHistorySizeChange = { n ->
+                            val clamped = clampComposerHistorySize(n)
+                            composerHistorySize = clamped
+                            themePrefs.setComposerHistorySize(clamped)
+                        },
+                    )
+                }
             }
         }
     }

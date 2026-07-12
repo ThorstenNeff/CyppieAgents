@@ -1,0 +1,68 @@
+package com.tneff.cyppieagents.connect
+
+import com.tneff.cyppieagents.net.hub.noise.NoiseJavaClientTransport
+import com.tneff.cyppieagents.net.hub.operator.ClientOperatorAuth
+import com.tneff.cyppieagents.net.hub.operator.CpJwtProvider
+import com.tneff.cyppieagents.net.hub.operator.KeystoreOperatorDeviceKeyStore
+import com.tneff.cyppieagents.net.hub.operator.NonceGenerator
+import com.tneff.cyppieagents.net.hub.operator.OperatorPopBuilder
+import com.tneff.cyppieagents.net.hub.operator.UserVerification
+import com.tneff.cyppieagents.net.hub.operator.UvOutcome
+import com.tneff.cyppieagents.net.hub.remote.RelayDialer
+import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
+import com.tneff.cyppieagents.net.hub.trust.MapPresentedHubKeySource
+import com.tneff.cyppieagents.net.hub.trust.PendingOobConfirmations
+import com.tneff.cyppieagents.net.hub.trust.TofuHubTrust
+import com.tneff.cyppieagents.net.hub.trust.defaultPinnedHubStore
+import java.security.SecureRandom
+
+/** jvm: the remote-mode flag reads `CYP_REMOTE_HUB` (off unless explicitly `true`). Off-default. */
+actual fun remoteHubEnabled(): Boolean =
+    System.getenv("CYP_REMOTE_HUB")?.equals("true", ignoreCase = true) == true
+
+/**
+ * jvm: the **real but INERT** remote assembly — the honest wiring topology. The real Noise transport, TOFU
+ * trust, and operator-auth are all constructed; the still-gated pieces are explicit **fail-closed seams** (the
+ * CYP-486 Client-Remote-Runway), so even a flipped flag connects to **nothing**:
+ *  - runway #1 [RelayDialer] → throws (no client rendezvous yet) ⇒ every connect fails at dial (RelayUnreachable);
+ *  - runway #2 presented-key → empty [MapPresentedHubKeySource] (client `HubDescriptor` has no `dhPubKey`) ⇒ trust fail-closed;
+ *  - runway #4 [CpJwtProvider] → `null` (S-K hubTicket deferred) ⇒ operator-auth fail-closed.
+ * The nonce source (runway #3) IS built here (jvm `SecureRandom`). Never a fake success — real only when the runway lands.
+ */
+actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? =
+    RemoteHubSessionFactory { hub, scope ->
+        RemoteHubSession(
+            hubId = hub.hubId,
+            transport = NoiseJavaClientTransport(),
+            dialer = gatedRelayDialer,
+            trust = TofuHubTrust(
+                presentedKeys = MapPresentedHubKeySource(), // runway #2: no client dhPubKey yet
+                store = defaultPinnedHubStore(),
+                confirmer = PendingOobConfirmations(),
+            ),
+            authenticator = ClientOperatorAuth(
+                popBuilder = OperatorPopBuilder(
+                    store = KeystoreOperatorDeviceKeyStore(
+                        userVerification = deferredUserVerification,
+                        keyPair = KeystoreOperatorDeviceKeyStore.generateDeviceKey(),
+                    ),
+                    nonceGenerator = secureRandomNonceGenerator,
+                ),
+                cpJwtProvider = CpJwtProvider { null }, // runway #4: no hubTicket yet ⇒ fail-closed
+            ),
+            scope = scope,
+        )
+    }
+
+/** Runway #1: no client relay/rendezvous dialer yet → fail-closed at dial (RelayUnreachable), never connects. */
+private val gatedRelayDialer = RelayDialer {
+    error("client relay rendezvous is not available yet (CYP-486 runway #1) — remote connect fails closed")
+}
+
+/** No UV UI in the headless assembly; never reached (dial fails first). Fail-closed ⇒ Unavailable. */
+private val deferredUserVerification = UserVerification { UvOutcome.Unavailable }
+
+/** Runway #3: the jvm PoP nonce source (`SecureRandom`) — the one small runway item built inline. */
+private val secureRandomNonceGenerator = NonceGenerator {
+    ByteArray(32).also { SecureRandom().nextBytes(it) }
+}
