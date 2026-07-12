@@ -320,6 +320,19 @@ fun Application.bootPlatform(
             )
         },
         hubIdentityFile = gitRoot.toPath().resolve(".cyppie/hub-identity.json").toFile(),
+        // CYP-459 (S3): the Phase-2 remote reverse-tunnel connector factory. INERT unless the Phase-2-Remote-GO gate
+        // (CYPPIE_REMOTE_RELAY_URL) is set AND local-hub custody + the CP-pin config are complete → then the live
+        // NoiseRelayConnector with the RR3 gate (CpJwt + PoP vs live h); else InertRelayConnector (fail-closed → no
+        // dial, current server unchanged). Deferred activation: the actual dial waits on the Phase-2-Remote migration.
+        remoteTransportFactory = { hubIdentity, secretStore, operatorDeviceStore, scope ->
+            com.tneff.cyppieagents.transport.buildRemoteTransport(
+                loopbackPort = config.hub.port,
+                hubIdentity = hubIdentity,
+                hubSecretStore = secretStore,
+                operatorDeviceStore = operatorDeviceStore,
+                scope = scope,
+            )
+        },
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-31: an EXPLICIT WS-origin gate on TOP of CORS — CORS is a no-op when allowedOrigins is empty (WS then
@@ -382,5 +395,10 @@ fun Application.bootPlatform(
         )
     } }
     installPlatform(booted, authDeps, settingsClient, registerMediator)
+    // CYP-459 (S3): stop the Phase-2 remote reverse-tunnel connector on shutdown (a no-op for the Inert default) —
+    // the only new lifecycle hook (there was none). Fail-safe: a stop error never blocks shutdown.
+    monitor.subscribe(io.ktor.server.application.ApplicationStopping) {
+        kotlinx.coroutines.runBlocking { runCatching { booted.remoteTransport.stop() } }
+    }
     return booted
 }

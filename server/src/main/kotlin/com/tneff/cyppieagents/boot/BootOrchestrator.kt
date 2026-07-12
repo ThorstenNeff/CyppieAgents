@@ -39,6 +39,7 @@ import com.tneff.cyppieagents.warden.StallPolicy
 import com.tneff.cyppieagents.warden.StallPolicyRunner
 import com.tneff.cyppieagents.warden.Warden
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.CompactRunSummary
 import kotlinx.coroutines.flow.filter
@@ -141,6 +142,11 @@ class BootedPlatform(
      *  at boot from the same S-B SecretStore when local-hub custody is configured; null otherwise (tests/legacy).
      *  Opt-in-off → the current server is unchanged (health 200). Consumed by the RR5-gated operator-auth path. */
     val operatorDeviceStore: com.tneff.cyppieagents.auth.operator.OperatorDeviceStore? = null,
+    /** CYP-459 (S3) — the Phase-2 remote reverse-tunnel connector. [com.tneff.cyppieagents.transport.InertRelayConnector]
+     *  by default (opt-in-off → no dial, current server unchanged); the live [com.tneff.cyppieagents.transport.NoiseRelayConnector]
+     *  (with the RR3 gate) only behind the Phase-2-Remote-GO boot gate. Held here so it can be stopped on shutdown. */
+    val remoteTransport: com.tneff.cyppieagents.transport.RelayConnector =
+        com.tneff.cyppieagents.transport.InertRelayConnector,
 )
 
 /**
@@ -250,6 +256,17 @@ class BootOrchestrator(
      *  only when local-hub custody is configured (`CYPPIE_MASTER_KEY` present). */
     private val hubSecretStore: com.tneff.cyppieagents.crypto.SecretStore? = null,
     private val hubIdentityFile: java.io.File? = null,
+    /** CYP-459 (S3) — builds the Phase-2 remote reverse-tunnel connector from the boot-derived deps (hub identity,
+     *  the S-B SecretStore holding the `dhKey` static, the operator device store, and the app scope). Default returns
+     *  [com.tneff.cyppieagents.transport.InertRelayConnector] → the hub never dials, the current server/tests are
+     *  unchanged; bootPlatform passes a live factory only behind the Phase-2-Remote-GO gate. */
+    private val remoteTransportFactory: (
+        hubIdentity: com.tneff.cyppieagents.crypto.HubIdentity?,
+        hubSecretStore: com.tneff.cyppieagents.crypto.SecretStore?,
+        operatorDeviceStore: com.tneff.cyppieagents.auth.operator.OperatorDeviceStore?,
+        scope: CoroutineScope,
+    ) -> com.tneff.cyppieagents.transport.RelayConnector =
+        { _, _, _, _ -> com.tneff.cyppieagents.transport.InertRelayConnector },
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -974,6 +991,12 @@ class BootOrchestrator(
             com.tneff.cyppieagents.auth.operator.SecretStoreBackedOperatorDeviceStore(it)
         }
 
+        // CYP-459 (S3): the Phase-2 remote reverse-tunnel connector. Opt-in-off — the factory returns
+        // InertRelayConnector unless bootPlatform wired the live one behind the Phase-2-Remote-GO gate → no dial,
+        // current server unchanged. `start()` is launched on the app scope (a no-op for the Inert default).
+        val remoteTransport = remoteTransportFactory(hubIdentity, hubSecretStore, operatorDeviceStore, scope)
+        scope.launch { runCatching { remoteTransport.start() } }
+
         return BootedPlatform(
             hub, state, registry, sessions, tokenRegistry, store, eventSink, booted, failed, lifecycle,
             projectConfig, durableActive, agentManagement, reportStore, projectRegistry, projectDeleter,
@@ -989,6 +1012,7 @@ class BootOrchestrator(
             resourceGovernor = resourceGovernor, // CYP-417 (S-G)
             hubIdentity = hubIdentity, // CYP-441 (S-C)
             operatorDeviceStore = operatorDeviceStore, // CYP-476 (②)
+            remoteTransport = remoteTransport, // CYP-459 (S3)
         )
     }
 }
