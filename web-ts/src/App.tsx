@@ -65,11 +65,16 @@ export interface AppProps {
   config?: HubConfig
   repo?: HubRepo
   socketDeps?: SocketDeps
+  /** CYP-470: the operator flag resolved from whoami by the AuthGate (role==='OPERATOR'). Overrides the injected-token
+   *  guess so the operator gates hang on the real session; falls back to cfg.operator (break-glass / tests). */
+  operatorOverride?: boolean
 }
 
-export function App({ config, repo, socketDeps }: AppProps = {}) {
+export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {}) {
   const cfg = config ?? readHubConfig()
   const hubRepo = repo ?? new RestHubRepo(cfg.apiBase)
+  // CYP-470: whoami is the truth for operator; cfg.operator (injected token) is the break-glass / test fallback.
+  const operator = operatorOverride ?? cfg.operator
 
   const setRoster = useHubStore((s) => s.setRoster)
   const setChannels = useHubStore((s) => s.setChannels)
@@ -113,7 +118,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
   const lifecyclePending = useHubStore((s) => s.lifecyclePending)
 
   // CYP-432: the event log is its own store (separate from the hub state). OPERATOR-ONLY: it carries message
-  // bodies, so the whole surface (window + socket + data) is gated on cfg.operator — defence-in-depth, not just
+  // bodies, so the whole surface (window + socket + data) is gated on operator — defence-in-depth, not just
   // the server tier (mirrors ShellGate/AclPanel; a W10 backstop if the proxy ever leaks the operator token).
   const onEventsEvent = useEventLogStore((s) => s.onEventsEvent)
   const onEventsClose = useEventLogStore((s) => s.onEventsClose)
@@ -154,8 +159,8 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
         },
         // CYP-432 fail-closed: wire the /ws/events handlers ONLY for an operator → a non-operator never opens the
         // bodies-carrying socket (liveHub skips it when onEventsEvent is absent).
-        onEventsEvent: cfg.operator ? onEventsEvent : undefined,
-        onEventsClose: cfg.operator ? onEventsClose : undefined,
+        onEventsEvent: operator ? onEventsEvent : undefined,
+        onEventsClose: operator ? onEventsClose : undefined,
       },
       socketDeps,
     )
@@ -189,10 +194,10 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     if (agents.length > 0 && !present.has(COMM_WINDOW_ID)) wm.add(tiledWindow(COMM_WINDOW_ID, 'Kommunikation', index++), true)
     if (agents.length > 0 && !present.has(ACL_WINDOW_ID)) wm.add(tiledWindow(ACL_WINDOW_ID, 'Zugriffsrechte (ACL)', index++), false)
     // CYP-432: the event log is OPERATOR-ONLY — a non-operator gets no event window at all (no bodies surface).
-    if (agents.length > 0 && cfg.operator && !present.has(EVENT_WINDOW_ID)) wm.add(tiledWindow(EVENT_WINDOW_ID, 'Ereignis-Protokoll', index++), true)
+    if (agents.length > 0 && operator && !present.has(EVENT_WINDOW_ID)) wm.add(tiledWindow(EVENT_WINDOW_ID, 'Ereignis-Protokoll', index++), true)
     // CYP-452: Browse is the same operator-gated bodies as the live-tail → OPERATOR-ONLY window (omission for a
     // non-operator; no Browse route, no /api/events query, no bodies in the DOM — CYP-432 leak parity).
-    if (agents.length > 0 && cfg.operator && !present.has(EVENT_BROWSE_WINDOW_ID)) wm.add(tiledWindow(EVENT_BROWSE_WINDOW_ID, 'Ereignis-Browser', index++), false)
+    if (agents.length > 0 && operator && !present.has(EVENT_BROWSE_WINDOW_ID)) wm.add(tiledWindow(EVENT_BROWSE_WINDOW_ID, 'Ereignis-Browser', index++), false)
     // CYP-433: the settings/API-key window is present for EVERYONE (present-but-disabled) — the masked status leaks
     // nothing; the panel gates editing on operator internally.
     if (agents.length > 0 && !present.has(SETTINGS_WINDOW_ID)) wm.add(tiledWindow(SETTINGS_WINDOW_ID, 'Einstellungen', index++), false)
@@ -202,7 +207,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     // CYP-464: Product-Lead report window is present for everyone; the panel fail-closes to the gate-hint (no trigger/
     // list/fetch) for a non-operator — reports are content-free, so this is present-but-gate-hint, not omission (§3).
     if (agents.length > 0 && !present.has(PRODUCT_LEAD_WINDOW_ID)) wm.add(tiledWindow(PRODUCT_LEAD_WINDOW_ID, 'Product-Lead', index++), false)
-  }, [agents, cfg.operator])
+  }, [agents, operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
     hubRepo.requestMode(agentId, mode === 'shell' ? 'TERMINAL' : 'ORCHESTRATION').catch(() => undefined)
@@ -283,7 +288,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
       return (
         <AgentManagementPanel
           agents={roster}
-          operator={cfg.operator}
+          operator={operator}
           runStateByAgent={runStateByAgent}
           onCreate={onCreateAgent}
           onUpdate={onUpdateAgent}
@@ -299,7 +304,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
       // (no trigger/list/fetch); for an operator it lists snapshots + triggers new ones.
       return (
         <ProductLeadPanel
-          operator={cfg.operator}
+          operator={operator}
           fetchReports={() => hubRepo.fetchReports()}
           generateReport={(type: ReportType) => hubRepo.generateReport({ type })}
         />
@@ -311,7 +316,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
       // the gate hint. Personal prefs (theme/history) stay in the app bar, ungated — never dragged in here (§0).
       return (
         <SettingsPanel
-          operator={cfg.operator}
+          operator={operator}
           repoConfig={repoConfig}
           onSaveRepo={onSaveRepo}
           apiKeyView={apiKeyView}
@@ -323,7 +328,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     if (win.id === EVENT_WINDOW_ID) {
       // CYP-432 defence-in-depth: never render bodies for a non-operator (even if a window somehow exists), and
       // fail closed to a locked placeholder when access was revoked (WS 1008) — never leave stale bodies showing.
-      if (!cfg.operator) {
+      if (!operator) {
         return (
           <p className="event-log-operator-only" data-testid="event-log-operator-only">
             Das Ereignis-Protokoll ist nur für Operatoren verfügbar.
@@ -352,7 +357,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
     }
     if (win.id === EVENT_BROWSE_WINDOW_ID) {
       // CYP-452 defence-in-depth: like the event log, never render the bodies-carrying Browse for a non-operator.
-      if (!cfg.operator) {
+      if (!operator) {
         return (
           <p className="event-log-operator-only" data-testid="event-browse-operator-only">
             Der Ereignis-Browser ist nur für Operatoren verfügbar.
@@ -386,7 +391,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           entries={aclEntries}
           pending={pendingAcl}
           poAgentId={poAgentId}
-          operator={cfg.operator}
+          operator={operator}
           onCommit={commitAcl}
           error={aclError}
         />
@@ -399,7 +404,7 @@ export function App({ config, repo, socketDeps }: AppProps = {}) {
           agentId={agentId}
           wsBase={cfg.wsBase}
           token={cfg.token}
-          operator={cfg.operator}
+          operator={operator}
           terminalState={terminalStateByAgent.get(agentId) ?? 'MEDIATED'}
           onRequestMode={onRequestMode}
           lifecycleState={runStateByAgent.get(agentId) ?? 'UNKNOWN'}

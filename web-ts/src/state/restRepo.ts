@@ -20,6 +20,7 @@ import type {
   ConnectorsView,
   ReportSnapshot,
   GenerateReportRequest,
+  AuthMe,
 } from '../types/generated/contract'
 import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
 import type { ConnectorKind } from '../connector/connectorModel'
@@ -96,6 +97,9 @@ export interface HubRepo {
   /** CYP-464 (operator). POST /api/reports {type, since?, until?} — generate a NEW immutable snapshot (per-run, never
    *  mutated). Returns the new snapshot. */
   generateReport(req: GenerateReportRequest): Promise<ReportSnapshot>
+  /** CYP-470. GET /api/auth/me (PUBLIC) — the content-free whoami {authenticated, role?, verified}. Drives the
+   *  resolve-then-render session gate + operator/member (fail-closed to none/member). */
+  fetchAuthMe(): Promise<AuthMe>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -177,5 +181,8 @@ export class RestHubRepo implements HubRepo {
   }
   generateReport(req: GenerateReportRequest): Promise<ReportSnapshot> {
     return this.rest.post<ReportSnapshot>('/api/reports', req)
+  }
+  fetchAuthMe(): Promise<AuthMe> {
+    return this.rest.get<AuthMe>('/api/auth/me')
   }
 }

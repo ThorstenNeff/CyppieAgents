@@ -27,6 +27,14 @@ export function restErrorCode(err: unknown): string | null {
   }
 }
 
+// CYP-470: a global 401 handler. Every /api/* 401 (session expired/revoked) fires it → the AuthGate re-auth-redirects
+// (clears operator UI, no stale, no retry loop). Module-level so every repo/client routes through the one handler
+// without threading it; the AuthGate installs it on mount. The failing call still throws RestError(401) as usual.
+let onUnauthorized: (() => void) | null = null
+export function setOnUnauthorized(handler: (() => void) | null): void {
+  onUnauthorized = handler
+}
+
 export class RestClient {
   constructor(private readonly baseUrl: string) {}
 
@@ -59,6 +67,7 @@ export class RestClient {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
 
+    if (res.status === 401) onUnauthorized?.() // CYP-470: session expired/revoked → re-auth redirect (AuthGate)
     if (!res.ok) throw new RestError(res.status, method, path, await res.text().catch(() => ''))
     if (res.status === 204) return undefined as T
     return (await res.json()) as T
