@@ -701,4 +701,17 @@
     <string name="remote_revoke_ended">Remote session ended.</string>
     <string name="a11y_remote_recovery_codes">Recovery codes, shown once — save them safely.</string>
     <string name="a11y_remote_revoke_ended">Remote session ended, connection closed.</string>
+    <!-- CYP-482 S-B (§3): FirstUse OOB-fingerprint-confirm screen (frozen CYP-480 §①) -->
+    <string name="remote_connect_trust_first_title">First connection to %1$s</string>
+    <string name="remote_connect_trust_first_body">Confirm the identity via another channel if security matters, then pin it.</string>
+    <string name="remote_connect_trust_wordlist_label">Comparison words</string>
+    <string name="remote_connect_trust_hex_label">Fingerprint (hex)</string>
+    <string name="remote_connect_trust_qr_label">Scan QR</string>
+    <string name="remote_connect_trust_oob">Confirm via another channel</string>
+    <string name="remote_connect_trust_oob_console">Compare with the display in the hub console.</string>
+    <string name="remote_connect_trust_pinned">Identity pinned</string>
+    <string name="remote_connect_trust_confirm">Matches — pin it</string>
+    <string name="remote_connect_trust_reject">Doesn't match — abort</string>
+    <string name="remote_connect_trust_aborted">Not connected — identity not confirmed.</string>
+    <string name="remote_connect_trust_changed_repin">Re-pin only after an out-of-band comparison of the new fingerprint.</string>
 </resources>
