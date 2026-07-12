@@ -1,0 +1,76 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-460 (Story unter Epic CYP-427) — Desktop-Native Remote-Operator-UX (Ergaenzung zu CYP-429)",
+    "version": "1.0-spec-closure",
+    "status": "Spec-Closure (Q-Rulings gefolded 2026-07-12; Q2/Q3 Threat-Model-parametrisiert, Q6 Recovery offen/eskaliert). Eingefroren als UI-Vorlage. docs-only, nichts gebaut. Baut auf CYP-429/CYP-449, gegroundet gg. CYP-443-Seams (read-only).",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop 817a674c; CYP-443 worktree operator-auth (read-only, Slice-1-only gebaut)",
+    "reuse_first": "KEINE neue Farbe. PIN/Passphrase = AuthPasswordField (maskiert). Native OS-Biometrie folgt dem OS. TOFU/Relay/Kontext/E2E = CYP-429 (identisch). Neutral = onSurfaceVariant/TonedHint(INFO). WARN-Amber NUR Trust-Aenderung (CYP-429 §8). errorContainer NUR harte Terminals (authRejected/Reconnect-fail). Kein tertiary/#40D6A0 als Status.",
+    "code_grounding": "CYP-443 Slice 1 real: RemoteConnState{AUTHENTICATING,TRUST_CHECK,LOST}, RemoteFailure{AuthRejected,TrustChanged}, OperatorAuthenticator.authenticate->Boolean, HubTrust.resolve->TrustResolution{Pinned,FirstUse(fingerprint),Changed}. UNDEFINIERT in Code (= diese UX gibt Gestalt): PoP-Ergebnis-Taxonomie, Keystore-Enroll/Unlock, PIN/Passphrase, Fingerprint-Format.",
+    "color_is_never_sole_signal": "Jeder Zustand Form + Label + a11y (WCAG 1.4.1). Presence != connected; connected=primary nur bei echtem LIVE; nie tertiary-gruen."
+  },
+  "semantic": {
+    "login.oidcHandoff": {
+      "role": "Native Zentral-Login OIDC (§4, Q4=Loopback RFC 8252). App -> System-Browser -> Loopback-Rueckkehr. Email/Passwort nativ-in-app.",
+      "honesty": "H3 — ehrlicher Browser-Handoff, KEIN eingebetteter Webview; UI sagt 'Weiter im Browser / Zurueck zur App'.",
+      "color": "neutraler Login-Stil, kein Sonder-Token",
+      "label_keys": ["remote_login_browser_handoff", "remote_login_browser_return"]
+    },
+    "pop.pathSelect": {
+      "role": "DevicePoP-Union Pfad-Wahl (§5.1, H1): Fido2 (Touch-ID/Hello, progressive) ODER Raw (OS-Keystore + App-PIN, cross-platform inkl Linux).",
+      "honesty": "aktiver Pfad EHRLICH benannt; nie Biometrie-Optik ohne Biometrie (Linux = immer PIN). Fido2 bevorzugt wo verfuegbar, Raw/PIN = Boden.",
+      "color": "neutral onSurfaceVariant",
+      "label_key": "remote_pop_path_hint"
+    },
+    "pop.pinField": {
+      "role": "PIN/Passphrase-Eingabe (Raw-Pfad, §5.4). Q2 Threat-Model-parametrisiert (PIN >=6 Default / Passphrase-Opt-up).",
+      "reuse": "AuthPasswordField (PasswordVisualTransformation, Text-Label-Reveal, nie a11y-Leak)",
+      "color": "bestehender Feld-Stil; kein Sonder-Token",
+      "label_keys": ["remote_pop_pin_title", "remote_pop_pin_body"],
+      "tags": ["remote.authStep.pinField", "remote.authStep.pinReveal"]
+    },
+    "pop.biometric": {
+      "role": "Fido2-Biometrie-Aufforderung (§5.1, Touch-ID/Hello). Native OS-Prompt.",
+      "color": "OS-nativ (App rahmt neutral); Fehl -> PIN-Fallback",
+      "label_key": "remote_pop_biometric_title",
+      "tag": "remote.authStep.biometricPrompt"
+    },
+    "pop.enroll": {
+      "role": "Erst-Setup (§5.2): Fido2 registrieren ODER Raw-Keypair + PIN setzen.",
+      "disclosure_q5": "solange DEVICE_SECURE named-not-built (Phase-1 in-memory): Copy EHRLICH 'nur fuer diese Sitzung' (remote_pop_enroll_session_only) — KEINE Hardware-/Geraete-Persistenz-Zusage; wechselt erst wenn DEVICE_SECURE gebaut (H7/Q5).",
+      "color": "neutral; onSurfaceVariant fuer die Session-Only-Disclosure",
+      "label_keys": ["remote_pop_enroll_title", "remote_pop_enroll_pin", "remote_pop_enroll_session_only"]
+    },
+    "pop.errorTaxonomy": {
+      "role": "Operator-facing Ergebnis-Taxonomie (§5.3) — NEU definiert (Code hat nur Boolean, Naht S-1).",
+      "local_vs_hub": "H2 STRIKT getrennt: LOKAL pinWrong/lockedOut (Versuchszaehler + Backoff, Q3 Threat-Model-parametrisiert) = neutral/Fehler-Ton VOR der Assertion; HUB-seitig authRejected (RemoteFailure.AuthRejected) = TERMINAL, errorContainer, 'neu anmelden', KEIN stiller Retry.",
+      "biometric_fallback": "biometricFailed -> sichtbarer Fallback auf PIN (Raw).",
+      "color": "lokal-Fehler = neutraler/Fehler-Hinweis; authRejected = errorContainer-terminal; nie tertiary-gruen",
+      "label_keys": ["remote_pop_wrong_pin", "remote_pop_locked", "remote_pop_biometric_failed", "remote_pop_rejected", "remote_pop_keystore_unavailable"],
+      "tags": ["remote.authStep.attempts", "remote.authStep.lockedOut", "remote.authStep.error.<cause>"]
+    },
+    "tofu.native": {
+      "role": "TOFU nativ (§6) gegen echte TrustResolution.",
+      "states": "FirstUse(fingerprint)=OOB-Confirm+Pin (Wordlist/Hex/QR, CYP-429 Q4); Pinned=still verifiziert (neutraler 'gepinnt'-Indikator); Changed=HARTER BLOCK terminal (RemoteFailure.TrustChanged), OOB-Re-Pin, nie still.",
+      "color": "neutral fuer FirstUse/Pinned; WARN-Amber (EventVisuals) NUR Changed; nie tertiary-gruen",
+      "reuse": "CYP-429 remote_trust_* / remote.trust.* — identisch"
+    },
+    "connection.native": {
+      "role": "Verbindungszustand/Reconnect (§7, Noise outbound-only, kein Plaintext-Fallback RR8).",
+      "e2e_metadata_honesty": "H5 — E2E-Indikator sagt NUR 'Nutzlast verschluesselt'; Relay sieht Groessen/Timing (Metadaten nicht gepolstert, Framing §6). NICHT ueber Nutzlast hinaus versprechen.",
+      "relay_drop": "H6 — outbound-only Reset -> reportDropped -> ein globales Reconnect-Surface (CYP-449) -> in-flight EHRLICH ungewiss, nie still als erledigt.",
+      "color": "neutral onSurfaceVariant (reconnect, kein Alarm-Rot); connected=primary nur bei echtem LIVE; authRejected/TrustChanged terminal",
+      "reuse": "CYP-429 remote_e2e_indicator / remote_relay_dropped / remote.connect.*"
+    }
+  },
+  "axes_separation": {
+    "role": "VERBINDLICH: getrennte Wahrheiten, nie ineinander gefaerbt/gelesen.",
+    "auth_path": "PIN (Raw, Boden) vs Biometrie (Fido2, progressive) — ehrlich benannt (H1).",
+    "local_vs_hub_reject": "lokaler PIN-Fehler/Lockout (vor Assertion) != hub-seitiger AuthRejected (terminal) (H2).",
+    "transport_confidentiality": "'E2E via Relay' = NUR Nutzlast (Metadaten sichtbar, H5).",
+    "hub_authenticity": "TOFU-Pin (H4) — nie mit Transport konflatiert.",
+    "keystore_durability": "session-only (heute) vs DEVICE_SECURE (spaeter) — ehrlich, nicht ueber-versprechen (H7/Q5).",
+    "rule": "Farbe nie alleiniger Traeger (1.4.1); tertiary/#40D6A0 NIE Status; nur Trust-Aenderung WARN-Amber; nur harte Terminals error-Rot."
+  }
+}
