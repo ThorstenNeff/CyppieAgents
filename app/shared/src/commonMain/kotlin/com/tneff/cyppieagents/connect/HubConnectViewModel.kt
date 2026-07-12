@@ -9,6 +9,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -28,6 +29,9 @@ class HubConnectViewModel(
     private val connectFeed: LocalConnectFeed,
     /** CYP-471 §7 — the remote (Noise-E2E) connect feed. Stub-driven until RR5 (defaulted so existing callers are unaffected). */
     private val remoteConnectFeed: RemoteConnectFeed = StubRemoteConnectFeed(),
+    /** CYP-510 — the live OOB-confirm source (trust layer's OobConfirmState + approve/reject + presented key).
+     *  `null` ⇒ INERT: the remote connect path is byte-identical to today (no live FirstUse screen). */
+    private val oobConfirm: OobConfirmCoordinator? = null,
     /** Hostname default for the editable hub-name field (Q1); the host injects the real device hostname. */
     private val defaultHubName: String = "mein-hub",
     scope: CoroutineScope? = null,
@@ -160,9 +164,28 @@ class HubConnectViewModel(
             ?: return
         remoteJob?.cancel() // Q5: exactly-one-hub — tear the current remote session down before the new one.
         _state.value = HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.RELAY_DIALING))
+        val coordinator = oobConfirm
         remoteJob = runScope.launch {
-            remoteConnectFeed.connect(hub).collect { rs ->
-                _state.value = HubConnectUiState.RemoteConnecting(hub, rs)
+            if (coordinator == null) {
+                // INERT (CYP-510): no live OOB source ⇒ byte-identical to the CYP-471 path.
+                remoteConnectFeed.connect(hub).collect { rs ->
+                    _state.value = HubConnectUiState.RemoteConnecting(hub, rs)
+                }
+            } else {
+                // CYP-510: combine the session feed with the live OobConfirmState. While a FirstUse confirm is
+                // Awaiting (the session is suspended in trust.resolve), surface the mandatory OOB screen at
+                // TRUST_CHECK regardless of the underlying dial state; otherwise reflect the feed's truth.
+                combine(remoteConnectFeed.connect(hub), coordinator.state) { rs, oob -> rs to oob }
+                    .collect { (rs, oob) ->
+                        val mount = buildLiveOobMount(coordinator, hub, oob)
+                        _state.value = if (mount != null) {
+                            HubConnectUiState.RemoteConnecting(
+                                hub, RemoteSessionState(hub.hubId, RemoteConnState.TRUST_CHECK), oobConfirm = mount,
+                            )
+                        } else {
+                            HubConnectUiState.RemoteConnecting(hub, rs)
+                        }
+                    }
             }
         }
     }

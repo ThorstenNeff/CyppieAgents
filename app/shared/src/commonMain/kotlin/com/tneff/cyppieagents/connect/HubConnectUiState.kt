@@ -42,6 +42,9 @@ sealed interface HubConnectUiState {
     data class RemoteConnecting(
         val hub: HubDescriptor,
         val remote: com.tneff.cyppieagents.net.hub.remote.RemoteSessionState,
+        /** CYP-510: the live FirstUse OOB-confirm mount (from the trust layer's OobConfirmState); null ⇒ no
+         *  confirmation pending (or INERT). Non-null ⇒ render the mandatory confirm screen at TRUST_CHECK. */
+        val oobConfirm: OobConfirmMount? = null,
     ) : HubConnectUiState
 }
 
