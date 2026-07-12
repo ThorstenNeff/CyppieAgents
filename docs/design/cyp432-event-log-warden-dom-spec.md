@@ -10,23 +10,33 @@
 
 ---
 
-## 0. Die Leak-Grenze zuerst — `/ws/events` ist **operator-gated Egress mit Bodies**
+## 0. Zugriffs-Rahmung zuerst — Client-Gate = defence-in-depth; die Secret-Grenze sitzt am **Server**
 
-Der PO-Kernpunkt, und der Unterschied zum Lifecycle-Header (CYP-431): der Lifecycle-Feed ist **content-free**
-(`{agentId, runState}`, CYP-421); der **Event-Feed trägt `detail`-JSON-Bodies** (`06` §3). Deshalb ist die **ganze
-Fläche operator-gated**, nicht bloß eine Aktion. **Zwei Gating-Zustände, beide fail-closed:**
+> **PRÄZISIERUNG (Reviewer/Tester 4-Quadranten-Check 2026-07-12, am Objekt bestätigt — ersetzt die frühere
+> „gated-Bodies"-Rahmung):** das Event-Log ist **secret-free METADATA**, **keine** Bodies. `EventModel.detail` ist
+> **content-free by design** (PRD §3.5 — **dieselbe Stufe** wie der Lifecycle-Feed CYP-421, **nicht** eine Ebene darüber),
+> jedes Event wird **vor Egress server-seitig maskiert** (Gate #3, `EventProjector`/`ClaudeCodeConnector`), und
+> `/api/events` ist **MEMBER-tier** lesbar (CYP-186, `EventRoutes.kt`). Die **echte** Secret-/Scope-Grenze sitzt **am
+> Server**: `resolveEventScope` (cross-project-Enum-Block, operator-only Override, fail-closed) + die Masking-Gates
+> halten alles Sensible zurück.
 
-1. **Kein Operator-Token → das Fenster/die Route wird gar nicht angeboten (Omission).** Es existiert **kein**
-   `eventBrowse.*`/`eventTail.*`-Knoten. **DOM-Regel:** die Event-Log-Route/-Komponente wird **nicht gemountet** —
-   die Bodies liegen dann **nicht** im DOM-Baum (ein verstecktes-aber-vorhandenes Element würde die Bodies leaken).
-   QA prüft die Omission über die **Abwesenheit** von `eventBrowse.table`/`eventTail.stream`, nicht über einen
-   „kein Zugriff"-Tag.
+**Der Client-Operator-Gate am Event-Log-Fenster BLEIBT — als bewusste zweite Schicht, nicht als Leak-Barriere:**
+**Produkt-Scoping** (das Event-Log ist ein Operator-/Observability-Feature) **+ defence-in-depth** (der Server ist die
+autoritative Barriere; der Client ist **NICHT** die Sole-Barriere). **Nicht entfernen** — auch wenn der Server die
+Metadaten member-tier ausgäbe, wird die Operator-Fläche im Client für Nicht-Operatoren **nicht angeboten**. **Zwei
+Client-Gating-Zustände (unverändertes Verhalten), beide fail-closed:**
+
+1. **Kein Operator-Token → das Fenster/die Route wird gar nicht gemountet (Omission).** Es existiert **kein**
+   `eventBrowse.*`/`eventTail.*`-Knoten. **DOM-Regel:** **nicht gemountet** (nicht CSS-`hidden`) — die Operator-Fläche
+   wird gar nicht ausgeliefert (defence-in-depth + saubere Produkt-Trennung). QA prüft die Omission über die
+   **Abwesenheit** von `eventBrowse.table`/`eventTail.stream`, nicht über einen „kein Zugriff"-Tag.
 2. **Laufzeit-Entzug (Token am Socket abgelehnt, WS 1008)** → `AccessRevoked`: ehrlicher **„Nur für Operatoren"**-
    Fallback (`event_access_denied`, `eventBrowse.accessRevoked`/`eventTail.accessRevoked`), **nie „live"**, **nie
-   Teildaten**. Der Strom stoppt, die schon gezeigten Bodies werden aus der Ansicht genommen.
+   Teildaten**. Der Strom stoppt, die Ansicht wird geräumt.
 
-> **Das ist die CYP-421-Leak-Lektion, eine Fläche höher:** nicht-gated Kanäle tragen keine Bodies; dieser hier
-> **tut** es → die Gating-Grenze sitzt am Mount, nicht an einem CSS-`hidden`.
+> **Einordnung korrigiert:** Event-Log = **content-free Metadata** (server-maskiert), **auf derselben Stufe wie der
+> Lifecycle-Feed CYP-421** — **nicht** eine „gated-Bodies"-Stufe darüber. Die Bodies hält der **Server** zurück; der
+> Client-Mount-Gate ist die **bewusste zweite Schicht** (Produkt-Scoping + defence-in-depth), und bleibt.
 
 ---
 
