@@ -99,6 +99,21 @@ fun main() {
                 event = ResultEvent(subtype = "success", sessionId = "s1"),
             )
         }
+        // CYP-452 §A6 Browse corpus — Event-Log events on the REST-history path (GET /api/events). Boot-seeded, so
+        // they appear in the Browse panel but NOT the live-only tail (the two-path discriminator). Distinctive
+        // detail markers ("BROWSE-SEED-*") + mixed severity let the tooth assert content and a server-side filter.
+        platform.booted.eventSink.append(
+            EventDraft(WebE2eSeed.SEED_AGENT, WebE2eSeed.PROJECT, EventType.TOOL_CALL, Severity.INFO,
+                detail = buildJsonObject { put("browseSeed", "BROWSE-SEED-A") }),
+        )
+        platform.booted.eventSink.append(
+            EventDraft(WebE2eSeed.SEED_AGENT, WebE2eSeed.PROJECT, EventType.TOOL_RESULT, Severity.WARN,
+                detail = buildJsonObject { put("browseSeed", "BROWSE-SEED-B") }),
+        )
+        platform.booted.eventSink.append(
+            EventDraft("po", WebE2eSeed.PROJECT, EventType.ERROR_TOOL, Severity.ERROR,
+                detail = buildJsonObject { put("browseSeed", "BROWSE-SEED-C") }),
+        )
     }
 
     Runtime.getRuntime().addShutdownHook(Thread { runCatching { platform.close() } })
