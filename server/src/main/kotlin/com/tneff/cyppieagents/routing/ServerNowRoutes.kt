@@ -13,9 +13,14 @@ import io.ktor.server.routing.route
  * REST read the client makes at /ws/agent attach, deliberately NOT a new WS frame (a browser WebSocket can't read
  * handshake headers → frame-or-REST; REST leaves CYP-412's bare `StoredAgentEvent` /ws/agent seam untouched).
  *
- * Content-free: only [ServerNow.serverNowMs]. **PARTICIPANT-tier** — the same authenticated read line as
- * `GET /api/agents`, which the frontend already fetches at attach (no anonymous access, nothing sensitive). The
- * [now] clock is injected so tests can drive a fixed instant.
+ * Content-free: only [ServerNow.serverNowMs]. **Read-tier via [requireCommReader]** (token OR a verified human
+ * OPERATOR/MEMBER session) — the SAME resolver as `GET /api/agents`, which the frontend fetches at the same attach.
+ *
+ * **CYP-487 (cutover landmine):** this was token-only ([requireParticipant]) — the tokenless SPA (Kratos session
+ * cookie, no bearer — CYP-230) got **401** here, exactly the CYP-320 bug class. Since CYP-346's client-born
+ * transcript timestamping ("stamp against SERVER time instead of the BROWSER clock") is a browser-session read, the
+ * token-only gate was a latent cutover 401. The Tier stays PARTICIPANT (the OpenAPI already advertised
+ * `sessionCookie`); the fix aligns the gate with the contract. [now] is injected so tests drive a fixed instant.
  */
 fun Route.serverNowRoutes(
     now: () -> Long,
@@ -25,7 +30,7 @@ fun Route.serverNowRoutes(
 ) {
     route("$apiBase/server-now") {
         get {
-            call.requireParticipant(deps)
+            call.requireCommReader(deps, registry) // token OR verified human session; 401 if unauthenticated
             call.respond(ServerNow(serverNowMs = now()))
         }
     }
