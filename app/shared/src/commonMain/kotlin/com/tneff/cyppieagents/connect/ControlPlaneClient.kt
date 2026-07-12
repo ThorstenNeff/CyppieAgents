@@ -15,6 +15,14 @@ data class HubDescriptor(
     val online: Boolean,
     val defaultPort: Int,
     val lastSeen: Long,
+    /**
+     * CYP-495 (Client-Remote-Runway #2, Decision 3 = Option X): the hub's X25519 Noise static as **base64 of the
+     * raw 32 bytes**, mirrored from the `:core` `HubDescriptor.dhPubKey` (CYP-481). The client **TOFU-pins** this
+     * (CYP-478) and derives the OOB fingerprint (CYP-482) from it;
+     * [com.tneff.cyppieagents.net.hub.trust.RegistryPresentedHubKeySource] decodes it straight-through. Default
+     * `""` = no key yet ⇒ fail-closed at trust (empty/malformed/wrong-sized → `null`, never a blind handshake).
+     */
+    val dhPubKey: String = "",
 )
 
 /** CYP-419 — outcome of hub registration (spec §4 A2 / seam **S-4**). Phase-1 desktop = device-code automatic (Q7). */
