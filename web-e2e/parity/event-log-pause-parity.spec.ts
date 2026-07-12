@@ -11,13 +11,12 @@ test.describe('A6 · Event-Log Live-Tail Pause (CYP-448)', () => {
     await page.goto('/');
     await expect(page.locator('[data-testid="event-log"]')).toBeVisible();
     await eventsWs;
-    await page.waitForTimeout(300);
+    // CYP-499 (my finding, now MERGED 64f296a5): /ws/events emits CaughtUp on-subscribe → the tail flips
+    // Loading→Live. This restores UIUX tooth 2's live-in-freeze discriminator (live must be present to prove it
+    // vanishes on pause).
+    await expect(page.locator('[data-testid="event-log-live"]')).toBeVisible();
 
-    // NOTE (finding, reported): the tail never reaches "Live" — the server /ws/events emits no CaughtUp, so
-    // `caughtUp` stays false and event-log-live never shows (status stuck "Verlauf lädt…"). The live-in-freeze
-    // discriminator (UIUX tooth 2) is thus weakened here; the BUFFERING discriminator (tooth 1) carries the proof.
-
-    // PAUSE → the paused indicator is shown (and live is — correctly — absent).
+    // PAUSE → tooth 2: the paused indicator is shown and the live indicator VANISHES (a frozen view is never live).
     await page.locator('[data-testid="event-log-pause"]').dispatchEvent('click');
     await expect(page.locator('[data-testid="event-log-paused"]')).toBeVisible();
     await expect(page.locator('[data-testid="event-log-live"]')).toHaveCount(0);
@@ -28,9 +27,10 @@ test.describe('A6 · Event-Log Live-Tail Pause (CYP-448)', () => {
     expect(emit.ok()).toBe(true);
     await expect(page.locator('[data-testid="event-log-buffered"]')).toContainText('1');
 
-    // tooth 3: RESUME → the pause + buffered cue clear, and the once-buffered event is now in the tail (caught up,
-    // not discarded).
+    // tooth 3: RESUME → live again, the pause + buffered cue clear, and the once-buffered event is now in the tail
+    // (caught up, not discarded).
     await page.locator('[data-testid="event-log-pause"]').dispatchEvent('click');
+    await expect(page.locator('[data-testid="event-log-live"]')).toBeVisible();
     await expect(page.locator('[data-testid="event-log-paused"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="event-log-buffered"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="event-log-rows"]')).toContainText('onerror');
