@@ -131,18 +131,23 @@ fun main() {
         // seq-`?since`/reconnect tooth can assert rendered transcript rows. (backend's success-ResultEvent corpus is
         // frame-only — the streamJsonMapper suppresses a success result, so it yields 0 rows.)
         repeat(WebE2eSeed.TRANSCRIPT_ROWS) { i ->
+            // §B-1 XSS-at-transcript-sink: embed the payload in row 0's text (keeps TRANSCRIPT_ROWS unchanged for the
+            // seq-reconnect count + the "TRANSCRIPT-SEED-0" marker) → the transcript tooth asserts it renders inert.
+            val text = if (i == 0) "TRANSCRIPT-SEED-0 ${WebE2eSeed.XSS_PROBE}" else "TRANSCRIPT-SEED-$i"
             platform.booted.agentEventStore.append(
                 agentId = WebE2eSeed.TRANSCRIPT_AGENT,
                 projectId = WebE2eSeed.PROJECT,
                 tsMs = (i + 1).toLong(),
                 event = AssistantEvent(
-                    message = AgentMessage(id = "m$i", role = "assistant", content = listOf(TextBlock("TRANSCRIPT-SEED-$i"))),
+                    message = AgentMessage(id = "m$i", role = "assistant", content = listOf(TextBlock(text))),
                 ),
             )
         }
         // CYP-422 Comm-Timeline corpus: seed messages in the po-backend spoke (both members can write). History
         // loads via GET /api/channels/{id}/messages; live + dedup-by-Message.id over /ws/comm (the reconnect tooth).
-        platform.booted.hub.postAsAgent("po", WebE2eSeed.SEED_CHANNEL, "COMM-SEED from po")
+        // §B-1 XSS-at-comm-body-sink: embed the payload in the po message body (keeps the 2-row count + "COMM-SEED
+        // from po" marker) → the comm-body tooth asserts it renders inert.
+        platform.booted.hub.postAsAgent("po", WebE2eSeed.SEED_CHANNEL, "COMM-SEED from po ${WebE2eSeed.XSS_PROBE}")
         platform.booted.hub.postAsAgent(WebE2eSeed.SEED_AGENT, WebE2eSeed.SEED_CHANNEL, "COMM-SEED from backend")
     }
 
