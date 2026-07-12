@@ -1,0 +1,101 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-480 (Story unter Epic CYP-427) — Trust-Confirm/Recovery/Revocation, Phase 2 (CYP-460-Erweiterung).",
+    "version": "1.0-spec-closure",
+    "status": "Spec-Closure (Q-Rulings gefolded 2026-07-12). docs-only, nichts gebaut. Ergaenzt CYP-429/460. Gegroundet gg. develop efc8eaf7 (read-only). OFFEN: §0.1/§6-Q7 Namens-Bestaetigung PO/DS.",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop efc8eaf7",
+    "grounding_core": "Realer Remote-Pfad laeuft weiter gegen StubRemoteConnectFeed (RemoteConnectFeed.kt:14, 'until RR5'). State+Copy honest-by-design, Backing (Pin-Store, Fingerprint-Rendering, Backup-Codes, Session-TTL/Registry) NICHT gebaut. Diese Tokens zeichnen die Ziel-UX + Ehrlichkeits-Disclosures und flaggen die Seams.",
+    "naming_drift": "CYP-429 §8 remote_trust_* wurde NIE gebaut; CYP-471/475 lieferten die Trust-Zustaende unter remote_connect_trust_* (RemoteConnectTags). Flaeche 1 (FirstUse-Screen = Branch von RemoteConnectingView) konsolidiert daher in remote.connect.trust*; revidiert das im Ticket genannte remote.trust.* -> remote.connect.trust*. PO/DS-Bestaetigung ausstehend (Q7).",
+    "reuse_first": "KEINE neue Farbe. Neutral = onSurfaceVariant. WARN-Amber NUR aus EventVisuals severityColor(WARN) fuer die Trust-Aenderung. errorContainer-Rot/TonedHint(ERROR) nur harte Terminals + Haus-Destructive-Confirm. Fingerprint/TOFU + Provisorisch + TrustChanged = ausgeliefert remote.connect.trust* (CYP-471/475); Enroll-Kontext = CYP-460; Sitzung-beenden = RemoteHubSession.close()/backToHubList() + AlertDialog-Scaffold (LockoutDialog/RemoveDialog). KEIN ApiKeySection/Secrets.mask (existiert nicht); Backup-Codes sind LESBAR (einmal), NICHT maskiert.",
+    "color_is_never_sole_signal": "Jeder Zustand Form + Label + a11y (WCAG 1.4.1). tertiary/#40D6A0 = BRAND, NIE Status.",
+    "code_anchor": "connect/RemoteConnectTags.kt + HubConnectSelection.kt/HubConnectViewModel.kt (Trust-Render + Reject-Seam S-B), net/hub/operator (Enroll/Recovery-Seam S-C), net/hub/remote/RemoteHubSession.close() (Teardown). Toene: eventlog/EventVisuals.kt, ui/TonedHint.kt."
+  },
+  "semantic": {
+    "connect.trust.confirm": {
+      "role": "First-Connect Confirm-Aktion (Option X): pinnt nach OOB-Fingerprint-Abgleich.",
+      "behavior": "pinnt NUR nach explizitem Abgleich; kein Auto-Pin; weiter zu AUTHENTICATING",
+      "color": "neutral primary (Standard-Bestaetigung); nie tertiary-gruen",
+      "label_key": "remote_connect_trust_confirm",
+      "gated_on": "S-A/CYP-478 Fingerprint-Ableitung (FirstUse.fingerprint heute verworfen, RemoteHubSession.kt:111) + Pin-Store"
+    },
+    "connect.trust.reject": {
+      "role": "First-Connect Reject/Abort (Option X): Fingerprint stimmt nicht = mgl. MITM.",
+      "behavior": "FAIL-CLOSED — nicht pinnen, Noise-Session-Teardown, zur Hub-Liste; Ergebnis remote_connect_trust_aborted",
+      "color": "neutral (SICHERE Wahl, KEIN Schreck-Rot) — Reject-bei-Nichtuebereinstimmung ist security-positiv",
+      "label_keys": ["remote_connect_trust_reject", "remote_connect_trust_aborted"],
+      "seam": "S-B/CYP-478 rejectTrust()-Aktion existiert heute nicht (T2, connect-Flow auto-getrieben)"
+    },
+    "connect.trust.provisional": {
+      "role": "Provisorisch-Disclosure am Trust-Screen (CYP-475, SHIPPED) — bleibt (Q1a), solange echtes Pinnen (dhPubKey) RR5-nachgelagert.",
+      "color": "neutral onSurfaceVariant / labelSmall",
+      "label_key": "remote_connect_trust_provisional",
+      "honesty": "Trust-Check impliziert KEINE echte Krypto-Verifikation, solange Fingerprint-Ableitung+Pin-Store ungebaut (T1). Uebersagen-durch-Auslassung vermeiden."
+    },
+    "connect.trust.fingerprint": {
+      "role": "Mehrschichtiger Fingerprint-Block (Q4): Wortlist primaer, Hex + QR sekundaer.",
+      "behavior": "rendert NUR echt aus dhPubKey abgeleitete Bytes — NIE Platzhalter (HA, null != Fake)",
+      "color": "neutral; Hex kopierbar; nie gruen",
+      "label_keys": ["remote_connect_trust_first_title", "remote_connect_trust_first_body", "remote_connect_trust_wordlist_label", "remote_connect_trust_hex_label", "remote_connect_trust_qr_label", "remote_connect_trust_oob", "remote_connect_trust_oob_console", "remote_connect_trust_pinned"],
+      "note": "Copy 1:1 aus CYP-429 §8 re-homed (superseded); nur echt-abgeleitet, gated S-A/CYP-478"
+    },
+    "connect.trust.changed.repin": {
+      "role": "Re-Pin-nur-OOB-Hinweis am TrustChanged-Alarm (HC).",
+      "behavior": "KEIN Re-Pin im MVP (Q1b) — reiner harter Block; _repin ist REIN INFORMATIV, kein Aktions-Button",
+      "color": "WARN-Amber-Kontext (reuse severityColor(WARN)); Alarm selbst = ausgeliefert remote.connect.error.trustChanged (terminal, no-retry)",
+      "label_key": "remote_connect_trust_changed_repin"
+    },
+    "recovery.codes": {
+      "role": "Backup-Codes-Anzeige beim Provisioning (im Enroll) — einmalige Klartext-Anzeige (Entsch. 2a).",
+      "behavior": "EINMAL sichtbar, danach NIE wieder anzeigbar; Verlassen nur nach explizitem Ack; jeder Code single-use",
+      "color": "neutral lesbar (NICHT maskiert — sollen gelesen+gespeichert werden); 'einmal-sichtbar'-Warnung = INFO/GATED-Ton, kein Alarm",
+      "label_keys": ["remote_recovery_codes_title", "remote_recovery_codes_body", "remote_recovery_codes_single_use", "remote_recovery_codes_copy", "remote_recovery_codes_ack"],
+      "a11y_key": "a11y_remote_recovery_codes",
+      "honesty": "kein 'Codes erneut ansehen'-Affordance; Ack-Gate gegen Verlust (HD). Anzahl N/Format = Reviewer-Threat-Model (Q2b), nicht Copy.",
+      "seam": "S-C/CYP-479+CYP-459/469 Backup-Code-Generierung (N Codes, gehasht, single-use) — OperatorDeviceRecovery heute leer (T3)"
+    },
+    "recovery.input": {
+      "role": "Recovery-Eingabe (verlorenes Geraet -> Re-Enroll = Re-Pin, Entsch. 2b/Q6).",
+      "behavior": "Backup-Code (OOB) -> neues Device-Key-Enroll -> Re-Pin; KEIN Zentral-Login-allein-Pfad",
+      "color": "neutral (Dialog); Fehler = error-Ton (invalid/benutzt); erschoepft = neutral ehrlicher OOB-am-Hub-Verweis",
+      "label_keys": ["remote_recovery_start_title", "remote_recovery_start_body", "remote_recovery_code_label", "remote_recovery_no_central", "remote_recovery_invalid_code", "remote_recovery_exhausted"],
+      "honesty": "remote_recovery_no_central = bewusst KEIN Zentral-Login-Recovery (HE/Q6/RR7: sonst wuerde CP-/Konto-Kompromiss = Operator-Seizure)",
+      "seam": "S-C/CYP-479 Recovery-Verifikation (Code -> Re-Enroll)"
+    },
+    "recovery.multidevice": {
+      "role": "Multi-Device als empfohlene Praevention (Entsch. 2) — frame-only + Seam-gated (Q2a).",
+      "color": "neutral onSurfaceVariant (Empfehlung, kein Alarm)",
+      "label_key": "remote_recovery_multidevice_hint",
+      "seam": "S-C/CYP-459/469 Multi-Device-Enroll — HEUTE lehnt der Server ein 2. Geraet ab (Rejected('already_enrolled_recovery_is_q6_seam'), OperatorDeviceEnroll.kt:32; OperatorPinStore modelliert schon ein Set). SEAM-GATED: befolgbaren Rat erst rendern, wenn gebaut."
+    },
+    "revoke.end": {
+      "role": "'Fern-Sitzung beenden'-Kontrolle (Entsch. 4) — Sofort-Teardown DIESER Verbindung.",
+      "behavior": "reuse RemoteHubSession.close()/backToHubList() (gebaut): Loop abbrechen, Tunnel schliessen, LOST, zur Hub-Liste. Destructive-Confirm-Dialog (Haus-Scaffold).",
+      "color": "Kontrolle neutral; Confirm-Dialog folgt Haus-Destructive-Confirm; KEIN tertiary-gruen",
+      "label_keys": ["remote_revoke_end_action", "remote_revoke_confirm_title", "remote_revoke_confirm_body", "remote_revoke_ended"],
+      "a11y_key": "a11y_remote_revoke_ended"
+    },
+    "revoke.scope": {
+      "role": "Ehrlichkeits-Grenze: 'beenden' != 'ueberall widerrufen' (HF, guaranteed-vs-advisory, Q3b MVP-lokal).",
+      "guaranteed": "remote_revoke_confirm_body — diese Verbindung SOFORT getrennt (lokaler Teardown, gebaut)",
+      "advisory": "remote_revoke_scope_note — nur diese Verbindung auf diesem Geraet, KEIN globales Revoke (keine Server-Session-Registry, T3; Cross-Device-Revoke = Follow-up)",
+      "color": "neutral onSurfaceVariant",
+      "label_keys": ["remote_revoke_scope_note"]
+    },
+    "revoke.ttl": {
+      "role": "advisory <=TTL-Ablauf-Hinweis (Entsch. 4/Q3a).",
+      "behavior": "NUR rendern, wenn das Backend eine (neu zu bauende) Operator-Session-TTL liefert; sonst ABSENT (kein erfundenes Ablaufdatum, null != 0)",
+      "color": "neutral onSurfaceVariant/gedaempft, kein Alarm",
+      "label_key": "remote_revoke_ttl_hint",
+      "seam": "S-D/CYP-459 Operator-Session-TTL existiert NICHT (T3: TTL nur auf Participant-Token/WS-Ticket/Nonce-Ledger, nicht auf der Operator-Session)."
+    }
+  },
+  "axes_separation": {
+    "role": "VERBINDLICH: getrennte Wahrheiten, nie ineinander gefaerbt/gelesen (erbt CYP-429).",
+    "hub_authenticity": "TOFU-Pin/Fingerprint-Abgleich (spreche ich mit MEINEM Hub?) — neutral gepinnt / WARN-Amber bei Aenderung; Confirm/Reject nach OOB (HB/HC).",
+    "device_possession_recovery": "Backup-Codes / Re-Enroll = Re-Pin (Besitz wiederherstellen) — KEIN Zentral-Login-allein (HE). Backup-Codes einmal sichtbar (HD).",
+    "session_lifetime": "'beenden' = lokaler Teardown (garantiert) vs. globales Revoke/TTL (advisory, ungebaut) — nie konflatiert (HF).",
+    "rule": "Farbe nie alleiniger Traeger (WCAG 1.4.1); tertiary/#40D6A0 NIE Status; Reject-bei-Nichtuebereinstimmung neutral (sichere Wahl), NUR Trust-Aenderung ist WARN-Amber; kein erfundenes Ablaufdatum/Fingerprint (null != Fake)."
+  }
+}
