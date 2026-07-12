@@ -36,7 +36,10 @@ describe('AclPanel — W9 dialog wiring (CYP-425)', () => {
     const onCommit = vi.fn()
     const { getByTestId, queryByTestId } = render(<AclPanel {...base({ onCommit })} />)
     fireEvent.click(getByTestId('acl.cell.po-frontend.po.read')) // PO read true -> false = lockout risk
-    expect(getByTestId('acl-lockout-dialog')).toBeTruthy()
+    const dialog = getByTestId('acl-lockout-dialog')
+    expect(dialog).toBeTruthy()
+    // CYP-468 micro: this is a WARN, so it must NOT carry the event-log ERROR glyph ⚠ (WARN glyph is ▲, aria-hidden).
+    expect(dialog.textContent).not.toContain('⚠')
     expect(onCommit).not.toHaveBeenCalled() // advisory: nothing committed yet
     fireEvent.click(getByTestId('acl-lockout-cancel'))
     expect(queryByTestId('acl-lockout-dialog')).toBeNull()

@@ -90,7 +90,7 @@ export function LifecycleHeader({ agentId, state, pending, operator, error = nul
           Neustart
         </button>
         {!operator && (
-          <span className="lifecycle-operator-only" data-testid={`lifecycle.operatorOnly.${agentId}`}>
+          <span className="lifecycle-operator-only" role="note" data-testid={`lifecycle.operatorOnly.${agentId}`}>
             Nur Operatoren steuern den Lebenszyklus.
           </span>
         )}

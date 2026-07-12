@@ -64,3 +64,23 @@ export const MARITIME_TOKENS = {
     onWarnContainer: '#FFC857',
   },
 }
+
+// CYP-468 (F2) — the event-log severity palette (CYP-274), now generated from THIS single source instead of being
+// hand-hardcoded in index.css (which drifted outside the token-gen guard). Ported 1:1 from EventVisuals severity
+// colours; used as the glyph colour in EventRow (a scan aid — the severity LABEL carries the meaning, so colour is
+// never the sole signal, which is why `debug` is deliberately a quiet/low-contrast tone). Emitted as `--event-sev-*`
+// by scripts/generate-tokens-css.mjs. Values unchanged from the previous index.css block (no visual/contrast change).
+export const EVENT_SEVERITY = {
+  light: {
+    error: '#B3261E',
+    warn: '#9A6400',
+    info: '#567083',
+    debug: '#B8BCC4',
+  },
+  dark: {
+    error: '#FF6B6B',
+    warn: '#FFC857',
+    info: '#A0A4AD',
+    debug: '#5A5E66',
+  },
+}

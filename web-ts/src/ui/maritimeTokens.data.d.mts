@@ -30,3 +30,8 @@ export type MaritimeRole =
 export type MaritimeScheme = Record<MaritimeRole, string>
 
 export declare const MARITIME_TOKENS: { light: MaritimeScheme; dark: MaritimeScheme }
+
+// CYP-468 (F2) — the event-log severity palette (CYP-274), single-sourced here and emitted as `--event-sev-*`.
+export type EventSeverityKey = 'error' | 'warn' | 'info' | 'debug'
+export type EventSeverityScheme = Record<EventSeverityKey, string>
+export declare const EVENT_SEVERITY: { light: EventSeverityScheme; dark: EventSeverityScheme }

@@ -1,5 +1,6 @@
-// CYP-452 (P2-c.2) — the Event-Log Browse panel: offline inspection over the same operator-gated, mount-gated bodies
-// as the live-tail (CYP-432 leak boundary — App mounts this ONLY for an operator; omission, not present-but-disabled).
+// CYP-452 (P2-c.2) — the Event-Log Browse panel: offline inspection over the same operator-gated, mount-gated content-
+// free metadata as the live-tail. The REAL scope boundary is server-side (resolveEventScope + masking); this client
+// mount-gate is defence-in-depth + product-scoping (App mounts it ONLY for an operator — omission), NOT a leak barrier.
 // Distinct from the tail: seq-paged REST + server-side filter + detail + two-axis drilldown. Shares the ONE EventRow +
 // severity/glyph source (spec §7). The load-bearing honesty:
 //   - server-side query per filter/drilldown tap (never a client post-filter over loaded data — spec §3/tooth 2);
@@ -70,7 +71,8 @@ export function EventBrowsePanel({ getEvents, agentIds }: EventBrowsePanelProps)
       })
       .catch((e) => {
         if (req !== reqSeq.current) return
-        // Runtime access revoke (403) → fail-closed: drop everything, lock the surface (CYP-432 leak parity).
+        // Runtime access revoke (403) → fail-closed: drop everything, lock the surface (server-authoritative; the
+        // server stops scoping events to us — the client just stops showing stale ones, defence-in-depth).
         if (e instanceof RestError && e.status === 403) {
           setEvents([])
           setAccessRevoked(true)
