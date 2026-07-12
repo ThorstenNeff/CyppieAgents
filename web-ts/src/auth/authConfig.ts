@@ -4,6 +4,7 @@
 interface AuthGlobals {
   CYPPIE_LOGIN_URL?: string
   CYPPIE_LOGOUT_URL?: string
+  CYPPIE_KRATOS_URL?: string
 }
 const g = (): AuthGlobals => globalThis as AuthGlobals
 
@@ -17,4 +18,13 @@ export function loginUrl(): string {
 export function logoutUrl(): string {
   const injected = g().CYPPIE_LOGOUT_URL
   return injected !== undefined && injected !== '' ? injected : '/self-service/logout/browser'
+}
+
+/** CYP-515 (a) — the SAME-ORIGIN Kratos public base the in-app login-core drives (the `/self-service/login/browser`
+ *  flow hangs off it). Same-origin is load-bearing: credentials POST over `connect-src 'self'`, and the native
+ *  `ory_kratos_session` httpOnly cookie Kratos sets is first-party. Deploy may override the mount point. No trailing slash. */
+export function kratosBase(): string {
+  const injected = g().CYPPIE_KRATOS_URL
+  const base = injected !== undefined && injected !== '' ? injected : '/.ory/kratos/public'
+  return base.replace(/\/+$/, '')
 }
