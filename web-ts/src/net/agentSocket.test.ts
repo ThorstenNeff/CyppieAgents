@@ -24,7 +24,6 @@ describe('AgentSocket', () => {
     const as = new AgentSocket({
       baseUrl: 'ws://host',
       agentId: 'po',
-      token: 't',
       onEvent: (e) => seqs.push(e.seq),
       factory: hub.factory,
       schedule: hub.runNow,
@@ -34,7 +33,7 @@ describe('AgentSocket', () => {
     as.start()
     const first = hub.last()
     expect(first.url).toContain('agentId=po')
-    expect(first.url).toContain('token=t')
+    expect(first.url).not.toContain('token=') // CYP-454: same-origin cookie authenticates, no token in the query
     expect(first.url).not.toContain('since=') // first connect = full replay
 
     first.emitOpen()
@@ -59,7 +58,6 @@ describe('AgentSocket', () => {
     const as = new AgentSocket({
       baseUrl: 'ws://host',
       agentId: 'po',
-      token: 't',
       onEvent: () => {},
       factory: hub.factory,
       schedule: hub.runNow,

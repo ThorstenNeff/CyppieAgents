@@ -13,7 +13,6 @@ import type { SocketFactory, Scheduler } from '../net/reconnectingSocket'
 export interface UseAgentTranscriptOptions {
   baseUrl: string
   agentId: string
-  token: string
   readyNoticeText: string
   factory?: SocketFactory
   schedule?: Scheduler
@@ -26,7 +25,7 @@ export interface AgentTranscriptHandle {
 }
 
 export function useAgentTranscript(opts: UseAgentTranscriptOptions): AgentTranscriptHandle {
-  const { baseUrl, agentId, token, readyNoticeText, factory, schedule } = opts
+  const { baseUrl, agentId, readyNoticeText, factory, schedule } = opts
   const [rows, setRows] = useState<readonly AgentEvent[]>([])
   const socketRef = useRef<AgentSocket | null>(null)
 
@@ -36,7 +35,6 @@ export function useAgentTranscript(opts: UseAgentTranscriptOptions): AgentTransc
     const socket = new AgentSocket({
       baseUrl,
       agentId,
-      token,
       factory,
       schedule,
       onEvent: (stored) => {
@@ -50,7 +48,7 @@ export function useAgentTranscript(opts: UseAgentTranscriptOptions): AgentTransc
       socket.close()
       socketRef.current = null
     }
-  }, [baseUrl, agentId, token, readyNoticeText, factory, schedule])
+  }, [baseUrl, agentId, readyNoticeText, factory, schedule])
 
   const send = useCallback((text: string) => socketRef.current?.send({ text }) ?? false, [])
   return { rows, send }
