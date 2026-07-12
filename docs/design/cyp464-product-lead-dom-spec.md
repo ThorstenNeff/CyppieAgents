@@ -106,12 +106,14 @@ Label `report_generate` + drei Buttons: `trigger.usage`/`.status`/`.defects` (`r
 Glyph" ist genau das, was die Kontrast-Ausnahme redundanz-basiert aussehen ließ — `severityColor(DEBUG)` = `outline`
 besteht ≥3:1 auf der Zahl selbst).
 
-> **Glyph-Konsistenz-Notiz (kein Blocker, PO/Dev5-Call):** die Compose-Quelle nutzt hier einen **eigenen** Glyph-Satz
-> **✕ / ! / i / ·** (ERROR/WARN/INFO/DEBUG), **distinct** vom Event-Log-Satz (⚠ / ▲ / ⓘ / ·). Für den DOM-Port: **Farbe
-> + Label kommen aus einer Quelle** (das ist Pflicht); für den **Glyph** empfehle ich, den Event-Log-`severityGlyph`
-> (`eventLog.ts`) **wiederzuverwenden** → eine Severity-Glyph-Quelle im ganzen Haus. Falls der report-eigene Satz
-> intentional ist (report-/Checklist-Anmutung), bewahren — dann als **eine** report-lokale Funktion, nicht inline
-> dupliziert. Ich signiere den finalen Glyph auf deinen Zuruf (wie bei CYP-432).
+> **Glyph FINAL SIGNIERT (2026-07-12): der report-lokale Satz ✕ / ! / i / · BLEIBT** (ERROR/WARN/INFO/DEBUG), **nicht**
+> der Event-Log-Reuse. **Begründung (eine Zeile):** ein Report-**Defekt** ist ein geprüftes **Finding/Triage-Mal**
+> (✕ = „das ist ein Defekt"), ein Event-Log-Glyph ist der **Alarm-Grad einer Live-Occurrence** (⚠ = „ein bedenkliches
+> Ereignis") — **verschiedene Achsen** (Finding-Verdikt ≠ Log-Severity), obwohl beide denselben `Severity`-Grad tragen.
+> Der **load-bearing** Teil (Farbe + Label) bleibt **single-source** via `severityColor` + `event_severity_*`; nur der
+> Glyph ist surface-spezifisch. **DOM-Auflage:** der report-Satz ist **eine** report-lokale Funktion (z. B.
+> `reportDefectGlyph(sev)`), **nie inline dupliziert** — innerhalb der Report-Fläche also selbst single-source. (Prinzip:
+> eine Quelle, außer die Unterscheidung ist semantisch load-bearing — hier ist sie es.)
 
 ---
 
