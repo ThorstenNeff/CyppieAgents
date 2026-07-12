@@ -243,15 +243,16 @@ private fun embeddedServerNetty(
     extraRoutes: (io.ktor.server.routing.Routing.() -> Unit)? = null,
     webAllowedOrigins: List<String> = emptyList(),
 ) = io.ktor.server.engine.embeddedServer(Netty, port = port) {
-    // The installPlatform(booted) overload (E2E path) does NOT install CORS — only the production boot-and-
-    // install path does. So a cross-origin browser (the web-ts SPA) would have every REST call blocked. Install
-    // it here from the harness allowlist (empty → no-op, every existing same-origin journey unchanged).
+    // The installPlatform(booted) overload (E2E path) does NOT install CORS — only the production boot-and-install
+    // path does. The CONFIRMED cutover topology (PO1) is SAME-ORIGIN (reverse-proxy = one origin): the parity run
+    // uses a Vite proxy so the browser sees a single origin, and this harness runs with webAllowedOrigins EMPTY →
+    // no CORS installed at all (same as production's API-only server behind the proxy).
     //
-    // allowCredentials=true (NOT installRestrictedCors's false): web-ts's REST client (net/rest.ts) sends
-    // `credentials:'include'` on EVERY call, so a cross-origin credentialed request is browser-blocked unless the
-    // response carries `Access-Control-Allow-Credentials: true` with a specific (non-wildcard) origin. This
-    // deviation is the harness modelling the deploy-proxy's same-origin credentials, so the parity run can reach
-    // the real REST surface — the client↔server credentials/CORS mismatch itself is reported as a P2 finding.
+    // The allowlist seam is retained ONLY for a (currently HELD) cross-origin pass, and it now mirrors production
+    // faithfully: allowCredentials=false, exactly like installRestrictedCors. web-ts's REST client sends
+    // `credentials:'include'`, so a cross-origin credentialed request is CORRECTLY browser-blocked here — that is
+    // fail-closed CORS / the stronger CSRF posture, not a defect (an earlier allowCredentials=true here was a rig
+    // artifact that masked this; reverted).
     if (webAllowedOrigins.isNotEmpty()) {
         install(io.ktor.server.plugins.cors.routing.CORS) {
             webAllowedOrigins.forEach { origin ->
@@ -262,7 +263,7 @@ private fun embeddedServerNetty(
             allowHeader(io.ktor.http.HttpHeaders.ContentType)
             listOf(io.ktor.http.HttpMethod.Get, io.ktor.http.HttpMethod.Post, io.ktor.http.HttpMethod.Put, io.ktor.http.HttpMethod.Delete, io.ktor.http.HttpMethod.Options)
                 .forEach { allowMethod(it) }
-            allowCredentials = true
+            allowCredentials = false // prod-faithful (installRestrictedCors); cross-origin credentialed = fail-closed
         }
     }
     installPlatform(booted)
