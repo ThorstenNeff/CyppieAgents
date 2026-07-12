@@ -20,6 +20,9 @@ import java.util.Base64
  * any byte reaches a route, while the bridge stays a dumb byte-pump (T2).
  */
 object RemoteRelayWiring {
+    /** CYP-484 — the default Op-Session-TTL (passive session lifetime, Decision 4 "kurze TTL Minuten"), single-sourced. */
+    const val DEFAULT_OP_SESSION_TTL_MS: Long = 15 * 60_000L
+
     fun build(
         config: RemoteTransportConfig,
         httpClient: HttpClient,
@@ -28,12 +31,22 @@ object RemoteRelayWiring {
         dhStaticPrivate: ByteArray,
         loopbackPort: Int,
         gate: Rr3TunnelGate,
+        /** CYP-484 — the live-session registry (revocation teardown) + the authenticated operator + the passive TTL. */
+        registry: TunnelSessionRegistry,
+        operatorId: String,
+        sessionTtlMs: Long,
         scope: CoroutineScope,
     ): RelayConnector = NoiseRelayConnector(
         config = config,
         dialer = WebSocketRelayDialer(httpClient, rendezvousId),
         terminator = NoiseJavaServerTerminator(dhStaticPrivate),
-        tunnelHandler = Rr3AuthenticatedTunnelHandler(gate, LoopbackBridge(loopbackPort))::handle,
+        tunnelHandler = Rr3AuthenticatedTunnelHandler(
+            authorize = gate::authorize,
+            bridge = LoopbackBridge(loopbackPort)::bridge,
+            registry = registry,
+            operatorId = operatorId,
+            sessionTtlMs = sessionTtlMs,
+        )::handle,
         scope = scope,
     )
 }
@@ -67,6 +80,9 @@ fun buildRemoteTransport(
     val dhPriv = hubSecretStore.get(HubIdentityProvisioner.DH_KEY)
         ?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
         ?: return InertRelayConnector
+    // CYP-484 — Op-Session-TTL (passive, minutes). Optional override CYPPIE_OP_SESSION_TTL_MIN; else the single-sourced default.
+    val sessionTtlMs = env("CYPPIE_OP_SESSION_TTL_MIN")?.toLongOrNull()?.takeIf { it > 0 }?.let { it * 60_000L }
+        ?: RemoteRelayWiring.DEFAULT_OP_SESSION_TTL_MS
 
     val gate = Rr3TunnelGate(
         cpJwtVerifier = CpJwtVerifier(),
@@ -87,6 +103,9 @@ fun buildRemoteTransport(
         dhStaticPrivate = dhPriv,
         loopbackPort = loopbackPort,
         gate = gate,
+        registry = TunnelSessionRegistry(),
+        operatorId = operatorId,
+        sessionTtlMs = sessionTtlMs,
         scope = scope,
     )
 }
