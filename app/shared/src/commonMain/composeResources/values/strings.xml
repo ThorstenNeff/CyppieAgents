@@ -693,4 +693,25 @@
     <string name="remote_connect_hub_offline">Hub ist offline.</string>
     <string name="remote_connect_handshake_failed">E2E-Handshake fehlgeschlagen.</string>
     <string name="remote_connect_trust_provisional">Vertrauensprüfung vorläufig — echtes Pinnen folgt.</string>
+    <!-- CYP-479 (CYP-480 Fläche ②/③): Q6-Recovery + Revocation -->
+    <string name="remote_recovery_codes_title">Wiederherstellungs-Codes</string>
+    <string name="remote_recovery_codes_body">Bewahre diese Codes offline und sicher auf. Du siehst sie nur dieses eine Mal — sie können nicht erneut angezeigt werden.</string>
+    <string name="remote_recovery_codes_single_use">Jeder Code funktioniert nur einmal.</string>
+    <string name="remote_recovery_codes_copy">Codes kopieren</string>
+    <string name="remote_recovery_codes_ack">Ich habe die Codes sicher gespeichert</string>
+    <string name="remote_recovery_start_title">Gerät wiederherstellen</string>
+    <string name="remote_recovery_start_body">Gib einen deiner Wiederherstellungs-Codes ein, um dieses Gerät neu einzurichten.</string>
+    <string name="remote_recovery_code_label">Wiederherstellungs-Code</string>
+    <string name="remote_recovery_no_central">Ein zentraler Login allein stellt den Zugriff nicht wieder her — das schützt dich, falls dein Konto kompromittiert wird.</string>
+    <string name="remote_recovery_multidevice_hint">Empfehlung: Richte ein zweites Gerät ein, damit du bei Verlust nicht ausgesperrt bist.</string>
+    <string name="remote_recovery_invalid_code">Code ungültig oder bereits benutzt.</string>
+    <string name="remote_recovery_exhausted">Keine Wiederherstellungs-Codes mehr — wende dich für die Wiederherstellung an die Hub-Konsole.</string>
+    <string name="remote_revoke_end_action">Fern-Sitzung beenden</string>
+    <string name="remote_revoke_confirm_title">Fern-Sitzung beenden?</string>
+    <string name="remote_revoke_confirm_body">Diese Verbindung wird sofort getrennt.</string>
+    <string name="remote_revoke_scope_note">Das beendet nur diese Verbindung auf diesem Gerät — es widerruft keine anderen Sitzungen.</string>
+    <string name="remote_revoke_ttl_hint">Deine Berechtigung läuft ohnehin innerhalb von %1$s ab.</string>
+    <string name="remote_revoke_ended">Fern-Sitzung beendet.</string>
+    <string name="a11y_remote_recovery_codes">Wiederherstellungs-Codes, einmalig angezeigt — sicher speichern.</string>
+    <string name="a11y_remote_revoke_ended">Fern-Sitzung beendet, Verbindung getrennt.</string>
 </resources>

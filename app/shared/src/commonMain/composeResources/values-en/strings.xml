@@ -680,4 +680,25 @@
     <string name="remote_connect_hub_offline">The hub is offline.</string>
     <string name="remote_connect_handshake_failed">E2E handshake failed.</string>
     <string name="remote_connect_trust_provisional">Trust check provisional — real pinning to come.</string>
+    <!-- CYP-479 (CYP-480 area ②/③): Q6 recovery + revocation -->
+    <string name="remote_recovery_codes_title">Recovery codes</string>
+    <string name="remote_recovery_codes_body">Store these codes offline and safely. You'll see them only this once — they can't be shown again.</string>
+    <string name="remote_recovery_codes_single_use">Each code works only once.</string>
+    <string name="remote_recovery_codes_copy">Copy codes</string>
+    <string name="remote_recovery_codes_ack">I've saved the codes safely</string>
+    <string name="remote_recovery_start_title">Recover this device</string>
+    <string name="remote_recovery_start_body">Enter one of your recovery codes to set up this device again.</string>
+    <string name="remote_recovery_code_label">Recovery code</string>
+    <string name="remote_recovery_no_central">A central login alone won't restore access — this protects you if your account is compromised.</string>
+    <string name="remote_recovery_multidevice_hint">Recommended: set up a second device so you're not locked out if you lose one.</string>
+    <string name="remote_recovery_invalid_code">Code invalid or already used.</string>
+    <string name="remote_recovery_exhausted">No recovery codes left — use the hub console to recover.</string>
+    <string name="remote_revoke_end_action">End remote session</string>
+    <string name="remote_revoke_confirm_title">End remote session?</string>
+    <string name="remote_revoke_confirm_body">This connection is torn down immediately.</string>
+    <string name="remote_revoke_scope_note">This ends only this connection on this device — it does not revoke other sessions.</string>
+    <string name="remote_revoke_ttl_hint">Your authorization expires within %1$s regardless.</string>
+    <string name="remote_revoke_ended">Remote session ended.</string>
+    <string name="a11y_remote_recovery_codes">Recovery codes, shown once — save them safely.</string>
+    <string name="a11y_remote_revoke_ended">Remote session ended, connection closed.</string>
 </resources>
