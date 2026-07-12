@@ -13,7 +13,7 @@ Security-Gates** (XSS/CSP + Contract-Real-Drift). **Stand develop `7accf768`: W8
 jetzt lauffähig. Der **Phase-1-Kern läuft grün** (6/6, `web-e2e/parity/` gegen den echten Ktor-Harness:
 Assembly · Comm-Fenster · Orchestration↔Shell-Toggle · stream-json-Transkript · ACL-Matrix · Preset). Die
 **Phase-2-Flächen sind gelandet** (Lifecycle-Header CYP-431/445/446, API-Key CYP-433, Event-Log CYP-432) und
-unten in **§A-P2** ausbuchstabiert; **Operator-Positiv-Zähne laufen grün** (same-origin, 9 passed / 3 skipped —
+unten in **§A-P2** ausbuchstabiert; **Operator-Positiv-Zähne laufen grün** (same-origin, 12 passed / 3 skipped —
 Member-Posture skipped-by-design, Coverage-Split in §A-P2). **Topologie = SAME-ORIGIN** (PO1-bestätigt,
 Reverse-Proxy = ein Origin) → `allowCredentials=false` korrekt; der cross-origin-Pass ist **zurückgehalten**.
 E2E-Basis ist die **CYP-418-Harness** (`web-e2e/`, Playwright gegen den echten Ktor-Server via der
@@ -86,9 +86,15 @@ Server) → Zustände → Guardrail**. Pflicht-Zustände überall: **empty / loa
 - [ ] **Preset „Hub-and-Spoke" wiederherstellen** [K] — Leitplanke gegen Aussperren des PO.
 
 ### A6 · Observability (Event-Log) — Spec: `docs/EVENT-LOG-UI.md`
-- [ ] **Browsen** (Master-Detail, Filter Agent/Typ/Severity/Zeit) [K] — gepaged/virtualisiert.
-- [ ] **Korrelations-Drilldown** („ganzer Lauf") [K] — über `correlationId`/`sessionId`.
-- [ ] **Live-Tail mit Pause** [K] — getrennt vom Browsen; `/ws/events`.
+> **Zwei getrennte Flächen (Präzisierung, PO):** (1) **Live-Tail** (`/ws/events`-Socket) ist **live-only by
+> design** — ein Tail replayt keine History (kein Defekt; deshalb emittiert der §A-P2-c-XSS-Zahn den Probe-Event
+> **live**, nicht per Seed). (2) **Browsen / Korrelations-Drilldown** ist **verdrahtet via CYP-452** über
+> `GET /api/events` (server-paged History: `afterSeq`/`since`/`until`) — ein **separater** REST-History-Pfad, **kein**
+> pending/unwired. Beide nach dem Rig-Rebase auf develop `d0144f47` testbar.
+- [ ] **Browsen** (Master-Detail, Filter Agent/Typ/Severity/Zeit) [K] — gepaged/virtualisiert; REST-History via
+  CYP-452 (`GET /api/events`). **Parity-Zahn offen** (nach Rig-Rebase): server-paged Historie + Filter am DOM.
+- [ ] **Korrelations-Drilldown** („ganzer Lauf") [K] — über `correlationId`/`sessionId` (CYP-452-Pfad).
+- [ ] **Live-Tail mit Pause** [K] — getrennt vom Browsen; `/ws/events` (live-only by design).
 - [ ] Projekt-Filter [MP, staged] — der Bericht zählt Projekt-gefiltert (CYP-353/364-Klasse).
 
 ### A7 · Aufsicht (Warden)
@@ -198,9 +204,13 @@ Das Client-seitige Member-Gate (Event-Log **weggelassen**, Lifecycle/API-Key **p
   Bearer-only; ein Member-Serve auth per Cookie/Session → eine token-lose Member-Seite assembliert nicht). Eine
   **Member-Session-Naht in der Harness** = **optionales Post-Cutover-Hardening** (bei Kapazität), **nicht gating**.
 
-**Lauf-Stand §A-P2 (same-origin, gegen die reale Harness):** Operator-Positiv-Zähne **grün** — Lifecycle RUNNING
-+ §8.4 Start-off · API-Key maskiert/write-only · Event-Log operator-mounted (9 passed / 3 skipped). Die
-Operator-Positiv-Zähne beweisen die **Fläche**, nicht das **Gate** — das Gate trägt der Coverage-Split oben.
+**Lauf-Stand §A-P2 (same-origin, gegen die reale Harness auf develop `d0144f47`, 12 passed / 3 skipped):**
+Operator-Positiv-Zähne **grün** — Lifecycle **RUNNING + §8.4 Start-off** **und** eine **echte Stop→Start-
+Transition** (STOPPED-Zeile → RUNNING restauriert, non-optimistisch) · API-Key **maskiert/write-only + clear-
+after-save-Round-Trip** (stärkster Klartext-nie-DOM-Diskriminator) · Event-Log **operator-mounted + XSS-at-detail
+inert** (B-1-Sink: escaped-Text/kein-`<img>`/kein-`onerror`). Die Operator-Positiv-Zähne beweisen die **Fläche**,
+nicht das **Gate** — das Gate trägt der Coverage-Split oben. Offen (Follow-ups): Lifecycle **ERROR + errorReason**
+(braucht FakeSpawner-Fail-Naht) · A6 **Browsen/REST-History** (CYP-452, nach Rig-Rebase) · seq-`?since`/Reconnect.
 
 ---
 
