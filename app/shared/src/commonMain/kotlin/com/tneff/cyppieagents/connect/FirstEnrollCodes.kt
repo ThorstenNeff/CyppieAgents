@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.connect
 
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
+import com.tneff.cyppieagents.operator.BACKUP_CODE_COUNT
 
 /**
  * CYP-525 GE2 — the per-connect first-enroll backup codes (seam). At `CONNECTED`, [firstEnrollCodes] yields the hub's
@@ -21,16 +22,12 @@ fun interface FirstEnrollCodesSource {
 /**
  * CYP-525 H3 (Reviewer) — the SavedAck must gate on a **validated, complete, non-empty code set**, NEVER a bare
  * button-press: a truncated/empty [EnrollResponse] must never be acknowledged into a finalize against codes the user
- * never had. A valid set is **exactly [EXPECTED_BACKUP_CODE_COUNT]** non-blank codes. Fail-closed: any other shape
- * (empty, short, over-count, blank entries) ⇒ `false` ⇒ no ack ⇒ no SavedAck ⇒ the hub never finalizes ⇒ clean
- * re-TOFU with fresh codes on the next connect.
+ * never had. A valid set is **exactly [BACKUP_CODE_COUNT]** non-blank codes — the count is **single-sourced in
+ * `:core`** (hub `mint(BACKUP_CODE_COUNT)` ↔ this client validation, no drift). Fail-closed: any other shape (empty,
+ * short, over-count, blank entries) ⇒ `false` ⇒ no ack ⇒ no SavedAck ⇒ the hub never finalizes ⇒ clean re-TOFU.
  */
 internal fun isValidCodeSet(codes: List<String>): Boolean =
-    codes.size == EXPECTED_BACKUP_CODE_COUNT && codes.all { it.isNotBlank() }
-
-/** The expected first-enroll backup-code count (BackupCodeStore.generate(10)). ★ Confirm the exact value against
- *  Backend's revised enroll design before the E2E frame-loop lands. */
-internal const val EXPECTED_BACKUP_CODE_COUNT = 10
+    codes.size == BACKUP_CODE_COUNT && codes.all { it.isNotBlank() }
 
 /**
  * CYP-525 GE2 (pure, load-bearing) — the CONNECTED gate: at `CONNECTED` with un-acknowledged first-enroll [codes],

@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.connect
 
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
+import com.tneff.cyppieagents.operator.BACKUP_CODE_COUNT
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -48,15 +49,15 @@ class Cyp525DeviceCodesGateTest {
 
     @Test
     fun h3_validCodeSet_isExactlyExpectedCount_nonBlank() {
-        assertTrue(isValidCodeSet(List(EXPECTED_BACKUP_CODE_COUNT) { "code-$it" }), "exactly N non-blank codes = valid")
+        assertTrue(isValidCodeSet(List(BACKUP_CODE_COUNT) { "code-$it" }), "exactly N non-blank codes = valid")
     }
 
     @Test
     fun h3_empty_truncated_overCount_orBlank_areInvalid() {
         assertTrue(!isValidCodeSet(emptyList()), "empty ⇒ invalid (never ack codes the user never had)")
-        assertTrue(!isValidCodeSet(List(EXPECTED_BACKUP_CODE_COUNT - 1) { "c$it" }), "truncated ⇒ invalid")
-        assertTrue(!isValidCodeSet(List(EXPECTED_BACKUP_CODE_COUNT + 1) { "c$it" }), "over-count ⇒ invalid")
-        val withBlank = List(EXPECTED_BACKUP_CODE_COUNT) { if (it == 0) "  " else "c$it" }
+        assertTrue(!isValidCodeSet(List(BACKUP_CODE_COUNT - 1) { "c$it" }), "truncated ⇒ invalid")
+        assertTrue(!isValidCodeSet(List(BACKUP_CODE_COUNT + 1) { "c$it" }), "over-count ⇒ invalid")
+        val withBlank = List(BACKUP_CODE_COUNT) { if (it == 0) "  " else "c$it" }
         assertTrue(!isValidCodeSet(withBlank), "a blank entry ⇒ invalid")
     }
 }
