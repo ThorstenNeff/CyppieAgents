@@ -612,9 +612,7 @@
     <string name="hubconnect_mode_local">Local</string>
     <string name="hubconnect_mode_local_sub">Direct on the same network — private and fast.</string>
     <string name="hubconnect_mode_remote">Remote</string>
-    <string name="hubconnect_mode_remote_soon">coming soon</string>
     <string name="hubconnect_mode_connect">Connect</string>
-    <string name="a11y_hubconnect_mode_remote_disabled">Remote mode — coming soon, not available yet.</string>
     <!-- CYP-419 (S-L): hubConnect screens copy (frozen hub-connection-keys.md). -->
     <string name="hubconnect_prepare_title">Setting up Cyppie…</string>
     <string name="hubconnect_register_intro">Sign in to link this hub to your account.</string>
@@ -632,8 +630,11 @@
     <string name="hubconnect_ready_title">Hub ready</string>
     <string name="hubconnect_ready_enter">Get started</string>
     <string name="hubconnect_hubs_title">Choose your hub</string>
-    <string name="hubconnect_hubs_empty">No hub registered yet.</string>
+    <string name="hubconnect_hubs_empty">No hubs yet — your hub appears here once it comes online.</string>
+    <string name="hubconnect_hubs_refresh">Refresh</string>
     <string name="hubconnect_hubs_register">Register a hub</string>
+    <string name="hubconnect_step_indicator">Step %1$s of %2$s</string>
+    <string name="a11y_hubconnect_hub_id">Hub ID %1$s</string>
     <string name="hubconnect_hubs_error">Can't reach the hub list. Try again.</string>
     <string name="hubconnect_presence_online">online</string>
     <string name="hubconnect_presence_offline">offline · last seen %1$s</string>

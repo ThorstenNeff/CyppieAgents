@@ -26,8 +26,8 @@ import com.tneff.cyppieagents.auth.resolveAuthMode
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 import com.tneff.cyppieagents.connect.HubConnectViewModel
 import com.tneff.cyppieagents.connect.RemoteHubConnectGate
+import com.tneff.cyppieagents.connect.defaultControlPlaneClient
 import com.tneff.cyppieagents.connect.defaultRemoteComponentsFactory
-import com.tneff.cyppieagents.connect.StubControlPlaneClient
 import com.tneff.cyppieagents.connect.StubHubCredentialRepository
 import com.tneff.cyppieagents.connect.StubLocalConnectFeed
 import com.tneff.cyppieagents.connect.defaultRemoteConnectFeed
@@ -103,7 +103,9 @@ fun App(
                     enabled = remoteConnectEnabled,
                     createViewModel = {
                         HubConnectViewModel(
-                            controlPlane = StubControlPlaneClient(),
+                            // S-J: env-gated live HttpControlPlaneClient (jvm + CYPPIE_CP_BASE_URL set) else the
+                            // INERT StubControlPlaneClient — byte-identical to today until the env-gated swap + deploy.
+                            controlPlane = defaultControlPlaneClient(authRepo::currentSessionToken),
                             credentials = StubHubCredentialRepository(),
                             connectFeed = StubLocalConnectFeed(),
                             remoteConnectFeed = defaultRemoteConnectFeed(),

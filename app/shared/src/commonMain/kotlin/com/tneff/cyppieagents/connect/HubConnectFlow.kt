@@ -54,6 +54,7 @@ import kmpcyppieagents.app.shared.generated.resources.hubconnect_ready_enter
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_ready_title
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_register_error_offline
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_register_intro
+import kmpcyppieagents.app.shared.generated.resources.hubconnect_step_indicator
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_register_name_label
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_hubs_error
 import kmpcyppieagents.app.shared.generated.resources.load_retry
@@ -298,13 +299,14 @@ internal fun WarnLine(text: String, tag: String) {
 }
 
 /**
- * Minimal onboarding step-progress anchor (spec §4 "Schritt 2 von 4"). The frozen keys carry no step-progress
- * copy key, so this is a locale-neutral "n / 4" — the tag is what the contract pins; the exact glyphing is UI.
+ * Minimal onboarding step-progress anchor. UX-QA (S-J / CYP-530): the flow has **3** steps (register / credentials /
+ * ready), not 4 — the denominator is corrected here. The localized "Schritt %1$s von %2$s" copy is a pending UIUX
+ * delta; until it lands this stays the locale-neutral "n / m" (the tag pins the contract, glyphing is UI).
  */
 @Composable
-private fun StepProgress(step: Int, of: Int = 4) {
+private fun StepProgress(step: Int, of: Int = 3) {
     Text(
-        "$step / $of",
+        stringResource(Res.string.hubconnect_step_indicator, step.toString(), of.toString()),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
