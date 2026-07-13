@@ -38,6 +38,10 @@ class HubConnectViewModel(
      *  coordinator together (display == pinned). When present it takes precedence over [remoteConnectFeed] +
      *  [oobConfirm] (the flag-gated App.kt wiring); `null` ⇒ INERT (the CYP-510/471 feed path). */
     private val remoteComponentsFactory: RemoteConnectComponentsFactory? = null,
+    /** CYP-525 GE2 — the per-connect first-enroll backup codes source (seam). Yields the hub's codes at CONNECTED iff
+     *  `grant.firstEnroll` (hub-authoritative), else `null`. `null` source ⇒ INERT (no reveal). Within-flow only — no
+     *  durable ack, no codes at-rest. The real source consumes Backend's `EnrollResponse` frame (read-loop HELD). */
+    private val firstEnrollCodes: FirstEnrollCodesSource? = null,
     /** Hostname default for the editable hub-name field (Q1); the host injects the real device hostname. */
     private val defaultHubName: String = "mein-hub",
     scope: CoroutineScope? = null,
@@ -173,6 +177,7 @@ class HubConnectViewModel(
             ?: return
         remoteJob?.cancel() // Q5: exactly-one-hub — tear the current remote session down before the new one.
         closeActiveComponents() // CYP-513: close the previous LIVE Noise session (Q5, nothing carried across)
+        pendingCodes = null; codesAcked = false // CYP-525 GE2: a fresh connect re-resolves first-enroll codes (within-flow)
         _state.value = HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.RELAY_DIALING))
         val factory = remoteComponentsFactory
         val coordinator = oobConfirm
@@ -187,7 +192,13 @@ class HubConnectViewModel(
                     comps.session.start()
                     try {
                         combine(comps.session.state, comps.oobConfirm.state) { rs, oob -> rs to oob }
-                            .collect { (rs, oob) -> surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob)) }
+                            .collect { (rs, oob) ->
+                                // GE2: resolve the hub's first-enroll codes ONCE at CONNECTED (the gate then holds until ack).
+                                if (rs.conn == RemoteConnState.CONNECTED && pendingCodes == null) {
+                                    pendingCodes = firstEnrollCodes?.firstEnrollCodes()
+                                }
+                                surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob))
+                            }
                     } finally {
                         withContext(NonCancellable) { comps.session.close() } // Q5 teardown on cancel / switch
                     }
@@ -207,13 +218,35 @@ class HubConnectViewModel(
         }
     }
 
-    /** Surface: an Awaiting OOB mount ⇒ the mandatory confirm screen at TRUST_CHECK; else the session's truth. */
+    /** CYP-525 GE2 — the first-enroll codes for the CURRENT connect (resolved once at CONNECTED; null = returning /
+     *  not resolved) and the WITHIN-FLOW ack (per-connect, NON-durable). Reset on each new connect. */
+    private var pendingCodes: List<String>? = null
+    private var codesAcked: Boolean = false
+
+    /** Surface: an Awaiting OOB mount ⇒ the mandatory confirm at TRUST_CHECK; else the GE2 gate / session truth. */
     private fun surfaceRemote(hub: HubDescriptor, rs: RemoteSessionState, mount: OobConfirmMount?) {
         _state.value = if (mount != null) {
             HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.TRUST_CHECK), oobConfirm = mount)
         } else {
-            HubConnectUiState.RemoteConnecting(hub, rs)
+            deviceCodesGate(hub, rs, pendingCodes, codesAcked)
         }
+    }
+
+    /**
+     * GE2: the operator acknowledged saving their backup codes → proceed to CONNECTED. **Within-flow only** (no
+     * durable persist). The ONLY forward door out of [HubConnectUiState.RevealCodes].
+     *
+     * **HELD (until Backend's authoritative frame spec):** the `SavedAck` send over the tunnel + reading the hub's
+     * finalize/CONNECTED signal (explicit Finalize-frame vs infer-from-byte-bridge — the reconcile point) is NOT
+     * wired here yet; this only does the within-flow transition so the reveal UI is complete + testable.
+     */
+    fun acknowledgeCodes() {
+        val s = _state.value as? HubConnectUiState.RevealCodes ?: return
+        // H3 (Reviewer): the ack MUST gate on a validated, complete, non-empty code set — NEVER a bare button-press.
+        // A truncated/empty EnrollResponse must not be acked into a finalize against codes the user never had.
+        if (!isValidCodeSet(s.codes)) return // fail-closed: no ack ⇒ no SavedAck ⇒ no finalize ⇒ clean re-TOFU
+        codesAcked = true
+        _state.value = HubConnectUiState.RemoteConnecting(s.hub, RemoteSessionState(s.hub.hubId, RemoteConnState.CONNECTED))
     }
 
     /** Q5/CYP-513: close + drop the active LIVE components so the old Noise session tears down (nothing carried). */

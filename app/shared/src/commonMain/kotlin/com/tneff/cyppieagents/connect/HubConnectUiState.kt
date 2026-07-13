@@ -46,6 +46,16 @@ sealed interface HubConnectUiState {
          *  confirmation pending (or INERT). Non-null ⇒ render the mandatory confirm screen at TRUST_CHECK. */
         val oobConfirm: OobConfirmMount? = null,
     ) : HubConnectUiState
+
+    /**
+     * CYP-525 GE2 (the load-bearing lockout gate) — at first-enroll the tunnel reached `CONNECTED` but the operator
+     * has NOT yet acknowledged saving their [codes]. The flow HOLDS here (`RecoveryCodesReveal`) — it does **not**
+     * surface CONNECTED / enter the workspace — until [HubConnectViewModel.acknowledgeCodes]. **Within-flow only** (no
+     * durable ack, no codes at-rest): a close/reload before the ack re-runs TOFU (hub provisional-discard) → the hub
+     * re-reveals FRESH codes, so there is no enrolled-without-saved-codes limbo. Reached iff the hub's
+     * `grant.firstEnroll` codes are present (hub-authoritative, INDEPENDENT of local `isEnrolled`).
+     */
+    data class RevealCodes(val hub: HubDescriptor, val codes: List<String>) : HubConnectUiState
 }
 
 /** A2 registration sub-phase. */
