@@ -68,18 +68,20 @@ class Cyp458RelayConnectorTest {
     }
 
     @Test
-    fun enabled_dialsOutboundOnce_terminates_thenHandsTunnelToBridge() = runBlocking {
+    fun enabled_dialsOutbound_terminates_handsTunnelToBridge_holdsAsResponder() = runBlocking {
         val tunnel = FakeTunnel()
         val dialer = RecordingDialer(FakeRelayChannel())
         val terminator = FakeTerminator(tunnel)
         val handled = CompletableDeferred<ServerNoiseTunnel>()
+        val hold = CompletableDeferred<Unit>() // CYP-526: the real bridge BLOCKS until the tunnel closes — model that
         val c = NoiseRelayConnector(
             RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/rzv-abc"),
-            dialer, terminator, { handled.complete(it) }, scope,
+            dialer, terminator, { handled.complete(it); hold.await() }, scope,
         )
         c.start()
         val got = withTimeout(5_000) { handled.await() }
-        assertEquals(listOf("wss://relay/rzv-abc"), dialer.dialed.toList(), "AC1: exactly one OUTBOUND dial to the relay")
+        delay(50) // give any (incorrect) spurious re-dial a chance to appear while the responder is HOLDING one tunnel
+        assertEquals(listOf("wss://relay/rzv-abc"), dialer.dialed.toList(), "AC1: outbound dial; the responder HOLDS one tunnel (no re-dial while bridging)")
         assertEquals(1, terminator.calls, "the NK terminator ran on the dialed L0 channel")
         assertSame(tunnel, got, "the terminated L2 tunnel is handed straight to the loopback-bridge handler")
         c.stop()
@@ -91,6 +93,7 @@ class Cyp458RelayConnectorTest {
         val c = NoiseRelayConnector(
             RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"),
             RecordingDialer(relay), FailingTerminator(), { }, scope,
+            backoffMs = { 10_000L }, // CYP-526: a large backoff so the reconnect loop doesn't re-dial within this window
         )
         c.start()
         withTimeout(5_000) { while (!relay.closed) delay(20) }

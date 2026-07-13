@@ -4,6 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import kotlinx.coroutines.delay
+import org.slf4j.LoggerFactory
 
 /**
  * CYP-521 (Epic CYP-427 Phase-2, activation) — the hub-side **rendezvous register** client: the register-pendant of
@@ -23,11 +25,34 @@ class HubRendezvousRegistrar(
     private val http: HttpClient,
     private val hubId: String,
     private val operatorBearer: () -> String?,
+    /** CYP-526 — the register POST hits the hub's OWN edge (like admit), so it shares the boot-window resilience:
+     *  bounded retry + the [cpJsonGuard] (no blind deserialize of a non-JSON edge response). Single-sourced [cpRetry]. */
+    private val retry: AdmissionRetry = AdmissionRetry(),
+    private val sleep: suspend (Long) -> Unit = { delay(it) },
 ) {
+    private val log = LoggerFactory.getLogger("cp.rendezvous.register")
+
+    /**
+     * Register with the CP → the CURRENT epoch-derived rendezvous id. Retry-resilient + diagnostic (CYP-526). Returns
+     * `null` fail-closed: no operator credential, exhausted transient retries, or a CP-served terminal rejection (e.g.
+     * the owner-gate before the hub is admitted). The reason is logged; the caller ([WebSocketRelayDialer]) fails the
+     * dial closed and the reconnect loop backs off + retries. **The caller caches the id — register mints a FRESH
+     * epoch every call (unlinkability, CYP-501 §2), so re-registering per re-dial would rotate the id and strand the
+     * client's resolved id.** Register ONCE; reuse the cached id on reconnect.
+     */
     suspend fun register(): String? {
         val bearer = operatorBearer()?.takeIf { it.isNotBlank() } ?: return null
-        val resp = http.post("$cpBaseUrl/api/cp/rendezvous/$hubId") { header("Authorization", "Bearer $bearer") }
-            .body<RendezvousResolveResponse>()
-        return resp.binding?.rendezvousId
+        return try {
+            cpRetry(retry, sleep, onExhausted = { log.warn("CYP-526 rendezvous register failed after retries: {}", it.message); null }) {
+                val resp = cpRequest("rendezvous") {
+                    http.post("$cpBaseUrl/api/cp/rendezvous/$hubId") { header("Authorization", "Bearer $bearer") }
+                }
+                cpJsonGuard(resp, "rendezvous") // never blind-deserialize a non-JSON edge response (the CYP-524 class)
+                resp.body<RendezvousResolveResponse>().binding?.rendezvousId
+            }
+        } catch (t: AdmissionRejectedException) {
+            log.warn("CYP-526 rendezvous register rejected (terminal): {}", t.message)
+            null
+        }
     }
 }

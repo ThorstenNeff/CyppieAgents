@@ -14,13 +14,9 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
-import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import java.util.Base64
 
@@ -66,72 +62,31 @@ class HubAdmissionClient(
      * returned [HubAdmissionResult] (even `admitted=false`, e.g. owner_mismatch) means the CP answered → return it.
      * Retries exhausted → a terminal `cp_unreachable_after_retries` result (never a silent success).
      */
-    suspend fun admit(): HubAdmissionResult {
-        var attempt = 0
-        while (true) {
-            attempt++
-            try {
-                return attemptAdmit()
-            } catch (t: AdmissionTransientException) {
-                if (attempt >= retry.maxAttempts) {
-                    return HubAdmissionResult(admitted = false, reason = "cp_unreachable_after_retries: ${t.message}")
-                }
-                sleep(retry.delayForAttempt(attempt))
-                // loop → a fresh challenge next attempt (the nonce is single-use; never reuse a stale one).
-            }
-        }
-    }
+    suspend fun admit(): HubAdmissionResult =
+        cpRetry( // CYP-526: the retry loop is now the shared [cpRetry] (single-sourced with the rendezvous register)
+            retry, sleep,
+            onExhausted = { HubAdmissionResult(admitted = false, reason = "cp_unreachable_after_retries: ${it.message}") },
+        ) { attemptAdmit() } // each attempt re-fetches a fresh challenge (the nonce is single-use; never reuse a stale one)
 
     private suspend fun attemptAdmit(): HubAdmissionResult {
         val bearer = operatorBearer()?.takeIf { it.isNotBlank() }
             ?: return HubAdmissionResult(admitted = false, reason = "no_operator_credential")
-        val challengeResp = request("challenge") {
+        val challengeResp = cpRequest("challenge") {
             http.get("$cpBaseUrl/api/cp/challenge") { header("Authorization", "Bearer $bearer") }
         }
-        guardJson(challengeResp, "challenge") // ★ never blind-deserialize a non-JSON edge response
+        cpJsonGuard(challengeResp, "challenge") // ★ never blind-deserialize a non-JSON edge response
         val challenge = challengeResp.body<HubChallenge>()
         val nonce = Base64.getDecoder().decode(challenge.nonce)
         val reg = registrar.register(nonce) // build the signed registration (transcript PoP over the CP-issued nonce)
-        val admitResp = request("admit") {
+        val admitResp = cpRequest("admit") {
             http.post("$cpBaseUrl/api/cp/admit") {
                 header("Authorization", "Bearer $bearer")
                 contentType(ContentType.Application.Json)
                 setBody(HubAdmissionRequest(reg, challenge.nonce))
             }
         }
-        guardJson(admitResp, "admit")
+        cpJsonGuard(admitResp, "admit")
         return admitResp.body()
-    }
-
-    /** A connect/IO error at the transport (edge not up, DNS, reset) is transient in the boot window → retryable. */
-    private suspend inline fun request(stage: String, call: () -> HttpResponse): HttpResponse =
-        try {
-            call()
-        } catch (c: CancellationException) {
-            throw c
-        } catch (e: Exception) {
-            throw AdmissionTransientException("CP $stage transport error: ${e.message}", e)
-        }
-
-    /**
-     * Fail-closed body guard: only a 2xx `application/json` is a real admission payload. Anything else is read as a
-     * BOUNDED diagnostic prefix (the challenge/result bodies carry no secret — a public nonce / typed result; a 502
-     * or HTML warmup prefix is exactly what we want visible) and thrown as transient (retry) or terminal (fail fast).
-     */
-    private suspend fun guardJson(resp: HttpResponse, stage: String) {
-        val ct = resp.contentType()
-        val isJson = ct?.match(ContentType.Application.Json) == true
-        if (resp.status.isSuccess() && isJson) return
-        val prefix = runCatching { resp.bodyAsText() }.getOrNull()?.take(BODY_PREFIX)?.replace('\n', ' ')?.trim()
-        val msg = "CP $stage → HTTP ${resp.status.value}, content-type ${ct ?: "none"}${prefix?.let { " — $it" } ?: ""}"
-        // A 4xx the CP itself served (auth) will NOT self-heal → terminal. A 5xx, a transport-level non-JSON body, or
-        // a 2xx that isn't JSON (an edge warmup/SPA page) is transient in the boot window → retry.
-        val terminal = resp.status.value in 400..499 && isJson
-        if (terminal) throw AdmissionRejectedException(msg) else throw AdmissionTransientException(msg)
-    }
-
-    private companion object {
-        const val BODY_PREFIX = 200
     }
 }
 
