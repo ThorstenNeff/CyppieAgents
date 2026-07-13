@@ -72,6 +72,17 @@ class ClientOperatorAuthTest {
     }
 
     @Test
+    fun request_carriesRaw32BDevicePublicKey_forTofuEnroll() = runTest {
+        // CYP-525 Inc 2: the tunnel-auth request carries the operator's raw-32B device pubkey so the hub can TOFU
+        // first-enroll it (FakeStore returns a 32-byte key; the :core helper passes raw through unchanged).
+        val tunnel = FakeTunnel(grantBytes(true))
+        val a = auth(PopResult.Signed(DevicePoP.Raw(sig)), jwt = "j")
+        a.authenticate(tunnel, hubId)
+        val req = CommJson.decodeFromString(TunnelAuthRequest.serializer(), tunnel.sent!!.decodeToString())
+        assertContentEquals(ByteArray(32), req.devicePublicKey, "raw-32B device pubkey travels for TOFU enroll")
+    }
+
+    @Test
     fun fido2Pop_mapsToWireFido2() = runTest {
         val cid = ByteArray(8) { 0x44 }
         val ad = ByteArray(37) { 0x55 }

@@ -46,7 +46,14 @@ class ClientOperatorAuth(
         return when (val built = popBuilder.buildPop(tunnel.handshakeHash, hubId)) {
             is PopBuildOutcome.Ready -> {
                 // Bind exactly what we built: the same nonce that the PoP challenge used travels in the request.
-                val request = TunnelAuthRequest(cpJwt = jwt, pop = built.pop.toWire(), nonce = built.nonce)
+                // CYP-525: also carry the raw-32B device public key so the hub can TOFU first-enroll it (the hub
+                // ignores it once a device is pinned; it's the operator's own already-known key, never a secret).
+                val request = TunnelAuthRequest(
+                    cpJwt = jwt,
+                    pop = built.pop.toWire(),
+                    nonce = built.nonce,
+                    devicePublicKey = popBuilder.devicePublicKeyRaw(),
+                )
                 tunnel.send(CommJson.encodeToString(TunnelAuthRequest.serializer(), request).encodeToByteArray())
                 val raw = tunnel.receive() ?: return OperatorAuthOutcome.Rejected // peer closed ⇒ not granted
                 val grant = CommJson.decodeFromString(TunnelAuthGrant.serializer(), raw.decodeToString())

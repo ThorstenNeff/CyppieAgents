@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub.operator
 
+import com.tneff.cyppieagents.operator.ed25519PublicKeyToRaw
 import com.tneff.cyppieagents.operator.operatorAuthChallenge
 
 /**
@@ -91,6 +92,11 @@ class OperatorPopBuilder(
     /** CYP-525: is an operator device-key enrolled on THIS device? Checked first (before any CP round-trip / UV
      *  prompt) so "not enrolled" routes to the enroll step, not a reject. */
     fun isEnrolled(): Boolean = store.isEnrolled()
+
+    /** CYP-525: the enrolled device public key in the **ratified wire form (raw-32B)** — carried in the tunnel-auth
+     *  request so the hub can TOFU first-enroll it; `null` when not enrolled. Converted through the `:core`
+     *  single-source [ed25519PublicKeyToRaw] (the store exposes X.509 SPKI) — the one encoding boundary, no drift. */
+    fun devicePublicKeyRaw(): ByteArray? = store.devicePublicKey()?.let { ed25519PublicKeyToRaw(it) }
 
     suspend fun buildPop(handshakeHash: ByteArray, hubId: String): PopBuildOutcome {
         val nonce = nonceGenerator.nonce()

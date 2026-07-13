@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.net.hub.operator.HttpCpJwtProvider
 import com.tneff.cyppieagents.net.hub.operator.KeystoreOperatorDeviceKeyStore
 import com.tneff.cyppieagents.net.hub.operator.NonceGenerator
 import com.tneff.cyppieagents.net.hub.operator.OperatorPopBuilder
+import com.tneff.cyppieagents.net.hub.operator.PersistentOperatorDeviceKey
 import com.tneff.cyppieagents.net.hub.operator.UserVerification
 import com.tneff.cyppieagents.net.hub.operator.UvOutcome
 import com.tneff.cyppieagents.net.hub.operator.coreChannelBinding
@@ -67,7 +68,7 @@ actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? =
                 popBuilder = OperatorPopBuilder(
                     store = KeystoreOperatorDeviceKeyStore(
                         userVerification = deferredUserVerification,
-                        keyPair = KeystoreOperatorDeviceKeyStore.generateDeviceKey(),
+                        keyPair = persistentDeviceKey.loadOrGenerate(),
                     ),
                     nonceGenerator = secureRandomNonceGenerator,
                 ),
@@ -108,7 +109,7 @@ fun liveRemoteConnectComponentsFactory(
             popBuilder = OperatorPopBuilder(
                 store = KeystoreOperatorDeviceKeyStore(
                     userVerification = deferredUserVerification,
-                    keyPair = KeystoreOperatorDeviceKeyStore.generateDeviceKey(),
+                    keyPair = persistentDeviceKey.loadOrGenerate(),
                 ),
                 nonceGenerator = secureRandomNonceGenerator,
             ),
@@ -131,3 +132,10 @@ private val deferredUserVerification = UserVerification { UvOutcome.Unavailable 
 private val secureRandomNonceGenerator = NonceGenerator {
     ByteArray(32).also { SecureRandom().nextBytes(it) }
 }
+
+/**
+ * CYP-525 Inc 2: the ONE durable operator device-key (DEVICE_SECURE, `~/.cyppie/operator-device.key`) —
+ * `loadOrGenerate()` persists+reuses one Ed25519 key across launches, replacing the fresh-per-launch
+ * `generateDeviceKey()` that never matched the hub's enrolled anchor.
+ */
+private val persistentDeviceKey = PersistentOperatorDeviceKey(PersistentOperatorDeviceKey.defaultKeyFile())
