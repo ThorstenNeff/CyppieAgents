@@ -131,6 +131,13 @@ hub → client : TunnelAuthGrant { granted=true, firstEnroll = (store NOT finali
   past-ack is at best inert and at worst harmful (it could suppress a *needed* re-reveal after a hub-side discard, since
   the old codes are already invalidated by `generate()`-replace).
 
+**▸CLIENT — Dev confirmation (annotated, all concurred; client half built on the shared branch):**
+- **`devicePublicKey` always sent (32B):** CONFIRMED + built — `ClientOperatorAuth` sends `TunnelAuthRequest.devicePublicKey` = raw-32B via the `:core` single-source `ed25519PublicKeyToRaw` (the store holds X.509 SPKI-44B). Inc 2 `87cded97`.
+- **H3 validate-before-ack, reveal from `firstEnroll` regardless of local `isEnrolled`:** CONFIRMED + built — `isValidCodeSet` = **exactly `EXPECTED_BACKUP_CODE_COUNT=10`** (matches Backend `mint(10)`) non-blank; `acknowledgeCodes` gates on it (fail-closed: truncated/empty ⇒ no ack ⇒ no `SavedAck`); the reveal is driven by `grant.firstEnroll` via `deviceCodesGate`, hub-authoritative, independent of local `isEnrolled` (post-Inc-2 the client ALWAYS has a key via `loadOrGenerate` ⇒ local `isEnrolled==true` always ⇒ the reveal MUST be server-driven — this is *why* hub-authority is necessary, not just cleaner). `9ce983ac`.
+- **CONNECTED = explicit `{granted=true, firstEnroll=false}` grant after the ack, never byte-bridge-inferred:** CONFIRMED. My earlier "explicit `Finalize{ok|reason}` frame" position is satisfied by this **reused `TunnelAuthGrant`** form (no 4th frame) — an explicit, hub-authoritative signal that carries the atomic-commit confirmation (H1) and can carry a reject (H3 invalid-set / replay). I will byte-exact-match this in the (currently HELD) frame-read-loop once the revised design is re-ratified and the authoritative sequence is relayed.
+- **Simplification RATIFIED + done:** the durable ack-store (`a22aa72f`) is REMOVED → within-flow state only; no durable ack, **no codes at-rest** (codes are secrets). Reveal-on-`firstEnroll` + `deviceCodesGate` + `acknowledgeCodes` are within-flow. `9ce983ac`.
+- **HELD (pending re-ratification + the relayed frame sequence):** the tunnel frame-read-loop — the `SavedAck` send + reading the reused-grant CONNECTED signal — is NOT wired yet, to avoid framing-order divergence.
+
 ---
 
 ## 5. Failure modes (all resolve to no-lockout)
