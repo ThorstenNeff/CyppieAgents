@@ -41,11 +41,14 @@ class Cyp530HubDiscoveryTest {
     private val relay = "wss://r.test/relay"
     private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
 
-    // Shared registry: op-1 owns hub_a + hub_b; op-2 owns hub_z. Distinct fields so the projection is checkable.
+    // Shared registry: op-1 owns hub_a + hub_b; op-2 owns hub_z; hub_blank has a BLANK owner. The blank-owner entry
+    // makes the blank-operator tooth NON-vacuous: without the isNullOrBlank guard, `filter { ownerId == "" }` would
+    // match it → a blank operator would enumerate it. So MUT-remove-guard reds `blankOperator_ownsNothing_failClosed`.
     private fun registrar() = HubRegistrar(ConcurrentHashMap(mapOf(
         "hub_a" to RegisteredHub("hub_a", "op-1", "Hub A", 8787, "sa", "da", admittedAt = 111L),
         "hub_b" to RegisteredHub("hub_b", "op-1", "Hub B", 8080, "sb", "db", admittedAt = 222L),
         "hub_z" to RegisteredHub("hub_z", "op-2", "Hub Z", 9000, "sz", "dz", admittedAt = 333L),
+        "hub_blank" to RegisteredHub("hub_blank", "", "Blank Owner", 1234, "sx", "dx", admittedAt = 444L),
     )))
 
     private fun ApplicationTestBuilder.app(rz: RelayRendezvous, reg: HubRegistrar, opId: String? = "op-1") {
