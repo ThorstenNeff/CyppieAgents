@@ -33,3 +33,12 @@ project-config.json
 projects.json
 # Cross-project channel-share gate, 0600 under the gitRoot. (CYP-93)
 channel-shares.json
+
+# Security hygiene: never commit a private key / certificate / keystore. There are none tracked
+# today; these patterns are a backstop so an accidental key/cert never lands in history.
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
