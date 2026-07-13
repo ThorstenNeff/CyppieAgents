@@ -53,7 +53,7 @@ class Cyp526ReconnectLoopTest {
             override suspend fun dial(relayUrl: String): ServerRelayChannel { dials.incrementAndGet(); return FakeRelayChannel() }
         }
         // The handler returns immediately → the tunnel "ends" → a persistent responder MUST re-dial (a one-shot stops at 1).
-        val c = NoiseRelayConnector(RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), dialer, FakeTerminator(), { }, scope, backoffMs = { 0L })
+        val c = NoiseRelayConnector(RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), dialer, FakeTerminator(), { }, scope, backoffMs = { 0L }, cleanEndFloorMs = 0L)
         c.start()
         withTimeout(5_000) { while (dials.get() < 3) delay(10) }
         assertTrue(dials.get() >= 3, "re-dials after each tunnel end (persistent responder, not one-shot): ${dials.get()}")
@@ -88,7 +88,7 @@ class Cyp526ReconnectLoopTest {
             // the production WebSocketRelayDialer calls rendezvousId() per dial; here that provider IS the cache.
             override suspend fun dial(relayUrl: String): ServerRelayChannel { idsSeen.add(cachingId.get()); return FakeRelayChannel() }
         }
-        val c = NoiseRelayConnector(RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), dialer, FakeTerminator(), { }, scope, backoffMs = { 0L })
+        val c = NoiseRelayConnector(RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), dialer, FakeTerminator(), { }, scope, backoffMs = { 0L }, cleanEndFloorMs = 0L)
         c.start()
         withTimeout(5_000) { while (idsSeen.size < 3) delay(10) }
         c.stop()
