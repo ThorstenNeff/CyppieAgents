@@ -14,9 +14,14 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import java.util.Base64
 
 /**
@@ -30,26 +35,125 @@ import java.util.Base64
  *
  * Operator-authenticated (the operator's bearer/session). INERT until `cpBaseUrl` (CYPPIE_CP_URL) is configured — the
  * boot constructs this only behind that gate, fail-closed. Never sends a secret (only the public registration + PoP).
+ *
+ * ★ CYP-524 — **boot-window resilience**. The hub self-admits at boot by dialing its OWN edge (`CYPPIE_CP_URL` →
+ * Caddy → `127.0.0.1:<port>` = this same process). The admit coroutine can fire BEFORE this process' HTTP listener
+ * has bound, so the self-GET hits an edge whose upstream isn't up yet → a **non-JSON** body (Caddy 502, a warmup
+ * page, connection-refused) that the old blind `.body<HubChallenge>()` turned into an opaque `SourceByteReadChannel`
+ * with no retry — one lost race left the hub unregistered until the next restart. Two changes fix it fail-safe:
+ *  - **[guardJson]** classifies every response BEFORE deserializing: a 2xx `application/json` is the only real
+ *    HubChallenge/result; anything else surfaces the concrete status + content-type + a bounded body prefix
+ *    (diagnostic, not cryptic), tagged **retryable** (transport error / 5xx / non-JSON edge warmup) vs **terminal**
+ *    (a 4xx the CP itself rendered — auth, which never self-heals → fail fast).
+ *  - **[retry]** a BOUNDED exponential backoff over the whole round-trip; each attempt re-fetches a fresh challenge
+ *    (the nonce is single-use). The dial leg already had [com.tneff.cyppieagents.net.hub.remote.RemoteHubSession]
+ *    backoff; admit was the only leg without. The structural [readyGate] in BootOrchestrator removes the race at the
+ *    root; the retry covers the residual (edge upstream warmup) — belt and suspenders.
  */
 class HubAdmissionClient(
     private val cpBaseUrl: String,
     private val http: HttpClient,
     private val registrar: ControlPlaneRegistrar,
     private val operatorBearer: () -> String?,
+    private val retry: AdmissionRetry = AdmissionRetry(),
+    /** Injectable so tests drive backoff deterministically (no real sleeping); prod = [kotlinx.coroutines.delay]. */
+    private val sleep: suspend (Long) -> Unit = { delay(it) },
 ) {
+    /**
+     * Run the round-trip with bounded retry. A TRANSIENT failure (transport error / 5xx / non-JSON edge response)
+     * is retried up to [AdmissionRetry.maxAttempts]; a TERMINAL rejection ([AdmissionRejectedException], a 4xx the
+     * CP itself served — auth) is NOT retried (it won't self-heal) and propagates with its diagnostic message; a
+     * returned [HubAdmissionResult] (even `admitted=false`, e.g. owner_mismatch) means the CP answered → return it.
+     * Retries exhausted → a terminal `cp_unreachable_after_retries` result (never a silent success).
+     */
     suspend fun admit(): HubAdmissionResult {
+        var attempt = 0
+        while (true) {
+            attempt++
+            try {
+                return attemptAdmit()
+            } catch (t: AdmissionTransientException) {
+                if (attempt >= retry.maxAttempts) {
+                    return HubAdmissionResult(admitted = false, reason = "cp_unreachable_after_retries: ${t.message}")
+                }
+                sleep(retry.delayForAttempt(attempt))
+                // loop → a fresh challenge next attempt (the nonce is single-use; never reuse a stale one).
+            }
+        }
+    }
+
+    private suspend fun attemptAdmit(): HubAdmissionResult {
         val bearer = operatorBearer()?.takeIf { it.isNotBlank() }
             ?: return HubAdmissionResult(admitted = false, reason = "no_operator_credential")
-        val challenge = http.get("$cpBaseUrl/api/cp/challenge") { header("Authorization", "Bearer $bearer") }.body<HubChallenge>()
+        val challengeResp = request("challenge") {
+            http.get("$cpBaseUrl/api/cp/challenge") { header("Authorization", "Bearer $bearer") }
+        }
+        guardJson(challengeResp, "challenge") // ★ never blind-deserialize a non-JSON edge response
+        val challenge = challengeResp.body<HubChallenge>()
         val nonce = Base64.getDecoder().decode(challenge.nonce)
         val reg = registrar.register(nonce) // build the signed registration (transcript PoP over the CP-issued nonce)
-        return http.post("$cpBaseUrl/api/cp/admit") {
-            header("Authorization", "Bearer $bearer")
-            contentType(ContentType.Application.Json)
-            setBody(HubAdmissionRequest(reg, challenge.nonce))
-        }.body()
+        val admitResp = request("admit") {
+            http.post("$cpBaseUrl/api/cp/admit") {
+                header("Authorization", "Bearer $bearer")
+                contentType(ContentType.Application.Json)
+                setBody(HubAdmissionRequest(reg, challenge.nonce))
+            }
+        }
+        guardJson(admitResp, "admit")
+        return admitResp.body()
+    }
+
+    /** A connect/IO error at the transport (edge not up, DNS, reset) is transient in the boot window → retryable. */
+    private suspend inline fun request(stage: String, call: () -> HttpResponse): HttpResponse =
+        try {
+            call()
+        } catch (c: CancellationException) {
+            throw c
+        } catch (e: Exception) {
+            throw AdmissionTransientException("CP $stage transport error: ${e.message}", e)
+        }
+
+    /**
+     * Fail-closed body guard: only a 2xx `application/json` is a real admission payload. Anything else is read as a
+     * BOUNDED diagnostic prefix (the challenge/result bodies carry no secret — a public nonce / typed result; a 502
+     * or HTML warmup prefix is exactly what we want visible) and thrown as transient (retry) or terminal (fail fast).
+     */
+    private suspend fun guardJson(resp: HttpResponse, stage: String) {
+        val ct = resp.contentType()
+        val isJson = ct?.match(ContentType.Application.Json) == true
+        if (resp.status.isSuccess() && isJson) return
+        val prefix = runCatching { resp.bodyAsText() }.getOrNull()?.take(BODY_PREFIX)?.replace('\n', ' ')?.trim()
+        val msg = "CP $stage → HTTP ${resp.status.value}, content-type ${ct ?: "none"}${prefix?.let { " — $it" } ?: ""}"
+        // A 4xx the CP itself served (auth) will NOT self-heal → terminal. A 5xx, a transport-level non-JSON body, or
+        // a 2xx that isn't JSON (an edge warmup/SPA page) is transient in the boot window → retry.
+        val terminal = resp.status.value in 400..499 && isJson
+        if (terminal) throw AdmissionRejectedException(msg) else throw AdmissionTransientException(msg)
+    }
+
+    private companion object {
+        const val BODY_PREFIX = 200
     }
 }
+
+/** CYP-524 — bounded exponential backoff for boot admission (never an unbounded loop). Single-sourced defaults. */
+data class AdmissionRetry(
+    val maxAttempts: Int = 6,
+    val baseDelayMs: Long = 250,
+    val maxDelayMs: Long = 4_000,
+    val factor: Double = 2.0,
+) {
+    /** Delay before the NEXT attempt (1-based): exponential from [baseDelayMs], capped at [maxDelayMs]. */
+    fun delayForAttempt(attempt: Int): Long {
+        val exp = baseDelayMs.toDouble() * Math.pow(factor, (attempt - 1).coerceAtLeast(0).toDouble())
+        return exp.toLong().coerceIn(0, maxDelayMs)
+    }
+}
+
+/** CYP-524 — a transient admission-transport failure (edge not up, 5xx, non-JSON warmup) — retryable in the boot window. */
+class AdmissionTransientException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** CYP-524 — a definitive CP-served rejection (a 4xx the CP itself rendered as JSON — auth) — NOT retryable; fail fast. */
+class AdmissionRejectedException(message: String) : Exception(message)
 
 /**
  * CYP-512 — the env-gated **boot factory** (PO GO env-A, fail-closed → INERT, mirror of `buildRemoteTransport`).
