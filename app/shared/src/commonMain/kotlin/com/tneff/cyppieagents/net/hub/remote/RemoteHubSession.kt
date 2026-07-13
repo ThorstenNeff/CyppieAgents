@@ -162,6 +162,15 @@ class RemoteHubSession(
                 _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.OperatorUvFailed) }
                 return Outcome.TERMINAL
             }
+            OperatorAuthOutcome.EnrollCodesUnavailable -> {
+                // CYP-525 Finding ①: the first-enroll codes didn't arrive intact (H3-invalid) — a DELIVERY problem,
+                // NOT a hub reject. Distinct retryable failure so the UI reads "codes didn't arrive — reconnect"
+                // (mirrors DeviceNotEnrolled: retry affordance, not the terminal-relogin AuthRejected). Fail-closed
+                // holds: nothing was pinned/finalized, no SavedAck was sent, never CONNECTED.
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.EnrollCodesUnavailable) }
+                return Outcome.TERMINAL
+            }
         }
 
         tunnel = t

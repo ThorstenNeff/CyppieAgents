@@ -77,13 +77,15 @@ class Cyp525EnrollProtocolTest {
     }
 
     @Test
-    fun firstEnroll_invalidCodeSet_failsClosed_noConfirm_noSavedAck() = runTest {
+    fun firstEnroll_invalidCodeSet_failsClosed_noConfirm_noSavedAck_isDeliveryNotReject() = runTest {
         var confirmerCalled = false
         val t = ScriptedTunnel(listOf(grant(true, firstEnroll = true), enrollResp(codes.dropLast(1)))) // truncated
         val outcome = auth(EnrollConfirmer { confirmerCalled = true; true }).authenticate(t, "hub-1")
-        assertEquals(OperatorAuthOutcome.Rejected, outcome)
+        // CYP-525 Finding ①: H3-invalid = the codes did NOT arrive intact = a DELIVERY problem (retryable), NOT a hub
+        // reject. Must be EnrollCodesUnavailable, never Rejected/AuthRejected ("re-login" mis-attribution).
+        assertEquals(OperatorAuthOutcome.EnrollCodesUnavailable, outcome)
         assertFalse(confirmerCalled, "H3: an invalid set is never even shown/confirmed")
-        assertTrue("SavedAck" !in sentTypes(t), "no SavedAck on an invalid set (hub discards the provisional)")
+        assertTrue("SavedAck" !in sentTypes(t), "fail-closed intact: no SavedAck on an invalid set (hub discards the provisional)")
     }
 
     @Test

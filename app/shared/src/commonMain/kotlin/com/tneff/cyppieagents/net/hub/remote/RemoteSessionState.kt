@@ -24,6 +24,12 @@ sealed interface RemoteFailure {
     /** The hub's OperatorAssertionVerifier said no (a∧b∧c failed) — fail-closed. */
     data object AuthRejected : RemoteFailure
     /**
+     * CYP-525 Finding ① — a first-enroll code set did not arrive intact (empty/truncated/blank `EnrollResponse`).
+     * **Retryable** (a delivery problem, reconnect), NOT the terminal [AuthRejected] mis-attribution ("re-login").
+     * Fail-closed upstream (no `SavedAck`, no CONNECTED); this is purely the honest attribution + retry affordance.
+     */
+    data object EnrollCodesUnavailable : RemoteFailure
+    /**
      * CYP-525 — **this device has no enrolled operator key** (a distinct third truth, never collapsed into
      * [AuthRejected]): the hub didn't reject us, we simply haven't set this device up yet. Actionable → the enroll
      * step ("set up this device"), NOT a dead reject. Distinct so the UI routes to enroll instead of "denied".
@@ -110,4 +116,13 @@ sealed interface OperatorAuthOutcome {
      * [RemoteFailure.OperatorUvFailed] (retry), never terminal [RemoteFailure.AuthRejected].
      */
     data object UvFailed : OperatorAuthOutcome
+
+    /**
+     * CYP-525 Finding ① (UIUX honesty) — a first-enroll [com.tneff.cyppieagents.operator.EnrollResponse] arrived but
+     * failed H3 (empty / truncated / over-count / blank) ⇒ the codes did NOT arrive intact. That is a **delivery**
+     * problem, NOT a hub rejection: retryable-reconnect, never the terminal [Rejected]/[RemoteFailure.AuthRejected]
+     * ("re-login") mis-attribution. Fail-closed stays intact (no `SavedAck`, no CONNECTED) — this only fixes the
+     * attribution so the session surfaces the retryable [RemoteFailure.EnrollCodesUnavailable].
+     */
+    data object EnrollCodesUnavailable : OperatorAuthOutcome
 }

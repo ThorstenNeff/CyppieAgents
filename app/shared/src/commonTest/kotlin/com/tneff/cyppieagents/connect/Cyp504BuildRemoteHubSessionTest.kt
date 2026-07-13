@@ -70,6 +70,7 @@ class Cyp504BuildRemoteHubSessionTest {
     private val gatedAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.Rejected } // cpJwt null ⇒ fail-closed
     private val notEnrolledAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.DeviceNotEnrolled } // CYP-525
     private val uvFailedAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.UvFailed } // CYP-525 F3
+    private val codesUnavailableAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.EnrollCodesUnavailable } // CYP-525 ①
 
     /**
      * Drive the builder's session and record its states, cancelling once it CONNECTs or fails. The session is
@@ -165,6 +166,21 @@ class Cyp504BuildRemoteHubSessionTest {
         assertFalse(seen.any { it.conn == RemoteConnState.CONNECTED }, "UV-failed never connects")
         assertTrue(seen.any { it.failure == RemoteFailure.OperatorUvFailed }, "wrong PIN → retryable OperatorUvFailed")
         assertFalse(seen.any { it.failure == RemoteFailure.AuthRejected }, "NEVER collapses into AuthRejected (F3)")
+        scope.cancel()
+    }
+
+    @Test
+    fun cyp525Finding1_enrollCodesUnavailable_isDeliveryFailure_neverAuthRejected() = runTest {
+        // Finding ①: H3-invalid (codes didn't arrive intact) surfaces the retryable RemoteFailure.EnrollCodesUnavailable
+        // ("codes didn't arrive — reconnect"), NEVER the terminal AuthRejected ("rejected by the hub, re-login"): it's a
+        // delivery problem, not a hub rejection. Fail-closed holds (never CONNECTED).
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val seen = mutableListOf<RemoteSessionState>()
+        drive(scope, seen, auth = codesUnavailableAuth) // dial + trust + transport all pass; H3 fails at enroll
+        advanceUntilIdle()
+        assertFalse(seen.any { it.conn == RemoteConnState.CONNECTED }, "undelivered codes never connect (fail-closed)")
+        assertTrue(seen.any { it.failure == RemoteFailure.EnrollCodesUnavailable }, "H3-invalid → retryable EnrollCodesUnavailable")
+        assertFalse(seen.any { it.failure == RemoteFailure.AuthRejected }, "NEVER collapses into AuthRejected (delivery ≠ reject)")
         scope.cancel()
     }
 

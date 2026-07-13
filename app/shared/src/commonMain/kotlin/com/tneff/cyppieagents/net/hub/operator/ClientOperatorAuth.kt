@@ -86,7 +86,10 @@ class ClientOperatorAuth(
         val enrollRaw = tunnel.receive() ?: return OperatorAuthOutcome.Rejected
         val enroll = CommJson.decodeFromString(EnrollResponse.serializer(), enrollRaw.decodeToString())
         // H3: never show / ack an invalid (empty/truncated/over-count/blank) set — fail-closed (no SavedAck ⇒ discard).
-        if (!isValidCodeSet(enroll.backupCodes)) return OperatorAuthOutcome.Rejected
+        // CYP-525 Finding ①: an invalid set means the codes did NOT arrive intact — a DELIVERY problem (retryable),
+        // NOT a hub reject. Surface EnrollCodesUnavailable (retryable-reconnect), never the terminal Rejected/AuthRejected
+        // mis-attribution. Fail-closed stays: no confirm, no SavedAck, no CONNECTED.
+        if (!isValidCodeSet(enroll.backupCodes)) return OperatorAuthOutcome.EnrollCodesUnavailable
         // Surface the ONE reveal + suspend until the operator confirms "saved" (abort ⇒ fail-closed, no SavedAck).
         if (!enrollConfirmer.confirmSavedCodes(enroll.backupCodes)) return OperatorAuthOutcome.Rejected
         tunnel.send(CommJson.encodeToString(SavedAck.serializer(), SavedAck()).encodeToByteArray())

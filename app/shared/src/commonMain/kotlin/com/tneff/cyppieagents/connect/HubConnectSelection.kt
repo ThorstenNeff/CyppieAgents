@@ -41,6 +41,7 @@ import kmpcyppieagents.app.shared.generated.resources.remote_connect_connected
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_e2e_handshake
 import kmpcyppieagents.app.shared.generated.resources.a11y_remote_connect_device_not_enrolled
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_device_not_enrolled
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_enroll_codes_unavailable
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_handshake_failed
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_hub_offline
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dialing
@@ -364,6 +365,25 @@ private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectView
         RemoteFailure.OperatorUvFailed -> RetryableRemoteFailure(
             stringResource(Res.string.remote_connect_uv_failed), RemoteConnectTags.error("operatorUvFailed"), viewModel,
         )
+        // CYP-525 Finding ① (GE8): first-enroll codes didn't arrive intact (H3-invalid) — a DELIVERY problem, WARN-amber
+        // advisory + RETRY (mirrors DeviceNotEnrolled), NOT the terminal error-red "hub rejected, re-login". Own node
+        // error(enrollCodesUnavailable), never authRejected. Frozen key/tag per UIUX spec @550ddb00.
+        RemoteFailure.EnrollCodesUnavailable -> Column(
+            modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.error("enrollCodesUnavailable")),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("▲ ", color = severityColor(Severity.WARN))
+                Text(
+                    stringResource(Res.string.remote_connect_enroll_codes_unavailable),
+                    color = severityColor(Severity.WARN),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Button(onClick = viewModel::connectRemote, modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.RETRY)) {
+                Text(stringResource(Res.string.load_retry))
+            }
+        }
         null -> Unit // clean teardown (Q5 switch) — nothing to render
     }
 }
