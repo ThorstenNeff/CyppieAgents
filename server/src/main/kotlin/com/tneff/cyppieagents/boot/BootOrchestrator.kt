@@ -274,6 +274,11 @@ class BootOrchestrator(
         hubIdentity: com.tneff.cyppieagents.crypto.HubIdentity?,
         hubSecretStore: com.tneff.cyppieagents.crypto.SecretStore?,
     ) -> (suspend () -> com.tneff.cyppieagents.controlplane.HubAdmissionResult)? = { _, _ -> null },
+    /** CYP-524 — a barrier the admit→dial launch AWAITS before it fires, so the self-admit never dials this
+     *  process' own edge before its HTTP listener has bound (the boot-ordering race). Default = no-op (the launch
+     *  is unchanged for tests / the local path); bootPlatform passes a gate that completes on `ApplicationStarted`.
+     *  Structural belt to the [com.tneff.cyppieagents.controlplane.HubAdmissionClient] retry suspenders. */
+    private val readyGate: suspend () -> Unit = {},
 ) {
     private val log = LoggerFactory.getLogger("boot.orchestrator")
 
@@ -1008,8 +1013,15 @@ class BootOrchestrator(
         // admit=null (CYP-512 gate off) and remoteTransport=Inert (CYP-459 gate off) each no-op. Fail-closed: any
         // failure is logged, never crashes boot; the mint/resolve owner-check stay gated meanwhile.
         scope.launch {
+            // CYP-524: wait for the server to be listening before self-admitting via its own edge (the boot-ordering
+            // race). Default gate = no-op; the live path (bootPlatform) completes it on `ApplicationStarted`.
+            runCatching { readyGate() }.onFailure { log.warn("CYP-524 ready-gate wait failed: {}", it.message) }
             hubAdmissionFactory(hubIdentity, hubSecretStore)?.let { admit ->
-                runCatching { admit() }.onFailure { log.warn("CYP-512 hub admission at boot failed: {}", it.message) }
+                // admit() is now retry-resilient (returns a result even after exhausted retries); log BOTH a thrown
+                // failure AND a returned not-admitted outcome, so a silent non-admission never hides at boot.
+                runCatching { admit() }
+                    .onFailure { log.warn("CYP-512 hub admission at boot failed: {}", it.message) }
+                    .onSuccess { r -> if (!r.admitted) log.warn("CYP-524 hub admission not granted: {}", r.reason) }
             }
             runCatching { remoteTransport.start() }.onFailure { log.warn("CYP-459/521 remote dial at boot failed: {}", it.message) }
         }

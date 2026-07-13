@@ -262,6 +262,13 @@ fun Application.bootPlatform(
     scope: kotlinx.coroutines.CoroutineScope,
 ): BootedPlatform {
     val config = com.tneff.cyppieagents.boot.PlatformConfig.load(configFile)
+    // CYP-524: the boot admission (self-dial to this process' own edge) must not fire before the HTTP listener has
+    // bound, or the edge's upstream is down → non-JSON 502 → the admission fails. This barrier releases it only on
+    // `ApplicationStarted` (fires after the module returns + connectors bind). Subscribed here during module load, so
+    // it is registered before the event; the admit launch awaits it. Retry in HubAdmissionClient covers the residual
+    // (edge upstream warmup). Symmetric to the existing `ApplicationStopping` hook (installPlatform).
+    val serverReady = kotlinx.coroutines.CompletableDeferred<Unit>()
+    monitor.subscribe(io.ktor.server.application.ApplicationStarted) { serverReady.complete(Unit) }
     // S12 / CYP-82: the active project (config.projectId) single-sources both the per-project API-key
     // resolution and the project-scoped worktree layout (projects/<projectId>/<agent>).
     val secrets = com.tneff.cyppieagents.boot.Secrets.fromEnv(config.agents.map { it.id }, listOf(config.projectId))
@@ -377,6 +384,8 @@ fun Application.bootPlatform(
                 hubPort = config.hub.port,
             )
         },
+        // CYP-524: gate the self-admit launch on the server being up (see `serverReady` above).
+        readyGate = { serverReady.await() },
     ).boot()
     installRestrictedCors(config.web.allowedOrigins) // CORS for the web client (Spec §14, CYP-30)
     // CYP-31: an EXPLICIT WS-origin gate on TOP of CORS — CORS is a no-op when allowedOrigins is empty (WS then
