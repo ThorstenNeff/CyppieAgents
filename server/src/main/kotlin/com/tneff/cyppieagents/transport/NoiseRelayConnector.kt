@@ -70,10 +70,18 @@ class NoiseRelayConnector(
     private val terminator: ServerNoiseTerminator,
     private val tunnelHandler: suspend (ServerNoiseTunnel) -> Unit,
     private val scope: CoroutineScope,
-    /** CYP-526 — backoff before a re-dial after a FAILURE (the loop is UNBOUNDED — a persistent responder; a clean
-     *  tunnel-end re-dials immediately). Reuses the CYP-524 [AdmissionRetry] exponential curve (capped). Injectable
-     *  for tests (fast/deterministic). */
+    /** CYP-526 — backoff before a re-dial after a FAILURE (the loop is UNBOUNDED — a persistent responder). Reuses the
+     *  CYP-524 [AdmissionRetry] exponential curve (capped). Injectable for tests (fast/deterministic). */
     private val backoffMs: (attempt: Int) -> Long = { a -> AdmissionRetry().delayForAttempt(a) },
+    /** CYP-528 — a MIN-INTERVAL floor on the **clean tunnel-end** re-dial path only. A real session (held ≥ floor)
+     *  still re-dials immediately (elapsed ≥ floor → 0 wait); only a near-instant tunnel-end (a churn: rapid
+     *  connect/disconnect, or terminate/bridge returning without a real session) is throttled to `floor - elapsed`
+     *  so the loop can't `delay(0)` tight-spin. The FAILURE path is unchanged (already capped by [backoffMs]). */
+    private val cleanEndFloorMs: Long = 500L,
+    /** Injectable monotonic clock (ms) for the clean-end elapsed measurement; tests drive it deterministically. */
+    private val nowMs: () -> Long = { System.currentTimeMillis() },
+    /** Injectable sleeper so tests observe the computed re-dial delay without real waiting; prod = [delay]. */
+    private val sleep: suspend (Long) -> Unit = { delay(it) },
 ) : RelayConnector {
     private val log = LoggerFactory.getLogger("cyp459.relay.connector")
     private var job: Job? = null
@@ -92,6 +100,7 @@ class NoiseRelayConnector(
         job = scope.launch {
             var attempt = 0
             while (isActive) {
+                val dialStart = nowMs() // CYP-528: measure how long this dial→bridge cycle held (for the clean-end floor)
                 try {
                     log.info("CYP-526 dialing relay as role=hub")
                     val relay = dialer.dial(url) // outbound-only (WS to the relay under the CACHED rendezvous id)
@@ -111,7 +120,14 @@ class NoiseRelayConnector(
                     attempt++
                     log.warn("CYP-526 relay dial/handshake failed (attempt {}): {}", attempt, e.message)
                 }
-                delay(if (attempt == 0) 0L else backoffMs(attempt)) // clean tunnel-end → immediate; failure → backoff
+                val wait = if (attempt == 0) {
+                    // CYP-528 clean-end floor: re-dial immediately when this cycle held ≥ the floor (a real session);
+                    // otherwise throttle to the remainder so a fast/instant tunnel-end can't `delay(0)` tight-loop.
+                    (cleanEndFloorMs - (nowMs() - dialStart)).coerceAtLeast(0L)
+                } else {
+                    backoffMs(attempt) // failure path unchanged — already capped
+                }
+                sleep(wait)
             }
         }
     }
