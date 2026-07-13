@@ -82,6 +82,12 @@ data class TunnelAuthGrant(
 data class EnrollResponse(val backupCodes: List<String>)
 
 /**
+ * CYP-525 GE5/GE7 — the operator backup-code set size, **single-sourced in `:core`** so the hub (`mint(BACKUP_CODE_COUNT)`)
+ * and the client (`EXPECTED_BACKUP_CODE_COUNT`, its H3 complete-set validation) can never drift. 10 codes (CYP-485 AC).
+ */
+const val BACKUP_CODE_COUNT: Int = 10
+
+/**
  * CYP-525 GE5/GE7 — the client's **user-saved** confirmation (NOT a mere receipt): the operator explicitly confirmed
  * they saved the codes. Only on this does the hub **Finalize** (persist code-hashes durably AND set the device anchor,
  * atomically, anchor last). No `SavedAck` (drop/close/restart) → the provisional enroll is discarded (never anchored) →
