@@ -72,6 +72,9 @@ fun buildRemoteTransport(
     env: (String) -> String? = System::getenv,
     // CYP-521: one client for BOTH the outbound relay WS dial AND the CP rendezvous-register POST (JSON).
     httpClientFactory: () -> HttpClient = { HttpClient(CIO) { install(WebSockets); install(ContentNegotiation) { json(CommJson) } } },
+    /** CYP-525 GE5/GE7 — the combined crash-atomic finalize store (device anchor + code-hashes). When present the gate
+     *  runs the ratified provisional→SavedAck→finalize flow; `null` keeps the pre-GE5 immediate deviceStore path. */
+    finalizedStore: com.tneff.cyppieagents.auth.operator.FinalizedEnrollmentStore? = null,
 ): RelayConnector {
     val relayUrl = env("CYPPIE_REMOTE_RELAY_URL")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
     // The live path REQUIRES local-hub custody + the full CP-pin config; any gap → INERT (fail-closed).
@@ -104,6 +107,7 @@ fun buildRemoteTransport(
             cpPublicKey = { k -> if (k == cpKid) cpPub else null },
             expectedRpId = rpId,
         ),
+        finalizedStore = finalizedStore, // CYP-525 GE5/GE7: the ratified provisional→finalize path (prod when wired)
     )
     val httpClient = httpClientFactory() // shared: the relay WS dial AND the CP rendezvous-register POST
     val registrar = HubRendezvousRegistrar(cpBaseUrl = cpUrl, http = httpClient, hubId = hubIdentity.hubId, operatorBearer = { cpOperatorToken })

@@ -44,6 +44,22 @@ class BackupCodeStore(
         }
     }
 
+    /**
+     * CYP-525 (GE5/GE7) — **MINT** a fresh set WITHOUT installing (PROVISIONAL): pure w.r.t. the store's live set,
+     * returns the plaintexts (delivered once) + the salted-hash [BackupCodeEntry]s to persist at Finalize (inside the
+     * combined [FinalizedEnrollment] record). Each first-enroll attempt mints its OWN set (session-bound, H2), so a
+     * discarded provisional never touches the live/finalized set.
+     */
+    fun mint(count: Int): MintedCodes {
+        val pairs = (1..count).map {
+            val raw = ByteArray(10).also { random.nextBytes(it) } // 80 bits
+            val code = crockfordBase32(raw)                        // 16 chars
+            val salt = ByteArray(16).also { random.nextBytes(it) }
+            code to BackupCodeEntry(salt, saltedHash(salt, code), consumed = false)
+        }
+        return MintedCodes(pairs.map { it.first }, pairs.map { it.second })
+    }
+
     /** Atomically verify + consume [code]: `true` on the FIRST use of a valid, unconsumed code; `false` for a wrong
      *  code or a reuse. A valid code is spent exactly once (single-use). */
     fun consume(code: String): Boolean = lock.withLock {
@@ -83,3 +99,14 @@ class BackupCodeStore(
         const val ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
     }
 }
+
+/** CYP-525 — an immutable salted-hash backup-code entry (NEVER the plaintext); persisted inside [FinalizedEnrollment]. */
+data class BackupCodeEntry(val salt: ByteArray, val hash: ByteArray, val consumed: Boolean) {
+    override fun equals(other: Any?): Boolean =
+        other is BackupCodeEntry && salt.contentEquals(other.salt) && hash.contentEquals(other.hash) && consumed == other.consumed
+    override fun hashCode(): Int = (31 * salt.contentHashCode() + hash.contentHashCode()) * 31 + consumed.hashCode()
+}
+
+/** CYP-525 — a freshly-minted provisional set: the plaintexts (shown ONCE, delivered in EnrollResponse) + the entries
+ *  to persist at Finalize (in the combined FinalizedEnrollment record). Session-bound — only the Finalized attempt persists. */
+class MintedCodes internal constructor(val plaintexts: List<String>, val entries: List<BackupCodeEntry>)
