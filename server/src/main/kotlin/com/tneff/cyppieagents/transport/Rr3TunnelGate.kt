@@ -24,6 +24,7 @@ import com.tneff.cyppieagents.operator.TunnelAuthRequest
 import com.tneff.cyppieagents.operator.ed25519PublicKeyToRaw
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
 
 /**
  * CYP-459 (S3) — the **RR3 tunnel-auth gate**. Immediately after the Noise handshake, before any HTTP byte, it reads
@@ -64,6 +65,19 @@ class Rr3TunnelGate(
     /** CYP-525 H2 — serialize first-enroll: ONE provisional in-flight (per-hub, this per-gate instance = per-hub). */
     private val firstEnrollLock = Mutex()
 
+    private val log = LoggerFactory.getLogger("cyp525.rr3gate")
+
+    /**
+     * CYP-525 H1b (self-re-read finding) — a corrupt/tampered FINALIZED anchor. After atomic-rename a torn/partial
+     * record cannot arise, so an unreadable record = **deliberate tampering** → fail-CLOSED: reject cleanly (never
+     * "empty → re-enroll" = the seizure vector) and NEVER let the throw propagate uncaught (which would loop the
+     * CYP-526 reconnect + surface no signal). Log the distinct §4 diagnostic so the human triggers OOB recovery.
+     */
+    private suspend fun rejectTampered(tunnel: ServerNoiseTunnel, e: Exception): Boolean {
+        log.warn("CYP-525 operator anchor unreadable (tampered/corrupt) — refusing ALL connects, OOB recovery required: {}", e.message)
+        return reject(tunnel)
+    }
+
     /** Read → verify against live `h` → reply → return true iff authorized (the caller bridges). Fail-closed. */
     suspend fun authorize(tunnel: ServerNoiseTunnel): Boolean {
         val h = tunnel.handshakeHash
@@ -98,9 +112,10 @@ class Rr3TunnelGate(
         if (principal == null) return reject(tunnel)
 
         // CYP-525 GE5/GE7 — the FINALIZED anchor comes from the combined [finalizedStore] when wired (else the pre-GE5
-        // [deviceStore]). A TAMPERED finalized record THROWS (fail-closed, propagates → the tunnel closes) — never a
-        // silent "empty → re-enroll" over a corrupt anchor (the tamper→re-enroll seizure vector).
-        val finalizedDevice = finalizedStore?.read()?.device
+        // [deviceStore]). A TAMPERED finalized record is fail-CLOSED with a distinct diagnostic (rejectTampered) — never
+        // a silent "empty → re-enroll" over a corrupt anchor (the tamper→re-enroll seizure vector), and never an uncaught
+        // throw (H1b self-re-read finding). read() is non-suspend, so this catch cannot swallow a cancellation.
+        val finalizedDevice = try { finalizedStore?.read()?.device } catch (e: Exception) { return rejectTampered(tunnel, e) }
         val anchor = finalizedDevice ?: deviceStore.enrolled()
 
         if (anchor == null) {
@@ -141,7 +156,9 @@ class Rr3TunnelGate(
         // H2 — serialize: only ONE provisional in-flight (per-hub). A 2nd concurrent first-connect is rejected.
         if (!firstEnrollLock.tryLock()) return reject(tunnel)
         try {
-            if (store.read() != null) return grant(tunnel, firstEnroll = false) // a concurrent finalize already won → CONNECTED
+            // recheck under the lock; a tampered record here is also fail-closed diagnostic (the `finally` still unlocks).
+            val existing = try { store.read() } catch (e: Exception) { return rejectTampered(tunnel, e) }
+            if (existing != null) return grant(tunnel, firstEnroll = false) // a concurrent finalize already won → CONNECTED
             val minted = backupCodes.mint(BACKUP_CODE_COUNT)                     // THIS session's codes, local (not persisted)
             reply(tunnel, TunnelAuthGrant(granted = true, firstEnroll = true))   // provisional grant → the client reveals
             runCatching { tunnel.send(CommJson.encodeToString(EnrollResponse(minted.plaintexts)).encodeToByteArray()) }

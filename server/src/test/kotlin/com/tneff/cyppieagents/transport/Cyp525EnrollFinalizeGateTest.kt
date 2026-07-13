@@ -120,6 +120,23 @@ class Cyp525EnrollFinalizeGateTest {
     }
 
     @Test
+    fun tamperedAnchor_failsClosed_cleanReject_notUncaughtThrow() = runBlocking {
+        // H1b self-re-read finding: a tampered FINALIZED record must be a CLEAN fail-closed reject (never a silent
+        // empty→re-enroll seizure, never an uncaught throw that loops the reconnect + surfaces no diagnostic).
+        val file = File(Files.createTempDirectory("cyp525-gate").toFile(), "enrollment.rec")
+        val cipher = SecretCipherFactory.single(1, MasterKeySource.Box(SecretCipherFactory.newBoxKeyset()))
+        val store = FinalizedEnrollmentStore(cipher, file, hubId)
+        val mk = { Rr3TunnelGate(CpJwtVerifier(), OperatorAssertionVerifier(), InMemoryOperatorDeviceStore(), config(), { nowMs }, finalizedStore = store, savedAckTimeoutMs = 5_000L) }
+        assertTrue(mk().authorize(GateTunnel(listOf(reqBytes(byteArrayOf(7)), ackBytes()))), "finalize first")
+        // byte-flip the at-rest record (an attacker corrupting the anchor)
+        val bytes = file.readBytes(); bytes[bytes.size - 1] = (bytes[bytes.size - 1].toInt() xor 0xFF).toByte(); file.writeBytes(bytes)
+        val t = GateTunnel(listOf(reqBytes(byteArrayOf(8))))
+        val ok = mk().authorize(t) // MUST NOT throw (MUT: propagate the read() throw → this line throws → RED)
+        assertFalse(ok, "a tampered anchor → clean fail-closed reject, not empty→re-enroll and not an uncaught throw")
+        assertTrue(grants(t).any { !it.granted }, "a reject grant was sent (clean diagnostic path)")
+    }
+
+    @Test
     fun afterFinalize_steadyState_skipsReveal_verifiesAnchor() = runBlocking {
         val store = finalStore()
         assertTrue(gate(store).authorize(GateTunnel(listOf(reqBytes(byteArrayOf(5)), ackBytes()))), "first-enroll finalizes")
