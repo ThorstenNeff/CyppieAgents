@@ -1,10 +1,11 @@
 # CYP-525 — Operator Device Enroll: Completion Semantics (JOINT design record)
 
-> Status: **REVISION 2 — awaiting PO re-ratification + Reviewer re-review; build HELD.** The first ratification
-> (`cbd893ac`) was NO-GO on an adversarial pre-review: H1 (crash-durability: program-order ≠ storage-order) + H2
-> (concurrent-provisional cross-contamination = a Q6-escalation) + H3 (client SavedAck must gate on a validated set).
-> This revision converges H1+H2 into ONE atomic, serialized, fsync'd finalize record {session code-hashes + anchor}.
-> Design-pass-first for a security-critical seam. JOINT: Backend (hub) authored; **Dev annotates ▸CLIENT**.
+> Status: **REVISION 3 — Reviewer-GO conditioned on the H1 precision below; awaiting Reviewer confirm of this text +
+> PO re-ratification; build HELD.** Rev-2 closed H2/H3/lock-scope/liveness (Reviewer-verified). Rev-3's last residual:
+> "atomic multi-key write + flush" re-admitted a 2-key split OR a torn in-place write → a corrupt record → Inc2's
+> `enrolled()` throws → HARD lockout. Fix: the finalize is ONE combined record written crash-atomically via **temp-file
+> + fsync + atomic-rename** (all-or-nothing) + a torn-write tooth; `throw-on-corrupt` stays UNCHANGED (fail-safe-to-empty
+> would be a tamper→re-enroll seizure vector). Design-pass-first. JOINT: Backend (hub) authored; **Dev annotates ▸CLIENT**.
 
 ---
 
@@ -45,9 +46,10 @@ hub → client : TunnelAuthGrant { granted=true, firstEnroll = (store NOT finali
         hub → client : EnrollResponse { backupCodes = minted.plaintexts } // E2E over Noise, relay blind; the ONE reveal
         ▸CLIENT      : validate a complete, non-empty code set ; show RecoveryCodesReveal ; user confirms "saved"   // H3
         client → hub : SavedAck                                            // user-saved, NOT mere receipt
-        hub  : FINALIZE = ONE atomic, fsync'd commit of { minted.entries (THIS session) + device anchor } together   // H1+H2
+        hub  : FINALIZE = write ONE combined record { minted.entries (THIS session) + device anchor } crash-atomically:
+               encrypt → temp file → fsync(file+dir) → atomic rename()   // H1+H2 — all-or-nothing, no split, no torn write
         hub  : release the FIRST-ENROLL LOCK
-        hub → client : TunnelAuthGrant { granted=true, firstEnroll=false } // ★ the CONNECTED signal — sent ONLY after fsync
+        hub → client : TunnelAuthGrant { granted=true, firstEnroll=false } // ★ the CONNECTED signal — sent ONLY after the rename
       hub          : start the byte-bridge  (== CONNECTED)
 ```
 - **CONNECTED signal (the divergence-risk decision, pinned):** an **explicit final frame** — a second
@@ -67,11 +69,23 @@ hub → client : TunnelAuthGrant { granted=true, firstEnroll = (store NOT finali
 
 1. **★ No-lockout (headline):** there is **no reachable state** where (Finalized / never-re-enroll) ∧ (no usable recovery
    codes). Finalize is ONE atomic fsync'd record of {code-hashes ∧ anchor} — both durable or neither.
-2. **★ H1 — atomic crash-durable finalize:** the code-hashes and the anchor commit as **ONE atomic, fsync-durable
-   record**; the CONNECTED frame is emitted **only after** the fsync returns. There is no reorder window (one write, one
-   flush) — a power-loss crash can never leave (anchor durable ∧ hashes lost). (Requires verifying `SecretStore` atomic
-   multi-key write + flush — §4; if unsupported, wrap: write the combined record + explicit flush before the anchor
-   counts as committed.)
+2. **★ H1 — atomic crash-durable finalize (via temp-file + fsync + atomic-rename, NOT multi-key-write+flush):** the
+   code-hashes and the anchor are ONE combined record written crash-atomically: **encrypt → write a temp file → `fsync`
+   the temp file → `fsync` its directory → atomic `rename()` to the final path.** POSIX `rename` is all-or-nothing: a
+   reader sees the OLD state OR the FULLY-new one, **never a 2-key split (H1-reorder) nor a torn/partial in-place write**.
+   The CONNECTED frame is emitted **only after** the rename returns. So a power-loss crash can never leave
+   (anchor durable ∧ hashes lost) **and can never leave a torn/corrupt record.** (A plain multi-key put + flush was the
+   residual: it re-admits the 2-key split, and a torn in-place write yields a corrupt record — see H1b.)
+   - **H1b — no torn-write hard-lockout:** because the write is all-or-nothing (rename), a torn/partial record cannot
+     arise, so `enrolled()` never sees an *accidentally* corrupt record → no accidental hard-lockout. The ONLY remaining
+     "corrupt" is **deliberate tampering** of the record — and there `enrolled()` MUST stay **fail-CLOSED (throw,
+     diagnostic)**, NOT fail-safe-to-empty: treating a tampered anchor as "empty → re-TOFU" is a **seizure vector** (an
+     attacker corrupts the anchor → forces a re-enroll → enrolls their own device). Fail-closed + a distinct
+     "anchor tampered — OOB recovery required" signal (surface to the human), never a silent auto-re-TOFU.
+     **The two cases are DISJOINT (atomic-rename makes them so):** a legit crash → the rename never completed →
+     the record is either absent or the prior valid one → `enrolled()==null` (or the old anchor) → **safe re-mint**;
+     deliberate tampering → a present-but-corrupt record → `enrolled()` **throws → fail-closed**. There is no third
+     (torn) state to conflate them.
 3. **★ H2 — serialized, session-bound finalize (SECURITY, defeats a Q6-escalation):** first-enroll is **serialized** by a
    first-enroll lock (ONE provisional in-flight; a 2nd first-connect rejects/queues), and finalize installs **THIS
    provisional session's** minted code-hashes, **never "the current store".** So a central-login-alone attacker cannot
@@ -109,9 +123,13 @@ hub → client : TunnelAuthGrant { granted=true, firstEnroll = (store NOT finali
   first-enroll lock.** Emit the CONNECTED grant **only after** the fsync returns. `install()` runs against the session's
   entries, under the SAME lock as the anchor — the standalone `install()` + separate `SecretStoreBackedBackupCodes`
   record from the held groundwork **merge into this combined finalize record**.
-- **Verify the durability primitive (testable requirement, NOT an inline "(durable)"):** does `SecretStore` support an
-  atomic multi-key write + flush/fsync? If not → wrap: write the combined record + an **explicit flush** before the
-  anchor is treated as committed. Cover it with the H1 crash-window test.
+- **Write the combined finalize record crash-atomically via temp-file + fsync + atomic-rename** (NOT a multi-key put +
+  flush): encrypt the combined {anchor + code-hashes} record → temp file → `fsync` (file + dir) → atomic `rename()` to
+  the final path. All-or-nothing; no 2-key split, no torn in-place write. This is the testable durability requirement,
+  not an inline "(durable)".
+- **Keep `enrolled()` fail-CLOSED on a corrupt/tampered record (throw + a diagnostic "anchor tampered" signal), NOT
+  fail-safe-to-empty** — after atomic-rename the only corrupt case is deliberate tampering, and empty→re-TOFU on a
+  tampered anchor is a seizure vector (H1b). The reader that loads the record (device anchor + codes) shares this.
 - **Durable groundwork (held):** the `BackupCodeStore` mint/consume/durable primitive + `SecretStoreBackedBackupCodes`
   are ok as building blocks, but the finalize **record-shape** (combined) is what this revision fixes → the store's
   persist path is subsumed by the combined commit.
@@ -148,6 +166,8 @@ hub → client : TunnelAuthGrant { granted=true, firstEnroll = (store NOT finali
 | Hub restart before finalize | provisional not persisted → discarded → re-mint fresh |
 | **★ H1 — power-loss crash mid-finalize** | ONE atomic fsync'd {hashes ∧ anchor} record → **either both durable or neither**; the CONNECTED grant is emitted only after fsync → NEVER (anchor durable ∧ hashes lost) → **closed by the atomic-fsync record** |
 | Pre-fsync crash (nothing flushed) | nothing durable → next connect `firstEnroll=true` → re-mint fresh (the orphan window is now empty) |
+| **★ H1b — torn/partial write (power loss mid-write)** | atomic `rename()` is all-or-nothing → the reader sees the OLD state (or absent), **never a torn/corrupt record** → `enrolled()==null` → **safe re-mint** (no accidental hard-lockout) |
+| **Deliberate tamper of the at-rest anchor** (byte-flip) | present-but-corrupt record → `enrolled()` **throws → fail-closed** + diagnostic (OOB recovery), **never** empty→re-TOFU (that would be a tamper→re-enroll **seizure** vector) |
 | **★ H2 — concurrent first-connects (incl. a central-login-alone race)** | serialized first-enroll lock → one provisional in-flight; finalize installs THIS session's codes → **the race-loser never installs → no cross-contamination, no Q6-defeat** → **closed by the serialized, session-bound finalize** |
 | **Hung provisional** (lock acquired, no `SavedAck`, not dropped) | bounded `SavedAck` TIMEOUT → discard → **lock released in `finally`** → the operator's retry acquires (no self-DoS); nothing installed |
 | Client thinks enrolled, hub discarded provisional | hub says `firstEnroll=true` → client re-reveals fresh codes (hub-authoritative) |
@@ -162,7 +182,9 @@ fsync'd finalize record {session code-hashes + anchor}** → post-fsync CONNECTE
 atomic-write/flush primitive (wrap if unsupported). **M + combined-record/durability S.** Folds into CYP-525.
 
 Teeth (revised): gen-at-provisional · ack-gate (no-ack → discard → re-mint-fresh) · **H1 crash-window** (a crash before
-the finalize fsync → NO finalized-without-codes; ONE record → both-or-neither) · **H2 concurrent-provisional** (a 2nd
+the rename → NO finalized-without-codes; ONE record → both-or-neither) · **H1b torn-write** (a partial/torn write is
+never observed — the reader sees the OLD/absent state via atomic-rename → `enrolled()==null` → safe re-mint, NOT a
+corrupt-record hard-lockout; the disjoint tamper case still throws fail-closed) · **H2 concurrent-provisional** (a 2nd
 first-connect during a provisional → serialized; the loser never installs → no cross-contamination / no Q6-defeat) ·
 honest-storage (hash-at-rest, single-use, durable-survives-restart) · no-lockout invariant · CONNECTED-is-an-explicit-
 post-fsync-grant · **lock-liveness** (a hung/timed-out/dropped provisional releases the lock → a subsequent first-enroll
