@@ -143,6 +143,8 @@ import coil3.ImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.tneff.cyppieagents.net.hub.HubTransport
+import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
+import kotlinx.coroutines.flow.StateFlow
 import com.tneff.cyppieagents.net.hub.TransportModeResolver
 import com.tneff.cyppieagents.terminal.TerminalView
 import com.tneff.cyppieagents.terminal.WsTerminalSession
@@ -283,6 +285,10 @@ fun AgentShell(
      *  on the remote path (NOT `RemoteHubConnectGate.entered`, which fires locally). Default null = local, no banner.
      *  (Threaded as the hub name — not a bare Boolean — because the UIUX-locked copy interpolates the hub name.) */
     remoteContext: String? = null,
+    /** M2 Seam-3 (b) — the live [RemoteSessionState] flow (RECONNECTING / inFlightUncertain) for the Seam-6 relay-drop
+     *  / in-flight-uncertain operating-surface chrome. `null` = Local / not remote. The chrome consumer lands with
+     *  Seam-6 (this only pipes it in so remote OFF stays byte-identical: default null ⇒ no consumer). */
+    @Suppress("UNUSED_PARAMETER") remoteSessionState: StateFlow<RemoteSessionState>? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 

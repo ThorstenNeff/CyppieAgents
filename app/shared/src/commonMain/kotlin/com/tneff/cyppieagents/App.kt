@@ -115,14 +115,18 @@ fun App(
                             remoteComponentsFactory = defaultRemoteComponentsFactory(authRepo::currentSessionToken),
                         )
                     },
-                ) { remoteContext ->
+                ) { handoff ->
                     AgentShell(
                         modifier = Modifier.fillMaxSize(),
                         tier = tier,
                         sessionToken = authRepo::currentSessionToken,
-                        // CYP-527: the gate binds this to the remote session's CONNECTED state (null when local /
-                        // not connected) → the workspace shows the persistent remote-operating context WARN banner.
-                        remoteContext = remoteContext,
+                        // M2 Seam-3 (a): the tunnel-backed transport ⇒ the whole (mode-blind, CYP-411) workspace runs
+                        // over the Noise tunnel. `null` (Local / pre-CONNECTED / non-Desktop) ⇒ the LOCAL default (INERT).
+                        transport = handoff?.transport,
+                        // CYP-527: the connected remote hub's name → the persistent remote-operating context WARN banner.
+                        remoteContext = handoff?.hubName,
+                        // M2 Seam-3 (b): the live RemoteSessionState flow → the Seam-6 relay-drop / in-flight-uncertain chrome.
+                        remoteSessionState = handoff?.sessionState,
                         themeMode = themeMode,
                         onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
                         composerHistorySize = composerHistorySize,
