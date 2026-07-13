@@ -113,6 +113,10 @@ fun App(
                             // Auftraggeber-GO). Present ⇒ connectRemote drives the real Noise session + the ①²
                             // per-connect OOB coordinator (display == pinned); absent ⇒ the stub feed path.
                             remoteComponentsFactory = defaultRemoteComponentsFactory(authRepo::currentSessionToken),
+                            // M2 Seam-3 (c) / G1: the bridged workspace request carries the operator's Kratos SESSION
+                            // (the same identity-bound token the CP-discovery uses) — Backend's tunnel-connector accepts
+                            // it + 401s the static god-token. NEVER the static OPERATOR_TOKEN (Reviewer Axis-1).
+                            remoteSessionToken = authRepo::currentSessionToken,
                         )
                     },
                 ) { handoff ->

@@ -9,6 +9,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -113,6 +114,17 @@ class RemoteTunnelHubTransportTest {
         val scope = CoroutineScope(Dispatchers.IO)
         val t = transport(FakeTunnel(), FakeAcceptor(port = 9003), scope, token = "hub-ticket-xyz")
         assertEquals("hub-ticket-xyz", t.sessionToken())
+        t.close(); scope.cancel()
+    }
+
+    @Test
+    fun sessionToken_neverHardcoded_G1_noStaticGodTokenFallback() = runBlocking {
+        // M2 (c)/G1 (Reviewer Axis-1): the bridged request may carry ONLY the injected CP-scoped operator session —
+        // the transport has NO static/god-token fallback. A null provider yields null (not a hardcoded token), so the
+        // client can NEVER send the static OPERATOR_TOKEN over the tunnel (App.kt injects authRepo.currentSessionToken).
+        val scope = CoroutineScope(Dispatchers.IO)
+        val t = transport(FakeTunnel(), FakeAcceptor(port = 9100), scope, token = null)
+        assertNull(t.sessionToken(), "no injected session ⇒ null, never a hardcoded/static god-token")
         t.close(); scope.cancel()
     }
 
