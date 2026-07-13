@@ -62,4 +62,30 @@ data class TunnelAuthRequest(
 data class TunnelAuthGrant(
     val granted: Boolean,
     val reason: String? = null,
+    /**
+     * CYP-525 GE5/GE7 — **hub-authoritative** first-vs-recurring signal. `true` iff this connect performed a TOFU
+     * first-enroll (the hub store was not yet Finalized). The client shows the RecoveryCodesReveal iff this is `true`,
+     * regardless of its own local `isEnrolled` (a client that thinks it is enrolled but whose provisional the hub
+     * discarded is told `firstEnroll=true` and re-reveals FRESH codes). Additive/nullable-safe (default `false` =
+     * steady-state). On `true`, an [EnrollResponse] follows on the tunnel before the byte-bridge, then the client
+     * confirms with a [SavedAck] and the hub Finalizes (persist code-hashes + set the anchor, atomically).
+     */
+    val firstEnroll: Boolean = false,
 )
+
+/**
+ * CYP-525 GE5/GE7 — the hub's **one-time backup-code reveal**, sent immediately after a first-enroll grant
+ * (`firstEnroll=true`), **before** the byte-bridge, **E2E over the Noise tunnel** (the relay is blind). The ONLY time
+ * the code plaintexts exist on the wire; the hub keeps only salted-SHA-256 hashes (persisted durably ONLY at Finalize).
+ */
+@Serializable
+data class EnrollResponse(val backupCodes: List<String>)
+
+/**
+ * CYP-525 GE5/GE7 — the client's **user-saved** confirmation (NOT a mere receipt): the operator explicitly confirmed
+ * they saved the codes. Only on this does the hub **Finalize** (persist code-hashes durably AND set the device anchor,
+ * atomically, anchor last). No `SavedAck` (drop/close/restart) → the provisional enroll is discarded (never anchored) →
+ * the next connect re-runs TOFU with FRESH codes. This is the no-lockout gate.
+ */
+@Serializable
+data class SavedAck(val ok: Boolean = true)
