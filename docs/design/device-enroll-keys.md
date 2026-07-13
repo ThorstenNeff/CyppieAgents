@@ -46,23 +46,36 @@
 |---|---|---|---|
 | `remote_connect_device_not_enrolled` | Dieses Gerät ist noch nicht eingerichtet — richte es ein, um fortzufahren. | This device isn't set up yet — set it up to continue. | **Q3-Distinct-Cause** `RemoteFailure.DeviceNotEnrolled`: aktionabel (→Enroll/Recovery), **nie** „abgelehnt" |
 | `a11y_remote_connect_device_not_enrolled` | Gerät nicht eingerichtet — Einrichtung nötig, um fortzufahren. | Device not set up — setup needed to continue. | a11y (optional-empfohlen) |
+| `remote_recovery_codes_no_central` | Ohne diese Codes gibt es keinen Weg zurück — ein zentraler Login stellt den Zugriff nicht wieder her. | Without these codes there's no way back — a central login won't restore access. | **★ ①-Befund (PO `1526254113…` BAU): die load-bearing Konsequenz auf dem *Reveal*, VOR dem Ack** — wer „gespeichert" quittiert, muss die Einsätze kennen. Variante von `remote_recovery_no_central` (das nur auf der *Verlust*-Fläche `RecoveryInputContent` steht), fürs Reveal (`RecoveryCodesReveal`) neu getextet: Konsequenz-Rahmen (kein Weg zurück) statt Schutz-Rahmen. |
 
 ## Honesty-Anker (für §-QA)
-- **HA — Ack-Gate Pflicht:** kein `CONNECTED` beim First-Enroll ohne quittiertes `remote_recovery_codes_ack`
-  (einzige Recovery, kein Zentral-Login → sonst Lockout-Falle).
+- **HA — Ack-Gate Pflicht + informierter Ack:** kein `CONNECTED` beim First-Enroll ohne quittiertes
+  `remote_recovery_codes_ack` (einzige Recovery, kein Zentral-Login → sonst Lockout-Falle). **★ Neu (①):** der Ack ist
+  nur ehrlich, wenn die **Einsätze auf dem Reveal stehen** — `remote_recovery_codes_no_central` rendert **auf dem
+  Reveal, VOR dem Ack** (nicht nur auf der Verlust-Fläche). Ohne diese Zeile quittiert der Nutzer blind, was er
+  aufs Spiel setzt. Gebauter Reveal (`RecoveryCodesReveal.kt` L49-53) sagt „einmalig", nicht „einziger Weg zurück".
 - **HB — not-enrolled ≠ rejected:** `remote_connect_device_not_enrolled` ist **aktionabel** (führt zu Enroll/Recovery),
   **nie** `remote_pop_rejected`/`AuthRejected`-terminal. 3 getrennte Wahrheiten (DeviceNotEnrolled ≠ AuthRejected ≠
   `cpSessionExpired`, CYP-517).
-- **HC — session-only nur Raw:** `remote_pop_enroll_session_only` erscheint **nur** auf dem Raw-Software-Pfad
-  (`sessionOnly==true`); ein Hardware-Passkey (Fido2) zeigt sie **nicht** (keine DEVICE_SECURE-Überzeichnung).
-  WARN-Ton (advisory), **nie** error-rot — dasselbe Disclosure-Doktrin wie `workspace.remoteContext`.
+- **HC — session-only nur Raw + WARN-amber-Ton:** `remote_pop_enroll_session_only` erscheint **nur** auf dem
+  Raw-Software-Pfad (`sessionOnly==true`); ein Hardware-Passkey (Fido2) zeigt sie **nicht** (keine
+  DEVICE_SECURE-Überzeichnung). **★ Ton ge-ruled (④, PO `1526254113…` BAU): `severityColor(Severity.WARN)`
+  (amber) + `▲` separater Node (WCAG 1.4.1), NICHT `onSurfaceVariant`** — es ist eine Security-Downgrade-Wahrheit
+  (schwächerer Session-Key, kein HW-Keychain), doktrin-konsistent mit `workspace.remoteContext`s reduced-guarantee-
+  Offenlegung. Gebaut heute neutral-grau (`OperatorAuthDialog.kt` L96-104) = Understatement; da (a)+Persist der
+  ratifizierte Default ist, ist Session-only die **Ausnahme** → amber-flaggen ist richtig, nicht laut. **Nie** error-rot
+  (kein „kaputt"), **nie** tertiary/grün (kein Erfolg). Kein neuer Key/Tag — Ton-Swap am **bestehenden** Node
+  `remote.authStep.enroll`, Dev verdrahtet die Farbe in Inc 3.
 - **HD — Codes einmal:** `remote_recovery_codes_body` = einmal sichtbar, nie erneut (kein „Codes-erneut-ansehen"-Key).
 - **HE — kein Zentral-Login-Recovery:** `remote_recovery_no_central` / `_exhausted` = OOB-am-Hub, kein Phantom-Weg.
 - **Kein „RR5"/„Seam"/„Passkey-vs-Raw-Internals"-Jargon in der User-Copy** — nur die schlichte Wahrheit.
 
 ## Self-Validation
-- **Net-new: 1 Realkey** (`remote_connect_device_not_enrolled`) **+ 1 a11y** (`a11y_remote_connect_device_not_enrolled`,
-  empfohlen) = **2 Keys**. Beide DE+EN, 0 Args (DE=EN Argument-Anzahl identisch).
+- **Net-new: 2 Realkeys** (`remote_connect_device_not_enrolled` + `remote_recovery_codes_no_central` [①]) **+ 1 a11y**
+  (`a11y_remote_connect_device_not_enrolled`, empfohlen) = **3 Keys**. Alle DE+EN, 0 Args (DE=EN Argument-Anzahl
+  identisch). ④ = **kein neuer Key** (Ton-Swap am bestehenden `remote_pop_enroll_session_only`-Node).
+- **①-Kollision: 0** — `remote_recovery_codes_no_central` greenfield gg. `strings.xml` @ `4572a278` (das bestehende
+  `remote_recovery_no_central` ist die *Verlust*-Fläche, distinkter Key/Kontext — kein Reuse, bewusst neu getextet).
 - **Reuse: 16 bestehende Keys** (3 enroll-step + 6 codes/a11y + 6 recovery-input + 1 `remote_pop_rejected`) —
   verifiziert vorhanden @ `4572a278`, Wortlaut oben 1:1 aus `strings.xml`. **NICHT neu anlegen.**
 - **Kollision: 0** — `remote_connect_device_not_enrolled` greenfield gg. `strings.xml` @ `4572a278`

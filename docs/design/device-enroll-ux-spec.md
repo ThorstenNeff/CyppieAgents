@@ -1,8 +1,9 @@
 # CYP-525 — Device-Enroll-Flow UX (Epic CYP-427 Phase-2 Remote)
 
 > Owner: UIUX-Designer · **RATIFIZIERT (a)+2-iii** (PO `1526244088…`) — Dev+Backend bauen · Stand 2026-07-13 ·
-> Companions (frozen Dev-AC): `device-enroll-keys.md` + `device-enroll-tags.md` (Guard-ACs GE1–GE5).
+> Companions (frozen Dev-AC): `device-enroll-keys.md` + `device-enroll-tags.md` (Guard-ACs GE1–GE7).
 > Dieser Doc = die **Design-Rationale/Begleit-Spec** hinter den Companions.
+> **UX-QA am gebauten Stand + PO-Rulings 2026-07-13 (PO `1526254113…`) → §0.1.**
 > Gegroundet READ-ONLY gg. develop (Explore, 2026-07-13). Der Enroll-Flow ist der **Dogfood-CONNECTED-Blocker**:
 > heute gibt es **keine Self-Enroll-Route**, also erreicht keine neue Operator-Maschine je `CONNECTED`.
 
@@ -22,6 +23,43 @@ Der Explore zeigt: der **Enroll-Schritt selbst ist schon modelliert**, nur nicht
 - Server-Domäne: `EnrolledOperatorDevice` (nur Public-Key, nie privat), `OperatorDeviceEnrollment.enrollFirstDevice`
   (admittiert **nur wenn noch kein Gerät enrolled**; 2. Gerät → `Rejected("already_enrolled_recovery_is_q6_seam")`),
   `OperatorDeviceRecoveryFlow.enrollWithBackupCode` (neues Gerät via Backup-Code).
+
+## 0.1 UX-QA am gebauten Stand + PO-Rulings (2026-07-13)
+
+UX-QA-Pass gg. die **shipped** Enroll-Fläche (CYP-460/480/471 @ develop `4572a278`; der Dev-Build
+`feature/CYP-525-operator-device-enroll @ c788e92c` war noch backend-only). Verdikt: Copy im Kern vollständig +
+DE/EN-paritätisch. 6 Befunde, alle vom PO ge-ruled:
+
+- **① [HOCH · BAU]** Der Reveal (`RecoveryCodesReveal.kt` L49-53) sagt „einmalig", aber die load-bearing Wahrheit
+  (kein Zentral-Login = diese Codes der **einzige Weg zurück**) steht nur auf der *Verlust*-Fläche
+  (`RecoveryInputContent` `NO_CENTRAL`), **nicht** auf dem Reveal, wo „Ich habe sie gespeichert" quittiert wird →
+  Blind-Quittung. **Fix (ge-ruled BAU):** net-new Key `remote_recovery_codes_no_central` auf dem Reveal, **VOR** dem
+  Ack (Variante von `remote_recovery_no_central`, Konsequenz-Rahmen). → **GE7**, Tag `remote.recovery.codesNoCentral`.
+- **④ [MITTEL · BAU]** session-only-Disclosure ist gebaut neutral-grau (`OperatorAuthDialog.kt` L96-104,
+  `onSurfaceVariant`) = Understatement einer Security-Downgrade-Wahrheit. **Fix (ge-ruled BAU):** **WARN-amber**
+  (`severityColor(Severity.WARN)` + `▲` separater Node, WCAG 1.4.1), doktrin-konsistent mit `workspace.remoteContext`.
+  Da (a)+Persist der ratifizierte Default ist, ist Session-only die **Ausnahme** → amber-flaggen ist richtig, nicht
+  laut. Ton-Swap am bestehenden Node — kein neuer Key/Tag. → **GE6**.
+- **③ [MITTEL · ENTSCHEIDUNG]** `cpSessionExpired` ist **bewusst KEINE** distinkte gerenderte Connect-Ursache: der
+  CpJwt = zentrale Operator-Session, ihr Ablauf = zentrales **Re-Login über AuthGate** (CYP-176), getrennt von der
+  Remote-Connect-Failure-Taxonomie. → **GE4 korrigiert auf 2-Wege: `DeviceNotEnrolled ≠ AuthRejected`** + separater
+  AuthGate-Pfad-Vermerk. Keine fehlende Ursache. Die „kollabiert-in-authRejected-Copy"-Kante = **LOW Post-Dogfood**
+  (Attributions-Unschärfe; Remedy Re-Login bleibt ~richtig), non-blocking geloggt. ⟹ „CYP-517 final am
+  Connect-Surface" ist mit dem 2-Wege-Wortlaut **wahr**.
+- **② [Info → Dev-AC, PO relayt]** Kein Copy-Defekt (Copy vollständig). GE2-**Enforcement** ist ungebaut: der Ack ist
+  ein Tap-through-`Button` (`RecoveryCodesReveal.kt` L72-75, kein `enabled`-Gate), `RecoveryCodesReveal` hat 0
+  Prod-Caller. Dev-Verhaltens-AC (Inc 3): Reveal als **einzige Vorwärts-Tür** mounten + CONNECTED an den Ack via
+  `enabled`-Gate koppeln (nicht Tap-through) + Testers Axis-4.
+- **⑤ [NIEDRIG · POSITIV]** „Enroll = Schritt, nicht Fehler" ist am Dialog-Layer schon ehrlich: `NeedsEnroll`
+  nicht-terminal (`OperatorAuthTaxonomy.kt` L28-29/L41), distinkter Tag `error("needsEnroll")`, aktionabler Titel.
+- **⑥ [NIEDRIG · Copy]** `remote_connect_auth_rejected` ≡ `remote_pop_rejected` wortidentisch — moot durch ③ (keine
+  neue cpSessionExpired-Ursache, also nichts zu reusen); Merker: **keinen** der beiden für eine spätere distinkte
+  cp-Copy reusen.
+
+**Dev-Verdrahtung in Inc 3:** ① Text auf dem Reveal, ④ Farbe am session-only-Node. Docs-only-Delta faltet in den
+CYP-525-Merge (revert-guard).
+
+---
 
 **Die 3 fehlenden Nähte (= CYP-525-Scope, mein Spec zeichnet die UX):**
 1. **Keine Enroll-Route/-Wire** — Enroll + Recovery + Backup-Code-Gen sind unverdrahtete Domänen-Klassen; nur der
