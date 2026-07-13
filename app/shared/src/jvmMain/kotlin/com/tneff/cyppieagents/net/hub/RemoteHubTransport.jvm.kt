@@ -10,3 +10,14 @@ actual class RemoteHubTransport actual constructor() : HubTransport {
     override fun sessionToken(): String? = remoteTransportNotYetAvailable()
     override fun close() = Unit
 }
+
+/** M2 Seam-3 jvm (Path-A): the REAL tunnel-backed transport — loopback + [ClientLoopbackBridge] over the session tunnel. */
+actual fun buildRemoteHubTransport(
+    currentTunnel: () -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
+    sessionToken: () -> String?,
+    scope: kotlinx.coroutines.CoroutineScope,
+): HubTransport? = RemoteTunnelHubTransport(
+    tunnelSource = { currentTunnel() },
+    sessionTokenProvider = sessionToken,
+    scope = scope,
+)

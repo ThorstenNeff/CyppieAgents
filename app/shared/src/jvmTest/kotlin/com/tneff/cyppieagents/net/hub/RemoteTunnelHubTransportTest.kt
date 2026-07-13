@@ -115,4 +115,15 @@ class RemoteTunnelHubTransportTest {
         assertEquals("hub-ticket-xyz", t.sessionToken())
         t.close(); scope.cancel()
     }
+
+    @Test
+    fun factory_jvm_buildsRealLoopbackTransport_notFailLoudStub() = runBlocking {
+        // Seam-3 (a): the commonMain factory returns the REAL tunnel-backed transport on jvm (Path-A), not the
+        // fail-loud RemoteHubTransport() stub — the loopback base is what makes AgentShell operate over the tunnel.
+        val scope = CoroutineScope(Dispatchers.IO)
+        val t = buildRemoteHubTransport(currentTunnel = { null }, sessionToken = { "cp-ticket" }, scope = scope)
+        assertTrue(t != null, "jvm factory builds a transport (Path-A Desktop)")
+        assertTrue(t!!.httpBaseUrl.startsWith("http://127.0.0.1:"), "it is the loopback tunnel transport, never the fail-loud stub")
+        t.close(); scope.cancel()
+    }
 }

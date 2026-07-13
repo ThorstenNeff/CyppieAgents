@@ -22,3 +22,19 @@ internal fun remoteTransportNotYetAvailable(): Nothing =
  * so it is a real, compiled part of the mode surface, not a comment.
  */
 expect class RemoteHubTransport() : HubTransport
+
+/**
+ * M2 Seam-3 — builds the CONNECTED remote workspace's **tunnel-backed** [HubTransport]. jvm returns the real
+ * `RemoteTunnelHubTransport` (loopback + `ClientLoopbackBridge` over the tunnel, CYP-457 Path-A); non-desktop
+ * targets return `null` (Path-A is Desktop-only; the multiplatform engine is the ② follow-on).
+ *
+ * [currentTunnel] reads the CURRENT `RemoteHubSession.tunnel` on **each** call, so the transport auto-rebinds after a
+ * relay-drop reconnect — the loopback port stays stable across re-dials, only the tunnel swaps (Backend2 trap: stable
+ * port; Seam-6). [sessionToken] MUST supply the operator's **CP-scoped hub ticket** (identity-bound), NEVER a static
+ * MachineOperator token — the bridged request carries it as the operator's authority to the hub (Reviewer Axis-1).
+ */
+expect fun buildRemoteHubTransport(
+    currentTunnel: () -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
+    sessionToken: () -> String?,
+    scope: kotlinx.coroutines.CoroutineScope,
+): HubTransport?
