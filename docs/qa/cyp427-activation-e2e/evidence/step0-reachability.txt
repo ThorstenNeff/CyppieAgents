@@ -1,0 +1,20 @@
+# CYP-427 Live Transport E2E — Step-0 Reachability (read-only, reject-before-mutation)
+captured_utc: 2026-07-13T10:25:37Z
+stand: CP=https://api.cyppie-agents.com  hubId=hub_c1d6f5ffd892a03d  relay=wss://api.cyppie-agents.com/relay  develop=d9a3d6be
+
+S0-1 relay reachable + header-gated:
+  GET /relay (bare, no upgrade) -> HTTP 400  [expect 400]
+
+S0-2 no-header WS dial -> 1008 (reject-before-mutation, no tunnel):
+  wss /relay upgrade WITHOUT X-Cyppie-Rendezvous/Role -> 101 then WS CLOSE code=1008 reason='bad_rendezvous'
+
+S0-3 operator-gated endpoints reject non-op/no-auth with prod ApiErrorBody JSON:
+  GET /api/cp/challenge (bogus bearer) -> HTTP 401
+    body: {"error":{"code":"unauthorized","message":"missing or invalid bearer token"}}
+  GET /api/cp/rendezvous/%s (no auth) -> HTTP 401
+    body: {"error":{"code":"unauthorized","message":"missing or invalid bearer token"}}
+
+S0-4 resolve->binding: PENDING (operator-gated, needs host-side bearer; part of HP-1)
+
+NOTE: no secrets in Step-0 — all read-only public/unauth probes. The 401 envelope corroborates the CYP-524
+Blindness-B fidelity (prod renders the exact ApiErrorBody JSON the fixture now mirrors byte-for-byte).

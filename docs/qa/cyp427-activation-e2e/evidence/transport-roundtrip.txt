@@ -1,0 +1,8 @@
+# CYP-427 LIVE transport E2E
+stand: cp=https://api.cyppie-agents.com hubId=hub_c1d6f5ffd892a03d dhPubKey(len)=32 deviceKey=fresh(A)
+HP-1 resolve -> Bound
+CT-1 rendezvous opacity: rendezvousId=nrW8_oGbUYbZtt8claiqPXCtBwZzrDRM9fwO79GGqzQ != hubId=hub_c1d6f5ffd892a03d -> true
+CT-1 relayUrl (CP-supplied binding): wss://api.cyppie-agents.com/relay
+HP-2 Noise_NK handshake FAILS CLOSED: NK handshake failed (wrong hub key / misroute / relay error)
+HP-2 diagnosis: a frame returned but readMessage failed (NK handshake failed (wrong hub key / misroute / relay error)) → either the hub is silent/relay-control-frame OR dhPubKey != hub live static (wrong-key/misroute); across runs mostly NO frame → pairing/liveness is the primary hypothesis
+RESULT: transport NOT established — no CONNECTED, no grant frame. Client fails closed correctly (never proceeds without a completed handshake).

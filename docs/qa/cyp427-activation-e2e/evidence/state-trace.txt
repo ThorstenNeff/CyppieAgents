@@ -1,0 +1,3 @@
+STATE: RELAY_DIALING
+HP-order visited: RELAY_DIALING
+terminal: TIMEOUT
