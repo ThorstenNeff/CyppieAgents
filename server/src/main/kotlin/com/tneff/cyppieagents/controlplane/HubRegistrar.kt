@@ -17,6 +17,12 @@ data class RegisteredHub(
     val defaultPort: Int,
     val signingPubKey: String,
     val dhPubKey: String,
+    /**
+     * S-J (GET /hubs) — epoch-ms of the last admit. The hub RE-ADMITS on every boot (CYP-512/524), so this is an
+     * honest "zuletzt gesehen" for the advisory `HubDescriptor.lastSeen` projection. Additive LAST field, default
+     * `0` = never/unknown. It stays inside the zero-knowledge boundary (a coarse admit time, not a presence feed).
+     */
+    val admittedAt: Long = 0L,
 )
 
 sealed interface AdmitResult {
@@ -39,6 +45,9 @@ sealed interface AdmitResult {
  */
 class HubRegistrar(
     private val registry: ConcurrentHashMap<String, RegisteredHub> = ConcurrentHashMap(),
+    /** S-J (CYP-530) — the admit-time clock for [RegisteredHub.admittedAt]. Injectable so tests pin it; default =
+     *  wall-clock. Additive default keeps every existing positional caller unchanged. */
+    private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     fun admit(reg: HubRegistration, cpNonce: ByteArray): AdmitResult {
         // (1) Transcript PoP — fail-closed. A substituted dhPubKey (or any field) alters the transcript → invalid.
@@ -49,12 +58,22 @@ class HubRegistrar(
         if (reg.hubId != HubIdentityProvisioner.deriveHubId(signingPubRaw)) {
             return AdmitResult.Rejected("hubid_not_self_certifying")
         }
-        val hub = RegisteredHub(reg.hubId, reg.ownerId, reg.name, reg.defaultPort, reg.signingPubKey, reg.dhPubKey)
+        val hub = RegisteredHub(reg.hubId, reg.ownerId, reg.name, reg.defaultPort, reg.signingPubKey, reg.dhPubKey, admittedAt = clock())
         registry[hub.hubId] = hub
         return AdmitResult.Admitted(hub)
     }
 
     fun lookup(hubId: String): RegisteredHub? = registry[hubId]
+
+    /**
+     * S-J (CYP-530, GET /hubs) — every hub owned by [operatorId], for the operator-scoped discovery projection.
+     * **Fail-closed:** a blank/null operator owns NOTHING (folds in the CYP-512 blank-ownerId guard, symmetric to the
+     * [ownedBy] predicate) — so a degenerate `""` operator can never enumerate `""`-owner hubs. Zero-knowledge: the
+     * returned [RegisteredHub]s carry identity/routing only (no payload); presence is layered on at the route.
+     */
+    fun hubsOwnedBy(operatorId: String?): List<RegisteredHub> =
+        if (operatorId.isNullOrBlank()) emptyList()
+        else registry.values.filter { it.ownerId == operatorId }
 
     fun count(): Int = registry.size
 }

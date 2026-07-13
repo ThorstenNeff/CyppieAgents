@@ -18,6 +18,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.delay
+import org.slf4j.LoggerFactory
 import java.util.Base64
 
 /**
@@ -122,6 +123,31 @@ class AdmissionRejectedException(message: String) : Exception(message)
  * operator — MVP-acceptable because the hub + operator are the SAME trust domain (the operator runs their own hub);
  * `operator-drives-admission` (central-UI admit, no hub-held operator secret) is the future BYOA ticket, not MVP.
  */
+private val selfAdmitLog = LoggerFactory.getLogger("cyp530.selfadmit")
+
+/** The 4 prerequisites [buildHubAdmission] gates on — env names + the custody dimension. */
+private const val SELF_ADMIT_PREREQ_COUNT = 4
+
+/**
+ * CYP-530 (S-J observability) — the SINGLE source of the [buildHubAdmission] gate: the list of MISSING prerequisites
+ * for hub self-admit (empty = ready). Naming them is what makes the boot fail-LOUD — a silent `null` factory is
+ * indistinguishable from "not yet admitted", the exact dead-end that leaves `GET /api/cp/hubs` empty with no
+ * diagnostic. buildHubAdmission derives its `null` from THIS (no drift between "why null" and "when null").
+ */
+fun hubAdmissionInertReasons(
+    hubIdentity: HubIdentity?,
+    hubSecretStore: SecretStore?,
+    hubIdentityFile: java.io.File?,
+    env: (String) -> String?,
+): List<String> {
+    val missing = mutableListOf<String>()
+    if (env("CYPPIE_CP_URL").isNullOrBlank()) missing += "CYPPIE_CP_URL"
+    if (env("CYPPIE_CP_OPERATOR_TOKEN").isNullOrBlank()) missing += "CYPPIE_CP_OPERATOR_TOKEN"
+    if (env("CYPPIE_OPERATOR_ID").isNullOrBlank()) missing += "CYPPIE_OPERATOR_ID"
+    if (hubIdentity == null || hubSecretStore == null || hubIdentityFile == null) missing += "CYPPIE_MASTER_KEY (local-hub custody)"
+    return missing
+}
+
 fun buildHubAdmission(
     hubIdentity: HubIdentity?,
     hubSecretStore: SecretStore?,
@@ -131,12 +157,32 @@ fun buildHubAdmission(
     env: (String) -> String? = System::getenv,
     httpClientFactory: () -> HttpClient = { HttpClient(CIO) { install(ContentNegotiation) { json(CommJson) } } },
 ): (suspend () -> HubAdmissionResult)? {
-    val cpUrl = env("CYPPIE_CP_URL")?.takeIf { it.isNotBlank() } ?: return null
-    val opToken = env("CYPPIE_CP_OPERATOR_TOKEN")?.takeIf { it.isNotBlank() } ?: return null
-    val ownerId = env("CYPPIE_OPERATOR_ID")?.takeIf { it.isNotBlank() } ?: return null
-    if (hubIdentity == null || hubSecretStore == null || hubIdentityFile == null) return null
-    val provisioner = HubIdentityProvisioner(hubSecretStore, hubIdentityFile.toPath())
-    val registrar = ControlPlaneRegistrar(hubIdentity, provisioner, NoOpControlPlaneConnector, ownerId, hubName, hubPort)
+    val missing = hubAdmissionInertReasons(hubIdentity, hubSecretStore, hubIdentityFile, env)
+    if (missing.isNotEmpty()) {
+        // Fail-LOUD (CYP-530): a PARTIAL config (some prereqs set, some missing) is a misconfiguration the operator
+        // meant to enable → WARN naming the missing one(s), so the deploy env-check sees WHY the hub won't appear in
+        // /api/cp/hubs. ALL missing = self-admit simply not configured (local-only) → a quiet DEBUG, not noise.
+        if (missing.size < SELF_ADMIT_PREREQ_COUNT) {
+            selfAdmitLog.warn("hub self-admit INERT — the hub will NOT appear in GET /api/cp/hubs; missing: {}", missing.joinToString(", "))
+        } else {
+            selfAdmitLog.debug("hub self-admit not configured (local-only); missing all: {}", missing.joinToString(", "))
+        }
+        return null
+    }
+    val cpUrl = env("CYPPIE_CP_URL")!!
+    val opToken = env("CYPPIE_CP_OPERATOR_TOKEN")!!
+    val ownerId = env("CYPPIE_OPERATOR_ID")!!
+    val provisioner = HubIdentityProvisioner(hubSecretStore!!, hubIdentityFile!!.toPath())
+    val registrar = ControlPlaneRegistrar(hubIdentity!!, provisioner, NoOpControlPlaneConnector, ownerId, hubName, hubPort)
     val client = HubAdmissionClient(cpUrl, httpClientFactory(), registrar, { opToken })
-    return { client.admit() }
+    return {
+        val result = client.admit()
+        // Positive confirmation (CYP-530): the deploy e2e self-verify keys on THIS line, not a guess. An admitted hub
+        // is now in the shared cpHubRegistrar (owner = the authenticated operator) → GET /api/cp/hubs will list it.
+        // (The not-granted / exception cases stay with the boot block's existing warns — no double-log.)
+        if (result.admitted) {
+            selfAdmitLog.info("hub self-admitted to CP as owner {} — hubId {} now discoverable in GET /api/cp/hubs", ownerId, result.hubId)
+        }
+        result
+    }
 }
