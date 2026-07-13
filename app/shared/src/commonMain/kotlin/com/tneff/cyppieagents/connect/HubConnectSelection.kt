@@ -56,6 +56,7 @@ import kmpcyppieagents.app.shared.generated.resources.hubconnect_error_port
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_hubs_empty
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_hubs_register
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_hubs_title
+import kmpcyppieagents.app.shared.generated.resources.hubconnect_ready_enter
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_presence_offline
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_presence_online
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_state_attempting
@@ -160,7 +161,14 @@ internal fun ModeView(hub: HubDescriptor, viewModel: HubConnectViewModel) {
 
 // --- §6 — local-connect states (my connection; inherits the neutral/LIVE idiom, never green prematurely) ---
 @Composable
-internal fun ConnectingView(hub: HubDescriptor, progress: ConnectProgress, viewModel: HubConnectViewModel) {
+internal fun ConnectingView(
+    hub: HubDescriptor,
+    progress: ConnectProgress,
+    viewModel: HubConnectViewModel,
+    // CYP-523: forward action from the CONNECTED state into the workspace (the gate's onEnterWorkspace). Only the
+    // CONNECTED branch surfaces it → the earlier states can never leak an enter-workspace affordance.
+    onEnterWorkspace: () -> Unit = {},
+) {
     HubCard {
         when (progress) {
             ConnectProgress.Attempting -> InProgress(
@@ -169,14 +177,21 @@ internal fun ConnectingView(hub: HubDescriptor, progress: ConnectProgress, viewM
             ConnectProgress.Handshake -> InProgress(
                 stringResource(Res.string.hubconnect_state_handshake), HubConnectTags.STATE_HANDSHAKE,
             )
-            ConnectProgress.Connected -> Row(
-                modifier = Modifier.fillMaxWidth().testTag(HubConnectTags.STATE_CONNECTED),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // LIVE only — `●`+`primary` (§3.3), reached ONLY on the feed's Connected (never before).
-                Text("● ", color = MaterialTheme.colorScheme.primary)
-                Text(stringResource(Res.string.hubconnect_state_connected), color = MaterialTheme.colorScheme.onSurface)
+            // CYP-523: CONNECTED is no longer a dead-end — the LIVE indicator + a primary „Loslegen" into the workspace.
+            ConnectProgress.Connected -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().testTag(HubConnectTags.STATE_CONNECTED),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // LIVE only — `●`+`primary` (§3.3), reached ONLY on the feed's Connected (never before).
+                    Text("● ", color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(Res.string.hubconnect_state_connected), color = MaterialTheme.colorScheme.onSurface)
+                }
+                Button(
+                    onClick = onEnterWorkspace,
+                    modifier = Modifier.fillMaxWidth().testTag(HubConnectTags.STATE_TO_WORKSPACE),
+                ) { Text(stringResource(Res.string.hubconnect_ready_enter)) }
             }
             is ConnectProgress.Failed -> {
                 val causeText = when (progress.cause) {
@@ -227,6 +242,9 @@ internal fun RemoteConnectingView(
     oobConfirm: OobConfirmMount? = null,
     popPrompt: (@Composable () -> Unit)? = null,
     onEndSession: (() -> Unit)? = null,
+    // CYP-523: forward action from CONNECTED into the workspace (the gate's onEnterWorkspace). Surfaced ONLY in the
+    // CONNECTED branch → dialing/handshake/trust-check/authenticating can never leak an enter-workspace affordance.
+    onEnterWorkspace: () -> Unit = {},
 ) {
     HubCard {
         when (remote.conn) {
@@ -272,8 +290,13 @@ internal fun RemoteConnectingView(
                     Text("● ", color = MaterialTheme.colorScheme.primary)
                     Text(stringResource(Res.string.remote_connect_connected), color = MaterialTheme.colorScheme.onSurface)
                 }
+                // CYP-523: primary forward action → the workspace (no dead-end at „● Verbunden"). Reuses the A4 copy.
+                Button(
+                    onClick = onEnterWorkspace,
+                    modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.TO_WORKSPACE),
+                ) { Text(stringResource(Res.string.hubconnect_ready_enter)) }
                 // CYP-482 S-B §6: the "end remote session" control (guaranteed local teardown). Seam null ⇒ absent
-                // (INERT) — the live wiring passes `viewModel::backToHubList` when a real session is connected.
+                // (INERT) — CYP-523 wires it to `viewModel::backToHubList` (end session → back to the hub list).
                 onEndSession?.let { RemoteRevokeControl(onEndSession = it) }
             }
             RemoteConnState.LOST -> RemoteFailureView(remote.failure, viewModel)

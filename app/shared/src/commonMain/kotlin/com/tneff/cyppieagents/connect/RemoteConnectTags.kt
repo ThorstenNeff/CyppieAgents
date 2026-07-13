@@ -14,6 +14,8 @@ object RemoteConnectTags {
     const val TRUST_PROVISIONAL = "remote.connect.trustProvisional"
     const val AUTHENTICATING = "remote.connect.authenticating"
     const val CONNECTED = "remote.connect.connected"
+    /** CYP-523: Seq-B forward action from the CONNECTED state → the workspace („Loslegen"). Additive (shared API w/ QA via PO). */
+    const val TO_WORKSPACE = "remote.connect.toWorkspace"
     /** The single workspace-scoped relay-drop / reconnecting surface (H4) — not N per-agent chips. */
     const val RELAY_DROP = "remote.relayDrop"
     /** Retry affordance — present ONLY for retryable transport failures, NEVER for a terminal trust-changed/auth-rejected. */
