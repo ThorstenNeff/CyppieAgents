@@ -31,16 +31,38 @@ class Cyp525PersistentDeviceKeyTest {
     }
 
     @Test
-    fun firstRun_writesOwnerOnlyPerms() {
+    fun firstRun_writesOwnerOnly_neverGroupOrWorldReadable() {
         val file = Files.createTempDirectory("cyp525").resolve("operator-device.key")
         PersistentOperatorDeviceKey(file).loadOrGenerate()
-        val perms = runCatching { Files.getPosixFilePermissions(file) }.getOrNull()
-        if (perms != null) { // POSIX filesystem
-            assertEquals(
-                setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE), perms,
-                "the device key is 0600 (owner-only) at rest",
+        assertOwnerOnly(file, "the device key is owner-only (0600) at rest")
+    }
+
+    @Test
+    fun regenerateOverPreExisting0644_endsOwnerOnly_notWorldReadable() {
+        // F1 window: a naive create-then-chmod that writes into a PRE-EXISTING 0644 file (Files.write keeps the
+        // existing perms) would leave the NEW key world-readable if the chmod is ever skipped. The atomic temp+move
+        // yields 0600 regardless — this exercises the overwrite path (corrupt→regenerate) end-to-end.
+        val file = Files.createTempDirectory("cyp525").resolve("operator-device.key")
+        Files.write(file, byteArrayOf(9, 9, 9)) // pre-existing garbage...
+        runCatching {
+            Files.setPosixFilePermissions(
+                file,
+                setOf(
+                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.GROUP_READ, PosixFilePermission.OTHERS_READ, // ...at 0644 world-readable
+                ),
             )
         }
+        PersistentOperatorDeviceKey(file).loadOrGenerate() // regenerates over it
+        assertOwnerOnly(file, "regenerating over a 0644 file must NOT leave the key group/world-readable")
+    }
+
+    private fun assertOwnerOnly(file: java.nio.file.Path, message: String) {
+        val perms = runCatching { Files.getPosixFilePermissions(file) }.getOrNull() ?: return // non-POSIX FS: skip
+        assertEquals(setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE), perms, message)
+        // Explicit anti-window assertions: the private key is NEVER group- or world-readable.
+        assertTrue(PosixFilePermission.GROUP_READ !in perms, "$message — no group read")
+        assertTrue(PosixFilePermission.OTHERS_READ !in perms, "$message — no world read")
     }
 
     @Test

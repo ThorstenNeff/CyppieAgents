@@ -3,7 +3,9 @@ package com.tneff.cyppieagents.net.hub.operator
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.PosixFilePermissions
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -59,24 +61,35 @@ class PersistentOperatorDeviceKey(private val keyFile: Path) {
         return kp
     }
 
-    /** Write [bytes] to [keyFile] with owner-only perms (parent 0700, file 0600); POSIX where supported. */
+    /**
+     * F1 (Reviewer, security): write [bytes] to [keyFile] **atomically owner-only** — the PKCS#8 private key must
+     * NEVER touch disk world-readable (0644 via umask), not even in the window between a naive `Files.write` and a
+     * follow-up chmod. So: create an owner-only (`0600`-from-birth) temp in the SAME dir (POSIX file-attribute at
+     * creation, not a later chmod), write into it, then **atomically move** it over the target (this also covers the
+     * regenerate-over-corrupt overwrite). On a non-POSIX FS the attribute is unsupported → best-effort chmod fallback.
+     */
     private fun writeOwnerOnly(bytes: ByteArray) {
-        val parent = keyFile.parent
-        if (parent != null && !Files.exists(parent)) Files.createDirectories(parent)
-        runCatching {
-            if (parent != null) {
-                Files.setPosixFilePermissions(
-                    parent,
-                    setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE),
-                )
-            }
+        val parent = requireNotNull(keyFile.parent) { "device key path must have a parent dir" }
+        val ownerFile = setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE)
+        val ownerDir = ownerFile + PosixFilePermission.OWNER_EXECUTE
+        if (!Files.exists(parent)) {
+            runCatching { Files.createDirectories(parent, PosixFilePermissions.asFileAttribute(ownerDir)) }
+                .onFailure { Files.createDirectories(parent) } // non-POSIX fallback
         }
-        Files.write(keyFile, bytes)
-        runCatching {
-            Files.setPosixFilePermissions(
-                keyFile,
-                setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
-            )
+        runCatching { Files.setPosixFilePermissions(parent, ownerDir) } // tighten an existing parent (best-effort)
+        // Create the temp owner-only AT CREATION (never 0644), same dir so ATOMIC_MOVE stays on one filesystem.
+        val tmp = runCatching {
+            Files.createTempFile(parent, ".op-device", ".tmp", PosixFilePermissions.asFileAttribute(ownerFile))
+        }.getOrElse {
+            Files.createTempFile(parent, ".op-device", ".tmp").also { runCatching { Files.setPosixFilePermissions(it, ownerFile) } }
+        }
+        try {
+            Files.write(tmp, bytes)
+            runCatching { Files.setPosixFilePermissions(tmp, ownerFile) } // belt-and-suspenders
+            runCatching { Files.move(tmp, keyFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
+                .onFailure { Files.move(tmp, keyFile, StandardCopyOption.REPLACE_EXISTING) } // non-atomic FS fallback
+        } finally {
+            runCatching { Files.deleteIfExists(tmp) } // never leak the key material via an orphaned temp
         }
     }
 
