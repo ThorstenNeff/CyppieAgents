@@ -22,8 +22,8 @@ aber eine **andere Wahrheit**: die zentrale Session/Autorisierung, nicht Gerät 
 | Ursache | Key | DE | EN | Ton / Affordance |
 |---|---|---|---|---|
 | **CP_SESSION_EXPIRED** | `remote_connect_cp_session_expired` | Sitzung abgelaufen — bitte erneut anmelden. | Session expired — please sign in again. | **RETRYABLE / recoverable → WARN-amber `▲`.** Affordance = **Re-Login** (zentraler AuthGate / CYP-176), **nicht** blindes Connect-Retry. Benignes Lebenszyklus-Ereignis — **nie** error-rot, **nie** „abgelehnt". |
-| **NOT_AUTHORIZED_FOR_HUB** | `remote_connect_not_authorized_hub` | Nicht berechtigt für diesen Hub. | Not authorized for this hub. | **TERMINAL → `HintTone.ERROR` (errorContainer), kein Retry, kein Re-Auth** (Re-Login ändert die Berechtigung nicht). Policy-Deny auf CP-Ebene. *(Optional-empfohlen OOB-Suffix, PO/DS-Entscheid: „— wende dich an deinen Hub-Administrator." / „— contact your hub administrator." — gibt dem Terminal-Zustand einen ehrlichen Nicht-Sackgassen-Weg; nur wenn der Rollen-Begriff im Produkt existiert.)* |
-| **cpUnreachable** | `remote_connect_cp_unreachable` | Control Plane nicht erreichbar — später erneut versuchen. | Control plane unreachable — try again later. | **TRANSIENT / retryable → wie `RelayUnreachable`** (Retry-Affordance). Symmetrisch zur Relay-/Hub-offline-Copy. |
+| **NOT_AUTHORIZED_FOR_HUB** | `remote_connect_not_authorized_hub` | Nicht berechtigt für diesen Hub. | Not authorized for this hub. | **TERMINAL → `HintTone.ERROR` (errorContainer), kein Retry, kein Re-Auth** (Re-Login ändert die Berechtigung nicht). Policy-Deny auf CP-Ebene. **KEIN Admin-Suffix (PO `1526303594…`):** MVP ist Single-Operator (Operator ownt seinen Hub → kein „Hub-Administrator"-Rollen-Begriff existiert); ein Suffix würde auf eine nicht-vorhandene Rolle zeigen. Zeile bleibt as-is; Suffix revisiten, wenn Multi-User/Rollen landen. (Im Single-Operator-Dogfood ist die Ursache quasi unerreichbar = defensiv/future-proofing.) |
+| **cpUnreachable** | `remote_connect_cp_unreachable` | Zentraler Dienst nicht erreichbar — später erneut versuchen. | Central service unreachable — try again later. | **TRANSIENT / retryable → wie `RelayUnreachable`** (Retry-Affordance). Symmetrisch zur Relay-/Hub-offline-Copy. **Plain-Language (PO `1526303594…`): „Zentraler Dienst" / „central service", NICHT „Control Plane"** — internes Architektur-Naming leakt nicht in user-facing Copy (Anti-Hype/Plain-Language-Ethos). |
 | a11y (empfohlen, WARN) | `a11y_remote_connect_cp_session_expired` | Warnung: Sitzung abgelaufen — erneut anmelden. | Warning: session expired — sign in again. | a11y-Präfix „Warnung/Warning" wie `a11y_workspace_remote_context` (der `▲`-Node ist dekorativ + Text trägt die Wahrheit, WCAG 1.4.1). |
 
 ## Tags — `RemoteConnectTags.error(<cause>)` (bestehende fn, KEIN neuer Const/Objekt)
@@ -51,9 +51,12 @@ aber eine **andere Wahrheit**: die zentrale Session/Autorisierung, nicht Gerät 
   sondern dessen erstklassige Oberflächung. GE4/HB (2-Wege heute) bleiben für den **Nicht-CP** Connect-Surface gültig.
 - **Herkunfts-Ehrlichkeit:** `cpUnreachable` ist client-seitig (kein Server-Verdikt) — nie als „Hub/CP hat entschieden"
   gerahmt; es ist „wir erreichen die CP nicht".
-- **Jargon-Flag (PO/DS-Entscheid):** „Control Plane" in `cp_unreachable` ist Architektur-Naming. Für die Operator-Persona
-  vertretbar + konsistent mit dem CP-Auth-Nachtrag; plainere Alternative „Zentraler Dienst nicht erreichbar" möglich,
-  falls „Control Plane" zu intern liest. `cp_session_expired` vermeidet den Begriff bereits („Sitzung abgelaufen").
+- **Plain-Language (PO `1526303594…` ge-ruled):** `cp_unreachable` sagt **„Zentraler Dienst" / „central service"**,
+  **nicht** „Control Plane" — internes Architektur-Naming leakt nie in user-facing Copy (Anti-Hype/Plain-Language-Ethos).
+  `cp_session_expired` vermeidet den Begriff ohnehin („Sitzung abgelaufen"). Der Key-Name (`_cp_unreachable`) + Tag
+  (`cpUnreachable`) bleiben (interne Kennung ≠ user-facing Copy).
+- **NOT_AUTHORIZED = terminal, ohne Admin-Verweis (PO `1526303594…` ge-ruled):** MVP Single-Operator → kein
+  „Hub-Administrator" existiert; die Terminal-Zeile bleibt suffixlos, nie auf eine nicht-vorhandene Rolle zeigend.
 
 ## Self-Validation
 - **Net-new: 3 Realkeys** (`remote_connect_cp_session_expired` / `_not_authorized_hub` / `_cp_unreachable`) **+ 1 a11y**
