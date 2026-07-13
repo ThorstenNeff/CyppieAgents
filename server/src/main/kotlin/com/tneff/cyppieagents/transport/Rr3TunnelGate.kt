@@ -1,15 +1,21 @@
 package com.tneff.cyppieagents.transport
 
 import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.IdentityToken
 import com.tneff.cyppieagents.auth.VerifierContext
 import com.tneff.cyppieagents.auth.operator.AssertionResult
+import com.tneff.cyppieagents.auth.operator.DeviceKeyAlg
+import com.tneff.cyppieagents.auth.operator.EnrollResult
+import com.tneff.cyppieagents.auth.operator.EnrolledOperatorDevice
 import com.tneff.cyppieagents.auth.operator.OperatorAssertionVerifier
+import com.tneff.cyppieagents.auth.operator.OperatorDeviceEnrollment
 import com.tneff.cyppieagents.auth.operator.OperatorDevicePoP
 import com.tneff.cyppieagents.auth.operator.OperatorDeviceStore
 import com.tneff.cyppieagents.operator.OperatorPoPWire
 import com.tneff.cyppieagents.operator.TunnelAuthGrant
 import com.tneff.cyppieagents.operator.TunnelAuthRequest
+import com.tneff.cyppieagents.operator.ed25519PublicKeyToRaw
 
 /**
  * CYP-459 (S3) — the **RR3 tunnel-auth gate**. Immediately after the Noise handshake, before any HTTP byte, it reads
@@ -36,6 +42,10 @@ class Rr3TunnelGate(
     private val config: Rr3Config,
     private val now: () -> Long = { System.currentTimeMillis() },
 ) {
+    // CYP-525 — First-Device-Enroll over the store (rejects a re-enroll; validates the key). Constructed from the same
+    // store the verify reads, so no constructor change / no wiring change: the gate self-serves TOFU first-enroll.
+    private val enrollment = OperatorDeviceEnrollment(deviceStore)
+
     /** Read → verify against live `h` → reply → return true iff authorized (the caller bridges). Fail-closed. */
     suspend fun authorize(tunnel: ServerNoiseTunnel): Boolean {
         val h = tunnel.handshakeHash
@@ -69,6 +79,12 @@ class Rr3TunnelGate(
         // is valid AND the PoP is genuinely processed.
         if (principal == null) return reject(tunnel)
 
+        // CYP-525 (2-iii) — TOFU first-enroll under a CpJwt-authenticated operator. On an EMPTY store the first PoP
+        // that PROVES possession of its presented device key anchors that key; the owner is the AUTHENTICATED operator
+        // ([principal], CT-2b — never a payload claim), so we only reach here past a valid CpJwt ⇒ no land-grab. A
+        // NON-empty store never re-enrolls here (that is the Q6-gated recovery seam, never central-login-alone).
+        if (deviceStore.enrolled() == null) return firstEnrollThenGrant(tunnel, req, h, principal)
+
         // CYP-485 (③ multi-device): the PoP may match ANY enrolled device (verifyAny handles the empty-store case);
         // the nonce is consumed once, only on a match (the verifyAny grief-guard). Both guards held together (CYP-490 ∧ CYP-485).
         val popVerified = operatorVerifier.verifyAny(
@@ -76,6 +92,30 @@ class Rr3TunnelGate(
         ) is AssertionResult.Verified
 
         return if (popVerified) grant(tunnel) else reject(tunnel)
+    }
+
+    /**
+     * CYP-525 first-enroll (the ratified (a) Raw/Ed25519 factor): the client sends its raw-32B device public key
+     * ([TunnelAuthRequest.devicePublicKey]) — a raw Ed25519 key is NOT recoverable from the signature, so it must ride
+     * the wire, but the OWNER is bound to [principal] (CT-2b), never the key/claim. Proof-of-possession FIRST (verify
+     * the PoP against the PRESENTED key), so a key the client can't sign with is never anchored — and the single-use
+     * nonce is consumed only on a genuine match (CYP-477/485 grief-guard). Then [OperatorDeviceEnrollment] anchors it
+     * (re-checks empty for a concurrent race; validates size). Fail-closed on every branch.
+     */
+    private suspend fun firstEnrollThenGrant(tunnel: ServerNoiseTunnel, req: TunnelAuthRequest, h: ByteArray, principal: AuthPrincipal): Boolean {
+        val rawPubkey = req.devicePublicKey?.let { runCatching { ed25519PublicKeyToRaw(it) }.getOrNull() }
+            ?: return reject(tunnel) // no (valid) device key on the wire ⇒ nothing to anchor ⇒ fail-closed
+        // CT-2b: the enrolled device is owned by the AUTHENTICATED operator (the CpJwt principal, sub==pinnedOperatorId).
+        val ownerId = (principal as? AuthPrincipal.Human)?.identityId ?: config.pinnedOperatorId
+        val candidate = EnrolledOperatorDevice(deviceId = ownerId, alg = DeviceKeyAlg.ED25519, publicKey = rawPubkey, credentialId = null)
+        val proven = operatorVerifier.verifyAny(
+            req.pop.toOperatorDevicePoP(), listOf(candidate), h, config.hubId, req.nonce, config.expectedRpId,
+        ) is AssertionResult.Verified
+        if (!proven) return reject(tunnel) // never anchor a key the client can't sign with; nonce not consumed on a non-match
+        return when (enrollment.enrollFirstDevice(candidate)) {
+            is EnrollResult.Enrolled -> grant(tunnel)
+            is EnrollResult.Rejected -> reject(tunnel) // e.g. a concurrent first-connect already enrolled
+        }
     }
 
     private suspend fun readRequest(tunnel: ServerNoiseTunnel): TunnelAuthRequest? = runCatching {

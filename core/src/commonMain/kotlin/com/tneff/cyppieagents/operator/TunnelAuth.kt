@@ -36,12 +36,21 @@ sealed interface OperatorPoPWire {
 /**
  * The operator's first tunnel message: the CP-minted identity JWT ([cpJwt]), the device proof-of-possession ([pop],
  * channel-bound to the live `h`), and the freshness [nonce] (the PoP challenge input, single-use at the hub).
+ *
+ * [devicePublicKey] (CYP-525) — the operator's **raw-32B** Ed25519 device public key, carried ONLY for **TOFU
+ * first-enroll**: on an empty hub store the gate anchors this key (after proving possession via [pop]) as the device
+ * the operator authenticates with thereafter. Additive + nullable (default `null`) — steady-state connects (device
+ * already enrolled) omit it, and the wire stays backward-compatible. **Raw-32B is the ratified wire form** — the client
+ * converts its X.509 `KeyPair.public.encoded` via [ed25519SpkiToRaw] before sending; the hub reads it via
+ * [ed25519PublicKeyToRaw]. The device **owner** is NEVER this payload — it is the CpJwt-authenticated operator
+ * (CT-2b), so a present key can only enroll under a valid operator session (no land-grab).
  */
 @Serializable
 data class TunnelAuthRequest(
     val cpJwt: String,
     val pop: OperatorPoPWire,
     val nonce: ByteArray,
+    val devicePublicKey: ByteArray? = null,
 )
 
 /**
