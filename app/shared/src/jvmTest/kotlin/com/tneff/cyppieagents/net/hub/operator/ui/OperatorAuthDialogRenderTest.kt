@@ -5,6 +5,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
 
@@ -75,5 +76,30 @@ class OperatorAuthDialogRenderTest {
         }
         onNodeWithTag(OperatorAuthTags.ENROLL_PIN_SET, useUnmergedTree = true).assertExists()
         onNodeWithTag(OperatorAuthTags.ENROLL, useUnmergedTree = true).assertExists() // Q5 "this session only"
+    }
+
+    @Test
+    fun ge6_sessionOnly_hasSeparateWarnGlyphNode() = runComposeUiTest {
+        // CYP-525 GE6: the session-only downgrade is WARN-amber with a SEPARATE `▲` node (WCAG 1.4.1) — colour is
+        // never the sole carrier. (The amber tone itself is UIUX §-QA-visual; the tag test pins the glyph node.)
+        setContent {
+            MaterialTheme {
+                OperatorAuthDialog(OperatorAuthStep.Enroll(sessionOnly = true), error = null, pin = "", {}, {})
+            }
+        }
+        onNodeWithTag(OperatorAuthTags.ENROLL, useUnmergedTree = true).assertExists()
+        onNodeWithText("▲", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun ge3_sessionOnly_absentOnHardwarePath() = runComposeUiTest {
+        // GE3: the session-only disclosure renders ONLY on the Raw software path (sessionOnly==true). A hardware
+        // passkey (Fido2, sessionOnly==false) never shows it — no DEVICE_SECURE over- or under-statement.
+        setContent {
+            MaterialTheme {
+                OperatorAuthDialog(OperatorAuthStep.Enroll(sessionOnly = false), error = null, pin = "", {}, {})
+            }
+        }
+        onNodeWithTag(OperatorAuthTags.ENROLL, useUnmergedTree = true).assertDoesNotExist()
     }
 }
