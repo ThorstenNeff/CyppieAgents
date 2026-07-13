@@ -41,6 +41,16 @@
 |---|---|---|---|
 | `remote_pop_rejected` | Vom Hub abgelehnt. Bitte neu anmelden. | Rejected by the hub. Please sign in again. | **`AuthRejected` — TERMINAL, Neu-Login**; muss DISTINKT von DeviceNotEnrolled bleiben (GE4) |
 
+### UV-Fail-Fallback (F3 → CYP-460-App-PIN-Dialog) — die letzte Enroll-Flow-Copy-Lücke (PO `1526283271…`)
+Die provisorische Connect-Copy `remote_connect_uv_failed` wird **retired**: eine UV-Fehlprüfung (`PopResult.UvFailed(reason)`,
+`UvFailReason { WRONG_PIN, CANCELLED, LOCKED_OUT }`) faltet in die **bestehende CYP-460-Taxonomie** (`OperatorAuthError`),
+NICHT in eine generische Connect-Zeile. Alle **retryable/lokal, nie terminal** (H2/GE4 — nur `HubRejected` terminal).
+| UvFailReason | Key | DE | EN | Rolle |
+|---|---|---|---|---|
+| `WRONG_PIN` | `remote_pop_wrong_pin` **(REUSE, final)** | Falsche PIN. Noch %1$s Versuche. | Wrong PIN. %1$s attempts left. | `OperatorAuthError.WrongPin(attemptsLeft)` — **retryable**, der Rest-Zähler `%1$s` = impliziter Retry (kein „abgelehnt"). Wortlaut bleibt, kein Change. |
+| `LOCKED_OUT` | `remote_pop_locked` **(REUSE, final)** | Zu viele Fehlversuche. Erneut in %1$s. | Too many attempts. Try again in %1$s. | `OperatorAuthError.LockedOut(retryAfter)` — eigenes Tag `LOCKED_OUT`; **Vollständigkeit** (3. Reason schon gedeckt). |
+| `CANCELLED` | `remote_pop_cancelled` **(NET-NEW)** | Abgebrochen — erneut versuchen. | Cancelled — try again. | `OperatorAuthError.Cancelled` — heute `""` (stiller Dismiss im Solo-Dialog); als **Connect-Fallback** braucht es eine **neutral/retryable** Zeile, damit ein abgebrochenes UV den Connect nicht stumm-unfertig/hängend zurücklässt. **Nicht** error-rot, **nicht** terminal. Tag existiert (`remote.authStep.error.cancelled`), nur Copy net-new. |
+
 ## NET-NEW — Dev legt an (0 Kollision @ `4572a278`)
 | Key | DE | EN | Rolle |
 |---|---|---|---|
@@ -54,9 +64,10 @@
   nur ehrlich, wenn die **Einsätze auf dem Reveal stehen** — `remote_recovery_codes_no_central` rendert **auf dem
   Reveal, VOR dem Ack** (nicht nur auf der Verlust-Fläche). Ohne diese Zeile quittiert der Nutzer blind, was er
   aufs Spiel setzt. Gebauter Reveal (`RecoveryCodesReveal.kt` L49-53) sagt „einmalig", nicht „einziger Weg zurück".
-- **HB — not-enrolled ≠ rejected:** `remote_connect_device_not_enrolled` ist **aktionabel** (führt zu Enroll/Recovery),
-  **nie** `remote_pop_rejected`/`AuthRejected`-terminal. 3 getrennte Wahrheiten (DeviceNotEnrolled ≠ AuthRejected ≠
-  `cpSessionExpired`, CYP-517).
+- **HB — not-enrolled ≠ rejected (2-Wege, ③ ge-ruled):** `remote_connect_device_not_enrolled` ist **aktionabel**
+  (führt zu Enroll/Recovery), **nie** `remote_pop_rejected`/`AuthRejected`-terminal. Am Connect-Surface **2 getrennte
+  Wahrheiten: `DeviceNotEnrolled ≠ AuthRejected`**; `cpSessionExpired` = bewusst AuthGate-Re-Login (CYP-176), keine
+  Connect-Ursache (GE4/③).
 - **HC — session-only nur Raw + WARN-amber-Ton:** `remote_pop_enroll_session_only` erscheint **nur** auf dem
   Raw-Software-Pfad (`sessionOnly==true`); ein Hardware-Passkey (Fido2) zeigt sie **nicht** (keine
   DEVICE_SECURE-Überzeichnung). **★ Ton ge-ruled (④, PO `1526254113…` BAU): `severityColor(Severity.WARN)`
@@ -68,16 +79,27 @@
   `remote.authStep.enroll`, Dev verdrahtet die Farbe in Inc 3.
 - **HD — Codes einmal:** `remote_recovery_codes_body` = einmal sichtbar, nie erneut (kein „Codes-erneut-ansehen"-Key).
 - **HE — kein Zentral-Login-Recovery:** `remote_recovery_no_central` / `_exhausted` = OOB-am-Hub, kein Phantom-Weg.
+- **HF — UV-Fail retryable ≠ terminal (F3, PO `1526283271…`):** eine UV-Fehlprüfung (WrongPin/Cancelled/LockedOut) ist
+  **lokal + retryable** und faltet in die CYP-460-Taxonomie — WrongPin=`remote_pop_wrong_pin` (Rest-Zähler=Retry),
+  Cancelled=`remote_pop_cancelled` (neutral „erneut versuchen"), LockedOut=`remote_pop_locked`. **Nie** die terminale
+  `remote_pop_rejected`/`AuthRejected`-Zeile (nur ein Hub-Verdikt ist terminal, H2/`isTerminal`). Die provisorische
+  Connect-Zeile `remote_connect_uv_failed` wird **retired** (keine generische Connect-UV-Copy mehr). Cancelled-Ton =
+  **neutral, nicht error-rot** (Nutzer-Entscheidung, kein Fehler); WrongPin = mild error-tone (etwas stimmte nicht).
 - **Kein „RR5"/„Seam"/„Passkey-vs-Raw-Internals"-Jargon in der User-Copy** — nur die schlichte Wahrheit.
 
 ## Self-Validation
-- **Net-new: 2 Realkeys** (`remote_connect_device_not_enrolled` + `remote_recovery_codes_no_central` [①]) **+ 1 a11y**
-  (`a11y_remote_connect_device_not_enrolled`, empfohlen) = **3 Keys**. Alle DE+EN, 0 Args (DE=EN Argument-Anzahl
-  identisch). ④ = **kein neuer Key** (Ton-Swap am bestehenden `remote_pop_enroll_session_only`-Node).
+- **Net-new: 3 Realkeys** (`remote_connect_device_not_enrolled` + `remote_recovery_codes_no_central` [①] +
+  `remote_pop_cancelled` [HF/UV-Fail]) **+ 1 a11y** (`a11y_remote_connect_device_not_enrolled`, empfohlen) = **4 Keys**.
+  Alle DE+EN. Args: `remote_pop_cancelled` = 0 Args; die net-new sonst 0 Args (die reused `wrong_pin`/`locked` tragen
+  je 1 `%1$s`). ④ = **kein neuer Key** (Ton-Swap am bestehenden `remote_pop_enroll_session_only`-Node).
 - **①-Kollision: 0** — `remote_recovery_codes_no_central` greenfield gg. `strings.xml` @ `4572a278` (das bestehende
   `remote_recovery_no_central` ist die *Verlust*-Fläche, distinkter Key/Kontext — kein Reuse, bewusst neu getextet).
-- **Reuse: 16 bestehende Keys** (3 enroll-step + 6 codes/a11y + 6 recovery-input + 1 `remote_pop_rejected`) —
-  verifiziert vorhanden @ `4572a278`, Wortlaut oben 1:1 aus `strings.xml`. **NICHT neu anlegen.**
+- **HF-Kollision: 0** — `remote_pop_cancelled` greenfield @ `4572a278` (`Cancelled` mappt heute auf `""`); Tag existiert
+  (`remote.authStep.error.cancelled`, kein net-new Tag). Provisorisches `remote_connect_uv_failed` = **retired** (nicht
+  finalisieren). WrongPin/LockedOut = **Reuse** (`remote_pop_wrong_pin`/`remote_pop_locked`, kein Change).
+- **Reuse: 18 bestehende Keys** (3 enroll-step + 6 codes/a11y + 6 recovery-input + 1 `remote_pop_rejected` +
+  **2 UV-Fail** `remote_pop_wrong_pin`/`remote_pop_locked`) — verifiziert vorhanden @ `4572a278`, Wortlaut oben 1:1 aus
+  `strings.xml`. **NICHT neu anlegen.**
 - **Kollision: 0** — `remote_connect_device_not_enrolled` greenfield gg. `strings.xml` @ `4572a278`
   (`device_not_enrolled`/`deviceNotEnrolled` existiert dort nicht; nur als Server-**Test-Methodenname**, kein Key/Tag).
 - **Kein content-tragender/sensibler Klartext** — keine `%1$s` in den net-new Keys; Backup-Codes/Fingerprint sind
