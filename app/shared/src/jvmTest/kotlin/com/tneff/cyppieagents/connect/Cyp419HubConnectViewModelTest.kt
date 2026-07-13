@@ -31,10 +31,14 @@ class Cyp419HubConnectViewModelTest {
     private val oneHub = listOf(HubDescriptor("hub-abc", "my-host", online = true, defaultPort = 8787, lastSeen = 1_700_000_000_000L))
 
     @Test
-    fun start_emptyHubs_routesToRegister() = runTest {
+    fun start_emptyHubs_routesToHonestEmptyHubList_notRegister() = runTest {
+        // CYP-530 (list+select, register vestigial): an empty hub list is the HONEST empty HubList, NEVER the dormant
+        // Register screen (a register CTA that leads nowhere). The empty-state (Δ2) + Refresh live on the list screen.
         val m = newVm(cp = StubControlPlaneClient(hubs = emptyList()))
         m.start()
-        assertIs<HubConnectUiState.Register>(m.state.value)
+        val s = m.state.value
+        assertIs<HubConnectUiState.HubList>(s)
+        assertTrue((s as HubConnectUiState.HubList).hubs.isEmpty())
     }
 
     @Test
@@ -51,10 +55,13 @@ class Cyp419HubConnectViewModelTest {
         assertEquals(HubConnectUiState.HubsUnreachable, m.state.value)
     }
 
+    // CYP-530: register/Seq-A is now DORMANT (unreachable via start(), which routes empty → the honest empty HubList).
+    // The code is retained for BYOA-later, so these Seq-A logic teeth stay — entered via registerNewHub() (the explicit
+    // path) instead of start()-empty.
     @Test
     fun register_success_advancesToCredentials() = runTest {
         val m = newVm(cp = StubControlPlaneClient(hubs = emptyList()))
-        m.start()
+        m.registerNewHub()
         m.register()
         assertIs<HubConnectUiState.Credentials>(m.state.value)
     }
@@ -62,7 +69,7 @@ class Cyp419HubConnectViewModelTest {
     @Test
     fun register_failure_showsOfflineErrorPhase() = runTest {
         val m = newVm(cp = StubControlPlaneClient(hubs = emptyList(), registerFails = true))
-        m.start()
+        m.registerNewHub()
         assertIs<HubConnectUiState.Register>(m.state.value)
         m.register()
         assertEquals(RegisterPhase.ERROR, (m.state.value as HubConnectUiState.Register).phase)
@@ -72,14 +79,14 @@ class Cyp419HubConnectViewModelTest {
     fun credentialGate_invalidBlocks_validatedAndUnreachableProceed() = runTest {
         // INVALID → continueToReady blocked (stays on Credentials).
         val invalid = newVm(cp = StubControlPlaneClient(hubs = emptyList()), creds = StubHubCredentialRepository(CredentialValidation.INVALID))
-        invalid.start(); invalid.register(); invalid.submitCredential("sk-ant-bad")
+        invalid.registerNewHub(); invalid.register(); invalid.submitCredential("sk-ant-bad")
         assertEquals(CredentialPhase.INVALID, (invalid.state.value as HubConnectUiState.Credentials).phase)
         assertFalse(invalid.continueToReady(), "Q5: INVALID must block the transition to Ready")
         assertIs<HubConnectUiState.Credentials>(invalid.state.value)
 
         // UNREACHABLE → may proceed (WARN — the key may be valid, Anthropic transiently down).
         val unreachable = newVm(cp = StubControlPlaneClient(hubs = emptyList()), creds = StubHubCredentialRepository(CredentialValidation.UNREACHABLE))
-        unreachable.start(); unreachable.register(); unreachable.submitCredential("sk-ant-x")
+        unreachable.registerNewHub(); unreachable.register(); unreachable.submitCredential("sk-ant-x")
         assertTrue(unreachable.continueToReady(), "Q5: UNREACHABLE may proceed with WARN")
         assertEquals(HubConnectUiState.Ready, unreachable.state.value)
     }

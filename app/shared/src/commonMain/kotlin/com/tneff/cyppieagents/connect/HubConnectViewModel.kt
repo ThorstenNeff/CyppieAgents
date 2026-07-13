@@ -56,11 +56,11 @@ class HubConnectViewModel(
                 _state.value = HubConnectUiState.HubsUnreachable
                 return@launch
             }
-            _state.value = if (hubs.isEmpty()) {
-                HubConnectUiState.Register(defaultHubName, RegisterPhase.EDITING)
-            } else {
-                HubConnectUiState.HubList(hubs)
-            }
+            // CYP-530 (PO flow-decision): list+select model — register is VESTIGIAL (hubs self-admit to the CP). An
+            // empty list is the HONEST empty HubList ("noch keine Hubs" + Refresh, Δ2), NEVER the dormant Register
+            // screen. Register/Seq-A stay in the code (unreachable in M1; retained for BYOA-later), just not the empty
+            // destination — so the operator never lands on a register CTA that leads nowhere.
+            _state.value = HubConnectUiState.HubList(hubs)
         }
     }
 

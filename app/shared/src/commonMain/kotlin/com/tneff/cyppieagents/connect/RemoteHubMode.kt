@@ -35,6 +35,16 @@ expect fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory?
 expect fun defaultRemoteComponentsFactory(operatorToken: () -> String?): RemoteConnectComponentsFactory?
 
 /**
+ * S-J — the [ControlPlaneClient] the hub-connect flow consumes (hub list + register). jvm returns the live
+ * [HttpControlPlaneClient] **only when `CYPPIE_CP_BASE_URL` is set** (env-gated); absent, and on every non-desktop
+ * target, it returns [StubControlPlaneClient] → INERT, byte-identical to the CYP-419 stub default. Only ever
+ * reached when [remoteHubEnabled] (the gate mounts the flow). The live swap + a deploy stay an Auftraggeber GO;
+ * building this only makes the wiring *present*, off unless the env is configured. [operatorToken] is the app
+ * session token (`Bearer`, same-origin CP auth — same source as [defaultRemoteComponentsFactory]).
+ */
+expect fun defaultControlPlaneClient(operatorToken: () -> String?): ControlPlaneClient
+
+/**
  * The production [RemoteConnectFeed]: the live [RemoteHubSessionConnectFeed] where a real (inert-seamed)
  * factory exists, else [StubRemoteConnectFeed]. Selected once; only ever reached when [remoteHubEnabled].
  */

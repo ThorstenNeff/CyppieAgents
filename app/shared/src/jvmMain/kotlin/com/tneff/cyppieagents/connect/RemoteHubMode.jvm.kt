@@ -42,6 +42,17 @@ actual fun defaultRemoteComponentsFactory(operatorToken: () -> String?): RemoteC
 }
 
 /**
+ * jvm: the [ControlPlaneClient] — env-gated live [HttpControlPlaneClient] when `CYPPIE_CP_BASE_URL` is set, else the
+ * [StubControlPlaneClient] (INERT — the CYP-419 stub default, byte-identical to today). The operator session rides
+ * as `Bearer` on the [sharedWsHttpClient] (same source/auth as [defaultRemoteComponentsFactory]). Only reached when
+ * [remoteHubEnabled]; the live swap + deploy stay an Auftraggeber GO — off unless the env is configured.
+ */
+actual fun defaultControlPlaneClient(operatorToken: () -> String?): ControlPlaneClient {
+    val cpBaseUrl = System.getenv("CYPPIE_CP_BASE_URL")?.takeIf { it.isNotBlank() } ?: return StubControlPlaneClient()
+    return HttpControlPlaneClient(sharedWsHttpClient(operatorToken), cpBaseUrl, { operatorToken() })
+}
+
+/**
  * jvm: the **real but INERT** remote assembly — the honest wiring topology. The real Noise transport, TOFU
  * trust, and operator-auth are all constructed; the still-gated pieces are explicit **fail-closed seams** (the
  * CYP-486 Client-Remote-Runway), so even a flipped flag connects to **nothing**:

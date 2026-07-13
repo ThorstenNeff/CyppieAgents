@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.agentview.TranscriptClock
 import com.tneff.cyppieagents.agentview.formatLocalHhMm
@@ -57,8 +58,9 @@ import kmpcyppieagents.app.shared.generated.resources.hubconnect_error_handshake
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_error_hub_offline
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_error_never_online
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_error_port
+import kmpcyppieagents.app.shared.generated.resources.a11y_hubconnect_hub_id
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_hubs_empty
-import kmpcyppieagents.app.shared.generated.resources.hubconnect_hubs_register
+import kmpcyppieagents.app.shared.generated.resources.hubconnect_hubs_refresh
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_hubs_title
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_ready_enter
 import kmpcyppieagents.app.shared.generated.resources.hubconnect_presence_offline
@@ -87,6 +89,9 @@ internal fun HubListView(
     AuthFormCard(tag = HubConnectTags.HUBS_LIST) {
         AuthTitle(stringResource(Res.string.hubconnect_hubs_title))
         if (hubs.isEmpty()) {
+            // Δ2 (CYP-530 UX-QA): register is VESTIGIAL in the list+select model (hubs self-admit to the CP), so the
+            // empty state is an HONEST waiting copy (the hub appears once it comes online — the GUI does NOT register
+            // it) + a Refresh affordance — NOT a non-functional "register hub" CTA. Copy per UIUX spec @f324aa08.
             Text(
                 stringResource(Res.string.hubconnect_hubs_empty),
                 style = MaterialTheme.typography.bodyMedium,
@@ -94,9 +99,9 @@ internal fun HubListView(
                 modifier = Modifier.fillMaxWidth().testTag(HubConnectTags.HUBS_EMPTY),
             )
             Button(
-                onClick = viewModel::registerNewHub,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(Res.string.hubconnect_hubs_register)) }
+                onClick = viewModel::retryLoadHubs, // re-query the list (check for self-admitted hubs), never register
+                modifier = Modifier.fillMaxWidth().testTag(HubConnectTags.HUBS_REFRESH),
+            ) { Text(stringResource(Res.string.hubconnect_hubs_refresh)) }
         } else {
             hubs.forEach { hub -> HubRow(hub, clock, onSelect = { viewModel.selectHub(hub) }) }
         }
@@ -110,12 +115,18 @@ private fun HubRow(hub: HubDescriptor, clock: TranscriptClock, onSelect: () -> U
             .testTag(HubConnectTags.hubRow(hub.hubId)).padding(vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        // Display the editable NAME (never the opaque id, which is only the tag segment).
+        // Δ1 (CYP-530 UX-QA): identity = editable NAME + advisory presence. NO `localhost:port` — that is a LIE for a
+        // relay-dialed remote hub (the operator never dials a host:port; a remote hub has no user-facing address).
         Text(hub.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+        // Optional short hubId (monospace, dimmed) for identity/disambiguation — an honest key, never a fake address.
+        val hubIdShort = hub.hubId.take(8)
+        val hubIdA11y = stringResource(Res.string.a11y_hubconnect_hub_id, hubIdShort)
         Text(
-            "localhost:${hub.defaultPort}",
-            style = MaterialTheme.typography.labelSmall,
+            hubIdShort,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.semantics { contentDescription = hubIdA11y },
         )
         PresenceRow(hub, clock)
     }

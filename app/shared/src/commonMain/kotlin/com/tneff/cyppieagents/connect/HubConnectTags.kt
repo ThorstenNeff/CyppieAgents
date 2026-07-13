@@ -45,8 +45,10 @@ object HubConnectTags {
     // --- Hub-Auswahl (Seq B) ---
     /** Container of the hub list. */
     const val HUBS_LIST = "hubConnect.hubs.list"
-    /** Empty state → primary action "register a hub". */
+    /** Empty state — honest "no hubs yet" waiting copy (register is vestigial: hubs self-admit, CYP-530). */
     const val HUBS_EMPTY = "hubConnect.hubs.empty"
+    /** CYP-530 Δ2: empty-state Refresh affordance (re-query the list for self-admitted hubs) — replaces the dead register CTA. */
+    const val HUBS_REFRESH = "hubConnect.hubs.refresh"
     /** `GET /hubs` failed (CP unreachable), errorContainer (H5). */
     const val HUBS_ERROR = "hubConnect.hubs.error"
 
@@ -58,11 +60,9 @@ object HubConnectTags {
     // --- Modus-Wahl (Seq B / §5) — landed in CYP-416 (S-M) ---
     /** Local option — active, default focus. */
     const val MODE_LOCAL = "hubConnect.mode.local"
-    /** Remote option — non-interactive / disabled ("kommt bald", H2); never preselected. */
+    /** Remote option — LIVE and selectable since CYP-471 (Noise-E2E via the Control Plane). */
     const val MODE_REMOTE = "hubConnect.mode.remote"
-    /** The honest "kommt bald" GATED hint beneath the disabled Remote option. */
-    const val MODE_REMOTE_SOON = "hubConnect.mode.remote.soon"
-    /** Primary action "Verbinden" → local connect (§6). */
+    /** Primary action "Verbinden" → routes to the selected mode's connect (§6 local / §7 remote). */
     const val MODE_CONNECT = "hubConnect.mode.connect"
 
     // --- Lokal-Connect-Zustände (§6) — inherits the ConnectionStatus idiom (neutral in-progress, never green) ---
