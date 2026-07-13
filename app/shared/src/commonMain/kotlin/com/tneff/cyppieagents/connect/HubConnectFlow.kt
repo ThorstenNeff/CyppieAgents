@@ -88,8 +88,15 @@ fun HubConnectFlow(
             HubConnectUiState.Ready -> ReadyView(onEnterWorkspace)
             is HubConnectUiState.HubList -> HubListView(s.hubs, viewModel)
             is HubConnectUiState.ChoosingMode -> ModeView(s.hub, viewModel)
-            is HubConnectUiState.Connecting -> ConnectingView(s.hub, s.progress, viewModel)
-            is HubConnectUiState.RemoteConnecting -> RemoteConnectingView(s.hub, s.remote, viewModel, oobConfirm = s.oobConfirm)
+            // CYP-523: Seq-B connect is no longer a dead-end — the gate's onEnterWorkspace reaches the CONNECTED
+            // branch (the „Loslegen" button), and onEndSession = backToHubList mounts the existing revoke/switch control.
+            is HubConnectUiState.Connecting -> ConnectingView(s.hub, s.progress, viewModel, onEnterWorkspace)
+            is HubConnectUiState.RemoteConnecting -> RemoteConnectingView(
+                s.hub, s.remote, viewModel,
+                oobConfirm = s.oobConfirm,
+                onEnterWorkspace = onEnterWorkspace,
+                onEndSession = viewModel::backToHubList,
+            )
         }
     }
 }

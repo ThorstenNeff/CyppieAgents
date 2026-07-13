@@ -72,6 +72,8 @@ object HubConnectTags {
     const val STATE_HANDSHAKE = "hubConnect.state.handshake"
     /** LIVE `●`+`primary` — appears **only** on real LIVE, never before. */
     const val STATE_CONNECTED = "hubConnect.state.connected"
+    /** CYP-523: Seq-B forward action from the CONNECTED state → the workspace („Loslegen"). Additive (shared API w/ QA via PO). */
+    const val STATE_TO_WORKSPACE = "hubConnect.state.toWorkspace"
 
     /**
      * Connect failure with a **typed** cause. [cause] ∈ `hubOffline` / `portUnreachable` / `handshakeFailed` /
