@@ -85,6 +85,9 @@ fun ProjectSwitcherBar(
     /** CYP-417 — the hub-scoped overload-reject WARN banner, rendered full-width below the bar. Default empty →
      *  present only on a real server reject. */
     overloadBanner: @Composable () -> Unit = {},
+    /** CYP-527 — the remote-operating context WARN banner, rendered full-width below the bar. Default empty →
+     *  present ONLY while the workspace operates a hub over the remote (Noise-E2E) transport AND it is CONNECTED. */
+    remoteContextBanner: @Composable () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val activeName = state.projects.firstOrNull { it.id == state.activeProjectId }?.name ?: state.activeProjectId
@@ -248,6 +251,9 @@ fun ProjectSwitcherBar(
         }
         // Scope boundary disclosure (§1): all windows/data belong to the active project. Neutral.
         TonedHint(stringResource(Res.string.project_switcher_scope_hint), HintTone.INFO, ProjectTags.SCOPE_HINT)
+        // CYP-527: the remote-operating context WARN banner, full-width below the bar. Present ONLY while operating
+        // a hub over the remote transport AND CONNECTED (the caller gates it) — the persistent "where the hub is" frame.
+        remoteContextBanner()
         // CYP-417: the hub-scoped overload-reject WARN banner, full-width below the bar. Present ONLY on a real
         // server reject (advisory surface; the server owns the hard gate, H5).
         overloadBanner()

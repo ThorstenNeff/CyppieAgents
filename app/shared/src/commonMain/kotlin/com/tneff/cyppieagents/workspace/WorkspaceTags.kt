@@ -42,4 +42,12 @@ object WorkspaceTags {
 
     /** The banner's dismiss action ("Got it"); persistent-until-clears **and** dismissable (Q5). */
     const val OVERLOAD_BANNER_DISMISS = "workspace.overloadBanner.dismiss"
+
+    /**
+     * CYP-527 — the persistent full-width **remote-operating context** WARN banner. Present iff the workspace is
+     * operating a hub over the REMOTE (Noise-E2E) transport AND that session is CONNECTED (bound to
+     * `RemoteSessionState.conn == CONNECTED`, NOT `RemoteHubConnectGate.entered` which also fires locally). Distinct
+     * from [ROLE_INDICATOR] (WHO you are, neutral, always) — this is WHERE the hub is (WARN, iff remote). UIUX-locked.
+     */
+    const val REMOTE_CONTEXT = "workspace.remoteContext"
 }
