@@ -365,12 +365,27 @@ fun Application.bootPlatform(
         // NoiseRelayConnector with the RR3 gate (CpJwt + PoP vs live h); else InertRelayConnector (fail-closed → no
         // dial, current server unchanged). Deferred activation: the actual dial waits on the Phase-2-Remote migration.
         remoteTransportFactory = { hubIdentity, secretStore, operatorDeviceStore, scope ->
+            // CYP-525 GE5/GE7 (3b): the combined FinalizedEnrollment record {device anchor + code-hashes}. The cipher is
+            // SINGLE-SOURCED with the hub master key (the SAME EnvKeysetMasterKeyCustody that backs hubSecretStore —
+            // NOT a second key); derived lazily here (only in the enabled path), a capability object, never logged. The
+            // record is written crash-atomically under gitRoot/.cyppie/ (gitignored — encrypted per-hub state, never committed).
+            val finalizedStore = hubIdentity?.takeIf { System.getenv("CYPPIE_MASTER_KEY")?.isNotBlank() == true }?.let { id ->
+                com.tneff.cyppieagents.auth.operator.FinalizedEnrollmentStore(
+                    cipher = com.tneff.cyppieagents.crypto.SecretCipherFactory.single(
+                        1,
+                        com.tneff.cyppieagents.crypto.MasterKeySource.Box(com.tneff.cyppieagents.crypto.EnvKeysetMasterKeyCustody().masterKeyset()),
+                    ),
+                    file = gitRoot.toPath().resolve(".cyppie/operator-enrollment.rec").toFile(),
+                    projectId = id.hubId,
+                )
+            }
             com.tneff.cyppieagents.transport.buildRemoteTransport(
                 loopbackPort = config.hub.port,
                 hubIdentity = hubIdentity,
                 hubSecretStore = secretStore,
                 operatorDeviceStore = operatorDeviceStore,
                 scope = scope,
+                finalizedStore = finalizedStore,
             )
         },
         // CYP-512 (activation): the live hub-admission boot invocation. Fail-closed to null (INERT) unless

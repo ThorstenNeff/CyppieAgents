@@ -186,8 +186,11 @@ class HubConnectViewModel(
                     activeComponents = comps
                     comps.session.start()
                     try {
-                        combine(comps.session.state, comps.oobConfirm.state) { rs, oob -> rs to oob }
-                            .collect { (rs, oob) -> surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob)) }
+                        // 3-way: session truth + OOB (TRUST_CHECK) + the §2 first-enroll reveal (during AUTHENTICATING).
+                        combine(comps.session.state, comps.oobConfirm.state, comps.enrollConfirm.state) { rs, oob, enroll -> Triple(rs, oob, enroll) }
+                            .collect { (rs, oob, enroll) ->
+                                surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob), enroll)
+                            }
                     } finally {
                         withContext(NonCancellable) { comps.session.close() } // Q5 teardown on cancel / switch
                     }
@@ -207,19 +210,37 @@ class HubConnectViewModel(
         }
     }
 
-    /** Surface: an Awaiting OOB mount ⇒ the mandatory confirm screen at TRUST_CHECK; else the session's truth. */
-    private fun surfaceRemote(hub: HubDescriptor, rs: RemoteSessionState, mount: OobConfirmMount?) {
-        _state.value = if (mount != null) {
-            HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.TRUST_CHECK), oobConfirm = mount)
-        } else {
-            HubConnectUiState.RemoteConnecting(hub, rs)
+    /** Surface: OOB Awaiting ⇒ the mandatory confirm at TRUST_CHECK; §2 first-enroll Revealing ⇒ the RecoveryCodesReveal
+     *  (DURING auth, before the finalize grant); else the session truth. */
+    private fun surfaceRemote(
+        hub: HubDescriptor,
+        rs: RemoteSessionState,
+        mount: OobConfirmMount?,
+        enroll: EnrollConfirmState = EnrollConfirmState.Idle,
+    ) {
+        _state.value = when {
+            mount != null ->
+                HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.TRUST_CHECK), oobConfirm = mount)
+            enroll is EnrollConfirmState.Revealing -> HubConnectUiState.RevealCodes(hub, enroll.codes)
+            else -> HubConnectUiState.RemoteConnecting(hub, rs)
         }
+    }
+
+    /**
+     * CYP-525 §2: the operator confirmed they saved their backup codes → resolve the enroll confirmer `true` so
+     * `ClientOperatorAuth` sends `SavedAck` and reads the hub's finalize grant → CONNECTED. The ONLY forward door out
+     * of [HubConnectUiState.RevealCodes]. **Within-flow, no durable persist.** H3 (the valid-complete-set gate) is
+     * enforced in `ClientOperatorAuth` BEFORE the reveal is ever shown, so this cannot ack an invalid set.
+     */
+    fun acknowledgeCodes() {
+        activeComponents?.enrollConfirm?.confirmSaved()
     }
 
     /** Q5/CYP-513: close + drop the active LIVE components so the old Noise session tears down (nothing carried). */
     private fun closeActiveComponents() {
         val previous = activeComponents ?: return
         activeComponents = null
+        previous.enrollConfirm.abort() // CYP-525 §2: a switch/leave during the reveal aborts enroll (fail-closed, no SavedAck)
         runScope.launch { withContext(NonCancellable) { previous.session.close() } }
     }
 

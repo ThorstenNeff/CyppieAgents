@@ -23,6 +23,25 @@ sealed interface RemoteFailure {
     data class TrustChanged(val expectedFingerprint: String) : RemoteFailure
     /** The hub's OperatorAssertionVerifier said no (a∧b∧c failed) — fail-closed. */
     data object AuthRejected : RemoteFailure
+    /**
+     * CYP-525 Finding ① — a first-enroll code set did not arrive intact (empty/truncated/blank `EnrollResponse`).
+     * **Retryable** (a delivery problem, reconnect), NOT the terminal [AuthRejected] mis-attribution ("re-login").
+     * Fail-closed upstream (no `SavedAck`, no CONNECTED); this is purely the honest attribution + retry affordance.
+     */
+    data object EnrollCodesUnavailable : RemoteFailure
+    /**
+     * CYP-525 — **this device has no enrolled operator key** (a distinct third truth, never collapsed into
+     * [AuthRejected]): the hub didn't reject us, we simply haven't set this device up yet. Actionable → the enroll
+     * step ("set up this device"), NOT a dead reject. Distinct so the UI routes to enroll instead of "denied".
+     */
+    data object DeviceNotEnrolled : RemoteFailure
+
+    /**
+     * CYP-525 F3 (Reviewer) — a **local user-verification** failure (wrong app-PIN / cancelled) during the operator
+     * PoP. **Retryable**, NOT terminal — and NEVER [AuthRejected] ("the hub denied you"): the hub never saw a
+     * request. The UI offers a retry (re-enter the PIN); distinct from the hub's terminal reject.
+     */
+    data object OperatorUvFailed : RemoteFailure
 }
 
 /**
@@ -76,5 +95,34 @@ sealed interface TrustResolution {
  * any error ⇒ not granted.
  */
 fun interface OperatorAuthenticator {
-    suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): Boolean
+    suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): OperatorAuthOutcome
+}
+
+/**
+ * CYP-525 — the RR3 tunnel-auth outcome as **three distinct truths** (never two-valued): the hub granted us
+ * ([Granted]), the hub rejected us ([Rejected] → terminal [RemoteFailure.AuthRejected]), or **this device isn't
+ * enrolled yet** ([DeviceNotEnrolled] → the enroll step, [RemoteFailure.DeviceNotEnrolled]) — the last must NEVER
+ * collapse into a reject (that is the bug this fixes: "not set up" read as "denied"). Fail-closed: any local PoP
+ * failure or thrown error that is not specifically "not enrolled" is a [Rejected], never a false grant.
+ */
+sealed interface OperatorAuthOutcome {
+    data object Granted : OperatorAuthOutcome
+    data object Rejected : OperatorAuthOutcome
+    data object DeviceNotEnrolled : OperatorAuthOutcome
+
+    /**
+     * CYP-525 F3 — a **local** user-verification failure (wrong app-PIN / cancelled) during the PoP build. Retryable,
+     * NEVER a hub reject (no request was sent). Distinct from [Rejected] so the session surfaces
+     * [RemoteFailure.OperatorUvFailed] (retry), never terminal [RemoteFailure.AuthRejected].
+     */
+    data object UvFailed : OperatorAuthOutcome
+
+    /**
+     * CYP-525 Finding ① (UIUX honesty) — a first-enroll [com.tneff.cyppieagents.operator.EnrollResponse] arrived but
+     * failed H3 (empty / truncated / over-count / blank) ⇒ the codes did NOT arrive intact. That is a **delivery**
+     * problem, NOT a hub rejection: retryable-reconnect, never the terminal [Rejected]/[RemoteFailure.AuthRejected]
+     * ("re-login") mis-attribution. Fail-closed stays intact (no `SavedAck`, no CONNECTED) — this only fixes the
+     * attribution so the session surfaces the retryable [RemoteFailure.EnrollCodesUnavailable].
+     */
+    data object EnrollCodesUnavailable : OperatorAuthOutcome
 }

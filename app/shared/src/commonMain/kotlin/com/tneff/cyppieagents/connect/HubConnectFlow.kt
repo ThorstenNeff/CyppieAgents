@@ -97,6 +97,12 @@ fun HubConnectFlow(
                 onEnterWorkspace = onEnterWorkspace,
                 onEndSession = viewModel::backToHubList,
             )
+            // CYP-525 GE2: the ONLY forward door out of first-enroll — the backup-codes reveal. The ack (within-flow)
+            // is what lets the flow proceed to CONNECTED (no CONNECTED without it). Codes are never persisted at-rest.
+            is HubConnectUiState.RevealCodes ->
+                com.tneff.cyppieagents.net.hub.operator.ui.RecoveryCodesReveal(
+                    codes = s.codes, onAcknowledged = viewModel::acknowledgeCodes,
+                )
         }
     }
 }

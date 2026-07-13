@@ -28,6 +28,15 @@ class RecoveryCodesRevealRenderTest {
     }
 
     @Test
+    fun ge7_noCentralConsequence_presentOnReveal_besideTheAck() = runComposeUiTest {
+        // CYP-525 GE7: the "no way back / no central login" consequence must render ON the reveal, before the ack —
+        // so the user knows the stakes before quittancing (not only on the loss surface).
+        setContent { MaterialTheme { RecoveryCodesReveal(codes = listOf("X-1"), onAcknowledged = {}) } }
+        onNodeWithTag(RemoteRecoveryTags.CODES_NO_CENTRAL, useUnmergedTree = true).assertExists()
+        onNodeWithTag(RemoteRecoveryTags.CODES_ACK, useUnmergedTree = true).assertExists()
+    }
+
+    @Test
     fun ackButton_isTheLeaveGate() = runComposeUiTest {
         var acked = false
         setContent { MaterialTheme { RecoveryCodesReveal(codes = listOf("X-1"), onAcknowledged = { acked = true }) } }

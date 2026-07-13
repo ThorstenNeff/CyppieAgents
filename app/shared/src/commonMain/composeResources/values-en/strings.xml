@@ -683,6 +683,16 @@
     <string name="remote_connect_relay_unreachable">Relay unreachable — try again later.</string>
     <string name="remote_connect_hub_offline">The hub is offline — is it running?</string>
     <string name="remote_connect_handshake_failed">E2E handshake failed — try again later.</string>
+    <!-- CYP-525 (UIUX frozen AC, device-enroll-keys.md): the Q3-distinct DeviceNotEnrolled cause — actionable, NEVER
+         "rejected" (GE4/HB). Distinct from remote_connect_auth_rejected. -->
+    <string name="remote_connect_device_not_enrolled">This device isn\'t set up yet — set it up to continue.</string>
+    <string name="a11y_remote_connect_device_not_enrolled">Device not set up — setup needed to continue.</string>
+    <!-- CYP-525 F3 (provisional copy — reconcile with UIUX; the final UV-failed surface folds into the app-PIN dialog,
+         CYP-460 WrongPin/Cancelled — this is the connect-failure FALLBACK). Retryable, NEVER "hub rejected". -->
+    <string name="remote_connect_uv_failed">Wrong PIN or cancelled — please try again.</string>
+    <!-- CYP-525 Finding ① (UIUX frozen @550ddb00, GE8): first-enroll codes did not arrive intact — a delivery problem,
+         retryable-reconnect, NEVER the terminal "rejected by the hub / sign in again" (remote_connect_auth_rejected). -->
+    <string name="remote_connect_enroll_codes_unavailable">Codes didn\'t arrive — please reconnect.</string>
     <string name="remote_connect_trust_provisional">Trust check provisional — real pinning to come.</string>
     <!-- CYP-479 (CYP-480 area ②/③): Q6 recovery + revocation -->
     <string name="remote_recovery_codes_title">Recovery codes</string>
@@ -690,6 +700,8 @@
     <string name="remote_recovery_codes_single_use">Each code works only once.</string>
     <string name="remote_recovery_codes_copy">Copy codes</string>
     <string name="remote_recovery_codes_ack">I've saved the codes safely</string>
+    <!-- CYP-525 GE7 (UIUX frozen, device-enroll-keys.md): the no-central consequence on the Reveal, BEFORE the ack. -->
+    <string name="remote_recovery_codes_no_central">Without these codes there\'s no way back — a central login won\'t restore access.</string>
     <string name="remote_recovery_start_title">Recover this device</string>
     <string name="remote_recovery_start_body">Enter one of your recovery codes to set up this device again.</string>
     <string name="remote_recovery_code_label">Recovery code</string>

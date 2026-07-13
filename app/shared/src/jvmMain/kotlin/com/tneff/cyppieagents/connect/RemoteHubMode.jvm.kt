@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.net.hub.operator.HttpCpJwtProvider
 import com.tneff.cyppieagents.net.hub.operator.KeystoreOperatorDeviceKeyStore
 import com.tneff.cyppieagents.net.hub.operator.NonceGenerator
 import com.tneff.cyppieagents.net.hub.operator.OperatorPopBuilder
+import com.tneff.cyppieagents.net.hub.operator.PersistentOperatorDeviceKey
 import com.tneff.cyppieagents.net.hub.operator.UserVerification
 import com.tneff.cyppieagents.net.hub.operator.UvOutcome
 import com.tneff.cyppieagents.net.hub.operator.coreChannelBinding
@@ -67,7 +68,7 @@ actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? =
                 popBuilder = OperatorPopBuilder(
                     store = KeystoreOperatorDeviceKeyStore(
                         userVerification = deferredUserVerification,
-                        keyPair = KeystoreOperatorDeviceKeyStore.generateDeviceKey(),
+                        keyPair = persistentDeviceKey.loadOrGenerate(),
                     ),
                     nonceGenerator = secureRandomNonceGenerator,
                 ),
@@ -96,6 +97,10 @@ fun liveRemoteConnectComponentsFactory(
     channelBinding: ChannelBinding = coreChannelBinding(),
 ): RemoteConnectComponentsFactory = RemoteConnectComponentsFactory { hub, scope ->
     val shared = buildSharedHubTrustComponents(hub, defaultPinnedHubStore()) // ①² one of(hub)+pending into both
+    // CYP-525 §2: ONE enroll confirmer shared between the session's ClientOperatorAuth (which calls it + suspends on
+    // firstEnroll) and the RemoteConnectComponents (which the VM surfaces as RevealCodes) — what the operator confirms
+    // IS what gates the SavedAck the session sends.
+    val enrollConfirm = LiveEnrollConfirmCoordinator()
     val session = buildRemoteHubSession(
         hubId = hub.hubId,
         transport = NoiseJavaClientTransport(),
@@ -108,15 +113,16 @@ fun liveRemoteConnectComponentsFactory(
             popBuilder = OperatorPopBuilder(
                 store = KeystoreOperatorDeviceKeyStore(
                     userVerification = deferredUserVerification,
-                    keyPair = KeystoreOperatorDeviceKeyStore.generateDeviceKey(),
+                    keyPair = persistentDeviceKey.loadOrGenerate(),
                 ),
                 nonceGenerator = secureRandomNonceGenerator,
             ),
             cpJwtProvider = HttpCpJwtProvider(cpHttpClient, cpBaseUrl, operatorToken, channelBinding),
+            enrollConfirmer = enrollConfirm,
         ),
         scope = scope,
     )
-    RemoteConnectComponents(session, shared.oobConfirm)
+    RemoteConnectComponents(session, shared.oobConfirm, enrollConfirm)
 }
 
 /** Runway #1: no client relay/rendezvous dialer yet → fail-closed at dial (RelayUnreachable), never connects. */
@@ -131,3 +137,10 @@ private val deferredUserVerification = UserVerification { UvOutcome.Unavailable 
 private val secureRandomNonceGenerator = NonceGenerator {
     ByteArray(32).also { SecureRandom().nextBytes(it) }
 }
+
+/**
+ * CYP-525 Inc 2: the ONE durable operator device-key (DEVICE_SECURE, `~/.cyppie/operator-device.key`) —
+ * `loadOrGenerate()` persists+reuses one Ed25519 key across launches, replacing the fresh-per-launch
+ * `generateDeviceKey()` that never matched the hub's enrolled anchor.
+ */
+private val persistentDeviceKey = PersistentOperatorDeviceKey(PersistentOperatorDeviceKey.defaultKeyFile())

@@ -21,6 +21,7 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_remote_recovery_codes
 import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_ack
 import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_body
 import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_copy
+import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_no_central
 import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_single_use
 import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_title
 import org.jetbrains.compose.resources.stringResource
@@ -69,6 +70,15 @@ fun RecoveryCodesReveal(
         ) {
             Text(stringResource(Res.string.remote_recovery_codes_copy))
         }
+        // CYP-525 GE7: the load-bearing consequence — no central login restores access, so these codes are the ONLY
+        // way back — rendered ON the reveal, BEFORE the ack, so the user knows the stakes before quittancing (①).
+        // Emphasized (onSurface, not the dimmed onSurfaceVariant) so it is actually read, not skimmed past.
+        Text(
+            stringResource(Res.string.remote_recovery_codes_no_central),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxWidth().testTag(RemoteRecoveryTags.CODES_NO_CENTRAL),
+        )
         // Leave-gate (HD): the only way forward is the explicit "I've saved them" acknowledgement.
         Button(onClick = onAcknowledged, modifier = Modifier.testTag(RemoteRecoveryTags.CODES_ACK)) {
             Text(stringResource(Res.string.remote_recovery_codes_ack))

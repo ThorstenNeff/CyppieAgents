@@ -13,6 +13,9 @@ import kotlinx.coroutines.CoroutineScope
 class RemoteConnectComponents(
     val session: RemoteHubSession,
     val oobConfirm: OobConfirmCoordinator,
+    /** CYP-525 §2 — the live first-enroll confirmer (the SAME instance injected into the session's
+     *  `ClientOperatorAuth`), so the reveal the VM surfaces IS what gates the `SavedAck` the session sends. */
+    val enrollConfirm: EnrollConfirmCoordinator = LiveEnrollConfirmCoordinator(),
 )
 
 /**

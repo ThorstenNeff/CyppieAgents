@@ -134,17 +134,43 @@ class RemoteHubSession(
         // Handshake succeeded AGAINST the pin ⇒ hub authenticity holds (trustCheck passes; CI-1).
         _state.update { it.copy(conn = RemoteConnState.TRUST_CHECK) }
         _state.update { it.copy(conn = RemoteConnState.AUTHENTICATING) }
-        val granted = try {
+        val outcome = try {
             authenticator.authenticate(t, hubId)
         } catch (c: CancellationException) {
             throw c
         } catch (e: Exception) {
-            false
+            OperatorAuthOutcome.Rejected // any thrown error ⇒ fail-closed reject, never a false grant / false enroll
         }
-        if (!granted) {
-            runCatching { t.close() }
-            _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.AuthRejected) }
-            return Outcome.TERMINAL // fail-closed (a∧b∧c said no)
+        when (outcome) {
+            OperatorAuthOutcome.Granted -> Unit // proceed to CONNECTED below
+            OperatorAuthOutcome.DeviceNotEnrolled -> {
+                // CYP-525: NOT a reject — this device simply isn't set up. Distinct terminal failure so the UI
+                // routes to the enroll step ("set up this device"), never "denied" (the bug this fixes).
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.DeviceNotEnrolled) }
+                return Outcome.TERMINAL
+            }
+            OperatorAuthOutcome.Rejected -> {
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.AuthRejected) }
+                return Outcome.TERMINAL // fail-closed (a∧b∧c said no)
+            }
+            OperatorAuthOutcome.UvFailed -> {
+                // CYP-525 F3: a local UV failure (wrong PIN / cancelled) — retryable, NEVER "hub rejected" (nothing
+                // was sent). Terminal for THIS attempt (tunnel torn down), but the UI offers a retry (re-enter PIN).
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.OperatorUvFailed) }
+                return Outcome.TERMINAL
+            }
+            OperatorAuthOutcome.EnrollCodesUnavailable -> {
+                // CYP-525 Finding ①: the first-enroll codes didn't arrive intact (H3-invalid) — a DELIVERY problem,
+                // NOT a hub reject. Distinct retryable failure so the UI reads "codes didn't arrive — reconnect"
+                // (mirrors DeviceNotEnrolled: retry affordance, not the terminal-relogin AuthRejected). Fail-closed
+                // holds: nothing was pinned/finalized, no SavedAck was sent, never CONNECTED.
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.EnrollCodesUnavailable) }
+                return Outcome.TERMINAL
+            }
         }
 
         tunnel = t

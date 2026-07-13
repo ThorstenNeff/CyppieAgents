@@ -16,6 +16,10 @@ object RemoteRecoveryTags {
     const val CODES_LIST = "remote.recovery.codesList"
     const val CODES_COPY = "remote.recovery.codesCopy"
 
+    /** CYP-525 GE7 — the no-central consequence line on the Reveal, ABOVE/before the ack ("without these codes there
+     *  is no way back; a central login won't restore access"). The ack is only honest once the stakes are visible. */
+    const val CODES_NO_CENTRAL = "remote.recovery.codesNoCentral"
+
     /** Leave-gate — "I've saved the codes" (friction against loss); no leaving without it (HD). */
     const val CODES_ACK = "remote.recovery.codesAck"
 

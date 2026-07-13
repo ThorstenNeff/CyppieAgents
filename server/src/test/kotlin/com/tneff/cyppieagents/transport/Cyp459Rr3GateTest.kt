@@ -170,14 +170,15 @@ class Cyp459Rr3GateTest {
     }
 
     @Test
-    fun t4_successfulAuthorize_isReadOnly_notLaunderedIntoWebAuthnEnrollment() {
-        // ★ T4: the RR3 tunnel authorization is a transport-scoped Boolean — it produces NO re-presentable credential
-        // and NEVER enrolls/mutates the operator device store. So the in-process tunnel principal cannot be laundered
-        // into the WebAuthn operator-auth surface (an enrolled device / a replayable op-session). Mutation (the gate
-        // enrolls the operator as a device) → the store changes = RED.
+    fun t4_successfulAuthorize_againstEnrolledStore_isReadOnly_neverReEnrolls() {
+        // ★ T4 (scoped by CYP-525): against an ALREADY-ENROLLED store (this fixture pre-enrolls `dev1`), a successful
+        // authorize is read-only — it NEVER re-enrolls/mutates the anchor (re-enroll is the Q6-gated recovery seam,
+        // never central-login-alone). CYP-525 adds a sanctioned exception ONLY for an EMPTY store (TOFU first-enroll
+        // under a CpJwt), covered separately; the steady-state laundering guard here is unchanged. Mutation (the gate
+        // re-enrolls / mutates a non-empty store) → the anchor changes = RED.
         val before = deviceStore.enrolled()
         val nonce = byteArrayOf(13)
         assertTrue(run(gate(), h, request(validCpJwt(), validPopSig(nonce = nonce), nonce)).first, "precondition: authorized")
-        assertSame(before, deviceStore.enrolled(), "a successful RR3 authorize leaves the operator device store untouched")
+        assertSame(before, deviceStore.enrolled(), "a successful RR3 authorize against an already-enrolled store never re-enrolls/mutates the anchor")
     }
 }

@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.net.hub.operator.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,11 +11,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.auth.AuthPasswordField
+import com.tneff.cyppieagents.eventlog.severityColor
+import com.tneff.cyppieagents.model.Severity
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_biometric_title
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_enroll_pin
@@ -94,13 +98,22 @@ fun OperatorAuthDialog(
                     modifier = Modifier.testTag(OperatorAuthTags.ENROLL_PIN_SET),
                 )
                 if (step.sessionOnly) {
-                    // Q5: honest "this session only" — no hardware/device-persistence promise while DEVICE_SECURE is named-not-built.
-                    Text(
-                        stringResource(Res.string.remote_pop_enroll_session_only),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // CYP-525 GE6: session-only is a security DOWNGRADE (the ratified default is persist), so it is
+                    // the exception — flag it WARN-amber (severityColor(WARN) + a SEPARATE `▲` node, WCAG 1.4.1),
+                    // doctrine-consistent with workspace.remoteContext. Never error-red (it isn't "broken"), never
+                    // the dimmed onSurfaceVariant understatement of a downgrade truth.
+                    Row(
                         modifier = Modifier.testTag(OperatorAuthTags.ENROLL),
-                    )
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("▲", color = severityColor(Severity.WARN), style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            stringResource(Res.string.remote_pop_enroll_session_only),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = severityColor(Severity.WARN),
+                        )
+                    }
                 }
             }
         }

@@ -47,7 +47,7 @@ class Cyp443RemoteHubSessionTest {
     }
 
     private val pinned = HubTrust { TrustResolution.Pinned(ByteArray(32)) }
-    private val grant = OperatorAuthenticator { _, _ -> true }
+    private val grant = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.Granted }
     // A non-zero backoff so a reconnect delay actually suspends in virtual time → the transient RECONNECTING /
     // inFlightUncertain state is observable before advanceUntilIdle() drives the reconnect (delay(0) returns
     // immediately, which would make the reconnect synchronous and the transient state unobservable).
@@ -87,7 +87,7 @@ class Cyp443RemoteHubSessionTest {
     @Test
     fun authRejected_isTerminal_failClosed() = runTest {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
-        val s = session(scope, auth = { _, _ -> false })
+        val s = session(scope, auth = { _, _ -> OperatorAuthOutcome.Rejected })
         s.start(); advanceUntilIdle()
         assertEquals(RemoteConnState.LOST, s.state.value.conn)
         assertEquals(RemoteFailure.AuthRejected, s.state.value.failure)
