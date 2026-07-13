@@ -38,6 +38,7 @@
 | **GE2** | **Backup-Ack Pflicht vor CONNECTED** (First-Device) | Der First-Enroll-Flow erreicht `RemoteConnState.CONNECTED` **erst nach** erfülltem `remote.recovery.codesAck` — **kein Skip, kein Überspringen mit Warnung** (HA: Codes = einzige Recovery). Nur First-Device (`enrollFirstDevice`); Ersatzgerät (`enrollWithBackupCode`) **gibt** keine neuen Codes, es **verbraucht** einen. |
 | **GE3** | **session-only-Disclosure nur Raw-Pfad** | `remote_pop_enroll_session_only` (Node `remote.authStep.enroll`) rendert **iff** der Enroll-Pfad der Raw-Software-Key ist (`sessionOnly == true`). Auf einem Hardware-Passkey (Fido2, `sessionOnly == false`) ist die Zeile **absent** (keine DEVICE_SECURE-Überzeichnung, kein -Understatement). |
 | **GE4** | **not-enrolled ≠ AuthRejected** | not-enrolled routet **in-flow** zum Enroll-Schritt (nie `false`→`AuthRejected`). Muss es als Connect-Failure erscheinen (Route unerreichbar / `already_enrolled`-Ersatzgerät), ist es die **distinkte** `remote.connect.error.deviceNotEnrolled` (aktionabel), **nie** in `authRejected` kollabiert. 3 nie-konflatierte Wahrheiten. |
+| **GE5** | **Codes einmal, nie erneut** | Die Backup-Codes werden beim First-Enroll **einmal** gezeigt (`remote.recovery.codesList`) und sind danach **nie** erneut abrufbar — es gibt **keine** „Codes erneut ansehen"-Affordance/Tag. Wer sie nicht gespeichert hat, muss neu enrollen/regenerieren (Re-Zeigen bräche die Einmal-Sicherheit). Reuse der `RecoveryCodesReveal`-Einmal-Semantik. |
 
 ## Fail-closed-/Ton-Anker (für §-QA)
 - `remote.connect.error.deviceNotEnrolled` = **aktionabel** (Enroll-/Recovery-Affordance, wie ein retryable Failure),
@@ -62,6 +63,6 @@
 - **Charset/Konvention:** `remote.connect.error.deviceNotEnrolled` = camelCase-Segmente, `[A-Za-z0-9-]+`, kein
   Underscore/Punkt im Segment-Wert. ✓
 - **Geteilte API mit QA (CYP-7):** Ursachen-Wert über den PO mit Tester + DS abstimmen (Frozen-Contract).
-- **Guard-ACs GE1–GE4** = der behaviorale §-QA-Kern — testbar: Enroll iff `isEnrolled()==false`, kein CONNECTED ohne
-  `codesAck`, session-only nur Raw, deviceNotEnrolled nie authRejected.
+- **Guard-ACs GE1–GE5** = der behaviorale §-QA-Kern — testbar: Enroll iff `isEnrolled()==false`, kein CONNECTED ohne
+  `codesAck`, session-only nur Raw, deviceNotEnrolled nie authRejected, Codes einmal (kein Re-View).
 - Jeder net-new Tag/Key ist in `device-enroll-keys.md` + der Begleit-Spec verankert.
