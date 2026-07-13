@@ -99,6 +99,44 @@ Abzuarbeiten, sobald Dev den Enroll-Flow gemountet hat (`feature/CYP-525-operato
 - **Fail-closed:** `deviceNotEnrolled` aktionabel (nicht terminal-„abgelehnt"); Ack-Gate hart; Ersatzgerät ohne
   gültigen Code kommt **nicht** durch.
 
-**Nicht als Befund werten (seam-/build-gated):** solange Dev die Mounts/Enforcement nicht landet, ist GE2-Enforcement
-(Tap-through→`enabled`-Gate) ein **Dev-Verhaltens-AC**, kein Copy-Defekt; `cpSessionExpired`-Abwesenheit = by design;
-Hardware-Passkey-Pfad ist jvm-Stub (Dogfood = Software-PIN).
+**Nicht als Befund werten (seam-/build-gated):** `cpSessionExpired`-Abwesenheit = by design (post-CYP-525-Merge);
+Hardware-Passkey-Pfad ist jvm-Stub (Dogfood = Software-PIN); GE6-Amber ist **nicht** tag-/unit-testbar (Farbe) → per
+Code-Read + visueller QA verifiziert, kein fehlender Test = Befund.
+
+---
+
+## B.1 Pre-Flight-Verifikation @ Dev-Build `1fc69fd3` (CYP-525 §2 first-enroll frame-loop + reveal-during-auth)
+
+Gegroundet READ-ONLY gg. die **echten** `1fc69fd3`-Blobs (nicht den develop-Worktree). **Alle GE1–GE7 lesen am Code
+PASS**; die formale behaviorale Runde (Maestro/Runtime) läuft post-gate. Anker + Status:
+
+| Guard | Code-Anker (`1fc69fd3`) | Status |
+|---|---|---|
+| **GE1** | `ClientOperatorAuth.authenticate`: `if (!popBuilder.isEnrolled()) return DeviceNotEnrolled` **zuerst** (vor Ticket/UV); Enroll-Reveal reached **iff** Hub-`grant.firstEnroll` (hub-authoritativ, `HubConnectUiState.RevealCodes`-KDoc). | ✅ PASS |
+| **GE2** | `ClientOperatorAuth.runEnrollProtocol` **suspendet** auf `enrollConfirmer.confirmSavedCodes()`; CONNECTED = **finaler** Grant erst nach `SavedAck`, gesendet nur nach `confirmSaved()`. UI `RevealCodes` **HÄLT** (kein CONNECTED/Workspace) bis `acknowledgeCodes`. **Same-Instance-Bindung** `RemoteConnectComponents.enrollConfirm` (= die im Session-`ClientOperatorAuth` injizierte). Tests `firstEnroll_happyPath…`, `connected_neverInferred…`, `firstEnroll_userAborts…`. | ✅ PASS (echt gegated, **kein** Tap-through — besser als `enabled`-Gate: suspendierender Confirmer) |
+| **GE3** | `OperatorAuthDialog`: `if (step.sessionOnly)` im `Enroll`-Zweig. | ✅ PASS |
+| **GE4** | `RemoteFailure.DeviceNotEnrolled` (distinkt) **+** `OperatorUvFailed` (F3); `ClientOperatorAuth` routet not-enrolled→`DeviceNotEnrolled`, UvFailed→`UvFailed`, **nur** echter Hub-Reject→`AuthRejected`. Render `RemoteFailureView`: DeviceNotEnrolled = **WARN-amber ▲ + Retry** `error("deviceNotEnrolled")`; OperatorUvFailed = `RetryableRemoteFailure` `error("operatorUvFailed")`. | ✅ PASS (2-Wege + F3-Bonus) |
+| **GE5** | `RecoveryCodesReveal`: keine Re-View-Affordance; bei Reconnect re-revealt der Hub **FRISCHE** Codes (kein Re-View derselben, `RevealCodes`-KDoc „no limbo"). | ✅ PASS |
+| **GE6** | `OperatorAuthDialog` session-only = `Row{ Text("▲", severityColor(WARN)); Text(session_only, severityColor(WARN)) }` — ▲ **separater Node**, WARN-amber, KDoc zitiert meine GE6-Doktrin. | ✅ PASS (Code-confirmed; Farbe nicht unit-testbar → visuelle QA) |
+| **GE7** | `RecoveryCodesReveal` rendert `remote_recovery_codes_no_central` (`onSurface`-betont, „read not skimmed") **vor** dem Ack-Button; Reihenfolge copy→**no_central**→ack; Tag `CODES_NO_CENTRAL="remote.recovery.codesNoCentral"`. | ✅ PASS |
+
+**Strings/Tags (exakt gg. frozen AC):** `remote_connect_device_not_enrolled` (+a11y) + `remote_recovery_codes_no_central`
+= **wortgleich** DE+EN meiner Companions. Neue geteilte CYP-7-Tag-Werte: `error("deviceNotEnrolled")`,
+`error("operatorUvFailed")` [F3, Dev-Add], `remote.recovery.codesNoCentral` — **mit Tester/DS einfrieren**.
+
+**2 Befunde (vor/mit dem Merge zu wägen):**
+- **① [MED · Honesty — beantwortet die H3-Flagge] H3-invalid mis-attributiert als AuthRejected.** `runEnrollProtocol`:
+  `if (!isValidCodeSet(enroll.backupCodes)) return OperatorAuthOutcome.Rejected` → `RemoteFailure.AuthRejected` →
+  „Vom Hub abgelehnt. Bitte neu anmelden." Ein truncated/leeres/malformed `EnrollResponse` ist **keine** Hub-Ablehnung
+  (der Hub hat nichts abgelehnt — die Codes kamen nicht an) und **nicht** terminal-„neu anmelden". Der vom PO gewünschte
+  „Codes nicht angekommen — neu verbinden"-Zustand fehlt. **→ JA, dedizierte Zeile gewünscht:** net-new distinkte
+  Ursache `RemoteFailure.EnrollCodesUnavailable` → **retryable** DE „Codes nicht angekommen — bitte neu verbinden." /
+  EN „Codes didn't arrive — please reconnect.", Tag `error("enrollCodesUnavailable")` (klein, spiegelt das
+  DeviceNotEnrolled-Muster). Test `firstEnroll_invalidCodeSet_failsClosed…` deckt das Fail-closed ab, nicht die
+  Attribution. (Defensiver Edge, aber H1-Anti-Konflation/typed-cause = meine Lane.)
+- **② [LOW · Reconcile] UV-Fail: Dev behielt `remote_connect_uv_failed` als Connect-Fallback (+„reconcile with UIUX").**
+  Mein `b41de091`-Delta sagte „retire" — **zu stark**: `RemoteFailure.OperatorUvFailed` ist eine **echte
+  Connect-Failure-Fläche** (nicht in-Dialog), braucht also eine Connect-Level-Zeile. **Reconcile: `remote_connect_uv_failed`
+  BEHALTEN** als Connect-Fallback (mein Lean); `remote_pop_wrong_pin`/`remote_pop_cancelled` bleiben die **in-Dialog**-
+  Taxonomie. Provisorische Copy „PIN falsch oder abgebrochen — bitte erneut versuchen." ist akzeptabel (retryable,
+  gemergt). Meine „retire"-Notiz in `device-enroll-keys.md` HF post-merge entsprechend weichzeichnen.
