@@ -97,6 +97,10 @@ fun liveRemoteConnectComponentsFactory(
     channelBinding: ChannelBinding = coreChannelBinding(),
 ): RemoteConnectComponentsFactory = RemoteConnectComponentsFactory { hub, scope ->
     val shared = buildSharedHubTrustComponents(hub, defaultPinnedHubStore()) // ①² one of(hub)+pending into both
+    // CYP-525 §2: ONE enroll confirmer shared between the session's ClientOperatorAuth (which calls it + suspends on
+    // firstEnroll) and the RemoteConnectComponents (which the VM surfaces as RevealCodes) — what the operator confirms
+    // IS what gates the SavedAck the session sends.
+    val enrollConfirm = LiveEnrollConfirmCoordinator()
     val session = buildRemoteHubSession(
         hubId = hub.hubId,
         transport = NoiseJavaClientTransport(),
@@ -114,10 +118,11 @@ fun liveRemoteConnectComponentsFactory(
                 nonceGenerator = secureRandomNonceGenerator,
             ),
             cpJwtProvider = HttpCpJwtProvider(cpHttpClient, cpBaseUrl, operatorToken, channelBinding),
+            enrollConfirmer = enrollConfirm,
         ),
         scope = scope,
     )
-    RemoteConnectComponents(session, shared.oobConfirm)
+    RemoteConnectComponents(session, shared.oobConfirm, enrollConfirm)
 }
 
 /** Runway #1: no client relay/rendezvous dialer yet → fail-closed at dial (RelayUnreachable), never connects. */

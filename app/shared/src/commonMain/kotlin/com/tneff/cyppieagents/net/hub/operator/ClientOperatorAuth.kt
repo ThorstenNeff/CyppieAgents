@@ -4,7 +4,9 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.remote.OperatorAuthenticator
 import com.tneff.cyppieagents.net.hub.remote.OperatorAuthOutcome
+import com.tneff.cyppieagents.operator.EnrollResponse
 import com.tneff.cyppieagents.operator.OperatorPoPWire
+import com.tneff.cyppieagents.operator.SavedAck
 import com.tneff.cyppieagents.operator.TunnelAuthGrant
 import com.tneff.cyppieagents.operator.TunnelAuthRequest
 
@@ -30,6 +32,10 @@ import com.tneff.cyppieagents.operator.TunnelAuthRequest
 class ClientOperatorAuth(
     private val popBuilder: OperatorPopBuilder,
     private val cpJwtProvider: CpJwtProvider,
+    /** CYP-525 §2 — the first-enroll user-saved confirmer. On `grant.firstEnroll`, after the (H3-validated)
+     *  EnrollResponse codes arrive, this surfaces the reveal + suspends until the operator confirms "saved" (→ send
+     *  SavedAck) or aborts (→ fail-closed, no SavedAck). Default = fail-closed no-op (INERT: first-enroll aborts). */
+    private val enrollConfirmer: EnrollConfirmer = EnrollConfirmer { false },
 ) : OperatorAuthenticator {
 
     override suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): OperatorAuthOutcome {
@@ -55,9 +61,7 @@ class ClientOperatorAuth(
                     devicePublicKey = popBuilder.devicePublicKeyRaw(),
                 )
                 tunnel.send(CommJson.encodeToString(TunnelAuthRequest.serializer(), request).encodeToByteArray())
-                val raw = tunnel.receive() ?: return OperatorAuthOutcome.Rejected // peer closed ⇒ not granted
-                val grant = CommJson.decodeFromString(TunnelAuthGrant.serializer(), raw.decodeToString())
-                if (grant.granted) OperatorAuthOutcome.Granted else OperatorAuthOutcome.Rejected
+                runEnrollProtocol(tunnel)
             }
             PopBuildOutcome.NotEnrolled -> OperatorAuthOutcome.DeviceNotEnrolled
             // CYP-525 F3: a local UV failure (wrong PIN / cancelled) is RETRYABLE — never a hub reject (nothing sent).
@@ -65,6 +69,34 @@ class ClientOperatorAuth(
             PopBuildOutcome.AuthenticatorUnavailable -> OperatorAuthOutcome.Rejected // no authenticator here ⇒ fail-closed
         }
     }
+
+    /**
+     * CYP-525 §2 — the finalization protocol over the tunnel (the [TunnelAuthRequest] is already sent):
+     *  read Grant → **steady-state** (`granted ∧ !firstEnroll`) IS CONNECTED (Granted); **first-enroll** → read
+     *  [EnrollResponse], H3-validate (fail-closed), confirm user-saved (abort ⇒ fail-closed, NO `SavedAck` ⇒ the hub
+     *  discards the provisional), send [SavedAck], then read the **final** Grant `{granted ∧ !firstEnroll}` = CONNECTED
+     *  (an explicit frame emitted only after the hub's fsync/rename finalize). The client **never infers** CONNECTED
+     *  from the byte-bridge. A closed tunnel / non-grant at any step ⇒ fail-closed Rejected.
+     */
+    private suspend fun runEnrollProtocol(tunnel: NoiseTunnel): OperatorAuthOutcome {
+        val grant = readGrant(tunnel) ?: return OperatorAuthOutcome.Rejected
+        if (!grant.granted) return OperatorAuthOutcome.Rejected
+        if (!grant.firstEnroll) return OperatorAuthOutcome.Granted // steady-state: this grant IS CONNECTED
+
+        val enrollRaw = tunnel.receive() ?: return OperatorAuthOutcome.Rejected
+        val enroll = CommJson.decodeFromString(EnrollResponse.serializer(), enrollRaw.decodeToString())
+        // H3: never show / ack an invalid (empty/truncated/over-count/blank) set — fail-closed (no SavedAck ⇒ discard).
+        if (!isValidCodeSet(enroll.backupCodes)) return OperatorAuthOutcome.Rejected
+        // Surface the ONE reveal + suspend until the operator confirms "saved" (abort ⇒ fail-closed, no SavedAck).
+        if (!enrollConfirmer.confirmSavedCodes(enroll.backupCodes)) return OperatorAuthOutcome.Rejected
+        tunnel.send(CommJson.encodeToString(SavedAck.serializer(), SavedAck()).encodeToByteArray())
+        // CONNECTED = the explicit final grant after finalize — read grants until granted ∧ !firstEnroll.
+        val finalGrant = readGrant(tunnel) ?: return OperatorAuthOutcome.Rejected
+        return if (finalGrant.granted && !finalGrant.firstEnroll) OperatorAuthOutcome.Granted else OperatorAuthOutcome.Rejected
+    }
+
+    private suspend fun readGrant(tunnel: NoiseTunnel): TunnelAuthGrant? =
+        tunnel.receive()?.let { CommJson.decodeFromString(TunnelAuthGrant.serializer(), it.decodeToString()) }
 }
 
 /**
