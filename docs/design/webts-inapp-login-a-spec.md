@@ -47,9 +47,10 @@ Zentriertes, breiten-begrenztes Formular (~400px; Phone voll+Padding, Desktop ze
 
 **④ CSRF / Flow-Token.** Der API-Flow-CSRF-Token (aus Flow-Init) wird beim Submit **im Body** mitgesendet, **nie** gerendert/geloggt/als Tag. **Stale-Flow/Token → fail-closed:** abgelaufen ⇒ **NICHT** mit stalem Token submitten — Flow **neu initialisieren**, Nutzer neu tippen lassen; nie raten.
 
-**Session = server-gesetztes httpOnly-First-Party-Cookie, NIE ein JS-Token.** Login-Erfolg ⇒ der **Server setzt das httpOnly Session-Cookie** (bestehender Pfad — `rest.ts` `credentials:'include'`); **web-ts hält kein Session-Token in JS.** Der rohe `X-Session-Token` des API-Flows wird **server-/proxy-seitig** ins httpOnly-Cookie umgesetzt — die SPA sieht ihn nie. **⟂Backend/Deploy-Naht.** whoami/operator/401 (CYP-470 §3/§5) tragen über das Cookie unverändert.
+**Session = server-gesetztes httpOnly-First-Party-Cookie, NIE ein JS-Token.** Login-Erfolg ⇒ der **Server setzt das httpOnly Session-Cookie** (`rest.ts` `credentials:'include'`); **web-ts hält kein Session-Token in JS.** Die SPA liest den Response-Body **nie** → sieht kein Token. whoami/operator/401 (CYP-470 §3/§5) tragen über das Cookie unverändert.
+> **RECONCILE (gemergter Impl `e8c6a86a`, Static-QA'd GO 2026-07-13):** die Impl erreicht die httpOnly-Cookie-Invariante über den **Kratos-BROWSER-Flow mit `Accept: application/json`** (`GET /self-service/login/browser` → Flow als JSON, kein 303; `POST /self-service/login?flow=<id>`), der die httpOnly-`ory_kratos_session` **nativ** setzt — **sauberer** als der im Spec-Text zitierte `/login/api`-mit-Proxy-Token-Swap (kein Custom-Proxy, kein `X-Session-Token` im Umlauf). **Die §2.3-Invariante (httpOnly-Cookie, kein JS-Token) hält; das Mechanismus-Detail ging an die klarere Naht.** (Backend2-verifiziert #4.)
 
-**CSP unverändert:** Login-POST **same-origin** (`/.ory/kratos/.../login/api` bzw. Proxy) → `connect-src 'self'` ✓; kein externer Host; die gehärtete CSP (object-src none, frame-ancestors none, kein unsafe-eval) trägt ohne Änderung.
+**CSP unverändert:** Login-POST **same-origin** (`/.ory/kratos/.../login/browser` + `/login?flow=`) → `connect-src 'self'` ✓; kein externer Host; die gehärtete CSP (object-src none, frame-ancestors none, kein unsafe-eval) trägt ohne Änderung.
 
 ---
 
