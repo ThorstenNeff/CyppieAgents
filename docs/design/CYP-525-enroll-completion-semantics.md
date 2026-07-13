@@ -78,6 +78,12 @@ hub → client : TunnelAuthGrant { granted=true, firstEnroll = (store NOT finali
    race a 2nd provisional to make the persisted codes theirs (valid backup codes without a device → recover/seize =
    defeats Q6). The race-loser never installs → no cross-contamination. The F2 `synchronized` (anchor only) is
    necessary but NOT sufficient — the SAME lock must cover mint→install→anchor.
+   - **Lock SCOPE = per-hub** (tied to this hub's operator device store / `pinnedOperatorId`), NEVER a global/process
+     lock — a global lock would serialize unrelated hubs' first-enrolls (needless cross-hub contention).
+   - **Lock LIVENESS (no self-DoS):** the lock is released in a `finally` on EVERY exit — finalize, a `SavedAck`-less
+     discard (drop/close), **and a bounded `SavedAck` TIMEOUT.** A provisional that acquires the lock but hangs
+     (no ack, not dropped) MUST time out → discard → release, or it would hold the lock forever and block the
+     operator's own retry (self-DoS). A discarded/timed-out provisional installs nothing (no anchor, no codes).
 4. **Hub-authoritative:** `grant.firstEnroll` is the single source of truth for first-vs-recurring. The client obeys it,
    never its own local `isEnrolled` (a client that thinks it's enrolled but whose provisional the hub discarded is told
    `firstEnroll=true` and re-reveals fresh codes).
@@ -93,7 +99,9 @@ hub → client : TunnelAuthGrant { granted=true, firstEnroll = (store NOT finali
 ## 4. Responsibilities
 
 **▸HUB (Backend, my half):**
-- **First-enroll LOCK** (serialize): only ONE provisional in-flight; a 2nd first-connect rejects/queues (H2).
+- **First-enroll LOCK** (serialize): only ONE provisional in-flight; a 2nd first-connect rejects/queues (H2). **Scope =
+  per-hub** (this hub's device store / `pinnedOperatorId`), never global. **Released in a `finally` on finalize, on a
+  drop/close discard, AND on a bounded `SavedAck` TIMEOUT** — a hung provisional must not hold the lock (self-DoS).
 - Defer the anchor until `SavedAck`; hold provisional state (the minted set) **LOCAL to the session**, in-memory only
   (reload-safe discard) — NEVER in a shared mutable "current store".
 - `mint()` the codes at provisional (not install); `EnrollResponse{minted.plaintexts}` frame.
@@ -134,6 +142,7 @@ hub → client : TunnelAuthGrant { granted=true, firstEnroll = (store NOT finali
 | **★ H1 — power-loss crash mid-finalize** | ONE atomic fsync'd {hashes ∧ anchor} record → **either both durable or neither**; the CONNECTED grant is emitted only after fsync → NEVER (anchor durable ∧ hashes lost) → **closed by the atomic-fsync record** |
 | Pre-fsync crash (nothing flushed) | nothing durable → next connect `firstEnroll=true` → re-mint fresh (the orphan window is now empty) |
 | **★ H2 — concurrent first-connects (incl. a central-login-alone race)** | serialized first-enroll lock → one provisional in-flight; finalize installs THIS session's codes → **the race-loser never installs → no cross-contamination, no Q6-defeat** → **closed by the serialized, session-bound finalize** |
+| **Hung provisional** (lock acquired, no `SavedAck`, not dropped) | bounded `SavedAck` TIMEOUT → discard → **lock released in `finally`** → the operator's retry acquires (no self-DoS); nothing installed |
 | Client thinks enrolled, hub discarded provisional | hub says `firstEnroll=true` → client re-reveals fresh codes (hub-authoritative) |
 | Finalized device, client restart | hub `firstEnroll=false` → skip reveal → steady-state verify (no client ack-persistence needed) |
 
@@ -149,7 +158,8 @@ Teeth (revised): gen-at-provisional · ack-gate (no-ack → discard → re-mint-
 the finalize fsync → NO finalized-without-codes; ONE record → both-or-neither) · **H2 concurrent-provisional** (a 2nd
 first-connect during a provisional → serialized; the loser never installs → no cross-contamination / no Q6-defeat) ·
 honest-storage (hash-at-rest, single-use, durable-survives-restart) · no-lockout invariant · CONNECTED-is-an-explicit-
-post-fsync-grant.
+post-fsync-grant · **lock-liveness** (a hung/timed-out/dropped provisional releases the lock → a subsequent first-enroll
+acquires — no self-DoS) · **lock-scope** (per-hub, not global).
 
 **Build only after the PO re-ratifies this revision + Reviewer re-reviews + Dev concurs on §4 ▸CLIENT.** The
 `BackupCodeStore` mint/consume/durable groundwork is held (uncommitted) until the combined finalize-record shape is
