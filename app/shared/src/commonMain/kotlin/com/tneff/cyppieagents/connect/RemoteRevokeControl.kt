@@ -39,8 +39,10 @@ private enum class RevokePhase { IDLE, CONFIRMING, ENDED }
  * never an invented expiry (③a, `null≠0`). The confirm follows the house destructive-confirm scaffold
  * (`LockoutDialog`/`RemoveDialog`); the control itself is neutral (no scare-red).
  *
- * Live mount = the remote-operating context banner (`WorkspaceTags.ROLE_INDICATOR`) / the `RemoteConnectingView`
- * CONNECTED row — rides with the RR5 transport (a real live session). Standalone + render-tested here.
+ * Live mount = near the remote-operating context banner (CYP-527 `WorkspaceTags.REMOTE_CONTEXT`) / the
+ * `RemoteConnectingView` CONNECTED row — rides with the RR5 transport (a real live session). Standalone +
+ * render-tested here. (The banner's own tag is `REMOTE_CONTEXT`, distinct from `ROLE_INDICATOR` — who-you-are ≠
+ * operating-remotely; the earlier KDoc pointed at ROLE_INDICATOR as the bar *neighborhood*, not a shared tag.)
  */
 @Composable
 fun RemoteRevokeControl(

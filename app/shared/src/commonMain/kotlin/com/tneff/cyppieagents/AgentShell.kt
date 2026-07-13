@@ -44,6 +44,7 @@ import com.tneff.cyppieagents.workspace.CapacityViewModel
 import com.tneff.cyppieagents.workspace.HubCapacitySource
 import com.tneff.cyppieagents.workspace.LiveHubCapacitySource
 import com.tneff.cyppieagents.workspace.OverloadBanner
+import com.tneff.cyppieagents.workspace.RemoteContextBanner
 import com.tneff.cyppieagents.workspace.StubHubCapacitySource
 import com.tneff.cyppieagents.auth.UserTier
 import com.tneff.cyppieagents.workspace.WorkspaceHttpRepository
@@ -276,6 +277,12 @@ fun AgentShell(
     composerHistorySize: Int = DEFAULT_COMPOSER_HISTORY_SIZE,
     /** CYP-387 — invoked when the user changes N in the settings stepper; the seam clamps (0..200) + persists. */
     onComposerHistorySizeChange: (Int) -> Unit = {},
+    /** CYP-527 — the remote-operating context signal: the connected remote hub's display name, or `null` when
+     *  operating locally / not yet CONNECTED / torn down. Non-null ⇒ the persistent [RemoteContextBanner] WARN
+     *  strip mounts (`%1$s` = this name). Bound by the composition root to `RemoteSessionState.conn == CONNECTED`
+     *  on the remote path (NOT `RemoteHubConnectGate.entered`, which fires locally). Default null = local, no banner.
+     *  (Threaded as the hub name — not a bare Boolean — because the UIUX-locked copy interpolates the hub name.) */
+    remoteContext: String? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -362,6 +369,11 @@ fun AgentShell(
           capacityReadout = { CapacityReadout(capacityVm.capacity.collectAsState().value) },
           overloadBanner = {
               if (capacityVm.overloadVisible.collectAsState().value) OverloadBanner(onDismiss = capacityVm::dismissOverload)
+          },
+          // CYP-527: the remote-operating context WARN banner — mounted iff `remoteContext` (the connected remote
+          // hub's name) is non-null. Absent in Local mode / before CONNECTED / after teardown (the caller's gate).
+          remoteContextBanner = {
+              remoteContext?.let { RemoteContextBanner(hubName = it) }
           },
           // CYP-268 R3 theme toggle + CYP-387 input-history size stepper — both personal, ungated, non-project
           // preferences ride the bar's trailing slot together.

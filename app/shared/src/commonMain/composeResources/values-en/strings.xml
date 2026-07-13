@@ -479,6 +479,10 @@
     <string name="workspace_role_indicator_operator">You are the operator</string>
     <string name="workspace_role_indicator_member">You are a member</string>
     <string name="workspace_operator_is">Operator: %1$s</string>
+    <!-- CYP-527: remote-operating context WARN banner (UIUX frozen AC, workspace-remote-context-keys.md @ 447337ff).
+         %1$s = hub.name (editable display name, never the id). Glyph ▲ rendered separately (WCAG 1.4.1). -->
+    <string name="workspace_remote_context_partial">Connected remotely to %1$s — workspace data isn\'t over the tunnel yet.</string>
+    <string name="a11y_workspace_remote_context">Warning: connected remotely to %1$s — workspace data isn\'t over the tunnel yet.</string>
     <string name="workspace_members_title">Members</string>
     <string name="workspace_tier_operator">Operator</string>
     <string name="workspace_tier_member">Member</string>

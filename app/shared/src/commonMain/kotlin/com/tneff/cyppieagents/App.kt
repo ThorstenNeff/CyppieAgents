@@ -113,11 +113,14 @@ fun App(
                             remoteComponentsFactory = defaultRemoteComponentsFactory(authRepo::currentSessionToken),
                         )
                     },
-                ) {
+                ) { remoteContext ->
                     AgentShell(
                         modifier = Modifier.fillMaxSize(),
                         tier = tier,
                         sessionToken = authRepo::currentSessionToken,
+                        // CYP-527: the gate binds this to the remote session's CONNECTED state (null when local /
+                        // not connected) → the workspace shows the persistent remote-operating context WARN banner.
+                        remoteContext = remoteContext,
                         themeMode = themeMode,
                         onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
                         composerHistorySize = composerHistorySize,
