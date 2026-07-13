@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.noise.RelayChannel
 import com.tneff.cyppieagents.net.hub.remote.HubTrust
 import com.tneff.cyppieagents.net.hub.remote.OperatorAuthenticator
+import com.tneff.cyppieagents.net.hub.remote.OperatorAuthOutcome
 import com.tneff.cyppieagents.net.hub.remote.RelayDialer
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
@@ -61,12 +62,13 @@ class Cyp504BuildRemoteHubSessionTest {
     }
     private val openDialer = RelayDialer { NoopRelay() }
     private val pinnedTrust = HubTrust { TrustResolution.Pinned(ByteArray(32)) }
-    private val grantingAuth = OperatorAuthenticator { _, _ -> true }
+    private val grantingAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.Granted }
 
     // ---- the three seams, GATED form (mirrors the prod jvm assembly) ----
     private val gatedDialer = RelayDialer { error("client relay rendezvous not available (runway #1)") }
     private val gatedTrust = HubTrust { error("presented key empty (runway #2 gated)") }
-    private val gatedAuth = OperatorAuthenticator { _, _ -> false } // cpJwt null ⇒ fail-closed
+    private val gatedAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.Rejected } // cpJwt null ⇒ fail-closed
+    private val notEnrolledAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.DeviceNotEnrolled } // CYP-525
 
     /**
      * Drive the builder's session and record its states, cancelling once it CONNECTs or fails. The session is
@@ -134,6 +136,20 @@ class Cyp504BuildRemoteHubSessionTest {
         advanceUntilIdle()
         assertFalse(seen.any { it.conn == RemoteConnState.CONNECTED }, "the operator-auth seam alone blocks CONNECTED")
         assertTrue(seen.any { it.failure == RemoteFailure.AuthRejected }, "fails closed at operator-auth (a∧b∧c said no)")
+        scope.cancel()
+    }
+
+    @Test
+    fun cyp525_authDeviceNotEnrolled_failsDistinct_neverAuthRejected() = runTest {
+        // GE4: not-enrolled is its own terminal truth (RemoteFailure.DeviceNotEnrolled → the enroll step), and it
+        // must NEVER collapse into AuthRejected ("the hub denied you") — that conflation is the CYP-525 bug root.
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val seen = mutableListOf<RemoteSessionState>()
+        drive(scope, seen, auth = notEnrolledAuth) // dial + trust + transport all pass
+        advanceUntilIdle()
+        assertFalse(seen.any { it.conn == RemoteConnState.CONNECTED }, "not-enrolled never connects")
+        assertTrue(seen.any { it.failure == RemoteFailure.DeviceNotEnrolled }, "routes to the distinct ENROLL truth")
+        assertFalse(seen.any { it.failure == RemoteFailure.AuthRejected }, "NEVER collapses into AuthRejected (the bug)")
         scope.cancel()
     }
 

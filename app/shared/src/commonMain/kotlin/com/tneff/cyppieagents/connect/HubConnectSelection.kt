@@ -39,6 +39,8 @@ import kmpcyppieagents.app.shared.generated.resources.remote_connect_authenticat
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_auth_rejected
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_connected
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_e2e_handshake
+import kmpcyppieagents.app.shared.generated.resources.a11y_remote_connect_device_not_enrolled
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_device_not_enrolled
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_handshake_failed
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_hub_offline
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dialing
@@ -325,6 +327,29 @@ private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectView
         RemoteFailure.AuthRejected -> TonedHint(
             stringResource(Res.string.remote_connect_auth_rejected), HintTone.ERROR, RemoteConnectTags.error("authRejected"),
         )
+        // CYP-525 (GE4/HB): the DISTINCT "this device isn't set up" truth — actionable, WARN-amber advisory (NOT
+        // error-red, it isn't "broken"; NOT terminal like AuthRejected/TrustChanged). The in-flow enroll step is
+        // CYP-525 Inc 3; here the fallback surface offers a retry. Own node `error(deviceNotEnrolled)`, never authRejected.
+        RemoteFailure.DeviceNotEnrolled -> {
+            val a11y = stringResource(Res.string.a11y_remote_connect_device_not_enrolled)
+            Column(
+                modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.error("deviceNotEnrolled"))
+                    .semantics { contentDescription = a11y },
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("▲ ", color = severityColor(Severity.WARN))
+                    Text(
+                        stringResource(Res.string.remote_connect_device_not_enrolled),
+                        color = severityColor(Severity.WARN),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Button(onClick = viewModel::connectRemote, modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.RETRY)) {
+                    Text(stringResource(Res.string.load_retry))
+                }
+            }
+        }
         RemoteFailure.RelayUnreachable -> RetryableRemoteFailure(
             stringResource(Res.string.remote_connect_relay_unreachable), RemoteConnectTags.error("relayUnreachable"), viewModel,
         )

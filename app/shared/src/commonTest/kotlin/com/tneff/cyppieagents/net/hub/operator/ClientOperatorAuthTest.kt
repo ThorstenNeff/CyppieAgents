@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.net.hub.operator
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import com.tneff.cyppieagents.net.hub.remote.OperatorAuthOutcome
 import com.tneff.cyppieagents.operator.OperatorPoPWire
 import com.tneff.cyppieagents.operator.TunnelAuthGrant
 import com.tneff.cyppieagents.operator.TunnelAuthRequest
@@ -38,9 +39,10 @@ class ClientOperatorAuthTest {
     private class FakeStore(
         private val result: PopResult,
         private val challengeSink: (ByteArray) -> Unit = {},
+        private val enrolled: Boolean = true,
     ) : OperatorDeviceKeyStore {
-        override fun isEnrolled(): Boolean = true
-        override fun devicePublicKey(): ByteArray? = ByteArray(32)
+        override fun isEnrolled(): Boolean = enrolled
+        override fun devicePublicKey(): ByteArray? = if (enrolled) ByteArray(32) else null
         override suspend fun sign(challenge: ByteArray): PopResult { challengeSink(challenge); return result }
     }
 
@@ -59,7 +61,7 @@ class ClientOperatorAuthTest {
         val tunnel = FakeTunnel(grantBytes(true))
         val a = auth(PopResult.Signed(DevicePoP.Raw(sig)), jwt = "jwt-abc") { signedChallenge = it }
 
-        assertTrue(a.authenticate(tunnel, hubId))
+        assertEquals(OperatorAuthOutcome.Granted, a.authenticate(tunnel, hubId))
         // channel-binding: the PoP was signed over the LIVE handshake hash + hubId + nonce.
         assertContentEquals(operatorAuthChallenge(tunnel.handshakeHash, hubId, nonce), signedChallenge)
         // the request binds exactly what we built (same jwt, same nonce, mapped pop).
@@ -75,7 +77,7 @@ class ClientOperatorAuthTest {
         val ad = ByteArray(37) { 0x55 }
         val tunnel = FakeTunnel(grantBytes(true))
         val a = auth(PopResult.Signed(DevicePoP.Fido2(cid, ad, sig)), jwt = "j")
-        assertTrue(a.authenticate(tunnel, hubId))
+        assertEquals(OperatorAuthOutcome.Granted, a.authenticate(tunnel, hubId))
         val req = CommJson.decodeFromString(TunnelAuthRequest.serializer(), tunnel.sent!!.decodeToString())
         val f = assertIs<OperatorPoPWire.Fido2>(req.pop)
         assertContentEquals(cid, f.credentialId)
@@ -84,22 +86,23 @@ class ClientOperatorAuthTest {
     }
 
     @Test
-    fun grantedFalse_returnsFalse() = runTest {
+    fun grantedFalse_rejected() = runTest {
         val a = auth(PopResult.Signed(DevicePoP.Raw(sig)), jwt = "j")
-        assertFalse(a.authenticate(FakeTunnel(grantBytes(false, reason = "denied")), hubId))
+        assertEquals(OperatorAuthOutcome.Rejected, a.authenticate(FakeTunnel(grantBytes(false, reason = "denied")), hubId))
     }
 
     @Test
-    fun closedTunnel_receiveNull_failsClosed() = runTest {
+    fun closedTunnel_receiveNull_failsClosed_rejected() = runTest {
         val a = auth(PopResult.Signed(DevicePoP.Raw(sig)), jwt = "j")
-        assertFalse(a.authenticate(FakeTunnel(reply = null), hubId))
+        assertEquals(OperatorAuthOutcome.Rejected, a.authenticate(FakeTunnel(reply = null), hubId))
     }
 
     @Test
-    fun localPopFailure_failsClosed_sendsNothing() = runTest {
+    fun uvFailure_rejected_sendsNothing() = runTest {
+        // A local UV failure (wrong PIN / cancelled) is NOT "not enrolled" ⇒ fail-closed Rejected, no request leaks.
         val tunnel = FakeTunnel(grantBytes(true))
-        val a = auth(PopResult.NotEnrolled, jwt = "j")
-        assertFalse(a.authenticate(tunnel, hubId))
+        val a = auth(PopResult.UvFailed(UvFailReason.WRONG_PIN), jwt = "j")
+        assertEquals(OperatorAuthOutcome.Rejected, a.authenticate(tunnel, hubId))
         assertNull(tunnel.sent, "a local PoP failure must NOT leak a request onto the tunnel")
     }
 
@@ -108,8 +111,36 @@ class ClientOperatorAuthTest {
         var signed = false
         val tunnel = FakeTunnel(grantBytes(true))
         val a = auth(PopResult.Signed(DevicePoP.Raw(sig)), jwt = null) { signed = true }
-        assertFalse(a.authenticate(tunnel, hubId))
+        assertEquals(OperatorAuthOutcome.Rejected, a.authenticate(tunnel, hubId))
         assertNull(tunnel.sent, "no ticket ⇒ nothing sent")
         assertFalse(signed, "no ticket ⇒ never prompt the operator to sign")
+    }
+
+    // --- CYP-525: not-enrolled is a distinct ENROLL truth, never a reject (GE1/GE4) ---
+
+    @Test
+    fun notEnrolled_isDeviceNotEnrolled_isEnrolledFirst_noTicketNoSignNoSend() = runTest {
+        // isEnrolled()==false ⇒ DeviceNotEnrolled WITHOUT fetching the ticket, prompting UV, or sending anything.
+        var jwtAsked = false
+        var signed = false
+        val tunnel = FakeTunnel(grantBytes(true))
+        val store = FakeStore(PopResult.Signed(DevicePoP.Raw(sig)), { signed = true }, enrolled = false)
+        val a = ClientOperatorAuth(
+            OperatorPopBuilder(store, NonceGenerator { nonce }),
+            CpJwtProvider { _, _ -> jwtAsked = true; "j" },
+        )
+        assertEquals(OperatorAuthOutcome.DeviceNotEnrolled, a.authenticate(tunnel, hubId))
+        assertNull(tunnel.sent, "not enrolled ⇒ nothing sent")
+        assertFalse(jwtAsked, "isEnrolled-first ⇒ no CP ticket round-trip when not enrolled")
+        assertFalse(signed, "isEnrolled-first ⇒ never prompt the operator to sign when not enrolled")
+    }
+
+    @Test
+    fun signReportsNotEnrolled_stillRoutesToEnroll_notReject() = runTest {
+        // Defensive: a race where isEnrolled()==true but sign() reports NotEnrolled still routes to enroll, not reject.
+        val tunnel = FakeTunnel(grantBytes(true))
+        val a = auth(PopResult.NotEnrolled, jwt = "j")
+        assertEquals(OperatorAuthOutcome.DeviceNotEnrolled, a.authenticate(tunnel, hubId))
+        assertNull(tunnel.sent, "not enrolled ⇒ nothing sent")
     }
 }

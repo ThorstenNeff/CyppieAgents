@@ -88,6 +88,10 @@ class OperatorPopBuilder(
     private val store: OperatorDeviceKeyStore,
     private val nonceGenerator: NonceGenerator,
 ) {
+    /** CYP-525: is an operator device-key enrolled on THIS device? Checked first (before any CP round-trip / UV
+     *  prompt) so "not enrolled" routes to the enroll step, not a reject. */
+    fun isEnrolled(): Boolean = store.isEnrolled()
+
     suspend fun buildPop(handshakeHash: ByteArray, hubId: String): PopBuildOutcome {
         val nonce = nonceGenerator.nonce()
         val challenge = operatorAuthChallenge(handshakeHash, hubId, nonce)

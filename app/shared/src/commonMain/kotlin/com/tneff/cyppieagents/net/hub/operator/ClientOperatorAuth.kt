@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.net.hub.operator
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.remote.OperatorAuthenticator
+import com.tneff.cyppieagents.net.hub.remote.OperatorAuthOutcome
 import com.tneff.cyppieagents.operator.OperatorPoPWire
 import com.tneff.cyppieagents.operator.TunnelAuthGrant
 import com.tneff.cyppieagents.operator.TunnelAuthRequest
@@ -13,10 +14,13 @@ import com.tneff.cyppieagents.operator.TunnelAuthRequest
  * live handshake hash `h`** (via [OperatorPopBuilder]), send **one** [TunnelAuthRequest]`{cpJwt, pop, nonce}`,
  * read **one** [TunnelAuthGrant]. Returns the hub's verdict.
  *
- * **Fail-closed everywhere** — a missing ticket, a local PoP failure (not-enrolled / UV-denied / no
- * authenticator), a closed tunnel (`receive()==null`), or any thrown exception all yield `false`, and
- * [com.tneff.cyppieagents.net.hub.remote.RemoteHubSession] turns `false`/throw into a **terminal**
- * `RemoteFailure.AuthRejected` (no silent retry). A local failure sends **nothing** (no request leaks).
+ * **Fail-closed, three distinct truths (CYP-525)** — returns [OperatorAuthOutcome]: a **not-enrolled** device
+ * (checked FIRST, before any ticket fetch or UV prompt) ⇒ [OperatorAuthOutcome.DeviceNotEnrolled] (→ the enroll
+ * step, NEVER a reject — the bug this fixes); a missing ticket, any other local PoP failure (UV-denied / no
+ * authenticator), a closed tunnel (`receive()==null`), or a thrown exception ⇒ [OperatorAuthOutcome.Rejected];
+ * only a real hub grant ⇒ [OperatorAuthOutcome.Granted]. [com.tneff.cyppieagents.net.hub.remote.RemoteHubSession]
+ * maps DeviceNotEnrolled → `RemoteFailure.DeviceNotEnrolled` and Rejected → `RemoteFailure.AuthRejected` (both
+ * terminal, no silent retry). A local failure sends **nothing** (no request leaks).
  *
  * **Channel-binding:** the PoP is over `h ‖ hubId ‖ nonce`, and the SAME `nonce` travels in the request — so a
  * grant can't be replayed on another tunnel (a foreign `h` yields a different challenge → the hub rejects).
@@ -28,21 +32,29 @@ class ClientOperatorAuth(
     private val cpJwtProvider: CpJwtProvider,
 ) : OperatorAuthenticator {
 
-    override suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): Boolean {
-        // Ticket first (cheap): no ticket ⇒ fail closed WITHOUT prompting the operator to sign. CYP-496: the
+    override suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): OperatorAuthOutcome {
+        // CYP-525: isEnrolled FIRST — "this device isn't set up" is an ENROLL step, never a reject. We don't even
+        // fetch the ticket or prompt the operator to sign; we route to enroll (DeviceNotEnrolled), distinct truth.
+        if (!popBuilder.isEnrolled()) return OperatorAuthOutcome.DeviceNotEnrolled
+
+        // Ticket next (cheap): no ticket ⇒ fail closed WITHOUT prompting the operator to sign. CYP-496: the
         // provider needs the live `h` + hubId to compute the channel-binding `cb` bound to THIS session.
-        val jwt = cpJwtProvider.cpJwt(tunnel.handshakeHash, hubId) ?: return false
+        val jwt = cpJwtProvider.cpJwt(tunnel.handshakeHash, hubId) ?: return OperatorAuthOutcome.Rejected
 
-        // PoP bound to the LIVE handshake hash. Any local failure ⇒ fail closed, no request sent.
-        val ready = popBuilder.buildPop(tunnel.handshakeHash, hubId) as? PopBuildOutcome.Ready ?: return false
-
-        // Bind exactly what we built: the same nonce that the PoP challenge used travels in the request.
-        val request = TunnelAuthRequest(cpJwt = jwt, pop = ready.pop.toWire(), nonce = ready.nonce)
-        tunnel.send(CommJson.encodeToString(TunnelAuthRequest.serializer(), request).encodeToByteArray())
-
-        val raw = tunnel.receive() ?: return false // peer closed ⇒ not granted
-        val grant = CommJson.decodeFromString(TunnelAuthGrant.serializer(), raw.decodeToString())
-        return grant.granted
+        // PoP bound to the LIVE handshake hash. A local failure ⇒ fail closed, no request sent — but "not enrolled"
+        // (a race after the pre-check) still routes to enroll, never a reject; any other local failure is Rejected.
+        return when (val built = popBuilder.buildPop(tunnel.handshakeHash, hubId)) {
+            is PopBuildOutcome.Ready -> {
+                // Bind exactly what we built: the same nonce that the PoP challenge used travels in the request.
+                val request = TunnelAuthRequest(cpJwt = jwt, pop = built.pop.toWire(), nonce = built.nonce)
+                tunnel.send(CommJson.encodeToString(TunnelAuthRequest.serializer(), request).encodeToByteArray())
+                val raw = tunnel.receive() ?: return OperatorAuthOutcome.Rejected // peer closed ⇒ not granted
+                val grant = CommJson.decodeFromString(TunnelAuthGrant.serializer(), raw.decodeToString())
+                if (grant.granted) OperatorAuthOutcome.Granted else OperatorAuthOutcome.Rejected
+            }
+            PopBuildOutcome.NotEnrolled -> OperatorAuthOutcome.DeviceNotEnrolled
+            else -> OperatorAuthOutcome.Rejected // UvFailed / AuthenticatorUnavailable ⇒ fail-closed (no false grant)
+        }
     }
 }
 

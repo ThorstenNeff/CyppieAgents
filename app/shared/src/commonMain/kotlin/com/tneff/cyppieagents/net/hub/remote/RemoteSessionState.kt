@@ -23,6 +23,12 @@ sealed interface RemoteFailure {
     data class TrustChanged(val expectedFingerprint: String) : RemoteFailure
     /** The hub's OperatorAssertionVerifier said no (a∧b∧c failed) — fail-closed. */
     data object AuthRejected : RemoteFailure
+    /**
+     * CYP-525 — **this device has no enrolled operator key** (a distinct third truth, never collapsed into
+     * [AuthRejected]): the hub didn't reject us, we simply haven't set this device up yet. Actionable → the enroll
+     * step ("set up this device"), NOT a dead reject. Distinct so the UI routes to enroll instead of "denied".
+     */
+    data object DeviceNotEnrolled : RemoteFailure
 }
 
 /**
@@ -76,5 +82,18 @@ sealed interface TrustResolution {
  * any error ⇒ not granted.
  */
 fun interface OperatorAuthenticator {
-    suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): Boolean
+    suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): OperatorAuthOutcome
+}
+
+/**
+ * CYP-525 — the RR3 tunnel-auth outcome as **three distinct truths** (never two-valued): the hub granted us
+ * ([Granted]), the hub rejected us ([Rejected] → terminal [RemoteFailure.AuthRejected]), or **this device isn't
+ * enrolled yet** ([DeviceNotEnrolled] → the enroll step, [RemoteFailure.DeviceNotEnrolled]) — the last must NEVER
+ * collapse into a reject (that is the bug this fixes: "not set up" read as "denied"). Fail-closed: any local PoP
+ * failure or thrown error that is not specifically "not enrolled" is a [Rejected], never a false grant.
+ */
+sealed interface OperatorAuthOutcome {
+    data object Granted : OperatorAuthOutcome
+    data object Rejected : OperatorAuthOutcome
+    data object DeviceNotEnrolled : OperatorAuthOutcome
 }

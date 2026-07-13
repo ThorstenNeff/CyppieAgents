@@ -696,6 +696,10 @@
     <string name="remote_connect_relay_unreachable">Relay nicht erreichbar — später erneut versuchen.</string>
     <string name="remote_connect_hub_offline">Hub ist offline — läuft er?</string>
     <string name="remote_connect_handshake_failed">E2E-Handshake fehlgeschlagen — später erneut versuchen.</string>
+    <!-- CYP-525 (UIUX frozen AC, device-enroll-keys.md): the Q3-distinct DeviceNotEnrolled cause — actionable, NEVER
+         "rejected" (GE4/HB). Distinct from remote_connect_auth_rejected. -->
+    <string name="remote_connect_device_not_enrolled">Dieses Gerät ist noch nicht eingerichtet — richte es ein, um fortzufahren.</string>
+    <string name="a11y_remote_connect_device_not_enrolled">Gerät nicht eingerichtet — Einrichtung nötig, um fortzufahren.</string>
     <string name="remote_connect_trust_provisional">Vertrauensprüfung vorläufig — echtes Pinnen folgt.</string>
     <!-- CYP-479 (CYP-480 Fläche ②/③): Q6-Recovery + Revocation -->
     <string name="remote_recovery_codes_title">Wiederherstellungs-Codes</string>

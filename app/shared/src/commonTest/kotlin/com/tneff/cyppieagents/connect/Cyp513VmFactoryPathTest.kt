@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.noise.RelayChannel
 import com.tneff.cyppieagents.net.hub.remote.HubTrust
 import com.tneff.cyppieagents.net.hub.remote.OperatorAuthenticator
+import com.tneff.cyppieagents.net.hub.remote.OperatorAuthOutcome
 import com.tneff.cyppieagents.net.hub.remote.RelayDialer
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
@@ -70,7 +71,7 @@ class Cyp513VmFactoryPathTest {
                 transport = handshakingTransport,
                 dialer = RelayDialer { NoopRelay() },
                 trust = HubTrust { TrustResolution.Pinned(ByteArray(32)) },
-                authenticator = OperatorAuthenticator { _, _ -> true },
+                authenticator = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.Granted },
                 scope = sessionScope,
                 backoff = Backoff(initialMs = 1_000, maxMs = 1_000),
             )

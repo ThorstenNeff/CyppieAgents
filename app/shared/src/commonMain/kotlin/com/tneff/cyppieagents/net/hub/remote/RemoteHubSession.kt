@@ -134,17 +134,27 @@ class RemoteHubSession(
         // Handshake succeeded AGAINST the pin ⇒ hub authenticity holds (trustCheck passes; CI-1).
         _state.update { it.copy(conn = RemoteConnState.TRUST_CHECK) }
         _state.update { it.copy(conn = RemoteConnState.AUTHENTICATING) }
-        val granted = try {
+        val outcome = try {
             authenticator.authenticate(t, hubId)
         } catch (c: CancellationException) {
             throw c
         } catch (e: Exception) {
-            false
+            OperatorAuthOutcome.Rejected // any thrown error ⇒ fail-closed reject, never a false grant / false enroll
         }
-        if (!granted) {
-            runCatching { t.close() }
-            _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.AuthRejected) }
-            return Outcome.TERMINAL // fail-closed (a∧b∧c said no)
+        when (outcome) {
+            OperatorAuthOutcome.Granted -> Unit // proceed to CONNECTED below
+            OperatorAuthOutcome.DeviceNotEnrolled -> {
+                // CYP-525: NOT a reject — this device simply isn't set up. Distinct terminal failure so the UI
+                // routes to the enroll step ("set up this device"), never "denied" (the bug this fixes).
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.DeviceNotEnrolled) }
+                return Outcome.TERMINAL
+            }
+            OperatorAuthOutcome.Rejected -> {
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.AuthRejected) }
+                return Outcome.TERMINAL // fail-closed (a∧b∧c said no)
+            }
         }
 
         tunnel = t
