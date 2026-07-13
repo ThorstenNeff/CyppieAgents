@@ -116,12 +116,16 @@ class Cyp427LiveTransportE2eTest {
             if (relay == null) { log("RESULT: failed at dial (no relay channel)"); writeEv(evDir, ev); return@runBlocking }
             val tunnel = runCatching { transport.connect(pin, relay) }.getOrElse { e ->
                 val msg = e.message ?: ""
-                // Distinguish the two fail-closed modes from the transport's own handling (both = HP-2 fails closed):
+                val cause = e.cause
+                val causeStr = cause?.let { "${it::class.qualifiedName}: ${it.message}" } ?: "(no wrapped cause)"
+                val aead = cause?.let { it::class.simpleName ?: "" }?.let { "BadTag" in it || "AEAD" in it || "BadPadding" in it } == true
                 val diag = when {
-                    "relay closed" in msg -> "NO msg2 (relay closed the channel) → hub NOT live-paired to the relay as a responder (registered in CP but no live relay presence)"
-                    else -> "a frame returned but readMessage failed ($msg) → either the hub is silent/relay-control-frame OR dhPubKey != hub live static (wrong-key/misroute); across runs mostly NO frame → pairing/liveness is the primary hypothesis"
+                    "relay closed" in msg -> "NO msg2 (relay closed the channel) → hub NOT live-paired to the relay as a responder"
+                    aead -> "msg2 RETURNED but its AEAD tag FAILED → the hub IS live-paired (a frame came back), but the pinned dhPubKey != the hub's live Noise static (WRONG-KEY). The blocker is now the KEY, not pairing (CYP-526 fixed pairing)."
+                    else -> "a frame returned but readMessage failed (cause: $causeStr) → hub paired but msg2 not processable under the pin (key mismatch or a relay-control/framing artifact)"
                 }
                 log("HP-2 Noise_NK handshake FAILS CLOSED: $msg")
+                log("HP-2 cause: $causeStr")
                 log("HP-2 diagnosis: $diag")
                 log("RESULT: transport NOT established — no CONNECTED, no grant frame. Client fails closed correctly (never proceeds without a completed handshake).")
                 relay.close(); writeEv(evDir, ev); return@runBlocking

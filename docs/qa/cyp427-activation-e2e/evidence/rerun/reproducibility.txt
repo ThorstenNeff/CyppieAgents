@@ -1,0 +1,13 @@
+CYP-427 transport round-trip — reproducibility (after CYP-526 hub-relay-liveness fix, deploy role=hub established=1)
+develop 75bb7b2d (CYP-526 merged) · client harness feature/CYP-427-activation-e2e 862ab059 · 2026-07-13
+
+4/4 runs PROVEN the AEAD TunnelAuthGrant transport round-trip; each a UNIQUE per-session live-h (CI-2 uniqueness):
+  run A (cause-capture): live-h=oz0r4hajwQqmztGHE1Fh-cfNQavZVwX8kYoj35bjM6c  framesSent=1[795B] framesRecv=1[40B]  granted=false reason=auth_failed
+  run B:                 live-h=2D-iUsmeUkJO9Z58FQZK4VogJ2DcA9FZh239i6LCXNw  granted=false reason=auth_failed
+  run C:                 live-h=i3E7OAWmkOoDaarIohSiiEBlYbcOLgwf3c7tctZbJ4E  granted=false reason=auth_failed
+  run D:                 live-h=QPjKet74P7A3OwZKoei85WLdunVK8g22g3HIM49hVxE  granted=false reason=auth_failed
+
+Note: the FIRST re-run immediately after the hub came up hit a brief stabilization window (a returned frame that
+failed readMessage — the reconnect loop still settling); the very next run and all subsequent runs completed the NK
+handshake cleanly. The pinned dhPubKey MATCHES the hub's live static (the handshake completes) — the earlier
+"key-mismatch" secondary hypothesis is DISPROVEN. CYP-526 fixed the pairing (signature flipped: no-frame -> clean handshake).

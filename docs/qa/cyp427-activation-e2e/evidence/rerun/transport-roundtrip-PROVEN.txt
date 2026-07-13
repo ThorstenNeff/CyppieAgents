@@ -1,0 +1,14 @@
+# CYP-427 LIVE transport E2E
+stand: cp=https://api.cyppie-agents.com hubId=hub_c1d6f5ffd892a03d dhPubKey(len)=32 deviceKey=fresh(A)
+HP-1 resolve -> Bound
+CT-1 rendezvous opacity: rendezvousId=aXHvSU5tUvLlJ7JI86jZYGsXLQFeKh0sbCb-Ydj1_wE != hubId=hub_c1d6f5ffd892a03d -> true
+CT-1 relayUrl (CP-supplied binding): wss://api.cyppie-agents.com/relay
+HP-2 Noise_NK handshake OK: live-h=oz0r4hajwQqmztGHE1Fh-cfNQavZVwX8kYoj35bjM6c (32B=true)
+HP-3 TRUST: handshake completed against the presented static == the pin (else it would have failed closed)
+HP-4/cb: cb=base64url(SHA-256(h||hubId))=Qss_In6Otzmhfefk2uO3rTRnbA3tVyf-b4m7Aw9QVHk
+HP-6(i) TRANSPORT: framesSent=1 framesRecv=1 (sizes sent=[795] recv=[40])
+✅ TRANSPORT ROUND-TRIP PROVEN: an AEAD-decrypted TunnelAuthGrant frame returned over Noise (responder=hub RR3-tunnel-gate, NOT echo/CR3)
+   authorization: granted=false reason=auth_failed
+   → authorization DENIED at the operator-device-PoP layer (expected for a non-enrolled/fresh device key — option A)
+HP-6(ii) genuine Hub-HTTP/CR3 route over the tunnel: OUT OF SCOPE — CR3 not wired (only NoiseTunnel primitive). NOT part of the CONNECTED-usable claim.
+session authenticate() verdict (RemoteHubSession would map to terminal AuthRejected): granted=false
