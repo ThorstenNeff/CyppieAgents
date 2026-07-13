@@ -1,14 +1,19 @@
 package com.tneff.cyppieagents.transport
 
+import com.tneff.cyppieagents.controlplane.AdmissionRetry
 import com.tneff.cyppieagents.relay.RENDEZVOUS_HEADER
 import com.tneff.cyppieagents.relay.ROLE_HEADER
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.header
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 
 /**
  * CYP-458 (S2) — the **outbound-only** relay dial seam (RR5): opens a connection **TO** the relay and returns the L0
@@ -65,21 +70,49 @@ class NoiseRelayConnector(
     private val terminator: ServerNoiseTerminator,
     private val tunnelHandler: suspend (ServerNoiseTunnel) -> Unit,
     private val scope: CoroutineScope,
+    /** CYP-526 — backoff before a re-dial after a FAILURE (the loop is UNBOUNDED — a persistent responder; a clean
+     *  tunnel-end re-dials immediately). Reuses the CYP-524 [AdmissionRetry] exponential curve (capped). Injectable
+     *  for tests (fast/deterministic). */
+    private val backoffMs: (attempt: Int) -> Long = { a -> AdmissionRetry().delayForAttempt(a) },
 ) : RelayConnector {
+    private val log = LoggerFactory.getLogger("cyp459.relay.connector")
     private var job: Job? = null
 
     override suspend fun start() {
         val url = config.relayUrl
-        if (!config.enabled || url == null) return // INERT / local-only: NO outbound dial, current behaviour unchanged
+        if (!config.enabled || url == null) {
+            // CYP-526: log the INERT reason so "no dial line" is never ambiguous between INERT vs a silent throw.
+            log.info("CYP-459 relay connector INERT (enabled={}, relayUrl set={}) — no outbound dial", config.enabled, url != null)
+            return
+        }
+        // CYP-526: a PERSISTENT responder. Dial → terminate → bridge, then on tunnel-end OR any failure re-dial with
+        // backoff — NEVER a one-shot (the pre-CYP-526 bug: a single transient dial/handshake throw killed the coroutine
+        // and the hub was never present at the relay again). Every failure is caught + logged, so the CYP-524-class
+        // throw between a successful register and an established relay WS is now VISIBLE + retried, not swallowed.
         job = scope.launch {
-            val relay = dialer.dial(url) // outbound-only
-            val tunnel = try {
-                terminator.terminate(relay) // NK responder handshake over L0
-            } catch (e: Exception) {
-                relay.close() // fail-closed: a failed handshake tears the L0 channel down
-                throw e
+            var attempt = 0
+            while (isActive) {
+                try {
+                    log.info("CYP-526 dialing relay as role=hub")
+                    val relay = dialer.dial(url) // outbound-only (WS to the relay under the CACHED rendezvous id)
+                    attempt = 0 // a live dial resets the backoff
+                    val tunnel = try {
+                        terminator.terminate(relay) // NK responder handshake over L0
+                    } catch (e: Exception) {
+                        relay.close() // fail-closed: a failed handshake tears the L0 channel down
+                        throw e
+                    }
+                    log.info("CYP-526 relay responder established — bridging tunnel")
+                    tunnelHandler(tunnel) // → LoopbackBridge.bridge; returns when the tunnel closes
+                    log.info("CYP-526 relay tunnel ended — re-dialing to remain a persistent responder")
+                } catch (c: CancellationException) {
+                    throw c // stop() cancelled us — exit cleanly, no reconnect
+                } catch (e: Exception) {
+                    attempt++
+                    log.warn("CYP-526 relay dial/handshake failed (attempt {}): {}", attempt, e.message)
+                }
+                delay(if (attempt == 0) 0L else backoffMs(attempt)) // clean tunnel-end → immediate; failure → backoff
             }
-            tunnelHandler(tunnel) // → LoopbackBridge.bridge in production
         }
     }
 

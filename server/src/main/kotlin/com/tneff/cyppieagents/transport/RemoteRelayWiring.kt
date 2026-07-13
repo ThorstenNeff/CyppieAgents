@@ -107,10 +107,13 @@ fun buildRemoteTransport(
     )
     val httpClient = httpClientFactory() // shared: the relay WS dial AND the CP rendezvous-register POST
     val registrar = HubRendezvousRegistrar(cpBaseUrl = cpUrl, http = httpClient, hubId = hubIdentity.hubId, operatorBearer = { cpOperatorToken })
+    // CYP-526: register ONCE and CACHE the id; the reconnect loop re-dials with the SAME cached id (never re-registers
+    // — that would rotate the epoch and strand the client's resolved id). A failed register isn't cached → retried.
+    val cachedRendezvousId = CachingRendezvousId { registrar.register() }
     return RemoteRelayWiring.build(
         config = RemoteTransportConfig(enabled = true, relayUrl = relayUrl),
         httpClient = httpClient,
-        rendezvousId = { registrar.register() }, // CYP-521: fresh epoch id from the CP register, at dial-time
+        rendezvousId = cachedRendezvousId::get, // CYP-521 fresh epoch id from the CP register; CYP-526 cached (once)
         dhStaticPrivate = dhPriv,
         loopbackPort = loopbackPort,
         gate = gate,
