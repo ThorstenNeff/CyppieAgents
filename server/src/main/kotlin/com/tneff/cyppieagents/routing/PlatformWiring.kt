@@ -196,6 +196,10 @@ fun Application.installPlatform(
             // ownerId bound to the authenticated operator; admits into the shared cpHubRegistrar. Empty until a hub
             // registers → mint/resolve owner-check stay fail-closed.
             hubAdmissionRoutes({ cpHubRegistrar }, hubAdmissionNonce, booted.tokenRegistry, authDeps, apiBase = apiBase, machineOperatorId = System.getenv("CYPPIE_OPERATOR_ID"))
+            // CYP-530 (S-J): the operator-facing hub-discovery list (GUI hub picker). Operator-gated + owner-scoped
+            // over the SAME shared cpHubRegistrar the admission populates; online derived cheaply from the live
+            // rendezvous, lastSeen = admittedAt. INERT-safe (empty until a hub self-admits). registerHub is vestigial.
+            hubDiscoveryRoutes({ cpHubRegistrar }, { relayRendezvous }, booted.tokenRegistry, authDeps, apiBase = apiBase, machineOperatorId = System.getenv("CYPPIE_OPERATOR_ID"))
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
             configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
             // CYP-466: GET /api/config/repo/reprovision-preview — the honest discard-confirm feed. Operator-tier,

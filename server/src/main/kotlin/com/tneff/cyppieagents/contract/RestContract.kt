@@ -124,6 +124,9 @@ object RestContract {
         //     ownerId bound to the authenticated operator; nonce single-use). Empty registry → fail-closed. ---
         Op("GET", "/api/cp/challenge", Tier.OPERATOR, response = json<com.tneff.cyppieagents.controlplane.HubChallenge>()),
         Op("POST", "/api/cp/admit", Tier.OPERATOR, request = json<com.tneff.cyppieagents.controlplane.HubAdmissionRequest>(), response = json<com.tneff.cyppieagents.controlplane.HubAdmissionResult>()),
+        // --- HubDiscoveryRoutes (CYP-530, S-J) — operator-scoped hub list (the GUI's hub picker). Owner-filtered over
+        //     the CP registry the CYP-512 admission populates; INERT-safe (empty until a hub self-admits). ---
+        Op("GET", "/api/cp/hubs", Tier.OPERATOR, response = arr<com.tneff.cyppieagents.model.HubDescriptor>()),
         // --- ConnectorRoutes ---
         Op("POST", "/api/agents/{id}/connector", Tier.OPERATOR, request = json<ConnectorChoice>(), response = json<Agent>()),
         // --- ConfigRoutes (/api/config) — masked at rest, never re-rendered ---

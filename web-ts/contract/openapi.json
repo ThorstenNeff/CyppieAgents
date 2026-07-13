@@ -1198,6 +1198,45 @@
                 }
             }
         },
+        "/api/cp/hubs": {
+            "get": {
+                "operationId": "get_api_cp_hubs",
+                "x-auth-tier": "OPERATOR",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/HubDescriptor"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/agents/{id}/connector": {
             "post": {
                 "operationId": "post_api_agents__id__connector",
@@ -3351,6 +3390,37 @@
                 },
                 "required": [
                     "admitted"
+                ]
+            },
+            "HubDescriptor": {
+                "type": "object",
+                "properties": {
+                    "hubId": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "online": {
+                        "type": "boolean"
+                    },
+                    "defaultPort": {
+                        "type": "integer"
+                    },
+                    "lastSeen": {
+                        "type": "integer"
+                    },
+                    "dhPubKey": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "hubId",
+                    "name",
+                    "online",
+                    "defaultPort",
+                    "lastSeen",
+                    "dhPubKey"
                 ]
             },
             "ConnectorChoice": {
