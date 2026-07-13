@@ -46,6 +46,9 @@ object RemoteConnectTags {
     /** Purely informational "re-pin only OOB" hint at the TrustChanged alarm (HC/①b) — NOT an action button. */
     const val TRUST_CHANGED_REPIN = "remote.connect.trustChangedRepin"
 
-    /** `remote.connect.error.<cause>`, cause ∈ relayUnreachable / hubOffline / handshakeFailed / trustChanged / authRejected. */
+    /**
+     * `remote.connect.error.<cause>`, cause ∈ relayUnreachable / hubOffline / handshakeFailed / trustChanged /
+     * trustRejected (CYP-478, terminal first-use OOB decline) / authRejected.
+     */
     fun error(cause: String) = "remote.connect.error.$cause"
 }

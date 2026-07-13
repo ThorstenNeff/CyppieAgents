@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.net.hub.remote
 import com.tneff.cyppieagents.net.Backoff
 import com.tneff.cyppieagents.net.hub.noise.ClientNoiseTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import com.tneff.cyppieagents.net.hub.trust.TrustConfirmationRejectedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -101,6 +102,16 @@ class RemoteHubSession(
 
         val resolution = try {
             trust.resolve(hubId)
+        } catch (r: TrustConfirmationRejectedException) {
+            // CYP-478: an operator OOB-fingerprint REJECT (poisoned-first-pin defence). It arrives as a
+            // CancellationException SUBCLASS, but it is a DELIBERATE terminal verdict — not a coroutine teardown.
+            // Convert it here to an explicit fail-closed terminal LOST; do NOT let it fall through to the generic
+            // `catch (CancellationException) { throw c }` and unwind the loop as a raw cancellation, which would
+            // leave the session stuck in a stale mid-connect state (conn=RELAY_DIALING, failure=null). Nothing was
+            // pinned; re-pin is OOB-only, so there is no silent retry / re-prompt loop.
+            runCatching { relay.close() }
+            _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.TrustRejected) }
+            return Outcome.TERMINAL
         } catch (c: CancellationException) {
             throw c
         } catch (e: Exception) {

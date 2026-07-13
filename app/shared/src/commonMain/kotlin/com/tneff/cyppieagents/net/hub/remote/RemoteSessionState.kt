@@ -21,6 +21,14 @@ sealed interface RemoteFailure {
     data object HandshakeFailed : RemoteFailure
     /** Hub key ≠ pin — a hard block, NOT a mere error (H1/H2, CI-5); needs OOB re-pin. */
     data class TrustChanged(val expectedFingerprint: String) : RemoteFailure
+    /**
+     * CYP-478 — the operator REJECTED the first-use OOB fingerprint (poisoned-first-pin defence). Terminal,
+     * fail-closed: nothing was pinned, no silent retry, re-pin is OOB-only. Distinct from [TrustChanged] (a key
+     * that *changed* after a prior pin) — this is a *first-use* decline. The reject arrives from the trust layer as
+     * a `TrustConfirmationRejectedException` (a `CancellationException`); the session converts it to THIS explicit
+     * terminal state rather than letting it unwind the connect loop as a raw cancellation (stale mid-connect limbo).
+     */
+    data object TrustRejected : RemoteFailure
     /** The hub's OperatorAssertionVerifier said no (a∧b∧c failed) — fail-closed. */
     data object AuthRejected : RemoteFailure
 }
