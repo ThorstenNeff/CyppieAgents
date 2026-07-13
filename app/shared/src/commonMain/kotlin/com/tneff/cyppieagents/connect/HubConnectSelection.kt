@@ -46,6 +46,7 @@ import kmpcyppieagents.app.shared.generated.resources.remote_connect_hub_offline
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dialing
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dropped
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_unreachable
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_uv_failed
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_changed
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_provisional
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_check
@@ -358,6 +359,10 @@ private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectView
         )
         RemoteFailure.HandshakeFailed -> RetryableRemoteFailure(
             stringResource(Res.string.remote_connect_handshake_failed), RemoteConnectTags.error("handshakeFailed"), viewModel,
+        )
+        // CYP-525 F3: a local UV failure (wrong PIN / cancelled) — RETRYABLE, never the terminal AuthRejected.
+        RemoteFailure.OperatorUvFailed -> RetryableRemoteFailure(
+            stringResource(Res.string.remote_connect_uv_failed), RemoteConnectTags.error("operatorUvFailed"), viewModel,
         )
         null -> Unit // clean teardown (Q5 switch) — nothing to render
     }

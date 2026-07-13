@@ -109,11 +109,12 @@ class ClientOperatorAuthTest {
     }
 
     @Test
-    fun uvFailure_rejected_sendsNothing() = runTest {
-        // A local UV failure (wrong PIN / cancelled) is NOT "not enrolled" ⇒ fail-closed Rejected, no request leaks.
+    fun uvFailure_isUvFailed_notRejected_sendsNothing() = runTest {
+        // CYP-525 F3: a local UV failure (wrong PIN / cancelled) is RETRYABLE ⇒ OperatorAuthOutcome.UvFailed, NEVER
+        // Rejected (which the session would render as terminal "hub rejected you"). No request leaks onto the tunnel.
         val tunnel = FakeTunnel(grantBytes(true))
         val a = auth(PopResult.UvFailed(UvFailReason.WRONG_PIN), jwt = "j")
-        assertEquals(OperatorAuthOutcome.Rejected, a.authenticate(tunnel, hubId))
+        assertEquals(OperatorAuthOutcome.UvFailed, a.authenticate(tunnel, hubId))
         assertNull(tunnel.sent, "a local PoP failure must NOT leak a request onto the tunnel")
     }
 

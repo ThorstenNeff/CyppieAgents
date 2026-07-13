@@ -60,7 +60,9 @@ class ClientOperatorAuth(
                 if (grant.granted) OperatorAuthOutcome.Granted else OperatorAuthOutcome.Rejected
             }
             PopBuildOutcome.NotEnrolled -> OperatorAuthOutcome.DeviceNotEnrolled
-            else -> OperatorAuthOutcome.Rejected // UvFailed / AuthenticatorUnavailable ⇒ fail-closed (no false grant)
+            // CYP-525 F3: a local UV failure (wrong PIN / cancelled) is RETRYABLE — never a hub reject (nothing sent).
+            is PopBuildOutcome.UvFailed -> OperatorAuthOutcome.UvFailed
+            PopBuildOutcome.AuthenticatorUnavailable -> OperatorAuthOutcome.Rejected // no authenticator here ⇒ fail-closed
         }
     }
 }

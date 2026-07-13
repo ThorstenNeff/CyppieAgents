@@ -155,6 +155,13 @@ class RemoteHubSession(
                 _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.AuthRejected) }
                 return Outcome.TERMINAL // fail-closed (a∧b∧c said no)
             }
+            OperatorAuthOutcome.UvFailed -> {
+                // CYP-525 F3: a local UV failure (wrong PIN / cancelled) — retryable, NEVER "hub rejected" (nothing
+                // was sent). Terminal for THIS attempt (tunnel torn down), but the UI offers a retry (re-enter PIN).
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.OperatorUvFailed) }
+                return Outcome.TERMINAL
+            }
         }
 
         tunnel = t

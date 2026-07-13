@@ -29,6 +29,13 @@ sealed interface RemoteFailure {
      * step ("set up this device"), NOT a dead reject. Distinct so the UI routes to enroll instead of "denied".
      */
     data object DeviceNotEnrolled : RemoteFailure
+
+    /**
+     * CYP-525 F3 (Reviewer) — a **local user-verification** failure (wrong app-PIN / cancelled) during the operator
+     * PoP. **Retryable**, NOT terminal — and NEVER [AuthRejected] ("the hub denied you"): the hub never saw a
+     * request. The UI offers a retry (re-enter the PIN); distinct from the hub's terminal reject.
+     */
+    data object OperatorUvFailed : RemoteFailure
 }
 
 /**
@@ -96,4 +103,11 @@ sealed interface OperatorAuthOutcome {
     data object Granted : OperatorAuthOutcome
     data object Rejected : OperatorAuthOutcome
     data object DeviceNotEnrolled : OperatorAuthOutcome
+
+    /**
+     * CYP-525 F3 — a **local** user-verification failure (wrong app-PIN / cancelled) during the PoP build. Retryable,
+     * NEVER a hub reject (no request was sent). Distinct from [Rejected] so the session surfaces
+     * [RemoteFailure.OperatorUvFailed] (retry), never terminal [RemoteFailure.AuthRejected].
+     */
+    data object UvFailed : OperatorAuthOutcome
 }

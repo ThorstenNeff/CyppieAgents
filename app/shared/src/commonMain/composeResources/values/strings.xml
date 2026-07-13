@@ -700,6 +700,9 @@
          "rejected" (GE4/HB). Distinct from remote_connect_auth_rejected. -->
     <string name="remote_connect_device_not_enrolled">Dieses Gerät ist noch nicht eingerichtet — richte es ein, um fortzufahren.</string>
     <string name="a11y_remote_connect_device_not_enrolled">Gerät nicht eingerichtet — Einrichtung nötig, um fortzufahren.</string>
+    <!-- CYP-525 F3 (provisional copy — reconcile with UIUX; the final UV-failed surface folds into the app-PIN dialog,
+         CYP-460 WrongPin/Cancelled — this is the connect-failure FALLBACK). Retryable, NEVER "hub rejected". -->
+    <string name="remote_connect_uv_failed">PIN falsch oder abgebrochen — bitte erneut versuchen.</string>
     <string name="remote_connect_trust_provisional">Vertrauensprüfung vorläufig — echtes Pinnen folgt.</string>
     <!-- CYP-479 (CYP-480 Fläche ②/③): Q6-Recovery + Revocation -->
     <string name="remote_recovery_codes_title">Wiederherstellungs-Codes</string>

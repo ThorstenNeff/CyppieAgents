@@ -69,6 +69,7 @@ class Cyp504BuildRemoteHubSessionTest {
     private val gatedTrust = HubTrust { error("presented key empty (runway #2 gated)") }
     private val gatedAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.Rejected } // cpJwt null ⇒ fail-closed
     private val notEnrolledAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.DeviceNotEnrolled } // CYP-525
+    private val uvFailedAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.UvFailed } // CYP-525 F3
 
     /**
      * Drive the builder's session and record its states, cancelling once it CONNECTs or fails. The session is
@@ -150,6 +151,20 @@ class Cyp504BuildRemoteHubSessionTest {
         assertFalse(seen.any { it.conn == RemoteConnState.CONNECTED }, "not-enrolled never connects")
         assertTrue(seen.any { it.failure == RemoteFailure.DeviceNotEnrolled }, "routes to the distinct ENROLL truth")
         assertFalse(seen.any { it.failure == RemoteFailure.AuthRejected }, "NEVER collapses into AuthRejected (the bug)")
+        scope.cancel()
+    }
+
+    @Test
+    fun cyp525F3_authUvFailed_isRetryable_neverAuthRejected() = runTest {
+        // F3: a local UV failure (wrong PIN / cancelled) surfaces the retryable RemoteFailure.OperatorUvFailed — it
+        // must NEVER collapse into terminal AuthRejected ("the hub denied you"): the hub never saw a request.
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val seen = mutableListOf<RemoteSessionState>()
+        drive(scope, seen, auth = uvFailedAuth) // dial + trust + transport all pass
+        advanceUntilIdle()
+        assertFalse(seen.any { it.conn == RemoteConnState.CONNECTED }, "UV-failed never connects")
+        assertTrue(seen.any { it.failure == RemoteFailure.OperatorUvFailed }, "wrong PIN → retryable OperatorUvFailed")
+        assertFalse(seen.any { it.failure == RemoteFailure.AuthRejected }, "NEVER collapses into AuthRejected (F3)")
         scope.cancel()
     }
 
