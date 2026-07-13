@@ -28,6 +28,8 @@
 |---|---|---|
 | `RemoteConnectTags.error("deviceNotEnrolled")` | `remote.connect.error.deviceNotEnrolled` | **Q3-Distinct-Cause** `RemoteFailure.DeviceNotEnrolled` — **aktionabel** (Enroll/Recovery-Affordance), **nie** terminal-„abgelehnt". Nutzt die **bestehende** `error(cause)`-fn → **kein neuer Const**, nur ein neuer Ursachen-String. |
 | `RemoteRecoveryTags.CODES_NO_CENTRAL` | `remote.recovery.codesNoCentral` | **★ ①-Befund (GE7):** Node der no-central-Konsequenz-Zeile auf dem Reveal (vor dem Ack). Neue Const im **bestehenden** `RemoteRecoveryTags`-Objekt (wie `CODES_LIST`/`CODES_ACK`) — kein neues Tag-Objekt. Macht GE7 sauber assertbar (present-vor-`CODES_ACK`). |
+| `RemoteConnectTags.error("enrollCodesUnavailable")` | `remote.connect.error.enrollCodesUnavailable` | **★ H3-Mount-QA-Befund (GE8, PO `1526311626…`):** `RemoteFailure.EnrollCodesUnavailable` — H3-invalides `EnrollResponse` = **retryable** „neu verbinden", **nie** `authRejected`. Bestehende `error(cause)`-fn → kein neuer Const. |
+| `RemoteConnectTags.error("operatorUvFailed")` | `remote.connect.error.operatorUvFailed` | **Dev-Add (F3, verifiziert @ `1fc69fd3`):** `RemoteFailure.OperatorUvFailed` Connect-Fallback (retryable). Teil des CYP-7-Contracts; hier zur Vollständigkeit gelistet (② `remote_connect_uv_failed` bleibt dessen Copy). |
 
 > Der Wert `deviceNotEnrolled` erscheint heute **nur** als Server-Test-Methodenname
 > (`Cyp485DeviceMgmtTest.recovery_…_deviceNotEnrolled`), **nicht** als Client-Tag → greenfield.
@@ -42,6 +44,7 @@
 | **GE5** | **Codes einmal, nie erneut** | Die Backup-Codes werden beim First-Enroll **einmal** gezeigt (`remote.recovery.codesList`) und sind danach **nie** erneut abrufbar — es gibt **keine** „Codes erneut ansehen"-Affordance/Tag. Wer sie nicht gespeichert hat, muss neu enrollen/regenerieren (Re-Zeigen bräche die Einmal-Sicherheit). Reuse der `RecoveryCodesReveal`-Einmal-Semantik. |
 | **GE6** | **session-only-Ton = WARN-amber (④ ge-ruled)** | Die session-only-Disclosure (`remote.authStep.enroll`, `remote_pop_enroll_session_only`) rendert **`severityColor(Severity.WARN)` (amber) + `▲` separater Node (WCAG 1.4.1)**, **nicht** `onSurfaceVariant` (gebaut heute neutral-grau `OperatorAuthDialog.kt` L96-104 = Understatement). Security-Downgrade-Wahrheit, doktrin-konsistent mit `workspace.remoteContext`. **Nie** error-rot, **nie** tertiary/grün. Ton-Swap am **bestehenden** Node — kein neuer Tag. |
 | **GE7** | **no-central-Konsequenz auf dem Reveal, vor dem Ack (①)** | Beim First-Enroll rendert `remote.recovery.codesNoCentral` (`remote_recovery_codes_no_central`) **auf dem Reveal**, **oberhalb/vor** dem Ack-Button (`remote.recovery.codesAck`) — nicht nur auf der Verlust-Fläche. Der Ack ist nur ehrlich, wenn die Einsätze (kein Zentral-Login = einziger Weg zurück) **vor** der Quittung sichtbar sind. |
+| **GE8** | **Codes-nicht-angekommen ≠ Hub-Ablehnung (H3, PO `1526311626…`)** | Ein H3-invalides `EnrollResponse` (`!isValidCodeSet` — truncated/leer/over-count/blank) surfacet als **distinkte, retryable** `remote.connect.error.enrollCodesUnavailable` (`remote_connect_enroll_codes_unavailable` „neu verbinden"), **nie** in `authRejected` kollabiert („Vom Hub abgelehnt" wäre Mis-Attribution — der Hub hat nichts abgelehnt). Behebt den `1fc69fd3`-Befund (`runEnrollProtocol` `!isValidCodeSet→Rejected→AuthRejected`). |
 
 ## Fail-closed-/Ton-Anker (für §-QA)
 - `remote.connect.error.deviceNotEnrolled` = **aktionabel** (Enroll-/Recovery-Affordance, wie ein retryable Failure),
@@ -64,15 +67,15 @@
 | `OperatorAuthError.NeedsEnroll` (`remote.authStep.error.needsEnroll`) | CYP-460 (SHIPPED) | lokaler nicht-terminaler not-enrolled — die Brücke zu GE1/GE4 |
 
 ## Self-Validation
-- **Net-new: 2 Tag-Werte** — `remote.connect.error.deviceNotEnrolled` (über die **bestehende** `error(cause)`-fn, **kein
-  neuer Const**) + `RemoteRecoveryTags.CODES_NO_CENTRAL` = `remote.recovery.codesNoCentral` (**neue Const im
-  bestehenden `RemoteRecoveryTags`-Objekt**, ① / GE7). **Kein neues Tag-Objekt.** ④ = **kein neuer Tag** (Ton-Swap am
-  bestehenden `remote.authStep.enroll`).
-- **0 Kollision:** `deviceNotEnrolled` als Client-Tag greenfield @ `4572a278` (nur Server-Test-Methodenname existiert);
-  `codesNoCentral` greenfield @ `4572a278` (bestehen nur `codes`/`codesList`/`codesCopy`/`codesAck`).
-- **Charset/Konvention:** beide = camelCase-Segmente, `[A-Za-z0-9-]+`, kein Underscore/Punkt im Segment-Wert. ✓
-- **Geteilte API mit QA (CYP-7):** beide Werte über den PO mit Tester + DS abstimmen (Frozen-Contract).
-- **Guard-ACs GE1–GE7** = der behaviorale §-QA-Kern — testbar: Enroll iff `isEnrolled()==false`, kein CONNECTED ohne
-  `codesAck`, session-only nur Raw (GE3) + WARN-amber-Ton (GE6), deviceNotEnrolled nie authRejected [2-Wege] (GE4),
-  Codes einmal (GE5), no-central-Zeile vor Ack (GE7).
+- **Net-new: 3 Tag-Werte** — `remote.connect.error.deviceNotEnrolled` + `remote.connect.error.enrollCodesUnavailable`
+  (beide über die **bestehende** `error(cause)`-fn, **kein neuer Const**) + `RemoteRecoveryTags.CODES_NO_CENTRAL` =
+  `remote.recovery.codesNoCentral` (**neue Const im bestehenden `RemoteRecoveryTags`-Objekt**). **Kein neues Tag-Objekt.**
+  ④ = **kein neuer Tag** (Ton-Swap). `error("operatorUvFailed")` = **Dev-Add** (F3, @ `1fc69fd3`), gehört zum Contract.
+- **0 Kollision:** `deviceNotEnrolled`/`enrollCodesUnavailable`/`codesNoCentral` greenfield @ `4572a278`.
+- **Charset/Konvention:** alle = camelCase-Segmente, `[A-Za-z0-9-]+`, kein Underscore/Punkt im Segment-Wert. ✓
+- **★ Geteilte CYP-7-Tag-Werte zum Einfrieren (PO friert mit Tester + DS, PO `1526311626…`):**
+  `deviceNotEnrolled` · `operatorUvFailed` · `codesNoCentral` · `enrollCodesUnavailable`.
+- **Guard-ACs GE1–GE8** = der behaviorale §-QA-Kern — testbar: Enroll iff `isEnrolled()==false` (GE1), kein CONNECTED ohne
+  `codesAck` (GE2), session-only nur Raw (GE3) + WARN-amber-Ton (GE6), deviceNotEnrolled nie authRejected [2-Wege] (GE4),
+  Codes einmal (GE5), no-central-Zeile vor Ack (GE7), Codes-nicht-angekommen ≠ Hub-Ablehnung (GE8).
 - Jeder net-new Tag/Key ist in `device-enroll-keys.md` + der Begleit-Spec verankert.

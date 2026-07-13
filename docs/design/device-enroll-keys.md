@@ -57,6 +57,7 @@ NICHT in eine generische Connect-Zeile. Alle **retryable/lokal, nie terminal** (
 | `remote_connect_device_not_enrolled` | Dieses Gerät ist noch nicht eingerichtet — richte es ein, um fortzufahren. | This device isn't set up yet — set it up to continue. | **Q3-Distinct-Cause** `RemoteFailure.DeviceNotEnrolled`: aktionabel (→Enroll/Recovery), **nie** „abgelehnt" |
 | `a11y_remote_connect_device_not_enrolled` | Gerät nicht eingerichtet — Einrichtung nötig, um fortzufahren. | Device not set up — setup needed to continue. | a11y (optional-empfohlen) |
 | `remote_recovery_codes_no_central` | Ohne diese Codes gibt es keinen Weg zurück — ein zentraler Login stellt den Zugriff nicht wieder her. | Without these codes there's no way back — a central login won't restore access. | **★ ①-Befund (PO `1526254113…` BAU): die load-bearing Konsequenz auf dem *Reveal*, VOR dem Ack** — wer „gespeichert" quittiert, muss die Einsätze kennen. Variante von `remote_recovery_no_central` (das nur auf der *Verlust*-Fläche `RecoveryInputContent` steht), fürs Reveal (`RecoveryCodesReveal`) neu getextet: Konsequenz-Rahmen (kein Weg zurück) statt Schutz-Rahmen. |
+| `remote_connect_enroll_codes_unavailable` | Codes nicht angekommen — bitte neu verbinden. | Codes didn't arrive — please reconnect. | **★ H3-Mount-QA-Befund (PO `1526311626…` akzeptiert, faltet in Merge): distinkte Ursache `RemoteFailure.EnrollCodesUnavailable`** — ein truncated/leeres/malformed `EnrollResponse` (H3 `!isValidCodeSet`) ist **KEINE** Hub-Ablehnung → **retryable** „neu verbinden", **nie** die terminale `AuthRejected`-Copy „Vom Hub abgelehnt". Spiegelt das DeviceNotEnrolled-Muster (typed-cause, aktionabel). Verhindert die Mis-Attribution, die ich im Build `1fc69fd3` fand. |
 
 ## Honesty-Anker (für §-QA)
 - **HA — Ack-Gate Pflicht + informierter Ack:** kein `CONNECTED` beim First-Enroll ohne quittiertes
@@ -82,16 +83,24 @@ NICHT in eine generische Connect-Zeile. Alle **retryable/lokal, nie terminal** (
 - **HF — UV-Fail retryable ≠ terminal (F3, PO `1526283271…`):** eine UV-Fehlprüfung (WrongPin/Cancelled/LockedOut) ist
   **lokal + retryable** und faltet in die CYP-460-Taxonomie — WrongPin=`remote_pop_wrong_pin` (Rest-Zähler=Retry),
   Cancelled=`remote_pop_cancelled` (neutral „erneut versuchen"), LockedOut=`remote_pop_locked`. **Nie** die terminale
-  `remote_pop_rejected`/`AuthRejected`-Zeile (nur ein Hub-Verdikt ist terminal, H2/`isTerminal`). Die provisorische
-  Connect-Zeile `remote_connect_uv_failed` wird **retired** (keine generische Connect-UV-Copy mehr). Cancelled-Ton =
+  `remote_pop_rejected`/`AuthRejected`-Zeile (nur ein Hub-Verdikt ist terminal, H2/`isTerminal`). Cancelled-Ton =
   **neutral, nicht error-rot** (Nutzer-Entscheidung, kein Fehler); WrongPin = mild error-tone (etwas stimmte nicht).
+  **② Reconcile (PO `1526311626…`, gg. frühere „retire"-Notiz):** `remote_connect_uv_failed` **BLEIBT** als
+  **Connect-Fallback** für `RemoteFailure.OperatorUvFailed` — das ist eine **echte Connect-Failure-Fläche** (retryable,
+  nicht in-Dialog), gebaut @ `1fc69fd3`. Die in-Dialog-Taxonomie (`remote_pop_wrong_pin`/`remote_pop_cancelled`) ist die
+  **separate** Fläche; beide koexistieren. Mein früheres „retire" war zu stark — hier bewusst zurückgezogen.
+- **HG — Codes-nicht-angekommen ≠ Hub-Ablehnung (H3, PO `1526311626…`):** ein H3-invalides `EnrollResponse`
+  (`!isValidCodeSet`) surfacet als **retryable** `remote_connect_enroll_codes_unavailable` „neu verbinden", **nie** als
+  terminale `AuthRejected` „Vom Hub abgelehnt" — der Hub hat nichts abgelehnt, die Codes kamen nicht an
+  (H1-Anti-Konflation, typed-cause). Behebt die Mis-Attribution im Build `1fc69fd3`.
 - **Kein „RR5"/„Seam"/„Passkey-vs-Raw-Internals"-Jargon in der User-Copy** — nur die schlichte Wahrheit.
 
 ## Self-Validation
-- **Net-new: 3 Realkeys** (`remote_connect_device_not_enrolled` + `remote_recovery_codes_no_central` [①] +
-  `remote_pop_cancelled` [HF/UV-Fail]) **+ 1 a11y** (`a11y_remote_connect_device_not_enrolled`, empfohlen) = **4 Keys**.
-  Alle DE+EN. Args: `remote_pop_cancelled` = 0 Args; die net-new sonst 0 Args (die reused `wrong_pin`/`locked` tragen
-  je 1 `%1$s`). ④ = **kein neuer Key** (Ton-Swap am bestehenden `remote_pop_enroll_session_only`-Node).
+- **Net-new: 4 Realkeys** (`remote_connect_device_not_enrolled` + `remote_recovery_codes_no_central` [①] +
+  `remote_pop_cancelled` [HF/UV-Fail] + `remote_connect_enroll_codes_unavailable` [HG/H3, PO `1526311626…`]) **+ 1 a11y**
+  (`a11y_remote_connect_device_not_enrolled`, empfohlen) = **5 Keys**. Alle DE+EN, 0 Args (die reused `wrong_pin`/`locked`
+  tragen je 1 `%1$s`). ④ = **kein neuer Key** (Ton-Swap am bestehenden `remote_pop_enroll_session_only`-Node).
+  `remote_connect_uv_failed` = **Dev-Key, bleibt** (② Reconcile, nicht meins, nicht retired).
 - **①-Kollision: 0** — `remote_recovery_codes_no_central` greenfield gg. `strings.xml` @ `4572a278` (das bestehende
   `remote_recovery_no_central` ist die *Verlust*-Fläche, distinkter Key/Kontext — kein Reuse, bewusst neu getextet).
 - **HF-Kollision: 0** — `remote_pop_cancelled` greenfield @ `4572a278` (`Cancelled` mappt heute auf `""`); Tag existiert
