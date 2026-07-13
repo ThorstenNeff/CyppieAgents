@@ -1,6 +1,6 @@
 # Web→TS-Cutover — UX-Paritäts-Map (gegen `09-UI-Funktionskatalog`)
 
-> Owner: UIUX-Designer · **Stand 2026-07-12 (Refresh)** · Basis `origin/develop` `2128ea62` · **UX-Teil des Cutover-Gates**
+> Owner: UIUX-Designer · **Stand 2026-07-12 (Refresh)** · Basis `origin/develop` `e8c6a86a` · **UX-Teil des Cutover-Gates**
 > (der Tester macht den funktionalen e2e-Teil). Docs-only.
 >
 > **Gate-Frage:** Bevor die web-ts-UI **Default** wird — deckt sie **jede** K-Funktion aus `09-UI-Funktionskatalog`
@@ -8,7 +8,7 @@
 >
 > **Was sich seit `3213a1b3` geändert hat (groß):** die App ist **assembliert** — `App.tsx` ist die **laufende App**
 > (CYP-425), **nicht** mehr der W0-Skeleton. Damit ist End-to-End-Parität je Bildschirm **jetzt verifizierbar**. Die
-> im **UX-Konsistenz-Pass** (2026-07-12) geprüft. **Stand `2128ea62`: die volle P2-Ersatz-Fläche steht — KEINE ○-Lücke
+> im **UX-Konsistenz-Pass** (2026-07-12) geprüft. **Stand `e8c6a86a`: die volle P2-Ersatz-Fläche steht — KEINE ○-Lücke
 > mehr.** Event-Log (Browse/Drilldown/Live-Tail+Pause, CYP-452/448), Connector (CYP-461) **und Auth (CYP-470)** sind
 > gemergt **+ UX-QA'd GO**. Rest = QA-on-Merge (Product-Lead CYP-464, Work-Guard CYP-465) + Politur CYP-468.
 
@@ -28,11 +28,11 @@ nie stiller Verlust. Gemessen an der Compose-Implementierung + den Rollen-/Spec-
 | **— (Stufe)** | MP/MU — außerhalb des K-Cutover-Scopes, erwartet später |
 
 **Ehrlichkeit:** Ich behaupte **keine** Deckung, die ich im Baum nicht sehe. „merged" = die Komponente ist auf develop;
-„◐ spec'd" = nur die Spec, **kein** Code. **Stand `2128ea62`:** Browse (CYP-452), Connector (CYP-461) + Live-Tail-Pause
+„◐ spec'd" = nur die Spec, **kein** Code. **Stand `e8c6a86a`:** Browse (CYP-452), Connector (CYP-461) + Live-Tail-Pause
 (CYP-448) sind **inzwischen gemergt** (QA offen/erledigt); **noch ◐ spec-only:** Product-Lead (CYP-464), Work-Guard
 (CYP-465). Auth (CYP-470) spec'd. Verifiziert am Baum.
 
-**web-ts-Coverage (develop `2128ea62`):** W0–W7 (CYP-398..405) + **W8 Toggle**, **W9 Comm/ACL**, **CYP-425 Assembly**,
+**web-ts-Coverage (develop `e8c6a86a`):** W0–W7 (CYP-398..405) + **W8 Toggle**, **W9 Comm/ACL**, **CYP-425 Assembly**,
 **P2-a Lifecycle (CYP-431/445)**, **P2-b Agenten-Verwaltung (CYP-450)**, **P2-c Event-Log-Tail (CYP-432)**,
 **P2-e API-Key (CYP-433)**, **P2-f Settings (CYP-453)** — alle gemergt. **Token-Ebene** (CYP-423/436/437) gemergt →
 die früheren W6-Styling-Findings (Thumb-Alpha/senderAccent) sind **behoben + re-QA'd grün**.
@@ -111,7 +111,7 @@ die früheren W6-Styling-Findings (Thumb-Alpha/senderAccent) sind **behoben + re
 ### §10 Multi-User (Auth & Mandanten)
 | Funktion | Stufe | Compose-Home | Coverage | Verdikt / Notiz |
 |---|---|---|---|---|
-| **Login / Auth · Session-Status · Logout · unauth-Redirect** | **K→P2-i** | `auth/` | **✓ merged (CYP-470)** | **QA'd 2026-07-12: GO** (14/14 vitest): **redirect-only** (kein Credential-Formular — Test erzwingt `input[password/email]=null`; kein Session-Token im DOM), vier Zustände (None→Login-Redirect · Unverified→Verify-Gate · OPERATOR/MEMBER content-free Indikator role-only), **whoami treibt operator** (App.tsx-Override, fail-closed), Logout=Kratos-Flow, 401→Re-Auth-Redirect, kein unauth-Flash. Verdikt **=** (verify-body strenger content-free als Spec). |
+| **Login / Auth · Session-Status · Logout · unauth-Redirect** | **K→P2-i** | `auth/` | **✓ merged — POSTURE GEWECHSELT (a)** | **UPDATE 2026-07-13:** die redirect-only-Posture (CYP-470) **loopte am Live-Deploy** (`?flow=`-Redirect-Loop, **CYP-515**) → **Auftraggeber-Entscheid (a): match-WASM = in-app-Login.** Merged develop `e8c6a86a`: `AuthGate.tsx` (in-app, **reverses CYP-470 redirect-only**) + `LoginScreen.tsx`/`loginFlow.ts` (Credential-Formular im DOM, gehärtet, API-Flow). Mein ★**Login-401-Loop-Guard sichtbar drin** („Login-submit 401s never reach here … can never re-introduce the CYP-515 redirect loop"). **QA-REST: die 8 Login-Core-Zähne (`webts-inapp-login-a-spec.md` §3) re-QA vor/beim Re-Cut** (Passwort-Exfil-frei, httpOnly-Cookie-nie-JS-Token, Enumeration, 401-Loop-Guard, Rate-Limit, CSRF-stale-fail-closed, kein-Inline-Script, kein-Success-Grün). **(b) redirect-only = CYP-518 deferred** (mein Security-Lean). whoami-treibt-operator (CYP-470 §3) bleibt. |
 | Nutzer-/Mandanten · bilaterale Freigabe | MU | `workspace/` | — (MU) | außerhalb K-Cutover; erwartet später |
 
 ---
@@ -171,9 +171,9 @@ Aus `09` Querschnitt + Rollen-Regeln; das UX-Ehrlichkeits-Raster des Gates. **De
   (blockierender Parity-QA-Zahn)**. **CYP-461 QA'd GO** (Finding → CYP-468-F3). **QA bei Merge:** CYP-464 (Glyph-Fn/
   Snapshot≠Live), CYP-465 (+CYP-466, At-Risk-Liste **live**), CYP-470 Auth.
 - **Re-Verify** die Nachzieh-Tickets (CYP-448-Rest Palette/Ring · CYP-468 F1/F2/F3 · CYP-446) an den gemergten Flächen.
-- **P2-i Auth (CYP-470)**: spec'd (redirect-only Auftraggeber-ratifiziert) → QA bei Impl. Keine ○-Lücke mehr.
+- **P2-i Auth: POSTURE (a) gewechselt** (redirect-only CYP-470 loopte live=CYP-515 → Auftraggeber-Entscheid in-app-Login, merged `e8c6a86a`). **QA-Rest: 8 Login-Core-Zähne re-QA vor/beim Re-Cut** (`webts-inapp-login-a-spec.md`). (b)=CYP-518 deferred. Keine ○-Lücke.
 - **Assembly-Ehrlichkeit** (jetzt möglich): je Bildschirm der laufenden App die Querschnitt-Regeln (§2) abhaken —
   nicht nur je Funktion.
 - **Ergebnis** = die priorisierte UX-Gate-Liste an den PO (Severity + konkreter Fix).
 
-**Nichts hier gebaut — Cutover-Gate-Sicht. Coverage-Stand = develop `2128ea62`; nachgezogen bei jedem Merge.**
+**Nichts hier gebaut — Cutover-Gate-Sicht. Coverage-Stand = develop `e8c6a86a`; nachgezogen bei jedem Merge.**
