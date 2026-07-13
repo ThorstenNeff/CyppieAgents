@@ -11,9 +11,9 @@ import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Role
-import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
 import com.tneff.cyppieagents.model.UserTurn
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,7 +24,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.nio.file.Files
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -101,29 +100,46 @@ class Cyp330RestartRobustnessTest {
         )
     }
 
+    /**
+     * CYP-531 — a session store that SIGNALS its first [clear] via a [CompletableDeferred]. The proactive heal
+     * clears the durable entry through `ClaudeCodeConnector`'s `onResumeFailed = { sessionStore.clear(..) }`, so the
+     * test awaits THAT signal deterministically instead of a `delay(50)`-poll time window (the last-flake source).
+     */
+    private class SignallingSessionStore : InMemorySessionStore() {
+        val cleared = CompletableDeferred<Unit>()
+        override fun clear(projectId: String, agentId: String) {
+            super.clear(projectId, agentId)
+            cleared.complete(Unit) // idempotent — complete() no-ops if already completed
+        }
+    }
+
     @Test
     fun restartWithStaleResume_healsToFreshWithoutATurn() = runBlocking {
         val script = fakeClaude()
         val worktrees = Files.createTempDirectory("cyp330-wt").toFile()
         File(worktrees, "backend").mkdirs()
-        val store = InMemorySessionStore().apply { upsert("default", "backend", "STALE", now = 1L) }
+        val store = SignallingSessionStore().apply { upsert("default", "backend", "STALE", now = 1L) }
         val connector = connector(script, store, worktrees)
 
-        // The restart scenario: open the resume-facade session and start it, but send NO turn.
+        // The restart scenario: open the resume-facade session and start it, but send NO turn. Signal the first
+        // SystemEvent binding through a deferred (not an async-collected list checked after sendTurn — the race).
         val session = connector.open("backend", "backend", "default")
-        val seen = CopyOnWriteArrayList<StreamJsonEvent>()
-        scope.launch { session.events.collect { seen.add(it) } }
+        val systemBound = CompletableDeferred<Unit>()
+        scope.launch { session.events.collect { if (it is SystemEvent) systemBound.complete(Unit) } }
 
-        // The PROACTIVE probe must detect the stale resume died unbound and clear the durable entry — with NO
-        // turn. Before the fix (turn-only heal) the entry stays "STALE" and this times out → RED.
-        withTimeout(15_000) {
-            while (store.find("default", "backend") != null) delay(50)
-        }
+        // The PROACTIVE probe must detect the stale resume died unbound and clear the durable entry — with NO turn.
+        // Deterministic: await the actual clear() signal (fired by onResumeFailed), NOT a timing poll. Before the
+        // CYP-330 fix (turn-only heal) the entry is never cleared without a turn → this await times out → RED.
+        withTimeout(15_000) { store.cleared.await() }
         assertNull(store.find("default", "backend"), "the stale durable entry is cleared proactively (no turn)")
 
         // And the healed session is a live FRESH one: the next turn binds it (agent alive, not dead-in-ERROR).
-        withTimeout(15_000) { session.sendTurn(UserTurn("hello after restart")) }
-        assertTrue(seen.any { it is SystemEvent }, "the fresh session bound on the first real turn (recovered)")
+        // Deterministic: await the SystemEvent binding on the events flow — no window race on a collected list.
+        withTimeout(15_000) {
+            session.sendTurn(UserTurn("hello after restart"))
+            systemBound.await()
+        }
+        assertTrue(systemBound.isCompleted, "the fresh session bound on the first real turn (recovered)")
         session.close()
     }
 
