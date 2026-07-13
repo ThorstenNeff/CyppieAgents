@@ -54,17 +54,26 @@ class InMemoryMultiOperatorDeviceStore : OperatorDeviceStore {
  */
 class OperatorDeviceEnrollment(private val store: OperatorDeviceStore) {
     fun enrollFirstDevice(device: EnrolledOperatorDevice): EnrollResult {
-        if (store.enrolled() != null) {
-            // Never silently overwrite the anchor via a plain enroll — re-enroll is the Q6-gated recovery SEAM.
-            return EnrollResult.Rejected("already_enrolled_recovery_is_q6_seam")
-        }
+        // Validate up front (pure, no shared state) — a malformed request never needs the lock.
         val pkOk = when (device.alg) {
             DeviceKeyAlg.ED25519 -> device.publicKey.size == 32
             DeviceKeyAlg.ES256 -> device.publicKey.size == 65 && device.publicKey[0].toInt() == 0x04
         }
         if (!pkOk) return EnrollResult.Rejected("bad_public_key")
         if (device.deviceId.isBlank()) return EnrollResult.Rejected("blank_device_id")
-        store.save(device)
+        // ★ CYP-525 Reviewer F2 — the empty-check → save MUST be ATOMIC over the SHARED store. Otherwise two
+        // simultaneous first-connects (each a valid operator CpJwt — now live-tunnel-reachable via CYP-525 TOFU
+        // enroll) both pass the empty check and both save = last-write-wins / double-grant. No priv-esc (both ARE the
+        // pinned operator) but a robustness + honesty bug (the gate KDoc claims a concurrent-race re-check). Synchronize
+        // on the SHARED store (not `this`): each RR3 gate builds its OWN OperatorDeviceEnrollment over the ONE store, so
+        // only the store's monitor serializes first-enroll across gate instances — making the check-then-act atomic.
+        synchronized(store) {
+            if (store.enrolled() != null) {
+                // Never silently overwrite the anchor via a plain enroll — re-enroll is the Q6-gated recovery SEAM.
+                return EnrollResult.Rejected("already_enrolled_recovery_is_q6_seam")
+            }
+            store.save(device)
+        }
         return EnrollResult.Enrolled(device)
     }
 }
