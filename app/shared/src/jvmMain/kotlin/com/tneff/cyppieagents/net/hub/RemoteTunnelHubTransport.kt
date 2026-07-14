@@ -72,7 +72,15 @@ class RemoteTunnelHubTransport(
             while (isActive) {
                 val conn = acceptor.accept() ?: break // acceptor closed → stop (the ONLY serial step)
                 launch { // ①/②: per-connection — acquire + pump run concurrently; the loop immediately accepts the next
-                    val tunnel = tunnelSource.acquire()
+                    val tunnel = try {
+                        tunnelSource.acquire()
+                    } catch (t: Throwable) {
+                        // CYP-561 NOTE-1: if acquire() RE-THROWS (e.g. a dial exception the pool re-raises), the
+                        // accepted loopback socket would otherwise leak until GC — reset it, then re-propagate
+                        // (a cancellation still cancels; the reset is fail-closed cleanup either way).
+                        runCatching { conn.reset() }
+                        throw t
+                    }
                     if (tunnel == null) {
                         conn.reset() // no live tunnel ⇒ fail-closed (RST), never a plaintext/local fallback
                     } else {
