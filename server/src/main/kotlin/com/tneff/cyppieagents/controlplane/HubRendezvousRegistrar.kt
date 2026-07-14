@@ -40,7 +40,18 @@ class HubRendezvousRegistrar(
      * epoch every call (unlinkability, CYP-501 §2), so re-registering per re-dial would rotate the id and strand the
      * client's resolved id.** Register ONCE; reuse the cached id on reconnect.
      */
-    suspend fun register(): String? {
+    suspend fun register(): String? = registerBinding()?.rendezvousId
+
+    /**
+     * CYP-536 (M2 Option A, WS1) — the **N-set** register: returns the full epoch-derived rendezvous set
+     * (`RendezvousBinding.rendezvousIds`) the hub runs its N concurrent responders over. Same POST + resilience as
+     * [register]; only the projection differs (the whole set vs element 0). `null`/empty fail-closed. Backs the
+     * [com.tneff.cyppieagents.transport.CachingRendezvousIdSet] → the `SessionRendezvousSource` seam.
+     */
+    suspend fun registerSet(): List<String>? = registerBinding()?.rendezvousIds?.takeIf { it.isNotEmpty() }
+
+    /** The shared register POST → the CP [RendezvousBinding] (retry-resilient, JSON-guarded), or `null` fail-closed. */
+    private suspend fun registerBinding(): RendezvousBinding? {
         val bearer = operatorBearer()?.takeIf { it.isNotBlank() } ?: return null
         return try {
             cpRetry(retry, sleep, onExhausted = { log.warn("CYP-526 rendezvous register failed after retries: {}", it.message); null }) {
@@ -48,7 +59,7 @@ class HubRendezvousRegistrar(
                     http.post("$cpBaseUrl/api/cp/rendezvous/$hubId") { header("Authorization", "Bearer $bearer") }
                 }
                 cpJsonGuard(resp, "rendezvous") // never blind-deserialize a non-JSON edge response (the CYP-524 class)
-                resp.body<RendezvousResolveResponse>().binding?.rendezvousId
+                resp.body<RendezvousResolveResponse>().binding
             }
         } catch (t: AdmissionRejectedException) {
             log.warn("CYP-526 rendezvous register rejected (terminal): {}", t.message)
