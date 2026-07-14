@@ -66,6 +66,9 @@ kotlin {
             implementation(libs.kotlinx.coroutinesSwing)
             // CYP-443 (Phase-2 remote): Noise_NK transport for the ClientNoiseTransport JVM actual (Desktop first).
             implementation(libs.noise.java)
+            // CYP-542/B1: BouncyCastle Argon2id (Argon2BytesGenerator) for the operator-passphrase KEK (JVM actual;
+            // pure-Java, no native/JNI). iOS/web KDF actuals are the ② follow-on.
+            implementation(libs.bouncycastle.prov)
         }
         iosMain.dependencies {
             // iOS Ktor client engine (Darwin) so the engine-less HttpClient {} in AgentShell can
