@@ -48,4 +48,15 @@ class CredentialPolicyTest {
         assertTrue(PassphraseStrength.meets("Xk9\$mQ2!vB7z".toCharArray(), floor))
         assertEquals(0, PassphraseStrength.estimateBits(CharArray(0)), "empty ⇒ 0 bits")
     }
+
+    @Test
+    fun blocklist_rejectsFamousAndBreached_evenIfStructurallyLong() {
+        val floor = CredentialPolicy.SOFTWARE_MIN_ENTROPY_BITS
+        // #3: "correct horse battery staple" is structurally ~89 bit but famous ⇒ blocklisted ⇒ meets() false.
+        assertTrue(PassphraseStrength.estimateBits("correct horse battery staple".toCharArray()) >= floor, "structurally over the floor")
+        assertTrue(PassphraseStrength.isBlocklisted("correct horse battery staple".toCharArray()), "but famous ⇒ blocklisted")
+        assertFalse(PassphraseStrength.meets("correct horse battery staple".toCharArray(), floor), "⇒ the gate rejects it")
+        assertTrue(PassphraseStrength.isBlocklisted("Password123".toCharArray()), "case-insensitive weak root")
+        assertFalse(PassphraseStrength.isBlocklisted("Xk9\$mQ2!vB7z anchor mint".toCharArray()), "a genuine random/diceware passphrase passes")
+    }
 }
