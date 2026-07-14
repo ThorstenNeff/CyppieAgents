@@ -30,8 +30,9 @@ object RemoteRelayWiring {
     fun build(
         config: RemoteTransportConfig,
         httpClient: HttpClient,
-        /** CYP-521: obtains the rendezvous id fresh from the CP register at dial-time (the epoch id), not a static env. */
-        rendezvousId: suspend () -> String?,
+        /** CYP-536: the epoch-derived rendezvous **SET** (fresh from the CP register, cached anti-rotation). The
+         *  manager runs one persistent responder per id in the set (C4, develop `20db04ad`). */
+        rendezvousIdSet: suspend () -> List<String>?,
         /** The hub's X25519 static PRIVATE scalar (S-C `hub.dhKey` from the SecretStore) — the NK responder static. */
         dhStaticPrivate: ByteArray,
         loopbackPort: Int,
@@ -41,19 +42,37 @@ object RemoteRelayWiring {
         operatorId: String,
         sessionTtlMs: Long,
         scope: CoroutineScope,
-    ): RelayConnector = NoiseRelayConnector(
-        config = config,
-        dialer = WebSocketRelayDialer(httpClient, rendezvousId),
-        terminator = NoiseJavaServerTerminator(dhStaticPrivate),
-        tunnelHandler = Rr3AuthenticatedTunnelHandler(
+        /** CYP-536 — the per-operator tunnel cap (= the CP set size). Single-sourced [RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP]. */
+        poolCap: Int = com.tneff.cyppieagents.controlplane.RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP,
+    ): RelayConnector {
+        // CYP-536 — ONE gate + ONE registry + ONE handler, SHARED by all N per-id responders. This is load-bearing:
+        //  · one gate ⇒ one nonce ledger (single-use nonces enforced ACROSS all N tunnels, R2) + one first-enroll lock;
+        //  · one registry + one operatorId ⇒ a revocation fans out to EVERY one of the operator's N tunnels (WS6
+        //    axis 1b — `TunnelSessionRegistry.revokeOperator` closes all matching sessions, proven for N by CYP-484).
+        // Only the per-tunnel dialer (fixed rendezvous-id) and the NK terminator are built per responder (each Noise
+        // handshake is independent). The bridge/gate are stateless per invocation, so sharing is correct.
+        val handler = Rr3AuthenticatedTunnelHandler(
             authorize = gate::authorize,
             bridge = LoopbackBridge(loopbackPort)::bridge,
             registry = registry,
             operatorId = operatorId,
             sessionTtlMs = sessionTtlMs,
-        )::handle,
-        scope = scope,
-    )
+        )
+        return ConcurrentRelayResponderManager(
+            source = SessionRendezvousSource { rendezvousIdSet() },
+            responderFor = { id ->
+                NoiseRelayConnector(
+                    config = config,
+                    dialer = WebSocketRelayDialer(httpClient) { id }, // this responder dials ONLY its own rendezvous-id
+                    terminator = NoiseJavaServerTerminator(dhStaticPrivate), // fresh per responder (independent handshake)
+                    tunnelHandler = handler::handle, // SHARED → shared registry (revocation fanout) + shared nonce ledger
+                    scope = scope,
+                )
+            },
+            poolCap = poolCap,
+            scope = scope,
+        )
+    }
 }
 
 /**
@@ -111,13 +130,14 @@ fun buildRemoteTransport(
     )
     val httpClient = httpClientFactory() // shared: the relay WS dial AND the CP rendezvous-register POST
     val registrar = HubRendezvousRegistrar(cpBaseUrl = cpUrl, http = httpClient, hubId = hubIdentity.hubId, operatorBearer = { cpOperatorToken })
-    // CYP-526: register ONCE and CACHE the id; the reconnect loop re-dials with the SAME cached id (never re-registers
-    // — that would rotate the epoch and strand the client's resolved id). A failed register isn't cached → retried.
-    val cachedRendezvousId = CachingRendezvousId { registrar.register() }
+    // CYP-536: register ONCE and CACHE the epoch-derived rendezvous SET; every one of the N responders (and their
+    // reconnect loops) reuses the SAME cached set (anti-rotation — a re-register would rotate the epoch → a different
+    // set → the client's resolved set no longer pairs). A failed/empty register isn't cached → retried.
+    val cachedRendezvousSet = CachingRendezvousIdSet { registrar.registerSet() }
     return RemoteRelayWiring.build(
         config = RemoteTransportConfig(enabled = true, relayUrl = relayUrl),
         httpClient = httpClient,
-        rendezvousId = cachedRendezvousId::get, // CYP-521 fresh epoch id from the CP register; CYP-526 cached (once)
+        rendezvousIdSet = cachedRendezvousSet::get, // CYP-536 the epoch-derived N-set (cached once, anti-rotation)
         dhStaticPrivate = dhPriv,
         loopbackPort = loopbackPort,
         gate = gate,

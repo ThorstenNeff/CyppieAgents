@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.connect
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseJavaClientTransport
+import com.tneff.cyppieagents.net.hub.operator.CachingUserVerification
 import com.tneff.cyppieagents.net.hub.operator.ChannelBinding
 import com.tneff.cyppieagents.net.hub.operator.ClientOperatorAuth
 import com.tneff.cyppieagents.net.hub.operator.CpJwtProvider
@@ -12,6 +13,8 @@ import com.tneff.cyppieagents.net.hub.operator.PersistentOperatorDeviceKey
 import com.tneff.cyppieagents.net.hub.operator.UserVerification
 import com.tneff.cyppieagents.net.hub.operator.UvOutcome
 import com.tneff.cyppieagents.net.hub.operator.coreChannelBinding
+import com.tneff.cyppieagents.net.hub.pool.NoisePoolTunnelDialer
+import com.tneff.cyppieagents.net.hub.pool.PooledTunnelSource
 import com.tneff.cyppieagents.net.hub.relay.HttpRendezvousResolver
 import com.tneff.cyppieagents.net.hub.relay.KtorWsRelayConnector
 import com.tneff.cyppieagents.net.hub.relay.RendezvousRelayDialer
@@ -106,34 +109,70 @@ fun liveRemoteConnectComponentsFactory(
     operatorToken: suspend () -> String?,
     relayWsClient: HttpClient,
     channelBinding: ChannelBinding = coreChannelBinding(),
+    // CYP-537 F⑥-1 test-seam (PO ruling (b), Assist-gated): the RAW UV under the shared [CachingUserVerification].
+    // **Default = the prod fail-closed [deferredUserVerification] stub ⇒ PROD STAYS INERT** (Unavailable; real
+    // WebAuthn UV gates prod, lands separately). Tests/the joint e2e override it with a VERIFYING raw UV to exercise
+    // the POSITIVE "1 UV for N" path. Same default→prod / override→test discipline as `connectorFactory`/`TunnelSource`.
+    // This param touches ONLY the test path — it never weakens prod (prod never passes it).
+    rawUserVerification: UserVerification = deferredUserVerification,
 ): RemoteConnectComponentsFactory = RemoteConnectComponentsFactory { hub, scope ->
     val shared = buildSharedHubTrustComponents(hub, defaultPinnedHubStore()) // ①² one of(hub)+pending into both
     // CYP-525 §2: ONE enroll confirmer shared between the session's ClientOperatorAuth (which calls it + suspends on
     // firstEnroll) and the RemoteConnectComponents (which the VM surfaces as RevealCodes) — what the operator confirms
     // IS what gates the SavedAck the session sends.
     val enrollConfirm = LiveEnrollConfirmCoordinator()
+    // Hoisted so the CYP-537 N-tunnel pool SHARES them with the session: pool tunnels ride the same TOFU pin
+    // ([shared.trust]) + the same enrolled device ([operatorAuth]'s durable key) the session's connect established.
+    val noiseTransport = NoiseJavaClientTransport()
+    // CYP-537 F⑥-1 (Reviewer / CYP-538 WS3): the N pool tunnels each PoP-auth over their own `h_i` via this ONE
+    // shared [operatorAuth] → its ONE store → this ONE [CachingUserVerification]. The session's control tunnel and
+    // the pool's N workspace tunnels therefore share a SINGLE bounded-window UV cache: the first authenticate prompts
+    // (a real UV ceremony), the rest within the window ride the cache ⇒ **1 UV prompt for N tunnels** (0 extra
+    // prompts — critical for dogfood). Security unchanged (each PoP is fresh over its own `h_i`, fail-closed; a denial
+    // is never cached). O5: [nowMs] is **monotonic** (`nanoTime`) so a wall-clock adjustment can't widen the window.
+    val cachingUv = buildOperatorUvCache(rawUserVerification) // default rawUv = prod fail-closed stub (INERT)
+    val operatorAuth = ClientOperatorAuth(
+        popBuilder = OperatorPopBuilder(
+            store = KeystoreOperatorDeviceKeyStore(
+                userVerification = cachingUv, // F⑥-1: store.userVerification IS the shared cachingUv (no wiring drift)
+                keyPair = persistentDeviceKey.loadOrGenerate(),
+            ),
+            nonceGenerator = secureRandomNonceGenerator,
+        ),
+        cpJwtProvider = HttpCpJwtProvider(cpHttpClient, cpBaseUrl, operatorToken, channelBinding),
+        enrollConfirmer = enrollConfirm,
+    )
+    // Shared by the session's single-tunnel dialer AND the CYP-537 pool: ONE resolver (CP rendezvous, CYP-536
+    // epoch-set) + ONE id-aware relay connector (stateless HTTP/WS). The session dials the base id (rendezvousIds[0]);
+    // the pool dials the rest (id_1..id_{cap-1}, `NoisePoolTunnelDialer.rendezvousSet()` = `drop(1)`) — no collision.
+    val rendezvousResolver = HttpRendezvousResolver(cpHttpClient, cpBaseUrl, operatorToken)
+    val relayConnector = KtorWsRelayConnector(relayWsClient)
     val session = buildRemoteHubSession(
         hubId = hub.hubId,
-        transport = NoiseJavaClientTransport(),
-        dialer = RendezvousRelayDialer(
-            resolver = HttpRendezvousResolver(cpHttpClient, cpBaseUrl, operatorToken),
-            connector = KtorWsRelayConnector(relayWsClient),
-        ),
+        transport = noiseTransport,
+        dialer = RendezvousRelayDialer(resolver = rendezvousResolver, connector = relayConnector),
         trust = shared.trust,
-        authenticator = ClientOperatorAuth(
-            popBuilder = OperatorPopBuilder(
-                store = KeystoreOperatorDeviceKeyStore(
-                    userVerification = deferredUserVerification,
-                    keyPair = persistentDeviceKey.loadOrGenerate(),
-                ),
-                nonceGenerator = secureRandomNonceGenerator,
-            ),
-            cpJwtProvider = HttpCpJwtProvider(cpHttpClient, cpBaseUrl, operatorToken, channelBinding),
-            enrollConfirmer = enrollConfirm,
-        ),
+        authenticator = operatorAuth,
         scope = scope,
     )
-    RemoteConnectComponents(session, shared.oobConfirm, enrollConfirm)
+    // CYP-537 (M2 Option A, WS2) — the N-tunnel pool, the F-M2-1 fix. It shares the session's transport/trust/
+    // authenticator (pool tunnels ride the pin + enrolled device) AND the live rendezvous resolver + connector
+    // (C4, CYP-536): `rendezvousSet()` resolves the CP epoch-set once and dials id_1..id_{cap-1}; the ids stay
+    // CP-derived + opaque (never re-derived). Real against Backend's live WS1 N-responder; still gated OFF by env
+    // (`CYPPIE_CP_BASE_URL` + `CYPPIE_REMOTE_RELAY_URL`) + `CYP_REMOTE_HUB` — the pool is only reached on a live
+    // remote connect. The pool mechanics (cap, lifecycle, C3 state, H7 backpressure) are unit-gated (`net/hub/pool`).
+    val tunnelPool = PooledTunnelSource(
+        dialer = NoisePoolTunnelDialer(
+            hubId = hub.hubId,
+            transport = noiseTransport,
+            trust = shared.trust,
+            authenticator = operatorAuth,
+            resolver = rendezvousResolver, // WS1 live: resolves the CYP-536 epoch N-set (rendezvousIds)
+            connector = relayConnector,    // id-aware relay open (X-Cyppie-Rendezvous, role: client)
+        ),
+        nowMs = { System.currentTimeMillis() },
+    )
+    RemoteConnectComponents(session, shared.oobConfirm, enrollConfirm, tunnelPool)
 }
 
 /** Runway #1: no client relay/rendezvous dialer yet → fail-closed at dial (RelayUnreachable), never connects. */
@@ -143,6 +182,27 @@ private val gatedRelayDialer = RelayDialer {
 
 /** No UV UI in the headless assembly; never reached (dial fails first). Fail-closed ⇒ Unavailable. */
 private val deferredUserVerification = UserVerification { UvOutcome.Unavailable }
+
+/**
+ * CYP-537 F⑥-1 (CYP-538) — the bounded UV-reuse window for the shared [CachingUserVerification]. Long enough to span
+ * the connect burst (the session's control-tunnel UV + the pool's N workspace-tunnel establishments, all within
+ * seconds of CONNECTED) plus a little live churn, so it costs **one** prompt; short enough that reuse stays bounded
+ * (a denial is never cached — fail-closed). Tunable (Reviewer may weigh the UX↔bound trade-off); 2 min is the
+ * conservative-short default.
+ */
+private const val OPERATOR_UV_REUSE_WINDOW_MS: Long = 120_000L
+
+/**
+ * CYP-537 F⑥-1 — build the shared operator UV cache with the **prod** parameters: the bounded [OPERATOR_UV_REUSE_WINDOW_MS]
+ * window + a **monotonic** millisecond clock (`nanoTime`, O5 — a wall-clock jump can't widen the window). Single-sourced
+ * so the factory + the seam test exercise the SAME construction; `internal` so the test can pin prod-inert-vs-override.
+ */
+internal fun buildOperatorUvCache(rawUv: UserVerification): CachingUserVerification =
+    CachingUserVerification(
+        delegate = rawUv,
+        reuseWindowMs = OPERATOR_UV_REUSE_WINDOW_MS,
+        nowMs = { System.nanoTime() / 1_000_000 },
+    )
 
 /** Runway #3: the jvm PoP nonce source (`SecureRandom`) — the one small runway item built inline. */
 private val secureRandomNonceGenerator = NonceGenerator {

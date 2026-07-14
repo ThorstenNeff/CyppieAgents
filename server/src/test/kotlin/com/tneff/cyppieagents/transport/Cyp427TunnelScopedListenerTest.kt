@@ -12,7 +12,7 @@ import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.routing.TokenRegistry
 import com.tneff.cyppieagents.routing.installPlatform
-import com.tneff.cyppieagents.routing.installTunnelGodTokenGuard
+import com.tneff.cyppieagents.routing.installTunnelGodTokenGuardOnPorts
 import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
@@ -76,9 +76,18 @@ class Cyp427TunnelScopedListenerTest {
         fun deliver(bytes: ByteArray) { inbound.trySend(bytes) }
     }
 
-    private data class Platform(val publicPort: Int, val tunnelPort: Int, val agentToken: String, val operatorToken: String)
+    private data class Platform(
+        val publicPort: Int,
+        val tunnelPort: Int,
+        // CYP-536 WS6 C5 axis 1a: a SECOND tunnel-scoped connector, so the God-token guard is proven to reject over the
+        // PORT-SET (all N tunnel ports), not just one fixed `tunnelPort`.
+        val tunnelPort2: Int,
+        val agentToken: String,
+        val operatorToken: String,
+    )
 
-    /** Boot the REAL platform once, exposed on TWO loopback connectors; the tunnel connector carries the God-token guard. */
+    /** Boot the REAL platform once, exposed on THREE loopback connectors ([0]=public, [1]/[2]=tunnel-scoped); the
+     *  God-token guard is installed over the SET of both tunnel ports (CYP-536 port-SET discriminator). */
     private fun startTwoConnectorPlatform(): Platform {
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         cleanups += { scope.cancel() }
@@ -98,24 +107,33 @@ class Cyp427TunnelScopedListenerTest {
         // AFTER the bind — no `ServerSocket(0)`-close→re-bind TOCTOU. resolvedConnectors() preserves declaration
         // order: [0]=public, [1]=tunnel. Requests only arrive after the holder is set, so the supplier is populated.
         val tunnelPortHolder = java.util.concurrent.atomic.AtomicInteger(-1)
+        val tunnelPort2Holder = java.util.concurrent.atomic.AtomicInteger(-1)
         val server = embeddedServer(
             Netty,
             serverConfig {
                 module {
                     installPlatform(booted)
-                    installTunnelGodTokenGuard({ tunnelPortHolder.get() }, booted.tokenRegistry::isOperator)
+                    // CYP-536: the guard discriminates on the SET of tunnel ports {t1, t2} (a positive allowlist), so a
+                    // God token is refused on EVERY tunnel connector, never only the first. Ports resolved post-bind.
+                    installTunnelGodTokenGuardOnPorts(
+                        { setOf(tunnelPortHolder.get(), tunnelPort2Holder.get()) },
+                        booted.tokenRegistry::isOperator,
+                    )
                 }
             },
         ) {
             connector { port = 0; host = "127.0.0.1" } // [0] public
-            connector { port = 0; host = "127.0.0.1" } // [1] tunnel-scoped (the guarded one)
+            connector { port = 0; host = "127.0.0.1" } // [1] tunnel-scoped (guarded)
+            connector { port = 0; host = "127.0.0.1" } // [2] tunnel-scoped #2 (also guarded — the port-SET tooth)
         }.start(wait = false)
         cleanups += { server.stop(0, 0) }
         val conns = runBlocking { server.engine.resolvedConnectors() }
         val publicPort = conns[0].port
         val tunnelPort = conns[1].port
+        val tunnelPort2 = conns[2].port
         tunnelPortHolder.set(tunnelPort)
-        return Platform(publicPort, tunnelPort, agentToken, operatorToken)
+        tunnelPort2Holder.set(tunnelPort2)
+        return Platform(publicPort, tunnelPort, tunnelPort2, agentToken, operatorToken)
     }
 
     // ── raw HTTP over the bridge ──
@@ -168,6 +186,16 @@ class Cyp427TunnelScopedListenerTest {
         val p = startTwoConnectorPlatform()
         val resp = driveStatus(p.tunnelPort, httpGet("/api/agents", listOf("Authorization: Bearer ${p.operatorToken}")))
         assertTrue("401" in statusLine(resp), "the static operator (God) token is refused on the tunnel connector: '${statusLine(resp)}'")
+    }
+
+    @Test
+    fun godToken_bearer_overSecondTunnelConnector_rejected401() {
+        // CYP-536 WS6 C5 axis 1a — the God token is refused on the SECOND tunnel port too, proving the guard checks the
+        // PORT-SET (membership across all N tunnel connectors), not just the first `tunnelPort`. A single-port equality
+        // discriminator would 200 here (the vulnerability the frozen axis closes: an unguarded Nth tunnel port).
+        val p = startTwoConnectorPlatform()
+        val resp = driveStatus(p.tunnelPort2, httpGet("/api/agents", listOf("Authorization: Bearer ${p.operatorToken}")))
+        assertTrue("401" in statusLine(resp), "the God token is refused on the 2nd tunnel connector (port-SET guard): '${statusLine(resp)}'")
     }
 
     @Test

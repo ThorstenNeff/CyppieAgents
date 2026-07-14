@@ -14,7 +14,7 @@ internal fun RendezvousResolveResponse.toResolution(): RendezvousResolution {
     val b = binding
     val f = failure
     return when {
-        b != null && f == null -> RendezvousResolution.Bound(b.rendezvousId, b.relayUrl)
+        b != null && f == null -> RendezvousResolution.Bound(b.rendezvousId, b.relayUrl, b.rendezvousIds)
         f != null && b == null -> RendezvousResolution.Failed(f.toUnavailable())
         // both-null OR both-set → the response is not a clean either/or ⇒ fail closed (never a partial Bound).
         else -> RendezvousResolution.Failed(RendezvousUnavailable.RELAY_UNAVAILABLE)

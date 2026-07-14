@@ -12,8 +12,24 @@ import kotlinx.serialization.Serializable
  * new registration rotates the epoch → a fresh id (unlinkable across registrations). Consumed by the desktop client
  * (Kotlin) and regenerated as a TypeScript type for the web (Team-2). INERT until the Phase-2-Remote-GO.
  */
+/**
+ * CYP-536 (M2 Option A, C4 ratified develop `20db04ad`) — [rendezvousIds] is the **epoch-derived N-set** the client
+ * dials for N concurrent tunnels: `[id_0 .. id_{cap-1}]`, all derived CP-side from the same secret epoch (the epoch
+ * still **never leaves the CP** — the client does NOT re-derive, it dials the returned ids). **Additive + defaulted**
+ * (`emptyList()`) → **backward-compatible**: a legacy consumer reads [rendezvousId] and ignores this field. (Not
+ * byte-identical wire — `CommJson` sets `encodeDefaults=true`, so the message gains a tolerated `rendezvousIds:[]`;
+ * what is unchanged is the single-tunnel **pairing VALUE** — element 0 == [rendezvousId] — and deserialization
+ * tolerates the new field, per the CYP-507 `.body<>()` round-trip teeth. Moot until the Phase-2 flip: INERT today.)
+ * `rendezvousIds.first() == rendezvousId` when populated (element 0 is the legacy base id). The hub runs one responder
+ * per id (WS1); the client dials as many as its pool needs (WS2); `cap` (= the set size) is the server-side per-operator
+ * tunnel CAP and MUST be ≥ the client pool cap (C2).
+ */
 @Serializable
-data class RendezvousBinding(val rendezvousId: String, val relayUrl: String)
+data class RendezvousBinding(
+    val rendezvousId: String,
+    val relayUrl: String,
+    val rendezvousIds: List<String> = emptyList(),
+)
 
 /**
  * CYP-507 — the resolve/register **response** (client CYP-494 ↔ CP). Exactly one of [binding] (found) / [failure] is

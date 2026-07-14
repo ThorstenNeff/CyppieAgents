@@ -167,7 +167,7 @@ class CypM2TierBTransportTest {
     fun tierB_realTransport_carriesOp_withLocalDifferential_andInTunnelCredential() = runBlocking {
         val p = startTwoConnectorPlatform()
         val queue = ConcurrentLinkedQueue<NoiseTunnel>()
-        val transport = buildRemoteHubTransport(currentTunnel = { queue.poll() }, sessionToken = { p.agentToken }, scope = scope)!!
+        val transport = buildRemoteHubTransport(acquireTunnel = { queue.poll() }, sessionToken = { p.agentToken }, scope = scope)!!
         cleanups += { transport.close() }
         assertTrue(transport.httpBaseUrl.startsWith("http://127.0.0.1:"), "Dev's transport exposes a loopback base, not the hub host")
 
@@ -195,7 +195,7 @@ class CypM2TierBTransportTest {
     fun tierB_realTransport_relayDropMidOp_failsClosed_neverFalseCleanSuccess() = runBlocking {
         val p = startTwoConnectorPlatform()
         val queue = ConcurrentLinkedQueue<NoiseTunnel>()
-        val transport = buildRemoteHubTransport(currentTunnel = { queue.poll() }, sessionToken = { p.agentToken }, scope = scope)!!
+        val transport = buildRemoteHubTransport(acquireTunnel = { queue.poll() }, sessionToken = { p.agentToken }, scope = scope)!!
         cleanups += { transport.close() }
 
         val ok = realTunnel(p.tunnelPort); queue.add(ok.tunnel)
@@ -211,7 +211,7 @@ class CypM2TierBTransportTest {
     fun tierB_godTokenOverTunnel_bothAuthChannels_refusedByRealGuard() = runBlocking {
         val p = startTwoConnectorPlatform()
         val queue = ConcurrentLinkedQueue<NoiseTunnel>()
-        val transport = buildRemoteHubTransport(currentTunnel = { queue.poll() }, sessionToken = { p.godToken }, scope = scope)!!
+        val transport = buildRemoteHubTransport(acquireTunnel = { queue.poll() }, sessionToken = { p.godToken }, scope = scope)!!
         cleanups += { transport.close() }
 
         // ★ (1) BEARER channel: the static god token over the tunnel → Backend's guard refuses it 401.

@@ -1,7 +1,9 @@
 package com.tneff.cyppieagents.net.hub
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import com.tneff.cyppieagents.net.hub.pool.BackpressureSignal
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,24 +35,46 @@ class ClientLoopbackBridge(private val loopbackHost: String = "127.0.0.1") {
 
     /** Pump one accepted connection ↔ [tunnel] until either side ends; applies the asymmetric truncation guard. */
     suspend fun pump(tunnel: NoiseTunnel, conn: BridgeConn): Unit = coroutineScope {
-        // Upstream: the workspace client's REQUEST bytes → the tunnel (to the hub). A clean local EOF ends the request
-        // → close the tunnel cleanly (the trusted side).
-        val up = launch(Dispatchers.IO) {
+        // Upstream (conn → tunnel): the workspace REQUEST bytes. H7 (CYP-535) — a bounded ≤INFLIGHT_FRAMES credit
+        // window sits between the source-socket READER and the tunnel-SENDER: when the window is full the reader
+        // suspends (stops reading the loopback socket) → TCP backpressure to the origin (the workspace Ktor client)
+        // → a fixed per-tunnel in-flight ceiling (≤8×CHUNK/dir) instead of Ktor's implicit/version-fragile buffer.
+        // Loss-free (never a drop) and ORTHOGONAL to the truncation guard (a full window never RSTs; only a tunnel
+        // END does — that stays exactly as-is). A pooled tunnel ([BackpressureSignal]) surfaces the full window as
+        // C3 BACKPRESSURED; a plain tunnel isn't one, so the window still bounds memory but emits no signal.
+        val window = Channel<ByteArray>(capacity = INFLIGHT_FRAMES)
+        val signal = tunnel as? BackpressureSignal
+        val reader = launch(Dispatchers.IO) {
             val buf = ByteArray(CHUNK)
             try {
                 while (true) {
                     val n = conn.read(buf)
-                    if (n < 0) break // the local workspace client closed its request cleanly
-                    tunnel.send(buf.copyOf(n))
+                    if (n < 0) break // the local workspace client closed its request cleanly (trusted EOF)
+                    val frame = buf.copyOf(n)
+                    if (window.trySend(frame).isFailure) { // window full ⇒ ≤8 credit exhausted: block the pump
+                        signal?.onBackpressured(true)
+                        window.send(frame) // suspends until the sender drains a slot → source-socket TCP backpressure
+                        signal?.onBackpressured(false)
+                    }
                 }
             } catch (_: Exception) {
-                // a read after the downstream guard's RST, or a send onto a closed tunnel — the connection ended.
+                // a read after the downstream guard's RST — the connection ended.
             } finally {
-                runCatching { tunnel.close() } // trusted local side ended → clean tunnel close
+                window.close() // no more request bytes; the sender drains the remaining window then closes the tunnel
+            }
+        }
+        val sender = launch(Dispatchers.IO) {
+            try {
+                for (frame in window) tunnel.send(frame) // drain the credit window → the tunnel (to the hub)
+            } catch (_: Exception) {
+                // a send onto a closed tunnel — the connection ended.
+            } finally {
+                runCatching { tunnel.close() } // trusted local side ended → clean tunnel close (after draining)
             }
         }
         // Downstream: the hub's RESPONSE bytes (via the UNTRUSTED relay) → the local socket. Any end here is
-        // in-flight-uncertain → RST the local socket (the truncation guard), never a clean EOF.
+        // in-flight-uncertain → RST the local socket (the truncation guard), never a clean EOF. UNCHANGED by H7 —
+        // the inbound direction is bounded by the local socket's OS buffer + the SERVER bridge's own send-window.
         val down = launch(Dispatchers.IO) {
             try {
                 while (true) {
@@ -63,12 +87,22 @@ class ClientLoopbackBridge(private val loopbackHost: String = "127.0.0.1") {
                 conn.reset() // ★ untrusted side ended → RST (never a clean FIN): the truncation guard
             }
         }
-        up.join()
+        reader.join()
+        sender.join()
         down.join()
     }
 
     private companion object {
         const val CHUNK = 16 * 1024
+
+        /**
+         * CYP-535 (H7) — the per-tunnel, per-direction in-flight credit window: **≤8 frames** (`8 × CHUNK` =
+         * ≤128 KB/dir, ≤256 KB/tunnel bidirectional). Single-sourced here for the client bridge; the server
+         * `transport/LoopbackBridge` **mirrors** the same value on its own tunnel-send direction (the client/server
+         * bridge-mirror rule). The aggregate bound is this × [com.tneff.cyppieagents.net.hub.pool.TUNNEL_POOL_CAP]
+         * (H7 §5: per-tunnel independent windows, not a shared credit pool — no cross-tunnel head-of-line blocking).
+         */
+        const val INFLIGHT_FRAMES = 8
     }
 }
 

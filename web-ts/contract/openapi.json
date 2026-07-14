@@ -3265,6 +3265,12 @@
                     },
                     "relayUrl": {
                         "type": "string"
+                    },
+                    "rendezvousIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
                 "required": [

@@ -199,12 +199,17 @@ class HubConnectViewModel(
                         combine(comps.session.state, comps.oobConfirm.state, comps.enrollConfirm.state) { rs, oob, enroll -> Triple(rs, oob, enroll) }
                             .collect { (rs, oob, enroll) ->
                                 surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob), enroll)
-                                // M2 Seam-3 (a): build the tunnel-backed transport ONCE on CONNECTED. `currentTunnel`
-                                // reads the CURRENT session tunnel each call → auto-rebind on relay-drop (stable
-                                // loopback port; Seam-6). null on non-Desktop (Path-A). Torn down in closeActiveComponents.
+                                // M2 Seam-3 (a): build the tunnel-backed transport ONCE on CONNECTED. CYP-537 (M2-A):
+                                // the source is the N-tunnel POOL (`tunnelPool.acquire()` — a distinct authenticated
+                                // tunnel per concurrent connection, F-M2-1 fix); if no pool (thru-cut/stub), fall back
+                                // to the single-flight session tunnel (auto-rebinds on relay-drop; stable loopback
+                                // port, Seam-6). null on non-Desktop (Path-A). Torn down in closeActiveComponents.
                                 if (rs.conn == RemoteConnState.CONNECTED && remoteTransport == null) {
+                                    val pool = comps.tunnelPool
                                     remoteTransport = buildRemoteHubTransport(
-                                        currentTunnel = { activeComponents?.session?.tunnel },
+                                        acquireTunnel =
+                                            if (pool != null) { { pool.acquire() } }
+                                            else { { activeComponents?.session?.tunnel } },
                                         sessionToken = remoteSessionToken,
                                         scope = runScope,
                                     )
@@ -273,7 +278,12 @@ class HubConnectViewModel(
         remoteTransport?.close() // M2 Seam-3: tear down the loopback transport (acceptor + owned client) with the session
         remoteTransport = null
         previous.enrollConfirm.abort() // CYP-525 §2: a switch/leave during the reveal aborts enroll (fail-closed, no SavedAck)
-        runScope.launch { withContext(NonCancellable) { previous.session.close() } }
+        runScope.launch {
+            withContext(NonCancellable) {
+                previous.tunnelPool?.close() // CYP-537: tear down all N pool tunnels (Q5 — nothing carried across)
+                previous.session.close()
+            }
+        }
     }
 
     /**

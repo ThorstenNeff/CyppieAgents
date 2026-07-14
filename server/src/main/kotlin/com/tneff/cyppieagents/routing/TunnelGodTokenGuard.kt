@@ -37,17 +37,30 @@ fun Application.installTunnelGodTokenGuard(tunnelPort: Int, isGodToken: (String?
  * reads it per-call (requests only arrive post-bind), which removes the `ServerSocket(0)`-close→re-bind TOCTOU race.
  * Production passes a constant supplier; behaviour is identical.
  */
-fun Application.installTunnelGodTokenGuard(tunnelPort: () -> Int, isGodToken: (String?) -> Boolean) {
+fun Application.installTunnelGodTokenGuard(tunnelPort: () -> Int, isGodToken: (String?) -> Boolean) =
+    installTunnelGodTokenGuardOnPorts({ setOf(tunnelPort()) }, isGodToken) // single-port = a singleton port-set
+
+/**
+ * CYP-536 (WS6 C5 axis 1a, N-tunnel) — the **port-SET** discriminator. Under Option-A the hub accepts N concurrent
+ * tunnels; the guard must refuse the God token on **every** tunnel-scoped connector, not just one fixed `tunnelPort`.
+ * The discriminator is membership in [tunnelPorts] — the SET of tunnel-scoped local ports — read per-call so an
+ * ephemeral bind resolves post-bind (the CYP-534 supplier invariant, now over a set). In the MVP the set is a
+ * singleton (all N tunnels bridge into ONE shared tunnel connector, which serves N concurrent loopback connections),
+ * but the guard is written for a set so a per-tunnel-port design cannot silently leave a tunnel port **unguarded**
+ * (a positive allowlist over tunnel ports, not a single equality — the frozen WS6 posture). Same two axes covered:
+ * the `Authorization` bearer AND the `?token=` WS/query fallback. Fail-closed 401 + finish().
+ */
+fun Application.installTunnelGodTokenGuardOnPorts(tunnelPorts: () -> Set<Int>, isGodToken: (String?) -> Boolean) {
     val log = LoggerFactory.getLogger("boot.tunnel-god-token")
     intercept(ApplicationCallPipeline.Plugins) {
-        val port = tunnelPort()
-        if (call.request.local.localPort != port) return@intercept // public connector — unchanged
+        val ports = tunnelPorts()
+        if (call.request.local.localPort !in ports) return@intercept // public connector — unchanged
         val presented = listOfNotNull(call.bearerToken(), call.request.queryParameters["token"])
         if (presented.any { isGodToken(it) }) {
             log.warn(
-                "CYP-427: static operator (God) token refused on the tunnel connector (port {}) — a remote operator " +
-                    "must present a CP-scoped operator session, not the static token",
-                port,
+                "CYP-427/536: static operator (God) token refused on a tunnel connector (port {} in tunnel-set {}) — " +
+                    "a remote operator must present a CP-scoped operator session, not the static token",
+                call.request.local.localPort, ports,
             )
             call.respond(HttpStatusCode.Unauthorized)
             finish() // definitively stop the pipeline — routing / route-scoped auth never runs for this call
