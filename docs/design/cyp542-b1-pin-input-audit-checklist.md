@@ -139,10 +139,16 @@ passiert** (①-honest-wording-Verstoß: eine Aussage ohne korrespondierende Akt
 (Copy-Button) → Notiz wird ehrlich. *Fix (B):* wenn nur Manual-Select gewollt, Notiz umformulieren (nicht „kopiert" behaupten).
 **Positiv am Register:** die Clear-Guidance „Zwischenablage nach dem Speichern leeren" ist **ehrlich** (kein falsches „auto-gelöscht/sicher").
 
-**🟡 F3 (Spec-vs-Build-Divergenz, reconcile) — Reveal-Toggle fehlt auf dem Feldpaar.** `PassphraseInput` übergibt **kein** `revealTag`
-an `AuthPasswordField` → kein Text-Label-Reveal, obwohl Visual-Spec §1b (→UIUX2 Z.48) ihn spezifiziert. Spannung: die Security-Rider
-(rider 4/5, Crown-Jewel-Surface minimieren) sprechen gegen Reveal; das Doppel-Eingabe-Confirm-Feld deckt Tippfehler-Verifikation ab.
-*→ PO/Team-1-Reconcile:* Reveal bewusst gedroppt (dann Visual-Spec §1b nachziehen) ODER wiren.
+**🟢 F3 (Spec-vs-Build-Divergenz) — PO1-RULING 2026-07-14: no-reveal gewinnt, BUILD KORREKT, SPEC zieht nach.** `PassphraseInput`
+übergibt **kein** `revealTag` → kein Reveal-Toggle; das ist die **richtige** Security-Wahl (Crown-Jewel; Reveal = Klartext on-screen →
+Shoulder-Surf/Screenshot, `FLAG_SECURE` n/a Desktop + Android deferred **CYP-567**; Rider „Crown-Jewel-Fläche minimieren" schlägt die
+frühere Spec; **Doppel-Confirm** deckt den Typo-UX-Bedarf, wofür Reveal sonst da wäre). **Kein Dev-Code-Change.** Der Fix ist ein
+**Spec-Reconcile**: Visual-Spec §1b (→UIUX2 Z.48) auf no-reveal ziehen. **Spec-Home = Team-1-UIUX' Branch `feature/CYP-542-uv-ui-spec
+@ ce069838` (NICHT develop/batch; Team-1 foldet die →UIUX2-Reconciles selbst, vgl. `e11c89c4` ①-Clipboard) → der §1b-Fold gehört an
+Team-1 (via PO), nicht in mein Audit-Branch.** **Vorgeschlagenes §1b-Delta (surgical):** die Klausel „(maskiert, **Text-Label-Reveal**
+— `→UIUX2` Reveal-Interaktion/a11y; **ich**: Reveal ist Text-Label…)" → **„(maskiert, KEIN Reveal-Toggle — PO1-Security-Ruling: Crown-
+Jewel; Reveal rendert Klartext [Shoulder-Surf/Screenshot], `FLAG_SECURE` n/a Desktop / Android CYP-567; Doppel-Confirm deckt Typo-UX).
+Der Build [kein `revealTag`] ist korrekt."** F3 damit **RESOLVED** (Ruling dokumentiert; §1b-Fold an Team-1 geroutet).
 
 **✅ PASS (gemessen):** a11y-Leak-frei (A3.2 — `contentDesc` = statisches Label-Resource, nie `value`; rider 5); Honesty-Parität (A4.3 —
 BLOCKLISTED-Fill `outline`-gedämpft, kein Glyph, OK=`●`+neutral kein-Grün, TOO_WEAK=`▲`-WARN-amber, alle Farbe+Glyph/Copy+Label 1.4.1);
@@ -153,4 +159,4 @@ Feld reused `AuthPasswordField` (A0-Input); CharArray-Hygiene/Zeroize (`Disposab
 **disabled** per Security-Rider (Crown-Jewel; Passwort-Manager-Pfad = Diceware-Reveal statt Feld-Autofill) → resolved-by-design, kein
 Finding. `granted`→Hub-Liste-Übergang außerhalb dieser Datei (VM-State). Logik-Tests (Dev-Self-Gate) nicht re-gefahren — Fokus = a11y-Layer.
 
-**CYP-542-a11y-Readiness: NO-GO bis F1 (+F2) gefixt; F3 reconcile.** Findings → PO → PO1-Batch. Re-Verify wenn Dev fixt.
+**CYP-542-a11y-Readiness: NO-GO bis F1 (+F2) gefixt; F3 RESOLVED (PO1-Ruling no-reveal; §1b-Delta an Team-1 zum Folden).** Findings → PO → PO1-Batch. Re-Verify + a11y-Regressions-Test wenn Dev F1(+F2) fixt.
