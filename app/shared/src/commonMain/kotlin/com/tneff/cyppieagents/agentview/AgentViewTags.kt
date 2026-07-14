@@ -85,6 +85,10 @@ object AgentViewTags {
 
     /** CYP-335: the `HH:mm` gutter of the N-th event line. Additive — coordinate with QA before renaming. */
     fun eventTime(agentId: String, index: Int) = "agent.$agentId.event.$index.time"
+
+    /** F4 (CYP-580): present ⇔ this user turn was composed while the per-agent socket was NOT LIVE ⇒ honestly
+     *  "not delivered" (never rendered as sent). Absent ⇒ a LIVE (best-effort sent) turn. Additive — coordinate w/ QA. */
+    fun userTurnUndelivered(agentId: String, index: Int) = "agent.$agentId.event.$index.undelivered"
 }
 
 /** Event-kind qualifier vocabulary from Test-Contract v0.4 §2 (`assistantText` · `toolCall` · `toolResult`).

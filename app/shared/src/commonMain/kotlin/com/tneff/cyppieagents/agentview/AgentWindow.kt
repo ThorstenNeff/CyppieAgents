@@ -90,6 +90,7 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_tool_running
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_system
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_time
 import kmpcyppieagents.app.shared.generated.resources.a11y_user_turn
+import kmpcyppieagents.app.shared.generated.resources.agent_turn_undelivered
 import kmpcyppieagents.app.shared.generated.resources.transcript_system_label
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_already_running
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_generic
@@ -795,6 +796,8 @@ private fun AgentTranscript(
                         )
                         is AgentEvent.UserTurn -> UserTurnRow(
                             event,
+                            agentId,
+                            index,
                             Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
                         )
                         is AgentEvent.IncomingSystem -> IncomingSystemRow(
@@ -1103,12 +1106,15 @@ private fun IncomingSystemRow(event: AgentEvent.IncomingSystem, modifier: Modifi
 }
 
 @Composable
-private fun UserTurnRow(event: AgentEvent.UserTurn, modifier: Modifier = Modifier) {
+private fun UserTurnRow(event: AgentEvent.UserTurn, agentId: String, index: Int, modifier: Modifier = Modifier) {
     // CYP-323: the human turn, set slightly apart with `colorScheme.secondary` text (role-bound, follows the theme).
     // WCAG 1.4.1 — colour is never the sole discriminator: a subtle leading `›` marks EVERY user row (and no other
     // turn). The `›` is purely visual → cleared from semantics (decorative/hidden); the row instead carries an
     // invisible "Deine Nachricht: …" content description so a screen reader still distinguishes the human turn.
+    // F4 (CYP-580): a turn composed while NOT connected carries an honest "nicht zugestellt" marker (never rendered
+    // as sent); colour is never the sole carrier (a worded label + a11y), and it recedes (onSurfaceVariant, WCAG-safe).
     val userTurnDescription = stringResource(Res.string.a11y_user_turn, event.text)
+    val undeliveredLabel = if (!event.delivered) stringResource(Res.string.agent_turn_undelivered) else null
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1125,6 +1131,16 @@ private fun UserTurnRow(event: AgentEvent.UserTurn, modifier: Modifier = Modifie
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.clearAndSetSemantics { contentDescription = userTurnDescription },
         )
+        if (undeliveredLabel != null) {
+            Text(
+                text = undeliveredLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, // WCAG 1.4.3-safe (8.69:1/9.80:1), quieter than content
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier
+                    .testTag(AgentViewTags.userTurnUndelivered(agentId, index))
+                    .clearAndSetSemantics { contentDescription = undeliveredLabel },
+            )
+        }
     }
 }
 

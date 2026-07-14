@@ -314,8 +314,14 @@ class AgentViewModel(
         if (trimmed.isEmpty()) return
         // CYP-387: record the actually-sent message for arrow-up/down recall (the sole sent-message choke point).
         inputHistory.record(trimmed)
+        // F4 (CYP-580, honest delivery): the echo reflects OBSERVED deliverability, not just our own action. A turn
+        // composed while the per-agent socket is not LIVE is NOT delivered (best case it buffers, worst case it is
+        // dropped in the client channel or skipped server-side in the restart window, AgentSocket:141) — mark it so
+        // rather than rendering it as sent. A LIVE send stays best-effort "sent" (true end-to-end confirmation needs
+        // a server ack — a separate item; we never fabricate a confirmed "delivered").
+        val delivered = connection.value == com.tneff.cyppieagents.comm.ConnectionStatus.LIVE
         _transcript.update {
-            foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed, tsMs = clientStampMs()))
+            foldEvent(it, AgentEvent.UserTurn(id = "user-${userTurnSeq++}", text = trimmed, tsMs = clientStampMs(), delivered = delivered))
         }
         session.sendMessage(trimmed)
     }
