@@ -18,6 +18,13 @@ object OperatorAuthTags {
     const val ATTEMPTS = "remote.authStep.attempts"
     const val LOCKED_OUT = "remote.authStep.lockedOut"
 
-    /** `remote.authStep.error.<cause>`, cause ∈ pinWrong / biometricFailed / keystoreUnavailable / authRejected / needsEnroll / cancelled. */
+    // CYP-542 / B1 — the U1 set-passphrase enroll step (D4 replaces the enroll text-stub). `enrollStrength` = the
+    // strength meter (D5 dampened for blocklist); `enrollSuggest` = the diceware one-click default button (#1).
+    const val ENROLL_PASSPHRASE_FIELD = "remote.authStep.enrollPassphraseField"
+    const val ENROLL_STRENGTH = "remote.authStep.enrollStrength"
+    const val ENROLL_SUGGEST = "remote.authStep.enrollSuggest"
+
+    /** `remote.authStep.error.<cause>`, cause ∈ pinWrong / biometricFailed / keystoreUnavailable / authRejected /
+     *  needsEnroll / cancelled / **tooWeak** / **blocklisted** (CYP-542 D3 setup-time causes, H1-distinct). */
     fun error(cause: String) = "remote.authStep.error.$cause"
 }
