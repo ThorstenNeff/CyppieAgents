@@ -45,8 +45,16 @@ fun main() {
     // of compile-time constants. Loaded here so `embeddedServer` can read them before it binds; `bootPlatform`
     // re-loads the same file for the rest of the wiring (cheap, single source of truth = the file).
     val config = PlatformConfig.load(configFile)
-    embeddedServer(Netty, port = config.hub.port, host = config.hub.host) {
-        bootPlatform(configFile, gitRoot, scope)
+    // CYP-427 (M2): TWO connectors on ONE Application (one shared platform / store set — NOT a second
+    // installPlatform, which would fork divergent in-memory stores). The tunnel-scoped connector is loopback-only
+    // and is the ONLY port the LoopbackBridge dials; installTunnelGodTokenGuard refuses the static operator token
+    // on it (port-discriminated, server-side-trusted — the dumb byte-pump stays dumb).
+    embeddedServer(
+        Netty,
+        serverConfig { module { bootPlatform(configFile, gitRoot, scope) } },
+    ) {
+        connector { port = config.hub.port; host = config.hub.host }   // public: local operator UI + agents
+        connector { port = config.hub.tunnelPort; host = "127.0.0.1" } // tunnel-scoped: God-token refused here
     }.start(wait = true)
 }
 
