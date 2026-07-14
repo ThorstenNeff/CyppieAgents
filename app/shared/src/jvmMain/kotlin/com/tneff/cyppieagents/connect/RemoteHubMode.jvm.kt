@@ -109,6 +109,12 @@ fun liveRemoteConnectComponentsFactory(
     operatorToken: suspend () -> String?,
     relayWsClient: HttpClient,
     channelBinding: ChannelBinding = coreChannelBinding(),
+    // CYP-537 F⑥-1 test-seam (PO ruling (b), Assist-gated): the RAW UV under the shared [CachingUserVerification].
+    // **Default = the prod fail-closed [deferredUserVerification] stub ⇒ PROD STAYS INERT** (Unavailable; real
+    // WebAuthn UV gates prod, lands separately). Tests/the joint e2e override it with a VERIFYING raw UV to exercise
+    // the POSITIVE "1 UV for N" path. Same default→prod / override→test discipline as `connectorFactory`/`TunnelSource`.
+    // This param touches ONLY the test path — it never weakens prod (prod never passes it).
+    rawUserVerification: UserVerification = deferredUserVerification,
 ): RemoteConnectComponentsFactory = RemoteConnectComponentsFactory { hub, scope ->
     val shared = buildSharedHubTrustComponents(hub, defaultPinnedHubStore()) // ①² one of(hub)+pending into both
     // CYP-525 §2: ONE enroll confirmer shared between the session's ClientOperatorAuth (which calls it + suspends on
@@ -124,11 +130,7 @@ fun liveRemoteConnectComponentsFactory(
     // (a real UV ceremony), the rest within the window ride the cache ⇒ **1 UV prompt for N tunnels** (0 extra
     // prompts — critical for dogfood). Security unchanged (each PoP is fresh over its own `h_i`, fail-closed; a denial
     // is never cached). O5: [nowMs] is **monotonic** (`nanoTime`) so a wall-clock adjustment can't widen the window.
-    val cachingUv = CachingUserVerification(
-        delegate = deferredUserVerification, // the raw UV source (headless stub today; real WebAuthn UI lands separately)
-        reuseWindowMs = OPERATOR_UV_REUSE_WINDOW_MS,
-        nowMs = { System.nanoTime() / 1_000_000 },
-    )
+    val cachingUv = buildOperatorUvCache(rawUserVerification) // default rawUv = prod fail-closed stub (INERT)
     val operatorAuth = ClientOperatorAuth(
         popBuilder = OperatorPopBuilder(
             store = KeystoreOperatorDeviceKeyStore(
@@ -189,6 +191,18 @@ private val deferredUserVerification = UserVerification { UvOutcome.Unavailable 
  * conservative-short default.
  */
 private const val OPERATOR_UV_REUSE_WINDOW_MS: Long = 120_000L
+
+/**
+ * CYP-537 F⑥-1 — build the shared operator UV cache with the **prod** parameters: the bounded [OPERATOR_UV_REUSE_WINDOW_MS]
+ * window + a **monotonic** millisecond clock (`nanoTime`, O5 — a wall-clock jump can't widen the window). Single-sourced
+ * so the factory + the seam test exercise the SAME construction; `internal` so the test can pin prod-inert-vs-override.
+ */
+internal fun buildOperatorUvCache(rawUv: UserVerification): CachingUserVerification =
+    CachingUserVerification(
+        delegate = rawUv,
+        reuseWindowMs = OPERATOR_UV_REUSE_WINDOW_MS,
+        nowMs = { System.nanoTime() / 1_000_000 },
+    )
 
 /** Runway #3: the jvm PoP nonce source (`SecureRandom`) — the one small runway item built inline. */
 private val secureRandomNonceGenerator = NonceGenerator {
