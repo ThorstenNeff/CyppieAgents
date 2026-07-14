@@ -105,9 +105,18 @@ session:
     persistent: true
 
 selfservice:
-  default_browser_return_url: REPLACE_ME
+  # SECURITY (CYP-562) — the post-login return-URL ALLOW-LIST is the OPEN-REDIRECT boundary. After a VALID login
+  # Kratos 302s the browser to the `?return_to=` target ONLY if it matches an entry here. Each entry MUST be an
+  # EXACT origin/URL — NEVER a wildcard, a scheme-only value, a host prefix, an all-interfaces host, or an origin
+  # that also serves attacker-controlled user content. A too-broad entry is a post-auth open redirect (a session
+  # can be handed to an attacker origin after a real login). Deploy MUST replace REPLACE_ME_SPA_ORIGIN with the
+  # EXACT web SPA origin; the desktop loopback is FIXED (RFC 8252, desktopApp main.kt LOOPBACK_PORT=47472) — keep
+  # it verbatim. Guarded by Rc2ConfigAssertionTest.kratosReferenceConfig_returnUrlAllowlist_hasOpenRedirectGuardrail;
+  # see deploy/kratos/CYP-562-RETURN-URL-ALLOWLIST.md.
+  default_browser_return_url: REPLACE_ME_SPA_ORIGIN
   allowed_return_urls:
-    - REPLACE_ME
+    - REPLACE_ME_SPA_ORIGIN            # the web SPA origin, EXACT (e.g. https://app.cyppie-agents.com) — never a wildcard/prefix
+    - http://127.0.0.1:47472/callback  # the desktop app's fixed loopback return (RFC 8252; main.kt LOOPBACK_PORT=47472)
 
   methods:
     password:

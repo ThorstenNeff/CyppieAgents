@@ -27,6 +27,7 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
@@ -75,6 +76,60 @@ class Rc2ConfigAssertionTest {
             Regex("base_url:\\s*http://127\\.0\\.0\\.1:").containsMatchIn(text),
             "RC4: the Kratos admin base_url must be loopback-bound (127.0.0.1)",
         )
+    }
+
+    // ---- CYP-562: return-URL allow-list open-redirect guardrail ----
+
+    @Test
+    fun kratosReferenceConfig_returnUrlAllowlist_hasOpenRedirectGuardrail() {
+        // The M1-auth re-read (CYP-550 follow-on) found the return-URL allow-list had NO test binding — unlike the
+        // enumeration / cookie / admin knobs above. Kratos 302s the browser to the post-login `?return_to=` target
+        // ONLY if it matches selfservice.allowed_return_urls, so a too-broad entry (wildcard / prefix / scheme-only /
+        // all-interfaces) is a post-auth open redirect. This binds the boundary: the key must be present, the fixed
+        // desktop loopback must be an explicit entry, and no concrete entry may be over-broad.
+        val text = repoFile("deploy/kratos/kratos.reference.yml").readText()
+        assertTrue(
+            Regex("(?m)^\\s*allowed_return_urls:").containsMatchIn(text),
+            "selfservice.allowed_return_urls must be present (Kratos gates post-login return_to against it)",
+        )
+        // Isolate the selfservice return-URL region so the value checks below can't false-match unrelated URLs
+        // elsewhere in the config (the region runs from `selfservice:` — so it includes the CYP-562 comment above
+        // default_browser_return_url — to the next `methods:` key). Comment-only lines parse to empty values below.
+        val region = Regex("(?s)selfservice:.*?\\n\\s*methods:").find(text)?.value
+            ?: fail("could not locate the selfservice return-URL region (selfservice: … methods:)")
+        // The security-invariant comment MUST be present so the deploy operator sees the exact-origin / no-wildcard
+        // rule at the point of edit (the placeholder alone doesn't convey the constraint).
+        assertTrue(region.contains("CYP-562"), "the return-URL block must carry the CYP-562 open-redirect security comment")
+        // Collect the CONCRETE return-URL values (strip inline comments so the doc comment's own `*` is not scanned).
+        val values = region.lines()
+            .map { it.substringBefore('#').trim() }
+            .mapNotNull { line ->
+                when {
+                    line.startsWith("- ") -> line.removePrefix("- ").trim()
+                    line.startsWith("default_browser_return_url:") -> line.substringAfter(':').trim()
+                    else -> null
+                }
+            }
+            .filter { it.isNotEmpty() }
+        assertTrue(values.isNotEmpty(), "the return-URL region must declare at least one value")
+        // The desktop loopback return is FIXED + deploy-invariant (RFC 8252; desktopApp main.kt LOOPBACK_PORT=47472),
+        // so pin it — a deploy edit can't silently drop it (which would break the desktop OIDC return or tempt a
+        // too-broad entry to "make it work"). Host:port form is asserted (robust to origin-vs-path matching form).
+        assertTrue(
+            values.any { it.contains("127.0.0.1:47472") },
+            "the fixed desktop loopback (127.0.0.1:47472) must be an explicit allow-list entry",
+        )
+        // Every CONCRETE (non-placeholder) entry must be an EXACT absolute http(s) origin/URL, never over-broad. An
+        // un-substituted REPLACE_ME_* placeholder is the deploy's job (a `grep REPLACE_ME` completeness check catches it).
+        for (v in values.filterNot { it.startsWith("REPLACE_ME") }) {
+            assertFalse(v.contains("*"), "return-URL entry \"$v\" must not contain a wildcard (post-auth open redirect)")
+            assertFalse(v.contains("0.0.0.0"), "return-URL entry \"$v\" must not bind all interfaces (open redirect)")
+            assertFalse(Regex("^https?://$").matches(v), "return-URL entry \"$v\" must not be scheme-only (matches every host)")
+            assertTrue(
+                Regex("^https?://[^/*]+").containsMatchIn(v),
+                "return-URL entry \"$v\" must be an EXACT absolute http(s) origin/URL",
+            )
+        }
     }
 
     // ---- CYP-190: Kratos-side log hardening (token/code leak into kratos.log) ----
