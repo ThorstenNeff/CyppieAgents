@@ -29,7 +29,13 @@ import io.ktor.websocket.send
  *  - one binary frame = one Noise message, forwarded verbatim (no length-prefix, LOCKED CYP-443).
  *  - `GET /health` → `ok`.
  */
-fun Application.relayModule(relay: RendezvousRelay = RendezvousRelay()) {
+fun Application.relayModule(
+    relay: RendezvousRelay = RendezvousRelay(),
+    /** CYP-549 — an optional wrapper applied to each joined [RelayPeer]. Prod = identity (no-op); a test injects a
+     *  decorator (e.g. a frame counter) so the live-relay e2e exercises THIS real module rather than a hand-copied
+     *  handler that could drift (the CYP-546 copy-drift class). Additive + default-identity → prod behaviour unchanged. */
+    peerDecorator: (RelayPeer) -> RelayPeer = { it },
+) {
     install(WebSockets)
     routing {
         get("/health") { call.respondText("ok") }
@@ -46,7 +52,7 @@ fun Application.relayModule(relay: RendezvousRelay = RendezvousRelay()) {
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "bad_rendezvous"))
                 return@webSocket
             }
-            relay.join(WebSocketRelayPeer(this, rzv, role))
+            relay.join(peerDecorator(WebSocketRelayPeer(this, rzv, role)))
         }
     }
 }
