@@ -27,6 +27,18 @@ object RemoteRelayWiring {
     /** CYP-484 — the default Op-Session-TTL (passive session lifetime, Decision 4 "kurze TTL Minuten"), single-sourced. */
     const val DEFAULT_OP_SESSION_TTL_MS: Long = 15 * 60_000L
 
+    /**
+     * CYP-563 — the SINGLE SOURCE for the effective Op-Session-TTL: the optional `CYPPIE_OP_SESSION_TTL_MIN` override
+     * (minutes, must be > 0) else [DEFAULT_OP_SESSION_TTL_MS]. BOTH legs of the `min(ticket-exp, tunnel-cap)` derive
+     * from this ONE resolver — the hub tunnel-cap ([buildRemoteTransport] `sessionTtlMs`) AND the CP hubTicket `exp`
+     * ([com.tneff.cyppieagents.controlplane.buildHubTicketMinter] → `LiveHubTicketMinter.ttlMs`) — so they cannot
+     * drift when the override is set (previously the tunnel-cap honored the env but the ticket leg was hard-wired to
+     * the default constant → drift; the CYP-503 single-source claim now holds for the override case too).
+     */
+    fun resolveOpSessionTtlMs(env: (String) -> String?): Long =
+        env("CYPPIE_OP_SESSION_TTL_MIN")?.toLongOrNull()?.takeIf { it > 0 }?.let { it * 60_000L }
+            ?: DEFAULT_OP_SESSION_TTL_MS
+
     fun build(
         config: RemoteTransportConfig,
         httpClient: HttpClient,
@@ -111,9 +123,9 @@ fun buildRemoteTransport(
     val dhPriv = hubSecretStore.get(HubIdentityProvisioner.DH_KEY)
         ?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
         ?: return InertRelayConnector
-    // CYP-484 — Op-Session-TTL (passive, minutes). Optional override CYPPIE_OP_SESSION_TTL_MIN; else the single-sourced default.
-    val sessionTtlMs = env("CYPPIE_OP_SESSION_TTL_MIN")?.toLongOrNull()?.takeIf { it > 0 }?.let { it * 60_000L }
-        ?: RemoteRelayWiring.DEFAULT_OP_SESSION_TTL_MS
+    // CYP-484 / CYP-563 — Op-Session-TTL (passive, minutes) from the ONE shared resolver (single-sourced with the CP
+    // hubTicket exp so the two legs of min(ticket-exp, tunnel-cap) cannot drift when CYPPIE_OP_SESSION_TTL_MIN is set).
+    val sessionTtlMs = RemoteRelayWiring.resolveOpSessionTtlMs(env)
 
     val gate = Rr3TunnelGate(
         cpJwtVerifier = CpJwtVerifier(),

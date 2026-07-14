@@ -18,10 +18,12 @@ import com.tneff.cyppieagents.transport.RemoteRelayWiring
  *  3. **`cb` passed 1:1, never recomputed** — the CP has no session `h`; it signs the client-supplied
  *     [HubTicketRequest.cb] verbatim. The binding is enforced at the hub against the LIVE `h` (S-E CHANNEL_BINDING),
  *     which is precisely why a client-supplied `cb` is safe.
- *  4. **Short TTL = the single-sourced Op-Session-TTL** — the ticket `exp` derives from
- *     [RemoteRelayWiring.DEFAULT_OP_SESSION_TTL_MS], the SAME constant the hub tunnel-cap uses
- *     ([Rr3AuthenticatedTunnelHandler] `sessionTtlMs`), so the effective `min(ticket-exp, op-session-TTL)` cannot
- *     drift between the two legs.
+ *  4. **Short TTL = the single-sourced Op-Session-TTL** — the ticket `exp` derives from [ttlMs], which the wiring
+ *     ([com.tneff.cyppieagents.controlplane.buildHubTicketMinter]) sets from [RemoteRelayWiring.resolveOpSessionTtlMs]
+ *     — the SAME resolver the hub tunnel-cap ([Rr3AuthenticatedTunnelHandler] `sessionTtlMs`) reads (default OR the
+ *     `CYPPIE_OP_SESSION_TTL_MIN` override). CYP-563 closed the earlier gap where the tunnel-cap honored the override
+ *     but the ticket leg was hard-wired to the default constant → the two legs of `min(ticket-exp, op-session-TTL)`
+ *     drifted; now they share one resolver and cannot.
  *
  * A dead CP session ([authenticate] → null) → [HubTicketFailure.CP_SESSION_EXPIRED] (non-terminal; the client
  * re-auths and resumes). Every branch returns a **typed** [HubTicketResponse] (never a bare null / throw) — the

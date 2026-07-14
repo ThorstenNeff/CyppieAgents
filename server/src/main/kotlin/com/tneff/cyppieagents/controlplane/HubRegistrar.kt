@@ -48,6 +48,10 @@ class HubRegistrar(
     /** S-J (CYP-530) — the admit-time clock for [RegisteredHub.admittedAt]. Injectable so tests pin it; default =
      *  wall-clock. Additive default keeps every existing positional caller unchanged. */
     private val clock: () -> Long = { System.currentTimeMillis() },
+    /** CYP-563 — a per-owner hub cap that bounds registry growth. Operator-only (admit is OPERATOR-gated), but no
+     *  reason to be unbounded. A re-admit of an ALREADY-registered hubId is an UPDATE (exempt); only a NEW hubId for
+     *  an owner already at the cap is rejected (`owner_hub_cap`). Additive default keeps positional callers unchanged. */
+    private val maxHubsPerOwner: Int = 64,
 ) {
     fun admit(reg: HubRegistration, cpNonce: ByteArray): AdmitResult {
         // (1) Transcript PoP — fail-closed. A substituted dhPubKey (or any field) alters the transcript → invalid.
@@ -57,6 +61,12 @@ class HubRegistrar(
             ?: return AdmitResult.Rejected("signing_pub_malformed")
         if (reg.hubId != HubIdentityProvisioner.deriveHubId(signingPubRaw)) {
             return AdmitResult.Rejected("hubid_not_self_certifying")
+        }
+        // (3) CYP-563 — per-owner cap (post-auth, before insert). A re-admit of the SAME hubId is an update (exempt);
+        // a NEW hubId for an owner already holding [maxHubsPerOwner] is rejected → registry growth is bounded.
+        val isNewHubId = !registry.containsKey(reg.hubId)
+        if (isNewHubId && registry.values.count { it.ownerId == reg.ownerId } >= maxHubsPerOwner) {
+            return AdmitResult.Rejected("owner_hub_cap")
         }
         val hub = RegisteredHub(reg.hubId, reg.ownerId, reg.name, reg.defaultPort, reg.signingPubKey, reg.dhPubKey, admittedAt = clock())
         registry[hub.hubId] = hub
