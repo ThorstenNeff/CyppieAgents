@@ -117,7 +117,9 @@ nicht-gebautes UI auditiere. An PO, falls der Slice zusammengelegt wird.
 
 ---
 
-## RUN-RESULTS — voller a11y-Audit @ `c3c03a9d` (2026-07-14, gemessen: Objekt-Read `RemoteOperatorAuthSteps.kt` + grep)
+## RUN-RESULTS — voller a11y-Audit @ `f71598980` (batch/CYP-542-b1, 2026-07-14, gemessen: Objekt-Read `RemoteOperatorAuthSteps.kt` + grep)
+> **Re-target (PO1): gegen Batch-Tip `f71598980` verifiziert** (nicht `c3c03a9d`). Am Objekt bestätigt: `RemoteOperatorAuthSteps.kt`
+> **byte-identisch** c3c03a9d↔f71598980 (0 Diff) + `liveRegion`-grep weiter 0 → **F1/F2/F3 halten verbatim** am wahren Merge-Baum.
 > **Verdikt: a11y NO-GO — 3 Findings zu fixen, bevor CYP-542 auf der a11y-Achse abschließt.** (Kein Selbst-Transition; PO1 zieht die
 > Findings in den B1-Batch.) Mess-Methode: Compose-a11y ist im Code deklariert → Objekt-Read + `liveRegion`-grep sind die Messung.
 
