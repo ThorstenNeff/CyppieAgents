@@ -28,16 +28,26 @@ import org.slf4j.LoggerFactory
  *
  * Runs on `ApplicationCallPipeline.Plugins` (before routing / any route-scoped auth); fail-closed with 401 + finish().
  */
-fun Application.installTunnelGodTokenGuard(tunnelPort: Int, isGodToken: (String?) -> Boolean) {
+fun Application.installTunnelGodTokenGuard(tunnelPort: Int, isGodToken: (String?) -> Boolean) =
+    installTunnelGodTokenGuard({ tunnelPort }, isGodToken) // production: config.hub.tunnelPort is fixed at install
+
+/**
+ * CYP-534: [tunnelPort] is a **supplier**, not a fixed Int, so a caller that binds the tunnel connector on an
+ * ephemeral `port=0` can supply the port RESOLVED after the bind (via `resolvedConnectors()`) — the interceptor
+ * reads it per-call (requests only arrive post-bind), which removes the `ServerSocket(0)`-close→re-bind TOCTOU race.
+ * Production passes a constant supplier; behaviour is identical.
+ */
+fun Application.installTunnelGodTokenGuard(tunnelPort: () -> Int, isGodToken: (String?) -> Boolean) {
     val log = LoggerFactory.getLogger("boot.tunnel-god-token")
     intercept(ApplicationCallPipeline.Plugins) {
-        if (call.request.local.localPort != tunnelPort) return@intercept // public connector — unchanged
+        val port = tunnelPort()
+        if (call.request.local.localPort != port) return@intercept // public connector — unchanged
         val presented = listOfNotNull(call.bearerToken(), call.request.queryParameters["token"])
         if (presented.any { isGodToken(it) }) {
             log.warn(
                 "CYP-427: static operator (God) token refused on the tunnel connector (port {}) — a remote operator " +
                     "must present a CP-scoped operator session, not the static token",
-                tunnelPort,
+                port,
             )
             call.respond(HttpStatusCode.Unauthorized)
             finish() // definitively stop the pipeline — routing / route-scoped auth never runs for this call

@@ -29,7 +29,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
-import java.net.ServerSocket
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -77,8 +76,6 @@ class Cyp427TunnelScopedListenerTest {
         fun deliver(bytes: ByteArray) { inbound.trySend(bytes) }
     }
 
-    private fun freePort(): Int = ServerSocket(0).use { it.localPort }
-
     private data class Platform(val publicPort: Int, val tunnelPort: Int, val agentToken: String, val operatorToken: String)
 
     /** Boot the REAL platform once, exposed on TWO loopback connectors; the tunnel connector carries the God-token guard. */
@@ -97,21 +94,27 @@ class Cyp427TunnelScopedListenerTest {
             FakeSpawner(),
             scope,
         ).boot()
-        val tunnelPort = freePort() // a fixed known port so the guard (installed at module load) can key on it
+        // CYP-534: BOTH connectors are ephemeral (port=0); the guard reads the tunnel port via a supplier RESOLVED
+        // AFTER the bind — no `ServerSocket(0)`-close→re-bind TOCTOU. resolvedConnectors() preserves declaration
+        // order: [0]=public, [1]=tunnel. Requests only arrive after the holder is set, so the supplier is populated.
+        val tunnelPortHolder = java.util.concurrent.atomic.AtomicInteger(-1)
         val server = embeddedServer(
             Netty,
             serverConfig {
                 module {
                     installPlatform(booted)
-                    installTunnelGodTokenGuard(tunnelPort, booted.tokenRegistry::isOperator)
+                    installTunnelGodTokenGuard({ tunnelPortHolder.get() }, booted.tokenRegistry::isOperator)
                 }
             },
         ) {
-            connector { port = 0; host = "127.0.0.1" }          // public (ephemeral)
-            connector { port = tunnelPort; host = "127.0.0.1" } // tunnel-scoped (the guarded one)
+            connector { port = 0; host = "127.0.0.1" } // [0] public
+            connector { port = 0; host = "127.0.0.1" } // [1] tunnel-scoped (the guarded one)
         }.start(wait = false)
         cleanups += { server.stop(0, 0) }
-        val publicPort = runBlocking { server.engine.resolvedConnectors() }.first { it.port != tunnelPort }.port
+        val conns = runBlocking { server.engine.resolvedConnectors() }
+        val publicPort = conns[0].port
+        val tunnelPort = conns[1].port
+        tunnelPortHolder.set(tunnelPort)
         return Platform(publicPort, tunnelPort, agentToken, operatorToken)
     }
 
