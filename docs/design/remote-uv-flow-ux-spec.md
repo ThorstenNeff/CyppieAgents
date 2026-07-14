@@ -14,7 +14,7 @@ Remote braucht eine **reale** User-Verification, um in Prod zu laufen — heute 
 
 | # | Naht | As-built heute | CYP-542 schließt |
 |---|---|---|---|
-| **U1** | **Enroll = wählen + bestätigen (+ Strength)** | `OperatorAuthStep.Enroll` rendert nur Disclosure-Text — **kein** Feldpaar, **kein** Strength-Meter (CYP-460 §5.2 fordert „zweifache Eingabe, Stärke-Hinweis"). | §4.1: Setz- + Bestätigungs-Feld + **capability-conditional Credential** (Passphrase/PIN) + Strength-Meter + Diceware + Gate. |
+| **U1** | **Enroll = wählen + bestätigen (+ Strength + starker Diceware-Default)** | `OperatorAuthStep.Enroll` rendert nur Disclosure-Text — **kein** Feldpaar, **kein** Strength-Meter, **kein** generierter One-Click-Diceware-Default (CYP-460 §5.2 + HG2). | §4.1: Setz- + Bestätigungs-Feld + **capability-conditional Credential** (Passphrase/PIN) + **generierter Diceware-One-Click-Default (HG2)** + Strength-Meter (type-your-own) + Gate. |
 | **U2** | **Prompt gemountet** | `RemoteConnectingView(popPrompt = null)` (`HubConnectSelection.kt:258/291-294`) → `AUTHENTICATING` zeigt den INERT-Spinner. | §4.2: `popPrompt` mountet den gebauten Dialog; `DeviceNotEnrolled` routet in den Enroll-Step. |
 | **U3** | **1-UV-für-N ehrlich** | Mechanik da (`CachingUserVerification`, `OPERATOR_UV_REUSE_WINDOW_MS`), UI **stumm**. | §4.3: neutraler Coverage-Hinweis, ehrlich begrenzt. |
 | **U4** | **Biometrie-Angebot** | Biometrie-*Prompt* gebaut; **kein** Opt-in-*Angebot*. | §4.4: „Touch-ID einrichten?"-Angebot, Credential bleibt Rückfall. |
@@ -32,6 +32,12 @@ Disclosure-Honesty-Regel, keine Kosmetik):
 **Regel (HG):** die UI **bietet nie** einen kurzen, offline-brute-forcebaren PIN an, wo keine Hardware ihn schützt — kein
 falsches Sicherheitsgefühl. Die Bau-Copy heißt **„App-Passphrase"** (no-hardware) vs **„App-PIN"** (hardware-backed);
 `pathHint` benennt immer den echten aktiven Pfad.
+
+**Regel (HG2, Devs Slice-3-Flag):** auf dem Passphrase-Pfad ist der **generierte 6-Wort-Diceware-Default** der prominente,
+empfohlene **One-Click-Default** (by-construction stark) — nicht bloß ein Hinweis. type-your-own bleibt möglich, ist aber
+**sekundär** (Strength-Meter + ≥64-bit-Floor-Gate), weil ein struktureller Meter allein eine schwache Common-Phrase
+durchlassen kann. Der generierte Credential wird **angezeigt + notierbar** (nie masked-at-generation). zxcvbn-Meter-Härtung
+fürs type-your-own = **separater Follow-up (PO-owned)**.
 
 ---
 
@@ -67,14 +73,23 @@ Drei Stufen, **eine Capability-Signal** wählt (dasselbe Signal, das auch U4 gat
 
 ### 4.1 U1 — Enroll: Credential wählen **+ bestätigen** (+ Strength, capability-conditional)
 Der `Enroll`-Step wird um das **Feldpaar** ergänzt (heute nur Disclosure-Text); der Credential-Typ ist capability-conditional:
-- **no-hardware (Passphrase):**
-  1. **Setz-Feld** — reuse `PIN_FIELD` + `remote_pop_enroll_passphrase` („App-Passphrase festlegen"), Tag `ENROLL_PIN_SET`.
-  2. **Strength-Meter** — `ENROLL_STRENGTH` + `remote_pop_enroll_strength_hint` („6 zufällige Wörter oder 12+ Zeichen");
-     Level-Labels `remote_pop_strength_{weak,fair,strong}` — **Text-Label**, Farbe nie alleiniger Träger (WCAG 1.4.1).
-  3. **Diceware-Vorschlag** — `ENROLL_SUGGEST` + `remote_pop_enroll_suggest` („Passphrase vorschlagen").
-  4. **Bestätigungs-Feld** — `ENROLL_PIN_CONFIRM` + `remote_pop_enroll_passphrase_confirm`.
-  5. **Gate:** kein Credential gesetzt bis Bestätigung == Setz **und** Entropie ≥ Schwelle → sonst `enrollError.mismatch`
-     bzw. `enrollError.tooWeak` (`remote_pop_enroll_too_weak`).
+- **no-hardware (Passphrase) — HG2: generierter Diceware-Default ist der Common-Path (Devs Slice-3-Flag):**
+  1. **Empfohlener One-Click-Default (prominent):** `ENROLL_SUGGESTED` zeigt eine **generierte 6-Wort-Diceware-Passphrase**
+     mit Label `remote_pop_enroll_suggested` („Empfohlen — 6 zufällige Wörter"). Akzeptanz per Klick
+     (`remote_pop_enroll_suggest_use` „Diese Passphrase verwenden") = **by-construction stark** (~kein Bit-Literal in der
+     Copy, Wortlisten-abhängig). **Regenerate** `ENROLL_SUGGEST` + `remote_pop_enroll_suggest` („Andere vorschlagen").
+  2. **Notierbarkeit (Ehrlichkeit):** die Wörter sind **angezeigt + notierbar** (`remote_pop_enroll_suggested_save` „Notiere
+     sie sicher — du brauchst sie bei jeder Anmeldung.") — **nie** ein masked-at-generation-Secret, das der Operator nicht
+     sichern kann.
+  3. **type-your-own (sekundär):** `ENROLL_TYPE_OWN` + `remote_pop_enroll_type_own` schaltet auf das **Setz-Feld** (reuse
+     `PIN_FIELD` + `remote_pop_enroll_passphrase`) mit **Strength-Meter** `ENROLL_STRENGTH` (+ `remote_pop_enroll_strength_hint`,
+     Level-Labels `remote_pop_strength_{weak,fair,strong}` — Text-Label, Farbe nie alleiniger Träger, WCAG 1.4.1).
+     **Warum sekundär:** ein struktureller Meter allein kann ein schwaches type-your-own (Common-Phrase „correcthorse…")
+     durchlassen — der generierte Default macht den Common-Path stark; type-your-own bleibt möglich, ist aber die Ausnahme.
+  4. **Bestätigungs-Feld** — `ENROLL_PIN_CONFIRM` + `remote_pop_enroll_passphrase_confirm` (bei type-your-own; der
+     One-Click-Default ist bereits bestätigt-durch-Anzeige).
+  5. **Gate:** kein Credential gesetzt bis (Default akzeptiert) **oder** (type-your-own: Bestätigung == Setz **und** Entropie
+     ≥ ≥64-bit-Floor) → sonst `enrollError.mismatch` bzw. `enrollError.tooWeak` (`remote_pop_enroll_too_weak`).
 - **hardware-backed (Kurz-PIN):**
   1. **Setz-Feld** — reuse `remote_pop_enroll_pin` („App-PIN festlegen"), Tag `ENROLL_PIN_SET`.
   2. **Bestätigungs-Feld** — `ENROLL_PIN_CONFIRM` + `remote_pop_enroll_confirm` („App-PIN bestätigen").
@@ -135,8 +150,12 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
 - **Affirmativ** (granted): neutral weiter, **kein** Erfolgs-Grün. Farbe nie alleiniger Träger (Label + Glyph + Tag).
 
 ## 7. Acceptance-Teeth (für spätere §-QA)
-1. **Credential-Staffelung (HG):** no-hardware ⇒ Passphrase-Feld + Strength-Meter + `tooWeak`-Gate; **kein** kurzer PIN
-   angeboten ohne Hardware. hardware-backed ⇒ Kurz-PIN erlaubt. `pathHint` benennt den echten Pfad.
+1. **Credential-Staffelung (HG):** no-hardware ⇒ Passphrase + `tooWeak`-Gate; **kein** kurzer PIN angeboten ohne Hardware.
+   hardware-backed ⇒ Kurz-PIN erlaubt. `pathHint` benennt den echten Pfad.
+1b. **Starker Diceware-Default (HG2):** der Passphrase-Enroll zeigt die generierte 6-Wort-Diceware **prominent als
+   One-Click-Default** (`enrollSuggested` present, `suggest_use` akzeptiert, `enrollSuggest` regeneriert); type-your-own ist
+   **sekundär** (`enrollTypeOwn`, Meter + Floor-Gate); der generierte Credential ist **angezeigt + notierbar**
+   (`_suggested_save`), nie masked-at-generation; **keine Bit-Zahl** im Copy-Literal.
 2. **Enroll gated:** kein Credential gesetzt bei Mismatch / zu-kurz / zu-schwach; `enrollError.*` render Fehler-Ton +
    eigener Tag, Felder aktiv, **kein** stiller Commit.
 3. **Mount:** `AUTHENTICATING` rendert den gebauten `OperatorAuthDialog` (nicht den INERT-Spinner); `DeviceNotEnrolled`
@@ -162,12 +181,15 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
 - **S-UV3 (Tester/DS, CYP-7):** die net-new Tags (`remote-uv-flow-tags.md`) im Frozen-Contract abstimmen.
 - **CYP-460-Konvergenz:** diese Delta **erweitert** den frozen CYP-460-Contract, ersetzt ihn nicht — bei Konflikt gilt
   CYP-460 für die gebauten Flächen, CYP-542 für die vier Nähte.
-- **Follow-up (gemeldet, nicht geraten):** `remote_pop_wrong_pin`/`_locked` sind frozen „PIN"-Copy; auf dem Passphrase-Pfad
-  ggf. schiefer Wortlaut → kleiner Copy-Follow-up an den PO, kein Retext im Rahmen von CYP-542.
+- **Follow-up 1 (PO-owned):** `remote_pop_wrong_pin`/`_locked` sind frozen „PIN"-Copy; auf dem Passphrase-Pfad ggf. schiefer
+  Wortlaut → credential-neutrale Zähler-Copy, PO filet non-blocking, kein Retext im Rahmen von CYP-542.
+- **Follow-up 2 (PO-owned):** **zxcvbn-Meter-Härtung** fürs type-your-own (struktureller Meter → dictionary/pattern-aware),
+  damit auch die sekundäre Ausnahme robuster ist. Separater Follow-up; CYP-542 setzt den ≥64-bit-Floor + den starken
+  generierten Default (HG2).
 
 ## 9. Self-Validation
-- **Deliverable-Konsistenz:** 3 Dateien (`-ux-spec`/`-tags`/`-keys`); Tag-Count (5 Const + 1 Fn) und Key-Count
-  (16 Realkeys + 1 a11y) über alle drei identisch referenziert.
+- **Deliverable-Konsistenz:** 3 Dateien (`-ux-spec`/`-tags`/`-keys`); Tag-Count (**7 Const + 1 Fn**) und Key-Count
+  (**20 Realkeys + 1 a11y**) über alle drei identisch referenziert.
 - **Anti-Duplikat:** kein `remote_pop_*`/`OperatorAuthTags`-Wert wird umgeschrieben; nur additive Nähte.
 - **Grounded @ `eb705236`:** jede Reuse-Behauptung gegen echten Code verifiziert (Code = Source of Truth); 0-Kollision
   grep-belegt.

@@ -23,8 +23,9 @@ Die Tag-Werte behalten der Konsistenz halber die `enrollPin…`-Namen (Twin zum 
 unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
 
 ## Warum überhaupt net-new (die As-built-Lücken vs. der frozen CYP-460-Spec)
-1. **Enroll = zweifache Eingabe + Strength fehlt.** `OperatorAuthStep.Enroll` rendert heute nur Disclosure-Text, **kein**
-   Feldpaar und **keinen** Strength-Meter (CYP-460 §5.2 fordert „zweifache Eingabe, Stärke-Hinweis").
+1. **Enroll = zweifache Eingabe + Strength + starker Diceware-Default fehlt.** `OperatorAuthStep.Enroll` rendert heute nur
+   Disclosure-Text, **kein** Feldpaar, **keinen** Strength-Meter und **keinen** generierten One-Click-Diceware-Default
+   (CYP-460 §5.2 fordert „zweifache Eingabe, Stärke-Hinweis"; HG2 macht den generierten Default zum Common-Path).
 2. **Dialog nicht gemountet.** `RemoteConnectingView(popPrompt = null)` (`HubConnectSelection.kt:258/291-294`).
 3. **1-UV-für-N ist stumm.** Mechanik existiert (`CachingUserVerification`), UI-Hinweis fehlt.
 4. **Biometrie-Enhancement-Angebot fehlt.** `BIOMETRIC_PROMPT` gebaut, aber **kein** Opt-in-*Angebot*.
@@ -35,8 +36,10 @@ unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
 | Konstante | Wert | Present ⇔ / Semantik |
 |---|---|---|
 | `ENROLL_PIN_CONFIRM` | `remote.authStep.enrollPinConfirm` | das **Bestätigungs-Feld** im Enroll (Twin zum gebauten `ENROLL_PIN_SET`). **Credential-agnostisch** (hält PIN *oder* Passphrase). Present ⇔ Enroll-Step gerendert. |
-| `ENROLL_STRENGTH` | `remote.authStep.enrollStrength` | der **Strength-Meter** (no-hardware Passphrase-Pfad). Present ⇔ Passphrase-Enroll aktiv. **Trägt ein Text-Level-Label** (schwach/mittel/stark) — Farbe **nie** alleiniger Träger (WCAG 1.4.1). |
-| `ENROLL_SUGGEST` | `remote.authStep.enrollSuggest` | die **Diceware-Vorschlag**-Affordanz („Passphrase vorschlagen"). Present ⇔ Passphrase-Enroll aktiv. |
+| `ENROLL_SUGGESTED` | `remote.authStep.enrollSuggested` | die **angezeigte generierte Diceware-Passphrase** = der **prominente empfohlene One-Click-Default** (6 zufällige Wörter, by-construction stark, HG2). Present ⇔ Passphrase-Enroll aktiv. Trägt die gerenderten Wörter + „One-Click-Verwenden"-Affordanz. |
+| `ENROLL_SUGGEST` | `remote.authStep.enrollSuggest` | die **Regenerate**-Affordanz („Andere vorschlagen" — neue Diceware würfeln). Present ⇔ Passphrase-Enroll aktiv. |
+| `ENROLL_TYPE_OWN` | `remote.authStep.enrollTypeOwn` | die **sekundäre** „Eigene eingeben"-Affordanz (Umschalten auf manuelle Passphrase). Present ⇔ Passphrase-Enroll aktiv. |
+| `ENROLL_STRENGTH` | `remote.authStep.enrollStrength` | der **Strength-Meter** (nur beim **type-your-own** relevant; der generierte Default ist by-construction stark). **Trägt ein Text-Level-Label** (schwach/mittel/stark) — Farbe **nie** alleiniger Träger (WCAG 1.4.1). |
 | `enrollError(cause)` | `remote.authStep.enrollError.<cause>` | **lokale Enroll-Validierung**, `<cause>` ∈ `mismatch` / `tooShort` (Kurz-PIN Min-Länge) / `tooWeak` (Passphrase-Entropie). Present ⇔ genau diese Validierung fehlschlägt. **Retryable**, Fehler-Ton (nie `errorContainer`), Feld bleibt aktiv. **≠** `error(<cause>)` (Auth-Zeit, nicht Setup). |
 | `UV_COVERAGE` | `remote.authStep.uvCoverage` | der **1-UV-für-N-Hinweis**. Present ⇔ die Wiederverwendungs-Fensterung greift real (N>1 bzw. cachingUv aktiv). **Neutral/advisory**, kein Erfolgs-Grün. |
 | `BIOMETRIC_OFFER` | `remote.authStep.biometricOffer` | das **Opt-in-Angebot** eines Platform-Authenticators (Enhancement). Present ⇔ Platform-Authenticator verfügbar **und** noch nicht aktiviert. **≠** `BIOMETRIC_PROMPT`. |
@@ -55,9 +58,15 @@ unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
 | `RemoteConnectTags.AUTHENTICATING` = `remote.connect.authenticating` | CYP-429 | der `AUTHENTICATING`-Zustand, in dessen `popPrompt`-Slot der Dialog mountet (ux-spec §4.2). |
 
 ## Fail-closed- / Ehrlichkeits-Anker (für §-QA)
-- **HG — Credential-Stärke matcht die reale Absicherung:** no-hardware ⇒ `ENROLL_STRENGTH` + Passphrase-Copy + `tooWeak`-Gate;
+- **HG — Credential-Stärke matcht die reale Absicherung:** no-hardware ⇒ Passphrase-Copy + `tooWeak`-Gate;
   **Kurz-PIN nur** wenn hardware-backed (Enclave rate-limitet). Die UI **bietet nie** einen kurzen, offline-brute-forcebaren
   PIN an, wo keine Hardware ihn schützt (kein falsches Sicherheitsgefühl). `pathHint` benennt ehrlich, was aktiv ist.
+- **HG2 — der starke Common-Path ist by-construction, nicht by-Meter:** der Passphrase-Enroll bietet `ENROLL_SUGGESTED`
+  (generierte 6-Wort-Diceware) **prominent als empfohlenen One-Click-Default** — Akzeptanz per Klick ist garantiert stark.
+  Ein struktureller `ENROLL_STRENGTH`-Meter allein könnte ein schwaches type-your-own (Common-Phrase) durchlassen; darum ist
+  der generierte Default der Common-Path, `ENROLL_TYPE_OWN` sekundär (Meter + ≥64-bit-Floor-`tooWeak`-Gate bleiben).
+  Der generierte Credential muss **anzeigbar/notierbar** sein (Operator braucht ihn bei jeder Anmeldung) — nie ein
+  masked-at-generation-Secret, das der Operator nicht sichern kann.
 - **Enroll-Commit ist gated:** kein Credential gesetzt, solange `enrollPinConfirm` ≠ `enrollPinSet` **oder** die
   Stärke-/Längen-Schwelle des Pfads nicht erreicht → `enrollError.mismatch` / `.tooShort` / `.tooWeak` (retryable). **Nie
   stiller Commit** einer unbestätigten/schwachen Eingabe.
@@ -72,11 +81,11 @@ unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
   + `severityColor(WARN)` (nie Fehler-Rot, nie `tertiary`-Grün); affirmative Fakten (`uvCoverage`) neutral, kein Grün.
 
 ## Self-Validation
-- **Net-new: 5 Const** (`ENROLL_PIN_CONFIRM`, `ENROLL_STRENGTH`, `ENROLL_SUGGEST`, `UV_COVERAGE`, `BIOMETRIC_OFFER`)
-  **+ 1 Fn** (`enrollError(cause)`, `<cause>` ∈ `mismatch`/`tooShort`/`tooWeak`) — alle in der **bestehenden** Area
-  `remote.authStep.*`, im **bestehenden** `OperatorAuthTags`-Object (kein neues Object/Namespace).
-- **0 Kollision @ `eb705236`:** `enrollPinConfirm` / `enrollStrength` / `enrollSuggest` / `uvCoverage` / `biometricOffer` /
-  `enrollError` existieren nicht im CYP-460/CYP-429-Satz (grep-verifiziert).
+- **Net-new: 7 Const** (`ENROLL_PIN_CONFIRM`, `ENROLL_SUGGESTED`, `ENROLL_SUGGEST`, `ENROLL_TYPE_OWN`, `ENROLL_STRENGTH`,
+  `UV_COVERAGE`, `BIOMETRIC_OFFER`) **+ 1 Fn** (`enrollError(cause)`, `<cause>` ∈ `mismatch`/`tooShort`/`tooWeak`) — alle in
+  der **bestehenden** Area `remote.authStep.*`, im **bestehenden** `OperatorAuthTags`-Object (kein neues Object/Namespace).
+- **0 Kollision @ `eb705236`:** `enrollPinConfirm` / `enrollSuggested` / `enrollSuggest` / `enrollTypeOwn` / `enrollStrength` /
+  `uvCoverage` / `biometricOffer` / `enrollError` existieren nicht im CYP-460/CYP-429-Satz (grep-verifiziert).
 - **Charset ✓** camelCase, `[A-Za-z0-9-]+`, keine Punkte im Wert.
 - **Reuse verifiziert:** die 9 reused Werte stammen 1:1 aus `OperatorAuthTags.kt` / `RemoteConnectTags.kt` @ `eb705236`
   (Code = Source of Truth) — Dev legt sie **nicht** neu an, wired nur.

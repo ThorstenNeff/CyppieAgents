@@ -11,24 +11,29 @@
 > den **hardware-backed Kurz-PIN-Pfad**; die neue Passphrase-Copy bedient den **no-hardware Boden**.
 
 ## Credential-Split (Crypto-Lens, PO/Reviewer)
-- **no-hardware** ⇒ **App-Passphrase ≥64 bit** (6-Wort-diceware / 12+ Zeichen) **+ Strength-Meter + Diceware-Vorschlag**.
+- **no-hardware** ⇒ **App-Passphrase ≥64 bit** — **generierte 6-Wort-Diceware als prominenter empfohlener One-Click-Default
+  (HG2, by-construction stark)**, type-your-own sekundär (Strength-Meter + ≥64-bit-Floor-Gate).
 - **hardware-backed** (Platform-Authenticator/Enclave präsent) ⇒ **Kurz-PIN** (reuse frozen `remote_pop_pin_*`).
 Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App-Passphrase" / „App-PIN" / „Touch-ID").
 
 ---
 
-## Net-new Copy (16 Realkeys + 1 a11y)
+## Net-new Copy (20 Realkeys + 1 a11y)
 
-### Δ1a — Passphrase-Pfad (no-hardware Boden): Setup + Unlock + Strength + Diceware
+### Δ1a — Passphrase-Pfad (no-hardware Boden): Setup + Unlock + **generierter Diceware-One-Click-Default (HG2)** + Strength
 | Key | DE (Default) | EN | Rolle |
 |---|---|---|---|
 | `remote_pop_passphrase_title` **(0)** | App-Passphrase eingeben | Enter your app passphrase | Unlock-Label (Feld), no-hardware. Twin zu frozen `remote_pop_pin_title`. |
 | `remote_pop_passphrase_body` **(0)** | Bestätige mit deiner App-Passphrase, um remote auf deine Hubs zuzugreifen. | Confirm with your app passphrase to access your hubs remotely. | Unlock-Body. Twin zu `remote_pop_pin_body`. |
 | `remote_pop_enroll_passphrase` **(0)** | App-Passphrase festlegen | Set an app passphrase | Enroll-Setz-Feld-Label. Twin zu `remote_pop_enroll_pin`. |
 | `remote_pop_enroll_passphrase_confirm` **(0)** | App-Passphrase bestätigen | Confirm your app passphrase | Enroll-**Bestätigungs**-Feld (`ENROLL_PIN_CONFIRM`), Passphrase-Pfad. |
-| `remote_pop_enroll_strength_hint` **(0)** | 6 zufällige Wörter oder mindestens 12 Zeichen. | 6 random words or at least 12 characters. | Guidance neben dem Strength-Meter (`ENROLL_STRENGTH`), neutral. |
-| `remote_pop_enroll_too_weak` **(0)** | Passphrase zu schwach — 6 zufällige Wörter oder 12+ Zeichen. | Passphrase too weak — 6 random words or 12+ characters. | `enrollError.tooWeak`-Gate (Entropie < ≥64 bit). Fehler-Ton, retryable. |
-| `remote_pop_enroll_suggest` **(0)** | Passphrase vorschlagen | Suggest a passphrase | Diceware-Vorschlag-Affordanz (`ENROLL_SUGGEST`). |
+| `remote_pop_enroll_suggested` **(0)** | Empfohlen — 6 zufällige Wörter | Recommended — 6 random words | Label über der **generierten Diceware-Default-Passphrase** (`ENROLL_SUGGESTED`, prominent, One-Click, HG2). Die Wörter selbst = gerenderte Daten, kein Key. **Kein** Bit-Zahl-Literal (Wortlisten-abhängig, driftet) — die Stärke trägt der Meter/„stark". |
+| `remote_pop_enroll_suggested_save` **(0)** | Notiere sie sicher — du brauchst sie bei jeder Anmeldung. | Save it securely — you'll need it every time you sign in. | **Ehrlichkeit (HG2):** der generierte Credential muss notierbar sein; kein masked-at-generation-Secret. |
+| `remote_pop_enroll_suggest_use` **(0)** | Diese Passphrase verwenden | Use this passphrase | **One-Click-Accept** des empfohlenen Defaults (Enroll-Affordanz zu `ENROLL_SUGGESTED`; Dev-Konvergenz: darf auch primärer Submit-Button sein). |
+| `remote_pop_enroll_suggest` **(0)** | Andere vorschlagen | Suggest another | **Regenerate**-Affordanz (`ENROLL_SUGGEST` — neue Diceware würfeln). |
+| `remote_pop_enroll_type_own` **(0)** | Eigene Passphrase eingeben | Type your own passphrase | **sekundäre** Umschaltung auf manuelle Eingabe (`ENROLL_TYPE_OWN`). |
+| `remote_pop_enroll_strength_hint` **(0)** | 6 zufällige Wörter oder mindestens 12 Zeichen. | 6 random words or at least 12 characters. | Guidance neben dem Strength-Meter (`ENROLL_STRENGTH`, nur type-your-own), neutral. |
+| `remote_pop_enroll_too_weak` **(0)** | Passphrase zu schwach — 6 zufällige Wörter oder 12+ Zeichen. | Passphrase too weak — 6 random words or 12+ characters. | `enrollError.tooWeak`-Gate (Entropie < ≥64 bit; type-your-own). Fehler-Ton, retryable. |
 | `remote_pop_strength_weak` **(0)** | Schwach | Weak | Strength-Meter-Level (Text-Label — Farbe **nie** alleiniger Träger, WCAG 1.4.1). |
 | `remote_pop_strength_fair` **(0)** | Mittel | Fair | Strength-Meter-Level. |
 | `remote_pop_strength_strong` **(0)** | Stark | Strong | Strength-Meter-Level. |
@@ -79,6 +84,10 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 - **HG — Credential-Stärke matcht die Absicherung:** no-hardware ⇒ **Passphrase + Strength-Meter + `too_weak`-Gate**;
   Kurz-PIN nur hardware-backed. Die UI bietet nie einen kurzen, offline-brute-forcebaren PIN an, wo keine Hardware ihn
   schützt. `remote_pop_path_hint` benennt ehrlich (Passphrase vs PIN vs Biometrie).
+- **HG2 — starker Common-Path by-construction:** `remote_pop_enroll_suggested` (generierte 6-Wort-Diceware) ist der
+  **prominente One-Click-Default**; type-your-own ist sekundär (`_type_own`), Meter + `_too_weak`-Floor bleiben. Der
+  generierte Credential wird **angezeigt + notierbar** (`_suggested_save`) — nie masked-at-generation. Bit-Zahl **nicht**
+  in der Copy (wortlisten-abhängig, driftet).
 - **HA — Enroll gated:** kein Credential gesetzt bei Mismatch / zu-kurz / zu-schwach; retryable (Fehler-Ton), nie stiller
   Commit.
 - **HB — Coverage ehrlich begrenzt:** „die jetzt geöffneten Hubs", nicht die ganze Sitzung; nach Ablauf neuer Prompt.
@@ -88,11 +97,13 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 - **WCAG 1.4.1:** die Strength-Meter-Level tragen Text-Labels (`_weak`/`_fair`/`_strong`) — Farbe nie alleiniger Träger.
 
 ## Self-Validation
-- **Net-new: 16 Realkeys + 1 a11y** — Passphrase-Pfad 10, Kurz-PIN-Pfad 3, Coverage 1(+a11y), Biometrie 2. Args:
-  `enroll_too_short` (1), `biometric_offer` (1), `path_hint`-Reuse (1); Rest 0. Alle **DE+EN paritätisch** (Argument-Anzahl
-  identisch).
-- **0 Retext, 0 Löschung** — reine Ergänzung; kein `remote_pop_*`/`remote_connect_*` wird angefasst.
-- **0 Kollision @ `eb705236`** (grep-verifiziert: keiner der 17 Keys existiert in `values/` oder `values-en/`).
+- **Net-new: 20 Realkeys + 1 a11y** — Passphrase-Pfad 14 (inkl. 4 HG2-Diceware-Default: `_suggested`, `_suggested_save`,
+  `_suggest_use`, `_type_own`; `_suggest` re-scoped auf Regenerate), Kurz-PIN-Pfad 3, Coverage 1(+a11y), Biometrie 2. Args:
+  `enroll_too_short` (1), `biometric_offer` (1), `path_hint`-Reuse (1); Rest 0. Alle **DE+EN paritätisch**.
+- **0 Retext frozener Keys, 0 Löschung** — reine Ergänzung an CYP-542-eigenen (noch nicht gebauten) Keys; kein
+  gebautes/frozen `remote_pop_*`/`remote_connect_*` wird angefasst (`_suggest`-Retext betrifft nur meinen eigenen
+  net-new-Key derselben Branch).
+- **0 Kollision @ `eb705236`** (grep-verifiziert: keiner der 21 Keys existiert in `values/` oder `values-en/`).
 - **Kein content-tragender/sensibler Klartext;** `%1$s` nur Count/Wait/Authenticator-Name/Min-Länge.
 - **Dev foldet in `OperatorAuthDialog`** (Passphrase/PIN-Feldpaar capability-conditional + Strength-Meter + Diceware +
   Coverage-Zeile + Biometrie-Angebot) — Copy hier ist der frozen AC.
