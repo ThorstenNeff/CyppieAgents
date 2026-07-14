@@ -16,8 +16,20 @@ fun interface RendezvousResolver {
 }
 
 sealed interface RendezvousResolution {
-    /** The CP paired the hub to a relay: dial [relayUrl], joining the opaque [rendezvousId] as the client role. */
-    data class Bound(val rendezvousId: String, val relayUrl: String) : RendezvousResolution
+    /**
+     * The CP paired the hub to a relay: dial [relayUrl], joining the opaque [rendezvousId] as the client role.
+     *
+     * CYP-537 (M2-A / C4): [rendezvousIds] is the **epoch-derived N-set** (`:core RendezvousBinding.rendezvousIds`,
+     * CYP-536) — the CP-derived opaque ids the pool dials for N concurrent tunnels. `rendezvousIds.first() ==
+     * rendezvousId` when populated (element 0 = the legacy base id the SESSION's control tunnel uses); the pool
+     * dials the REST (`drop(1)`) so it never collides with the session's 1↔1 relay pairing. Additive + defaulted
+     * (`emptyList()`) → the single-tunnel legacy resolve is byte-unchanged.
+     */
+    data class Bound(
+        val rendezvousId: String,
+        val relayUrl: String,
+        val rendezvousIds: List<String> = emptyList(),
+    ) : RendezvousResolution
 
     /** A typed unavailability (mirror of the `:core` `RendezvousFailure`) → a distinct operator-facing cause. */
     data class Failed(val cause: RendezvousUnavailable) : RendezvousResolution

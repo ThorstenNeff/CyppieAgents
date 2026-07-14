@@ -128,31 +128,33 @@ fun liveRemoteConnectComponentsFactory(
         cpJwtProvider = HttpCpJwtProvider(cpHttpClient, cpBaseUrl, operatorToken, channelBinding),
         enrollConfirmer = enrollConfirm,
     )
+    // Shared by the session's single-tunnel dialer AND the CYP-537 pool: ONE resolver (CP rendezvous, CYP-536
+    // epoch-set) + ONE id-aware relay connector (stateless HTTP/WS). The session dials the base id (rendezvousIds[0]);
+    // the pool dials the rest (id_1..id_{cap-1}, `NoisePoolTunnelDialer.rendezvousSet()` = `drop(1)`) — no collision.
+    val rendezvousResolver = HttpRendezvousResolver(cpHttpClient, cpBaseUrl, operatorToken)
+    val relayConnector = KtorWsRelayConnector(relayWsClient)
     val session = buildRemoteHubSession(
         hubId = hub.hubId,
         transport = noiseTransport,
-        dialer = RendezvousRelayDialer(
-            resolver = HttpRendezvousResolver(cpHttpClient, cpBaseUrl, operatorToken),
-            connector = KtorWsRelayConnector(relayWsClient),
-        ),
+        dialer = RendezvousRelayDialer(resolver = rendezvousResolver, connector = relayConnector),
         trust = shared.trust,
         authenticator = operatorAuth,
         scope = scope,
     )
     // CYP-537 (M2 Option A, WS2) — the N-tunnel pool, the F-M2-1 fix. It shares the session's transport/trust/
-    // authenticator (pool tunnels ride the pin + enrolled device). The **CP-N-set resolve** (C4: opaque epoch-derived
-    // ids, CYP-536/507) and the **id-aware relay dial** are the co-located WS1↔WS2 convergence seams — wired
-    // **fail-closed** here (a `null` set / a throwing dial ⇒ the pool yields no tunnels ⇒ INERT), exactly like the
-    // rest of the gated remote runway. When Backend publishes the Register/Resolve set-format they swap in live; the
-    // pool mechanics (cap, lifecycle, C3 state, H7 backpressure) are already built + gated (`net/hub/pool`).
+    // authenticator (pool tunnels ride the pin + enrolled device) AND the live rendezvous resolver + connector
+    // (C4, CYP-536): `rendezvousSet()` resolves the CP epoch-set once and dials id_1..id_{cap-1}; the ids stay
+    // CP-derived + opaque (never re-derived). Real against Backend's live WS1 N-responder; still gated OFF by env
+    // (`CYPPIE_CP_BASE_URL` + `CYPPIE_REMOTE_RELAY_URL`) + `CYP_REMOTE_HUB` — the pool is only reached on a live
+    // remote connect. The pool mechanics (cap, lifecycle, C3 state, H7 backpressure) are unit-gated (`net/hub/pool`).
     val tunnelPool = PooledTunnelSource(
         dialer = NoisePoolTunnelDialer(
             hubId = hub.hubId,
             transport = noiseTransport,
             trust = shared.trust,
             authenticator = operatorAuth,
-            rendezvousSetResolver = { null }, // convergence: CP N-set endpoint not wired ⇒ fail-closed ⇒ INERT
-            dialRendezvous = { _ -> error("client N-set rendezvous dial not wired yet (WS1↔WS2 convergence) — fail-closed") },
+            resolver = rendezvousResolver, // WS1 live: resolves the CYP-536 epoch N-set (rendezvousIds)
+            connector = relayConnector,    // id-aware relay open (X-Cyppie-Rendezvous, role: client)
         ),
         nowMs = { System.currentTimeMillis() },
     )

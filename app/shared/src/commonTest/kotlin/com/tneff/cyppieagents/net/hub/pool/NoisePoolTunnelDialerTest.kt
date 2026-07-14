@@ -3,6 +3,10 @@ package com.tneff.cyppieagents.net.hub.pool
 import com.tneff.cyppieagents.net.hub.noise.ClientNoiseTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.noise.RelayChannel
+import com.tneff.cyppieagents.net.hub.relay.RelayWsConnector
+import com.tneff.cyppieagents.net.hub.relay.RendezvousResolution
+import com.tneff.cyppieagents.net.hub.relay.RendezvousResolver
+import com.tneff.cyppieagents.net.hub.relay.RendezvousUnavailable
 import com.tneff.cyppieagents.net.hub.remote.HubTrust
 import com.tneff.cyppieagents.net.hub.remote.OperatorAuthOutcome
 import com.tneff.cyppieagents.net.hub.remote.OperatorAuthenticator
@@ -12,17 +16,16 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * CYP-537 (M2 Option A, WS2) — [NoisePoolTunnelDialer] establishment teeth: the pool tunnel's crypto path
- * (dial-the-opaque-id → resolve trust → Noise handshake → operator PoP) is **fail-closed at every step** and rides
- * the pin the session already adopted. A Granted PoP yields the tunnel; anything else (reject / trust-changed /
- * handshake fail / relay fail) yields `null` with the relay/tunnel torn down first — never a leaked or unauthenticated
- * tunnel. Cancellation always propagates (a switch/leave unwinds, never swallowed as a fail).
+ * CYP-537 (M2 Option A, WS2) — [NoisePoolTunnelDialer] teeth against Backend's live WS1 responder seams
+ * ([RendezvousResolver] + [RelayWsConnector], C4). [rendezvousSet] resolves once and returns the CP epoch-set
+ * **minus the base id** (`drop(1)` — the session's control tunnel holds id_0); [dial] opens a SPECIFIC opaque id
+ * then runs the pinned-handshake + PoP, fail-closed at every step, riding the pin the session adopted. Cancellation
+ * always propagates.
  */
 class NoisePoolTunnelDialerTest {
 
@@ -42,6 +45,7 @@ class NoisePoolTunnelDialerTest {
     }
 
     private val pinnedStatic = ByteArray(32) { 7 }
+    private val boundSet = listOf("id-0", "id-1", "id-2") // element 0 = the base id the session holds
 
     // ClientNoiseTransport is a *regular* interface (its connect() has a default `prologue`) ⇒ NOT SAM: use object :.
     private fun fakeTransport(tunnel: NoiseTunnel, throws: Boolean = false) = object : ClientNoiseTransport {
@@ -54,33 +58,56 @@ class NoisePoolTunnelDialerTest {
         connectThrows: Boolean = false,
         tunnel: FakeTunnel = FakeTunnel(),
         outcome: OperatorAuthOutcome = OperatorAuthOutcome.Granted,
-        relay: FakeRelay = FakeRelay(),
-        set: List<String>? = listOf("id-0", "id-1"),
-        relayDial: suspend (String) -> RelayChannel = { relay },
+        resolution: RendezvousResolution = RendezvousResolution.Bound("id-0", "ws://relay/x", boundSet),
+        resolverThrows: Boolean = false,
+        connector: RelayWsConnector = RelayWsConnector { _, _ -> FakeRelay() },
     ): NoisePoolTunnelDialer = NoisePoolTunnelDialer(
         hubId = "hub-1",
         transport = fakeTransport(tunnel, connectThrows),
         trust = HubTrust { trust },
         authenticator = OperatorAuthenticator { _, _ -> outcome },
-        rendezvousSetResolver = { set },
-        dialRendezvous = relayDial,
+        resolver = RendezvousResolver { if (resolverThrows) error("cp down") else resolution },
+        connector = connector,
     )
 
     @Test
-    fun dial_pinnedAndGranted_returnsTunnel_dialsTheId() = runTest {
-        val dialedIds = mutableListOf<String>()
-        val d = dialer(relayDial = { id -> dialedIds.add(id); FakeRelay() })
-        val t = assertNotNull(d.dial("id-0"), "pinned + Granted ⇒ a live authenticated tunnel")
-        assertTrue(t is FakeTunnel)
-        assertFalse(t.closed)
-        assertEquals(listOf("id-0"), dialedIds, "the specific opaque id was dialed (C4)")
+    fun rendezvousSet_dropsBaseId_returnsTheRest() = runTest {
+        // The pool dials id_1..id_{cap-1}; id_0 is the session's control tunnel (no 1↔1 collision).
+        assertEquals(listOf("id-1", "id-2"), dialer().rendezvousSet())
+    }
+
+    @Test
+    fun rendezvousSet_resolveFailed_returnsNull() = runTest {
+        val d = dialer(resolution = RendezvousResolution.Failed(RendezvousUnavailable.NOT_REGISTERED))
+        assertNull(d.rendezvousSet(), "a typed Failed resolve ⇒ null fail-closed (pool INERT)")
+    }
+
+    @Test
+    fun rendezvousSet_cpUnreachable_returnsNull() = runTest {
+        assertNull(dialer(resolverThrows = true).rendezvousSet(), "a CP transport error ⇒ null fail-closed")
+    }
+
+    @Test
+    fun rendezvousSet_emptySet_returnsEmpty_legacyInert() = runTest {
+        // Legacy single-tunnel CP (rendezvousIds empty) ⇒ drop(1) of [] = [] ⇒ the pool has no ids (INERT).
+        val d = dialer(resolution = RendezvousResolution.Bound("id-0", "ws://relay/x", emptyList()))
+        assertEquals(emptyList(), d.rendezvousSet())
+    }
+
+    @Test
+    fun dial_pinnedAndGranted_returnsTunnel_opensTheSpecificId() = runTest {
+        val opened = mutableListOf<Pair<String, String>>()
+        val d = dialer(connector = RelayWsConnector { url, id -> opened.add(url to id); FakeRelay() })
+        val t = assertNotNull(d.dial("id-1"), "pinned + Granted ⇒ a live authenticated tunnel")
+        assertTrue(t is FakeTunnel && !t.closed)
+        assertEquals(listOf("ws://relay/x" to "id-1"), opened, "the relay opened THIS opaque id at the resolved url (C4)")
     }
 
     @Test
     fun dial_authRejected_returnsNull_closesTunnel() = runTest {
         val tunnel = FakeTunnel()
         val d = dialer(tunnel = tunnel, outcome = OperatorAuthOutcome.Rejected)
-        assertNull(d.dial("id-0"), "a rejected PoP ⇒ null (fail-closed), never an unauthenticated tunnel")
+        assertNull(d.dial("id-1"), "a rejected PoP ⇒ null (fail-closed), never an unauthenticated tunnel")
         assertTrue(tunnel.closed, "the tunnel is torn down on reject")
     }
 
@@ -88,7 +115,7 @@ class NoisePoolTunnelDialerTest {
     fun dial_deviceNotEnrolled_returnsNull_closesTunnel() = runTest {
         val tunnel = FakeTunnel()
         val d = dialer(tunnel = tunnel, outcome = OperatorAuthOutcome.DeviceNotEnrolled)
-        assertNull(d.dial("id-0"), "a pool tunnel just fails-closed on any non-Granted outcome")
+        assertNull(d.dial("id-1"), "a pool tunnel just fails-closed on any non-Granted outcome")
         assertTrue(tunnel.closed)
     }
 
@@ -105,37 +132,37 @@ class NoisePoolTunnelDialerTest {
             },
             trust = HubTrust { TrustResolution.Changed(expectedFingerprint = "AB:CD") },
             authenticator = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.Granted },
-            rendezvousSetResolver = { listOf("id-0") },
-            dialRendezvous = { relay },
+            resolver = RendezvousResolver { RendezvousResolution.Bound("id-0", "ws://relay/x", boundSet) },
+            connector = RelayWsConnector { _, _ -> relay },
         )
-        assertNull(d.dial("id-0"), "a changed hub key is a hard block — NEVER a silently re-pinned pool tunnel (CI-5)")
+        assertNull(d.dial("id-1"), "a changed hub key is a hard block — NEVER a silently re-pinned pool tunnel (CI-5)")
         assertTrue(relay.closed, "the relay is closed on the trust block")
-        assertFalse(connected, "no handshake is attempted against a changed key")
+        assertTrue(!connected, "no handshake is attempted against a changed key")
     }
 
     @Test
-    fun dial_relayUnreachable_returnsNull() = runTest {
-        val d = dialer(relayDial = { error("relay down") })
-        assertNull(d.dial("id-0"), "a relay-open failure ⇒ null (fail-closed)")
+    fun dial_relayOpenFails_returnsNull() = runTest {
+        val d = dialer(connector = RelayWsConnector { _, _ -> error("relay down") })
+        assertNull(d.dial("id-1"), "a relay-open failure ⇒ null (fail-closed)")
     }
 
     @Test
     fun dial_handshakeFails_returnsNull_closesRelay() = runTest {
         val relay = FakeRelay()
-        val d = dialer(connectThrows = true, relayDial = { relay })
-        assertNull(d.dial("id-0"), "a handshake failure ⇒ null")
+        val d = dialer(connectThrows = true, connector = RelayWsConnector { _, _ -> relay })
+        assertNull(d.dial("id-1"), "a handshake failure ⇒ null")
         assertTrue(relay.closed, "the relay is closed on a handshake failure")
     }
 
     @Test
-    fun rendezvousSet_delegatesToResolver() = runTest {
-        assertEquals(listOf("id-0", "id-1"), dialer().rendezvousSet())
-        assertNull(dialer(set = null).rendezvousSet(), "an unresolved CP set is null fail-closed")
+    fun dial_resolveFailed_returnsNull() = runTest {
+        val d = dialer(resolution = RendezvousResolution.Failed(RendezvousUnavailable.RELAY_UNAVAILABLE))
+        assertNull(d.dial("id-1"), "no resolved binding ⇒ dial fails closed (never opens a relay)")
     }
 
     @Test
     fun dial_cancellation_propagates_notSwallowed() = runTest {
-        val d = dialer(relayDial = { throw CancellationException("switch") })
-        assertFailsWith<CancellationException> { d.dial("id-0") }
+        val d = dialer(connector = RelayWsConnector { _, _ -> throw CancellationException("switch") })
+        assertFailsWith<CancellationException> { d.dial("id-1") }
     }
 }
