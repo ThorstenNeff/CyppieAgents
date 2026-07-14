@@ -105,8 +105,14 @@ class SqliteAgentEventStore(
                 ps.executeQuery().use { rs ->
                     buildList {
                         while (rs.next()) {
-                            val ev = runCatching { CommJson.decodeFromString(StreamJsonEvent.serializer(), rs.getString(5)) }.getOrNull()
-                            if (ev != null) add(StoredAgentEvent(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getLong(4), ev))
+                            val seq = rs.getLong(1)
+                            // CYP-579: an undecodable row (schema-drift after a StreamJsonEvent variant/field change, or a
+                            // corrupt/partial row) was silently skipped → a `/ws/agent` replay gap with no signal (CYP-575
+                            // class). Now: WARN + emit an "unrenderable" placeholder at the SAME seq (visible gap, cursor intact).
+                            val ev = runCatching { CommJson.decodeFromString(StreamJsonEvent.serializer(), rs.getString(5)) }
+                                .onFailure { log.warn("CYP-579: undecodable agent_event seq={} agent={} — emitting unrenderable placeholder", seq, agentId, it) }
+                                .getOrElse { unrenderableEventPlaceholder(seq) }
+                            add(StoredAgentEvent(seq, rs.getString(2), rs.getString(3), rs.getLong(4), ev))
                         }
                     }
                 }

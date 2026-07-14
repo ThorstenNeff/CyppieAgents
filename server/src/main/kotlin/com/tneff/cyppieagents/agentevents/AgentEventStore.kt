@@ -1,7 +1,10 @@
 package com.tneff.cyppieagents.agentevents
 
+import com.tneff.cyppieagents.model.AgentMessage
 import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
+import com.tneff.cyppieagents.model.TextBlock
+import com.tneff.cyppieagents.model.UserEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +15,34 @@ import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
+
+/**
+ * CYP-579 — the **"unrenderable event" replay placeholder**. When a persisted `event_json` row fails to decode
+ * (a schema-drift after a [StreamJsonEvent] variant/field change, or a corrupt/partially-written row), the
+ * store [query] emits THIS at the row's OWN `seq` instead of silently dropping it — so the transcript gap is
+ * **visible** (a marked system row) rather than an invisible hole (the CYP-575/Root-C anti-pattern: make the
+ * absence positive). It is a [UserEvent] with a non-null `injectedSource`, which the client `StreamJsonMapper`
+ * already renders as an `IncomingSystem` row (the CYP-326 injected-message path) — so NO client change is
+ * needed. Same `seq` ⇒ the `?since=` cursor/dedup stays intact; a unique `uuid` ⇒ `foldEvent`'s id-dedup keeps
+ * it to one row across replays. Single-sourced here so the Sqlite + Pg stores can never drift.
+ *
+ * The text is a server-side diagnostic (English, not localized — the mapper deliberately holds no user literal);
+ * a localized render is a follow-up (a small mapper change keyed on `injectedSource == "cyppie/replay"`).
+ */
+internal fun unrenderableEventPlaceholder(seq: Long): StreamJsonEvent =
+    UserEvent(
+        message = AgentMessage(
+            role = "system",
+            content = listOf(TextBlock("⚠ Unrenderable stored event (seq $seq) — persisted but could not be decoded")),
+        ),
+        uuid = "$UNRENDERABLE_UUID_PREFIX$seq",
+        injectedSource = UNRENDERABLE_INJECTED_SOURCE,
+    )
+
+/** CYP-579 — the placeholder's `injectedSource` tag (the render-path key) + uuid prefix, single-sourced for tests. */
+internal const val UNRENDERABLE_INJECTED_SOURCE = "cyppie/replay"
+internal const val UNRENDERABLE_UUID_PREFIX = "unrenderable-"
 
 /**
  * CYP-198 — durable, replayable persistence of the per-agent stream-json transcript, the **single source**
@@ -97,19 +128,35 @@ class InMemoryAgentEventStore(private val retainPerAgent: Int = DEFAULT_RETAIN_P
 /**
  * CYP-198 — the ordered, non-blocking feeder from the [com.tneff.cyppieagents.connector.SessionObserver] tap
  * to the [AgentEventStore]. The observer's `onEvent` runs on the session read-loop and MUST NOT block (no
- * Observer-Effect), so [record] only `trySend`s to an UNLIMITED queue (never fails, never blocks, never
- * drops → lossless); a single consumer drains it to the store IN ORDER, so each agent's transcript keeps
- * its emit order + a gapless seq.
+ * Observer-Effect), so [record] only `trySend`s to an UNLIMITED queue (the ENQUEUE never fails/blocks); a
+ * single consumer drains it to the store IN ORDER, so each agent's transcript keeps its emit order + a gapless seq.
+ *
+ * **CYP-579 (honesty fix):** the durable [AgentEventStore.append] CAN fail (SQLITE_BUSY / disk-full / PG down /
+ * constraint), and this consumer must not die — so the append is wrapped in `runCatching`. Previously the
+ * failure was **swallowed with no log** while this KDoc claimed "lossless" (a contract lie): a live write blip
+ * silently lost a transcript event → a `/ws/agent` replay gap with zero signal (the CYP-575 class). The failure
+ * is now **logged (WARN)** so the drop is diagnosable. The event IS still dropped (no retry) — closing that gap
+ * with retry/dead-letter to make the path genuinely lossless is the ratified **follow-on** (not this ticket).
  */
 class AgentEventRecorder(
     private val store: AgentEventStore,
     scope: CoroutineScope,
     private val nowMs: () -> Long = { System.currentTimeMillis() },
 ) {
+    private val log = LoggerFactory.getLogger("agentevents.recorder")
     private data class Item(val agentId: String, val projectId: String, val event: StreamJsonEvent)
     private val queue = Channel<Item>(Channel.UNLIMITED)
 
-    init { scope.launch { for (item in queue) runCatching { store.append(item.agentId, item.projectId, nowMs(), item.event) } } }
+    init {
+        scope.launch {
+            for (item in queue) {
+                runCatching { store.append(item.agentId, item.projectId, nowMs(), item.event) }
+                    // CYP-579: never swallow silently — a dropped durable event is now visible in the logs (the
+                    // CYP-575 diagnosability fix). Retry/dead-letter (true losslessness) = follow-on ticket.
+                    .onFailure { log.warn("CYP-579: durable agent-event append FAILED — event DROPPED (no retry): agent={} project={}", item.agentId, item.projectId, it) }
+            }
+        }
+    }
 
     /** Non-blocking: enqueue one MASKED event for durable, in-order append (called from the observer tap). */
     fun record(agentId: String, projectId: String, event: StreamJsonEvent) {
