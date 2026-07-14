@@ -95,7 +95,19 @@ Seams UIUX must fill (B1 is UI-agnostic; the `PinPrompt` seam is injected):
 6. **"No UV available"** fail-closed state (Unavailable) — honest, actionable.
 The existing CYP-525 honesty rails (UvFailed ≠ hub reject) already scope the distinct-cause copy.
 
-## 8. Open decisions for PO ratification
+## 8. Decisions — PROVISIONALLY RULED (PO 2026-07-14, subject to Reviewer crypto-lens + UIUX; final ratification pending)
+
+> **Build HALTED** until (1) the Reviewer crypto-security-lens on this design and (2) UIUX §7 convergence land → then the PO finalizes ratification → build. The provisional rulings (all matched the recommendations):
+> · **D1 = Argon2id** (memory-hard; the hardness is the only offline barrier — must be right; dep accepted).
+> · **D2 = PIN-KEK-AEAD-encrypt** the key (§4.1) — cryptographic binding; OS-keystore-only would leave the gesture concern on Linux/CI.
+> · **D3 = passphrase OR a strong PIN** (adequate entropy; NO weak 4–6-digit — offline-exfil-brute-forceable; the platform authenticator sidesteps it where present).
+> · **D4 = conventional escalating backoff + tamper-evident counter** (a reset must not bypass the cooldown).
+> · **D5 = 120s + zeroize** (matches the milestone reuse window; no GC-reliance).
+> · **D6 = in-place re-seal** (preserve the anchor, no re-enroll) + atomically delete the plaintext key.
+> · **D7 = jvm-desktop only now; iOS/web = ②.**
+> The original decision framing is retained below for the Reviewer/UIUX context.
+
+### Original open framing (now provisionally ruled above)
 
 - **D1 — KDF:** Argon2id (needs a KMP/jvm crypto dep — e.g. a bundled Argon2 lib) **[recommended]** vs JDK-only PBKDF2-HMAC-SHA256 high-iteration (no new dep, weaker). Security ↔ dependency trade-off.
 - **D2 — Key-binding variant:** PIN-KEK-AEAD-encrypts-the-key (§4.1) **[recommended, no-shortcut]** vs UV-as-gate-only + rely on an OS keystore for at-rest (simpler, but trusts the OS keystore + leaves the "UI-gesture" concern on Linux/CI where no strong keystore exists).
