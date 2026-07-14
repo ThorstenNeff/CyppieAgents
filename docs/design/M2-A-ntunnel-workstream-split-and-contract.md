@@ -59,9 +59,13 @@ Today `acquire()` hands back **one shared** tunnel → F-M2-1. **N-tunnel = a po
 These seam **shapes** are frozen now so Team-2 starts immediately; the core team (WS1/WS2) fills the *internal* details without changing the shapes. Any shape change = PO-ratified doc revision, relayed to po2.
 
 ### C1 — Tunnel credential + PoP protocol (WS1 server-verify ↔ WS3 client-PoP)
-- **Frozen:** each of the N tunnels authenticates with a **per-tunnel Proof-of-Possession** bound to the operator device key (`PersistentOperatorDeviceKey`), presented in the Noise `prologue`/first authenticated frame. The **UV (WebAuthn user-verification) is performed ONCE per session and cached**; the N per-tunnel PoPs are derived from the cached UV assertion (no N prompts). Fail-closed: absent/invalid PoP on any tunnel → server refuses THAT tunnel (RST), never a fallback.
-- **TBD-by-WS1 (does not block WS3):** exact PoP challenge bytes + signature transcript. WS3 builds against a `PerTunnelPoPProvider` seam: `suspend fun popFor(tunnelIndex/rendezvousId, challenge): ByteArray` + `cachedUv: UvAssertion?`. **WS1 publishes the challenge format first; WS3 consumes it.**
-- **Security invariant (WS6 guards):** the god-token-reject (`TunnelGodTokenGuard`, f2dd508b) applies **per tunnel** — the static OPERATOR_TOKEN is refused on every tunnel's auth channel; only the CP-scoped operator session passes.
+> **Hardened per WS6 review + reconciled with the PUBLISHED C1 format (CYP-536 `2745f1b8`, `docs/design/CYP-536-C1-tunnel-credential-pop-format.md`).** The binding is FROZEN, not TBD — leaving it TBD risked WS3 building a conformant-but-insecure provider on another host.
+
+- **FROZEN binding — NO new format:** each of the N tunnels uses the *existing* RR3 PoP (`:core operatorAuthChallenge`, CYP-473), evaluated once per tunnel over **that tunnel's own live Noise channel-binding `h_i`**. Challenge bytes = `LP(h_i) ‖ LP(hubId.utf8) ‖ LP(nonce_i) ‖ LP("operator-auth")` (LP = 4-byte-BE len-prefix); transcript = `Ed25519.sign(deviceKey, challenge)` (raw, the Linux/MVP branch). **The PoP MUST bind to `h_i`, NEVER to `rendezvousId`** (rendezvousId is client-chosen + relay-visible → binding to it drops anti-MITM channel-binding). **3 per-tunnel uniqueness rules:** **R1** sign against THAT tunnel's own `h_i` (foreign `h` → `bad_signature`); **R2** fresh single-use `nonce_i` (shared nonce → tunnels 2..N get `nonce_replayed`, hub burns it on tunnel 1); **R3** one `cpJwt_i` per tunnel, `cb`-bound to `h_i` — this is "CP N-mint": CP issues N tokens/session, **no CpJwt shape change, only count.**
+- **UV-cache = PRESENCE/ACCESS-GATE ONLY, never a signature substitute.** One UV ceremony per session, cached → N PoPs, 0 extra prompts. Linux/Raw (the [[no-hardware-no-shortcuts]] CYP-525 path): unlock the persistent Ed25519 key ONCE, then N plain signs — each still over its own `h_i`+`nonce_i`. A *reused* assertion/PoP across tunnels IS the forbidden "cached-UV = unbounded-reuse window."
+- **Seam:** `PerTunnelPoPProvider { openSession(): UvAssertion?; popFor(rvid, challenge): ByteArray }`. **WS2 (client transport) OWNS challenge assembly** (it holds `h_i`/`nonce_i`/`cpJwt_i`, so nonce↔sig stay coupled); **WS3's `popFor` is a PURE SIGNATURE** over the caller-assembled challenge and does NOT construct the binding. `rvid` is **correlation/logging ONLY — MUST NOT enter the signature.** This decomposition *structurally* eliminates the bind-to-rvid footgun: the assembler (WS2) holds `h_i` and uses it; WS3 can only sign what it's given. WS3 builds against a fake until it consumes the published format.
+- **God-token-reject per tunnel (WS1):** `TunnelGodTokenGuard` (f2dd508b) refuses the static OPERATOR_TOKEN on **every** tunnel's auth channel. With N connectors the guard discriminator must check the **port SET**, not a single `tunnelPort`. **Revocation must fan out to ALL N** operator-sessions.
+- **WS6 verifies:** `popFor` is a pure sign, `rvid` is crypto-inert, R1/R2/R3 hold, UV-cache is access-gate-only (no per-`h_i` signature substitution).
 
 ### C2 — `TunnelSource` N-semantics (WS2 ↔ foundation/transport)
 - **Frozen interface (unchanged signature):** `fun interface TunnelSource { suspend fun acquire(): NoiseTunnel? }`.
@@ -73,6 +77,11 @@ These seam **shapes** are frozen now so Team-2 starts immediately; the core team
 
 ### C4 — Rendezvous allocation (WS1 relay/hub ↔ WS2 client dial)
 - **Frozen:** N **distinct** rendezvous-ids per session, client-allocated and dialed via `RendezvousRelayDialer`; relay unchanged (independent 1↔1 pairings). Server accepts any validly-PoP'd tunnel on any of the session's rendezvous-ids. **No shared rendezvous-id across tunnels.**
+
+### C5 — Additional frozen security invariants (WS6 hardening)
+- **Server-side per-operator tunnel CAP (WS1) — DoS floor.** Client `poolCap` (C2) is *necessary-but-not-sufficient*: the hub MUST enforce its OWN per-operator concurrent-tunnel cap, so a client bug or attacker cannot spawn unbounded tunnels. Exceeding it → refuse the NEW tunnel (RST), never degrade an existing one.
+- **Per-tunnel credential re-verification, no cross-talk (C2/WS2).** Each of the N routes re-verifies its OWN credential — the foundation "each route re-verifies its cred" invariant holds **per tunnel**. No session-state is shared or trusted across tunnels; a valid tunnel #k grants nothing to tunnel #j.
+- **H7 aggregate = ONE shared counter across N pumps (CYP-535).** The pool-wide backpressure cap is a single shared counter over all N pumps, NOT a per-pump bound applied ×N. Cap-hit stays truncation-safe (block-the-pump backpressure, no silent drop, no Noise-stream corruption); RST-on-null stays orthogonal.
 
 ---
 
