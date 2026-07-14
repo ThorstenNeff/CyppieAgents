@@ -34,12 +34,22 @@ leise Ausnahme.
 - **Label:** `remote_pop_enroll_suggested` „Empfohlen — 6 zufällige Wörter" — `labelMedium`, `onSurfaceVariant`. **Kein**
   Grün, kein „✓" — „Empfohlen" trägt der Text, nicht die Farbe.
 - **Die Wörter:** `bodyLarge`, **monospace**, `onSurface`, Wort-getrennt (großzügiges Spacing) — lesbar + abschreibbar,
-  selektierbar. `→UIUX2`: Selektion/Copy-Interaktion + SR-Ansage.
+  selektierbar. `→UIUX2`: Selektion-Interaktion + SR-Ansage.
+- **Copy-Affordanz (`ENROLL_COPY`):** ein **Copy-Icon** (kein neues Sichtbar-Label — a11y-`contentDescription` = `→UIUX2`),
+  Sibling zum `remote.recovery.codesCopy`-Muster (anti-duplicate). Löst die **Clipboard-Egress-Disclosure** aus (s. u.).
+- **★ Clipboard-Egress-Disclosure (`ENROLL_CLIPBOARD_NOTICE`, UIUX2-Reconcile ①):** die generierte Passphrase ist die
+  Crown-Jewel — Copy ist **echter Egress**. Präsent ⇔ Copy angeboten/genutzt: `remote_pop_enroll_clipboard_notice` „In die
+  Zwischenablage kopiert. Leere die Zwischenablage, nachdem du die Passphrase gespeichert hast." — `labelSmall`,
+  `onSurfaceVariant`, **neutral-informativ, KEIN WARN** (der Nutzer hat bewusst kopiert; kein Alarm/Downgrade). **Ehrlich:**
+  **nie** „sicher kopiert"/„gelöscht" — Auto-Clear ist plattform-abhängig; Dev macht best-effort-Clear wo unterstützt, aber
+  die Copy **verspricht es nicht** (Clear-Onus ehrlich beim Nutzer). Rein manuelle Transkription bleibt möglich (Selektion);
+  die Disclosure erscheint **nur** wenn Copy genutzt wird.
 - **Primär-Aktion:** `remote_pop_enroll_suggest_use` „Diese Passphrase verwenden" — **gefüllter `primary`-Button**
   (`onPrimary`-Text), volle Breite. Der One-Click-Accept ist die visuell stärkste Aktion.
 - **Regenerate:** `remote_pop_enroll_suggest` „Andere vorschlagen" — **Text-/Outlined-Button** (`primary`-Text), sekundär.
 - **Save-Hinweis:** `remote_pop_enroll_suggested_save` „Notiere sie sicher …" — `labelSmall`, `onSurfaceVariant`,
-  **neutral-informativ** (kein WARN — es ist Guidance, kein Downgrade). Nah an den Wörtern.
+  **neutral-informativ** (kein WARN — es ist Guidance, kein Downgrade). Nah an den Wörtern. (Komplementär zur Clipboard-
+  Disclosure: Save = „aufschreiben/speichern"; Clipboard-Notice = „nach dem Speichern leeren".)
 
 **1b. Type-your-own (sekundär, entwertet):**
 - Einstieg: `remote_pop_enroll_type_own` „Eigene Passphrase eingeben" — **leiser Text-Button** (`onSurfaceVariant`/
@@ -117,9 +127,13 @@ terminale Hub-Reject) und keiner nutzt `tertiary`-Grün.
 - **DE = Default + EN-Parität** (alle Copy-Anker aus `-keys.md`).
 
 ## 6. Nahtstellen
-- **UIUX2 (Interaktion/a11y):** Feld-Fokus/IME/Reveal-Verhalten, SR-Ansagen (Feld, Meter-Live-Stärke,
-  Zustandswechsel), Fokus-Reihenfolge (Default→Accept→Regenerate→type-own). **Ich** liefere die visuellen Zustände +
-  Farb-/Glyph-/Label-Paarung, an denen die a11y ansetzt.
+- **UIUX2 (Interaktion/a11y):** Feld-Fokus/IME/Reveal-Verhalten, Copy-Icon-`contentDescription`, SR-Ansagen (Feld,
+  Meter-Live-Stärke, Zustandswechsel, Clipboard-Notice), Fokus-Reihenfolge (Default→Accept→Regenerate→type-own). **Ich**
+  liefere die visuellen Zustände + Farb-/Glyph-/Label-Paarung, an denen die a11y ansetzt.
+- **UIUX2-Reconcile ② (bestätigt):** `remote_pop_enroll_blocklisted` und `remote_pop_enroll_too_weak` sind **zwei
+  eigenständige, ursachen-spezifische** Strings (nicht generisch) — sie **taugen** als distinkte SR-Ursachen-Ansage. UIUX2
+  verdrahtet die Live-Region; **kein neuer Wortlaut** nötig (die beiden Strings + `_blocklisted`s selbstbeschreibendes
+  *warum* tragen die Bedeutung).
 - **Dev (S-UV2):** baut die Elemente in `OperatorAuthDialog`/`HubConnectFlow` gegen diese Optik + `-tokens.json`.
 - **Backend (S-UV1):** Entropie-Schätzung + Blocklist-Boolean (`meets()`) + Generierungsquelle liefern die *Zustände*,
   die diese Optik zeichnet.

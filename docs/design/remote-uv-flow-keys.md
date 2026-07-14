@@ -18,7 +18,7 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 
 ---
 
-## Net-new Copy (21 Realkeys + 1 a11y)
+## Net-new Copy (22 Realkeys + 2 a11y)
 
 ### Δ1a — Passphrase-Pfad (no-hardware Boden): Setup + Unlock + **generierter Diceware-One-Click-Default (HG2)** + Strength
 | Key | DE (Default) | EN | Rolle |
@@ -29,6 +29,8 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 | `remote_pop_enroll_passphrase_confirm` **(0)** | App-Passphrase bestätigen | Confirm your app passphrase | Enroll-**Bestätigungs**-Feld (`ENROLL_PIN_CONFIRM`), Passphrase-Pfad. |
 | `remote_pop_enroll_suggested` **(0)** | Empfohlen — 6 zufällige Wörter | Recommended — 6 random words | Label über der **generierten Diceware-Default-Passphrase** (`ENROLL_SUGGESTED`, prominent, One-Click, HG2). Die Wörter selbst = gerenderte Daten, kein Key. **Kein** Bit-Zahl-Literal (Wortlisten-abhängig, driftet) — die Stärke trägt der Meter/„stark". |
 | `remote_pop_enroll_suggested_save` **(0)** | Notiere sie sicher — du brauchst sie bei jeder Anmeldung. | Save it securely — you'll need it every time you sign in. | **Ehrlichkeit (HG2):** der generierte Credential muss notierbar sein; kein masked-at-generation-Secret. |
+| `remote_pop_enroll_clipboard_notice` **(0)** | In die Zwischenablage kopiert. Leere die Zwischenablage, nachdem du die Passphrase gespeichert hast. | Copied to clipboard. Clear your clipboard after you've saved the passphrase. | **Clipboard-Egress-Disclosure (UIUX2-Reconcile ①), neutral-informativ** (`onSurfaceVariant`, kein WARN). **Nie** „sicher kopiert"/„gelöscht" — Auto-Clear ist plattform-abhängig (best-effort Dev, nicht versprochen); Clear-Onus ehrlich beim Nutzer. Tag `ENROLL_CLIPBOARD_NOTICE`. |
+| `a11y_remote_pop_enroll_clipboard_notice` **(0)** | In die Zwischenablage kopiert — Zwischenablage nach dem Speichern leeren. | Copied to clipboard — clear your clipboard after saving. | a11y der Disclosure. |
 | `remote_pop_enroll_suggest_use` **(0)** | Diese Passphrase verwenden | Use this passphrase | **One-Click-Accept** des empfohlenen Defaults (Enroll-Affordanz zu `ENROLL_SUGGESTED`; Dev-Konvergenz: darf auch primärer Submit-Button sein). |
 | `remote_pop_enroll_suggest` **(0)** | Andere vorschlagen | Suggest another | **Regenerate**-Affordanz (`ENROLL_SUGGEST` — neue Diceware würfeln). |
 | `remote_pop_enroll_type_own` **(0)** | Eigene Passphrase eingeben | Type your own passphrase | **sekundäre** Umschaltung auf manuelle Eingabe (`ENROLL_TYPE_OWN`). |
@@ -98,13 +100,12 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 - **WCAG 1.4.1:** die Strength-Meter-Level tragen Text-Labels (`_weak`/`_fair`/`_strong`) — Farbe nie alleiniger Träger.
 
 ## Self-Validation
-- **Net-new: 21 Realkeys + 1 a11y** — Passphrase-Pfad 14 (inkl. 4 HG2-Diceware-Default), Kurz-PIN-Pfad 4 (inkl.
-  `_blocklisted`, PO-Ruling G1), Coverage 1(+a11y), Biometrie 2. Args: `enroll_too_short` (1), `biometric_offer` (1),
-  `path_hint`-Reuse (1); Rest 0. Alle **DE+EN paritätisch**.
+- **Net-new: 22 Realkeys + 2 a11y** — Passphrase-Pfad 15 (inkl. 4 HG2-Diceware-Default + `_clipboard_notice` UIUX2-①),
+  Kurz-PIN-Pfad 4 (inkl. `_blocklisted`, G1), Coverage 1(+a11y), Biometrie 2. a11y: `_uv_coverage` + `_clipboard_notice`.
+  Args: `enroll_too_short` (1), `biometric_offer` (1), `path_hint`-Reuse (1); Rest 0. Alle **DE+EN paritätisch**.
 - **0 Retext frozener Keys, 0 Löschung** — reine Ergänzung an CYP-542-eigenen (noch nicht gebauten) Keys; kein
-  gebautes/frozen `remote_pop_*`/`remote_connect_*` wird angefasst (`_suggest`-Retext betrifft nur meinen eigenen
-  net-new-Key derselben Branch).
-- **0 Kollision @ `eb705236`** (grep-verifiziert: keiner der 22 Keys existiert in `values/` oder `values-en/`).
+  gebautes/frozen `remote_pop_*`/`remote_connect_*` wird angefasst.
+- **0 Kollision @ `eb705236`** (grep-verifiziert: keiner der 24 Keys existiert in `values/` oder `values-en/`).
 - **Kein content-tragender/sensibler Klartext;** `%1$s` nur Count/Wait/Authenticator-Name/Min-Länge.
 - **Dev foldet in `OperatorAuthDialog`** (Passphrase/PIN-Feldpaar capability-conditional + Strength-Meter + Diceware +
   Coverage-Zeile + Biometrie-Angebot) — Copy hier ist der frozen AC.

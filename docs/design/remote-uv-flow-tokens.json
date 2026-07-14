@@ -31,8 +31,10 @@
       "primary_action": "gefuellter primary-Button (onPrimary), volle Breite = staerkste Aktion",
       "regenerate": "Text-/Outlined-Button primary = sekundaer",
       "save_hint": "labelSmall onSurfaceVariant, neutral-informativ (KEIN WARN — Guidance, kein Downgrade)",
-      "label_keys": ["remote_pop_enroll_suggested", "remote_pop_enroll_suggest_use", "remote_pop_enroll_suggest", "remote_pop_enroll_suggested_save"],
-      "tags": ["remote.authStep.enrollSuggested", "remote.authStep.enrollSuggest"]
+      "copy_affordance": "Copy-Icon (kein Sichtbar-Label; a11y contentDescription = UIUX2), Sibling zu remote.recovery.codesCopy",
+      "clipboard_egress_disclosure": "★ UIUX2-Reconcile ①: Copy = echter Crown-Jewel-Egress. remote_pop_enroll_clipboard_notice, labelSmall onSurfaceVariant, neutral-informativ (KEIN WARN). EHRLICH: nie 'sicher kopiert'/'geloescht' — Auto-Clear plattform-abhaengig (best-effort Dev, NICHT in Copy versprochen), Clear-Onus beim Nutzer. Present iff Copy angeboten/genutzt. Manuelle Transkription bleibt moeglich (kein Egress).",
+      "label_keys": ["remote_pop_enroll_suggested", "remote_pop_enroll_suggest_use", "remote_pop_enroll_suggest", "remote_pop_enroll_suggested_save", "remote_pop_enroll_clipboard_notice"],
+      "tags": ["remote.authStep.enrollSuggested", "remote.authStep.enrollSuggest", "remote.authStep.enrollCopy", "remote.authStep.enrollClipboardNotice"]
     },
     "enroll.typeOwn": {
       "role": "Element 1b — sekundaerer type-your-own (leiser Text-Button), expandiert Feldpaar + Meter.",

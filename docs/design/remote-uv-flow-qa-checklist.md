@@ -29,6 +29,7 @@
 | A8 | **Mismatch** → klare Fehler-Copy, retryable | `enrollError.mismatch` + `remote_pop_enroll_mismatch` (credential-neutral) | nicht gebaut | 🟡 PLAN |
 | A9 | **blocklisted** (lang genug, aber Common-Phrase) → **distinkte** ehrliche Copy die *warum* sagt (≠ tooWeak) | **G1 RULED distinkt:** `enrollError.blocklisted` + `remote_pop_enroll_blocklisted`; Signal `meets()` in B1 vorhanden (kein CYP-544-Blocker) | nicht gebaut | 🟡 PLAN (G1 ✅ geruled) |
 | A10 | Session-only-Downgrade bleibt WARN-amber (`▲` + severityColor(WARN)), kein Über-Versprechen | `remote_pop_enroll_session_only` (Q5/GE6) | **gebaut** (`OperatorAuthDialog.kt:100-116`) | ✅ |
+| A12 | **Clipboard-Egress-Disclosure** (UIUX2-①): Copy erlaubt **mit** ehrlicher Disclosure — neutral-informativ, **nie** „sicher kopiert"/„gelöscht"; Auto-Clear best-effort Dev, nicht versprochen; present ⇔ Copy angeboten/genutzt | visual-spec §1a, `ENROLL_COPY`+`ENROLL_CLIPBOARD_NOTICE`+`remote_pop_enroll_clipboard_notice` | nicht gebaut | 🟡 PLAN (①-gefoldet) |
 | A11 | **Enroll-Erfolg → Weiterlauf**: kein „gesetzt, Nutzer sitzt"; auto-treibt AUTHENTICATING→CONNECTED; in-hand-Passphrase = **erste UV** (kein sofortiger 2. Prompt, `DecryptedKeyHold`-Window) | **G2 RULED:** ux-spec §4.2 ergänzt (Enroll→seal→AUTH mit in-hand-Passphrase; Startpunkt des 1-UV-für-N-Fensters) | nicht gebaut | 🟡 PLAN (G2 ✅ geruled) |
 
 ## B. AUTHENTICATING-Mount + DeviceNotEnrolled-Route (Nutzer landet nie im Nirwana)

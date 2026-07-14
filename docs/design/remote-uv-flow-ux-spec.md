@@ -80,7 +80,9 @@ Der `Enroll`-Step wird um das **Feldpaar** ergänzt (heute nur Disclosure-Text);
      Copy, Wortlisten-abhängig). **Regenerate** `ENROLL_SUGGEST` + `remote_pop_enroll_suggest` („Andere vorschlagen").
   2. **Notierbarkeit (Ehrlichkeit):** die Wörter sind **angezeigt + notierbar** (`remote_pop_enroll_suggested_save` „Notiere
      sie sicher — du brauchst sie bei jeder Anmeldung.") — **nie** ein masked-at-generation-Secret, das der Operator nicht
-     sichern kann.
+     sichern kann. **Copy-to-Clipboard** (`ENROLL_COPY`) ist erlaubt (Passwort-Manager-Workflow), **mit** ehrlicher
+     Egress-Disclosure (`remote_pop_enroll_clipboard_notice`, UIUX2-① — neutral, **nie** „sicher kopiert"/„gelöscht";
+     Auto-Clear best-effort Dev, nicht versprochen; Detail in `remote-uv-flow-visual-spec.md`).
   3. **type-your-own (sekundär):** `ENROLL_TYPE_OWN` + `remote_pop_enroll_type_own` schaltet auf das **Setz-Feld** (reuse
      `PIN_FIELD` + `remote_pop_enroll_passphrase`) mit **Strength-Meter** `ENROLL_STRENGTH` (+ `remote_pop_enroll_strength_hint`,
      Level-Labels `remote_pop_strength_{weak,fair,strong}` — Text-Label, Farbe nie alleiniger Träger, WCAG 1.4.1).
@@ -212,9 +214,9 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
   ist unabhängig lieferbar.
 
 ## 9. Self-Validation
-- **Deliverable-Konsistenz:** 4 Dateien (`-ux-spec`/`-tags`/`-keys`/`-qa-checklist`); Tag-Count (**7 Const + 1 Fn**, Fn-Causes
-  `mismatch`/`tooShort`/`tooWeak`/`blocklisted`) und Key-Count (**21 Realkeys + 1 a11y**) über alle identisch referenziert.
-  PO-Rulings G1–G5 (`1526532076…`/`1526532077…`) eingefaltet.
+- **Deliverable-Konsistenz:** 6 Dateien (`-ux-spec`/`-tags`/`-keys`/`-qa-checklist`/`-visual-spec`/`-tokens.json`); Tag-Count
+  (**9 Const + 1 Fn**, Fn-Causes `mismatch`/`tooShort`/`tooWeak`/`blocklisted`) und Key-Count (**22 Realkeys + 2 a11y**) über
+  alle identisch referenziert. PO-Rulings G1–G5 (`1526532076…`) + UIUX2-Reconcile ①/② (`1526539512…`) eingefaltet.
 - **Anti-Duplikat:** kein `remote_pop_*`/`OperatorAuthTags`-Wert wird umgeschrieben; nur additive Nähte.
 - **Grounded @ `eb705236`:** jede Reuse-Behauptung gegen echten Code verifiziert (Code = Source of Truth); 0-Kollision
   grep-belegt.
