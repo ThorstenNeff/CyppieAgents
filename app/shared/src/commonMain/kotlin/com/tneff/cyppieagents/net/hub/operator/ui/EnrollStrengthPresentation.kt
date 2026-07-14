@@ -20,14 +20,22 @@ data class EnrollStrengthUi(
     val blocks: Boolean,
     /** D5 — the meter fill fraction hint (0f..1f); dampened for BLOCKLISTED so a common phrase never shows "strong". */
     val meterFraction: Float,
+    /**
+     * R4 (render-oracle `b03d4b7c`) — the **fill-structure marker** the meter renders + Tester headless-asserts. `false`
+     * ⇒ the fill uses the affirmative `primary` role (OK = full, TOO_WEAK = proportional). `true` ⇒ **BLOCKLISTED**: the
+     * fill uses the **damped `outline` role, NEVER `primary`/"full"** — the core honesty that a structurally-long-but-
+     * blocklisted passphrase must not render as "strong". Exposed (not just a colour) so the headless render-QA can pin it.
+     */
+    val fillDamped: Boolean,
 )
 
 /** The enroll-strength tone (D1). WARN = amber advisory (`▲`); ERROR = error tone; NEUTRAL = no alarm. */
 enum class EnrollTone { NEUTRAL, WARN, ERROR }
 
-/** Map the vault [StrengthVerdict] to its ratified enroll presentation (D1/D3/D5). */
+/** Map the vault [StrengthVerdict] to its ratified enroll presentation (D1/D3/D5 + R4 fill marker). */
 fun enrollStrengthUi(verdict: StrengthVerdict): EnrollStrengthUi = when (verdict) {
-    StrengthVerdict.OK -> EnrollStrengthUi(EnrollTone.NEUTRAL, "enroll_strength_ok", blocks = false, meterFraction = 1f)
-    StrengthVerdict.TOO_WEAK -> EnrollStrengthUi(EnrollTone.WARN, "enroll_error_too_weak", blocks = true, meterFraction = 0.25f)
-    StrengthVerdict.BLOCKLISTED -> EnrollStrengthUi(EnrollTone.ERROR, "enroll_error_blocklisted", blocks = true, meterFraction = 0.1f)
+    StrengthVerdict.OK -> EnrollStrengthUi(EnrollTone.NEUTRAL, "enroll_strength_ok", blocks = false, meterFraction = 1f, fillDamped = false)
+    StrengthVerdict.TOO_WEAK -> EnrollStrengthUi(EnrollTone.WARN, "enroll_error_too_weak", blocks = true, meterFraction = 0.25f, fillDamped = false)
+    // R4: BLOCKLISTED fill is `outline`-damped, NOT `primary` — the optics must not lie "strong" even if structurally long.
+    StrengthVerdict.BLOCKLISTED -> EnrollStrengthUi(EnrollTone.ERROR, "enroll_error_blocklisted", blocks = true, meterFraction = 0.1f, fillDamped = true)
 }

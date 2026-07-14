@@ -42,4 +42,13 @@ class EnrollStrengthPresentationTest {
         assertNotEquals(enrollStrengthUi(StrengthVerdict.TOO_WEAK).tone, enrollStrengthUi(StrengthVerdict.BLOCKLISTED).tone)
         assertNotEquals(enrollStrengthUi(StrengthVerdict.TOO_WEAK).messageKey, enrollStrengthUi(StrengthVerdict.BLOCKLISTED).messageKey)
     }
+
+    @Test
+    fun fillDamped_marker_onlyBlocklisted_isDamped_R4() {
+        // R4 (render-oracle b03d4b7c): the BLOCKLISTED fill is `outline`-damped (NEVER primary/full) — the optics must
+        // not lie "strong" even for a structurally-long blocklisted phrase. OK/TOO_WEAK keep the affirmative primary fill.
+        assertTrue(!enrollStrengthUi(StrengthVerdict.OK).fillDamped, "OK fill is the affirmative primary role")
+        assertTrue(!enrollStrengthUi(StrengthVerdict.TOO_WEAK).fillDamped, "TOO_WEAK fill is proportional primary")
+        assertTrue(enrollStrengthUi(StrengthVerdict.BLOCKLISTED).fillDamped, "R4: BLOCKLISTED fill is outline-damped, never primary/full")
+    }
 }
