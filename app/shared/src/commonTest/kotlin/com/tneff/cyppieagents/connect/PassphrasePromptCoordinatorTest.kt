@@ -67,6 +67,23 @@ class PassphrasePromptCoordinatorTest {
     }
 
     @Test
+    fun submit_withNoConsumer_zeroizesTheArray_neverOrphans() = runTest {
+        val c = LivePassphrasePromptCoordinator()
+        // No pending prompt ⇒ submit reaches no consumer ⇒ the owner (coordinator) must zeroize it here.
+        val orphan = "no-waiter-submit".toCharArray()
+        c.submit(orphan)
+        assertTrue(orphan.all { it == '\u0000' }, "P2 gate-check: a submit with no pending waiter zeroizes the array (no orphan)")
+        // Superseded/cancelled waiter ⇒ same: the array reaches no consumer ⇒ zeroized.
+        val pending = async { c.prompt(UvReason.OPERATOR_AUTH) }
+        kotlinx.coroutines.yield()
+        c.cancel() // resolves the waiter null
+        assertNull(pending.await())
+        val afterCancel = "post-cancel-submit".toCharArray()
+        c.submit(afterCancel)
+        assertTrue(afterCancel.all { it == '\u0000' }, "P2: a submit after the waiter resolved zeroizes the array")
+    }
+
+    @Test
     fun newPrompt_resolvesStaleWaiterNull_exactlyOne() = runTest {
         val c = LivePassphrasePromptCoordinator()
         val stale = async { c.prompt(UvReason.OPERATOR_AUTH) }

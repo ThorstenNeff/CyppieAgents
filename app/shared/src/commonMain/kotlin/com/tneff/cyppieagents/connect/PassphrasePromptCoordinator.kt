@@ -62,7 +62,13 @@ class LivePassphrasePromptCoordinator : PassphrasePromptCoordinator {
         }
     }
 
-    override fun submit(passphrase: CharArray) { waiter?.complete(passphrase) }
+    override fun submit(passphrase: CharArray) {
+        // Owner-zeroize on ALL paths (the P2 gate-check): hand the array to the pending waiter (the async UV then owns +
+        // H-1-zeroizes it after use). If there is NO pending waiter, or it was already resolved (superseded/cancelled),
+        // the array reaches no consumer ⇒ zeroize it HERE so a submit never orphans an un-zeroized crown-jewel.
+        val w = waiter
+        if (w == null || !w.complete(passphrase)) passphrase.fill('\u0000')
+    }
     override fun cancel() { clearPreArm(); waiter?.complete(null) } // cancel aborts a pending pre-arm too (P1)
     override fun preArm(passphrase: CharArray) { clearPreArm(); preArmed = passphrase } // never leak a prior un-consumed arm
     override fun clearPreArm() {
