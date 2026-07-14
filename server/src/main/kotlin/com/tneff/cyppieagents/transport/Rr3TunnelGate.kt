@@ -158,7 +158,15 @@ class Rr3TunnelGate(
         try {
             // recheck under the lock; a tampered record here is also fail-closed diagnostic (the `finally` still unlocks).
             val existing = try { store.read() } catch (e: Exception) { return rejectTampered(tunnel, e) }
-            if (existing != null) return grant(tunnel, firstEnroll = false) // a concurrent finalize already won → CONNECTED
+            // CYP-554 (CYP-550 finding ②): a concurrent first-enroll already committed the anchor. Do NOT grant this
+            // provisional — its PoP was verified (above) against its OWN presented key, NOT the enrolled anchor, so
+            // granting here would admit a tunnel that never proved possession of the enrolled device (defeating the PoP
+            // anti-seizure under a forged-CpJwt CP: an adversary with a forged CpJwt + its own key would win CONNECTED
+            // in this race). REJECT instead: the operator reconnects to the steady-state path, which verifies the PoP
+            // against the enrolled anchor with a FRESH nonce (the legit same-device operator's key matches → grants; a
+            // forged-CpJwt adversary's own key → bad_signature → stays rejected). Re-verifying HERE cannot reuse this
+            // request's nonce — it was already single-use-consumed by the verifyAny above — so reconnect is the clean path.
+            if (existing != null) return reject(tunnel)
             val minted = backupCodes.mint(BACKUP_CODE_COUNT)                     // THIS session's codes, local (not persisted)
             reply(tunnel, TunnelAuthGrant(granted = true, firstEnroll = true))   // provisional grant → the client reveals
             runCatching { tunnel.send(CommJson.encodeToString(EnrollResponse(minted.plaintexts)).encodeToByteArray()) }

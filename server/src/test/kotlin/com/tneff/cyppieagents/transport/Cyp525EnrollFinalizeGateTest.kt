@@ -3,8 +3,12 @@ package com.tneff.cyppieagents.transport
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.CpJwtVerifier
 import com.tneff.cyppieagents.auth.TokenPredicates
+import com.tneff.cyppieagents.auth.operator.DeviceKeyAlg
+import com.tneff.cyppieagents.auth.operator.EnrolledOperatorDevice
+import com.tneff.cyppieagents.auth.operator.FinalizedEnrollment
 import com.tneff.cyppieagents.auth.operator.FinalizedEnrollmentStore
 import com.tneff.cyppieagents.auth.operator.InMemoryOperatorDeviceStore
+import com.tneff.cyppieagents.auth.operator.NonceLedger
 import com.tneff.cyppieagents.auth.operator.OperatorAssertionVerifier
 import com.tneff.cyppieagents.controlplane.CpJwtMinter
 import com.tneff.cyppieagents.crypto.MasterKeySource
@@ -134,6 +138,39 @@ class Cyp525EnrollFinalizeGateTest {
         val ok = mk().authorize(t) // MUST NOT throw (MUT: propagate the read() throw → this line throws → RED)
         assertFalse(ok, "a tampered anchor → clean fail-closed reject, not empty→re-enroll and not an uncaught throw")
         assertTrue(grants(t).any { !it.granted }, "a reject grant was sent (clean diagnostic path)")
+    }
+
+    @Test
+    fun cyp554_concurrentFinalizeRace_rejects_neverGrantsBlindWithSelfSignedPoP() = runBlocking {
+        // ★ CYP-554 (CYP-550 finding ②): a 2nd first-connect reads the store empty at the outer check, then a
+        // CONCURRENT first-enroll commits the anchor before this connect's lock-guarded re-read. The provisional's PoP
+        // was verified against its OWN presented key (not the winning anchor), so a blind grant would admit a tunnel
+        // that never proved possession of the enrolled device — under the forged-CpJwt CP threat model an adversary
+        // wins CONNECTED here. The fix REJECTS; the operator reconnects to the steady-state path (verify vs the anchor).
+        //
+        // The concurrent finalize is injected DETERMINISTICALLY via the NonceLedger seam: `useOnce()` is called inside
+        // `verifyAny` — i.e. exactly between the gate's outer store read and its inner lock-guarded read — so committing
+        // a DIFFERENT device's anchor there reproduces the race with no fragile timing.
+        val store = finalStore()
+        val aDevice = RawKeys.generateEd25519() // the WINNING anchor — a DIFFERENT device than this connect's `device`
+        val committed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val raceLedger = NonceLedger {
+            if (committed.compareAndSet(false, true)) {
+                store.commit(FinalizedEnrollment(EnrolledOperatorDevice(operatorId, DeviceKeyAlg.ED25519, aDevice.publicRaw), emptyList()))
+            }
+            true // this connect's nonce is fresh (single-use) — the reject is about the anchor mismatch, not the nonce
+        }
+        val gate = Rr3TunnelGate(
+            CpJwtVerifier(), OperatorAssertionVerifier(raceLedger), InMemoryOperatorDeviceStore(), config(), { nowMs },
+            finalizedStore = store, savedAckTimeoutMs = 5_000L,
+        )
+        val t = GateTunnel(listOf(reqBytes(byteArrayOf(9)))) // signs with `device` (≠ aDevice) + presents device.publicRaw
+        assertFalse(
+            gate.authorize(t),
+            "★ CYP-554: a concurrent-finalize race REJECTS — the provisional's PoP was against its own key, not the winning anchor; never grant blind",
+        )
+        assertTrue(grants(t).all { !it.granted }, "the connect got a reject grant, never a CONNECTED grant")
+        assertEquals(operatorId, store.read()!!.device.deviceId) // the winning anchor stands; this connect never overwrote it
     }
 
     @Test
