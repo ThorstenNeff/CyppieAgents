@@ -8,7 +8,7 @@
 > damit Dev die UI-gg-CYP-460-Slice gegen ein Design baut, nicht nur gegen Verhaltens-ACs. **4 Elemente:** (1) Passphrase-
 > Enroll-Eingabe · (2) Strength-Meter (3 Verdict-States) · (3) Blocklisted-Fehler-Präsentation · (4) Auto-Weiterlauf.
 >
-> **Nahtstelle UIUX2 (non-colliding):** UIUX2 macht die **Eingabe-Interaktion + a11y** (Fokus/IME/Reveal-Verhalten,
+> **Nahtstelle UIUX2 (non-colliding):** UIUX2 macht die **Eingabe-Interaktion + a11y** (Fokus/IME — **kein Reveal**, §1b,
 > SR-Ansagen des Felds + Meters, Fokus-Reihenfolge). **Ich** mache das **visuelle Design** (Farb-Rollen, Ton-Trennung,
 > Layout, Typo, die visuelle Sprache des Meters, WCAG-Farbe+Glyph-Paarung). Wo sich das berührt, ist's markiert `→UIUX2`.
 
@@ -55,8 +55,10 @@ leise Ausnahme.
 - Einstieg: `remote_pop_enroll_type_own` „Eigene Passphrase eingeben" — **leiser Text-Button** (`onSurfaceVariant`/
   `primary`), unter dem Default. Signalisiert „Ausnahme, nicht der Default".
 - Expandiert das **Feldpaar:** Setz-Feld (`remote_pop_enroll_passphrase`) + Bestätigungs-Feld
-  (`remote_pop_enroll_passphrase_confirm`), beide **reuse `AuthPasswordField`** (maskiert, Text-Label-Reveal — `→UIUX2`
-  Reveal-Interaktion/a11y; **ich**: Reveal ist Text-Label, **kein Emoji**, `primary`/`onSurfaceVariant`-Stil).
+  (`remote_pop_enroll_passphrase_confirm`), beide **reuse `AuthPasswordField`** (maskiert, **KEIN Reveal-Toggle** —
+  PO-Security-Ruling: Passphrase = Crown-Jewel; Reveal rendert Klartext [Shoulder-Surf/Screenshot], FLAG_SECURE n/a
+  Desktop / Android CYP-567; Doppel-Confirm deckt Typo). Build (kein `revealTag`) ist korrekt.
+  (Referenz: UIUX2-Audit-Doc `8626ce13`, F3→RESOLVED.)
 - Darunter der **Strength-Meter** (§2).
 
 ---
@@ -127,7 +129,7 @@ terminale Hub-Reject) und keiner nutzt `tertiary`-Grün.
 - **DE = Default + EN-Parität** (alle Copy-Anker aus `-keys.md`).
 
 ## 6. Nahtstellen
-- **UIUX2 (Interaktion/a11y):** Feld-Fokus/IME/Reveal-Verhalten, Copy-Icon-`contentDescription`, SR-Ansagen (Feld,
+- **UIUX2 (Interaktion/a11y):** Feld-Fokus/IME (**kein Reveal**, §1b), Copy-Icon-`contentDescription`, SR-Ansagen (Feld,
   Meter-Live-Stärke, Zustandswechsel, Clipboard-Notice), Fokus-Reihenfolge (Default→Accept→Regenerate→type-own). **Ich**
   liefere die visuellen Zustände + Farb-/Glyph-/Label-Paarung, an denen die a11y ansetzt.
 - **UIUX2-Reconcile ② (bestätigt):** `remote_pop_enroll_blocklisted` und `remote_pop_enroll_too_weak` sind **zwei
