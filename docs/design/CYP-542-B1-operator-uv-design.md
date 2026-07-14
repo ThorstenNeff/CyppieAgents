@@ -39,13 +39,16 @@ real UserVerification  →  rawUserVerification (RemoteHubMode.jvm.kt, F⑥-1 te
 
 ## 4. Mechanism
 
-### 4.1 App-PIN baseline (the no-hardware path — everywhere)
+### 4.1 App-Passphrase baseline (the no-hardware path — everywhere)
 
-**At-rest custody (replaces CYP-525 plaintext `0600`):** the Ed25519 device key is stored **AEAD-encrypted under a PIN-derived key-encryption-key (KEK)**:
+> **Naming (freeze ②):** the no-hardware secret is an **App-Passphrase ≥ 64 bit** (strength-meter-enforced), NOT a short PIN — a short PIN is offline-GPU-forceable even under Argon2id. A short PIN is allowed ONLY on hardware-backed installs (§4.2). Frozen KDF params: **Argon2id `m≥64 MiB, t≥3, p=1`** (single-sourced const, §8.1).
 
-- **Enrollment / set-PIN:** generate the Ed25519 key (CYP-525) → operator sets a PIN/passphrase → `KEK = KDF(pin, per-install random salt)` → `sealed = AEAD_encrypt(KEK, pkcs8_privkey)` → persist `{salt, kdf-params, aead-nonce, sealed, x509-pub, attempt-state}` owner-only (the CYP-525 `writeOwnerOnly` atomic pattern) in the DEVICE_SECURE store. **No plaintext key, no plaintext PIN** (only the KDF salt + params + ciphertext).
-- **Verify (`sign` path):** prompt PIN → `KEK = KDF(pin, salt)` → `AEAD_decrypt(KEK, sealed)`; **decrypt success == correct PIN** (the AEAD tag is the verifier — no separate password hash needed) → `UvOutcome.Verified` + the decrypted key held for the bounded window (§4.4). Decrypt/tag failure ⇒ `Denied(WRONG_PIN)`; user cancels ⇒ `Denied(CANCELLED)`; lockout ⇒ `Denied(LOCKED_OUT)`; no vault/authenticator ⇒ `Unavailable`.
-- **Rate-limiting (LOCKED_OUT):** a persisted, tamper-evident attempt counter → after N wrong PINs, exponential backoff → `LOCKED_OUT` for a cooldown. Bounds **online** guessing. (Offline brute-force on the file is bounded ONLY by KDF hardness — see §6.)
+**At-rest custody (replaces CYP-525 plaintext `0600`):** the Ed25519 device key is stored **AEAD-encrypted under a passphrase-derived key-encryption-key (KEK)**:
+
+- **Enrollment / set-passphrase:** generate the Ed25519 key (CYP-525) → operator sets a passphrase (≥64-bit, meter-enforced) → `KEK = Argon2id(passphrase, per-install random salt, m≥64MiB/t≥3/p=1)` → `sealed = AEAD_encrypt(KEK, pkcs8_privkey, aad = {salt‖kdf-params‖version‖key-id})` (H-2 AAD binding) → persist `{salt, kdf-params, aead-nonce, sealed, x509-pub, attempt-state, vault-version}` owner-only (the CYP-525 `writeOwnerOnly` atomic pattern) in the DEVICE_SECURE store. **No plaintext key, no plaintext passphrase** (only salt + params + ciphertext).
+- **Verify (`sign` path):** prompt passphrase → `KEK = Argon2id(passphrase, salt, …)` → `AEAD_decrypt(KEK, sealed, aad)`; **decrypt+tag success == correct passphrase** (the AEAD tag is the verifier — no separate hash) → `UvOutcome.Verified` + the decrypted key held (as `ByteArray`, H-1) for the bounded window (§4.4). Decrypt/tag failure ⇒ `Denied(WRONG_PIN)`; cancel ⇒ `Denied(CANCELLED)`; lockout ⇒ `Denied(LOCKED_OUT)`; no vault/authenticator ⇒ `Unavailable`.
+- **Rate-limiting (LOCKED_OUT):** a persisted, tamper-evident attempt counter → after N failures, escalating backoff → `LOCKED_OUT`. Bounds **online** guessing ONLY (H-4 — an offline attacker with the file ignores it; the offline barrier is Argon2id + the ≥64-bit floor, §6).
+- **Corrupt vs missing (freeze ③):** a **missing** vault ⇒ first-enroll (OK). A **corrupt/tampered** vault ⇒ `Unavailable` + OOB-recovery, **NEVER** auto-re-enroll/new-key (that would be a key-substitution vector — an attacker corrupts the vault to force a key they control; CYP-525-H1b class).
 
 ### 4.2 Platform-authenticator enhancement (where present, never required)
 
@@ -95,19 +98,26 @@ Seams UIUX must fill (B1 is UI-agnostic; the `PinPrompt` seam is injected):
 6. **"No UV available"** fail-closed state (Unavailable) — honest, actionable.
 The existing CYP-525 honesty rails (UvFailed ≠ hub reject) already scope the distinct-cause copy.
 
-## 8. Decisions — PROVISIONALLY RULED (PO 2026-07-14, subject to Reviewer crypto-lens + UIUX; final ratification pending)
+## 8. Decisions — ✅ RATIFIED (PO final, 2026-07-14, post Reviewer crypto-lens + UIUX grounding)
 
-> **Build HALTED** until (1) the Reviewer crypto-security-lens on this design and (2) UIUX §7 convergence land → then the PO finalizes ratification → build. The provisional rulings (all matched the recommendations):
-> · **D1 = Argon2id** (memory-hard; the hardness is the only offline barrier — must be right; dep accepted).
-> · **D2 = PIN-KEK-AEAD-encrypt** the key (§4.1) — cryptographic binding; OS-keystore-only would leave the gesture concern on Linux/CI.
-> · **D3 = passphrase OR a strong PIN** (adequate entropy; NO weak 4–6-digit — offline-exfil-brute-forceable; the platform authenticator sidesteps it where present).
-> · **D4 = conventional escalating backoff + tamper-evident counter** (a reset must not bypass the cooldown).
-> · **D5 = 120s + zeroize** (matches the milestone reuse window; no GC-reliance).
-> · **D6 = in-place re-seal** (preserve the anchor, no re-enroll) + atomically delete the plaintext key.
-> · **D7 = jvm-desktop only now; iOS/web = ②.**
-> The original decision framing is retained below for the Reviewer/UIUX context.
+> **BUILD GO** (client lane; Backend=none; Reviewer at-code; Tester teeth). The 7 rulings stand; the Reviewer crypto-lens froze 3 blocker-class values + H-1..H-5 build-time items; UIUX grounding reduces scope (the UV-UI already exists).
 
-### Original open framing (now provisionally ruled above)
+### 8.1 Frozen blocker-class values (Reviewer crypto-lens)
+- **① Argon2id params FROZEN:** `m ≥ 64 MiB, t ≥ 3, p = 1`, **single-sourced const** — stronger than login minima because this is an **offline grind** and the KDF is the ONLY offline barrier.
+- **② Entropy floor FROZEN (D3):** the **no-hardware path = App-PASSPHRASE ≥ 64 bit** (6-word diceware / 12+ random chars), **strength-meter-enforced**. **NO short PIN** on no-hardware (8 digits ≈ 26 bit is offline-GPU-forceable even under Argon2id). **Rename "App-PIN" → "App-Passphrase" for the no-hardware path.** A short PIN is allowed **only** on hardware-backed installs (platform authenticator present → the Enclave rate-limits).
+- **③ Corrupt-vault behavior FROZEN:** **fail-closed (`Unavailable` + OOB-recovery), NEVER re-enroll/new-key.** Distinguish `missing` (first-enroll OK) vs `corrupt` (tamper → a **seizure / key-substitution** vector, the CYP-525-H1b class). Auto-re-enroll on a corrupt vault would let an attacker delete/corrupt the vault to force a new key they control → this closes that hole.
+
+### 8.2 Build-time hardening (H-1..H-5, Reviewer reviews at code)
+- **H-1 — zeroize honesty:** hold key material in `ByteArray` (not `SecretKey`), the passphrase in `char[]` (not `String`); minimize copies; explicit clear (never GC-reliance).
+- **H-2 — AEAD AAD binding:** bind context (salt/kdf-params/version/key-id) into the AEAD **AAD** so ciphertext can't be transplanted across params/installs.
+- **H-3 — seal → verify → delete order:** on re-seal/migration, write the sealed vault, **verify it decrypts**, THEN atomically delete the plaintext (never delete-before-verify).
+- **H-4 — rate-limit honesty:** the counter bounds **online** guessing only (an offline attacker with the file ignores it) — the doc/code must NOT overclaim it as offline protection (that's ① + ②).
+- **H-5 — downgrade resistance:** **pin the enrolled method**; a platform-auth install must NOT silently fall back to a weaker PIN — a method downgrade requires an **explicit re-enroll**.
+
+### 8.3 UIUX grounding (scope reduction — the UI already exists)
+The UV-UI **already exists** (CYP-460: `OperatorAuthDialog` / `OperatorAuthTags` / `remote_pop_*` keys). **B1 = the crypto IMPL + wiring (flip the `rawUserVerification` prod default) + UIUX's thin 4-gap delta (U1–U4), NOT a from-scratch UI.** Build against the existing dialog; **U1 enroll-field = Passphrase** (per ②, strength-meter). U2–U4 = the remaining UIUX delta (converge via PO — the ratification message tail was truncated at "Konvergie…"; the exact U2–U4 spec is requested before the UI-wiring step; the crypto core + `rawUserVerification` wiring do not depend on it).
+
+### 8.4 Original decision framing (now ratified above — retained for context)
 
 - **D1 — KDF:** Argon2id (needs a KMP/jvm crypto dep — e.g. a bundled Argon2 lib) **[recommended]** vs JDK-only PBKDF2-HMAC-SHA256 high-iteration (no new dep, weaker). Security ↔ dependency trade-off.
 - **D2 — Key-binding variant:** PIN-KEK-AEAD-encrypts-the-key (§4.1) **[recommended, no-shortcut]** vs UV-as-gate-only + rely on an OS keystore for at-rest (simpler, but trusts the OS keystore + leaves the "UI-gesture" concern on Linux/CI where no strong keystore exists).
