@@ -3,9 +3,7 @@ package com.tneff.cyppieagents
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.sun.net.httpserver.HttpServer
-import java.awt.Desktop
 import java.net.InetSocketAddress
-import java.net.URI
 
 fun main() = application {
     Window(
@@ -13,11 +11,11 @@ fun main() = application {
         title = "KMPCyppieAgents",
     ) {
         // CYP-185: open the GitHub OIDC redirect URL in the system browser — the platform-actual for §6
-        // (commonMain only holds the state). A headless/unsupported desktop is a safe no-op.
+        // (commonMain only holds the state). CYP-575: the URL is ALWAYS logged to stdout and falls back to
+        // `xdg-open` when AWT `Desktop` is unavailable, so an unsupported/throwing desktop is never a silent
+        // dead end (the old `runCatching` swallowed it and the human could not sign in). See openExternalUrlWithFallback.
         App(
-            onOpenExternalUrl = { url ->
-                runCatching { if (Desktop.isDesktopSupported()) Desktop.getDesktop().browse(URI(url)) }
-            },
+            onOpenExternalUrl = { url -> openExternalUrlWithFallback(url) },
             // CYP-474 §4: Desktop-native OIDC via RFC 8252 loopback (system browser + localhost redirect) — H3,
             // no embedded webview. The handoff states + copy live in commonMain; this host arms the return listener.
             nativeOidcLoopback = true,
