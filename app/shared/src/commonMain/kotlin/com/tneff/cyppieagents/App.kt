@@ -131,6 +131,12 @@ fun App(
                         remoteContext = handoff?.hubName,
                         // M2 Seam-3 (b): the live RemoteSessionState flow → the Seam-6 relay-drop / in-flight-uncertain chrome.
                         remoteSessionState = handoff?.sessionState,
+                        // CYP-427/M2 Seam #8: the revoke → the handoff's guaranteed local teardown (backToHubList/close).
+                        onRemoteEndSession = handoff?.onEndSession ?: {},
+                        // CYP-427/M2 Seam #1: the CR3 "data over the tunnel" capability + the fingerprint-pin signals are
+                        // not yet produced (RemoteHubTransport = fail-loud stub) ⇒ left at their honest false defaults →
+                        // the banner stays B2 (WARN-partial). The real transport (RR5/G7) feeds these true → B3/.pinned.
+
                         themeMode = themeMode,
                         onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
                         composerHistorySize = composerHistorySize,
