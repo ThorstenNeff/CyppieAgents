@@ -256,11 +256,13 @@ class HubConnectViewModel(
                 throw c // Q5 teardown / hub-switch — never swallowed (the cancel path closes the session via finally)
             } catch (e: Throwable) {
                 // F1: an unexpected RAW error in the connect drive ⇒ honest terminal LOST (never a stuck
-                // RELAY_DIALING spinner) + tear the half-built session down. No typed RemoteFailure is fabricated —
-                // the cause is genuinely unknown, so LOST(failure=null) is the honest state (the ConnectingView
-                // renders it as ended, with a retry, instead of an endless progress ring).
-                closeActiveComponents()
+                // RELAY_DIALING spinner). No typed RemoteFailure is fabricated — the cause is genuinely unknown, so
+                // LOST(failure=null) is the honest state (the ConnectingView renders it as ended, with a retry).
+                // Assist Finding-2: set LOST FIRST — a throw from the best-effort teardown below (closing a
+                // half-built session in the error path) must NOT undo it and re-strand the spinner (the very hang
+                // class this closes). The teardown is then best-effort; its own failure can't erase the LOST above.
                 _state.value = HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.LOST))
+                runCatching { closeActiveComponents() }
             }
         }
     }

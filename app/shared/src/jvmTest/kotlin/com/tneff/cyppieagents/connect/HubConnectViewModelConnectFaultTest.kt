@@ -1,7 +1,9 @@
 package com.tneff.cyppieagents.connect
 
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -51,6 +53,39 @@ class HubConnectViewModelConnectFaultTest {
             RemoteConnState.LOST,
             (s as HubConnectUiState.RemoteConnecting).remote.conn,
             "a raw connect-drive throw must land on honest LOST — never stay on the RELAY_DIALING spinner",
+        )
+    }
+
+    /**
+     * Assist Finding-1 (the cancel tooth) — a CANCELLED connect (Q5 hub-switch / teardown) must be RETHROWN, never
+     * caught as a `Throwable` and painted `LOST` (which would falsely tell the operator the connection failed when
+     * they simply switched away). Modeled by a feed whose collect raises `CancellationException` — the exact
+     * exception a job-cancel propagates through the collect.
+     *
+     * **Mutation (RED):** remove `catch (CancellationException) { throw c }` in [HubConnectViewModel] → the
+     * CancellationException falls to the `catch (Throwable)` branch → state is painted `LOST` → this assertion
+     * reddens. Without this tooth that mutation stays green (the "green-in-unit, breaks-live" class).
+     */
+    @Test
+    fun connectRemote_cancellation_isNotSurfacedAsLost() = runTest {
+        val cancellingFeed = RemoteConnectFeed { flow<com.tneff.cyppieagents.net.hub.remote.RemoteSessionState> { throw CancellationException("hub-switch") } }
+        val vm = HubConnectViewModel(
+            controlPlane = StubControlPlaneClient(hubs = oneHub),
+            credentials = StubHubCredentialRepository(),
+            connectFeed = StubLocalConnectFeed(),
+            remoteConnectFeed = cancellingFeed,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+        )
+        vm.start()
+        vm.selectHub(oneHub.first())
+        vm.connectRemote()
+
+        val s = vm.state.value
+        assertIs<HubConnectUiState.RemoteConnecting>(s)
+        assertEquals(
+            RemoteConnState.RELAY_DIALING,
+            (s as HubConnectUiState.RemoteConnecting).remote.conn,
+            "a cancelled connect must NOT be painted LOST — it stays at the pre-cancel state (rethrown, not caught as Throwable)",
         )
     }
 }
