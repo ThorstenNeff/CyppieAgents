@@ -116,7 +116,13 @@ class Rr3TunnelGate(
         // a silent "empty → re-enroll" over a corrupt anchor (the tamper→re-enroll seizure vector), and never an uncaught
         // throw (H1b self-re-read finding). read() is non-suspend, so this catch cannot swallow a cancellation.
         val finalizedDevice = try { finalizedStore?.read()?.device } catch (e: Exception) { return rejectTampered(tunnel, e) }
-        val anchor = finalizedDevice ?: deviceStore.enrolled()
+        // CYP-557 (CYP-550 ③): the pre-GE5 fallback [deviceStore] can ALSO throw on a tampered at-rest blob
+        // (`SecretStoreBackedOperatorDeviceStore.enrolled()` fails-closed with `SecretCipherException` on a corrupt
+        // record). Guard it with the SAME fail-closed [rejectTampered] as the finalizedStore read above — else the
+        // throw propagates → the handler closes the tunnel → a silent reconnect/lockout loop with NO operator
+        // diagnostic (the exact silent-lockout rejectTampered exists to prevent). Reachable on a pre-GE5→GE5 upgrade
+        // whose old device blob is corrupt, or in the pre-GE5 wiring.
+        val anchor = finalizedDevice ?: try { deviceStore.enrolled() } catch (e: Exception) { return rejectTampered(tunnel, e) }
 
         if (anchor == null) {
             // EMPTY: TOFU first-enroll under a CpJwt-authenticated operator (CT-2b; only reachable past a valid CpJwt ⇒
