@@ -57,6 +57,14 @@ mismatch is invisible at mint time (mint only uses the seed) and only bites at t
 1. Mint a ticket: `curl -sf -H "Authorization: Bearer $OPERATOR_TOKEN" -X POST http://<cp>/api/cp/hubticket -d '{"hubId":"<hubId>","cb":"<cb>"}'` → returns `{ cpJwt: "…" }` (a `NOT_AUTHORIZED_FOR_HUB`/`CP_SESSION_EXPIRED` failure ⇒ group B is Inert or the operator doesn't own the hub).
 2. A **real client tunnel authorizes** (the desktop/web client connects over the remote hub). If SEED↔PUBKEY match, RR3 authorizes and the client connects. On mismatch, RR3 rejects with the uniform `auth_failed` and the client never connects — grep the hub log for repeated RR3 rejects with a good CpJwt as the tell.
 
+**Isolated cryptographic proof — when no standalone Noise client is on hand (as at the B1 deploy).** The keypair check
+does NOT require a full tunnel: mint a CpJwt with the live `CYPPIE_CP_SIGNING_SEED`, then **verify its Ed25519 signature
+against the live `CYPPIE_CP_PUBKEY`** — a valid signature ⟺ the two are a matching keypair. This IS exactly the RR3
+gate's own check (`CpJwtVerifier` verifies the CpJwt signature against `cpPublicKey(kid)` = `CYPPIE_CP_PUBKEY`), so it
+settles the mint-invisible SEED↔PUBKEY silent-fail *more directly* than a full tunnel. The full end-to-end (live-`h`
+channel-binding + nonce + operator PoP) is a separate superset — proven by the CI test below and re-confirmed by the
+Dogfood first-connect.
+
 > CI equivalent (no staging): `Cyp536LiveRelayLoopbackE2eTest` exercises the same real-relay datapath (RR3→200+roster).
 
 ---
@@ -108,10 +116,18 @@ is locked out of every tunnel** until OOB recovery. Boot 1 looked perfectly heal
 
 ## E. Per-project secret (NOT a boot env)
 
-- `ANTHROPIC_API_KEY` — resolved **per project/team** via the CYP-96 config store (`POST /api/config/apikey`,
-  operator-gated, secret-at-rest 0600, masked, never logged). Set it through the endpoint/GUI, not as a global env; a
-  change takes effect on the **next agent spawn** (restart the agent). VERIFY: `GET /api/config/apikey` returns a masked
-  value (last-4 only), and a spawned agent produces output (not an auth error).
+- `ANTHROPIC_API_KEY` — resolved **per project/team** via the CYP-96 config store. **GET `/api/config/apikey` is
+  PARTICIPANT-gated** (any authed agent/operator sees the masked status) and returns `{ set, masked }` — never the raw
+  key; **PUT `/api/config/apikey` is OPERATOR** (secret-at-rest 0600, masked, never logged). A change takes effect on the
+  **next agent spawn** (restart the agent).
+- **[STANDING CREDS-POLICY]** The default/intended posture is **subscription-OAuth** — no API key is set without an
+  explicit human instruction. In that posture `GET /api/config/apikey` legitimately returns **`{set:false}`** and this
+  is GREEN, not a gap.
+- **VERIFY:** a spawned agent **produces output (not an auth error)** — the operative check (7/7 RUNNING). A **masked**
+  value only when a team explicitly opts into an API key instead of OAuth.
+
+  *(Live-Referenz: B1 deploy `a3730297`, apikey→`{set:false}`, 7/7 RUNNING via Abo-OAuth = green. Corrected from the
+  pre-live assumption `set:true`/operator-GET; §E-Policy-Wording authored by `deploy`.)*
 
 ---
 
@@ -145,5 +161,52 @@ Auftraggeber ratify.
 4. **Restart the hub; the enrolled operator still connects** (no `operator anchor unreadable` WARN). (§C.2 — MASTER_KEY stable + blob persists)
 5. `grep REPLACE_ME` the deployed Kratos config = empty; OIDC providers env injected; return-URL allow-list = {SPA-origin, loopback}. (§F)
 6. `CYPPIE_COOKIE_SECURE=true` iff serving over TLS. (§D)
-7. `ANTHROPIC_API_KEY` set per-project via the endpoint; agent restarted; agent produces output. (§E)
+7. `GET /api/config/apikey` = `{ set: false }` (subscription OAuth intended; `set: true` only if a BYO key was deliberately provisioned) AND the agents produce output (functional auth proof). (§E)
 8. No secret value in any repo file / log / chat.
+
+---
+
+## Validated live (B1 deploy, 2026-07-14)
+
+This runbook's 8-step sequence was run live on the first B1 deploy (`deploy` held the creds; read-only non-secret
+markers arbitrated against runbook+code). **Result: 8/8 green — Deploy-VERIFY durch.** Notably: #3 settled via the
+isolated cryptographic keypair proof (§B — mint-sig verifies under the live `CYPPIE_CP_PUBKEY`); #4 §C.2 disproven (0
+`operator anchor unreadable` + MASTER_KEY-md5-stable → the sealed device blob decrypts after restart); #5 even tested an
+attacker `return_to` rejects; #7 corrected to `{ set: false }` + OAuth (see §E). The observed-event layer (#3 full
+tunnel, #4 post-restart connect, #7 agent output) is closed by the Dogfood first-connect as the live E2E.
+
+---
+
+## Appendix — paste-ready VERIFY commands
+
+Secrets are NEVER hardcoded: set `STG` (the `/api` base host) + `OPT` (operator token) out-of-band at the deploy host,
+never in a shared channel. "Deploy is through" = these steps green, not the exit code (fail-closed = silent INERT).
+
+```bash
+# Step 1 — self-admit (boot log)
+grep -E 'hub self-admit INERT|hub self-admitted .* now discoverable' "$BOOTLOG"   # want the INFO, NOT the INERT WARN
+grep 'CYP-524 hub admission not granted'                             "$BOOTLOG"   # want: empty
+
+# Step 2 — /hubs lists the hub (operator) + no-auth fails closed
+curl -sf -H "Authorization: Bearer $OPT" "$STG/api/cp/hubs" | jq '.[].hubId'      # want the hubId; [] => INERT (read Step 1)
+curl -s -o /dev/null -w '%{http_code}\n'  "$STG/api/cp/hubs"                       # want: 401
+
+# Step 3 — mint; then EITHER a real client tunnel connects OR verify the mint-sig against the live PUBKEY (§B)
+curl -sf -H "Authorization: Bearer $OPT" -H 'Content-Type: application/json' \
+     -X POST "$STG/api/cp/hubticket" -d '{"hubId":"<hubId>","cb":"<cb>"}' | jq .   # want {cpJwt:...}; {failure:...} => Inert/not-owned
+
+# Step 4 — MASTER_KEY stable (enroll -> RESTART -> still connects)
+grep 'operator anchor unreadable' "$BOOTLOG_AFTER_RESTART"                         # want: EMPTY
+
+# Step 5 — Kratos config substituted
+grep REPLACE_ME "$DEPLOYED_KRATOS_YML"                                             # want: EMPTY (+ allow-list {SPA, loopback})
+
+# Step 6 — CSRF Secure over TLS
+curl -sI "$STG/api/health" | grep -i '^set-cookie:.*cyppie_csrf'                   # want: contains 'Secure'
+
+# Step 7 — API key per-project (participant GET -> masked; {set:false}=OAuth intended)
+curl -sf -H "Authorization: Bearer $OPT" "$STG/api/config/apikey" | jq .           # want {set:false,...} (OAuth) or {set:true,masked:"..."} (BYO)
+
+# Step 8 — no secret leak
+grep -RiE 'ory_st_|ANTHROPIC|BEGIN .*PRIVATE KEY|MASTER_KEY=' "$LOGDIR"            # want: EMPTY
+```
