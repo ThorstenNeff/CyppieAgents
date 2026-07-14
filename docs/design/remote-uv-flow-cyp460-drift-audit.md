@@ -20,9 +20,12 @@
   festlegen", `remote_pop_pin_title` „App-PIN eingeben"); der Dialog hat **keinen Capability-Branch**. Finale Sprache:
   **no-hardware → „App-Passphrase"** (neue Keys), hardware-backed → „App-PIN" (Reuse der frozen Copy). Dev muss die
   **capability-conditional Copy-Wahl** einziehen (Signal = Platform-Authenticator vorhanden?, S-UV1).
-- **D3 — `enrollError.*` ≠ `error.*` (H1):** der gebaute Dialog kennt nur `error(cause)` (**Auth-Zeit**:
-  pinWrong/biometricFailed/…). Die Enroll-Validierung nutzt die **neue** Fn `enrollError(cause)` (`mismatch`/`tooShort`/
-  `tooWeak`/`blocklisted`, **Setup-Zeit**). **Nicht mergen** — distinkte Wahrheiten, distinkte Tags.
+- **D3 — H1 Setup-Ursachen ≠ Auth-Ursachen (RECONCILED @ `a3730297`):** ~~separate Fn `enrollError(cause)`~~ — der
+  gebaute B1 **erweitert die bestehende `error(cause)`-Fn** um die **Setup-Ursachen** (`mismatch`/`tooShort`/`tooWeak`/
+  `blocklisted`) statt eines zweiten Namespace. **H1 bleibt gewahrt über die Ursachen-Namen** (Setup-Ursachen kommen nur
+  aus dem Enroll, Auth-Ursachen `pinWrong`/… nur aus der Anmeldung) — **ein** Namespace `remote.authStep.error.<cause>`,
+  distinkte Ursachen. B1-§-QA-Reconcile: Code+Dev-Render-Test = Source of Truth (mein früherer `enrollError`-Namespace-
+  Vorschlag ist zugunsten der gebauten Realität zurückgezogen).
 - **D4 — Enroll-Step ist heute ein Text-Stub:** `OperatorAuthStep.Enroll` (`:94-118`) rendert nur Titel +
   `remote_pop_enroll_pin`-Text + Session-only — **kein** Feldpaar, **kein** Meter, **kein** Diceware-Default. Der ganze
   U1-Bau (visual-spec §1/§2) ist net-new; er ersetzt den Stub (nicht erweitern).

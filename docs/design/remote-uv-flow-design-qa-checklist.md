@@ -24,7 +24,7 @@ Bei Farb-/Glyph-/Fill-**Werten** gilt das **Render-Oracle**; bei Ton-**Bedeutung
 | **PassphrasePrompt** | Prompt-Shell / Auth-Nutzungs-Eingabe (Mount-Host §4.2) | `remote.authStep.*` (Host), `remote.connect.authenticating` | `remote_pop_passphrase_title`, `_passphrase_body`, `remote_pop_path_hint` |
 | **DicewareReveal** | §1a — empfohlener Diceware-Default (prominent) | `enrollSuggested`, `enrollSuggest`, `enrollCopy`, `enrollClipboardNotice` | `_enroll_suggested`, `_suggest_use`, `_suggest`, `_suggested_save`, `_clipboard_notice` |
 | **SetPassphrase** | §1b — type-your-own Feldpaar (sekundär) | `enrollTypeOwn`, `enrollPinConfirm` | `_enroll_type_own`, `_enroll_passphrase`, `_enroll_passphrase_confirm` |
-| **StrengthMeter** | §2 — Meter + 3 Verdict-States | `enrollStrength`, `enrollError.tooWeak`, `enrollError.blocklisted` | `_strength_{weak,fair,strong}`, `_enroll_too_weak`, `_enroll_blocklisted` |
+| **StrengthMeter** | §2 — Meter + 3 Verdict-States | `enrollStrength`, `error.tooWeak`, `error.blocklisted` | `_strength_{weak,fair,strong}`, `_enroll_too_weak`, `_enroll_blocklisted` |
 
 > **★ Honesty-Klarstellung „Reveal" (Namenskollision, wichtig für Dev/Tester):** der Screen-Name **DicewareReveal**
 > meint die **Anzeige der *generierten* Passphrase** — die per HG2-Ehrlichkeit **gezeigt werden MUSS** (nie

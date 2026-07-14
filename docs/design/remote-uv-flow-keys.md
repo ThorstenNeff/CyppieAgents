@@ -35,7 +35,7 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 | `remote_pop_enroll_suggest` **(0)** | Andere vorschlagen | Suggest another | **Regenerate**-Affordanz (`ENROLL_SUGGEST` — neue Diceware würfeln). |
 | `remote_pop_enroll_type_own` **(0)** | Eigene Passphrase eingeben | Type your own passphrase | **sekundäre** Umschaltung auf manuelle Eingabe (`ENROLL_TYPE_OWN`). |
 | `remote_pop_enroll_strength_hint` **(0)** | 6 zufällige Wörter oder mindestens 12 Zeichen. | 6 random words or at least 12 characters. | Guidance neben dem Strength-Meter (`ENROLL_STRENGTH`, nur type-your-own), neutral. |
-| `remote_pop_enroll_too_weak` **(0)** | Passphrase zu schwach — 6 zufällige Wörter oder 12+ Zeichen. | Passphrase too weak — 6 random words or 12+ characters. | `enrollError.tooWeak`-Gate (Entropie < ≥64 bit; type-your-own). Fehler-Ton, retryable. |
+| `remote_pop_enroll_too_weak` **(0)** | Passphrase zu schwach — 6 zufällige Wörter oder 12+ Zeichen. | Passphrase too weak — 6 random words or 12+ characters. | `error.tooWeak`-Gate (Entropie < ≥64 bit; type-your-own). Fehler-Ton, retryable. |
 | `remote_pop_strength_weak` **(0)** | Schwach | Weak | Strength-Meter-Level (Text-Label — Farbe **nie** alleiniger Träger, WCAG 1.4.1). |
 | `remote_pop_strength_fair` **(0)** | Mittel | Fair | Strength-Meter-Level. |
 | `remote_pop_strength_strong` **(0)** | Stark | Strong | Strength-Meter-Level. |
@@ -44,9 +44,9 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 | Key | DE (Default) | EN | Rolle |
 |---|---|---|---|
 | `remote_pop_enroll_confirm` **(0)** | App-PIN bestätigen | Confirm your app PIN | Enroll-**Bestätigungs**-Feld (`ENROLL_PIN_CONFIRM`), Kurz-PIN-Pfad. |
-| `remote_pop_enroll_mismatch` **(0)** | Eingaben stimmen nicht überein — bitte erneut eingeben. | Entries don't match — please re-enter. | `enrollError.mismatch`. **Credential-neutral** (PIN *und* Passphrase). Fehler-Ton, retryable. |
-| `remote_pop_enroll_too_short` **(1)** | PIN zu kurz — mindestens %1$s Zeichen. | PIN too short — at least %1$s characters. | `enrollError.tooShort`. `%1$s` = Threat-Model-Min (**nicht** hartkodiert). |
-| `remote_pop_enroll_blocklisted` **(0)** | Diese Passphrase ist zu verbreitet — sie steht auf einer Liste bekannt-schwacher Passphrasen. Bitte eine andere. | This passphrase is too common — it's on a list of known-weak passphrases. Please choose another. | `enrollError.blocklisted` (**distinkt** von `tooWeak`, PO-Ruling G1). Sagt ehrlich das *warum*. **Enroll-Pfad**, kein Enumeration-Oracle (Nutzer setzt sein eigenes Secret — CYP-543-Neutralität betrifft nur den Auth-Pfad). |
+| `remote_pop_enroll_mismatch` **(0)** | Eingaben stimmen nicht überein — bitte erneut eingeben. | Entries don't match — please re-enter. | `error.mismatch`. **Credential-neutral** (PIN *und* Passphrase). Fehler-Ton, retryable. |
+| `remote_pop_enroll_too_short` **(1)** | PIN zu kurz — mindestens %1$s Zeichen. | PIN too short — at least %1$s characters. | `error.tooShort`. `%1$s` = Threat-Model-Min (**nicht** hartkodiert). |
+| `remote_pop_enroll_blocklisted` **(0)** | Diese Passphrase ist zu verbreitet — sie steht auf einer Liste bekannt-schwacher Passphrasen. Bitte eine andere. | This passphrase is too common — it's on a list of known-weak passphrases. Please choose another. | `error.blocklisted` (**distinkt** von `tooWeak`, PO-Ruling G1). Sagt ehrlich das *warum*. **Enroll-Pfad**, kein Enumeration-Oracle (Nutzer setzt sein eigenes Secret — CYP-543-Neutralität betrifft nur den Auth-Pfad). |
 
 ### Δ2 — 1-UV-für-N: eine Bestätigung, N Tunnel
 | Key | DE (Default) | EN | Rolle |

@@ -96,7 +96,7 @@ terminale Hub-Reject) und keiner nutzt `tertiary`-Grün.
 - **Feld-Kopplung:** das Setz-Feld schaltet `isError = true` → `error`-Outline; Fehlerzeile **direkt darunter** → Feld +
   Meldung lesen als **eine** retryable Einheit. Feld **bleibt aktiv** (retryable, kein Sackgassen-State).
 - **Ton-Position (3-Stufen, verbindlich):** WARN-Amber (`too_weak`, advisory) **<** error-Ton (`blocklisted`, retryable
-  reject) **<** `errorContainer` (terminal Hub-Reject, **nicht** im Enroll). Distinkte Ursache `enrollError.blocklisted` ≠
+  reject) **<** `errorContainer` (terminal Hub-Reject, **nicht** im Enroll). Distinkte Ursache `error.blocklisted` ≠
   `tooWeak` — die Farbe folgt der Ursache.
 - **WCAG 1.4.1:** die Copy ist **selbstbeschreibend** (sagt *warum*) → Farbe nie alleiniger Träger; optional `▲`/Marker,
   aber der Text trägt bereits die Bedeutung. **Kein Enumeration-Oracle** (Enroll = eigenes Secret; CYP-543-Neutralität nur

@@ -25,9 +25,9 @@
 | A4 | Generierter Credential **angezeigt + notierbar** (nie masked-at-generation) | `remote_pop_enroll_suggested_save` (HG2-Ehrlichkeit) | n/a | 🟡 PLAN |
 | A5 | **type-your-own sekundär** mit Strength-Meter (Text-Level-Label, Farbe nie alleiniger Träger) | §4.1.3, `ENROLL_TYPE_OWN` + `ENROLL_STRENGTH` + `remote_pop_strength_{weak,fair,strong}` | `severityColor(WARN)`-Pattern existiert (`:110`), aber kein Meter | 🟡 PLAN |
 | A6 | **Setz + Bestätigung** = zweifache Eingabe; Commit erst wenn `confirm==set` | §4.1.4, `ENROLL_PIN_CONFIRM` | Enroll-Step hat **kein** Feld (nur `enrollPinSet`-Text) | 🟡 PLAN |
-| A7 | **unter-Floor** (Entropie < ≥64-bit) → klare Fehler-Copy, **retryable**, Feld aktiv, **kein** Sackgassen-State | §4.1.5, `enrollError.tooWeak` + `remote_pop_enroll_too_weak` (Fehler-Ton ≠ errorContainer) | Taxonomie-Pattern gebaut (lokal=retryable, `:133-139`); tooWeak-Cause noch nicht | 🟡 PLAN |
-| A8 | **Mismatch** → klare Fehler-Copy, retryable | `enrollError.mismatch` + `remote_pop_enroll_mismatch` (credential-neutral) | nicht gebaut | 🟡 PLAN |
-| A9 | **blocklisted** (lang genug, aber Common-Phrase) → **distinkte** ehrliche Copy die *warum* sagt (≠ tooWeak) | **G1 RULED distinkt:** `enrollError.blocklisted` + `remote_pop_enroll_blocklisted`; Signal `meets()` in B1 vorhanden (kein CYP-544-Blocker) | nicht gebaut | 🟡 PLAN (G1 ✅ geruled) |
+| A7 | **unter-Floor** (Entropie < ≥64-bit) → klare Fehler-Copy, **retryable**, Feld aktiv, **kein** Sackgassen-State | §4.1.5, `error.tooWeak` + `remote_pop_enroll_too_weak` (Fehler-Ton ≠ errorContainer) | Taxonomie-Pattern gebaut (lokal=retryable, `:133-139`); tooWeak-Cause noch nicht | 🟡 PLAN |
+| A8 | **Mismatch** → klare Fehler-Copy, retryable | `error.mismatch` + `remote_pop_enroll_mismatch` (credential-neutral) | nicht gebaut | 🟡 PLAN |
+| A9 | **blocklisted** (lang genug, aber Common-Phrase) → **distinkte** ehrliche Copy die *warum* sagt (≠ tooWeak) | **G1 RULED distinkt:** `error.blocklisted` + `remote_pop_enroll_blocklisted`; Signal `meets()` in B1 vorhanden (kein CYP-544-Blocker) | nicht gebaut | 🟡 PLAN (G1 ✅ geruled) |
 | A10 | Session-only-Downgrade bleibt WARN-amber (`▲` + severityColor(WARN)), kein Über-Versprechen | `remote_pop_enroll_session_only` (Q5/GE6) | **gebaut** (`OperatorAuthDialog.kt:100-116`) | ✅ |
 | A12 | **Clipboard-Egress-Disclosure** (UIUX2-①): Copy erlaubt **mit** ehrlicher Disclosure — neutral-informativ, **nie** „sicher kopiert"/„gelöscht"; Auto-Clear best-effort Dev, nicht versprochen; present ⇔ Copy angeboten/genutzt | visual-spec §1a, `ENROLL_COPY`+`ENROLL_CLIPBOARD_NOTICE`+`remote_pop_enroll_clipboard_notice` | nicht gebaut | 🟡 PLAN (①-gefoldet) |
 | A11 | **Enroll-Erfolg → Weiterlauf**: kein „gesetzt, Nutzer sitzt"; auto-treibt AUTHENTICATING→CONNECTED; in-hand-Passphrase = **erste UV** (kein sofortiger 2. Prompt, `DecryptedKeyHold`-Window) | **G2 RULED:** ux-spec §4.2 ergänzt (Enroll→seal→AUTH mit in-hand-Passphrase; Startpunkt des 1-UV-für-N-Fensters) | nicht gebaut | 🟡 PLAN (G2 ✅ geruled) |
@@ -85,7 +85,7 @@
 ---
 
 ## Rulings G1–G5 (PO-ratifiziert `1526532076…`/`1526532077…`, eingefaltet)
-- **G1 (A9/CR2) → DISTINKT.** Eigener Cause `enrollError.blocklisted` ≠ `tooWeak` + `remote_pop_enroll_blocklisted`
+- **G1 (A9/CR2) → DISTINKT.** Eigener Cause `error.blocklisted` ≠ `tooWeak` + `remote_pop_enroll_blocklisted`
   (ehrliches *warum*). **Kein CYP-544-Blocker:** B1 hat das Blocklist-Boolean schon (`meets() = Floor ∧ !blocklist`).
   CYP-543-Neutralität betrifft nur den **Auth**-Pfad — Enroll-Copy darf spezifisch-ehrlich sein (kein Enumeration-Oracle).
 - **G2 (A11) → JA, §4.2-Ergänzung geliefert.** Enroll-Erfolg → seal → **selbsttätig** AUTHENTICATING→CONNECTED; die

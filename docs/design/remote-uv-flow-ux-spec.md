@@ -91,7 +91,7 @@ Der `Enroll`-Step wird um das **Feldpaar** ergänzt (heute nur Disclosure-Text);
   4. **Bestätigungs-Feld** — `ENROLL_PIN_CONFIRM` + `remote_pop_enroll_passphrase_confirm` (bei type-your-own; der
      One-Click-Default ist bereits bestätigt-durch-Anzeige).
   5. **Gate:** kein Credential gesetzt bis (Default akzeptiert) **oder** (type-your-own: Bestätigung == Setz **und**
-     `meets() = Entropie ≥ ≥64-bit-Floor ∧ !blocklist`) → sonst `enrollError.mismatch` / `.tooWeak`
+     `meets() = Entropie ≥ ≥64-bit-Floor ∧ !blocklist`) → sonst `error.mismatch` / `.tooWeak`
      (`remote_pop_enroll_too_weak`) / **`.blocklisted`** (`remote_pop_enroll_blocklisted`, PO-Ruling G1 — **distinkter** Cause
      der ehrlich das *warum* sagt: „zu verbreitet / auf Blocklist"; das Blocklist-Signal liefert B1 **jetzt** [`meets()`],
      unabhängig von CYP-544/zxcvbn). Enroll-Copy darf **spezifisch-ehrlich** sein (kein Enumeration-Oracle — der Nutzer setzt
@@ -99,7 +99,7 @@ Der `Enroll`-Step wird um das **Feldpaar** ergänzt (heute nur Disclosure-Text);
 - **hardware-backed (Kurz-PIN):**
   1. **Setz-Feld** — reuse `remote_pop_enroll_pin` („App-PIN festlegen"), Tag `ENROLL_PIN_SET`.
   2. **Bestätigungs-Feld** — `ENROLL_PIN_CONFIRM` + `remote_pop_enroll_confirm` („App-PIN bestätigen").
-  3. **Gate:** Bestätigung == Setz **und** Länge ≥ Min → sonst `enrollError.mismatch` / `enrollError.tooShort`.
+  3. **Gate:** Bestätigung == Setz **und** Länge ≥ Min → sonst `error.mismatch` / `error.tooShort`.
 - **Gemeinsam:** Gate-Fehler sind **retryable, Fehler-Ton (`colorScheme.error`, nicht `errorContainer`)**, Felder bleiben
   aktiv (analog gebautem lokalem `WrongPin`). **Nie stiller Commit** einer unbestätigten/schwachen Eingabe. Session-only-
   Disclosure unverändert (WARN-amber `remote_pop_enroll_session_only`, Q5/GE6) — kein Über-Versprechen eines Hardware-
@@ -174,7 +174,7 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
    One-Click-Default** (`enrollSuggested` present, `suggest_use` akzeptiert, `enrollSuggest` regeneriert); type-your-own ist
    **sekundär** (`enrollTypeOwn`, Meter + Floor-Gate); der generierte Credential ist **angezeigt + notierbar**
    (`_suggested_save`), nie masked-at-generation; **keine Bit-Zahl** im Copy-Literal.
-2. **Enroll gated:** kein Credential gesetzt bei Mismatch / zu-kurz / zu-schwach / **blocklisted**; `enrollError.*` render
+2. **Enroll gated:** kein Credential gesetzt bei Mismatch / zu-kurz / zu-schwach / **blocklisted**; `error.*` render
    Fehler-Ton + eigener Tag (G1: `blocklisted` **distinkt** von `tooWeak`, ehrliches *warum*), Felder aktiv, **kein**
    stiller Commit.
 2c. **Enroll→Auth-Weiterlauf (G2):** nach Enroll-Erfolg treibt der Flow selbsttätig in AUTHENTICATING→CONNECTED (kein „gesetzt,
@@ -210,7 +210,7 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
 - **Follow-up 1 = CYP-543 (PO-owned):** `remote_pop_wrong_pin`/`_locked` frozen „PIN"-Copy am **Auth**-Pfad → credential-
   neutrale Zähler-Copy. Betrifft **nicht** Enroll (dort ist spezifisch-ehrliche Copy korrekt, kein Enumeration-Oracle).
 - **Follow-up 2 = CYP-544 (PO-owned):** **zxcvbn-Meter-Härtung** fürs type-your-own (graduelle Stärke, dictionary/pattern-
-  aware). **Kein** Blocker für G1: das Blocklist-Boolean (`meets()`) existiert in B1 **jetzt** → `enrollError.blocklisted`
+  aware). **Kein** Blocker für G1: das Blocklist-Boolean (`meets()`) existiert in B1 **jetzt** → `error.blocklisted`
   ist unabhängig lieferbar.
 
 ## 9. Self-Validation

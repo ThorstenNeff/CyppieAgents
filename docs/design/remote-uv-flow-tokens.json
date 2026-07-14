@@ -50,15 +50,15 @@
       "verdict.BLOCKLISTED": "auf Blocklist (unabh. Laenge). ★ Fill GEDAeMPFT outline/neutral — NICHT voll/stark (Optik luegt nie 'stark'; H1 anti-Konflation). Verdict-Zeile error-Ton colorScheme.error + remote_pop_enroll_blocklisted. Haerterer Reject.",
       "tone_separation": "OK=primary/neutral · TOO_WEAK=WARN-Amber+▲ · BLOCKLISTED=error-Ton. Jeder Text-Label (1.4.1). Keiner errorContainer, keiner tertiary-Gruen.",
       "label_keys": ["remote_pop_strength_weak", "remote_pop_strength_fair", "remote_pop_strength_strong", "remote_pop_enroll_strength_hint", "remote_pop_enroll_too_weak", "remote_pop_enroll_blocklisted"],
-      "tags": ["remote.authStep.enrollStrength", "remote.authStep.enrollError.tooWeak", "remote.authStep.enrollError.blocklisted"]
+      "tags": ["remote.authStep.enrollStrength", "remote.authStep.error.tooWeak", "remote.authStep.error.blocklisted"]
     },
     "enroll.blocklistedError": {
       "role": "Element 3 — Blocklisted-Fehler-Praesentation (neue ehrliche Copy visuell verankert).",
       "copy": "bodySmall colorScheme.error-Ton (NICHT errorContainer). Feld isError=true (error-Outline), Fehlerzeile direkt darunter = eine retryable Einheit; Feld bleibt aktiv.",
-      "tone_ladder": "WARN-Amber (too_weak, advisory) < error-Ton (blocklisted, retryable reject) < errorContainer (terminal Hub-Reject, NICHT im Enroll). Farbe folgt der Ursache; enrollError.blocklisted ≠ tooWeak.",
+      "tone_ladder": "WARN-Amber (too_weak, advisory) < error-Ton (blocklisted, retryable reject) < errorContainer (terminal Hub-Reject, NICHT im Enroll). Farbe folgt der Ursache; error.blocklisted ≠ tooWeak.",
       "wcag": "Copy selbstbeschreibend (sagt warum) -> Farbe nie alleiniger Traeger. Kein Enumeration-Oracle (Enroll=eigenes Secret; CYP-543 nur Auth-Pfad).",
       "label_key": "remote_pop_enroll_blocklisted",
-      "tag": "remote.authStep.enrollError.blocklisted"
+      "tag": "remote.authStep.error.blocklisted"
     },
     "enroll.autoContinue": {
       "role": "Element 4 — Auto-Weiterlauf Enroll->AUTHENTICATING (G2), sichtbar, kein toter Moment.",

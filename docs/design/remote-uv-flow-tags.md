@@ -40,7 +40,7 @@ unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
 | `ENROLL_SUGGEST` | `remote.authStep.enrollSuggest` | die **Regenerate**-Affordanz („Andere vorschlagen" — neue Diceware würfeln). Present ⇔ Passphrase-Enroll aktiv. |
 | `ENROLL_TYPE_OWN` | `remote.authStep.enrollTypeOwn` | die **sekundäre** „Eigene eingeben"-Affordanz (Umschalten auf manuelle Passphrase). Present ⇔ Passphrase-Enroll aktiv. |
 | `ENROLL_STRENGTH` | `remote.authStep.enrollStrength` | der **Strength-Meter** (nur beim **type-your-own** relevant; der generierte Default ist by-construction stark). **Trägt ein Text-Level-Label** (schwach/mittel/stark) — Farbe **nie** alleiniger Träger (WCAG 1.4.1). |
-| `enrollError(cause)` | `remote.authStep.enrollError.<cause>` | **lokale Enroll-Validierung**, `<cause>` ∈ `mismatch` / `tooShort` (Kurz-PIN Min-Länge) / `tooWeak` (Passphrase-Entropie < Floor) / **`blocklisted`** (lang genug, aber Common-Phrase auf Blocklist — **distinkt** von `tooWeak`, PO-Ruling G1). Present ⇔ genau diese Validierung fehlschlägt. **Retryable**, Fehler-Ton (nie `errorContainer`), Feld bleibt aktiv. **≠** `error(<cause>)` (Auth-Zeit, nicht Setup). |
+| `error(cause)` (setup-Ursachen) | `remote.authStep.error.<cause>` | **lokale Enroll-Validierung** — die **bestehende** `OperatorAuthTags.error(cause)`-Fn (CYP-460), um die Setup-Ursachen `<cause>` ∈ `mismatch` / `tooShort` (Kurz-PIN Min-Länge) / `tooWeak` (Passphrase-Entropie < Floor) / **`blocklisted`** (lang genug, aber Common-Phrase auf Blocklist — **distinkt** von `tooWeak`, PO-Ruling G1) **erweitert**. Present ⇔ genau diese Validierung fehlschlägt. **Retryable**, Fehler-Ton (nie `errorContainer`), Feld bleibt aktiv. **H1 gewahrt über die Ursachen-Namen** (Setup-Ursachen `tooWeak`/`blocklisted`/`tooShort` kommen nur aus dem Enroll; Auth-Ursachen `pinWrong`/`authRejected` nur aus der Anmeldung) — **ein** Namespace, distinkte Ursachen. **(Gebaut so @ `a3730297`; B1-§-QA-Reconcile — Code+Dev-Render-Test = Source of Truth statt eines separaten `enrollError`-Namespace.)** |
 | `UV_COVERAGE` | `remote.authStep.uvCoverage` | der **1-UV-für-N-Hinweis**. Present ⇔ die Wiederverwendungs-Fensterung greift real (N>1 bzw. cachingUv aktiv). **Neutral/advisory**, kein Erfolgs-Grün. |
 | `BIOMETRIC_OFFER` | `remote.authStep.biometricOffer` | das **Opt-in-Angebot** eines Platform-Authenticators (Enhancement). Present ⇔ Platform-Authenticator verfügbar **und** noch nicht aktiviert. **≠** `BIOMETRIC_PROMPT`. |
 | `ENROLL_COPY` | `remote.authStep.enrollCopy` | die **Copy-to-Clipboard**-Affordanz für die generierte Passphrase (Icon; a11y-Label = **UIUX2**). Present ⇔ Passphrase-Enroll-Default sichtbar. Sibling zum `remote.recovery.codesCopy`-Muster (anti-duplicate). |
@@ -70,7 +70,7 @@ unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
   Der generierte Credential muss **anzeigbar/notierbar** sein (Operator braucht ihn bei jeder Anmeldung) — nie ein
   masked-at-generation-Secret, das der Operator nicht sichern kann.
 - **Enroll-Commit ist gated:** kein Credential gesetzt, solange `enrollPinConfirm` ≠ `enrollPinSet` **oder** die
-  Stärke-/Längen-Schwelle des Pfads nicht erreicht → `enrollError.mismatch` / `.tooShort` / `.tooWeak` (retryable). **Nie
+  Stärke-/Längen-Schwelle des Pfads nicht erreicht → `error.mismatch` / `.tooShort` / `.tooWeak` (retryable). **Nie
   stiller Commit** einer unbestätigten/schwachen Eingabe.
 - **`uvCoverage` ist ehrlich, nicht still, nicht überzeichnet:** present ⇔ Fensterung greift; Copy sagt „die Hubs, die du
   **jetzt** öffnest" — nicht „diese Sitzung für immer"; nach Ablauf **neuer** Prompt, nie stille Re-Auth.
@@ -84,12 +84,14 @@ unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
 
 ## Self-Validation
 - **Net-new: 9 Const** (`ENROLL_PIN_CONFIRM`, `ENROLL_SUGGESTED`, `ENROLL_SUGGEST`, `ENROLL_TYPE_OWN`, `ENROLL_STRENGTH`,
-  `ENROLL_COPY`, `ENROLL_CLIPBOARD_NOTICE`, `UV_COVERAGE`, `BIOMETRIC_OFFER`) **+ 1 Fn** (`enrollError(cause)`, `<cause>` ∈
-  `mismatch`/`tooShort`/`tooWeak`/`blocklisted`) — alle in der **bestehenden** Area `remote.authStep.*`, im **bestehenden**
+  `ENROLL_COPY`, `ENROLL_CLIPBOARD_NOTICE`, `UV_COVERAGE`, `BIOMETRIC_OFFER`) **+ Setup-Ursachen an der bestehenden
+  `error(cause)`-Fn** (`<cause>` ∈ `mismatch`/`tooShort`/`tooWeak`/`blocklisted`; **kein** separater `enrollError`-Namespace
+  — gebaut @ `a3730297`, B1-§-QA-Reconcile) — alle in der **bestehenden** Area `remote.authStep.*`, im **bestehenden**
   `OperatorAuthTags`-Object (kein neues Object).
 - **0 Kollision @ `eb705236`:** `enrollPinConfirm` / `enrollSuggested` / `enrollSuggest` / `enrollTypeOwn` / `enrollStrength` /
-  `enrollCopy` / `enrollClipboardNotice` / `uvCoverage` / `biometricOffer` / `enrollError` existieren nicht im
-  CYP-460/CYP-429-Satz (grep-verifiziert).
+  `enrollCopy` / `enrollClipboardNotice` / `uvCoverage` / `biometricOffer` existieren nicht im
+  CYP-460/CYP-429-Satz (grep-verifiziert). Die Setup-Ursachen `error.tooWeak`/`.blocklisted`/`.tooShort` sind additiv an
+  der bereits vorhandenen `error(cause)`-Fn (die Auth-Ursachen wie `error.pinWrong` bestehen).
 - **Charset ✓** camelCase, `[A-Za-z0-9-]+`, keine Punkte im Wert.
 - **Reuse verifiziert:** die 9 reused Werte stammen 1:1 aus `OperatorAuthTags.kt` / `RemoteConnectTags.kt` @ `eb705236`
   (Code = Source of Truth) — Dev legt sie **nicht** neu an, wired nur.

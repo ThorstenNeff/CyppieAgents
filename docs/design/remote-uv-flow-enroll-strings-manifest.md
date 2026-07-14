@@ -81,9 +81,9 @@
 | `remote_pop_enroll_passphrase` / `_confirm` | `enrollPinSet`(reuse) / `enrollPinConfirm` | §1b Feldpaar (Passphrase) |
 | `remote_pop_enroll_confirm` | `enrollPinConfirm` | §1b Feldpaar (Kurz-PIN) |
 | `remote_pop_enroll_strength_hint` · `_strength_{weak,fair,strong}` | `enrollStrength` | §2 Meter + Level-Labels |
-| `remote_pop_enroll_too_weak` | `enrollError.tooWeak` | §2 Verdict TOO_WEAK (WARN-Amber) |
-| `remote_pop_enroll_blocklisted` | `enrollError.blocklisted` | §2/§3 Verdict BLOCKLISTED (error-Ton) |
-| `remote_pop_enroll_mismatch` · `_too_short` | `enrollError.mismatch` / `.tooShort` | §1b Gate |
+| `remote_pop_enroll_too_weak` | `error.tooWeak` | §2 Verdict TOO_WEAK (WARN-Amber) |
+| `remote_pop_enroll_blocklisted` | `error.blocklisted` | §2/§3 Verdict BLOCKLISTED (error-Ton) |
+| `remote_pop_enroll_mismatch` · `_too_short` | `error.mismatch` / `.tooShort` | §1b Gate (`OperatorAuthTags.error(cause)`, gebaut @ `a3730297`) |
 | `remote_pop_passphrase_title` / `_body` | `pinField`(reuse) | Unlock (no-hardware) |
 | `remote_pop_uv_coverage` (+a11y) | `uvCoverage` | §4 Auto-Weiterlauf/1-UV-für-N |
 | `remote_pop_biometric_offer` / `_fallback` | `biometricOffer` | §4.4 Enhancement-Angebot |
