@@ -10,10 +10,10 @@ import com.tneff.cyppieagents.net.hub.remote.OperatorAuthenticator
 import com.tneff.cyppieagents.net.hub.remote.RelayDialer
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
-import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import com.tneff.cyppieagents.net.hub.remote.TrustResolution
 import com.tneff.cyppieagents.transport.NoiseJavaServerTerminator
 import com.tneff.cyppieagents.transport.ServerRelayChannel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,8 +49,15 @@ class CypM2SessionDropE2eTest {
     @Test
     fun h6_realTunnelSession_relayDrop_reconnectingInFlightUncertain_thenRecovers() = runBlocking {
         val dh = RawKeys.generateX25519()
-        // Each dial: a fresh in-memory relay + a fresh real responder on the SAME hub static (the pin holds across re-dials).
+        // CYP-541 — the RECOVERY re-dial is GATED: the first dial connects immediately; the second (recovery) dial
+        // blocks until the test has deterministically observed the honest in-flight-uncertain reconnecting posture.
+        // This HOLDS that state stable, so the test does not race a fleeting StateFlow value — it is green under ANY
+        // scheduling, including 16-concurrent-tunnel contention (the flake this fixes). Each dial mints a fresh relay +
+        // a fresh real responder on the SAME hub static (the pin holds across re-dials).
+        val dialCount = AtomicInteger()
+        val releaseReDial = CompletableDeferred<Unit>()
         val dialer = RelayDialer { _ ->
+            if (dialCount.getAndIncrement() >= 1) releaseReDial.await() // hold the recovery dial until the test releases it
             val (clientRelay, hubEnd) = InMemDuplex.pair()
             scope.launch { runCatching { NoiseJavaServerTerminator(dh.privateRaw).terminate(hubEnd) } }
             clientRelay
@@ -64,28 +71,38 @@ class CypM2SessionDropE2eTest {
             trust = trust,
             authenticator = auth,
             scope = scope,
-            backoff = Backoff(initialMs = 250, maxMs = 250), // non-zero → RECONNECTING persists long enough to observe
+            // Backoff no longer gates determinism (the re-dial hold does) — keep it tiny so the test is fast. The former
+            // non-zero value was a timing crutch for observing the conflation-transient RECONNECTING sub-state.
+            backoff = Backoff(initialMs = 1, maxMs = 1),
         )
 
-        // Record every state emission (the robust way to catch the transient RECONNECTING without conflation loss).
-        val seen = CopyOnWriteArrayList<RemoteSessionState>()
-        val collector = scope.launch { session.state.collect { seen += it } }
-
         session.start()
-        // Reach CONNECTED over the REAL handshake.
-        val connected = withTimeoutOrNull(8_000) { session.state.first { it.conn == RemoteConnState.CONNECTED } }
+        // Reach CONNECTED over the REAL handshake. The timeouts here are hang BACKSTOPS (a broken state machine fails
+        // instead of hanging CI) — NOT race-timers: correctness comes from awaiting stable states, not from their length.
+        val connected = withTimeoutOrNull(20_000) { session.state.first { it.conn == RemoteConnState.CONNECTED } }
         assertEquals(RemoteConnState.CONNECTED, connected?.conn, "the session reaches CONNECTED over a real Noise tunnel")
         assertTrue(!connected!!.inFlightUncertain, "at a clean CONNECTED the in-flight-uncertain flag is not set")
 
-        // ★ a relay drop → RECONNECTING + inFlightUncertain (honest in-flight signal), then recovery to CONNECTED.
+        // ★ a relay drop → an honest in-flight-uncertain reconnecting posture. `inFlightUncertain` is set at the
+        // RECONNECTING transition (RemoteHubSession H4) and PERSISTS through RELAY_DIALING until recovery clears it —
+        // the DURABLE honesty signal. Observed deterministically because the gated re-dial HOLDS the reconnecting state
+        // (never a false CONNECTED, never a silent stall). We assert the durable signal, NOT the conflation-transient
+        // conn==RECONNECTING sub-state: a MutableStateFlow legitimately drops that fleeting value under collector
+        // starvation (the CYP-541 flake) — the signal is emitted correctly, so this is a TEST-observation fix, not a
+        // product defect. (Repro before the fix: `Backoff(0,0)` shrinks the RECONNECTING window to nothing → the old
+        // `seen`-collector assertion fails deterministically 3/3.)
         session.reportDropped()
-        val recovered = withTimeoutOrNull(8_000) {
-            session.state.first { it.conn == RemoteConnState.CONNECTED && !it.inFlightUncertain && seen.any { s -> s.conn == RemoteConnState.RECONNECTING } }
+        val uncertain = withTimeoutOrNull(20_000) {
+            session.state.first { it.inFlightUncertain && it.conn != RemoteConnState.CONNECTED }
         }
-        collector.cancel()
+        assertTrue(uncertain != null,
+            "a relay drop honestly flags in-flight-uncertain in a reconnecting posture (H4), never a silent stall or a false CONNECTED")
 
-        assertTrue(seen.any { it.conn == RemoteConnState.RECONNECTING && it.inFlightUncertain },
-            "a relay drop transitions the real session to RECONNECTING + inFlightUncertain (H4 honesty), never a silent stall")
+        // Release the recovery dial → the session re-dials onto a FRESH real tunnel and recovers.
+        releaseReDial.complete(Unit)
+        val recovered = withTimeoutOrNull(20_000) {
+            session.state.first { it.conn == RemoteConnState.CONNECTED && !it.inFlightUncertain }
+        }
         assertTrue(recovered != null,
             "the session re-dials onto a FRESH real tunnel and recovers to CONNECTED with the uncertain flag cleared")
     }
