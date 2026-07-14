@@ -45,7 +45,7 @@
     },
     "enroll.strengthMeter": {
       "role": "Element 2 — Strength-Meter (nur type-your-own) + 3 Verdict-States. Track surfaceVariant 6dp rounded, Fill proportional primary.",
-      "verdict.OK": "Floor ∧ !blocklist. Fill primary bis 'stark'. Label 'Stark' onSurfaceVariant/primary. KEIN Alarm-Glyph, KEIN Gruen. Affirmativ-neutral.",
+      "verdict.OK": "Floor ∧ !blocklist. Fill primary bis 'stark'. ●-Marker (neutral-affirmativ) + Label 'Stark' onSurfaceVariant/primary. KEIN Alarm-Glyph (▲), KEIN Gruen. Affirmativ-neutral. (Render-Werte: remote-uv-flow-render-oracle.md)",
       "verdict.TOO_WEAK": "< Entropie-Floor. Fill primary proportional (klein). Verdict-Zeile WARN-Amber severityColor(WARN) + ▲ + remote_pop_enroll_too_weak. Advisory.",
       "verdict.BLOCKLISTED": "auf Blocklist (unabh. Laenge). ★ Fill GEDAeMPFT outline/neutral — NICHT voll/stark (Optik luegt nie 'stark'; H1 anti-Konflation). Verdict-Zeile error-Ton colorScheme.error + remote_pop_enroll_blocklisted. Haerterer Reject.",
       "tone_separation": "OK=primary/neutral · TOO_WEAK=WARN-Amber+▲ · BLOCKLISTED=error-Ton. Jeder Text-Label (1.4.1). Keiner errorContainer, keiner tertiary-Gruen.",

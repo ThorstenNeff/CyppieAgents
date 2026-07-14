@@ -72,7 +72,7 @@ leise Ausnahme.
 
 | Verdict | Bedeutung | Fill | Verdict-Zeile (Farbe + Glyph + Label) | Ton |
 |---|---|---|---|---|
-| **OK** | ≥64-bit-Floor ∧ !blocklist | `primary`, bis „stark"-Zone | „Stark" (`remote_pop_strength_strong`), `onSurfaceVariant`/`primary`, **kein Alarm-Glyph** | affirmativ-neutral (**kein Grün**) |
+| **OK** | ≥64-bit-Floor ∧ !blocklist | `primary`, bis „stark"-Zone | `●`-Marker (neutral-affirmativ) + „Stark" (`remote_pop_strength_strong`), `onSurfaceVariant`/`primary`, **kein Alarm-Glyph** (`▲`) | affirmativ-neutral (**kein Grün**) |
 | **TOO_WEAK** | < Entropie-Floor | `primary`, proportional (klein) | `▲` + `remote_pop_enroll_too_weak`, **WARN-Amber** (`severityColor(WARN)`) | **advisory** („noch nicht stark genug") |
 | **BLOCKLISTED** | auf Blocklist (unabh. Länge) | **gedämpft `outline`/neutral — NICHT „voll/stark"** | `remote_pop_enroll_blocklisted`, **error-Ton** (`colorScheme.error`) | **härterer Reject** („andere wählen") |
 
