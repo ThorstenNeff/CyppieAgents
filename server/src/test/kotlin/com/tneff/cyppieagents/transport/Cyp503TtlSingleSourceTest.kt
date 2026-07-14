@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -49,5 +50,35 @@ class Cyp503TtlSingleSourceTest {
         advanceTimeBy(2); runCurrent()
         assertTrue(tunnel.closed.isCompleted, "torn down EXACTLY at the single-sourced Op-Session-TTL (min upper leg)")
         job.join()
+    }
+
+    // ---- CYP-563 — the ONE shared resolver both legs read (so ticket-exp and tunnel-cap cannot drift) ----
+
+    @Test
+    fun resolveOpSessionTtlMs_default_whenEnvUnset() {
+        assertEquals(
+            RemoteRelayWiring.DEFAULT_OP_SESSION_TTL_MS, RemoteRelayWiring.resolveOpSessionTtlMs { null },
+            "no override → the default constant",
+        )
+    }
+
+    @Test
+    fun resolveOpSessionTtlMs_honorsPositiveOverrideMinutes() {
+        assertEquals(
+            60 * 60_000L,
+            RemoteRelayWiring.resolveOpSessionTtlMs { if (it == "CYPPIE_OP_SESSION_TTL_MIN") "60" else null },
+            "CYPPIE_OP_SESSION_TTL_MIN=60 → 60 minutes",
+        )
+    }
+
+    @Test
+    fun resolveOpSessionTtlMs_nonPositiveOrGarbage_fallsBackToDefault() {
+        for (bad in listOf("0", "-5", "abc", "", " ")) {
+            assertEquals(
+                RemoteRelayWiring.DEFAULT_OP_SESSION_TTL_MS,
+                RemoteRelayWiring.resolveOpSessionTtlMs { if (it == "CYPPIE_OP_SESSION_TTL_MIN") bad else null },
+                "a non-positive/garbage override (\"$bad\") fails safe to the default",
+            )
+        }
     }
 }

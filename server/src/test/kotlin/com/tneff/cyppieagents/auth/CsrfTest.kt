@@ -9,6 +9,7 @@ import io.ktor.client.request.post
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.parseServerSetCookieHeader
 import io.ktor.server.application.install
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
@@ -21,6 +22,7 @@ import io.ktor.server.testing.testApplication
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -114,5 +116,37 @@ class CsrfTest {
         assertTrue(setCookie.contains(CSRF_COOKIE), "issuer did not set the $CSRF_COOKIE cookie: $setCookie")
         assertTrue(setCookie.contains("SameSite=Strict", ignoreCase = true), "CSRF cookie is not SameSite=Strict: $setCookie")
         assertTrue(!setCookie.contains("HttpOnly", ignoreCase = true), "CSRF cookie must be JS-readable (not HttpOnly): $setCookie")
+    }
+
+    // ---- CYP-563 ④ — the EFFECT: the env-gated `secure` flag actually lands on the Set-Cookie attribute ----
+    // (Cyp563CsrfSecureTest proves env→decision; these prove decision→cookie-attribute — closing the plumb
+    //  install{secure=…} → pluginConfig.secure → Cookie(secure=…) that had zero teeth. Parse the real Set-Cookie
+    //  `Secure` attribute — never a substring match, since the base64url cookie VALUE could coincidentally hold "secure".)
+
+    /** The parsed `Secure` attribute of the issued [CSRF_COOKIE], for a plugin installed with [secureFlag]. */
+    private fun issuedCookieIsSecure(secureFlag: Boolean): Boolean {
+        var isSecure = false
+        testApplication {
+            application {
+                install(CsrfCookieIssuer) { secure = secureFlag }
+                routing { get("/x") { call.respondText("ok") } }
+            }
+            val header = client.get("/x").headers.getAll(HttpHeaders.SetCookie)
+                ?.first { it.startsWith("$CSRF_COOKIE=") }
+                ?: error("issuer did not set the $CSRF_COOKIE cookie")
+            isSecure = parseServerSetCookieHeader(header).secure
+        }
+        return isSecure
+    }
+
+    @Test
+    fun issuer_marksCookieSecure_whenConfiguredSecureTrue() {
+        // MUT: delete `secure = secure` in the Cookie append (Csrf.kt) → the cookie is never Secure → this reds.
+        assertTrue(issuedCookieIsSecure(secureFlag = true), "install{secure=true} → the issued CSRF cookie carries the Secure attribute")
+    }
+
+    @Test
+    fun issuer_omitsSecure_byDefault_forLocalhostDevHttp() {
+        assertFalse(issuedCookieIsSecure(secureFlag = false), "the default (unset) install → NO Secure attribute (localhost dev plain http)")
     }
 }

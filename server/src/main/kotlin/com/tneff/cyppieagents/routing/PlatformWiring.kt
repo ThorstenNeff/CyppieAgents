@@ -39,7 +39,9 @@ fun Application.installPlatform(
     registerMediator: com.tneff.cyppieagents.auth.RegisterMediator? = null,
 ) {
     install(ContentNegotiation) { json(CommJson) }
-    install(com.tneff.cyppieagents.auth.CsrfCookieIssuer) // CYP-178 RC5: issue the double-submit CSRF cookie
+    install(com.tneff.cyppieagents.auth.CsrfCookieIssuer) { // CYP-178 RC5: issue the double-submit CSRF cookie
+        secure = com.tneff.cyppieagents.auth.cookiesShouldBeSecure() // CYP-563: Secure in prod/TLS (CYPPIE_COOKIE_SECURE)
+    }
     install(WebSockets) { maxFrameSize = MessageInput.MAX_FRAME_BYTES } // CYP-143: protocol backstop on inject frames
     install(StatusPages) {
         exception<ApiException> { call, cause ->

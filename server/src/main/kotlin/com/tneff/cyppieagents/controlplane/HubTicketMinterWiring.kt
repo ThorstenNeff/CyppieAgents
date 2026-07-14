@@ -37,5 +37,9 @@ fun buildHubTicketMinter(
         registrar = registrar,
         cpJwtMinter = CpJwtMinter(seed, kid, issuer),
         nowMs = nowMs,
+        // CYP-563 — thread the effective Op-Session-TTL from the SINGLE shared resolver, so the ticket `exp` honors
+        // CYPPIE_OP_SESSION_TTL_MIN identically to the hub tunnel-cap (the two legs cannot drift). Previously omitted
+        // → the ticket was hard-wired to the default constant while the tunnel-cap honored the env override.
+        ttlMs = com.tneff.cyppieagents.transport.RemoteRelayWiring.resolveOpSessionTtlMs(env),
     )
 }

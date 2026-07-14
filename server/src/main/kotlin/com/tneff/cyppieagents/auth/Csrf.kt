@@ -51,9 +51,20 @@ private fun constantTimeEquals(a: String, b: String): Boolean =
  * request never even sends it, so a forged POST also lacks the cookie the double-submit compares against —
  * defense-in-depth over the header check). 128-bit `SecureRandom`, base64url. The value is opaque and
  * stateless (the security is the same-origin read/set barrier, not server-side storage), so re-issuing a
- * fresh one when absent is safe. `secure` is left to the deployment/CORS story (localhost dev is plain http).
+ * fresh one when absent is safe.
+ *
+ * CYP-563 — the `Secure` attribute is env-gated ([secure], set from [cookiesShouldBeSecure] at install). In prod
+ * (over TLS) the cookie is marked `Secure` so a plaintext/mixed-content downgrade can't send it; dev over localhost
+ * plain-http leaves it off. Defense-in-depth: the token is a double-submit value (security rests on the same-origin
+ * read/set barrier + `SameSite=Strict`, not secrecy), and the Kratos SESSION cookie is already `Secure`.
  */
-val CsrfCookieIssuer = createApplicationPlugin("CsrfCookieIssuer") {
+class CsrfCookieConfig {
+    /** Mark the CSRF cookie `Secure` (prod/TLS). Set at install from [cookiesShouldBeSecure]. */
+    var secure: Boolean = false
+}
+
+val CsrfCookieIssuer = createApplicationPlugin("CsrfCookieIssuer", ::CsrfCookieConfig) {
+    val secure = pluginConfig.secure
     onCall { call ->
         if (call.request.cookies[CSRF_COOKIE].isNullOrBlank()) {
             call.response.cookies.append(
@@ -61,6 +72,7 @@ val CsrfCookieIssuer = createApplicationPlugin("CsrfCookieIssuer") {
                     name = CSRF_COOKIE,
                     value = secureCsrfToken(),
                     path = "/",
+                    secure = secure, // CYP-563 — Secure in prod/TLS (env-gated), off for localhost dev http
                     httpOnly = false, // the SPA must read it to echo in X-CSRF-Token
                     extensions = mapOf("SameSite" to "Strict"),
                 ),
@@ -68,6 +80,11 @@ val CsrfCookieIssuer = createApplicationPlugin("CsrfCookieIssuer") {
         }
     }
 }
+
+/** CYP-563 — whether cookies this deployment issues should carry the `Secure` attribute. True iff the deployment
+ *  opts in via `CYPPIE_COOKIE_SECURE=true` (prod over TLS); default false keeps localhost dev (plain http) working. */
+fun cookiesShouldBeSecure(env: (String) -> String? = System::getenv): Boolean =
+    env("CYPPIE_COOKIE_SECURE")?.trim()?.equals("true", ignoreCase = true) == true
 
 private fun secureCsrfToken(): String {
     val bytes = ByteArray(16) // 128-bit
