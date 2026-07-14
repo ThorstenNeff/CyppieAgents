@@ -44,7 +44,7 @@ import com.tneff.cyppieagents.workspace.CapacityViewModel
 import com.tneff.cyppieagents.workspace.HubCapacitySource
 import com.tneff.cyppieagents.workspace.LiveHubCapacitySource
 import com.tneff.cyppieagents.workspace.OverloadBanner
-import com.tneff.cyppieagents.workspace.RemoteContextBanner
+import com.tneff.cyppieagents.workspace.RemoteOperatingChrome
 import com.tneff.cyppieagents.workspace.StubHubCapacitySource
 import com.tneff.cyppieagents.auth.UserTier
 import com.tneff.cyppieagents.workspace.WorkspaceHttpRepository
@@ -285,10 +285,24 @@ fun AgentShell(
      *  on the remote path (NOT `RemoteHubConnectGate.entered`, which fires locally). Default null = local, no banner.
      *  (Threaded as the hub name — not a bare Boolean — because the UIUX-locked copy interpolates the hub name.) */
     remoteContext: String? = null,
-    /** M2 Seam-3 (b) — the live [RemoteSessionState] flow (RECONNECTING / inFlightUncertain) for the Seam-6 relay-drop
-     *  / in-flight-uncertain operating-surface chrome. `null` = Local / not remote. The chrome consumer lands with
-     *  Seam-6 (this only pipes it in so remote OFF stays byte-identical: default null ⇒ no consumer). */
-    @Suppress("UNUSED_PARAMETER") remoteSessionState: StateFlow<RemoteSessionState>? = null,
+    /** M2 Seam-3 (b) / Seam-6 — the live [RemoteSessionState] flow (RECONNECTING / inFlightUncertain). `null` = Local /
+     *  not remote. CYP-427/M2: consumed by [RemoteOperatingChrome] in the banner region (RECONNECTING → relay-drop
+     *  banner + in-flight-uncertain). Default null ⇒ no relay-drop chrome (remote OFF stays byte-identical). */
+    remoteSessionState: StateFlow<RemoteSessionState>? = null,
+    /** CYP-427/M2 Seam #1 — the capability signal "workspace data really runs over the tunnel" (CR3). `false` ⇒ the
+     *  context banner stays B2 (WARN-partial); `true` ⇒ B3 (affirmative "over an encrypted tunnel", neutral `●`). The
+     *  composition root feeds the REAL capability; today no real signal exists (stub) ⇒ default false (G1: no
+     *  optimistic flip on plain CONNECTED — correct, not a bug). */
+    remoteDataOverTunnel: Boolean = false,
+    /** CYP-427/M2 Seam #1 — identity is REALLY fingerprint-pinned (`HubTrust` pin, not provisional) ⇒ the `.pinned`
+     *  sub-node renders in B3 (G2/HC). Default false (provisional ⇒ no faked pin). */
+    remotePinned: Boolean = false,
+    /** CYP-427/M2 Seam #8 — the remote-workspace revoke → guaranteed local teardown (handoff `onEndSession` =
+     *  `backToHubList()` / `RemoteHubSession.close()`). Default no-op (Local / not wired). */
+    onRemoteEndSession: () -> Unit = {},
+    /** CYP-427/M2 Seam #8 — the operator-session TTL hint for the revoke dialog (seam-gated, CYP-459). `null` ⇒ the
+     *  ≤TTL hint is absent (never an invented expiry). */
+    remoteSessionTtl: String? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -376,10 +390,19 @@ fun AgentShell(
           overloadBanner = {
               if (capacityVm.overloadVisible.collectAsState().value) OverloadBanner(onDismiss = capacityVm::dismissOverload)
           },
-          // CYP-527: the remote-operating context WARN banner — mounted iff `remoteContext` (the connected remote
-          // hub's name) is non-null. Absent in Local mode / before CONNECTED / after teardown (the caller's gate).
+          // CYP-427/M2 (Seams #4/#6/#8): the remote-operating chrome region — a state-driven state machine over
+          // `remoteSessionState` (graduates CYP-527's WARN banner). CONNECTED → context banner (B2/B3) + trailing
+          // revoke; RECONNECTING → relay-drop banner (+ in-flight-uncertain); Local/LOST → absent. `remoteContext`
+          // (hub name, present-iff CONNECTED) carries the B2/B3 copy; the flow drives the state.
           remoteContextBanner = {
-              remoteContext?.let { RemoteContextBanner(hubName = it) }
+              RemoteOperatingChrome(
+                  hubName = remoteContext,
+                  sessionState = remoteSessionState,
+                  onEndSession = onRemoteEndSession,
+                  dataOverTunnel = remoteDataOverTunnel,
+                  pinned = remotePinned,
+                  ttl = remoteSessionTtl,
+              )
           },
           // CYP-268 R3 theme toggle + CYP-387 input-history size stepper — both personal, ungated, non-project
           // preferences ride the bar's trailing slot together.
