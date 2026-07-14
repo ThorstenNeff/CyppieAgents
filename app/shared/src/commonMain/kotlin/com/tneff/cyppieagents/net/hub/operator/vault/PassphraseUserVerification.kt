@@ -4,6 +4,10 @@ import com.tneff.cyppieagents.net.hub.operator.UserVerification
 import com.tneff.cyppieagents.net.hub.operator.UvFailReason
 import com.tneff.cyppieagents.net.hub.operator.UvOutcome
 import com.tneff.cyppieagents.net.hub.operator.UvReason
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * CYP-542 / B1 (§4.4 — the load-bearing seam) — the real [UserVerification]: prompt the operator passphrase → open the
@@ -61,14 +65,31 @@ fun interface PassphrasePrompt {
  * returns a defensive copy the caller zeroizes after signing, so a concurrent window-expiry can't clear the bytes
  * mid-sign.
  */
-class DecryptedKeyHold(private val nowMs: () -> Long) {
+class DecryptedKeyHold(
+    private val nowMs: () -> Long,
+    /**
+     * Assist BLOCK-1 (part 2 — the idle path): when present, [put] schedules a **proactive** zeroize at window-expiry
+     * so a hold that is never [get]-touched and never torn down (operator idles) still clears at ≤120s — otherwise the
+     * "≤120s bounded exposure" (§4.4) is false for idle (the key would linger until GC). `null` ⇒ lazy-only (tests that
+     * don't exercise the timer). The scope is the per-connect scope, so teardown cancels the timer too.
+     */
+    private val scope: CoroutineScope? = null,
+) {
     private var key: ByteArray? = null
     private var expiresAtMs: Long = 0L
+    private var expiryJob: Job? = null
 
     fun put(k: ByteArray, expiresAtMs: Long) {
         clear()
         this.key = k
         this.expiresAtMs = expiresAtMs
+        // Proactive expiry (idle path): zeroize when the window elapses even with no get()/teardown. A fresh put()
+        // cancelled the prior job in clear(); teardown's clear() cancels this one. Idempotent with the lazy get()-path.
+        val delayMs = expiresAtMs - nowMs()
+        expiryJob = scope?.launch {
+            if (delayMs > 0) delay(delayMs)
+            zeroizeNow() // window elapsed untouched ⇒ never let the crown-jewel key linger past the bound (H-1)
+        }
     }
 
     /** A defensive copy of the held key, or `null` if none / the window expired (which also zeroizes the original). */
@@ -77,8 +98,19 @@ class DecryptedKeyHold(private val nowMs: () -> Long) {
         return key?.copyOf()
     }
 
-    /** Zeroize + drop the held key (window-expiry, session teardown, or a fresh [put]). Idempotent. */
+    /**
+     * Zeroize + drop the held key. Idempotent. Reached on: a fresh [put]; window-expiry — both **lazy** (via [get])
+     * AND **proactive** (the [scope] timer, so an idle hold clears at the bound); and **session teardown** (the VM
+     * invokes it via `RemoteConnectComponents.keyHold` on every teardown — switch/leave/cancel/onCleared, Assist
+     * BLOCK-1) so the crown-jewel key never lingers GC-reachable past the connection (H-1, §4.4 bounded exposure).
+     */
     fun clear() {
+        expiryJob?.cancel()
+        expiryJob = null
+        zeroizeNow()
+    }
+
+    private fun zeroizeNow() {
         key?.fill(0)
         key = null
         expiresAtMs = 0L

@@ -160,7 +160,9 @@ fun liveRemoteConnectComponentsFactory(
         aead = JceAead(),
         nowMs = { System.currentTimeMillis() },
     )
-    val keyHold = DecryptedKeyHold(nowMs = monotonicMs)
+    // Assist BLOCK-1 (part 2): the connect scope drives the proactive window-expiry zeroize (idle path) so the key
+    // never lingers past ≤120s even untouched; teardown (part 1) clears it earlier via RemoteConnectComponents.keyHold.
+    val keyHold = DecryptedKeyHold(nowMs = monotonicMs, scope = scope)
     // The RAW UV: prod = the real [PassphraseUserVerification] (prompt → vault.open → key-hold); the test-seam override
     // ([rawUserVerification] non-null) injects a verifying UV for the joint e2e. **Prod stays fail-closed until a real
     // [passphrasePrompt] is wired at App.kt** (default = a fail-closed prompt ⇒ no prompt ⇒ Denied(CANCELLED)) — the
@@ -172,6 +174,9 @@ fun liveRemoteConnectComponentsFactory(
     // F⑥-1 / CYP-547: ONE shared [CachingUserVerification] — session-auth AND pool-auth run through THIS instance
     // (store.userVerification IS it; the pool's authenticator IS the same operatorAuth) ⇒ 1-UV-for-N (Tester drives
     // this exact instance via [RemoteConnectComponents.operatorUvCache]). The store-swap must NOT split it into two.
+    // ⚠ INVARIANT (Assist final-gate): the session (line ~198) AND the pool dialer (line ~212) MUST share this ONE
+    // [operatorAuth] instance — a split gives each its own UV cache ⇒ 1-UV-for-N breaks (the operator is prompted 2×).
+    // No automated tooth guards the construction seam here; it is **review-gated** — see CYP-569.
     val cachingUv = buildOperatorUvCache(rawUv)
     val operatorAuth = ClientOperatorAuth(
         popBuilder = OperatorPopBuilder(
@@ -233,6 +238,9 @@ fun liveRemoteConnectComponentsFactory(
         operatorUvCache = cachingUv,
         passphrasePrompt = passphrasePromptCoordinator, // null ⇒ INERT (VM keeps the old surface)
         enroll = enroll,
+        // Assist BLOCK-1: expose THIS connect's decrypted-key hold so the VM zeroizes it on teardown (H-1, no
+        // GC-reliance) — the same keyHold the UV puts into + the keystore signs from.
+        keyHold = keyHold,
     )
 }
 

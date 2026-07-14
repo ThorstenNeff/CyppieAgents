@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.net.hub.noise.ClientNoiseTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.noise.RelayChannel
 import com.tneff.cyppieagents.net.hub.operator.UvReason
+import com.tneff.cyppieagents.net.hub.operator.vault.DecryptedKeyHold
 import com.tneff.cyppieagents.net.hub.operator.vault.EnrollOutcome
 import com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollController
 import com.tneff.cyppieagents.net.hub.operator.vault.StrengthVerdict
@@ -30,6 +31,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * CYP-542 / B1 — the operator-UV VM surface (AC-1/AC-2/AC-4), tested against a fake per-connect session (no render).
@@ -91,12 +93,13 @@ class Cyp542OperatorUvVmTest {
         auth: OperatorAuthenticator,
         coordinator: PassphrasePromptCoordinator? = null,
         enroll: OperatorEnrollController? = null,
+        keyHold: DecryptedKeyHold? = null,
     ): Pair<HubConnectViewModel, CoroutineScope> {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         val factory = RemoteConnectComponentsFactory { _, sessionScope ->
             RemoteConnectComponents(
                 sessionScope.session(auth), IdleOob(),
-                passphrasePrompt = coordinator, enroll = enroll,
+                passphrasePrompt = coordinator, enroll = enroll, keyHold = keyHold,
             )
         }
         val m = HubConnectViewModel(
@@ -193,6 +196,26 @@ class Cyp542OperatorUvVmTest {
         m.submitPassphrase("Basalt5#harbor Qw2nV zephyr".toCharArray()); advanceUntilIdle()
         val s = assertIs<HubConnectUiState.RemoteConnecting>(m.state.value)
         assertEquals(RemoteConnState.CONNECTED, s.remote.conn, "submit ⇒ the UV grants ⇒ CONNECTED")
+        scope.cancel()
+    }
+
+    @Test
+    fun teardown_zeroizesTheDecryptedKeyHold_notGcReliance() = runTest {
+        // Assist BLOCK-1: a prior auth decrypted the device key into the ≤120s hold; a switch/leave/cancel in the window
+        // must zeroize it NOW (H-1), not wait for the lazy put/get-expiry. DecryptedKeyHold.put stores the SAME array,
+        // and clear() zeroizes it — so after teardown the bytes we put in must be all-zero.
+        val keyHold = DecryptedKeyHold(nowMs = { 0L })
+        val keyBytes = ByteArray(32) { 7 }
+        keyHold.put(keyBytes, expiresAtMs = Long.MAX_VALUE) // simulate the post-auth held device key
+        val (m, scope) = vm(
+            auth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.Granted },
+            keyHold = keyHold,
+        )
+        m.start(); advanceUntilIdle(); m.selectHub(hub); m.connectRemote(); advanceUntilIdle()
+        assertIs<HubConnectUiState.RemoteConnecting>(m.state.value)
+
+        m.backToHubList(); advanceUntilIdle() // the most common teardown (leave / hub-switch) in the reuse window
+        assertTrue(keyBytes.all { it == 0.toByte() }, "BLOCK-1: the decrypted device key is zeroized on teardown, never left GC-reachable")
         scope.cancel()
     }
 

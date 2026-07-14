@@ -49,6 +49,7 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_remote_pop_enroll_cli
 import kmpcyppieagents.app.shared.generated.resources.a11y_remote_pop_uv_coverage
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_enroll_blocklisted
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_enroll_clipboard_notice
+import kmpcyppieagents.app.shared.generated.resources.remote_pop_enroll_copy
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_enroll_mismatch
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_enroll_passphrase
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_enroll_passphrase_confirm
@@ -63,7 +64,6 @@ import kmpcyppieagents.app.shared.generated.resources.remote_pop_passphrase_body
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_passphrase_title
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_strength_strong
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_uv_coverage
-import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_copy
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -269,6 +269,7 @@ private fun DicewareReveal(passphrase: CharArray) {
     val clipboard = LocalClipboardManager.current
     val text = passphrase.concatToString() // inherent to a readable reveal (the user must READ + save it)
     val a11y = stringResource(Res.string.a11y_remote_pop_enroll_clipboard_notice)
+    var copied by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SelectionContainer {
             Text(
@@ -278,17 +279,23 @@ private fun DicewareReveal(passphrase: CharArray) {
                     .background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp),
             )
         }
-        TextButton( // the real copy — makes the clipboard-notice below honest (RecoveryCodesReveal-path reuse, A0)
-            onClick = { clipboard.setText(AnnotatedString(text)) },
+        TextButton( // the real copy — the RecoveryCodesReveal-path reuse (A0). Label = the dedicated UIUX2 key (the
+            // TextButton text IS the accessible name — no separate a11y contentDescription needed).
+            onClick = { clipboard.setText(AnnotatedString(text)); copied = true },
             modifier = Modifier.testTag(OperatorAuthTags.ENROLL_CLIPBOARD_NOTICE + ".copy"),
-        ) { Text(stringResource(Res.string.remote_recovery_codes_copy)) }
-        Text(
-            stringResource(Res.string.remote_pop_enroll_clipboard_notice),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, // neutral, NO glyph (informational egress disclosure)
-            modifier = Modifier.fillMaxWidth().testTag(OperatorAuthTags.ENROLL_CLIPBOARD_NOTICE)
-                .semantics { contentDescription = a11y },
-        )
+        ) { Text(stringResource(Res.string.remote_pop_enroll_copy)) }
+        // F2-honesty-residual: the notice is PAST-TENSE ("Copied to clipboard…") — show it ONLY after a real copy, so
+        // it is never a premature completion-claim before any copy happened. (Manual SelectionContainer copy is a
+        // fallback; the explicit button is the disclosed egress the notice attaches to.)
+        if (copied) {
+            Text(
+                stringResource(Res.string.remote_pop_enroll_clipboard_notice),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, // neutral, NO glyph (informational egress disclosure)
+                modifier = Modifier.fillMaxWidth().testTag(OperatorAuthTags.ENROLL_CLIPBOARD_NOTICE)
+                    .semantics { contentDescription = a11y },
+            )
+        }
     }
 }
 

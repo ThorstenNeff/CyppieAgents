@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.connect
 
 import com.tneff.cyppieagents.net.hub.operator.CachingUserVerification
+import com.tneff.cyppieagents.net.hub.operator.vault.DecryptedKeyHold
 import com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollController
 import com.tneff.cyppieagents.net.hub.pool.PooledTunnelSource
 import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
@@ -47,6 +48,15 @@ class RemoteConnectComponents(
      * retry-reloop). Enroll success → [PassphrasePromptCoordinator.preArm] + reconnect (AC-2). `null` ⇒ INERT.
      */
     val enroll: OperatorEnrollController? = null,
+    /**
+     * CYP-542 / B1 (Assist BLOCK-1) — the decrypted device-key hold, exposed so the VM **zeroizes it on session
+     * teardown** ([HubConnectViewModel.closeActiveComponents] → `keyHold.clear()`, next to `clearPreArm()`). The hold's
+     * lazy `clear()` only fires on `put()`/`get()`-at-expiry, so a switch/leave/cancel WITHIN the ≤120s reuse window
+     * would otherwise drop the object graph with the crown-jewel Ed25519 key still un-zeroized + GC-reachable (H-1
+     * violation on the most common path). The proactive window-expiry timer (the hold's own `scope`) covers the idle
+     * path; this field covers teardown. `null` ⇒ INERT (no vault-backed hold; nothing to zeroize).
+     */
+    val keyHold: DecryptedKeyHold? = null,
 )
 
 /**

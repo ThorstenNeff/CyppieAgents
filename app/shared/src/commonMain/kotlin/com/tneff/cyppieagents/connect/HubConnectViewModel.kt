@@ -352,6 +352,8 @@ class HubConnectViewModel(
         remoteTransport?.close() // M2 Seam-3: tear down the loopback transport (acceptor + owned client) with the session
         remoteTransport = null
         previous.passphrasePrompt?.clearPreArm() // CYP-542/B1 P1: zeroize+drop any un-consumed pre-arm on switch/leave
+        previous.keyHold?.clear() // CYP-542/B1 (Assist BLOCK-1): zeroize the decrypted device key NOW (H-1 — never wait
+        // for the lazy put/get-expiry; a switch/leave/cancel in the ≤120s window must not drop it GC-reachable)
         previous.enrollConfirm.abort() // CYP-525 §2: a switch/leave during the reveal aborts enroll (fail-closed, no SavedAck)
         runScope.launch {
             withContext(NonCancellable) {
@@ -359,6 +361,13 @@ class HubConnectViewModel(
                 previous.session.close()
             }
         }
+    }
+
+    /** Q5/H-1: the flow's ViewModel is being destroyed (screen gone / idle) — tear the live session down so the decrypted
+     *  device key is zeroized (closeActiveComponents' BLOCK-1 zeroize) rather than lingering until GC. */
+    override fun onCleared() {
+        closeActiveComponents()
+        super.onCleared()
     }
 
     /**

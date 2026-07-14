@@ -772,6 +772,7 @@
     <string name="remote_pop_enroll_suggest_use">Diese Passphrase verwenden</string>
     <string name="remote_pop_enroll_suggest">Andere vorschlagen</string>
     <string name="remote_pop_enroll_type_own">Eigene Passphrase eingeben</string>
+    <string name="remote_pop_enroll_copy">Passphrase kopieren</string>
     <string name="remote_pop_enroll_strength_hint">6 zufällige Wörter oder mindestens 12 Zeichen.</string>
     <string name="remote_pop_enroll_too_weak">Passphrase zu schwach — 6 zufällige Wörter oder 12+ Zeichen.</string>
     <string name="remote_pop_strength_weak">Schwach</string>
