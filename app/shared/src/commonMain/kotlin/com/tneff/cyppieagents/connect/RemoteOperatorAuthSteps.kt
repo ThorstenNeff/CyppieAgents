@@ -16,6 +16,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -25,9 +26,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.auth.AuthPasswordField
 import com.tneff.cyppieagents.eventlog.severityColor
@@ -58,6 +63,7 @@ import kmpcyppieagents.app.shared.generated.resources.remote_pop_passphrase_body
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_passphrase_title
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_strength_strong
 import kmpcyppieagents.app.shared.generated.resources.remote_pop_uv_coverage
+import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_copy
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -219,7 +225,12 @@ internal fun SetPassphraseStep(state: HubConnectUiState.SetPassphrase, viewModel
         val matched = pass.isNotEmpty() && pass == confirm
 
         if (enrolling) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // F1: announce the enrolling progress (otherwise the bare spinner is SR-silent). Polite — advisory progress.
+            val enrollingDesc = stringResource(Res.string.remote_pop_enroll_passphrase)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite; contentDescription = enrollingDesc },
+            ) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
@@ -233,7 +244,9 @@ internal fun SetPassphraseStep(state: HubConnectUiState.SetPassphrase, viewModel
                     stringResource(Res.string.remote_pop_enroll_mismatch),
                     color = MaterialTheme.colorScheme.error, // error tone (retryable), NOT errorContainer
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.testTag(OperatorAuthTags.error("mismatch")),
+                    // F1: a mismatch is an ASSERTIVE announcement (the SR interrupts to read the already-distinct string).
+                    modifier = Modifier.testTag(OperatorAuthTags.error("mismatch"))
+                        .semantics { liveRegion = LiveRegionMode.Assertive },
                 )
             }
             OutlinedButton(onClick = viewModel::cancelEnroll, modifier = Modifier.fillMaxWidth()) {
@@ -243,16 +256,21 @@ internal fun SetPassphraseStep(state: HubConnectUiState.SetPassphrase, viewModel
     }
 }
 
-/** A0 — the generated diceware passphrase, shown readable (NOT masked) + copyable, via the RecoveryCodesReveal pattern
- *  (SelectionContainer + clipboard) with the clipboard-egress disclosure. The secret is a CharArray held by the caller. */
+/**
+ * A0 (F2 fix) — the generated diceware passphrase, shown readable (NOT masked), via the **same hardened reveal path as
+ * `RecoveryCodesReveal`**: a [SelectionContainer] (manual-copy fallback, esp. Web) + a real copy-to-clipboard button
+ * (reusing that path's `remote_recovery_codes_copy` action) + the clipboard-egress disclosure. The button makes the
+ * disclosure HONEST (a copy really happens). This is the intended, DISCLOSED recovery egress — the generated passphrase
+ * IS the recovery secret the user must save, framed like backup codes — and is **distinct from the clipboard-free
+ * `PassphraseInput`** (rider 5: no clipboard on the masked input). The secret is a CharArray held by the caller.
+ */
 @Composable
 private fun DicewareReveal(passphrase: CharArray) {
-    // The generated passphrase IS shown readable (the user must READ + save it, like recovery codes) — this is the
-    // intended reveal egress (rider 5), NOT the masked input field. concatToString is inherent to displaying it.
-    val text = passphrase.concatToString()
+    val clipboard = LocalClipboardManager.current
+    val text = passphrase.concatToString() // inherent to a readable reveal (the user must READ + save it)
     val a11y = stringResource(Res.string.a11y_remote_pop_enroll_clipboard_notice)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        SelectionContainer { // manual-copy fallback (esp. Web), mirroring the hardened RecoveryCodesReveal path (A0)
+        SelectionContainer {
             Text(
                 text,
                 style = MaterialTheme.typography.bodyMedium,
@@ -260,6 +278,10 @@ private fun DicewareReveal(passphrase: CharArray) {
                     .background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp),
             )
         }
+        TextButton( // the real copy — makes the clipboard-notice below honest (RecoveryCodesReveal-path reuse, A0)
+            onClick = { clipboard.setText(AnnotatedString(text)) },
+            modifier = Modifier.testTag(OperatorAuthTags.ENROLL_CLIPBOARD_NOTICE + ".copy"),
+        ) { Text(stringResource(Res.string.remote_recovery_codes_copy)) }
         Text(
             stringResource(Res.string.remote_pop_enroll_clipboard_notice),
             style = MaterialTheme.typography.bodySmall,
@@ -278,7 +300,10 @@ private fun StrengthMeter(passphrase: String) {
     val ui = enrollStrengthUi(verdict)
     val fillColor = if (ui.fillDamped) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
     Column(
-        modifier = Modifier.fillMaxWidth().testTag(OperatorAuthTags.ENROLL_STRENGTH),
+        // F1 (WCAG 4.1.3): the live strength readout is a POLITE live region so a screenreader announces the verdict
+        // (strong / too-weak / blocklisted) + hint as the operator types — the distinct cause-strings are no longer SR-mute.
+        modifier = Modifier.fillMaxWidth().testTag(OperatorAuthTags.ENROLL_STRENGTH)
+            .semantics { liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         // Track + proportional fill (custom so the fill COLOUR role is exact, not LinearProgressIndicator's primary default).
@@ -311,11 +336,15 @@ private fun StrengthMeter(passphrase: String) {
     }
 }
 
-/** The typed core-enroll refusal (F-#4) with the render-oracle tone: TooWeak ▲ WARN-amber · Blocklisted error-tone. */
+/** The typed core-enroll refusal (F-#4) with the render-oracle tone: TooWeak ▲ WARN-amber · Blocklisted error-tone.
+ *  F1: each refusal is an ASSERTIVE live region (the SR interrupts to read the already-distinct cause-string). */
 @Composable
 private fun EnrollOutcomeLine(outcome: EnrollOutcome?) {
     when (outcome) {
-        EnrollOutcome.TooWeak -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        EnrollOutcome.TooWeak -> Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+        ) {
             Text("▲ ", color = severityColor(Severity.WARN), style = MaterialTheme.typography.bodySmall)
             Text(stringResource(Res.string.remote_pop_enroll_too_weak), color = severityColor(Severity.WARN),
                 style = MaterialTheme.typography.bodySmall,
@@ -324,7 +353,8 @@ private fun EnrollOutcomeLine(outcome: EnrollOutcome?) {
         EnrollOutcome.Blocklisted -> Text(
             stringResource(Res.string.remote_pop_enroll_blocklisted),
             color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.testTag(OperatorAuthTags.error("blocklisted")))
+            modifier = Modifier.testTag(OperatorAuthTags.error("blocklisted"))
+                .semantics { liveRegion = LiveRegionMode.Assertive })
         else -> Unit // Enrolled/MigrationFailed/AlreadyEnrolled/null — not a strength refusal
     }
 }
