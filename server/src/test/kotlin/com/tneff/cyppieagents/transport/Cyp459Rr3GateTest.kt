@@ -7,8 +7,10 @@ import com.tneff.cyppieagents.auth.operator.DeviceKeyAlg
 import com.tneff.cyppieagents.auth.operator.EnrolledOperatorDevice
 import com.tneff.cyppieagents.auth.operator.InMemoryOperatorDeviceStore
 import com.tneff.cyppieagents.auth.operator.OperatorAssertionVerifier
+import com.tneff.cyppieagents.auth.operator.OperatorDeviceStore
 import com.tneff.cyppieagents.controlplane.CpJwtMinter
 import com.tneff.cyppieagents.crypto.RawKeys
+import com.tneff.cyppieagents.crypto.SecretCipherException
 import com.tneff.cyppieagents.operator.OperatorPoPWire
 import com.tneff.cyppieagents.operator.TunnelAuthGrant
 import com.tneff.cyppieagents.operator.TunnelAuthRequest
@@ -180,5 +182,24 @@ class Cyp459Rr3GateTest {
         val nonce = byteArrayOf(13)
         assertTrue(run(gate(), h, request(validCpJwt(), validPopSig(nonce = nonce), nonce)).first, "precondition: authorized")
         assertSame(before, deviceStore.enrolled(), "a successful RR3 authorize against an already-enrolled store never re-enrolls/mutates the anchor")
+    }
+
+    @Test
+    fun cyp557_tamperedDeviceStoreAnchor_failsClosed_cleanReject_notUncaughtThrow() {
+        // ★ CYP-557 (CYP-550 ③): the pre-GE5 fallback `deviceStore.enrolled()` throws on a tampered at-rest blob
+        // (`SecretStoreBackedOperatorDeviceStore` fails-closed with `SecretCipherException`). Unguarded, that throw
+        // propagates out of `authorize` → the handler closes the tunnel → a silent reconnect/lockout loop with NO
+        // operator diagnostic (the exact silent-lockout `rejectTampered` exists to prevent). The fix wraps the fallback
+        // in the same `rejectTampered` guard: a clean fail-closed reject, never an uncaught throw. MUT (remove the
+        // guard) → `authorize` throws → this test errors = RED.
+        val tamperedStore = object : OperatorDeviceStore {
+            override fun enrolled(): EnrolledOperatorDevice? = throw SecretCipherException("tampered device blob")
+            override fun save(device: EnrolledOperatorDevice) {}
+        }
+        val gate = Rr3TunnelGate(CpJwtVerifier(), OperatorAssertionVerifier(), tamperedStore, config(), now = { nowMs })
+        val nonce = byteArrayOf(20)
+        val (ok, grant) = run(gate, h, request(validCpJwt(), validPopSig(nonce = nonce), nonce))
+        assertFalse(ok, "a tampered deviceStore anchor → clean fail-closed reject, never an uncaught throw (CYP-557)")
+        assertEquals("auth_failed", grant?.reason, "the uniform reject code (the rejectTampered fail-closed path)")
     }
 }
