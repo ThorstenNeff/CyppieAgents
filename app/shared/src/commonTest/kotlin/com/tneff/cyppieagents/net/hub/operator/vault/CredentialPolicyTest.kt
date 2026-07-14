@@ -59,4 +59,13 @@ class CredentialPolicyTest {
         assertTrue(PassphraseStrength.isBlocklisted("Password123".toCharArray()), "case-insensitive weak root")
         assertFalse(PassphraseStrength.isBlocklisted("Xk9\$mQ2!vB7z anchor mint".toCharArray()), "a genuine random/diceware passphrase passes")
     }
+
+    @Test
+    fun verdict_distinguishesTooWeakFromBlocklisted_fromOk() {
+        val floor = CredentialPolicy.SOFTWARE_MIN_ENTROPY_BITS
+        // AC-3: three distinct honest causes for the enroll UI.
+        assertEquals(StrengthVerdict.TOO_WEAK, PassphraseStrength.verdict("hunter2".toCharArray(), floor), "short/low-entropy = tooWeak")
+        assertEquals(StrengthVerdict.BLOCKLISTED, PassphraseStrength.verdict("correct horse battery staple".toCharArray(), floor), "famous phrase = blocklisted (not tooWeak, even though structurally long)")
+        assertEquals(StrengthVerdict.OK, PassphraseStrength.verdict("Xk9\$mQ2!vB7z anchor mint".toCharArray(), floor))
+    }
 }

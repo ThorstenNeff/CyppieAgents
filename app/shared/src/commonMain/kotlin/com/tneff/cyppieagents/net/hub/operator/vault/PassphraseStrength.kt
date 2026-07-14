@@ -35,8 +35,18 @@ object PassphraseStrength {
      * The ② gate: the passphrase meets [minBits] AND is not blocklisted. **Real-enforced fail-closed** — the enroll
      * flow refuses a passphrase that fails this (the weak meter never lets an under-floor/blocklisted secret through).
      */
-    fun meets(passphrase: CharArray, minBits: Int): Boolean =
-        estimateBits(passphrase) >= minBits && !isBlocklisted(passphrase)
+    fun meets(passphrase: CharArray, minBits: Int): Boolean = verdict(passphrase, minBits) == StrengthVerdict.OK
+
+    /**
+     * AC-3 (UIUX enroll-QA G1) — the **distinct** enroll verdict so the UI shows an honest, cause-specific error:
+     * [BLOCKLISTED] (common/breached — checked first, since a blocklisted phrase can be structurally strong) ≠
+     * [TOO_WEAK] (structural entropy `<` [minBits]) ≠ [OK]. Both failures fail-closed. Not coupled to zxcvbn (CYP-544).
+     */
+    fun verdict(passphrase: CharArray, minBits: Int): StrengthVerdict = when {
+        isBlocklisted(passphrase) -> StrengthVerdict.BLOCKLISTED
+        estimateBits(passphrase) < minBits -> StrengthVerdict.TOO_WEAK
+        else -> StrengthVerdict.OK
+    }
 
     /**
      * #3 (Reviewer) — a no-dep common-phrase blocklist against the type-your-own path: top breached passwords + famous
@@ -76,3 +86,6 @@ object PassphraseStrength {
     /** Weak roots — a passphrase equal-to or starting-with one is blocklisted (catches `password<anything>`). */
     private val WEAK_ROOTS: Set<String> = setOf("password", "qwerty", "123456", "letmein", "admin", "welcome", "iloveyou")
 }
+
+/** AC-3 — the distinct enroll strength causes (honest, cause-specific copy in the UI). */
+enum class StrengthVerdict { OK, TOO_WEAK, BLOCKLISTED }
