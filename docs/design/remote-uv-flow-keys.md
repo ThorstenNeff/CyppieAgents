@@ -18,7 +18,7 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 
 ---
 
-## Net-new Copy (20 Realkeys + 1 a11y)
+## Net-new Copy (21 Realkeys + 1 a11y)
 
 ### Δ1a — Passphrase-Pfad (no-hardware Boden): Setup + Unlock + **generierter Diceware-One-Click-Default (HG2)** + Strength
 | Key | DE (Default) | EN | Rolle |
@@ -44,6 +44,7 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 | `remote_pop_enroll_confirm` **(0)** | App-PIN bestätigen | Confirm your app PIN | Enroll-**Bestätigungs**-Feld (`ENROLL_PIN_CONFIRM`), Kurz-PIN-Pfad. |
 | `remote_pop_enroll_mismatch` **(0)** | Eingaben stimmen nicht überein — bitte erneut eingeben. | Entries don't match — please re-enter. | `enrollError.mismatch`. **Credential-neutral** (PIN *und* Passphrase). Fehler-Ton, retryable. |
 | `remote_pop_enroll_too_short` **(1)** | PIN zu kurz — mindestens %1$s Zeichen. | PIN too short — at least %1$s characters. | `enrollError.tooShort`. `%1$s` = Threat-Model-Min (**nicht** hartkodiert). |
+| `remote_pop_enroll_blocklisted` **(0)** | Diese Passphrase ist zu verbreitet — sie steht auf einer Liste bekannt-schwacher Passphrasen. Bitte eine andere. | This passphrase is too common — it's on a list of known-weak passphrases. Please choose another. | `enrollError.blocklisted` (**distinkt** von `tooWeak`, PO-Ruling G1). Sagt ehrlich das *warum*. **Enroll-Pfad**, kein Enumeration-Oracle (Nutzer setzt sein eigenes Secret — CYP-543-Neutralität betrifft nur den Auth-Pfad). |
 
 ### Δ2 — 1-UV-für-N: eine Bestätigung, N Tunnel
 | Key | DE (Default) | EN | Rolle |
@@ -97,13 +98,13 @@ Der aktive Pfad benennt sich ehrlich via `remote_pop_path_hint` (`%1$s` = „App
 - **WCAG 1.4.1:** die Strength-Meter-Level tragen Text-Labels (`_weak`/`_fair`/`_strong`) — Farbe nie alleiniger Träger.
 
 ## Self-Validation
-- **Net-new: 20 Realkeys + 1 a11y** — Passphrase-Pfad 14 (inkl. 4 HG2-Diceware-Default: `_suggested`, `_suggested_save`,
-  `_suggest_use`, `_type_own`; `_suggest` re-scoped auf Regenerate), Kurz-PIN-Pfad 3, Coverage 1(+a11y), Biometrie 2. Args:
-  `enroll_too_short` (1), `biometric_offer` (1), `path_hint`-Reuse (1); Rest 0. Alle **DE+EN paritätisch**.
+- **Net-new: 21 Realkeys + 1 a11y** — Passphrase-Pfad 14 (inkl. 4 HG2-Diceware-Default), Kurz-PIN-Pfad 4 (inkl.
+  `_blocklisted`, PO-Ruling G1), Coverage 1(+a11y), Biometrie 2. Args: `enroll_too_short` (1), `biometric_offer` (1),
+  `path_hint`-Reuse (1); Rest 0. Alle **DE+EN paritätisch**.
 - **0 Retext frozener Keys, 0 Löschung** — reine Ergänzung an CYP-542-eigenen (noch nicht gebauten) Keys; kein
   gebautes/frozen `remote_pop_*`/`remote_connect_*` wird angefasst (`_suggest`-Retext betrifft nur meinen eigenen
   net-new-Key derselben Branch).
-- **0 Kollision @ `eb705236`** (grep-verifiziert: keiner der 21 Keys existiert in `values/` oder `values-en/`).
+- **0 Kollision @ `eb705236`** (grep-verifiziert: keiner der 22 Keys existiert in `values/` oder `values-en/`).
 - **Kein content-tragender/sensibler Klartext;** `%1$s` nur Count/Wait/Authenticator-Name/Min-Länge.
 - **Dev foldet in `OperatorAuthDialog`** (Passphrase/PIN-Feldpaar capability-conditional + Strength-Meter + Diceware +
   Coverage-Zeile + Biometrie-Angebot) — Copy hier ist der frozen AC.

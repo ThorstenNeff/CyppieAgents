@@ -40,7 +40,7 @@ unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
 | `ENROLL_SUGGEST` | `remote.authStep.enrollSuggest` | die **Regenerate**-Affordanz („Andere vorschlagen" — neue Diceware würfeln). Present ⇔ Passphrase-Enroll aktiv. |
 | `ENROLL_TYPE_OWN` | `remote.authStep.enrollTypeOwn` | die **sekundäre** „Eigene eingeben"-Affordanz (Umschalten auf manuelle Passphrase). Present ⇔ Passphrase-Enroll aktiv. |
 | `ENROLL_STRENGTH` | `remote.authStep.enrollStrength` | der **Strength-Meter** (nur beim **type-your-own** relevant; der generierte Default ist by-construction stark). **Trägt ein Text-Level-Label** (schwach/mittel/stark) — Farbe **nie** alleiniger Träger (WCAG 1.4.1). |
-| `enrollError(cause)` | `remote.authStep.enrollError.<cause>` | **lokale Enroll-Validierung**, `<cause>` ∈ `mismatch` / `tooShort` (Kurz-PIN Min-Länge) / `tooWeak` (Passphrase-Entropie). Present ⇔ genau diese Validierung fehlschlägt. **Retryable**, Fehler-Ton (nie `errorContainer`), Feld bleibt aktiv. **≠** `error(<cause>)` (Auth-Zeit, nicht Setup). |
+| `enrollError(cause)` | `remote.authStep.enrollError.<cause>` | **lokale Enroll-Validierung**, `<cause>` ∈ `mismatch` / `tooShort` (Kurz-PIN Min-Länge) / `tooWeak` (Passphrase-Entropie < Floor) / **`blocklisted`** (lang genug, aber Common-Phrase auf Blocklist — **distinkt** von `tooWeak`, PO-Ruling G1). Present ⇔ genau diese Validierung fehlschlägt. **Retryable**, Fehler-Ton (nie `errorContainer`), Feld bleibt aktiv. **≠** `error(<cause>)` (Auth-Zeit, nicht Setup). |
 | `UV_COVERAGE` | `remote.authStep.uvCoverage` | der **1-UV-für-N-Hinweis**. Present ⇔ die Wiederverwendungs-Fensterung greift real (N>1 bzw. cachingUv aktiv). **Neutral/advisory**, kein Erfolgs-Grün. |
 | `BIOMETRIC_OFFER` | `remote.authStep.biometricOffer` | das **Opt-in-Angebot** eines Platform-Authenticators (Enhancement). Present ⇔ Platform-Authenticator verfügbar **und** noch nicht aktiviert. **≠** `BIOMETRIC_PROMPT`. |
 
@@ -82,8 +82,8 @@ unterscheidet PIN vs Passphrase (`remote-uv-flow-keys.md`).
 
 ## Self-Validation
 - **Net-new: 7 Const** (`ENROLL_PIN_CONFIRM`, `ENROLL_SUGGESTED`, `ENROLL_SUGGEST`, `ENROLL_TYPE_OWN`, `ENROLL_STRENGTH`,
-  `UV_COVERAGE`, `BIOMETRIC_OFFER`) **+ 1 Fn** (`enrollError(cause)`, `<cause>` ∈ `mismatch`/`tooShort`/`tooWeak`) — alle in
-  der **bestehenden** Area `remote.authStep.*`, im **bestehenden** `OperatorAuthTags`-Object (kein neues Object/Namespace).
+  `UV_COVERAGE`, `BIOMETRIC_OFFER`) **+ 1 Fn** (`enrollError(cause)`, `<cause>` ∈ `mismatch`/`tooShort`/`tooWeak`/`blocklisted`)
+  — alle in der **bestehenden** Area `remote.authStep.*`, im **bestehenden** `OperatorAuthTags`-Object (kein neues Object).
 - **0 Kollision @ `eb705236`:** `enrollPinConfirm` / `enrollSuggested` / `enrollSuggest` / `enrollTypeOwn` / `enrollStrength` /
   `uvCoverage` / `biometricOffer` / `enrollError` existieren nicht im CYP-460/CYP-429-Satz (grep-verifiziert).
 - **Charset ✓** camelCase, `[A-Za-z0-9-]+`, keine Punkte im Wert.

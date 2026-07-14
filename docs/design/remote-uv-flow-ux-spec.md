@@ -88,8 +88,12 @@ Der `Enroll`-Step wird um das **Feldpaar** ergänzt (heute nur Disclosure-Text);
      durchlassen — der generierte Default macht den Common-Path stark; type-your-own bleibt möglich, ist aber die Ausnahme.
   4. **Bestätigungs-Feld** — `ENROLL_PIN_CONFIRM` + `remote_pop_enroll_passphrase_confirm` (bei type-your-own; der
      One-Click-Default ist bereits bestätigt-durch-Anzeige).
-  5. **Gate:** kein Credential gesetzt bis (Default akzeptiert) **oder** (type-your-own: Bestätigung == Setz **und** Entropie
-     ≥ ≥64-bit-Floor) → sonst `enrollError.mismatch` bzw. `enrollError.tooWeak` (`remote_pop_enroll_too_weak`).
+  5. **Gate:** kein Credential gesetzt bis (Default akzeptiert) **oder** (type-your-own: Bestätigung == Setz **und**
+     `meets() = Entropie ≥ ≥64-bit-Floor ∧ !blocklist`) → sonst `enrollError.mismatch` / `.tooWeak`
+     (`remote_pop_enroll_too_weak`) / **`.blocklisted`** (`remote_pop_enroll_blocklisted`, PO-Ruling G1 — **distinkter** Cause
+     der ehrlich das *warum* sagt: „zu verbreitet / auf Blocklist"; das Blocklist-Signal liefert B1 **jetzt** [`meets()`],
+     unabhängig von CYP-544/zxcvbn). Enroll-Copy darf **spezifisch-ehrlich** sein (kein Enumeration-Oracle — der Nutzer setzt
+     sein eigenes Secret; CYP-543-Neutralität betrifft nur den **Auth**-Pfad).
 - **hardware-backed (Kurz-PIN):**
   1. **Setz-Feld** — reuse `remote_pop_enroll_pin` („App-PIN festlegen"), Tag `ENROLL_PIN_SET`.
   2. **Bestätigungs-Feld** — `ENROLL_PIN_CONFIRM` + `remote_pop_enroll_confirm` („App-PIN bestätigen").
@@ -108,6 +112,13 @@ Der `Enroll`-Step wird um das **Feldpaar** ergänzt (heute nur Disclosure-Text);
   „nicht eingerichtet", **nie** „falsche PIN").
 - **Ergebnis-Taxonomie** unverändert (CYP-460 §5.3): `verifying`→neutraler Spinner; `granted`→weiter zur Hub-Liste
   **ohne Erfolgs-Grün**; lokale Fehler retryable; `authRejected` terminal.
+- **Enroll→Auth-Weiterlauf (PO-Ruling G2, Kriterium „kein Credential gesetzt, Nutzer sitzt"):** nach Enroll-Erfolg treibt
+  der Flow **selbsttätig** weiter — kein toter Zwischenzustand. **Kohärenz-Bonus (Dev/Backend, S-UV1):** die eben
+  eingegebene Enroll-Passphrase ist **in-hand** (hat gerade den Vault gesealt) und dient direkt als **erste UV** — sie
+  nutzt das `DecryptedKeyHold`-≤120s-Window, **kein sofortiger zweiter Prompt**. Sequenz: **Enroll-Erfolg → seal →
+  AUTHENTICATING mit derselben in-hand-Passphrase → CONNECTED**. Das ist zugleich der Startpunkt des 1-UV-für-N-Fensters
+  (§4.3) — ehrlich: **eine** Ceremony deckt Enroll **und** die jetzt geöffneten Tunnel. (`DecryptedKeyHold` = B1-Mechanik,
+  noch nicht im Code @ `eb705236` — Dev/Backend-owned; die UX zeichnet nur die Zustände.)
 
 ### 4.3 U3 — 1-UV-für-N: eine Bestätigung, N Tunnel (ehrlich)
 `CachingUserVerification` sorgt dafür, dass **eine** Bestätigung die **N** Tunnel autorisiert, die der Operator jetzt öffnet
@@ -138,6 +149,10 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
   ehrlichem Zustand (`remote_pop_keystore_unavailable`), **nie** stille Gewährung. `granted` zeigt **kein** Erfolgs-Grün.
 - **Terminal nur bei Hub-Reject (H2):** `remote_pop_rejected` + `error(authRejected)` = errorContainer, neu anmelden,
   kein stiller Retry; **jede** lokale Störung retryable.
+- **EINE Retry-Fläche (PO-Ruling G4):** der **Inline-Dialog** besitzt den Retry-/Lockout-Lifecycle
+  (`OperatorAuthError.WrongPin` + `ATTEMPTS` + `LOCKED_OUT`); er bubbelt zum connect-level `OperatorUvFailed`→`LOST` **nur**
+  bei **Nutzer-Abbruch** oder **erschöpftem Lockout**. Nie zwei konkurrierende Retry-Flächen (kein Doppel-Ehrlichkeits-
+  Risiko). Wird §-QA-Kriterium; Dev verdrahtet es so.
 
 ## 6. Maritim + M3
 - **Neutrale Fakten** (Pfad-Hinweis, Coverage, Setz/Bestätigen-Felder): `onSurfaceVariant`/`onSurface`, kein Statusfarbton.
@@ -156,8 +171,13 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
    One-Click-Default** (`enrollSuggested` present, `suggest_use` akzeptiert, `enrollSuggest` regeneriert); type-your-own ist
    **sekundär** (`enrollTypeOwn`, Meter + Floor-Gate); der generierte Credential ist **angezeigt + notierbar**
    (`_suggested_save`), nie masked-at-generation; **keine Bit-Zahl** im Copy-Literal.
-2. **Enroll gated:** kein Credential gesetzt bei Mismatch / zu-kurz / zu-schwach; `enrollError.*` render Fehler-Ton +
-   eigener Tag, Felder aktiv, **kein** stiller Commit.
+2. **Enroll gated:** kein Credential gesetzt bei Mismatch / zu-kurz / zu-schwach / **blocklisted**; `enrollError.*` render
+   Fehler-Ton + eigener Tag (G1: `blocklisted` **distinkt** von `tooWeak`, ehrliches *warum*), Felder aktiv, **kein**
+   stiller Commit.
+2c. **Enroll→Auth-Weiterlauf (G2):** nach Enroll-Erfolg treibt der Flow selbsttätig in AUTHENTICATING→CONNECTED (kein „gesetzt,
+   Nutzer sitzt"); die in-hand-Passphrase dient als erste UV (`DecryptedKeyHold`-Window) — **kein** sofortiger zweiter Prompt.
+2d. **EINE Retry-Fläche (G4):** Inline-Dialog besitzt Retry/Lockout; bubbelt zu `OperatorUvFailed`→LOST nur bei Abbruch /
+   Lockout-erschöpft. Nie zwei konkurrierende Retry-Flächen.
 3. **Mount:** `AUTHENTICATING` rendert den gebauten `OperatorAuthDialog` (nicht den INERT-Spinner); `DeviceNotEnrolled`
    routet in den Enroll-Step (kein WARN-Dead-End).
 4. **1-UV-für-N:** genau **ein** Prompt für N jetzt geöffnete Tunnel; `uvCoverage` present ⇔ Fensterung greift, Copy sagt
@@ -181,15 +201,19 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
 - **S-UV3 (Tester/DS, CYP-7):** die net-new Tags (`remote-uv-flow-tags.md`) im Frozen-Contract abstimmen.
 - **CYP-460-Konvergenz:** diese Delta **erweitert** den frozen CYP-460-Contract, ersetzt ihn nicht — bei Konflikt gilt
   CYP-460 für die gebauten Flächen, CYP-542 für die vier Nähte.
-- **Follow-up 1 (PO-owned):** `remote_pop_wrong_pin`/`_locked` sind frozen „PIN"-Copy; auf dem Passphrase-Pfad ggf. schiefer
-  Wortlaut → credential-neutrale Zähler-Copy, PO filet non-blocking, kein Retext im Rahmen von CYP-542.
-- **Follow-up 2 (PO-owned):** **zxcvbn-Meter-Härtung** fürs type-your-own (struktureller Meter → dictionary/pattern-aware),
-  damit auch die sekundäre Ausnahme robuster ist. Separater Follow-up; CYP-542 setzt den ≥64-bit-Floor + den starken
-  generierten Default (HG2).
+- **G3 (PO-Ruling) — DeviceNotEnrolled-Loop = harte AC der Enroll+Wiring-Slice:** meine §4.2-Route (DeviceNotEnrolled→
+  Enroll-Step) ist die Lösung; der PO macht sie zur **harten Akzeptanzbedingung** der Slice, die Dev jetzt baut — **kein**
+  DeviceNotEnrolled→Retry-Sackgasse darf nach der Slice übrig bleiben. Relay an Dev läuft (PO).
+- **Follow-up 1 = CYP-543 (PO-owned):** `remote_pop_wrong_pin`/`_locked` frozen „PIN"-Copy am **Auth**-Pfad → credential-
+  neutrale Zähler-Copy. Betrifft **nicht** Enroll (dort ist spezifisch-ehrliche Copy korrekt, kein Enumeration-Oracle).
+- **Follow-up 2 = CYP-544 (PO-owned):** **zxcvbn-Meter-Härtung** fürs type-your-own (graduelle Stärke, dictionary/pattern-
+  aware). **Kein** Blocker für G1: das Blocklist-Boolean (`meets()`) existiert in B1 **jetzt** → `enrollError.blocklisted`
+  ist unabhängig lieferbar.
 
 ## 9. Self-Validation
-- **Deliverable-Konsistenz:** 3 Dateien (`-ux-spec`/`-tags`/`-keys`); Tag-Count (**7 Const + 1 Fn**) und Key-Count
-  (**20 Realkeys + 1 a11y**) über alle drei identisch referenziert.
+- **Deliverable-Konsistenz:** 4 Dateien (`-ux-spec`/`-tags`/`-keys`/`-qa-checklist`); Tag-Count (**7 Const + 1 Fn**, Fn-Causes
+  `mismatch`/`tooShort`/`tooWeak`/`blocklisted`) und Key-Count (**21 Realkeys + 1 a11y**) über alle identisch referenziert.
+  PO-Rulings G1–G5 (`1526532076…`/`1526532077…`) eingefaltet.
 - **Anti-Duplikat:** kein `remote_pop_*`/`OperatorAuthTags`-Wert wird umgeschrieben; nur additive Nähte.
 - **Grounded @ `eb705236`:** jede Reuse-Behauptung gegen echten Code verifiziert (Code = Source of Truth); 0-Kollision
   grep-belegt.
