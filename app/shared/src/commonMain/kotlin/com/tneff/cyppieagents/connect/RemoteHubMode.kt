@@ -31,8 +31,15 @@ expect fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory?
  * stack from env config (CP base URL + relay URL), or `null` where remote isn't available / not configured
  * (INERT). App.kt passes it flag-gated ([remoteHubEnabled]); the user-reachable flip (config + a relay server +
  * a deploy) stays an Auftraggeber GO. [operatorToken] is the app session token (`Bearer`, same-origin CP auth).
+ *
+ * CYP-542 / B1 — [passphrasePromptCoordinator] is the App.kt-owned, VM-lifetime operator-UV bridge (the CYP-460
+ * dialog is driven by its state; the VM surfaces + pre-arms it). Threaded here so the composition root owns the
+ * INERT→real kip: `null` ⇒ the jvm factory uses a fail-closed prompt (no real UV) — the pre-B1 INERT behaviour.
  */
-expect fun defaultRemoteComponentsFactory(operatorToken: () -> String?): RemoteConnectComponentsFactory?
+expect fun defaultRemoteComponentsFactory(
+    operatorToken: () -> String?,
+    passphrasePromptCoordinator: PassphrasePromptCoordinator? = null,
+): RemoteConnectComponentsFactory?
 
 /**
  * S-J — the [ControlPlaneClient] the hub-connect flow consumes (hub list + register). jvm returns the live

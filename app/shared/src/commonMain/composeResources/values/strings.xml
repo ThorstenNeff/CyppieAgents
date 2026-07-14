@@ -760,4 +760,30 @@
     <string name="tunnel_pool_aggregate_backpressured">gedrosselt</string>
     <string name="a11y_tunnel_pool_row">Tunnel %1$s: %2$s</string>
     <string name="a11y_tunnel_pool_aggregate">Pool: %1$d von %2$d aktiv%3$s</string>
+    <!-- CYP-542 (Phase A/B1) Remote UV/Enroll — net-new. UIUX-frozen, pull 1:1 (remote-uv-flow-enroll-strings-manifest.md). -->
+    <string name="remote_pop_passphrase_title">App-Passphrase eingeben</string>
+    <string name="remote_pop_passphrase_body">Bestätige mit deiner App-Passphrase, um remote auf deine Hubs zuzugreifen.</string>
+    <string name="remote_pop_enroll_passphrase">App-Passphrase festlegen</string>
+    <string name="remote_pop_enroll_passphrase_confirm">App-Passphrase bestätigen</string>
+    <string name="remote_pop_enroll_suggested">Empfohlen — 6 zufällige Wörter</string>
+    <string name="remote_pop_enroll_suggested_save">Notiere sie sicher — du brauchst sie bei jeder Anmeldung.</string>
+    <string name="remote_pop_enroll_clipboard_notice">In die Zwischenablage kopiert. Leere die Zwischenablage, nachdem du die Passphrase gespeichert hast.</string>
+    <string name="a11y_remote_pop_enroll_clipboard_notice">In die Zwischenablage kopiert — Zwischenablage nach dem Speichern leeren.</string>
+    <string name="remote_pop_enroll_suggest_use">Diese Passphrase verwenden</string>
+    <string name="remote_pop_enroll_suggest">Andere vorschlagen</string>
+    <string name="remote_pop_enroll_type_own">Eigene Passphrase eingeben</string>
+    <string name="remote_pop_enroll_copy">Passphrase kopieren</string>
+    <string name="remote_pop_enroll_strength_hint">6 zufällige Wörter oder mindestens 12 Zeichen.</string>
+    <string name="remote_pop_enroll_too_weak">Passphrase zu schwach — 6 zufällige Wörter oder 12+ Zeichen.</string>
+    <string name="remote_pop_strength_weak">Schwach</string>
+    <string name="remote_pop_strength_fair">Mittel</string>
+    <string name="remote_pop_strength_strong">Stark</string>
+    <string name="remote_pop_enroll_confirm">App-PIN bestätigen</string>
+    <string name="remote_pop_enroll_mismatch">Eingaben stimmen nicht überein — bitte erneut eingeben.</string>
+    <string name="remote_pop_enroll_too_short">PIN zu kurz — mindestens %1$s Zeichen.</string>
+    <string name="remote_pop_enroll_blocklisted">Diese Passphrase ist zu verbreitet — sie steht auf einer Liste bekannt-schwacher Passphrasen. Bitte eine andere.</string>
+    <string name="remote_pop_uv_coverage">Eine Bestätigung autorisiert die Hubs, die du jetzt öffnest — nicht jeden einzeln.</string>
+    <string name="a11y_remote_pop_uv_coverage">Hinweis: eine Bestätigung autorisiert die jetzt geöffneten Hubs.</string>
+    <string name="remote_pop_biometric_offer">%1$s verfügbar — als schnellere Bestätigung einrichten?</string>
+    <string name="remote_pop_biometric_offer_fallback">Deine App-PIN/Passphrase bleibt als Rückfall.</string>
 </resources>
