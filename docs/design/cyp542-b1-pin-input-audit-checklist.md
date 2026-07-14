@@ -160,3 +160,31 @@ Feld reused `AuthPasswordField` (A0-Input); CharArray-Hygiene/Zeroize (`Disposab
 Finding. `granted`→Hub-Liste-Übergang außerhalb dieser Datei (VM-State). Logik-Tests (Dev-Self-Gate) nicht re-gefahren — Fokus = a11y-Layer.
 
 **CYP-542-a11y-Readiness: NO-GO bis F1 (+F2) gefixt; F3 RESOLVED (PO1-Ruling no-reveal; §1b-Delta an Team-1 zum Folden).** Findings → PO → PO1-Batch. Re-Verify + a11y-Regressions-Test wenn Dev F1(+F2) fixt.
+
+---
+
+## RE-AUDIT — nach Dev-Fix @ `54f840ba` (2026-07-14, gemessen: Objekt-Read + headless `runComposeUiTest` 4/4)
+> **Verdikt: F1 GO · F2 GO-mit-1-Residual · F3 RESOLVED.** (Kein Selbst-Transition; PO1 zieht in den B1-Batch.)
+> B1-BLOCK-1 (keyHold-Zeroize, Core) ist disjunkt von der Render/liveRegion-Schicht → mein Audit gilt.
+
+**🟢 F1 GO (adversarial verifiziert + test-locked):** `liveRegion` ist jetzt korrekt zugeordnet — Strength-Readout `:306`=**Polite**
+(kündigt Verdict ohne Fokus-Klau), Enrolling `:232`=Polite+contentDesc, Mismatch `:249` + TooWeak-Row `:346` + Blocklisted `:357`=
+**Assertive**. Jeder Announce trägt den **spezifischen** String (blocklisted≠tooWeak≠mismatch, nie generisch). **Regressions-Test
+gebankt + grün 4/4:** `app/shared/src/jvmTest/…/connect/Cyp542EnrollA11yLiveRegionTest.kt` (strengthReadout=Polite · blocklisted/
+tooWeak-Refusal=Assertive+distinkt · mismatch=Assertive) = die **cherry-pickbare net-neue Test-Datei** (Branch sonst docs-only).
+
+**🟠 F2 GO-mit-1-RESIDUAL (A0 eingelöst, ①-Honesty-Nit offen):** der Copy-Button ist jetzt **echt** (`LocalClipboardManager` +
+`clipboard.setText`, RecoveryCodesReveal-Pfad → **A0 erfüllt**). **Residual (mein ①-honest-wording):** die Clipboard-Notiz
+(„In die Zwischenablage kopiert / Copied to clipboard") wird **UNCONDITIONAL** gerendert — also **bevor** der Nutzer „Kopieren"
+klickt → ein verfrühter Past-Tense-Claim (Copy behauptet, der noch nicht passiert ist). *Fix (nicht-blockierend, meine Achse):* die
+Notiz **an die Copy-Aktion gaten** (erst nach Klick zeigen) ODER conditional umformulieren („Der Kopieren-Button legt sie in die
+Zwischenablage — leere sie danach"). Wortlaut = Team-1; Gating = Dev. (Die Clear-Guidance bleibt ehrlich, kein „auto-gelöscht".)
+
+**🟢 F3 RESOLVED** (no-reveal-Ruling; §1b-Delta an Team-1, oben).
+
+**UX-Copy-Entscheid (PO-Frage, meine Wahl):** der Diceware-Copy-Button reused `remote_recovery_codes_copy` („Codes kopieren"). **→ dediziertes
+Label:** die Passphrase ist **keine** „Codes" (Recovery-Codes = eigenes Konzept); „Codes kopieren" mislabelt das Objekt. Vorschlag
+**`remote_pop_enroll_copy` = DE „Passphrase kopieren" / EN „Copy passphrase"** (shared-key-landing: entwerfe ich, landet mit Dev-Impl).
+Ausnahme von „reuse first", weil das reused Label semantisch falsch für das Objekt ist (Genauigkeit schlägt Reuse hier).
+
+**RE-AUDIT-Readiness: a11y GO** (F1 fixed+locked, F2-Residual non-blocking, F3 resolved). Re-Verify-Test 4/4 grün @ `54f840ba`.
