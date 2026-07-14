@@ -92,7 +92,7 @@ class Cyp459BootWiringTest {
     }
 
     @Test
-    fun buildRemoteTransport_complete_buildsLiveNoiseConnector() {
+    fun buildRemoteTransport_complete_buildsLiveNResponderManager() {
         val env = completeEnv()
         val c = buildRemoteTransport(
             loopbackPort = 8787,
@@ -103,7 +103,9 @@ class Cyp459BootWiringTest {
             env = { env[it] },
             httpClientFactory = { HttpClient(CIO) { install(WebSockets) }.also { clients += it } },
         )
-        assertIs<NoiseRelayConnector>(c, "gate + custody + CP-pin config complete → the live RR3-authenticated connector")
+        // CYP-536: the live path now builds the N-concurrent responder manager (each per-id responder is a
+        // NoiseRelayConnector with the RR3 gate; the manager fans them over the epoch-derived rendezvous set).
+        assertIs<ConcurrentRelayResponderManager>(c, "gate + custody + CP-pin config complete → the live N-responder manager")
     }
 
     @Test
