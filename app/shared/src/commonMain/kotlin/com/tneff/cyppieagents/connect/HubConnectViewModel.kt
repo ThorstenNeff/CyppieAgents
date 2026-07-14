@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.net.hub.HubTransport
 import com.tneff.cyppieagents.net.hub.buildRemoteHubTransport
+import com.tneff.cyppieagents.net.hub.operator.vault.EnrollOutcome
+import com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollController
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
+import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -179,7 +182,15 @@ class HubConnectViewModel(
     fun connectRemote() {
         val hub = (_state.value as? HubConnectUiState.ChoosingMode)?.hub
             ?: (_state.value as? HubConnectUiState.RemoteConnecting)?.hub
+            ?: (_state.value as? HubConnectUiState.SetPassphrase)?.hub // AC-1/2: reconnect from the set-passphrase step
             ?: return
+        connectRemoteInternal(hub, preArm = null)
+    }
+
+    /** [connectRemote] core. [preArm] (AC-2) arms the freshly-built session's coordinator AFTER the prior teardown
+     *  ([closeActiveComponents]' P1 clear runs first, so the enroll passphrase can't be wiped) and BEFORE the new
+     *  session authenticates ⇒ the first UV reuses it (no 2nd prompt); the UV zeroizes it after (P2). */
+    private fun connectRemoteInternal(hub: HubDescriptor, preArm: CharArray?) {
         remoteJob?.cancel() // Q5: exactly-one-hub — tear the current remote session down before the new one.
         closeActiveComponents() // CYP-513: close the previous LIVE Noise session (Q5, nothing carried across)
         _state.value = HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.RELAY_DIALING))
@@ -193,12 +204,17 @@ class HubConnectViewModel(
                     // trust's own waiter). Drive the session; surface the FirstUse confirm at TRUST_CHECK while Awaiting.
                     val comps = factory.create(hub, this)
                     activeComponents = comps
+                    preArm?.let { comps.passphrasePrompt?.preArm(it) } // AC-2: reuse the enroll passphrase for the FIRST UV
                     comps.session.start()
                     try {
-                        // 3-way: session truth + OOB (TRUST_CHECK) + the §2 first-enroll reveal (during AUTHENTICATING).
-                        combine(comps.session.state, comps.oobConfirm.state, comps.enrollConfirm.state) { rs, oob, enroll -> Triple(rs, oob, enroll) }
-                            .collect { (rs, oob, enroll) ->
-                                surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob), enroll)
+                        // 4-way: session truth + OOB (TRUST_CHECK) + the §2 first-enroll reveal + the CYP-542/B1
+                        // auth-time passphrase prompt (during AUTHENTICATING). The prompt flow is Idle when INERT (no
+                        // coordinator wired) ⇒ byte-identical to the pre-B1 3-way surface.
+                        val promptFlow = comps.passphrasePrompt?.state ?: MutableStateFlow(PassphrasePromptState.Idle)
+                        combine(comps.session.state, comps.oobConfirm.state, comps.enrollConfirm.state, promptFlow) { rs, oob, enroll, prompt ->
+                            surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob), enroll, prompt, comps.enroll)
+                            rs
+                        }.collect { rs ->
                                 // M2 Seam-3 (a): build the tunnel-backed transport ONCE on CONNECTED. CYP-537 (M2-A):
                                 // the source is the N-tunnel POOL (`tunnelPool.acquire()` — a distinct authenticated
                                 // tunnel per concurrent connection, F-M2-1 fix); if no pool (thru-cut/stub), fall back
@@ -234,21 +250,79 @@ class HubConnectViewModel(
         }
     }
 
-    /** Surface: OOB Awaiting ⇒ the mandatory confirm at TRUST_CHECK; §2 first-enroll Revealing ⇒ the RecoveryCodesReveal
-     *  (DURING auth, before the finalize grant); else the session truth. */
+    /** Surface priority (phase order): OOB Awaiting ⇒ the mandatory confirm at TRUST_CHECK; the B1 auth-time passphrase
+     *  prompt (during AUTHENTICATING) ⇒ [HubConnectUiState.PassphrasePrompt]; §2 first-enroll Revealing ⇒ the
+     *  RecoveryCodesReveal; **AC-1** DeviceNotEnrolled (+ an enroll controller) ⇒ the set-passphrase step (never the
+     *  retry-reloop); else the session truth. */
     private fun surfaceRemote(
         hub: HubDescriptor,
         rs: RemoteSessionState,
         mount: OobConfirmMount?,
         enroll: EnrollConfirmState = EnrollConfirmState.Idle,
+        passphrase: PassphrasePromptState = PassphrasePromptState.Idle,
+        enrollController: OperatorEnrollController? = null,
     ) {
         _state.value = when {
             mount != null ->
                 HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.TRUST_CHECK), oobConfirm = mount)
+            passphrase is PassphrasePromptState.Prompting ->
+                HubConnectUiState.PassphrasePrompt(hub, passphrase.reason) // B1: the real UV is asking for the App-Passphrase
             enroll is EnrollConfirmState.Revealing -> HubConnectUiState.RevealCodes(hub, enroll.codes)
+            rs.failure == RemoteFailure.DeviceNotEnrolled && enrollController != null ->
+                // AC-1: this device isn't set up ⇒ the enroll step, NOT the :346 retry-reloop. Keep an in-progress
+                // enroll sub-state (ENROLLING/ERROR set by setEnrollPassphrase) — only INITIATE ENTERING, never clobber.
+                (_state.value as? HubConnectUiState.SetPassphrase) ?: HubConnectUiState.SetPassphrase(hub, EnrollPhase.ENTERING)
             else -> HubConnectUiState.RemoteConnecting(hub, rs)
         }
     }
+
+    // --- CYP-542 / B1: auth-time passphrase prompt (AC-4) + set-passphrase enroll (AC-1/AC-2) ---
+
+    /** AC: the operator entered their App-Passphrase in the CYP-460 dialog → resolve the pending UV prompt with it.
+     *  The UV opens the vault; a wrong passphrase re-prompts inline (the dialog stays up), never a session teardown. */
+    fun submitPassphrase(passphrase: CharArray) {
+        activeComponents?.passphrasePrompt?.submit(passphrase)
+    }
+
+    /** AC-4: the operator cancelled the passphrase prompt → resolve `null` ⇒ Denied(CANCELLED) ⇒ the session bubbles
+     *  to LOST/OperatorUvFailed (abort is the ONLY non-lockout path that tears the session down). */
+    fun cancelPassphrase() {
+        activeComponents?.passphrasePrompt?.cancel()
+    }
+
+    /** AC-1: the strong one-click diceware default for the set-passphrase field (or `null` if the EFF asset is
+     *  unavailable ⇒ the dialog offers only type-your-own). The caller (dialog) zeroizes it after use. */
+    fun suggestPassphrase(): CharArray? = activeComponents?.enroll?.suggestPassphrase()
+
+    /**
+     * AC-1/AC-2: seal the device-key vault under the chosen App-Passphrase, then auto-reconnect. On [EnrollOutcome.Enrolled]
+     * the passphrase is **pre-armed** (AC-2: the first auth UV reuses it, no 2nd prompt; the UV zeroizes it after — the
+     * flow must NOT zeroize a pre-armed array, P2) and [connectRemote] auto-drives AUTH→CONNECTED. A typed refusal
+     * (TooWeak / Blocklisted / MigrationFailed / AlreadyEnrolled) surfaces the ERROR phase; the un-armed passphrase is
+     * zeroized here (H-1). The floor is CORE-enforced inside [OperatorEnrollController.enroll] (F-#4), never a UI gate.
+     */
+    fun setEnrollPassphrase(passphrase: CharArray) {
+        val s = _state.value as? HubConnectUiState.SetPassphrase ?: return
+        val comps = activeComponents ?: return
+        val controller = comps.enroll ?: return
+        _state.value = s.copy(phase = EnrollPhase.ENROLLING, outcome = null)
+        runScope.launch {
+            when (val outcome = controller.enroll(passphrase)) {
+                EnrollOutcome.Enrolled ->
+                    // AC-2: reconnect reusing the just-set passphrase as the FIRST UV — armed AFTER the failed
+                    // session's teardown (P1-clear can't wipe it); the coordinator+UV own+zeroize it (P2, not here).
+                    connectRemoteInternal(s.hub, preArm = passphrase)
+                else -> {
+                    passphrase.fill('\u0000') // failure path: preArm did NOT take it ⇒ zeroize now (H-1)
+                    _state.value = HubConnectUiState.SetPassphrase(s.hub, EnrollPhase.ERROR, outcome)
+                }
+            }
+        }
+    }
+
+    /** AC-1: leave the set-passphrase step without enrolling (back to the hub list). Tears the failed session down and
+     *  clears any pending pre-arm (P1) via [closeActiveComponents]. */
+    fun cancelEnroll() = backToHubList()
 
     /**
      * CYP-525 §2: the operator confirmed they saved their backup codes → resolve the enroll confirmer `true` so
@@ -277,6 +351,7 @@ class HubConnectViewModel(
         activeComponents = null
         remoteTransport?.close() // M2 Seam-3: tear down the loopback transport (acceptor + owned client) with the session
         remoteTransport = null
+        previous.passphrasePrompt?.clearPreArm() // CYP-542/B1 P1: zeroize+drop any un-consumed pre-arm on switch/leave
         previous.enrollConfirm.abort() // CYP-525 §2: a switch/leave during the reveal aborts enroll (fail-closed, no SavedAck)
         runScope.launch {
             withContext(NonCancellable) {

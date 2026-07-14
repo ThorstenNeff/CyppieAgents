@@ -25,6 +25,7 @@ import com.tneff.cyppieagents.auth.defaultAuthLiveEnv
 import com.tneff.cyppieagents.auth.resolveAuthMode
 import com.tneff.cyppieagents.testing.enableTestTagsAsResourceId
 import com.tneff.cyppieagents.connect.HubConnectViewModel
+import com.tneff.cyppieagents.connect.LivePassphrasePromptCoordinator
 import com.tneff.cyppieagents.connect.RemoteHubConnectGate
 import com.tneff.cyppieagents.connect.defaultControlPlaneClient
 import com.tneff.cyppieagents.connect.defaultRemoteComponentsFactory
@@ -99,6 +100,11 @@ fun App(
                 // authenticates the shell's data reads/sockets (X-Session-Token native / same-origin cookie browser).
                 // CYP-486 live-wiring: gate the (INERT) remote hub-connect flow. OFF (default) ⇒ createViewModel
                 // is never invoked and AgentShell renders directly — byte-identical to today.
+                // CYP-542 / B1 — ONE VM-lifetime operator-UV coordinator (the INERT→real kip): the CYP-460 dialog is
+                // driven by its state (via the VM) and the enroll pre-arms it, so it must be a stable singleton across
+                // recompositions (a post-enroll pre-arm survives enroll→reconnect, AC-2). Threaded into the live factory;
+                // on non-jvm / INERT it is simply ignored (the factory returns null).
+                val passphrasePromptCoordinator = remember { LivePassphrasePromptCoordinator() }
                 RemoteHubConnectGate(
                     enabled = remoteConnectEnabled,
                     createViewModel = {
@@ -112,7 +118,7 @@ fun App(
                             // CYP-513: the LIVE components factory (flag-gated; null/INERT unless env-configured +
                             // Auftraggeber-GO). Present ⇒ connectRemote drives the real Noise session + the ①²
                             // per-connect OOB coordinator (display == pinned); absent ⇒ the stub feed path.
-                            remoteComponentsFactory = defaultRemoteComponentsFactory(authRepo::currentSessionToken),
+                            remoteComponentsFactory = defaultRemoteComponentsFactory(authRepo::currentSessionToken, passphrasePromptCoordinator),
                             // M2 Seam-3 (c) / G1: the bridged workspace request carries the operator's Kratos SESSION
                             // (the same identity-bound token the CP-discovery uses) — Backend's tunnel-connector accepts
                             // it + 401s the static god-token. NEVER the static OPERATOR_TOKEN (Reviewer Axis-1).

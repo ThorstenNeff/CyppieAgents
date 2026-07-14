@@ -29,6 +29,12 @@ material3 = "1.10.0-alpha05"
 thumbnailator = "0.4.20"
 tink = "1.15.0"
 noiseJava = "0.1.1"
+# CYP-542/B1: Argon2id KDF (Argon2BytesGenerator) — pure-Java, no native/JNI (PO-ratified vs argon2-jvm JNI).
+# RR5 supply-chain (Reviewer): pin ≥ 1.78 exact (NO range) — ≤1.77 carry CVE-2024-30172 (BC Ed25519 infinite-loop)
+# + CVE-2023-33201, both fixed in 1.78. Cross-check: CYP-525's Ed25519 uses JDK SunEC (`getInstance("Ed25519")`, no
+# provider) NOT BC, and we never register BouncyCastleProvider (Argon2 uses the lightweight Argon2BytesGenerator
+# directly), so the BC Ed25519 CVE path is unreachable here — the pin is defense-in-depth. Bump to latest stable at gate.
+bouncycastle = "1.78.1"
 hikaricp = "5.1.0"
 postgresql = "42.7.4"
 flyway = "10.17.0"
@@ -44,6 +50,8 @@ jediterm-ui = { module = "org.jetbrains.jediterm:jediterm-ui", version.ref = "je
 # Signal's Maven-Central fork of the reference southernstorm/noise-java — pure-Java, MIT, no runtime deps
 # (jaxb-api in its POM is test-only). CR1-spike-verified: Noise_NK_25519_ChaChaPoly_BLAKE2s + getHandshakeHash().
 noise-java = { module = "org.signal.forks:noise-java", version.ref = "noiseJava" }
+# CYP-542/B1: BouncyCastle provider for Argon2id (operator-passphrase KEK) — pure-Java, well-vetted, no runtime native deps.
+bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { module = "junit:junit", version.ref = "junit" }

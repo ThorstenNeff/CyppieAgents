@@ -35,6 +35,17 @@ class PersistentOperatorDeviceKey(private val keyFile: Path) {
     fun loadOrGenerate(): KeyPair =
         (if (Files.exists(keyFile)) runCatching { load() }.getOrNull() else null) ?: generateAndPersist()
 
+    /** CYP-542 migration — the persisted key iff the file exists AND is readable, else `null`. **Never generates**
+     *  (unlike [loadOrGenerate]) so B1 can migrate an existing plaintext key without accidentally minting a new one. */
+    fun loadOrNull(): KeyPair? =
+        if (Files.exists(keyFile)) runCatching { load() }.getOrNull() else null
+
+    /** Whether a plaintext key file is present (regardless of readability). */
+    fun exists(): Boolean = Files.exists(keyFile)
+
+    /** Delete the plaintext key file (CYP-542 migration, AFTER the vault re-seal verifies). No-op if absent. */
+    fun delete() { runCatching { Files.deleteIfExists(keyFile) } }
+
     private fun load(): KeyPair {
         val bytes = Files.readAllBytes(keyFile)
         val privLen = ((bytes[0].toInt() and 0xff) shl 24) or ((bytes[1].toInt() and 0xff) shl 16) or

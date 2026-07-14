@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.connect
 
+import com.tneff.cyppieagents.net.hub.operator.CachingUserVerification
+import com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollController
 import com.tneff.cyppieagents.net.hub.pool.PooledTunnelSource
 import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +26,27 @@ class RemoteConnectComponents(
      * switch/leave (nothing carried across). Shares the session's trust/device seams (pool tunnels ride the pin).
      */
     val tunnelPool: PooledTunnelSource? = null,
+    /**
+     * CYP-542 / B1 (CYP-547) — the **shared** [CachingUserVerification] instance the session-auth AND the pool-auth
+     * both run through (store.userVerification IS it; the pool's authenticator IS the same operatorAuth). Exposed so
+     * Tester can drive `operatorUvCache.verify(OPERATOR_AUTH)` N× **directly** on the real shared instance (the
+     * behavioral 1-UV-for-N `prompts==1` guard) — `ClientOperatorAuth.authenticate` short-circuits at the cpJwt
+     * network boundary before the UV, so a headless `authenticate` accessor can't reach it. `null` off the live factory.
+     */
+    val operatorUvCache: CachingUserVerification? = null,
+    /**
+     * CYP-542 / B1 — the auth-time passphrase prompt bridge (the CYP-460 dialog is driven by its `state`; the VM
+     * surfaces `Prompting`/`submit`/`cancel`). A **VM-lifetime singleton** (the live factory hoists ONE instance
+     * across every `create()` so a post-enroll [preArm][PassphrasePromptCoordinator.preArm] survives the
+     * enroll→reconnect cycle — the AC-2 no-second-prompt path). `null` ⇒ INERT (no real UV prompt wired).
+     */
+    val passphrasePrompt: PassphrasePromptCoordinator? = null,
+    /**
+     * CYP-542 / B1 — the set-passphrase controller the VM drives when the hub reports [DeviceNotEnrolled]
+     * [com.tneff.cyppieagents.net.hub.remote.RemoteFailure.DeviceNotEnrolled] (AC-1: route to the enroll step, not a
+     * retry-reloop). Enroll success → [PassphrasePromptCoordinator.preArm] + reconnect (AC-2). `null` ⇒ INERT.
+     */
+    val enroll: OperatorEnrollController? = null,
 )
 
 /**
