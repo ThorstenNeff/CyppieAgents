@@ -46,6 +46,7 @@ import com.tneff.cyppieagents.workspace.LiveHubCapacitySource
 import com.tneff.cyppieagents.workspace.OverloadBanner
 import com.tneff.cyppieagents.workspace.RemoteOperatingChrome
 import com.tneff.cyppieagents.workspace.StubHubCapacitySource
+import com.tneff.cyppieagents.workspace.TunnelPoolStatusChrome
 import com.tneff.cyppieagents.auth.UserTier
 import com.tneff.cyppieagents.workspace.WorkspaceHttpRepository
 import com.tneff.cyppieagents.workspace.WorkspaceRepository
@@ -143,6 +144,7 @@ import coil3.ImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.tneff.cyppieagents.net.hub.HubTransport
+import com.tneff.cyppieagents.net.hub.pool.TunnelPoolState
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import kotlinx.coroutines.flow.StateFlow
 import com.tneff.cyppieagents.net.hub.TransportModeResolver
@@ -303,6 +305,12 @@ fun AgentShell(
     /** CYP-427/M2 Seam #8 — the operator-session TTL hint for the revoke dialog (seam-gated, CYP-459). `null` ⇒ the
      *  ≤TTL hint is absent (never an invented expiry). */
     remoteSessionTtl: String? = null,
+    /** CYP-540/M2 (WS5) — the live C3 [TunnelPoolState] emitter flow (per-tunnel DIALING/UP/BACKPRESSURED/DOWN +
+     *  the pool aggregate). `null` ⇒ the pool-status surface is INERT/absent (Local / pre-connect / no emitter — no
+     *  phantom "0/cap"). WS2 (Team-1) owns the real emitter; when it lands (via the handoff) the composition root
+     *  feeds it here. Default null = remote OFF stays byte-identical. Consumed by [TunnelPoolStatusChrome],
+     *  co-located below [RemoteOperatingChrome]. */
+    tunnelPoolState: StateFlow<TunnelPoolState>? = null,
 ) {
     val cfg = remember { config ?: defaultShellConfig() }
 
@@ -395,14 +403,20 @@ fun AgentShell(
           // revoke; RECONNECTING → relay-drop banner (+ in-flight-uncertain); Local/LOST → absent. `remoteContext`
           // (hub name, present-iff CONNECTED) carries the B2/B3 copy; the flow drives the state.
           remoteContextBanner = {
-              RemoteOperatingChrome(
-                  hubName = remoteContext,
-                  sessionState = remoteSessionState,
-                  onEndSession = onRemoteEndSession,
-                  dataOverTunnel = remoteDataOverTunnel,
-                  pinned = remotePinned,
-                  ttl = remoteSessionTtl,
-              )
+              Column {
+                  RemoteOperatingChrome(
+                      hubName = remoteContext,
+                      sessionState = remoteSessionState,
+                      onEndSession = onRemoteEndSession,
+                      dataOverTunnel = remoteDataOverTunnel,
+                      pinned = remotePinned,
+                      ttl = remoteSessionTtl,
+                  )
+                  // CYP-540/M2 (WS5): the per-tunnel pool-status surface, co-located BELOW the operating chrome
+                  // (ONE surface, per-tunnel rows inside — not N per-agent chips). INERT/absent until the WS2
+                  // emitter feeds `tunnelPoolState` (remote OFF stays byte-identical).
+                  TunnelPoolStatusChrome(poolState = tunnelPoolState)
+              }
           },
           // CYP-268 R3 theme toggle + CYP-387 input-history size stepper — both personal, ungated, non-project
           // preferences ride the bar's trailing slot together.

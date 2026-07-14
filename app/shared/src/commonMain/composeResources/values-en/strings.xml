@@ -737,4 +737,14 @@
     <string name="remote_connect_trust_reject">Doesn't match — abort</string>
     <string name="remote_connect_trust_aborted">Not connected — identity not confirmed.</string>
     <string name="remote_connect_trust_changed_repin">Re-pin only after an out-of-band comparison of the new fingerprint.</string>
+
+    <!-- CYP-540 (WS5): N-tunnel pool status chrome (per-tunnel state + aggregate). EN derived from the frozen DE spec §8 (Dev5-derived, flagged to UIUX2 for ratification). -->
+    <string name="tunnel_pool_state_dialing">Connecting…</string>
+    <string name="tunnel_pool_state_up">Connected</string>
+    <string name="tunnel_pool_state_backpressured">Throttled</string>
+    <string name="tunnel_pool_state_down">Disconnected</string>
+    <string name="tunnel_pool_aggregate">%1$d of %2$d tunnels active</string>
+    <string name="tunnel_pool_aggregate_backpressured">throttled</string>
+    <string name="a11y_tunnel_pool_row">Tunnel %1$s: %2$s</string>
+    <string name="a11y_tunnel_pool_aggregate">Pool: %1$d of %2$d active%3$s</string>
 </resources>
