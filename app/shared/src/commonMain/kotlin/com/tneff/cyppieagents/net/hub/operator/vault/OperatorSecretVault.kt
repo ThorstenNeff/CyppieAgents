@@ -65,7 +65,7 @@ class OperatorSecretVault(
         val nonce = aead.randomBytes(NONCE_LEN)
         val kek = kdf.deriveKek(passphrase, salt, params)
         try {
-            val aad = aad(VAULT_VERSION, salt, params, x509Pub)
+            val aad = aad(VAULT_VERSION, salt, nonce, params, x509Pub)
             val sealed = aead.seal(kek, nonce, privKeyPkcs8, aad)
             writeBlob(
                 VaultBlob(
@@ -96,7 +96,7 @@ class OperatorSecretVault(
 
         val kek = kdf.deriveKek(passphrase, blob.salt.unb64(), blob.paramsOf())
         val priv = try {
-            aead.open(kek, blob.nonce.unb64(), blob.sealed.unb64(), aad(blob.v, blob.salt.unb64(), blob.paramsOf(), blob.x509Pub()))
+            aead.open(kek, blob.nonce.unb64(), blob.sealed.unb64(), aad(blob.v, blob.salt.unb64(), blob.nonce.unb64(), blob.paramsOf(), blob.x509Pub()))
         } finally {
             kek.fill(0) // H-1
         }
@@ -145,10 +145,12 @@ class OperatorSecretVault(
         const val SALT_LEN = 16
         const val NONCE_LEN = 12
 
-        /** H-2: bind the immutable context into the AEAD AAD so a sealed blob can't be transplanted across params/installs. */
-        fun aad(version: Int, salt: ByteArray, params: Argon2Params, x509Pub: ByteArray): ByteArray =
-            ("v$version|m${params.memoryKiB}|t${params.iterations}|p${params.parallelism}|").encodeToByteArray() +
-                salt + x509Pub
+        /** H-2 / F-#2: bind the immutable context into the AEAD AAD so a sealed blob can't be transplanted across
+         *  params/installs. The **nonce** is included (5-field: version‖params‖salt‖nonce‖pub) — AES-GCM already binds
+         *  the nonce inherently (J0/tag), so this is belt-and-suspenders matching the ratified 5-field wording. */
+        fun aad(version: Int, salt: ByteArray, nonce: ByteArray, params: Argon2Params, x509Pub: ByteArray): ByteArray =
+            ("v$version|m${params.memoryKiB}|t${params.iterations}|p${params.parallelism}|n").encodeToByteArray() +
+                salt + nonce + x509Pub
     }
 }
 
