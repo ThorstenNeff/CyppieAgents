@@ -54,6 +54,13 @@ class OperatorSecretVault(
      * state. The caller MUST have UI-enforced the ② passphrase floor. Zeroizes the KEK. Does NOT hold the private key.
      */
     fun enroll(passphrase: CharArray, privKeyPkcs8: ByteArray, x509Pub: ByteArray) {
+        // F-#4 (Reviewer, HIGH) — CORE enforcement, not only UI: the ② floor + #3 blocklist are enforced HERE, at the
+        // single seal choke-point through which ALL paths run (first-enroll, change-passphrase, migration). A weak /
+        // blocklisted passphrase is REFUSED fail-closed (nothing sealed) — a test / headless / future-orchestrator /
+        // bug can never bypass the strength control. The UI gate stays (UX); this is the non-bypassable enforcement.
+        require(PassphraseStrength.verdict(passphrase, CredentialPolicy.SOFTWARE_MIN_ENTROPY_BITS) == StrengthVerdict.OK) {
+            "operator passphrase is below the enroll floor or is blocklisted — refused (fail-closed core enforcement)"
+        }
         val salt = aead.randomBytes(SALT_LEN)
         val nonce = aead.randomBytes(NONCE_LEN)
         val kek = kdf.deriveKek(passphrase, salt, params)

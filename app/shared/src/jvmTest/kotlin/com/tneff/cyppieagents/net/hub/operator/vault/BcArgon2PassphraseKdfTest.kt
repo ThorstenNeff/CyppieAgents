@@ -36,6 +36,18 @@ class BcArgon2PassphraseKdfTest {
     }
 
     @Test
+    fun goldenKat_pinsArgon2idIdentityAndParams() {
+        // F-A1 (Reviewer, HIGH): a byte-exact known-answer for FIXED (passphrase, salt, m=65536/t=3/p=1). Pins the
+        // Argon2**id** variant + VERSION_13 + params — an algorithm/param drift (_id→_i, _13→_10, m/t/p change) yields
+        // a different KEK ⇒ this reds where the determinism/round-trip teeth stay green.
+        val salt = ByteArray(16) { 0x2a } // fixed 0x2a*16
+        val kek = kdf.deriveKek("cyppie-argon2id-kat-vector".toCharArray(), salt, Argon2Params.FROZEN)
+        val hex = kek.joinToString("") { ((it.toInt() and 0xff) + 0x100).toString(16).substring(1) }
+        // Argon2id / VERSION_13 / m=65536,t=3,p=1 / salt=0x2a*16 / pw="cyppie-argon2id-kat-vector" / 32-byte tag.
+        assertEquals("43e0407c9e3812fd0afd467530e9d243c41e49fed4acba393317dc9af483280f", hex, "golden KAT — pins the Argon2id variant + params (drift-detecting)")
+    }
+
+    @Test
     fun frozenParams_runAtRealCost_produceAKek() {
         // Not a perf assertion — proof the ratified floor (m≥64 MiB, t≥3, p=1) actually runs + yields a 32-byte KEK.
         val kek = kdf.deriveKek("a-strong-64-bit-passphrase-xyz".toCharArray(), ByteArray(16) { 9 }, Argon2Params.FROZEN)

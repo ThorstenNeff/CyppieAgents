@@ -4,6 +4,7 @@ import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -38,12 +39,22 @@ class OperatorSecretVaultTest {
     fun enroll_thenOpen_roundtrips_returnsThePrivKey() {
         val store = MemStore(); val v = vault(store)
         assertEquals(VaultState.Missing, v.state())
-        v.enroll("correct horse battery staple".toCharArray(), priv, pub)
+        v.enroll("Zephyr7!mQ anchor-mint Kx9vB".toCharArray(), priv, pub)
         assertEquals(VaultState.Enrolled, v.state())
         assertContentEquals(pub, v.devicePublicKey())
-        val open = v.open("correct horse battery staple".toCharArray())
+        val open = v.open("Zephyr7!mQ anchor-mint Kx9vB".toCharArray())
         assertIs<VaultOpen.Unlocked>(open)
         assertContentEquals(priv, open.privKeyPkcs8, "the correct passphrase decrypts the exact enrolled key")
+    }
+
+    @Test
+    fun enroll_refusesWeakOrBlocklistedPassphrase_coreEnforcement_failClosed() {
+        // F-#4 (HIGH): the ② floor + #3 blocklist are enforced at the CORE, not only the UI — a below-floor or
+        // blocklisted passphrase is REFUSED fail-closed (nothing sealed), so no headless/test/bug path can bypass it.
+        val store = MemStore(); val v = vault(store)
+        assertFailsWith<IllegalArgumentException> { v.enroll("hunter2".toCharArray(), priv, pub) } // structurally too weak
+        assertFailsWith<IllegalArgumentException> { v.enroll("correct horse battery staple".toCharArray(), priv, pub) } // blocklisted (famous)
+        assertEquals(VaultState.Missing, v.state(), "a refused enroll seals NOTHING (fail-closed)")
     }
 
     @Test
@@ -89,10 +100,10 @@ class OperatorSecretVaultTest {
     @Test
     fun lockout_resetsOnlyOnSuccess() {
         val store = MemStore(); val v = vault(store, maxAttempts = 3)
-        v.enroll("real".toCharArray(), priv, pub)
+        v.enroll("Basalt5#harbor Qw2nV zephyr".toCharArray(), priv, pub)
         assertIs<VaultOpen.WrongPassphrase>(v.open("bad".toCharArray()))
         assertIs<VaultOpen.WrongPassphrase>(v.open("bad".toCharArray())) // 2 failures (below max)
-        assertIs<VaultOpen.Unlocked>(v.open("real".toCharArray()))       // success resets the counter
+        assertIs<VaultOpen.Unlocked>(v.open("Basalt5#harbor Qw2nV zephyr".toCharArray()))       // success resets the counter
         // The counter is back to 0 → it takes the full maxAttempts again to lock (not 1 more): 2 wrongs stay
         // WrongPassphrase, only the 3rd re-locks (proving the reset happened).
         assertIs<VaultOpen.WrongPassphrase>(v.open("bad".toCharArray()))

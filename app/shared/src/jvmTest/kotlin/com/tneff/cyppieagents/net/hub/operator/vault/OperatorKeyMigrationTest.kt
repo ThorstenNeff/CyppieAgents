@@ -69,7 +69,7 @@ class OperatorKeyMigrationTest {
         val store = MemStore()
         val v = vault(store, faultyAead)
         val custody = FakeCustody(realKey())
-        val outcome = OperatorKeyMigration(custody, v).migrateIfNeeded("pass-64bit".toCharArray())
+        val outcome = OperatorKeyMigration(custody, v).migrateIfNeeded("Basalt5#harbor Qw2nV zephyr".toCharArray())
 
         assertIs<OperatorKeyMigration.Outcome.Failed>(outcome)
         assertTrue(!custody.deleted, "a re-seal that does not verify NEVER deletes the plaintext (no silent key loss)")
