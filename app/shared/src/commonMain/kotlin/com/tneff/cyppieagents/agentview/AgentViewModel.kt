@@ -2,15 +2,21 @@ package com.tneff.cyppieagents.agentview
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tneff.cyppieagents.comm.ConnectionStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -20,6 +26,51 @@ import kotlinx.coroutines.launch
  *  produces neither a terminal lifecycle event nor a synchronous failure within this window, the flag falls back to
  *  the last resolved state — a stuck spinner can't outlive a real spawn (spawns confirm in seconds). */
 const val START_PENDING_TIMEOUT_MS: Long = 30_000L
+
+/**
+ * CYP-573 — the flicker-guard window before a lost connection degrades the header status dot to
+ * [AgentLifecycleState.UNKNOWN]. Coupled to the WS reconnect [com.tneff.cyppieagents.net.Backoff]
+ * (250ms → ×2 → 5s cap): 3s spans ~three failed backoff rungs (250+500+1000+2000 ≈ 3.75s cumulative), so a
+ * normal fast reconnect (one rung, ≤~500ms) returns to LIVE far inside this window and NEVER flips the dot —
+ * only a genuinely SUSTAINED outage (multiple failed reconnects) degrades it. The `reconnecting` chip covers
+ * the interim (Dot + Chip complementary — both read the agent session's connection, the window's single
+ * freshness proxy, CYP-204).
+ */
+const val SUSTAINED_DISCONNECT_MS: Long = 3_000L
+
+/**
+ * CYP-573 — connection-gate the displayed lifecycle state. The server-reported [lifecycle] state is only FRESH
+ * while the agent session is [ConnectionStatus.LIVE]; on a real hub/server restart the mediated session AND
+ * `/ws/lifecycle` drop together, so a disconnected session ⇒ the last lifecycle value is STALE (the CYP-573
+ * defect: a stopped agent's dot frozen on "RUNNING" across the reconnect gap).
+ *
+ * Fail-honest, not fail-eager: while not LIVE the last-known state is HELD through the flicker-guard window
+ * ([sustainedDisconnectMs]); a sub-second blip returns to LIVE and [flatMapLatest] cancels the pending degrade
+ * before it fires (no flicker). Only a SUSTAINED non-LIVE emits [AgentLifecycleState.UNKNOWN] — reusing the
+ * existing honest "no confirmed state" vocabulary (the CYP-396 ring), never inventing a state. On reconnect the
+ * fresh server state replaces UNKNOWN. A raw state already [AgentLifecycleState.UNKNOWN] needs no gate.
+ *
+ * Pure (no ViewModel / no `viewModelScope`) on purpose, so the load-bearing logic is unit-tested on virtual time
+ * (Cyp573ConnectionGatedDotTest) instead of a suite-hanging `setMain` VM drive (cf. ProjectVmStoreManagerTest KDoc).
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun connectionGatedLifecycle(
+    lifecycle: Flow<AgentLifecycleState>,
+    connection: Flow<ConnectionStatus>,
+    sustainedDisconnectMs: Long,
+): Flow<AgentLifecycleState> =
+    combine(lifecycle, connection) { state, conn -> state to conn }
+        .flatMapLatest { (state, conn) ->
+            if (conn == ConnectionStatus.LIVE || state == AgentLifecycleState.UNKNOWN) {
+                flowOf(state) // fresh (LIVE) or already the honest unknown — no gate
+            } else {
+                flow {
+                    emit(state)                         // grace: hold the last-known state (flicker-guard)
+                    delay(sustainedDisconnectMs)        // a blip flips back to LIVE and cancels this branch
+                    emit(AgentLifecycleState.UNKNOWN)   // sustained non-LIVE ⇒ honest UNKNOWN (the CYP-573 fix)
+                }
+            }
+        }
 
 /**
  * CYP-333: which view the agent window renders in its content rectangle. A **client view-selection** — NOT the
@@ -57,6 +108,9 @@ class AgentViewModel(
     /** CYP-262 T1 robustness: watchdog window for the "Startet…" transient (see [START_PENDING_TIMEOUT_MS]).
      *  Injectable so tests can drive the fallback with a tiny value. */
     private val startPendingTimeoutMs: Long = START_PENDING_TIMEOUT_MS,
+    /** CYP-573: flicker-guard window before a sustained disconnect degrades the status dot to UNKNOWN (see
+     *  [SUSTAINED_DISCONNECT_MS]). Injectable so a render test can make the gate deterministic (0 ⇒ immediate). */
+    private val sustainedDisconnectMs: Long = SUSTAINED_DISCONNECT_MS,
     /** CYP-335: the wall clock for the two rows that are BORN here rather than arriving on the wire — the
      *  composer's [AgentEvent.UserTurn] echo and the `conn-error` [AgentEvent.Notice]. Injected (never a clock
      *  call inside the VM body) so a test can fake it and assert a deterministic timestamp. Every other row is
@@ -226,6 +280,17 @@ class AgentViewModel(
                 emit(event.state)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, AgentLifecycleState.UNKNOWN)
+
+    /**
+     * CYP-573 — the CONNECTION-GATED lifecycle state that drives the header status DOT. The **controls** keep the
+     * raw [lifecycleState] (their enablement is a separate concern); only the DOT is gated, so a sustained
+     * disconnect degrades it to UNKNOWN and it never asserts a stale "RUNNING" for a stopped agent across a
+     * reconnect gap. Fresh server state while LIVE; UNKNOWN only on SUSTAINED non-LIVE — the flicker-guard and the
+     * complementary `reconnecting` chip live in [connectionGatedLifecycle].
+     */
+    val displayLifecycleState: StateFlow<AgentLifecycleState> =
+        connectionGatedLifecycle(lifecycleState, connection, sustainedDisconnectMs)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, AgentLifecycleState.UNKNOWN)
 
     /**
      * Agent overall status (CYP-12 "Ebene B") derived from the transcript. WAITING_FOR_INPUT /

@@ -197,6 +197,9 @@ fun AgentWindow(
 ) {
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
+    // CYP-573: the DOT reads the connection-gated state (stale "RUNNING" degrades to UNKNOWN on a sustained
+    // disconnect); the CONTROLS below keep the raw [lifecycleState] (their enablement is a separate concern).
+    val dotLifecycle by viewModel.displayLifecycleState.collectAsState()
     val startPending by viewModel.startPending.collectAsState()
     val restartPending by viewModel.restartPending.collectAsState()
     val lifecycleError by viewModel.lifecycleError.collectAsState()
@@ -228,6 +231,7 @@ fun AgentWindow(
         AgentHeader(
             agentId = agentId,
             state = lifecycle,
+            dotState = dotLifecycle, // CYP-573: connection-gated state for the status dot only
             startPending = startPending,
             restartPending = restartPending,
             connection = connection,
@@ -456,6 +460,9 @@ private fun AgentHeader(
     agentId: String,
     state: AgentLifecycleState,
     canControl: Boolean,
+    /** CYP-573: connection-gated state for the status DOT (UNKNOWN on a sustained disconnect). The controls use the
+     *  raw [state]. Defaults to [state] so callers/tests that don't gate see the unchanged dot=controls behaviour. */
+    dotState: AgentLifecycleState = state,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
@@ -501,7 +508,7 @@ private fun AgentHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatusIndicator(agentId, state, startPending, restartPending)
+                StatusIndicator(agentId, dotState, startPending, restartPending) // CYP-573: dotState is connection-gated
                 // CYP-204: reconnecting indicator — present ONLY while the per-agent WS is not LIVE (the adapter is
                 // auto-reconnecting from the seq cursor; on reconnect the server replays the history gapless). Its OWN
                 // axis, next to but distinct from the lifecycle status (process state ≠ socket state).
