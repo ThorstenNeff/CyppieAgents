@@ -1,0 +1,78 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "ticket": "CYP-542 (Phase A/B1, Epic CYP-427) — Remote UV-Flow B1 net-new UI-Elemente (Visual/M3)",
+    "version": "1.0-visual-spec",
+    "status": "Visual-Spec ratifikations-reif. Keep-busy bis §-QA. docs-only, nichts gebaut. Erweitert CYP-460 (desktop-remote-operator-tokens.json) um die 4 net-new B1-Elemente. Begleit: remote-uv-flow-visual-spec.md + -{ux-spec,tags,keys,qa-checklist}.md.",
+    "brand": "CyppieAgents (Anti-Hype)",
+    "grounded_against": "develop eb705236; MaritimeTheme.kt (CYP-268 R1 + CYP-304 Night, WCAG-AA) + EventVisuals.kt (Severity-Ampel scheme-adaptiv), read-only.",
+    "reuse_first": "KEINE neue Farbe. Feld = AuthPasswordField (maskiert). Maritime-Rollen (primary/error/onSurface/onSurfaceVariant/outline/surfaceVariant) by name. WARN = severityColor(WARN)/warnContainer (EventVisuals). error-Ton = colorScheme.error (NICHT errorContainer, ausser terminal). tertiary/#40D6A0 NIE Status.",
+    "collision_split": "Non-colliding mit UIUX2: UIUX2 = Eingabe-Interaktion + a11y (Fokus/IME/Reveal-Verhalten, SR-Ansagen, Fokus-Reihenfolge). UIUX (ich) = visuelles Design (Farb-Rollen, Ton-Trennung, Layout, Typo, Meter-visuelle-Sprache, WCAG-Farbe+Glyph-Paarung).",
+    "color_is_never_sole_signal": "Jeder Zustand = Farbe + Glyph/Marker + Text-Label (WCAG 1.4.1). Meter-Level = Text (weak/fair/strong); TOO_WEAK = ▲; BLOCKLISTED = selbstbeschreibende Copy; OK = 'Stark' (kein Gruen)."
+  },
+  "palette_ref": {
+    "primary_light": "#0A5AA0", "primary_dark": "#6FBEEA",
+    "error_light": "#B3261E", "error_dark": "#F2B8B5",
+    "warn_fg_light": "#9A6400", "warn_fg_dark": "#FFC857",
+    "warn_container_light": ["#FFE7B0", "#5A3D00"], "warn_container_dark": ["#4A3A10", "#FFC857"],
+    "onSurface_light": "#0C2635", "onSurface_dark": "#DCE7ED",
+    "onSurfaceVariant_light": "#3A4E5A", "onSurfaceVariant_dark": "#A6BECD",
+    "outline_light": "#6E8C9E", "outline_dark": "#57707F",
+    "surfaceVariant_light": "#E4EFF8", "surfaceVariant_dark": "#12242F",
+    "forbidden_status": "tertiary #40D6A0 (Signal-Gruen) = Brand-only, NIE Status (§9-Inv.1)",
+    "uiux_ratifies": "die WARN-Hex (#9A6400 light / #FFC857 dark) sind fuer diese Flaeche ratifiziert (EventVisuals-KDoc: UIUX ratifiziert exakte WARN-hex am §9)."
+  },
+  "semantic": {
+    "enroll.passphraseSuggested": {
+      "role": "Element 1a — generierte 6-Wort-Diceware, prominenter One-Click-Default (HG2, by-construction stark).",
+      "container": "surfaceVariant-Fill + outline-Rahmen 1dp, 12dp Radius, 16dp Padding",
+      "words": "bodyLarge monospace onSurface, wort-getrennt, selektierbar (Selektion/Copy = UIUX2)",
+      "label": "labelMedium onSurfaceVariant — 'Empfohlen' traegt der Text, nie Gruen",
+      "primary_action": "gefuellter primary-Button (onPrimary), volle Breite = staerkste Aktion",
+      "regenerate": "Text-/Outlined-Button primary = sekundaer",
+      "save_hint": "labelSmall onSurfaceVariant, neutral-informativ (KEIN WARN — Guidance, kein Downgrade)",
+      "label_keys": ["remote_pop_enroll_suggested", "remote_pop_enroll_suggest_use", "remote_pop_enroll_suggest", "remote_pop_enroll_suggested_save"],
+      "tags": ["remote.authStep.enrollSuggested", "remote.authStep.enrollSuggest"]
+    },
+    "enroll.typeOwn": {
+      "role": "Element 1b — sekundaerer type-your-own (leiser Text-Button), expandiert Feldpaar + Meter.",
+      "entry": "leiser Text-Button onSurfaceVariant/primary — 'Ausnahme, nicht Default'",
+      "fields": "Setz + Bestaetigung, reuse AuthPasswordField (Reveal = Text-Label, KEIN Emoji; Reveal-Interaktion/a11y = UIUX2)",
+      "label_keys": ["remote_pop_enroll_type_own", "remote_pop_enroll_passphrase", "remote_pop_enroll_passphrase_confirm"],
+      "tags": ["remote.authStep.enrollTypeOwn", "remote.authStep.enrollPinConfirm"]
+    },
+    "enroll.strengthMeter": {
+      "role": "Element 2 — Strength-Meter (nur type-your-own) + 3 Verdict-States. Track surfaceVariant 6dp rounded, Fill proportional primary.",
+      "verdict.OK": "Floor ∧ !blocklist. Fill primary bis 'stark'. Label 'Stark' onSurfaceVariant/primary. KEIN Alarm-Glyph, KEIN Gruen. Affirmativ-neutral.",
+      "verdict.TOO_WEAK": "< Entropie-Floor. Fill primary proportional (klein). Verdict-Zeile WARN-Amber severityColor(WARN) + ▲ + remote_pop_enroll_too_weak. Advisory.",
+      "verdict.BLOCKLISTED": "auf Blocklist (unabh. Laenge). ★ Fill GEDAeMPFT outline/neutral — NICHT voll/stark (Optik luegt nie 'stark'; H1 anti-Konflation). Verdict-Zeile error-Ton colorScheme.error + remote_pop_enroll_blocklisted. Haerterer Reject.",
+      "tone_separation": "OK=primary/neutral · TOO_WEAK=WARN-Amber+▲ · BLOCKLISTED=error-Ton. Jeder Text-Label (1.4.1). Keiner errorContainer, keiner tertiary-Gruen.",
+      "label_keys": ["remote_pop_strength_weak", "remote_pop_strength_fair", "remote_pop_strength_strong", "remote_pop_enroll_strength_hint", "remote_pop_enroll_too_weak", "remote_pop_enroll_blocklisted"],
+      "tags": ["remote.authStep.enrollStrength", "remote.authStep.enrollError.tooWeak", "remote.authStep.enrollError.blocklisted"]
+    },
+    "enroll.blocklistedError": {
+      "role": "Element 3 — Blocklisted-Fehler-Praesentation (neue ehrliche Copy visuell verankert).",
+      "copy": "bodySmall colorScheme.error-Ton (NICHT errorContainer). Feld isError=true (error-Outline), Fehlerzeile direkt darunter = eine retryable Einheit; Feld bleibt aktiv.",
+      "tone_ladder": "WARN-Amber (too_weak, advisory) < error-Ton (blocklisted, retryable reject) < errorContainer (terminal Hub-Reject, NICHT im Enroll). Farbe folgt der Ursache; enrollError.blocklisted ≠ tooWeak.",
+      "wcag": "Copy selbstbeschreibend (sagt warum) -> Farbe nie alleiniger Traeger. Kein Enumeration-Oracle (Enroll=eigenes Secret; CYP-543 nur Auth-Pfad).",
+      "label_key": "remote_pop_enroll_blocklisted",
+      "tag": "remote.authStep.enrollError.blocklisted"
+    },
+    "enroll.autoContinue": {
+      "role": "Element 4 — Auto-Weiterlauf Enroll->AUTHENTICATING (G2), sichtbar, kein toter Moment.",
+      "visual": "Enroll-Karte weicht kontinuierlich; CircularProgressIndicator primary auf surface + remote_connect_authenticating (bodyMedium onSurfaceVariant). KEIN Erfolgs-Gruen, KEIN Fake-Success — Zustand = verifying, nicht granted.",
+      "uv_coverage": "falls Fensterung greift: remote_pop_uv_coverage neutral onSurfaceVariant (optional ⓘ) — kein 2. Prompt (in-hand-Passphrase = erste UV, DecryptedKeyHold = Dev-Mechanik).",
+      "granted": "weiter zur Hub-Liste OHNE Erfolgs-Gruen. Fokus-Uebergabe/SR = UIUX2.",
+      "label_keys": ["remote_connect_authenticating", "remote_pop_uv_coverage"],
+      "tags": ["remote.connect.authenticating", "remote.authStep.uvCoverage"]
+    }
+  },
+  "axes_separation": {
+    "role": "VERBINDLICH: getrennte Wahrheiten, nie ineinander gefaerbt/gelesen.",
+    "strength_vs_blocklist": "strukturelle Entropie (Meter-Fill) != Blocklist-Urteil; bei Konflikt folgt die Optik dem strengeren (BLOCKLISTED daempft den Fill) (H1).",
+    "advisory_vs_reject": "too_weak = WARN-Amber advisory (noch nicht stark genug) != blocklisted = error-Ton retryable reject (andere waehlen).",
+    "retryable_vs_terminal": "alle Enroll-Fehler retryable (error-Ton/WARN, Feld aktiv) != terminal Hub-Reject (errorContainer, nur Auth-Zeit).",
+    "verifying_vs_granted": "Auto-Weiterlauf zeigt 'verifying' (neutral), nie ein Fake-'granted'-Gruen.",
+    "rule": "Farbe nie alleiniger Traeger (1.4.1); tertiary/#40D6A0 NIE Status; WARN-Amber nur advisory-Downgrade; error-Ton retryable-Reject; errorContainer nur terminal."
+  }
+}

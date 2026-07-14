@@ -157,10 +157,11 @@ Wo verfügbar (macOS Touch-ID / Windows Hello): **Enhancement über dem Credenti
 ## 6. Maritim + M3
 - **Neutrale Fakten** (Pfad-Hinweis, Coverage, Setz/Bestätigen-Felder): `onSurfaceVariant`/`onSurface`, kein Statusfarbton.
 - **Strength-Meter:** Level trägt **Text-Label** (`_weak`/`_fair`/`_strong`) — Farbe nie alleiniger Träger (WCAG 1.4.1).
-- **WARN-Downgrade** (Session-only): `severityColor(Severity.WARN)` + separater `▲`-Node — nie Fehler-Rot, nie
-  `tertiary`-Grün.
-- **Lokaler Fehler** (mismatch/tooShort/tooWeak/wrongPin/lockout): `colorScheme.error`-Ton, **nicht** `errorContainer`
-  (retryable, nicht „broken").
+- **WARN-Downgrade / advisory** (Session-only · **`tooWeak` „noch nicht stark genug"**): `severityColor(Severity.WARN)` +
+  separater `▲`-Node — nie Fehler-Rot, nie `tertiary`-Grün. (Ton-Trennung der Meter-Verdicts: Detail in `remote-uv-flow-visual-spec.md`.)
+- **Lokaler Fehler / retryable Reject** (mismatch/tooShort/**blocklisted**/wrongPin/lockout): `colorScheme.error`-Ton,
+  **nicht** `errorContainer` (retryable, nicht „broken"). **`blocklisted`** ist der härtere error-Ton-Reject ≠ dem
+  advisory WARN-Amber `tooWeak` (visuelle Ton-Trennung, PO-Anker; Meter-Fill bei blocklisted gedämpft, lügt nie „stark").
 - **Terminal** (Hub-Reject): `errorContainer` (die einzige „broken"-Fläche).
 - **Affirmativ** (granted): neutral weiter, **kein** Erfolgs-Grün. Farbe nie alleiniger Träger (Label + Glyph + Tag).
 
