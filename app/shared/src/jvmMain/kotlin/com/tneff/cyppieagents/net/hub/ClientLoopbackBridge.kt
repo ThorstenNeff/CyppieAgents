@@ -96,11 +96,20 @@ class ClientLoopbackBridge(private val loopbackHost: String = "127.0.0.1") {
         const val CHUNK = 16 * 1024
 
         /**
-         * CYP-535 (H7) — the per-tunnel, per-direction in-flight credit window: **≤8 frames** (`8 × CHUNK` =
-         * ≤128 KB/dir, ≤256 KB/tunnel bidirectional). Single-sourced here for the client bridge; the server
-         * `transport/LoopbackBridge` **mirrors** the same value on its own tunnel-send direction (the client/server
-         * bridge-mirror rule). The aggregate bound is this × [com.tneff.cyppieagents.net.hub.pool.TUNNEL_POOL_CAP]
-         * (H7 §5: per-tunnel independent windows, not a shared credit pool — no cross-tunnel head-of-line blocking).
+         * CYP-535 (H7) — the per-tunnel, per-direction in-flight credit window for THIS client bridge: **≤8 frames**
+         * (`8 × CHUNK` = ≤128 KB/dir, ≤256 KB/tunnel bidirectional) — an explicit `Channel(INFLIGHT_FRAMES)` window on
+         * the tunnel-send direction.
+         *
+         * **CYP-546 — the server `transport/LoopbackBridge` is ALSO bounded, but by a DIFFERENT (stricter) mechanism —
+         * NOT a mirrored ≤8 `Channel`** (this KDoc previously claimed it "mirrors the same value"; it does not). The
+         * server pump is a **synchronous inline `read → tunnel.send`** per direction (no `Channel(capacity)`), so it
+         * keeps at most **~1 CHUNK** in flight — it reads the next chunk only after the prior `send` returns, so
+         * send-suspend + the source socket's OS buffer are the backpressure. So neither bridge has an unbounded-buffer
+         * gap; they are bounded by different means (this explicit ≤8 window vs the server's structural ~1-CHUNK inline
+         * pump), not one shared value. (A `Cyp458LoopbackBridgeTest` refactor-guard pins the server's ~1-CHUNK bound.)
+         *
+         * The client aggregate bound is this × [com.tneff.cyppieagents.net.hub.pool.TUNNEL_POOL_CAP] (H7 §5:
+         * per-tunnel independent windows, not a shared credit pool — no cross-tunnel head-of-line blocking).
          */
         const val INFLIGHT_FRAMES = 8
     }
