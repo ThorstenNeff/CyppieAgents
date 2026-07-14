@@ -74,6 +74,7 @@ These seam **shapes** are frozen now so Team-2 starts immediately; the core team
 
 ### C3 — Per-tunnel status/observability (WS2 ↔ WS4 harness, WS5 UX)
 - **Frozen:** the transport emits a per-tunnel state stream `TunnelPoolState` = list of `{ rendezvousId, state ∈ {DIALING, UP, BACKPRESSURED, DOWN}, sinceTs }` + `aggregate { active, cap, anyBackpressured }`. WS5 renders it; WS4 asserts on it. WS2 owns the emitter; the **enum + shape are frozen here**.
+- **Placement (FROZEN requirement — the type has TWO cross-host consumers building fakes now):** `TunnelPoolState` MUST be importable by BOTH `:e2e` (Tester2/WS4 fake→real graduation) AND `app/shared` commonMain (Dev5/WS5 chrome, CYP-540). Place it in a commonly-depended source set — **NOT test-only, NOT a non-importable module.** Recommended: `app/shared` commonMain (chrome lives there; `:e2e` depends on `app/shared`), or a lower shared module (`:core`/`:protocol`) if cleaner. **WS2 (Dev) sets the final placement + reports it → PO relays to Tester2 + Dev5** so both fakes swap to the real type without rework.
 
 ### C4 — Rendezvous allocation (WS1 relay/hub ↔ WS2 client dial)
 > **Reconciled with the live `LiveRelayRendezvous` / CYP-507 model** (ids are CP-epoch-derived, the epoch never leaves the CP → "client-allocated" was wrong; a literal reading would either leak the epoch-secret or need a new tunnel-0 control channel).
