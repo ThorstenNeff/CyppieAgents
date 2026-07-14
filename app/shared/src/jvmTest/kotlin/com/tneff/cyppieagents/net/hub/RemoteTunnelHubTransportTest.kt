@@ -1,11 +1,14 @@
 package com.tneff.cyppieagents.net.hub
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -125,6 +128,43 @@ class RemoteTunnelHubTransportTest {
         val scope = CoroutineScope(Dispatchers.IO)
         val t = transport(FakeTunnel(), FakeAcceptor(port = 9100), scope, token = null)
         assertNull(t.sessionToken(), "no injected session ⇒ null, never a hardcoded/static god-token")
+        t.close(); scope.cancel()
+    }
+
+    /** A long-lived connection: signals it has started being pumped, then its read blocks forever (like a live WS that
+     *  never closes). Used to prove N pumps run CONCURRENTLY through the real accept-loop. */
+    private class LongLivedConn(private val onPumpStarted: () -> Unit) : BridgeConn {
+        private val hold = CompletableDeferred<Unit>() // never completed → read suspends forever (until cancelled)
+        override suspend fun read(buf: ByteArray): Int {
+            onPumpStarted() // the pump's upstream reader reached this connection → it is being served
+            hold.await()    // block like a live, open WS
+            return -1
+        }
+        override suspend fun write(bytes: ByteArray) {}
+        override fun reset() {}
+    }
+
+    @Test
+    fun acceptLoop_servesNConnectionsConcurrently_notSingleFlight_CYP556() = runBlocking {
+        // CYP-556 fidelity: the WS4 harness proved the pool/dialer; THIS proves the REAL accept-loop serves N
+        // long-lived connections CONCURRENTLY (per-connection coroutine), not single-flight. Mutant: revert the
+        // accept-loop to an inline `bridge.pump(...)` ⇒ only the 1st connection is ever pumped (the loop suspends
+        // at the inline pump and never accepts the rest) ⇒ `started` stalls at 1 ⇒ this times out ⇒ RED (= the
+        // F-M2-1 regression this fix closes).
+        val n = 4
+        val started = AtomicInteger(0)
+        val allStarted = CompletableDeferred<Unit>()
+        val conns = (0 until n).map { LongLivedConn { if (started.incrementAndGet() == n) allStarted.complete(Unit) } }
+        val scope = CoroutineScope(Dispatchers.IO)
+        val t = RemoteTunnelHubTransport(
+            tunnelSource = { FakeTunnel() }, // a fresh (distinct) tunnel per connection, like PooledTunnelSource
+            sessionTokenProvider = { "cp-ticket" },
+            scope = scope,
+            acceptor = FakeAcceptor(port = 9200, conns = conns),
+            injectedClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO),
+        )
+        withTimeout(5_000) { allStarted.await() } // all N pumped at once ⇒ completes; single-flight ⇒ times out (RED)
+        assertEquals(n, started.get(), "all N accepted connections are pumped CONCURRENTLY (per-connection, not single-flight)")
         t.close(); scope.cancel()
     }
 

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -21,11 +22,12 @@ import java.net.Socket
  * [ClientLoopbackBridge] pumps the socket bytes ↔ the [NoiseTunnel] (the CR3-① datapath). No new engine, no mux — the hub
  * HTTP/1.1(+WS) runs over the tunnel like HTTP over TLS (`NoiseTunnel` KDoc, RR8).
  *
- * **Concurrency (single-flight, by design):** a `NoiseTunnel` is ONE ordered duplex stream = ONE connection (no mux, RR8).
- * The accept-loop carries one connection per tunnel via the [TunnelSource] seam. Phase-1 (this thru-cut) sources the ONE
- * authenticated session tunnel → proves the datapath end-to-end for a single connection. The concurrent multi-agent
- * workspace (many live WS) is the **N-tunnel follow-on**: [TunnelSource] dials a fresh tunnel per connection (Backend
- * gate: the Noise-Terminator must accept N per operator) — it plugs in here without touching the transport or the handoff.
+ * **Concurrency (per-connection, CYP-556):** a `NoiseTunnel` is ONE ordered duplex stream = ONE connection (no mux, RR8).
+ * The accept-loop handles **each** accepted connection in its **own coroutine** — `accept()` is the only serial step;
+ * the per-connection `acquire()`+`pump()` run concurrently, so N live workspace WS are served over N distinct tunnels
+ * from the pooling [TunnelSource] **without the accept-loop serializing them**. This is the F-M2-1 fix: an *inline* pump
+ * would block the loop on the first connection until it ends, serializing every other WS behind it (the workspace hang).
+ * The pool ([TunnelSource]) dials a fresh tunnel per connection (Backend gate: the Noise-Terminator accepts N per operator).
  *
  * **Ownership:** the transport owns the [acceptor] + (unless injected) the [httpClient]; it does NOT own the tunnels
  * (those are [com.tneff.cyppieagents.net.hub.remote.RemoteHubSession]'s — Seam-3 lifecycle, incl. relay-drop re-bind).
@@ -48,16 +50,40 @@ class RemoteTunnelHubTransport(
 
     override fun sessionToken(): String? = sessionTokenProvider()
 
-    /** The accept-loop: one connection at a time (single-flight, no mux) over a tunnel from [tunnelSource]. */
+    /**
+     * The accept-loop. **`accept()` is the only serial step**; each accepted connection is handled in its **own child
+     * coroutine**, so N live workspace WS are served concurrently over N distinct tunnels (CYP-556 — an *inline* pump
+     * would block the loop on the first WS forever, serializing/hanging every other WS: F-M2-1).
+     *
+     * Concurrency decisions (CYP-556, per the Assist concurrency lens — deliberate + documented):
+     *  - **① α — `acquire()` runs INSIDE the per-connection `launch`** (concurrent), so it uses the pool's
+     *    purpose-built **off-lock dial** ([com.tneff.cyppieagents.net.hub.pool.PooledTunnelSource]) for true N-tunnel
+     *    concurrency + parallel startup. (β — serial `acquire()`, launch only the pump — has a smaller race surface
+     *    but under-uses the pool's concurrent dial and serializes startup.) α's concurrent-acquire race is made safe
+     *    by the pool's `reserveSlot` mutex (never over-issues past cap) + its `closed`-under-`liveLock` recheck (no
+     *    close-mid-dial leak) — both covered by the pool's race-interleaving teeth.
+     *  - **② [supervisorScope] + per-connection `try/finally`** — a failure in ONE pump cancels only ITS connection,
+     *    never the accept-loop or sibling pumps; the `finally` closes the (pooled) tunnel on ANY exit so an exception
+     *    frees its slot (idempotent). The children are children of THIS job → [close]'s `cancel()` tears them all down
+     *    together (no leak, no bytes after close — H4); they are NOT `scope.launch` (which would outlive `close()`).
+     */
     internal val acceptJob: Job = scope.launch(Dispatchers.IO) {
-        while (isActive) {
-            val conn = acceptor.accept() ?: break // acceptor closed → stop
-            val tunnel = tunnelSource.acquire()
-            if (tunnel == null) {
-                conn.reset() // no live tunnel ⇒ fail-closed (RST), never a plaintext/local fallback
-                continue
+        supervisorScope { // ②: an exception in one pump child never cancels the loop or its sibling pumps
+            while (isActive) {
+                val conn = acceptor.accept() ?: break // acceptor closed → stop (the ONLY serial step)
+                launch { // ①/②: per-connection — acquire + pump run concurrently; the loop immediately accepts the next
+                    val tunnel = tunnelSource.acquire()
+                    if (tunnel == null) {
+                        conn.reset() // no live tunnel ⇒ fail-closed (RST), never a plaintext/local fallback
+                    } else {
+                        try {
+                            bridge.pump(tunnel, conn) // carries this connection until either side ends (RR8, no mux)
+                        } finally {
+                            runCatching { tunnel.close() } // slot-release on ANY exit (idempotent; a pooled tunnel frees its slot)
+                        }
+                    }
+                }
             }
-            bridge.pump(tunnel, conn) // carries this connection until either side ends (RR8, no mux)
         }
     }
 

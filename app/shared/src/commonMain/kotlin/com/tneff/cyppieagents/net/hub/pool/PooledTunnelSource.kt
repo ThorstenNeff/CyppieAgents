@@ -72,14 +72,21 @@ class PooledTunnelSource(
             releaseSlot(rendezvousId) // fail-closed dial ⇒ drop the reservation (no phantom UP entry)
             return null
         }
-        if (closed) { // a teardown raced the dial — don't hand out a tunnel the pool won't track/close
-            runCatching { tunnel.close() }
-            releaseSlot(rendezvousId)
-            return null
-        }
-        markUp(rendezvousId)
         val wrapper = PooledNoiseTunnel(delegate = tunnel, rendezvousId = rendezvousId, pool = this)
-        liveLock.withLock { live[rendezvousId] = wrapper }
+        // CYP-556 H2: the post-dial `closed` recheck sits UNDER liveLock, atomic with the live-insert. The dial runs
+        // OFF-lock, so a concurrent [close] can set `closed` + snapshot/clear `live` in the window between a pre-insert
+        // check and the insert — that would leave THIS wrapper in `live` after close() already ran (a leaked, never
+        // torn-down tunnel). Doing the recheck + insert in one liveLock section closes that window: if a teardown
+        // raced the dial ⇒ close the tunnel + free the slot + hand out null; else mark UP and insert atomically.
+        liveLock.withLock {
+            if (closed) {
+                runCatching { tunnel.close() }
+                releaseSlot(rendezvousId)
+                return null
+            }
+            markUp(rendezvousId)
+            live[rendezvousId] = wrapper
+        }
         return wrapper
     }
 

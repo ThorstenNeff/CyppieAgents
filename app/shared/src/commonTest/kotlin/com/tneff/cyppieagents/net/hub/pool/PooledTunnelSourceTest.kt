@@ -1,9 +1,12 @@
 package com.tneff.cyppieagents.net.hub.pool
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -27,16 +30,20 @@ class PooledTunnelSourceTest {
         override suspend fun close() { closed = true }
     }
 
-    /** A fake dialer: [setIds] is the CP N-set; each [dial] mints a fresh [FakeTunnel] for the id (or `null` to fail). */
+    /** A fake dialer: [setIds] is the CP N-set; each [dial] mints a fresh [FakeTunnel] for the id (or `null` to fail).
+     *  [yieldInDial] yields inside the (off-lock) dial so concurrent acquires interleave — exercising the reserve gate
+     *  under real contention (CYP-556 race teeth). */
     private class FakeDialer(
         private val setIds: List<String>?,
         private val failDial: Boolean = false,
+        private val yieldInDial: Boolean = false,
     ) : PoolTunnelDialer {
         val dialedIds = mutableListOf<String>()
         val minted = mutableListOf<FakeTunnel>()
         override suspend fun rendezvousSet(): List<String>? = setIds
         override suspend fun dial(rendezvousId: String): NoiseTunnel? {
             dialedIds.add(rendezvousId)
+            if (yieldInDial) yield() // let sibling acquires reserve/interleave (the off-lock-dial window)
             if (failDial) return null
             return FakeTunnel(rendezvousId).also { minted.add(it) }
         }
@@ -131,6 +138,52 @@ class PooledTunnelSourceTest {
         p.close()
         assertTrue(dialer.minted.all { it.closed }, "close() tears down every underlying tunnel")
         assertNull(p.acquire(), "after close ⇒ inert (fail-closed)")
+    }
+
+    @Test
+    fun concurrentAcquire_atCap_neverExceedsCap_CYP556() = runTest {
+        // CYP-556 race-interleaving: the accept-loop now calls acquire() CONCURRENTLY (α). With N > cap concurrent
+        // acquires, the mutex-guarded reserveSlot must admit EXACTLY cap and fail-close the rest — never over-issue
+        // past cap. `yieldInDial` forces the reserves to interleave (reserve, yield, sibling reserves) so the gate is
+        // exercised under real contention. Mutant: drop `if (held.size >= cap) return null` ⇒ all N succeed ⇒ RED.
+        val cap = 4
+        val ids = (0 until 12).map { "id-$it" } // more ids than cap ⇒ the CAP is the limiter, not the set size
+        val dialer = FakeDialer(setIds = ids, yieldInDial = true)
+        val p = pool(dialer, cap = cap)
+        val results = (0 until 12).map { async { p.acquire() } }.awaitAll()
+        assertEquals(cap, results.count { it != null }, "exactly cap concurrent acquires succeed; the rest fail-closed — never > cap")
+        assertEquals(cap, p.state.value.aggregate.active, "live count == cap; never exceeded under concurrency")
+        assertTrue(p.state.value.tunnels.count { it.state != TunnelState.DOWN } <= cap, "no over-issue past cap")
+    }
+
+    @Test
+    fun closeDuringDial_doesNotLeakTheInFlightTunnel_CYP556() = runTest {
+        // CYP-556 H2: the dial runs OFF-lock, so a close() that races an in-flight dial must NOT leave the freshly
+        // dialed tunnel live (leaked, never torn down). The gate = the `closed` recheck UNDER liveLock, atomic with
+        // the insert. Mutant: remove that recheck (insert without re-checking closed) ⇒ the tunnel is inserted AFTER
+        // close() cleared `live` ⇒ live-but-never-closed ⇒ acquire returns it (not null) + it stays open ⇒ RED.
+        val gate = CompletableDeferred<Unit>()
+        val minted = mutableListOf<FakeTunnel>()
+        val dialer = object : PoolTunnelDialer {
+            override suspend fun rendezvousSet() = listOf("id-0")
+            override suspend fun dial(rendezvousId: String): NoiseTunnel? {
+                gate.await() // hold the dial in-flight (off-lock) until the test releases it — AFTER close()
+                return FakeTunnel(rendezvousId).also { minted.add(it) }
+            }
+        }
+        val p = pool(dialer, cap = 4)
+        val acq = async { p.acquire() } // suspends inside dial (awaiting `gate`)
+        advanceUntilIdle() // let `acq` reach the suspended dial
+        p.close() // teardown races the in-flight dial: closed=true; snapshot+clear live (still empty — not inserted yet)
+        gate.complete(Unit) // now the dial completes, POST-close
+        val result = acq.await()
+        assertNull(result, "a dial that completes AFTER close() hands out NULL (fail-closed), never a live tunnel")
+        assertEquals(1, minted.size, "the tunnel WAS dialed (the race is real)")
+        assertTrue(minted.single().closed, "the in-flight-dialed tunnel is CLOSED, not leaked, when close() raced the dial")
+        assertTrue(
+            p.state.value.tunnels.none { it.rendezvousId == "id-0" && it.state != TunnelState.DOWN },
+            "no live/dialing entry leaks for the raced id",
+        )
     }
 
     @Test
