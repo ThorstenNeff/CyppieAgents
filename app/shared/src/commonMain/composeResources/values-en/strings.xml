@@ -747,4 +747,29 @@
     <string name="tunnel_pool_aggregate_backpressured">throttled</string>
     <string name="a11y_tunnel_pool_row">Tunnel %1$s: %2$s</string>
     <string name="a11y_tunnel_pool_aggregate">Pool: %1$d of %2$d active%3$s</string>
+    <!-- CYP-542 (Phase A/B1) Remote UV/Enroll — net-new. UIUX-frozen, pull 1:1. -->
+    <string name="remote_pop_passphrase_title">Enter your app passphrase</string>
+    <string name="remote_pop_passphrase_body">Confirm with your app passphrase to access your hubs remotely.</string>
+    <string name="remote_pop_enroll_passphrase">Set an app passphrase</string>
+    <string name="remote_pop_enroll_passphrase_confirm">Confirm your app passphrase</string>
+    <string name="remote_pop_enroll_suggested">Recommended — 6 random words</string>
+    <string name="remote_pop_enroll_suggested_save">Save it securely — you'll need it every time you sign in.</string>
+    <string name="remote_pop_enroll_clipboard_notice">Copied to clipboard. Clear your clipboard after you've saved the passphrase.</string>
+    <string name="a11y_remote_pop_enroll_clipboard_notice">Copied to clipboard — clear your clipboard after saving.</string>
+    <string name="remote_pop_enroll_suggest_use">Use this passphrase</string>
+    <string name="remote_pop_enroll_suggest">Suggest another</string>
+    <string name="remote_pop_enroll_type_own">Type your own passphrase</string>
+    <string name="remote_pop_enroll_strength_hint">6 random words or at least 12 characters.</string>
+    <string name="remote_pop_enroll_too_weak">Passphrase too weak — 6 random words or 12+ characters.</string>
+    <string name="remote_pop_strength_weak">Weak</string>
+    <string name="remote_pop_strength_fair">Fair</string>
+    <string name="remote_pop_strength_strong">Strong</string>
+    <string name="remote_pop_enroll_confirm">Confirm your app PIN</string>
+    <string name="remote_pop_enroll_mismatch">Entries don't match — please re-enter.</string>
+    <string name="remote_pop_enroll_too_short">PIN too short — at least %1$s characters.</string>
+    <string name="remote_pop_enroll_blocklisted">This passphrase is too common — it's on a list of known-weak passphrases. Please choose another.</string>
+    <string name="remote_pop_uv_coverage">One confirmation authorizes the hubs you open now — not each one separately.</string>
+    <string name="a11y_remote_pop_uv_coverage">Note: one confirmation authorizes the hubs opened now.</string>
+    <string name="remote_pop_biometric_offer">%1$s available — set it up for faster confirmation?</string>
+    <string name="remote_pop_biometric_offer_fallback">Your app PIN/passphrase stays as a fallback.</string>
 </resources>
