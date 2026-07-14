@@ -25,3 +25,23 @@ class CachingRendezvousId(private val register: suspend () -> String?) {
 
     suspend fun invalidate() = mutex.withLock { cached = null }
 }
+
+/**
+ * CYP-536 (M2 Option A, WS1) — the N-tunnel analogue of [CachingRendezvousId]: caches the hub's rendezvous-id **SET**
+ * (the epoch-derived `[id_0..id_{cap-1}]`, C4 develop `889e6919`) so the N concurrent responders and their reconnect
+ * loops **reuse** the same set instead of re-registering. Same ANTI-ROTATION invariant: a re-register mints a fresh
+ * epoch → a different set → the client's already-resolved set would no longer pair. Register ONCE (the first
+ * successful [get]); reuse the cached set on every reconnect. A failed/empty register is never cached (the next
+ * attempt retries). Backs the [SessionRendezvousSource] seam.
+ */
+class CachingRendezvousIdSet(private val registerSet: suspend () -> List<String>?) {
+    private val mutex = Mutex()
+    private var cached: List<String>? = null
+
+    /** The cached set, registering ONCE on the first successful (non-null, non-empty) call; never caches null/empty. */
+    suspend fun get(): List<String>? = mutex.withLock {
+        cached ?: registerSet()?.takeIf { it.isNotEmpty() }?.also { cached = it }
+    }
+
+    suspend fun invalidate() = mutex.withLock { cached = null }
+}

@@ -24,6 +24,10 @@ import java.util.concurrent.ConcurrentHashMap
 class LiveRelayRendezvous(
     private val relayUrl: String?,
     private val epochBytes: Int = 16, // 128-bit CP-secret epoch
+    /** CYP-536 — the epoch-derived rendezvous SET size = the server-side per-operator tunnel CAP (C4/C5, WS6 axis 2).
+     *  register/resolve return exactly this many ids ⟹ ≤ `cap` distinct tunnels can pair per operator (structural DoS
+     *  floor). MUST be ≥ the client pool cap (C2). Single-sourced default [RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP]. */
+    private val cap: Int = RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP,
     private val randomBytes: (Int) -> ByteArray = { n -> ByteArray(n).also { SecureRandom().nextBytes(it) } },
 ) : RelayRendezvous {
 
@@ -34,14 +38,24 @@ class LiveRelayRendezvous(
         val url = relayUrl ?: return null // INERT: no live relay configured
         val epoch = randomBytes(epochBytes) // fresh per-registration epoch → rotates the id (unlinkable across regs)
         epochs[hubId] = epoch
-        return RendezvousBinding(RelayRendezvous.rendezvousId(hubId, epoch), url)
+        return bindingFor(hubId, epoch, url)
     }
 
     override fun resolve(hubId: String): RendezvousBinding? {
         val url = relayUrl ?: return null // INERT
         val epoch = epochs[hubId] ?: return null // never registered → no rendezvous
-        return RendezvousBinding(RelayRendezvous.rendezvousId(hubId, epoch), url)
+        return bindingFor(hubId, epoch, url)
     }
+
+    /** CYP-536 — `rendezvousId` = the legacy UNINDEXED base (== `rendezvousIds.first()`, single-tunnel unchanged);
+     *  `rendezvousIds` = the full epoch-derived N-set (base + indexed). Both derive from the SAME stored epoch, so
+     *  register and resolve return byte-identical ids for a hub. */
+    private fun bindingFor(hubId: String, epoch: ByteArray, url: String): RendezvousBinding =
+        RendezvousBinding(
+            rendezvousId = RelayRendezvous.rendezvousId(hubId, epoch),
+            relayUrl = url,
+            rendezvousIds = RelayRendezvous.rendezvousIdSet(hubId, epoch, cap),
+        )
 
     override fun isLive(): Boolean = relayUrl != null
 }
