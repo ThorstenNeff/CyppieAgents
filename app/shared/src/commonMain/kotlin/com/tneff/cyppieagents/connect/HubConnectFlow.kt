@@ -104,6 +104,11 @@ fun HubConnectFlow(
                 com.tneff.cyppieagents.net.hub.operator.ui.RecoveryCodesReveal(
                     codes = s.codes, onAcknowledged = viewModel::acknowledgeCodes,
                 )
+            // CYP-542 / B1 — the real operator UV surfaces. NOTE: minimal-but-wired placeholders; the full CYP-460
+            // dialog (secure CharArray field + strength meter + diceware reveal-reuse, render-oracle b03d4b7c) lands
+            // in the (a) commit which the PO arbiters on a clean render env. Behaviour is VM-driven + tested at (b).
+            is HubConnectUiState.PassphrasePrompt -> PassphrasePromptStep(viewModel)
+            is HubConnectUiState.SetPassphrase -> SetPassphraseStep(s, viewModel)
         }
     }
 }

@@ -1,5 +1,8 @@
 package com.tneff.cyppieagents.connect
 
+import com.tneff.cyppieagents.net.hub.operator.UvReason
+import com.tneff.cyppieagents.net.hub.operator.vault.EnrollOutcome
+
 /**
  * CYP-419 (S-L) — the hubConnect flow state (spec §4–§6). Seq A (first-start register) and Seq B (hub selection +
  * connect) share this one machine; the entry [start][HubConnectViewModel.start] routes by whether the hub list is
@@ -56,10 +59,35 @@ sealed interface HubConnectUiState {
      * `grant.firstEnroll` codes are present (hub-authoritative, INDEPENDENT of local `isEnrolled`).
      */
     data class RevealCodes(val hub: HubDescriptor, val codes: List<String>) : HubConnectUiState
+
+    /**
+     * CYP-542 / B1 — auth-time: the operator UV (the real [com.tneff.cyppieagents.net.hub.operator.vault.PassphraseUserVerification])
+     * is prompting for the App-Passphrase to open the sealed device-key vault (the CYP-460 dialog renders it). Surfaced
+     * from the [PassphrasePromptCoordinator]'s `Prompting` state during AUTHENTICATING. **AC-4:** a wrong passphrase is
+     * retried inline (the UV re-prompts, this state persists) — only an abort (cancel) or an exhausted lockout tears the
+     * session down to LOST/OperatorUvFailed. [reason] is the ceremony cause (operator-auth).
+     */
+    data class PassphrasePrompt(val hub: HubDescriptor, val reason: UvReason) : HubConnectUiState
+
+    /**
+     * CYP-542 / B1 (AC-1) — this device has no enrolled operator key (the hub reported
+     * [com.tneff.cyppieagents.net.hub.remote.RemoteFailure.DeviceNotEnrolled]) ⇒ the **set-passphrase** step, NOT a
+     * retry-reloop. The operator picks a strong App-Passphrase (diceware one-click default or type-your-own); on success
+     * the flow pre-arms that passphrase and auto-reconnects (AC-2). [outcome] carries the last refusal (TooWeak /
+     * Blocklisted / MigrationFailed / AlreadyEnrolled) for the error copy (null while entering).
+     */
+    data class SetPassphrase(
+        val hub: HubDescriptor,
+        val phase: EnrollPhase,
+        val outcome: EnrollOutcome? = null,
+    ) : HubConnectUiState
 }
 
 /** A2 registration sub-phase. */
 enum class RegisterPhase { EDITING, REGISTERING, ERROR }
+
+/** CYP-542 / B1 — the set-passphrase sub-phase (AC-1): entering the passphrase, sealing the vault, or a typed refusal. */
+enum class EnrollPhase { ENTERING, ENROLLING, ERROR }
 
 /** A3 credential sub-phase — the §7 tri-state (`UNREACHABLE` ≠ `INVALID`, H3). */
 enum class CredentialPhase { ENTERING, VALIDATING, VALIDATED, INVALID, UNREACHABLE }
