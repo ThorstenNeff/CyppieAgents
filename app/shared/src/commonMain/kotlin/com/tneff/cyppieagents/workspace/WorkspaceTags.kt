@@ -50,4 +50,27 @@ object WorkspaceTags {
      * from [ROLE_INDICATOR] (WHO you are, neutral, always) — this is WHERE the hub is (WARN, iff remote). UIUX-locked.
      */
     const val REMOTE_CONTEXT = "workspace.remoteContext"
+
+    /**
+     * CYP-427/M2 (Seam #1) — the E2E-pinned indicator in the affirmative remote-context banner. Present ⇔ identity is
+     * REALLY pinned (a `HubTrust` fingerprint pin, NOT provisional trust); copy = `remote_connect_trust_pinned`. A
+     * sub-node of [REMOTE_CONTEXT] so QA can tell "pinned is there" from "banner is there" (G2). Neutral/primary tone,
+     * NEVER green (transport encryption + identity pin are two facts, neither a success). Frozen with QA/DS via the PO.
+     */
+    const val REMOTE_CONTEXT_PINNED = "workspace.remoteContext.pinned"
+
+    /**
+     * CYP-427/M2 (Seam #2) — the ONE global in-operation relay-drop surface (reconnect banner). Present ⇔
+     * `RemoteSessionState.conn == RECONNECTING`; WARN-amber `▲`, NEVER red (the session is reconnecting, not dead;
+     * terminal loss = `LOST` = a different path). Copy = `remote_connect_relay_dropped`. Distinct from
+     * `RemoteConnectTags.RELAY_DROP` (the connect-flow row — a different surface). Frozen with QA/DS via the PO.
+     */
+    const val RELAY_DROP = "workspace.relayDrop"
+
+    /**
+     * CYP-427/M2 (Seam #2, H4) — in-flight actions honestly UNCERTAIN on a drop (never silently done). Present ⇔
+     * `RemoteSessionState.inFlightUncertain == true`; a sub-node of [RELAY_DROP], WARN-amber. Copy =
+     * `workspace_relay_uncertain`. Frozen with QA/DS via the PO.
+     */
+    const val RELAY_DROP_UNCERTAIN = "workspace.relayDrop.uncertain"
 }

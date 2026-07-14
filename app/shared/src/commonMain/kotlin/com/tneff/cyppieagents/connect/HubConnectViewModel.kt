@@ -2,6 +2,8 @@ package com.tneff.cyppieagents.connect
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tneff.cyppieagents.net.hub.HubTransport
+import com.tneff.cyppieagents.net.hub.buildRemoteHubTransport
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +42,10 @@ class HubConnectViewModel(
     private val remoteComponentsFactory: RemoteConnectComponentsFactory? = null,
     /** Hostname default for the editable hub-name field (Q1); the host injects the real device hostname. */
     private val defaultHubName: String = "mein-hub",
+    /** M2 Seam-3 (c) — the operator's **CP-scoped** credential the bridged request carries to the hub (NEVER the static
+     *  god-token, Reviewer Axis-1). HELD as a seam (`{ null }`) until Backend's tunnel-scoped listener contract lands;
+     *  App.kt then injects the real CP-scoped provider. INERT default keeps the datapath proof credential-agnostic. */
+    private val remoteSessionToken: () -> String? = { null },
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -160,6 +166,9 @@ class HubConnectViewModel(
     /** CYP-513 — the active LIVE components (Q5): closed on a hub switch / leave so the old Noise session tears down. */
     private var activeComponents: RemoteConnectComponents? = null
 
+    /** M2 Seam-3 (a) — the tunnel-backed transport, built ONCE on CONNECTED from the live session; closed on switch/leave. */
+    private var remoteTransport: HubTransport? = null
+
     /**
      * B3 Remote "Verbinden" / Q5 "auf Hub wechseln" → the honest §7 remote progress against
      * [RemoteConnectFeed]. **Exactly one hub (Q5, CI-6):** any active remote session is torn down first
@@ -190,6 +199,16 @@ class HubConnectViewModel(
                         combine(comps.session.state, comps.oobConfirm.state, comps.enrollConfirm.state) { rs, oob, enroll -> Triple(rs, oob, enroll) }
                             .collect { (rs, oob, enroll) ->
                                 surfaceRemote(hub, rs, buildLiveOobMount(comps.oobConfirm, hub, oob), enroll)
+                                // M2 Seam-3 (a): build the tunnel-backed transport ONCE on CONNECTED. `currentTunnel`
+                                // reads the CURRENT session tunnel each call → auto-rebind on relay-drop (stable
+                                // loopback port; Seam-6). null on non-Desktop (Path-A). Torn down in closeActiveComponents.
+                                if (rs.conn == RemoteConnState.CONNECTED && remoteTransport == null) {
+                                    remoteTransport = buildRemoteHubTransport(
+                                        currentTunnel = { activeComponents?.session?.tunnel },
+                                        sessionToken = remoteSessionToken,
+                                        scope = runScope,
+                                    )
+                                }
                             }
                     } finally {
                         withContext(NonCancellable) { comps.session.close() } // Q5 teardown on cancel / switch
@@ -236,10 +255,23 @@ class HubConnectViewModel(
         activeComponents?.enrollConfirm?.confirmSaved()
     }
 
+    /**
+     * M2 Seam-3 (a)+(b) — the CONNECTED remote-workspace hand-off, or `null` (Local / not-yet-CONNECTED ⇒ AgentShell's
+     * LOCAL default, the INERT invariant). Non-null iff the live session is CONNECTED with a built transport.
+     */
+    fun remoteHandoff(): RemoteWorkspaceHandoff? {
+        val s = _state.value as? HubConnectUiState.RemoteConnecting ?: return null
+        if (s.remote.conn != RemoteConnState.CONNECTED) return null
+        val comps = activeComponents ?: return null
+        return RemoteWorkspaceHandoff(s.hub.name, remoteTransport, comps.session.state, ::backToHubList)
+    }
+
     /** Q5/CYP-513: close + drop the active LIVE components so the old Noise session tears down (nothing carried). */
     private fun closeActiveComponents() {
         val previous = activeComponents ?: return
         activeComponents = null
+        remoteTransport?.close() // M2 Seam-3: tear down the loopback transport (acceptor + owned client) with the session
+        remoteTransport = null
         previous.enrollConfirm.abort() // CYP-525 §2: a switch/leave during the reveal aborts enroll (fail-closed, no SavedAck)
         runScope.launch { withContext(NonCancellable) { previous.session.close() } }
     }

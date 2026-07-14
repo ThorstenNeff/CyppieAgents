@@ -27,19 +27,22 @@ import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 fun RemoteHubConnectGate(
     enabled: Boolean,
     createViewModel: () -> HubConnectViewModel,
-    workspace: @Composable (remoteContext: String?) -> Unit,
+    workspace: @Composable (handoff: RemoteWorkspaceHandoff?) -> Unit,
 ) {
     if (!enabled) {
-        // OFF (default): construct nothing — byte-identical to a build without the hub-connect flow (no remote ctx).
+        // OFF (default): construct nothing — byte-identical to a build without the hub-connect flow (no remote hand-off).
         workspace(null)
         return
     }
     val viewModel = remember { createViewModel() }
     var entered by remember { mutableStateOf(false) }
     if (entered) {
-        // CYP-527: bind the remote-context banner to the live session state (CONNECTED), not to `entered`.
+        // M2 Seam-3 (a)+(b): recompute the hand-off when the live session state changes. Non-null only on a REMOTE
+        // CONNECTED (transport + live RemoteSessionState + endSession); `null` for Local / pre-CONNECTED ⇒ AgentShell's
+        // LOCAL default (the INERT invariant). CYP-527's banner name rides inside the hand-off ([RemoteWorkspaceHandoff]).
         val state by viewModel.state.collectAsState()
-        workspace(remoteContextHubName(state))
+        val handoff = remember(state) { viewModel.remoteHandoff() }
+        workspace(handoff)
     } else {
         HubConnectFlow(viewModel, onEnterWorkspace = { entered = true })
     }

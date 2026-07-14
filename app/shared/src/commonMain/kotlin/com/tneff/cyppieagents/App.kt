@@ -113,16 +113,30 @@ fun App(
                             // Auftraggeber-GO). Present ⇒ connectRemote drives the real Noise session + the ①²
                             // per-connect OOB coordinator (display == pinned); absent ⇒ the stub feed path.
                             remoteComponentsFactory = defaultRemoteComponentsFactory(authRepo::currentSessionToken),
+                            // M2 Seam-3 (c) / G1: the bridged workspace request carries the operator's Kratos SESSION
+                            // (the same identity-bound token the CP-discovery uses) — Backend's tunnel-connector accepts
+                            // it + 401s the static god-token. NEVER the static OPERATOR_TOKEN (Reviewer Axis-1).
+                            remoteSessionToken = authRepo::currentSessionToken,
                         )
                     },
-                ) { remoteContext ->
+                ) { handoff ->
                     AgentShell(
                         modifier = Modifier.fillMaxSize(),
                         tier = tier,
                         sessionToken = authRepo::currentSessionToken,
-                        // CYP-527: the gate binds this to the remote session's CONNECTED state (null when local /
-                        // not connected) → the workspace shows the persistent remote-operating context WARN banner.
-                        remoteContext = remoteContext,
+                        // M2 Seam-3 (a): the tunnel-backed transport ⇒ the whole (mode-blind, CYP-411) workspace runs
+                        // over the Noise tunnel. `null` (Local / pre-CONNECTED / non-Desktop) ⇒ the LOCAL default (INERT).
+                        transport = handoff?.transport,
+                        // CYP-527: the connected remote hub's name → the persistent remote-operating context WARN banner.
+                        remoteContext = handoff?.hubName,
+                        // M2 Seam-3 (b): the live RemoteSessionState flow → the Seam-6 relay-drop / in-flight-uncertain chrome.
+                        remoteSessionState = handoff?.sessionState,
+                        // CYP-427/M2 Seam #8: the revoke → the handoff's guaranteed local teardown (backToHubList/close).
+                        onRemoteEndSession = handoff?.onEndSession ?: {},
+                        // CYP-427/M2 Seam #1: the CR3 "data over the tunnel" capability + the fingerprint-pin signals are
+                        // not yet produced (RemoteHubTransport = fail-loud stub) ⇒ left at their honest false defaults →
+                        // the banner stays B2 (WARN-partial). The real transport (RR5/G7) feeds these true → B3/.pinned.
+
                         themeMode = themeMode,
                         onThemeModeChange = { mode -> themeMode = mode; themePrefs.setThemeMode(mode) },
                         composerHistorySize = composerHistorySize,

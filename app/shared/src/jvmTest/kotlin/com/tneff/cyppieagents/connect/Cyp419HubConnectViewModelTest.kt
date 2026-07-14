@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -39,6 +40,16 @@ class Cyp419HubConnectViewModelTest {
         val s = m.state.value
         assertIs<HubConnectUiState.HubList>(s)
         assertTrue((s as HubConnectUiState.HubList).hubs.isEmpty())
+    }
+
+    @Test
+    fun remoteHandoff_nullUnlessRemoteConnected_preservesLocalDefault() = runTest {
+        // M2 Seam-3 INERT invariant: no remote CONNECTED session ⇒ remoteHandoff()==null ⇒ AgentShell's LOCAL default
+        // (remote OFF / local / pre-CONNECTED ⇒ byte-identical to today, no tunnel transport injected).
+        val m = newVm(cp = StubControlPlaneClient(hubs = oneHub))
+        assertNull(m.remoteHandoff(), "initial (Preparing) ⇒ no hand-off")
+        m.start()
+        assertNull(m.remoteHandoff(), "browsing the hub list (not CONNECTED) ⇒ still no hand-off (LOCAL default holds)")
     }
 
     @Test

@@ -483,6 +483,12 @@
          %1$s = hub.name (editable display name, never the id). Glyph ▲ rendered separately (WCAG 1.4.1). -->
     <string name="workspace_remote_context_partial">Connected remotely to %1$s — workspace data isn\'t over the tunnel yet.</string>
     <string name="a11y_workspace_remote_context">Warning: connected remotely to %1$s — workspace data isn\'t over the tunnel yet.</string>
+    <!-- CYP-427/M2 Seam #1 — the affirmative "over the tunnel" form of the same banner node (capability-gated). -->
+    <string name="workspace_remote_context_tunnel">Connected remotely to %1$s — over an encrypted tunnel.</string>
+    <string name="a11y_workspace_remote_context_tunnel">Connected remotely to %1$s over an encrypted tunnel.</string>
+    <!-- CYP-427/M2 Seam #2 — the honest in-flight-uncertain warning on a relay drop (never silently "done"). -->
+    <string name="workspace_relay_uncertain">In-flight actions are unconfirmed — we\'ll check what went through once reconnected.</string>
+    <string name="a11y_workspace_relay_uncertain">Warning: in-flight actions are unconfirmed — we\'ll check what went through once reconnected.</string>
     <string name="workspace_members_title">Members</string>
     <string name="workspace_tier_operator">Operator</string>
     <string name="workspace_tier_member">Member</string>
