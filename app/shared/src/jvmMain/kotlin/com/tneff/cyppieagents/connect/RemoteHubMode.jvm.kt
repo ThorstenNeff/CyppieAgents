@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.connect
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseJavaClientTransport
+import com.tneff.cyppieagents.net.hub.operator.CachingUserVerification
 import com.tneff.cyppieagents.net.hub.operator.ChannelBinding
 import com.tneff.cyppieagents.net.hub.operator.ClientOperatorAuth
 import com.tneff.cyppieagents.net.hub.operator.CpJwtProvider
@@ -117,10 +118,21 @@ fun liveRemoteConnectComponentsFactory(
     // Hoisted so the CYP-537 N-tunnel pool SHARES them with the session: pool tunnels ride the same TOFU pin
     // ([shared.trust]) + the same enrolled device ([operatorAuth]'s durable key) the session's connect established.
     val noiseTransport = NoiseJavaClientTransport()
+    // CYP-537 F⑥-1 (Reviewer / CYP-538 WS3): the N pool tunnels each PoP-auth over their own `h_i` via this ONE
+    // shared [operatorAuth] → its ONE store → this ONE [CachingUserVerification]. The session's control tunnel and
+    // the pool's N workspace tunnels therefore share a SINGLE bounded-window UV cache: the first authenticate prompts
+    // (a real UV ceremony), the rest within the window ride the cache ⇒ **1 UV prompt for N tunnels** (0 extra
+    // prompts — critical for dogfood). Security unchanged (each PoP is fresh over its own `h_i`, fail-closed; a denial
+    // is never cached). O5: [nowMs] is **monotonic** (`nanoTime`) so a wall-clock adjustment can't widen the window.
+    val cachingUv = CachingUserVerification(
+        delegate = deferredUserVerification, // the raw UV source (headless stub today; real WebAuthn UI lands separately)
+        reuseWindowMs = OPERATOR_UV_REUSE_WINDOW_MS,
+        nowMs = { System.nanoTime() / 1_000_000 },
+    )
     val operatorAuth = ClientOperatorAuth(
         popBuilder = OperatorPopBuilder(
             store = KeystoreOperatorDeviceKeyStore(
-                userVerification = deferredUserVerification,
+                userVerification = cachingUv, // F⑥-1: store.userVerification IS the shared cachingUv (no wiring drift)
                 keyPair = persistentDeviceKey.loadOrGenerate(),
             ),
             nonceGenerator = secureRandomNonceGenerator,
@@ -168,6 +180,15 @@ private val gatedRelayDialer = RelayDialer {
 
 /** No UV UI in the headless assembly; never reached (dial fails first). Fail-closed ⇒ Unavailable. */
 private val deferredUserVerification = UserVerification { UvOutcome.Unavailable }
+
+/**
+ * CYP-537 F⑥-1 (CYP-538) — the bounded UV-reuse window for the shared [CachingUserVerification]. Long enough to span
+ * the connect burst (the session's control-tunnel UV + the pool's N workspace-tunnel establishments, all within
+ * seconds of CONNECTED) plus a little live churn, so it costs **one** prompt; short enough that reuse stays bounded
+ * (a denial is never cached — fail-closed). Tunable (Reviewer may weigh the UX↔bound trade-off); 2 min is the
+ * conservative-short default.
+ */
+private const val OPERATOR_UV_REUSE_WINDOW_MS: Long = 120_000L
 
 /** Runway #3: the jvm PoP nonce source (`SecureRandom`) — the one small runway item built inline. */
 private val secureRandomNonceGenerator = NonceGenerator {
