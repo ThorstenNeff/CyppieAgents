@@ -29,10 +29,13 @@ oder ist es ein **divergentes One-off**? *Diskriminiert:* eine Eigenbau-Eingabe 
   ein nicht-selektierbarer Text-Block, der Speichern erzwingt = Abtippen. *Mess:* Selektion/Copy-Aktion am `enrollSuggested`-Node.
 - **A1.2 — Copy wird SR-angesagt** („Passphrase kopiert") — nicht stumm. *Diskriminiert:* stiller Copy, den ein SR-Nutzer nicht
   bestätigt bekommt. *Mess:* Announce/Live-Region nach Copy.
-- **A1.3 — Copy-Honesty (meine Lane):** Copy legt das Secret in die **Zwischenablage** (verlässt die App-Grenze) — der
-  Save-Hinweis (`remote_pop_enroll_suggested_save`) ist SR-erreichbar + neutral (kein WARN, Guidance). Falls die Fläche einen
-  Clipboard-Clear/Timeout andeutet, muss er ehrlich sein (nicht suggerieren, was nicht passiert). *(Clipboard-Egress-Wortlaut =
-  Grauzone zu Team-1-Copy → an PO.)*
+- **A1.3 — Clipboard-Egress: disclosed + ehrlich + kein silent Copy (PO1-Reconcile 2026-07-14, meine a11y-Achse).** Der Diceware-
+  Copy ist ein echter Egress (Crown-Jewel → Zwischenablage); Copy **erlaubt** (Passwort-Manager-Save real+wichtig), aber:
+  **(a) kein silent Copy** — der SR sagt die **Clipboard-Disclosure** an (dass die Passphrase in die Zwischenablage geht);
+  **(b) honest-wording-Zahn (load-bearing, meine Lane):** kein Announce/Text impliziert je „sicher"/„gelöscht", wenn die Plattform
+  es **nicht garantiert** — bei best-effort-Auto-Clear ehrlich „best-effort/nach X" statt „gelöscht". *Diskriminiert:* ein stiller
+  Copy ODER ein „sicher gelöscht", wo nur best-effort-Clear läuft. *Mess:* Announce-Präsenz nach Copy + Wortlaut-Register-Read.
+  *(Team-1 ownt die Disclosure-**Copy** — kommt von PO1; Dev baut die Clear-**Mechanik** [bounded Timeout, wo Plattform stützt] gegen meine Spec.)*
 - **A1.4 — Die generierten Wörter erscheinen NICHT in `contentDescription`/Log als separater Leak-Vektor** über die sichtbare
   Darstellung hinaus (sie sind sichtbar by-design, aber kein Doppel-Announce/Log). *Mess:* kein zweiter Node/Log trägt sie.
 
@@ -74,9 +77,11 @@ oder ist es ein **divergentes One-off**? *Diskriminiert:* eine Eigenbau-Eingabe 
   Sackgassen-State). *Diskriminiert:* stiller Fehler (nur farbige Outline), den ein SR-Nutzer nie bemerkt. *Mess:* liveRegion==Assertive
   am `enrollError`-Node + Fokus-Ziel.
 - **A5.2 — mismatch (Setz≠Confirm) wird angesagt** — nicht nur farbig; Fokus führt zur Korrektur. *Diskriminiert:* mismatch nur visuell.
-- **A5.3 — `blocklisted` ≠ `tooWeak` bleibt distinkt hörbar:** die selbstbeschreibende Copy trägt die Ursache (die Copy-Wahl ist
-  Team-1; ich prüfe, dass die **Ursachen-Distinktion** SR-erreichbar ist, nicht zu einem generischen „ungültig" kollabiert). *Mess:*
-  Announce/Text unterscheidet blocklisted vs tooWeak.
+- **A5.3 — SR sagt die SPEZIFISCHE Ursache an (PO1-Reconcile 2026-07-14, meine a11y-Achse — kein Copy-Konflikt).** `blocklisted` ≠
+  `tooWeak` haben bereits **distinkte ratifizierte Strings** (`remote_pop_enroll_blocklisted` vs tooWeak); meine Achse = die
+  Live-Region **so verdrahten, dass der SR die spezifische Ursache hört** (blocklisted / tooWeak / mismatch / tooShort), **nie zu
+  einem generischen „ungültig" kollabiert**. *Diskriminiert:* eine Error-Live-Region, die alle 4 Ursachen auf einen generischen
+  Announce mappt (SR-Nutzer erfährt nicht *warum*). *Mess:* Announce bei jeder der 4 `enrollError.<cause>` trägt die distinkte Ursache. *(Wortlaut = Team-1, existiert schon.)*
 - **A5.4 — Feld bei Fehler NICHT still geleert** (oder Leerung angesagt). *Diskriminiert:* stilles Clear.
 
 ## 6 — Auto-Weiterlauf: Zustandswechsel-Ansage + Fokus-Übergabe (`→UIUX2` Z. 103, Tag `RemoteConnectTags.authenticating`)
@@ -92,7 +97,10 @@ oder ist es ein **divergentes One-off**? *Diskriminiert:* eine Eigenbau-Eingabe 
 - **Meins:** Fokus/IME/Reveal-Mechanik · SR-Ansagen (Feld · Meter-Live · Zustandswechsel · Copy) · Fokus-Reihenfolge · Selektion/
   Copy-Interaktion · a11y-Leak-Freiheit · advisory-vs-Garantie- + BLOCKLISTED-**Register** am Announce.
 - **Team-1-UIUX:** Layout/Typo/visuelle Meter-Sprache · WCAG-Farb-/Glyph-/Label-**Werte** · Copy-Wortlaut DE/EN · Ton-Trennung · Flow-Sequenz.
-- **Grauzone → an PO flaggen, nicht still:** Clipboard-Egress-Wortlaut (A1.3), Stärke-/Ursachen-Copy-Register (A4.4/A5.3), Pfad-Benennung.
+- **Grauzonen — PO1-RECONCILE 2026-07-14 (beide RESOLVED):** ① Clipboard-Egress (A1.3) → Copy erlaubt, aber disclosed + ehrlich +
+  kein-silent; meine Achse = SR-Disclosure-Announce + honest-wording + no-silent (Team-1 Copy von PO1, Dev Clear-Mechanik). ②
+  Ursachen-Register (A5.3) → distinkte Strings existieren; meine Achse = Live-Region sagt spezifische Ursache (nicht generisch). **Kein
+  offener Copy-Konflikt mehr.** Rest-Grauzone bei Bedarf (Pfad-Benennung) weiter an PO, nicht still.
 
 ## Unlock-Pfad (separater Slice — hier NICHT gefordert)
 Der Follow-Usage-**Unlock** (`pinWrong`/`lockedOut`/`biometricFailed`, `desktop-remote-operator-ux-spec.md` §5.3) ist eine **andere**
