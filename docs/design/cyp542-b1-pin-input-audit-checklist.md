@@ -114,3 +114,41 @@ nicht-gebautes UI auditiere. An PO, falls der Slice zusammengelegt wird.
 - **Reconciled an die reale 4-Element-Enroll-UI** (nicht die ursprünglich angenommene Plain-PIN); Unlock-Pfad explizit ausgeklammert.
 - Scoped auf Interaktion/a11y; Farbe/Copy/Flow = Team-1; Grauzonen als Overlap-an-PO markiert (nie still).
 - Grounded @ `0dfc8005` (Visual-Spec + tags) + `AuthPasswordField`/`AnnouncingHint` (CYP-176). **CYP-542-Transition beim RUN.**
+
+---
+
+## RUN-RESULTS — voller a11y-Audit @ `c3c03a9d` (2026-07-14, gemessen: Objekt-Read `RemoteOperatorAuthSteps.kt` + grep)
+> **Verdikt: a11y NO-GO — 3 Findings zu fixen, bevor CYP-542 auf der a11y-Achse abschließt.** (Kein Selbst-Transition; PO1 zieht die
+> Findings in den B1-Batch.) Mess-Methode: Compose-a11y ist im Code deklariert → Objekt-Read + `liveRegion`-grep sind die Messung.
+
+**🔴 F1 (PRIMÄR, blockierend) — KEINE Live-Region im gesamten Enroll/Operator-UI → dynamische SR-Ansagen fehlen komplett.**
+`grep liveRegion|LiveRegionMode` über `connect/**` + `net/hub/operator/**` @ `c3c03a9d` = **0 Treffer**. Folge (WCAG 4.1.3 Status
+Messages, AA): Strength-Verdict-Wechsel (weak→strong) nicht angesagt (mein A4.1 Polite), Enroll-Fehler `too_weak`/`blocklisted`
+(`EnrollOutcomeLine`/`StrengthMeter`) + `mismatch` nicht angesagt (A5.1 Assertive), Regenerate-neue-Passphrase nicht angesagt (A2.2),
+Enrolling-Zustand nicht angesagt (A6.1). **Die distinkten Ursachen-DATEN sind korrekt (Pre-Gate PASS), aber der SR HÖRT sie nie.**
+*Fix:* Strength-Verdict-Zeile in `liveRegion=Polite`, Fehler/Mismatch-Zeilen in `liveRegion=Assertive` (der Announce trägt den schon-
+distinkten String → spezifische Ursache, erfüllt ②).
+
+**🟠 F2 (A0-Forward-Flag + ①-Honesty, verlinkt) — `DicewareReveal` REUSED `RecoveryCodesReveal` NICHT + „kopiert"-Notiz ohne Copy-Aktion.**
+`RecoveryCodesReveal` (der gehärtete Pfad) hat einen echten Copy-Button (`LocalClipboardManager.setText`) + Ack-Gate. `DicewareReveal`
+ist ein **One-off**, das nur `SelectionContainer` „spiegelt" — **kein Copy-Button, kein Clipboard-Write**. TROTZDEM sagt die Notiz
+`remote_pop_enroll_clipboard_notice` = „In die Zwischenablage kopiert / Copied to clipboard" → **behauptet einen Copy, der nie
+passiert** (①-honest-wording-Verstoß: eine Aussage ohne korrespondierende Aktion). *Fix (A):* `RecoveryCodesReveal` wirklich reusen
+(Copy-Button) → Notiz wird ehrlich. *Fix (B):* wenn nur Manual-Select gewollt, Notiz umformulieren (nicht „kopiert" behaupten).
+**Positiv am Register:** die Clear-Guidance „Zwischenablage nach dem Speichern leeren" ist **ehrlich** (kein falsches „auto-gelöscht/sicher").
+
+**🟡 F3 (Spec-vs-Build-Divergenz, reconcile) — Reveal-Toggle fehlt auf dem Feldpaar.** `PassphraseInput` übergibt **kein** `revealTag`
+an `AuthPasswordField` → kein Text-Label-Reveal, obwohl Visual-Spec §1b (→UIUX2 Z.48) ihn spezifiziert. Spannung: die Security-Rider
+(rider 4/5, Crown-Jewel-Surface minimieren) sprechen gegen Reveal; das Doppel-Eingabe-Confirm-Feld deckt Tippfehler-Verifikation ab.
+*→ PO/Team-1-Reconcile:* Reveal bewusst gedroppt (dann Visual-Spec §1b nachziehen) ODER wiren.
+
+**✅ PASS (gemessen):** a11y-Leak-frei (A3.2 — `contentDesc` = statisches Label-Resource, nie `value`; rider 5); Honesty-Parität (A4.3 —
+BLOCKLISTED-Fill `outline`-gedämpft, kein Glyph, OK=`●`+neutral kein-Grün, TOO_WEAK=`▲`-WARN-amber, alle Farbe+Glyph/Copy+Label 1.4.1);
+Fokus-Reihenfolge Default→Accept→Regenerate→type-own (Layout-Reihenfolge); no-silent-Copy (keine app-initiierte Clipboard-Schreibung);
+Feld reused `AuthPasswordField` (A0-Input); CharArray-Hygiene/Zeroize (`DisposableEffect`).
+
+**Ehrliche Scope-Notizen:** `tooShort` nicht in dieser Passphrase-UI gerendert (PIN-Pfad, separat) → N/A hier. A2.2-Autofill bewusst
+**disabled** per Security-Rider (Crown-Jewel; Passwort-Manager-Pfad = Diceware-Reveal statt Feld-Autofill) → resolved-by-design, kein
+Finding. `granted`→Hub-Liste-Übergang außerhalb dieser Datei (VM-State). Logik-Tests (Dev-Self-Gate) nicht re-gefahren — Fokus = a11y-Layer.
+
+**CYP-542-a11y-Readiness: NO-GO bis F1 (+F2) gefixt; F3 reconcile.** Findings → PO → PO1-Batch. Re-Verify wenn Dev fixt.
