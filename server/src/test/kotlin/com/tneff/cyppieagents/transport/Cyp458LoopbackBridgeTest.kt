@@ -17,8 +17,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.AfterTest
 import kotlin.test.assertEquals
@@ -162,6 +164,45 @@ class Cyp458LoopbackBridgeTest {
             )
             bridgeJob.cancel()
         }
+    }
+
+    @Test
+    fun cyp546_downstream_isBounded_synchronousInline_noReadAheadBuffer() = runBlocking {
+        // CYP-546 — refactor-guard for the server downstream bound. The pump is a SYNCHRONOUS inline read→tunnel.send
+        // (no Channel buffer), so with the tunnel-send BLOCKED it can hold at most ONE CHUNK in flight (the one stuck
+        // in send) — it reads the next chunk only after the prior send returns. A refactor that inserted a read-ahead
+        // buffer (unbounded, or even a ≤8 window like the CLIENT bridge) would let the reader drain the endless socket
+        // ahead of the blocked sender → a 2nd read happens. This pins that the server bridge is bounded by its inline
+        // structure (~1 CHUNK), NOT a mirrored ≤8 Channel (the CYP-546 doc-drift), and that a future refactor can't
+        // silently un-bound it. The timeout is a bounded wait to observe read-ahead — the synchronous pump structurally
+        // can never read ahead of a blocked send, so this can only fail if a buffer was introduced (never flaky).
+        val reads = AtomicInteger()
+        val readAheadDetected = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val endlessSocket = object : BridgeSocket { // an inexhaustible downstream source (every read yields a full CHUNK)
+            override val remote: InetAddress = InetAddress.getLoopbackAddress()
+            override suspend fun write(bytes: ByteArray) {} // upstream is idle in this test
+            override suspend fun read(buf: ByteArray): Int {
+                if (reads.incrementAndGet() >= 2) readAheadDetected.complete(Unit) // a 2nd read ⇒ the pump read ahead
+                return buf.size
+            }
+            override fun reset() {}
+        }
+        val senderBlockedTunnel = object : ServerNoiseTunnel {
+            override val handshakeHash: ByteArray = ByteArray(32)
+            override suspend fun receive(): ByteArray? = kotlinx.coroutines.CompletableDeferred<ByteArray?>().await() // upstream idle → no RST
+            override suspend fun send(plaintext: ByteArray) { kotlinx.coroutines.CompletableDeferred<Unit>().await() } // tunnel-send blocks forever
+            override suspend fun close() {}
+        }
+        val job = launch(Dispatchers.IO) {
+            runCatching { LoopbackBridge(9, "127.0.0.1") { _, _ -> endlessSocket }.bridge(senderBlockedTunnel) }
+        }
+        val readAhead = withTimeoutOrNull(3_000) { readAheadDetected.await() } // null ⇒ never read ahead (bounded)
+        job.cancel()
+        assertTrue(
+            readAhead == null && reads.get() <= 1,
+            "the server downstream keeps ≤1 CHUNK in flight (synchronous inline read→send) — a buffering refactor " +
+                "would read ahead of the blocked sender (reads=${reads.get()})",
+        )
     }
 
     @Test
