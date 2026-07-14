@@ -195,10 +195,13 @@ class Rr3TunnelGate(
             val minted = backupCodes.mint(BACKUP_CODE_COUNT)                     // THIS session's codes, local (not persisted)
             reply(tunnel, TunnelAuthGrant(granted = true, firstEnroll = true))   // provisional grant → the client reveals
             runCatching { tunnel.send(CommJson.encodeToString(EnrollResponse(minted.plaintexts)).encodeToByteArray()) }
-                .getOrElse { return false }                                      // send failed → discard (nothing committed)
+                // CYP-579 (tier-2 diagnosability): was a silent fail-closed. Log the FACT only — content-free (NEVER the
+                // codes/payload; exception TYPE only, no message) — so a live enroll stall is triageable, not mistaken for an auth reject.
+                .getOrElse { log.warn("CYP-579: enroll-response send failed → discarding provisional, nothing committed ({})", it::class.simpleName); return false }
             // Bounded await for the user-saved ack (liveness). No ack / timeout / nack → discard → close (re-mint next).
             val ack = withTimeoutOrNull(savedAckTimeoutMs) { readSavedAck(tunnel) }
-            if (ack?.ok != true) return false
+            // CYP-579: a missing/timeout/nack ack was silently fail-closed — log (content-free) so a slow-operator/dropped-frame stall is diagnosable.
+            if (ack?.ok != true) { log.warn("CYP-579: enroll SavedAck missing/timeout/nack → discarding provisional (operator re-mints next connect)"); return false }
             // FINALIZE: the anchor + THIS session's code-hashes commit TOGETHER as ONE crash-atomic record (H1/H2).
             // CYP-558 (CYP-550 ④) — guard the commit against a storage fault. commit() is non-suspend (like read()), so
             // catching Exception here cannot swallow a coroutine cancellation.
@@ -217,7 +220,7 @@ class Rr3TunnelGate(
     private suspend fun readSavedAck(tunnel: ServerNoiseTunnel): SavedAck? = runCatching {
         val raw = tunnel.receive() ?: return null
         CommJson.decodeFromString<SavedAck>(raw.decodeToString())
-    }.getOrNull()
+    }.onFailure { log.warn("CYP-579: SavedAck receive/decode failed → treated as no-ack ({})", it::class.simpleName) }.getOrNull()
 
     /**
      * CYP-525 first-enroll (the ratified (a) Raw/Ed25519 factor): the client sends its raw-32B device public key
@@ -246,7 +249,7 @@ class Rr3TunnelGate(
     private suspend fun readRequest(tunnel: ServerNoiseTunnel): TunnelAuthRequest? = runCatching {
         val raw = tunnel.receive() ?: return null
         CommJson.decodeFromString<TunnelAuthRequest>(raw.decodeToString())
-    }.getOrNull()
+    }.onFailure { log.warn("CYP-579: tunnel auth-request receive/decode failed → uniform reject ({})", it::class.simpleName) }.getOrNull()
 
     private suspend fun grant(tunnel: ServerNoiseTunnel, firstEnroll: Boolean = false): Boolean {
         reply(tunnel, TunnelAuthGrant(granted = true, firstEnroll = firstEnroll))
@@ -259,7 +262,10 @@ class Rr3TunnelGate(
     }
 
     private suspend fun reply(tunnel: ServerNoiseTunnel, grant: TunnelAuthGrant) {
+        // CYP-579 (tier-2): a failed grant/reject send was discarded silently → the peer could be granted/rejected and
+        // never receive the frame with zero trace. Log the FACT (exception type only, no payload).
         runCatching { tunnel.send(CommJson.encodeToString(grant).encodeToByteArray()) }
+            .onFailure { log.warn("CYP-579: grant/reject reply send failed ({})", it::class.simpleName) }
     }
 
     private companion object {
