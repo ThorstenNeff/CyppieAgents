@@ -25,7 +25,12 @@ Substanzielle Reconnect-Infra ist schon gebaut; die Objekt-Evidenz deutet auf **
 
 ⟹ **Prelim-Verdikt: wahrscheinlich ehrlich.** Die Verifikation BESTÄTIGT das (+ prüft die Flächen, die ich noch nicht am Objekt schließen konnte, v.a. das separate Lifecycle-Signal über einen ECHTEN Restart).
 
-## 1. Verifikations-Zähne — HEADLESS jetzt messbar (Objekt-Read + E2E-Test, gemessen)
+## 1. Verifikations-Zähne — HEADLESS ✅ ERLEDIGT + GRÜN (2026-07-14, gemessen aus TEST-XML)
+> **V1–V5 = GRÜN.** `AgentWsReconnectTest` 1/1 (V1 no-re-date + V2 dedup/cursor-resume, asserted) · `Cyp571ReconnectHonestyTest` 4/4
+> (V5 deriveStatus→IDLE bei vollständigem Replay + RUNNING-nur-bei-offenem-Stream · V4 RUNNING-Agent→kein-Badge + ERROR→Attention).
+> V3 (Chip nie-grün, present⇔!LIVE) = **Objekt-verifiziert** (`ReconnectingChip:618` early-return-on-LIVE + neutral onSurfaceVariant nie
+> tertiary; `ReconnectingChip` ist `private` → kein direkter Render-Test, wie CYP-542-Kontrast-by-measurement). **Distributed-Honesty am
+> pure-Derivation- + Reconnect-E2E-Layer test-gelockt.** Netto: der Prelim „honest-by-construction" ist jetzt für V1–V5 **verifiziert**, nicht nur gelesen.
 - **V1 — Kein Re-Dating:** replayte Events behalten die originale `tsMs` (nicht die Reconnect-Restamp). *Mess:* `AgentWsReconnectTest` (asserted schon) re-bestätigen. *Diskriminiert:* ein Reconnect, der Historie neu datiert (läse sich als „gerade passiert").
 - **V2 — Dedup / keine Doppel-Zeilen:** Reconnect-Replay dupliziert keine bereits gezeigten Events (LazyColumn-key = `event.id`). *Mess:* `AgentWsReconnectTest` (asserted). *Diskriminiert:* re-gesendeter seq erzeugt eine zweite Zeile.
 - **V3 — Reconnecting-Chip ehrlich:** present ⇔ `connection != LIVE`, neutral, **nie grün**. *Mess:* Objekt-Read ✓ / optional Render-Test. *Diskriminiert:* ein grüner/„verbunden"-Chip auf ungefährem Stand.
