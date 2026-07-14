@@ -13,9 +13,14 @@ non-blocklisted, correctly-normalized input that IS accepted through the same se
 vacuously (e.g. against a seam that rejects *everything*). And every reject carries a **mutation counter-probe**: a
 named mutation that removes the check must turn the reject RED (a green-that-can't-go-red is not coverage).
 
-**Seam (resolve on B1 landing):** the passphrase-validation entry point B1 exposes (Core policy fn / vault-create +
-vault-unlock-rekey paths). Drive at the **Core/server** layer so the proof is server-enforcement, not UI. Fill the
-exact symbol/route here once B1 lands: `<TBD: e.g. VaultPassphrasePolicy.validate(...) / POST /api/vault/...>`.
+**Seam (resolve on B1 landing):** the passphrase-validation entry point B1 exposes. Per UIUX2's B1-seam reconcile,
+the real B1 UI is a **Diceware-passphrase ENROLL flow** (Diceware default + strength-meter + blocklist error +
+auto-continue), **not** a plain-PIN. Consequences for this axis:
+- The floor/blocklist policy is exercised on the **user-typed ALTERNATIVE** passphrase — the **Diceware default is
+  strong-by-construction** (it sails over the floor), so all reject teeth (M1/M3/M4) drive the type-own path.
+- Seam = the **enroll passphrase-validate** path; tag family `OperatorAuthTags remote.authStep.enroll*`.
+- Drive at the **Core/server** layer (M5/M6 target the validate-seam, **not** the UI strength-meter). Fill the exact
+  symbol/route here once B1 lands: `<TBD: e.g. remote.authStep.enroll* validate fn / route>`.
 
 **Jira:** QA = B1-DoD evidence under **CYP-542** (no separate ticket). Executable teeth land on branch
 `test/CYP-542-b1-qa-passphrase-policy`, commits `CYP-542: …`; transition CYP-542 via the real board only after the
