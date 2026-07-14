@@ -10,6 +10,7 @@ import io.ktor.http.Cookie
 import io.ktor.http.Url
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -276,12 +277,22 @@ class HttpAuthRepository(
         sessionStore.clear()
         recoveryAction = null
         recoveryCsrf = null
+        clearKratosCookies()
+    }
+
+    /**
+     * Expire EVERY cookie the Kratos host currently holds in the app jar (`ory_kratos_session`, `ory_kratos_continuity`,
+     * the dynamic `csrf_token_<hash>` cookies). Two callers need a **cookie-free** Kratos context:
+     *  - recovery reset ([clearRecoverySession]) — an API-initiated flow 400s if it carries ANY cookie;
+     *  - CYP-576 OIDC — the API login flow must be cookie-free, AND (Backend-verified, Kratos v1.3.0) whoami **500s**
+     *    if an `X-Session-Token` header and a stale `ory_kratos_session` cookie arrive together ("both poison whoami").
+     *    So the OIDC path clears stale cookies before init (prior broken browser-flow attempts may have left them) and
+     *    again before the post-exchange whoami, so the native token is the SOLE credential.
+     */
+    private suspend fun clearKratosCookies() {
         runCatching {
             val storage = cookieStorage ?: return@runCatching
             val url = Url(kratos)
-            // Expire EVERY cookie the recovery flow left on the Kratos host — not only ory_kratos_session but
-            // also the dynamic csrf_token_<hash> cookies — so the post-reset /login/api is TRULY cookie-free
-            // (Kratos 400s an API-initiated flow that carries ANY cookie, not just the session).
             client.cookies(kratos).forEach { c ->
                 storage.addCookie(url, Cookie(name = c.name, value = "", maxAge = 0, path = c.path ?: "/"))
             }
@@ -339,25 +350,60 @@ class HttpAuthRepository(
 
     // --- §5 / P4 GitHub OIDC (CYP-185) ---
 
-    override suspend fun githubStart(): GithubStart = failClosed(GithubStart.Error) {
-        // OIDC is a browser-mode login method: init the browser login flow, then submit oidc/github via the
-        // proxy + flow id (same-origin invariant). Kratos does state+PKCE and answers with a
-        // browser_location_change to GitHub — we hand its `redirect_browser_to` to the platform to open.
-        val initBody = client.get("$kratos/self-service/login/browser") { authHeaders() }.bodyAsText()
+    override suspend fun githubStart(returnToState: String?): GithubStart = failClosed(GithubStart.Error) {
+        // CYP-576 — native API-flow OIDC (Backend live-verified against staging Kratos v1.x, 2026-07-14). Replaces the
+        // old browser-flow-driven-by-the-app-client path, which orphaned the `ory_kratos_continuity` cookie in the app
+        // jar (the browser finished the callback without it → Kratos 400). API flows set NO CSRF/continuity cookie AND
+        // return a native `session_token` via token-exchange (not a cookie) → both the cookie-split AND the
+        // browser-cookie handoff gap are gone. Init arms the exchange + points `return_to` at the loopback; hold the
+        // `session_token_exchange_code` (init half) for the exchange after the loopback returns its `?code=`.
+        clearKratosCookies() // cookie-free API flow: a prior broken browser-flow attempt may have left stale cookies
+        // CYP-576 P1 (Backend security-rec): carry the app-generated `state` nonce in return_to so the loopback can
+        // reject a callback that isn't ours (the loopback is unauth). Kratos preserves the return_to query and
+        // appends only `&code=` (verified in the live run). No state ⇒ bare loopback (web/tests).
+        val returnTo = if (returnToState.isNullOrBlank()) OIDC_LOOPBACK_CALLBACK_URL
+        else "$OIDC_LOOPBACK_CALLBACK_URL?state=$returnToState"
+        val initBody = client.get("$kratos/self-service/login/api") {
+            authHeaders()
+            parameter("return_session_token_exchange_code", "true")
+            parameter("return_to", returnTo)
+        }.bodyAsText()
         val flow = parseKratosFlow(initBody)
-        val csrf = parseKratosCsrfToken(initBody)
-        val resp = client.post("$kratos/self-service/login?flow=${flow.id}") {
+        val initCode = parseKratosExchangeInitCode(initBody)
+        // API-flow oidc submit: NO csrf (API flows are cookieless). Kratos answers HTTP 422 browser_location_change
+        // with the GitHub `redirect_browser_to` — read the body regardless of status (Ktor doesn't throw on non-2xx
+        // without expectSuccess), 422 is the expected success shape here, NOT a failure.
+        val submitBody = client.post("$kratos/self-service/login?flow=${flow.id}") {
             authHeaders()
             contentType(ContentType.Application.Json)
-            setBody(
-                buildJsonObject {
-                    put("method", "oidc"); put("provider", "github"); if (csrf != null) put("csrf_token", csrf)
-                }.toString(),
-            )
-        }
-        val redirect = parseKratosRedirectUrl(resp.bodyAsText())
-        if (redirect != null) GithubStart.Redirect(redirect) else GithubStart.Error
+            setBody(buildJsonObject { put("method", "oidc"); put("provider", "github") }.toString())
+        }.bodyAsText()
+        val redirect = parseKratosRedirectUrl(submitBody)
+        // Both halves required: no init code ⇒ the exchange can't complete ⇒ fail-closed to Error (never a half-flow).
+        if (redirect != null && initCode != null) GithubStart.Redirect(redirect, initCode) else GithubStart.Error
     }
+
+    override suspend fun githubTokenExchange(initCode: String, returnToCode: String): SessionState =
+        failClosed(SessionState.None) {
+            // CYP-576 — redeem the init half (from githubStart) + the return half (loopback `?code=`) for a native
+            // `session_token`, store it in the existing session plumbing, then resolve the session. No token ⇒
+            // fail-closed None (the callback did not complete a real login — never a fabricated session).
+            val body = client.get("$kratos/sessions/token-exchange") {
+                authHeaders()
+                parameter("init_code", initCode)
+                parameter("return_to_code", returnToCode)
+            }.bodyAsText()
+            val token = parseKratosSessionToken(body)
+            if (token == null) {
+                SessionState.None
+            } else {
+                sessionStore.setSessionToken(token) // native X-Session-Token plumbing (captureSession's store)
+                // Kratos v1.3.0: X-Session-Token + a stale ory_kratos_session cookie BOTH reaching whoami = 500
+                // ("both poisons whoami", Backend-verified). Clear the jar so the native token is the SOLE credential.
+                clearKratosCookies()
+                session() // re-read whoami → Verified/Unverified (an OIDC identity may be unverified → S2 gate)
+            }
+        }
 
     // --- Kratos flow driving ---
 

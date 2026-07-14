@@ -104,7 +104,7 @@ fun AuthGate(
     onOpenExternalUrl: (String) -> Unit = {},
     /** CYP-474 §4: Desktop-native loopback hook — the host arms a localhost (RFC 8252) redirect listener and calls
      *  [onReturn] (= `viewModel.onGithubReturn`) when the OAuth callback arrives. Default no-op (web uses the redirect). */
-    onAwaitLoopbackReturn: (onReturn: () -> Unit) -> Unit = {},
+    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?) -> Unit) -> Unit = {},
     /** The verified desktop — receives the session's [UserTier] (CYP-186) so it can gate operator surfaces. */
     content: @Composable (UserTier) -> Unit,
 ) {
@@ -144,7 +144,7 @@ private fun LoginScreen(
     state: AuthUiState.Unauthenticated,
     vm: AuthViewModel,
     onOpenExternalUrl: (String) -> Unit = {},
-    onAwaitLoopbackReturn: (onReturn: () -> Unit) -> Unit = {},
+    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?) -> Unit) -> Unit = {},
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
