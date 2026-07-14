@@ -78,6 +78,25 @@ class Rr3TunnelGate(
         return reject(tunnel)
     }
 
+    /**
+     * CYP-558 (CYP-550 ④) — the combined-atomic FINALIZE commit failed (a storage fault: disk-full / permissions /
+     * fsync / atomic-rename). By this point the provisional grant + the backup codes were ALREADY revealed to the
+     * client this session, but NOTHING persisted. If the throw escaped uncaught (as it did) it propagates out of
+     * [authorize] → the tunnel handler closes → the operator reconnects into the EMPTY-anchor path → a FRESH provisional
+     * mints + reveals FRESH codes → **silent churn** (the codes the user just "saved" are void), with NO signal telling
+     * the human WHY. Fail-closed with a DISTINCT §4 diagnostic (sibling to [rejectTampered]) so the operator investigates
+     * hub storage OOB; return `false` — a clean discard with NO CONNECTED grant, matching the send-fail / no-ack discard
+     * paths above (which also `return false` bare after the provisional grant). The enclosing `finally` still unlocks
+     * [firstEnrollLock] (liveness). Non-suspend: cannot swallow a cancellation.
+     */
+    private fun rejectFinalizeCommitFailed(e: Exception): Boolean {
+        log.error(
+            "CYP-525/558 finalize commit FAILED — enrollment NOT persisted (storage fault); the codes revealed this " +
+                "session are VOID, the next connect re-mints. Investigate hub storage OOB: {}", e.message,
+        )
+        return false
+    }
+
     /** Read → verify against live `h` → reply → return true iff authorized (the caller bridges). Fail-closed. */
     suspend fun authorize(tunnel: ServerNoiseTunnel): Boolean {
         val h = tunnel.handshakeHash
@@ -181,7 +200,13 @@ class Rr3TunnelGate(
             val ack = withTimeoutOrNull(savedAckTimeoutMs) { readSavedAck(tunnel) }
             if (ack?.ok != true) return false
             // FINALIZE: the anchor + THIS session's code-hashes commit TOGETHER as ONE crash-atomic record (H1/H2).
-            store.commit(FinalizedEnrollment(candidate, minted.entries))
+            // CYP-558 (CYP-550 ④) — guard the commit against a storage fault. commit() is non-suspend (like read()), so
+            // catching Exception here cannot swallow a coroutine cancellation.
+            try {
+                store.commit(FinalizedEnrollment(candidate, minted.entries))
+            } catch (e: Exception) {
+                return rejectFinalizeCommitFailed(e)
+            }
             reply(tunnel, TunnelAuthGrant(granted = true, firstEnroll = false))  // ★ post-commit CONNECTED grant
             return true
         } finally {

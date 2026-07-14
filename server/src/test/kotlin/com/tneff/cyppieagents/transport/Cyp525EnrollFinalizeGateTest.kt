@@ -174,6 +174,31 @@ class Cyp525EnrollFinalizeGateTest {
     }
 
     @Test
+    fun cyp558_finalizeCommitFails_failsClosed_notUncaughtThrow_noConnectedGrant() = runBlocking {
+        // ★ CYP-558 (CYP-550 finding ④): the combined-atomic finalize commit throws on a STORAGE FAULT (disk-full /
+        // permissions / atomic-rename). By this point the provisional grant + backup codes were already revealed. If the
+        // throw escaped uncaught it would propagate out of `authorize` → the handler closes → the operator reconnects
+        // into the EMPTY path → a FRESH provisional reveals FRESH codes → silent churn, the "saved" codes void, no signal.
+        // The fix catches it → a clean fail-closed discard (rejectFinalizeCommitFailed) with a distinct diagnostic, never
+        // an uncaught throw, never a CONNECTED grant. MUT: remove the try/catch around store.commit → the IOException
+        // propagates → this `authorize` call throws → RED.
+        //
+        // A REAL FinalizedEnrollmentStore whose commit() faults deterministically: its file's parent is a regular FILE
+        // (not a directory), so AtomicFileWrite's temp-create throws IOException. read() still returns null (the file
+        // doesn't exist) so the flow reaches the commit attempt.
+        val notADir = Files.createTempFile("cyp558-notdir", ".file").toFile() // a regular file, NOT a directory
+        val badFile = File(notADir, "enrollment.rec")                         // parent is a file → commit's temp-create throws
+        val cipher = SecretCipherFactory.single(1, MasterKeySource.Box(SecretCipherFactory.newBoxKeyset()))
+        val commitFailStore = FinalizedEnrollmentStore(cipher, badFile, hubId)
+        val t = GateTunnel(listOf(reqBytes(byteArrayOf(20)), ackBytes()))
+        val ok = gate(commitFailStore).authorize(t) // MUST NOT throw (MUT: propagate the commit throw → this line throws → RED)
+        assertFalse(ok, "a finalize commit storage-fault → clean fail-closed discard, never an uncaught throw (CYP-558)")
+        assertTrue(grants(t).any { it.granted && it.firstEnroll }, "we reached the commit attempt (the provisional grant was sent)")
+        assertTrue(grants(t).none { it.granted && !it.firstEnroll }, "no post-commit CONNECTED grant — the finalize failed, nothing persisted")
+        assertNull(commitFailStore.read(), "nothing was persisted (the commit faulted)")
+    }
+
+    @Test
     fun afterFinalize_steadyState_skipsReveal_verifiesAnchor() = runBlocking {
         val store = finalStore()
         assertTrue(gate(store).authorize(GateTunnel(listOf(reqBytes(byteArrayOf(5)), ackBytes()))), "first-enroll finalizes")
