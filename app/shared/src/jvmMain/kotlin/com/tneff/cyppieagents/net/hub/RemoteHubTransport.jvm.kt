@@ -11,13 +11,15 @@ actual class RemoteHubTransport actual constructor() : HubTransport {
     override fun close() = Unit
 }
 
-/** M2 Seam-3 jvm (Path-A): the REAL tunnel-backed transport — loopback + [ClientLoopbackBridge] over the session tunnel. */
+/** M2 Seam-3 jvm (Path-A): the REAL tunnel-backed transport — loopback + [ClientLoopbackBridge] over the tunnel(s).
+ *  CYP-537: [acquireTunnel] is the pooling `PooledTunnelSource.acquire` (a distinct tunnel per connection), so the
+ *  accept-loop's per-connection `tunnelSource.acquire()` gives true N-tunnel concurrency (F-M2-1 fix). */
 actual fun buildRemoteHubTransport(
-    currentTunnel: () -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
+    acquireTunnel: suspend () -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
     sessionToken: () -> String?,
     scope: kotlinx.coroutines.CoroutineScope,
 ): HubTransport? = RemoteTunnelHubTransport(
-    tunnelSource = { currentTunnel() },
+    tunnelSource = { acquireTunnel() },
     sessionTokenProvider = sessionToken,
     scope = scope,
 )

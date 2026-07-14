@@ -12,6 +12,8 @@ import com.tneff.cyppieagents.net.hub.operator.PersistentOperatorDeviceKey
 import com.tneff.cyppieagents.net.hub.operator.UserVerification
 import com.tneff.cyppieagents.net.hub.operator.UvOutcome
 import com.tneff.cyppieagents.net.hub.operator.coreChannelBinding
+import com.tneff.cyppieagents.net.hub.pool.NoisePoolTunnelDialer
+import com.tneff.cyppieagents.net.hub.pool.PooledTunnelSource
 import com.tneff.cyppieagents.net.hub.relay.HttpRendezvousResolver
 import com.tneff.cyppieagents.net.hub.relay.KtorWsRelayConnector
 import com.tneff.cyppieagents.net.hub.relay.RendezvousRelayDialer
@@ -112,28 +114,49 @@ fun liveRemoteConnectComponentsFactory(
     // firstEnroll) and the RemoteConnectComponents (which the VM surfaces as RevealCodes) — what the operator confirms
     // IS what gates the SavedAck the session sends.
     val enrollConfirm = LiveEnrollConfirmCoordinator()
+    // Hoisted so the CYP-537 N-tunnel pool SHARES them with the session: pool tunnels ride the same TOFU pin
+    // ([shared.trust]) + the same enrolled device ([operatorAuth]'s durable key) the session's connect established.
+    val noiseTransport = NoiseJavaClientTransport()
+    val operatorAuth = ClientOperatorAuth(
+        popBuilder = OperatorPopBuilder(
+            store = KeystoreOperatorDeviceKeyStore(
+                userVerification = deferredUserVerification,
+                keyPair = persistentDeviceKey.loadOrGenerate(),
+            ),
+            nonceGenerator = secureRandomNonceGenerator,
+        ),
+        cpJwtProvider = HttpCpJwtProvider(cpHttpClient, cpBaseUrl, operatorToken, channelBinding),
+        enrollConfirmer = enrollConfirm,
+    )
     val session = buildRemoteHubSession(
         hubId = hub.hubId,
-        transport = NoiseJavaClientTransport(),
+        transport = noiseTransport,
         dialer = RendezvousRelayDialer(
             resolver = HttpRendezvousResolver(cpHttpClient, cpBaseUrl, operatorToken),
             connector = KtorWsRelayConnector(relayWsClient),
         ),
         trust = shared.trust,
-        authenticator = ClientOperatorAuth(
-            popBuilder = OperatorPopBuilder(
-                store = KeystoreOperatorDeviceKeyStore(
-                    userVerification = deferredUserVerification,
-                    keyPair = persistentDeviceKey.loadOrGenerate(),
-                ),
-                nonceGenerator = secureRandomNonceGenerator,
-            ),
-            cpJwtProvider = HttpCpJwtProvider(cpHttpClient, cpBaseUrl, operatorToken, channelBinding),
-            enrollConfirmer = enrollConfirm,
-        ),
+        authenticator = operatorAuth,
         scope = scope,
     )
-    RemoteConnectComponents(session, shared.oobConfirm, enrollConfirm)
+    // CYP-537 (M2 Option A, WS2) — the N-tunnel pool, the F-M2-1 fix. It shares the session's transport/trust/
+    // authenticator (pool tunnels ride the pin + enrolled device). The **CP-N-set resolve** (C4: opaque epoch-derived
+    // ids, CYP-536/507) and the **id-aware relay dial** are the co-located WS1↔WS2 convergence seams — wired
+    // **fail-closed** here (a `null` set / a throwing dial ⇒ the pool yields no tunnels ⇒ INERT), exactly like the
+    // rest of the gated remote runway. When Backend publishes the Register/Resolve set-format they swap in live; the
+    // pool mechanics (cap, lifecycle, C3 state, H7 backpressure) are already built + gated (`net/hub/pool`).
+    val tunnelPool = PooledTunnelSource(
+        dialer = NoisePoolTunnelDialer(
+            hubId = hub.hubId,
+            transport = noiseTransport,
+            trust = shared.trust,
+            authenticator = operatorAuth,
+            rendezvousSetResolver = { null }, // convergence: CP N-set endpoint not wired ⇒ fail-closed ⇒ INERT
+            dialRendezvous = { _ -> error("client N-set rendezvous dial not wired yet (WS1↔WS2 convergence) — fail-closed") },
+        ),
+        nowMs = { System.currentTimeMillis() },
+    )
+    RemoteConnectComponents(session, shared.oobConfirm, enrollConfirm, tunnelPool)
 }
 
 /** Runway #1: no client relay/rendezvous dialer yet → fail-closed at dial (RelayUnreachable), never connects. */

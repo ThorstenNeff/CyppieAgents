@@ -28,13 +28,17 @@ expect class RemoteHubTransport() : HubTransport
  * `RemoteTunnelHubTransport` (loopback + `ClientLoopbackBridge` over the tunnel, CYP-457 Path-A); non-desktop
  * targets return `null` (Path-A is Desktop-only; the multiplatform engine is the ② follow-on).
  *
- * [currentTunnel] reads the CURRENT `RemoteHubSession.tunnel` on **each** call, so the transport auto-rebinds after a
- * relay-drop reconnect — the loopback port stays stable across re-dials, only the tunnel swaps (Backend2 trap: stable
- * port; Seam-6). [sessionToken] MUST supply the operator's **CP-scoped hub ticket** (identity-bound), NEVER a static
- * MachineOperator token — the bridged request carries it as the operator's authority to the hub (Reviewer Axis-1).
+ * [acquireTunnel] supplies the [com.tneff.cyppieagents.net.hub.noise.NoiseTunnel] that carries the **next** accepted
+ * loopback connection (the transport's `TunnelSource`). CYP-537 (M2 Option A): it is a **pooling** source —
+ * `PooledTunnelSource.acquire()` establishes a **distinct** authenticated tunnel per concurrent connection (up to
+ * `TUNNEL_POOL_CAP`), fixing F-M2-1. `null` ⇒ the transport RSTs that connection (fail-closed, C2). (Single-flight
+ * fallback: a `suspend { session.tunnel }` still works for the 1-connection thru-cut.) It is `suspend` because
+ * establishing a fresh tunnel dials + handshakes + PoP-authenticates. [sessionToken] MUST supply the operator's
+ * **CP-scoped hub ticket** (identity-bound), NEVER a static MachineOperator token — the bridged request carries it
+ * as the operator's authority to the hub (Reviewer Axis-1, G1).
  */
 expect fun buildRemoteHubTransport(
-    currentTunnel: () -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
+    acquireTunnel: suspend () -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
     sessionToken: () -> String?,
     scope: kotlinx.coroutines.CoroutineScope,
 ): HubTransport?
