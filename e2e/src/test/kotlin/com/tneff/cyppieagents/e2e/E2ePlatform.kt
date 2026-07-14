@@ -139,6 +139,10 @@ fun e2ePlatform(
     gitRootOverride: File? = null,
     fileBacked: Boolean = false,
     runner: CommandRunner? = null,
+    // Post-login E2E (desktop turn→persistence, Team-2): durably back the HUB MESSAGE store so a posted turn
+    // survives a re-boot() over the reused gitRoot, provable through the real GET /api/channels/{id}/messages.
+    // Null → the production-default InMemoryMessageStore (unchanged for EVERY existing caller). Additive.
+    messageStoreFile: File? = null,
     // CYP-247 S3: the LRU session-suspension cap. Default (null) → the production default = 1 (teardown-on-switch).
     // A journey that exercises the cap>1 background-live state machine (J9) passes it explicitly.
     runtimeSuspensionCap: Int? = null,
@@ -178,6 +182,13 @@ fun e2ePlatform(
         spawner = FakeSpawner(),
         scope = scope,
         connectorFactory = connectorFactory,
+        // Post-login E2E: durable hub-message store when a file is supplied; else the prod-default InMemory
+        // (identical to omitting the arg) — so a posted turn survives a real re-boot() over the reused gitRoot.
+        storeFactory = if (messageStoreFile != null) {
+            { com.tneff.cyppieagents.comm.JsonFileMessageStore(messageStoreFile) }
+        } else {
+            { com.tneff.cyppieagents.comm.InMemoryMessageStore() }
+        },
         // CYP-256 (.5a): when file-backed, the durable stores live under the (reused) gitRoot so they survive a
         // re-boot() — projectRegistry (which projects exist) + projectAgents (runtime-added agent sets) + overrides.
         projectRegistryFile = if (fileBacked) gitRoot.toPath().resolve(".cyppie/projects.json").toFile() else null,
