@@ -17,6 +17,7 @@ import com.tneff.cyppieagents.model.TerminalControlState
 import com.tneff.cyppieagents.model.TerminalMode
 import com.tneff.cyppieagents.model.UserTurn
 import com.tneff.cyppieagents.pty.PtyManager
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -350,15 +351,25 @@ class Cyp355HandoffMotorTest {
             transitions = rig.transitions, // the SAME shared lock — the deadlock surface
             onTeardown = { rig.pty.closeAndAwait(it) }, // suspend, awaits under the lock
         )
-        rig.makeInteractive("backend")
+        // CYP-560 — the interactive PTY's onExit completes this: the OBSERVED "the process truly died" signal.
+        val ptyExited = CompletableDeferred<Int>()
+        rig.makeInteractive("backend", onExit = { code -> ptyExited.complete(code) })
         assertTrue(rig.pty.isLive("backend"))
 
-        val t0 = System.nanoTime()
-        withTimeout(4_000) { lifecycle.restart("backend") } // a deadlock/hang → TimeoutCancellationException → RED
-        val elapsedMs = (System.nanoTime() - t0) / 1_000_000
+        // Success = OBSERVED events, never a survived timeout (CYP-560): the restart returns, the REAL interactive-PTY
+        // onExit fires (the teardown actually observed the process die), and the mediated session is respawned. The
+        // outer withTimeout is a pure DEADLOCK BACKSTOP set ABOVE production's own closeAndAwait belt
+        // (CLOSE_AWAIT_TIMEOUT_MS = 5000ms) — it fires ONLY on a real unbounded deadlock (e.g. the shared
+        // transition-lock reentrancy the test name references), never on a within-contract slow teardown under load
+        // (the old CYP-560 false-RED, where elapsedMs<3000 / withTimeout(4000) asserted BELOW the 5000ms contract).
+        withTimeout(8_000) { lifecycle.restart("backend") }
 
+        // Observed-event success (no wall-clock): restart returned within the backstop AND the REAL interactive-PTY
+        // onExit fired during the teardown — the process truly died and the teardown observed it. Non-vacuous: restart
+        // CAN return with this INCOMPLETE — the belt-degraded path, where closeAndAwait hits its own 5000ms belt
+        // WITHOUT the pump joining (onExit never fired) → this reds (an unobserved teardown), never a false-green.
+        assertTrue(ptyExited.isCompleted, "the interactive PTY's onExit fired — the teardown OBSERVED the process die (an event, not a survived timeout)")
         assertNotNull(rig.sessions.session("backend"), "the mediated session is respawned")
         assertFalse(rig.pty.isLive("backend"), "restart during INTERACTIVE tears the PTY down (no orphan)")
-        assertTrue(elapsedMs < 3_000, "restart returned bounded (${elapsedMs}ms) — no masked near-hang under the lock")
     }
 }
