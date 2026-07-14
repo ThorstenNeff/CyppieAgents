@@ -750,4 +750,14 @@
     <string name="remote_connect_trust_reject">Stimmt nicht — abbrechen</string>
     <string name="remote_connect_trust_aborted">Nicht verbunden — Identität nicht bestätigt.</string>
     <string name="remote_connect_trust_changed_repin">Neu pinnen nur nach Out-of-Band-Abgleich des neuen Fingerprints.</string>
+
+    <!-- CYP-540 (WS5): N-Tunnel-Pool-Status-Chrome (per-Tunnel-State + Aggregat). Copy aus tunnel-pool-status-spec.md §8. -->
+    <string name="tunnel_pool_state_dialing">Verbindet…</string>
+    <string name="tunnel_pool_state_up">Verbunden</string>
+    <string name="tunnel_pool_state_backpressured">Gedrosselt</string>
+    <string name="tunnel_pool_state_down">Getrennt</string>
+    <string name="tunnel_pool_aggregate">%1$d von %2$d Tunneln aktiv</string>
+    <string name="tunnel_pool_aggregate_backpressured">gedrosselt</string>
+    <string name="a11y_tunnel_pool_row">Tunnel %1$s: %2$s</string>
+    <string name="a11y_tunnel_pool_aggregate">Pool: %1$d von %2$d aktiv%3$s</string>
 </resources>
