@@ -43,6 +43,13 @@ class OperatorSecretVault(
     fun devicePublicKey(): ByteArray? = (readBlob() as? BlobRead.Present)?.blob?.x509Pub()
 
     /**
+     * Delete the vault blob (state → [VaultState.Missing]). Internal use only — the **migration fail-safe rollback**
+     * (a re-seal that did not verify is discarded so migration retries) and Q5 teardown. NOT a user/attacker path (an
+     * attacker-triggered discard-to-force-re-enroll is exactly what ③ forbids; this is never wired to input).
+     */
+    fun discard() = store.delete()
+
+    /**
      * First-enroll (or change-passphrase re-seal): seal [privKeyPkcs8] under a fresh salt+nonce KEK. Resets the attempt
      * state. The caller MUST have UI-enforced the ② passphrase floor. Zeroizes the KEK. Does NOT hold the private key.
      */
