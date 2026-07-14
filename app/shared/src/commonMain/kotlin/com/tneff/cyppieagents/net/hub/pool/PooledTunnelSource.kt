@@ -1,12 +1,14 @@
 package com.tneff.cyppieagents.net.hub.pool
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * CYP-537 (M2 Option A, WS2) — the **pooling** source of workspace tunnels: the N-tunnel swap point that fixes
@@ -177,7 +179,11 @@ class PooledNoiseTunnel internal constructor(
         closedOnce = true
         pool.onTunnelClosed(rendezvousId) // mark DOWN + free the slot BEFORE closing the bytes (state-first)
         runCatching { delegate.close() }
-        pool.removeLive(rendezvousId)
+        // CYP-561 NOTE-2: run the live-map removal under NonCancellable so a cancellation between here and the
+        // `liveLock.withLock` suspension point can't skip it and leave a stale `live` entry. (The entry is already
+        // cap-/security-safe — onTunnelClosed freed the slot + delegate is closed, and a stale ref only gets an
+        // idempotent re-close at Q5 teardown — so this is a by-construction cleanliness belt, not a safety fix.)
+        withContext(NonCancellable) { pool.removeLive(rendezvousId) }
     }
 
     override fun onBackpressured(active: Boolean) = pool.onBackpressured(rendezvousId, active)

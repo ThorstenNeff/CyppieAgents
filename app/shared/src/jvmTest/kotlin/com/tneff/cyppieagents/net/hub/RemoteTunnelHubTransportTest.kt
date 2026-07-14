@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.net.hub
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -165,6 +166,26 @@ class RemoteTunnelHubTransportTest {
         )
         withTimeout(5_000) { allStarted.await() } // all N pumped at once ⇒ completes; single-flight ⇒ times out (RED)
         assertEquals(n, started.get(), "all N accepted connections are pumped CONCURRENTLY (per-connection, not single-flight)")
+        t.close(); scope.cancel()
+    }
+
+    @Test
+    fun acquireThrows_resetsConn_noLeak_CYP561() = runBlocking {
+        // CYP-561 NOTE-1: an acquire() that RE-THROWS (a dial exception the pool re-raises) must still RESET the
+        // accepted loopback socket (not leak until GC). supervisorScope isolates the failed child; the loop survives.
+        // Mutant: drop the try/catch around acquire ⇒ conn is never reset ⇒ wasReset false ⇒ RED.
+        val conn = FakeConn(listOf("GET /ws/lifecycle HTTP/1.1\r\n\r\n".encodeToByteArray()))
+        val handler = CoroutineExceptionHandler { _, _ -> } // the re-thrown acquire error is isolated (kept out of stderr)
+        val scope = CoroutineScope(Dispatchers.IO + handler)
+        val t = RemoteTunnelHubTransport(
+            tunnelSource = { throw RuntimeException("dial boom") }, // acquire() re-throws
+            sessionTokenProvider = { "cp-ticket" },
+            scope = scope,
+            acceptor = FakeAcceptor(port = 9300, conns = listOf(conn)),
+            injectedClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO),
+        )
+        t.acceptJob.join() // supervisorScope waits for the failed child; the throw is isolated (loop survives)
+        assertTrue(conn.wasReset, "acquire() re-throw ⇒ the accepted loopback socket is RESET, not leaked until GC")
         t.close(); scope.cancel()
     }
 
