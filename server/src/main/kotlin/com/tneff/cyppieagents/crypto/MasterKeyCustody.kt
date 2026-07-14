@@ -132,6 +132,13 @@ internal class SealedKeyset(
  * 256-bit KEK from the passphrase + a random 16-byte salt; AES-256-GCM (96-bit random nonce, 128-bit tag) seals the
  * serialized Tink keyset. Decryption verifies the tag — a wrong passphrase is indistinguishable from a tampered
  * blob (both fail-closed, no oracle).
+ *
+ * **KDF choice — PBKDF2-600k, not Argon2id (CYP-548, deliberate):** this custody protects a HIGH-entropy operator
+ * passphrase in a `0600` file against OFFLINE brute-force (single-boot-unlock) — a different threat model from Kratos's
+ * Argon2id (LOW-entropy end-user passwords, ONLINE no-lockout N-guess where the per-attempt cost floor is the whole
+ * defense). It is also a non-default option (env-keyset custody is the default) and JDK-only (Argon2id needs a native
+ * lib). 600k iters is OWASP-current. The [SealedKeyset] format is versioned (`v1:iters:…`), so an Argon2id `v2:`
+ * migration stays free if a trigger fires. Full rationale + triggers: `docs/design/CYP-548-master-key-kdf-rationale.md`.
  */
 private object Pbe {
     private const val ITERATIONS = 600_000
