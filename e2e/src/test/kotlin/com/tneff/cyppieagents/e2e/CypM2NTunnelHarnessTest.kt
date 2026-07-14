@@ -13,12 +13,15 @@ import com.tneff.cyppieagents.connector.AgentProcess
 import com.tneff.cyppieagents.connector.ProcessSpawner
 import com.tneff.cyppieagents.crypto.RawKeys
 import com.tneff.cyppieagents.model.Role
-import com.tneff.cyppieagents.net.hub.RemoteTunnelHubTransport
-import com.tneff.cyppieagents.net.hub.TunnelSource
 import com.tneff.cyppieagents.net.hub.buildRemoteHubTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseJavaClientTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.noise.RelayChannel
+import com.tneff.cyppieagents.net.hub.pool.BackpressureSignal
+import com.tneff.cyppieagents.net.hub.pool.PoolTunnelDialer
+import com.tneff.cyppieagents.net.hub.pool.PooledTunnelSource
+import com.tneff.cyppieagents.net.hub.pool.TUNNEL_POOL_CAP
+import com.tneff.cyppieagents.net.hub.pool.TunnelState
 import com.tneff.cyppieagents.routing.installPlatform
 import com.tneff.cyppieagents.routing.installTunnelGodTokenGuard
 import com.tneff.cyppieagents.transport.LoopbackBridge
@@ -49,9 +52,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.AfterTest
@@ -62,95 +65,55 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * CYP-539 (WS4) — the **N-tunnel E2E harness**: extends the single-flight Tier-B proof
- * ([CypM2TierBTransportTest]) to **N concurrent Noise tunnels**, the M2 Option-A datapath that fixes F-M2-1
- * (one tunnel = one duplex stream → the ~8 eager persistent WS deadlock on a single tunnel). Design + frozen
- * contracts: `docs/design/M2-A-ntunnel-workstream-split-and-contract.md` (§2, §4 C2/C3, §5).
+ * CYP-539 (WS4) — the **N-tunnel E2E harness**, GRADUATED onto the real CYP-537 pool (develop-landing base
+ * `b1035fb9`). Extends the single-flight Tier-B proof ([CypM2TierBTransportTest]) to **N concurrent Noise tunnels**,
+ * the M2 Option-A datapath that fixes F-M2-1 (one tunnel = one duplex stream → the ~8 eager persistent WS deadlock
+ * on a single tunnel). Design + frozen contracts: `docs/design/M2-A-ntunnel-workstream-split-and-contract.md`.
  *
- * **Contract-first (§5.1).** On develop `7358c853` the transport is still Phase-1 single-flight and the WS2
- * internals are NOT landed (0 hits for the N-pooling `TunnelSource`, `TunnelPoolState`, `poolCap`,
- * `BACKPRESSURED`). So this harness builds against the **frozen §4 shapes with test-local fakes** — the C2
- * [FakePoolingTunnelSource] and the C3 [TunnelPoolState] fixture + [FakePoolState] emitter — kept entirely in
- * `:e2e` test scope. It does NOT define/touch any `app/shared` production type (WS2's lane); when WS2 lands the
- * real pooling source + real emitter, these fixtures swap 1:1 against the same frozen shapes.
+ * **Graduated fake→real.** The C3 observability now asserts on the **real** `net.hub.pool.TunnelPoolState` emitted by
+ * a **real** [PooledTunnelSource] (no test-local fixture), and the pool-cap/fail-closed tooth drives the real
+ * transport with `acquireTunnel = pool::acquire` (the real pool client, per the WS2 rename `currentTunnel→acquireTunnel`).
+ * What is REAL: the crypto (real Noise NK tunnels), the routes (the real booted platform), the guard (Backend's real
+ * `installTunnelGodTokenGuard`), and the pool (real `PooledTunnelSource` cap + C3 state machine). The only substitution
+ * is the in-memory relay for the live relay WS (identical to Tier-B), and — for the pool-cap/C3 teeth — a lightweight
+ * [PoolTunnelDialer] that mints those real tunnels to the guarded tunnel connector (the CP/relay dial is Backend's
+ * `NoisePoolTunnelDialer`, exercised in its own joint auth proof `Cyp536JointNTunnelAuthE2eTest`).
  *
- * What is REAL here (not faked): the crypto (real Noise NK tunnels), the routes (the real booted platform), and
- * the guard (Backend's real `installTunnelGodTokenGuard`, tunnel-scoped). The only substitution is the in-memory
- * relay for the live relay WS — identical to Tier-B.
+ * **Division of labour (no duplication):** the operator-auth joint properties (1-UV-for-N, cross-tunnel anti-replay,
+ * bounded-reuse) are Backend's `Cyp536JointNTunnelAuthE2eTest` over the real `Rr3TunnelGate` — NOT re-proven here.
+ * This harness owns the datapath + per-tunnel guard + pool-cap fail-closed + C3 observability.
  *
- * Teeth (each non-vacuous — the keystone mutation that would make it pass falsely is named in each, and was
- * confirmed RED in a probe run):
- *  - ★ §C2/N-datapath: N tunnels carry N ops CONCURRENTLY (all 200 + real roster), each tunnel's own bytes grew
- *    (distinctness), and an unrelated witness tunnel stays at ZERO frames (no cross-leak). Converge N=2 → scale
- *    to `poolCap`. Keystone RED: share ONE tunnel across ops → the per-tunnel-grew set collapses (only one grows).
- *  - ★ §C1/security: the static operator (god) token is refused **per tunnel** on BOTH auth channels (Bearer 401,
- *    `?token=` WS no-event) on EVERY one of N tunnels; an agent token on each → 200; god on the PUBLIC connector →
- *    200 (port-scoped). Keystone RED: drop the per-tunnel guard → god accepted on some tunnel.
- *  - ★ §C2/pool-cap fail-closed: `acquire()` hands out exactly `cap` DISTINCT live tunnels then `null`; wired into
- *    the real transport, the first `cap` connections are carried (200) and the (cap+1)th fails CLOSED (RST, no
- *    local fallback — the `noLiveTunnel_failsClosed` invariant). Keystone RED: cap-bypass (a tunnel past cap) OR
- *    null-fallback (a local 200 instead of RST) → the (cap+1)th would 200.
- *  - ★ §C3/H7 observable: the per-tunnel [TunnelPoolState] stream surfaces DIALING→UP, a saturated tunnel as
- *    BACKPRESSURED, a dropped tunnel as DOWN, and the `aggregate {active, cap, anyBackpressured}` tracks it.
- *    SCOPE-HONEST: the real per-tunnel *pump* bound is CYP-535/H7 (Team-1, unlanded — the bridge pump uses
- *    UNLIMITED channels today), so this asserts the frozen C3 **observable contract**; it graduates to the real
- *    bound when H7 lands. Keystone RED: an emitter that never flips BACKPRESSURED → `anyBackpressured` stays false.
+ * Teeth (each non-vacuous — the keystone mutation that would make it pass falsely is named in each, confirmed RED
+ * in a probe run):
+ *  - ★ N-datapath: N distinct tunnels carry N ops CONCURRENTLY (all 200 + real roster), each tunnel's own bytes grew
+ *    (distinctness), an unrelated witness tunnel stays at ZERO frames (no cross-leak). Converge N=2 → scale to
+ *    `TUNNEL_POOL_CAP`. Keystone RED: share ONE tunnel across ops → the per-tunnel-grew set collapses.
+ *  - ★ god-token refused PER tunnel across ALL N (WS6 vector, k>0) on BOTH channels (Bearer 401, `?token=` WS
+ *    no-event); agent token → 200 on each; god on PUBLIC connector → 200 (port-scoped). **F②-1 positive control:** an
+ *    AGENT token over `/ws/events?token=` IS served an event → the WS path is functional, so the god no-event is the
+ *    GUARD refusing, not a broken WS. Keystone RED: drop the per-tunnel guard → god accepted on the tunnels.
+ *  - ★ pool-cap fail-closed (real [PooledTunnelSource]): `acquire()` hands out exactly `cap` DISTINCT live tunnels
+ *    then `null`. A connection over a headroom pool is carried (200 — the positive control that the routes are
+ *    healthy); then a PRE-EXHAUSTED pool (cap tunnels held open, no slot free) wired into the real transport makes the
+ *    accept-loop's `acquire()==null` → conn.reset() (RST) → the connection fails CLOSED (an IOException class, never a
+ *    local 200). (Sequential connections can't exhaust the pool: the bridge's clean-EOF `tunnel.close()` frees the slot
+ *    — correct reuse — so exhaustion is driven by concurrent HOLD.) The honest keystone is CAP-DISCRIMINATION
+ *    (`assertNotNull`×cap + `assertNull` past cap), not a null-vs-local claim — the transport has no local-serve path
+ *    (a null just RSTs). Keystone RED: cap-bypass → the exhausted pool would hand a tunnel → the connection 200s.
+ *  - ★ C3 pool-state (real emitter, behavior-driven): the real [PooledTunnelSource.state] surfaces DIALING→UP on
+ *    acquire, BACKPRESSURED via the real [BackpressureSignal] seam, DOWN on close, and `aggregate{active,cap,
+ *    anyBackpressured}` tracks it. (The PUMP auto-firing the backpressure signal under real saturation is H7/CYP-535's
+ *    own test; here the real pool state machine is driven via the real seam.) Keystone RED: assert `anyBackpressured`
+ *    without firing the seam → false.
  */
 class CypM2NTunnelHarnessTest {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val cleanups = mutableListOf<() -> Unit>()
 
-    /** WS2 owns the real single-sourced const (≈10–15, C2). Test-local until WS2 lands it; then swap. */
-    private val harnessPoolCap = 12
-
     @AfterTest fun tearDown() {
         cleanups.asReversed().forEach { runCatching { it() } }
         scope.cancel()
-    }
-
-    // ============================================================================================================
-    // C3 fixture — the FROZEN per-tunnel status shape (contract doc §4 C3). Test-local; WS2's real emitter must
-    // satisfy exactly this shape. enum {DIALING,UP,BACKPRESSURED,DOWN} + {rendezvousId,state,sinceTs} + aggregate.
-    // ============================================================================================================
-    enum class TunnelState { DIALING, UP, BACKPRESSURED, DOWN }
-    data class TunnelStatus(val rendezvousId: String, val state: TunnelState, val sinceTs: Long)
-    data class PoolAggregate(val active: Int, val cap: Int, val anyBackpressured: Boolean)
-    data class TunnelPoolState(val tunnels: List<TunnelStatus>, val aggregate: PoolAggregate)
-
-    /** A minimal fake C3 emitter the harness drives over tunnel lifecycle; asserts on the frozen shape. */
-    private class FakePoolState(private val cap: Int) {
-        private val byId = LinkedHashMap<String, TunnelStatus>()
-        private var clock = 0L
-        @Synchronized fun mark(rendezvousId: String, state: TunnelState) {
-            byId[rendezvousId] = TunnelStatus(rendezvousId, state, sinceTs = ++clock)
-        }
-        @Synchronized fun snapshot(): TunnelPoolState {
-            val tunnels = byId.values.toList()
-            val active = tunnels.count { it.state == TunnelState.UP || it.state == TunnelState.BACKPRESSURED }
-            return TunnelPoolState(tunnels, PoolAggregate(active, cap, anyBackpressured = tunnels.any { it.state == TunnelState.BACKPRESSURED }))
-        }
-    }
-
-    // ============================================================================================================
-    // C2 fixture — the FROZEN N-semantics of `TunnelSource.acquire()` (contract doc §4 C2): each acquire() returns
-    // a DISTINCT live tunnel over its own rendezvous-id up to [cap]; past cap → null (fail-closed, never fallback).
-    // ============================================================================================================
-    private class FakePoolingTunnelSource(
-        private val cap: Int,
-        private val mint: suspend (rendezvousId: String) -> NoiseTunnel,
-    ) : TunnelSource {
-        private val next = AtomicInteger(0)
-        val handedOut = CopyOnWriteArrayList<NoiseTunnel>()
-        val rendezvousIds = CopyOnWriteArrayList<String>()
-        override suspend fun acquire(): NoiseTunnel? {
-            val idx = next.getAndIncrement()
-            if (idx >= cap) return null // ★ hard cap → fail-closed (the transport RSTs; never a local fallback)
-            val rvId = "rv-$idx"
-            val t = mint(rvId) // a fresh, DISTINCT, live tunnel over its OWN rendezvous-id
-            handedOut += t; rendezvousIds += rvId
-            return t
-        }
     }
 
     // ============================================================================================================
@@ -164,7 +127,7 @@ class CypM2NTunnelHarnessTest {
 
     @Test
     fun nTunnels_concurrentDatapath_scalesToPoolCap() = runBlocking {
-        runNConcurrentDatapath(n = harnessPoolCap)
+        runNConcurrentDatapath(n = TUNNEL_POOL_CAP)
     }
 
     /** N distinct tunnels carry N ops CONCURRENTLY through the real guard/routes; each tunnel's own bytes grew; an
@@ -172,12 +135,12 @@ class CypM2NTunnelHarnessTest {
     private suspend fun runNConcurrentDatapath(n: Int) {
         val p = startTwoConnectorPlatform()
         // One real tunnel per logical connection; one transport per tunnel (each transport is single-flight, so N
-        // transports = N concurrent connections — exactly the N-tunnel datapath the pooling source will serve).
+        // transports = N concurrent connections — exactly the N-tunnel datapath the pool serves in prod).
         val handles = (0 until n).map { realTunnel(p.tunnelPort) }
         val witness = realTunnel(p.tunnelPort) // deliberately handed to NO transport
         val transports = handles.map { h ->
             val q = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(h.tunnel) }
-            buildRemoteHubTransport(currentTunnel = { q.poll() }, sessionToken = { p.agentToken }, scope = scope)!!
+            buildRemoteHubTransport(acquireTunnel = { q.poll() }, sessionToken = { p.agentToken }, scope = scope)!!
                 .also { t -> cleanups += { t.close() } }
         }
         val witnessBase = witness.recorder.snapshot()
@@ -204,109 +167,158 @@ class CypM2NTunnelHarnessTest {
         // ★ per-tunnel: the god token is refused on EVERY one of N tunnels (Bearer + WS), an agent token passes on each.
         repeat(n) { i ->
             val godTx = realTunnel(p.tunnelPort)
-            val godTransport = buildRemoteHubTransport(currentTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(godTx.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
+            val godTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(godTx.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
             cleanups += { godTransport.close() }
             assertEquals(401, oneShotGet("${godTransport.httpBaseUrl}/api/agents", p.godToken).status.value,
                 "tunnel #$i: the god token as Bearer over the tunnel is refused 401 by the real per-tunnel guard")
 
             // `?token=` WS channel on the SAME logical tunnel (a fresh tunnel for the fresh connection, no-mux).
             val godWsTx = realTunnel(p.tunnelPort)
-            val godWsTransport = buildRemoteHubTransport(currentTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(godWsTx.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
+            val godWsTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(godWsTx.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
             cleanups += { godWsTransport.close() }
-            val wsClient = HttpClient(CIO) { install(WebSockets) }
-            cleanups += { runCatching { wsClient.close() } }
-            var served = false
-            withTimeoutOrNull(6_000) {
-                runCatching {
-                    wsClient.webSocket("${godWsTransport.wsBaseUrl}/ws/events?token=${p.godToken}") {
-                        for (frame in incoming) { if (frame is Frame.Text) { served = true; break } }
-                    }
-                }
-            }
-            assertTrue(!served, "tunnel #$i: the god token via ?token= over the WS path is refused (no event served, no query bypass)")
+            assertTrue(!wsEventServed(godWsTransport.wsBaseUrl, p.godToken),
+                "tunnel #$i: the god token via ?token= over the WS path is refused (no event served, no query bypass)")
 
             // non-vacuity per tunnel: an AGENT token over the SAME tunnel connector → 200 (only the god token is refused).
             val agentTx = realTunnel(p.tunnelPort)
-            val agentTransport = buildRemoteHubTransport(currentTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(agentTx.tunnel) }::poll, sessionToken = { p.agentToken }, scope = scope)!!
+            val agentTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(agentTx.tunnel) }::poll, sessionToken = { p.agentToken }, scope = scope)!!
             cleanups += { agentTransport.close() }
             assertEquals(200, oneShotGet("${agentTransport.httpBaseUrl}/api/agents", p.agentToken).status.value,
                 "tunnel #$i: an agent token over the tunnel is accepted (200) — the guard refuses ONLY the god token")
         }
+
+        // ★ F②-1 POSITIVE CONTROL (anti-vacuity on the WS auth axis): an AGENT token over `/ws/events?token=` IS
+        //   served an event — so the WS path is functional and carries events, and the god no-event above is the
+        //   GUARD refusing, not a broken/dead WS (which would also yield no-event, indistinguishable without this).
+        val posTx = realTunnel(p.tunnelPort)
+        val posTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(posTx.tunnel) }::poll, sessionToken = { p.agentToken }, scope = scope)!!
+        cleanups += { posTransport.close() }
+        assertTrue(wsEventServed(posTransport.wsBaseUrl, p.agentToken),
+            "F②-1 positive control: an AGENT token over /ws/events?token= IS served an event — the WS path works, so the god no-event is the guard")
+
         // non-vacuity: the SAME god token over the PUBLIC connector → 200 (the guard is port-scoped, not global).
         val pub = realTunnel(p.publicPort)
-        val pubTransport = buildRemoteHubTransport(currentTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(pub.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
+        val pubTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(pub.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
         cleanups += { pubTransport.close() }
         assertEquals(200, oneShotGet("${pubTransport.httpBaseUrl}/api/agents", p.godToken).status.value,
             "the SAME god token over the PUBLIC connector is served 200 — the tunnel guard is port-scoped")
     }
 
     @Test
-    fun poolCap_handsOutDistinctUpToCap_thenFailsClosed_endToEnd() = runBlocking {
+    fun poolCap_realPool_handsOutDistinctUpToCap_thenFailsClosed_endToEnd() = runBlocking {
         val p = startTwoConnectorPlatform()
         val cap = 4
-        val source = FakePoolingTunnelSource(cap) { realTunnel(p.tunnelPort).tunnel }
 
-        // ★ C2 direct semantics: exactly `cap` DISTINCT non-null tunnels, then null (fail-closed) past the cap.
+        // ★ C2 direct semantics on the REAL PooledTunnelSource: exactly `cap` DISTINCT non-null tunnels, then null.
+        val source = realPool(p.tunnelPort, cap)
         val acquired = (0 until cap).map { source.acquire() }
-        acquired.forEachIndexed { i, t -> assertNotNull(t, "acquire() #$i within cap returns a live tunnel") }
+        acquired.forEachIndexed { i, t -> assertNotNull(t, "real pool acquire() #$i within cap returns a live tunnel") }
         assertEquals(cap, acquired.filterNotNull().distinct().size, "the $cap acquired tunnels are all DISTINCT")
-        assertEquals(cap, source.rendezvousIds.distinct().size, "each acquired tunnel has its OWN distinct rendezvous-id")
-        assertNull(source.acquire(), "acquire() past the cap returns null (fail-closed, never a fallback tunnel)")
-        assertNull(source.acquire(), "acquire() stays null past the cap")
+        assertNull(source.acquire(), "real pool acquire() past the cap returns null (fail-closed, never a fallback tunnel)")
+        assertNull(source.acquire(), "real pool acquire() stays null past the cap")
+        // and the real C3 state reflects the cap-full pool.
+        assertEquals(cap, source.state.value.aggregate.active, "the real pool reports `cap` active tunnels")
+        assertEquals(cap, source.state.value.aggregate.cap, "the real pool aggregate carries its cap")
 
-        // ★ end-to-end fail-closed: wire a FRESH pool into the REAL transport. The first `cap` connections are carried
-        //   (200, live); the (cap+1)th → acquire()==null → conn.reset() (RST) → the request fails CLOSED, never a
-        //   local 200. (Single-flight transport → drive the connections sequentially.)
-        val e2ePool = FakePoolingTunnelSource(cap) { realTunnel(p.tunnelPort).tunnel }
-        val transport = RemoteTunnelHubTransport(tunnelSource = e2ePool, sessionTokenProvider = { p.agentToken }, scope = scope)
+        // ★ POSITIVE CONTROL (transport+real-pool wiring carries an op): a fresh pool with headroom → one connection is
+        //   carried over a pooled tunnel (200). Note single-flight + the bridge's clean-EOF `tunnel.close()` FREES the
+        //   pool slot when a connection ends, so sequential connections REUSE slots (correct pool behaviour) and cannot
+        //   themselves exhaust the pool — exhaustion is a CONCURRENT-hold property, driven explicitly below.
+        val livePool = realPool(p.tunnelPort, cap)
+        val liveTransport = buildRemoteHubTransport(acquireTunnel = livePool::acquire, sessionToken = { p.agentToken }, scope = scope)!!
+        cleanups += { liveTransport.close() }
+        assertEquals(200, oneShotGet("${liveTransport.httpBaseUrl}/api/agents", p.agentToken).status.value,
+            "positive control: a connection over a pooled tunnel is carried 200 — the routes/platform are healthy")
+
+        // ★ end-to-end fail-closed: PRE-EXHAUST a fresh pool by acquiring + HOLDING `cap` tunnels (slots stay occupied,
+        //   never closed) so acquire() is at null; wire THAT exhausted pool into the real transport → the accept-loop's
+        //   `acquire()==null` → conn.reset() (RST) → the connection fails CLOSED (an IOException class), never a local 200.
+        val exhaustedPool = realPool(p.tunnelPort, cap)
+        val held = (0 until cap).map { assertNotNull(exhaustedPool.acquire(), "pre-exhaust hold #$it") }
+        assertEquals(cap, held.distinct().size, "held $cap distinct tunnels")
+        assertNull(exhaustedPool.acquire(), "the pool is now exhausted (cap held, no slot free)")
+        val transport = buildRemoteHubTransport(acquireTunnel = exhaustedPool::acquire, sessionToken = { p.agentToken }, scope = scope)!!
         cleanups += { transport.close() }
-        repeat(cap) { i ->
-            assertEquals(200, oneShotGet("${transport.httpBaseUrl}/api/agents", p.agentToken).status.value,
-                "connection #$i within cap is carried over a pooled tunnel (200)")
-        }
         val overflow = runCatching { oneShotGet("${transport.httpBaseUrl}/api/agents", p.agentToken).status.value }
         assertTrue(overflow.isFailure,
-            "the (cap+1)th connection fails CLOSED (RST) when the pool is exhausted — noLiveTunnel_failsClosed (got ${overflow.getOrNull()})")
+            "a connection against an EXHAUSTED pool fails CLOSED (acquire null → RST), never a local 200 (got ${overflow.getOrNull()})")
+        // sharpen (WS6 F②-1-adjacent): the failure is a connection-reset/EOF CLASS (the RST fail-closed signal), not a
+        // timeout-hang or a masked success. Robust across CIO's exception surface (type OR cause OR message).
+        val ex = overflow.exceptionOrNull()
+        val exMsg = ((ex?.message ?: "") + " " + (ex?.cause?.message ?: "")).lowercase()
+        assertTrue(
+            ex is IOException || ex?.cause is IOException || listOf("reset", "closed", "eof", "refused", "end of").any { it in exMsg },
+            "the fail-closed is a connection-reset/EOF class (RST), got $ex",
+        )
     }
 
     @Test
-    fun c3_poolState_observableContract_notBehavior_perTunnelStatesAndAggregate() {
-        // ⚠ OBSERVABLE-CONTRACT, NOT BEHAVIOR. This asserts the FROZEN C3 shape against a FAKE emitter — it proves
-        // the assertion-machinery stands against the contract (ready to swap), NOT that backpressure actually holds.
-        // A fake-driven BACKPRESSURED must NEVER be read as "backpressure proven" — the real per-tunnel pump bound
-        // is H7/CYP-535 (Team-1, unlanded; the bridge pump uses UNLIMITED channels today). This tooth GRADUATES to
-        // behavior-proven when H7 lands: swap the fake for the real emitter, real saturation drives BACKPRESSURED.
-        val cap = harnessPoolCap
-        val ps = FakePoolState(cap)
+    fun c3_realPoolState_perTunnel_dialingUp_backpressured_down_andAggregate() = runBlocking {
+        val p = startTwoConnectorPlatform()
+        val pool = realPool(p.tunnelPort, cap = TUNNEL_POOL_CAP)
 
-        // two tunnels DIALING → UP
-        ps.mark("rv-0", TunnelState.DIALING); ps.mark("rv-1", TunnelState.DIALING)
-        ps.mark("rv-0", TunnelState.UP); ps.mark("rv-1", TunnelState.UP)
-        var s = ps.snapshot()
-        assertEquals(2, s.aggregate.active, "both live tunnels are active")
-        assertEquals(cap, s.aggregate.cap, "aggregate carries the pool cap")
+        // acquire two real tunnels → the REAL pool state surfaces them UP (DIALING→UP happened inside acquire).
+        val a = assertNotNull(pool.acquire(), "first pooled tunnel")
+        val b = assertNotNull(pool.acquire(), "second pooled tunnel")
+        assertTrue(a !== b, "two DISTINCT pooled tunnels")
+        var s = pool.state.value
+        assertEquals(2, s.aggregate.active, "both live tunnels are active in the real pool state")
+        assertEquals(TUNNEL_POOL_CAP, s.aggregate.cap, "aggregate carries the real TUNNEL_POOL_CAP")
         assertTrue(!s.aggregate.anyBackpressured, "no backpressure while both are UP")
-        assertEquals(TunnelState.UP, s.tunnels.first { it.rendezvousId == "rv-0" }.state)
+        assertTrue(s.tunnels.all { it.state == TunnelState.UP }, "both tunnels report UP")
 
-        // rv-1 saturates → BACKPRESSURED; aggregate.anyBackpressured flips true (still active — it's UP-ish, bounded)
-        ps.mark("rv-1", TunnelState.BACKPRESSURED)
-        s = ps.snapshot()
-        assertTrue(s.aggregate.anyBackpressured, "★ a saturated tunnel surfaces as BACKPRESSURED in the aggregate (C3)")
-        assertEquals(TunnelState.BACKPRESSURED, s.tunnels.first { it.rendezvousId == "rv-1" }.state)
-        assertTrue(s.tunnels.first { it.rendezvousId == "rv-1" }.sinceTs > s.tunnels.first { it.rendezvousId == "rv-0" }.sinceTs,
-            "the state-transition timestamp advances (sinceTs is per-transition)")
+        // ★ BACKPRESSURED via the REAL BackpressureSignal seam (the acquire() result IS a BackpressureSignal): the real
+        //   pool state machine flips that tunnel BACKPRESSURED + aggregate.anyBackpressured. (Whether the PUMP fires
+        //   this under real saturation is H7/CYP-535's own test — here the real pool emitter is driven via the real seam.)
+        val aBackpressure = a as BackpressureSignal
+        aBackpressure.onBackpressured(true)
+        s = pool.state.value
+        assertTrue(s.aggregate.anyBackpressured, "★ the real pool surfaces BACKPRESSURED in the aggregate (C3, behavior-driven)")
+        assertEquals(1, s.tunnels.count { it.state == TunnelState.BACKPRESSURED }, "exactly the saturated tunnel is BACKPRESSURED")
+        assertEquals(2, s.aggregate.active, "a BACKPRESSURED tunnel is still active (live-but-slow, not down)")
 
-        // rv-0 drops → DOWN (no longer active); rv-1 recovers → UP (backpressure clears)
-        ps.mark("rv-0", TunnelState.DOWN); ps.mark("rv-1", TunnelState.UP)
-        s = ps.snapshot()
-        assertEquals(1, s.aggregate.active, "a DOWN tunnel is not active")
-        assertTrue(!s.aggregate.anyBackpressured, "backpressure clears when the saturated tunnel recovers")
-        assertEquals(TunnelState.DOWN, s.tunnels.first { it.rendezvousId == "rv-0" }.state)
+        // recover → UP (backpressure clears)
+        aBackpressure.onBackpressured(false)
+        assertTrue(!pool.state.value.aggregate.anyBackpressured, "backpressure clears when the tunnel recovers")
+
+        // ★ DOWN on close: closing a pooled tunnel frees its slot in the real pool state.
+        b.close()
+        s = pool.state.value
+        assertEquals(1, s.aggregate.active, "a closed (DOWN) tunnel is no longer active")
+        assertTrue(s.tunnels.any { it.state == TunnelState.DOWN }, "the closed tunnel surfaces DOWN")
     }
 
     // ------------------------------------------------------------------------------------------------------------
     // Infra (self-contained, mirrors CypM2TierBTransportTest so the proven single-tunnel teeth stay untouched).
     // ------------------------------------------------------------------------------------------------------------
+
+    /** A real [PooledTunnelSource] whose dialer mints [cap] REAL Noise tunnels to the guarded tunnel connector. The
+     *  CP/relay dial is Backend's `NoisePoolTunnelDialer` (its own joint proof); here the pool's cap + C3 state are real. */
+    private fun realPool(tunnelPort: Int, cap: Int): PooledTunnelSource {
+        val ids = (0 until cap).map { "rv-$it" }
+        val clock = AtomicLong(0)
+        val dialer = object : PoolTunnelDialer {
+            override suspend fun rendezvousSet(): List<String> = ids
+            override suspend fun dial(rendezvousId: String): NoiseTunnel = realTunnel(tunnelPort).tunnel
+        }
+        return PooledTunnelSource(dialer = dialer, cap = cap, nowMs = { clock.incrementAndGet() })
+            .also { pool -> cleanups += { runCatching { runBlocking { pool.close() } } } }
+    }
+
+    /** Subscribe `/ws/events?token=` over [wsBase]; true iff a text event frame is served within the window. */
+    private suspend fun wsEventServed(wsBase: String, token: String): Boolean {
+        val wsClient = HttpClient(CIO) { install(WebSockets) }
+        cleanups += { runCatching { wsClient.close() } }
+        var served = false
+        withTimeoutOrNull(6_000) {
+            runCatching {
+                wsClient.webSocket("${wsBase.trimEnd('/')}/ws/events?token=$token") {
+                    for (frame in incoming) { if (frame is Frame.Text) { served = true; break } }
+                }
+            }
+        }
+        return served
+    }
 
     private class FakeProcess : AgentProcess {
         override val stdoutLines = kotlinx.coroutines.flow.emptyFlow<String>()

@@ -75,7 +75,7 @@ class CypM2HardeningTest {
             val nettyPort = platform.baseUrl.substringAfterLast(':').toInt()
             val op = E2ePlatform.OPERATOR_TOKEN
             val queue = ConcurrentLinkedQueue<NoiseTunnel>()
-            val transport = buildRemoteHubTransport(currentTunnel = { queue.poll() }, sessionToken = { op }, scope = scope)!!
+            val transport = buildRemoteHubTransport(acquireTunnel = { queue.poll() }, sessionToken = { op }, scope = scope)!!
             cleanups += { transport.close() }
             val h = realTunnel(nettyPort); queue.add(h.tunnel)
             val wsClient = HttpClient(CIO) { install(WebSockets) }
@@ -116,7 +116,7 @@ class CypM2HardeningTest {
             val nettyPort = platform.baseUrl.substringAfterLast(':').toInt()
             val bearer = E2ePlatform.agentToken("backend")
             val queue = ConcurrentLinkedQueue<NoiseTunnel>()
-            val transport = buildRemoteHubTransport(currentTunnel = { queue.poll() }, sessionToken = { bearer }, scope = scope)!!
+            val transport = buildRemoteHubTransport(acquireTunnel = { queue.poll() }, sessionToken = { bearer }, scope = scope)!!
             cleanups += { transport.close() }
             val stableBase = transport.httpBaseUrl // the loopback port is stable across the drop; only the tunnel swaps
 
@@ -140,7 +140,7 @@ class CypM2HardeningTest {
             val nettyPort = platform.baseUrl.substringAfterLast(':').toInt()
             val op = E2ePlatform.OPERATOR_TOKEN
             val queue = ConcurrentLinkedQueue<NoiseTunnel>()
-            val transport = buildRemoteHubTransport(currentTunnel = { queue.poll() }, sessionToken = { op }, scope = scope)!!
+            val transport = buildRemoteHubTransport(acquireTunnel = { queue.poll() }, sessionToken = { op }, scope = scope)!!
             cleanups += { transport.close() }
 
             // control: a COMPLETE POST over an intact tunnel creates the agent (201) — so the failure below is the drop's doing.
@@ -176,7 +176,7 @@ class CypM2HardeningTest {
             // so N-concurrent is N transports today; the full client-side N-per-session mux is the ready-if-A follow-on.
             val transports = (0 until n).map { i ->
                 val queue = ConcurrentLinkedQueue<NoiseTunnel>()
-                val t = buildRemoteHubTransport(currentTunnel = { queue.poll() }, sessionToken = { bearer }, scope = scope)!!
+                val t = buildRemoteHubTransport(acquireTunnel = { queue.poll() }, sessionToken = { bearer }, scope = scope)!!
                 cleanups += { t.close() }
                 val h = realTunnel(nettyPort); queue.add(h.tunnel)
                 t to h
