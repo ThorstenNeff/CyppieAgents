@@ -125,6 +125,14 @@ class OutlineTextColorGuardTest {
                     "the NUMBER (outline↔surface 3.55:1 / 3.63:1 ≥ 3:1), pinned by Cyp392ScrollbarStyleTest. NO alpha " +
                     "(outline sits near the 3:1 floor — the CYP-337 lesson); the active/hover colour is onSurfaceVariant.",
         ),
+        "RemoteOperatorAuthSteps.kt" to mapOf(
+            "val fillColor = if (ui.fillDamped) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary" to
+                "DECIDED (UIUX-Designer2, CYP-574 token-call: keep outline — no dedicated damped token, M3 has no " +
+                    "muted-fill role; scoped entry prevents outline-as-fill generally): RemoteOperatorAuthSteps:308 — " +
+                    "damped strength-fill (BLOCKLISTED), honesty-parity: low-emphasis neutral, damit der Fill nicht " +
+                    "„stark“ lesen kann; Non-Text ≥3:1 (Fill, NICHT Text-Color; measured 3.05:1, WCAG 1.4.11 — the low " +
+                    "contrast IS the honesty intent); Scope = nur dieser damped strength-fill (R4/CYP-542).",
+        ),
     )
 
     private data class Hit(val file: String, val line: Int, val text: String)
