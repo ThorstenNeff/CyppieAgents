@@ -157,6 +157,11 @@ fun e2ePlatform(
     // main to serve the reference DOM fixture same-origin (no WS cross-origin/CORS). Null → nothing extra (prod
     // path / every existing journey unchanged).
     extraRoutes: (io.ktor.server.routing.Routing.() -> Unit)? = null,
+    // Post-login E2E (desktop login→hub handoff, Team-2): the auth resolution seam. Null → installPlatform's own
+    // default (`AuthDeps(tokenRegistry)`, unchanged for every existing caller). Supply an AuthDeps with a fake
+    // IdentityProvider + RoleStore to drive the REAL native `X-Session-Token` session→authorized-reads path
+    // hermetically (no live Kratos). Additive.
+    authDeps: com.tneff.cyppieagents.auth.AuthDeps? = null,
 ): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
@@ -235,7 +240,7 @@ fun e2ePlatform(
     // leaves the durable-active as the active view — the harness must mirror that, not force config.projectId.
     booted.state.rescope(booted.activeProjectId)
 
-    val server = embeddedServerNetty(booted, port, extraRoutes)
+    val server = embeddedServerNetty(booted, port, extraRoutes, authDeps)
     server.start(wait = false)
     val resolvedPort = runBlocking { server.engine.resolvedConnectors().first().port }
     return E2ePlatform(booted, server, "http://127.0.0.1:$resolvedPort", now, scope, gitRoot, deleteGitRootOnClose = gitRootOverride == null)
@@ -245,8 +250,9 @@ private fun embeddedServerNetty(
     booted: BootedPlatform,
     port: Int = 0,
     extraRoutes: (io.ktor.server.routing.Routing.() -> Unit)? = null,
+    authDeps: com.tneff.cyppieagents.auth.AuthDeps? = null,
 ) = io.ktor.server.engine.embeddedServer(Netty, port = port) {
-    installPlatform(booted)
+    if (authDeps != null) installPlatform(booted, authDeps = authDeps) else installPlatform(booted)
     if (extraRoutes != null) routing { extraRoutes() }
 }
 
