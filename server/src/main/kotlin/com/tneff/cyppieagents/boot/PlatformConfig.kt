@@ -109,6 +109,15 @@ data class HubConfig(
     val url: String = "http://localhost:8787",
     val port: Int = 8787,
     val host: String = "127.0.0.1",
+    /**
+     * CYP-427 (M2): the **tunnel-scoped connector** port — a SECOND Netty connector bound loopback-only
+     * (`127.0.0.1:[tunnelPort]`) that ONLY the [com.tneff.cyppieagents.transport.LoopbackBridge] dials. Requests
+     * arriving on it are refused the static machine operator token ("God token") by
+     * [com.tneff.cyppieagents.routing.installTunnelGodTokenGuard], so that unscoped/non-revocable credential can
+     * never ride the tunnel — the remote operator authenticates with a CP-scoped session instead. Distinct from
+     * [port] (public, 8787) and the relay's 8788; loopback-only, additive + defaulted so pre-M2 configs load unchanged.
+     */
+    val tunnelPort: Int = 8786,
 )
 
 /**

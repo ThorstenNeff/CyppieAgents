@@ -384,7 +384,9 @@ fun Application.bootPlatform(
                 )
             }
             com.tneff.cyppieagents.transport.buildRemoteTransport(
-                loopbackPort = config.hub.port,
+                // CYP-427 (M2): the bridge MUST target the RESTRICTIVE tunnel-scoped connector (not the public port),
+                // or tunnel traffic would arrive on the public connector and the God-token guard would never see it.
+                loopbackPort = config.hub.tunnelPort,
                 hubIdentity = hubIdentity,
                 hubSecretStore = secretStore,
                 operatorDeviceStore = operatorDeviceStore,
@@ -411,6 +413,10 @@ fun Application.bootPlatform(
     // has no origin protection) and only spot-tests 2 of 8 ws routes. This holds for every /ws/* upgrade,
     // empty allowlist included (defense-in-depth vs CSWSH; permits no-Origin native clients + same-origin).
     installWsOriginGuard(config.web.allowedOrigins)
+    // CYP-427 (M2): refuse the static operator ("God") token on the tunnel-scoped connector (config.hub.tunnelPort).
+    // Port-discriminated (server-side-trusted, the dumb byte-pump stays dumb); agent tokens + Kratos operator sessions
+    // pass unchanged (isOperator is true ONLY for the one static string). App-wide install, no-ops on the public port.
+    installTunnelGodTokenGuard(config.hub.tunnelPort, booted.tokenRegistry::isOperator)
     // CYP-178: build the real AuthDeps — the verified-human OPERATOR path — when Kratos is configured;
     // otherwise fail-closed to token-only (human path deny-all). The role store is durable + out-of-repo.
     val authDeps = config.auth?.let { authCfg ->
