@@ -51,6 +51,16 @@ internal fun parseKratosErrorId(body: String): String? = runCatching {
         ?: root["id"]?.jsonPrimitive?.content
 }.getOrNull()
 
+/**
+ * CYP-576 — the native API-flow `session_token_exchange_code` (the "init half", ~64ch) from the `GET
+ * /self-service/login/api?return_session_token_exchange_code=true` response. Redeemed together with the loopback
+ * `return_to_code` at `GET /sessions/token-exchange` for a native `session_token` (no browser-cookie handoff).
+ * Version-verified field name (Backend live-staging spike 2026-07-14). Null when absent (flow not exchange-armed).
+ */
+internal fun parseKratosExchangeInitCode(body: String): String? = runCatching {
+    KratosJson.parseToJsonElement(body).jsonObject["session_token_exchange_code"]?.jsonPrimitive?.content
+}.getOrNull()?.ifBlank { null }
+
 /** The `redirect_browser_to` URL from a Kratos browser-location-change response (the OIDC → GitHub URL), or null. */
 internal fun parseKratosRedirectUrl(body: String): String? = runCatching {
     KratosJson.parseToJsonElement(body).jsonObject["redirect_browser_to"]?.jsonPrimitive?.content

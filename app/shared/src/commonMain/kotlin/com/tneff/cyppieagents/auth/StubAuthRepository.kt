@@ -23,6 +23,8 @@ class StubAuthRepository(
     var verifyEmailResult: (token: String) -> VerifyResult = { _ -> VerifyResult.Ok },
     var resendVerificationResult: () -> ResendResult = { ResendResult.Accepted },
     var githubStartResult: () -> GithubStart = { GithubStart.Redirect("https://github.test/login/oauth/authorize") },
+    /** CYP-576 — the native token-exchange outcome (init+return codes → resolved session). Default = Verified MEMBER. */
+    var githubTokenExchangeResult: (initCode: String, returnToCode: String) -> SessionState = { _, _ -> SessionState.Verified(UserTier.MEMBER) },
 ) : AuthRepository {
 
     override suspend fun session(): SessionState = sessionState
@@ -45,7 +47,10 @@ class StubAuthRepository(
     override suspend fun resendVerification(): ResendResult =
         resendVerificationResult()
 
-    override suspend fun githubStart(): GithubStart = githubStartResult()
+    override suspend fun githubStart(returnToState: String?): GithubStart = githubStartResult()
+
+    override suspend fun githubTokenExchange(initCode: String, returnToCode: String): SessionState =
+        githubTokenExchangeResult(initCode, returnToCode)
 
     override suspend fun logout() {
         sessionState = SessionState.None

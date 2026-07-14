@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -114,11 +116,21 @@ sealed interface GithubUiState {
  * Client-side field validation (empty→disabled, email shape, password mismatch) lives in the screens
  * (§3.2/§5.5); this VM owns only the server-driven transitions and the neutral messages.
  */
+/** CYP-576 P1 (BUG-A/CYP-578): the desktop OIDC handoff watchdog. If no loopback return arrives within this window
+ *  the VM leaves the "Continuing in your browser…" state for a retry-able Error instead of hanging forever (a bind
+ *  failure / abandoned tab / any hiccup). The richer TimedOut(url) advisory is the UIUX follow-on. */
+const val OIDC_HANDOFF_TIMEOUT_MS: Long = 30_000L
+
 class AuthViewModel(
     private val repository: AuthRepository,
     /** CYP-474 §4: Desktop-native uses the RFC-8252 loopback flavor (system-browser + localhost return); web = false. */
     private val nativeOidcLoopback: Boolean = false,
     scope: CoroutineScope? = null,
+    /** CYP-576 P1: app-generated `state` nonce provider for the native OIDC handoff (Backend security-rec). The desktop
+     *  host injects a CSPRNG (`SecureRandom`); `null` (default) ⇒ no nonce (web/non-native/tests that don't exercise it). */
+    private val newOidcState: () -> String? = { null },
+    /** CYP-576 P1: the handoff watchdog window (see [OIDC_HANDOFF_TIMEOUT_MS]). Injectable so a test drives it fast. */
+    private val handoffTimeoutMs: Long = OIDC_HANDOFF_TIMEOUT_MS,
 ) : ViewModel() {
 
     private val runScope: CoroutineScope = scope ?: viewModelScope
@@ -259,20 +271,64 @@ class AuthViewModel(
 
     // --- GitHub OIDC (§6 / P4 — CYP-185) ---
 
+    /** CYP-576 — the native API-flow `session_token_exchange_code` (init half), held between [startGithub] and
+     *  [onGithubReturn] so the loopback `return_to_code` can be redeemed with it. One-shot: cleared after every return
+     *  so a stale code is never replayed. Desktop-native only (null on the web redirect path). */
+    private var pendingExchangeInitCode: String? = null
+
+    /** CYP-576 P1 — the app-generated `state` nonce for the in-flight native attempt; the loopback callback must echo
+     *  it or it's rejected (the loopback is unauth). One-shot, cleared with the init code. */
+    private var pendingState: String? = null
+
+    /** CYP-576 P1 — the handoff watchdog (breaks the "Continuing…" hang after [handoffTimeoutMs]). Cancelled on return. */
+    private var handoffTimeoutJob: Job? = null
+
+    private fun clearPendingOidc() {
+        pendingExchangeInitCode = null
+        pendingState = null
+        handoffTimeoutJob?.cancel()
+        handoffTimeoutJob = null
+    }
+
     /** Initiate the GitHub OIDC login (§5): the platform opens [GithubUiState.Redirecting.url] on success. */
     fun startGithub() {
         if (_state.value !is AuthUiState.Unauthenticated) return
         runScope.launch {
-            val r = runCatching { repository.githubStart() }
+            // CYP-576 P1: generate the state nonce BEFORE githubStart (it goes into the flow's return_to) and hold it.
+            val state = if (nativeOidcLoopback) newOidcState() else null
+            val r = runCatching { repository.githubStart(state) }
                 .getOrElse { e -> if (e is CancellationException) throw e; GithubStart.Error }
             val github = when (r) {
                 // CYP-474 §4: Desktop-native → the loopback handoff (system-browser + localhost return); web → redirect.
                 is GithubStart.Redirect ->
-                    if (nativeOidcLoopback) GithubUiState.BrowserHandoff(r.url) else GithubUiState.Redirecting(r.url)
+                    if (nativeOidcLoopback) {
+                        pendingExchangeInitCode = r.initCode // CYP-576: hold the init half for the token-exchange
+                        pendingState = state
+                        armHandoffTimeout() // CYP-576 P1: break the hang if the loopback never returns
+                        GithubUiState.BrowserHandoff(r.url)
+                    } else {
+                        GithubUiState.Redirecting(r.url)
+                    }
                 // S1b: existing-email collision → Kratos requires login-first; surface (route to sign-in), NEVER merge.
                 GithubStart.LoginRequired, GithubStart.Error -> GithubUiState.Error
             }
             (_state.value as? AuthUiState.Unauthenticated)?.let { _state.value = it.copy(github = github) }
+        }
+    }
+
+    /** CYP-576 P1 (BUG-A/CYP-578) — while awaiting the loopback return, arm a watchdog: if the state is STILL a
+     *  BrowserHandoff after [handoffTimeoutMs] (bind failure / abandoned tab / any hiccup), leave the hang for a
+     *  retry-able Error. The button re-enables (Error is not a busy state), so the operator can retry or use email. */
+    private fun armHandoffTimeout() {
+        handoffTimeoutJob?.cancel()
+        handoffTimeoutJob = runScope.launch {
+            delay(handoffTimeoutMs)
+            (_state.value as? AuthUiState.Unauthenticated)?.let { st ->
+                if (st.github is GithubUiState.BrowserHandoff) {
+                    clearPendingOidc()
+                    _state.value = st.copy(github = GithubUiState.Error)
+                }
+            }
         }
     }
 
@@ -281,11 +337,33 @@ class AuthViewModel(
      * [session] maps the established session, so an OIDC identity's `verified=false` → [AuthedUnverified] (S2,
      * not one-click). Called by the platform's callback handler (deep-link / redirect return).
      */
-    fun onGithubReturn() {
+    fun onGithubReturn(code: String? = null, state: String? = null) {
+        // CYP-576 P1 (Backend security-rec) — the loopback is unauthenticated, so a native return MUST echo THIS
+        // attempt's `state` nonce. No pending attempt or a mismatch (incl. a bind-failure signalled as (null,null),
+        // or a spurious/forged callback) ⇒ reject → retry-able Error, NEVER an exchange on a foreign callback.
+        if (nativeOidcLoopback) {
+            val expected = pendingState
+            if (expected == null || state != expected) {
+                clearPendingOidc()
+                _state.value = AuthUiState.Unauthenticated(github = GithubUiState.Error)
+                return
+            }
+        }
         _state.value = AuthUiState.Unauthenticated(github = GithubUiState.Returning(native = nativeOidcLoopback))
+        val init = pendingExchangeInitCode
+        clearPendingOidc() // one-shot: consume the attempt (also cancels the handoff watchdog)
         runScope.launch {
-            val s = runCatching { repository.session() }
-                .getOrElse { e -> if (e is CancellationException) throw e; SessionState.None }
+            val s = runCatching {
+                if (nativeOidcLoopback && init != null && code != null) {
+                    // CYP-576 desktop-native: redeem the init half (from startGithub) + the loopback return_to_code
+                    // for a native session_token, then resolve the session. The credential is now in the app's own
+                    // plumbing (not a browser cookie) → the normal verified-gate applies.
+                    repository.githubTokenExchange(init, code)
+                } else {
+                    // Web redirect path: the browser set the same-origin session cookie → read it back as before.
+                    repository.session()
+                }
+            }.getOrElse { e -> if (e is CancellationException) throw e; SessionState.None }
             _state.value = when (s) {
                 is SessionState.Verified -> AuthUiState.Verified(s.tier)
                 is SessionState.Unverified -> AuthUiState.AuthedUnverified(s.email) // S2 verified-gate

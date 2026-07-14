@@ -33,7 +33,7 @@ class Cyp474NativeOidcLoopbackRenderTest {
         val stub = StubAuthRepository(githubStartResult = { GithubStart.Redirect("https://gh.test/a") })
         val vm = AuthViewModel(stub, nativeOidcLoopback = true)
         var opened: String? = null
-        var armedReturn: (() -> Unit)? = null
+        var armedReturn: ((String?, String?) -> Unit)? = null
         setContent {
             MaterialTheme {
                 AuthGate(vm, onOpenExternalUrl = { opened = it }, onAwaitLoopbackReturn = { armedReturn = it }) { Marker() }

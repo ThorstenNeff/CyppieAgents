@@ -3,7 +3,11 @@ package com.tneff.cyppieagents
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.sun.net.httpserver.HttpServer
+import com.tneff.cyppieagents.auth.OIDC_LOOPBACK_PORT
+import com.tneff.cyppieagents.auth.parseLoopbackCode
+import com.tneff.cyppieagents.auth.parseLoopbackParam
 import java.net.InetSocketAddress
+import java.security.SecureRandom
 
 fun main() = application {
     Window(
@@ -20,8 +24,20 @@ fun main() = application {
             // no embedded webview. The handoff states + copy live in commonMain; this host arms the return listener.
             nativeOidcLoopback = true,
             onAwaitLoopbackReturn = { onReturn -> armLoopbackListener(onReturn) },
+            // CYP-576 P1: CSPRNG `state` nonce for the native OIDC handoff (Backend security-rec) — the VM holds it and
+            // the loopback callback must echo it, so a foreign/forged callback is rejected.
+            oidcStateProvider = { secureStateNonce() },
         )
     }
+}
+
+/** CYP-576 P1 — a 128-bit hex `state` nonce from `SecureRandom` (CSPRNG). Unguessable-per-attempt so a takeover would
+ *  need to guess it AND break the Kratos pairing AND guess the app-private init_code (which never leaves the process). */
+private val secureRng = SecureRandom()
+private fun secureStateNonce(): String {
+    val bytes = ByteArray(16)
+    secureRng.nextBytes(bytes)
+    return bytes.joinToString("") { ((it.toInt() and 0xff) + 0x100).toString(16).substring(1) }
 }
 
 /**
@@ -29,24 +45,29 @@ fun main() = application {
  * on the OAuth callback, fires [onReturn] (= `AuthViewModel.onGithubReturn`) and shuts down. Bound to loopback
  * only (never a public interface).
  *
- * ⚑ Backend/ops dependency (flagged): the OIDC `redirect_uri` Kratos redirects to must point at this loopback
- * port — the exact port/URI + robust listener lifecycle (reuse/close across attempts) is the real-wiring
- * follow-up, coordinated with the Kratos config. Fail-soft here: a bind failure is a no-op (the handoff copy
- * still shows honestly), never a crash.
+ * CYP-576: Kratos redirects the browser here as the API-flow `return_to` with `?code=<return_to_code>`; we extract
+ * that code ([parseLoopbackCode]) and hand it to [onReturn] (it is redeemed with the init code at
+ * `/sessions/token-exchange`). Port/URL are the single-source-of-truth [OIDC_LOOPBACK_PORT] — the API-flow
+ * `return_to` uses the same constant, so the listener and the redirect target can never drift. Fail-soft: a bind
+ * failure is a no-op (the handoff copy still shows honestly), never a crash.
  */
-private fun armLoopbackListener(onReturn: () -> Unit) {
-    runCatching {
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", LOOPBACK_PORT), 0)
+private fun armLoopbackListener(onReturn: (String?, String?) -> Unit) {
+    // CYP-576 P1 (BUG-A/CYP-578): SURFACE a bind failure instead of swallowing it into an eternal "Continuing…" hang.
+    // On any bind/start error, signal (null, null) → the VM rejects it (state mismatch) → retry-able Error. The VM's
+    // handoff watchdog is the catch-all for the other hang causes (abandoned tab).
+    val bound = runCatching {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", OIDC_LOOPBACK_PORT), 0)
         server.createContext("/callback") { exchange ->
+            val query = exchange.requestURI?.rawQuery
+            val code = parseLoopbackCode(query)              // CYP-576: the return_to_code (was discarded)
+            val state = parseLoopbackParam(query, "state")   // CYP-576 P1: the nonce the VM must match
             val body = "Anmeldung abgeschlossen — zurück zur App.".encodeToByteArray()
             exchange.sendResponseHeaders(200, body.size.toLong())
             exchange.responseBody.use { it.write(body) }
-            runCatching { onReturn() }
+            runCatching { onReturn(code, state) }
             server.stop(0)
         }
         server.start()
-    }
+    }.isSuccess
+    if (!bound) onReturn(null, null) // bind failed → break the hang now (do not silently no-op)
 }
-
-/** The loopback redirect port (must match the Kratos-configured `redirect_uri` — see [armLoopbackListener]). */
-private const val LOOPBACK_PORT = 47472

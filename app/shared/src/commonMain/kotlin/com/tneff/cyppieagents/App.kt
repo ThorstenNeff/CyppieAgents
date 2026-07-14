@@ -45,7 +45,10 @@ fun App(
     // system-browser+localhost-return handoff, and `onAwaitLoopbackReturn` is the host that arms the localhost
     // redirect listener → `onGithubReturn`. Web keeps the redirect flavor (both default off/no-op).
     nativeOidcLoopback: Boolean = false,
-    onAwaitLoopbackReturn: (onReturn: () -> Unit) -> Unit = {},
+    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?) -> Unit) -> Unit = {},
+    // CYP-576 P1: the desktop host injects a CSPRNG (`SecureRandom`) `state`-nonce provider for the native OIDC
+    // handoff (Backend security-rec). Default null ⇒ no nonce (web/non-native).
+    oidcStateProvider: () -> String? = { null },
     // CYP-268 R3: the persisted theme-mode store; tests inject a fake (e.g. InMemoryThemePreferences(DARK)).
     // null → the platform default ([defaultThemePreferences]): durable on Web/Desktop, in-memory on Android/iOS.
     themePreferences: ThemePreferences? = null,
@@ -66,7 +69,9 @@ fun App(
     val authRepo = remember(authRepository) {
         authRepository ?: authRepositoryFor(resolveAuthMode(defaultAuthLiveEnv()))
     }
-    val authViewModel = remember(authRepo, nativeOidcLoopback) { AuthViewModel(authRepo, nativeOidcLoopback) }
+    val authViewModel = remember(authRepo, nativeOidcLoopback) {
+        AuthViewModel(authRepo, nativeOidcLoopback, newOidcState = oidcStateProvider)
+    }
     // CYP-268 R1/R3: the ONE theme seam — inject the maritime ColorScheme (Light + Dark). R1 followed the system;
     // R3 makes it user-switchable via a persisted [ThemeMode] (default SYSTEM → still follow-system). The mode is
     // read synchronously here (this seam sits above AuthGate, no coroutine scope) and the toggle both updates the

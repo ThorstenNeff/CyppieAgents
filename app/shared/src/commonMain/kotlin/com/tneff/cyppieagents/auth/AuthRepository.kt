@@ -64,13 +64,25 @@ interface AuthRepository {
      * dance. Security default (S2): an OIDC identity is `verified=false` → [session] returns
      * [SessionState.Unverified] → the "verify your email" gate, **not** one-click access.
      */
-    suspend fun githubStart(): GithubStart
+    suspend fun githubStart(returnToState: String? = null): GithubStart
+
+    /**
+     * CYP-576 — redeem the native API-flow OIDC token-exchange: [initCode] (the `session_token_exchange_code` from
+     * [githubStart]) + [returnToCode] (the loopback `?code=` after the browser round-trip) → a native `session_token`
+     * (stored in the session plumbing) → the resolved [SessionState]. Fail-closed to [SessionState.None] on any
+     * error / missing token (never a bypass). Desktop-native only; the web redirect path never calls this.
+     */
+    suspend fun githubTokenExchange(initCode: String, returnToCode: String): SessionState
 }
 
 /** §5 outcome of initiating the GitHub OIDC login. */
 sealed interface GithubStart {
-    /** The external GitHub OAuth [url] to open; after the callback the session is read via [AuthRepository.session]. */
-    data class Redirect(val url: String) : GithubStart
+    /**
+     * The external GitHub OAuth [url] to open. CYP-576 (desktop-native): [initCode] is the API-flow
+     * `session_token_exchange_code` held for the token-exchange after the loopback return; `null` on the web
+     * redirect path (there the session is read via [AuthRepository.session] once the cookie is set).
+     */
+    data class Redirect(val url: String, val initCode: String? = null) : GithubStart
 
     /** S1b — the GitHub email collides with an existing account; Kratos requires **login-first** (ownership
      *  proof) before linking. The client routes to sign-in — it never silently merges. */
