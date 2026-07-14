@@ -44,11 +44,19 @@ actual fun remoteHubEnabled(): Boolean =
  * absent ⇒ `null` ⇒ the connect path stays the stub feed. The operator-authed client is [sharedWsHttpClient]
  * ([operatorToken] rides as the same-origin session; the resolver/cpJwt also send it as `Bearer`).
  */
-actual fun defaultRemoteComponentsFactory(operatorToken: () -> String?): RemoteConnectComponentsFactory? {
+actual fun defaultRemoteComponentsFactory(
+    operatorToken: () -> String?,
+    passphrasePromptCoordinator: PassphrasePromptCoordinator?,
+): RemoteConnectComponentsFactory? {
     val cpBaseUrl = System.getenv("CYPPIE_CP_BASE_URL")?.takeIf { it.isNotBlank() } ?: return null
     if (System.getenv("CYPPIE_REMOTE_RELAY_URL").isNullOrBlank()) return null // no relay server ⇒ INERT (fail-closed)
     val client = sharedWsHttpClient(operatorToken)
-    return liveRemoteConnectComponentsFactory(cpBaseUrl, client, { operatorToken() }, client)
+    // CYP-542 / B1 — thread the App.kt operator-UV coordinator into the live factory (the INERT→real kip). `null` ⇒
+    // the factory falls back to the fail-closed prompt (no real UV) — unchanged pre-B1 behaviour.
+    return liveRemoteConnectComponentsFactory(
+        cpBaseUrl, client, { operatorToken() }, client,
+        passphrasePromptCoordinator = passphrasePromptCoordinator,
+    )
 }
 
 /**
@@ -116,9 +124,11 @@ fun liveRemoteConnectComponentsFactory(
     operatorToken: suspend () -> String?,
     relayWsClient: HttpClient,
     channelBinding: ChannelBinding = coreChannelBinding(),
-    // CYP-542 / B1 — the operator passphrase prompt (the CYP-460 dialog). Default = **fail-closed** (returns `null` ⇒
-    // Denied(CANCELLED)) so prod stays INERT until App.kt wires the real dialog prompt (the isolated INERT→real kip).
-    passphrasePrompt: com.tneff.cyppieagents.net.hub.operator.vault.PassphrasePrompt = failClosedPassphrasePrompt,
+    // CYP-542 / B1 — the operator UV prompt bridge (the CYP-460 dialog is driven by its state; the VM surfaces it +
+    // pre-arms it). App.kt passes ONE VM-lifetime [PassphrasePromptCoordinator] singleton (so a post-enroll pre-arm
+    // survives enroll→reconnect, AC-2). `null` (default) ⇒ **INERT**: the UV uses a fail-closed prompt (⇒ no prompt ⇒
+    // Denied(CANCELLED)) and no coordinator/enroll is exposed to the VM — prod stays inert until App.kt wires the dialog.
+    passphrasePromptCoordinator: PassphrasePromptCoordinator? = null,
     // CYP-537 F⑥-1 test-seam (PO ruling (b), Assist-gated): the RAW UV under the shared [CachingUserVerification].
     // **`null` (prod default) ⇒ the real [PassphraseUserVerification]** (built per-connect over the vault+prompt+hold);
     // a non-null override injects a VERIFYING raw UV for the joint e2e (the "1 UV for N" positive path). Same
@@ -155,8 +165,10 @@ fun liveRemoteConnectComponentsFactory(
     // ([rawUserVerification] non-null) injects a verifying UV for the joint e2e. **Prod stays fail-closed until a real
     // [passphrasePrompt] is wired at App.kt** (default = a fail-closed prompt ⇒ no prompt ⇒ Denied(CANCELLED)) — the
     // INERT→real kip is App.kt providing the CYP-460 dialog prompt, isolated from this store-swap.
+    // The UV drives the coordinator (App.kt-provided) if wired, else the fail-closed prompt (INERT).
+    val prompt: com.tneff.cyppieagents.net.hub.operator.vault.PassphrasePrompt = passphrasePromptCoordinator ?: failClosedPassphrasePrompt
     val rawUv = rawUserVerification
-        ?: PassphraseUserVerification(vault, passphrasePrompt, keyHold, monotonicMs, OPERATOR_UV_REUSE_WINDOW_MS)
+        ?: PassphraseUserVerification(vault, prompt, keyHold, monotonicMs, OPERATOR_UV_REUSE_WINDOW_MS)
     // F⑥-1 / CYP-547: ONE shared [CachingUserVerification] — session-auth AND pool-auth run through THIS instance
     // (store.userVerification IS it; the pool's authenticator IS the same operatorAuth) ⇒ 1-UV-for-N (Tester drives
     // this exact instance via [RemoteConnectComponents.operatorUvCache]). The store-swap must NOT split it into two.
@@ -201,7 +213,27 @@ fun liveRemoteConnectComponentsFactory(
         ),
         nowMs = { System.currentTimeMillis() },
     )
-    RemoteConnectComponents(session, shared.oobConfirm, enrollConfirm, tunnelPool, operatorUvCache = cachingUv)
+    // CYP-542 / B1 — the set-passphrase controller (AC-1/AC-2), built per-connect over the SAME vault the UV opens
+    // (so an enroll sealed here is what the next connect's UV unlocks). Only exposed when the coordinator is wired
+    // (App.kt live path); INERT ⇒ null ⇒ the VM keeps the old LOST/DeviceNotEnrolled fallback. Argon2id runs off the
+    // UI dispatcher (enroll is suspend + withContext(Default)). Policy = SOFTWARE_ONLY (② ≥64-bit passphrase floor).
+    val enroll: com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollController? = passphrasePromptCoordinator?.let {
+        com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollment(
+            vault = vault,
+            plaintextCustody = com.tneff.cyppieagents.net.hub.operator.vault.PersistentPlaintextKeyCustody(persistentDeviceKey),
+            diceware = com.tneff.cyppieagents.net.hub.operator.vault.defaultDicewareGenerator(),
+            policy = com.tneff.cyppieagents.net.hub.operator.vault.CredentialPolicy.forCapability(
+                com.tneff.cyppieagents.net.hub.operator.vault.OperatorAuthCapability.SOFTWARE_ONLY,
+                maxAttempts = 5, backoffBaseMs = 30_000, backoffMaxMs = 900_000,
+            ),
+        )
+    }
+    RemoteConnectComponents(
+        session, shared.oobConfirm, enrollConfirm, tunnelPool,
+        operatorUvCache = cachingUv,
+        passphrasePrompt = passphrasePromptCoordinator, // null ⇒ INERT (VM keeps the old surface)
+        enroll = enroll,
+    )
 }
 
 /** CYP-542 / B1 — the passphrase-sealed operator device-key vault file (DEVICE_SECURE intent), sibling of the CYP-525

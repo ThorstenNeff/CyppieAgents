@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.connect
 
 import com.tneff.cyppieagents.net.hub.operator.UvReason
 import com.tneff.cyppieagents.net.hub.operator.vault.PassphrasePrompt
+import kotlin.concurrent.Volatile // multiplatform @Volatile (kotlin.jvm.Volatile is JVM-only)
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
