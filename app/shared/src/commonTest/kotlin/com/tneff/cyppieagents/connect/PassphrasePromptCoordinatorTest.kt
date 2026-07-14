@@ -53,6 +53,20 @@ class PassphrasePromptCoordinatorTest {
     }
 
     @Test
+    fun clearPreArm_zeroizesAndDropsUnconsumedArm_nextPromptActuallyPrompts() = runTest {
+        val c = LivePassphrasePromptCoordinator()
+        val secret = "un-consumed-enroll-secret".toCharArray()
+        c.preArm(secret)
+        c.clearPreArm() // P1: the flow aborts before the first auth prompt ⇒ zeroize + drop the crown-jewel
+        assertTrue(secret.all { it == '\u0000' }, "P1: the un-consumed pre-arm is zeroized (NUL), not left to GC")
+        // the pre-arm is gone: the next prompt must actually prompt (no auto-resolve), proving it was dropped.
+        val pending = async { c.prompt(UvReason.OPERATOR_AUTH) }
+        kotlinx.coroutines.yield()
+        assertIs<PassphrasePromptState.Prompting>(c.state.value, "P1: a cleared pre-arm does NOT auto-resolve the next prompt")
+        c.cancel(); assertNull(pending.await())
+    }
+
+    @Test
     fun newPrompt_resolvesStaleWaiterNull_exactlyOne() = runTest {
         val c = LivePassphrasePromptCoordinator()
         val stale = async { c.prompt(UvReason.OPERATOR_AUTH) }

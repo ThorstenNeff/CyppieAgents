@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub.operator.vault
 
+import kotlinx.coroutines.test.runTest
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
@@ -49,22 +50,22 @@ class OperatorEnrollmentTest {
     }
 
     @Test
-    fun enroll_weakOrBlocklisted_refusedFailClosed_noSeal() {
+    fun enroll_weakOrBlocklisted_refusedFailClosed_noSeal() = runTest {
         val store = MemStore()
         val e = OperatorEnrollment(vault(store), FakeCustody(null), diceware(), policy)
-        assertIs<OperatorEnrollment.EnrollOutcome.TooWeak>(e.enroll("hunter2".toCharArray()))
-        assertIs<OperatorEnrollment.EnrollOutcome.Blocklisted>(e.enroll("correct horse battery staple".toCharArray()))
+        assertIs<EnrollOutcome.TooWeak>(e.enroll("hunter2".toCharArray()))
+        assertIs<EnrollOutcome.Blocklisted>(e.enroll("correct horse battery staple".toCharArray()))
         assertNull(store.blob, "a refused enroll seals nothing")
     }
 
     @Test
-    fun enroll_withPlaintextKey_migrates_anchorPreserved() {
+    fun enroll_withPlaintextKey_migrates_anchorPreserved() = runTest {
         val kp = realKey()
         val store = MemStore()
         val v = vault(store)
         val custody = FakeCustody(kp)
         val e = OperatorEnrollment(v, custody, diceware(), policy)
-        assertIs<OperatorEnrollment.EnrollOutcome.Enrolled>(e.enroll(strong.toCharArray()))
+        assertIs<EnrollOutcome.Enrolled>(e.enroll(strong.toCharArray()))
         assertTrue(custody.deleted, "the plaintext is deleted after a verified re-seal")
         val opened = v.open(strong.toCharArray())
         assertIs<VaultOpen.Unlocked>(opened)
@@ -73,17 +74,17 @@ class OperatorEnrollmentTest {
     }
 
     @Test
-    fun enroll_noPlaintext_firstEnrollsFreshKey() {
+    fun enroll_noPlaintext_firstEnrollsFreshKey() = runTest {
         val store = MemStore()
         val v = vault(store)
         val fresh = realKey()
         val e = OperatorEnrollment(v, FakeCustody(null), diceware(), policy, newKey = { fresh })
-        assertIs<OperatorEnrollment.EnrollOutcome.Enrolled>(e.enroll(strong.toCharArray()))
+        assertIs<EnrollOutcome.Enrolled>(e.enroll(strong.toCharArray()))
         assertContentEquals(fresh.public.encoded, v.devicePublicKey(), "first-enroll sealed the fresh key (new anchor)")
     }
 
     @Test
-    fun enroll_migrationVerifyFails_preservesPlaintext_noKeyLoss() {
+    fun enroll_migrationVerifyFails_preservesPlaintext_noKeyLoss() = runTest {
         val faulty = object : Aead {
             val real = JceAead()
             override fun seal(k: ByteArray, n: ByteArray, p: ByteArray, a: ByteArray) = real.seal(k, n, p, a)
@@ -93,7 +94,7 @@ class OperatorEnrollmentTest {
         val store = MemStore()
         val custody = FakeCustody(realKey())
         val e = OperatorEnrollment(vault(store, faulty), custody, diceware(), policy)
-        assertIs<OperatorEnrollment.EnrollOutcome.MigrationFailed>(e.enroll(strong.toCharArray()))
+        assertIs<EnrollOutcome.MigrationFailed>(e.enroll(strong.toCharArray()))
         assertTrue(!custody.deleted, "a re-seal that does not verify NEVER deletes the plaintext (no key loss)")
     }
 }

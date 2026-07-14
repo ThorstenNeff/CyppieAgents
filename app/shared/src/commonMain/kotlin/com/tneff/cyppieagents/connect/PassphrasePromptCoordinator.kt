@@ -30,16 +30,25 @@ interface PassphrasePromptCoordinator : PassphrasePrompt {
     fun cancel()
     /** AC-2: arm the NEXT [prompt] to auto-resolve with [passphrase] (the just-set enroll secret) — no re-prompt. */
     fun preArm(passphrase: CharArray)
+    /**
+     * P1 (zeroize): drop **and zeroize** a pre-arm that was never consumed (the flow aborts before the first auth
+     * prompt). The VM calls this on any teardown/reset (switch/leave/cancel) so a crown-jewel passphrase never
+     * lingers in memory to GC. Idempotent, safe when nothing is armed. NOT called on the normal consume path —
+     * [prompt] hands the SAME array to the UV, which zeroizes it after use (P2: the flow never double-zeroizes it).
+     */
+    fun clearPreArm()
 }
 
 class LivePassphrasePromptCoordinator : PassphrasePromptCoordinator {
     private val _state = MutableStateFlow<PassphrasePromptState>(PassphrasePromptState.Idle)
     override val state: StateFlow<PassphrasePromptState> = _state.asStateFlow()
-    private var waiter: CompletableDeferred<CharArray?>? = null
-    private var preArmed: CharArray? = null
+    // P3 (concurrency): @Volatile — the prompt coroutine sets these while submit/cancel/preArm/clearPreArm may run on
+    // another thread; @Volatile guarantees the cross-thread visibility (mirrors LiveEnrollConfirmCoordinator's intent).
+    @Volatile private var waiter: CompletableDeferred<CharArray?>? = null
+    @Volatile private var preArmed: CharArray? = null
 
     override suspend fun prompt(reason: UvReason): CharArray? {
-        preArmed?.let { pre -> preArmed = null; return pre } // AC-2: reuse the in-hand enroll passphrase, no prompt
+        preArmed?.let { pre -> preArmed = null; return pre } // AC-2: reuse the in-hand enroll passphrase (P2: NOT zeroized here — the UV owns+zeroizes it)
         waiter?.complete(null) // resolve any stale waiter fail-closed (exactly-one prompt in flight)
         val deferred = CompletableDeferred<CharArray?>()
         waiter = deferred
@@ -53,6 +62,10 @@ class LivePassphrasePromptCoordinator : PassphrasePromptCoordinator {
     }
 
     override fun submit(passphrase: CharArray) { waiter?.complete(passphrase) }
-    override fun cancel() { waiter?.complete(null) }
-    override fun preArm(passphrase: CharArray) { preArmed = passphrase }
+    override fun cancel() { clearPreArm(); waiter?.complete(null) } // cancel aborts a pending pre-arm too (P1)
+    override fun preArm(passphrase: CharArray) { clearPreArm(); preArmed = passphrase } // never leak a prior un-consumed arm
+    override fun clearPreArm() {
+        preArmed?.fill('\u0000') // P1: zeroize the un-consumed crown-jewel (NUL), never GC-reliance (H-1)
+        preArmed = null
+    }
 }
