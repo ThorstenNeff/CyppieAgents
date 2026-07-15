@@ -53,6 +53,12 @@ class HubConnectViewModel(
      *  god-token, Reviewer Axis-1). HELD as a seam (`{ null }`) until Backend's tunnel-scoped listener contract lands;
      *  App.kt then injects the real CP-scoped provider. INERT default keeps the datapath proof credential-agnostic. */
     private val remoteSessionToken: () -> String? = { null },
+    /** CYP-620 — the mux-transport gate (default = the real deploy flag). Injectable so a test drives the flag-ON path
+     *  without the env-based `expect fun`. */
+    private val muxEnabled: () -> Boolean = { remoteMuxTransportEnabled() },
+    /** CYP-620 — a test hook fired when a `ClientMuxSession` is (re)built over a carrier (default no-op). Lets a test
+     *  pin the flag-gating + the reference-identity guard (one attach per new tunnel, not per healthy re-emission). */
+    private val onMuxAttached: (NoiseTunnel) -> Unit = {},
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -245,11 +251,12 @@ class HubConnectViewModel(
                                     // still CONNECTED) does NOT rebuild. run() ends on carrier-drop → reportDropped() tells
                                     // RemoteHubSession to re-dial → the next CONNECTED spans a fresh mux over the new tunnel.
                                     val carrier = comps.session.tunnel
-                                    if (remoteMuxTransportEnabled() && carrier != null && carrier !== currentMuxCarrier) {
+                                    if (muxEnabled() && carrier != null && carrier !== currentMuxCarrier) {
                                         currentMuxCarrier = carrier
                                         val mux = ClientMuxSession(carrier, runScope)
                                         currentMuxSession = mux
                                         currentMuxSource.value = MuxedStreamSource(mux)
+                                        onMuxAttached(carrier)
                                         runScope.launch { mux.run(); comps.session.reportDropped() }
                                     }
                                     // Build the loopback transport ONCE (stable ports — never rebuilt, or the workspace's
@@ -262,7 +269,7 @@ class HubConnectViewModel(
                                         val pool = comps.tunnelPool
                                         remoteTransport = buildRemoteHubTransport(
                                             acquireTunnel =
-                                                if (remoteMuxTransportEnabled()) { { lane -> currentMuxSource.value?.acquire(lane) } }
+                                                if (muxEnabled()) { { lane -> currentMuxSource.value?.acquire(lane) } }
                                                 else if (pool != null) { { lane -> pool.acquire(lane) } }
                                                 else { { _ -> activeComponents?.session?.tunnel } },
                                             sessionToken = remoteSessionToken,
