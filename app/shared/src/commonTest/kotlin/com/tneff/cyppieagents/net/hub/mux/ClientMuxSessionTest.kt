@@ -59,6 +59,29 @@ class ClientMuxSessionTest {
     }
 
     @Test
+    fun run_completesOnCarrierDrop_resettingAllStreams_CYP620layering() = runTest {
+        // CYP-620 ①-ruling: ClientMuxSession is a pure consumer of ONE tunnel. On carrier drop it must reset ALL streams
+        // and let run() COMPLETE (surface the drop, never swallow) so RemoteHubSession re-dials + spans a fresh session.
+        // Stateless-across-carriers: no zombie stream on a dead tunnel. Mutant: run() swallows the drop (loops instead
+        // of returning) ⇒ run never completes / streams not reset ⇒ RED.
+        val carrier = FakeCarrier()
+        val session = ClientMuxSession(carrier, scope = this)
+        val runJob = launch { session.run() } // RemoteHubSession awaits the mux lifecycle
+        val a = assertNotNull(session.openStream(StreamClass.AGENT_WS))
+        val b = assertNotNull(session.openStream(StreamClass.SINGLETON_WS))
+        advanceUntilIdle()
+        assertFalse(runJob.isCompleted, "run() stays live while the carrier is up")
+
+        carrier.close() // the relay/tunnel drops → carrier.receive() returns null
+        advanceUntilIdle()
+
+        assertTrue(runJob.isCompleted, "run() COMPLETES on carrier drop — surfaces it so RemoteHubSession re-dials")
+        assertEquals(0, session.liveStreamCount(), "a dropped carrier RESETS all streams (no zombie; mutant: skip teardown ⇒ RED)")
+        assertNull(a.receive(), "the reset stream's receive() returns null (closed inbound)")
+        assertNull(b.receive(), "every stream reset — stateless-across-carriers")
+    }
+
+    @Test
     fun send_chunksToFrameSizeCap_soControlCanInterleave_CYP620() = runTest {
         // CYP-620: a bulk send is split into DATA frames ≤ frameSizeCap, so a CONTROL frame can preempt BETWEEN a bulk
         // stream's chunks (the priority scheduler picks it next). Large window (no backpressure), cap=4, send 10 bytes.

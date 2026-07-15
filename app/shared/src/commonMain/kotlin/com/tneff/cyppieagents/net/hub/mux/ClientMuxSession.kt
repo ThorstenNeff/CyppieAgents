@@ -137,9 +137,32 @@ class ClientMuxSession(
     private var closed = false
     private var readJob: Job? = null
 
-    /** Start the demux read-loop (idempotent). */
+    /** Convenience: launch [run] in [scope] (fire-and-forget) — for a consumer/test that doesn't await the lifecycle. */
     fun start() {
-        if (readJob == null) readJob = scope.launch { readLoop() }
+        if (readJob == null) readJob = scope.launch { run() }
+    }
+
+    /**
+     * CYP-620 ①-ruling — drive the demux read-loop until the carrier drops (EOF/error), then reset ALL streams and
+     * RETURN. The drop is **surfaced** to the caller ([com.tneff.cyppieagents.net.hub.remote.RemoteHubSession]), never
+     * swallowed (mirrors the server `YamuxSession` returning on link EOF). This session is a **pure consumer of ONE
+     * given tunnel** — it dials/handshakes/authenticates nothing; `RemoteHubSession` owns the carrier lifecycle and,
+     * observing this `run()` end, re-dials + spans a FRESH session. **Stateless-across-carriers (§4.8.3):** a dropped
+     * carrier resets every stream (no zombie on a dead tunnel = fail-closed); no stream is preserved — "no data loss"
+     * is durable cursors (`?since=<seq>`) + the G5 idempotency-key on re-open, not stream carry-over.
+     */
+    suspend fun run() {
+        try {
+            while (!closed) {
+                val chunk = carrier.receive() ?: break // carrier EOF → return, surfacing the drop (never swallow)
+                for (frame in decoder.feed(chunk)) dispatch(frame) // throws on malformed/overshoot → fail-closed below
+            }
+        } catch (_: Throwable) {
+            runCatching { writeFrame(YamuxFrame.goAway(YamuxGoAway.PROTOCOL_ERROR), SESSION_CONTROL_PRIORITY) } // fail-closed
+        } finally {
+            teardown()                        // all streams reset (stateless-across-carriers)
+            runCatching { scheduler.close() } // stop the priority writer
+        }
     }
 
     /**
