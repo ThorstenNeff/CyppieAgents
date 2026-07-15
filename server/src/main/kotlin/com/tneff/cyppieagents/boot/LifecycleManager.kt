@@ -218,7 +218,11 @@ class LifecycleManager(
             emitCapacity(agentId) // CYP-417: a spawn changed the running count
             true
         } catch (e: Exception) {
-            log.error("agent '{}' failed to boot ({})", agentId, e.message)
+            // CYP-598-C: log the THROWABLE (type + message + cause chain + stack), not `e.message` alone — a
+            // null/blank message (e.g. some IOExceptions) rendered "failed to boot ()", masking the boot cause at
+            // exactly the line deploy greps. `e.toString()` keeps the inline "(<reason>)" always non-blank (the class,
+            // + message when present) AND the trailing throwable attaches the full stack.
+            log.error("agent '{}' failed to boot ({})", agentId, e.toString(), e)
             setRunState(agentId, AgentRunState.ERROR, AgentErrorCode.SPAWN_FAILED)
             false
         }
@@ -307,17 +311,17 @@ class LifecycleManager(
                 try {
                     log.warn(
                         "agent '{}' {} respawn failed ({}); retrying FRESH (context-free rollback)",
-                        agentId, if (restart) "restart" else "start", e.message,
+                        agentId, if (restart) "restart" else "start", e.toString(), e, // CYP-598-C: throwable, not just message
                     )
                     return doSpawn(agentId, restart, spawnFn = fresh)
                 } catch (e2: Exception) {
                     setRunState(agentId, AgentRunState.ERROR, AgentErrorCode.SPAWN_FAILED)
-                    log.error("agent '{}' fresh fallback also failed ({})", agentId, e2.message)
+                    log.error("agent '{}' fresh fallback also failed ({})", agentId, e2.toString(), e2) // CYP-598-C: throwable
                     throw ServiceUnavailableException("agent '$agentId' failed to spawn", code = "spawn_failed")
                 }
             }
             setRunState(agentId, AgentRunState.ERROR, AgentErrorCode.SPAWN_FAILED)
-            log.error("agent '{}' failed to {} ({})", agentId, if (restart) "restart" else "start", e.message)
+            log.error("agent '{}' failed to {} ({})", agentId, if (restart) "restart" else "start", e.toString(), e) // CYP-598-C: throwable
             throw ServiceUnavailableException("agent '$agentId' failed to spawn", code = "spawn_failed")
         }
     }
