@@ -40,4 +40,21 @@ object MuxHello {
         val mode = msg[6].toInt() and 0xFF
         return version == VERSION && mode == MODE_MUX
     }
+
+    /**
+     * CYP-620 instrumentation (logs-only) — classify WHY a peer's hello would be rejected, for the [MuxBridge] refuse
+     * log. Returns a stable category plus a benign numeric where useful (size / version / mode). It NEVER returns byte
+     * content: the hello carries only magic+version+mode — no secret — and this deliberately surfaces none of the raw
+     * bytes. `"ok"` means it verifies (the caller would not log a reject).
+     */
+    fun rejectReason(msg: ByteArray?): String {
+        if (msg == null) return "absent"
+        if (msg.size != SIZE) return "bad-length:${msg.size}"
+        for (i in MAGIC.indices) if (msg[i] != MAGIC[i]) return "bad-magic"
+        val version = ((msg[4].toInt() and 0xFF) shl 8) or (msg[5].toInt() and 0xFF)
+        if (version != VERSION) return "version-skew:$version"
+        val mode = msg[6].toInt() and 0xFF
+        if (mode != MODE_MUX) return "mode-mismatch:$mode"
+        return "ok"
+    }
 }

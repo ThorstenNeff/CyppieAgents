@@ -44,10 +44,13 @@ class MuxBridge(
         // G7: the peer's hello is the first tunnel message. A pool peer / tampered marker / EOF → refuse.
         val peerHello = tunnel.receive()
         if (peerHello == null || !MuxHello.verify(peerHello)) {
-            log.info("CYP-620 mux hello mismatch (size={}) → refuse fail-closed", peerHello?.size ?: -1)
+            // WARN (fail-closed refuse): the classified reason (absent / bad-length / bad-magic / version-skew /
+            // mode-mismatch) — never the raw hello bytes. This is the mixed-mode / downgrade-attempt diagnostic seam.
+            log.warn("CYP-620 mux G7 hello REJECTED (reason={}) → refused fail-closed, tunnel closed", MuxHello.rejectReason(peerHello))
             tunnel.close()
             return@coroutineScope
         }
+        log.info("CYP-620 mux G7 hello accepted → yamux session starting (maxStreams={})", maxStreams)
         tunnel.send(MuxHello.ENCODED) // our hello — the client verifies it symmetrically
 
         // Handshake OK: run the yamux session. One loopback socket per opened stream (streamId/class not needed for
