@@ -40,6 +40,10 @@ import java.security.SecureRandom
 actual fun remoteHubEnabled(): Boolean =
     System.getenv("CYP_REMOTE_HUB")?.equals("true", ignoreCase = true) == true
 
+/** CYP-620: the mux-transport flag reads `CYP_MUX_TRANSPORT` (off unless explicitly `true`). Off-default. */
+actual fun remoteMuxTransportEnabled(): Boolean =
+    System.getenv("CYP_MUX_TRANSPORT")?.equals("true", ignoreCase = true) == true
+
 /**
  * jvm: the LIVE components factory — composed from env config, **fail-closed to INERT** when unconfigured. Needs
  * BOTH `CYPPIE_CP_BASE_URL` (the same-origin CP) and `CYPPIE_REMOTE_RELAY_URL` (the relay-server activation gate);

@@ -19,6 +19,15 @@ import kotlinx.coroutines.CoroutineScope
 expect fun remoteHubEnabled(): Boolean
 
 /**
+ * CYP-620 — the **mux-transport deploy flag** (the flag-flip candidate). When `true`, the CONNECTED remote workspace
+ * runs over ONE yamux-muxed tunnel ([com.tneff.cyppieagents.net.hub.mux.ClientMuxSession] /
+ * [com.tneff.cyppieagents.net.hub.mux.MuxedStreamSource]) instead of the N-tunnel pool — the "1 tunnel, N streams, no
+ * pool to exhaust" fix (the "Server unreachable" root). Off-default (jvm reads `CYP_MUX_TRANSPORT`; every other target
+ * hard-`false`); the flip stays an Auftraggeber deploy GO. Only meaningful when [remoteHubEnabled] is already on.
+ */
+expect fun remoteMuxTransportEnabled(): Boolean
+
+/**
  * The platform's real [RemoteHubSessionFactory] — the jvm assembly of the Noise stack (`NoiseJavaClientTransport`
  * + `TofuHubTrust` + `ClientOperatorAuth`), or `null` where that stack isn't available (non-jvm). **INERT even
  * when present:** the assembly injects fail-closed seams for the still-gated pieces (relay dialer / cpJwt /
