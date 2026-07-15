@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub
 
+import com.tneff.cyppieagents.net.Backoff
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -204,6 +205,36 @@ class RemoteTunnelHubTransportTest {
         val t = buildRemoteHubTransport(acquireTunnel = { _ -> null }, sessionToken = { "cp-ticket" }, scope = scope)
         assertTrue(t != null, "jvm factory builds a transport (Path-A Desktop)")
         assertTrue(t!!.httpBaseUrl.startsWith("http://127.0.0.1:"), "it is the loopback tunnel transport, never the fail-loud stub")
+        t.close(); scope.cancel()
+    }
+
+    @Test
+    fun dataLane_acquireNull_holdsAndRetries_noRstTear_CYP619() = runBlocking {
+        // CYP-619 (the anti-cascade tooth, non-vacuous): a DATA-lane acquire=null must NOT hard-RST the loopback — that
+        // TEARS the conn → the workspace re-dials → acquire=null → RST = the storm cascade the dogfood logged. Instead
+        // the transport HOLDS the conn + backoff-retries until a DATA slot frees, then PUMPS it. Here acquire returns null
+        // once (pool momentarily full), then a tunnel (a slot freed). The proof the conn was HELD (not hard-evicted) is
+        // that its bytes reached the tunnel — a hard-evict resets BEFORE any pump, so nothing would flow. Mutant: revert
+        // to `conn.reset()` on DATA null ⇒ acquire is called once (no retry) + no pump ⇒ calls==1 AND sent empty ⇒ RED.
+        // (`wasReset` is NOT asserted: the bridge legitimately resets the conn when the tunnel's receive() ends — that is
+        // normal post-pump teardown, distinct from the pre-pump hard-evict this fix removes.)
+        val req = "GET /ws/agent HTTP/1.1\r\n\r\n".encodeToByteArray()
+        val tunnel = FakeTunnel(listOf("HTTP/1.1 101 Switching Protocols\r\n\r\n".encodeToByteArray()))
+        val conn = FakeConn(listOf(req))
+        val calls = AtomicInteger(0)
+        val scope = CoroutineScope(Dispatchers.IO)
+        val t = RemoteTunnelHubTransport(
+            tunnelSource = { _ -> if (calls.getAndIncrement() == 0) null else tunnel }, // 1st DATA acquire null → then a freed slot
+            sessionTokenProvider = { "cp-ticket" },
+            scope = scope,
+            wsAcceptor = FakeAcceptor(port = 9500, conns = listOf(conn)), // DATA lane
+            restAcceptor = FakeAcceptor(port = 9501),
+            dataRetryBackoff = Backoff(initialMs = 1, maxMs = 2, factor = 1.0), // fast retry so the test doesn't wait
+            injectedClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO),
+        )
+        t.wsAcceptJob.join()
+        assertTrue(calls.get() >= 2, "DATA acquire=null HELD the conn + retried (backed off, re-acquired) — no hard-RST-tear")
+        assertTrue(tunnel.sent.any { it.contentEquals(req) }, "once a DATA slot freed, the HELD conn's bytes pumped over the tunnel (impossible under a pre-pump hard-evict)")
         t.close(); scope.cancel()
     }
 }
