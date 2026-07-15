@@ -1,15 +1,23 @@
 package com.tneff.cyppieagents.net
 
 /**
+ * `?token=…` / `&token=…` (also `access_token`), case-insensitive; value runs until the next `&`, whitespace, or quote.
+ * CYP-617: case-insensitivity is via [RegexOption.IGNORE_CASE], NOT the `(?i)` INLINE flag — `(?i)` is a JVM-only
+ * construct that throws `SyntaxError` when the Regex is constructed on Kotlin/JS + Kotlin/Wasm. Compiled once (top-level
+ * val) so every redaction reuses it — the ONE redaction pattern in the module.
+ */
+private val URL_SECRET_REDACT = Regex("([?&](?:token|access_token)=)[^&\\s\"']*", RegexOption.IGNORE_CASE)
+
+/**
  * Redact query-param secrets from a string BEFORE it reaches a log sink. The WS clients dial URLs that carry the
  * operator/agent credential as a `?token=…` query param (browsers can't set the `Authorization` header on a WS
  * upgrade, CYP-230), so a connect/handshake exception whose `.message` embeds the request URL would otherwise
- * leak the token to stdout. Pure + unit-tested; the ONE place log messages are sanitized.
+ * leak the token to stdout. Pure + unit-tested; the ONE place log messages are sanitized. Multiplatform-safe
+ * (CYP-617) — runs identically on JVM/JS/Wasm.
  */
 internal fun redactUrlSecrets(message: String?): String {
     if (message == null) return ""
-    // `?token=…` / `&token=…` (also access_token), case-insensitive; value runs until the next `&`, whitespace, or quote.
-    return message.replace(Regex("(?i)([?&](?:token|access_token)=)[^&\\s\"']*"), "$1***")
+    return message.replace(URL_SECRET_REDACT, "$1***")
 }
 
 /**
@@ -51,25 +59,18 @@ fun logWsPool(source: String, msg: String) {
 }
 
 /**
- * The [redactUrlSecrets] redaction, but with [RegexOption.IGNORE_CASE] instead of the `(?i)` INLINE flag. `(?i)` is a
- * JVM-only construct — on Kotlin/JS + Kotlin/Wasm it throws `SyntaxError` at Regex construction (CYP-617). [logMux]
- * runs on the **multiplatform** client-mux path (unlike [logWsPool]/[redactUrlSecrets], which are only reached on the
- * JVM loopback transport), so it MUST use the JS/Wasm-safe form. Same pattern, same output — only the flag mechanism
- * differs. [redactUrlSecrets] itself is left untouched; its `(?i)` fix is the separate CYP-617.
- */
-private val MUX_SECRET_REDACT = Regex("([?&](?:token|access_token)=)[^&\\s\"']*", RegexOption.IGNORE_CASE)
-
-/**
  * CYP-620/622 client-mux instrumentation: log a mux-session lifecycle event so an instrumented dogfood can pin the
  * client mux path — the G7 hello (send/verify), carrier attach, stream acquire, carrier-drop, stream close — the
  * e2e-datapath class no unit test reaches (a fake carrier is green in isolation; the real fault is client-vs-server).
  * [source] = the site (`transport`/`attach`/`hello`/`acquire`/`stream`/`carrier`), [msg] = a SECRET-SAFE census:
  * carrier/stream ids + lane/class/mode/version/reject-category only — NEVER a token/passphrase/auth/raw-hello-byte
- * (defence-in-depth via [MUX_SECRET_REDACT]; the ids are opaque, see [muxCarrierId]). Minimal println until a shared
- * multiplatform logger lands; centralized so it swaps in one place (mirrors [logWsPool]).
+ * (defence-in-depth via [redactUrlSecrets]; the ids are opaque, see [muxCarrierId]). CYP-617: [logMux] runs on the
+ * multiplatform mux path, and now [redactUrlSecrets] is JS/Wasm-safe, so it reuses the ONE redaction helper (the
+ * earlier CYP-622 `MUX_SECRET_REDACT` split existed only because `(?i)` broke JS — now folded back). Minimal println
+ * until a shared multiplatform logger lands; centralized so it swaps in one place (mirrors [logWsPool]).
  */
 fun logMux(source: String, msg: String) {
-    println("[mux:$source] ${msg.replace(MUX_SECRET_REDACT, "$1***")}")
+    println("[mux:$source] ${redactUrlSecrets(msg)}")
 }
 
 /**
