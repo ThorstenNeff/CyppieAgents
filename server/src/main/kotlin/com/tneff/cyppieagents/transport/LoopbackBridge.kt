@@ -59,10 +59,18 @@ class LoopbackBridge(
                     // pump is best-effort and the truncation guard below still fires. (Not an error to propagate.)
                     reason = "tunnel-exc:${e::class.simpleName}" // CYP-607
                 } finally {
-                    // CYP-607: this socket.reset() (SO_LINGER 0 → RST) is the client-visible "reset by peer" trigger.
-                    // `reason` names WHY the untrusted side ended: clean relay/client close vs a tunnel exception.
-                    diagLog.info("CYP-607 bridge#{} up-end reason={} -> socket.reset() (RST)", bridgeId, reason)
-                    socket.reset() // ★ untrusted side ended → RST (never a clean EOF): the truncation guard
+                    // CYP-609 — asymmetric teardown by the KIND of upstream end (the reason from CYP-607):
+                    //  • a CLEAN relay/client EOF (`receive()==null`, `tunnel-clean-eof`) → **graceful FIN** (half-close
+                    //    the loopback out): the hub's Ktor sees a clean input-EOF, NOT a "Connection reset", and the
+                    //    down-pump can still drain + flush the hub's queued response. The truncation guard is NOT lost —
+                    //    Ktor's own HTTP layer rejects a truncated body (Content-Length short / missing terminal chunk →
+                    //    non-2xx), which the CYP-459-T2 real-route teeth pin (Assist-verified sign-off, CYP-609).
+                    //  • an ABRUPT/error end (`receive()` THREW — AEAD-decrypt-fail / tamper-truncation, or a write onto a
+                    //    peer-reset socket, `tunnel-exc:*`) → **RST (SO_LINGER 0)**: in-flight-uncertain, hard-abort so a
+                    //    malicious/lossy relay can never have a tampered stream completed as clean (§4/AC2 preserved).
+                    val graceful = !reason.startsWith("tunnel-exc")
+                    diagLog.info("CYP-607 bridge#{} up-end reason={} -> {}", bridgeId, reason, if (graceful) "socket.closeGraceful() (FIN)" else "socket.reset() (RST)")
+                    if (graceful) socket.closeGraceful() else socket.reset()
                 }
             }
             // Downstream: hub response bytes → the client. A hub-side EOF is a TRUSTED clean close.
@@ -110,8 +118,9 @@ class LoopbackBridge(
 
 /**
  * The loopback socket the bridge pumps through. Abstracted so tests can (a) run the real routes over a real socket and
- * (b) assert the RST-vs-clean **truncation discipline** deterministically. [reset] MUST send a TCP RST (abortive), NOT
- * a clean FIN — that distinction is the truncation guard.
+ * (b) assert the FIN-vs-RST **truncation discipline** deterministically. [reset] MUST send a TCP RST (abortive) — used
+ * on an ABRUPT/error upstream end (tamper-truncation, in-flight-uncertain); [closeGraceful] MUST send a clean FIN
+ * (half-close) — used on a CLEAN upstream EOF (CYP-609). That FIN-vs-RST distinction is the truncation guard.
  */
 interface BridgeSocket {
     /** The connected peer address — asserted loopback by the bridge's T3 guard on the real socket. */
@@ -119,8 +128,13 @@ interface BridgeSocket {
     suspend fun write(bytes: ByteArray)
     /** Read into [buf]; returns the byte count, or -1 on a clean peer EOF. */
     suspend fun read(buf: ByteArray): Int
-    /** Abortive close (RST): SO_LINGER 0. Idempotent. */
+    /** Abortive close (RST): SO_LINGER 0. Idempotent. Used on an ABRUPT/error upstream end (truncation guard). */
     fun reset()
+    /** CYP-609 — graceful FIN half-close of the WRITE side (`shutdownOutput`): the peer's Ktor sees a clean input-EOF
+     *  (never a "Connection reset"), and the READ side stays open so the down-pump can drain + flush the peer's queued
+     *  response. Used on a CLEAN upstream EOF. Idempotent. (The truncation guard is NOT lost — Ktor's own HTTP layer
+     *  rejects a truncated body; the abrupt/tamper path still [reset]s.) */
+    fun closeGraceful()
 }
 
 /** Production [BridgeSocket] over a real loopback [Socket]; blocking I/O is offloaded to [Dispatchers.IO] by the pump. */
@@ -146,5 +160,11 @@ internal class RealBridgeSocket(host: String, port: Int) : BridgeSocket {
 
     override fun reset() {
         runCatching { if (!socket.isClosed) socket.close() } // SO_LINGER 0 → RST
+    }
+
+    override fun closeGraceful() {
+        // CYP-609: shutdownOutput() sends a FIN (graceful half-close) regardless of SO_LINGER 0 (which only governs
+        // close()). The input stays readable so the down-pump can drain the peer's queued response before it ends.
+        runCatching { if (!socket.isClosed && !socket.isOutputShutdown) socket.shutdownOutput() }
     }
 }

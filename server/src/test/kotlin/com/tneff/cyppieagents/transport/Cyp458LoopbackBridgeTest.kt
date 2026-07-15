@@ -44,13 +44,22 @@ class Cyp458LoopbackBridgeTest {
     private class ControllableTunnel : ServerNoiseTunnel {
         private val inbound = Channel<ByteArray>(Channel.UNLIMITED)  // test → bridge (client→hub)
         val outbound = Channel<ByteArray>(Channel.UNLIMITED)         // bridge → test (hub→client)
+        @Volatile private var faultOnDrain = false                  // CYP-609: drained end THROWS instead of null
         override val handshakeHash: ByteArray get() = ByteArray(32)
-        override suspend fun receive(): ByteArray? = inbound.receiveCatching().getOrNull()
+        override suspend fun receive(): ByteArray? {
+            val r = inbound.receiveCatching()
+            // CYP-609: an ABRUPT L2 fault (AEAD-decrypt-fail / tamper) surfaces as receive() THROWING, distinct from a
+            // clean channel EOF (null). The bridge RSTs the former, FINs the latter.
+            if (r.isClosed && faultOnDrain) throw RuntimeException("AEAD decrypt-fail / tamper (abrupt L2 fault)")
+            return r.getOrNull()
+        }
         override suspend fun send(plaintext: ByteArray) { outbound.trySend(plaintext) }
         override suspend fun close() { inbound.close(); outbound.close() }
         fun deliver(bytes: ByteArray) { inbound.trySend(bytes) }
-        /** The UNTRUSTED relay/L2 dropping — `receive()` then returns null (the truncation trigger). */
+        /** The UNTRUSTED relay/L2 closing CLEANLY — `receive()` then returns null (the CYP-609 graceful-FIN trigger). */
         fun dropRelay() { inbound.close() }
+        /** The UNTRUSTED relay/L2 faulting ABRUPTLY — `receive()` then THROWS (the CYP-609 RST / truncation-guard trigger). */
+        fun throwRelay() { faultOnDrain = true; inbound.close() }
     }
 
     private val cleanups = mutableListOf<() -> Unit>()
@@ -131,10 +140,11 @@ class Cyp458LoopbackBridgeTest {
         LoopbackBridge(8080, "localhost")
     }
 
-    @Test
-    fun ac2_relayDropMidRequest_resetsHubSocket_notCleanEof() = runBlocking {
+    /** Drive a partial request through the bridge, apply [fault] (a clean relay drop OR an abrupt relay throw), and
+     *  return what the raw hub socket's SECOND read sees: a graceful FIN → success(-1); an RST → failure (throws). */
+    private fun observeHubSecondReadAfterUpstreamFault(fault: (ControllableTunnel) -> Unit): Result<Int> = runBlocking {
         withTimeout(15_000) {
-            // A raw loopback "hub" that reads what the bridge sends, then reads again after the relay drops.
+            // A raw loopback "hub" that reads what the bridge sends, then reads again after the upstream fault.
             val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
             cleanups += { runCatching { server.close() } }
             val port = server.localPort
@@ -147,7 +157,7 @@ class Cyp458LoopbackBridgeTest {
                 val input = conn.getInputStream()
                 val buf = ByteArray(4096)
                 partialSeen.complete(input.read(buf))          // the partial request bytes
-                secondRead.complete(runCatching { input.read(buf) }) // after the drop: RST → throws; clean EOF → -1
+                secondRead.complete(runCatching { input.read(buf) }) // after the fault: RST → throws; graceful FIN → -1
             }
 
             val tunnel = ControllableTunnel()
@@ -155,15 +165,38 @@ class Cyp458LoopbackBridgeTest {
             tunnel.deliver("GET /slow HTTP/1.1\r\nHost: x\r\n".encodeToByteArray()) // a partial request (no terminator)
             assertTrue(partialSeen.await() > 0, "the hub received the in-flight request bytes")
 
-            tunnel.dropRelay() // ★ untrusted relay drop mid-request
+            fault(tunnel) // ★ the upstream (untrusted relay) ends mid-request — cleanly (drop) or abruptly (throw)
             val second = secondRead.await()
-            assertTrue(
-                second.isFailure,
-                "an untrusted relay drop RESETS the hub socket (RST), never a clean EOF — else a malicious relay " +
-                    "truncates a response undetected. Got: $second",
-            )
             bridgeJob.cancel()
+            second
         }
+    }
+
+    @Test
+    fun ac2a_cleanRelayEof_gracefulFin_hubSeesCleanEof_notReset_CYP609() {
+        // CYP-609: a CLEAN upstream EOF (`receive()==null` — the relay/client closed cleanly) → the bridge FIN-half-closes
+        // the loopback (`shutdownOutput`), so the hub's Ktor sees a clean input-EOF (-1), NOT a "Connection reset". The
+        // truncation guard is NOT lost — Ktor's own HTTP layer rejects a truncated body (Content-Length short / missing
+        // terminal chunk → non-2xx), which the CYP-459-T2 real-route teeth pin (Assist-verified sign-off).
+        // MUTATION-RED: revert `closeGraceful()`→`reset()` on the clean path ⇒ the hub's 2nd read throws ⇒ this REDs.
+        val second = observeHubSecondReadAfterUpstreamFault { it.dropRelay() }
+        assertTrue(
+            second.isSuccess && second.getOrNull() == -1,
+            "a CLEAN relay EOF → graceful FIN → the hub reads -1 (clean EOF), never an RST. Got: $second",
+        )
+    }
+
+    @Test
+    fun ac2b_abruptRelayFault_resetsHubSocket_RST_truncationGuardPreserved_CYP609() {
+        // CYP-609 C2: an ABRUPT upstream fault (`receive()` THREW — AEAD-decrypt-fail / tamper-truncation) MUST still RST
+        // the loopback (SO_LINGER 0) — in-flight-uncertain, hard-abort so a malicious/lossy relay can NEVER have a
+        // tampered/truncated stream completed as clean (§4/AC2 preserved).
+        // MUTATION-RED: collapse the throw path to `closeGraceful()` too ⇒ the hub reads -1 instead of throwing ⇒ this REDs.
+        val second = observeHubSecondReadAfterUpstreamFault { it.throwRelay() }
+        assertTrue(
+            second.isFailure,
+            "an ABRUPT relay fault (receive threw) RESETS the hub socket (RST) — the 2nd read throws. Got: $second",
+        )
     }
 
     @Test
@@ -186,6 +219,7 @@ class Cyp458LoopbackBridgeTest {
                 return buf.size
             }
             override fun reset() {}
+            override fun closeGraceful() {} // CYP-609
         }
         val senderBlockedTunnel = object : ServerNoiseTunnel {
             override val handshakeHash: ByteArray = ByteArray(32)
