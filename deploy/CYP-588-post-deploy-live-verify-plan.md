@@ -53,22 +53,35 @@ is the load-bearing cursor (`AgentSocket.kt:117-120`).
    (throttled timers stop draining frames); deterministic alt = a scripted WS client that reads a few frames then **pauses
    draining for ~3–5 s** while the burst flows.
 2. While it's paused, generate a **burst of > 256 events for agent A** faster than it drains. Closest-to-dogfood =
-   **a real verbose agent turn** (a task that emits a long stream-json burst, e.g. a command with large output). Deterministic
-   alt = a controlled inject harness if a seam exists. Aim comfortably over the 256-buffer (e.g. ~400–500 events).
+   **a real verbose agent turn** (a task that emits a long stream-json burst, e.g. a command with large output).
+   **>256 must be GUARANTEED, not hoped** — if the backgrounded-tab burst can't reliably clear 256, use the **fallback: a
+   scripted slow-reader with a controlled inject of a KNOWN count** (e.g. exactly 400) so the drop is guaranteed and measurable.
 3. Resume the slow subscriber's draining.
 
-### 3b. Prove the fix (the client's received transcript is COMPLETE)
+### 3b — STEP 1 (MUST PASS FIRST): prove the gap was REAL — the non-vacuity gate
+> **A green Step 2 is meaningless unless a drop provably happened.** If no gap was created (burst ≤ buffer / consumer wasn't
+> actually slow), "no hole" is **VACUOUS** — it only shows "no burst happened," NOT "backfill works." Verify the drop FIRST:
+
+| # | Check | Must hold (gap was real) |
+|---|---|---|
+| 3b.1 | **durable count jumped > 256 in the slow window** | `query(A)` count rose by **> 256** during the paused window (the burst really exceeded the 256 buffer) |
+| 3b.2 | **the live stream RECEIVED FEWER than durable during the window** | the slow subscriber's live-received count (pre-backfill) < durable appended count → **a drop provably occurred** |
+| 3b.3 | **WARN fired** | the gap WARN is present → the drop path was actually triggered (second, independent confirmation) |
+
+**If 3b.1–3b.3 do NOT all hold → the test is VACUOUS. Re-run with the guaranteed-burst fallback. Do NOT read Step 2 as a pass.**
+
+### 3c — STEP 2 (only meaningful after Step 1): prove the gap-detect BACKFILLED it
 The slow subscriber records **every `seq` it receives**. After it settles, assert against the durable truth
 `GET /ws/agent?agentId=<A>&since=0` (or `query`) as the reference:
 
 | # | Check | GREEN (fix works) | RED (silent loss) |
 |---|---|---|---|
-| 3b.1 | **seq continuity** | received seqs form a **contiguous** range (no hole) from the subscribe cursor to the latest appended seq | a missing seq range = the DROP_OLDEST hole never backfilled |
-| 3b.2 | **event-count match** | count(distinct received seq) == count(durable rows for A in the window) | received < durable |
-| 3b.3 | **no cursor-jump** | the received transcript == the durable `query(A, 0)` transcript, byte-for-byte per event | a jump past the dropped range |
-| 3b.4 | **WARN on the real gap** | a WARN log fires for the DETECTED gap (the backfill re-query) at the dropped range | no WARN, or a silent skip |
+| 3c.1 | **seq continuity** | received seqs form a **contiguous** range (no hole) from the subscribe cursor to the latest appended seq | a missing seq range = the DROP_OLDEST hole never backfilled |
+| 3c.2 | **event-count match** | count(distinct received seq) == count(durable rows for A in the window) | received < durable |
+| 3c.3 | **no cursor-jump** | the received transcript == the durable `query(A, 0)` transcript, byte-for-byte per event | a jump past the dropped range |
 
 > Client-side dedup by `seq` is expected (the backfill re-query may overlap the buffered tail — dedup keeps it to one row/seq).
+> **Order is load-bearing: Step 1 (gap real) BEFORE Step 2 (gap healed). Step 2 green without Step 1 = vacuous, not a pass.**
 
 ---
 
@@ -84,17 +97,20 @@ The slow subscriber records **every `seq` it receives**. After it settles, asser
 
 ## 5. Combined post-deploy sequence (one run)
 
-`§1 read-only pre-checks` → `§2 deploy-didn't-break (health + default-agents 7/7)` → `§3 force gap → prove backfill
-(seq-continuous + count-match + WARN-on-gap)` → `§4 no-regression (normal delivery clean + WARN-only-on-gap)`.
-**"CYP-588 live proven" = §3 GREEN (a forced real gap was backfilled, transcript complete) AND §4 GREEN (no false-fire).**
-Anything RED in §3 → the gap-detect does not work live → **do NOT call it proven; escalate.**
+`§1 read-only pre-checks` → `§2 deploy-didn't-break (health + default-agents 7/7)` → `§3 force gap: **Step 1 prove the gap was
+REAL (durable +>256 · live-received < durable · WARN)** → **Step 2 prove backfill (seq-continuous · count-match · no jump)**` →
+`§4 no-regression (normal delivery clean + WARN-only-on-gap)`.
+**"CYP-588 live proven" = §3 Step 1 GREEN (a real >256 drop provably occurred) AND §3 Step 2 GREEN (it was backfilled, transcript
+complete) AND §4 GREEN (no false-fire).** Step 2 green WITHOUT Step 1 = **vacuous, NOT a pass** (no gap was ever created).
+Anything RED in §3 Step 2 (after Step 1 passed) → the gap-detect does not work live → **do NOT call it proven; escalate.**
 
 ---
 
 ## Appendix — honesty notes
 
 - §3 is inherently **mutating** (needs live event activity) → it runs post-deploy, controlled; pure read-only cannot trigger it.
-- The `> 256` burst is the load-bearing condition — under 256, no drop, no gap, nothing to prove. Confirm the burst actually
-  exceeded the buffer (the durable count jumped by > 256 during the slow window) or the test is vacuous.
+- The `> 256` burst is the load-bearing condition — under 256, no drop, no gap, nothing to prove. This is now the hard
+  **§3 Step-1 non-vacuity gate** (prove the drop happened BEFORE reading the backfill as a pass) — not a footnote. Guarantee
+  >256 via the scripted-inject fallback if the backgrounded tab can't.
 - Reference truth is the **durable** store (`query`/a full `since=0` replay), which is lossless within retention
   (`DEFAULT_RETAIN_PER_AGENT`); the whole test is "did the LIVE-path gap get healed from the durable truth."
