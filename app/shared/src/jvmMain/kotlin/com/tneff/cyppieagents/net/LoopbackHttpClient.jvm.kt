@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.net
 import com.tneff.cyppieagents.net.hub.pool.REST_DEDICATED_CONNS
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.cio.EndpointConfig
 import io.ktor.client.engine.cio.endpoint
 import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.websocket.WebSockets
@@ -53,14 +54,19 @@ fun pinnedCioWsHttpClient(sessionToken: () -> String? = { null }): HttpClient = 
  * No `WebSockets` plugin — this leg never upgrades. ∞ keep-alive is now safe *because* the cap bounds it to one socket.
  */
 fun pinnedCioRestHttpClient(sessionToken: () -> String? = { null }): HttpClient = HttpClient(CIO) {
-    engine {
-        endpoint {
-            keepAliveTime = LOOPBACK_KEEP_ALIVE_MS
-            // THE CYP-610 fix: cap REST to one shared loopback socket → ≤1 REST tunnel → 14 WS slots always free.
-            maxConnectionsPerRoute = REST_DEDICATED_CONNS
-        }
-    }
+    engine { endpoint { applyRestLoopbackCap() } }
     install(DefaultRequest) { sessionToken()?.let { header("X-Session-Token", it) } }
+}
+
+/**
+ * CYP-610 — the REST loopback endpoint config, extracted so a unit tooth can assert the cap **deterministically**
+ * (no socket race): [maxConnectionsPerRoute] = [REST_DEDICATED_CONNS] funnels all REST onto that many shared keep-alive
+ * sockets (CIO default is 100 = effectively uncapped), and the ∞ [keepAliveTime] keeps that socket warm. Removing the
+ * cap line reverts [maxConnectionsPerRoute] to the CIO default ⇒ the tooth reddens.
+ */
+internal fun EndpointConfig.applyRestLoopbackCap() {
+    keepAliveTime = LOOPBACK_KEEP_ALIVE_MS
+    maxConnectionsPerRoute = REST_DEDICATED_CONNS
 }
 
 /**
