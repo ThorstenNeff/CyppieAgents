@@ -74,4 +74,25 @@ class Cyp595EnrollTimeoutTest {
         runCurrent()
         assertEquals(OperatorAuthOutcome.Granted, outcome, "a prompt final grant connects — the bound does not false-trip")
     }
+
+    @Test
+    fun cpJwtFetchStalls_timesOut_toEnrollTimedOut_notHang() = runTest {
+        // CYP-595 R2 follow-up (Assist verify): the pre-protocol cpJwt fetch is a suspend CP HTTP roundtrip, and the
+        // shared client installs NO HttpTimeout. A jammed CP (accept-then-silent) must NOT hang the enroll auth ABOVE
+        // the bounded RR3 receives — the bounded fetch surfaces the retryable EnrollTimedOut, symmetric with a stalled
+        // receive. (Without this, CYP-595 only relocated the eternal hang one step up into the ticket fetch.)
+        val stallingCp = CpJwtProvider { _, _ -> awaitCancellation() } // the CP accepts the request but never responds
+        val auth = ClientOperatorAuth(
+            OperatorPopBuilder(FakeStore(), NonceGenerator { ByteArray(16) }),
+            stallingCp,
+            enrollConfirmer = EnrollConfirmer { true },
+            enrollFinalizeTimeoutMs = 1_000L,
+        )
+        val t = StallOnFinalTunnel(emptyList()) // never reached; the stall is upstream in the cpJwt fetch
+        var outcome: OperatorAuthOutcome? = null
+        backgroundScope.launch { outcome = auth.authenticate(t, "hub-1") }
+        advanceTimeBy(1_001L); runCurrent()
+        // Reddening mutation: remove the bounded{} wrap around cpJwt ⇒ the fetch awaits forever ⇒ outcome stays null ⇒ red.
+        assertEquals(OperatorAuthOutcome.EnrollTimedOut, outcome, "a jammed CP cpJwt fetch ⇒ retryable EnrollTimedOut, not a pre-protocol hang")
+    }
 }
