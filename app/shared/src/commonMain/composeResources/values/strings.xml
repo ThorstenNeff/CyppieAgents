@@ -169,6 +169,10 @@
     <string name="agent_ctl_err_already_running">Läuft bereits</string>
     <string name="agent_ctl_err_spawn_failed">Start fehlgeschlagen</string>
     <string name="agent_ctl_err_operator_required">Nur der Operator darf den Agenten steuern</string>
+    <!-- CYP-598-A: distinkte Gründe, die vorher aufs generische „Aktion fehlgeschlagen" kollabierten
+         (Diagnose-Masking-Klasse CYP-580): 404 agent_not_found + Transport (Server unerreichbar/Timeout). -->
+    <string name="agent_ctl_err_agent_not_found">Agent nicht gefunden</string>
+    <string name="agent_ctl_err_unreachable">Server nicht erreichbar</string>
     <string name="agent_ctl_err_generic">Aktion fehlgeschlagen</string>
     <!-- Per-Fenster-Badges (CYP-55). pager_activity_badge: in CYP-54/50 bewusst zu CYP-55 deferred,
          hier GENAU EINMAL definiert (Titelleisten-Count + Pager-Aktivitäts-Badge teilen den Wortlaut).

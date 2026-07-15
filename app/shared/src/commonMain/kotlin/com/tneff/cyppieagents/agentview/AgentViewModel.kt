@@ -381,8 +381,16 @@ class AgentViewModel(
                 // "Startet…"/"Neustart…" hanging on a request that already failed; the state stays honest.
                 clearStartPending()
                 clearRestartPending()
-                // Surface the server's reason code (409/403/503/404) honestly; generic fallback otherwise.
-                _lifecycleError.value = (e as? AgentLifecycleHttpException)?.code ?: "lifecycle_failed"
+                // CYP-598-A: surface the REAL cause, never a generic blur. A response-bearing reject passes its
+                // honest server code through (already_running / spawn_failed / operator_required / agent_not_found …);
+                // a code-less non-2xx keeps the generic fallback. A TRANSPORT failure (server unreachable / refused /
+                // timeout / TLS / reset) threw BEFORE any response — it is NOT an AgentLifecycleHttpException — so it
+                // gets its own distinct `unreachable` cause instead of collapsing to the opaque `lifecycle_failed`
+                // token (the CYP-598 masking defect: "Action failed" hid whether the server was even reachable).
+                _lifecycleError.value = when (e) {
+                    is AgentLifecycleHttpException -> e.code ?: "lifecycle_failed"
+                    else -> "unreachable"
+                }
             }
         }
     }
