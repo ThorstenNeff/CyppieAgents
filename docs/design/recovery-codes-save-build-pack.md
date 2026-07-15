@@ -4,6 +4,12 @@
 > **Design/Copy, kein Code.** Companion zu `recovery-codes-save-ux-fix-spec.md` (Design-Rationale). Gegroundet READ-ONLY
 > gg. develop `a1593d19`. **Dev zieht 1:1 (kein Ableiten = kein Drift).** Ticket-Key: PO beim Dispatch.
 >
+> **⟳ RE-VERIFIZIERT gg. develop `025b17ae` (2026-07-15, post-akut):** 5 Keys + 4 Tags **weiter 0-Kollision**;
+> Line-Anchors **halten** (`RecoveryCodesReveal.kt` unverändert a1593d19→025b17ae); File-Save-Seam **weiter novel**.
+> **2 Refinements gefoldet:** (a) §5 File-Save-Seam-Präzedenz = `rememberImagePicker`/`FileDialog` (spiegeln, nicht
+> divergent erfinden); (b) §2 Apostroph-Konvention der recovery-Sektion ist real **gemischt** — Wahl = **roh** (matcht
+> das prominente `_body`, beweisbar compilierend in Compose-Resources). Docs-only, kein force-push (Branch evtl. Dev-gezogen).
+>
 > **Scope = die robuste Runde (①②③), NICHT der akute CYP-595/596-Subset:** `_window_expired`/`_reconnect` +
 > `codesWindowExpired`/`codesReconnect` gehören zu **CYP-595** (Expiry-Zustand, separat gemappt §10 der Spec) — **nicht hier**.
 
@@ -19,7 +25,10 @@ durch eine ~30-s-Uhr.**
 
 ## 2. ② + ③ Neue Keys — paste-ready Strings-Manifest (Dev pullt 1:1)
 > **DE** → `app/shared/src/commonMain/composeResources/values/strings.xml` · **EN** → `…/values-en/strings.xml`.
-> Apostroph **roh** (Haus-Konvention der recovery-Sektion: „You'll"/„can't"/„I've" roh). Alle **0 Args**.
+> Apostroph **roh** (`there's`). **⚠ Konvention-Nuance (@025b17ae verifiziert):** die recovery-Sektion ist real
+> **gemischt** — `_body` roh (`You'll`/`can't`), `_no_central` **escaped** (`there\'s`/`won\'t`). Wahl = **roh**, weil
+> das prominente `_body` roh ist **und beweisbar compiliert** (es ist in develop/shipped → Compose-Resources erzwingt
+> die Android-aapt-Escape-Regel NICHT). **Kein Escaping nötig**; falls das Build-Tooling je strikt würde = trivialer Swap. Alle **0 Args**.
 
 **DE (`values/strings.xml`):**
 ```xml
@@ -59,9 +68,13 @@ const val CODES_NO_RUSH = "remote.recovery.codesNoRush"      // §3 „nimm dir 
 
 **Unverändert:** `_title`/`_body`/`_single_use`/`_no_central`/`SelectionContainer`/`CODES_ACK` — kein Churn, rein additiv.
 
-## 5. Save-to-File-Seam (NEU — kein bestehendes Client-`expect/actual`, Dev legt an)
-Es gibt **kein** wiederverwendbares commonMain-Client-File-Write (die Store-Treffer sind server-seitig). Also **neuer**
-Platform-Seam:
+## 5. Save-to-File-Seam (NEU — kein bestehendes file-WRITE, aber `ImagePicker` ist der Struktur-Präzedenz)
+Es gibt **kein** wiederverwendbares commonMain-Client-File-**Write** (die Store-Treffer sind server-seitig). **ABER**
+(@025b17ae): `agentsettings/ImagePicker.kt`/`.jvm.kt` ist ein bestehendes **expect/actual-File-Dialog-Muster**
+(`expect fun rememberImagePicker(onPicked)`, jvm = `java.awt.FileDialog(…, FileDialog.LOAD)`). Es ist file-**READ**
+(Bild picken), also **nicht direkt reusable** für einen Text-Code-**Save** — aber der neue Seam soll dessen
+**expect/actual-Struktur + JVM-`FileDialog` spiegeln** (mit `FileDialog.SAVE`, dem Write-Spiegel von `.LOAD`),
+**nicht divergent erfinden** (Reuse-Disziplin). Also **neuer** Platform-Seam, an `ImagePicker` modelliert:
 ```kotlin
 // commonMain
 expect suspend fun saveRecoveryCodesToFile(codes: List<String>): Boolean // true = gespeichert
@@ -83,6 +96,7 @@ expect suspend fun saveRecoveryCodesToFile(codes: List<String>): Boolean // true
 
 ## 7. Self-Validation
 - **Bau-fertig:** paste-ready XML (DE+EN) + exakte Tag-consts + line-verankerte Insertion-Points + der neue File-Seam — Dev zieht 1:1.
-- **Gegroundet** gg. `RecoveryCodesReveal.kt`/`RemoteRecoveryTags.kt`/recovery-Strings @ `a1593d19` (file:line); Apostroph-Konvention (roh) verifiziert; 5 Keys + 4 Tags **0-Kollision** grep-belegt.
+- **Gegroundet** gg. `RecoveryCodesReveal.kt`/`RemoteRecoveryTags.kt`/recovery-Strings @ `a1593d19` (file:line); 5 Keys + 4 Tags **0-Kollision** grep-belegt.
+- **⟳ RE-VERIFIZIERT @ develop `025b17ae`:** 5 Keys + 4 Tags weiter **0-Kollision** (grep); Line-Anchors halten (`RecoveryCodesReveal.kt` byte-unverändert seit a1593d19); File-Save-Seam weiter novel (nur `ImagePicker`-READ-Präzedenz, §5); Apostroph-Konvention real gemischt (§2, roh gewählt, compiliert beweisbar).
 - **Reuse-first:** Copy-Feedback = `DicewareReveal`-Muster · Tags = `remote.recovery.*` · bestehende Copy/Confirm/Ack unverändert.
 - **Scope sauber getrennt:** robuste Runde (①②③) hier; CYP-595-Expiry-Subset separat (Spec §10). Kein Bau, docs-only auf `feature/recovery-codes-save-ux-fix`.
