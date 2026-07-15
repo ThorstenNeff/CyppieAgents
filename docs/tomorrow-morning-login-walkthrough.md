@@ -101,6 +101,40 @@
 
 ---
 
+## ★ CYP-588 — Transcript-Vollständigkeit unter Slow-Consumer (optional, non-vakuos)
+
+> Best-effort **Live-Bestätigung**, dass der Gap-Detect (CYP-588, gemergt `c5cbae6e`) eine echte `/ws/agent`-Buffer-Lücke
+> heilt. **Der Mechanismus ist bereits bewiesen** — in-process `Cyp588LiveGapDetectTest` (echter `SqliteAgentEventStore`/
+> DROP_OLDEST, echter slow-Subscriber, echter >256-Burst, **mutation-RED**). Dieser Schritt fügt nur „über die echte WS"
+> hinzu — **mit hartem Non-Vakuitäts-Guard: ohne echten >256-Drop → INCONCLUSIVE, KEIN fake-pass.**
+
+- **Was du tust (du bist OPERATOR):** auf einem Agenten einen **verbosen Turn** treiben (Aufgabe mit viel Ausgabe, z.B.
+  „liste 400 nummerierte Zeilen mit je einem kurzen Satz") → **während er streamt, das Agenten-Fenster ~5–10 s
+  backgrounden/minimieren** (drosselt den WS-Consumer → DROP_OLDEST droppt mid-stream) → wieder in den Vordergrund →
+  **reconnect** (die App re-subscribed mit `?since=<lastSeq>`).
+- **Was erwartet (falls die Lücke real war):** das Transcript ist nach dem Reconnect **vollständig** — **kein Loch**,
+  seq-kontinuierlich; der gedroppte Bereich wurde aus dem durable Store nachgefüllt.
+
+🔎 **Server-Verify (QA/Team-2, creds-seitig; der Backend arbitriert die maskierten Marker, Path B):**
+**Schritt 1 — ZUERST beweisen, dass der Drop REAL war (sonst vakuos):**
+1. der `durable`-Event-Count des Agenten stieg im Fenster um **> 256** (`GET /ws/agent?agentId=<A>&since=0` drainen +
+   zählen, vorher/nachher).
+2. das Live-Fenster empfing **weniger** als durable hat (pre-backfill) → **ein Drop ist beweisbar passiert**.
+3. der WARN feuerte: `CYP-588: live-buffer gap seq <from>..<to> (slow consumer + DROP_OLDEST) — backfilled from the
+   durable store: agent=<A>` (`SqliteAgentEventStore.kt:87`).
+→ Halten (1)–(3) **nicht** alle (der verbose Turn emittierte ≤ 256 Events → kein Drop): **als INCONCLUSIVE markieren** —
+   der Mechanismus-Beweis bleibt der in-process-Test. **Kein fake-pass.**
+
+**Schritt 2 — erst DANN: beweisen, dass geheilt wurde:**
+4. das im Fenster empfangene Transcript == durable `since=0` (seq-kontinuierlich, **kein Loch**, Count-Match) →
+   **GRÜN = Backfill live bestätigt.**
+
+> Reihenfolge ist load-bearing: Schritt 1 (Drop real) **VOR** Schritt 2 (geheilt). Schritt-2-grün ohne Schritt-1 =
+> vakuos, kein Pass. Voller Plan: `deploy/CYP-588-post-deploy-live-verify-plan.md`; Gate-Referenz:
+> `scratchpad/cyp588_live_verify.py --dry-check`.
+
+---
+
 ## ★ Persistenz (optional, nach einem Hub-Restart)
 
 - **Was du tust:** (falls getestet) Hub neustarten → App reconnecten.
