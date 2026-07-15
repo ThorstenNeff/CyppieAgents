@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub
 
+import com.tneff.cyppieagents.net.Backoff
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.pool.TunnelLane
 import com.tneff.cyppieagents.net.logWsTeardown
@@ -9,6 +10,7 @@ import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -44,6 +46,9 @@ class RemoteTunnelHubTransport(
     private val wsAcceptor: LoopbackAcceptor = RealLoopbackAcceptor(),
     private val restAcceptor: LoopbackAcceptor = RealLoopbackAcceptor(),
     private val bridge: ClientLoopbackBridge = ClientLoopbackBridge(),
+    // CYP-619: the backoff schedule for the DATA-lane HOLD+retry on a null acquire (default = the standard WS backoff);
+    // injectable so a test drives it fast/deterministically.
+    private val dataRetryBackoff: Backoff = Backoff(),
     injectedClient: HttpClient? = null,
 ) : HubTransport {
 
@@ -90,27 +95,44 @@ class RemoteTunnelHubTransport(
                 while (isActive) {
                     val conn = acceptor.accept() ?: break // acceptor closed → stop (the ONLY serial step)
                     launch { // ①/②: per-connection — acquire + pump run concurrently; the loop immediately accepts the next
-                        val tunnel = try {
-                            tunnelSource.acquire(lane)
-                        } catch (t: Throwable) {
-                            // CYP-561 NOTE-1: if acquire() RE-THROWS (e.g. a dial exception the pool re-raises), the
-                            // accepted loopback socket would otherwise leak until GC — reset it, then re-propagate
-                            // (a cancellation still cancels; the reset is fail-closed cleanup either way).
-                            runCatching { conn.reset() }
-                            throw t
+                        // CYP-619: on a DATA-lane `acquire=null` DO NOT hard-RST the loopback. The hard reset TEARS the
+                        // conn → the workspace Ktor client re-dials → acquire=null again → RST = the storm cascade the
+                        // dogfood logged (`held=21` overlap → 21× churn/agent). Instead HOLD the conn (the workspace just
+                        // waits, like connection latency) and backoff-retry until a DATA slot frees. Capacity is proven
+                        // sufficient (CYP-619 check: DATA_steady = 8 singleton-WS + N agents = 16 at N=8, < the 21 DATA
+                        // budget), so the overlap resolves and a slot WILL free. CONTROL single-tries: its CYP-616 reserved
+                        // slot means a null there = the WHOLE pool (incl. reserve) is full = genuine exhaustion → honest
+                        // fail-closed reset (and CONTROL is rare/short — no cascade). Bounded by the coroutine: [close] /
+                        // hub-switch cancels this child ⇒ the loop exits with `tunnel == null` ⇒ the conn is reset (clean).
+                        var tunnel: NoiseTunnel? = null
+                        var attempt = 0
+                        while (isActive) {
+                            tunnel = try {
+                                tunnelSource.acquire(lane)
+                            } catch (t: Throwable) {
+                                // CYP-561 NOTE-1: if acquire() RE-THROWS (e.g. a dial exception the pool re-raises), the
+                                // accepted loopback socket would otherwise leak until GC — reset it, then re-propagate
+                                // (a cancellation still cancels; the reset is fail-closed cleanup either way).
+                                runCatching { conn.reset() }
+                                throw t
+                            }
+                            if (tunnel != null || lane != TunnelLane.DATA) break // got a tunnel, OR CONTROL (single-try)
+                            // DATA + no slot: hold the conn, back off, and retry — the anti-cascade of CYP-619.
+                            attempt += 1
+                            com.tneff.cyppieagents.net.logWsPool("transport", "DATA acquire=null → HOLD+backoff (attempt=$attempt; no RST-tear, waiting for a DATA slot — CYP-619)")
+                            delay(dataRetryBackoff.delayFor(attempt))
                         }
-                        if (tunnel == null) {
-                            // 6-agent incident: THIS is the client-originated RST the dogfood log sees as "reset by peer" —
-                            // a loopback conn got no tunnel (pool/set exhausted, see the ws-pool:reserve census, or a
-                            // dial-fail) → fail-closed RST. CYP-616: a CONTROL conn should now only RST if EVEN the reserve
-                            // is gone (both lanes full); a DATA conn RSTs at effectiveCap, leaving the reserve for CONTROL.
+                        val live = tunnel // capture the var into a val so the closures below smart-cast to non-null
+                        if (live == null) {
+                            // Reached for a CONTROL null (whole pool incl. reserve full = genuine exhaustion) OR a DATA loop
+                            // exited via cancellation (transport close / hub-switch). Fail-closed RST — never a plaintext fallback.
                             com.tneff.cyppieagents.net.logWsPool("transport", "acquire(lane=$lane)=null → RST loopback conn (no tunnel; see ws-pool:reserve for cause)")
                             conn.reset() // no live tunnel ⇒ fail-closed (RST), never a plaintext/local fallback
                         } else {
                             try {
-                                bridge.pump(tunnel, conn) // carries this connection until either side ends (RR8, no mux)
+                                bridge.pump(live, conn) // carries this connection until either side ends (RR8, no mux)
                             } finally {
-                                runCatching { tunnel.close() } // slot-release on ANY exit (idempotent; a pooled tunnel frees its slot)
+                                runCatching { live.close() } // slot-release on ANY exit (idempotent; a pooled tunnel frees its slot)
                             }
                         }
                     }
