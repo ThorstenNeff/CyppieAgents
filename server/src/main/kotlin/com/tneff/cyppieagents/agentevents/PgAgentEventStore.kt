@@ -13,9 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -71,14 +68,12 @@ class PgAgentEventStore(
         return stored
     }
 
-    override fun subscribe(agentId: String, sinceSeq: Long?): Flow<StoredAgentEvent> = flow {
-        var cursor = sinceSeq ?: 0L
-        // Same CYP-198 race fix as sqlite: register on `live` BEFORE the replay query (onSubscription), dedup by
-        // `seq > cursor` — no gap and no dup across the history→live boundary.
-        live
-            .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it); cursor = maxOf(cursor, it.seq) } }
-            .collect { rec -> if (rec.agentId == agentId && rec.seq > cursor) { emit(rec); cursor = rec.seq } }
-    }
+    // CYP-198 race fix + CYP-588 GAP-DETECT (DROP_OLDEST live drop under a slow consumer → re-query + backfill),
+    // single-sourced in [agentEventReplayThenLive] (identical to Sqlite — the drift the shared body prevents).
+    override fun subscribe(agentId: String, sinceSeq: Long?): Flow<StoredAgentEvent> =
+        agentEventReplayThenLive(agentId, sinceSeq, live, ::query) { from, to ->
+            log.warn("CYP-588: live-buffer gap seq {}..{} (slow consumer + DROP_OLDEST) — backfilled from the durable store: agent={}", from, to, agentId)
+        }
 
     override suspend fun query(agentId: String, sinceSeq: Long?, limit: Int): List<StoredAgentEvent> = withContext(io) {
         dataSource.connection.use { c ->

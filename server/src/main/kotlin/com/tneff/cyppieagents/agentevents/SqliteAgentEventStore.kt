@@ -8,9 +8,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -82,19 +79,13 @@ class SqliteAgentEventStore(
         return stored
     }
 
-    override fun subscribe(agentId: String, sinceSeq: Long?): Flow<StoredAgentEvent> = flow {
-        var cursor = sinceSeq ?: 0L
-        // CYP-198 race fix: [onSubscription] runs AFTER this collector is REGISTERED on `live`, so any append
-        // concurrent with the replay is captured by `live` (not silently dropped by its replay=0). Replaying
-        // the durable tail INSIDE onSubscription closes the "after query-read, before subscribe" gap that a
-        // naive `launch { live.collect }; query()` leaves (measured ~33% loss). Overlap (an event in BOTH the
-        // replay and the live buffer, appended during the query) is de-duplicated **correct-by-construction**
-        // by the `seq > cursor` guard: the replay advances `cursor` as it emits (CYP-205 — explicit at the
-        // site), so a live event with `seq <= cursor` (already replayed) is dropped, never re-emitted.
-        live
-            .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it); cursor = maxOf(cursor, it.seq) } }
-            .collect { rec -> if (rec.agentId == agentId && rec.seq > cursor) { emit(rec); cursor = rec.seq } }
-    }
+    // CYP-198 race fix (onSubscription-before-query, ~33% loss otherwise) + CYP-588 GAP-DETECT (the prod `live` is
+    // DROP_OLDEST, so a slow /ws/agent consumer silently loses mid-stream live events → a `seq>cursor+1` jump re-queries
+    // the durable rows and backfills the gap). Both live in the single-sourced [agentEventReplayThenLive].
+    override fun subscribe(agentId: String, sinceSeq: Long?): Flow<StoredAgentEvent> =
+        agentEventReplayThenLive(agentId, sinceSeq, live, ::query) { from, to ->
+            log.warn("CYP-588: live-buffer gap seq {}..{} (slow consumer + DROP_OLDEST) — backfilled from the durable store: agent={}", from, to, agentId)
+        }
 
     override suspend fun query(agentId: String, sinceSeq: Long?, limit: Int): List<StoredAgentEvent> = withContext(io) {
         mutex.withLock {

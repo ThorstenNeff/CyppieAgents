@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onSubscription
@@ -43,6 +44,47 @@ internal fun unrenderableEventPlaceholder(seq: Long): StreamJsonEvent =
 /** CYP-579 — the placeholder's `injectedSource` tag (the render-path key) + uuid prefix, single-sourced for tests. */
 internal const val UNRENDERABLE_INJECTED_SOURCE = "cyppie/replay"
 internal const val UNRENDERABLE_UUID_PREFIX = "unrenderable-"
+
+/**
+ * CYP-588 — the shared **replay-then-live with GAP-DETECT** [subscribe][AgentEventStore.subscribe] body for EVERY
+ * store (single-sourced so Sqlite/Pg/InMemory can't drift). The live fan-out [live] may **DROP_OLDEST** under a slow
+ * consumer (prod Sqlite/Pg deliberately use DROP_OLDEST so a slow `/ws/agent` client never blocks `append`) — which
+ * silently discards a mid-stream live event (`tryEmit` returns `true` on a DROP_OLDEST drop, so the drop is invisible
+ * to the producer). The naive `if (seq > cursor)` cursor would then jump PAST the dropped seq → a **permanent**
+ * transcript hole (a client's `?since=<lastSeq>` reconnect never re-fetches a seq below its cursor). The dropped rows
+ * ARE durable, so a **`seq > cursor + 1` jump triggers a re-[query]** that backfills exactly the missing rows in
+ * order — no hole. [onGap] is the diagnosability hook (a WARN naming the gap). InMemory uses SUSPEND (its `append`
+ * `emit`s, never drops) → the gap branch never fires there, so this is behaviour-preserving for it.
+ */
+internal fun agentEventReplayThenLive(
+    agentId: String,
+    sinceSeq: Long?,
+    live: SharedFlow<StoredAgentEvent>,
+    query: suspend (agentId: String, sinceSeq: Long?, limit: Int) -> List<StoredAgentEvent>,
+    onGap: (fromSeq: Long, toSeq: Long) -> Unit = { _, _ -> },
+): Flow<StoredAgentEvent> = flow {
+    var cursor = sinceSeq ?: 0L
+    // onSubscription registers on `live` BEFORE the replay query (CYP-198 race fix) so a concurrent append can't slip
+    // the boundary; dedup by `seq > cursor`.
+    live
+        .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it); cursor = maxOf(cursor, it.seq) } }
+        .collect { rec ->
+            if (rec.agentId == agentId && rec.seq > cursor) {
+                if (rec.seq > cursor + 1) {
+                    // CYP-588 GAP-DETECT: live events in (cursor, rec.seq) were DROPPED from the buffer (slow consumer +
+                    // DROP_OLDEST) → re-query the DURABLE store and backfill the missing rows in order (append writes the
+                    // DB BEFORE tryEmit, so every gap seq is already durable). No permanent hole. `rec` itself (seq==rec.seq)
+                    // is in the DB too, so it is emitted from the query — not separately (no dup). Rows > rec.seq arrive via live.
+                    onGap(cursor + 1, rec.seq - 1)
+                    query(agentId, cursor, Int.MAX_VALUE).forEach { row ->
+                        if (row.seq > cursor && row.seq <= rec.seq) { emit(row); cursor = row.seq }
+                    }
+                } else {
+                    emit(rec); cursor = rec.seq
+                }
+            }
+        }
+}
 
 /**
  * CYP-198 — durable, replayable persistence of the per-agent stream-json transcript, the **single source**
@@ -100,14 +142,10 @@ class InMemoryAgentEventStore(private val retainPerAgent: Int = DEFAULT_RETAIN_P
         return stored
     }
 
-    override fun subscribe(agentId: String, sinceSeq: Long?): Flow<StoredAgentEvent> = flow {
-        var cursor = sinceSeq ?: 0L
-        // CYP-198 race fix (see SqliteAgentEventStore): onSubscription registers this collector on `live`
-        // BEFORE the replay query runs, so a concurrent append can't slip through the gap; dedup by seq.
-        live
-            .onSubscription { query(agentId, cursor, Int.MAX_VALUE).forEach { emit(it); cursor = maxOf(cursor, it.seq) } }
-            .collect { rec -> if (rec.agentId == agentId && rec.seq > cursor) { emit(rec); cursor = rec.seq } }
-    }
+    // CYP-588: the shared replay-then-live-with-gap-detect. InMemory's `live` is SUSPEND (its append `emit`s, never
+    // drops) → the gap branch never fires here; using the shared body keeps it drift-free with the durable stores.
+    override fun subscribe(agentId: String, sinceSeq: Long?): Flow<StoredAgentEvent> =
+        agentEventReplayThenLive(agentId, sinceSeq, live, ::query)
 
     override suspend fun query(agentId: String, sinceSeq: Long?, limit: Int): List<StoredAgentEvent> = mutex.withLock {
         rows.asSequence()
