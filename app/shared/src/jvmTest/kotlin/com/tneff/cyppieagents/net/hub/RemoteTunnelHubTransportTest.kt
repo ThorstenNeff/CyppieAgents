@@ -54,16 +54,21 @@ class RemoteTunnelHubTransportTest {
         override fun close() { closed = true }
     }
 
+    // CYP-616: the transport now has TWO acceptors (REST→CONTROL, WS→DATA). These teeth drive a single conn on the
+    // REST/CONTROL acceptor (the datapath req is a REST "GET"); the WS acceptor defaults to an empty one on the SAME
+    // port so the loopback base-URL assertions still hold. `tunnelSource` ignores the lane here (a fixed fake tunnel).
     private fun transport(
         tunnel: NoiseTunnel?,
-        acceptor: LoopbackAcceptor,
+        restAcceptor: LoopbackAcceptor,
         scope: CoroutineScope,
         token: String? = "cp-ticket",
+        wsAcceptor: LoopbackAcceptor = FakeAcceptor(port = restAcceptor.port),
     ) = RemoteTunnelHubTransport(
-        tunnelSource = { tunnel },
+        tunnelSource = { _ -> tunnel },
         sessionTokenProvider = { token },
         scope = scope,
-        acceptor = acceptor,
+        wsAcceptor = wsAcceptor,
+        restAcceptor = restAcceptor,
         injectedClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO), // test-owned, closed via transport.close()
     )
 
@@ -85,7 +90,7 @@ class RemoteTunnelHubTransportTest {
         val conn = FakeConn(listOf(req))
         val scope = CoroutineScope(Dispatchers.IO)
         val t = transport(tunnel, FakeAcceptor(port = 9000, conns = listOf(conn)), scope)
-        t.acceptJob.join() // the loop accepts the one conn, pumps it over the tunnel, then drains → completes
+        t.restAcceptJob.join() // the CONTROL loop accepts the one REST conn, pumps it over the tunnel, then drains → completes
         assertTrue(tunnel.sent.any { it.contentEquals(req) }, "the workspace REQUEST flowed over the Noise tunnel (client → hub)")
         assertTrue(conn.written.any { it.contentEquals(resp) }, "the hub RESPONSE flowed back to the loopback socket (hub → client)")
         t.close(); scope.cancel()
@@ -95,8 +100,8 @@ class RemoteTunnelHubTransportTest {
     fun noLiveTunnel_failsClosed_resetsConnection_neverLocalFallback() = runBlocking {
         val conn = FakeConn(listOf("GET / HTTP/1.1\r\n\r\n".encodeToByteArray()))
         val scope = CoroutineScope(Dispatchers.IO)
-        val t = transport(tunnel = null, acceptor = FakeAcceptor(port = 9001, conns = listOf(conn)), scope = scope)
-        t.acceptJob.join()
+        val t = transport(tunnel = null, restAcceptor = FakeAcceptor(port = 9001, conns = listOf(conn)), scope = scope)
+        t.restAcceptJob.join()
         assertTrue(conn.wasReset, "no live tunnel ⇒ the connection is RESET (fail-closed), never carried in the clear")
         t.close(); scope.cancel()
     }
@@ -158,10 +163,11 @@ class RemoteTunnelHubTransportTest {
         val conns = (0 until n).map { LongLivedConn { if (started.incrementAndGet() == n) allStarted.complete(Unit) } }
         val scope = CoroutineScope(Dispatchers.IO)
         val t = RemoteTunnelHubTransport(
-            tunnelSource = { FakeTunnel() }, // a fresh (distinct) tunnel per connection, like PooledTunnelSource
+            tunnelSource = { _ -> FakeTunnel() }, // a fresh (distinct) tunnel per connection, like PooledTunnelSource
             sessionTokenProvider = { "cp-ticket" },
             scope = scope,
-            acceptor = FakeAcceptor(port = 9200, conns = conns),
+            wsAcceptor = FakeAcceptor(port = 9200, conns = conns), // CYP-616: the N WS conns ride the DATA-lane acceptor
+            restAcceptor = FakeAcceptor(port = 9201),
             injectedClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO),
         )
         withTimeout(5_000) { allStarted.await() } // all N pumped at once ⇒ completes; single-flight ⇒ times out (RED)
@@ -178,13 +184,14 @@ class RemoteTunnelHubTransportTest {
         val handler = CoroutineExceptionHandler { _, _ -> } // the re-thrown acquire error is isolated (kept out of stderr)
         val scope = CoroutineScope(Dispatchers.IO + handler)
         val t = RemoteTunnelHubTransport(
-            tunnelSource = { throw RuntimeException("dial boom") }, // acquire() re-throws
+            tunnelSource = { _ -> throw RuntimeException("dial boom") }, // acquire() re-throws
             sessionTokenProvider = { "cp-ticket" },
             scope = scope,
-            acceptor = FakeAcceptor(port = 9300, conns = listOf(conn)),
+            restAcceptor = FakeAcceptor(port = 9300, conns = listOf(conn)), // the REST conn rides the CONTROL-lane acceptor
+            wsAcceptor = FakeAcceptor(port = 9301),
             injectedClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO),
         )
-        t.acceptJob.join() // supervisorScope waits for the failed child; the throw is isolated (loop survives)
+        t.restAcceptJob.join() // supervisorScope waits for the failed child; the throw is isolated (loop survives)
         assertTrue(conn.wasReset, "acquire() re-throw ⇒ the accepted loopback socket is RESET, not leaked until GC")
         t.close(); scope.cancel()
     }
@@ -194,7 +201,7 @@ class RemoteTunnelHubTransportTest {
         // Seam-3 (a): the commonMain factory returns the REAL tunnel-backed transport on jvm (Path-A), not the
         // fail-loud RemoteHubTransport() stub — the loopback base is what makes AgentShell operate over the tunnel.
         val scope = CoroutineScope(Dispatchers.IO)
-        val t = buildRemoteHubTransport(acquireTunnel = { null }, sessionToken = { "cp-ticket" }, scope = scope)
+        val t = buildRemoteHubTransport(acquireTunnel = { _ -> null }, sessionToken = { "cp-ticket" }, scope = scope)
         assertTrue(t != null, "jvm factory builds a transport (Path-A Desktop)")
         assertTrue(t!!.httpBaseUrl.startsWith("http://127.0.0.1:"), "it is the loopback tunnel transport, never the fail-loud stub")
         t.close(); scope.cancel()

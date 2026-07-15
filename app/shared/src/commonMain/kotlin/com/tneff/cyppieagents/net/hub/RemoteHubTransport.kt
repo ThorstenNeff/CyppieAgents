@@ -38,7 +38,7 @@ expect class RemoteHubTransport() : HubTransport
  * as the operator's authority to the hub (Reviewer Axis-1, G1).
  */
 expect fun buildRemoteHubTransport(
-    acquireTunnel: suspend () -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
+    acquireTunnel: suspend (com.tneff.cyppieagents.net.hub.pool.TunnelLane) -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
     sessionToken: () -> String?,
     scope: kotlinx.coroutines.CoroutineScope,
 ): HubTransport?

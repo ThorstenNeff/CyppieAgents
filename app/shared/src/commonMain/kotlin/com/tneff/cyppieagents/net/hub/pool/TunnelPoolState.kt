@@ -92,3 +92,23 @@ const val WS_RESERVED_SLOTS: Int = 14
 
 /** @see WS_RESERVED_SLOTS — REST's dedicated connection budget (one shared keep-alive socket). */
 const val REST_DEDICATED_CONNS: Int = 1
+
+/**
+ * CYP-616 — the tunnel-acquire **lane** (client-only reservation-class, belt-and-suspenders to CYP-609). The pool is
+ * otherwise WS/REST-blind; the lane lets [PooledTunnelSource.acquire] carve a **reserved break-glass headroom** the
+ * DATA (WS) lane can never consume, so lifecycle-REST ([CONTROL]) can ALWAYS acquire a tunnel even when a WS-churn
+ * storm has saturated the data slots (`EXHAUSTED@set held=23 inUse=23` → the "Server unreachable" on stop). The
+ * transport routes the lane **by port** (two acceptors: the `restAcceptor` → [CONTROL], the `wsAcceptor` → [DATA]).
+ */
+enum class TunnelLane { DATA, CONTROL }
+
+/**
+ * CYP-616 — the number of pool slots reserved for the [TunnelLane.CONTROL] lane (lifecycle-REST). DATA (WS) is gated
+ * at `min(cap, resolvedSet.size) − CONTROL_RESERVED_SLOTS`; CONTROL is gated at the full usable set — so the last
+ * [CONTROL_RESERVED_SLOTS] slots are a break-glass headroom only lifecycle-REST can take. At [TUNNEL_POOL_CAP]=24 the
+ * usable set is 23 (id 0 = the CP control tunnel, `drop(1)`), so WS share **21** and CONTROL keeps **2** in reserve.
+ * 2 (not 1) gives a REST reconnect-overlap slot; the WS working set (14, [WS_RESERVED_SLOTS]) fits comfortably under 21.
+ * Wired into the prod pool in `RemoteHubMode.jvm.kt`; the pool's `controlReserved` ctor param defaults to 0 (no
+ * reservation) so every existing call site + the CYP-537/556 race-teeth stay byte-identical (the default is the trick).
+ */
+const val CONTROL_RESERVED_SLOTS: Int = 2
