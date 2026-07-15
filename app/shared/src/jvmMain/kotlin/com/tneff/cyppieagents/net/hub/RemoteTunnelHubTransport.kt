@@ -86,6 +86,10 @@ class RemoteTunnelHubTransport(
                         throw t
                     }
                     if (tunnel == null) {
+                        // 6-agent incident: THIS is the client-originated RST the dogfood log sees as "reset by peer" —
+                        // a loopback conn (a WS upgrade or REST) got no tunnel (pool/set exhausted, see the ws-pool:reserve
+                        // census, or a dial-fail) → fail-closed RST → the WS churns. No secret (no id available here).
+                        com.tneff.cyppieagents.net.logWsPool("transport", "acquire=null → RST loopback conn (no tunnel; see ws-pool:reserve for cause)")
                         conn.reset() // no live tunnel ⇒ fail-closed (RST), never a plaintext/local fallback
                     } else {
                         try {

@@ -77,7 +77,12 @@ class NoisePoolTunnelDialer(
         // Drop element 0 (== rendezvousId): the session's CONTROL tunnel already holds it. The pool dials id_1..N.
         // Empty (legacy single-tunnel CP, pre-CYP-536) ⇒ no pool ids ⇒ the pool is INERT (the workspace would run
         // single-flight — that legacy wire is gone once WS1 is deployed; the live N-responder always populates it).
-        return bound.rendezvousIds.drop(1)
+        val dataSet = bound.rendezvousIds.drop(1)
+        // 6-agent incident, driver (a): THE decisive number — how many DATA tunnels the client can EVER hold at once
+        // (= min(this, cap=16), shared by all ~14 WS + REST). If dataSet.size ≪ concurrent WS demand, the pool is
+        // structurally too small → the surplus WS churn regardless of REST hold. Counts only, resolved once.
+        com.tneff.cyppieagents.net.logWsPool("resolve", "data rendezvous set: ${dataSet.size} ids (total=${bound.rendezvousIds.size}, control=1) — max concurrent data tunnels = min(${dataSet.size}, cap)")
+        return dataSet
     }
 
     override suspend fun dial(rendezvousId: String): NoiseTunnel? {
