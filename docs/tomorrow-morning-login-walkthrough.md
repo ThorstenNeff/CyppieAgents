@@ -1,7 +1,7 @@
 # Morgen-Früh-Walkthrough — Live-Dogfood GitHub-Login → B1 → Agent-Turn (Crown-Jewel-Test)
 
 > **Für den Auftraggeber** (fährt den Desktop-Client) **+ die server-seitige QA-Verify-Lane** (S-Tester).
-> Build: **develop `d06001a6`** (CYP-575 Browser-Launch-Fallback + CYP-576 native API-flow token-exchange + Follow-on:
+> Build: **`origin/develop`** (Stand `9855dc3e`) (CYP-575 Browser-Launch-Fallback + CYP-576 native API-flow token-exchange + Follow-on:
 > UX-States/Double-Click-Guard/Loopback-Server-Stop/Error-Split). Der Login-Fix ist **komplett** — dies ist der erste
 > Ende-zu-Ende-Beweis.
 >
@@ -24,7 +24,7 @@
   ```
   cd <repo> && FIX_REF=origin/develop ./run-dogfood-client.sh
   ```
-  (`FIX_REF` zeigt per Default schon auf `origin/develop` = `d06001a6` mit dem kompletten Fix.)
+  (`FIX_REF` zeigt per Default schon auf `origin/develop` — den bewegten Ref mit dem kompletten Fix; die Doc pinnt bewusst keine SHA.)
 
   **Falls `run-dogfood-client.sh` fehlt** (frischer Clone / Datei nicht vorhanden): dieselben Schritte manuell (JDK 17+ nötig) —
   ```
