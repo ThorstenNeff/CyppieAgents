@@ -116,6 +116,7 @@
 |---|---|
 | App hängt auf „Weiter im Browser…" | Loopback nicht zurück (CYP-578-Klasse) → Retry (Double-Click-Guard verhindert jetzt Doppel-Arm); sonst App neu starten. |
 | Login-Return sofort **Error** / „Bind"-Fehler beim Start | Ein alter Client-Prozess hält noch Port **47472** → freigeben: `lsof -ti:47472 \| xargs -r kill` (hartnäckig: `kill -9`; oder `pkill -f desktopApp`) → App neu starten + retry. |
+| App kehrt aus dem Browser zurück, zeigt aber **Error/Login statt Workspace** (≠ „hängt im Browser auf Weiter") | Der `state`-Nonce hat den Callback abgelehnt (state fehlt/mismatch). **Erwartet ist das NICHT** — Kratos v1.3.0 erhält den `state`. Callback-URL prüfen: enthält sie `?state=…&code=…`? **Fehlt `state`** → unerwartetes Kratos-Append-Verhalten → an **PO/Backend eskalieren** (nicht selbst weiterklicken). |
 | Kein Browser öffnet | Fallback-URL aus der App kopieren + manuell öffnen (CYP-575). |
 | Verify-Pending-Gate (unerwartet — dein Account ist verified=true) | Re-Probe-Button „Weiter/Aktualisieren" (CYP-576-Follow-on / CYP-582 fix a); sonst Logout → Re-Login. |
 | OOB-Fingerprint ≠ `Geiger…dreadful` | **NICHT fortfahren** — an PO melden (fail-closed, C-F2). |
