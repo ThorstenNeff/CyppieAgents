@@ -7,6 +7,8 @@ import com.tneff.cyppieagents.net.hub.buildRemoteHubTransport
 import com.tneff.cyppieagents.net.hub.mux.ClientMuxSession
 import com.tneff.cyppieagents.net.hub.mux.MuxedStreamSource
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import com.tneff.cyppieagents.net.logMux
+import com.tneff.cyppieagents.net.muxCarrierId
 import com.tneff.cyppieagents.net.hub.operator.vault.EnrollOutcome
 import com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollController
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
@@ -253,6 +255,7 @@ class HubConnectViewModel(
                                     val carrier = comps.session.tunnel
                                     if (muxEnabled() && carrier != null && carrier !== currentMuxCarrier) {
                                         currentMuxCarrier = carrier
+                                        logMux("attach", "carrier connected ${muxCarrierId(carrier.handshakeHash)} → attaching ClientMuxSession (source rebuilt on new carrier)")
                                         val mux = ClientMuxSession(carrier, runScope)
                                         currentMuxSession = mux
                                         currentMuxSource.value = MuxedStreamSource(mux)
@@ -267,6 +270,7 @@ class HubConnectViewModel(
                                     // hold(DATA)/fail-closed(CONTROL) in the transport (unchanged).
                                     if (remoteTransport == null) {
                                         val pool = comps.tunnelPool
+                                        logMux("transport", "CYP_MUX_TRANSPORT=${muxEnabled()} → client transport=${if (muxEnabled()) "mux" else if (pool != null) "pool" else "single-flight"}")
                                         remoteTransport = buildRemoteHubTransport(
                                             acquireTunnel =
                                                 if (muxEnabled()) { { lane -> currentMuxSource.value?.acquire(lane) } }

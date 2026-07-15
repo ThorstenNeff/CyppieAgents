@@ -49,3 +49,34 @@ fun logWsTeardown(source: String, cause: String) {
 fun logWsPool(source: String, msg: String) {
     println("[ws-pool:$source] ${redactUrlSecrets(msg)}")
 }
+
+/**
+ * The [redactUrlSecrets] redaction, but with [RegexOption.IGNORE_CASE] instead of the `(?i)` INLINE flag. `(?i)` is a
+ * JVM-only construct — on Kotlin/JS + Kotlin/Wasm it throws `SyntaxError` at Regex construction (CYP-617). [logMux]
+ * runs on the **multiplatform** client-mux path (unlike [logWsPool]/[redactUrlSecrets], which are only reached on the
+ * JVM loopback transport), so it MUST use the JS/Wasm-safe form. Same pattern, same output — only the flag mechanism
+ * differs. [redactUrlSecrets] itself is left untouched; its `(?i)` fix is the separate CYP-617.
+ */
+private val MUX_SECRET_REDACT = Regex("([?&](?:token|access_token)=)[^&\\s\"']*", RegexOption.IGNORE_CASE)
+
+/**
+ * CYP-620/622 client-mux instrumentation: log a mux-session lifecycle event so an instrumented dogfood can pin the
+ * client mux path — the G7 hello (send/verify), carrier attach, stream acquire, carrier-drop, stream close — the
+ * e2e-datapath class no unit test reaches (a fake carrier is green in isolation; the real fault is client-vs-server).
+ * [source] = the site (`transport`/`attach`/`hello`/`acquire`/`stream`/`carrier`), [msg] = a SECRET-SAFE census:
+ * carrier/stream ids + lane/class/mode/version/reject-category only — NEVER a token/passphrase/auth/raw-hello-byte
+ * (defence-in-depth via [MUX_SECRET_REDACT]; the ids are opaque, see [muxCarrierId]). Minimal println until a shared
+ * multiplatform logger lands; centralized so it swaps in one place (mirrors [logWsPool]).
+ */
+fun logMux(source: String, msg: String) {
+    println("[mux:$source] ${msg.replace(MUX_SECRET_REDACT, "$1***")}")
+}
+
+/**
+ * An opaque, non-secret carrier correlation id for the mux logs: a short hex prefix of the Noise handshake-transcript
+ * hash. The handshake hash is a **public** channel-binding value (a transcript digest), NOT a key — and only a 4-byte
+ * prefix is surfaced, purely to correlate the same carrier across the VM's `attach` log and the session's
+ * `drop`/`stream` logs (same carrier ⇒ same id). Never logs a secret.
+ */
+internal fun muxCarrierId(handshakeHash: ByteArray): String =
+    handshakeHash.take(4).joinToString("") { ((it.toInt() and 0xFF) + 0x100).toString(16).substring(1) }
