@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 
 /**
  * CYP-220 Phase 6 S5 — the **Postgres** [AgentEventStore]. Behaviour-identical to
@@ -38,6 +39,7 @@ class PgAgentEventStore(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     migrate: Boolean = true,
 ) : AgentEventStore, MigrationTarget, AutoCloseable {
+    private val log = LoggerFactory.getLogger("agentevents.pg")
     private val mutex = Mutex()
     private val live = MutableSharedFlow<StoredAgentEvent>(extraBufferCapacity = 256, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
@@ -87,8 +89,14 @@ class PgAgentEventStore(
                 ps.executeQuery().use { rs ->
                     buildList {
                         while (rs.next()) {
-                            val ev = runCatching { CommJson.decodeFromString(StreamJsonEvent.serializer(), rs.getString(5)) }.getOrNull()
-                            if (ev != null) add(StoredAgentEvent(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getLong(4), ev))
+                            val seq = rs.getLong(1)
+                            // CYP-579: an undecodable row (schema-drift / corrupt) was silently skipped → a `/ws/agent`
+                            // replay gap with no signal (CYP-575 class). Now: WARN + emit an "unrenderable" placeholder at
+                            // the SAME seq so the gap is visible (cursor/dedup intact). Identical to the Sqlite path.
+                            val ev = runCatching { CommJson.decodeFromString(StreamJsonEvent.serializer(), rs.getString(5)) }
+                                .onFailure { log.warn("CYP-579: undecodable agent_event seq={} agent={} — emitting unrenderable placeholder", seq, agentId, it) }
+                                .getOrElse { unrenderableEventPlaceholder(seq) }
+                            add(StoredAgentEvent(seq, rs.getString(2), rs.getString(3), rs.getLong(4), ev))
                         }
                     }
                 }
