@@ -143,8 +143,9 @@
    **GRÜN = Backfill live bestätigt.**
 
 > Reihenfolge ist load-bearing: Schritt 1 (Drop real) **VOR** Schritt 2 (geheilt). Schritt-2-grün ohne Schritt-1 =
-> vakuos, kein Pass. Voller Plan: `deploy/CYP-588-post-deploy-live-verify-plan.md`; Gate-Referenz:
-> `scratchpad/cyp588_live_verify.py --dry-check`.
+> vakuos, kein Pass. Voller Plan (getrackt): `deploy/CYP-588-post-deploy-live-verify-plan.md`. **Der Mensch-§3 ist der
+> verbose-Turn → backgrounden → Transcript-Check oben — NICHT ein Skript.** Team-2-creds-seitiges Referenz-Tool für die
+> Gate-Rechnung: `scratchpad/cyp588_live_verify.py --dry-check` (untracked, braucht Operator-creds — nicht der Menschen-Kernpfad).
 
 ---
 
@@ -172,5 +173,5 @@
 
 > **Referenzen:** QA-Katalog `test/M1-M2-dogfood-qa-scenario-catalog.md` (Path 0 Login, Path 1 Enroll, §8 Server-Verify-
 > Checkliste) · Harness `test/harness/github-oidc-verify.sh` + `github-oidc-maestro.yaml` · CYP-576-Deploy→Verify-Runbook
-> (docs) · verwandte offene Tickets: **CYP-578** (Loopback-Bind-Swallow, im Follow-on adressiert), **CYP-582**
+> `deploy/CYP-576-verify-runbook.md` · verwandte offene Tickets: **CYP-578** (Loopback-Bind-Swallow, im Follow-on adressiert), **CYP-582**
 > (Verify-Gate/Deep-Link-Gap, non-blocking bei verified=true).
