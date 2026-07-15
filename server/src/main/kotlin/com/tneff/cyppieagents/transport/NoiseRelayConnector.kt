@@ -110,7 +110,6 @@ class NoiseRelayConnector(
                 try {
                     log.info("CYP-526 dialing relay as role=hub")
                     val relay = dialer.dial(url) // outbound-only (WS to the relay under the CACHED rendezvous id)
-                    attempt = 0 // a live dial resets the backoff
                     val tunnel = try {
                         terminator.terminate(relay) // NK responder handshake over L0
                     } catch (e: Exception) {
@@ -119,6 +118,16 @@ class NoiseRelayConnector(
                     }
                     log.info("CYP-526 relay responder established — bridging tunnel")
                     tunnelHandler(tunnel) // → LoopbackBridge.bridge; returns when the tunnel closes
+                    // CYP-606 (dogfood 2026-07-15, Backend2 amplifier ⑥): reset the backoff ONLY after a tunnel genuinely
+                    // SERVED — i.e. AFTER tunnelHandler returns (a real session bridged, or an instant clean churn). PRE-fix
+                    // the reset sat at dial-success (before terminate/bridge): a dial-ok-but-handshake-fail tunnel reset
+                    // attempt=0 every cycle → terminate() throws → attempt=1 → re-dial → attempt=0 AGAIN → PINNED at
+                    // backoffMs(1) (≈250ms), NEVER escalating (the ①-jitter only spread the herd; the per-responder 250ms
+                    // pin remained). Reset-here makes `attempt == 0` mean exactly "the last cycle ended cleanly": ANY throw
+                    // (dial / terminate / mid-session bridge) now escalates the backoff, while a clean end (real session or
+                    // instant churn) resets → the CYP-528 clean-end floor path. Kills the whole reset-too-early amplifier
+                    // class, not just the reported handshake instance.
+                    attempt = 0
                     log.info("CYP-526 relay tunnel ended — re-dialing to remain a persistent responder")
                 } catch (c: CancellationException) {
                     throw c // stop() cancelled us — exit cleanly, no reconnect
