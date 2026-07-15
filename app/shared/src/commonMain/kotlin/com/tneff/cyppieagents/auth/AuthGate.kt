@@ -12,6 +12,20 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import kmpcyppieagents.app.shared.generated.resources.auth_github_handoff_fallback
+import kmpcyppieagents.app.shared.generated.resources.auth_github_url_copy
+import kmpcyppieagents.app.shared.generated.resources.auth_github_timeout
+import kmpcyppieagents.app.shared.generated.resources.auth_github_retry
+import kmpcyppieagents.app.shared.generated.resources.auth_github_cancelled
+import kmpcyppieagents.app.shared.generated.resources.a11y_auth_github_url
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -104,7 +118,7 @@ fun AuthGate(
     onOpenExternalUrl: (String) -> Unit = {},
     /** CYP-474 §4: Desktop-native loopback hook — the host arms a localhost (RFC 8252) redirect listener and calls
      *  [onReturn] (= `viewModel.onGithubReturn`) when the OAuth callback arrives. Default no-op (web uses the redirect). */
-    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?) -> Unit) -> Unit = {},
+    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?, error: String?) -> Unit) -> (() -> Unit)? = { null },
     /** The verified desktop — receives the session's [UserTier] (CYP-186) so it can gate operator surfaces. */
     content: @Composable (UserTier) -> Unit,
 ) {
@@ -144,7 +158,7 @@ private fun LoginScreen(
     state: AuthUiState.Unauthenticated,
     vm: AuthViewModel,
     onOpenExternalUrl: (String) -> Unit = {},
-    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?) -> Unit) -> Unit = {},
+    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?, error: String?) -> Unit) -> (() -> Unit)? = { null },
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -192,8 +206,7 @@ private fun LoginScreen(
 
         // --- P4 (auth-spec §6): "or" divider + GitHub OIDC (CYP-185) ---
         val github = state.github
-        val githubBusy = github is GithubUiState.Redirecting || github is GithubUiState.BrowserHandoff ||
-            github is GithubUiState.Returning
+        val githubBusy = github.isBusy // CYP-576 follow-on: the ONE predicate (incl. Starting) — VM guard + render share it
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
         Text(
             text = stringResource(Res.string.auth_or_divider),
@@ -225,10 +238,22 @@ private fun LoginScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().testTag(OperatorAuthTags.LOGIN_BROWSER_HANDOFF),
                 )
+                GithubFallbackUrl(github.url) // CYP-576 §2: visible fallback URL + copy (no dead "Continuing…")
                 LaunchedEffect(github.url) {
                     onOpenExternalUrl(github.url)
-                    onAwaitLoopbackReturn(vm::onGithubReturn)
+                    // Assist-C1/CYP-578: hand the loopback stop-handle to the VM so timeout/error/cancel/teardown free
+                    // port 47472 → a retry re-binds cleanly (a stuck attempt must not leak the port).
+                    vm.setLoopbackStopper(onAwaitLoopbackReturn(vm::onGithubReturn))
                 }
+            }
+            is GithubUiState.TimedOut -> {
+                // CYP-576 §3: advisory (INFO/neutral, NOT error-red) — slow, not broken. URL stays + explicit retry.
+                AnnouncingHint(
+                    stringResource(Res.string.auth_github_timeout), HintTone.INFO,
+                    AuthTags.GITHUB_TIMED_OUT, LiveRegionMode.Polite,
+                )
+                GithubFallbackUrl(github.url)
+                GithubRetry(vm)
             }
             is GithubUiState.Returning -> Text(
                 // §4 "Zurück zur App …" on the native flavor; the web flavor keeps its own returning copy.
@@ -238,13 +263,72 @@ private fun LoginScreen(
                 modifier = Modifier.fillMaxWidth()
                     .testTag(if (github.native) OperatorAuthTags.LOGIN_BROWSER_RETURN else AuthTags.GITHUB_RETURNING),
             )
-            GithubUiState.Error -> AnnouncingHint(
+            GithubUiState.Error -> {
+                // CYP-576 §4: a REAL failure — actionable (retexted copy points to the email alternative) + explicit retry.
+                AnnouncingHint(
+                    stringResource(Res.string.auth_github_error), HintTone.ERROR,
+                    AuthTags.GITHUB_ERROR, LiveRegionMode.Assertive,
+                )
+                GithubRetry(vm)
+            }
+            GithubUiState.LoginRequired -> AnnouncingHint(
+                // CYP-576 §4: S1b collision — a DISTINCT state (not a generic failure) whose retexted copy signposts the
+                // email sign-in. (Shares auth_github_error copy, which points to email; dedicated collision copy = optional
+                // UIUX follow-up — flagged, no copy invented here.)
                 stringResource(Res.string.auth_github_error), HintTone.ERROR,
                 AuthTags.GITHUB_ERROR, LiveRegionMode.Assertive,
             )
-            GithubUiState.Idle -> {}
+            GithubUiState.Cancelled -> AnnouncingHint(
+                // CYP-576 §4: the user deliberately cancelled at GitHub — neutral/INFO, no alarm, no "failed".
+                stringResource(Res.string.auth_github_cancelled), HintTone.INFO,
+                AuthTags.GITHUB_CANCELLED, LiveRegionMode.Polite,
+            )
+            GithubUiState.Starting, GithubUiState.Idle -> {} // Starting is transient; the disabled button is the feedback
         }
     }
+}
+
+/**
+ * CYP-576 follow-on §2 — the visible fallback-URL block (Browser-Handoff + Timeout). The OIDC authorize URL is NOT a
+ * secret (State/PKCE-bound), so it's shown selectable ([SelectionContainer]) + a copy affordance so an unopened
+ * browser is never a dead end. (`→UIUX2` refines the clipboard interaction + a11y live-region wiring.)
+ */
+@Composable
+private fun GithubFallbackUrl(url: String) {
+    val clipboard = LocalClipboardManager.current
+    val a11yUrl = stringResource(Res.string.a11y_auth_github_url)
+    Text(
+        text = stringResource(Res.string.auth_github_handoff_fallback),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant, // neutral — NEVER "browser opened" (H3, no false success)
+        modifier = Modifier.fillMaxWidth(),
+    )
+    SelectionContainer {
+        Text(
+            text = url,
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(8.dp)
+                .testTag(AuthTags.GITHUB_HANDOFF_URL)
+                .semantics { contentDescription = a11yUrl },
+        )
+    }
+    TextButton(
+        onClick = { clipboard.setText(AnnotatedString(url)) },
+        modifier = Modifier.testTag(AuthTags.GITHUB_HANDOFF_COPY),
+    ) { Text(stringResource(Res.string.auth_github_url_copy)) }
+}
+
+/** CYP-576 follow-on §3/§4 — the explicit retry (re-invokes [AuthViewModel.startGithub]), shared by Timeout + Error. */
+@Composable
+private fun GithubRetry(vm: AuthViewModel) {
+    OutlinedButton(
+        onClick = vm::startGithub,
+        modifier = Modifier.fillMaxWidth().testTag(AuthTags.GITHUB_RETRY),
+    ) { Text(stringResource(Res.string.auth_github_retry)) }
 }
 
 // --- Register (§3.2) ---
@@ -365,6 +449,12 @@ private fun VerifyPendingScreen(state: AuthUiState.AuthedUnverified, vm: AuthVie
             onClick = vm::resendVerification, enabled = !submitting,
             modifier = Modifier.fillMaxWidth().testTag(AuthTags.VERIFY_RESEND),
         ) { Text(stringResource(if (submitting) Res.string.auth_submitting else Res.string.auth_verify_resend)) }
+        // CYP-576 follow-on (Retry-Re-Probe, CYP-582 insurance): re-check the session (e.g. after verifying in another
+        // tab) WITHOUT a logout loop — Verified → the desktop; still unverified → stay on this gate. Reuses [session].
+        OutlinedButton(
+            onClick = vm::continueAfterVerify, enabled = !submitting,
+            modifier = Modifier.fillMaxWidth().testTag(AuthTags.VERIFY_CONTINUE),
+        ) { Text(stringResource(Res.string.auth_verify_continue)) }
 
         when (val r = state.resendResult) {
             ResendResult.Accepted -> AnnouncingHint(

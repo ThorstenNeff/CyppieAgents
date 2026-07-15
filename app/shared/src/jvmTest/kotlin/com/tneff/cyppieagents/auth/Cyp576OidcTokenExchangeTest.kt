@@ -100,7 +100,8 @@ class Cyp576OidcTokenExchangeTest {
         assertTrue((vm.state.value as AuthUiState.Unauthenticated).github is GithubUiState.BrowserHandoff)
         advanceTimeBy(1_001L) // no loopback return arrives (bind failure / abandoned tab)
         // Reddening mutation: no watchdog ⇒ stays BrowserHandoff forever ⇒ red (the CYP-578 eternal-hang bug).
+        // Follow-on: the timeout now lands on the advisory TimedOut (retry-able), not a hard Error.
         val s = vm.state.value
-        assertTrue(s is AuthUiState.Unauthenticated && s.github is GithubUiState.Error, "sustained hang ⇒ retry-able Error")
+        assertTrue(s is AuthUiState.Unauthenticated && s.github is GithubUiState.TimedOut, "sustained hang ⇒ advisory TimedOut")
     }
 }

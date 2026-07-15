@@ -477,7 +477,13 @@
     <string name="auth_github_button">Mit GitHub anmelden</string>
     <string name="auth_github_redirect">Weiter zu GitHub…</string>
     <string name="auth_github_returning">Anmeldung wird abgeschlossen…</string>
-    <string name="auth_github_error">GitHub-Anmeldung fehlgeschlagen oder abgebrochen.</string>
+    <string name="auth_github_error">Die GitHub-Anmeldung wurde nicht abgeschlossen. Bitte erneut versuchen oder oben mit E-Mail anmelden.</string>
+    <string name="auth_github_handoff_fallback">Falls sich der Browser nicht öffnet, öffne diesen Link:</string>
+    <string name="auth_github_url_copy">Link kopieren</string>
+    <string name="auth_github_timeout">Das dauert länger als erwartet.</string>
+    <string name="auth_github_retry">Erneut versuchen</string>
+    <string name="auth_github_cancelled">GitHub-Anmeldung abgebrochen.</string>
+    <string name="a11y_auth_github_url">GitHub-Anmelde-Link — zum Öffnen kopieren</string>
     <string name="a11y_auth_email">E-Mail-Adresse eingeben</string>
     <string name="a11y_auth_password">Passwort eingeben</string>
     <string name="a11y_auth_password_confirm">Passwort erneut eingeben</string>

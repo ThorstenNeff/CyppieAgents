@@ -81,4 +81,10 @@ object AuthTags {
     const val GITHUB_REDIRECTING = "auth.github.redirecting"
     const val GITHUB_RETURNING = "auth.github.returning"
     const val GITHUB_ERROR = "auth.github.error"
+    // CYP-576 follow-on (auth-oidc-legibility-tags.md) — legibility/robustness states
+    const val GITHUB_HANDOFF_URL = "auth.github.handoffUrl"   // §2 visible fallback URL (selectable)
+    const val GITHUB_HANDOFF_COPY = "auth.github.handoffCopy" // §2 copy affordance
+    const val GITHUB_TIMED_OUT = "auth.github.timedOut"       // §3 timeout advisory (Polite)
+    const val GITHUB_RETRY = "auth.github.retry"              // §3/§4 explicit retry
+    const val GITHUB_CANCELLED = "auth.github.cancelled"      // §4 user-cancel notice (Polite)
 }
