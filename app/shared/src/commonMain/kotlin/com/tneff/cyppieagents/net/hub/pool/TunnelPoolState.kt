@@ -53,15 +53,42 @@ data class TunnelPoolState(
  *    (Capacity/Lifecycle/Comm/Events/ACL/TokenUsage/Busy/TerminalControl) **plus** per-agent WS. One tunnel = one
  *    duplex stream (no mux) ⇒ single-flight deadlocks on the first persistent WS. The pool needs a slot per
  *    concurrent logical connection, so the cap MUST exceed the eager-8 + a working set of agents.
- *  - **Single-sourced to the SERVER cap (WS1↔WS2 convergence):** Backend's `DEFAULT_TUNNEL_POOL_CAP = 16` is the
+ *  - **Single-sourced to the SERVER cap (WS1↔WS2 convergence):** Backend's `DEFAULT_TUNNEL_POOL_CAP` is the
  *    **authoritative structural ceiling** — the CP derives **exactly** that many opaque rendezvous-ids (C4), so at
- *    most 16 tunnels can ever pair (the per-operator DoS floor). The **effective** pool is therefore
+ *    most that many tunnels can ever pair (the per-operator DoS floor). The **effective** pool is therefore
  *    `min(TUNNEL_POOL_CAP, rendezvousIds.size)`: the client is structurally bound by the resolved set-size — it can
- *    only dial ids the CP handed it. Matching this const to the server's 16 uses the full pairable capacity (no
- *    self-limit below the ceiling) and gives the design ONE number (eager-8 + headroom, contract C2's "≈ 10–15",
- *    rounded up to the server ceiling). Freed slots are REUSED, so the cap bounds *concurrent* connections, not total.
- *  - **H7 aggregate bound (§5):** per-tunnel ≤8-frame windows × cap ⇒ worst-case ≤ 16 × 256 KB = 4 MB. Per-tunnel
+ *    only dial ids the CP handed it. Matching this const to the server value uses the full pairable capacity (no
+ *    self-limit below the ceiling). Freed slots are REUSED, so the cap bounds *concurrent* connections, not total.
+ *  - **CYP-611 — raised 16→24 (human-authorized DoS-envelope bump), lockstep with server `DEFAULT_TUNNEL_POOL_CAP=24`
+ *    (server ≥ client).** 24 ⇒ 23 usable data-ids after Control ([WS_RESERVED_SLOTS]=14 WS + [REST_DEDICATED_CONNS]=1
+ *    REST + ~8 headroom, carries to ~16 agents). The CYP-610 REST-vs-WS fix is correct at any cap ≥ 15; 24 just adds
+ *    headroom so a WS reconnect overlap never contends.
+ *  - **H7 aggregate bound (§5):** per-tunnel ≤8-frame windows × cap ⇒ worst-case ≤ 24 × 256 KB = 6 MB. Per-tunnel
  *    isolation (not a shared credit pool) avoids cross-tunnel head-of-line blocking; the cap is the aggregate ceiling.
  *  - Referenced by H7's aggregate (CYP-535) and the WS4 harness — never re-literal the number elsewhere.
  */
-const val TUNNEL_POOL_CAP: Int = 16
+const val TUNNEL_POOL_CAP: Int = 24
+
+/**
+ * CYP-610 — the WS-vs-REST **partition** of the usable data-tunnel budget (the 6-agent-remote root fix). The pool is
+ * blind to WS-vs-REST; without a partition the dozen+ REST + 7 agent-WS + 7 singleton-WS all draw from the same
+ * `min([TUNNEL_POOL_CAP], rendezvousSet)` usable ids (Control holds id 0), so idle keep-alive REST connections
+ * starve the persistent WS → the 1-up/6-churn. The partition:
+ *  - **[WS_RESERVED_SLOTS] = 14** long-lived WS each get their OWN tunnel — one Noise tunnel = one SOCKET (no mux,
+ *    RR8/Spec §5), so the 7 agent-WS + 7 singleton-WS (busy/lifecycle/terminal-state/token-usage/comm/events/acl)
+ *    CANNOT share; 14 is the 7-agent-default working set. (Future Tage-refactor: consolidate the 7 singleton streams
+ *    to 1–2 muxed → ~9 WS, relieving pool pressure without a cap bump — does not change THIS fix.)
+ *  - **[REST_DEDICATED_CONNS] = 1** — REST is short + sequential, so it shares ONE socket via HTTP/1.1 keep-alive
+ *    (Backend: "one tunnel = one SOCKET, not one REQUEST"). Enforced client-side: the REST loopback client is capped
+ *    to this many connections-per-route, so REST holds ≤ this many tunnels and can NEVER take a WS slot — the same
+ *    invariant as a pool reservation, at minimal blast-radius (no pool-lane surgery, no CYP-537/556 race-teeth risk).
+ *
+ * At [TUNNEL_POOL_CAP]=24 (CYP-611): 23 usable ⇒ `1 REST + 14 WS + ~8 headroom` (carries to ~16 agents; the WS
+ * reconnect-overlap edge that a zero-headroom 15-budget would briefly contend is gone). The fix is correct at any
+ * cap ≥ 15; if the server cap changes ([TUNNEL_POOL_CAP] is server-anchored, `DEFAULT_TUNNEL_POOL_CAP`), tune these
+ * two constants — no rework.
+ */
+const val WS_RESERVED_SLOTS: Int = 14
+
+/** @see WS_RESERVED_SLOTS — REST's dedicated connection budget (one shared keep-alive socket). */
+const val REST_DEDICATED_CONNS: Int = 1

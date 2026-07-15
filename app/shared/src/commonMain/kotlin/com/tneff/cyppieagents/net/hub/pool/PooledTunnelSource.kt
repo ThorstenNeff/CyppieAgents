@@ -88,6 +88,9 @@ class PooledTunnelSource(
             }
             markUp(rendezvousId)
             live[rendezvousId] = wrapper
+            // 6-agent incident: a tunnel went UP. Pairing UP/DOWN per rendezvous-id across the run shows WHICH ids
+            // stay up (the "1") vs churn (the "6"), and the live census at each UP. Opaque id + counts only, no secret.
+            com.tneff.cyppieagents.net.logWsPool("acquire", "UP rid=$rendezvousId live=${live.size} active=${_state.value.aggregate.active}/$cap")
         }
         return wrapper
     }
@@ -114,9 +117,20 @@ class PooledTunnelSource(
     private suspend fun reserveSlot(): String? = mutex.withLock {
         val set = resolvedSet ?: dialer.rendezvousSet()?.also { resolvedSet = it } ?: return@withLock null
         val held = _state.value.tunnels.filter { it.state != TunnelState.DOWN } // live/dialing hold a slot
-        if (held.size >= cap) return@withLock null // at cap ⇒ no reservation (even if the set has more ids than cap)
+        if (held.size >= cap) {
+            // 6-agent incident: this null → the transport RSTs the loopback conn → a WS churns. Census pins driver (a):
+            // cap reached (rare — setSize would have to exceed cap=16). Counts only, no secret.
+            com.tneff.cyppieagents.net.logWsPool("reserve", "EXHAUSTED@cap: held=${held.size} cap=$cap setSize=${set.size} → acquire=null → transport RST")
+            return@withLock null // at cap ⇒ no reservation (even if the set has more ids than cap)
+        }
         val inUse = held.map { it.rendezvousId }.toSet()
-        val freeId = set.firstOrNull { it !in inUse } ?: return@withLock null // set exhausted (≤ cap ids)
+        val freeId = set.firstOrNull { it !in inUse } ?: run {
+            // 6-agent incident driver (a) vs (b): the CP set is fully in use though we're UNDER cap → the pool is smaller
+            // than the concurrent WS+REST demand (small CP set and/or idle-keepalive REST conns holding ids). THIS null
+            // is the 1-up/6-churn RST. Counts only (rendezvous-ids are opaque CP-derived, not secrets — but redacted anyway).
+            com.tneff.cyppieagents.net.logWsPool("reserve", "EXHAUSTED@set: held=${held.size} inUse=${inUse.size} setSize=${set.size} cap=$cap → acquire=null → transport RST")
+            return@withLock null // set exhausted (≤ cap ids)
+        }
         _state.update { cur ->
             val liveTunnels = cur.tunnels.filter { it.state != TunnelState.DOWN } // prune leftover DOWN (freed slots)
             cur.copy(tunnels = liveTunnels + TunnelStatus(freeId, TunnelState.DIALING, nowMs())).recomputeAggregate()
@@ -181,6 +195,9 @@ class PooledNoiseTunnel internal constructor(
     override suspend fun close() {
         if (closedOnce) return
         closedOnce = true
+        // 6-agent incident: a tunnel went DOWN (bridge conn-end / relay drop / Q5 teardown). Pairs with the "acquire UP"
+        // line by rendezvous-id → the churn cadence (a ~0.23s UP→DOWN→re-dial loop on an id = a churning stream). Opaque id only.
+        com.tneff.cyppieagents.net.logWsPool("close", "DOWN rid=$rendezvousId")
         pool.onTunnelClosed(rendezvousId) // mark DOWN + free the slot BEFORE closing the bytes (state-first)
         runCatching { delegate.close() }
         // CYP-561 NOTE-2: run the live-map removal under NonCancellable so a cancellation between here and the

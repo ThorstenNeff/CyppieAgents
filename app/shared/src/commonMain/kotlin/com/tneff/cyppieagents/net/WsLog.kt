@@ -37,3 +37,15 @@ fun logWsError(source: String, error: Throwable) {
 fun logWsTeardown(source: String, cause: String) {
     println("[ws-teardown:$source] ${redactUrlSecrets(cause)}")
 }
+
+/**
+ * 6-agent-remote incident instrumentation: log a tunnel-**pool** lifecycle event so an instrumented dogfood connect-run
+ * can pin the 1-up/6-churn as pool exhaustion — and distinguish its driver: (a) the CP rendezvous set is smaller than the
+ * concurrent WS demand vs (b) idle keep-alive REST connections holding rendezvous-ids (the loopback client's `∞`
+ * keep-alive). [source] = the site (`resolve`/`reserve`/`acquire`/`close`/`transport`), [msg] = a **secret-safe** census:
+ * counts + the CP-derived OPAQUE rendezvous-id only — never a token/handshake value (defence-in-depth via [redactUrlSecrets]).
+ * Minimal `println` until a shared multiplatform logger lands; centralized so it swaps in one place (mirrors [logWsTeardown]).
+ */
+fun logWsPool(source: String, msg: String) {
+    println("[ws-pool:$source] ${redactUrlSecrets(msg)}")
+}
