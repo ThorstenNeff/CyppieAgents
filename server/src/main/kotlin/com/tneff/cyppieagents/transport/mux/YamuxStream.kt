@@ -15,6 +15,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 
 /**
  * CYP-620 Increment 3 (step 3) — ONE multiplexed stream's state machine. A stream carries one HTTP/WS connection as a
@@ -81,31 +82,48 @@ class YamuxStream(
     /** Inbound `DATA` payload. Credits the recv window (fail-closed on overshoot → the session tears the tunnel),
      *  then hands the bytes to the upstream drain. */
     suspend fun onData(payload: ByteArray) {
-        lock.withLock { recvWindow.onReceived(payload.size.toLong()) } // throws YamuxProtocolException on overshoot
+        try {
+            lock.withLock { recvWindow.onReceived(payload.size.toLong()) } // throws YamuxProtocolException on overshoot
+        } catch (e: YamuxProtocolException) {
+            log.warn("CYP-620 yamux stream {}: recv-window overshoot ({} B) → fail-closed protocol-error", streamId, payload.size)
+            throw e
+        }
         inbound.send(payload)
     }
 
     /** Inbound `WINDOW_UPDATE`: the peer granted us more send credit (fail-closed on u32 overflow). Wakes the pump. */
     suspend fun onWindowUpdate(delta: Long) {
-        lock.withLock { sendWindow.grant(delta) } // throws on negative / overflow
+        try {
+            lock.withLock { sendWindow.grant(delta) } // throws on negative / overflow
+        } catch (e: YamuxProtocolException) {
+            log.warn("CYP-620 yamux stream {}: send-window grant overflow → fail-closed protocol-error", streamId)
+            throw e
+        }
         creditSignal.trySend(Unit)
     }
 
     /** Inbound `FIN`: the peer will send no more request bytes. Close the inbound queue → the upstream pump drains what
      *  remains, then half-closes the socket gracefully (route sees a clean input-EOF). */
     fun onFin() {
+        log.debug("CYP-620 yamux stream {}: peer FIN (inbound half-close)", streamId)
         inbound.close()
     }
 
-    /** Inbound `RST` (or a protocol error the session maps to this stream): abort the socket + stop the pumps. */
+    /** Inbound `RST` from the peer: abort the socket + stop the pumps. */
     fun onReset() {
-        sink.reset()
-        inbound.close(YamuxProtocolException("stream $streamId reset by peer"))
-        streamJob.cancel()
+        log.info("CYP-620 yamux stream {}: peer RST (inbound abort)", streamId)
+        doReset()
     }
 
-    /** Tunnel-level teardown (the ONE tunnel dropped → all streams reset). Abortive, per §4.8.3. */
-    fun abort() = onReset()
+    /** Tunnel-level teardown (the ONE tunnel dropped → all streams reset). Abortive, per §4.8.3. The session logs the
+     *  aggregate teardown count, so this does not log per stream (avoids a burst of N lines on a tunnel drop). */
+    fun abort() = doReset()
+
+    private fun doReset() {
+        sink.reset()
+        inbound.close(YamuxProtocolException("stream $streamId reset"))
+        streamJob.cancel()
+    }
 
     /** Stop the stream's pumps (release resources). Idempotent. Used at teardown / when a stream fully retires. */
     fun close() {
@@ -144,6 +162,7 @@ class YamuxStream(
                 val buf = ByteArray(cap)
                 val n = sink.read(buf)
                 if (n < 0) { // route closed its response cleanly → graceful stream close
+                    log.debug("CYP-620 yamux stream {}: local FIN (route response complete)", streamId)
                     emitter.ordered(streamId, streamClass, YamuxFrame.data(streamId, YamuxFrame.EMPTY, YamuxFlags.FIN))
                     break
                 }
@@ -151,13 +170,18 @@ class YamuxStream(
                 lock.withLock { sendWindow.consume(n.toLong()) } // n ≤ cap ≤ avail; reader only GROWS credit → safe
                 emitter.ordered(streamId, streamClass, YamuxFrame.data(streamId, buf.copyOf(n)))
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // A socket read error (peer-reset, etc.) → signal an abrupt stream reset to the peer. Same lane as DATA
             // so it never overtakes an earlier DATA frame in flight.
+            log.info("CYP-620 yamux stream {}: local RST (route read error: {})", streamId, e::class.simpleName)
             runCatching {
                 emitter.ordered(streamId, streamClass, YamuxFrame.windowUpdate(streamId, 0, YamuxFlags.RST))
             }
         }
+    }
+
+    private companion object {
+        private val log = LoggerFactory.getLogger(YamuxStream::class.java)
     }
 }
 

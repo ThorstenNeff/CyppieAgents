@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 
 /**
  * CYP-620 Increment 3 (step 4) — the multiplexed **session** over ONE Noise tunnel: it weaves the adapter
@@ -61,6 +62,7 @@ class YamuxSession(
 
     /** Run the session until the tunnel closes, an inbound `GO_AWAY` arrives, or a protocol error tears it down. */
     suspend fun run() {
+        log.info("CYP-620 yamux session: reader+writer loops starting (maxStreams={})", maxStreams)
         val writer = scope.launch {
             try {
                 while (true) {
@@ -75,15 +77,20 @@ class YamuxSession(
             reader@ while (true) {
                 val frames = link.read() ?: break // tunnel/relay closed
                 for (f in frames) {
-                    if (f.type == YamuxType.GO_AWAY) break@reader // the peer is closing the session
+                    if (f.type == YamuxType.GO_AWAY) {
+                        log.info("CYP-620 yamux session: inbound GO_AWAY (code={}) → ending session", f.length)
+                        break@reader // the peer is closing the session
+                    }
                     dispatch(f)
                 }
             }
-        } catch (_: YamuxProtocolException) {
+        } catch (e: YamuxProtocolException) {
             // Malformed frame or flow-control violation → announce + fail closed.
+            log.warn("CYP-620 yamux session: protocol error → GO_AWAY(protocol-error) + teardown: {}", e.message)
             runCatching { link.write(YamuxFrame.goAway(YamuxGoAway.PROTOCOL_ERROR)) }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // Tunnel I/O error — treat as a drop.
+            log.info("CYP-620 yamux session: tunnel I/O ended ({}) → teardown", e::class.simpleName)
         } finally {
             scheduler.close() // no more enqueues; next() drains what is queued then returns null
             runCatching { writer.join() } // let the writer flush already-queued frames (e.g. an RST) before we close
@@ -121,9 +128,11 @@ class YamuxSession(
         }
         if (opened == null) {
             // Refused → RST this id (fail-closed); never opens, never bleeds into another stream.
+            log.warn("CYP-620 yamux: stream {} SYN refused (maxStreams={} reached or duplicate id) → RST", streamId, maxStreams)
             scheduler.enqueueData(streamId, YamuxFrame.windowUpdate(streamId, 0, YamuxFlags.RST))
             return
         }
+        log.info("CYP-620 yamux: stream {} opened (class={})", streamId, streamClass)
         opened.start()
         if (rest.isNotEmpty()) opened.onData(rest) // may throw on overshoot → GoAway (reader catch)
         if (f.isFin) { opened.onFin(); markRemoteClosed(streamId) }
@@ -134,6 +143,8 @@ class YamuxSession(
         val streamId = f.streamId
         val stream = lock.withLock { streams[streamId] }
         if (stream == null) {
+            // Critical no-byte-bleed reject seam (§4.8.2): a frame for an unknown/retired id is RST, never misrouted.
+            log.warn("CYP-620 yamux: {} for unknown/retired stream {} → RST (no-byte-bleed reject)", f.type, streamId)
             scheduler.enqueueData(streamId, YamuxFrame.windowUpdate(streamId, 0, YamuxFlags.RST))
             return
         }
@@ -182,6 +193,7 @@ class YamuxSession(
     private suspend fun teardown() = lock.withLock {
         if (tornDown) return@withLock
         tornDown = true
+        if (streams.isNotEmpty()) log.info("CYP-620 yamux session: teardown → resetting {} live stream(s)", streams.size)
         streams.values.forEach { it.abort() } // tunnel drop → every stream resets (§4.8.3)
         streams.clear(); localClosed.clear(); remoteClosed.clear()
         runCatching { link.close() }
@@ -198,5 +210,7 @@ class YamuxSession(
          * is to be single-sourced into `:core` alongside the window config (the CYP-613 follow-up).
          */
         const val DEFAULT_MAX_STREAMS: Int = 64
+
+        private val log = LoggerFactory.getLogger(YamuxSession::class.java)
     }
 }
