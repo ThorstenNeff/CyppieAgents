@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.controlplane.HubRendezvousRegistrar
 import com.tneff.cyppieagents.crypto.HubIdentity
 import com.tneff.cyppieagents.crypto.HubIdentityProvisioner
 import com.tneff.cyppieagents.crypto.SecretStore
+import com.tneff.cyppieagents.transport.mux.MuxBridge
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -49,6 +50,17 @@ object RemoteRelayWiring {
         env("CYPPIE_ENROLL_SAVEDACK_TIMEOUT_SEC")?.toLongOrNull()?.takeIf { it > 0 }?.let { it * 1_000L }
             ?: Rr3TunnelGate.DEFAULT_SAVEDACK_TIMEOUT_MS
 
+    /**
+     * CYP-620 — SINGLE SOURCE for the effective remote transport mode: `CYPPIE_REMOTE_TRANSPORT=mux` selects the yamux
+     * multiplexer ([TransportMode.MUX]); anything else — unset, `pool`, or an unrecognized value — resolves to
+     * [TransportMode.POOL] (the legacy tunnel-per-stream pool). Fail-SAFE default: a typo or a stale env can never
+     * *silently* flip the hub onto the new wire protocol; the flip is explicit. Case-insensitive, trimmed. It is a
+     * wire-protocol choice → the client and hub MUST match; a mismatch is refused fail-closed at the G7 hello
+     * ([com.tneff.cyppieagents.transport.mux.MuxHello]) — never a byte bridged under a half-flipped deploy.
+     */
+    fun resolveTransportMode(env: (String) -> String?): TransportMode =
+        if (env("CYPPIE_REMOTE_TRANSPORT")?.trim()?.lowercase() == "mux") TransportMode.MUX else TransportMode.POOL
+
     fun build(
         config: RemoteTransportConfig,
         httpClient: HttpClient,
@@ -66,6 +78,9 @@ object RemoteRelayWiring {
         scope: CoroutineScope,
         /** CYP-536 — the per-operator tunnel cap (= the CP set size). Single-sourced [RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP]. */
         poolCap: Int = com.tneff.cyppieagents.controlplane.RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP,
+        /** CYP-620 — which bridge each paired tunnel runs: POOL (legacy 1-socket-per-tunnel [LoopbackBridge], DEFAULT)
+         *  or MUX (a [MuxBridge] = one yamux session, many streams over the tunnel). Default preserves current behavior. */
+        transportMode: TransportMode = TransportMode.POOL,
     ): RelayConnector {
         // CYP-536 — ONE gate + ONE registry + ONE handler, SHARED by all N per-id responders. This is load-bearing:
         //  · one gate ⇒ one nonce ledger (single-use nonces enforced ACROSS all N tunnels, R2) + one first-enroll lock;
@@ -73,9 +88,17 @@ object RemoteRelayWiring {
         //    axis 1b — `TunnelSessionRegistry.revokeOperator` closes all matching sessions, proven for N by CYP-484).
         // Only the per-tunnel dialer (fixed rendezvous-id) and the NK terminator are built per responder (each Noise
         // handshake is independent). The bridge/gate are stateless per invocation, so sharing is correct.
+        // CYP-620 — select the per-tunnel bridge by mode. POOL = the legacy dumb 1-socket pump; MUX = a yamux session
+        // fanning many per-stream loopback sockets over the ONE tunnel (a client that dials one tunnel and muxes over
+        // it pairs with exactly one MuxBridge). Both are the same `suspend (ServerNoiseTunnel) -> Unit` seam, so the
+        // RR3 gate + registry + TTL wrapper is identical; only the byte-pump differs.
+        val bridge: suspend (ServerNoiseTunnel) -> Unit = when (transportMode) {
+            TransportMode.MUX -> MuxBridge(loopbackPort)::bridge
+            TransportMode.POOL -> LoopbackBridge(loopbackPort)::bridge
+        }
         val handler = Rr3AuthenticatedTunnelHandler(
             authorize = gate::authorize,
-            bridge = LoopbackBridge(loopbackPort)::bridge,
+            bridge = bridge,
             registry = registry,
             operatorId = operatorId,
             sessionTtlMs = sessionTtlMs,
@@ -168,5 +191,13 @@ fun buildRemoteTransport(
         operatorId = operatorId,
         sessionTtlMs = sessionTtlMs,
         scope = scope,
+        transportMode = RemoteRelayWiring.resolveTransportMode(env), // CYP-620: pool (default) | mux, from CYPPIE_REMOTE_TRANSPORT
     )
 }
+
+/**
+ * CYP-620 — the remote-transport wire mode. A client + hub MUST agree; a mismatch is refused fail-closed at the G7
+ * hello ([com.tneff.cyppieagents.transport.mux.MuxHello]), so a half-flipped deploy bridges no bytes. Flip via the
+ * feature flag `CYPPIE_REMOTE_TRANSPORT` ([RemoteRelayWiring.resolveTransportMode]); default [POOL] until dogfooded.
+ */
+enum class TransportMode { POOL, MUX }
