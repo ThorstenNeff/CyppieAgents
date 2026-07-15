@@ -8,6 +8,16 @@ const val OIDC_LOOPBACK_PORT: Int = 47472
 const val OIDC_LOOPBACK_CALLBACK_URL: String = "http://127.0.0.1:$OIDC_LOOPBACK_PORT/callback"
 
 /**
+ * CYP-593 — the loopback callback's success page. The body has non-ASCII (`—`, `ü`), so the response MUST declare
+ * UTF-8: `com.sun.net.httpserver` sets NO Content-Type by default → the browser fell back to Latin-1 and mis-decoded
+ * the UTF-8 bytes (Mojibake: `Anmeldung abgeschlossen â€" zurÃ¼ck`). The HTTP header [OIDC_LOOPBACK_RESPONSE_CONTENT_TYPE]
+ * is authoritative; the `<meta charset>` is belt-and-suspenders. The bytes were always correct (`encodeToByteArray` = UTF-8).
+ */
+const val OIDC_LOOPBACK_RESPONSE_CONTENT_TYPE: String = "text/html; charset=utf-8"
+const val OIDC_LOOPBACK_RESPONSE_HTML: String =
+    "<!doctype html><html><head><meta charset=\"utf-8\"></head><body>Anmeldung abgeschlossen — zurück zur App.</body></html>"
+
+/**
  * CYP-576 — extract the `return_to_code` from the RFC 8252 loopback callback's query string. After the browser
  * completes the GitHub round-trip, Kratos redirects to `http://127.0.0.1:47472/callback?code=<return_to_code>`;
  * the desktop host's `armLoopbackListener` calls this on the raw query and hands the code to
