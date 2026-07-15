@@ -26,6 +26,7 @@ import com.tneff.cyppieagents.net.hub.relay.HttpRendezvousResolver
 import com.tneff.cyppieagents.net.hub.relay.KtorWsRelayConnector
 import com.tneff.cyppieagents.net.hub.relay.RendezvousRelayDialer
 import com.tneff.cyppieagents.net.hub.remote.RelayDialer
+import com.tneff.cyppieagents.net.pinnedCioWsHttpClient
 import com.tneff.cyppieagents.net.sharedWsHttpClient
 import com.tneff.cyppieagents.net.hub.trust.RegistryPresentedHubKeySource
 import com.tneff.cyppieagents.net.hub.trust.PendingOobConfirmations
@@ -50,7 +51,10 @@ actual fun defaultRemoteComponentsFactory(
 ): RemoteConnectComponentsFactory? {
     val cpBaseUrl = System.getenv("CYPPIE_CP_BASE_URL")?.takeIf { it.isNotBlank() } ?: return null
     if (System.getenv("CYPPIE_REMOTE_RELAY_URL").isNullOrBlank()) return null // no relay server ⇒ INERT (fail-closed)
-    val client = sharedWsHttpClient(operatorToken)
+    // Tunnel-warmth fix: PIN CIO explicitly for the relay-WS (+ CP) client so `WebSockets{pingIntervalMillis=15s}`
+    // actually applies (it silently no-ops on OkHttp) → the relay/tunnel WS gets its keepalive ping. Same bare-client
+    // engine-ambiguity root as the loopback keepAliveTime no-op; the pin fixes both.
+    val client = pinnedCioWsHttpClient(operatorToken)
     // CYP-542 / B1 — thread the App.kt operator-UV coordinator into the live factory (the INERT→real kip). `null` ⇒
     // the factory falls back to the fail-closed prompt (no real UV) — unchanged pre-B1 behaviour.
     return liveRemoteConnectComponentsFactory(

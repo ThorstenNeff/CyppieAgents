@@ -11,3 +11,13 @@ package com.tneff.cyppieagents.net
 fun logWsError(source: String, error: Throwable) {
     println("[ws:$source] error: ${error::class.simpleName}: ${error.message}")
 }
+
+/**
+ * Tunnel-warmth incident instrumentation: log a WS/tunnel **teardown** with its cause so an instrumented dogfood
+ * re-test can pin WHAT tears the remote WS tunnels synchronously (a transport close, a per-agent WS end, a pool
+ * teardown). [source] = the layer (`transport`/`pool`/`agent-ws:<id>`), [cause] = why it ended. Minimal `println`
+ * until a shared multiplatform logger lands; centralized so it swaps in one place (mirrors [logWsError]).
+ */
+fun logWsTeardown(source: String, cause: String) {
+    println("[ws-teardown:$source] $cause")
+}
