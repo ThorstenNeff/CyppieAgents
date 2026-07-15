@@ -27,6 +27,10 @@ class LocalHubTransport(
     private val ownsClient: Boolean = injectedClient == null
     override val httpClient: HttpClient = injectedClient ?: sharedWsHttpClient(sessionTokenProvider)
 
+    // CYP-610: Local mode is a direct LAN connect — no tunnel pool, so no REST-vs-WS slot contention. REST + WS share
+    // the one client (the split only matters for the remote tunnel transport's 15-id budget).
+    override val wsHttpClient: HttpClient get() = httpClient
+
     override fun sessionToken(): String? = sessionTokenProvider()
 
     override fun close() {

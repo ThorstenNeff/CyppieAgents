@@ -21,8 +21,20 @@ interface HubTransport {
     /** WS base, e.g. `ws(s)://host:port` — exactly what live-sources pass as their `wsBaseUrl` today. */
     val wsBaseUrl: String
 
-    /** The shared Ktor client (WS + REST), carrying the `X-Session-Token` DefaultRequest seam. */
+    /**
+     * The Ktor client for **REST** repos, carrying the `X-Session-Token` DefaultRequest seam. CYP-610: on the remote
+     * tunnel transport this is connection-capped ([com.tneff.cyppieagents.net.hub.pool.REST_DEDICATED_CONNS]) so the
+     * dozen+ REST repos share ONE loopback socket = ≤1 Noise tunnel; Local/stub modes leave it a plain shared client.
+     */
     val httpClient: HttpClient
+
+    /**
+     * The Ktor client for **WebSocket** live-sources, carrying the same `X-Session-Token` seam. CYP-610: distinct from
+     * [httpClient] so each long-lived WS opens its OWN loopback connection = its own Noise tunnel (one socket per tunnel,
+     * no mux), unthrottled by the REST connection cap. Local/stub modes alias this to [httpClient] (no split needed —
+     * only the remote tunnel pool is slot-constrained).
+     */
+    val wsHttpClient: HttpClient
 
     /**
      * The session identity presented to the hub (native `X-Session-Token`). Phase 1 = the Kratos session token

@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.net.hub
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.logWsTeardown
+import com.tneff.cyppieagents.net.pinnedCioRestHttpClient
 import com.tneff.cyppieagents.net.pinnedCioWsHttpClient
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
@@ -50,7 +51,11 @@ class RemoteTunnelHubTransport(
     // Tunnel-warmth fix: the loopback datapath client PINS CIO explicitly so `endpoint.keepAliveTime` (idle-conn
     // warmth → tunnel reuse, no REST churn) AND `WebSockets{pingInterval}` actually take effect — a bare
     // `sharedWsHttpClient` (no engine, CIO+OkHttp both on classpath) silently no-ops both (the churn root).
-    override val httpClient: HttpClient = injectedClient ?: pinnedCioWsHttpClient(sessionTokenProvider)
+    // CYP-610: split into a connection-CAPPED REST client (≤REST_DEDICATED_CONNS loopback sockets → ≤1 REST tunnel) and
+    // an UNBOUNDED WS client (one socket per long-lived WS → its own tunnel), so REST can never starve the 14 WS out of
+    // the 15-usable-id pool (the 6-agent 1-up/6-churn root). A test-injected client stands in for BOTH (cap untested there).
+    override val httpClient: HttpClient = injectedClient ?: pinnedCioRestHttpClient(sessionTokenProvider)
+    override val wsHttpClient: HttpClient = injectedClient ?: pinnedCioWsHttpClient(sessionTokenProvider)
 
     override fun sessionToken(): String? = sessionTokenProvider()
 
@@ -111,7 +116,7 @@ class RemoteTunnelHubTransport(
         logWsTeardown("transport", "close() → accept-loop cancelled, all pooled data tunnels torn; caller=\n" + callerHint())
         acceptor.close() // unblocks a pending accept() → the loop ends
         acceptJob.cancel()
-        if (ownsClient) httpClient.close()
+        if (ownsClient) { httpClient.close(); wsHttpClient.close() } // CYP-610: both owned legs (distinct when not injected)
         // The tunnel is RemoteHubSession-owned (Seam-3) — never closed here.
     }
 

@@ -337,15 +337,23 @@ fun AgentShell(
         transport ?: TransportModeResolver.create(TransportModeResolver.defaultMode(), cfg.hubEndpoint(), sessionToken)
     }
     val httpClient = resolvedTransport.httpClient
+    // CYP-610: WS live-sources use the SEPARATE, un-capped WS client so each long-lived WS opens its own loopback
+    // socket = its own Noise tunnel; `httpClient` (REST) is connection-capped so the dozen+ REST repos share ONE
+    // socket and can never starve the WS out of the remote tunnel pool. Local mode aliases both to one client.
+    val wsHttpClient = resolvedTransport.wsHttpClient
     DisposableEffect(Unit) { onDispose { resolvedTransport.close() } }
 
-    // CYP-216: an authed Coil ImageLoader over the SHARED client — the avatar serve endpoint
-    // (GET /api/agents/{id}/avatar) is participant-gated, so image GETs must carry the same
-    // session/operator credential. Provided to the shared AgentAvatarView via CompositionLocals.
+    // CYP-216: an authed Coil ImageLoader — the avatar serve endpoint (GET /api/agents/{id}/avatar) is
+    // participant-gated, so image GETs carry the same session/operator credential. Provided to the shared
+    // AgentAvatarView via CompositionLocals.
+    // CYP-610: avatars ride the WS (un-capped) client, NOT the REST-capped one. Avatar images are larger + loaded
+    // per-agent concurrently; on the 1-socket REST client they would head-of-line-block the API loads (agents/
+    // channels/acl) behind them. The WS client's pool headroom (cap 24: ~8 spare beyond 14 WS + 1 REST) absorbs the
+    // transient avatar connections without contending the persistent WS or the API REST socket.
     val avatarPlatformContext = LocalPlatformContext.current
-    val avatarImageLoader = remember(httpClient, avatarPlatformContext) {
+    val avatarImageLoader = remember(wsHttpClient, avatarPlatformContext) {
         ImageLoader.Builder(avatarPlatformContext)
-            .components { add(KtorNetworkFetcherFactory(httpClient = { httpClient })) }
+            .components { add(KtorNetworkFetcherFactory(httpClient = { wsHttpClient })) }
             .build()
     }
 
@@ -389,7 +397,7 @@ fun AgentShell(
       // banner just reflect it. Operator-token-bound like every sibling live source. `:app:webAppDemo` injects a
       // StubHubCapacitySource for the Maestro flows (readout absent + no banner = honest cold-start).
       val defaultCapacitySource = remember(httpClient, cfg) {
-          LiveHubCapacitySource(httpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+          LiveHubCapacitySource(wsHttpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
       }
       val capacityVm = viewModel(key = "hubCapacity") { CapacityViewModel(capacitySource ?: defaultCapacitySource) }
       ProjectSwitcherBar(
@@ -510,7 +518,7 @@ fun AgentShell(
     // factory — the mapper is pure Kotlin and cannot call stringResource itself (spec §2, §5).
     val readyNotice = stringResource(Res.string.agent_ready_notice)
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
-        val ws = AgentWsClient(httpClient, resolvedTransport.wsBaseUrl, agentId, cfg.agentToken(agentId))
+        val ws = AgentWsClient(wsHttpClient, resolvedTransport.wsBaseUrl, agentId, cfg.agentToken(agentId))
         MappingAgentSession(
             source = ws.events, sink = ws::send, connection = ws.connection, readyNoticeText = readyNotice,
         )
@@ -524,7 +532,7 @@ fun AgentShell(
     val resolvedCommApi = commApi ?: defaultCommApi
 
     val defaultLiveSource = remember(httpClient, cfg) {
-        CommWsClient(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        CommWsClient(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedLiveSource = commLiveSource ?: defaultLiveSource
 
@@ -543,7 +551,7 @@ fun AgentShell(
     }
     val resolvedEventsApi = eventsApi ?: defaultEventsApi
     val defaultEventsLiveSource = remember(httpClient, cfg) {
-        EventsWsClient(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        EventsWsClient(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedEventsLiveSource = eventsLiveSource ?: defaultEventsLiveSource
 
@@ -555,7 +563,7 @@ fun AgentShell(
     }
     val resolvedAclApi = aclApi ?: defaultAclApi
     val defaultAclLiveSource = remember(httpClient, cfg) {
-        AclWsClient(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        AclWsClient(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedAclLiveSource = aclLiveSource ?: defaultAclLiveSource
 
@@ -597,22 +605,22 @@ fun AgentShell(
     }
     val resolvedLifecycleApi = lifecycleApi ?: defaultLifecycleApi
     val defaultLifecycleSource = remember(httpClient, cfg) {
-        AgentLifecycleLiveSource(httpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        AgentLifecycleLiveSource(wsHttpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedLifecycleSource = lifecycleSource ?: defaultLifecycleSource
     // CYP-316: the per-agent context-token feed (`/ws/token-usage`, participant-gated like lifecycle → same bearer).
     val defaultTokenUsageSource = remember(httpClient, cfg) {
-        TokenUsageLiveSource(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        TokenUsageLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedTokenUsageSource = tokenUsageSource ?: defaultTokenUsageSource
     // CYP-324: the per-agent busy feed (`/ws/busy-state`, participant-gated like lifecycle → same bearer).
     val defaultBusyStateSource = remember(httpClient, cfg) {
-        BusyStateLiveSource(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        BusyStateLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedBusyStateSource = busyStateSource ?: defaultBusyStateSource
     // CYP-354: the per-agent terminal-control mode feed (`/ws/terminal-state`, participant-gated like busy → same bearer).
     val defaultTerminalControlSource = remember(httpClient, cfg) {
-        TerminalControlLiveSource(httpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        TerminalControlLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedTerminalControlSource = terminalControlSource ?: defaultTerminalControlSource
     // CYP-381: the hand-off command port. **Real swap done** (CYP-355 motor merged): default = ModeHttpRepository,
@@ -1012,7 +1020,7 @@ fun AgentShell(
                             terminalContent = if (WORKTREE_SHELL_LIVE_ENABLED) {
                                 { id, m ->
                                     val session = remember(id) {
-                                        WsTerminalSession(httpClient, resolvedTransport.wsBaseUrl, id, cfg.operatorToken ?: "")
+                                        WsTerminalSession(wsHttpClient, resolvedTransport.wsBaseUrl, id, cfg.operatorToken ?: "")
                                     }
                                     TerminalView(session, m)
                                 }

@@ -7,6 +7,7 @@ actual class RemoteHubTransport actual constructor() : HubTransport {
     override val httpBaseUrl: String get() = remoteTransportNotYetAvailable()
     override val wsBaseUrl: String get() = remoteTransportNotYetAvailable()
     override val httpClient: HttpClient get() = remoteTransportNotYetAvailable()
+    override val wsHttpClient: HttpClient get() = remoteTransportNotYetAvailable()
     override fun sessionToken(): String? = remoteTransportNotYetAvailable()
     override fun close() = Unit
 }
