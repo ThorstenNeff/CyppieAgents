@@ -82,6 +82,12 @@ class NoiseRelayConnector(
     private val nowMs: () -> Long = { System.currentTimeMillis() },
     /** Injectable sleeper so tests observe the computed re-dial delay without real waiting; prod = [delay]. */
     private val sleep: suspend (Long) -> Unit = { delay(it) },
+    /** CYP-528b (dogfood 2026-07-15) — a JITTERED minimum re-dial delay applied EVEN on a clean-end that held ≥
+     *  [cleanEndFloorMs] (where the CYP-528 floor term is 0). PRE-528b such an end re-dialed at 0ms; under a burst of
+     *  simultaneous tunnel-ends (unconsumed-tunnel churn / batch connection-close / project-switch) that was a
+     *  SYNCHRONIZED 0ms thundering herd that saturated the relay. The jitter (`base + random(0..spread)`) de-synchronizes
+     *  the N responders' re-dials. Single-sourced via [ReDialJitter]; injectable so tests observe a deterministic value. */
+    private val reDialJitterMs: () -> Long = { ReDialJitter.next() },
 ) : RelayConnector {
     private val log = LoggerFactory.getLogger("cyp459.relay.connector")
     private var job: Job? = null
@@ -121,11 +127,16 @@ class NoiseRelayConnector(
                     log.warn("CYP-526 relay dial/handshake failed (attempt {}): {}", attempt, e.message)
                 }
                 val wait = if (attempt == 0) {
-                    // CYP-528 clean-end floor: re-dial immediately when this cycle held ≥ the floor (a real session);
-                    // otherwise throttle to the remainder so a fast/instant tunnel-end can't `delay(0)` tight-loop.
-                    (cleanEndFloorMs - (nowMs() - dialStart)).coerceAtLeast(0L)
+                    // CYP-528 clean-end floor: throttle a fast/instant tunnel-end to `floor - elapsed` so it can't
+                    // `delay(0)` tight-loop. CYP-528b (dogfood 2026-07-15): apply a JITTERED minimum EVEN when held ≥
+                    // floor (the floor term is 0) — so a burst of simultaneous clean-ends (unconsumed-tunnel churn /
+                    // batch-close / project-switch) DE-SYNCHRONIZES instead of a synchronized 0ms thundering herd.
+                    maxOf((cleanEndFloorMs - (nowMs() - dialStart)).coerceAtLeast(0L), reDialJitterMs())
                 } else {
-                    backoffMs(attempt) // failure path unchanged — already capped
+                    // CYP-528b: additive jitter on the deterministic [backoffMs] curve too — else N responders whose
+                    // dials fail together re-sync on the identical backoff (Backend2 review; belt-and-suspenders — the
+                    // dogfood amplifier was the clean-end instant path above, but the failure path re-syncs likewise).
+                    backoffMs(attempt) + reDialJitterMs()
                 }
                 sleep(wait)
             }

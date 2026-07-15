@@ -55,6 +55,9 @@ class ConcurrentRelayResponderManager(
     private val backoffMs: (attempt: Int) -> Long = { a -> AdmissionRetry().delayForAttempt(a) },
     /** Injectable sleeper so tests drive the retry cadence without real waiting; prod = [delay]. */
     private val sleep: suspend (Long) -> Unit = { delay(it) },
+    /** CYP-528b — additive re-dial jitter on the set-fetch retry so N managers/responders don't re-sync on the
+     *  identical deterministic backoff. Single-sourced [ReDialJitter]; injectable for deterministic teeth. */
+    private val reDialJitterMs: () -> Long = { ReDialJitter.next() },
 ) : RelayConnector {
     private val log = LoggerFactory.getLogger("cyp536.responder.manager")
     private val responders = CopyOnWriteArrayList<RelayConnector>() // CYP-553 (⑦): thread-safe
@@ -97,7 +100,7 @@ class ConcurrentRelayResponderManager(
                 "CYP-553: rendezvous set not yet available (attempt {}) — retrying (transient CP / boot-admission race / " +
                     "hub not yet owned). NOT dark: the manager keeps trying instead of a silent one-shot INERT.", attempt,
             )
-            sleep(backoffMs(attempt))
+            sleep(backoffMs(attempt) + reDialJitterMs()) // CYP-528b: + jitter → de-sync the deterministic retry curve
         }
     }
 
