@@ -249,10 +249,14 @@ internal fun SetPassphraseStep(state: HubConnectUiState.SetPassphrase, viewModel
                         .semantics { liveRegion = LiveRegionMode.Assertive },
                 )
             }
-            OutlinedButton(onClick = viewModel::cancelEnroll, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(Res.string.remote_pop_enroll_type_own))
-            }
         }
+        // CYP-584 F1a (§2.1, T1): the Cancel/leave affordance stays visible in BOTH branches — during ENROLLING only
+        // the submit is replaced by the spinner, but the operator must ALWAYS have an escape (no dead-wait spinner from
+        // which there is no exit). Reuses cancelEnroll, which now actually cancels the in-flight seal (the F1a VM fix).
+        OutlinedButton(
+            onClick = viewModel::cancelEnroll,
+            modifier = Modifier.fillMaxWidth().testTag(OperatorAuthTags.ENROLL_CANCEL),
+        ) { Text(stringResource(Res.string.remote_pop_enroll_type_own)) }
     }
 }
 

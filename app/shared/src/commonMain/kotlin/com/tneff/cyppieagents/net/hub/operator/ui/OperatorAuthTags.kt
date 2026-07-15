@@ -28,6 +28,7 @@ object OperatorAuthTags {
     const val PASSPHRASE_PROMPT = "remote.authStep.passphrasePrompt" // auth-time unlock (no-hardware)
     const val ENROLL_SUGGESTED = "remote.authStep.enrollSuggested"   // §1a diceware default block (reveal + one-click use)
     const val ENROLL_TYPE_OWN = "remote.authStep.enrollTypeOwn"      // §1b type-your-own
+    const val ENROLL_CANCEL = "remote.enroll.cancel"                 // CYP-584 F1a: the leave/cancel escape (visible during ENROLLING)
     const val ENROLL_PASSPHRASE_CONFIRM = "remote.authStep.enrollPinConfirm" // §1b confirm field (paired)
     const val ENROLL_CLIPBOARD_NOTICE = "remote.authStep.enrollClipboardNotice" // §1a clipboard-egress disclosure
     const val UV_COVERAGE = "remote.authStep.uvCoverage"             // §4 1-UV-for-N coverage line

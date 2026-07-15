@@ -44,6 +44,15 @@ class Cyp542EnrollA11yLiveRegionTest {
         onNodeWithTag(OperatorAuthTags.error("tooWeak"), useUnmergedTree = true).assertDoesNotExist() // specific, not generic
     }
 
+    // CYP-584 F1a / T1 — the Cancel/leave affordance stays visible DURING ENROLLING (only the submit is replaced by
+    // the spinner), so the operator ALWAYS has an escape — no dead-wait spinner. Before the fix the Cancel lived in the
+    // `else` branch → an ENROLLING spinner with no exit. Discriminates that dead-wait.
+    @Test
+    fun cyp584T1_cancelStaysVisibleDuringEnrolling_noDeadWaitSpinner() = runComposeUiTest {
+        setContent { MaterialTheme { SetPassphraseStep(state(EnrollPhase.ENROLLING), vm()) } }
+        onNodeWithTag(OperatorAuthTags.ENROLL_CANCEL, useUnmergedTree = true).assertExists()
+    }
+
     // F1/② — a TOO_WEAK refusal is ASSERTIVE (liveRegion on the wrapping row) + its own distinct cause.
     @Test
     fun tooWeakRefusal_isAssertive_specificCause() = runComposeUiTest {
