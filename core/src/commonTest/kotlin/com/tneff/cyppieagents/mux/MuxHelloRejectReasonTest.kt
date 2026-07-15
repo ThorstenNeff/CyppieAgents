@@ -1,4 +1,4 @@
-package com.tneff.cyppieagents.transport.mux
+package com.tneff.cyppieagents.mux
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -7,6 +7,7 @@ import kotlin.test.assertTrue
 /**
  * CYP-620 instrumentation — the logs-only [MuxHello.rejectReason] classifier used in the MuxBridge refuse WARN. Proves
  * the categories are correct AND (the no-secret-leak property) that it returns a stable category, never raw bytes.
+ * Lives in `:core` commonTest alongside [MuxHello] (CYP-622: shared, one source of truth for both ends).
  */
 class MuxHelloRejectReasonTest {
 

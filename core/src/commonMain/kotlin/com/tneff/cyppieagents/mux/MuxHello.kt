@@ -1,10 +1,15 @@
-package com.tneff.cyppieagents.transport.mux
+package com.tneff.cyppieagents.mux
 
 /**
  * CYP-620 — the **G7 mode/version hello** (§4.2 / §4.8.10). Exchanged as the FIRST message on the tunnel, INSIDE the
  * Noise channel (AEAD-authenticated), BEFORE any yamux frame. It pins the transport mode + protocol version so a
  * mixed-mode deploy (one peer `mux`, one `pool`) or a version skew is refused **fail-closed at the handshake** — the
  * untrusted relay (RR4) cannot tamper the marker to force a downgrade, because it rides the encrypted channel.
+ *
+ * **Shared `:core` (CYP-622): ONE source of truth for BOTH ends.** Like the yamux codec, this lives in `:core` common
+ * so the hub (JVM `MuxBridge`) and the client (`:app` mux transport) compile against the SAME 7 bytes — a byte-drift
+ * between the sides is structurally impossible. (Originally `:server`-only, which meant the client sent no hello and
+ * the hub refused it at the flip — CYP-622.)
  *
  * Wire (7 bytes): `[ magic: 4B = "CYMX" ][ version: u16 ][ mode: u8 ]`, big-endian. A hello that does not match
  * byte-for-byte (bad magic / unknown version / unexpected mode / wrong length / absent) → the peer is not a
@@ -42,7 +47,7 @@ object MuxHello {
     }
 
     /**
-     * CYP-620 instrumentation (logs-only) — classify WHY a peer's hello would be rejected, for the [MuxBridge] refuse
+     * CYP-620 instrumentation (logs-only) — classify WHY a peer's hello would be rejected, for the MuxBridge refuse
      * log. Returns a stable category plus a benign numeric where useful (size / version / mode). It NEVER returns byte
      * content: the hello carries only magic+version+mode — no secret — and this deliberately surfaces none of the raw
      * bytes. `"ok"` means it verifies (the caller would not log a reject).
