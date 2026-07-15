@@ -1,7 +1,7 @@
 # Morgen-Früh-Walkthrough — Live-Dogfood GitHub-Login → B1 → Agent-Turn (Crown-Jewel-Test)
 
 > **Für den Auftraggeber** (fährt den Desktop-Client) **+ die server-seitige QA-Verify-Lane** (S-Tester).
-> Build: **develop `d06001a6`** (CYP-575 Browser-Launch-Fallback + CYP-576 native API-flow token-exchange + Follow-on:
+> Build: **`origin/develop`** (Stand `9855dc3e`) (CYP-575 Browser-Launch-Fallback + CYP-576 native API-flow token-exchange + Follow-on:
 > UX-States/Double-Click-Guard/Loopback-Server-Stop/Error-Split). Der Login-Fix ist **komplett** — dies ist der erste
 > Ende-zu-Ende-Beweis.
 >
@@ -24,7 +24,20 @@
   ```
   cd <repo> && FIX_REF=origin/develop ./run-dogfood-client.sh
   ```
-  (`FIX_REF` zeigt per Default schon auf `origin/develop` = `d06001a6` mit dem kompletten Fix.)
+  (`FIX_REF` zeigt per Default schon auf `origin/develop` — den bewegten Ref mit dem kompletten Fix; die Doc pinnt bewusst keine SHA.)
+
+  **Falls `run-dogfood-client.sh` fehlt** (frischer Clone / Datei nicht vorhanden): dieselben Schritte manuell (JDK 17+ nötig) —
+  ```
+  cd ~/cyppie-agents/KMPCyppieAgents
+  git fetch origin && git checkout --detach origin/develop
+  export CYPPIE_AUTH_LIVE=true
+  export CYPPIE_AUTH_ORIGIN=https://api.cyppie-agents.com
+  export CYPPIE_AUTH_PROXY=https://api.cyppie-agents.com/.ory/kratos/public/
+  export CYP_REMOTE_HUB=true
+  export CYPPIE_CP_BASE_URL=https://api.cyppie-agents.com
+  export CYPPIE_REMOTE_RELAY_URL=wss://api.cyppie-agents.com/relay
+  ./gradlew --no-daemon :app:desktopApp:run
+  ```
 - **Was du siehst:** Fetch- + Build-Log → das Desktop-App-Fenster startet → **Login-Screen**.
 - **Was erwartet:** App startet ohne Build-Fehler; Login-Screen mit E-Mail/Passwort **und** dem Button „Sign in with GitHub".
 - 🔎 **Server-Verify:** — (lokaler Build). QA-seitig: `github-oidc-verify.sh` Hops 1–2 grün = die Front-Door lebt.
