@@ -29,20 +29,24 @@ class MuxWriteScheduler(
     private val lock = Mutex()
     private val signal = Channel<Unit>(Channel.CONFLATED) // wakes the writer when a lane gains a frame
     private var closed = false
+    private var draining = false // graceful close: no new frames accepted, but the writer flushes what's queued
     private val writer: Job = scope.launch { writeLoop() }
 
     /** Enqueue an already-encoded frame at [priority] (0=highest=CONTROL … 3=REST); out-of-range clamps to the lowest lane. */
     suspend fun enqueue(bytes: ByteArray, priority: Int) {
         val lane = priority.coerceIn(0, PRIORITY_LANES - 1)
-        lock.withLock { if (!closed) lanes[lane].addLast(bytes) }
+        lock.withLock { if (!closed && !draining) lanes[lane].addLast(bytes) }
         signal.trySend(Unit)
     }
 
     private suspend fun writeLoop() {
         while (!closed) {
             val next = lock.withLock { pickHighest() }
-            if (next == null) { signal.receive(); continue } // nothing pending → wait for an enqueue
-            carrier.send(next)                               // serialized: this is the ONLY writer
+            if (next == null) {
+                if (draining) break              // lanes drained + draining ⇒ exit (all queued frames flushed)
+                signal.receive(); continue        // nothing pending → wait for an enqueue
+            }
+            carrier.send(next)                    // serialized: this is the ONLY writer
         }
     }
 
@@ -52,10 +56,21 @@ class MuxWriteScheduler(
         return null
     }
 
-    /** Stop the writer (idempotent). The carrier itself is closed by the session (it owns the tunnel). */
+    /** Abrupt stop (idempotent) — cancels the writer immediately (a dead carrier: draining would just block). */
     suspend fun close() {
         closed = true
         signal.trySend(Unit)
         writer.cancel()
+    }
+
+    /**
+     * Graceful close (CYP-609 clean-close lineage): stop accepting new frames, let the writer **FLUSH everything
+     * already queued** (e.g. a `GoAway` the session just enqueued) to the still-live carrier, then exit. Use on a clean
+     * session close; [close] is the abrupt variant for a dropped carrier.
+     */
+    suspend fun drainAndClose() {
+        draining = true
+        signal.trySend(Unit) // wake the writer to notice draining + drain the lanes
+        writer.join()        // wait until it has flushed all lanes and returned
     }
 }

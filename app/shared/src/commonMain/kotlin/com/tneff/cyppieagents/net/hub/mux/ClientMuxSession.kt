@@ -193,19 +193,6 @@ class ClientMuxSession(
         if (existed) writeFrame(YamuxFrame(YamuxType.WINDOW_UPDATE, YamuxFlags.FIN, id, 0L), priority) // header-only FIN
     }
 
-    private suspend fun readLoop() {
-        try {
-            while (!closed) {
-                val chunk = carrier.receive() ?: break // carrier closed/EOF → session ends
-                for (frame in decoder.feed(chunk)) dispatch(frame) // throws on malformed/overshoot → caught below
-            }
-        } catch (_: Throwable) {
-            runCatching { writeFrame(YamuxFrame.goAway(YamuxGoAway.PROTOCOL_ERROR), SESSION_CONTROL_PRIORITY) } // fail-closed
-        } finally {
-            teardown()
-        }
-    }
-
     private suspend fun dispatch(f: YamuxFrame) {
         when (f.type) {
             YamuxType.DATA -> {
@@ -244,7 +231,9 @@ class ClientMuxSession(
         closed = true
         readJob?.cancel()
         teardown()
-        runCatching { scheduler.close() }
+        // Graceful: let the writer FLUSH the enqueued GoAway to the still-live carrier BEFORE we close it (CYP-609
+        // clean-close). (run()'s finally uses the abrupt scheduler.close() — there the carrier is already dead.)
+        runCatching { scheduler.drainAndClose() }
         runCatching { carrier.close() }
     }
 

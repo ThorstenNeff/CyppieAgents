@@ -48,6 +48,30 @@ class ClientMuxSessionTest {
     private fun dataBytesSentFor(carrier: FakeCarrier, streamId: Long): Int =
         dataFramesSentFor(carrier, streamId).sumOf { it.payload.size }
 
+    /** Every frame the client sent (in order), decoded from the carrier. */
+    private fun allFramesSent(carrier: FakeCarrier): List<YamuxFrame> {
+        val dec = YamuxFrameDecoder(YamuxFrameDecoder.DEFAULT_MAX_FRAME_LEN)
+        val out = mutableListOf<YamuxFrame>()
+        for (chunk in carrier.sent) out.addAll(dec.feed(chunk))
+        return out
+    }
+
+    @Test
+    fun close_flushesGoAwayBeforeClosingCarrier_CYP609cleanClose() = runTest {
+        // Backend2 fast-follow (2): a clean session close() must FLUSH the enqueued GoAway before the writer stops — the
+        // scheduler's drainAndClose, not an abrupt writer-cancel (CYP-609 clean-close lineage). Mutant: close() uses the
+        // abrupt scheduler.close() ⇒ the GoAway is cancelled out of the writer ⇒ never reaches the carrier ⇒ RED.
+        val carrier = FakeCarrier()
+        val session = ClientMuxSession(carrier, scope = this)
+        session.start()
+        advanceUntilIdle()
+        session.close()
+        advanceUntilIdle()
+
+        assertTrue(allFramesSent(carrier).any { it.type == YamuxType.GO_AWAY }, "close() flushes the GoAway to the carrier")
+        assertTrue(carrier.closedFlag, "the carrier is closed AFTER the GoAway flush")
+    }
+
     /** The app-DATA frames the client sent on [streamId] (excluding the SYN open frame). */
     private fun dataFramesSentFor(carrier: FakeCarrier, streamId: Long): List<YamuxFrame> {
         val dec = YamuxFrameDecoder(YamuxFrameDecoder.DEFAULT_MAX_FRAME_LEN)
