@@ -7,9 +7,14 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Priority lanes = the 4 stream classes ([StreamClass.wire]: 0=CONTROL highest … 3=REST lowest). */
 internal const val PRIORITY_LANES: Int = 4
+
+/** CYP-620 (Backend2 belt) — the bound on [MuxWriteScheduler.drainAndClose]'s flush: if `carrier.send` stalls at a
+ *  clean close, fall back to an abrupt cancel rather than hang teardown. */
+internal const val DRAIN_FLUSH_TIMEOUT_MS: Long = 2_000
 
 /**
  * CYP-620 (client half of **control-frame non-starvation** — the peer of the server's `MuxWriteScheduler`): the write
@@ -71,6 +76,8 @@ class MuxWriteScheduler(
     suspend fun drainAndClose() {
         draining = true
         signal.trySend(Unit) // wake the writer to notice draining + drain the lanes
-        writer.join()        // wait until it has flushed all lanes and returned
+        // Bound the flush (Backend2 belt): if carrier.send stalls at clean-close, don't hang teardown — after
+        // [DRAIN_FLUSH_TIMEOUT_MS] fall back to the abrupt cancel. The happy path (flush completes) returns immediately.
+        if (withTimeoutOrNull(DRAIN_FLUSH_TIMEOUT_MS) { writer.join() } == null) writer.cancel()
     }
 }
