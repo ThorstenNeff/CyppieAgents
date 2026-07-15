@@ -715,6 +715,9 @@
     <string name="remote_recovery_codes_single_use">Each code works only once.</string>
     <string name="remote_recovery_codes_copy">Copy codes</string>
     <string name="remote_recovery_codes_ack">I've saved the codes safely</string>
+    <!-- CYP-595 (UIUX expiry-subset): the enroll finalize window timed out — the shown codes are stale; reconnect for fresh. -->
+    <string name="remote_recovery_codes_window_expired">The window expired — the shown codes are no longer valid. Reconnect for fresh codes.</string>
+    <string name="remote_recovery_reconnect">Reconnect</string>
     <!-- CYP-525 GE7 (UIUX frozen, device-enroll-keys.md): the no-central consequence on the Reveal, BEFORE the ack. -->
     <string name="remote_recovery_codes_no_central">Without these codes there\'s no way back — a central login won\'t restore access.</string>
     <string name="remote_recovery_start_title">Recover this device</string>

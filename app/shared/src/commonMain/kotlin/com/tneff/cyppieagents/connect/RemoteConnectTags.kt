@@ -21,6 +21,11 @@ object RemoteConnectTags {
     /** Retry affordance — present ONLY for retryable transport failures, NEVER for a terminal trust-changed/auth-rejected. */
     const val RETRY = "remote.connect.retry"
 
+    // CYP-595 (UIUX expiry-subset) — the enroll finalize window expired (RR3 receive timed out): the shown codes are
+    // stale; reconnect for fresh ones. codesWindowExpired = Assertive; codesReconnect reuses the connectRemote re-TOFU.
+    const val CODES_WINDOW_EXPIRED = "remote.connect.codesWindowExpired"
+    const val CODES_RECONNECT = "remote.connect.codesReconnect"
+
     // CYP-482 S-B (§3) — the FirstUse OOB-fingerprint-confirm screen (frozen CYP-480 §① contract; shared API w/ QA).
     /** FirstUse OOB-confirm screen container (§2.1) — the mandatory-blocking First-Use gate. */
     const val TRUST_FIRST = "remote.connect.trustFirst"

@@ -36,6 +36,10 @@ import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
+import com.tneff.cyppieagents.auth.AnnouncingHint
+import androidx.compose.ui.semantics.LiveRegionMode
+import kmpcyppieagents.app.shared.generated.resources.remote_recovery_codes_window_expired
+import kmpcyppieagents.app.shared.generated.resources.remote_recovery_reconnect
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_authenticating
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_auth_rejected
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_connected
@@ -393,6 +397,21 @@ private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectView
             }
             Button(onClick = viewModel::connectRemote, modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.RETRY)) {
                 Text(stringResource(Res.string.load_retry))
+            }
+        }
+        // CYP-595 (UIUX expiry-subset): an RR3 receive (esp. the post-SavedAck final grant) timed out — the hub stalled
+        // and the shown codes are now stale. Assertive "window expired" (the operator must act) + a reconnect CTA that
+        // reuses connectRemote (the CYP-525 re-TOFU path) for a fresh enroll. Distinct from EnrollCodesUnavailable.
+        RemoteFailure.EnrollTimedOut -> Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            AnnouncingHint(
+                stringResource(Res.string.remote_recovery_codes_window_expired),
+                HintTone.ERROR, RemoteConnectTags.CODES_WINDOW_EXPIRED, LiveRegionMode.Assertive,
+            )
+            Button(onClick = viewModel::connectRemote, modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.CODES_RECONNECT)) {
+                Text(stringResource(Res.string.remote_recovery_reconnect))
             }
         }
         null -> Unit // clean teardown (Q5 switch) — nothing to render
