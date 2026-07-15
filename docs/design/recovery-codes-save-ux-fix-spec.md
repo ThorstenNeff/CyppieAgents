@@ -126,6 +126,25 @@ Niemand soll handschriftlich abschreiben müssen. Drei Wege, robust gestaffelt:
 6. „no-central"-Stakes bleiben **vor** dem Ack; Töne neutral/`primary`, Expiry = error-Ton (blockierend), **kein** Erfolgs-Grün.
 7. DE=Default + EN-Parität.
 
+## 10. Ticket-Mapping (PO-Koordination, zwei Geschwindigkeiten)
+> Der PO teilt diese Spec auf zwei Speeds. Damit Dev/Backend die **richtige Teilmenge** je Ticket ziehen:
+
+**Immediate (live-unblock):**
+- **CYP-596 (Backend, baut):** Fenster **großzügig + env-config** — der schnelle Server-Fix (= §1 „falls Backend eine Obergrenze braucht: großzügig", die Brücke, **nicht** die Ziel-Semantik).
+- **CYP-595 (Dev, baut) + mein Anti-Dead-Hang-Expiry-Zustand gefoldet:** Client-Timeout → **statt nacktem Rejected** der **§1-Ablauf-Zustand**: „Fenster abgelaufen — neu verbinden für frische Codes" + Reconnect-CTA (reuse CYP-525-Re-TOFU).
+  - **Keys für CYP-595:** `remote_recovery_codes_window_expired` · `remote_recovery_reconnect`.
+  - **Tags für CYP-595:** `remote.recovery.codesWindowExpired` (**Assertive**) · `remote.recovery.codesReconnect`.
+
+**Robust Follow-on (CYP-596-Teil-2 + Copy/Save, mit voller Spec):**
+- **① Tunnel-Liveness-Semantik (Backend, der Kern > extend-clock):** Provisorik durch Tunnel-Liveness + Ack/Abort, nicht Uhr. (Keine neuen Keys — Verhaltens-Semantik.)
+- **② Copy-Feedback + „In Datei speichern" (Dev/UIUX2, der Anti-Handschrift-Wurzel-Fix):**
+  - **Keys:** `remote_recovery_codes_copied` · `remote_recovery_codes_save_file` · `remote_recovery_codes_saved_file` · `a11y_remote_recovery_codes_copied`.
+  - **Tags:** `remote.recovery.codesCopied` (Polite) · `remote.recovery.codesSaveFile` · `remote.recovery.codesSavedFile` (Polite).
+- **③ „Nimm dir Zeit"-CTA (Dev):**
+  - **Key:** `remote_recovery_codes_no_rush`. **Tag:** `remote.recovery.codesNoRush`.
+
+> Live-Brücke (kein Bau nötig): Screenshot-Workaround + großzügiges Fenster; die Wurzel-Fixe (①-Semantik + ②-Copy/Save) sind die dauerhafte Lösung.
+
 ## 9. Self-Validation
 - **Gegroundet** gg. `RecoveryCodesReveal.kt` / `EnrollConfirmCoordinator.kt` / `ClientOperatorAuth.kt` / `HubConnectUiState.kt` @ `a1593d19` (file:symbol) — Hang-Mechanik code-belegt, nicht vermutet.
 - **0 Kollision @ `a1593d19`:** die 7 neuen Keys grep-verifiziert **nicht** vorhanden; die 6 Tags nicht in `RemoteRecoveryTags`.
