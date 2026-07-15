@@ -1,7 +1,8 @@
 package com.tneff.cyppieagents.net.hub
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
-import com.tneff.cyppieagents.net.sharedWsHttpClient
+import com.tneff.cyppieagents.net.logWsTeardown
+import com.tneff.cyppieagents.net.pinnedCioWsHttpClient
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +47,10 @@ class RemoteTunnelHubTransport(
     override val wsBaseUrl: String = "ws://127.0.0.1:${acceptor.port}"
 
     private val ownsClient: Boolean = injectedClient == null
-    override val httpClient: HttpClient = injectedClient ?: sharedWsHttpClient(sessionTokenProvider)
+    // Tunnel-warmth fix: the loopback datapath client PINS CIO explicitly so `endpoint.keepAliveTime` (idle-conn
+    // warmth → tunnel reuse, no REST churn) AND `WebSockets{pingInterval}` actually take effect — a bare
+    // `sharedWsHttpClient` (no engine, CIO+OkHttp both on classpath) silently no-ops both (the churn root).
+    override val httpClient: HttpClient = injectedClient ?: pinnedCioWsHttpClient(sessionTokenProvider)
 
     override fun sessionToken(): String? = sessionTokenProvider()
 
@@ -96,11 +100,20 @@ class RemoteTunnelHubTransport(
     }
 
     override fun close() {
+        // Tunnel-warmth incident instrumentation: this close() cancels the accept-loop → ALL pooled data tunnels are
+        // torn synchronously. Log WHO called it (the caller stack) so an instrumented re-test pins the batch-teardown
+        // trigger (a Compose composition-leave via AgentShell's DisposableEffect vs closeActiveComponents vs a
+        // higher-level remount). No secrets — stack frames only, no tokens/handshake material.
+        logWsTeardown("transport", "close() → accept-loop cancelled, all pooled data tunnels torn; caller=\n" + callerHint())
         acceptor.close() // unblocks a pending accept() → the loop ends
         acceptJob.cancel()
         if (ownsClient) httpClient.close()
         // The tunnel is RemoteHubSession-owned (Seam-3) — never closed here.
     }
+
+    /** The immediate caller chain (a few frames), for the teardown instrumentation — pins who triggered close(). */
+    private fun callerHint(): String =
+        Throwable().stackTrace.drop(1).take(6).joinToString("\n") { "  at $it" }
 }
 
 /**

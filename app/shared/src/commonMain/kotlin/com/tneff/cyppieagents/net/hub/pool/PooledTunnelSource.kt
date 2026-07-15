@@ -96,6 +96,10 @@ class PooledTunnelSource(
     suspend fun close() {
         closed = true
         val snapshot = liveLock.withLock { live.values.toList().also { live.clear() } }
+        // Tunnel-warmth incident instrumentation: a pool close() tears down ALL live tunnels at once — log it (with
+        // the count) so an instrumented re-test can pin whether a synchronous WS-tunnel batch-teardown came through
+        // here (closeActiveComponents / hub switch/leave). No secrets — count only.
+        com.tneff.cyppieagents.net.logWsTeardown("pool", "close() → tearing down ${snapshot.size} live tunnels (hub switch / leave / end-session)")
         snapshot.forEach { runCatching { it.close() } }
     }
 

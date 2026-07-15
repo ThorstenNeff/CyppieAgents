@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import com.tneff.cyppieagents.net.Backoff
+import com.tneff.cyppieagents.net.logWsTeardown
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
@@ -79,6 +80,7 @@ class AgentWsClient(
     val events: Flow<StoredAgentEvent> = channelFlow {
         var attempt = 0
         while (true) {
+            var endReason = "incoming-closed" // the server/tunnel closed the WS cleanly (the for(incoming) loop ended)
             try {
                 client.webSocket(
                     urlString = agentUrl(),
@@ -115,10 +117,15 @@ class AgentWsClient(
                 }
             } catch (c: CancellationException) {
                 throw c
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                endReason = "exception:${t::class.simpleName}"
                 // Transient socket/connect error → reconnect from the cursor after a backoff.
             }
             _connection.value = ConnectionStatus.DISCONNECTED
+            // Tunnel-warmth incident instrumentation: log WHY this agent WS ended so an instrumented re-test can
+            // correlate whether many agent WS end synchronously (a batch teardown) and their cause. No secrets —
+            // agentId + reason + attempt only (never tokens/handshake material).
+            logWsTeardown("agent-ws:$agentId", "$endReason → reconnect #${attempt + 1}")
             attempt += 1
             reconnectDelay(attempt) // CYP-598-B: escalates for a 0-frame (stopped-agent) connection — no floor-hammer
         }
