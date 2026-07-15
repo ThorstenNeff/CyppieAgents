@@ -48,10 +48,24 @@
 |---|---|---|
 | 1 | `GET <KRATOS_PUBLIC>/self-service/login/api?return_session_token_exchange_code=true&return_to=http://127.0.0.1:47472/callback` | `200` + body field **`session_token_exchange_code`** (64ch) + `return_to` echoed |
 | 2 | `POST <KRATOS_PUBLIC>/self-service/login?flow=<id>` · JSON `{"method":"oidc","provider":"github"}` (api-flow → **no csrf**) | **`422`** + top-level **`redirect_browser_to`** = `https://github.com/login/oauth/authorize…` + `error.id=browser_location_change_required` |
-| 3 | *(browser)* GitHub consent → `<KRATOS_PUBLIC>/self-service/methods/oidc/callback/github` | `302` → `return_to` loopback with **`?code=<return_to_code>`** (+ `&state=` if the client pins one) |
+| 3 | *(browser)* GitHub consent → `<KRATOS_PUBLIC>/self-service/methods/oidc/callback/github` | `302` → `return_to` loopback carrying **BOTH `?state=<nonce>&code=<return_to_code>`** (`&`-separated). **`state` is EXPECTED, not optional** — the shipped client (`845fd1df`) hard-rejects a callback whose `?state` ≠ the app CSPRNG nonce (`AuthViewModel.onGithubReturn`). A **missing** `state` on the real complete = the one live-unproven case (GAP 1) → **STOP + escalate** (see note ↓). *This hop is the FIRST live marker of the run.* |
 | 4 | `GET <KRATOS_PUBLIC>/sessions/token-exchange?init_code=<…>&return_to_code=<…>` | pre-completion: `404` "no session yet for this code"; **post-completion: `200` `{ session_token, session }`** |
 
 **Fail-closed:** missing `return_to_code` on hop 4 → `400`. Hop 2 with a bad provider → the flow re-renders with an error node, never a redirect.
+
+> **GAP 1 — `state` preservation (VERIFIED refuted on v1.3.0; the one live-unproven sliver is hop 3's append).**
+> The client's `state`-check is **Kratos-echo-dependent** by design: it compares the loopback's `?state` to the app CSPRNG
+> nonce it embedded in `return_to`. Read-only probe (2026-07-14): Kratos v1.3.0 **accepts** `return_to=…/callback?state=X`
+> (`200`, allowlist matches despite the extra query) and **echoes it verbatim** → it stores return_to as-is and appends
+> `&code=` on completion → hop 3 delivers both. **The only headless-unprovable step is that final append** — hop 3 confirms it live.
+> - **If `state` is present + matches** → PASS → hop 4 → workspace. Expected.
+> - **If `state` is missing/stripped at hop 3** (unexpected) → the client rejects (retry-able Error, not a wrong-credential exchange) → **STOP + escalate to PO.**
+> **Contingency fix path (pre-documented, only if hop 3 strips `state`):** NOT a security break — the `init_code` is the
+> **app-private primary binding** (an attacker can never form the victim's pair; `state` is defense-in-depth). Fix = relax the
+> hard `state`-gate to `init_code`-primary correlation (keep `state` as best-effort). `return_to` is the correct preserved
+> channel, so no change is needed while v1.3.0 preserves it.
+> **Standing condition (CYP-586, low):** re-verify `return_to` state-preservation on **every Kratos upgrade** — current
+> correctness is v1.3.0-specific (echo-dependent by design, version-sensitive).
 
 ---
 
