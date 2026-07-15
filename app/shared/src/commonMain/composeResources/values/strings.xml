@@ -11,6 +11,8 @@
     <string name="a11y_notice">Hinweis: %1$s</string>
     <!-- CYP-323: unsichtbare SR-Kennzeichnung des menschlichen Turns (das visuelle „›" ist dekorativ/hidden). %1$s = Nachrichtentext. -->
     <string name="a11y_user_turn">Deine Nachricht: %1$s</string>
+    <string name="agent_turn_undelivered">Zustellung nicht bestätigt</string>
+    <string name="a11y_agent_turn_undelivered">Agenten-Turn: Zustellung nicht bestätigt</string>
     <!-- CYP-326 #1: injizierte System-/Orchestrator-Nachricht im Agenten-Verlauf (Label + unsichtbare SR-Kennzeichnung). -->
     <string name="transcript_system_label">System</string>
     <string name="a11y_transcript_system">System: %1$s</string>

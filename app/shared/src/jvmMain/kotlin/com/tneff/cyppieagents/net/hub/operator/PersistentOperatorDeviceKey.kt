@@ -11,6 +11,7 @@ import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
+import org.slf4j.LoggerFactory
 
 /**
  * CYP-525 Inc 2 — **durable** Ed25519 operator device-key custody (the CYP-413 `DEVICE_SECURE` intent, jvm actual).
@@ -31,9 +32,24 @@ import java.security.spec.X509EncodedKeySpec
  */
 class PersistentOperatorDeviceKey(private val keyFile: Path) {
 
+    private val log = LoggerFactory.getLogger("operator.deviceKey")
+
     /** Load the persisted Ed25519 device key, or generate + persist one on first run (idempotent across launches). */
-    fun loadOrGenerate(): KeyPair =
-        (if (Files.exists(keyFile)) runCatching { load() }.getOrNull() else null) ?: generateAndPersist()
+    fun loadOrGenerate(): KeyPair {
+        if (Files.exists(keyFile)) {
+            runCatching { load() }.getOrNull()?.let { return it }
+            // F3 (silent-swallow fix — WARN-LOG ONLY; the fail-closed-vs-regenerate POSTURE is a PO1 security
+            // decision and is deliberately NOT changed here). A PRESENT device-key file that failed to load is about
+            // to be regenerated, which SILENTLY changes this device's identity → the hub then sees a new key and
+            // forces re-enrollment. Was a bare `.getOrNull() ?: generateAndPersist()` (the CYP-575 class): a corrupt
+            // custody file caused an unexplained re-enroll with no trace. Log it so the cause is diagnosable.
+            log.warn(
+                "operator device-key file present but UNREADABLE at {} — regenerating a fresh device identity; the hub will see a new key and require re-enrollment (corrupt custody file)",
+                keyFile,
+            )
+        }
+        return generateAndPersist()
+    }
 
     /** CYP-542 migration — the persisted key iff the file exists AND is readable, else `null`. **Never generates**
      *  (unlike [loadOrGenerate]) so B1 can migrate an existing plaintext key without accidentally minting a new one. */

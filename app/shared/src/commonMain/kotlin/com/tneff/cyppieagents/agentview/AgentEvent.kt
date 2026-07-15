@@ -78,6 +78,15 @@ sealed interface AgentEvent {
         override val id: String,
         val text: String,
         override val tsMs: Long,
+        /**
+         * F4 (CYP-580, honest delivery — the CYP-353 optimistic-proxy class): whether this composer turn was
+         * handed off while the per-agent socket was actually LIVE. `false` ⇒ it was composed offline/while
+         * reconnecting, so it is NOT delivered (best case it buffers; worst case it is dropped in the client
+         * channel or skipped server-side in the restart/respawn window) — the row says so instead of rendering
+         * every turn as sent. `true` stays best-effort "sent" (true end-to-end confirmation would need a server
+         * ack; absent that we never fabricate a confirmed "delivered"). Default `true` keeps replayed/test rows intact.
+         */
+        val delivered: Boolean = true,
     ) : AgentEvent
 
     /**

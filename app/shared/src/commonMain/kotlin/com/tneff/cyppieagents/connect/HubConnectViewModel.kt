@@ -9,6 +9,7 @@ import com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollController
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -197,6 +198,10 @@ class HubConnectViewModel(
         val factory = remoteComponentsFactory
         val coordinator = oobConfirm
         remoteJob = runScope.launch {
+            // F1 (silent-swallow fix): guard the whole connect drive. A RAW throw (NOT a modeled RemoteFailure) from
+            // factory.create / session.start / the combine flow would otherwise escape this launch and strand the UI
+            // on the RELAY_DIALING spinner forever (the CYP-575 hang class). The catch below surfaces an honest state.
+            try {
             when {
                 factory != null -> {
                     // CYP-513 LIVE: per-connect components — the session's TofuHubTrust and this OOB coordinator
@@ -246,6 +251,18 @@ class HubConnectViewModel(
                         _state.value = HubConnectUiState.RemoteConnecting(hub, rs)
                     }
                 }
+            }
+            } catch (c: CancellationException) {
+                throw c // Q5 teardown / hub-switch — never swallowed (the cancel path closes the session via finally)
+            } catch (e: Throwable) {
+                // F1: an unexpected RAW error in the connect drive ⇒ honest terminal LOST (never a stuck
+                // RELAY_DIALING spinner). No typed RemoteFailure is fabricated — the cause is genuinely unknown, so
+                // LOST(failure=null) is the honest state (the ConnectingView renders it as ended, with a retry).
+                // Assist Finding-2: set LOST FIRST — a throw from the best-effort teardown below (closing a
+                // half-built session in the error path) must NOT undo it and re-strand the spinner (the very hang
+                // class this closes). The teardown is then best-effort; its own failure can't erase the LOST above.
+                _state.value = HubConnectUiState.RemoteConnecting(hub, RemoteSessionState(hub.hubId, RemoteConnState.LOST))
+                runCatching { closeActiveComponents() }
             }
         }
     }
