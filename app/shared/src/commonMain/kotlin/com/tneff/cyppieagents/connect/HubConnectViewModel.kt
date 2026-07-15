@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -167,6 +168,10 @@ class HubConnectViewModel(
     /** The active remote collect job — held so a hub switch (Q5) tears it down before starting a new one. */
     private var remoteJob: Job? = null
 
+    /** CYP-584 F1a: the active enroll (Argon2id seal) job — held so a cancel during ENROLLING (cancelEnroll / leave)
+     *  actually cancels the running seal and can't land a stale post-enroll state-write. */
+    private var enrollJob: Job? = null
+
     /** CYP-513 — the active LIVE components (Q5): closed on a hub switch / leave so the old Noise session tears down. */
     private var activeComponents: RemoteConnectComponents? = null
 
@@ -323,8 +328,16 @@ class HubConnectViewModel(
         val comps = activeComponents ?: return
         val controller = comps.enroll ?: return
         _state.value = s.copy(phase = EnrollPhase.ENROLLING, outcome = null)
-        runScope.launch {
-            when (val outcome = controller.enroll(passphrase)) {
+        // CYP-584 F1a: HOLD the enroll in [enrollJob] and re-check activity AFTER it returns, so a cancel during
+        // ENROLLING (the operator leaves via cancelEnroll / hub-switch / teardown) actually cancels the running
+        // Argon2id AND cannot land a STALE post-enroll state-write (ERROR — or worse, connectRemoteInternal
+        // reconnecting after the operator left) onto the screen they moved to. A prior in-flight enroll is superseded.
+        enrollJob?.cancel()
+        enrollJob = runScope.launch {
+            try {
+            val outcome = controller.enroll(passphrase)
+            ensureActive() // F1a: cancelled during ENROLLING ⇒ throw here, before any state-write / reconnect below
+            when (outcome) {
                 EnrollOutcome.Enrolled ->
                     // AC-2: reconnect reusing the just-set passphrase as the FIRST UV — armed AFTER the failed
                     // session's teardown (P1-clear can't wipe it); the coordinator+UV own+zeroize it (P2, not here).
@@ -334,11 +347,17 @@ class HubConnectViewModel(
                     _state.value = HubConnectUiState.SetPassphrase(s.hub, EnrollPhase.ERROR, outcome)
                 }
             }
+            } catch (c: CancellationException) {
+                // CYP-584 F1a (H-1): cancelled during ENROLLING (operator left) ⇒ the passphrase was neither pre-armed
+                // (Enrolled) nor zeroized (else) — zeroize the un-consumed secret before the cancellation propagates.
+                passphrase.fill(0.toChar())
+                throw c
+            }
         }
     }
 
     /** AC-1: leave the set-passphrase step without enrolling (back to the hub list). Tears the failed session down and
-     *  clears any pending pre-arm (P1) via [closeActiveComponents]. */
+     *  clears any pending pre-arm (P1) via [closeActiveComponents]. CYP-584 F1a: [backToHubList] cancels [enrollJob]. */
     fun cancelEnroll() = backToHubList()
 
     /**
@@ -393,6 +412,8 @@ class HubConnectViewModel(
      * the subsequent [selectHub] + [connectRemote] establishes the new one.
      */
     fun backToHubList() {
+        enrollJob?.cancel() // CYP-584 F1a: cancel a mid-ENROLLING seal so its post-enroll state-write can't land here
+        enrollJob = null
         remoteJob?.cancel()
         remoteJob = null
         closeActiveComponents() // CYP-513: tear down the LIVE Noise session before returning to the list (Q5)

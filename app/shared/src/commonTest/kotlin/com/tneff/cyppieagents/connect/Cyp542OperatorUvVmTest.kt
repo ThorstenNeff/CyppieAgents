@@ -18,6 +18,7 @@ import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 import com.tneff.cyppieagents.net.hub.remote.RemoteHubSession
 import com.tneff.cyppieagents.net.hub.remote.TrustResolution
 import com.tneff.cyppieagents.net.hub.trust.OobConfirmState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -77,6 +78,13 @@ class Cyp542OperatorUvVmTest {
         override suspend fun enroll(passphrase: CharArray): EnrollOutcome {
             enrolledWith = passphrase.concatToString(); return outcome
         }
+    }
+
+    /** CYP-584 F1a: an enroll whose seal SUSPENDS on [gate] — lets a test cancel mid-ENROLLING (as a slow Argon2id). */
+    private class GatedEnroll(private val gate: CompletableDeferred<EnrollOutcome>) : OperatorEnrollController {
+        override fun suggestPassphrase(): CharArray = "Zephyr7!mQ anchor-mint Kx9vB".toCharArray()
+        override fun validate(passphrase: CharArray): StrengthVerdict = StrengthVerdict.OK
+        override suspend fun enroll(passphrase: CharArray): EnrollOutcome = gate.await()
     }
 
     private fun CoroutineScope.session(auth: OperatorAuthenticator) = RemoteHubSession(
@@ -216,6 +224,34 @@ class Cyp542OperatorUvVmTest {
 
         m.backToHubList(); advanceUntilIdle() // the most common teardown (leave / hub-switch) in the reuse window
         assertTrue(keyBytes.all { it == 0.toByte() }, "BLOCK-1: the decrypted device key is zeroized on teardown, never left GC-reachable")
+        scope.cancel()
+    }
+
+    @Test
+    fun cyp584F1a_cancelDuringEnrolling_cancelsSeal_noStalePostEnrollStateWrite() = runTest {
+        // CYP-584 F1a: the enroll seal is held in enrollJob so a cancel during ENROLLING (the operator leaves) actually
+        // cancels it and CANNOT land a stale post-enroll state-write. Before the fix the anonymous launch ran to
+        // completion and painted ERROR — or worse auto-reconnected (Enrolled → connectRemoteInternal) — onto the hub
+        // list the operator had moved to.  Mutation (RED): drop enrollJob/ensureActive → gate.complete lands a stale
+        // RemoteConnecting/SetPassphrase(ERROR) over the HubList → the assertions below redden.
+        val gate = CompletableDeferred<EnrollOutcome>()
+        val (m, scope) = vm(
+            auth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.DeviceNotEnrolled },
+            coordinator = LivePassphrasePromptCoordinator(),
+            enroll = GatedEnroll(gate),
+        )
+        m.start(); advanceUntilIdle(); m.selectHub(hub); m.connectRemote(); advanceUntilIdle()
+        assertIs<HubConnectUiState.SetPassphrase>(m.state.value)
+
+        m.setEnrollPassphrase("Basalt5#harbor Qw2nV zephyr".toCharArray()); advanceUntilIdle()
+        assertEquals(EnrollPhase.ENROLLING, (m.state.value as HubConnectUiState.SetPassphrase).phase, "the seal is in flight (suspended)")
+
+        m.cancelEnroll(); advanceUntilIdle() // the operator leaves mid-ENROLLING
+        // the seal now belatedly "completes" — but its job was cancelled, so NOTHING must be written from it.
+        gate.complete(EnrollOutcome.Enrolled); advanceUntilIdle()
+
+        val s = m.state.value
+        assertIs<HubConnectUiState.HubList>(s) // backToHubList landed the list; the cancelled enroll never overwrote it
         scope.cancel()
     }
 
