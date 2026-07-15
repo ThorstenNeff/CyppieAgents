@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tneff.cyppieagents.net.hub.HubTransport
 import com.tneff.cyppieagents.net.hub.buildRemoteHubTransport
+import com.tneff.cyppieagents.net.hub.mux.ClientMuxSession
+import com.tneff.cyppieagents.net.hub.mux.MuxedStreamSource
+import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.operator.vault.EnrollOutcome
 import com.tneff.cyppieagents.net.hub.operator.vault.OperatorEnrollController
 import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
@@ -50,6 +53,12 @@ class HubConnectViewModel(
      *  god-token, Reviewer Axis-1). HELD as a seam (`{ null }`) until Backend's tunnel-scoped listener contract lands;
      *  App.kt then injects the real CP-scoped provider. INERT default keeps the datapath proof credential-agnostic. */
     private val remoteSessionToken: () -> String? = { null },
+    /** CYP-620 — the mux-transport gate (default = the real deploy flag). Injectable so a test drives the flag-ON path
+     *  without the env-based `expect fun`. */
+    private val muxEnabled: () -> Boolean = { remoteMuxTransportEnabled() },
+    /** CYP-620 — a test hook fired when a `ClientMuxSession` is (re)built over a carrier (default no-op). Lets a test
+     *  pin the flag-gating + the reference-identity guard (one attach per new tunnel, not per healthy re-emission). */
+    private val onMuxAttached: (NoiseTunnel) -> Unit = {},
     scope: CoroutineScope? = null,
 ) : ViewModel() {
 
@@ -173,6 +182,16 @@ class HubConnectViewModel(
     /** M2 Seam-3 (a) — the tunnel-backed transport, built ONCE on CONNECTED from the live session; closed on switch/leave. */
     private var remoteTransport: HubTransport? = null
 
+    // CYP-620 Step-2b (mux datapath) — the current mux source, SWAPPED across reconnects while the transport (and its
+    // loopback ports) stay STABLE. A [MutableStateFlow] so the swap is cross-coroutine-safe: the transport's accept-loops
+    // read `.value`, the connect-collect writes it (a plain var would risk a stale/invisible read → a broken reconnect
+    // datapath). [currentMuxCarrier] is the reference-identity guard — read/written ONLY in the single connect-collect
+    // coroutine, so a plain var is safe: rebuild the mux only when `session.tunnel` is a NEW instance (first connect OR
+    // reconnect), never on a healthy `combine` re-emission. [currentMuxSession] is held so a hub-switch closes it cleanly.
+    private val currentMuxSource = MutableStateFlow<MuxedStreamSource?>(null)
+    private var currentMuxCarrier: NoiseTunnel? = null
+    private var currentMuxSession: ClientMuxSession? = null
+
     /**
      * B3 Remote "Verbinden" / Q5 "auf Hub wechseln" → the honest §7 remote progress against
      * [RemoteConnectFeed]. **Exactly one hub (Q5, CI-6):** any active remote session is torn down first
@@ -225,17 +244,38 @@ class HubConnectViewModel(
                                 // tunnel per concurrent connection, F-M2-1 fix); if no pool (thru-cut/stub), fall back
                                 // to the single-flight session tunnel (auto-rebinds on relay-drop; stable loopback
                                 // port, Seam-6). null on non-Desktop (Path-A). Torn down in closeActiveComponents.
-                                if (rs.conn == RemoteConnState.CONNECTED && remoteTransport == null) {
-                                    val pool = comps.tunnelPool
-                                    remoteTransport = buildRemoteHubTransport(
-                                        // CYP-616: pass the lane to the pool (CONTROL=lifecycle-REST gets the reserved
-                                        // break-glass slot). The single-flight fallback ignores it (one tunnel, no pool).
-                                        acquireTunnel =
-                                            if (pool != null) { { lane -> pool.acquire(lane) } }
-                                            else { { _ -> activeComponents?.session?.tunnel } },
-                                        sessionToken = remoteSessionToken,
-                                        scope = runScope,
-                                    )
+                                if (rs.conn == RemoteConnState.CONNECTED) {
+                                    // CYP-620 Step-2b (mux mode, flag-gated): (re)span a ClientMuxSession over the CURRENT
+                                    // carrier when `session.tunnel` is a NEW instance — first connect OR reconnect, by
+                                    // reference identity so a healthy `combine` re-emission (oob/enroll/prompt change while
+                                    // still CONNECTED) does NOT rebuild. run() ends on carrier-drop → reportDropped() tells
+                                    // RemoteHubSession to re-dial → the next CONNECTED spans a fresh mux over the new tunnel.
+                                    val carrier = comps.session.tunnel
+                                    if (muxEnabled() && carrier != null && carrier !== currentMuxCarrier) {
+                                        currentMuxCarrier = carrier
+                                        val mux = ClientMuxSession(carrier, runScope)
+                                        currentMuxSession = mux
+                                        currentMuxSource.value = MuxedStreamSource(mux)
+                                        onMuxAttached(carrier)
+                                        runScope.launch { mux.run(); comps.session.reportDropped() }
+                                    }
+                                    // Build the loopback transport ONCE (stable ports — never rebuilt, or the workspace's
+                                    // base-urls would break). Its acquireTunnel delegates to the CURRENT source: the mux
+                                    // (the StateFlow, swapped across reconnects) when the flag is on — CONTROL→streamClass-0
+                                    // via MuxedStreamSource (CAUTION-1); else the N-tunnel pool (CYP-537); else the
+                                    // single-flight session tunnel (thru-cut/stub). A null mid-reconnect → CYP-619
+                                    // hold(DATA)/fail-closed(CONTROL) in the transport (unchanged).
+                                    if (remoteTransport == null) {
+                                        val pool = comps.tunnelPool
+                                        remoteTransport = buildRemoteHubTransport(
+                                            acquireTunnel =
+                                                if (muxEnabled()) { { lane -> currentMuxSource.value?.acquire(lane) } }
+                                                else if (pool != null) { { lane -> pool.acquire(lane) } }
+                                                else { { _ -> activeComponents?.session?.tunnel } },
+                                            sessionToken = remoteSessionToken,
+                                            scope = runScope,
+                                        )
+                                    }
                                 }
                             }
                     } finally {
@@ -370,12 +410,20 @@ class HubConnectViewModel(
         activeComponents = null
         remoteTransport?.close() // M2 Seam-3: tear down the loopback transport (acceptor + owned client) with the session
         remoteTransport = null
+        // CYP-620 Step-2b: drop the swappable mux source + carrier-identity guard on switch/leave; the current mux
+        // session is closed in the NonCancellable block below (its GoAway flushes to the still-live carrier BEFORE
+        // session.close() tears the tunnel).
+        currentMuxSource.value = null
+        currentMuxCarrier = null
+        val muxToClose = currentMuxSession
+        currentMuxSession = null
         previous.passphrasePrompt?.clearPreArm() // CYP-542/B1 P1: zeroize+drop any un-consumed pre-arm on switch/leave
         previous.keyHold?.clear() // CYP-542/B1 (Assist BLOCK-1): zeroize the decrypted device key NOW (H-1 — never wait
         // for the lazy put/get-expiry; a switch/leave/cancel in the ≤120s window must not drop it GC-reachable)
         previous.enrollConfirm.abort() // CYP-525 §2: a switch/leave during the reveal aborts enroll (fail-closed, no SavedAck)
         runScope.launch {
             withContext(NonCancellable) {
+                muxToClose?.close() // CYP-620 Step-2b: flush the GoAway to the still-live carrier, then stop the writer
                 previous.tunnelPool?.close() // CYP-537: tear down all N pool tunnels (Q5 — nothing carried across)
                 previous.session.close()
             }
