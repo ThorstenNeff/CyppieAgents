@@ -150,6 +150,14 @@ class RemoteHubSession(
                 _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.DeviceNotEnrolled) }
                 return Outcome.TERMINAL
             }
+            OperatorAuthOutcome.DeviceCustodyCorrupt -> {
+                // CYP-583: the local device-key custody file is present but CORRUPT — fail-closed with a DISTINCT
+                // diagnostic (mirrors the server's rejectTampered + the vault's VaultOpen.Corrupt), NEVER a silent
+                // regenerate/re-enroll and NEVER a hub reject. Terminal: the operator must recover the custody.
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.DeviceCustodyCorrupt) }
+                return Outcome.TERMINAL
+            }
             OperatorAuthOutcome.Rejected -> {
                 runCatching { t.close() }
                 _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.AuthRejected) }

@@ -41,7 +41,9 @@ import kmpcyppieagents.app.shared.generated.resources.remote_connect_auth_reject
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_connected
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_e2e_handshake
 import kmpcyppieagents.app.shared.generated.resources.a11y_remote_connect_device_not_enrolled
+import kmpcyppieagents.app.shared.generated.resources.a11y_remote_connect_device_custody_corrupt
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_device_not_enrolled
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_device_custody_corrupt
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_enroll_codes_unavailable
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_handshake_failed
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_hub_offline
@@ -393,6 +395,27 @@ private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectView
             }
             Button(onClick = viewModel::connectRemote, modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.RETRY)) {
                 Text(stringResource(Res.string.load_retry))
+            }
+        }
+        // CYP-583: the local device-key custody is present but CORRUPT — a DISTINCT, terminal fail-closed surface
+        // (mirrors the server rejectTampered + the vault VaultOpen.Corrupt), NEVER silent and NEVER generic-LOST. No
+        // plain retry (it re-fails until the operator RECOVERS via OOB backup code — like TrustChanged, a hard block).
+        // WARN-amber (the custody is locally unusable, it is not a hub "reject"). Own node error(deviceCustodyCorrupt).
+        // The full dedicated recovery-ack flow is the follow-on (CYP-584); this is the honest distinct signal.
+        RemoteFailure.DeviceCustodyCorrupt -> {
+            val a11y = stringResource(Res.string.a11y_remote_connect_device_custody_corrupt)
+            Row(
+                modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.error("deviceCustodyCorrupt"))
+                    .semantics { contentDescription = a11y },
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("▲ ", color = severityColor(Severity.WARN))
+                Text(
+                    stringResource(Res.string.remote_connect_device_custody_corrupt),
+                    color = severityColor(Severity.WARN),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
         null -> Unit // clean teardown (Q5 switch) — nothing to render

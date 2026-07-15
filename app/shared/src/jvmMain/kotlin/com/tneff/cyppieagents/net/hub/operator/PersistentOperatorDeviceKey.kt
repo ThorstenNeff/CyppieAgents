@@ -26,29 +26,52 @@ import org.slf4j.LoggerFactory
  * sidesteps the at-rest question entirely (non-exportable in the authenticator) and stays the ratified end-state.
  *
  * File format: `[4-byte big-endian len(PKCS#8 private)] ‖ PKCS#8 private ‖ X.509 public` — both encodings are stored
- * because the JDK Ed25519 provider cannot re-derive the public key from the private one alone. A present-but-unreadable
- * file is treated as "no key" and regenerated (a corrupt custody file must not brick connect; the hub then sees a new
- * key → the enroll/recovery flow, CYP-525 Inc 3).
+ * because the JDK Ed25519 provider cannot re-derive the public key from the private one alone. **CYP-583:** a
+ * present-but-unreadable file is now [DeviceKeyCustody.Corrupt] (fail-closed → operator recovery), NOT silently
+ * regenerated (that was a re-enroll seizure vector); only an ABSENT file first-runs a fresh key.
  */
+
+/**
+ * CYP-583 — the outcome of [PersistentOperatorDeviceKey.loadOrGenerate], mirroring the vault's `VaultOpen`: a usable
+ * device key ([Ready]), or a **present-but-corrupt** custody file ([Corrupt]) that must fail closed to
+ * operator-acknowledged recovery, NEVER a silent regenerate (the `tamper → re-enroll` seizure vector).
+ */
+sealed interface DeviceKeyCustody {
+    data class Ready(val keyPair: KeyPair) : DeviceKeyCustody
+    data object Corrupt : DeviceKeyCustody
+}
+
 class PersistentOperatorDeviceKey(private val keyFile: Path) {
 
     private val log = LoggerFactory.getLogger("operator.deviceKey")
 
-    /** Load the persisted Ed25519 device key, or generate + persist one on first run (idempotent across launches). */
-    fun loadOrGenerate(): KeyPair {
+    /**
+     * Load the persisted Ed25519 device key ([DeviceKeyCustody.Ready]), first-run generate+persist a fresh one
+     * ([DeviceKeyCustody.Ready]), or — for a PRESENT-but-corrupt custody file — fail closed as
+     * [DeviceKeyCustody.Corrupt] (CYP-583).
+     *
+     * **CYP-583 fail-closed posture (supersedes CYP-580's WARN-log-only interim):** a present-but-unreadable file is
+     * NEVER silently regenerated. Silent regeneration swapped a NEW device identity in without the operator's
+     * knowledge — the client mirror of a `tamper → re-enroll` seizure vector (`Rr3TunnelGate.rejectTampered`,
+     * `VaultOpen.Corrupt`); it also bought ~zero availability (the hub rejects the new key against the pinned anchor,
+     * so re-enroll is mandatory regardless — it only traded away the honest signal + the anti-phishing receipt). So a
+     * corrupt present file returns [DeviceKeyCustody.Corrupt] (→ operator-acknowledged recovery). An **ABSENT** file
+     * still first-runs a fresh key (the legit first-enroll — deliberately UNTOUCHED, never over-block first-enroll).
+     */
+    fun loadOrGenerate(): DeviceKeyCustody {
         if (Files.exists(keyFile)) {
-            runCatching { load() }.getOrNull()?.let { return it }
-            // F3 (silent-swallow fix — WARN-LOG ONLY; the fail-closed-vs-regenerate POSTURE is a PO1 security
-            // decision and is deliberately NOT changed here). A PRESENT device-key file that failed to load is about
-            // to be regenerated, which SILENTLY changes this device's identity → the hub then sees a new key and
-            // forces re-enrollment. Was a bare `.getOrNull() ?: generateAndPersist()` (the CYP-575 class): a corrupt
-            // custody file caused an unexplained re-enroll with no trace. Log it so the cause is diagnosable.
+            runCatching { load() }.getOrNull()?.let { return DeviceKeyCustody.Ready(it) }
+            // Present-but-unreadable ⇒ CORRUPT, fail-closed (no silent regenerate). The WARN makes the corruption
+            // diagnosable (CYP-580 F3); the Corrupt result is the CYP-583 posture — non-bypassable (there is no
+            // regenerate alt-path from here), distinct so the connect surfaces DeviceCustodyCorrupt → recovery.
             log.warn(
-                "operator device-key file present but UNREADABLE at {} — regenerating a fresh device identity; the hub will see a new key and require re-enrollment (corrupt custody file)",
+                "operator device-key file present but UNREADABLE at {} — DeviceCustodyCorrupt (fail-closed: no silent regenerate; operator recovery required)",
                 keyFile,
             )
+            return DeviceKeyCustody.Corrupt
         }
-        return generateAndPersist()
+        // Absent ⇒ legit first-run: generate + persist a fresh key (UNTOUCHED by CYP-583).
+        return DeviceKeyCustody.Ready(generateAndPersist())
     }
 
     /** CYP-542 migration — the persisted key iff the file exists AND is readable, else `null`. **Never generates**

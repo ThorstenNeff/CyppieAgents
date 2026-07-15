@@ -7,6 +7,7 @@ import java.security.Signature
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -18,6 +19,9 @@ import kotlin.test.assertTrue
  * enrolled BEFORE the restart (raw-32B). These teeth drive that end-to-end with a real disk reload (a fresh instance =
  * a relaunch) + real JCA sign/verify, so a persist bug that preserves bytes but breaks signing (or silently regenerates)
  * is caught as "the hub's enrolled anchor no longer matches → never CONNECTED again", not a green byte-compare.
+ *
+ * **CYP-583:** a present-but-corrupt/truncated custody file now fails closed as [DeviceKeyCustody.Corrupt] (no silent
+ * regenerate) — the former "corrupt → regenerate a usable key" teeth are inverted to assert the fail-closed posture.
  */
 class QaCyp525PersistRestartTest {
 
@@ -32,9 +36,9 @@ class QaCyp525PersistRestartTest {
     @Test
     fun postRestartKey_signsPoP_thatVerifiesAgainstPreRestartEnrolledPublic() {
         val file = tmpKeyFile()
-        val enrolled = PersistentOperatorDeviceKey(file).loadOrGenerate().public // the pubkey the hub enrolls (raw-32B)
+        val enrolled = assertIs<DeviceKeyCustody.Ready>(PersistentOperatorDeviceKey(file).loadOrGenerate()).keyPair.public // the pubkey the hub enrolls (raw-32B)
         // ── a REAL restart: a brand-new instance reads the SAME custody file back from disk ──
-        val afterRestart = PersistentOperatorDeviceKey(file).loadOrGenerate()
+        val afterRestart = assertIs<DeviceKeyCustody.Ready>(PersistentOperatorDeviceKey(file).loadOrGenerate()).keyPair
         val nonce = ByteArray(32) { 4 }
         val pop = sign(afterRestart.private, operatorAuthChallenge(h, hubId, nonce)) // signed by the POST-restart key
         // ★ the CONNECTED-survives-restart invariant: the enrolled (pre-restart) public still verifies the new PoP.
@@ -50,33 +54,32 @@ class QaCyp525PersistRestartTest {
     }
 
     @Test
-    fun corruptFile_regeneratesA_USABLE_key_notBricked() {
+    fun corruptFile_failsClosedAsCorrupt_notRegenerated() {
+        // CYP-583 (inverts the former "corrupt → usable regenerated key"): a present-but-corrupt custody file fails
+        // closed as DeviceCustodyCorrupt — never a silent regenerate (the tamper→re-enroll seizure vector).
         val file = tmpKeyFile()
         Files.write(file, ByteArray(40) { 0x7f }) // garbage that is NOT a valid [len‖pkcs8‖x509] blob
-        val kp = PersistentOperatorDeviceKey(file).loadOrGenerate() // must not throw
-        val nonce = ByteArray(32) { 5 }
-        val msg = operatorAuthChallenge(h, hubId, nonce)
-        // sharper than "an Ed25519 key": the regenerated key must actually SIGN + VERIFY (usable for a fresh enroll).
-        assertTrue(verify(kp.public, msg, sign(kp.private, msg)), "the regenerated key is a usable signer (corrupt file never bricks connect)")
-        // and it persisted the NEW key → a subsequent reload reuses it (not another regen).
-        val reloaded = PersistentOperatorDeviceKey(file).loadOrGenerate()
-        assertContentEquals(kp.public.encoded, reloaded.public.encoded, "the regenerated key was persisted + is reused")
+        assertIs<DeviceKeyCustody.Corrupt>(
+            PersistentOperatorDeviceKey(file).loadOrGenerate(),
+            "a corrupt custody file fails closed as Corrupt, never silently regenerated",
+        )
     }
 
     @Test
-    fun truncatedBlob_regenerates_notBricked() {
+    fun truncatedBlob_failsClosedAsCorrupt_notRegenerated() {
         val file = tmpKeyFile()
         // a plausible-but-truncated blob: a 4-byte length header claiming a large body, then too few bytes.
         Files.write(file, byteArrayOf(0, 0, 2, 0, 1, 2, 3))
-        val kp = PersistentOperatorDeviceKey(file).loadOrGenerate() // load() throws internally → regen, no brick
-        val msg = operatorAuthChallenge(h, hubId, ByteArray(32) { 6 })
-        assertTrue(verify(kp.public, msg, sign(kp.private, msg)), "a truncated custody blob regenerates a usable key")
+        assertIs<DeviceKeyCustody.Corrupt>(
+            PersistentOperatorDeviceKey(file).loadOrGenerate(), // load() throws internally → Corrupt (CYP-583), no regen
+            "a truncated custody blob fails closed as Corrupt",
+        )
     }
 
     @Test
     fun twoIndependentPaths_holdDistinctKeys_noCrossContamination() {
-        val a = PersistentOperatorDeviceKey(tmpKeyFile()).loadOrGenerate()
-        val b = PersistentOperatorDeviceKey(tmpKeyFile()).loadOrGenerate()
+        val a = assertIs<DeviceKeyCustody.Ready>(PersistentOperatorDeviceKey(tmpKeyFile()).loadOrGenerate()).keyPair
+        val b = assertIs<DeviceKeyCustody.Ready>(PersistentOperatorDeviceKey(tmpKeyFile()).loadOrGenerate()).keyPair
         // distinct custody files → distinct keys (a sanity guard that persistence is path-scoped, not a static/global).
         assertFalse(a.public.encoded.contentEquals(b.public.encoded), "distinct custody paths hold distinct device keys")
     }

@@ -58,6 +58,18 @@ class Cyp471RemoteConnectRenderTest {
     }
 
     @Test
+    fun deviceCustodyCorrupt_isTerminalDistinct_noRetry_notCollapsed() = runComposeUiTest {
+        // CYP-583: a present-but-corrupt local device-key custody renders its OWN distinct node (never collapsed into
+        // authRejected / deviceNotEnrolled) and is terminal — no misleading retry (retry re-fails until the operator
+        // recovers via OOB backup code, like TrustChanged). The full recovery-ack flow is the follow-on (CYP-584).
+        setContent { MaterialTheme { RemoteConnectingView(hub, rs(RemoteConnState.LOST, RemoteFailure.DeviceCustodyCorrupt), vm()) } }
+        onNodeWithTag(RemoteConnectTags.error("deviceCustodyCorrupt"), useUnmergedTree = true).assertExists()
+        onNodeWithTag(RemoteConnectTags.error("authRejected"), useUnmergedTree = true).assertDoesNotExist() // distinct, not a hub reject
+        onNodeWithTag(RemoteConnectTags.error("deviceNotEnrolled"), useUnmergedTree = true).assertDoesNotExist() // distinct from "never set up"
+        onNodeWithTag(RemoteConnectTags.RETRY, useUnmergedTree = true).assertDoesNotExist() // terminal ⇒ no misleading retry
+    }
+
+    @Test
     fun handshakeFailed_isRetryable_withRetry() = runComposeUiTest {
         setContent { MaterialTheme { RemoteConnectingView(hub, rs(RemoteConnState.LOST, RemoteFailure.HandshakeFailed), vm()) } }
         onNodeWithTag(RemoteConnectTags.error("handshakeFailed"), useUnmergedTree = true).assertExists()

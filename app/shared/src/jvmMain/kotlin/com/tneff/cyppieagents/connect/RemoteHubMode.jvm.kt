@@ -93,16 +93,24 @@ actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? =
                 store = defaultPinnedHubStore(),
                 confirmer = PendingOobConfirmations(),
             ),
-            authenticator = ClientOperatorAuth(
-                popBuilder = OperatorPopBuilder(
-                    store = KeystoreOperatorDeviceKeyStore(
-                        userVerification = deferredUserVerification,
-                        keyPair = persistentDeviceKey.loadOrGenerate(),
+            // CYP-583: present-but-corrupt device-key custody ⇒ NO silent regenerate. A [DeviceKeyCustody.Corrupt]
+            // wires the fail-closed [DeviceCustodyCorruptAuthenticator] (always → DeviceCustodyCorrupt, distinct →
+            // operator recovery), mirroring the LIVE/B1 path's VaultOpen.Corrupt fail-close and the server's
+            // rejectTampered — non-bypassable (no path from a corrupt file to a built PoP). Ready = the normal PoP.
+            authenticator = when (val custody = persistentDeviceKey.loadOrGenerate()) {
+                is com.tneff.cyppieagents.net.hub.operator.DeviceKeyCustody.Ready -> ClientOperatorAuth(
+                    popBuilder = OperatorPopBuilder(
+                        store = KeystoreOperatorDeviceKeyStore(
+                            userVerification = deferredUserVerification,
+                            keyPair = custody.keyPair,
+                        ),
+                        nonceGenerator = secureRandomNonceGenerator,
                     ),
-                    nonceGenerator = secureRandomNonceGenerator,
-                ),
-                cpJwtProvider = CpJwtProvider { _, _ -> null }, // runway #4: HttpCpJwtProvider wires at S-J/CYP-514 ⇒ fail-closed until then
-            ),
+                    cpJwtProvider = CpJwtProvider { _, _ -> null }, // runway #4: HttpCpJwtProvider wires at S-J/CYP-514 ⇒ fail-closed until then
+                )
+                com.tneff.cyppieagents.net.hub.operator.DeviceKeyCustody.Corrupt ->
+                    com.tneff.cyppieagents.net.hub.remote.DeviceCustodyCorruptAuthenticator
+            },
             scope = scope,
         )
     }

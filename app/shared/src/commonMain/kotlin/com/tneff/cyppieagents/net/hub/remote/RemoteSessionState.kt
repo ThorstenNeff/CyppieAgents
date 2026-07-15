@@ -37,6 +37,15 @@ sealed interface RemoteFailure {
     data object DeviceNotEnrolled : RemoteFailure
 
     /**
+     * CYP-583 — the operator's **local device-key custody file is present but CORRUPT** (unreadable/tampered). Distinct
+     * + fail-closed, NEVER collapsed into a reject and NEVER a silent regenerate: the client mirror of the server's
+     * [com.tneff.cyppieagents.transport rejectTampered] and the vault's `VaultOpen.Corrupt`. Terminal — the operator
+     * must recover (OOB backup code); a plain retry re-fails until the custody is recovered. Distinct from
+     * [DeviceNotEnrolled] ("never set up") — this is "was set up, now unreadable".
+     */
+    data object DeviceCustodyCorrupt : RemoteFailure
+
+    /**
      * CYP-525 F3 (Reviewer) — a **local user-verification** failure (wrong app-PIN / cancelled) during the operator
      * PoP. **Retryable**, NOT terminal — and NEVER [AuthRejected] ("the hub denied you"): the hub never saw a
      * request. The UI offers a retry (re-enter the PIN); distinct from the hub's terminal reject.
@@ -99,6 +108,18 @@ fun interface OperatorAuthenticator {
 }
 
 /**
+ * CYP-583 — the fail-closed [OperatorAuthenticator] wired when the local device-key custody is present-but-corrupt
+ * ([com.tneff.cyppieagents.net.hub.operator.DeviceKeyCustody.Corrupt]). It NEVER touches the tunnel and always yields
+ * [OperatorAuthOutcome.DeviceCustodyCorrupt] → the distinct [RemoteFailure.DeviceCustodyCorrupt] surface. This makes
+ * "corrupt custody" **non-bypassable** (there is no code path from a corrupt file to a built PoP), mirroring the
+ * server's `rejectTampered`. No regenerate, no false grant.
+ */
+object DeviceCustodyCorruptAuthenticator : OperatorAuthenticator {
+    override suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): OperatorAuthOutcome =
+        OperatorAuthOutcome.DeviceCustodyCorrupt
+}
+
+/**
  * CYP-525 — the RR3 tunnel-auth outcome as **three distinct truths** (never two-valued): the hub granted us
  * ([Granted]), the hub rejected us ([Rejected] → terminal [RemoteFailure.AuthRejected]), or **this device isn't
  * enrolled yet** ([DeviceNotEnrolled] → the enroll step, [RemoteFailure.DeviceNotEnrolled]) — the last must NEVER
@@ -109,6 +130,13 @@ sealed interface OperatorAuthOutcome {
     data object Granted : OperatorAuthOutcome
     data object Rejected : OperatorAuthOutcome
     data object DeviceNotEnrolled : OperatorAuthOutcome
+
+    /**
+     * CYP-583 — the local device-key custody is present but CORRUPT (unreadable), so no PoP can be built. Distinct +
+     * fail-closed (→ [RemoteFailure.DeviceCustodyCorrupt]) — NEVER a false grant, NEVER a silent regenerate, and NOT a
+     * hub [Rejected] (the hub never saw a request). Mirrors the vault's fail-closed `VaultOpen.Corrupt`.
+     */
+    data object DeviceCustodyCorrupt : OperatorAuthOutcome
 
     /**
      * CYP-525 F3 — a **local** user-verification failure (wrong app-PIN / cancelled) during the PoP build. Retryable,

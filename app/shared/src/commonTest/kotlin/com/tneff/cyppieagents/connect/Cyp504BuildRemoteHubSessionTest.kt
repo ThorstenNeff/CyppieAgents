@@ -71,6 +71,9 @@ class Cyp504BuildRemoteHubSessionTest {
     private val notEnrolledAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.DeviceNotEnrolled } // CYP-525
     private val uvFailedAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.UvFailed } // CYP-525 F3
     private val codesUnavailableAuth = OperatorAuthenticator { _, _ -> OperatorAuthOutcome.EnrollCodesUnavailable } // CYP-525 ①
+    // CYP-583: the REAL fail-closed authenticator wired when the local device-key custody is present-but-corrupt
+    // (drives the object itself + the session mapping end-to-end, not a bespoke inline stub).
+    private val custodyCorruptAuth: OperatorAuthenticator = com.tneff.cyppieagents.net.hub.remote.DeviceCustodyCorruptAuthenticator
 
     /**
      * Drive the builder's session and record its states, cancelling once it CONNECTs or fails. The session is
@@ -181,6 +184,23 @@ class Cyp504BuildRemoteHubSessionTest {
         assertFalse(seen.any { it.conn == RemoteConnState.CONNECTED }, "undelivered codes never connect (fail-closed)")
         assertTrue(seen.any { it.failure == RemoteFailure.EnrollCodesUnavailable }, "H3-invalid → retryable EnrollCodesUnavailable")
         assertFalse(seen.any { it.failure == RemoteFailure.AuthRejected }, "NEVER collapses into AuthRejected (delivery ≠ reject)")
+        scope.cancel()
+    }
+
+    @Test
+    fun cyp583_authDeviceCustodyCorrupt_failsDistinct_neverAuthRejectedNorEnroll() = runTest {
+        // CYP-583: a present-but-corrupt LOCAL device-key custody surfaces the DISTINCT, fail-closed
+        // RemoteFailure.DeviceCustodyCorrupt (→ operator recovery), NEVER collapsed into AuthRejected ("the hub denied
+        // you") or DeviceNotEnrolled ("never set up" — this was set up, now unreadable), and NEVER CONNECTED. Mirrors
+        // the server's rejectTampered + the vault's VaultOpen.Corrupt. Drives the real DeviceCustodyCorruptAuthenticator.
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val seen = mutableListOf<RemoteSessionState>()
+        drive(scope, seen, auth = custodyCorruptAuth) // dial + trust + transport all pass; the local custody is corrupt
+        advanceUntilIdle()
+        assertFalse(seen.any { it.conn == RemoteConnState.CONNECTED }, "corrupt custody never connects (fail-closed)")
+        assertTrue(seen.any { it.failure == RemoteFailure.DeviceCustodyCorrupt }, "routes to the distinct DeviceCustodyCorrupt truth")
+        assertFalse(seen.any { it.failure == RemoteFailure.AuthRejected }, "NEVER collapses into AuthRejected")
+        assertFalse(seen.any { it.failure == RemoteFailure.DeviceNotEnrolled }, "NEVER collapses into DeviceNotEnrolled")
         scope.cancel()
     }
 

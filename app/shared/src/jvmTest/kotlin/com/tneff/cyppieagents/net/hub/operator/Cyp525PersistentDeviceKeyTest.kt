@@ -7,6 +7,7 @@ import java.security.KeyPairGenerator
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -22,9 +23,9 @@ class Cyp525PersistentDeviceKeyTest {
     @Test
     fun loadOrGenerate_persistsAcrossLaunches_sameKey() {
         val file = Files.createTempDirectory("cyp525").resolve("operator-device.key")
-        val first = PersistentOperatorDeviceKey(file).loadOrGenerate() // generates + persists
+        val first = assertIs<DeviceKeyCustody.Ready>(PersistentOperatorDeviceKey(file).loadOrGenerate()).keyPair // generates + persists
         assertTrue(Files.exists(file), "first run persists the key")
-        val second = PersistentOperatorDeviceKey(file).loadOrGenerate() // fresh instance = a relaunch
+        val second = assertIs<DeviceKeyCustody.Ready>(PersistentOperatorDeviceKey(file).loadOrGenerate()).keyPair // fresh instance = a relaunch
         assertContentEquals(first.public.encoded, second.public.encoded, "same public key across relaunch")
         assertContentEquals(first.private.encoded, second.private.encoded, "same private key across relaunch")
         assertTrue(first.public.algorithm in setOf("Ed25519", "EdDSA"), "an Ed25519 key")
@@ -37,25 +38,12 @@ class Cyp525PersistentDeviceKeyTest {
         assertOwnerOnly(file, "the device key is owner-only (0600) at rest")
     }
 
-    @Test
-    fun regenerateOverPreExisting0644_endsOwnerOnly_notWorldReadable() {
-        // F1 window: a naive create-then-chmod that writes into a PRE-EXISTING 0644 file (Files.write keeps the
-        // existing perms) would leave the NEW key world-readable if the chmod is ever skipped. The atomic temp+move
-        // yields 0600 regardless — this exercises the overwrite path (corrupt→regenerate) end-to-end.
-        val file = Files.createTempDirectory("cyp525").resolve("operator-device.key")
-        Files.write(file, byteArrayOf(9, 9, 9)) // pre-existing garbage...
-        runCatching {
-            Files.setPosixFilePermissions(
-                file,
-                setOf(
-                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
-                    PosixFilePermission.GROUP_READ, PosixFilePermission.OTHERS_READ, // ...at 0644 world-readable
-                ),
-            )
-        }
-        PersistentOperatorDeviceKey(file).loadOrGenerate() // regenerates over it
-        assertOwnerOnly(file, "regenerating over a 0644 file must NOT leave the key group/world-readable")
-    }
+    // NOTE (CYP-583): the former `regenerateOverPreExisting0644_endsOwnerOnly` exercised the OVERWRITE-over-a-
+    // pre-existing-corrupt-file path (corrupt → regenerate → owner-only). That path is now UNREACHABLE via
+    // loadOrGenerate — a present-but-corrupt file returns DeviceKeyCustody.Corrupt (fail-closed, no overwrite), and
+    // loadOrGenerate only writes when the file is ABSENT. First-run owner-only is still covered by
+    // [firstRun_writesOwnerOnly]; the corrupt-fail-closed posture by [corruptFile_failsClosedAsCorrupt] +
+    // PersistentOperatorDeviceKeyCustodyTest (which also asserts the corrupt file is NOT silently overwritten).
 
     private fun assertOwnerOnly(file: java.nio.file.Path, message: String) {
         val perms = runCatching { Files.getPosixFilePermissions(file) }.getOrNull() ?: return // non-POSIX FS: skip
@@ -66,11 +54,13 @@ class Cyp525PersistentDeviceKeyTest {
     }
 
     @Test
-    fun corruptFile_regenerates_insteadOfBricking() {
+    fun corruptFile_failsClosedAsCorrupt_neverSilentlyRegenerated() {
+        // CYP-583 (INVERTS the CYP-525-Inc3 "corrupt → regenerate" posture): a present-but-corrupt custody file fails
+        // closed as DeviceCustodyCorrupt — NEVER a silent regenerate (the tamper→re-enroll seizure vector).
         val file = Files.createTempDirectory("cyp525").resolve("operator-device.key")
         Files.write(file, byteArrayOf(1, 2, 3)) // garbage, not a valid key blob
-        val kp = PersistentOperatorDeviceKey(file).loadOrGenerate() // must not throw
-        assertTrue(kp.public.algorithm in setOf("Ed25519", "EdDSA"), "a corrupt custody file regenerates, never bricks connect")
+        val custody = PersistentOperatorDeviceKey(file).loadOrGenerate() // must not throw
+        assertIs<DeviceKeyCustody.Corrupt>(custody, "a corrupt custody file fails closed as Corrupt, never silently regenerated")
     }
 
     @Test
