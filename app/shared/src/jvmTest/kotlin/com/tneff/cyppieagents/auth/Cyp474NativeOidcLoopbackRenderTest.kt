@@ -33,10 +33,10 @@ class Cyp474NativeOidcLoopbackRenderTest {
         val stub = StubAuthRepository(githubStartResult = { GithubStart.Redirect("https://gh.test/a") })
         val vm = AuthViewModel(stub, nativeOidcLoopback = true)
         var opened: String? = null
-        var armedReturn: ((String?, String?) -> Unit)? = null
+        var armedReturn: ((String?, String?, String?) -> Unit)? = null
         setContent {
             MaterialTheme {
-                AuthGate(vm, onOpenExternalUrl = { opened = it }, onAwaitLoopbackReturn = { armedReturn = it }) { Marker() }
+                AuthGate(vm, onOpenExternalUrl = { opened = it }, onAwaitLoopbackReturn = { armedReturn = it; null }) { Marker() }
             }
         }
         onNodeWithTag(AuthTags.LOGIN_GITHUB, useUnmergedTree = true).performClick()

@@ -45,7 +45,9 @@ fun App(
     // system-browser+localhost-return handoff, and `onAwaitLoopbackReturn` is the host that arms the localhost
     // redirect listener → `onGithubReturn`. Web keeps the redirect flavor (both default off/no-op).
     nativeOidcLoopback: Boolean = false,
-    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?) -> Unit) -> Unit = {},
+    // CYP-576 follow-on (Assist-C1/CYP-578): the host arms the loopback and returns a STOP-handle (null on bind
+    // failure) so the VM can free port 47472 on timeout/error/cancel/teardown → a retry re-binds cleanly.
+    onAwaitLoopbackReturn: (onReturn: (code: String?, state: String?, error: String?) -> Unit) -> (() -> Unit)? = { null },
     // CYP-576 P1: the desktop host injects a CSPRNG (`SecureRandom`) `state`-nonce provider for the native OIDC
     // handoff (Backend security-rec). Default null ⇒ no nonce (web/non-native).
     oidcStateProvider: () -> String? = { null },

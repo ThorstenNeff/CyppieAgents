@@ -51,23 +51,27 @@ private fun secureStateNonce(): String {
  * `return_to` uses the same constant, so the listener and the redirect target can never drift. Fail-soft: a bind
  * failure is a no-op (the handoff copy still shows honestly), never a crash.
  */
-private fun armLoopbackListener(onReturn: (String?, String?) -> Unit) {
+private fun armLoopbackListener(onReturn: (String?, String?, String?) -> Unit): (() -> Unit)? {
     // CYP-576 P1 (BUG-A/CYP-578): SURFACE a bind failure instead of swallowing it into an eternal "Continuing…" hang.
-    // On any bind/start error, signal (null, null) → the VM rejects it (state mismatch) → retry-able Error. The VM's
-    // handoff watchdog is the catch-all for the other hang causes (abandoned tab).
-    val bound = runCatching {
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", OIDC_LOOPBACK_PORT), 0)
-        server.createContext("/callback") { exchange ->
+    // On any bind/start error, signal (null,null,null) → the VM rejects it (state mismatch) → retry-able Error.
+    val server = runCatching {
+        val s = HttpServer.create(InetSocketAddress("127.0.0.1", OIDC_LOOPBACK_PORT), 0)
+        s.createContext("/callback") { exchange ->
             val query = exchange.requestURI?.rawQuery
             val code = parseLoopbackCode(query)              // CYP-576: the return_to_code (was discarded)
             val state = parseLoopbackParam(query, "state")   // CYP-576 P1: the nonce the VM must match
+            val error = parseLoopbackParam(query, "error")   // CYP-576 §4: access_denied ⇒ user cancel ≠ real error
             val body = "Anmeldung abgeschlossen — zurück zur App.".encodeToByteArray()
             exchange.sendResponseHeaders(200, body.size.toLong())
             exchange.responseBody.use { it.write(body) }
-            runCatching { onReturn(code, state) }
-            server.stop(0)
+            runCatching { onReturn(code, state, error) }
+            s.stop(0)
         }
-        server.start()
-    }.isSuccess
-    if (!bound) onReturn(null, null) // bind failed → break the hang now (do not silently no-op)
+        s.start()
+        s
+    }.getOrNull()
+    if (server == null) { onReturn(null, null, null); return null } // bind failed → surface + no stop-handle
+    // Assist-C1/CYP-578: the stop-handle the VM invokes on timeout/error/cancel/teardown so port 47472 is freed and a
+    // retry re-binds cleanly (the server is single-shot, but must be GUARANTEED-stopped on every exit, not just success).
+    return { runCatching { server.stop(0) } }
 }

@@ -92,21 +92,49 @@ sealed interface AuthUiState {
 sealed interface GithubUiState {
     data object Idle : GithubUiState
 
+    /** CYP-576 follow-on (busy-guard) — the synchronous in-flight state set on [startGithub] entry, BEFORE the async
+     *  `githubStart()` resolves, so the button is disabled immediately and a double-click can't launch two flows. */
+    data object Starting : GithubUiState
+
     /** Web flavor (§6): the SPA navigates the browser to [url] and returns via `window.location`. */
     data class Redirecting(val url: String) : GithubUiState
 
     /**
      * CYP-474 §4 — the **Desktop-native loopback** flavor (RFC 8252 §7.3): the OS system browser is opened at
      * [url] (H3 — no embedded webview) and the app **waits for the localhost redirect** to return. Honest,
-     * user-visible handoff ("Weiter im Browser …"); the host arms a loopback listener → [onGithubReturn].
+     * user-visible handoff ("Weiter im Browser …"); the host arms a loopback listener → [onGithubReturn]. CYP-576
+     * follow-on §2: the [url] is now RENDERED (visible fallback) so an unopened browser is never a dead end.
      */
     data class BrowserHandoff(val url: String) : GithubUiState
+
+    /** CYP-576 follow-on §3 — the handoff waited past the watchdog with no loopback return. Advisory (INFO, NOT an
+     *  error): nothing is broken, it's just slow. [url] stays visible + a retry is offered. */
+    data class TimedOut(val url: String) : GithubUiState
 
     /** The callback returned; completing via the normal gate. [native] = the §4 "Zurück zur App …" copy vs the web copy. */
     data class Returning(val native: Boolean = false) : GithubUiState
 
+    /**
+     * CYP-576 follow-on §4 — a REAL failure (the flow start failed, or the callback returned no session). Actionable:
+     * retexted copy ("didn't complete… try again or sign in with email") + a retry. NEVER implies the user cancelled.
+     */
     data object Error : GithubUiState
+
+    /** CYP-576 follow-on §4 — S1b: the GitHub email collides with an existing account; Kratos requires login-first.
+     *  A DISTINCT state (was wrongly folded into [Error]) that signposts the email sign-in, never a generic failure. */
+    data object LoginRequired : GithubUiState
+
+    /** CYP-576 follow-on §4 — the user CANCELLED at GitHub (`?error=access_denied` at the loopback). Neutral/INFO — no
+     *  alarm, no "failed": the user deliberately stopped. Distinct from [Error] (Backend carries error≠cancel). */
+    data object Cancelled : GithubUiState
 }
+
+/** CYP-576 follow-on (busy-guard) — an OIDC attempt is in flight; the "Mit GitHub anmelden" button is disabled and a
+ *  new attempt is refused. [GithubUiState.TimedOut]/[GithubUiState.Error]/[GithubUiState.Cancelled] are NOT busy —
+ *  they are retry-able. The VM guard and the render share this ONE predicate so they can't diverge. */
+val GithubUiState.isBusy: Boolean
+    get() = this is GithubUiState.Starting || this is GithubUiState.Redirecting ||
+        this is GithubUiState.BrowserHandoff || this is GithubUiState.Returning
 
 /**
  * Drives the login gate (auth-spec §2) over an [AuthRepository] (stub today; live REST after Backend's
@@ -138,6 +166,11 @@ class AuthViewModel(
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
     init { runScope.launch { checkSession() } }
+
+    override fun onCleared() {
+        clearPendingOidc() // Assist-C1/CYP-578: never leak the loopback server (port 47472) past this VM's life
+        super.onCleared()
+    }
 
     /** §7.1 boot probe → §2.1 (verified→desktop / unverified→hard gate / none→login). Fail-closed. */
     private suspend fun checkSession() {
@@ -283,16 +316,34 @@ class AuthViewModel(
     /** CYP-576 P1 — the handoff watchdog (breaks the "Continuing…" hang after [handoffTimeoutMs]). Cancelled on return. */
     private var handoffTimeoutJob: Job? = null
 
+    /** CYP-576 follow-on (Assist-C1/CYP-578) — a stop-handle for THIS attempt's loopback HTTP server, registered by the
+     *  desktop host after arming ([setLoopbackStopper]). The server is single-shot but must be GUARANTEED-stopped on
+     *  every exit (timeout / error / cancel / retry / teardown), not only a successful callback — else port 47472 stays
+     *  bound and the next attempt fails to re-bind (the user who aborts the tab + retries can't log in until restart). */
+    private var loopbackStopper: (() -> Unit)? = null
+
+    /** CYP-576 follow-on — the desktop host hands back the loopback server's stop-handle after arming. */
+    fun setLoopbackStopper(stopper: (() -> Unit)?) { loopbackStopper = stopper }
+
     private fun clearPendingOidc() {
         pendingExchangeInitCode = null
         pendingState = null
         handoffTimeoutJob?.cancel()
         handoffTimeoutJob = null
+        // Free port 47472 on EVERY abandon path so a retry re-binds cleanly (Assist-C1/CYP-578). Idempotent.
+        loopbackStopper?.invoke()
+        loopbackStopper = null
     }
 
     /** Initiate the GitHub OIDC login (§5): the platform opens [GithubUiState.Redirecting.url] on success. */
     fun startGithub() {
-        if (_state.value !is AuthUiState.Unauthenticated) return
+        val current = _state.value
+        if (current !is AuthUiState.Unauthenticated) return
+        // CYP-576 follow-on (busy-guard): refuse a second attempt already in flight, and mark in-flight SYNCHRONOUSLY
+        // (before the async githubStart) so a double-click during the request can't launch two flows / collide loopbacks.
+        if (current.github.isBusy) return
+        clearPendingOidc() // Assist-C1/CYP-578: stop any prior attempt's loopback server so this one re-binds cleanly
+        _state.value = current.copy(github = GithubUiState.Starting)
         runScope.launch {
             // CYP-576 P1: generate the state nonce BEFORE githubStart (it goes into the flow's return_to) and hold it.
             val state = if (nativeOidcLoopback) newOidcState() else null
@@ -309,8 +360,10 @@ class AuthViewModel(
                     } else {
                         GithubUiState.Redirecting(r.url)
                     }
-                // S1b: existing-email collision → Kratos requires login-first; surface (route to sign-in), NEVER merge.
-                GithubStart.LoginRequired, GithubStart.Error -> GithubUiState.Error
+                // CYP-576 §4: S1b existing-email collision → login-first is a DISTINCT state (route to email), NOT a
+                // generic failure (the regression); a real start failure → Error.
+                GithubStart.LoginRequired -> GithubUiState.LoginRequired
+                GithubStart.Error -> GithubUiState.Error
             }
             (_state.value as? AuthUiState.Unauthenticated)?.let { _state.value = it.copy(github = github) }
         }
@@ -324,9 +377,12 @@ class AuthViewModel(
         handoffTimeoutJob = runScope.launch {
             delay(handoffTimeoutMs)
             (_state.value as? AuthUiState.Unauthenticated)?.let { st ->
-                if (st.github is GithubUiState.BrowserHandoff) {
+                val gh = st.github
+                if (gh is GithubUiState.BrowserHandoff) {
+                    // §3: advisory (INFO, NOT error-red) + retry; keep the url visible. Assist-C1/CYP-578: stop the
+                    // loopback server (clearPendingOidc) so port 47472 is free and a retry re-binds cleanly.
+                    _state.value = st.copy(github = GithubUiState.TimedOut(gh.url))
                     clearPendingOidc()
-                    _state.value = st.copy(github = GithubUiState.Error)
                 }
             }
         }
@@ -337,7 +393,7 @@ class AuthViewModel(
      * [session] maps the established session, so an OIDC identity's `verified=false` → [AuthedUnverified] (S2,
      * not one-click). Called by the platform's callback handler (deep-link / redirect return).
      */
-    fun onGithubReturn(code: String? = null, state: String? = null) {
+    fun onGithubReturn(code: String? = null, state: String? = null, error: String? = null) {
         // CYP-576 P1 (Backend security-rec) — the loopback is unauthenticated, so a native return MUST echo THIS
         // attempt's `state` nonce. No pending attempt or a mismatch (incl. a bind-failure signalled as (null,null),
         // or a spurious/forged callback) ⇒ reject → retry-able Error, NEVER an exchange on a foreign callback.
@@ -346,6 +402,15 @@ class AuthViewModel(
             if (expected == null || state != expected) {
                 clearPendingOidc()
                 _state.value = AuthUiState.Unauthenticated(github = GithubUiState.Error)
+                return
+            }
+            // CYP-576 §4 error≠cancel: the OIDC `error` param distinguishes a deliberate user cancel from a real
+            // failure. `access_denied` = the user stopped → neutral Cancelled (no alarm); any other error = Error.
+            if (error != null) {
+                clearPendingOidc()
+                _state.value = AuthUiState.Unauthenticated(
+                    github = if (error == "access_denied") GithubUiState.Cancelled else GithubUiState.Error,
+                )
                 return
             }
         }

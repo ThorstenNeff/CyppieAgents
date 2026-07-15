@@ -469,7 +469,13 @@
     <string name="auth_github_button">Sign in with GitHub</string>
     <string name="auth_github_redirect">Continuing to GitHub…</string>
     <string name="auth_github_returning">Completing sign-in…</string>
-    <string name="auth_github_error">GitHub sign-in failed or was cancelled.</string>
+    <string name="auth_github_error">GitHub sign-in didn't complete. Please try again, or sign in with email above.</string>
+    <string name="auth_github_handoff_fallback">If your browser doesn't open, open this link:</string>
+    <string name="auth_github_url_copy">Copy link</string>
+    <string name="auth_github_timeout">This is taking longer than expected.</string>
+    <string name="auth_github_retry">Try again</string>
+    <string name="auth_github_cancelled">GitHub sign-in was cancelled.</string>
+    <string name="a11y_auth_github_url">GitHub sign-in link — copy to open</string>
     <string name="a11y_auth_email">Enter email address</string>
     <string name="a11y_auth_password">Enter password</string>
     <string name="a11y_auth_password_confirm">Re-enter password</string>
