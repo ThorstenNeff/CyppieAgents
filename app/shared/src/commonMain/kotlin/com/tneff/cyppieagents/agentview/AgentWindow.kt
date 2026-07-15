@@ -89,6 +89,7 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_tool_ok
 import kmpcyppieagents.app.shared.generated.resources.a11y_tool_running
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_system
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_time
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_turn_undelivered
 import kmpcyppieagents.app.shared.generated.resources.a11y_user_turn
 import kmpcyppieagents.app.shared.generated.resources.agent_turn_undelivered
 import kmpcyppieagents.app.shared.generated.resources.transcript_system_label
@@ -1132,13 +1133,17 @@ private fun UserTurnRow(event: AgentEvent.UserTurn, agentId: String, index: Int,
             modifier = Modifier.clearAndSetSemantics { contentDescription = userTurnDescription },
         )
         if (undeliveredLabel != null) {
+            // UIUX2 honesty-gate: the marker fires on UNCONFIRMED (composed while not LIVE ⇒ buffered, may still
+            // deliver on reconnect), not on a KNOWN drop — so the copy is "delivery not confirmed", never the
+            // definitive "not delivered". The a11y description names the object (not a free-floating phrase).
+            val undeliveredA11y = stringResource(Res.string.a11y_agent_turn_undelivered)
             Text(
                 text = undeliveredLabel,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, // WCAG 1.4.3-safe (8.69:1/9.80:1), quieter than content
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier
                     .testTag(AgentViewTags.userTurnUndelivered(agentId, index))
-                    .clearAndSetSemantics { contentDescription = undeliveredLabel },
+                    .clearAndSetSemantics { contentDescription = undeliveredA11y },
             )
         }
     }
