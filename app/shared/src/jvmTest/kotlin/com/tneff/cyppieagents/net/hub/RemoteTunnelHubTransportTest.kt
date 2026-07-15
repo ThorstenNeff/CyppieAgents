@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.net.hub
 
 import com.tneff.cyppieagents.net.Backoff
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import com.tneff.cyppieagents.net.hub.pool.TunnelLane
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -236,5 +237,33 @@ class RemoteTunnelHubTransportTest {
         assertTrue(calls.get() >= 2, "DATA acquire=null HELD the conn + retried (backed off, re-acquired) — no hard-RST-tear")
         assertTrue(tunnel.sent.any { it.contentEquals(req) }, "once a DATA slot freed, the HELD conn's bytes pumped over the tunnel (impossible under a pre-pump hard-evict)")
         t.close(); scope.cancel()
+    }
+
+    @Test
+    fun laneRouting_restAcceptorIsControl_wsAcceptorIsData_CYP616() = runBlocking {
+        // CYP-616 (the load-bearing wiring tooth — Backend2 gap, fast-follow hardening): the pool tooth proves the
+        // RESERVATION; THIS proves the transport hands the pool the RIGHT lane per PORT — a REST-acceptor conn → CONTROL
+        // (lifecycle-REST gets the reserved slot), a WS-acceptor conn → DATA. Without this, `tunnelSource` ignores the
+        // lane, so a swapped wiring (rest→DATA/ws→CONTROL) stays green and silently reintroduces the incident. Mutant:
+        // swap the lanes in `launchAcceptLoop` init (wsAcceptor↔restAcceptor lane) ⇒ the REST-only case records DATA ⇒ RED.
+        // Drive ONE conn on exactly one acceptor (the other empty) so the single acquire() records that port's lane.
+        suspend fun laneFor(onRest: Boolean): TunnelLane {
+            val seen = CompletableDeferred<TunnelLane>()
+            val conn = FakeConn(listOf("GET / HTTP/1.1\r\n\r\n".encodeToByteArray()))
+            val scope = CoroutineScope(Dispatchers.IO)
+            val t = RemoteTunnelHubTransport(
+                tunnelSource = { lane -> if (!seen.isCompleted) seen.complete(lane); FakeTunnel() },
+                sessionTokenProvider = { "cp-ticket" },
+                scope = scope,
+                wsAcceptor = if (onRest) FakeAcceptor(port = 9401) else FakeAcceptor(port = 9401, conns = listOf(conn)),
+                restAcceptor = if (onRest) FakeAcceptor(port = 9400, conns = listOf(conn)) else FakeAcceptor(port = 9400),
+                injectedClient = io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO),
+            )
+            val lane = withTimeout(5_000) { seen.await() }
+            t.close(); scope.cancel()
+            return lane
+        }
+        assertEquals(TunnelLane.CONTROL, laneFor(onRest = true), "a conn on the restAcceptor acquires the CONTROL lane (lifecycle-REST → reserved slot)")
+        assertEquals(TunnelLane.DATA, laneFor(onRest = false), "a conn on the wsAcceptor acquires the DATA lane (WS gated below the reserve)")
     }
 }
