@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.relay
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -78,11 +79,39 @@ class RendezvousRelay {
         }
     }
 
-    /** Pump [a]→[b] and [b]→[a] concurrently. When EITHER direction hits EOF, both peers are closed, so the other
-     *  direction's `receive()` returns `null` and the whole pair tears down (no half-open session). */
+    /**
+     * CYP-617 — pump [a]→[b] and [b]→[a] concurrently with an **ASYMMETRIC close** (close-ORDERING only; the relay
+     * still forwards opaque frames verbatim, RR4 unchanged — no decode/parse/inspect, no new capability). The pair
+     * tears down when the **HUB** side ends (its response is fully sent and it closed), NOT when the client side ends.
+     *
+     * This fixes the storm-root: the pre-CYP-617 SYMMETRIC close (`finally { a.close(); b.close() }` on EITHER pump)
+     * tore the whole pair the instant the CLIENT closed, killing an in-flight hub→client response before the hub's
+     * loopback down-pump could flush it → the client saw "server prematurely closed", re-dialed, and exhausted the
+     * tunnel pool. Now a client-close only stops the client→hub direction; the hub→client leg stays alive so the hub
+     * can flush its response. A bounded [GRACE_MS] backstops a hub that never closes after a client-close, so a
+     * client-close can NEVER leak the pairing (no unbounded hold, no new DoS surface).
+     *
+     * **Efficacy bound:** this recovers the response only when the client's READ side is still open after it stopped
+     * sending (a graceful drain). A client that HARD-closes its connection (WS full close) is gone and gets nothing —
+     * that residual is the client-pool teardown-under-pressure, a separate client-side concern.
+     */
     private suspend fun forward(a: RelayPeer, b: RelayPeer) = coroutineScope {
-        launch { try { pump(a, b) } finally { a.close(); b.close() } }
-        launch { try { pump(b, a) } finally { a.close(); b.close() } }
+        val hub = if (a.role == RelayRole.HUB) a else b
+        val client = if (a.role == RelayRole.CLIENT) a else b
+        val hubToClient = launch { runCatching { pump(hub, client) } } // hub→client: its END drives the teardown
+        val clientToHub = launch { runCatching { pump(client, hub) } } // client→hub: its end does NOT tear the pair
+        // If the client stops first, give the hub a bounded grace to flush its response, then force the teardown.
+        val graceBackstop = launch {
+            clientToHub.join()
+            delay(GRACE_MS)
+            hubToClient.cancel() // grace expired after a client-close → bring the hub→client leg down (no pairing leak)
+        }
+        try {
+            hubToClient.join() // tear when the hub finished (response sent + closed) OR the grace-backstop cancelled it
+        } finally {
+            hub.close(); client.close()
+            clientToHub.cancel(); graceBackstop.cancel()
+        }
     }
 
     /** One-for-one verbatim forwarding: each inbound frame from [from] is sent as exactly one frame to [to]. The
@@ -96,4 +125,10 @@ class RendezvousRelay {
 
     /** Live pairing count (test/observability) — never exposes ids or bytes. */
     fun activePairings(): Int = table.size
+
+    private companion object {
+        /** CYP-617 — bounded grace for the hub to flush its response after a client-close, before the pair is torn.
+         *  Small (an HTTP response drains fast) yet bounded, so a client-close can never leak the pairing. */
+        const val GRACE_MS = 2_000L
+    }
 }
