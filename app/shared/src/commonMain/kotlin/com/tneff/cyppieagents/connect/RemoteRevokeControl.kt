@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,7 +64,11 @@ fun RemoteRevokeControl(
         return
     }
 
-    TextButton(onClick = { phase = RevokePhase.CONFIRMING }, modifier = modifier.testTag(RemoteRevokeTags.END)) {
+    // CYP-597-2A: raise the affordance from a bare text-link to a clear NEUTRAL outlined button, so it reads as THE
+    // end-session control (spec §2A — findability without relocation). Still neutral (no scare-red), still bound to
+    // the CONNECTED context-row (G6 present-iff-CONNECTED unchanged). Pure reuse-move: same `RemoteRevokeTags.END`,
+    // same label, same confirm-guard + teardown below — 0 new keys/tags. The confirm/dismiss stay TextButtons.
+    OutlinedButton(onClick = { phase = RevokePhase.CONFIRMING }, modifier = modifier.testTag(RemoteRevokeTags.END)) {
         Text(stringResource(Res.string.remote_revoke_end_action))
     }
 
