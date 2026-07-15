@@ -28,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.nio.file.Files
@@ -35,6 +36,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -101,6 +103,51 @@ class Cyp525EnrollFinalizeGateTest {
         val t = GateTunnel(listOf(reqBytes(byteArrayOf(2))))
         assertFalse(gate(store).authorize(t), "no SavedAck → the provisional is discarded (not CONNECTED)")
         assertNull(store.read(), "nothing committed → the next connect re-mints FRESH (no-lockout)")
+    }
+
+    /** CYP-596 — a tunnel whose SavedAck (the 2nd receive) arrives only after [ackDelayMs] (VIRTUAL under [runTest]). */
+    private fun delayedAckTunnel(nonce: ByteArray, ackDelayMs: Long) = object : ServerNoiseTunnel {
+        private var reads = 0
+        override val handshakeHash = ByteArray(32) { (it + 1).toByte() }
+        override suspend fun receive(): ByteArray? {
+            reads++
+            return when (reads) { 1 -> reqBytes(nonce); 2 -> { delay(ackDelayMs); ackBytes() }; else -> null }
+        }
+        override suspend fun send(plaintext: ByteArray) {}
+        override suspend fun close() {}
+    }
+
+    /**
+     * CYP-596 — the SavedAck window VALUE governs commit-vs-discard. The dogfood bug (2026-07-15): a human took >30s to
+     * SAVE the revealed backup codes, so the SavedAck arrived AFTER the old 30s window → fail-closed discard → re-enroll
+     * loop. A 60s-late ack now FINALIZES under the widened [Rr3TunnelGate.DEFAULT_SAVEDACK_TIMEOUT_MS] (5 min), where the
+     * OLD 30s discards it. Virtual time ([runTest]) → deterministic. Mutation (revert the default to 30_000L) → the
+     * new-default arm REDs (that gate would discard the 60s ack), so the tooth is NON-vacuous.
+     */
+    @Test
+    fun savedAck_at60s_finalizesUnderNewDefault_discardsUnderOld30s_CYP596() = runTest {
+        val late = 60_000L // AFTER the old 30s window, WITHIN the new 5-min default
+        val storeNew = finalStore()
+        assertTrue(
+            gate(storeNew, ttlMs = Rr3TunnelGate.DEFAULT_SAVEDACK_TIMEOUT_MS).authorize(delayedAckTunnel(byteArrayOf(9), late)),
+            "SavedAck at 60s FINALIZES under the 5-min default (CYP-596 fixes the dogfood 30s-discard)",
+        )
+        assertNotNull(storeNew.read(), "anchor + codes committed under the widened window")
+        val storeOld = finalStore()
+        assertFalse(
+            gate(storeOld, ttlMs = 30_000L).authorize(delayedAckTunnel(byteArrayOf(10), late)),
+            "CONTRAST: the OLD 30s window discards the SAME 60s-late ack — the dogfood re-enroll loop",
+        )
+        assertNull(storeOld.read(), "nothing committed under the too-short window")
+    }
+
+    /** CYP-596 — the single-source resolver: `CYPPIE_ENROLL_SAVEDACK_TIMEOUT_SEC` (seconds, >0) else the 5-min default. */
+    @Test
+    fun resolveSavedAckTimeoutMs_envOverride_elseDefault_CYP596() {
+        assertEquals(120_000L, RemoteRelayWiring.resolveSavedAckTimeoutMs { if (it == "CYPPIE_ENROLL_SAVEDACK_TIMEOUT_SEC") "120" else null }, "env seconds → ms")
+        assertEquals(Rr3TunnelGate.DEFAULT_SAVEDACK_TIMEOUT_MS, RemoteRelayWiring.resolveSavedAckTimeoutMs { null }, "unset → default")
+        assertEquals(Rr3TunnelGate.DEFAULT_SAVEDACK_TIMEOUT_MS, RemoteRelayWiring.resolveSavedAckTimeoutMs { if (it == "CYPPIE_ENROLL_SAVEDACK_TIMEOUT_SEC") "0" else null }, "≤0 → default (never a 0-window footgun)")
+        assertEquals(5 * 60_000L, Rr3TunnelGate.DEFAULT_SAVEDACK_TIMEOUT_MS, "the widened default is 5 min (was 30s — the dogfood root cause)")
     }
 
     @Test

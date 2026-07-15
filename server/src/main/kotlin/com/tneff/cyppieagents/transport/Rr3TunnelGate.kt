@@ -55,8 +55,9 @@ class Rr3TunnelGate(
      *  `null` = the pre-GE5 immediate-enroll path over [deviceStore] (existing tests / not-yet-wired). */
     private val finalizedStore: FinalizedEnrollmentStore? = null,
     private val backupCodes: BackupCodeStore = BackupCodeStore(),
-    /** CYP-525 — bounded await for the client's [SavedAck] (lock-liveness: a hung provisional times out → discard → release). */
-    private val savedAckTimeoutMs: Long = 30_000L,
+    /** CYP-525 — bounded await for the client's [SavedAck] (lock-liveness: a hung provisional times out → discard → release).
+     *  CYP-596: default widened from 30s to [DEFAULT_SAVEDACK_TIMEOUT_MS] (a human must SAVE the revealed backup codes first). */
+    private val savedAckTimeoutMs: Long = DEFAULT_SAVEDACK_TIMEOUT_MS,
 ) {
     // CYP-525 — First-Device-Enroll over the store (rejects a re-enroll; validates the key). Constructed from the same
     // store the verify reads, so no constructor change / no wiring change: the gate self-serves TOFU first-enroll.
@@ -268,9 +269,15 @@ class Rr3TunnelGate(
             .onFailure { log.warn("CYP-579: grant/reject reply send failed ({})", it::class.simpleName) }
     }
 
-    private companion object {
+    companion object {
         /** The one uniform, non-secret reject code — same for bad-h / malformed / bad-CpJwt / bad-PoP (no oracle). */
-        const val REJECT_CODE = "auth_failed"
+        private const val REJECT_CODE = "auth_failed"
+
+        /** CYP-596 — the SavedAck window default: generous enough for a human to SAVE the revealed backup codes
+         *  (screenshot/photo/handwrite) before confirming. The original 30s discarded a slow-but-legit operator
+         *  (dogfood 2026-07-15: SavedAck arrived after the 30s window → fail-closed discard → re-enroll loop).
+         *  Single-sourced: the constructor default AND [RemoteRelayWiring.resolveSavedAckTimeoutMs]'s fallback use THIS. */
+        const val DEFAULT_SAVEDACK_TIMEOUT_MS: Long = 5 * 60_000L
     }
 }
 

@@ -39,6 +39,16 @@ object RemoteRelayWiring {
         env("CYPPIE_OP_SESSION_TTL_MIN")?.toLongOrNull()?.takeIf { it > 0 }?.let { it * 60_000L }
             ?: DEFAULT_OP_SESSION_TTL_MS
 
+    /**
+     * CYP-596 — the SINGLE SOURCE for the enroll SavedAck window: the optional `CYPPIE_ENROLL_SAVEDACK_TIMEOUT_SEC`
+     * override (seconds, must be > 0) else [Rr3TunnelGate.DEFAULT_SAVEDACK_TIMEOUT_MS] (5 min). The window must comfortably
+     * exceed the time a human needs to SAVE the revealed backup codes before confirming — the original 30s discarded a
+     * slow-but-legit operator (dogfood 2026-07-15) → fail-closed re-enroll loop. Ops-tunable without a rebuild.
+     */
+    fun resolveSavedAckTimeoutMs(env: (String) -> String?): Long =
+        env("CYPPIE_ENROLL_SAVEDACK_TIMEOUT_SEC")?.toLongOrNull()?.takeIf { it > 0 }?.let { it * 1_000L }
+            ?: Rr3TunnelGate.DEFAULT_SAVEDACK_TIMEOUT_MS
+
     fun build(
         config: RemoteTransportConfig,
         httpClient: HttpClient,
@@ -139,6 +149,7 @@ fun buildRemoteTransport(
             expectedRpId = rpId,
         ),
         finalizedStore = finalizedStore, // CYP-525 GE5/GE7: the ratified provisional→finalize path (prod when wired)
+        savedAckTimeoutMs = RemoteRelayWiring.resolveSavedAckTimeoutMs(env), // CYP-596: ops-tunable enroll SavedAck window (default 5 min)
     )
     val httpClient = httpClientFactory() // shared: the relay WS dial AND the CP rendezvous-register POST
     val registrar = HubRendezvousRegistrar(cpBaseUrl = cpUrl, http = httpClient, hubId = hubIdentity.hubId, operatorBearer = { cpOperatorToken })
