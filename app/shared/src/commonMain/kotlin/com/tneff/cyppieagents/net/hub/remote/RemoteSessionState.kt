@@ -42,6 +42,14 @@ sealed interface RemoteFailure {
      * request. The UI offers a retry (re-enter the PIN); distinct from the hub's terminal reject.
      */
     data object OperatorUvFailed : RemoteFailure
+
+    /**
+     * CYP-595 — an RR3 network receive (initial grant / enroll codes / the post-`SavedAck` final grant) exceeded its
+     * bound: the hub stalled and never sent the frame (e.g. a server-side finalize-commit stall). **Retryable**
+     * ("session expired — reconnect"), NEVER the terminal [AuthRejected] and NOT [EnrollCodesUnavailable] (the codes
+     * DID arrive) — a distinct truth so the operator reconnects instead of hanging forever on "Confirming operator".
+     */
+    data object EnrollTimedOut : RemoteFailure
 }
 
 /**
@@ -125,4 +133,12 @@ sealed interface OperatorAuthOutcome {
      * attribution so the session surfaces the retryable [RemoteFailure.EnrollCodesUnavailable].
      */
     data object EnrollCodesUnavailable : OperatorAuthOutcome
+
+    /**
+     * CYP-595 — an RR3 network receive (initial grant / enroll codes / post-`SavedAck` final grant) exceeded its bound:
+     * the hub stalled. **Retryable-reconnect**, NEVER the terminal [Rejected] — the client bounds the await so a stall
+     * surfaces [RemoteFailure.EnrollTimedOut] ("session expired — reconnect") instead of an eternal "Confirming
+     * operator" spinner (the CYP-371-class unbounded-await hang the live enroll hit).
+     */
+    data object EnrollTimedOut : OperatorAuthOutcome
 }

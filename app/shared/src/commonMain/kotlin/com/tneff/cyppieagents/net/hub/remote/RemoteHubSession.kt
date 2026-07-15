@@ -171,6 +171,14 @@ class RemoteHubSession(
                 _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.EnrollCodesUnavailable) }
                 return Outcome.TERMINAL
             }
+            OperatorAuthOutcome.EnrollTimedOut -> {
+                // CYP-595: an RR3 network receive (esp. the post-SavedAck final grant) exceeded its bound — the hub
+                // stalled. Retryable "window expired — reconnect", NOT the terminal AuthRejected and NOT EnrollCodesUnavailable
+                // (the codes DID arrive) — a distinct truth so the operator reconnects for fresh codes instead of hanging.
+                runCatching { t.close() }
+                _state.update { it.copy(conn = RemoteConnState.LOST, failure = RemoteFailure.EnrollTimedOut) }
+                return Outcome.TERMINAL
+            }
         }
 
         tunnel = t

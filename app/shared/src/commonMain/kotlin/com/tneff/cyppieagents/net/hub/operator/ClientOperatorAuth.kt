@@ -9,6 +9,13 @@ import com.tneff.cyppieagents.operator.OperatorPoPWire
 import com.tneff.cyppieagents.operator.SavedAck
 import com.tneff.cyppieagents.operator.TunnelAuthGrant
 import com.tneff.cyppieagents.operator.TunnelAuthRequest
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+
+/** CYP-595 — the bound on each RR3 network receive (the grant / enroll codes / post-SavedAck final grant). Generous
+ *  (the hub's fsync/rename finalize is quick), but bounded so a hub stall surfaces a retryable "session expired"
+ *  instead of an eternal "Confirming operator" hang. The user-saved confirm is a SEPARATE, unbounded user wait. */
+const val ENROLL_FINALIZE_TIMEOUT_MS: Long = 30_000L
 
 /**
  * CYP-486 — the real [OperatorAuthenticator] (RR3 tunnel-auth). After the Noise handshake, over the E2E tunnel
@@ -36,6 +43,8 @@ class ClientOperatorAuth(
      *  EnrollResponse codes arrive, this surfaces the reveal + suspends until the operator confirms "saved" (→ send
      *  SavedAck) or aborts (→ fail-closed, no SavedAck). Default = fail-closed no-op (INERT: first-enroll aborts). */
     private val enrollConfirmer: EnrollConfirmer = EnrollConfirmer { false },
+    /** CYP-595 — the per-receive network bound (see [ENROLL_FINALIZE_TIMEOUT_MS]). Injectable so a test drives it fast. */
+    private val enrollFinalizeTimeoutMs: Long = ENROLL_FINALIZE_TIMEOUT_MS,
 ) : OperatorAuthenticator {
 
     override suspend fun authenticate(tunnel: NoiseTunnel, hubId: String): OperatorAuthOutcome {
@@ -78,29 +87,48 @@ class ClientOperatorAuth(
      *  (an explicit frame emitted only after the hub's fsync/rename finalize). The client **never infers** CONNECTED
      *  from the byte-bridge. A closed tunnel / non-grant at any step ⇒ fail-closed Rejected.
      */
-    private suspend fun runEnrollProtocol(tunnel: NoiseTunnel): OperatorAuthOutcome {
-        val grant = readGrant(tunnel) ?: return OperatorAuthOutcome.Rejected
+    private suspend fun runEnrollProtocol(tunnel: NoiseTunnel): OperatorAuthOutcome = try {
+        // CYP-595: EVERY network receive is bounded ([bounded]) so a hub stall surfaces a retryable EnrollTimedOut,
+        // never an eternal "Confirming operator" hang. The user-saved confirm below is a SEPARATE, UNBOUNDED user wait.
+        val grant = bounded { readGrant(tunnel) } ?: return OperatorAuthOutcome.Rejected
         if (!grant.granted) return OperatorAuthOutcome.Rejected
         if (!grant.firstEnroll) return OperatorAuthOutcome.Granted // steady-state: this grant IS CONNECTED
 
-        val enrollRaw = tunnel.receive() ?: return OperatorAuthOutcome.Rejected
+        val enrollRaw = bounded { tunnel.receive() } ?: return OperatorAuthOutcome.Rejected
         val enroll = CommJson.decodeFromString(EnrollResponse.serializer(), enrollRaw.decodeToString())
         // H3: never show / ack an invalid (empty/truncated/over-count/blank) set — fail-closed (no SavedAck ⇒ discard).
         // CYP-525 Finding ①: an invalid set means the codes did NOT arrive intact — a DELIVERY problem (retryable),
         // NOT a hub reject. Surface EnrollCodesUnavailable (retryable-reconnect), never the terminal Rejected/AuthRejected
         // mis-attribution. Fail-closed stays: no confirm, no SavedAck, no CONNECTED.
         if (!isValidCodeSet(enroll.backupCodes)) return OperatorAuthOutcome.EnrollCodesUnavailable
-        // Surface the ONE reveal + suspend until the operator confirms "saved" (abort ⇒ fail-closed, no SavedAck).
+        // Surface the ONE reveal + suspend until the operator confirms "saved" — an UNBOUNDED USER wait (never timed
+        // out; saving codes can take minutes). Abort ⇒ fail-closed, no SavedAck.
         if (!enrollConfirmer.confirmSavedCodes(enroll.backupCodes)) return OperatorAuthOutcome.Rejected
         tunnel.send(CommJson.encodeToString(SavedAck.serializer(), SavedAck()).encodeToByteArray())
-        // CONNECTED = the explicit final grant after finalize — read grants until granted ∧ !firstEnroll.
-        val finalGrant = readGrant(tunnel) ?: return OperatorAuthOutcome.Rejected
-        return if (finalGrant.granted && !finalGrant.firstEnroll) OperatorAuthOutcome.Granted else OperatorAuthOutcome.Rejected
+        // CYP-595 (the live-hang spot): the post-SavedAck final grant. Bounded — a hub finalize-stall ⇒ EnrollTimedOut
+        // (retryable "window expired — reconnect"), never the eternal spinner. CONNECTED = granted ∧ !firstEnroll.
+        val finalGrant = bounded { readGrant(tunnel) } ?: return OperatorAuthOutcome.Rejected
+        if (finalGrant.granted && !finalGrant.firstEnroll) OperatorAuthOutcome.Granted else OperatorAuthOutcome.Rejected
+    } catch (e: EnrollFinalizeTimeout) {
+        OperatorAuthOutcome.EnrollTimedOut // a bounded RR3 receive exceeded its window ⇒ retryable reconnect (not a hang)
     }
+
+    /** CYP-595 — run [block] under the per-receive network bound; a timeout throws [EnrollFinalizeTimeout] (caught at
+     *  [runEnrollProtocol] → [OperatorAuthOutcome.EnrollTimedOut]). A REAL structured cancellation still propagates
+     *  (we convert only the [TimeoutCancellationException] `withTimeout` raises). */
+    private suspend fun <T> bounded(block: suspend () -> T): T =
+        try {
+            withTimeout(enrollFinalizeTimeoutMs) { block() }
+        } catch (e: TimeoutCancellationException) {
+            throw EnrollFinalizeTimeout()
+        }
 
     private suspend fun readGrant(tunnel: NoiseTunnel): TunnelAuthGrant? =
         tunnel.receive()?.let { CommJson.decodeFromString(TunnelAuthGrant.serializer(), it.decodeToString()) }
 }
+
+/** CYP-595 — internal marker: a bounded RR3 network receive exceeded its window (→ retryable [OperatorAuthOutcome.EnrollTimedOut]). */
+private class EnrollFinalizeTimeout : Exception()
 
 /**
  * Supplies the CP-minted, hub-scoped identity ticket for [TunnelAuthRequest.cpJwt] (the S-K `hubTicket`).
