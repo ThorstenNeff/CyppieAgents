@@ -52,9 +52,17 @@ class ClientOperatorAuth(
         // fetch the ticket or prompt the operator to sign; we route to enroll (DeviceNotEnrolled), distinct truth.
         if (!popBuilder.isEnrolled()) return OperatorAuthOutcome.DeviceNotEnrolled
 
-        // Ticket next (cheap): no ticket ⇒ fail closed WITHOUT prompting the operator to sign. CYP-496: the
-        // provider needs the live `h` + hubId to compute the channel-binding `cb` bound to THIS session.
-        val jwt = cpJwtProvider.cpJwt(tunnel.handshakeHash, hubId) ?: return OperatorAuthOutcome.Rejected
+        // Ticket next: no ticket ⇒ fail closed WITHOUT prompting the operator to sign. CYP-496: the provider needs
+        // the live `h` + hubId to compute the channel-binding `cb` bound to THIS session.
+        // CYP-595 (R2 follow-up): the real provider's cpJwt fetch is a suspend CP HTTP roundtrip, and the shared
+        // client installs NO HttpTimeout — so a jammed CP (accept-then-silent) would hang HERE, one step ABOVE the
+        // bounded RR3 receives, relocating the eternal hang instead of closing it. Bound it with the SAME window ⇒ a
+        // stalled CP roundtrip surfaces the retryable EnrollTimedOut, engine-agnostic, symmetric with the receives.
+        val jwt = try {
+            bounded { cpJwtProvider.cpJwt(tunnel.handshakeHash, hubId) }
+        } catch (e: EnrollFinalizeTimeout) {
+            return OperatorAuthOutcome.EnrollTimedOut // a jammed CP roundtrip ⇒ retryable reconnect, never a pre-protocol hang
+        } ?: return OperatorAuthOutcome.Rejected
 
         // PoP bound to the LIVE handshake hash. A local failure ⇒ fail closed, no request sent — but "not enrolled"
         // (a race after the pre-check) still routes to enroll, never a reject; any other local failure is Rejected.
@@ -113,9 +121,11 @@ class ClientOperatorAuth(
         OperatorAuthOutcome.EnrollTimedOut // a bounded RR3 receive exceeded its window ⇒ retryable reconnect (not a hang)
     }
 
-    /** CYP-595 — run [block] under the per-receive network bound; a timeout throws [EnrollFinalizeTimeout] (caught at
-     *  [runEnrollProtocol] → [OperatorAuthOutcome.EnrollTimedOut]). A REAL structured cancellation still propagates
-     *  (we convert only the [TimeoutCancellationException] `withTimeout` raises). */
+    /** CYP-595 — run [block] under the per-network-op bound; a timeout throws [EnrollFinalizeTimeout] (caught at the
+     *  cpJwt fetch → [OperatorAuthOutcome.EnrollTimedOut], and at [runEnrollProtocol] → the same). Guards BOTH the
+     *  pre-protocol CP-ticket roundtrip (R2 follow-up) AND every RR3 receive, so neither a jammed CP nor a hub stall
+     *  hangs the enroll auth. A REAL structured cancellation still propagates (we convert only the
+     *  [TimeoutCancellationException] `withTimeout` raises). */
     private suspend fun <T> bounded(block: suspend () -> T): T =
         try {
             withTimeout(enrollFinalizeTimeoutMs) { block() }
