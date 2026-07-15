@@ -53,6 +53,11 @@ class AgentWsClient(
     private val agentId: String,
     private val token: String,
     private val backoff: Backoff = Backoff(),
+    /** CYP-600/CYP-598-B — the reconnect wait, injectable so a test observes the backoff `attempt` sequence WITHOUT
+     *  real time. Default = the exponential [backoff] delay. The point of the seam is the attempt ESCALATION: a
+     *  connection that never delivers a frame (a stopped agent the server accept-then-closes) must NOT reset the
+     *  ladder, so it backs off to the cap instead of hammering the shared client runtime at the floor. */
+    private val reconnectDelay: suspend (attempt: Int) -> Unit = { delay(backoff.delayFor(it)) },
 ) {
     private val outbound = Channel<UserTurn>(Channel.BUFFERED)
 
@@ -82,13 +87,18 @@ class AgentWsClient(
                     request = { if (token.isNotBlank()) header(HttpHeaders.Authorization, "Bearer $token") },
                 ) {
                     _connection.value = ConnectionStatus.LIVE
-                    attempt = 0 // a successful connect resets the backoff ladder
+                    // CYP-600/CYP-598-B: do NOT reset the backoff ladder on the bare WS UPGRADE. A stopped agent makes
+                    // the server accept-then-immediately-close (0 frames); resetting here kept `attempt` pinned at the
+                    // 250ms floor → an eternal ~250ms reconnect HAMMER (311k live) that hogs the shared client runtime
+                    // (Ktor engine / Dispatchers.IO) and starves the idle agents' sockets. The reset now happens only
+                    // on a PRODUCTIVE frame (below) → a 0-frame connection escalates to the backoff cap (~5s poll).
                     val pump = launch {
                         for (turn in outbound) send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), turn)))
                     }
                     try {
                         for (frame in incoming) {
                             if (frame is Frame.Text) {
+                                attempt = 0 // productive connection: a real frame arrived → the ladder is safe to reset
                                 val stored = CommJson.decodeFromString(StoredAgentEvent.serializer(), frame.readText())
                                 if (stored.seq > lastSeq) { // dedup + advance cursor (idempotent replay)
                                     lastSeq = stored.seq
@@ -110,7 +120,7 @@ class AgentWsClient(
             }
             _connection.value = ConnectionStatus.DISCONNECTED
             attempt += 1
-            delay(backoff.delayFor(attempt))
+            reconnectDelay(attempt) // CYP-598-B: escalates for a 0-frame (stopped-agent) connection — no floor-hammer
         }
     }
 
