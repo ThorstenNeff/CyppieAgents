@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.net.hub
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import com.tneff.cyppieagents.net.hub.pool.TunnelLane
 import com.tneff.cyppieagents.net.logWsTeardown
 import com.tneff.cyppieagents.net.pinnedCioRestHttpClient
 import com.tneff.cyppieagents.net.pinnedCioWsHttpClient
@@ -38,14 +39,18 @@ class RemoteTunnelHubTransport(
     private val tunnelSource: TunnelSource,
     private val sessionTokenProvider: () -> String?,
     scope: CoroutineScope,
-    private val acceptor: LoopbackAcceptor = RealLoopbackAcceptor(),
+    // CYP-616: TWO loopback acceptors so the accept-loop knows the lane BY PORT (no byte-sniff). REST (lifecycle) dials
+    // [httpBaseUrl]→[restAcceptor]→CONTROL lane (reserved break-glass slot); WS dials [wsBaseUrl]→[wsAcceptor]→DATA lane.
+    private val wsAcceptor: LoopbackAcceptor = RealLoopbackAcceptor(),
+    private val restAcceptor: LoopbackAcceptor = RealLoopbackAcceptor(),
     private val bridge: ClientLoopbackBridge = ClientLoopbackBridge(),
     injectedClient: HttpClient? = null,
 ) : HubTransport {
 
-    // The workspace dials THIS loopback (never the hub's real host:port) — every byte then rides the Noise tunnel.
-    override val httpBaseUrl: String = "http://127.0.0.1:${acceptor.port}"
-    override val wsBaseUrl: String = "ws://127.0.0.1:${acceptor.port}"
+    // The workspace dials THIS loopback (never the hub's real host:port) — every byte then rides the Noise tunnel. CYP-616:
+    // REST and WS dial DISTINCT loopback ports so the transport routes the acquire lane by which acceptor accepted.
+    override val httpBaseUrl: String = "http://127.0.0.1:${restAcceptor.port}"
+    override val wsBaseUrl: String = "ws://127.0.0.1:${wsAcceptor.port}"
 
     private val ownsClient: Boolean = injectedClient == null
     // Tunnel-warmth fix: the loopback datapath client PINS CIO explicitly so `endpoint.keepAliveTime` (idle-conn
@@ -76,46 +81,53 @@ class RemoteTunnelHubTransport(
      *    frees its slot (idempotent). The children are children of THIS job → [close]'s `cancel()` tears them all down
      *    together (no leak, no bytes after close — H4); they are NOT `scope.launch` (which would outlive `close()`).
      */
-    internal val acceptJob: Job = scope.launch(Dispatchers.IO) {
-        supervisorScope { // ②: an exception in one pump child never cancels the loop or its sibling pumps
-            while (isActive) {
-                val conn = acceptor.accept() ?: break // acceptor closed → stop (the ONLY serial step)
-                launch { // ①/②: per-connection — acquire + pump run concurrently; the loop immediately accepts the next
-                    val tunnel = try {
-                        tunnelSource.acquire()
-                    } catch (t: Throwable) {
-                        // CYP-561 NOTE-1: if acquire() RE-THROWS (e.g. a dial exception the pool re-raises), the
-                        // accepted loopback socket would otherwise leak until GC — reset it, then re-propagate
-                        // (a cancellation still cancels; the reset is fail-closed cleanup either way).
-                        runCatching { conn.reset() }
-                        throw t
-                    }
-                    if (tunnel == null) {
-                        // 6-agent incident: THIS is the client-originated RST the dogfood log sees as "reset by peer" —
-                        // a loopback conn (a WS upgrade or REST) got no tunnel (pool/set exhausted, see the ws-pool:reserve
-                        // census, or a dial-fail) → fail-closed RST → the WS churns. No secret (no id available here).
-                        com.tneff.cyppieagents.net.logWsPool("transport", "acquire=null → RST loopback conn (no tunnel; see ws-pool:reserve for cause)")
-                        conn.reset() // no live tunnel ⇒ fail-closed (RST), never a plaintext/local fallback
-                    } else {
-                        try {
-                            bridge.pump(tunnel, conn) // carries this connection until either side ends (RR8, no mux)
-                        } finally {
-                            runCatching { tunnel.close() } // slot-release on ANY exit (idempotent; a pooled tunnel frees its slot)
+    // CYP-616: ONE accept-loop per acceptor, each tagging its accepted connections with a fixed [lane] (the port IS the
+    // lane). Same CYP-556 per-connection structure (accept serial, acquire+pump per-connection concurrent) — the ONLY
+    // change is `acquire(lane)`. WS→DATA (gated below the reserve), REST→CONTROL (may take the reserved break-glass slot).
+    private fun launchAcceptLoop(scope: CoroutineScope, acceptor: LoopbackAcceptor, lane: TunnelLane): Job =
+        scope.launch(Dispatchers.IO) {
+            supervisorScope { // ②: an exception in one pump child never cancels the loop or its sibling pumps
+                while (isActive) {
+                    val conn = acceptor.accept() ?: break // acceptor closed → stop (the ONLY serial step)
+                    launch { // ①/②: per-connection — acquire + pump run concurrently; the loop immediately accepts the next
+                        val tunnel = try {
+                            tunnelSource.acquire(lane)
+                        } catch (t: Throwable) {
+                            // CYP-561 NOTE-1: if acquire() RE-THROWS (e.g. a dial exception the pool re-raises), the
+                            // accepted loopback socket would otherwise leak until GC — reset it, then re-propagate
+                            // (a cancellation still cancels; the reset is fail-closed cleanup either way).
+                            runCatching { conn.reset() }
+                            throw t
+                        }
+                        if (tunnel == null) {
+                            // 6-agent incident: THIS is the client-originated RST the dogfood log sees as "reset by peer" —
+                            // a loopback conn got no tunnel (pool/set exhausted, see the ws-pool:reserve census, or a
+                            // dial-fail) → fail-closed RST. CYP-616: a CONTROL conn should now only RST if EVEN the reserve
+                            // is gone (both lanes full); a DATA conn RSTs at effectiveCap, leaving the reserve for CONTROL.
+                            com.tneff.cyppieagents.net.logWsPool("transport", "acquire(lane=$lane)=null → RST loopback conn (no tunnel; see ws-pool:reserve for cause)")
+                            conn.reset() // no live tunnel ⇒ fail-closed (RST), never a plaintext/local fallback
+                        } else {
+                            try {
+                                bridge.pump(tunnel, conn) // carries this connection until either side ends (RR8, no mux)
+                            } finally {
+                                runCatching { tunnel.close() } // slot-release on ANY exit (idempotent; a pooled tunnel frees its slot)
+                            }
                         }
                     }
                 }
             }
         }
-    }
+
+    internal val wsAcceptJob: Job = launchAcceptLoop(scope, wsAcceptor, TunnelLane.DATA)
+    internal val restAcceptJob: Job = launchAcceptLoop(scope, restAcceptor, TunnelLane.CONTROL)
 
     override fun close() {
-        // Tunnel-warmth incident instrumentation: this close() cancels the accept-loop → ALL pooled data tunnels are
-        // torn synchronously. Log WHO called it (the caller stack) so an instrumented re-test pins the batch-teardown
-        // trigger (a Compose composition-leave via AgentShell's DisposableEffect vs closeActiveComponents vs a
-        // higher-level remount). No secrets — stack frames only, no tokens/handshake material.
-        logWsTeardown("transport", "close() → accept-loop cancelled, all pooled data tunnels torn; caller=\n" + callerHint())
-        acceptor.close() // unblocks a pending accept() → the loop ends
-        acceptJob.cancel()
+        // Tunnel-warmth incident instrumentation: this close() cancels BOTH accept-loops → ALL pooled tunnels are torn
+        // synchronously. Log WHO called it (the caller stack) so an instrumented re-test pins the batch-teardown trigger.
+        // No secrets — stack frames only, no tokens/handshake material.
+        logWsTeardown("transport", "close() → accept-loops cancelled, all pooled tunnels torn; caller=\n" + callerHint())
+        wsAcceptor.close(); restAcceptor.close() // unblock pending accept()s → the loops end
+        wsAcceptJob.cancel(); restAcceptJob.cancel()
         if (ownsClient) { httpClient.close(); wsHttpClient.close() } // CYP-610: both owned legs (distinct when not injected)
         // The tunnel is RemoteHubSession-owned (Seam-3) — never closed here.
     }
@@ -131,7 +143,9 @@ class RemoteTunnelHubTransport(
  * connection (no-mux, RR8). `null` ⇒ no live tunnel ⇒ the transport fails the connection closed (RST).
  */
 fun interface TunnelSource {
-    suspend fun acquire(): NoiseTunnel?
+    /** CYP-616: [lane] selects the pool lane — [TunnelLane.CONTROL] (lifecycle-REST via the restAcceptor) draws from the
+     *  reserved break-glass headroom; [TunnelLane.DATA] (WS via the wsAcceptor) is gated below it. */
+    suspend fun acquire(lane: TunnelLane): NoiseTunnel?
 }
 
 /** Accepts loopback connections for [RemoteTunnelHubTransport]. A seam so tests drive the accept-loop without a real socket. */

@@ -18,11 +18,11 @@ actual class RemoteHubTransport actual constructor() : HubTransport {
  *  are served concurrently over N tunnels — true N-tunnel concurrency (the F-M2-1 fix). A per-connection `acquire()`
  *  alone was NOT enough: before CYP-556 the *inline* pump serialized every WS behind the first (the workspace hang). */
 actual fun buildRemoteHubTransport(
-    acquireTunnel: suspend () -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
+    acquireTunnel: suspend (com.tneff.cyppieagents.net.hub.pool.TunnelLane) -> com.tneff.cyppieagents.net.hub.noise.NoiseTunnel?,
     sessionToken: () -> String?,
     scope: kotlinx.coroutines.CoroutineScope,
 ): HubTransport? = RemoteTunnelHubTransport(
-    tunnelSource = { acquireTunnel() },
+    tunnelSource = { lane -> acquireTunnel(lane) }, // CYP-616: the transport routes the lane by acceptor port
     sessionTokenProvider = sessionToken,
     scope = scope,
 )

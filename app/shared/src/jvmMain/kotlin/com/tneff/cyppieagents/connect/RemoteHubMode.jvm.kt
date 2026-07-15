@@ -20,6 +20,7 @@ import com.tneff.cyppieagents.net.hub.operator.vault.OperatorSecretVault
 import com.tneff.cyppieagents.net.hub.operator.vault.OwnerOnlyVaultStore
 import com.tneff.cyppieagents.net.hub.operator.vault.PassphraseUserVerification
 import com.tneff.cyppieagents.net.hub.operator.vault.VaultOperatorDeviceKeyStore
+import com.tneff.cyppieagents.net.hub.pool.CONTROL_RESERVED_SLOTS
 import com.tneff.cyppieagents.net.hub.pool.NoisePoolTunnelDialer
 import com.tneff.cyppieagents.net.hub.pool.PooledTunnelSource
 import com.tneff.cyppieagents.net.hub.relay.HttpRendezvousResolver
@@ -221,6 +222,10 @@ fun liveRemoteConnectComponentsFactory(
             connector = relayConnector,    // id-aware relay open (X-Cyppie-Rendezvous, role: client)
         ),
         nowMs = { System.currentTimeMillis() },
+        // CYP-616: reserve the break-glass control slots so lifecycle-REST (CONTROL lane, via the transport's
+        // restAcceptor) can ALWAYS acquire a tunnel even when a WS-churn storm has saturated the DATA (WS) lane —
+        // belt-and-suspenders to CYP-609. WS are gated at usable−2 (=21 at cap 24); the reserved 2 are CONTROL-only.
+        controlReserved = CONTROL_RESERVED_SLOTS,
     )
     // CYP-542 / B1 — the set-passphrase controller (AC-1/AC-2), built per-connect over the SAME vault the UV opens
     // (so an enroll sealed here is what the next connect's UV unlocks). Only exposed when the coordinator is wired

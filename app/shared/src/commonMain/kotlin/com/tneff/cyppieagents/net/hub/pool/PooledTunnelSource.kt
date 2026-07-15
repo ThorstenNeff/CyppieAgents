@@ -40,6 +40,10 @@ class PooledTunnelSource(
     private val dialer: PoolTunnelDialer,
     private val cap: Int = TUNNEL_POOL_CAP,
     private val nowMs: () -> Long,
+    // CYP-616: slots reserved for the CONTROL (lifecycle-REST) lane that the DATA (WS) lane can never consume — the
+    // break-glass headroom. Default 0 (NO reservation) so every existing call site + the CYP-537/556 race-teeth stay
+    // byte-identical (`effectiveCap == usable` when 0). Prod wires [CONTROL_RESERVED_SLOTS] in RemoteHubMode.jvm.kt.
+    private val controlReserved: Int = 0,
 ) {
     private val _state = MutableStateFlow(TunnelPoolState.empty(cap))
     /** The C3 per-tunnel pool state (WS5 renders, WS4 asserts). */
@@ -61,9 +65,9 @@ class PooledTunnelSource(
      * [cap], on a dial failure, or after [close]). The returned tunnel is a [PooledNoiseTunnel] — closing it (the
      * bridge does, when the connection ends) frees its pool slot.
      */
-    suspend fun acquire(): NoiseTunnel? {
+    suspend fun acquire(lane: TunnelLane = TunnelLane.DATA): NoiseTunnel? {
         if (closed) return null
-        val rendezvousId = reserveSlot() ?: return null // at cap ⇒ fail-closed (no dial), C2
+        val rendezvousId = reserveSlot(lane) ?: return null // at cap ⇒ fail-closed (no dial), C2
         val tunnel = try {
             dialer.dial(rendezvousId) // OFF-lock: N dials proceed concurrently
         } catch (t: Throwable) {
@@ -114,14 +118,20 @@ class PooledTunnelSource(
      * `null` at cap (all set ids in use) or if the set is unresolved. Serialized by [mutex] so two concurrent
      * reserves never pick the same id; the subsequent dial runs OFF this lock (concurrent establishment).
      */
-    private suspend fun reserveSlot(): String? = mutex.withLock {
+    private suspend fun reserveSlot(lane: TunnelLane): String? = mutex.withLock {
         val set = resolvedSet ?: dialer.rendezvousSet()?.also { resolvedSet = it } ?: return@withLock null
         val held = _state.value.tunnels.filter { it.state != TunnelState.DOWN } // live/dialing hold a slot
-        if (held.size >= cap) {
-            // 6-agent incident: this null → the transport RSTs the loopback conn → a WS churns. Census pins driver (a):
-            // cap reached (rare — setSize would have to exceed cap=16). Counts only, no secret.
-            com.tneff.cyppieagents.net.logWsPool("reserve", "EXHAUSTED@cap: held=${held.size} cap=$cap setSize=${set.size} → acquire=null → transport RST")
-            return@withLock null // at cap ⇒ no reservation (even if the set has more ids than cap)
+        // CYP-616: the usable ceiling is set-bound (`min(cap, set.size)` — id 0 is the CP control tunnel, `drop(1)`), NOT
+        // raw cap. The DATA (WS) lane is gated `controlReserved` slots BELOW usable so the last `controlReserved` slots
+        // stay a break-glass headroom only the CONTROL (lifecycle-REST) lane can take (`effectiveCap == usable`). With
+        // `controlReserved=0` this is byte-identical to the old `held.size >= cap` gate (the CYP-537/556 teeth are safe).
+        val usable = minOf(cap, set.size)
+        val effectiveCap = if (lane == TunnelLane.CONTROL) usable else usable - controlReserved
+        if (held.size >= effectiveCap) {
+            // 6-agent incident: this null → the transport RSTs the loopback conn → a WS churns. CYP-616: a DATA null at
+            // `effectiveCap` (with CONTROL headroom still free) is the lane-reservation in force, NOT a real exhaustion.
+            com.tneff.cyppieagents.net.logWsPool("reserve", "EXHAUSTED@lane=$lane: held=${held.size} effCap=$effectiveCap usable=$usable cap=$cap reserved=$controlReserved setSize=${set.size} → acquire=null → transport RST")
+            return@withLock null // at (lane-)cap ⇒ no reservation
         }
         val inUse = held.map { it.rendezvousId }.toSet()
         val freeId = set.firstOrNull { it !in inUse } ?: run {

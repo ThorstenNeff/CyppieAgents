@@ -228,9 +228,11 @@ class HubConnectViewModel(
                                 if (rs.conn == RemoteConnState.CONNECTED && remoteTransport == null) {
                                     val pool = comps.tunnelPool
                                     remoteTransport = buildRemoteHubTransport(
+                                        // CYP-616: pass the lane to the pool (CONTROL=lifecycle-REST gets the reserved
+                                        // break-glass slot). The single-flight fallback ignores it (one tunnel, no pool).
                                         acquireTunnel =
-                                            if (pool != null) { { pool.acquire() } }
-                                            else { { activeComponents?.session?.tunnel } },
+                                            if (pool != null) { { lane -> pool.acquire(lane) } }
+                                            else { { _ -> activeComponents?.session?.tunnel } },
                                         sessionToken = remoteSessionToken,
                                         scope = runScope,
                                     )

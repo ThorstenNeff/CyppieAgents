@@ -202,4 +202,26 @@ class PooledTunnelSourceTest {
         assertEquals(TunnelState.UP, p.state.value.tunnels.single().state)
         assertFalse(p.state.value.aggregate.anyBackpressured)
     }
+
+    @Test
+    fun controlLane_acquiresUnderDataSaturation_theBreakGlassReservation_CYP616() = runTest {
+        // CYP-616 (THE fix tooth, non-vacuous): with controlReserved=2, the DATA (WS) lane is gated `controlReserved`
+        // BELOW the usable set, so once WS churn saturates it a DATA acquire fail-closes — but a CONTROL (lifecycle-REST)
+        // acquire STILL succeeds from the reserved break-glass headroom. This is exactly the incident (WS storm →
+        // pool-exhaust → lifecycle "Server unreachable") and its fix. Mutant: drop the `if (lane==CONTROL)` in
+        // reserveSlot (so CONTROL also subtracts controlReserved) ⇒ CONTROL null under saturation ⇒ RED. Mutant:
+        // controlReserved=0 (no reservation) ⇒ DATA fills all 5, the "4th DATA fail-closes" assert reddens.
+        val cap = 5
+        val ids = (0 until cap).map { "id-$it" } // usable = min(cap, set.size) = 5 ⇒ DATA effectiveCap = 5 − 2 = 3
+        val dialer = FakeDialer(setIds = ids)
+        val p = PooledTunnelSource(dialer = dialer, cap = cap, nowMs = { 0L }, controlReserved = 2)
+        // Saturate the DATA lane up to its effectiveCap (3), like a WS-churn storm holding every data slot.
+        val data = (0 until 3).map { p.acquire(TunnelLane.DATA) }
+        assertTrue(data.all { it != null }, "DATA fills up to usable − controlReserved (3)")
+        assertNull(p.acquire(TunnelLane.DATA), "the next DATA acquire fail-closes at effectiveCap — the reserve is off-limits to WS")
+        // The break-glass headroom is still available ONLY to CONTROL (lifecycle-REST) — the whole point of the fix.
+        assertNotNull(p.acquire(TunnelLane.CONTROL), "CONTROL acquires the reserved slot even under full DATA saturation")
+        assertNotNull(p.acquire(TunnelLane.CONTROL), "the 2nd reserved slot is CONTROL-available too")
+        assertNull(p.acquire(TunnelLane.CONTROL), "beyond the usable set even CONTROL fail-closes — no over-issue past the ids")
+    }
 }
