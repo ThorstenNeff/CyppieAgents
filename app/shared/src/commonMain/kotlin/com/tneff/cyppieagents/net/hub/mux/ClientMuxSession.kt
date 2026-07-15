@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.mux.YamuxRecvWindow
 import com.tneff.cyppieagents.mux.YamuxSendWindow
 import com.tneff.cyppieagents.mux.YamuxType
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import com.tneff.cyppieagents.net.hub.pool.TunnelLane
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -249,5 +250,22 @@ class ClientMuxSession(
  */
 class MuxedStreamSource(private val session: ClientMuxSession) {
     suspend fun acquire(streamClass: StreamClass): MuxedStream? = session.openStream(streamClass)
+
+    /**
+     * CYP-620 minimal-cutover — acquire a stream for the transport's [TunnelLane] (the 2-lane→stream bridge the current
+     * `acquire(lane)` transport injects; the fine agent-ws/singleton-ws split is the 4-acceptor refinement, CYP-621).
+     * **CAUTION-1 (§4.8.4, non-negotiable):** [TunnelLane.CONTROL] → [StreamClass.CONTROL] (wire 0) — that reserved-
+     * priority class IS the CYP-616 break-glass (the stop/restart fix); any other class loses it.
+     */
+    suspend fun acquire(lane: TunnelLane): MuxedStream? = session.openStream(laneToStreamClass(lane))
+
     suspend fun close() = session.close()
+
+    companion object {
+        /** The 2-lane→streamClass mapping. CAUTION-1: CONTROL MUST be wire 0 (break-glass); DATA collapses to one data class. */
+        internal fun laneToStreamClass(lane: TunnelLane): StreamClass = when (lane) {
+            TunnelLane.CONTROL -> StreamClass.CONTROL   // MUST be wire 0 (CYP-616 break-glass / stop-restart fix)
+            TunnelLane.DATA -> StreamClass.AGENT_WS     // one data class (the fine agent/singleton split = CYP-621)
+        }
+    }
 }
