@@ -5,10 +5,13 @@ import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.ParticipantPrincipal
 import com.tneff.cyppieagents.auth.resolvePrincipal
+import com.tneff.cyppieagents.auth.sessionCredential
 import com.tneff.cyppieagents.comm.HubState
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
+import io.ktor.server.request.path
+import org.slf4j.LoggerFactory
 
 /**
  * MVP auth (Spec 02 §14): a bearer token per agent maps to an agent id; one separate operator token
@@ -162,20 +165,56 @@ suspend fun ApplicationCall.requireCommWriter(deps: AuthDeps, registry: TokenReg
  * empty until granted). READ-ONLY: the send path stays token-only — no session path is weaker than the `/api`
  * guard. Returns null → the WS handler closes VIOLATED_POLICY (no app frame delivered).
  */
+/**
+ * CYP-607 DIAGNOSTIC INSTRUMENTATION (dogfood 2026-07-15) — TEMPORARY. The remote-tunnel dogfood showed the hub
+ * silently `close(1008)`-ing 6-of-7 concurrent inner loopback WS (→ [com.tneff.cyppieagents.transport.LoopbackBridge]
+ * `socket.reset()` RST → client "reset by peer" / "server prematurely closed"), with NO log of WHY (all resetting
+ * routes share this silent gate). This logs, per WS auth attempt, the ROUTE + which auth AXIS resolved — or, on the
+ * reject, NULL + the credential-PRESENCE booleans (which axis was even PRESENT). It **never** logs a token/session
+ * VALUE — only the axis name, boolean presence, and the non-secret principal *role*. Because it runs INSIDE the
+ * `webSocket{}` block, its presence proves the WS upgrade (101) completed → an ABSENT log for a reset connection is
+ * itself the signal the reject was pre-101 (connection-level), not this auth gate. Remove once the root is fixed.
+ */
+private val wsAuthDiagLog = LoggerFactory.getLogger("cyp607-diag")
+
 suspend fun ApplicationCall.wsReaderOrNull(deps: AuthDeps, registry: TokenRegistry): String? {
+    val diagPath = request.path() // CYP-607: route only, never the query (no `?token=` value in the log)
     // CYP-286: a short-lived, single-use `?ticket=` (minted at POST /api/ws-ticket by an already-authenticated
     // caller, bound to its OWN read subject) — consumed ATOMICALLY here so a browser need not carry a long-lived
     // bearer in the loggable `?token=` query. No escalation: it resolves to the subject the minter already had.
     // Tried first (the preferred, exposure-minimising path); an invalid/expired/spent ticket falls through.
-    request.queryParameters["ticket"]?.let { deps.wsTickets.consume(it) }?.let { return it }
+    request.queryParameters["ticket"]?.let { deps.wsTickets.consume(it) }?.let {
+        wsAuthDiagLog.info("ws-auth OK path={} axis=ticket", diagPath) // CYP-607
+        return it
+    }
     // CYP-292 (deploy hygiene, human-gated): a `?token=` query is exposure-sensitive (CYP-190 class) — the
     // reverse-proxy access log MUST strip/mask the query before the query-token WS surfaces go public. App-side
     // is clean (no CallLogging; audit uses request.path() sans query), so this is a deploy-path condition only.
     val token = bearerToken() ?: request.queryParameters["token"]
-    registry.participantFor(token)?.let { return it }
-    participantSubject(deps, token)?.let { return it } // CYP-234b: participant token via ?token= (browser WS can't set Authorization)
+    registry.participantFor(token)?.let {
+        wsAuthDiagLog.info("ws-auth OK path={} axis=token(agent/operator)", diagPath) // CYP-607
+        return it
+    }
+    participantSubject(deps, token)?.let { // CYP-234b: participant token via ?token= (browser WS can't set Authorization)
+        wsAuthDiagLog.info("ws-auth OK path={} axis=participant-subject", diagPath) // CYP-607
+        return it
+    }
     return when (val p = resolvePrincipal(deps)) {
-        is AuthPrincipal.Human -> if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
-        else -> null
+        is AuthPrincipal.Human -> {
+            wsAuthDiagLog.info("ws-auth OK path={} axis=session role={}", diagPath, p.role) // CYP-607 (role, not identityId)
+            if (p.role == AuthRole.OPERATOR) HubState.OPERATOR_ID else p.identityId
+        }
+        else -> {
+            // CYP-607: the SILENT reject the dogfood was blind to — surface WHY without any secret value. The
+            // presence booleans discriminate the runtime cause: hasSessionCred=true but session-fell-through ⇒ the
+            // whoami returned null/unverified at runtime (Kratos-side); hasSessionCred=false ⇒ the tunnel never
+            // forwarded the credential for this connection (client/tunnel side).
+            wsAuthDiagLog.warn(
+                "ws-auth NULL path={} axis=session-fell-through principal={} hasBearer={} hasQueryToken={} hasSessionCred={}",
+                diagPath, p?.let { it::class.simpleName } ?: "null",
+                bearerToken() != null, request.queryParameters["token"] != null, sessionCredential() != null,
+            )
+            null
+        }
     }
 }

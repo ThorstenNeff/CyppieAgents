@@ -12,6 +12,7 @@ import com.tneff.cyppieagents.model.UserTurn
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.install
+import io.ktor.server.request.path
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
@@ -22,6 +23,13 @@ import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
+
+// CYP-607 DIAGNOSTIC INSTRUMENTATION (dogfood 2026-07-15) — TEMPORARY. `/ws/agent` uses an opaque `authorize`
+// predicate (not [wsReaderOrNull]); its close paths were as silent as the shared gate. This names each reject
+// (authorize-false / agentId-missing / cross-project) + the agentId so the next dogfood run distinguishes them.
+// Never logs a token value. Remove once the loopback-WS reject root is fixed.
+private val agentWsDiagLog = LoggerFactory.getLogger("cyp607-diag")
 
 /**
  * Per-agent event-stream WebSocket (Frame contract for Dev's `MappingAgentSession`):
@@ -94,17 +102,24 @@ fun Route.agentSocket(
 ) {
     webSocket("/ws/agent") {
         if (!authorize(call)) {
+            agentWsDiagLog.warn( // CYP-607: name the silent authorize reject (agentId for correlation; no token value)
+                "ws-auth NULL path={} axis=agent-authorize agentId={} hasBearer={} hasQueryToken={}",
+                call.request.path(), call.request.queryParameters["agentId"],
+                call.bearerToken() != null, call.request.queryParameters["token"] != null,
+            )
             close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
             return@webSocket
         }
         val agentId = call.request.queryParameters["agentId"]
         if (agentId.isNullOrBlank()) {
+            agentWsDiagLog.warn("ws-auth REJECT path={} reason=agentId-missing", call.request.path()) // CYP-607
             close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "agentId required"))
             return@webSocket
         }
         // CYP-255 ②: fail-closed on cross-project agent-id — the id must belong to the ACTIVE project.
         // Even an operator (workspace-wide by token) can only watch the ACTIVE project's agents (switch first).
         if (activeAgentIds != null && agentId !in activeAgentIds!!()) {
+            agentWsDiagLog.warn("ws-auth REJECT path={} reason=cross-project-agent agentId={}", call.request.path(), agentId) // CYP-607
             close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "no such agent in the active project"))
             return@webSocket
         }
