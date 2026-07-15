@@ -5,7 +5,7 @@
 > save-ux-fix`, umbenennbar). Impl-Koordination: PO → Dev (Client) + Backend (Hub-Window-Semantik).
 
 ## 0. Der Hang (Root-Cause, gegroundet)
-Beim Erst-Enroll zeigt `RecoveryCodesReveal` (`RecoveryCodesReveal.kt`) die einmaligen Backup-Codes; der Flow HÄLT
+Beim Erst-Enroll zeigt `RecoveryCodesReveal` (`RecoveryCodesReveal.kt`) die einmaligen Wiederherstellungs-Codes; der Flow HÄLT
 (`EnrollConfirmState.Revealing`, CYP-525 GE2) **client-seitig unbegrenzt** (`confirmSavedCodes` suspendiert auf
 `deferred.await()`, **kein** Client-Timeout). Der Mensch klickt „Ich habe gespeichert" → `confirmSaved()` → `SavedAck` →
 Hub finalisiert → CONNECTED.
