@@ -80,11 +80,11 @@ class RendezvousRelay {
     }
 
     /**
-     * CYP-617 — pump [a]→[b] and [b]→[a] concurrently with an **ASYMMETRIC close** (close-ORDERING only; the relay
+     * CYP-618 — pump [a]→[b] and [b]→[a] concurrently with an **ASYMMETRIC close** (close-ORDERING only; the relay
      * still forwards opaque frames verbatim, RR4 unchanged — no decode/parse/inspect, no new capability). The pair
      * tears down when the **HUB** side ends (its response is fully sent and it closed), NOT when the client side ends.
      *
-     * This fixes the storm-root: the pre-CYP-617 SYMMETRIC close (`finally { a.close(); b.close() }` on EITHER pump)
+     * This fixes the storm-root: the pre-CYP-618 SYMMETRIC close (`finally { a.close(); b.close() }` on EITHER pump)
      * tore the whole pair the instant the CLIENT closed, killing an in-flight hub→client response before the hub's
      * loopback down-pump could flush it → the client saw "server prematurely closed", re-dialed, and exhausted the
      * tunnel pool. Now a client-close only stops the client→hub direction; the hub→client leg stays alive so the hub
@@ -127,7 +127,7 @@ class RendezvousRelay {
     fun activePairings(): Int = table.size
 
     private companion object {
-        /** CYP-617 — bounded grace for the hub to flush its response after a client-close, before the pair is torn.
+        /** CYP-618 — bounded grace for the hub to flush its response after a client-close, before the pair is torn.
          *  Small (an HTTP response drains fast) yet bounded, so a client-close can never leak the pairing. */
         const val GRACE_MS = 2_000L
     }
