@@ -4,6 +4,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.sun.net.httpserver.HttpServer
 import com.tneff.cyppieagents.auth.OIDC_LOOPBACK_PORT
+import com.tneff.cyppieagents.auth.OIDC_LOOPBACK_RESPONSE_CONTENT_TYPE
+import com.tneff.cyppieagents.auth.OIDC_LOOPBACK_RESPONSE_HTML
 import com.tneff.cyppieagents.auth.parseLoopbackCode
 import com.tneff.cyppieagents.auth.parseLoopbackParam
 import java.net.InetSocketAddress
@@ -61,7 +63,10 @@ private fun armLoopbackListener(onReturn: (String?, String?, String?) -> Unit): 
             val code = parseLoopbackCode(query)              // CYP-576: the return_to_code (was discarded)
             val state = parseLoopbackParam(query, "state")   // CYP-576 P1: the nonce the VM must match
             val error = parseLoopbackParam(query, "error")   // CYP-576 §4: access_denied ⇒ user cancel ≠ real error
-            val body = "Anmeldung abgeschlossen — zurück zur App.".encodeToByteArray()
+            val body = OIDC_LOOPBACK_RESPONSE_HTML.encodeToByteArray()
+            // CYP-593: declare UTF-8 BEFORE sendResponseHeaders (which flushes headers) — else the browser mis-decodes
+            // the UTF-8 bytes as Latin-1 (Mojibake). com.sun.net.httpserver sets no Content-Type by default.
+            exchange.responseHeaders.set("Content-Type", OIDC_LOOPBACK_RESPONSE_CONTENT_TYPE)
             exchange.sendResponseHeaders(200, body.size.toLong())
             exchange.responseBody.use { it.write(body) }
             runCatching { onReturn(code, state, error) }
