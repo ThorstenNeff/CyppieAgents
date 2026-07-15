@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub.mux
 
+import com.tneff.cyppieagents.mux.MuxHello
 import com.tneff.cyppieagents.mux.YamuxFrame
 import com.tneff.cyppieagents.mux.YamuxFrameCodec
 import com.tneff.cyppieagents.mux.YamuxFrameDecoder
@@ -26,14 +27,20 @@ import kotlin.test.assertTrue
  */
 class ClientMuxSessionTest {
 
-    /** A fake carrier tunnel: `receive()` yields queued (encoded) frame chunks; `send()` captures client frames. */
+    /** A fake carrier tunnel: `receive()` yields queued (encoded) frame chunks; `send()` captures client frames.
+     *  CYP-622: the session now performs the G7 hello FIRST — it sends [MuxHello.ENCODED] and reads+verifies the peer's
+     *  hello before any yamux frame. So this fake (a) auto-seeds a valid server hello as the FIRST receive (else run()
+     *  would block on the hello read and openStream would hang), and (b) filters the client's own hello out of [sent],
+     *  keeping [sent] a pure stream of yamux frames so the frame-decoding helpers below are unchanged. The dedicated
+     *  hello send/verify/fail-closed teeth live in Cyp622ClientHelloTest. */
     private class FakeCarrier : NoiseTunnel {
         override val handshakeHash = ByteArray(32)
         val sent = mutableListOf<ByteArray>()
         var closedFlag = false
         private val rx = Channel<ByteArray>(Channel.UNLIMITED)
+        init { rx.trySend(MuxHello.ENCODED) } // the peer's G7 hello — the first message the session reads
         suspend fun deliver(frame: YamuxFrame) { rx.send(YamuxFrameCodec.encode(frame)) }
-        override suspend fun send(plaintext: ByteArray) { sent.add(plaintext) }
+        override suspend fun send(plaintext: ByteArray) { if (!plaintext.contentEquals(MuxHello.ENCODED)) sent.add(plaintext) }
         override suspend fun receive(): ByteArray? = rx.receiveCatching().getOrNull()
         override suspend fun close() { closedFlag = true; rx.close() }
     }

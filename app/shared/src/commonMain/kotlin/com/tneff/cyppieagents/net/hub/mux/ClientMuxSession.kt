@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.net.hub.mux
 
 import com.tneff.cyppieagents.mux.DEFAULT_INITIAL_WINDOW
+import com.tneff.cyppieagents.mux.MuxHello
 import com.tneff.cyppieagents.mux.YamuxFrame
 import com.tneff.cyppieagents.mux.YamuxFrameCodec
 import com.tneff.cyppieagents.mux.YamuxFrameDecoder
@@ -11,6 +12,9 @@ import com.tneff.cyppieagents.mux.YamuxSendWindow
 import com.tneff.cyppieagents.mux.YamuxType
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.pool.TunnelLane
+import com.tneff.cyppieagents.net.logMux
+import com.tneff.cyppieagents.net.muxCarrierId
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -137,6 +141,10 @@ class ClientMuxSession(
     private var nextId = 1L          // client opens ODD ids (server = even), never reused within a session
     private var closed = false
     private var readJob: Job? = null
+    // CYP-622 G7 hello gate: openStream awaits this so no yamux SYN precedes the hello. true = handshake ok; false =
+    // fail-closed (server-hello mismatch/EOF, or teardown) ⇒ every openStream returns null (no stream on a bad peer).
+    private val helloComplete = CompletableDeferred<Boolean>()
+    private val carrierId = muxCarrierId(carrier.handshakeHash) // opaque, non-secret — correlates VM/session mux logs
 
     /** Convenience: launch [run] in [scope] (fire-and-forget) — for a consumer/test that doesn't await the lifecycle. */
     fun start() {
@@ -154,13 +162,30 @@ class ClientMuxSession(
      */
     suspend fun run() {
         try {
+            // CYP-622 G7 mode/version hello FIRST (§4.8.10), before ANY yamux frame. Our hello is the FIRST carrier.send
+            // (the priority scheduler's writer is idle until an openStream SYN is enqueued, and openStream is gated on
+            // [helloComplete] below — so nothing races this send). Then receive + verify the server's hello (message-
+            // framed, mirroring the server MuxBridge: peer-hello → verify → own-hello). A mismatch/EOF is fail-closed:
+            // NO yamux loop, NO streams — run() returns, and the caller's reportDropped() re-dials (the existing drop path).
+            carrier.send(MuxHello.ENCODED)
+            logMux("hello", "G7 hello sent carrier=$carrierId mode=${MuxHello.MODE_MUX} version=${MuxHello.VERSION}")
+            val peerHello = carrier.receive()
+            if (peerHello == null || !MuxHello.verify(peerHello)) {
+                logMux("hello", "G7 peer hello rejected carrier=$carrierId reason=${MuxHello.rejectReason(peerHello)} → fail-closed, no streams")
+                helloComplete.complete(false) // unblock any waiting openStream → it fails closed
+                return
+            }
+            logMux("hello", "G7 peer hello verified carrier=$carrierId → mux ready")
+            helloComplete.complete(true)      // gate opens: openStream may now SYN
             while (!closed) {
                 val chunk = carrier.receive() ?: break // carrier EOF → return, surfacing the drop (never swallow)
                 for (frame in decoder.feed(chunk)) dispatch(frame) // throws on malformed/overshoot → fail-closed below
             }
+            logMux("carrier", "carrier dropped carrier=$carrierId → run() ended → streams reset → reportDropped → re-dial")
         } catch (_: Throwable) {
             runCatching { writeFrame(YamuxFrame.goAway(YamuxGoAway.PROTOCOL_ERROR), SESSION_CONTROL_PRIORITY) } // fail-closed
         } finally {
+            if (!helloComplete.isCompleted) helloComplete.complete(false) // any openStream waiter fails closed on teardown
             teardown()                        // all streams reset (stateless-across-carriers)
             runCatching { scheduler.close() } // stop the priority writer
         }
@@ -172,14 +197,23 @@ class ClientMuxSession(
      * before the peer `ACK`).
      */
     suspend fun openStream(streamClass: StreamClass): MuxedStream? {
+        // CYP-622: gate on the G7 hello — no SYN may precede a verified hello. A failed handshake ⇒ null (fail-closed).
+        if (!helloComplete.await()) {
+            logMux("acquire", "openStream(class=${streamClass.wire}) → null (G7 hello fail-closed) carrier=$carrierId")
+            return null
+        }
         val stream = lock.withLock {
             if (closed) return null
-            if (streams.size >= maxStreams) return null // fail-closed at the per-operator stream cap
+            if (streams.size >= maxStreams) {
+                logMux("acquire", "openStream(class=${streamClass.wire}) → null (maxStreams=$maxStreams) carrier=$carrierId")
+                return null // fail-closed at the per-operator stream cap
+            }
             val id = nextId
             nextId += 2
             MuxedStream(id, streamClass, this, carrier.handshakeHash, initialWindow, frameSizeCap).also { streams[id] = it }
         }
         writeFrame(YamuxFrame.data(stream.streamId, byteArrayOf(streamClass.wireByte), flags = YamuxFlags.SYN), streamClass.wire)
+        logMux("acquire", "openStream(class=${streamClass.wire}) → stream ${stream.streamId} carrier=$carrierId")
         return stream
     }
 
@@ -217,7 +251,11 @@ class ClientMuxSession(
     }
 
     private suspend fun streamRemoteClosed(id: Long) {
-        lock.withLock { streams.remove(id) }?.remoteClosed()
+        val s = lock.withLock { streams.remove(id) }
+        if (s != null) {
+            logMux("stream", "stream $id peer FIN/RST carrier=$carrierId → closed")
+            s.remoteClosed()
+        }
     }
 
     private suspend fun teardown() {
