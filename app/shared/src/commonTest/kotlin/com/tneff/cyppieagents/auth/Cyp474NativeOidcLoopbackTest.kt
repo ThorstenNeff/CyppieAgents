@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,8 +22,10 @@ class Cyp474NativeOidcLoopbackTest {
     @Test
     fun nativeLoopback_startGithub_isBrowserHandoff_notRedirecting() = runTest {
         val vm = AuthViewModel(redirect, nativeOidcLoopback = true, scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
-        advanceUntilIdle() // init checkSession → None → Unauthenticated
-        vm.startGithub(); advanceUntilIdle()
+        runCurrent() // init checkSession → None → Unauthenticated
+        // CYP-576: runCurrent (NOT advanceUntilIdle) — the native flow now arms a ~30s handoff watchdog; advancing
+        // virtual time to idle would fire it (BrowserHandoff → TimedOut/Error) before we observe the handoff itself.
+        vm.startGithub(); runCurrent()
         val gh = assertIs<AuthUiState.Unauthenticated>(vm.state.value).github
         val handoff = assertIs<GithubUiState.BrowserHandoff>(gh)
         assertEquals("https://gh.test/a", handoff.url)

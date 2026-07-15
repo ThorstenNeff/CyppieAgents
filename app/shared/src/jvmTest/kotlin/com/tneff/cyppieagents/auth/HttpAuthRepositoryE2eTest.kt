@@ -86,10 +86,16 @@ class HttpAuthRepositoryE2eTest {
                         )
                         return@get
                     }
-                    call.respondText(
-                        """{"id":"f1","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/$kind"}}""",
-                        ContentType.Application.Json,
-                    )
+                    // CYP-576: the native API-flow login init arms the token-exchange (`return_session_token_exchange_code=true`)
+                    // and Kratos returns a `session_token_exchange_code` (the init half) on the flow. Model it so githubStart's
+                    // init step yields the init code (else it fail-closes to Error — the stale-test breakage).
+                    val wantExchange = call.request.queryParameters["return_session_token_exchange_code"] == "true"
+                    val body = if (wantExchange) {
+                        """{"id":"f1","session_token_exchange_code":"init-code-123","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/$kind"}}"""
+                    } else {
+                        """{"id":"f1","ui":{"action":"http://127.0.0.1:${fx.port}/.ory/kratos/public/self-service/$kind"}}"""
+                    }
+                    call.respondText(body, ContentType.Application.Json)
                 }
                 post("/.ory/kratos/public/self-service/logout/api") {
                     call.respondText("{}", ContentType.Application.Json)
@@ -504,6 +510,8 @@ class HttpAuthRepositoryE2eTest {
         val r = repo.githubStart()
         assertIs<GithubStart.Redirect>(r)
         assertEquals("https://github.test/login/oauth/authorize?state=abc", r.url)
+        // CYP-576: the native API-flow also carries the init half (session_token_exchange_code) for the token-exchange.
+        assertEquals("init-code-123", r.initCode)
     }
 
     @Test
