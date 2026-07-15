@@ -56,7 +56,7 @@
 
 ## Schritt 3 — Hub → Remote → Verbinden → OOB-Fingerprint
 
-- **Was du siehst:** Hub-Liste; Remote-Connect-Option.
+- **Was du siehst:** Hub-Liste (**zeigt `hub_c1d6f5ffd892a03d`**); Remote-Connect-Option.
 - **Was du tust:** Hub wählen → **Verbinden/Remote**. Am **OOB-Fingerprint-Dialog PAUSIEREN**.
 - **Was erwartet:** eine **Wortliste** wird angezeigt. **Paste sie an den PO (a-po).** Erwartet: **`Geiger…dreadful`**.
 - 🔎 **Server-Verify:** QA/deploy/Backend vergleichen die Wortliste aus **3 Quellen** (dein Client-Display +
@@ -115,6 +115,7 @@
 | Symptom | Ursache / Aktion |
 |---|---|
 | App hängt auf „Weiter im Browser…" | Loopback nicht zurück (CYP-578-Klasse) → Retry (Double-Click-Guard verhindert jetzt Doppel-Arm); sonst App neu starten. |
+| Login-Return sofort **Error** / „Bind"-Fehler beim Start | Ein alter Client-Prozess hält noch Port **47472** → freigeben: `lsof -ti:47472 \| xargs -r kill` (hartnäckig: `kill -9`; oder `pkill -f desktopApp`) → App neu starten + retry. |
 | Kein Browser öffnet | Fallback-URL aus der App kopieren + manuell öffnen (CYP-575). |
 | Verify-Pending-Gate (unerwartet — dein Account ist verified=true) | Re-Probe-Button „Weiter/Aktualisieren" (CYP-576-Follow-on / CYP-582 fix a); sonst Logout → Re-Login. |
 | OOB-Fingerprint ≠ `Geiger…dreadful` | **NICHT fortfahren** — an PO melden (fail-closed, C-F2). |
