@@ -66,6 +66,11 @@
 
 ---
 
+> **Precondition — `~/.cyppie`:** Für einen frischen First-Enroll sollte `~/.cyppie` **leer/absent** sein. Existiert
+> bereits ein `operator-vault` (früherer Versuch), erwartest du den **PIN/Unlock**-Screen, **nicht** „Passphrase setzen"
+> — das ist korrekt. Ein **korruptes** Vault → **OOB-Recovery** (kein Re-Enroll): das ist **by-design fail-closed**
+> (E-F1/SF-3), **kein** Bug. Für einen sauberen Demo-Run optional vorher `mv ~/.cyppie ~/.cyppie.bak`.
+
 ## Schritt 4 — B1-Enroll (Passphrase → Recovery-Codes → Connected)
 
 - **Was du siehst:** „App-Passphrase setzen"-Screen mit **Stärke-Meter** + **Diceware-Vorschlag** (Ein-Klick).
@@ -113,6 +118,7 @@
 | Kein Browser öffnet | Fallback-URL aus der App kopieren + manuell öffnen (CYP-575). |
 | Verify-Pending-Gate (unerwartet — dein Account ist verified=true) | Re-Probe-Button „Weiter/Aktualisieren" (CYP-576-Follow-on / CYP-582 fix a); sonst Logout → Re-Login. |
 | OOB-Fingerprint ≠ `Geiger…dreadful` | **NICHT fortfahren** — an PO melden (fail-closed, C-F2). |
+| Hub-Liste **leer** bei Schritt 3 | Wahrscheinlich als **falscher GitHub-Account** autorisiert (erwartet: Operator `ab7c54e3`, Hub `hub_c1d6f5ffd892a03d`). In Chrome bei GitHub **ausloggen** (oder Inkognito-Fenster) → erneut „Sign in with GitHub". |
 | Agent-Turn erscheint client-seitig, aber nicht server-seitig | an QA/PO melden (Turn nicht echt ausgeführt). |
 
 > **Referenzen:** QA-Katalog `test/M1-M2-dogfood-qa-scenario-catalog.md` (Path 0 Login, Path 1 Enroll, §8 Server-Verify-
