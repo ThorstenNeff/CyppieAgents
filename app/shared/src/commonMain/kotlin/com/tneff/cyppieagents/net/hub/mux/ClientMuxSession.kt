@@ -21,6 +21,9 @@ import kotlinx.coroutines.sync.withLock
  *  transport RSTs, or post-CYP-619 holds+retries) — the DoS envelope is now on STREAMS over one tunnel, not tunnels. */
 const val MAX_STREAMS: Int = 64
 
+/** Session-level control frames (PING pong, GoAway) ride the highest priority lane (== [StreamClass.CONTROL].wire). */
+internal const val SESSION_CONTROL_PRIORITY: Int = 0
+
 /**
  * CYP-620 (client wiring) — ONE logical yamux stream, presented to the loopback bridge as a [NoiseTunnel] so the
  * bridge/transport pump a **stream** with zero interface change (a stream *is* a tunnel to the bridge).
@@ -41,6 +44,7 @@ class MuxedStream internal constructor(
     private val session: ClientMuxSession,
     override val handshakeHash: ByteArray,
     initialWindow: Long,
+    private val frameSizeCap: Int,
 ) : NoiseTunnel {
 
     internal val inbound: Channel<ByteArray> = Channel(Channel.UNLIMITED)
@@ -53,14 +57,16 @@ class MuxedStream internal constructor(
     override suspend fun send(plaintext: ByteArray) {
         var off = 0
         while (off < plaintext.size && !closed) {
-            // Take as much send-credit as is available now (per-stream backpressure — never the tunnel).
+            // Take as much send-credit as is available now (per-stream backpressure — never the tunnel), but never
+            // more than [frameSizeCap] per DATA frame — so a bulk stream is chunked and a CONTROL frame can preempt
+            // BETWEEN its chunks (the control-non-starvation guarantee, paired with the priority write-scheduler).
             val take = windowLock.withLock {
                 val avail = sendWindow.available()
-                if (avail <= 0L) 0 else minOf(avail, (plaintext.size - off).toLong()).toInt()
+                if (avail <= 0L) 0 else minOf(avail, (plaintext.size - off).toLong(), frameSizeCap.toLong()).toInt()
                     .also { if (it > 0) sendWindow.consume(it.toLong()) }
             }
             if (take == 0) { creditSignal.receive(); continue } // window empty ⇒ block until a WINDOW_UPDATE grants
-            session.writeFrame(YamuxFrame.data(streamId, plaintext.copyOfRange(off, off + take)))
+            session.writeFrame(YamuxFrame.data(streamId, plaintext.copyOfRange(off, off + take)), streamClass.wire)
             off += take
         }
     }
@@ -70,7 +76,7 @@ class MuxedStream internal constructor(
     override suspend fun receive(): ByteArray? {
         val bytes = inbound.receiveCatching().getOrNull() ?: return null
         val delta = windowLock.withLock { recvWindow.onDrained(bytes.size.toLong()) }
-        if (delta > 0) session.writeFrame(YamuxFrame.windowUpdate(streamId, delta))
+        if (delta > 0) session.writeFrame(YamuxFrame.windowUpdate(streamId, delta), streamClass.wire)
         return bytes
     }
 
@@ -78,7 +84,7 @@ class MuxedStream internal constructor(
         if (closed) return
         closed = true
         creditSignal.trySend(Unit) // unblock any waiting sender so it observes `closed` and returns
-        session.closeStream(streamId) // FIN + unregister
+        session.closeStream(streamId, streamClass.wire) // FIN + unregister (at this stream's priority)
     }
 
     /** Session read-loop → account the peer's spend against our recv window (overshoot ⇒ fail closed), then deliver to
@@ -109,8 +115,9 @@ class MuxedStream internal constructor(
  * [StreamClass] (the hub's `:server` scheduler honors the same 4 values for QoS priority).
  *
  * **Fail-closed:** a malformed frame OR a recv-window overshoot throws → the loop GoAways `PROTOCOL_ERROR` + tears down
- * (no best-effort skip → a stray payload can never land in the wrong stream's socket). One write-mutex serializes
- * `carrier.send`; the read-loop is the sole reader (demux by streamId).
+ * (no best-effort skip → a stray payload can never land in the wrong stream's socket). The [MuxWriteScheduler] is the
+ * ONE writer (serializes `carrier.send`) AND drains CONTROL ahead of bulk (non-starvation); the read-loop is the sole
+ * reader (demux by streamId).
  */
 class ClientMuxSession(
     private val carrier: NoiseTunnel,
@@ -118,18 +125,44 @@ class ClientMuxSession(
     private val maxStreams: Int = MAX_STREAMS,
     private val initialWindow: Long = DEFAULT_INITIAL_WINDOW,
     maxFrameLen: Int = YamuxFrameDecoder.DEFAULT_MAX_FRAME_LEN,
+    private val frameSizeCap: Int = YamuxFrameDecoder.DEFAULT_MAX_FRAME_LEN,
 ) {
     private val decoder = YamuxFrameDecoder(maxFrameLen)
     private val streams = mutableMapOf<Long, MuxedStream>()
     private val lock = Mutex()       // guards [streams] + [nextId]
-    private val writeMutex = Mutex() // serializes carrier.send (one Noise transport message at a time)
+    // CYP-620 control-non-starvation: the priority write-scheduler REPLACES the FIFO write-mutex — it is the ONE writer
+    // (serializes carrier.send) AND drains CONTROL frames ahead of bulk so a lifecycle STOP never waits behind REST bulk.
+    private val scheduler = MuxWriteScheduler(carrier, scope)
     private var nextId = 1L          // client opens ODD ids (server = even), never reused within a session
     private var closed = false
     private var readJob: Job? = null
 
-    /** Start the demux read-loop (idempotent). */
+    /** Convenience: launch [run] in [scope] (fire-and-forget) — for a consumer/test that doesn't await the lifecycle. */
     fun start() {
-        if (readJob == null) readJob = scope.launch { readLoop() }
+        if (readJob == null) readJob = scope.launch { run() }
+    }
+
+    /**
+     * CYP-620 ①-ruling — drive the demux read-loop until the carrier drops (EOF/error), then reset ALL streams and
+     * RETURN. The drop is **surfaced** to the caller ([com.tneff.cyppieagents.net.hub.remote.RemoteHubSession]), never
+     * swallowed (mirrors the server `YamuxSession` returning on link EOF). This session is a **pure consumer of ONE
+     * given tunnel** — it dials/handshakes/authenticates nothing; `RemoteHubSession` owns the carrier lifecycle and,
+     * observing this `run()` end, re-dials + spans a FRESH session. **Stateless-across-carriers (§4.8.3):** a dropped
+     * carrier resets every stream (no zombie on a dead tunnel = fail-closed); no stream is preserved — "no data loss"
+     * is durable cursors (`?since=<seq>`) + the G5 idempotency-key on re-open, not stream carry-over.
+     */
+    suspend fun run() {
+        try {
+            while (!closed) {
+                val chunk = carrier.receive() ?: break // carrier EOF → return, surfacing the drop (never swallow)
+                for (frame in decoder.feed(chunk)) dispatch(frame) // throws on malformed/overshoot → fail-closed below
+            }
+        } catch (_: Throwable) {
+            runCatching { writeFrame(YamuxFrame.goAway(YamuxGoAway.PROTOCOL_ERROR), SESSION_CONTROL_PRIORITY) } // fail-closed
+        } finally {
+            teardown()                        // all streams reset (stateless-across-carriers)
+            runCatching { scheduler.close() } // stop the priority writer
+        }
     }
 
     /**
@@ -143,34 +176,21 @@ class ClientMuxSession(
             if (streams.size >= maxStreams) return null // fail-closed at the per-operator stream cap
             val id = nextId
             nextId += 2
-            MuxedStream(id, streamClass, this, carrier.handshakeHash, initialWindow).also { streams[id] = it }
+            MuxedStream(id, streamClass, this, carrier.handshakeHash, initialWindow, frameSizeCap).also { streams[id] = it }
         }
-        writeFrame(YamuxFrame.data(stream.streamId, byteArrayOf(streamClass.wireByte), flags = YamuxFlags.SYN))
+        writeFrame(YamuxFrame.data(stream.streamId, byteArrayOf(streamClass.wireByte), flags = YamuxFlags.SYN), streamClass.wire)
         return stream
     }
 
-    internal suspend fun writeFrame(frame: YamuxFrame) {
+    /** Enqueue a frame at [priority] (the stream's [StreamClass.wire]; session-control frames use [SESSION_CONTROL_PRIORITY]). */
+    internal suspend fun writeFrame(frame: YamuxFrame, priority: Int) {
         if (closed) return
-        val bytes = YamuxFrameCodec.encode(frame)
-        writeMutex.withLock { carrier.send(bytes) }
+        scheduler.enqueue(YamuxFrameCodec.encode(frame), priority)
     }
 
-    internal suspend fun closeStream(id: Long) {
+    internal suspend fun closeStream(id: Long, priority: Int) {
         val existed = lock.withLock { streams.remove(id) != null }
-        if (existed) writeFrame(YamuxFrame(YamuxType.WINDOW_UPDATE, YamuxFlags.FIN, id, 0L)) // header-only FIN
-    }
-
-    private suspend fun readLoop() {
-        try {
-            while (!closed) {
-                val chunk = carrier.receive() ?: break // carrier closed/EOF → session ends
-                for (frame in decoder.feed(chunk)) dispatch(frame) // throws on malformed/overshoot → caught below
-            }
-        } catch (_: Throwable) {
-            runCatching { writeFrame(YamuxFrame.goAway(YamuxGoAway.PROTOCOL_ERROR)) } // fail-closed
-        } finally {
-            teardown()
-        }
+        if (existed) writeFrame(YamuxFrame(YamuxType.WINDOW_UPDATE, YamuxFlags.FIN, id, 0L), priority) // header-only FIN
     }
 
     private suspend fun dispatch(f: YamuxFrame) {
@@ -190,7 +210,7 @@ class ClientMuxSession(
                     lock.withLock { streams[f.streamId] }?.onWindowGrant(f.length)
                 }
             }
-            YamuxType.PING -> if (f.isSyn) writeFrame(YamuxFrame.ping(f.length, YamuxFlags.ACK)) // pong
+            YamuxType.PING -> if (f.isSyn) writeFrame(YamuxFrame.ping(f.length, YamuxFlags.ACK), SESSION_CONTROL_PRIORITY) // pong
             YamuxType.GO_AWAY -> closed = true // peer teardown → the loop exits next check
         }
     }
@@ -207,10 +227,13 @@ class ClientMuxSession(
 
     /** Q5 teardown: GoAway(normal) + close every stream + close the carrier. Idempotent. */
     suspend fun close() {
-        if (!closed) runCatching { writeFrame(YamuxFrame.goAway(YamuxGoAway.NORMAL)) }
+        if (!closed) runCatching { writeFrame(YamuxFrame.goAway(YamuxGoAway.NORMAL), SESSION_CONTROL_PRIORITY) }
         closed = true
         readJob?.cancel()
         teardown()
+        // Graceful: let the writer FLUSH the enqueued GoAway to the still-live carrier BEFORE we close it (CYP-609
+        // clean-close). (run()'s finally uses the abrupt scheduler.close() — there the carrier is already dead.)
+        runCatching { scheduler.drainAndClose() }
         runCatching { carrier.close() }
     }
 
