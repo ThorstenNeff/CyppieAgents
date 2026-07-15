@@ -56,7 +56,7 @@ object RemoteRelayWiring {
      * [TransportMode.POOL] (the legacy tunnel-per-stream pool). Fail-SAFE default: a typo or a stale env can never
      * *silently* flip the hub onto the new wire protocol; the flip is explicit. Case-insensitive, trimmed. It is a
      * wire-protocol choice → the client and hub MUST match; a mismatch is refused fail-closed at the G7 hello
-     * ([com.tneff.cyppieagents.transport.mux.MuxHello]) — never a byte bridged under a half-flipped deploy.
+     * ([com.tneff.cyppieagents.mux.MuxHello]) — never a byte bridged under a half-flipped deploy.
      */
     fun resolveTransportMode(env: (String) -> String?): TransportMode =
         if (env("CYPPIE_REMOTE_TRANSPORT")?.trim()?.lowercase() == "mux") TransportMode.MUX else TransportMode.POOL
@@ -197,7 +197,7 @@ fun buildRemoteTransport(
 
 /**
  * CYP-620 — the remote-transport wire mode. A client + hub MUST agree; a mismatch is refused fail-closed at the G7
- * hello ([com.tneff.cyppieagents.transport.mux.MuxHello]), so a half-flipped deploy bridges no bytes. Flip via the
+ * hello ([com.tneff.cyppieagents.mux.MuxHello]), so a half-flipped deploy bridges no bytes. Flip via the
  * feature flag `CYPPIE_REMOTE_TRANSPORT` ([RemoteRelayWiring.resolveTransportMode]); default [POOL] until dogfooded.
  */
 enum class TransportMode { POOL, MUX }
