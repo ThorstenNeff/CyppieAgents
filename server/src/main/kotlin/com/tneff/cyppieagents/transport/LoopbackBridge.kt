@@ -4,9 +4,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * CYP-458 (S2) — the **Option A loopback bridge**: pump one terminated [ServerNoiseTunnel] (L2, decrypted client
@@ -40,41 +42,54 @@ class LoopbackBridge(
 
     /** Bridge [tunnel] to the loopback listener until either side ends; applies the asymmetric truncation guard. */
     suspend fun bridge(tunnel: ServerNoiseTunnel): Unit = coroutineScope {
+        val bridgeId = bridgeSeq.incrementAndGet() // CYP-607 diag: correlate this bridge's up/down/end lines
         val socket = socketFactory(loopbackHost, loopbackPort)
+        diagLog.info("CYP-607 bridge#{} start", bridgeId) // CYP-607
         try {
             // Upstream: client bytes (via the UNTRUSTED relay) → the hub socket. Any end here is in-flight-uncertain.
             val up = launch(Dispatchers.IO) {
+                var reason = "tunnel-clean-eof" // CYP-607: receive()==null (relay/client closed cleanly)
                 try {
                     while (true) {
                         val chunk = tunnel.receive() ?: break // relay/L2 closed — untrusted, treat as truncation
                         socket.write(chunk)
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     // decrypt-fail on the tunnel, or a write onto a peer-reset socket — the connection ended; the
                     // pump is best-effort and the truncation guard below still fires. (Not an error to propagate.)
+                    reason = "tunnel-exc:${e::class.simpleName}" // CYP-607
                 } finally {
+                    // CYP-607: this socket.reset() (SO_LINGER 0 → RST) is the client-visible "reset by peer" trigger.
+                    // `reason` names WHY the untrusted side ended: clean relay/client close vs a tunnel exception.
+                    diagLog.info("CYP-607 bridge#{} up-end reason={} -> socket.reset() (RST)", bridgeId, reason)
                     socket.reset() // ★ untrusted side ended → RST (never a clean EOF): the truncation guard
                 }
             }
             // Downstream: hub response bytes → the client. A hub-side EOF is a TRUSTED clean close.
             val down = launch(Dispatchers.IO) {
                 val buf = ByteArray(CHUNK)
+                var reason = "hub-clean-eof" // CYP-607: read()<0 — the hub Ktor route closed its side (e.g. WS 1008)
                 try {
                     while (true) {
                         val n = socket.read(buf)
                         if (n < 0) break // hub closed cleanly (its own response ended)
                         tunnel.send(buf.copyOf(n))
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     // socket read after the guard's RST (Connection reset), or a send onto a closed tunnel — the
                     // connection ended; end the pump quietly. The RST the hub already saw is the truncation signal.
+                    reason = "hub-exc:${e::class.simpleName}" // CYP-607
                 } finally {
+                    // CYP-607: `hub-clean-eof` here = the inner Ktor WS route CLOSED its side (a 1008 auth-close, or a
+                    // handler that returned/threw) → the smoking gun for the "auth OK but still resets" branch.
+                    diagLog.info("CYP-607 bridge#{} down-end reason={} -> tunnel.close()", bridgeId, reason)
                     tunnel.close() // trusted, clean close → the remote client sees a clean end
                 }
             }
             up.join()
             down.join()
         } finally {
+            diagLog.info("CYP-607 bridge#{} bridge-end (both pumps joined)", bridgeId) // CYP-607
             socket.reset()
             tunnel.close()
         }
@@ -82,6 +97,14 @@ class LoopbackBridge(
 
     private companion object {
         const val CHUNK = 16 * 1024
+
+        // CYP-607 DIAGNOSTIC INSTRUMENTATION (dogfood 2026-07-15) — TEMPORARY. The dogfood showed the hub resetting
+        // 6-of-7 inner loopback WS with no trace of WHY. `wsReaderOrNull` logs the auth-null path; this logs the RST
+        // TRIGGER at the bridge — which side ended first (down-end `hub-clean-eof` = the inner route closed; up-end
+        // `tunnel-exc` = relay-leg) and why. One run then shows "auth-null" OR "bridge reset trigger=X". No secret
+        // (only a monotonic bridge id + a reason string). Remove once the loopback-WS reject root is fixed.
+        private val diagLog = LoggerFactory.getLogger("cyp607-diag")
+        private val bridgeSeq = AtomicLong()
     }
 }
 
