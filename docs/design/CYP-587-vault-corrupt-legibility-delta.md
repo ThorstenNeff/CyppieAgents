@@ -3,6 +3,15 @@
 > Owner: UIUX-Designer · Ticket **CYP-587** (Bug, Med, post-Live-Test) · Stand 2026-07-15 · **Design/Copy, kein Code.**
 > Ursprung: der Visual-Completeness-Critic (`CYP-576-login-edge-states-legibility-critic.md`, Gap ④). Gegroundet READ-ONLY
 > gg. develop `85553cd3`. Adjazent zur **CYP-584**-Recovery-Lane (Umsetzung: Team-1-Dev oder fold-in-584 = PO-Call).
+>
+> **⚠ KONVERGENZ (PO-Relay, vor Bau zusammenzuführen):** Team-2-UIUX2 designte parallel **dieselbe** Corrupt-Recovery
+> (CYP-584 §3b, guided DeviceCustodyCorrupt-Recovery). **Gleiche CTA, zwei Keys** — meins `remote_pop_vault_corrupt_recover`
+> vs UIUX2s `remote_connect_to_recovery`. **NICHT beide bauen.** Der PO führt zu EINEM Design zusammen (post-Test). Rollen-
+> Split für die Zusammenführung: **meins = die Foundation** (der `VaultCorrupt`-Seam §5 + die Corrupt-Copy §2 `_vault_corrupt`/
+> `_detail` — ohne die Wurzel-Trennung kann **keine** UI die Distinktion zeichnen); **UIUX2s = der Consumer** (Connect-Flow-
+> Routing §3b). Die **CTA-Key/Routing-Zeile ist verhandelbar** → wenn `remote_connect_to_recovery` (Connect-Flow-benannt)
+> die Recovery-Entry gleich erreicht, **cede ich meinen `_recover`-Key** dafür (ein Knopf, ein Key). Non-verhandelbar bleibt
+> nur die **Foundation** (Seam + ehrliche Corrupt-Copy). Bis zum PO-Reconcile = **Vorschlag**, nicht bau-final.
 
 ## 0. Das Problem (Code-Ursache, exakt)
 `VaultOpen.Corrupt` **und** `VaultOpen.Missing` mappen **beide** auf `UvOutcome.Unavailable`
