@@ -93,10 +93,12 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_agent_turn_undelivere
 import kmpcyppieagents.app.shared.generated.resources.a11y_user_turn
 import kmpcyppieagents.app.shared.generated.resources.agent_turn_undelivered
 import kmpcyppieagents.app.shared.generated.resources.transcript_system_label
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_agent_not_found
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_already_running
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_generic
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_operator_required
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_spawn_failed
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_unreachable
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_restart
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_start
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_stop
@@ -387,6 +389,11 @@ private fun LifecycleErrorRow(agentId: String, code: String) {
         "already_running" -> stringResource(Res.string.agent_ctl_err_already_running)
         "spawn_failed" -> stringResource(Res.string.agent_ctl_err_spawn_failed)
         "operator_required" -> stringResource(Res.string.agent_ctl_err_operator_required)
+        // CYP-598-A: two causes that previously fell to the generic `else` ("Action failed") — a documented server
+        // code (`agent_not_found`, per the AgentLifecycleHttpException KDoc) and a client-side transport failure
+        // (`unreachable`, emitted by the VM when the request never reached the server). Now each reads honestly.
+        "agent_not_found" -> stringResource(Res.string.agent_ctl_err_agent_not_found)
+        "unreachable" -> stringResource(Res.string.agent_ctl_err_unreachable)
         "mode_swap_failed" -> stringResource(Res.string.terminal_mode_swap_failed) // CYP-381 §3.4
         else -> stringResource(Res.string.agent_ctl_err_generic)
     }

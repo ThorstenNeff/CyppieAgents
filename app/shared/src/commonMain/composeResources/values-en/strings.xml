@@ -162,6 +162,10 @@
     <string name="agent_ctl_err_already_running">Already running</string>
     <string name="agent_ctl_err_spawn_failed">Start failed</string>
     <string name="agent_ctl_err_operator_required">Only the operator may control the agent</string>
+    <!-- CYP-598-A: distinct causes that previously collapsed into the generic "Action failed"
+         (diagnosis-masking class CYP-580): 404 agent_not_found + transport (server unreachable/timeout). -->
+    <string name="agent_ctl_err_agent_not_found">Agent not found</string>
+    <string name="agent_ctl_err_unreachable">Server unreachable</string>
     <string name="agent_ctl_err_generic">Action failed</string>
     <!-- Per-window badges (CYP-55). pager_activity_badge: deferred to CYP-55 by CYP-54/50, defined here
          EXACTLY ONCE (titlebar count + pager activity badge share the wording). "new since last" = an
