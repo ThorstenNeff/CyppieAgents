@@ -51,7 +51,7 @@ class Cyp528ChurnFloorTest {
         // sleeper observes the computed re-dial delay without real waiting; the handler returns immediately (clean end).
         val c = NoiseRelayConnector(
             RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), countingDialer(dials), FakeTerminator(), { }, scope,
-            backoffMs = { 0L }, cleanEndFloorMs = 500L, nowMs = { 1_000L }, sleep = { delays.add(it) },
+            backoffMs = { 0L }, cleanEndFloorMs = 500L, nowMs = { 1_000L }, sleep = { delays.add(it) }, reDialJitterMs = { 300L },
         )
         c.start()
         withTimeout(5_000) { while (dials.get() < 3) delay(10) }
@@ -60,19 +60,44 @@ class Cyp528ChurnFloorTest {
     }
 
     @Test
-    fun realSession_heldBeyondFloor_reDialsImmediately_notThrottled() = runBlocking {
+    fun cleanEnd_heldBeyondFloor_reDialsAfterJitteredFloor_notInstant_CYP528b() = runBlocking {
         val delays = CopyOnWriteArrayList<Long>()
         val dials = AtomicInteger(0)
-        // A clock that advances 10s per read → every cycle measures elapsed = 10s >> the 500ms floor (a real session)
-        // → the floor yields 0: a genuine long-lived tunnel is NEVER throttled (the floor is surgical to churn only).
+        // A clock that advances 10s per read → every cycle's elapsed = 10s >> the 500ms floor → the CYP-528 floor term
+        // yields 0. PRE-CYP-528b this re-dialed at 0ms — under a burst of simultaneous held-≥-floor clean-ends (the
+        // dogfood unconsumed-tunnel churn) that was a synchronized 0-5ms thundering herd (the dominant amplifier). NOW
+        // the JITTERED floor caps the INSTANT path: even a held-≥-floor clean-end waits the jitter, never 0.
         val clk = AtomicLong(0)
         val c = NoiseRelayConnector(
             RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), countingDialer(dials), FakeTerminator(), { }, scope,
-            backoffMs = { 0L }, cleanEndFloorMs = 500L, nowMs = { clk.addAndGet(10_000L) }, sleep = { delays.add(it) },
+            backoffMs = { 0L }, cleanEndFloorMs = 500L, nowMs = { clk.addAndGet(10_000L) }, sleep = { delays.add(it) }, reDialJitterMs = { 300L },
         )
         c.start()
         withTimeout(5_000) { while (dials.get() < 3) delay(10) }
         c.stop()
-        assertTrue(delays.take(3).all { it == 0L }, "a real session (elapsed >> floor) re-dials immediately — the floor doesn't throttle it: ${delays.toList()}")
+        // Mutation (remove `maxOf(..., reDialJitterMs())` on the clean-end path) → wait = 0 → this REDs.
+        assertTrue(delays.take(3).all { it == 300L }, "held-≥-floor clean-end re-dials after the JITTERED floor (300), NOT the 0ms instant hammer: ${delays.toList()}")
+    }
+
+    private class ThrowingTerminator : ServerNoiseTerminator {
+        override suspend fun terminate(relay: ServerRelayChannel): ServerNoiseTunnel = throw RuntimeException("NK handshake failed")
+    }
+
+    @Test
+    fun failurePath_jittersTheDeterministicBackoff_deSyncsHerd_CYP528b() = runBlocking {
+        val delays = CopyOnWriteArrayList<Long>()
+        val dials = AtomicInteger(0)
+        // The dial succeeds (attempt reset to 0) but the NK handshake THROWS → attempt++ → the FAILURE path. Its backoff
+        // (`AdmissionRetry.delayForAttempt`) is a FIXED curve identical for every responder → re-syncs the herd. CYP-528b
+        // adds the additive jitter: wait = backoff + jitter, so N failing responders don't re-dial in lock-step.
+        val c = NoiseRelayConnector(
+            RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), countingDialer(dials), ThrowingTerminator(), { }, scope,
+            backoffMs = { 1_000L }, cleanEndFloorMs = 500L, nowMs = { 1_000L }, sleep = { delays.add(it) }, reDialJitterMs = { 300L },
+        )
+        c.start()
+        withTimeout(5_000) { while (dials.get() < 2) delay(10) }
+        c.stop()
+        // Mutation (remove `+ reDialJitterMs()` on the failure path) → wait = 1000 → this REDs.
+        assertTrue(delays.take(2).all { it == 1_300L }, "the failure backoff is JITTERED (backoff 1000 + jitter 300 = 1300) — de-syncs the deterministic curve: ${delays.toList()}")
     }
 }
