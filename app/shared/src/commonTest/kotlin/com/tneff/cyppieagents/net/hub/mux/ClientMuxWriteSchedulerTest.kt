@@ -5,6 +5,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -54,5 +55,17 @@ class ClientMuxWriteSchedulerTest {
         carrier.permit(); advanceUntilIdle()
         assertEquals(listOf(11, 0, 12, 13), carrier.order, "remaining bulk drains after the control frame")
         sched.close()
+    }
+
+    @Test
+    fun drainAndClose_stalledCarrier_fallsBackToAbrupt_doesNotHang_CYP620belt() = runTest {
+        // Backend2 belt: drainAndClose flushes queued frames, but if carrier.send STALLS at clean-close it must not hang
+        // teardown — after DRAIN_FLUSH_TIMEOUT it falls back to an abrupt cancel. Here the carrier never permits, so the
+        // writer blocks forever. Mutant: an unbounded writer.join() ⇒ drainAndClose hangs ⇒ the outer withTimeout ⇒ RED.
+        val carrier = GatedCarrier() // never permits → carrier.send blocks forever
+        val sched = MuxWriteScheduler(carrier, scope = this)
+        sched.enqueue(byteArrayOf(1), StreamClass.CONTROL.wire)
+        advanceUntilIdle() // the writer sends frame-1, then blocks on the never-issued permit
+        withTimeout(30_000) { sched.drainAndClose() } // returns via the timeout fallback — reaching here = no hang
     }
 }
