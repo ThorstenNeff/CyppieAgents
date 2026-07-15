@@ -45,13 +45,36 @@ class ClientMuxSessionTest {
     }
 
     /** Total app-DATA bytes the client sent on [streamId] (excluding the SYN open frame's streamClass byte). */
-    private fun dataBytesSentFor(carrier: FakeCarrier, streamId: Long): Int {
+    private fun dataBytesSentFor(carrier: FakeCarrier, streamId: Long): Int =
+        dataFramesSentFor(carrier, streamId).sumOf { it.payload.size }
+
+    /** The app-DATA frames the client sent on [streamId] (excluding the SYN open frame). */
+    private fun dataFramesSentFor(carrier: FakeCarrier, streamId: Long): List<YamuxFrame> {
         val dec = YamuxFrameDecoder(YamuxFrameDecoder.DEFAULT_MAX_FRAME_LEN)
-        var total = 0
+        val out = mutableListOf<YamuxFrame>()
         for (chunk in carrier.sent) for (f in dec.feed(chunk)) {
-            if (f.type == YamuxType.DATA && !f.isSyn && f.streamId == streamId) total += f.payload.size
+            if (f.type == YamuxType.DATA && !f.isSyn && f.streamId == streamId) out.add(f)
         }
-        return total
+        return out
+    }
+
+    @Test
+    fun send_chunksToFrameSizeCap_soControlCanInterleave_CYP620() = runTest {
+        // CYP-620: a bulk send is split into DATA frames ≤ frameSizeCap, so a CONTROL frame can preempt BETWEEN a bulk
+        // stream's chunks (the priority scheduler picks it next). Large window (no backpressure), cap=4, send 10 bytes.
+        // Mutant: no cap (one big DATA of 10) ⇒ a frame > 4 ⇒ RED (and bulk would monopolize the tunnel).
+        val carrier = FakeCarrier()
+        val session = ClientMuxSession(carrier, scope = this, frameSizeCap = 4)
+        session.start()
+        val s = assertNotNull(session.openStream(StreamClass.REST))
+        s.send(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+        advanceUntilIdle()
+
+        val frames = dataFramesSentFor(carrier, s.streamId)
+        assertEquals(10, frames.sumOf { it.payload.size }, "all 10 bytes are sent")
+        assertTrue(frames.all { it.payload.size <= 4 }, "each DATA frame is ≤ frameSizeCap (control can interleave between chunks)")
+        assertTrue(frames.size >= 3, "the 10-byte payload was chunked, not sent as one monopolizing frame")
+        session.close()
     }
 
     @Test
@@ -106,6 +129,7 @@ class ClientMuxSessionTest {
         val session = ClientMuxSession(carrier, scope = this)
         session.start()
         val s = assertNotNull(session.openStream(StreamClass.CONTROL))
+        advanceUntilIdle() // the SYN is enqueued to the priority scheduler → let its single writer drain to the carrier
 
         val syn = decodeOne(carrier.sent.single())
         assertTrue(syn.isSyn, "openStream emits a SYN frame")
