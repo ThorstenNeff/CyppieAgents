@@ -68,4 +68,16 @@ class Cyp536RendezvousSetTest {
         assertEquals(set[0], RelayRendezvous.rendezvousId(hubId, epoch), "set.first() == the legacy single-tunnel base id")
         assertEquals(set[1], RelayRendezvous.rendezvousId(hubId, epoch, 1), "set[i>=1] == the indexed id for i")
     }
+
+    @Test
+    fun cyp611_dosCapIs24_authorizedFloor_element0IsControl_dataIdsHaveHeadroom() {
+        // CYP-611 — the per-operator DoS cap (WS6 axis 2) was raised 16→24 with the Auftraggeber's out-of-band GO. This
+        // pins the AUTHORIZED value as a regression guard: reverting to 16 (or any drop below the workload) re-introduces
+        // the 8-agent pool-exhaustion foot-gun and would be an UNauthorized DoS-envelope change. Data-ids = cap-1 (element
+        // 0 is the control tunnel) → 23 usable, headroom to ~16 agents (7 singleton-WS + N agent-WS + 1 REST).
+        assertEquals(24, RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP, "CYP-611: Auftraggeber-authorized DoS cap = 24")
+        val dataIds = RelayRendezvous.rendezvousIdSet(hubId, epoch, RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP).drop(1)
+        assertEquals(23, dataIds.size, "data-id pool (after the control id) = cap-1 = 23")
+        assertTrue(dataIds.size >= 15, "must cover the 7-agent default (14 WS + 1 REST) with headroom")
+    }
 }

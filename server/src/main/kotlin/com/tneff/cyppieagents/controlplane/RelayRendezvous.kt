@@ -27,9 +27,20 @@ interface RelayRendezvous {
          * pool cap = the number of epoch-derived rendezvous-ids the CP mints = the **server-side per-operator tunnel
          * CAP** (WS6 axis 2, the DoS floor). One const feeds BOTH the CP set-derivation ([rendezvousIdSet]) and the
          * [com.tneff.cyppieagents.transport.ConcurrentRelayResponderManager] responder cap, so the two can never drift
-         * (the "single-source derived values" rule). Sized to the mode-blind workspace's ~8 eager WS + headroom.
+         * (the "single-source derived values" rule).
+         *
+         * **CYP-611 (dogfood 2026-07-15, 16→24 — Auftraggeber-AUTHORIZED DoS-envelope change):** the mode-blind
+         * client pool opens one tunnel per loopback connection (WS long-lived + 1 dedicated REST tunnel + 1 control),
+         * so at the 7-agent default the 15 data-ids (`cap-1`, after the control id at element 0) were filled EXACTLY
+         * (7 agent-WS + 7 singleton-WS + 1 REST) — an 8th agent exhausted the pool. Raising the cap to **24** gives
+         * ~23 data-ids ⟹ headroom to ~16 agents. This IS a deliberate loosening of the per-operator DoS floor, so it
+         * required the Auftraggeber's out-of-band GO (NOT an autonomous change). The **relay imposes no per-session
+         * ceiling** ([com.tneff.cyppieagents.relay.RendezvousRelay] pairs 1↔1 per opaque id, unbounded), so 24
+         * concurrent tunnels are not relay-limited. **Lockstep obligation:** the client `TUNNEL_POOL_CAP` MUST be
+         * raised to 24 in the SAME deploy, and the server cap MUST stay ≥ the client cap (C2). The two consts are
+         * separate (client in `:app:shared`, not a shared `:core` const yet — see the CYP follow-up) → change BOTH.
          */
-        const val DEFAULT_TUNNEL_POOL_CAP: Int = 16
+        const val DEFAULT_TUNNEL_POOL_CAP: Int = 24
 
         /** RR4 opaque id: `base64url(SHA-256(hubId ‖ epoch))` — the relay sees only this, never `hubId`. The
          *  [rendezvousEpoch] is **per-registration**: a new registration rotates the id (unlinkable across
