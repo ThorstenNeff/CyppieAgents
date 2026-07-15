@@ -3,12 +3,17 @@ package com.tneff.cyppieagents.net.hub.mux
 import com.tneff.cyppieagents.mux.YamuxFrame
 import com.tneff.cyppieagents.mux.YamuxFrameCodec
 import com.tneff.cyppieagents.mux.YamuxFrameDecoder
+import com.tneff.cyppieagents.mux.YamuxType
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -36,6 +41,42 @@ class ClientMuxSessionTest {
         val frames = YamuxFrameDecoder(YamuxFrameDecoder.DEFAULT_MAX_FRAME_LEN).feed(bytes)
         assertEquals(1, frames.size, "exactly one frame in the buffer")
         return frames.single()
+    }
+
+    /** Total app-DATA bytes the client sent on [streamId] (excluding the SYN open frame's streamClass byte). */
+    private fun dataBytesSentFor(carrier: FakeCarrier, streamId: Long): Int {
+        val dec = YamuxFrameDecoder(YamuxFrameDecoder.DEFAULT_MAX_FRAME_LEN)
+        var total = 0
+        for (chunk in carrier.sent) for (f in dec.feed(chunk)) {
+            if (f.type == YamuxType.DATA && !f.isSyn && f.streamId == streamId) total += f.payload.size
+        }
+        return total
+    }
+
+    @Test
+    fun send_blocksAtWindowZero_resumesOnWindowUpdate_M2adapterBackpressure() = runTest {
+        // CYP-620 adapter-backpressure (against :core's REAL YamuxSendWindow): a stream may send only while it holds
+        // credit; at 0 it BLOCKS this stream (never the tunnel) until an inbound WINDOW_UPDATE grants more. With a 4-byte
+        // window, sending 6 bytes emits exactly the first 4 then blocks; a grant of 4 unblocks the tail. Mutant: send
+        // ignores the window (emits all 6 at once) ⇒ 6 bytes flow before any grant + send completes ⇒ RED.
+        val carrier = FakeCarrier()
+        val session = ClientMuxSession(carrier, scope = this, initialWindow = 4)
+        session.start()
+        val s = assertNotNull(session.openStream(StreamClass.AGENT_WS))
+
+        val sendDone = CompletableDeferred<Unit>()
+        launch { s.send(byteArrayOf(1, 2, 3, 4, 5, 6)); sendDone.complete(Unit) }
+        advanceUntilIdle() // let the send push one window's worth, then block at credit 0
+
+        assertEquals(4, dataBytesSentFor(carrier, s.streamId), "exactly one window (4B) flows, then the send blocks at 0")
+        assertFalse(sendDone.isCompleted, "the send is BLOCKED awaiting a WINDOW_UPDATE — not dropping, not busy-looping past the window")
+
+        carrier.deliver(YamuxFrame.windowUpdate(s.streamId, 4)) // peer credits 4 more
+        advanceUntilIdle()
+
+        assertTrue(sendDone.isCompleted, "the WINDOW_UPDATE unblocks the send")
+        assertEquals(6, dataBytesSentFor(carrier, s.streamId), "after the grant the remaining bytes flow (6B total)")
+        session.close()
     }
 
     @Test
