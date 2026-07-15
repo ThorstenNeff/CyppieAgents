@@ -30,11 +30,12 @@ class ClientMuxSessionTest {
     private class FakeCarrier : NoiseTunnel {
         override val handshakeHash = ByteArray(32)
         val sent = mutableListOf<ByteArray>()
+        var closedFlag = false
         private val rx = Channel<ByteArray>(Channel.UNLIMITED)
         suspend fun deliver(frame: YamuxFrame) { rx.send(YamuxFrameCodec.encode(frame)) }
         override suspend fun send(plaintext: ByteArray) { sent.add(plaintext) }
         override suspend fun receive(): ByteArray? = rx.receiveCatching().getOrNull()
-        override suspend fun close() { rx.close() }
+        override suspend fun close() { closedFlag = true; rx.close() }
     }
 
     private fun decodeOne(bytes: ByteArray): YamuxFrame {
@@ -139,5 +140,29 @@ class ClientMuxSessionTest {
         carrier.deliver(YamuxFrame(com.tneff.cyppieagents.mux.YamuxType.WINDOW_UPDATE, com.tneff.cyppieagents.mux.YamuxFlags.FIN, s.streamId, 0L))
         assertNull(withTimeout(5_000) { s.receive() }, "a peer FIN ends the stream (receive → null)")
         session.close()
+    }
+
+    @Test
+    fun streamFin_endsThatStreamOnly_carrierAndSiblingSurvive_CYP620finding1() = runTest {
+        // Backend2 FINDING-1: a per-stream FIN/RST must end ONLY that stream — the shared carrier tunnel and every
+        // SIBLING stream survive (one tunnel, many streams; FIN is a stream event, not a session event). Without this,
+        // a mutation that closed the carrier (or torn the session) on a stream-FIN would survive all the other teeth.
+        val carrier = FakeCarrier()
+        val session = ClientMuxSession(carrier, scope = this)
+        session.start()
+        val a = assertNotNull(session.openStream(StreamClass.AGENT_WS))     // id 1
+        val b = assertNotNull(session.openStream(StreamClass.SINGLETON_WS)) // id 3
+
+        // Peer FINs A only.
+        carrier.deliver(YamuxFrame(com.tneff.cyppieagents.mux.YamuxType.WINDOW_UPDATE, com.tneff.cyppieagents.mux.YamuxFlags.FIN, a.streamId, 0L))
+        assertNull(withTimeout(5_000) { a.receive() }, "A ended by its FIN")
+
+        // The sibling B still delivers, and the carrier is NOT closed — the FIN was a stream event, not a teardown.
+        carrier.deliver(YamuxFrame.data(b.streamId, "still-here".encodeToByteArray()))
+        assertEquals("still-here", withTimeout(5_000) { b.receive() }?.decodeToString(), "the sibling survives A's FIN")
+        assertFalse(carrier.closedFlag, "a stream FIN must NOT close the shared carrier tunnel (mutation: close carrier on FIN ⇒ RED)")
+
+        session.close()
+        assertTrue(carrier.closedFlag, "session.close() DOES close the carrier (sanity: the flag tracks real closes)")
     }
 }

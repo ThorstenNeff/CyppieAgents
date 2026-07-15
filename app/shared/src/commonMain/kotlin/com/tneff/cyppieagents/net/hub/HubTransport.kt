@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub
 
+import com.tneff.cyppieagents.net.hub.mux.StreamClass
 import io.ktor.client.HttpClient
 
 /**
@@ -43,6 +44,20 @@ interface HubTransport {
      * threaded from `ShellConfig`, not this method (they stay unchanged in Phase 1).
      */
     fun sessionToken(): String?
+
+    /**
+     * CYP-620 — the loopback base a connection of [streamClass] must dial (the 4-acceptor QoS routing → the pinned
+     * first-SYN-byte streamClass). The **default collapses to the coarse 2-leg split** (CONTROL/REST → the REST leg
+     * [httpBaseUrl]; AGENT_WS/SINGLETON_WS → the WS leg [wsBaseUrl]) — correct for Local/stub modes, which have no QoS
+     * lanes. The remote **tunnel** transport OVERRIDES this with 4 distinct loopback ports so the hub's `:server`
+     * scheduler can prioritize CONTROL (lifecycle stop/start) over REST (bulk) and AGENT_WS over SINGLETON_WS — the
+     * control-frame non-starvation guarantee (bilateral). AgentShell dials `baseUrlFor(class)` per site (the ~20
+     * repos/live-sources pick their class explicitly = self-documenting; a wrong class = wrong QoS).
+     */
+    fun baseUrlFor(streamClass: StreamClass): String = when (streamClass) {
+        StreamClass.CONTROL, StreamClass.REST -> httpBaseUrl
+        StreamClass.AGENT_WS, StreamClass.SINGLETON_WS -> wsBaseUrl
+    }
 
     /** Release transport-owned resources (an owned [httpClient]). Called once on shell dispose; always safe. */
     fun close()
