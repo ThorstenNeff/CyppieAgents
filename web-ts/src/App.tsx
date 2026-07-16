@@ -18,6 +18,8 @@ import { useWindowStore } from './windowmgr/windowStore'
 import type { WindowState } from './windowmgr/windowState'
 import { deriveWindowActivity } from './windowmgr/activityBadge'
 import { WindowActivityBadge } from './windowmgr/WindowActivityBadge'
+import { WindowBadge } from './windowmgr/WindowBadge'
+import { commCountBadge, eventSeverityBadge, maxTailSeverity } from './windowmgr/windowBadge'
 import { useHubStore } from './state/hubStore'
 import { rosterPoAgentId } from './state/hubReducers'
 import { readHubConfig, type HubConfig, type SocketDeps } from './state/hubConfig'
@@ -171,6 +173,23 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const eventsTrimmed = useEventLogStore((s) => s.trimmed)
   const eventsPaused = useEventLogStore((s) => s.paused)
   const eventsPausedAtSeq = useEventLogStore((s) => s.pausedAtSeq)
+  // CYP-646: the focused (top-most) window id — list order is z-order, so the last window is focused. Selecting only
+  // the id keeps this off the drag/resize re-render path.
+  const focusedWindowId = useWindowStore((s) => (s.windows.length > 0 ? s.windows[s.windows.length - 1].id : null))
+  // CYP-646 (Count): comm-unread since the comm window was last focused. `commSeen` tracks the total at the last
+  // focus; unread = total − seen, reset to 0 whenever the comm window is focused (a focused window has "seen" it).
+  const commTotalCount = useMemo(() => {
+    let n = 0
+    for (const msgs of messagesByChannel.values()) n += msgs.length
+    return n
+  }, [messagesByChannel])
+  const [commSeenCount, setCommSeenCount] = useState(0)
+  useEffect(() => {
+    if (focusedWindowId === COMM_WINDOW_ID) setCommSeenCount(commTotalCount)
+  }, [focusedWindowId, commTotalCount])
+  const commUnread = Math.max(0, commTotalCount - commSeenCount)
+  // CYP-646 (Severity): the event tail's max open severity (drives the event-window badge at/above WARN).
+  const tailMaxSeverity = useMemo(() => maxTailSeverity(eventLog), [eventLog])
   const toggleEventsPause = useEventLogStore((s) => s.togglePause)
 
   const historySize = useMemo(() => () => loadHistorySize(browserStore()), [])
@@ -590,17 +609,29 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     return null
   }
 
-  // CYP-641: the per-window live activity badge — only for agent windows (id `agent:<id>`); other windows get none.
-  // Fail-closed: deriveWindowActivity returns null when nothing is known → no accessory.
-  const activityAccessory = (win: WindowState): React.ReactNode => {
-    if (!win.id.startsWith(AGENT_PREFIX)) return null
-    const agentId = win.id.slice(AGENT_PREFIX.length)
-    const activity = deriveWindowActivity({
-      runState: runStateByAgent.get(agentId),
-      busy: busyByAgent.get(agentId) ?? false,
-      contextTokens: contextTokensByAgent.get(agentId),
-    })
-    return activity === null ? null : <WindowActivityBadge title={win.title} activity={activity} />
+  // Per-window title-bar badge. CYP-641 (agent activity), CYP-646 (comm Count / event Severity — the non-feed
+  // channels of the CMP tri-badge). Each is fail-closed (null → no accessory) and the Count/Severity are focus-gated
+  // (a focused window has "seen" its activity).
+  const titleAccessoryFor = (win: WindowState): React.ReactNode => {
+    if (win.id === COMM_WINDOW_ID) {
+      const badge = commCountBadge(commUnread, focusedWindowId === COMM_WINDOW_ID)
+      return badge === null ? null : <WindowBadge title={win.title} badge={badge} />
+    }
+    if (win.id === EVENT_WINDOW_ID) {
+      // The event window exists only for an operator (added operator-gated), so this never renders for a member.
+      const badge = eventSeverityBadge(tailMaxSeverity, focusedWindowId === EVENT_WINDOW_ID)
+      return badge === null ? null : <WindowBadge title={win.title} badge={badge} />
+    }
+    if (win.id.startsWith(AGENT_PREFIX)) {
+      const agentId = win.id.slice(AGENT_PREFIX.length)
+      const activity = deriveWindowActivity({
+        runState: runStateByAgent.get(agentId),
+        busy: busyByAgent.get(agentId) ?? false,
+        contextTokens: contextTokensByAgent.get(agentId),
+      })
+      return activity === null ? null : <WindowActivityBadge title={win.title} activity={activity} />
+    }
+    return null
   }
 
   return (
@@ -624,7 +655,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
       <div className="workspace-desktop">
         <WindowHost>
           {(win) => (
-            <WindowFrame window={win} titleAccessory={activityAccessory(win)}>
+            <WindowFrame window={win} titleAccessory={titleAccessoryFor(win)}>
               {renderContent(win)}
             </WindowFrame>
           )}
