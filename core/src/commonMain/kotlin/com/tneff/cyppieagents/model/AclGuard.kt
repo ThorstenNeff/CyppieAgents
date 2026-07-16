@@ -15,6 +15,11 @@ package com.tneff.cyppieagents.model
  *
  * Pure function over an immutable snapshot — like [AclMatrix] — so the exact logic the server
  * enforces is testable platform-neutrally in `:core` and cannot drift from enforcement.
+ *
+ * ★ CYP-663 — this guard covers the **PO only, BY DESIGN** (Auftraggeber decision 2026-07-16, two-net verified). The
+ * **operator** ACL column is intentionally NOT guarded here: it is togglable + UI-reachable, but recovery is
+ * structurally guaranteed because `PUT /api/acl` is gated on the runtime-immutable `AuthRole.OPERATOR`, not the
+ * comm-ACL. This is NOT an oversight — do not add an operator branch unprompted. Full rationale on `HubState.setAcl`.
  */
 object AclGuard {
     /**
