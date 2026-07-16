@@ -282,6 +282,7 @@
     <string name="a11y_agent_settings_open">Open settings for %1$s</string>
     <!-- CYP-316: a11y name of the context-token count in the window title bar (%1$s = compact value, e.g. "137k"). -->
     <string name="a11y_agent_context_tokens">Context tokens: %1$s</string>
+    <string name="a11y_agent_context_tokens_stale">Context: last known %1$s tokens (not live)</string>
     <!-- CYP-324: a11y name of the busy marker ("*") in the window title bar (%1$s = agent/window name). -->
     <string name="a11y_agent_busy">%1$s is working</string>
     <string name="a11y_agent_display_name">Enter display name</string>
