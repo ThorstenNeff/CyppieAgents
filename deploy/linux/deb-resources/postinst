@@ -34,38 +34,10 @@ case "$1" in
       chown -R cyppie:cyppie /var/lib/cyppiehub
     fi
 
-    # 4. install + enable the systemd unit (headless auto-start). The unit is embedded here so the jpackage .deb ships
-    #    it (jpackage packages only /opt/cyppiehub); it MIRRORS deploy/linux/cyppiehub.service (the reviewable master —
-    #    CYP-636 boot-verifies they match). StartLimit* in [Unit] (systemd v230+), the 2 JVM args ride the launcher .cfg.
-    cat > /lib/systemd/system/cyppiehub.service <<'UNIT'
-[Unit]
-Description=Cyppie self-hosted agent hub (headless Ktor server)
-Documentation=https://github.com/ThorstenNeff/CyppieAgents
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=3600
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=cyppie
-Group=cyppie
-ExecStart=/opt/cyppiehub/bin/CyppieHub
-WorkingDirectory=/var/lib/cyppiehub
-EnvironmentFile=/etc/cyppiehub/hub.env
-Restart=on-failure
-RestartSec=10
-TimeoutStopSec=30
-KillMode=mixed
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths=/var/lib/cyppiehub
-ProtectHome=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-UNIT
+    # 4. install + enable the systemd unit (headless auto-start). CYP-636: SINGLE-SOURCE — the unit is shipped in the
+    #    .deb payload (jpackage --app-content → /opt/cyppiehub/lib/cyppiehub.service) and COPIED here, NOT embedded as a
+    #    heredoc → no duplication, drift structurally impossible. StartLimit* in [Unit] (v230+), JVM args on the launcher .cfg.
+    install -m 0644 /opt/cyppiehub/lib/cyppiehub.service /lib/systemd/system/cyppiehub.service
     systemctl daemon-reload 2>/dev/null || true
     systemctl enable --now cyppiehub.service 2>/dev/null || true
     ;;
