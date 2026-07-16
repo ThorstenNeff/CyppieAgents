@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.gateway
 
+import com.tneff.cyppieagents.contract.RestContract
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -43,18 +44,45 @@ import io.ktor.server.routing.routing
 /**
  * The edge allow decision. **Default-DENY**: only an explicitly-allowed `(method, path)` is forwarded to the hub; every
  * other request is refused at the edge (404) BEFORE it reaches the hub — so the `/api/cp` prefix, `/ws/hub`, `/mcp/hub` etc. are
- * unreachable through the gateway even though the hub also gates them (defense-in-depth, contract §5). S0 ships a
- * minimal stub; S1 (REST ← `RestContract.REST_OPS`) and S2 (WS ← `ContractGenerator`) replace the impl with a
- * single-sourced allowlist so the edge surface can never drift from the hub's real routes.
+ * unreachable through the gateway even though the hub also gates them (defense-in-depth, contract §5). **S1** fills the
+ * REST data-plane from `RestContract.REST_OPS` (see [fromRestContract]); **S2** adds the WS sockets from
+ * `ContractGenerator` — both single-sourced so the edge surface can never drift from the hub's real routes.
  */
 fun interface GatewayAllowlist {
     fun isAllowed(method: HttpMethod, path: String): Boolean
 
     companion object {
-        /** S0 stub — the one PUBLIC, no-auth route (`/api/health`, both mount prefixes), enough to prove forward +
-         *  default-deny end-to-end. Superseded by S1/S2's single-sourced allowlist. */
-        val S0_HEALTH_ONLY = GatewayAllowlist { method, path ->
-            method == HttpMethod.Get && (path == "/api/health" || path == "/api/v1/health")
+        /** CYP-638 §5 — the machine control-plane prefix in `/api`. These ops ARE in [RestContract.REST_OPS] (the hub
+         *  serves them, OPERATOR + owner-gated) but they are the remote-operate surface the gateway MUST NOT expose to
+         *  the browser, so they are excluded from the data-plane allowlist below. */
+        const val CONTROL_PLANE_PREFIX = "/api/cp/"
+
+        /**
+         * S1 — the REST data-plane allowlist **single-sourced from [RestContract.REST_OPS]**: every op whose path is NOT
+         * the [CONTROL_PLANE_PREFIX] control surface, matched by `(method, path-template)` and accepting BOTH the `/api`
+         * and `/api/v1` dual-mount. **Derived at construction, never hand-copied** — a new data-plane op in `REST_OPS`
+         * is auto-allowed and a new `/api/cp/` op is auto-denied, so the edge can't drift from the hub's real routes.
+         * (WebSocket sockets are added in S2 from `ContractGenerator`.)
+         */
+        fun fromRestContract(): GatewayAllowlist {
+            val dataPlane = RestContract.REST_OPS.filter { !it.path.startsWith(CONTROL_PLANE_PREFIX) }
+            val matchers = dataPlane.map { it.method to it.path.split('/') }
+            return GatewayAllowlist { method, path ->
+                // fold the `/api/v1` dual-mount onto the canonical `/api` the REST_OPS templates are written in.
+                val canonical = if (path.startsWith("/api/v1/")) "/api/" + path.removePrefix("/api/v1/") else path
+                val segs = canonical.split('/')
+                matchers.any { (m, tmpl) -> m.equals(method.value, ignoreCase = true) && segmentsMatch(tmpl, segs) }
+            }
+        }
+
+        /** A concrete request path matches a `REST_OPS` template iff they have the same segment count and each template
+         *  segment is either literally equal or a `{param}` placeholder filled by a non-empty concrete segment. */
+        private fun segmentsMatch(template: List<String>, actual: List<String>): Boolean {
+            if (template.size != actual.size) return false
+            return template.indices.all { i ->
+                val t = template[i]
+                if (t.startsWith("{") && t.endsWith("}")) actual[i].isNotEmpty() else t == actual[i]
+            }
         }
     }
 }
@@ -71,7 +99,7 @@ private val HOP_BY_HOP: Set<String> = setOf(
  */
 fun Application.gatewayModule(
     hubBaseUrl: String,
-    allowlist: GatewayAllowlist = GatewayAllowlist.S0_HEALTH_ONLY,
+    allowlist: GatewayAllowlist = GatewayAllowlist.fromRestContract(),
     client: HttpClient = HttpClient(CIO),
 ) {
     monitor.subscribe(ApplicationStopped) { client.close() }
