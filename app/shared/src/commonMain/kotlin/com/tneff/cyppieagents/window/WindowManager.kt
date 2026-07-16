@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
 import com.tneff.cyppieagents.agentview.formatLocalHhMm
+import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.eventlog.severityColor
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.model.AgentTerminalControlEvent
@@ -105,6 +106,16 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 /**
+ * CYP-656 substrate — resolve a title-bar window's live-feed connection from the shell's per-agent connection
+ * snapshot. An **agent** window returns its real `session.connection`; a **system** window (comm/acl/event-log/…) or
+ * an unknown id is absent from the map → **`null` = "no live feed"** (NOT a fabricated [ConnectionStatus.LIVE]:
+ * inventing freshness where there is none is exactly the fail-open this bundle removes). Pure so the mapping is
+ * unit-testable without a compose render.
+ */
+internal fun titleBarConnection(connections: Map<String, ConnectionStatus>, windowId: String): ConnectionStatus? =
+    connections[windowId]
+
+/**
  * The window host. The layout mode is chosen from the **Compose Window Size Classes** of the measured
  * host (CYP-50/S10, mandated primitive — not `expect`/`actual`):
  *
@@ -142,6 +153,20 @@ fun WindowHost(
      * it from the `/ws/busy-state` map (mirrors [contextTokensFor]). Canvas title bar only — NOT the phone pager.
      */
     busyFor: (String) -> Boolean = { false },
+    /**
+     * CYP-656 substrate — per-window live-feed connection status (the same `session.connection` the body's status
+     * dot / reconnecting chip already use), or **`null` = "no live feed"** for a system window / unwired caller.
+     * Default **`{ null }` (NOT `{ LIVE }`)**: fail-closed at this broad host boundary — a caller that omits it
+     * yields `null`, which the CYP-656 bundle renders as "unknown/grey", NEVER a silently-assumed fresh. `null` is
+     * also semantically true (a Settings/Comm window genuinely has no feed), so the default names a real category
+     * rather than papering over a forgotten wire. The shell feeds it from the hoisted per-agent `AgentViewModel`s
+     * (mirrors [busyFor]).
+     *
+     * **Substrate only — no behaviour yet.** This threads the connection to the title-bar render scope so the
+     * busy-`*` / token-count bundle can gate on it (busy → hide on non-LIVE like the CYP-573 dot; token → grey on
+     * non-LIVE, not hidden). Nothing consumes it yet. Canvas title bar only — NOT the phone pager.
+     */
+    connectionFor: (String) -> ConnectionStatus? = { null },
     /**
      * CYP-354 (client mirror): per-window terminal-control event; `null`/MEDIATED-state → no marker (fail-closed,
      * absent == MEDIATED). Default `{ null }` keeps the host marker-free for callers/tests. The shell feeds it
@@ -184,6 +209,7 @@ fun WindowHost(
         } else {
             WindowCanvas(
                 state = state, onFit = onFit, badgeFor = badgeFor, contextTokensFor = contextTokensFor, busyFor = busyFor,
+                connectionFor = connectionFor,
                 controlEventFor = controlEventFor,
                 titleBarColorsFor = titleBarColorsFor, settingsFor = settingsFor, titleBarLeadingFor = titleBarLeadingFor,
                 agentsEmpty = agentsEmpty, canAddAgent = canAddAgent, onAddFirstAgent = onAddFirstAgent,
@@ -205,6 +231,9 @@ private fun WindowCanvas(
     badgeFor: (String) -> WindowBadge?,
     contextTokensFor: (String) -> Int? = { null },
     busyFor: (String) -> Boolean = { false },
+    // CYP-656 substrate (no behaviour yet): per-window live-feed connection, threaded to the title bar for the
+    // busy-`*`/token bundle to gate on. `null` = no feed (fail-closed, ≠ LIVE). See [WindowHost.connectionFor].
+    connectionFor: (String) -> ConnectionStatus? = { null },
     controlEventFor: (String) -> AgentTerminalControlEvent? = { null },
     titleBarColorsFor: (String) -> TitleBarColors? = { null },
     settingsFor: (String) -> (() -> Unit)? = { null },
@@ -238,6 +267,7 @@ private fun WindowCanvas(
                     badge = badgeFor(window.id),
                     contextTokens = contextTokensFor(window.id),
                     busy = busyFor(window.id),
+                    connection = connectionFor(window.id),
                     control = controlEventFor(window.id),
                     titleBarColors = titleBarColorsFor(window.id),
                     onSettings = settingsFor(window.id),
@@ -559,6 +589,17 @@ fun FloatingWindow(
     contextTokens: Int? = null,
     /** CYP-324: this window's agent is busy (a turn in flight) → a `*` in the title bar; `false` → nothing (unknown ≠ busy). */
     busy: Boolean = false,
+    /**
+     * CYP-656 substrate — this window's live-feed connection status, or **`null` = "no live feed"** (a system
+     * window like Settings/Comm, or an unwired host). **REQUIRED (no default) on purpose:** this is the render
+     * boundary where the busy-`*`/token-count markers live, so the compiler guarantees every caller states the
+     * freshness explicitly. "No info" is an explicit `null`, NEVER a silently-assumed [ConnectionStatus.LIVE] — that
+     * fail-open default is exactly the bug class CYP-656 closes. **Substrate only — NOT yet consumed here;** the
+     * CYP-656 bundle gates the markers on it (busy suppressed on non-LIVE like the CYP-573 dot; token greyed, not
+     * hidden). Rendering is deliberately unchanged until that ticket wires the gate.
+     */
+    @Suppress("unused")
+    connection: ConnectionStatus?,
     /** CYP-354 (client mirror): this window's terminal-control event; `null`/MEDIATED-state → NO marker (absent ==
      *  MEDIATED, the default). Only a non-MEDIATED state shows the read-only §5.1 mode marker. CYP-381: carries
      *  holder-identity ([AgentTerminalControlEvent.heldBy]) + since so the marker can surface who + since when. */

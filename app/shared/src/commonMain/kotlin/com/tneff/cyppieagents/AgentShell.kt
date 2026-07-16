@@ -87,6 +87,7 @@ import com.tneff.cyppieagents.agentview.AgentWindow
 import com.tneff.cyppieagents.agentview.AgentWsClient
 import com.tneff.cyppieagents.agentview.MappingAgentSession
 import com.tneff.cyppieagents.comm.CommApi
+import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.comm.CommLiveSource
 import com.tneff.cyppieagents.comm.CommPanel
 import com.tneff.cyppieagents.comm.CommRepository
@@ -125,6 +126,7 @@ import com.tneff.cyppieagents.settings.SettingsPanel
 import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.settings.ConfigHttpRepository
 import com.tneff.cyppieagents.window.WindowHost
+import com.tneff.cyppieagents.window.titleBarConnection
 import com.tneff.cyppieagents.window.WindowManagerState
 import com.tneff.cyppieagents.agentsettings.AgentSettingsPanel
 import com.tneff.cyppieagents.agentsettings.AgentSettingsViewModel
@@ -789,6 +791,14 @@ fun AgentShell(
     for ((id, vm) in agentVms) {
         agentStatuses[id] = vm.status.collectAsState().value
     }
+    // CYP-656 substrate: per-agent live-feed connection for the title bar. Mirrors the agentStatuses collection
+    // above — each agent owns its /ws/agent socket (vs. busy/token, one shared-socket map flow), so collect each
+    // VM's session.connection into a per-composition map. Read by connectionFor below; a non-agent/system window
+    // is simply absent → titleBarConnection returns null ("no feed"), never a fabricated LIVE.
+    val agentConnections = LinkedHashMap<String, ConnectionStatus>()
+    for ((id, vm) in agentVms) {
+        agentConnections[id] = vm.connection.collectAsState().value
+    }
     val tailMaxSeverity: Severity? =
         tailVm?.state?.collectAsState()?.value?.events?.maxOfOrNull { it.severity }
 
@@ -889,6 +899,10 @@ fun AgentShell(
             // CYP-324: feed each window's busy flag from the WS map (mirrors contextTokensFor). Absent key → false →
             // no `*` (unknown ≠ busy); only an explicit busy=true event lights it, an explicit false clears it.
             busyFor = { id -> busy[id] ?: false },
+            // CYP-656 substrate: feed each window's live-feed connection (mirrors busyFor). Absent key (system
+            // window / not-yet-open agent) → null = "no feed" (fail-closed, ≠ LIVE). No behaviour yet — the
+            // busy-`*`/token bundle gates on it. See [titleBarConnection] / [WindowHost.connectionFor].
+            connectionFor = { id -> titleBarConnection(agentConnections, id) },
             // CYP-354 §5.1: feed each window's terminal-control event from the WS map (mirrors busyFor). Absent key →
             // null → the marker treats it as MEDIATED (the default) → NO marker (absent == MEDIATED). CYP-381: the
             // WHOLE event (holder-identity + since), not just the enum. Read-only mirror.
