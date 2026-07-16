@@ -72,6 +72,12 @@ const COMPACT_WINDOW_ID = 'compact'
 const WORKSPACE_WINDOW_ID = 'workspace'
 const PROJECT_MGMT_WINDOW_ID = 'projectMgmt'
 const CHANNEL_SHARE_WINDOW_ID = 'channelShare'
+// CYP-662: the server's privileged operator identity (HubState.OPERATOR_ID). It is injected UNCONDITIONALLY as a
+// member of every spoke channel (an auth/ACL participant), so it rides in `agents` (the roster ∪ channel-members
+// union) — but it is NOT a spawnable agent: `/ws/agent?agentId=operator` is rejected fail-closed. It must therefore
+// never get an agent WINDOW (it stays a legitimate ACL participant column). Token config is irrelevant — the filter
+// is unconditional (Backend2: the members-injection is not token-gated).
+const OPERATOR_AGENT_ID = 'operator'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -275,6 +281,10 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     const present = new Set(wm.windows.map((w) => w.id))
     let index = wm.windows.length
     for (const agentId of agents) {
+      // CYP-662: `operator` is a channel-membership/ACL identity, not a spawnable agent — never open a window for it
+      // (a dead phantom: the server rejects /ws/agent?agentId=operator, so the transcript is empty + the composer
+      // sends to nowhere, falsely presenting the operator as controllable). It stays an ACL column (agents unchanged).
+      if (agentId === OPERATOR_AGENT_ID) continue
       const id = `${AGENT_PREFIX}${agentId}`
       if (!present.has(id)) wm.add(tiledWindow(id, agentId, index++), true)
     }
