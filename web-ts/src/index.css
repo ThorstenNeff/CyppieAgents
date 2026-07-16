@@ -51,6 +51,29 @@ body,
   gap: 8px;
   padding: 4px 8px;
 }
+/* CYP-643: pushes the theme toggle to the trailing (right) end of the bar, mirroring the CMP ProjectSwitcherBar
+   trailing slot. */
+.workspace-bar-spacer {
+  flex: 1 1 auto;
+}
+.theme-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.theme-toggle select {
+  font: inherit;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-variant);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 4px;
+  padding: 2px 4px;
+  min-height: 24px; /* WCAG 2.5.8 target size */
+  cursor: pointer;
+}
 /* The capacity pill: neutral by default; WARN-amber only when full. Colour is never the sole signal (WCAG 1.4.1) —
    the count + the "voll" label carry it. */
 .capacity-pill {

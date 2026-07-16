@@ -47,6 +47,8 @@ import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest,
 import { CapacityPill } from './workspace/CapacityPill'
 import { OverloadBanner } from './workspace/OverloadBanner'
 import { overloadVisible } from './workspace/capacityModel'
+import { ThemeToggle } from './ui/ThemeToggle'
+import { loadThemeMode, saveThemeMode, applyThemeMode, type ThemeMode } from './ui/themePreference'
 
 const AGENT_PREFIX = 'agent:'
 const ACL_WINDOW_ID = 'acl'
@@ -111,6 +113,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // self-clears when headroom returns (overloadVisible) and is dismissable. A NEW reject un-dismisses (Q5).
   const [overloadActive, setOverloadActive] = useState(false)
   const [overloadDismissed, setOverloadDismissed] = useState(false)
+  // CYP-643: the app-global theme mode (client-local, per-user, durable). Loaded once from localStorage; applied to
+  // <html> via data-theme (the tokens CSS recolours). system = no attribute → prefers-color-scheme governs.
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode(browserStore()))
   // CYP-445: per-agent transient lifecycle-action reject notice (separate from the agent's ERROR run-state).
   const [lifecycleError, setLifecycleError] = useState<ReadonlyMap<string, string>>(new Map())
   const setAgentLifecycleError = (agentId: string, message: string | null) =>
@@ -191,6 +196,12 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // CYP-643: apply the theme mode to <html> whenever it changes (and on mount) — the tokens CSS recolours off
+  // data-theme. Guarded for a non-DOM env (defensive; the app always has document).
+  useEffect(() => {
+    if (typeof document !== 'undefined') applyThemeMode(themeMode, document.documentElement)
+  }, [themeMode])
+
   // Default the comm selection to the first channel once channels arrive.
   useEffect(() => {
     if (selectedChannelId === null && channels.length > 0) setSelectedChannelId(channels[0].id)
@@ -235,6 +246,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
     hubRepo.requestMode(agentId, mode === 'shell' ? 'TERMINAL' : 'ORCHESTRATION').catch(() => undefined)
+  }
+
+  // CYP-643: change + persist the theme mode. The effect re-applies it to <html>; localStorage keeps it across
+  // reloads. Purely client-local — no server, no gate.
+  const onThemeChange = (mode: ThemeMode) => {
+    setThemeMode(mode)
+    saveThemeMode(browserStore(), mode)
   }
 
   // CYP-431: non-optimistic lifecycle. The click marks a transient pending; the run-state flips only on the
@@ -491,13 +509,14 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
 
   return (
     <div className="app-root" data-testid="app-root">
-      {/* CYP-642: the workspace bar carries the capacity pill (present only when there is capacity data — null≠0/0).
-          The overload banner sits full-width below it; both are auto-height, the desktop takes the rest (flex). */}
-      {capacity != null && (
-        <div className="workspace-bar" data-testid="workspace-bar">
-          <CapacityPill capacity={capacity} />
-        </div>
-      )}
+      {/* CYP-642 capacity pill (present only when there is capacity data — null≠0/0) + CYP-643 theme toggle (always
+          present, personal pref). The bar always renders now (the toggle is unconditional); the overload banner sits
+          full-width below it; both are auto-height, the desktop takes the rest (flex). */}
+      <div className="workspace-bar" data-testid="workspace-bar">
+        {capacity != null && <CapacityPill capacity={capacity} />}
+        <div className="workspace-bar-spacer" />
+        <ThemeToggle mode={themeMode} onChange={onThemeChange} />
+      </div>
       {overloadVisible(overloadActive, overloadDismissed, capacity) && (
         <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />
       )}
