@@ -1,0 +1,87 @@
+{
+  "$meta": {
+    "owner": "UIUX-Designer",
+    "epic": "CYP-623",
+    "ticket": "CYP-629",
+    "version": "0.1",
+    "status": "Vorschlag — wartet auf Dev-Gegenlesen",
+    "stand": "2026-07-16",
+    "brand": "maritime-m3",
+    "grounded_against": "develop 2f664e33",
+    "note": "Semantische Tokens für das First-Run-Gate. Keine Roh-Hex im Component — Rollen mappen auf MaterialTheme/maritimeColorScheme (Quelle: MaritimeTheme.kt). WARN-Amber (state.waiting #FFC857/#B26A00) ist eine RESERVIERTE Status-Hue und wird hier NICHT als Chrome verwendet; tertiary-green ist brand-only, nie Erfolgs-Signal.",
+    "reuse_note": "Config-/Roster-Felder erben ihre Tokens aus project-settings-tokens.json / agent-management-tokens.json (eingebettete Sektionen, unverändert). Hier nur die First-Run-eigenen Rollen. HintTone-Mapping: nur INFO + ERROR. EFFECT_DEFERRED und GATED sind bewusst UNGENUTZT (kein Deferral im First-Run — keine laufenden Agenten; Operator upstream authentifiziert). Siehe ux-spec §9."
+  },
+  "semantic": {
+    "firstRun.intro": {
+      "hintTone": "INFO",
+      "container": "surface",
+      "onContainer": "onSurface",
+      "icon": "info",
+      "label_key": "first_run_intro"
+    },
+    "firstRun.degraded": {
+      "hintTone": "INFO",
+      "container": "secondaryContainer",
+      "onContainer": "onSecondaryContainer",
+      "icon": "info",
+      "label_key": "first_run_degraded_note",
+      "note": "Rahmt den 'läuft aber unkonfiguriert'-Zustand als ERWARTET (nicht Fehler). Spiegelt settings.notConfigured."
+    },
+    "firstRun.posture": {
+      "hintTone": "INFO",
+      "container": "surfaceVariant",
+      "onContainer": "onSurfaceVariant",
+      "icon": "key",
+      "label_key": "first_run_apikey_posture",
+      "note": "Ehrliche at-rest-Posture. Advisory/faktisch, kein Alarm. Ton von den Worten, nicht von Farbe."
+    },
+    "firstRun.saved": {
+      "hintTone": "INFO",
+      "container": "surface",
+      "onContainer": "onSurfaceVariant",
+      "icon": "check",
+      "note": "Neutrale First-Run-Bestätigung (Key gespeichert / Repo gesetzt / geklont-ok). NEUTRALER check — KEIN tertiary-green (kein Erfolgs-Signal). Trägt first_run_apikey_saved / first_run_repo_saved / first_run_repo_clone_ok."
+    },
+    "firstRun.cloning": {
+      "hintTone": "INFO",
+      "container": "surfaceVariant",
+      "onContainer": "onSurfaceVariant",
+      "icon": "sync",
+      "label_key": "first_run_repo_cloning",
+      "note": "In-progress. Live-Region Polite. Auch der fail-closed-Default (Status unbekannt/absent) rendert hier — nie 'fertig'."
+    },
+    "firstRun.cloneFailed": {
+      "hintTone": "ERROR",
+      "container": "errorContainer",
+      "onContainer": "onErrorContainer",
+      "icon": "error",
+      "label_key": "first_run_repo_clone_failed",
+      "note": "Echter, korrigierbarer Fehlschlag (url/auth/generisch teilen diesen Slot). Live-Region Assertive. Zwei-Tier: der Fehler ist rot, der umgebende Hub-Zustand bleibt 'oben, degraded' (firstRun.degraded / workspace.unconfigured)."
+    },
+    "firstRun.complete": {
+      "hintTone": "INFO",
+      "container": "surface",
+      "onContainer": "onSurface",
+      "icon": "check",
+      "label_key": "first_run_complete_body",
+      "note": "Abschluss — neutral, kein Erfolgs-Grün."
+    },
+    "workspace.unconfigured": {
+      "hintTone": "INFO",
+      "container": "secondaryContainer",
+      "onContainer": "onSecondaryContainer",
+      "icon": "info",
+      "label_key": "workspace_unconfigured_banner",
+      "note": "Persistenter Banner im degradierten Workspace nach Skip/Teil-Konfig. ERWARTET, kein Alarm-Rot; führt in window.settings."
+    }
+  },
+  "dimensions": {
+    "firstRun.gate.maxWidth": "560dp",
+    "firstRun.gate.padding": "24dp",
+    "firstRun.stepper.spacing": "12dp",
+    "firstRun.section.spacing": "20dp",
+    "field.minWidth": "280dp",
+    "field.spacing": "8dp",
+    "_reuse": "field.minWidth / field.spacing gespiegelt aus project-settings-tokens.json (eingebettete Config-Felder bleiben maßgleich)."
+  }
+}
