@@ -22,7 +22,7 @@ import { useHubStore } from './state/hubStore'
 import { rosterPoAgentId } from './state/hubReducers'
 import { readHubConfig, type HubConfig, type SocketDeps } from './state/hubConfig'
 import { RestHubRepo, type HubRepo } from './state/restRepo'
-import { RestError } from './net/rest'
+import { RestError, restErrorCode } from './net/rest'
 import { commitAclChange } from './state/aclCommit'
 import { startLiveHub } from './state/liveHub'
 import { AgentWindow } from './AgentWindow'
@@ -43,7 +43,10 @@ import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
 import type { LifecycleAction } from './state/hubReducers'
-import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest, ProjectsView } from './types/generated/contract'
+import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity } from './types/generated/contract'
+import { CapacityPill } from './workspace/CapacityPill'
+import { OverloadBanner } from './workspace/OverloadBanner'
+import { overloadVisible } from './workspace/capacityModel'
 
 const AGENT_PREFIX = 'agent:'
 const ACL_WINDOW_ID = 'acl'
@@ -101,6 +104,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const [repoConfig, setRepoConfig] = useState<RepoConfigView | null>(null)
   // CYP-467/94: the project registry + active pointer drive the Event-Browse cross-project axis (operator-only view).
   const [projectsView, setProjectsView] = useState<ProjectsView | null>(null)
+  // CYP-642: the server-authoritative capacity snapshot ({current, estimatedMax?}) — drives the capacity pill.
+  // Refetched after spawn/exit (lifecycle, add) since those move `current`. null = unknown → pill absent (never 0/0).
+  const [capacity, setCapacity] = useState<Capacity | null>(null)
+  // CYP-642: a REAL server overload reject (503 capacity_exceeded from a spawn/start) raises the banner; it
+  // self-clears when headroom returns (overloadVisible) and is dismissable. A NEW reject un-dismisses (Q5).
+  const [overloadActive, setOverloadActive] = useState(false)
+  const [overloadDismissed, setOverloadDismissed] = useState(false)
   // CYP-445: per-agent transient lifecycle-action reject notice (separate from the agent's ERROR run-state).
   const [lifecycleError, setLifecycleError] = useState<ReadonlyMap<string, string>>(new Map())
   const setAgentLifecycleError = (agentId: string, message: string | null) =>
@@ -151,6 +161,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     hubRepo.getApiKey().then(setApiKeyView).catch(() => undefined) // masked view; plaintext never comes back
     hubRepo.getRepoConfig().then(setRepoConfig).catch(() => undefined) // CYP-453 project repo config
     hubRepo.getProjects().then(setProjectsView).catch(() => undefined) // CYP-467 cross-project Event-Browse axis
+    hubRepo.getCapacity().then(setCapacity).catch(() => undefined) // CYP-642 hub-capacity snapshot (MEMBER-tier)
     const live = startLiveHub(
       cfg,
       {
@@ -229,16 +240,31 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // CYP-431: non-optimistic lifecycle. The click marks a transient pending; the run-state flips only on the
   // server's AgentRunStateEvent (the POST response, mirrored by /ws/lifecycle) — both resolve the pending. A
   // rejected request clears the pending (no event will come) so the transient label can't stick.
+  // CYP-642: re-read the server-authoritative capacity after a spawn/exit moved `current`.
+  const refreshCapacity = () => hubRepo.getCapacity().then(setCapacity).catch(() => undefined)
+  // CYP-642: a REAL server capacity reject (503 capacity_exceeded, H5 — never invented) raises the overload banner
+  // and un-dismisses it (a new reject re-surfaces even after a prior dismiss, Q5).
+  const noteCapacityReject = (err: unknown) => {
+    if (restErrorCode(err) === 'capacity_exceeded') {
+      setOverloadActive(true)
+      setOverloadDismissed(false)
+    }
+  }
+
   const onLifecycle = (agentId: string, action: LifecycleAction) => {
     setAgentLifecycleError(agentId, null) // clear any prior reject notice for this agent
     markLifecyclePending(agentId, action)
     hubRepo
       .setLifecycle(agentId, action)
-      .then(onRunState)
+      .then((ev) => {
+        onRunState(ev)
+        void refreshCapacity() // a start/stop changed the RUNNING count → refresh the pill
+      })
       // CYP-445 §6: a rejected action clears the pending (no feed event will come) AND surfaces why (409/503/…).
       .catch((err) => {
         clearLifecyclePending(agentId)
         setAgentLifecycleError(agentId, lifecycleRejectMessage(err))
+        noteCapacityReject(err) // CYP-642: a capacity_exceeded start-reject also raises the overload banner
       })
   }
 
@@ -275,7 +301,18 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // onDone (spawnHint / effectHint) fires only after these resolve.
   const refreshRoster = () => hubRepo.fetchAgents().then(setRoster)
   const onCreateAgent = (spec: Parameters<HubRepo['createAgent']>[0]): Promise<void> =>
-    hubRepo.createAgent(spec).then(refreshRoster)
+    hubRepo
+      .createAgent(spec)
+      .then(() => {
+        void refreshRoster()
+        void refreshCapacity() // CYP-642: a new agent may spawn → refresh the pill
+      })
+      // CYP-642: re-throw so the add dialog still surfaces the server code, but first raise the overload banner on a
+      // real capacity_exceeded reject.
+      .catch((err) => {
+        noteCapacityReject(err)
+        throw err
+      })
   const onUpdateAgent = (id: string, edit: Parameters<HubRepo['updateAgent']>[1]): Promise<void> =>
     hubRepo.updateAgent(id, edit).then(refreshRoster)
   const onRemoveAgent = (id: string, fate: Parameters<HubRepo['removeAgent']>[1]): Promise<void> =>
@@ -454,13 +491,26 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
 
   return (
     <div className="app-root" data-testid="app-root">
-      <WindowHost>
-        {(win) => (
-          <WindowFrame window={win} titleAccessory={activityAccessory(win)}>
-            {renderContent(win)}
-          </WindowFrame>
-        )}
-      </WindowHost>
+      {/* CYP-642: the workspace bar carries the capacity pill (present only when there is capacity data — null≠0/0).
+          The overload banner sits full-width below it; both are auto-height, the desktop takes the rest (flex). */}
+      {capacity != null && (
+        <div className="workspace-bar" data-testid="workspace-bar">
+          <CapacityPill capacity={capacity} />
+        </div>
+      )}
+      {overloadVisible(overloadActive, overloadDismissed, capacity) && (
+        <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />
+      )}
+      {/* CYP-641 titleAccessory (activity badge) rides on each WindowFrame, inside the CYP-642 desktop region. */}
+      <div className="workspace-desktop">
+        <WindowHost>
+          {(win) => (
+            <WindowFrame window={win} titleAccessory={activityAccessory(win)}>
+              {renderContent(win)}
+            </WindowFrame>
+          )}
+        </WindowHost>
+      </div>
     </div>
   )
 }

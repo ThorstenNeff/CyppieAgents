@@ -22,6 +22,7 @@ import type {
   GenerateReportRequest,
   AuthMe,
   ProjectsView,
+  Capacity,
 } from '../types/generated/contract'
 import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
 import type { ConnectorKind } from '../connector/connectorModel'
@@ -104,6 +105,9 @@ export interface HubRepo {
   /** CYP-467/94. GET /api/projects — the registry + active pointer ({activeProjectId, projects}). Drives the Event-
    *  Browse cross-project axis (operator-only): null=active(server-forced) → other project → 'all'. */
   getProjects(): Promise<ProjectsView>
+  /** CYP-642 (S-G). GET /api/capacity — the server-authoritative hub-capacity snapshot ({current, estimatedMax?}).
+   *  MEMBER-tier (all users get the readout). Drives the capacity pill; a null estimatedMax = max not yet estimated. */
+  getCapacity(): Promise<Capacity>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -191,5 +195,8 @@ export class RestHubRepo implements HubRepo {
   }
   getProjects(): Promise<ProjectsView> {
     return this.rest.get<ProjectsView>('/api/projects')
+  }
+  getCapacity(): Promise<Capacity> {
+    return this.rest.get<Capacity>('/api/capacity')
   }
 }
