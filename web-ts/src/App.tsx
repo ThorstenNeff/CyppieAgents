@@ -44,8 +44,9 @@ import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
 import type { LifecycleAction } from './state/hubReducers'
-import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity } from './types/generated/contract'
+import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity, CompactStatus, CompactConfig } from './types/generated/contract'
 import { CapacityPill } from './workspace/CapacityPill'
+import { CompactPanel } from './compact/CompactPanel'
 import { OverloadBanner } from './workspace/OverloadBanner'
 import { overloadVisible } from './workspace/capacityModel'
 import { ThemeToggle } from './ui/ThemeToggle'
@@ -59,6 +60,7 @@ const EVENT_BROWSE_WINDOW_ID = 'eventBrowse'
 const SETTINGS_WINDOW_ID = 'settings'
 const AGENT_MGMT_WINDOW_ID = 'agentMgmt'
 const PRODUCT_LEAD_WINDOW_ID = 'productLead'
+const COMPACT_WINDOW_ID = 'compact'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -110,6 +112,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // CYP-642: the server-authoritative capacity snapshot ({current, estimatedMax?}) — drives the capacity pill.
   // Refetched after spawn/exit (lifecycle, add) since those move `current`. null = unknown → pill absent (never 0/0).
   const [capacity, setCapacity] = useState<Capacity | null>(null)
+  // CYP-649: the server-owned compact status. null = UNKNOWN (unresolved / load failed) → the panel renders facts +
+  // editors ABSENT, never a defaulted idle/off. Refreshed on mount + polled while mounted (status moves as a run does).
+  const [compactStatus, setCompactStatus] = useState<CompactStatus | null>(null)
   // CYP-642: a REAL server overload reject (503 capacity_exceeded from a spawn/start) raises the banner; it
   // self-clears when headroom returns (overloadVisible) and is dismissable. A NEW reject un-dismisses (Q5).
   const [overloadActive, setOverloadActive] = useState(false)
@@ -248,6 +253,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     // CYP-464: Product-Lead report window is present for everyone; the panel fail-closes to the gate-hint (no trigger/
     // list/fetch) for a non-operator — reports are content-free, so this is present-but-gate-hint, not omission (§3).
     if (agents.length > 0 && !present.has(PRODUCT_LEAD_WINDOW_ID)) wm.add(tiledWindow(PRODUCT_LEAD_WINDOW_ID, 'Product-Lead', index++), false)
+    // CYP-649: the compact-orchestration window is present for EVERYONE (the status is read-tier); the panel gates
+    // editing on operator internally (member = read-only chip + gate hint), never omission.
+    if (agents.length > 0 && !present.has(COMPACT_WINDOW_ID)) wm.add(tiledWindow(COMPACT_WINDOW_ID, 'Compact', index++), false)
   }, [agents, operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
@@ -270,6 +278,24 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // rejected request clears the pending (no event will come) so the transient label can't stick.
   // CYP-642: re-read the server-authoritative capacity after a spawn/exit moved `current`.
   const refreshCapacity = () => hubRepo.getCapacity().then(setCapacity).catch(() => undefined)
+  // CYP-649: re-read the server-owned compact status (on load failure it STAYS null → honest "unknown", never a
+  // defaulted idle/off). Used by the mount fetch, the poll-while-open, and the post-config refresh.
+  const refreshCompactStatus = () => hubRepo.getCompactStatus().then(setCompactStatus).catch(() => undefined)
+  // CYP-649: operator config write (allowed / threshold / timings) — non-optimistic: POST then refetch so the panel
+  // reflects the SERVER state, never the local draft. The server range-validates (400) and enforces the operator gate.
+  const onSetCompactConfig = (config: CompactConfig): Promise<void> =>
+    hubRepo.setCompactConfig(config).then(() => {
+      void refreshCompactStatus()
+    })
+
+  // CYP-649 (CYP-328): refresh the compact status on mount + poll while mounted — the server-owned facts (running /
+  // last-run) move AS a sequence runs, so an open window must re-poll to stay honest.
+  useEffect(() => {
+    void refreshCompactStatus()
+    const id = setInterval(() => void refreshCompactStatus(), 5000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // CYP-642: a REAL server capacity reject (503 capacity_exceeded, H5 — never invented) raises the overload banner
   // and un-dismisses it (a new reject re-surfaces even after a prior dismiss, Q5).
   const noteCapacityReject = (err: unknown) => {
@@ -387,6 +413,11 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           generateReport={(type: ReportType) => hubRepo.generateReport({ type })}
         />
       )
+    }
+    if (win.id === COMPACT_WINDOW_ID) {
+      // CYP-649: compact-orchestration. Status is read-tier (all users see the facts); editing is operator-only
+      // (member = read-only chip + gate hint). Non-optimistic + fail-closed (unknown status → facts absent).
+      return <CompactPanel status={compactStatus} operator={operator} onSetConfig={onSetCompactConfig} />
     }
     if (win.id === SETTINGS_WINDOW_ID) {
       // CYP-453: the Settings level frames the PROJECT config (repo + framed API-key). present-but-disabled for a
