@@ -1,9 +1,12 @@
 package com.tneff.cyppieagents.gateway
 
+import com.tneff.cyppieagents.contract.ContractGenerator
 import com.tneff.cyppieagents.contract.RestContract
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
+import io.ktor.client.plugins.websocket.webSocket as clientWebSocket
 import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
@@ -15,6 +18,7 @@ import io.ktor.http.contentType
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationStopped
+import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.request.httpMethod
@@ -25,6 +29,15 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import io.ktor.server.websocket.DefaultWebSocketServerSession
+import io.ktor.server.websocket.WebSockets
+import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.CloseReason
+import io.ktor.websocket.DefaultWebSocketSession
+import io.ktor.websocket.Frame
+import io.ktor.websocket.close
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * CYP-638 S0 — the **isolated Gateway process** scaffold (A2, Auftraggeber-ratified §8).
@@ -100,16 +113,25 @@ private val HOP_BY_HOP: Set<String> = setOf(
 fun Application.gatewayModule(
     hubBaseUrl: String,
     allowlist: GatewayAllowlist = GatewayAllowlist.fromRestContract(),
-    client: HttpClient = HttpClient(CIO),
+    client: HttpClient = HttpClient(CIO) { install(ClientWebSockets) },
 ) {
+    val hubWsBase = wsBaseOf(hubBaseUrl)
     monitor.subscribe(ApplicationStopped) { client.close() }
+    install(WebSockets)
     routing {
-        route("{...}") { // catch-all: every method + path is decided by the allowlist (default-deny)
+        // S2 — WS: a transparent proxy per **single-sourced** `ContractGenerator.WS_CHANNELS` (the 8 data sockets).
+        // Only these paths get a WS handler; a denied WS-upgrade (e.g. `/ws/hub`, in `EXCLUDED_WS_PATHS`) has NO route
+        // here → it falls through to the REST catch-all below → 404 at the edge. No hand-list — a channel added to
+        // `WS_CHANNELS` is auto-proxied; `/ws/hub` stays excluded there, so it can't drift into the browser surface.
+        ContractGenerator.WS_CHANNELS.forEach { channel ->
+            webSocket(channel.path) { proxyWebSocketToHub(client, hubWsBase) }
+        }
+        route("{...}") { // catch-all: every non-WS method + path is decided by the REST allowlist (default-deny)
             handle {
                 val method = call.request.httpMethod
                 val path = call.request.path()
                 if (!allowlist.isAllowed(method, path)) {
-                    // ★ default-deny — the control surface never reaches the hub.
+                    // ★ default-deny — the control surface (and any un-allowlisted WS-upgrade path) never reaches the hub.
                     call.respondBytes(ByteArray(0), status = HttpStatusCode.NotFound)
                     return@handle
                 }
@@ -117,6 +139,56 @@ fun Application.gatewayModule(
             }
         }
     }
+}
+
+/** Derive the hub's `ws(s)://` base from its `http(s)://` base for the WS proxy leg. */
+private fun wsBaseOf(httpBaseUrl: String): String = when {
+    httpBaseUrl.startsWith("https://") -> "wss://" + httpBaseUrl.removePrefix("https://")
+    httpBaseUrl.startsWith("http://") -> "ws://" + httpBaseUrl.removePrefix("http://")
+    else -> httpBaseUrl
+}.trimEnd('/')
+
+/** WS-handshake headers the client's own upgrade regenerates — never relayed from the browser's request. The auth
+ *  headers (`Cookie`, `Authorization`) are deliberately NOT here: the cookie MUST survive the upgrade (CYP-230/515). */
+private val WS_HANDSHAKE_STRIP: Set<String> = setOf(
+    "sec-websocket-key", "sec-websocket-version", "sec-websocket-extensions", "sec-websocket-accept",
+    "sec-websocket-protocol", HttpHeaders.Host,
+).map { it.lowercase() }.toSet()
+
+/**
+ * Transparently proxy one accepted browser WS ([this]) to the hub over a client WS, until either side closes. The
+ * browser's `Cookie`/auth + the query (`token/ticket/since/agentId/projectId`, verbatim in [ApplicationCall.request] uri)
+ * ride the upgrade unmodified; frames relay both ways and the close reason (e.g. 1008 auth-revoked) propagates unmasked.
+ */
+private suspend fun DefaultWebSocketServerSession.proxyWebSocketToHub(client: HttpClient, hubWsBase: String) {
+    val browser = this
+    val browserCall = call
+    val target = hubWsBase + browserCall.request.uri // path + query verbatim
+    client.clientWebSocket(urlString = target, request = {
+        browserCall.request.headers.forEach { name, values ->
+            if (name.lowercase() !in WS_HANDSHAKE_STRIP && name.lowercase() !in HOP_BY_HOP) {
+                values.forEach { header(name, it) } // ★ Cookie/Authorization forwarded — NOT stripped on the WSS handshake
+            }
+        }
+    }) {
+        relayFrames(browser, this)
+    }
+}
+
+/** Bidirectional frame relay between two WS sessions; on either close, the peer's close reason is propagated to the
+ *  other (unmasked — 1008 auth-revoked drives the client's offline banner). */
+private suspend fun relayFrames(a: DefaultWebSocketSession, b: DefaultWebSocketSession) = coroutineScope {
+    val normal = CloseReason(CloseReason.Codes.NORMAL, "")
+    val aToB = launch {
+        runCatching { for (frame in a.incoming) if (frame !is Frame.Close) b.send(frame) }
+        runCatching { b.close(a.closeReason.await() ?: normal) }
+    }
+    val bToA = launch {
+        runCatching { for (frame in b.incoming) if (frame !is Frame.Close) a.send(frame) }
+        runCatching { a.close(b.closeReason.await() ?: normal) }
+    }
+    aToB.join()
+    bToA.join()
 }
 
 /** Forward one allowed call to the hub verbatim and relay the hub's response back to the browser. */
