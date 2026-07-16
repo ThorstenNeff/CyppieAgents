@@ -194,10 +194,8 @@ Der Skip ist kein Sackgassen-Ausgang, sondern ein **ehrlich degradierter Betrieb
 entscheiden, ob das trägt:
 
 **(a) Was sieht der Nutzer *nach* dem Skip?**
-Ein voll navigierbarer Workspace (Fenster/Panels bedienbar — der Hub läuft ja) **plus** ein **persistenter**
-`workspace_unconfigured_banner` (`INFO`, an stabiler Stelle im Workspace-Chrome, **nicht** wegklickbar
-solange unkonfiguriert — er beschreibt einen realen Dauerzustand, kein Toast). Der Banner ist **spezifisch**,
-nicht generisch:
+Ein voll navigierbarer Workspace (Fenster/Panels bedienbar — der Hub läuft ja) **plus** ein Unkonfiguriert-Hinweis.
+Der Banner ist **spezifisch**, nicht generisch:
 - **beide fehlen / eines fehlt:** der Banner nennt konkret, was fehlt — über die **bestehenden Schritt-Labels
   als „fehlt:"-Chips** (Reuse `first_run_step_apikey` / `first_run_step_repo`; keine grammatik-fragilen neuen
   Sätze). Der Client kennt beide Flags → zeigt genau die offenen.
@@ -205,6 +203,23 @@ nicht generisch:
   geklont) — er trägt die **Clone-Fehler-Copy** (`first_run_repo_clone_failed*`, Reuse), damit der Nutzer die
   *Realität* sieht, nicht die Konfiguration (genau die CYP-639-Verwechslung, die §7 schließt).
 - Der Banner trägt die CTA **„Einrichtung fortsetzen"** `workspace_setup_resume` → (b).
+
+**★ Nag-Falle vermieden (PO-Fund, Selbstkorrektur): der Banner ist NICHT strikt „nicht-wegklickbar".**
+Ein permanent-unklickbarer Banner für einen Nutzer, der **bewusst geskippt** hat und 3 Stunden arbeitet, wäre
+**Nörgeln durch die Hintertür** — er widerspräche dem eigenen (b)-Grundsatz „Skip respektieren heißt Skip
+respektieren". Auflösung über die **Lastverteilung der Ehrlichkeit**:
+- Die **eigentliche Ehrlichkeits-Durchsetzung sitzt am Punkt der Handlung** — der `GATED`-Start-Block (c)
+  bringt die Wahrheit **genau dann**, wenn der Nutzer wirklich einen Agenten starten will. Der ambiente
+  Banner muss also **nicht** ein Dauer-Nag sein, um das Produkt ehrlich zu halten.
+- Deshalb: der Banner ist **einklappbar** (`workspace.unconfiguredCollapse`) → kollabiert zu einem **leisen,
+  passiven Indikator-Chip** `workspace_unconfigured_chip` („Nicht eingerichtet") im Workspace-Chrome —
+  **nicht ganz weg** (der unfertige Zustand ist ein realer Dauerfakt → nie zu Null verstecken = keine
+  Ehrlichkeits-Auslassung), aber **passiv statt fordernd.**
+- **Kadenz:** voller Banner **einmal pro Session-Start** (klar, spezifisch); Einklappen wird **für die Session
+  respektiert** (klappt nicht von selbst wieder auf, nörgelt nicht); Chip-Tap → Banner/Resume auf Abruf. Bei
+  **Relaunch** (noch unkonfiguriert) einmal wieder voll — **dieselbe Kadenz wie das Gate** (eine ehrliche
+  Erinnerung pro Session-Start, danach passiv). Ein 3-Stunden-Skipper sieht: 1× Banner → einklappen → leiser
+  Chip. Ehrlichkeit erhalten, Nag entfernt.
 
 **(b) Kommt er zurück ins Gate — und wann?**
 Drei Wege, bewusst getrennt (Ehrlichkeit ohne Nörgeln):
@@ -363,8 +378,20 @@ identisch zu deiner approved Formulierung; nur die Ticket-Nummer ist aus dem sic
   gegenlesen. Kein unilateraler Umbau; Ton + Ehrlichkeit sind der Kern.
 - **Backend:** der §7-Seam (`cloneStatus`/`cloneReason` auf `RepoConfigView`, prompter Clone-Trigger,
   fail-closed). **Consumer-driven, PO routet.**
-- **UIUX2 (Interaktion/a11y, über PO):** Fokus-Reihenfolge im Stepper, Live-Region-Politeness
-  (Polite/Assertive), Tastatur-Durchlauf; Flächen-Split über PO.
+- **UIUX2 (Interaktion/a11y, über PO) — konkreter Ask:**
+  1. **Fokus beim Gate-Öffnen/Schritt-Wechsel:** wohin landet der Fokus beim Gate-Auftakt und bei jedem
+     Schritt-Übergang (erster offener Schritt, nicht zurück auf Titel).
+  2. **Live-Region-Politeness (bestätigen/verfeinern):** Clone-Status-Transitionen **Polite**, Clone-**Fehler
+     Assertive**, Key/Repo-Bestätigungen **Polite**, Banner-Erstauftritt **Polite**, `agent_ctl_unconfigured`
+     **Polite** (kein Assertive — es ist kein Fehler).
+  3. **★ GATED-Start-Control:** der Grund muss **programmatisch mit dem deaktivierten Control assoziiert** sein
+     (nicht nur visuell daneben) — ein Screenreader-Nutzer muss beim Fokus auf „Start" **hören, warum** es
+     nicht geht. Das ist die a11y-kritischste Stelle (§6.3c).
+  4. **Nag-Fix-Interaktion (§6.3a):** Fokus-/Announce-Verhalten beim Einklappen Banner→Chip und beim
+     Chip-Tap→Wiederaufklappen (kein Fokus-Klau, kein wiederholtes Announce beim passiven Chip).
+  5. **CTA-Fokusordnung:** `first_run_skip` / `workspace_setup_resume` dürfen nicht der erste Tab-Stop sein
+     (kein versehentliches Skippen/Re-Öffnen). Tastatur-Durchlauf des Steppers.
+  (Flächen-Split über den PO.)
 
 ---
 
@@ -382,9 +409,12 @@ identisch zu deiner approved Formulierung; nur die Ticket-Nummer ist aus dem sic
   Q2-Ratifikation (fail-closed + prompter Clone + 4 Zustände).
 - **§9-Flag ENTSCHIEDEN (PO 2026-07-16):** `(CYP-220)` bleibt **aus** der user-facing Copy — Tracking nur
   in Spec + Key-Kommentar. Copy unverändert („späteres Update").
-- **Skip-Pfad-Kanten (§6.3, PO-ungated-Auftrag) beantwortet:** nach-Skip-Sicht (spezifischer persistenter
-  Banner), Rückkehr ins Gate (auf-Abruf via CTA / bei Relaunch / Skip-in-Session respektiert / Settings-Alt),
-  und der Lackmustest „Start trotz unkonfiguriert" (pre-emptiv `GATED` + ehrlicher Grund vor Klick, kein
-  stiller Fail; ⟂ AgentView-Seam).
+- **Skip-Pfad-Kanten (§6.3, PO-ungated-Auftrag) beantwortet:** nach-Skip-Sicht (spezifischer Banner),
+  Rückkehr ins Gate (auf-Abruf via CTA / bei Relaunch / Skip-in-Session respektiert / Settings-Alt), und der
+  Lackmustest „Start trotz unkonfiguriert" (pre-emptiv `GATED` + ehrlicher Grund vor Klick, kein stiller Fail;
+  ⟂ AgentView-Seam).
+- **Nag-Falle selbst-korrigiert (PO-Fund §6.3a):** strikt-nicht-wegklickbarer Banner wäre Back-Door-Nörgeln
+  gg. den eigenen Skip-Respekt-Grundsatz → Banner **einklappbar → leiser Chip** (nie zu Null); die eigentliche
+  Ehrlichkeit trägt der Punkt-der-Handlung-`GATED`-Block, nicht der ambiente Banner.
 - Companion-Files eingefroren: `first-run-setup-keys.md` · `first-run-setup-tags.md` ·
   `first-run-setup-tokens.json`. Kein Bau, docs-only auf `feature/CYP-629-first-run-setup-spec`.

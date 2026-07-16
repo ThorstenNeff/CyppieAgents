@@ -53,6 +53,14 @@
 |---|---|---|
 | `workspace_unconfigured_banner` | Hub noch nicht eingerichtet — Agenten können nicht starten. In den Projekt-Einstellungen einrichten. | Hub not configured yet — agents can't start. Set it up in Project Settings. |
 | `workspace_setup_resume` | Einrichtung fortsetzen | Continue setup |
+| `workspace_unconfigured_chip` | Nicht eingerichtet | Not configured |
+| `a11y_workspace_unconfigured_collapse` | Hinweis einklappen | Collapse notice |
+
+> **Nag-Falle-Fix (§6.3a, PO-Fund):** der volle Banner ist **einklappbar** → leiser, passiver
+> `workspace_unconfigured_chip` (nie ganz weg = keine Ehrlichkeits-Auslassung; passiv = kein Nag). Die
+> eigentliche Ehrlichkeit trägt der `GATED`-Start-Block (c) am Punkt der Handlung. `a11y_workspace_unconfigured_collapse`
+> = a11y des Einklapp-Controls (kein reuse-fähiges generisches Dismiss-a11y gefunden; `a11y_*_hide` sind
+> Reveal-Toggles, nicht Dismiss).
 
 ### Skip-Pfad-Kanten (§6.3) — Start-blockiert `GATED`
 | Key | DE | EN |
@@ -96,16 +104,17 @@
   `agent_ctl_unconfigured` reiht sich ein (nicht neu erfunden).
 
 ## Self-Validation
-- **24 neue Keys:** 20 × `first_run_*` + `workspace_unconfigured_banner` + `workspace_setup_resume` +
-  `agent_ctl_unconfigured` + `a11y_agent_ctl_unconfigured`. Alle DE+EN befüllt.
+- **26 neue Keys:** 20 × `first_run_*` + `workspace_unconfigured_banner` + `workspace_setup_resume` +
+  `workspace_unconfigured_chip` + `a11y_workspace_unconfigured_collapse` + `agent_ctl_unconfigured` +
+  `a11y_agent_ctl_unconfigured`. Alle DE+EN befüllt.
 - **Argument-Anzahl:** **alle 0 Args** (kein `%n$s`); DE/EN-Argument-Anzahl identisch (0 == 0) je Zeile. Der
   Text „***<letzte 4>" / „***<last 4>" in `first_run_apikey_posture` ist **literale Erklärung**, kein Format-Arg.
 - **Kein content-tragendes/sensibles Klartext:** kein Key-Rohwert, kein Token, kein Fingerprint in der Copy;
   Maskierung wird nur *beschrieben*, nicht materialisiert.
 - **Kollision:** 0 — `first_run_*` greenfield (`grep name="first_run_"` @ `2f664e33` leer); `workspace_setup_resume`
-  + `workspace_unconfigured_banner` gg. `name="workspace_"` verifiziert (kein bestehender Unkonfiguriert-Banner,
-  §6.2); `agent_ctl_unconfigured` reiht sich kollisionsfrei in die bestehende `agent_ctl_*`-Familie (verifiziert
-  @ `2f664e33`: `agent_ctl_unconfigured` existiert noch nicht).
+  / `_unconfigured_banner` / `_unconfigured_chip` gg. `name="workspace_"` verifiziert (kein bestehender
+  Unkonfiguriert-Surface, §6.2); `agent_ctl_unconfigured` reiht sich kollisionsfrei in die bestehende
+  `agent_ctl_*`-Familie (verifiziert @ `2f664e33`: existiert noch nicht).
 - **DE/EN-Parität:** jede Zeile beidseitig.
 - **Reuse vs neu sauber getrennt:** 2 bestehende Effekt-Hints bewusst NICHT reused (Honesty §3.2/§4.1),
   begründet; der Rest der Config-/Roster-Keys 1:1 reused.

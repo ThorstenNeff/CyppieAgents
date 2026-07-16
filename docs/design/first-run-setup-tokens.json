@@ -72,7 +72,15 @@
       "onContainer": "onSecondaryContainer",
       "icon": "info",
       "label_key": "workspace_unconfigured_banner",
-      "note": "Persistenter Banner im degradierten Workspace nach Skip/Teil-Konfig. ERWARTET, kein Alarm-Rot; nennt das Fehlende via first_run_step_*-Chips bzw. bei CLONE_FAILED via first_run_repo_clone_failed*; trägt die CTA workspace_setup_resume (öffnet Gate). §6.3a/b."
+      "note": "Voller Banner im degradierten Workspace nach Skip/Teil-Konfig. ERWARTET, kein Alarm-Rot; nennt das Fehlende via first_run_step_*-Chips bzw. bei CLONE_FAILED via first_run_repo_clone_failed*; trägt CTA workspace_setup_resume (öffnet Gate) + Einklapp-Control. §6.3a/b."
+    },
+    "workspace.unconfiguredChip": {
+      "hintTone": "INFO",
+      "container": "surfaceVariant",
+      "onContainer": "onSurfaceVariant",
+      "icon": "info",
+      "label_key": "workspace_unconfigured_chip",
+      "note": "Leiser passiver Indikator (eingeklappter Banner) — Nag-Fix §6.3a: nie ganz weg (Ehrlichkeit), aber passiv (kein Nörgeln). Kompakter/gedämpfter als der volle Banner; die eigentliche Ehrlichkeit trägt der GATED-Start-Block (agentView.ctlUnconfigured)."
     },
     "agentView.ctlUnconfigured": {
       "hintTone": "GATED",

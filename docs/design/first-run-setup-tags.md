@@ -31,7 +31,9 @@
 **Cross-Area (Konsument des Skip, §6.3):**
 | Tag | Area | Element | Ton | a11y |
 |---|---|---|---|---|
-| `workspace.unconfiguredBanner` | `workspace` | Unkonfiguriert-Banner im degradierten Workspace | `INFO` | Polite |
+| `workspace.unconfiguredBanner` | `workspace` | voller Unkonfiguriert-Banner im degradierten Workspace | `INFO` | Polite |
+| `workspace.unconfiguredCollapse` | `workspace` | Einklapp-Control des Banners (§6.3a Nag-Fix) | — | — |
+| `workspace.unconfiguredChip` | `workspace` | leiser passiver Indikator-Chip (eingeklappt) | `INFO` | — |
 | `workspace.setupResume` | `workspace` | Banner-CTA „Einrichtung fortsetzen" → öffnet Gate | — | — |
 | `agent.<id>.ctlUnconfigured` | `agent` (scoped) | Start-blockiert-Grund am per-Agent-Control | **`GATED`** | Polite |
 
@@ -60,12 +62,13 @@
   bestehende Projekt-Settings.
 
 ## Self-Validation
-- **17 `firstRun.*` + 2 `workspace.*` (`unconfiguredBanner`, `setupResume`) + 1 `agent.<id>.ctlUnconfigured`**
-  = **20 neue Tags**; Schema-konform (`<area>[.<scopeId>].<element>`, camelCase-Werte, keine Punkte im
-  Segmentwert, charset `[A-Za-z0-9-]+`; `<id>` ist der Scope-Platzhalter wie bei `agent.<id>.restartBtn`).
-- **Kollision:** 0 — `firstRun`-Area greenfield; `workspace.unconfiguredBanner`/`workspace.setupResume` gg.
-  bestehende `workspace.*` verifizieren (§6.2); `agent.<id>.ctlUnconfigured` mirrort das bestehende
-  `agent.<id>.*`-Schema (Start-Control-Naming gg. `AgentViewTags` gegenlesen, §6.3c).
+- **17 `firstRun.*` + 4 `workspace.*` (`unconfiguredBanner`, `unconfiguredCollapse`, `unconfiguredChip`,
+  `setupResume`) + 1 `agent.<id>.ctlUnconfigured`** = **22 neue Tags**; Schema-konform
+  (`<area>[.<scopeId>].<element>`, camelCase-Werte, keine Punkte im Segmentwert, charset `[A-Za-z0-9-]+`;
+  `<id>` ist der Scope-Platzhalter wie bei `agent.<id>.restartBtn`).
+- **Kollision:** 0 — `firstRun`-Area greenfield; die vier `workspace.*` gg. bestehende `workspace.*`
+  verifizieren (§6.2); `agent.<id>.ctlUnconfigured` mirrort das bestehende `agent.<id>.*`-Schema
+  (Start-Control-Naming gg. `AgentViewTags` gegenlesen, §6.3c).
 - **Reuse gg. Code verifiziert:** alle zitierten `settings.*`/`agentMgmt.*`/`window.settings`-Tags existieren
   in `SettingsTags.kt` / `AgentMgmtTags.kt` / `WindowTestTags` @ `2f664e33` (nicht aus dem Spec abgeleitet).
 - **2 bestehende Effekt-Hint-Tags bewusst NICHT reused** (`settings.*.effectHint`) — Honesty-Begründung in
