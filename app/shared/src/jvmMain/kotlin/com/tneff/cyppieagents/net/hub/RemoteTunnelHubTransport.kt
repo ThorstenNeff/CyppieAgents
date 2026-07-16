@@ -8,7 +8,6 @@ import com.tneff.cyppieagents.net.pinnedCioRestHttpClient
 import com.tneff.cyppieagents.net.pinnedCioWsHttpClient
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -90,7 +89,10 @@ class RemoteTunnelHubTransport(
     // lane). Same CYP-556 per-connection structure (accept serial, acquire+pump per-connection concurrent) — the ONLY
     // change is `acquire(lane)`. WS→DATA (gated below the reserve), REST→CONTROL (may take the reserved break-glass slot).
     private fun launchAcceptLoop(scope: CoroutineScope, acceptor: LoopbackAcceptor, lane: TunnelLane): Job =
-        scope.launch(Dispatchers.IO) {
+        // CYP-647: the blocking `server.accept()` loop rides the dedicated elastic [ClientBridgeBlocking] dispatcher,
+        // NOT the shared capped `Dispatchers.IO` — one long-lived parked accept per loop must not count against the IO
+        // cap that the per-connection bridge reads also draw from (the starvation this ticket closes on the client).
+        scope.launch(ClientBridgeBlocking.dispatcher) {
             supervisorScope { // ②: an exception in one pump child never cancels the loop or its sibling pumps
                 while (isActive) {
                     val conn = acceptor.accept() ?: break // acceptor closed → stop (the ONLY serial step)
@@ -185,7 +187,7 @@ class RealLoopbackAcceptor : LoopbackAcceptor {
         bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)) // loopback-only, ephemeral — never a public iface
     }
     override val port: Int = server.localPort
-    override suspend fun accept(): BridgeConn? = withContext(Dispatchers.IO) {
+    override suspend fun accept(): BridgeConn? = withContext(ClientBridgeBlocking.dispatcher) { // CYP-647: elastic pool, not Dispatchers.IO
         runCatching { RealBridgeConn(server.accept() as Socket) }.getOrNull() // null when the socket is closed
     }
     override fun close() { runCatching { server.close() } }

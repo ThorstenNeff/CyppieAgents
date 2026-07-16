@@ -2,7 +2,7 @@ package com.tneff.cyppieagents.net.hub
 
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.pool.BackpressureSignal
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -25,7 +25,13 @@ import java.net.Socket
  *
  * The pump is over a [BridgeConn] seam so tests drive the RST-vs-clean discipline deterministically without a real socket.
  */
-class ClientLoopbackBridge(private val loopbackHost: String = "127.0.0.1") {
+class ClientLoopbackBridge(
+    private val loopbackHost: String = "127.0.0.1",
+    /** CYP-647 — the dispatcher the blocking pumps run on. Default = the dedicated elastic [ClientBridgeBlocking]
+     *  dispatcher (NOT the shared capped `Dispatchers.IO`); injectable so a test can pin a bounded pool and prove the
+     *  starvation deterministically (mirrors the server's `LoopbackBridge.blockingDispatcher`). */
+    private val blockingDispatcher: CoroutineDispatcher = ClientBridgeBlocking.dispatcher,
+) {
     init {
         // Never bind/dial a non-loopback address — the workspace bytes must never leave the host in cleartext.
         require(InetAddress.getByName(loopbackHost).isLoopbackAddress) {
@@ -44,7 +50,7 @@ class ClientLoopbackBridge(private val loopbackHost: String = "127.0.0.1") {
         // C3 BACKPRESSURED; a plain tunnel isn't one, so the window still bounds memory but emits no signal.
         val window = Channel<ByteArray>(capacity = INFLIGHT_FRAMES)
         val signal = tunnel as? BackpressureSignal
-        val reader = launch(Dispatchers.IO) {
+        val reader = launch(blockingDispatcher) {
             val buf = ByteArray(CHUNK)
             try {
                 while (true) {
@@ -63,7 +69,7 @@ class ClientLoopbackBridge(private val loopbackHost: String = "127.0.0.1") {
                 window.close() // no more request bytes; the sender drains the remaining window then closes the tunnel
             }
         }
-        val sender = launch(Dispatchers.IO) {
+        val sender = launch(blockingDispatcher) {
             try {
                 for (frame in window) tunnel.send(frame) // drain the credit window → the tunnel (to the hub)
             } catch (_: Exception) {
@@ -75,7 +81,7 @@ class ClientLoopbackBridge(private val loopbackHost: String = "127.0.0.1") {
         // Downstream: the hub's RESPONSE bytes (via the UNTRUSTED relay) → the local socket. Any end here is
         // in-flight-uncertain → RST the local socket (the truncation guard), never a clean EOF. UNCHANGED by H7 —
         // the inbound direction is bounded by the local socket's OS buffer + the SERVER bridge's own send-window.
-        val down = launch(Dispatchers.IO) {
+        val down = launch(blockingDispatcher) {
             try {
                 while (true) {
                     val chunk = tunnel.receive() ?: break // relay/tunnel closed — untrusted → treat as truncation
@@ -127,15 +133,20 @@ interface BridgeConn {
     fun reset()
 }
 
-/** Production [BridgeConn] over a real accepted loopback [Socket]; blocking I/O offloaded to [Dispatchers.IO] by the pump. */
-internal class RealBridgeConn(private val socket: Socket) : BridgeConn {
+/** Production [BridgeConn] over a real accepted loopback [Socket]; blocking I/O offloaded to [dispatcher] — CYP-647:
+ *  the dedicated elastic [ClientBridgeBlocking] dispatcher by default, NOT the shared capped `Dispatchers.IO`
+ *  (injectable so a test can pin a bounded pool and prove the starvation deterministically). */
+internal class RealBridgeConn(
+    private val socket: Socket,
+    private val dispatcher: CoroutineDispatcher = ClientBridgeBlocking.dispatcher,
+) : BridgeConn {
     init {
         socket.setSoLinger(true, 0) // close() emits a RST, not a FIN — the abortive semantics the truncation guard needs
         socket.tcpNoDelay = true
     }
     private val input = socket.getInputStream()
     private val output = socket.getOutputStream()
-    override suspend fun read(buf: ByteArray): Int = withContext(Dispatchers.IO) { input.read(buf) }
-    override suspend fun write(bytes: ByteArray) = withContext(Dispatchers.IO) { output.write(bytes); output.flush() }
+    override suspend fun read(buf: ByteArray): Int = withContext(dispatcher) { input.read(buf) }
+    override suspend fun write(bytes: ByteArray) = withContext(dispatcher) { output.write(bytes); output.flush() }
     override fun reset() { runCatching { if (!socket.isClosed) socket.close() } } // SO_LINGER 0 → RST
 }
