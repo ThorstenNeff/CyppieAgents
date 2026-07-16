@@ -167,21 +167,24 @@ class CypM2NTunnelHarnessTest {
         // ★ per-tunnel: the god token is refused on EVERY one of N tunnels (Bearer + WS), an agent token passes on each.
         repeat(n) { i ->
             val godTx = realTunnel(p.tunnelPort)
-            val godTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(godTx.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
+            val godQ = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(godTx.tunnel) }
+            val godTransport = buildRemoteHubTransport(acquireTunnel = { godQ.poll() }, sessionToken = { p.godToken }, scope = scope)!!
             cleanups += { godTransport.close() }
             assertEquals(401, oneShotGet("${godTransport.httpBaseUrl}/api/agents", p.godToken).status.value,
                 "tunnel #$i: the god token as Bearer over the tunnel is refused 401 by the real per-tunnel guard")
 
             // `?token=` WS channel on the SAME logical tunnel (a fresh tunnel for the fresh connection, no-mux).
             val godWsTx = realTunnel(p.tunnelPort)
-            val godWsTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(godWsTx.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
+            val godWsQ = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(godWsTx.tunnel) }
+            val godWsTransport = buildRemoteHubTransport(acquireTunnel = { godWsQ.poll() }, sessionToken = { p.godToken }, scope = scope)!!
             cleanups += { godWsTransport.close() }
             assertTrue(!wsEventServed(godWsTransport.wsBaseUrl, p.godToken),
                 "tunnel #$i: the god token via ?token= over the WS path is refused (no event served, no query bypass)")
 
             // non-vacuity per tunnel: an AGENT token over the SAME tunnel connector → 200 (only the god token is refused).
             val agentTx = realTunnel(p.tunnelPort)
-            val agentTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(agentTx.tunnel) }::poll, sessionToken = { p.agentToken }, scope = scope)!!
+            val agentQ = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(agentTx.tunnel) }
+            val agentTransport = buildRemoteHubTransport(acquireTunnel = { agentQ.poll() }, sessionToken = { p.agentToken }, scope = scope)!!
             cleanups += { agentTransport.close() }
             assertEquals(200, oneShotGet("${agentTransport.httpBaseUrl}/api/agents", p.agentToken).status.value,
                 "tunnel #$i: an agent token over the tunnel is accepted (200) — the guard refuses ONLY the god token")
@@ -191,14 +194,16 @@ class CypM2NTunnelHarnessTest {
         //   served an event — so the WS path is functional and carries events, and the god no-event above is the
         //   GUARD refusing, not a broken/dead WS (which would also yield no-event, indistinguishable without this).
         val posTx = realTunnel(p.tunnelPort)
-        val posTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(posTx.tunnel) }::poll, sessionToken = { p.agentToken }, scope = scope)!!
+        val posQ = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(posTx.tunnel) }
+        val posTransport = buildRemoteHubTransport(acquireTunnel = { posQ.poll() }, sessionToken = { p.agentToken }, scope = scope)!!
         cleanups += { posTransport.close() }
         assertTrue(wsEventServed(posTransport.wsBaseUrl, p.agentToken),
             "F②-1 positive control: an AGENT token over /ws/events?token= IS served an event — the WS path works, so the god no-event is the guard")
 
         // non-vacuity: the SAME god token over the PUBLIC connector → 200 (the guard is port-scoped, not global).
         val pub = realTunnel(p.publicPort)
-        val pubTransport = buildRemoteHubTransport(acquireTunnel = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(pub.tunnel) }::poll, sessionToken = { p.godToken }, scope = scope)!!
+        val pubQ = ConcurrentLinkedQueue<NoiseTunnel>().apply { add(pub.tunnel) }
+        val pubTransport = buildRemoteHubTransport(acquireTunnel = { pubQ.poll() }, sessionToken = { p.godToken }, scope = scope)!!
         cleanups += { pubTransport.close() }
         assertEquals(200, oneShotGet("${pubTransport.httpBaseUrl}/api/agents", p.godToken).status.value,
             "the SAME god token over the PUBLIC connector is served 200 — the tunnel guard is port-scoped")
