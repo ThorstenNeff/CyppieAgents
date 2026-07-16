@@ -174,10 +174,17 @@ function ColorSection({
   const [hexInput, setHexInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  // CYP-661: the parent passes a NEW fetchDetail identity every render (inline arrow over an unstable hubRepo); ref it
+  // so the seed effect depends only on [agentId] and runs on mount, NOT on every WS-tick re-render — a re-run would
+  // re-seed hexInput from d.color and CLOBBER an in-progress colour edit. Same churn-immune cure as ClaudeMdSection
+  // (CYP-660) / AvatarSection (CYP-658).
+  const fetchDetailRef = useRef(fetchDetail)
+  fetchDetailRef.current = fetchDetail
 
   useEffect(() => {
     let live = true
-    fetchDetail(agentId)
+    fetchDetailRef
+      .current(agentId)
       .then((d) => {
         if (live && d.color) setHexInput(d.color)
       })
@@ -185,7 +192,7 @@ function ColorSection({
     return () => {
       live = false
     }
-  }, [agentId, fetchDetail])
+  }, [agentId])
 
   const verdict = useMemo(() => (hexInput.trim() === '' ? null : evaluateColor(hexInput)), [hexInput])
   const normalized = normalizeHex(hexInput)
