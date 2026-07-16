@@ -1,11 +1,15 @@
 # Absender-/Kanal-Farbcodierung — Comm-Panel (v0.1)
 
-> Owner: UIUX-Designer · Ticket: **CYP-14** (Vorarbeit Comm-Panel S6 / Epic CYP-3) · Status: **Entwurf — wartet auf Dev-Gegenlesen** · Stand: 2026-06-26
+> Owner: UIUX-Designer · Ticket: **CYP-14** (Vorarbeit Comm-Panel S6 / Epic CYP-3) · Status: **Entwurf — wartet auf Dev-Gegenlesen** · Stand: 2026-07-16
 > **Kanonischer Ort:** geteiltes Repo `KMPCyppieAgents` unter `docs/COLOR-CODING.md`.
-> Begleit-Artefakte: `docs/design/color-coding-tokens.json`, `docs/design/color-coding-keys.md`.
+> Begleit-Artefakte: `docs/design/color-coding-tokens.json`, `docs/design/color-coding-keys.md`, **`scripts/contrast-check.py`** (§8, reproduzierbare Messung).
 > **Brand:** CyppieAgents (Anti-Hype). NeonFi nur Referenz.
 
 Definiert, wie Absender und Kanäle im Comm-Panel **deterministisch, barrierearm und konsistent** farblich kodiert werden — gegen das reale Comm-Modell gemappt. Keine Implementierungsvorgabe.
+
+> **★ Bevor du „grau das mal aus" auf einer Titelleiste / einem Agenten-Fenster umsetzt: lies §8.** Auf
+> agent-eingefärbten Flächen gibt es **keinen** AA-sicheren Sekundär-/Dimm-Ton (null Headroom by construction) —
+> Zustand wird dort über **Glyph bei vollem Kontrast** getragen, nie über Ton/Alpha. Nachrechnen: `scripts/contrast-check.py`.
 
 ---
 
@@ -24,7 +28,7 @@ Definiert, wie Absender und Kanäle im Comm-Panel **deterministisch, barrierearm
 1. **Deterministisch & stabil.** Gleiche `id` → gleiche Farbe, über Sessions und Clients hinweg. **Kein** Zufall, kein laufzeit-zufälliger Hash-Seed. Server und Client müssen dieselbe reine Funktion verwenden (§3).
 2. **Farbe nie alleiniger Träger** (WCAG 1.4.1). Absender = **Avatar (Initialen) + Name + Farbe**; Kanal = **Kind-Icon + Name + Farbe**. Farbe ist Scan-Hilfe, nicht das Identifikationsmerkmal. Bei vielen Agenten trägt das Label/Avatar die Eindeutigkeit, nicht der Farbton.
 3. **Keine Kollision mit Status-Semantik (CYP-12).** Die Absender-/Kanal-Palette meidet **bewusst** die reservierten Status-Hues (running-Blau, ok-Grün, error-Rot, waiting-Amber). Sonst läse sich ein grün eingefärbter Absender als „OK". **Status-Signale haben visuell immer Vorrang**; Identitätsfarbe sitzt auf Avatar/Name, nie auf Status-Chips.
-4. **Kontrast (Pflicht).** Name-/Label-Text ≥ **4.5:1** gegen die Fläche; Farbe auf Avatar-Fill/Border ≥ **3:1**. Werte für dark (Default) + light. Auto-Validierung steht aus (QA/Dev).
+4. **Kontrast (Pflicht).** Name-/Label-Text ≥ **4.5:1** gegen die Fläche; Farbe auf Avatar-Fill/Border ≥ **3:1**. Werte für dark (Default) + light. Auto-Validierung: **`scripts/contrast-check.py`** (gegen die *echte* Fläche messen, nicht Token-Namen-plausibel — §8). **Sonderfall agent-eingefärbte Flächen: null Headroom → kein Sekundär-Ton, nur Glyph — siehe §8.**
 5. **RTL-tauglich.** Farb-/Avatar-Anordnung spiegelbar; Reihenfolge logisch (start/end), nicht hart links/rechts.
 
 ---
@@ -100,4 +104,68 @@ Eigenständig von Absender/Kanal. **Reuse statt Neuerfindung:** für `STATUS` di
 3. ✅ **Avatar-Quelle:** Initialen aus `Agent.name`, kein Bild-Asset im MVP.
 
 **Offen:**
-4. **Kontrast-Validierung** der Paletten automatisieren vor „Fertig" (QA/Dev).
+4. ✅ **Kontrast-Validierung automatisiert:** `scripts/contrast-check.py` (§8) — reproduzierbare WCAG-Messung gegen die echte Fläche. (Optional weiter: CI-Zahn, der die Paletten-Tokens gegen ihre Flächen prüft.)
+
+---
+
+## 8. Sekundär-Signale auf agent-eingefärbten Flächen — die Null-Headroom-Invariante
+
+> **Produktweite Regel** (nicht comm-panel-spezifisch). Herkunft: UIUX-Designer, entdeckt bei **CYP-656**
+> (Titelleisten-Token-Frische), 2026-07-16. Reproduzierbar: **`scripts/contrast-check.py`**.
+
+### ① Die Invariante — mit den Zahlen, die sie unwiderlegbar machen
+
+Agent-eingefärbte Flächen (Titelleiste via `SenderPalette.forAgent` → `:core` `deriveScheme`,
+`core/.../model/ColorDerivation.kt`) haben **null Kontrast-Headroom *by construction*:** `deriveScheme` setzt
+`barContent` = **reines Weiß/Schwarz** und zieht dann den **Hintergrund** nach, bis Weiß/Schwarz *gerade* 4.5:1
+erreicht. Gemessen (`scripts/contrast-check.py`, WCAG 1.4.3):
+
+| Test | Ergebnis |
+|---|---|
+| Weiß @ Alpha 0.75 über eine 4.5:1-Bar | **3.30** (@0.90 = **3.96**) — jedes Dimmen bricht AA |
+| fester „Grau"-Token gg. die Farb-Familie | **1.0–2.7:1** (fällt bei fast allen Mitgliedern) |
+| bester **fester** Slot, pink `#C24D6A`, Headroom für Weiß | **+0.10** — es ist keine Luft da |
+| Custom-`#RRGGBB` Agent-Farben | landen bei **exakt ~4.5:1** (deriveScheme) — Worst Case ist generisch |
+| Unfokus-Blend `lerp(agent, surface, 0.45)` | fällt zusätzlich **je Theme** (1.15 light / 1.18 dark) |
+
+⟹ Bei **unbeschränkter** Agent-Farb-Familie (jeder Operator kann ein `#RRGGBB` setzen) gibt es **keinen**
+sekundären/gedimmten Ton, der für *alle* Mitglieder ≥ 4.5:1 trägt. Das ist nicht „der falsche Grauwert" — die
+**Mechanik ist an dieser Fläche unmöglich**, weil die Fläche so konstruiert ist, dass sie exakt das Minimum liefert.
+
+### ② Die Regel
+
+**Auf agent-eingefärbten Flächen wird ein Zustand / Sekundär-Signal über einen GLYPH bei vollem `barContent`
+getragen — nie über Ton, Alpha oder Dimmen.** Farbe darf nur *verstärken*, nie alleiniger/primärer Träger sein
+(Verschärfung von Prinzip 2 + 4 für den Null-Headroom-Fall). Das ist das **Hausmuster**, dreifach belegt — keine
+Ausweich-Erfindung:
+
+- **Mode-Marker `◉/→/←/∅`** (`WindowManager.kt` §5.1) — Kontroll-Zustand: Glyph + Label, Farbe nur Verstärkung.
+- **Busy-`*`** — Turn-in-flight: Glyph bei vollem `barContent`.
+- **Token-Frische `~137k`** (CYP-656) — „zuletzt bekannt/ungefähr": Glyph-Marker statt Grau.
+
+Der nächste, der **etwas Sekundäres** in die Titelleiste / ein Agenten-Fenster will (Timestamp, Sekundär-Label,
+„veraltet"-Hinweis, Zähler zweiter Ordnung), nutzt **diese Achse** — nicht einen erfundenen Grau-Ton.
+
+### ③ Reproduzierbar (nicht Prosa)
+
+```
+python3 scripts/contrast-check.py                 # self-test = die Zahlen aus ①
+python3 scripts/contrast-check.py FG BG           # Kontrast zweier #RRGGBB
+python3 scripts/contrast-check.py --dim FG BG A   # „grau das aus"-Probe: FG @Alpha A über BG vs BG
+python3 scripts/contrast-check.py --survives CAND f1 f2 …   # trägt ein Sekundär-Ton die ganze Familie?
+```
+Kein Vertrauen auf „onSurfaceVariant klingt gedimmt genug" — **nachrechnen gegen die echte Fläche.**
+
+### ④ Wo es NICHT gilt (präzise, kein pauschales Verbot)
+
+Die Invariante greift **nur** auf agent-eingefärbten Flächen (per Konstruktion auf 4.5:1 gedrückt). Auf Flächen
+mit **garantiertem Headroom** — Standard-M3-`surface`, **nicht** agent-eingefärbt — ist ein sekundärer Ton völlig
+legitim: `onSurfaceVariant` vs maritime-Surface = **8.69** (light) / **9.80** (dark), beide ≥ 4.5:1. Ein pauschales
+Ton-Verbot wäre falsch (und würde umgangen) — die Regel ist **flächen-spezifisch.**
+
+### Warum das eine Regel ist, kein Ticket-Detail
+
+Genau die **CYP-643-Klasse:** „`onSurfaceVariant` klingt gedimmt genug" kommt durch Token-Flip-Gates durch, weil
+der Token-**Name** plausibel ist — aber die **gemessene** Fläche trägt nicht. Diese Regel + der Script fangen das
+**vor** dem Bau. Ziel: wer „grau das mal aus" gesagt bekommt, sieht in 30 Sekunden, dass es an dieser Fläche nicht
+geht — und kriegt die Antwort (Glyph bei vollem Kontrast) gleich mitgeliefert.
