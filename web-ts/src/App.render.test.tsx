@@ -53,6 +53,8 @@ const fakeRepo = (): HubRepo => ({
   fetchAuthMe: vi.fn().mockResolvedValue({ authenticated: true, role: 'OPERATOR', verified: true }),
   getProjects: vi.fn().mockResolvedValue({ activeProjectId: 'team-1', projects: [] }),
   getCapacity: vi.fn().mockResolvedValue({ current: 2, estimatedMax: 6 }),
+  getCompactStatus: vi.fn().mockResolvedValue({ allowed: false, thresholdTokens: 500000, armed: false, running: false }),
+  setCompactConfig: vi.fn().mockResolvedValue(undefined),
 })
 
 beforeEach(() => {

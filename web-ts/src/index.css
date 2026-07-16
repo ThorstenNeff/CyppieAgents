@@ -962,3 +962,107 @@ body {
   opacity: 0.5;
   cursor: default;
 }
+
+/* CYP-649 (Epic CYP-640) — the compact-orchestration panel. Scrolls (tall); neutral tones; the INFO/GATE hints reuse
+   the tone conventions. Colour is never the sole carrier — text/labels carry meaning. */
+.compact-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px;
+  height: 100%;
+  overflow-y: auto;
+  color: var(--md-sys-color-on-surface);
+}
+.compact-allow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.compact-allow-chip {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.compact-hint {
+  margin: 0;
+  font-size: 0.8rem;
+}
+.compact-hint-info {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.compact-hint-gated {
+  color: var(--md-sys-color-on-surface-variant);
+  font-style: italic;
+}
+.compact-editors {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--md-sys-color-outline);
+  padding-top: 8px;
+}
+.compact-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.compact-editor-label {
+  flex: 1 1 100%;
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.compact-editor-input {
+  width: 8em;
+  font: inherit;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-variant);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 4px;
+  padding: 2px 6px;
+  min-height: 24px;
+}
+.compact-editor-preview {
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+.compact-editor-set {
+  min-height: 24px;
+  cursor: pointer;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 4px;
+}
+.compact-editor-set:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.compact-editor-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--md-sys-color-error);
+  font-size: 0.8rem;
+}
+.compact-facts {
+  margin: 0;
+  border-top: 1px solid var(--md-sys-color-outline);
+  padding-top: 8px;
+}
+.compact-fact {
+  display: flex;
+  gap: 8px;
+}
+.compact-fact dt {
+  color: var(--md-sys-color-on-surface-variant);
+  min-width: 8em;
+}
+.compact-fact dd {
+  margin: 0;
+}
+.compact-confirm {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.8rem;
+}

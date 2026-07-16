@@ -23,6 +23,8 @@ import type {
   AuthMe,
   ProjectsView,
   Capacity,
+  CompactStatus,
+  CompactConfig,
 } from '../types/generated/contract'
 import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
 import type { ConnectorKind } from '../connector/connectorModel'
@@ -108,6 +110,12 @@ export interface HubRepo {
   /** CYP-642 (S-G). GET /api/capacity — the server-authoritative hub-capacity snapshot ({current, estimatedMax?}).
    *  MEMBER-tier (all users get the readout). Drives the capacity pill; a null estimatedMax = max not yet estimated. */
   getCapacity(): Promise<Capacity>
+  /** CYP-649. GET /api/compact/status (read-tier) — the server-owned CompactStatus (allowed/threshold/armed/running/
+   *  lastRun/timings). null is never defaulted by the caller: an UNKNOWN status renders the facts absent. */
+  getCompactStatus(): Promise<CompactStatus>
+  /** CYP-649. POST /api/compact/config (OPERATOR, 403 else) — set allowed / threshold / timings. Non-optimistic: the
+   *  UI reflects the server via a follow-up status read, never the local draft. Server range-validates (400). */
+  setCompactConfig(config: CompactConfig): Promise<void>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -198,5 +206,11 @@ export class RestHubRepo implements HubRepo {
   }
   getCapacity(): Promise<Capacity> {
     return this.rest.get<Capacity>('/api/capacity')
+  }
+  getCompactStatus(): Promise<CompactStatus> {
+    return this.rest.get<CompactStatus>('/api/compact/status')
+  }
+  async setCompactConfig(config: CompactConfig): Promise<void> {
+    await this.rest.post<unknown>('/api/compact/config', config)
   }
 }
