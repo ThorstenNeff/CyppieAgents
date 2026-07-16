@@ -1,0 +1,32 @@
+#!/bin/sh
+# CYP-637 — TEST-SCOPED .deb postrm. Same preserve/purge shape as prod, but EVERY destructive op references EXCLUSIVELY
+# the `-test` names/paths: /lib/systemd/system/cyppiehub-test.service, /etc/cyppiehub-test, /var/lib/cyppiehub-test,
+# user cyppie-test. There is NO reference to any live name anywhere in this file — a purge here can only wipe the -test set.
+set -e
+
+case "$1" in
+  remove|upgrade|abort-install|abort-upgrade|disappear)
+    # PRESERVE the TEST data dir + secrets (a reinstall reattaches). Only the unit file is removed.
+    rm -f /lib/systemd/system/cyppiehub-test.service
+    systemctl daemon-reload 2>/dev/null || true
+    ;;
+
+  purge)
+    # ★ DESTRUCTIVE — wipes ONLY the -test set (data dir + secrets + user), together, never a half-deleted state.
+    rm -f /lib/systemd/system/cyppiehub-test.service
+    systemctl daemon-reload 2>/dev/null || true
+    rm -f /etc/cyppiehub-test/hub.env
+    rmdir /etc/cyppiehub-test 2>/dev/null || true
+    rm -rf /var/lib/cyppiehub-test
+    if getent passwd cyppie-test >/dev/null 2>&1; then userdel cyppie-test 2>/dev/null || true; fi
+    ;;
+
+  failed-upgrade)
+    ;;
+  *)
+    echo "postrm called with unknown argument \`$1'" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

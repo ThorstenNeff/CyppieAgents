@@ -1,0 +1,51 @@
+#!/bin/sh
+# CYP-637 — TEST-SCOPED .deb postinst. Byte-for-byte the same shape as the prod postinst, but EVERY name/path/port is
+# `-test`-scoped: user cyppie-test, /var/lib/cyppiehub-test, /etc/cyppiehub-test, /opt/cyppiehub-test, ports 18787/18786,
+# unit cyppiehub-test.service. It provisions + enables an ISOLATED hub instance that shares NOTHING with the live hub, so
+# the lifecycle (install → remove → reinstall → purge) can be exercised on the real host without ever touching live data.
+set -e
+
+case "$1" in
+  configure)
+    # 1. dedicated low-privilege TEST system user (idempotent).
+    if ! getent passwd cyppie-test >/dev/null 2>&1; then
+      useradd -r -s /usr/sbin/nologin -d /var/lib/cyppiehub-test -c "Cyppie hub TEST service" cyppie-test
+    fi
+
+    # 2. TEST data dir + secrets dir. Owner-only where secrets live.
+    install -d -o cyppie-test -g cyppie-test -m 0750 /var/lib/cyppiehub-test /var/lib/cyppiehub-test/logs
+    install -d -o root       -g root       -m 0755 /etc/cyppiehub-test
+
+    # 3. PROVISION once — only if not already provisioned (preserve-safe on reinstall). Never logs secret values.
+    if [ ! -f /etc/cyppiehub-test/hub.env ]; then
+      SECRETS="$(mktemp)"; chmod 0600 "$SECRETS"
+      /opt/cyppiehub-test/bin/CyppieHubProvision \
+        --data-dir /var/lib/cyppiehub-test --host 127.0.0.1 --port 18787 --tunnel-port 18786 \
+        --secrets-out "$SECRETS" >/dev/null
+      {
+        cat "$SECRETS"
+        echo "PLATFORM_CONFIG=/var/lib/cyppiehub-test/platform.config.json"
+        echo "PLATFORM_GIT_ROOT=/var/lib/cyppiehub-test"
+      } > /etc/cyppiehub-test/hub.env
+      shred -u "$SECRETS" 2>/dev/null || rm -f "$SECRETS"
+      chown cyppie-test:cyppie-test /etc/cyppiehub-test/hub.env; chmod 0600 /etc/cyppiehub-test/hub.env
+      chown -R cyppie-test:cyppie-test /var/lib/cyppiehub-test
+    fi
+
+    # 4. install + enable the TEST systemd unit (single-source: shipped in the payload at
+    #    /opt/cyppiehub-test/lib/cyppiehub-test.service and COPIED here — no heredoc, no drift).
+    install -m 0644 /opt/cyppiehub-test/lib/cyppiehub-test.service /lib/systemd/system/cyppiehub-test.service
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable --now cyppiehub-test.service 2>/dev/null || true
+    ;;
+
+  abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+  *)
+    echo "postinst called with unknown argument \`$1'" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

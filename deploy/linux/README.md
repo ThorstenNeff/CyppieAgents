@@ -60,3 +60,22 @@ curl http://127.0.0.1:8787/api/health                # → ok  (master-key-gated
 sudo apt remove cyppiehub                            # /var/lib/cyppiehub PRESERVED → reinstall reattaches
 sudo apt purge  cyppiehub                            # data + secrets + user WIPED together
 ```
+
+## Automated lifecycle acceptance (CYP-637) — TEST-SCOPED, safe-by-construction
+
+To exercise the full lifecycle on a real host **without risking the live hub**, build the isolated `-test` variant.
+Every name/path/port is `-test`-scoped — package `cyppiehub-test`, user `cyppie-test`, `/opt/cyppiehub-test`,
+`/var/lib/cyppiehub-test`, `/etc/cyppiehub-test`, unit `cyppiehub-test.service`, ports **18787/18786**. Its `postrm purge`
+can only ever wipe the `-test` set; it shares nothing with the live install (different package/user/paths, live tunnel
+port 8786). Every destructive op in the maintainer scripts, the unit, and the harness references **only** `-test` names.
+
+```sh
+./gradlew :server:hubInstallerTest                   # → server/build/hub-installer-test/cyppiehub-test_<ver>_amd64.deb
+sudo ./deploy/linux/test-lifecycle.sh                # root harness: install → health@18787 → remove(preserve) →
+                                                     #   reinstall(reattach, same master key) → purge(wipe) → host clean
+```
+
+The harness pre-flights (root, free `-test` ports, no pre-existing `-test` artifacts), asserts each step (PASS/FAIL),
+proves the master key is UNCHANGED across remove→reinstall (reattach, not re-mint), verifies the host is left clean after
+purge, confirms the **live** hub (tunnel port 8786) stayed listening throughout, and purges on any exit via a cleanup
+trap. It is a one-off acceptance artifact — not a customer deliverable.

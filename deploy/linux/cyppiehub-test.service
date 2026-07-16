@@ -1,0 +1,31 @@
+# CYP-637 — TEST-SCOPED systemd unit for the .deb lifecycle acceptance. Same shape as the prod unit but every name/path
+# is `-test`-scoped (package cyppiehub-test, user cyppie-test, /opt/cyppiehub-test, /var/lib/cyppiehub-test,
+# /etc/cyppiehub-test) so it can NEVER touch the live hub — its purge removes ONLY the -test set. Ports 18787/18786
+# (from the test config), free on the target host. NOT a customer artifact — it exists only to prove the lifecycle.
+[Unit]
+Description=Cyppie hub — TEST instance (CYP-637 lifecycle acceptance)
+Documentation=https://github.com/ThorstenNeff/CyppieAgents
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=cyppie-test
+Group=cyppie-test
+ExecStart=/opt/cyppiehub-test/bin/CyppieHub
+WorkingDirectory=/var/lib/cyppiehub-test
+EnvironmentFile=/etc/cyppiehub-test/hub.env
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillMode=mixed
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cyppiehub-test
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

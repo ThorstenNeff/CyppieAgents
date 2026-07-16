@@ -188,6 +188,11 @@ run {
     // --app-content → /opt/cyppiehub/cyppiehub.service) so the postinst `cp`s it (no heredoc duplication → drift
     // structurally impossible).
     val unitFile = rootProject.file("deploy/linux/cyppiehub.service").absolutePath
+    // CYP-637: TEST-SCOPED twins of the .deb resources — same shape, every name/path/port `-test`-scoped so the
+    // hubInstallerTest .deb (cyppiehub-test) provisions an ISOLATED hub that shares NOTHING with the live install.
+    val debResourceDirTest = rootProject.file("deploy/linux/deb-resources-test").absolutePath
+    val unitFileTest = rootProject.file("deploy/linux/cyppiehub-test.service").absolutePath
+    val installerPathTest = layout.buildDirectory.dir("hub-installer-test").get().asFile.absolutePath
     val os = org.gradle.internal.os.OperatingSystem.current()
     // CYP-634: Linux → `.deb` (jpackage needs dpkg/fakeroot on the host). Same installDist→jlink→jpackage chain.
     val installerType = when { os.isWindows -> "msi"; os.isMacOsX -> "dmg"; else -> "deb" }
@@ -234,6 +239,36 @@ run {
             "--linux-package-name", "cyppiehub", "--install-dir", "/opt",
             "--resource-dir", debResourceDir, // CYP-635: postinst/prerm/postrm (service install + provision + preserve/purge)
             "--app-content", unitFile, // CYP-636: ship the systemd unit into the payload → postinst cp's it (single-source)
+        )
+        commandLine(args)
+    }
+
+    // CYP-637: the TEST-SCOPED .deb (Linux only). Identical build chain to hubInstaller, but --linux-package-name
+    // cyppiehub-test → install-dir /opt/cyppiehub-test, and the -test maintainer scripts + unit whose EVERY destructive
+    // op references ONLY the -test names. Produces build/hub-installer-test/cyppiehub-test_<ver>_amd64.deb — the artifact
+    // the Auftraggeber installs (with sudo) to exercise the lifecycle without ever touching the live hub.
+    if (isLinux) tasks.register<Exec>("hubInstallerTest") {
+        group = "distribution"
+        description = "CYP-637: jpackage the TEST-SCOPED cyppiehub-test .deb (isolated names/paths/ports) for the lifecycle acceptance."
+        dependsOn("installDist", hubJlink)
+        doFirst { File(installerPathTest).apply { deleteRecursively(); mkdirs() } }
+        val args = mutableListOf(
+            "$jdkHome/bin/jpackage",
+            "--type", "deb",
+            "--name", installerName, // launcher stays CyppieHub (→ /opt/cyppiehub-test/bin/CyppieHub)
+            "--app-version", versionStr,
+            "--input", distLibPath,
+            "--main-jar", mainJar,
+            "--main-class", hubMainClass,
+            "--runtime-image", runtimePath,
+            "--dest", installerPathTest,
+        )
+        launcherArgs.forEach { args += listOf("--java-options", it) }
+        args += listOf("--add-launcher", "CyppieHubProvision=$provisionLauncherProps")
+        args += listOf(
+            "--linux-package-name", "cyppiehub-test", "--install-dir", "/opt",
+            "--resource-dir", debResourceDirTest, // CYP-637: -test postinst/prerm/postrm (isolated provision + preserve/purge)
+            "--app-content", unitFileTest, // CYP-637: -test systemd unit → postinst cp's it (single-source)
         )
         commandLine(args)
     }
