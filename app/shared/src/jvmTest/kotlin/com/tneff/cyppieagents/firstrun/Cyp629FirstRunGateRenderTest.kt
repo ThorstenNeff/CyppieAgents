@@ -9,6 +9,15 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
+import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
+import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
+import com.tneff.cyppieagents.agentmgmt.AgentMgmtException
+import com.tneff.cyppieagents.agentmgmt.AgentMgmtTags
+import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.AgentDetail
+import com.tneff.cyppieagents.model.AgentEdit
+import com.tneff.cyppieagents.model.NewAgentSpec
+import com.tneff.cyppieagents.model.WorktreeFate
 import com.tneff.cyppieagents.settings.ApiKeyState
 import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.RepoConfigState
@@ -39,6 +48,14 @@ class Cyp629FirstRunGateRenderTest {
         override suspend fun putApiKey(apiKey: String) = ApiKeyState(set = true, masked = "***1234")
     }
 
+    private class StubMgmtRepo : AgentManagementRepository {
+        override suspend fun list(): List<Agent> = emptyList()
+        override suspend fun detail(id: String): AgentDetail = throw AgentMgmtException("stub")
+        override suspend fun add(spec: NewAgentSpec): Agent = throw AgentMgmtException("stub")
+        override suspend fun edit(id: String, edit: AgentEdit): Agent = throw AgentMgmtException("stub")
+        override suspend fun remove(id: String, worktree: WorktreeFate) {}
+    }
+
     private fun unconfigured() = FirstRunConfigStatus(loaded = true, apiKeySet = false, cloneStatus = CloneStatus.NOT_CONFIGURED)
     private fun keyDoneCloning() = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.CLONING)
     private fun done() = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.CLONED_OK)
@@ -51,6 +68,7 @@ class Cyp629FirstRunGateRenderTest {
                         enabled = enabled,
                         createViewModel = { FirstRunViewModel(StubFirstRunConfigSource(status)) },
                         createSettingsViewModel = { SettingsViewModel(StubRepo(), editable = true) },
+                        createAgentMgmtViewModel = { AgentManagementViewModel(StubMgmtRepo(), editable = true) },
                         workspace = { Text("workspace", modifier = Modifier.testTag(WORKSPACE)) },
                     )
                 }
@@ -66,6 +84,7 @@ class Cyp629FirstRunGateRenderTest {
                     enabled = false,
                     createViewModel = { error("VM must NOT be constructed when disabled") },
                     createSettingsViewModel = { error("settings VM must NOT be constructed when disabled") },
+                    createAgentMgmtViewModel = { error("agent-mgmt VM must NOT be constructed when disabled") },
                     workspace = { Text("workspace", modifier = Modifier.testTag(WORKSPACE)) },
                 )
             }
@@ -130,11 +149,22 @@ class Cyp629FirstRunGateRenderTest {
                     enabled = true,
                     createViewModel = { FirstRunViewModel(StubFirstRunConfigSource(unconfigured())) },
                     createSettingsViewModel = { SettingsViewModel(StubRepo(), editable = true) },
+                    createAgentMgmtViewModel = { AgentManagementViewModel(StubMgmtRepo(), editable = true) },
                     workspace = { Text("workspace", modifier = Modifier.testTag(WORKSPACE)) },
                 )
             }
         }
         onNodeWithText(postureText).assertExists()
+    }
+
+    @Test
+    fun teamStep_embedsRoster_withIntro() = runGate(unconfigured()) {
+        // Team is reachable (optional §5). Tapping its chip shows the intro framing + the reused roster panel.
+        onNodeWithTag(FirstRunTags.STEP_TEAM).performClick()
+        onNodeWithTag(FirstRunTags.TEAM_INTRO).assertExists()
+        onNodeWithTag(AgentMgmtTags.PANEL).assertExists()
+        // NOTE (PO constraint ③): team is OPTIONAL — there is deliberately NO tooth asserting the finish depends on
+        // adding agents; completion hangs on Key + Repo CLONED_OK (covered by done_showsCompletionSurface…).
     }
 
     @Test
