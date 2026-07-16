@@ -142,8 +142,17 @@ private fun RepoSection(state: SettingsUiState, viewModel: SettingsViewModel) {
     }
 }
 
+/**
+ * CYP-629 §3.2 — reused by the First-Run gate. [firstRunContext] defaults `false` = the **existing** Project-Settings
+ * behaviour, byte-identical (the amber `EFFECT_DEFERRED` restart hint after a save — TRUE there, agents are running).
+ * `true` **suppresses** that restart hint only: in first-run no agents are running to restart (the key applies at
+ * first start), so the hint would mislead. The neutral INFO confirmation + the at-rest posture line are net-new
+ * first-run surfaces rendered by the first-run wrapper AROUND this section (kept out of the shared component). Input
+ * / masking / reveal / operator-gate are untouched (reuse pur). The default names the real existing-correct
+ * category, not "unknown" — so it does not drift (the fail-open-default lesson).
+ */
 @Composable
-private fun ApiKeySection(state: SettingsUiState, viewModel: SettingsViewModel) {
+internal fun ApiKeySection(state: SettingsUiState, viewModel: SettingsViewModel, firstRunContext: Boolean = false) {
     Column(
         modifier = Modifier.fillMaxWidth().testTag(SettingsTags.SECTION_API_KEY),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -214,9 +223,10 @@ private fun ApiKeySection(state: SettingsUiState, viewModel: SettingsViewModel) 
             TonedHint(errorText(key), HintTone.ERROR, SettingsTags.API_KEY_ERROR)
         }
 
-        // Amber "saved ≠ active — restart the affected agents" (§4.2). No restart button here: the
-        // honest activation is the existing CYP-73 per-agent restart (agent.<id>.restartBtn).
-        if (state.apiKeyEffectHint) {
+        // Amber "saved ≠ active — restart the affected agents" (§4.2). No restart button here: the honest
+        // activation is the existing CYP-73 per-agent restart (agent.<id>.restartBtn). CYP-629 §3.2: SUPPRESSED in
+        // the first-run context (no running agents to restart; the wrapper shows the neutral INFO confirmation).
+        if (state.apiKeyEffectHint && !firstRunContext) {
             TonedHint(stringResource(Res.string.settings_apikey_effect_hint), HintTone.EFFECT_DEFERRED, SettingsTags.API_KEY_EFFECT_HINT)
         }
     }
