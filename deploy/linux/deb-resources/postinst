@@ -1,0 +1,82 @@
+#!/bin/sh
+# CYP-635 — .deb postinst for the Cyppie hub. Overrides jpackage's empty `configure)` skeleton (via --resource-dir).
+# On install/reinstall: create the dedicated system user, the data dir, PROVISION (mint the master key + tokens +
+# default config via the shipped CyppieHubProvision — secret-free installer, minted on the host), write the 0600
+# EnvironmentFile (custody = ratified option (a)), install + enable the systemd unit. Idempotent: an existing
+# /etc/cyppiehub/hub.env is PRESERVED (a reinstall reattaches to the team's data — never re-mints over it).
+set -e
+
+case "$1" in
+  configure)
+    # 1. dedicated low-privilege system user (idempotent).
+    if ! getent passwd cyppie >/dev/null 2>&1; then
+      useradd -r -s /usr/sbin/nologin -d /var/lib/cyppiehub -c "Cyppie hub service" cyppie
+    fi
+
+    # 2. data dir (PLATFORM_GIT_ROOT) + the secrets dir. Owner-only where secrets live.
+    install -d -o cyppie -g cyppie -m 0750 /var/lib/cyppiehub /var/lib/cyppiehub/logs
+    install -d -o root  -g root  -m 0755 /etc/cyppiehub
+
+    # 3. PROVISION once — only if not already provisioned (preserve-safe on reinstall). Never logs secret values.
+    if [ ! -f /etc/cyppiehub/hub.env ]; then
+      SECRETS="$(mktemp)"; chmod 0600 "$SECRETS"
+      /opt/cyppiehub/bin/CyppieHubProvision \
+        --data-dir /var/lib/cyppiehub --host 127.0.0.1 --port 8787 --tunnel-port 8786 \
+        --secrets-out "$SECRETS" >/dev/null
+      # hub.env = the 3 minted secrets (CYPPIE_MASTER_KEY, OPERATOR_TOKEN, HUB_TOKEN_PO) + the non-secret PLATFORM_* paths.
+      {
+        cat "$SECRETS"
+        echo "PLATFORM_CONFIG=/var/lib/cyppiehub/platform.config.json"
+        echo "PLATFORM_GIT_ROOT=/var/lib/cyppiehub"
+      } > /etc/cyppiehub/hub.env
+      shred -u "$SECRETS" 2>/dev/null || rm -f "$SECRETS"   # secure-delete the transient secrets file
+      chown cyppie:cyppie /etc/cyppiehub/hub.env; chmod 0600 /etc/cyppiehub/hub.env
+      chown -R cyppie:cyppie /var/lib/cyppiehub
+    fi
+
+    # 4. install + enable the systemd unit (headless auto-start). The unit is embedded here so the jpackage .deb ships
+    #    it (jpackage packages only /opt/cyppiehub); it MIRRORS deploy/linux/cyppiehub.service (the reviewable master —
+    #    CYP-636 boot-verifies they match). StartLimit* in [Unit] (systemd v230+), the 2 JVM args ride the launcher .cfg.
+    cat > /lib/systemd/system/cyppiehub.service <<'UNIT'
+[Unit]
+Description=Cyppie self-hosted agent hub (headless Ktor server)
+Documentation=https://github.com/ThorstenNeff/CyppieAgents
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=cyppie
+Group=cyppie
+ExecStart=/opt/cyppiehub/bin/CyppieHub
+WorkingDirectory=/var/lib/cyppiehub
+EnvironmentFile=/etc/cyppiehub/hub.env
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillMode=mixed
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cyppiehub
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable --now cyppiehub.service 2>/dev/null || true
+    ;;
+
+  abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+  *)
+    echo "postinst called with unknown argument \`$1'" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

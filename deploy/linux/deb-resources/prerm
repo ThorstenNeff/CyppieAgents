@@ -1,0 +1,17 @@
+#!/bin/sh
+# CYP-635 — .deb prerm: stop + disable the service before the package files go away (analog of CYP-627's service stop).
+set -e
+
+case "$1" in
+  remove|upgrade|deconfigure)
+    systemctl disable --now cyppiehub.service 2>/dev/null || true   # graceful stop (unit TimeoutStopSec=30) + disable
+    ;;
+  failed-upgrade)
+    ;;
+  *)
+    echo "prerm called with unknown argument \`$1'" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

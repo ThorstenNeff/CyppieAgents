@@ -180,6 +180,10 @@ run {
     // CYP-628: a second app-image launcher (CyppieHubProvision) for the install-time provisioning entrypoint. Shares
     // the --main-jar; only overrides the main class (see the properties file). The wizard invokes it once on the host.
     val provisionLauncherProps = rootProject.file("deploy/windows/provision-launcher.properties").absolutePath
+    // CYP-635: the Linux .deb maintainer-script overrides (postinst/prerm/postrm) — jpackage picks them up from
+    // --resource-dir and substitutes its empty skeleton. They do the user + provision + hub.env + unit install/enable
+    // (postinst), stop/disable (prerm), and remove-preserve / purge-wipe (postrm).
+    val debResourceDir = rootProject.file("deploy/linux/deb-resources").absolutePath
     val os = org.gradle.internal.os.OperatingSystem.current()
     // CYP-634: Linux → `.deb` (jpackage needs dpkg/fakeroot on the host). Same installDist→jlink→jpackage chain.
     val installerType = when { os.isWindows -> "msi"; os.isMacOsX -> "dmg"; else -> "deb" }
@@ -222,7 +226,10 @@ run {
         if (isWindows) args += listOf("--win-console", "--win-dir-chooser", "--win-menu", "--win-shortcut")
         // CYP-634: Linux `.deb` — install to /opt (→ /opt/cyppiehub/bin/CyppieHub, referenced by the systemd unit).
         // The systemd unit + maintainer scripts (install/enable/provision, CYP-635) ride via --resource-dir deploy/linux.
-        if (isLinux) args += listOf("--linux-package-name", "cyppiehub", "--install-dir", "/opt")
+        if (isLinux) args += listOf(
+            "--linux-package-name", "cyppiehub", "--install-dir", "/opt",
+            "--resource-dir", debResourceDir, // CYP-635: postinst/prerm/postrm (service install + provision + preserve/purge)
+        )
         commandLine(args)
     }
 }
