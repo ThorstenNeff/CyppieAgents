@@ -95,6 +95,13 @@ tasks.register<JavaExec>("relayRun") {
     mainClass.set("com.tneff.cyppieagents.relay.RelayServerKt")
 }
 
+tasks.register<JavaExec>("gatewayRun") {
+    group = "application"
+    description = "CYP-638 S0 — run the isolated Gateway process (same-origin front-door; default-deny allowlist reverse-proxy to the hub)."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.tneff.cyppieagents.gateway.GatewayServerKt")
+}
+
 dependencies {
     api(projects.core)
     api(projects.connectorCore)
