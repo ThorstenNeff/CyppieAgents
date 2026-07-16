@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.comm.ConnectionStatus
 import kotlin.test.Test
 
 /**
@@ -38,6 +39,9 @@ class WindowContextTokensRenderTest {
                         state = state,
                         // backend has a real value; frontend is null (Connector-B / pre-first-turn / unknown).
                         contextTokensFor = { id -> if (id == "backend") 137_214 else null },
+                        // CYP-656: the token is greyed (not hidden) on a non-LIVE feed; a LIVE feed here isolates the
+                        // value-vs-null axis (the stale/grey axis is Cyp656TokenStaleRenderTest's job).
+                        connectionFor = { ConnectionStatus.LIVE },
                         windowContent = { Text("c ${it.id}") },
                     )
                 }

@@ -85,6 +85,7 @@ import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_handing_back
 import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_handing_over
 import kmpcyppieagents.app.shared.generated.resources.terminal_ctl_interactive
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_context_tokens
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_context_tokens_stale
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_settings_open
 import kmpcyppieagents.app.shared.generated.resources.agent_add
 import kmpcyppieagents.app.shared.generated.resources.agent_empty_body
@@ -114,6 +115,16 @@ import org.jetbrains.compose.resources.stringResource
  */
 internal fun titleBarConnection(connections: Map<String, ConnectionStatus>, windowId: String): ConnectionStatus? =
     connections[windowId]
+
+/**
+ * CYP-656 — is the title-bar context-token count STALE, i.e. can it not be confirmed current? True on any feed that
+ * is not [ConnectionStatus.LIVE] — a non-LIVE or absent (`null` = no feed) socket cannot refresh the count, so a
+ * plain figure is a silent freshness overclaim. Pure so the decision is unit-testable without a compose render.
+ * (Staleness is marked with a leading `~`, NOT a colour — dimming has no AA-safe tone on the per-agent-coloured
+ * title bar; see the render site + docs/design/titlebar-token-staleness-spec.md. The node is always kept — marked,
+ * never hidden.)
+ */
+internal fun titleBarTokenStale(connection: ConnectionStatus?): Boolean = connection != ConnectionStatus.LIVE
 
 /**
  * The window host. The layout mode is chosen from the **Compose Window Size Classes** of the measured
@@ -595,8 +606,8 @@ fun FloatingWindow(
      * busy-`*`/token-count freshness markers live, so the compiler guarantees every caller states the freshness
      * explicitly. "No info" is an explicit `null`, NEVER a silently-assumed [ConnectionStatus.LIVE] — that fail-open
      * default is exactly the bug class CYP-656 closes. Consumed here: the busy-`*` is suppressed on a non-LIVE feed
-     * (a stale discrete-state claim, like the CYP-573 dot); the token count's grey-on-non-LIVE lands in a follow-up
-     * commit on this ticket.
+     * (a stale discrete-state claim, like the CYP-573 dot), and the context-token count is marked with a leading `~`
+     * — not hidden — on a non-LIVE feed (a silent freshness overclaim; see [titleBarTokenStale]).
      */
     connection: ConnectionStatus?,
     /** CYP-354 (client mirror): this window's terminal-control event; `null`/MEDIATED-state → NO marker (absent ==
@@ -850,19 +861,42 @@ fun FloatingWindow(
                         // AFTER the title (which ellipsizes first) and BEFORE the badge → `Avatar · Title · [137k] ·
                         // Badge · ⋮`. Rendered ONLY when non-null (Z1); `null` (Connector-B / pre-first-turn / unknown)
                         // shows NOTHING — never "0" (the §8-3 honesty core: null ≠ 0). The a11y label carries meaning.
+                        //
+                        // CYP-656: on a non-LIVE feed the count is FROZEN (its socket can't refresh it), so a plain
+                        // figure is a silent freshness OVERCLAIM (not a false discrete state like busy — the weaker
+                        // class). Per the product/honesty call it is MARKED, not hidden: showing "not sure this is
+                        // current" beats both claiming-fresh and blanking. Mechanic = a NON-COLOUR marker, per the
+                        // UIUX spec (docs/design/titlebar-token-staleness-spec.md): dimming is impossible here —
+                        // `deriveScheme` lands `barContent` at exactly 4.5:1 (zero headroom), so NO grey/alpha is
+                        // AA-safe across the per-agent-coloured family (:711-712 was principled, not just cautious).
+                        // Instead the number stays FULL-contrast `barContent` (AA preserved by construction) and
+                        // staleness rides a leading `~` ("last known / approximate") — the same full-contrast-glyph
+                        // pattern the mode markers and busy-`*` already use on an arbitrary agent colour. a11y carries
+                        // the same honesty (never visually-honest-but-assistively-mute): a `stale` contentDescription
+                        // + `stateDescription` (the QA hook, idiom AgentAvatarSection.kt:110). The NODE always stays
+                        // rendered ([tokenStale] only changes text+voice, never presence) — the "marked, not hidden" core.
+                        val tokenStale = titleBarTokenStale(connection)
                         contextTokens?.let { n ->
                             val compact = formatCompactTokens(n)
-                            val tokensCd = stringResource(Res.string.a11y_agent_context_tokens, compact)
+                            // Leading `~` on stale = "last known" (plain ASCII, tofu-free, monospace-friendly).
+                            val shown = if (tokenStale) "~$compact" else compact
+                            val tokensCd = stringResource(
+                                if (tokenStale) Res.string.a11y_agent_context_tokens_stale else Res.string.a11y_agent_context_tokens,
+                                compact,
+                            )
                             Text(
-                                text = compact,
+                                text = shown,
                                 maxLines = 1,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = FontFamily.Monospace,
-                                color = barContent,
+                                color = barContent, // FULL contrast always — the marker, not colour, carries staleness (AA by construction)
                                 modifier = Modifier
                                     .padding(start = 8.dp)
                                     .testTag(WindowTestTags.contextTokens(window.id))
-                                    .semantics { contentDescription = tokensCd },
+                                    .semantics {
+                                        contentDescription = tokensCd
+                                        stateDescription = if (tokenStale) "stale" else "live" // QA hook (Tester asserts, no pixel-peek)
+                                    },
                             )
                         }
                         // CYP-55 activity badge at the title end (fail-closed: only when present).
