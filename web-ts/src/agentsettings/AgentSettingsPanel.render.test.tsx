@@ -3,6 +3,7 @@
 // (invalid → error + save blocked; degraded → advisory), the CLAUDE.md conflict dialog (409 stale → dialog, no silent
 // clobber; reload vs overwrite), the restart-deferred hint, and the worktree failed≠remote zone. Container-scoped
 // (no auto-cleanup in this repo).
+import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, fireEvent, waitFor } from '@testing-library/react'
 import { AgentSettingsPanel, type AgentSettingsPanelProps } from './AgentSettingsPanel'
@@ -149,5 +150,73 @@ describe('AgentSettingsPanel — worktree zone', () => {
     await waitFor(() => expect(fetchDetail).toHaveBeenCalled())
     expect(q(container, 'agentSettings.worktree.notLocal')).toBeNull()
     expect(q(container, 'agentSettings.worktree.path')).toBeNull()
+  })
+})
+
+// CYP-660 — the load-bearing regression tooth: the conflict dialog must survive callback-identity CHURN (the App
+// passes NEW getClaudeMd/updateClaudeMd arrows every render over an unstable hubRepo). With the churn-immune wiring
+// (ClaudeMdSection refs the fetchers, load deps [agentId]) the baseline loads ONCE, in-progress edits survive WS-tick
+// re-renders, and a real drift → 409 → the conflict dialog. Mutation = revert to churning deps → this goes RED
+// (baseline auto-reloads → edit clobbered + the if-match advances → silent 200, no dialog).
+function ChurnHarness({
+  getSpy,
+  upSpy,
+}: {
+  getSpy: (id: string) => Promise<ClaudeMdView>
+  upSpy: (id: string, content: string, ev: string | null) => Promise<ClaudeMdView>
+}) {
+  const [tick, setTick] = useState(0)
+  return (
+    <div>
+      <button data-testid="ws-tick" onClick={() => setTick((t) => t + 1)}>
+        {tick}
+      </button>
+      <AgentSettingsPanel
+        agents={AGENTS}
+        operator={true}
+        fetchDetail={(id) => Promise.resolve({ id, name: 'Frontend', role: 'WORKER', worktree: 'frontend', launch: 'bash' })}
+        onSaveColor={() => Promise.resolve()}
+        // ★ INLINE arrows → a NEW identity every render (reproduces the App.tsx churn that defeated the dialog).
+        getClaudeMd={(id) => getSpy(id)}
+        updateClaudeMd={(id, content, ev) => upSpy(id, content, ev)}
+      />
+    </div>
+  )
+}
+
+describe('AgentSettingsPanel — CYP-660 conflict survives callback churn (live outcome)', () => {
+  it('baseline loads ONCE despite churn, edits survive WS-ticks, and drift → conflict dialog (if-match pinned to v1)', async () => {
+    const v1: ClaudeMdView = { agentId: 'frontend', content: 'SERVER V1', exists: true, version: 'v1' }
+    const v2: ClaudeMdView = { agentId: 'frontend', content: 'SERVER V2', exists: true, version: 'v2' }
+    // The server drifted v1→v2 out-of-band: a subsequent GET would return v2; a POST is 200 only if its if-match is
+    // the CURRENT v2 (a stale v1 if-match → 409). This is what the buggy auto-reload used to pick up.
+    const getSpy = vi.fn<(id: string) => Promise<ClaudeMdView>>().mockResolvedValueOnce(v1).mockResolvedValue(v2)
+    const upSpy = vi.fn((_id: string, content: string, ev: string | null) =>
+      ev === 'v2' ? Promise.resolve({ ...v2, content }) : Promise.reject(new RestError(409, 'POST', '/x', JSON.stringify({ error: { code: CLAUDE_MD_STALE_CODE } }))),
+    )
+    const { container } = render(<ChurnHarness getSpy={getSpy} upSpy={upSpy} />)
+
+    const ta = (await waitFor(() => {
+      const t = q(container, 'agentSettings.persona.input') as HTMLTextAreaElement | null
+      if (!t || t.value !== 'SERVER V1') throw new Error('not loaded')
+      return t
+    })) as HTMLTextAreaElement
+    expect(getSpy).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(ta, { target: { value: 'MY LOCAL EDIT' } })
+
+    // WS-tick re-renders → churn the callback identities; a churn-immune section must NOT reload the baseline.
+    const tick = q(container, 'ws-tick') as HTMLButtonElement
+    fireEvent.click(tick)
+    fireEvent.click(tick)
+    fireEvent.click(tick)
+    await waitFor(() => expect((q(container, 'ws-tick') as HTMLButtonElement).textContent).toBe('3'))
+
+    expect(getSpy).toHaveBeenCalledTimes(1) // baseline NOT auto-reloaded on the WS-tick re-renders
+    expect((q(container, 'agentSettings.persona.input') as HTMLTextAreaElement).value).toBe('MY LOCAL EDIT') // edit survived
+
+    fireEvent.click(q(container, 'agentSettings.persona.save') as HTMLButtonElement)
+    await waitFor(() => expect(q(container, 'agentSettings.persona.conflict')).not.toBeNull()) // 409 → dialog, no silent 200
+    expect(upSpy).toHaveBeenCalledWith('frontend', 'MY LOCAL EDIT', 'v1') // the if-match stayed pinned to the loaded v1
   })
 })

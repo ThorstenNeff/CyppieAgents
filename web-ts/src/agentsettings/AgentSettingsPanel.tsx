@@ -275,6 +275,19 @@ function ClaudeMdSection({
   const [writeError, setWriteError] = useState(false)
   const [stale, setStale] = useState(false)
   const liveRef = useRef(true)
+  // CYP-660: hold the fetchers (+ the live buffer) in refs so `load` depends ONLY on [agentId]. The parent passes NEW
+  // getClaudeMd/updateClaudeMd identities every render (inline arrows over an unstable hubRepo); without this the
+  // load-useCallback churned → useEffect([load]) re-ran on every WS-tick re-render → the baseline auto-reloaded,
+  // clobbering in-progress edits AND advancing the if-match version so drift was never seen (409 never fired). Refs +
+  // an [agentId]-only dep make the section CHURN-IMMUNE regardless of parent identity — load runs on mount only.
+  const getClaudeMdRef = useRef(getClaudeMd)
+  getClaudeMdRef.current = getClaudeMd
+  const updateClaudeMdRef = useRef(updateClaudeMd)
+  updateClaudeMdRef.current = updateClaudeMd
+  const contentRef = useRef(content)
+  contentRef.current = content
+  const baselineRef = useRef(baseline)
+  baselineRef.current = baseline
 
   const applyView = useCallback((v: ClaudeMdView) => {
     const b = baselineFromView(v)
@@ -284,25 +297,34 @@ function ClaudeMdSection({
     setExists(b.exists)
   }, [])
 
-  const load = useCallback(() => {
-    setLoading(true)
-    setLoadError(false)
-    getClaudeMd(agentId)
-      .then((v) => {
-        if (!liveRef.current) return
-        applyView(v)
-        setWritten(false)
-        setWriteError(false)
-        setStale(false)
-      })
-      .catch(() => {
-        // fail-closed: an error line, NEVER a blank buffer a save would clobber (failed ≠ empty).
-        if (liveRef.current) setLoadError(true)
-      })
-      .finally(() => {
-        if (liveRef.current) setLoading(false)
-      })
-  }, [agentId, getClaudeMd, applyView])
+  // `force` = an EXPLICIT reload (retry / conflict "load live") that discards local. An automatic load with
+  // force=false is a NO-OP when the buffer is dirty — belt-and-suspenders that never clobbers an in-progress edit and,
+  // crucially, never advances the pinned if-match version under a dirty buffer (advancing it would BE the silent
+  // clobber). On mount the buffer is fresh (not dirty), so the first load always applies.
+  const load = useCallback(
+    (force = false) => {
+      setLoading(true)
+      setLoadError(false)
+      getClaudeMdRef
+        .current(agentId)
+        .then((v) => {
+          if (!liveRef.current) return
+          if (!force && isClaudeMdDirty(contentRef.current, baselineRef.current)) return
+          applyView(v)
+          setWritten(false)
+          setWriteError(false)
+          setStale(false)
+        })
+        .catch(() => {
+          // fail-closed: an error line, NEVER a blank buffer a save would clobber (failed ≠ empty).
+          if (liveRef.current) setLoadError(true)
+        })
+        .finally(() => {
+          if (liveRef.current) setLoading(false)
+        })
+    },
+    [agentId, applyView],
+  )
 
   useEffect(() => {
     liveRef.current = true
@@ -321,7 +343,7 @@ function ClaudeMdSection({
     setWriting(true)
     try {
       const ifMatch = force ? version : expectedVersion(exists, version)
-      const echo = await updateClaudeMd(agentId, content, ifMatch)
+      const echo = await updateClaudeMdRef.current(agentId, content, ifMatch)
       if (!liveRef.current) return
       applyView(echo)
       setStale(false)
@@ -339,7 +361,7 @@ function ClaudeMdSection({
   // discard the external edit — a deliberate, fresh-if-match overwrite, still not a blind clobber of an unknown state).
   const overwriteAnyway = async () => {
     try {
-      const cur = await getClaudeMd(agentId)
+      const cur = await getClaudeMdRef.current(agentId)
       if (!liveRef.current) return
       setVersion(cur.version ?? null)
       setExists(cur.exists)
@@ -361,7 +383,7 @@ function ClaudeMdSection({
           <p className="agent-settings-hint agent-settings-error" role="alert" data-testid={TID.personaLoadError}>
             {T.personaLoadError}
           </p>
-          <button type="button" data-testid={TID.personaRetry} onClick={load}>
+          <button type="button" data-testid={TID.personaRetry} onClick={() => load(true)}>
             {T.personaRetry}
           </button>
         </div>
@@ -424,7 +446,7 @@ function ClaudeMdSection({
           <p>{T.conflictBody}</p>
           <div className="agent-settings-actions">
             {/* reload is the SAFE default (discard local, load current); overwrite is the deliberate, error-toned choice. */}
-            <button type="button" data-testid={TID.conflictReload} autoFocus onClick={load}>
+            <button type="button" data-testid={TID.conflictReload} autoFocus onClick={() => load(true)}>
               {T.conflictReload}
             </button>
             <button
