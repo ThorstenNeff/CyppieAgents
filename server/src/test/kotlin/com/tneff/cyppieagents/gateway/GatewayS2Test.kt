@@ -17,6 +17,7 @@ import io.ktor.websocket.readText
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -43,6 +44,9 @@ class GatewayS2Test {
                         for (f in incoming) if (f is Frame.Text) send(Frame.Text("ECHO:" + f.readText()))
                     }
                 }
+                // A REAL /ws/hub downstream (the control-plane wire) that emits an identifiable secret — so the F4
+                // refusal tooth measures ACTIVE refusal (the secret must never traverse), not mere route-absence.
+                webSocket("/ws/hub") { send(Frame.Text("SECRET-HUB-WIRE")); for (f in incoming) { /* drain */ } }
             }
         }.start(wait = false)
         val port = runBlocking { hub.engine.resolvedConnectors().first().port }
@@ -80,21 +84,45 @@ class GatewayS2Test {
     }
 
     @Test
-    fun wsHub_isRefusedAtTheEdge() {
-        val (hub, hp) = startFakeWsHub()
+    fun wsHub_isActivelyRefusedAtTheEdge_andTheHubWireSecretNeverLeaks() {
+        val (hub, hp) = startFakeWsHub() // has a real /ws/hub secret downstream
         val (gw, gp) = startGateway(hp)
         val wsClient = HttpClient(CIO) { install(ClientWebSockets) }
         try {
-            val refused = try {
-                runBlocking { wsClient.webSocket("ws://127.0.0.1:$gp/ws/hub") { /* should never open */ } }
-                false
-            } catch (_: Exception) {
-                true // the handshake fails (404 at the edge — no WS route for the excluded path)
+            // (a) CONCRETE refusal — the upgrade to the excluded socket gets 404 AT THE EDGE. A broken gateway / wrong
+            //     port / hub-down would NOT yield exactly 404, so this can't pass by environment breakage (F4 fix).
+            assertEquals(404, rawWsUpgradeStatus(gp, "/ws/hub"), "/ws/hub upgrade → 404 at the edge (active refusal)")
+            // positive control: an allowed channel DOES upgrade (101) — proves the probe reads real status, so the 404
+            // above measures the refusal, not the absence of a route.
+            assertEquals(101, rawWsUpgradeStatus(gp, "/ws/comm"), "an allowed channel upgrades (101)")
+            // (b) DISCRIMINATOR — even attempting a real WS, the /ws/hub hub-wire secret (a live downstream on the fake
+            //     hub) must NEVER traverse the gateway. If the deny broke, this is what would come through.
+            var received: String? = null
+            runCatching {
+                runBlocking {
+                    kotlinx.coroutines.withTimeout(3000) {
+                        wsClient.webSocket("ws://127.0.0.1:$gp/ws/hub") {
+                            received = (incoming.receive() as? Frame.Text)?.readText()
+                        }
+                    }
+                }
             }
-            assertTrue(refused, "/ws/hub WS upgrade must be refused at the gateway edge")
-            assertTrue("/ws/hub" in ContractGenerator.EXCLUDED_WS_PATHS, "sanity: /ws/hub is the excluded control socket")
+            assertNotEquals("SECRET-HUB-WIRE", received, "the /ws/hub hub-wire secret must never leak through the gateway")
         } finally {
             wsClient.close(); gw.stop(0, 0); hub.stop(0, 0)
+        }
+    }
+
+    /** Send a raw WS-upgrade request and return the HTTP status of the FIRST response line (101 upgrade / 404 refused).
+     *  Concrete status — unlike `catch(_: Exception)`, a broken env yields a connect error, not a spurious pass. */
+    private fun rawWsUpgradeStatus(port: Int, path: String): Int {
+        java.net.Socket("127.0.0.1", port).use { s ->
+            val req = "GET $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+                "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
+                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+            s.getOutputStream().apply { write(req.toByteArray()); flush() }
+            val statusLine = s.getInputStream().bufferedReader().readLine() ?: ""
+            return statusLine.split(" ").getOrNull(1)?.toIntOrNull() ?: -1
         }
     }
 }
