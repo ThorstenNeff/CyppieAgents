@@ -179,6 +179,12 @@ describe('applyTerminalControl — per-agent, last write wins', () => {
     expect(s.terminalStateByAgent.get('backend')).toBe('INTERACTIVE')
     expect(s.terminalStateByAgent.get('frontend')).toBe('INTERACTIVE')
   })
+
+  it('CYP-644: also keeps the FULL event (heldBy/since) in terminalControlByAgent — no drift from the enum map', () => {
+    const s = applyTerminalControl(emptyHubState, { agentId: 'backend', state: 'INTERACTIVE', heldBy: 'po', since: 1000 })
+    expect(s.terminalControlByAgent.get('backend')).toEqual({ agentId: 'backend', state: 'INTERACTIVE', heldBy: 'po', since: 1000 })
+    expect(s.terminalStateByAgent.get('backend')).toBe('INTERACTIVE') // the enum projection stays in lockstep
+  })
 })
 
 describe('CYP-641 — busy-state fold (/ws/busy-state)', () => {

@@ -45,6 +45,10 @@ export interface HubState {
   messagesByChannel: ReadonlyMap<string, readonly Message1[]>
   /** the server-confirmed per-agent terminal-control state (drives the non-optimistic mode toggle). */
   terminalStateByAgent: ReadonlyMap<string, TerminalControlState>
+  /** CYP-644: the FULL last terminal-control event per agent (state + heldBy + since) — drives the handoff /
+   *  context-lost landmark banner, which needs heldBy/since the enum map above discards. Same source (set together
+   *  in applyTerminalControl), so it never drifts from terminalStateByAgent. */
+  terminalControlByAgent: ReadonlyMap<string, AgentTerminalControlEvent>
   /** the /ws/comm connection posture (CommPanel banner). */
   commConnection: CommConnection
   /** server-confirmed process run-state per agent (CYP-431 lifecycle header); absent → UNKNOWN until the feed. */
@@ -70,6 +74,7 @@ export const emptyHubState: HubState = {
   pendingAcl: new Map(),
   messagesByChannel: new Map(),
   terminalStateByAgent: new Map(),
+  terminalControlByAgent: new Map(),
   commConnection: 'connecting',
   runStateByAgent: new Map(),
   errorCodeByAgent: new Map(),
@@ -200,7 +205,10 @@ export function applyCommEvent(state: HubState, event: CommWsServerEvent): HubSt
 export function applyTerminalControl(state: HubState, ev: AgentTerminalControlEvent): HubState {
   const terminalStateByAgent = new Map(state.terminalStateByAgent)
   terminalStateByAgent.set(ev.agentId, ev.state)
-  return { ...state, terminalStateByAgent }
+  // CYP-644: keep the FULL event too (heldBy/since for the banner) — set from the same ev so the two never drift.
+  const terminalControlByAgent = new Map(state.terminalControlByAgent)
+  terminalControlByAgent.set(ev.agentId, ev)
+  return { ...state, terminalStateByAgent, terminalControlByAgent }
 }
 
 /** CYP-641: fold a /ws/busy-state event — the live "is this agent working" flag. An explicit false is STORED (not
