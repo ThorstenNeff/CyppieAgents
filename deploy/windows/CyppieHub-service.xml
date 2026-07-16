@@ -1,0 +1,53 @@
+<!--
+  CYP-627 — WinSW service definition for the Cyppie self-hosted hub (Windows, Topology A / standalone-local).
+  Runs the CYP-626 jpackage app-image launcher (CyppieHub.exe) as a headless, auto-starting Windows Service and
+  captures its win-console stdout to a rotating log. SECRET-FREE + redistributable: the two placeholders
+  (@INSTALL_DIR@, @DATA_DIR@) are substituted by the install wizard (CYP-628); secrets (CYPPIE_MASTER_KEY,
+  OPERATOR_TOKEN, HUB_TOKEN_*) are NOT here — they come from the service account's ACL-protected environment
+  (wizard-provisioned). See README.md §Secrets. Rename WinSW.exe → CyppieHubService.exe next to this file (renamed to
+  CyppieHubService.xml), then `CyppieHubService.exe install|start|stop|uninstall|status`.
+-->
+<service>
+  <id>cyppiehub</id>
+  <name>Cyppie Hub</name>
+  <description>Cyppie self-hosted agent hub — headless Ktor server (standalone/local, loopback-bound by default).</description>
+
+  <!-- The jpackage app-image launcher (CYP-626). Its CyppieHub.cfg ALREADY carries the two mandatory JVM args
+       (-Dio.netty.jfr.enabled=false, -XX:MaxRAMPercentage=75.0), so none are re-specified here — a custom java -jar
+       that dropped the JFR arg would hit NoClassDefFoundError FreeChunkEvent (CYP-206/225). -->
+  <executable>@INSTALL_DIR@\CyppieHub.exe</executable>
+
+  <!-- Working dir = the data dir; the hub also receives absolute PLATFORM_* (below), so CWD is not load-bearing. -->
+  <workingdirectory>@DATA_DIR@</workingdirectory>
+
+  <!-- Auto-start on boot; delayed so the network stack + any dependency services are up first. -->
+  <startmode>Automatic</startmode>
+  <delayedAutoStart/>
+
+  <!-- Restart on an unexpected exit (crash/OOM resilience the CYP-417 governor assumes), with a backoff so a
+       persistently-failing hub (e.g. bad config) does not tight-loop. Failure count resets after an hour of health. -->
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="120 sec"/>
+  <resetfailure>1 hour</resetfailure>
+
+  <!-- Capture the hub's win-console stdout+stderr to a rolling log under the data dir (bounded disk). -->
+  <logpath>@DATA_DIR@\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold> <!-- 10 MB per file -->
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <!-- NON-SECRET operational config ONLY. Secrets are provisioned into the service account's environment by the
+       wizard (CYP-628), NOT written here — this file stays secret-free/redistributable (design doc CYP-623 §3). -->
+  <env name="PLATFORM_CONFIG" value="@DATA_DIR@\platform.config.json"/>
+  <env name="PLATFORM_GIT_ROOT" value="@DATA_DIR@"/>
+
+  <!-- Give the JVM time to close WS/connections and flush the sqlite stores on stop before a hard kill. -->
+  <stoptimeout>30 sec</stoptimeout>
+  <stopparentprocessfirst>true</stopparentprocessfirst>
+
+  <!-- Run under a dedicated low-privilege service account whose ACL-protected environment holds the secrets. The
+       wizard creates/selects it (CYP-628); LocalService is the fallback. NOT LocalSystem (least privilege). -->
+  <!-- <serviceaccount><username>@SERVICE_ACCOUNT@</username><password>@SERVICE_ACCOUNT_PW@</password></serviceaccount> -->
+</service>
