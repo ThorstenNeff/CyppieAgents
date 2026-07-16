@@ -9,7 +9,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -17,40 +16,42 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
-import androidx.compose.ui.platform.testTag
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.first_run_degraded_note
 import kmpcyppieagents.app.shared.generated.resources.first_run_intro
-import kmpcyppieagents.app.shared.generated.resources.first_run_skip
-import kmpcyppieagents.app.shared.generated.resources.first_run_skip_note
 import kmpcyppieagents.app.shared.generated.resources.first_run_title
 import org.jetbrains.compose.resources.stringResource
 
 /**
  * CYP-629 §1 — the First-Run setup gate, inserted `AuthGate → RemoteHubConnectGate → ▶ FirstRunGate ◀ → Workspace`
  * (ux-spec §1). Mirrors the [com.tneff.cyppieagents.connect.RemoteHubConnectGate] opt-in-**off** discipline: with
- * [enabled] `false` (the default until the §7 Backend seam ships + a deploy GO) the gate is **inert** — the VM is
- * never constructed and [workspace] renders directly, byte-identical to today. A tooth pins "off ⇒ workspace".
+ * [enabled] `false` (the default until the §7 Backend seam ships + a deploy GO) the gate is **inert** — neither VM is
+ * constructed and [workspace] renders directly, byte-identical to today. A tooth pins "off ⇒ workspace".
  *
- * When enabled it derives its mode purely from the config status ([firstRunGateMode]): TRANSPARENT (key set AND
- * repo CLONED_OK) → straight to [workspace]; LOADING (status unknown) → a load/retry surface (fail-closed — never
- * passes through on unknown); ACTIVE → the setup surface. Skipping (§6.2) drops to [workspace] (the degraded
- * banner is a later sub-slice); the gate re-derives on the next launch while still unconfigured.
+ * When enabled the mode is derived purely from the config status ([firstRunGateMode]):
+ * - **LOADING** (status unknown) → a live load surface. **Never** rendered as "step 1" — unknown ≠ unconfigured
+ *   (PO constraint ①); the load state is the honest statement, a step would assert a config-state we don't know.
+ * - **TRANSPARENT** (key set AND repo `CLONED_OK`) → the completion surface. It appears because the MODE is
+ *   TRANSPARENT, NOT because a "last step" was clicked (PO constraint ③) — so nobody sees "done" mid-clone. Only its
+ *   CTA advances into [workspace].
+ * - **ACTIVE** → orientation (§2) + the stepper, which lands on [firstRunOpenStep] (PO constraint ④).
  *
- * **Sub-slice 2a:** the shell — orientation (§2) + honest degraded framing + skip. The stepper and the embedded
- * reused `ApiKeySection`/`RepoSection`/roster (§3–§5) land in 2b+.
+ * Skipping (§6.2) drops to [workspace] (the degraded banner/resume is Inc4); the gate re-derives on the next launch.
  */
 @Composable
 fun FirstRunGate(
     enabled: Boolean,
     createViewModel: () -> FirstRunViewModel,
+    createSettingsViewModel: () -> SettingsViewModel,
     workspace: @Composable () -> Unit,
 ) {
     if (!enabled) {
@@ -59,24 +60,27 @@ fun FirstRunGate(
         return
     }
     val viewModel = remember { createViewModel() }
+    val settingsViewModel = remember { createSettingsViewModel() }
     val status by viewModel.status.collectAsState()
-    // Skip is a session choice (§6.3b: the gate re-derives on the next launch while still unconfigured).
+    val settingsState by settingsViewModel.state.collectAsState()
     var skipped by remember { mutableStateOf(false) }
+    var opened by remember { mutableStateOf(false) } // set ONLY by the completion CTA (§6.1) — not a "completed" flag
 
     when {
-        skipped -> workspace()
+        skipped || opened -> workspace()
         else -> when (firstRunGateMode(status)) {
-            FirstRunGateMode.TRANSPARENT -> workspace()
+            FirstRunGateMode.TRANSPARENT -> FirstRunComplete(onOpen = { opened = true })
             FirstRunGateMode.LOADING -> FirstRunLoading()
-            FirstRunGateMode.ACTIVE -> FirstRunSetup(onSkip = { skipped = true })
+            FirstRunGateMode.ACTIVE ->
+                FirstRunActive(status, settingsState, settingsViewModel, onSkip = { skipped = true })
         }
     }
 }
 
 /**
- * Fail-closed load surface: the status is not yet known, so the gate shows a live indicator rather than passing
- * through (unknown ≠ configured, ux-spec §1). (2a: a minimal indicator; the full `LoadErrorRetry` reuse + retry
- * wiring land with the live source in a later sub-slice.)
+ * Fail-closed load surface (constraint ①): the status is not yet known, so the gate shows a live indicator rather
+ * than passing through OR rendering a step. (The full `LoadErrorRetry` reuse + retry wiring land with the live
+ * source in Inc3.)
  */
 @Composable
 private fun FirstRunLoading() {
@@ -88,13 +92,14 @@ private fun FirstRunLoading() {
     }
 }
 
-/**
- * The ACTIVE setup surface (2a shell): title + orientation intro + the honest degraded framing ("running but not
- * configured is normal"), plus the skip affordance. Net-new copy only — no reused input sections yet (2b+).
- */
+/** ACTIVE: orientation (§2) framed honestly + the setup stepper (lands on the first open step, §6.3b/④). */
 @Composable
-private fun FirstRunSetup(onSkip: () -> Unit) {
-    val skipLabel = stringResource(Res.string.first_run_skip)
+private fun FirstRunActive(
+    status: FirstRunConfigStatus,
+    settingsState: com.tneff.cyppieagents.settings.SettingsUiState,
+    settingsViewModel: SettingsViewModel,
+    onSkip: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -110,16 +115,13 @@ private fun FirstRunSetup(onSkip: () -> Unit) {
         )
         // Orientation (§2): what to do now. INFO — neutral, never success-green / alarm-red.
         TonedHint(text = stringResource(Res.string.first_run_intro), tone = HintTone.INFO, tag = FirstRunTags.INTRO)
-        // Degraded framing (§2, PO point): frame the degraded boot as EXPECTED so the operator doesn't read it as
-        // broken. Polite live-region (a11y §2): a persistent context, announced once.
+        // Degraded framing (§2, PO point): frame the degraded boot as EXPECTED, not broken. Polite live-region once.
         TonedHint(
             text = stringResource(Res.string.first_run_degraded_note),
             tone = HintTone.INFO,
             tag = FirstRunTags.DEGRADED_NOTE,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
-        // Skip (§6.2): honest degraded workspace, no dead end (the banner/resume land in a later sub-slice).
-        TextButton(onClick = onSkip, modifier = Modifier.testTag(FirstRunTags.SKIP)) { Text(skipLabel) }
-        TonedHint(text = stringResource(Res.string.first_run_skip_note), tone = HintTone.INFO, tag = "${FirstRunTags.SKIP}.note")
+        FirstRunStepper(status, settingsState, settingsViewModel, onSkip)
     }
 }
