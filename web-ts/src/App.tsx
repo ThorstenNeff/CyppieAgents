@@ -48,6 +48,8 @@ import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest,
 import { WorkspaceRosterPanel } from './workspace/WorkspaceRosterPanel'
 import { CapacityPill } from './workspace/CapacityPill'
 import { CompactPanel } from './compact/CompactPanel'
+import { ProjectManagementPanel } from './project/ProjectManagementPanel'
+import { ProjectSwitcher } from './project/ProjectSwitcher'
 import { OverloadBanner } from './workspace/OverloadBanner'
 import { overloadVisible } from './workspace/capacityModel'
 import { ThemeToggle } from './ui/ThemeToggle'
@@ -63,6 +65,7 @@ const AGENT_MGMT_WINDOW_ID = 'agentMgmt'
 const PRODUCT_LEAD_WINDOW_ID = 'productLead'
 const COMPACT_WINDOW_ID = 'compact'
 const WORKSPACE_WINDOW_ID = 'workspace'
+const PROJECT_MGMT_WINDOW_ID = 'projectMgmt'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -270,6 +273,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     // CYP-649: the compact-orchestration window is present for EVERYONE (the status is read-tier); the panel gates
     // editing on operator internally (member = read-only chip + gate hint), never omission.
     if (agents.length > 0 && !present.has(COMPACT_WINDOW_ID)) wm.add(tiledWindow(COMPACT_WINDOW_ID, 'Compact', index++), false)
+    // CYP-651: project management window — present for everyone; the panel fail-closes to a gate-hint for a
+    // non-operator (no list/mutations), mirrors the agent-management gate pattern.
+    if (agents.length > 0 && !present.has(PROJECT_MGMT_WINDOW_ID)) wm.add(tiledWindow(PROJECT_MGMT_WINDOW_ID, 'Projekte', index++), false)
   }, [agents, operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
@@ -392,6 +398,21 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // promise so the RepoSection surfaces the server code (invalid_repo_url) on its error line.
   const onSaveRepo = (req: RepoConfigRequest): Promise<void> => hubRepo.putRepoConfig(req).then((v) => setRepoConfig(v))
 
+  // CYP-651: project mutations, all NON-OPTIMISTIC (the view reflects the server, never the local intent). Errors
+  // propagate so the panel maps the server guard codes; the correctness boundary is the server ProjectGuard.
+  const refreshProjects = () => hubRepo.getProjects().then(setProjectsView).catch(() => undefined)
+  const onCreateProject = (id: string, name: string): Promise<void> => hubRepo.createProject(id, name).then(() => void refreshProjects())
+  // Switch is heavyweight + non-optimistic: the returned ProjectsView (200) is the flipped pointer — set it only then.
+  const onSwitchProject = (projectId: string): Promise<void> => hubRepo.switchProject(projectId).then((v) => setProjectsView(v))
+  const onRenameProject = (id: string, name: string): Promise<void> => hubRepo.renameProject(id, name).then(() => void refreshProjects())
+  // Delete: refetch in ALL cases (a 404 = 'already gone' still needs the list to reflect it); the error still
+  // propagates so the panel surfaces the 409-last / 409-active guard messages.
+  const onDeleteProject = (id: string, deleteWorktrees: boolean): Promise<void> =>
+    hubRepo
+      .deleteProject(id, deleteWorktrees)
+      .then(() => undefined)
+      .finally(() => void refreshProjects())
+
   // CYP-461: connector change (edit) → POST /connector, then refetch the roster so the settled kind reflects the
   // server (non-optimistic). The advisory preview source (getConnectors) is passed straight to the picker.
   const onSetConnector = (id: string, kind: ConnectorKind): Promise<void> =>
@@ -421,6 +442,20 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
       // CYP-650: operator-only roster + audit. The window only exists for an operator (added above), so no in-panel
       // gate is needed — the component just renders the operator-only data.
       return <WorkspaceRosterPanel members={workspaceMembers} audit={operatorAudit} />
+    }
+    if (win.id === PROJECT_MGMT_WINDOW_ID) {
+      // CYP-651: project switch + management (operator-gated inside the panel). Non-optimistic mutations; the
+      // destructive delete is name-echo-armed and the active/last project have delete disabled with an inline reason.
+      return (
+        <ProjectManagementPanel
+          projects={projectsView}
+          operator={operator}
+          onCreate={onCreateProject}
+          onSwitch={onSwitchProject}
+          onRename={onRenameProject}
+          onDelete={onDeleteProject}
+        />
+      )
     }
     if (win.id === PRODUCT_LEAD_WINDOW_ID) {
       // CYP-464: operator-gated report surface. The panel itself fail-closes to the gate-hint for a non-operator
@@ -575,6 +610,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           full-width below it; both are auto-height, the desktop takes the rest (flex). */}
       <div className="workspace-bar" data-testid="workspace-bar">
         {capacity != null && <CapacityPill capacity={capacity} />}
+        {/* CYP-651: the always-visible project switcher (leading; the workspace context). */}
+        <ProjectSwitcher projects={projectsView} operator={operator} onSwitch={onSwitchProject} />
         <div className="workspace-bar-spacer" />
         {/* CYP-645 composer-history stepper + CYP-643 theme toggle — same personal, ungated trailing-slot family. */}
         <ComposerHistoryStepper size={historySizeValue} onChange={onHistorySizeChange} />

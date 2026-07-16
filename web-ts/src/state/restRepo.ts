@@ -22,6 +22,7 @@ import type {
   GenerateReportRequest,
   AuthMe,
   ProjectsView,
+  Project,
   Capacity,
   CompactStatus,
   CompactConfig,
@@ -37,6 +38,15 @@ export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
 /** CYP-450: the removed agent's worktree fate. Default KEEP (non-destructive); DELETE is the explicit, warned path
  *  → maps to the server's `?worktree=delete` query (default keep). */
 export type WorktreeFate = 'keep' | 'delete'
+
+/** CYP-651. DELETE /api/projects/{id} response — the cascade-delete receipt (hand-modeled; not in the generated
+ *  contract, like the other REST DTOs). Content-free counts of what was torn down. */
+export interface ProjectDeleteReceipt {
+  projectId: string
+  configRemoved: boolean
+  eventsRemoved: number
+  worktreesRemoved: number
+}
 
 export interface HubRepo {
   /** GET /api/agents — the typed roster (id/name/role/…). The real source of the agent list + PO identity (CYP-444),
@@ -109,6 +119,20 @@ export interface HubRepo {
   /** CYP-467/94. GET /api/projects — the registry + active pointer ({activeProjectId, projects}). Drives the Event-
    *  Browse cross-project axis (operator-only): null=active(server-forced) → other project → 'all'. */
   getProjects(): Promise<ProjectsView>
+  /** CYP-651 (operator). POST /api/projects {id,name} — create a project. 400 invalid_project_id · 409 project_exists.
+   *  Non-optimistic: the caller refetches getProjects; never optimistically inserts. */
+  createProject(id: string, name: string): Promise<Project>
+  /** CYP-651 (operator). POST /api/projects/switch {projectId} — flip the active pointer. HEAVYWEIGHT + NON-OPTIMISTIC:
+   *  the server drains/stops sessions (cap==1) and awaits BEFORE the flip; the caller keeps the switch PENDING until
+   *  the 200 and never flips the pointer early. 404 project_not_found. Switch-to-active is a safe no-op. */
+  switchProject(projectId: string): Promise<ProjectsView>
+  /** CYP-651 (operator). PUT /api/projects/{id} {name} — rename (id is immutable). 400 invalid · 404 not_found. */
+  renameProject(id: string, name: string): Promise<Project>
+  /** CYP-651 (operator). DELETE /api/projects/{id}?deleteWorktrees= — HARD cascade-delete. `deleteWorktrees` defaults
+   *  FALSE (worktrees kept). NO confirm-token/body: the client name-echo is a UX guard only. The SERVER ProjectGuard
+   *  is authoritative: 404 project_not_found · 409 last_project · 409 active_project_protected (the active project must
+   *  be switched away FIRST). A 2nd delete = 404 = 'already gone' → benign. */
+  deleteProject(id: string, deleteWorktrees: boolean): Promise<ProjectDeleteReceipt>
   /** CYP-642 (S-G). GET /api/capacity — the server-authoritative hub-capacity snapshot ({current, estimatedMax?}).
    *  MEMBER-tier (all users get the readout). Drives the capacity pill; a null estimatedMax = max not yet estimated. */
   getCapacity(): Promise<Capacity>
@@ -212,6 +236,18 @@ export class RestHubRepo implements HubRepo {
   }
   getProjects(): Promise<ProjectsView> {
     return this.rest.get<ProjectsView>('/api/projects')
+  }
+  createProject(id: string, name: string): Promise<Project> {
+    return this.rest.post<Project>('/api/projects', { id, name })
+  }
+  switchProject(projectId: string): Promise<ProjectsView> {
+    return this.rest.post<ProjectsView>('/api/projects/switch', { projectId })
+  }
+  renameProject(id: string, name: string): Promise<Project> {
+    return this.rest.put<Project>(`/api/projects/${encodeURIComponent(id)}`, { name })
+  }
+  deleteProject(id: string, deleteWorktrees: boolean): Promise<ProjectDeleteReceipt> {
+    return this.rest.delete<ProjectDeleteReceipt>(`/api/projects/${encodeURIComponent(id)}?deleteWorktrees=${deleteWorktrees}`)
   }
   getCapacity(): Promise<Capacity> {
     return this.rest.get<Capacity>('/api/capacity')
