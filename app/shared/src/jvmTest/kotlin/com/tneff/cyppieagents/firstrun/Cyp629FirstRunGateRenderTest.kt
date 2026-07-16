@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import com.tneff.cyppieagents.settings.ApiKeyState
@@ -13,6 +14,9 @@ import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.RepoConfigState
 import com.tneff.cyppieagents.settings.SettingsTags
 import com.tneff.cyppieagents.settings.SettingsViewModel
+import kmpcyppieagents.app.shared.generated.resources.Res
+import kmpcyppieagents.app.shared.generated.resources.first_run_apikey_posture
+import org.jetbrains.compose.resources.stringResource
 import kotlin.test.Test
 
 /**
@@ -103,6 +107,34 @@ class Cyp629FirstRunGateRenderTest {
         // Only the CTA advances into the workspace.
         onNodeWithTag(FirstRunTags.OPEN_WORKSPACE).performClick()
         onNodeWithTag(WORKSPACE).assertExists()
+    }
+
+    @Test
+    fun apiKeyStep_showsPostureLine() = runGate(unconfigured()) {
+        // ② presence: the at-rest posture line — the ONLY place the product discloses "not encrypted at rest" —
+        // must be in the API-key step. Mutation: remove the posture TonedHint → this node is gone → red.
+        onNodeWithTag(FirstRunTags.APIKEY_POSTURE).assertExists()
+    }
+
+    @Test
+    fun postureLine_carriesTheRatifiedString() = runComposeUiTest {
+        // ② integrity: the posture line must carry the RATIFIED copy (`first_run_apikey_posture`), not just any
+        // string. Assert the KEY's resolved value (i18n-robust — resolved here from the same key), so a refactor
+        // that swaps in a different (e.g. falsely reassuring "your key is safe") key reddens. The literal text is
+        // never hard-coded in the assertion.
+        lateinit var postureText: String
+        setContent {
+            MaterialTheme {
+                postureText = stringResource(Res.string.first_run_apikey_posture)
+                FirstRunGate(
+                    enabled = true,
+                    createViewModel = { FirstRunViewModel(StubFirstRunConfigSource(unconfigured())) },
+                    createSettingsViewModel = { SettingsViewModel(StubRepo(), editable = true) },
+                    workspace = { Text("workspace", modifier = Modifier.testTag(WORKSPACE)) },
+                )
+            }
+        }
+        onNodeWithText(postureText).assertExists()
     }
 
     @Test
