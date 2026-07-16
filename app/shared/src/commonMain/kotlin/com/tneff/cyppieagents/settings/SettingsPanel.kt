@@ -78,8 +78,16 @@ fun SettingsPanel(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * CYP-629 §4.1 — reused by the First-Run gate. [firstRunContext] defaults `false` = the **existing** Project-Settings
+ * behaviour, byte-identical (the amber "applies to new worktrees / next boot" hint after a save). `true` **suppresses**
+ * that hint only: in first-run the hub clones the repo NOW (not "next boot"), so the deferred-effect framing would
+ * mislead (ux-spec §4.1). The net-new "repository set, cloning now" confirmation + the clone-status states are
+ * first-run wrapper surfaces rendered AROUND this section (kept out of the shared component — the section does not
+ * know first-run; see [ApiKeySection]). URL/branch/validation/operator-gate are untouched (reuse pur).
+ */
 @Composable
-private fun RepoSection(state: SettingsUiState, viewModel: SettingsViewModel) {
+internal fun RepoSection(state: SettingsUiState, viewModel: SettingsViewModel, firstRunContext: Boolean = false) {
     Column(
         modifier = Modifier.fillMaxWidth().testTag(SettingsTags.SECTION_REPO),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -135,8 +143,10 @@ private fun RepoSection(state: SettingsUiState, viewModel: SettingsViewModel) {
             TonedHint(errorText(key), HintTone.ERROR, SettingsTags.REPO_ERROR)
         }
 
-        // Amber "saved ≠ active" — applies to new worktrees / next boot (§3.2, disclosure mandatory).
-        if (state.repoEffectHint) {
+        // Amber "saved ≠ active" — applies to new worktrees / next boot (§3.2, disclosure mandatory). CYP-629 §4.1:
+        // SUPPRESSED in the first-run context (the hub clones NOW, not "next boot"; the wrapper shows the
+        // "set, cloning now" confirmation + the clone-status states).
+        if (state.repoEffectHint && !firstRunContext) {
             TonedHint(stringResource(Res.string.settings_repo_effect_hint), HintTone.EFFECT_DEFERRED, SettingsTags.REPO_EFFECT_HINT)
         }
     }
