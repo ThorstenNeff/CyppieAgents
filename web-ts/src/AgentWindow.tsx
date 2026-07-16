@@ -8,6 +8,8 @@ import { ContentViewSwitch } from './agentview/ContentViewSwitch'
 import { AgentTranscript } from './agentview/AgentTranscript'
 import { Composer } from './agentview/Composer'
 import { terminalModeSelection, type TerminalControlState, type SelectedView } from './agentview/terminalModeSelection'
+import { HandoffBanner } from './agentview/HandoffBanner'
+import type { AgentTerminalControlEvent } from './types/generated/contract'
 import { useAgentTranscript } from './agentview/useAgentTranscript'
 import { loadHistorySize, browserStore } from './agentview/historySizePreference'
 import { LifecycleHeader } from './agentview/LifecycleHeader'
@@ -28,6 +30,8 @@ export interface AgentWindowProps {
   token: string
   operator: boolean
   terminalState: TerminalControlState
+  /** CYP-644: the full latest terminal-control event (state + heldBy + since) for the handoff/context-lost banner. */
+  terminalControl?: AgentTerminalControlEvent
   onRequestMode: (agentId: string, mode: SelectedView) => void
   lifecycleState: LifecycleState
   lifecyclePending: LifecycleAction | undefined
@@ -43,6 +47,7 @@ export function AgentWindow({
   token,
   operator,
   terminalState,
+  terminalControl,
   onRequestMode,
   lifecycleState,
   lifecyclePending,
@@ -81,6 +86,8 @@ export function AgentWindow({
       {/* CYP-488: observed fidelity badge (own axis, beside the lifecycle status) — present only when degraded/unknown. */}
       <FidelityBadge agentId={agentId} capabilities={agent?.capabilities} connectorKind={agent?.connectorKind} />
       <ModeToggle state={terminalState} operator={operator} onRequestMode={(mode) => onRequestMode(agentId, mode)} />
+      {/* CYP-644: handoff / context-lost landmark banner (WARN-amber, persistent; null → nothing, fail-closed). */}
+      <HandoffBanner agentId={agentId} control={terminalControl} />
       <ContentViewSwitch
         active={active}
         orchestration={

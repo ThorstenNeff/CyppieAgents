@@ -898,3 +898,19 @@ body,
 .wa-attention {
   color: var(--md-sys-color-error);
 }
+
+/* CYP-644 (Epic CYP-640) — the handoff / context-lost landmark banner in the agent window. Persistent WARN-amber
+   strip (reuses the CYP-437 WARN tokens), NEVER green (a handoff is a caution, not success) and NEVER error-red
+   (nothing crashed). Colour is never the sole carrier (WCAG 1.4.1): the ▲ glyph + the text carry the meaning. */
+.handoff-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  font-size: 0.8rem;
+}
+.handoff-text {
+  min-width: 0;
+}

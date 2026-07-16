@@ -132,6 +132,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const aclEntries = useHubStore((s) => s.aclEntries)
   const pendingAcl = useHubStore((s) => s.pendingAcl)
   const terminalStateByAgent = useHubStore((s) => s.terminalStateByAgent)
+  const terminalControlByAgent = useHubStore((s) => s.terminalControlByAgent) // CYP-644: full event for the banner
   const messagesByChannel = useHubStore((s) => s.messagesByChannel)
   const commConnection = useHubStore((s) => s.commConnection)
   const runStateByAgent = useHubStore((s) => s.runStateByAgent)
@@ -481,6 +482,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           token={cfg.token}
           operator={operator}
           terminalState={terminalStateByAgent.get(agentId) ?? 'MEDIATED'}
+          terminalControl={terminalControlByAgent.get(agentId)}
           onRequestMode={onRequestMode}
           lifecycleState={runStateByAgent.get(agentId) ?? 'UNKNOWN'}
           lifecyclePending={lifecyclePending.get(agentId)}
