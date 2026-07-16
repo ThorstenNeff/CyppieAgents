@@ -149,6 +149,31 @@ Der **Fix reused den bestehenden Save-Knopf:** Operator editiert die URL / beheb
 **erneut Speichern** → `PUT` → §7-Retry → `cloneStatus` transitioniert neu. **Kein separater „Retry"-CTA**
 nötig; die Copy `_clone_failed_*` sagt explizit „… und setze es erneut". Reuse-first.
 
+### 4.4 Lange Clones — ein ehrlicher Zustand darf nicht wie ein Hänger aussehen (PO-Fund)
+
+Ein Clone kann **Minuten** dauern (großes Repo). Ein statisches „Repository wird geklont…", das **5 Minuten**
+steht, **liest sich als Hänger → wird als Defekt gelesen** — dann hätten wir Ehrlichkeit gebaut und Vertrauen
+verloren. `CLONING` liefert **keinen Fortschritt in %** (§7 ist ein Enum, kein Progress) → wir können keinen
+Balken faken. Ehrliche Anti-Hänger-Behandlung **ohne** erfundenen Fortschritt, drei Teile:
+
+1. **Lebenszeichen statt statischem Label:** der Clone-Zustand rendert einen **animierten indeterminaten
+   Indikator** (Spinner/indeterminate — sichtbar *lebendig*), nie ein eingefrorenes „…". (Reuse des
+   bestehenden Prepare-/Lade-Spinner-Musters.)
+2. **Erwartung progressiv setzen:** nach einer **Schwelle** (~15 s, damit ein schneller Clone **nicht**
+   über-gewarnt wird) erscheint eine ruhige Zusatzzeile `first_run_repo_cloning_slow` — **„Klont noch — bei
+   großen Repositories kann das einige Minuten dauern."** (`INFO`, Live-Region **Polite, einmal** — kein
+   wiederholtes Announce). So kippt „dauert lange" von „kaputt?" zu „erwartet".
+3. **Agency statt Spinner-Falle:** der Nutzer darf den Clone **im Hintergrund weiterlaufen lassen** und den
+   Gate verlassen (Reuse `first_run_skip`) — der Clone läuft server-seitig weiter; im degradierten Workspace
+   spiegelt der Chip/Banner dann **ehrlich „Repository wird geklont"** (Reuse `first_run_repo_cloning`, **nicht**
+   „nicht eingerichtet" — es *ist* gesetzt und in Arbeit), und der Agent-Start bleibt `GATED` mit dem
+   **cloning-spezifischen** Grund statt „fehlt". Niemand sitzt einen 5-Minuten-Spinner ab.
+
+**Kein Client-Timeout→`ERROR` bei `CLONING`:** ein langer Clone ist **kein** Fehlschlag — nur der Server-
+`CLONE_FAILED` bedeutet Fehler (§7). Der Client erfindet keinen Fehlschlag (fail-closed in die ehrliche
+Richtung), gibt dem Nutzer aber die **Ausstiegs-Agency** (3), statt ihn festzuhalten. (Anti-Dead-Hang-Doktrin,
+konsistent mit CYP-576-OIDC „Continuing…" und dem Recovery-Codes-Hang.)
+
 ---
 
 ## 5. Schritt 4 — Team/Roster (Reuse `AgentManagementPanel`)

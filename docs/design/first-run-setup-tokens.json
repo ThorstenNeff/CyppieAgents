@@ -48,7 +48,7 @@
       "onContainer": "onSurfaceVariant",
       "icon": "sync",
       "label_key": "first_run_repo_cloning",
-      "note": "In-progress. Live-Region Polite. Auch der fail-closed-Default (Status unbekannt/absent) rendert hier — nie 'fertig'."
+      "note": "In-progress — ANIMIERTER indeterminater Indikator (Lebenszeichen), nie statisches Label (§4.4). Nach ~15s Zusatzzeile first_run_repo_cloning_slow ('kann Minuten dauern', Polite einmal). Live-Region Polite. Auch der fail-closed-Default (Status unbekannt/absent) rendert hier — nie 'fertig'. Kein Client-Timeout->ERROR: langer Clone ist kein Fehlschlag."
     },
     "firstRun.cloneFailed": {
       "hintTone": "ERROR",

@@ -20,7 +20,8 @@
 | `firstRun.apiKey.posture` | ehrliche at-rest-Posture-Zeile | `INFO` | — |
 | `firstRun.apiKey.saved` | „gespeichert, greift beim ersten Start" | `INFO` | Polite |
 | `firstRun.repo.saved` | „Repository gesetzt, klont jetzt" | `INFO` | Polite |
-| `firstRun.repo.cloning` | „wird geklont …" | `INFO` | Polite |
+| `firstRun.repo.cloning` | „wird geklont …" (animiert/indeterminate, §4.4) | `INFO` | Polite |
+| `firstRun.repo.cloningSlow` | Lebenszeichen-Zeile nach ~15s „kann Minuten dauern" | `INFO` | Polite (einmal) |
 | `firstRun.repo.cloneOk` | „geklont, Team kann arbeiten" | `INFO` | Polite |
 | `firstRun.repo.cloneFailed` | Clone-Fehlschlag (url/auth/generisch) | **`ERROR`** | **Assertive** |
 | `firstRun.team.intro` | Team-Rahmung „startet mit 1 PO" | `INFO` | — |
@@ -62,8 +63,9 @@
   bestehende Projekt-Settings.
 
 ## Self-Validation
-- **17 `firstRun.*` + 4 `workspace.*` (`unconfiguredBanner`, `unconfiguredCollapse`, `unconfiguredChip`,
-  `setupResume`) + 1 `agent.<id>.ctlUnconfigured`** = **22 neue Tags**; Schema-konform
+- **18 `firstRun.*` (inkl. `firstRun.repo.cloningSlow`, §4.4) + 4 `workspace.*` (`unconfiguredBanner`,
+  `unconfiguredCollapse`, `unconfiguredChip`, `setupResume`) + 1 `agent.<id>.ctlUnconfigured`** = **23 neue
+  Tags**; Schema-konform
   (`<area>[.<scopeId>].<element>`, camelCase-Werte, keine Punkte im Segmentwert, charset `[A-Za-z0-9-]+`;
   `<id>` ist der Scope-Platzhalter wie bei `agent.<id>.restartBtn`).
 - **Kollision:** 0 — `firstRun`-Area greenfield; die vier `workspace.*` gg. bestehende `workspace.*`

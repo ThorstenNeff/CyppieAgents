@@ -29,6 +29,7 @@
 |---|---|---|
 | `first_run_repo_saved` | Repository gesetzt. Der Hub klont es jetzt. | Repository set. The hub is cloning it now. |
 | `first_run_repo_cloning` | Repository wird geklont … | Cloning repository… |
+| `first_run_repo_cloning_slow` | Klont noch — bei großen Repositories kann das einige Minuten dauern. | Still cloning — this can take a few minutes for large repositories. |
 | `first_run_repo_clone_ok` | Repository geklont. Dein Team kann arbeiten. | Repository cloned. Your team can work. |
 | `first_run_repo_clone_failed` | Das Repository konnte nicht geklont werden. Prüfe URL und Zugriffsrechte des Hub-Hosts und setze es erneut. | The repository couldn't be cloned. Check the URL and the hub host's access, then set it again. |
 | `first_run_repo_clone_failed_url` | Das Repository konnte nicht geklont werden: die URL ist nicht erreichbar. Prüfe die Adresse und setze das Repository erneut. | The repository couldn't be cloned: the URL isn't reachable. Check the address and set the repository again. |
@@ -104,9 +105,9 @@
   `agent_ctl_unconfigured` reiht sich ein (nicht neu erfunden).
 
 ## Self-Validation
-- **26 neue Keys:** 20 × `first_run_*` + `workspace_unconfigured_banner` + `workspace_setup_resume` +
-  `workspace_unconfigured_chip` + `a11y_workspace_unconfigured_collapse` + `agent_ctl_unconfigured` +
-  `a11y_agent_ctl_unconfigured`. Alle DE+EN befüllt.
+- **27 neue Keys:** 21 × `first_run_*` (inkl. `first_run_repo_cloning_slow`, §4.4) + `workspace_unconfigured_banner`
+  + `workspace_setup_resume` + `workspace_unconfigured_chip` + `a11y_workspace_unconfigured_collapse` +
+  `agent_ctl_unconfigured` + `a11y_agent_ctl_unconfigured`. Alle DE+EN befüllt.
 - **Argument-Anzahl:** **alle 0 Args** (kein `%n$s`); DE/EN-Argument-Anzahl identisch (0 == 0) je Zeile. Der
   Text „***<letzte 4>" / „***<last 4>" in `first_run_apikey_posture` ist **literale Erklärung**, kein Format-Arg.
 - **Kein content-tragendes/sensibles Klartext:** kein Key-Rohwert, kein Token, kein Fingerprint in der Copy;
