@@ -1274,3 +1274,24 @@ body {
   color: var(--md-sys-color-error);
   font-size: 0.8rem;
 }
+
+/* CYP-646 (Epic CYP-640) — the Count / Severity window-title badge (comm-unread / event-tail). Count = neutral
+   number pill; Severity = a glyph pill whose glyph reuses the shared .event-sev-* tone (colour never sole — the
+   number/glyph shape + the a11y label carry the meaning). */
+.window-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  line-height: 1.7;
+}
+.window-badge-count {
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+.window-badge-severity {
+  background: var(--md-sys-color-surface-variant);
+}
