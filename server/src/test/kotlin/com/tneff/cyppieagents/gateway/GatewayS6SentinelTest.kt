@@ -10,6 +10,7 @@ import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.HttpHeaders
@@ -63,7 +64,10 @@ class GatewayS6SentinelTest {
         root.addAppender(capture)
 
         val deadPort = deadHubPort()
-        val gw = embeddedServer(Netty, port = 0) { gatewayModule("http://127.0.0.1:$deadPort") }.start(wait = false)
+        val deadKratos = deadHubPort() // a dead Kratos upstream too → the S3 leg's forward throws (C8 path there as well)
+        val gw = embeddedServer(Netty, port = 0) {
+            gatewayModule("http://127.0.0.1:$deadPort", kratosBaseUrl = "http://127.0.0.1:$deadKratos")
+        }.start(wait = false)
         val gp = runBlocking { gw.engine.resolvedConnectors().first().port }
         val client = HttpClient(CIO) { install(ClientWebSockets) }
         try {
@@ -75,6 +79,16 @@ class GatewayS6SentinelTest {
                         header(HttpHeaders.Cookie, "ory_kratos_session=$C1")   // C1
                         header(HttpHeaders.Authorization, "Bearer $C2")         // C2
                         setBody("""{"apiKey":"$C7"}""")                          // C7 (raw credential body)
+                    }
+                }
+                // ★ S3 leg — the credential-heaviest cleartext surface: a self-service submit carries a RAW password
+                //   (C7) + the cookie/bearer/token sentinels through `/.ory/kratos/public/*`. This leg was blind before
+                //   (the sentinel never touched it); now a careless log at the Kratos handler leaks a sentinel → red.
+                runCatching {
+                    client.post("http://127.0.0.1:$gp/.ory/kratos/public/self-service/login?token=$C3&ticket=$TICKET") {
+                        header(HttpHeaders.Cookie, "ory_kratos_session=$C1")   // C1
+                        header(HttpHeaders.Authorization, "Bearer $C2")         // C2
+                        setBody("""{"method":"password","password":"$C7"}""")    // C7 (raw credential in a self-service body)
                     }
                 }
                 // WS: a PTY-like frame (C5) on an allowed channel, with a ?token in the upgrade URI (C3) → dead hub WS.
