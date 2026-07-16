@@ -5,7 +5,7 @@
 // mutation controls are disabled + a gate hint shows for a non-operator — never omission. All honesty rules live in
 // agentSettingsModel (tested); this file is orchestration + presentation.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Agent, AgentDetail, ClaudeMdView } from '../types/generated/contract'
+import type { Agent, AgentAvatar, AgentDetail, ClaudeMdView, Preset } from '../types/generated/contract'
 import {
   AGENT_SETTINGS_TEXT as T,
   AGENT_SETTINGS_TESTID as TID,
@@ -22,6 +22,22 @@ import {
   claudeMdHint,
   worktreeZone,
 } from './agentSettingsModel'
+import {
+  AVATAR_TEXT as AT,
+  AVATAR_TESTID as ATID,
+  AVATAR_STYLES,
+  type AvatarStyle,
+  type AvatarUploadError,
+  avatarStage,
+  selectedStyleOf,
+  presetFor,
+  shuffledPreset,
+  precheckUpload,
+  uploadErrorText,
+  creditLine,
+  avatarServeUrl,
+  avatarPreviewUrl,
+} from './avatarModel'
 
 export interface AgentSettingsPanelProps {
   agents: readonly Agent[]
@@ -37,6 +53,14 @@ export interface AgentSettingsPanelProps {
   getClaudeMd: (id: string) => Promise<ClaudeMdView>
   /** POST /api/agents/{id}/claude-md — write with an if-match; returns the fresh echo. Rejects with 409 on drift. */
   updateClaudeMd: (id: string, content: string, expectedVersion: string | null) => Promise<ClaudeMdView>
+  /** CYP-658: the API base for the same-origin avatar <img> serve/preview URLs (never a third-party host). */
+  apiBase: string
+  /** PUT /api/agents/{id} {avatar:preset} → the fresh Agent echo (re-sync avatar non-optimistically). */
+  onSetAvatarPreset: (id: string, preset: Preset) => Promise<Agent>
+  /** POST /api/agents/{id}/avatar (multipart) → the fresh AgentDetail echo (new avatar + ref). */
+  onUploadAvatar: (id: string, file: File) => Promise<AgentDetail>
+  /** DELETE /api/agents/{id}/avatar → clear to the fallback. */
+  onRemoveAvatar: (id: string) => Promise<void>
 }
 
 export function AgentSettingsPanel(props: AgentSettingsPanelProps) {
@@ -90,15 +114,31 @@ export function AgentSettingsPanel(props: AgentSettingsPanelProps) {
 
 function AgentSections({
   agentId,
+  agents,
   operator,
   previewSurface = 'light',
+  apiBase,
   fetchDetail,
   onSaveColor,
   getClaudeMd,
   updateClaudeMd,
+  onSetAvatarPreset,
+  onUploadAvatar,
+  onRemoveAvatar,
 }: AgentSettingsPanelProps & { agentId: string }) {
+  const agentName = agents.find((a) => a.id === agentId)?.name ?? agentId
   return (
     <>
+      <AvatarSection
+        agentId={agentId}
+        agentName={agentName}
+        operator={operator}
+        apiBase={apiBase}
+        fetchDetail={fetchDetail}
+        onSetPreset={onSetAvatarPreset}
+        onUpload={onUploadAvatar}
+        onRemove={onRemoveAvatar}
+      />
       <ColorSection
         agentId={agentId}
         operator={operator}
@@ -508,6 +548,243 @@ function WorktreeSection({
           </code>
         </div>
       )}
+    </section>
+  )
+}
+
+// ── Avatar (CYP-658) ─────────────────────────────────────────────────────────────────────────────────────────────
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return ''
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+/** The shared avatar renderer: an <img> at the same-origin serve URL for an image/preset avatar, falling back (on a
+ *  null avatar OR an <img> error) to the initials/colour disc. The a11y label names the STAGE, never a pixel peek. */
+function AgentAvatarView({ apiBase, agentId, avatar, name, testid }: { apiBase: string; agentId: string; avatar: AgentAvatar | null; name: string; testid: string }) {
+  const [imgError, setImgError] = useState(false)
+  useEffect(() => setImgError(false), [avatar]) // a fresh avatar deserves a fresh load attempt
+  const stage = avatarStage(avatar, name)
+  const showImg = (stage === 'image' || stage === 'preset') && avatar !== null && !imgError
+  return (
+    <span className="agent-avatar" data-testid={testid} data-stage={stage} role="img" aria-label={`Avatar (${stage})`}>
+      {showImg ? (
+        <img className="agent-avatar-img" src={avatarServeUrl(apiBase, agentId, avatar)} alt="" onError={() => setImgError(true)} />
+      ) : (
+        <span className="agent-avatar-fallback" aria-hidden="true">
+          {stage === 'initials' ? initialsOf(name) : ''}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function AvatarSection({
+  agentId,
+  agentName,
+  operator,
+  apiBase,
+  fetchDetail,
+  onSetPreset,
+  onUpload,
+  onRemove,
+}: {
+  agentId: string
+  agentName: string
+  operator: boolean
+  apiBase: string
+  fetchDetail: (id: string) => Promise<AgentDetail>
+  onSetPreset: (id: string, preset: Preset) => Promise<Agent>
+  onUpload: (id: string, file: File) => Promise<AgentDetail>
+  onRemove: (id: string) => Promise<void>
+}) {
+  const [avatar, setAvatar] = useState<AgentAvatar | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [uploadError, setUploadError] = useState<AvatarUploadError | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const liveRef = useRef(true)
+  // CYP-658 (churn-immune, per CYP-660): the parent passes a NEW fetchDetail identity every render (inline arrow over
+  // an unstable hubRepo); ref it so the load effect depends only on [agentId] → it runs on mount / agent-switch, never
+  // on a WS-tick re-render (which would needlessly re-fetch and could reset the avatar under an in-progress action).
+  const fetchDetailRef = useRef(fetchDetail)
+  fetchDetailRef.current = fetchDetail
+
+  useEffect(() => {
+    liveRef.current = true
+    fetchDetailRef
+      .current(agentId)
+      .then((d) => {
+        if (liveRef.current) setAvatar(d.avatar ?? null)
+      })
+      .catch(() => undefined)
+    return () => {
+      liveRef.current = false
+    }
+  }, [agentId])
+
+  const selectedStyle = selectedStyleOf(avatar)
+
+  // Non-optimistic: every mutation re-syncs `avatar` from the SERVER echo (Agent/AgentDetail), never the local pick.
+  const pickPreset = async (style: AvatarStyle) => {
+    setUploadError(null)
+    setBusy(true)
+    try {
+      const a = await onSetPreset(agentId, presetFor(style, agentId))
+      if (liveRef.current) setAvatar(a.avatar ?? null)
+    } finally {
+      if (liveRef.current) setBusy(false)
+    }
+  }
+  const shuffle = async () => {
+    if (selectedStyle === null) return
+    setBusy(true)
+    try {
+      const a = await onSetPreset(agentId, shuffledPreset(selectedStyle, agentId, Math.floor(Math.random() * 1_000_000)))
+      if (liveRef.current) setAvatar(a.avatar ?? null)
+    } finally {
+      if (liveRef.current) setBusy(false)
+    }
+  }
+  const onFilePicked = async (file: File | undefined) => {
+    if (!file) return
+    setUploadError(null)
+    // Client pre-check FIRST (fail-closed): a non-ok verdict never touches the network / never persists.
+    const pre = precheckUpload(file.type, file.size)
+    if (pre !== 'ok') {
+      setUploadError(pre)
+      if (fileRef.current) fileRef.current.value = ''
+      return
+    }
+    setBusy(true)
+    try {
+      const d = await onUpload(agentId, file) // the upload IS the commit; the echo carries the new avatar + ref
+      if (liveRef.current) setAvatar(d.avatar ?? null)
+    } catch {
+      // Backend2 §1: `avatar_rejected` is a UNIFORM 400 with no reason → the GENERIC error, never a fabricated why.
+      if (liveRef.current) setUploadError('generic')
+    } finally {
+      if (liveRef.current) {
+        setBusy(false)
+        if (fileRef.current) fileRef.current.value = ''
+      }
+    }
+  }
+  const doRemove = async () => {
+    setBusy(true)
+    try {
+      await onRemove(agentId)
+      if (liveRef.current) {
+        setAvatar(null)
+        setConfirmRemove(false)
+      }
+    } finally {
+      if (liveRef.current) setBusy(false)
+    }
+  }
+
+  return (
+    <section className="agent-settings-section agent-avatar-section" data-testid={ATID.section}>
+      <h3>{AT.heading}</h3>
+
+      <div className="agent-avatar-current-row">
+        <AgentAvatarView apiBase={apiBase} agentId={agentId} avatar={avatar} name={agentName} testid={ATID.current} />
+        {operator && avatar !== null && (
+          <button type="button" data-testid={ATID.remove} disabled={busy} onClick={() => setConfirmRemove(true)}>
+            {AT.removeButton}
+          </button>
+        )}
+      </div>
+
+      {/* Backend2 §3: DELETE is idempotent with no server confirm → the client owns this "reset to default?" guard. */}
+      {operator && confirmRemove && (
+        <div role="alertdialog" aria-label={AT.removeConfirm} className="agent-avatar-remove-confirm" data-testid={ATID.removeConfirm}>
+          <p>{AT.removeConfirm}</p>
+          <div className="agent-settings-actions">
+            <button type="button" data-testid={ATID.removeCancel} autoFocus onClick={() => setConfirmRemove(false)}>
+              {AT.cancel}
+            </button>
+            <button type="button" className="agent-settings-destructive" data-testid={ATID.removeConfirmButton} disabled={busy} onClick={() => void doRemove()}>
+              {AT.removeConfirmButton}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Mutation controls are operator-only (present-but-disabled panel; a member sees current avatar + credits only). */}
+      {operator && (
+        <>
+          <div className="agent-avatar-grid" role="radiogroup" aria-label={AT.heading} data-testid={ATID.preset}>
+            {AVATAR_STYLES.map((info) => {
+              const selected = selectedStyle === info.style
+              return (
+                <button
+                  key={info.style}
+                  type="button"
+                  className={`agent-avatar-cell${selected ? ' selected' : ''}`}
+                  data-testid={ATID.presetStyle(info.style)}
+                  aria-label={AT.presetStyleLabel(info.label)}
+                  aria-pressed={selected}
+                  disabled={busy}
+                  onClick={() => void pickPreset(info.style)}
+                >
+                  {/* the server renders the ACTUAL preset PNG (non-optimistic, same-origin — never api.dicebear.com) */}
+                  <img className="agent-avatar-cell-img" src={avatarPreviewUrl(apiBase, agentId, info.style, agentId)} alt="" />
+                  {selected ? (
+                    <span className="agent-avatar-cell-check" aria-hidden="true">
+                      ✓
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="agent-settings-actions">
+            {selectedStyle !== null && (
+              <button type="button" data-testid={ATID.shuffle} disabled={busy} onClick={() => void shuffle()}>
+                {AT.shuffleButton}
+              </button>
+            )}
+            <button type="button" data-testid={ATID.upload} disabled={busy} onClick={() => fileRef.current?.click()}>
+              {AT.uploadButton}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              hidden
+              data-testid={ATID.fileInput}
+              onChange={(e) => void onFilePicked(e.target.files?.[0])}
+            />
+          </div>
+          {/* honest: the server re-crops to 256×256 + strips EXIF; the upload IS the commit (no pre-commit fidelity). */}
+          <p className="agent-settings-hint" role="note" data-testid={ATID.cropHint}>
+            {AT.cropHint}
+          </p>
+          {uploadError !== null && (
+            <p className="agent-settings-hint agent-settings-error" role="alert" data-testid={ATID.uploadError}>
+              {uploadErrorText(uploadError)}
+            </p>
+          )}
+        </>
+      )}
+
+      {/* Credits are ALWAYS shown (even read-only): CC-BY 4.0 §3(a) needs the attribution + license URI in-app. */}
+      <div className="agent-avatar-credits" data-testid={ATID.credits}>
+        <h4>{AT.creditsHeading}</h4>
+        <ul>
+          {AVATAR_STYLES.map((info) => (
+            <li key={info.style} data-testid={ATID.creditEntry(info.style)}>
+              {creditLine(info)} —{' '}
+              <a href={info.licenseUrl} target="_blank" rel="noreferrer noopener">
+                {info.license}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
     </section>
   )
 }

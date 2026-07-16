@@ -475,10 +475,14 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           agents={roster}
           operator={operator}
           previewSurface={themeMode === 'dark' ? 'dark' : 'light'}
+          apiBase={cfg.apiBase}
           fetchDetail={(id) => hubRepo.fetchAgentDetail(id)}
           onSaveColor={onSaveAgentColor}
           getClaudeMd={(id) => hubRepo.getClaudeMd(id)}
           updateClaudeMd={(id, content, ev) => hubRepo.updateClaudeMd(id, { content, expectedVersion: ev })}
+          onSetAvatarPreset={(id, preset) => hubRepo.setAvatarPreset(id, preset).then((a) => { void refreshRoster(); return a })}
+          onUploadAvatar={(id, file) => hubRepo.uploadAvatar(id, file).then((d) => { void refreshRoster(); return d })}
+          onRemoveAvatar={(id) => hubRepo.removeAvatar(id).then(() => { void refreshRoster() })}
         />
       )
     }

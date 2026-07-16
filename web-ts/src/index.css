@@ -1436,3 +1436,99 @@ body {
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
 }
+
+/* CYP-658 (P10) — Agent-Avatar section inside the settings panel. Preset grid (server-rendered preview PNGs, never a
+   third-party host), custom upload (fail-closed), CC-BY credits, client-owned remove confirm. Selection carries a ring
+   + ✓ (never colour alone). Placeholder + fallback use surface-variant so a loading/404 <img> never flashes empty.
+   Tokens resolve in both themes. */
+.agent-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  border: 1px solid var(--md-sys-color-outline);
+  flex: 0 0 auto;
+}
+.agent-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.agent-avatar-fallback {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+.agent-avatar-current-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.agent-avatar-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-avatar-cell {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--md-sys-color-surface-variant);
+  border: 1px solid var(--md-sys-color-outline);
+}
+.agent-avatar-cell.selected {
+  outline: 3px solid var(--md-sys-color-on-surface);
+  outline-offset: 1px;
+}
+.agent-avatar-cell:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.agent-avatar-cell-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.agent-avatar-cell-check {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
+  text-shadow: 0 0 2px var(--md-sys-color-surface);
+}
+/* the "reset to default?" confirm — client-owned, error-toned like the CLAUDE.md conflict box. */
+.agent-avatar-remove-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--md-sys-color-error);
+  border-radius: 6px;
+  padding: 8px;
+}
+.agent-avatar-remove-confirm p {
+  margin: 0;
+}
+.agent-avatar-credits {
+  font-size: 0.75rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.agent-avatar-credits h4 {
+  margin: 0 0 4px;
+}
+.agent-avatar-credits ul {
+  margin: 0;
+  padding-left: 16px;
+}
+.agent-avatar-credits a {
+  color: var(--md-sys-color-on-surface-variant);
+}

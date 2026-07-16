@@ -26,6 +26,10 @@ function mkProps(over: Partial<AgentSettingsPanelProps> = {}): AgentSettingsPane
     onSaveColor: vi.fn().mockResolvedValue(undefined),
     getClaudeMd: vi.fn().mockResolvedValue(view),
     updateClaudeMd: vi.fn().mockResolvedValue({ ...view, content: 'PERSONA', version: 'v2' }),
+    apiBase: 'http://h',
+    onSetAvatarPreset: vi.fn().mockResolvedValue({ id: 'frontend', name: 'Frontend', role: 'WORKER', worktree: 'frontend' }),
+    onUploadAvatar: vi.fn().mockResolvedValue(detail),
+    onRemoveAvatar: vi.fn().mockResolvedValue(undefined),
     ...over,
   }
 }
@@ -174,11 +178,15 @@ function ChurnHarness({
       <AgentSettingsPanel
         agents={AGENTS}
         operator={true}
+        apiBase="http://h"
         fetchDetail={(id) => Promise.resolve({ id, name: 'Frontend', role: 'WORKER', worktree: 'frontend', launch: 'bash' })}
         onSaveColor={() => Promise.resolve()}
         // ★ INLINE arrows → a NEW identity every render (reproduces the App.tsx churn that defeated the dialog).
         getClaudeMd={(id) => getSpy(id)}
         updateClaudeMd={(id, content, ev) => upSpy(id, content, ev)}
+        onSetAvatarPreset={() => Promise.resolve({ id: 'frontend', name: 'Frontend', role: 'WORKER', worktree: 'frontend' })}
+        onUploadAvatar={() => Promise.resolve({ id: 'frontend', name: 'Frontend', role: 'WORKER', worktree: 'frontend', launch: 'bash' })}
+        onRemoveAvatar={() => Promise.resolve()}
       />
     </div>
   )
