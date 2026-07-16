@@ -510,7 +510,7 @@ private fun AgentHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatusIndicator(agentId, state, startPending, restartPending)
+                StatusIndicator(agentId, state, startPending, restartPending, connection)
                 // CYP-204: reconnecting indicator — present ONLY while the per-agent WS is not LIVE (the adapter is
                 // auto-reconnecting from the seq cursor; on reconnect the server replays the history gapless). Its OWN
                 // axis, next to but distinct from the lifecycle status (process state ≠ socket state).
@@ -660,18 +660,50 @@ internal fun statusDotSpec(state: AgentLifecycleState, pending: Boolean): Pair<S
     }
 }
 
+/**
+ * CYP-573 — the connection-gate: the lifecycle dot/label may only assert a RESOLVED run-state ([state]) while its
+ * live feed is actually [ConnectionStatus.LIVE]. The lifecycle source holds the last-known state across a WS drop
+ * (a reconnect just re-streams the snapshot and upserts — [AgentLifecycleLiveSource]), so across a real server/hub
+ * restart the dot would keep showing a **stale RUNNING for an already-stopped agent** through the reconnect gap —
+ * a state it can no longer prove. Fail closed: while the socket is not LIVE, collapse the resolved state to
+ * [AgentLifecycleState.UNKNOWN] (RING, "unbekannt") — honest absence, never a phantom claim.
+ *
+ * Gated on the SAME [session][com.tneff.cyppieagents.agentview.AgentViewModel.connection] signal the
+ * [ReconnectingChip] uses, so the two move in lockstep: chip visible ⟺ dot UNKNOWN (no independent flap surface).
+ * [pending] (Startet…/Neustart…) is a client-local transient INTENT, not a resolved-state claim — it is surfaced by
+ * the label branch and always resolves on the next lifecycle event, so it is passed through untouched here.
+ */
+internal fun gatedLifecycleState(
+    state: AgentLifecycleState,
+    pending: Boolean,
+    connection: ConnectionStatus,
+): AgentLifecycleState {
+    if (pending) return state
+    return if (connection == ConnectionStatus.LIVE) state else AgentLifecycleState.UNKNOWN
+}
+
 @Composable
-private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPending: Boolean = false, restartPending: Boolean = false) {
+private fun StatusIndicator(
+    agentId: String,
+    state: AgentLifecycleState,
+    startPending: Boolean = false,
+    restartPending: Boolean = false,
+    connection: ConnectionStatus = ConnectionStatus.LIVE,
+) {
     // CYP-262/330 Teil 1: while a Start/Restart request is in flight (client-only, before the server's event),
     // show the honest transient "Startet…"/"Neustart…" instead of the resolved state — NEVER a resolved label
     // before the server confirms it (§9-1). Both flags always resolve on the next lifecycle event, so neither can
     // stick. Same node/tag (0 new tag) and the in-progress NEUTRAL tone (CYP-300 a0: onSurfaceVariant). The
     // "Neustart…" flash is the visible acknowledgement of a RUNNING→RUNNING restart (the swallowed-click fix).
     val pending = startPending || restartPending
+    // CYP-573: gate the RESOLVED state on the live-feed connection so BOTH the label and the dot fail closed to
+    // "unbekannt" on a WS drop (gating only the dot would leave the text still asserting "Läuft" — WCAG 1.4.1: the
+    // text carries the meaning). Pending passes through (it drives the Startet…/Neustart… branch below, unchanged).
+    val effectiveState = gatedLifecycleState(state, pending, connection)
     val label = when {
         startPending -> stringResource(Res.string.agent_status_starting)
         restartPending -> stringResource(Res.string.agent_status_restarting)
-        else -> when (state) {
+        else -> when (effectiveState) {
             AgentLifecycleState.RUNNING -> stringResource(Res.string.agent_status_running)
             AgentLifecycleState.STOPPED -> stringResource(Res.string.agent_status_stopped)
             AgentLifecycleState.ERROR -> stringResource(Res.string.agent_status_error)
@@ -681,7 +713,7 @@ private fun StatusIndicator(agentId: String, state: AgentLifecycleState, startPe
     // CYP-396: form + colour-role are a pure decision (see statusDotSpec) so both are testable without a pixel
     // compare. UNKNOWN becomes a RING (a different AXIS from STOPPED), never a pale disc — role `outline` (3.55/
     // 3.63 ≥ 3:1 on its own, WCAG 1.4.11) instead of the near-invisible `outlineVariant` (1.41/1.52).
-    val (dotShape, dotRole) = statusDotSpec(state, pending)
+    val (dotShape, dotRole) = statusDotSpec(effectiveState, pending)
     val dotColor = when (dotRole) {
         StatusDotRole.PRIMARY -> MaterialTheme.colorScheme.primary
         StatusDotRole.OUTLINE -> MaterialTheme.colorScheme.outline
