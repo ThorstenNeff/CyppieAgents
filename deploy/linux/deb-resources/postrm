@@ -1,0 +1,33 @@
+#!/bin/sh
+# CYP-635 — .deb postrm. ★ DATA-PRESERVING by default (analog of CYP-630): `remove` keeps the team's data + secrets
+# (a reinstall reattaches); only the explicit `purge` verb wipes. Never silently deletes /var/lib/cyppiehub.
+set -e
+
+case "$1" in
+  remove|upgrade|abort-install|abort-upgrade|disappear)
+    # PRESERVE the data dir (/var/lib/cyppiehub) AND the secrets (/etc/cyppiehub/hub.env — incl. CYPPIE_MASTER_KEY).
+    # Keeping BOTH is the master-key↔SecretStore coupling: a preserved SecretStore would be orphaned without its key.
+    rm -f /lib/systemd/system/cyppiehub.service
+    systemctl daemon-reload 2>/dev/null || true
+    ;;
+
+  purge)
+    # ★ DESTRUCTIVE (only on `apt purge`): wipe the data dir AND the account-scoped secrets AND the user, together —
+    # never a half-deleted state (orphaned key XOR orphaned store). The Linux analog of CYP-630's -WipeData.
+    rm -f /lib/systemd/system/cyppiehub.service
+    systemctl daemon-reload 2>/dev/null || true
+    rm -f /etc/cyppiehub/hub.env
+    rmdir /etc/cyppiehub 2>/dev/null || true
+    rm -rf /var/lib/cyppiehub
+    if getent passwd cyppie >/dev/null 2>&1; then userdel cyppie 2>/dev/null || true; fi
+    ;;
+
+  failed-upgrade)
+    ;;
+  *)
+    echo "postrm called with unknown argument \`$1'" >&2
+    exit 1
+    ;;
+esac
+
+exit 0
