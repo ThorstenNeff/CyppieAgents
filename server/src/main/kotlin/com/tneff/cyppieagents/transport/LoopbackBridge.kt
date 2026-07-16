@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.transport
 
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -8,7 +9,27 @@ import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * CYP-633 — the **dedicated elastic dispatcher for bridge blocking I/O**. The loopback bridge's socket reads/writes
+ * and pump loops are BLOCKING and long-lived (a per-stream `input.read()` parks a thread for the whole time a stream
+ * waits for its route response — seconds for a slow route, indefinitely for a live WS). Running them on the shared,
+ * **capped** `Dispatchers.IO` (default 64 threads) means ~2N threads for N streams: at N≈32 the IO dispatcher is
+ * exhausted, a new bridge op (or ANY other `Dispatchers.IO` user — sqlite, file I/O) starves → livelock/timeout
+ * (latent-HIGH; bites POOL at the id-count and MUX at `maxStreams`). Isolating the bridge's blocking ops onto a
+ * **dedicated cached (elastic) pool** removes the contention: it grows to ~2N as needed (bounded by `maxStreams` /
+ * the pool cap — not unbounded in practice) and idle threads are reaped, and it no longer competes with the rest of
+ * the JVM's I/O. One dispatcher hardens both the pool ([LoopbackBridge]) and the mux (its per-stream [RealBridgeSocket]).
+ */
+object BridgeBlocking {
+    val dispatcher: CoroutineDispatcher = Executors.newCachedThreadPool { r ->
+        Thread(r, "cyp-bridge-io-${threadSeq.incrementAndGet()}").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
+
+    private val threadSeq = AtomicLong()
+}
 
 /**
  * CYP-458 (S2) — the **Option A loopback bridge**: pump one terminated [ServerNoiseTunnel] (L2, decrypted client
@@ -30,8 +51,13 @@ import java.util.concurrent.atomic.AtomicLong
 class LoopbackBridge(
     private val loopbackPort: Int,
     private val loopbackHost: String = "127.0.0.1",
-    /** Injectable for tests (a recording fake for the RST-vs-clean discipline); prod = a real loopback [Socket]. */
-    private val socketFactory: (host: String, port: Int) -> BridgeSocket = ::RealBridgeSocket,
+    /** CYP-633 — the dispatcher the blocking pumps + socket I/O run on. Default = the dedicated elastic
+     *  [BridgeBlocking.dispatcher] (NOT `Dispatchers.IO`); injectable so a test can pin a bounded one and prove the
+     *  starvation deterministically. */
+    private val blockingDispatcher: CoroutineDispatcher = BridgeBlocking.dispatcher,
+    /** Injectable for tests (a recording fake for the RST-vs-clean discipline); prod = a real loopback [Socket] whose
+     *  blocking I/O runs on [blockingDispatcher]. */
+    private val socketFactory: (host: String, port: Int) -> BridgeSocket = { h, p -> RealBridgeSocket(h, p, blockingDispatcher) },
 ) {
     init {
         // T3 — fail closed if the bridge target is not loopback. A wildcard/public target would re-expose the routes.
@@ -47,7 +73,7 @@ class LoopbackBridge(
         diagLog.info("CYP-607 bridge#{} start", bridgeId) // CYP-607
         try {
             // Upstream: client bytes (via the UNTRUSTED relay) → the hub socket. Any end here is in-flight-uncertain.
-            val up = launch(Dispatchers.IO) {
+            val up = launch(blockingDispatcher) {
                 var reason = "tunnel-clean-eof" // CYP-607: receive()==null (relay/client closed cleanly)
                 try {
                     while (true) {
@@ -74,7 +100,7 @@ class LoopbackBridge(
                 }
             }
             // Downstream: hub response bytes → the client. A hub-side EOF is a TRUSTED clean close.
-            val down = launch(Dispatchers.IO) {
+            val down = launch(blockingDispatcher) {
                 val buf = ByteArray(CHUNK)
                 var reason = "hub-clean-eof" // CYP-607: read()<0 — the hub Ktor route closed its side (e.g. WS 1008)
                 try {
@@ -137,8 +163,13 @@ interface BridgeSocket {
     fun closeGraceful()
 }
 
-/** Production [BridgeSocket] over a real loopback [Socket]; blocking I/O is offloaded to [Dispatchers.IO] by the pump. */
-internal class RealBridgeSocket(host: String, port: Int) : BridgeSocket {
+/** Production [BridgeSocket] over a real loopback [Socket]; its blocking I/O is offloaded to [dispatcher] — CYP-633:
+ *  the dedicated elastic [BridgeBlocking.dispatcher] by default, NOT the shared capped `Dispatchers.IO`. */
+internal class RealBridgeSocket(
+    host: String,
+    port: Int,
+    private val dispatcher: CoroutineDispatcher = BridgeBlocking.dispatcher,
+) : BridgeSocket {
     private val socket = Socket().apply {
         // SO_LINGER 0 ⇒ close() emits a RST, not a FIN — the abortive semantics the truncation guard needs.
         setSoLinger(true, 0)
@@ -150,11 +181,11 @@ internal class RealBridgeSocket(host: String, port: Int) : BridgeSocket {
 
     override val remote: InetAddress get() = socket.inetAddress
 
-    override suspend fun write(bytes: ByteArray) = withContext(Dispatchers.IO) {
+    override suspend fun write(bytes: ByteArray) = withContext(dispatcher) {
         output.write(bytes); output.flush()
     }
 
-    override suspend fun read(buf: ByteArray): Int = withContext(Dispatchers.IO) {
+    override suspend fun read(buf: ByteArray): Int = withContext(dispatcher) {
         input.read(buf)
     }
 
