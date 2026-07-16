@@ -18,6 +18,8 @@
 #
 # Requirements: macOS with a graphical display, JDK 17+ (JetBrains Runtime ideal), git, curl.
 #   ANTHROPIC_API_KEY must be exported — the LOCAL hub spawns real Claude agents with it.
+#   REPO_URL must be exported (first run) — the git repo your agents work on; the hub clones it
+#     for per-agent worktrees. ssh/https/file:// all work. (Skippable once platform.config.json is set.)
 
 set -euo pipefail
 
@@ -81,7 +83,26 @@ fi
 [[ -f .env ]] || { echo "ERROR: no .env and no scripts/dev-setup.sh / .env.example to generate it." >&2; exit 1; }
 [[ -f platform.config.json ]] || { echo "ERROR: no platform.config.json (needed to boot the hub)." >&2; exit 1; }
 
-# --- 3b. Load the dev tokens (.env) into the env for the hub -----------------
+# --- 3b. repo.url — the hub CLONES it to give each agent a git worktree ------
+# dev-setup writes a placeholder repo.url (git@github.com:org/projekt.git); the hub tries to
+# `git clone` it at boot, so a fresh install aborts unless a real repo is provided. Set REPO_URL
+# to the git repo your agents will work on (ssh/https/file://).
+PLACEHOLDER_REPO='git@github.com:org/projekt.git'
+if [[ -n "${REPO_URL:-}" ]]; then
+  if grep -q "$PLACEHOLDER_REPO" platform.config.json 2>/dev/null; then
+    sed -i.bak "s|$PLACEHOLDER_REPO|${REPO_URL}|g" platform.config.json && rm -f platform.config.json.bak
+    echo "==> repo.url set to $REPO_URL in platform.config.json"
+  fi
+elif grep -q "$PLACEHOLDER_REPO" platform.config.json 2>/dev/null; then
+  echo "ERROR: platform.config.json still has the placeholder repo.url ($PLACEHOLDER_REPO)." >&2
+  echo "       The local hub CLONES repo.url to give each agent a git worktree — a placeholder aborts boot." >&2
+  echo "       Set the repo your agents will work on and re-run:" >&2
+  echo "         export REPO_URL=<git-url-or-file:///abs/path>   # e.g. git@github.com:you/yourrepo.git" >&2
+  echo "       (or edit platform.config.json's repo.url by hand.)" >&2
+  exit 1
+fi
+
+# --- 3c. Load the dev tokens (.env) into the env for the hub -----------------
 set -a; source ./.env; set +a
 
 # --- 4. LOCAL mode: ensure NO remote/relay/staging flags leak in -------------
