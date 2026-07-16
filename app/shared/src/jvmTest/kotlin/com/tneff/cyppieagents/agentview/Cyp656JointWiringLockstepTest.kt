@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.runComposeUiTest
@@ -72,6 +73,7 @@ class Cyp656JointWiringLockstepTest {
                     WindowHost(
                         state = oneWindow(),
                         busyFor = { true },
+                        contextTokensFor = { 137_214 }, // the THIRD marker: `~137k` (stale) vs `137k` (fresh)
                         connectionFor = { c },
                         windowContent = { AgentWindow(agentId = it.id, viewModel = theVm) },
                     )
@@ -81,6 +83,7 @@ class Cyp656JointWiringLockstepTest {
         onNodeWithTag(WindowTestTags.HOST).assertExists()
         onNodeWithText(runningLabel).assertExists() // dot: fresh RUNNING
         onNodeWithTag(WindowTestTags.busy("backend")).assertExists() // `*`: shown — both fresh, in lockstep
+        onNodeWithTag(WindowTestTags.contextTokens("backend")).assertTextEquals("137k") // token: FRESH (no `~`) — the LIVE anchor, all THREE agree
     }
 
     @Test
@@ -98,6 +101,7 @@ class Cyp656JointWiringLockstepTest {
                     WindowHost(
                         state = oneWindow(),
                         busyFor = { true },
+                        contextTokensFor = { 137_214 }, // the THIRD marker: `~137k` (stale) vs `137k` (fresh)
                         connectionFor = { c },
                         windowContent = { AgentWindow(agentId = it.id, viewModel = theVm) },
                     )
@@ -108,6 +112,7 @@ class Cyp656JointWiringLockstepTest {
         onNodeWithText(unknownLabel).assertExists() // dot: UNKNOWN (positive anchor for the absence below)
         onNodeWithText(runningLabel).assertDoesNotExist()
         onNodeWithTag(WindowTestTags.busy("backend")).assertDoesNotExist() // `*`: suppressed — LOCKSTEP with the dot
+        onNodeWithTag(WindowTestTags.contextTokens("backend")).assertTextEquals("~137k") // token: MARKED stale — all THREE agree (dot UNKNOWN, `*` gone, token `~`)
     }
 
     @Test
@@ -124,6 +129,7 @@ class Cyp656JointWiringLockstepTest {
                     WindowHost(
                         state = oneWindow(),
                         busyFor = { true },
+                        contextTokensFor = { 137_214 }, // the THIRD marker: `~137k` (stale) vs `137k` (fresh)
                         connectionFor = { tc }, // title-bar reads a DIFFERENT source than the body → the split
                         windowContent = { AgentWindow(agentId = it.id, viewModel = theVm) },
                     )
@@ -134,6 +140,7 @@ class Cyp656JointWiringLockstepTest {
         // MUTATION-EFFECT VERIFICATION — a collection-point split renders a VISIBLE DIVERGENCE:
         onNodeWithText(runningLabel).assertExists() // dot: fresh RUNNING (body LIVE)
         onNodeWithTag(WindowTestTags.busy("backend")).assertDoesNotExist() // `*`: suppressed (title DISCONNECTED)
+        onNodeWithTag(WindowTestTags.contextTokens("backend")).assertTextEquals("~137k") // token: MARKED stale (title DISCONNECTED) — the two TITLE-BAR markers (`*`+token) diverge TOGETHER from the fresh dot
         // ⟹ dot and `*` DISAGREE when their sources split → the two lockstep tests above WOULD RED on a real split
         //    (the stub-connectionFor tooth, feeding both sides one hand-value, cannot produce this divergence).
     }
