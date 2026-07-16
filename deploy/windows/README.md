@@ -50,7 +50,8 @@ so the JVM (and its pty4j children) shut down cleanly. **No JVM args here** — 
 ## 4. ★ Secrets — the service stays secret-free (security-review item)
 
 The hub needs, at boot: **required** `OPERATOR_TOKEN` + `HUB_TOKEN_<AGENTID>` (boot throws without them) and,
-**gated**, `CYPPIE_MASTER_KEY` (enables the encrypted SecretStore that holds the ANTHROPIC_API_KEY at rest). None of
+**gated**, `CYPPIE_MASTER_KEY` (enables the encrypted SecretStore — hub identity / device / remote tokens; **not** the
+ANTHROPIC_API_KEY, which is plaintext@0600, see §8). None of
 these are written into the XML or the app — that would leak them into a readable/redistributable file.
 
 **Recommended flow (matches the design doc's secret-free principle + the PO's ACL-keyset master-key decision):**
@@ -62,11 +63,15 @@ these are written into the XML or the app — that would leak them into a readab
   account-scoped env var (or a tiny launch shim reads the ACL-locked keyset file into the env before exec). No
   passphrase prompt at start (headless auto-start requires this).
 - The **ANTHROPIC_API_KEY** is never in env/XML at all — it is entered at first-run via the operator GUI
-  (`PUT /api/config/apikey`) and stored **encrypted-at-rest** under the master key (CYP-629).
+  (`PUT /api/config/apikey`, operator-gated) and stored in an **owner-only (0600) file** — OS file-permission
+  protection, **NOT** encrypted-at-rest under the master key. Encryption-at-rest for the API key is **deferred to
+  CYP-220** (§8). The master key today protects only the **SecretStore** (hub identity / device / remote tokens) —
+  **never** the API key.
 
 **Flag for security review** (with the master-key-custody flag in the design doc §3.1): confirm the account-scoped-env
-approach vs. an ACL-locked `<env>`-in-XML for the auto-generated local tokens. The API-key-encrypted-at-rest posture is
-settled; the local-token custody is the open detail. This is CYP-628's provisioning to implement against this shape.
+approach vs. an ACL-locked `<env>`-in-XML for the auto-generated local tokens. The API-key posture is settled
+(Auftraggeber, Option B: **plaintext in an owner-only 0600 file**, OS-permission-protected; encryption-at-rest deferred
+to CYP-220 — §8); the local-token custody is the open detail. This is CYP-628's provisioning to implement against this shape.
 
 ## 5. Windows-runner verification (retires the Windows leg)
 
@@ -97,7 +102,8 @@ keyset), so a Java **provisioning entrypoint** does it:
 - **`provision.ps1`** — creates + ACL-locks the data dir; runs `CyppieHubProvision`; sets the 3 secrets in the
   **service account's ACL-protected environment** (not machine/system env — world-readable); securely deletes the
   transient file; substitutes the WinSW XML + installs the service. The **ANTHROPIC_API_KEY is NOT provisioned here**
-  — it is entered at first-run via the operator GUI and stored encrypted-at-rest under the master key (CYP-629).
+  — it is entered at first-run via the operator GUI (CYP-629) and stored in an owner-only (0600) file (OS-permission
+  protection, **NOT** encrypted-at-rest — §8).
 
 **PROVEN e2e on Linux** (the mechanism is cross-platform; only the ACL/service-account/env steps are Windows):
 `CyppieHubProvision` minted the master key + tokens + config → the packaged hub booted with that generated env →
@@ -114,3 +120,26 @@ That produced a correct JDK-21 runtime in both the backend and PO envs, but it i
 on JDK 25 would emit a 25 runtime, not the pinned 21 LTS. **Hardening:** resolve the packaging JDK via a Gradle
 **toolchain** (`javaToolchains.launcherFor { languageVersion = 21 }`) so the runtime is deterministic regardless of the
 Gradle JVM. Small, own follow-up ticket; the current tasks work when Gradle runs on JDK 21.
+
+## 8. First-run operator setup (CYP-629)
+
+After the service starts, the operator completes the sensitive config through the GUI — no secret ships in the `.msi`
+and none is provisioned into env. **The existing endpoints already support this — CYP-629 adds no new backend
+endpoint.** The install wizard hands the operator the wizard-minted `OPERATOR_TOKEN` (CYP-628); the first-run GUI
+(UIUX owns the UX) then:
+
+1. **Detect "not configured yet"** — `GET /api/config/apikey` returns `{ "set": false }` → the GUI prompts for the key.
+2. **Enter the key** — `PUT /api/config/apikey` (operator-gated) `{ "apiKey": "sk-ant-…" }` → `{ "set": true, "masked": "***last4" }`.
+3. **Confirm** — `GET /api/config/apikey` → `{ "set": true, "masked": "***last4" }`. The **raw key is never egressed by any GET** (masked only; a MEMBER never sees it).
+4. **Repo + roster** — `PUT /api/config/repo` (operator) and the agent-CRUD endpoints, if not set at install.
+
+**Proven e2e on Linux:** against the packaged hub (provisioned per §7, booted with the generated env), an operator-token
+flow returned `GET apikey` → `{set:false}` → `PUT apikey` → `{set:true,masked:"***test"}` → `GET` → `{set:true,masked:"***test"}`.
+
+### ★ Honest API-key posture (Auftraggeber decision, Option B) — no false claim
+The **ANTHROPIC_API_KEY is stored PLAINTEXT in an owner-only (0600) file** (`project-config.db`, `SqliteProjectConfigStore`),
+protected by **OS file permissions** — it is **NOT encrypted-at-rest under the master key**. We do not ship the
+self-hoster a protection they do not have. The `CYPPIE_MASTER_KEY` (CYP-628) encrypts **only** the `SecretStore` (hub
+identity / device anchor / remote tokens), never the API key. **Encryption-at-rest for the API key is deferred to
+CYP-220** (the SecretCipher "S-B" slice, already scoped there; today only the Postgres store — a dark path — encrypts
+the project config). A self-hoster running the default embedded-SQLite store gets 0600 file protection, no more.

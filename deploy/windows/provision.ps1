@@ -53,7 +53,8 @@ if ($LASTEXITCODE -ne 0) { throw "provisioning failed (CyppieHubProvision exit $
 # --- 3. set the secrets in the SERVICE ACCOUNT's env (ACL-protected), then securely delete the transient file -------
 # NB: these go to the service account's user environment (readable only by that account + Admins) — NOT the machine/
 # system environment, which is world-readable. The master key = an ACL-keyset held here per the PO decision; the
-# ANTHROPIC_API_KEY is NOT set here — it is entered at first-run via the operator GUI and stored encrypted-at-rest.
+# ANTHROPIC_API_KEY is NOT set here — it is entered at first-run via the operator GUI and stored in an owner-only
+# (0600) file (OS file-permission protection; NOT encrypted-at-rest under the master key — CYP-220 follow-up).
 foreach ($line in Get-Content $secretsFile) {
   if ($line -match '^(?<k>[^=]+)=(?<v>.*)$') {
     # Set the var in the service account's environment (implementation: the wizard runs this in the account's context,
@@ -69,4 +70,4 @@ $svcXml = Get-Content (Join-Path $InstallDir "CyppieHub-service.xml") -Raw
 $svcXml = $svcXml.Replace("@INSTALL_DIR@", $InstallDir).Replace("@DATA_DIR@", $DataDir)
 Set-Content -Path (Join-Path $InstallDir "CyppieHubService.xml") -Value $svcXml -Encoding UTF8
 & (Join-Path $InstallDir "CyppieHubService.exe") install
-Write-Host "CYP-628 provisioned. Start with: CyppieHubService.exe start  — then open the operator GUI to enter the ANTHROPIC_API_KEY (encrypted-at-rest) and set the repo/roster."
+Write-Host "CYP-628 provisioned. Start with: CyppieHubService.exe start  — then open the operator GUI to enter the ANTHROPIC_API_KEY (stored in an owner-only 0600 file) and set the repo/roster."
