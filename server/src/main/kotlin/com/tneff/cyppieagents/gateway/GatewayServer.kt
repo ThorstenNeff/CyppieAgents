@@ -77,15 +77,38 @@ fun interface GatewayAllowlist {
          * is auto-allowed and a new `/api/cp/` op is auto-denied, so the edge can't drift from the hub's real routes.
          * (WebSocket sockets are added in S2 from `ContractGenerator`.)
          */
-        fun fromRestContract(): GatewayAllowlist {
-            val dataPlane = RestContract.REST_OPS.filter { !it.path.startsWith(CONTROL_PLANE_PREFIX) }
+        fun fromRestContract(ops: List<RestContract.Op> = RestContract.REST_OPS): GatewayAllowlist {
+            val dataPlane = ops.filter { !it.path.startsWith(CONTROL_PLANE_PREFIX) }
             val matchers = dataPlane.map { it.method to it.path.split('/') }
             return GatewayAllowlist { method, path ->
                 // fold the `/api/v1` dual-mount onto the canonical `/api` the REST_OPS templates are written in.
                 val canonical = if (path.startsWith("/api/v1/")) "/api/" + path.removePrefix("/api/v1/") else path
+                // ★ CYP-638 §5 request-side control-plane deny (the SAME [CONTROL_PLANE_PREFIX] constant — never a second
+                //   literal that could drift): refuse ANY path that resolves to `/api/cp/…`, decoded first so a
+                //   `%63p`-style encoding can't slip a *future* `/api/{param}/…` data-plane template into matching a
+                //   control path. This pins "the control plane is unreachable" independent of the current REST_OPS shape
+                //   — the emergent "no {param} at segment index 2" invariant is no longer load-bearing.
+                if (decodePercent(canonical).startsWith(CONTROL_PLANE_PREFIX)) return@GatewayAllowlist false
                 val segs = canonical.split('/')
                 matchers.any { (m, tmpl) -> m.equals(method.value, ignoreCase = true) && segmentsMatch(tmpl, segs) }
             }
+        }
+
+        /** Decode `%XX` escapes only (never `+`→space, which is query-encoding not path-encoding) so the control-plane
+         *  deny sees the true path — e.g. `/api/%63p/…` → `/api/cp/…`. Idempotent for un-escaped paths. */
+        private fun decodePercent(s: String): String {
+            if ('%' !in s) return s
+            val sb = StringBuilder(s.length)
+            var i = 0
+            while (i < s.length) {
+                val c = s[i]
+                if (c == '%' && i + 2 < s.length) {
+                    val hex = s.substring(i + 1, i + 3).toIntOrNull(16)
+                    if (hex != null) { sb.append(hex.toChar()); i += 3; continue }
+                }
+                sb.append(c); i++
+            }
+            return sb.toString()
         }
 
         /** A concrete request path matches a `REST_OPS` template iff they have the same segment count and each template
