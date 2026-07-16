@@ -49,6 +49,17 @@ class TokenRedactorTest {
     }
 
     @Test
+    fun cyp638_redactsTicketCookieAndSessionHeader() {
+        // CYP-638 (gateway A2 output seam): ?ticket (single-use WS read cred), the Kratos session cookie, and
+        // X-Session-Token — all operator-session credentials that must not survive to a log line.
+        assertEquals("GET /ws/comm?ticket=[REDACTED]&since=1", TokenRedactor.redact("GET /ws/comm?ticket=SINGLEUSE-9x&since=1"))
+        val cookie = TokenRedactor.redact("Cookie: ory_kratos_session=SESSIONSECRET; other=1")
+        assertEquals("Cookie: ory_kratos_session=[REDACTED]; other=1", cookie)
+        assertFalse(cookie.contains("SESSIONSECRET"), "the session cookie value must not survive — $cookie")
+        assertEquals("X-Session-Token: [REDACTED]", TokenRedactor.redact("X-Session-Token: OPSESSION-abc"))
+    }
+
+    @Test
     fun leavesNonTokenMessagesUntouched() {
         val msg = "boot: cloned repo, 3 worktrees, hub ready on 127.0.0.1:8787"
         assertEquals(msg, TokenRedactor.redact(msg), "a message with no credential must be unchanged")

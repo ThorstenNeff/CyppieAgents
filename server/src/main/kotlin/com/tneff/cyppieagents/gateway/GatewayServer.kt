@@ -38,6 +38,12 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
+
+/** CYP-638 S6 — the gateway's ONLY logger. It must NEVER be handed a request URI/query (carries `?token=`) or any
+ *  header/frame body — only structural facts (an exception's class name, a status). A token on any log path is the
+ *  CYP-190 leak class the S6 sentinel tooth forbids. */
+private val gwLog = LoggerFactory.getLogger("gateway")
 
 /**
  * CYP-638 S0 — the **isolated Gateway process** scaffold (A2, Auftraggeber-ratified §8).
@@ -187,14 +193,21 @@ private suspend fun DefaultWebSocketServerSession.proxyWebSocketToHub(client: Ht
     val browser = this
     val browserCall = call
     val target = hubWsBase + browserCall.request.uri // path + query verbatim
-    client.clientWebSocket(urlString = target, request = {
-        browserCall.request.headers.forEach { name, values ->
-            if (name.lowercase() !in WS_HANDSHAKE_STRIP && name.lowercase() !in HOP_BY_HOP) {
-                values.forEach { header(name, it) } // ★ Cookie/Authorization forwarded — NOT stripped on the WSS handshake
+    try {
+        client.clientWebSocket(urlString = target, request = {
+            browserCall.request.headers.forEach { name, values ->
+                if (name.lowercase() !in WS_HANDSHAKE_STRIP && name.lowercase() !in HOP_BY_HOP) {
+                    values.forEach { header(name, it) } // ★ Cookie/Authorization forwarded — NOT stripped on the WSS handshake
+                }
             }
+        }) {
+            relayFrames(browser, this)
         }
-    }) {
-        relayFrames(browser, this)
+    } catch (e: Exception) {
+        // ★ CYP-638 S6 — same leak class as the REST leg: an unreachable hub WS must not let the token-bearing URL reach
+        //   a log. Log only the exception class; close the (already-upgraded) browser socket cleanly.
+        gwLog.warn("gateway: upstream WS failed [{}]", e::class.simpleName)
+        runCatching { browser.close(CloseReason(CloseReason.Codes.INTERNAL_ERROR, "upstream_unavailable")) }
     }
 }
 
@@ -218,14 +231,25 @@ private suspend fun relayFrames(a: DefaultWebSocketSession, b: DefaultWebSocketS
 private suspend fun forwardToHub(call: ApplicationCall, client: HttpClient, hubBaseUrl: String) {
     val target = hubBaseUrl.trimEnd('/') + call.request.uri // path + query, verbatim
     val requestBody: ByteArray = runCatching { call.receive<ByteArray>() }.getOrDefault(ByteArray(0))
-    val hubResp: HttpResponse = client.request(target) {
-        method = call.request.httpMethod
-        call.request.headers.forEach { name, values ->
-            if (name.lowercase() !in HOP_BY_HOP && !name.equals(HttpHeaders.Host, ignoreCase = true)) {
-                values.forEach { header(name, it) }
+    val hubResp: HttpResponse = try {
+        client.request(target) {
+            method = call.request.httpMethod
+            call.request.headers.forEach { name, values ->
+                if (name.lowercase() !in HOP_BY_HOP && !name.equals(HttpHeaders.Host, ignoreCase = true)) {
+                    values.forEach { header(name, it) }
+                }
             }
+            if (requestBody.isNotEmpty()) setBody(requestBody)
         }
-        if (requestBody.isNotEmpty()) setBody(requestBody)
+    } catch (e: Exception) {
+        // ★ CYP-638 S6 — the hub being unreachable is a NORMAL operational state (e.g. before/after a restart). Fail
+        //   closed with a bounded 502 (not an unhandled 500), logging ONLY the exception's class name — never the request
+        //   URI/query/headers/body. Defense-in-depth on top of the `%redactedMsg` output seam. (Verified: Ktor 3.5's own
+        //   unhandled-exception log is method+PATH only, no query, so this does not itself prevent a `?token` log leak —
+        //   its provable value is the fail-closed 502 and not letting any future/other exception path see the request line.)
+        gwLog.warn("gateway: upstream request failed [{}] — 502", e::class.simpleName)
+        call.respondBytes(ByteArray(0), status = HttpStatusCode.BadGateway)
+        return
     }
     val respBody: ByteArray = hubResp.body()
     hubResp.headers.forEach { name, values -> // relay response headers (Set-Cookie etc.), minus hop-by-hop + content-type

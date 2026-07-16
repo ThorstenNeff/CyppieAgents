@@ -148,3 +148,21 @@ Every story ends with a **real proof** (browser/`curl`/`wscat`: allowed path wor
 ## 12. Status / next
 
 §8 **ratified** (A2 + `/ws/terminal` in). This v2 + the S0–S7 breakdown → **PO review** → build. First build target: **S0** (the process scaffold) — everything else forwards through it.
+
+---
+
+## 13. S6 — cleartext-boundary hardening: what is pinned vs the documented residual exposure
+
+**Pinned by teeth (automatic, in the gate — no real creds needed):**
+- **No cleartext sentinel in any gateway log line**, at INFO **and** DEBUG (`GatewayS6SentinelTest`): one request drives a unique sentinel through every category — C1 cookie, C2 Bearer, C3 `?token`/`?ticket`, C5 PTY-like WS frame, C7 raw-credential body — plus the C8 exception path (a dead hub). Mutation-proven: a naive `log.info(call.request.uri)` at a forward seam makes the sentinel appear → red.
+- **Construction seam, not discipline:** the gateway process runs under the same `logback.xml` `%redactedMsg` converter (`TokenRedactor`), so a `?token`/`?ticket`/`Bearer`/`ory_kratos_session`/`X-Session-Token` in *any* message is redacted at output — a future careless `log.X` still can't emit it. (`TokenRedactor` extended in S6 to cover ticket + the Kratos cookie + the session header.)
+- **Fail-closed on an unreachable hub:** `forwardToHub`/`proxyWebSocketToHub` catch the client throw → a bounded **502** (not an unhandled 500), logging only the exception class name. Mutation-proven (re-throw → 500 → red).
+
+**★ Honest, verified finding (Ktor 3.5):** the exception-path leak the acceptance bar assumed — *"an uncaught `forwardToHub` throw lets Ktor's default log the request line incl. `?token`"* — **does not reproduce here.** Ktor 3.5's unhandled-exception log is `Unhandled: <method> - <path>` — **path only, no query string** — so the `?token` never reaches it (verified by capturing the log at DEBUG). The try/catch is therefore kept as **fail-closed 502 + defense-in-depth** (and it does cover the WS leg), not as a fix for a leak that occurs in this version.
+
+**Documented residual exposure (a tooth cannot close these — acceptance bar §4):**
+- **Cleartext in RAM is definitional** — A2 terminates the tunnel, so decrypted operator↔hub bytes (incl. PTY) exist in the gateway process memory. A heap/core dump, swap, or an attached debugger/ptrace can read them. *Operational mitigation:* core-dumps off, no swap, ptrace restriction, bounded buffers (§8 memory hygiene). A tooth can pin only *"no cleartext spill to **disk**"* (no temp files / persistence), **not** *"no cleartext in RAM"*.
+- **PTY output is rendered by the operator's own browser** — inherent, not a gateway leak.
+- **Ciphertext size/timing is visible to the relay** — relay threat model, outside S6.
+- **TLS termination (S7)** — the pre-re-encrypt window is inherent to the terminator.
+- The gateway can pin only **its own** logs; it cannot pin the hub process (which has its own `TokenRedactor`) nor a deploy misconfiguration (e.g. DEBUG in prod) — hence the DEBUG test run above proves the property holds even at DEBUG.
