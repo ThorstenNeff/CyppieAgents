@@ -52,6 +52,17 @@
 | Key | DE | EN |
 |---|---|---|
 | `workspace_unconfigured_banner` | Hub noch nicht eingerichtet — Agenten können nicht starten. In den Projekt-Einstellungen einrichten. | Hub not configured yet — agents can't start. Set it up in Project Settings. |
+| `workspace_setup_resume` | Einrichtung fortsetzen | Continue setup |
+
+### Skip-Pfad-Kanten (§6.3) — Start-blockiert `GATED`
+| Key | DE | EN |
+|---|---|---|
+| `agent_ctl_unconfigured` | Agent kann nicht starten, solange der Hub nicht eingerichtet ist (API-Key + Repository). Jetzt einrichten. | An agent can't start until the hub is set up (API key + repository). Set it up now. |
+| `a11y_agent_ctl_unconfigured` | Start nicht möglich: Hub nicht eingerichtet. | Can't start: hub not configured. |
+
+> **`agent_ctl_unconfigured`** reiht sich in die **bestehende `agent_ctl_*`-Familie** ein (Reuse-konsistent,
+> nicht divergent). Eine Copy, zwei Flächen: pre-emptiver disabled-Reason am Start-Control (`GATED`) **und**
+> Race-Fail server-seitig (statt `agent_ctl_err_generic`). ⟂ AgentView/Lifecycle — Verankerung mit Dev (ux-spec §6.3).
 
 > **Kommentar (nicht user-facing):** `first_run_apikey_posture` — die at-rest-Verschlüsselung ist die
 > spätere Slice **CYP-220**. Der Ticket-Key steht **bewusst nicht** im sichtbaren String (interner Tracking-Ref
@@ -75,15 +86,26 @@
   `agent_add_id_exists`, `agent_add_po_exists`, `agent_add_error`, `a11y_agent_add_id`, `a11y_agent_add_persona`,
   `agent_mgmt_title`, `agent_mgmt_operator_required` (der komplette bestehende Add-Flow, unverändert eingebettet).
 - **Operator-Gate:** kein Reuse nötig — der Operator ist upstream authentifiziert (ux-spec §2), kein Gate-Hint.
+- **Banner-Spezifik (§6.3a):** der Unkonfiguriert-Banner nennt das Fehlende über die **Schritt-Labels als
+  „fehlt:"-Chips** (`first_run_step_apikey` / `first_run_step_repo`, oben schon definiert — keine neuen Sätze)
+  und bei `CLONE_FAILED` über die **Clone-Fehler-Copy** (`first_run_repo_clone_failed*`, oben) — Reuse statt
+  Banner-Varianten-Wildwuchs.
+- **Lifecycle-Fehlerfamilie (§6.3c):** `agent_ctl_start`, `agent_ctl_stop`, `agent_ctl_restart`,
+  `agent_ctl_err_spawn_failed`, `agent_ctl_err_operator_required`, `agent_ctl_err_unreachable`,
+  `agent_ctl_err_already_running`, `agent_ctl_err_agent_not_found`, `agent_ctl_err_generic` — **bestehen**;
+  `agent_ctl_unconfigured` reiht sich ein (nicht neu erfunden).
 
 ## Self-Validation
-- **21 neue Keys** (20 × `first_run_*` + 1 × `workspace_unconfigured_banner`), alle DE+EN befüllt.
+- **24 neue Keys:** 20 × `first_run_*` + `workspace_unconfigured_banner` + `workspace_setup_resume` +
+  `agent_ctl_unconfigured` + `a11y_agent_ctl_unconfigured`. Alle DE+EN befüllt.
 - **Argument-Anzahl:** **alle 0 Args** (kein `%n$s`); DE/EN-Argument-Anzahl identisch (0 == 0) je Zeile. Der
   Text „***<letzte 4>" / „***<last 4>" in `first_run_apikey_posture` ist **literale Erklärung**, kein Format-Arg.
 - **Kein content-tragendes/sensibles Klartext:** kein Key-Rohwert, kein Token, kein Fingerprint in der Copy;
   Maskierung wird nur *beschrieben*, nicht materialisiert.
-- **Kollision:** 0 — `first_run_*` ist greenfield (`grep name="first_run_"` @ `2f664e33` liefert nichts);
-  `workspace_unconfigured_banner` vor Bau gegen `name="workspace_"` verifizieren (Reuse-Check §6.2).
+- **Kollision:** 0 — `first_run_*` greenfield (`grep name="first_run_"` @ `2f664e33` leer); `workspace_setup_resume`
+  + `workspace_unconfigured_banner` gg. `name="workspace_"` verifiziert (kein bestehender Unkonfiguriert-Banner,
+  §6.2); `agent_ctl_unconfigured` reiht sich kollisionsfrei in die bestehende `agent_ctl_*`-Familie (verifiziert
+  @ `2f664e33`: `agent_ctl_unconfigured` existiert noch nicht).
 - **DE/EN-Parität:** jede Zeile beidseitig.
 - **Reuse vs neu sauber getrennt:** 2 bestehende Effekt-Hints bewusst NICHT reused (Honesty §3.2/§4.1),
   begründet; der Rest der Config-/Roster-Keys 1:1 reused.

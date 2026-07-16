@@ -188,6 +188,65 @@ Jederzeit CTA `first_run_skip` „Später einrichten" → **ehrlich-degradierter
 > Workspace-Level-Unkonfiguriert-Banner; Config lag nur im vergrabenen Settings-Fenster). Bei Fund → dessen
 > Key reusen statt neu anlegen.
 
+### 6.3 Skip-Pfad-Kanten — wo „ehrlich degradiert" trägt oder auffliegt (PO-Auftrag)
+
+Der Skip ist kein Sackgassen-Ausgang, sondern ein **ehrlich degradierter Betriebszustand.** Drei Kanten
+entscheiden, ob das trägt:
+
+**(a) Was sieht der Nutzer *nach* dem Skip?**
+Ein voll navigierbarer Workspace (Fenster/Panels bedienbar — der Hub läuft ja) **plus** ein **persistenter**
+`workspace_unconfigured_banner` (`INFO`, an stabiler Stelle im Workspace-Chrome, **nicht** wegklickbar
+solange unkonfiguriert — er beschreibt einen realen Dauerzustand, kein Toast). Der Banner ist **spezifisch**,
+nicht generisch:
+- **beide fehlen / eines fehlt:** der Banner nennt konkret, was fehlt — über die **bestehenden Schritt-Labels
+  als „fehlt:"-Chips** (Reuse `first_run_step_apikey` / `first_run_step_repo`; keine grammatik-fragilen neuen
+  Sätze). Der Client kennt beide Flags → zeigt genau die offenen.
+- **Repo `CLONE_FAILED`:** der Banner darf **nicht** „Repository fehlt" sagen (es ist gesetzt, nur nicht
+  geklont) — er trägt die **Clone-Fehler-Copy** (`first_run_repo_clone_failed*`, Reuse), damit der Nutzer die
+  *Realität* sieht, nicht die Konfiguration (genau die CYP-639-Verwechslung, die §7 schließt).
+- Der Banner trägt die CTA **„Einrichtung fortsetzen"** `workspace_setup_resume` → (b).
+
+**(b) Kommt er zurück ins Gate — und wann?**
+Drei Wege, bewusst getrennt (Ehrlichkeit ohne Nörgeln):
+- **Auf Abruf (jederzeit):** die Banner-CTA `workspace_setup_resume` **öffnet das FirstRunGate erneut** und
+  landet auf dem **ersten offenen Schritt** (nicht wieder Schritt 1, wenn Key schon steht). Der geführte Weg
+  bleibt erreichbar, nicht nur der vergrabene Settings-Weg.
+- **Bei nächstem Start (automatisch):** das Gate ist **zustandslos abgeleitet** (`apikey.set=false` ODER Repo
+  ≠ `CLONED_OK`) → beim nächsten App-Start **erscheint es wieder** (ehrliche wiederkehrende Erinnerung an
+  einen real unfertigen Zustand), wieder überspringbar.
+- **Innerhalb der Session:** der Skip wird **respektiert** — das Gate **poppt nicht von selbst wieder auf**
+  (kein Nörgeln); der Nutzer holt es über die CTA zurück. Balance: persistenter Banner + Relaunch-Gate
+  (Ehrlichkeit) vs. respektierter Skip in der Session (kein Trap/kein Nag).
+- **Settings bleibt der direkte Alternativweg** (`window.settings`) für den Power-User, der die Felder direkt
+  editieren will — gleichwertig, nicht der einzige Weg.
+- Sobald **Key + Repo `CLONED_OK`**: Gate erscheint **nie** mehr, Banner verschwindet.
+
+**(c) Er überspringt und startet *doch* einen Agenten — sagt das Produkt ehrlich, *warum* es nicht geht?**
+**Das ist der Lackmustest.** Ein Agent braucht Key (um `claude` zu fahren) **und** Repo/Worktree (um zu
+arbeiten). Ohne die zwei **darf der Start nicht still scheitern oder ewig spinnen.**
+- **Pre-emptiv + ehrlich (`GATED`-Ton):** solange unkonfiguriert ist das per-Agent **Start-Control
+  deaktiviert mit sichtbarem Grund** — `agent_ctl_unconfigured` (Reuse-konsistent zur bestehenden
+  `agent_ctl_*`-Familie): **„Agent kann nicht starten, solange der Hub nicht eingerichtet ist (API-Key +
+  Repository). Jetzt einrichten."** mit direktem Weg in die Einrichtung. `GATED` (nicht `ERROR`) ist hier
+  korrekt: **es ist nichts fehlgeschlagen** — die Aktion ist an eine unerfüllte Vorbedingung *gekoppelt*. Der
+  Grund steht **vor** dem Klick, nicht als Überraschung danach. Das ist „ehrlich degradiert" am Punkt der
+  Handlung — die schwerste und wichtigste Stelle.
+- **Fail-closed bei Race:** ändert sich der Konfig-Status unter der Hand (gerade entzogen), muss ein trotzdem
+  durchgerutschter Start server-seitig mit **demselben ehrlichen Grund** scheitern — **dieselbe Copy
+  `agent_ctl_unconfigured` in die bestehende `agent_ctl_err_*`-Fehlerfläche** (nie ein generisches
+  `agent_ctl_err_generic` „Start fehlgeschlagen" ohne das *Warum*). Eine Copy, zwei Flächen (disabled-Reason
+  + Race-Fail).
+
+> **Nahtstellen-Flag (⟂ AgentView/Lifecycle):** (c) berührt das **per-Agent-Start-Control** (`agent_ctl_*` /
+> `AgentViewTags`), **nicht** nur First-Run — daher als **Empfehlung + Copy-Seam** gespect, nicht unilateral
+> umgebaut. **Reuse gg. Code verifiziert:** die Lifecycle-Fehlerfamilie **`agent_ctl_err_*`** (`_spawn_failed`,
+> `_operator_required`, `_unreachable`, `_generic`, …) + Controls `agent_ctl_start/stop/restart` existieren
+> bereits (`strings.xml` @ `2f664e33`) — der neue Grund `agent_ctl_unconfigured` **reiht sich ein** (kein
+> Fremdkörper). Exakte Verankerung am Control (disabled-Reason-Slot + Tag) mit Dev koordinieren (über PO;
+> `AgentViewTags`-Start-Control-Naming vor Bau gegenlesen). Der **Ton (`GATED`, nicht `ERROR`) und die
+> Ehrlichkeits-Anforderung** (Grund sichtbar vor der Handlung, kein stiller Fail) sind der nicht-verhandelbare
+> Design-Kern.
+
 ---
 
 ## 7. ★ Backend-Seam (consumer-driven — was die UX braucht, Backend baut)
@@ -251,12 +310,14 @@ Pro Schritt zusätzlich die bestehenden Feld-Zustände (idle / saving / saved / 
 - **`INFO`** (neutral advisory, kein Alarm/kein Grün): Orientierung, Degraded-Rahmung, at-rest-Posture,
   First-Run-Bestätigungen (Key gespeichert / Repo gesetzt / geklont), Team-Intro, Skip-Note, Unkonfiguriert-Banner.
 - **`ERROR`** (echter Fehlschlag, actionable): Clone-Fehler.
+- **`GATED`** (Aktion an unerfüllte Vorbedingung gekoppelt, nichts fehlgeschlagen): der Start-blockiert-Grund
+  am per-Agent-Control im **degradierten Workspace** (§6.3c) — **nicht** im First-Run-Gate selbst.
 - **KEIN `EFFECT_DEFERRED`** im First-Run — **bewusst**: das Deferral existiert hier nicht (keine laufenden
   Agenten zum Neustarten; Repo klont jetzt, nicht „nächsten Boot"). Der amber Restart-/Next-Boot-Hint der
   laufenden Settings-Panel wäre eine **Überzeichnung** → ersetzt durch neutrale `INFO`-Bestätigung. Die
   laufende Settings-Variante behält ihren `EFFECT_DEFERRED`-Hint (dort korrekt).
-- **KEIN `GATED`** — der Operator ist upstream authentifiziert (§2); es gibt keinen Operator-Gate-Hint im
-  First-Run (er IST Operator).
+- **Kein `GATED` im First-Run-Gate** — der Operator ist upstream authentifiziert (§2); es gibt keinen
+  Operator-Gate-Hint im Gate (er IST Operator). (`GATED` erscheint erst im degradierten Workspace, §6.3c.)
 - **Kein content-tragendes/sensibles Klartext-Leak:** kein Key-Rohwert (nur `***<last4>`), kein Token im UI.
 - **WCAG 1.4.1:** jeder Zustand ist distinktes **Text** + Ton + a11y-Label; Farbe nie alleiniger Träger.
   Live-Regions: `cloneStatus`-Transitionen **Polite**, Clone-Fehler **Assertive** (§4.2, siehe -tags.md).
@@ -296,7 +357,10 @@ identisch zu deiner approved Formulierung; nur die Ticket-Nummer ist aus dem sic
 
 - **Dev (Client):** FirstRunGate-Hülle + Stepper; Einbettung der reused `RepoSection`/`ApiKeySection`/
   Roster; First-Run-Kontext-Schalter (Effekt-Hint→`INFO`-Bestätigung, §3.2/§4.1); `cloneStatus`-Poll (§7.3);
-  Skip→Degraded-Workspace + Banner.
+  Skip→Degraded-Workspace + Banner + Resume-CTA (§6.3a/b).
+- **Dev (⟂ AgentView/Lifecycle):** der Start-blockiert-Grund `agent_ctl_unconfigured` (`GATED`) am
+  per-Agent-Start-Control + Race-Fail-Fläche (§6.3c) — Naming/Verankerung gg. `agent_ctl_*`/`AgentViewTags`
+  gegenlesen. Kein unilateraler Umbau; Ton + Ehrlichkeit sind der Kern.
 - **Backend:** der §7-Seam (`cloneStatus`/`cloneReason` auf `RepoConfigView`, prompter Clone-Trigger,
   fail-closed). **Consumer-driven, PO routet.**
 - **UIUX2 (Interaktion/a11y, über PO):** Fokus-Reihenfolge im Stepper, Live-Region-Politeness
@@ -314,7 +378,13 @@ identisch zu deiner approved Formulierung; nur die Ticket-Nummer ist aus dem sic
 - **Honesty:** at-rest-Posture ehrlich + nicht alarmierend (Anker CYP-199); `EFFECT_DEFERRED` bewusst
   vermieden (kein Deferral im First-Run); Clone-Fehler `ERROR`/actionable vs Hub-degraded `INFO`/erwartet
   (Zwei-Tier); fail-closed überall (unbekannt ≠ ok).
-- **PO-Entscheide verankert:** Q1=(A)/nie-Bearer-Paste (§2), Q3=Gate/überspringbar (§1/§6), Q2=Seam (§7).
-- **1 offener Auftraggeber-Entscheid** (§9-Flag): Ticket-Key in der Posture-Copy ja/nein.
+- **PO-Entscheide verankert:** Q1=(A)/nie-Bearer-Paste (§2), Q3=Gate/überspringbar (§1/§6), Q2=Seam (§7),
+  Q2-Ratifikation (fail-closed + prompter Clone + 4 Zustände).
+- **§9-Flag ENTSCHIEDEN (PO 2026-07-16):** `(CYP-220)` bleibt **aus** der user-facing Copy — Tracking nur
+  in Spec + Key-Kommentar. Copy unverändert („späteres Update").
+- **Skip-Pfad-Kanten (§6.3, PO-ungated-Auftrag) beantwortet:** nach-Skip-Sicht (spezifischer persistenter
+  Banner), Rückkehr ins Gate (auf-Abruf via CTA / bei Relaunch / Skip-in-Session respektiert / Settings-Alt),
+  und der Lackmustest „Start trotz unkonfiguriert" (pre-emptiv `GATED` + ehrlicher Grund vor Klick, kein
+  stiller Fail; ⟂ AgentView-Seam).
 - Companion-Files eingefroren: `first-run-setup-keys.md` · `first-run-setup-tags.md` ·
   `first-run-setup-tokens.json`. Kein Bau, docs-only auf `feature/CYP-629-first-run-setup-spec`.

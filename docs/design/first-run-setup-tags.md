@@ -28,10 +28,16 @@
 | `firstRun.openWorkspace` | CTA „Workspace öffnen" | — | — |
 | `firstRun.skip` | CTA „Später einrichten" | — | — |
 
-**Cross-Area (Konsument des Skip):**
+**Cross-Area (Konsument des Skip, §6.3):**
 | Tag | Area | Element | Ton | a11y |
 |---|---|---|---|---|
 | `workspace.unconfiguredBanner` | `workspace` | Unkonfiguriert-Banner im degradierten Workspace | `INFO` | Polite |
+| `workspace.setupResume` | `workspace` | Banner-CTA „Einrichtung fortsetzen" → öffnet Gate | — | — |
+| `agent.<id>.ctlUnconfigured` | `agent` (scoped) | Start-blockiert-Grund am per-Agent-Control | **`GATED`** | Polite |
+
+> **`agent.<id>.ctlUnconfigured`** ist **agent-scoped** (mirrort `agent.<id>.*`, z. B. `agent.<id>.restartBtn`).
+> ⟂ AgentView/Lifecycle — **Start-Control-Naming in `AgentViewTags` vor Bau gegenlesen** und exakte Verankerung
+> mit Dev koordinieren (ux-spec §6.3c); der Ton (`GATED`) + Ehrlichkeit (Grund vor Klick) sind der Kern.
 
 > **Ein Clone-Status-Slot, nicht vier Tags:** `firstRun.repo.cloneFailed` ist der Fehler-Slot; die drei
 > Reason-Copys (`_url`/`_auth`/generisch, siehe -keys.md) rendern in **denselben** Tag (der Zustand ist
@@ -54,10 +60,12 @@
   bestehende Projekt-Settings.
 
 ## Self-Validation
-- **17 neue `firstRun.*`-Tags + 1 `workspace.unconfiguredBanner`** = 18 neue Tags; Schema-konform
-  (`<area>[.<scopeId>].<element>`, camelCase-Werte, keine Punkte im Segmentwert, charset `[A-Za-z0-9-]+`).
-- **Kollision:** 0 — `firstRun`-Area ist greenfield; `workspace.unconfiguredBanner` vor Bau gg. bestehende
-  `workspace.*`-Tags verifizieren (Reuse-Check ux-spec §6.2).
+- **17 `firstRun.*` + 2 `workspace.*` (`unconfiguredBanner`, `setupResume`) + 1 `agent.<id>.ctlUnconfigured`**
+  = **20 neue Tags**; Schema-konform (`<area>[.<scopeId>].<element>`, camelCase-Werte, keine Punkte im
+  Segmentwert, charset `[A-Za-z0-9-]+`; `<id>` ist der Scope-Platzhalter wie bei `agent.<id>.restartBtn`).
+- **Kollision:** 0 — `firstRun`-Area greenfield; `workspace.unconfiguredBanner`/`workspace.setupResume` gg.
+  bestehende `workspace.*` verifizieren (§6.2); `agent.<id>.ctlUnconfigured` mirrort das bestehende
+  `agent.<id>.*`-Schema (Start-Control-Naming gg. `AgentViewTags` gegenlesen, §6.3c).
 - **Reuse gg. Code verifiziert:** alle zitierten `settings.*`/`agentMgmt.*`/`window.settings`-Tags existieren
   in `SettingsTags.kt` / `AgentMgmtTags.kt` / `WindowTestTags` @ `2f664e33` (nicht aus dem Spec abgeleitet).
 - **2 bestehende Effekt-Hint-Tags bewusst NICHT reused** (`settings.*.effectHint`) — Honesty-Begründung in

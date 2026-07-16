@@ -9,7 +9,7 @@
     "brand": "maritime-m3",
     "grounded_against": "develop 2f664e33",
     "note": "Semantische Tokens für das First-Run-Gate. Keine Roh-Hex im Component — Rollen mappen auf MaterialTheme/maritimeColorScheme (Quelle: MaritimeTheme.kt). WARN-Amber (state.waiting #FFC857/#B26A00) ist eine RESERVIERTE Status-Hue und wird hier NICHT als Chrome verwendet; tertiary-green ist brand-only, nie Erfolgs-Signal.",
-    "reuse_note": "Config-/Roster-Felder erben ihre Tokens aus project-settings-tokens.json / agent-management-tokens.json (eingebettete Sektionen, unverändert). Hier nur die First-Run-eigenen Rollen. HintTone-Mapping: nur INFO + ERROR. EFFECT_DEFERRED und GATED sind bewusst UNGENUTZT (kein Deferral im First-Run — keine laufenden Agenten; Operator upstream authentifiziert). Siehe ux-spec §9."
+    "reuse_note": "Config-/Roster-Felder erben ihre Tokens aus project-settings-tokens.json / agent-management-tokens.json (eingebettete Sektionen, unverändert). Hier nur die First-Run-eigenen Rollen. HintTone: EFFECT_DEFERRED bleibt UNGENUTZT (kein Deferral im First-Run — keine laufenden Agenten). GATED ist im First-Run-GATE ungenutzt (Operator upstream authentifiziert), wird aber im degradierten Workspace für den Start-blockiert-Grund (agentView.ctlUnconfigured, §6.3c) genutzt: die Aktion ist an eine unerfüllte Vorbedingung gekoppelt, nichts ist fehlgeschlagen. Siehe ux-spec §9/§6.3."
   },
   "semantic": {
     "firstRun.intro": {
@@ -72,7 +72,15 @@
       "onContainer": "onSecondaryContainer",
       "icon": "info",
       "label_key": "workspace_unconfigured_banner",
-      "note": "Persistenter Banner im degradierten Workspace nach Skip/Teil-Konfig. ERWARTET, kein Alarm-Rot; führt in window.settings."
+      "note": "Persistenter Banner im degradierten Workspace nach Skip/Teil-Konfig. ERWARTET, kein Alarm-Rot; nennt das Fehlende via first_run_step_*-Chips bzw. bei CLONE_FAILED via first_run_repo_clone_failed*; trägt die CTA workspace_setup_resume (öffnet Gate). §6.3a/b."
+    },
+    "agentView.ctlUnconfigured": {
+      "hintTone": "GATED",
+      "container": "surfaceVariant",
+      "onContainer": "onSurfaceVariant",
+      "icon": "lock",
+      "label_key": "agent_ctl_unconfigured",
+      "note": "Start-blockiert-Grund am per-Agent-Control, solange Hub unkonfiguriert. GATED (Vorbedingung), NICHT ERROR (nichts fehlgeschlagen). Spiegelt settings.gated. Grund sichtbar VOR dem Klick; dieselbe Copy auch für Race-Fail (statt agent_ctl_err_generic). ⟂ AgentView/Lifecycle, §6.3c."
     }
   },
   "dimensions": {
