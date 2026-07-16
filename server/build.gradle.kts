@@ -185,7 +185,7 @@ run {
     // (postinst), stop/disable (prerm), and remove-preserve / purge-wipe (postrm).
     val debResourceDir = rootProject.file("deploy/linux/deb-resources").absolutePath
     // CYP-636: SINGLE-SOURCE the systemd unit — bundle the reviewable master into the .deb payload (jpackage
-    // --app-content → /opt/cyppiehub/cyppiehub.service) so the postinst `cp`s it (no heredoc duplication → drift
+    // --app-content → /opt/cyppiehub/lib/cyppiehub.service) so the postinst `cp`s it (no heredoc duplication → drift
     // structurally impossible).
     val unitFile = rootProject.file("deploy/linux/cyppiehub.service").absolutePath
     val os = org.gradle.internal.os.OperatingSystem.current()
