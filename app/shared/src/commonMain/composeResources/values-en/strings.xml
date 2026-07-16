@@ -795,4 +795,14 @@
     <string name="first_run_degraded_note">This is normal for a fresh hub: it's already running, but it can't start any agents until the key and repository are set.</string>
     <string name="first_run_skip">Set up later</string>
     <string name="first_run_skip_note">You can do this anytime in Project Settings. Until then the hub runs but can't start any agents.</string>
+    <string name="first_run_step_apikey">API key</string>
+    <string name="first_run_step_repo">Repository</string>
+    <string name="first_run_step_team">Team</string>
+    <string name="first_run_apikey_posture">The API key is stored on the server and only ever shown masked (***&lt;last 4&gt;) — not yet encrypted at rest (encryption is coming in a later update). Treat the hub host as trusted.</string>
+    <string name="first_run_apikey_saved">Saved. The key will be used when your agents first start.</string>
+    <string name="first_run_repo_saved">Repository set. The hub is cloning it now.</string>
+    <string name="first_run_team_intro">Your team starts with one PO. Add more agents now — or later in the workspace.</string>
+    <string name="first_run_complete_title">Setup complete</string>
+    <string name="first_run_complete_body">The key and repository are set. Your hub is ready to work.</string>
+    <string name="first_run_open_workspace">Open workspace</string>
 </resources>
