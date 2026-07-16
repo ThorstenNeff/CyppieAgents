@@ -52,6 +52,7 @@ import { WorkspaceRosterPanel } from './workspace/WorkspaceRosterPanel'
 import { CapacityPill } from './workspace/CapacityPill'
 import { CompactPanel } from './compact/CompactPanel'
 import { ProjectManagementPanel } from './project/ProjectManagementPanel'
+import { ChannelSharePanel } from './comm/ChannelSharePanel'
 import { ProjectSwitcher } from './project/ProjectSwitcher'
 import { OverloadBanner } from './workspace/OverloadBanner'
 import { overloadVisible } from './workspace/capacityModel'
@@ -70,6 +71,7 @@ const PRODUCT_LEAD_WINDOW_ID = 'productLead'
 const COMPACT_WINDOW_ID = 'compact'
 const WORKSPACE_WINDOW_ID = 'workspace'
 const PROJECT_MGMT_WINDOW_ID = 'projectMgmt'
+const CHANNEL_SHARE_WINDOW_ID = 'channelShare'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -300,6 +302,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     // CYP-651: project management window — present for everyone; the panel fail-closes to a gate-hint for a
     // non-operator (no list/mutations), mirrors the agent-management gate pattern.
     if (agents.length > 0 && !present.has(PROJECT_MGMT_WINDOW_ID)) wm.add(tiledWindow(PROJECT_MGMT_WINDOW_ID, 'Projekte', index++), false)
+    // CYP-659: cross-project channel-share — present for EVERYONE (GET is read-tier: badge/status visible to readers);
+    // the panel gates authorize/revoke on operator internally (present-but-disabled), never omission.
+    if (agents.length > 0 && !present.has(CHANNEL_SHARE_WINDOW_ID)) wm.add(tiledWindow(CHANNEL_SHARE_WINDOW_ID, 'Kanal-Freigaben', index++), false)
   }, [agents, operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
@@ -502,6 +507,20 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           onSwitch={onSwitchProject}
           onRename={onRenameProject}
           onDelete={onDeleteProject}
+        />
+      )
+    }
+    if (win.id === CHANNEL_SHARE_WINDOW_ID) {
+      // CYP-659: cross-project channel-share. present-but-disabled: badge/status read-tier for everyone; authorize/
+      // revoke operator-gated. Non-optimistic — the panel re-syncs from the server ChannelShareView echo.
+      return (
+        <ChannelSharePanel
+          channels={channels}
+          projects={projectsView?.projects ?? []}
+          operator={operator}
+          getShare={(cid) => hubRepo.getChannelShare(cid)}
+          onShare={(cid, sharedWith) => hubRepo.shareChannel(cid, sharedWith)}
+          onUnshare={(cid) => hubRepo.unshareChannel(cid)}
         />
       )
     }

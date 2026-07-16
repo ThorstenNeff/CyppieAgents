@@ -11,6 +11,7 @@ import type {
   Preset,
   ApiKeyView,
   Channel,
+  ChannelShareView,
   Message1,
   AgentRunStateEvent,
   NewAgentSpec,
@@ -175,6 +176,16 @@ export interface HubRepo {
   /** CYP-658 (operator). DELETE /api/agents/{id}/avatar — clear back to the initials/colour fallback. 204, idempotent,
    *  no confirm token → the "reset to default?" confirm is the CLIENT's to own. */
   removeAvatar(agentId: string): Promise<void>
+  /** CYP-659. GET /api/channels/{id}/share (read-tier — the badge/status is NOT a secret; scoped by canRead). The
+   *  cross-project share view { shared, sharedAt?, reachableScope? }. */
+  getChannelShare(channelId: string): Promise<ChannelShareView>
+  /** CYP-659 (operator). PUT /api/channels/{id}/share { sharedWith } — SET/REPLACE the grantee project set. An empty
+   *  set revokes (the store removes the record). Returns the fresh ChannelShareView echo → non-optimistic re-sync.
+   *  403 `operator_required` / 404 `channel_not_found` are server-authoritative (surfaced, never pre-guessed). */
+  shareChannel(channelId: string, sharedWith: string[]): Promise<ChannelShareView>
+  /** CYP-659 (operator). DELETE /api/channels/{id}/share — revoke. Idempotent; the server responds 200 with the fresh
+   *  ChannelShareView echo ({ shared:false }), NOT 204 — so this returns the echo (re-sync from it, non-optimistic). */
+  unshareChannel(channelId: string): Promise<ChannelShareView>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -317,5 +328,16 @@ export class RestHubRepo implements HubRepo {
   }
   async removeAvatar(agentId: string): Promise<void> {
     await this.rest.delete<void>(`/api/agents/${encodeURIComponent(agentId)}/avatar`)
+  }
+  getChannelShare(channelId: string): Promise<ChannelShareView> {
+    return this.rest.get<ChannelShareView>(`/api/channels/${encodeURIComponent(channelId)}/share`)
+  }
+  shareChannel(channelId: string, sharedWith: string[]): Promise<ChannelShareView> {
+    // AuthorizeShareRequest { sharedWith } — REST-only DTO, hand-modeled (not in the asyncapi export).
+    return this.rest.put<ChannelShareView>(`/api/channels/${encodeURIComponent(channelId)}/share`, { sharedWith })
+  }
+  unshareChannel(channelId: string): Promise<ChannelShareView> {
+    // The server responds 200 + the fresh view echo ({shared:false}), NOT 204 — RestClient parses the JSON echo.
+    return this.rest.delete<ChannelShareView>(`/api/channels/${encodeURIComponent(channelId)}/share`)
   }
 }

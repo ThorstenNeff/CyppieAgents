@@ -1532,3 +1532,114 @@ body {
 .agent-avatar-credits a {
   color: var(--md-sys-color-on-surface-variant);
 }
+/* CYP-659 (P11) — Cross-Project Channel-Share panel. Present-but-disabled: badge/status/owner read-tier for everyone,
+   grantee editor + authorize/revoke operator-only. Badge carries a glyph + text (never colour alone). The destructive
+   revoke + its confirm are error-toned; the confirm is client-owned (server has no confirm token). Tokens both themes. */
+.channel-share {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.channel-share-subtitle {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.8rem;
+}
+.channel-share-gate {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.channel-share-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.channel-share-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 6px;
+  padding: 8px;
+}
+.channel-share-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.channel-share-name {
+  font-weight: 600;
+}
+.channel-share-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.channel-share-badge.shared {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+}
+.channel-share-owner,
+.channel-share-status {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: normal;
+}
+.channel-share-reach {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 0.75rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.channel-share-grantees {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.channel-share-grantees legend {
+  font-size: 0.75rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.channel-share-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.channel-share-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.channel-share-error {
+  margin: 0;
+  color: var(--md-sys-color-error);
+  white-space: normal;
+}
+.channel-share-destructive {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
+.channel-share-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--md-sys-color-error);
+  border-radius: 6px;
+  padding: 8px;
+}
+.channel-share-confirm p {
+  margin: 0;
+}
