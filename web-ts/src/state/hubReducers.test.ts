@@ -16,6 +16,8 @@ import {
   clearLifecyclePending,
   applyRoster,
   rosterPoAgentId,
+  applyBusyState,
+  applyTokenUsage,
   type HubState,
 } from './hubReducers'
 import { pendingKey, enforcedValue } from '../comm/aclModel'
@@ -176,5 +178,33 @@ describe('applyTerminalControl — per-agent, last write wins', () => {
     s = applyTerminalControl(s, { agentId: 'backend', state: 'INTERACTIVE' })
     expect(s.terminalStateByAgent.get('backend')).toBe('INTERACTIVE')
     expect(s.terminalStateByAgent.get('frontend')).toBe('INTERACTIVE')
+  })
+})
+
+describe('CYP-641 — busy-state fold (/ws/busy-state)', () => {
+  it('applyBusyState sets the live busy flag per agent (unknown ≠ busy: absent stays absent)', () => {
+    const s = applyBusyState(emptyHubState, { agentId: 'backend', busy: true })
+    expect(s.busyByAgent.get('backend')).toBe(true)
+    expect(s.busyByAgent.has('frontend')).toBe(false) // never seen → absent (the derive reads absent as not-busy)
+  })
+
+  it('an explicit busy=false authoritatively clears a prior true (stored, not just dropped)', () => {
+    const on = applyBusyState(emptyHubState, { agentId: 'backend', busy: true })
+    const off = applyBusyState(on, { agentId: 'backend', busy: false })
+    expect(off.busyByAgent.get('backend')).toBe(false)
+  })
+})
+
+describe('CYP-641 — token-usage fold (/ws/token-usage)', () => {
+  it('applyTokenUsage stores a numeric context-token count', () => {
+    const s = applyTokenUsage(emptyHubState, { agentId: 'backend', contextTokens: 12345 })
+    expect(s.contextTokensByAgent.get('backend')).toBe(12345)
+  })
+
+  it('a null OR omitted contextTokens is stored as null (unknown ≠ 0 → no number)', () => {
+    const nullish = applyTokenUsage(emptyHubState, { agentId: 'backend', contextTokens: null })
+    expect(nullish.contextTokensByAgent.get('backend')).toBeNull()
+    const omitted = applyTokenUsage(emptyHubState, { agentId: 'frontend' })
+    expect(omitted.contextTokensByAgent.get('frontend')).toBeNull()
   })
 })

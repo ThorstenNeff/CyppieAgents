@@ -6,7 +6,17 @@ import { useRef } from 'react'
 import { useWindowStore } from './windowStore'
 import type { WindowState } from './windowState'
 
-export function WindowFrame({ window: w, children }: { window: WindowState; children?: React.ReactNode }) {
+export function WindowFrame({
+  window: w,
+  children,
+  titleAccessory,
+}: {
+  window: WindowState
+  children?: React.ReactNode
+  /** CYP-641: an optional passive marker rendered at the END of the title bar (the per-window activity badge).
+   *  Non-interactive; it sits inside the draggable header, which is fine — a badge press just begins a drag. */
+  titleAccessory?: React.ReactNode
+}) {
   const focus = useWindowStore((s) => s.focus)
   const moveBy = useWindowStore((s) => s.moveBy)
   const resizeBy = useWindowStore((s) => s.resizeBy)
@@ -56,7 +66,8 @@ export function WindowFrame({ window: w, children }: { window: WindowState; chil
         onPointerUp={end}
         onPointerCancel={end}
       >
-        {w.title}
+        <span className="window-title-text">{w.title}</span>
+        {titleAccessory}
       </header>
       <div className="window-body">{children}</div>
       <div

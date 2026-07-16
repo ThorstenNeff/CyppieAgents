@@ -777,3 +777,40 @@ body,
   color: var(--md-sys-color-on-surface-variant);
   white-space: normal;
 }
+
+/* CYP-641 (Epic CYP-640) — per-window title bar + live activity badge. `.window-title` was previously unstyled;
+   make it a flex row so the title text takes the space and the activity accessory sits at the end. The header stays
+   the drag handle (WindowFrame's pointer handlers are on it). */
+.window-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.window-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The activity badge: a row of passive atoms. Colour is NEVER the sole carrier (WCAG 1.4.1) — each atom is a
+   glyph/number with an aria-label; the tones are secondary. Layout-stable (compact token count, fixed line). */
+.window-activity {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+.wa-tokens {
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+.wa-busy {
+  color: var(--md-sys-color-on-surface-variant);
+  letter-spacing: 1px;
+}
+.wa-attention {
+  color: var(--md-sys-color-error);
+}
