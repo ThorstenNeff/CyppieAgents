@@ -1,9 +1,12 @@
 package com.tneff.cyppieagents.firstrun
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,6 +24,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kmpcyppieagents.app.shared.generated.resources.first_run_skip
+import com.tneff.cyppieagents.agentmgmt.AgentManagementPanel
+import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
 import com.tneff.cyppieagents.settings.ApiKeySection
 import com.tneff.cyppieagents.settings.RepoSection
 import com.tneff.cyppieagents.settings.SettingsUiState
@@ -48,16 +53,19 @@ import org.jetbrains.compose.resources.stringResource
  */
 @Composable
 internal fun FirstRunStepper(
+    modifier: Modifier = Modifier,
     status: FirstRunConfigStatus,
     settingsState: SettingsUiState,
     settingsViewModel: SettingsViewModel,
+    agentMgmtViewModel: AgentManagementViewModel,
+    activeProjectName: String?,
     onSkip: () -> Unit,
 ) {
     // ④: initial selection = the first open step (API_KEY or REPO in ACTIVE; TEAM is only reachable by tapping,
     // since "both core done" is TRANSPARENT, not ACTIVE). User-navigable thereafter.
     var current by remember { mutableStateOf(firstRunOpenStep(status)) }
 
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().testTag(FirstRunTags.STEPPER),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -67,10 +75,14 @@ internal fun FirstRunStepper(
             StepChip(FirstRunTags.STEP_TEAM, stringResource(Res.string.first_run_step_team), selected = current == FirstRunStep.TEAM) { current = FirstRunStep.TEAM }
         }
 
-        when (current) {
-            FirstRunStep.API_KEY -> FirstRunApiKeyStep(settingsState, settingsViewModel)
-            FirstRunStep.REPO -> FirstRunRepoStep(settingsState, settingsViewModel)
-            FirstRunStep.TEAM -> FirstRunTeamStep()
+        // Weighted, bounded region: the config steps scroll their own content; the team step's roster panel
+        // (fillMaxSize + its own scroll) needs a bounded height here — NOT an ancestor scroll (infinite-height crash).
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when (current) {
+                FirstRunStep.API_KEY -> FirstRunApiKeyStep(settingsState, settingsViewModel)
+                FirstRunStep.REPO -> FirstRunRepoStep(settingsState, settingsViewModel)
+                FirstRunStep.TEAM -> FirstRunTeamStep(agentMgmtViewModel, activeProjectName)
+            }
         }
 
         // Skip (§6.2): honest degraded workspace, no dead end (the banner/resume land in Inc4).
@@ -99,7 +111,7 @@ private fun StepChip(tag: String, label: String, selected: Boolean, onClick: () 
  */
 @Composable
 internal fun FirstRunApiKeyStep(state: SettingsUiState, viewModel: SettingsViewModel) {
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         TonedHint(stringResource(Res.string.first_run_apikey_posture), HintTone.INFO, FirstRunTags.APIKEY_POSTURE)
         ApiKeySection(state, viewModel, firstRunContext = true)
         // Neutral INFO confirmation instead of the suppressed restart hint (same apiKeyEffectHint save signal).
@@ -119,7 +131,7 @@ internal fun FirstRunApiKeyStep(state: SettingsUiState, viewModel: SettingsViewM
  */
 @Composable
 internal fun FirstRunRepoStep(state: SettingsUiState, viewModel: SettingsViewModel) {
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         RepoSection(state, viewModel, firstRunContext = true)
         if (state.repoEffectHint) {
             TonedHint(
@@ -131,13 +143,16 @@ internal fun FirstRunRepoStep(state: SettingsUiState, viewModel: SettingsViewMod
 }
 
 /**
- * Step 4 — team. Net-new framing only (§5): the roster starts with one PO; adding agents is optional now or later.
- * The `AgentManagementPanel` roster embed lands next (its own VM wiring); this pins the intro framing.
+ * Step 4 — team (§5). Net-new framing (`first_run_team_intro`) in the WRAPPER + the reused [AgentManagementPanel]
+ * embedded UNCHANGED (reuse pur — no `firstRunContext`: its `agent_add_spawn_hint` is TRUE in first-run too, so
+ * there is no lying hint to suppress). Team is OPTIONAL: the roster starts with one PO; adding agents is not a
+ * completion prerequisite (that is Key + Repo CLONED_OK, ux-spec §6.1) — nothing here gates the finish.
  */
 @Composable
-internal fun FirstRunTeamStep() {
+internal fun FirstRunTeamStep(agentMgmtViewModel: AgentManagementViewModel, activeProjectName: String?) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         TonedHint(stringResource(Res.string.first_run_team_intro), HintTone.INFO, FirstRunTags.TEAM_INTRO)
+        AgentManagementPanel(agentMgmtViewModel, activeProjectName = activeProjectName)
     }
 }
 

@@ -4,8 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,6 +20,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel
 import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.ui.HintTone
 import com.tneff.cyppieagents.ui.TonedHint
@@ -52,6 +51,8 @@ fun FirstRunGate(
     enabled: Boolean,
     createViewModel: () -> FirstRunViewModel,
     createSettingsViewModel: () -> SettingsViewModel,
+    createAgentMgmtViewModel: () -> AgentManagementViewModel,
+    activeProjectName: String? = null,
     workspace: @Composable () -> Unit,
 ) {
     if (!enabled) {
@@ -61,6 +62,7 @@ fun FirstRunGate(
     }
     val viewModel = remember { createViewModel() }
     val settingsViewModel = remember { createSettingsViewModel() }
+    val agentMgmtViewModel = remember { createAgentMgmtViewModel() }
     val status by viewModel.status.collectAsState()
     val settingsState by settingsViewModel.state.collectAsState()
     var skipped by remember { mutableStateOf(false) }
@@ -72,7 +74,7 @@ fun FirstRunGate(
             FirstRunGateMode.TRANSPARENT -> FirstRunComplete(onOpen = { opened = true })
             FirstRunGateMode.LOADING -> FirstRunLoading()
             FirstRunGateMode.ACTIVE ->
-                FirstRunActive(status, settingsState, settingsViewModel, onSkip = { skipped = true })
+                FirstRunActive(status, settingsState, settingsViewModel, agentMgmtViewModel, activeProjectName, onSkip = { skipped = true })
         }
     }
 }
@@ -98,14 +100,15 @@ private fun FirstRunActive(
     status: FirstRunConfigStatus,
     settingsState: com.tneff.cyppieagents.settings.SettingsUiState,
     settingsViewModel: SettingsViewModel,
+    agentMgmtViewModel: com.tneff.cyppieagents.agentmgmt.AgentManagementViewModel,
+    activeProjectName: String?,
     onSkip: () -> Unit,
 ) {
+    // Fixed orientation header + a weighted stepper body (NOT an outer verticalScroll: the embedded roster panel
+    // scrolls itself + fillMaxSize, and a fillMaxSize child inside a scroll is an infinite-height crash. The stepper
+    // gives its step content a weighted, bounded region so each step scrolls appropriately).
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag(FirstRunTags.GATE)
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+        modifier = Modifier.fillMaxSize().testTag(FirstRunTags.GATE).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
@@ -122,6 +125,6 @@ private fun FirstRunActive(
             tag = FirstRunTags.DEGRADED_NOTE,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
-        FirstRunStepper(status, settingsState, settingsViewModel, onSkip)
+        FirstRunStepper(Modifier.weight(1f), status, settingsState, settingsViewModel, agentMgmtViewModel, activeProjectName, onSkip)
     }
 }
