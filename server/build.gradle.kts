@@ -153,7 +153,12 @@ dependencies {
 // jpackage app-image. This packages the FULL :server (Netty/Tink/Flyway/… atop those two natives) into an OS-native
 // installer: Windows `.msi` (needs WiX 3.x on the build host), else `dmg`/`app-image`. One config, `--type` per OS.
 run {
-    val jdkHome = System.getProperty("java.home") // the JDK running Gradle (must be a JDK 17+/21 with jlink+jpackage)
+    // CYP-634: pin the packaging JDK to 21 via a Gradle TOOLCHAIN (deterministic bundled JRE), NOT the Gradle JVM's
+    // java.home — a build on JDK 25 would otherwise emit a 25 runtime (the README §6 follow-up, folded in with the deb
+    // branch since the deb is the first second-OS packaging where determinism bites). jlink + jpackage both ship in 21.
+    val jdkHome = javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }.get().metadata.installationPath.asFile.absolutePath
     val installerName = "CyppieHub"
     val hubMainClass = "com.tneff.cyppieagents.ApplicationKt"
     // CYP-625 finding: `jdk.unsupported` is REQUIRED (pty4j → JNA → sun.misc.Unsafe). `jdk.crypto.ec` for the JDK EC
@@ -176,8 +181,10 @@ run {
     // the --main-jar; only overrides the main class (see the properties file). The wizard invokes it once on the host.
     val provisionLauncherProps = rootProject.file("deploy/windows/provision-launcher.properties").absolutePath
     val os = org.gradle.internal.os.OperatingSystem.current()
-    val installerType = when { os.isWindows -> "msi"; os.isMacOsX -> "dmg"; else -> "app-image" }
+    // CYP-634: Linux → `.deb` (jpackage needs dpkg/fakeroot on the host). Same installDist→jlink→jpackage chain.
+    val installerType = when { os.isWindows -> "msi"; os.isMacOsX -> "dmg"; else -> "deb" }
     val isWindows = os.isWindows
+    val isLinux = os.isLinux
 
     val hubJlink = tasks.register<Exec>("hubJlink") {
         group = "distribution"
@@ -193,7 +200,7 @@ run {
 
     tasks.register<Exec>("hubInstaller") {
         group = "distribution"
-        description = "CYP-626: jpackage the hub into an OS-native installer ($installerType: msi on Windows, dmg on macOS, app-image on Linux)."
+        description = "CYP-626/634: jpackage the hub into an OS-native installer ($installerType: msi on Windows, dmg on macOS, deb on Linux)."
         dependsOn("installDist", hubJlink) // installDist → build/install/server/lib/*.jar (all runtime jars in one dir)
         doFirst { File(installerPath).apply { deleteRecursively(); mkdirs() } }
         val args = mutableListOf(
@@ -213,6 +220,9 @@ run {
         args += listOf("--add-launcher", "CyppieHubProvision=$provisionLauncherProps")
         // Windows: a console app (the hub logs to stdout; the CYP-627 service wrapper captures it) + install chooser.
         if (isWindows) args += listOf("--win-console", "--win-dir-chooser", "--win-menu", "--win-shortcut")
+        // CYP-634: Linux `.deb` — install to /opt (→ /opt/cyppiehub/bin/CyppieHub, referenced by the systemd unit).
+        // The systemd unit + maintainer scripts (install/enable/provision, CYP-635) ride via --resource-dir deploy/linux.
+        if (isLinux) args += listOf("--linux-package-name", "cyppiehub", "--install-dir", "/opt")
         commandLine(args)
     }
 }

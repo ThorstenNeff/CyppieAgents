@@ -1,0 +1,53 @@
+# CYP-634 — systemd unit for the Cyppie self-hosted hub (Linux .deb, Topology A / standalone-local). The Linux analog
+# of the CYP-627 WinSW wrapper: systemd is the native service manager (no third-party wrapper). Installed + enabled by
+# the CYP-635 maintainer scripts (postinst); the secrets ride the EnvironmentFile per the ratified custody = option (a)
+# (dedicated system user `cyppie` + /etc/cyppiehub/hub.env at 0600).
+[Unit]
+Description=Cyppie self-hosted agent hub (headless Ktor server)
+Documentation=https://github.com/ThorstenNeff/CyppieAgents
+After=network-online.target
+Wants=network-online.target
+# Restart-rate cap (the WinSW onfailure-escalation analog). These MUST live in [Unit] — systemd (since v230) ignores
+# StartLimit* in [Service], which would make the cap vacuous → a persistently-failing hub (bad config) tight-loops
+# every RestartSec forever. With them here, systemd stops restarting after StartLimitBurst failures per interval.
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=cyppie
+Group=cyppie
+
+# The jpackage launcher. Its CyppieHub.cfg ALREADY carries the two mandatory JVM args
+# (-Dio.netty.jfr.enabled=false, -XX:MaxRAMPercentage=75.0) — CYP-626 — so they are NOT repeated here.
+# NB: jpackage installs to /opt/<linux-package-name> (lowercase `cyppiehub`), with the launcher named `CyppieHub`.
+ExecStart=/opt/cyppiehub/bin/CyppieHub
+
+# The data dir (PLATFORM_GIT_ROOT). The hub also gets absolute PLATFORM_* via the EnvironmentFile, so CWD is a belt.
+WorkingDirectory=/var/lib/cyppiehub
+
+# ★ Secret custody = option (a) (ratified): CYPPIE_MASTER_KEY + OPERATOR_TOKEN + HUB_TOKEN_PO + PLATFORM_CONFIG +
+# PLATFORM_GIT_ROOT live in this 0600 file, owned by `cyppie` (provision.sh writes it, CYP-635). Never world-readable.
+EnvironmentFile=/etc/cyppiehub/hub.env
+
+# Headless auto-start (systemctl enable) + crash resilience: restart on failure every RestartSec, bounded by the
+# StartLimit* cap in [Unit] above (so a persistently-failing hub does not tight-loop forever).
+Restart=on-failure
+RestartSec=10
+
+# Graceful stop: give the JVM time to flush the sqlite stores + close WS, then SIGKILL. KillMode=mixed SIGTERMs the
+# main process then the whole control group — so the pty4j agent children are reaped (no orphans), CYP-627 parity.
+TimeoutStopSec=30
+KillMode=mixed
+
+# stdout/stderr → journald (journalctl -u cyppiehub) — the Linux analog of WinSW's rolling log; no logpath needed.
+
+# Least-privilege hardening (systemd sandboxing; the data dir stays writable):
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cyppiehub
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
