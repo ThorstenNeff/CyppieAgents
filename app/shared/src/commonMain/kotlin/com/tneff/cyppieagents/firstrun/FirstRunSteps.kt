@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,6 +40,11 @@ import kmpcyppieagents.app.shared.generated.resources.first_run_apikey_saved
 import kmpcyppieagents.app.shared.generated.resources.first_run_complete_body
 import kmpcyppieagents.app.shared.generated.resources.first_run_complete_title
 import kmpcyppieagents.app.shared.generated.resources.first_run_open_workspace
+import kmpcyppieagents.app.shared.generated.resources.first_run_repo_clone_failed
+import kmpcyppieagents.app.shared.generated.resources.first_run_repo_clone_failed_auth
+import kmpcyppieagents.app.shared.generated.resources.first_run_repo_clone_failed_url
+import kmpcyppieagents.app.shared.generated.resources.first_run_repo_clone_ok
+import kmpcyppieagents.app.shared.generated.resources.first_run_repo_cloning
 import kmpcyppieagents.app.shared.generated.resources.first_run_repo_saved
 import kmpcyppieagents.app.shared.generated.resources.first_run_step_apikey
 import kmpcyppieagents.app.shared.generated.resources.first_run_step_repo
@@ -80,7 +87,7 @@ internal fun FirstRunStepper(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when (current) {
                 FirstRunStep.API_KEY -> FirstRunApiKeyStep(settingsState, settingsViewModel)
-                FirstRunStep.REPO -> FirstRunRepoStep(settingsState, settingsViewModel)
+                FirstRunStep.REPO -> FirstRunRepoStep(settingsState, settingsViewModel, status)
                 FirstRunStep.TEAM -> FirstRunTeamStep(agentMgmtViewModel, activeProjectName)
             }
         }
@@ -126,17 +133,58 @@ internal fun FirstRunApiKeyStep(state: SettingsUiState, viewModel: SettingsViewM
 
 /**
  * Step 3 — repository. Embeds the reused [RepoSection] in first-run context (next-boot hint suppressed) + the
- * "set, cloning now" INFO confirmation (§4.1). The live clone-status states (§4.2/§4.4) wire against the §7 seam in
- * Inc3 — not here.
+ * "set, cloning now" INFO confirmation (§4.1) + the live [CloneStatusDisplay] (§4.2/§4.4), driven by the polled
+ * [FirstRunConfigStatus] from the §7 seam.
  */
 @Composable
-internal fun FirstRunRepoStep(state: SettingsUiState, viewModel: SettingsViewModel) {
+internal fun FirstRunRepoStep(state: SettingsUiState, viewModel: SettingsViewModel, status: FirstRunConfigStatus) {
     Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         RepoSection(state, viewModel, firstRunContext = true)
         if (state.repoEffectHint) {
             TonedHint(
                 stringResource(Res.string.first_run_repo_saved), HintTone.INFO, FirstRunTags.REPO_SAVED,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+        CloneStatusDisplay(status)
+    }
+}
+
+/**
+ * CYP-629 §4.2/§4.4 — the repo clone lifecycle, exactly one state (via [cloneDisplay], fail-closed to CLONING while
+ * unsure). CLONING shows a **live indeterminate indicator** (§4.4 — a life-sign, never a fabricated % bar, since
+ * `CloneStatus` carries no progress) + the "cloning…" line (INFO/Polite). CLONED_OK is neutral INFO (no green).
+ * CLONE_FAILED is a real, operator-correctable failure → ERROR/Assertive, with the reason selecting the actionable
+ * copy (URL vs auth vs generic). Fixed via the SAME repo save (§4.3 — no separate retry CTA). `NOT_CONFIGURED`
+ * (repo not set yet) renders nothing.
+ */
+@Composable
+internal fun CloneStatusDisplay(status: FirstRunConfigStatus) {
+    when (cloneDisplay(status.cloneStatus)) {
+        null -> Unit
+        CloneDisplay.CLONING -> Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp)) // §4.4: live life-sign, NOT a fake progress bar
+            TonedHint(
+                stringResource(Res.string.first_run_repo_cloning), HintTone.INFO, FirstRunTags.REPO_CLONING,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+        CloneDisplay.CLONED_OK -> TonedHint(
+            stringResource(Res.string.first_run_repo_clone_ok), HintTone.INFO, FirstRunTags.REPO_CLONE_OK,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        CloneDisplay.FAILED -> {
+            val copy = when (status.cloneReason) {
+                CloneFailReason.URL_UNREACHABLE -> Res.string.first_run_repo_clone_failed_url
+                CloneFailReason.AUTH -> Res.string.first_run_repo_clone_failed_auth
+                CloneFailReason.UNKNOWN, null -> Res.string.first_run_repo_clone_failed
+            }
+            TonedHint(
+                stringResource(copy), HintTone.ERROR, FirstRunTags.REPO_CLONE_FAILED,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
             )
         }
     }

@@ -801,6 +801,12 @@
     <string name="first_run_apikey_posture">The API key is stored on the server and only ever shown masked (***&lt;last 4&gt;) — not yet encrypted at rest (encryption is coming in a later update). Treat the hub host as trusted.</string>
     <string name="first_run_apikey_saved">Saved. The key will be used when your agents first start.</string>
     <string name="first_run_repo_saved">Repository set. The hub is cloning it now.</string>
+    <string name="first_run_repo_cloning">Cloning repository…</string>
+    <string name="first_run_repo_cloning_slow">Still cloning — this can take a few minutes for large repositories.</string>
+    <string name="first_run_repo_clone_ok">Repository cloned. Your team can work.</string>
+    <string name="first_run_repo_clone_failed">The repository couldn't be cloned. Check the URL and the hub host's access, then set it again.</string>
+    <string name="first_run_repo_clone_failed_url">The repository couldn't be cloned: the URL isn't reachable. Check the address and set the repository again.</string>
+    <string name="first_run_repo_clone_failed_auth">The repository couldn't be cloned: the hub host has no access. Provide credentials on the host (SSH/gh) and set the repository again.</string>
     <string name="first_run_team_intro">Your team starts with one PO. Add more agents now — or later in the workspace.</string>
     <string name="first_run_complete_title">Setup complete</string>
     <string name="first_run_complete_body">The key and repository are set. Your hub is ready to work.</string>
