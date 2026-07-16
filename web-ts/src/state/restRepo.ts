@@ -2,11 +2,13 @@
 // in tests. Channels/ACL ride the generated contract types (they appear in the WS schema too). The mode-change
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
-import { RestClient } from '../net/rest'
+import { RestClient, RestError } from '../net/rest'
+import { operatorToken } from '../platform/operatorToken'
 import type {
   AclEntry,
   Agent,
   AgentDetail,
+  Preset,
   ApiKeyView,
   Channel,
   Message1,
@@ -160,11 +162,24 @@ export interface HubRepo {
    *  conflict dialog, never silently overwrites). Returns the FRESH ClaudeMdView echo so the caller re-syncs its
    *  buffer + version. Restart-deferred: the change takes effect on the agent's next spawn (amber effect hint). */
   updateClaudeMd(agentId: string, update: ClaudeMdUpdate): Promise<ClaudeMdView>
+  /** CYP-658 (operator). PUT /api/agents/{id} with only `{avatar: preset}` — the DiceBear preset write path (JSON).
+   *  Write-DTO is Preset-only (a client cannot forge an Upload ref; those are server-minted). Returns the fresh Agent
+   *  echo so the caller re-syncs `agent.avatar` (non-optimistic — the server's avatar truth, never the local pick).
+   *  Restart-agnostic: the avatar is cosmetic and takes effect immediately (not a spawn-deferred config). */
+  setAvatarPreset(agentId: string, preset: Preset): Promise<Agent>
+  /** CYP-658 (operator). POST /api/agents/{id}/avatar as multipart — the upload IS the commit (no server pre-preview).
+   *  The server sniffs magic bytes (PNG/JPEG only), re-crops to 256×256, strips EXIF, and mints the Upload `ref`.
+   *  Returns the fresh AgentDetail echo (new avatar + `ref` cache-bust). A reject is a UNIFORM 400 `avatar_rejected`
+   *  with no reason → the caller shows a GENERIC error, never a fabricated why. */
+  uploadAvatar(agentId: string, file: File): Promise<AgentDetail>
+  /** CYP-658 (operator). DELETE /api/agents/{id}/avatar — clear back to the initials/colour fallback. 204, idempotent,
+   *  no confirm token → the "reset to default?" confirm is the CLIENT's to own. */
+  removeAvatar(agentId: string): Promise<void>
 }
 
 export class RestHubRepo implements HubRepo {
   private readonly rest: RestClient
-  constructor(apiBase: string) {
+  constructor(private readonly apiBase: string) {
     this.rest = new RestClient(apiBase)
   }
   fetchAgents(): Promise<Agent[]> {
@@ -281,5 +296,26 @@ export class RestHubRepo implements HubRepo {
   updateClaudeMd(agentId: string, update: ClaudeMdUpdate): Promise<ClaudeMdView> {
     // The POST returns the fresh ClaudeMdView (content + new version) — the caller re-syncs baseline+version from it.
     return this.rest.post<ClaudeMdView>(`/api/agents/${encodeURIComponent(agentId)}/claude-md`, update)
+  }
+  setAvatarPreset(agentId: string, preset: Preset): Promise<Agent> {
+    // AgentEdit with ONLY avatar set (role omitted = preserve; avoids the last-PO guard false-positive). Returns the
+    // edited Agent so the caller re-syncs agent.avatar from the server (non-optimistic).
+    return this.rest.put<Agent>(`/api/agents/${encodeURIComponent(agentId)}`, { avatar: preset })
+  }
+  async uploadAvatar(agentId: string, file: File): Promise<AgentDetail> {
+    // Multipart — RestClient can't send FormData; a raw fetch mirroring its auth (operator Bearer if present, else the
+    // session cookie). NO content-type header → the browser sets multipart/form-data + the boundary.
+    const form = new FormData()
+    form.append('file', file, file.name)
+    const headers: Record<string, string> = { accept: 'application/json' }
+    const token = operatorToken()
+    if (token !== null) headers['authorization'] = `Bearer ${token}`
+    const path = `/api/agents/${encodeURIComponent(agentId)}/avatar`
+    const res = await fetch(`${this.apiBase}${path}`, { method: 'POST', headers, credentials: 'include', body: form })
+    if (!res.ok) throw new RestError(res.status, 'POST', path, await res.text().catch(() => ''))
+    return (await res.json()) as AgentDetail
+  }
+  async removeAvatar(agentId: string): Promise<void> {
+    await this.rest.delete<void>(`/api/agents/${encodeURIComponent(agentId)}/avatar`)
   }
 }
