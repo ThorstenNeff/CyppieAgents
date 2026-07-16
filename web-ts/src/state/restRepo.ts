@@ -25,6 +25,8 @@ import type {
   Capacity,
   CompactStatus,
   CompactConfig,
+  WorkspaceMember,
+  OperatorAudit,
 } from '../types/generated/contract'
 import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
 import type { ConnectorKind } from '../connector/connectorModel'
@@ -116,6 +118,13 @@ export interface HubRepo {
   /** CYP-649. POST /api/compact/config (OPERATOR, 403 else) — set allowed / threshold / timings. Non-optimistic: the
    *  UI reflects the server via a follow-up status read, never the local draft. Server range-validates (400). */
   setCompactConfig(config: CompactConfig): Promise<void>
+  /** CYP-650 (OPERATOR-only). GET /api/workspace/members — the workspace member roster ({identityId, tier,
+   *  displayName?}). Operator-only egress (enumeration seam): the caller mounts this only for an operator; a member
+   *  never fetches it. Rows show a SHORT non-identifying label + the tier text. */
+  getWorkspaceMembers(): Promise<WorkspaceMember[]>
+  /** CYP-650 (OPERATOR-only). GET /api/audit?limit — recent operator actions ({actor, method, path, tsMs}). Content-
+   *  free (verb + path, no bodies). Operator-only, same gate as the roster. */
+  getOperatorAudit(limit?: number): Promise<OperatorAudit[]>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -212,5 +221,11 @@ export class RestHubRepo implements HubRepo {
   }
   async setCompactConfig(config: CompactConfig): Promise<void> {
     await this.rest.post<unknown>('/api/compact/config', config)
+  }
+  getWorkspaceMembers(): Promise<WorkspaceMember[]> {
+    return this.rest.get<WorkspaceMember[]>('/api/workspace/members')
+  }
+  getOperatorAudit(limit = 200): Promise<OperatorAudit[]> {
+    return this.rest.get<OperatorAudit[]>(`/api/audit?limit=${encodeURIComponent(String(limit))}`)
   }
 }

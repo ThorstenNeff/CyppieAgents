@@ -44,7 +44,8 @@ import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
 import type { LifecycleAction } from './state/hubReducers'
-import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity, CompactStatus, CompactConfig } from './types/generated/contract'
+import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity, CompactStatus, CompactConfig, WorkspaceMember, OperatorAudit } from './types/generated/contract'
+import { WorkspaceRosterPanel } from './workspace/WorkspaceRosterPanel'
 import { CapacityPill } from './workspace/CapacityPill'
 import { CompactPanel } from './compact/CompactPanel'
 import { OverloadBanner } from './workspace/OverloadBanner'
@@ -61,6 +62,7 @@ const SETTINGS_WINDOW_ID = 'settings'
 const AGENT_MGMT_WINDOW_ID = 'agentMgmt'
 const PRODUCT_LEAD_WINDOW_ID = 'productLead'
 const COMPACT_WINDOW_ID = 'compact'
+const WORKSPACE_WINDOW_ID = 'workspace'
 
 const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
 
@@ -115,6 +117,10 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // CYP-649: the server-owned compact status. null = UNKNOWN (unresolved / load failed) → the panel renders facts +
   // editors ABSENT, never a defaulted idle/off. Refreshed on mount + polled while mounted (status moves as a run does).
   const [compactStatus, setCompactStatus] = useState<CompactStatus | null>(null)
+  // CYP-650: the OPERATOR-only workspace roster + recent operator-audit. Fetched (and the window mounted) ONLY for an
+  // operator — a member never enumerates the roster (the same egress seam as the event log).
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([])
+  const [operatorAudit, setOperatorAudit] = useState<OperatorAudit[]>([])
   // CYP-642: a REAL server overload reject (503 capacity_exceeded from a spawn/start) raises the banner; it
   // self-clears when headroom returns (overloadVisible) and is dismissable. A NEW reject un-dismisses (Q5).
   const [overloadActive, setOverloadActive] = useState(false)
@@ -178,6 +184,11 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     hubRepo.getRepoConfig().then(setRepoConfig).catch(() => undefined) // CYP-453 project repo config
     hubRepo.getProjects().then(setProjectsView).catch(() => undefined) // CYP-467 cross-project Event-Browse axis
     hubRepo.getCapacity().then(setCapacity).catch(() => undefined) // CYP-642 hub-capacity snapshot (MEMBER-tier)
+    if (operator) {
+      // CYP-650: operator-only egress — a member never fetches the roster/audit (enumeration seam).
+      hubRepo.getWorkspaceMembers().then(setWorkspaceMembers).catch(() => undefined)
+      hubRepo.getOperatorAudit().then(setOperatorAudit).catch(() => undefined)
+    }
     const live = startLiveHub(
       cfg,
       {
@@ -240,6 +251,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     if (agents.length > 0 && !present.has(ACL_WINDOW_ID)) wm.add(tiledWindow(ACL_WINDOW_ID, 'Zugriffsrechte (ACL)', index++), false)
     // CYP-432: the event log is OPERATOR-ONLY — a non-operator gets no event window at all (no bodies surface).
     if (agents.length > 0 && operator && !present.has(EVENT_WINDOW_ID)) wm.add(tiledWindow(EVENT_WINDOW_ID, 'Ereignis-Protokoll', index++), true)
+    // CYP-650: the workspace roster is OPERATOR-ONLY — a non-operator gets NO window at all (enumeration seam), not a
+    // gated panel. Mirrors the event-log omission.
+    if (agents.length > 0 && operator && !present.has(WORKSPACE_WINDOW_ID)) wm.add(tiledWindow(WORKSPACE_WINDOW_ID, 'Arbeitsbereich', index++), false)
     // CYP-452: Browse is the same operator-gated, content-free metadata as the live-tail → OPERATOR-ONLY window
     // (omission for a non-operator; no Browse route, no /api/events query, no bodies in the DOM). The real scope
     // boundary is server-side (resolveEventScope + masking); this client gate is defence-in-depth + product-scoping.
@@ -402,6 +416,11 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           onSetConnector={onSetConnector}
         />
       )
+    }
+    if (win.id === WORKSPACE_WINDOW_ID) {
+      // CYP-650: operator-only roster + audit. The window only exists for an operator (added above), so no in-panel
+      // gate is needed — the component just renders the operator-only data.
+      return <WorkspaceRosterPanel members={workspaceMembers} audit={operatorAudit} />
     }
     if (win.id === PRODUCT_LEAD_WINDOW_ID) {
       // CYP-464: operator-gated report surface. The panel itself fail-closes to the gate-hint for a non-operator

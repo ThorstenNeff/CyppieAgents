@@ -35,6 +35,8 @@ const repoWith = (putAcl: HubRepo['putAcl']): HubRepo => ({
   getCapacity: vi.fn(),
   getCompactStatus: vi.fn(),
   setCompactConfig: vi.fn(),
+  getWorkspaceMembers: vi.fn(),
+  getOperatorAudit: vi.fn(),
 })
 
 describe('commitAclChange (CYP-435 — pending lifecycle)', () => {
