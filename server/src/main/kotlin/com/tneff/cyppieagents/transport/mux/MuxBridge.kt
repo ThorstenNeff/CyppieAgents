@@ -30,8 +30,9 @@ import java.net.InetAddress
 class MuxBridge(
     private val loopbackPort: Int,
     private val loopbackHost: String = "127.0.0.1",
-    /** Injectable for tests; prod = a real loopback [RealBridgeSocket]. Dialed once per opened stream. */
-    private val socketFactory: (host: String, port: Int) -> BridgeSocket = ::RealBridgeSocket,
+    /** Injectable for tests; prod = a real loopback [RealBridgeSocket] whose blocking I/O runs on the dedicated
+     *  elastic `BridgeBlocking.dispatcher` (CYP-633), NOT the shared capped `Dispatchers.IO`. Dialed per opened stream. */
+    private val socketFactory: (host: String, port: Int) -> BridgeSocket = { h, p -> RealBridgeSocket(h, p) },
     private val maxStreams: Int = YamuxSession.DEFAULT_MAX_STREAMS,
 ) {
     init {
