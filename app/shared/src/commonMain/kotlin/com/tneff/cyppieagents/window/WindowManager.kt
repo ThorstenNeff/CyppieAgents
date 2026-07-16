@@ -590,15 +590,14 @@ fun FloatingWindow(
     /** CYP-324: this window's agent is busy (a turn in flight) → a `*` in the title bar; `false` → nothing (unknown ≠ busy). */
     busy: Boolean = false,
     /**
-     * CYP-656 substrate — this window's live-feed connection status, or **`null` = "no live feed"** (a system
-     * window like Settings/Comm, or an unwired host). **REQUIRED (no default) on purpose:** this is the render
-     * boundary where the busy-`*`/token-count markers live, so the compiler guarantees every caller states the
-     * freshness explicitly. "No info" is an explicit `null`, NEVER a silently-assumed [ConnectionStatus.LIVE] — that
-     * fail-open default is exactly the bug class CYP-656 closes. **Substrate only — NOT yet consumed here;** the
-     * CYP-656 bundle gates the markers on it (busy suppressed on non-LIVE like the CYP-573 dot; token greyed, not
-     * hidden). Rendering is deliberately unchanged until that ticket wires the gate.
+     * CYP-656 — this window's live-feed connection status, or **`null` = "no live feed"** (a system window like
+     * Settings/Comm, or an unwired host). **REQUIRED (no default) on purpose:** this is the render boundary where the
+     * busy-`*`/token-count freshness markers live, so the compiler guarantees every caller states the freshness
+     * explicitly. "No info" is an explicit `null`, NEVER a silently-assumed [ConnectionStatus.LIVE] — that fail-open
+     * default is exactly the bug class CYP-656 closes. Consumed here: the busy-`*` is suppressed on a non-LIVE feed
+     * (a stale discrete-state claim, like the CYP-573 dot); the token count's grey-on-non-LIVE lands in a follow-up
+     * commit on this ticket.
      */
-    @Suppress("unused")
     connection: ConnectionStatus?,
     /** CYP-354 (client mirror): this window's terminal-control event; `null`/MEDIATED-state → NO marker (absent ==
      *  MEDIATED, the default). Only a non-MEDIATED state shows the read-only §5.1 mode marker. CYP-381: carries
@@ -824,7 +823,15 @@ fun FloatingWindow(
                         // and coexists with the token count. Rendered ONLY when busy (Z1); `false`/no-event (idle / pre-
                         // first-turn / unknown) shows NOTHING — never a stale `*` (unknown ≠ busy). The a11y label carries
                         // the meaning (never colour/glyph alone).
-                        if (busy) {
+                        //
+                        // CYP-656: ALSO gate on a LIVE feed. The busy flag is held last-known across a WS drop (its
+                        // socket doesn't reset it), so across a real server/hub restart a `*` could keep asserting
+                        // "running a turn" for an already-stopped agent through the reconnect gap. `*` is a DISCRETE
+                        // state claim — it lies, exactly like the CYP-573 dot did. Fail closed: only assert busy while
+                        // the feed is [ConnectionStatus.LIVE]; on a non-LIVE (or absent = `null`) feed suppress it —
+                        // "unknown ≠ busy" extended to "not-confirmably-fresh ≠ busy" (the reconnecting chip carries the
+                        // freshness signal in the body). A stale `*` is never shown.
+                        if (busy && connection == ConnectionStatus.LIVE) {
                             val busyCd = stringResource(Res.string.a11y_agent_busy, window.title)
                             Text(
                                 text = "*",
