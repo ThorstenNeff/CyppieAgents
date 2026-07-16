@@ -15,6 +15,8 @@ import {
   applyRunState,
   setLifecyclePending,
   clearLifecyclePending,
+  applyBusyState,
+  applyTokenUsage,
   type HubState,
   type CommConnection,
   type LifecycleAction,
@@ -27,6 +29,8 @@ import type {
   CommWsServerEvent,
   AgentTerminalControlEvent,
   AgentRunStateEvent,
+  AgentBusyStateEvent,
+  AgentTokenUsageEvent,
 } from '../types/generated/contract'
 import type { AclDimension } from '../comm/aclModel'
 
@@ -43,6 +47,8 @@ export interface HubStore extends HubState {
   onRunState: (event: AgentRunStateEvent) => void
   markLifecyclePending: (agentId: string, action: LifecycleAction) => void
   clearLifecyclePending: (agentId: string) => void
+  onBusyState: (event: AgentBusyStateEvent) => void
+  onTokenUsage: (event: AgentTokenUsageEvent) => void
 }
 
 export const useHubStore = create<HubStore>((set) => ({
@@ -59,4 +65,6 @@ export const useHubStore = create<HubStore>((set) => ({
   onRunState: (event) => set((s) => applyRunState(s, event)),
   markLifecyclePending: (agentId, action) => set((s) => setLifecyclePending(s, agentId, action)),
   clearLifecyclePending: (agentId) => set((s) => clearLifecyclePending(s, agentId)),
+  onBusyState: (event) => set((s) => applyBusyState(s, event)),
+  onTokenUsage: (event) => set((s) => applyTokenUsage(s, event)),
 }))

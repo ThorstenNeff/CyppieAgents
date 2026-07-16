@@ -89,4 +89,31 @@ describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
     feed.emitMessage(JSON.stringify({ type: 'caughtup' }))
     expect(onEventsEvent).toHaveBeenCalledWith({ type: 'caughtup' })
   })
+
+  it('CYP-641: mounts /ws/busy-state + /ws/token-usage with the token and folds their events', () => {
+    const hub = new FakeSocketHub()
+    const onBusyState = vi.fn()
+    const onTokenUsage = vi.fn()
+    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onBusyState, onTokenUsage }, { factory: hub.factory, schedule: hub.runNow })
+
+    const busy = socketFor(hub, '/ws/busy-state')
+    expect(busy.url).toContain('token=tok')
+    busy.emitOpen()
+    busy.emitMessage(JSON.stringify({ agentId: 'backend', busy: true }))
+    expect(onBusyState).toHaveBeenCalledWith({ agentId: 'backend', busy: true })
+
+    const tokens = socketFor(hub, '/ws/token-usage')
+    expect(tokens.url).toContain('token=tok')
+    tokens.emitOpen()
+    tokens.emitMessage(JSON.stringify({ agentId: 'backend', contextTokens: 4200 }))
+    expect(onTokenUsage).toHaveBeenCalledWith({ agentId: 'backend', contextTokens: 4200 })
+  })
+
+  it('CYP-641: stop() closes the busy + token-usage sockets (no leak under StrictMode remount)', () => {
+    const hub = new FakeSocketHub()
+    const handle = startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onBusyState: vi.fn(), onTokenUsage: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
+    handle.stop()
+    expect(socketFor(hub, '/ws/busy-state').closed).toBe(true)
+    expect(socketFor(hub, '/ws/token-usage').closed).toBe(true)
+  })
 })

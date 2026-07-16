@@ -16,6 +16,8 @@ import { WindowHost } from './windowmgr/WindowHost'
 import { WindowFrame } from './windowmgr/WindowFrame'
 import { useWindowStore } from './windowmgr/windowStore'
 import type { WindowState } from './windowmgr/windowState'
+import { deriveWindowActivity } from './windowmgr/activityBadge'
+import { WindowActivityBadge } from './windowmgr/WindowActivityBadge'
 import { useHubStore } from './state/hubStore'
 import { rosterPoAgentId } from './state/hubReducers'
 import { readHubConfig, type HubConfig, type SocketDeps } from './state/hubConfig'
@@ -88,6 +90,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const onRunState = useHubStore((s) => s.onRunState)
   const markLifecyclePending = useHubStore((s) => s.markLifecyclePending)
   const clearLifecyclePending = useHubStore((s) => s.clearLifecyclePending)
+  const onBusyState = useHubStore((s) => s.onBusyState)
+  const onTokenUsage = useHubStore((s) => s.onTokenUsage)
   const [aclError, setAclError] = useState<string | null>(null)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [commSendError, setCommSendError] = useState<string | null>(null)
@@ -118,6 +122,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const runStateByAgent = useHubStore((s) => s.runStateByAgent)
   const errorCodeByAgent = useHubStore((s) => s.errorCodeByAgent)
   const lifecyclePending = useHubStore((s) => s.lifecyclePending)
+  const busyByAgent = useHubStore((s) => s.busyByAgent)
+  const contextTokensByAgent = useHubStore((s) => s.contextTokensByAgent)
 
   // CYP-432: the event log is its own store (separate from the hub state). OPERATOR-ONLY: it carries message
   // bodies, so the whole surface (window + socket + data) is gated on operator — defence-in-depth, not just
@@ -160,6 +166,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           onRunState(ev)
           setAgentLifecycleError(ev.agentId, null)
         },
+        // CYP-641: the two activity feeds fold straight into the store (no bodies → no operator gate).
+        onBusyState,
+        onTokenUsage,
         // CYP-432 fail-closed: wire the /ws/events handlers ONLY for an operator → a non-operator never opens the
         // bodies-carrying socket (liveHub skips it when onEventsEvent is absent).
         onEventsEvent: operator ? onEventsEvent : undefined,
@@ -430,9 +439,28 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     return null
   }
 
+  // CYP-641: the per-window live activity badge — only for agent windows (id `agent:<id>`); other windows get none.
+  // Fail-closed: deriveWindowActivity returns null when nothing is known → no accessory.
+  const activityAccessory = (win: WindowState): React.ReactNode => {
+    if (!win.id.startsWith(AGENT_PREFIX)) return null
+    const agentId = win.id.slice(AGENT_PREFIX.length)
+    const activity = deriveWindowActivity({
+      runState: runStateByAgent.get(agentId),
+      busy: busyByAgent.get(agentId) ?? false,
+      contextTokens: contextTokensByAgent.get(agentId),
+    })
+    return activity === null ? null : <WindowActivityBadge title={win.title} activity={activity} />
+  }
+
   return (
     <div className="app-root" data-testid="app-root">
-      <WindowHost>{(win) => <WindowFrame window={win}>{renderContent(win)}</WindowFrame>}</WindowHost>
+      <WindowHost>
+        {(win) => (
+          <WindowFrame window={win} titleAccessory={activityAccessory(win)}>
+            {renderContent(win)}
+          </WindowFrame>
+        )}
+      </WindowHost>
     </div>
   )
 }

@@ -13,6 +13,8 @@ import type {
   CommWsServerEvent,
   AgentTerminalControlEvent,
   AgentRunStateEvent,
+  AgentBusyStateEvent,
+  AgentTokenUsageEvent,
 } from '../types/generated/contract'
 import { pendingKey, type AclDimension, type PendingAcl } from '../comm/aclModel'
 import type { TerminalControlState } from '../agentview/terminalModeSelection'
@@ -52,6 +54,12 @@ export interface HubState {
   /** a lifecycle request in flight per agent (CYP-431) — transient "Startet…/Neustart…", cleared by the next
    *  AgentRunStateEvent. Non-optimistic: the STATE flips only on that event, never on the click. */
   lifecyclePending: ReadonlyMap<string, LifecycleAction>
+  /** CYP-641: the live `/ws/busy-state` flag per agent (drives the window-title activity marker). Absent → not busy
+   *  (unknown ≠ busy); only an explicit busy=true lights it, an explicit false clears it. */
+  busyByAgent: ReadonlyMap<string, boolean>
+  /** CYP-641: the live `/ws/token-usage` context-token count per agent (drives the title-bar number). Absent OR a
+   *  null value → no number (unknown ≠ 0). */
+  contextTokensByAgent: ReadonlyMap<string, number | null>
 }
 
 export const emptyHubState: HubState = {
@@ -66,6 +74,8 @@ export const emptyHubState: HubState = {
   runStateByAgent: new Map(),
   errorCodeByAgent: new Map(),
   lifecyclePending: new Map(),
+  busyByAgent: new Map(),
+  contextTokensByAgent: new Map(),
 }
 
 /** Fold a /ws/lifecycle event: the server-confirmed run-state for one agent, which also RESOLVES any pending
@@ -191,4 +201,21 @@ export function applyTerminalControl(state: HubState, ev: AgentTerminalControlEv
   const terminalStateByAgent = new Map(state.terminalStateByAgent)
   terminalStateByAgent.set(ev.agentId, ev.state)
   return { ...state, terminalStateByAgent }
+}
+
+/** CYP-641: fold a /ws/busy-state event — the live "is this agent working" flag. An explicit false is STORED (not
+ *  deleted) so it authoritatively clears a prior true; an agent never seen stays absent (→ the derive reads it as
+ *  not busy). Fail-closed: unknown ≠ busy. */
+export function applyBusyState(state: HubState, ev: AgentBusyStateEvent): HubState {
+  const busyByAgent = new Map(state.busyByAgent)
+  busyByAgent.set(ev.agentId, ev.busy)
+  return { ...state, busyByAgent }
+}
+
+/** CYP-641: fold a /ws/token-usage event — the live context-token count. Stores `contextTokens ?? null`; a null (or
+ *  an omitted field) authoritatively means "no number" (unknown ≠ 0), so the title bar shows nothing for it. */
+export function applyTokenUsage(state: HubState, ev: AgentTokenUsageEvent): HubState {
+  const contextTokensByAgent = new Map(state.contextTokensByAgent)
+  contextTokensByAgent.set(ev.agentId, ev.contextTokens ?? null)
+  return { ...state, contextTokensByAgent }
 }

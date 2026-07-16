@@ -3,12 +3,14 @@
 // The socket factory/scheduler are injectable (SocketDeps) so tests drive the whole VM with fake sockets — no
 // real WebSocket. Returns a stop() that closes both sockets (called on App unmount). Per-agent /ws/agent and
 // /ws/terminal sockets are owned by the agent windows themselves (one socket per mounted window), not here.
-import { commSocket, terminalStateFeed, lifecycleFeed, eventsSocket } from '../net/channels'
+import { commSocket, terminalStateFeed, lifecycleFeed, busyStateFeed, tokenUsageFeed, eventsSocket } from '../net/channels'
 import type { HubConfig, SocketDeps } from './hubConfig'
 import type {
   CommWsServerEvent,
   AgentTerminalControlEvent,
   AgentRunStateEvent,
+  AgentBusyStateEvent,
+  AgentTokenUsageEvent,
   EventsWsServerEvent,
 } from '../types/generated/contract'
 
@@ -21,6 +23,10 @@ export interface HubActions {
   onCommClose?: (code?: number) => void
   /** server-confirmed per-agent run-state — drives the CYP-431 lifecycle header (non-optimistic). */
   onRunState?: (event: AgentRunStateEvent) => void
+  /** CYP-641: live per-agent busy flag (/ws/busy-state) — drives the window-title activity marker. */
+  onBusyState?: (event: AgentBusyStateEvent) => void
+  /** CYP-641: live per-agent context-token count (/ws/token-usage) — drives the title-bar number. */
+  onTokenUsage?: (event: AgentTokenUsageEvent) => void
   /** /ws/events feed (replay + Caughtup) — drives the CYP-432 event log. Provided ONLY for an operator: the event
    *  log carries message bodies (operator-only egress), so a non-operator must never open this socket (CYP-432). */
   onEventsEvent?: (event: EventsWsServerEvent) => void
@@ -37,9 +43,16 @@ export function startLiveHub(config: HubConfig, actions: HubActions, deps: Socke
   const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen, onClose: actions.onCommClose })
   const terminal = terminalStateFeed({ ...common, onEvent: actions.onTerminalControl })
   const lifecycle = lifecycleFeed({ ...common, onEvent: (e) => actions.onRunState?.(e) })
+  // CYP-641: the two read-only activity feeds — one global socket each, upserted by agentId in the store. Mounted
+  // unconditionally (participant-gated by the server, same bearer as lifecycle); they carry no message bodies, so
+  // no operator gate is needed (unlike /ws/events).
+  const busy = busyStateFeed({ ...common, onEvent: (e) => actions.onBusyState?.(e) })
+  const tokenUsage = tokenUsageFeed({ ...common, onEvent: (e) => actions.onTokenUsage?.(e) })
   comm.start()
   terminal.start()
   lifecycle.start()
+  busy.start()
+  tokenUsage.start()
 
   // CYP-432 fail-closed: only OPEN /ws/events when the caller wired onEventsEvent (operator). A non-operator never
   // starts the bodies-carrying socket at all — the client mount-gate is load-bearing defence-in-depth.
@@ -54,6 +67,8 @@ export function startLiveHub(config: HubConfig, actions: HubActions, deps: Socke
       comm.close()
       terminal.close()
       lifecycle.close()
+      busy.close()
+      tokenUsage.close()
       events?.close()
     },
   }
