@@ -35,6 +35,7 @@ import { EventBrowsePanel } from './eventlog/EventBrowsePanel'
 import { useEventLogStore } from './eventlog/eventLogStore'
 import { tailView } from './eventlog/eventLog'
 import { AgentManagementPanel } from './agentmgmt/AgentManagementPanel'
+import { AgentSettingsPanel } from './agentsettings/AgentSettingsPanel'
 import type { ConnectorKind } from './connector/connectorModel'
 import { ProductLeadPanel } from './report/ProductLeadPanel'
 import type { ReportType } from './report/productLeadModel'
@@ -64,6 +65,7 @@ const EVENT_WINDOW_ID = 'events'
 const EVENT_BROWSE_WINDOW_ID = 'eventBrowse'
 const SETTINGS_WINDOW_ID = 'settings'
 const AGENT_MGMT_WINDOW_ID = 'agentMgmt'
+const AGENT_SETTINGS_WINDOW_ID = 'agentSettings'
 const PRODUCT_LEAD_WINDOW_ID = 'productLead'
 const COMPACT_WINDOW_ID = 'compact'
 const WORKSPACE_WINDOW_ID = 'workspace'
@@ -286,6 +288,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     // CYP-450: the agent-management window is present for EVERYONE — the roster/list is ungated display; the panel
     // gates add/edit/remove on operator internally (present-but-disabled), never omission.
     if (agents.length > 0 && !present.has(AGENT_MGMT_WINDOW_ID)) wm.add(tiledWindow(AGENT_MGMT_WINDOW_ID, 'Agenten-Verwaltung', index++), false)
+    // CYP-657: per-agent settings (colour / CLAUDE.md / worktree path) — present for EVERYONE; the panel gates the
+    // mutations on operator (present-but-disabled + gate hint), the display is ungated. Mirrors agent-management.
+    if (agents.length > 0 && !present.has(AGENT_SETTINGS_WINDOW_ID)) wm.add(tiledWindow(AGENT_SETTINGS_WINDOW_ID, 'Agenten-Einstellungen', index++), false)
     // CYP-464: Product-Lead report window is present for everyone; the panel fail-closes to the gate-hint (no trigger/
     // list/fetch) for a non-operator — reports are content-free, so this is present-but-gate-hint, not omission (§3).
     if (agents.length > 0 && !present.has(PRODUCT_LEAD_WINDOW_ID)) wm.add(tiledWindow(PRODUCT_LEAD_WINDOW_ID, 'Product-Lead', index++), false)
@@ -413,6 +418,11 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const fetchAgentDetailForEdit = (id: string) =>
     hubRepo.fetchAgentDetail(id).then((d) => ({ role: d.role, persona: d.persona, launch: d.launch }))
 
+  // CYP-657: save just the display colour (AgentEdit.color). Non-optimistic — refetch the roster so the accent
+  // reflects the server. Restart-deferred like every AgentEdit (the panel shows the amber effect hint on success).
+  const onSaveAgentColor = (id: string, color: string): Promise<void> =>
+    hubRepo.updateAgent(id, { color }).then(refreshRoster)
+
   // CYP-453: repo config save. Non-optimistic — the returned view refreshes the status/prefill; a reject rejects the
   // promise so the RepoSection surfaces the server code (invalid_repo_url) on its error line.
   const onSaveRepo = (req: RepoConfigRequest): Promise<void> => hubRepo.putRepoConfig(req).then((v) => setRepoConfig(v))
@@ -454,6 +464,21 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           fetchDetail={fetchAgentDetailForEdit}
           getConnectors={() => hubRepo.getConnectors()}
           onSetConnector={onSetConnector}
+        />
+      )
+    }
+    if (win.id === AGENT_SETTINGS_WINDOW_ID) {
+      // CYP-657: per-agent settings (colour / CLAUDE.md conflict / worktree path). present-but-disabled for a member;
+      // the roster is the typed Agent[] source. previewSurface is illustrative (the contrast guard checks BOTH themes).
+      return (
+        <AgentSettingsPanel
+          agents={roster}
+          operator={operator}
+          previewSurface={themeMode === 'dark' ? 'dark' : 'light'}
+          fetchDetail={(id) => hubRepo.fetchAgentDetail(id)}
+          onSaveColor={onSaveAgentColor}
+          getClaudeMd={(id) => hubRepo.getClaudeMd(id)}
+          updateClaudeMd={(id, content, ev) => hubRepo.updateClaudeMd(id, { content, expectedVersion: ev })}
         />
       )
     }

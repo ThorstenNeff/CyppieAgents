@@ -37,6 +37,8 @@ const repoWith = (putAcl: HubRepo['putAcl']): HubRepo => ({
   setCompactConfig: vi.fn(),
   getWorkspaceMembers: vi.fn(),
   getOperatorAudit: vi.fn(),
+  getClaudeMd: vi.fn(),
+  updateClaudeMd: vi.fn(),
   createProject: vi.fn(),
   switchProject: vi.fn(),
   renameProject: vi.fn(),

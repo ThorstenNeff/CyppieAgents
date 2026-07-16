@@ -1295,3 +1295,144 @@ body {
 .window-badge-severity {
   background: var(--md-sys-color-surface-variant);
 }
+
+/* CYP-657 (P9) — Per-Agent-Settings panel. Present-but-disabled gate (neutral), amber effect-hint ("saved ≠ active",
+   WARN role, never success-green), error role for invalid-hex/save-error, error-container for the destructive
+   overwrite. Colour is never the sole signal (the swatch selection carries a ✓ + ring; the severity/advisory carry
+   text). Disclosure/error/advisory text wraps, never ellipsis. Tokens resolve in both themes. */
+.agent-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.agent-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.agent-settings-picker-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-settings-gate {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.agent-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 6px;
+  padding: 8px;
+}
+.agent-settings-section h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.agent-settings-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.agent-settings-swatch {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 6px;
+  cursor: pointer;
+  color: #000;
+  font-weight: 700;
+}
+/* selection carries a ring + ✓ glyph — never colour alone (WCAG 1.4.1). */
+.agent-settings-swatch.selected {
+  outline: 2px solid var(--md-sys-color-on-surface);
+  outline-offset: 1px;
+}
+.agent-settings-swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.agent-settings-hex {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.agent-settings-hint {
+  margin: 0;
+  white-space: normal;
+}
+.agent-settings-error {
+  color: var(--md-sys-color-error);
+}
+/* advisory (degraded contrast) — amber WARN, informational not blocking. */
+.agent-settings-advisory {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  padding: 2px 6px;
+}
+/* saved ≠ active → amber restart hint (never success-green). */
+.agent-settings-effect {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+  padding: 2px 6px;
+}
+.agent-settings-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.agent-settings-preview-name {
+  font-weight: 600;
+}
+.agent-settings-preview-swatch {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 50%;
+}
+.agent-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-settings-persona-input {
+  min-height: 120px;
+  font-family: monospace;
+  resize: vertical;
+}
+.agent-settings-loaderror {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-settings-worktree-path {
+  display: block;
+  overflow-x: auto;
+  white-space: pre;
+  padding: 4px 6px;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: 4px;
+}
+/* the conflict dialog is a fail-closed alertdialog — the destructive overwrite is error-toned + clearly named. */
+.agent-settings-conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--md-sys-color-error);
+  border-radius: 6px;
+  padding: 8px;
+}
+.agent-settings-conflict h4 {
+  margin: 0;
+}
+.agent-settings-destructive {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}

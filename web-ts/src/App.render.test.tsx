@@ -57,6 +57,8 @@ const fakeRepo = (): HubRepo => ({
   setCompactConfig: vi.fn().mockResolvedValue(undefined),
   getWorkspaceMembers: vi.fn().mockResolvedValue([]),
   getOperatorAudit: vi.fn().mockResolvedValue([]),
+  getClaudeMd: vi.fn().mockResolvedValue({ agentId: 'a', content: '', exists: false }),
+  updateClaudeMd: vi.fn().mockResolvedValue({ agentId: 'a', content: '', exists: true, version: 'v1' }),
   createProject: vi.fn().mockResolvedValue({ id: 'p2', name: 'P2' }),
   switchProject: vi.fn().mockResolvedValue({ activeProjectId: 'p2', projects: [] }),
   renameProject: vi.fn().mockResolvedValue({ id: 'p1', name: 'renamed' }),
