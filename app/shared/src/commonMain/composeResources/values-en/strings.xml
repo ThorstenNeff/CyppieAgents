@@ -789,4 +789,10 @@
     <string name="a11y_remote_pop_uv_coverage">Note: one confirmation authorizes the hubs opened now.</string>
     <string name="remote_pop_biometric_offer">%1$s available — set it up for faster confirmation?</string>
     <string name="remote_pop_biometric_offer_fallback">Your app PIN/passphrase stays as a fallback.</string>
+    <!-- CYP-629 First-Run operator setup (docs/design/first-run-setup-keys.md) -->
+    <string name="first_run_title">Set up your hub</string>
+    <string name="first_run_intro">Your hub is installed and running — but not configured yet. Set the API key and repository, then your team can work.</string>
+    <string name="first_run_degraded_note">This is normal for a fresh hub: it's already running, but it can't start any agents until the key and repository are set.</string>
+    <string name="first_run_skip">Set up later</string>
+    <string name="first_run_skip_note">You can do this anytime in Project Settings. Until then the hub runs but can't start any agents.</string>
 </resources>
