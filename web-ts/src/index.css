@@ -14,9 +14,22 @@ body,
   height: 100%;
 }
 
+/* CYP-631 — #root hosts EITHER the self-centering `.auth-screen` (login/loading/verify: own min-height:100vh +
+   place-items:center) OR, once authed, the AuthGate fragment `[.auth-session-status, .app-root]`. The old
+   `display:grid; place-items:center` centered EVERY direct child to its content size — harmless for the login
+   card (it self-sizes to 100vh and centers internally) but fatal for `.app-root`: content-sized in an auto grid
+   row it collapsed, so `.window-host{height:100%}` resolved against ~0 and every agent window was clipped to
+   nothing. A flex column lets the session-status strip keep its natural height and `.app-root` grow into the
+   rest; the login screen — the sole child in its state — still fills the viewport and centers itself, so login
+   centering is untouched. jsdom computes no layout, so this bug was invisible to vitest — it is browser-verified
+   (F2 seeded-server + an isolated headless-Chrome layout harness). */
 #root {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+}
+.app-root {
+  flex: 1 1 auto;
+  min-height: 0; /* let the flex child shrink so its own overflow container (WindowHost) governs, not #root */
 }
 
 /* CYP-404 (W6) / CYP-423 — the transcript's native-scrolling container + a thin scrollbar (parity of CYP-392).
