@@ -85,6 +85,19 @@ class Cyp629CloneStatusDisplayTest {
     }
 
     @Test
+    fun cloning_slowLine_appearsOnlyAfterThreshold() = runComposeUiTest {
+        // §4.4: the "still cloning — can take minutes" line is a life-sign after a threshold, NOT before (a fast clone
+        // must not be over-warned) and NOT a timeout (the state stays CLONING — the failure invariant is elsewhere).
+        mainClock.autoAdvance = false
+        setContent { MaterialTheme { CloneStatusDisplay(status(CloneStatus.CLONING)) } }
+        mainClock.advanceTimeBy(100) // first frame
+        onNodeWithTag(FirstRunTags.REPO_CLONING).assertExists()
+        onNodeWithTag(FirstRunTags.REPO_CLONING_SLOW).assertDoesNotExist() // not before the threshold
+        mainClock.advanceTimeBy(CLONE_SLOW_THRESHOLD_MS + 1_000)
+        onNodeWithTag(FirstRunTags.REPO_CLONING_SLOW).assertExists() // appears after the threshold
+    }
+
+    @Test
     fun notConfigured_showsNoCloneState() = runComposeUiTest {
         setContent { MaterialTheme { CloneStatusDisplay(status(CloneStatus.NOT_CONFIGURED)) } }
         onNodeWithTag(FirstRunTags.REPO_CLONING).assertDoesNotExist()
