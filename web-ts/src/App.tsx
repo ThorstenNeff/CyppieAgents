@@ -38,7 +38,8 @@ import { ProductLeadPanel } from './report/ProductLeadPanel'
 import type { ReportType } from './report/productLeadModel'
 // CYP-453: App renders SettingsPanel (which frames the CYP-433 ApiKeyPanel internally) — no direct ApiKeyPanel here.
 import { SettingsPanel } from './settings/SettingsPanel'
-import { loadHistorySize, browserStore } from './agentview/historySizePreference'
+import { loadHistorySize, saveHistorySize, browserStore } from './agentview/historySizePreference'
+import { ComposerHistoryStepper } from './agentview/ComposerHistoryStepper'
 import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
@@ -116,6 +117,10 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // CYP-643: the app-global theme mode (client-local, per-user, durable). Loaded once from localStorage; applied to
   // <html> via data-theme (the tokens CSS recolours). system = no attribute → prefers-color-scheme governs.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode(browserStore()))
+  // CYP-645: the ONE global composer input-history size N (recall depth). Held here for the stepper's display; the
+  // composers read it live via their loadHistorySize() supplier (localStorage is the shared source, so a save is
+  // picked up on the next recall — no prop threading).
+  const [historySizeValue, setHistorySizeValue] = useState<number>(() => loadHistorySize(browserStore()))
   // CYP-445: per-agent transient lifecycle-action reject notice (separate from the agent's ERROR run-state).
   const [lifecycleError, setLifecycleError] = useState<ReadonlyMap<string, string>>(new Map())
   const setAgentLifecycleError = (agentId: string, message: string | null) =>
@@ -255,6 +260,10 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     setThemeMode(mode)
     saveThemeMode(browserStore(), mode)
   }
+
+  // CYP-645: change + persist N. saveHistorySize clamps (0..MAX) and returns the clamped value — the single source of
+  // truth for both the display and the composers' live supplier.
+  const onHistorySizeChange = (n: number) => setHistorySizeValue(saveHistorySize(browserStore(), n))
 
   // CYP-431: non-optimistic lifecycle. The click marks a transient pending; the run-state flips only on the
   // server's AgentRunStateEvent (the POST response, mirrored by /ws/lifecycle) — both resolve the pending. A
@@ -517,6 +526,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
       <div className="workspace-bar" data-testid="workspace-bar">
         {capacity != null && <CapacityPill capacity={capacity} />}
         <div className="workspace-bar-spacer" />
+        {/* CYP-645 composer-history stepper + CYP-643 theme toggle — same personal, ungated trailing-slot family. */}
+        <ComposerHistoryStepper size={historySizeValue} onChange={onHistorySizeChange} />
         <ThemeToggle mode={themeMode} onChange={onThemeChange} />
       </div>
       {overloadVisible(overloadActive, overloadDismissed, capacity) && (

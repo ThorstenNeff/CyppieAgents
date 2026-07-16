@@ -932,3 +932,33 @@ body {
 .handoff-text {
   min-width: 0;
 }
+
+/* CYP-645 (Epic CYP-640) — the composer input-history-size stepper in the workspace bar (personal, ungated; same
+   trailing-slot family as the theme toggle). [−] N [+]; disabled buttons at the bounds. Neutral tone. */
+.composer-history-stepper {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.chs-value {
+  min-width: 2.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.chs-btn {
+  min-width: 24px;
+  min-height: 24px; /* WCAG 2.5.8 target size */
+  cursor: pointer;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 4px;
+  line-height: 1;
+}
+.chs-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
