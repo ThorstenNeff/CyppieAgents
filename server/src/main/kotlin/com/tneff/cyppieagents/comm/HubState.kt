@@ -102,6 +102,20 @@ class HubState(
      * hub of hub-and-spoke; if a change would strip its read or write on any spoke it hubs, we reject
      * with 409 and commit nothing. Legitimate worker toggles are untouched. The candidate matrix is
      * reused for the commit, so the checked state and the persisted state cannot drift.
+     *
+     * ★ CYP-663 — ACCEPTED EDGE (Auftraggeber decision, 2026-07-16; do NOT "fix" this unprompted). This guard covers
+     * **`po.id` ONLY**. The **operator** ACL column ([HubState.OPERATOR_ID]) is togglable via `PUT /api/acl` WITHOUT a
+     * guardrail and IS reachable from the UI — real, not cosmetic. It is accepted because **recovery is structurally
+     * guaranteed**: `PUT /api/acl` is gated on `AuthRole.OPERATOR` (`CommRoutes.kt:225`), and that role is **runtime-
+     * IMMUTABLE** (`RoleStore` has no setter; there is no role-mutation endpoint). So the comm-ACL — which is ALL this
+     * guard concerns — is NOT the operator's admin seam, and no comm-ACL toggle can permanently brick the operator
+     * (a self-toggled operator column is a recoverable comm-visibility degradation, re-granted via `PUT /api/acl`).
+     * Two-net verified (this team's measurement + Team-2's Backend2, independent; Team-2 live probe: 200 observed / 409
+     * control). Long-form: **CYP-663**. No re-litigate without the Auftraggeber.
+     *
+     * ★ NOTE (the confusion that triggered the two-net read): `PlatformWiring.kt:448` (CYP-186 operator-**TOKEN**
+     * kill-switch — "effective only once a role-OPERATOR exists") is a **DIFFERENT seam**, **NOT** this guard. The two
+     * comments both read like "a guard"; they are not the same one. This note nails that down so the detour is paid once.
      */
     fun setAcl(entry: AclEntry): AclEntry = synchronized(lock) {
         // CYP-188: single-source the tenant scope — a `PUT /api/acl` grant is ALWAYS for the active project, so
