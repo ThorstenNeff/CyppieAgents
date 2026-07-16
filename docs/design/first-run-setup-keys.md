@@ -67,7 +67,11 @@
 | Key | DE | EN |
 |---|---|---|
 | `agent_ctl_unconfigured` | Agent kann nicht starten, solange der Hub nicht eingerichtet ist (API-Key + Repository). Jetzt einrichten. | An agent can't start until the hub is set up (API key + repository). Set it up now. |
-| `a11y_agent_ctl_unconfigured` | Start nicht möglich: Hub nicht eingerichtet. | Can't start: hub not configured. |
+| `a11y_agent_ctl_unconfigured` | nicht verfügbar — Hub nicht eingerichtet (API-Key + Repository) | unavailable — hub not configured (API key + repository) |
+
+> **`a11y_agent_ctl_unconfigured`** ist als **`stateDescription`** des Start-Controls formuliert (a11y-spec §1):
+> der SR liest „Start, <stateDescription>" = „Start — nicht verfügbar: Hub nicht eingerichtet …". Deshalb ohne
+> führendes „Start" (kein „Start … Start nicht möglich"-Doppel) und kleingeschrieben (Anschluss an den Label).
 
 > **`agent_ctl_unconfigured`** reiht sich in die **bestehende `agent_ctl_*`-Familie** ein (Reuse-konsistent,
 > nicht divergent). Eine Copy, zwei Flächen: pre-emptiver disabled-Reason am Start-Control (`GATED`) **und**

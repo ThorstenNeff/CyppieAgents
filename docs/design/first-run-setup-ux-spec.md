@@ -4,7 +4,7 @@
 > Status: **Vorschlag — wartet auf Dev-Gegenlesen + Backend-Seam-Bau (§7)** · **Design/Spec, kein Code.**
 > Gegroundet READ-ONLY gg. develop `2f664e33` (Endpunkte/Reuse) + PO-Code-Befund (`ConfigRoutes.kt:44-64`,
 > `BootOrchestrator.kt:305`). Eingefrorene Companion-Files (Haus-Konvention): `first-run-setup-keys.md` ·
-> `first-run-setup-tags.md` · `first-run-setup-tokens.json`.
+> `first-run-setup-tags.md` · `first-run-setup-tokens.json` · `first-run-setup-a11y.md` (a11y/Interaktion).
 
 ---
 
@@ -403,20 +403,12 @@ identisch zu deiner approved Formulierung; nur die Ticket-Nummer ist aus dem sic
   gegenlesen. Kein unilateraler Umbau; Ton + Ehrlichkeit sind der Kern.
 - **Backend:** der §7-Seam (`cloneStatus`/`cloneReason` auf `RepoConfigView`, prompter Clone-Trigger,
   fail-closed). **Consumer-driven, PO routet.**
-- **UIUX2 (Interaktion/a11y, über PO) — konkreter Ask:**
-  1. **Fokus beim Gate-Öffnen/Schritt-Wechsel:** wohin landet der Fokus beim Gate-Auftakt und bei jedem
-     Schritt-Übergang (erster offener Schritt, nicht zurück auf Titel).
-  2. **Live-Region-Politeness (bestätigen/verfeinern):** Clone-Status-Transitionen **Polite**, Clone-**Fehler
-     Assertive**, Key/Repo-Bestätigungen **Polite**, Banner-Erstauftritt **Polite**, `agent_ctl_unconfigured`
-     **Polite** (kein Assertive — es ist kein Fehler).
-  3. **★ GATED-Start-Control:** der Grund muss **programmatisch mit dem deaktivierten Control assoziiert** sein
-     (nicht nur visuell daneben) — ein Screenreader-Nutzer muss beim Fokus auf „Start" **hören, warum** es
-     nicht geht. Das ist die a11y-kritischste Stelle (§6.3c).
-  4. **Nag-Fix-Interaktion (§6.3a):** Fokus-/Announce-Verhalten beim Einklappen Banner→Chip und beim
-     Chip-Tap→Wiederaufklappen (kein Fokus-Klau, kein wiederholtes Announce beim passiven Chip).
-  5. **CTA-Fokusordnung:** `first_run_skip` / `workspace_setup_resume` dürfen nicht der erste Tab-Stop sein
-     (kein versehentliches Skippen/Re-Öffnen). Tastatur-Durchlauf des Steppers.
-  (Flächen-Split über den PO.)
+- **a11y/Interaktion (PO-zugewiesen 2026-07-16 — MEINE Fläche, First-Run = Team-1-Scope):** vollständig
+  spezifiziert in der Companion **`first-run-setup-a11y.md`**. Die 5 Punkte: (1) Gate-/Schritt-Fokus; (2)
+  Live-Region-Politeness (Clone-Fehler Assertive, Rest Polite, `agent_ctl_unconfigured` Polite, Chip stumm);
+  (**★3**) der `GATED`-Grund **programmatisch am Control** (Merge-Gruppe + `stateDescription`, nicht daneben) —
+  die a11y-kritischste Stelle; (4) Nag-Fix-Einklapp-Fokus; (5) CTA-Fokusordnung (Skip/Resume nie erster
+  Tab-Stop). Gegroundet an realen Repo-Idiomen; behaviorale a11y-QA → Tester (CYP-7).
 
 ---
 
