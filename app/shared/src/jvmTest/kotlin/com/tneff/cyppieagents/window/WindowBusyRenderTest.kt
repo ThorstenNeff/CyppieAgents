@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.comm.ConnectionStatus
 import kotlin.test.Test
 
 /**
@@ -38,6 +39,10 @@ class WindowBusyRenderTest {
                         state = state,
                         // backend has a turn in flight; frontend is idle (or pre-first-turn / unknown).
                         busyFor = { id -> id == "backend" },
+                        // CYP-656: the busy `*` is now freshness-gated, so a LIVE feed is required for it to show.
+                        // Both windows LIVE here → this test isolates the busy-vs-idle axis (the drop axis is
+                        // Cyp656BusyConnectionGateTest's job).
+                        connectionFor = { ConnectionStatus.LIVE },
                         windowContent = { Text("c ${it.id}") },
                     )
                 }
