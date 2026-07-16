@@ -143,3 +143,35 @@ self-hoster a protection they do not have. The `CYPPIE_MASTER_KEY` (CYP-628) enc
 identity / device anchor / remote tokens), never the API key. **Encryption-at-rest for the API key is deferred to
 CYP-220** (the SecretCipher "S-B" slice, already scoped there; today only the Postgres store — a dark path — encrypts
 the project config). A self-hoster running the default embedded-SQLite store gets 0600 file protection, no more.
+
+## 9. Uninstall + data preservation (CYP-630)
+
+**The uninstall NEVER silently deletes a team's data.** `uninstall.ps1` is data-preserving by default: it stops +
+deregisters the service and (optionally) removes the app-image, but leaves the **data dir** (`@DATA_DIR@` —
+`PLATFORM_GIT_ROOT`) fully intact — the sqlite stores, git clones/worktrees, `platform.config.json`, the encrypted
+SecretStore. A reinstall or upgrade reattaches to the team's existing state. A destructive wipe is a **separate,
+explicit, confirmed** action (`-WipeData`, `ConfirmImpact=High`).
+
+```powershell
+# default — data-preserving: stop + deregister the service, keep @DATA_DIR@
+uninstall.ps1 -InstallDir "C:\Program Files\CyppieHub" -DataDir "C:\ProgramData\CyppieHub" -RemoveAppImage
+
+# destructive — deletes the data dir AND the account-scoped secrets, together (prompts unless -Confirm:$false)
+uninstall.ps1 -InstallDir "…" -DataDir "…" -ServiceAccount "…" -WipeData
+```
+
+**★ Master-key ↔ SecretStore coupling.** The SecretStore in the data dir (`.cyppie\hub-secrets.db`) is encrypted under
+`CYPPIE_MASTER_KEY` (in the service account's env, CYP-628). So preserve-mode also **preserves the master key + tokens**
+— otherwise the kept SecretStore would be orphaned (undecryptable) on reinstall. Wipe-mode removes **both** the data dir
+**and** the account-scoped secrets, together — never a half-deleted state (an orphaned key XOR an orphaned store). (The
+API key rides in the data dir as plaintext@0600, §8, so it is preserved/wiped with the data dir either way.)
+
+**MSI note:** an MSI uninstall removes the files the installer *placed* (the app-image); the data dir is created at
+runtime by the service, so the MSI does **not** touch it → data is preserved by default at the MSI level too, matching
+this script. The service stop/deregister is the one step the MSI cannot do cleanly (a running JVM + pty4j children), so
+the uninstall runs `uninstall.ps1` first (a WiX custom action / a documented pre-uninstall step).
+
+**Windows-runner verification:** with the service installed (§5) + data present, `uninstall.ps1` (default) → `sc query
+cyppiehub` = not-found (deregistered), `@DATA_DIR@` still present with its stores; re-running `provision.ps1` +
+`CyppieHubService.exe install/start` → `GET /api/health = ok` on the SAME data (the API key + config survive). Then
+`uninstall.ps1 -WipeData` (confirmed) → `@DATA_DIR@` gone + the account-scoped secrets cleared.
