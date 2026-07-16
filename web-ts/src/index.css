@@ -30,6 +30,67 @@ body,
 .app-root {
   flex: 1 1 auto;
   min-height: 0; /* let the flex child shrink so its own overflow container (WindowHost) governs, not #root */
+  /* CYP-642: a column so the workspace bar + overload banner take their natural height and the desktop takes the
+     rest. (CYP-631 kept .app-root a single-child block; the bar/banner made it multi-child → it must lay out.) */
+  display: flex;
+  flex-direction: column;
+}
+
+/* CYP-642 (Epic CYP-640) — the workspace bar (capacity pill; later the project switcher), the overload banner, and
+   the desktop region. The desktop takes the remaining height (flex:1) so WindowHost's height:100% resolves against a
+   definite box — the SAME invariant CYP-631 restored for #root, now one level down. */
+.workspace-desktop {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+.workspace-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+}
+/* The capacity pill: neutral by default; WARN-amber only when full. Colour is never the sole signal (WCAG 1.4.1) —
+   the count + the "voll" label carry it. */
+.capacity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.capacity-pill.full {
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+}
+.capacity-count {
+  font-variant-numeric: tabular-nums;
+}
+/* The overload banner: full-width WARN-amber strip (▲ glyph), never error-red / success-green. */
+.overload-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+}
+.overload-text {
+  flex: 1 1 auto;
+}
+.overload-dismiss {
+  flex: 0 0 auto;
+  min-height: 24px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 4px;
 }
 
 /* CYP-404 (W6) / CYP-423 — the transcript's native-scrolling container + a thin scrollbar (parity of CYP-392).
