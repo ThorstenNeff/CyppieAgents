@@ -3,7 +3,6 @@ package com.tneff.cyppieagents.gateway
 import com.tneff.cyppieagents.contract.RestContract
 import io.ktor.http.HttpMethod
 import kotlin.test.Test
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -30,13 +29,20 @@ class GatewayS1HardeningTest {
     @Test
     fun controlPlaneUnreachable_inAllThreeViews_evenWithCollidingDataPlaneTemplates() {
         assertTrue(cpOps.size >= 6, "sanity: exercised all /api/cp ops (${cpOps.size})")
+        // Collect EVERY (op, view) that is wrongly reachable rather than fail-fast on the first — so a mutation reds
+        // ALL 3 views visibly at once (6 cp-ops × 3 views = 18), not just the canonical one (the view-split rule).
+        val reachable = mutableListOf<String>()
         for (op in cpOps) {
             val method = HttpMethod.parse(op.method)
             val cp = op.path.replace(Regex("\\{[^}]+}"), "x") // e.g. /api/cp/rendezvous/x
-            assertFalse(allow.isAllowed(method, cp), "canonical: ${op.method} $cp must be denied")
-            assertFalse(allow.isAllowed(method, "/api/v1" + cp.removePrefix("/api")), "v1-folded: ${op.method} $cp must be denied")
-            assertFalse(allow.isAllowed(method, cp.replaceFirst("/cp/", "/%63p/")), "%63p-encoded: ${op.method} $cp must be denied")
+            val views = mapOf(
+                "canonical" to cp,
+                "v1-folded" to "/api/v1" + cp.removePrefix("/api"),
+                "%63p-encoded" to cp.replaceFirst("/cp/", "/%63p/"),
+            )
+            for ((view, path) in views) if (allow.isAllowed(method, path)) reachable += "${op.method} $path [$view]"
         }
+        assertTrue(reachable.isEmpty(), "control-plane paths reachable through the gateway (must all be denied): $reachable")
     }
 
     @Test

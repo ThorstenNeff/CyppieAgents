@@ -89,13 +89,18 @@ fun interface GatewayAllowlist {
             return GatewayAllowlist { method, path ->
                 // fold the `/api/v1` dual-mount onto the canonical `/api` the REST_OPS templates are written in.
                 val canonical = if (path.startsWith("/api/v1/")) "/api/" + path.removePrefix("/api/v1/") else path
+                // ★ Resolve the path the HUB will actually route to: decode `%XX` (so `%2f`→`/`, `%63`→`c`) THEN
+                //   normalize `.`/`..` dot-segments. Order is the whole fix (CYP-638 F5): `/api/agents/..%2fcp%2fchallenge`
+                //   decodes to `/api/agents/../cp/challenge`, which normalizes to `/api/cp/challenge` — caught by the deny;
+                //   without the normalize the raw form doesn't start with `/api/cp/` and slips through as `/api/agents/{id}`
+                //   while the hub's own `..` normalization lands it on the control plane (a measured bypass).
+                val resolved = normalizeDotSegments(decodePercent(canonical))
                 // ★ CYP-638 §5 request-side control-plane deny (the SAME [CONTROL_PLANE_PREFIX] constant — never a second
-                //   literal that could drift): refuse ANY path that resolves to `/api/cp/…`, decoded first so a
-                //   `%63p`-style encoding can't slip a *future* `/api/{param}/…` data-plane template into matching a
-                //   control path. This pins "the control plane is unreachable" independent of the current REST_OPS shape
-                //   — the emergent "no {param} at segment index 2" invariant is no longer load-bearing.
-                if (decodePercent(canonical).startsWith(CONTROL_PLANE_PREFIX)) return@GatewayAllowlist false
-                val segs = canonical.split('/')
+                //   literal that could drift): refuse ANY path that resolves to `/api/cp/…`, so `%63p`-encoding AND
+                //   `..`-traversal are both denied regardless of the current REST_OPS shape.
+                if (resolved.startsWith(CONTROL_PLANE_PREFIX)) return@GatewayAllowlist false
+                // Match on the SAME resolved path the deny used — the allow decision is over what the hub will route to.
+                val segs = resolved.split('/')
                 matchers.any { (m, tmpl) -> m.equals(method.value, ignoreCase = true) && segmentsMatch(tmpl, segs) }
             }
         }
@@ -115,6 +120,20 @@ fun interface GatewayAllowlist {
                 sb.append(c); i++
             }
             return sb.toString()
+        }
+
+        /** Resolve `.`/`..` dot-segments in an absolute path (RFC 3986 §5.2.4 style): `.` drops, `..` pops the previous
+         *  segment (never above root), and empty segments (`//`) collapse — so the gateway decides on the SAME path the
+         *  hub will route to. e.g. `/api/agents/../cp/challenge` → `/api/cp/challenge`; `/api/a/../../cp` → `/cp`. */
+        private fun normalizeDotSegments(p: String): String {
+            if (!p.contains("..") && !p.contains("/.") && !p.contains("//")) return p // fast path: nothing to resolve
+            val out = ArrayDeque<String>()
+            for (seg in p.split('/')) when (seg) {
+                "", "." -> {} // collapse `//` and drop `.`
+                ".." -> if (out.isNotEmpty()) out.removeLast() // pop; never escape above root
+                else -> out.addLast(seg)
+            }
+            return "/" + out.joinToString("/")
         }
 
         /** A concrete request path matches a `REST_OPS` template iff they have the same segment count and each template
