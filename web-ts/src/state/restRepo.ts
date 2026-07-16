@@ -28,6 +28,8 @@ import type {
   CompactConfig,
   WorkspaceMember,
   OperatorAudit,
+  ClaudeMdView,
+  ClaudeMdUpdate,
 } from '../types/generated/contract'
 import { buildEventsQuery, type EventFilter } from '../eventlog/eventBrowse'
 import type { ConnectorKind } from '../connector/connectorModel'
@@ -149,6 +151,15 @@ export interface HubRepo {
   /** CYP-650 (OPERATOR-only). GET /api/audit?limit — recent operator actions ({actor, method, path, tsMs}). Content-
    *  free (verb + path, no bodies). Operator-only, same gate as the roster. */
   getOperatorAudit(limit?: number): Promise<OperatorAudit[]>
+  /** CYP-657. GET /api/agents/{id}/claude-md — the LIVE CLAUDE.md ({content, exists, version?}). `version` is the
+   *  optimistic-concurrency token; `exists=false` = no file yet (first write is expect-absent). A load failure fails
+   *  closed in the panel (an error line, never a blank buffer that a save would clobber). */
+  getClaudeMd(agentId: string): Promise<ClaudeMdView>
+  /** CYP-657 (operator). POST /api/agents/{id}/claude-md {content, expectedVersion?} — write the persona file with an
+   *  if-match. The SERVER is authoritative: a stale expectedVersion → 409 `claude_md_stale` (the caller opens the
+   *  conflict dialog, never silently overwrites). Returns the FRESH ClaudeMdView echo so the caller re-syncs its
+   *  buffer + version. Restart-deferred: the change takes effect on the agent's next spawn (amber effect hint). */
+  updateClaudeMd(agentId: string, update: ClaudeMdUpdate): Promise<ClaudeMdView>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -263,5 +274,12 @@ export class RestHubRepo implements HubRepo {
   }
   getOperatorAudit(limit = 200): Promise<OperatorAudit[]> {
     return this.rest.get<OperatorAudit[]>(`/api/audit?limit=${encodeURIComponent(String(limit))}`)
+  }
+  getClaudeMd(agentId: string): Promise<ClaudeMdView> {
+    return this.rest.get<ClaudeMdView>(`/api/agents/${encodeURIComponent(agentId)}/claude-md`)
+  }
+  updateClaudeMd(agentId: string, update: ClaudeMdUpdate): Promise<ClaudeMdView> {
+    // The POST returns the fresh ClaudeMdView (content + new version) — the caller re-syncs baseline+version from it.
+    return this.rest.post<ClaudeMdView>(`/api/agents/${encodeURIComponent(agentId)}/claude-md`, update)
   }
 }
