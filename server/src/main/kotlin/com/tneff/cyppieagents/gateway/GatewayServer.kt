@@ -160,6 +160,11 @@ private val HOP_BY_HOP: Set<String> = setOf(
  */
 fun Application.gatewayModule(
     hubBaseUrl: String,
+    // CYP-638 S3 — the Kratos PUBLIC base (e.g. `http://127.0.0.1:4433`). The browser drives the FULL self-service
+    // surface (login/registration/recovery/verification/settings/logout) same-origin under `/.ory/kratos/public/*`
+    // (`HttpAuthRepository.kt:54`); the gateway proxies that prefix here so the httpOnly `ory_kratos_session` Set-Cookie
+    // lands same-origin. Blank ⇒ the Kratos leg is not mounted (Kratos not configured).
+    kratosBaseUrl: String = "",
     allowlist: GatewayAllowlist = GatewayAllowlist.fromRestContract(),
     client: HttpClient = HttpClient(CIO) { install(ClientWebSockets) },
 ) {
@@ -174,6 +179,14 @@ fun Application.gatewayModule(
         ContractGenerator.WS_CHANNELS.forEach { channel ->
             webSocket(channel.path) { proxyWebSocketToHub(client, hubWsBase) }
         }
+        // S3 — the Kratos self-service same-origin proxy: `/.ory/kratos/public/*` → `{kratosBaseUrl}/*` (the Kratos
+        // PUBLIC API only — never the admin port). Preserves method + path-suffix + query + Cookie/CSRF + body, and
+        // relays the response headers incl. `Set-Cookie` so the browser's `ory_kratos_session` is set same-origin.
+        if (kratosBaseUrl.isNotBlank()) {
+            route("$KRATOS_PUBLIC_PREFIX/{...}") {
+                handle { forwardToUpstream(call, client, kratosBaseUrl, stripPrefix = KRATOS_PUBLIC_PREFIX) }
+            }
+        }
         route("{...}") { // catch-all: every non-WS method + path is decided by the REST allowlist (default-deny)
             handle {
                 val method = call.request.httpMethod
@@ -183,11 +196,15 @@ fun Application.gatewayModule(
                     call.respondBytes(ByteArray(0), status = HttpStatusCode.NotFound)
                     return@handle
                 }
-                forwardToHub(call, client, hubBaseUrl)
+                forwardToUpstream(call, client, hubBaseUrl)
             }
         }
     }
 }
+
+/** CYP-638 S3 — the same-origin path prefix the browser dials the Kratos PUBLIC API under (matches the client's
+ *  `kratosBaseUrl = "$platformBaseUrl/.ory/kratos/public"`). Stripped before forwarding to the real Kratos base. */
+private const val KRATOS_PUBLIC_PREFIX = "/.ory/kratos/public"
 
 /** Derive the hub's `ws(s)://` base from its `http(s)://` base for the WS proxy leg. */
 private fun wsBaseOf(httpBaseUrl: String): String = when {
@@ -246,9 +263,13 @@ private suspend fun relayFrames(a: DefaultWebSocketSession, b: DefaultWebSocketS
     bToA.join()
 }
 
-/** Forward one allowed call to the hub verbatim and relay the hub's response back to the browser. */
-private suspend fun forwardToHub(call: ApplicationCall, client: HttpClient, hubBaseUrl: String) {
-    val target = hubBaseUrl.trimEnd('/') + call.request.uri // path + query, verbatim
+/** Forward one allowed call to [upstreamBase] verbatim and relay the response back to the browser. [stripPrefix] is
+ *  removed from the path before forwarding (S3 Kratos leg: `/.ory/kratos/public/X` → `{kratos}/X`); empty for the hub
+ *  leg (path forwarded as-is). Response headers incl. `Set-Cookie` are relayed so a same-origin cookie is set. */
+private suspend fun forwardToUpstream(call: ApplicationCall, client: HttpClient, upstreamBase: String, stripPrefix: String = "") {
+    val uri = call.request.uri // path + query
+    val forwardUri = if (stripPrefix.isNotEmpty()) uri.removePrefix(stripPrefix).ifEmpty { "/" } else uri
+    val target = upstreamBase.trimEnd('/') + forwardUri
     val requestBody: ByteArray = runCatching { call.receive<ByteArray>() }.getOrDefault(ByteArray(0))
     val hubResp: HttpResponse = try {
         client.request(target) {
@@ -288,5 +309,7 @@ fun main() {
     val port = System.getenv("CYPPIE_GATEWAY_PORT")?.toIntOrNull() ?: 8080
     val host = System.getenv("CYPPIE_GATEWAY_HOST") ?: "0.0.0.0"
     val hubUrl = System.getenv("CYPPIE_HUB_URL") ?: "http://127.0.0.1:8787"
-    embeddedServer(Netty, port = port, host = host) { gatewayModule(hubUrl) }.start(wait = true)
+    // CYP-638 S3 — the Kratos PUBLIC base for the same-origin self-service proxy. Blank ⇒ the Kratos leg is unmounted.
+    val kratosUrl = System.getenv("CYPPIE_KRATOS_URL") ?: ""
+    embeddedServer(Netty, port = port, host = host) { gatewayModule(hubUrl, kratosUrl) }.start(wait = true)
 }
