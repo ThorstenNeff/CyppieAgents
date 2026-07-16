@@ -172,6 +172,9 @@ run {
     val distLibPath = layout.buildDirectory.dir("install/server/lib").get().asFile.absolutePath
     val versionStr = project.version.toString()
     val mainJar = "server-$versionStr.jar"
+    // CYP-628: a second app-image launcher (CyppieHubProvision) for the install-time provisioning entrypoint. Shares
+    // the --main-jar; only overrides the main class (see the properties file). The wizard invokes it once on the host.
+    val provisionLauncherProps = rootProject.file("deploy/windows/provision-launcher.properties").absolutePath
     val os = org.gradle.internal.os.OperatingSystem.current()
     val installerType = when { os.isWindows -> "msi"; os.isMacOsX -> "dmg"; else -> "app-image" }
     val isWindows = os.isWindows
@@ -205,6 +208,9 @@ run {
             "--dest", installerPath,
         )
         launcherArgs.forEach { args += listOf("--java-options", it) }
+        // CYP-628: the provisioning launcher (CyppieHubProvision) — the install wizard runs it to mint the master key
+        // + tokens + default config on the host (the .msi ships no secret).
+        args += listOf("--add-launcher", "CyppieHubProvision=$provisionLauncherProps")
         // Windows: a console app (the hub logs to stdout; the CYP-627 service wrapper captures it) + install chooser.
         if (isWindows) args += listOf("--win-console", "--win-dir-chooser", "--win-menu", "--win-shortcut")
         commandLine(args)

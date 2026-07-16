@@ -82,6 +82,31 @@ On a Windows host with the CYP-626 `.msi` installed (or the app-image staged) + 
 
 Green here = the hub runs as a Windows service headless with stdout captured → CYP-627 done; proceed to CYP-628.
 
+## 7. Provisioning (CYP-628) — how the secrets + config are minted, secret-free
+
+The install wizard (UIUX owns the UX) drives `provision.ps1`, which mints every secret **on the host at install
+time** — the `.msi` ships none. The one secret PowerShell can't make itself is `CYPPIE_MASTER_KEY` (a Tink AES-256-GCM
+keyset), so a Java **provisioning entrypoint** does it:
+
+- **`CyppieHubProvision`** — a second app-image launcher (jpackage `--add-launcher`, wired into the CYP-626
+  `hubInstaller`; spec in `provision-launcher.properties`). It runs `com.tneff.cyppieagents.provision.ProvisionMain`:
+  mints `CYPPIE_MASTER_KEY` (single-line, env-safe minified Tink keyset), `OPERATOR_TOKEN` + `HUB_TOKEN_PO`
+  (secure-random), and a default secret-free `platform.config.json` (1 PO agent, loopback bind). Config → the data
+  dir; secrets → a `--secrets-out` `KEY=VALUE` file (owner-only) the wizard consumes then securely deletes. Secret
+  values are never printed.
+- **`provision.ps1`** — creates + ACL-locks the data dir; runs `CyppieHubProvision`; sets the 3 secrets in the
+  **service account's ACL-protected environment** (not machine/system env — world-readable); securely deletes the
+  transient file; substitutes the WinSW XML + installs the service. The **ANTHROPIC_API_KEY is NOT provisioned here**
+  — it is entered at first-run via the operator GUI and stored encrypted-at-rest under the master key (CYP-629).
+
+**PROVEN e2e on Linux** (the mechanism is cross-platform; only the ACL/service-account/env steps are Windows):
+`CyppieHubProvision` minted the master key + tokens + config → the packaged hub booted with that generated env →
+`Application started`, `Responding at 127.0.0.1:8787`, the master-key-gated `SqliteSecretStore` initialized, and
+`GET /api/health = ok`. Unit teeth (`ProvisionMainTest`, 5): the minted key roundtrips through the REAL cipher
+(encrypt/decrypt), the config loads as `PlatformConfig` with exactly one PO, the key is single-line (env-safe), the
+tokens are non-blank/distinct, and each run mints fresh secrets. The Windows service-account/ACL steps in `provision.ps1`
+are the Windows-runner leg (§5).
+
 ## 6. Follow-up flagged from CYP-626 (not blocking)
 
 `hubJlink`/`hubInstaller` resolve `jlink`/`jpackage` from `System.getProperty("java.home")` (the JDK running Gradle).
