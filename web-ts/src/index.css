@@ -14,6 +14,24 @@ body,
   height: 100%;
 }
 
+/* CYP-648 — PAINT the root surface from the theme tokens. CYP-643 flipped the token vars via data-theme, but
+   nothing bound the page background/text to them, so dark mode only recoloured token-styled chrome and left the
+   desktop white (the AC "recolour applies" was unmet; it slipped because the gates measured the token flip, not the
+   painted surface). Binding `body` to the surface/on-surface tokens paints the whole viewport — login, workspace,
+   and the gaps behind unstyled windows — and it flips with data-theme like every other token. */
+body {
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+}
+/* An explicit theme also drives the UA `color-scheme` so form controls / scrollbars / the canvas match (the base
+   :root already declares `light dark`; these pin it when the toggle overrides prefers-color-scheme). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
 /* CYP-631 — #root hosts EITHER the self-centering `.auth-screen` (login/loading/verify: own min-height:100vh +
    place-items:center) OR, once authed, the AuthGate fragment `[.auth-session-status, .app-root]`. The old
    `display:grid; place-items:center` centered EVERY direct child to its content size — harmless for the login
