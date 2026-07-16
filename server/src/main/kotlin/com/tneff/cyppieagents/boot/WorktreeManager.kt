@@ -58,8 +58,16 @@ class WorktreeManager(
      */
     fun forProject(projectId: String): WorktreeManager = WorktreeManager(runner, gitRoot, projectId)
 
-    /** Clone [repo] into this project's [repoDir] (`clones/<projectId>`) if not already a git repo. Idempotent. */
+    /** Clone [repo] into this project's [repoDir] (`clones/<projectId>`) if not already a git repo. Idempotent.
+     *  CYP-639: an UNCONFIGURED repo (blank / a `REPLACE_ME_*` provisioning placeholder) is a no-op — a fresh
+     *  `.deb`/`.msi` provision defaults `repo.url` to the placeholder the operator replaces via the GUI, so boot must
+     *  NOT try to `git clone` it (which fails exit 128 and would abort the whole boot). The clone happens later when
+     *  the operator sets a real repo (the re-provision path re-clones). One guard, both call sites (boot + lazy). */
     fun ensureClone(repo: RepoConfig) {
+        if (!repo.isConfigured) {
+            log.info("repo not configured (url='{}') — skipping clone; the operator sets the repo via the GUI (CYP-639)", repo.url)
+            return
+        }
         if (File(repoDir, ".git").exists()) {
             log.info("repo clone already present at {}", repoDir)
             return

@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.provision
 
+import com.tneff.cyppieagents.boot.RepoConfig
 import com.tneff.cyppieagents.crypto.SecretCipherFactory
 import java.io.File
 import java.security.SecureRandom
@@ -106,7 +107,7 @@ private data class Options(
                 host = m["host"] ?: "127.0.0.1",
                 port = (m["port"] ?: "8787").toInt(),
                 tunnelPort = (m["tunnel-port"] ?: "8786").toInt(),
-                repo = m["repo"] ?: "REPLACE_ME_set_the_repo_url_in_the_operator_GUI",
+                repo = m["repo"] ?: RepoConfig.REPO_URL_PLACEHOLDER, // CYP-639: single-sourced; boot tolerates it
                 branch = m["branch"] ?: "main",
                 agentLaunch = m["agent-launch"] ?: "claude", // prod default; the wizard verifies `claude` is on PATH
                 secretsOut = m["secrets-out"],
