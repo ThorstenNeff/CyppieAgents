@@ -184,6 +184,10 @@ run {
     // --resource-dir and substitutes its empty skeleton. They do the user + provision + hub.env + unit install/enable
     // (postinst), stop/disable (prerm), and remove-preserve / purge-wipe (postrm).
     val debResourceDir = rootProject.file("deploy/linux/deb-resources").absolutePath
+    // CYP-636: SINGLE-SOURCE the systemd unit — bundle the reviewable master into the .deb payload (jpackage
+    // --app-content → /opt/cyppiehub/cyppiehub.service) so the postinst `cp`s it (no heredoc duplication → drift
+    // structurally impossible).
+    val unitFile = rootProject.file("deploy/linux/cyppiehub.service").absolutePath
     val os = org.gradle.internal.os.OperatingSystem.current()
     // CYP-634: Linux → `.deb` (jpackage needs dpkg/fakeroot on the host). Same installDist→jlink→jpackage chain.
     val installerType = when { os.isWindows -> "msi"; os.isMacOsX -> "dmg"; else -> "deb" }
@@ -229,6 +233,7 @@ run {
         if (isLinux) args += listOf(
             "--linux-package-name", "cyppiehub", "--install-dir", "/opt",
             "--resource-dir", debResourceDir, // CYP-635: postinst/prerm/postrm (service install + provision + preserve/purge)
+            "--app-content", unitFile, // CYP-636: ship the systemd unit into the payload → postinst cp's it (single-source)
         )
         commandLine(args)
     }
