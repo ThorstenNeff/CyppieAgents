@@ -29,15 +29,18 @@ import kotlin.test.assertFalse
  * CYP-638 S6 — the automatic **cleartext-boundary sentinel gate** for the A2 gateway process. A ListAppender on the
  * ROOT logger (at INFO **and** DEBUG) captures EVERY log line while one real request drives a unique sentinel through
  * every cleartext category (§1 of the acceptance bar): C1 cookie, C2 Bearer, C3 `?token`/`?ticket`, C5 PTY-like WS
- * frame, C7 raw-credential body — and, by pointing at a DEAD hub, forces the C8 exception path (secondary-path #1: an
- * unhandled `forwardToHub` client throw would let Ktor's default log the token-bearing request line). The property:
+ * frame, C7 raw-credential body — and, by pointing at a DEAD hub, exercises the C8 exception path. The property:
  * **no sentinel appears in ANY captured log line** — proven at DEBUG too, because a leak that only shows at DEBUG IS
  * the CYP-190 case. Unlike a manual masking proof, this needs no real creds (only the gateway + a dead hub) so it runs
  * in the gate.
  *
- * Mutation-proven (adversarial re-gate will re-run these): add a naive `gwLog.info(call.request.uri)` at a forward seam
- * → the C3 sentinel appears → red; remove the `forwardToHub` try/catch → the dead-hub throw reaches Ktor's default
- * logger with the request line → the C3 sentinel appears → red. A tooth that stays green under those pins nothing.
+ * Mutation-proven (adversarial re-gate re-runs it): add a naive `gwLog.info(call.request.uri)` at a forward seam → the
+ * C3 sentinel appears at INFO **and** DEBUG → red. A tooth that stays green under this pins nothing.
+ *
+ * ★ VERIFIED, not assumed: removing the `forwardToHub` try/catch does **NOT** red these sentinel teeth — Ktor 3.5's
+ * unhandled-exception log is `Unhandled: <method> - <path>` (path only, **no query**), so no `?token` ever reaches the
+ * log on that path. The try/catch's provable value is the fail-closed 502 — pinned separately by
+ * [deadHub_failsClosedWith502_notUnhandled500] (mutation: re-throw → unhandled 500 → red) — NOT a `?token`-leak fix.
  */
 class GatewayS6SentinelTest {
 
