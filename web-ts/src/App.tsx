@@ -93,7 +93,12 @@ export interface AppProps {
 
 export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {}) {
   const cfg = config ?? readHubConfig()
-  const hubRepo = repo ?? new RestHubRepo(cfg.apiBase)
+  // CYP-661 (defense-in-depth): memoize so the repo identity is STABLE across re-renders. A fresh `new RestHubRepo`
+  // every render (each building a new RestClient) is the churn ROOT that defeated the section load-effects — the
+  // component-local useRef cures immunise the critical paths, but a stable repo protects any consumer (incl. future
+  // ones) that keys on its identity. Keyed on the primitive apiBase (cfg is a fresh object each render when config is
+  // undefined → readHubConfig()).
+  const hubRepo = useMemo(() => repo ?? new RestHubRepo(cfg.apiBase), [repo, cfg.apiBase])
   // CYP-470: whoami is the truth for operator; cfg.operator (injected token) is the break-glass / test fallback.
   const operator = operatorOverride ?? cfg.operator
 

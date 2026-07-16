@@ -228,3 +228,44 @@ describe('AgentSettingsPanel — CYP-660 conflict survives callback churn (live 
     expect(upSpy).toHaveBeenCalledWith('frontend', 'MY LOCAL EDIT', 'v1') // the if-match stayed pinned to the loaded v1
   })
 })
+
+// CYP-661 — the ColorSection churn tooth (same class as CYP-660): the parent passes a NEW fetchDetail identity every
+// render; a churn-immune section must NOT re-seed the colour input on a WS-tick re-render (which would clobber an
+// in-progress edit). Mutation = revert the ColorSection effect deps to [agentId, fetchDetail] → re-fetch re-seeds →
+// the edit is lost → RED.
+function ColorChurnHarness({ fetchSpy }: { fetchSpy: (id: string) => Promise<AgentDetail> }) {
+  const [tick, setTick] = useState(0)
+  return (
+    <div>
+      <button data-testid="ws-tick" onClick={() => setTick((t) => t + 1)}>
+        {tick}
+      </button>
+      <AgentSettingsPanel {...mkProps({ fetchDetail: (id: string) => fetchSpy(id) })} />
+    </div>
+  )
+}
+
+describe('AgentSettingsPanel — CYP-661 ColorSection churn-immune', () => {
+  it('an in-progress colour edit survives WS-tick re-renders (not re-seeded from a churning fetchDetail)', async () => {
+    // the server has a colour → ColorSection seeds it on mount; a spurious re-fetch would re-seed and clobber an edit.
+    const fetchSpy = vi.fn<(id: string) => Promise<AgentDetail>>().mockResolvedValue({ id: 'frontend', name: 'Frontend', role: 'WORKER', worktree: 'frontend', launch: 'bash', color: '#111111' })
+    const { container } = render(<ColorChurnHarness fetchSpy={fetchSpy} />)
+
+    const input = (await waitFor(() => {
+      const el = q(container, 'agentSettings.customHex.input') as HTMLInputElement | null
+      if (!el || el.value !== '#111111') throw new Error('not seeded')
+      return el
+    })) as HTMLInputElement
+
+    fireEvent.change(input, { target: { value: '#abcdef' } })
+
+    const tick = q(container, 'ws-tick') as HTMLButtonElement
+    fireEvent.click(tick)
+    fireEvent.click(tick)
+    await waitFor(() => expect((q(container, 'ws-tick') as HTMLButtonElement).textContent).toBe('2'))
+
+    // churn-immune: ColorSection did NOT re-seed the input → the edit stands (isolated from the other sections'
+    // fetchDetail calls, which don't touch the colour input).
+    expect((q(container, 'agentSettings.customHex.input') as HTMLInputElement).value).toBe('#abcdef')
+  })
+})
