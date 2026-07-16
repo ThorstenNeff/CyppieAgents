@@ -101,6 +101,23 @@ describe('App assembly (CYP-425)', () => {
     expect(getByTestId('acl-panel')).toBeTruthy()
   })
 
+  it('CYP-662: `operator` (injected as a channel member) gets NO agent window — an ACL identity, not a spawnable agent', async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    // the server injects `operator` into every spoke channel's members UNCONDITIONALLY (an auth/ACL participant); it
+    // must NOT become an agent window (a dead phantom — /ws/agent?agentId=operator is rejected fail-closed).
+    repo.fetchChannels = vi.fn().mockResolvedValue([{ id: 'po-frontend', name: 'PO ↔ FE', kind: 'DIRECT', members: ['po', 'frontend', 'operator'] }])
+    const { findByTestId, queryByTestId } = render(
+      <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    // real agents still get windows...
+    expect(await findByTestId('agent-window.po')).toBeTruthy()
+    expect(queryByTestId('agent-window.frontend')).toBeTruthy()
+    // ...but the operator does NOT (mutation = remove the filter → an agent-window.operator appears → RED).
+    expect(queryByTestId('agent-window.operator')).toBeNull()
+  })
+
   it('renders the Comm window with channels, folds fetched history, and shows a live message (CYP-438)', async () => {
     const hub = new FakeSocketHub()
     const repo = fakeRepo()
