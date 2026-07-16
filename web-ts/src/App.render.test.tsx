@@ -57,6 +57,10 @@ const fakeRepo = (): HubRepo => ({
   setCompactConfig: vi.fn().mockResolvedValue(undefined),
   getWorkspaceMembers: vi.fn().mockResolvedValue([]),
   getOperatorAudit: vi.fn().mockResolvedValue([]),
+  createProject: vi.fn().mockResolvedValue({ id: 'p2', name: 'P2' }),
+  switchProject: vi.fn().mockResolvedValue({ activeProjectId: 'p2', projects: [] }),
+  renameProject: vi.fn().mockResolvedValue({ id: 'p1', name: 'renamed' }),
+  deleteProject: vi.fn().mockResolvedValue({ projectId: 'p1', configRemoved: true, eventsRemoved: 0, worktreesRemoved: 0 }),
 })
 
 beforeEach(() => {
