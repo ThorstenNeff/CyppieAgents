@@ -296,7 +296,14 @@ class BootOrchestrator(
         if (worktrees.adoptLegacyClone()) log.info("migrated legacy single-clone layout → per-project clones/{}", config.projectId)
         // Repo change takes effect at the next boot (design §3.2): clone the resolved (override→boot) repo.
         // Idempotent: a no-op after an adopt (the boot clone now exists at clones/<pid>).
-        worktrees.ensureClone(projectConfig.resolvedRepo(config.projectId))
+        // CYP-639: boot must SURVIVE a repo it can't clone. An unconfigured (placeholder/blank) repo is already a
+        // no-op inside ensureClone; here we additionally tolerate a CONFIGURED-but-uncloneable repo (bad URL, no
+        // network, auth failure) — log + come up DEGRADED so the operator can fix the repo via the GUI, rather than
+        // aborting the whole boot (which would strand the operator with no reachable UI). The lazy per-spawn path
+        // (ensureActiveWorktree) is deliberately NOT wrapped: an agent spawn genuinely needs a working clone, so a
+        // failure there must surface, not be swallowed.
+        runCatching { worktrees.ensureClone(projectConfig.resolvedRepo(config.projectId)) }
+            .onFailure { log.warn("boot: repo clone failed ({}) — hub starts DEGRADED; set/fix the repo via the operator GUI (CYP-639)", it.message) }
 
         val agents = config.agents.map { Agent(it.id, it.name, it.role, it.worktreeName, color = it.color?.ifBlank { null }) }
         // S17 / CYP-93: the cross-project share gate. The hub consults it for the AclMatrix permit

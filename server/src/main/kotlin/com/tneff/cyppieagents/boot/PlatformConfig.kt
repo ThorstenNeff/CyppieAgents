@@ -45,7 +45,24 @@ data class PlatformConfig(
 }
 
 @Serializable
-data class RepoConfig(val url: String, val branch: String = "main")
+data class RepoConfig(val url: String, val branch: String = "main") {
+    /**
+     * CYP-639 — true iff [url] is a real, cloneable repo: non-blank AND not an un-substituted `REPLACE_ME_*`
+     * provisioning placeholder. A fresh `.deb`/`.msi` provision defaults `repo.url` to [REPO_URL_PLACEHOLDER] (the
+     * operator sets the real one via the GUI), so boot must **tolerate** it — [WorktreeManager.ensureClone] skips the
+     * clone rather than aborting the whole boot on `git clone <placeholder>` (exit 128), which would leave the operator
+     * unable to ever reach the GUI (the chicken-and-egg with CYP-629 first-run).
+     */
+    val isConfigured: Boolean get() = url.isNotBlank() && !url.startsWith(REPO_URL_PLACEHOLDER_PREFIX)
+
+    companion object {
+        /** Every provisioning placeholder starts with this — the `grep REPLACE_ME` deploy-completeness convention. */
+        const val REPO_URL_PLACEHOLDER_PREFIX = "REPLACE_ME"
+        /** The `repo.url` a fresh provision writes; the operator replaces it via the GUI. Single-sourced here so the
+         *  provisioner (writes it) and boot (tolerates it) can never drift. */
+        const val REPO_URL_PLACEHOLDER = "REPLACE_ME_set_the_repo_url_in_the_operator_GUI"
+    }
+}
 
 /**
  * End-user auth config (CYP-178). [kratosPublicUrl] is the Kratos PUBLIC base URL (e.g.

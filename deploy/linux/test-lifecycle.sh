@@ -13,6 +13,13 @@
 # If the path is omitted it auto-discovers server/build/hub-installer-test/*.deb.
 set -uo pipefail
 
+# CYP-639 — tee the FULL run (stdout+stderr) to a readable file so the run can be read directly (no copy-paste).
+# Defaults next to this script (i.e. the staged install dir); override with $CYP637_LOGFILE. Truncated per run.
+LOGFILE="${CYP637_LOGFILE:-$(cd "$(dirname "$0")" && pwd)/cyp637-run.log}"
+: > "$LOGFILE" 2>/dev/null || LOGFILE="/tmp/cyp637-run.log"  # fall back if the script dir is not writable
+exec > >(tee "$LOGFILE") 2>&1
+echo "CYP-637 lifecycle — full output also written to: $LOGFILE"
+
 # ---- test-scoped constants (NEVER the live names) -----------------------------------------------------------
 PKG="cyppiehub-test"
 SVC="cyppiehub-test.service"
@@ -123,5 +130,7 @@ fi
 # ============================================================================================================
 echo; echo "============================================================"
 echo "  CYP-637 lifecycle: PASS=$PASS  FAIL=$FAIL"
+echo "  full run log: $LOGFILE"
 echo "============================================================"
+sync 2>/dev/null || true   # flush the tee'd log before exit
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
