@@ -13,9 +13,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# hub-pattern: source the out-of-repo .env for CYPPIE_* config (host/port, hub url, kratos url, SPA dir). Location is
-# deploy-configurable; default is the repo/deploy root two levels up from this script.
-ENV_FILE="${CYPPIE_GATEWAY_ENV_FILE:-$SCRIPT_DIR/../../.env}"
+# ★ CUSTODY (ratified option (a), ported from deploy/linux/cyppiehub.service): source config from a 0600 env file that
+#   lives OUTSIDE any user home — the macOS mirror of EnvironmentFile=/etc/cyppiehub/hub.env. A LaunchDaemon runs
+#   outside the console session, so it must NOT depend on a `customer`-home .env; deploy provisions this 0600 file
+#   owned by the dedicated service user. launchd has no EnvironmentFile key, so the wrapper sources it here.
+ENV_FILE="${CYPPIE_GATEWAY_ENV_FILE:-/etc/cyppiehub/gateway.env}"
 if [ -f "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi
 
 # Read the single-source JVM args (skip comments + blank lines; trim leading/trailing whitespace, pure-bash-3.2).
