@@ -5,6 +5,7 @@
 import { useRef } from 'react'
 import { useWindowStore } from './windowStore'
 import type { WindowState } from './windowState'
+import { isCompact } from './pagerModel'
 
 export function WindowFrame({
   window: w,
@@ -20,7 +21,12 @@ export function WindowFrame({
   const focus = useWindowStore((s) => s.focus)
   const moveBy = useWindowStore((s) => s.moveBy)
   const resizeBy = useWindowStore((s) => s.resizeBy)
+  const host = useWindowStore((s) => s.host)
   const last = useRef<{ x: number; y: number } | null>(null)
+  // CYP-664: in a compact size-class the WindowHost lays this frame out as a full-bleed pager page — drop the
+  // floating transform/geometry + drag/resize affordances (they are meaningless in the pager). The SAME element stays
+  // mounted across a size-class switch (WindowHost keys slots by id), so the window body + its inputs survive.
+  const compact = isCompact(host.width, host.height)
 
   const capture = (e: React.PointerEvent) => {
     const el = e.currentTarget as Element & { setPointerCapture?: (id: number) => void }
@@ -54,31 +60,34 @@ export function WindowFrame({
 
   return (
     <section
-      className="window"
+      className={`window${compact ? ' window-compact' : ''}`}
       data-window-id={w.id}
-      style={{ transform: `translate(${w.x}px, ${w.y}px)`, width: w.width, height: w.height }}
+      // desktop: floating (transform + fixed w/h). compact: full-bleed page (layout via CSS, no inline geometry).
+      style={compact ? undefined : { transform: `translate(${w.x}px, ${w.y}px)`, width: w.width, height: w.height }}
       onPointerDown={() => focus(w.id)}
     >
       <header
         className="window-title"
-        onPointerDown={beginDrag}
-        onPointerMove={onDrag}
-        onPointerUp={end}
-        onPointerCancel={end}
+        onPointerDown={compact ? undefined : beginDrag}
+        onPointerMove={compact ? undefined : onDrag}
+        onPointerUp={compact ? undefined : end}
+        onPointerCancel={compact ? undefined : end}
       >
         <span className="window-title-text">{w.title}</span>
         {titleAccessory}
       </header>
       <div className="window-body">{children}</div>
-      <div
-        className="window-resize"
-        role="presentation"
-        aria-hidden="true"
-        onPointerDown={beginResize}
-        onPointerMove={onResize}
-        onPointerUp={end}
-        onPointerCancel={end}
-      />
+      {!compact && (
+        <div
+          className="window-resize"
+          role="presentation"
+          aria-hidden="true"
+          onPointerDown={beginResize}
+          onPointerMove={onResize}
+          onPointerUp={end}
+          onPointerCancel={end}
+        />
+      )}
     </section>
   )
 }

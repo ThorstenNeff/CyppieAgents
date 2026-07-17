@@ -8,6 +8,10 @@ import * as R from './windowReducer'
 export interface WindowStore {
   /** List order IS the z-order: last = top-most (focused). */
   windows: WindowState[]
+  /** CYP-664: the STABLE registration order (order in which windows were added), NEVER reordered by focus/move/resize
+   *  — parity with CMP's `windowOrder`. The desktop uses `windows` (z-order); the phone-pager keys its pages off this
+   *  so giving a window focus moves only the CURRENT page, never re-sorts the pages. Maintained ONLY in add/remove. */
+  windowOrder: string[]
   host: { width: number; height: number }
   /** content windows (Agent/Comm) carry a composer → the larger resize floor (CYP-373). */
   contentIds: ReadonlySet<string>
@@ -22,6 +26,7 @@ export interface WindowStore {
 
 export const useWindowStore = create<WindowStore>((set) => ({
   windows: [],
+  windowOrder: [],
   host: { width: 0, height: 0 },
   contentIds: new Set<string>(),
 
@@ -35,6 +40,8 @@ export const useWindowStore = create<WindowStore>((set) => ({
   add: (win, isContent = false) =>
     set((s) => ({
       windows: [...s.windows, win],
+      // CYP-664: append to the stable registration order (dedupe — an idempotent re-add never double-registers).
+      windowOrder: s.windowOrder.includes(win.id) ? s.windowOrder : [...s.windowOrder, win.id],
       contentIds: isContent ? new Set([...s.contentIds, win.id]) : s.contentIds,
     })),
 
@@ -42,9 +49,11 @@ export const useWindowStore = create<WindowStore>((set) => ({
     set((s) => {
       const contentIds = new Set(s.contentIds)
       contentIds.delete(id)
-      return { windows: s.windows.filter((w) => w.id !== id), contentIds }
+      return { windows: s.windows.filter((w) => w.id !== id), windowOrder: s.windowOrder.filter((wid) => wid !== id), contentIds }
     }),
 
+  // CYP-664: focus reorders the Z-ORDER only (windows) — windowOrder is NOT returned here, so it stays put (the pager
+  // pages never re-sort on focus). Same for moveBy/resizeBy/setHost below.
   focus: (id) => set((s) => ({ windows: R.bringToFront(s.windows, id) })),
 
   moveBy: (id, dx, dy) =>

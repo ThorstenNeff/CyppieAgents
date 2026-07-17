@@ -1643,3 +1643,101 @@ body {
 .channel-share-confirm p {
   margin: 0;
 }
+
+/* CYP-664 (P12) — the phone-pager: at a compact size-class the floating windows become a one-window-per-page pager.
+   The window content stays mounted (only display toggles) so state survives the switch. Active dot = shape/size +
+   aria-current (never colour alone, WCAG 1.4.1). 48px touch targets. Tokens resolve in both themes. */
+.window-host-compact .window-slot {
+  position: absolute;
+  inset: 0 0 52px 0; /* leave room for the indicator row */
+}
+.window.window-compact {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+}
+.window.window-compact .window-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.phone-pager-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.phone-pager-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 8px;
+  background: var(--md-sys-color-surface-variant);
+  border-top: 1px solid var(--md-sys-color-outline);
+}
+.phone-pager-nav {
+  flex: 0 0 auto;
+  min-width: 48px;
+  min-height: 48px;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 8px;
+}
+.phone-pager-nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.phone-pager-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+/* dots are graphical tap targets: 48px hit area, the visual dot centered inside (shape/size carries active state). */
+.phone-pager-dot {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+.phone-pager-dot::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--md-sys-color-outline);
+}
+.phone-pager-dot.active::after {
+  width: 12px;
+  height: 12px;
+  background: var(--md-sys-color-on-surface);
+}
+.phone-pager-counter {
+  font-variant-numeric: tabular-nums;
+  color: var(--md-sys-color-on-surface-variant);
+  min-width: 48px;
+  text-align: center;
+}
