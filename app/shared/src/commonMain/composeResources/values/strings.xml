@@ -165,6 +165,9 @@
     <string name="agent_ctl_start">Start</string>
     <string name="agent_ctl_stop">Stop</string>
     <string name="agent_ctl_restart">Neustart</string>
+    <!-- CYP-629 §6.3c — honest GATED start-block while the hub is unconfigured (reuse-consistent with agent_ctl_* family) -->
+    <string name="agent_ctl_unconfigured">Agent kann nicht starten, solange der Hub nicht eingerichtet ist (API-Key + Repository). Jetzt einrichten.</string>
+    <string name="a11y_agent_ctl_unconfigured">nicht verfügbar — Hub nicht eingerichtet (API-Key + Repository)</string>
     <!-- Lifecycle-Steuerungsfehler (CYP-73): ehrliche Server-Gründe (409/403/503/404). -->
     <string name="agent_ctl_err_already_running">Läuft bereits</string>
     <string name="agent_ctl_err_spawn_failed">Start fehlgeschlagen</string>

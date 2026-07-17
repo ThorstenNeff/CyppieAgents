@@ -37,6 +37,11 @@ object AgentViewTags {
     fun stopBtn(agentId: String) = "agent.$agentId.stopBtn"
     fun restartBtn(agentId: String) = "agent.$agentId.restartBtn"
 
+    /** CYP-629 §6.3c: honest GATED reason at the start control — the workspace is unconfigured (API key / repo),
+     *  so spawning cannot succeed. GATED, not ERROR: nothing failed, the prerequisite is missing. Mirrors the
+     *  [modeToggleGateHint] `.gateHint` qualifier precedent (a gate reason AT the control, not a foreign node beside it). */
+    fun startBtnGateHint(agentId: String) = "agent.$agentId.startBtn.gateHint"
+
     /** Honest surfacing of a lifecycle-control failure (409/403/503/404). */
     fun lifecycleError(agentId: String) = "agent.$agentId.lifecycleError"
 
