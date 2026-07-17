@@ -43,7 +43,8 @@ import kotlin.test.assertTrue
  *  - [chromeInputsVariedByTheFloorGuard] — it changes chrome height, and the floor guard drives it (directly or
  *    through the `AgentViewModel`). Being here is a promise that `ChromeState` covers it.
  *  - [chromeInputProductionGatedAndTripwired] — it changes chrome height but production cannot reach the change;
- *    its return is caught by `theRealShellsUpperChrome…`, which measures the shipped shell.
+ *    its return is caught by a tripwire — the real-shell render for a BUILD flag (`theRealShellsUpperChrome…`), or a
+ *    SOURCE scan of the shell call site for a RUNTIME status whose row the real shell never renders in its state.
  *  - [chromeInertByMeasurement] — it does **not** change chrome height, and [theInertBucketIsMeasuredNotBelieved]
  *    proves it: the header is rendered with the parameter at a chrome-provoking value and its height is asserted
  *    unchanged. **This bucket is a measurement, not a claim.**
@@ -79,6 +80,16 @@ class AgentWindowChromeInputCoverageTest {
         "terminalGatedNote" to "renders the gated-shell note only when `terminalGatedNote && !terminalAvailable`; " +
             "the shipped shell passes `!WORKTREE_SHELL_LIVE_ENABLED` = false AND a non-null terminalContent, so " +
             "both conjuncts are false. Reachability is guarded by theRealShellsUpperChrome…, not assumed here",
+        // CYP-629 §6.3c: hubUnconfigured renders StartUnconfiguredGateRow (a chrome row below the header) only when
+        // true. Opt-in-OFF today — default false AND NOT passed at the sole production call site (AgentShell), so
+        // production cannot reach the row. UNLIKE terminalGatedNote (a BUILD flag the real-shell render reflects),
+        // this is a RUNTIME status, so theRealShellsUpperChrome (which renders a CONFIGURED hub) cannot catch it going
+        // live. Its tripwire is therefore a SOURCE scan, [hubUnconfigured_isNotYetWiredInTheShell…], which fires the
+        // instant AgentShell threads it — forcing reclassification to chromeInputsVariedByTheFloorGuard + a floor.
+        "hubUnconfigured" to "CYP-629 §6.3c: the unconfigured-hub GATED start row (below the header). Opt-in-off — " +
+            "default false and unwired in AgentShell, so production can't reach it. A RUNTIME status, not a build " +
+            "flag, so the real-shell render can't catch its flip; the source-scan tripwire " +
+            "hubUnconfigured_isNotYetWiredInTheShell does, forcing a move to the varied bucket + a floor when wired",
     )
 
     /**
@@ -156,6 +167,31 @@ class AgentWindowChromeInputCoverageTest {
         val doubled = mutableListOf<String>()
         allBuckets().forEach { (_, names) -> names.forEach { if (!seen.add(it)) doubled += it } }
         assertTrue(doubled.isEmpty(), "a parameter is in more than one bucket: $doubled")
+    }
+
+    /**
+     * CYP-629 §6.3c — the tripwire for `hubUnconfigured`'s place in [chromeInputProductionGatedAndTripwired]. That
+     * bucket's promise is "production cannot reach the chrome change." For `terminalGatedNote` a BUILD flag makes
+     * that measurable — the real-shell render reflects it (`theRealShellsUpperChrome…`). `hubUnconfigured` is a
+     * **runtime** status, so the real shell (rendered with a CONFIGURED hub) shows no row whether or not the input
+     * is wired — a render tripwire is blind to its flip. A **source** scan is not: `AgentShell` is the sole
+     * production `AgentWindow` call site, and while it does not thread `hubUnconfigured`, the gated row is
+     * unreachable and the bucket-2 claim holds. The instant the first-run gate is wired live (App → shell passes
+     * the status), this reddens — the classification cannot silently rot into "unreachable" while the surface ships.
+     */
+    @Test
+    fun hubUnconfigured_isNotYetWiredInTheShell_soItsGatedBucketStillHolds() {
+        val wired = locateAgentShellSource().readLines().any { line ->
+            line.substringBefore("//").contains("hubUnconfigured")
+        }
+        assertTrue(
+            !wired,
+            "CYP-629 §6.3c: AgentShell now references `hubUnconfigured` — the first-run gate has been wired live, so " +
+                "the StartUnconfiguredGateRow is production-reachable chrome and can no longer sit in " +
+                "chromeInputProductionGatedAndTripwired. Move `hubUnconfigured` to chromeInputsVariedByTheFloorGuard, " +
+                "add a ChromeState dimension for it in ContentWindowChromeFloorGuardTest (an unconfigured hub has NO " +
+                "running agent ⇒ banner = NONE), and let the floor follow the measurement.",
+        )
     }
 
     /**
@@ -261,8 +297,14 @@ class AgentWindowChromeInputCoverageTest {
         return Param(name, index + 1)
     }
 
-    private fun locateAgentWindowSource(): File {
-        val rel = "src/commonMain/kotlin/com/tneff/cyppieagents/agentview/AgentWindow.kt"
+    private fun locateAgentWindowSource(): File =
+        locateSource("src/commonMain/kotlin/com/tneff/cyppieagents/agentview/AgentWindow.kt")
+
+    /** CYP-629 §6.3c: the sole production `AgentWindow` call site, scanned by the hubUnconfigured wiring tripwire. */
+    private fun locateAgentShellSource(): File =
+        locateSource("src/commonMain/kotlin/com/tneff/cyppieagents/AgentShell.kt")
+
+    private fun locateSource(rel: String): File {
         var cur: File? = File(".").absoluteFile
         while (cur != null) {
             File(cur, rel).let { if (it.isFile) return it }
