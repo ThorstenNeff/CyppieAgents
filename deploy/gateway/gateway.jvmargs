@@ -1,0 +1,27 @@
+# CYP-638 S7 — the isolated Gateway (A2) process launch hardening JVM args.
+#
+# SINGLE SOURCE. Both `:server:gatewayRun` and any packaged gateway launcher read THIS file, so the flags cannot
+# drift between the dev-run and the deployed launcher (the CYP-623 lesson: two hand-copied arg lists drift). One arg
+# per line; blank lines and `#` comments are ignored. A change here re-runs GatewayLaunchHardeningTest (wired as a
+# `test` task input in server/build.gradle.kts, the CYP-178 CC2 stale-green fix).
+#
+# ★ Why these are CONSTRUCTION, not a runbook line (PO-Assistant, CYP-638 §13): the A2 gateway terminates the
+#   operator↔hub tunnel, so decrypted cleartext — session tokens, ?token/?ticket, and PTY code-exec bytes — lives in
+#   this process's heap. A heap dump writes that cleartext to DISK, so "no cleartext on disk" is FALSE while a heap
+#   dump can fire. A flag in the launcher holds; a sentence in a runbook does not.
+
+# Force heap-dump-on-OOM OFF even if the deploy environment (JAVA_TOOL_OPTIONS / container default) tried to enable
+# it — an OOM must NOT spill the cleartext heap to an .hprof on disk.
+-XX:-HeapDumpOnOutOfMemoryError
+
+# No JVM-written core dump on a fatal error — a core image contains the same cleartext heap. (OS-level `ulimit -c 0` /
+# systemd `LimitCORE=0` is the deploy/unit complement; this is the in-JVM half.)
+-XX:-CreateCoredumpOnCrash
+
+# Netty 4.2 JFR guard — the gateway runs on Netty (embeddedServer(Netty)); without this it hits the CYP-206/225
+# NoClassDefFoundError FreeChunkEvent on a stripped/quirky jdk.jfr JVM. Same flag the hub carries.
+-Dio.netty.jfr.enabled=false
+
+# A bounded, knowable heap ceiling (same rationale as the hub, CYP-417) — a runaway allocation fails closed at a known
+# limit instead of dragging the host. Deploy may override with an explicit -Xmx.
+-XX:MaxRAMPercentage=75.0
