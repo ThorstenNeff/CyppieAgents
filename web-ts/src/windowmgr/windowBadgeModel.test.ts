@@ -1,7 +1,7 @@
 // CYP-646 — the pure Count/Severity window-badge policy. Teeth pin the focus-gating (a focused window shows no
 // badge), the ≥WARN severity threshold, the max-severity fold, and the layout-stable count.
 import { describe, it, expect } from 'vitest'
-import { maxTailSeverity, commCountBadge, eventSeverityBadge, severityRank, formatBadgeCount } from './windowBadge'
+import { maxTailSeverity, commCountBadge, eventSeverityBadge, severityRank, formatBadgeCount } from './windowBadgeModel'
 import type { Severity } from '../eventlog/eventLog'
 
 const ev = (severity: Severity) => ({ severity })
