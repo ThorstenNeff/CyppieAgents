@@ -85,3 +85,13 @@ fun cloneDisplay(status: CloneStatus): CloneDisplay? = when (status) {
  */
 fun isTerminalCloneStatus(status: CloneStatus): Boolean =
     status == CloneStatus.CLONED_OK || status == CloneStatus.CLONE_FAILED
+
+/**
+ * CYP-629 §7.3 — should the poll KEEP polling? Only while a clone is actively in progress
+ * ([CloneStatus.CONFIGURED_NEVER_CLONED] just set → about to clone, or [CloneStatus.CLONING]). It stops the instant
+ * the status reaches a TERMINAL value ([isTerminalCloneStatus]) — that is the ONLY stop-path (no timeout, no
+ * attempt-counter: a long clone is not a failure, ux-spec §4.4). `NOT_CONFIGURED` (no repo yet) is not in progress,
+ * so the poll never spins on it.
+ */
+fun isCloneInProgress(status: CloneStatus): Boolean =
+    status == CloneStatus.CONFIGURED_NEVER_CLONED || status == CloneStatus.CLONING
