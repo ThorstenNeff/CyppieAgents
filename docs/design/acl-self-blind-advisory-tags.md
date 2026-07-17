@@ -24,10 +24,16 @@ Der Marker sitzt auf **derselben** Zelle wie das Read-/Write-Toggle (`aclMatrix.
 |---|---|---|
 | `AclMatrixTags.SELF_BLIND_WARNING` | `aclMatrix.selfBlindWarning` | **RETIRE bei B1** — der Selbst-Halte-Dialog entfällt (READ zieht auf die post-commit-Inline-Advisory um). Der **PO-Lockout**-Dialog (`LOCKOUT_DIALOG`/`.confirm`/`.cancel`) **bleibt** (Guarantee-brechend → Guard, unverändert). |
 
-> **Wichtig für QA (CYP-7):** `SELF_BLIND_WARNING` ist heute in einem Test verankert (Selbst-Erblindungs-Dialog).
-> Bei B1 wandert die Assertion vom **Dialog-Node** (`aclMatrix.selfBlindWarning`) auf den **Zell-Qualifier**
-> (`aclMatrix.cell.<ch>.<ag>.selfBlind`) — **das ist ein geteilter Contract-Change, PO-koordiniert, nicht
-> unilateral.** Bei B2 bliebe der Dialog-Tag; B1 ist empfohlen.
+> **Wichtig für QA (CYP-7) — B1 vom Auftraggeber ENTSCHIEDEN (2026-07-17):** `SELF_BLIND_WARNING` ist heute in
+> einem Test verankert (Selbst-Erblindungs-Dialog). Die Assertion wandert vom **Dialog-Node**
+> (`aclMatrix.selfBlindWarning`) auf den **Zell-Qualifier** (`aclMatrix.cell.<ch>.<ag>.selfBlind`) — **geteilter
+> Contract-Change, den der PO mit po2 fährt, NICHT unilateral von mir.** Ich benenne nur exakt das Weg/Dazu.
+> **`LOCKOUT_DIALOG` / `.confirm` / `.cancel` bleiben** (der PO-Lockout nutzt den Dialog weiter).
+>
+> **Der Outcome-Zahn (spec §5.2) assertet über DIESEN Qualifier + den Grant-Wert, nicht über die Advisory-
+> Berechnung:** Zahn A = kein `aclMatrix.selfBlindWarning`-Node beim Selbst-Toggle + `.selfBlind`-Marker da +
+> Zelle committed; Mutation „Dialog-Zweig zurück ⇒ rot". Zahn B = Re-Grant stellt den Grant wieder her + der
+> `.selfBlind`-Qualifier verschwindet (der echte Rückweg, nicht nur der Text).
 
 ## a11y-Verankerung (kein Tag, semantics)
 

@@ -63,11 +63,13 @@ Jede Copy trägt beide Teile, in dieser Reihenfolge:
 - **Reuse Marker-Fläche:** dieselbe per-Zelle-`cellNotice`→`StateMarker`-Bahn wie `acl_po_protected`
   (`AclPanel.kt:310,366`) — neutraler Inline-Marker, **kein** Error-Banner (`state.notice` ist errorContainer,
   `AclPanel.kt:133-134` — **nicht** verwenden).
-- **RETIRE `acl_self_blind_warning`** („Damit erblindet dein Live-Feed …") **bei B1** (READ zieht auf die
-  Inline-Advisory um, s. spec §5): die alte Dialog-Copy ist „_warning"-getönt (Alarm) + READ-zentrisch + im
-  Halte-Dialog — genau das, was der Auftraggeber-Entscheid ablöst. **Bei B2** (READ-Dialog bleibt) würde
-  `acl_self_blind_warning` bestehen; B1 ist empfohlen (spec §5). **Retire ist ein PO-ratifizierter Behavior-Change
-  einer ausgelieferten Fläche — nicht stumm ziehen.**
+- **RETIRE `acl_self_blind_warning`** („Damit erblindet dein Live-Feed …") — **B1 vom Auftraggeber ENTSCHIEDEN**
+  (2026-07-17): READ zieht auf die Inline-Advisory um, der selfBlind-Ast in den Halte-Dialog fällt weg. Die alte
+  Dialog-Copy ist „_warning"-getönt (Alarm) + READ-zentrisch + im Halte-Dialog — genau das, was der Entscheid
+  ablöst. **Ablösung `acl_self_blind_warning` → `acl_self_blind_read` + `acl_self_blind_write`.**
+  ⚠ **PO-KOORDINIERT, nicht einseitig:** der Key hängt am geteilten CYP-7-Contract (Team-2 liest mit) — der **PO**
+  fährt die Ablösung mit po2; ich benenne nur exakt (spec §5.1). **Nicht** retiren: `acl_po_lockout_warning` /
+  `acl_po_protected` (der PO-Lockout-Dialog lebt weiter).
 
 ## Self-Validation
 
