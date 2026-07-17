@@ -204,7 +204,15 @@ fun Application.gatewayModule(
 
 /** CYP-638 S3 — the same-origin path prefix the browser dials the Kratos PUBLIC API under (matches the client's
  *  `kratosBaseUrl = "$platformBaseUrl/.ory/kratos/public"`). Stripped before forwarding to the real Kratos base. */
-private const val KRATOS_PUBLIC_PREFIX = "/.ory/kratos/public"
+internal const val KRATOS_PUBLIC_PREFIX = "/.ory/kratos/public"
+
+/** CYP-638 — the Kratos self-service flow vocabulary the browser drives same-origin under [KRATOS_PUBLIC_PREFIX]
+ *  (login/registration/recovery/verification/settings/logout; `HttpAuthRepository.kt`). Fixed by Kratos, but the
+ *  gateway proxies the whole prefix via a wildcard so it does NOT enumerate flows at runtime. This list is the ONE
+ *  place the flow set is named, so the S3/S6 gateway tests can drive EVERY self-service surface from a single source
+ *  — the leak-coverage analog to REST_OPS / WS_CHANNELS for the Kratos leg (a new flow named here is auto-driven). */
+internal val KRATOS_SELF_SERVICE_FLOWS: List<String> =
+    listOf("login", "registration", "recovery", "verification", "settings", "logout")
 
 /** Derive the hub's `ws(s)://` base from its `http(s)://` base for the WS proxy leg. */
 private fun wsBaseOf(httpBaseUrl: String): String = when {
