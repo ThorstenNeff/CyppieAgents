@@ -68,6 +68,13 @@ tasks.named<Test>("test") {
         .withPropertyName("openApiContractExport")
         .withPathSensitivity(PathSensitivity.RELATIVE)
         .optional(true)
+    // CYP-638 S7: GatewayLaunchHardeningTest reads deploy/gateway/gateway.jvmargs at RUNTIME (a repoFile walk), so
+    // Gradle can't otherwise see it as a test input — without this, editing ONLY the argfile leaves `test` UP-TO-DATE
+    // and the launch-hardening guard is stale-green on the exact file it exists to pin (same CC2 fix as the yml/jsonnet
+    // wiring above).
+    inputs.file(rootProject.file("deploy/gateway/gateway.jvmargs"))
+        .withPropertyName("gatewayJvmArgs")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 // CYP-409/CYP-426 (W1 producer): export the AsyncAPI (WS) + OpenAPI (REST) contracts (generated from :core via
@@ -100,6 +107,15 @@ tasks.register<JavaExec>("gatewayRun") {
     description = "CYP-638 S0 — run the isolated Gateway process (same-origin front-door; default-deny allowlist reverse-proxy to the hub)."
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.tneff.cyppieagents.gateway.GatewayServerKt")
+    // CYP-638 S7 — the gateway launch HARDENING args ride from the SINGLE-SOURCE argfile so this dev-run and any
+    // packaged gateway launcher (jpackage --java-options / systemd) carry the SAME flags (no drift; the CYP-623 lesson
+    // that two hand-copied arg lists diverge). PO-Assistant flag: `-XX:-HeapDumpOnOutOfMemoryError` +
+    // `-XX:-CreateCoredumpOnCrash` so the A2 cleartext heap (tokens + PTY bytes) never spills to disk. Pinned by
+    // GatewayLaunchHardeningTest (which reads the same file).
+    jvmArgs(
+        rootProject.file("deploy/gateway/gateway.jvmargs").readLines()
+            .map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") },
+    )
 }
 
 dependencies {
