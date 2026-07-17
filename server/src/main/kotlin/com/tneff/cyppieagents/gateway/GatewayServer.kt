@@ -27,6 +27,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.request.uri
 import io.ktor.server.response.header
 import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondFile
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.DefaultWebSocketServerSession
@@ -39,6 +40,7 @@ import io.ktor.websocket.close
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import java.io.File
 
 /** CYP-638 S6 — the gateway's ONLY logger. It must NEVER be handed a request URI/query (carries `?token=`) or any
  *  header/frame body — only structural facts (an exception's class name, a status). A token on any log path is the
@@ -105,36 +107,10 @@ fun interface GatewayAllowlist {
             }
         }
 
-        /** Decode `%XX` escapes only (never `+`→space, which is query-encoding not path-encoding) so the control-plane
-         *  deny sees the true path — e.g. `/api/%63p/…` → `/api/cp/…`. Idempotent for un-escaped paths. */
-        private fun decodePercent(s: String): String {
-            if ('%' !in s) return s
-            val sb = StringBuilder(s.length)
-            var i = 0
-            while (i < s.length) {
-                val c = s[i]
-                if (c == '%' && i + 2 < s.length) {
-                    val hex = s.substring(i + 1, i + 3).toIntOrNull(16)
-                    if (hex != null) { sb.append(hex.toChar()); i += 3; continue }
-                }
-                sb.append(c); i++
-            }
-            return sb.toString()
-        }
-
-        /** Resolve `.`/`..` dot-segments in an absolute path (RFC 3986 §5.2.4 style): `.` drops, `..` pops the previous
-         *  segment (never above root), and empty segments (`//`) collapse — so the gateway decides on the SAME path the
-         *  hub will route to. e.g. `/api/agents/../cp/challenge` → `/api/cp/challenge`; `/api/a/../../cp` → `/cp`. */
-        private fun normalizeDotSegments(p: String): String {
-            if (!p.contains("..") && !p.contains("/.") && !p.contains("//")) return p // fast path: nothing to resolve
-            val out = ArrayDeque<String>()
-            for (seg in p.split('/')) when (seg) {
-                "", "." -> {} // collapse `//` and drop `.`
-                ".." -> if (out.isNotEmpty()) out.removeLast() // pop; never escape above root
-                else -> out.addLast(seg)
-            }
-            return "/" + out.joinToString("/")
-        }
+        // ★ CYP-638 F5 path resolution — `decodePercent` + `normalizeDotSegments` are now TOP-LEVEL internal (just below
+        //   the class) so BOTH this allowlist deny AND the S7 SPA disk-serve resolve on the SAME decoded+normalized path.
+        //   The F5 lesson (an encoded `..` decoded only at File-resolve time escapes the root) MUST hold for the SPA leg
+        //   too — single-sourced, not re-implemented.
 
         /** A concrete request path matches a `REST_OPS` template iff they have the same segment count and each template
          *  segment is either literally equal or a `{param}` placeholder filled by a non-empty concrete segment. */
@@ -146,6 +122,40 @@ fun interface GatewayAllowlist {
             }
         }
     }
+}
+
+/** Decode `%XX` escapes only (never `+`→space, which is query-encoding not path-encoding) so a decision sees the true
+ *  path — e.g. `/api/%63p/…` → `/api/cp/…`, `/%2e%2e%2f` → `/../`. Idempotent for un-escaped paths. (CYP-638 F5:
+ *  Ktor's `request.path()` does NOT decode `%2f`/`%2e`, so a raw path must be decoded here BEFORE any deny or
+ *  file-resolve — an escape decoded only at File-resolve time would break out of the root.) */
+internal fun decodePercent(s: String): String {
+    if ('%' !in s) return s
+    val sb = StringBuilder(s.length)
+    var i = 0
+    while (i < s.length) {
+        val c = s[i]
+        if (c == '%' && i + 2 < s.length) {
+            val hex = s.substring(i + 1, i + 3).toIntOrNull(16)
+            if (hex != null) { sb.append(hex.toChar()); i += 3; continue }
+        }
+        sb.append(c); i++
+    }
+    return sb.toString()
+}
+
+/** Resolve `.`/`..` dot-segments in an absolute path (RFC 3986 §5.2.4 style): `.` drops, `..` pops the previous
+ *  segment (never above root), and empty segments (`//`) collapse — so the gateway decides on the SAME path the hub
+ *  will route to / the SAME path the SPA dir resolves under. e.g. `/api/agents/../cp/challenge` → `/api/cp/challenge`;
+ *  `/assets/../../etc/passwd` → `/etc/passwd` (clamped at root, never escaping). */
+internal fun normalizeDotSegments(p: String): String {
+    if (!p.contains("..") && !p.contains("/.") && !p.contains("//")) return p // fast path: nothing to resolve
+    val out = ArrayDeque<String>()
+    for (seg in p.split('/')) when (seg) {
+        "", "." -> {} // collapse `//` and drop `.`
+        ".." -> if (out.isNotEmpty()) out.removeLast() // pop; never escape above root
+        else -> out.addLast(seg)
+    }
+    return "/" + out.joinToString("/")
 }
 
 /** RFC 7230 §6.1 hop-by-hop headers — owned by the transport, never blindly relayed across the proxy hop. */
@@ -167,6 +177,11 @@ fun Application.gatewayModule(
     kratosBaseUrl: String = "",
     allowlist: GatewayAllowlist = GatewayAllowlist.fromRestContract(),
     client: HttpClient = HttpClient(CIO) { install(ClientWebSockets) },
+    // CYP-638 S7 (R3 / CYP-666) — the built SPA static dir the gateway serves SAME-ORIGIN so the httpOnly
+    // `ory_kratos_session` cookie is set + auto-sent (which is what makes `/ws/agent`'s cookie-only auth work). `null`
+    // ⇒ the SPA leg is unmounted (dev / behind-proxy) and the edge behaves exactly as before. Deploy points this at the
+    // frontend build output (web-ts `dist/`). See [serveSpaIfEligible] for the deny-before-fallback + traversal guards.
+    spaDir: File? = null,
 ) {
     val hubWsBase = wsBaseOf(hubBaseUrl)
     monitor.subscribe(ApplicationStopped) { client.close() }
@@ -191,15 +206,65 @@ fun Application.gatewayModule(
             handle {
                 val method = call.request.httpMethod
                 val path = call.request.path()
-                if (!allowlist.isAllowed(method, path)) {
-                    // ★ default-deny — the control surface (and any un-allowlisted WS-upgrade path) never reaches the hub.
-                    call.respondBytes(ByteArray(0), status = HttpStatusCode.NotFound)
+                if (allowlist.isAllowed(method, path)) {
+                    forwardToUpstream(call, client, hubBaseUrl)
                     return@handle
                 }
-                forwardToUpstream(call, client, hubBaseUrl)
+                // ★ CYP-638 S7 — the request is NOT an allowed data-plane op. Try the SPA leg (R3 same-origin), but
+                //   ONLY as a fallback AFTER the allowlist denial and NEVER for the machine surface — [serveSpaIfEligible]
+                //   enforces deny-before-fallback + the F5 traversal guard. If it did not serve, the default-deny holds.
+                if (serveSpaIfEligible(call, method, path, spaDir)) return@handle
+                // ★ default-deny — the control surface (and any un-allowlisted WS-upgrade path) never reaches the hub,
+                //   and the SPA leg never masked it with a 200 index.html.
+                call.respondBytes(ByteArray(0), status = HttpStatusCode.NotFound)
             }
         }
     }
+}
+
+/** CYP-638 S7 — the machine/data-plane prefixes the SPA leg MUST NEVER serve: those keep hitting the allowlist /
+ *  WS / Kratos handlers so the `/api/cp` control-plane, `/ws/hub`, `/mcp`, and the Kratos surface stay **404 at the
+ *  edge**, never masked by a `200 index.html`. Matched on the decoded+normalized path, at segment boundaries. */
+private val SPA_RESERVED_PREFIXES: List<String> = listOf("/api", "/ws", "/.ory", "/mcp")
+
+private fun isReservedSurface(resolvedPath: String): Boolean =
+    SPA_RESERVED_PREFIXES.any { resolvedPath == it || resolvedPath.startsWith("$it/") }
+
+/**
+ * CYP-638 S7 (R3 / CYP-666) — serve the same-origin SPA as a **fallback**, or return `false` so the caller keeps the
+ * default-deny 404. Responds (returns `true`) only for a browser-navigation GET that is safe to serve; otherwise leaves
+ * the 404 to the caller. Order is the whole security of this leg:
+ *
+ *  1. **Not eligible** (no SPA dir, or not a GET) → `false` (caller 404s). The allowlist denial already ran first, so
+ *     this is only reached for non-allowed paths — the SPA can never shadow an allowed API/WS route.
+ *  2. **★ F5 traversal guard (mandatory, verbatim lesson):** decode the raw path, and if it contains any `..` segment
+ *     REFUSE outright (404) — never fall back to index.html. Ktor's `request.path()` does not decode `%2f`/`%2e`, so a
+ *     `%2e%2e%2f` decoded only at File-resolve time would escape the root; decoding here BEFORE the File-resolve is the
+ *     fix. (Belt: the canonical-under-root check below also rejects an escape.)
+ *  3. **★ deny before fallback:** on the decoded+normalized path, if it is the machine surface ([isReservedSurface])
+ *     → `false` (caller 404s), so the SPA never masks the control-plane / `/ws/hub` deny with a 200.
+ *  4. Otherwise resolve the file UNDER the SPA dir (canonically, belt-and-suspenders against symlink escape) and serve
+ *     it; a path with no matching file falls back to `index.html` (SPA client-side routing). No index.html → `false`.
+ */
+private suspend fun serveSpaIfEligible(call: ApplicationCall, method: HttpMethod, rawPath: String, spaDir: File?): Boolean {
+    if (spaDir == null || method != HttpMethod.Get) return false
+    val decoded = decodePercent(rawPath)
+    if (decoded.split('/').any { it == ".." }) { // (2) traversal attempt → 404, never a byte, never index.html
+        call.respondBytes(ByteArray(0), status = HttpStatusCode.NotFound)
+        return true
+    }
+    val resolved = normalizeDotSegments(decoded)
+    if (isReservedSurface(resolved)) return false // (3) machine surface → caller keeps the default-deny 404
+    val root = spaDir.canonicalFile
+    val candidate = File(root, resolved.trimStart('/')).canonicalFile
+    if (candidate != root && !candidate.path.startsWith(root.path + File.separator)) { // (4 belt) escaped the root
+        call.respondBytes(ByteArray(0), status = HttpStatusCode.NotFound)
+        return true
+    }
+    val file = candidate.takeIf { it.isFile } ?: File(root, "index.html")
+    if (!file.isFile) return false // no asset and no index.html → caller 404s
+    call.respondFile(file)
+    return true
 }
 
 /** CYP-638 S3 — the same-origin path prefix the browser dials the Kratos PUBLIC API under (matches the client's
@@ -319,5 +384,10 @@ fun main() {
     val hubUrl = System.getenv("CYPPIE_HUB_URL") ?: "http://127.0.0.1:8787"
     // CYP-638 S3 — the Kratos PUBLIC base for the same-origin self-service proxy. Blank ⇒ the Kratos leg is unmounted.
     val kratosUrl = System.getenv("CYPPIE_KRATOS_URL") ?: ""
-    embeddedServer(Netty, port = port, host = host) { gatewayModule(hubUrl, kratosUrl) }.start(wait = true)
+    // CYP-638 S7 (R3 / CYP-666) — the built SPA static dir served SAME-ORIGIN. Blank/unset ⇒ the SPA leg is unmounted
+    //   (dev / behind-proxy). Deploy points this at the frontend build output (e.g. web-ts `dist/`).
+    val spaDir = System.getenv("CYPPIE_GATEWAY_SPA_DIR")?.takeIf { it.isNotBlank() }?.let { File(it) }
+    embeddedServer(Netty, port = port, host = host) {
+        gatewayModule(hubUrl, kratosUrl, spaDir = spaDir)
+    }.start(wait = true)
 }
