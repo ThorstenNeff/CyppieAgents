@@ -95,3 +95,35 @@ fun isTerminalCloneStatus(status: CloneStatus): Boolean =
  */
 fun isCloneInProgress(status: CloneStatus): Boolean =
     status == CloneStatus.CONFIGURED_NEVER_CLONED || status == CloneStatus.CLONING
+
+/**
+ * CYP-629 §6.2/§6.3a — the honest degraded-workspace state after a skip, derived from the SAME config status (no
+ * separate flag to drift). Visible exactly while the gate would be ACTIVE ([firstRunGateMode] == ACTIVE): unknown
+ * (LOADING) shows nothing (we don't assert "unconfigured" when unsure), and done (TRANSPARENT) shows nothing (the
+ * banner clears itself the instant key + `CLONED_OK` land — no lingering nag).
+ *
+ * SPECIFIC, not generic (§6.3a): it names exactly what is open, via the reused step labels — [missingApiKey] and/or
+ * [missingRepo]. The one edge that a generic message would LIE about (the CYP-639 confusion §7 closes): a repo whose
+ * clone FAILED is *set*, not missing — so [cloneFailed] carries the clone-error copy, and [missingRepo] is then
+ * false. Precedence: a set-but-failed repo reads "clone failed", never "repository missing".
+ */
+data class WorkspaceUnconfiguredState(
+    val visible: Boolean,
+    val missingApiKey: Boolean,
+    val missingRepo: Boolean,
+    val cloneFailed: Boolean,
+    val cloneReason: CloneFailReason?,
+)
+
+fun workspaceUnconfigured(status: FirstRunConfigStatus): WorkspaceUnconfiguredState {
+    val active = firstRunGateMode(status) == FirstRunGateMode.ACTIVE
+    // A set-but-failed repo is not "missing" — it carries its own clone-error copy (never "repository missing").
+    val cloneFailed = active && status.cloneStatus == CloneStatus.CLONE_FAILED
+    return WorkspaceUnconfiguredState(
+        visible = active,
+        missingApiKey = active && !status.apiKeySet,
+        missingRepo = active && status.cloneStatus != CloneStatus.CLONED_OK && !cloneFailed,
+        cloneFailed = cloneFailed,
+        cloneReason = if (cloneFailed) status.cloneReason else null,
+    )
+}
