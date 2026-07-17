@@ -1,7 +1,7 @@
 // CYP-644 — the pure handoff/context-lost banner policy. Teeth pin the fail-closed rule (banner ONLY on the two
 // settled states, never on MEDIATED / the transient HANDING_* / absent) + the holder/since fallbacks.
 import { describe, it, expect } from 'vitest'
-import { handoffBanner, formatHandoffSince, handoffHolderLabel } from './handoffBanner'
+import { handoffBanner, formatHandoffSince, handoffHolderLabel } from './handoffBannerModel'
 import type { AgentTerminalControlEvent } from '../types/generated/contract'
 
 const ev = (state: AgentTerminalControlEvent['state'], extra: Partial<AgentTerminalControlEvent> = {}): AgentTerminalControlEvent => ({

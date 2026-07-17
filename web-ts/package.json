@@ -6,8 +6,9 @@
   "description": "CyppieAgents Web frontend — TypeScript/DOM rewrite (Epic CYP-397). Coexists with the WASM :app:webApp until cutover (W10).",
   "scripts": {
     "dev": "vite",
-    "build": "npm run contract:gen && npm run tokens:gen && tsc -b && vite build",
+    "build": "npm run check:casing && npm run contract:gen && npm run tokens:gen && tsc -b && vite build",
     "typecheck": "tsc -b",
+    "check:casing": "node scripts/check-casing.mjs",
     "contract:gen": "node scripts/generate-contract-types.mjs",
     "tokens:gen": "node scripts/generate-tokens-css.mjs",
     "contract:check": "node scripts/generate-contract-types.mjs && tsc -b",
