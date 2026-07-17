@@ -811,6 +811,11 @@
     <string name="first_run_step_apikey">API-Key</string>
     <string name="first_run_step_repo">Repository</string>
     <string name="first_run_step_team">Team</string>
+    <!-- CYP-629 Inc4 — first-run skip → honest degraded workspace (ux-spec §6.2/§6.3a) -->
+    <string name="workspace_unconfigured_banner">Hub noch nicht eingerichtet — Agenten können nicht starten. In den Projekt-Einstellungen einrichten.</string>
+    <string name="workspace_setup_resume">Einrichtung fortsetzen</string>
+    <string name="workspace_unconfigured_chip">Nicht eingerichtet</string>
+    <string name="a11y_workspace_unconfigured_collapse">Hinweis einklappen</string>
     <string name="first_run_apikey_posture">Der API-Key wird server-seitig gespeichert und überall nur maskiert angezeigt (***&lt;letzte 4&gt;) — noch nicht verschlüsselt at-rest (Verschlüsselung folgt in einem späteren Update). Behandle den Hub-Host als vertrauenswürdig.</string>
     <string name="first_run_apikey_saved">Gespeichert. Der Key wird beim ersten Start deiner Agenten verwendet.</string>
     <string name="first_run_repo_saved">Repository gesetzt. Der Hub klont es jetzt.</string>

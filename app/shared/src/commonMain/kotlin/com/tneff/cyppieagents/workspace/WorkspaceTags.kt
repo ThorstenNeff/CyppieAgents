@@ -73,4 +73,27 @@ object WorkspaceTags {
      * `workspace_relay_uncertain`. Frozen with QA/DS via the PO.
      */
     const val RELAY_DROP_UNCERTAIN = "workspace.relayDrop.uncertain"
+
+    // --- CYP-629 Inc4 (first-run skip → honest degraded workspace, ux-spec §6.2/§6.3a) ---
+
+    /**
+     * The persistent full-width **unconfigured** banner shown after a skip while the hub is still unconfigured
+     * (key missing and/or repo not `CLONED_OK`). `INFO`/Polite — the degraded boot is **expected**, never alarm-red.
+     * Specific, not generic: names what's open via the reused first-run step labels; a `CLONE_FAILED` repo carries the
+     * clone-error copy, NOT "repository missing". Carries the collapse control + the resume CTA.
+     */
+    const val UNCONFIGURED_BANNER = "workspace.unconfiguredBanner"
+
+    /** The banner's collapse control (§6.3a Nag-fix) → collapses to the passive [UNCONFIGURED_CHIP]. */
+    const val UNCONFIGURED_COLLAPSE = "workspace.unconfiguredCollapse"
+
+    /**
+     * The collapsed, **passive** indicator chip ("Not configured"). Never wholly hidden (the unfinished state is a real
+     * standing fact → hiding it would be an honesty omission), but passive: it carries **no** liveRegion — the collapsed
+     * chip does not announce, so honesty is kept without an assistive back-door nag. Tap → re-expands the banner on demand.
+     */
+    const val UNCONFIGURED_CHIP = "workspace.unconfiguredChip"
+
+    /** The banner's "Continue setup" CTA → reopens the FirstRunGate at the first open step (not always step 1). */
+    const val SETUP_RESUME = "workspace.setupResume"
 }
