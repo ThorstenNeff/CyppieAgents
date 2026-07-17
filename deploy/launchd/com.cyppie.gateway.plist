@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CYP-667 S7 — launchd job for the isolated Gateway (A2) process, in the MEASURED hub pattern (wrapper +
+  KeepAlive + RunAtLoad). deploy adjusts the relative paths below to absolute at install (matching how the
+  hub/relay LaunchAgents are laid out on the host).
+
+  ★★ OPEN — Auftraggeber posture decision (PO escalating; DO NOT finalize the load context until answered):
+     LaunchAgent (this shape; ~/Library/LaunchAgents, gui/$UID — matches hub/relay) vs LaunchDaemon
+     (/Library/LaunchDaemons, system/root, boot-persistent + a `UserName` key to drop privileges). Auto-login is
+     OFF on the host, so a User-LaunchAgent only runs after someone logs in at the console — for a PUBLIC service
+     that may need to be a boot-persistent LaunchDaemon. Everything below (wrapper single-source, KeepAlive,
+     RunAtLoad, and the Core=0 ResourceLimits) is posture-INDEPENDENT and correct either way.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cyppie.gateway</string>
+
+    <!-- Run the wrapper, which single-sources the JVM hardening flags from deploy/gateway/gateway.jvmargs (no
+         hand-copied arg set here — the CYP-623 drift lesson). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>deploy/launchd/gateway-run.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>gateway.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>gateway.err.log</string>
+
+    <!-- ★ CYP-667 S7 — the OS core-dump complement to the JVM argfile half (the macOS equivalent of systemd
+         LimitCORE=0). The A2 gateway terminates the operator↔hub tunnel, so decrypted cleartext (session tokens,
+         ?token/?ticket, PTY code-exec bytes) lives in this process's heap; a core dump writes that to disk.
+         Hub + Relay set NO ResourceLimits → they inherit launchd's default soft 0 / hard UNLIMITED → a process
+         can raise its own soft limit and dump. The gateway sets BOTH soft AND hard Core=0 so NO process can raise
+         a core limit — construction, not a runbook line. (The in-JVM half — -XX:-CreateCoredumpOnCrash /
+         -XX:-HeapDumpOnOutOfMemoryError — rides the wrapper from the argfile.) -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>Core</key>
+        <integer>0</integer>
+    </dict>
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>Core</key>
+        <integer>0</integer>
+    </dict>
+</dict>
+</plist>

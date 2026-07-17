@@ -75,6 +75,14 @@ tasks.named<Test>("test") {
     inputs.file(rootProject.file("deploy/gateway/gateway.jvmargs"))
         .withPropertyName("gatewayJvmArgs")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+    // CYP-667 S7: GatewayLaunchdPlistTest reads the macOS launchd wrapper + plist at RUNTIME (repoFile walk) — declare
+    // them as inputs so editing ONLY the wrapper/plist re-runs the guard (same CC2 stale-green fix as above).
+    inputs.file(rootProject.file("deploy/launchd/gateway-run.sh"))
+        .withPropertyName("gatewayLaunchdWrapper")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.file("deploy/launchd/com.cyppie.gateway.plist"))
+        .withPropertyName("gatewayLaunchdPlist")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 // CYP-409/CYP-426 (W1 producer): export the AsyncAPI (WS) + OpenAPI (REST) contracts (generated from :core via
