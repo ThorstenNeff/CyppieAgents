@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.model.ResumeOutcome
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -132,8 +133,30 @@ class ResumingSession(
         }
     }
 
+    /**
+     * CYP-711 — the forwarder must be a REGISTERED subscriber before [ClaudeCodeSession.start] can emit.
+     *
+     * Both call sites are `forward(...)` immediately followed by `session.start()` ([start] :139-141 and
+     * [healToFreshLocked] :203-205), and a plain `launch` returns a `Job`, which is NOT a subscription receipt:
+     * the coroutine may not have reached `collect` when the reader begins parsing stdout. `ClaudeCodeSession`'s
+     * `_events` is **replay=0**, so an emission with no subscriber is dropped, not queued — the event never
+     * reaches this facade at all, and no collector on [events] can recover it.
+     *
+     * `CoroutineStart.UNDISPATCHED` runs the body synchronously on the calling thread up to the first real
+     * suspension, and `SharedFlow.collect` registers its slot before suspending — so the subscription exists by
+     * the time `forward` returns. This is the one form that works at BOTH sites: `start()` is not a suspend
+     * function, so it cannot await a subscription signal without changing its signature and every caller.
+     *
+     * Deliberately NOT `replay = 1`: a turn emits a BURST (`system/init`, `assistant`, `result`), and a replay
+     * of 1 hands a late subscriber only the last of them — measured RED for exactly this reason (CYP-341 arm C).
+     * Replay would have to cover an unbounded burst; subscribe-before-emit is burst-independent.
+     *
+     * The "collect registers before it suspends" step is `SharedFlow` implementation behaviour, not a documented
+     * guarantee — `Cyp711ForwardSubscriptionTest.undispatchedLaunch_isSubscribedBeforeItReturns` pins that
+     * assurance directly, so it reds if the runtime ever stops honouring it.
+     */
     private fun forward(session: ClaudeCodeSession): Job =
-        scope.launch { session.events.collect { _events.emit(it) } }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { session.events.collect { _events.emit(it) } }
 
     fun start() {
         forwardJob = forward(firstAttempt)
