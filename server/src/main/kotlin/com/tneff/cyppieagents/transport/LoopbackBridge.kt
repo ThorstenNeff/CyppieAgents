@@ -5,6 +5,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -55,6 +56,17 @@ class LoopbackBridge(
      *  [BridgeBlocking.dispatcher] (NOT `Dispatchers.IO`); injectable so a test can pin a bounded one and prove the
      *  starvation deterministically. */
     private val blockingDispatcher: CoroutineDispatcher = BridgeBlocking.dispatcher,
+    /** CYP-655 — the **tunnel-closed-keyed drain deadline**. On a CLEAN up-end the bridge FIN-half-closes the loopback
+     *  (CYP-609 `closeGraceful` = `shutdownOutput`) so the down-pump can drain + flush the hub's queued response — but
+     *  the read side stays open, so an idle-never-emitting hub feed (a stopped agent's `/ws/lifecycle` | `/ws/busy-state`
+     *  that never sends and never EOFs) parks `read()` FOREVER → the down-pump and its blocking thread leak. Once the
+     *  tunnel/up-side has closed, the down-pump gets THIS bounded window to finish; if it is still parked past it, the
+     *  socket is force-closed (RST) to free the read. Keyed on the tunnel HAVING CLOSED (the wait runs only after the
+     *  up-pump ends), NOT on read-idleness — a still-LIVE idle feed's up-pump is still parked in `receive()`, so it
+     *  never reaches the deadline and is never force-closed (the feature stays intact). `pingPeriodMillis` (stops after
+     *  incoming-EOF) and `SO_TIMEOUT` (would kill live idle feeds) are refuted alternatives. Default 1s (well under the
+     *  3s acceptance ceiling — a stopped-feed cleanup); injectable so a test can pin a tighter/looser bound. */
+    private val drainDeadlineMs: Long = 1_000,
     /** Injectable for tests (a recording fake for the RST-vs-clean discipline); prod = a real loopback [Socket] whose
      *  blocking I/O runs on [blockingDispatcher]. */
     private val socketFactory: (host: String, port: Int) -> BridgeSocket = { h, p -> RealBridgeSocket(h, p, blockingDispatcher) },
@@ -121,7 +133,17 @@ class LoopbackBridge(
                 }
             }
             up.join()
-            down.join()
+            // CYP-655 — the tunnel/up-side has closed (the up-pump ended). Give the down-pump a bounded window to finish
+            // draining the hub's queued response; if it is still parked past the deadline — an idle hub feed whose FIN'd
+            // read never EOFs — force-close (RST) to free the parked read so its blocking thread cannot leak. This runs
+            // ONLY after up.join() returns, i.e. once the tunnel closed → a still-LIVE idle feed (up-pump parked in
+            // receive()) never reaches here and is never force-closed (② feature-intact). On an ABRUPT up-end the socket
+            // was already reset in the up-pump's finally, so down.join() completes at once and no second reset fires.
+            if (withTimeoutOrNull(drainDeadlineMs) { down.join() } == null) {
+                diagLog.info("CYP-607 bridge#{} drain-deadline {}ms expired -> socket.reset() (free parked idle down-read)", bridgeId, drainDeadlineMs)
+                socket.reset()
+                down.join()
+            }
         } finally {
             diagLog.info("CYP-607 bridge#{} bridge-end (both pumps joined)", bridgeId) // CYP-607
             socket.reset()
