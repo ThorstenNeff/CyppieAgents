@@ -45,6 +45,15 @@ describe('CYP-704 §8 — mention DISPLAY resolves fail-closed against the roste
     expect(seg('@frontend', ['front', 'frontend'])).toEqual(['[@frontend]'])
   })
 
+  it('★ the match must be BOUNDARY-TERMINATED — a prefix of a longer handle is never highlighted', () => {
+    // `-` and `_` are legal id characters, so `@frontend-dev` with only `frontend` on the roster must NOT resolve:
+    // the sender meant some other (or non-existent) agent, and highlighting `frontend` would point at the wrong
+    // person with full confidence. Mirrors the Phase-2 server rule.
+    expect(seg('@frontend-dev', ['frontend'])).toEqual(['@frontend-dev'])
+    expect(seg('@po_2', ['po'])).toEqual(['@po_2'])
+    expect(seg('@frontend-dev', ['frontend', 'frontend-dev'])).toEqual(['[@frontend-dev]']) // exact id → resolves
+  })
+
   it('resolves case-insensitively but reports the CANONICAL id (text stays verbatim)', () => {
     const m = mentionSegments('moin @FrontEnd', ROSTER).find((s) => s.kind === 'mention')
     expect(m).toMatchObject({ kind: 'mention', id: 'frontend', text: '@FrontEnd' })
@@ -60,6 +69,33 @@ describe('CYP-704 §8 — mention DISPLAY resolves fail-closed against the roste
 
   it('a blank roster id never swallows a bare sigil', () => {
     expect(seg('hi @ da', ['   ', ...ROSTER])).toEqual(['hi @ da'])
+  })
+
+  // Code-exempt / quote-include — the rule shared with the Phase-2 server resolver. If the two sides disagree here,
+  // the phase boundary drifts (Phase 1 highlights, Phase 2 never notifies), which is the exact defect the shared
+  // rule exists to prevent.
+  it('★ fenced code is exempt — a handle in a snippet is shown, not addressed', () => {
+    expect(seg('siehe\n```\nhub send @frontend\n```\ndanke')).toEqual(['siehe\n```\nhub send @frontend\n```\ndanke'])
+  })
+
+  it('★ inline code is exempt', () => {
+    expect(seg('nimm `@frontend` als Beispiel')).toEqual(['nimm `@frontend` als Beispiel'])
+  })
+
+  it('★ a QUOTED line still mentions — quoting someone who addressed you is still addressing', () => {
+    expect(seg('> @frontend bitte schauen')).toEqual(['> ', '[@frontend]', ' bitte schauen'])
+  })
+
+  it('a mention AFTER a closed code block still resolves (the exemption ends with the block)', () => {
+    expect(seg('```\n@po\n```\n@frontend')).toEqual(['```\n@po\n```\n', '[@frontend]'])
+  })
+
+  it('★ an UNTERMINATED fence exempts to the end — fail-closed, never a half-parsed body', () => {
+    expect(seg('```\n@frontend @po')).toEqual(['```\n@frontend @po'])
+  })
+
+  it('a backtick INSIDE a fence is content, not an inline delimiter', () => {
+    expect(seg('```\n`@po`\n```\n@frontend')).toEqual(['```\n`@po`\n```\n', '[@frontend]'])
   })
 
   it('mentionedIds de-duplicates in first-appearance order', () => {

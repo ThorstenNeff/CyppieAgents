@@ -34,6 +34,27 @@ function isSigilBoundary(body: string, at: number): boolean {
   return at === 0 || /\s/.test(body[at - 1] ?? '')
 }
 
+// CODE IS EXEMPT, QUOTES ARE NOT (the rule shared with the Phase-2 server resolver — both sides must recognise the
+// same thing or the phase boundary drifts: highlight in Phase 1, no notify in Phase 2). `@frontend` inside code is
+// being SHOWN, not addressed — a snippet quoting a handle must not read as summoning that person. A QUOTED line
+// (`> …`) is the opposite: quoting someone who addressed you is still addressing, so quotes stay included.
+const FENCED = /```[\s\S]*?(?:```|$)/g
+const INLINE = /`[^`\n]*`?/g
+
+/** Positions covered by fenced or inline code. Unterminated markers exempt to the end of block/line — fail-closed. */
+function codeMask(body: string): readonly boolean[] {
+  const mask = new Array<boolean>(body.length).fill(false)
+  const cover = (from: number, to: number) => {
+    for (let i = from; i < to; i++) mask[i] = true
+  }
+  for (const m of body.matchAll(FENCED)) cover(m.index, m.index + m[0].length)
+  // inline only OUTSIDE fenced regions — a backtick inside a fence is content, not a delimiter.
+  for (const m of body.matchAll(INLINE)) {
+    if (mask[m.index] !== true) cover(m.index, m.index + m[0].length)
+  }
+  return mask
+}
+
 /**
  * Split `body` into text/mention segments against the roster the CALLER controls.
  *
@@ -51,14 +72,22 @@ export function mentionSegments(body: string, rosterIds: readonly string[]): rea
     pending = ''
   }
 
+  const inCode = codeMask(body)
   for (let i = 0; i < body.length; ) {
-    if (body[i] !== '@' || !isSigilBoundary(body, i)) {
+    if (body[i] !== '@' || !isSigilBoundary(body, i) || inCode[i] === true) {
       pending += body[i]
       i += 1
       continue
     }
     const rest = body.slice(i + 1).toLowerCase()
-    const hit = ids.find((id) => rest.startsWith(id.toLowerCase()))
+    // The match must be BOUNDARY-TERMINATED: the next character must end the string or be a non-id character
+    // (`[^A-Za-z0-9_-]`). Without this, `@frontend-dev` with only `frontend` on the roster would highlight
+    // `frontend` — pointing at an agent the sender did not mean, since `-` is itself a legal id character. Better
+    // no mention than a confident one aimed at the wrong person. Mirrors the Phase-2 server rule exactly.
+    const hit = ids.find((id) => {
+      const lower = id.toLowerCase()
+      return rest.startsWith(lower) && !/[A-Za-z0-9_-]/.test(rest[lower.length] ?? '')
+    })
     if (hit === undefined) {
       pending += body[i] // unknown token → the '@' is ordinary text (fail-closed)
       i += 1
