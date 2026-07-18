@@ -1,0 +1,13 @@
+# CYP-670 — Relay JVM launch args, SINGLE SOURCE for the macOS LaunchDaemon wrapper (deploy/launchd/relay-run.sh).
+#
+# The relay previously launched with ZERO JVM args (`relayRun` set none — the same "zero hardening" class as the old
+# `gatewayRun`, before CYP-667). It runs on Netty → it needs the JFR guard (CYP-206/225 NoClassDefFoundError
+# FreeChunkEvent on a stripped JDK); a bounded heap gives a knowable ceiling. One arg per line; `#`/blank ignored.
+#
+# ★ D2 (PO-ratified INTO CYP-670): the relay carries Noise-ENCRYPTED frames, but its heap can still hold connection
+#   metadata / peer-handshake material BEFORE encryption → "marginal" ≠ "zero". Uniform hardening with the hub/gateway
+#   (zero-downside, behavior-neutral): the FULL set + `Core=0` in the plist.
+-Dio.netty.jfr.enabled=false
+-XX:MaxRAMPercentage=75.0
+-XX:-HeapDumpOnOutOfMemoryError
+-XX:-CreateCoredumpOnCrash

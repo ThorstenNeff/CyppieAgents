@@ -8,26 +8,24 @@ plugins {
 
 group = "com.tneff.cyppieagents"
 version = "1.0.0"
+
+// CYP-678 — SINGLE SOURCE for the hub's JVM launch args. BOTH consumers derive from this ONE file:
+//   • `applicationDefaultJvmArgs` below → Gradle `run` / `installDist` (the generated start scripts + `:server:run`);
+//   • the `.deb` jpackage `--java-options` (`launcherArgs`, the CYP-626 installer).
+// Before CYP-678 these were TWO hand-copied lists = the CYP-623 drift trap (a flag changed in one, forgotten in the
+// other). `gatewayRun` reads its own `gateway.jvmargs` the same way (CYP-667). `deploy/hub/hub.jvmargs` carries the
+// full set — `-Dio.netty.jfr.enabled=false` (CYP-206/225: a LAUNCH arg, not the in-code setProperty that races
+// class-init, so `<clinit>` caches JFR=false and FreeChunkEvent is never referenced on a stripped jdk.jfr), the
+// bounded heap (CYP-417), AND the CYP-670 D2 hardening (HeapDump/CoreDump-off; the hub holds the master key in RAM on
+// Linux too — D2 is platform-independent). Editing the argfile now updates BOTH launchers. Pinned by
+// HubJvmArgsSingleSourceTest (both sides derive from the file — delete a flag → both red); `hub.jvmargs` is a declared
+// `test` input (CC2) so an argfile-only edit re-runs that guard.
+val hubJvmArgs: List<String> = rootProject.file("deploy/hub/hub.jvmargs").readLines()
+    .map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+
 application {
     mainClass = "com.tneff.cyppieagents.ApplicationKt"
-    // CYP-225: disable Netty 4.2's JFR buffer telemetry via a JVM LAUNCH ARG, not only the in-code
-    // System.setProperty in Application.main (CYP-206). Root cause of the persistent NoClassDefFoundError
-    // FreeChunkEvent: `PlatformDependent.JFR` is a `static final` computed in `<clinit>` (cached at class-load)
-    // and the emit sites guard `new FreeChunkEvent` with `isJfrEnabled()`; the in-code setProperty only takes
-    // effect if it runs BEFORE PlatformDependent is class-initialized — which the deploy runtime does not
-    // guarantee, so JFR cached `true` and the fix was a no-op (symptom identical to pre-fix). A launch arg is
-    // applied before ANY class loads → `<clinit>` always caches JFR=false → FreeChunkEvent (extends
-    // jdk.jfr.Event; NoClassDefFoundError on a stripped/quirky jdk.jfr JVM) is never referenced. Covers the
-    // generated distribution start scripts + `:server:run`. (NOT a netty version/transitive issue — single
-    // 4.2.13.Final; the in-code guard stays as belt-and-suspenders.) The deploy launch must carry the same arg
-    // if it does not use the generated start script (java -jar / custom command) — flagged to deploy.
-    applicationDefaultJvmArgs = listOf(
-        "-Dio.netty.jfr.enabled=false",
-        // CYP-417 (S-G / D8): a real, bounded heap so the JVM has a knowable ceiling (the ResourceGovernor's
-        // capacity estimate needs a non-unbounded maxMemory()) AND the OOM lesson is enforced at the JVM level,
-        // not just at the spawn gate. 75% of container RAM (deploy may override with an explicit -Xmx).
-        "-XX:MaxRAMPercentage=75.0",
-    )
+    applicationDefaultJvmArgs = hubJvmArgs // CYP-678: single-sourced from deploy/hub/hub.jvmargs (see above)
 }
 
 // CYP-157 (onboarding): the application plugin's `run` task otherwise uses the module dir as its
@@ -68,6 +66,47 @@ tasks.named<Test>("test") {
         .withPropertyName("openApiContractExport")
         .withPathSensitivity(PathSensitivity.RELATIVE)
         .optional(true)
+    // CYP-638 S7: GatewayLaunchHardeningTest reads deploy/gateway/gateway.jvmargs at RUNTIME (a repoFile walk), so
+    // Gradle can't otherwise see it as a test input — without this, editing ONLY the argfile leaves `test` UP-TO-DATE
+    // and the launch-hardening guard is stale-green on the exact file it exists to pin (same CC2 fix as the yml/jsonnet
+    // wiring above).
+    inputs.file(rootProject.file("deploy/gateway/gateway.jvmargs"))
+        .withPropertyName("gatewayJvmArgs")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    // CYP-667 S7: GatewayLaunchdPlistTest reads the macOS launchd wrapper + plist at RUNTIME (repoFile walk) — declare
+    // them as inputs so editing ONLY the wrapper/plist re-runs the guard (same CC2 stale-green fix as above).
+    inputs.file(rootProject.file("deploy/launchd/gateway-run.sh"))
+        .withPropertyName("gatewayLaunchdWrapper")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.file("deploy/launchd/com.cyppie.gateway.plist"))
+        .withPropertyName("gatewayLaunchdPlist")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    // CYP-670: CyppieDaemonBootPersistenceTest reads the Hub+Relay launchd plists/wrappers/argfiles at RUNTIME —
+    // declare them so editing ONLY a config file re-runs the boot-persistence guard (same CC2 stale-green fix).
+    listOf(
+        "deploy/launchd/com.cyppie.hub.plist", "deploy/launchd/com.cyppie.relay.plist",
+        "deploy/launchd/hub-run.sh", "deploy/launchd/relay-run.sh",
+        "deploy/hub/hub.jvmargs", "deploy/relay/relay.jvmargs",
+    ).forEachIndexed { i, p ->
+        inputs.file(rootProject.file(p)).withPropertyName("cyp670Config$i").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
+    // CYP-678: HubJvmArgsSingleSourceTest reads server/build.gradle.kts at RUNTIME to assert BOTH the Gradle
+    // `run`/`installDist` args AND the `.deb` `launcherArgs` derive from `hub.jvmargs` — so declare the build script an
+    // input, else hard-coding one side back to a literal list (the drift mutation) could leave `test` UP-TO-DATE =
+    // false-green ([[gate-undeclared-input-uptodate]]).
+    inputs.file(rootProject.file("server/build.gradle.kts"))
+        .withPropertyName("serverBuildScript")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    // CYP-680: HubSystemdCoreDumpTest reads the .deb systemd units at RUNTIME — declare them so removing LimitCORE=0
+    // from a unit (the drift mutation) re-runs the guard instead of leaving `test` UP-TO-DATE (CC2 stale-green fix).
+    listOf("deploy/linux/cyppiehub.service", "deploy/linux/cyppiehub-test.service").forEachIndexed { i, p ->
+        inputs.file(rootProject.file(p)).withPropertyName("cyp680Unit$i").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
+    // CYP-681: GitignoreSecretHygieneTest reads the root .gitignore at RUNTIME — declare it so removing a secret
+    // pattern (the drift mutation) re-runs the guard instead of leaving `test` UP-TO-DATE (CC2 stale-green fix).
+    inputs.file(rootProject.file(".gitignore"))
+        .withPropertyName("rootGitignore")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 // CYP-409/CYP-426 (W1 producer): export the AsyncAPI (WS) + OpenAPI (REST) contracts (generated from :core via
@@ -100,6 +139,15 @@ tasks.register<JavaExec>("gatewayRun") {
     description = "CYP-638 S0 — run the isolated Gateway process (same-origin front-door; default-deny allowlist reverse-proxy to the hub)."
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.tneff.cyppieagents.gateway.GatewayServerKt")
+    // CYP-638 S7 — the gateway launch HARDENING args ride from the SINGLE-SOURCE argfile so this dev-run and any
+    // packaged gateway launcher (jpackage --java-options / systemd) carry the SAME flags (no drift; the CYP-623 lesson
+    // that two hand-copied arg lists diverge). PO-Assistant flag: `-XX:-HeapDumpOnOutOfMemoryError` +
+    // `-XX:-CreateCoredumpOnCrash` so the A2 cleartext heap (tokens + PTY bytes) never spills to disk. Pinned by
+    // GatewayLaunchHardeningTest (which reads the same file).
+    jvmArgs(
+        rootProject.file("deploy/gateway/gateway.jvmargs").readLines()
+            .map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") },
+    )
 }
 
 dependencies {
@@ -175,7 +223,10 @@ run {
     val jlinkModules = "java.se,jdk.unsupported,jdk.crypto.ec,jdk.jfr"
     // CYP-623 §1: BOTH mandatory :server JVM args MUST ride the generated launcher (a custom `java -jar`/service
     // command that drops `-Dio.netty.jfr.enabled=false` hits NoClassDefFoundError FreeChunkEvent on a stripped JDK).
-    val launcherArgs = listOf("-Dio.netty.jfr.enabled=false", "-XX:MaxRAMPercentage=75.0")
+    // CYP-678: single-sourced from deploy/hub/hub.jvmargs — the SAME `hubJvmArgs` list `applicationDefaultJvmArgs`
+    // uses, no hand-copied second set. Consolidating also gives the `.deb` the CYP-670 D2 hardening
+    // (HeapDump/CoreDump-off), which is correct: the hub holds the master key in RAM on Linux too (D2 = platform-independent).
+    val launcherArgs = hubJvmArgs
 
     // Absolute paths + flags captured at CONFIG time (Strings/Booleans → configuration-cache-safe; the task actions
     // touch NO Project/script objects — only java.io.File — so the tasks serialize cleanly under the config cache).

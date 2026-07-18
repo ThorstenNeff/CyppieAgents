@@ -44,7 +44,8 @@ import org.jetbrains.compose.resources.stringResource
  *   CTA advances into [workspace].
  * - **ACTIVE** → orientation (§2) + the stepper, which lands on [firstRunOpenStep] (PO constraint ④).
  *
- * Skipping (§6.2) drops to [workspace] (the degraded banner/resume is Inc4); the gate re-derives on the next launch.
+ * Skipping (§6.2) drops to the honest [DegradedWorkspace] (workspace + a persistent unconfigured banner/chip + a
+ * resume CTA back into the gate); the gate re-derives on the next launch. Once configured the surface vanishes.
  */
 @Composable
 fun FirstRunGate(
@@ -67,9 +68,23 @@ fun FirstRunGate(
     val settingsState by settingsViewModel.state.collectAsState()
     var skipped by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) } // set ONLY by the completion CTA (§6.1) — not a "completed" flag
+    // Inc4 (§6.3a): the degraded-workspace banner's collapse preference — HOISTED to gate scope so it survives the
+    // resume → gate → skip round-trip (DegradedWorkspace unmounts on resume; a local bit would reset and re-nag every
+    // cycle). Reset only on relaunch → full banner once per session-start, then collapse respected for the session.
+    var bannerCollapsed by remember { mutableStateOf(false) }
 
     when {
-        skipped || opened -> workspace()
+        opened -> workspace() // completed via the CTA → fully transparent, no degraded surface
+        // Skipped (§6.2): the honest degraded workspace — the real workspace PLUS the unconfigured banner/chip while
+        // still unconfigured; the banner clears itself once configured (workspaceUnconfigured goes invisible). Resume
+        // reopens the gate at the first open step (firstRunOpenStep, not always step 1).
+        skipped -> DegradedWorkspace(
+            status = status,
+            collapsedPref = bannerCollapsed,
+            onCollapse = { bannerCollapsed = true },
+            onResume = { skipped = false },
+            workspace = workspace,
+        )
         else -> when (firstRunGateMode(status)) {
             FirstRunGateMode.TRANSPARENT -> FirstRunComplete(onOpen = { opened = true })
             FirstRunGateMode.LOADING -> FirstRunLoading()

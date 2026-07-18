@@ -1741,3 +1741,63 @@ body {
   min-width: 48px;
   text-align: center;
 }
+
+/* CYP-676 (Epic CYP-675) — the connection-security-tier badge (remote.security.tier*). Neutral by design: the tier
+   glyph shape carries the level, the label + (gateway) disclosure carry the meaning — colour is NEVER the sole signal
+   and BROWSER_GATEWAY is NOT alarm-coded (§5). Per §8 the label is a TEXT role (on-surface for ≥4.5:1 on the
+   surface-variant pill); the glyph is a graphic tone (≥3:1): native=primary (LIVE ● idiom), gateway/unknown=neutral. */
+.rst {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.rst-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-variant);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--md-sys-color-on-surface); /* label = text role → ≥4.5:1 on surface-variant */
+  white-space: nowrap;
+}
+.rst-glyph {
+  color: var(--md-sys-color-on-surface-variant); /* graphic tone → ≥3:1; neutral for gateway/unknown */
+}
+.rst-native .rst-glyph {
+  color: var(--md-sys-color-primary); /* native mirrors the LIVE ●+primary idiom */
+}
+/* gateway + unknown keep the neutral glyph tone — no error/warn colour (§5). */
+.rst-disclosure {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  max-width: 40ch;
+}
+.rst-disclosure-glyph {
+  flex: 0 0 auto;
+  font-style: italic;
+}
+
+/* CYP-288 — shared honest load-error + retry surface (failed INITIAL load ≠ empty). Same error-token tone as the
+   shipped event-browse-error; the retry button keeps a ≥24px target. Colour is not the sole signal — the text
+   ("Laden fehlgeschlagen.") + the retry button carry the meaning. */
+.load-error {
+  color: var(--md-sys-color-error);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  white-space: normal;
+  padding: 4px 0;
+}
+.load-error-retry {
+  min-height: 24px;
+}

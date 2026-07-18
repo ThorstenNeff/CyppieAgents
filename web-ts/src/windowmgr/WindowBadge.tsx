@@ -2,8 +2,8 @@
 // Parity with the CMP WindowBadge (CYP-55): a neutral number pill for Count, a severity-glyph pill for Severity.
 // Form carries meaning (number vs glyph), so the variants are distinguishable without colour (WCAG 1.4.1); each
 // carries an a11y label naming the window + meaning.
-import type { WindowBadge as WindowBadgeModel } from './windowBadge'
-import { formatBadgeCount } from './windowBadge'
+import type { WindowBadge as WindowBadgeModel } from './windowBadgeModel'
+import { formatBadgeCount } from './windowBadgeModel'
 import { severityGlyph, severityLabel } from '../eventlog/eventLog'
 
 export function WindowBadge({ title, badge }: { title: string; badge: WindowBadgeModel }) {

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CYP-667 S7 — launchd job for the isolated Gateway (A2) process. Target host = macOS (no systemd, no /proc).
+
+  Auftraggeber-decided: this is a **system LaunchDaemon** (Caddy's pattern: /Library/LaunchDaemons, root-loaded,
+  boot-persistent), NOT the hub/relay User-LaunchAgent pattern — because auto-login is OFF and a public service must
+  survive an unattended reboot. deploy installs this at /Library/LaunchDaemons/com.cyppie.gateway.plist and adjusts the
+  absolute install prefix below (owned by deploy). This file is delivered only; deploy installs it, and ONLY on a
+  direct Auftraggeber GO.
+
+  ★ SCOPE NOTE (not this file's job): a boot-persistent gateway does NOT by itself make the public face survive a
+    reboot — Hub + Relay are still User-LaunchAgents (no auto-login), so after a reboot they are DOWN and the gateway
+    answers 502 (fail-closed via forwardToUpstream). The full chain needs Hub/Relay migrated too — separate work on a
+    running system (PO tracks it), out of this ticket.
+
+  ★ CUSTODY = the ratified option (a) from deploy/linux/cyppiehub.service, PORTED to macOS (not reinvented): a
+    dedicated non-root service user + a 0600 env file OUTSIDE any user home, sourced by the wrapper.
+    Ports 1:1:  User=cyppie/Group=cyppie      → UserName/GroupName (a dedicated role account, provisioned by deploy)
+                EnvironmentFile=/etc/…/hub.env → the wrapper sources /etc/cyppiehub/gateway.env (0600, owned by the
+                                                 service user; launchd has no EnvironmentFile key, so the wrapper reads it)
+    ★ Does NOT port 1:1 (REPORTED, no substitute invented): systemd ProtectSystem=strict / ProtectHome=true /
+      NoNewPrivileges=true have NO launchd equivalent keys. The macOS posture for those is OS-level, deploy-owned:
+      SIP (enabled on the host — protects /System, /usr) + TCC + running as this non-root UserName. There is no plist
+      key to set; faking one would be theatre. Flagged to the PO.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cyppie.gateway</string>
+
+    <!-- ★ CUSTODY (option a, ported): run as a DEDICATED NON-ROOT service account — the macOS mirror of the .deb's
+         User=cyppie/Group=cyppie. deploy provisions this role account; never root. -->
+    <key>UserName</key>
+    <string>_cyppie</string>
+    <key>GroupName</key>
+    <string>_cyppie</string>
+
+    <!-- Caddy pattern: run the wrapper, which single-sources the JVM hardening flags from
+         deploy/gateway/gateway.jvmargs (no hand-copied arg set here — the CYP-623 drift lesson) and sources the 0600
+         out-of-home env file. Absolute path; deploy adjusts the install prefix. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/opt/cyppie-gateway/deploy/launchd/gateway-run.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- Restart-rate cap (the .deb's RestartSec=10 / StartLimitBurst analog) so a crash-loop can't hammer the host. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/cyppie-gateway/gateway.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/cyppie-gateway/gateway.err.log</string>
+
+    <!-- ★ CYP-667 S7 — the OS core-dump complement to the JVM argfile half (the macOS equivalent of systemd
+         LimitCORE=0). The A2 gateway terminates the operator↔hub tunnel, so decrypted cleartext (session tokens,
+         ?token/?ticket, PTY code-exec bytes) lives in this process's heap; a core dump writes that to disk.
+         deploy MEASURED that Hub + Relay set NO ResourceLimits → they inherit launchd's default soft 0 / hard
+         UNLIMITED → a process can raise its own soft limit and dump. The gateway sets BOTH soft AND hard Core=0 so
+         NO process can raise a core limit — construction, not a runbook line. (The in-JVM half —
+         -XX:-CreateCoredumpOnCrash / -XX:-HeapDumpOnOutOfMemoryError — rides the wrapper from the argfile.) -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>Core</key>
+        <integer>0</integer>
+    </dict>
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>Core</key>
+        <integer>0</integer>
+    </dict>
+</dict>
+</plist>

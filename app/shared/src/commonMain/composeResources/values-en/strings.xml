@@ -158,6 +158,9 @@
     <string name="agent_ctl_start">Start</string>
     <string name="agent_ctl_stop">Stop</string>
     <string name="agent_ctl_restart">Restart</string>
+    <!-- CYP-629 §6.3c — honest GATED start-block while the hub is unconfigured (reuse-consistent with agent_ctl_* family) -->
+    <string name="agent_ctl_unconfigured">An agent can't start until the hub is set up (API key + repository). Set it up now.</string>
+    <string name="a11y_agent_ctl_unconfigured">unavailable — hub not configured (API key + repository)</string>
     <!-- Lifecycle control errors (CYP-73): honest server reasons (409/403/503/404). -->
     <string name="agent_ctl_err_already_running">Already running</string>
     <string name="agent_ctl_err_spawn_failed">Start failed</string>
@@ -798,6 +801,11 @@
     <string name="first_run_step_apikey">API key</string>
     <string name="first_run_step_repo">Repository</string>
     <string name="first_run_step_team">Team</string>
+    <!-- CYP-629 Inc4 — first-run skip → honest degraded workspace (ux-spec §6.2/§6.3a) -->
+    <string name="workspace_unconfigured_banner">Hub not configured yet — agents can't start. Set it up in Project Settings.</string>
+    <string name="workspace_setup_resume">Continue setup</string>
+    <string name="workspace_unconfigured_chip">Not configured</string>
+    <string name="a11y_workspace_unconfigured_collapse">Collapse notice</string>
     <string name="first_run_apikey_posture">The API key is stored on the server and only ever shown masked (***&lt;last 4&gt;) — not yet encrypted at rest (encryption is coming in a later update). Treat the hub host as trusted.</string>
     <string name="first_run_apikey_saved">Saved. The key will be used when your agents first start.</string>
     <string name="first_run_repo_saved">Repository set. The hub is cloning it now.</string>

@@ -2,7 +2,7 @@
 // content views (ContentViewSwitch keeps both mounted, §W8.2). Orchestration = the structured /ws/agent transcript
 // + the composer (send on the same socket). Shell = the operator-gated xterm (ShellGate mounts XtermView only after
 // the open-warning). The toggle is non-optimistic: `active` follows the server-confirmed terminal-control state.
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { ModeToggle } from './agentview/ModeToggle'
 import { ContentViewSwitch } from './agentview/ContentViewSwitch'
 import { AgentTranscript } from './agentview/AgentTranscript'
@@ -17,7 +17,13 @@ import type { LifecycleState } from './agentview/lifecycleStatus'
 import { FidelityBadge } from './connector/FidelityBadge'
 import { useHubStore } from './state/hubStore'
 import { ShellGate } from './terminal/ShellGate'
-import { XtermView } from './terminal/XtermView'
+// CYP-665 (F3 bundle-size hardening): xterm (@xterm/*, ~88 KB gz ≈ 47 % of the initial bundle) is pulled ONLY by
+// XtermView, which renders ONLY inside ShellGate's `open` phase (operator-only, opt-in, two-step warning). Lazy-load
+// it so the whole xterm chunk leaves the initial paint and is fetched on the first (deliberate) shell-open. NO
+// behaviour/access change: the server /ws/terminal gate stays the source of truth and ShellGate still gates the mount;
+// the async import fires only when a window is actually mounted (open phase), so most sessions never download xterm.
+// XtermView is a named export; adapted to React.lazy's default-export contract here so the module stays untouched.
+const XtermView = lazy(() => import('./terminal/XtermView').then((m) => ({ default: m.XtermView })))
 import type { SocketDeps } from './state/hubConfig'
 import type { LifecycleAction, AgentErrorCode } from './state/hubReducers'
 
@@ -98,7 +104,11 @@ export function AgentWindow({
         }
         shell={
           <ShellGate operator={operator}>
-            <XtermView baseUrl={wsBase} agentId={agentId} token={token} />
+            {/* CYP-665: the async xterm chunk loads on the first shell-open; Suspense shows a brief loading line
+                only during that one-time fetch (a deliberate operator action), never on the initial paint. */}
+            <Suspense fallback={<p className="xterm-loading" data-testid="xterm-loading">Terminal wird geladen …</p>}>
+              <XtermView baseUrl={wsBase} agentId={agentId} token={token} />
+            </Suspense>
           </ShellGate>
         }
       />

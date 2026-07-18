@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -99,8 +100,10 @@ import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_generic
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_operator_required
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_spawn_failed
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_unreachable
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_ctl_unconfigured
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_restart
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_start
+import kmpcyppieagents.app.shared.generated.resources.agent_ctl_unconfigured
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_stop
 import com.tneff.cyppieagents.comm.ConnectionStatus
 import kmpcyppieagents.app.shared.generated.resources.agent_reconnecting
@@ -198,6 +201,15 @@ fun AgentWindow(
      * only MEDIATED sees no banner — honest either way.
      */
     control: AgentTerminalControlEvent? = null,
+    /**
+     * CYP-629 §6.3c: the hub is unconfigured (no API key and/or repo not `CLONED_OK`), so a spawn cannot succeed.
+     * `false` (default) = byte-identical today — this is a SEAM: it is bound to the first-run config status by the
+     * (deferred, opt-in-off) App wiring, together with [com.tneff.cyppieagents.firstrun.FirstRunGate]. When `true`
+     * the per-agent Start control is pre-emptively GATED with an honest, visible reason (`agent_ctl_unconfigured`),
+     * BEFORE the click — not a silent fail after it. The server stays the fail-closed backstop (a race that slips
+     * through returns the same reason via the existing `agent_ctl_err_*` surface, Backend-owned).
+     */
+    hubUnconfigured: Boolean = false,
 ) {
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
@@ -236,6 +248,7 @@ fun AgentWindow(
             restartPending = restartPending,
             connection = connection,
             canControl = viewModel.canControl,
+            hubUnconfigured = hubUnconfigured,
             onStart = viewModel::start,
             onStop = viewModel::stop,
             onRestart = viewModel::restart,
@@ -244,6 +257,11 @@ fun AgentWindow(
             provider = provider,
             onCapabilityBadgeClick = onCapabilityBadgeClick,
         )
+        // CYP-629 §6.3c: the honest, VISIBLE reason the Start control is gated — adjacent to the header controls
+        // (mirrors [LifecycleErrorRow]'s placement), present BEFORE the click. GATED, not ERROR: nothing failed, a
+        // prerequisite is missing. Absent when configured (fail-closed by absence). The a11y reason additionally
+        // rides ON the Start button as its `stateDescription` (AgentLifecycleControls).
+        if (hubUnconfigured) StartUnconfiguredGateRow(agentId)
         // CYP-333: the mode toggle lives in a FRAME row above the content rectangle. Z-order (04 §5): the Desktop
         // terminal is a `SwingPanel` that renders OVER the Compose layer, so chrome must frame it, never overlay it.
         ModeToggleRow(
@@ -409,6 +427,24 @@ private fun LifecycleErrorRow(agentId: String, code: String) {
 }
 
 /**
+ * CYP-629 §6.3c — the honest GATED reason for the disabled Start control while the hub is unconfigured. GATED tone
+ * (neutral `onSurfaceVariant`, NOT `error`): nothing failed, the prerequisite (API key + repo) is missing — the same
+ * doctrine as [modeToggleGateHint]. Rendered only while gated; absent when configured (fail-closed by absence).
+ */
+@Composable
+private fun StartUnconfiguredGateRow(agentId: String) {
+    Text(
+        text = stringResource(Res.string.agent_ctl_unconfigured),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .testTag(AgentViewTags.startBtnGateHint(agentId)),
+    )
+}
+
+/**
  * CYP-381 §6/§7b — the persistent WARN frame strips driven by the CYP-354 control-state (never keystrokes/PTV
  * content, state/identity/time only). **INTERACTIVE** → the **hub-blind** banner ("der Hub vermittelt nicht" +
  * holder + since): the honest "you are driving the real session" consequence, complementary to the titlebar
@@ -469,6 +505,8 @@ private fun AgentHeader(
     onStop: () -> Unit,
     onRestart: () -> Unit,
     modifier: Modifier = Modifier,
+    /** CYP-629 §6.3c: the hub is unconfigured → the Start control is GATED with a visible honest reason. */
+    hubUnconfigured: Boolean = false,
     /** CYP-262: a Start request is in flight → the status shows the transient "Startet…" (client-only). */
     startPending: Boolean = false,
     /** CYP-330: a Restart request is in flight → the status shows the transient "Neustart…" (client-only). */
@@ -536,6 +574,7 @@ private fun AgentHeader(
                 agentId = agentId,
                 state = state,
                 canControl = canControl,
+                hubUnconfigured = hubUnconfigured,
                 compact = compact,
                 onStart = onStart,
                 onStop = onStop,
@@ -564,18 +603,33 @@ private fun AgentLifecycleControls(
     agentId: String,
     state: AgentLifecycleState,
     canControl: Boolean,
+    hubUnconfigured: Boolean,
     compact: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
 ) {
-    data class Control(val label: String, val glyph: String, val tag: String, val enabled: Boolean, val onClick: () -> Unit)
+    // CYP-629 §6.3c: the honest a11y reason ON the Start control while gated — `stateDescription` (a11y-spec §1),
+    // so a screen reader reads "Start, unavailable — hub not configured" (the WHY, before the click). Only Start.
+    val startUnconfiguredA11y = stringResource(Res.string.a11y_agent_ctl_unconfigured)
+    data class Control(
+        val label: String,
+        val glyph: String,
+        val tag: String,
+        val enabled: Boolean,
+        val stateDescription: String?,
+        val onClick: () -> Unit,
+    )
     val controls = listOf(
         Control(
             label = stringResource(Res.string.agent_ctl_start),
             glyph = "▶",
             tag = AgentViewTags.startBtn(agentId),
-            enabled = canControl && state != AgentLifecycleState.RUNNING,
+            // CYP-629 §6.3c: a THIRD barrier beside the operator gate and the running-state gate. A spawn needs a
+            // configured hub (API key + repo) — pre-emptively disabled, honestly, so the operator never sees a
+            // silent fail / eternal spinner. (The other two barriers already exist; this one is additive.)
+            enabled = canControl && state != AgentLifecycleState.RUNNING && !hubUnconfigured,
+            stateDescription = if (hubUnconfigured) startUnconfiguredA11y else null,
             onClick = onStart,
         ),
         Control(
@@ -583,6 +637,7 @@ private fun AgentLifecycleControls(
             glyph = "■",
             tag = AgentViewTags.stopBtn(agentId),
             enabled = canControl && state == AgentLifecycleState.RUNNING,
+            stateDescription = null,
             onClick = onStop,
         ),
         Control(
@@ -593,6 +648,7 @@ private fun AgentLifecycleControls(
             // stopped/unknown agent is exactly when you want to bring it back). The server stays authoritative and
             // surfaces an honest reason if the transition is invalid; the "Neustart…" transient acknowledges the click.
             enabled = canControl,
+            stateDescription = null,
             onClick = onRestart,
         ),
     )
@@ -605,13 +661,18 @@ private fun AgentLifecycleControls(
                 IconButton(
                     onClick = control.onClick,
                     enabled = control.enabled,
-                    modifier = Modifier.testTag(control.tag).semantics { contentDescription = control.label },
+                    modifier = Modifier.testTag(control.tag).semantics {
+                        contentDescription = control.label
+                        control.stateDescription?.let { stateDescription = it }
+                    },
                 ) { Text(control.glyph, maxLines = 1) }
             } else {
                 TextButton(
                     onClick = control.onClick,
                     enabled = control.enabled,
-                    modifier = Modifier.testTag(control.tag),
+                    modifier = Modifier.testTag(control.tag).semantics {
+                        control.stateDescription?.let { stateDescription = it }
+                    },
                 ) { Text(control.label, maxLines = 1) }
             }
         }

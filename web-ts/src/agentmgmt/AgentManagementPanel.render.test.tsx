@@ -121,3 +121,27 @@ describe('AgentManagementPanel (CYP-450)', () => {
     expect(hint.className).toContain('effect-hint') // amber effect-hint styling hook (never success-green)
   })
 })
+
+describe('AgentManagementPanel — CYP-288 honest load-error + retry (failed roster ≠ empty)', () => {
+  it('failed roster load (empty) → error+retry, NOT the empty list; retry fires', () => {
+    const onRetryLoad = vi.fn()
+    const { getByTestId, queryByTestId } = renderPanel({ agents: [], loadError: true, onRetryLoad })
+    expect(getByTestId('agentMgmt.loadError')).toBeTruthy()
+    expect(queryByTestId('agentMgmt.list')).toBeNull() // the empty <ul> ("no agents") is replaced by the honest error
+    fireEvent.click(getByTestId('agentMgmt.loadError.retry'))
+    expect(onRetryLoad).toHaveBeenCalledTimes(1)
+  })
+
+  it('roster present + error flag → list renders, error hidden (live/WS roster wins — flag 4)', () => {
+    const { getByTestId, queryByTestId } = renderPanel({ loadError: true })
+    expect(getByTestId('agentMgmt.list')).toBeTruthy()
+    expect(getByTestId('agentMgmt.item.backend')).toBeTruthy()
+    expect(queryByTestId('agentMgmt.loadError')).toBeNull()
+  })
+
+  it('genuinely-empty roster (no error) → the empty list, not the error (non-vacuum contrast)', () => {
+    const { getByTestId, queryByTestId } = renderPanel({ agents: [], loadError: false })
+    expect(getByTestId('agentMgmt.list')).toBeTruthy() // empty <ul> present, honest "no agents"
+    expect(queryByTestId('agentMgmt.loadError')).toBeNull()
+  })
+})

@@ -5,7 +5,7 @@
 // one-shot alert). The CONTEXT_LOST transcript chrome (dimmed history + discontinuity line) is deferred — CMP defers
 // it too; this is the banner only.
 import type { AgentTerminalControlEvent } from '../types/generated/contract'
-import { handoffBanner, formatHandoffSince, handoffHolderLabel } from './handoffBanner'
+import { handoffBanner, formatHandoffSince, handoffHolderLabel } from './handoffBannerModel'
 
 export function HandoffBanner({ agentId, control }: { agentId: string; control: AgentTerminalControlEvent | undefined | null }) {
   const banner = handoffBanner(control)

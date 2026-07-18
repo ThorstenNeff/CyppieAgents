@@ -8,6 +8,7 @@ import { useAutoscrollPin } from '../agentview/useAutoscrollPin'
 import { Composer } from '../agentview/Composer'
 import { senderAccent } from './senderAccent'
 import { composerDisclosure } from './commDisclosure'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import type { Channel, Message1 } from '../types/generated/contract'
 
 export interface CommPanelProps {
@@ -21,6 +22,12 @@ export interface CommPanelProps {
   sendError: string | null
   onSend: (text: string) => void
   historySize: () => number
+  // CYP-288: a failed INITIAL channel-list / history load surfaces error+retry, NOT an empty list (failed ≠ empty).
+  // Gated on the data still being empty → live/WS data or a successful retry hides the error naturally.
+  channelsLoadError?: boolean
+  onRetryChannels?: () => void
+  messagesLoadError?: boolean
+  onRetryMessages?: () => void
 }
 
 const CONNECTION_TEXT: Record<CommPanelProps['connection'], string> = {
@@ -32,6 +39,7 @@ const CONNECTION_TEXT: Record<CommPanelProps['connection'], string> = {
 
 export function CommPanel(props: CommPanelProps) {
   const { channels, selectedChannelId, onSelectChannel, messages, senderRole, connection } = props
+  const { channelsLoadError = false, onRetryChannels, messagesLoadError = false, onRetryMessages } = props
   // CYP-437(#4): a terminal revoke (WS 1008) closes the write affordance entirely — don't leave a composer that
   // only fails server-side. This overrides the disclosure (a revoked socket can't write, whatever canWrite said).
   const revoked = connection === 'revoked'
@@ -42,18 +50,24 @@ export function CommPanel(props: CommPanelProps) {
   return (
     <div className="comm-panel" data-testid="comm-panel">
       <nav className="comm-channels" aria-label="Kanäle" data-testid="comm-channels">
-        {channels.map((ch) => (
-          <button
-            key={ch.id}
-            type="button"
-            className="comm-channel"
-            aria-current={ch.id === selectedChannelId ? 'true' : undefined}
-            data-testid={`comm.channel.${ch.id}`}
-            onClick={() => onSelectChannel(ch.id)}
-          >
-            {ch.name}
-          </button>
-        ))}
+        {channels.length === 0
+          ? // CYP-288: a failed channel-list load shows error+retry, not a silently-empty list. Genuinely-empty
+            // (no error) stays as-is (an empty nav) — non-vacuum contrast.
+            channelsLoadError && (
+              <LoadErrorRetry testId="comm.channels.loadError" onRetry={onRetryChannels ?? (() => undefined)} />
+            )
+          : channels.map((ch) => (
+              <button
+                key={ch.id}
+                type="button"
+                className="comm-channel"
+                aria-current={ch.id === selectedChannelId ? 'true' : undefined}
+                data-testid={`comm.channel.${ch.id}`}
+                onClick={() => onSelectChannel(ch.id)}
+              >
+                {ch.name}
+              </button>
+            ))}
       </nav>
 
       <section className="comm-conversation">
@@ -69,9 +83,15 @@ export function CommPanel(props: CommPanelProps) {
 
         <div className="comm-timeline transcript-scroll" ref={ref} onScroll={onScroll} data-testid="comm-timeline">
           {messages.length === 0 ? (
-            <p className="comm-empty" data-testid="comm-empty">
-              Noch keine Nachrichten.
-            </p>
+            // CYP-288: a failed history load shows error+retry (failed ≠ empty); a genuinely-empty channel keeps
+            // the empty state — error BEATS empty, non-vacuum contrast.
+            messagesLoadError ? (
+              <LoadErrorRetry testId="comm.timeline.loadError" onRetry={onRetryMessages ?? (() => undefined)} />
+            ) : (
+              <p className="comm-empty" data-testid="comm-empty">
+                Noch keine Nachrichten.
+              </p>
+            )
           ) : (
             <ol>
               {messages.map((m) => (

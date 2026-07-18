@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { AclMatrix } from './AclMatrix'
 import { enforcedValue, isPoLockoutChange, presetDiff, type AclDimension, type AclChange, type PendingAcl } from './aclModel'
 import { hubAndSpokeTarget } from './aclPreset'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import type { AclEntry, Channel } from '../types/generated/contract'
 
 export interface AclPanelProps {
@@ -23,6 +24,11 @@ export interface AclPanelProps {
   onCommit: (entry: AclEntry, dims: readonly AclDimension[]) => void
   /** transient reject notice (CYP-435) — a rejected PUT (e.g. 409 lockout) surfaces here instead of a stuck switch. */
   error?: string | null
+  // CYP-288: a failed INITIAL load of the matrix axes (channels → also agents) surfaces error+retry instead of an
+  // empty matrix (failed ≠ empty). Gated on channels being empty (no axes = the "empty matrix" symptom); once axes
+  // load (REST retry or live/WS) the matrix renders. A genuinely-empty matrix (no error) stays as-is.
+  loadError?: boolean
+  onRetryLoad?: () => void
 }
 
 interface LockoutPrompt {
@@ -48,7 +54,7 @@ const changedDims = (entries: readonly AclEntry[], change: AclChange): AclDimens
   return dims
 }
 
-export function AclPanel({ channels, agents, entries, pending, poAgentId, operator, onCommit, error = null }: AclPanelProps) {
+export function AclPanel({ channels, agents, entries, pending, poAgentId, operator, onCommit, error = null, loadError = false, onRetryLoad }: AclPanelProps) {
   const [lockout, setLockout] = useState<LockoutPrompt | null>(null)
   const [preset, setPreset] = useState<AclChange[] | null>(null)
 
@@ -82,23 +88,31 @@ export function AclPanel({ channels, agents, entries, pending, poAgentId, operat
           {error}
         </p>
       )}
-      {operator && (
-        <div className="acl-actions">
-          <button type="button" className="acl-preset" data-testid="acl-preset-open" onClick={openPreset}>
-            Hub-and-Spoke wiederherstellen
-          </button>
-        </div>
-      )}
+      {loadError && channels.length === 0 ? (
+        // CYP-288: the axes failed to load → an empty matrix would read as "no ACL". Show error+retry instead; the
+        // preset action is hidden too (nothing to preset against). Once axes arrive the matrix renders.
+        <LoadErrorRetry testId="acl.loadError" onRetry={onRetryLoad ?? (() => undefined)} />
+      ) : (
+        <>
+          {operator && (
+            <div className="acl-actions">
+              <button type="button" className="acl-preset" data-testid="acl-preset-open" onClick={openPreset}>
+                Hub-and-Spoke wiederherstellen
+              </button>
+            </div>
+          )}
 
-      <AclMatrix
-        channels={channelsForMatrix}
-        agents={agents}
-        entries={entries}
-        pending={pending}
-        poAgentId={poAgentId}
-        onToggle={handleToggle}
-        readOnly={!operator}
-      />
+          <AclMatrix
+            channels={channelsForMatrix}
+            agents={agents}
+            entries={entries}
+            pending={pending}
+            poAgentId={poAgentId}
+            onToggle={handleToggle}
+            readOnly={!operator}
+          />
+        </>
+      )}
 
       {lockout !== null && (
         <div className="acl-dialog acl-lockout" role="alertdialog" aria-label="PO-Aussperrung bestätigen" data-testid="acl-lockout-dialog">

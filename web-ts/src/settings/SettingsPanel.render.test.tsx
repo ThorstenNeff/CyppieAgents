@@ -152,3 +152,26 @@ describe('SettingsPanel (CYP-453)', () => {
     expect((getByTestId('settings.repo.discardToggle') as HTMLInputElement).checked).toBe(true) // armed after confirm
   })
 })
+
+describe('SettingsPanel — CYP-679 honest repo load-error + retry', () => {
+  it('failed repo-config load (null + repoLoadError) → error+retry, NOT a blank form; retry fires', () => {
+    const onRetryRepo = vi.fn()
+    const { getByTestId, queryByTestId } = renderPanel({ repoConfig: null, repoLoadError: true, onRetryRepo })
+    expect(getByTestId('settings.repo.loadError')).toBeTruthy()
+    expect(queryByTestId('settings.repo.url.input')).toBeNull() // the blank form (reads as "unconfigured") is replaced
+    fireEvent.click(getByTestId('settings.repo.loadError.retry'))
+    expect(onRetryRepo).toHaveBeenCalledTimes(1)
+  })
+
+  it('config loaded (no error) → the form renders, not the error (non-vacuum contrast)', () => {
+    const { getByTestId, queryByTestId } = renderPanel({ repoConfig: configured, repoLoadError: false })
+    expect(getByTestId('settings.repo.url.input')).toBeTruthy()
+    expect(queryByTestId('settings.repo.loadError')).toBeNull()
+  })
+
+  it('config present + error flag → form renders, error hidden (flag 4)', () => {
+    const { getByTestId, queryByTestId } = renderPanel({ repoConfig: configured, repoLoadError: true })
+    expect(getByTestId('settings.repo.url.input')).toBeTruthy()
+    expect(queryByTestId('settings.repo.loadError')).toBeNull()
+  })
+})
