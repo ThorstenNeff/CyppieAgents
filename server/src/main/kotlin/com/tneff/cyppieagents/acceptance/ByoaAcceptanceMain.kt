@@ -10,6 +10,8 @@ import com.tneff.cyppieagents.model.WireDeliver
 import com.tneff.cyppieagents.model.WireEnvelope
 import com.tneff.cyppieagents.model.WireError
 import com.tneff.cyppieagents.model.WireErrorCode
+import com.tneff.cyppieagents.model.WireEvent
+import com.tneff.cyppieagents.model.WireEventType
 import com.tneff.cyppieagents.model.WireFrame
 import com.tneff.cyppieagents.model.WireHello
 import com.tneff.cyppieagents.model.WireSend
@@ -25,6 +27,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import io.ktor.websocket.send
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.system.exitProcess
@@ -45,6 +48,8 @@ import kotlin.system.exitProcess
  *  - `send`             (C) connect + hello + `WireSend{channel, nonce}` → expect `WireAck("sent <id>")`; prints
  *                           `MESSAGE_ID=<id>` for the script's REST assertion (server-stamped `from`/`projectId`).
  *  - `await-deliver`    (D) connect + hello + `WireSubscribe(channel)` → expect a `WireDeliver` whose text carries the nonce.
+ *  - `event`            (E) connect + hello + `WireEvent(TOOL_CALL)` → fire-and-forget; the server stamps `source=remote`
+ *                           into `/api/events` (the ONLY frame that does — A–D never emit one). Script asserts via REST.
  *  - `expect-unauthorized` (fail-closed 1) connect with a bad/operator token → expect the server to close 1008.
  *  - `send-before-hello`   (fail-closed 2) `WireSend` BEFORE any hello → expect `WireError(PROTOCOL)`.
  *  - `elevated-caps`       (fail-closed 3) hello declaring FULL/local caps → still `WireAck("hello")` (server clamps
@@ -170,6 +175,16 @@ fun main(args: Array<String>): Unit = runBlocking {
                             val f = nextFrame()
                             if (f is WireError && f.code == WireErrorCode.FORBIDDEN) pass("send-without-canWrite → WireError(FORBIDDEN) (uniform, no topology leak)")
                             fail("expected WireError(FORBIDDEN), got $f")
+                        }
+                        // (E) connect + hello + WireEvent(TOOL_CALL) — the real bridge self-report path. Fire-and-forget:
+                        // the server does NOT ack it (HubWireRoutes:220) but stamps source=remote into /api/events
+                        // (WireEventIngest.toDraft). This is the ONLY frame that generates a source=remote event — A–D
+                        // (hello/send/deliver) never emit one, which is why E could not fire without this probe. The
+                        // script asserts source=remote via REST; E stays the real remote-over-wire discriminator.
+                        "event" -> {
+                            sendFrame(WireEvent(WireEventType.TOOL_CALL, tool = "cyp687-acceptance"))
+                            delay(500) // let the fire-and-forget ingest land server-side before we close the session
+                            pass("WireEvent(TOOL_CALL) emitted — server stamps source=remote (asserted via /api/events)")
                         }
                         else -> fail("unknown --cmd '$cmd'")
                     }

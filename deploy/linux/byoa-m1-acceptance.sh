@@ -147,6 +147,12 @@ if wait "$DPID"; then ok "D await-deliver ($(head -1 /tmp/cyp687-d.out))"; else 
 
 # ── E: source=remote (THE discriminator — without it a LOCAL agent satisfies A–D) ─────────────────────────────────
 say "E — source=remote (discriminator)"
+# E needs a source=remote event to EXIST. A–D (hello/send/deliver) never emit a WireEvent, so emit one now over the
+# wire — a WireEvent(TOOL_CALL), the real bridge self-report path — which the server stamps source=remote into
+# /api/events (WireEventIngest.toDraft). The assertion below is UNCHANGED (the real discriminator); this probe only
+# generates the very event it observes. Mutation: drop this probe → no source=remote event → the assert reds (E fails).
+probe "E emit WireEvent(TOOL_CALL)" -- --cmd event --url "$WS" --token "$AGENT_TOKEN"
+sleep 1  # let the fire-and-forget event ingest land in /api/events before the assert
 EV1="$(api_get "$OPERATOR_TOKEN" /api/events)"
 json_true "$EV1" "any(('$AGENT' in json.dumps(x)) and (x.get('source')=='remote') for x in ($(items events)))" \
   && ok "/api/events shows source=remote for '$AGENT' (over the wire, not a local process)" || bad "no source=remote event for '$AGENT' (E fails)"
