@@ -41,6 +41,16 @@ data class OperatorAudit(val actor: String, val method: String, val path: String
 - **Effect (in `resolvePrincipal`, bearer branch):** the operator token is honored as `MachineOperator` UNLESS
   **disabled-effective**; when disabled-effective it falls through to `MachineAgent` (MEMBER) → 403 on operator
   routes. So a disabled token is simply not an operator anymore.
+
+  > ❗ **KORREKTUR (2026-07-18, Tester-gemessen CYP-722/CYP-724 — dies ist eine Messung, keine Deutung):**
+  > Die hier beschriebene Herabstufung (`disabled-effective` → `MachineAgent`/MEMBER) gilt **NUR für die
+  > strukturelle/Admin-Fläche** (`resolvePrincipal`). **Auf der Comm-Fläche findet sie NICHT statt:** dort löst
+  > `participantFor()` → `isOperator()` das Token auf `HubState.OPERATOR_ID` auf, **an `resolvePrincipal` und
+  > damit am Kill-Switch vorbei** (`routing/Auth.kt:87`; gemessen: `POST /api/channels/{id}/messages` → 201
+  > `from:"operator"` bei gezogenem Switch, CYP-722). ⟹ „a disabled token is simply not an operator anymore"
+  > ist auf der Comm-Fläche **falsch** — das eingedämmte Token behält dort volle Operator-Handlungsfähigkeit
+  > (23/65 Ops, CYP-710-Matrix). **Nicht auf die Demotion für die Comm-Fläche bauen.** Behebung ist eine
+  > Code-Frage (Divergenz Design↔Impl), keine Design-Entscheidung — Auftraggeber-Weiche in CYP-722.
 - **⭐ Lockout-guard:** disabled-effective = `operatorTokenDisabled && roles.hasOperator()`. The disable takes
   effect **only once a role-OPERATOR (a verified human) already exists** — until then the token stays active,
   so the platform is **never left with zero operator paths** (the first human still bootstraps OPERATOR via
