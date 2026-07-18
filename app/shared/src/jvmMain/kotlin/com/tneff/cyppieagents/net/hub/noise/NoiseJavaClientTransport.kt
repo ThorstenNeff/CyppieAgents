@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.net.hub.noise
 
 import com.southernstorm.noise.protocol.CipherStatePair
 import com.southernstorm.noise.protocol.HandshakeState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -52,6 +53,12 @@ class NoiseJavaClientTransport : ClientNoiseTransport {
             return NoiseJavaTunnel(relay, pair, h)
         } catch (e: NoiseHandshakeException) {
             throw e
+        } catch (c: CancellationException) {
+            // NEVER swallow cancellation: a mid-NK `relay.receive()` cancelled by a batch-teardown (transport/pool
+            // close cancelling the in-flight dial) MUST propagate as CancellationException — structured concurrency,
+            // AND diagnosis fidelity: a teardown-cancel is NOT a handshake failure. Wrapping it (below) mis-reported
+            // the tunnel-warmth mid-NK aborts as failures, hiding the real (ii) client-cancel trigger.
+            throw c
         } catch (e: Exception) {
             // Wrong hub key / misrouted rendezvous ⇒ es/ee fails ⇒ AEADBadTagException etc. ⇒ FAIL CLOSED (CI-1).
             throw NoiseHandshakeException("NK handshake failed (wrong hub key / misroute / relay error)", e)
