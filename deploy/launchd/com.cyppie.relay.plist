@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CYP-670 — boot-persistent LaunchDaemon for the Relay on the macOS host. Migrates the Relay off its current
+  User-LaunchAgent to a system LaunchDaemon that comes up on a headless reboot (auto-login is OFF). Same Caddy pattern
+  as the gateway (3dc6d14a). deploy installs at /Library/LaunchDaemons/com.cyppie.relay.plist and adjusts the absolute
+  install prefix; delivered only, installed on a direct Auftraggeber-GO in a quiet window (NO hot-migration).
+
+  ★ CUSTODY = ratified option (a), ported: dedicated NON-ROOT UserName + an optional 0600 EnvironmentFile out-of-home
+    sourced by the wrapper. The relay is a dumb Noise-frame pipe (no hub store/secret), so it has little secret to
+    protect — but it still runs non-root for consistency. ProtectSystem/ProtectHome/NoNewPrivileges have no launchd
+    analog (SIP + TCC + non-root user; deploy-owned).
+
+  ★ LOOPBACK BIND: the wrapper exports CYPPIE_RELAY_HOST=127.0.0.1 — on THIS host Caddy fronts the relay
+    (`/relay → 127.0.0.1:8788`, measured case 2). The relay's CODE default is 0.0.0.0 (legitimate for a case-1 public
+    Noise rendezvous, where remote clients dial it directly — Noise-encrypted, so non-loopback is intended, NOT the
+    gateway cleartext-leak class). This host is case 2 → loopback.
+
+  ★ D2 (PO-ratified INTO CYP-670): the relay heap can hold connection metadata / peer-handshake material BEFORE
+    encryption → "marginal" ≠ "zero". Uniform hardening with the hub/gateway (zero-downside): the heap/core-dump-off
+    flags ride deploy/relay/relay.jvmargs via the wrapper, and Core=0 (Soft+Hard) below is the OS complement.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cyppie.relay</string>
+
+    <key>UserName</key>
+    <string>_cyppie</string>
+    <key>GroupName</key>
+    <string>_cyppie</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/opt/cyppie-relay/deploy/launchd/relay-run.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/cyppie-relay/relay.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/cyppie-relay/relay.err.log</string>
+
+    <!-- ★ CYP-670 D2 — the OS core-dump complement (macOS equivalent of systemd LimitCORE=0). Uniform hardening with
+         the hub/gateway; both limits at 0 so no process can raise a core limit. -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>Core</key>
+        <integer>0</integer>
+    </dict>
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>Core</key>
+        <integer>0</integer>
+    </dict>
+</dict>
+</plist>

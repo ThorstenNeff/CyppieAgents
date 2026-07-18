@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CYP-670 — boot-persistent LaunchDaemon for the Hub on the macOS host. Migrates the Hub off its current
+  User-LaunchAgent (which only runs after a console login — auto-login is OFF) to a system LaunchDaemon that comes up
+  on a headless reboot. Same Caddy pattern as the gateway (3dc6d14a). deploy installs at
+  /Library/LaunchDaemons/com.cyppie.hub.plist and adjusts the absolute install prefix; delivered only, installed on a
+  direct Auftraggeber-GO in a quiet window (NO hot-migration).
+
+  ★ CUSTODY = ratified option (a), ported: dedicated NON-ROOT UserName + the 0600 EnvironmentFile /etc/cyppiehub/hub.env
+    sourced by the wrapper (launchd has no EnvironmentFile key). ProtectSystem/ProtectHome/NoNewPrivileges have NO
+    launchd analog → macOS posture is SIP + TCC + the non-root user (deploy-owned), not faked here.
+
+  ★ D2 (PO-ratified INTO CYP-670): the hub holds the DECRYPTED master key + tokens in RAM — the gateway leak class with
+    the most valuable material, REACHABLE at the public flip (PL-0008). So it carries the FULL hardening set: the
+    heap/core-dump-off flags ride deploy/hub/hub.jvmargs via the wrapper, and Core=0 (Soft+Hard) below is the OS
+    complement — a core/heap dump can never spill the secret heap to disk.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cyppie.hub</string>
+
+    <key>UserName</key>
+    <string>_cyppie</string>
+    <key>GroupName</key>
+    <string>_cyppie</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/opt/cyppie-hub/deploy/launchd/hub-run.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/cyppie-hub/hub.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/cyppie-hub/hub.err.log</string>
+
+    <!-- ★ CYP-670 D2 — the OS core-dump complement to the JVM heap/core-dump-off flags (deploy/hub/hub.jvmargs). The
+         hub holds the DECRYPTED master key + tokens in RAM; a core dump would write them to disk. Hub/Relay set NO
+         ResourceLimits today → inherit soft 0 / hard UNLIMITED → a process can raise its own soft limit. Both at 0 ⇒
+         no process can raise a core limit. (macOS equivalent of systemd LimitCORE=0.) -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>Core</key>
+        <integer>0</integer>
+    </dict>
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>Core</key>
+        <integer>0</integer>
+    </dict>
+</dict>
+</plist>

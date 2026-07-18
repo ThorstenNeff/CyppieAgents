@@ -83,6 +83,15 @@ tasks.named<Test>("test") {
     inputs.file(rootProject.file("deploy/launchd/com.cyppie.gateway.plist"))
         .withPropertyName("gatewayLaunchdPlist")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+    // CYP-670: CyppieDaemonBootPersistenceTest reads the Hub+Relay launchd plists/wrappers/argfiles at RUNTIME —
+    // declare them so editing ONLY a config file re-runs the boot-persistence guard (same CC2 stale-green fix).
+    listOf(
+        "deploy/launchd/com.cyppie.hub.plist", "deploy/launchd/com.cyppie.relay.plist",
+        "deploy/launchd/hub-run.sh", "deploy/launchd/relay-run.sh",
+        "deploy/hub/hub.jvmargs", "deploy/relay/relay.jvmargs",
+    ).forEachIndexed { i, p ->
+        inputs.file(rootProject.file(p)).withPropertyName("cyp670Config$i").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
 }
 
 // CYP-409/CYP-426 (W1 producer): export the AsyncAPI (WS) + OpenAPI (REST) contracts (generated from :core via
