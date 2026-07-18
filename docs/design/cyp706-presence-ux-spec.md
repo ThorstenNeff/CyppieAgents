@@ -11,7 +11,9 @@ Präsenz ist ein **weiches, beobachtetes** Signal, kein hartes. Drei Regeln, all
 - **Advisory, nie Garantie.** „Hier/aktiv/zuletzt gesehen" ist eine **Beobachtung**, nie eine Zusage von **Zustellung, Antwort oder Aufmerksamkeit**. (Register wie HubDiscovery `online/lastSeen` = *„advisory (H1)"* und FidelityBadge = *„ADVISORY, content-free, colour never the sole carrier"*.)
 - **Nie success-green „active now".** Code-Präzedenz `agentSettingsModel.ts:16` (restart-deferred → amber effect-hint, *„never a success-green ‚active now'"*). Präsenz ist neutral/informativ, kein triumphales Grün.
 - **Absence = unknown, nicht „niemand da"** ([[absence-reads-as-all-clear]]; agentSettings failed≠remote-Regel: *„an unresolved/failed load renders NOTHING — never claim from an unknown"*). Kein Präsenz-Feed / nicht bestimmbar ⇒ **sichtbarer neutraler unknown**, nie ein stiller „leerer Raum".
-- **Drei Register (wie CYP-705):** **present** (advisory) · **away/last-seen** (advisory, Alter ehrlich) · **unknown** (kein Feed → neutraler sichtbarer Marker, **nicht** „abwesend"). unknown ≠ away ≠ here.
+- **H1 — „present" hat eine Heartbeat-TTL, verfällt zu unknown** (Assist2-Review): „present" gilt nur **innerhalb einer TTL** der letzten Beobachtung; veraltet der letzte Heartbeat ⇒ **decay zu unknown/away**, nie „still present". Sonst ist es die **zeitverzögerte** „active-now"-Lüge — dieselbe Klasse wie das Grün-Verbot, nur langsam.
+- **H2 — Verbindung ≠ Aufmerksamkeit** (Assist2-Review, auch beim Menschen): ein Background-Tab liest als „connected". Copy/aria sagt **„hier/verbunden"**, **nie** „schaut zu / liest / aufmerksam" — Verbindung impliziert **keine** Aufmerksamkeit.
+- **Drei Register (wie CYP-705):** **present** (advisory, **TTL-begrenzt**) · **away/last-seen** (advisory, Alter ehrlich) · **unknown** (kein Feed **oder TTL abgelaufen** → neutraler sichtbarer Marker, **nicht** „abwesend"). unknown ≠ away ≠ here.
 
 ## §1 Reconcile, nicht kollabieren — ZWEI Achsen (die load-bearing Unterscheidung)
 | Achse | Was | Quelle (heute) |
@@ -30,28 +32,33 @@ Der Client kennt sein/das Menschen-`identityId` **nicht** (`AuthMe` = `{authenti
 - **Rolle** („ein Operator ist hier") · **Count** („N schauen zu") · **server-Prinzipal-keyed, grob angezeigt** (wie 705: Server kennt den Prinzipal, Anzeige bleibt grob) — **sidesteps** den identityId-Block. · **benannt** — braucht die PL-Identitäts-Entscheidung (gekoppelt an CYP-704-NOTIFY).
 - **Empfehlung MVP:** Rolle/Count (oder server-keyed-grob), **benannt später** mit der NOTIFY-Identitätsentscheidung.
 
-## §3 Offene Produktfragen (design-ahead — für PO/PL, NICHT raten)
-- **(a) Wessen Präsenz?** nur Menschen, oder Menschen+Agenten? *(Agenten-„Präsenz" = Liveness = andere Achse → Empfehlung: **nur Menschen**; Liveness bleibt getrennt.)*
-- **(b) Granularität?** benannt / Rolle / Count? *(content-free AuthMe → benannt = Identitäts-Entscheidung wie 704-NOTIFY; Empfehlung MVP: **Rolle/Count**.)*
-- **(c) Skope?** per-Kanal (wer ist in DIESEM Kanal) oder global (wer ist in der App)? *(Empfehlung: global fürs MVP-„wer ist da"; per-Kanal später.)*
-- **(d) „Zuletzt gesehen"-Zeitstempel?** *(advisory + staleness — Empfehlung: nur mit **ehrlicher Alterung** („vor 5 min"), nie „here now" impliziert; oder ganz weglassen fürs MVP.)*
+## §3 Produktfragen — teils SECURITY-entschieden (Assist2-Review), teils offen für PO/PL
+- **(a) Wessen Präsenz?** [offen] nur Menschen, oder Menschen+Agenten? *(Agenten-„Präsenz" = Liveness = andere Achse → Empfehlung: **nur Menschen**; Liveness getrennt.)*
+- **(b) Granularität?** [offen, mit Security-Constraint] benannt / Rolle / Count. content-free AuthMe → benannt = Identitäts-Entscheidung wie 704-NOTIFY; Empfehlung MVP: **Rolle/Count**. **★ S2 (Assist2):** Rolle/Count **anonymisiert nur bei Set-Größe > 1**. Bei **einem** Operator ist „ein Operator ist hier" **nicht** anonym (= diese Person). Grobe Präsenz nur zeigen, wenn ≥2 im Set; sonst **unknown/aus** — nie de-anonymisieren.
+- **(c) Skope? — SECURITY-ENTSCHIEDEN: ACL-scoped, NICHT global (★ S1, Assist2, überstimmt meine frühere „global fürs MVP"-Empfehlung — die ist RAUS).** Global würde **Existenz über die ACL-Grenze leaken** — keine sichere Abkürzung. Präsenz respektiert **dieselbe ACL** wie Kanäle/Nachrichten: du siehst nur Präsenz von Teilnehmern in Kanälen, die du lesen darfst. **S3:** per-Kanal-Präsenz („wer ist in DIESEM Kanal") koppelt an **705s Read-Receipt-Absage** — nicht durch die Hintertür ein „X liest hier" aufmachen; per-Kanal nur **ohne** Read-Receipt-Semantik.
+- **(d) „Zuletzt gesehen"?** [offen] *(advisory + staleness — Empfehlung: nur **grob** („vor 5 min"), nie „here now". **★ S5 (Assist2):** grobe Alterung ist **Privacy**, nicht nur Ehrlichkeit — präzise Timestamps sind ein Tracking-Leak. Grob oder weglassen.)*
 
 ## §4 Layout & Zustände (parametrisch — konkretisiert nach §3-Entscheidung)
 - **Präsenz-Indikator**: Dot **+ Text/aria** (colour-never-sole, WCAG 1.4.1), reuse FidelityBadge-Idiom (advisory, content-free). Zustände:
-  - **present** → neutraler (NICHT grüner) „hier"-Marker + aria.
-  - **away / last-seen** → advisory, mit **sichtbarem Alter** („vor 5 min"), nie „jetzt hier".
-  - **unknown** (kein Feed / nicht bestimmbar) → **sichtbarer neutraler** Marker, **nicht** „abwesend"/leer (die 705-Drei-Zustands-Lehre: unknown sichtbar ≠ Stille).
-- **Nie**: green „active now" · „niemand da" aus unknown · derselbe Marker wie Agent-Liveness.
+  - **present** (innerhalb Heartbeat-TTL, H1) → neutraler (NICHT grüner) **„hier/verbunden"**-Marker + aria; Copy impliziert **keine** Aufmerksamkeit (H2). Nach TTL-Ablauf → unknown/away.
+  - **away / last-seen** → advisory, mit **grobem** Alter („vor 5 min", S5-Privacy), nie „jetzt hier".
+  - **unknown** (kein Feed / TTL abgelaufen / nicht bestimmbar) → **sichtbarer neutraler** Marker, **nicht** „abwesend"/leer (die 705-Drei-Zustands-Lehre: unknown sichtbar ≠ Stille).
+- **Nie**: green „active now" · „niemand da" aus unknown · derselbe Marker wie Agent-Liveness · „schaut zu/liest" aus bloßer Verbindung (H2) · Präsenz über die ACL-Grenze (S1).
 
 ## §5 Honesty-Invarianten (die Zähne, wenn gebaut wird)
 1. **advisory nie Garantie** — keine Copy/kein Marker impliziert Zustellung/Antwort/Aufmerksamkeit.
 2. **nie green „active now"** (Code-Präzedenz).
 3. **unknown ≠ away ≠ here** — drei distinkte, sichtbare Renders; unknown nie als Abwesenheit ([[absence-reads-as-all-clear]]).
 4. **liveness ≠ presence** — Agent-run-state/busy und Menschen-Präsenz haben **distinkte** Marker/Copy/testids; ein Test muss sie **unterscheiden** (Mutation: Präsenz aus run-state ableiten → RED).
-5. **staleness ehrlich** — „zuletzt gesehen" zeigt **Alter**, impliziert nie „jetzt hier".
+5. **staleness ehrlich** — „zuletzt gesehen" zeigt **grobes** Alter, impliziert nie „jetzt hier".
+6. **★ TTL-decay (H1)** — „present" jenseits der Heartbeat-TTL rendert **unknown/away**, nie „still present". *(Mutation: kein TTL → dauerhaftes „present" → RED = zeitverzögerte active-now-Lüge.)*
+7. **Verbindung ≠ Aufmerksamkeit (H2)** — Copy/aria sagt „verbunden/hier", **nie** „schaut zu/liest".
+8. **★ ACL-scoped (S1/S4)** — Präsenz nur für ACL-lesbare Teilnehmer; WS-Präsenz-Event **ACL-scoped zugestellt** (705-F1-Lehre). *(Mutation: globale/cross-ACL-Präsenz → RED = Existenz-Leak.)*
+9. **k-Anonymität (S2)** — grobe Rolle/Count nur bei Set-Größe > 1; bei 1 kein De-Anonymisieren (→ unknown/aus).
+10. **per-Kanal ⇏ Read-Receipt (S3)** — falls per-Kanal, keine „X liest hier"-Semantik (705-Read-Receipt-Absage nicht durch die Hintertür).
 
 ## §6 Backend2-Reconcile-Contract (was ein Präsenz-Feed bräuchte — später, wie 705)
-Ein **advisory** Präsenz-Signal pro Prinzipal (connected / last-active-ts), **server-Prinzipal-keyed** (kein Client-`identityId`), **grob angezeigt** (§2.1). Live via WS (eigener Event, nicht in Comm/704 falten — [[reconcile-not-collapse-distinct-states]]). **Kein Feed ⇒ unknown** (sichtbar), nie „niemand da". Wie 705: **blockiert auf eine Backend-Fläche** + die §3-Produktentscheidungen.
+Ein **advisory** Präsenz-Signal pro Prinzipal (connected + **`lastHeartbeat`-ts** für die TTL-Decay H1 + `last-active-ts`), **server-Prinzipal-keyed** (kein Client-`identityId`), **grob angezeigt** (§2.1). **★ ACL-scoped (S1/S4):** der Server liefert Präsenz **nur** für Teilnehmer, die der Aufrufer per ACL sehen darf; das Live-WS-Präsenz-Event wird **ACL-scoped zugestellt** (dieselbe F1-Lehre wie 705s `ReadStateEvent`) — **nie** global/cross-ACL (Existenz-Leak). Eigener Event, **nicht** in Comm/704 falten ([[reconcile-not-collapse-distinct-states]]). **Kein Feed / TTL abgelaufen ⇒ unknown** (sichtbar), nie „niemand da". **Read-Receipts bleiben OUT** (705-Absage; per-Kanal-Präsenz koppelt daran, S3). Wie 705: **blockiert auf eine Backend-Fläche** + die §3-Produktentscheidungen.
 
 ## §7 Parität & Reuse
 - **HubDiscovery `online/lastSeen`** — advisory (H1) Register-Vorbild.
@@ -61,7 +68,9 @@ Ein **advisory** Präsenz-Signal pro Prinzipal (connected / last-active-ts), **s
 - **CMP CYP-55 B1** (`commFocused`/`markCommFocused`) — lokaler Fokus, **nicht** Cross-Teilnehmer-Präsenz; nicht als Präsenz umwidmen.
 
 ## §8 Übergabe-Flags an den Koordinator
-- **Design-ahead:** **noch nicht build-fertig.** Blockiert auf **(i) PO/PL-Produktentscheidungen §3 (a)-(d)** und **(ii) eine Backend-Präsenz-Fläche** (kein Feed heute).
-- **Load-bearing Honesty (jetzt schon fix):** **liveness ≠ presence** (Zwei-Achsen-Trennung), **advisory nie Garantie**, **nie green active-now**, **unknown sichtbar ≠ „niemand da"**.
-- **Identitäts-Kopplung:** benannte Präsenz teilt die pausierte CYP-704-NOTIFY-Identitätsentscheidung; grob (Rolle/Count/server-keyed) ist **entkoppelt** baubar — wie 705.
+- **Design-ahead:** **noch nicht build-fertig.** Blockiert auf **(i)** die **offenen** §3-Produktentscheidungen **(a) wessen · (b) Granularität · (d) last-seen** und **(ii)** eine Backend-Präsenz-Fläche (kein Feed heute).
+- **SECURITY-entschieden (Assist2, überstimmt Produkt):** **§3(c)-Skope = ACL-scoped, nicht global (S1)** — der Fork ist **zu**, nicht mehr offen. Dazu S2 (k-Anon nur Set>1), S3 (per-Kanal ⇏ Read-Receipt), S4 (WS ACL-scoped), S5 (grobes last-seen = Privacy).
+- **Honesty-Korrektur (Assist2):** H1 = present-Heartbeat-**TTL** → decay zu unknown (zeitverzögerte active-now-Lüge vermeiden); H2 = Verbindung ≠ Aufmerksamkeit (Copy).
+- **Load-bearing Honesty (fix):** **liveness ≠ presence**, **advisory nie Garantie**, **nie green active-now**, **unknown sichtbar ≠ „niemand da"**, **ACL-scoped**.
+- **Identitäts-Kopplung:** benannte Präsenz teilt die pausierte CYP-704-NOTIFY-Identitätsentscheidung; grob (Rolle/Count/server-keyed, Set>1) ist **entkoppelt** baubar — wie 705.
 - **Shared Keys / Backend-Contract** landen mit der Impl, nicht vorab.
