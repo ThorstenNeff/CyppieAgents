@@ -77,6 +77,8 @@ Backend2 hat `ChannelReadState{lastReadSeq: Long non-null, unreadCount}` gepinnt
 - **④ non-optimistisch — bestätigt:** read erst nach 200/`ReadStateEvent`, nie lokaler Scroll-Optimismus (§3).
 
 - **⑤ Trenner-Eingabe-Vertrag (Tester2 #68) — gefoldet:** Timeline-`messages` seq-aufsteigend (+ `seq` am Message) als expliziter Vertrag; Client sortiert nicht nach (§2).
+- **⑥ Reconnect → frischer Re-fetch (2b-AC, ratifiziert) — BESTÄTIGT:** nach WS-Reconnect wird `GET /api/read-state` **frisch** geholt (autoritativ); **UNKNOWN bis der Fetch da ist** — nie stale-als-aktuell zeigen (der Cursor kann während des Ausfalls anderswo advanct sein). Identisch zum Cold-Load-Pfad (§4/§9b); Omissionen in der frischen Antwort ⇒ UNKNOWN.
+- **⑦ `ReadStateEvent` = VOLLER per-Kanal-State (kein Delta) (2b-AC, ratifiziert) — BESTÄTIGT:** `{channelId, lastReadSeq, unreadCount}` → der Renderer **ersetzt** den Kanal-Zustand wholesale, **keine Client-Merge/Akkumulation**. **Idempotent:** ein doppeltes/verpasstes/umsortiertes Event self-healt (der nächste volle State ist korrekt, egal der Historie) — vermeidet die Delta-Drift-Klasse, hält den Client **display-only** (rechnet nie Unread). Komponiert sauber mit ⑥ (Live-Upserts + Reconnect-Re-fetch = volles Bild inkl. Omissionen→UNKNOWN). *(3. Tester2-Frage `unreadCount clamp≥0` = rein Server; Client-`<=0→read` (§2) ist zusätzlich defensiv safe.)*
 
 **Status:** **①②③④⑤ ALLE geschlossen; ① inkl. UNKNOWN-Naht = Wahl A (omit, `lastReadSeq` non-null) bilateral ratifiziert (2026-07-18).** Keine offene Reconcile-Naht mehr → **Backend2 baut Server, Dev5 den Cursor-Pfad** gegen diesen gepinnten Stand. Dev5s `channelUnread()` matcht (A) heute schon; sein Modell-Typ folgt dem non-null `:core`-Typ.
 
@@ -97,6 +99,8 @@ Wenn Dev5 den echten Cursor-Pfad baut (`readState: unavailable → available`, l
 4. **Mark-read — Server-Echo, nicht lokaler Scroll:** Kanal betrachten POSTet mark-read; Badge klärt **nur** auf `ReadStateEvent`/200, **nicht** auf den Scroll, der ihn auslöste. *(Mutation: optimistisches lokales Clear → RED.)*
 5. **Trenner beim Cursor-Landing:** an erster `seq > cursor` (seq-aufsteigend, Vertrag §2/#68); kein Cursor → kein Trenner; ein Cursor-Update bewegt den Trenner korrekt.
 6. **Fetch-Grenzen-Guard:** Wire-`null` auf präsentem Eintrag (Vertragsbruch) ⇒ UNKNOWN, nie „0" (§2 Laufzeit-Guard, distinkt vom non-null Typ).
+7. **Reconnect (§8-⑥):** WS-Reconnect → frischer Re-fetch, **UNKNOWN während der Lücke** — nie stale-als-aktuell; Omissionen in der frischen Antwort → UNKNOWN. *(Mutation: reconnect zeigt alten Count weiter → RED = stale-als-Wahrheit.)*
+8. **Voller-State-Event idempotent (§8-⑦):** dasselbe `ReadStateEvent` zweimal angewandt = identischer Render (kein Akkumulieren). *(Mutation: Delta-Akkumulation +N → RED bei Dup/Reorder.)*
 **Tool-Grenze:** die Zustands-Übergänge sind **headless render-test-messbar** (readState-Prop wechseln / `ReadStateEvent` feuern im Render-Test); das echte WS-Timing/Flicker-*Feel* am Live-Server = guided-human. Ich prüfe die State-Machine, Tester2 die Verhaltens-/Pointer-Ebene.
 
 ## §10 Übergabe-Flags an den Koordinator
