@@ -220,7 +220,10 @@ run {
     // provider (Ed25519/X25519), `jdk.jfr` for Netty's JFR class refs (disabled via the arg below, module kept for
     // safety). `java.se` is the generous-but-proven aggregate (all java.* incl. sql/naming/xml/management); a later
     // pass can minimize once each target OS's full-boot module needs are profiled.
-    val jlinkModules = "java.se,jdk.unsupported,jdk.crypto.ec,jdk.jfr"
+    // CYP-687 (M1.1): `jdk.jcmd` bundles `jcmd` into the runtime so the BYOA acceptance can read the RUNNING hub JVM's
+    // effective flags (`jcmd <pid> VM.flags`) — the authoritative source for whether the -Xmx run-override actually
+    // gripped (the hard heap gate in deploy/linux/byoa-m1-acceptance.sh). Small; no new attack surface (a diagnostic CLI).
+    val jlinkModules = "java.se,jdk.unsupported,jdk.crypto.ec,jdk.jfr,jdk.jcmd"
     // CYP-623 §1: BOTH mandatory :server JVM args MUST ride the generated launcher (a custom `java -jar`/service
     // command that drops `-Dio.netty.jfr.enabled=false` hits NoClassDefFoundError FreeChunkEvent on a stripped JDK).
     // CYP-678: single-sourced from deploy/hub/hub.jvmargs — the SAME `hubJvmArgs` list `applicationDefaultJvmArgs`
