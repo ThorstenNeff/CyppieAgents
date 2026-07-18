@@ -97,6 +97,11 @@ tasks.named<Test>("test") {
     inputs.file(rootProject.file("server/build.gradle.kts"))
         .withPropertyName("serverBuildScript")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+    // CYP-680: HubSystemdCoreDumpTest reads the .deb systemd units at RUNTIME — declare them so removing LimitCORE=0
+    // from a unit (the drift mutation) re-runs the guard instead of leaving `test` UP-TO-DATE (CC2 stale-green fix).
+    listOf("deploy/linux/cyppiehub.service", "deploy/linux/cyppiehub-test.service").forEachIndexed { i, p ->
+        inputs.file(rootProject.file(p)).withPropertyName("cyp680Unit$i").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
 }
 
 // CYP-409/CYP-426 (W1 producer): export the AsyncAPI (WS) + OpenAPI (REST) contracts (generated from :core via

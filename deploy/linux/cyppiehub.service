@@ -18,8 +18,10 @@ Type=simple
 User=cyppie
 Group=cyppie
 
-# The jpackage launcher. Its CyppieHub.cfg ALREADY carries the two mandatory JVM args
-# (-Dio.netty.jfr.enabled=false, -XX:MaxRAMPercentage=75.0) — CYP-626 — so they are NOT repeated here.
+# The jpackage launcher. Its CyppieHub.cfg ALREADY carries the JVM launch args, single-sourced from
+# deploy/hub/hub.jvmargs (CYP-678): -Dio.netty.jfr.enabled=false, -XX:MaxRAMPercentage=75.0, and the CYP-670 D2
+# cleartext-on-disk hardening -XX:-HeapDumpOnOutOfMemoryError + -XX:-CreateCoredumpOnCrash — so they are NOT repeated
+# here. The OS-level core-dump complement to those is LimitCORE=0 (below).
 # NB: jpackage installs to /opt/<linux-package-name> (lowercase `cyppiehub`), with the launcher named `CyppieHub`.
 ExecStart=/opt/cyppiehub/bin/CyppieHub
 
@@ -48,6 +50,13 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/cyppiehub
 ProtectHome=true
 PrivateTmp=true
+
+# ★ CYP-680 — no core dumps. The hub holds the DECRYPTED master key + tokens in RAM; a core image would write them to
+# disk. LimitCORE=0 (RLIMIT_CORE=0) is the OS-level complement to the in-JVM dump-off flags the launcher already
+# carries (-XX:-HeapDumpOnOutOfMemoryError / -XX:-CreateCoredumpOnCrash via CYP-678): the JVM flags stop the JVM's own
+# heap/hs_err/core; LimitCORE=0 also stops an OS/native core (a SIGSEGV in JNI native code — pty4j / sqlite). This is
+# the exact Linux equivalent of the macOS daemon plist Core=0 (CYP-670) — the .deb reaches D2 dump-hardening parity.
+LimitCORE=0
 
 [Install]
 WantedBy=multi-user.target
