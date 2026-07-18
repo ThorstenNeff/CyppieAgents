@@ -53,4 +53,37 @@ class Cyp417ResourceGovernorTest {
         // Advisory-only when we can't ground a gate — never invent one (H5).
         assertIs<SpawnDecision.Admit>(governor(Long.MAX_VALUE).admitSpawn(9999))
     }
+
+    /**
+     * CYP-442 — the seeded/bootstrap roster ALWAYS boots, even on a lean box whose honest estimate is BELOW the roster
+     * size (else a deploy+restart silently loses seeded agents — the [[oom-gate-tmpfs-host]] lesson turned into
+     * data-loss). The gate is `max(estimatedMax, rosterFloor)`: the floor lifts the gate to the roster for the SEEDED
+     * agents, while NEW spawns above stay fail-closed. This is the evidence tooth the code-reading rests on.
+     *
+     * Mutation-proven: drop the `rosterFloor` from the gate in [ResourceGovernor.admitSpawn] (gate = estimatedMax) →
+     * the seeded agents past the honest estimate are rejected → this reds.
+     */
+    @Test
+    fun cyp442_seededRosterAlwaysBoots_onALeanBox_whereEstimateIsBelowRosterSize() {
+        val roster = 6
+        val g = ResourceGovernor(
+            maxMemoryBytes = { 2 * perAgent },  // honest estimate = 2 (memory-bound), BELOW the 6-agent roster
+            availableProcessors = { 64 },
+            rosterFloor = { roster },           // PlatformWiring wires this from config.agents.count { !it.remote }
+        )
+        // the REPORTED estimate stays the honest hardware number (never the floor) — the capacity pill can't lie.
+        assertEquals(2, g.estimatedMax())
+        // every seeded agent boots (current 0..5) — the floor guarantees it despite estimate < roster.
+        for (current in 0 until roster) {
+            assertIs<SpawnDecision.Admit>(
+                g.admitSpawn(current),
+                "CYP-442: seeded agent #$current must boot on a lean box (rosterFloor floors the gate)",
+            )
+        }
+        // a NEW spawn ABOVE the seeded roster is still fail-closed gated (the floor floors to the roster, not beyond).
+        assertIs<SpawnDecision.Reject>(
+            g.admitSpawn(roster),
+            "a spawn above the seeded roster stays fail-closed (the floor does not lift the real limit)",
+        )
+    }
 }
