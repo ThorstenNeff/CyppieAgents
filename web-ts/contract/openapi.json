@@ -2775,6 +2775,9 @@
                     },
                     "projectId": {
                         "type": "string"
+                    },
+                    "seq": {
+                        "type": "integer"
                     }
                 },
                 "required": [
