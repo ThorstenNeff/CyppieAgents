@@ -26,6 +26,9 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/cyppiehub-test
 ProtectHome=true
 PrivateTmp=true
+# CYP-680 — no core dumps (OS complement to the launcher's in-JVM dump-off flags); parity with the prod unit + the
+# macOS plist Core=0. The -test hub also holds a (test) master key in RAM.
+LimitCORE=0
 
 [Install]
 WantedBy=multi-user.target
