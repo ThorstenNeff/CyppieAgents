@@ -73,12 +73,14 @@ class Hub(
             // in-project channel, so this records the message's tenant for project-scoped reads.
             projectId = state.activeProjectId,
         )
-        store.append(message)
-        audit.posted(message)
-        _events.tryEmit(MessageEvent(message)) // live push to /ws/comm (filtered per participant)
-        onPosted(message) // CYP-132: durable inbound delivery — AFTER persist (the single funnel)
-        onSent(message)   // CYP-698: provenance emit (comm.sent) — AFTER persist, at the single chokepoint
-        return message
+        // CYP-705: the store assigns the authoritative `seq`; thread the STORED copy through every downstream
+        // funnel so the live MessageEvent, delivery, provenance, and the POST response all carry the real seq.
+        val stored = store.append(message)
+        audit.posted(stored)
+        _events.tryEmit(MessageEvent(stored)) // live push to /ws/comm (filtered per participant)
+        onPosted(stored) // CYP-132: durable inbound delivery — AFTER persist (the single funnel)
+        onSent(stored)   // CYP-698: provenance emit (comm.sent) — AFTER persist, at the single chokepoint
+        return stored
     }
 
     /**
