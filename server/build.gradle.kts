@@ -102,6 +102,18 @@ tasks.named<Test>("test") {
     listOf("deploy/linux/cyppiehub.service", "deploy/linux/cyppiehub-test.service").forEachIndexed { i, p ->
         inputs.file(rootProject.file(p)).withPropertyName("cyp680Unit$i").withPathSensitivity(PathSensitivity.RELATIVE)
     }
+    // CYP-708: DebTwinPinTest reads the .deb maintainer scripts of BOTH packages at RUNTIME — declare all six so a
+    // drift in either twin re-runs the guard. Measured, not assumed: with these undeclared, three real mutations to
+    // the -test postinst (chmod 0600→0644, a deleted `systemctl daemon-reload`, --host 127.0.0.1→0.0.0.0) ALL left
+    // `test` UP-TO-DATE and the guard reported green. A twin-pin that cannot see the twins is worse than no guard —
+    // it certifies the drift it was built to catch (same CC2 stale-green class as the units above).
+    listOf(
+        "deploy/linux/deb-resources/postinst", "deploy/linux/deb-resources/prerm", "deploy/linux/deb-resources/postrm",
+        "deploy/linux/deb-resources-test/postinst", "deploy/linux/deb-resources-test/prerm",
+        "deploy/linux/deb-resources-test/postrm",
+    ).forEachIndexed { i, p ->
+        inputs.file(rootProject.file(p)).withPropertyName("cyp708DebResource$i").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
     // CYP-681: GitignoreSecretHygieneTest reads the root .gitignore at RUNTIME — declare it so removing a secret
     // pattern (the drift mutation) re-runs the guard instead of leaving `test` UP-TO-DATE (CC2 stale-green fix).
     inputs.file(rootProject.file(".gitignore"))
