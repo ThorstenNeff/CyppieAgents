@@ -9,8 +9,12 @@
 ## §0 Ehrlichkeits-Haken (VORNE — bindend, prägt alles darunter)
 Ein Ungelesen-Badge/-Trenner ist **nur dann ein wahrhaftiges „neu seit du zuletzt gelesen hast"**, wenn ein **server-autoritativer, pro-Prinzipal `lastRead`/`seen`-Cursor** dahinter steht. Konsequenzen:
 - **Kein rein-lokaler Marker als Quelle.** Ein client-only `lastRead` (localStorage/Speicher) täuscht **durable Gewissheit** vor: nicht cross-session/-device, driftet, und sagt „gelesen", wo real nur „vorbeigescrollt" gilt. **Verboten** als Unread-of-Record-Quelle.
-- **Server-`seen` nicht verfügbar → kein Unread-of-Record-Badge/-Trenner.** Und — kritisch — **Abwesenheit ≠ all-clear:** „keine Badge = **unbekannt**, nicht „alles gelesen"". **Nie** ein affirmatives „0 ungelesen / alles gelesen" rendern, das der Client nicht garantieren kann (die CYP-288-Klasse: unknown ≠ empty).
-- **`seen=0` server-bestätigt** ist dagegen ein **ehrliches** „gelesen" (autoritativ) → legitime Abwesenheit der Badge. Der Unterschied zum degradierten Fall ist *Wissen*: bestätigte 0 vs. unbekannt.
+- **Drei distinkte Zustände, nicht zwei** (Backend2s `known:false`-Kante + Assist2s **Absence-of-Signal-Falle**):
+  1. **server-confirmed-read** (Cursor bekannt, `unreadCount=0`) → **nichts** (legitimes all-clear — wir *wissen*, es ist gelesen).
+  2. **UNKNOWN** (kein Cursor / lädt / `known:false`) → **sichtbarer neutraler Indikator** („•/unbekannt"), **NICHT Abwesenheit.** Denn „keine Badge" liest sich visuell als all-clear — Stille wäre also die Lüge, nicht die Ehrlichkeit. Neutral getönt, **kein Alarm** ([[over-alarm-is-also-dishonest]]): unknown ist kein Fehler, nur „nicht bestimmt".
+  3. **unread>0** → **Count-Badge**.
+- **Nie** ein affirmatives „0 ungelesen / alles gelesen" rendern, das der Client nicht garantieren kann; und **nie** UNKNOWN als Abwesenheit rendern (das *ist* das falsche all-clear). Die CYP-288-Klasse **am Render, nicht nur in der Intention**: unknown ≠ empty muss man *sehen*.
+- **Kein „seed-at-join"** (entschieden mit PO): den Cursor beim Beitritt NICHT auf „latest" setzen — das fabriziert „alles davor gelesen", das du nie warst. Vor-Beitritts-Historie ist **unknown** (neutraler „•"), nicht „gelesen".
 
 ## §1 Reconcile, nicht kollabieren — zwei distinkte Register ([[reconcile-not-collapse-distinct-states]])
 Es gibt **zwei** „neu"-Signale; sie dürfen **nicht** ineinander kollabieren:
@@ -26,48 +30,51 @@ Es gibt **zwei** „neu"-Signale; sie dürfen **nicht** ineinander kollabieren:
 
 **Architektur-Schlüssel (löst die Identitäts-Frage, die CYP-704-NOTIFY pausierte):** der Server **löst den authentifizierten Prinzipal pro Request auf** (`hub.inbox(participant)`, `CommRoutes.kt:199`). Damit ist ein **pro-Prinzipal `lastRead` server-seitig keybar, OHNE dem Client ein `identityId` zu geben** (`AuthMe` bleibt content-free). **Der Server berechnet den Unread-Count** (er kennt Prinzipal + Nachrichten inkl. `from`) → der Client **zeigt nur an**, braucht selbst **kein** „me".
 
-**Client-Contract, den Backend2s Fläche liefern muss (zu reconcilen):**
-1. **Read-Cursor pro Kanal für den Aufrufer** — z. B. `lastReadSeq` je Kanal (in `GET /api/channels` additiv, oder dediziert `GET /api/read-state`).
-2. **Unread-Count pro Kanal, server-berechnet** (`count(seq > lastReadSeq)`, eigene Nachrichten ausgeschlossen) — **nicht** client-abgeleitet über eine Teilseite (das unter-zählt; falls nur client-seitig möglich, ehrlich „N+" offenlegen).
-3. **Mark-Read-Write** — `POST /api/channels/{id}/read {upToSeq}` → Server schreibt den Cursor **für den authentifizierten Prinzipal**, echo't den neuen Cursor (**non-optimistisch**, wie ACL/Share).
-4. **Ordnungsschlüssel = `seq`** (nicht `ts`).
+**Backend2s GEPINNTER `:core`-Contract (Stand 2026-07-18):** `ChannelReadState{lastReadSeq, unreadCount}` pro Kanal; **`seq` aus dem Store exponiert** (autoritativer Schlüssel, nicht `ts`); **Read-Receipts OUT** (kein „der Absender sieht, dass du gelesen hast" — Read-State ist **self-only**, das hält die Ehrlichkeit sauber, kein Über-Anspruch gegenüber Dritten). Der Server berechnet `unreadCount` pro Prinzipal (eigene Nachrichten ausgeschlossen) → Client zeigt nur an, **kein Client-`identityId`**.
+
+**UNKNOWN-Kodierung (die Drei-Zustands-Angel — muss der Carrier tragen):** der Client muss **UNKNOWN** (kein `ChannelReadState` für den Kanal / `known:false`) von **confirmed-read** (`ChannelReadState` vorhanden, `unreadCount=0`) unterscheiden können. Konvention: **Kanal fehlt in der Read-State-Antwort ⇒ UNKNOWN** (neutraler „•"); **vorhanden mit `unreadCount=0` ⇒ confirmed-read** (nichts). Ohne diese Unterscheidbarkeit kollabieren §0-Zustände 1+2 → verboten.
 
 ## §3 Layout & Zustände (Reuse, keine Divergenz)
 Erweitert die Comm-Nav (`CommPanel.tsx`) + Timeline; alle bestehenden Zustände (empty / CYP-288 load-error / revoked / disclosure) bleiben und **beherrschen** weiter.
 
-- **Per-Kanal-Badge** am Kanal-Button — **present-only**-Marker-Idiom (`FidelityBadge`/`WindowActivityBadge`): Glyph + **Count-Text** + `aria-label`, **Farbe nie allein** (WCAG 1.4.1), fail-closed by absence.
-  - `unread>0` (server) → Badge mit Count.
-  - `unread=0` **server-bestätigt** → keine Badge (ehrlich „gelesen").
-  - **server-`seen` unverfügbar** → **keine Badge** + **kein** all-clear (present-only ⇒ still; falls die Nav eine Read-Spalte hätte, zeigt sie „Status unbekannt", nie „0/gelesen").
+- **Per-Kanal-Indikator** am Kanal-Button — Glyph/Text + `aria-label`, **Farbe nie allein** (WCAG 1.4.1). **Nicht** rein present-only: UNKNOWN ist **sichtbar**, nicht Abwesenheit. Drei distinkte, **visuell unterscheidbare** Renders:
+  - **unread>0** (server) → **Count-Badge** (Zahl + aria-label „{n} ungelesen in {channel}").
+  - **confirmed-read** (`ChannelReadState` da, `unreadCount=0`) → **nichts** (ehrlich „gelesen", autoritativ).
+  - **UNKNOWN** (kein `ChannelReadState` / `known:false` / lädt / Fläche unverfügbar) → **sichtbarer neutraler Indikator** „•" (neutral getönt, kein Alarm) + `aria-label` „Ungelesen-Status unbekannt". **Kein** Count, **kein** all-clear, **keine** Stille.
 - **„Neue Nachrichten"-Trenner** in der Timeline — eine Trenner-Row im `<ol>` an der **ersten-ungelesen-Grenze** (erste `seq > lastReadSeq`). Nur mit Server-Cursor gerendert; ohne Cursor **kein** Trenner.
 - **„Was ist neu"** = Badge + Trenner zusammen. Optional (Scope-Notiz, nicht MVP-bindend): „zum ersten Ungelesenen springen".
 - **Mark-Read-Auslöser:** wenn der Kanal betrachtet wird (offen + ungelesene im Viewport / bis unten gescrollt) → Client `POST …/read {upToSeq}`; **Badge klärt erst auf den Server-Echo** des neuen Cursors (non-optimistisch — der Cursor ist Server-Wahrheit, kein lokaler Scroll-Optimismus). „Gelesen" = der Server hat deinen Cursor **notiert** (durable), nicht „du hast es verstanden".
 
 ## §4 Der degradierte/unverfügbare Pfad (Ehrlichkeits-Kern, ausgeführt)
-- Read-State-Fläche fehlt (Backend2 nicht gebaut) **oder** Runtime-Fehler → Unread-of-Record-Badge **und** Trenner **unterdrückt** (present-only ⇒ einfach abwesend).
-- **Nie** als „alles gelesen" präsentieren: kein „✓ alle gelesen", kein grünes all-clear. Read-State unbekannt = **unbekannt**.
+- Read-State-Fläche fehlt (Backend2 nicht gebaut) / `known:false` / Runtime-Fehler → **UNKNOWN-Zustand: der sichtbare neutrale „•"-Indikator** (§3), **nicht** Abwesenheit. Der **Trenner** entfällt (kein Cursor → keine ehrliche Grenze), aber der Per-Kanal-Indikator zeigt **sichtbar „unbekannt"** — Stille würde als all-clear gelesen (**Absence-of-Signal-Falle**).
+- **Nie** als „alles gelesen" präsentieren: kein „✓ alle gelesen", kein grünes all-clear. Read-State unbekannt = **unbekannt** (sichtbar, nicht still).
 - **Kein lokaler Fallback** als Unread-of-Record-Quelle (localStorage/Speicher täuscht durable Gewissheit). Ein lokaler Scroll darf den **Mark-Read-CALL** treiben, aber die **Anzeige** leitet sich aus dem Server-Cursor ab.
 - Analog CYP-288: eine unverfügbare Read-State ist „unknown", nie ein fabriziertes empty/all-clear.
 
 ## §5 Resource-Keys (Design; Dev5 landet mit Impl — [[shared-key-landing]], Shared-Check re-syncen)
 - `a11y_comm_unread` = „{n} ungelesen in {channel}" (Badge-a11y).
 - `comm_unread_divider` = „Neu" (Trenner; EN „New").
-- `comm_unread_unavailable` = „Ungelesen-Status nicht verfügbar" (nur falls ein Slot es sonst als all-clear läse; unknown, **nicht** all-clear).
+- `comm_unread_unknown` = „•" (Indikator-Glyph, neutral) + `a11y_comm_unread_unknown` = „Ungelesen-Status unbekannt" (der sichtbare UNKNOWN-Indikator §3 — unknown, **nicht** all-clear).
 DE/EN-Strings liefere ich auf Zuruf; **Keys landen mit Dev5s Impl**, nicht vorab (Shared-Drift-Flag).
 
 ## §6 testTags (charset-safe)
-`comm.channel.{id}.unreadBadge` (Kanal-Id = stabile Config-Id, charset-ok) · `comm.unread.divider` · (degradiert) `comm.unread.unavailable`. Opake Werte nie roh als Scope ([[testtag-scopeid-charset-safe]]).
+`comm.channel.{id}.unreadBadge` (Count) · `comm.channel.{id}.unreadUnknown` (neutraler „•"-Indikator) · `comm.unread.divider` (Kanal-Id = stabile Config-Id, charset-ok). Opake Werte nie roh als Scope ([[testtag-scopeid-charset-safe]]).
 
 ## §7 Parität
 **Kein** Per-Kanal-Unread-of-Record existiert — weder Server (kein Cursor) noch CMP (nur B1-Soft-Aktivität) noch web-ts (nichts). CYP-705 ist **neu auf beiden Seiten** (Backend2-Fläche + Client). Reuse-Anker: present-only-Marker-Idiom, CYP-288 unknown≠empty-Ehrlichkeit, Event-Log `seq`-Autorität (nicht `ts`), CMP-B1-Register-Trennung.
 
-## §8 Reconcile-Checkliste mit Backend2 (das ist die abzugleichende Fläche)
-Backend2 misst/baut die server-`seen`-Fläche; **diese Punkte gleichen wir ab**, bevor Dev5 fest gegen den Contract baut:
-1. Cursor-Träger: `lastReadSeq` in `/api/channels` **oder** `/api/read-state`? 2. Unread-Count **server-berechnet** (ja/nein; wenn client-seitig → „N+"-Ehrlichkeit). 3. Mark-Read: `POST /api/channels/{id}/read {upToSeq}`, non-optimistischer Echo. 4. Schlüssel `seq` (nicht `ts`). 5. Prinzipal-Keying server-seitig (kein Client-`identityId`). 6. Verhalten wenn Fläche fehlt (Client degradiert wie §4 — **kein** all-clear).
+## §8 Reconcile mit Backend2 — gegen den GEPINNTEN Contract (Stand 2026-07-18)
+Backend2 hat `ChannelReadState{lastReadSeq, unreadCount}` gepinnt (`seq` exponiert, Read-Receipts out). Vier Touch-Points:
+- **① Carrier — ENTSCHIEDEN: standalone `GET /api/read-state`** (mein UX-Call = Backend2-Empf.). Begründung: Read-State ist **volatil** (jede Nachricht bewegt `unreadCount`, jedes Lesen `lastReadSeq`) — additiv auf dem **stabilen** `/api/channels` würde entweder den Kanal-List-Refetch an Read-State koppeln oder `/api/channels` volatil machen. Standalone + der standalone `ReadStateEvent` (③) bilden einen **kohärenten Read-State-Kanal**. **UX-Bedingung:** die Antwort kodiert **UNKNOWN = Kanal fehlt** vs **confirmed-read = vorhanden mit `unreadCount=0`** (die §0-Drei-Zustands-Angel; additiv-auf-channels verwischt das über ein nullable Feld je Zeile).
+- **② UNKNOWN-Render — gefoldet:** neutraler sichtbarer „•", **kein seed-at-join** (§0/§3).
+- **③ Live-Event — ENTSCHIEDEN: standalone `ReadStateEvent`** (mein UX-Call = Backend2-Lehnen). Begründung: eigener Register — **nicht** in CYP-704/Mentions falten ([[reconcile-not-collapse-distinct-states]]); trägt Cross-Device-Cursor-Advance und **ist** der non-optimistische Server-Echo (§3), der die Badge live + ehrlich klärt.
+- **④ non-optimistisch — bestätigt:** read erst nach 200/`ReadStateEvent`, nie lokaler Scroll-Optimismus (§3).
+
+**Rest:** ①/③ sind meine Calls (beide = Backend2s Lehnen) → **bilateral ratifizieren**, dann Server-Bau + Dev5-Cursor-Pfad.
 
 ## §9 Render-Test-Zähne (diskriminierend, mutation-aware) ([[test-must-discriminate]])
-1. server unread=3 (Kanal X) → Badge „3" (Glyph + **Count-Text** + aria-label); Kanal mit server-0 → **keine** Badge.
-2. **★ degradiert:** Read-State unverfügbar → **keine** Badge **und kein** all-clear/„0 gelesen"-Text. *(Mutation: lokaler Fallback-Zähler ODER „alles gelesen" → RED — die Gewissheits-Grenze.)*
+1. **Drei distinkte, unterscheidbare Renders:** server unread=3 → Count-Badge „3" (Glyph+Count-Text+aria-label); confirmed-read (`ChannelReadState` da, `unreadCount=0`) → **nichts**; **UNKNOWN** (kein `ChannelReadState`) → **sichtbarer neutraler „•"** (+aria-label). *(Non-vacuous: die drei müssen visuell **unterscheidbar** sein — v. a. UNKNOWN ≠ confirmed-read.)*
+2. **★ Absence-of-Signal-Guard:** UNKNOWN rendert **sichtbar** (nicht als Abwesenheit, nicht wie confirmed-read/„0 gelesen"). *(Mutation: UNKNOWN→Stille ODER UNKNOWN==nichts → RED — genau die Falle, dass „keine Badge" als all-clear liest.)* Plus: kein lokaler Fallback-Zähler, kein „alles gelesen"-Affirmativ.
 3. Trenner an erster `seq > cursor`; **kein** Cursor → **kein** Trenner.
 4. **non-optimistisch:** Badge klärt **nur** auf Server-Echo des neuen Cursors, **nicht** auf lokalen Scroll allein. *(Mutation: optimistisches lokales Clear → RED.)*
 5. **colour-never-sole:** Badge trägt Count-Text + aria-label (nicht nur gefärbter Dot). *(Mutation: colour-only → RED.)*
@@ -75,6 +82,8 @@ Backend2 misst/baut die server-`seen`-Fläche; **diese Punkte gleichen wir ab**,
 7. eigene Nachrichten heben Unread **nicht** (server-`from`-Ausschluss); Unread ist **pro Kanal**, nicht comm-weit.
 
 ## §10 Übergabe-Flags an den Koordinator
-- **Blockiert auf Backend2s server-`seen`-Fläche** — Dev5 kann UI-Gerüst + degradierten Pfad (§4) **jetzt** bauen (present-only ⇒ ohne Fläche einfach still, ehrlich), aber der **echte** Unread-Pfad landet erst mit dem Server-Cursor. §8 vor dem Fest-Bau reconcilen.
+- **Contract gepinnt (Backend2: `ChannelReadState{lastReadSeq, unreadCount}`); ①/③ = standalone (meine Calls = Backend2s Lehnen)** → **bilateral ratifizieren**, dann Backend2 baut Server, Dev5 den Cursor-Pfad.
+- **UX-Bedingung an ①:** Carrier muss UNKNOWN (Kanal fehlt) von confirmed-read (`unreadCount=0`) unterscheidbar machen — sonst kollabiert die Drei-Zustands-Angel (§0/§2).
+- Dev5 baut **jetzt** das **degradierte Gerüst** (UNKNOWN-„•", §4) gegen diese Spec.
 - **Identitäts-Entkopplung:** anders als CYP-704-NOTIFY braucht CYP-705 **kein** Client-`identityId` (server-Prinzipal-keyed) → **nicht** vom NOTIFY-Pending blockiert.
 - **Shared Keys** landen mit Dev5s Impl.
