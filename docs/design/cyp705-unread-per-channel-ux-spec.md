@@ -89,6 +89,16 @@ Backend2 hat `ChannelReadState{lastReadSeq: Long non-null, unreadCount}` gepinnt
 6. **reconcile-not-collapse:** ein Soft-Aktivitäts-Signal (falls je geportet) trägt **andere** testid/Copy als Unread-of-Record — nie als „ungelesen von record" etikettiert. *(Guard gegen Kollaps.)*
 7. eigene Nachrichten heben Unread **nicht** (server-`from`-Ausschluss); Unread ist **pro Kanal**, nicht comm-weit.
 
+## §9b Cursor-Pfad UX-QA — VOR-REGISTRIERT (pairt mit Tester2s QA-Prep)
+Wenn Dev5 den echten Cursor-Pfad baut (`readState: unavailable → available`, live `ReadStateEvent`, mark-read `POST`), prüft **diese Linse** — dieselbe, die den Gerüst-Drift fing — die **dynamischen Übergänge**, die das degradierte Gerüst nicht ausübte. Honesty-Lens, **komplementär** zu Tester2s Verhaltens-/Pointer-QA (nicht duplizierend).
+1. **★ Load-Übergang — UNKNOWN bleibt sichtbar, kein all-clear-Flash:** während `GET /api/read-state` in-flight ist (vor erster Auflösung), bleibt jeder Kanal **UNKNOWN „•"** (Default-UNAVAILABLE) — **nie** kurz Stille/„0"/nichts. *(Mutation: Load rendert Abwesenheit/„0" → RED = der falsche all-clear-Flash.)*
+2. **Available-Übergang — absent bleibt UNKNOWN:** nach Landung flippen Kanäle auf count/read; **in der Antwort fehlende Kanäle bleiben UNKNOWN „•"** (Wahl A omit), **nie** „0"/read. *(Mutation: absent → „0"/nichts → RED.)*
+3. **Live `ReadStateEvent` — non-optimistisch:** Event advanct Cursor / ändert `unreadCount` → Badge+Trenner updaten **auf das Event**, nicht spekulativ.
+4. **Mark-read — Server-Echo, nicht lokaler Scroll:** Kanal betrachten POSTet mark-read; Badge klärt **nur** auf `ReadStateEvent`/200, **nicht** auf den Scroll, der ihn auslöste. *(Mutation: optimistisches lokales Clear → RED.)*
+5. **Trenner beim Cursor-Landing:** an erster `seq > cursor` (seq-aufsteigend, Vertrag §2/#68); kein Cursor → kein Trenner; ein Cursor-Update bewegt den Trenner korrekt.
+6. **Fetch-Grenzen-Guard:** Wire-`null` auf präsentem Eintrag (Vertragsbruch) ⇒ UNKNOWN, nie „0" (§2 Laufzeit-Guard, distinkt vom non-null Typ).
+**Tool-Grenze:** die Zustands-Übergänge sind **headless render-test-messbar** (readState-Prop wechseln / `ReadStateEvent` feuern im Render-Test); das echte WS-Timing/Flicker-*Feel* am Live-Server = guided-human. Ich prüfe die State-Machine, Tester2 die Verhaltens-/Pointer-Ebene.
+
 ## §10 Übergabe-Flags an den Koordinator
 - **①②③④⑤ RATIFIZIERT (2026-07-18, converged mit Backend2), UNKNOWN-Naht = Wahl A (omit, `lastReadSeq` non-null) geschlossen** → **Backend2 baut Server, Dev5 den Cursor-Pfad** gegen den gepinnten Stand. Keine offene Reconcile-Naht.
 - **UX-QA Gerüst `b52e21b4` → Fix `59dec48c` render-confirm PASS → PO1** (drei-Zustands-Render, Absence-of-Signal-Zahn geflippt, 18/18 headless). Optionale „•"-gedämpfte-Tönung = non-blocking-Politur, Kandidat fürs Cursor-Pfad-PR.
