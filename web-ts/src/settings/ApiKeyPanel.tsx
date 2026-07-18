@@ -12,6 +12,7 @@
 // P2-a restart — there is NO restart control here.
 import { useState } from 'react'
 import type { ApiKeyView } from '../types/generated/contract'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 
 export interface ApiKeyPanelProps {
   view: ApiKeyView | null
@@ -19,9 +20,14 @@ export interface ApiKeyPanelProps {
   /** write-only save: resolves on success (the parent refreshes the masked view), rejects on failure. The panel
    *  never surfaces the key on failure — only a generic message. */
   onSave: (apiKey: string) => Promise<void>
+  // CYP-679: a failed load of the masked view else renders "Kein Schlüssel hinterlegt" — a FALSE, leak-sensitive
+  // claim that no key is configured (the contract's legit `set:false` is rendered identically). Show error+retry
+  // for the STATUS instead; the write-only entry stays usable. Retry re-fetches the masked view.
+  loadError?: boolean
+  onRetryLoad?: () => void
 }
 
-export function ApiKeyPanel({ view, operator, onSave }: ApiKeyPanelProps) {
+export function ApiKeyPanel({ view, operator, onSave, loadError = false, onRetryLoad }: ApiKeyPanelProps) {
   const [draft, setDraft] = useState('') // the transient NEW key — never persisted, cleared after save
   const [reveal, setReveal] = useState(false) // un-masks ONLY this input, never the stored status
   const [error, setError] = useState<string | null>(null)
@@ -53,10 +59,15 @@ export function ApiKeyPanel({ view, operator, onSave }: ApiKeyPanelProps) {
         API-Schlüssel
       </h2>
 
-      {/* status: server-masked only, a plain text node, never interactive, never the value */}
-      <p className="apikey-masked" data-testid="settings.apiKey.masked">
-        {masked}
-      </p>
+      {/* status: server-masked only, a plain text node, never interactive, never the value. CYP-679: a failed LOAD
+          shows error+retry here instead of the masked line (which would falsely read "kein Schlüssel"). */}
+      {view === null && loadError ? (
+        <LoadErrorRetry testId="settings.apiKey.loadError" onRetry={onRetryLoad ?? (() => undefined)} />
+      ) : (
+        <p className="apikey-masked" data-testid="settings.apiKey.masked">
+          {masked}
+        </p>
+      )}
 
       <div className="apikey-entry">
         <input

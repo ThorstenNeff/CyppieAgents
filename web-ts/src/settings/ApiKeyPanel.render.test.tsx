@@ -106,3 +106,26 @@ describe('ApiKeyPanel (CYP-433 — leak-most-sensitive; the 8 spec teeth)', () =
     expect(gate.getAttribute('role')).toBe('note') // CYP-468 F1: was role=status (a live region — wrong for a persistent gate)
   })
 })
+
+describe('ApiKeyPanel — CYP-679 honest load-error + retry', () => {
+  it('failed load (view null + loadError) → error+retry, NOT the false "Kein Schlüssel hinterlegt"; retry fires', () => {
+    const onRetryLoad = vi.fn()
+    const { getByTestId, queryByTestId } = render(<ApiKeyPanel {...base({ view: null, loadError: true, onRetryLoad })} />)
+    expect(getByTestId('settings.apiKey.loadError')).toBeTruthy()
+    expect(queryByTestId('settings.apiKey.masked')).toBeNull() // no false "no key" claim on a leak-sensitive surface
+    fireEvent.click(getByTestId('settings.apiKey.loadError.retry'))
+    expect(onRetryLoad).toHaveBeenCalledTimes(1)
+  })
+
+  it('legit set:false (no error) → "Kein Schlüssel hinterlegt", not the load-error (non-vacuum contrast)', () => {
+    const { getByTestId, queryByTestId } = render(<ApiKeyPanel {...base({ view: { set: false }, loadError: false })} />)
+    expect(getByTestId('settings.apiKey.masked').textContent).toBe('Kein Schlüssel hinterlegt')
+    expect(queryByTestId('settings.apiKey.loadError')).toBeNull()
+  })
+
+  it('view present + error flag → masked status shows, error hidden (flag 4)', () => {
+    const { getByTestId, queryByTestId } = render(<ApiKeyPanel {...base({ view: { set: true, masked: '***x9' }, loadError: true })} />)
+    expect(getByTestId('settings.apiKey.masked').textContent).toContain('***x9')
+    expect(queryByTestId('settings.apiKey.loadError')).toBeNull()
+  })
+})

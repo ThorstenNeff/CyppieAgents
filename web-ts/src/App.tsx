@@ -129,6 +129,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const [channelsLoadError, setChannelsLoadError] = useState(false)
   const [aclEntriesLoadError, setAclEntriesLoadError] = useState(false)
   const [messagesLoadError, setMessagesLoadError] = useState(false)
+  // CYP-679: honest load-errors for the remaining bootstrap fetches that feed a false empty/absent surface (same
+  // class as CYP-288). getCapacity is EXCLUDED (its pill renders nothing on absent by design — absent ≠ empty).
+  const [repoConfigLoadError, setRepoConfigLoadError] = useState(false)
+  const [apiKeyLoadError, setApiKeyLoadError] = useState(false)
+  const [projectsLoadError, setProjectsLoadError] = useState(false)
+  const [workspaceMembersLoadError, setWorkspaceMembersLoadError] = useState(false)
+  const [operatorAuditLoadError, setOperatorAuditLoadError] = useState(false)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [commSendError, setCommSendError] = useState<string | null>(null)
   // CYP-433: the API-key MASKED view (never the plaintext — the server only ever sends {set, masked:"***last4"}).
@@ -233,20 +240,37 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const loadMessages = useCallback((channelId: string) => {
     hubRepo.getMessages(channelId).then((m) => { ingestMessages(m); setMessagesLoadError(false) }).catch(() => setMessagesLoadError(true))
   }, [hubRepo, ingestMessages])
+  // CYP-679: the same set-data+clear-error / flag-error loaders for the APPLY-set bootstrap fetches (also reused as
+  // each surface's onRetry). Stable over the memoized hubRepo → churn-immune.
+  const loadRepoConfig = useCallback(() => {
+    hubRepo.getRepoConfig().then((c) => { setRepoConfig(c); setRepoConfigLoadError(false) }).catch(() => setRepoConfigLoadError(true))
+  }, [hubRepo])
+  const loadApiKey = useCallback(() => {
+    hubRepo.getApiKey().then((v) => { setApiKeyView(v); setApiKeyLoadError(false) }).catch(() => setApiKeyLoadError(true)) // masked view; plaintext never comes back
+  }, [hubRepo])
+  const loadProjects = useCallback(() => {
+    hubRepo.getProjects().then((p) => { setProjectsView(p); setProjectsLoadError(false) }).catch(() => setProjectsLoadError(true))
+  }, [hubRepo])
+  const loadWorkspaceMembers = useCallback(() => {
+    hubRepo.getWorkspaceMembers().then((m) => { setWorkspaceMembers(m); setWorkspaceMembersLoadError(false) }).catch(() => setWorkspaceMembersLoadError(true))
+  }, [hubRepo])
+  const loadOperatorAudit = useCallback(() => {
+    hubRepo.getOperatorAudit().then((a) => { setOperatorAudit(a); setOperatorAuditLoadError(false) }).catch(() => setOperatorAuditLoadError(true))
+  }, [hubRepo])
 
   // Bootstrap: REST snapshot + the live-socket VM. Runs once; the VM stops on unmount.
   useEffect(() => {
     loadRoster()
     loadChannels()
     loadAcl()
-    hubRepo.getApiKey().then(setApiKeyView).catch(() => undefined) // masked view; plaintext never comes back
-    hubRepo.getRepoConfig().then(setRepoConfig).catch(() => undefined) // CYP-453 project repo config
-    hubRepo.getProjects().then(setProjectsView).catch(() => undefined) // CYP-467 cross-project Event-Browse axis
-    hubRepo.getCapacity().then(setCapacity).catch(() => undefined) // CYP-642 hub-capacity snapshot (MEMBER-tier)
+    loadApiKey() // CYP-679: honest load-error (masked status else falsely reads "kein Schlüssel")
+    loadRepoConfig() // CYP-679: honest load-error (blank form else falsely reads "unconfigured")
+    loadProjects() // CYP-679: honest load-error at ProjectManagementPanel (else "Projekte werden geladen…" forever)
+    hubRepo.getCapacity().then(setCapacity).catch(() => undefined) // CYP-642 capacity snapshot — CYP-679 N/A: the pill renders nothing on absent by design (absent ≠ empty)
     if (operator) {
       // CYP-650: operator-only egress — a member never fetches the roster/audit (enumeration seam).
-      hubRepo.getWorkspaceMembers().then(setWorkspaceMembers).catch(() => undefined)
-      hubRepo.getOperatorAudit().then(setOperatorAudit).catch(() => undefined)
+      loadWorkspaceMembers() // CYP-679: honest load-error (else falsely reads "Keine Mitglieder")
+      loadOperatorAudit() // CYP-679: honest load-error (else falsely reads "Keine Aktionen")
     }
     const live = startLiveHub(
       cfg,
@@ -534,7 +558,16 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     if (win.id === WORKSPACE_WINDOW_ID) {
       // CYP-650: operator-only roster + audit. The window only exists for an operator (added above), so no in-panel
       // gate is needed — the component just renders the operator-only data.
-      return <WorkspaceRosterPanel members={workspaceMembers} audit={operatorAudit} />
+      return (
+        <WorkspaceRosterPanel
+          members={workspaceMembers}
+          audit={operatorAudit}
+          membersLoadError={workspaceMembersLoadError}
+          onRetryMembers={loadWorkspaceMembers}
+          auditLoadError={operatorAuditLoadError}
+          onRetryAudit={loadOperatorAudit}
+        />
+      )
     }
     if (win.id === PROJECT_MGMT_WINDOW_ID) {
       // CYP-651: project switch + management (operator-gated inside the panel). Non-optimistic mutations; the
@@ -543,6 +576,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         <ProjectManagementPanel
           projects={projectsView}
           operator={operator}
+          loadError={projectsLoadError}
+          onRetryLoad={loadProjects}
           onCreate={onCreateProject}
           onSwitch={onSwitchProject}
           onRename={onRenameProject}
@@ -592,6 +627,10 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           apiKeyView={apiKeyView}
           onSaveApiKey={onSaveApiKey}
           getReprovisionPreview={() => hubRepo.getReprovisionPreview()}
+          repoLoadError={repoConfigLoadError}
+          onRetryRepo={loadRepoConfig}
+          apiKeyLoadError={apiKeyLoadError}
+          onRetryApiKey={loadApiKey}
         />
       )
     }

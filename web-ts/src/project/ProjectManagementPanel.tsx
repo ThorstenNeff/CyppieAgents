@@ -10,10 +10,14 @@ import { useState } from 'react'
 import type { ProjectsView } from '../types/generated/contract'
 import { deleteBlockedReason, canFireProjectDelete, projectMutationMessage } from './projectModel'
 import { restErrorCode } from '../net/rest'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 
 export interface ProjectMgmtProps {
   projects: ProjectsView | null
   operator: boolean
+  // CYP-679: a failed projects load else shows "Projekte werden geladen…" FOREVER (loading-that-actually-failed).
+  loadError?: boolean
+  onRetryLoad?: () => void
   onCreate: (id: string, name: string) => Promise<void>
   onSwitch: (projectId: string) => Promise<void>
   onRename: (id: string, name: string) => Promise<void>
@@ -23,7 +27,7 @@ export interface ProjectMgmtProps {
 const blockedReasonText = (r: 'last' | 'active'): string =>
   r === 'last' ? 'Das letzte Projekt kann nicht gelöscht werden.' : 'Aktives Projekt — erst wechseln, dann löschbar.'
 
-export function ProjectManagementPanel({ projects, operator, onCreate, onSwitch, onRename, onDelete }: ProjectMgmtProps) {
+export function ProjectManagementPanel({ projects, operator, loadError = false, onRetryLoad, onCreate, onSwitch, onRename, onDelete }: ProjectMgmtProps) {
   const [error, setError] = useState<string | null>(null)
   const [pendingSwitch, setPendingSwitch] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
@@ -40,9 +44,17 @@ export function ProjectManagementPanel({ projects, operator, onCreate, onSwitch,
     )
   }
   if (projects === null) {
+    // CYP-679: distinguish a failed load (error+retry) from the genuine loading placeholder — else a failed load
+    // reads as "loading…" forever. (Only an operator reaches here — the gate hint returns above.)
     return (
       <div className="project-mgmt" data-testid="project-mgmt">
-        <p className="project-empty">Projekte werden geladen…</p>
+        {loadError ? (
+          <LoadErrorRetry testId="project-mgmt.loadError" onRetry={onRetryLoad ?? (() => undefined)} />
+        ) : (
+          <p className="project-empty" role="status" data-testid="project-mgmt.loading">
+            Projekte werden geladen…
+          </p>
+        )}
       </div>
     )
   }
