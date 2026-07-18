@@ -94,19 +94,22 @@ describe('createLogin (CYP-515 (a) in-app login-core — Kratos BROWSER flow, na
     expect(await login('a@b.co', 'pw')).toEqual({ kind: 'rateLimited', retryAfter: '30' })
   })
 
-  it('⑥ stale/malformed flow: no id OR no csrf → rejected AND no credential POST (fail-closed, never submit blind)', async () => {
+  // CYP-515 (loud error): the OUTCOME of these three system-failure paths changed rejected -> unavailable per
+  // UIUX2 spec 62f125e6 §3 (a system fault is not a credential verdict). The FAIL-CLOSED half is unchanged and is
+  // still asserted here: no credential POST is ever attempted. Full coverage in loginUnavailable.test.ts.
+  it('⑥ stale/malformed flow: no id OR no csrf → unavailable AND no credential POST (fail-closed, never submit blind)', async () => {
     for (const bad of [FLOW_NO_ID, FLOW_NO_CSRF]) {
       const { fetchImpl, calls } = makeFetch(bad, resp({ status: 200 }))
       const login = createLogin({ fetchImpl, fetchAuthMe: okFetchAuthMe(authMe({})), kratos: K })
-      expect(await login('a@b.co', 'pw')).toEqual({ kind: 'rejected' })
+      expect(await login('a@b.co', 'pw')).toEqual({ kind: 'unavailable' })
       expect(calls.some((c) => c.init?.method === 'POST')).toBe(false)
     }
   })
 
-  it('a non-ok flow-init → rejected, no submit (fail-closed)', async () => {
+  it('a non-ok flow-init → unavailable, no submit (fail-closed)', async () => {
     const { fetchImpl, calls } = makeFetch(resp({ status: 500 }), resp({ status: 200 }))
     const login = createLogin({ fetchImpl, fetchAuthMe: okFetchAuthMe(authMe({})), kratos: K })
-    expect(await login('a@b.co', 'pw')).toEqual({ kind: 'rejected' })
+    expect(await login('a@b.co', 'pw')).toEqual({ kind: 'unavailable' })
     expect(calls.some((c) => c.init?.method === 'POST')).toBe(false)
   })
 
@@ -118,11 +121,11 @@ describe('createLogin (CYP-515 (a) in-app login-core — Kratos BROWSER flow, na
     expect(await mk({ authenticated: false, verified: false })('a@b.co', 'pw')).toEqual({ kind: 'rejected' }) // post-2xx none → fail-closed
   })
 
-  it('any transport/parse error → generic rejected (fail-closed)', async () => {
+  it('any transport/parse error → unavailable (fail-closed; a transport fault is not a credential verdict)', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('network down')
     }) as unknown as typeof fetch
     const login = createLogin({ fetchImpl, fetchAuthMe: okFetchAuthMe(authMe({})), kratos: K })
-    expect(await login('a@b.co', 'pw')).toEqual({ kind: 'rejected' })
+    expect(await login('a@b.co', 'pw')).toEqual({ kind: 'unavailable' })
   })
 })

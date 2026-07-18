@@ -30,7 +30,8 @@ export function LoginScreen({ login, onVerified, onUnverified }: LoginScreenProp
   const canSubmit = !submitting && !throttled && email.trim() !== '' && password !== ''
 
   // A field edit clears a transient error / rate-limit back to idle (manual retry; never an auto-retry, §2.3③).
-  const clearTransient = () => setPhase((p) => (p.kind === 'error' || p.kind === 'rateLimited' ? { kind: 'idle' } : p))
+  const clearTransient = () =>
+    setPhase((p) => (p.kind === 'error' || p.kind === 'rateLimited' || p.kind === 'unavailable' ? { kind: 'idle' } : p))
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -50,6 +51,9 @@ export function LoginScreen({ login, onVerified, onUnverified }: LoginScreenProp
         return
       case 'rejected':
         setPhase({ kind: 'error' }) // ONE generic message, never enumerating
+        return
+      case 'unavailable':
+        setPhase({ kind: 'unavailable' }) // CYP-515: SYSTEM fault — a distinct, honest state, not a credential verdict
         return
     }
   }
@@ -114,6 +118,13 @@ export function LoginScreen({ login, onVerified, onUnverified }: LoginScreenProp
         {phase.kind === 'error' && (
           <p className="auth-login-error" role="alert" aria-live="assertive" data-testid="auth.login.error">
             {AUTH_TEXT.loginErrorGeneric}
+          </p>
+        )}
+        {/* CYP-515 (UIUX2 62f125e6 §4): the SYSTEM-failure state, distinct from the credential error — two
+            testids, two attributions. Manual retry = submit again; the form stays usable, nothing auto-retries. */}
+        {phase.kind === 'unavailable' && (
+          <p className="auth-login-unavailable" role="alert" aria-live="assertive" data-testid="auth.login.unavailable">
+            {AUTH_TEXT.flowInitFailed}
           </p>
         )}
         {phase.kind === 'rateLimited' && (
