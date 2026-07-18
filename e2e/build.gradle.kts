@@ -52,6 +52,11 @@ tasks.register<JavaExec>("webE2eServer") {
     mainClass.set("com.tneff.cyppieagents.e2e.WebE2eServerMainKt")
     workingDir = rootProject.projectDir
     System.getenv("WEB_E2E_PORT")?.let { environment("WEB_E2E_PORT", it) }
+    // CYP-407: the boot main reads this too, and JavaExec does NOT inherit the Gradle process environment — an
+    // un-forwarded variable is silently ignored, which reads exactly like "the feature does not work". (Measured:
+    // the seed booted with one channel and no hint that the request had been dropped. Same class as CYP-342's
+    // un-forwarded TZ.) Forward it explicitly, or not at all.
+    System.getenv("WEB_E2E_EXTRA_AGENT")?.let { environment("WEB_E2E_EXTRA_AGENT", it) }
     standardOutput = System.out
     errorOutput = System.err
 }
