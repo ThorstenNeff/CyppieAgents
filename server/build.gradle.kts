@@ -238,6 +238,10 @@ run {
     // CYP-628: a second app-image launcher (CyppieHubProvision) for the install-time provisioning entrypoint. Shares
     // the --main-jar; only overrides the main class (see the properties file). The wizard invokes it once on the host.
     val provisionLauncherProps = rootProject.file("deploy/windows/provision-launcher.properties").absolutePath
+    // CYP-687 (M1.1): a third app-image launcher (CyppieHubAcceptance) — the claude-free BYOA acceptance wire-client
+    // (ByoaAcceptanceMain) that proves a remote agent connects + works both ways over /ws/hub. po2 drives it on the
+    // Ubuntu-26 box via deploy/linux/byoa-m1-acceptance.sh (the gap-4 target acceptance).
+    val acceptanceLauncherProps = rootProject.file("deploy/linux/acceptance-launcher.properties").absolutePath
     // CYP-635: the Linux .deb maintainer-script overrides (postinst/prerm/postrm) — jpackage picks them up from
     // --resource-dir and substitutes its empty skeleton. They do the user + provision + hub.env + unit install/enable
     // (postinst), stop/disable (prerm), and remove-preserve / purge-wipe (postrm).
@@ -289,6 +293,7 @@ run {
         // CYP-628: the provisioning launcher (CyppieHubProvision) — the install wizard runs it to mint the master key
         // + tokens + default config on the host (the .msi ships no secret).
         args += listOf("--add-launcher", "CyppieHubProvision=$provisionLauncherProps")
+        args += listOf("--add-launcher", "CyppieHubAcceptance=$acceptanceLauncherProps") // CYP-687 M1.1 acceptance wire-client
         // Windows: a console app (the hub logs to stdout; the CYP-627 service wrapper captures it) + install chooser.
         if (isWindows) args += listOf("--win-console", "--win-dir-chooser", "--win-menu", "--win-shortcut")
         // CYP-634: Linux `.deb` — install to /opt (→ /opt/cyppiehub/bin/CyppieHub, referenced by the systemd unit).
@@ -297,6 +302,12 @@ run {
             "--linux-package-name", "cyppiehub", "--install-dir", "/opt",
             "--resource-dir", debResourceDir, // CYP-635: postinst/prerm/postrm (service install + provision + preserve/purge)
             "--app-content", unitFile, // CYP-636: ship the systemd unit into the payload → postinst cp's it (single-source)
+            // CYP-687 (M1.1) — `git` is a RUNTIME prereq (the hub clones/pulls the repo; agents work in worktrees). It is
+            // NOT a shared-lib dep so dpkg-shlibdeps never auto-detects it → declare it so `apt install ./cyppiehub.deb`
+            // pulls it on a fresh Ubuntu box. Appended to (not replacing) the auto shlib Depends. `claude` is a separate
+            // non-apt prereq (documented; not declarable here). NB: the ~10 X11/audio libs the auto-Depends pull are
+            // LEGITIMATE — java.desktop (ImageIO + Thumbnailator, CYP-215 avatars) links them; apt resolves them on Ubuntu.
+            "--linux-package-deps", "git",
         )
         commandLine(args)
     }
@@ -323,6 +334,7 @@ run {
         )
         launcherArgs.forEach { args += listOf("--java-options", it) }
         args += listOf("--add-launcher", "CyppieHubProvision=$provisionLauncherProps")
+        args += listOf("--add-launcher", "CyppieHubAcceptance=$acceptanceLauncherProps") // CYP-687 M1.1 acceptance wire-client
         args += listOf(
             "--linux-package-name", "cyppiehub-test", "--install-dir", "/opt",
             "--resource-dir", debResourceDirTest, // CYP-637: -test postinst/prerm/postrm (isolated provision + preserve/purge)

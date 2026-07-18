@@ -1,8 +1,14 @@
 package com.tneff.cyppieagents.provision
 
+import com.tneff.cyppieagents.CommJson
+import com.tneff.cyppieagents.boot.AgentConfig
+import com.tneff.cyppieagents.boot.PlatformConfig
 import com.tneff.cyppieagents.boot.RepoConfig
 import com.tneff.cyppieagents.crypto.SecretCipherFactory
+import com.tneff.cyppieagents.model.Role
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -24,6 +30,10 @@ import java.util.Base64
  */
 fun main(args: Array<String>) {
     val opts = Options.parse(args)
+    // CYP-687 (M1.1): the read-modify-existing ADD mode for the BYOA acceptance's config-declared remote agent. It
+    // NEVER mints or reads CYPPIE_MASTER_KEY (the SecretStore stays intact — no re-mint, no orphaned token) and it
+    // PRESERVES the existing agents (append-only). config-declared ⇒ durable ⇒ survives restart (bypasses CYP-690).
+    if (opts.addRemoteAgent != null) { addRemoteAgent(opts); return }
     val dataDir = File(opts.dataDir).apply { mkdirs() }
 
     // (1) the master keyset — this IS CYPPIE_MASTER_KEY (box-local; treat as any master key, never a user DB).
@@ -57,6 +67,47 @@ fun main(args: Array<String>) {
     println("  config    = ${File(dataDir, "platform.config.json").absolutePath} (host=${opts.host} port=${opts.port} agents=[po])")
     println("  secrets   = ${opts.secretsOut ?: "(none — pass --secrets-out <file>)"}  [CYPPIE_MASTER_KEY, OPERATOR_TOKEN, HUB_TOKEN_PO]")
     println("  NEXT (wizard): set those 3 in the service account's ACL-protected env, then SECURELY DELETE the secrets file.")
+}
+
+/**
+ * CYP-687 (M1.1) — ADD a config-declared REMOTE worker to an EXISTING install (read-modify-write). Seeds the agent
+ * that the BYOA acceptance connects as over /ws/hub. Invariants (mutation-teethed at the PO gate):
+ *  - **master key UNTOUCHED** — this mode never calls newBoxKeyset / reads CYPPIE_MASTER_KEY (no re-mint, no orphan);
+ *  - **existing agents PRESERVED** — append-only (`config.agents + new`), never a replace;
+ *  - **no orphan** — config-declared ⇒ rehydrated into the roster on every boot ⇒ survives restart (bypasses CYP-690);
+ *  - mints ONLY the new agent's `HUB_TOKEN_<ID>` (secure-random) → `--secrets-out` (APPENDED; the caller merges it into
+ *    hub.env). A duplicate id is refused (never overwrites an existing agent). Secret value never printed.
+ */
+private fun addRemoteAgent(opts: Options) {
+    val id = opts.addRemoteAgent!!
+    require(id.isNotBlank() && id.all { it.isLetterOrDigit() }) {
+        "--add-remote-agent id must be non-blank alphanumeric (it maps to HUB_TOKEN_${id.uppercase()})"
+    }
+    val configFile = File(opts.dataDir, "platform.config.json")
+    require(configFile.isFile) { "no platform.config.json at ${configFile.absolutePath} — provision the hub first" }
+    val config = PlatformConfig.load(configFile)
+    require(config.agents.none { it.id == id }) {
+        "agent '$id' already exists — refusing to overwrite (append-only, preserves existing agents)"
+    }
+    // PRESERVE existing agents; APPEND a remote WORKER (remote=true ⇒ registered STOPPED at boot, awaiting /ws/hub).
+    val updated = config.copy(agents = config.agents + AgentConfig(id = id, name = id, role = Role.WORKER, remote = true))
+    // Atomic write-back (tmp + rename) so a crash can't leave a truncated config.
+    val tmp = File(configFile.parentFile, "${configFile.name}.tmp")
+    tmp.writeText(CommJson.encodeToString(PlatformConfig.serializer(), updated) + "\n")
+    Files.move(tmp.toPath(), configFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+
+    val token = randomToken()
+    opts.secretsOut?.let { path ->
+        val f = File(path)
+        f.appendText("HUB_TOKEN_${id.uppercase()}=$token\n") // APPEND — the caller merges into hub.env
+        ownerOnly(f)
+    }
+    // Non-secret summary ONLY (never the token value).
+    println("CYP-687 added config-declared remote agent:")
+    println("  config     = ${configFile.absolutePath} (agents += $id [role=WORKER, remote=true]; ${config.agents.size} existing preserved)")
+    println("  secrets    = ${opts.secretsOut ?: "(none — pass --secrets-out <file>)"}  [HUB_TOKEN_${id.uppercase()}]")
+    println("  master key = UNTOUCHED (this mode never mints/reads CYPPIE_MASTER_KEY)")
+    println("  NEXT: merge HUB_TOKEN_${id.uppercase()} into /etc/cyppiehub/hub.env, then restart the hub.")
 }
 
 private fun randomToken(): String {
@@ -93,6 +144,7 @@ private data class Options(
     val branch: String,
     val agentLaunch: String,
     val secretsOut: String?,
+    val addRemoteAgent: String? = null, // CYP-687 (M1.1): when set, run the read-modify ADD mode (never a fresh provision)
 ) {
     companion object {
         fun parse(args: Array<String>): Options {
@@ -111,6 +163,7 @@ private data class Options(
                 branch = m["branch"] ?: "main",
                 agentLaunch = m["agent-launch"] ?: "claude", // prod default; the wizard verifies `claude` is on PATH
                 secretsOut = m["secrets-out"],
+                addRemoteAgent = m["add-remote-agent"],
             )
         }
     }

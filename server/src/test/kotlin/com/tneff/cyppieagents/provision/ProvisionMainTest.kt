@@ -92,4 +92,38 @@ class ProvisionMainTest {
         assertNotEquals(a.getValue("CYPPIE_MASTER_KEY"), b.getValue("CYPPIE_MASTER_KEY"), "each install mints a fresh master key")
         assertNotEquals(a.getValue("OPERATOR_TOKEN"), b.getValue("OPERATOR_TOKEN"), "each install mints fresh tokens")
     }
+
+    /**
+     * CYP-687 (M1.1) — `--add-remote-agent` seeds the BYOA acceptance's config-declared remote agent by
+     * read-modify-existing. The four invariants (each a distinct mutation the gate can red):
+     *  (1) PRESERVES existing agents (the PO survives — append-only, never a replace);
+     *  (2) TOKEN-MINT — the new agent's HUB_TOKEN is minted;
+     *  (3) NO MASTER-KEY TOUCH — the ADD mode never mints a master key (no re-mint → no orphaned SecretStore);
+     *  (4) NO ORPHAN — the agent is config-DECLARED (remote=true in the config) ⇒ rehydrated on restart (durable).
+     */
+    @Test
+    fun cyp687_addRemoteAgent_preservesExisting_mintsToken_untouchesMasterKey() {
+        val dir = Files.createTempDirectory("cyp687").toFile()
+        provision(dir, File(dir, "provision.env")) // base: 1-PO config + master key + tokens
+
+        // ADD a config-declared remote agent (read-modify-existing; separate secrets file, NOT a re-provision).
+        val addSecrets = File(dir, "add.env")
+        main(arrayOf("--data-dir", dir.absolutePath, "--add-remote-agent", "sidekick", "--secrets-out", addSecrets.absolutePath))
+
+        // (1)+(4) PRESERVES the PO AND ADDS sidekick as a config-DECLARED remote WORKER (durable ⇒ no orphan).
+        val cfg = PlatformConfig.load(File(dir, "platform.config.json"))
+        assertEquals(1, cfg.agents.count { it.role == Role.PO }, "the existing PO agent is PRESERVED (append-only, not replaced)")
+        val sidekick = cfg.agents.singleOrNull { it.id == "sidekick" }
+        assertTrue(
+            sidekick != null && sidekick.remote && sidekick.role == Role.WORKER,
+            "sidekick added as a config-declared remote WORKER (durable ⇒ rehydrated on restart ⇒ no orphaned token)",
+        )
+
+        // (2) TOKEN-MINT: the new agent's HUB_TOKEN is minted (non-blank).
+        val added = readSecrets(addSecrets)
+        assertTrue(added["HUB_TOKEN_SIDEKICK"]?.isNotBlank() == true, "HUB_TOKEN_SIDEKICK is minted")
+
+        // (3) NO MASTER-KEY TOUCH: the ADD mode never mints/writes a master key (no re-mint of the SecretStore's KEK).
+        assertTrue("CYPPIE_MASTER_KEY" !in added, "the ADD mode does NOT mint/write a master key")
+    }
 }

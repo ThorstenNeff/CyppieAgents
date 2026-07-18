@@ -33,7 +33,7 @@ curl -sS -X POST https://api.cyppie-agents.com/api/agents \
 
 ## 2. Get the bridge binary
 
-On the machine that will run the agent, build the bridge dist (JDK 17+):
+On the machine that will run the agent, build the bridge dist (JDK 21 — the bridge, like the hub, is Java-21 bytecode):
 
 ```bash
 ./gradlew :remote-runtime:installDist
