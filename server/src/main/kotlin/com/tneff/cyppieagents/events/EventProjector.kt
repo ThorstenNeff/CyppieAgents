@@ -248,8 +248,12 @@ class EventProjector(
         }
 
     /** `comm.sent`: a message the router posted on the agent's behalf — metadata only, NO body. */
-    fun commSent(agentId: String, channelId: String, kind: MessageKind?) =
-        draft(agentId, null, null, EventType.COMM_SENT, Severity.INFO) {
+    // CYP-718: [msgProjectId] is the MESSAGE's server-stamped project (Hub.kt:64 = the active project at post
+    // time), NOT the projector's fixed boot project. comm.sent is emitted from the SHARED chokepoint projector
+    // (CYP-255) whose [projectId] is the boot constant, so after a project switch a boot-stamped comm.sent
+    // would land in the wrong tenant bucket. Stamp the message's project → correct multi-hub tenant isolation.
+    fun commSent(agentId: String, channelId: String, kind: MessageKind?, msgProjectId: String) =
+        draft(agentId, null, null, EventType.COMM_SENT, Severity.INFO, projectIdOverride = msgProjectId) {
             put("from", agentId)
             put("channel", channelId)
             kind?.let { put("kind", it.name) }
@@ -273,10 +277,14 @@ class EventProjector(
         correlationId: String?,
         type: EventType,
         severity: Severity,
+        // CYP-718: an optional override of the projector's fixed [projectId]. Default null → the projector's own
+        // project (every existing per-project-projector event is unchanged). comm.sent, emitted from the SHARED
+        // chokepoint projector, passes the message's true tenant so it does not mis-bucket after a project switch.
+        projectIdOverride: String? = null,
         detail: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit,
     ): EventDraft = EventDraft(
         agentId = agentId,
-        projectId = projectId,
+        projectId = projectIdOverride ?: projectId,
         type = type,
         severity = severity,
         sessionId = sessionId,

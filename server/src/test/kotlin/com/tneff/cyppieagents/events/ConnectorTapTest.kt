@@ -52,7 +52,7 @@ class ConnectorTapTest {
         val projector = EventProjector(ContextUsageBander(), projectId = "team")
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), InMemoryMessageStore())
         // CYP-698: comm.sent now rides the Hub chokepoint (was MediationRouter's own emit) — wire it as boot does.
-        hub.onSent = { msg -> recorder.record(projector.commSent(msg.from, msg.channelId, msg.meta?.kind)) }
+        hub.onSent = { msg -> recorder.record(projector.commSent(msg.from, msg.channelId, msg.meta?.kind, msg.projectId)) }
         val registry = SessionRegistry()
         val router = MediationRouter(registry, hub)
         val proc = FakeAgentProcess()

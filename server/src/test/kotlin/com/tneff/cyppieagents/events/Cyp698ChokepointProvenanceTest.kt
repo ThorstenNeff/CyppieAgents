@@ -60,7 +60,7 @@ class Cyp698ChokepointProvenanceTest {
         val projector = EventProjector(ContextUsageBander(), projectId = "team")
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), InMemoryMessageStore())
         // Production wiring (BootOrchestrator): provenance at the chokepoint, emitted once per post.
-        hub.onSent = { msg -> recorder.record(projector.commSent(msg.from, msg.channelId, msg.meta?.kind)) }
+        hub.onSent = { msg -> recorder.record(projector.commSent(msg.from, msg.channelId, msg.meta?.kind, msg.projectId)) }
 
         // A caller that emits NOTHING of its own posts through the chokepoint (backend → its own spoke).
         UninstrumentedCaller(hub).sendOnBehalf("backend", "po-backend", "chokepoint-probe SECRET-NEEDLE")

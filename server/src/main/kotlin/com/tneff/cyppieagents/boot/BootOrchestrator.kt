@@ -422,7 +422,7 @@ class BootOrchestrator(
         // MediationRouter, the remote /ws/hub WireSend, the human CommRoutes, McpConnector, and any future path —
         // server-stamped from the persisted Message (from/channel/kind, never the body), never a frame/body field.
         // Reuses eventProjector.commSent (the exact draft the router used) so the projectId source is unchanged.
-        hub.onSent = { msg -> eventRecorder.record(eventProjector.commSent(msg.from, msg.channelId, msg.meta?.kind)) }
+        hub.onSent = { msg -> eventRecorder.record(eventProjector.commSent(msg.from, msg.channelId, msg.meta?.kind, msg.projectId)) }
         sessions.addRegisterListener(deliverer::onSessionAttached)
 
         // S14 / CYP-97: the mutable per-agent connector config (launch + persona), seeded from config.
