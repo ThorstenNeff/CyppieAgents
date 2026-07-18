@@ -34,6 +34,8 @@ Es gibt **zwei** „neu"-Signale; sie dürfen **nicht** ineinander kollabieren:
 
 **UNKNOWN-Kodierung (die Drei-Zustands-Angel — muss der Carrier tragen):** der Client muss **UNKNOWN** (kein `ChannelReadState` für den Kanal / `known:false`) von **confirmed-read** (`ChannelReadState` vorhanden, `unreadCount=0`) unterscheiden können. Konvention: **Kanal fehlt in der Read-State-Antwort ⇒ UNKNOWN** (neutraler „•"); **vorhanden mit `unreadCount=0` ⇒ confirmed-read** (nichts). Ohne diese Unterscheidbarkeit kollabieren §0-Zustände 1+2 → verboten.
 
+**Trenner-Eingabe-Vertrag (Tester2 #68, explizit gefoldet):** `firstUnreadIndex` = `findIndex(m.seq > cursor)` liefert nur dann die **erste** ungelesene Grenze, wenn die Timeline-`messages` **seq-aufsteigend** ankommen. Das ist ein **expliziter Eingabe-Vertrag** (garantiert durch Store/Merge, Tester2 #68) — der Client **sortiert nicht selbst nach** (redundant/riskant), er **verlässt sich** darauf. Zwei Preconditions, damit der Trenner beim Cursor-Landing stimmt: **(1)** die Nachricht trägt `seq` (heute wire-seitig noch nicht — `Message` = `{id,channelId,from,body,ts,meta,projectId}`; landet mit dem gepinnten Contract), **(2)** seq-aufsteigende Reihenfolge. Bricht (2), ist der Trenner out-of-contract (falsch platziert) — daher als Vertrag fixiert, nicht als Client-Fallback maskiert.
+
 ## §3 Layout & Zustände (Reuse, keine Divergenz)
 Erweitert die Comm-Nav (`CommPanel.tsx`) + Timeline; alle bestehenden Zustände (empty / CYP-288 load-error / revoked / disclosure) bleiben und **beherrschen** weiter.
 
@@ -70,19 +72,22 @@ Backend2 hat `ChannelReadState{lastReadSeq, unreadCount}` gepinnt (`seq` exponie
 - **③ Live-Event — ENTSCHIEDEN: standalone `ReadStateEvent`** (mein UX-Call = Backend2-Lehnen). Begründung: eigener Register — **nicht** in CYP-704/Mentions falten ([[reconcile-not-collapse-distinct-states]]); trägt Cross-Device-Cursor-Advance und **ist** der non-optimistische Server-Echo (§3), der die Badge live + ehrlich klärt.
 - **④ non-optimistisch — bestätigt:** read erst nach 200/`ReadStateEvent`, nie lokaler Scroll-Optimismus (§3).
 
-**Rest:** ①/③ sind meine Calls (beide = Backend2s Lehnen) → **bilateral ratifizieren**, dann Server-Bau + Dev5-Cursor-Pfad.
+- **⑤ Trenner-Eingabe-Vertrag (Tester2 #68) — gefoldet:** Timeline-`messages` seq-aufsteigend (+ `seq` am Message) als expliziter Vertrag; Client sortiert nicht nach (§2).
+
+**Status:** ①/③ = meine Calls (beide = Backend2s Lehnen), ②④⑤ gefoldet → **ratifizierungs-bereit; bilateral mit Backend2 ratifizieren** (via PO, hub-and-spoke), dann Server-Bau + Dev5-Cursor-Pfad.
 
 ## §9 Render-Test-Zähne (diskriminierend, mutation-aware) ([[test-must-discriminate]])
 1. **Drei distinkte, unterscheidbare Renders:** server unread=3 → Count-Badge „3" (Glyph+Count-Text+aria-label); confirmed-read (`ChannelReadState` da, `unreadCount=0`) → **nichts**; **UNKNOWN** (kein `ChannelReadState`) → **sichtbarer neutraler „•"** (+aria-label). *(Non-vacuous: die drei müssen visuell **unterscheidbar** sein — v. a. UNKNOWN ≠ confirmed-read.)*
 2. **★ Absence-of-Signal-Guard:** UNKNOWN rendert **sichtbar** (nicht als Abwesenheit, nicht wie confirmed-read/„0 gelesen"). *(Mutation: UNKNOWN→Stille ODER UNKNOWN==nichts → RED — genau die Falle, dass „keine Badge" als all-clear liest.)* Plus: kein lokaler Fallback-Zähler, kein „alles gelesen"-Affirmativ.
-3. Trenner an erster `seq > cursor`; **kein** Cursor → **kein** Trenner.
+3. Trenner an **erster** `seq > cursor` bei **seq-aufsteigender** Eingabe (Vertrag §2/Tester2 #68); **kein** Cursor → **kein** Trenner. *(Mutation: unsortierte Eingabe → Trenner fehlplatziert = out-of-contract, im Test seq-aufsteigend fixieren.)*
 4. **non-optimistisch:** Badge klärt **nur** auf Server-Echo des neuen Cursors, **nicht** auf lokalen Scroll allein. *(Mutation: optimistisches lokales Clear → RED.)*
 5. **colour-never-sole:** Badge trägt Count-Text + aria-label (nicht nur gefärbter Dot). *(Mutation: colour-only → RED.)*
 6. **reconcile-not-collapse:** ein Soft-Aktivitäts-Signal (falls je geportet) trägt **andere** testid/Copy als Unread-of-Record — nie als „ungelesen von record" etikettiert. *(Guard gegen Kollaps.)*
 7. eigene Nachrichten heben Unread **nicht** (server-`from`-Ausschluss); Unread ist **pro Kanal**, nicht comm-weit.
 
 ## §10 Übergabe-Flags an den Koordinator
-- **Contract gepinnt (Backend2: `ChannelReadState{lastReadSeq, unreadCount}`); ①/③ = standalone (meine Calls = Backend2s Lehnen)** → **bilateral ratifizieren**, dann Backend2 baut Server, Dev5 den Cursor-Pfad.
+- **Contract gepinnt (Backend2: `ChannelReadState{lastReadSeq, unreadCount}`); ①/③ = standalone (meine Calls = Backend2s Lehnen), ②④⑤ gefoldet** → **ratifizierungs-bereit** (bilateral mit Backend2), dann Backend2 baut Server, Dev5 den Cursor-Pfad.
+- **UX-QA Gerüst `b52e21b4`:** 1 High-Finding (UNKNOWN rendert als Abwesenheit statt „•") — Dev5 ergänzt das „•"-Delta + flippt den Test-Zahn; **ich bestätige die Render → PO1** (Re-Verify pending).
 - **UX-Bedingung an ①:** Carrier muss UNKNOWN (Kanal fehlt) von confirmed-read (`unreadCount=0`) unterscheidbar machen — sonst kollabiert die Drei-Zustands-Angel (§0/§2).
 - Dev5 baut **jetzt** das **degradierte Gerüst** (UNKNOWN-„•", §4) gegen diese Spec.
 - **Identitäts-Entkopplung:** anders als CYP-704-NOTIFY braucht CYP-705 **kein** Client-`identityId` (server-Prinzipal-keyed) → **nicht** vom NOTIFY-Pending blockiert.
