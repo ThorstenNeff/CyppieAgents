@@ -13,6 +13,8 @@ describe('OneWayFeed', () => {
     const hub = new FakeSocketHub()
     const got: Ping[] = []
     const feed = new OneWayFeed<Ping>({
+      // CYP-420: fail-CLOSED default — a transport-level test opts in to "no schema" explicitly (see bidiFeed.test).
+      validate: (raw) => raw as Ping,
       baseUrl: 'ws://host',
       path: '/ws/busy-state',
       token: 't',

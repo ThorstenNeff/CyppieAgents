@@ -21,6 +21,9 @@ describe('BidiFeed', () => {
       baseUrl: 'ws://host',
       path: '/ws/comm',
       token: 't',
+      // CYP-420: the default is now fail-CLOSED (drops everything), so a transport test must opt IN explicitly.
+      // That explicitness is the point — a channel can no longer skip validation by omission.
+      validate: (raw) => raw as Srv,
       onEvent: (e) => got.push(e),
       factory: hub.factory,
       schedule: hub.runNow,
