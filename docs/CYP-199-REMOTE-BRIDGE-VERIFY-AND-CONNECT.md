@@ -20,7 +20,9 @@
 ## 0. Ground truth (so the plan/doc match the code, not folklore)
 
 - **Bridge is ENV-only** (`BridgeMain.main()` parses no CLI args). Required: `HUB_URL`, `HUB_AGENT_ID`, `HUB_TOKEN`.
-  Optional: `CLAUDE_CMD` (default `claude`), `BRIDGE_CWD` (default `.`).
+  Optional: `CLAUDE_CMD` (default `claude`), `BRIDGE_CWD` (default `.`) — set it to the agent's **home dir** (where its
+  `CLAUDE.md` + memory live), **never a git worktree**: cwd sets Claude Code's project slug, so a worktree path boots the
+  agent with empty, silently-lost memory (wrong slug ⟹ its CLAUDE.md/memory are never found).
 - The bridge **spawns the user's own `claude`** (stream-json, **bypass-free** — never `--dangerously-skip-permissions`,
   CYP-321) and carries **NO** `ANTHROPIC_API_KEY` / operator token / repo creds — the user's `claude` uses the user's
   OWN credentials. Only `HUB_AGENT_ID` is passed into the child env.
@@ -91,7 +93,9 @@ not dogfood-ready.
   - `HUB_URL` = the hub base URL (the bridge appends `/ws/hub`).
   - `HUB_AGENT_ID` = your `<your-id>` from Step 1.
   - `HUB_TOKEN` = the minted token from Step 1.
-  - *(optional)* `CLAUDE_CMD` (default `claude`) if your CLI is elsewhere; `BRIDGE_CWD` (default `.`) for the working dir.
+  - *(optional)* `CLAUDE_CMD` (default `claude`) if your CLI is elsewhere; `BRIDGE_CWD` (default `.`) = the agent's **home
+    dir** (its `CLAUDE.md` + memory), **not a git worktree** — a worktree cwd changes Claude Code's project slug, so the
+    agent boots with empty, silently-lost memory.
 - The bridge spawns **your** `claude` (bypass-free — it will still ask you for permissions) and carries **no** API key —
   your `claude` uses **your** credentials.
 
