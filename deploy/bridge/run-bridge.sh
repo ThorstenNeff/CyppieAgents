@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
-# CYP-142 — launch ONE Bridge instance from the bundled app-image, with per-instance isolation.
+# CYP-142 — launch ONE Bridge instance from the bundled app-image.
 #
-# All N Bridges run as the SAME OS user, so isolation is NOT by user — it is by a per-instance HOME and
-# working directory. HOME and BRIDGE_CWD propagate through the Bridge to the spawned `claude` process
-# (the connector env whitelist passes HOME/PATH/USER/LOGNAME/locale), so each claude gets its OWN
-# ~/.claude — separate config, session state, and credential store. That is what keeps 6 concurrent
-# instances from writing over each other.
+# All N Bridges run as the SAME OS user and SHARE the real HOME (~/.claude is preserved). This is
+# DELIBERATE:
+#   • The agent's MEMORY lives under ~/.claude/projects/<cwd-slug>/ (keyed by the working-directory
+#     path). Overriding HOME to a fresh dir would point ~ at an empty tree → every agent boots
+#     WITHOUT its memory, silently, no error. So HOME is NOT touched here.
+#   • The single OAuth login lives in ~/.claude. Splitting HOME splits one login into N — the
+#     Auftraggeber's credentials/cost, not ours to fan out.
+# Per-agent separation comes from a per-instance WORKING DIRECTORY: claude keys per-project memory by
+# the cwd slug, so each agent's own cwd → its own memory + role, with the shared login intact.
 #
 #   Required env : HUB_URL  HUB_AGENT_ID  HUB_TOKEN
-#   Optional env : BRIDGE_ROOT (per-instance dir; default ./instances/<HUB_AGENT_ID>)
-#                  CLAUDE_CMD  (default: claude)
+#   Optional env : BRIDGE_CWD (per-instance working dir; DEFAULT /home/thorsten/cyppie-agents/<agent> —
+#                  the path whose existing cwd-slug already holds that agent's memory), CLAUDE_CMD.
 #
-# ⚠ AUTH TRADE-OFF (operator decision — see README-BRIDGE.md §Parallel instances):
-#   An isolated per-instance HOME means each ~/.claude needs its OWN claude authentication seeded once
-#   (copy an already-authenticated ~/.claude into each instance HOME). If instead you want the 6 to
-#   SHARE one login, point every instance at the same BRIDGE_ROOT/home — but then they share one state
-#   store, which is the collision this isolation avoids. Pick deliberately; do not assume shared holds.
+# ⚠ Do NOT start all instances at the same instant — claude does a read-modify-write on
+#   ~/.claude.json; stagger the launches (see README-BRIDGE.md §Parallel instances).
 
 set -euo pipefail
 : "${HUB_URL:?set HUB_URL, e.g. wss://api.cyppie-agents.com}"
@@ -23,11 +24,18 @@ set -euo pipefail
 : "${HUB_TOKEN:?set HUB_TOKEN, the per-agent bearer token}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-BRIDGE_ROOT="${BRIDGE_ROOT:-$HERE/instances/$HUB_AGENT_ID}"
+# HOME is intentionally NOT overridden — the shared ~/.claude carries the login + existing memory.
+# Per-instance cwd → own cwd-slug → own memory/role. Default = the agent's existing repo dir on the box.
+export BRIDGE_CWD="${BRIDGE_CWD:-/home/thorsten/cyppie-agents/$HUB_AGENT_ID}"
 
-export HOME="$BRIDGE_ROOT/home"   # per-instance ~/.claude lives here → no cross-instance state collision
-export BRIDGE_CWD="$BRIDGE_ROOT/work"
-mkdir -p "$HOME" "$BRIDGE_CWD"
+# Fail LOUD if the cwd is missing: a non-existent cwd would make claude mint a FRESH (memory-less)
+# slug — the exact silent-blank-boot we are guarding against. Do not mkdir a blank one.
+[ -d "$BRIDGE_CWD" ] || {
+  echo "[run-bridge] ERROR: BRIDGE_CWD '$BRIDGE_CWD' does not exist — refusing to boot agent '$HUB_AGENT_ID'" >&2
+  echo "[run-bridge]        a fresh cwd = a fresh, memory-less ~/.claude/projects slug. Point BRIDGE_CWD at" >&2
+  echo "[run-bridge]        the agent's existing working directory." >&2
+  exit 1
+}
 
-echo "[run-bridge] agent=$HUB_AGENT_ID  hub=$HUB_URL  HOME=$HOME  cwd=$BRIDGE_CWD" >&2
+echo "[run-bridge] agent=$HUB_AGENT_ID  hub=$HUB_URL  HOME=$HOME (shared)  cwd=$BRIDGE_CWD" >&2
 exec "$HERE/CyppieBridge/bin/CyppieBridge"
