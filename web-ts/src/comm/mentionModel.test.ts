@@ -45,6 +45,24 @@ describe('CYP-704 §8 — mention DISPLAY resolves fail-closed against the roste
     expect(seg('@frontend', ['front', 'frontend'])).toEqual(['[@frontend]'])
   })
 
+  it('★ Tester2 F1 — the reported false positives produce no mention', () => {
+    // measured against d438ebbf: `@dev5x` etc. highlighted `dev5`, pointing at an agent the sender did not mean.
+    for (const body of ['@dev5x', '@dev5_backup', '@dev5-hotfix', '@dev52']) {
+      expect(seg(body, ['dev5'])).toEqual([body])
+    }
+  })
+
+  it('★ Tester2 F2 — bracketed/quoted mentions resolve, while the email guard still holds', () => {
+    // requiring WHITESPACE before the sigil was too strict: these are ordinary ways to write a mention.
+    expect(seg('(@frontend)')).toEqual(['(', '[@frontend]', ')'])
+    expect(seg('[@frontend]')).toEqual(['[', '[@frontend]', ']'])
+    expect(seg('"@frontend"')).toEqual(['"', '[@frontend]', '"'])
+    expect(seg('@frontend, bitte')).toEqual(['[@frontend]', ', bitte'])
+    // …and the false-positive guard is unaffected: an id character before the sigil is still no mention.
+    expect(seg('mail@frontend')).toEqual(['mail@frontend'])
+    expect(seg('x_@frontend')).toEqual(['x_@frontend'])
+  })
+
   it('★ the match must be BOUNDARY-TERMINATED — a prefix of a longer handle is never highlighted', () => {
     // `-` and `_` are legal id characters, so `@frontend-dev` with only `frontend` on the roster must NOT resolve:
     // the sender meant some other (or non-existent) agent, and highlighting `frontend` would point at the wrong

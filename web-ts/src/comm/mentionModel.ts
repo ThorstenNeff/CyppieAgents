@@ -29,10 +29,20 @@ export type MessageSegment =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'mention'; readonly text: string; readonly id: string }
 
-/** `@` counts as a mention sigil only at string start or after whitespace — this is what makes `a@b.com` safe. */
+/**
+ * `@` counts as a mention sigil at string start or when the preceding character is NOT an id character. Mirror of
+ * the end-boundary rule below, and the same rule the Phase-2 server applies.
+ *
+ * Requiring *whitespace* was too strict (Tester2 F2): `(@dev5)`, `[@dev5]` and `"@dev5"` are ordinary ways to write
+ * a mention and silently produced nothing. Keying on "not an id character" admits those while keeping the email
+ * protection intact — in `mail@dev5` the preceding `l` IS an id character, so it is still no mention.
+ */
 function isSigilBoundary(body: string, at: number): boolean {
-  return at === 0 || /\s/.test(body[at - 1] ?? '')
+  return at === 0 || !ID_CHAR.test(body[at - 1] ?? '')
 }
+
+/** The id alphabet — `AgentMgmtGuard.SAFE_ID` is `^[a-zA-Z0-9_-]+$`, so `_` and `-` are part of an id, not breaks. */
+const ID_CHAR = /[A-Za-z0-9_-]/
 
 // CODE IS EXEMPT, QUOTES ARE NOT (the rule shared with the Phase-2 server resolver — both sides must recognise the
 // same thing or the phase boundary drifts: highlight in Phase 1, no notify in Phase 2). `@frontend` inside code is
@@ -86,7 +96,7 @@ export function mentionSegments(body: string, rosterIds: readonly string[]): rea
     // no mention than a confident one aimed at the wrong person. Mirrors the Phase-2 server rule exactly.
     const hit = ids.find((id) => {
       const lower = id.toLowerCase()
-      return rest.startsWith(lower) && !/[A-Za-z0-9_-]/.test(rest[lower.length] ?? '')
+      return rest.startsWith(lower) && !ID_CHAR.test(rest[lower.length] ?? '')
     })
     if (hit === undefined) {
       pending += body[i] // unknown token → the '@' is ordinary text (fail-closed)
