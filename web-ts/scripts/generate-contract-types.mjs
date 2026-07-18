@@ -13,122 +13,20 @@
 // PROVISIONAL fixture `contract/asyncapi.provisional.json` (with a loud warning). `/docs/*` is auth-gated, so we
 // never fetch a live server — the schema is a deterministic build artifact.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { compile } from 'json-schema-to-typescript'
-import { selectContractInput, contractRequireReal } from './contractInput.mjs'
+import { buildContractRootSchema } from './contractSchema.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 
-const REAL = resolve(root, 'contract/asyncapi.json')
-const PROVISIONAL = resolve(root, 'contract/asyncapi.provisional.json')
-// CYP-444: the REST contract (openapi.json, Backend2 build-export via CYP-426). It carries the REST-only DTOs the
-// WS asyncapi doesn't — Agent (roster + role), AgentDetail, mode/send request bodies, etc. Merged below.
-const REAL_OPENAPI = resolve(root, 'contract/openapi.json')
 const OUT = resolve(root, 'src/types/generated/contract.ts')
 
-// CYP-400: fail-closed flip — with CONTRACT_REQUIRE_REAL set (CI/release), a missing real export throws (exit 1).
-const choice = selectContractInput(existsSync(REAL), contractRequireReal(process.env.CONTRACT_REQUIRE_REAL))
-const inputPath = choice === 'real' ? REAL : PROVISIONAL
-const isProvisional = choice === 'provisional'
-if (isProvisional) {
-  console.warn(
-    '[CYP-399] ⚠  Using PROVISIONAL fixture contract/asyncapi.provisional.json — the real :core build-export ' +
-      '(contract/asyncapi.json) is not present. Types are a stand-in; set CONTRACT_REQUIRE_REAL in CI to forbid this.',
-  )
-}
-
-const doc = JSON.parse(readFileSync(inputPath, 'utf8'))
-const schemas = doc?.components?.schemas
-if (schemas === undefined || schemas === null) {
-  throw new Error(`[CYP-399] no components.schemas in ${inputPath} — not a ContractGenerator schema doc?`)
-}
-
-// CYP-444: merge the REST (openapi) schemas so the roster + other REST DTOs are typed too. We keep the WS asyncapi
-// schemas EXACTLY (values AND key order) and append only the openapi-ONLY names (Agent, AgentDetail, …). Appending
-// only new keys is deliberate: (a) asyncapi keeps its discriminated-union `discriminator`/`mapping` the injection
-// step needs, and (b) json-schema-to-typescript's collision numbering (e.g. Message vs the `message` event wrapper)
-// stays stable — a shared DTO is byte-identical in both docs (:core source), so dropping openapi's copy loses nothing.
-let restOnly = {}
-if (existsSync(REAL_OPENAPI)) {
-  const openapiDoc = JSON.parse(readFileSync(REAL_OPENAPI, 'utf8'))
-  const restSchemas = openapiDoc?.components?.schemas ?? {}
-  restOnly = Object.fromEntries(Object.entries(restSchemas).filter(([name]) => !(name in schemas)))
-} else if (!isProvisional) {
-  console.warn('[CYP-444] ⚠  contract/openapi.json not found — REST-only types (Agent roster, …) will be missing.')
-}
-
-// Deep clone so we never mutate the source doc on disk.
-const defs = structuredClone({ ...schemas, ...restOnly })
-
-// --- inject the discriminant literal into each union member (the CYP-399 core step) ------------------------
-const refName = (ref) => {
-  if (typeof ref !== 'string' || !ref.startsWith('#/components/schemas/')) {
-    throw new Error(`[CYP-399] unexpected $ref (want #/components/schemas/X): ${ref}`)
-  }
-  return ref.slice('#/components/schemas/'.length)
-}
-
-let injected = 0
-const injectedLiterals = []
-for (const [unionName, schema] of Object.entries(defs)) {
-  const disc = schema?.discriminator
-  if (disc === undefined || !Array.isArray(schema.oneOf)) continue
-  const prop = disc.propertyName
-  const mapping = disc.mapping ?? {}
-  if (typeof prop !== 'string' || Object.keys(mapping).length === 0) {
-    throw new Error(`[CYP-399] union ${unionName} has a discriminator without propertyName/mapping`)
-  }
-  for (const [wire, ref] of Object.entries(mapping)) {
-    const member = defs[refName(ref)]
-    if (member === undefined) {
-      throw new Error(`[CYP-399] union ${unionName}: mapping "${wire}" -> ${ref} does not resolve to a schema`)
-    }
-    member.type = 'object'
-    member.properties = member.properties ?? {}
-    const existing = member.properties[prop]
-    if (existing !== undefined && existing.const !== undefined && existing.const !== wire) {
-      throw new Error(
-        `[CYP-399] member ${refName(ref)} already has ${prop}=${existing.const} but union ${unionName} maps it to "${wire}"`,
-      )
-    }
-    member.properties[prop] = { type: 'string', const: wire }
-    member.required = Array.from(new Set([...(member.required ?? []), prop]))
-    injected++
-    injectedLiterals.push(wire)
-  }
-}
-if (injected === 0) {
-  throw new Error('[CYP-399] no discriminated-union members were injected — schema shape unexpected (fail-closed)')
-}
-
-// --- rewrite $refs #/components/schemas/X -> #/definitions/X (json-schema-to-typescript resolves definitions) --
-const rewriteRefs = (node) => {
-  if (Array.isArray(node)) return node.map(rewriteRefs)
-  if (node !== null && typeof node === 'object') {
-    const out = {}
-    for (const [k, v] of Object.entries(node)) {
-      if (k === '$ref' && typeof v === 'string') out[k] = v.replace('#/components/schemas/', '#/definitions/')
-      else if (k === 'mapping' && v !== null && typeof v === 'object') {
-        out[k] = Object.fromEntries(
-          Object.entries(v).map(([mk, mv]) => [mk, String(mv).replace('#/components/schemas/', '#/definitions/')]),
-        )
-      } else out[k] = rewriteRefs(v)
-    }
-    return out
-  }
-  return node
-}
-
-const rootSchema = {
-  $schema: 'http://json-schema.org/draft-07/schema#',
-  title: 'CyppieContract',
-  type: 'object',
-  additionalProperties: false,
-  definitions: rewriteRefs(defs),
-}
+// CYP-420: the load/merge/inject/rewrite pipeline moved to scripts/contractSchema.mjs so the zod runtime schemas
+// are generated from the SAME source (one contract, no hand-maintenance). Extraction was verified byte-identical.
+const { rootSchema, injectedLiterals, isProvisional } = buildContractRootSchema()
 
 const banner = `/**
  * AUTO-GENERATED (CYP-399) — DO NOT EDIT. Run \`npm run contract:gen\`.
@@ -157,4 +55,4 @@ if (missing.length > 0) {
 
 mkdirSync(dirname(OUT), { recursive: true })
 writeFileSync(OUT, ts, 'utf8')
-console.log(`[CYP-399] wrote ${OUT} (${injected} discriminant literal(s) injected; all survived codegen)`)
+console.log(`[CYP-399] wrote ${OUT} (${injectedLiterals.length} discriminant literal(s) injected; all survived codegen)`)

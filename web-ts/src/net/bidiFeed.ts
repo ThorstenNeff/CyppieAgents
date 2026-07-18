@@ -5,6 +5,7 @@
 //
 // `validate` is the untrusted-frame boundary seam (Spec 14 §7 / Assist hardening): a hook to runtime-check each
 // inbound frame (e.g. a generated zod schema). Default is identity; wiring zod uniformly is the W2-rest follow-up.
+import { deliverIfValid } from './wsValidation'
 import { ReconnectingSocket, type SocketFactory, type Scheduler } from './reconnectingSocket'
 import { Backoff } from './backoff'
 
@@ -33,7 +34,9 @@ export class BidiFeed<TServer, TClient> {
         const p = new URLSearchParams({ ...(opts.query ?? {}), token: opts.token })
         return `${opts.baseUrl}${opts.path}?${p.toString()}`
       },
-      onText: (data) => opts.onEvent(validate(JSON.parse(data))),
+      // CYP-420: validation failures DROP the frame (deliverIfValid) instead of throwing into the socket's
+      // onmessage — one malformed frame must not tear down a live channel (fail-closed, not fail-brittle).
+      onText: (data) => deliverIfValid(validate, JSON.parse(data), opts.onEvent),
       onOpen: opts.onOpen,
       onClose: opts.onClose,
       backoff: opts.backoff,
