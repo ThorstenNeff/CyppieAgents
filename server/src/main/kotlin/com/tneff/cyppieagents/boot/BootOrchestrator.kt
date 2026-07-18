@@ -836,6 +836,23 @@ class BootOrchestrator(
                     rt.agentConfigs.put(stored.id, stored.launch, stored.persona, stored.connectorKind)
                     state.addAgent(stored.toAgent()) // HubState slice + spoke + ACL (projectId-stamped)
                     rt.lifecycle.register(stored.id, stored.worktree) // known + STOPPED
+                    // CYP-172 Part 2 — a REHYDRATED remote agent must be re-clamped to the REMOTE ceiling and
+                    // re-marked remote: the runtime [Agent] carries no remote flag (toAgent() can't), so without this
+                    // a restart would resurrect a persisted remote agent with stale LOCAL all-AVAILABLE caps
+                    // (caps/trust ESCALATION) and lose worktreePath=null / the CLAUDE.md agent_not_local guard. This
+                    // mirrors the boot-config clamp (fail-closed BEFORE it reconnects over /ws/hub); the wire
+                    // WireHello later REFINES within the same REMOTE ceiling. Writes the PER-RUNTIME registry so a
+                    // switch-triggered rehydrate lands in the activated project.
+                    if (stored.remote) {
+                        rt.agentManagement.markRemote(stored.id)
+                        rt.capabilityRegistry.set(
+                            stored.id,
+                            com.tneff.cyppieagents.model.CapabilityCeiling.clamp(
+                                connector.capabilitiesFor(stored.id),
+                                com.tneff.cyppieagents.model.CapabilityCeiling.ceilingFor(com.tneff.cyppieagents.model.ConnectorTrust.REMOTE),
+                            ),
+                        )
+                    }
                 }
             }
         }
