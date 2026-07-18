@@ -110,7 +110,7 @@ vorgesehene Slot. Die Komponente ist **standalone** (nimmt `tier` als Param, §6
 <string name="remote_security_tier_gateway">Browser-Gateway</string>
 <string name="remote_security_tier_unknown">Wird geprüft</string>
 <string name="remote_security_tier_native_detail">Direkt Ende-zu-Ende verschlüsselt (Noise-E2E), Hub-Identität gepinnt.</string>
-<string name="remote_security_tier_gateway_disclosure">Über ein Browser-Gateway verbunden. Anders als bei der nativen Ende-zu-Ende-Verbindung endet die Verschlüsselung am Gateway: es sieht den Datenverkehr zum Hub im Klartext, und die Browser-App wird vom Server ausgeliefert — ohne unabhängigen Pin. Dokumentiert schwächer; vorgesehen nur für selbst gehostete Hubs, die dir gehören.</string>
+<string name="remote_security_tier_gateway_disclosure">Über ein Browser-Gateway verbunden. Anders als bei der nativen Ende-zu-Ende-Verbindung endet die Verschlüsselung am Gateway: es sieht den Datenverkehr mit dem Hub im Klartext, und die Browser-App wird vom Server ausgeliefert — ohne unabhängigen Pin. Dokumentiert schwächer; vorgesehen nur für selbst gehostete Deployments, die dir gehören (Hub und Gateway).</string>
 <string name="a11y_remote_security_tier_gateway">Verbindungssicherheit: Browser-Gateway — dokumentiert schwächer als die native Ende-zu-Ende-Verbindung.</string>
 <string name="a11y_remote_security_tier_native">Verbindungssicherheit: Ende-zu-Ende, direkt verschlüsselt und Hub-Identität gepinnt.</string>
 <string name="a11y_remote_security_tier_unknown">Verbindungssicherheit wird ermittelt.</string>
@@ -122,7 +122,7 @@ vorgesehene Slot. Die Komponente ist **standalone** (nimmt `tier` als Param, §6
 <string name="remote_security_tier_gateway">Browser gateway</string>
 <string name="remote_security_tier_unknown">Checking…</string>
 <string name="remote_security_tier_native_detail">Directly end-to-end encrypted (Noise-E2E), hub identity pinned.</string>
-<string name="remote_security_tier_gateway_disclosure">Connected via a browser gateway. Unlike the native end-to-end connection, the encryption ends at the gateway: it sees the traffic to the hub in cleartext, and the browser app is served by the server — without an independent pin. Documented as weaker; intended only for self-hosted hubs that you own.</string>
+<string name="remote_security_tier_gateway_disclosure">Connected via a browser gateway. Unlike the native end-to-end connection, the encryption ends at the gateway: it sees the traffic with the hub in cleartext, and the browser app is served by the server — without an independent pin. Documented as weaker; intended only for self-hosted deployments that you own (hub and gateway).</string>
 <string name="a11y_remote_security_tier_gateway">Connection security: browser gateway — documented as weaker than the native end-to-end connection.</string>
 <string name="a11y_remote_security_tier_native">Connection security: end-to-end, directly encrypted and hub identity pinned.</string>
 <string name="a11y_remote_security_tier_unknown">Determining connection security…</string>
@@ -134,7 +134,9 @@ vorgesehene Slot. Die Komponente ist **standalone** (nimmt `tier` als Param, §6
 - **Kein Hype auf `NATIVE`** (kein „100 % / vollkommen sicher") — nennt den **Mechanismus** (Noise-E2E, Pin),
   keinen Superlativ.
 - Gateway nennt **exakt die zwei ratifizierten Residuals** (A2-Hop-Klartext · RR6 server-servierte App ohne Pin)
-  **und** die ratifizierte Bedingung (nur operator-owned self-hosted, cyp638 Präz. i).
+  **und** die ratifizierte Bedingung (nur operator-owned self-hosted **Deployment — Hub und Gateway**, cyp638
+  Präz. i; „Deployment (Hub und Gateway)" **nicht** bloß „Hubs" — sonst läse self-hosted-Hub + Cyppie-Gateway
+  [Fall b] fälschlich grün).
 
 ### 4.1 Quellen-Mapping (verbatim gg. cyp638 — für den Backend2-Fakten-Check)
 | Copy-Klausel | cyp638-Fakt (verbatim-Grundlage) |
@@ -142,14 +144,16 @@ vorgesehene Slot. Die Komponente ist **standalone** (nimmt `tier` als Param, §6
 | `native_detail`: „Direkt Ende-zu-Ende verschlüsselt (Noise-E2E)" | „Nativ ist Device⇄Hub durchgehend **Noise-verschlüsselt** (E2E)" (§Was strukturell passiert) |
 | `native_detail`: „Hub-Identität gepinnt" | „Malicious-CP wird durch client-seitiges **TOFU-Pinning** abgefangen"; Anchor = „shipped Binary + Operator-TOFU-Pin" (§E2E-vs-NOT) |
 | `gateway_disclosure`: „die Verschlüsselung endet am Gateway" | „die native E2E-Spanne wird **am Gateway zerschnitten**: `Browser —TLS— Gateway` + `Gateway —(Klartext)— Hub`" |
-| `gateway_disclosure`: „sieht den Datenverkehr zum Hub im Klartext" | **(A2-Hop)** „der Gateway sieht operator↔hub **im Klartext**" |
+| `gateway_disclosure`: „sieht den Datenverkehr **mit dem Hub** im Klartext" | **(A2-Hop)** „der Gateway sieht operator↔hub **im Klartext**" (bidirektional → „mit dem Hub", B2-geschärft) |
 | `gateway_disclosure`: „die Browser-App wird vom Server ausgeliefert — ohne unabhängigen Pin" | **(RR6)** „die Browser-Krypto/der Trust-Anchor ist **server-serviert** (SPA/JS vom Gateway) ohne native-Pin-Äquivalent" |
 | `gateway_disclosure`: „dokumentiert schwächer" | „Browser = **dokumentiert schwächer**, ‚vertraut TLS + der server-servierten SPA'" (Option A) |
-| `gateway_disclosure`: „nur für selbst gehostete Hubs, die dir gehören" | Präz. i: „gilt NUR wenn gateway+CP+hub wirklich **operator-owned** sind"; Freigabe „strikt an operator-owned gateway+CP+hub gebunden" |
+| `gateway_disclosure`: „nur für selbst gehostete **Deployments**, die dir gehören **(Hub und Gateway)**" | Präz. i: „gilt NUR wenn **gateway+CP+hub** wirklich **operator-owned** sind" — B2-geschärft: „(Hub und Gateway)" statt bloß „Hubs", damit self-hosted-Hub **+ Cyppie-Gateway** (= Fall b) die Copy NICHT grün liest. (CP als Infra in „Deployment" gefaltet; user-facing Kurzform = B2-ratifiziert.) |
 
-> **B2-Prüf-Fokus:** stimmt jede rechte Spalte mit der server-truth `cyp638-trust-boundary-artifact.md` §3–§5?
-> Insb. (a) „Klartext zum Hub" = A2-Hop akkurat? (b) „App vom Server, kein Pin" = RR6 akkurat, nicht
-> über/unter-stellend? (c) impliziert die Copy **nirgends** die native Garantie für den Gateway-Fall?
+> **B2-Prüf-Fokus (✅ 2026-07-18: alle 🟢, a/b/c 🟢):** stimmt jede rechte Spalte mit der server-truth
+> `cyp638-trust-boundary-artifact.md` §3–§5? (a) „Klartext **mit** Hub"=A2-Hop akkurat ✅ · (b) „App vom Server,
+> kein Pin"=RR6 akkurat ✅ · (c) Copy impliziert **nirgends** die native Garantie für den Gateway-Fall ✅.
+> **B2-Schärfung eingezogen:** Klausel 7 „(Hub und Gateway)" (nicht „Hubs") = verbindliche Freigabe-Bedingung
+> Präz. i, kein Fall-b-Grün-Leck; Klausel 4 „mit dem Hub" (bidirektional).
 
 ---
 
