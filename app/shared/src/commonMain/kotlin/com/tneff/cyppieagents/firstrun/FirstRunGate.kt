@@ -81,6 +81,13 @@ fun FirstRunGate(
     // DERIVED from `mode == TRANSPARENT` (PO ③), just gated so a fresh configured launch is transparent, not a nag.
     var wasActive by remember { mutableStateOf(false) }
     LaunchedEffect(mode) { if (mode == FirstRunGateMode.ACTIVE) wasActive = true }
+    // Live-wiring: after the operator saves the API key or repo in a step, the config changed server-side — re-read
+    // it so the mode advances (e.g. ACTIVE → TRANSPARENT once both are set). Keyed on the settings save-signals so a
+    // save (effect-hint false→true) triggers exactly one reload; without this the gate would never notice the key/repo
+    // the user just entered and could never be completed.
+    LaunchedEffect(settingsState.apiKeyEffectHint, settingsState.repoEffectHint) {
+        if (settingsState.apiKeyEffectHint || settingsState.repoEffectHint) viewModel.reload()
+    }
 
     when {
         opened -> workspace() // completed via the CTA → fully transparent, no degraded surface
