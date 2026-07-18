@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.net.Backoff
 import com.tneff.cyppieagents.net.hub.noise.ClientNoiseTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.noise.RelayChannel
+import com.tneff.cyppieagents.net.hub.trust.TrustConfirmationRejectedException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -81,6 +82,23 @@ class Cyp443RemoteHubSessionTest {
         assertEquals(RemoteConnState.LOST, s.state.value.conn)
         assertEquals(RemoteFailure.TrustChanged("ab:cd"), s.state.value.failure)
         assertEquals(0, transport.calls, "a changed key must NEVER reach the handshake (CI-5)")
+        scope.cancel()
+    }
+
+    @Test
+    fun oobReject_isTerminal_failClosed_notSilentUnwind() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val transport = FakeTransport()
+        // CYP-478/696: the operator OOB-rejects the first-use fingerprint. TofuHubTrust surfaces that as a
+        // TrustConfirmationRejectedException (a CancellationException subclass) out of resolve(). The session must
+        // convert it to an explicit terminal fail-closed LOST — NOT let it unwind the loop as a raw cancellation
+        // that leaves the state stuck mid-connect (conn=RELAY_DIALING, failure=null).
+        val s = session(scope, transport = transport, trust = { throw TrustConfirmationRejectedException("hub-1") })
+        s.start(); advanceUntilIdle()
+        assertEquals(RemoteConnState.LOST, s.state.value.conn, "an OOB reject lands a clean terminal LOST, never stale limbo")
+        assertEquals(RemoteFailure.TrustRejected, s.state.value.failure)
+        assertEquals(0, transport.calls, "a rejected first-use key must NEVER reach the handshake (nothing pinned)")
+        assertNull(s.tunnel, "a rejected first use leaves no live tunnel")
         scope.cancel()
     }
 

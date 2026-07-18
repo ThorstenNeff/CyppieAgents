@@ -53,6 +53,7 @@ object RemoteConnectTags {
 
     /**
      * `remote.connect.error.<cause>`, cause ∈ relayUnreachable / hubOffline / handshakeFailed / trustChanged /
+     * trustRejected (CYP-478/696, terminal first-use OOB decline) /
      * authRejected / deviceNotEnrolled / operatorUvFailed / enrollCodesUnavailable (CYP-525 ①, GE8 — retryable
      * delivery failure, never authRejected).
      */

@@ -715,6 +715,7 @@
     <string name="remote_connect_connected">Verbunden</string>
     <string name="remote_connect_relay_dropped">Verbindung unterbrochen — verbinde neu …</string>
     <string name="remote_connect_trust_changed">Hub-Schlüssel geändert — Verbindung blockiert. Neu-Pinnen nötig.</string>
+    <string name="remote_connect_trust_rejected">Fingerprint abgelehnt — nicht verbunden. Zum Verbinden Out-of-Band bestätigen.</string>
     <string name="remote_connect_auth_rejected">Vom Hub abgelehnt. Bitte neu anmelden.</string>
     <string name="remote_connect_relay_unreachable">Relay nicht erreichbar — später erneut versuchen.</string>
     <string name="remote_connect_hub_offline">Hub ist offline — läuft er?</string>
