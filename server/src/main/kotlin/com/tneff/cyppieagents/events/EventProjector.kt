@@ -264,8 +264,11 @@ class EventProjector(
      * only (recipient / message id / channel), **never the body**, which legitimately enters only the
      * recipient's connector session via `sendTurn`. The content-free "delivered" marker.
      */
-    fun commReceived(recipientId: String, messageId: String, channelId: String) =
-        draft(recipientId, null, null, EventType.COMM_RECEIVED, Severity.INFO) {
+    // CYP-721: like commSent (CYP-718), stamp the delivered MESSAGE's project ([msgProjectId] = m.projectId),
+    // NOT the shared chokepoint projector's fixed boot project — else comm.received mis-buckets into the wrong
+    // tenant's event log after a project switch (the same F3 sibling class as 718).
+    fun commReceived(recipientId: String, messageId: String, channelId: String, msgProjectId: String) =
+        draft(recipientId, null, null, EventType.COMM_RECEIVED, Severity.INFO, projectIdOverride = msgProjectId) {
             put("to", recipientId)
             put("messageId", messageId)
             put("channel", channelId)

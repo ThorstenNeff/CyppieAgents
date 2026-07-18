@@ -113,7 +113,7 @@ class MessageDeliverer(
                 session.sendTurn(inboundTurn(m))                     // AT-LEAST-ONCE (M1)
                 log.markDelivered(pid, agentId, m.id)                // after success ⇒ idempotent over reconnect
                 if (recorder != null && projector != null) {
-                    recorder.record(projector.commReceived(agentId, m.id, channel.id)) // metadata-only (m2)
+                    recorder.record(projector.commReceived(agentId, m.id, channel.id, m.projectId)) // metadata-only (m2); CYP-721: tenant = the delivered message's project
                 }
             }
         }
