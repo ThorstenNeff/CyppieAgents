@@ -11,6 +11,7 @@ import com.tneff.cyppieagents.mediation.SessionRegistry
 import com.tneff.cyppieagents.mediation.SessionTurnQueue
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.SystemEvent
 import com.tneff.cyppieagents.model.UserTurn
 import kotlinx.coroutines.CompletableDeferred
@@ -19,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -125,7 +128,23 @@ class Cyp330RestartRobustnessTest {
         // SystemEvent binding through a deferred (not an async-collected list checked after sendTurn — the race).
         val session = connector.open("backend", "backend", "default")
         val systemBound = CompletableDeferred<Unit>()
-        scope.launch { session.events.collect { if (it is SystemEvent) systemBound.complete(Unit) } }
+        // CYP-341: attach the collector DETERMINISTICALLY. `session.events` is a **replay=0** SharedFlow
+        // (ResumingSession.kt:58-59), so an emission with no subscriber is dropped, not queued. A collector
+        // coroutine that subscribes LATE — under a host-load spike such as the compact orchestration, which the
+        // original 2026-07-10 red run in the CYP-332 merge gate coincided with — misses the fresh session's
+        // `system/init` emitted by the `sendTurn` below, and the event is gone for good.
+        //
+        // Await CONFIRMED subscription via `onSubscription` BEFORE the emit, so being a registered subscriber is
+        // true by construction rather than by scheduling luck. NOT a widened timeout: the 15s bound below cannot
+        // help, because the event is DROPPED, not late — which is also why the failure mode of the current test
+        // shape is a 15s hang rather than the immediate assert of the pre-CYP-531 version.
+        val subscribed = CompletableDeferred<Unit>()
+        scope.launch {
+            (session.events as SharedFlow<StreamJsonEvent>)
+                .onSubscription { subscribed.complete(Unit) }
+                .collect { if (it is SystemEvent) systemBound.complete(Unit) }
+        }
+        subscribed.await()
 
         // The PROACTIVE probe must detect the stale resume died unbound and clear the durable entry — with NO turn.
         // Deterministic: await the actual clear() signal (fired by onResumeFailed), NOT a timing poll. Before the
