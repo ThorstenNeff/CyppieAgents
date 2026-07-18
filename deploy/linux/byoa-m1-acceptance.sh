@@ -88,9 +88,20 @@ cat "$SECRETS" >> "$ENVFILE"; shred -u "$SECRETS" 2>/dev/null || rm -f "$SECRETS
 grep -q '^JAVA_TOOL_OPTIONS=' "$ENVFILE" || echo 'JAVA_TOOL_OPTIONS=-Xmx2g' >> "$ENVFILE"
 chown cyppie:cyppie "$ENVFILE"; chmod 0600 "$ENVFILE"
 systemctl restart cyppiehub; health || die "hub did not come up after seeding $AGENT"
-journalctl -u cyppiehub --no-pager 2>/dev/null | grep -q 'Picked up JAVA_TOOL_OPTIONS.*-Xmx2g' \
-  && echo "  [heap] JVM applied the -Xmx2g run-override (po2: confirm effective MaxHeapSize via jcmd)" \
-  || echo "  [heap] WARN: could not confirm -Xmx2g in journalctl — po2 MUST measure the effective jvmargs (do not assume)"
+# CYP-687 (PL HARD GATE): confirm the -Xmx2g run-override actually GRIPPED, from the AUTHORITATIVE source — `jcmd
+# <pid> VM.flags` on the RUNNING hub JVM (the only source of what the process ACTUALLY uses; jdk.jcmd is bundled in the
+# runtime). Positioned AFTER the seeding-restart, BEFORE any agent load, so a non-gripping override (heap left at the
+# ~26 GiB MaxRAMPercentage ceiling on a ~6 GiB box) aborts HERE, before it can OOM-kill an agent. NOT a log-scrape.
+JCMD="/opt/cyppiehub/lib/runtime/bin/jcmd"
+[ -x "$JCMD" ] || die "jcmd not found at $JCMD (jdk.jcmd must be in the jlink module set) — cannot measure the effective heap"
+MAINPID="$(systemctl show -p MainPID --value cyppiehub 2>/dev/null)"
+[ -n "$MAINPID" ] && [ "$MAINPID" != 0 ] || die "no hub MainPID from systemd — cannot attach jcmd"
+MAXHEAP="$("$JCMD" "$MAINPID" VM.flags 2>/dev/null | grep -oE '\-XX:MaxHeapSize=[0-9]+' | grep -oE '[0-9]+' | head -1)"
+[ -n "$MAXHEAP" ] || die "could not read effective -XX:MaxHeapSize from 'jcmd $MAINPID VM.flags' (authoritative source unavailable)"
+if [ "$MAXHEAP" -gt 3221225472 ]; then
+  die "the -Xmx2g run-override did NOT grip: EFFECTIVE MaxHeapSize=$MAXHEAP bytes (>3 GiB → the ~26 GiB MaxRAMPercentage ceiling is live) — aborting BEFORE agent load to prevent an OOM-kill. source: jcmd $MAINPID VM.flags"
+fi
+echo "  [heap] EFFECTIVE MaxHeapSize=$MAXHEAP bytes (source: jcmd $MAINPID VM.flags) — -Xmx2g override GRIPPED (<=3 GiB, not the ~26 GiB ceiling)"
 OPERATOR_TOKEN="$(sed -n 's/^OPERATOR_TOKEN=//p' "$ENVFILE")"
 PO_TOKEN="$(sed -n 's/^HUB_TOKEN_PO=//p' "$ENVFILE")"
 AGENT_TOKEN="$(sed -n "s/^HUB_TOKEN_${AGENT^^}=//p" "$ENVFILE")"
