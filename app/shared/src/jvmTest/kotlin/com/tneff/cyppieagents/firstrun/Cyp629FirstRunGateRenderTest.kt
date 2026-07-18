@@ -63,7 +63,8 @@ class Cyp629FirstRunGateRenderTest {
     }
 
     private fun unconfigured() = FirstRunConfigStatus(loaded = true, apiKeySet = false, cloneStatus = CloneStatus.NOT_CONFIGURED)
-    private fun keyDoneCloning() = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.CLONING)
+    // B1: "key set, repo NOT set" is the ACTIVE state that lands on the REPO step (a set repo would be TRANSPARENT).
+    private fun keySetRepoNotSet() = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.NOT_CONFIGURED)
     private fun done() = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.CLONED_OK)
 
     private fun runGate(status: FirstRunConfigStatus, enabled: Boolean = true, block: androidx.compose.ui.test.ComposeUiTest.() -> Unit) =
@@ -109,7 +110,7 @@ class Cyp629FirstRunGateRenderTest {
     }
 
     @Test
-    fun keySet_landsOnRepoStep_notStepOne() = runGate(keyDoneCloning()) {
+    fun keySet_landsOnRepoStep_notStepOne() = runGate(keySetRepoNotSet()) {
         // ④: key already set → land on REPO, not API_KEY.
         onNodeWithTag(SettingsTags.SECTION_REPO).assertExists()
         onNodeWithTag(SettingsTags.SECTION_API_KEY).assertDoesNotExist()

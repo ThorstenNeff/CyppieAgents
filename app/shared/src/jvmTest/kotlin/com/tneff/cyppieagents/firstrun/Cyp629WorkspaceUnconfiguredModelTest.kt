@@ -41,11 +41,12 @@ class Cyp629WorkspaceUnconfiguredModelTest {
     }
 
     @Test
-    fun keySet_repoNeverCloned_namesRepoOnly() {
+    fun keySet_repoSet_isConfigured_notDegraded() {
+        // B1: key set AND repo set (never cloned) = CONFIGURED (transparent) → NOT a degraded workspace. The clone is
+        // best-effort and never a prerequisite; the banner does not treat a set-but-uncloned repo as "missing".
         val s = workspaceUnconfigured(st(apiKeySet = true, clone = CloneStatus.CONFIGURED_NEVER_CLONED))
-        assertTrue(s.visible)
-        assertFalse(s.missingApiKey)
-        assertTrue(s.missingRepo)
+        assertFalse(s.visible, "a configured hub (key + repo set) shows no unconfigured banner")
+        assertFalse(s.missingRepo)
     }
 
     @Test
@@ -59,19 +60,24 @@ class Cyp629WorkspaceUnconfiguredModelTest {
     @Test
     fun cloneFailed_isNotMissingRepo_carriesReason() {
         // ★ SHARP (the CYP-639 confusion §7 closes): a set-but-failed repo is NOT "repository missing" — it reads the
-        // clone-error copy. Mutation: drop `&& !cloneFailed` from missingRepo → this flips missingRepo true → red.
-        val s = workspaceUnconfigured(st(apiKeySet = true, clone = CloneStatus.CLONE_FAILED, reason = CloneFailReason.AUTH))
+        // clone-error copy. The key is missing here (so the hub is ACTIVE/degraded), the repo is set-but-failed.
+        // Mutation: change missingRepo to `cloneStatus != CLONED_OK` → CLONE_FAILED != CLONED_OK → missingRepo true → red.
+        // (B1: CLONE_FAILED is dormant — no source produces it — but the logic is pinned honest for CYP-684/B2.)
+        val s = workspaceUnconfigured(st(apiKeySet = false, clone = CloneStatus.CLONE_FAILED, reason = CloneFailReason.AUTH))
         assertTrue(s.visible)
+        assertTrue(s.missingApiKey, "the key is what's open here")
         assertTrue(s.cloneFailed)
         assertFalse(s.missingRepo, "a set-but-failed repo is NOT 'missing' — it carries the clone-error copy")
         assertEquals(CloneFailReason.AUTH, s.cloneReason)
     }
 
     @Test
-    fun cloning_isRepoNotReady_notFailed() {
+    fun keySet_repoCloning_isConfigured_notDegraded() {
+        // B1: a set repo that is (best-effort) cloning is still CONFIGURED → no degraded banner. "Cloning" is not
+        // "missing"; the gate is transparent and the workspace is open.
         val s = workspaceUnconfigured(st(apiKeySet = true, clone = CloneStatus.CLONING))
-        assertTrue(s.visible)
-        assertTrue(s.missingRepo)
+        assertFalse(s.visible)
+        assertFalse(s.missingRepo)
         assertFalse(s.cloneFailed)
         assertNull(s.cloneReason)
     }

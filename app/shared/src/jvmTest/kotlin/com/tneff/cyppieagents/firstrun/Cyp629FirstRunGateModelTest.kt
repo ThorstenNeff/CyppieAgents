@@ -16,11 +16,20 @@ class Cyp629FirstRunGateModelTest {
         FirstRunConfigStatus(loaded = loaded, apiKeySet = key, cloneStatus = clone)
 
     @Test
-    fun gateMode_transparent_onlyWhenKeySetAndCloned() {
+    fun gateMode_transparent_whenConfigured_notRequiringCloneOk() {
+        // ★ B1 (CYP-629 live-wiring): TRANSPARENT on CONFIGURED (key set AND repo SET), NOT on CLONED_OK — there is no
+        // backend clone-status source, so the client never produces CLONED_OK; gating on it would hang the wizard
+        // forever. Mutation: require `cloneStatus == CLONED_OK` again → the never-cloned case reddens (a configured hub
+        // stuck ACTIVE). This also STRUCTURALLY guarantees the leak invariant: CLONED_OK is never needed → never faked.
+        assertEquals(
+            FirstRunGateMode.TRANSPARENT,
+            firstRunGateMode(status(loaded = true, key = true, clone = CloneStatus.CONFIGURED_NEVER_CLONED)),
+            "key set AND repo set (never cloned) → transparent: the clone is best-effort, never a gate",
+        )
         assertEquals(
             FirstRunGateMode.TRANSPARENT,
             firstRunGateMode(status(loaded = true, key = true, clone = CloneStatus.CLONED_OK)),
-            "both prerequisites met → transparent, straight to workspace",
+            "key set AND repo cloned → transparent too",
         )
     }
 
@@ -38,18 +47,31 @@ class Cyp629FirstRunGateModelTest {
 
     @Test
     fun gateMode_active_whenUnconfiguredOrPartial() {
-        assertEquals(FirstRunGateMode.ACTIVE, firstRunGateMode(status(true, key = false, clone = CloneStatus.NOT_CONFIGURED)))
-        assertEquals(FirstRunGateMode.ACTIVE, firstRunGateMode(status(true, key = true, clone = CloneStatus.CLONING)), "key set but repo cloning → still active")
-        assertEquals(FirstRunGateMode.ACTIVE, firstRunGateMode(status(true, key = false, clone = CloneStatus.CLONED_OK)), "repo cloned but no key → still active")
-        assertEquals(FirstRunGateMode.ACTIVE, firstRunGateMode(status(true, key = true, clone = CloneStatus.CLONE_FAILED)), "clone failed → active, never done")
+        // B1: ACTIVE ⟺ NOT configured = no key OR repo NOT set (NOT_CONFIGURED). A set repo is configured (transparent).
+        assertEquals(FirstRunGateMode.ACTIVE, firstRunGateMode(status(true, key = false, clone = CloneStatus.NOT_CONFIGURED)), "nothing set → active")
+        assertEquals(FirstRunGateMode.ACTIVE, firstRunGateMode(status(true, key = true, clone = CloneStatus.NOT_CONFIGURED)), "key set but repo NOT set → active (repo step open)")
+        assertEquals(FirstRunGateMode.ACTIVE, firstRunGateMode(status(true, key = false, clone = CloneStatus.CONFIGURED_NEVER_CLONED)), "repo set but no key → active")
     }
 
     @Test
     fun openStep_landsOnFirstOpenStep() {
         assertEquals(FirstRunStep.API_KEY, firstRunOpenStep(status(true, key = false, clone = CloneStatus.NOT_CONFIGURED)))
-        assertEquals(FirstRunStep.REPO, firstRunOpenStep(status(true, key = true, clone = CloneStatus.CLONING)), "key done → land on repo, not step 1")
-        assertEquals(FirstRunStep.REPO, firstRunOpenStep(status(true, key = true, clone = CloneStatus.CLONE_FAILED)))
+        assertEquals(FirstRunStep.REPO, firstRunOpenStep(status(true, key = true, clone = CloneStatus.NOT_CONFIGURED)), "key done, repo NOT set → land on repo, not step 1")
+        // B1: a set-but-uncloned repo is done (clone is not a prerequisite) → team, matching firstRunGateMode's TRANSPARENT.
+        assertEquals(FirstRunStep.TEAM, firstRunOpenStep(status(true, key = true, clone = CloneStatus.CONFIGURED_NEVER_CLONED)), "key + repo set → team, clone not a prerequisite")
         assertEquals(FirstRunStep.TEAM, firstRunOpenStep(status(true, key = true, clone = CloneStatus.CLONED_OK)), "both core done → team (optional)")
+    }
+
+    @Test
+    fun cloneInProgress_onlyWhileActivelyCloning() {
+        // ★ B1 spin-fix: only CLONING keeps the §7.3 poll alive. CONFIGURED_NEVER_CLONED is STATIC under B1 (no source
+        // moves it to terminal) → including it would spin the poll forever. Mutation: re-add CONFIGURED_NEVER_CLONED
+        // to isCloneInProgress → its assertion below reddens.
+        assertTrue(isCloneInProgress(CloneStatus.CLONING), "actively cloning → poll runs (B2 backend drives this)")
+        assertTrue(!isCloneInProgress(CloneStatus.CONFIGURED_NEVER_CLONED), "never-cloned is static under B1 — not in progress, no poll spin")
+        assertTrue(!isCloneInProgress(CloneStatus.NOT_CONFIGURED))
+        assertTrue(!isCloneInProgress(CloneStatus.CLONED_OK))
+        assertTrue(!isCloneInProgress(CloneStatus.CLONE_FAILED))
     }
 
     @Test

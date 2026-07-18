@@ -56,9 +56,12 @@ class Cyp629WorkspaceDegradedTest {
     }
 
     private fun unconfigured() = FirstRunConfigStatus(loaded = true, apiKeySet = false, cloneStatus = CloneStatus.NOT_CONFIGURED)
-    private fun keySet_cloneFailed(reason: CloneFailReason) =
-        FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.CLONE_FAILED, cloneReason = reason)
-    private fun keySet_cloning() = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.CLONING)
+    // B1: for the degraded banner to be ACTIVE with a set-but-failed repo, the KEY must be what's open (a set repo
+    // with a set key would be TRANSPARENT). CLONE_FAILED is dormant under B1 (no source) — the render logic is pinned.
+    private fun keyMissing_cloneFailed(reason: CloneFailReason) =
+        FirstRunConfigStatus(loaded = true, apiKeySet = false, cloneStatus = CloneStatus.CLONE_FAILED, cloneReason = reason)
+    // "key set, repo NOT set" — the ACTIVE state that lands on the REPO step (a set repo is TRANSPARENT under B1).
+    private fun keySetRepoNotSet() = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.NOT_CONFIGURED)
     private fun done() = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.CLONED_OK)
 
     private fun runGate(status: FirstRunConfigStatus, block: androidx.compose.ui.test.ComposeUiTest.() -> Unit) =
@@ -98,7 +101,7 @@ class Cyp629WorkspaceDegradedTest {
                 repoLabel = stringResource(Res.string.first_run_step_repo)
                 FirstRunGate(
                     enabled = true,
-                    createViewModel = { FirstRunViewModel(StubFirstRunConfigSource(keySet_cloneFailed(CloneFailReason.URL_UNREACHABLE))) },
+                    createViewModel = { FirstRunViewModel(StubFirstRunConfigSource(keyMissing_cloneFailed(CloneFailReason.URL_UNREACHABLE))) },
                     createSettingsViewModel = { SettingsViewModel(StubRepo(), editable = true) },
                     createAgentMgmtViewModel = { AgentManagementViewModel(StubMgmtRepo(), editable = true) },
                     workspace = { Text("workspace", modifier = Modifier.testTag(WORKSPACE)) },
@@ -141,7 +144,7 @@ class Cyp629WorkspaceDegradedTest {
     }
 
     @Test
-    fun resume_reopensGate_atFirstOpenStep() = runGate(keySet_cloning()) {
+    fun resume_reopensGate_atFirstOpenStep() = runGate(keySetRepoNotSet()) {
         // Key already set, repo cloning → mode ACTIVE. Skip, then resume: the gate reopens at the FIRST OPEN step
         // (REPO — because the key is set), not step 1.
         onNodeWithTag(FirstRunTags.SKIP).performClick()

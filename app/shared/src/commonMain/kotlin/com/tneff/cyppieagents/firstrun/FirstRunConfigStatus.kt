@@ -39,13 +39,19 @@ enum class FirstRunGateMode {
 }
 
 /**
- * CYP-629 §1/§8 — the gate is TRANSPARENT only when `apiKeySet` AND repo `CLONED_OK`; while the status is not yet
- * loaded it is LOADING (fail-closed — an unknown status is never treated as done); otherwise ACTIVE. This is the
- * single honesty core: unknown ≠ configured, so nobody is passed silently into a hub that can't start agents.
+ * CYP-629 §1/§8 — the gate is TRANSPARENT when the hub is **configured** (`apiKeySet` AND the repo is **set**); while
+ * the status is not yet loaded it is LOADING (fail-closed — an unknown status is never treated as done); otherwise
+ * ACTIVE. Unknown ≠ configured, so nobody is passed silently into a hub that isn't set up.
+ *
+ * **B1 (CYP-629 live-wiring): configured, NOT `CLONED_OK`.** There is no backend clone-status source (CYP-684 is the
+ * follow-up that would add one), so the client NEVER produces `CLONED_OK` — gating TRANSPARENT on it would hang the
+ * wizard forever. "Repo set" ⟺ `cloneStatus != NOT_CONFIGURED` (an unset repo derives to `NOT_CONFIGURED`, a set one
+ * to `CONFIGURED_NEVER_CLONED`). The clone is best-effort (CYP-639 boots degraded-tolerant); its lifecycle drives
+ * Inc3's display only, and — since the client never fabricates `CLONED_OK`/`CLONE_FAILED` — never claims success.
  */
 fun firstRunGateMode(status: FirstRunConfigStatus): FirstRunGateMode = when {
     !status.loaded -> FirstRunGateMode.LOADING
-    status.apiKeySet && status.cloneStatus == CloneStatus.CLONED_OK -> FirstRunGateMode.TRANSPARENT
+    status.apiKeySet && status.cloneStatus != CloneStatus.NOT_CONFIGURED -> FirstRunGateMode.TRANSPARENT
     else -> FirstRunGateMode.ACTIVE
 }
 
@@ -54,12 +60,14 @@ enum class FirstRunStep { API_KEY, REPO, TEAM }
 
 /**
  * CYP-629 §6.3b — the first not-yet-done step, so a resumed/returning operator lands on what's open (not always
- * step 1): API_KEY while no key, else REPO while the repo isn't CLONED_OK, else TEAM (both core prerequisites met;
- * team is optional). Pure so the stepper's initial focus is testable without a render.
+ * step 1): API_KEY while no key, else REPO while the repo isn't **set** (`NOT_CONFIGURED`), else TEAM (both core
+ * prerequisites met; team is optional). B1: "set", NOT "cloned" — the clone is best-effort and never a prerequisite
+ * (there is no `CLONED_OK` source), so a set-but-uncloned repo lands on TEAM, matching [firstRunGateMode]'s TRANSPARENT.
+ * Pure so the stepper's initial focus is testable without a render.
  */
 fun firstRunOpenStep(status: FirstRunConfigStatus): FirstRunStep = when {
     !status.apiKeySet -> FirstRunStep.API_KEY
-    status.cloneStatus != CloneStatus.CLONED_OK -> FirstRunStep.REPO
+    status.cloneStatus == CloneStatus.NOT_CONFIGURED -> FirstRunStep.REPO
     else -> FirstRunStep.TEAM
 }
 
@@ -87,25 +95,31 @@ fun isTerminalCloneStatus(status: CloneStatus): Boolean =
     status == CloneStatus.CLONED_OK || status == CloneStatus.CLONE_FAILED
 
 /**
- * CYP-629 §7.3 — should the poll KEEP polling? Only while a clone is actively in progress
- * ([CloneStatus.CONFIGURED_NEVER_CLONED] just set → about to clone, or [CloneStatus.CLONING]). It stops the instant
- * the status reaches a TERMINAL value ([isTerminalCloneStatus]) — that is the ONLY stop-path (no timeout, no
- * attempt-counter: a long clone is not a failure, ux-spec §4.4). `NOT_CONFIGURED` (no repo yet) is not in progress,
- * so the poll never spins on it.
+ * CYP-629 §7.3 — should the poll KEEP polling? Only while a clone is **actively** cloning ([CloneStatus.CLONING]).
+ *
+ * **B1 (CYP-629 live-wiring): `CLONING` ONLY, not `CONFIGURED_NEVER_CLONED`.** With no backend clone-status source
+ * (CYP-684 follow-up), a set-but-uncloned repo derives to `CONFIGURED_NEVER_CLONED` **statically** — nothing ever
+ * moves it to a terminal value, so including it here would spin the poll **forever**. `CLONING` is only ever produced
+ * by a REAL backend source (B2), where it genuinely transitions to terminal — so this is forward-compatible: dormant
+ * under B1 (never `CLONING` → no poll), live under B2 (backend drives `CLONING` → the §7.3 poll runs). It stops the
+ * instant the status reaches a TERMINAL value ([isTerminalCloneStatus]) — the ONLY stop-path (no timeout/counter,
+ * ux-spec §4.4). `NOT_CONFIGURED`/`CONFIGURED_NEVER_CLONED` are not "in progress", so the poll never spins on them.
  */
 fun isCloneInProgress(status: CloneStatus): Boolean =
-    status == CloneStatus.CONFIGURED_NEVER_CLONED || status == CloneStatus.CLONING
+    status == CloneStatus.CLONING
 
 /**
  * CYP-629 §6.2/§6.3a — the honest degraded-workspace state after a skip, derived from the SAME config status (no
  * separate flag to drift). Visible exactly while the gate would be ACTIVE ([firstRunGateMode] == ACTIVE): unknown
- * (LOADING) shows nothing (we don't assert "unconfigured" when unsure), and done (TRANSPARENT) shows nothing (the
- * banner clears itself the instant key + `CLONED_OK` land — no lingering nag).
+ * (LOADING) shows nothing (we don't assert "unconfigured" when unsure), and configured (TRANSPARENT) shows nothing
+ * (the banner clears itself the instant the hub is **configured** — key set + repo set — no lingering nag).
  *
  * SPECIFIC, not generic (§6.3a): it names exactly what is open, via the reused step labels — [missingApiKey] and/or
- * [missingRepo]. The one edge that a generic message would LIE about (the CYP-639 confusion §7 closes): a repo whose
- * clone FAILED is *set*, not missing — so [cloneFailed] carries the clone-error copy, and [missingRepo] is then
- * false. Precedence: a set-but-failed repo reads "clone failed", never "repository missing".
+ * [missingRepo]. **B1: "repo missing" = the repo is not SET (`NOT_CONFIGURED`)**, not "not cloned" — a set repo makes
+ * the hub configured (TRANSPARENT), so a visible/ACTIVE banner with a set repo means only the KEY is open. The one
+ * edge a generic message would LIE about (CYP-639 confusion): a [cloneFailed] repo is *set*, not missing → it carries
+ * the clone-error copy, [missingRepo] false. (Under B1 there is no clone-status source, so `CLONE_FAILED` never
+ * occurs and that branch is dormant — kept honest for the CYP-684/B2 backend field.)
  */
 data class WorkspaceUnconfiguredState(
     val visible: Boolean,
@@ -117,12 +131,13 @@ data class WorkspaceUnconfiguredState(
 
 fun workspaceUnconfigured(status: FirstRunConfigStatus): WorkspaceUnconfiguredState {
     val active = firstRunGateMode(status) == FirstRunGateMode.ACTIVE
-    // A set-but-failed repo is not "missing" — it carries its own clone-error copy (never "repository missing").
+    // A set-but-failed repo is not "missing" — it carries its own clone-error copy (dormant under B1, no source).
     val cloneFailed = active && status.cloneStatus == CloneStatus.CLONE_FAILED
     return WorkspaceUnconfiguredState(
         visible = active,
         missingApiKey = active && !status.apiKeySet,
-        missingRepo = active && status.cloneStatus != CloneStatus.CLONED_OK && !cloneFailed,
+        // B1: repo "missing" ⟺ NOT SET (NOT_CONFIGURED). A set-but-uncloned repo is configured, never "missing".
+        missingRepo = active && status.cloneStatus == CloneStatus.NOT_CONFIGURED,
         cloneFailed = cloneFailed,
         cloneReason = if (cloneFailed) status.cloneReason else null,
     )
