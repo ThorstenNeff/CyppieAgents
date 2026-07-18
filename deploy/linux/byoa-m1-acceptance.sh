@@ -77,14 +77,20 @@ health || die "hub did not come up after install"
 SECRETS="$(mktemp)"; chmod 0600 "$SECRETS"
 sudo -u cyppie "$PROVISION" --add-remote-agent "$AGENT" --data-dir "$DATADIR" --secrets-out "$SECRETS" >/dev/null || die "--add-remote-agent failed"
 cat "$SECRETS" >> "$ENVFILE"; shred -u "$SECRETS" 2>/dev/null || rm -f "$SECRETS"
-# CYP-687 (PL): cap the hub heap for the acceptance. hub.jvmargs carries MaxRAMPercentage=75 → a ~26 GiB heap ceiling,
-# but po2's box has only ~6 GiB FREE (shared: other agents + e2e). GC would let the heap grow past real-free → the Linux
-# OOM-killer could take an AGENT/e2e instead of the hub (looks like a random agent death, no heap dump). An explicit
-# -Xmx overrides MaxRAMPercentage (A–E + FC need nowhere near 26 GiB); JAVA_TOOL_OPTIONS is read by the jpackage JVM
-# from the systemd env (EnvironmentFile) and applies to every (re)start below.
+# CYP-687 (PL) — RUN-override of the heap for THIS acceptance run. NOT a hub.jvmargs commit: MaxRAMPercentage=75 is
+# CORRECT for a DEDICATED box (we configure a run, we do not fix a bug); a repo-anchored "shared-host" mode = a follow-up
+# ticket. Why: MaxRAMPercentage=75 → a ~26 GiB heap ceiling, but po2's box has only ~6 GiB FREE (shared: other agents +
+# e2e) → GC could grow the heap past real-free → the Linux OOM-killer might take an AGENT/e2e (looks like a random agent
+# death, no heap dump). We set an explicit -Xmx=2g (A–E+FC need nowhere near 26 GiB) as a run-override via
+# JAVA_TOOL_OPTIONS in hub.env — the EnvironmentFile the systemd unit sources, read by the jpackage JVM on every
+# (re)start. Precedent: deploy/gateway/gateway.jvmargs:27 "Deploy may override with an explicit -Xmx" = the intended
+# mechanism. ⚠ po2 MEASURES the effective jvmargs (verified below + authoritatively via jcmd) — never assumes it took.
 grep -q '^JAVA_TOOL_OPTIONS=' "$ENVFILE" || echo 'JAVA_TOOL_OPTIONS=-Xmx2g' >> "$ENVFILE"
 chown cyppie:cyppie "$ENVFILE"; chmod 0600 "$ENVFILE"
 systemctl restart cyppiehub; health || die "hub did not come up after seeding $AGENT"
+journalctl -u cyppiehub --no-pager 2>/dev/null | grep -q 'Picked up JAVA_TOOL_OPTIONS.*-Xmx2g' \
+  && echo "  [heap] JVM applied the -Xmx2g run-override (po2: confirm effective MaxHeapSize via jcmd)" \
+  || echo "  [heap] WARN: could not confirm -Xmx2g in journalctl — po2 MUST measure the effective jvmargs (do not assume)"
 OPERATOR_TOKEN="$(sed -n 's/^OPERATOR_TOKEN=//p' "$ENVFILE")"
 PO_TOKEN="$(sed -n 's/^HUB_TOKEN_PO=//p' "$ENVFILE")"
 AGENT_TOKEN="$(sed -n "s/^HUB_TOKEN_${AGENT^^}=//p" "$ENVFILE")"
