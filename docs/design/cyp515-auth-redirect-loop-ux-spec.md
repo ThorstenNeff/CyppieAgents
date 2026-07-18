@@ -1,159 +1,150 @@
-# CYP-515 — web-ts Auth-Redirect-Loop: UX-Anteil (Login-Render + honest `?flow=`-Guard) — Dev5-Spec
+# CYP-515 — web-ts Auth: honest Login-**Fehlerpfad** bei Kratos-Proxy-Contract-Bruch — Dev5-Spec
 
-> Owner: UIUX-Designer (Team-2) · **Ungated High-Fill** (parallel zu Dev5s Loop-Logik-Fix; nicht auf Team-1 `.deb`) ·
-> Stand 2026-07-18 · **Design/Copy, kein Code** (ich spec/verifiziere, Dev5 baut). Gegroundet READ-ONLY @ develop
-> `025b17ae`. web-ts nutzt **inline Strings** (keine i18n-Keys) → Copy = literale Strings in `authModel.ts:AUTH_TEXT`.
+> Owner: UIUX-Designer (Team-2) · **Ungated High-Fill** · Stand 2026-07-18 · **Design/Copy, kein Code** (ich
+> spec/verifiziere, Dev5 baut). Gegroundet READ-ONLY @ develop `025b17ae`. web-ts nutzt **inline Strings** (keine
+> i18n-Keys, DE-only in `authModel.ts:AUTH_TEXT`).
 >
-> **Kernaussage vorab (Reuse-Befund, am Objekt gemessen):** das **Login-Formular existiert schon voll gehärtet**
-> (`LoginScreen.tsx`, CYP-515 (a)), und die **Redirect/Loading-Copy existiert schon** (`AUTH_TEXT.redirectingSignin`
-> = „Weiterleitung zur Anmeldung…", heute **unverdrahtet/reserviert**). Es ist **nichts Neues zu erfinden** — der
-> echte Delta ist **ein Guard + Verdrahtung**. Details §0.
+> **⟳ REFOKUSSIERT nach PO-Klärung (msg 1528018855):** Dev5s Ansatz **eliminiert den Redirect komplett** (None→in-app
+> `LoginScreen`, Kratos same-origin `Accept: application/json` = 200-JSON, kein 303 → **`?flow=` erscheint nie in der
+> URL**, Ory-Muster/Assist2-bestätigt). ⟹ **Kein `?flow=`-Guard, kein „Weiterleitung"-Interim nötig** — beide
+> **gebankt für OIDC-P2** (§9). **Der gefragte Teil = der honest ERROR-State** für den realen Restrisiko-Pfad
+> (Assist2): **bricht der gehärtete Proxy den JSON-Contract, wird jeder Login still als „abgelehnt" gerendert.**
 
 ---
 
-## 0. Was schon existiert (Reuse) vs. der echte Delta
+## 0. Reuse-Befund (validiert) + Scope
 
-**Schon gebaut + getestet (NICHT neu bauen — reuse):**
-- **`LoginScreen.tsx`** — das gehärtete Credential-Surface (CYP-515 (a)): Felder (E-Mail `autocomplete=username` ·
-  Passwort `type=password`/`current-password` + Reveal-Toggle), **ONE generic error** (`role=alert`,
-  `loginErrorGeneric`, keine Enumeration), **429 honest** (`role=status`, `rateLimitedText`, kein Auto-Retry),
-  **Submit = Label-Swap** (kein Spinner), **clear-after-submit**, **kein Success-Grün**. `LoginScreen.render.test.tsx`
-  lockt es. → **Das ist „das Formular, das die Loop-Schleife ersetzt". Es existiert.**
-- **`AuthGate.tsx`** — resolve-then-render Session-Gate (whoami zuerst, kein Flash): `resolving`(role=status,
-  `AUTH_TEXT.loading`) · `none`→`LoginScreen` · `unverified`→Verify-Gate · `active`. Ein globaler /api-401 flippt
-  **in-app** zurück auf `none` (kein window-Redirect → **Session-Expiry kann die Loop nicht neu einführen**).
-- **`loginFlow.ts`** — Kratos same-origin **Browser-Flow**: `GET /self-service/login/browser` mit `Accept: json`
-  (**kein 303-Redirect**) → `{id, csrf}` → `POST /self-service/login?flow=<id>` (Creds im **Body**), **fresh per
-  submit** (nie stale), **fail-closed** bei malformed/missing csrf, **direct-fetch** (Login-401 feuert NICHT den
-  globalen Re-Auth-Hook → keine Loop auf dem Login-Surface).
-- **Copy schon da (in `AUTH_TEXT`, aber UNVERDRAHTET — reserviert für genau diesen Fall):**
-  `redirectingSignin: 'Weiterleitung zur Anmeldung…'` · `sessionExpired: 'Sitzung abgelaufen – neue Anmeldung…'`.
-- **OIDC-Redirect/Loading/Error-States** sind bereits designt in `docs/design/oidc-enroll-loading-error-ux-spec.md`
-  (Redirecting/Returning Progress-Notices, Split-Error, Timeout-Eskalation) — **ein Progress-Vokabular**, hier
-  spiegeln, nicht divergieren.
+**Validiert (am Objekt, PO bestätigt „goldrichtig") — NICHT neu bauen:**
+- **`LoginScreen.tsx`** existiert voll gehärtet (CYP-515 (a)): Felder/Reveal, ONE generic error (`role=alert`,
+  `loginErrorGeneric`), 429 honest (`role=status`), Label-Swap-Submit, **clear-after-submit**, kein Success-Grün.
+- **`AUTH_TEXT.redirectingSignin`** („Weiterleitung zur Anmeldung…") + `sessionExpired` — reserviert; **bleiben
+  gebankt** (OIDC-P2), hier **nicht** verdrahtet.
 
-**Der echte Delta (das einzig Fehlende) = der inbound-`?flow=`-Guard.**
-Der SPA **liest heute `?flow=` NICHT aus der URL** (grep-belegt: `?flow=` existiert nur im **ausgehenden** POST in
-`loginFlow.ts:74`; **kein** `location.search`/`URLSearchParams.get('flow')` inbound). Der `AuthGate.tsx:6`-Kommentar
-sagt es explizit: **„the `?flow=` guard is deferred to the OIDC-P2 screen per spec §5".** Genau dort loopt es: landet
-der Browser (Kratos-initiierter Redirect — OIDC/social-Return oder Kratos-gehosteter Link) auf dem SPA **mit
-`?flow=<id>`**, und der SPA **triggert einen frischen Flow-Init** statt den vorhandenen Flow zu **rendern/fortzusetzen**
-→ Init redirected wieder mit `?flow=` → **stille Endlos-Schleife**. **Dies** ist der PO/Dev5-Fix; **dies** speche ich.
+**IN Scope (dieser Spec):** **ein honest Fehlerzustand**, der einen **systemischen** Login-Startfehler (Proxy bricht
+den JSON-Contract) **ehrlich als solchen** zeigt — statt ihn als Credential-Ablehnung zu maskieren.
+**OUT of Scope (gebankt OIDC-P2):** der inbound-`?flow=`-Guard + das „Weiterleitung"-Interim (§9).
 
 ---
 
-## 1. Der `?flow=<id>`-Guard — UX-Kontrakt (Dev5 besitzt die Logik)
+## 1. Das Problem (Assist2s reale Restgefahr) — die Honesty-Lücke
 
-Wenn der SPA-Einstieg (`main.tsx`/`AuthGate`) mit **`?flow=<id>`** in der URL geladen wird:
-1. **Rendern/Fortsetzen statt Re-Init:** den **vorhandenen `LoginScreen`** zeigen (Passwort-Surface), gebunden an
-   den bereits laufenden Kratos-Flow — **NIE** `GET /self-service/login/browser` neu auslösen. Das bricht die Loop.
-2. **`?flow=` nach dem Konsumieren aus der URL entfernen** (`history.replaceState`, Dev5) — damit ein **Reload**
-   nicht erneut in den Guard-Pfad fällt und (falls der Flow inzwischen abgelaufen ist) nicht re-loopt.
-3. **Nur ein wohlgeformter Flow rendert das Formular.** Fehlt `id`/`csrf` oder ist der Flow **stale/expired** →
-   **fail-closed** in den honest Error-Zustand (§3), **nicht** blind ein frischer Init (das wäre die Loop).
+`loginFlow.ts` startet pro Submit einen frischen Kratos-Browser-Flow: `GET /self-service/login/browser`
+(`Accept: json`) → `{id, csrf}` parsen → `POST /self-service/login?flow=<id>` (Creds im Body). Heute kollabiert
+**jeder** Fehlschlag zu **einem** generischen `rejected` (Enumeration-Safety, §2.3②) → die UI zeigt
+`loginErrorGeneric` = **„Anmeldung fehlgeschlagen. Bitte prüfe deine Eingaben."**
 
-> **Naht-Ehrlichkeit:** ob „Fortsetzen" = den `?flow=`-Flow direkt submitten oder frisch initialisieren-**einmal**
-> ist Dev5s Kratos-Logik. Die **UX-Invariante**: **auf `?flow=` niemals eine automatische Re-Init-Kette** — genau
-> eine Auflösung (Formular **oder** honest Error), nie ein selbst-nachladender Zyklus.
+**Bricht der gehärtete Proxy den JSON-Contract** (liefert Nicht-JSON / falschen Content-Type / HTML-Fehlerseite /
+5xx / einen Flow **ohne `id`/`csrf`**), dann:
+- `loginFlow.ts:65` (`!initRes.ok`) **oder** `:69` (`flow.id===''||flow.csrf===null`) → `{ kind: 'rejected' }`.
+- ⟹ **jeder** Login — auch mit **korrekten** Credentials — wird als `rejected` gerendert: **„prüfe deine
+  Eingaben."**
 
-## 2. Der honest Zwischenzustand „Weiterleitung zur Anmeldung…" (reuse `redirectingSignin`)
+**Die Lücke (meine Lane):** das ist eine **systemische/Infra-Störung**, wird aber als **Credential-Urteil**
+dargestellt. Der Nutzer mit **richtigem** Passwort wird angewiesen, seine (korrekte) Eingabe zu prüfen → tippt
+endlos, misstraut sich selbst, während in Wahrheit **der Login-Dienst gebrochen** ist. **Stille Fehl-Attribution
+eines Systemfehlers als Nutzerfehler.**
 
-Während der Guard den `?flow=`-Landing auflöst (kurzer Moment vor Formular **oder** Error):
-- **Copy:** `AUTH_TEXT.redirectingSignin` (**existiert**, „Weiterleitung zur Anmeldung…") — **verdrahten**, nicht neu erfinden.
-- **Form/A11y:** ein `role="status"` / `aria-live="polite"`-Notice (spiegelt `AuthGate` `resolving`-Loading), im
-  `auth-screen`-Container. **Kein** Spinner-Pflicht (Label reicht, konsistent zu §2.3⑧ „no spinner").
-- **BOUNDED, kein Dauer-Refresh:** der Zustand ist **transient** — er endet deterministisch in Formular **oder**
-  Error. **Er darf sich nicht selbst neu laden** (das war der Bug). Optional (Dev5): eine großzügige Timeout-Grenze
-  → bei Überschreitung honest Error (§3), **kein** stiller Retry — analog der Timeout-Eskalation in
-  `oidc-enroll-loading-error-ux-spec.md` §5.
+## 2. Die honest Trennung (der Kern) — Systemfehler ≠ Credential-Urteil
 
-## 3. Der Fehlerfall — Flow-Init/Resolution fehlgeschlagen (statt stiller Loop)
+**Zwei ehrlich getrennte Fehlerklassen** — die Attribution wird korrekt, **ohne** Enumeration-Safety zu brechen:
 
-Wenn der `?flow=`-Flow nicht auflösbar ist (malformed/expired/transport) **oder** der Timeout greift:
-- **Honest Error statt Loop:** ein `role="alert"` / `aria-live="assertive"`-Notice (spiegelt `LoginScreen`
-  `phase==='error'`). **Kein** stiller Re-Init, **kein** Dauer-Refresh.
-- **Copy:** Reuse `AUTH_TEXT.loginErrorGeneric` („Anmeldung fehlgeschlagen. Bitte prüfe deine Eingaben.") passt
-  **nicht ganz** (hier ist es kein Credential-Fehler, sondern ein Flow-Init-Fehler). **Empfehlung: 1 neuer honest,
-  nicht-enumerierender String** (inline in `AUTH_TEXT`, s. §7): **„Anmeldung konnte nicht gestartet werden. Bitte
-  erneut versuchen."** — nennt den Zustand ehrlich, ohne Server-Detail/Enumeration.
-- **Manueller Retry (nie Auto):** ein **„Erneut versuchen"**-Button, der **auf Nutzer-Aktion** genau **einen**
-  frischen Flow-Init auslöst (→ zurück zum normalen in-app `LoginScreen`/`none`-Pfad). **Nie** automatisch — das
-  Wiederherstellen der Auto-Kette wäre die Loop zurück. (Reuse das Muster „Feld-Edit/Klick clears transient",
-  `LoginScreen.tsx:33`.)
+| Auslöser | Klasse | Outcome | Copy | Rolle/Live |
+|---|---|---|---|---|
+| Login-Flow **kann nicht gestartet** werden: init `!ok` · Nicht-JSON/Contract-Bruch · Flow ohne `id`/`csrf` · Transport-Fehler **vor** dem Submit | **systemisch/Infra** | **NEU** `unavailable` | **`flowInitFailed`** = „Anmeldung konnte nicht gestartet werden. Bitte erneut versuchen." | `role="alert"` / assertive |
+| Der **Credential-POST** wird abgelehnt (400/401 **nach** gestartetem Flow) | **Credential-Urteil** | `rejected` (unverändert) | `loginErrorGeneric` = „…prüfe deine Eingaben." | `role="alert"` / assertive |
+| 429 | Throttle | `rateLimited` (unverändert) | `rateLimitedText` | `role="status"` / polite |
 
-## 4. Das Formular selbst — 100 % Reuse
+**⭐ Enumeration-Safety bleibt intakt (der sensible Punkt):** `flowInitFailed` feuert **bevor** irgendein
+Identifier/Passwort von Kratos ausgewertet wird — `GET /self-service/login/browser` ist **credential-frei**. Der
+Zustand ist damit **für jeden Nutzer und jede Eingabe identisch** (auch für leere/Müll-E-Mail) und **leakt nichts
+über irgendein Konto** — er spiegelt nur **globale Infra-Gesundheit**. ⟹ **Die Trennung führt KEINE Enumeration
+ein** (kein per-Konto-Oracle; „prüfe deine Eingaben" bleibt generisch für **jeden** Credential-Fehler,
+wrong-password == no-such-user). Ein Health-Oracle auf öffentliche Proxy-Verfügbarkeit ist nicht sensibel.
 
-**Keine neuen Felder/Fehlerzustände/Submit-Logik.** Der gerenderte Login = der **bestehende `LoginScreen`**
-(Felder/Reveal/generic-error/429/label-swap/clear-after-submit unverändert). Der Guard **wählt nur, wann** er
-rendert; das **Wie** ist schon gebaut + getestet. Kein zweiter Formular-Dialekt.
+## 3. loginFlow-Kontrakt (Dev5 baut die Logik)
 
-## 5. A11y — bestehende Muster spiegeln (0 neue Muster)
+Ich spece das **Mapping**, Dev5 verdrahtet es in `loginFlow.ts`:
+- **init-Phase-Fehler → `unavailable`** (statt `rejected`): `!initRes.ok` (:65) · `await initRes.json()` wirft /
+  liefert Nicht-JSON · `parseFlowInit` ⇒ `id===''||csrf===null` (:69) · ein `catch` (:87), der **vor** dem
+  Credential-POST greift.
+- **Credential-POST 400/401 → `rejected`** (unverändert, :81) — der einzige echte Credential-Pfad.
+- **429 → `rateLimited`** (unverändert). **2xx → verified/unverified** (unverändert).
+- `LoginResult` bekommt `| { kind: 'unavailable' }`; `LoginPhase` bekommt `| { kind: 'unavailable' }`.
 
-| Zustand | Rolle | Live | Präzedenz (bestehend) |
-|---|---|---|---|
-| „Weiterleitung zur Anmeldung…" (§2) | `role="status"` | `polite` | `AuthGate` `resolving`-Loading |
-| Flow-Init-Fehler (§3) | `role="alert"` | `assertive` | `LoginScreen` `phase==='error'` |
-| das Formular (§4) | (unverändert) | — | `LoginScreen` wie gebaut |
+> **Naht-Ehrlichkeit:** ein Transport-Fehler **auf dem POST selbst** (Netz weg mitten im Submit) ist **kein
+> Credential-Urteil** → ich empfehle ihn ebenfalls als `unavailable` zu behandeln (honest „konnte nicht
+> abgeschlossen werden" statt „prüfe deine Eingaben"). Feinjustierung = Dev5s Kratos-Kenntnis; **die UX-Regel:
+> nur eine echte Server-Ablehnung des Submits (4xx) ist der „prüfe deine Eingaben"-Pfad, alles andere (nicht
+> starten / nicht erreichen / Contract gebrochen) ist der honest „konnte nicht gestartet werden"-Pfad.**
 
-Konsistent zur CYP-288-Linie **error=assertive / status=polite** (Load-Fehler = Alert; transienter Progress = Status).
+## 4. LoginScreen-Render — der neue Fehlerzustand (Reuse des Error-Musters)
 
-## 6. Honesty-Invarianten (der Kern von CYP-515)
+- **0 neues Formular:** Felder/Reveal/Submit unverändert (bestehendes `LoginScreen`).
+- **Neuer Zweig** analog `phase.kind === 'error'` (`LoginScreen.tsx:114`): `phase.kind === 'unavailable'` →
+  `<p role="alert" aria-live="assertive" data-testid="auth.login.unavailable">{AUTH_TEXT.flowInitFailed}</p>`.
+  Distinkt vom bestehenden `auth.login.error` (Credential) — **zwei Testids, zwei Attributionen**.
+- **Manueller Retry, nie Auto:** der Fehler zeigt, **das Formular bleibt bedienbar**; Retry = erneutes **Absenden**
+  (der bestehende Submit). **`clear-after-submit` bleibt** (`LoginScreen.tsx:40`) → das Passwort wird auch hier
+  neu getippt (Security unverändert; **kein** Auto-Re-Submit, **kein** Secret-Persistieren für Bequemlichkeit).
+- **Ein Feld-Edit clear't den Transient** (bestehendes `clearTransient`, :33) — auf `unavailable` mit erweitern.
 
-- **Kein stiller Loop:** `?flow=` löst **deterministisch** in Formular **oder** honest Error auf — nie ein
-  selbst-nachladender Zyklus. **Das ist der Fix.**
-- **Kein Dauer-Refresh als „Loading":** der Zwischenzustand ist **bounded + transient**, kein perpetuierlicher Spinner.
-- **Fail-closed, nie optimistisch:** malformed/expired Flow → Error/Login, **nie** ein blinder frischer Init und
-  **nie** ein optimistisches „eingeloggt".
-- **Generic, keine Enumeration:** der Flow-Init-Error nennt **keinen** Server-Grund (wie der bestehende generic
-  Login-Error) — honest ohne Leak.
-- **Manueller Retry only:** Recovery ist immer eine **Nutzer-Aktion**, nie eine automatische Re-Init-Kette.
+## 5. Copy (web-ts inline `AUTH_TEXT`, DE-only) — **max. 1 neuer String**
 
-## 7. Copy (web-ts inline `AUTH_TEXT`) — Reuse-first, **max. 1 neuer String**
-
-| Zweck | String | Status |
+| String | Wert | Status |
 |---|---|---|
-| Zwischenzustand (§2) | `redirectingSignin` = „Weiterleitung zur Anmeldung…" | **existiert** (unverdrahtet) → verdrahten |
-| Session-Expiry-Variante | `sessionExpired` = „Sitzung abgelaufen – neue Anmeldung…" | **existiert** (unverdrahtet) → falls Expiry-Pfad |
-| Flow-Init-Fehler (§3) | **NEU:** `flowInitFailed` = „Anmeldung konnte nicht gestartet werden. Bitte erneut versuchen." | **1 neuer inline-String** (honest, nicht-enumerierend) |
-| Retry-Button (§3) | Reuse bestehende Retry-Wording — **„Erneut versuchen"** (deckungsgleich zu web-ts EventBrowse/CYP-288) | reuse |
+| **`flowInitFailed`** | **„Anmeldung konnte nicht gestartet werden. Bitte erneut versuchen."** | **1 neuer inline-String** (honest: attribuiert an das **System**, nicht an die Nutzereingabe; nicht-enumerierend; actionable) |
+| `loginErrorGeneric` | „Anmeldung fehlgeschlagen. Bitte prüfe deine Eingaben." | **unverändert** (bleibt der Credential-Pfad) |
+| `redirectingSignin` / `sessionExpired` | (bestehend) | **gebankt** (OIDC-P2), hier nicht verdrahtet |
 
-> **Nur 1 neuer String.** web-ts ist inline → kein Shared-Key-Sync-Flag nötig (kein `values/`-Landing); der String
-> lebt in `authModel.ts:AUTH_TEXT`. Falls das Team einen KMP-Parity-Key will (`auth_flow_init_failed`), ist das ein
-> optionaler Folge-Add, **nicht** hier.
+> **1 neuer String, inline** → **kein** Shared-Key-Sync-Flag (web-ts inline, kein `values/`-Landing). Optionaler
+> KMP-Parity-Key `auth_flow_init_failed` = späterer Folge-Add, **nicht** hier.
 
-## 8. Acceptance-Teeth (meine §-QA — web-ts render-tests, Vitest/testing-library, Muster = `LoginScreen.render.test.tsx`)
+## 6. A11y — 0 neue Muster
+
+`unavailable` = `role="alert"` / `aria-live="assertive"` — **identisch** zum bestehenden Credential-Error-Muster
+(`LoginScreen.tsx:114`). Distinkte `data-testid` (`auth.login.unavailable` vs `auth.login.error`), damit
+Screenreader **und** Tests die zwei Attributionen unterscheiden. CYP-288-konsistent (error=assertive).
+
+## 7. Honesty-Invarianten (der Kern von CYP-515)
+
+- **Systemfehler ≠ Credential-Urteil:** ein Proxy-/Infra-/Contract-Bruch wird **als solcher** gezeigt („konnte
+  nicht gestartet werden"), **nie** als „prüfe deine Eingaben" — der Nutzer wird nicht fälschlich an seiner
+  korrekten Eingaben zweifeln gemacht. **Das ist der Fix.**
+- **Enumeration-Safety bleibt (nicht verhandelt):** `flowInitFailed` ist credential-frei/global → **kein**
+  per-Konto-Leak; `rejected` bleibt generisch. Die Trennung ist honest **und** enumeration-safe (§2).
+- **Fail-closed, nie optimistisch:** kein blinder Retry, kein „eingeloggt" ohne 2xx-Session.
+- **Nur manueller Retry:** Recovery = Nutzer-Aktion (erneut absenden), nie eine automatische Kette.
+- **Kein stiller Zustand:** der Systemfehler ist **sichtbar + korrekt attribuiert**, nicht als generische
+  Ablehnung verschluckt.
+
+## 8. Acceptance-Teeth (meine §-QA — web-ts render-tests, Muster `LoginScreen.render.test.tsx`)
 
 Diskriminierend (jeder Zahn schließt eine falsche Impl aus):
-1. **Landing mit `?flow=<id>` (wohlgeformt)** → der **`LoginScreen`** rendert (`auth.login.form` present); **KEIN**
-   erneuter `GET /self-service/login/browser` (Fetch-Spy: 0 Re-Init-Aufrufe) → **beweist: Loop gebrochen**.
-2. **`?flow=` wird nach Konsum aus der URL entfernt** (`history.replaceState`-Spy / `location.search` leer) →
-   Reload re-loopt nicht.
-3. **Zwischenzustand** zeigt `redirectingSignin` mit `role="status"` **und ist transient** (kein Selbst-Reload:
-   nach Auflösung ist der Status weg, Formular/Error da).
-4. **Flow-Init-Fehler** → `role="alert"` + `flowInitFailed`-Copy + Retry-Button; **kein** automatischer Re-Init
-   (Fetch-Spy: Re-Init **nur** nach Retry-Klick, 0 automatisch) → **beweist: kein stiller Loop**.
-5. **Fail-closed:** malformed/missing-`id` `?flow=` → Error-Zustand, **nicht** ein blinder frischer Init.
-6. **Reuse-Integrität:** die Formular-Felder/Fehler/Submit sind die bestehenden `LoginScreen`-Knoten (keine
-   Duplikat-Testids) — kein zweiter Formular-Dialekt.
+1. **init `!ok` / Nicht-JSON / Flow ohne id/csrf** → `auth.login.unavailable` (`flowInitFailed`, `role=alert`) —
+   **NICHT** `auth.login.error`/`loginErrorGeneric`. **Beweist: Systemfehler korrekt attribuiert** (kein Fake-„prüfe
+   deine Eingaben"). *(Eine Impl, die beide kollabiert, failt hier.)*
+2. **Credential-POST 400/401 (Flow gestartet)** → **weiterhin** `auth.login.error`/`loginErrorGeneric` — der
+   Credential-Pfad ist unverändert. *(Beweist: die Trennung hat den Credential-Fehler nicht kaputt gemacht.)*
+3. **Enumeration-Safety:** `flowInitFailed`-Copy ist **identisch** unabhängig von der E-Mail (existierend vs nicht,
+   leer vs Müll) — 0 per-Konto-Varianz. *(Beweist: kein Enumeration-Oracle eingeführt.)*
+4. **Manueller Retry only:** nach `unavailable` kein **automatischer** Re-Submit (Fetch-Spy: erneuter Flow-Init
+   **nur** nach Nutzer-Submit, 0 automatisch).
+5. **clear-after-submit erhalten:** das Passwortfeld ist nach dem fehlgeschlagenen Submit leer (Security
+   unverändert, auch auf `unavailable`).
 
-**Tool-Grenze (ehrlich):** T1–T6 sind **web-ts render-test-messbar** (JSDOM/testing-library, kein Browser nötig).
-Kein Pixel/Runtime-Claim ohne Bestätigung; die Loop-Freiheit ist über den **Fetch-Spy** (0 Auto-Re-Init) beweisbar,
-nicht nur visuell.
+**Tool-Grenze (ehrlich):** T1–T5 sind **web-ts render-test-messbar** (JSDOM/testing-library, kein Browser). Die
+korrekte Attribution ist über die **distinkten Testids + den Fetch-Spy** beweisbar, nicht nur visuell.
 
-## 9. Self-Validation + 1 Klärung
+## 9. Gebankt (OIDC-P2) + Self-Validation
 
-- **Reuse-first, kein Duplikat:** Formular (`LoginScreen`) + Interim-Copy (`redirectingSignin`) + OIDC-States
-  (`oidc-…-spec`) alle **bestehend** → verdrahten/spiegeln; **nur 1 neuer Fehler-String** + der Guard-Kontrakt.
-- **Gegroundet @ `025b17ae`:** `LoginScreen.tsx` · `AuthGate.tsx:6` (§5-deferred `?flow=`-Guard) · `loginFlow.ts` ·
-  `authModel.ts:AUTH_TEXT` (redirectingSignin/sessionExpired unverdrahtet, grep-belegt) · SPA liest `?flow=` heute
-  nicht inbound (grep-belegt).
-- **Honesty-Kern:** kein stiller Loop · bounded Interim · fail-closed · generic (keine Enumeration) · nur manueller Retry.
-- **A11y:** 0 neue Muster (status/alert wie bestehend), CYP-288-konsistent.
-- **⚠ 1 Klärung an PO (nicht-blockend — ich habe die wahrscheinlichste Lesart gespect):** ist der Rest-CYP-515-UX
-  wirklich der **inbound-`?flow=`-Guard** (§5-deferred, reuse `LoginScreen`) — passend zu deiner Formulierung „SPA
-  muss bei `?flow=<id>` das Formular rendern statt Flow-Init neu triggern"? **Oder** hast du beobachtet, dass das
-  **bestehende gehärtete `LoginScreen` in einem deployten Szenario NICHT erreicht** wird (Regression/Bypass, z. B.
-  ein Kratos-gehosteter Redirect, der den SPA umgeht)? Ersteres → diese Spec trifft; Letzteres → der Fix ist Dev5-Code
-  (SPA-Einstieg erreichen) und mein Teil schrumpft auf den Reuse-Verweis. **Ich habe gegen Ersteres gespect** (deine
-  Wortwahl + der Code-Stand deuten klar darauf).
-- Kein Bau; docs-only auf `feature/CYP-515-auth-redirect-loop-ux-spec` (Basis `025b17ae`).
+- **Gebankt für OIDC-P2 (nicht CYP-515):** der inbound-`?flow=`-Guard (auf `?flow=<id>`-Landing den vorhandenen
+  Flow rendern statt Re-Init) **und** das „Weiterleitung zur Anmeldung…"-Interim (`redirectingSignin`, role=status,
+  bounded). Dev5s No-Redirect-Ansatz macht sie für CYP-515 **moot**; sie werden relevant, **falls** OIDC-P2 je
+  einen Kratos-Redirect mit `?flow=` einführt. **Copy `redirectingSignin`/`sessionExpired` bleiben reserviert.**
+- **Gegroundet @ `025b17ae`:** `loginFlow.ts:65/69/81/87` (die 4 Fehl-Pfade) · `LoginScreen.tsx:33/40/114`
+  (clearTransient / clear-after-submit / Error-Zweig) · `authModel.ts:AUTH_TEXT` (DE-only inline).
+- **Honesty-Kern:** Systemfehler ehrlich attribuiert · Enumeration-Safety bewahrt (der sensible Reconcile) · nur
+  manueller Retry · fail-closed.
+- **Reuse-first:** 0 neues Formular · 0 neue A11y-Muster · 1 neuer inline-String · 1 neuer `LoginResult`/`Phase`-Fall.
+- **PO-Klärung aufgelöst:** kein Guard/Interim (No-Redirect), **der honest Error-Pfad ist der gefragte Teil** —
+  hier gespect. Kein Bau; docs-only auf `feature/CYP-515-auth-redirect-loop-ux-spec` (Basis `025b17ae`).
