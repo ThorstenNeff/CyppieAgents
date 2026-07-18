@@ -8,6 +8,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +63,13 @@ fun FirstRunGate(
         return
     }
     val viewModel = remember { createViewModel() }
+    // CYP-629 (same class as CYP-443 Slice 3, [[cmp-remember-vm-no-oncleared]]): this gate-owned VM is held by a
+    // plain `remember`, NOT a ViewModelStore, so `onCleared` never fires on composition exit — without this, the
+    // §7.3 clone poll (`while (in-progress) delay()`) would keep re-fetching FOREVER after the gate leaves
+    // composition. Route disposal to the VM's teardown chokepoint. ONLY this VM: the settings/agent-mgmt VMs are
+    // injected + owned by AgentShell (createSettingsViewModel/createAgentMgmtViewModel return shared instances) —
+    // disposing them here would tear down the shell's live VMs.
+    DisposableEffect(viewModel) { onDispose { viewModel.dispose() } }
     val settingsViewModel = remember { createSettingsViewModel() }
     val agentMgmtViewModel = remember { createAgentMgmtViewModel() }
     val status by viewModel.status.collectAsState()
