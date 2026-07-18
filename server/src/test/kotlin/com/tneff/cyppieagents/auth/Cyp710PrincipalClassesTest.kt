@@ -205,6 +205,10 @@ class Cyp710PrincipalClassesTest {
 
         // BEFORE any role-OPERATOR row exists the kill-switch is deliberately inert (never lock yourself out).
         val beforeBump = client.request("/api/projects") { header("Authorization", "Bearer $opToken") }.status
+        // CYP-722 follow-up (deploy's design-doc hypothesis, MEASURED): on an installation with NO role-OPERATOR
+        // row the switch is lockout-guarded (`operatorTokenDisabled && roles.hasOperator()`, Principal.kt:105) and
+        // therefore has NO effect at all — the machine operator token stays fully OPERATOR, admin ops included.
+        println("CYP710-KILLSWITCH-NOROLE GET /api/projects (switch=true, no role-OPERATOR row) -> ${beforeBump.value}")
         assertTrue(
             beforeBump.isAdmitted(),
             "precondition: with NO role-OPERATOR row the kill-switch must be INERT, so the operator token still " +
