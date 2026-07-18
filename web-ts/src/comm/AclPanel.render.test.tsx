@@ -85,3 +85,27 @@ describe('AclPanel — W9 dialog wiring (CYP-425)', () => {
     expect(getByTestId('acl.cell.po-frontend.frontend.read').tagName).toBe('SPAN')
   })
 })
+
+describe('AclPanel — CYP-288 honest load-error + retry (failed axes ≠ empty matrix)', () => {
+  it('failed axes load (no channels) → error+retry, NOT an empty matrix; preset hidden; retry fires', () => {
+    const onRetryLoad = vi.fn()
+    const { getByTestId, queryByTestId } = render(
+      <AclPanel {...base({ channels: [], agents: [], entries: [], loadError: true, onRetryLoad })} />,
+    )
+    expect(getByTestId('acl.loadError')).toBeTruthy()
+    expect(queryByTestId('acl-preset-open')).toBeNull() // nothing to preset against → action hidden
+    fireEvent.click(getByTestId('acl.loadError.retry'))
+    expect(onRetryLoad).toHaveBeenCalledTimes(1)
+  })
+
+  it('axes present + error flag → matrix renders, error hidden (live/WS axes win — flag 4)', () => {
+    const { getByTestId, queryByTestId } = render(<AclPanel {...base({ loadError: true })} />)
+    expect(getByTestId('acl.cell.po-frontend.frontend.read')).toBeTruthy() // mutation: show error over present axes → RED
+    expect(queryByTestId('acl.loadError')).toBeNull()
+  })
+
+  it('genuinely-empty (no channels, no error) → no error surface (non-vacuum contrast)', () => {
+    const { queryByTestId } = render(<AclPanel {...base({ channels: [], agents: [], entries: [], loadError: false })} />)
+    expect(queryByTestId('acl.loadError')).toBeNull()
+  })
+})

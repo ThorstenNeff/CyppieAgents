@@ -1785,3 +1785,19 @@ body {
   flex: 0 0 auto;
   font-style: italic;
 }
+
+/* CYP-288 — shared honest load-error + retry surface (failed INITIAL load ≠ empty). Same error-token tone as the
+   shipped event-browse-error; the retry button keeps a ≥24px target. Colour is not the sole signal — the text
+   ("Laden fehlgeschlagen.") + the retry button carry the meaning. */
+.load-error {
+  color: var(--md-sys-color-error);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  white-space: normal;
+  padding: 4px 0;
+}
+.load-error-retry {
+  min-height: 24px;
+}
