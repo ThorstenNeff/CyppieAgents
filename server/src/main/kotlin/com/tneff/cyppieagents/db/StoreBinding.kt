@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.db
 
 import com.tneff.cyppieagents.CommJson
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.jsonObject
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
@@ -57,8 +58,23 @@ class FileBindingRegistry(private val file: File?, private val clock: () -> Long
     init {
         val f = file
         if (f != null && f.exists() && f.length() > 0) {
-            runCatching { byKey.putAll(CommJson.decodeFromString<Map<String, StoreBinding>>(f.readText())) }
-                .onFailure { log.error("corrupt store-binding registry at {}; starting empty", f) }
+            runCatching {
+                // CYP-714: an OLD binding row written before the `state` field existed carries NO "state" key.
+                // Decoding it straight into [StoreBinding] would silently apply the data-class default (ACTIVE) —
+                // making that legacy binding freely writable and losing the CYP-220 migration write-lock for
+                // pre-existing data (PgStoreRouting.activeDataSource routes to Postgres iff state==ACTIVE).
+                // "unknown" is NOT ACTIVE. The fix is at THIS read seam, not the write seam (bind/setState are
+                // retroactively blind — they can't reach an already-persisted row): a row with no persisted state
+                // loads fail-closed as READ_ONLY, so activeDataSource returns null AND inMigrationWindow returns
+                // true → writes are rejected until the binding is deliberately re-evaluated. A row that DID persist
+                // its state is decoded verbatim (an explicit ACTIVE stays ACTIVE — no over-coercion).
+                val root = CommJson.parseToJsonElement(f.readText()).jsonObject
+                for ((k, v) in root) {
+                    val obj = v.jsonObject
+                    val decoded = CommJson.decodeFromJsonElement(StoreBinding.serializer(), obj)
+                    byKey[k] = if ("state" in obj) decoded else decoded.copy(state = BindingState.READ_ONLY)
+                }
+            }.onFailure { log.error("corrupt store-binding registry at {}; starting empty", f) }
         }
     }
 
