@@ -134,6 +134,21 @@ Konvention für die Kurzform in Listen — **reuse, keine zweite Maskierungsform
 
 ## 4. Abschnitt C — Start & das Fenster (H2)
 
+> ⛔ **VORBEDINGUNG — §4.1 und §4.2 setzen CYP-714 voraus** (PO-Entscheid 2026-07-18, in Jira als
+> **blockierend** für die CYP-220-UI verlinkt; Herkunft: CYP-712-Fund A2).
+>
+> **Ohne den read-seam-Fix ist die hier angesagte Schreibsperre für Alt-Bindungen nicht belastbar.**
+> Belegt: `StoreBinding.state` hat den Default `= BindingState.ACTIVE` (`db/StoreBinding.kt:26`) und der
+> Registry-Load ist ein direktes `decodeFromString<Map<String, StoreBinding>>` (`:60`) — eine vor dem
+> `state`-Feld geschriebene Zeile lädt damit **stumm als `ACTIVE`**, und `MIGRATING` greift nie.
+>
+> **Warum das die UI blockiert und nicht nur die Montage:** die Copy in §4.1 **sagt zu**, dass
+> Schreibvorgänge abgelehnt werden. Greift die Sperre nicht, sagt der Screen „abgelehnt", während
+> Schreibvorgänge durchgehen — und **genau diese gehen beim Rebind still verloren** (die Kopie ist bereits
+> durch). Das ist der Verlust, gegen den `MigrationGate` überhaupt existiert. Eine Disclosure, die
+> **aktiv beruhigt, wo nicht beruhigt werden darf**, ist die schlimmere Klasse: der Operator passt
+> *wegen* der Zusage nicht selbst auf. **Die UI landet nicht vor CYP-714.**
+
 ### 4.1 Vor dem Start: der Bestätigungsdialog
 Haus-Muster `DeleteDialog` (`project/ProjectManagementPanel.kt:251`), **aber nicht destruktiv gefärbt** —
 eine Migration ist kein Löschen; der Confirm-Button ist ein normaler `Button`, **nicht** `error`-gefärbt.
@@ -324,6 +339,8 @@ behauptet. Lieber keine Historie als eine, die schweigt.
 | **BE-4** | Klartext-Namen je `storeKey` | §2.1 — kein Rohschlüssel in der UI |
 | **BE-5** | (optional) Zeilen-Fortschritt in COPY | §5.2 — ohne ihn bleibt COPY spinner-only, das ist ok |
 | **BE-6** | Decommission als **eigener** Endpunkt | §6.2 — nicht Teil von `migrate` |
+| **BE-7** | **CYP-714** (read-seam) — Alt-Bindungen laden nicht mehr stumm als `ACTIVE` | §4 — **blockierend für die gesamte UI**, s. Vorbedingung |
+| **BE-8** | Erkennbarkeit: ist eine Bindung aus der Vor-`state`-Ära? | §4 — s. §11.4; sonst sieht der stille Fall aus wie der gesunde |
 
 ---
 
@@ -337,6 +354,16 @@ behauptet. Lieber keine Historie als eine, die schweigt.
 3. **Mehrere Migrationen gleichzeitig?** Der Migrator ist per Aufruf synchron; ob die Fläche mehrere
    parallele Fenster zulässt, ist eine Betriebsentscheidung. **Default-Vorschlag: eine zur Zeit**, weil
    mehrere gleichzeitige Schreib-Sperren für den Nutzer nicht mehr als ein Ereignis lesbar sind.
+4. **Reicht CYP-714 aus UX-Sicht?** Dass Alt-Zeilen künftig **richtig laden**, ist notwendig — aber
+   solange nicht **erkennbar** ist, ob eine Bindung noch aus der Vor-`state`-Ära stammt, hat der Screen
+   dasselbe Problem wie beim Audit-Sink (§8) und beim Operator-Pin (CYP-576 §0.1): **der stille Fall sieht
+   aus wie der gesunde.** Als BE-8 aufgenommen; Entscheid liegt bei Backend/PL.
+
+> **Muster-Notiz (drei Fälle an einem Tag, gleiche Form):** stiller Operator-Pin · nicht verdrahteter
+> Audit-Sink · Alt-Bindung ohne `state`. Jedes Mal ist das System **fail-safe, aber wortlos**, und der
+> defekte Zustand ist vom gesunden **nicht unterscheidbar** — die UI erbt die Stille und gibt sie als
+> Tatsache aus. Die Gegenmaßnahme ist jedes Mal dieselbe: **den degradierten Zustand unterscheidbar
+> machen**, nicht nur korrigieren. Als Muster an den PL gemeldet, nicht als drei Einzelfälle.
 
 ---
 
