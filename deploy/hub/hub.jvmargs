@@ -16,3 +16,7 @@
 -XX:MaxRAMPercentage=75.0
 -XX:-HeapDumpOnOutOfMemoryError
 -XX:-CreateCoredumpOnCrash
+# CYP-687 (M1.1) — the hub is a headless server, but java.desktop is on the module path (ImageIO + Thumbnailator for the
+# CYP-215 avatar processor). Force headless so avatar decode/encode never tries to init a display: a fresh Ubuntu-26
+# server has the X11 runtime libs the .deb pulls, but no running X display. Single-sourced → the .deb launcher gets it too.
+-Djava.awt.headless=true
