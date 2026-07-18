@@ -9,7 +9,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetAddress
 import kotlin.test.AfterTest
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -29,8 +28,9 @@ import kotlin.test.assertTrue
  *
  * This tooth pins BOTH directions of that property:
  *  • **①** ([tunnelClosed_idleHub_parkedReadFreedWithinDeadline_leakClosed]) — leak CLOSED: after the tunnel closes, a
- *    parked idle read is freed within a bounded deadline. **RED on current develop** (no drain-deadline); the fix makes
- *    it GREEN. This is the fix's acceptance test — see the `@Ignore` note.
+ *    parked idle read is freed within a bounded deadline. Was **RED on develop** (no drain-deadline); the
+ *    tunnel-closed-keyed drain-deadline fix ([LoopbackBridge] `drainDeadlineMs`, default 1s) makes it GREEN — now
+ *    un-ignored, a live regression guard.
  *  • **②** ([tunnelLive_idleHub_socketNotForceClosed_featureIntact]) — feature INTACT: a LIVE-but-idle feed's socket is
  *    NOT force-closed. GREEN on develop and under the correct tunnel-closed-keyed fix; **RED under a read-idle-keyed
  *    deadline** (the mutation the PO will run — the trap the whole tooth exists to prevent).
@@ -123,11 +123,9 @@ class Cyp655BridgeDrainDeadlineTest {
     }
 
     @Test
-    @Ignore(
-        "CYP-655: RED until the tunnel-closed-keyed drain-deadline fix lands — this is the fix's ACCEPTANCE test. " +
-            "Demonstrated red on develop 1da14371 (2026-07-16): finCalled=true resetCalled=false, bridge parked >3s = " +
-            "the leak. Un-ignoring it is the drain-deadline fix's QA gate; it MUST turn green when the fix is built.",
-    )
+    // CYP-655: un-ignored — the tunnel-closed-keyed drain-deadline fix (LoopbackBridge.drainDeadlineMs, default 1s) has
+    // landed, so this acceptance test is now GREEN and a live regression guard. (Was @Ignore'd + RED on develop
+    // 1da14371: finCalled=true resetCalled=false, bridge parked >3s = the leak.)
     fun tunnelClosed_idleHub_parkedReadFreedWithinDeadline_leakClosed() = runBlocking {
         // ① DIRECTION ONE — the LEAK IS CLOSED. A CLEAN up-end (relay/client closed → receive() null → the bridge FIN-
         // half-closes the loopback, CYP-609) followed by an idle-never-emitting hub (a stopped agent's /ws/lifecycle):
