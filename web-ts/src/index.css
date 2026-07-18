@@ -1807,3 +1807,13 @@ body {
 .load-error-retry {
   min-height: 24px;
 }
+
+/* CYP-693 — partial-view disclosure: INFO tone (KMP secondaryContainer parity), never an error tone. Nothing has
+   failed; the view is simply narrower than the system. Text carries the meaning, colour only reinforces it. */
+.acl-partial-view {
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
