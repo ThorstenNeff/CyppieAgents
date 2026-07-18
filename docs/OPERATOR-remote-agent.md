@@ -55,7 +55,9 @@ export HUB_AGENT_ID="sidekick"                 # the agent id from step 1
 export HUB_TOKEN="<the one-time token>"         # the ONLY secret the bridge holds
 # optional:
 # export CLAUDE_CMD="claude"                    # the Claude Code launch command (default: claude)
-# export BRIDGE_CWD="/path/to/worktree"         # the agent's working dir (default: .)
+# export BRIDGE_CWD="/home/thorsten/cyppie-agents/<agent>"  # the agent's HOME dir — where its CLAUDE.md + memory live (default: .)
+# ⚠ Set BRIDGE_CWD to the agent's home dir, NEVER a git worktree: Claude Code keys its memory to the cwd's project slug,
+#   so a worktree path boots the agent with EMPTY, silently-lost memory (wrong slug ⟹ its CLAUDE.md/memory are never found).
 
 remote-runtime/build/install/remote-runtime/bin/remote-runtime
 # log: "bridge connected: agent=sidekick spoke=po-sidekick hub=wss://api.cyppie-agents.com"
