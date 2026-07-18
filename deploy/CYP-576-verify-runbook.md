@@ -21,6 +21,26 @@
   reads the `?code=` query; `onGithubReturn(code)` exchanges → `session_token` → `X-Session-Token` plumbing.
 - `allowed_return_urls` contains `http://127.0.0.1:47472/callback` (CYP-562, §4.1 of M1-M2 runbook).
 
+### 0.1 Pre-flight — **BEFORE** setting the `bootstrapOperatorIdentityId` pin
+
+Check `role_assignments` for an existing OPERATOR row on the target host:
+
+```bash
+sqlite3 <roleDbPath> "SELECT identity_id, role, granted_at FROM role_assignments WHERE role='OPERATOR';"
+```
+
+- **Zero rows** → the slot is free; the pin will grip. Proceed.
+- **A row for the identity you are about to pin** → already done; the pin is a no-op by design.
+- **A row for ANY OTHER identity** (e.g. a pre-CYP-196 legacy OPERATOR) → **stop and resolve it first.**
+
+**Why this step exists — the pin fails *silently*.** `ensureAssigned` upgrades the pinned identity only
+`WHERE … NOT EXISTS (SELECT 1 FROM role_assignments WHERE role='OPERATOR' AND identity_id<>?)`
+(`server/…/auth/RoleStore.kt:155-158`). A stale OPERATOR row holds the single slot, so the `UPDATE` matches
+zero rows and the pinned human stays **MEMBER**. That is fail-closed and therefore safe — but it is also
+**wordless**: the success log is guarded by `if (upgraded)` (`RoleStore.kt:159`) with **no else branch**, so
+a pin that did not grip produces **no log line at all**. Without this check the next operator reads a clean
+boot log, trusts the pin, and only finds out at §3/#5 or §6.4 that the hub is invisible to them.
+
 ---
 
 ## 1. Post-deploy health / boot markers (run first; each fail-closed)
@@ -124,7 +144,7 @@ The static write-tier `OPERATOR_TOKEN` must never surface. Re-confirm before the
 | 6.1 | `GET /api/config/apikey` (participant) | `{ set:true, masked:"…last4" }` — never the raw key |
 | 6.2 | Static operator token over a **tunnel** auth channel | `401` (god-token-per-tunnel; static token refused on the tunnel connector; `200` only on the public connector — port-scoped) |
 | 6.3 | Log scan | `grep -RiE 'ory_st_\|ANTHROPIC\|OPERATOR_TOKEN=\|BEGIN .*PRIVATE KEY\|session_token' <LOGDIR>` → **empty** |
-| 6.4 | `ab7c54e3` = OPERATOR pin | `bootstrapOperatorIdentityId == ab7c54e3` (or an explicit RoleStore OPERATOR assignment) — else authed-but-MEMBER → hub invisible (#2b) |
+| 6.4 | `ab7c54e3` = OPERATOR pin | `bootstrapOperatorIdentityId == ab7c54e3` (or an explicit RoleStore OPERATOR assignment) — else authed-but-MEMBER → hub invisible (#2b). Config alone is **not** proof the pin gripped: verify the effective row (`SELECT role FROM role_assignments WHERE identity_id='ab7c54e3…'` = `OPERATOR`), see §0.1 |
 
 ---
 
