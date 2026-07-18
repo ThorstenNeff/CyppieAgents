@@ -35,19 +35,25 @@ class SqliteMessageStore(dbPath: Path) : MessageStore, AutoCloseable {
         }
     }
 
-    override fun append(message: Message) = synchronized(lock) {
+    override fun append(message: Message): Message = synchronized(lock) {
         conn.prepareStatement("INSERT INTO messages(channel_id, ts, message_json) VALUES(?, ?, ?)").use { ps ->
             ps.setString(1, message.channelId)
             ps.setLong(2, message.ts)
+            // message_json is stored with seq=0 (the constructed value); the authoritative seq is the
+            // AUTOINCREMENT column, injected on read (byChannel) — so message_json never drifts from it.
             ps.setString(3, CommJson.encodeToString(Message.serializer(), message))
             ps.executeUpdate()
         }
-        Unit
+        // CYP-705: the AUTOINCREMENT `seq` IS the rowid → last_insert_rowid() returns the just-assigned value.
+        val seq = conn.prepareStatement("SELECT last_insert_rowid()").use { ps ->
+            ps.executeQuery().use { rs -> rs.next(); rs.getLong(1) }
+        }
+        message.copy(seq = seq)
     }
 
     override fun byChannel(channelId: String, since: Long?): List<Message> = synchronized(lock) {
         val sql = buildString {
-            append("SELECT message_json FROM messages WHERE channel_id = ?")
+            append("SELECT seq, message_json FROM messages WHERE channel_id = ?")
             if (since != null) append(" AND ts > ?")
             append(" ORDER BY seq")
         }
@@ -62,7 +68,7 @@ class SqliteMessageStore(dbPath: Path) : MessageStore, AutoCloseable {
         if (channelIds.isEmpty()) return@synchronized emptyList()
         val placeholders = channelIds.joinToString(",") { "?" }
         val sql = buildString {
-            append("SELECT message_json FROM messages WHERE channel_id IN (").append(placeholders).append(")")
+            append("SELECT seq, message_json FROM messages WHERE channel_id IN (").append(placeholders).append(")")
             if (since != null) append(" AND ts > ?")
             append(" ORDER BY seq")
         }
@@ -77,7 +83,8 @@ class SqliteMessageStore(dbPath: Path) : MessageStore, AutoCloseable {
     private fun java.sql.PreparedStatement.readMessages(): List<Message> {
         executeQuery().use { rs ->
             val out = ArrayList<Message>()
-            while (rs.next()) out.add(CommJson.decodeFromString(Message.serializer(), rs.getString(1)))
+            // CYP-705: inject the authoritative `seq` column into the decoded Message (message_json carries seq=0).
+            while (rs.next()) out.add(CommJson.decodeFromString(Message.serializer(), rs.getString(2)).copy(seq = rs.getLong(1)))
             return out
         }
     }

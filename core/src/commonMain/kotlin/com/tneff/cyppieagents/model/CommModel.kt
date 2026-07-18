@@ -193,6 +193,17 @@ data class Message(
         defaulted so older persisted messages decode onto [DEFAULT_PROJECT_ID]. Out-of-project
         messages are filtered out by [AclMatrix.visibleMessages] (fail-closed). */
     val projectId: String = DEFAULT_PROJECT_ID,
+    /**
+     * CYP-705 — the store-assigned, monotonic append-order ordinal (the authoritative ordering key for the
+     * read-state cursor; **not `ts`**, whose client-observed epoch-ms can collide/skew). CANONICAL and
+     * **viewer-independent** — every viewer agrees on a message's `seq` (unlike the per-viewer read cursor,
+     * which is never a `Message` field). Sourced from the store's monotonic sequence (SQLite `AUTOINCREMENT`;
+     * in-memory insertion order) and stamped on the returned/delivered copy. Global-monotonic → also a valid
+     * total order **within any channel** (a channel's messages are a strictly-increasing subsequence), so the
+     * unread cursor works off it directly. Additive + defaulted (`0` = not-yet-persisted / an older payload),
+     * so every existing `Message(...)` construction and every older stored/wire payload still decode.
+     */
+    val seq: Long = 0L,
 )
 
 // ----- REST request/response wire types -----
@@ -207,6 +218,34 @@ data class SendMessageRequest(
     val body: String,
     val meta: MessageMeta? = null,
 )
+
+/**
+ * CYP-705 — one channel's read-state **for the calling principal** (`GET /api/read-state` returns a
+ * `List<ChannelReadState>`; `POST /api/channels/{id}/read` returns the updated one). Server-computed.
+ *
+ * **The three-state honesty edge is carried by PRESENCE, not a nullable field** (UIUX2 §8 ① UX-condition):
+ *  - a channel **present** with [unreadCount] `> 0` → **unread** (count badge);
+ *  - **present** with [unreadCount] `== 0` → **confirmed-read** (render nothing — an authoritative all-clear);
+ *  - **ABSENT** from the read-state list → **UNKNOWN** (no cursor yet → the visible neutral "•", never silence,
+ *    never a fabricated 0). A `ChannelReadState` exists **iff** the principal has a cursor for that channel, so
+ *    both fields are non-null and [lastReadSeq] is always a real value.
+ *
+ * Per-viewer read-state is **self-only** — no read-receipts (a principal never observes another's cursor).
+ */
+@Serializable
+data class ChannelReadState(
+    val channelId: String,
+    /** The principal's cursor: `seq` of the last message they marked read in this channel (advance-only). */
+    val lastReadSeq: Long,
+    /** Server-computed count of messages in this channel with `seq > lastReadSeq`, ACL-`canRead` + in-project,
+        excluding the principal's own sends. `0` = confirmed-read; `> 0` = unread. */
+    val unreadCount: Int,
+)
+
+/** CYP-705 — body for `POST /api/channels/{id}/read`. The client sends the `seq` of the last message it has
+ *  read; the server advances the cursor to `max(existing, upToSeq)` (monotonic, non-optimistic). */
+@Serializable
+data class MarkReadRequest(val upToSeq: Long)
 
 @Serializable
 data class ApiError(val code: String, val message: String)

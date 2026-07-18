@@ -13,8 +13,9 @@ import java.nio.file.StandardCopyOption
  * SQLDelight) without touching the hub/REST. Implementations must be safe for concurrent calls.
  */
 interface MessageStore {
-    fun append(message: Message)
-    /** Messages in one channel, optionally only those strictly after [since] (epoch ms). */
+    /** Persist [message] and return the stored copy with its store-assigned [Message.seq] (CYP-705). */
+    fun append(message: Message): Message
+    /** Messages in one channel, optionally only those strictly after [since] (epoch ms). Seq-ascending. */
     fun byChannel(channelId: String, since: Long? = null): List<Message>
     /** Messages across several channels (for inbox aggregation), optionally after [since]. */
     fun acrossChannels(channelIds: Collection<String>, since: Long? = null): List<Message>
@@ -24,9 +25,12 @@ interface MessageStore {
 open class InMemoryMessageStore : MessageStore {
     private val lock = Any()
     private val messages = mutableListOf<Message>()
+    private var nextSeq = 1L // CYP-705: the in-memory analog of the SQLite AUTOINCREMENT `seq`.
 
-    override fun append(message: Message) {
-        synchronized(lock) { messages.add(message) }
+    override fun append(message: Message): Message = synchronized(lock) {
+        val stored = message.copy(seq = nextSeq++)
+        messages.add(stored)
+        stored
     }
 
     override fun byChannel(channelId: String, since: Long?): List<Message> = synchronized(lock) {
@@ -43,6 +47,8 @@ open class InMemoryMessageStore : MessageStore {
 
     protected fun loadAll(initial: List<Message>) = synchronized(lock) {
         messages.clear(); messages.addAll(initial)
+        // CYP-705: resume the seq counter past any persisted seq so new appends stay monotonic across restart.
+        nextSeq = (initial.maxOfOrNull { it.seq } ?: 0L) + 1L
     }
 }
 
@@ -69,9 +75,10 @@ class JsonFileMessageStore(private val file: File) : InMemoryMessageStore() {
         }
     }
 
-    override fun append(message: Message) {
-        super.append(message)
+    override fun append(message: Message): Message {
+        val stored = super.append(message)
         flush()
+        return stored
     }
 
     private fun flush() = synchronized(flushLock) {
