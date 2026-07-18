@@ -448,6 +448,11 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
 
   // PO identity for the reserved sender accent comes from explicit config, never a `po-<worker>` guess (CYP-426
   // will supply the typed roster's role). Everyone else falls to the hashed worker palette.
+  // CYP-704: mentions resolve against the TYPED roster (Agent.id), not `agents` (which is roster ∪ channel-members
+  // and carries the operator pseudo-participant — the operator is not a mentionable agent). While the roster is
+  // unloaded or its load FAILED, this stays empty and every body renders as plain text (spec §2 / CYP-288): never
+  // a guessed mention on unresolved data.
+  const mentionRosterIds = useMemo(() => roster.map((a) => a.id), [roster])
   const senderRole = (agentId: string): string | null => (poAgentId !== null && agentId === poAgentId ? 'PO' : null)
 
   const commitAcl = (entry: AclEntry, dims: readonly AclDimension[]) => {
@@ -691,6 +696,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           onSelectChannel={setSelectedChannelId}
           messages={messages}
           senderRole={senderRole}
+          rosterIds={mentionRosterIds}
           connection={commConnection}
           canWrite={null}
           sendError={commSendError}
