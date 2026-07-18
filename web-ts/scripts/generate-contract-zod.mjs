@@ -86,6 +86,20 @@ const generated = chunks.join('\n\n')
 if (/\$ref/.test(generated)) {
   throw new Error('[CYP-420] a `$ref` survived into the emitted schema — it did not dereference and would validate nothing. Fail-closed.')
 }
+// ①b COUNT-PIN (Assist2 F3): the contract's genuinely untyped free-form fields are a FIXED, known set —
+// content, input, usage, tools, rate_limit_info (and their duplicates across union members). Pinning the exact
+// count catches BOTH a $ref that silently degraded to `z.any()` AND the free-form set quietly GROWING (a new
+// untyped field is a real reduction in validation coverage and must be a conscious, reviewed change — not a
+// silent one). Raising this number is allowed; doing it without noticing is not.
+const BARE_ANY_EXPECTED = 8
+const bareAnyCount = (generated.replace(/\.catchall\(z\.any\(\)\)/g, '').match(/z\.any\(\)/g) ?? []).length
+if (bareAnyCount !== BARE_ANY_EXPECTED) {
+  throw new Error(
+    `[CYP-420] bare z.any() count is ${bareAnyCount}, expected ${BARE_ANY_EXPECTED}. Either a $ref stopped ` +
+      'dereferencing (validation silently lost) or the contract gained/lost an untyped free-form field. Review the ' +
+      'diff, then update BARE_ANY_EXPECTED deliberately. Fail-closed.',
+  )
+}
 // ② every frame root actually emitted an export
 const missing = FRAME_ROOTS.filter((n) => !generated.includes(`export const ${n}Schema`))
 if (missing.length > 0) throw new Error(`[CYP-420] no schema emitted for: ${missing.join(', ')} — fail-closed.`)

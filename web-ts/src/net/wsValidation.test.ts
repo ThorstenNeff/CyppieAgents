@@ -6,6 +6,8 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { commSocket, eventsSocket, terminalSocket, lifecycleFeed, tokenUsageFeed, busyStateFeed, terminalStateFeed } from './channels'
 import { AgentSocket } from './agentSocket'
+import { OneWayFeed } from './oneWayFeed'
+import { BidiFeed } from './bidiFeed'
 import { setOnFrameRejected, type FrameRejection } from './wsValidation'
 import { Backoff } from './backoff'
 import { FakeSocketHub } from './testing/fakeSocket'
@@ -159,5 +161,144 @@ describe('CYP-420 — WS boundary runtime validation (every ingress)', () => {
     const frame = { seq: 5, agentId: 'a', projectId: 'p', tsMs: 3, event: { type: 'result' } }
     hub.last().emitMessage(JSON.stringify(frame))
     expect(got).toEqual([frame])
+  })
+})
+
+// CYP-420 (Assist2 F1, the structural half) — coverage by CONSTRUCTION, not by enumeration. The tests above check
+// the ingresses that exist TODAY; this one fails when a FUTURE one is added without a validator, which is the case
+// the throwing default makes safe-but-silent-at-review-time. Together: the default keeps a forgotten validator
+// fail-CLOSED at runtime, and this keeps it from ever reaching main unnoticed.
+describe('CYP-420 (Assist2 F1) — a transport with NO validator is fail-CLOSED, not fail-open', () => {
+  it('a feed constructed without `validate` delivers NOTHING (an identity default would pass anything through)', () => {
+    const hub = new FakeSocketHub()
+    const got: unknown[] = []
+    setOnFrameRejected(() => undefined)
+    new OneWayFeed<{ a: number }>({
+      baseUrl: 'ws://h',
+      path: '/ws/future-channel',
+      token: 't',
+      onEvent: (e) => got.push(e),
+      factory: hub.factory,
+      schedule: hub.runNow,
+      backoff: zeroBackoff(),
+    }).start()
+    hub.last().emitOpen()
+    hub.last().emitMessage(JSON.stringify({ anything: 'goes' })) // would sail straight through an identity default
+    expect(got).toEqual([])
+  })
+
+  // BOTH transports must be covered: an earlier version of this suite only exercised OneWayFeed, so reverting
+  // BidiFeed's default to identity went GREEN — the tooth looked complete and was not. Parametrised so a third
+  // transport cannot quietly slip past either.
+  it.each([
+    ['OneWayFeed', (o: never) => new OneWayFeed<{ a: number }>(o)],
+    ['BidiFeed', (o: never) => new BidiFeed<{ a: number }, { b: number }>(o)],
+  ] as const)('%s constructed without `validate` delivers NOTHING', (_n, make) => {
+    const hub = new FakeSocketHub()
+    const got: unknown[] = []
+    setOnFrameRejected(() => undefined)
+    make({
+      baseUrl: 'ws://h',
+      path: '/ws/future-channel',
+      token: 't',
+      onEvent: (e: unknown) => got.push(e),
+      factory: hub.factory,
+      schedule: hub.runNow,
+      backoff: zeroBackoff(),
+    } as never).start()
+    hub.last().emitOpen()
+    hub.last().emitMessage(JSON.stringify({ anything: 'goes' }))
+    expect(got).toEqual([])
+  })
+
+  it('the drop is REPORTED (a missing validator is loud, not a silent hole)', () => {
+    const hub = new FakeSocketHub()
+    const rejected: FrameRejection[] = []
+    setOnFrameRejected((r) => rejected.push(r))
+    new OneWayFeed<{ a: number }>({
+      baseUrl: 'ws://h',
+      path: '/ws/future-channel',
+      token: 't',
+      onEvent: () => undefined,
+      factory: hub.factory,
+      schedule: hub.runNow,
+      backoff: zeroBackoff(),
+    }).start()
+    hub.last().emitOpen()
+    hub.last().emitMessage('{}')
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0].schema).toContain('/ws/future-channel') // names the offending channel
+    expect(rejected[0].issues).toContain('validate:missing')
+  })
+})
+
+describe('CYP-420 (Assist2 F2) — malformed JSON is a counted drop, not an uncaught throw', () => {
+  it('a non-JSON frame (e.g. an HTML error page) is dropped and REPORTED, and does not escape the guard', () => {
+    const hub = new FakeSocketHub()
+    const got: unknown[] = []
+    const rejected: FrameRejection[] = []
+    setOnFrameRejected((r) => rejected.push(r))
+    const feed = openIngress(INGRESSES[0], hub, got)
+    feed.start()
+    hub.last().emitOpen()
+    // must NOT throw out of the socket handler — that was the pre-F2 behaviour (parse sat outside the try)
+    expect(() => hub.last().emitMessage('<html>502 Bad Gateway</html>')).not.toThrow()
+    expect(got).toEqual([])
+    expect(rejected).toEqual([{ schema: 'json', issues: ['json:malformed'] }])
+  })
+
+  it('the malformed-JSON report carries NO payload text (a SyntaxError message would quote it)', () => {
+    const hub = new FakeSocketHub()
+    const rejected: FrameRejection[] = []
+    setOnFrameRejected((r) => rejected.push(r))
+    const feed = openIngress(INGRESSES[0], hub, [])
+    feed.start()
+    hub.last().emitOpen()
+    hub.last().emitMessage('{"token":"sk-live-LEAKED", oops}')
+    expect(JSON.stringify(rejected)).not.toContain('sk-live-LEAKED')
+  })
+
+  it('the channel survives malformed JSON and still delivers the next valid frame', () => {
+    const hub = new FakeSocketHub()
+    const got: unknown[] = []
+    setOnFrameRejected(() => undefined)
+    const feed = openIngress(INGRESSES[0], hub, got)
+    feed.start()
+    hub.last().emitOpen()
+    hub.last().emitMessage('not json at all')
+    hub.last().emitMessage(JSON.stringify(INGRESSES[0].valid))
+    expect(got).toEqual([INGRESSES[0].valid])
+  })
+})
+
+describe('CYP-420 — structural: no transport may be constructed without a validator', () => {
+  it('every non-test BidiFeed/OneWayFeed construction passes `validate`', async () => {
+    const { readFileSync, readdirSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        const p = join(dir, e.name)
+        if (e.isDirectory()) return e.name === 'generated' ? [] : walk(p)
+        return /\.(ts|tsx)$/.test(e.name) && !/\.test\.(ts|tsx)$/.test(e.name) ? [p] : []
+      })
+
+    const offenders: string[] = []
+    for (const file of walk('src')) {
+      const src = readFileSync(file, 'utf8')
+      // scan each `new BidiFeed…(`/`new OneWayFeed…(` construction's argument span for a `validate` key
+      for (const m of src.matchAll(/new\s+(BidiFeed|OneWayFeed)\s*(?:<[^>]*>)?\s*\(/g)) {
+        const start = (m.index ?? 0) + m[0].length
+        let depth = 1
+        let i = start
+        while (i < src.length && depth > 0) {
+          if (src[i] === '(' || src[i] === '{') depth++
+          else if (src[i] === ')' || src[i] === '}') depth--
+          i++
+        }
+        const args = src.slice(start, i)
+        if (!/\bvalidate\s*:/.test(args)) offenders.push(`${file}: new ${m[1]}(…) without \`validate\``)
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })

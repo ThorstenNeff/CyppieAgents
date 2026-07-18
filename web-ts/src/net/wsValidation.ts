@@ -44,6 +44,17 @@ export function makeFrameValidator<T>(schema: string, zodSchema: ZodType<T>): (r
   }
 }
 
+/** The DEFAULT for a transport whose caller wired no validator. Deliberately NOT identity: an identity default is
+ *  fail-OPEN — a channel added later that forgets `validate` would silently fall back to the pre-CYP-420 unchecked
+ *  cast, and nothing would ever say so. Every frame on such a channel is dropped and reported instead, so a missing
+ *  validator is LOUD and closed rather than quiet and open. (Assist2 F1: AgentSocket already defaulted fail-closed;
+ *  the asymmetry with the two feeds was the tell.) Opting out of validation must be an explicit, visible choice. */
+export function rejectUnvalidated<T>(channel: string): (raw: unknown) => T {
+  return () => {
+    throw new FrameValidationError({ schema: `${channel} (no validator wired)`, issues: ['validate:missing'] })
+  }
+}
+
 /** Where dropped frames are reported. Default warns WITHOUT the payload (③); tests/telemetry can swap it. */
 let onFrameRejected: (r: FrameRejection) => void = (r) => {
   console.warn(`[CYP-420] dropped an invalid ${r.schema} frame (fields: ${r.issues.join(', ')})`)
@@ -53,15 +64,27 @@ export function setOnFrameRejected(handler: ((r: FrameRejection) => void) | null
   onFrameRejected = handler ?? (() => undefined)
 }
 
-/** Transport helper: run `deliver` only if validation passed; otherwise drop + report, and keep the channel alive.
- *  Any non-validation error is re-thrown — we only swallow what we deliberately handle. */
-export function deliverIfValid<T>(validate: (raw: unknown) => T, raw: unknown, deliver: (value: T) => void): void {
+/** Transport helper: PARSE + validate, then `deliver` only if both passed; otherwise drop + report and keep the
+ *  channel alive. Any non-validation error is re-thrown — we only swallow what we deliberately handle.
+ *
+ *  Assist2 F2: the JSON.parse lives INSIDE this guard on purpose. It used to sit at the call site, so a frame that
+ *  was not even valid JSON threw straight into the socket's onmessage handler — an uncaught throw, outside the
+ *  drop/report path, and the one malformed input most likely to arrive from a broken proxy (an HTML error page is
+ *  not JSON). Now it is just another payload-free counted drop, exactly like a schema violation.
+ *  The parse error is NEVER surfaced: its message can quote the offending source text, which is the leak this
+ *  boundary must not create (③). Only `json:malformed` is reported. */
+export function deliverIfValid<T>(validate: (raw: unknown) => T, rawText: string, deliver: (value: T) => void): void {
   let value: T
   try {
-    value = validate(raw)
+    value = validate(JSON.parse(rawText))
   } catch (e) {
     if (e instanceof FrameValidationError) {
       onFrameRejected(e.rejection) // ① dropped: `deliver` is NOT called
+      return
+    }
+    if (e instanceof SyntaxError) {
+      // malformed JSON — report the FACT, never the text (a SyntaxError message quotes the payload)
+      onFrameRejected({ schema: 'json', issues: ['json:malformed'] })
       return
     }
     throw e

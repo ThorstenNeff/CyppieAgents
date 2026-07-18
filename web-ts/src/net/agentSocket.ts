@@ -42,8 +42,14 @@ export class AgentSocket {
       // CYP-420: runtime-validated BEFORE the cursor moves. Ordering is load-bearing — validating after would let
       // a malformed frame with a bogus `seq` poison lastSeq and silently suppress every subsequent real event.
       // An invalid frame is dropped and leaves the cursor untouched (was: an unchecked cast straight into onEvent).
+      //
+      // SCOPE (Assist2 F4): the schema validates the frame's SHAPE — that `seq` is an integer, not that it is the
+      // RIGHT integer. Nothing here can tell a plausible-but-wrong `seq` from a genuine one; a well-formed frame
+      // with an inflated `seq` still advances the cursor. Sequence integrity therefore rests on the channel being
+      // authentic — the same-origin httpOnly session cookie authenticating the WSS handshake (CYP-454) — NOT on
+      // this validation. Do not read frame validation as a defence against a trusted-channel replay/skew.
       onText: (data) =>
-        deliverIfValid(validate, JSON.parse(data), (event) => {
+        deliverIfValid(validate, data, (event) => {
           // Idempotency: drop anything at or before the cursor (a reconnect may re-send the cursor event).
           if (this.lastSeq !== null && event.seq <= this.lastSeq) return
           this.lastSeq = event.seq
