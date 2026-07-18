@@ -24,7 +24,6 @@ FAILURES=0
 say()  { printf '\n=== %s ===\n' "$*"; }
 ok()   { printf '  PASS: %s\n' "$*"; }
 bad()  { printf '  FAIL: %s\n' "$*"; FAILURES=$((FAILURES+1)); }
-note() { printf '  NOTE: %s\n' "$*"; } # advisory — NOT counted in FAILURES
 die()  { printf '\nABORT: %s\n' "$*" >&2; exit 2; }
 [ "$(id -u)" = 0 ] || die "run as root"
 
@@ -128,17 +127,17 @@ json_true "$EV1" "any(('$AGENT' in json.dumps(x)) and (x.get('source')=='remote'
 say "Fail-closed controls"
 probe "FC1 operator token on /ws/hub -> close 1008" -- --cmd expect-unauthorized --url "$WS" --token "$OPERATOR_TOKEN"
 probe "FC2 send-before-hello -> WireError(PROTOCOL)" -- --cmd send-before-hello --url "$WS" --token "$AGENT_TOKEN" --channel "$SPOKE"
-# FC3 — the WIRE probe is the AUTHORITATIVE check: the server accepts the elevated-caps hello and clamps to the REMOTE
-# ceiling structurally (:131-136; CapabilityGate: AVAILABLE->ENABLED, LIMITED->DEGRADED). The REST caps snapshot below
-# is ADVISORY only (NOT counted) — a robust struct-check needs the exact /api/agents caps field (see the note); the
-# earlier substring test was decoration that could go vacuum-green / false-red, so it is demoted, not trusted.
-probe "FC3 elevated-caps accepted; server clamps REMOTE (authoritative)" -- --cmd elevated-caps --url "$WS" --token "$AGENT_TOKEN"
+# FC3 — TWO checks, both COUNTED. (a) the WIRE probe: the server accepts the elevated-caps hello and clamps to the
+# REMOTE ceiling structurally (:131-136; CapabilityGate AVAILABLE->ENABLED / LIMITED->DEGRADED). (b) the REST struct
+# check on Backend2's MEASURED field: the clamp forces the remote agent's `capabilities.structuredUsage` to
+# 'unavailable' (the REMOTE ceiling) although the client DECLARED 'available' (elevated) — reading 'unavailable' proves
+# the clamp applied; a missing/other value -> FAIL (fail-closed). (The old `'enabled' not in json` was stale-green:
+# caps serialize available/limited/unavailable, so 'enabled' never appears -> it always passed without the clamp.)
+probe "FC3a elevated-caps accepted; server clamps REMOTE (wire)" -- --cmd elevated-caps --url "$WS" --token "$AGENT_TOKEN"
 AGD="$(api_get "$OPERATOR_TOKEN" /api/agents)"
-if json_true "$AGD" "next((x.get('capabilities') for x in ($(items agents)) if x.get('id')=='$AGENT'), {}).get('structuredUsage')=='available'"; then
-  note "FC3 REST (advisory): '$AGENT'.capabilities.structuredUsage reads 'available' — if the caps field is present this hints the clamp did NOT apply; confirm the exact field with Backend2 (Capabilities{structuredUsage,toolGranularity,...}, REMOTE ceiling = UNAVAILABLE/LIMITED, never all-AVAILABLE)."
-else
-  note "FC3 REST (advisory): '$AGENT' caps do not surface an all-AVAILABLE structuredUsage (consistent with the REMOTE clamp) OR the caps field shape differs — the WIRE probe above is the authoritative FC3 signal either way."
-fi
+json_true "$AGD" "next((x.get('capabilities') for x in ($(items agents)) if x.get('id')=='$AGENT'), {}).get('structuredUsage')=='unavailable'" \
+  && ok "FC3b REST: '$AGENT'.capabilities.structuredUsage='unavailable' (REMOTE-clamped, not the declared 'available')" \
+  || bad "FC3b: '$AGENT' caps not clamped to REMOTE (structuredUsage != 'unavailable', or caps absent) — clamp broken (fail-closed)"
 
 probe "FC4 send-without-canWrite -> uniform WireError(FORBIDDEN)" -- --cmd send-no-write --url "$WS" --token "$AGENT_TOKEN" --channel "forbidden-$(cat /proc/sys/kernel/random/uuid)"
 
