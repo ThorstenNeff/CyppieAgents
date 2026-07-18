@@ -51,8 +51,10 @@ class ConnectorTapTest {
         val recorder = EventRecorder(sink, scope).also { it.start() }
         val projector = EventProjector(ContextUsageBander(), projectId = "team")
         val hub = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), InMemoryMessageStore())
+        // CYP-698: comm.sent now rides the Hub chokepoint (was MediationRouter's own emit) — wire it as boot does.
+        hub.onSent = { msg -> recorder.record(projector.commSent(msg.from, msg.channelId, msg.meta?.kind)) }
         val registry = SessionRegistry()
-        val router = MediationRouter(registry, hub, recorder, projector)
+        val router = MediationRouter(registry, hub)
         val proc = FakeAgentProcess()
         val session = claudeCodeServerSession("backend", proc, registry, router, SessionTurnQueue(), scope, recorder, projector)
         session.start()

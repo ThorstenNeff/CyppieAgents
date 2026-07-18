@@ -43,6 +43,16 @@ class Hub(
      */
     var onPosted: (Message) -> Unit = {}
 
+    /**
+     * CYP-698: invoked with the persisted [Message] AFTER every successful post — the SINGLE provenance
+     * chokepoint. Wired once at boot to emit a `comm.sent` event-log entry (metadata only — from/channel/
+     * kind, NEVER the body; identity is the server-stamped [Message.from], never a frame/body field). Because
+     * it fires inside [postAsAgent], ALL callers get provenance automatically — MediationRouter, the remote
+     * `/ws/hub` WireSend, the human CommRoutes, McpConnector, and any future 5th path — not per-caller.
+     * Default no-op so dev/test installs (and any non-boot use) are unchanged.
+     */
+    var onSent: (Message) -> Unit = {}
+
     /** Post [body] from [senderId] into [channelId]. Throws 403 if the sender may not write. */
     fun postAsAgent(senderId: String, channelId: String, body: String, meta: MessageMeta? = null): Message {
         // Gate #2: fail-closed BEFORE any write.
@@ -67,6 +77,7 @@ class Hub(
         audit.posted(message)
         _events.tryEmit(MessageEvent(message)) // live push to /ws/comm (filtered per participant)
         onPosted(message) // CYP-132: durable inbound delivery — AFTER persist (the single funnel)
+        onSent(message)   // CYP-698: provenance emit (comm.sent) — AFTER persist, at the single chokepoint
         return message
     }
 
