@@ -49,8 +49,10 @@ class TofuHubTrust(
 
 /**
  * The source of a hub's **presented** Noise static — the control-plane registry's `dhPubKey`, base64-decoded.
- * A seam so the trust logic builds now against a stub; the real impl reads `HubDescriptor.dhPubKey` once
- * Backend lands that field on the `:core` `RegisteredHub`/registry DTO with S-J (then swap + re-gate).
+ * The real impl is [RegistryPresentedHubKeySource] (CYP-495): it reads `HubDescriptor.dhPubKey` (landed on the
+ * registry DTO, CYP-481) and fail-safe-decodes it to 32 raw bytes. [MapPresentedHubKeySource] is the fixed-map
+ * stub used only in tests. (The still-open runway is the *live* CP serving a non-empty `dhPubKey` — verified
+ * against real hosts, not here.)
  */
 fun interface PresentedHubKeySource {
     /** The hub's presented static, or `null` if the registry has no (readable) key for [hubId]. */
