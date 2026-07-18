@@ -1,8 +1,29 @@
 # CYP-623 — Linux `.deb` hub install (deploy/linux)
 
-> Epic CYP-623, Topology A (standalone/local). The Linux twin of `deploy/windows`. **The `.deb` builds AND
-> installs/boots on a Linux host** (no external-runner hand-off, unlike the `.msi`) — the full lifecycle is
-> e2e-verified on the build host (CYP-636).
+> Epic CYP-623, Topology A (standalone/local). The Linux twin of `deploy/windows`. The `.deb` builds AND
+> installs/boots on a Linux host (no external-runner hand-off, unlike the `.msi`).
+>
+> **⚠ build-host ≠ target (CYP-687 / M1.1).** CYP-636's lifecycle was proven **on the build host** — that is
+> necessary but NOT sufficient for the real BYOA target. The Team-2 target is **Ubuntu 26.04 amd64**; the `.deb`
+> is built on an Ubuntu-26.04 host (glibc 2.43) so the auto-`Depends` match, and the **install + service +
+> BYOA-agent lifecycle is validated on po2's real Ubuntu-26 box**, NOT the build host. **DoD = a REMOTE agent
+> registers + connects + exchanges a message BOTH ways over `/ws/hub`** (the BYOA connection), NOT `health=ok`
+> (a live service that can do nothing is the expensive false-green).
+
+## Target & prerequisites (Ubuntu 26.04)
+
+- **Runtime = self-contained.** The `.deb` bundles a jlink JRE 21 (jpackage `--runtime-image`); every entry point
+  (systemd `ExecStart=/opt/cyppiehub/bin/CyppieHub`, the `CyppieHubProvision` launcher) uses the **bundled**
+  runtime — **no system JDK is needed** (the box's stock JDK is irrelevant; there is no bare-`java` PATH lookup —
+  the anti-CYP-685). The hub is compiled to Java-21 bytecode, so a system JDK 17 could NOT run it anyway.
+- **`git` = declared `Depends`** (CYP-687): the hub clones/pulls the repo and agents work in worktrees, so
+  `apt install ./cyppiehub_<ver>_amd64.deb` pulls `git` on a fresh box.
+- **`claude` CLI = a separate, non-apt prereq** for the *local-spawn* model (the service user must reach it). Held
+  pending the attach-vs-spawn decision (CYP-200): a BYOA/remote agent connects over `/ws/hub` and the hub spawns
+  nothing locally, in which case the hub `.deb` needs no `claude` at all.
+- **The auto-`Depends` include ~10 X11/audio libs** (`libx11-6`, `libxtst6`, `libasound2t64`, …). These are
+  **legitimate** — `java.desktop` (ImageIO + Thumbnailator, the CYP-215 avatar processor) links them; they are
+  apt-resolvable on Ubuntu 26 even headless. The hub runs headless (server); avatar processing needs no display.
 
 ## Files
 

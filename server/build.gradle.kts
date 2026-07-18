@@ -297,6 +297,12 @@ run {
             "--linux-package-name", "cyppiehub", "--install-dir", "/opt",
             "--resource-dir", debResourceDir, // CYP-635: postinst/prerm/postrm (service install + provision + preserve/purge)
             "--app-content", unitFile, // CYP-636: ship the systemd unit into the payload → postinst cp's it (single-source)
+            // CYP-687 (M1.1) — `git` is a RUNTIME prereq (the hub clones/pulls the repo; agents work in worktrees). It is
+            // NOT a shared-lib dep so dpkg-shlibdeps never auto-detects it → declare it so `apt install ./cyppiehub.deb`
+            // pulls it on a fresh Ubuntu box. Appended to (not replacing) the auto shlib Depends. `claude` is a separate
+            // non-apt prereq (documented; not declarable here). NB: the ~10 X11/audio libs the auto-Depends pull are
+            // LEGITIMATE — java.desktop (ImageIO + Thumbnailator, CYP-215 avatars) links them; apt resolves them on Ubuntu.
+            "--linux-package-deps", "git",
         )
         commandLine(args)
     }
