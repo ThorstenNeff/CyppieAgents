@@ -47,13 +47,15 @@ data class StoredAgent(
 
     companion object {
         /** Compose the durable record from the live [Agent] + its [AgentRuntimeConfig] (launch/persona/kind).
-         *  `remote` is a boot/spec-level flag (not on the runtime [Agent]); .5a only ever stores LOCAL agents,
-         *  so it stays the default false — the field is kept for CYP-264 forward-compat. */
-        fun of(a: Agent, cfg: AgentRuntimeConfig?): StoredAgent = StoredAgent(
+         *  CYP-172 Part 2: `remote` is a boot/spec-level flag (NOT on the runtime [Agent]), so a re-put (edit /
+         *  avatar) MUST be told it explicitly — else it silently resets a persisted remote agent to `remote=false`,
+         *  which on the next rehydration flips it to a LOCAL, un-clamped agent (the all-or-nothing hole). Callers
+         *  pass `id in remoteAgents`. */
+        fun of(a: Agent, cfg: AgentRuntimeConfig?, remote: Boolean = false): StoredAgent = StoredAgent(
             id = a.id, name = a.name, role = a.role, worktree = a.worktree,
             launch = cfg?.launch ?: "claude", persona = cfg?.persona,
             connectorKind = cfg?.connectorKind ?: a.connectorKind,
-            color = a.color, avatar = a.avatar,
+            color = a.color, avatar = a.avatar, remote = remote,
         )
     }
 }

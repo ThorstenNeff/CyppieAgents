@@ -92,7 +92,7 @@ class AgentManagement(
     private fun persistRuntimeOrOverlay(pid: String, id: String, overlayWrite: () -> Unit) {
         if (projectAgents?.contains(pid, id) == true) {
             val a = state.agent(id) ?: return
-            projectAgents.put(pid, StoredAgent.of(a, configs.configOf(id)))
+            projectAgents.put(pid, StoredAgent.of(a, configs.configOf(id), remote = id in remoteAgents))
         } else {
             overlayWrite()
         }
@@ -170,13 +170,16 @@ class AgentManagement(
         val pid = activeProjectId()
         val launch = spec.launch?.ifBlank { null }?.trim() ?: "claude"
         val persona = spec.persona?.ifBlank { null }
-        // CYP-256 (.5a) — a runtime-added LOCAL agent's FULL record (incl. avatar) persists to the
-        // ProjectAgentStore = its single durable source (D1: NOT the override overlay). Persisted BEFORE the
-        // in-memory mutations (CR3 / CYP-259c extended to durability): a persist failure THROWS here, leaving no
-        // live-but-not-durable agent. Remote agents stay OUT of .5a (CR4 → CYP-264): they keep the overlay path.
-        val toStore = projectAgents != null && !spec.remote
+        // CYP-256 (.5a) — a runtime-added agent's FULL record (incl. avatar) persists to the ProjectAgentStore =
+        // its single durable source (D1: NOT the override overlay). Persisted BEFORE the in-memory mutations
+        // (CR3 / CYP-259c extended to durability): a persist failure THROWS here, leaving no live-but-not-durable
+        // agent. CYP-172 Part 2 — REMOTE agents are now persisted too (with remote=true), so they survive a restart;
+        // rehydration re-clamps them to the REMOTE ceiling BEFORE they reconnect (BootOrchestrator), so persisting
+        // them does NOT let a restart resurrect an un-clamped / LOCAL agent — the all-or-nothing invariant (a partial
+        // persist without the remote-aware rehydration clamp would reintroduce the flip-to-local escalation).
+        val toStore = projectAgents != null
         if (toStore) {
-            projectAgents!!.put(pid, StoredAgent(agent.id, agent.name, agent.role, worktree, launch, persona, agent.connectorKind, agent.color, agent.avatar))
+            projectAgents!!.put(pid, StoredAgent(agent.id, agent.name, agent.role, worktree, launch, persona, agent.connectorKind, agent.color, agent.avatar, remote = spec.remote))
         }
         configs.put(agent.id, launch, persona)
         state.addAgent(agent)                 // spoke channel + ACL, projectId-stamped (fail-closed)
@@ -191,6 +194,13 @@ class AgentManagement(
         val token = if (spec.remote) remoteToken?.issue(agent.id) else null
         if (spec.remote) remoteAgents.add(agent.id) // CYP-310: a remote agent has no local worktree (agent_not_local)
         CreatedAgent(agent, token)
+    }
+
+    /** CYP-172 Part 2 — mark a REHYDRATED remote agent as remote at runtime (restores worktreePath=null +
+     *  the CLAUDE.md `agent_not_local` guard), WITHOUT re-entering [add] (which would mint a fresh token +
+     *  persist). Called by the boot rehydration seam for a [StoredAgent.remote] agent. Idempotent. */
+    fun markRemote(id: String) {
+        remoteAgents.add(id)
     }
 
     /** Write agent config (effective next spawn). Omitted/blank persona/launch PRESERVE the stored value. */
