@@ -22,7 +22,12 @@ export function resolveAuthState(me: AuthMe | null): AuthState {
 export type LoginResult =
   | { kind: 'verified'; operator: boolean } // session established + verified → mount the app at this tier
   | { kind: 'unverified' } // session established but email not verified → the verify-gate (no app access)
-  | { kind: 'rejected' } // ANY bad-credential / flow / transport failure → ONE generic outcome (enumeration-safe, fail-closed)
+  | { kind: 'rejected' } // a REAL 4xx credential rejection of the submit — the only "check your input" path
+  // CYP-515 (loud error, UIUX2 spec 62f125e6 §3): the login could not be STARTED/COMPLETED at all — flow-init not
+  // ok, non-JSON from the proxy, a broken flow contract, or a transport failure. A SYSTEM fault is not a credential
+  // verdict, and telling the user "check your input" when the proxy returned HTML is a false accusation. Still
+  // enumeration-safe: this fires PRE-CREDENTIAL, so it is identical for every e-mail — zero per-account signal.
+  | { kind: 'unavailable' }
   | { kind: 'rateLimited'; retryAfter: string | null } // 429 — honest throttle, never a fake success
 
 // The login submit phase (one axis, no spinner). `error` is the ONE generic message; `rateLimited` is amber, not error.
@@ -30,6 +35,7 @@ export type LoginPhase =
   | { kind: 'idle' }
   | { kind: 'submitting' } // fields + button disabled, label → submitting; NO spinner
   | { kind: 'error' } // generic auth error (role=alert); manual retry
+  | { kind: 'unavailable' } // CYP-515: system/flow failure, attributed to the SYSTEM not the input; manual retry
   | { kind: 'rateLimited'; retryAfter: string | null } // amber (role=status), submit disabled until it clears
 
 /** Map a resolved whoami into the post-login outcome (server is the source of truth; None post-success → fail-closed). */
@@ -62,6 +68,9 @@ export const AUTH_TEXT = {
   submitting: 'Wird gesendet…', // auth_submitting (label only; NO spinner)
   loginErrorGeneric: 'Anmeldung fehlgeschlagen. Bitte prüfe deine Eingaben.', // auth_login_error_generic (never enumerating)
   rateLimited: 'Zu viele Versuche. Bitte kurz warten.', // auth_rate_limited
+  // CYP-515 (UIUX2 62f125e6 §5) — the ONE new inline string. Attributes the failure to the SYSTEM (not the user's
+  // input), non-enumerating, actionable. A KMP-parity key `auth_flow_init_failed` is a later follow-up, not here.
+  flowInitFailed: 'Anmeldung konnte nicht gestartet werden. Bitte erneut versuchen.',
 } as const
 
 /** Honest 429 text (§2.3③): with a server retry hint → the "…in <x>…" variant, else the plain one. Never a fake success. */

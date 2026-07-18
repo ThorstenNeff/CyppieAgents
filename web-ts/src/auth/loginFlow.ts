@@ -5,7 +5,9 @@
 // Security invariants baked in per the spec §2.3:
 //   ① credentials go in the request BODY (never the URL/query → no referrer/history/log leak); we NEVER read the
 //      login response body — the session is the server-set httpOnly cookie, never a JS token (tooth ②);
-//   ② every failure (bad creds, flow error, transport) collapses to ONE generic `rejected` (no enumeration);
+//   ② a bad-credential 4xx collapses to ONE generic `rejected` (no enumeration). CYP-515 splits SYSTEM failures
+//      out into `unavailable` — this does NOT weaken ②: `unavailable` fires PRE-CREDENTIAL, so it is byte-identical
+//      for every e-mail (existing or not) and carries zero per-account signal;
 //   ④ this uses DIRECT fetch, NOT the RestClient — so a login 401 does NOT fire the global setOnUnauthorized re-auth
 //      hook (that would loop on the login surface, CYP-515). The 401 is just a generic reject here;
 //   ⑤ a 429 is surfaced honestly with the server Retry-After hint, never a fake success, never an auto-retry;
@@ -50,7 +52,8 @@ function parseFlowInit(json: unknown): FlowInit {
   return { id, csrf }
 }
 
-/** Build the in-app login submitter. Returns a generic `rejected` on ANY failure (fail-closed, enumeration-safe). */
+/** Build the in-app login submitter. Fail-closed throughout; enumeration-safe. A 4xx rejection of the credential
+ *  POST is `rejected` (the ONLY "check your input" path); every earlier/system failure is `unavailable` (CYP-515). */
 export function createLogin(deps: LoginDeps): (email: string, password: string) => Promise<LoginResult> {
   const kratos = deps.kratos ?? kratosBase()
   return async (email, password) => {
@@ -62,11 +65,15 @@ export function createLogin(deps: LoginDeps): (email: string, password: string) 
         headers: { accept: 'application/json' },
         credentials: 'include',
       })
-      if (!initRes.ok) return { kind: 'rejected' } // can't init → generic, fail-closed
+      // CYP-515 §3: the flow could not be STARTED — a system fault, not a credential verdict.
+      if (!initRes.ok) return { kind: 'unavailable' }
       const flow = parseFlowInit(await initRes.json())
       // The browser flow REQUIRES the csrf_token from the flow JSON. No id OR no csrf = malformed/stale → fail-closed:
       // never submit blind or with a missing token (§2.3⑥).
-      if (flow.id === '' || flow.csrf === null) return { kind: 'rejected' }
+      // CYP-515 §3: the proxy answered but broke the flow contract (no id / no csrf — e.g. HTML instead of the
+      // flow JSON). Still fail-closed (we never submit blind), but reported as a SYSTEM failure. This is also the
+      // Content-Type guard: a non-JSON body fails `initRes.json()` into the catch below, or lands here as no-id.
+      if (flow.id === '' || flow.csrf === null) return { kind: 'unavailable' }
 
       // 2. Submit credentials in the BODY (never the URL/query). We do not read the response body: on success Kratos
       //    sets the httpOnly session cookie natively; web-ts never sees/stores a token (tooth ①/②).
@@ -84,7 +91,13 @@ export function createLogin(deps: LoginDeps): (email: string, password: string) 
       const me = await deps.fetchAuthMe()
       return loginOutcomeFromAuth(me)
     } catch {
-      return { kind: 'rejected' } // any transport/parse error → generic fail-closed
+      // CYP-515 §3: init/parse/transport failure → SYSTEM, never a credential verdict. This deliberately also
+      // covers a transport failure ON the credential POST (spec §3 "Naht-Ehrlichkeit" left the fine-tuning to me):
+      // the network dying mid-submit is not the user getting their password wrong, and "check your input" would be
+      // a false accusation. It likewise covers a post-2xx whoami transport failure — the copy then slightly
+      // understates ("could not be started"), but misattributing a system fault to the credentials is the worse
+      // error, and AuthGate re-resolves whoami anyway. Enumeration-safety is unaffected: no per-account variance.
+      return { kind: 'unavailable' }
     }
   }
 }

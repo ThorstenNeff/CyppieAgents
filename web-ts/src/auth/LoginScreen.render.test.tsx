@@ -65,6 +65,48 @@ describe('LoginScreen (CYP-515 (a) login-core)', () => {
     expect(err.textContent).toBe(AUTH_TEXT.loginErrorGeneric) // static generic string, never server text
   })
 
+  // --- CYP-515 (loud error, UIUX2 62f125e6 §4) -------------------------------------------------------------
+  it('★ an unavailable outcome shows the SYSTEM message (role=alert) — distinct testid, NOT the credential error', async () => {
+    const { getByTestId, queryByTestId, findByTestId } = setup({ login: async () => ({ kind: 'unavailable' }) })
+    type(getByTestId('auth.login.email'), 'a@b.co')
+    type(getByTestId('auth.login.password'), 'pw')
+    fireEvent.submit(getByTestId('auth.login.form'))
+    const el = await findByTestId('auth.login.unavailable')
+    expect(el.getAttribute('role')).toBe('alert')
+    expect(el.textContent).toBe(AUTH_TEXT.flowInitFailed)
+    // the two states must never be confusable — a system fault must not read as "check your input"
+    expect(queryByTestId('auth.login.error')).toBeNull()
+    expect(el.textContent).not.toBe(AUTH_TEXT.loginErrorGeneric)
+  })
+
+  it('★ the two failure states are attributed differently (system vs input) and never render together', async () => {
+    const un = setup({ login: async () => ({ kind: 'unavailable' }) })
+    type(un.getByTestId('auth.login.email'), 'a@b.co')
+    type(un.getByTestId('auth.login.password'), 'pw')
+    fireEvent.submit(un.getByTestId('auth.login.form'))
+    await un.findByTestId('auth.login.unavailable')
+    expect(un.queryByTestId('auth.login.error')).toBeNull()
+    cleanup()
+    const rej = setup({ login: async () => ({ kind: 'rejected' }) })
+    type(rej.getByTestId('auth.login.email'), 'a@b.co')
+    type(rej.getByTestId('auth.login.password'), 'pw')
+    fireEvent.submit(rej.getByTestId('auth.login.form'))
+    await rej.findByTestId('auth.login.error')
+    expect(rej.queryByTestId('auth.login.unavailable')).toBeNull()
+  })
+
+  it('unavailable: the form stays usable, a field edit clears it, and NOTHING auto-retries', async () => {
+    const { getByTestId, queryByTestId, findByTestId, login } = setup({ login: async () => ({ kind: 'unavailable' }) })
+    type(getByTestId('auth.login.email'), 'a@b.co')
+    type(getByTestId('auth.login.password'), 'pw')
+    fireEvent.submit(getByTestId('auth.login.form'))
+    await findByTestId('auth.login.unavailable')
+    expect(login).toHaveBeenCalledTimes(1) // manual retry only — never an auto re-submit (that is what looped)
+    expect((getByTestId('auth.login.password') as HTMLInputElement).value).toBe('') // clear-after-submit holds
+    type(getByTestId('auth.login.email'), 'a@b.c') // an edit clears the transient
+    expect(queryByTestId('auth.login.unavailable')).toBeNull()
+  })
+
   it('③ a 429 shows the amber rate-limit (role=status, not alert) with the retry hint; submit is disabled', async () => {
     const { getByTestId, queryByTestId } = setup({ login: async () => ({ kind: 'rateLimited', retryAfter: '30' }) })
     type(getByTestId('auth.login.email'), 'a@b.co')

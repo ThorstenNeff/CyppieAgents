@@ -820,6 +820,12 @@ body {
   color: var(--md-sys-color-error);
   margin: 0;
 }
+/* CYP-515: the SYSTEM-failure state. Same error tone as the credential error — both are genuine failures the user
+   must see; the DISTINCTION is carried by the text (system vs input), never by colour alone (CYP-99/CYP-54). */
+.auth-login-unavailable {
+  color: var(--md-sys-color-error);
+  margin: 0;
+}
 .auth-login-rate-limited {
   background: var(--md-sys-color-warn-container);
   color: var(--md-sys-color-on-warn-container);
