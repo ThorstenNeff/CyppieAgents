@@ -373,14 +373,40 @@ private suspend fun forwardToUpstream(call: ApplicationCall, client: HttpClient,
     call.respondBytes(respBody, contentType = hubResp.contentType(), status = hubResp.status)
 }
 
+/** CYP-667 S7 — loopback addresses the gateway may bind. The `127.0.0.0/8` block and IPv6 `::1` / `localhost` are all
+ *  loopback (never routed off-host). ANYTHING else (esp. `0.0.0.0` / `::`, a LAN IP, or a public IP) would expose the
+ *  gateway's PLAIN traffic over the network. */
+private fun isLoopbackHost(host: String): Boolean = when (val h = host.trim().lowercase().removeSurrounding("[", "]")) {
+    "localhost", "::1", "0:0:0:0:0:0:0:1" -> true
+    else -> h.startsWith("127.") // 127.0.0.0/8
+}
+
+/**
+ * CYP-667 S7 — resolve the gateway bind host **fail-closed to loopback**. The gateway speaks PLAIN (post-TLS-termination
+ * cleartext: tokens, `?token`/`?ticket`, PTY bytes) behind the Caddy TLS edge, which proxies to `127.0.0.1:<port>`. So
+ * the gateway MUST listen only on loopback — a non-loopback bind (`0.0.0.0`, a LAN/public IP) would expose that cleartext
+ * unencrypted over the network, the exact worst case the Caddy edge exists to prevent. Default = `127.0.0.1`; a
+ * configured non-loopback host is REFUSED (throws) rather than silently honored — fail closed, not fail open.
+ */
+internal fun resolveGatewayBindHost(configured: String?): String {
+    val host = configured?.takeIf { it.isNotBlank() } ?: "127.0.0.1"
+    require(isLoopbackHost(host)) {
+        "CYPPIE_GATEWAY_HOST='$host' is not a loopback address. The gateway speaks PLAIN behind the Caddy TLS edge; " +
+            "binding a non-loopback host would expose cleartext (tokens + PTY bytes) over the network. Refusing to start."
+    }
+    return host
+}
+
 /**
  * Standalone entrypoint (run task `:server:gatewayRun`, or the `GatewayServerKt.main` class in a deploy unit). Binds the
- * browser-facing edge to `CYPPIE_GATEWAY_HOST`:`CYPPIE_GATEWAY_PORT` (defaults `0.0.0.0:8080`) and forwards to the hub at
- * `CYPPIE_HUB_URL` (default `http://127.0.0.1:8787`). TLS / public-exposure posture is deploy-owned (like the relay).
+ * browser-facing edge to `CYPPIE_GATEWAY_HOST`:`CYPPIE_GATEWAY_PORT` (defaults **`127.0.0.1`**:8080 — loopback only, see
+ * [resolveGatewayBindHost]) and forwards to the hub at `CYPPIE_HUB_URL` (default `http://127.0.0.1:8787`). TLS + public
+ * exposure are deploy-owned: Caddy (root LaunchDaemon) is the TLS edge and proxies plain to this loopback port.
  */
 fun main() {
     val port = System.getenv("CYPPIE_GATEWAY_PORT")?.toIntOrNull() ?: 8080
-    val host = System.getenv("CYPPIE_GATEWAY_HOST") ?: "0.0.0.0"
+    // ★ CYP-667 S7 — loopback-only, fail-closed (the gateway is plain behind Caddy; never expose cleartext off-host).
+    val host = resolveGatewayBindHost(System.getenv("CYPPIE_GATEWAY_HOST"))
     val hubUrl = System.getenv("CYPPIE_HUB_URL") ?: "http://127.0.0.1:8787"
     // CYP-638 S3 — the Kratos PUBLIC base for the same-origin self-service proxy. Blank ⇒ the Kratos leg is unmounted.
     val kratosUrl = System.getenv("CYPPIE_KRATOS_URL") ?: ""
