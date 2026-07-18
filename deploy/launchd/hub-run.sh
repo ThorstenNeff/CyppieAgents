@@ -26,4 +26,14 @@ done < "$ARGFILE"
 
 : "${CYPPIE_HUB_JAR:?set CYPPIE_HUB_JAR to the built server jar (or classpath) that contains ApplicationKt}"
 
-exec java "${JVM_ARGS[@]}" -cp "$CYPPIE_HUB_JAR" com.tneff.cyppieagents.ApplicationKt
+# CYP-685 — resolve an ABSOLUTE java from a _cyppie-readable JDK. A system LaunchDaemon's PATH is
+# /usr/bin:/bin:/usr/sbin:/sbin (no JDK), and a corretto JDK under a console user's ~/.gradle is unreadable by the
+# dedicated daemon user — so a bare `java` invocation hit the macOS /usr/bin/java stub ("Unable to locate a Java
+# Runtime") and every daemon failed to boot (CYP-670 regression: the old User-LaunchAgent used a full absolute path).
+# JAVA_HOME is provisioned in the 0600 env file (deploy relocates corretto-21 → /opt/cyppie-hub/jdk, chown _cyppie, and
+# sets JAVA_HOME to its java-home). Fail-closed: never fall through to a PATH lookup.
+: "${JAVA_HOME:?CYP-685: set JAVA_HOME to a _cyppie-readable JDK 21 in the env file — the LaunchDaemon PATH has no JDK}"
+JAVA_BIN="$JAVA_HOME/bin/java"
+[ -x "$JAVA_BIN" ] || { echo "CYP-685: no executable java at $JAVA_BIN (JAVA_HOME=$JAVA_HOME) — daemon cannot start" >&2; exit 1; }
+
+exec "$JAVA_BIN" "${JVM_ARGS[@]}" -cp "$CYPPIE_HUB_JAR" com.tneff.cyppieagents.ApplicationKt
