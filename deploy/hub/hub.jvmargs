@@ -1,0 +1,18 @@
+# CYP-670 — Hub JVM launch args, SINGLE SOURCE for the macOS LaunchDaemon wrapper (deploy/launchd/hub-run.sh).
+#
+# Current set = the hub's EXISTING args (netty-jfr guard + bounded heap), so the macOS daemon matches today's hub
+# launch. One arg per line; `#`/blank ignored.
+#
+# ★ D1 (PO-ratified, SEPARATE ticket): the hub args are today double-sourced (build.gradle `applicationDefaultJvmArgs`
+#   + the `.deb` `launcherArgs`, CYP-626) — the CYP-623 drift trap. Consolidating BOTH onto this one file touches the
+#   shipped `.deb` + every hub `run`/`installDist` (all OSes) → own refactor + gate (follow-up ticket). For CYP-670
+#   this file is read by the macOS wrapper only.
+#
+# ★ D2 (PO-ratified INTO CYP-670): the hub holds the DECRYPTED master key + tokens in RAM — the same leak class as the
+#   gateway cleartext, with the MOST valuable material, and REACHABLE at the public flip (PL-0008). A heap/core dump on
+#   OOM would write the master key to disk. So the hub carries the FULL hardening set, mirroring the gateway (with
+#   `Core=0` in the plist as the OS complement).
+-Dio.netty.jfr.enabled=false
+-XX:MaxRAMPercentage=75.0
+-XX:-HeapDumpOnOutOfMemoryError
+-XX:-CreateCoredumpOnCrash
