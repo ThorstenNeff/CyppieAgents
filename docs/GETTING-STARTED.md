@@ -4,7 +4,7 @@
 > Grounded in the current `develop` (endpoints, commands, and flows verified against the code).
 
 **What you'll build:** a 3-agent team (a Product Owner + a Backend worker + a Tester) working a repo.
-**You'll need:** JDK 17+, Git, and the Claude CLI installed and signed in.
+**You'll need:** JDK 17+ (the remote bridge needs JDK 21), Git, and the Claude CLI installed and signed in.
 **Time:** ~15 minutes to first task.
 
 ---
@@ -58,9 +58,9 @@ worktree. So even if you use the hosted web UI, the server that runs the team is
 > remote bridge (see [§6 Remote agents](#6-remote-agents-bring-your-own-machine)). The local self-host below
 > is the primary walkthrough; the hosted option lets you skip the clone-and-run steps.
 
-> **Prerequisites:** JDK 17+ (JetBrains Runtime recommended) · Git · the Claude CLI installed and signed
-> in (`claude` on your `PATH`; the agents use your Claude login). An Anthropic API key is optional and set
-> per project, not required to start.
+> **Prerequisites:** JDK 17+ (JetBrains Runtime recommended; JDK 21 for the remote bridge) · Git · the
+> Claude CLI installed and signed in (`claude` on your `PATH`; the agents use your Claude login). An
+> Anthropic API key is optional and set per project, not required to start.
 
 **Step 1 — Clone and generate your local config.** `dev-setup.sh` writes a `.env` (with generated tokens)
 and a starter `platform.config.json`.
