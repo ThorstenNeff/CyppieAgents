@@ -63,3 +63,26 @@ describe('ProjectManagementPanel (render)', () => {
     expect(onSwitch).toHaveBeenCalledWith('beta')
   })
 })
+
+describe('ProjectManagementPanel — CYP-679 honest load-error + retry', () => {
+  it('failed load (null + loadError) → error+retry, NOT the perpetual "loading…" placeholder; retry fires', () => {
+    const onRetryLoad = vi.fn()
+    const { container } = render(panel({ projects: null, loadError: true, onRetryLoad }))
+    expect(q(container, 'project-mgmt.loadError')).not.toBeNull()
+    expect(q(container, 'project-mgmt.loading')).toBeNull() // mutation: render loading instead of error → RED
+    fireEvent.click(q(container, 'project-mgmt.loadError.retry') as HTMLElement)
+    expect(onRetryLoad).toHaveBeenCalledTimes(1)
+  })
+
+  it('loading (null, no error) → the loading placeholder, not the error (non-vacuum contrast)', () => {
+    const { container } = render(panel({ projects: null, loadError: false }))
+    expect(q(container, 'project-mgmt.loading')).not.toBeNull()
+    expect(q(container, 'project-mgmt.loadError')).toBeNull()
+  })
+
+  it('a member never sees the load-error — the gate hint wins even on failure', () => {
+    const { container } = render(panel({ projects: null, loadError: true, operator: false }))
+    expect(q(container, 'project-mgmt.gate')).not.toBeNull()
+    expect(q(container, 'project-mgmt.loadError')).toBeNull()
+  })
+})

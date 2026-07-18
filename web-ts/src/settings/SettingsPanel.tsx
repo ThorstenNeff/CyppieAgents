@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import type { RepoConfigView, RepoConfigRequest, ApiKeyView, ReprovisionPreview } from '../types/generated/contract'
 import { ApiKeyPanel } from './ApiKeyPanel'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import { canSaveRepo, repoSaveRejectMessage, atRiskLabel, SETTINGS_TEXT as T } from './settingsModel'
 
 export interface SettingsPanelProps {
@@ -20,17 +21,40 @@ export interface SettingsPanelProps {
   onSaveApiKey: (apiKey: string) => Promise<void>
   // CYP-465: the LIVE at-risk preview — fetched fresh each time the discard dialog opens, never cached.
   getReprovisionPreview: () => Promise<ReprovisionPreview>
+  // CYP-679: honest load-errors for the two project-config sections (repo form / masked API-key status).
+  repoLoadError?: boolean
+  onRetryRepo?: () => void
+  apiKeyLoadError?: boolean
+  onRetryApiKey?: () => void
 }
 
-export function SettingsPanel({ operator, repoConfig, onSaveRepo, apiKeyView, onSaveApiKey, getReprovisionPreview }: SettingsPanelProps) {
+export function SettingsPanel({
+  operator,
+  repoConfig,
+  onSaveRepo,
+  apiKeyView,
+  onSaveApiKey,
+  getReprovisionPreview,
+  repoLoadError = false,
+  onRetryRepo,
+  apiKeyLoadError = false,
+  onRetryApiKey,
+}: SettingsPanelProps) {
   return (
     <div className="settings-panel transcript-scroll" data-testid="settings.panel">
-      <RepoSection operator={operator} config={repoConfig} onSave={onSaveRepo} getReprovisionPreview={getReprovisionPreview} />
+      <RepoSection
+        operator={operator}
+        config={repoConfig}
+        onSave={onSaveRepo}
+        getReprovisionPreview={getReprovisionPreview}
+        loadError={repoLoadError}
+        onRetryLoad={onRetryRepo}
+      />
       {/* API-key section: FRAMED from CYP-433 (one source for the leak model) — placed as the 2nd project-config
           section under the repo section, sharing the same operator gate + amber effect-hint pattern (§4/§5). */}
       <section role="group" className="settings-section apikey-frame" data-testid="settings.section.apiKey.frame">
         <h3>{T.apiKeySection}</h3>
-        <ApiKeyPanel view={apiKeyView} operator={operator} onSave={onSaveApiKey} />
+        <ApiKeyPanel view={apiKeyView} operator={operator} onSave={onSaveApiKey} loadError={apiKeyLoadError} onRetryLoad={onRetryApiKey} />
       </section>
     </div>
   )
@@ -41,11 +65,15 @@ function RepoSection({
   config,
   onSave,
   getReprovisionPreview,
+  loadError,
+  onRetryLoad,
 }: {
   operator: boolean
   config: RepoConfigView | null
   onSave: (req: RepoConfigRequest) => Promise<void>
   getReprovisionPreview: () => Promise<ReprovisionPreview>
+  loadError: boolean
+  onRetryLoad?: () => void
 }) {
   const [url, setUrl] = useState('')
   const [branch, setBranch] = useState('')
@@ -78,6 +106,18 @@ function RepoSection({
     }
   }
   const submit = () => save(discardArmed)
+
+  // CYP-679: a failed config load (config still null) shows error+retry instead of a blank form — else the empty
+  // url/branch inputs with no status read as a legit "repo not configured yet". Once config loads (or retry), the
+  // form renders. (config !== null → loaded, even if configured:false; loading with no error → the form as before.)
+  if (config === null && loadError) {
+    return (
+      <section role="group" className="settings-section repo" data-testid="settings.section.repo">
+        <h3>{T.repoSection}</h3>
+        <LoadErrorRetry testId="settings.repo.loadError" onRetry={onRetryLoad ?? (() => undefined)} />
+      </section>
+    )
+  }
 
   return (
     <section role="group" className="settings-section repo" data-testid="settings.section.repo">

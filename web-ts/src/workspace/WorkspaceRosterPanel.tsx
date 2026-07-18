@@ -4,16 +4,38 @@
 // identifying label + the tier as TEXT (never colour alone). The audit list is content-free (verb + path + time).
 import type { WorkspaceMember, OperatorAudit } from '../types/generated/contract'
 import { memberLabel, tierLabel, auditLine, formatAuditTime } from './rosterModel'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 
-export function WorkspaceRosterPanel({ members, audit }: { members: readonly WorkspaceMember[]; audit: readonly OperatorAudit[] }) {
+// CYP-679: members + audit are two INDEPENDENT fetches feeding two sections — each gets its own honest load-error +
+// retry (mirrors the CommPanel channels+timeline split), length-gated so live/retry data hides it; a failed load ≠
+// the genuinely-empty "Keine Mitglieder."/"Keine Aktionen." state.
+export function WorkspaceRosterPanel({
+  members,
+  audit,
+  membersLoadError = false,
+  onRetryMembers,
+  auditLoadError = false,
+  onRetryAudit,
+}: {
+  members: readonly WorkspaceMember[]
+  audit: readonly OperatorAudit[]
+  membersLoadError?: boolean
+  onRetryMembers?: () => void
+  auditLoadError?: boolean
+  onRetryAudit?: () => void
+}) {
   return (
     <div className="workspace-roster" data-testid="workspace-roster">
       <section className="roster-section" aria-label="Mitglieder">
         <h3 className="roster-title">Mitglieder</h3>
         {members.length === 0 ? (
-          <p className="roster-empty" data-testid="workspace-roster.members-empty">
-            Keine Mitglieder.
-          </p>
+          membersLoadError ? (
+            <LoadErrorRetry testId="workspace-roster.members.loadError" onRetry={onRetryMembers ?? (() => undefined)} />
+          ) : (
+            <p className="roster-empty" data-testid="workspace-roster.members-empty">
+              Keine Mitglieder.
+            </p>
+          )
         ) : (
           <ul className="roster-list" data-testid="workspace-roster.members">
             {members.map((m) => (
@@ -31,9 +53,13 @@ export function WorkspaceRosterPanel({ members, audit }: { members: readonly Wor
       <section className="roster-section" aria-label="Letzte Operator-Aktionen">
         <h3 className="roster-title">Letzte Operator-Aktionen</h3>
         {audit.length === 0 ? (
-          <p className="roster-empty" data-testid="workspace-roster.audit-empty">
-            Keine Aktionen.
-          </p>
+          auditLoadError ? (
+            <LoadErrorRetry testId="workspace-roster.audit.loadError" onRetry={onRetryAudit ?? (() => undefined)} />
+          ) : (
+            <p className="roster-empty" data-testid="workspace-roster.audit-empty">
+              Keine Aktionen.
+            </p>
+          )
         ) : (
           <ul className="roster-list" data-testid="workspace-roster.audit">
             {audit.map((a, i) => (
