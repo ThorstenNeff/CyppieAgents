@@ -9,6 +9,7 @@ import { Composer } from '../agentview/Composer'
 import { senderAccent } from './senderAccent'
 import { composerDisclosure } from './commDisclosure'
 import { LoadErrorRetry } from '../ui/LoadErrorRetry'
+import { mentionSegments } from './mentionModel'
 import type { Channel, Message1 } from '../types/generated/contract'
 
 export interface CommPanelProps {
@@ -17,6 +18,8 @@ export interface CommPanelProps {
   onSelectChannel: (id: string) => void
   messages: readonly Message1[]
   senderRole: (agentId: string) => string | null
+  /** CYP-704: roster ids mentions resolve against. Empty (default) = not loaded / load failed → all plain text. */
+  rosterIds?: readonly string[]
   connection: 'live' | 'connecting' | 'offline' | 'revoked'
   canWrite: boolean | null
   sendError: string | null
@@ -40,6 +43,7 @@ const CONNECTION_TEXT: Record<CommPanelProps['connection'], string> = {
 export function CommPanel(props: CommPanelProps) {
   const { channels, selectedChannelId, onSelectChannel, messages, senderRole, connection } = props
   const { channelsLoadError = false, onRetryChannels, messagesLoadError = false, onRetryMessages } = props
+  const { rosterIds = [] } = props
   // CYP-437(#4): a terminal revoke (WS 1008) closes the write affordance entirely — don't leave a composer that
   // only fails server-side. This overrides the disclosure (a revoked socket can't write, whatever canWrite said).
   const revoked = connection === 'revoked'
@@ -100,7 +104,28 @@ export function CommPanel(props: CommPanelProps) {
                   <span className="comm-from" style={{ color: senderAccent(m.from, senderRole(m.from)) }}>
                     {m.from}
                   </span>
-                  <span className="comm-body">{m.body}</span>
+                  <span className="comm-body">
+                    {/* CYP-704 — mention chips. Roster-gated: with an unloaded/failed roster `rosterIds` is empty,
+                        every segment is text, and the body renders exactly as before. Segments are rendered as TEXT
+                        NODES (never dangerouslySetInnerHTML — the CYP-456/W9 invariant holds). The chip carries the
+                        sender's own accent AND the literal text, so colour is never the sole signal (WCAG 1.4.1).
+                        The chip shows the token VERBATIM as it was typed rather than the canonical id: we highlight
+                        what the sender wrote, never silently rewrite it. */}
+                    {mentionSegments(m.body, rosterIds).map((s, i) =>
+                      s.kind === 'mention' ? (
+                        <span
+                          key={i}
+                          className="comm-mention"
+                          data-testid={`comm.mention.${i}`}
+                          style={{ color: senderAccent(s.id, senderRole(s.id)) }}
+                        >
+                          {s.text}
+                        </span>
+                      ) : (
+                        <span key={i}>{s.text}</span>
+                      ),
+                    )}
+                  </span>
                 </li>
               ))}
             </ol>
