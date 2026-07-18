@@ -912,6 +912,28 @@ class BootOrchestrator(
         // owns config agents ∪ its own runtime-added agents).
         rehydrateActiveProject()
 
+        // CYP-690 — boot orphan-purge. A runtime-minted remote-agent token survives in remoteTokenStore (restored into
+        // the registry by the bind loop above), but the agent is NOT rehydrated into the roster — its identity was never
+        // persisted (CYP-172). The restored binding would otherwise authenticate a bridge for an agent that is invisible
+        // in the roster: a valid credential outliving its roster entry, unrevocable via the normal agent-removal path.
+        // After the roster is rehydrated, revoke + remove every persisted token whose agentId is not a live participant.
+        // ★ COLLATERAL-FREE BY CONSTRUCTION: remoteTokenStore holds ONLY runtime-minted tokens — config-declared agents'
+        // tokens live in the boot seed (secrets.agentTokens), NEVER here — so a config-declared agent is structurally
+        // untouched (stays durable, bypasses CYP-690). Single-project scoped (BYOA Topology-A). Multi-project note:
+        // remoteTokenStore is global while `state` is the active project here — but no runtime-remote agent survives
+        // restart today (M1.4), so every such token is orphaned and correctly purged; CYP-172 + the permanent at-connect
+        // agentFor cross-check supersede the cross-project case.
+        run {
+            val liveAgentIds = state.agents.map { it.id }.toSet()
+            remoteTokenStore.all().forEach { (agentId, _) ->
+                if (agentId !in liveAgentIds) {
+                    tokenRegistry.revoke(agentId)
+                    remoteTokenStore.remove(agentId)
+                    log.warn("CYP-690: purged orphaned remote-token binding for agent '{}' (not in the rehydrated roster)", agentId)
+                }
+            }
+        }
+
         // CYP-308: the durable active pointer is pure VIEW. Now that config.projectId is fully seeded (config agents
         // + its own store agents), switch the active view to the durable-active project — the SAME orchestration as a
         // runtime switch (PlatformWiring.onActiveSwitch): mint its runtime, rescope the hub (the config agents stash
