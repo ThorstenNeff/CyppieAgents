@@ -5,6 +5,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -54,6 +55,11 @@ class Cyp629FirstRunGateRenderTest {
         override suspend fun add(spec: NewAgentSpec): Agent = throw AgentMgmtException("stub")
         override suspend fun edit(id: String, edit: AgentEdit): Agent = throw AgentMgmtException("stub")
         override suspend fun remove(id: String, worktree: WorktreeFate) {}
+    }
+
+    /** A source whose returned status can be flipped between reads, to drive an in-session ACTIVE → TRANSPARENT transition. */
+    private class MutableFirstRunConfigSource(var current: FirstRunConfigStatus) : FirstRunConfigSource {
+        override suspend fun status(): FirstRunConfigStatus = current
     }
 
     private fun unconfigured() = FirstRunConfigStatus(loaded = true, apiKeySet = false, cloneStatus = CloneStatus.NOT_CONFIGURED)
@@ -119,12 +125,49 @@ class Cyp629FirstRunGateRenderTest {
     }
 
     @Test
-    fun done_showsCompletionSurface_derivedFromMode_notWorkspaceUntilCta() = runGate(done()) {
-        // ③: TRANSPARENT ⇒ the completion surface, NOT the workspace and NOT because a step was clicked.
-        onNodeWithTag(FirstRunTags.COMPLETE).assertExists()
+    fun configuredAtLaunch_passesThroughTransparently_noCompletionStep() = runGate(done()) {
+        // §1/§6.3b (CYP-629 live-wiring, A): a hub configured AT LAUNCH — the gate was NEVER ACTIVE this session —
+        // is transparent: straight into the workspace, NO intermediate completion step (else a configured hub is
+        // nagged with a "Workspace öffnen" CTA every launch). Like RemoteHubConnectGate passing through once satisfied.
+        onNodeWithTag(WORKSPACE).assertExists()
+        onNodeWithTag(FirstRunTags.OPEN_WORKSPACE).assertDoesNotExist() // no completion CTA on a configured launch
+    }
+
+    @Test
+    fun configuredInSession_showsCompletion_derivedFromMode_thenCtaOpensWorkspace() = runComposeUiTest {
+        // ③ preserved: the completion surface IS still DERIVED from mode == TRANSPARENT — it appears when the operator
+        // completes setup DURING this session (the gate was ACTIVE, then becomes TRANSPARENT). `wasActive` gates only
+        // its RECURRENCE, not its derivation. Start ACTIVE (unconfigured), then the source reports configured + reload.
+        val src = MutableFirstRunConfigSource(
+            FirstRunConfigStatus(loaded = true, apiKeySet = false, cloneStatus = CloneStatus.NOT_CONFIGURED),
+        )
+        lateinit var vm: FirstRunViewModel
+        setContent {
+            MaterialTheme {
+                FirstRunGate(
+                    enabled = true,
+                    createViewModel = { FirstRunViewModel(src).also { vm = it } },
+                    createSettingsViewModel = { SettingsViewModel(StubRepo(), editable = true) },
+                    createAgentMgmtViewModel = { AgentManagementViewModel(StubMgmtRepo(), editable = true) },
+                    workspace = { Text("workspace", modifier = Modifier.testTag(WORKSPACE)) },
+                )
+            }
+        }
+        // ACTIVE this session → the stepper (wasActive latches true), not the workspace.
+        onNodeWithTag(FirstRunTags.GATE).assertExists()
+        onNodeWithTag(WORKSPACE).assertDoesNotExist()
+        // The operator finishes setup → the source now reports configured; the VM re-reads.
+        src.current = FirstRunConfigStatus(loaded = true, apiKeySet = true, cloneStatus = CloneStatus.CLONED_OK)
+        vm.reload()
+        // reload() emits on the VM scope, so wait for the completion CTA to appear (not just a compose frame). Because
+        // this session WAS active, TRANSPARENT shows the completion surface (not a silent passthrough). useUnmergedTree:
+        // the CTA lives under FirstRunComplete's merged container after the ACTIVE→TRANSPARENT subtree swap.
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithTag(FirstRunTags.OPEN_WORKSPACE, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
         onNodeWithTag(WORKSPACE).assertDoesNotExist()
         // Only the CTA advances into the workspace.
-        onNodeWithTag(FirstRunTags.OPEN_WORKSPACE).performClick()
+        onNodeWithTag(FirstRunTags.OPEN_WORKSPACE, useUnmergedTree = true).performClick()
         onNodeWithTag(WORKSPACE).assertExists()
     }
 

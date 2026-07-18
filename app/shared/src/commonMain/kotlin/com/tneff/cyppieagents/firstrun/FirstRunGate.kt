@@ -8,6 +8,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +73,14 @@ fun FirstRunGate(
     // resume → gate → skip round-trip (DegradedWorkspace unmounts on resume; a local bit would reset and re-nag every
     // cycle). Reset only on relaunch → full banner once per session-start, then collapse respected for the session.
     var bannerCollapsed by remember { mutableStateOf(false) }
+    val mode = firstRunGateMode(status)
+    // §1/§6.3b — once configured the gate NEVER re-appears: a hub configured AT LAUNCH passes straight through (like
+    // [com.tneff.cyppieagents.connect.RemoteHubConnectGate]), with NO completion step. The completion surface is the
+    // IN-SESSION finish moment ONLY — it shows when this session actually went through setup (reached ACTIVE) and then
+    // became TRANSPARENT. `wasActive` is a session-scoped latch, NOT a durable "completed" flag: completion is still
+    // DERIVED from `mode == TRANSPARENT` (PO ③), just gated so a fresh configured launch is transparent, not a nag.
+    var wasActive by remember { mutableStateOf(false) }
+    LaunchedEffect(mode) { if (mode == FirstRunGateMode.ACTIVE) wasActive = true }
 
     when {
         opened -> workspace() // completed via the CTA → fully transparent, no degraded surface
@@ -85,8 +94,9 @@ fun FirstRunGate(
             onResume = { skipped = false },
             workspace = workspace,
         )
-        else -> when (firstRunGateMode(status)) {
-            FirstRunGateMode.TRANSPARENT -> FirstRunComplete(onOpen = { opened = true })
+        else -> when (mode) {
+            // TRANSPARENT: pass straight through UNLESS the operator just completed setup this session (§1 vs §6.1).
+            FirstRunGateMode.TRANSPARENT -> if (wasActive) FirstRunComplete(onOpen = { opened = true }) else workspace()
             FirstRunGateMode.LOADING -> FirstRunLoading()
             FirstRunGateMode.ACTIVE ->
                 FirstRunActive(status, settingsState, settingsViewModel, agentMgmtViewModel, activeProjectName, onSkip = { skipped = true })
