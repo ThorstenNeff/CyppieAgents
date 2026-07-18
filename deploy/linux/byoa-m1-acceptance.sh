@@ -6,12 +6,15 @@
 # It drives the claude-free wire-client (/opt/cyppiehub/bin/CyppieHubAcceptance, one probe per invocation) + curl/REST,
 # and seeds a CONFIG-DECLARED remote agent (durable ⇒ survives restart) via CyppieHubProvision --add-remote-agent.
 #
-# Usage:  sudo ./byoa-m1-acceptance.sh /path/to/cyppiehub_<ver>_amd64.deb
-# Prereq: the box is CLEAN (no prior cyppie hub) — `getent passwd cyppie` empty, /opt|/var/lib|/etc/cyppiehub absent,
-#         ports 8787/8786 free, `git` present (a .deb Depend), python3 present (Ubuntu-26 default).
+# Usage:  sudo ./byoa-m1-acceptance.sh /path/to/cyppiehub_<ver>_amd64.deb   [--no-cleanup]
+#         sudo ./byoa-m1-acceptance.sh --cleanup     # reset the box (purge + remove dirs/user) — the documented way back
+# Prereq: the box is CLEAN (no prior cyppie hub — else run --cleanup first), ports 8787/8786 free, python3 present.
+#
+# ★ RE-RUNNABILITY (PL-required): this harness INSTALLS the .deb. On any non-PASS exit AFTER install it AUTO-PURGES
+#   (the on_exit trap) so a failed/aborted run never strands a half-configured box — the next run's clean-check passes.
+#   `--no-cleanup` keeps the box as-is for debugging; `--cleanup` is a standalone reset. On PASS the hub is LEFT LIVE.
 set -uo pipefail
 
-DEB="${1:?usage: sudo $0 /path/to/cyppiehub_<ver>_amd64.deb}"
 AGENT="sidekick"; SPOKE="po-${AGENT}"
 BASE="http://127.0.0.1:8787"; WS="ws://127.0.0.1:8787/ws/hub"
 ACCEPT="/opt/cyppiehub/bin/CyppieHubAcceptance"; PROVISION="/opt/cyppiehub/bin/CyppieHubProvision"
@@ -21,29 +24,57 @@ FAILURES=0
 say()  { printf '\n=== %s ===\n' "$*"; }
 ok()   { printf '  PASS: %s\n' "$*"; }
 bad()  { printf '  FAIL: %s\n' "$*"; FAILURES=$((FAILURES+1)); }
+note() { printf '  NOTE: %s\n' "$*"; } # advisory — NOT counted in FAILURES
 die()  { printf '\nABORT: %s\n' "$*" >&2; exit 2; }
 [ "$(id -u)" = 0 ] || die "run as root"
+
+# ── VERIFIED cleanup/reset (mirrors the CYP-637-tested test-lifecycle.sh purge order, prod names). Idempotent. ──────
+cleanup() {
+  systemctl stop cyppiehub    >/dev/null 2>&1 || true
+  systemctl disable cyppiehub >/dev/null 2>&1 || true
+  dpkg --purge cyppiehub      >/dev/null 2>&1 || apt-get purge -y cyppiehub >/dev/null 2>&1 || true # postrm purge wipes data+secrets+user
+  rm -f /lib/systemd/system/cyppiehub.service >/dev/null 2>&1 || true; systemctl daemon-reload >/dev/null 2>&1 || true
+  rm -rf /var/lib/cyppiehub    >/dev/null 2>&1 || true
+  rm -f  /etc/cyppiehub/hub.env >/dev/null 2>&1 || true; rmdir /etc/cyppiehub >/dev/null 2>&1 || true
+  rm -rf /opt/cyppiehub        >/dev/null 2>&1 || true # purge normally removes it; belt for a partial install
+  getent passwd cyppie >/dev/null 2>&1 && userdel cyppie >/dev/null 2>&1 || true
+}
+box_dirty() { getent passwd cyppie >/dev/null 2>&1 || [ -e /var/lib/cyppiehub ] || [ -e /etc/cyppiehub ] || [ -e /opt/cyppiehub ] || systemctl list-unit-files cyppiehub.service >/dev/null 2>&1; }
+
+# --cleanup sub-command: reset the box, then exit (the documented, tested way back).
+if [ "${1:-}" = "--cleanup" ]; then cleanup; box_dirty && die "cleanup ran but the box still shows cyppie artifacts — inspect manually" || { echo "cleanup done — box is clean (package purged; dirs + cyppie user removed)"; exit 0; }; fi
+
+DEB="${1:?usage: sudo $0 /path/to/cyppiehub_<ver>_amd64.deb [--no-cleanup]   |   sudo $0 --cleanup}"
+NO_CLEANUP="${2:-}"
 command -v python3 >/dev/null || die "python3 required for the JSON assertions"
+
+INSTALLED=0
+on_exit() {
+  local rc=$?
+  if [ "$rc" != 0 ] && [ "$INSTALLED" = 1 ] && [ "$NO_CLEANUP" != "--no-cleanup" ]; then
+    printf '\n[auto-cleanup] run did not PASS (rc=%s) — purging so the box is clean for a re-run (pass --no-cleanup to keep it for debugging)\n' "$rc"
+    cleanup
+  fi
+}
+trap on_exit EXIT
 
 nonce()  { printf 'CYP687-%s' "$(cat /proc/sys/kernel/random/uuid)"; }
 health() { local _; for _ in $(seq 1 30); do [ "$(curl -fsS "$BASE/api/health" 2>/dev/null)" = ok ] && return 0; sleep 1; done; return 1; }
-api_get()  { curl -fsS -H "Authorization: Bearer $1" "$BASE$2" 2>/dev/null; }             # api_get  <token> <path>
-api_post() { curl -fsS -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3" "$BASE$2" 2>/dev/null; } # <token> <path> <json>
-# probe <label> -- <CyppieHubAcceptance args...> : run a wire probe IN THIS SHELL (so bad() persists FAILURES), print result.
+api_get()  { curl -fsS -H "Authorization: Bearer $1" "$BASE$2" 2>/dev/null; }
+api_post() { curl -fsS -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3" "$BASE$2" 2>/dev/null; }
 probe() { local label="$1"; shift 2; local out; if out="$("$ACCEPT" "$@" 2>&1)"; then ok "$label ($(printf '%s' "$out" | head -1))"; else bad "$label -> $(printf '%s' "$out" | head -1)"; fi; }
-# json_true <json> <python-expr over `d`> : returns 0 iff the expression is truthy (empty/bad JSON -> non-zero -> caller bad()).
 json_true() { printf '%s' "$1" | python3 -c 'import sys,json
 try: d=json.load(sys.stdin)
 except Exception: sys.exit(1)
 sys.exit(0 if ('"$2"') else 1)'; }
-items() { echo "d if isinstance(d,list) else d.get('$1',[])"; } # events/agents/messages responses may be a list OR {key:[...]}
+items() { echo "d if isinstance(d,list) else d.get('$1',[])"; }
 
 # ── Setup: install the prod .deb, seed a config-declared remote agent, restart ────────────────────────────────────
 say "Setup — install prod .deb + seed a config-declared remote agent"
-getent passwd cyppie >/dev/null && die "a 'cyppie' user already exists — box not clean (precondition)"
+box_dirty && die "box not clean (a cyppie user/dir/service exists) — run: sudo $0 --cleanup   then re-run"
 { apt-get install -y "$DEB" || dpkg -i "$DEB"; } || die "install failed"
+INSTALLED=1
 health || die "hub did not come up after install"
-# ③ CYP-687: add a config-DECLARED remote agent (durable). Minted token appended to a transient, merged into hub.env.
 SECRETS="$(mktemp)"; chmod 0600 "$SECRETS"
 sudo -u cyppie "$PROVISION" --add-remote-agent "$AGENT" --data-dir "$DATADIR" --secrets-out "$SECRETS" >/dev/null || die "--add-remote-agent failed"
 cat "$SECRETS" >> "$ENVFILE"; shred -u "$SECRETS" 2>/dev/null || rm -f "$SECRETS"
@@ -83,7 +114,7 @@ say "D — hub->agent (WireDeliver carries the nonce)"
 ND="$(nonce)"
 "$ACCEPT" --cmd await-deliver --url "$WS" --token "$AGENT_TOKEN" --channel "$SPOKE" --nonce "$ND" >/tmp/cyp687-d.out 2>&1 &
 DPID=$!
-sleep 2 # let it connect + subscribe before the post
+sleep 2
 api_post "$PO_TOKEN" "/api/channels/$SPOKE/messages" "{\"body\":\"$ND\"}" >/dev/null || bad "D: PO post failed"
 if wait "$DPID"; then ok "D await-deliver ($(head -1 /tmp/cyp687-d.out))"; else bad "D -> $(head -1 /tmp/cyp687-d.out)"; fi
 
@@ -97,11 +128,18 @@ json_true "$EV1" "any(('$AGENT' in json.dumps(x)) and (x.get('source')=='remote'
 say "Fail-closed controls"
 probe "FC1 operator token on /ws/hub -> close 1008" -- --cmd expect-unauthorized --url "$WS" --token "$OPERATOR_TOKEN"
 probe "FC2 send-before-hello -> WireError(PROTOCOL)" -- --cmd send-before-hello --url "$WS" --token "$AGENT_TOKEN" --channel "$SPOKE"
-probe "FC3 elevated-caps accepted; server clamps REMOTE" -- --cmd elevated-caps --url "$WS" --token "$AGENT_TOKEN"
+# FC3 — the WIRE probe is the AUTHORITATIVE check: the server accepts the elevated-caps hello and clamps to the REMOTE
+# ceiling structurally (:131-136; CapabilityGate: AVAILABLE->ENABLED, LIMITED->DEGRADED). The REST caps snapshot below
+# is ADVISORY only (NOT counted) — a robust struct-check needs the exact /api/agents caps field (see the note); the
+# earlier substring test was decoration that could go vacuum-green / false-red, so it is demoted, not trusted.
+probe "FC3 elevated-caps accepted; server clamps REMOTE (authoritative)" -- --cmd elevated-caps --url "$WS" --token "$AGENT_TOKEN"
 AGD="$(api_get "$OPERATOR_TOKEN" /api/agents)"
-# best-effort: the clamped agent must not surface an ENABLED capability MODE (po2: adjust the field if the shape differs).
-json_true "$AGD" "'enabled' not in json.dumps([x for x in ($(items agents)) if x.get('id')=='$AGENT']).lower()" \
-  && ok "FC3 REST: '$AGENT' caps DEGRADED/clamped, never ENABLED" || bad "FC3: '$AGENT' shows ENABLED caps (clamp broken)"
+if json_true "$AGD" "next((x.get('capabilities') for x in ($(items agents)) if x.get('id')=='$AGENT'), {}).get('structuredUsage')=='available'"; then
+  note "FC3 REST (advisory): '$AGENT'.capabilities.structuredUsage reads 'available' — if the caps field is present this hints the clamp did NOT apply; confirm the exact field with Backend2 (Capabilities{structuredUsage,toolGranularity,...}, REMOTE ceiling = UNAVAILABLE/LIMITED, never all-AVAILABLE)."
+else
+  note "FC3 REST (advisory): '$AGENT' caps do not surface an all-AVAILABLE structuredUsage (consistent with the REMOTE clamp) OR the caps field shape differs — the WIRE probe above is the authoritative FC3 signal either way."
+fi
+
 probe "FC4 send-without-canWrite -> uniform WireError(FORBIDDEN)" -- --cmd send-no-write --url "$WS" --token "$AGENT_TOKEN" --channel "forbidden-$(cat /proc/sys/kernel/random/uuid)"
 
 # ── Restart-repetition (the CYP-172 guard — a config-declared agent survives restart) ─────────────────────────────
@@ -116,5 +154,5 @@ if wait "$DPID2"; then ok "D(after restart) await-deliver ($(head -1 /tmp/cyp687
 
 # ── Verdict ───────────────────────────────────────────────────────────────────────────────────────────────────────
 say "Verdict"
-if [ "$FAILURES" = 0 ]; then echo "M1.1 ACCEPTANCE: PASS (A–E + 4 fail-closed + restart-repetition, on the .deb-installed hub)"; exit 0
-else echo "M1.1 ACCEPTANCE: FAIL ($FAILURES step(s))"; exit 1; fi
+if [ "$FAILURES" = 0 ]; then echo "M1.1 ACCEPTANCE: PASS (A–E + 4 fail-closed + restart-repetition, on the .deb-installed hub — LEFT LIVE)"; exit 0
+else echo "M1.1 ACCEPTANCE: FAIL ($FAILURES step(s)) — box auto-purged for a clean re-run (unless --no-cleanup)"; exit 1; fi
