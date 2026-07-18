@@ -14,8 +14,10 @@ import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
+import com.tneff.cyppieagents.model.MarkReadRequest
 import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.ProjectScope
+import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
 import com.tneff.cyppieagents.model.Subscribe
@@ -199,6 +201,21 @@ fun Route.commRoutes(
             call.respond(hub.inbox(participant, since))
         }
 
+        // CYP-705 — unread-per-channel read-state. Read-tier (requireCommReader subject → the ACL read-subject,
+        // never a client-supplied id), self-only. Absent channels = UNKNOWN (the caller has no cursor there).
+        get("/read-state") {
+            val participant = call.requireCommReader(deps, registry)
+            call.respond(hub.readState(participant))
+        }
+        // Non-optimistic mark-read: advance the caller's cursor to max(existing, upToSeq); returns the updated
+        // ChannelReadState (the client shows "read" only on this echo). ACL-canRead-gated (403 without a grant).
+        post("/channels/{id}/read") {
+            val participant = call.requireCommReader(deps, registry)
+            val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+            val req = call.receive<MarkReadRequest>()
+            call.respond(hub.markRead(participant, channelId, req.upToSeq))
+        }
+
         get("/acl") {
             val participant = call.requireCommReader(deps, registry)
             val filterChannel = call.request.queryParameters["channelId"]
@@ -266,6 +283,13 @@ fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry, deps: c
                 if (out != null) emit(out)
             }
         }
+        // CYP-705: the self-only read-state pump — forward a ReadStateEvent ONLY when it targets THIS
+        // participant (the subject is matched server-side and never sent on the wire → content-free).
+        val readStatePump = launch {
+            hub.readStateEvents.collect { targeted ->
+                if (targeted.subject == participant) emit(targeted.event)
+            }
+        }
         try {
             for (frame in incoming) {
                 if (frame is Frame.Text) {
@@ -275,6 +299,7 @@ fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry, deps: c
             }
         } finally {
             pump.cancel()
+            readStatePump.cancel() // CYP-705
         }
     }
 }
@@ -319,4 +344,7 @@ internal fun commEventForParticipant(
             null
         }
     is ChannelsEvent -> ChannelsEvent(state.acl.readableChannels(participant)) // re-scope to participant
+    // CYP-705: ReadStateEvent is per-recipient and NEVER broadcast through this content-filter path — it is
+    // routed self-only via the Hub's targeted read-state flow (see commSocket). So it can't arrive here.
+    is ReadStateEvent -> null
 }

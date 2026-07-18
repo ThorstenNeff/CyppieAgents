@@ -316,6 +316,90 @@
                 }
             }
         },
+        "/api/read-state": {
+            "get": {
+                "operationId": "get_api_read-state",
+                "x-auth-tier": "PARTICIPANT",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ChannelReadState"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/channels/{id}/read": {
+            "post": {
+                "operationId": "post_api_channels__id__read",
+                "x-auth-tier": "PARTICIPANT",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MarkReadRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ChannelReadState"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/acl": {
             "get": {
                 "operationId": "get_api_acl",
@@ -2829,6 +2913,36 @@
                 },
                 "required": [
                     "body"
+                ]
+            },
+            "ChannelReadState": {
+                "type": "object",
+                "properties": {
+                    "channelId": {
+                        "type": "string"
+                    },
+                    "lastReadSeq": {
+                        "type": "integer"
+                    },
+                    "unreadCount": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "channelId",
+                    "lastReadSeq",
+                    "unreadCount"
+                ]
+            },
+            "MarkReadRequest": {
+                "type": "object",
+                "properties": {
+                    "upToSeq": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "upToSeq"
                 ]
             },
             "AclEntry": {
