@@ -14,7 +14,9 @@ import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.routing.TokenRegistry
 import com.tneff.cyppieagents.routing.installPlatform
 import io.ktor.client.request.header
+import io.ktor.client.request.setBody
 import io.ktor.client.request.request
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -165,6 +167,91 @@ class Cyp710PrincipalClassesTest {
                 anyAdmitted,
                 "INCONCLUSIVE, not a pass: no principal class was admitted at ${p.method} ${p.path}, so its denials " +
                     "are indistinguishable from the route not existing at all",
+            )
+        }
+    }
+
+
+    // ---------- class (c): the kill-switch-downgraded operator token ----------
+    /**
+     * CYP-710 class (c) `MachineAgent(null)`. The deploy kill-switch (`operatorTokenDisabled`) demotes the machine
+     * OPERATOR token, but ONLY once a role-OPERATOR row exists (Principal.kt:105, the never-lock-out condition) —
+     * so the fixture needs BOTH the flag and a bumped pinned human, and it therefore cannot share the app instance
+     * above.
+     *
+     * Two candidate findings are measured here rather than asserted from code reading:
+     *  - does `requireCommReader` still admit it? It reaches `isOperator` DIRECTLY (routing/Auth.kt:87) rather than
+     *    going through `resolvePrincipal`, which would make the kill-switch ineffective on that whole mechanism.
+     *  - does `GET /api/auth/me` still report OPERATOR? `resolveAuthState` (Principal.kt:142) checks
+     *    `tokens.isOperator(bearer)` FIRST, which would make the whoami disagree with every gated op.
+     *
+     * The assertions state what is SAFE either way (the structural gate must refuse the downgraded token) and
+     * REPORT the two bypass observations without failing on them — they are findings for the coordinator to grade,
+     * not a verdict this test invents.
+     */
+    @Test
+    fun killSwitchDowngradedOperatorToken_isMachineAgentNull() = testApplication {
+        val db = Files.createTempFile("cyp710-killswitch", ".db")
+        val roles = SqliteRoleStore(db, bootstrapOperatorId = "alice")
+        val authDeps = AuthDeps(
+            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
+            idp = FakeIdentityProvider(mapOf("sess-alice" to ResolvedIdentity("alice", verified = true))),
+            roles = roles,
+            nowMs = { 1_000L },
+            operatorTokenDisabled = true, // the deploy kill-switch
+        )
+        application { installPlatform(bootFake(), authDeps, settingsClient = KratosSettingsClient("http://localhost:1")) }
+        startApplication()
+
+        // BEFORE any role-OPERATOR row exists the kill-switch is deliberately inert (never lock yourself out).
+        val beforeBump = client.request("/api/projects") { header("Authorization", "Bearer $opToken") }.status
+        assertTrue(
+            beforeBump.isAdmitted(),
+            "precondition: with NO role-OPERATOR row the kill-switch must be INERT, so the operator token still " +
+                "works — if this is already denied, the rest of this test would be measuring the wrong cause (got $beforeBump)",
+        )
+
+        // Create the role-OPERATOR row; the kill-switch becomes effective from here.
+        client.request("/api/auth/me") { header("X-Session-Token", "sess-alice") }
+
+        val structural = client.request("/api/projects") { header("Authorization", "Bearer $opToken") }.status
+        val commReader = client.request("/api/channels") { header("Authorization", "Bearer $opToken") }.status
+        val whoami = client.request("/api/auth/me") { header("Authorization", "Bearer $opToken") }
+        val whoamiBody = whoami.bodyAsText()
+
+        println(
+            "CYP710-KILLSWITCH structural=${structural.value} commReader=${commReader.value} whoami=${whoami.status.value} body=$whoamiBody",
+        )
+
+        // THE SAFETY INVARIANT — this is what must hold, and it is asserted.
+        assertTrue(
+            !structural.isAdmitted(),
+            "CYP-186 C.2: once a role-OPERATOR exists, the kill-switch MUST demote the machine operator token at " +
+                "structurally-gated OPERATOR ops (got $structural)",
+        )
+
+        // Does the downgraded token still WRITE on the comm surface? participantFor() maps the operator token to
+        // HubState.OPERATOR_ID (routing/Auth.kt:87) and BOTH requireCommReader (:126) and requireCommWriter (:145)
+        // consult it, so the token may keep the OPERATOR's full ACL identity for writes too. Measured, not inferred.
+        val write = client.request("/api/channels/po-backend/messages") {
+            method = HttpMethod.Post
+            header("Authorization", "Bearer $opToken")
+            header("Content-Type", "application/json")
+            setBody("""{"body":"cyp710-killswitch-write-probe"}""")
+        }
+        println("CYP710-KILLSWITCH write=${write.status.value} body=${write.bodyAsText().take(160)}")
+
+        // THE TWO OBSERVATIONS — reported, not adjudicated here.
+        if (commReader.isAdmitted()) {
+            println(
+                "CYP710-FINDING requireCommReader ADMITS the kill-switch-downgraded operator token ($commReader) " +
+                    "while the structural gate refuses it ($structural) — the kill-switch does not reach mechanism B",
+            )
+        }
+        if (whoamiBody.contains("OPERATOR")) {
+            println(
+                "CYP710-FINDING GET /api/auth/me still reports OPERATOR for the downgraded token: $whoamiBody — " +
+                    "the whoami disagrees with every structurally-gated op",
             )
         }
     }
