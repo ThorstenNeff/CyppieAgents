@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,10 +32,14 @@ class FirstRunViewModel(
     private val _status = MutableStateFlow(FirstRunConfigStatus.Unknown)
     val status: StateFlow<FirstRunConfigStatus> = _status.asStateFlow()
 
+    /** The active load/poll coroutine, tracked so [dispose] can cancel the §7.3 poll loop on teardown. */
+    private var loadJob: Job? = null
+
     init { reload() }
 
     fun reload() {
-        runScope.launch {
+        loadJob?.cancel() // a retry supersedes any in-flight poll — never stack two poll loops on the same source
+        loadJob = runScope.launch {
             _status.value = FirstRunConfigStatus.Unknown // fail-closed while the status is being (re)fetched
             var s = fetchOnce()
             _status.value = s
@@ -45,6 +50,18 @@ class FirstRunViewModel(
                 _status.value = s
             }
         }
+    }
+
+    /**
+     * CYP-629 (same class as CYP-443 Slice 3, [[cmp-remember-vm-no-oncleared]]) — the composition-disposal teardown.
+     * [FirstRunGate] holds this VM via a plain `remember` (NOT a `ViewModelStore`), so `onCleared` never fires on
+     * composition exit — without this, the §7.3 clone poll (a `while (in-progress) delay()` loop) would keep
+     * re-fetching **forever** after the gate left composition. The gate's `DisposableEffect { onDispose { dispose() } }`
+     * routes that exit here so the poll is cancelled. Idempotent.
+     */
+    fun dispose() {
+        loadJob?.cancel()
+        loadJob = null
     }
 
     private suspend fun fetchOnce(): FirstRunConfigStatus = try {
