@@ -14,22 +14,23 @@
 
 ---
 
-## 0. Fakten-Quelle & Gating (WICHTIG — vor Copy-Finalisierung)
+## 0. Fakten-Quelle & Gating — ✅ §4 FINALISIERT (verbatim gg. cyp638)
 
 Die **faktischen Trust-Boundary-Aussagen** (was das Gateway sieht, was „server-servierte Krypto ohne Pin"
-genau bedeutet) sind **Sicherheits-Aussagen** — die schreibe ich **nicht aus dem Gedächtnis/paraphrasiert**,
-sondern **verbatim gegroundet** auf die ratifizierte Quelle. Das ist dieselbe Disziplin, die ich an gebauten
-Screens prüfe: **eine Garantie/Boundary-Aussage nie überstellen, immer gegen eine kontrollierte Wahrheit
-belegen.**
+genau bedeutet) sind **Sicherheits-Aussagen** — **nicht aus dem Gedächtnis/paraphrasiert**, sondern **verbatim
+gegroundet** auf die ratifizierte Quelle. Dieselbe Disziplin, die ich an gebauten Screens prüfe: **eine
+Garantie/Boundary-Aussage nie überstellen, immer gegen eine kontrollierte Wahrheit belegen.**
 
-- **Quelle:** `cyp638-remote-hub-trust-boundary-one-pager.md` (PO liefert an) — die ratifizierten Fakten.
-- **Fakten-Check:** Backend2 gegen die Server-Truth · **Review:** PO.
-- **Konsequenz für dieses Dokument:** die **Struktur, States, Form, A11y, Tags, Seam, Verify-Teeth** stehen
-  fest (aus Code-Truth gegroundet). Die **Copy-Strings mit Sicherheits-Fakten** (§4, native/gateway-Detail +
-  Gateway-Disclosure) sind **PROVISORISCH** — Platzhalter in der richtigen Stimme, die **1:1 gegen das
-  One-Pager finalisiert** werden, sobald es vorliegt. **Kein Merge/Bau der Copy vor B2-Fakten-Check + PO-Review.**
-- **(a) User-Doku:** schreibe ich in einem **eigenen Drop**, sobald das One-Pager da ist (gleiche Stimme wie §4).
-  → **Ich bitte um das One-Pager** (PO-Angebot „sag, wenn du's brauchst"): **ja, bitte anhängen.**
+- **✅ Quelle vorliegend:** `cyp638-remote-hub-trust-boundary-one-pager.md` (PO msg 1527893297, Stand 2026-07-17;
+  Grundlage = Backend2 server-truth `cyp638-trust-boundary-artifact.md` §3–§5, code-belegt). **Ratifizierte
+  Weiche = Option A** (Browser-Remote nur Self-Hosted; nativ = Strong-Path).
+- **✅ §4 gegen diese Fakten FINALISIERT** (nicht mehr provisorisch) — jede Sicherheits-Klausel trägt eine
+  **Quellen-Zeile** (§4.1) für den Fakten-Check.
+- **Offener Flow (PO-Routing):** §4 final → **Backend2 fakten-checkt gg. server-truth** → **PO reviewt** → PO
+  routet die finale Spec an Dev5 (Copy/State-Swap). **Kein Copy-Merge/Bau vor B2-Check + PO-Review.**
+- **✅ 3 Design-Entscheidungen PO-RATIFIZIERT** (msg 1527893297): (1) `UNKNOWN` fail-closed Default · (2)
+  `BROWSER_GATEWAY` NEUTRAL (nicht rot/amber) · (3) distinkte Domäne `remote.security.tier*`. Alle GO.
+- **(a) User-Doku:** eigener Drop **nach** §4-Review, gleiche Stimme wie §4 — gegroundet auf dieselbe cyp638-Quelle.
 
 ---
 
@@ -57,9 +58,9 @@ Begründung (PO-ratifizierbar):
 | **`BROWSER_GATEWAY`** | **Advisory / informativ** | dokumentiert **schwächer**: Gateway sieht Klartext; server-servierte Krypto ohne unabhängigen Pin | die schwächere, dokumentierte Stufe |
 | **`UNKNOWN`** *(ergänzt)* | **fail-closed neutral** | Stufe noch nicht ermittelt (Verbindungsaufbau / unbestimmt) | **Honesty:** die Komponente darf **nie** auf `NATIVE` defaulten, bevor die Stufe feststeht (kein optimistisches Grün). Da das Wiring S7-gated ist, kann die Komponente vor der Auflösung gemountet werden → sie braucht einen ehrlichen Ruhezustand. |
 
-> **`UNKNOWN` ist der Default** (kein Default-Argument auf `NATIVE`). Wenn PO die 3. Stufe nicht will, ist der
-> **fail-closed-Default trotzdem Pflicht** — dann rendert die Komponente bei unbekanntem Tier schlicht nichts
-> Bestätigendes (nie `NATIVE`). Empfehlung: die sichtbare `UNKNOWN`-Stufe **behalten** (ehrlicher als leer).
+> **✅ PO-RATIFIZIERT (msg 1527893297):** `UNKNOWN` als fail-closed Default = Pflicht (nie optimistisch-NATIVE
+> vor Tier-Klarheit). `UNKNOWN` ist der Default-Param (kein Default-Argument auf `NATIVE`); die sichtbare
+> `UNKNOWN`-Stufe bleibt (ehrlicher als leer).
 
 ---
 
@@ -95,12 +96,12 @@ vorgesehene Slot. Die Komponente ist **standalone** (nimmt `tier` als Param, §6
 
 ---
 
-## 4. Copy — DE (Default) + EN · **§4-Sicherheits-Fakten = PROVISORISCH (s. §0)**
+## 4. Copy — DE (Default) + EN · ✅ FINALISIERT (verbatim gg. cyp638, §4.1)
 
 > DE → `app/shared/src/commonMain/composeResources/values/strings.xml` · EN → `…/values-en/strings.xml`.
 > **0 Args**, DE==EN Arg-Parität. Apostroph: dieselbe Konvention wie die umgebende recovery/connect-Sektion.
-> **Badge-Labels sind stabil** (kurz, faktisch). **Die mit ⚠FAKT markierten Detail/Disclosure-Zeilen sind
-> Platzhalter in der richtigen Stimme — 1:1 gegen `cyp638`-One-Pager finalisieren + B2-Fakten-Check.**
+> **Badge-Labels stabil** (kurz, faktisch). Die Detail/Disclosure/a11y-Zeilen sind **verbatim gegen die
+> ratifizierten cyp638-Fakten gegroundet** — Quellen-Mapping in **§4.1** für den Backend2-Fakten-Check.
 
 **DE:**
 ```xml
@@ -108,10 +109,9 @@ vorgesehene Slot. Die Komponente ist **standalone** (nimmt `tier` als Param, §6
 <string name="remote_security_tier_native">Ende-zu-Ende</string>
 <string name="remote_security_tier_gateway">Browser-Gateway</string>
 <string name="remote_security_tier_unknown">Wird geprüft</string>
-<!-- ⚠FAKT (provisorisch, gg. cyp638 finalisieren): -->
 <string name="remote_security_tier_native_detail">Direkt Ende-zu-Ende verschlüsselt (Noise-E2E), Hub-Identität gepinnt.</string>
-<string name="remote_security_tier_gateway_disclosure">Über ein Browser-Gateway verbunden. Das Gateway sieht den Datenverkehr im Klartext; die Verschlüsselung wird vom Server bereitgestellt, ohne unabhängigen Pin. Dokumentiert schwächer als die direkte Ende-zu-Ende-Verbindung — vorgesehen für selbst gehostete Hubs.</string>
-<string name="a11y_remote_security_tier_gateway">Verbindungssicherheit: Browser-Gateway — dokumentiert schwächer als Ende-zu-Ende.</string>
+<string name="remote_security_tier_gateway_disclosure">Über ein Browser-Gateway verbunden. Anders als bei der nativen Ende-zu-Ende-Verbindung endet die Verschlüsselung am Gateway: es sieht den Datenverkehr zum Hub im Klartext, und die Browser-App wird vom Server ausgeliefert — ohne unabhängigen Pin. Dokumentiert schwächer; vorgesehen nur für selbst gehostete Hubs, die dir gehören.</string>
+<string name="a11y_remote_security_tier_gateway">Verbindungssicherheit: Browser-Gateway — dokumentiert schwächer als die native Ende-zu-Ende-Verbindung.</string>
 <string name="a11y_remote_security_tier_native">Verbindungssicherheit: Ende-zu-Ende, direkt verschlüsselt und Hub-Identität gepinnt.</string>
 <string name="a11y_remote_security_tier_unknown">Verbindungssicherheit wird ermittelt.</string>
 ```
@@ -121,10 +121,9 @@ vorgesehene Slot. Die Komponente ist **standalone** (nimmt `tier` als Param, §6
 <string name="remote_security_tier_native">End-to-end</string>
 <string name="remote_security_tier_gateway">Browser gateway</string>
 <string name="remote_security_tier_unknown">Checking…</string>
-<!-- ⚠FAKT (provisional, finalize against cyp638): -->
 <string name="remote_security_tier_native_detail">Directly end-to-end encrypted (Noise-E2E), hub identity pinned.</string>
-<string name="remote_security_tier_gateway_disclosure">Connected via a browser gateway. The gateway sees the traffic in cleartext; the encryption is served by the server, without an independent pin. Documented as weaker than the direct end-to-end connection — intended for self-hosted hubs.</string>
-<string name="a11y_remote_security_tier_gateway">Connection security: browser gateway — documented as weaker than end-to-end.</string>
+<string name="remote_security_tier_gateway_disclosure">Connected via a browser gateway. Unlike the native end-to-end connection, the encryption ends at the gateway: it sees the traffic to the hub in cleartext, and the browser app is served by the server — without an independent pin. Documented as weaker; intended only for self-hosted hubs that you own.</string>
+<string name="a11y_remote_security_tier_gateway">Connection security: browser gateway — documented as weaker than the native end-to-end connection.</string>
 <string name="a11y_remote_security_tier_native">Connection security: end-to-end, directly encrypted and hub identity pinned.</string>
 <string name="a11y_remote_security_tier_unknown">Determining connection security…</string>
 ```
@@ -134,8 +133,23 @@ vorgesehene Slot. Die Komponente ist **standalone** (nimmt `tier` als Param, §6
   **faktischer Komparativ** („dokumentiert schwächer"), kein Alarm, kein Beschwichtigen.
 - **Kein Hype auf `NATIVE`** (kein „100 % / vollkommen sicher") — nennt den **Mechanismus** (Noise-E2E, Pin),
   keinen Superlativ.
-- Gateway nennt **exakt was schwächer ist** (Gateway sieht Klartext · server-servierte Krypto · kein
-  unabhängiger Pin) **und** den vorgesehenen Kontext (self-hosted) — **das sind die ⚠FAKT-Zeilen** (§0).
+- Gateway nennt **exakt die zwei ratifizierten Residuals** (A2-Hop-Klartext · RR6 server-servierte App ohne Pin)
+  **und** die ratifizierte Bedingung (nur operator-owned self-hosted, cyp638 Präz. i).
+
+### 4.1 Quellen-Mapping (verbatim gg. cyp638 — für den Backend2-Fakten-Check)
+| Copy-Klausel | cyp638-Fakt (verbatim-Grundlage) |
+|---|---|
+| `native_detail`: „Direkt Ende-zu-Ende verschlüsselt (Noise-E2E)" | „Nativ ist Device⇄Hub durchgehend **Noise-verschlüsselt** (E2E)" (§Was strukturell passiert) |
+| `native_detail`: „Hub-Identität gepinnt" | „Malicious-CP wird durch client-seitiges **TOFU-Pinning** abgefangen"; Anchor = „shipped Binary + Operator-TOFU-Pin" (§E2E-vs-NOT) |
+| `gateway_disclosure`: „die Verschlüsselung endet am Gateway" | „die native E2E-Spanne wird **am Gateway zerschnitten**: `Browser —TLS— Gateway` + `Gateway —(Klartext)— Hub`" |
+| `gateway_disclosure`: „sieht den Datenverkehr zum Hub im Klartext" | **(A2-Hop)** „der Gateway sieht operator↔hub **im Klartext**" |
+| `gateway_disclosure`: „die Browser-App wird vom Server ausgeliefert — ohne unabhängigen Pin" | **(RR6)** „die Browser-Krypto/der Trust-Anchor ist **server-serviert** (SPA/JS vom Gateway) ohne native-Pin-Äquivalent" |
+| `gateway_disclosure`: „dokumentiert schwächer" | „Browser = **dokumentiert schwächer**, ‚vertraut TLS + der server-servierten SPA'" (Option A) |
+| `gateway_disclosure`: „nur für selbst gehostete Hubs, die dir gehören" | Präz. i: „gilt NUR wenn gateway+CP+hub wirklich **operator-owned** sind"; Freigabe „strikt an operator-owned gateway+CP+hub gebunden" |
+
+> **B2-Prüf-Fokus:** stimmt jede rechte Spalte mit der server-truth `cyp638-trust-boundary-artifact.md` §3–§5?
+> Insb. (a) „Klartext zum Hub" = A2-Hop akkurat? (b) „App vom Server, kein Pin" = RR6 akkurat, nicht
+> über/unter-stellend? (c) impliziert die Copy **nirgends** die native Garantie für den Gateway-Fall?
 
 ---
 
@@ -252,9 +266,11 @@ meine stehende Disziplin (Keys entwerfe ich, landen tut sie die Impl).
 - **Honesty-Kern (§5):** Garantie- vs. Advisory-Register distinkt · `BROWSER_GATEWAY` neutral (nicht
   alarm-rot, nicht downplay) · `UNKNOWN` fail-closed (nie optimistisch `NATIVE`) · Anti-Hype/Anti-Downplay
   an jeder Copy-Zeile.
-- **PROVISORISCH & korrekt gegated:** die §4-Sicherheits-Fakten-Zeilen finalisiere ich gegen
-  `cyp638`-One-Pager (B2-Fakten-Check + PO-Review); **kein Copy-Merge davor** (§0). **User-Doku (a) folgt als
-  eigener Drop**, sobald das One-Pager vorliegt — gleiche Stimme wie §4.
+- **✅ §4 FINALISIERT verbatim gg. cyp638** (Quellen-Mapping §4.1 je Klausel → A2-Hop/RR6/Präz.i). Offener
+  Flow: **B2-Fakten-Check → PO-Review → Dev5**; **kein Copy-Merge davor** (§0). **User-Doku (a) folgt als
+  eigener Drop nach dem §4-Review** — gleiche Stimme, dieselbe cyp638-Quelle.
+- **✅ 3 Design-Entscheidungen PO-ratifiziert** (UNKNOWN-fail-closed · BROWSER_GATEWAY-neutral · Domäne
+  `remote.security.tier*`).
 - **Reuse-first, kein Duplikat:** neue Namens-Domäne `remote.security.tier*` bewusst getrennt von der
   Pinning-`trust`-Familie; Pill+TonedHint gespiegelt, kein divergenter Dialekt.
 - Kein Bau; docs-only auf `feature/CYP-676-trust-delta-indicator-spec` (Basis `025b17ae`).
