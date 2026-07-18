@@ -54,6 +54,7 @@ import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dropp
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_unreachable
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_uv_failed
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_changed
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_rejected
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_provisional
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_check
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -337,6 +338,21 @@ private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectView
             Text("▲ ", color = severityColor(Severity.WARN))
             Text(
                 stringResource(Res.string.remote_connect_trust_changed),
+                color = severityColor(Severity.WARN),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        RemoteFailure.TrustRejected -> Row(
+            modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.error("trustRejected")),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // CYP-478/696: a deliberate first-use OOB reject is a fail-closed safety stop (verify-OOB WARN-amber), NOT
+            // a "broken" error-red. Terminal / no retry (re-pin is OOB-only) — same form (▲) + colour + label as the
+            // TrustChanged block above (WCAG 1.4.1), distinct copy + tag.
+            Text("▲ ", color = severityColor(Severity.WARN))
+            Text(
+                stringResource(Res.string.remote_connect_trust_rejected),
                 color = severityColor(Severity.WARN),
                 style = MaterialTheme.typography.bodySmall,
             )
