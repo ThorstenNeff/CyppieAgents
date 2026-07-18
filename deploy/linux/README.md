@@ -71,16 +71,28 @@ have.
   `/etc/cyppiehub/hub.env` **and** the `cyppie` user, **together** — never a half-deleted state (orphaned key XOR
   orphaned store). The Linux analog of CYP-630's `-WipeData`.
 
-## Verification (CYP-636, on this host)
+## Build-host smoke (CYP-636) — NECESSARY, not sufficient
+
+> ⚠ **This is a build-host smoke, NOT the M1.1 acceptance.** `health=ok` proves the service *starts* — a live service
+> that can do nothing is the expensive false-green. **build-host green ≠ valid on the Ubuntu-26 target.** The real
+> acceptance is gap-4 (Target acceptance) below.
 
 ```sh
 ./gradlew :server:hubInstaller                       # → server/build/hub-installer/cyppiehub_<ver>_amd64.deb
 sudo apt install ./…/cyppiehub_<ver>_amd64.deb       # postinst: user + provision + enable --now
 systemctl status cyppiehub && journalctl -u cyppiehub  # Application started, Responding at 127.0.0.1:8787
-curl http://127.0.0.1:8787/api/health                # → ok  (master-key-gated SecretStore up)
+curl http://127.0.0.1:8787/api/health                # → ok (SMOKE only — the service is up; NOT the DoD)
 sudo apt remove cyppiehub                            # /var/lib/cyppiehub PRESERVED → reinstall reattaches
 sudo apt purge  cyppiehub                            # data + secrets + user WIPED together
 ```
+
+## ★ Target acceptance (Ubuntu 26.04, po2's box) — gap-4, the M1.1 DoD (OPEN)
+
+gap-1's **glibc floor is closed with evidence** (bare `libc6`, measured on a real Ubuntu-26.04 build host). But
+**install + start + agents-come-up on the Ubuntu-26.04 target is gap-4, and stays OPEN until po2 runs it on the real
+box** — a green build here does NOT close M1.1. The DoD (Tester A–E) runs on **po2's Ubuntu-26 box, NOT the build
+host**, and proves a **REMOTE agent REGISTERS + CONNECTS + exchanges a message BOTH ways over `/ws/hub`** (E:
+`source=remote`, the non-vacuosity anchor) **+ survives a hub restart** — NOT `health=ok`.
 
 ## Automated lifecycle acceptance (CYP-637) — TEST-SCOPED, safe-by-construction
 
