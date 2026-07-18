@@ -79,6 +79,28 @@ fun Route.hubWireRoutes(
             close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
             return@webSocket
         }
+        // CYP-172: at-connect roster cross-check. `agentFor` is a bare token→agentId map (Auth.kt:32) with no
+        // roster validation, so a token OUTLIVES its agent's membership: after a project switch (`state.rescope`,
+        // HubState.kt:277) the outgoing project's agents are stashed while their tokens stay bound in the
+        // registry, so a stale token still resolves to an agentId above. Require that agentId to be a LIVE
+        // participant of the ACTIVE roster (`state.agent(id) != null`) — else refuse with the SAME "unauthorized"
+        // reason as an unknown token. This is the sole admission gate for the stale/cross-project agent: cutting
+        // the connection here (before any frame) also denies its cross-project event-log write (edge ③), and
+        // closes the unrevocability gap (a stashed agent cannot be revoked via the normal route).
+        //
+        // DELIBERATE SEMANTIC (Topology-A, flagged not silent): `state.agents` is the ACTIVE project's roster,
+        // and remote agents are excluded from the per-project store (`toStore = … && !spec.remote`,
+        // AgentManagement.kt:178) → there is no per-project roster covering runtime remote agents. So this check
+        // ALSO refuses the bridge of a legitimately INACTIVE project, not only a switched-away/deleted one.
+        // Defensible while one hub serves one active project; REVISIT for multi-active-project topologies. It
+        // couples with the (deferred) all-or-nothing remote-aware rehydration: a legit ACTIVE-project remote
+        // agent must be rehydrated back INTO `state.agents` on reboot, else this gate would refuse it — today it
+        // is already refused post-reboot because CYP-690's boot orphan-purge revokes the not-in-roster token, so
+        // this adds no new post-reboot breakage; it closes the WITHIN-runtime switch hole the tooth pins.
+        if (hub.state.agent(agentId) == null) {
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
+            return@webSocket
+        }
 
         // RC1 (CYP-141): ONE shared lock guards EVERY send on this WS — the read-loop's reply() AND the
         // deliverer's async WireDeliver push (the wire-backed session). Two unsynchronized writers on one

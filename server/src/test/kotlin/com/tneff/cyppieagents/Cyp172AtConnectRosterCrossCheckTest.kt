@@ -46,7 +46,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -221,31 +220,36 @@ class Cyp172AtConnectRosterCrossCheckTest {
         assertWireAccepts(fx.liveTokenB, "ANCHOR: an agent in the ACTIVE roster must authenticate")
     }
 
-    // ---------- ④ the hole is REAL today + the ACL block is verified-good (green now) ----------
+    // ---------- ④ the hole is now CLOSED + the ACL block stays verified-good (green after the fix) ----------
     /**
-     * Characterises the CURRENT behaviour and pins the part that already holds:
-     *  - the stale agent's token is still bound and the socket is ACCEPTED (→ the hole is real, and ②/③'s
-     *    red is a genuine gap rather than a broken fixture);
-     *  - but `WireSend` into the active project is refused by the ACL (fail-closed, no cross-project OR).
-     *
-     * When the CYP-172 fix lands this test must be REVISITED: the connect will start being refused, so the
-     * "accepted" half becomes obsolete while the ACL half stays. It is deliberately separate from ②/③ so the
-     * fix does not silently erase the record of what the hole was.
+     * REVISED when the CYP-172 fix landed (the pre-fix ④ was flagged "must be REVISITED": it asserted the stale
+     * agent is ACCEPTED at connect, which the fix now refuses). This keeps ④'s two intents, both post-fix:
+     *  - **the hole is CLOSED** — the stale agent (bound token, not in the active roster) is now refused AT
+     *    CONNECT (the characterisation that used to say "accepted" is inverted by the fix);
+     *  - **the ACL block is still verified-good** — the fix must not become the ONLY defense. An agent that IS
+     *    in the active roster (`frontend`) still has a `WireSend` into a channel it does not own fail-closed by
+     *    the ACL (member AND canWrite, no cross-project OR). This preserves the AclMatrix regression guard the
+     *    pre-fix ④ carried, now via an in-roster sender since the stale agent can no longer reach the send path.
+     * Kept separate from ②/③ so the record of the ACL layer is not silently erased by the connect-refusal fix.
      */
     @Test
-    fun cyp172_4_today_staleAgentConnects_butAclStillBlocksItsSend() = testApplication {
+    fun cyp172_4_afterFix_staleRefusedAtConnect_andAclStillFailClosesUnownedChannel() = testApplication {
         val fx = installPostSwitch()
         assertTrue(fx.state.agent("byoa") == null, "precondition: 'byoa' is NOT in the active roster after the switch")
+        // (a) the hole is CLOSED: the stale agent is now refused at the auth check (was ACCEPTED pre-fix).
+        assertWireRefusedAtAuth(fx.staleToken, "CYP-172 fix: a stale (not-in-active-roster) token must be refused at connect")
+        // (b) the ACL block stays verified-good — an IN-ROSTER agent's send into a channel it does not own is
+        //     still fail-closed (AclMatrix). "po-backend" is project A's spoke, absent from active project B.
         var sendOutcome: WireFrame? = null
         withTimeout(20_000) {
-            wsClient(this@testApplication).webSocket("/ws/hub?token=${fx.staleToken}") {
+            wsClient(this@testApplication).webSocket("/ws/hub?token=${fx.liveTokenB}") {
                 sendFrame(WireHello(allAvailable(), provider))
-                assertIs<WireAck>(recv(), "TODAY: the stale token still authenticates and handshakes (the hole)")
-                sendFrame(WireSend("po-backend", "stale-agent-probe"))
+                assertIs<WireAck>(recv(), "the in-roster control agent authenticates and handshakes")
+                sendFrame(WireSend("po-backend", "unowned-channel-probe"))
                 sendOutcome = recv()
             }
         }
-        assertIs<WireError>(sendOutcome, "VERIFIED-GOOD: the ACL refuses a stale agent's send into the active project")
+        assertIs<WireError>(sendOutcome, "VERIFIED-GOOD: the ACL fail-closes a send into a channel the agent does not own")
     }
 
     // ---------- ② ACCEPTANCE (RED until the fix) — the stale token must be refused AT CONNECT ----------
@@ -257,7 +261,6 @@ class Cyp172AtConnectRosterCrossCheckTest {
      * Un-ignore this when the at-connect cross-check lands — it is the fix's acceptance test.
      */
     @Test
-    @Ignore // RED until the CYP-172 at-connect cross-check lands (acceptance test for the fix)
     fun cyp172_2_staleAgentToken_isRefusedAtConnect_afterProjectSwitch() = testApplication {
         val fx = installPostSwitch()
         assertTrue(fx.state.agent("byoa") == null, "precondition: 'byoa' is NOT in the active roster")
@@ -288,7 +291,6 @@ class Cyp172AtConnectRosterCrossCheckTest {
      * "refused", not "the fixture never connected anything".
      */
     @Test
-    @Ignore // RED until the CYP-172 at-connect cross-check lands (acceptance test for the fix)
     fun cyp172_3_staleAgent_writesNoEventIntoTheActiveProjectsLog() = testApplication {
         val fx = installPostSwitch()
 
