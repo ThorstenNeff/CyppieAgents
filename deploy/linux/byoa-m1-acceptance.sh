@@ -112,14 +112,22 @@ PO_TOKEN="$(sed -n 's/^HUB_TOKEN_PO=//p' "$ENVFILE")"
 AGENT_TOKEN="$(sed -n "s/^HUB_TOKEN_${AGENT^^}=//p" "$ENVFILE")"
 [ -n "$OPERATOR_TOKEN" ] && [ -n "$PO_TOKEN" ] && [ -n "$AGENT_TOKEN" ] || die "missing a required token in $ENVFILE"
 
-# ── A: baseline (the non-vacuosity anchor) — roster has the agent, but NO wire session + NO source=remote yet ──────
-say "A — baseline (anchor)"
+# ── A: contamination precondition — no source=remote alt-events for this agent from a PRIOR run on this box ─────────
+# HONEST ROLE (CYP-687): A is NOT the non-vacuosity guarantee (that is E's drop-the-probe mutation). A is a
+# contamination precondition: it asserts the box carries NO leftover source=remote event for this agent from an
+# earlier run — otherwise E could go green off a stale remnant instead of THIS run's probe. `source` is stamped
+# NESTED at detail.source (WireEventIngest.toDraft), NOT top-level; A (and E) now read x['detail']['source'] and
+# match agentId EXACTLY (was the weak `agent in json.dumps(x)` substring — the wrong path made A do nothing for 3
+# runs). A cannot be naturally red-proven (a pre-connect source=remote event cannot arise — the agent is not yet
+# connected, so it cannot emit a WireEvent); its value is as this precondition, not as a bite-in-the-field anchor.
+say "A — contamination precondition (no prior-run source=remote alt-events)"
 AGENTS="$(api_get "$OPERATOR_TOKEN" /api/agents)"
 json_true "$AGENTS" "any(x.get('id')=='$AGENT' for x in ($(items agents)))" \
   && ok "roster contains '$AGENT' (registered STOPPED, awaiting /ws/hub — config, NOT connection)" || bad "roster missing '$AGENT'"
 EV0="$(api_get "$OPERATOR_TOKEN" /api/events)"
-json_true "$EV0" "not any(('$AGENT' in json.dumps(x)) and (x.get('source')=='remote') for x in ($(items events)))" \
-  && ok "no source=remote event for '$AGENT' before connect (anchor holds)" || bad "a source=remote event exists pre-connect (anchor broken)"
+json_true "$EV0" "not any(x.get('agentId')=='$AGENT' and (x.get('detail') or {}).get('source')=='remote' for x in ($(items events)))" \
+  && ok "no pre-existing source=remote event for '$AGENT' (box clean of prior-run remnants → E's green is THIS run's probe)" \
+  || bad "a source=remote event for '$AGENT' already exists (contaminated box / prior-run remnant → E cannot attribute its green to this run's probe)"
 
 # ── B: auth-bound connect → WireAck("hello") ──────────────────────────────────────────────────────────────────────
 say "B — auth-bound connect (WireHello -> WireAck hello)"
@@ -154,7 +162,7 @@ say "E — source=remote (discriminator)"
 probe "E emit WireEvent(TOOL_CALL)" -- --cmd event --url "$WS" --token "$AGENT_TOKEN"
 sleep 1  # let the fire-and-forget event ingest land in /api/events before the assert
 EV1="$(api_get "$OPERATOR_TOKEN" /api/events)"
-json_true "$EV1" "any(('$AGENT' in json.dumps(x)) and (x.get('source')=='remote') for x in ($(items events)))" \
+json_true "$EV1" "any(x.get('agentId')=='$AGENT' and (x.get('detail') or {}).get('source')=='remote' for x in ($(items events)))" \
   && ok "/api/events shows source=remote for '$AGENT' (over the wire, not a local process)" || bad "no source=remote event for '$AGENT' (E fails)"
 
 # ── 4 fail-closed controls (so a green can actually FAIL) ─────────────────────────────────────────────────────────
