@@ -23,6 +23,32 @@ const base = (over: Partial<AclPanelProps> = {}): AclPanelProps => ({
   ...over,
 })
 
+
+// CYP-693 (W9-F2) — the partial-view disclosure. Tester2's U6: a member sees only their own channels and the
+// matrix therefore LOOKS complete; without a banner they form a false belief about the full ACL. The defect is
+// the silence. Ported from KMP (AclPanel.kt:114 / AclMatrixTags.PARTIAL_VIEW / acl_partial_view).
+describe('CYP-693 — partial-view disclosure', () => {
+  it('★ a NON-operator sees the partial-view banner (the matrix must not read as complete)', () => {
+    const { getByTestId } = render(<AclPanel {...base({ operator: false })} />)
+    const banner = getByTestId('aclMatrix.partialView')
+    expect(banner.textContent).toContain('Teilansicht')
+    expect(banner.getAttribute('role')).toBe('note') // INFO, not alert — nothing has failed
+  })
+
+  it('an OPERATOR sees NO banner (their view is complete — the disclosure would be a lie)', () => {
+    const { queryByTestId } = render(<AclPanel {...base({ operator: true })} />)
+    expect(queryByTestId('aclMatrix.partialView')).toBeNull()
+  })
+
+  it('the banner does not depend on how many channels happen to be visible (role is the fact, not the count)', () => {
+    // a member who happens to see MANY channels is still on a filtered view — the client is never told the system
+    // total, so a count-based gate would fall silent exactly where it is needed.
+    const many: Channel[] = Array.from({ length: 5 }, (_, i) => ({ id: `c${i}`, name: `C${i}`, kind: 'DIRECT', members: ['po', 'frontend'] }))
+    const { getByTestId } = render(<AclPanel {...base({ operator: false, channels: many })} />)
+    expect(getByTestId('aclMatrix.partialView')).toBeTruthy()
+  })
+})
+
 describe('AclPanel — W9 dialog wiring (CYP-425)', () => {
   it('a non-PO toggle commits directly, with no dialog', () => {
     const onCommit = vi.fn()

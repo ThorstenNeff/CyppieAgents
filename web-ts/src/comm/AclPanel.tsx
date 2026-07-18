@@ -94,6 +94,21 @@ export function AclPanel({ channels, agents, entries, pending, poAgentId, operat
         <LoadErrorRetry testId="acl.loadError" onRetry={onRetryLoad ?? (() => undefined)} />
       ) : (
         <>
+          {/* CYP-693 (W9-F2) — the partial-view disclosure, ported from KMP (AclPanel.kt:114, tag
+              AclMatrixTags.PARTIAL_VIEW, string acl_partial_view). A member only ever receives their OWN channels
+              (the server filters correctly — no leak), so without this the matrix LOOKS complete and the member
+              forms a false belief about who may read/write what. The defect is the SILENCE, not the filtering.
+              INFO tone, not an error: nothing is wrong, the view is simply narrower than the system (§4/§7.3).
+              GATE: `!operator`, exactly as KMP gates on `!state.editable` — NOT "visible channels < system total".
+              The client is never told a system-wide channel count (it receives only its own filtered list), so a
+              count comparison could only be inferred from the very data that was already filtered — circular, and
+              it would fall silent in the one case that matters (a member whose channels happen to be all of them
+              cannot be distinguished from an operator). Role is the fact the client actually knows. */}
+          {!operator && (
+            <p className="acl-partial-view" role="note" data-testid="aclMatrix.partialView">
+              Teilansicht – nur deine Kanäle. Vollständige Matrix nur als Operator.
+            </p>
+          )}
           {operator && (
             <div className="acl-actions">
               <button type="button" className="acl-preset" data-testid="acl-preset-open" onClick={openPreset}>
