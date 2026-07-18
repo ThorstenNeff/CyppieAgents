@@ -1,26 +1,30 @@
-// CYP-705 (Epic CYP-703, Achse 2) — unread-of-record per channel. Built against UIUX2's UX spec at 25cc93ea.
+// CYP-705 (Epic CYP-703, Achse 2) — unread-of-record per channel. Built against UIUX2's UX spec at 82e3680b
+// (the three-state revision; the earlier 25cc93ea two-state version is superseded — see the note below).
 //
-// §0 IS THE WHOLE POINT: an unread badge is only truthful if a SERVER-AUTHORITATIVE, per-principal `lastRead`
+// §0 IS THE WHOLE POINT: an unread count is only truthful if a SERVER-AUTHORITATIVE, per-principal `lastRead`
 // cursor stands behind it. A client-only marker (localStorage/memory) fakes DURABLE certainty — it does not travel
 // across sessions or devices, it drifts, and it says "read" where only "scrolled past" happened. So this model has
 // no local fallback and cannot acquire one: it takes the read state as INPUT and never derives it.
 //
-// THE HARD PART IS THE ABSENCE. Without a server cursor there is no badge — but the absence must not read as
-// "all clear". Unknown ≠ zero. `seen=0` confirmed BY THE SERVER is an honest "read" (a legitimate empty); an
-// unavailable read-state is *unknown*, and rendering "✓ all read" over it would be the CYP-288 defect one level
-// up: presenting a missing answer as a reassuring one. Both cases render nothing (present-only), which is exactly
-// why the two must stay DISTINGUISHABLE in the model — a caller that ever grows a read column has to be able to
-// say "Status unbekannt" instead of "0", and a test has to be able to tell the two apart.
+// THREE STATES, NOT TWO — and the reason is a defect this file originally had. The first version treated the
+// marker as present-only: unread>0 showed a count, and BOTH "server says zero" and "we have no idea" rendered
+// nothing. UIUX2's UX-QA caught it: on a channel list, silence reads as ALL-CLEAR, so rendering UNKNOWN as absence
+// is itself the false reassurance — the CYP-288 class at the pixel, not merely in intent. Hence:
+//   • unread>0            → count badge
+//   • confirmed-read      → nothing (authoritative; we KNOW it is read)
+//   • UNKNOWN             → a VISIBLE neutral marker, never silence
+// Neutral, never alarming: unknown is undetermined, not an error — over-alarming would be its own dishonesty.
 //
 // NON-OPTIMISTIC (§3): the display derives ONLY from the server cursor. A local scroll may drive the mark-read
 // CALL, but never the badge — it clears on the server's echo of the new cursor, not on the scroll that requested
 // it. "Read" means the server durably recorded your cursor, not "you understood it".
 //
-// BACKEND SURFACE NOT PINNED YET (§8/§10): Backend2's read-state surface is still being measured, so this file
-// deliberately models only what the spec fixes — the shapes below are the CLIENT's view, and the wire mapping is
-// wired when the contract is pinned. Today `Message` carries no `seq` at all (measured on develop: {id, channelId,
-// from, body, ts, meta, projectId}), so `firstUnreadIndex` is written against a minimal `{seq}` shape rather than
-// the wire type: it stays inert until the cursor exists, instead of guessing a field.
+// SURFACE NOT BUILT YET (§8/§10): Backend2 has PINNED `ChannelReadState{lastReadSeq, unreadCount}` (with `seq`
+// exposed and read-receipts deliberately out — read state is self-only), but the endpoint and `ReadStateEvent`
+// still need bilateral ratification before the cursor path is wired. Until then every channel is UNKNOWN, which
+// is now visibly honest rather than quietly reassuring. Today `Message` carries no `seq` at all (measured on
+// develop: {id, channelId, from, body, ts, meta, projectId}), so `firstUnreadIndex` is written against a minimal
+// `{seq}` shape rather than the wire type: it stays inert until the cursor exists, instead of guessing a field.
 
 /**
  * The caller's read state. `unavailable` is a FIRST-CLASS state, not a null — "we do not know" has to be
@@ -30,31 +34,48 @@ export type ReadState =
   | { readonly kind: 'unavailable' }
   | { readonly kind: 'available'; readonly channels: Readonly<Record<string, ChannelReadState>> }
 
+/** Backend2's pinned `:core` shape (2026-07-18): `ChannelReadState{lastReadSeq, unreadCount}`. */
 export interface ChannelReadState {
   /** Server-computed count. Own messages are excluded server-side (§9.7) — never counted here. */
-  readonly unread: number
+  readonly unreadCount: number
   /** Server cursor; `null` = the server has no cursor for this channel yet (never "start of time"). */
   readonly lastReadSeq: number | null
 }
 
+/**
+ * The three distinct states of §0 — deliberately a closed union, because the whole defect class here is two of
+ * them collapsing into one. There is no two-state accessor in this module on purpose: an API that answered
+ * "badge or no badge" would let a caller render UNKNOWN as silence, which is the exact bug this replaced.
+ */
+export type ChannelUnread =
+  | { readonly kind: 'unread'; readonly count: number }
+  | { readonly kind: 'read' }
+  | { readonly kind: 'unknown' }
+
 export const READ_STATE_UNAVAILABLE: ReadState = { kind: 'unavailable' }
 
-/** True only when the server answered. Drives "Status unbekannt" wording — never a rendered "0". */
+/** Whether the read-state SURFACE answered at all (distinct from per-channel unknown — see [channelUnread]). */
 export function isReadStateKnown(state: ReadState): boolean {
   return state.kind === 'available'
 }
 
 /**
- * The badge to show for a channel, or `null` for "render nothing".
+ * Which of the three states a channel is in.
  *
- * `null` covers BOTH an honest server-confirmed zero and an unknown read state — present-only, so both are silent.
- * Use [isReadStateKnown] when a surface needs to *say* which one it is; never infer "all read" from `null`.
+ * The encoding is the one Backend2 pinned (§2): a channel MISSING from the read-state response is UNKNOWN; a
+ * channel PRESENT with `unreadCount=0` is confirmed-read. That distinction is the whole hinge — without it,
+ * "we never heard about this channel" and "the server says you have read it" become the same pixel.
+ *
+ * UNKNOWN must be RENDERED VISIBLY by callers (a neutral marker), never as absence: on a channel list, silence
+ * reads as all-clear, so staying quiet would be the lie rather than the caution. Neutral, not alarming — unknown
+ * is not an error, it is merely undetermined.
  */
-export function unreadBadge(state: ReadState, channelId: string): { readonly count: number } | null {
-  if (state.kind !== 'available') return null // unknown → silent, and NEVER an all-clear
+export function channelUnread(state: ReadState, channelId: string): ChannelUnread {
+  if (state.kind !== 'available') return { kind: 'unknown' } // surface absent → undetermined, NOT all-clear
   const entry = state.channels[channelId]
-  if (entry === undefined || entry.unread <= 0) return null // server-confirmed read → legitimately empty
-  return { count: entry.unread }
+  if (entry === undefined) return { kind: 'unknown' } // §2: missing channel ⇒ unknown, never an implied zero
+  if (entry.unreadCount <= 0) return { kind: 'read' } // server-confirmed → honestly silent
+  return { kind: 'unread', count: entry.unreadCount }
 }
 
 /**

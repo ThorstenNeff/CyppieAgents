@@ -1,63 +1,70 @@
-// CYP-705 — teeth for unread-of-record (UIUX2 spec §9, 25cc93ea). ★ = the honesty boundary this ticket exists for.
+// CYP-705 — teeth for unread-of-record (UIUX2 spec §9 at 82e3680b, the three-state revision).
+// ★ = the honesty boundary this ticket exists for.
+//
+// NOTE — these teeth were REWRITTEN after UIUX2's UX-QA. The first version pinned the two-state design (unknown
+// and confirmed-read both silent) and therefore passed happily on the defect: it asserted the two were
+// indistinguishable in pixels, which is exactly the absence-of-signal trap. A test that locks in the bug is worse
+// than no test, so they are flipped rather than extended.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import {
-  unreadBadge,
-  firstUnreadIndex,
-  isReadStateKnown,
-  READ_STATE_UNAVAILABLE,
-  type ReadState,
-} from './unreadModel'
+import { channelUnread, firstUnreadIndex, isReadStateKnown, READ_STATE_UNAVAILABLE, type ReadState } from './unreadModel'
 
-const available = (channels: Record<string, { unread: number; lastReadSeq: number | null }>): ReadState => ({
+const available = (channels: Record<string, { unreadCount: number; lastReadSeq: number | null }>): ReadState => ({
   kind: 'available',
   channels,
 })
 
 const msgs = (...seqs: number[]) => seqs.map((seq) => ({ seq }))
 
-describe('CYP-705 §9 — unread-of-record is server-authoritative or absent', () => {
-  it('① a server unread count produces a badge; a server-confirmed zero produces none', () => {
-    const state = available({ x: { unread: 3, lastReadSeq: 10 }, y: { unread: 0, lastReadSeq: 42 } })
-    expect(unreadBadge(state, 'x')).toEqual({ count: 3 })
-    expect(unreadBadge(state, 'y')).toBeNull() // confirmed read → legitimately silent
+describe('CYP-705 §9 — three distinct states, none collapsing into another', () => {
+  it('① the three states are distinct: count · confirmed-read · unknown', () => {
+    const state = available({ x: { unreadCount: 3, lastReadSeq: 10 }, y: { unreadCount: 0, lastReadSeq: 42 } })
+    expect(channelUnread(state, 'x')).toEqual({ kind: 'unread', count: 3 })
+    expect(channelUnread(state, 'y')).toEqual({ kind: 'read' }) // authoritative: we KNOW it is read
+    expect(channelUnread(state, 'never-reported')).toEqual({ kind: 'unknown' })
   })
 
-  it('★ ② an UNAVAILABLE read state produces no badge — and is never confusable with "all read"', () => {
-    // the certainty boundary: both render nothing, but the model must still tell them apart, or a caller will
-    // eventually print "0 unread" over an answer the server never gave.
-    expect(unreadBadge(READ_STATE_UNAVAILABLE, 'x')).toBeNull()
+  it('★ ② UNKNOWN is never the same value as confirmed-read (the absence-of-signal trap)', () => {
+    // The defect UIUX2 caught: if these two answer the same, a caller renders both as silence and "we have no
+    // idea" reads as "all clear". They must differ in the MODEL so they can differ on screen.
+    const unknown = channelUnread(READ_STATE_UNAVAILABLE, 'x')
+    const read = channelUnread(available({ x: { unreadCount: 0, lastReadSeq: 1 } }), 'x')
+    expect(unknown.kind).toBe('unknown')
+    expect(read.kind).toBe('read')
+    expect(unknown).not.toEqual(read)
+  })
+
+  it('★ ② a channel MISSING from an available response is unknown, not an implied zero (§2 encoding)', () => {
+    // Backend2's pinned convention: present-with-0 means read; absent means we were never told.
+    const state = available({ other: { unreadCount: 2, lastReadSeq: 5 } })
+    expect(channelUnread(state, 'missing')).toEqual({ kind: 'unknown' })
+    expect(channelUnread(state, 'other')).toEqual({ kind: 'unread', count: 2 })
+  })
+
+  it('the surface-level helper reports whether the read state answered at all', () => {
     expect(isReadStateKnown(READ_STATE_UNAVAILABLE)).toBe(false)
-    expect(isReadStateKnown(available({ x: { unread: 0, lastReadSeq: 1 } }))).toBe(true)
-  })
-
-  it('★ ② a channel the server did not report is unknown, not zero', () => {
-    // an available read state that simply omits a channel must not be read as "nothing unread there".
-    const channels = { other: { unread: 2, lastReadSeq: 5 } }
-    expect(unreadBadge(available(channels), 'missing')).toBeNull()
-    expect(Object.keys(channels)).not.toContain('missing') // no invented entry
+    expect(isReadStateKnown(available({}))).toBe(true) // answered, even if it listed no channels
   })
 
   it('③ the divider sits at the first message past the cursor; no cursor → no divider', () => {
-    const state = available({ x: { unread: 2, lastReadSeq: 20 } })
+    const state = available({ x: { unreadCount: 2, lastReadSeq: 20 } })
     expect(firstUnreadIndex(msgs(10, 20, 30, 40), state, 'x')).toBe(2)
     expect(firstUnreadIndex(msgs(10, 20), state, 'x')).toBeNull() // nothing past the cursor
-    expect(firstUnreadIndex(msgs(10, 30), available({ x: { unread: 1, lastReadSeq: null } }), 'x')).toBeNull()
+    expect(firstUnreadIndex(msgs(10, 30), available({ x: { unreadCount: 1, lastReadSeq: null } }), 'x')).toBeNull()
     expect(firstUnreadIndex(msgs(10, 30), READ_STATE_UNAVAILABLE, 'x')).toBeNull()
   })
 
   it('③ ordering is by seq, not by position — an out-of-order list still cuts at the cursor', () => {
-    const state = available({ x: { unread: 1, lastReadSeq: 15 } })
+    const state = available({ x: { unreadCount: 1, lastReadSeq: 15 } })
     expect(firstUnreadIndex(msgs(10, 12, 16, 14), state, 'x')).toBe(2)
   })
 
-  it('★ ④ non-optimistic: the badge is a pure function of the SERVER state', () => {
+  it('★ ④ non-optimistic: the state is a pure function of the SERVER answer', () => {
     // clearing must follow the server's echoed cursor. Calling repeatedly — as a scroll handler would — cannot
-    // move the badge; only a new read state does. This is the structural half of "no local optimism".
-    const before = available({ x: { unread: 4, lastReadSeq: 7 } })
-    for (let scrolls = 0; scrolls < 5; scrolls++) expect(unreadBadge(before, 'x')).toEqual({ count: 4 })
-    const afterServerEcho = available({ x: { unread: 0, lastReadSeq: 11 } })
-    expect(unreadBadge(afterServerEcho, 'x')).toBeNull()
+    // move it; only a new read state does.
+    const before = available({ x: { unreadCount: 4, lastReadSeq: 7 } })
+    for (let scrolls = 0; scrolls < 5; scrolls++) expect(channelUnread(before, 'x')).toEqual({ kind: 'unread', count: 4 })
+    expect(channelUnread(available({ x: { unreadCount: 0, lastReadSeq: 11 } }), 'x')).toEqual({ kind: 'read' })
   })
 
   it('★ no local persistence is reachable from this model — a local marker would fake durable certainty', () => {
@@ -70,12 +77,12 @@ describe('CYP-705 §9 — unread-of-record is server-authoritative or absent', (
   })
 
   it('⑦ unread is per channel — one channel’s count never leaks into another', () => {
-    const state = available({ a: { unread: 5, lastReadSeq: 1 }, b: { unread: 0, lastReadSeq: 1 } })
-    expect(unreadBadge(state, 'a')).toEqual({ count: 5 })
-    expect(unreadBadge(state, 'b')).toBeNull()
+    const state = available({ a: { unreadCount: 5, lastReadSeq: 1 }, b: { unreadCount: 0, lastReadSeq: 1 } })
+    expect(channelUnread(state, 'a')).toEqual({ kind: 'unread', count: 5 })
+    expect(channelUnread(state, 'b')).toEqual({ kind: 'read' })
   })
 
-  it('a negative or nonsensical server count is treated as nothing to show, not as a badge', () => {
-    expect(unreadBadge(available({ x: { unread: -1, lastReadSeq: 3 } }), 'x')).toBeNull()
+  it('a nonsensical negative count is treated as read, not as a badge — but the channel was still reported', () => {
+    expect(channelUnread(available({ x: { unreadCount: -1, lastReadSeq: 3 } }), 'x')).toEqual({ kind: 'read' })
   })
 })

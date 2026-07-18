@@ -11,7 +11,7 @@ import { senderAccent } from './senderAccent'
 import { composerDisclosure } from './commDisclosure'
 import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import { mentionSegments } from './mentionModel'
-import { unreadBadge, READ_STATE_UNAVAILABLE, type ReadState } from './unreadModel'
+import { channelUnread, READ_STATE_UNAVAILABLE, type ReadState } from './unreadModel'
 import type { Channel, Message1 } from '../types/generated/contract'
 
 export interface CommPanelProps {
@@ -77,18 +77,32 @@ export function CommPanel(props: CommPanelProps) {
                 onClick={() => onSelectChannel(ch.id)}
               >
                 {ch.name}
-                {/* CYP-705 — unread-of-record, present-only. Absent when the server confirms zero AND when the
-                    read state is unavailable; the absence is never an all-clear (§0/§4). Colour is never the sole
-                    carrier: the badge is a count TEXT plus an aria-label (WCAG 1.4.1). */}
+                {/* CYP-705 — unread-of-record, THREE distinct states (spec 82e3680b §0/§3). UNKNOWN is rendered
+                    VISIBLY as a neutral marker, never as absence: on a channel list silence reads as "all clear",
+                    so staying quiet would be the lie rather than the caution. Neutral, not alarming — unknown is
+                    undetermined, not an error. Only a server-CONFIRMED zero is legitimately silent. Colour is
+                    never the sole carrier: each marker has text/glyph plus an aria-label. */}
                 {(() => {
-                  const badge = unreadBadge(readState, ch.id)
-                  return badge === null ? null : (
+                  const unread = channelUnread(readState, ch.id)
+                  if (unread.kind === 'read') return null // authoritative "you have read this" — honestly silent
+                  if (unread.kind === 'unknown') {
+                    return (
+                      <span
+                        className="comm-unread-unknown"
+                        data-testid={`comm.channel.${ch.id}.unreadUnknown`}
+                        aria-label="Ungelesen-Status unbekannt"
+                      >
+                        •
+                      </span>
+                    )
+                  }
+                  return (
                     <span
                       className="comm-unread"
                       data-testid={`comm.channel.${ch.id}.unreadBadge`}
-                      aria-label={`${badge.count} ungelesen in ${ch.name}`}
+                      aria-label={`${unread.count} ungelesen in ${ch.name}`}
                     >
-                      {badge.count}
+                      {unread.count}
                     </span>
                   )
                 })()}
