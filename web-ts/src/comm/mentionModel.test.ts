@@ -116,6 +116,17 @@ describe('CYP-704 §8 — mention DISPLAY resolves fail-closed against the roste
     expect(seg('```\n`@po`\n```\n@frontend')).toEqual(['```\n`@po`\n```\n', '[@frontend]'])
   })
 
+  it('★ code-exempt BEATS the widened sigil boundary — the backtick is not a licence', () => {
+    // The subtle interaction: F2 made "preceding char is not an id character" the boundary, and a backtick is not
+    // an id character — so a boundary-first implementation would treat `` `@frontend` `` as a mention and partially
+    // undo inline-code exemption. Resolution order is therefore CUT CODE FIRST, then apply boundaries to the rest.
+    expect(seg('(`@frontend`)')).toEqual(['(`@frontend`)']) // bracket AND code — the sharpest case
+    expect(seg('`@frontend`')).toEqual(['`@frontend`'])
+    expect(seg('a`@frontend')).toEqual(['a`@frontend']) // unterminated inline → exempt to line end, fail-closed
+    expect(seg('(@frontend)')).toEqual(['(', '[@frontend]', ')']) // control: same bracket, no code → resolves
+    expect(seg('`x` (@frontend)')).toEqual(['`x` (', '[@frontend]', ')']) // exemption ends with the span
+  })
+
   it('mentionedIds de-duplicates in first-appearance order', () => {
     expect(mentionedIds(mentionSegments('@po @frontend @po', ROSTER))).toEqual(['po', 'frontend'])
   })
