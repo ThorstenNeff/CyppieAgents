@@ -77,6 +77,12 @@ health || die "hub did not come up after install"
 SECRETS="$(mktemp)"; chmod 0600 "$SECRETS"
 sudo -u cyppie "$PROVISION" --add-remote-agent "$AGENT" --data-dir "$DATADIR" --secrets-out "$SECRETS" >/dev/null || die "--add-remote-agent failed"
 cat "$SECRETS" >> "$ENVFILE"; shred -u "$SECRETS" 2>/dev/null || rm -f "$SECRETS"
+# CYP-687 (PL): cap the hub heap for the acceptance. hub.jvmargs carries MaxRAMPercentage=75 → a ~26 GiB heap ceiling,
+# but po2's box has only ~6 GiB FREE (shared: other agents + e2e). GC would let the heap grow past real-free → the Linux
+# OOM-killer could take an AGENT/e2e instead of the hub (looks like a random agent death, no heap dump). An explicit
+# -Xmx overrides MaxRAMPercentage (A–E + FC need nowhere near 26 GiB); JAVA_TOOL_OPTIONS is read by the jpackage JVM
+# from the systemd env (EnvironmentFile) and applies to every (re)start below.
+grep -q '^JAVA_TOOL_OPTIONS=' "$ENVFILE" || echo 'JAVA_TOOL_OPTIONS=-Xmx2g' >> "$ENVFILE"
 chown cyppie:cyppie "$ENVFILE"; chmod 0600 "$ENVFILE"
 systemctl restart cyppiehub; health || die "hub did not come up after seeding $AGENT"
 OPERATOR_TOKEN="$(sed -n 's/^OPERATOR_TOKEN=//p' "$ENVFILE")"
@@ -135,7 +141,7 @@ probe "FC2 send-before-hello -> WireError(PROTOCOL)" -- --cmd send-before-hello 
 # caps serialize available/limited/unavailable, so 'enabled' never appears -> it always passed without the clamp.)
 probe "FC3a elevated-caps accepted; server clamps REMOTE (wire)" -- --cmd elevated-caps --url "$WS" --token "$AGENT_TOKEN"
 AGD="$(api_get "$OPERATOR_TOKEN" /api/agents)"
-json_true "$AGD" "next((x.get('capabilities') for x in ($(items agents)) if x.get('id')=='$AGENT'), {}).get('structuredUsage')=='unavailable'" \
+json_true "$AGD" "(next((x.get('capabilities') for x in ($(items agents)) if x.get('id')=='$AGENT'), None) or {}).get('structuredUsage')=='unavailable'" \
   && ok "FC3b REST: '$AGENT'.capabilities.structuredUsage='unavailable' (REMOTE-clamped, not the declared 'available')" \
   || bad "FC3b: '$AGENT' caps not clamped to REMOTE (structuredUsage != 'unavailable', or caps absent) — clamp broken (fail-closed)"
 
