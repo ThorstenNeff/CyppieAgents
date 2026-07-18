@@ -32,10 +32,17 @@ export default defineConfig({
   plugins: [react()],
   server: { port: 8080, strictPort: true },
   preview: { port: 8080, strictPort: true },
-  // CYP-455 (CYP-422-prep) — CSP nonce seam. `modulePreload.polyfill=false` removes Vite's one PROD inline
-  // `<script>` (the module-preload polyfill), so the cutover CSP can keep `script-src` STRICT (no
-  // `unsafe-inline`) — the actual XSS defense. The only remaining inline script is the deploy-injected operator
-  // token in index.html, which carries a per-response `nonce` (seam documented there). The CSP header + nonce
-  // stamp are DEPLOY-owned and activated at cutover under Auftraggeber-GO — this is only the web-ts-side prep.
+  // CYP-455 (CYP-422-prep) — CSP nonce seam, kept so the cutover CSP can hold `script-src` STRICT (no
+  // `unsafe-inline`) — the actual XSS defense. The only inline script at cutover is the deploy-injected operator
+  // token in index.html, carrying a per-response `nonce` (seam documented there). CSP header + nonce stamp are
+  // DEPLOY-owned and activated at cutover under Auftraggeber-GO — this is only the web-ts-side prep.
+  //
+  // MEASURED CORRECTION (2026-07-18, vite 6.4.3): the older note here claimed `polyfill=false` is what removes
+  // Vite's "one prod inline `<script>`". That is NOT true on Vite 6 — the module-preload polyfill is emitted into
+  // the ENTRY JS CHUNK, not as an inline `<script>` in index.html (verified: the `modulepreload` marker count in
+  // dist/assets/index-*.js goes 1→2 when flipped on; index.html emits ZERO inline scripts either way). So this
+  // line is kept because it drops dead polyfill code from the bundle — NOT because it is load-bearing for the CSP.
+  // The CSP precondition is enforced where it actually matters, on the built artifact, by `npm run check:csp`
+  // (scripts/check-csp-seam.mjs), which fails closed on ANY inline script regardless of what produced it.
   build: { modulePreload: { polyfill: false } },
 })
