@@ -215,8 +215,11 @@ in any machine contract**.
 
 - **G1 — no machine contract for `/ws/hub`.** It is **excluded by design** from the generated `asyncapi.json`
   (`ContractGenerator.EXCLUDED_WS_PATHS`). A foreign agent has only `:core` Kotlin + this doc — the exact
-  CYP-234 M2/BYOA-external gap. *Decision needed:* is `/ws/hub` to get its own generated AsyncAPI (parallel
-  to the frontend one), or stay doc-only? **(Open weiche — routed to PL 2026-07-18; not decided here.)**
+  CYP-234 M2/BYOA-external gap. **DECIDED by PL (2026-07-18): `/ws/hub` gets its OWN dedicated AsyncAPI
+  (NOT doc-only)** — because it is the only surface a foreign agent must implement and the only one without
+  a machine contract. **This repo's `docs/protocol/asyncapi-ws-hub.json` IS that fill** — hand-authored from
+  my measurement (constraint: NOT `:core`-generated, so it can't inherit F2 a level up), descriptive/non-
+  normative pending Auftraggeber (§4b), F2-(a) baked (subtypes declare the `type` literal).
 - **G2 — close-code taxonomy is invisible to any generated contract** (§8b). `VIOLATED_POLICY` vs
   `PROTOCOL_ERROR` + reason strings are runtime-only; a generator over `:core` can never emit them.
 - **G3 — auth-failure vs framing-failure asymmetry** (§8): bare close vs error-then-close. Undocumented

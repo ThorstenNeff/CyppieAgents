@@ -67,9 +67,8 @@
     "schemas": {
       "WireEnvelopeClient": {
         "type": "object",
-        "description": "[D] Versioned envelope for client→server frames.",
+        "description": "[D] Versioned envelope for client→server frames. Additive fields are TOLERATED (server decodes ignoreUnknownKeys=true) — deliberately NO `additionalProperties:false`, so a generated validator stays forward-compatible.",
         "required": ["v", "frame"],
-        "additionalProperties": false,
         "properties": {
           "v": { "type": "integer", "const": 1, "description": "[D] Wire version. SUPPORTED_WIRE_VERSIONS={1}; any other → WireError(unsupported_version)+close." },
           "frame": {
@@ -86,9 +85,8 @@
       },
       "WireEnvelopeServer": {
         "type": "object",
-        "description": "[D] Versioned envelope for server→client frames.",
+        "description": "[D] Versioned envelope for server→client frames. Additive fields TOLERATED (ignoreUnknownKeys=true) — deliberately NO `additionalProperties:false`.",
         "required": ["v", "frame"],
-        "additionalProperties": false,
         "properties": {
           "v": { "type": "integer", "const": 1 },
           "frame": {
