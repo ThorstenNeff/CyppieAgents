@@ -5,6 +5,10 @@
 > Protokoll, keinen Codegen und keinen Client. Jede Diskrepanz ist als **Befund** markiert, nicht als Fix.
 > **Gemessen gegen:** `contract/asyncapi.json` + `contract/openapi.json` (:core-Build-Export) und den realen
 > web-ts-Client auf develop `a3ed3962`, 2026-07-18.
+> **Revision 2 (2026-07-18):** **F7 korrigiert** nach Assist2s Recompute — meine erste Fassung behauptete
+> fälschlich, `security` sei nirgends angewandt (ich hatte nur die globale Ebene gemessen). Alle 65 Operationen
+> deklarieren `security`; der überlebende, geschärfte Kern ist die nicht ausdrückbare **Tier**-Grenze. Die
+> Korrektur steht sichtbar in F7, nicht stillschweigend ersetzt.
 
 ## 1. Warum dieser Cross-Check aussagekräftig ist
 
@@ -134,13 +138,40 @@ Schema-Validierung abgedeckt.
 `channels[].publish` **vollständig und korrekt** auflösbar (s. §4) — die Namen allein tragen sie aber nicht.
 **Spec-Vorschlag:** entweder normalisieren oder in der Spec-Tabelle explizit zuordnen (Letzteres genügt).
 
-### F7 (MITTEL) — REST: `securitySchemes` deklariert, aber nirgends angewandt; kein `servers`
+### F7 (MITTEL) — REST: die **Tier**-Grenze (Operator vs. Member) ist nicht maschinen-ausdrückbar
 
-`openapi.json` definiert beide Schemes, setzt aber **weder global noch pro Operation `security`**. Damit ist
-**unbestimmt, welcher Endpunkt welche Auth verlangt** — insbesondere die Operator-only-Endpunkte (ACL-`PUT`,
-Projekt-Mutationen, API-Key). Ebenso fehlt `servers` (Basis-URL/Origin).
-**Konsequenz:** ein fremdes Frontend erfährt aus dem Vertrag nicht, wo die Autoritätsgrenze liegt — es lernt sie
-erst am 401/403. Für BYO-Frontend ist genau diese Grenze das Sicherheitsrelevante.
+> **KORRIGIERT nach Assist2s Recompute (2026-07-18).** Meine ursprüngliche Fassung behauptete, `openapi.json`
+> setze `security` „weder global noch pro Operation". **Das war falsch und hat der Messung nicht standgehalten.**
+> Ich hatte nur den *globalen* Schlüssel `o.security` geprüft (= `NONE`) und daraus auf „nirgends" geschlossen,
+> **ohne die Operations-Ebene zu messen** — exakt der Kurzschluss von der Abwesenheit auf einer Ebene auf die
+> Abwesenheit überhaupt. Nachgemessen: **alle 65 Operationen deklarieren `security`.**
+> Der Fehler steht hier sichtbar statt stillschweigend ersetzt — dieselbe Behandlung wie die widerlegte
+> Hypothese in §4; ein Spec-Input, der seine eigenen Korrekturen versteckt, ist als Quelle weniger wert.
+
+**Gemessener Ist-Stand:** 65 Operationen, **65 mit `security`** — davon **62** mit
+`[{bearerAuth},{sessionCookie}]` (= „authentifiziert, per Token **oder** Session") und **3** explizit öffentlich
+(`[]`): `GET /api/health`, `GET /api/auth/me`, `POST /api/auth/register`. Die Grenze **öffentlich ↔
+authentifiziert ist damit sauber und maschinenlesbar ausgedrückt.** ✅
+
+**Was NICHT ausgedrückt ist — der überlebende Kern:** die **Autoritäts-*Tier*-Grenze**. Gemessen:
+
+| Operation | Tier real | deklariertes `security` |
+|---|---|---|
+| `PUT /api/acl` | **Operator-only** | `[{bearerAuth},{sessionCookie}]` |
+| `GET /api/channels` | member-lesbar | `[{bearerAuth},{sessionCookie}]` |
+| `GET /api/agents` | member-lesbar | `[{bearerAuth},{sessionCookie}]` |
+
+**Byte-identisch.** OpenAPI-`security` beantwortet „**ob** authentifiziert", nicht „**als was**". Ein fremdes
+Frontend kann aus dem Vertrag also nicht ableiten, welche Operationen Operator-Autorität verlangen (ACL-`PUT`,
+Projekt-Mutationen, API-Key-Wechsel) — **es lernt die Grenze erst am 403.**
+**Konsequenz für BYO:** genau diese Grenze ist das Sicherheitsrelevante. Ein Client, der sie nicht kennt, baut
+UI-Affordanzen für Aktionen, die er nie ausführen darf (und muss den 403 als Normalfall behandeln statt als
+Fehler). **Spec-Vorschlag:** das Tier maschinenlesbar machen — z. B. Scopes/Rollen am Scheme
+(`bearerAuth: [operator]` vs `[]`) oder ein normatives `x-tier`-Feld pro Operation; mindestens aber eine
+normative Tabelle „Operation → geforderte Tier" in der Spec.
+
+**Zusätzlich (unverändert):** `openapi.json` deklariert **kein `servers`** (Basis-URL/Origin) — analog zu F1 auf
+der WS-Seite.
 
 ## 4. Widerlegte Hypothese (dokumentiert, damit sie niemand erneut aufwirft)
 
@@ -170,6 +201,7 @@ fahren.
 
 1. **F1 + F3 zuerst** — ohne Verbindungs- und Auth-Beschreibung ist der Rest akademisch: man kommt nicht rein.
 2. **F2** — entscheidet, ob der Vertrag *ohne Sonderwissen* generierbar ist. Bevorzugt am Export lösen.
-3. **F7** — Autoritätsgrenze (welcher Endpunkt braucht was) ist die sicherheitsrelevante Angabe für BYO-Frontends.
+3. **F7 (korrigiert)** — nicht „Auth fehlt", sondern: die **Tier**-Grenze (Operator vs. Member) ist nicht
+   maschinen-ausdrückbar. Für BYO ist genau sie das Sicherheitsrelevante.
 4. **F4** — Voraussetzung dafür, dass Versionierung/Kompatibilität überhaupt funktioniert.
 5. **F5, F6** — Klarstellungen; billig, verhindern Fehlannahmen.
