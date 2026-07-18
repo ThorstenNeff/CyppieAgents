@@ -87,9 +87,11 @@ class Cyp528ChurnFloorTest {
     fun failurePath_jittersTheDeterministicBackoff_deSyncsHerd_CYP528b() = runBlocking {
         val delays = CopyOnWriteArrayList<Long>()
         val dials = AtomicInteger(0)
-        // The dial succeeds (attempt reset to 0) but the NK handshake THROWS → attempt++ → the FAILURE path. Its backoff
+        // The dial succeeds but the NK handshake THROWS → attempt++ → the FAILURE path. Its backoff
         // (`AdmissionRetry.delayForAttempt`) is a FIXED curve identical for every responder → re-syncs the herd. CYP-528b
-        // adds the additive jitter: wait = backoff + jitter, so N failing responders don't re-dial in lock-step.
+        // adds the additive jitter: wait = backoff + jitter, so N failing responders don't re-dial in lock-step. Here
+        // `backoffMs` is a CONSTANT {1000}, so it isolates the JITTER term (the attempt value doesn't matter); the
+        // escalation-across-attempts is covered separately by [repeatedHandshakeFail_escalatesBackoff…_CYP606].
         val c = NoiseRelayConnector(
             RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), countingDialer(dials), ThrowingTerminator(), { }, scope,
             backoffMs = { 1_000L }, cleanEndFloorMs = 500L, nowMs = { 1_000L }, sleep = { delays.add(it) }, reDialJitterMs = { 300L },
@@ -99,5 +101,29 @@ class Cyp528ChurnFloorTest {
         c.stop()
         // Mutation (remove `+ reDialJitterMs()` on the failure path) → wait = 1000 → this REDs.
         assertTrue(delays.take(2).all { it == 1_300L }, "the failure backoff is JITTERED (backoff 1000 + jitter 300 = 1300) — de-syncs the deterministic curve: ${delays.toList()}")
+    }
+
+    @Test
+    fun repeatedHandshakeFail_escalatesBackoff_notPinnedAtAttempt1_CYP606() = runBlocking {
+        val delays = CopyOnWriteArrayList<Long>()
+        val dials = AtomicInteger(0)
+        // CYP-606 (Backend2 amplifier ⑥): a tunnel that DIALS ok but whose NK handshake keeps THROWING must ESCALATE its
+        // backoff (attempt 1→2→3…), not pin at backoffMs(1). PRE-fix the `attempt = 0` reset sat at dial-success — before
+        // terminate() — so every cycle reset attempt to 0 → terminate throws → attempt=1 → PINNED at backoffMs(1) forever
+        // (a tight 250ms re-dial loop that never backs off). An attempt-DEPENDENT backoff (`a -> a*1000`) makes the pin
+        // vs. escalation observable; jitter=0 isolates the escalation term.
+        val c = NoiseRelayConnector(
+            RemoteTransportConfig(enabled = true, relayUrl = "wss://relay/x"), countingDialer(dials), ThrowingTerminator(), { }, scope,
+            backoffMs = { a -> a * 1_000L }, cleanEndFloorMs = 500L, nowMs = { 1_000L }, sleep = { delays.add(it) }, reDialJitterMs = { 0L },
+        )
+        c.start()
+        withTimeout(5_000) { while (dials.get() < 3) delay(10) }
+        c.stop()
+        // Mutation (move the `attempt = 0` reset back to dial-success, i.e. before terminate()) → attempt pins at 1 →
+        // delays become [1000, 1000, 1000] → this REDs. The fix (reset only after tunnelHandler SERVED) → escalation.
+        assertTrue(
+            delays.take(3) == listOf(1_000L, 2_000L, 3_000L),
+            "repeated dial-ok/handshake-fail ESCALATES the backoff (1000,2000,3000), not pinned at backoffMs(1): ${delays.toList()}",
+        )
     }
 }
