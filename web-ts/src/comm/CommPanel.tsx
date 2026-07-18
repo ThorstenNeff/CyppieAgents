@@ -3,6 +3,7 @@
 // filter would lie about access). Timeline reuses the W6 autoscroll/retention; composer reuses the W5 input
 // history. Disclosure is the three distinct states (commDisclosure); sender identity via the contrast-safe accent
 // plus text (colour never alone).
+import { Fragment } from 'react'
 import { formatLocalHhMm } from '../agentview/transcriptTime'
 import { useAutoscrollPin } from '../agentview/useAutoscrollPin'
 import { Composer } from '../agentview/Composer'
@@ -10,6 +11,7 @@ import { senderAccent } from './senderAccent'
 import { composerDisclosure } from './commDisclosure'
 import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import { mentionSegments } from './mentionModel'
+import { channelUnread, READ_STATE_UNAVAILABLE, type ReadState } from './unreadModel'
 import type { Channel, Message1 } from '../types/generated/contract'
 
 export interface CommPanelProps {
@@ -20,6 +22,10 @@ export interface CommPanelProps {
   senderRole: (agentId: string) => string | null
   /** CYP-704: roster ids mentions resolve against. Empty (default) = not loaded / load failed → all plain text. */
   rosterIds?: readonly string[]
+  /** CYP-705: server read state. Default UNAVAILABLE → no badge and NO all-clear (unknown ≠ zero). */
+  readState?: ReadState
+  /** CYP-705: index of the first unread message (from firstUnreadIndex). null/absent ⇒ no divider. */
+  unreadDividerIndex?: number | null
   connection: 'live' | 'connecting' | 'offline' | 'revoked'
   canWrite: boolean | null
   sendError: string | null
@@ -44,6 +50,7 @@ export function CommPanel(props: CommPanelProps) {
   const { channels, selectedChannelId, onSelectChannel, messages, senderRole, connection } = props
   const { channelsLoadError = false, onRetryChannels, messagesLoadError = false, onRetryMessages } = props
   const { rosterIds = [] } = props
+  const { readState = READ_STATE_UNAVAILABLE, unreadDividerIndex = null } = props
   // CYP-437(#4): a terminal revoke (WS 1008) closes the write affordance entirely — don't leave a composer that
   // only fails server-side. This overrides the disclosure (a revoked socket can't write, whatever canWrite said).
   const revoked = connection === 'revoked'
@@ -70,6 +77,35 @@ export function CommPanel(props: CommPanelProps) {
                 onClick={() => onSelectChannel(ch.id)}
               >
                 {ch.name}
+                {/* CYP-705 — unread-of-record, THREE distinct states (spec 82e3680b §0/§3). UNKNOWN is rendered
+                    VISIBLY as a neutral marker, never as absence: on a channel list silence reads as "all clear",
+                    so staying quiet would be the lie rather than the caution. Neutral, not alarming — unknown is
+                    undetermined, not an error. Only a server-CONFIRMED zero is legitimately silent. Colour is
+                    never the sole carrier: each marker has text/glyph plus an aria-label. */}
+                {(() => {
+                  const unread = channelUnread(readState, ch.id)
+                  if (unread.kind === 'read') return null // authoritative "you have read this" — honestly silent
+                  if (unread.kind === 'unknown') {
+                    return (
+                      <span
+                        className="comm-unread-unknown"
+                        data-testid={`comm.channel.${ch.id}.unreadUnknown`}
+                        aria-label="Ungelesen-Status unbekannt"
+                      >
+                        •
+                      </span>
+                    )
+                  }
+                  return (
+                    <span
+                      className="comm-unread"
+                      data-testid={`comm.channel.${ch.id}.unreadBadge`}
+                      aria-label={`${unread.count} ungelesen in ${ch.name}`}
+                    >
+                      {unread.count}
+                    </span>
+                  )
+                })()}
               </button>
             ))}
       </nav>
@@ -98,8 +134,16 @@ export function CommPanel(props: CommPanelProps) {
             )
           ) : (
             <ol>
-              {messages.map((m) => (
-                <li key={m.id} className="comm-message" data-testid={`comm.message.${m.id}`}>
+              {messages.map((m, i) => (
+                <Fragment key={m.id}>
+                  {/* CYP-705 — the "Neu" divider at the first-unread boundary. Rendered ONLY from a server cursor
+                      (the index is computed by firstUnreadIndex); no cursor ⇒ no divider, never a guessed line. */}
+                  {i === unreadDividerIndex && (
+                    <li className="comm-unread-divider" role="separator" data-testid="comm.unread.divider">
+                      Neu
+                    </li>
+                  )}
+                <li className="comm-message" data-testid={`comm.message.${m.id}`}>
                   <time>{formatLocalHhMm(m.ts)}</time>
                   <span className="comm-from" style={{ color: senderAccent(m.from, senderRole(m.from)) }}>
                     {m.from}
@@ -127,6 +171,7 @@ export function CommPanel(props: CommPanelProps) {
                     )}
                   </span>
                 </li>
+                </Fragment>
               ))}
             </ol>
           )}
