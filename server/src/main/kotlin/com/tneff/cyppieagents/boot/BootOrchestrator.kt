@@ -396,7 +396,7 @@ class BootOrchestrator(
             onCompactCompleted = { agentId -> runtimeRegistry.active().compactSignal.onCompleted(agentId) },
         )
 
-        val router = MediationRouter(registry, hub, eventRecorder, eventProjector)
+        val router = MediationRouter(registry, hub)
 
         // CYP-132: durable inbound delivery — the mediator's "ear". Wired to the SINGLE write funnel
         // (hub.onPosted, called after persist) and to session (re)attach, so a PO→worker TASK (and a
@@ -418,6 +418,11 @@ class BootOrchestrator(
             projector = eventProjector,
         )
         hub.onPosted = deliverer::onPosted
+        // CYP-698: wire-provenance at the SINGLE write chokepoint. comm.sent is emitted here for EVERY post —
+        // MediationRouter, the remote /ws/hub WireSend, the human CommRoutes, McpConnector, and any future path —
+        // server-stamped from the persisted Message (from/channel/kind, never the body), never a frame/body field.
+        // Reuses eventProjector.commSent (the exact draft the router used) so the projectId source is unchanged.
+        hub.onSent = { msg -> eventRecorder.record(eventProjector.commSent(msg.from, msg.channelId, msg.meta?.kind)) }
         sessions.addRegisterListener(deliverer::onSessionAttached)
 
         // S14 / CYP-97: the mutable per-agent connector config (launch + persona), seeded from config.

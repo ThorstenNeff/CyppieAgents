@@ -1,8 +1,6 @@
 package com.tneff.cyppieagents.mediation
 
 import com.tneff.cyppieagents.comm.Hub
-import com.tneff.cyppieagents.events.EventProjector
-import com.tneff.cyppieagents.events.EventRecorder
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageKind
 import com.tneff.cyppieagents.model.MessageMeta
@@ -25,9 +23,8 @@ import org.slf4j.LoggerFactory
 class MediationRouter(
     private val registry: SessionRegistry,
     private val hub: Hub,
-    // Observability (CYP-37): records comm.sent metadata when a post succeeds. Null = no tapping.
-    private val recorder: EventRecorder? = null,
-    private val projector: EventProjector? = null,
+    // CYP-698: the recorder/projector are gone — comm.sent is no longer emitted per-caller here; it rides the
+    // single Hub chokepoint ([Hub.onSent], fired inside [Hub.postAsAgent]) so every caller is covered uniformly.
 ) {
     private val log = LoggerFactory.getLogger("mediation.router")
 
@@ -53,10 +50,10 @@ class MediationRouter(
 
         // Gate #1: channelId comes from identity→spoke, NOT from `body`. Gate #2: canWrite enforced here.
         val posted = hub.postAsAgent(senderId = agentId, channelId = channelId, body = post.body, meta = MessageMeta(kind = post.kind))
-        // Observability (CYP-37): comm.sent metadata only — from/channel/kind, never the body.
-        if (recorder != null && projector != null) {
-            recorder.record(projector.commSent(agentId, channelId, post.kind))
-        }
+        // CYP-698: `comm.sent` is now emitted ONCE at the Hub chokepoint ([Hub.onSent], fired inside
+        // [Hub.postAsAgent]), so EVERY caller — this router, the remote `/ws/hub` WireSend, the human
+        // CommRoutes, McpConnector, and any future path — gets provenance uniformly. Emitting here too
+        // would double-count this router's posts.
         return posted
     }
 
