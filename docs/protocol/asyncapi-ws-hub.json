@@ -1,0 +1,231 @@
+{
+  "asyncapi": "2.6.0",
+  "info": {
+    "title": "Cyppie Agents — /ws/hub Remote-Agent Wire (Hub-Wire-Protocol v1)",
+    "version": "1.0.0-measured-2026-07-18",
+    "description": "DESCRIPTIVE, NOT NORMATIVE — a measured snapshot, not a ratified guarantee.\n\nThis document describes the `/ws/hub` remote-agent (BYOA) wire so a foreign-language agent (Python/Node/Go) can implement it WITHOUT reading Kotlin. It is the surface Dev5's ContractGenerator deliberately EXCLUDES (`EXCLUDED_WS_PATHS = {\"/ws/hub\"}`) — the only surface a foreign agent must implement and the only one with no machine contract, hence this file (CYP-234 / G1, PL-decided 2026-07-18).\n\nHOW THIS WAS BUILT (important): it is **hand-authored from a live runtime measurement** (the M1.2 BYOA dry-run against a running Hub, 2026-07-18) — NOT generated from `:core`. Generating from `:core` would only prove what `:core` DECLARES, not what the server DOES; this file records the latter. Every schema/description carries a provenance tag:\n  [D] declared in :core (a @Serializable DTO)\n  [O] observed live in the dry-run (measured, the authority here)\n  [S] server-enforced at runtime, NOT expressible in an AsyncAPI schema (see the channel description: close codes, rate limits, ordering, the capability clamp)\n\nNORMATIVE STATUS: none yet. Descriptions say \"measured\", not \"guaranteed\". Nothing here is a compatibility promise until the Auftraggeber ratifies (§4b). Field names/enum values match the bytes observed on the wire (which happen to equal the :core shapes). The `type` discriminant literal is declared inside each frame subtype per the PL-decided F2 option (a) export-change (build tracked as CYP-695, PARKED); a naive codegen over this file yields a correctly-discriminated union without special knowledge.\n\nSCOPE: only `/ws/hub`. `/ws/agent` (a frontend channel with a different, unmeasured auth) is intentionally absent (measure-first-write-nothing).",
+    "x-provenance-legend": { "D": "declared-in-:core", "O": "observed-in-dry-run (authority)", "S": "server-enforced-runtime (not schema-expressible)" },
+    "x-status": "descriptive-snapshot; non-normative pending Auftraggeber ratification (§4b)"
+  },
+  "servers": {
+    "local-loopback": {
+      "url": "ws://127.0.0.1:{port}",
+      "protocol": "ws",
+      "description": "[O] Measured against a local loopback Hub (port 8791 in the dry-run). Real deployments set host/port via config; TLS (wss) is a deployment concern, not measured here.",
+      "variables": { "port": { "default": "8791", "description": "Hub WS port (deploy-configured)." } }
+    }
+  },
+  "channels": {
+    "/ws/hub": {
+      "description": "The remote-agent wire. ONE WebSocket per connected agent.\n\n== CONNECT & AUTH [O] (F1/F3, runtime-measured) ==\nAuthenticate at the upgrade with EITHER an `Authorization: Bearer <agentToken>` header OR a `?token=<agentToken>` query param. The server resolves identity by the token alone (`agentFor(token)`); there is NO agent-id field in any frame and NO cookie path on /ws/hub. A token that is not an AGENT token (operator/unknown/absent) → the socket is CLOSED `VIOLATED_POLICY \"unauthorized\"` before any frame is read, with NO error frame sent. The `?token=`-in-URL hygiene note (proxy/access logs, referrer) applies — see CYP-286 (WS-ticket/token hardening).\n\n== SESSION LIFECYCLE / ORDERING [S] ==\n1) connect (auth-first) → 2) send `hello` (MUST be the first frame, within 10s) → server replies `ack` (detail=\"hello\") → 3) optional `subscribe` → `message`* (history+live) → 4) `send`/`event` (agent→hub) and `deliver` (hub→agent, pushed). Exactly ONE hello per connection.\n\n== CAPABILITY CLAMP [O]+[D] ==\nThe `hello` capabilities are self-declared DATA, not authority. The server ACCEPTS the hello and CLAMPS caps to the REMOTE ceiling (it does NOT reject an over-declaration): observed `structuredUsage → \"unavailable\"`, `coordination` stays `\"available\"`. Lies degrade, never escalate.\n\n== IDENTITY [O] ==\n`from`/`projectId` on any posted message are SERVER-STAMPED from the bearer-bound agent + active project; a frame cannot spoof them. (The reference Kotlin bridge's HUB_AGENT_ID env is cosmetic — identity is 100% token-derived.)\n\n== CLOSE-CODE TAXONOMY [S] (NOT expressible in AsyncAPI — observation-only) ==\nVIOLATED_POLICY: \"unauthorized\" (bad/absent/operator token, no error frame) · \"handshake timeout\" (no hello in 10s; preceded by WireError code=protocol) · \"flood\" (sustained rate-limit; preceded by WireError code=rate_limited).\nPROTOCOL_ERROR: \"bad request\" (malformed/unknown frame; WireError bad_request) · \"unsupported version\" (WireError unsupported_version) · \"second hello\" (WireError protocol) · \"<x> before hello\" for send/subscribe/event (WireError protocol).\nAsymmetry: auth failure = bare close, NO error frame; framing/ordering = WireError frame THEN close.\n\n== RATE LIMITS [S] (CYP-161; not in any schema) ==\nToken bucket per bound agent: burst CAPACITY=20; sustained FLOOD_CLOSE_AFTER=50 consecutive throttled sends → close VIOLATED_POLICY \"flood\"; refill 5/sec. Two connections of one agent share one bucket.\n\n== UNKNOWN FIELDS [D] ==\nThe server decodes with ignoreUnknownKeys=true → the wire is TOLERANT (additive fields are non-breaking).",
+      "bindings": {
+        "ws": {
+          "bindingVersion": "0.1.0",
+          "query": {
+            "type": "object",
+            "description": "[O] Optional bearer via query when a header is inconvenient (browsers can't set WS headers). Prefer the Authorization header off-browser.",
+            "properties": { "token": { "type": "string", "description": "[O] The agent bearer token (alternative to the Authorization: Bearer header). Token-only; no cookie on /ws/hub." } }
+          },
+          "headers": {
+            "type": "object",
+            "properties": { "Authorization": { "type": "string", "description": "[O] `Bearer <agentToken>`. Resolved by agentFor() BEFORE any frame; non-agent → close VIOLATED_POLICY unauthorized." } }
+          }
+        }
+      },
+      "publish": {
+        "operationId": "clientToHub",
+        "description": "client → server (the agent sends). [D] Each frame travels inside WireEnvelope; the frame is discriminated by `type`.",
+        "message": { "$ref": "#/components/messages/HubClientEnvelope" }
+      },
+      "subscribe": {
+        "operationId": "hubToClient",
+        "description": "server → client (the agent receives).",
+        "message": { "$ref": "#/components/messages/HubServerEnvelope" }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "agentBearer": { "type": "http", "scheme": "bearer", "description": "[O] Per-agent bearer token (Authorization header OR ?token= query). Minted once via POST /api/agents {remote:true} (operator-only). Token-only — NO cookie on /ws/hub." }
+    },
+    "messages": {
+      "HubClientEnvelope": {
+        "name": "HubClientEnvelope",
+        "title": "client→server frame (envelope)",
+        "summary": "[O] hello | send | subscribe | event, wrapped in WireEnvelope.",
+        "contentType": "application/json",
+        "payload": { "$ref": "#/components/schemas/WireEnvelopeClient" }
+      },
+      "HubServerEnvelope": {
+        "name": "HubServerEnvelope",
+        "title": "server→client frame (envelope)",
+        "summary": "[O] ack | message | deliver | error, wrapped in WireEnvelope.",
+        "contentType": "application/json",
+        "payload": { "$ref": "#/components/schemas/WireEnvelopeServer" }
+      }
+    },
+    "schemas": {
+      "WireEnvelopeClient": {
+        "type": "object",
+        "description": "[D] Versioned envelope for client→server frames.",
+        "required": ["v", "frame"],
+        "additionalProperties": false,
+        "properties": {
+          "v": { "type": "integer", "const": 1, "description": "[D] Wire version. SUPPORTED_WIRE_VERSIONS={1}; any other → WireError(unsupported_version)+close." },
+          "frame": {
+            "description": "[D] Discriminated union on `type`.",
+            "oneOf": [
+              { "$ref": "#/components/schemas/WireHello" },
+              { "$ref": "#/components/schemas/WireSend" },
+              { "$ref": "#/components/schemas/WireSubscribe" },
+              { "$ref": "#/components/schemas/WireEvent" }
+            ],
+            "discriminator": "type"
+          }
+        }
+      },
+      "WireEnvelopeServer": {
+        "type": "object",
+        "description": "[D] Versioned envelope for server→client frames.",
+        "required": ["v", "frame"],
+        "additionalProperties": false,
+        "properties": {
+          "v": { "type": "integer", "const": 1 },
+          "frame": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/WireAck" },
+              { "$ref": "#/components/schemas/WireMessage" },
+              { "$ref": "#/components/schemas/WireDeliver" },
+              { "$ref": "#/components/schemas/WireError" }
+            ],
+            "discriminator": "type"
+          }
+        }
+      },
+      "WireHello": {
+        "type": "object",
+        "description": "[D]+[O] Handshake — MUST be first frame (≤10s). Self-declared caps are CLAMPED to REMOTE (accept-and-degrade, not reject). Carries no identity.",
+        "required": ["type", "capabilities", "provider"],
+        "properties": {
+          "type": { "type": "string", "const": "hello", "description": "[O] discriminant literal (F2-(a): declared in the subtype)." },
+          "capabilities": { "$ref": "#/components/schemas/Capabilities" },
+          "provider": { "$ref": "#/components/schemas/ProviderInfo" }
+        }
+      },
+      "WireSend": {
+        "type": "object",
+        "description": "[D] Post to a channel. NO from/projectId — server-stamped. canWrite denial → WireError(forbidden, uniform).",
+        "required": ["type", "channel", "text"],
+        "properties": {
+          "type": { "type": "string", "const": "send" },
+          "channel": { "type": "string", "description": "[O] e.g. \"po-<agentId>\" (the agent's spoke)." },
+          "text": { "type": "string", "description": "[O] body; size-capped at the edge → WireError(too_large) if oversized/blank." },
+          "kind": { "$ref": "#/components/schemas/MessageKind" }
+        }
+      },
+      "WireSubscribe": {
+        "type": "object",
+        "description": "[D] Request ACL-filtered readable history for channels; replies as `message` frames.",
+        "required": ["type", "channels"],
+        "properties": {
+          "type": { "type": "string", "const": "subscribe" },
+          "channels": { "type": "array", "items": { "type": "string" } },
+          "since": { "type": "integer", "format": "int64", "description": "[D] optional replay cursor. NOTE (gap): cursor semantics (ts vs seq, inclusive/exclusive) + at-least-once/dedup-by-id are server/deliverer behavior, NOT measured here — underspecified." }
+        }
+      },
+      "WireEvent": {
+        "type": "object",
+        "description": "[D] Content-free self-report (rate-limit / tool NAME only — never tool I/O). Server stamps source=remote, whitelists+size-caps every field, and NEVER touches the caps clamp.",
+        "required": ["type", "signal"],
+        "properties": {
+          "type": { "type": "string", "const": "event" },
+          "signal": { "$ref": "#/components/schemas/WireEventType" },
+          "rateLimit": { "type": "object", "additionalProperties": { "type": "string" }, "description": "[D] RATE_LIMIT only; whitelisted keys, size-capped values." },
+          "tool": { "type": "string", "description": "[D] TOOL_CALL/TOOL_RESULT only; the tool NAME, never input/output." }
+        }
+      },
+      "WireAck": {
+        "type": "object",
+        "description": "[D] A hello/send/subscribe was accepted. detail=\"hello\" after handshake (sent BEFORE delivery registration).",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "const": "ack" },
+          "detail": { "type": "string" }
+        }
+      },
+      "WireMessage": {
+        "type": "object",
+        "description": "[D] One readable inbound message (ACL-filtered + secret-masked at source).",
+        "required": ["type", "message"],
+        "properties": {
+          "type": { "type": "string", "const": "message" },
+          "message": { "$ref": "#/components/schemas/Message" }
+        }
+      },
+      "WireDeliver": {
+        "type": "object",
+        "description": "[D]+[O] Hub→agent push (durable, deduped, at-least-once). GAP: `text` is an UNSTRUCTURED server-formatted string \"[hub:<channel>] <from>: <body>\" — a foreign agent must parse it back; there is no structured payload.",
+        "required": ["type", "text"],
+        "properties": {
+          "type": { "type": "string", "const": "deliver" },
+          "text": { "type": "string", "description": "[O] e.g. \"[hub:po-sidekick] po: TASK do-the-thing\"." }
+        }
+      },
+      "WireError": {
+        "type": "object",
+        "description": "[D] Fail-closed error (usually followed by a close — see the channel close-code taxonomy). `forbidden` is UNIFORM for \"no such channel\" AND \"forbidden channel\" (no topology leak).",
+        "required": ["type", "code"],
+        "properties": {
+          "type": { "type": "string", "const": "error" },
+          "code": { "$ref": "#/components/schemas/WireErrorCode" },
+          "detail": { "type": "string" }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "description": "[D] Connector capabilities. On /ws/hub these are CLAMPED to the REMOTE ceiling after hello [O].",
+        "required": ["structuredUsage", "toolGranularity", "reliableResult", "rateLimitSignal", "coordination", "kind"],
+        "properties": {
+          "structuredUsage": { "$ref": "#/components/schemas/CapabilityStatus" },
+          "toolGranularity": { "$ref": "#/components/schemas/CapabilityStatus" },
+          "reliableResult": { "$ref": "#/components/schemas/CapabilityStatus" },
+          "rateLimitSignal": { "$ref": "#/components/schemas/CapabilityStatus" },
+          "coordination": { "$ref": "#/components/schemas/CapabilityStatus" },
+          "kind": { "$ref": "#/components/schemas/ConnectorKind" }
+        }
+      },
+      "CapabilityStatus": { "type": "string", "enum": ["available", "limited", "unavailable"], "description": "[D] lowercase on the wire. [O] REMOTE clamp drives structuredUsage→\"unavailable\"." },
+      "ConnectorKind": { "type": "string", "enum": ["stream_json", "mcp"], "description": "[D] lowercase on the wire." },
+      "ProviderInfo": {
+        "type": "object",
+        "description": "[D] e.g. {\"id\":\"claude\",\"displayName\":\"Claude\"}.",
+        "required": ["id", "displayName"],
+        "properties": { "id": { "type": "string" }, "displayName": { "type": "string" } }
+      },
+      "Message": {
+        "type": "object",
+        "description": "[D] Wrapped by WireMessage. from/projectId are server-stamped [O].",
+        "required": ["id", "channelId", "from", "body", "ts"],
+        "properties": {
+          "id": { "type": "string" },
+          "channelId": { "type": "string" },
+          "from": { "type": "string", "description": "[O] server-stamped bearer-bound agentId." },
+          "body": { "type": "string" },
+          "ts": { "type": "integer", "format": "int64", "description": "epoch millis." },
+          "meta": { "$ref": "#/components/schemas/MessageMeta" },
+          "projectId": { "type": "string", "default": "default", "description": "[O] server-stamped active project." }
+        }
+      },
+      "MessageMeta": {
+        "type": "object",
+        "properties": {
+          "inReplyTo": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/MessageKind" }
+        }
+      },
+      "MessageKind": { "type": "string", "enum": ["TASK", "STATUS", "NOTE"], "description": "[D] UPPERCASE on the wire (contrast: CapabilityStatus/ConnectorKind are lowercase)." },
+      "WireEventType": { "type": "string", "enum": ["rate_limit", "tool_call", "tool_result"], "description": "[D] lowercase on the wire." },
+      "WireErrorCode": { "type": "string", "enum": ["unsupported_version", "forbidden", "too_large", "bad_request", "protocol", "rate_limited"], "description": "[D] lowercase on the wire. See the channel description for which close code each pairs with." }
+    }
+  }
+}

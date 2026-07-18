@@ -289,12 +289,17 @@ observation · **[C]** Dev5's client-side finding (not server-measured).
   tool-I/O payload. Worth stating so a foreign author doesn't expect stream-json bodies on `/ws/hub`.
 - **F6 (LOW) — client→server payload naming.** [C] frontend naming (`UserTurn` etc.). Not a `/ws/hub`
   issue (the wire frames are uniformly `WireX`), noted for completeness.
-- **F7 (MED) — REST authority boundary declared-but-unapplied.** [C] `openapi.json` defines
-  `securitySchemes` but sets no `security` per-op, and no `servers`. **[O] for the provisioning REST
-  (nailed):** `POST /api/agents {remote:true}` is **operator-only** — `201` with the operator bearer,
-  **`401` without**; `DELETE /api/agents/{id}` operator → `204`. → The authority boundary for the mint/
-  revoke endpoints a foreign-agent operator needs is **runtime-confirmed**, even though the exported
-  contract doesn't state it. (The broader per-endpoint `security` gap stays Dev5's [C] REST finding.)
+- **F7 (MED) — REST authorization-TIER boundary is not machine-expressible.** **Correction [measured —
+  Assist2 recompute + a2-po cross-check, supersedes Dev5's derivation]:** `openapi.json` **DOES** declare
+  per-operation `security` — **65 ops** (62× `[bearerAuth, sessionCookie]`, 3× `[]` explicit-public). The
+  earlier "sets no `security`" reading was a *derivation* and is **wrong — not carried here.** The real
+  gap: a `security:[bearerAuth, sessionCookie]` says *authenticated*, not *operator* — the
+  **operator-vs-member authorization tier** (who may call the operator-only ops: ACL `PUT`, project
+  mutations, API-key, agent mint) is **not expressible** in the OpenAPI security model; a foreign client
+  learns it only at the **401/403**. **[O] my runtime evidence for exactly this:** `POST /api/agents
+  {remote:true}` → `201` with the operator bearer, **`401` without**; `DELETE /api/agents/{id}` (operator)
+  → `204` — the mint/revoke tier boundary is real but undeclared. `servers` (base-URL/origin) absent —
+  confirmed. (BYO-relevant: the authority boundary is the security-critical fact for a foreign frontend.)
   **→ CYP-286:** the operator-tier bearer measured here is the same credential surface CYP-286 hardens;
   link F7's authority-boundary evidence there.
 
