@@ -14,8 +14,9 @@
 # it — an OOM must NOT spill the cleartext heap to an .hprof on disk.
 -XX:-HeapDumpOnOutOfMemoryError
 
-# No JVM-written core dump on a fatal error — a core image contains the same cleartext heap. (OS-level `ulimit -c 0` /
-# systemd `LimitCORE=0` is the deploy/unit complement; this is the in-JVM half.)
+# No JVM-written core dump on a fatal error — a core image contains the same cleartext heap. This is the in-JVM half;
+# the OS-level complement is the service manager's core-limit — systemd `LimitCORE=0` (the `.deb`) / launchd
+# `HardResourceLimits{Core=0}` (the macOS gateway plist) — set alongside it.
 -XX:-CreateCoredumpOnCrash
 
 # Netty 4.2 JFR guard — the gateway runs on Netty (embeddedServer(Netty)); without this it hits the CYP-206/225
