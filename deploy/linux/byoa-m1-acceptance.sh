@@ -75,6 +75,11 @@ box_dirty && die "box not clean (a cyppie user/dir/service exists) — run: sudo
 INSTALLED=1
 health || die "hub did not come up after install"
 SECRETS="$(mktemp)"; chmod 0600 "$SECRETS"
+# CYP-687: mktemp created $SECRETS as ROOT; the provision runs `sudo -u cyppie` and writes --secrets-out → cyppie
+# cannot write a root-owned file (FileNotFoundException/Permission denied at ProvisionMain appendText — the CYP-685
+# "created by one user, written by another" class). chown it to cyppie so the write succeeds; posture unchanged (0600,
+# owner cyppie — like hub.env; root still reads it below, `shred -u` wipes it immediately).
+chown cyppie:cyppie "$SECRETS"
 sudo -u cyppie "$PROVISION" --add-remote-agent "$AGENT" --data-dir "$DATADIR" --secrets-out "$SECRETS" >/dev/null || die "--add-remote-agent failed"
 cat "$SECRETS" >> "$ENVFILE"; shred -u "$SECRETS" 2>/dev/null || rm -f "$SECRETS"
 # CYP-687 (PL) — RUN-override of the heap for THIS acceptance run. NOT a hub.jvmargs commit: MaxRAMPercentage=75 is
