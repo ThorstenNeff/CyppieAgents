@@ -13,6 +13,7 @@ import type { WorktreeFate } from '../state/restRepo'
 import { ConnectorPicker } from '../connector/ConnectorPicker'
 import type { ConnectorKind } from '../connector/connectorModel'
 import { lifecycleLabel } from '../agentview/lifecycleStatus'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import {
   ROLE_OPTIONS,
   roleLabel,
@@ -29,6 +30,10 @@ import {
 export interface AgentManagementPanelProps {
   agents: readonly Agent[]
   operator: boolean
+  // CYP-288: a failed INITIAL roster load (GET /api/agents) surfaces error+retry instead of an empty list (failed ≠
+  // empty). Gated on the roster still being empty → a live/WS roster update or a successful retry hides the error.
+  loadError?: boolean
+  onRetryLoad?: () => void
   runStateByAgent: ReadonlyMap<string, AgentRunState>
   /** All three resolve on server-confirm and reject (RestError) on a server reject. The App does the roster refetch
    *  on success (non-optimistic); the dialogs surface the mapped reject on failure. */
@@ -49,6 +54,8 @@ type Notice = null | { kind: 'spawn' } | { kind: 'effect' }
 export function AgentManagementPanel({
   agents,
   operator,
+  loadError = false,
+  onRetryLoad,
   runStateByAgent,
   onCreate,
   onUpdate,
@@ -95,6 +102,11 @@ export function AgentManagementPanel({
         </p>
       )}
 
+      {agents.length === 0 && loadError ? (
+        // CYP-288: a failed roster load shows error+retry, not an empty list (which reads as "no agents"). A
+        // genuinely-empty roster (no error) still renders the empty list — non-vacuum contrast.
+        <LoadErrorRetry testId="agentMgmt.loadError" onRetry={onRetryLoad ?? (() => undefined)} />
+      ) : (
       <ul className="agent-mgmt-list" data-testid="agentMgmt.list">
         {agents.map((a) => (
           <li key={a.id} className="agent-mgmt-item" data-testid={`agentMgmt.item.${a.id}`}>
@@ -131,6 +143,7 @@ export function AgentManagementPanel({
           </li>
         ))}
       </ul>
+      )}
 
       {dialog?.kind === 'add' && (
         <AddDialog

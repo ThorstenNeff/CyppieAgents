@@ -11,7 +11,7 @@
 // identity comes from the explicit CYPPIE_PO_AGENT_ID config (never a `po-<worker>` guess) — both swap to the real
 // typed roster when CYP-426 lands. Comm `canWrite` is left unknown (server enforces on POST; the revoked-composer
 // lock is CYP-437).
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { WindowHost } from './windowmgr/WindowHost'
 import { WindowFrame } from './windowmgr/WindowFrame'
 import { useWindowStore } from './windowmgr/windowStore'
@@ -123,6 +123,12 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const onBusyState = useHubStore((s) => s.onBusyState)
   const onTokenUsage = useHubStore((s) => s.onTokenUsage)
   const [aclError, setAclError] = useState<string | null>(null)
+  // CYP-288: honest INITIAL-load errors (failed load ≠ empty). Transient UI state (App-local, not the domain store);
+  // the panels render an error+retry surface off these, gated on their data still being empty so live/WS data hides it.
+  const [rosterLoadError, setRosterLoadError] = useState(false)
+  const [channelsLoadError, setChannelsLoadError] = useState(false)
+  const [aclEntriesLoadError, setAclEntriesLoadError] = useState(false)
+  const [messagesLoadError, setMessagesLoadError] = useState(false)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [commSendError, setCommSendError] = useState<string | null>(null)
   // CYP-433: the API-key MASKED view (never the plaintext — the server only ever sends {set, masked:"***last4"}).
@@ -212,11 +218,27 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // lockout advisory simply won't fire until we truly know who the PO is).
   const poAgentId = rosterPoAgentId(roster)
 
+  // CYP-288: named snapshot loaders — set the data (clearing the error) on success, or flag a load error on failure,
+  // so a failed INITIAL load surfaces an honest error+retry instead of a silent empty state. Reused as the panels'
+  // onRetry. Stable (useCallback over the memoized hubRepo + stable store actions) → churn-immune (CYP-660/661).
+  const loadRoster = useCallback(() => {
+    hubRepo.fetchAgents().then((r) => { setRoster(r); setRosterLoadError(false) }).catch(() => setRosterLoadError(true))
+  }, [hubRepo, setRoster])
+  const loadChannels = useCallback(() => {
+    hubRepo.fetchChannels().then((c) => { setChannels(c); setChannelsLoadError(false) }).catch(() => setChannelsLoadError(true))
+  }, [hubRepo, setChannels])
+  const loadAcl = useCallback(() => {
+    hubRepo.fetchAcl().then((a) => { setAcl(a); setAclEntriesLoadError(false) }).catch(() => setAclEntriesLoadError(true))
+  }, [hubRepo, setAcl])
+  const loadMessages = useCallback((channelId: string) => {
+    hubRepo.getMessages(channelId).then((m) => { ingestMessages(m); setMessagesLoadError(false) }).catch(() => setMessagesLoadError(true))
+  }, [hubRepo, ingestMessages])
+
   // Bootstrap: REST snapshot + the live-socket VM. Runs once; the VM stops on unmount.
   useEffect(() => {
-    hubRepo.fetchAgents().then(setRoster).catch(() => undefined)
-    hubRepo.fetchChannels().then(setChannels).catch(() => undefined)
-    hubRepo.fetchAcl().then(setAcl).catch(() => undefined)
+    loadRoster()
+    loadChannels()
+    loadAcl()
     hubRepo.getApiKey().then(setApiKeyView).catch(() => undefined) // masked view; plaintext never comes back
     hubRepo.getRepoConfig().then(setRepoConfig).catch(() => undefined) // CYP-453 project repo config
     hubRepo.getProjects().then(setProjectsView).catch(() => undefined) // CYP-467 cross-project Event-Browse axis
@@ -270,7 +292,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   useEffect(() => {
     if (selectedChannelId === null) return
     setCommSendError(null)
-    hubRepo.getMessages(selectedChannelId).then(ingestMessages).catch(() => undefined)
+    setMessagesLoadError(false) // reset per channel switch — the error is about THIS channel's history load
+    loadMessages(selectedChannelId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChannelId])
 
@@ -477,6 +500,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         <AgentManagementPanel
           agents={roster}
           operator={operator}
+          loadError={rosterLoadError}
+          onRetryLoad={loadRoster}
           runStateByAgent={runStateByAgent}
           onCreate={onCreateAgent}
           onUpdate={onUpdateAgent}
@@ -632,6 +657,12 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           sendError={commSendError}
           onSend={onSendComm}
           historySize={historySize}
+          channelsLoadError={channelsLoadError}
+          onRetryChannels={loadChannels}
+          messagesLoadError={messagesLoadError}
+          onRetryMessages={() => {
+            if (selectedChannelId !== null) loadMessages(selectedChannelId)
+          }}
         />
       )
     }
@@ -646,6 +677,11 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           operator={operator}
           onCommit={commitAcl}
           error={aclError}
+          loadError={channelsLoadError || aclEntriesLoadError}
+          onRetryLoad={() => {
+            loadChannels()
+            loadAcl()
+          }}
         />
       )
     }

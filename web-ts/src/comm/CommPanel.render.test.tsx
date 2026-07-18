@@ -87,3 +87,51 @@ describe('CommPanel (CYP-407 W9 part 2)', () => {
     expect(revoked.queryByTestId('composer-input')).toBeNull()
   })
 })
+
+describe('CommPanel — CYP-288 honest load-error + retry (failed load ≠ empty)', () => {
+  it('failed channel-list load → error+retry, NOT a silently-empty list; retry fires', () => {
+    const onRetry = vi.fn()
+    const { getByTestId, queryByTestId } = render(
+      <CommPanel {...base} channels={[]} channelsLoadError onRetryChannels={onRetry} />,
+    )
+    expect(getByTestId('comm.channels.loadError')).toBeTruthy()
+    expect(queryByTestId('comm.channel.po-frontend')).toBeNull()
+    fireEvent.click(getByTestId('comm.channels.loadError.retry'))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('genuinely-empty channels (no error) → no error surface (non-vacuum contrast)', () => {
+    const { queryByTestId } = render(<CommPanel {...base} channels={[]} channelsLoadError={false} />)
+    expect(queryByTestId('comm.channels.loadError')).toBeNull()
+  })
+
+  it('channels present + error flag → channels render, error hidden (live/WS data wins — flag 4)', () => {
+    const { getByTestId, queryByTestId } = render(<CommPanel {...base} channelsLoadError />)
+    expect(getByTestId('comm.channel.po-frontend')).toBeTruthy()
+    expect(queryByTestId('comm.channels.loadError')).toBeNull()
+  })
+
+  it('failed history load → error+retry, NOT comm-empty (error BEATS empty); retry fires', () => {
+    const onRetry = vi.fn()
+    const { getByTestId, queryByTestId } = render(
+      <CommPanel {...base} messages={[]} messagesLoadError onRetryMessages={onRetry} />,
+    )
+    expect(getByTestId('comm.timeline.loadError')).toBeTruthy()
+    expect(queryByTestId('comm-empty')).toBeNull() // mutation: render empty instead of error → RED
+    fireEvent.click(getByTestId('comm.timeline.loadError.retry'))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('genuinely-empty channel (no error) → comm-empty, not the error (non-vacuum contrast)', () => {
+    const { queryByTestId } = render(<CommPanel {...base} messages={[]} messagesLoadError={false} />)
+    expect(queryByTestId('comm-empty')).not.toBeNull()
+    expect(queryByTestId('comm.timeline.loadError')).toBeNull()
+  })
+
+  it('messages present + error flag → timeline renders, error hidden (flag 4)', () => {
+    const msgs: Message1[] = [{ id: 'm1', channelId: 'po-frontend', from: 'frontend', body: 'hi', ts: 0 }]
+    const { getByTestId, queryByTestId } = render(<CommPanel {...base} messages={msgs} messagesLoadError />)
+    expect(getByTestId('comm.message.m1')).toBeTruthy()
+    expect(queryByTestId('comm.timeline.loadError')).toBeNull()
+  })
+})
