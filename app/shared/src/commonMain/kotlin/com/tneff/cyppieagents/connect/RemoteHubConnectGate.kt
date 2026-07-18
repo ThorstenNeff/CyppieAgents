@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.connect
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,12 @@ fun RemoteHubConnectGate(
         return
     }
     val viewModel = remember { createViewModel() }
+    // CYP-443 Slice 3 (H-1): the VM is held by a plain `remember`, NOT a ViewModelStore, so `ViewModel.onCleared`
+    // NEVER fires on composition exit (logout / auth-subtree teardown). Without this, a leave would drop the VM with
+    // the decrypted device key + live Noise tunnels still un-torn-down (GC-reachable leak). Route disposal through the
+    // teardown chokepoint here so `onDispose` reaches `closeActiveComponents` (zeroize key / close pool / abort enroll /
+    // clear pre-arm). Reachability — not just existence — is what the Slice-3 wiring guard pins (neutralize → leak).
+    DisposableEffect(viewModel) { onDispose { viewModel.dispose() } }
     var entered by remember { mutableStateOf(false) }
     if (entered) {
         // M2 Seam-3 (a)+(b): recompute the hand-off when the live session state changes. Non-null only on a REMOTE

@@ -442,6 +442,21 @@ class HubConnectViewModel(
     }
 
     /**
+     * CYP-443 Slice 3 — the **explicit composition-disposal teardown**. The connect VM is held by a plain
+     * `remember` ([RemoteHubConnectGate]), NOT a `ViewModelStore`, so [onCleared] never fires on composition exit
+     * (logout / auth-subtree teardown) — the gate's `DisposableEffect { onDispose { dispose() } }` routes that
+     * exit through THIS entry so it lands at the same teardown chokepoint ([closeActiveComponents]): the
+     * crown-jewel decrypted device key + live tunnels + pre-arm + enroll are zeroized/closed on leave (H-1),
+     * never left GC-reachable. Unlike [backToHubList] this is teardown-ONLY — no `hubs()` reload / `LoadingHubs`
+     * state change (a disposal must not re-drive the flow it is tearing down). Idempotent.
+     */
+    fun dispose() {
+        remoteJob?.cancel()
+        remoteJob = null
+        closeActiveComponents()
+    }
+
+    /**
      * Q5 "auf Hub wechseln" step 1 — leave the current (remote) connection to pick another hub. **Tears the active
      * remote session down FIRST** (exactly-one-hub, CI-6 — nothing carried across) and returns to the hub list;
      * the subsequent [selectHub] + [connectRemote] establishes the new one.
