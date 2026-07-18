@@ -236,7 +236,8 @@ POST /api/agents
 A remote agent isn't spawned locally — it registers `STOPPED`, reachable only over the wire. Its hub spoke
 is `po-sidekick`, as for any worker.
 
-**Step 2 — Build the bridge.** On the machine that will run the agent (JDK 17+):
+**Step 2 — Build the bridge.** On the machine that will run the agent (JDK 21 — the bridge, like the hub, is
+Java-21 bytecode):
 
 ```bash
 ./gradlew :remote-runtime:installDist
