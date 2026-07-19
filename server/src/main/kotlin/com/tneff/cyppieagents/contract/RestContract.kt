@@ -151,7 +151,11 @@ object RestContract {
         Op("POST", "/api/projects", Tier.OPERATOR, request = json<CreateProjectRequest>(), response = json<Project>()),
         Op("POST", "/api/projects/switch", Tier.OPERATOR, request = json<SwitchActiveRequest>(), response = json<ProjectsView>()),
         Op("PUT", "/api/projects/{id}", Tier.OPERATOR, request = json<RenameProjectRequest>(), response = json<Project>()),
-        Op("DELETE", "/api/projects/{id}", Tier.OPERATOR, response = Body.None),
+        // CYP-739: the DELETE genuinely returns a ProjectDeleteReceipt body (ProjectRoutes → deleter.delete()), NOT
+        // 204/no-body. Declaring it here (in-place — @Serializable server type, walked by descriptor like
+        // RevokedParticipantTokens; no :core promotion needed) makes openapi carry the schema so the web-ts consumer
+        // generates the type instead of hand-modelling it (drift-proof; closes the latent 204-cast bug Dev5 pinned).
+        Op("DELETE", "/api/projects/{id}", Tier.OPERATOR, response = json<com.tneff.cyppieagents.boot.ProjectDeleteReceipt>()),
         // --- ChannelShareRoutes (/api/channels/{id}/share) ---
         Op("GET", "/api/channels/{id}/share", Tier.PARTICIPANT, response = json<ChannelShareView>()),
         Op("PUT", "/api/channels/{id}/share", Tier.OPERATOR, response = json<ChannelShareView>()),
