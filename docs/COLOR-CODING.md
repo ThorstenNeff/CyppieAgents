@@ -169,3 +169,12 @@ Genau die **CYP-643-Klasse:** „`onSurfaceVariant` klingt gedimmt genug" kommt 
 der Token-**Name** plausibel ist — aber die **gemessene** Fläche trägt nicht. Diese Regel + der Script fangen das
 **vor** dem Bau. Ziel: wer „grau das mal aus" gesagt bekommt, sieht in 30 Sekunden, dass es an dieser Fläche nicht
 geht — und kriegt die Antwort (Glyph bei vollem Kontrast) gleich mitgeliefert.
+
+---
+
+## 9. Verwandte Design-System-Regeln
+
+- **`A11Y-ANNOUNCEMENTS.md`** — Ansage-Dringlichkeit `Polite` vs `Assertive`. Die Achse ist
+  **Aufmerksamkeit, nicht Schwere**: Ergebnis einer gestarteten Aktion oder unaufgefordert ⇒ `Assertive`;
+  Anfangszustand einer gerade geöffneten Fläche ⇒ `Polite`. Ergänzt §8: dort geht es darum, **womit** ein
+  Zustand getragen wird (Glyph statt Ton), hier **wie laut** er angesagt wird.
