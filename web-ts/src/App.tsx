@@ -58,6 +58,8 @@ import { ProjectManagementPanel } from './project/ProjectManagementPanel'
 import { ChannelSharePanel } from './comm/ChannelSharePanel'
 import { ProjectSwitcher } from './project/ProjectSwitcher'
 import { OverloadBanner } from './workspace/OverloadBanner'
+import { UnconfiguredBanner } from './workspace/UnconfiguredBanner'
+import { setupStatusOf, mayPromptSetup } from './workspace/setupStatus'
 import { overloadVisible } from './workspace/capacityModel'
 import { ThemeToggle } from './ui/ThemeToggle'
 import { RemoteSecurityTierBadge } from './connector/RemoteSecurityTierBadge'
@@ -159,6 +161,10 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const [apiKeyView, setApiKeyView] = useState<ApiKeyView | null>(null)
   // CYP-453: the project repo config ({ configured, url?, branch? }) — drives the honest unset status + prefills.
   const [repoConfig, setRepoConfig] = useState<RepoConfigView | null>(null)
+  // CYP-735 §3.1/§4: the honest four-state setup status. `null` means "not loaded" OR "load failed", so it is
+  // NOT read as unconfigured — prompting setup on a failed load tells a configured operator to configure.
+  const setupStatus = setupStatusOf(repoConfig, repoConfigLoadError)
+  const setupPrompt = mayPromptSetup(setupStatus)
   // CYP-467/94: the project registry + active pointer drive the Event-Browse cross-project axis (operator-only view).
   const [projectsView, setProjectsView] = useState<ProjectsView | null>(null)
   // CYP-642: the server-authoritative capacity snapshot ({current, estimatedMax?}) — drives the capacity pill.
@@ -802,6 +808,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
       return (
         <AgentWindow
           agentId={agentId}
+          setupBlocked={setupPrompt}
           wsBase={cfg.wsBase}
           token={cfg.token}
           operator={operator}
@@ -868,6 +875,9 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
       <div className="workspace-tier" data-testid="workspace-tier">
         <RemoteSecurityTierBadge tier={gatewayTierFor(commConnection)} />
       </div>
+      {/* CYP-735 §3.1 — a STANDING condition (not dismissable): agents cannot start until the hub is set up.
+          Shown only on a server-stated configured:false; a load error surfaces its own error+retry instead. */}
+      {setupPrompt && <UnconfiguredBanner onSetUp={() => useWindowStore.getState().focus(SETTINGS_WINDOW_ID)} />}
       {overloadVisible(overloadActive, overloadDismissed, capacity) && (
         <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />
       )}

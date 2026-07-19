@@ -118,6 +118,38 @@ body {
   font-variant-numeric: tabular-nums;
 }
 /* The overload banner: full-width WARN-amber strip (▲ glyph), never error-red / success-green. */
+/* CYP-735 §3.1 — the standing "hub not set up" strip. Neither the overload banner's WARN-amber (nothing was
+   rejected) nor error-red (nothing failed): this is a call to action on a fresh install. Text carries the state,
+   colour only reinforces it. Not dismissable by design — the condition persists until it is fixed. */
+.unconfigured-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.unconfigured-chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+.unconfigured-text {
+  white-space: normal; /* never ellipsis — a truncated instruction is a useless one */
+}
+.unconfigured-action {
+  margin-left: auto;
+  min-height: 24px;
+}
+.lifecycle-setup-blocked {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.8125rem;
+  white-space: normal;
+}
 .overload-banner {
   flex: 0 0 auto;
   display: flex;

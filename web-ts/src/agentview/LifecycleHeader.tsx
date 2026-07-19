@@ -22,12 +22,19 @@ export interface LifecycleHeaderProps {
   error?: string | null
   /** CYP-446: the durable ERROR-state reason code; shown as a curated sentence ONLY in ERROR, its own node. */
   errorCode?: AgentErrorCode
+  /** CYP-735 §3.1: an unconfigured hub cannot start agents. PRESENT-BUT-DISABLED with a stated reason — never a
+   *  hidden control (a missing button leaves the operator guessing) and never a fake-enabled one that fails on
+   *  click. Defaults false so the gate only ever applies where it is deliberately wired. */
+  setupBlocked?: boolean
   onStart: (agentId: string) => void
   onStop: (agentId: string) => void
   onRestart: (agentId: string) => void
 }
 
-export function LifecycleHeader({ agentId, state, pending, operator, error = null, errorCode, onStart, onStop, onRestart }: LifecycleHeaderProps) {
+/** CYP-735 §3.1 — the stated reason for a start blocked by an unset-up hub (never a silent disable). */
+export const SETUP_BLOCKED_REASON = 'Hub nicht eingerichtet — jetzt einrichten.'
+
+export function LifecycleHeader({ agentId, state, pending, operator, error = null, errorCode, setupBlocked = false, onStart, onStop, onRestart }: LifecycleHeaderProps) {
   const spec = statusDotSpec(state, pending !== undefined)
   const label = lifecycleLabel(state, pending)
   const color = dotRoleVar(spec.role)
@@ -38,7 +45,8 @@ export function LifecycleHeader({ agentId, state, pending, operator, error = nul
 
   // CYP-445 §5: per-control enablement (Start⇔≠RUNNING / Stopp⇔=RUNNING / Neustart⇔operator), not a single flag.
   const isPending = pending !== undefined
-  const startEnabled = lifecycleControlEnabled('start', state, operator, isPending)
+  // the setup gate is an ADDITIONAL block on start only — it never enables anything the lifecycle rules disable.
+  const startEnabled = lifecycleControlEnabled('start', state, operator, isPending) && !setupBlocked
   const stopEnabled = lifecycleControlEnabled('stop', state, operator, isPending)
   const restartEnabled = lifecycleControlEnabled('restart', state, operator, isPending)
 
@@ -63,10 +71,18 @@ export function LifecycleHeader({ agentId, state, pending, operator, error = nul
           data-testid={`lifecycle.start.${agentId}`}
           disabled={!startEnabled}
           aria-disabled={!startEnabled}
+          // the REASON travels with the disabled control — a disabled button without one is a dead end.
+          title={setupBlocked ? SETUP_BLOCKED_REASON : undefined}
+          aria-describedby={setupBlocked ? `lifecycle.setupBlocked.${agentId}` : undefined}
           onClick={() => onStart(agentId)}
         >
           Start
         </button>
+        {setupBlocked && (
+          <span className="lifecycle-setup-blocked" id={`lifecycle.setupBlocked.${agentId}`} data-testid={`lifecycle.setupBlocked.${agentId}`} role="note">
+            {SETUP_BLOCKED_REASON}
+          </span>
+        )}
         <button
           type="button"
           className="lifecycle-btn"

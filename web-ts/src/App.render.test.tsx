@@ -608,3 +608,61 @@ describe('CYP-733 — the connection-security tier is always visible and never o
     expect(queryByTestId('remote.security.tierDisclosure')).toBeNull() // nothing to disclose about no connection
   })
 })
+
+// ── CYP-735 §3.1 — the unconfigured banner + agent-start gating ──────────────────────────────────────────────
+describe('CYP-735 — an unset-up hub says so, and never guesses it from a failed load', () => {
+  const repo = (over: { configured?: boolean; reject?: boolean } = {}) => {
+    const r = fakeRepo()
+    r.getRepoConfig = vi.fn(() =>
+      over.reject ? Promise.reject(new RestError(500, 'GET', '/api/config/repo', '')) : Promise.resolve({ configured: over.configured ?? true }),
+    )
+    return r
+  }
+
+  it('★ configured:false → banner + chip + the start button is DISABLED with a stated reason', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId } = render(
+      <App config={config} repo={repo({ configured: false })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(await findByTestId('workspace.unconfiguredBanner')).toBeTruthy()
+    expect(getByTestId('workspace.unconfiguredChip')).toBeTruthy()
+    const start = getByTestId('lifecycle.start.po') as HTMLButtonElement
+    expect(start.disabled).toBe(true) // present-but-disabled, never hidden
+    expect(getByTestId('lifecycle.setupBlocked.po').textContent).toContain('nicht eingerichtet') // the reason travels
+  })
+
+  it('★ a FAILED config load shows NO setup prompt — it would tell a configured operator to configure', async () => {
+    // The collapse this ticket exists to prevent: `config === null` after an error must not read as "not set up".
+    const hub = new FakeSocketHub()
+    const { queryByTestId, getByTestId } = render(
+      <App config={config} repo={repo({ reject: true })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(queryByTestId('workspace.unconfiguredBanner')).toBeNull()
+    expect(queryByTestId('workspace.unconfiguredChip')).toBeNull()
+    const start = getByTestId('lifecycle.start.po') as HTMLButtonElement
+    expect(start.disabled).toBe(false) // and we do not block work on a guess either
+  })
+
+  it('configured:true renders no banner and leaves start ungated (non-vacuous contrast)', async () => {
+    const hub = new FakeSocketHub()
+    const { queryByTestId, getByTestId } = render(
+      <App config={config} repo={repo({ configured: true })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(queryByTestId('workspace.unconfiguredBanner')).toBeNull()
+    expect((getByTestId('lifecycle.start.po') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('★ the banner is NOT dismissable — "not set up" is a standing condition, not a passing event', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, container } = render(
+      <App config={config} repo={repo({ configured: false })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    const banner = await findByTestId('workspace.unconfiguredBanner')
+    expect(banner).toBeTruthy()
+    expect(container.querySelector('[data-testid="workspace.unconfiguredBanner.dismiss"]')).toBeNull()
+  })
+})
