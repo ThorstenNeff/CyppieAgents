@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, cleanup, fireEvent, act, waitFor } from '@testing-library/react'
 import { EventBrowsePanel } from './EventBrowsePanel'
 import { RestError } from '../net/rest'
+import { LOAD_ERROR_DEFAULT_MESSAGE, LOAD_ERROR_RETRY_LABEL } from '../ui/LoadErrorRetry'
 import type { EventPage, EventSurrogate } from '../types/generated/contract'
 import type { EventFilter } from './eventBrowse'
 
@@ -50,6 +51,21 @@ describe('EventBrowsePanel (CYP-452)', () => {
     expect(await findByTestId('eventBrowse.error')).toBeTruthy()
     expect(await findByTestId('eventBrowse.error.retry')).toBeTruthy()
     expect(queryByTestId('eventBrowse.empty')).toBeNull() // never the "no events" state on a failure
+  })
+
+  it('★ the error surface IS the shared primitive — so copy/a11y changes reach it (CYP-288 consolidation)', async () => {
+    // The divergence risk, not the markup, was the point: an inline copy silently stops tracking the primitive the
+    // day someone changes its wording or a11y. Pinned structurally — a re-inlined surface loses `.load-error` and
+    // the shared label constant, and this goes red. The testid deliberately stays `eventBrowse.error` (shared
+    // surface with Tester2's harness); the naming convention aligns separately, not unilaterally.
+    const getEvents = vi.fn().mockRejectedValue(new RestError(500, 'GET', '/api/events', ''))
+    const { findByTestId, container } = render(<EventBrowsePanel getEvents={getEvents} agentIds={[]} />)
+    const surface = await findByTestId('eventBrowse.error')
+    expect(surface.className).toContain('load-error') // the primitive's own class, not a local one
+    expect(surface.getAttribute('role')).toBe('alert')
+    expect(surface.textContent).toContain(LOAD_ERROR_DEFAULT_MESSAGE) // single source of truth for the copy
+    expect((await findByTestId('eventBrowse.error.retry')).textContent).toBe(LOAD_ERROR_RETRY_LABEL)
+    expect(container.querySelector('.event-browse-error')).toBeNull() // the old inline surface is gone
   })
 
   it('a 403 on load fails closed to the revoked lock, no rows (runtime access revoke)', async () => {
