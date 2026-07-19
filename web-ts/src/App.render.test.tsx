@@ -31,6 +31,8 @@ const fakeRepo = (): HubRepo => ({
   fetchAgents: vi.fn().mockResolvedValue(roster),
   fetchChannels: vi.fn().mockResolvedValue(channels),
   fetchAcl: vi.fn().mockResolvedValue([]),
+  fetchReadState: vi.fn().mockResolvedValue([]),
+  markRead: vi.fn().mockResolvedValue({ channelId: 'c', lastReadSeq: 0, unreadCount: 0 }),
   putAcl: vi.fn().mockResolvedValue({ channelId: '', agentId: '', canRead: false, canWrite: false }),
   requestMode: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn().mockResolvedValue([]),
@@ -401,5 +403,39 @@ describe('App assembly (CYP-425)', () => {
     await flush()
     expect(queryByTestId('eventBrowse')).toBeNull() // omission — no bodies surface for a non-operator
     expect(repo.getEvents).not.toHaveBeenCalled() // and no /api/events query at all
+  })
+})
+
+// ── CYP-705 ⑥ (UIUX2 §9b) — read-state must survive a reconnect honestly ──────────────────────────────────────
+describe('CYP-705 ⑥ — reconnect re-fetches the read-state', () => {
+  it('★ a /ws/comm (re)open re-fetches read-state — stale counts must not be shown as current', () => {
+    // While the socket was down the cursor may have advanced on another device. Keeping the counts we happen to
+    // hold and presenting them as current is the same lie as a fabricated zero, only aged. The client re-ASKS
+    // rather than trusting the server to resend after a gap the server cannot see.
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    render(<App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
+    const initial = (repo.fetchReadState as ReturnType<typeof vi.fn>).mock.calls.length
+    expect(initial).toBeGreaterThan(0) // boot fetch happened at all (non-vacuous)
+    const comm = hub.sockets.find((s) => s.url.includes('/ws/comm'))!
+    act(() => {
+      comm.emitOpen()
+    })
+    expect((repo.fetchReadState as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(initial)
+  })
+
+  it('★ every subsequent reopen re-fetches too — not just the first reconnect', () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    render(<App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
+    const comm = hub.sockets.find((s) => s.url.includes('/ws/comm'))!
+    act(() => {
+      comm.emitOpen()
+    })
+    const afterFirst = (repo.fetchReadState as ReturnType<typeof vi.fn>).mock.calls.length
+    act(() => {
+      comm.emitOpen()
+    })
+    expect((repo.fetchReadState as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(afterFirst)
   })
 })

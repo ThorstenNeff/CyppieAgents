@@ -21,6 +21,7 @@ import {
   type CommConnection,
   type LifecycleAction,
 } from './hubReducers'
+import type { UnreadView } from '../comm/unreadModel'
 import type {
   AclEntry,
   Agent,
@@ -37,6 +38,8 @@ import type { AclDimension } from '../comm/aclModel'
 export interface HubStore extends HubState {
   setRoster: (roster: readonly Agent[]) => void
   setChannels: (channels: readonly Channel[]) => void
+  /** CYP-705: seed the read-state view from GET /api/read-state (the WS ReadStateEvent keeps it fresh). */
+  setUnreadView: (view: UnreadView) => void
   setAcl: (entries: readonly AclEntry[]) => void
   onCommEvent: (event: CommWsServerEvent) => void
   onTerminalControl: (event: AgentTerminalControlEvent) => void
@@ -55,6 +58,7 @@ export const useHubStore = create<HubStore>((set) => ({
   ...emptyHubState,
   setRoster: (roster) => set((s) => applyRoster(s, roster)),
   setChannels: (channels) => set((s) => applyChannels(s, channels)),
+  setUnreadView: (view) => set((s) => ({ ...s, unreadView: view })),
   setAcl: (entries) => set((s) => applyAcl(s, entries)),
   onCommEvent: (event) => set((s) => applyCommEvent(s, event)),
   onTerminalControl: (event) => set((s) => applyTerminalControl(s, event)),

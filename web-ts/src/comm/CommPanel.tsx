@@ -11,7 +11,7 @@ import { senderAccent } from './senderAccent'
 import { composerDisclosure } from './commDisclosure'
 import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import { mentionSegments } from './mentionModel'
-import { channelUnread, READ_STATE_UNAVAILABLE, type ReadState } from './unreadModel'
+import { channelUnread, READ_STATE_UNAVAILABLE, type UnreadView } from './unreadModel'
 import type { Channel, Message1 } from '../types/generated/contract'
 
 export interface CommPanelProps {
@@ -23,7 +23,7 @@ export interface CommPanelProps {
   /** CYP-704: roster ids mentions resolve against. Empty (default) = not loaded / load failed → all plain text. */
   rosterIds?: readonly string[]
   /** CYP-705: server read state. Default UNAVAILABLE → no badge and NO all-clear (unknown ≠ zero). */
-  readState?: ReadState
+  readState?: UnreadView
   /** CYP-705: index of the first unread message (from firstUnreadIndex). null/absent ⇒ no divider. */
   unreadDividerIndex?: number | null
   connection: 'live' | 'connecting' | 'offline' | 'revoked'

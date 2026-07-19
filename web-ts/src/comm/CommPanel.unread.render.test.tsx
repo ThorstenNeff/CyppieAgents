@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { CommPanel } from './CommPanel'
-import { READ_STATE_UNAVAILABLE, type ReadState } from './unreadModel'
+import { READ_STATE_UNAVAILABLE, type UnreadView } from './unreadModel'
 import type { Channel, Message1 } from '../types/generated/contract'
 
 const CHANNELS: readonly Channel[] = [
@@ -17,7 +17,7 @@ const MESSAGES: readonly Message1[] = [
   { id: 'm2', channelId: 'po-frontend', from: 'po', body: 'zwei', ts: 0 },
 ]
 
-const renderPanel = (readState: ReadState, unreadDividerIndex: number | null = null) =>
+const renderPanel = (readState: UnreadView, unreadDividerIndex: number | null = null) =>
   render(
     <CommPanel
       channels={CHANNELS}
@@ -35,9 +35,10 @@ const renderPanel = (readState: ReadState, unreadDividerIndex: number | null = n
     />,
   )
 
-const available = (channels: Record<string, { unreadCount: number; lastReadSeq: number | null }>): ReadState => ({
+/** Build the view the way the wire does — channelId lives INSIDE each entry (contract shape). */
+const available = (channels: Record<string, { unreadCount: number; lastReadSeq: number }>): UnreadView => ({
   kind: 'available',
-  channels,
+  channels: Object.fromEntries(Object.entries(channels).map(([id, e]) => [id, { channelId: id, ...e }])),
 })
 
 /** Every word the panel renders — used to prove no all-clear claim appears anywhere. */
@@ -104,7 +105,8 @@ describe('CYP-705 §9 — unread badge + divider in the Comm panel', () => {
   it('★ ③ no cursor → no divider (never a guessed line)', () => {
     expect(renderPanel(READ_STATE_UNAVAILABLE, null).container.querySelector('[data-testid="comm.unread.divider"]')).toBeNull()
     cleanup()
-    const state = available({ 'po-frontend': { unreadCount: 2, lastReadSeq: null } })
+    // cast: the contract forbids a null cursor, so this simulates untrusted wire data violating it (fail-closed)
+    const state = available({ 'po-frontend': { unreadCount: 2, lastReadSeq: null as unknown as number } })
     expect(renderPanel(state, null).container.querySelector('[data-testid="comm.unread.divider"]')).toBeNull()
   })
 
