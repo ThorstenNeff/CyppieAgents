@@ -94,10 +94,11 @@ describe('CYP-737 — a 200 whose body breaks the contract is a FAILED read, not
     const consumedButUnchecked = stillCast.filter((t) => t !== 'unknown' && t !== 'void')
     console.info(`[CYP-737] validated: ${(repo.match(/contractResponse\(/g) ?? []).length}; ` +
       `unread bodies (ok): ${stillCast.length - consumedButUnchecked.length}; consumed-but-unchecked: ${consumedButUnchecked.join(', ') || 'none'}`)
-    // ProjectDeleteReceipt is the one exception, and it is a CONTRACT discrepancy rather than a missed validator:
-    // openapi declares DELETE /api/projects/{id} as 204 no-body, while the client hand-models a four-field
-    // receipt. There is no schema to validate against because the contract says there is no body. Flagged to
-    // Backend2; harmless today only because the caller discards it (`.then(() => undefined)`).
-    expect(consumedButUnchecked).toEqual(['ProjectDeleteReceipt'])
+    // The exception is GONE: CYP-739 declared DELETE /api/projects/{id} as returning ProjectDeleteReceipt (it was
+    // 204 no-body), so the schema generates and the call is validated like every other consumed response. The
+    // rule now holds with no carve-out — every consumed body is checked, and only deliberately-unread ones are
+    // cast. An empty list is the assertion; a new entry here means someone added a consumed read without a
+    // validator, which is the F1 class returning.
+    expect(consumedButUnchecked).toEqual([])
   })
 })

@@ -7,6 +7,7 @@ import { operatorToken } from '../platform/operatorToken'
 import {
   AclEntrySchema,
   AgentRunStateEventSchema,
+  ProjectDeleteReceiptSchema,
   ProjectSchema,
   AgentDetailSchema,
   AgentSchema,
@@ -70,14 +71,12 @@ export type TerminalMode = 'ORCHESTRATION' | 'TERMINAL'
  *  → maps to the server's `?worktree=delete` query (default keep). */
 export type WorktreeFate = 'keep' | 'delete'
 
-/** CYP-651. DELETE /api/projects/{id} response — the cascade-delete receipt (hand-modeled; not in the generated
- *  contract, like the other REST DTOs). Content-free counts of what was torn down. */
-export interface ProjectDeleteReceipt {
-  projectId: string
-  configRemoved: boolean
-  eventsRemoved: number
-  worktreesRemoved: number
-}
+// CYP-737/CYP-739: the delete receipt is now DECLARED in the contract, so the hand-modelled interface is gone.
+// It had been a client type asserting a shape the contract denied (openapi said 204 no-body) — harmless only
+// because the caller discarded it. Backend2 corrected the contract; the type is now generated from it and the
+// call is validated like every other consumed response. Re-exported so existing importers are unaffected.
+export type { ProjectDeleteReceipt } from '../types/generated/contract'
+import type { ProjectDeleteReceipt } from '../types/generated/contract'
 
 export interface HubRepo {
   /** GET /api/agents — the typed roster (id/name/role/…). The real source of the agent list + PO identity (CYP-444),
@@ -329,7 +328,10 @@ export class RestHubRepo implements HubRepo {
     return this.rest.put(`/api/projects/${encodeURIComponent(id)}`, { name }, contractResponse('Project', ProjectSchema))
   }
   deleteProject(id: string, deleteWorktrees: boolean): Promise<ProjectDeleteReceipt> {
-    return this.rest.delete<ProjectDeleteReceipt>(`/api/projects/${encodeURIComponent(id)}?deleteWorktrees=${deleteWorktrees}`)
+    return this.rest.delete(
+      `/api/projects/${encodeURIComponent(id)}?deleteWorktrees=${deleteWorktrees}`,
+      contractResponse('ProjectDeleteReceipt', ProjectDeleteReceiptSchema),
+    )
   }
   getCapacity(): Promise<Capacity> {
     // CYP-737: capacity drives a pill that must never invent numbers.
