@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -34,6 +35,39 @@ const val START_PENDING_TIMEOUT_MS: Long = 30_000L
 enum class AgentContentMode { ORCHESTRATION, TERMINAL }
 
 /**
+ * CYP-738 — the agent [MessageComposer]'s send-writability, as **four structurally-distinct states** so the §4a
+ * PL guardrail is enforced by the type, not a fragile value convention:
+ *  - [UNGATED]   — the feature is **not installed** (no [AgentWritableApi] injected) → the pre-CYP-738
+ *                  unconditional-editable path. Dormant until the post-window HTTP wire-up. This is the ONLY way
+ *                  the composer is editable-without-a-signal; it must NEVER be reached from a `null`/error mapping.
+ *  - [WRITABLE]  — feature active, the caller may message this agent (agentId ∈ the writable set) → editable.
+ *  - [READ_ONLY] — feature active, the caller may NOT (agentId ∉ set) → the proactive read-only hint (no input).
+ *  - [UNKNOWN]   — feature active but the writable set could not be determined (endpoint error / pre-deploy /
+ *                  loading) → disabled-with-hint, **unconditionally**. Distinct from [UNGATED] on purpose: a wired
+ *                  runtime-unknown must never fall back onto the dormant editable path (the leak the PL flagged).
+ */
+enum class AgentComposerWritability { UNGATED, WRITABLE, READ_ONLY, UNKNOWN }
+
+/**
+ * CYP-738 — the pure derivation of [AgentComposerWritability], extracted so the §4a-critical mapping is unit-testable
+ * without a Compose render or the ViewModel's `viewModelScope` timing. [fetched] is the writable-agents fetch
+ * `Result` (or `null` = no seam injected / dormant):
+ *  - `null`            → [AgentComposerWritability.UNGATED] (the pre-CYP-738 unconditional-editable path).
+ *  - success, in set   → [AgentComposerWritability.WRITABLE].
+ *  - success, NOT in set → [AgentComposerWritability.READ_ONLY].
+ *  - failure           → [AgentComposerWritability.UNKNOWN] (disabled, fail-closed) — **never** editable. This is
+ *    the PL §4a guardrail: a wired runtime-unknown must not fall onto WRITABLE/UNGATED.
+ */
+internal fun deriveComposerWritability(fetched: Result<List<String>>?, agentId: String): AgentComposerWritability =
+    when (fetched) {
+        null -> AgentComposerWritability.UNGATED
+        else -> fetched.fold(
+            onSuccess = { ids -> if (agentId in ids) AgentComposerWritability.WRITABLE else AgentComposerWritability.READ_ONLY },
+            onFailure = { AgentComposerWritability.UNKNOWN },
+        )
+    }
+
+/**
  * Drives the agent window: collects the [AgentSession] event stream, folds it into the rendered
  * transcript via [foldEvent], and forwards human turns to the session.
  *
@@ -54,6 +88,11 @@ class AgentViewModel(
     busySource: BusyStateSource? = null,
     /** Whether the operator token is present → Start/Stop/Restart controls are enabled (fail-closed). */
     val canControl: Boolean = false,
+    /** CYP-738: the agent-writable seam (`GET /api/agents/writable`). `null` (default) → the composer gate is
+     *  DORMANT ([AgentComposerWritability.UNGATED]) — byte-identical to the pre-CYP-738 unconditional-editable
+     *  composer; the live [HttpAgentWritableApi] is the post-window one-line wire-up. Non-null → the tri-state
+     *  gate is active (WRITABLE / READ_ONLY / UNKNOWN). */
+    private val agentWritable: AgentWritableApi? = null,
     /** CYP-262 T1 robustness: watchdog window for the "Startet…" transient (see [START_PENDING_TIMEOUT_MS]).
      *  Injectable so tests can drive the fallback with a tiny value. */
     private val startPendingTimeoutMs: Long = START_PENDING_TIMEOUT_MS,
@@ -235,6 +274,25 @@ class AgentViewModel(
     val status: StateFlow<AgentStatus> = _transcript
         .map { deriveStatus(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AgentStatus.IDLE)
+
+    /**
+     * CYP-738 — the send-writability of THIS agent's composer (see [AgentComposerWritability]). Derived ONCE from
+     * the injected [agentWritable] seam: agentId ∈ writable → [AgentComposerWritability.WRITABLE], ∉ →
+     * [AgentComposerWritability.READ_ONLY], a fetch failure → [AgentComposerWritability.UNKNOWN] (disabled,
+     * fail-closed — never optimistic). Seeds UNKNOWN while the fetch is in flight (no editable flash). When no seam
+     * is injected the gate is DORMANT ([AgentComposerWritability.UNGATED] = the old unconditional-editable path) — a
+     * SEPARATE state from UNKNOWN, so a wired runtime-unknown can never reuse the dormant editable path (PL §4a).
+     */
+    val composerWritability: StateFlow<AgentComposerWritability> =
+        (agentWritable?.let { api ->
+            flow { emit(deriveComposerWritability(runCatching { api.writableAgents() }, agentId)) }
+        } ?: flowOf(deriveComposerWritability(null, agentId))).stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            // Seed while the fetch is in flight: UNKNOWN (disabled, fail-closed) when the gate is active, UNGATED
+            // when dormant — never a WRITABLE/editable flash before the write-right is known.
+            if (agentWritable == null) AgentComposerWritability.UNGATED else AgentComposerWritability.UNKNOWN,
+        )
 
     /** CYP-335: distinguishes successive connection-loss notices (see the `catch` below). */
     private var connErrorSeq = 0

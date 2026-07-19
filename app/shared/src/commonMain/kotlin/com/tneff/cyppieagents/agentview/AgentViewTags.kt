@@ -23,6 +23,12 @@ object AgentViewTags {
     /** The send button. */
     fun sendBtn(agentId: String) = "agent.$agentId.sendBtn"
 
+    /** CYP-738: the composer's proactive read-only hint (agent NOT in the writable set — read, don't message). */
+    fun composerReadonly(agentId: String) = "agent.$agentId.composer.readonly"
+
+    /** CYP-738: the composer's UNKNOWN disabled-with-hint (write-right undetermined — endpoint error / pre-deploy). */
+    fun composerUnknown(agentId: String) = "agent.$agentId.composer.unknown"
+
     /** The window header bar (status + lifecycle controls), CYP-73. */
     fun header(agentId: String) = "agent.$agentId.header"
 
