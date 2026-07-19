@@ -126,3 +126,37 @@ export function buildContractRootSchema() {
   }
   return { rootSchema, injectedLiterals, isProvisional, inputPath }
 }
+
+/**
+ * CYP-737 — the REST response roots, DERIVED from the openapi paths rather than hand-listed.
+ *
+ * The WS side keeps an explicit FRAME_ROOTS list because there are eight channels and adding one is a conscious
+ * act. REST has 67 operations: a hand-maintained list would rot on the first endpoint someone adds, and the rot is
+ * SILENT — the new response simply goes unvalidated while everything still looks covered. Deriving it makes
+ * coverage structural instead of disciplinary.
+ *
+ * Returns the distinct named schemas referenced by any 2xx JSON response, unwrapping `array` items so
+ * `List<Agent>` contributes `Agent`. Inline (unnamed) response schemas are reported separately: they cannot be
+ * emitted as a named root, and silently dropping them would be exactly the invisible gap this function exists to
+ * prevent.
+ */
+export function restResponseRoots() {
+  const REAL_OPENAPI = resolve(root, 'contract/openapi.json')
+  if (!existsSync(REAL_OPENAPI)) return { roots: [], inlineOps: [] }
+  const doc = JSON.parse(readFileSync(REAL_OPENAPI, 'utf8'))
+  const roots = new Set()
+  const inlineOps = []
+  for (const [path, methods] of Object.entries(doc?.paths ?? {})) {
+    for (const [verb, op] of Object.entries(methods ?? {})) {
+      for (const [code, res] of Object.entries(op?.responses ?? {})) {
+        if (!/^2/.test(code)) continue
+        const schema = res?.content?.['application/json']?.schema
+        if (schema === undefined) continue // no body (204 etc.) — nothing to validate
+        const named = schema.$ref ?? (schema.type === 'array' ? schema.items?.$ref : undefined)
+        if (named === undefined) inlineOps.push(`${verb.toUpperCase()} ${path}`)
+        else roots.add(named.replace('#/components/schemas/', ''))
+      }
+    }
+  }
+  return { roots: [...roots].sort(), inlineOps: [...new Set(inlineOps)].sort() }
+}
