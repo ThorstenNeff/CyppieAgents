@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MarkReadRequest
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.model.Role
@@ -70,7 +71,7 @@ class Cyp705ReadStateSocketTest {
     private suspend fun HttpClient.postMessage(channel: String, token: String, body: String): Message =
         post("/api/channels/$channel/messages") {
             bearerAuth(token); contentType(ContentType.Application.Json); setBody(SendMessageRequest(body))
-        }.body()
+        }.body<DeliveredMessage>().message // CYP-744: the POST returns the DeliveredMessage envelope; unwrap
 
     private suspend fun HttpClient.markRead(channel: String, token: String, upToSeq: Long) {
         post("/api/channels/$channel/read") {

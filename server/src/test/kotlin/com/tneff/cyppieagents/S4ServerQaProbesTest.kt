@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -79,7 +80,8 @@ class S4ServerQaProbesTest {
         assertTrue(inbox.isEmpty(), "write-only channel must not appear in own inbox")
 
         // but po (full member) can still read it
-        val poRead: List<Message> = client.get("/api/channels/po-backend/messages") { bearerAuth("tok-po") }.body()
+        val poRead: List<Message> = client.get("/api/channels/po-backend/messages") { bearerAuth("tok-po") }
+            .body<List<DeliveredMessage>>().map { it.message } // CYP-744: unwrap the DeliveredMessage envelope
         assertEquals(listOf("write-only"), poRead.map { it.body })
     }
 
@@ -148,7 +150,8 @@ class S4ServerQaProbesTest {
             bearerAuth("tok-backend"); contentType(ContentType.Application.Json)
             setBody(SendMessageRequest("leaking $secret now"))
         }
-        val msgs: List<Message> = client.get("/api/channels/po-backend/messages") { bearerAuth("tok-po") }.body()
+        val msgs: List<Message> = client.get("/api/channels/po-backend/messages") { bearerAuth("tok-po") }
+            .body<List<DeliveredMessage>>().map { it.message } // CYP-744: unwrap the DeliveredMessage envelope
         val body = msgs.single().body
         assertFalse(body.contains(secret), "raw secret must not be persisted/served: $body")
         assertTrue(body.contains("***REDACTED***"), "expected redaction marker, got: $body")
@@ -162,12 +165,14 @@ class S4ServerQaProbesTest {
         val created: Message = client.post("/api/channels/po-backend/messages") {
             bearerAuth("tok-backend"); contentType(ContentType.Application.Json)
             setBody(SendMessageRequest("m1"))
-        }.body()
+        }.body<DeliveredMessage>().message // CYP-744: unwrap
 
-        val atTs: List<Message> = client.get("/api/channels/po-backend/messages?since=${created.ts}") { bearerAuth("tok-po") }.body()
+        val atTs: List<Message> = client.get("/api/channels/po-backend/messages?since=${created.ts}") { bearerAuth("tok-po") }
+            .body<List<DeliveredMessage>>().map { it.message }
         assertFalse(atTs.any { it.id == created.id }, "since=ts must EXCLUDE the message at exactly ts")
 
-        val justBefore: List<Message> = client.get("/api/channels/po-backend/messages?since=${created.ts - 1}") { bearerAuth("tok-po") }.body()
+        val justBefore: List<Message> = client.get("/api/channels/po-backend/messages?since=${created.ts - 1}") { bearerAuth("tok-po") }
+            .body<List<DeliveredMessage>>().map { it.message }
         assertTrue(justBefore.any { it.id == created.id }, "since=ts-1 must INCLUDE the message")
     }
 

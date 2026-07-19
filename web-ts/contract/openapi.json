@@ -215,7 +215,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/Message"
+                                        "$ref": "#/components/schemas/DeliveredMessage"
                                     }
                                 }
                             }
@@ -259,7 +259,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Message"
+                                    "$ref": "#/components/schemas/DeliveredMessage"
                                 }
                             }
                         }
@@ -2836,6 +2836,23 @@
                     "members"
                 ]
             },
+            "DeliveredMessage": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "$ref": "#/components/schemas/Message"
+                    },
+                    "mentions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MentionSpan"
+                        }
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
             "Message": {
                 "type": "object",
                 "properties": {
@@ -2900,6 +2917,25 @@
                         ]
                     }
                 }
+            },
+            "MentionSpan": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "integer"
+                    },
+                    "end": {
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "start",
+                    "end",
+                    "id"
+                ]
             },
             "SendMessageRequest": {
                 "type": "object",

@@ -52,7 +52,7 @@ import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
 import type { LifecycleAction } from './state/hubReducers'
-import type { AclEntry, ApiKeyView, Message1, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity, CompactStatus, CompactConfig, WorkspaceMember, OperatorAudit } from './types/generated/contract'
+import type { AclEntry, ApiKeyView, DeliveredMessage, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity, CompactStatus, CompactConfig, WorkspaceMember, OperatorAudit } from './types/generated/contract'
 import { WorkspaceRosterPanel } from './workspace/WorkspaceRosterPanel'
 import { CapacityPill } from './workspace/CapacityPill'
 import { CompactPanel } from './compact/CompactPanel'
@@ -102,8 +102,12 @@ const OPERATOR_AGENT_ID = 'operator'
 const currentEntries = (v: { kind: 'unavailable' } | { kind: 'available'; channels: Readonly<Record<string, ChannelReadState>> }) =>
   v.kind === 'available' ? Object.values(v.channels) : []
 
-const byOrder = (a: Message1, b: Message1): number =>
-  hasAuthoritativeSeq(a) && hasAuthoritativeSeq(b) ? (a.seq as number) - (b.seq as number) : a.ts - b.ts
+// CYP-744: entries are DeliveredMessage envelopes — order on the STORED message (seq/ts ride there untouched; the
+// mention spans never affect ordering). Same key as the divider (firstUnreadIndex), which also reads the message.
+const byOrder = (a: DeliveredMessage, b: DeliveredMessage): number =>
+  hasAuthoritativeSeq(a.message) && hasAuthoritativeSeq(b.message)
+    ? (a.message.seq as number) - (b.message.seq as number)
+    : a.message.ts - b.message.ts
 
 /** Cascade layout for a freshly opened window (content floor: 320×303). */
 function tiledWindow(id: string, title: string, index: number): WindowState {
@@ -416,7 +420,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     // moment you look at it.
     if (!canAdvanceReadCursor({ ...browserFocus, commWindowFocused: focusedWindowId === COMM_WINDOW_ID })) return
     const rendered = messagesByChannel.get(selectedChannelId) ?? []
-    const upTo = markReadUpTo(rendered)
+    // CYP-744: the read cursor is about the STORED message's seq — unwrap the envelope; unreadModel is unchanged.
+    const upTo = markReadUpTo(rendered.map((d) => d.message))
     if (upTo === null) return
     const known = unreadView.kind === 'available' ? unreadView.channels[selectedChannelId] : undefined
     if (known !== undefined && known.lastReadSeq >= upTo) return // already at/past this point — no redundant POST
@@ -567,11 +572,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
 
   // PO identity for the reserved sender accent comes from explicit config, never a `po-<worker>` guess (CYP-426
   // will supply the typed roster's role). Everyone else falls to the hashed worker palette.
-  // CYP-704: mentions resolve against the TYPED roster (Agent.id), not `agents` (which is roster ∪ channel-members
-  // and carries the operator pseudo-participant — the operator is not a mentionable agent). While the roster is
-  // unloaded or its load FAILED, this stays empty and every body renders as plain text (spec §2 / CYP-288): never
-  // a guessed mention on unresolved data.
-  const mentionRosterIds = useMemo(() => roster.map((a) => a.id), [roster])
+  // CYP-744: mention resolution moved to the server — the client no longer builds a roster-id list to resolve
+  // against, so the former `mentionRosterIds` memo is gone. Chips render from the DeliveredMessage spans directly.
   const senderRole = (agentId: string): string | null => (poAgentId !== null && agentId === poAgentId ? 'PO' : null)
 
   const commitAcl = (entry: AclEntry, dims: readonly AclDimension[]) => {
@@ -816,9 +818,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           onSelectChannel={setSelectedChannelId}
           messages={messages}
           senderRole={senderRole}
-          rosterIds={mentionRosterIds}
           readState={unreadView}
-          unreadDividerIndex={selectedChannelId === null ? null : firstUnreadIndex(messages, unreadView, selectedChannelId)}
+          unreadDividerIndex={selectedChannelId === null ? null : firstUnreadIndex(messages.map((d) => d.message), unreadView, selectedChannelId)}
           messagesByChannel={messagesByChannel}
           connection={commConnection}
           canWrite={null}

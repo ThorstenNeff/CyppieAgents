@@ -70,7 +70,7 @@ class ContractConformanceTest {
     fun commWsAndRestDtos_conformToTheirGeneratedSchemas() {
         val message = Message(id = "x", channelId = "po-be", from = "po", body = "hi", ts = 1L)
         val cases: List<Pair<KSerializer<CommWsServerEvent>, CommWsServerEvent>> = listOf(
-            serializer<CommWsServerEvent>() to MessageEvent(message),
+            serializer<CommWsServerEvent>() to MessageEvent(com.tneff.cyppieagents.model.DeliveredMessage(message)),
             serializer<CommWsServerEvent>() to AclEvent(AclEntry("po-be", "backend", canRead = true, canWrite = false)),
             serializer<CommWsServerEvent>() to ChannelsEvent(listOf(Channel("po-be", "po-be", ChannelKind.HUB, listOf("po", "backend")))),
         )

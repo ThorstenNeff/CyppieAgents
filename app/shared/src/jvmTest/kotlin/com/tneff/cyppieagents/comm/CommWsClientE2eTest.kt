@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageEvent
 import io.ktor.client.HttpClient
@@ -41,7 +42,7 @@ class CommWsClientE2eTest {
         )
         val messageFrame = CommJson.encodeToString(
             CommWsServerEvent.serializer(),
-            MessageEvent(Message("m1", "po-frontend", "frontend", "hi PO", 1L)),
+            MessageEvent(DeliveredMessage(Message("m1", "po-frontend", "frontend", "hi PO", 1L))),
         )
 
         val server = embeddedServer(Netty, port = 0) {

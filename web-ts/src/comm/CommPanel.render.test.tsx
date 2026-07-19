@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, fireEvent, cleanup } from '@testing-library/react'
 import { CommPanel, type CommPanelProps } from './CommPanel'
-import type { Channel, Message1 } from '../types/generated/contract'
+import type { Channel, DeliveredMessage } from '../types/generated/contract'
 
 afterEach(cleanup)
 
@@ -43,7 +43,7 @@ describe('CommPanel (CYP-407 W9 part 2)', () => {
     const empty = render(<CommPanel {...base} />)
     expect(empty.queryByTestId('comm-empty')).not.toBeNull()
     cleanup()
-    const msgs: Message1[] = [{ id: 'm1', channelId: 'po-frontend', from: 'frontend', body: 'hi there', ts: 0 }]
+    const msgs: DeliveredMessage[] = [{ message: { id: 'm1', channelId: 'po-frontend', from: 'frontend', body: 'hi there', ts: 0 } }]
     const withMsg = render(<CommPanel {...base} messages={msgs} />)
     expect(withMsg.queryByTestId('comm-empty')).toBeNull()
     expect(withMsg.getByTestId('comm.message.m1').textContent).toContain('hi there')
@@ -129,7 +129,7 @@ describe('CommPanel — CYP-288 honest load-error + retry (failed load ≠ empty
   })
 
   it('messages present + error flag → timeline renders, error hidden (flag 4)', () => {
-    const msgs: Message1[] = [{ id: 'm1', channelId: 'po-frontend', from: 'frontend', body: 'hi', ts: 0 }]
+    const msgs: DeliveredMessage[] = [{ message: { id: 'm1', channelId: 'po-frontend', from: 'frontend', body: 'hi', ts: 0 } }]
     const { getByTestId, queryByTestId } = render(<CommPanel {...base} messages={msgs} messagesLoadError />)
     expect(getByTestId('comm.message.m1')).toBeTruthy()
     expect(queryByTestId('comm.timeline.loadError')).toBeNull()

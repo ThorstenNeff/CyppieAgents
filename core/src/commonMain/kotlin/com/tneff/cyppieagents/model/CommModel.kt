@@ -206,6 +206,34 @@ data class Message(
     val seq: Long = 0L,
 )
 
+/**
+ * CYP-744 (Notify Phase-2) — a server-detected `@<agentId>` mention span into a message body. `[start, end)`
+ * are **UTF-16 code-unit** offsets into the RAW body ([start] indexes the `@`, [end] EXCLUSIVE); the invariant is
+ * `body.substring(start, end).lowercase() == "@" + id` — the literal typed casing is highlighted, the canonical
+ * lowercase roster [id] carries identity (case-insensitive match). **Server GUARANTEE:** spans are sorted ascending
+ * by [start] and non-overlapping; an out-of-range / overlapping / roster-unknown span is a server bug → the client
+ * discards the overlay and renders plaintext (fail-closed).
+ *
+ * Carried ONLY on the FRONTEND delivery wrapper (CYP-744 (a) `DeliveredMessage{message, mentions}`), **NEVER on the
+ * stored [Message]** — which the `/ws/hub` `WireMessage(message)` frame embeds verbatim, so a field here would be
+ * the §9 BYOA-wire touch this design exists to avoid.
+ */
+@Serializable
+data class MentionSpan(val start: Int, val end: Int, val id: String)
+
+/**
+ * CYP-744 (Notify Phase-2) — the FRONTEND delivery wrapper: the whole [message] (incl. `seq`/`meta`/`projectId`/
+ * `body` — CYP-705's unread line + `upToSeq` cursor ride `message.seq` INTACT, incl. the `0`=unassigned sentinel)
+ * PLUS the server-computed [mentions] (roster-resolved [MentionSpan]s over `message.body`, sorted + non-overlapping).
+ *
+ * Carried ONLY on the FRONTEND transports — `/ws/comm` (MessageEvent) + REST (`GET …/messages` → `List<DeliveredMessage>`).
+ * The `/ws/hub` `WireMessage(message)` BYOA frame keeps carrying the **bare [Message]** — the spans NEVER reach the
+ * agent wire (the §9-frame-guard). The client reads `delivered.message.*` + `delivered.mentions` and does NO
+ * client-side re-derivation. `mentions` is additive-defaulted so an older/absent payload decodes to no overlay.
+ */
+@Serializable
+data class DeliveredMessage(val message: Message, val mentions: List<MentionSpan> = emptyList())
+
 // ----- REST request/response wire types -----
 
 /**

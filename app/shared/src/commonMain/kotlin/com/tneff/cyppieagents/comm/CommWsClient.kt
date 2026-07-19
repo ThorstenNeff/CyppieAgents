@@ -52,7 +52,8 @@ class CommWsClient(
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
-                                is MessageEvent -> this@channelFlow.send(CommLiveEvent.MessageReceived(event.message))
+                                // CYP-744: the frame wraps a DeliveredMessage now; the CMP client takes the bare message.
+                                is MessageEvent -> this@channelFlow.send(CommLiveEvent.MessageReceived(event.delivered.message))
                                 is ChannelsEvent -> this@channelFlow.send(CommLiveEvent.ChannelsChanged(event.channels))
                                 // CYP-273/S7: surface a content-free ACL-changed signal so the VM re-fetches the
                                 // writable set (composer enable/disable live). The pushed row is NOT trusted as the

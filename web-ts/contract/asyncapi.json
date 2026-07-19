@@ -272,8 +272,25 @@
             "message": {
                 "type": "object",
                 "properties": {
+                    "delivered": {
+                        "$ref": "#/components/schemas/DeliveredMessage"
+                    }
+                },
+                "required": [
+                    "delivered"
+                ]
+            },
+            "DeliveredMessage": {
+                "type": "object",
+                "properties": {
                     "message": {
                         "$ref": "#/components/schemas/Message"
+                    },
+                    "mentions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MentionSpan"
+                        }
                     }
                 },
                 "required": [
@@ -344,6 +361,25 @@
                         ]
                     }
                 }
+            },
+            "MentionSpan": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "integer"
+                    },
+                    "end": {
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "start",
+                    "end",
+                    "id"
+                ]
             },
             "readState": {
                 "type": "object",

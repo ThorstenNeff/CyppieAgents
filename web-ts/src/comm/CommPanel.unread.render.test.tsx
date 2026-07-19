@@ -6,15 +6,15 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { CommPanel } from './CommPanel'
 import { READ_STATE_UNAVAILABLE, type UnreadView } from './unreadModel'
-import type { Channel, Message1 } from '../types/generated/contract'
+import type { Channel, DeliveredMessage } from '../types/generated/contract'
 
 const CHANNELS: readonly Channel[] = [
   { id: 'po-frontend', name: 'PO ↔ Frontend', kind: 'DIRECT', members: [] },
   { id: 'po-backend', name: 'PO ↔ Backend', kind: 'DIRECT', members: [] },
 ]
-const MESSAGES: readonly Message1[] = [
-  { id: 'm1', channelId: 'po-frontend', from: 'po', body: 'eins', ts: 0 },
-  { id: 'm2', channelId: 'po-frontend', from: 'po', body: 'zwei', ts: 0 },
+const MESSAGES: readonly DeliveredMessage[] = [
+  { message: { id: 'm1', channelId: 'po-frontend', from: 'po', body: 'eins', ts: 0 } },
+  { message: { id: 'm2', channelId: 'po-frontend', from: 'po', body: 'zwei', ts: 0 } },
 ]
 
 const renderPanel = (readState: UnreadView, unreadDividerIndex: number | null = null) =>
@@ -138,9 +138,9 @@ describe('CYP-705 §9 — unread badge + divider in the Comm panel', () => {
   })
 })
 
-// ── CYP-740 — the channel-level @agent mention cue ───────────────────────────────────────────────────────────
+// ── CYP-740 / CYP-744 — the channel-level @agent mention cue (now driven by SERVER spans) ─────────────────────
 describe('CYP-740 — the mention cue shows a positive, never claims a negative', () => {
-  const withMessages = (byChannel: Record<string, Message1[]>, rosterIds: readonly string[] = ['frontend', 'po']) =>
+  const withMessages = (byChannel: Record<string, DeliveredMessage[]>) =>
     render(
       <CommPanel
         channels={CHANNELS}
@@ -148,7 +148,6 @@ describe('CYP-740 — the mention cue shows a positive, never claims a negative'
         onSelectChannel={() => undefined}
         messages={[]}
         senderRole={() => null}
-        rosterIds={rosterIds}
         messagesByChannel={new Map(Object.entries(byChannel))}
         connection="live"
         canWrite={true}
@@ -158,12 +157,22 @@ describe('CYP-740 — the mention cue shows a positive, never claims a negative'
       />,
     )
 
-  const msg = (body: string, channelId: string): Message1 => ({ id: `${channelId}-1`, channelId, from: 'po', body, ts: 0 })
+  // CYP-744: the cue reads the SERVER's resolved spans off the envelope — the client no longer parses. `mentioned`
+  // carries a span (server found a mention); `plain` carries none (server found none — the fail-closed cases like
+  // unknown-token / email / unloaded-roster all arrive here as an empty `mentions`, which is the server's job now).
+  const mentioned = (channelId: string, body: string, start: number, end: number, id: string): DeliveredMessage => ({
+    message: { id: `${channelId}-1`, channelId, from: 'po', body, ts: 0 },
+    mentions: [{ start, end, id }],
+  })
+  const plain = (channelId: string, body: string): DeliveredMessage => ({
+    message: { id: `${channelId}-1`, channelId, from: 'po', body, ts: 0 },
+    mentions: [],
+  })
 
-  it('a channel carrying an @agent mention gets the cue; one without gets none (non-vacuum contrast)', () => {
+  it('a channel whose envelope carries a mention span gets the cue; one without gets none (non-vacuum contrast)', () => {
     const { getByTestId, queryByTestId } = withMessages({
-      'po-frontend': [msg('bitte @frontend schauen', 'po-frontend')],
-      'po-backend': [msg('nichts hier', 'po-backend')],
+      'po-frontend': [mentioned('po-frontend', 'bitte @frontend schauen', 6, 15, 'frontend')],
+      'po-backend': [plain('po-backend', 'nichts hier')],
     })
     expect(getByTestId('comm.channel.po-frontend.mentionCue')).toBeTruthy()
     expect(queryByTestId('comm.channel.po-backend.mentionCue')).toBeNull()
@@ -179,15 +188,18 @@ describe('CYP-740 — the mention cue shows a positive, never claims a negative'
     }
   })
 
-  it('★ ③.1 fail-closed roster: an unloaded roster produces no cue, even with mentions in the text', () => {
-    const { queryByTestId } = withMessages({ 'po-frontend': [msg('bitte @frontend schauen', 'po-frontend')] }, [])
+  it('★ no span ⇒ no cue: a loaded message the server resolved to zero mentions lights nothing', () => {
+    // The client-side half of fail-closed: whatever the reason the server found no mention (unknown token, email,
+    // code, unloaded roster), the envelope arrives with empty `mentions` and the cue must stay dark — never a cue
+    // guessed from the body text (the parser that used to do that is gone from the render path).
+    const { queryByTestId } = withMessages({ 'po-frontend': [plain('po-frontend', 'bitte @frontend schauen')] })
     expect(queryByTestId('comm.channel.po-frontend.mentionCue')).toBeNull()
   })
 
   it('★ ②.reconcile: the mention cue is DISTINCT from the unread badge — never flattened into one marker', () => {
     // Both are channel-level cues but different facts: "someone addressed an agent here" vs "there is unread".
     // One marker for both would make them indistinguishable.
-    const { getByTestId, container } = withMessages({ 'po-frontend': [msg('@frontend', 'po-frontend')] })
+    const { getByTestId, container } = withMessages({ 'po-frontend': [mentioned('po-frontend', '@frontend', 0, 9, 'frontend')] })
     const cue = getByTestId('comm.channel.po-frontend.mentionCue')
     expect(cue.textContent).toBe('@') // its own glyph
     expect(cue.getAttribute('aria-label')).toContain('Erwähnungen') // colour is never the sole carrier

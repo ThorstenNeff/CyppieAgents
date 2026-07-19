@@ -7,6 +7,7 @@ import com.tneff.cyppieagents.model.ChannelKind
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.Subscribe
@@ -21,7 +22,7 @@ class CommWsEventTest {
 
     @Test
     fun messageEventRoundTrips() {
-        val ev: CommWsServerEvent = MessageEvent(Message("1", "po-backend", "backend", "hi", 1))
+        val ev: CommWsServerEvent = MessageEvent(DeliveredMessage(Message("1", "po-backend", "backend", "hi", 1)))
         assertEquals(ev, roundTrip(ev))
         assertIs<MessageEvent>(roundTrip(ev))
     }

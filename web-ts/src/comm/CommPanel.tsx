@@ -10,25 +10,25 @@ import { Composer } from '../agentview/Composer'
 import { senderAccent } from './senderAccent'
 import { composerDisclosure } from './commDisclosure'
 import { LoadErrorRetry } from '../ui/LoadErrorRetry'
-import { mentionSegments } from './mentionModel'
+import { applyMentionSpans } from './mentionSpans'
 import { channelUnread, READ_STATE_UNAVAILABLE, type UnreadView } from './unreadModel'
 import { channelHasMention } from './mentionCue'
-import type { Channel, Message1 } from '../types/generated/contract'
+import type { Channel, DeliveredMessage } from '../types/generated/contract'
 
 export interface CommPanelProps {
   channels: readonly Channel[]
   selectedChannelId: string | null
   onSelectChannel: (id: string) => void
-  messages: readonly Message1[]
+  /** CYP-744: DeliveredMessage envelopes (stored message + server-resolved mention spans). Chips render from the
+   *  spans; the client no longer resolves mentions from the body. */
+  messages: readonly DeliveredMessage[]
   senderRole: (agentId: string) => string | null
-  /** CYP-704: roster ids mentions resolve against. Empty (default) = not loaded / load failed → all plain text. */
-  rosterIds?: readonly string[]
   /** CYP-705: server read state. Default UNAVAILABLE → no badge and NO all-clear (unknown ≠ zero). */
   readState?: UnreadView
   /** CYP-705: index of the first unread message (from firstUnreadIndex). null/absent ⇒ no divider. */
   unreadDividerIndex?: number | null
-  /** CYP-740: loaded messages per channel, for the channel-level @agent mention cue. Absent ⇒ no cue (silent). */
-  messagesByChannel?: ReadonlyMap<string, readonly Message1[]>
+  /** CYP-740: loaded envelopes per channel, for the channel-level @agent mention cue. Absent ⇒ no cue (silent). */
+  messagesByChannel?: ReadonlyMap<string, readonly DeliveredMessage[]>
   connection: 'live' | 'connecting' | 'offline' | 'revoked'
   canWrite: boolean | null
   sendError: string | null
@@ -52,13 +52,12 @@ const CONNECTION_TEXT: Record<CommPanelProps['connection'], string> = {
 export function CommPanel(props: CommPanelProps) {
   const { channels, selectedChannelId, onSelectChannel, messages, senderRole, connection } = props
   const { channelsLoadError = false, onRetryChannels, messagesLoadError = false, onRetryMessages } = props
-  const { rosterIds = [] } = props
   const { readState = READ_STATE_UNAVAILABLE, unreadDividerIndex = null, messagesByChannel } = props
   // CYP-437(#4): a terminal revoke (WS 1008) closes the write affordance entirely — don't leave a composer that
   // only fails server-side. This overrides the disclosure (a revoked socket can't write, whatever canWrite said).
   const revoked = connection === 'revoked'
   const disclosure = composerDisclosure(props.canWrite, props.sendError)
-  const tail = messages.length === 0 ? '' : `${messages.length}|${messages[messages.length - 1].id}`
+  const tail = messages.length === 0 ? '' : `${messages.length}|${messages[messages.length - 1].message.id}`
   const { ref, onScroll } = useAutoscrollPin(tail)
 
   return (
@@ -90,7 +89,7 @@ export function CommPanel(props: CommPanelProps) {
                     flattening them would make "has mentions" and "has unread" indistinguishable.
                     Absence is SILENT — never "no mentions", because an unopened channel has no loaded messages
                     and we would be reporting a gap as a result. */}
-                {channelHasMention(messagesByChannel?.get(ch.id) ?? [], rosterIds) && (
+                {channelHasMention(messagesByChannel?.get(ch.id) ?? []) && (
                   <span
                     className="comm-mention-cue"
                     data-testid={`comm.channel.${ch.id}.mentionCue`}
@@ -151,8 +150,8 @@ export function CommPanel(props: CommPanelProps) {
             )
           ) : (
             <ol>
-              {messages.map((m, i) => (
-                <Fragment key={m.id}>
+              {messages.map((d, i) => (
+                <Fragment key={d.message.id}>
                   {/* CYP-705 — the "Neu" divider at the first-unread boundary. Rendered ONLY from a server cursor
                       (the index is computed by firstUnreadIndex); no cursor ⇒ no divider, never a guessed line. */}
                   {i === unreadDividerIndex && (
@@ -160,19 +159,20 @@ export function CommPanel(props: CommPanelProps) {
                       Neu
                     </li>
                   )}
-                <li className="comm-message" data-testid={`comm.message.${m.id}`}>
-                  <time>{formatLocalHhMm(m.ts)}</time>
-                  <span className="comm-from" style={{ color: senderAccent(m.from, senderRole(m.from)) }}>
-                    {m.from}
+                <li className="comm-message" data-testid={`comm.message.${d.message.id}`}>
+                  <time>{formatLocalHhMm(d.message.ts)}</time>
+                  <span className="comm-from" style={{ color: senderAccent(d.message.from, senderRole(d.message.from)) }}>
+                    {d.message.from}
                   </span>
                   <span className="comm-body">
-                    {/* CYP-704 — mention chips. Roster-gated: with an unloaded/failed roster `rosterIds` is empty,
-                        every segment is text, and the body renders exactly as before. Segments are rendered as TEXT
-                        NODES (never dangerouslySetInnerHTML — the CYP-456/W9 invariant holds). The chip carries the
-                        sender's own accent AND the literal text, so colour is never the sole signal (WCAG 1.4.1).
-                        The chip shows the token VERBATIM as it was typed rather than the canonical id: we highlight
-                        what the sender wrote, never silently rewrite it. */}
-                    {mentionSegments(m.body, rosterIds).map((s, i) =>
+                    {/* CYP-744 — mention chips from SERVER spans. The server resolved the mentions (fail-closed:
+                        unknown token / email / code all yield no span, proven == the old client rule by the parity
+                        oracle); the client only slices the body at those offsets. Segments are rendered as TEXT
+                        NODES (never dangerouslySetInnerHTML — the CYP-456/W9 invariant holds, and applyMentionSpans
+                        stays lossless even on a malformed span). The chip carries the sender's accent AND the literal
+                        text, so colour is never the sole signal (WCAG 1.4.1); the text is the token VERBATIM as typed
+                        (body.slice), never a rewritten id. */}
+                    {applyMentionSpans(d.message.body, d.mentions ?? []).map((s, i) =>
                       s.kind === 'mention' ? (
                         <span
                           key={i}
