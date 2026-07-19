@@ -741,8 +741,11 @@ fun AgentShell(
     }
     // CYP-246: re-keyed on activeProjectId — the caps are read per-agent (project-scoped via the agent set)
     // and the VM loads once, so a switch must re-instance it to reflect the new project's agents.
+    // CYP-742: thread the SAME lifecycle source the agent windows use → a RUNNING event (≈ connector opt-in, when
+    // caps become available, LATER than agent-create) triggers a bounded caps re-poll, so a live-started agent no
+    // longer hangs on "not yet reported". Re-keyed per project like the VM (the lifecycle source is project-scoped).
     val connectorCapVm = viewModel(viewModelStoreOwner = projectStoreOwner, key = "connectorCapabilities-$activeProjectId") {
-        ConnectorCapabilityViewModel(resolvedConnectorCapRepo)
+        ConnectorCapabilityViewModel(resolvedConnectorCapRepo, lifecycleSource = resolvedLifecycleSource)
     }
     val connectorCapState = connectorCapVm.state.collectAsState().value
 
