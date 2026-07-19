@@ -10,8 +10,14 @@
 //
 // Rendered ONLY on a server-stated `configured: false` (see setupStatus): never while the config is still loading
 // and never after a failed load, where "set up your hub" would be confidently wrong.
-export const UNCONFIGURED_BANNER_TEXT = 'Hub nicht eingerichtet — Agenten können nicht starten.'
-export const UNCONFIGURED_CHIP_TEXT = 'Nicht eingerichtet'
+// CYP-735 §3.2 — copy now comes from the shared source (firstRunText), not a paraphrase. §3.1 shipped
+// "Hub nicht eingerichtet …" while the shared CMP string reads "Hub NOCH nicht eingerichtet … In den
+// Projekt-Einstellungen einrichten." A near-miss on a shared string is still a miss: the two strands must say the
+// same words to the same user, which is the entire reason the key is shared.
+import { WORKSPACE_UNCONFIGURED_BANNER, WORKSPACE_UNCONFIGURED_CHIP } from '../firstrun/firstRunText'
+
+export const UNCONFIGURED_BANNER_TEXT = WORKSPACE_UNCONFIGURED_BANNER
+export const UNCONFIGURED_CHIP_TEXT = WORKSPACE_UNCONFIGURED_CHIP
 export const UNCONFIGURED_ACTION_TEXT = 'Einrichten'
 
 export function UnconfiguredBanner({ onSetUp }: { onSetUp: () => void }) {
