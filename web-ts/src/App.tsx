@@ -11,7 +11,7 @@
 // identity comes from the explicit CYPPIE_PO_AGENT_ID config (never a `po-<worker>` guess) — both swap to the real
 // typed roster when CYP-426 lands. Comm `canWrite` is left unknown (server enforces on POST; the revoked-composer
 // lock is CYP-437).
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WindowHost } from './windowmgr/WindowHost'
 import { WindowFrame } from './windowmgr/WindowFrame'
 import { useWindowStore } from './windowmgr/windowStore'
@@ -31,6 +31,8 @@ import { AgentWindow } from './AgentWindow'
 import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
 import { firstUnreadIndex, hasAuthoritativeSeq, markReadUpTo, unreadViewFrom, type ChannelReadState } from './comm/unreadModel'
+import { canAdvanceReadCursor } from './comm/markReadGate'
+import { useFocusState } from './comm/useFocusState'
 import { EventLogView } from './eventlog/EventLogView'
 import { EventBrowsePanel } from './eventlog/EventBrowsePanel'
 import { useEventLogStore } from './eventlog/eventLogStore'
@@ -217,6 +219,11 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // CYP-646: the focused (top-most) window id — list order is z-order, so the last window is focused. Selecting only
   // the id keeps this off the drag/resize re-render path.
   const focusedWindowId = useWindowStore((s) => (s.windows.length > 0 ? s.windows[s.windows.length - 1].id : null))
+  // CYP-705 focus gate: the browser half (tab visible + window focused); the in-app half is focusedWindowId.
+  const browserFocus = useFocusState()
+  // CYP-732: highest upToSeq already REQUESTED per channel (see the mark-read effect for why the echo alone is
+  // not a safe loop guard). A ref, not state — it must not itself re-trigger the effect.
+  const requestedRead = useRef<Map<string, number>>(new Map())
   // CYP-646 (Count): comm-unread since the comm window was last focused. `commSeen` tracks the total at the last
   // focus; unread = total − seen, reset to 0 whenever the comm window is focused (a focused window has "seen" it).
   const commTotalCount = useMemo(() => {
@@ -346,13 +353,27 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // `upToSeq: 0` would be a server no-op but still a claim to have read something.
   useEffect(() => {
     if (selectedChannelId === null) return
+    // FOCUS GATE: only advance the cursor while this conversation is actually in front of someone. Without it the
+    // `messagesByChannel` dependency made every ARRIVING message advance the cursor — including with the tab
+    // hidden — marking read what nobody saw. The cursor is durable and cross-device, so that erases the unread
+    // signal everywhere, permanently. Refusing when unsure only leaves something unread, which self-corrects the
+    // moment you look at it.
+    if (!canAdvanceReadCursor({ ...browserFocus, commWindowFocused: focusedWindowId === COMM_WINDOW_ID })) return
     const rendered = messagesByChannel.get(selectedChannelId) ?? []
     const upTo = markReadUpTo(rendered)
     if (upTo === null) return
     const known = unreadView.kind === 'available' ? unreadView.channels[selectedChannelId] : undefined
     if (known !== undefined && known.lastReadSeq >= upTo) return // already at/past this point — no redundant POST
+    // A LOCAL request ledger, deliberately independent of the echo. Without it, termination depends on the server
+    // echoing a cursor >= what we asked for THIS channel: a server that clamps, lags, or answers about a different
+    // channel would leave the guard above permanently untripped, and since the effect re-runs on every unreadView
+    // change, the client would hammer /read in an unbounded loop. Asking once per (channel, upTo) is the honest
+    // contract — we do not re-ask merely because we dislike the answer. (Surfaced by a test that hung: the double
+    // echoed a different channelId, which is exactly the disagreeing-server case.)
+    if ((requestedRead.current.get(selectedChannelId) ?? 0) >= upTo) return
+    requestedRead.current.set(selectedChannelId, upTo)
     hubRepo.markRead(selectedChannelId, upTo).then((rs) => setUnreadView(unreadViewFrom([...currentEntries(unreadView), rs]))).catch(() => undefined)
-  }, [selectedChannelId, messagesByChannel, unreadView, hubRepo, setUnreadView])
+  }, [selectedChannelId, messagesByChannel, unreadView, hubRepo, setUnreadView, browserFocus, focusedWindowId])
 
   // On channel select, load its ACL-filtered history and fold it in (deduped by id → safe to overlap with live).
   useEffect(() => {

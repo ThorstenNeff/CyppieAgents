@@ -32,7 +32,8 @@ const fakeRepo = (): HubRepo => ({
   fetchChannels: vi.fn().mockResolvedValue(channels),
   fetchAcl: vi.fn().mockResolvedValue([]),
   fetchReadState: vi.fn().mockResolvedValue([]),
-  markRead: vi.fn().mockResolvedValue({ channelId: 'c', lastReadSeq: 0, unreadCount: 0 }),
+  // realistic echo: the server answers about the channel it was asked about, with the cursor it advanced to.
+  markRead: vi.fn((channelId: string, upToSeq: number) => Promise.resolve({ channelId, lastReadSeq: upToSeq, unreadCount: 0 })),
   putAcl: vi.fn().mockResolvedValue({ channelId: '', agentId: '', canRead: false, canWrite: false }),
   requestMode: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn().mockResolvedValue([]),
@@ -437,5 +438,111 @@ describe('CYP-705 ⑥ — reconnect re-fetches the read-state', () => {
       comm.emitOpen()
     })
     expect((repo.fetchReadState as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(afterFirst)
+  })
+})
+
+// ── CYP-732 — the mark-read FOCUS GATE ───────────────────────────────────────────────────────────────────────
+// NON-VACUITY NOTE (measured, not assumed): in vitest's jsdom `document.hasFocus()` is FALSE and
+// `visibilityState` is 'visible'. So without explicitly simulating focus, the gate blocks by default and every
+// "does not advance" assertion would pass while proving nothing. Each test below therefore establishes focus
+// first, and the FIRST test is the positive control: it proves mark-read CAN fire in this harness at all.
+describe('CYP-732 — the read cursor advances only when the conversation is in front of someone', () => {
+  const setFocus = (opts: { visible: boolean; focused: boolean }) => {
+    Object.defineProperty(document, 'visibilityState', { value: opts.visible ? 'visible' : 'hidden', configurable: true })
+    document.hasFocus = () => opts.focused
+  }
+
+  /** Render with the comm window focused (the in-app half of the gate) and a message carrying a real seq. */
+  const renderFocusedComm = async () => {
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    repo.getMessages = vi.fn().mockResolvedValue([{ id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 }])
+    const view = render(<App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
+    await flush()
+    await act(async () => {
+      useWindowStore.getState().focus('comm') // comm is the focused app window
+      await Promise.resolve()
+    })
+    return { repo, view }
+  }
+
+  it('★ CONTROL: with tab visible, window focused and comm focused, mark-read DOES fire', async () => {
+    setFocus({ visible: true, focused: true })
+    const { repo } = await renderFocusedComm()
+    await flush()
+    expect((repo.markRead as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0)
+  })
+
+  it('★ a HIDDEN tab never advances the cursor — the defect: read while you were away', async () => {
+    setFocus({ visible: false, focused: true })
+    const { repo } = await renderFocusedComm()
+    await flush()
+    expect((repo.markRead as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
+  })
+
+  it('★ a visible tab whose WINDOW is not focused never advances — visible is not "being read"', async () => {
+    setFocus({ visible: true, focused: false })
+    const { repo } = await renderFocusedComm()
+    await flush()
+    expect((repo.markRead as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
+  })
+
+  it('★ comm window not focused inside the app never advances, even with the browser focused', async () => {
+    setFocus({ visible: true, focused: true })
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    repo.getMessages = vi.fn().mockResolvedValue([{ id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 }])
+    render(<App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
+    await flush()
+    await act(async () => {
+      useWindowStore.getState().focus('acl') // looking at a different window
+      await Promise.resolve()
+    })
+    await flush()
+    expect((repo.markRead as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
+  })
+
+  it('★ a DISAGREEING server cannot cause an unbounded /read loop (found by a test that hung)', async () => {
+    // The original guard only compared against the ECHO: if the server answers about a different channel — or
+    // clamps the cursor below what we asked for — the guard never trips, and since the effect re-runs on every
+    // unreadView change the client would hammer /read forever. The local ledger makes the request happen once per
+    // (channel, upToSeq) regardless of the answer: we do not re-ask because we dislike the reply.
+    setFocus({ visible: true, focused: true })
+    const hub = new FakeSocketHub()
+    const repo = fakeRepo()
+    repo.getMessages = vi.fn().mockResolvedValue([{ id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 }])
+    // The disagreeing server: always answers about someone else's channel. The counter+cutoff matters — without
+    // the ledger this loops unboundedly, and an unbounded loop WEDGES the runner instead of failing. A tooth that
+    // hangs is a bad tooth (it looks like an infra flake, not a defect), so the double stops answering after a few
+    // calls and the assertion below fails fast and legibly instead.
+    let calls = 0
+    repo.markRead = vi.fn(() => {
+      calls += 1
+      if (calls > 4) return Promise.reject(new Error('runaway /read loop — the request ledger is missing'))
+      return Promise.resolve({ channelId: 'other', lastReadSeq: 99, unreadCount: 0 })
+    })
+    render(<App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
+    await flush()
+    await act(async () => {
+      useWindowStore.getState().focus('comm')
+      await Promise.resolve()
+    })
+    await flush()
+    await flush()
+    expect((repo.markRead as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1) // asked once, not repeatedly
+  })
+
+  it('★ returning to the window advances what is now visible — the gate defers, it does not discard', async () => {
+    setFocus({ visible: false, focused: false })
+    const { repo } = await renderFocusedComm()
+    await flush()
+    expect((repo.markRead as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0) // nothing while away
+    await act(async () => {
+      setFocus({ visible: true, focused: true })
+      window.dispatchEvent(new Event('focus')) // the return
+      await Promise.resolve()
+    })
+    await flush()
+    expect((repo.markRead as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0)
   })
 })
