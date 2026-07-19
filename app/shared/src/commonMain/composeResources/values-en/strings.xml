@@ -834,6 +834,11 @@
     <string name="migration_state_bound">In %1$s</string>
     <string name="migration_state_migrating">Migrating …</string>
     <string name="migration_state_readonly">Read-only</string>
+    <!-- CYP-730 — READ_ONLY provenance (Achse B): three distinct rows by reason + localized a11y label -->
+    <string name="migration_readonly_reason_migrating">Migration window</string>
+    <string name="migration_readonly_reason_legacy">Legacy, not yet evaluated</string>
+    <string name="migration_readonly_reason_unknown">Reason unknown</string>
+    <string name="migration_legacy_action">Frozen as a precaution (binding from an earlier version). Writes stay blocked until an operator reviews it.</string>
     <string name="migration_reason_no_export">No export path — this store cannot currently be copied.</string>
     <string name="migration_reason_no_target">No Postgres target — this store stays local.</string>
     <string name="migration_reason_infra">Stays on the platform — it points to the other stores\' databases.</string>

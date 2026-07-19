@@ -35,6 +35,21 @@ object MigrationTags {
     const val INVENTORY_RETRY = "migration.inventoryUnavailable.retry"
     const val STORES_EMPTY = "migration.storesEmpty"
 
+    // §2 (CYP-730) — READ_ONLY provenance sub-rows (Achse B): readOnlyReason → distinct row + action line.
+    // Additive to the shared QA/CYP-7 tag contract — the READ_ONLY row gains a reason sub-qualifier
+    // (.readonly.migrating/.legacy/.unknown). Coordinate any rename via the PO.
+    fun storeReadonly(storeKey: String, reason: ReadOnlyReason?): String =
+        "${storeState(storeKey)}.readonly.${readonlyQualifier(reason)}"
+
+    fun storeLegacyAction(storeKey: String): String =
+        "${storeReadonly(storeKey, ReadOnlyReason.LEGACY_UNEVALUATED)}.action"
+
+    private fun readonlyQualifier(reason: ReadOnlyReason?): String = when (reason) {
+        ReadOnlyReason.MIGRATION_WINDOW -> "migrating"
+        ReadOnlyReason.LEGACY_UNEVALUATED -> "legacy"
+        null -> "unknown"
+    }
+
     // §3 — Target DSN
     const val DSN_SECTION = "migration.dsn.section"
     const val DSN_LABEL = "migration.dsn.label"
