@@ -45,7 +45,10 @@ const fakeRepo = (): HubRepo => ({
   createAgent: vi.fn().mockResolvedValue(undefined),
   updateAgent: vi.fn().mockResolvedValue(undefined),
   removeAgent: vi.fn().mockResolvedValue(undefined),
-  getRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false }),
+  // CYP-735 §3.3: a fixture that claims a FULLY set-up hub must now also say the clone succeeded — since CYP-736
+  // exposed `cloneStatus`, "configured" alone means the URL was accepted, not that the repo is usable. Without
+  // this the wizard correctly holds, which is the honest behaviour, not a test problem.
+  getRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false, cloneStatus: 'CLONED_OK' }),
   putRepoConfig: vi.fn().mockResolvedValue({ configured: true, url: 'git@github.com:org/repo.git', branch: 'main', reprovisionPending: false }),
   getReprovisionPreview: vi.fn().mockResolvedValue({ reprovisionPending: false, atRisk: [] }),
   getEvents: vi.fn().mockResolvedValue({ events: [], hasMore: false }),
@@ -611,10 +614,31 @@ describe('CYP-733 — the connection-security tier is always visible and never o
 
 // ── CYP-735 §3.1 — the unconfigured banner + agent-start gating ──────────────────────────────────────────────
 describe('CYP-735 — an unset-up hub says so, and never guesses it from a failed load', () => {
+  // The skip is a REMEMBERED preference (localStorage), so it leaks across tests in a shared jsdom unless cleared.
+  // Found the hard way: a skip clicked in one test silently suppressed the gate in the next.
+  beforeEach(() => {
+    try {
+      localStorage.clear()
+    } catch {
+      /* storage unavailable — nothing to clear */
+    }
+  })
+
+  /** An unconfigured hub meets the WIZARD first; the banner belongs to the degraded (skipped) workspace. */
+  const skipWizard = async (findByTestId: (id: string) => Promise<HTMLElement>) => {
+    await act(async () => {
+      ;(await findByTestId('firstrun.skip')).click()
+      await Promise.resolve()
+    })
+  }
+
   const repo = (over: { configured?: boolean; reject?: boolean } = {}) => {
     const r = fakeRepo()
     r.getRepoConfig = vi.fn(() =>
-      over.reject ? Promise.reject(new RestError(500, 'GET', '/api/config/repo', '')) : Promise.resolve({ configured: over.configured ?? true }),
+      over.reject
+        ? Promise.reject(new RestError(500, 'GET', '/api/config/repo', ''))
+        : // a "configured" hub in these tests means fully set up, which since CYP-736 includes a successful clone
+          Promise.resolve({ configured: over.configured ?? true, cloneStatus: (over.configured ?? true) ? ('CLONED_OK' as const) : ('NOT_CONFIGURED' as const) }),
     )
     return r
   }
@@ -625,6 +649,9 @@ describe('CYP-735 — an unset-up hub says so, and never guesses it from a faile
       <App config={config} repo={repo({ configured: false })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
     )
     await flush()
+    // Skipping the guidance must NEVER suppress the banner or the gating (UIUX2 condition (a)): guidance is
+    // dismissable, the truth is not. Driving the real flow proves that rather than asserting it.
+    await skipWizard(findByTestId)
     expect(await findByTestId('workspace.unconfiguredBanner')).toBeTruthy()
     expect(getByTestId('workspace.unconfiguredChip')).toBeTruthy()
     const start = getByTestId('lifecycle.start.po') as HTMLButtonElement
@@ -635,14 +662,42 @@ describe('CYP-735 — an unset-up hub says so, and never guesses it from a faile
   it('★ a FAILED config load shows NO setup prompt — it would tell a configured operator to configure', async () => {
     // The collapse this ticket exists to prevent: `config === null` after an error must not read as "not set up".
     const hub = new FakeSocketHub()
-    const { queryByTestId, getByTestId } = render(
+    const { queryByTestId, findByTestId } = render(
       <App config={config} repo={repo({ reject: true })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
     )
     await flush()
+    // The gate shows its LOAD surface (error+retry) — never the steps, never "set up your hub".
+    expect((await findByTestId('firstrun.gate')).dataset.mode).toBe('loading')
+    expect(queryByTestId('firstrun.step.apikey')).toBeNull()
     expect(queryByTestId('workspace.unconfiguredBanner')).toBeNull()
-    expect(queryByTestId('workspace.unconfiguredChip')).toBeNull()
-    const start = getByTestId('lifecycle.start.po') as HTMLButtonElement
-    expect(start.disabled).toBe(false) // and we do not block work on a guess either
+  })
+
+  it('★ configured but NOT yet cloned keeps the wizard up — an accepted URL is not a usable repo', async () => {
+    // The §3.2/§3.3 seam: `configured:true` means the URL was ACCEPTED. Only CLONED_OK completes the repo step,
+    // so the gate must stay active and show the live clone state instead of releasing the workspace.
+    const hub = new FakeSocketHub()
+    const r = fakeRepo()
+    r.getRepoConfig = vi.fn().mockResolvedValue({ configured: true, url: 'u', branch: 'main', cloneStatus: 'CLONING' })
+    const { findByTestId, queryByTestId } = render(
+      <App config={config} repo={r} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect((await findByTestId('firstrun.gate')).dataset.mode).toBe('active') // not released
+    expect(await findByTestId('firstrun.repo.cloneStatus.cloning')).toBeTruthy()
+    expect(queryByTestId('firstrun.step.repo.status')?.dataset.state).not.toBe('done')
+  })
+
+  it('★ a FAILED clone also keeps the wizard up, with the reason and a retry', async () => {
+    const hub = new FakeSocketHub()
+    const r = fakeRepo()
+    r.getRepoConfig = vi
+      .fn()
+      .mockResolvedValue({ configured: true, url: 'u', branch: 'main', cloneStatus: 'CLONE_FAILED', cloneFailReason: 'AUTH' })
+    const { findByTestId } = render(<App config={config} repo={r} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
+    await flush()
+    expect((await findByTestId('firstrun.gate')).dataset.mode).toBe('active')
+    expect(await findByTestId('firstrun.repo.cloneFailReason.auth')).toBeTruthy()
+    expect(await findByTestId('firstrun.repo.cloneRetry')).toBeTruthy()
   })
 
   it('configured:true renders no banner and leaves start ungated (non-vacuous contrast)', async () => {
@@ -661,6 +716,7 @@ describe('CYP-735 — an unset-up hub says so, and never guesses it from a faile
       <App config={config} repo={repo({ configured: false })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
     )
     await flush()
+    await skipWizard(findByTestId)
     const banner = await findByTestId('workspace.unconfiguredBanner')
     expect(banner).toBeTruthy()
     expect(container.querySelector('[data-testid="workspace.unconfiguredBanner.dismiss"]')).toBeNull()

@@ -47,3 +47,26 @@ export const STEP_STATE_LABEL = {
   saved: 'Gespeichert',
   done: 'Erledigt',
 } as const
+
+// ── CYP-735 §3.3 clone lifecycle (shared CMP keys where they exist; §1/§6 copy from the screen-spec) ──────────
+/** `first_run_repo_cloning` */
+export const CLONE_CLONING = 'Repository wird geklont …'
+/** `first_run_repo_cloning_slow` (~15s) — advisory, still cloning. */
+export const CLONE_SLOW_HINT = 'Das dauert länger als üblich — große Repositories brauchen Zeit.'
+/** `first_run_repo_cloning_long` (~60s) — shows the measured duration; never a verdict. */
+export const cloneLongHint = (elapsedMs: number): string =>
+  `Klont noch — dauert schon ${Math.max(1, Math.floor(elapsedMs / 60_000))} min. Große Repositories können lange ` +
+  'brauchen; du kannst warten oder später zurückkommen.'
+/** `first_run_repo_clone_ok` */
+export const CLONE_OK = 'Repository geklont.'
+/** Config accepted, clone still outstanding — explicitly NOT "it works". */
+export const CLONE_NEVER = 'Gespeichert — Klonen steht aus.'
+/** Status not determinable (loading / old server / failed read) — never a quiet OK. */
+export const CLONE_UNKNOWN = 'Status unbekannt.'
+/** Distinct failure reasons, each naming its own fix; UNKNOWN stays honestly undetermined. */
+export const CLONE_FAILED_TEXT = {
+  URL_UNREACHABLE: 'Repository nicht erreichbar — URL prüfen.',
+  AUTH: 'Zugang abgelehnt — Token/SSH-Schlüssel am Hub-Host prüfen.',
+  UNKNOWN: 'Klonen fehlgeschlagen — Grund nicht ermittelbar.',
+} as const
+export const CLONE_RETRY = 'Erneut versuchen'

@@ -60,7 +60,9 @@ export function SettingsPanel({
   )
 }
 
-function RepoSection({
+// CYP-735 §3.2: exported so the first-run gate can reuse the REPO form alone (spec §5 "SettingsPanel-Teil"),
+// without dragging the API-key panel along and rendering two key forms in one flow.
+export function RepoSection({
   operator,
   config,
   onSave,
