@@ -319,7 +319,7 @@
         "/api/read-state": {
             "get": {
                 "operationId": "get_api_read-state",
-                "x-auth-tier": "PARTICIPANT",
+                "x-auth-tier": "OPERATOR",
                 "security": [
                     {
                         "bearerAuth": []
@@ -358,7 +358,7 @@
         "/api/channels/{id}/read": {
             "post": {
                 "operationId": "post_api_channels__id__read",
-                "x-auth-tier": "PARTICIPANT",
+                "x-auth-tier": "OPERATOR",
                 "security": [
                     {
                         "bearerAuth": []

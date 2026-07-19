@@ -201,19 +201,25 @@ fun Route.commRoutes(
             call.respond(hub.inbox(participant, since))
         }
 
-        // CYP-705 — unread-per-channel read-state. Read-tier (requireCommReader subject → the ACL read-subject,
-        // never a client-supplied id), self-only. Absent channels = UNKNOWN (the caller has no cursor there).
-        get("/read-state") {
-            val participant = call.requireCommReader(deps, registry)
-            call.respond(hub.readState(participant))
-        }
-        // Non-optimistic mark-read: advance the caller's cursor to max(existing, upToSeq); returns the updated
-        // ChannelReadState (the client shows "read" only on this echo). ACL-canRead-gated (403 without a grant).
-        post("/channels/{id}/read") {
-            val participant = call.requireCommReader(deps, registry)
-            val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
-            val req = call.receive<MarkReadRequest>()
-            call.respond(hub.markRead(participant, channelId, req.upToSeq))
+        // CYP-705 — unread-per-channel read-state. OPERATOR-tier (measurement DoD, a2-po 2026-07-19): a grep of
+        // web-ts found NO read-state HTTP consumer wired — only the CommPanel/unreadModel render layer against a
+        // `readState` prop (net/rest.ts has no /read-state or /read call site). The web-ts operator serve is the
+        // sole consumer path, so this is fail-closed operator-only. The STRUCTURAL OPERATOR gate gives MEMBER→403,
+        // agent→403, participant→401 (resolvePrincipal rejects participant tokens), operator→200, and rejects
+        // BEFORE the handler (removing the earlier 500s from `requireCommReader` on a mutation — the CYP-690 seam).
+        // Subject = the single operator (OPERATOR_ID) → one operator cursor. A future MEMBER-tier read-state
+        // consumer widens this to MEMBER-allowed self-scoped (deferred — needs the self-scope tooth, PO1).
+        authenticatedApi(deps, com.tneff.cyppieagents.auth.AuthRole.OPERATOR) {
+            get("/read-state") {
+                call.respond(hub.readState(HubState.OPERATOR_ID))
+            }
+            // Non-optimistic mark-read: advance the operator's cursor to max(existing, upToSeq); returns the
+            // updated ChannelReadState (the client shows "read" only on this echo).
+            post("/channels/{id}/read") {
+                val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+                val req = call.receive<MarkReadRequest>()
+                call.respond(hub.markRead(HubState.OPERATOR_ID, channelId, req.upToSeq))
+            }
         }
 
         get("/acl") {

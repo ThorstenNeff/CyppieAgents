@@ -91,10 +91,11 @@ object RestContract {
         Op("GET", "/api/channels/{id}/messages", Tier.PARTICIPANT, response = arr<Message>()),
         Op("POST", "/api/channels/{id}/messages", Tier.PARTICIPANT_WRITE, request = json<SendMessageRequest>(), response = json<Message>()),
         Op("GET", "/api/inbox", Tier.PARTICIPANT, response = arr<Message>()),
-        // CYP-705 — unread-per-channel read-state (read-tier; self-only). GET returns one entry per channel the
-        // caller has a cursor for (absence ⇒ UNKNOWN); POST advances the caller's cursor (non-optimistic MAX).
-        Op("GET", "/api/read-state", Tier.PARTICIPANT, response = arr<ChannelReadState>()),
-        Op("POST", "/api/channels/{id}/read", Tier.PARTICIPANT, request = json<MarkReadRequest>(), response = json<ChannelReadState>()),
+        // CYP-705 — unread-per-channel read-state. OPERATOR-tier (measurement DoD: no MEMBER-tier read-state
+        // consumer exists in web-ts → fail-closed operator-only; the operator serve is the sole consumer).
+        // GET returns one entry per channel the operator has a cursor for (absence ⇒ UNKNOWN); POST advances it.
+        Op("GET", "/api/read-state", Tier.OPERATOR, response = arr<ChannelReadState>()),
+        Op("POST", "/api/channels/{id}/read", Tier.OPERATOR, request = json<MarkReadRequest>(), response = json<ChannelReadState>()),
         Op("GET", "/api/acl", Tier.PARTICIPANT, response = arr<AclEntry>()),
         Op("PUT", "/api/acl", Tier.OPERATOR, request = json<AclEntry>(), response = json<AclEntry>()),
         // --- AgentMgmtRoutes (/api/agents) ---
