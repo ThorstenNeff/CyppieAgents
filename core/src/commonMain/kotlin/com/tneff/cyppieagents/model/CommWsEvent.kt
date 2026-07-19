@@ -26,6 +26,20 @@ data class AclEvent(val entry: AclEntry) : CommWsServerEvent
 @SerialName("channels")
 data class ChannelsEvent(val channels: List<Channel>) : CommWsServerEvent
 
+/**
+ * CYP-705 — a per-`(viewer, channel)` read-state delta for the CONNECTED principal. **Self-only**: the server
+ * routes it ONLY to the viewer's own connections (no cross-viewer leak; the subject never reaches the wire, so
+ * this event stays content-free — no `identityId`). The client renders [unreadCount] as-is (server-computed,
+ * never client arithmetic). Standalone — deliberately NOT folded into [MessageEvent] (CYP-704 is decoupled).
+ */
+@Serializable
+@SerialName("readState")
+data class ReadStateEvent(
+    val channelId: String,
+    val lastReadSeq: Long,
+    val unreadCount: Int,
+) : CommWsServerEvent
+
 /** Client → server frames on `/ws/comm`. */
 @Serializable
 sealed interface CommWsClientEvent

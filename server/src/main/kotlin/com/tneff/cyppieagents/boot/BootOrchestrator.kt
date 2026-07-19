@@ -170,6 +170,10 @@ class BootOrchestrator(
     // CYP-132: durable per-recipient delivered-id log. Default in-memory (tests); bootPlatform supplies
     // a JsonFileDeliveryLog out-of-repo under the gitRoot (gitignored).
     private val deliveryLog: com.tneff.cyppieagents.comm.DeliveryLog = com.tneff.cyppieagents.comm.InMemoryDeliveryLog(),
+    // CYP-705: durable per-(principal, channel) read cursor (unread-per-channel). Default in-memory (tests);
+    // the entrypoint injects a durable SqliteReadCursorStore (parity with deliveryLog's injection; the
+    // Pg-migration-router binding lands with PgStoreRouting.readCursorStore — follow-up).
+    private val readCursors: com.tneff.cyppieagents.comm.ReadCursorStore = com.tneff.cyppieagents.comm.InMemoryReadCursorStore(),
     // Default in-memory; CYP-43 swaps in a SqliteEventSink from the events config (sinkPath/WAL).
     private val eventSinkFactory: () -> EventSink = { InMemoryEventSink(SystemTimeSource()) },
     // CYP-198: durable per-agent transcript store. Default in-memory (tests); bootPlatform supplies a
@@ -343,7 +347,7 @@ class BootOrchestrator(
         // still BEFORE the spawn loop, so every worktree op / spawn resolves through a live-registered runtime.
         val runtimeRegistry = RuntimeRegistry { state.activeProjectId }
         val store = storeFactory()
-        val hub = Hub(state, store)
+        val hub = Hub(state, store, readCursors = readCursors) // CYP-705: thread the durable read cursor
         val registry = SessionRegistry()
         val turnQueue = SessionTurnQueue()
         val sessions = ConnectorSessions()

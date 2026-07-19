@@ -3,17 +3,26 @@ package com.tneff.cyppieagents.comm
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.ChannelReadState
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.MessageMeta
+import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.auth.ParticipantPrincipal
 import com.tneff.cyppieagents.routing.ConflictException
 import com.tneff.cyppieagents.routing.ForbiddenException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+
+/**
+ * CYP-705 — a [ReadStateEvent] tagged with its target [subject] for **self-only** `/ws/comm` routing. Server
+ * -internal and never serialized: the `commSocket` forwards only the untagged [event] to the connection whose
+ * participant == [subject], so the subject (an agentId / identityId) never reaches any client (content-free).
+ */
+data class TargetedReadState(val subject: String, val event: ReadStateEvent)
 
 /**
  * The comm hub: the single place that enforces ACL on write and read, using the pure
@@ -31,10 +40,18 @@ class Hub(
     private val audit: Audit = Audit(),
     private val clock: Clock = Clock.SYSTEM,
     private val ids: IdGenerator = IdGenerator.UUIDS,
+    // CYP-705: per-(principal, channel) read cursor. Default in-memory so dev/test installs are unchanged;
+    // prod boot passes a durable SqliteReadCursorStore. Absence of a cursor ⇒ UNKNOWN (never a false 0).
+    private val readCursors: ReadCursorStore = InMemoryReadCursorStore(),
 ) {
     // Live event stream for /ws/comm subscribers; filtered per participant at the WS boundary.
     private val _events = MutableSharedFlow<CommWsServerEvent>(extraBufferCapacity = 256)
     val events: SharedFlow<CommWsServerEvent> = _events.asSharedFlow()
+
+    // CYP-705: per-(viewer,channel) read-state deltas, tagged with their target subject for SELF-ONLY routing
+    // at the /ws/comm boundary — the subject never reaches the wire (the client gets only the untagged event).
+    private val _readState = MutableSharedFlow<TargetedReadState>(extraBufferCapacity = 256)
+    val readStateEvents: SharedFlow<TargetedReadState> = _readState.asSharedFlow()
 
     /**
      * CYP-132: invoked with the persisted [Message] AFTER every successful post — the single funnel the
@@ -78,6 +95,9 @@ class Hub(
         val stored = store.append(message)
         audit.posted(stored)
         _events.tryEmit(MessageEvent(stored)) // live push to /ws/comm (filtered per participant)
+        // CYP-705: a new message moves every OTHER reader's unread for this channel — recompute + push each
+        // (self-only routed). Emitted AFTER MessageEvent so a client never renders a count lagging the message.
+        emitReadStateFor(stored.channelId, exclude = senderId)
         onPosted(stored) // CYP-132: durable inbound delivery — AFTER persist (the single funnel)
         onSent(stored)   // CYP-698: provenance emit (comm.sent) — AFTER persist, at the single chokepoint
         return stored
@@ -100,6 +120,55 @@ class Hub(
         _events.tryEmit(AclEvent(saved))
         _events.tryEmit(ChannelsEvent(state.channels))
         return saved
+    }
+
+    /**
+     * CYP-705 — the calling [subject]'s read-state: one [ChannelReadState] per channel they `canRead` **and**
+     * have a cursor for. A channel with no cursor is OMITTED ⇒ the caller reads absence as UNKNOWN (never a
+     * fabricated 0). Server-computed [ChannelReadState.unreadCount]; self-only (no other principal's state).
+     */
+    fun readState(subject: String): List<ChannelReadState> {
+        val pid = state.activeProjectId
+        return state.channels.mapNotNull { ch ->
+            if (!state.acl.canRead(ch.id, subject)) return@mapNotNull null
+            val cursor = readCursors.lastReadSeq(pid, subject, ch.id) ?: return@mapNotNull null // no cursor ⇒ UNKNOWN ⇒ omit
+            ChannelReadState(ch.id, cursor, unreadCount(subject, ch.id, cursor))
+        }
+    }
+
+    /**
+     * CYP-705 — advance [subject]'s cursor in [channelId] to `max(existing, upToSeq)` (monotonic) and return the
+     * updated read-state; emits a **self-only** [ReadStateEvent] (the non-optimistic echo the client waits for).
+     * Throws 403 if [subject] may not read the channel (read-tier; you mark your OWN read-state, not a write).
+     */
+    fun markRead(subject: String, channelId: String, upToSeq: Long): ChannelReadState {
+        if (!state.acl.canRead(channelId, subject)) {
+            throw ForbiddenException("agent '$subject' has no read access to channel '$channelId'")
+        }
+        val pid = state.activeProjectId
+        readCursors.markRead(pid, subject, channelId, upToSeq)
+        val cursor = readCursors.lastReadSeq(pid, subject, channelId) ?: upToSeq
+        val rs = ChannelReadState(channelId, cursor, unreadCount(subject, channelId, cursor))
+        _readState.tryEmit(TargetedReadState(subject, ReadStateEvent(channelId, rs.lastReadSeq, rs.unreadCount)))
+        return rs
+    }
+
+    /** CYP-705 — server-computed unread for [subject] in [channelId] past [cursor]: project-scoped + `canRead`
+     *  (via [com.tneff.cyppieagents.model.AclMatrix.visibleMessages]), `seq > cursor`, own sends excluded. */
+    private fun unreadCount(subject: String, channelId: String, cursor: Long): Int =
+        state.acl.visibleMessages(subject, store.byChannel(channelId)).count { it.seq > cursor && it.from != subject }
+
+    /** CYP-705 — push a fresh [ReadStateEvent] to every reader of [channelId] except [exclude] (self-only
+     *  routed). A reader with no cursor stays UNKNOWN (omitted — a new message can't make UNKNOWN knowable). */
+    private fun emitReadStateFor(channelId: String, exclude: String) {
+        val pid = state.activeProjectId
+        val ch = state.channels.firstOrNull { it.id == channelId } ?: return
+        for (member in ch.members) {
+            if (member == exclude) continue
+            if (!state.acl.canRead(channelId, member)) continue
+            val cursor = readCursors.lastReadSeq(pid, member, channelId) ?: continue // UNKNOWN stays UNKNOWN
+            _readState.tryEmit(TargetedReadState(member, ReadStateEvent(channelId, cursor, unreadCount(member, channelId, cursor))))
+        }
     }
 
     /** Messages of one channel for [readerId]; throws 403 if the reader may not read it. */

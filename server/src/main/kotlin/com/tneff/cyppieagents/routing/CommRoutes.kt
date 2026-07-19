@@ -14,8 +14,10 @@ import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
+import com.tneff.cyppieagents.model.MarkReadRequest
 import com.tneff.cyppieagents.model.MessageEvent
 import com.tneff.cyppieagents.model.ProjectScope
+import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
 import com.tneff.cyppieagents.model.Subscribe
@@ -199,6 +201,27 @@ fun Route.commRoutes(
             call.respond(hub.inbox(participant, since))
         }
 
+        // CYP-705 — unread-per-channel read-state. OPERATOR-tier (measurement DoD, a2-po 2026-07-19): a grep of
+        // web-ts found NO read-state HTTP consumer wired — only the CommPanel/unreadModel render layer against a
+        // `readState` prop (net/rest.ts has no /read-state or /read call site). The web-ts operator serve is the
+        // sole consumer path, so this is fail-closed operator-only. The STRUCTURAL OPERATOR gate gives MEMBER→403,
+        // agent→403, participant→401 (resolvePrincipal rejects participant tokens), operator→200, and rejects
+        // BEFORE the handler (removing the earlier 500s from `requireCommReader` on a mutation — the CYP-690 seam).
+        // Subject = the single operator (OPERATOR_ID) → one operator cursor. A future MEMBER-tier read-state
+        // consumer widens this to MEMBER-allowed self-scoped (deferred — needs the self-scope tooth, PO1).
+        authenticatedApi(deps, com.tneff.cyppieagents.auth.AuthRole.OPERATOR) {
+            get("/read-state") {
+                call.respond(hub.readState(HubState.OPERATOR_ID))
+            }
+            // Non-optimistic mark-read: advance the operator's cursor to max(existing, upToSeq); returns the
+            // updated ChannelReadState (the client shows "read" only on this echo).
+            post("/channels/{id}/read") {
+                val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+                val req = call.receive<MarkReadRequest>()
+                call.respond(hub.markRead(HubState.OPERATOR_ID, channelId, req.upToSeq))
+            }
+        }
+
         get("/acl") {
             val participant = call.requireCommReader(deps, registry)
             val filterChannel = call.request.queryParameters["channelId"]
@@ -266,6 +289,13 @@ fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry, deps: c
                 if (out != null) emit(out)
             }
         }
+        // CYP-705: the self-only read-state pump — forward a ReadStateEvent ONLY when it targets THIS
+        // participant (the subject is matched server-side and never sent on the wire → content-free).
+        val readStatePump = launch {
+            hub.readStateEvents.collect { targeted ->
+                if (targeted.subject == participant) emit(targeted.event)
+            }
+        }
         try {
             for (frame in incoming) {
                 if (frame is Frame.Text) {
@@ -275,6 +305,7 @@ fun Route.commSocket(hub: Hub, state: HubState, registry: TokenRegistry, deps: c
             }
         } finally {
             pump.cancel()
+            readStatePump.cancel() // CYP-705
         }
     }
 }
@@ -319,4 +350,7 @@ internal fun commEventForParticipant(
             null
         }
     is ChannelsEvent -> ChannelsEvent(state.acl.readableChannels(participant)) // re-scope to participant
+    // CYP-705: ReadStateEvent is per-recipient and NEVER broadcast through this content-filter path — it is
+    // routed self-only via the Hub's targeted read-state flow (see commSocket). So it can't arrive here.
+    is ReadStateEvent -> null
 }

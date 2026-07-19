@@ -169,6 +169,9 @@
                     },
                     {
                         "$ref": "#/components/schemas/message"
+                    },
+                    {
+                        "$ref": "#/components/schemas/readState"
                     }
                 ],
                 "discriminator": {
@@ -176,7 +179,8 @@
                     "mapping": {
                         "acl": "#/components/schemas/acl",
                         "channels": "#/components/schemas/channels",
-                        "message": "#/components/schemas/message"
+                        "message": "#/components/schemas/message",
+                        "readState": "#/components/schemas/readState"
                     }
                 }
             },
@@ -340,6 +344,25 @@
                         ]
                     }
                 }
+            },
+            "readState": {
+                "type": "object",
+                "properties": {
+                    "channelId": {
+                        "type": "string"
+                    },
+                    "lastReadSeq": {
+                        "type": "integer"
+                    },
+                    "unreadCount": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "channelId",
+                    "lastReadSeq",
+                    "unreadCount"
+                ]
             },
             "CommWsClientEvent": {
                 "oneOf": [
