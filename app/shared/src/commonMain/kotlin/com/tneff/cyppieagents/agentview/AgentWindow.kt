@@ -92,6 +92,8 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_system
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_time
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_turn_undelivered
 import kmpcyppieagents.app.shared.generated.resources.a11y_user_turn
+import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.agent_composer_readonly_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_composer_unknown_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_turn_undelivered
@@ -1270,6 +1272,19 @@ private fun NoticeRow(event: AgentEvent.Notice, modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * CYP-743 — the hint [HintTone] per composer state, so "unknown" never reads as "denied" at the glyph/colour
+ * (which land BEFORE the text — the visible half of the safe-but-silent discipline). [AgentComposerWritability.READ_ONLY]
+ * → [HintTone.GATED] (`·`, a permission gate, not a fault); [AgentComposerWritability.UNKNOWN] → [HintTone.ERROR]
+ * (`✕`, a fail-closed block). The two MUST differ — the tooth pins it. UNGATED/WRITABLE render the editable
+ * composer (no hint) → defensive [HintTone.INFO], never reached.
+ */
+internal fun agentComposerHintTone(writability: AgentComposerWritability): HintTone = when (writability) {
+    AgentComposerWritability.READ_ONLY -> HintTone.GATED
+    AgentComposerWritability.UNKNOWN -> HintTone.ERROR
+    AgentComposerWritability.UNGATED, AgentComposerWritability.WRITABLE -> HintTone.INFO
+}
+
 @Composable
 private fun MessageComposer(
     agentId: String,
@@ -1289,20 +1304,24 @@ private fun MessageComposer(
     //               (the §4a leak the PL guardrail forbids). Distinct surface + string from READ_ONLY.
     //   UNGATED / WRITABLE → the editable composer below (UNGATED = dormant/old path; WRITABLE = gated-and-allowed).
     if (writability == AgentComposerWritability.READ_ONLY) {
-        Text(
+        // CYP-743: GATED tone (·) — a permission gate, not an error. Distinct from UNKNOWN's ERROR so the glyph/
+        // colour (which land before the text) never make "no write access" read as a fault.
+        TonedHint(
             text = stringResource(Res.string.agent_composer_readonly_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = modifier.fillMaxWidth().padding(12.dp).testTag(AgentViewTags.composerReadonly(agentId)),
+            tone = agentComposerHintTone(writability),
+            tag = AgentViewTags.composerReadonly(agentId),
+            modifier = modifier.padding(12.dp),
         )
         return
     }
     if (writability == AgentComposerWritability.UNKNOWN) {
-        Text(
+        // CYP-743: ERROR tone (✕) — a fail-closed block (write-right couldn't be checked). Deliberately NOT the
+        // GATED tone: "unknown" must not read as "denied" (the visible half of the safe-but-silent discipline).
+        TonedHint(
             text = stringResource(Res.string.agent_composer_unknown_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = modifier.fillMaxWidth().padding(12.dp).testTag(AgentViewTags.composerUnknown(agentId)),
+            tone = agentComposerHintTone(writability),
+            tag = AgentViewTags.composerUnknown(agentId),
+            modifier = modifier.padding(12.dp),
         )
         return
     }
