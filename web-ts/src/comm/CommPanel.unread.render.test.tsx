@@ -137,3 +137,60 @@ describe('CYP-705 §9 — unread badge + divider in the Comm panel', () => {
     expect(container.querySelector('[data-testid="comm.unread.divider"]')).toBeNull()
   })
 })
+
+// ── CYP-740 — the channel-level @agent mention cue ───────────────────────────────────────────────────────────
+describe('CYP-740 — the mention cue shows a positive, never claims a negative', () => {
+  const withMessages = (byChannel: Record<string, Message1[]>, rosterIds: readonly string[] = ['frontend', 'po']) =>
+    render(
+      <CommPanel
+        channels={CHANNELS}
+        selectedChannelId="po-frontend"
+        onSelectChannel={() => undefined}
+        messages={[]}
+        senderRole={() => null}
+        rosterIds={rosterIds}
+        messagesByChannel={new Map(Object.entries(byChannel))}
+        connection="live"
+        canWrite={true}
+        sendError={null}
+        onSend={() => undefined}
+        historySize={() => 0}
+      />,
+    )
+
+  const msg = (body: string, channelId: string): Message1 => ({ id: `${channelId}-1`, channelId, from: 'po', body, ts: 0 })
+
+  it('a channel carrying an @agent mention gets the cue; one without gets none (non-vacuum contrast)', () => {
+    const { getByTestId, queryByTestId } = withMessages({
+      'po-frontend': [msg('bitte @frontend schauen', 'po-frontend')],
+      'po-backend': [msg('nichts hier', 'po-backend')],
+    })
+    expect(getByTestId('comm.channel.po-frontend.mentionCue')).toBeTruthy()
+    expect(queryByTestId('comm.channel.po-backend.mentionCue')).toBeNull()
+  })
+
+  it('★ ③.2 an unloaded channel is SILENT — no cue and no "no mentions" claim anywhere', () => {
+    // The honesty rule: absence may not be turned into an affirmative. An unopened channel has no loaded
+    // messages, so a "0 mentions" would report a gap as a result.
+    const { container, queryByTestId } = withMessages({}) // nothing loaded at all
+    expect(queryByTestId('comm.channel.po-frontend.mentionCue')).toBeNull()
+    for (const claim of ['keine erwähnungen', '0 erwähnungen', 'keine mentions', 'nichts für dich']) {
+      expect((container.textContent ?? '').toLowerCase()).not.toContain(claim)
+    }
+  })
+
+  it('★ ③.1 fail-closed roster: an unloaded roster produces no cue, even with mentions in the text', () => {
+    const { queryByTestId } = withMessages({ 'po-frontend': [msg('bitte @frontend schauen', 'po-frontend')] }, [])
+    expect(queryByTestId('comm.channel.po-frontend.mentionCue')).toBeNull()
+  })
+
+  it('★ ②.reconcile: the mention cue is DISTINCT from the unread badge — never flattened into one marker', () => {
+    // Both are channel-level cues but different facts: "someone addressed an agent here" vs "there is unread".
+    // One marker for both would make them indistinguishable.
+    const { getByTestId, container } = withMessages({ 'po-frontend': [msg('@frontend', 'po-frontend')] })
+    const cue = getByTestId('comm.channel.po-frontend.mentionCue')
+    expect(cue.textContent).toBe('@') // its own glyph
+    expect(cue.getAttribute('aria-label')).toContain('Erwähnungen') // colour is never the sole carrier
+    expect(container.querySelector('[data-testid="comm.channel.po-frontend.unreadBadge"]')).toBeNull() // separate
+  })
+})

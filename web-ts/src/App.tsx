@@ -818,6 +818,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           rosterIds={mentionRosterIds}
           readState={unreadView}
           unreadDividerIndex={selectedChannelId === null ? null : firstUnreadIndex(messages, unreadView, selectedChannelId)}
+          messagesByChannel={messagesByChannel}
           connection={commConnection}
           canWrite={null}
           sendError={commSendError}

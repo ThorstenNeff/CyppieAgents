@@ -200,6 +200,33 @@ body {
    reconnectable WARN, `revoked` is a terminal error — NEVER `tertiary`, which goes GREEN at night and would read
    as "ok"). live/connecting stay a quiet neutral. The distinction also lives in the banner TEXT (colour never
    alone, WCAG 1.4.1); these tones reinforce it. onColor is AA on its container in both themes (measured guard). */
+/* CYP-740 — the channel-level @agent mention cue, and CYP-705's unread count beside it. Both sit on the channel
+   button and state DIFFERENT facts, so they get distinct shapes rather than one shared pill. Text/glyph carries
+   the meaning in both; the tint only reinforces it (WCAG 1.4.1).
+   NOTE: `.comm-unread` shipped with CYP-705 WITHOUT any rule — the markup existed, the styling did not, so the
+   count rendered as bare inline text. Added here because leaving one of two adjacent markers unstyled would make
+   them read as a single run of text, which is exactly the flattening the two testids exist to prevent. */
+.comm-mention-cue,
+.comm-unread {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.comm-mention-cue {
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.comm-unread {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  font-variant-numeric: tabular-nums;
+}
+.comm-unread-unknown {
+  margin-left: 4px;
+  color: var(--md-sys-color-on-surface-variant);
+}
 .comm-status-live,
 .comm-status-connecting {
   background: var(--md-sys-color-surface-variant);

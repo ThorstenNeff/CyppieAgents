@@ -12,6 +12,7 @@ import { composerDisclosure } from './commDisclosure'
 import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import { mentionSegments } from './mentionModel'
 import { channelUnread, READ_STATE_UNAVAILABLE, type UnreadView } from './unreadModel'
+import { channelHasMention } from './mentionCue'
 import type { Channel, Message1 } from '../types/generated/contract'
 
 export interface CommPanelProps {
@@ -26,6 +27,8 @@ export interface CommPanelProps {
   readState?: UnreadView
   /** CYP-705: index of the first unread message (from firstUnreadIndex). null/absent ⇒ no divider. */
   unreadDividerIndex?: number | null
+  /** CYP-740: loaded messages per channel, for the channel-level @agent mention cue. Absent ⇒ no cue (silent). */
+  messagesByChannel?: ReadonlyMap<string, readonly Message1[]>
   connection: 'live' | 'connecting' | 'offline' | 'revoked'
   canWrite: boolean | null
   sendError: string | null
@@ -50,7 +53,7 @@ export function CommPanel(props: CommPanelProps) {
   const { channels, selectedChannelId, onSelectChannel, messages, senderRole, connection } = props
   const { channelsLoadError = false, onRetryChannels, messagesLoadError = false, onRetryMessages } = props
   const { rosterIds = [] } = props
-  const { readState = READ_STATE_UNAVAILABLE, unreadDividerIndex = null } = props
+  const { readState = READ_STATE_UNAVAILABLE, unreadDividerIndex = null, messagesByChannel } = props
   // CYP-437(#4): a terminal revoke (WS 1008) closes the write affordance entirely — don't leave a composer that
   // only fails server-side. This overrides the disclosure (a revoked socket can't write, whatever canWrite said).
   const revoked = connection === 'revoked'
@@ -82,6 +85,20 @@ export function CommPanel(props: CommPanelProps) {
                     so staying quiet would be the lie rather than the caution. Neutral, not alarming — unknown is
                     undetermined, not an error. Only a server-CONFIRMED zero is legitimately silent. Colour is
                     never the sole carrier: each marker has text/glyph plus an aria-label. */}
+                {/* CYP-740 — the @agent mention cue. PRESENT-ONLY and deliberately distinct from the CYP-705
+                    unread badge (own testid, own glyph): both are channel-level cues but different facts, and
+                    flattening them would make "has mentions" and "has unread" indistinguishable.
+                    Absence is SILENT — never "no mentions", because an unopened channel has no loaded messages
+                    and we would be reporting a gap as a result. */}
+                {channelHasMention(messagesByChannel?.get(ch.id) ?? [], rosterIds) && (
+                  <span
+                    className="comm-mention-cue"
+                    data-testid={`comm.channel.${ch.id}.mentionCue`}
+                    aria-label={`Erwähnungen in ${ch.name}`}
+                  >
+                    @
+                  </span>
+                )}
                 {(() => {
                   const unread = channelUnread(readState, ch.id)
                   if (unread.kind === 'read') return null // authoritative "you have read this" — honestly silent
