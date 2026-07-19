@@ -12,7 +12,7 @@ import type { AgentRunState } from '../state/hubReducers'
 import type { WorktreeFate } from '../state/restRepo'
 import { ConnectorPicker } from '../connector/ConnectorPicker'
 import type { ConnectorKind } from '../connector/connectorModel'
-import { lifecycleLabel } from '../agentview/lifecycleStatus'
+import { statusDotSpec, dotRoleVar, lifecycleLabel } from '../agentview/lifecycleStatus'
 import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import {
   ROLE_OPTIONS,
@@ -35,6 +35,8 @@ export interface AgentManagementPanelProps {
   loadError?: boolean
   onRetryLoad?: () => void
   runStateByAgent: ReadonlyMap<string, AgentRunState>
+  /** CYP-741: per-agent busy (CYP-641 feed). Absent ⇒ NOT busy — a missing value is never a guessed "working". */
+  busyByAgent?: ReadonlyMap<string, boolean>
   /** All three resolve on server-confirm and reject (RestError) on a server reject. The App does the roster refetch
    *  on success (non-optimistic); the dialogs surface the mapped reject on failure. */
   onCreate: (spec: NewAgentSpec) => Promise<void>
@@ -57,6 +59,7 @@ export function AgentManagementPanel({
   loadError = false,
   onRetryLoad,
   runStateByAgent,
+  busyByAgent,
   onCreate,
   onUpdate,
   onRemove,
@@ -110,9 +113,41 @@ export function AgentManagementPanel({
       <ul className="agent-mgmt-list" data-testid="agentMgmt.list">
         {agents.map((a) => (
           <li key={a.id} className="agent-mgmt-item" data-testid={`agentMgmt.item.${a.id}`}>
+            {/* CYP-741 — the SAME dot as the LifecycleHeader (statusDotSpec/dotRoleVar, CYP-431): one fact, one
+                source, two places. The honesty core is UNKNOWN: an agent whose run-state we have never observed
+                gets a RING, not STOPPED's filled disc — unobserved is a different axis from off, and painting it
+                grey would claim we looked. The text label STAYS (colour is never the sole carrier); the dot only
+                reinforces it, which is why the dot is aria-hidden. */}
+            {(() => {
+              const state = runStateByAgent.get(a.id) ?? 'UNKNOWN'
+              const spec = statusDotSpec(state, false)
+              const color = dotRoleVar(spec.role)
+              return (
+                <span
+                  className="agent-mgmt-dot"
+                  aria-hidden="true"
+                  data-testid={`agentMgmt.item.${a.id}.dot`}
+                  data-shape={spec.shape}
+                  data-role={spec.role}
+                  style={
+                    spec.shape === 'fill'
+                      ? { width: 8, height: 8, borderRadius: '50%', background: color }
+                      : { width: 8, height: 8, borderRadius: '50%', border: `2px solid ${color}`, boxSizing: 'border-box' }
+                  }
+                />
+              )
+            })()}
             <span className="agent-mgmt-status" data-testid={`agentMgmt.item.${a.id}.status`}>
               {lifecycleLabel(runStateByAgent.get(a.id) ?? 'UNKNOWN', undefined)}
             </span>
+            {/* Busy is a DISTINCT fact from run-state (a RUNNING agent can be idle), so it gets its own marker —
+                never folded into the dot. Absent ⇒ not busy (fail-closed), and suppressed under ERROR: "working"
+                next to an error is a mixed signal (same rule as deriveWindowActivity). */}
+            {(busyByAgent?.get(a.id) ?? false) && (runStateByAgent.get(a.id) ?? 'UNKNOWN') !== 'ERROR' && (
+              <span className="agent-mgmt-busy" data-testid={`agentMgmt.item.${a.id}.busy`} aria-label="arbeitet">
+                ●
+              </span>
+            )}
             <span className="agent-mgmt-name">{a.name}</span>
             <span className="agent-mgmt-role">{roleLabel(a.role as Role)}</span>
             <button
