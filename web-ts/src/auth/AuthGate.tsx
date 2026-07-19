@@ -14,6 +14,29 @@ import type { AuthMe } from '../types/generated/contract'
 import { setOnUnauthorized } from '../net/rest'
 import { resolveAuthState, signedInAs, AUTH_TEXT, type AuthState, type LoginResult } from './authModel'
 import { LoginScreen } from './LoginScreen'
+import { RemoteSecurityTierBadge } from '../connector/RemoteSecurityTierBadge'
+import { gatewayTierFor } from '../connector/gatewayTier'
+import { useHubStore } from '../state/hubStore'
+
+/**
+ * CYP-733 (spec §2+§3) — the connection-security tier, shown with the session.
+ *
+ * Mounted HERE and nowhere else on purpose: the session surface is the outermost always-visible chrome (it wraps
+ * the whole app and survives every window being closed), so ONE placement satisfies both the connect disclosure
+ * (§2) and the session one (§3). Rendering it in two places would print the same honesty sentence twice, and
+ * repetition reads as boilerplate — it dilutes the statement it is meant to make.
+ *
+ * Reads the live-connection signal from the store because this gate sits ABOVE the app that owns it. Tier is
+ * UNKNOWN whenever the connection is not up, and can never be NATIVE (see gatewayTier).
+ */
+function SessionTierBadge() {
+  const connection = useHubStore((s) => s.commConnection)
+  return (
+    <div className="auth-session-tier" data-testid="auth.sessionTier">
+      <RemoteSecurityTierBadge tier={gatewayTierFor(connection)} />
+    </div>
+  )
+}
 
 export interface AuthGateProps {
   fetchAuthMe: () => Promise<AuthMe>
@@ -92,6 +115,7 @@ export function AuthGate({
   // active: content-free session indicator (role text+label, never colour alone; no id/email/secret) + the app.
   return (
     <>
+      <SessionTierBadge />
       <div className="auth-session-status" role="status" data-testid="auth.sessionStatus">
         <span data-testid="auth.role">{signedInAs(state.operator)}</span>
         <button type="button" className="auth-logout" data-testid="auth.logout" onClick={redirectToLogout}>

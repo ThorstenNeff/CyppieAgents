@@ -4,6 +4,7 @@ import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import { AuthGate } from './AuthGate'
 import type { AuthMe } from '../types/generated/contract'
 import type { LoginResult } from './authModel'
+import { useHubStore } from '../state/hubStore'
 
 const me = (over: Partial<AuthMe>): AuthMe => ({ authenticated: true, verified: true, ...over })
 
@@ -119,5 +120,48 @@ describe('AuthGate (CYP-515 (a) — in-app login)', () => {
     const u = setup({ authMe: me({ verified: false, role: null }) })
     await u.findByTestId('auth.verifyGate')
     expect(u.container.querySelector('input')).toBeNull()
+  })
+})
+
+// ── CYP-733 (spec §3) — the session is honest about its SECURITY LEVEL, not only its role ────────────────────
+describe('CYP-733 — the connection-security tier rides with the session indicator', () => {
+  it('★ the tier is ALWAYS present in an active session — fail-closed UNKNOWN, never absent, never native', async () => {
+    // "Always visible" is what makes it an honesty indicator: one that only appears once things look fine is not
+    // one, and absence would read as "nothing to disclose".
+    useHubStore.setState({ commConnection: 'connecting' })
+    const { findByTestId, queryByTestId } = setup()
+    expect(await findByTestId('auth.sessionTier')).toBeTruthy()
+    expect(await findByTestId('remote.security.tier.unknown')).toBeTruthy()
+    expect(queryByTestId('remote.security.tier.native')).toBeNull() // a browser can never reach native
+  })
+
+  it('★ a LIVE connection discloses BROWSER_GATEWAY openly, alongside the role', async () => {
+    useHubStore.setState({ commConnection: 'live' })
+    const { findByTestId } = setup()
+    expect(await findByTestId('auth.role')).toBeTruthy() // role still there
+    expect(await findByTestId('remote.security.tier.browserGateway')).toBeTruthy()
+    expect(await findByTestId('remote.security.tierDisclosure')).toBeTruthy() // always-visible, never tap-to-reveal
+  })
+
+  it('★ a dropped connection falls back to UNKNOWN — the session never keeps claiming the old tier', async () => {
+    useHubStore.setState({ commConnection: 'live' })
+    const { findByTestId, queryByTestId } = setup()
+    expect(await findByTestId('remote.security.tier.browserGateway')).toBeTruthy()
+    await act(async () => {
+      useHubStore.setState({ commConnection: 'offline' })
+      await Promise.resolve()
+    })
+    expect(await findByTestId('remote.security.tier.unknown')).toBeTruthy()
+    expect(queryByTestId('remote.security.tierDisclosure')).toBeNull() // no gateway claim without a gateway link
+  })
+
+  it('★ the disclosure is stated ONCE — a repeated honesty line reads as boilerplate and dilutes itself', async () => {
+    useHubStore.setState({ commConnection: 'live' })
+    const { container } = setup()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(container.querySelectorAll('[data-testid="remote.security.tierDisclosure"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-testid="remote.security.tierBadge"]')).toHaveLength(1)
   })
 })

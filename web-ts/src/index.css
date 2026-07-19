@@ -62,10 +62,9 @@ body {
   min-height: 0;
   position: relative;
 }
-/* CYP-733 — the always-visible connection-tier strip. Its own row under the toolbar so the disclosure sentence
-   has width to breathe (truncating an honesty line softens it). Auto-height; the desktop still takes the rest. */
-.workspace-tier {
-  flex: 0 0 auto;
+/* CYP-733 — the always-visible connection-tier strip, shown with the session (AuthGate). Its own row so the
+   disclosure sentence has width to breathe: truncating an honesty line softens it. */
+.auth-session-tier {
   padding: 2px 8px 4px;
 }
 .workspace-bar {
