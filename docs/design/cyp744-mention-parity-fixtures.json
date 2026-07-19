@@ -1,0 +1,457 @@
+{
+  "$comment": "CYP-744 §3-ii parity oracle. GENERATED from the CYP-704 client resolver (web-ts mentionModel.ts) — do not hand-edit; regenerate with UPDATE_MENTION_FIXTURES=1. Offsets are UTF-16 code units over `body`, `end` is EXCLUSIVE. The server implementation of CYP-744 must reproduce `expected` exactly for every case.",
+  "cases": [
+    {
+      "name": "plain-mention",
+      "why": "a roster-known token is one mention; surrounding text stays intact",
+      "body": "hi @frontend please look",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 3,
+          "end": 12,
+          "id": "frontend"
+        }
+      ]
+    },
+    {
+      "name": "unknown-token-fail-closed",
+      "why": "FALSE-POSITIVE GUARD: an unknown handle is NOT a mention — claiming someone was addressed when nobody is called that is the core lie",
+      "body": "hi @nobody there",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": []
+    },
+    {
+      "name": "email-not-a-mention",
+      "why": "a sigil mid-word is not a mention: in mail@dev5.de the preceding `l` is an id character",
+      "body": "write to mail@dev5.de please",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": []
+    },
+    {
+      "name": "empty-roster-resolves-nothing",
+      "why": "UNLOADED or FAILED roster ⇒ plain text, never a guessed mention (CYP-288 tie-in)",
+      "body": "hi @frontend",
+      "rosterIds": [],
+      "expected": []
+    },
+    {
+      "name": "multiple-mentions",
+      "why": "several mentions in one body; the connecting text stays text",
+      "body": "@po and @dev5 sync please",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 0,
+          "end": 3,
+          "id": "po"
+        },
+        {
+          "start": 8,
+          "end": 13,
+          "id": "dev5"
+        }
+      ]
+    },
+    {
+      "name": "longest-match-wins",
+      "why": "with both `front` and `frontend` on the roster, `@frontend` resolves to the LONGER id",
+      "body": "ping @frontend",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 5,
+          "end": 14,
+          "id": "frontend"
+        }
+      ]
+    },
+    {
+      "name": "boundary-terminated",
+      "why": "THE WRONG-PERSON GUARD: `@frontend-dev` must not highlight `frontend`, because `-` is itself a legal id character",
+      "body": "ping @frontend-dev now",
+      "rosterIds": [
+        "frontend",
+        "front"
+      ],
+      "expected": []
+    },
+    {
+      "name": "boundary-terminated-resolves-full-id",
+      "why": "the same body DOES resolve when the full id is on the roster",
+      "body": "ping @frontend-dev now",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 5,
+          "end": 18,
+          "id": "frontend-dev"
+        }
+      ]
+    },
+    {
+      "name": "punctuation-stops-at-id",
+      "why": "longest-match stops at the id; trailing punctuation stays text",
+      "body": "ok @frontend! thanks",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 3,
+          "end": 12,
+          "id": "frontend"
+        }
+      ]
+    },
+    {
+      "name": "bracketed",
+      "why": "Tester2 F2: (@dev5) is an ordinary way to write a mention",
+      "body": "see (@dev5) for this",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 5,
+          "end": 10,
+          "id": "dev5"
+        }
+      ]
+    },
+    {
+      "name": "quoted-inline",
+      "why": "Tester2 F2: \"@dev5\" resolves while the email guard still holds",
+      "body": "the \"@dev5\" ticket",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 5,
+          "end": 10,
+          "id": "dev5"
+        }
+      ]
+    },
+    {
+      "name": "case-insensitive-canonical-id",
+      "why": "people type @Frontend; the id reported is CANONICAL, the text stays verbatim",
+      "body": "hey @Frontend",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 4,
+          "end": 13,
+          "id": "frontend"
+        }
+      ]
+    },
+    {
+      "name": "underscore-id",
+      "why": "`_` is an id character, not a break",
+      "body": "ping @ui_ux please",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 5,
+          "end": 11,
+          "id": "ui_ux"
+        }
+      ]
+    },
+    {
+      "name": "fenced-code-exempt",
+      "why": "a handle in a snippet is being SHOWN, not addressed — must not summon anyone",
+      "body": "look:\n```\nrun @frontend now\n```\ndone",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": []
+    },
+    {
+      "name": "inline-code-exempt",
+      "why": "same rule for inline code",
+      "body": "the flag `@dev5` is literal",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": []
+    },
+    {
+      "name": "unterminated-fence-exempt-to-end",
+      "why": "FAIL-CLOSED: an unterminated fence exempts to the end rather than half-parsing the body",
+      "body": "oops:\n```\n@frontend still in code",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": []
+    },
+    {
+      "name": "mention-after-closed-fence",
+      "why": "the exemption ENDS with the block — a later mention still resolves",
+      "body": "```\n@po in code\n```\nnow really @po",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 31,
+          "end": 34,
+          "id": "po"
+        }
+      ]
+    },
+    {
+      "name": "backtick-inside-fence-is-content",
+      "why": "a backtick inside a fence is content, not an inline delimiter",
+      "body": "```\na ` b @frontend\n```",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": []
+    },
+    {
+      "name": "code-exempt-beats-sigil-boundary",
+      "why": "the widened sigil boundary must not turn a backtick into a licence to mention",
+      "body": "text `@dev5` more",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": []
+    },
+    {
+      "name": "quoted-line-still-mentions",
+      "why": "quoting someone who addressed you is STILL addressing — quotes are included, unlike code",
+      "body": "> hey @dev5 look\nyes",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 6,
+          "end": 11,
+          "id": "dev5"
+        }
+      ]
+    },
+    {
+      "name": "bare-sigil",
+      "why": "a bare `@` resolves to nothing and stays text",
+      "body": "email @ me",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": []
+    },
+    {
+      "name": "blank-roster-id-ignored",
+      "why": "a blank/whitespace roster id must never swallow a bare sigil",
+      "body": "hi @ there",
+      "rosterIds": [
+        "",
+        "   ",
+        "dev5"
+      ],
+      "expected": []
+    },
+    {
+      "name": "adjacent-mentions",
+      "why": "two mentions separated only by punctuation keep distinct spans",
+      "body": "@po,@dev5",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 0,
+          "end": 3,
+          "id": "po"
+        },
+        {
+          "start": 4,
+          "end": 9,
+          "id": "dev5"
+        }
+      ]
+    },
+    {
+      "name": "mention-at-string-start",
+      "why": "position 0 is a valid sigil boundary",
+      "body": "@dev5 first",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 0,
+          "end": 5,
+          "id": "dev5"
+        }
+      ]
+    },
+    {
+      "name": "utf16-offsets-after-astral-char",
+      "why": "OFFSET UNITS ARE UTF-16 CODE UNITS, end-EXCLUSIVE. An emoji outside the BMP counts as TWO units, so a server using code POINTS would report a span two short here. Without this case both conventions agree on every ASCII fixture and the disagreement ships silently.",
+      "body": "🎉 party @dev5 now",
+      "rosterIds": [
+        "frontend",
+        "front",
+        "dev5",
+        "backend",
+        "po",
+        "frontend-dev",
+        "ui_ux"
+      ],
+      "expected": [
+        {
+          "start": 9,
+          "end": 14,
+          "id": "dev5"
+        }
+      ]
+    }
+  ]
+}
