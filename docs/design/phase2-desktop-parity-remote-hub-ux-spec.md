@@ -48,9 +48,9 @@ web-ts hat vom Remote-Hub **fast nichts** — **1 Datei** (der CYP-676 Tier-Disc
 - **Welche native-Features sind im Gateway-Modell relevant** (Recovery, Discovery) vs. entfallen (Pinning, Tunnel-Pool)?
 - **Identitäts-Kopplung:** teilt der Gateway-Connect eine Auth-/Identitäts-Entscheidung mit CYP-704-NOTIFY / 706-Menschen-Präsenz? (content-free `AuthMe`.)
 
-## §6 Sekundäre (nicht-Remote) Paritäts-Gaps — kurz, am Objekt
-- **crossproject:** web-ts hat **Teil-Parität** — `ChannelSharePanel` (CYP-659) + der Event-Browse Cross-Project-Axis; CMP hat ein eigenes `crossproject/`-Modul → **prüfen, ob web-ts alle CMP-crossproject-Flächen deckt** (halb).
-- **firstrun:** CMP hat ein `firstrun/`-Modul; web-ts hat `workspace_unconfigured*`-Banner, aber **evtl. kein volles First-Run-Onboarding** → verifizieren (mögliches Gap).
+## §6 Sekundäre (nicht-Remote) Paritäts-Gaps — am Objekt aufgelöst
+- **crossproject: weitgehend gedeckt (KEIN wesentliches Gap).** CMP `crossproject/` (S17/CYP-93 Kanal-Autorisierung/Disclosure) ist in web-ts abgebildet als **`ChannelSharePanel` (CYP-659, Port von `CrossProjectControls`)** + **`project/ProjectSwitcher` + `project/ProjectManagementPanel`** + Event-Browse Cross-Project-Axis (CYP-94). Strukturell da; Detail-Fidelity je Fläche separat prüfbar.
+- **firstrun: FEHLT (echtes Sekundär-Gap, am Objekt bestätigt).** CMP hat einen **geführten First-Run** (`FirstRunGate` / `FirstRunSteps` / `FirstRunViewModel` / `WorkspaceUnconfigured`); web-ts hat **nur** den `workspace_unconfigured`-Banner, **nicht** den geführten First-Run-Flow (Gate + Steps). → **Phase-2-Paritäts-Item (nicht-remote)**, später zu spezifizieren.
 - **migration:** CMP `migration/` = Store-Infra, **kein UI-Paritäts-Anteil** (aus dem UX-Scope raus).
 - Gemeinsame Flächen (comm, acl, agentmgmt, agentsettings, agentview, eventlog, report, settings, terminal, connector, compact, workspace, window) sind **beidseitig vorhanden** — kein Struktur-Gap (Detail-Fidelity je Fläche separat prüfbar, nicht in diesem Remote-fokussierten Pass).
 
