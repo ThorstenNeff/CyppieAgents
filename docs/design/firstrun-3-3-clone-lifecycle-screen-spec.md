@@ -1,57 +1,58 @@
-# First-Run §3.3 — Repo-Clone-Lifecycle (5 States) · web-ts Screen-Spec
+# First-Run §3.3 — Repo-Clone-Lifecycle · web-ts Screen-Spec
 
-**Für:** Dev5 · **Grounded auf:** Backend2 CYP-736-Contract (gepinnt 2026-07-19) · **Von:** UIUX2 (Team-2) · **Begleitet:** `firstrun-3-2-guided-setup-screen-spec.md` (§3.2)
-**Scope:** der Repo-Schritt-**Clone-Lifecycle** — das, was §3.2s Repo-Schritt von „gespeichert" auf „done" hebt. Baut, sobald Backend2 den Seam liefert.
+**Für:** Dev5 · **Grounded auf:** Backend2s `:core`-Contract (adoptiert Dev5s gebautes Client-Enum verbatim, 2026-07-19) · **Von:** UIUX2 (Team-2) · **Begleitet:** `firstrun-3-2-guided-setup-screen-spec.md` (§3.2)
+**Scope:** der Repo-Schritt-**Clone-Lifecycle** — das, was §3.2s Repo-Schritt von „gespeichert" auf „done" hebt. Baut, sobald der Seam (`cloneStatus` in `GET /api/config/repo`) steht.
 **Tooling-Grenze:** Zustände headless render-test-messbar; das Live-Poll-/Timing-*Feel* = guided-human.
 
 ---
 
-## §0 Contract-Match (CYP-736) — bestätigt, KEINE Divergenz zu flaggen
-Backend2s gepinnter Contract mappt **exakt** auf meinen §3.2-§7 / Parität-§3.3-Intent:
-| Backend2 CYP-736 | mein Intent | 
-|---|---|
-| `ClonePhase.SAVED` | „gespeichert" (Config akzeptiert, Clone nicht gestartet) |
-| `ClonePhase.CLONING` | „wird geklont" |
-| `ClonePhase.SLOW` (~15s-Schwelle) | „cloning-slow" (ehrlicher Zwischenzustand) |
-| `ClonePhase.OK` | „CLONED_OK" (done — hebt §3.2-Repo auf done) |
-| `ClonePhase.FAILED` + `CloneFailureReason{AUTH,URL}` | „failed", auth-vs-url **distinkt** |
-| `clonePhase == null` | **UNKNOWN** (nie false-OK) |
-**→ exakter Match. Backend2 baut; ich mappe nichts anders.**
+## §0 Contract (reconciled 2026-07-19 auf die finale `:core`-Shape)
+Backend2 hat Dev5s **schon gebautes** Client-Enum gelesen und `:core` adoptiert es **verbatim** — ich spitze §3.3 darauf (mein `88b26ebf` matchte die vorläufige Shape):
+- **`CloneStatus{ NOT_CONFIGURED, CONFIGURED_NEVER_CLONED, CLONING, CLONE_FAILED, CLONED_OK }`**
+- **`CloneFailReason{ URL_UNREACHABLE, AUTH, UNKNOWN }`** (bei `CLONE_FAILED`) — **3-wertig.**
+- **`cloneStatus == null / absent` ⇒ UNKNOWN** (lädt / Feld noch nicht da / Ladefehler) — nie false-OK.
 
-## §1 Die 5 States + UNKNOWN (je: Bedeutung · Copy · Honesty)
-| State | Bedeutung | Marker/Copy (Vorschlag) | Honesty |
+**★ Zwei ratifizierte Honesty-Verfeinerungen (beide honester als meine Erst-Shape):**
+1. **`SLOW` als server-Phase GEDROPPT** — der Server kann „slow" **nicht ehrlich** von „läuft" trennen (die ~15s-Schwelle ist willkürlich) → ein server-`SLOW` wäre eine **geratene Tatsache** ([[measured-vs-derived]] / forecast≠observed: die Quelle behauptet nie einen Zustand, den sie nicht kennt). **„dauert-länger" = CLIENT-elapsed-time** (der Client **misst** die `CLONING`-Dauer — Beobachtung, kein Guess), ein **Attribut auf `CLONING`**, keine Phase.
+2. **`CloneFailReason.UNKNOWN` (3. Reason) ist honester** — nie AUTH-vs-URL **fabrizieren**, wenn der Server den Grund nicht kennt; `UNKNOWN` = fail-closed „fehlgeschlagen — Grund nicht ermittelbar" ([[reconcile-not-collapse-distinct-states]]: distinkte Gründe **inklusive** eines ehrlichen „unbekannt", statt in einen der zwei zu raten).
+
+## §1 States (je: Bedeutung · Copy · Honesty)
+| `CloneStatus` | Bedeutung | Marker/Copy (Vorschlag) | Honesty |
 |---|---|---|---|
-| **SAVED** | Config akzeptiert, Clone noch nicht gestartet | „gespeichert — Klonen steht aus" | **≠ OK/„funktioniert"** |
+| **UNKNOWN** (`null`/absent) | Status unbestimmt (lädt / Feld fehlt / Ladefehler) | neutraler „Status unbekannt", **kein** OK | **fail-closed: nie false-OK** |
+| **NOT_CONFIGURED** | kein Repo gesetzt | (= §3.2-Repo-Schritt **offen**) | ≠ „gespeichert", ≠ done |
+| **CONFIGURED_NEVER_CLONED** | Config akzeptiert, Clone noch nicht/ausstehend | „gespeichert — Klonen steht aus" | **≠ CLONED_OK / „funktioniert"** |
 | **CLONING** | Clone läuft | „Repository wird geklont…" (progress) | Zwischenzustand, kein done |
-| **SLOW** | Clone läuft, > ~15s | „…dauert länger als üblich" | **≠ hängend, ≠ fehlgeschlagen** — advisory-reassure |
-| **OK** | Geklont | „Repository geklont ✓" | = das **CLONED_OK**, das §3.2-Repo-done + Gate-TRANSPARENT freigibt |
-| **FAILED · AUTH** | Zugang abgelehnt | „Zugang abgelehnt — Token/SSH-Schlüssel prüfen" + **Retry** | **distinkt** von URL |
-| **FAILED · URL** | URL/Repo ungültig | „Repository nicht gefunden — URL prüfen" + **Retry** | **distinkt** von AUTH |
-| **UNKNOWN** (`null`) | clonePhase unbestimmt (lädt/absent) | neutraler „Status unbekannt", **kein** OK | **fail-closed: nie false-OK** |
+| ↳ *client-elapsed „dauert-länger"* | `CLONING` > client-Schwelle (~15s) | „…dauert länger als üblich" | **Attribut auf CLONING, KEINE Phase** — client-**gemessene** elapsed-time; **≠ hängend, ≠ fehlgeschlagen, ≠ done** |
+| **CLONE_FAILED · URL_UNREACHABLE** | URL/Repo nicht erreichbar | „Repository nicht erreichbar — URL prüfen" + **Retry** | distinkt |
+| **CLONE_FAILED · AUTH** | Zugang abgelehnt | „Zugang abgelehnt — Token/SSH-Schlüssel prüfen" + **Retry** | distinkt |
+| **CLONE_FAILED · UNKNOWN** | Grund nicht ermittelbar | „Klonen fehlgeschlagen — Grund nicht ermittelbar" + **Retry** | **ehrliches „unbekannt", nie in AUTH/URL geraten** |
+| **CLONED_OK** | Geklont | „Repository geklont ✓" | = das done, das §3.2-Repo-done + Gate-TRANSPARENT freigibt |
 
 ## §2 Honesty-Zähne (diskriminierend)
-1. **★ UNKNOWN (`null`) ≠ OK** — ein `null` clonePhase rendert **nie** als OK/„geklont"/done (fail-closed); der Config-Ladefehler = error+retry, nicht „geklont" ([[absence-reads-as-all-clear]]). *(Mutation: null→OK/done → RED.)*
-2. **SAVED ≠ OK** — „gespeichert" (URL akzeptiert) ist **nicht** „geklont"; nie als „das Repo funktioniert" (der §3.2-Punkt, hier terminal aufgelöst). *(Mutation: SAVED→„done" → RED.)*
-3. **★ SLOW ehrlich** — advisory „dauert länger", **nie** „hängt"/„fehlgeschlagen"/„fertig" ([[over-alarm-is-also-dishonest]]: SLOW ist kein Fehler und kein Erfolg, nur ein langsamer Zwischenstand). *(Mutation: SLOW→error-Ton ODER SLOW→ok → RED.)*
-4. **★ FAILED-Gründe distinkt (AUTH vs URL)** — je **eigene** Copy + **actionable Fix** (Token/SSH vs URL); **nie** ein generisches „fehlgeschlagen" ([[reconcile-not-collapse-distinct-states]]). *(Mutation: AUTH+URL → eine gemeinsame Copy → RED.)*
-5. **State = server-`clonePhase`, non-optimistisch** — der Marker kommt aus dem gepollten/gepushten `clonePhase`, **nie** client-geraten; kein optimistisches „OK" vor dem Server-Signal.
+1. **★ UNKNOWN (`null`) ≠ CLONED_OK** — ein `null`/absent `cloneStatus` rendert **nie** als OK/„geklont"/done (fail-closed); der Config-Ladefehler = error+retry, nicht „geklont" ([[absence-reads-as-all-clear]]). *(Mutation: null→OK → RED.)*
+2. **CONFIGURED_NEVER_CLONED ≠ CLONED_OK** — „gespeichert" (URL akzeptiert) ist **nicht** „geklont"; nie „das Repo funktioniert" (der §3.2-Punkt, hier terminal aufgelöst). *(Mutation: saved→„done" → RED.)*
+3. **★ „dauert-länger" = client-elapsed, kein Server-State** — aus der **client-gemessenen** `CLONING`-Dauer (Beobachtung), **nie** aus einem server-`SLOW` (existiert nicht). Advisory, **nie** „hängt"/„fehlgeschlagen"/„fertig" ([[over-alarm-is-also-dishonest]]); bleibt `CLONING`, ein Attribut, keine Phase. *(Mutation: →error-Ton ODER →ok/failed ODER als eigene Phase → RED.)*
+4. **★ CLONE_FAILED-Gründe distinkt (URL_UNREACHABLE vs AUTH vs UNKNOWN)** — je **eigene** Copy + Fix; `UNKNOWN` bleibt **ehrlich „unbekannt", nie in AUTH/URL geraten** ([[reconcile-not-collapse-distinct-states]]). *(Mutation: alle drei → eine Copy, ODER UNKNOWN→AUTH/URL geraten → RED.)*
+5. **State = server-`cloneStatus`, non-optimistisch** — der Marker kommt aus dem gepollten/gepushten `cloneStatus`, **nie** client-geraten; kein optimistisches „OK" vor dem Server-Signal. (Ausnahme, die KEINE ist: die „dauert-länger"-elapsed-time ist client-**gemessen**, keine geratene Phase.)
 
 ## §3 Progression + Polling (CMP CYP-629 §7.3)
-- **SAVED → CLONING → (SLOW bei ~15s) → OK** *oder* **FAILED[AUTH|URL]**. **Terminal = OK oder FAILED.**
-- Der Client **pollt** (oder empfängt) `clonePhase` **bis terminal** (Poll **stoppt** bei OK/FAILED — kein endloses Pollen; vgl. das 705-Ledger-Prinzip, Requests bounden).
-- **FAILED → actionable Fix + Retry:** der Grund (AUTH/URL) nennt den konkreten Fix; Retry re-triggert den Clone (zurück zu SAVED→CLONING). Non-optimistisch: der Zustand flippt auf den nächsten server-`clonePhase`, nicht auf den Retry-Klick.
+- **CONFIGURED_NEVER_CLONED → CLONING (+ client-elapsed „dauert-länger" bei ~15s) → CLONED_OK** *oder* **CLONE_FAILED[URL_UNREACHABLE|AUTH|UNKNOWN]**. **Terminal = CLONED_OK oder CLONE_FAILED.**
+- Der Client **pollt** (oder empfängt) `cloneStatus` **bis terminal** (Poll **stoppt** bei CLONED_OK/CLONE_FAILED — kein endloses Pollen; vgl. das 705-Ledger-Prinzip).
+- **CLONE_FAILED → actionable Fix + Retry:** der Grund nennt den Fix (URL / Token) — bei `UNKNOWN` ehrlich „Grund nicht ermittelbar" + Retry. Retry re-triggert (zurück zu CLONING). Non-optimistisch: Zustand flippt auf den nächsten server-`cloneStatus`, nicht auf den Retry-Klick.
 
 ## §4 Naht zu §3.2 (die Vollendung)
-- **`ClonePhase.OK` IST das CLONED_OK**, das §3.2s Repo-Schritt von „gespeichert" auf **„done"** hebt → mit API-Key-set → Gate **TRANSPARENT**. §3.3 **vollendet** §3.2s Repo-Schritt (der ohne den Seam bei „gespeichert" hing; „TRANSPARENT unerreichbar bis CYP-736" — jetzt erreichbar).
-- Der **Repo-Schritt-Marker in §3.2 zeigt jetzt den Live-Clone-State** (SAVED→CLONING→SLOW→OK/FAILED) statt nur „gespeichert".
+- **`CLONED_OK` hebt §3.2s Repo-Schritt von „gespeichert" auf „done"** → mit API-Key-set → Gate **TRANSPARENT**. §3.3 **vollendet** §3.2s Repo-Schritt (der ohne den Seam bei „gespeichert" hing).
+- Der **Repo-Schritt-Marker in §3.2 zeigt jetzt den Live-`cloneStatus`** (CONFIGURED_NEVER_CLONED → CLONING → CLONED_OK/CLONE_FAILED) statt nur „gespeichert".
+- **★ Skip-Persistenz (ratifiziert 2026-07-19):** solange kein CLONED_OK ist TRANSPARENT unerreichbar → der Skip wird **client-lokal (per-Browser) erinnert**, damit man nicht bei jedem Laden im Gate landet. **Ehrlich, weil die Wahrheit NICHT im Gate lebt:** der **Gate = Führung** (wegklickbar = UI-Präferenz, kein Fakt — anders als CYP-705s server-`seen`); die **Wahrheit = das nicht-ausblendbare §3.1-Banner + agent-start-Gating** (server-getrieben, immer sichtbar solange `!configured`/`!CLONED_OK`). **Bedingungen:** (a) Skip unterdrückt Banner/Gating **nie**; (b) Resume-Pfad zurück in den Gate (das Banner-„Einrichten"); (c) sobald server-`CLONED_OK`/`configured` → Banner UND Gate klären sich.
 
 ## §5 Layout + testTags
-- Der **Repo-Schritt (§3.2-Stepper)** trägt den Clone-State-Marker; **FAILED** zeigt Grund + Fix + Retry **inline** am Repo-Schritt.
-- SLOW = derselbe progress-Marker wie CLONING + ein advisory-Zusatz („dauert länger"), **nicht** ein Farb-/Ton-Wechsel zu WARN/error.
-- testTags: `firstrun.repo.clonePhase.{saved|cloning|slow|ok|failed}` · `firstrun.repo.cloneFailure.{auth|url}` · `firstrun.repo.cloneRetry` · `firstrun.repo.cloneUnknown`.
+- Der **Repo-Schritt (§3.2-Stepper)** trägt den `cloneStatus`-Marker; **CLONE_FAILED** zeigt Grund + Fix + Retry **inline**.
+- „dauert-länger" = derselbe progress-Marker wie CLONING + ein advisory-Zusatz, **nicht** ein Farb-/Ton-Wechsel zu WARN/error.
+- testTags: `firstrun.repo.cloneStatus.{notConfigured|configuredNeverCloned|cloning|failed|ok}` · `firstrun.repo.cloneSlowHint` (client-elapsed, kein Phase-Tag) · `firstrun.repo.cloneFailReason.{urlUnreachable|auth|unknown}` · `firstrun.repo.cloneRetry` · `firstrun.repo.cloneUnknown`.
 
 ## §6 Übergabe-Flags
-- **Grounded auf den CYP-736-Contract (exakter Match, keine Divergenz).** Build-ready, sobald Backend2 den Seam (`clonePhase` + `CloneFailureReason` in `GET /api/config/repo`) liefert.
-- **Vollendet §3.2** (OK = §3.2-Repo-done → Gate-TRANSPARENT erreichbar).
-- **Reuse:** der §3.2-Repo-Schritt-Marker; das honest-Zustands-Idiom (offen→gespeichert→cloning→slow→ok/failed).
+- **Grounded auf die finale `:core`-Shape** (`CloneStatus` + `CloneFailReason`, 3-wertig; SLOW = client-elapsed). Build-ready, sobald der Seam (`cloneStatus` in `GET /api/config/repo`) steht.
+- **Vollendet §3.2** (CLONED_OK → §3.2-Repo-done → Gate-TRANSPARENT erreichbar); die **Skip-Persistenz** (§4) überbrückt die Zeit bis dahin ehrlich.
+- **Reuse:** der §3.2-Repo-Schritt-Marker; das honest-Zustands-Idiom.
 - **Copy = neue `first_run_clone_*`-Keys** (shared, mit Dev5s Impl landen — [[shared-key-landing]]); DE/EN auf Zuruf.
