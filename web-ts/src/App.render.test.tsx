@@ -546,3 +546,65 @@ describe('CYP-732 — the read cursor advances only when the conversation is in 
     expect((repo.markRead as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0)
   })
 })
+
+// ── CYP-733 — the CYP-676 tier disclosure, wired into the app chrome ─────────────────────────────────────────
+describe('CYP-733 — the connection-security tier is always visible and never overstates', () => {
+  it('★ the badge is present BEFORE any connection — fail-closed UNKNOWN, never absent, never native', async () => {
+    // "Always visible" is the load-bearing property: an honesty indicator that only appears once things are fine
+    // is not an honesty indicator. Absent would read as "nothing to disclose".
+    const hub = new FakeSocketHub()
+    const { getByTestId, queryByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(getByTestId('remote.security.tierBadge')).toBeTruthy()
+    expect(getByTestId('remote.security.tier.unknown')).toBeTruthy()
+    expect(queryByTestId('remote.security.tier.native')).toBeNull() // a browser can never be native
+  })
+
+  it('★ a LIVE connection discloses BROWSER_GATEWAY openly — pill AND the always-visible disclosure line', async () => {
+    const hub = new FakeSocketHub()
+    const { getByTestId, queryByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    const comm = hub.sockets.find((s) => s.url.includes('/ws/comm'))!
+    await act(async () => {
+      comm.emitOpen()
+      await Promise.resolve()
+    })
+    expect(getByTestId('remote.security.tier.browserGateway')).toBeTruthy()
+    expect(getByTestId('remote.security.tierDisclosure')).toBeTruthy() // never tap-to-reveal
+    expect(queryByTestId('remote.security.tier.native')).toBeNull()
+  })
+
+  it('★ a dropped connection falls BACK to unknown — it never keeps claiming the old tier', async () => {
+    // A tier describes a running connection. Holding the last-known tier after the socket dropped would describe
+    // something that is no longer there — the same stale-as-current class as CYP-705 ⑥.
+    const hub = new FakeSocketHub()
+    const { getByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    const comm = hub.sockets.find((s) => s.url.includes('/ws/comm'))!
+    await act(async () => {
+      comm.emitOpen()
+      await Promise.resolve()
+    })
+    expect(getByTestId('remote.security.tier.browserGateway')).toBeTruthy()
+    await act(async () => {
+      comm.emitClose(1006) // unexpected drop → offline
+      await Promise.resolve()
+    })
+    expect(getByTestId('remote.security.tier.unknown')).toBeTruthy()
+  })
+
+  it('★ the disclosure appears ONLY for the gateway tier — unknown carries no gateway claim', async () => {
+    const hub = new FakeSocketHub()
+    const { queryByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(queryByTestId('remote.security.tierDisclosure')).toBeNull() // nothing to disclose about no connection
+  })
+})

@@ -60,6 +60,8 @@ import { ProjectSwitcher } from './project/ProjectSwitcher'
 import { OverloadBanner } from './workspace/OverloadBanner'
 import { overloadVisible } from './workspace/capacityModel'
 import { ThemeToggle } from './ui/ThemeToggle'
+import { RemoteSecurityTierBadge } from './connector/RemoteSecurityTierBadge'
+import { gatewayTierFor } from './connector/gatewayTier'
 import { loadThemeMode, saveThemeMode, applyThemeMode, type ThemeMode } from './ui/themePreference'
 
 const AGENT_PREFIX = 'agent:'
@@ -856,6 +858,15 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         {/* CYP-645 composer-history stepper + CYP-643 theme toggle — same personal, ungated trailing-slot family. */}
         <ComposerHistoryStepper size={historySizeValue} onChange={onHistorySizeChange} />
         <ThemeToggle mode={themeMode} onChange={onThemeChange} />
+      </div>
+      {/* CYP-733 — the CYP-676 tier disclosure, finally wired. It lives in the app chrome rather than inside the
+          comm window on purpose: the spec requires it to be ALWAYS VISIBLE, and a window can be closed. Its own
+          strip (like the overload banner) rather than in the toolbar row, because the disclosure is a full
+          sentence and must never be squeezed or truncated — a shortened honesty line is a softened one.
+          The tier is derived from the live connection, and is UNKNOWN whenever the connection is not up: we do not
+          describe the security of a connection that is not carrying traffic. It can never render NATIVE. */}
+      <div className="workspace-tier" data-testid="workspace-tier">
+        <RemoteSecurityTierBadge tier={gatewayTierFor(commConnection)} />
       </div>
       {overloadVisible(overloadActive, overloadDismissed, capacity) && (
         <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />
