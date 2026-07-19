@@ -153,29 +153,47 @@ private fun GroupHeading(text: String, tag: String) {
     )
 }
 
-/** A migratable store row (§2.1): name · state · action. */
+/**
+ * A migratable store row (§2.1): name · state · action. CYP-730 §2.2b: a LEGACY_UNEVALUATED READ_ONLY store carries
+ * an action line UNDER the row (it needs a review before it can migrate), so the row is a Column wrapping the
+ * name/state/action Row plus the optional line.
+ */
 @Composable
 private fun MigratableRow(store: MigratableStore, isOperator: Boolean, onStartMigrate: (String) -> Unit) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth().testTag(MigrationTags.store(store.storeKey)),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(
-            text = store.displayName,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        StoreState(store)
-        // Action — start a migration. Enabled only for an operator and only when the store is LOCAL (unbound);
-        // MIGRATING/READ_ONLY are in-flight, BOUND is already on a target. §4's confirm dialog is a later increment.
-        val canMigrate = isOperator && store.state == StoreBindingState.LOCAL
-        OutlinedButton(
-            onClick = { onStartMigrate(store.storeKey) },
-            enabled = canMigrate,
-            modifier = Modifier.testTag(MigrationTags.storeMigrate(store.storeKey)),
-        ) { Text(stringResource(Res.string.migration_start)) }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = store.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            StoreState(store)
+            // Action — start a migration. Enabled only for an operator and only when the store is LOCAL (unbound);
+            // MIGRATING/READ_ONLY are in-flight, BOUND is already on a target. §4's confirm dialog is a later increment.
+            val canMigrate = isOperator && store.state == StoreBindingState.LOCAL
+            OutlinedButton(
+                onClick = { onStartMigrate(store.storeKey) },
+                enabled = canMigrate,
+                modifier = Modifier.testTag(MigrationTags.storeMigrate(store.storeKey)),
+            ) { Text(stringResource(Res.string.migration_start)) }
+        }
+        // CYP-730 §2.2b — the LEGACY_UNEVALUATED action line: this store is frozen READ_ONLY because its
+        // migratability was never evaluated, so it needs a review before a migration can start.
+        if (store.state == StoreBindingState.READ_ONLY && store.readOnlyReason == ReadOnlyReason.LEGACY_UNEVALUATED) {
+            Text(
+                text = stringResource(Res.string.migration_legacy_action),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag(MigrationTags.storeLegacyAction(store.storeKey)),
+            )
+        }
     }
 }
 
@@ -217,23 +235,49 @@ private fun StoreState(store: MigratableStore) {
                 Text(running, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
             }
         }
-        StoreBindingState.READ_ONLY -> {
-            // WARN (severityColor + a SEPARATE ▲ node, WCAG 1.4.1). CYP-720: the reason (migration window vs a
-            // legacy pre-state freeze) rides in the a11y stateDescription so READ_ONLY is never silently one or the
-            // other. A visible reason-distinct label needs a dedicated key + BE-8 — flagged to PO (spec §11.4).
-            val readonly = stringResource(Res.string.migration_state_readonly)
-            val reasonWord = store.readOnlyReason?.name ?: "unknown"
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.testTag(tag).semantics { stateDescription = "$readonly ($reasonWord)" },
-            ) {
-                Text("▲", color = severityColor(Severity.WARN), style = MaterialTheme.typography.bodySmall)
-                Text(readonly, color = severityColor(Severity.WARN), style = MaterialTheme.typography.bodySmall)
-            }
-        }
+        // CYP-730 §2.2b — READ_ONLY splits by provenance into three distinct rows (see [ReadOnlyState]).
+        StoreBindingState.READ_ONLY -> ReadOnlyState(store)
     }
 }
+
+/**
+ * CYP-730 §2.2b — the READ_ONLY state cell, split by provenance into three DISTINCT rows:
+ *  - [ReadOnlyReason.MIGRATION_WINDOW]   → NOT a warning: `secondary` colour, no ▲ (an active migration, not a fault).
+ *  - [ReadOnlyReason.LEGACY_UNEVALUATED] → WARN + ▲ (frozen, needs evaluation; carries an action line in [MigratableRow]).
+ *  - `null` (reason absent)              → WARN + ▲ (unknown provenance; fail-loud, never silently "fine").
+ *
+ * The a11y [androidx.compose.ui.semantics.stateDescription] carries a **localized** reason label (BE-4), never the
+ * raw enum name — a screenreader must not read "Nur lesend (LEGACY_UNEVALUATED)". Colour is never the sole signal:
+ * WARN reasons carry a separate ▲ node (WCAG 1.4.1).
+ */
+@Composable
+private fun ReadOnlyState(store: MigratableStore) {
+    val reason = store.readOnlyReason
+    val readonly = stringResource(Res.string.migration_state_readonly)
+    val reasonLabel = when (reason) {
+        ReadOnlyReason.MIGRATION_WINDOW -> stringResource(Res.string.migration_readonly_reason_migrating)
+        ReadOnlyReason.LEGACY_UNEVALUATED -> stringResource(Res.string.migration_readonly_reason_legacy)
+        null -> stringResource(Res.string.migration_readonly_reason_unknown)
+    }
+    val warn = readOnlyIsWarn(reason)
+    val color = if (warn) severityColor(Severity.WARN) else MaterialTheme.colorScheme.secondary
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.testTag(MigrationTags.storeReadonly(store.storeKey, reason))
+            .semantics { stateDescription = "$readonly — $reasonLabel" },
+    ) {
+        // MIGRATION_WINDOW is not a warning → no ▲, secondary colour. Legacy/unknown keep the ▲ WARN form marker.
+        if (warn) Text("▲", color = color, style = MaterialTheme.typography.bodySmall)
+        Text(readonly, color = color, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/**
+ * CYP-730 — READ_ONLY warning classification: an in-flight migration ([ReadOnlyReason.MIGRATION_WINDOW]) is NOT a
+ * warning (no amber, else the genuinely-worrying legacy/unknown rows stop standing out); every other reason is.
+ */
+internal fun readOnlyIsWarn(reason: ReadOnlyReason?): Boolean = reason != ReadOnlyReason.MIGRATION_WINDOW
 
 /** A non-migratable store row (§2.2): name + reason, no action control (there is no action). */
 @Composable

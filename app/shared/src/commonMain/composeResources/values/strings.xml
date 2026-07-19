@@ -847,6 +847,11 @@
     <string name="migration_state_bound">In %1$s</string>
     <string name="migration_state_migrating">Wird migriert …</string>
     <string name="migration_state_readonly">Nur lesend</string>
+    <!-- CYP-730 — READ_ONLY provenance (Achse B): three distinct rows by reason + localized a11y label -->
+    <string name="migration_readonly_reason_migrating">Migrationsfenster</string>
+    <string name="migration_readonly_reason_legacy">Altbestand, noch nicht bewertet</string>
+    <string name="migration_readonly_reason_unknown">Grund unbekannt</string>
+    <string name="migration_legacy_action">Noch nicht bewertet — vor dem Migrieren prüfen.</string>
     <string name="migration_reason_no_export">Kein Export-Pfad — dieser Store kann derzeit nicht kopiert werden.</string>
     <string name="migration_reason_no_target">Kein Postgres-Ziel — dieser Store bleibt lokal.</string>
     <string name="migration_reason_infra">Bleibt auf der Plattform — verweist auf die Datenbanken der anderen Stores.</string>
