@@ -129,6 +129,47 @@ Das `MigrationModel`-KDoc sagt bereits richtig, ein solcher Store werde „hones
 | `READ_ONLY` | `LEGACY_UNEVALUATED` | „Gesperrt — muss überprüft werden" (**handeln**) |
 | `READ_ONLY` | `null` | **„Gesperrt — Grund unbekannt"** ⚠ nie stillschweigend als Migration lesen |
 
+### 2.2b Achse B — Umsetzungs-Tabelle `READ_ONLY` (Dev-Hand-off CYP-727)
+
+**Stand im Bau (`MigrationSection.StoreState`, develop):** `READ_ONLY` rendert **eine** Zeile —
+`▲` + `migration_state_readonly`, beides in `severityColor(Severity.WARN)` — und der Grund fährt **nur**
+in der `stateDescription` mit, als **roher Enum-Name** (`store.readOnlyReason?.name ?: "unknown"`).
+Dev hat das im Code selbst als offen markiert („needs a dedicated key + BE-8"). Die drei Zeilen unten
+lösen es auf.
+
+| `readOnlyReason` | sichtbares Label | Tag-Qualifier | Farbe / Glyph | `stateDescription` (a11y) | Zusatzzeile |
+|---|---|---|---|---|---|
+| `MIGRATION_WINDOW` | `migration_state_readonly_migrating` | `.readonly.migrating` | **`secondary`, kein `▲`** (s.u.) | `a11y_migration_state_readonly_migrating` | — |
+| `LEGACY_UNEVALUATED` | `migration_state_readonly_legacy` | `.readonly.legacy` | `severityColor(WARN)` + `▲` | `a11y_migration_state_readonly_legacy` | **`migration_legacy_action`** (Handlungssatz) |
+| `null` | `migration_state_readonly_unknown` | `.readonly.unknown` | `severityColor(WARN)` + `▲` | `a11y_migration_state_readonly_unknown` | — |
+
+**Drei Festlegungen, je mit Grund:**
+
+1. ⭐ **`MIGRATION_WINDOW` bekommt KEIN Amber.** Ein Store, der gerade planmäßig migriert, ist **kein
+   Warnzustand** — er tut genau das, was der Operator angestoßen hat. `▲` + WARN-Amber würde einen
+   **erwarteten** Vorgang als Störung zeichnen und damit die Amber-Bedeutung abstumpfen (dann sieht
+   `LEGACY_UNEVALUATED` aus wie „auch nur Migration"). Also `secondary` wie der `MIGRATING`-Zustand,
+   mit dem er faktisch identisch ist. **WARN bleibt den beiden Fällen vorbehalten, in denen etwas
+   nicht stimmt oder unklar ist.**
+2. **`null` ist WARN, nicht neutral.** „Wir wissen nicht, warum dieser Store gesperrt ist" ist ein
+   Zustand, der jemanden interessieren muss — er darf nicht ruhig aussehen (safe-but-silent).
+3. ⚠ **Der rohe Enum-Name muss aus der a11y-Ausgabe raus.** Heute hört ein Screenreader-Nutzer
+   „Nur lesend (LEGACY_UNEVALUATED)" — ein Bezeichner aus dem Code, vorgelesen. Das verletzt dieselbe
+   Regel wie ein roher `storeKey` in der UI (Spec BE-4: Klartext, nie Rohschlüssel). Ersatz: die drei
+   `a11y_*`-Keys oben.
+
+**Ansage-Dringlichkeit:** alle drei `Polite` — es ist der **Anfangszustand einer gerade geöffneten
+Fläche**, nicht das Ergebnis einer abgeschickten Aktion (`docs/A11Y-ANNOUNCEMENTS.md §1`).
+
+**Aktions-Button je Zeile:** in allen drei Fällen **disabled** — der Store ist gesperrt. (Heute korrekt:
+`canMigrate` verlangt `LOCAL`.) Für `LEGACY_UNEVALUATED` ist die **Handlungszeile** der Träger der
+Information, nicht ein Button: *was* zu tun ist, hängt an CYP-720/Backend und wird hier **nicht** erfunden.
+
+> ⭐ **Wichtig fürs Schneiden: Achse B ist HEUTE vollständig baubar.** Der Stub liefert bereits
+> `LEGACY_UNEVALUATED` (`MigrationApi.kt:102-103`, `channel_share`), und `ReadOnlyReason` steht im Modell.
+> **CYP-720 gated nur, ob echte Daten den Grund tragen — nicht die drei UI-Pfade.** Dev kann alle drei
+> Zeilen inkl. Zähne gegen den Stub bauen und testen; die Live-Daten schalten sie später scharf.
+
 ### 2.3 Lauf-Zustand (dritte, kurzlebige Achse — existiert)
 
 `PhaseState = PENDING · RUNNING · DONE · FAILED · SKIPPED` je Phase, plus `MigrationError` für den Lauf.
@@ -184,7 +225,18 @@ umfasst, welche Teilmenge, und was dem Kunden zugesagt wird, ist die **offene §
 | `migration_state_readonly_unknown` | Gesperrt — Grund unbekannt | Frozen — reason unknown |
 | `migration_legacy_action` | Diese Bindung stammt aus einer früheren Version und wurde sicherheitshalber gesperrt. Ein Operator muss sie überprüfen; bis dahin bleibt der Store schreibgeschützt. | This binding is from an earlier version and was frozen as a precaution. An operator has to review it; until then the store stays read-only. |
 
-**a11y:** `a11y_migration_checking` · `a11y_migration_unavailable` (Assertive) · `a11y_migration_state_readonly_unknown`.
+**a11y:** `a11y_migration_checking` · `a11y_migration_unavailable` · die drei `a11y_migration_state_readonly_{migrating,legacy,unknown}` (§2.2b — sie **ersetzen** den heute vorgelesenen rohen Enum-Namen).
+
+| a11y-Key | DE | EN |
+|---|---|---|
+| `a11y_migration_state_readonly_migrating` | Wird migriert, Schreiben gesperrt | Migrating, writes frozen |
+| `a11y_migration_state_readonly_legacy` | Gesperrt, muss von einem Operator überprüft werden | Frozen, needs operator review |
+| `a11y_migration_state_readonly_unknown` | Gesperrt, Grund unbekannt | Frozen, reason unknown |
+
+⚠ **Ansage-Dringlichkeit:** `migration_unavailable_*` ist **`Polite`**, nicht Assertive — Anfangszustand
+einer gerade geöffneten Fläche (`docs/A11Y-ANNOUNCEMENTS.md §1`; entschieden in CYP-727, `LoadErrorRetry`
+trägt die Polite-Region ohnehin zentral). **Korrigiert meine frühere Achse-A-Tabelle**, die hier
+Assertive sagte.
 
 ⭐ **`migration_unavailable_hint` ist die Kern-Zeile dieses Passes.** Sie sagt ausdrücklich, was der
 Zustand **nicht** bedeutet — weil die naheliegende Fehllesart („dann gibt es eben keine") genau die ist,
@@ -225,6 +277,8 @@ Entschärfung: die neue Konstante `INVENTORY_UNAVAILABLE = "migration.inventoryU
 | 3 | **Laden ist sichtbar:** während der Abfrage `migration.checking` + Polite-Region | Ladephase rendert nichts |
 | 4 | **READ_ONLY ohne Reason ist eigen:** Reason `null` ⇒ `.readonly.unknown`, **nicht** `.readonly.migrating` | fehlender Reason wird als Migration gelesen |
 | 5 | **Handlungs-Zeile existiert:** `LEGACY_UNEVALUATED` ⇒ `migration_legacy_action` sichtbar | Zustand wird angezeigt, ohne zu sagen, dass gehandelt werden muss |
+| 6 | **Kein roher Bezeichner in der a11y-Ausgabe:** die `stateDescription` der drei READ_ONLY-Zeilen enthält **keinen** Enum-Namen (`LEGACY_UNEVALUATED` o.ä.) | der rohe Enum-Name wird vorgelesen (**rötet heute**) |
+| 7 | **Erwartetes ist nicht amber:** `MIGRATION_WINDOW` rendert **ohne** `▲`/WARN-Farbe | der planmäßige Migrationsfall wird als Warnung gezeichnet |
 
 **Zahn 1 rötet gegen den heutigen Code — er ist ein Regressionstest auf den Befund aus §1**, kein
 theoretischer Fall.
