@@ -43,7 +43,9 @@ import type { ConnectorKind } from './connector/connectorModel'
 import { ProductLeadPanel } from './report/ProductLeadPanel'
 import type { ReportType } from './report/productLeadModel'
 // CYP-453: App renders SettingsPanel (which frames the CYP-433 ApiKeyPanel internally) — no direct ApiKeyPanel here.
-import { SettingsPanel } from './settings/SettingsPanel'
+import { SettingsPanel, RepoSection } from './settings/SettingsPanel'
+import { ApiKeyPanel } from './settings/ApiKeyPanel'
+import { LoadErrorRetry } from './ui/LoadErrorRetry'
 import { loadHistorySize, saveHistorySize, browserStore } from './agentview/historySizePreference'
 import { ComposerHistoryStepper } from './agentview/ComposerHistoryStepper'
 import type { AclDimension } from './comm/aclModel'
@@ -60,6 +62,11 @@ import { ProjectSwitcher } from './project/ProjectSwitcher'
 import { OverloadBanner } from './workspace/OverloadBanner'
 import { UnconfiguredBanner } from './workspace/UnconfiguredBanner'
 import { setupStatusOf, mayPromptSetup } from './workspace/setupStatus'
+import { FirstRunGate } from './firstrun/FirstRunGate'
+import { firstRunGateMode } from './firstrun/firstRunModel'
+import { isSetupSkipped, setSetupSkipped, clearSetupSkipped } from './firstrun/skipPreference'
+import { cloneView, clonePollMs, isCloneDone } from './firstrun/cloneStatusModel'
+import { CloneStatusRow } from './firstrun/CloneStatusRow'
 import { overloadVisible } from './workspace/capacityModel'
 import { ThemeToggle } from './ui/ThemeToggle'
 import { RemoteSecurityTierBadge } from './connector/RemoteSecurityTierBadge'
@@ -165,6 +172,24 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // NOT read as unconfigured — prompting setup on a failed load tells a configured operator to configure.
   const setupStatus = setupStatusOf(repoConfig, repoConfigLoadError)
   const setupPrompt = mayPromptSetup(setupStatus)
+  // CYP-735 §3.2 — the guided gate. Inputs are DERIVED, never stored, so the gate and §3.1's banner cannot drift.
+  // `repoCloned` stays null until the CYP-736 clone seam lands, so the repo step tops out at "saved" and the gate
+  // cannot reach transparent — honest, because an accepted URL is not a clonable repo.
+  // CYP-735 §3.3 — the clone lifecycle, now that CYP-736 exposes it. `cloneStartedAt` is the CLIENT's own clock:
+  // the server reports the phase, we measure only how long CLONING has lasted. That measurement may produce an
+  // advisory hint, never a verdict — a hung clone is indistinguishable from a slow one from here.
+  const [cloneStartedAt, setCloneStartedAt] = useState<number | null>(null)
+  const [cloneElapsedMs, setCloneElapsedMs] = useState(0)
+  const clone = cloneView(repoConfig, cloneElapsedMs)
+  const firstRunInputs = {
+    setup: setupStatus,
+    apiKeySet: apiKeyView === null ? null : apiKeyView.set,
+    repoCloned: isCloneDone(clone) ? true : null,
+  }
+  const [setupSkipped, setSetupSkippedState] = useState(isSetupSkipped)
+  // Condition (c): once the server says configured the gate is transparent BY DERIVATION — a stale skip flag can
+  // neither hold it open nor keep anything hidden.
+  const showGate = firstRunGateMode(firstRunInputs) !== 'transparent' && !setupSkipped
   // CYP-467/94: the project registry + active pointer drive the Event-Browse cross-project axis (operator-only view).
   const [projectsView, setProjectsView] = useState<ProjectsView | null>(null)
   // CYP-642: the server-authoritative capacity snapshot ({current, estimatedMax?}) — drives the capacity pill.
@@ -279,6 +304,29 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const loadRepoConfig = useCallback(() => {
     hubRepo.getRepoConfig().then((c) => { setRepoConfig(c); setRepoConfigLoadError(false) }).catch(() => setRepoConfigLoadError(true))
   }, [hubRepo])
+  // CYP-735 §3.3 — poll the clone status. Thins after the long threshold but NEVER stops before a verdict
+  // (thinning is not giving up), and is bound to this component's life: unmount/skip stops it, so there is no
+  // forever-loop. A terminal status ends it because there is nothing left to watch.
+  useEffect(() => {
+    const every = clonePollMs(clone)
+    if (every === null) return
+    const id = setInterval(() => loadRepoConfig(), every)
+    return () => clearInterval(id)
+  }, [clone.kind, clone.kind === 'cloning' && clone.long, loadRepoConfig]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Client-measured CLONING duration: start the clock when cloning begins, clear it when it ends.
+  useEffect(() => {
+    if (clone.kind !== 'cloning') {
+      setCloneStartedAt(null)
+      setCloneElapsedMs(0)
+      return
+    }
+    const started = cloneStartedAt ?? Date.now()
+    if (cloneStartedAt === null) setCloneStartedAt(started)
+    const id = setInterval(() => setCloneElapsedMs(Date.now() - started), 1_000)
+    return () => clearInterval(id)
+  }, [clone.kind, cloneStartedAt])
+
   const loadApiKey = useCallback(() => {
     hubRepo.getApiKey().then((v) => { setApiKeyView(v); setApiKeyLoadError(false) }).catch(() => setApiKeyLoadError(true)) // masked view; plaintext never comes back
   }, [hubRepo])
@@ -852,6 +900,50 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     return null
   }
 
+  if (showGate) {
+    // The gate covers the workspace while setup is genuinely outstanding. Skipping leads to the REAL workspace
+    // carrying the §3.1 banner + agent-start gating (condition a) — never a clean-looking workspace.
+    return (
+      <div className="app-root" data-testid="app-root">
+        <FirstRunGate
+          inputs={firstRunInputs}
+          apiKeyStep={
+            <ApiKeyPanel
+              view={apiKeyView}
+              operator={operator}
+              onSave={onSaveApiKey}
+              loadError={apiKeyLoadError}
+              onRetryLoad={loadApiKey}
+            />
+          }
+          repoStep={
+            <>
+              {/* CYP-735 §3.3 — the live clone lifecycle beneath the repo form: this is what lifts the step from
+                  "gespeichert" to "done", and what keeps it honestly short of done until the server says CLONED_OK. */}
+              <CloneStatusRow view={clone} onRetry={loadRepoConfig} />
+              <RepoSection
+              operator={operator}
+              config={repoConfig}
+              onSave={onSaveRepo}
+              getReprovisionPreview={() => hubRepo.getReprovisionPreview()}
+                loadError={repoConfigLoadError}
+                onRetryLoad={loadRepoConfig}
+              />
+            </>
+          }
+          onSkip={() => {
+            setSetupSkipped()
+            setSetupSkippedState(true)
+          }}
+          onRetry={loadRepoConfig}
+          loadErrorSurface={<LoadErrorRetry testId="firstrun.loadError" onRetry={loadRepoConfig} />}
+        >
+          {null}
+        </FirstRunGate>
+      </div>
+    )
+  }
+
   return (
     <div className="app-root" data-testid="app-root">
       {/* CYP-642 capacity pill (present only when there is capacity data — null≠0/0) + CYP-643 theme toggle (always
@@ -877,7 +969,16 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
       </div>
       {/* CYP-735 §3.1 — a STANDING condition (not dismissable): agents cannot start until the hub is set up.
           Shown only on a server-stated configured:false; a load error surfaces its own error+retry instead. */}
-      {setupPrompt && <UnconfiguredBanner onSetUp={() => useWindowStore.getState().focus(SETTINGS_WINDOW_ID)} />}
+      {setupPrompt && (
+        <UnconfiguredBanner
+          onSetUp={() => {
+            // Condition (b): the resume path returns to the GUIDANCE, not merely to a settings window — a user who
+            // skipped and now wants help should get the guided flow back, not be dropped at a form.
+            clearSetupSkipped()
+            setSetupSkippedState(false)
+          }}
+        />
+      )}
       {overloadVisible(overloadActive, overloadDismissed, capacity) && (
         <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />
       )}
