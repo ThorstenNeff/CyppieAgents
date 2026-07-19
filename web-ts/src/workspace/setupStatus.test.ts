@@ -37,6 +37,17 @@ describe('CYP-735 — setup status is four distinct states, and only one may pro
     expect(setupStatusOf(cfg(false), true)).toEqual({ kind: 'error' })
   })
 
+  it('★ F1 — a 200 whose body lacks `configured` is UNKNOWN, never unconfigured (Tester2)', () => {
+    // The REST client casts instead of validating, so a missing field arrives as `undefined` — falsy, and
+    // therefore silently "not configured". That put a setup banner on a correctly-configured hub. An
+    // uninterpretable body is exactly as unknown as no body at all.
+    for (const body of [{}, { configured: undefined }, { configured: 'true' }, { configured: 1 }, { configured: null }]) {
+      const status = setupStatusOf(body as never, false)
+      expect(status).toEqual({ kind: 'unknown' })
+      expect(mayPromptSetup(status)).toBe(false)
+    }
+  })
+
   it('★ exactly ONE of the four states prompts — scanned, not enumerated by hand', () => {
     const all: SetupStatus[] = [{ kind: 'unknown' }, { kind: 'error' }, { kind: 'unconfigured' }, { kind: 'configured' }]
     expect(all.filter(mayPromptSetup)).toEqual([{ kind: 'unconfigured' }])

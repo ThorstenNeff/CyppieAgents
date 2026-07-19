@@ -33,6 +33,15 @@ export type SetupStatus =
 export function setupStatusOf(config: RepoConfigView | null, loadError: boolean): SetupStatus {
   if (loadError) return { kind: 'error' } // failed ≠ unconfigured
   if (config === null) return { kind: 'unknown' } // not answered yet ≠ unconfigured
+  // CYP-735 F1 (Tester2): a 200 whose body LACKS `configured` must not read as `configured: false`. The REST
+  // client casts rather than validates (only the WS boundary validates, CYP-420), so an old server, a proxy error
+  // page or a shape change arrives here as `undefined` — and `undefined` is falsy, which silently produced
+  // "unconfigured" and put a setup banner on a correctly-configured hub.
+  //
+  // My original guard was careful about the ABSENCE of an answer (null) but trusted the SHAPE of one that arrived.
+  // That is the honesty stopping one level too early: "we got a response" is not "we got an answer". An
+  // uninterpretable body is exactly as unknown as no body at all.
+  if (typeof config.configured !== 'boolean') return { kind: 'unknown' }
   return config.configured ? { kind: 'configured' } : { kind: 'unconfigured' }
 }
 
