@@ -223,7 +223,16 @@ umfasst, welche Teilmenge, und was dem Kunden zugesagt wird, ist die **offene §
 | `migration_state_readonly_migrating` | Wird migriert — Schreiben gesperrt | Migrating — writes frozen |
 | `migration_state_readonly_legacy` | Gesperrt — muss überprüft werden | Frozen — needs review |
 | `migration_state_readonly_unknown` | Gesperrt — Grund unbekannt | Frozen — reason unknown |
-| `migration_legacy_action` | Diese Bindung stammt aus einer früheren Version und wurde sicherheitshalber gesperrt. Ein Operator muss sie überprüfen; bis dahin bleibt der Store schreibgeschützt. | This binding is from an earlier version and was frozen as a precaution. An operator has to review it; until then the store stays read-only. |
+| `migration_legacy_action` | Vorsorglich gesperrt (Bindung aus einer früheren Version). Schreibvorgänge bleiben blockiert, bis ein Operator sie prüft. | Frozen as a precaution (binding from an earlier version). Writes stay blocked until an operator reviews it. |
+
+> **Wortlaut final (CYP-730, 2026-07-19).** Reihenfolge ist **Folge → Ursache → Handlung**, mit Absicht:
+> die Sperre wirkt **jetzt** und **migrations-unabhängig** (CYP-714 friert fail-closed ein), also muss
+> „Schreibvorgänge bleiben blockiert" vorn stehen — es erklärt zugleich das 409, das dem Operator
+> anderswo begegnet. **Verworfen wurde „… vor dem Migrieren prüfen"**: das rahmt die Sperre als
+> Migrations-Vorbedingung, worauf ein Operator ohne Migrationsabsicht folgerichtig „betrifft mich nicht"
+> schließt — und der Store bliebe unbestimmt schreibgesperrt. Genau die CYP-720-Lücke (nicht „lügt die
+> UI", sondern „erfährt er, dass er handeln muss"). **„bis ein Operator sie prüft"** nennt die Handlung,
+> **ohne ein Verfahren zu erfinden** — was konkret zu tun ist, hängt an CYP-720/Backend.
 
 **a11y:** `a11y_migration_checking` · `a11y_migration_unavailable` · die drei `a11y_migration_state_readonly_{migrating,legacy,unknown}` (§2.2b — sie **ersetzen** den heute vorgelesenen rohen Enum-Namen).
 
