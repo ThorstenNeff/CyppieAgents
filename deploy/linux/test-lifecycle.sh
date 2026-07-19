@@ -31,6 +31,7 @@ UNIT="/lib/systemd/system/$SVC"
 PORT=18787            # test hub public port
 TPORT=18786           # test hub tunnel port
 LIVE_TUNNEL_PORT=8786 # live hub tunnel port — READ-ONLY liveness probe, never written/stopped
+LIVE_PORT=8787        # live hub PUBLIC port — READ-ONLY /api/health probe (content oracle, never written)
 # CYP-637 G5 — live-side paths, referenced READ-ONLY for a POSITIVE isolation proof (never written/removed).
 LIVE_DATA="/var/lib/cyppiehub"
 LIVE_ETC="/etc/cyppiehub"
@@ -59,9 +60,22 @@ cleanup() {
 # CYP-637 G2 — sample live-hub liveness AFTER each destructive step, not just at start/end. A disturbance that
 # knocks the live hub down and lets it recover would otherwise be invisible to a start/end comparison; this also
 # LOCATES which step caused it. Read-only: probes a port (and /api/health when reachable), never writes.
+# The oracle is the CONTENT of /api/health ("ok") when the live public port answers, exactly the standard
+# health() applies to -test. A listening port only proves a socket is bound, not that the hub is serving —
+# holding the live hub to the weaker bar than the test hub would be the wrong way round. Falls back to the
+# tunnel-port check when the live health endpoint is not reachable read-only, and SAYS which oracle it used,
+# so the report never implies a stronger proof than was actually obtained.
+live_healthy() {
+  if [ "$(curl -fsS --max-time 3 "http://127.0.0.1:$LIVE_PORT/api/health" 2>/dev/null)" = "ok" ]; then
+    LIVE_ORACLE="health"; return 0
+  fi
+  if listening "$LIVE_PORT" || listening "$LIVE_TUNNEL_PORT"; then LIVE_ORACLE="port"; return 0; fi
+  LIVE_ORACLE="none"; return 1
+}
+
 live_probe() { # $1 = step label
   [ "$LIVE_UP_START" = yes ] || return 0   # nothing to compare against; G1 already reports the INCONCLUSIVE
-  if listening "$LIVE_TUNNEL_PORT"; then ok "live hub still listening after $1"
+  if live_healthy; then ok "live hub still up after $1 (oracle: $LIVE_ORACLE)"
   else bad "live hub went DOWN during $1 — the test disturbed the live hub"; fi
 }
 
@@ -94,8 +108,11 @@ listening "$TPORT" && { echo "refusing: test tunnel port $TPORT already in use";
 ok "clean starting state; deb present; test ports free"
 
 # record live-hub liveness so we can prove we never disturbed it
-LIVE_UP_START=no; listening "$LIVE_TUNNEL_PORT" && LIVE_UP_START=yes
-echo "  (live tunnel port $LIVE_TUNNEL_PORT listening at start: $LIVE_UP_START)"
+LIVE_UP_START=no; LIVE_ORACLE=none
+live_healthy && LIVE_UP_START=yes
+echo "  (live hub up at start: $LIVE_UP_START, oracle: $LIVE_ORACLE)"
+[ "$LIVE_UP_START" = yes ] && [ "$LIVE_ORACLE" = port ] && \
+  echo "  (note: live /api/health not reachable read-only — isolation is proven at PORT level only, a weaker oracle than the -test hub is held to)"
 # CYP-637 G5 — record which live-side PATHS exist now, so the end-state check is a real comparison. Same
 # discipline as G1: a path that was never there cannot prove "still there", so absence at start => INCONCLUSIVE,
 # not a free pass.
@@ -172,7 +189,7 @@ REM=0; for art in "$DATA" "$ETC" "$UNIT"; do [ -e "$art" ] && { bad "residual -t
 getent passwd "$USR" >/dev/null 2>&1 && { bad "residual $USR user"; REM=1; }
 [ "$REM" -eq 0 ] && ok "no residual -test artifacts on host"
 if [ "$LIVE_UP_START" = yes ]; then
-  listening "$LIVE_TUNNEL_PORT" && ok "live hub (tunnel port $LIVE_TUNNEL_PORT) STILL listening — never disturbed" || bad "live tunnel port $LIVE_TUNNEL_PORT went down — the test disturbed the live hub!"
+  if live_healthy; then ok "live hub STILL up — never disturbed (oracle: $LIVE_ORACLE)"; else bad "live hub went down — the test disturbed the live hub!"; fi
 else
   # CYP-637 G1 — was: a bare echo, so the run still ended PASS/exit-0 and looked identical to one that PROVED
   # isolation. The single claim that justifies running this beside production must never be silently skipped.
