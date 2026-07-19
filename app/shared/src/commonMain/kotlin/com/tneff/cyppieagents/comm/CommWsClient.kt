@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.net.isAccessRevoked
 import com.tneff.cyppieagents.net.logWsError
 import com.tneff.cyppieagents.net.readCloseCode
@@ -57,6 +58,7 @@ class CommWsClient(
                                 // writable set (composer enable/disable live). The pushed row is NOT trusted as the
                                 // write authority — the VM asks the server (GET /api/channels/writable) instead.
                                 is AclEvent -> this@channelFlow.send(CommLiveEvent.AclChanged)
+                                is ReadStateEvent -> Unit // CYP-705: read-state deltas (CMP unread not wired yet)
                             }
                         }
                     }

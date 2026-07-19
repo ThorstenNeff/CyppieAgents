@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.MessageEvent
+import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.net.isAccessRevoked
 import com.tneff.cyppieagents.net.logWsError
 import com.tneff.cyppieagents.net.readCloseCode
@@ -49,6 +50,7 @@ class AclWsClient(
                                 is AclEvent -> this@channelFlow.send(AclLiveEvent.EntryChanged(event.entry))
                                 is ChannelsEvent -> this@channelFlow.send(AclLiveEvent.ChannelsChanged(event.channels))
                                 is MessageEvent -> Unit // consumed by the comm timeline, not the ACL matrix
+                                is ReadStateEvent -> Unit // CYP-705: read-state deltas are not the ACL matrix's concern
                             }
                         }
                     }
