@@ -5,12 +5,28 @@
 import { RestClient, RestError, contractResponse} from '../net/rest'
 import { operatorToken } from '../platform/operatorToken'
 import {
+  AclEntrySchema,
+  AgentRunStateEventSchema,
+  ProjectSchema,
+  AgentDetailSchema,
   AgentSchema,
   ApiKeyViewSchema,
   AuthMeSchema,
   CapacitySchema,
   ChannelReadStateSchema,
+  ChannelSchema,
+  ChannelShareViewSchema,
+  ClaudeMdViewSchema,
+  CompactStatusSchema,
+  ConnectorsViewSchema,
+  EventPageSchema,
+  MessageSchema,
+  OperatorAuditSchema,
+  ProjectsViewSchema,
   RepoConfigViewSchema,
+  ReportSnapshotSchema,
+  ReprovisionPreviewSchema,
+  WorkspaceMemberSchema,
 } from '../types/generated/contractSchemas'
 import { z } from 'zod'
 import type {
@@ -216,20 +232,20 @@ export class RestHubRepo implements HubRepo {
     return this.rest.get('/api/agents', contractResponse('Agent[]', z.array(AgentSchema)))
   }
   fetchChannels(): Promise<Channel[]> {
-    return this.rest.get<Channel[]>('/api/channels')
+    return this.rest.get('/api/channels', contractResponse('Channel[]', z.array(ChannelSchema)))
   }
   fetchAcl(): Promise<AclEntry[]> {
-    return this.rest.get<AclEntry[]>('/api/acl')
+    return this.rest.get('/api/acl', contractResponse('AclEntry[]', z.array(AclEntrySchema)))
   }
   fetchReadState(): Promise<ChannelReadState[]> {
     // CYP-737: a malformed entry would otherwise become a confident unread count.
     return this.rest.get('/api/read-state', contractResponse('ChannelReadState[]', z.array(ChannelReadStateSchema)))
   }
   markRead(channelId: string, upToSeq: number): Promise<ChannelReadState> {
-    return this.rest.post<ChannelReadState>(`/api/channels/${encodeURIComponent(channelId)}/read`, { upToSeq })
+    return this.rest.post(`/api/channels/${encodeURIComponent(channelId)}/read`, { upToSeq }, contractResponse('ChannelReadState', ChannelReadStateSchema))
   }
   putAcl(entry: AclEntry): Promise<AclEntry> {
-    return this.rest.put<AclEntry>('/api/acl', entry)
+    return this.rest.put('/api/acl', entry, contractResponse('AclEntry', AclEntrySchema))
   }
   async requestMode(agentId: string, target: TerminalMode): Promise<void> {
     // ModeChangeRequest { target } — hand-modeled (CYP-426). We ignore the ModeChangeResponse body on purpose:
@@ -238,14 +254,14 @@ export class RestHubRepo implements HubRepo {
   }
   getMessages(channelId: string, since?: number): Promise<Message1[]> {
     const q = since !== undefined ? `?since=${since}` : ''
-    return this.rest.get<Message1[]>(`/api/channels/${encodeURIComponent(channelId)}/messages${q}`)
+    return this.rest.get(`/api/channels/${encodeURIComponent(channelId)}/messages${q}`, contractResponse('Message[]', z.array(MessageSchema)))
   }
   postMessage(channelId: string, body: string): Promise<Message1> {
     // SendMessageRequest { body } — hand-modeled (REST-only DTO, not in the asyncapi export; CYP-426).
-    return this.rest.post<Message1>(`/api/channels/${encodeURIComponent(channelId)}/messages`, { body })
+    return this.rest.post(`/api/channels/${encodeURIComponent(channelId)}/messages`, { body }, contractResponse('Message', MessageSchema))
   }
   setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent> {
-    return this.rest.post<AgentRunStateEvent>(`/api/agents/${encodeURIComponent(agentId)}/${action}`)
+    return this.rest.post(`/api/agents/${encodeURIComponent(agentId)}/${action}`, undefined, contractResponse('AgentRunStateEvent', AgentRunStateEventSchema))
   }
   getApiKey(): Promise<ApiKeyView> {
     // CYP-737: a malformed view otherwise reads as "kein Schlüssel hinterlegt" — a false, leak-sensitive claim.
@@ -253,10 +269,10 @@ export class RestHubRepo implements HubRepo {
   }
   putApiKey(apiKey: string): Promise<ApiKeyView> {
     // write-only: the plaintext goes up in the body; the response is the MASKED view (no plaintext back).
-    return this.rest.put<ApiKeyView>('/api/config/apikey', { apiKey })
+    return this.rest.put('/api/config/apikey', { apiKey }, contractResponse('ApiKeyView', ApiKeyViewSchema))
   }
   fetchAgentDetail(id: string): Promise<AgentDetail> {
-    return this.rest.get<AgentDetail>(`/api/agents/${encodeURIComponent(id)}`)
+    return this.rest.get(`/api/agents/${encodeURIComponent(id)}`, contractResponse('AgentDetail', AgentDetailSchema))
   }
   async createAgent(spec: NewAgentSpec): Promise<void> {
     // ignore the CreatedAgent body (it carries the new agent's token — a secret); the list refetches instead.
@@ -275,42 +291,42 @@ export class RestHubRepo implements HubRepo {
     return this.rest.get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
   }
   putRepoConfig(req: RepoConfigRequest): Promise<RepoConfigView> {
-    return this.rest.put<RepoConfigView>('/api/config/repo', req)
+    return this.rest.put('/api/config/repo', req, contractResponse('RepoConfigView', RepoConfigViewSchema))
   }
   getReprovisionPreview(): Promise<ReprovisionPreview> {
-    return this.rest.get<ReprovisionPreview>('/api/config/repo/reprovision-preview')
+    return this.rest.get('/api/config/repo/reprovision-preview', contractResponse('ReprovisionPreview', ReprovisionPreviewSchema))
   }
   getEvents(filter: EventFilter, afterSeq: number | null, limit: number): Promise<EventPage> {
-    return this.rest.get<EventPage>(`/api/events${buildEventsQuery(filter, afterSeq, limit)}`)
+    return this.rest.get(`/api/events${buildEventsQuery(filter, afterSeq, limit)}`, contractResponse('EventPage', EventPageSchema))
   }
   getConnectors(): Promise<ConnectorsView> {
-    return this.rest.get<ConnectorsView>('/api/connectors')
+    return this.rest.get('/api/connectors', contractResponse('ConnectorsView', ConnectorsViewSchema))
   }
   async setConnector(agentId: string, connectorKind: ConnectorKind): Promise<void> {
     // ConnectorChoice { connectorKind } — the audited, operator-only connector change (never via PATCH; §6).
     await this.rest.post<unknown>(`/api/agents/${encodeURIComponent(agentId)}/connector`, { connectorKind })
   }
   fetchReports(): Promise<ReportSnapshot[]> {
-    return this.rest.get<ReportSnapshot[]>('/api/reports')
+    return this.rest.get('/api/reports', contractResponse('ReportSnapshot[]', z.array(ReportSnapshotSchema)))
   }
   generateReport(req: GenerateReportRequest): Promise<ReportSnapshot> {
-    return this.rest.post<ReportSnapshot>('/api/reports', req)
+    return this.rest.post('/api/reports', req, contractResponse('ReportSnapshot', ReportSnapshotSchema))
   }
   fetchAuthMe(): Promise<AuthMe> {
     // CYP-737: the auth state gates the whole app — an uninterpretable body must fail, not default.
     return this.rest.get('/api/auth/me', contractResponse('AuthMe', AuthMeSchema))
   }
   getProjects(): Promise<ProjectsView> {
-    return this.rest.get<ProjectsView>('/api/projects')
+    return this.rest.get('/api/projects', contractResponse('ProjectsView', ProjectsViewSchema))
   }
   createProject(id: string, name: string): Promise<Project> {
-    return this.rest.post<Project>('/api/projects', { id, name })
+    return this.rest.post('/api/projects', { id, name }, contractResponse('Project', ProjectSchema))
   }
   switchProject(projectId: string): Promise<ProjectsView> {
-    return this.rest.post<ProjectsView>('/api/projects/switch', { projectId })
+    return this.rest.post('/api/projects/switch', { projectId }, contractResponse('ProjectsView', ProjectsViewSchema))
   }
   renameProject(id: string, name: string): Promise<Project> {
-    return this.rest.put<Project>(`/api/projects/${encodeURIComponent(id)}`, { name })
+    return this.rest.put(`/api/projects/${encodeURIComponent(id)}`, { name }, contractResponse('Project', ProjectSchema))
   }
   deleteProject(id: string, deleteWorktrees: boolean): Promise<ProjectDeleteReceipt> {
     return this.rest.delete<ProjectDeleteReceipt>(`/api/projects/${encodeURIComponent(id)}?deleteWorktrees=${deleteWorktrees}`)
@@ -320,28 +336,28 @@ export class RestHubRepo implements HubRepo {
     return this.rest.get('/api/capacity', contractResponse('Capacity', CapacitySchema))
   }
   getCompactStatus(): Promise<CompactStatus> {
-    return this.rest.get<CompactStatus>('/api/compact/status')
+    return this.rest.get('/api/compact/status', contractResponse('CompactStatus', CompactStatusSchema))
   }
   async setCompactConfig(config: CompactConfig): Promise<void> {
     await this.rest.post<unknown>('/api/compact/config', config)
   }
   getWorkspaceMembers(): Promise<WorkspaceMember[]> {
-    return this.rest.get<WorkspaceMember[]>('/api/workspace/members')
+    return this.rest.get('/api/workspace/members', contractResponse('WorkspaceMember[]', z.array(WorkspaceMemberSchema)))
   }
   getOperatorAudit(limit = 200): Promise<OperatorAudit[]> {
-    return this.rest.get<OperatorAudit[]>(`/api/audit?limit=${encodeURIComponent(String(limit))}`)
+    return this.rest.get(`/api/audit?limit=${encodeURIComponent(String(limit))}`, contractResponse('OperatorAudit[]', z.array(OperatorAuditSchema)))
   }
   getClaudeMd(agentId: string): Promise<ClaudeMdView> {
-    return this.rest.get<ClaudeMdView>(`/api/agents/${encodeURIComponent(agentId)}/claude-md`)
+    return this.rest.get(`/api/agents/${encodeURIComponent(agentId)}/claude-md`, contractResponse('ClaudeMdView', ClaudeMdViewSchema))
   }
   updateClaudeMd(agentId: string, update: ClaudeMdUpdate): Promise<ClaudeMdView> {
     // The POST returns the fresh ClaudeMdView (content + new version) — the caller re-syncs baseline+version from it.
-    return this.rest.post<ClaudeMdView>(`/api/agents/${encodeURIComponent(agentId)}/claude-md`, update)
+    return this.rest.post(`/api/agents/${encodeURIComponent(agentId)}/claude-md`, update, contractResponse('ClaudeMdView', ClaudeMdViewSchema))
   }
   setAvatarPreset(agentId: string, preset: Preset): Promise<Agent> {
     // AgentEdit with ONLY avatar set (role omitted = preserve; avoids the last-PO guard false-positive). Returns the
     // edited Agent so the caller re-syncs agent.avatar from the server (non-optimistic).
-    return this.rest.put<Agent>(`/api/agents/${encodeURIComponent(agentId)}`, { avatar: preset })
+    return this.rest.put(`/api/agents/${encodeURIComponent(agentId)}`, { avatar: preset }, contractResponse('Agent', AgentSchema))
   }
   async uploadAvatar(agentId: string, file: File): Promise<AgentDetail> {
     // Multipart — RestClient can't send FormData; a raw fetch mirroring its auth (operator Bearer if present, else the
@@ -360,14 +376,14 @@ export class RestHubRepo implements HubRepo {
     await this.rest.delete<void>(`/api/agents/${encodeURIComponent(agentId)}/avatar`)
   }
   getChannelShare(channelId: string): Promise<ChannelShareView> {
-    return this.rest.get<ChannelShareView>(`/api/channels/${encodeURIComponent(channelId)}/share`)
+    return this.rest.get(`/api/channels/${encodeURIComponent(channelId)}/share`, contractResponse('ChannelShareView', ChannelShareViewSchema))
   }
   shareChannel(channelId: string, sharedWith: string[]): Promise<ChannelShareView> {
     // AuthorizeShareRequest { sharedWith } — REST-only DTO, hand-modeled (not in the asyncapi export).
-    return this.rest.put<ChannelShareView>(`/api/channels/${encodeURIComponent(channelId)}/share`, { sharedWith })
+    return this.rest.put(`/api/channels/${encodeURIComponent(channelId)}/share`, { sharedWith }, contractResponse('ChannelShareView', ChannelShareViewSchema))
   }
   unshareChannel(channelId: string): Promise<ChannelShareView> {
     // The server responds 200 + the fresh view echo ({shared:false}), NOT 204 — RestClient parses the JSON echo.
-    return this.rest.delete<ChannelShareView>(`/api/channels/${encodeURIComponent(channelId)}/share`)
+    return this.rest.delete(`/api/channels/${encodeURIComponent(channelId)}/share`, contractResponse('ChannelShareView', ChannelShareViewSchema))
   }
 }

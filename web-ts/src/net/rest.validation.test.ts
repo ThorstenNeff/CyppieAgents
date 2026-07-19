@@ -84,18 +84,20 @@ describe('CYP-737 — a 200 whose body breaks the contract is a FAILED read, not
     await expect(new RestClient('http://x').get('/api/whatever')).resolves.toMatchObject({ anything: true })
   })
 
-  it('★ COVERAGE, visible not assumed: the honesty-critical reads are validated, the rest is counted', () => {
-    // A partial rollout is fine; a partial rollout that LOOKS complete is not. This prints the remaining gap
-    // instead of leaving it to memory, and fails if a validated read silently loses its validator.
+  it('★ COVERAGE: EVERY response the client actually reads is validated — the rest is void/ignored by contract', () => {
+    // Phase 2 completes the rollout. The rule is not "validate everything" but "validate everything we READ": a
+    // response whose body the client discards cannot become a false claim, so a validator there would be
+    // ceremony. What must never happen is a CONSUMED response going unchecked — that is the F1 class.
     const repo = readFileSync(resolve(process.cwd(), 'src/state/restRepo.ts'), 'utf8')
-    const mustValidate = ['RepoConfigView', 'ApiKeyView', 'AuthMe', 'Agent[]', 'ChannelReadState[]', 'Capacity']
-    for (const schema of mustValidate) {
-      expect(repo).toContain(`contractResponse('${schema}'`)
-    }
-    const validated = (repo.match(/contractResponse\(/g) ?? []).length
-    const bareGets = (repo.match(/this\.rest\.(get|post|put|delete)</g) ?? []).length
-    // Not an assertion on the remainder — a record of it, so the next reader sees the real state.
-    console.info(`[CYP-737] validated reads: ${validated}; still-cast call sites: ${bareGets}`)
-    expect(validated).toBeGreaterThanOrEqual(mustValidate.length)
+    const stillCast = [...repo.matchAll(/this\.rest\.(?:get|post|put|delete)<([^>]*)>/g)].map((m) => m[1])
+    // `unknown`/`void` = the body is deliberately not read. Anything else here is a consumed-but-unvalidated read.
+    const consumedButUnchecked = stillCast.filter((t) => t !== 'unknown' && t !== 'void')
+    console.info(`[CYP-737] validated: ${(repo.match(/contractResponse\(/g) ?? []).length}; ` +
+      `unread bodies (ok): ${stillCast.length - consumedButUnchecked.length}; consumed-but-unchecked: ${consumedButUnchecked.join(', ') || 'none'}`)
+    // ProjectDeleteReceipt is the one exception, and it is a CONTRACT discrepancy rather than a missed validator:
+    // openapi declares DELETE /api/projects/{id} as 204 no-body, while the client hand-models a four-field
+    // receipt. There is no schema to validate against because the contract says there is no body. Flagged to
+    // Backend2; harmless today only because the caller discards it (`.then(() => undefined)`).
+    expect(consumedButUnchecked).toEqual(['ProjectDeleteReceipt'])
   })
 })
