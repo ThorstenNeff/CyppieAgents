@@ -12,9 +12,9 @@
     <!-- CYP-323: unsichtbare SR-Kennzeichnung des menschlichen Turns (das visuelle „›" ist dekorativ/hidden). %1$s = Nachrichtentext. -->
     <string name="a11y_user_turn">Deine Nachricht: %1$s</string>
     <string name="agent_turn_undelivered">Zustellung nicht bestätigt</string>
-    <!-- CYP-738 — agent composer send-writability tri-state (wording to be confirmed by UIUX) -->
-    <string name="agent_composer_readonly_hint">Nur lesend — du darfst diesem Agenten keine Nachricht senden.</string>
-    <string name="agent_composer_unknown_hint">Schreibrecht derzeit nicht bestimmbar — Eingabe vorübergehend deaktiviert.</string>
+    <!-- CYP-738/CYP-743 — agent composer send-writability tri-state (UIUX-confirmed; no "temporarily" — pre-deploy holds indefinitely) -->
+    <string name="agent_composer_readonly_hint">Nur lesend — für diesen Agenten hast du kein Schreibrecht. Ein Operator kann es freischalten.</string>
+    <string name="agent_composer_unknown_hint">Schreibrecht ließ sich nicht prüfen — Senden ist sicherheitshalber gesperrt.</string>
     <string name="a11y_agent_turn_undelivered">Agenten-Turn: Zustellung nicht bestätigt</string>
     <!-- CYP-326 #1: injizierte System-/Orchestrator-Nachricht im Agenten-Verlauf (Label + unsichtbare SR-Kennzeichnung). -->
     <string name="transcript_system_label">System</string>
