@@ -184,8 +184,9 @@ private fun MigratableRow(store: MigratableStore, isOperator: Boolean, onStartMi
                 modifier = Modifier.testTag(MigrationTags.storeMigrate(store.storeKey)),
             ) { Text(stringResource(Res.string.migration_start)) }
         }
-        // CYP-730 §2.2b — the LEGACY_UNEVALUATED action line: this store is frozen READ_ONLY because its
-        // migratability was never evaluated, so it needs a review before a migration can start.
+        // CYP-730 §2.2b — the LEGACY_UNEVALUATED action line: this store was frozen fail-closed (CYP-714) because
+        // its binding predates state-evaluation; writes stay blocked NOW until an operator reviews it (not a
+        // migration precondition — the freeze is active regardless of whether anyone intends to migrate).
         if (store.state == StoreBindingState.READ_ONLY && store.readOnlyReason == ReadOnlyReason.LEGACY_UNEVALUATED) {
             Text(
                 text = stringResource(Res.string.migration_legacy_action),
