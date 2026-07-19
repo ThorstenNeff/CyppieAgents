@@ -47,3 +47,28 @@ Der **Wert** des Cues liegt bei **UNGEÖFFNETEN** Kanälen (eine Mention im offe
 - **Rendering:** Nav-Badge-Pattern (CYP-705); die Datenquelle wechselt (A: client-`mentionSegments` · B: Server-Fakt), der „@"-Cue bleibt distinkt vom Unread-Badge (§2).
 - **Agent-scoped (`human-identity: n`)** — löst nur Kanäle/`@agent` auf, nie einen Menschen.
 - **Grenze:** „DEINE Mentions" = **(j) STOP**; diese Spec ist rein „Kanal enthält `@agent`-Mention".
+
+## §6 (B) server-computed — Framing für PL/Backend2 (Follow-up-Kandidat)
+**Was:** ein **server-berechneter, viewer-independent-public** Fakt je Kanal „enthält ≥1 `@agent`-Mention", auf der Kanalliste ausgeliefert. Ersetzt die client-`mentionSegments`-Detection; **derselbe „@"-Render** (§2), nur die Datenquelle wechselt.
+**Warum:** der Server sieht **alle** Nachrichten → **vollständig**, cued auch **ungeöffnete** Kanäle (der eigentliche Use-Case, den (A) strukturell nicht erreicht). Der 3. Zustand **entfällt** — Abwesenheit des Flags = **autoritativ keine Mention** (legitim still, kein Unbekannt mehr).
+
+**★ Harte Invariante — der Server BESITZT die Regel, der Client zeigt nur:** der Server resolved `@agent` mit **derselben** Regel wie `mentionSegments`/die inline-Chips (roster-resolved Agent-ID; unbekanntes `@token` ≠ Mention; email-förmiger Body ≠ Mention; Code exempt — CYP-704-Regeln). **Ein** Resolver, sonst driftet der Cue gegen die Chips (der CYP-704-Zwei-Resolver-Fehler). **Der Client re-computet NICHTS.**
+
+**Kontrakt-Shape (Vorschlag, PL/Backend2 final):**
+- **Minimal:** `Channel.hasAgentMention: Boolean` (present-only-Fakt).
+- **Forward-kompatibel (empfohlen):** `Channel.mentionedAgentIds: List<String>` (welche Agenten erwähnt sind; Cue = `isNotEmpty()`). Ein Feld, viewer-independent, ermöglicht später die §4-Verfeinerung + per-Agent-Filter — **bleibt `n`** (Agent-IDs, nie ein Mensch).
+- **Auslieferung:** Initialwert in `GET /api/channels`; **Live-Update** über den bestehenden `ChannelsEvent` (`/ws/comm`, 02 §8.2) bei neuer Mention → der Cue eines **ungeöffneten** Kanals leuchtet ohne Refetch. (Ohne Live = stale-complete = eigene Unehrlichkeit: Mention kommt, Cue bleibt dunkel.) **Kein** Client-Re-Derive aus Message-Events (das wäre der zweite Resolver).
+- **ACL-scoped:** den Flag nur für Kanäle liefern, die der Aufrufer **lesen** darf (wie die Messages) — viewer-independent-public heißt „nicht viewer-*spezifisch*", nicht „an ACL vorbei".
+
+**Honesty unter (B):**
+- **present-only** bleibt (Cue bei has-mention, sonst nichts) — Abwesenheit ist jetzt **autoritativ** clear (Server-vollständig), **kein** Unbekannt-Marker nötig.
+- **fail-closed Degradation:** fehlt der Flag (alter Server / Fehler), zeigt der Client **keinen** Cue (nie einen geratenen) — still, present-only.
+- **viewer-independent → `human-identity: n`:** der Fakt hat **keinen** Viewer-Parameter → „DEINE Mentions" bleibt strukturell unerreichbar. „@Mensch"/human-targeting bräuchte Identität → `j` → PL-Weiche, **nicht** hier.
+
+**Diskriminierende Zähne (B):**
+1. **Server-owns-rule** — Client zeigt nur; ein Client-Re-Derive neben dem Server-Fakt → RED (CYP-704-Drift).
+2. **Live-Update** — Mention in ungeöffnetem Kanal → Cue leuchtet ohne Refetch (via `ChannelsEvent`). *(Mutation: Flag nur beim initialen GET → RED = stale-complete.)*
+3. **ACL-scoped** — Flag nur für lesbare Kanäle. *(Mutation: Flag für nicht-lesbaren Kanal geliefert → RED.)*
+4. **viewer-independent** — kein Viewer-Param im Fakt. *(Mutation: der Fakt hängt vom Aufrufer ab → RED = wäre human-identity `j`.)*
+
+**Migration (A)→(B):** reiner Datenquellen-Swap hinter demselben Surface — `channelHasMention(loadedMessages, roster)` → `channel.mentionedAgentIds.isNotEmpty()`; der 3. Zustand + das Verbot entfallen (Daten vollständig). Kein Render-Umbau, keine neuen i18n-Keys.
