@@ -4,7 +4,7 @@
 **Baseline (am Objekt):** develop, web-ts single-hub-Identität — `state/hubConfig.ts`, `platform/operatorToken.ts`, `platform/appConfig.ts`, `auth/authConfig.ts`, `auth/AuthGate.tsx`, `net/rest.ts`.
 **Art:** **Design-Vorarbeit.** Dies sind **ANFORDERUNGEN an den Trust-Kontrakt (Input für Team-1s Aussteller-Design)** — **kein** angenommener Kontrakt. Wo unten „der Kontrakt muss …" steht, ist das ein **Bedarf**, keine Festlegung des Mechanismus (Token-Format, Signatur, Aussteller-Protokoll = Team-1 + Reviewer/Security).
 **Scope (PL/po-gepinnt, CYP-747):** **mehrere Hub-Identitäten DESSELBEN Operators** — **keine** fremden/Cross-Operator-Hubs. Alles unten ist same-operator-multi-hub; Föderation mit fremden Operatoren ist **außer Scope**.
-**human-identity:** **n mit benannter j-Weiche** — die Client-*Bedarfe* (UX/State) sind agent-/seat-scoped (n). **Ob** „eine Operator-Identität über mehrere Hubs" ein **fixer Seat** bleibt oder zu einer **portablen Menschen-/Prinzipal-Identität** wird (Aussteller = Identity-Provider), ist die **offene j-Frage** — §5.Q1, **PL/Team-1**, nicht hier entschieden.
+**human-identity:** **n / seat-scoped — RESOLVED (PL, volle Zuversicht, 2026-07-19).** Die Client-*Bedarfe* (UX/State) sind seat-scoped (n). **Objekt-Grund:** `pinnedOperatorId` + Operator-Device-PoP **IST** der funktionale Operator-Seat (kein modellierter Mensch); Modell 2 **generalisiert genau diesen Seat** über die Hubs; `AuthMe` ist pausiert → ein portabler Mensch ist heute gar nicht baubar. **Die j-Weiche bleibt benannt+markiert** (nicht offen, nicht gelöscht): würde „eine Operator-Identität über Hubs" morgen eine **portable Menschen-/Prinzipal-Identität** meinen (Aussteller = IdP für einen Menschen), wäre das eine **separate, größere §5b/AuthMe-Weiche** — sichtbares Delta, **PL/Auftraggeber**, nicht hier. Siehe §3, §4.Q1.
 
 ---
 
@@ -82,14 +82,14 @@ Nicht verhandelbar, egal welchen Mechanismus Team-1 wählt:
 ## §3 Was ich BEWUSST NICHT designe (die n/j-Grenze)
 
 - **Ich NICHT:** Proof-/Token-Format, Signatur/Krypto, Aussteller-Protokoll, Credential-Lebensdauer/Rotation, die erlaubte Cross-Origin/CSP-Menge. Das ist **Team-1 + Reviewer/Security**. Ich liefere **Bedarfe/Zustände/UX-Anforderungen** dazu.
-- **n heute:** die Client-*Bedarfe* sind seat-/agent-scoped (der Operator-Seat, fest wie heute `operatorToken`) → **n**.
-- **★ Die j-Weiche (benannt, nicht still):** **wenn** §5.Q1 ergibt, dass „eine Operator-Identität über mehrere Hubs" eine **portable Menschen-/Prinzipal-Identität** meint (Aussteller = Identity-Provider, der einen *Menschen* über Hubs trägt), dann berührt **das** j — **explizite PL-Weiche**, separat adjudiziert. Ich rahme es als offene Frage, **löse es nicht** ([[scope-boundary-is-semantic-not-labeled]]).
+- **n — RESOLVED (PL, volle Zuversicht):** die Client-*Bedarfe* sind seat-scoped → **n**. Der Seat ist real am Objekt: `pinnedOperatorId` + Operator-Device-PoP **ist** der funktionale Operator-Seat (kein modellierter Mensch); Modell 2 **generalisiert diesen Seat** über die Hubs. `AuthMe` pausiert → portabler Mensch heute nicht baubar. **Kein Platzhalter.**
+- **★ Die j-Weiche (benannt+markiert, nicht offen, nicht gelöscht):** würde „eine Operator-Identität über Hubs" morgen eine **portable Menschen-/Prinzipal-Identität** meinen (Aussteller = IdP für einen *Menschen*), wäre das eine **separate, größere §5b/AuthMe-Weiche** — **PL/Auftraggeber**, separat adjudiziert. Ich halte das **Delta sichtbar** (falls der Scope kippt), **löse es aber nicht** und **blockiere nicht darauf** ([[scope-boundary-is-semantic-not-labeled]]).
 
 ---
 
 ## §4 Offene Fragen (Input, den ich von Team-1/PL zurück brauche)
 
-- **Q1 (j-kritisch):** Ist die „eine Operator-Identität über Hubs" ein **fixer Seat** (n) oder eine **portable Menschen-/Prinzipal-Identität** (j)? Entscheidet §3s Weiche und ob weitere Bedarfe adjudiziert werden müssen.
+- **~~Q1~~ (RESOLVED 2026-07-19, PL, volle Zuversicht): SEAT (n).** „Eine Operator-Identität über Hubs" ist der **fixe Seat** — `pinnedOperatorId` + Operator-Device-PoP generalisiert über die Hubs; kein modellierter Mensch (`AuthMe` pausiert). Die **j-Variante** (portabler Mensch, Aussteller=IdP) bleibt als **separate §5b/AuthMe-Weiche benannt+markiert**, nicht offen-blockierend. (Siehe §0-Header, §3.)
 - **Q2:** Proof-**Lebensdauer/Refresh** — kurzlebig+Rotation (dann braucht der Client einen Refresh-/Re-Präsentations-Pfad, §2.N4) oder langlebig? Prägt den STALE-Zustand (§2.N3).
 - **Q3:** Ist der Vertrauens-**Widerruf** beobachtbar (Push/Signal) oder nur lazy beim nächsten Call spürbar? Prägt, wie schnell STALE ehrlich eintritt.
 - **Q4:** Wird zur Laufzeit **gleichzeitig** mit mehreren Hubs geredet (paralleler State) oder gibt es genau **einen aktiven** Hub (Wechsel = Teardown/Setup)? Prägt N1s Registry-Umfang und die N5-UX.
