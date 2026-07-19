@@ -3581,6 +3581,30 @@
                     },
                     "reprovisionPending": {
                         "type": "boolean"
+                    },
+                    "cloneStatus": {
+                        "enum": [
+                            "NOT_CONFIGURED",
+                            "CONFIGURED_NEVER_CLONED",
+                            "CLONING",
+                            "CLONE_FAILED",
+                            "CLONED_OK"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "cloneFailReason": {
+                        "enum": [
+                            "URL_UNREACHABLE",
+                            "AUTH",
+                            "UNKNOWN"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [

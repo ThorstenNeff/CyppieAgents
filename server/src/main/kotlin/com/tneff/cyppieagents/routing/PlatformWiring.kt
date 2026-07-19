@@ -203,7 +203,9 @@ fun Application.installPlatform(
             // rendezvous, lastSeen = admittedAt. INERT-safe (empty until a hub self-admits). registerHub is vestigial.
             hubDiscoveryRoutes({ cpHubRegistrar }, { relayRendezvous }, booted.tokenRegistry, authDeps, apiBase = apiBase, machineOperatorId = System.getenv("CYPPIE_OPERATOR_ID"))
             // CYP-96/CYP-102: project-settings config — GET participant (masked key), PUT operator; live pointer.
-            configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision)
+            // CYP-736: the clone-status is single-sourced from the ACTIVE project's WorktreeManager (the manager that
+            // runs the clone), resolved live like the reprovision-preview at :210 — one store, GET reads what ensureClone wrote.
+            configRoutes(booted.projectConfig, booted.tokenRegistry, booted.projectRegistry::activeProjectId, authDeps, apiBase = apiBase, reprovision = booted.repoReprovision, cloneStatus = { booted.runtimeRegistry.active().worktrees.cloneStatusStore })
             // CYP-466: GET /api/config/repo/reprovision-preview — the honest discard-confirm feed. Operator-tier,
             // LIVE per-agent at-risk work, single-sourced from the ACTIVE project's WorktreeManager.unpushedWork()
             // (the SAME function the re-provision block decision uses → confirm == block).

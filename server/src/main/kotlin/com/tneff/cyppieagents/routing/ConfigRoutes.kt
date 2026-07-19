@@ -37,6 +37,9 @@ fun Route.configRoutes(
     apiBase: String = "/api",
     // CYP-247 S2: null (dev/tests) → the view never carries the pending flag and a PUT marks nothing.
     reprovision: com.tneff.cyppieagents.boot.RepoReprovision? = null,
+    // CYP-736: the live clone-status store (resolved from the active project's WorktreeManager). null (dev/tests)
+    // → the view never carries a cloneStatus (the client decodes NOT_CONFIGURED/CONFIGURED_NEVER_CLONED, never OK).
+    cloneStatus: (() -> com.tneff.cyppieagents.boot.CloneStatusStore)? = null,
 ) {
     route("$apiBase/config") {
         // GET = any authenticated reader — agent/operator token OR a verified human (incl. a MEMBER session,
@@ -45,7 +48,12 @@ fun Route.configRoutes(
             call.requireCommReader(deps, registry)
             val pid = activeProjectId()
             // CYP-247 S2: surface the pending-re-provision (EFFECT_DEFERRED) so the UI shows "takes effect on restart".
-            call.respond(store.repoView(pid).copy(reprovisionPending = reprovision?.pending(pid) != null))
+            val view = store.repoView(pid).copy(reprovisionPending = reprovision?.pending(pid) != null)
+            // CYP-736: surface the live clone lifecycle. The ③-invariant is enforced HERE at the wire boundary via
+            // cloneStatusForWire (a non-null cloneStatus ONLY when configured) — so `configured=false`+CLONED_OK can
+            // never leave the server. A null cloneStatus → the client decodes NOT_CONFIGURED/CONFIGURED_NEVER_CLONED.
+            val cs = com.tneff.cyppieagents.boot.cloneStatusForWire(view.configured, cloneStatus?.invoke()?.get(pid))
+            call.respond(view.copy(cloneStatus = cs?.status, cloneFailReason = cs?.reason))
         }
         get("/apikey") {
             call.requireCommReader(deps, registry)

@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.boot
 
 import com.tneff.cyppieagents.model.AtRiskAgent
+import com.tneff.cyppieagents.model.CloneStatus
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -41,6 +42,12 @@ class WorktreeManager(
      * (`projectId`) at boot; defaulted so existing constructions resolve to the one MVP project.
      */
     private val activeProjectId: String = DEFAULT_PROJECT_ID,
+    /**
+     * CYP-736 — the clone-status store this manager reports its clone lifecycle into (CLONING → CLONED_OK /
+     * CLONE_FAILED+reason). Default = a fresh in-mem store so existing constructions/tests are unchanged;
+     * [forProject] propagates the SAME instance so every project runtime + the `GET /api/config/repo` read ONE status.
+     */
+    val cloneStatusStore: CloneStatusStore = InMemoryCloneStatusStore(),
 ) {
     private val log = LoggerFactory.getLogger("boot.worktree")
     // CYP-247 S1: per-project clone (was the shared gitRoot/repo). forProject(pid) → clones/<pid>.
@@ -56,7 +63,7 @@ class WorktreeManager(
      * [ProjectRuntimeFactory] mints one per project runtime so a spawn lands in that project's clone+root;
      * [ensureClone] is LAZY (D6) — called on first worktree need for a non-boot project.
      */
-    fun forProject(projectId: String): WorktreeManager = WorktreeManager(runner, gitRoot, projectId)
+    fun forProject(projectId: String): WorktreeManager = WorktreeManager(runner, gitRoot, projectId, cloneStatusStore)
 
     /** Clone [repo] into this project's [repoDir] (`clones/<projectId>`) if not already a git repo. Idempotent.
      *  CYP-639: an UNCONFIGURED repo (blank / a `REPLACE_ME_*` provisioning placeholder) is a no-op — a fresh
@@ -66,15 +73,26 @@ class WorktreeManager(
     fun ensureClone(repo: RepoConfig) {
         if (!repo.isConfigured) {
             log.info("repo not configured (url='{}') — skipping clone; the operator sets the repo via the GUI (CYP-639)", repo.url)
+            // CYP-736: record NOTHING for an unconfigured repo → the GET yields a null cloneStatus → the client
+            // decodes NOT_CONFIGURED (never CLONED_OK). The ③-invariant (non-null ONLY when configured) holds.
             return
         }
         if (File(repoDir, ".git").exists()) {
             log.info("repo clone already present at {}", repoDir)
+            cloneStatusStore.report(activeProjectId, CloneStatus.CLONED_OK) // CYP-736: an existing clone IS cloned-ok
             return
         }
         gitRoot.mkdirs()
+        cloneStatusStore.report(activeProjectId, CloneStatus.CLONING) // CYP-736: clone in flight
         val res = runner.run(listOf("git", "clone", "--branch", repo.branch, repo.url, repoDir.absolutePath), gitRoot)
-        check(res.exitCode == 0) { "git clone failed (exit ${res.exitCode})" }
+        if (res.exitCode != 0) {
+            // CYP-736: record the failure (with a single-sourced reason) BEFORE the throw, so the boot's
+            // `runCatching` still TOLERATES a bad repo (BootOrchestrator) — but the GET now surfaces
+            // CLONE_FAILED+reason instead of the pre-CYP-736 SWALLOWED error.
+            cloneStatusStore.report(activeProjectId, CloneStatus.CLONE_FAILED, classifyCloneFailure(res.output))
+            error("git clone failed (exit ${res.exitCode})")
+        }
+        cloneStatusStore.report(activeProjectId, CloneStatus.CLONED_OK) // CYP-736: fresh clone succeeded
     }
 
     /**

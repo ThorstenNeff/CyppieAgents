@@ -13,6 +13,27 @@ import kotlinx.serialization.Serializable
  * to a client. The repo URL is not a secret and round-trips in full.
  */
 
+/**
+ * CYP-736 — the guided-first-run repo clone lifecycle on the wire (`GET /api/config/repo`). The values MIRROR
+ * the CMP-side CYP-629 `com.tneff.cyppieagents.firstrun.CloneStatus` VERBATIM (that enum is the client DISPLAY
+ * axis; a follow-up typealiases it onto THIS `:core` type so the two single-source). This `:core` type is the
+ * WIRE AUTHORITY the server stamps and every client decodes.
+ *
+ * Honesty (CYP-629 §1): a client that cannot yet know the status must NOT read `CLONED_OK` — an absent
+ * [RepoConfigView.cloneStatus] (`null`, i.e. not-yet-known / a pre-CYP-736 server) decodes to
+ * `CONFIGURED_NEVER_CLONED` (if the repo is configured) else `NOT_CONFIGURED`, NEVER `CLONED_OK`.
+ */
+@Serializable
+enum class CloneStatus { NOT_CONFIGURED, CONFIGURED_NEVER_CLONED, CLONING, CLONE_FAILED, CLONED_OK }
+
+/**
+ * CYP-736 — why a [CloneStatus.CLONE_FAILED] (mirrors the CYP-629 CMP `CloneFailReason`). The server GUARANTEES
+ * a non-null reason WHENEVER `cloneStatus == CLONE_FAILED` — an unclassifiable failure is [UNKNOWN] (honest),
+ * never a guessed `AUTH`/`URL_UNREACHABLE`.
+ */
+@Serializable
+enum class CloneFailReason { URL_UNREACHABLE, AUTH, UNKNOWN }
+
 /** GET/PUT /api/config/repo response: the active project's repo, or `configured=false` when unset. */
 @Serializable
 data class RepoConfigView(
@@ -26,6 +47,16 @@ data class RepoConfigView(
      * "takes effect on next restart" hint. Additive (default false); the field is set by the config route.
      */
     val reprovisionPending: Boolean = false,
+    /**
+     * CYP-736 — the guided-first-run clone lifecycle. `null` = UNKNOWN / not-yet-known (repo unconfigured, or
+     * a pre-CYP-736 server): the client's `decodeCloneStatus` derives `CONFIGURED_NEVER_CLONED` (if [configured])
+     * else `NOT_CONFIGURED` — NEVER a false `CLONED_OK`. **Server INVARIANT (③): non-null ONLY when
+     * [configured] == true** (enforced at the config-route wire boundary + tested), so `configured=false`+`CLONED_OK`
+     * can never appear on the wire — the client's contradiction-guard backstops a promise, not a primary defense.
+     */
+    val cloneStatus: CloneStatus? = null,
+    /** CYP-736 — the failure reason, non-null WHENEVER [cloneStatus] == [CloneStatus.CLONE_FAILED] (②), else null. */
+    val cloneFailReason: CloneFailReason? = null,
 )
 
 /** PUT /api/config/repo body. */
