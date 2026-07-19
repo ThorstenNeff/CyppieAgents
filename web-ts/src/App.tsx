@@ -297,7 +297,15 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
       {
         onCommEvent,
         onTerminalControl,
-        onCommOpen: () => setCommConnection('live'),
+        // CYP-705 ⑥ (UIUX2 §9b) — a reconnect MUST re-fetch the read-state, not just flip the banner. While the
+        // socket was down the cursor may have advanced elsewhere (another device, another tab), so the counts we
+        // still hold are stale — and rendering stale counts as current is the same lie as a fabricated zero, just
+        // aged. The client re-asks rather than waiting for a server push, so it does not depend on the server
+        // choosing to resend after a gap it cannot see.
+        onCommOpen: () => {
+          setCommConnection('live')
+          loadReadState()
+        },
         // CYP-437(b): an unexpected drop flips the banner off 'live'; a 1008 (auth revoked) is terminal → 'revoked'.
         onCommClose: (code) => setCommConnection(code === 1008 ? 'revoked' : 'offline'),
         // CYP-445-QA minor (folded into CYP-446): a server run-state event also RESOLVES the transient action-reject

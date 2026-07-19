@@ -246,3 +246,31 @@ describe('CYP-705 — applyCommEvent folds ReadStateEvent', () => {
     expect(s.channels.map((c) => c.id)).toEqual(['po-frontend'])
   })
 })
+
+// ── CYP-705 ⑥ — transition honesty: no flash, idempotent echoes ───────────────────────────────────────────────
+describe('CYP-705 ⑥ — read-state transitions', () => {
+  it('★ unavailable → available never passes through a fabricated "read" for an unlisted channel', () => {
+    // The transition must not momentarily claim all-clear: before the answer every channel is unknown, and after
+    // it only the LISTED ones become known. An unlisted channel stays unknown across the whole transition.
+    expect(channelUnread(emptyHubState.unreadView, 'b')).toEqual({ kind: 'unknown' })
+    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 3, unreadCount: 1 })
+    expect(channelUnread(s.unreadView, 'a')).toEqual({ kind: 'unread', count: 1 })
+    expect(channelUnread(s.unreadView, 'b')).toEqual({ kind: 'unknown' }) // no flash to read/zero
+  })
+
+  it('★ a duplicated ReadStateEvent is idempotent — reconnect replay cannot double-count', () => {
+    // The server may resend after a reconnect; the count is server-computed, so applying it twice must equal
+    // applying it once. (Client-side arithmetic is exactly what the contract forbids.)
+    const ev = { type: 'readState', channelId: 'a', lastReadSeq: 7, unreadCount: 4 } as const
+    const once = applyCommEvent(emptyHubState, ev)
+    const twice = applyCommEvent(once, ev)
+    expect(channelUnread(twice.unreadView, 'a')).toEqual(channelUnread(once.unreadView, 'a'))
+    expect(channelUnread(twice.unreadView, 'a')).toEqual({ kind: 'unread', count: 4 })
+  })
+
+  it('★ an out-of-order echo does not resurrect a cleared badge by arithmetic — last server word wins', () => {
+    let s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0 })
+    s = applyCommEvent(s, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0 })
+    expect(channelUnread(s.unreadView, 'a')).toEqual({ kind: 'read' })
+  })
+})
