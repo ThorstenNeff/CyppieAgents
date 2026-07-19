@@ -651,6 +651,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           loadError={rosterLoadError}
           onRetryLoad={loadRoster}
           runStateByAgent={runStateByAgent}
+          busyByAgent={busyByAgent}
           onCreate={onCreateAgent}
           onUpdate={onUpdateAgent}
           onRemove={onRemoveAgent}

@@ -241,6 +241,24 @@ body {
   color: var(--md-sys-color-on-error-container);
 }
 
+/* CYP-741 — roster presence: the dot is the SAME shape/role pair as the LifecycleHeader below (inline styles carry
+   the fill-vs-ring geometry, as in the header); these rules only place it. The busy marker is deliberately its own
+   shape, never folded into the dot — run-state and busy are different facts.
+   Placed HERE rather than at the top of this section (where the rebase conflict with CYP-740 arose): both tickets
+   appended after the CYP-437 banner-tones comment, which had already left that comment orphaned from its own
+   `.comm-status-*` rules. Keeping the comment adjacent to what it documents also retires the shared insertion
+   point, so the next additive rule does not collide the same way. Both selectors are unique — no cascade change. */
+.agent-mgmt-dot {
+  display: inline-block;
+  margin-right: 6px;
+  flex: 0 0 auto;
+}
+.agent-mgmt-busy {
+  margin-left: 4px;
+  color: var(--md-sys-color-primary);
+  font-size: 0.7rem;
+}
+
 /* CYP-431 (P2-a) — the agent lifecycle header. CYP-369 distribution: the controls cluster is flex-shrink:0 (every
    control keeps width>0 at a narrow window); the status cluster (min-width:0) shrinks and the label ellipsises. */
 .lifecycle-header {
