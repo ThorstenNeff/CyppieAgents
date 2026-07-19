@@ -1821,8 +1821,15 @@
                     }
                 ],
                 "responses": {
-                    "204": {
-                        "description": "success"
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectDeleteReceipt"
+                                }
+                            }
+                        }
                     },
                     "4XX": {
                         "description": "error envelope",
@@ -3871,6 +3878,29 @@
                 },
                 "required": [
                     "name"
+                ]
+            },
+            "ProjectDeleteReceipt": {
+                "type": "object",
+                "properties": {
+                    "projectId": {
+                        "type": "string"
+                    },
+                    "configRemoved": {
+                        "type": "boolean"
+                    },
+                    "eventsRemoved": {
+                        "type": "integer"
+                    },
+                    "worktreesRemoved": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "projectId",
+                    "configRemoved",
+                    "eventsRemoved",
+                    "worktreesRemoved"
                 ]
             },
             "ChannelShareView": {
