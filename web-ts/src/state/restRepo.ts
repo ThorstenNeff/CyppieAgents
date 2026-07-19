@@ -2,8 +2,17 @@
 // in tests. Channels/ACL ride the generated contract types (they appear in the WS schema too). The mode-change
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
-import { RestClient, RestError } from '../net/rest'
+import { RestClient, RestError, contractResponse} from '../net/rest'
 import { operatorToken } from '../platform/operatorToken'
+import {
+  AgentSchema,
+  ApiKeyViewSchema,
+  AuthMeSchema,
+  CapacitySchema,
+  ChannelReadStateSchema,
+  RepoConfigViewSchema,
+} from '../types/generated/contractSchemas'
+import { z } from 'zod'
 import type {
   ChannelReadState,
   AclEntry,
@@ -203,7 +212,8 @@ export class RestHubRepo implements HubRepo {
     this.rest = new RestClient(apiBase)
   }
   fetchAgents(): Promise<Agent[]> {
-    return this.rest.get<Agent[]>('/api/agents')
+    // CYP-737: validated — a malformed roster otherwise becomes "no agents", an invented fact.
+    return this.rest.get('/api/agents', contractResponse('Agent[]', z.array(AgentSchema)))
   }
   fetchChannels(): Promise<Channel[]> {
     return this.rest.get<Channel[]>('/api/channels')
@@ -212,7 +222,8 @@ export class RestHubRepo implements HubRepo {
     return this.rest.get<AclEntry[]>('/api/acl')
   }
   fetchReadState(): Promise<ChannelReadState[]> {
-    return this.rest.get<ChannelReadState[]>('/api/read-state')
+    // CYP-737: a malformed entry would otherwise become a confident unread count.
+    return this.rest.get('/api/read-state', contractResponse('ChannelReadState[]', z.array(ChannelReadStateSchema)))
   }
   markRead(channelId: string, upToSeq: number): Promise<ChannelReadState> {
     return this.rest.post<ChannelReadState>(`/api/channels/${encodeURIComponent(channelId)}/read`, { upToSeq })
@@ -237,7 +248,8 @@ export class RestHubRepo implements HubRepo {
     return this.rest.post<AgentRunStateEvent>(`/api/agents/${encodeURIComponent(agentId)}/${action}`)
   }
   getApiKey(): Promise<ApiKeyView> {
-    return this.rest.get<ApiKeyView>('/api/config/apikey')
+    // CYP-737: a malformed view otherwise reads as "kein Schlüssel hinterlegt" — a false, leak-sensitive claim.
+    return this.rest.get('/api/config/apikey', contractResponse('ApiKeyView', ApiKeyViewSchema))
   }
   putApiKey(apiKey: string): Promise<ApiKeyView> {
     // write-only: the plaintext goes up in the body; the response is the MASKED view (no plaintext back).
@@ -259,7 +271,8 @@ export class RestHubRepo implements HubRepo {
     await this.rest.delete<void>(`/api/agents/${encodeURIComponent(id)}${q}`)
   }
   getRepoConfig(): Promise<RepoConfigView> {
-    return this.rest.get<RepoConfigView>('/api/config/repo')
+    // CYP-737 (F1's root): a 200 without `configured` used to read as "hub not set up".
+    return this.rest.get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
   }
   putRepoConfig(req: RepoConfigRequest): Promise<RepoConfigView> {
     return this.rest.put<RepoConfigView>('/api/config/repo', req)
@@ -284,7 +297,8 @@ export class RestHubRepo implements HubRepo {
     return this.rest.post<ReportSnapshot>('/api/reports', req)
   }
   fetchAuthMe(): Promise<AuthMe> {
-    return this.rest.get<AuthMe>('/api/auth/me')
+    // CYP-737: the auth state gates the whole app — an uninterpretable body must fail, not default.
+    return this.rest.get('/api/auth/me', contractResponse('AuthMe', AuthMeSchema))
   }
   getProjects(): Promise<ProjectsView> {
     return this.rest.get<ProjectsView>('/api/projects')
@@ -302,7 +316,8 @@ export class RestHubRepo implements HubRepo {
     return this.rest.delete<ProjectDeleteReceipt>(`/api/projects/${encodeURIComponent(id)}?deleteWorktrees=${deleteWorktrees}`)
   }
   getCapacity(): Promise<Capacity> {
-    return this.rest.get<Capacity>('/api/capacity')
+    // CYP-737: capacity drives a pill that must never invent numbers.
+    return this.rest.get('/api/capacity', contractResponse('Capacity', CapacitySchema))
   }
   getCompactStatus(): Promise<CompactStatus> {
     return this.rest.get<CompactStatus>('/api/compact/status')

@@ -18,7 +18,7 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { jsonSchemaToZod } from 'json-schema-to-zod'
-import { buildContractRootSchema } from './contractSchema.mjs'
+import { buildContractRootSchema, restResponseRoots } from './contractSchema.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
@@ -58,10 +58,24 @@ const deref = (node, stack) => {
   return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, deref(v, stack)]))
 }
 
+// CYP-737 — the REST response roots, DERIVED from the openapi paths (not hand-listed): 67 operations would rot a
+// manual list, and the rot is silent — a new endpoint simply goes unvalidated while coverage still looks complete.
+// An inline (unnamed) response schema cannot become a named root; those are REPORTED rather than dropped, so the
+// gap stays visible instead of becoming an invisible hole in the coverage story.
+const { roots: REST_ROOTS, inlineOps } = restResponseRoots()
+if (inlineOps.length > 0) {
+  console.warn(
+    `[CYP-737] ⚠  ${inlineOps.length} REST operation(s) return an INLINE (unnamed) schema and therefore get no ` +
+      `generated validator: ${inlineOps.join(', ')}. Give the response a named :core DTO to bring it under validation.`,
+  )
+}
+// WS roots first (stable output order), then the REST roots not already covered by a WS frame.
+const ALL_ROOTS = [...FRAME_ROOTS, ...REST_ROOTS.filter((n) => !FRAME_ROOTS.includes(n))]
+
 const chunks = []
-for (const name of FRAME_ROOTS) {
+for (const name of ALL_ROOTS) {
   const schema = defs[name]
-  if (schema === undefined) throw new Error(`[CYP-420] frame root ${name} missing from the contract — fail-closed.`)
+  if (schema === undefined) throw new Error(`[CYP-420/737] root ${name} missing from the contract — fail-closed.`)
   const body = jsonSchemaToZod(deref(schema, [name]), { name: `${name}Schema`, module: 'esm', type: false })
   // strip the per-schema import line; one shared import goes in the banner
   chunks.push(body.replace(/^import \{ z \} from "zod"\s*/m, '').trim())
@@ -91,7 +105,12 @@ if (/\$ref/.test(generated)) {
 // count catches BOTH a $ref that silently degraded to `z.any()` AND the free-form set quietly GROWING (a new
 // untyped field is a real reduction in validation coverage and must be a conscious, reviewed change — not a
 // silent one). Raising this number is allowed; doing it without noticing is not.
-const BARE_ANY_EXPECTED = 8
+// CYP-737: raised 8 → 9, deliberately and after identifying the source (the guard's whole purpose is to force
+// that identification rather than a reflexive bump). The 9th is `EventPage`, whose embedded `EventSurrogate.detail`
+// is the SAME contract-untyped free-form field already accepted on the WS side via `EventsWsServerEvent` — now
+// also reachable through the REST paging response. No NEW untyped field entered the contract, and no `$ref`
+// stopped dereferencing; the identical field simply became reachable by a second route.
+const BARE_ANY_EXPECTED = 9
 const bareAnyCount = (generated.replace(/\.catchall\(z\.any\(\)\)/g, '').match(/z\.any\(\)/g) ?? []).length
 if (bareAnyCount !== BARE_ANY_EXPECTED) {
   throw new Error(
@@ -101,7 +120,7 @@ if (bareAnyCount !== BARE_ANY_EXPECTED) {
   )
 }
 // ② every frame root actually emitted an export
-const missing = FRAME_ROOTS.filter((n) => !generated.includes(`export const ${n}Schema`))
+const missing = ALL_ROOTS.filter((n) => !generated.includes(`export const ${n}Schema`))
 if (missing.length > 0) throw new Error(`[CYP-420] no schema emitted for: ${missing.join(', ')} — fail-closed.`)
 // ③ the discriminated unions kept their `type` literals — same tooth as the TS generator (CYP-399). Without the
 //    literal the union would accept any member shape for any `type`.
