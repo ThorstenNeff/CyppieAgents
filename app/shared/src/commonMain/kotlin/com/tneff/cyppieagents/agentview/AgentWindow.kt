@@ -92,6 +92,8 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_system
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_time
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_turn_undelivered
 import kmpcyppieagents.app.shared.generated.resources.a11y_user_turn
+import kmpcyppieagents.app.shared.generated.resources.agent_composer_readonly_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_composer_unknown_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_turn_undelivered
 import kmpcyppieagents.app.shared.generated.resources.transcript_system_label
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_err_agent_not_found
@@ -220,6 +222,8 @@ fun AgentWindow(
     val contentMode by viewModel.contentMode.collectAsState()
     val modeSwitching by viewModel.modeSwitching.collectAsState()
     val agentBusy by viewModel.busy.collectAsState()
+    // CYP-738: the agent composer's send-writability tri-state (dormant UNGATED until the AgentWritableApi seam is wired).
+    val composerWritability by viewModel.composerWritability.collectAsState()
     // CYP-381 §7.1: the DURABLE CONTEXT_LOST landmark. The live control-state is momentary (CONTEXT_LOST → MEDIATED
     // on the next real turn), but "the agent does not remember the scrollback above the loss" is permanent for that
     // buffer. So latch the loss instant here and NEVER clear it — anchored to the loss ts, it survives recovery, so
@@ -295,6 +299,7 @@ fun AgentWindow(
                 agentId = agentId,
                 onSend = viewModel::onSend,
                 history = viewModel::inputHistorySnapshot,
+                writability = composerWritability,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -1272,8 +1277,35 @@ private fun MessageComposer(
     // CYP-387: newest-last snapshot of messages sent to this agent (the immutable store), read lazily on each
     // arrow press. Default empty keeps existing call sites / tests unchanged (no recall = the old behaviour).
     history: () -> List<String> = { emptyList() },
+    // CYP-738: the send-writability tri-state. Default [AgentComposerWritability.UNGATED] = editable, byte-identical
+    // for existing call sites / render tests (the feature is dormant until the AgentWritableApi seam is wired).
+    writability: AgentComposerWritability = AgentComposerWritability.UNGATED,
     modifier: Modifier = Modifier,
 ) {
+    // CYP-738 tri-state (mirrors CommPanel's CYP-273 composer). Render precedence before the editable body:
+    //   READ_ONLY → the proactive read-only hint (you may read this agent, just not message it), no input.
+    //   UNKNOWN   → disabled-with-hint UNCONDITIONALLY — the write-right could not be determined (endpoint error /
+    //               pre-deploy). NEVER silently editable: a wired runtime-unknown must not reuse the UNGATED path
+    //               (the §4a leak the PL guardrail forbids). Distinct surface + string from READ_ONLY.
+    //   UNGATED / WRITABLE → the editable composer below (UNGATED = dormant/old path; WRITABLE = gated-and-allowed).
+    if (writability == AgentComposerWritability.READ_ONLY) {
+        Text(
+            text = stringResource(Res.string.agent_composer_readonly_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = modifier.fillMaxWidth().padding(12.dp).testTag(AgentViewTags.composerReadonly(agentId)),
+        )
+        return
+    }
+    if (writability == AgentComposerWritability.UNKNOWN) {
+        Text(
+            text = stringResource(Res.string.agent_composer_unknown_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = modifier.fillMaxWidth().padding(12.dp).testTag(AgentViewTags.composerUnknown(agentId)),
+        )
+        return
+    }
     var draft by remember { mutableStateOf("") }
     // CYP-387 §2 — the recall cursor (pure state machine; see ComposerRecall). Per agent window.
     val recall = remember { ComposerRecall() }

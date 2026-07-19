@@ -212,6 +212,11 @@ fun AgentShell(
     /** CYP-273: override the writable-channels port (tests inject a fake); `null` → the live
      *  `GET /api/channels/writable` HTTP client ([HttpWritableChannelsApi]) that drives the composer enable/disable. */
     writableChannelsApi: WritableChannelsApi? = null,
+    /** CYP-738: override the writable-AGENTS port (tests inject a [com.tneff.cyppieagents.agentview.StubAgentWritableApi]).
+     *  `null` (default) → the agent composer gate is **DORMANT** (byte-identical unconditional-editable). The live
+     *  `GET /api/agents/writable` client is the post-window one-line wire-up — NOT wired here yet (the endpoint is a
+     *  separate Backend ticket; wiring it pre-deploy would fail-closed the composer for everyone). */
+    agentWritableApi: com.tneff.cyppieagents.agentview.AgentWritableApi? = null,
     /** Override the event-log REST port (tests/dev inject a stub); `null` → the stub until CYP-39. */
     eventsApi: EventsApi? = null,
     /** Override the event-log live source (tests/dev inject a stub); `null` → the stub until CYP-40. */
@@ -545,6 +550,13 @@ fun AgentShell(
     }
     val resolvedWritable = writableChannelsApi ?: defaultWritable
 
+    // CYP-738: the agent-writable port. DORMANT by default (no HTTP wiring) → the agent composer keeps its
+    // pre-CYP-738 unconditional-editable path (never fail-close prod messaging before a real signal exists). The
+    // POST-WINDOW one-liner is `agentWritableApi ?: HttpAgentWritableApi(httpClient, resolvedTransport.httpBaseUrl,
+    // cfg.operatorToken ?: "")` — deferred until the Backend `GET /api/agents/writable` endpoint lands. Tests inject
+    // a StubAgentWritableApi to exercise the active tri-state (WRITABLE / READ_ONLY / UNKNOWN).
+    val resolvedAgentWritable = agentWritableApi
+
     // Event-Log read sources, now LIVE (CYP-39 `/api/events` REST + CYP-40 `/ws/events` WS) — Browse and
     // Live-Tail go live together, operator-only/fail-closed like comm. Injectable so tests stay hermetic;
     // `:app:webAppDemo` injects stubs for the Maestro flows. Windows exist only when operatorToken != null.
@@ -660,6 +672,8 @@ fun AgentShell(
                 modeRepository = resolvedModeRepository,
                 busySource = resolvedBusyStateSource,
                 canControl = isOperator,
+                // CYP-738: dormant unless a writable-agents port is injected (post-window HTTP wire-up).
+                agentWritable = resolvedAgentWritable,
             )
         }
     }
