@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.eventlog.severityColor
 import com.tneff.cyppieagents.ui.HintTone
+import com.tneff.cyppieagents.ui.LoadErrorRetry
 import com.tneff.cyppieagents.ui.TonedHint
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.*
@@ -47,6 +48,7 @@ fun MigrationSection(
     isOperator: Boolean,
     activeProjectName: String,
     onStartMigrate: (storeKey: String) -> Unit = {},
+    onReload: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -76,18 +78,69 @@ fun MigrationSection(
             )
         }
 
-        val stores = state.stores
-        if (stores != null) {
-            if (stores.migratable.isNotEmpty()) {
-                GroupHeading(stringResource(Res.string.migration_group_migratable), MigrationTags.GROUP_MIGRATABLE)
-                for (store in stores.migratable) MigratableRow(store, isOperator, onStartMigrate)
-            }
-            if (stores.unavailable.isNotEmpty()) {
-                GroupHeading(stringResource(Res.string.migration_group_unavailable), MigrationTags.GROUP_UNAVAILABLE)
-                for (store in stores.unavailable) UnavailableRow(store)
+        // §2 (CYP-727) — inventory precedence: loading → error → empty → content (the CYP-288 house rule). A failed
+        // query is NEVER rendered as an empty one; the three states stay visibly distinct on the anti-lie surface.
+        when (val inventory = state.inventory) {
+            InventoryState.Checking -> InventoryChecking()
+            InventoryState.Unavailable -> LoadErrorRetry(
+                message = stringResource(Res.string.migration_inventory_unavailable),
+                onRetry = onReload,
+                containerTag = MigrationTags.INVENTORY_UNAVAILABLE,
+                retryTag = MigrationTags.INVENTORY_RETRY,
+            )
+            is InventoryState.Known -> {
+                val stores = inventory.stores
+                if (stores.migratable.isEmpty() && stores.unavailable.isEmpty()) {
+                    // Genuinely empty (loaded, no stores) — an honest own line, NOT the silent header-only render
+                    // the old `if (stores != null)` produced (which showed nothing at all for an empty inventory).
+                    StoresEmpty()
+                } else {
+                    if (stores.migratable.isNotEmpty()) {
+                        GroupHeading(stringResource(Res.string.migration_group_migratable), MigrationTags.GROUP_MIGRATABLE)
+                        for (store in stores.migratable) MigratableRow(store, isOperator, onStartMigrate)
+                    }
+                    if (stores.unavailable.isNotEmpty()) {
+                        GroupHeading(stringResource(Res.string.migration_group_unavailable), MigrationTags.GROUP_UNAVAILABLE)
+                        for (store in stores.unavailable) UnavailableRow(store)
+                    }
+                }
             }
         }
     }
+}
+
+/**
+ * CYP-727 §2 — the inventory query is in flight. A spinner + a text label (never a bare, SR-mute spinner) with a
+ * Polite live region so the checking state is announced. This is the "loading" tier of loading→error→empty.
+ */
+@Composable
+private fun InventoryChecking() {
+    val checking = stringResource(Res.string.migration_checking)
+    Row(
+        modifier = Modifier.testTag(MigrationTags.CHECKING).semantics {
+            liveRegion = LiveRegionMode.Polite
+            contentDescription = checking
+        },
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        Text(checking, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * CYP-727 §2 — the inventory loaded and is genuinely empty (both groups empty). An explicit "nothing to migrate"
+ * line — true ONLY here, never on a failed load (that path renders [LoadErrorRetry] instead, higher precedence).
+ */
+@Composable
+private fun StoresEmpty() {
+    Text(
+        text = stringResource(Res.string.migration_stores_empty),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.testTag(MigrationTags.STORES_EMPTY),
+    )
 }
 
 @Composable

@@ -28,6 +28,13 @@ object MigrationTags {
     fun unavailable(storeKey: String) = "migration.unavailable.${seg(storeKey)}"
     fun unavailableReason(storeKey: String) = "migration.unavailable.${seg(storeKey)}.reason"
 
+    // §2 (CYP-727) — inventory load tri-state: failed ≠ empty ≠ loading (the safe-but-silent §4a fix).
+    // Additive to the shared QA/CYP-7 tag contract — never rename silently, coordinate via the PO.
+    const val CHECKING = "migration.checking"
+    const val INVENTORY_UNAVAILABLE = "migration.inventoryUnavailable"
+    const val INVENTORY_RETRY = "migration.inventoryUnavailable.retry"
+    const val STORES_EMPTY = "migration.storesEmpty"
+
     // §3 — Target DSN
     const val DSN_SECTION = "migration.dsn.section"
     const val DSN_LABEL = "migration.dsn.label"
