@@ -22,12 +22,13 @@ import {
   type HubState,
 } from './hubReducers'
 import { pendingKey, enforcedValue } from '../comm/aclModel'
-import type { AclEntry, Agent, Channel, Message1 } from '../types/generated/contract'
+import type { AclEntry, Agent, Channel, DeliveredMessage } from '../types/generated/contract'
 
 const agent = (id: string, role: Agent['role']): Agent => ({ id, name: id, role, worktree: id })
 const ch = (id: string, members: string[]): Channel => ({ id, name: id, kind: 'DIRECT', members })
 const acl = (channelId: string, agentId: string, canRead: boolean, canWrite: boolean): AclEntry => ({ channelId, agentId, canRead, canWrite })
-const msg = (id: string, channelId: string, body: string): Message1 => ({ id, channelId, from: 'x', body, ts: 0 })
+// CYP-744: the store holds DeliveredMessage envelopes. Dedup/ordering key on the STORED message (`.message.id`).
+const msg = (id: string, channelId: string, body: string): DeliveredMessage => ({ message: { id, channelId, from: 'x', body, ts: 0 } })
 
 describe('deriveAgents (interim roster from channel members — never a po-<worker> guess)', () => {
   it('is the sorted, deduped union of every channel member', () => {
@@ -115,7 +116,7 @@ describe('comm messages — id-dedup idempotency (reconnect replay adds no dupli
     const after = s.messagesByChannel.get('po-frontend')
     expect(after).toHaveLength(2)
     expect(after).toBe(before) // unchanged reference — a true no-op on duplicate
-    expect(after?.map((m) => m.id)).toEqual(['m1', 'm2'])
+    expect(after?.map((d) => d.message.id)).toEqual(['m1', 'm2'])
   })
 })
 
@@ -123,7 +124,7 @@ describe('ingestMessages — fold fetched history, deduped against live (CYP-438
   it('adds new ids and drops ones already present', () => {
     let s = applyMessage(emptyHubState, msg('live1', 'po-frontend', 'live'))
     s = ingestMessages(s, [msg('hist1', 'po-frontend', 'h1'), msg('live1', 'po-frontend', 'live'), msg('hist2', 'po-frontend', 'h2')])
-    expect(s.messagesByChannel.get('po-frontend')?.map((m) => m.id)).toEqual(['live1', 'hist1', 'hist2'])
+    expect(s.messagesByChannel.get('po-frontend')?.map((d) => d.message.id)).toEqual(['live1', 'hist1', 'hist2'])
   })
 })
 
@@ -133,7 +134,7 @@ describe('applyCommEvent — the three server variants', () => {
     expect(s.agents).toEqual(['frontend', 'po'])
     s = applyCommEvent(s, { type: 'acl', entry: acl('po-frontend', 'frontend', true, false) })
     expect(enforcedValue(s.aclEntries, 'po-frontend', 'frontend')).toEqual({ canRead: true, canWrite: false })
-    s = applyCommEvent(s, { type: 'message', message: msg('m1', 'po-frontend', 'hi') })
+    s = applyCommEvent(s, { type: 'message', delivered: msg('m1', 'po-frontend', 'hi') })
     expect(s.messagesByChannel.get('po-frontend')).toHaveLength(1)
   })
 })

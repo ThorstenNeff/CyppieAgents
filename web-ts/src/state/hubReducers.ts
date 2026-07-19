@@ -11,7 +11,7 @@ import type {
   AclEntry,
   Agent,
   Channel,
-  Message1,
+  DeliveredMessage,
   CommWsServerEvent,
   AgentTerminalControlEvent,
   AgentRunStateEvent,
@@ -45,9 +45,11 @@ export interface HubState {
   aclEntries: readonly AclEntry[]
   /** cells with an in-flight PUT awaiting the AclEvent echo (keyed channel|agent|dim → requested value). */
   pendingAcl: PendingAcl
-  /** comm timeline store, deduped by Message.id. The timeline UI (CommPanel) integrates with CYP-424; the VM
-   *  already keeps + dedups the messages so that integration is a render, not a re-plumb. */
-  messagesByChannel: ReadonlyMap<string, readonly Message1[]>
+  /** comm timeline store, deduped by Message.id. CYP-744: entries are the DeliveredMessage ENVELOPE (stored
+   *  message + server-resolved mention spans), not the bare message — the timeline renders chips from the spans,
+   *  and the stored message rides untouched inside. The VM keeps + dedups so integration is a render, not a
+   *  re-plumb. */
+  messagesByChannel: ReadonlyMap<string, readonly DeliveredMessage[]>
   /** the server-confirmed per-agent terminal-control state (drives the non-optimistic mode toggle). */
   terminalStateByAgent: ReadonlyMap<string, TerminalControlState>
   /** CYP-644: the FULL last terminal-control event per agent (state + heldBy + since) — drives the handoff /
@@ -120,8 +122,8 @@ export function clearLifecyclePending(state: HubState, agentId: string): HubStat
   return { ...state, lifecyclePending }
 }
 
-/** Fold a batch of fetched history messages into state (each deduped by id — safe to overlap with live). */
-export function ingestMessages(state: HubState, msgs: readonly Message1[]): HubState {
+/** Fold a batch of fetched history envelopes into state (each deduped by id — safe to overlap with live). */
+export function ingestMessages(state: HubState, msgs: readonly DeliveredMessage[]): HubState {
   return msgs.reduce((s, m) => applyMessage(s, m), state)
 }
 
@@ -186,12 +188,13 @@ export function clearAclPending(state: HubState, channelId: string, agentId: str
   return { ...state, pendingAcl }
 }
 
-/** Append a comm message, deduped by id (reconnect replay is idempotent). */
-export function applyMessage(state: HubState, msg: Message1): HubState {
-  const existing = state.messagesByChannel.get(msg.channelId) ?? []
-  if (existing.some((m) => m.id === msg.id)) return state // idempotent: drop the duplicate
+/** Append a comm envelope, deduped by the stored message's id (reconnect replay is idempotent). */
+export function applyMessage(state: HubState, delivered: DeliveredMessage): HubState {
+  const { channelId, id } = delivered.message
+  const existing = state.messagesByChannel.get(channelId) ?? []
+  if (existing.some((d) => d.message.id === id)) return state // idempotent: drop the duplicate
   const messagesByChannel = new Map(state.messagesByChannel)
-  messagesByChannel.set(msg.channelId, [...existing, msg])
+  messagesByChannel.set(channelId, [...existing, delivered])
   return { ...state, messagesByChannel }
 }
 
@@ -203,7 +206,10 @@ export function applyCommEvent(state: HubState, event: CommWsServerEvent): HubSt
     case 'channels':
       return applyChannels(state, event.channels)
     case 'message':
-      return applyMessage(state, event.message)
+      // CYP-744: the /ws/comm message frame now carries the DeliveredMessage envelope (`delivered`), not a bare
+      // message — the WireProtocol/BYOA wire is unchanged (stored Message untouched), spans ride the frontend
+      // envelope only. Reading `.delivered` here is the whole client half of that split.
+      return applyMessage(state, event.delivered)
     // CYP-705 — the self-only read-state echo. THIS is what makes the badge non-optimistic: a local scroll only
     // asks (POST …/read); the count changes here, when the server confirms its own cursor.
     case 'readState':

@@ -26,7 +26,7 @@ import type {
   AclEntry,
   Agent,
   Channel,
-  Message1,
+  DeliveredMessage,
   CommWsServerEvent,
   AgentTerminalControlEvent,
   AgentRunStateEvent,
@@ -45,7 +45,7 @@ export interface HubStore extends HubState {
   onTerminalControl: (event: AgentTerminalControlEvent) => void
   markAclPending: (channelId: string, agentId: string, dim: AclDimension, requested: boolean) => void
   clearAclPending: (channelId: string, agentId: string, dim: AclDimension) => void
-  ingestMessages: (msgs: readonly Message1[]) => void
+  ingestMessages: (msgs: readonly DeliveredMessage[]) => void
   setCommConnection: (connection: CommConnection) => void
   onRunState: (event: AgentRunStateEvent) => void
   markLifecyclePending: (agentId: string, action: LifecycleAction) => void

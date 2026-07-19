@@ -37,7 +37,7 @@ const fakeRepo = (): HubRepo => ({
   putAcl: vi.fn().mockResolvedValue({ channelId: '', agentId: '', canRead: false, canWrite: false }),
   requestMode: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn().mockResolvedValue([]),
-  postMessage: vi.fn().mockResolvedValue({ id: 'x', channelId: '', from: '', body: '', ts: 0 }),
+  postMessage: vi.fn().mockResolvedValue({ message: { id: 'x', channelId: '', from: '', body: '', ts: 0 } }),
   setLifecycle: vi.fn().mockResolvedValue({ agentId: 'backend', runState: 'RUNNING' }),
   getApiKey: vi.fn().mockResolvedValue({ set: true, masked: '***k999' }),
   putApiKey: vi.fn().mockResolvedValue({ set: true, masked: '***new4' }),
@@ -127,7 +127,7 @@ describe('App assembly (CYP-425)', () => {
   it('renders the Comm window with channels, folds fetched history, and shows a live message (CYP-438)', async () => {
     const hub = new FakeSocketHub()
     const repo = fakeRepo()
-    repo.getMessages = vi.fn().mockResolvedValue([{ id: 'hist1', channelId: 'po-frontend', from: 'po', body: 'history line', ts: 1 }])
+    repo.getMessages = vi.fn().mockResolvedValue([{ message: { id: 'hist1', channelId: 'po-frontend', from: 'po', body: 'history line', ts: 1 } }])
     const { findByTestId, getByTestId } = render(
       <App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
     )
@@ -140,7 +140,7 @@ describe('App assembly (CYP-425)', () => {
     const comm = hub.sockets.find((s) => s.url.includes('/ws/comm'))!
     await act(async () => {
       comm.emitOpen()
-      comm.emitMessage(JSON.stringify({ type: 'message', message: { id: 'live1', channelId: 'po-frontend', from: 'frontend', body: 'live line', ts: 2 } }))
+      comm.emitMessage(JSON.stringify({ type: 'message', delivered: { message: { id: 'live1', channelId: 'po-frontend', from: 'frontend', body: 'live line', ts: 2 } } }))
     })
     expect(await findByTestId('comm.message.live1')).toBeTruthy()
   })
@@ -459,7 +459,7 @@ describe('CYP-732 — the read cursor advances only when the conversation is in 
   const renderFocusedComm = async () => {
     const hub = new FakeSocketHub()
     const repo = fakeRepo()
-    repo.getMessages = vi.fn().mockResolvedValue([{ id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 }])
+    repo.getMessages = vi.fn().mockResolvedValue([{ message: { id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 } }])
     const view = render(<App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
     await flush()
     await act(async () => {
@@ -494,7 +494,7 @@ describe('CYP-732 — the read cursor advances only when the conversation is in 
     setFocus({ visible: true, focused: true })
     const hub = new FakeSocketHub()
     const repo = fakeRepo()
-    repo.getMessages = vi.fn().mockResolvedValue([{ id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 }])
+    repo.getMessages = vi.fn().mockResolvedValue([{ message: { id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 } }])
     render(<App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
     await flush()
     await act(async () => {
@@ -513,7 +513,7 @@ describe('CYP-732 — the read cursor advances only when the conversation is in 
     setFocus({ visible: true, focused: true })
     const hub = new FakeSocketHub()
     const repo = fakeRepo()
-    repo.getMessages = vi.fn().mockResolvedValue([{ id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 }])
+    repo.getMessages = vi.fn().mockResolvedValue([{ message: { id: 'm1', channelId: 'po-frontend', from: 'po', body: 'hi', ts: 1, seq: 5 } }])
     // The disagreeing server: always answers about someone else's channel. The counter+cutoff matters — without
     // the ledger this loops unboundedly, and an unbounded loop WEDGES the runner instead of failing. A tooth that
     // hangs is a bad tooth (it looks like an infra flake, not a defect), so the double stops answering after a few

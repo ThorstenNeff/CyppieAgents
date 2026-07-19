@@ -20,8 +20,8 @@ import {
   ClaudeMdViewSchema,
   CompactStatusSchema,
   ConnectorsViewSchema,
+  DeliveredMessageSchema,
   EventPageSchema,
-  MessageSchema,
   OperatorAuditSchema,
   ProjectsViewSchema,
   RepoConfigViewSchema,
@@ -39,7 +39,7 @@ import type {
   ApiKeyView,
   Channel,
   ChannelShareView,
-  Message1,
+  DeliveredMessage,
   AgentRunStateEvent,
   NewAgentSpec,
   AgentEdit,
@@ -97,10 +97,12 @@ export interface HubRepo {
   /** POST /api/agents/{id}/mode (operator). Non-optimistic: the confirmed flip arrives via /ws/terminal-state,
    *  not this response — callers await it only to surface a hard failure. */
   requestMode(agentId: string, target: TerminalMode): Promise<void>
-  /** GET /api/channels/{id}/messages — ACL-filtered history; folded into the store (deduped by id, overlaps live). */
-  getMessages(channelId: string, since?: number): Promise<Message1[]>
-  /** POST /api/channels/{id}/messages — returns the server Message; the same message also echoes over /ws/comm. */
-  postMessage(channelId: string, body: string): Promise<Message1>
+  /** GET /api/channels/{id}/messages — ACL-filtered history as DeliveredMessage envelopes (CYP-744: stored message
+   *  + server-resolved mention spans); folded into the store (deduped by id, overlaps live). */
+  getMessages(channelId: string, since?: number): Promise<DeliveredMessage[]>
+  /** POST /api/channels/{id}/messages — returns the server DeliveredMessage envelope; the same envelope also
+   *  echoes over /ws/comm (CYP-744 — REST + WS carry one shape, so the fold is uniform). */
+  postMessage(channelId: string, body: string): Promise<DeliveredMessage>
   /** POST /api/agents/{id}/{start|stop|restart} (operator). Returns the server run-state; the same state also
    *  arrives on /ws/lifecycle — non-optimistic, so the header flips on that event, not the click (CYP-431). */
   setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent>
@@ -251,13 +253,16 @@ export class RestHubRepo implements HubRepo {
     // the view flips only on the /ws/terminal-state echo (non-optimistic), so this just proves the POST was accepted.
     await this.rest.post<unknown>(`/api/agents/${encodeURIComponent(agentId)}/mode`, { target })
   }
-  getMessages(channelId: string, since?: number): Promise<Message1[]> {
+  getMessages(channelId: string, since?: number): Promise<DeliveredMessage[]> {
     const q = since !== undefined ? `?since=${since}` : ''
-    return this.rest.get(`/api/channels/${encodeURIComponent(channelId)}/messages${q}`, contractResponse('Message[]', z.array(MessageSchema)))
+    // CYP-737 validation rides the ENVELOPE now: a malformed history entry otherwise becomes silently-dropped or,
+    // worse, a message rendered with no/garbled mention spans. Validating DeliveredMessage covers both halves.
+    return this.rest.get(`/api/channels/${encodeURIComponent(channelId)}/messages${q}`, contractResponse('DeliveredMessage[]', z.array(DeliveredMessageSchema)))
   }
-  postMessage(channelId: string, body: string): Promise<Message1> {
-    // SendMessageRequest { body } — hand-modeled (REST-only DTO, not in the asyncapi export; CYP-426).
-    return this.rest.post(`/api/channels/${encodeURIComponent(channelId)}/messages`, { body }, contractResponse('Message', MessageSchema))
+  postMessage(channelId: string, body: string): Promise<DeliveredMessage> {
+    // SendMessageRequest { body } — hand-modeled (REST-only DTO, not in the asyncapi export; CYP-426). The response
+    // is the DeliveredMessage envelope (same shape as history + the /ws/comm echo), validated like every consumed body.
+    return this.rest.post(`/api/channels/${encodeURIComponent(channelId)}/messages`, { body }, contractResponse('DeliveredMessage', DeliveredMessageSchema))
   }
   setLifecycle(agentId: string, action: 'start' | 'stop' | 'restart'): Promise<AgentRunStateEvent> {
     return this.rest.post(`/api/agents/${encodeURIComponent(agentId)}/${action}`, undefined, contractResponse('AgentRunStateEvent', AgentRunStateEventSchema))
