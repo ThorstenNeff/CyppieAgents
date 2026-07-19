@@ -31,6 +31,8 @@ import type { LifecycleAction, AgentErrorCode } from './state/hubReducers'
 const READY_NOTICE = 'Agent bereit'
 
 export interface AgentWindowProps {
+  /** CYP-735 §3.1: an unconfigured hub blocks agent start (present-but-disabled, with the reason stated). */
+  setupBlocked?: boolean
   agentId: string
   wsBase: string
   token: string
@@ -47,7 +49,7 @@ export interface AgentWindowProps {
   socketDeps?: SocketDeps
 }
 
-export function AgentWindow({
+export function AgentWindow({ setupBlocked = false,
   agentId,
   wsBase,
   token,
@@ -79,6 +81,7 @@ export function AgentWindow({
   return (
     <div className="agent-window" data-testid={`agent-window.${agentId}`}>
       <LifecycleHeader
+        setupBlocked={setupBlocked}
         agentId={agentId}
         state={lifecycleState}
         pending={lifecyclePending}
