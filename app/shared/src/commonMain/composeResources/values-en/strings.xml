@@ -826,6 +826,10 @@
     <string name="migration_section_project">Project: %1$s</string>
     <string name="migration_group_migratable">Can be migrated</string>
     <string name="migration_group_unavailable">Cannot be migrated</string>
+    <!-- CYP-727 — inventory load tri-state (failed ≠ empty ≠ loading) -->
+    <string name="migration_checking">Loading migration status …</string>
+    <string name="migration_stores_empty">No migratable stores in this project.</string>
+    <string name="migration_inventory_unavailable">Migration status could not be loaded.</string>
     <string name="migration_state_local">Local (SQLite)</string>
     <string name="migration_state_bound">In %1$s</string>
     <string name="migration_state_migrating">Migrating …</string>
