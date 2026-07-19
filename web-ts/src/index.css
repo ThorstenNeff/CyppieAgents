@@ -575,13 +575,6 @@ body {
 .event-browse-detail-meta {
   color: var(--md-sys-color-on-surface-variant);
 }
-.event-browse-error {
-  color: var(--md-sys-color-error);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  white-space: normal;
-}
 .event-browse-revoked {
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);

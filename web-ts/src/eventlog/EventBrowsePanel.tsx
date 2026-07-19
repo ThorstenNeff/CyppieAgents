@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EventPage, EventSurrogate, Project } from '../types/generated/contract'
 import { RestError } from '../net/rest'
 import { EventRow } from './EventRow'
+import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import { severityLabel, typeGlyph, type Severity } from './eventLog'
 import { formatLocalHhMm } from '../agentview/transcriptTime'
 import {
@@ -179,16 +180,13 @@ export function EventBrowsePanel({ getEvents, agentIds, projects = [], activePro
           <div className="event-browse-body">
             <div className="event-browse-master">
               {firstPageError ? (
-                <div className="event-browse-error" role="alert" data-testid="eventBrowse.error">
-                  <span>Laden fehlgeschlagen.</span>
-                  <button
-                    type="button"
-                    data-testid="eventBrowse.error.retry"
-                    onClick={() => setFilter((f) => ({ ...f }))} // re-run the current query (new object → effect)
-                  >
-                    Erneut versuchen
-                  </button>
-                </div>
+                // CYP-288 follow-up: this surface was the ONE remaining inline copy of the load-error shape. It
+                // now uses the shared primitive, so a future change to the copy or a11y reaches it too — the
+                // divergence risk was the point, not the markup. The testid stays `eventBrowse.error` (the
+                // primitive stamps `${testId}` + `${testId}.retry`, byte-identical to what shipped), so no test
+                // harness breaks: the naming convention can align later, once Tester2 confirms nothing depends on
+                // it. Renaming a shared testid unilaterally is the drift this consolidation is meant to reduce.
+                <LoadErrorRetry testId="eventBrowse.error" onRetry={() => setFilter((f) => ({ ...f }))} />
               ) : events.length === 0 && !loading ? (
                 <p className="event-browse-empty" role="status" data-testid="eventBrowse.empty">
                   Keine Events.
