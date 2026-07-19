@@ -38,7 +38,9 @@ Backend2 hat Dev5s **schon gebautes** Client-Enum gelesen und `:core` adoptiert 
 
 ## §3 Progression + Polling (CMP CYP-629 §7.3)
 - **CONFIGURED_NEVER_CLONED → CLONING (+ client-elapsed „dauert-länger" bei ~15s) → CLONED_OK** *oder* **CLONE_FAILED[URL_UNREACHABLE|AUTH|UNKNOWN]**. **Terminal = CLONED_OK oder CLONE_FAILED.**
-- Der Client **pollt** (oder empfängt) `cloneStatus` **bis terminal** (Poll **stoppt** bei CLONED_OK/CLONE_FAILED — kein endloses Pollen; vgl. das 705-Ledger-Prinzip).
+- **Poll (WS-Nudge gedroppt → nur Poll)** von `cloneStatus` (`GET /api/config/repo`). **Kadenz:** **~2s** im aktiven Fenster; nach der Long-Running-Schwelle **ausdünnen auf ~30s**. **Stopp NUR bei terminal** (`CLONED_OK`/`CLONE_FAILED`) — **ausdünnen ≠ aufgeben** (das eventuelle Ende muss noch gefangen werden). **Component-lifecycle-bounded** (Skip/Unmount stoppt, Rückkehr re-pollt) → **kein Forever-Loop**.
+- **Elapsed-Schwellen (client-gemessen, auf `CLONING`, KEINE server-States):** **~15s** → advisory „dauert länger als üblich" (`first_run_repo_cloning_slow`); **~60s** → Poll ausdünnen (~30s) + **Elapsed sichtbar machen** „dauert schon {min} min" (`first_run_repo_cloning_long`). **Beide bleiben `CLONING`.** — Copy-Wahl: die **Dauer** zeigen (ehrlicher, nützlicher Fakt), **nicht** ein Forever-„klont noch"-Spinner (behaupteter Fortschritt) und **nicht** „Status unbestimmt/kaputt" (Alarm).
+- **★ NIE „failed" aus Elapsed-Time** — ein **hängender** Clone ist client-seitig **ununterscheidbar** von einem **langsamen**; „failed" wäre eine **erfundene Diagnose** (SLOW-drop-Linie: der Client rät nie einen Zustand aus der Zeit; unknown bleibt unknown). Long-running = ehrliches **„läuft noch, Dauer unbekannt"**, nie failed/hung.
 - **CLONE_FAILED → actionable Fix + Retry:** der Grund nennt den Fix (URL / Token) — bei `UNKNOWN` ehrlich „Grund nicht ermittelbar" + Retry. Retry re-triggert (zurück zu CLONING). Non-optimistisch: Zustand flippt auf den nächsten server-`cloneStatus`, nicht auf den Retry-Klick.
 
 ## §4 Naht zu §3.2 (die Vollendung)
@@ -55,4 +57,8 @@ Backend2 hat Dev5s **schon gebautes** Client-Enum gelesen und `:core` adoptiert 
 - **Grounded auf die finale `:core`-Shape** (`CloneStatus` + `CloneFailReason`, 3-wertig; SLOW = client-elapsed). Build-ready, sobald der Seam (`cloneStatus` in `GET /api/config/repo`) steht.
 - **Vollendet §3.2** (CLONED_OK → §3.2-Repo-done → Gate-TRANSPARENT erreichbar); die **Skip-Persistenz** (§4) überbrückt die Zeit bis dahin ehrlich.
 - **Reuse:** der §3.2-Repo-Schritt-Marker; das honest-Zustands-Idiom.
-- **Copy = neue `first_run_clone_*`-Keys** (shared, mit Dev5s Impl landen — [[shared-key-landing]]); DE/EN auf Zuruf.
+- **Copy** (shared keys, mit Dev5s Impl landen — [[shared-key-landing]]):
+  - `first_run_repo_cloning` „Repository wird geklont…" / "Cloning repository…"
+  - `first_run_repo_cloning_slow` (~15s) „Das dauert länger als üblich — große Repositories brauchen Zeit." / "This is taking longer than usual — large repositories take time."
+  - `first_run_repo_cloning_long` (~60s) „Klont noch — dauert schon {min} min. Große Repositories können lange brauchen; du kannst warten oder später zurückkommen." / "Still cloning — {min} min so far. Large repositories can take a while; you can wait or come back later."
+  - plus die `CloneStatus`-/`CloneFailReason`-Copys (§1); weitere DE/EN auf Zuruf.
