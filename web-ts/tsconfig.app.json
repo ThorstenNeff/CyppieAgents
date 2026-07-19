@@ -15,6 +15,11 @@
     "jsx": "react-jsx",
 
     "strict": true,
+    /* CYP-705: a reducer that forgets a union case must FAIL, not silently return undefined into the state.
+       Measured before enabling: 0 errors across both projects, so this costs nothing today and makes the
+       exhaustiveness structural. Note it catches a MISSING return, not `default: return state` — that needs the
+       `never` guard (see assertNever in hubReducers). */
+    "noImplicitReturns": true,
     "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

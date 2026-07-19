@@ -5,7 +5,9 @@
 // Idempotency (Spec 14 §2/§8 tooth 3): comm messages dedup by Message.id, so a /ws/comm reconnect replay adds
 // no duplicates. Non-optimistic ACL (§W9.2): a PUT records a *pending* flag; the ENFORCED value flips only when
 // the AclEvent echo arrives (applyAclEntry), which also clears that cell's pending — never the optimistic click.
+import { READ_STATE_UNAVAILABLE, type UnreadView } from '../comm/unreadModel'
 import type {
+  ReadState as ReadStateWsEvent,
   AclEntry,
   Agent,
   Channel,
@@ -37,6 +39,9 @@ export interface HubState {
   /** the agent id set for windows/ACL columns: the roster's ids ∪ any live channel member (so a runtime-added
    *  agent still surfaces before a roster refetch). Sorted, deduped. */
   agents: readonly string[]
+  /** CYP-705: the server's read-state, keyed by channel. `unavailable` until GET /api/read-state answers —
+   *  and an UNAVAILABLE view renders a visible "unknown" marker, never a silent all-clear (unknown ≠ zero). */
+  unreadView: UnreadView
   aclEntries: readonly AclEntry[]
   /** cells with an in-flight PUT awaiting the AclEvent echo (keyed channel|agent|dim → requested value). */
   pendingAcl: PendingAcl
@@ -71,6 +76,7 @@ export const emptyHubState: HubState = {
   roster: [],
   agents: [],
   aclEntries: [],
+  unreadView: READ_STATE_UNAVAILABLE,
   pendingAcl: new Map(),
   messagesByChannel: new Map(),
   terminalStateByAgent: new Map(),
@@ -198,7 +204,33 @@ export function applyCommEvent(state: HubState, event: CommWsServerEvent): HubSt
       return applyChannels(state, event.channels)
     case 'message':
       return applyMessage(state, event.message)
+    // CYP-705 — the self-only read-state echo. THIS is what makes the badge non-optimistic: a local scroll only
+    // asks (POST …/read); the count changes here, when the server confirms its own cursor.
+    case 'readState':
+      return applyReadState(state, event)
+    default:
+      // Exhaustiveness guard: adding a CommWsServerEvent variant without handling it fails to COMPILE here.
+      // `noImplicitReturns` alone would not catch it — a `default: return state` swallows a new variant silently
+      // ("handled", but wrongly). This makes the omission structural instead of per-reducer discipline.
+      return assertNever(event)
   }
+}
+
+/** Fold one channel's server-confirmed read-state into the view (server-computed count — the client never adds). */
+function applyReadState(state: HubState, ev: ReadStateWsEvent): HubState {
+  const base = state.unreadView.kind === 'available' ? state.unreadView.channels : {}
+  return {
+    ...state,
+    unreadView: {
+      kind: 'available',
+      channels: { ...base, [ev.channelId]: { channelId: ev.channelId, lastReadSeq: ev.lastReadSeq, unreadCount: ev.unreadCount } },
+    },
+  }
+}
+
+/** Compile-time proof that every union case is handled; unreachable at runtime by construction. */
+function assertNever(x: never): never {
+  throw new Error(`unhandled CommWsServerEvent variant: ${JSON.stringify(x)}`)
 }
 
 /** Fold a /ws/terminal-state event: the server-confirmed control state for one agent. */

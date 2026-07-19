@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { channelUnread, isReadStateKnown } from '../comm/unreadModel'
 import {
   emptyHubState,
   deriveAgents,
@@ -212,5 +213,36 @@ describe('CYP-641 — token-usage fold (/ws/token-usage)', () => {
     expect(nullish.contextTokensByAgent.get('backend')).toBeNull()
     const omitted = applyTokenUsage(emptyHubState, { agentId: 'frontend' })
     expect(omitted.contextTokensByAgent.get('frontend')).toBeNull()
+  })
+})
+
+// ── CYP-705 — the self-only read-state echo is what clears the badge (non-optimistic) ─────────────────────────
+describe('CYP-705 — applyCommEvent folds ReadStateEvent', () => {
+  it('★ a readState event sets the channel’s server-confirmed cursor + count', () => {
+    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'po-frontend', lastReadSeq: 12, unreadCount: 3 })
+    expect(channelUnread(s.unreadView, 'po-frontend')).toEqual({ kind: 'unread', count: 3 })
+  })
+
+  it('★ before any event the view is UNAVAILABLE — unknown, not a fabricated zero', () => {
+    expect(isReadStateKnown(emptyHubState.unreadView)).toBe(false)
+    expect(channelUnread(emptyHubState.unreadView, 'po-frontend')).toEqual({ kind: 'unknown' })
+  })
+
+  it('★ an echo for one channel never invents state for another', () => {
+    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 4, unreadCount: 1 })
+    expect(channelUnread(s.unreadView, 'a')).toEqual({ kind: 'unread', count: 1 })
+    expect(channelUnread(s.unreadView, 'b')).toEqual({ kind: 'unknown' }) // untouched stays unknown
+  })
+
+  it('a later echo replaces the earlier one for the same channel (server is the single count source)', () => {
+    let s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 4, unreadCount: 5 })
+    s = applyCommEvent(s, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0 })
+    expect(channelUnread(s.unreadView, 'a')).toEqual({ kind: 'read' }) // cleared ONLY because the server said so
+  })
+
+  it('folding a readState echo leaves the other reducers’ state intact', () => {
+    let s = applyCommEvent(emptyHubState, { type: 'channels', channels: [ch('po-frontend', ['po', 'frontend'])] })
+    s = applyCommEvent(s, { type: 'readState', channelId: 'po-frontend', lastReadSeq: 1, unreadCount: 2 })
+    expect(s.channels.map((c) => c.id)).toEqual(['po-frontend'])
   })
 })

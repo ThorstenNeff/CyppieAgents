@@ -5,6 +5,7 @@
 import { RestClient, RestError } from '../net/rest'
 import { operatorToken } from '../platform/operatorToken'
 import type {
+  ChannelReadState,
   AclEntry,
   Agent,
   AgentDetail,
@@ -58,6 +59,14 @@ export interface HubRepo {
    *  replacing the channel-derived interim + the CYPPIE_PO_AGENT_ID config guess. */
   fetchAgents(): Promise<Agent[]>
   fetchChannels(): Promise<Channel[]>
+  /** CYP-705. GET /api/read-state (OPERATOR-tier) — the caller's per-channel cursors. A channel is present IFF a
+   *  cursor exists; ABSENT ⇒ UNKNOWN (never an implied zero). A 403/failure leaves the view unavailable, which
+   *  renders a visible "unknown" marker, never a silent all-clear. */
+  fetchReadState(): Promise<ChannelReadState[]>
+  /** CYP-705. POST /api/channels/{id}/read {upToSeq} — advances the caller's cursor to max(existing, upToSeq) and
+   *  returns the updated state. NON-OPTIMISTIC: the badge clears on this echo (or the ReadStateEvent), never on
+   *  the local scroll that triggered it. */
+  markRead(channelId: string, upToSeq: number): Promise<ChannelReadState>
   fetchAcl(): Promise<AclEntry[]>
   /** PUT /api/acl (operator). Returns the server-authoritative entry; the enforced flip also arrives as an AclEvent. */
   putAcl(entry: AclEntry): Promise<AclEntry>
@@ -201,6 +210,12 @@ export class RestHubRepo implements HubRepo {
   }
   fetchAcl(): Promise<AclEntry[]> {
     return this.rest.get<AclEntry[]>('/api/acl')
+  }
+  fetchReadState(): Promise<ChannelReadState[]> {
+    return this.rest.get<ChannelReadState[]>('/api/read-state')
+  }
+  markRead(channelId: string, upToSeq: number): Promise<ChannelReadState> {
+    return this.rest.post<ChannelReadState>(`/api/channels/${encodeURIComponent(channelId)}/read`, { upToSeq })
   }
   putAcl(entry: AclEntry): Promise<AclEntry> {
     return this.rest.put<AclEntry>('/api/acl', entry)

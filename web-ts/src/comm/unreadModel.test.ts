@@ -7,11 +7,21 @@
 // than no test, so they are flipped rather than extended.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { channelUnread, firstUnreadIndex, isReadStateKnown, READ_STATE_UNAVAILABLE, type ReadState } from './unreadModel'
+import {
+  channelUnread,
+  firstUnreadIndex,
+  hasAuthoritativeSeq,
+  isReadStateKnown,
+  markReadUpTo,
+  unreadViewFrom,
+  READ_STATE_UNAVAILABLE,
+  type UnreadView,
+} from './unreadModel'
 
-const available = (channels: Record<string, { unreadCount: number; lastReadSeq: number | null }>): ReadState => ({
+/** Build the view the way the wire does — channelId lives INSIDE each entry (contract shape). */
+const available = (channels: Record<string, { unreadCount: number; lastReadSeq: number }>): UnreadView => ({
   kind: 'available',
-  channels,
+  channels: Object.fromEntries(Object.entries(channels).map(([id, e]) => [id, { channelId: id, ...e }])),
 })
 
 const msgs = (...seqs: number[]) => seqs.map((seq) => ({ seq }))
@@ -50,7 +60,11 @@ describe('CYP-705 §9 — three distinct states, none collapsing into another', 
     const state = available({ x: { unreadCount: 2, lastReadSeq: 20 } })
     expect(firstUnreadIndex(msgs(10, 20, 30, 40), state, 'x')).toBe(2)
     expect(firstUnreadIndex(msgs(10, 20), state, 'x')).toBeNull() // nothing past the cursor
-    expect(firstUnreadIndex(msgs(10, 30), available({ x: { unreadCount: 1, lastReadSeq: null } }), 'x')).toBeNull()
+    // A null cursor is FORBIDDEN by the contract (lastReadSeq is required) — so this cast deliberately simulates
+    // untrusted wire data violating it. Without the runtime guard `seq > null` becomes `seq > 0` and EVERY message
+    // reads as unread, dropping the divider at the top. The type being honest does not make the edge unchecked.
+    const nullCursor = available({ x: { unreadCount: 1, lastReadSeq: null as unknown as number } })
+    expect(firstUnreadIndex(msgs(10, 30), nullCursor, 'x')).toBeNull()
     expect(firstUnreadIndex(msgs(10, 30), READ_STATE_UNAVAILABLE, 'x')).toBeNull()
   })
 
@@ -84,5 +98,55 @@ describe('CYP-705 §9 — three distinct states, none collapsing into another', 
 
   it('a nonsensical negative count is treated as read, not as a badge — but the channel was still reported', () => {
     expect(channelUnread(available({ x: { unreadCount: -1, lastReadSeq: 3 } }), 'x')).toEqual({ kind: 'read' })
+  })
+})
+
+// ── CYP-705 #4 (cursor path) — the wire→view fold, the seq sentinel, and mark-read ───────────────────────────
+describe('CYP-705 #4 — wire fold, seq authority, mark-read', () => {
+  const entry = (channelId: string, lastReadSeq: number, unreadCount: number) => ({ channelId, lastReadSeq, unreadCount })
+
+  it('★ the fold is the ONE place the presence rule lives: listed ⇒ known, absent ⇒ unknown', () => {
+    const view = unreadViewFrom([entry('a', 5, 2), entry('b', 9, 0)])
+    expect(channelUnread(view, 'a')).toEqual({ kind: 'unread', count: 2 })
+    expect(channelUnread(view, 'b')).toEqual({ kind: 'read' }) // present with 0 = authoritative all-clear
+    expect(channelUnread(view, 'c')).toEqual({ kind: 'unknown' }) // never listed = never told
+  })
+
+  it('★ an EMPTY list is "server answered, no cursors yet" — every channel unknown, none fabricated as read', () => {
+    const view = unreadViewFrom([])
+    expect(isReadStateKnown(view)).toBe(true) // the surface DID answer
+    expect(channelUnread(view, 'a')).toEqual({ kind: 'unknown' }) // …but said nothing about this channel
+  })
+
+  it('★ malformed wire entries are dropped → the channel stays UNKNOWN, never a coerced 0', () => {
+    // untrusted input: the contract types these as required, but a violating payload must not become "read".
+    const bad = [
+      { channelId: 'a', lastReadSeq: null, unreadCount: 3 },
+      { channelId: '', lastReadSeq: 1, unreadCount: 1 },
+      { channelId: 'c', lastReadSeq: 1, unreadCount: 'many' },
+    ] as unknown as Parameters<typeof unreadViewFrom>[0]
+    const view = unreadViewFrom(bad)
+    expect(channelUnread(view, 'a')).toEqual({ kind: 'unknown' })
+    expect(channelUnread(view, 'c')).toEqual({ kind: 'unknown' })
+  })
+
+  it('★ seq 0 and undefined both mean "no authoritative order" — 0 is the legacy sentinel, not position zero', () => {
+    expect(hasAuthoritativeSeq({ seq: 7 })).toBe(true)
+    expect(hasAuthoritativeSeq({ seq: 0 })).toBe(false)
+    expect(hasAuthoritativeSeq({})).toBe(false)
+  })
+
+  it('★ a legacy row cannot BE the boundary, but does not suppress the divider either', () => {
+    // fail-closed = omit the guessed claim, not switch the feature off. One legacy row must not silence the
+    // divider for a whole channel — that silence would itself read as "nothing new".
+    const view = unreadViewFrom([entry('x', 10, 2)])
+    expect(firstUnreadIndex([{ seq: 0 }, { seq: 5 }, { seq: 12 }, { seq: 20 }], view, 'x')).toBe(2)
+    expect(firstUnreadIndex([{ seq: 0 }, { seq: undefined }], view, 'x')).toBeNull() // no authoritative boundary
+  })
+
+  it('★ markReadUpTo sends only authoritative seqs — and nothing at all when there are none', () => {
+    expect(markReadUpTo([{ seq: 3 }, { seq: 9 }, { seq: 4 }])).toBe(9)
+    expect(markReadUpTo([{ seq: 0 }, { seq: undefined }])).toBeNull() // never claim to have read "up to 0"
+    expect(markReadUpTo([])).toBeNull()
   })
 })

@@ -30,6 +30,7 @@ import { startLiveHub } from './state/liveHub'
 import { AgentWindow } from './AgentWindow'
 import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
+import { firstUnreadIndex, hasAuthoritativeSeq, markReadUpTo, unreadViewFrom, type ChannelReadState } from './comm/unreadModel'
 import { EventLogView } from './eventlog/EventLogView'
 import { EventBrowsePanel } from './eventlog/EventBrowsePanel'
 import { useEventLogStore } from './eventlog/eventLogStore'
@@ -79,7 +80,17 @@ const CHANNEL_SHARE_WINDOW_ID = 'channelShare'
 // is unconditional (Backend2: the members-injection is not token-gated).
 const OPERATOR_AGENT_ID = 'operator'
 
-const byTs = (a: Message1, b: Message1): number => a.ts - b.ts
+// CYP-705 — `seq` is the CANONICAL ordering key (store-assigned, monotonic, viewer-independent); `ts` is a
+// client-observed epoch that can skew or collide, so it is only a fallback for legacy rows that carry no
+// authoritative seq (seq absent or 0). This matters beyond aesthetics: the unread divider is DEFINED as the first
+// message past the cursor by seq, so if the rendered order disagreed with seq the line would land in the wrong
+// place. Ordering and the divider must come from the same key.
+/** Existing read-state entries as a list (so a POST echo folds in without dropping the other channels). */
+const currentEntries = (v: { kind: 'unavailable' } | { kind: 'available'; channels: Readonly<Record<string, ChannelReadState>> }) =>
+  v.kind === 'available' ? Object.values(v.channels) : []
+
+const byOrder = (a: Message1, b: Message1): number =>
+  hasAuthoritativeSeq(a) && hasAuthoritativeSeq(b) ? (a.seq as number) - (b.seq as number) : a.ts - b.ts
 
 /** Cascade layout for a freshly opened window (content floor: 320×303). */
 function tiledWindow(id: string, title: string, index: number): WindowState {
@@ -109,6 +120,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const operator = operatorOverride ?? cfg.operator
 
   const setRoster = useHubStore((s) => s.setRoster)
+  const setUnreadView = useHubStore((s) => s.setUnreadView)
+  const unreadView = useHubStore((s) => s.unreadView)
   const setChannels = useHubStore((s) => s.setChannels)
   const setAcl = useHubStore((s) => s.setAcl)
   const onCommEvent = useHubStore((s) => s.onCommEvent)
@@ -231,6 +244,12 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   const loadRoster = useCallback(() => {
     hubRepo.fetchAgents().then((r) => { setRoster(r); setRosterLoadError(false) }).catch(() => setRosterLoadError(true))
   }, [hubRepo, setRoster])
+  // CYP-705 — the read-state fetch. On failure the view simply stays `unavailable`, which renders the visible
+  // "unknown" marker: no badge, and crucially no all-clear. OPERATOR-tier server-side, so a member gets 403 →
+  // unknown everywhere, which is the honest answer rather than a fabricated zero.
+  const loadReadState = useCallback(() => {
+    hubRepo.fetchReadState().then((rs) => setUnreadView(unreadViewFrom(rs))).catch(() => undefined)
+  }, [hubRepo, setUnreadView])
   const loadChannels = useCallback(() => {
     hubRepo.fetchChannels().then((c) => { setChannels(c); setChannelsLoadError(false) }).catch(() => setChannelsLoadError(true))
   }, [hubRepo, setChannels])
@@ -263,6 +282,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     loadRoster()
     loadChannels()
     loadAcl()
+    loadReadState() // CYP-705: unread cursors; on failure the view stays UNKNOWN (visible), never all-clear
     loadApiKey() // CYP-679: honest load-error (masked status else falsely reads "kein Schlüssel")
     loadRepoConfig() // CYP-679: honest load-error (blank form else falsely reads "unconfigured")
     loadProjects() // CYP-679: honest load-error at ProjectManagementPanel (else "Projekte werden geladen…" forever)
@@ -311,6 +331,20 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   useEffect(() => {
     if (selectedChannelId === null && channels.length > 0) setSelectedChannelId(channels[0].id)
   }, [channels, selectedChannelId])
+
+  // CYP-705 — MARK-READ. Viewing a channel ASKS the server to advance the cursor; it never moves the badge
+  // locally. The count changes only when the server answers (this 200, or the self-only ReadStateEvent), so a
+  // scroll can never fake "read". Only authoritative seqs are sent: with none, no request is made at all —
+  // `upToSeq: 0` would be a server no-op but still a claim to have read something.
+  useEffect(() => {
+    if (selectedChannelId === null) return
+    const rendered = messagesByChannel.get(selectedChannelId) ?? []
+    const upTo = markReadUpTo(rendered)
+    if (upTo === null) return
+    const known = unreadView.kind === 'available' ? unreadView.channels[selectedChannelId] : undefined
+    if (known !== undefined && known.lastReadSeq >= upTo) return // already at/past this point — no redundant POST
+    hubRepo.markRead(selectedChannelId, upTo).then((rs) => setUnreadView(unreadViewFrom([...currentEntries(unreadView), rs]))).catch(() => undefined)
+  }, [selectedChannelId, messagesByChannel, unreadView, hubRepo, setUnreadView])
 
   // On channel select, load its ACL-filtered history and fold it in (deduped by id → safe to overlap with live).
   useEffect(() => {
@@ -688,7 +722,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
       )
     }
     if (win.id === COMM_WINDOW_ID) {
-      const messages = [...(messagesByChannel.get(selectedChannelId ?? '') ?? [])].sort(byTs)
+      const messages = [...(messagesByChannel.get(selectedChannelId ?? '') ?? [])].sort(byOrder)
       return (
         <CommPanel
           channels={channels}
@@ -697,6 +731,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           messages={messages}
           senderRole={senderRole}
           rosterIds={mentionRosterIds}
+          readState={unreadView}
+          unreadDividerIndex={selectedChannelId === null ? null : firstUnreadIndex(messages, unreadView, selectedChannelId)}
           connection={commConnection}
           canWrite={null}
           sendError={commSendError}
