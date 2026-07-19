@@ -178,7 +178,9 @@ fun Route.commRoutes(
                 val participant = call.requireCommReader(deps, registry)
                 val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
                 val since = call.request.queryParameters["since"]?.toLongOrNull()
-                call.respond(hub.channelMessages(participant, channelId, since))
+                // CYP-744: the frontend history carries the DeliveredMessage wrapper (spans) — same envelope as the WS
+                // echo + the POST return, so the client's messagesByChannel slot holds ONE shape.
+                call.respond(hub.deliveredMessages(participant, channelId, since))
             }
             post {
                 // CYP-188 P2b-iii: the WRITE gate admits a verified human session (like the read gate); the
@@ -191,7 +193,9 @@ fun Route.commRoutes(
                 MessageInput.requireValidBody(body.body) // CYP-143: cap + validate before the chokepoint
                 // Sender = bearer identity; channel = path. Body carries neither (Gate #1).
                 val message = hub.postAsAgent(participant, channelId, body.body, body.meta)
-                call.respond(HttpStatusCode.Created, message)
+                // CYP-744: return the SAME DeliveredMessage envelope as the WS echo + REST get (Dev5 consistency:
+                // one shape in the messagesByChannel slot). The spans are viewer-independent (Display), resolved once.
+                call.respond(HttpStatusCode.Created, hub.deliveredOf(message))
             }
         }
 
@@ -337,8 +341,9 @@ internal fun commEventForParticipant(
     subscribed: Set<String>?,
 ): CommWsServerEvent? = when (event) {
     is MessageEvent -> {
-        val ch = event.message.channelId
-        val visible = state.acl.visibleMessages(participant, listOf(event.message)).isNotEmpty()
+        // CYP-744: the frame now carries a DeliveredMessage wrapper; filter on the whole message inside it.
+        val ch = event.delivered.message.channelId
+        val visible = state.acl.visibleMessages(participant, listOf(event.delivered.message)).isNotEmpty()
         if (visible && (subscribed?.contains(ch) != false)) event else null
     }
     is AclEvent ->

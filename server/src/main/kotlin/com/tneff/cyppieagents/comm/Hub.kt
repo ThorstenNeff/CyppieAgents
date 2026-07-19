@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.comm
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.ChannelReadState
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
@@ -94,7 +95,7 @@ class Hub(
         // funnel so the live MessageEvent, delivery, provenance, and the POST response all carry the real seq.
         val stored = store.append(message)
         audit.posted(stored)
-        _events.tryEmit(MessageEvent(stored)) // live push to /ws/comm (filtered per participant)
+        _events.tryEmit(MessageEvent(deliveredOf(stored))) // CYP-744: live /ws/comm push carries the DeliveredMessage wrapper (spans) — same envelope as REST get/post (filtered per participant)
         // CYP-705: a new message moves every OTHER reader's unread for this channel — recompute + push each
         // (self-only routed). Emitted AFTER MessageEvent so a client never renders a count lagging the message.
         emitReadStateFor(stored.channelId, exclude = senderId)
@@ -181,6 +182,25 @@ class Hub(
         // is dropped fail-closed, not served.
         return state.acl.visibleMessages(readerId, store.byChannel(channelId, since))
     }
+
+    /**
+     * CYP-744 — wrap [m] for a FRONTEND transport (/ws/comm + REST) with its server-resolved `@agent` mention spans.
+     * The spans are viewer-INDEPENDENT Display spans (body-derived, roster-resolved) → resolved ONCE per message, not
+     * per viewer. The stored [Message] is passed through WHOLE ([Message.seq]/meta/projectId/body intact — CYP-705's
+     * unread line + cursor ride `seq`). The `/ws/hub` `WireMessage` path NEVER calls this, so the spans never reach the
+     * BYOA agent wire (the §9-frame-guard). Single source for the WS echo, REST get, AND the REST post return — one
+     * envelope, so the client's `messagesByChannel` slot never holds two shapes.
+     */
+    fun deliveredOf(m: Message): DeliveredMessage =
+        DeliveredMessage(m, MentionResolver.resolve(m.body, membersOf(m.channelId)))
+
+    private fun membersOf(channelId: String): List<String> =
+        state.channels.firstOrNull { it.id == channelId }?.members ?: emptyList()
+
+    /** CYP-744 — the FRONTEND message history: [channelMessages] wrapped as [DeliveredMessage] with resolved spans.
+     *  REST `GET /api/channels/{id}/messages` serves THIS; `/ws/hub` keeps serving bare [channelMessages] (§9). */
+    fun deliveredMessages(readerId: String, channelId: String, since: Long? = null): List<DeliveredMessage> =
+        channelMessages(readerId, channelId, since).map(::deliveredOf)
 
     /** Aggregated inbox across all channels [readerId] may read (Spec 02 §6.3, ACL-filtered). */
     fun inbox(readerId: String, since: Long? = null): List<Message> {

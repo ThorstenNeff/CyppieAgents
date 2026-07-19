@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.comm
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.MessageMeta
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -52,7 +53,9 @@ class CommRepository(
 
     override suspend fun messages(channelId: String, since: Long?): List<Message> {
         val query = if (since != null) "?since=$since" else ""
-        return getList("/api/channels/$channelId/messages$query", Message.serializer())
+        // CYP-744: the endpoint now returns DeliveredMessage{message, mentions}; the CMP client consumes the bare
+        // message (it does not render the mention-cue yet — that's the web-ts client). Spans are dropped here.
+        return getList("/api/channels/$channelId/messages$query", DeliveredMessage.serializer()).map { it.message }
     }
 
     override suspend fun send(channelId: String, body: String, meta: MessageMeta?): Message {
@@ -63,7 +66,8 @@ class CommRepository(
         }
         val text = response.bodyAsText()
         ensureSuccess(response, text)
-        return CommJson.decodeFromString(Message.serializer(), text)
+        // CYP-744: POST returns the same DeliveredMessage envelope as GET/WS; the CMP client uses the bare message.
+        return CommJson.decodeFromString(DeliveredMessage.serializer(), text).message
     }
 
     private suspend fun <T> getList(path: String, element: KSerializer<T>): List<T> {

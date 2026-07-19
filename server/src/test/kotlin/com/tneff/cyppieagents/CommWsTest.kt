@@ -68,8 +68,8 @@ class CommWsTest {
                 setBody(SendMessageRequest("live!"))
             }
             val ev = assertIs<MessageEvent>(nextEvent())
-            assertEquals("live!", ev.message.body)
-            assertEquals("po-backend", ev.message.channelId)
+            assertEquals("live!", ev.delivered.message.body)
+            assertEquals("po-backend", ev.delivered.message.channelId)
         }
     }
 
@@ -105,7 +105,7 @@ class CommWsTest {
                 setBody(SendMessageRequest("hi po"))
             }
             val ev = assertIs<MessageEvent>(nextEvent())
-            assertEquals("po-frontend", ev.message.channelId)
+            assertEquals("po-frontend", ev.delivered.message.channelId)
         }
     }
 

@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -58,13 +59,13 @@ class CommHubAclTest {
             setBody(SendMessageRequest("ready"))
         }
         assertEquals(HttpStatusCode.Created, post.status)
-        val created: Message = post.body()
+        val created: Message = post.body<DeliveredMessage>().message // CYP-744: unwrap the DeliveredMessage envelope
         assertEquals("backend", created.from)
         assertEquals("po-backend", created.channelId)
 
         val read = client.get("/api/channels/po-backend/messages") { bearerAuth("tok-po") }
         assertEquals(HttpStatusCode.OK, read.status)
-        val msgs: List<Message> = read.body()
+        val msgs: List<Message> = read.body<List<DeliveredMessage>>().map { it.message } // CYP-744: unwrap
         assertEquals(listOf("ready"), msgs.map { it.body })
     }
 

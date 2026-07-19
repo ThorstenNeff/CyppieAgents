@@ -3,6 +3,7 @@ package com.tneff.cyppieagents
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -57,13 +58,15 @@ class OperatorAccessTest {
     fun operatorCanSendAsHumanInTheLoop() = testApplication {
         application { installComm(config()) }
         val rest = client()
+        // CYP-744: the /messages endpoints now return the DeliveredMessage wrapper; unwrap to the bare message.
         val created: Message = rest.post("/api/channels/po-backend/messages") {
             bearerAuth("tok-op"); contentType(ContentType.Application.Json)
             setBody(SendMessageRequest("operator says hi"))
-        }.body()
+        }.body<DeliveredMessage>().message
         assertEquals("operator", created.from) // sent as the operator participant, audited
 
-        val read: List<Message> = rest.get("/api/channels/po-backend/messages") { bearerAuth("tok-backend") }.body()
+        val read: List<Message> = rest.get("/api/channels/po-backend/messages") { bearerAuth("tok-backend") }
+            .body<List<DeliveredMessage>>().map { it.message }
         assertEquals(listOf("operator says hi"), read.map { it.body })
     }
 

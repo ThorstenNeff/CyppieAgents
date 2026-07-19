@@ -14,9 +14,14 @@ import kotlinx.serialization.Serializable
 @Serializable
 sealed interface CommWsServerEvent
 
+/**
+ * CYP-744 — the /ws/comm live message push now carries the FRONTEND [DeliveredMessage] wrapper: `delivered.message`
+ * (the whole stored message, seq intact) + `delivered.mentions` (server-resolved spans). The `/ws/hub` BYOA frame
+ * (`WireMessage`) still carries the bare [Message] — the spans never reach the agent wire (§9-frame-guard).
+ */
 @Serializable
 @SerialName("message")
-data class MessageEvent(val message: Message) : CommWsServerEvent
+data class MessageEvent(val delivered: DeliveredMessage) : CommWsServerEvent
 
 @Serializable
 @SerialName("acl")

@@ -98,6 +98,8 @@ class HubMcpTools(
     /** `hub_watch`: live messages the agent may read — the same per-participant ACL filter as `/ws/comm`. */
     fun watch(): Flow<Message> = hub.events
         .filterIsInstance<MessageEvent>()
-        .filter { hub.state.acl.canRead(it.message.channelId, agentId) }
-        .map { it.message }
+        // CYP-744: the event now wraps a DeliveredMessage; the MCP agent path maps to the BARE message (drops the
+        // Display spans) — an agent connector never receives mention spans (§9: enrichment stays off the agent wire).
+        .filter { hub.state.acl.canRead(it.delivered.message.channelId, agentId) }
+        .map { it.delivered.message }
 }
