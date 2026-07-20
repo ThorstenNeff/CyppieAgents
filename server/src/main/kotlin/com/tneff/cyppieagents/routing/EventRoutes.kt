@@ -2,13 +2,14 @@ package com.tneff.cyppieagents.routing
 
 import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.auth.AuthDeps
-import com.tneff.cyppieagents.auth.AuthPrincipal
 import com.tneff.cyppieagents.auth.AuthRole
 import com.tneff.cyppieagents.auth.PrincipalKey
 import com.tneff.cyppieagents.auth.authenticatedApi
+import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.EventSink
 import com.tneff.cyppieagents.events.Page
+import com.tneff.cyppieagents.model.AclMatrix
 import com.tneff.cyppieagents.model.ApiError
 import com.tneff.cyppieagents.model.ApiErrorBody
 import com.tneff.cyppieagents.model.EventType
@@ -34,6 +35,10 @@ import io.ktor.server.routing.routing
  * The cross-project `?projectId=` override stays OPERATOR-only (a non-operator is forced to the active
  * project). (Historical note: this was operator-only pre-CYP-186; the read tier was widened to MEMBER there.)
  *
+ * **CYP-719:** `comm.*` events additionally carry a channel, so they are ACL-narrowed here ([aclQuery]) — a
+ * non-operator sees a `comm.sent`/`comm.received` row only for a channel it may `canRead` (operator bypasses),
+ * closing the leak where any MEMBER learned "who posted where/when" without a per-channel grant.
+ *
  * Filters arrive as **query params** (not a JSON body, mirroring `CommApi.messages`); the time window
  * is half-open `[since, until)`; paging is stable over `seq` (`afterSeq` cursor + `limit`).
  */
@@ -46,6 +51,10 @@ fun Route.eventRoutes(
     // never honor an override (forced-active stays the only behavior).
     authorizedProjects: () -> Set<String> = { emptySet() },
     deps: AuthDeps = AuthDeps(registry),
+    // CYP-719: the CURRENT ACL (live var, rebuilt on every grant/project switch) for the comm.* read-filter.
+    // Defaulted to a FAIL-CLOSED empty matrix (canRead → false for every non-operator) so a caller that omits
+    // it can never fall OPEN — production (PlatformWiring) always passes `{ booted.hub.state.acl }`.
+    acl: () -> AclMatrix = { AclMatrix(emptyList(), emptyList()) },
     apiBase: String = "/api",
 ) {
     // CYP-186 BE2: the event-log is secret-free metadata → readable at the MEMBER tier (gate STRUCTURAL,
@@ -56,15 +65,14 @@ fun Route.eventRoutes(
         route("$apiBase/events") {
             get {
                 val q = call.request.queryParameters
-                // CYP-240 (A): reuse the principal the STRUCTURAL AuthGuard already resolved + stashed under
-                // [PrincipalKey] — do NOT call resolvePrincipal again (that was a 2nd live Kratos whoami per
-                // /api/events request, doubling this endpoint's exposure to the whoami-race/timeout). The
-                // handler runs inside the authenticatedApi(MEMBER) group, so PrincipalKey is always present.
-                val isOperator = when (val p = call.attributes[PrincipalKey]) {
-                    is AuthPrincipal.MachineOperator -> true
-                    is AuthPrincipal.Human -> p.role == AuthRole.OPERATOR
-                    else -> false
-                }
+                // CYP-240 (A) + CYP-719 §3: reuse the principal the STRUCTURAL AuthGuard already resolved +
+                // stashed under [PrincipalKey] — do NOT call resolvePrincipal again (that was a 2nd live Kratos
+                // whoami per /api/events request, guarded by EventsPrincipalReuseTest). The handler runs inside
+                // the authenticatedApi(MEMBER) group, so PrincipalKey is always present. [commReadSubjectOf]
+                // derives the ACL read-subject from that same stash (whoami-free), matching the WS resolver
+                // vocab; `isOperator` is then just "the subject is the member-of-all operator".
+                val subject = commReadSubjectOf(call.attributes[PrincipalKey])
+                val isOperator = subject == HubState.OPERATOR_ID
                 val filter = EventFilter(
                     agentId = q["agentId"],
                     type = q["type"]?.let { parseType(it) },
@@ -82,7 +90,9 @@ fun Route.eventRoutes(
                 )
                 val afterSeq = q["afterSeq"]?.let { parseLong(it, "afterSeq") }
                 val limit = (q["limit"]?.let { parseInt(it, "limit") } ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
-                call.respond(sink.query(filter, Page(afterSeq = afterSeq, limit = limit)))
+                // CYP-719: ACL-filter comm.* down to channels the subject may canRead (operator bypasses),
+                // over-fetching so the `limit`/`nextAfterSeq` cursor stays correct across denied rows.
+                call.respond(aclQuery(sink, filter, Page(afterSeq = afterSeq, limit = limit), subject, isOperator, acl()))
             }
         }
     }
@@ -99,6 +109,7 @@ fun Application.installEvents(
     registry: TokenRegistry,
     activeProjectId: () -> String? = { null },
     authorizedProjects: () -> Set<String> = { emptySet() },
+    acl: () -> AclMatrix = { AclMatrix(emptyList(), emptyList()) }, // CYP-719: fail-closed default
 ) {
     install(ContentNegotiation) { json(CommJson) }
     install(StatusPages) {
@@ -109,7 +120,7 @@ fun Application.installEvents(
             call.respond(HttpStatusCode.InternalServerError, ApiErrorBody(ApiError("internal", "internal error")))
         }
     }
-    routing { eventRoutes(sink, registry, activeProjectId, authorizedProjects) }
+    routing { eventRoutes(sink, registry, activeProjectId, authorizedProjects, acl = acl) }
 }
 
 private const val DEFAULT_LIMIT = 100

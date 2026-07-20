@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.events.EventFilter
 import com.tneff.cyppieagents.events.EventSink
+import com.tneff.cyppieagents.model.AclMatrix
 import com.tneff.cyppieagents.model.CaughtUp
 import com.tneff.cyppieagents.model.EventPushed
 import com.tneff.cyppieagents.model.EventsWsClientEvent
@@ -26,9 +27,12 @@ import kotlinx.coroutines.launch
  * post-upgrade close convention as `/ws/agent` and `/ws/comm`; cross-origin browser upgrades are additionally
  * refused pre-handshake by CORS (HTTP 403, CYP-30).
  *
- * The Event-Log is team-wide + secret-free, so every reader sees the active project's events — no per-agent ACL
- * (unlike `/ws/comm`). The cross-project `?projectId` override (CYP-94) stays **operator-only** (a non-operator's
- * authorized set is empty → forced-active). [SubscribeEvents] otherwise only narrows the caller's own view.
+ * The Event-Log is team-wide + secret-free, so every reader sees the active project's non-comm events. **CYP-719:
+ * `comm.*` events ARE per-agent ACL-narrowed** (like `/ws/comm`) — a non-operator receives a `comm.sent`/
+ * `comm.received` push only for a channel it may `canRead` ([aclVisibleEvent], the SAME predicate as REST
+ * `aclQuery`); the operator bypasses. The cross-project `?projectId` override (CYP-94) stays **operator-only** (a
+ * non-operator's authorized set is empty → forced-active). [SubscribeEvents] otherwise only narrows the caller's
+ * own view.
  */
 // [activeProjectId] defaults to unscoped for legacy single-store WS tests; production (installPlatform)
 // always passes the registry active-pointer resolver (CYP-102). [authorizedProjects] (S17 / CYP-94) is
@@ -40,6 +44,9 @@ fun Route.eventSocket(
     activeProjectId: () -> String? = { null },
     authorizedProjects: () -> Set<String> = { emptySet() },
     deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry),
+    // CYP-719: the CURRENT ACL for the comm.* live-tail filter (same live var + fail-closed empty default as
+    // the REST eventRoutes) — production passes `{ booted.hub.state.acl }`, tests default to deny-all.
+    acl: () -> AclMatrix = { AclMatrix(emptyList(), emptyList()) },
 ) {
     webSocket("/ws/events") {
         // CYP-188 B: MEMBER-tier read (was operator-only) — matches GET /api/events (authenticatedApi MEMBER),
@@ -78,7 +85,9 @@ fun Route.eventSocket(
         val pump = launch {
             emit(CaughtUp)
             sink.subscribe(EventFilter.ALL).collect { event ->
-                if (filter.matches(event)) emit(EventPushed(event))
+                // CYP-719: the SAME ACL predicate as REST (aclQuery) — a comm.* event reaches the reader only
+                // if it may canRead the event's channel; operator bypasses. `reader` is the WS ACL-subject.
+                if (filter.matches(event) && aclVisibleEvent(event, reader, isOperator, acl())) emit(EventPushed(event))
             }
         }
         try {
