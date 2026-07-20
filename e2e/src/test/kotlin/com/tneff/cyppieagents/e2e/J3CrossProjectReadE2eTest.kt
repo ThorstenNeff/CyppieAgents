@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.ApiKeyView
 import com.tneff.cyppieagents.model.AuthorizeShareRequest
 import com.tneff.cyppieagents.model.Channel
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -110,7 +111,7 @@ class J3CrossProjectReadE2eTest {
             p.provisionShareAndSwitch()
             // grantee backend reads the owner's channel ACROSS the boundary (200, not 403) and sees the message
             p.asAgent("backend").use { c ->
-                val msgs = c.get("${p.baseUrl}/api/channels/po-frontend/messages").body<List<Message>>()
+                val msgs = c.get("${p.baseUrl}/api/channels/po-frontend/messages").body<List<DeliveredMessage>>().map { it.message }
                 assertTrue(msgs.any { it.body == "hello-from-frontend" }, "grantee reads the owner's cross-project message")
             }
         }

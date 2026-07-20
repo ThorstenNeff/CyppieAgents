@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.acl.AclLiveEvent
 import com.tneff.cyppieagents.acl.AclRepository
 import com.tneff.cyppieagents.acl.AclWsClient
 import com.tneff.cyppieagents.model.AclEntry
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -119,7 +120,7 @@ class Cyp317AclNonMemberGrantClientWireTest {
                 // ENFORCEMENT: the granted non-member now really sends AND reads.
                 p.asAgent("backend").use { be ->
                     assertEquals(HttpStatusCode.Created, be.send(base, "po-frontend", "post-grant").status, "granted non-member can now send")
-                    val msgs = be.get("$base/api/channels/po-frontend/messages").body<List<Message>>()
+                    val msgs = be.get("$base/api/channels/po-frontend/messages").body<List<DeliveredMessage>>().map { it.message }
                     assertTrue(msgs.any { it.body == "post-grant" }, "granted non-member can now read")
                 }
                 collector.cancel()

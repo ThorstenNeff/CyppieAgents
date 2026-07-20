@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.model.ApiKeyRequest
 import com.tneff.cyppieagents.model.ApiKeyView
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.CreateProjectRequest
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.ChannelsEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.EventPushed
@@ -255,9 +256,12 @@ class J2IsolationE2eTest {
                     // POSITIVE CONTROL — an active-project (beta) message on the colliding channel DOES arrive, so
                     // the post-switch delivery path is proven live (the drop-assert below is not vacuously green).
                     p.injectBufferedMessageEvent(projectId = "beta", channelId = "po-frontend", from = "frontend", body = "beta-live")
-                    val delivered = withTimeoutOrNull(2000) { nextMessageOrAcl() }
+                    val ev = withTimeoutOrNull(2000) { nextMessageOrAcl() }
+                    // CYP-765: reads through the CYP-744 envelope (`delivered.message`). Deliberately still
+                    // asserts the BODY reached us — not merely `ev is MessageEvent` — so a broken delivery path
+                    // reddens HERE and the axis-1 assertNull below can never be vacuously green.
                     assertTrue(
-                        delivered is MessageEvent && delivered.message.body == "beta-live",
+                        ev is MessageEvent && ev.delivered.message.body == "beta-live",
                         "positive control: an active-project MessageEvent is delivered over the held, switched connection",
                     )
 
@@ -348,9 +352,19 @@ class J2IsolationE2eTest {
         return field.get(booted.hub) as kotlinx.coroutines.flow.MutableSharedFlow<CommWsServerEvent>
     }
 
+    /**
+     * CYP-765: the frame carries the CYP-744 [DeliveredMessage] envelope. The staged event must stay a FAITHFUL
+     * analogue of a real in-flight one — the wrapper is added around the SAME [Message], nothing about the
+     * message (projectId/channelId/body) is weakened, because those are exactly the fields the pump's
+     * `visibleMessages` gate reads (`CommRoutes.commEventForParticipant`, MessageEvent branch).
+     */
     private fun E2ePlatform.injectBufferedMessageEvent(projectId: String, channelId: String, from: String, body: String) {
         hubEvents().tryEmit(
-            MessageEvent(Message(id = "m-$projectId-$channelId-$body", channelId = channelId, from = from, body = body, ts = 0L, projectId = projectId)),
+            MessageEvent(
+                DeliveredMessage(
+                    Message(id = "m-$projectId-$channelId-$body", channelId = channelId, from = from, body = body, ts = 0L, projectId = projectId),
+                ),
+            ),
         )
     }
 
