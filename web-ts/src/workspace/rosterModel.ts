@@ -2,6 +2,7 @@
 // WorkspaceRosterPanel (CYP-186). Framework-free + unit-tested. The privacy rule (short, NON-identifying labels;
 // no email / full identity) lives here so it is proven, not asserted in a component.
 import type { WorkspaceMember, OperatorAudit } from '../types/generated/contract'
+import { AUTH_ROLE } from '../auth/authRole'
 
 /** The short, non-identifying member label: the friendly displayName when the server supplies one, else the first 8
  *  chars of the identityId (CMP `shortId`). Never the full identity / email. */
@@ -17,7 +18,7 @@ export function shortId(identityId: string): string {
 
 /** The tier as human TEXT (never colour alone, WCAG 1.4.1). OPERATOR (any case) → "Operator", else "Mitglied". */
 export function tierLabel(tier: string): string {
-  return tier.toUpperCase() === 'OPERATOR' ? 'Operator' : 'Mitglied'
+  return tier.toUpperCase() === AUTH_ROLE.OPERATOR ? 'Operator' : 'Mitglied'
 }
 
 /** A content-free one-line audit summary: the verb + path only (no bodies, no query secrets — the server sends the
