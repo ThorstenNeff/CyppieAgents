@@ -98,6 +98,24 @@ object PgStoreRouting {
             ?.let { PgRemoteTokenStore(it, cipher, projectId) } ?: fileFallback()
     }
 
+    /**
+     * CYP-770 ① — the missing placement point for `project`. [PgProjectRegistry] exists, so the store is really
+     * offloadable; without this accessor a migration window on `project` was opened by the migrator but never
+     * consulted, leaving the registry's writes unfrozen during the copy (Finding B, on the project registry).
+     */
+    fun projectRegistry(
+        projectId: String,
+        bindings: BindingRegistry,
+        connections: ConnectionProvider,
+        seedProjectId: String,
+        seedProjectName: String,
+        fileFallback: () -> ProjectRegistry,
+    ): ProjectRegistry {
+        windowReason("project", projectId, bindings)?.let { return MigrationGatedProjectRegistry(fileFallback(), it) }
+        return activeDataSource("project", projectId, bindings, connections)
+            ?.let { PgProjectRegistry(it, seedProjectId, seedProjectName) } ?: fileFallback()
+    }
+
     fun projectConfigStore(
         projectId: String,
         bindings: BindingRegistry,

@@ -80,9 +80,10 @@ class TierQuotaPolicyTest {
     // ---- CYP-220 Phase 6 Slice 1: residency FAIL-CLOSED + inventory gate ----
 
     @Test fun storeResidency_operationalCapable_bootstrapHome() {
-        listOf("project", "project_config", "remote_token", "agent_override", "channel_share", "avatar_blob", "event_log", "agent_events", "report", "session", "delivery")
+        listOf("project", "project_config", "remote_token", "agent_override", "channel_share", "event_log", "agent_events", "report", "session", "delivery")
             .forEach { assertEquals(StoreResidency.USER_DB_CAPABLE, StoreResidencies.of(it), "$it offloadable") }
-        listOf("roles", "account", "dsn_registry", "store_binding", "migration_audit", "mcp_config", "free_fallback_toggle", "quota_usage")
+        // CYP-770: avatar_blob moved to mustStayHome — classified, but not offloadable while no PgAvatarBlobStore exists.
+        listOf("roles", "account", "dsn_registry", "store_binding", "migration_audit", "mcp_config", "free_fallback_toggle", "quota_usage", "avatar_blob")
             .forEach { assertEquals(StoreResidency.MUST_STAY_HOME, StoreResidencies.of(it), "$it must stay home") }
     }
 
@@ -100,10 +101,10 @@ class TierQuotaPolicyTest {
         // Inventory gate: every classified store is in exactly one bucket (the init-check enforces disjointness),
         // and `inventory` is exactly the union — so a reviewer adding a store must classify it deliberately.
         val expected = setOf(
-            "project", "project_config", "remote_token", "agent_override", "channel_share", "avatar_blob",
+            "project", "project_config", "remote_token", "agent_override", "channel_share",
             "event_log", "agent_events", "report", "session", "delivery",
             "roles", "account", "dsn_registry", "store_binding", "migration_audit", "mcp_config",
-            "free_fallback_toggle", "quota_usage",
+            "free_fallback_toggle", "quota_usage", "avatar_blob",
         )
         assertEquals(expected, StoreResidencies.inventory, "the known-store inventory drifted — classify new stores explicitly")
         // every inventory key resolves (capable keys → USER_DB_CAPABLE), and nothing outside is capable.
