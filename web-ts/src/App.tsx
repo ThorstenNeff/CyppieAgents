@@ -210,6 +210,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // self-clears when headroom returns (overloadVisible) and is dismissable. A NEW reject un-dismisses (Q5).
   const [overloadActive, setOverloadActive] = useState(false)
   const [overloadDismissed, setOverloadDismissed] = useState(false)
+  // CYP-759: a monotonic count of COMPLETED capacity GETs, and the count captured at the last reject. The overload
+  // self-clear (overloadVisible) requires evidence NEWER than the reject — i.e. the count advanced since — so a
+  // snapshot fetched BEFORE the reject can't clear a live 503 (stale estimate over-riding the authoritative reject).
+  // Refs, not state: the setCapacity / setOverloadActive that accompany each change already drive the re-render;
+  // these only need to read current at render time.
+  const capacityFetchSeq = useRef(0)
+  const overloadRejectSeq = useRef<number | null>(null)
   // CYP-643: the app-global theme mode (client-local, per-user, durable). Loaded once from localStorage; applied to
   // <html> via data-theme (the tokens CSS recolours). system = no attribute → prefers-color-scheme governs.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode(browserStore()))
@@ -353,7 +360,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     loadApiKey() // CYP-679: honest load-error (masked status else falsely reads "kein Schlüssel")
     loadRepoConfig() // CYP-679: honest load-error (blank form else falsely reads "unconfigured")
     loadProjects() // CYP-679: honest load-error at ProjectManagementPanel (else "Projekte werden geladen…" forever)
-    hubRepo.getCapacity().then(setCapacity).catch(() => undefined) // CYP-642 capacity snapshot — CYP-679 N/A: the pill renders nothing on absent by design (absent ≠ empty)
+    hubRepo.getCapacity().then((c) => { capacityFetchSeq.current += 1; setCapacity(c) }).catch(() => undefined) // CYP-642 capacity snapshot (CYP-759: bump the fetch-seq so a self-clear can require newer-than-reject evidence) — CYP-679 N/A: pill renders nothing on absent
     if (operator) {
       // CYP-650: operator-only egress — a member never fetches the roster/audit (enumeration seam).
       loadWorkspaceMembers() // CYP-679: honest load-error (else falsely reads "Keine Mitglieder")
@@ -494,7 +501,11 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   }, [agents, operator])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
-    hubRepo.requestMode(agentId, mode === 'shell' ? 'TERMINAL' : 'ORCHESTRATION').catch(() => undefined)
+    // CYP-759 (a): route the reject through noteCapacityReject instead of a blanket swallow. It is a No-Op for any
+    // non-capacity error (so the mode change stays non-optimistic / echo-driven, no regression), but if the server
+    // ever 503s a mode switch on capacity (a shell = a PTY, plausibly capacity-relevant) the banner rises instead
+    // of the reject vanishing silently. Consistent with the start/add reject paths.
+    hubRepo.requestMode(agentId, mode === 'shell' ? 'TERMINAL' : 'ORCHESTRATION').catch(noteCapacityReject)
   }
 
   // CYP-643: change + persist the theme mode. The effect re-applies it to <html>; localStorage keeps it across
@@ -512,7 +523,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // server's AgentRunStateEvent (the POST response, mirrored by /ws/lifecycle) — both resolve the pending. A
   // rejected request clears the pending (no event will come) so the transient label can't stick.
   // CYP-642: re-read the server-authoritative capacity after a spawn/exit moved `current`.
-  const refreshCapacity = () => hubRepo.getCapacity().then(setCapacity).catch(() => undefined)
+  const refreshCapacity = () => hubRepo.getCapacity().then((c) => { capacityFetchSeq.current += 1; setCapacity(c) }).catch(() => undefined)
   // CYP-649: re-read the server-owned compact status (on load failure it STAYS null → honest "unknown", never a
   // defaulted idle/off). Used by the mount fetch, the poll-while-open, and the post-config refresh.
   const refreshCompactStatus = () => hubRepo.getCompactStatus().then(setCompactStatus).catch(() => undefined)
@@ -535,6 +546,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // and un-dismisses it (a new reject re-surfaces even after a prior dismiss, Q5).
   const noteCapacityReject = (err: unknown) => {
     if (restErrorCode(err) === 'capacity_exceeded') {
+      overloadRejectSeq.current = capacityFetchSeq.current // CYP-759: mark WHEN — only a capacity GET AFTER this may self-clear it
       setOverloadActive(true)
       setOverloadDismissed(false)
     }
@@ -998,9 +1010,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           />
         </div>
       )}
-      {overloadVisible(overloadActive, overloadDismissed, capacity) && (
-        <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />
-      )}
+      {overloadVisible(
+        overloadActive,
+        overloadDismissed,
+        capacity,
+        // CYP-759: has a capacity GET completed AFTER the reject? Only then may headroom self-clear the banner.
+        overloadRejectSeq.current !== null && capacityFetchSeq.current > overloadRejectSeq.current,
+      ) && <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />}
       {/* CYP-641 titleAccessory (activity badge) rides on each WindowFrame, inside the CYP-642 desktop region. */}
       <div className="workspace-desktop">
         <WindowHost>

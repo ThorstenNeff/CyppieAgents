@@ -763,3 +763,29 @@ describe('CYP-735 — an unset-up hub says so, and never guesses it from a faile
     expect(queryByTestId('workspace.setupError')).toBeNull() // …not the error one
   })
 })
+
+describe('CYP-759 — a real capacity reject is not swallowed by a stale (pre-reject) headroom snapshot', () => {
+  const capacityRejectRepo = () => {
+    const r = fakeRepo()
+    // capacity snapshot has HEADROOM, fetched on mount BEFORE any reject — the stale estimate that used to swallow.
+    r.getCapacity = vi.fn().mockResolvedValue({ current: 2, estimatedMax: 6 })
+    // the server authoritatively rejects the spawn as over capacity (503 capacity_exceeded).
+    r.setLifecycle = vi.fn().mockRejectedValue(
+      new RestError(503, 'POST', '/api/agents/backend/start', JSON.stringify({ error: { code: 'capacity_exceeded' } })),
+    )
+    return r
+  }
+
+  it('★ headroom snapshot + capacity_exceeded reject → the overload banner SHOWS (stale estimate must not clear it)', async () => {
+    // Case A: without the fix, overloadVisible self-cleared on the room-showing snapshot (fetched before the reject),
+    // so the authoritative 503 vanished. The banner must stand until evidence NEWER than the reject shows headroom.
+    const hub = new FakeSocketHub()
+    const { findByTestId } = render(
+      <App config={config} repo={capacityRejectRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    fireEvent.click(await findByTestId('lifecycle.start.backend'))
+    await flush()
+    expect(await findByTestId('overload-banner')).toBeTruthy()
+  })
+})
