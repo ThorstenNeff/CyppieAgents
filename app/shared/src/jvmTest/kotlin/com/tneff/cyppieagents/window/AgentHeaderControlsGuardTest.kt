@@ -13,10 +13,12 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.agentview.AgentLifecycleState
 import com.tneff.cyppieagents.agentview.AgentViewModel
 import com.tneff.cyppieagents.agentview.AgentViewTags
 import com.tneff.cyppieagents.agentview.AgentWindow
 import com.tneff.cyppieagents.agentview.HEADER_LABELLED_CONTROLS_MIN_WIDTH
+import com.tneff.cyppieagents.agentview.StubAgentLifecycle
 import com.tneff.cyppieagents.agentview.StubAgentSession
 import com.tneff.cyppieagents.connector.ConnectorTags
 import kotlin.test.Test
@@ -151,9 +153,19 @@ class AgentHeaderControlsGuardTest {
     private fun measure(width: Float): Probe {
         lateinit var probe: Probe
         runComposeUiTest {
-            // An operator, RUNNING is irrelevant here: `enabled` does not change a node's bounds, and a disabled
-            // control must still be a target (it is announced, and it becomes enabled without relayout).
-            val vm = AgentViewModel(StubAgentSession(), AGENT_ID, canControl = true)
+            // An operator. `enabled` is still irrelevant to BOUNDS (a disabled control must be a target too — it is
+            // announced, and becomes enabled without relayout), but CYP-771/CYP-746 made the lifecycle LOAD-BEARING
+            // here for a different reason: the fidelity badge — the 199 dp marker this whole arithmetic is about —
+            // renders only in a badge-bearing state. With `capabilities = null` that is D (`null` + RUNNING, the `○`
+            // "not yet reported" badge); a not-RUNNING agent is E and renders NO badge, so `badgeWidth` below would
+            // have no node to measure. RUNNING is chosen deliberately over passing degraded caps: it keeps the SAME
+            // `connector_fidelity_unknown` label the 199 dp figure was measured from, so the sweep still pins the
+            // exact geometry the CYP-369 defect produced — a different label would be a different width.
+            val lifecycle = StubAgentLifecycle(mapOf(AGENT_ID to AgentLifecycleState.RUNNING))
+            val vm = AgentViewModel(
+                StubAgentSession(), AGENT_ID,
+                lifecycle = lifecycle, lifecycleSource = lifecycle, canControl = true,
+            )
             setContent {
                 MaterialTheme {
                     Box(Modifier.size(width.dp, 900.dp)) {
