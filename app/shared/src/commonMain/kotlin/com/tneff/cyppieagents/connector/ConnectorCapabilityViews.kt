@@ -321,6 +321,14 @@ fun CapabilityPanel(
         val activeText = if (caps != null) {
             stringResource(Res.string.connector_active, connectorKindLabel(caps.kind))
         } else {
+            // CYP-746 — the E-copy `connector_caps_not_running` is DELIBERATELY OMITTED here (PO-ratified 2026-07-20).
+            // This panel is reachable ONLY via the header fidelity badge (AgentShell `onCapabilityBadgeClick`), and
+            // that badge is ABSENT for E (NOT_STARTED = null caps + not-RUNNING) — so the panel never opens for a
+            // pure-E agent. Every REACHABLE null-caps panel state is D (RUNNING, hasn't reported yet), where "not yet
+            // reported" is exactly right. The reachability premise is pinned by the D-vs-E model tooth
+            // (Cyp746CapabilityDisplayStateTest.dUnknown_vs_eNotStarted_areDistinct) + the E→no-badge Maestro flow
+            // (connector-capability-state-android.yaml). ADD an E-copy here IF a non-badge path to this panel is
+            // ever introduced (then E becomes reachable and "not yet reported" would be a lie for a stopped agent).
             stringResource(Res.string.connector_fidelity_unknown)
         }
         Text(
