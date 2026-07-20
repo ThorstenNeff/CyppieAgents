@@ -25,6 +25,10 @@ class ConnectorCapabilityLoadSuppressionTest {
 
     @Test
     fun badge_suppressedWhileLoading_evenWhenCapsNull() = runComposeUiTest {
+        // CYP-746: within the load window — BEFORE the C→D timeout — the badge stays suppressed. Freeze the virtual
+        // clock so the badge's `LaunchedEffect(loading)` 15 s C→D `delay` can't auto-advance and surface a `○` here;
+        // the hung-load→`○` fallback is asserted at the model level (Cyp746 hungLoading_isUnknown_notFull).
+        mainClock.autoAdvance = false
         setContent { MaterialTheme { ConnectorCapabilityBadge(caps = null, agentId = "a", lifecycle = AgentLifecycleState.RUNNING, loading = true) } }
         onNodeWithTag(ConnectorTags.fidelityBadge("a")).assertDoesNotExist()
     }
