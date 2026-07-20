@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.model
 
+import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -268,6 +269,36 @@ data class ChannelReadState(
     /** Server-computed count of messages in this channel with `seq > lastReadSeq`, ACL-`canRead` + in-project,
         excluding the principal's own sends. `0` = confirmed-read; `> 0` = unread. */
     val unreadCount: Int,
+    /**
+     * CYP-745 (Notify Phase-2) — server-computed: does at least one UNREAD message in this channel mention the
+     * **calling principal**? `true` ⟺ ∃ a message with `seq > lastReadSeq` whose CYP-744 spans contain the
+     * caller ([com.tneff.cyppieagents.model.MentionSpan]), under the SAME filter chain as [unreadCount]
+     * (ACL-`canRead` + in-project, own sends excluded) — single-sourced server-side so the two can never drift.
+     *
+     * Recognition rides the ONE `MentionResolver` pass that also produces the Display overlay spans, so the
+     * Notify signal and the highlight can never disagree. The client **renders this as-is** and never
+     * re-derives it from a message list + cursor (server-authoritative viewer-fact).
+     *
+     * **Independent of [unreadCount]:** `unreadCount > 0` with no mention is the normal case; `true` here
+     * implies `unreadCount >= 1`, but NOT the converse — a mention badge must not be keyed off the count.
+     *
+     * Three-state honesty rides PRESENCE exactly as for [unreadCount]: channel ABSENT = UNKNOWN (no cursor,
+     * neutral "•"); present + `false` = authoritative "no unread mention"; present + `true` = mention badge.
+     * So no nullable Boolean is needed. Additive + defaulted (`false`) → older payloads still decode.
+     *
+     * Carried ONLY on the self-only frontend surfaces (`/ws/comm` [ReadStateEvent] + the read-state REST) —
+     * never on the `/ws/hub` BYOA wire, which keeps carrying the bare [Message] (the §9 boundary).
+     *
+     * **`@Required` (CYP-745, per the [AuthMe.verified] precedent) — load-bearing, not cosmetic.** Without it a
+     * defaulted `Boolean` may be OMITTED by a terse serializer and lands OPTIONAL in the generated contract; a
+     * PRESENT channel could then arrive without the field, and both readings are wrong: `undefined → false` is a
+     * **fabricated all-clear** (the §8① collapse this ticket exists to prevent), and `undefined → UNKNOWN` adds a
+     * second UNKNOWN axis next to channel-presence. `@Required` makes it always on the wire (even when `false`,
+     * independent of `encodeDefaults`) AND non-optional in the descriptor — which is what the OpenAPI generator
+     * (`SchemaWalker`) reads to place it in `required`. The other three fields here are non-defaulted and thus
+     * already contract-required; this keeps that set hole-free. Locked by `Cyp745HasUnreadMentionRequiredTest`.
+     */
+    @Required val hasUnreadMention: Boolean = false,
 )
 
 /** CYP-705 — body for `POST /api/channels/{id}/read`. The client sends the `seq` of the last message it has

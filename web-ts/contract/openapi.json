@@ -2969,12 +2969,16 @@
                     },
                     "unreadCount": {
                         "type": "integer"
+                    },
+                    "hasUnreadMention": {
+                        "type": "boolean"
                     }
                 },
                 "required": [
                     "channelId",
                     "lastReadSeq",
-                    "unreadCount"
+                    "unreadCount",
+                    "hasUnreadMention"
                 ]
             },
             "MarkReadRequest": {
