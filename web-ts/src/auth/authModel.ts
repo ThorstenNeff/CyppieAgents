@@ -3,6 +3,7 @@
 // whoami is the truth for operator/member (not the injected token alone); fail-closed everywhere — a whoami error or
 // an unclear state resolves to None (→ login redirect), never optimistically "authenticated/operator".
 import type { AuthMe } from '../types/generated/contract'
+import { AUTH_ROLE } from './authRole'
 
 export type AuthState =
   | { kind: 'resolving' } // whoami in flight — render NOTHING of the app yet (anti-flash, tooth 7)
@@ -14,7 +15,7 @@ export type AuthState =
 export function resolveAuthState(me: AuthMe | null): AuthState {
   if (me === null || !me.authenticated) return { kind: 'none' }
   if (!me.verified) return { kind: 'unverified' } // verified=false ≠ access
-  return { kind: 'active', operator: me.role === 'OPERATOR' } // whoami drives operator; anything but OPERATOR → member
+  return { kind: 'active', operator: me.role === AUTH_ROLE.OPERATOR } // whoami drives operator; anything but OPERATOR → member
 }
 
 // CYP-515 (a) — the in-app login-core outcome (the redirect-only posture of CYP-470 is reversed here per the ratified
