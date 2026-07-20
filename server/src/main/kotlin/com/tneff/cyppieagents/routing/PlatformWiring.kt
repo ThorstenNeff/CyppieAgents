@@ -109,6 +109,7 @@ fun Application.installPlatform(
             booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
             authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
             deps = authDeps,
+            acl = { booted.hub.state.acl }, // CYP-719: live, active-project-scoped ACL for the comm.* filter
         )
         // /ws/lifecycle — CYP-73/CYP-188 B: content-free status feed, read-tier. CYP-255 (.4b): active runtime.
         lifecycleSocket({ booted.runtimeRegistry.active().lifecycle }, booted.tokenRegistry, authDeps)
@@ -154,6 +155,7 @@ fun Application.installPlatform(
                 booted.eventSink, booted.tokenRegistry, booted.projectRegistry::activeProjectId,
                 authorizedProjects = { booted.projectRegistry.projects().map { it.id }.toSet() },
                 deps = authDeps,
+                acl = { booted.hub.state.acl }, // CYP-719: live, active-project-scoped ACL for the comm.* filter
                 apiBase = apiBase,
             )
             // CYP-417 (S-G): GET /api/capacity — server-authoritative capacity read (MEMBER). Same source as the
