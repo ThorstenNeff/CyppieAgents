@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.comm.ChannelShareStore
 import com.tneff.cyppieagents.model.AgentAvatar
 import com.tneff.cyppieagents.model.ApiKeyView
 import com.tneff.cyppieagents.model.RepoConfigView
+import com.tneff.cyppieagents.db.BindingReason
 import com.tneff.cyppieagents.routing.ConflictException
 
 /**
@@ -24,21 +25,35 @@ import com.tneff.cyppieagents.routing.ConflictException
  * The client's contract is "retry after the switch"; the 409 IS the signal, so the write happens exactly once,
  * against B, after ACTIVE.
  */
-internal fun storeMigrating(storeKey: String): ConflictException =
-    ConflictException(
-        "store '$storeKey' is migrating; writes are temporarily rejected — retry after the switch completes",
-        code = "store_migrating",
-    )
+internal fun storeMigrating(
+    storeKey: String,
+    reason: BindingReason,
+): ConflictException = when (reason) {
+    BindingReason.MIGRATION_WINDOW ->
+        ConflictException(
+            "store '$storeKey' is migrating; writes are temporarily rejected — retry after the switch completes",
+            code = "store_migrating",
+        )
+    // CYP-720 (BE-8): a CYP-714-coerced legacy binding is NOT migrating. Deliberately a DIFFERENT typed code, so
+    // a client cannot render the deferred/"retry after the switch" copy here — there is no switch to wait for and
+    // the lock is not temporary. The action is the operator's: re-evaluate the binding (rebind or setState).
+    BindingReason.LEGACY_UNEVALUATED ->
+        ConflictException(
+            "store '$storeKey' has a legacy binding with no recorded state; writes stay locked until the " +
+                "binding is re-evaluated — this will not clear on its own",
+            code = "store_binding_unevaluated",
+        )
+}
 
 /**
  * Read-only window gate for [RemoteTokenStore]: [all] reads through to source A ([sourceA]); [put]/[remove] are
  * rejected ([storeMigrating] → 409) so a token minted/revoked mid-migration can never be lost in A or duplicated
  * into B. The [RemoteTokenIssuer] revoke/issue path surfaces the 409 to the operator, who retries after ACTIVE.
  */
-class MigrationGatedRemoteTokenStore(private val sourceA: RemoteTokenStore) : RemoteTokenStore {
+class MigrationGatedRemoteTokenStore(private val sourceA: RemoteTokenStore, private val reason: BindingReason) : RemoteTokenStore {
     override fun all(): Map<String, String> = sourceA.all()
-    override fun put(agentId: String, token: String): Unit = throw storeMigrating("remote_token")
-    override fun remove(agentId: String): Unit = throw storeMigrating("remote_token")
+    override fun put(agentId: String, token: String): Unit = throw storeMigrating("remote_token", reason)
+    override fun remove(agentId: String): Unit = throw storeMigrating("remote_token", reason)
 }
 
 /**
@@ -47,14 +62,14 @@ class MigrationGatedRemoteTokenStore(private val sourceA: RemoteTokenStore) : Re
  * (repo + API key) therefore stays correct and consistent from A throughout the window; operator config PUTs and
  * the project-delete config-cascade get a typed 409 and retry after the switch.
  */
-class MigrationGatedProjectConfigStore(private val sourceA: ProjectConfigStore) : ProjectConfigStore {
+class MigrationGatedProjectConfigStore(private val sourceA: ProjectConfigStore, private val reason: BindingReason) : ProjectConfigStore {
     override fun resolvedRepo(projectId: String): RepoConfig = sourceA.resolvedRepo(projectId)
     override fun resolvedApiKey(projectId: String): String? = sourceA.resolvedApiKey(projectId)
     override fun repoView(projectId: String): RepoConfigView = sourceA.repoView(projectId)
     override fun apiKeyView(projectId: String): ApiKeyView = sourceA.apiKeyView(projectId)
-    override fun setRepo(projectId: String, url: String, branch: String): RepoConfigView = throw storeMigrating("project_config")
-    override fun setApiKey(projectId: String, key: String): ApiKeyView = throw storeMigrating("project_config")
-    override fun remove(projectId: String): Boolean = throw storeMigrating("project_config")
+    override fun setRepo(projectId: String, url: String, branch: String): RepoConfigView = throw storeMigrating("project_config", reason)
+    override fun setApiKey(projectId: String, key: String): ApiKeyView = throw storeMigrating("project_config", reason)
+    override fun remove(projectId: String): Boolean = throw storeMigrating("project_config", reason)
 }
 
 /**
@@ -62,13 +77,13 @@ class MigrationGatedProjectConfigStore(private val sourceA: ProjectConfigStore) 
  * every mutation ([put]/[setAvatar]/[removeAgent]/[removeProject]) is rejected ([storeMigrating] → 409), so a
  * name/colour/persona/avatar edit or a cascade during the window can never be lost in A or duplicated into B.
  */
-class MigrationGatedAgentOverrideStore(private val sourceA: AgentOverrideStore) : AgentOverrideStore {
+class MigrationGatedAgentOverrideStore(private val sourceA: AgentOverrideStore, private val reason: BindingReason) : AgentOverrideStore {
     override fun overrideOf(projectId: String, agentId: String): AgentOverride? = sourceA.overrideOf(projectId, agentId)
     override fun allFor(projectId: String): Map<String, AgentOverride> = sourceA.allFor(projectId)
-    override fun put(projectId: String, agentId: String, name: String?, color: String?, persona: String?, launch: String?): AgentOverride = throw storeMigrating("agent_override")
-    override fun setAvatar(projectId: String, agentId: String, avatar: AgentAvatar?): AgentOverride = throw storeMigrating("agent_override")
-    override fun removeAgent(projectId: String, agentId: String): Boolean = throw storeMigrating("agent_override")
-    override fun removeProject(projectId: String): Int = throw storeMigrating("agent_override")
+    override fun put(projectId: String, agentId: String, name: String?, color: String?, persona: String?, launch: String?): AgentOverride = throw storeMigrating("agent_override", reason)
+    override fun setAvatar(projectId: String, agentId: String, avatar: AgentAvatar?): AgentOverride = throw storeMigrating("agent_override", reason)
+    override fun removeAgent(projectId: String, agentId: String): Boolean = throw storeMigrating("agent_override", reason)
+    override fun removeProject(projectId: String): Int = throw storeMigrating("agent_override", reason)
 }
 
 /**
@@ -77,9 +92,9 @@ class MigrationGatedAgentOverrideStore(private val sourceA: AgentOverrideStore) 
  * grant/revoke during the window can never be lost in A or duplicated into B. The gate is the AclMatrix permit
  * input, so freezing writes keeps the authorization gate consistent from A throughout the window.
  */
-class MigrationGatedChannelShareStore(private val sourceA: ChannelShareStore) : ChannelShareStore {
+class MigrationGatedChannelShareStore(private val sourceA: ChannelShareStore, private val reason: BindingReason) : ChannelShareStore {
     override fun record(channelId: String): ChannelShareRecord? = sourceA.record(channelId)
     override fun sharedInboundChannelIds(activeProjectId: String): Set<String> = sourceA.sharedInboundChannelIds(activeProjectId)
-    override fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord = throw storeMigrating("channel_share")
-    override fun revoke(channelId: String): Boolean = throw storeMigrating("channel_share")
+    override fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord = throw storeMigrating("channel_share", reason)
+    override fun revoke(channelId: String): Boolean = throw storeMigrating("channel_share", reason)
 }

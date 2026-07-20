@@ -14,6 +14,23 @@ import java.nio.file.attribute.PosixFilePermission
 enum class BindingState { ACTIVE, MIGRATING, READ_ONLY }
 
 /**
+ * CYP-720 (BE-8) — **WHY** a binding holds a write-lock. [BindingState] alone conflates two causes with
+ * OPPOSITE operator actions, so the 409 the operator sees was right for one and actively misleading for the other:
+ *
+ *  - [MIGRATION_WINDOW] — a real migration is in flight (§4.3). Nothing is broken, the freeze is **temporary**,
+ *    and "retry after the switch completes" is a real path. This is the pre-CYP-720 behaviour, kept verbatim.
+ *  - [LEGACY_UNEVALUATED] — the CYP-714 fail-closed coercion: a row persisted before `state` existed loads as
+ *    READ_ONLY because "unknown is not ACTIVE". For such a binding the migration copy is **triply false** —
+ *    nothing is migrating, no switch is coming, and it is not temporary: it holds until someone deliberately
+ *    re-evaluates the binding. Telling that operator to "wait for the switch" sends them to wait for an event
+ *    that never arrives; the correct signal is action-required.
+ *
+ * Defaulted to [MIGRATION_WINDOW] so rows persisted before this field existed decode back-compat (and because a
+ * reason is only ever CONSULTED while write-locked — on an ACTIVE binding it is moot).
+ */
+enum class BindingReason { MIGRATION_WINDOW, LEGACY_UNEVALUATED }
+
+/**
  * Which named DSN a given `(storeKey, projectId)` is bound to (Design §1.1). Per-store AND per-project, so
  * different projects can point the same store at different instances. `dsnId` empty is not represented —
  * an unbound store simply has no [StoreBinding] (→ the store's file fallback, resolved in a later phase).
@@ -26,6 +43,8 @@ data class StoreBinding(
     val schema: String = "public",
     val state: BindingState = BindingState.ACTIVE,
     val boundAt: Long,
+    /** CYP-720: WHY a write-lock is held — see [BindingReason]. Consulted only while [state] is not ACTIVE. */
+    val reason: BindingReason = BindingReason.MIGRATION_WINDOW,
 )
 
 /**
@@ -72,7 +91,14 @@ class FileBindingRegistry(private val file: File?, private val clock: () -> Long
                 for ((k, v) in root) {
                     val obj = v.jsonObject
                     val decoded = CommJson.decodeFromJsonElement(StoreBinding.serializer(), obj)
-                    byKey[k] = if ("state" in obj) decoded else decoded.copy(state = BindingState.READ_ONLY)
+                    // CYP-720: this is the ONE site that stamps LEGACY_UNEVALUATED — the coercion IS the cause,
+                    // so the reason is recorded exactly where it is known. Everything reachable through the live
+                    // API (bind/setState) is a real migration and keeps MIGRATION_WINDOW.
+                    byKey[k] = if ("state" in obj) {
+                        decoded
+                    } else {
+                        decoded.copy(state = BindingState.READ_ONLY, reason = BindingReason.LEGACY_UNEVALUATED)
+                    }
                 }
             }.onFailure { log.error("corrupt store-binding registry at {}; starting empty", f) }
         }
@@ -89,7 +115,9 @@ class FileBindingRegistry(private val file: File?, private val clock: () -> Long
 
     override fun setState(storeKey: String, projectId: String, state: BindingState): StoreBinding? = synchronized(lock) {
         val cur = byKey[key(storeKey, projectId)] ?: return null
-        val next = cur.copy(state = state)
+        // CYP-720: setState IS the migration path, so it stamps MIGRATION_WINDOW explicitly — which also RESETS a
+        // re-evaluated legacy binding instead of leaving a stale LEGACY_UNEVALUATED reason behind on it.
+        val next = cur.copy(state = state, reason = BindingReason.MIGRATION_WINDOW)
         byKey[key(storeKey, projectId)] = next
         persist()
         next

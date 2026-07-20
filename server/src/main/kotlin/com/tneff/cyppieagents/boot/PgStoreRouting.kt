@@ -16,6 +16,7 @@ import com.tneff.cyppieagents.events.MigrationGatedEventSink
 import com.tneff.cyppieagents.report.MigrationGatedReportStore
 import com.tneff.cyppieagents.report.ReportStore
 import com.tneff.cyppieagents.db.BindingRegistry
+import com.tneff.cyppieagents.db.BindingReason
 import com.tneff.cyppieagents.db.BindingState
 import com.tneff.cyppieagents.db.ConnectionProvider
 import com.tneff.cyppieagents.tier.StoreResidencies
@@ -61,11 +62,25 @@ object PgStoreRouting {
      * stay served from source A and writes MUST be rejected. A MUST_STAY_HOME store never holds a user-DB binding
      * (residency, S2), so it is never in a window here — its own writes are unaffected.
      */
-    fun inMigrationWindow(storeKey: String, projectId: String, bindings: BindingRegistry): Boolean {
-        if (!StoreResidencies.isUserDbCapable(storeKey)) return false
-        return when (bindings.binding(storeKey, projectId)?.state) {
-            BindingState.MIGRATING, BindingState.READ_ONLY -> true
-            else -> false
+    fun inMigrationWindow(storeKey: String, projectId: String, bindings: BindingRegistry): Boolean =
+        windowReason(storeKey, projectId, bindings) != null
+
+    /**
+     * CYP-720 (BE-8) — the same predicate as [inMigrationWindow] but carrying **WHY** the write-lock is held
+     * ([BindingReason]), or null when the store is not locked at all. [inMigrationWindow] is DERIVED from this so
+     * the "is it locked" and "why is it locked" answers are single-sourced and cannot drift apart.
+     *
+     * The reason is what makes the 409 honest: a [BindingReason.MIGRATION_WINDOW] lock is temporary and
+     * retry-after-switch is real, whereas a [BindingReason.LEGACY_UNEVALUATED] lock (the CYP-714 fail-closed
+     * coercion) is held until an operator acts — the same `store_migrating` copy for both sent that operator to
+     * wait for a switch that was never coming.
+     */
+    fun windowReason(storeKey: String, projectId: String, bindings: BindingRegistry): BindingReason? {
+        if (!StoreResidencies.isUserDbCapable(storeKey)) return null // MUST_STAY_HOME → never windowed
+        val binding = bindings.binding(storeKey, projectId) ?: return null // unbound → not a window
+        return when (binding.state) {
+            BindingState.MIGRATING, BindingState.READ_ONLY -> binding.reason
+            BindingState.ACTIVE -> null
         }
     }
 
@@ -78,7 +93,7 @@ object PgStoreRouting {
     ): RemoteTokenStore {
         // S3: during the migration window, reads come from source A (the File fallback for the File→Pg
         // initial-offload the migrator performs today); writes are frozen (store_migrating 409).
-        if (inMigrationWindow("remote_token", projectId, bindings)) return MigrationGatedRemoteTokenStore(fileFallback())
+        windowReason("remote_token", projectId, bindings)?.let { return MigrationGatedRemoteTokenStore(fileFallback(), it) }
         return activeDataSource("remote_token", projectId, bindings, connections)
             ?.let { PgRemoteTokenStore(it, cipher, projectId) } ?: fileFallback()
     }
@@ -92,7 +107,7 @@ object PgStoreRouting {
         secrets: Secrets,
         fileFallback: () -> ProjectConfigStore,
     ): ProjectConfigStore {
-        if (inMigrationWindow("project_config", projectId, bindings)) return MigrationGatedProjectConfigStore(fileFallback())
+        windowReason("project_config", projectId, bindings)?.let { return MigrationGatedProjectConfigStore(fileFallback(), it) }
         return activeDataSource("project_config", projectId, bindings, connections)
             ?.let { PgProjectConfigStore(it, cipher, fallbackRepo, secrets) } ?: fileFallback()
     }
@@ -105,7 +120,7 @@ object PgStoreRouting {
         connections: ConnectionProvider,
         fileFallback: () -> AgentOverrideStore,
     ): AgentOverrideStore {
-        if (inMigrationWindow("agent_override", projectId, bindings)) return MigrationGatedAgentOverrideStore(fileFallback())
+        windowReason("agent_override", projectId, bindings)?.let { return MigrationGatedAgentOverrideStore(fileFallback(), it) }
         return activeDataSource("agent_override", projectId, bindings, connections)
             ?.let { PgAgentOverrideStore(it) } ?: fileFallback()
     }
@@ -116,7 +131,7 @@ object PgStoreRouting {
         connections: ConnectionProvider,
         fileFallback: () -> ChannelShareStore,
     ): ChannelShareStore {
-        if (inMigrationWindow("channel_share", projectId, bindings)) return MigrationGatedChannelShareStore(fileFallback())
+        windowReason("channel_share", projectId, bindings)?.let { return MigrationGatedChannelShareStore(fileFallback(), it) }
         return activeDataSource("channel_share", projectId, bindings, connections)
             ?.let { PgChannelShareStore(it) } ?: fileFallback()
     }
@@ -134,7 +149,7 @@ object PgStoreRouting {
         pg: (DataSource) -> EventSink,
         fileFallback: () -> EventSink,
     ): EventSink {
-        if (inMigrationWindow("event_log", projectId, bindings)) return MigrationGatedEventSink(fileFallback())
+        windowReason("event_log", projectId, bindings)?.let { return MigrationGatedEventSink(fileFallback(), it) }
         return activeDataSource("event_log", projectId, bindings, connections)?.let { pg(it) } ?: fileFallback()
     }
 
@@ -145,7 +160,7 @@ object PgStoreRouting {
         pg: (DataSource) -> AgentEventStore,
         fileFallback: () -> AgentEventStore,
     ): AgentEventStore {
-        if (inMigrationWindow("agent_events", projectId, bindings)) return MigrationGatedAgentEventStore(fileFallback())
+        windowReason("agent_events", projectId, bindings)?.let { return MigrationGatedAgentEventStore(fileFallback(), it) }
         return activeDataSource("agent_events", projectId, bindings, connections)?.let { pg(it) } ?: fileFallback()
     }
 
@@ -157,7 +172,7 @@ object PgStoreRouting {
         connections: ConnectionProvider,
         fileFallback: () -> SessionStore,
     ): SessionStore {
-        if (inMigrationWindow("session", projectId, bindings)) return MigrationGatedSessionStore(fileFallback())
+        windowReason("session", projectId, bindings)?.let { return MigrationGatedSessionStore(fileFallback(), it) }
         return activeDataSource("session", projectId, bindings, connections)?.let { PgSessionStore(it) } ?: fileFallback()
     }
 
@@ -167,7 +182,7 @@ object PgStoreRouting {
         connections: ConnectionProvider,
         fileFallback: () -> DeliveryLog,
     ): DeliveryLog {
-        if (inMigrationWindow("delivery", projectId, bindings)) return MigrationGatedDeliveryLog(fileFallback())
+        windowReason("delivery", projectId, bindings)?.let { return MigrationGatedDeliveryLog(fileFallback(), it) }
         return activeDataSource("delivery", projectId, bindings, connections)?.let { PgDeliveryLog(it) } ?: fileFallback()
     }
 
@@ -182,7 +197,7 @@ object PgStoreRouting {
         pg: (DataSource) -> ReportStore,
         fileFallback: () -> ReportStore,
     ): ReportStore {
-        if (inMigrationWindow("report", projectId, bindings)) return MigrationGatedReportStore(fileFallback())
+        windowReason("report", projectId, bindings)?.let { return MigrationGatedReportStore(fileFallback(), it) }
         return activeDataSource("report", projectId, bindings, connections)?.let { pg(it) } ?: fileFallback()
     }
 }

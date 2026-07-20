@@ -1,6 +1,7 @@
 package com.tneff.cyppieagents.comm
 
 import com.tneff.cyppieagents.boot.storeMigrating
+import com.tneff.cyppieagents.db.BindingReason
 
 /**
  * CYP-705 — the read-only-window gate for [ReadCursorStore] (mirrors [MigrationGatedDeliveryLog]): during a
@@ -9,10 +10,10 @@ import com.tneff.cyppieagents.boot.storeMigrating
  * means the client's `POST …/read` 409s and retries after the switch, so the cursor is never advanced in A and
  * lost after the rebind onto B (unread would only transiently over-report, never a false all-clear).
  */
-class MigrationGatedReadCursorStore(private val sourceA: ReadCursorStore) : ReadCursorStore {
+class MigrationGatedReadCursorStore(private val sourceA: ReadCursorStore, private val reason: BindingReason) : ReadCursorStore {
     override fun lastReadSeq(projectId: String, subject: String, channelId: String): Long? =
         sourceA.lastReadSeq(projectId, subject, channelId)
 
     override fun markRead(projectId: String, subject: String, channelId: String, upToSeq: Long): Unit =
-        throw storeMigrating("read-cursor")
+        throw storeMigrating("read-cursor", reason)
 }

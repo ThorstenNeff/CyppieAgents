@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.connector
 
+import com.tneff.cyppieagents.db.BindingReason
+
 import com.tneff.cyppieagents.boot.storeMigrating
 
 /**
@@ -8,8 +10,8 @@ import com.tneff.cyppieagents.boot.storeMigrating
  * ([upsert]/[clear]) is rejected ([storeMigrating] → 409), so a resume-binding write mid-migration can never be
  * lost in A or duplicated into B.
  */
-class MigrationGatedSessionStore(private val sourceA: SessionStore) : SessionStore {
+class MigrationGatedSessionStore(private val sourceA: SessionStore, private val reason: BindingReason) : SessionStore {
     override fun find(projectId: String, agentId: String): SessionEntry? = sourceA.find(projectId, agentId)
-    override fun upsert(projectId: String, agentId: String, sessionId: String, now: Long): Unit = throw storeMigrating("session")
-    override fun clear(projectId: String, agentId: String): Unit = throw storeMigrating("session")
+    override fun upsert(projectId: String, agentId: String, sessionId: String, now: Long): Unit = throw storeMigrating("session", reason)
+    override fun clear(projectId: String, agentId: String): Unit = throw storeMigrating("session", reason)
 }
