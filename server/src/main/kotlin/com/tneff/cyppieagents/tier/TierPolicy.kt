@@ -29,15 +29,28 @@ object StoreResidencies {
     /** Operational stores explicitly cleared to live on a user DB. Secret stores here (project_config apiKey,
      *  remote_token tokens) are only offloadable because their secrets are SecretCipher-encrypted at rest. */
     private val userDbCapable = setOf(
-        "project", "project_config", "remote_token", "agent_override", "channel_share", "avatar_blob",
+        "project", "project_config", "remote_token", "agent_override", "channel_share",
         "event_log", "agent_events", "report", "session", "delivery",
     )
+    // CYP-770 ①: `avatar_blob` was REMOVED from the allow-list. It was classified offloadable, but there is no
+    // `PgAvatarBlobStore` — only `SqliteAvatarBlobStore` — so no code path could ever route it to a user DB.
+    // Building a migration gate for it would have protected a path that does not exist (a protection class that
+    // reads as "covered" at review time and covers nothing). De-classified until the path is real.
+    // **Rule for whoever builds `PgAvatarBlobStore`: re-add the key HERE and add the `PgStoreRouting` placement
+    // point in the SAME commit** — capability and write-freeze must land together, never one without the other.
 
     /** Bootstrap/auth stores that MUST stay on our infra (they point at / gate the user DBs, or ARE the login
      *  boundary — §7.6). Listed for the inventory gate; NOT the fail-closed default (unknown also stays home). */
     private val mustStayHome = setOf(
         "roles", "account", "dsn_registry", "store_binding", "migration_audit", "mcp_config",
         "free_fallback_toggle", "quota_usage",
+        // CYP-770 ①: `avatar_blob` sits here for a DIFFERENT reason than the keys above. Those MUST stay home
+        // (they gate the user DBs / are the login boundary). `avatar_blob` merely CANNOT leave yet — there is no
+        // `PgAvatarBlobStore`, so no path exists to route it. It is classified here rather than left out so the
+        // inventory stays complete: an unclassified store is safe only by the fail-closed default, i.e.
+        // unnoticed-safe rather than deliberately classified. Moving it back to `userDbCapable` is expected the
+        // day a Pg impl + placement point land together.
+        "avatar_blob",
     )
 
     /** The full known-store inventory — every store the codebase has MUST be classified here (inventory gate). */
