@@ -2,7 +2,7 @@
 // in tests. Channels/ACL ride the generated contract types (they appear in the WS schema too). The mode-change
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
-import { RestClient, RestError, contractResponse} from '../net/rest'
+import { RestClient, RestError, contractResponse, validateResponse } from '../net/rest'
 import { operatorToken } from '../platform/operatorToken'
 import {
   AclEntrySchema,
@@ -377,7 +377,10 @@ export class RestHubRepo implements HubRepo {
     const path = `/api/agents/${encodeURIComponent(agentId)}/avatar`
     const res = await fetch(`${this.apiBase}${path}`, { method: 'POST', headers, credentials: 'include', body: form })
     if (!res.ok) throw new RestError(res.status, 'POST', path, await res.text().catch(() => ''))
-    return (await res.json()) as AgentDetail
+    // CYP-750: validate the multipart-upload response like every other consumed body. It was `as AgentDetail` — an
+    // unchecked cast on the raw-fetch path that the CYP-737 `this.rest.*` coverage scan cannot see, so a malformed
+    // AgentDetail (missing avatar ref / cache-bust) flowed on as a plausible object. Same masked path as RestClient.
+    return validateResponse('POST', path, contractResponse('AgentDetail', AgentDetailSchema), await res.json())
   }
   async removeAvatar(agentId: string): Promise<void> {
     await this.rest.delete<void>(`/api/agents/${encodeURIComponent(agentId)}/avatar`)
