@@ -64,6 +64,22 @@ export function contractResponse<T>(schema: string, zod: { parse: (raw: unknown)
 }
 
 /**
+ * Validate a parsed response body against a contract validator, or throw a MASKED [ResponseShapeError].
+ *
+ * The single validation+masking path, shared by [RestClient.request] and the raw-fetch call sites that cannot go
+ * through RestClient (the multipart avatar upload, CYP-750). Keeping one path means every consumed body — JSON or
+ * multipart-response — fails the same way (path:code only, never the received value) instead of some call sites
+ * re-implementing the masking and drifting from it.
+ */
+export function validateResponse<T>(method: string, path: string, validate: ResponseValidator<T>, raw: unknown): T {
+  try {
+    return validate.parse(raw)
+  } catch (e) {
+    throw new ResponseShapeError(method, path, validate.schema, issuesOf(e))
+  }
+}
+
+/**
  * CYP-737 — a REST response that did not match its contract.
  *
  * Distinct from [RestError] on purpose: the transport SUCCEEDED (a 200 arrived) and the body is still unusable.
@@ -123,13 +139,9 @@ export class RestClient {
     // is per-call-site (see restRepo), and the coverage guard in rest.validation.test.ts keeps the remaining
     // unvalidated reads VISIBLE rather than quietly assumed safe.
     if (validate === undefined) return raw as T
-    try {
-      return validate.parse(raw)
-    } catch (e) {
-      // A 200 whose body we cannot interpret is a FAILED read, not an empty one — it surfaces through the same
-      // honest error+retry paths as any other failure (CYP-288/679), instead of flowing on as a plausible object
-      // with missing fields. F1 is the concrete case: a body without `configured` became "hub not set up".
-      throw new ResponseShapeError(method, path, validate.schema, issuesOf(e))
-    }
+    // A 200 whose body we cannot interpret is a FAILED read, not an empty one — it surfaces through the same honest
+    // error+retry paths as any other failure (CYP-288/679), instead of flowing on as a plausible object with missing
+    // fields. F1 is the concrete case: a body without `configured` became "hub not set up". (Shared masking path.)
+    return validateResponse(method, path, validate, raw)
   }
 }
