@@ -392,6 +392,9 @@
                     },
                     "unreadCount": {
                         "type": "integer"
+                    },
+                    "hasUnreadMention": {
+                        "type": "boolean"
                     }
                 },
                 "required": [

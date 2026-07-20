@@ -43,6 +43,10 @@ data class ReadStateEvent(
     val channelId: String,
     val lastReadSeq: Long,
     val unreadCount: Int,
+    /** CYP-745 — server-computed "an unread message mentions YOU" for this viewer+channel. Same single filter
+     *  pass as [unreadCount] (see [ChannelReadState.hasUnreadMention]), so the two can never disagree:
+     *  `true` here implies `unreadCount >= 1`. Additive + defaulted → older clients decode unchanged. */
+    val hasUnreadMention: Boolean = false,
 ) : CommWsServerEvent
 
 /** Client → server frames on `/ws/comm`. */

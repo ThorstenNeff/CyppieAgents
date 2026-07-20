@@ -133,7 +133,7 @@ class Hub(
         return state.channels.mapNotNull { ch ->
             if (!state.acl.canRead(ch.id, subject)) return@mapNotNull null
             val cursor = readCursors.lastReadSeq(pid, subject, ch.id) ?: return@mapNotNull null // no cursor ⇒ UNKNOWN ⇒ omit
-            ChannelReadState(ch.id, cursor, unreadCount(subject, ch.id, cursor))
+            readStateOf(subject, ch.id, cursor)
         }
     }
 
@@ -149,15 +149,34 @@ class Hub(
         val pid = state.activeProjectId
         readCursors.markRead(pid, subject, channelId, upToSeq)
         val cursor = readCursors.lastReadSeq(pid, subject, channelId) ?: upToSeq
-        val rs = ChannelReadState(channelId, cursor, unreadCount(subject, channelId, cursor))
-        _readState.tryEmit(TargetedReadState(subject, ReadStateEvent(channelId, rs.lastReadSeq, rs.unreadCount)))
+        val rs = readStateOf(subject, channelId, cursor)
+        _readState.tryEmit(
+            TargetedReadState(subject, ReadStateEvent(channelId, rs.lastReadSeq, rs.unreadCount, rs.hasUnreadMention)),
+        )
         return rs
     }
 
-    /** CYP-705 — server-computed unread for [subject] in [channelId] past [cursor]: project-scoped + `canRead`
-     *  (via [com.tneff.cyppieagents.model.AclMatrix.visibleMessages]), `seq > cursor`, own sends excluded. */
-    private fun unreadCount(subject: String, channelId: String, cursor: Long): Int =
-        state.acl.visibleMessages(subject, store.byChannel(channelId)).count { it.seq > cursor && it.from != subject }
+    /**
+     * CYP-705 + CYP-745 — the calling [subject]'s server-computed read-state for [channelId] past [cursor].
+     *
+     * **ONE filter pass, deliberately.** `unreadCount` and `hasUnreadMention` are both derived from the SAME
+     * materialized `unread` set — project-scoped + `canRead` (via
+     * [com.tneff.cyppieagents.model.AclMatrix.visibleMessages]), `seq > cursor`, own sends excluded. That makes
+     * the cross-field invariant **structural, not coincidental**: `hasUnreadMention == true` with
+     * `unreadCount == 0` is unreachable, because the flag can only be raised by an element of the very set
+     * whose size is the count. Two independent traversals that merely happen to agree would be the drift bug
+     * this shape forecloses — hence the single source. (Tooth: `Cyp745UnreadMentionTest`.)
+     *
+     * CYP-745 recognition reuses the ONE [MentionResolver] pass that also produces the Display overlay spans
+     * (roster = the channel's members), so the Notify signal and the highlight can never disagree.
+     */
+    private fun readStateOf(subject: String, channelId: String, cursor: Long): ChannelReadState {
+        val unread = state.acl.visibleMessages(subject, store.byChannel(channelId))
+            .filter { it.seq > cursor && it.from != subject }
+        val roster = membersOf(channelId)
+        val mentionsMe = unread.any { MentionResolver.mentionsYou(subject, MentionResolver.resolve(it.body, roster)) }
+        return ChannelReadState(channelId, cursor, unread.size, mentionsMe)
+    }
 
     /** CYP-705 — push a fresh [ReadStateEvent] to every reader of [channelId] except [exclude] (self-only
      *  routed). A reader with no cursor stays UNKNOWN (omitted — a new message can't make UNKNOWN knowable). */
@@ -168,7 +187,10 @@ class Hub(
             if (member == exclude) continue
             if (!state.acl.canRead(channelId, member)) continue
             val cursor = readCursors.lastReadSeq(pid, member, channelId) ?: continue // UNKNOWN stays UNKNOWN
-            _readState.tryEmit(TargetedReadState(member, ReadStateEvent(channelId, cursor, unreadCount(member, channelId, cursor))))
+            val rs = readStateOf(member, channelId, cursor)
+            _readState.tryEmit(
+                TargetedReadState(member, ReadStateEvent(channelId, rs.lastReadSeq, rs.unreadCount, rs.hasUnreadMention)),
+            )
         }
     }
 
