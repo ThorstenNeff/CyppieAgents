@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.comm
 
+import com.tneff.cyppieagents.db.BindingReason
+
 import com.tneff.cyppieagents.boot.storeMigrating
 
 /**
@@ -9,7 +11,7 @@ import com.tneff.cyppieagents.boot.storeMigrating
  * markDelivered means the deliverer does not commit the delivery either (the send is retried after the switch),
  * so a delivery is never recorded in A but lost after the rebind onto B.
  */
-class MigrationGatedDeliveryLog(private val sourceA: DeliveryLog) : DeliveryLog {
+class MigrationGatedDeliveryLog(private val sourceA: DeliveryLog, private val reason: BindingReason) : DeliveryLog {
     override fun isDelivered(projectId: String, agentId: String, messageId: String): Boolean = sourceA.isDelivered(projectId, agentId, messageId)
-    override fun markDelivered(projectId: String, agentId: String, messageId: String): Unit = throw storeMigrating("delivery")
+    override fun markDelivered(projectId: String, agentId: String, messageId: String): Unit = throw storeMigrating("delivery", reason)
 }
