@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.model
 
+import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -287,8 +288,17 @@ data class ChannelReadState(
      *
      * Carried ONLY on the self-only frontend surfaces (`/ws/comm` [ReadStateEvent] + the read-state REST) —
      * never on the `/ws/hub` BYOA wire, which keeps carrying the bare [Message] (the §9 boundary).
+     *
+     * **`@Required` (CYP-745, per the [AuthMe.verified] precedent) — load-bearing, not cosmetic.** Without it a
+     * defaulted `Boolean` may be OMITTED by a terse serializer and lands OPTIONAL in the generated contract; a
+     * PRESENT channel could then arrive without the field, and both readings are wrong: `undefined → false` is a
+     * **fabricated all-clear** (the §8① collapse this ticket exists to prevent), and `undefined → UNKNOWN` adds a
+     * second UNKNOWN axis next to channel-presence. `@Required` makes it always on the wire (even when `false`,
+     * independent of `encodeDefaults`) AND non-optional in the descriptor — which is what the OpenAPI generator
+     * (`SchemaWalker`) reads to place it in `required`. The other three fields here are non-defaulted and thus
+     * already contract-required; this keeps that set hole-free. Locked by `Cyp745HasUnreadMentionRequiredTest`.
      */
-    val hasUnreadMention: Boolean = false,
+    @Required val hasUnreadMention: Boolean = false,
 )
 
 /** CYP-705 — body for `POST /api/channels/{id}/read`. The client sends the `seq` of the last message it has

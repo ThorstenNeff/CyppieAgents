@@ -400,7 +400,8 @@
                 "required": [
                     "channelId",
                     "lastReadSeq",
-                    "unreadCount"
+                    "unreadCount",
+                    "hasUnreadMention"
                 ]
             },
             "CommWsClientEvent": {

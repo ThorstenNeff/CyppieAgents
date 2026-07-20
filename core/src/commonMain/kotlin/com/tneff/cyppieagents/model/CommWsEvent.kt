@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.model
 
+import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -45,8 +46,10 @@ data class ReadStateEvent(
     val unreadCount: Int,
     /** CYP-745 — server-computed "an unread message mentions YOU" for this viewer+channel. Same single filter
      *  pass as [unreadCount] (see [ChannelReadState.hasUnreadMention]), so the two can never disagree:
-     *  `true` here implies `unreadCount >= 1`. Additive + defaulted → older clients decode unchanged. */
-    val hasUnreadMention: Boolean = false,
+     *  `true` here implies `unreadCount >= 1`. `@Required` for the same reason as on [ChannelReadState] — an
+     *  omissible field would let a PRESENT channel arrive without it, and `undefined → false` is a fabricated
+     *  all-clear. Default stays → no call-site changes. Locked by `Cyp745HasUnreadMentionRequiredTest`. */
+    @Required val hasUnreadMention: Boolean = false,
 ) : CommWsServerEvent
 
 /** Client → server frames on `/ws/comm`. */

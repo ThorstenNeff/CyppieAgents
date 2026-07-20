@@ -2977,7 +2977,8 @@
                 "required": [
                     "channelId",
                     "lastReadSeq",
-                    "unreadCount"
+                    "unreadCount",
+                    "hasUnreadMention"
                 ]
             },
             "MarkReadRequest": {
