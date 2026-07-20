@@ -63,7 +63,7 @@ import { OverloadBanner } from './workspace/OverloadBanner'
 import { UnconfiguredBanner } from './workspace/UnconfiguredBanner'
 import { setupStatusOf, mayPromptSetup } from './workspace/setupStatus'
 import { FirstRunGate } from './firstrun/FirstRunGate'
-import { firstRunGateMode } from './firstrun/firstRunModel'
+import { firstRunGateMode, setupErrorCueVisible } from './firstrun/firstRunModel'
 import { isSetupSkipped, setSetupSkipped, clearSetupSkipped } from './firstrun/skipPreference'
 import { cloneView, clonePollMs, isCloneDone } from './firstrun/cloneStatusModel'
 import { CloneStatusRow } from './firstrun/CloneStatusRow'
@@ -981,6 +981,22 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
             setSetupSkippedState(false)
           }}
         />
+      )}
+      {/* CYP-758 — ERROR OVERRIDES SKIP. The guided gate (which carries a config-load error when not skipped) is
+          hidden once skipped; without this, `error ∧ skipped` showed nothing — a failed config read reading as
+          "all clear" (the collapse setupStatus.ts forbids). So a standing, NON-modal error+retry cue surfaces the
+          load failure skip-independently — WITHOUT re-raising the skipped gate (that would re-nag). Deliberately
+          DISTINCT from UnconfiguredBanner ("hub not set up"): this says "setup status not loadable — retry", a
+          different fact, its own testid. Only reachable here when skipped (error ⇒ gate mode 'loading' ⇒ this
+          branch runs only if setupSkipped), so it never double-surfaces with the gate. */}
+      {setupErrorCueVisible(setupStatus, setupSkipped) && (
+        <div className="workspace-setup-error" data-testid="workspace.setupError.strip">
+          <LoadErrorRetry
+            testId="workspace.setupError"
+            onRetry={loadRepoConfig}
+            message="Einrichtungs-Status konnte nicht geladen werden."
+          />
+        </div>
       )}
       {overloadVisible(overloadActive, overloadDismissed, capacity) && (
         <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />

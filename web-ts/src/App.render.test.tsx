@@ -9,6 +9,7 @@ import { useEventLogStore } from './eventlog/eventLogStore'
 import { emptyEventLog } from './eventlog/eventLog'
 import { FakeSocketHub } from './net/testing/fakeSocket'
 import { RestError } from './net/rest'
+import { setSetupSkipped } from './firstrun/skipPreference'
 import type { HubConfig } from './state/hubConfig'
 import type { HubRepo } from './state/restRepo'
 import type { Agent, Channel } from './types/generated/contract'
@@ -720,5 +721,45 @@ describe('CYP-735 — an unset-up hub says so, and never guesses it from a faile
     const banner = await findByTestId('workspace.unconfiguredBanner')
     expect(banner).toBeTruthy()
     expect(container.querySelector('[data-testid="workspace.unconfiguredBanner.dismiss"]')).toBeNull()
+  })
+
+  // CYP-758 — a config-load ERROR must not be swallowed by a prior skip (unknown/error→all-clear collapse). The
+  // error gate has no skip button, so error∧skip is reached via a REMEMBERED skip (localStorage) from an earlier
+  // session, then a failing config load — pre-set the preference to reproduce that exact state.
+  it('★ error ∧ skipped → a standing config-error+retry cue is present (skip must NOT hide the error)', async () => {
+    setSetupSkipped()
+    const hub = new FakeSocketHub()
+    const { findByTestId, queryByTestId } = render(
+      <App config={config} repo={repo({ reject: true })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect(await findByTestId('workspace.setupError')).toBeTruthy() // the surface the skip used to swallow
+    expect(await findByTestId('workspace.setupError.retry')).toBeTruthy() // …and it is actionable
+    // DISTINCT signals, never conflated: this is "status not loadable", NOT the "hub not set up" banner (that one
+    // is server-stated unconfigured, which a load error is precisely not).
+    expect(queryByTestId('workspace.unconfiguredBanner')).toBeNull()
+    // and it is NOT the blocking gate re-raised (that would re-nag the user who skipped).
+    expect(queryByTestId('firstrun.gate')).toBeNull()
+  })
+
+  it('error ∧ NOT skipped → the gate carries the error; the workspace cue does not fire (no double-surface)', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, queryByTestId } = render(
+      <App config={config} repo={repo({ reject: true })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    expect((await findByTestId('firstrun.gate')).dataset.mode).toBe('loading') // gate shows the load surface
+    expect(queryByTestId('workspace.setupError')).toBeNull() // the degraded cue stays out of the way
+  })
+
+  it('★ unconfigured ∧ skipped → the error cue does NOT over-fire (the setup prompt stays its own signal)', async () => {
+    const hub = new FakeSocketHub()
+    const { findByTestId, queryByTestId } = render(
+      <App config={config} repo={repo({ configured: false })} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    await skipWizard(findByTestId)
+    expect(await findByTestId('workspace.unconfiguredBanner')).toBeTruthy() // the unconfigured signal
+    expect(queryByTestId('workspace.setupError')).toBeNull() // …not the error one
   })
 })

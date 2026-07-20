@@ -171,6 +171,15 @@ body {
   border: 1px solid currentColor;
   border-radius: 4px;
 }
+/* CYP-758 — the degraded-workspace config-load-ERROR strip: a STANDING, non-modal cue. ERROR tone (a real failure),
+   deliberately distinct from the neutral unconfigured banner (a call-to-action) and the warn-amber overload banner
+   (a transient event). Full-width standing strip like its siblings; houses the shared LoadErrorRetry. */
+.workspace-setup-error {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
 
 /* CYP-404 (W6) / CYP-423 — the transcript's native-scrolling container + a thin scrollbar (parity of CYP-392).
    The thumb is a graphical object (WCAG 1.4.11, ≥3:1): bound to the maritime `outline` token — measured 3.55:1
