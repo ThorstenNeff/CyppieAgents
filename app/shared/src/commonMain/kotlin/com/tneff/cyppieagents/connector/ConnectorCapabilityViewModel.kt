@@ -21,8 +21,13 @@ import kotlinx.coroutines.launch
  *  (`ConnectorOptIn`), which is LATER than the create event, so caps land in `GET /api/agents` shortly AFTER the
  *  RUNNING signal. The bound keeps a never-opting-in agent from being polled forever (its `null` caps are the
  *  honest "not yet reported"). Tuned modestly: a few attempts spaced a couple of seconds. */
-private const val CAPS_POLL_ATTEMPTS = 5
-private const val CAPS_POLL_INTERVAL_MS = 2_000L
+internal const val CAPS_POLL_ATTEMPTS = 5
+internal const val CAPS_POLL_INTERVAL_MS = 2_000L
+
+/** CYP-746 — the worst-case wall-clock the bounded caps re-poll can run (attempts × interval ≈ 10 s). The badge's
+ *  C→D timeout ([CAPS_CHECKING_TIMEOUT_MS]) must be ≥ this so a live-created agent's caps get the full re-poll
+ *  window to land before the badge would flip to UNKNOWN — the coupling the CYP-746 tooth pins. */
+internal const val CAPS_REPOLL_MAX_DURATION_MS: Long = CAPS_POLL_ATTEMPTS * CAPS_POLL_INTERVAL_MS
 
 /**
  * Immutable UI state for the connector **capability display** (CYP-123). Holds the per-agent capability map

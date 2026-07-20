@@ -1,0 +1,84 @@
+# CYP-746 — connector capability display-state D-vs-E + unknown→reported transition (Android, native Compose).
+#
+# Proves the slice-2 render honesty on a real device, the half the JVM logic teeth can't reach (runComposeUiTest
+# hangs headless, so `Cyp746CapabilityDisplayStateTest` pins the pure state derivation; THIS pins the rendered
+# badge). Two properties:
+#
+#   E (NOT_STARTED = null caps while NOT running):  the fidelity badge is ABSENT — no false `○`. The lifecycle
+#       DOT (agent.<id>.status, RING vs FILL) carries D-vs-E, so the badge stays silent about an agent that simply
+#       isn't running. This is the CYP-746 fix (before slice 2, null caps ALWAYS drew `○`, even for a stopped agent).
+#   D (UNKNOWN = null caps while RUNNING):           the fidelity badge is PRESENT (the `○` "not yet reported").
+#   Transition (CYP-742 clean-Done):                 a running agent whose connector reports FULL caps shortly after
+#       START → the `○` badge DISAPPEARS (unknown→reported, visible). (A degraded connector instead turns `○`→`!`;
+#       both share the badge tag, so the glyph flip is an OBSERVATIONAL check — see NOTES.)
+#
+# Maestro `id:` selectors are REGEX → dots escaped (\.), anchored (^…$), SINGLE-QUOTED (Test-Contract §4).
+# testTags are exposed as resource-ids via Modifier.enableTestTagsAsResourceId() at the shell root (CYP-15).
+#
+# ── PREREQUISITES (tester runtime) ────────────────────────────────────────────────────────────────────────────
+#   * CANVAS MODE (same as eventlog-presence-android): the agent windows carry the header badge/status only in the
+#     desktop canvas layout. On a Compact phone flip density first, e.g.:
+#         adb shell wm density 240   # 1080px → 720dp → Medium → canvas mode
+#         maestro test -e AGENT_D=<id> -e AGENT_E=<id> maestro/connector-capability-state-android.yaml
+#         adb shell wm density reset
+#   * TWO agents in the scenario, BOTH with caps not yet reported (a fresh scenario, or one where the connector
+#     has not opted in), passed as env so this flow is scenario-agnostic:
+#         AGENT_D — RUNNING, caps still null  → expect the `○` badge PRESENT
+#         AGENT_E — NOT running (STOPPED / created-not-started), caps null → expect the badge ABSENT
+#     Use the staging BYOA drop-in scenario (the PO's C→D-threshold datum source): create both agents, START only
+#     AGENT_D, leave AGENT_E stopped, and run BEFORE AGENT_D's connector reports caps (within ~10 s of START — the
+#     re-poll window; see CAPS_REPOLL_MAX_DURATION_MS). If your scenario has stable ids, pass them; the flow does
+#     not hard-code any agent id.
+appId: com.tneff.cyppieagents
+name: "CYP-746 connector capability state (Android) — E shows no ○, D shows ○, unknown→reported"
+tags:
+  - connector
+  - capability
+env:
+  AGENT_D: "po"
+  AGENT_E: "backend"
+---
+- launchApp
+
+# Shell is up (host present) — sanity, same as the sibling flows.
+- assertVisible:
+    id: '^window\.host$'
+    label: "Window host rendered (shell functional)"
+
+# ── E: a NOT-running agent with null caps shows NO fidelity badge (the CYP-746 fix) ──────────────────────────────
+# The lifecycle status (dot + label) IS present — it carries E via the RING/FILL dot — but the fidelity badge, which
+# used to draw a false `○` for ANY null caps, is now ABSENT because E = NOT_STARTED.
+- assertVisible:
+    id: '^agent\.${AGENT_E}\.status$'
+    label: "E: the lifecycle status/dot is present (carries D-vs-E via RING/FILL)"
+- assertNotVisible:
+    id: '^connector\.${AGENT_E}\.fidelityBadge$'
+    label: "E: NO `○` fidelity badge for a not-running agent with null caps (was a false `○` before slice 2)"
+
+# ── D: a RUNNING agent with null caps shows the `○` "not yet reported" badge ─────────────────────────────────────
+- assertVisible:
+    id: '^agent\.${AGENT_D}\.status$'
+    label: "D: the lifecycle status/dot is present (RUNNING → FILL/primary)"
+- assertVisible:
+    id: '^connector\.${AGENT_D}\.fidelityBadge$'
+    label: "D: the `○` fidelity badge IS present for a running agent that hasn't reported caps yet"
+
+# ── Transition (CYP-742 clean-Done): unknown → reported is VISIBLE ───────────────────────────────────────────────
+# Once AGENT_D's connector reports FULL-fidelity caps (shortly after START, via the bounded re-poll), the badge
+# disappears (fail-closed by absence == all available) — the unknown→reported switch, rendered. `waitUntil…gone`
+# tolerates the report latency without a fixed sleep. (Skip this block if your scenario's AGENT_D reports DEGRADED
+# caps — see NOTES; then the badge stays present as `!`, checked by eye.)
+- extendedWaitUntil:
+    notVisible:
+      id: '^connector\.${AGENT_D}\.fidelityBadge$'
+    timeout: 15000
+    label: "Transition: `○` badge disappears once AGENT_D reports full-fidelity caps (unknown→reported)"
+
+# ── NOTES (observational, not tag-assertable) ───────────────────────────────────────────────────────────────────
+# * Glyph & copy: the badge tag is the SAME for D (`○` "noch nicht gemeldet") and RESTRICTED (`!` "Eingeschränkt")
+#   and the a11y label ("Connector-Fähigkeiten anzeigen") does not carry the glyph → Maestro can assert badge
+#   PRESENCE/ABSENCE but not `○` vs `!`. Confirm by eye: D shows `○`, a degraded agent shows `!`, E shows nothing.
+# * Dot coherence: on a socket drop the status dot falls to the RING (UNKNOWN) AND the badge falls silent (E) — the
+#   badge threads the SAME connection-gated lifecycle the dot uses, so they never disagree (no stale `○`).
+# * C→D timeout: if AGENT_D's read HANGS (connector process wedged), the badge still surfaces `○` after
+#   CAPS_CHECKING_TIMEOUT_MS (15 s, provisional) rather than staying blank forever — a long-hang manual check.

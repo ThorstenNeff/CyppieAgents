@@ -572,6 +572,10 @@ private fun AgentHeader(
                 ConnectorCapabilityBadge(
                     caps = capabilities,
                     agentId = agentId,
+                    // CYP-746: the SAME connection-gated effective state the lifecycle dot shows (see StatusIndicator)
+                    // — so the badge's D-vs-E stays coherent with the dot. A dropped socket gates RUNNING→UNKNOWN →
+                    // the badge falls to NOT_STARTED (no `○`) exactly as the dot falls to the RING, never a stale `○`.
+                    lifecycle = gatedLifecycleState(state, startPending || restartPending, connection),
                     onClick = onCapabilityBadgeClick,
                     loading = capabilitiesLoading,
                     compact = compact,

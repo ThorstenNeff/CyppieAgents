@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
+import com.tneff.cyppieagents.agentview.AgentLifecycleState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,14 +25,18 @@ class ConnectorCapabilityLoadSuppressionTest {
 
     @Test
     fun badge_suppressedWhileLoading_evenWhenCapsNull() = runComposeUiTest {
-        setContent { MaterialTheme { ConnectorCapabilityBadge(caps = null, agentId = "a", loading = true) } }
+        // CYP-746: within the load window — BEFORE the C→D timeout — the badge stays suppressed. Freeze the virtual
+        // clock so the badge's `LaunchedEffect(loading)` 15 s C→D `delay` can't auto-advance and surface a `○` here;
+        // the hung-load→`○` fallback is asserted at the model level (Cyp746 hungLoading_isUnknown_notFull).
+        mainClock.autoAdvance = false
+        setContent { MaterialTheme { ConnectorCapabilityBadge(caps = null, agentId = "a", lifecycle = AgentLifecycleState.RUNNING, loading = true) } }
         onNodeWithTag(ConnectorTags.fidelityBadge("a")).assertDoesNotExist()
     }
 
     @Test
     fun badge_showsNotReported_onceSettledAndCapsNull() = runComposeUiTest {
         // Non-vacuous: a SETTLED null (genuinely unreported) DOES show the ○ badge — only the load window suppresses it.
-        setContent { MaterialTheme { ConnectorCapabilityBadge(caps = null, agentId = "a", loading = false) } }
+        setContent { MaterialTheme { ConnectorCapabilityBadge(caps = null, agentId = "a", lifecycle = AgentLifecycleState.RUNNING, loading = false) } }
         onNodeWithTag(ConnectorTags.fidelityBadge("a")).assertExists()
     }
 
