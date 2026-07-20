@@ -1,6 +1,6 @@
 // CYP-735 §3.2 — teeth for the guided first-run model (UIUX2 screen-spec 951823ab §6).
 import { describe, it, expect } from 'vitest'
-import { firstRunGateMode, firstRunProgress, firstIncompleteStep, type FirstRunInputs } from './firstRunModel'
+import { firstRunGateMode, firstRunProgress, firstIncompleteStep, setupErrorCueVisible, type FirstRunInputs } from './firstRunModel'
 import type { SetupStatus } from '../workspace/setupStatus'
 
 const inputs = (over: Partial<FirstRunInputs> = {}): FirstRunInputs => ({
@@ -59,5 +59,32 @@ describe('CYP-735 §3.2 — "done" means server-validated, never form-submitted'
   it('★ an unresolved config never yields a "saved" repo either — nothing is inferred from silence', () => {
     expect(firstRunProgress(inputs({ setup: { kind: 'error' }, repoCloned: null })).repo).toBe('open')
     expect(firstRunProgress(inputs({ setup: { kind: 'unknown' }, repoCloned: null })).repo).toBe('open')
+  })
+})
+
+describe('CYP-758 — setupErrorCueVisible: error overrides skip (the degraded-workspace error cue)', () => {
+  const st = (kind: SetupStatus['kind']): SetupStatus => ({ kind }) as SetupStatus
+
+  it('★ error ∧ skipped → visible: a config-load error must NOT be swallowed by the skip flag', () => {
+    // The whole defect: skip hid the gate that carried the error. Mutation "skip hides error" (return error && !skip,
+    // or drop the skip term to `false`) flips this to false → RED.
+    expect(setupErrorCueVisible(st('error'), true)).toBe(true)
+  })
+
+  it('error ∧ NOT skipped → NOT this cue: the gate carries the error while the user is still in first-run', () => {
+    expect(setupErrorCueVisible(st('error'), false)).toBe(false)
+  })
+
+  it('★ unconfigured ∧ skipped → NOT this cue: the setup PROMPT stays skip-suppressible (distinct signal)', () => {
+    // The control that stops the fix from over-firing: skipping setup on an unconfigured hub must not raise an
+    // ERROR cue — that is the UnconfiguredBanner's job, a different fact.
+    expect(setupErrorCueVisible(st('unconfigured'), true)).toBe(false)
+  })
+
+  it('unknown / configured (either skip state) → never this cue', () => {
+    for (const skipped of [true, false]) {
+      expect(setupErrorCueVisible(st('unknown'), skipped)).toBe(false)
+      expect(setupErrorCueVisible(st('configured'), skipped)).toBe(false)
+    }
   })
 })

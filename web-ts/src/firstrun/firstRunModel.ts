@@ -76,6 +76,23 @@ export function firstRunGateMode(inputs: FirstRunInputs): FirstRunGateMode {
   return p.apiKey === 'done' && p.repo === 'done' ? 'transparent' : 'active'
 }
 
+/**
+ * CYP-758 — should the DEGRADED workspace show a standing config-load-ERROR cue?
+ *
+ * The bug this closes: the guided gate is hidden once skipped (`showGate = … && !setupSkipped`), and the gate is
+ * where a load ERROR surfaced. So `error ∧ skipped` produced NO surface — a failed config read read as "everything
+ * is fine", the exact unknown/error→all-clear collapse `setupStatus.ts` forbids.
+ *
+ * ERROR OVERRIDES SKIP, but as a standing NON-MODAL cue in the workspace — never by re-raising the gate the user
+ * just skipped (that would re-nag; over-alarm is also dishonest). It is skip-INDEPENDENT in effect: the gate carries
+ * the error when NOT skipped (`error ∧ !skip`, unchanged), and this cue carries it when skipped. `unconfigured`
+ * stays skip-suppressible (its own standing UnconfiguredBanner handles that, distinct signal) — only `error`
+ * overrides skip here. `unknown`/`configured` never show it.
+ */
+export function setupErrorCueVisible(setup: SetupStatus, setupSkipped: boolean): boolean {
+  return setup.kind === 'error' && setupSkipped
+}
+
 /** Where a resuming user lands: the first step that is not done (spec §3, resume) — never always step 1. */
 export function firstIncompleteStep(progress: FirstRunProgress): 'apikey' | 'repo' | 'team' | null {
   if (progress.apiKey !== 'done') return 'apikey'
