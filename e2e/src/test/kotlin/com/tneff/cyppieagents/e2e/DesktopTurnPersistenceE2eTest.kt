@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.e2e
 
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -58,11 +59,14 @@ class DesktopTurnPersistenceE2eTest {
                 contentType(ContentType.Application.Json); setBody(SendMessageRequest(text))
             }
             check(r.status == HttpStatusCode.Created) { "POST turn '$text' as $agentId → ${r.status}" }
-            r.body()
+            // CYP-765: POST returns the CYP-744 DeliveredMessage envelope; unwrap so the durability
+            // assertions below keep asserting on the MESSAGE itself (from/body), unchanged in substance.
+            r.body<DeliveredMessage>().message
         }
 
     private suspend fun E2ePlatform.readTurns(agentId: String): List<Message> =
-        asAgent(agentId).use { it.get("$baseUrl/api/channels/$channel/messages").body() }
+        asAgent(agentId).use { it.get("$baseUrl/api/channels/$channel/messages").body<List<DeliveredMessage>>() }
+            .map { it.message }
 
     @Test
     fun aTurnSurvivesARealServerRestart_readBackThroughTheRealGet() = runBlocking {

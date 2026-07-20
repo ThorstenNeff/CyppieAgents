@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.e2e
 
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.ApiErrorBody
+import com.tneff.cyppieagents.model.DeliveredMessage
 import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
@@ -64,7 +65,7 @@ class Cyp317NonMemberGrantE2eTest {
             // AFTER: the hub ENFORCES the grant — backend can now send (canWrite) and read (canRead).
             p.asAgent("backend").use { be ->
                 assertEquals(HttpStatusCode.Created, be.send(base, "po-frontend", "post-grant hello").status, "granted non-member can now SEND")
-                val msgs = be.get("$base/api/channels/po-frontend/messages").body<List<Message>>()
+                val msgs = be.get("$base/api/channels/po-frontend/messages").body<List<DeliveredMessage>>().map { it.message }
                 assertTrue(msgs.any { it.body == "post-grant hello" }, "granted non-member can now READ the channel")
             }
         }
