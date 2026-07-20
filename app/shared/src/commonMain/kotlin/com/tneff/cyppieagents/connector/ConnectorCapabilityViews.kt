@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -16,6 +21,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.agentview.AgentLifecycleState
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
@@ -47,6 +53,7 @@ import kmpcyppieagents.app.shared.generated.resources.connector_kind_mcp
 import kmpcyppieagents.app.shared.generated.resources.connector_kind_stream_json
 import kmpcyppieagents.app.shared.generated.resources.connector_provider
 import kmpcyppieagents.app.shared.generated.resources.connector_provider_unknown
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -177,15 +184,33 @@ fun ConnectorProviderChip(provider: ProviderInfo?, agentId: String, modifier: Mo
 }
 
 /**
- * Compact fidelity badge at the agent-window header (spec §2.2). **Fail-closed by absence** (like CYP-55):
- * present **only** when caps are degraded or `null`; a full-fidelity agent renders NOTHING (no false
- * "all-green" seal). Clickable (opens the detail panel via [onClick]); carries the a11y label and the Fidelity
- * axis only — the connector identity lives in the panel, not here.
+ * CYP-746 — the C→D fallback threshold for the badge: a caps load that hangs past this is no longer treated as
+ * in-flight, so a stuck load surfaces as UNKNOWN/`○` (honest) instead of a silent no-badge forever (the UIUX §5.1
+ * anti-lie — a hung load must never masquerade as full/absent).
+ *
+ * **PROVISIONAL / tunable** (15 s), injectable per-badge for tests. **Coupling LOWER BOUND (CYP-742):** must be
+ * ≥ the bounded caps re-poll duration ([CAPS_REPOLL_MAX_DURATION_MS] = attempts × interval ≈ 10 s) — else the badge
+ * would flip C→D (LOADING→UNKNOWN) *before* the re-poll can land caps, a false-unknown flash. Pinned by the
+ * coupling tooth in `Cyp746CapabilityDisplayStateTest`.
+ */
+internal const val CAPS_CHECKING_TIMEOUT_MS: Long = 15_000L
+
+/**
+ * Compact fidelity badge at the agent-window header (spec §2.2). **Fail-closed by absence** (like CYP-55): the five
+ * [CapabilityDisplayState]s decide presence (CYP-746) — FULL / LOADING / NOT_STARTED render NOTHING; RESTRICTED
+ * shows the `!` "Eingeschränkt" badge; UNKNOWN (D) shows the `○` "not yet reported" badge. Crucially **E
+ * (NOT_STARTED = `null` caps while not RUNNING) shows NO `○`** — the lifecycle **dot** (`statusDotSpec` RING/FILL)
+ * carries the D-vs-E distinction, so the badge never claims "unreported" about an agent that simply isn't running.
+ * Clickable (opens the detail panel via [onClick]); carries the a11y label and the Fidelity axis only.
  */
 @Composable
 fun ConnectorCapabilityBadge(
     caps: Capabilities?,
     agentId: String,
+    /** CYP-746: the agent's (connection-gated) lifecycle — splits `null` caps into D (UNKNOWN, RUNNING → `○`) vs E
+     *  (NOT_STARTED, not RUNNING → no badge). Pass the SAME effective state the lifecycle dot uses, so dot and badge
+     *  stay coherent (a disconnected agent gates to UNKNOWN → NOT_STARTED → no false `○`). */
+    lifecycle: AgentLifecycleState,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
     /** CYP-280: caps read in flight → suppress the badge entirely. `null` caps during a load ("not loaded yet")
@@ -199,16 +224,36 @@ fun ConnectorCapabilityBadge(
      * The badge stays a 48 dp target either way.
      */
     compact: Boolean = false,
+    /** CYP-746: the C→D fallback threshold (provisional 15 s), injectable for tests. See [CAPS_CHECKING_TIMEOUT_MS]. */
+    checkingTimeoutMs: Long = CAPS_CHECKING_TIMEOUT_MS,
 ) {
-    // CYP-280: while the caps are still loading (e.g. a fresh project switch), show no fidelity claim at all —
-    // a transient `○` on a full-fidelity agent is actively wrong (worse than absence).
-    if (loading) return
-    // Full fidelity → no badge (fail-closed by absence; absence == "all available").
-    if (caps != null && !caps.isDegraded) return
+    // CYP-746 (C→D): once a load persists past the threshold, stop treating it as in-flight so a HUNG load surfaces
+    // as UNKNOWN/`○` (honest) instead of a silent no-badge forever. Keyed on agentId so a project/agent switch
+    // resets; re-armed whenever `loading` flips.
+    var loadTimedOut by remember(agentId) { mutableStateOf(false) }
+    LaunchedEffect(agentId, loading, checkingTimeoutMs) {
+        loadTimedOut = false
+        if (loading) {
+            delay(checkingTimeoutMs)
+            loadTimedOut = true
+        }
+    }
+    // CYP-746: derived INLINE (never `remember`ed) so when the CYP-742 re-poll lands caps (null→present) the badge
+    // re-derives on the next recomposition and switches ○→reported — the visible unknown→reported transition.
+    val display = capabilityDisplayState(caps, loading, loadTimedOut, lifecycle)
+    // FULL (all available) / LOADING (still in flight) / NOT_STARTED (E) → NO badge. E in particular never shows a
+    // false `○`: the lifecycle dot carries D-vs-E (spec — "unknown is a different axis").
+    if (display == CapabilityDisplayState.FULL ||
+        display == CapabilityDisplayState.LOADING ||
+        display == CapabilityDisplayState.NOT_STARTED
+    ) {
+        return
+    }
 
     val a11y = stringResource(Res.string.a11y_connector_fidelity_badge)
-    // null caps ⇒ "not yet reported" (neutral GATED, `○`); degraded ⇒ "Limited" (amber Attention, `!`).
-    val unknown = caps == null
+    // UNKNOWN (D: null caps + RUNNING) ⇒ "not yet reported" (neutral GATED, `○`); RESTRICTED (degraded caps) ⇒
+    // "Eingeschränkt" (amber Attention, `!`).
+    val unknown = display == CapabilityDisplayState.UNKNOWN
     val label = if (unknown) {
         stringResource(Res.string.connector_fidelity_unknown)
     } else {

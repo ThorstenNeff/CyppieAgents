@@ -67,6 +67,39 @@ class Cyp746CapabilityDisplayStateTest {
         assertEquals(CapabilityDisplayState.LOADING, capabilityDisplayState(null, loading = true, loadingTimedOut = false, AgentLifecycleState.STOPPED))
     }
 
+    /**
+     * CYP-746 coupling tooth — the badge's C→D timeout must be **≥ the CYP-742 re-poll duration**. Otherwise the
+     * badge flips LOADING→UNKNOWN *before* the bounded re-poll (attempts × interval) can land caps → a false-unknown
+     * `○` flash on a live-created agent that is about to report. Lower the threshold below the re-poll bound → RED.
+     */
+    @Test
+    fun checkingTimeout_isAtLeastRepollDuration_noFalseUnknownFlash() {
+        assertTrue(
+            CAPS_CHECKING_TIMEOUT_MS >= CAPS_REPOLL_MAX_DURATION_MS,
+            "C→D timeout ($CAPS_CHECKING_TIMEOUT_MS ms) must be ≥ the CYP-742 re-poll duration " +
+                "($CAPS_REPOLL_MAX_DURATION_MS ms) — else the badge flashes a false `○` before caps can land",
+        )
+    }
+
+    /**
+     * CYP-742 clean-Done — the **unknown→reported transition**, not merely the endpoints. While the agent stays
+     * RUNNING, when the re-poll lands caps (null→present) the display MUST leave UNKNOWN for a reported verdict, so
+     * the badge switches `○`→reported. Pins the CHANGE across the SAME held lifecycle (two evaluations differ),
+     * distinct from the per-state teeth above.
+     */
+    @Test
+    fun unknownToReported_transition_whileRunning_notJustEndpoints() {
+        val lc = AgentLifecycleState.RUNNING
+        val before = capabilityDisplayState(caps = null, loading = false, loadingTimedOut = true, lifecycle = lc)
+        val afterFull = capabilityDisplayState(caps = FULL_CAPS, loading = false, loadingTimedOut = true, lifecycle = lc)
+        val afterDegraded = capabilityDisplayState(caps = DEGRADED_CAPS, loading = false, loadingTimedOut = true, lifecycle = lc)
+        assertEquals(CapabilityDisplayState.UNKNOWN, before, "start: null caps while RUNNING = D (the `○` badge)")
+        assertNotEquals(before, afterFull, "caps landing must move the display OFF unknown (the ○→reported transition)")
+        assertNotEquals(before, afterDegraded, "caps landing degraded must also leave unknown (○→`!`)")
+        assertEquals(CapabilityDisplayState.FULL, afterFull, "full caps → FULL (badge disappears)")
+        assertEquals(CapabilityDisplayState.RESTRICTED, afterDegraded, "degraded caps → RESTRICTED (`!`)")
+    }
+
     private companion object {
         val FULL_CAPS = Capabilities(
             CapabilityStatus.AVAILABLE, CapabilityStatus.AVAILABLE, CapabilityStatus.AVAILABLE,

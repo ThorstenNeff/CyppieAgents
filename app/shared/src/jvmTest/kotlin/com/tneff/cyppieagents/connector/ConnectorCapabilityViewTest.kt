@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.runComposeUiTest
+import com.tneff.cyppieagents.agentview.AgentLifecycleState
 import com.tneff.cyppieagents.model.Capabilities
 import com.tneff.cyppieagents.model.CapabilityStatus
 import com.tneff.cyppieagents.model.ConnectorKind
@@ -69,20 +70,21 @@ class ConnectorCapabilityViewTest {
 
     @Test
     fun badge_absentForFullAgent_failClosedByAbsence() = runComposeUiTest {
-        setContent { MaterialTheme { ConnectorCapabilityBadge(full, "agA") } }
+        setContent { MaterialTheme { ConnectorCapabilityBadge(full, "agA", lifecycle = AgentLifecycleState.RUNNING) } }
         onNodeWithTag(ConnectorTags.fidelityBadge("agA")).assertDoesNotExist()
     }
 
     @Test
     fun badge_presentForNullCaps_notYetReported() = runComposeUiTest {
-        setContent { MaterialTheme { ConnectorCapabilityBadge(null, "agA") } }
+        // CYP-746: null caps + RUNNING = D (UNKNOWN) → the `○` badge is present ("not yet reported").
+        setContent { MaterialTheme { ConnectorCapabilityBadge(null, "agA", lifecycle = AgentLifecycleState.RUNNING) } }
         onNodeWithTag(ConnectorTags.fidelityBadge("agA")).assertExists()
     }
 
     @Test
     fun badge_presentForDegradedAgent_presenceFlipsWithIsDegraded() = runComposeUiTest {
         // Mutation-style: same composable, only isDegraded differs → presence flips (cf. the full-agent test).
-        setContent { MaterialTheme { ConnectorCapabilityBadge(degraded, "agA") } }
+        setContent { MaterialTheme { ConnectorCapabilityBadge(degraded, "agA", lifecycle = AgentLifecycleState.RUNNING) } }
         onNodeWithTag(ConnectorTags.fidelityBadge("agA")).assertExists()
     }
 
