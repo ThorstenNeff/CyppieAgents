@@ -47,7 +47,7 @@ class Cyp335TranscriptTimeColumnTest {
 
     /** Drives mapper + fold with an explicit server stamp per wire event — exactly what `MappingAgentSession` does. */
     private fun pipeline(stamped: List<Pair<StreamJsonEvent, Long>>): List<AgentEvent> {
-        val mapper = StreamJsonMapper(readyNoticeText = "READY")
+        val mapper = StreamJsonMapper(readyNoticeText = "READY", turnErrorLabel = "TURNERR")
         return foldEvents(stamped.flatMap { (event, tsMs) -> mapper.map(event, tsMs) })
     }
 

@@ -26,6 +26,13 @@ class StubAgentSession(
     private val human = MutableSharedFlow<String>(extraBufferCapacity = 16)
 
     override val events: Flow<AgentEvent> = flow {
+        // CYP-386: this "Session gestartet" literal stays DE ON PURPOSE (PO-ratified skip 2026-07-21). This stub is a
+        // DEMO fixture — it backs `:app:webAppDemo` (mainDemo/EventLogDemoApp, "NOT the prod web App") and tests,
+        // never the prod session (which is the localized MappingAgentSession/StreamJsonMapper). Its whole scripted
+        // scenario below is German demo content, so localizing this one notice would only mix languages for ~0 gain.
+        // NOT a prod i18n bug. `Cyp386NoticeLiteralGuardTest` excludes this file explicitly (excludedDemoSites) with
+        // this reason + a "still exists" tooth, so the exclusion is LABELED, not a silent scan gap. If a non-demo
+        // path ever uses this stub for prod, revisit.
         emit(AgentEvent.Notice("sys-1", "Session gestartet · Agent: backend", nowMs()))
 
         // Streaming assistant text — three deltas under one id. Only the first delta's stamp survives the fold.

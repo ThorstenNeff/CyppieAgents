@@ -27,7 +27,7 @@ class StreamJsonMapperTest {
 
     /** CYP-335: each wire event is stamped 1_000 ms apart, so a row's time identifies which event bore it. */
     private fun pipeline(events: List<StreamJsonEvent>): List<AgentEvent> {
-        val mapper = StreamJsonMapper(readyNoticeText = "READY")
+        val mapper = StreamJsonMapper(readyNoticeText = "READY", turnErrorLabel = "TURNERR")
         return foldEvents(events.flatMapIndexed { i, e -> mapper.map(e, tsMs = (i + 1) * 1_000L) })
     }
 
@@ -113,7 +113,7 @@ class StreamJsonMapperTest {
         // ONE tool_result wire event fans out into TWO rows (the resolved ToolCall + the Result). They must not
         // share a timestamp: the tool call is dated by its start, the result by its arrival. The operator reads
         // start AND end off the transcript — that only works if the fan-out rows are dated independently.
-        val mapper = StreamJsonMapper(readyNoticeText = "READY")
+        val mapper = StreamJsonMapper(readyNoticeText = "READY", turnErrorLabel = "TURNERR")
         val toolUse = AssistantEvent(
             message = AgentMessage(
                 id = "m", stopReason = "tool_use",
@@ -139,14 +139,14 @@ class StreamJsonMapperTest {
 
     @Test
     fun rateLimitAndSuccessResult_produceNoRows() {
-        val mapper = StreamJsonMapper(readyNoticeText = "READY")
+        val mapper = StreamJsonMapper(readyNoticeText = "READY", turnErrorLabel = "TURNERR")
         assertTrue(mapper.map(RateLimitEvent(uuid = "r"), tsMs = 0L).isEmpty())
         assertTrue(mapper.map(ResultEvent(subtype = "success", isError = false, uuid = "x"), tsMs = 0L).isEmpty())
     }
 
     @Test
     fun thinkingOnlyAssistant_isDropped() {
-        val mapper = StreamJsonMapper(readyNoticeText = "READY")
+        val mapper = StreamJsonMapper(readyNoticeText = "READY", turnErrorLabel = "TURNERR")
         val ev = AssistantEvent(
             message = AgentMessage(id = "m", stopReason = "tool_use", content = listOf(ThinkingBlock("nur denken"))),
             uuid = "u",
@@ -178,7 +178,7 @@ class StreamJsonMapperTest {
 
     @Test
     fun errorResult_emitsNotice() {
-        val mapper = StreamJsonMapper(readyNoticeText = "READY")
+        val mapper = StreamJsonMapper(readyNoticeText = "READY", turnErrorLabel = "TURNERR")
         val rows = mapper.map(ResultEvent(subtype = "error_max_turns", isError = true, uuid = "e"), tsMs = 7_000L)
         val notice = rows.single() as AgentEvent.Notice
         assertTrue(notice.text.contains("error_max_turns"))
@@ -186,6 +186,10 @@ class StreamJsonMapperTest {
         // neutral one that would read like an ordinary status line. Mutation: drop `isError = true` at the
         // Turn-Fehler site ⇒ red.
         assertTrue(notice.isError, "a failed-turn notice must be flagged isError (CYP-385)")
+        // CYP-386: the label is INJECTED (localized by the caller), not a hardcoded German literal — the text
+        // starts with the injected marker, and the untranslated wire subtype follows. Mutation: hardcode a literal
+        // in the mapper again ⇒ the text no longer starts with the injected label ⇒ red.
+        assertTrue(notice.text.startsWith("TURNERR"), "the turn-error label must come from the injected (localized) text, not a mapper literal (CYP-386)")
     }
 
     // --- CYP-326 #1: injected incoming/system message visibility ---

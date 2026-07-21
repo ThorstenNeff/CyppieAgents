@@ -55,6 +55,7 @@ class Cyp571S2ClientRenderProofTest {
         sink = {},
         connection = MutableStateFlow(ConnectionStatus.LIVE),
         readyNoticeText = "bereit",
+        turnErrorLabel = "Turn-Fehler",
     )
 
     /**

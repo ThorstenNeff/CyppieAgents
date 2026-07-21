@@ -102,6 +102,15 @@ class AgentViewModel(
      *  dated by the server (see [AgentEvent.tsMs]). */
     private val nowMs: () -> Long = platformTranscriptClock()::nowMs,
     /**
+     * CYP-386: the localized "connection lost" notice label, resolved by the composable caller ([AgentShell]) via
+     * `stringResource(Res.string.agent_conn_lost_notice)`. The ViewModel is NOT composable, so — like the mapper's
+     * [MappingAgentSession] `readyNoticeText`/`turnErrorLabel` — the user-facing text is INJECTED, never a literal in
+     * the VM body, so the EN build never shows German. The default is a NON-German English fallback (unreached in
+     * prod, where the shell always injects) chosen so no German notice literal remains at this prod emission site
+     * (pinned by `Cyp386NoticeLiteralGuardTest`).
+     */
+    private val connLostLabel: String = "Connection to the agent lost",
+    /**
      * CYP-387: capacity of the sent-message input history (arrow-up/down recall). This is the ONE global personal
      * preference (spec §3), so it is a live `var` — [AgentShell] mirrors the current global N onto every open
      * agent VM, and the store reads it through a supplier (see [inputHistory]). `0` = recall off. Default 20.
@@ -349,7 +358,7 @@ class AgentViewModel(
                 // but the row must not depend on that for its honesty: wrap this in a retry loop tomorrow and the
                 // constant id turns into a silently-wrong clock.
                 _transcript.update {
-                    foldEvent(it, AgentEvent.Notice("conn-error-${connErrorSeq++}", "Verbindung zum Agenten verloren", clientStampMs(), isError = true))
+                    foldEvent(it, AgentEvent.Notice("conn-error-${connErrorSeq++}", connLostLabel, clientStampMs(), isError = true))
                 }
             }
         }
