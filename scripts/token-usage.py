@@ -26,6 +26,15 @@ survives, but the ABSOLUTE token counts are 2x too high - and the Auftraggeber m
   DIFFERENT usage, that violates the single-billing invariant -> it is FLAGGED as an anomaly (surfaced in
   output + stderr), never silently resolved. Normal case: identical -> zero anomalies. Run `--selftest`.
 
+  NAMED LIMIT (not closed): dedup-by-id rests on the assumption `1 requestId : 1 message.id` - i.e. a
+  request never bills usage across MULTIPLE distinct message.ids. Verified at the object 2026-07-21:
+  24706 usage-bearing requestIds across all transcripts, 0 mapping to >1 message.id (+ the API contract:
+  one request -> one assistant message -> one usage; a tool_use continuation is a NEW request -> NEW id).
+  Revisit ONLY if the API ever bills per-request across DISTINCT message.ids: dedup-by-id would then
+  OVER-count, and the same-id divergence flag would NOT catch it (the collision would be across different
+  ids, not a same-id conflict). At 24706:0 a runtime guard is gold-plating; the assumption is named here
+  rather than left latent - leaving it latent is the trap.
+
 Usage:
   token-usage.py --agent <id> [--from <iso>] [--to <iso>] [--out file.csv|file.json] [--per-turn]
   token-usage.py --dir <path-to-project-slug-dir> ...
