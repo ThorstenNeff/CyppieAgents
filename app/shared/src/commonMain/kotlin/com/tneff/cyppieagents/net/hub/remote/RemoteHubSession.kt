@@ -35,6 +35,16 @@ class RemoteHubSession(
     private val prologue: ByteArray = ByteArray(0),
     private val latencyDamping: Double = 0.3,
     private val latencyDegradedMillis: Long = 400L,
+    /**
+     * CYP-783 — a TEST-ONLY suspension seam invoked at a FIXED source point immediately BEFORE the CONNECTED
+     * announce (`_state.update{CONNECTED}`). Prod default = no-op (zero behaviour, zero cost). Its sole purpose is
+     * to make the announce/arm-latch ORDERING deterministically observable: the arm-then-announce fix means the
+     * drop latch is already armed when this hook runs, so a `reportDropped()` from inside the hook is CAPTURED
+     * (→ reconnect). Regress the order (arm AFTER announce) and the same hook sees an UNARMED latch → the drop is
+     * lost → the session wedges CONNECTED forever. The regression tooth drives exactly that (deterministic,
+     * non-vacuous), so the ordering can never silently drift back. Never overridden in prod.
+     */
+    private val onBeforeAnnounceConnected: suspend () -> Unit = {},
 ) {
     private val _state = MutableStateFlow(RemoteSessionState(hubId, RemoteConnState.RELAY_DIALING))
     val state: StateFlow<RemoteSessionState> = _state.asStateFlow()
@@ -193,11 +203,14 @@ class RemoteHubSession(
         }
 
         tunnel = t
-        _state.update { it.copy(conn = RemoteConnState.CONNECTED, failure = null, inFlightUncertain = false) }
-
-        // Stay connected until a drop is reported or teardown unwinds us.
+        // CYP-774: ARM the drop latch BEFORE announcing CONNECTED. A consumer (or a test) that observes
+        // CONNECTED and immediately reports a drop must never lose the signal in the announce->arm window — that
+        // lost drop leaves d.await() blocked forever (session stuck CONNECTED, no reconnect). Arm-then-announce.
         val d = CompletableDeferred<Unit>()
         drop = d
+        onBeforeAnnounceConnected() // CYP-783: test seam at the announce/arm boundary (prod no-op) — the arm above must precede the announce below
+        _state.update { it.copy(conn = RemoteConnState.CONNECTED, failure = null, inFlightUncertain = false) }
+        // Stay connected until a drop is reported or teardown unwinds us.
         try {
             d.await()
         } finally {

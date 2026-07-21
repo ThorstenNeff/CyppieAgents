@@ -1,6 +1,9 @@
 package com.tneff.cyppieagents.e2e
 
+import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.crypto.RawKeys
+import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.AgentRunState
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.net.hub.buildRemoteHubTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseHandshakeException
@@ -36,6 +39,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.builtins.ListSerializer
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.AfterTest
@@ -156,11 +160,35 @@ class CypM2HardeningTest {
             }
             assertTrue(outcome.isFailure, "a dropped POST surfaces as a caller-visible failure (in-flight-uncertain), never a false success: got ${outcome.getOrNull()}")
 
-            // and it is never silently applied MORE than once (no phantom replay by the transport) — ghost appears <= 1x.
+            // and it is never silently applied MORE than once (no phantom replay by the transport) — at most ONE
+            // ghost AGENT. CYP-774: count agent ENTRIES with id=="ghost", NOT raw "ghost" string occurrences — a
+            // single ghost's `worktree` defaults to its id, so it serializes with BOTH "id":"ghost" AND
+            // "worktree":"ghost" (2 string hits for ONE agent). The old `Regex("\"ghost\"").count() <= 1` therefore
+            // FALSELY fired whenever the in-flight-uncertain POST legitimately applied ONCE (a lost RESPONSE, not a
+            // replayed REQUEST — `outcome.isFailure` above already confirms the client saw the failure). The real
+            // invariant this guards is "no DUPLICATE agent": 0 (not applied) or 1 (applied once) both pass; only a
+            // genuine replay (2 agents) fails. (See ghostCountIsOverAgentEntries_notStringOccurrences for the proof.)
             val rosterT = realTunnel(nettyPort); queue.add(rosterT.tunnel)
-            val ghosts = Regex("\"ghost\"").findAll(oneShotGet("${transport.httpBaseUrl}/api/agents", op).bodyAsText()).count()
-            assertTrue(ghosts <= 1, "the dropped POST is never replayed into a duplicate (ghost appears <=1x, was $ghosts)")
+            val roster = CommJson.decodeFromString(ListSerializer(Agent.serializer()), oneShotGet("${transport.httpBaseUrl}/api/agents", op).bodyAsText())
+            val ghostAgents = roster.count { it.id == "ghost" }
+            assertTrue(ghostAgents <= 1, "the dropped POST is never replayed into a duplicate (at most one 'ghost' AGENT, was $ghostAgents)")
         }
+    }
+
+    /**
+     * CYP-774 — the DETERMINISTIC proof that h4's flake was a false-failure from a loose COUNT, not a prod
+     * duplicate-mutation. A single ghost agent's `worktree` defaults to its id ("ghost"), so it serializes with
+     * BOTH `"id":"ghost"` and `"worktree":"ghost"` → `Regex("\"ghost\"")` returns 2 for ONE agent. That is why the
+     * old assertion read `was 2` (not `was 4`, which a genuine 2-agent replay would give): ONE agent, miscounted.
+     * The prod behaviour is correct — an in-flight-uncertain POST whose RESPONSE is lost may legitimately apply
+     * once, and the client correctly sees a failure. The fix counts agent ENTRIES; this pins WHY.
+     */
+    @Test
+    fun ghostCountIsOverAgentEntries_notStringOccurrences() {
+        val oneGhost = listOf(Agent(id = "ghost", name = "Ghost", role = Role.WORKER, worktree = "ghost", runState = AgentRunState.STOPPED))
+        val json = CommJson.encodeToString(ListSerializer(Agent.serializer()), oneGhost)
+        assertEquals(2, Regex("\"ghost\"").findAll(json).count(), "the OLD loose regex over-counts ONE ghost agent as 2 (id + worktree) — the false-failure root")
+        assertEquals(1, oneGhost.count { it.id == "ghost" }, "the CORRECT count is over agent ENTRIES: one applied ghost = one agent, never a replay")
     }
 
     // ---- H5: N concurrent REAL tunnels are all carried by the real routes — proves the SERVER handles N-concurrent

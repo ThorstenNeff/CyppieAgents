@@ -5,6 +5,7 @@ import com.tneff.cyppieagents.net.hub.noise.ClientNoiseTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.noise.RelayChannel
 import com.tneff.cyppieagents.net.hub.trust.TrustConfirmationRejectedException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -61,6 +62,35 @@ class Cyp443RemoteHubSessionTest {
         trust: HubTrust = pinned,
         auth: OperatorAuthenticator = grant,
     ) = RemoteHubSession("hub-1", transport, dialer, trust, auth, scope, slowBackoff)
+
+    /**
+     * CYP-783 — the DETERMINISTIC regression guard for the arm-then-announce ordering (the lost-drop wedge the M2
+     * full-suite acceptance surfaced). A drop reported EXACTLY at the announce/arm boundary — a consumer that
+     * observes CONNECTED and immediately reports a tunnel death — must NOT be lost. The [onBeforeAnnounceConnected]
+     * seam fires `reportDropped()` at that fixed boundary point: with the fix (`drop` armed BEFORE the announce)
+     * the drop is CAPTURED → the session honestly enters a reconnecting/in-flight-uncertain posture; regress the
+     * order (arm AFTER announce) and the same hook sees an unarmed latch → the drop is LOST → the session wedges
+     * CONNECTED forever → `inFlightUncertain` never sets → this teeth reds. Non-vacuous by construction, and
+     * deterministic (no widened-window `delay`, no flake) — the seam makes the multi-thread window observable.
+     */
+    @Test
+    fun dropAtTheAnnounceArmBoundary_isNotLost_armThenAnnounce() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        var dialCount = 0
+        val releaseReDial = CompletableDeferred<Unit>() // hold the recovery dial so the reconnecting posture is observable
+        val dialer = RelayDialer { if (dialCount++ >= 1) releaseReDial.await(); NoopRelay() }
+        lateinit var s: RemoteHubSession
+        var fired = false
+        s = RemoteHubSession(
+            "hub-1", FakeTransport(), dialer, pinned, grant, scope, slowBackoff,
+            onBeforeAnnounceConnected = { if (!fired) { fired = true; s.reportDropped() } }, // the drop lands in the window, ONCE
+        )
+        s.start(); advanceUntilIdle()
+        assertTrue(s.state.value.inFlightUncertain, "a drop reported at the announce/arm boundary must be CAPTURED (arm-then-announce) — regressing the order loses it and this reds")
+        assertTrue(s.state.value.conn != RemoteConnState.CONNECTED, "the captured drop drove a reconnecting posture, never a wedged CONNECTED")
+        releaseReDial.complete(Unit)
+        scope.cancel()
+    }
 
     @Test
     fun happyPath_reachesConnected_withTunnel() = runTest {
