@@ -23,15 +23,39 @@
 
 ### 0.1 Pre-flight — **BEFORE** setting the `bootstrapOperatorIdentityId` pin
 
-Check `role_assignments` for an existing OPERATOR row on the target host:
+Check `role_assignments` for an existing OPERATOR row on the target host. **This check is fail-closed
+(PL-0089): absent substrate — no `sqlite3`, no role DB, no `role_assignments` table — is `N/A`, never
+"proceed". A bare `sqlite3 … WHERE role='OPERATOR'` on a token-only host (`config.auth == null`, the
+default → no `SqliteRoleStore`, `Principal.kt:56-60`) prints an empty stdout that reads as "zero rows",
+which is exactly how a missing store would silently pass. So assert the store EXISTS first, then classify.**
 
 ```bash
-sqlite3 <roleDbPath> "SELECT identity_id, role, granted_at FROM role_assignments WHERE role='OPERATOR';"
+roleDbPath="<roleDbPath>"; PIN_ID="<the bootstrapOperatorIdentityId you are about to pin>"
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  echo "N/A: sqlite3 not installed — cannot evaluate (NOT proceed)"
+elif [ ! -f "$roleDbPath" ]; then
+  echo "N/A: role DB '$roleDbPath' absent — token-only / no Kratos role store (NOT proceed)"
+elif [ -z "$(sqlite3 "$roleDbPath" "SELECT name FROM sqlite_master WHERE type='table' AND name='role_assignments';")" ]; then
+  echo "N/A: table role_assignments does not exist — no role store on this host (NOT proceed)"
+else
+  # table EXISTS → the empty result is now a genuine "zero rows", not a missing store.
+  # Mirror ensureAssigned's blocking predicate exactly: an OPERATOR row with identity_id<>PIN blocks the UPDATE.
+  other="$(sqlite3 "$roleDbPath" "SELECT count(*) FROM role_assignments WHERE role='OPERATOR' AND identity_id<>'$PIN_ID';")"
+  self="$( sqlite3 "$roleDbPath" "SELECT count(*) FROM role_assignments WHERE role='OPERATOR' AND identity_id='$PIN_ID';")"
+  if   [ "${other:-0}" -gt 0 ]; then echo "ROW_FOREIGN: OPERATOR held by another identity != '$PIN_ID' — STOP, resolve it first"
+  elif [ "${self:-0}"  -gt 0 ]; then echo "ROW_SELF: already pinned to '$PIN_ID' — no-op by design. PROCEED"
+  else                               echo "ZERO_ROWS: slot free — the pin will grip. PROCEED"
+  fi
+fi
 ```
 
-- **Zero rows** → the slot is free; the pin will grip. Proceed.
-- **A row for the identity you are about to pin** → already done; the pin is a no-op by design.
-- **A row for ANY OTHER identity** (e.g. a pre-CYP-196 legacy OPERATOR) → **stop and resolve it first.**
+Four-valued verdict — **only `ZERO_ROWS` (with the table present) or `ROW_SELF` is "proceed":**
+- **`ZERO_ROWS`** (table exists, no OPERATOR row) → the slot is free; the pin will grip. **Proceed.**
+- **`ROW_SELF`** (the identity you are about to pin) → already done; the pin is a no-op by design. **Proceed.**
+- **`ROW_FOREIGN`** (ANY OTHER identity, e.g. a pre-CYP-196 legacy OPERATOR) → **STOP and resolve it first.**
+- **`N/A`** (no `sqlite3` / no DB file / no `role_assignments` table) → the store is not present in the
+  config that is running; the check **cannot be evaluated** ⇒ **N/A, never "proceed".** Do **not** read a
+  missing store as an empty slot.
 
 **Why this step exists — the pin fails *silently*.** `ensureAssigned` upgrades the pinned identity only
 `WHERE … NOT EXISTS (SELECT 1 FROM role_assignments WHERE role='OPERATOR' AND identity_id<>?)`
@@ -143,7 +167,7 @@ The static write-tier `OPERATOR_TOKEN` must never surface. Re-confirm before the
 |---|---|---|
 | 6.1 | `GET /api/config/apikey` (participant) | `{ set:true, masked:"…last4" }` — never the raw key |
 | 6.2 | Static operator token over a **tunnel** auth channel | `401` (god-token-per-tunnel; static token refused on the tunnel connector; `200` only on the public connector — port-scoped) |
-| 6.3 | Log scan | `grep -RiE 'ory_st_\|ANTHROPIC\|OPERATOR_TOKEN=\|BEGIN .*PRIVATE KEY\|session_token' <LOGDIR>` → **empty** |
+| 6.3 | Log scan (corpus-gated, PL-0089) | Use the fail-closed form from **CYP-565 App. Step 8** (assert `$LOGDIR` set+exists+**non-empty** and a planted canary is seen, THEN grep) → **`PASS`** (corpus scanned, no secret) · **`FAIL`** (secret found) · **`N/A`** if `$LOGDIR` is unset/absent/empty — a bare `grep … <LOGDIR> → empty` passes vacuously over no corpus, so **N/A is never a pass** |
 | 6.4 | `ab7c54e3` = OPERATOR pin | `bootstrapOperatorIdentityId == ab7c54e3` (or an explicit RoleStore OPERATOR assignment) — else authed-but-MEMBER → hub invisible (#2b). Config alone is **not** proof the pin gripped: verify the effective row (`SELECT role FROM role_assignments WHERE identity_id='ab7c54e3…'` = `OPERATOR`), see §0.1 |
 
 ---
