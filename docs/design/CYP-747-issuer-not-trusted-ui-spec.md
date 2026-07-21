@@ -18,9 +18,17 @@ Der Client modelliert heute **zwei bewusst getrennte** Trust-Achsen, firewalled 
 - **(a) Hub-Key-Trust** — `TrustResolution` (TOFU des Noise-DH-Static-Key), `TofuHubTrust.resolve()`.
 - **(b) Operator-Identität** — `OperatorAuthOutcome` / `OperatorAuthError`.
 
-`owned-but-issuer-not-trusted` ist eine **DRITTE** Achse: der **Aussteller (`iss`) des CP-JWT / Zertifikats**
-(`CpJwtProvider`, `HttpCpJwtProvider`). Der Hub ist an der Control-Plane **admittiert/owned**, aber sein
-Credential-**Aussteller** ist nicht als vertrauenswürdig hinterlegt.
+`owned-but-issuer-not-trusted` ist eine **DRITTE** Achse: das **Vertrauen zum Aussteller** (`iss`, CP-JWT /
+Relay-Key; `CpJwtProvider`, `HttpCpJwtProvider`). Der Hub ist an der Control-Plane **admittiert/owned**, aber
+es ist **kein vertrauenswürdiger Aussteller am Hub etabliert/gepinnt**.
+
+> **Anker-Ebene, nicht Token-Ebene (Backend-Route-#1, code-belegt 2026-07-21):** §5-C2 = ZWEI unabhängige
+> Kanten — `owns-hub` **∧** `hub-trusts-issuer`. Der Zustand sitzt auf der **Trust-ESTABLISHMENT-Ebene**
+> („kein vertrauenswürdiger Aussteller/Relay-Key am Hub gepinnt"), **UPSTREAM** des per-Token-CpJwt-Verify —
+> **KEIN** „Token abgelehnt"-Sub-Case (die Krypto bleibt atomar: `iss`+`sub` in EINEM Token). Issuer-Trust ⊥
+> Operator-Id ⊥ Hub-Pin (ein *anderer* Operator kann vom *selben* Aussteller bezeugt sein; ein *rotierter*
+> Aussteller-Key bezeugt *denselben* Operator). ⟹ Die Copy formuliert den **Anker-Zustand** („kein Aussteller
+> etabliert"), **nie** eine Token-Ablehnung — das trägt zugleich die WARN-amber-Klassifikation (§3).
 
 > **Diese Achse wird NICHT in (a) oder (b) gefaltet.** Das neue `RemoteFailure.IssuerNotTrusted` referenziert
 > **weder** `TrustResolution` **noch** `OperatorAuth*`-Typen — es trägt seine Issuer-Daten als **eigenes** Feld
@@ -85,21 +93,24 @@ Retry); nach OOB-Auflösung durchläuft der frische Connect die Aussteller-Prüf
 
 | Key | DE | EN |
 |---|---|---|
-| `remote_connect_issuer_not_trusted` | Verbindung angehalten: Dieser Hub ist registriert, aber sein Aussteller ist nicht als vertrauenswürdig hinterlegt. Ohne Aussteller-Vertrauen wird keine Operator-Berechtigung erteilt. | Connection halted: this hub is registered, but its issuer isn't marked as trusted. Without issuer trust, no operator authority is granted. |
-| `remote_connect_issuer_oob` | Aussteller-Vertrauen wird **außerhalb der App** hergestellt (durch den Betreiber/PO). Danach erneut verbinden. | Issuer trust is established **outside the app** (by the operator/PO). Reconnect afterwards. |
-| `a11y_remote_connect_issuer_not_trusted` | Verbindung angehalten: Aussteller des Hubs nicht vertrauenswürdig. Keine Operator-Berechtigung. Aussteller-Vertrauen wird außerhalb der App hergestellt; danach erneut verbinden. | Connection halted: the hub's issuer is not trusted. No operator authority. Issuer trust is established outside the app; reconnect afterwards. |
+| `remote_connect_issuer_not_trusted` | Verbindung angehalten: Dieser Hub ist registriert, aber es ist kein vertrauenswürdiger Aussteller an ihm etabliert. Ohne etabliertes Aussteller-Vertrauen wird keine Operator-Berechtigung erteilt. | Connection halted: this hub is registered, but no trusted issuer is established for it. Without established issuer trust, no operator authority is granted. |
+| `remote_connect_issuer_oob` | Ein vertrauenswürdiger Aussteller wird **außerhalb der App** am Hub etabliert (durch den Betreiber/PO). Danach erneut verbinden. | A trusted issuer is established for the hub **outside the app** (by the operator/PO). Reconnect afterwards. |
+| `a11y_remote_connect_issuer_not_trusted` | Verbindung angehalten: kein vertrauenswürdiger Aussteller am Hub etabliert. Keine Operator-Berechtigung. Aussteller-Vertrauen wird außerhalb der App etabliert; danach erneut verbinden. | Connection halted: no trusted issuer established for the hub. No operator authority. Issuer trust is established outside the app; reconnect afterwards. |
 
 **Wortlaut-Begründung:**
-- **Nennt den owned-Zustand ehrlich:** „registriert, aber Aussteller nicht vertrauenswürdig" — nicht
-  „kaputt", nicht „abgelehnt". Der Hub ist legitim; die Lücke ist das Aussteller-Vertrauen.
+- **Nennt den Anker-Zustand ehrlich:** „registriert, aber kein vertrauenswürdiger Aussteller etabliert" —
+  nicht „kaputt", nicht „abgelehnt", **nicht „Token abgelehnt"** (Backend-Route-#1: Establishment-Ebene,
+  nicht Token-Ebene, §1). Der Hub ist legitim; die Lücke ist ein **nicht etabliertes Aussteller-Vertrauen**.
 - **Nennt die Fail-closed-Folge explizit:** „keine Operator-Berechtigung" — der Operator sieht, dass
   Autorität **entzogen** ist (nicht still fehlt) = „marked, not hidden" (CYP-789).
 - **`remote_connect_issuer_oob` ist ein HINWEIS, kein Button** — mirror von `trustChangedRepin`
   („purely informational OOB hint, NOT an action button"). Keine Handlungsverben Richtung App.
-- **„Aussteller"** ist der operator-lesbare Begriff für `iss`; **final mit Backends §5-C2-Naming
-  abstimmen** (falls Backend „Zertifizierungsstelle"/„CA" o.ä. verwendet, angleichen — ein Wort für die Sache).
+- **„Aussteller" ankerbar (§3.1-offener-Punkt ZU, Backend-Route-#1):** der operator-lesbare Begriff für die
+  **Aussteller-Anker/Pin-Kante** — „etabliert/gepinnt", **nie** „Token abgelehnt". Backend hat „3. Achse
+  firewalled" code-belegt bestätigt; der Wortlaut ist damit final verankert (kein „CA"/„Token"-Framing).
 - **`%`-Platzhalter optional** für den Aussteller-Bezeichner, falls Backend ihn liefert (§4): dann Vollform
-  „…sein Aussteller %1$s ist nicht…"; fehlt er → obige generische Form (**`null ≠ fabriziert`**).
+  „…es ist kein vertrauenswürdiger Aussteller %1$s etabliert…"; fehlt er → obige generische Form
+  (**`null ≠ fabriziert`**).
 
 ### 3.2 Ansage-Dringlichkeit
 
@@ -152,9 +163,11 @@ billiger als Dev's Q2 als Obergrenze skizzierte.)*
 `"remote.connect.issuerOob"` für den OOB-Hinweis. Frozen `error(cause)`-Taxonomie ist das etablierte Zuhause;
 Segment-Charset konform. **Shared API mit QA (CYP-7) — über den PO koordinieren** (wie die CYP-460/471-Tags).
 
-**(5) Detektions-Phase (Backend-S1, nicht meine Lane):** der Aussteller wird am CP-JWT geprüft → der Verdikt
-entsteht vermutlich um **AUTHENTICATING**. Das UI ist **phasen-agnostisch** — es rendert, sobald
-`rs.failure = IssuerNotTrusted` gesetzt ist. WO/WANN Backend den Verdikt bildet = §5-C2.
+**(5) Detektions-Ebene (Backend-S1, nicht meine Lane):** Backend-Route-#1 verortet den Verdikt auf der
+**Establishment-Ebene** — „kein vertrauenswürdiger Aussteller am Hub etabliert/gepinnt", **UPSTREAM** des
+per-Token-CpJwt-Verify (kein Token-Reject-Sub-Case). Das UI ist **ebenen-/phasen-agnostisch** — es rendert,
+sobald `rs.failure = IssuerNotTrusted` gesetzt ist. WO/WIE Backend die **Anker-Bestimmung** baut = §5-C2 (S1
+im Bau).
 
 ---
 
@@ -165,8 +178,12 @@ entsteht vermutlich um **AUTHENTICATING**. Das UI ist **phasen-agnostisch** — 
    **strukturell** nicht erteilbar (①, by construction).
 2. **Kein Grant-Pfad** — keine `trustIssuer`-Methode, kein Grant-Button; der einzige Ausgang ist OOB +
    frischer Connect (③).
-3. **Achsen-Firewall grün** — `IssuerNotTrusted` referenziert keine `TrustResolution`/`OperatorAuth*`-Typen;
-   `Cyp443…Guard` bleibt grün (dritte Achse bleibt dritte Achse).
+3. **Achsen-Firewall — und der Bau-Zahn dahinter** — `IssuerNotTrusted` referenziert keine
+   `TrustResolution`/`OperatorAuth*`-Typen. **⚠ Reviewer-bestätigt (2026-07-21): der `Cyp443`-Guard ist heute
+   2-von-3 (blind für die Issuer-Achse).** „Dritte Achse firewalled" ist **Prosa, bis der Guard die
+   Issuer-Anker/Pin-Kante real rötet** — beim Bau ist der Tripwire auf genau diese **Aussteller-Anker/Pin-Heimat**
+   (⊥ a/b) zu erweitern. **Das ist ein Ehrlichkeits-Zahn** (PO gatet, ich verifiziere beim §-QA, dass die
+   „firewalled"-Aussage tatsächlich stimmt), nicht bloße Bau-Hygiene.
 4. **Marked, not hidden** (CYP-789) — der Zustand wird **explizit** gerendert (eigener Tag, eigene Copy,
    Grund + OOB-Weg), nie als stiller/generischer Failure und nie im vertrauten Look.
 5. **`null ≠ fabriziert`** — fehlt der Aussteller-Bezeichner, generische Copy, keine Platzhalter-Nummer.
