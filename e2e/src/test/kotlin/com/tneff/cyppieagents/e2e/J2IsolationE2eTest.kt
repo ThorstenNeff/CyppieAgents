@@ -62,7 +62,10 @@ class J2IsolationE2eTest {
     fun channels_followSwitch_AnotVisibleInB() = runBlocking {
         twoProjects().use { p ->
             val alpha = p.asOperator().use { it.get("${p.baseUrl}/api/channels").body<List<Channel>>() }
-            assertEquals(listOf("po-frontend"), alpha.map { it.id })
+            // CYP-787: alpha is boot-seeded via hubAndSpoke → it has the PO's op-po spoke (operator is a member).
+            // beta below is seeded via addAgent (topology-only, no op-po), so it stays [po-backend] — this asymmetry
+            // is the harness's non-active-project seed path, not a scope leak.
+            assertEquals(listOf("po-frontend", "op-po"), alpha.map { it.id })
             p.switchActive("beta")
             val beta = p.asOperator().use { it.get("${p.baseUrl}/api/channels").body<List<Channel>>() }
             assertEquals(listOf("po-backend"), beta.map { it.id })
@@ -74,7 +77,9 @@ class J2IsolationE2eTest {
     fun acl_followSwitch_noForeignEntriesInB() = runBlocking {
         twoProjects().use { p ->
             val alphaAcl = p.asOperator().use { it.get("${p.baseUrl}/api/acl").body<List<AclEntry>>() }
-            assertTrue(alphaAcl.isNotEmpty() && alphaAcl.all { it.channelId == "po-frontend" })
+            // CYP-787: alpha's ACL now also carries op-po entries (its boot-seeded PO spoke). The isolation intent
+            // holds — every entry is an ALPHA channel (po-frontend or op-po), no foreign (beta) channelId leaks in.
+            assertTrue(alphaAcl.isNotEmpty() && alphaAcl.all { it.channelId == "po-frontend" || it.channelId == "op-po" })
             p.switchActive("beta")
             val betaAcl = p.asOperator().use { it.get("${p.baseUrl}/api/acl").body<List<AclEntry>>() }
             assertTrue(betaAcl.isNotEmpty() && betaAcl.all { it.channelId == "po-backend" })
@@ -142,9 +147,9 @@ class J2IsolationE2eTest {
     @Test
     fun wsComm_reScopesOnReconnectAfterSwitch() = runBlocking {
         twoProjects().use { p ->
-            assertEquals(listOf("po-frontend"), p.firstCommChannelSnapshot())
+            assertEquals(listOf("po-frontend", "op-po"), p.firstCommChannelSnapshot()) // CYP-787: alpha has op-po (boot-seeded)
             p.switchActive("beta")
-            assertEquals(listOf("po-backend"), p.firstCommChannelSnapshot())
+            assertEquals(listOf("po-backend"), p.firstCommChannelSnapshot()) // beta seeded via addAgent → no op-po
         }
     }
 
