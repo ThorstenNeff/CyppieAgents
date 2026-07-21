@@ -34,7 +34,7 @@ const fakeRepo = (): HubRepo => ({
   fetchAcl: vi.fn().mockResolvedValue([]),
   fetchReadState: vi.fn().mockResolvedValue([]),
   // realistic echo: the server answers about the channel it was asked about, with the cursor it advanced to.
-  markRead: vi.fn((channelId: string, upToSeq: number) => Promise.resolve({ channelId, lastReadSeq: upToSeq, unreadCount: 0 })),
+  markRead: vi.fn((channelId: string, upToSeq: number) => Promise.resolve({ channelId, lastReadSeq: upToSeq, unreadCount: 0, hasUnreadMention: false })),
   putAcl: vi.fn().mockResolvedValue({ channelId: '', agentId: '', canRead: false, canWrite: false }),
   requestMode: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn().mockResolvedValue([]),
@@ -523,7 +523,7 @@ describe('CYP-732 — the read cursor advances only when the conversation is in 
     repo.markRead = vi.fn(() => {
       calls += 1
       if (calls > 4) return Promise.reject(new Error('runaway /read loop — the request ledger is missing'))
-      return Promise.resolve({ channelId: 'other', lastReadSeq: 99, unreadCount: 0 })
+      return Promise.resolve({ channelId: 'other', lastReadSeq: 99, unreadCount: 0, hasUnreadMention: false })
     })
     render(<App config={config} repo={repo} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />)
     await flush()

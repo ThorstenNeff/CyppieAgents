@@ -19,9 +19,13 @@ import {
 } from './unreadModel'
 
 /** Build the view the way the wire does — channelId lives INSIDE each entry (contract shape). */
-const available = (channels: Record<string, { unreadCount: number; lastReadSeq: number }>): UnreadView => ({
+const available = (
+  channels: Record<string, { unreadCount: number; lastReadSeq: number; hasUnreadMention?: boolean }>,
+): UnreadView => ({
   kind: 'available',
-  channels: Object.fromEntries(Object.entries(channels).map(([id, e]) => [id, { channelId: id, ...e }])),
+  // hasUnreadMention defaults to false (no mention) but each entry may override — these count/read/unknown teeth
+  // don't exercise mentions, so the neutral default keeps them honest without inventing a mention.
+  channels: Object.fromEntries(Object.entries(channels).map(([id, e]) => [id, { channelId: id, hasUnreadMention: false, ...e }])),
 })
 
 const msgs = (...seqs: number[]) => seqs.map((seq) => ({ seq }))
@@ -103,7 +107,12 @@ describe('CYP-705 §9 — three distinct states, none collapsing into another', 
 
 // ── CYP-705 #4 (cursor path) — the wire→view fold, the seq sentinel, and mark-read ───────────────────────────
 describe('CYP-705 #4 — wire fold, seq authority, mark-read', () => {
-  const entry = (channelId: string, lastReadSeq: number, unreadCount: number) => ({ channelId, lastReadSeq, unreadCount })
+  const entry = (channelId: string, lastReadSeq: number, unreadCount: number, hasUnreadMention = false) => ({
+    channelId,
+    lastReadSeq,
+    unreadCount,
+    hasUnreadMention,
+  })
 
   it('★ the fold is the ONE place the presence rule lives: listed ⇒ known, absent ⇒ unknown', () => {
     const view = unreadViewFrom([entry('a', 5, 2), entry('b', 9, 0)])

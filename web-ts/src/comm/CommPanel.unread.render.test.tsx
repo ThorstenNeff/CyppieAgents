@@ -36,9 +36,11 @@ const renderPanel = (readState: UnreadView, unreadDividerIndex: number | null = 
   )
 
 /** Build the view the way the wire does — channelId lives INSIDE each entry (contract shape). */
-const available = (channels: Record<string, { unreadCount: number; lastReadSeq: number }>): UnreadView => ({
+const available = (
+  channels: Record<string, { unreadCount: number; lastReadSeq: number; hasUnreadMention?: boolean }>,
+): UnreadView => ({
   kind: 'available',
-  channels: Object.fromEntries(Object.entries(channels).map(([id, e]) => [id, { channelId: id, ...e }])),
+  channels: Object.fromEntries(Object.entries(channels).map(([id, e]) => [id, { channelId: id, hasUnreadMention: false, ...e }])),
 })
 
 /** Every word the panel renders — used to prove no all-clear claim appears anywhere. */
