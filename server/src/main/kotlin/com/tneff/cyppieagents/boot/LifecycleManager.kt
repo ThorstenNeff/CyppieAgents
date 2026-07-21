@@ -139,21 +139,23 @@ class LifecycleManager(
      * [ConnectorSessions.removeAndAwait] → `closeAndAwait()` → `readerJob.cancelAndJoin()`, and the exit tail
      * lives inside that `readerJob`, so it is finished or cancelled before the next state is written.
      *
-     * The **spawn** path is not. [start] is check-then-act with no mutual exclusion, and its window is a whole
-     * `fork/exec`: two concurrent `POST /api/agents/{id}/start` both read "not RUNNING" and both spawn.
-     * [ConnectorSessions.register] then displaces the first session **without closing it** — so it keeps running,
-     * unregistered, with its exit listener still bound. When it dies it moves the run state of the *live* one.
-     * Measured by the reviewer: 11 of 12 rounds produced two live sessions, and killing the displaced one flipped
-     * the survivor to ERROR.
+     * The **spawn** path WAS not, historically. `[start]` used to be check-then-act with no mutual exclusion:
+     * two concurrent `POST /api/agents/{id}/start` both read "not RUNNING" and both spawned, and
+     * [ConnectorSessions.register] displaced the first session **without closing it** (measured: 11 of 12 rounds
+     * produced two live sessions; killing the displaced one flipped the survivor to ERROR). **Both reaching paths
+     * are now closed:** CYP-368 serialises `[start]` per agent ([com.tneff.cyppieagents.boot.AgentTransitionLock])
+     * and `removeAndAwait`s any incumbent before `doSpawn`; CYP-775 makes the remote `/ws/hub` register
+     * close-then-accept (`removeAndAwait` before register). Two live sessions for one agent can no longer coexist.
      *
      * **An earlier version of this comment claimed there was "no second writer". That was wrong**, and a wrong
      * comment is worse than none: it carries the authority of a check that did happen, and stops the next reader
-     * from looking. The search was thorough in the wrong place (`remove`/`stop`/`restart`); the second writer
-     * comes through the front door.
+     * from looking. The search was thorough in the wrong place (`remove`/`stop`/`restart`); the second writer came
+     * through the front door — `register`.
      *
-     * **The fix is not a guard here.** Ignoring the displaced session's exit would restore a correct green dot on
-     * top of two live `claude` processes burning tokens for one agent. CYP-368 serialises the spawn so only one
-     * session can exist; a session-identity guard is worth adding *after* that, as depth, never instead of it.
+     * **This guard is DEPTH, never the primary fix.** Ignoring the displaced session's exit alone would restore a
+     * correct green dot on top of two live `claude` processes; the primary fix is closing the swap (CYP-368 +
+     * CYP-775). This identity guard stays beneath them so a straggling exit from a displaced / removed-without-join
+     * session can never move the replacement's run state.
      *
      * Guards, in order:
      *  - an unknown agent (already removed via [forget]) is ignored — nothing to say about it. The death is
