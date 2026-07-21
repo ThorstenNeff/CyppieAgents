@@ -56,41 +56,56 @@ CATEGORIES = (
 )
 
 
-def parse_ts(s):
-    """ISO-8601 -> aware datetime, else None. For RECORD timestamps: a bad/absent record ts skips that one
-    record (a single corrupt line must not fail a whole measurement). NOT for CLI bounds - see
-    [parse_window_bound], which fails LOUD, because a silently-dropped window is the whole-range bug."""
+def _parse_iso(s):
+    """Parse ISO-8601 -> (aware_datetime, was_tz_naive), or None if unparseable.
+
+    Record timestamps are UTC (trailing 'Z' -> aware). A tz-LESS input (a bound "2026-07-21T06:00:00", or the
+    space-separated form `fromisoformat` accepts) parses NAIVE -> assume UTC, so aware/naive comparisons never
+    crash and a bound aligns with the UTC-stamped records. `was_tz_naive` lets the CLI-bound path SURFACE that
+    assumption (PL: name-the-limit at runtime, not only in the docstring) without spamming it per record.
+    """
     if not s:
         return None
     try:
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
         return None
-    # Record timestamps are UTC (trailing 'Z' -> aware). A tz-LESS input (e.g. a bound "2026-07-21T06:00:00",
-    # or the space-separated form fromisoformat accepts) parses NAIVE -> assume UTC, so aware/naive comparisons
-    # never crash and a bound aligns with the UTC-stamped records. (Named assumption: naive input = UTC.)
-    if dt.tzinfo is None:
+    was_naive = dt.tzinfo is None
+    if was_naive:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+    return dt, was_naive
+
+
+def parse_ts(s):
+    """RECORD-timestamp parse: aware datetime or None. A bad/absent record ts SKIPS that one record (a single
+    corrupt line must not fail a whole measurement) and is SILENT (per-record notes would spam the data path).
+    The tz-coerce note belongs to user INPUT only - see [parse_window_bound]."""
+    r = _parse_iso(s)
+    return r[0] if r else None
 
 
 def parse_window_bound(flag, value):
-    """CLI `--from`/`--to`: None when NOT given (no filter); FAIL LOUD when GIVEN but unparseable.
+    """CLI `--from`/`--to`: None when NOT given (no filter); FAIL LOUD when GIVEN but unparseable; and EMIT a
+    note when a given bound is tz-naive (assumed UTC).
 
-    The critical distinction (PL): a not-given bound is a legitimate "no filter" (None); a given-but-invalid
-    bound (a typo - a space instead of 'T', a wrong format) must NOT silently become None, or the tool - whose
-    entire purpose is a time WINDOW - would measure the FULL range and report a plausible, wrong number. Since
-    a specified value is always non-empty, `parse_ts(value) is None` here means unparseable, not absent.
+    Distinctions (PL): a not-given bound is a legitimate "no filter" (None); a given-but-invalid bound (a typo)
+    must NOT silently become None, or the tool - whose whole purpose is a time WINDOW - measures the FULL range
+    and reports a plausible, wrong number. And a given-but-tz-naive bound is coerced to UTC - which is an
+    ASSUMPTION about the user's input, so it is surfaced at runtime (scoped to bounds, never to the record data).
     """
     if value is None:
         return None
-    ts = parse_ts(value)
-    if ts is None:
+    r = _parse_iso(value)
+    if r is None:
         raise SystemExit(
             f"error: {flag} value {value!r} is not a valid ISO-8601 timestamp (e.g. 2026-07-21T06:12:00Z) "
             f"- refusing to silently measure the FULL range"
         )
-    return ts
+    dt, was_naive = r
+    if was_naive:
+        print(f"note: {flag} bound {value!r} is tz-naive -> assuming UTC "
+              f"(records are UTC-stamped)", file=sys.stderr)
+    return dt
 
 
 def resolve_dir(agent, explicit_dir, projects_root):
@@ -323,6 +338,28 @@ def selftest():
                     parse_window_bound("--from", bad)
             # the RECORD-level parse_ts stays lenient (a corrupt line skips, never crashes the run):
             self.assertIsNone(parse_ts("not-a-date"), "record-ts parsing stays lenient (skip, not crash)")
+
+        def test_tz_naive_bound_emits_note_but_records_and_aware_bounds_do_not(self):
+            # PL: the tz-naive->UTC coercion is an assumption about USER INPUT -> surface it at runtime, but
+            # ONLY on the bound path. An aware bound emits nothing; a record-stamp parse emits nothing (per-record
+            # notes would spam the data path). The note is for the user's window, not the data.
+            import contextlib
+            import io
+
+            def stderr_of(fn):
+                buf = io.StringIO()
+                with contextlib.redirect_stderr(buf):
+                    fn()
+                return buf.getvalue()
+
+            naive_note = stderr_of(lambda: parse_window_bound("--from", "2026-07-21T06:00:00"))  # no Z
+            self.assertIn("assuming UTC", naive_note, "a tz-naive BOUND must surface the UTC assumption")
+            self.assertEqual("", stderr_of(lambda: parse_window_bound("--from", "2026-07-21T06:00:00Z")),
+                             "an aware bound emits NO note")
+            self.assertEqual("", stderr_of(lambda: parse_ts("2026-07-21T06:00:00")),
+                             "record-stamp parsing must NEVER emit the note (per-record spam)")
+            # and the coercion still works (aware result, comparison-safe)
+            self.assertIsNotNone(parse_window_bound("--from", "2026-07-21T06:00:00").tzinfo)
 
         def test_csv_output_carries_anomalies_column(self):
             import tempfile
