@@ -17,6 +17,7 @@ import java.nio.file.attribute.PosixFilePermission
  * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileRemoteTokenStore]; a future PG
  * impl implements this; companion `invoke` = current factory choice, no behavior change.
  */
+@com.tneff.cyppieagents.tier.StoreKey("remote_token")
 interface RemoteTokenStore {
     /** Snapshot `agentId → token` (boot restore into the [TokenRegistry]). */
     fun all(): Map<String, String>

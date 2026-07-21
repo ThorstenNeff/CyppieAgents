@@ -135,6 +135,7 @@ private suspend fun FlowCollector<StoredAgentEvent>.drainDurableAgentEvents(
  *
  * Mirrors the `EventSink` (CYP-35) discipline: WAL + gapless seq + a live [Flow] fan-out.
  */
+@com.tneff.cyppieagents.tier.StoreKey("agent_events")
 interface AgentEventStore {
     /** Append one MASKED event; assigns + returns the gapless [StoredAgentEvent.seq]. */
     suspend fun append(agentId: String, projectId: String, tsMs: Long, event: StreamJsonEvent): StoredAgentEvent

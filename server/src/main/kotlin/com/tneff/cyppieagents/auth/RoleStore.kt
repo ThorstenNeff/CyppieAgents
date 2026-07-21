@@ -24,6 +24,7 @@ enum class AuthRole { OPERATOR, MEMBER }
 /** A single role assignment row — CYP-186 BE3a, for the OPERATOR-only workspace roster. */
 data class RoleAssignment(val identityId: String, val role: AuthRole, val grantedAtMs: Long)
 
+@com.tneff.cyppieagents.tier.StoreKey("roles")
 interface RoleStore {
     /** The role of [identityId] — the assigned role, or [AuthRole.MEMBER] by default (never null). */
     suspend fun roleOf(identityId: String): AuthRole

@@ -35,6 +35,7 @@ data class AgentOverride(
  * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileAgentOverrideStore]; a future PG
  * impl implements this; companion `invoke` = current factory choice, no behavior change.
  */
+@com.tneff.cyppieagents.tier.StoreKey("agent_override")
 interface AgentOverrideStore {
     /** This agent's override in [projectId], or null (no override → the config seed wins). */
     fun overrideOf(projectId: String, agentId: String): AgentOverride?

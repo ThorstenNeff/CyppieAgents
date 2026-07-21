@@ -45,6 +45,7 @@ internal fun projectGuardException(code: String): Exception = when (code) {
  * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileProjectRegistry]; a future PG
  * impl implements this; companion `invoke` = current factory choice, no behavior change.
  */
+@com.tneff.cyppieagents.tier.StoreKey("project")
 interface ProjectRegistry {
 
     // ---- reads ----

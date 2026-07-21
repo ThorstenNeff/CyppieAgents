@@ -12,6 +12,7 @@ import java.nio.file.StandardCopyOption
  * The companion `invoke` keeps `AvatarBlobStore(root)` construction resolving to the file impl (the current
  * factory choice) — no behavior change.
  */
+@com.tneff.cyppieagents.tier.StoreKey("avatar_blob")
 interface AvatarBlobStore {
     /** Store the re-encoded PNG for an agent (overwrites any prior one). Returns false if disabled/invalid. */
     fun write(projectId: String, agentId: String, png: ByteArray): Boolean

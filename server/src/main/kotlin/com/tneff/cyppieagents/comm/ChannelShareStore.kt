@@ -35,6 +35,7 @@ data class ChannelShareRecord(
  * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileChannelShareStore]; a future PG
  * impl implements this; companion `invoke` = current factory choice, no behavior change.
  */
+@com.tneff.cyppieagents.tier.StoreKey("channel_share")
 interface ChannelShareStore {
     /** Set (or replace) the directed share of [channelId] owned by [ownerProjectId] to [sharedWith]. */
     fun share(channelId: String, ownerProjectId: String, sharedWith: Set<String>): ChannelShareRecord

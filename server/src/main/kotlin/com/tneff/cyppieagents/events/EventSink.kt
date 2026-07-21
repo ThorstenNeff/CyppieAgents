@@ -90,6 +90,7 @@ data class Page(val afterSeq: Long? = null, val limit: Int = 100)
  * MVP impl: SQLite (WAL, batch). In-memory double for tests. Swappable for Redis Streams / Postgres
  * later without touching callers.
  */
+@com.tneff.cyppieagents.tier.StoreKey("event_log")
 interface EventSink {
     /** Stamp + persist one event durably, returning the stamped [Event]. */
     suspend fun append(draft: EventDraft): Event = appendBatch(listOf(draft)).first()
