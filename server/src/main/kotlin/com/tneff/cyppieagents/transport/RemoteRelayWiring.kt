@@ -15,6 +15,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
+import org.slf4j.LoggerFactory
 import java.util.Base64
 
 /**
@@ -25,6 +26,8 @@ import java.util.Base64
  * any byte reaches a route, while the bridge stays a dumb byte-pump (T2).
  */
 object RemoteRelayWiring {
+    private val log = LoggerFactory.getLogger("remote.relay.wiring")
+
     /** CYP-484 — the default Op-Session-TTL (passive session lifetime, Decision 4 "kurze TTL Minuten"), single-sourced. */
     const val DEFAULT_OP_SESSION_TTL_MS: Long = 15 * 60_000L
 
@@ -80,6 +83,37 @@ object RemoteRelayWiring {
         val kid = env("${prefix}KID")?.takeIf { it.isNotBlank() } ?: return null
         val pub = env("${prefix}PUBKEY")?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() } ?: return null
         return IssuerAnchor(issuer, kid, pub)
+    }
+
+    /**
+     * CYP-747 S1b — the hub's issuer-trust posture (§5-C2 axis c), classified SERVER-INTERNALLY so the no-issuer
+     * case is a DISTINCT, observable reason, never a silent [InertRelayConnector] (§5-b: no INERT-silence). This is
+     * **not** a `:core` wire type — the client-facing typed connect-cause is drawn in S1c (the web-ts contract-freeze
+     * point). The distinctness lives at the establishment level ("is a trusted issuer pinned?"), UPSTREAM of and
+     * separate from the per-token operator-identity check (Route #1: axis c ⊥ b).
+     *  - [REMOTE_NOT_CONFIGURED]: no relay URL → the hub isn't set up for remote at all; nothing to say about issuer trust.
+     *  - [ISSUER_NOT_TRUSTED]: remote IS intended (a relay URL is set) but NO trusted issuer is pinned
+     *    ([resolveIssuerAnchor] == null) → owned-but-issuer-not-trusted (the axis-c edge is absent).
+     *  - [ISSUER_TRUSTED]: remote intended AND a complete issuer anchor is pinned.
+     */
+    enum class RemoteIssuerTrustState { REMOTE_NOT_CONFIGURED, ISSUER_NOT_TRUSTED, ISSUER_TRUSTED }
+
+    fun classifyIssuerTrust(env: (String) -> String?): RemoteIssuerTrustState {
+        // Remote INTENT = the operator configured a relay URL. Without it there is no remote path → the issuer-trust
+        // question does not apply (distinct from "configured for remote but missing an issuer").
+        env("CYPPIE_REMOTE_RELAY_URL")?.takeIf { it.isNotBlank() } ?: return RemoteIssuerTrustState.REMOTE_NOT_CONFIGURED
+        return if (resolveIssuerAnchor(env) != null) RemoteIssuerTrustState.ISSUER_TRUSTED
+        else RemoteIssuerTrustState.ISSUER_NOT_TRUSTED
+    }
+
+    /** CYP-747 S1b (§5-b, server-internal observable) — emit the DISTINCT owned-but-issuer-not-trusted WARN for the
+     *  no-issuer INERT path, so it is never a silent [InertRelayConnector]. Not a `:core` wire crossing (that is S1c). */
+    internal fun logIssuerNotTrusted(env: (String) -> String?) {
+        log.warn(
+            "remote relay INERT ({}): the hub is configured for remote but no trusted ISSUER is pinned — set " +
+                "CYPPIE_RELAY_ISSUER/KID/PUBKEY (own relay, Q3) or CYPPIE_CP_* (fallback). Remote stays off until then.",
+            classifyIssuerTrust(env),
+        )
     }
 
     fun build(
@@ -169,7 +203,15 @@ fun buildRemoteTransport(
     // RELAY. Resolved ALL-OR-NOTHING (relay set preferred, CP set as deploy-compat fallback, never mixed) — the
     // hub-trusts-issuer EDGE (§5-C2 axis c), verified UPSTREAM of the per-token operator-identity check; per-hub AND
     // (aud/cb/PoP) untouched.
-    val issuerAnchor = RemoteRelayWiring.resolveIssuerAnchor(env) ?: return InertRelayConnector
+    val issuerAnchor = RemoteRelayWiring.resolveIssuerAnchor(env) ?: run {
+        // CYP-747 S1b (§5-b — NO INERT-silence): control reached here past the relay-URL / custody / operator-id
+        // gates, so the hub IS configured for remote but NO trusted issuer is pinned → owned-but-issuer-not-trusted
+        // (§5-C2 axis c absent). Emit a DISTINCT, observable server-log reason instead of silently returning INERT.
+        // Server-INTERNAL only — the client-facing typed connect-cause (the :core wire crossing) is deferred to S1c
+        // / CYP-798 (the joint Team-1/Team-2 :core promotion), never a unilateral :core type here.
+        RemoteRelayWiring.logIssuerNotTrusted(env)
+        return InertRelayConnector
+    }
     val rpId = env("CYPPIE_OPERATOR_RP_ID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
     // CYP-521: the hub dial-side rendezvous id is now obtained from the CP register (the epoch id), NOT a static env.
     // Needs the CP URL + the operator bearer (like the CYP-512 admit) — a static CYPPIE_REMOTE_RENDEZVOUS is GONE.
