@@ -46,6 +46,11 @@ class Cyp443TrustAxisSeparationGuardTest {
         "IssuerNotTrusted", "IssuerAnchor", "IssuerTrust", "IssuerPinStore", "CpIssuerPin",
     )
 
+    /** CYP-798 §4b — the SHARED `:core` hub-trust VOCABULARY (axis-a UX enums: [com.tneff.cyppieagents.model.HubTrustState]
+     *  etc.). It must stay a pure vocabulary — never reach into the operator-identity (b) or issuer (c) axes, and no
+     *  `:server`-issuer coupling — so folding the axes can't leak in via the shared enum (the Reviewer ① build tooth). */
+    private val sharedHubTrustEnumTokens = listOf("HubTrustState", "TrustRejectReason", "HubDescriptorValidity")
+
     @Test
     fun operatorAuth_neverReferences_hubTrustPinAxis() {
         val code = codeLinesOf("src/commonMain/kotlin/com/tneff/cyppieagents/net/hub/operator/ClientOperatorAuth.kt")
@@ -90,6 +95,21 @@ class Cyp443TrustAxisSeparationGuardTest {
                 code.none { it.contains(token) },
                 "CYP-747 §5-C2: ClientOperatorAuth (operator-identity axis b) must NOT reference the issuer-trust type " +
                     "'$token' — operator identity does not establish issuer trust. Found a cross-axis reference.",
+            )
+        }
+    }
+
+    @Test
+    fun sharedHubTrustEnum_neverReferences_operatorOrIssuerAxes() {
+        // CYP-798 §4b (Reviewer ①) — module-boundary tooth: the shared `:core` HubTrust vocabulary lives OUTSIDE
+        // :app:shared, so a repo-root-relative path (locateSource walks up to the repo root, which holds `core/`).
+        val code = codeLinesOf("core/src/commonMain/kotlin/com/tneff/cyppieagents/model/HubTrust.kt")
+        for (token in operatorIdentityTokens + issuerTrustTokens) {
+            assertTrue(
+                code.none { it.contains(token) },
+                "CYP-798 §4b: the shared :core HubTrust vocabulary (axis a) must NOT reference the operator-identity (b) " +
+                    "/ issuer (c) type '$token' — the shared trust enum stays a pure vocabulary, no :server-issuer coupling. " +
+                    "Found a cross-axis reference.",
             )
         }
     }
