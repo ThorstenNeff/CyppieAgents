@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -25,6 +26,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.acl.AclPanel
+import com.tneff.cyppieagents.agentview.AgentViewModel
+import com.tneff.cyppieagents.agentview.AgentWindow
+import com.tneff.cyppieagents.agentview.StubAgentSession
+import com.tneff.cyppieagents.agentview.StubAgentWritableApi
 import com.tneff.cyppieagents.acl.AclViewModel
 import com.tneff.cyppieagents.acl.StubAclHub
 import com.tneff.cyppieagents.comm.CommApi
@@ -57,13 +62,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /** Demo panel selector — which surface the [EventLogDemoApp] tab switcher shows. */
-private enum class DemoPanel { BROWSE, TAIL, ACL, COMM, PAGER }
+private enum class DemoPanel { BROWSE, TAIL, ACL, COMM, PAGER, OP_PO }
 
 private const val DEMO_TAB_BROWSE = "demo.tab.browse"
 private const val DEMO_TAB_TAIL = "demo.tab.tail"
 private const val DEMO_TAB_ACL = "demo.tab.acl"
 private const val DEMO_TAB_COMM = "demo.tab.comm"
 private const val DEMO_TAB_PAGER = "demo.tab.pager"
+
+// CYP-788: the operator→PO write-path surface (see [OperatorPoComposerDemo]).
+private const val DEMO_TAB_OP_PO = "demo.tab.opPo"
+private const val DEMO_OP_PO_SEED_BTN = "demo.opPo.seedBtn"
 
 /**
  * DEDICATED test/demo entry — NOT the prod [com.tneff.cyppieagents.MainActivity] / [com.tneff.cyppieagents.App].
@@ -120,6 +129,9 @@ fun EventLogDemoApp() {
                 Button(onClick = { panel = DemoPanel.PAGER }, modifier = Modifier.testTag(DEMO_TAB_PAGER)) {
                     Text("Pager")
                 }
+                Button(onClick = { panel = DemoPanel.OP_PO }, modifier = Modifier.testTag(DEMO_TAB_OP_PO)) {
+                    Text("Op→PO")
+                }
             }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 // Injected scope (not viewModelScope) so the demo VMs run without a ViewModelStoreOwner.
@@ -149,8 +161,49 @@ fun EventLogDemoApp() {
                         CommPanel(vm)
                     }
                     DemoPanel.PAGER -> PhonePagerDemo()
+                    DemoPanel.OP_PO -> OperatorPoComposerDemo()
                 }
             }
+        }
+    }
+}
+
+/**
+ * CYP-788 device harness (Tester Ask 2): the operator→PO write path, on a real [AgentWindow] for `po`, fed by
+ * a hermetic writable stub that flips READ_ONLY→WRITABLE — so the Maestro-android flow can drive the exact
+ * transition CYP-787 makes real on the server, WITHOUT a live backend.
+ *
+ *  - **Before** the seed: `po` is NOT in the writable set → the composer is the proactive READ_ONLY hint
+ *    (`agent.po.composer.readonly`, no editable input) — the "operator can't yet message the PO" state.
+ *  - Tap **Seed op-po** (`demo.opPo.seedBtn`) → `po` enters the set → the hint disappears and the editable
+ *    input (`agent.po.input`) appears — the misleading "no write access" copy is gone.
+ *
+ * The flip re-keys the VM ([key]) because the writability fetch is one-shot-eager (AgentViewModel §4a: never a
+ * WRITABLE flash before the write-right is known). The stub RETURNS the set (never a dead endpoint), so `po`
+ * lands WRITABLE — not `agent.po.composer.unknown` (the UNKNOWN wrong-state the Tester called out). The
+ * [StubAgentSession]'s `connection` inherits the LIVE default, so a sent turn is honestly delivered
+ * (F4/CYP-580), not `…undelivered`. Hermetic, no server; mirrors the [Cyp788OperatorPoComposerTest] anchor.
+ */
+@Composable
+private fun OperatorPoComposerDemo() {
+    var seeded by remember { mutableStateOf(false) }
+    val session = remember { StubAgentSession() }
+    val vm = key(seeded) {
+        AgentViewModel(
+            session,
+            agentId = "po",
+            agentWritable = StubAgentWritableApi(if (seeded) listOf("po") else emptyList()),
+        )
+    }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Button(
+            onClick = { seeded = true },
+            modifier = Modifier.fillMaxWidth().padding(8.dp).testTag(DEMO_OP_PO_SEED_BTN),
+        ) {
+            Text(if (seeded) "op-po geseedet — PO schreibbar" else "Seed op-po (PO Schreibrecht geben)")
+        }
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            AgentWindow(agentId = "po", viewModel = vm)
         }
     }
 }
