@@ -4,7 +4,7 @@
 > Autor: PO (Team-1, Coordinator). Grundlage: eigene read-only Objekt-Erhebung (`develop 7dd39b23`) + Team-2-Client-Needs (UIUX2 / CYP-748) + Reviewer-Second-Opinion (PO-Assistent, code-verifiziert) + PL-Review-Punkte (Rev.2) + Auftraggeber-Weichen (2026-07-21).
 > Verwandt: CYP-427 Ph2 (Relay-CODE-Lineage), CYP-702 (deploybare-Relay-Paketierung), CYP-697 (Operator-Widerruf → Agenten verstummen; von Q2 abgedeckt), [[architecture-two-principals-no-foreigners]].
 >
-> **Δ zu Rev.2:** Q1=SEAT bestätigt · **Q2=aktive Widerruf-Propagierung (a2) ENTSCHIEDEN** (schließt CYP-697; a1-MVP-Empfehlung SUPERSEDED) · **Q3=eigenes-Relay-jetzt ENTSCHIEDEN** (CYP-702 auf dem Pfad) · Seam A (WebAuthn-Origin) + Seam B (OOB-Warming) code-belegt gefaltet · **§9 neu: exhaustive per-Kante-Enumeration am `resolvePrincipal`-Chokepoint (Eigenschaft, nicht Liste) + AAL2-Fix** (PL-0067-Abnahmekriterium).
+> **Δ zu Rev.2:** Q1=SEAT bestätigt · **Q2=aktive Widerruf-Propagierung (a2) ENTSCHIEDEN** (schließt CYP-697; a1-MVP-Empfehlung SUPERSEDED) · **Q3=eigenes-Relay-jetzt ENTSCHIEDEN** (CYP-702 auf dem Pfad) · Seam B (OOB-Warming) code-belegt gefaltet (`OobFingerprintConfirmer`) · **§9 nach Reviewer-Re-Pass überarbeitet (PL-0067):** der Seam-A-Claim (WebAuthn-Challenge schließt Browser-per-Hub-AND) ist **GESTRICHEN** (tunnel-`h` browser-unerreichbar) → §9.3 Chokepoint-AAL2 als per-Kante-Eigenschaft (schließt nur AAL1→AAL2) · §9.4 browser-remote HEUTE unmöglich (Relay=Noise-Rendezvous) · §9.5 local/remote-Grenze code-belegt non-forgeable (Tunnel=einzige-Brücke ∧ `config.hub.host`-loopback ∧ kein-3.-Ingress) · §9.6 browser-remote-multi-hub-Zukunft = per-Hub-Origins (distinkte Hostnamen + host-only Cookies, simpler+sicherer als per-Aktion-WebAuthn), NICHT das ambiente Cookie (die „Prämisse" WAR die Verwundbarkeit).
 
 Dieses Dokument beschreibt **was** das Trust-Modell ist und **welche Zähne** der spätere Bau tragen muss. Kein Implementierungsplan.
 
@@ -17,7 +17,7 @@ Dieses Dokument beschreibt **was** das Trust-Modell ist und **welche Zähne** de
 - **Q2 = AKTIVE Widerruf-Propagierung (a2), ENTSCHIEDEN:** Schritt 3 (Issuer-Widerruf) wird **VOLL gebaut** — aktive Propagierung im Hub↔Relay-Protokoll + Cross-Hub-Session-Registry (C3). **Schließt CYP-697** (Operator aus Verzeichnis entfernt → Agenten verstummen sofort). Die a1-„kurzlebig-nur"-MVP-Empfehlung aus Rev.2 ist **abgelöst** (Auftraggeber wählte die stärkere Haltung).
 - **Q3 = EIGENES RELAY JETZT, ENTSCHIEDEN:** Aussteller = eigenes Relay; BYOAuth-extern später **hinter derselben Abstraktion**. **CYP-702** (`:relay`-Extraktion + deploybar) ist auf dem Pfad bestätigt.
 - **one-active-Hub = reine Client-Konvention** (PL §4a), NICHT server-erzwungen; Security davon vollständig entkoppelt (§6).
-- **(d) Browser-Posture = FAIL-CLOSED-mit-WebAuthn** (aus Seam A + §9-Exhaustiv): kein hub-lokaler zweiter Faktor → kein Browser-Operator-Zugang. Keine stille Degradation.
+- **(d) Browser-Posture = abgestuft (§9.4–9.6):** local-direct adäquat (Chokepoint-AAL2); browser-**remote HEUTE unmöglich** (Relay=Noise-Rendezvous, kein HTTP-Proxy); browser-remote-multi-hub = **benannte Zukunft via per-Hub-Origins** (distinkte Hostnamen + host-only Cookies), NICHT das eine ambiente Cookie. Der frühere „Seam-A-schließt-per-Hub"-Claim ist **gestrichen** (tunnel-`h` browser-unerreichbar, Reviewer-Fund).
 
 ---
 
@@ -140,16 +140,41 @@ owned=ja ∧ issuer-trusted=ja ∧ jws=gültig ∧ pop=gültig-über-PRÄSENTIER
 - **Achse COOKIE (Browser):** Kratos-Session → `resolvePrincipal` → `Human(OPERATOR)`. `authenticatedApi`/`requirePrincipal` (Principal.kt:157/169/190) rufen ALLE `resolvePrincipal`; WS `AgentSocket:68` + Terminal `TerminalAccess:177` fallen ebenfalls auf `resolvePrincipal` für die Cookie-Achse. ⟹ **EIN Chokepoint für die Cookie-Achse.**
 - **Achse TOKEN (statischer Operator-Bearer, `isOperator(token)`=`token==operatorToken`, `Auth.kt:33`):** direkt geprüft in `AgentSocket:65` + `TerminalAccess:173`. Das ist die **CMP/native/LOKAL**-Operator-Credential, NICHT der Browser (ein Browser hat den statischen `operatorToken` nicht). Anti-Seizure der Token-Achse = Tunnel-Device-PoP (remote) / Lokal-Box-Trust (local). **Kein Browser-Seizure-Vektor** — aber in Rev.3 benannt, damit sie nicht mit der Cookie-Achse vermischt wird.
 
-### 9.3 Der Fix — AAL2/WebAuthn am `resolvePrincipal`-Chokepoint (fail-closed, hubId-channel-bound)
+### 9.3 Der Teil-Fix — Chokepoint-AAL2 schliesst AAL1→AAL2, NICHT die per-Hub-Replay-Achse (Reviewer-Korrektur, ehrlich)
 
-- **AAL2-Gate AM Chokepoint:** die OPERATOR-Rolle wird NUR einer **WebAuthn/AAL2-gebackten** Kratos-Session zuerkannt — AAL1 → OPERATOR VERWEIGERN (fail-closed). Weil `resolvePrincipal`(Human→OPERATOR) der **einzige** Cookie-Chokepoint ist, **erben ALLE ~20 /api + WS + Terminal Kanten den Faktor als EIGENSCHAFT** (auch die 21., künftige — solange sie `authenticatedApi`/`resolvePrincipal` nutzen). Kein per-Route-Gate.
-- **★ Seam A (WebAuthn-Origin) — code-belegt GELÖST:** WebAuthn bindet per RP-ID an den **Origin**, nicht an `hubId` → bei GETEILTER Origin (die §9s same-origin-Cookie überhaupt nutzt) kollabierte per-Hub-`AND` auf per-Origin. **Aufgelöst:** die WebAuthn-**Challenge** ist bereits hub-gebunden — `operatorAuthChallenge(h, hubId, nonce)` (`OperatorAssertionVerifier:93/125`) → der Browser muss `hubId` in die Challenge spiegeln (via dieselbe `cb=SHA-256(h‖hubId)`-Mechanik). Die per-Hub-Bindung sitzt in der **Challenge**, nicht in der RP-ID ⟹ **das AND überlebt geteilten Origin.** **Subdomain-per-Hub ist FALSCH** (andere Origin → bricht §9s Cookie-Prämisse).
-- **Server prüft AAL selbst** (defense-in-depth), verlässt sich nicht nur auf Kratos-Config.
-- **Kein Fallback:** kein password-only OPERATOR; Session-Resumption erhält die AAL2-Backing; die Token-Achse (Achse 2) ist separat + nicht browser-erreichbar.
+**Notwendig, nicht hinreichend — AAL2-Gate AM Chokepoint:** die OPERATOR-Rolle wird NUR einer **WebAuthn/AAL2-gebackten** Kratos-Session zuerkannt — AAL1 (password-only) → OPERATOR VERWEIGERN (fail-closed). Weil `resolvePrincipal`(Human→OPERATOR) der **einzige** Cookie-Chokepoint ist, erben ALLE ~20 /api + WS + Terminal Kanten den Faktor als **EIGENSCHAFT** (auch die 21., künftige). Das hebt die Latte fürs ERLANGEN der Session (Passkey statt Passwort) und schliesst §9.1s AAL1-Loch. Der Fix-Locus ist richtig.
 
-### 9.4 (d) Browser-Posture = FAIL-CLOSED
+**★ ABER (Reviewer, code-belegt): das schliesst die per-Hub-Anti-Seizure NICHT — es verengt sie nur.** Die in der Rev.3-Erstfassung behauptete Bindung via `operatorAuthChallenge(h, hubId, nonce)` ist **browser-unerreichbar**: die Challenge ist über die Noise-`h` definiert (`:core OperatorAuthChallenge.kt`), ALLE Aufrufer liegen auf dem Tunnel-Pfad (`app/shared/net/hub/operator/*`, `OperatorAuth:103`), **kein Browser-Aufrufer** — der Browser-`/api`-Pfad baut keinen Noise-Tunnel → kein `h` → kann die Challenge nicht erzeugen. Was der Chokepoint-AAL2 liefert ist **Session-Level** → ein **Bearer-Cookie**, NICHT der per-Verbindungs-, per-Hub-, transport-unfälschbare Device-PoP, den der Tunnel der Token-Achse gibt. Auf einem **geteilten Origin für N Hubs** (Subdomain-per-Hub verworfen → etwas frontet die N Hubs, nach Q3 plausibel das eigene Relay als Reverse-Proxy) sieht der Origin-TLS-Terminator (Relay) das AAL2-Cookie und kann es an JEDEN ko-gehosteten Hub **replayen** → Seizure. **AAL2-at-Login ≠ per-Hub-relay-unfälschbar.** ⟹ **Der „AND überlebt geteilten Origin"-Claim ist GESTRICHEN.** (Dieselbe Krankheit wie der Cold-Anchor: ein Faktor auf der FALSCHEN Ebene — Origin/Login statt Hub/Verbindung.)
 
-Ohne hub-lokalen Browser-Faktor (WebAuthn) ist der Browser-Teil nicht anti-seizure → **fail-CLOSED**: kein Faktor → kein Browser-Operator-Zugang. Keine benannte Degradation (Auftraggeber/PL). Folge (Team-1/Security): erlaubte `connect-src`/Origin-Menge Relay-verankert eng weiten.
+### 9.4 (d) Browser-Posture — local-direct adäquat; browser-remote HEUTE UNMÖGLICH (stärker als fail-closed)
+
+Die §3-Invariante verlangt „hub-lokal, per Verbindung bewiesen". Session-AAL2 ist „IdP/Origin, per Login" — nicht hub-lokal. Daher abgestuft:
+
+- **Browser LOCAL-DIRECT** (Auftraggeber-Box, same-origin, kein Relay im Pfad): das AAL2-Cookie ist nicht relay-replaybar (kein Proxy terminiert den TLS zwischen Browser und Hub). ⟹ Chokepoint-AAL2 (§9.3) ist **adäquat** — der MVP-Browser-Operator-Pfad.
+- **Browser REMOTE** (relay-vermittelt): **HEUTE ARCHITEKTONISCH UNMÖGLICH, nicht bloss fail-closed** — das Relay ist ein **Noise-Frame-Rendezvous, KEIN HTTP-Reverse-Proxy** (`RelayServer` Noise-only; ein Browser kann kein Noise). Ein Browser erreicht einen Remote-Hub übers Relay gar nicht; er landet immer nur auf dem lokalen public-Connector. Remote-Operator geht über die **CMP/Token-Achse** (Noise-Tunnel + `Rr3TunnelGate` Device-PoP, per-Hub, relay-unfälschbar).
+- **★ BRUCHBEDINGUNG (explizit):** die Unmöglichkeit hält NUR, solange das Relay ein Noise-Rendezvous bleibt. Führt man je einen **Relay-als-HTTP-Reverse-Proxy** ein (um N Hub-Web-UIs auf EINEM Origin zu servieren), wird browser-remote real, das Relay terminiert TLS → sieht+replayt das Cookie → Seizure zurück. **MVP-Grenze: Relay bleibt Noise-Rendezvous; kein HTTP-Proxying des Browsers.** §9.6 ist Voraussetzung, BEVOR je ein shared-origin-Proxy-Relay shippt.
+
+### 9.5 ★ Warum die local/remote-Grenze NICHT-FÄLSCHBAR ist (code-belegt — Eigenschaft, nicht Behauptung)
+
+„local-direct adäquat / remote via Tunnel-Device-PoP" trägt nur, wenn die Klassifikation server-seitig unfälschbar ist (sonst kommt Seizure verkleidet zurück). Drei Invarianten, alle code-belegt:
+
+1. **Tunnel = die EINZIGE Relay→`/api`-Brücke, Device-PoP-Pflicht:** `LoopbackBridge` (Noise-terminiert, `Rr3TunnelGate`-gegatet) ist der einzige Relay→`/api`-Pfad und bridget auf `127.0.0.1` (`LoopbackBridge:37/54`, `MuxBridge:32`, `RelayConnector` — alle `127.0.0.1`). Ein bare Cookie kann den Tunnel nicht traversieren (kein Device-PoP) ⟹ **ein bare-cookie-OPERATOR ist beweisbar local-direct.**
+2. **`/api` loopback-bind (BENANNTE VORBEDINGUNG):** `Application.kt:52` = EIN `embeddedServer(Netty)`, ZWEI Connectors: `:56` public `host=config.hub.host` (**default 127.0.0.1**), `:57` tunnel-scoped `"127.0.0.1"` hardcoded. `/api` by default loopback-only. **Invariante: `config.hub.host` muss loopback bleiben** — ein `0.0.0.0` dort träfe ein remote bare Cookie direkt (am Tunnel vorbei) und bräche §9.5. **Distinkt von CYP-702-§4.3** (das ist der RELAY-Bind `CYPPIE_RELAY_HOST` default `0.0.0.0`, ein Noise-Rendezvous — exponiert `/api` NICHT; §4.3-`0.0.0.0` entwertet §9.5 nicht). Build-Zeit-Check: `config.hub.host` ∈ loopback.
+3. **Kein dritter Ingress:** EIN `embeddedServer` (2 loopback-Connectors); alle anderen `.start()`s = interne Worker (Scanner/Warden/…), KEINE HTTP-Listener; MCP = Route am selben Server; Relay separat (Noise). Build-Zeit-Meta-Test (wie Zahn 8): „genau diese 2 Connectors, beide loopback; kein bare-cookie-fähiger Nebeneingang zu `/api`".
+
+⟹ **§9.5 belegt den nicht-fälschbaren fail-closed als EIGENSCHAFT** (Tunnel=einzige-Brücke ∧ `/api`-loopback ∧ kein-3.-Ingress). Fällt eine der drei, kippt die Klassifikation → Seizure verkleidet → daher als Invarianten geführt, nicht als Annahme.
+
+### 9.6 Benannte Zukunft: browser-remote-multi-hub = PER-HUB-ORIGINS (NICHT das eine ambiente Cookie)
+
+**★ Umkehr (Reviewer): die „ein ambientes same-origin-Cookie über N Hubs"-Prämisse IST die Verwundbarkeit**, nicht etwas zu Bewahrendes — dieses eine Cookie lässt EINE Session ALLE ko-gehosteten Hubs autorisieren = der Cross-Hub-Replay/Seizure-Vektor. **N5 (`Operator@A ⇏ Operator@B`) sagt gerade, dass die Rolle NICHT reisen darf** → Re-Auth-pro-Hub ist das KORREKTE Verhalten, keine „Kost".
+
+**Mechanismus (gratis, browser-nativ):** **per-Hub-Origins** → Same-Origin-Policy + Cookie-Origin-Scoping verhindern, dass ein Cookie für Hub A je an Hub B gesendet wird — Cross-Hub-Replay vom Browser unterbunden, ohne Server-Krypto, ohne per-Aktion-Ceremony. Löst zusätzlich §9.4s Bruchbedingung auf (keine geteilte Origin → kein fronting-Proxy → kein Relay-TLS-Seizure).
+
+**★ BAU-VORSCHRIFT (nicht bloss „nimm Subdomains" — der stille Trap):** Isolation braucht distinkte **HOSTNAMEN, NICHT Ports** — **Cookies ignorieren den Port** (`localhost:A` teilt das Cookie mit `localhost:B`) → per-Port isoliert NICHT. Per-Hub-**Host**: Subdomain (`hub-a.…`/`hub-b.…`) ODER distinkte Loopback-IP/-Alias (`127.0.0.1` vs `127.0.0.2` = getrennte Cookie-Jars). **UND host-only Cookies** (KEIN breites `Domain=.parent` — re-teilt still über Subdomains). Falsch (per-Port / breites `Domain`) = **stilles Re-Sharing = Seizure zurück, ohne Warnung.**
+
+**Alternative (schwerer):** per-Hub-per-Aktion WebAuthn-Assertion über eine HUB-ausgestellte Challenge (früher „Pfad 1") — transport-unfälschbar, aber per-Request-Ceremony. Per-Hub-Origins sind der leichtere, browser-native Verschluss + die empfohlene Zukunft.
+
+**⟹ (d)-Auflösung final:** Browser-Operator = **local-direct adäquat (AAL2), remote HEUTE unmöglich (Relay=Noise)**; browser-remote-multi-hub = benannte Zukunft via **per-Hub-Origins (distinkte Hostnamen + host-only Cookies)**, NICHT das eine ambiente Cookie. Kein Universal-„AND überlebt geteilten Origin" — die geteilte Origin ist gerade das, was vermieden wird. Folge: `connect-src`/Origin eng, Relay-verankert.
 
 ---
 
@@ -157,7 +182,7 @@ Ohne hub-lokalen Browser-Faktor (WebAuthn) ist der Browser-Teil nicht anti-seizu
 
 - **(a) Widerruf-Wirksamkeit → a2 AKTIV** (Q2). Kein a1-MVP mehr.
 - **(b) Aussteller-Reichweite → eigenes-Relay jetzt** (Q3); (j) portable-Menschen-Identität aufgeschoben.
-- **(d) Browser-Posture → fail-CLOSED-mit-WebAuthn** (aus Seam A + §9).
+- **(d) Browser-Posture → abgestuft (§9.4–9.6):** local-direct adäquat (AAL2) · remote HEUTE unmöglich (Relay=Noise) · browser-remote-multi-hub-Zukunft = per-Hub-Origins (distinkte Hostnamen + host-only Cookies, simpler+sicherer als per-Aktion-WebAuthn). „AND überlebt Origin"-Claim gestrichen.
 - Verbleibend NICHT-Weiche, sondern Bau-Detail: die Cross-Hub-Session-Registry-Form (C3) für a2 — konventionell, PO/Backend.
 
 ---
@@ -171,8 +196,8 @@ Ohne hub-lokalen Browser-Faktor (WebAuthn) ist der Browser-Teil nicht anti-seizu
 5. **`DeviceNotEnrolled` ≠ rejected** (N4a), client-abgeleitet.
 6. **Nebenläufigkeits-Sicherheit** (§6): per-Hub-AND hält unter parallelen Same-Operator-Sessions.
 7. **★ Aktiver-Widerruf-Wirksamkeit (Q2/a2)** (§7): nach Widerruf → **Push-STALE/REJECTED über ALLE live Hub-Sessions SOFORT** (nicht ≤TTL); CYP-697-Fall (Operator entfernt → Agenten verstummen) explizit.
-8. **★★ Browser-AAL2-Chokepoint-EIGENSCHAFT** (§9): eine synthetische **Nicht-AAL2**-Operator-Cookie-Session wird an **JEDER** operator-autoritativen Cookie-Kante abgewiesen — property-test am `resolvePrincipal`-Chokepoint, NICHT Stichprobe. **+ Zusatz-Guard: KEIN neuer operator-`/api`-Pfad umgeht `resolvePrincipal`/`authenticatedApi`** (die 21.-Kante-Prüfung; heute sind `AgentSocket:65`/`TerminalAccess:173` die separate Token-Achse, kein Cookie-Bypass). Non-vakuos: Mutation „AAL1 erlaubt" rötet an jeder Kante.
-9. **Browser-Differential-Paar** (§9.3): JWS+Cookie-only→reject ∧ JWS+Browser-PoP-über-hubId-channel-bound-Challenge→accept, pro Hub.
+8. **★★ Browser-AAL2-Chokepoint-EIGENSCHAFT + Nicht-Fälschbarkeit der local/remote-Grenze** (§9.3/§9.5): (a) eine synthetische **Nicht-AAL2**-Operator-Cookie-Session wird an JEDER operator-autoritativen Cookie-Kante abgewiesen — **strukturell** via Route-Tabellen-Meta-Test (jede operator-Tier-Route löst über `authenticatedApi`/`resolvePrincipal` auf; KEINE Hand-Liste — sonst ist die Vollständigkeit selbst die Aufrufer-Krankheit). (b) **Loopback-Bind-Invariante:** Build-Zeit-Check `config.hub.host` ∈ loopback. (c) **Kein-3.-Ingress-Meta-Test:** genau die 2 loopback-Connectors, kein bare-cookie-fähiger Nebeneingang zu `/api`. Non-vakuos: Mutation „AAL1 erlaubt" / „`config.hub.host`=0.0.0.0" / „3. HTTP-Connector" rötet.
+9. **Per-Hub-Isolations-Zahn (benannte Zukunft §9.6, WENN browser-remote-multi-hub gebaut wird):** ein Operator-Cookie für Hub A wird vom Browser NIE an Hub B gesendet — via distinkte HOSTNAMEN (nicht Ports; Cookies ignorieren Ports) + host-only Cookies (kein `Domain=.parent`). Non-vakuos: Mutation „per-Port statt per-Host" / „breites `Domain`" → Cross-Hub-Cookie-Leak rötet. **(Ersetzt das alte tunnel-`h`-`operatorAuthChallenge`-Differential-Paar der Rev.3-Erstfassung, das browser-unerreichbar war — Reviewer-Fund.)**
 10. **Cap gegen auth-Sessions** (§6): Relay-Junk-Rendezvous erschöpft die Cap nicht.
 11. **Wahrheitstabellen-Vollständigkeit** (§8): jede `(…, enrolled?)`-Zeile in einem definierten nicht-grün-außer-verdient Zustand.
 
