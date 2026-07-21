@@ -40,7 +40,7 @@ const fakeRepo = (): HubRepo => ({
   fetchChannels: vi.fn().mockResolvedValue(channels),
   fetchAcl: vi.fn().mockResolvedValue([]),
   fetchReadState: vi.fn().mockResolvedValue([]),
-  markRead: vi.fn((channelId: string, upToSeq: number) => Promise.resolve({ channelId, lastReadSeq: upToSeq, unreadCount: 0 })),
+  markRead: vi.fn((channelId: string, upToSeq: number) => Promise.resolve({ channelId, lastReadSeq: upToSeq, unreadCount: 0, hasUnreadMention: false })),
   putAcl: vi.fn().mockResolvedValue({ channelId: '', agentId: '', canRead: false, canWrite: false }),
   requestMode: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn().mockResolvedValue([]),
