@@ -218,7 +218,13 @@ fun WindowHost(
         if (isCompact) {
             // The phone pager shows one page per window without a floating titlebar → no ⋮/theming there (CYP-211).
             // CYP-65: the context-token count IS carried into the pager header (the only per-window chip the pager gets).
-            PhonePager(state = state, badgeFor = badgeFor, contextTokensFor = contextTokensFor, windowContent = windowContent)
+            PhonePager(
+                state = state, badgeFor = badgeFor, contextTokensFor = contextTokensFor,
+                // CYP-789: feed the same per-agent connection to the pager so its context chip marks staleness on a
+                // non-LIVE feed (was canvas-only — the CYP-65 follow-up that CYP-789 closes).
+                connectionFor = connectionFor,
+                windowContent = windowContent,
+            )
         } else {
             WindowCanvas(
                 state = state, onFit = onFit, badgeFor = badgeFor, contextTokensFor = contextTokensFor, busyFor = busyFor,
@@ -382,6 +388,10 @@ private fun PhonePager(
     // CYP-65: per-window live context-token count (mirrors the canvas title-bar chip); `null` → no chip
     // (fail-closed, null ≠ 0). Default `{ null }` keeps existing callers/tests chip-free — never a regression.
     contextTokensFor: (String) -> Int? = { null },
+    // CYP-789: per-window live-feed connection (mirrors [WindowHost.connectionFor]); the context chip marks itself
+    // STALE (`~`) on any non-LIVE/absent feed. Default `{ null }` = "no feed" → fail-closed to stale (≠ LIVE), so a
+    // caller that omits it never gets a silently-fresh chip. The shell feeds it the same per-agent connection state.
+    connectionFor: (String) -> ConnectionStatus? = { null },
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     val pages = state.orderedWindows
@@ -437,14 +447,22 @@ private fun PhonePager(
                     .weight(1f, fill = false)
                     .testTag(PhonePagerTags.HEADER_TITLE),
             )
-            // CYP-65: context size AFTER the name — mirrors the canvas chip (formatCompactTokens + the same a11y
-            // string). Fail-closed (§8-8, null ≠ 0): no known value → NO node, never a phantom "0". The CYP-656
-            // staleness `~` is canvas-only here (the pager isn't wired `connectionFor`; flagged as a 656 follow-up).
+            // CYP-65: context size AFTER the name — mirrors the canvas chip (formatCompactTokens + a11y string).
+            // Fail-closed (§8-8, null ≠ 0): no known value → NO node, never a phantom "0". CYP-789: staleness rides a
+            // leading `~` on any non-LIVE feed (the same [titleBarTokenStale] the canvas title bar uses) — "last
+            // known / approximate", never a silent freshness overclaim on a socket that can't refresh the count. The
+            // NODE always stays (marked, not hidden); `stateDescription` is the QA hook, and the marker (not colour)
+            // carries the state so full contrast / AA is preserved by construction — same rationale as the canvas.
             contextTokensFor(pages[currentIndex].id)?.let { n ->
                 val compact = formatCompactTokens(n)
-                val tokensCd = stringResource(Res.string.a11y_agent_context_tokens, compact)
+                val tokenStale = titleBarTokenStale(connectionFor(pages[currentIndex].id))
+                val shown = if (tokenStale) "~$compact" else compact
+                val tokensCd = stringResource(
+                    if (tokenStale) Res.string.a11y_agent_context_tokens_stale else Res.string.a11y_agent_context_tokens,
+                    compact,
+                )
                 Text(
-                    text = compact,
+                    text = shown,
                     maxLines = 1,
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
@@ -452,7 +470,10 @@ private fun PhonePager(
                     modifier = Modifier
                         .padding(start = 8.dp)
                         .testTag(PhonePagerTags.HEADER_CONTEXT)
-                        .semantics { contentDescription = tokensCd },
+                        .semantics {
+                            contentDescription = tokensCd
+                            stateDescription = if (tokenStale) "stale" else "live" // QA hook (Tester asserts, no pixel-peek)
+                        },
                 )
             }
         }
