@@ -2,6 +2,7 @@ package com.tneff.cyppieagents.agentview
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +61,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -133,6 +137,12 @@ import kmpcyppieagents.app.shared.generated.resources.terminal_context_lost
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_context_lost
 import kmpcyppieagents.app.shared.generated.resources.transcript_context_lost
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_context_lost
+import kmpcyppieagents.app.shared.generated.resources.transcript_tool_run_collapsed
+import kmpcyppieagents.app.shared.generated.resources.transcript_tool_run_errors
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_collapsed
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_collapsed_with_errors
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_expand
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_collapse
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import org.jetbrains.compose.resources.stringResource
@@ -292,12 +302,12 @@ fun AgentWindow(
         Box(modifier = Modifier.weight(1f).fillMaxWidth().testTag(AgentViewTags.content(agentId))) {
             when (contentMode) {
                 AgentContentMode.ORCHESTRATION ->
-                    AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, modifier = Modifier.fillMaxSize())
+                    AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, foldToolRuns = agentId == "po", modifier = Modifier.fillMaxSize())
                 AgentContentMode.TERMINAL ->
                     // Defensive: the toggle disables the Terminal segment when no terminal is wired, so this
                     // branch is normally unreachable without [terminalContent]; fall back to the transcript.
                     terminalContent?.invoke(agentId, Modifier.fillMaxSize())
-                        ?: AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, modifier = Modifier.fillMaxSize())
+                        ?: AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, foldToolRuns = agentId == "po", modifier = Modifier.fillMaxSize())
             }
         }
         // The mediated composer belongs to the Orchestrierung view only — the terminal has its own input. It is
@@ -871,6 +881,9 @@ private fun AgentTranscript(
      *  the agent's forgotten history (receded, role-demoted + gutter rail); a WARN discontinuity band marks the
      *  boundary. Anchored to the loss ts, NOT the live control-state — so the boundary persists after recovery. */
     contextLostAt: Long? = null,
+    /** CYP-790: fold long, clean, completed ToolCall/Result runs into a collapsible summary (op-po anti-flood).
+     *  Default false → byte-identical to today; the op-po (PO agent) window opts in at the call-site (§14). */
+    foldToolRuns: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     // CYP-393 — pin the transcript to the live end, but RELEASE when the user scrolls up to read back and RESUME
@@ -907,19 +920,29 @@ private fun AgentTranscript(
             }
         }
     }
-    LaunchedEffect(events.size, events.lastOrNull(), pinned) {
-        if (pinned && events.isNotEmpty()) {
-            // `scrollToItem` forces a synchronous remeasure; yield past the current measure/layout pass first, or
-            // an effect that fires during the initial composition throws "performMeasureAndLayout during measure".
-            withFrameNanos {}
-            listState.scrollToItem(events.lastIndex)
-        }
-    }
     // §7.1: the boundary = the first event at/after the loss (events are time-ascending); if no fresh row exists yet,
     // the band tails the buffer. ts-positioned so it survives buffer trims and generalizes past a single loss.
     val boundary = contextLostAt?.let { ts ->
         events.indexOfFirst { it.tsMs >= ts }.let { if (it < 0) events.size else it }
     }
+    // CYP-790: the render model — Single rows, or (op-po only, §14) folded ToolCall/Result runs. A run breaks at
+    // the §15 [boundary] so a fold can never span the CONTEXT_LOST landmark. foldToolRuns=false → 1:1 Singles,
+    // byte-identical to today. Recomputed only when its inputs change (not per-recompose).
+    val renderItems = remember(events, foldToolRuns, boundary) { transcriptItems(events, foldToolRuns, boundary) }
+    LaunchedEffect(events.size, events.lastOrNull(), pinned) {
+        if (pinned && renderItems.isNotEmpty()) {
+            // `scrollToItem` forces a synchronous remeasure; yield past the current measure/layout pass first, or
+            // an effect that fires during the initial composition throws "performMeasureAndLayout during measure".
+            // CYP-790: follow to the RENDERED last index (a fold shortens the list vs. raw `events`) — but keyed
+            // on the raw `events` signature (size + last identity), which still changes on every append/delta.
+            withFrameNanos {}
+            listState.scrollToItem(renderItems.lastIndex)
+        }
+    }
+    // CYP-790 §12: the operator's fold-override per run, keyed by the run's stable identity (its FIRST event.id).
+    // Held here (survives recompose/new events), NOT re-derived from the list — an opened run never re-collapses
+    // while the PO keeps talking. Absent key ⇒ the §10 default (clean+completed ⇒ collapsed; error ⇒ open).
+    val foldOverrides = remember { mutableStateMapOf<String, Boolean>() }
     // CYP-392: the transcript scrolls; overlay a vertical scrollbar on the right edge (Desktop + Web — the seam
     // is a no-op on Android/iOS). Only shown when the content actually overflows the viewport (`canScroll*`).
     Box(modifier = modifier) {
@@ -929,51 +952,25 @@ private fun AgentTranscript(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        itemsIndexed(events, key = { _, event -> event.id }) { index, event ->
-            val receded = boundary != null && index < boundary // §7.1: forgotten history, above the landmark
-            val row: @Composable () -> Unit = {
-                // CYP-335: the `HH:mm` gutter wraps EVERY line kind — one place, so no row type can be forgotten.
-                TranscriptRow(agentId = agentId, index = index, tsMs = event.tsMs, receded = receded) {
-                    when (event) {
-                        is AgentEvent.AssistantText -> AssistantTextRow(
-                            event,
-                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
-                            receded = receded,
-                        )
-                        is AgentEvent.ToolCall -> ToolCallRow(
-                            event,
-                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
-                        )
-                        is AgentEvent.Result -> ResultRow(
-                            event,
-                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
-                        )
-                        // Notice has no kind in the v0.4 vocabulary → index tag only (kind qualifier is optional).
-                        is AgentEvent.Notice -> NoticeRow(
-                            event,
-                            Modifier.testTag(AgentViewTags.event(agentId, index)),
-                        )
-                        is AgentEvent.UserTurn -> UserTurnRow(
-                            event,
-                            agentId,
-                            index,
-                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
-                        )
-                        is AgentEvent.IncomingSystem -> IncomingSystemRow(
-                            event,
-                            Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.INCOMING_SYSTEM)),
-                        )
-                    }
+        itemsIndexed(renderItems, key = { _, item -> item.key }) { _, item ->
+            val receded = boundary != null && item.startIndex < boundary // §7.1: forgotten history, above the landmark
+            val content: @Composable () -> Unit = {
+                when (item) {
+                    // A single event renders exactly as before (byte-identical) — the whole non-op-po path is this.
+                    is TranscriptItem.Single -> TranscriptEventRow(agentId, item.startIndex, item.event, receded)
+                    // CYP-790: a folded ToolCall/Result run — collapsible summary + (on expand) the original rows.
+                    is TranscriptItem.Run -> ToolRunGroup(agentId, item, receded, foldOverrides)
                 }
             }
-            // §7.1: the durable discontinuity band sits ATOP the first fresh (post-loss) row.
-            if (boundary != null && index == boundary) {
+            // §7.1: the durable discontinuity band sits ATOP the first fresh (post-loss) item. §15: a run never
+            // spans the boundary, so the landmark always falls on an item START (never mid-fold).
+            if (boundary != null && item.startIndex == boundary) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     TranscriptDiscontinuityRow(agentId)
-                    row()
+                    content()
                 }
             } else {
-                row()
+                content()
             }
         }
         // §7.1: loss just happened, no fresh row yet → the band is the tail landmark (history all above it).
@@ -989,6 +986,141 @@ private fun AgentTranscript(
               modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().testTag(AgentViewTags.scrollbar(agentId)),
           )
       }
+    }
+}
+
+/**
+ * CYP-790 — the per-event row dispatch, extracted so a [TranscriptItem.Single] AND a folded run's expanded
+ * children render through ONE path (a child keeps its original `agent.<id>.event.<index>…` tag, §7). The body is
+ * byte-identical to the pre-CYP-790 inline `when` in [AgentTranscript].
+ */
+@Composable
+private fun TranscriptEventRow(agentId: String, index: Int, event: AgentEvent, receded: Boolean) {
+    // CYP-335: the `HH:mm` gutter wraps EVERY line kind — one place, so no row type can be forgotten.
+    TranscriptRow(agentId = agentId, index = index, tsMs = event.tsMs, receded = receded) {
+        when (event) {
+            is AgentEvent.AssistantText -> AssistantTextRow(
+                event,
+                Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.ASSISTANT_TEXT)),
+                receded = receded,
+            )
+            is AgentEvent.ToolCall -> ToolCallRow(
+                event,
+                Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_CALL)),
+            )
+            is AgentEvent.Result -> ResultRow(
+                event,
+                Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.TOOL_RESULT)),
+            )
+            // Notice has no kind in the v0.4 vocabulary → index tag only (kind qualifier is optional).
+            is AgentEvent.Notice -> NoticeRow(
+                event,
+                Modifier.testTag(AgentViewTags.event(agentId, index)),
+            )
+            is AgentEvent.UserTurn -> UserTurnRow(
+                event,
+                agentId,
+                index,
+                Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.USER_TURN)),
+            )
+            is AgentEvent.IncomingSystem -> IncomingSystemRow(
+                event,
+                Modifier.testTagA11y(AgentViewTags.event(agentId, index, EventKind.INCOMING_SYSTEM)),
+            )
+        }
+    }
+}
+
+/**
+ * CYP-790 — a folded ToolCall/Result run: a collapsible summary header (always the true step count, §3 Zahn 1;
+ * plus a fail-loud error marker, Zahn 2) over the original rows, which reappear UNCHANGED on expand (nothing is
+ * destroyed). Collapsed default = the run's §10 default; the operator's toggle overrides it for THIS run only,
+ * persisted by the run's stable id in [foldOverrides] (§12) so it never re-collapses as the PO keeps talking.
+ */
+@Composable
+private fun ToolRunGroup(
+    agentId: String,
+    run: TranscriptItem.Run,
+    receded: Boolean,
+    foldOverrides: MutableMap<String, Boolean>,
+) {
+    val collapsed = foldOverrides[run.key] ?: run.defaultCollapsed
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ToolRunHeader(
+            agentId = agentId,
+            run = run,
+            collapsed = collapsed,
+            receded = receded,
+            onToggle = { foldOverrides[run.key] = !collapsed },
+        )
+        if (!collapsed) {
+            run.events.forEachIndexed { offset, ev ->
+                TranscriptEventRow(agentId, run.startIndex + offset, ev, receded)
+            }
+        }
+    }
+}
+
+/**
+ * CYP-790 — the run summary/toggle header. Full-width toggle (Role.Button, keyboard Enter/Space via [clickable]);
+ * the chevron is a decorative second signal ([clearAndSetSemantics]) — meaning rides `contentDescription` (count
+ * + error clause, §6 keys; never colour/glyph alone) + the toggle `onClickLabel`. Sits in the CYP-335 gutter at
+ * the run's FIRST event ts (§15). Zahn 1: the count always shows; Zahn 2: an error run adds `✗ %d Fehler` in the
+ * error role. Receded (pre-CONTEXT_LOST, §15) demotes the header text to `onSurfaceVariant`.
+ */
+@Composable
+private fun ToolRunHeader(
+    agentId: String,
+    run: TranscriptItem.Run,
+    collapsed: Boolean,
+    receded: Boolean,
+    onToggle: () -> Unit,
+) {
+    val steps = run.stepCount
+    val toggleLabel = stringResource(
+        if (collapsed) Res.string.a11y_transcript_tool_run_expand else Res.string.a11y_transcript_tool_run_collapse,
+    )
+    // Collapsed state carries "eingeklappt" (+ the error clause); expanded is the neutral count (children own their a11y).
+    val cd = when {
+        !collapsed -> stringResource(Res.string.transcript_tool_run_collapsed, steps)
+        run.hasError -> stringResource(Res.string.a11y_transcript_tool_run_collapsed_with_errors, steps, run.errorCount)
+        else -> stringResource(Res.string.a11y_transcript_tool_run_collapsed, steps)
+    }
+    val stepsLabel = stringResource(Res.string.transcript_tool_run_collapsed, steps)
+    val contentColor =
+        if (receded) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+    TranscriptRow(agentId = agentId, index = run.startIndex, tsMs = run.events.first().tsMs, receded = receded) {
+        Box(modifier = Modifier.testTag(AgentViewTags.toolRun(agentId, run.startIndex))) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(AgentViewTags.toolRunToggle(agentId, run.startIndex))
+                    .clickable(onClickLabel = toggleLabel, role = Role.Button, onClick = onToggle)
+                    .semantics {
+                        role = Role.Button
+                        stateDescription = toggleLabel
+                        contentDescription = cd
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    if (collapsed) "▸" else "▾",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = contentColor,
+                    modifier = Modifier.clearAndSetSemantics {},
+                )
+                Text(stepsLabel, style = MaterialTheme.typography.labelMedium, color = contentColor)
+                if (run.hasError) {
+                    Text(
+                        "✗ " + stringResource(Res.string.transcript_tool_run_errors, run.errorCount),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag(AgentViewTags.toolRunErrors(agentId, run.startIndex)),
+                    )
+                }
+            }
+        }
     }
 }
 
