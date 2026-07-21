@@ -23,7 +23,7 @@ private val KNOWN_SENDER_SLOTS: Map<String, Int> = mapOf(
 )
 
 /** True when [id] should use the reserved PO/hub colour rather than a [colorSlot] index. */
-fun isPoSlot(id: String): Boolean = id == "po"
+fun isPoSlot(id: String): Boolean = id == PO_AGENT_ID
 
 /**
  * Deterministic palette slot for [id] in `0 until [paletteSize]`: a fixed slot for known ids,

@@ -77,6 +77,7 @@ import com.tneff.cyppieagents.eventlog.severityColor
 import com.tneff.cyppieagents.eventlog.severityContainer
 import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.Capabilities
+import com.tneff.cyppieagents.model.PO_AGENT_ID
 import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.Severity
 import com.tneff.cyppieagents.model.TerminalControlState
@@ -303,12 +304,12 @@ fun AgentWindow(
         Box(modifier = Modifier.weight(1f).fillMaxWidth().testTag(AgentViewTags.content(agentId))) {
             when (contentMode) {
                 AgentContentMode.ORCHESTRATION ->
-                    AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, foldToolRuns = agentId == "po", modifier = Modifier.fillMaxSize())
+                    AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, foldToolRuns = agentId == PO_AGENT_ID, modifier = Modifier.fillMaxSize())
                 AgentContentMode.TERMINAL ->
                     // Defensive: the toggle disables the Terminal segment when no terminal is wired, so this
                     // branch is normally unreachable without [terminalContent]; fall back to the transcript.
                     terminalContent?.invoke(agentId, Modifier.fillMaxSize())
-                        ?: AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, foldToolRuns = agentId == "po", modifier = Modifier.fillMaxSize())
+                        ?: AgentTranscript(agentId = agentId, events = transcript, contextLostAt = contextLostAt.value, foldToolRuns = agentId == PO_AGENT_ID, modifier = Modifier.fillMaxSize())
             }
         }
         // The mediated composer belongs to the Orchestrierung view only — the terminal has its own input. It is
