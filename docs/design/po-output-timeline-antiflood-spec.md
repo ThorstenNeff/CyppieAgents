@@ -1,12 +1,16 @@
-# op-po PO-Output-Fenster — Timeline-Anti-Flood (verbose PO-Turns)
+# CYP-790 — op-po PO-Output-Fenster: Timeline-Anti-Flood (verbose PO-Turns)
 
 > Owner: UIUX-Designer · Design-only, **kein Bau** · Stand develop `c9aa1a5f`.
-> **Kontext, nicht Scope:** `CYP-787` (Server: `op-po`-Kanal-Seed + ACL) und `CYP-788` (Client:
-> PO-Composer → `op-po`-Inbound) sind der **Schreib-Pfad** (Operator → PO). Dieses Dokument ist die
-> **Lese-/Render-Seite** (PO-Antwort **im** op-po-Fenster) — ein **Geschwister-Anliegen**, kein Teil
-> von 787/788. **Es braucht ein eigenes Bau-Ticket (PO schneidet es).** PL-Hinweis: PO-Turn-Output
-> ist **verbose** (Worker-Koordinations-Interna) → das Timeline-Rendering darf **nicht fluten**.
+> **Ticket:** `CYP-790` (Lese-/Render-Seite). **Kontext, nicht Scope:** `CYP-787` (Server:
+> `op-po`-Kanal-Seed + ACL) und `CYP-788` (Client: PO-Composer → `op-po`-Inbound) sind der
+> **Schreib-Pfad** (Operator → PO); dieses Dokument ist die **Lese-Seite** (PO-Antwort **im**
+> op-po-Fenster) — getrennt geschnitten. PL-Hinweis: PO-Turn-Output ist **verbose**
+> (Worker-Koordinations-Interna) → das Timeline-Rendering darf **nicht fluten**.
 > Verwandt: `CYP-738 §4` (Pre-Read) · `A11Y-ANNOUNCEMENTS.md` · das safe-but-silent-Prinzip (§4a).
+>
+> **§§1–9 = Konzept (PO-angenommen 2026-07-21).** **§§10–16 = Bau-reife Vertiefung** (CYP-790,
+> 2026-07-21): exaktes Gruppierungs-Prädikat, Collapsed-Row-Optik, Interaktion, Falt-State-Persistenz,
+> Kanten (CONTEXT_LOST-Landmark, Zähl-Wahrheit). Additiv — §§1–9 unverändert.
 
 ---
 
@@ -211,3 +215,129 @@ bestehenden `agent.<id>.event.<index>.toolCall|toolResult`-Tags — der Tester f
   bleiben beim Aufklappen erhalten.
 - **Keine Zeile Bau:** `strings.xml`/Tags-Datei (Dev-Lane) nicht angefasst — dieses Dokument ist die
   Referenz, nicht die Quelle.
+
+---
+
+# Bau-reife Vertiefung (CYP-790, 2026-07-21)
+
+> Das op-po-Fenster ist am Code bestätigt **eine normale `AgentWindow`-Instanz** für `agentId = "po"`
+> (`AgentShell.kt:1053`, der generische `else ->`-Zweig rendert `AgentWindow(agentId = window.id, …)`
+> pro Agent-Fenster). Der Fold lebt also in `AgentTranscript` und greift am PO-Fenster über die
+> Schwelle — **kein op-po-Sonderpfad im Renderer**, nur ggf. ein Default-Flag (§14).
+
+## 10. Das Gruppierungs-Prädikat (bau-kritisch — exakt)
+
+Ein **Tool-Lauf** ist eine **maximale zusammenhängende Teilfolge** von Events, in der **jedes** Event
+`AgentEvent.ToolCall` **oder** `AgentEvent.Result` ist. Der Lauf **bricht** an **jedem** anderen
+Event-Typ:
+
+| Event-Typ | Wirkung auf den Lauf |
+|---|---|
+| `ToolCall`, `Result` | **im Lauf** |
+| `AssistantText` | **bricht** (Prosa = Signal, nie in einen Fold geschluckt) |
+| `UserTurn` | **bricht** (Operator-Turn — eine semantische Grenze) |
+| `IncomingSystem` | **bricht** (Plattform-Injektion, z.B. `/compact` — nie verstecken) |
+| `Notice` | **bricht** (conn-error o.ä. — trägt eigene Bedeutung) |
+
+**Warum diese Wahl:** Nur die reinen Tool-Läufe sind das Rauschen. Jeder Nicht-Tool-Event ist eine
+Aussage (der PO / der Operator / die Plattform) und bleibt **immer** als eigene Zeile stehen — der
+Fold kann keine Aussage schlucken. Das ist die Prädikat-Form der safe-but-silent-Grenze: gefaltet wird
+**nur** das definitiv-Rauschen, nie das potenziell-Bedeutungstragende.
+
+**Falt-Bedingung eines Laufs (alle müssen gelten):**
+1. **Länge** `stepCount(run) ≥ RUN_FOLD_THRESHOLD` (§14, Vorschlag 4).
+2. **fehlerfrei** — kein `ToolCall.status == ERROR` **und** kein `Result.isError` im Lauf (sonst
+   fail-loud, §3 Zahn 2 → Lauf kommt **offen**, mit Fehler-Marker am Kopf).
+3. **abgeschlossen** — der Lauf ist **nicht** der streamende Tail (§13 Zahn 3).
+4. **kein Operator-Override auf „ausgeklappt"** (§12).
+
+Trifft eine Bedingung nicht zu → der Lauf rendert **wie heute** als Einzelzeilen (kein Kopf, kein
+Kollaps). Kurze/fehlerhafte/streamende Läufe sind damit **byte-identisch** zum heutigen Rendering.
+
+## 11. „N Schritte" — was genau gezählt wird (Zähl-Wahrheit)
+
+`stepCount(run)` = **Anzahl der `ToolCall`-Events im Lauf.** Ein `Result` ist das **Ergebnis** seines
+`ToolCall`, **kein eigener Schritt** — es mitzuzählen würde jeden Aufruf **doppeln** (12 Aufrufe →
+falsche „24"). Kante: ein Lauf ohne einen einzigen `ToolCall` (nur `Result`s — praktisch nicht
+erwartet, aber definiert) zählt **ersatzweise die Event-Zahl**, damit „N" nie 0 ist. Die Zahl ist
+**wahr und definiert**, nicht geschätzt — genau das ist Zahn 1.
+
+## 12. Falt-State: Identität & Persistenz
+
+**Der Operator-Klapp-Zustand überlebt neue Events.** Beim Eintreffen neuer PO-Events recomponiert die
+Timeline; ein vom Operator **aufgeklappter** Lauf darf **nicht** wieder zuklappen.
+
+- **Lauf-Identität = die `event.id` des ERSTEN Events des Laufs** (stabil; die `LazyColumn` keyt schon
+  auf `event.id`). Der Falt-State ist eine `Map<runId, Boolean>` (überschrieben-offen / überschrieben-zu),
+  gehalten in `remember`/VM-State des Transkripts, **nicht** aus der Event-Liste neu abgeleitet.
+- **Default** (kein Override): abgeleitet aus §10-Falt-Bedingung (lange, heile, abgeschlossene Läufe
+  = zu). Sobald der Operator togglet, gewinnt sein Override für **diesen** Lauf; andere Läufe bleiben
+  Default. Neue Läufe erben den Default, nicht den Nachbar-Override.
+- **Ein wachsender Tail-Lauf** (Schritte kommen noch dazu) behält seine `runId` (erstes Event fix), also
+  seinen State — er springt nicht, während er wächst.
+
+## 13. Interaktion, Scroll & a11y (Detail)
+
+- **Kopfzeile = ein Toggle-Control** über die ganze Breite: `Modifier.clickable`, `Role.Button`,
+  Tastatur Enter/Space, sichtbarer Fokus-Ring (Desktop/Web). Chevron `▸` (zu) / `▾` (offen) ist
+  **dekorativ** (`clearAndSetSemantics {}`); die Bedeutung trägt `stateDescription` (auf/zu) + die
+  `contentDescription` (Zahl + Fehler-Klausel, §6-Keys).
+- **Kein Scroll-Ruck:** Auf-/Zuklappen ändert die Item-Zahl der `LazyColumn`. Beim Toggle eines
+  **mittigen** Laufs bleibt die **Kopfzeile** die Scroll-Verankerung (nicht eine weggefaltete
+  Kindzeile). Der CYP-393-Tail-Pin bleibt intakt: die Summary ist **ein** Item, das den Lauf ersetzt →
+  die Tail-Signatur (size + last-event-id) wächst weiter, das Auto-Follow am Ende ist unberührt.
+- **Keine Pflicht-Animation.** Wenn Animation, dann billig (Höhen-Expand); nie eine, die den
+  Tail-Follow während des Streamens stört. Default: instant, wie der Rest des Transkripts.
+- **Fehler-Marker-a11y:** ein offen-kommender Fehler-Lauf braucht **keinen** neuen Live-Region-Kanal —
+  der Fehler ist ohnehin **offen** sichtbar; die einzelnen `ToolCallRow`/`ResultRow` tragen ihre
+  bestehenden a11y-Beschreibungen (`a11y_tool_error` etc.). Der Kopf-Marker ist zusätzlich, nicht
+  ersetzend.
+
+## 14. Zwei Weichen — mit Bau-Form (PO entscheidet)
+
+- **`RUN_FOLD_THRESHOLD`** (Vorschlag **4**): eine `private const val` im Renderer, ein Ort. Justierbar
+  nach einem Blick auf echte PO-Turn-Längen (Tester/PO). Kein Rebuild-Risiko, reiner Schwellwert.
+- **Global-schwellen vs. strikt op-po-only:** empfohlen **global** (der Fold greift **wo** ≥ Schwelle
+  geflutet wird — überwiegend der PO, aber auch ein verbose Worker-Turn profitiert; Reuse statt
+  Sonderfall). Will der PO strikt nur das op-po-Fenster, ist es **ein Boolean-Gate** am Call-Site
+  (`AgentTranscript(..., foldToolRuns = agentId == "po")`) — ein Einzeiler, kein Umbau. **Kein
+  Alleingang; ich baue keins von beiden fest ein.**
+
+## 15. Kanten (die stillen Fallen)
+
+- **CONTEXT_LOST-Landmark nie in einen Fold verschlucken (Ehrlichkeits-Kante).** Der durable
+  CYP-381-§7.1-Discontinuity-Band wird an `boundary = events.indexOfFirst { tsMs >= contextLostAt }`
+  **zwischen** Zeilen injiziert. Fiele diese Grenze **mitten in einen Tool-Lauf**, dürfte der Fold den
+  Landmark nicht überspannen (der Operator würde den Gedächtnis-Bruch in einem `▸ 12 Schritte`-Balken
+  **verlieren**). **Regel: ein Tool-Lauf bricht zusätzlich an der `boundary`.** Der Lauf teilt sich in
+  „vor dem Verlust" (receded, oberhalb) und „nach dem Verlust" — der Band bleibt eine sichtbare,
+  un-faltbare Zeile dazwischen. (Derselbe Reflex wie Zahn 2: der Landmark ist genau das, was ein
+  Kollaps nicht schlucken darf.)
+- **Receded (vergessene) Läufe** oberhalb des Landmarks falten normal (sie sind Historie), tragen aber
+  die §7.1-Rollen-Demotion — die Kopfzeile erbt den `receded`-Stil (`onSurfaceVariant`, WCAG-AA), nicht
+  den vollen `onSurface`.
+- **Ein Lauf mit genau `RUN_FOLD_THRESHOLD − 1` Schritten** faltet nicht — bewusst; die Schwelle ist
+  „ab", nicht „nahe". Kein Grau-Bereich.
+- **Der Kopf-Zeitstempel** im CYP-335-Gutter = die **`tsMs` des ERSTEN** Lauf-Events („wann begann der
+  Lauf") — konsistent mit der aufsteigenden Zeitachse; beim Aufklappen zeigen die Kindzeilen ihre
+  eigenen ts.
+
+## 16. Self-Validation (Vertiefung)
+
+- **op-po = AgentWindow am Code bestätigt** (`AgentShell.kt:1053`), nicht angenommen — der Fold braucht
+  keinen Renderer-Sonderpfad, nur eine optionale Default-Weiche (§14).
+- **Prädikat vollständig über die 6 realen `AgentEvent`-Typen** definiert (§10) — jeder Typ hat eine
+  benannte Wirkung; keine „sonstige"-Lücke, in der ein Event still verschwindet.
+- **Zähl-Wahrheit gegen Doppelung abgesichert** (§11): `ToolCall`-Zahl, nicht `ToolCall`+`Result`; die
+  Null-Kante definiert. Zahn 1 ist damit nicht nur „zeig eine Zahl", sondern „zeig die **richtige**".
+- **CONTEXT_LOST-Kante aktiv gefunden und geschlossen** (§15) — der Fold hätte sonst den durablen
+  Gedächtnis-Landmark verschluckt; die Zusatz-Bruchregel an `boundary` verhindert genau die stille
+  Falle, die safe-but-silent adressiert.
+- **Falt-State-Persistenz an stabiler Identität** (`erstes event.id`, §12) — der aufgeklappte Zustand
+  überlebt Recompose/neue Events; kein „klappt wieder zu, wenn der PO weiterredet"-Bug.
+- **CYP-393-Tail-Pin-Interaktion durchdacht** (§13), nicht übersehen — die Summary-als-ein-Item-Regel
+  hält Auto-Follow und Nicht-Ruck beim Mitten-Toggle zusammen.
+- **Beide Weichen mit konkreter Bau-Form offengelassen** (§14) — Schwellwert als `const`, op-po-only
+  als Boolean-Gate-Einzeiler; ich entscheide keine, baue keine fest ein.
+- **Additiv, §§1–9 unberührt** — die PO-angenommene Konzept-Ebene bleibt zitierfähig; die Vertiefung
+  ist klar abgegrenzt und als solche markiert.
