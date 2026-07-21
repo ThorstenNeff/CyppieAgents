@@ -13,6 +13,14 @@ import kotlinx.serialization.Serializable
  * of an agent is [Agent] itself — there is nothing to strip.
  */
 
+/**
+ * CYP-794 — the stable id of the PO ("Product Owner") agent, the hub-and-spoke nabe. The hub derives its channel
+ * ids from it (`op-po` inbound, `po-<worker>` spokes) and the client uses it wherever an ID-level PO check is
+ * needed (e.g. the op-po transcript-fold gate, [isPoSlot]) — one place instead of a scattered `"po"` literal. This
+ * is the id-based equivalent of `role == Role.PO`, for call sites that hold the agentId but not the [Agent].
+ */
+const val PO_AGENT_ID: String = "po"
+
 // CYP-217: `@Serializable` gives a COMPILE-TIME serializer on every target. Without it, direct
 // `encodeToString(Role)`/`decodeFromString<Role>` fell back to runtime reflection — fine on jvm/android but
 // throwing `SerializationException` on js/wasmJs (no reflection). The `@SerialName`s below were already
