@@ -98,7 +98,7 @@ class CommWsTest {
 
         wsClient().webSocket("/ws/comm?token=tok-op") {
             val initial = assertIs<ChannelsEvent>(nextEvent())
-            assertEquals(setOf("po-frontend", "po-backend"), initial.channels.map { it.id }.toSet())
+            assertEquals(setOf("po-frontend", "po-backend", "op-po"), initial.channels.map { it.id }.toSet()) // CYP-787: operator is a member of op-po
             delay(150)
             rest.post("/api/channels/po-frontend/messages") {
                 bearerAuth("tok-frontend"); contentType(ContentType.Application.Json)

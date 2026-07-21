@@ -71,7 +71,8 @@ class OperatorNoBypassProbeTest {
 
         // ...and po-frontend drops out of the operator's channel list, leaving only po-backend.
         val chans: List<Channel> = client.get("/api/channels") { bearerAuth("tok-op") }.body()
-        assertEquals(listOf("po-backend"), chans.map { it.id }, "revoked channel must disappear from operator view")
+        // CYP-787: op-po remains (the operator's ACL there is untouched); only the revoked po-frontend disappears.
+        assertEquals(listOf("po-backend", "op-po"), chans.map { it.id }, "revoked channel must disappear from operator view")
 
         // A genuine member (po) is unaffected — the change was scoped to the operator participant only.
         assertEquals(

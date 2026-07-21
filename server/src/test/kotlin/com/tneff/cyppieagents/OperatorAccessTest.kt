@@ -44,7 +44,7 @@ class OperatorAccessTest {
     fun operatorSeesAllChannels() = testApplication {
         application { installComm(config()) }
         val channels: List<Channel> = client().get("/api/channels") { bearerAuth("tok-op") }.body()
-        assertEquals(setOf("po-frontend", "po-backend"), channels.map { it.id }.toSet())
+        assertEquals(setOf("po-frontend", "po-backend", "op-po"), channels.map { it.id }.toSet()) // CYP-787: operator is a member of op-po
     }
 
     @Test

@@ -41,7 +41,9 @@ class HarnessSmokeTest {
             // still be just [po-frontend]; under `ProjectScope.permits → true` the operator would see
             // `po-backend` too, so this reddens. (The frontend probe above only proves membership isolation.)
             val opChannels: List<Channel> = p.asOperator().use { it.get("${p.baseUrl}/api/channels").body() }
-            assertEquals(listOf("po-frontend"), opChannels.map { it.id }, "operator (member of all) sees only the active project's channel → project-scope, not membership")
+            // CYP-787: the active project (alpha) is boot-seeded → it has the PO's op-po spoke (operator is a member).
+            // The project-scope point stands: po-backend (beta) is still NOT here — only membership+scope, and op-po is alpha's.
+            assertEquals(listOf("po-frontend", "op-po"), opChannels.map { it.id }, "operator sees the active project's channels (incl. op-po) → project-scope, not the foreign po-backend")
         }
     }
 }

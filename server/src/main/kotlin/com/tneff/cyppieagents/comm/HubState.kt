@@ -314,13 +314,32 @@ class HubState(
         channels.filter { it.kind == ChannelKind.HUB && ProjectScope.permits(it.projectId, activeProjectId) }
             .map { it.id }.toSet()
 
-    /** The agent's hub-and-spoke channel (`po-<agentId>`), if present and the agent is a member. */
-    fun spokeChannelFor(agentId: String): String? =
-        channels.firstOrNull { it.id == "po-$agentId" && agentId in it.members }?.id
+    /**
+     * The channel to REACH agent [agentId] — its hub-and-spoke inbound spoke, if present and the agent is
+     * a member. A worker's own `po-<id>`; the **PO's** dedicated operator channel [OP_PO_CHANNEL_ID]
+     * (CYP-787, symmetric spoke: the PO now has a real spoke like a worker). **Single-sourced:** BOTH the
+     * send direction ([com.tneff.cyppieagents.comm.Hub.writableAgents]) and the MediationRouter (the channel
+     * an agent's turn-output posts INTO) resolve through here, so for the PO they agree on op-po — the
+     * operator tasks the PO AND the PO's reply routes back to op-po (visible to the operator only).
+     */
+    fun spokeChannelFor(agentId: String): String? {
+        val channelId = if (isPoId(agentId)) OP_PO_CHANNEL_ID else "po-$agentId"
+        return channels.firstOrNull { it.id == channelId && agentId in it.members }?.id
+    }
+
+    /** True iff [agentId] is the PO of the current topology (CYP-787 op-po resolution). */
+    private fun isPoId(agentId: String): Boolean = agents.any { it.id == agentId && it.role == Role.PO }
 
     companion object {
         /** Reserved participant id for the human operator / UI viewer (Spec D2). */
         const val OPERATOR_ID = "operator"
+
+        /**
+         * CYP-787 — the id of the PO's dedicated operator↔PO channel (C1/1b). A DIRECT channel (not a HUB
+         * spoke) so it is excluded from [poHubChannelIds] and never trips the CYP-111 PO-lockout guard.
+         * [spokeChannelFor] resolves the PO to this id (its symmetric inbound/outbound spoke).
+         */
+        const val OP_PO_CHANNEL_ID = "op-po"
 
         /**
          * Builds the default hub-and-spoke topology from the agent list (Spec 02 §6.2):
@@ -347,7 +366,7 @@ class HubState(
             // CYP-98: Product Leads are read-only reviewers on every spoke — members (canRead) but NEVER
             // canWrite, and they get NO spoke of their own → structurally never a task target.
             val productLeadIds = agents.filter { it.role == Role.PRODUCT_LEAD }.map { it.id }
-            val channels = workers.map { w ->
+            val workerChannels = workers.map { w ->
                 val members = buildList {
                     add(po.id); add(w.id)
                     if (operatorId != null) add(operatorId)
@@ -361,13 +380,40 @@ class HubState(
                     projectId = activeProjectId,
                 )
             }
-            val entries = channels.flatMap { ch ->
+            // CYP-787 (C1/1b, symmetric): the PO's dedicated operator↔PO channel. DIRECT — NOT a HUB spoke,
+            // so it is excluded from [poHubChannelIds] and the CYP-111 PO-lockout guard never trips on it.
+            // Members {operator, po}, both canRead+canWrite: the operator TASKS the PO and the PO's turn-output
+            // routes BACK here (symmetric spoke, like a worker's po-<id>). Makes [spokeChannelFor] resolve for
+            // the PO → "po" ∈ writableAgents (composer-enable) AND MediationRouter posts PO output here instead
+            // of dropping it. Narrowly amends CYP-98 "PO=hub, never a task target" to this ONE operator-inbound
+            // edge — workers are NOT members, so a worker still cannot task the PO. Seeded only with an operator.
+            val opPoChannel = operatorId?.let { op ->
+                Channel(
+                    id = OP_PO_CHANNEL_ID,
+                    name = OP_PO_CHANNEL_ID,
+                    kind = com.tneff.cyppieagents.model.ChannelKind.DIRECT,
+                    members = listOf(op, po.id),
+                    projectId = activeProjectId,
+                )
+            }
+            val channels = workerChannels + listOfNotNull(opPoChannel)
+            val workerEntries = workerChannels.flatMap { ch ->
                 ch.members.map { member ->
                     // PL read-only posture enforced HERE (core ACL, not just UI): canWrite=false, fail-closed.
                     val readOnly = member in productLeadIds
                     AclEntry(ch.id, member, canRead = true, canWrite = !readOnly, projectId = activeProjectId)
                 }
             }
+            // CYP-787: op-po ACL — BOTH members (operator, po) canRead+canWrite. This IS the (a)-symmetric
+            // grant: the operator tasks the PO and the PO writes its reply back, both directions on the one
+            // channel. Explicit uniform RW (not the worker-spoke !readOnly rule) so the PO's intentional write
+            // grant here is visible; it is the PO's sole new write edge (no broad grant — workers are not members).
+            val opPoEntries = opPoChannel?.let { ch ->
+                ch.members.map { member ->
+                    AclEntry(ch.id, member, canRead = true, canWrite = true, projectId = activeProjectId)
+                }
+            }.orEmpty()
+            val entries = workerEntries + opPoEntries
             return HubState(agents, channels, entries, activeProjectId, operatorId, sharedInboundProvider)
         }
     }

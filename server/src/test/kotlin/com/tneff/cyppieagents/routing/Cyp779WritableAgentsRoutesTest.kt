@@ -84,9 +84,12 @@ class Cyp779WritableAgentsRoutesTest {
         setBody("""{"channelId":"$ch","agentId":"$memberId","canRead":$canRead,"canWrite":$canWrite}""")
     }
 
-    /** The AUTHORITATIVE send-to-agent path: post into the agent's spoke `po-<id>`. 201 ⟺ the send is allowed. */
+    /** The AUTHORITATIVE send-to-agent path: post into the agent's inbound spoke. 201 ⟺ the send is allowed.
+     *  Mirrors [com.tneff.cyppieagents.comm.HubState.spokeChannelFor]: a worker's `po-<id>`; the PO's `op-po`
+     *  (CYP-787) — so the parity check exercises the REAL channel each agent is reached on. */
+    private fun channelToReach(agentId: String) = if (agentId == "po") "op-po" else "po-$agentId"
     private suspend fun ApplicationTestBuilder.sendToAgent(agentId: String, hdr: Pair<String, String>) =
-        client.post("/api/channels/po-$agentId/messages") {
+        client.post("/api/channels/${channelToReach(agentId)}/messages") {
             header(hdr.first, hdr.second); contentType(ContentType.Application.Json); setBody("""{"body":"hi"}""")
         }
 
@@ -163,15 +166,16 @@ class Cyp779WritableAgentsRoutesTest {
     }
 
     @Test
-    fun operator_mayWriteEverySpokedAgent_poHubExcludedFailClosed() = testApplication {
+    fun operator_mayWriteEveryWorker_andThePo_viaOpPo() = testApplication {
         val db = Files.createTempFile("cyp779-op", ".db"); val store = SqliteRoleStore(db)
         application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
         startApplication()
         val writable = writableAgents(op).toSet()
-        // The operator is a member-of-all with canWrite → every WORKER (which has a spoke) is writable...
-        assertEquals(setOf("frontend", "backend"), writable, "operator may write every spoked worker")
-        // ...and the PO is excluded fail-closed: the hub has no `po-po` spoke to post into (no send target).
-        assertFalse("po" in writable, "the PO hub has no spoke → not a send target → fail-closed excluded")
+        // CYP-787: the operator is a member-of-all with canWrite → every WORKER spoke AND the PO's new op-po
+        // spoke are writable. This FLIPS the pre-787 exclusion: CYP-98 "PO=hub, never a task target" is now
+        // narrowly amended to the ONE operator-inbound edge (op-po) — workers still can't task the PO (below).
+        assertEquals(setOf("frontend", "backend", "po"), writable, "operator may write every worker AND the PO (op-po)")
+        assertTrue("po" in writable, "CYP-787: the PO gained its op-po spoke → now a send target for the operator")
         assertSendParity("operator", op)
         store.close(); Files.deleteIfExists(db)
     }

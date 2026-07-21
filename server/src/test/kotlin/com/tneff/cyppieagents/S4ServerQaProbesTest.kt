@@ -191,7 +191,7 @@ class S4ServerQaProbesTest {
         assertEquals(HttpStatusCode.OK, res.status, "CYP-18: operator token is an accepted privileged participant on comm reads")
         val channels: List<Channel> = res.body()
         assertEquals(
-            setOf("po-frontend", "po-backend"),
+            setOf("po-frontend", "po-backend", "op-po"), // CYP-787: op-po is a channel the operator is a member of
             channels.map { it.id }.toSet(),
             "operator (privileged participant) must see ALL channels, not just be accepted",
         )
