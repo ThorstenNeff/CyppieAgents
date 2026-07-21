@@ -46,7 +46,7 @@ import glob
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 CATEGORIES = (
     "input_tokens",
@@ -57,13 +57,40 @@ CATEGORIES = (
 
 
 def parse_ts(s):
-    """ISO-8601 -> aware datetime; tolerate a trailing 'Z' (older fromisoformat rejects it)."""
+    """ISO-8601 -> aware datetime, else None. For RECORD timestamps: a bad/absent record ts skips that one
+    record (a single corrupt line must not fail a whole measurement). NOT for CLI bounds - see
+    [parse_window_bound], which fails LOUD, because a silently-dropped window is the whole-range bug."""
     if not s:
         return None
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
         return None
+    # Record timestamps are UTC (trailing 'Z' -> aware). A tz-LESS input (e.g. a bound "2026-07-21T06:00:00",
+    # or the space-separated form fromisoformat accepts) parses NAIVE -> assume UTC, so aware/naive comparisons
+    # never crash and a bound aligns with the UTC-stamped records. (Named assumption: naive input = UTC.)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def parse_window_bound(flag, value):
+    """CLI `--from`/`--to`: None when NOT given (no filter); FAIL LOUD when GIVEN but unparseable.
+
+    The critical distinction (PL): a not-given bound is a legitimate "no filter" (None); a given-but-invalid
+    bound (a typo - a space instead of 'T', a wrong format) must NOT silently become None, or the tool - whose
+    entire purpose is a time WINDOW - would measure the FULL range and report a plausible, wrong number. Since
+    a specified value is always non-empty, `parse_ts(value) is None` here means unparseable, not absent.
+    """
+    if value is None:
+        return None
+    ts = parse_ts(value)
+    if ts is None:
+        raise SystemExit(
+            f"error: {flag} value {value!r} is not a valid ISO-8601 timestamp (e.g. 2026-07-21T06:12:00Z) "
+            f"- refusing to silently measure the FULL range"
+        )
+    return ts
 
 
 def resolve_dir(agent, explicit_dir, projects_root):
@@ -175,8 +202,11 @@ def write_output(out_path, totals, rows):
     elif ext == ".csv":
         with open(out_path, "w", encoding="utf-8", newline="") as fh:
             w = csv.writer(fh)
-            w.writerow(["scope"] + list(CATEGORIES) + ["turns", "total_tokens"])
-            w.writerow(["SUMMARY"] + [totals[c] for c in CATEGORIES] + [totals["turns"], totals["total_tokens"]])
+            # `anomalies` in the CSV too (not just JSON/stderr): a CSV-only consumer must still see a
+            # single-billing violation - stderr scrolls away, the file is what gets reported.
+            w.writerow(["scope"] + list(CATEGORIES) + ["turns", "total_tokens", "anomalies"])
+            w.writerow(["SUMMARY"] + [totals[c] for c in CATEGORIES]
+                       + [totals["turns"], totals["total_tokens"], totals["anomalies"]])
             if rows:
                 w.writerow([])
                 w.writerow(["message_id", "timestamp"] + list(CATEGORIES))
@@ -280,6 +310,33 @@ def selftest():
                              "the 4 categories are summed independently, never merged")
             self.assertEqual(t["total_tokens"], 15)
 
+        def test_cli_window_bound_given_but_invalid_fails_LOUD(self):
+            # PL bug: a specified-but-unparseable --from/--to must NOT silently become None (which would
+            # measure the FULL range). not-given -> None (ok); given-but-invalid -> SystemExit (loud).
+            self.assertIsNone(parse_window_bound("--from", None), "not-given bound is a legit no-filter (None)")
+            self.assertIsNotNone(parse_window_bound("--from", "2026-07-21T06:00:00Z"), "a valid bound parses")
+            # a tz-less but VALID stamp is coerced to UTC (aware) - not an error, and comparison-safe:
+            b = parse_window_bound("--from", "2026-07-21T06:00:00")
+            self.assertIsNotNone(b) and self.assertIsNotNone(b.tzinfo)
+            for bad in ("not-a-date", "yesterday", "2026/07/21", "Jul 21 6am"):
+                with self.assertRaises(SystemExit, msg=f"invalid bound {bad!r} must FAIL LOUD, not silently None"):
+                    parse_window_bound("--from", bad)
+            # the RECORD-level parse_ts stays lenient (a corrupt line skips, never crashes the run):
+            self.assertIsNone(parse_ts("not-a-date"), "record-ts parsing stays lenient (skip, not crash)")
+
+        def test_csv_output_carries_anomalies_column(self):
+            import tempfile
+            lines = [  # a divergent same-id pair -> 1 anomaly that MUST reach the CSV, not just stderr
+                _rec("m", "2026-07-21T06:00:00.100Z", inp=1, out=5),
+                _rec("m", "2026-07-21T06:00:00.600Z", inp=1, out=99),
+            ]
+            by_id, anomalies = collect([self._file("d.jsonl", lines)])
+            out = os.path.join(self.tmp, "o.csv")
+            write_output(out, summarize(by_id, anomalies), None)
+            text = open(out, encoding="utf-8").read()
+            self.assertIn("anomalies", text.splitlines()[0], "CSV header must include the anomalies column")
+            self.assertEqual(text.splitlines()[1].split(",")[-1], "1", "the anomaly count must appear in the CSV row")
+
         def test_non_assistant_and_usageless_records_ignored(self):
             lines = [
                 json.dumps({"type": "user", "timestamp": "2026-07-21T06:00:00Z", "message": {"id": "u"}}),
@@ -317,7 +374,7 @@ def main(argv=None):
     files = sorted(glob.glob(os.path.join(d, "*.jsonl")))
     if not files:
         raise SystemExit(f"error: no *.jsonl transcripts in {d}")
-    by_id, anomalies = collect(files, parse_ts(args.frm), parse_ts(args.to))
+    by_id, anomalies = collect(files, parse_window_bound("--from", args.frm), parse_window_bound("--to", args.to))
     totals = summarize(by_id, anomalies)
     rows = per_turn_rows(by_id) if args.per_turn else None
     if anomalies:
