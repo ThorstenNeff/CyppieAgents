@@ -201,11 +201,16 @@ class HubState(
     }
 
     /**
-     * Register a new agent at runtime (CYP-97) and, for a WORKER, add its hub-and-spoke spoke
-     * `po-<id>` with the SAME shape the boot factory builds: members `[po, <id>, operator?]`, all
-     * read+write, **stamped with [activeProjectId]** (no cross-project leak), and rebuild the matrix.
-     * Atomic under the lock. The add-guard (exactly-one-PO / unique id) runs at the call site before
-     * this; a PO is never added at runtime (so no second hub), and this only ever creates a spoke.
+     * Register a new agent at runtime (CYP-97) and add its hub-and-spoke channel with the SAME shape the
+     * boot factory [hubAndSpoke] builds, **stamped with [activeProjectId]** (no cross-project leak), then
+     * rebuild the matrix. Atomic under the lock.
+     *  - WORKER → its spoke `po-<id>` (members `[po, <id>, operator?, PLs]`, read+write, PLs read-only).
+     *  - PO (CYP-792) → its op-po ([OP_PO_CHANNEL_ID], DIRECT, {operator, po} both RW) when an operator exists.
+     *    A PO is NOT added at runtime in the BOOT project (the call-site add-guard rejects a second PO), but a
+     *    non-boot/switched-to project's PO IS (re)added here via [com.tneff.cyppieagents.boot.BootOrchestrator]'s
+     *    rehydration, which BYPASSES that guard — so op-po must be seeded here too, else the switched-to PO
+     *    window regresses to read-only (CYP-787 symptom). A PO gets NO worker spoke — it is the hub.
+     *  - PRODUCT_LEAD → joins every HUB spoke read-only, no spoke of its own.
      */
     fun addAgent(agent: Agent): Agent = synchronized(lock) {
         val po = agents.firstOrNull { it.role == Role.PO }
@@ -220,6 +225,29 @@ class HubState(
                 val channel = Channel("po-${agent.id}", "po-${agent.id}", ChannelKind.HUB, members, projectId = activeProjectId)
                 val newEntries = members.map { m ->
                     AclEntry(channel.id, m, canRead = true, canWrite = m !in productLeadIds, projectId = activeProjectId)
+                }
+                channels = channels + channel
+                entries = entries + newEntries
+                acl = AclMatrix(channels, entries, activeProjectId, sharedInboundChannelIds)
+            }
+            // CYP-792: idempotency is PROJECT-SCOPED — op-po's id is a cross-project CONSTANT and `channels` holds
+            // every project's channels un-stashed (rescope isolates by projectId, not by swapping the list, see
+            // [rescope]). A plain `id == OP_PO_CHANNEL_ID` check would false-positive on ANOTHER project's op-po
+            // and refuse to seed THIS project's — the CYP-81 cross-project-constant-id trap (caught by the e2e
+            // switch journey, invisible to a fresh-slice unit test).
+            agent.role == Role.PO && operatorId != null &&
+                channels.none { it.id == OP_PO_CHANNEL_ID && it.projectId == activeProjectId } -> {
+                // CYP-792: a PO added at runtime — a non-boot/switched-to project rehydrated via
+                // BootOrchestrator's `state.addAgent` (or a future multi-project create) — gets the SAME op-po
+                // the boot factory [hubAndSpoke] seeds. Single-sourced so the switch/rescope path cannot regress
+                // to a read-only PO window (the CYP-787 symptom recurring in the S12 multi-project case). DIRECT
+                // (not HUB → CYP-111 lockout guard stays clear), members {operator, po}, both canRead+canWrite
+                // (the (a)-symmetric grant: operator tasks the PO, the PO's turn-output routes back). Idempotent
+                // (skip if op-po already exists for the active project) and only with an operator (nobody to task
+                // the PO otherwise). A PO adds NO worker spoke — it is the hub, not a task target of a spoke.
+                val channel = Channel(OP_PO_CHANNEL_ID, OP_PO_CHANNEL_ID, ChannelKind.DIRECT, listOf(operatorId, agent.id), projectId = activeProjectId)
+                val newEntries = channel.members.map { m ->
+                    AclEntry(channel.id, m, canRead = true, canWrite = true, projectId = activeProjectId)
                 }
                 channels = channels + channel
                 entries = entries + newEntries
