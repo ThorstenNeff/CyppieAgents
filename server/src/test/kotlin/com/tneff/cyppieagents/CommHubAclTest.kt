@@ -100,7 +100,7 @@ class CommHubAclTest {
 
         val poChannels: List<Channel> =
             client.get("/api/channels") { bearerAuth("tok-po") }.body()
-        assertEquals(setOf("po-frontend", "po-backend"), poChannels.map { it.id }.toSet())
+        assertEquals(setOf("po-frontend", "po-backend", "op-po"), poChannels.map { it.id }.toSet()) // CYP-787: PO is a member of its op-po spoke
     }
 
     @Test

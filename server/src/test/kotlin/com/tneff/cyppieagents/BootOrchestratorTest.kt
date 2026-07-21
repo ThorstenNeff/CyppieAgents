@@ -101,7 +101,7 @@ class BootOrchestratorTest {
         assertNotNull(booted.connectorSessions.session("backend"))
 
         // Hub-and-spoke channels + default ACL derived from config.
-        assertEquals(setOf("po-frontend", "po-backend"), booted.state.channels.map { it.id }.toSet())
+        assertEquals(setOf("po-frontend", "po-backend", "op-po"), booted.state.channels.map { it.id }.toSet()) // CYP-787: + the PO's op-po spoke
         assertTrue(booted.state.acl.canWrite("po-backend", "backend"))
         assertFalse(booted.state.acl.canWrite("po-backend", "frontend")) // cross-agent isolation
     }
@@ -130,7 +130,7 @@ class BootOrchestratorTest {
         assertEquals(setOf("po", "frontend"), booted.bootedAgents.toSet())
         assertNull(booted.connectorSessions.session("backend"))
         assertNotNull(booted.connectorSessions.session("frontend"))
-        assertEquals(setOf("po-frontend", "po-backend"), booted.state.channels.map { it.id }.toSet())
+        assertEquals(setOf("po-frontend", "po-backend", "op-po"), booted.state.channels.map { it.id }.toSet()) // CYP-787: + the PO's op-po spoke
     }
 
     @Test
