@@ -7,6 +7,7 @@ import com.tneff.cyppieagents.comm.HubState
 import com.tneff.cyppieagents.comm.InMemoryMessageStore
 import com.tneff.cyppieagents.comm.MessageStore
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.WritableAgentsView
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.AclEvent
 import com.tneff.cyppieagents.model.ApiError
@@ -171,6 +172,15 @@ fun Route.commRoutes(
         get("/channels/writable") {
             val participant = call.requireCommReader(deps, registry)
             call.respond(hub.writableChannels(participant))
+        }
+
+        // CYP-779 — the composer-enable seam at AGENT granularity (Dev's CYP-738 composer is built against the
+        // fixed PL-0068 contract `{agentIds: string[]}` — do NOT rename the field). Same participant-read gate
+        // as /channels/writable; writability-of-agent is writability-of-its-spoke, derived from the SAME
+        // send-enforcing set → single-source with the POST, fail-closed for participants and spoke-less agents.
+        get("/agents/writable") {
+            val participant = call.requireCommReader(deps, registry)
+            call.respond(WritableAgentsView(hub.writableAgents(participant)))
         }
 
         route("/channels/{id}/messages") {

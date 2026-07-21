@@ -195,6 +195,42 @@
                 }
             }
         },
+        "/api/agents/writable": {
+            "get": {
+                "operationId": "get_api_agents_writable",
+                "x-auth-tier": "PARTICIPANT",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "sessionCookie": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WritableAgentsView"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorBody"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/channels/{id}/messages": {
             "get": {
                 "operationId": "get_api_channels__id__messages",
@@ -2834,6 +2870,20 @@
                     "name",
                     "kind",
                     "members"
+                ]
+            },
+            "WritableAgentsView": {
+                "type": "object",
+                "properties": {
+                    "agentIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "agentIds"
                 ]
             },
             "DeliveredMessage": {

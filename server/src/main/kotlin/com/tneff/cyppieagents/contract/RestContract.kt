@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.contract
 import com.tneff.cyppieagents.auth.OperatorAudit
 import com.tneff.cyppieagents.model.AclEntry
 import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.WritableAgentsView
 import com.tneff.cyppieagents.model.ChannelReadState
 import com.tneff.cyppieagents.model.MarkReadRequest
 import com.tneff.cyppieagents.model.AgentDetail
@@ -89,6 +90,7 @@ object RestContract {
         Op("GET", "/api/agents", Tier.PARTICIPANT, response = arr<Agent>()),
         Op("GET", "/api/channels", Tier.PARTICIPANT, response = arr<Channel>()),
         Op("GET", "/api/channels/writable", Tier.PARTICIPANT, response = arr<String>()), // CYP-273: composer-enable seam
+        Op("GET", "/api/agents/writable", Tier.PARTICIPANT, response = json<WritableAgentsView>()), // CYP-779: agent-granularity composer-enable seam
         // CYP-744: frontend message surfaces carry the DeliveredMessage wrapper (message + server-resolved spans);
         // /ws/hub keeps bare Message (§9). GET history + POST return are the same envelope as the /ws/comm echo.
         Op("GET", "/api/channels/{id}/messages", Tier.PARTICIPANT, response = arr<DeliveredMessage>()),

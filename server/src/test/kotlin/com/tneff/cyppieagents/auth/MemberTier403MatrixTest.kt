@@ -55,6 +55,9 @@ class MemberTier403MatrixTest {
         // CYP-273 — the composer-enable seam: the WRITABLE-subset read is the same participant-read tier as
         // `/api/channels` (ACL-filtered, content-free channel ids), so a MEMBER reaches it (200), not tier-denied.
         "GET /api/channels/writable",
+        // CYP-779 — the agent-granularity composer-enable seam, same PARTICIPANT read tier as /channels/writable
+        // (ACL-filtered, content-free agent ids). A MEMBER reaches it (200), not tier-denied.
+        "GET /api/agents/writable",
         "GET /api/config/repo", "GET /api/config/apikey", "GET /api/events",
         // CYP-417 (S-G): the capacity read is MEMBER-tier (content-free counters, secret-free) — a MEMBER reaches
         // it (200), like the other reads above; the hard capacity GATE is server-side in the spawn path, not here.

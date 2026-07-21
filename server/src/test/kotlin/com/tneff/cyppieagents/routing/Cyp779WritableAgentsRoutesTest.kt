@@ -1,0 +1,209 @@
+package com.tneff.cyppieagents.routing
+
+import com.tneff.cyppieagents.FakeGit
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.FakeIdentityProvider
+import com.tneff.cyppieagents.auth.KratosSettingsClient
+import com.tneff.cyppieagents.auth.ParticipantTokenStore
+import com.tneff.cyppieagents.auth.ResolvedIdentity
+import com.tneff.cyppieagents.auth.SqliteRoleStore
+import com.tneff.cyppieagents.boot.AgentConfig
+import com.tneff.cyppieagents.boot.BootOrchestrator
+import com.tneff.cyppieagents.boot.BootedPlatform
+import com.tneff.cyppieagents.boot.PlatformConfig
+import com.tneff.cyppieagents.boot.RepoConfig
+import com.tneff.cyppieagents.boot.Secrets
+import com.tneff.cyppieagents.boot.WorktreeManager
+import com.tneff.cyppieagents.connector.AgentProcess
+import com.tneff.cyppieagents.connector.ProcessSpawner
+import com.tneff.cyppieagents.model.Role
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.server.testing.ApplicationTestBuilder
+import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.nio.file.Files
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/**
+ * CYP-779 — `GET /api/agents/writable` (the composer-enable seam at AGENT granularity, sibling of CYP-273's
+ * `/channels/writable`). Returns the agent ids the resolved caller may currently SEND to. "Send to agent X" =
+ * post into X's hub-and-spoke channel `po-<X>`, which the chokepoint gates with `canWrite` — so an agent is
+ * writable ⟺ the caller may write its spoke. The endpoint's answer must MATCH the real send outcome
+ * (single-source, no second traversal), be fail-closed for participants and spoke-less agents, and carry the
+ * FIXED PL-0068 contract `{agentIds: string[]}`.
+ */
+class Cyp779WritableAgentsRoutesTest {
+
+    private val json = Json { ignoreUnknownKeys = true }
+    private val opToken = "tok-op"
+    private val memberId = "carol-mem"
+    private val ptStore = ParticipantTokenStore { 1_000L }
+
+    private fun authDeps(store: SqliteRoleStore) = AuthDeps(
+        tokens = TokenRegistry(emptyMap(), operatorToken = opToken),
+        idp = FakeIdentityProvider(mapOf("sess-carol" to ResolvedIdentity(memberId, verified = true))),
+        roles = store, nowMs = { 1_000L },
+        participantTokens = ptStore,
+    )
+
+    private val op get() = "Authorization" to "Bearer $opToken"
+    private val carol get() = "X-Session-Token" to "sess-carol"
+
+    /** The raw response element — so a tooth can pin the CONTRACT SHAPE (`{agentIds:[...]}`), not just the ids. */
+    private suspend fun ApplicationTestBuilder.writableRaw(hdr: Pair<String, String>) =
+        json.parseToJsonElement(client.get("/api/agents/writable") { header(hdr.first, hdr.second) }.bodyAsText())
+
+    private suspend fun ApplicationTestBuilder.writableAgents(hdr: Pair<String, String>): List<String> =
+        writableRaw(hdr).jsonObject["agentIds"]!!.jsonArray.map { it.jsonPrimitive.content }
+
+    private suspend fun ApplicationTestBuilder.allAgentIds(hdr: Pair<String, String>): List<String> =
+        json.parseToJsonElement(client.get("/api/agents") { header(hdr.first, hdr.second) }.bodyAsText())
+            .jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
+
+    private suspend fun ApplicationTestBuilder.grant(ch: String, canRead: Boolean, canWrite: Boolean) = client.put("/api/acl") {
+        header("Authorization", "Bearer $opToken"); contentType(ContentType.Application.Json)
+        setBody("""{"channelId":"$ch","agentId":"$memberId","canRead":$canRead,"canWrite":$canWrite}""")
+    }
+
+    /** The AUTHORITATIVE send-to-agent path: post into the agent's spoke `po-<id>`. 201 ⟺ the send is allowed. */
+    private suspend fun ApplicationTestBuilder.sendToAgent(agentId: String, hdr: Pair<String, String>) =
+        client.post("/api/channels/po-$agentId/messages") {
+            header(hdr.first, hdr.second); contentType(ContentType.Application.Json); setBody("""{"body":"hi"}""")
+        }
+
+    /**
+     * The seam's core invariant — for EVERY agent, `id ∈ writableAgents` ⟺ the real POST-to-spoke is 201. This
+     * is the single-source / anti-drift tooth (Zahn 2): the composer's enable prediction can never diverge from
+     * the send chokepoint's actual decision, because both resolve through the same `spokeChannelFor` + canWrite.
+     */
+    private suspend fun ApplicationTestBuilder.assertSendParity(label: String, hdr: Pair<String, String>) {
+        val writable = writableAgents(hdr).toSet()
+        for (id in allAgentIds(hdr)) {
+            val sent201 = sendToAgent(id, hdr).status == HttpStatusCode.Created
+            assertEquals(id in writable, sent201, "$label: parity break on agent '$id' — inWritable=${id in writable} sent201=$sent201")
+        }
+    }
+
+    @Test
+    fun contract_isExactlyAgentIdsObject_notABareArray() = testApplication {
+        val db = Files.createTempFile("cyp779-contract", ".db"); val store = SqliteRoleStore(db)
+        application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
+        startApplication()
+        val body = writableRaw(op).jsonObject
+        // PL-0068: the Dev composer is built against `{agentIds: string[]}` — the field name is load-bearing.
+        assertEquals(setOf("agentIds"), body.keys, "the response is EXACTLY {agentIds:[...]}, no more/other fields")
+        assertTrue(body["agentIds"]!!.jsonArray.all { it.jsonPrimitive.isString }, "agentIds is a string[]")
+        store.close(); Files.deleteIfExists(db)
+    }
+
+    @Test
+    fun filterBites_memberSeesOnlyCanWriteAgents_andPositiveControlNonEmpty() = testApplication {
+        val db = Files.createTempFile("cyp779-filter", ".db"); val store = SqliteRoleStore(db)
+        application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
+        startApplication()
+        client.get("/api/auth/me") { header("X-Session-Token", "sess-carol") } // verify → MEMBER
+
+        // Before any grant: MEMBER may write no agent (fail-closed).
+        assertTrue(writableAgents(carol).isEmpty(), "MEMBER may write no agent before any grant")
+
+        // Grant canWrite on frontend's spoke, canRead-ONLY on backend's spoke.
+        assertEquals(HttpStatusCode.OK, grant("po-frontend", canRead = true, canWrite = true).status)
+        assertEquals(HttpStatusCode.OK, grant("po-backend", canRead = true, canWrite = false).status)
+
+        val writable = writableAgents(carol).toSet()
+        // FILTER (Zahn 1): the canWrite agent is in; the canRead-only agent is NOT (mutation "return all agents" → red).
+        assertTrue("frontend" in writable, "the canWrite-granted agent is writable")
+        assertFalse("backend" in writable, "the canRead-ONLY agent must NOT be writable (this is the seam)")
+        // POSITIVE CONTROL (Zahn 3): a caller with ≥1 allowed edge yields a NON-EMPTY set, so the filter above
+        // is not vacuously green (an always-empty result would also pass the assertFalse).
+        assertTrue(writable.isNotEmpty(), "positive control: a caller with a canWrite edge gets a non-empty set")
+
+        // SINGLE-SOURCE (Zahn 2): writable ⟺ the actual send-to-spoke outcome, for every agent.
+        assertSendParity("member", carol)
+
+        store.close(); Files.deleteIfExists(db)
+    }
+
+    @Test
+    fun participantToken_neverWrites_emptyEvenWithCanWriteGrant() = testApplication {
+        val db = Files.createTempFile("cyp779-pt", ".db"); val store = SqliteRoleStore(db)
+        application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
+        startApplication()
+        // A participant granted canRead+canWrite on frontend's spoke — but CYP-297 L3 rejects participant SENDS
+        // (403) regardless of canWrite, so it MUST NOT appear writable (else enable-then-403 returns). Inherited
+        // for free because writableAgents derives from writableChannels, which already excludes participants.
+        val ptRaw = ptStore.mint("byo-consumer")
+        client.put("/api/acl") {
+            header("Authorization", "Bearer $opToken"); contentType(ContentType.Application.Json)
+            setBody("""{"channelId":"po-frontend","agentId":"participant:byo-consumer","canRead":true,"canWrite":true}""")
+        }
+        val participant = "Authorization" to "Bearer $ptRaw"
+        assertTrue(writableAgents(participant).isEmpty(), "a participant NEVER writes (CYP-297 L3) → empty even WITH a canWrite grant")
+        assertSendParity("participant", participant) // holds only because writable is empty AND every send is 403
+        store.close(); Files.deleteIfExists(db)
+    }
+
+    @Test
+    fun operator_mayWriteEverySpokedAgent_poHubExcludedFailClosed() = testApplication {
+        val db = Files.createTempFile("cyp779-op", ".db"); val store = SqliteRoleStore(db)
+        application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
+        startApplication()
+        val writable = writableAgents(op).toSet()
+        // The operator is a member-of-all with canWrite → every WORKER (which has a spoke) is writable...
+        assertEquals(setOf("frontend", "backend"), writable, "operator may write every spoked worker")
+        // ...and the PO is excluded fail-closed: the hub has no `po-po` spoke to post into (no send target).
+        assertFalse("po" in writable, "the PO hub has no spoke → not a send target → fail-closed excluded")
+        assertSendParity("operator", op)
+        store.close(); Files.deleteIfExists(db)
+    }
+
+    @Test
+    fun writable_requiresACredential_401() = testApplication {
+        val db = Files.createTempFile("cyp779-gate", ".db"); val store = SqliteRoleStore(db)
+        application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
+        startApplication()
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/agents/writable").status, "the writable read is participant-gated like /agents")
+        store.close(); Files.deleteIfExists(db)
+    }
+
+    private class FakeProcess : AgentProcess {
+        override val stdoutLines: Flow<String> = emptyFlow()
+        override suspend fun writeLine(line: String) {}
+        override fun destroy() {}
+    }
+
+    private fun bootFake(): BootedPlatform {
+        val config = PlatformConfig(
+            RepoConfig("git@github.com:org/repo.git", "main"),
+            agents = listOf(
+                AgentConfig("po", "PO", Role.PO),
+                AgentConfig("frontend", "FE", Role.WORKER),
+                AgentConfig("backend", "BE", Role.WORKER),
+            ),
+        )
+        val secrets = Secrets(emptyMap(), operatorToken = opToken, apiKey = null)
+        val gitRoot = Files.createTempDirectory("cyp779-test").toFile()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val spawner = ProcessSpawner { _, _, _ -> FakeProcess() }
+        return BootOrchestrator(config, secrets, WorktreeManager(FakeGit(), gitRoot), spawner, scope).boot()
+    }
+}
