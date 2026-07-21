@@ -73,15 +73,17 @@ Zwei Orte, beide **Reuse**:
 
 ## §4 Fehlerpfad beim Wechsel — Ursachen trennen (N4)
 
-**Drei distinkte Ursachen, drei distinkte Copys + Recoverys** ([[reconcile-not-collapse-distinct-states]]) — **nie** ein generisches „Verbindung fehlgeschlagen":
+**Vier distinkte Ursachen, vier distinkte Copys + Recoverys** ([[reconcile-not-collapse-distinct-states]]) — **nie** ein generisches „Verbindung fehlgeschlagen". **★ `malformed` ist ein eigenes diagnostisches Signal, KEIN Trust-Zustand** (PL-Präzisierung, CYP-798): ein korrupter/böswilliger Descriptor muss **diagnostizierbar** bleiben, nicht still als `unknown` verschwinden.
 
-| Ursache | Zustand | Copy (Register) | Recovery |
+| Ursache | Zustand/Signal | Copy (Register) | Recovery |
 |---|---|---|---|
 | **Netz / Hub unerreichbar** (transient) | `unknown` (nicht `rejected`!) | „Hub nicht erreichbar" | „erneut versuchen" (manuell) |
+| **Ungültiger/korrupter Descriptor** (malformed/uninterpretierbar) | **distinktes Upstream-Signal — KEIN Trust-Zustand** (weder `rejected` noch still `unknown`) | „Ungültiger Hub-Descriptor — Status nicht interpretierbar" | diagnostizierbar/meldbar (kein Trust-Verdikt, kein benigner Retry) |
 | **Proof abgelehnt** (Trust) [TF-code] | `rejected` | „Hub hat den Zugang abgelehnt" | Re-Präsentation/neues Proof [TF] |
 | **Aussteller vouch't nicht mehr** (Widerruf) [TF-signal] | `stale` | „Zugang zu diesem Hub entzogen" | **kein** Client-Retry heilt das — ehrlich benennen |
 
 - **Register-Trennung:** Netz-Fehler ist **nicht** `rejected` (System ≠ Trust-Verdikt) — dieselbe Linie wie CYP-515 `unavailable ≠ rejected` (reuse `loginFlow.ts`-Doktrin, enumeration-safe/pre-credential).
+- **★ `malformed` ≠ `unknown` (PL, CYP-798):** `unknown` ist die **benigne Abwesenheit** einer Bestimmung (noch nicht geprüft); `malformed` ist ein **Fehler-/evtl.-Angriffs-Signal** (invalider Descriptor) und muss **diagnostizierbar** sichtbar sein — nicht ins benigne `unknown` gefaltet (sonst verschwindet ein korrupter/böswilliger Descriptor still — dieselbe distinguishable≠distinguished-Falle). `malformed→unknown` (mein Prototyp) ist fail-closed-korrekt (raus aus `rejected`), aber die **Produktions-Rendering** trägt das **distinkte Upstream-Signal**. **PL präzisiert die exakte Signal-Form bei der CYP-798-Ratifikation.**
 - **401/Trust-Verlust hub-scoped:** ein 401 von Hub B **kippt nicht** die (heute globale) App — nur B's Surfaces gehen fail-closed. **[Flag an Dev5]** der heutige globale `setOnUnauthorized` (`net/rest.ts`, `AuthGate`) muss für Multi-Hub **hub-scoped** werden — sonst reißt B's 401 A mit. (Bedarf N4b; Umsetzung mit dem Trust-Frame.)
 
 ---
@@ -127,7 +129,8 @@ TrustRejectReason = PROOF_DECLINED | ISSUER_UNTRUSTED | …         // klein, cl
 ```
 
 - **P3 — `TRUSTED` (Affirmation):** Wire trägt `TRUSTED` als **positiven, hub-ausgestellten** Zustand (**Provenance = Hub**). **Client-Anforderung:** der Zustand ist **lesbar** und wird **nie** client-seitig aus „Verbindung steht"/Absence abgeleitet. *Mindestens:* der Zustand. *Ideal:* als **beobachtbarer Übergang** `PENDING→TRUSTED` (koppelt an P5-Modus). **Naming-Vorsicht an Team-1:** den Wert **nicht** so benennen/typen, dass er **natives** Identsein impliziert — `trusted` ist **abgeleitet/widerrufbar** (Honesty-Kern §1).
-- **P4 — `REJECTED` + Maschinen-Code:** Wire trägt `REJECTED` **plus** `reason: TrustRejectReason` (closed set). **Mindest-Trennschärfe (nicht verhandelbar):** der Code trennt **Trust-Reject** von **(a) Netzfehler** (= kein Trust-Verdikt → Zustand `UNKNOWN`, **nicht** `REJECTED`) **und (b) Widerruf** (→ `STALE`). Feinere Sub-Reasons (bad-audience / expired-proof / unknown-issuer) = **Team-1-Option**; Client-**Minimum** = diese Top-Level-Ursachen-Trennung. Client mappt **`code`→kuratierte Copy**, nie message-string-match (Reuse `net/rest.ts` `restErrorCode`-Muster, `{ error: { code } }`).
+- **P4 — `REJECTED` + Maschinen-Code:** Wire trägt `REJECTED` **plus** `reason: TrustRejectReason` (closed set). **Mindest-Trennschärfe (nicht verhandelbar):** der Code trennt **Trust-Reject** von **(a) Netzfehler** (= kein Trust-Verdikt → Zustand `UNKNOWN`, **nicht** `REJECTED`), **(b) Widerruf** (→ `STALE`) **und (c) malformed/invalider Descriptor** (→ **distinktes diagnostizierbares Upstream-Signal, KEIN Trust-Zustand**, weder `REJECTED` noch still `UNKNOWN` — PL, CYP-798). `TrustRejectReason` gilt **nur** für echte Trust-Eval-Rejects (nicht für Netz/malformed). Feinere Sub-Reasons (bad-audience / expired-proof / unknown-issuer) = **Team-1-Option**; Client-**Minimum** = diese Top-Level-Ursachen-Trennung. Client mappt **`code`→kuratierte Copy**, nie message-string-match (Reuse `net/rest.ts` `restErrorCode`-Muster, `{ error: { code } }`).
+  - **Wire-Need (malformed):** die Promotion muss einen **Descriptor-Validitäts-/Upstream-Fehler** als **eigenes Signal** exponieren (getrennt vom `HubTrustState`-Enum), damit der Client einen korrupten/böswilligen Descriptor **diagnostizierbar** rendert statt ihn in `UNKNOWN` zu verlieren. Exakte Form = **PL bei CYP-798**.
 - **P5 — `STALE` + Widerruf-Signal:** Wire trägt `STALE` **distinkt** (nie in `REJECTED`/`TRUSTED` gefaltet) **plus** ein **Widerruf-/Ablauf-Signal**, das `TRUSTED→STALE` bewegt. **Modus** (push/beobachtbar vs. lazy/erst-beim-Next-Call) = **Team-1 sub-weiche (a)**. **Client-Anforderung modus-unabhängig:** `STALE` ist ein **erreichbarer** Zustand; **bei lazy** muss der Next-Call-Fehlschlag den **Widerruf-Code** tragen (distinkt vom transienten Netzfehler), damit der Client **`STALE` setzt statt `UNKNOWN`/generisch**. **Meine Präferenz:** push/beobachtbar — sonst stale-lit-Risiko (trusted bleibt sichtbar nach Widerruf).
 
 **Was die Promotion damit minimal braucht:** das 5-Werte-Zustands-Enum (P1/P2 tragen `UNKNOWN`/`PENDING` schon frame-unabhängig) · das kleine `TrustRejectReason`-Enum (P4) · die Regel „`TRUSTED` nur hub-ausgestellt" (P3) · das Widerruf-Signal `TRUSTED→STALE` (P5). Die **Werte/Modi von P3-Provenance, P4-Reason-Set, P5-Signal** sind die **[TF]-Teilmenge** — der Rest (Enum-Existenz, `UNKNOWN`/`PENDING`, per-`hubId`, hub-scoped-401) ist **frame-unabhängig** und jetzt promotierbar.
@@ -143,6 +146,7 @@ TrustRejectReason = PROOF_DECLINED | ISSUER_UNTRUSTED | …         // klein, cl
 6. **kein-optimistischer-Switch** — B-Surfaces rendern erst nach `trusted`-Auflösung (resolve-then-render). *(Mutation: B-Surfaces live während `pending` → RED.)*
 7. **colour-never-sole** — jeder Zustand trägt Glyph-Form + Label, nie nur Farbe (WCAG 1.4.1).
 8. **inaktive Hubs nicht stale-trusted** — Switcher-Liste zeigt nicht-frische Hubs als `unknown`, nicht letztes `trusted`.
+9. **malformed ≠ unknown (PL, CYP-798)** — ein invalider/korrupter Descriptor rendert ein **distinktes diagnostizierbares Upstream-Signal**, nicht still `unknown` und nicht `rejected`. *(Mutation: malformed → still `unknown` → RED = korrupter/böswilliger Descriptor verschwindet; malformed → `rejected` → RED = erfundenes Trust-Verdikt.)*
 
 ---
 
