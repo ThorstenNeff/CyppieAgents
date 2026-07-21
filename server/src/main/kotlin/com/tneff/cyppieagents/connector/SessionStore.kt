@@ -30,6 +30,7 @@ data class SessionEntry(
  * Persistence seam, mirroring [com.tneff.cyppieagents.comm.MessageStore]: swappable In-Memory ↔ JSON
  * without touching the connector. Implementations must be safe for concurrent calls.
  */
+@com.tneff.cyppieagents.tier.StoreKey("session")
 interface SessionStore {
     /** The durable binding for [projectId]/[agentId], or null ⇒ no `--resume` (first-start invariant). */
     fun find(projectId: String, agentId: String): SessionEntry?

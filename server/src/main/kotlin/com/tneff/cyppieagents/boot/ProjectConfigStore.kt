@@ -27,6 +27,7 @@ data class ProjectConfigEntry(
  * CYP-223 (CYP-220 Phase 1): **store-seam interface;** default impl [FileProjectConfigStore]; a future
  * PG impl implements this; companion `invoke` = current factory choice, no behavior change.
  */
+@com.tneff.cyppieagents.tier.StoreKey("project_config")
 interface ProjectConfigStore {
 
     // ---- resolution (spawn / boot read paths) ----

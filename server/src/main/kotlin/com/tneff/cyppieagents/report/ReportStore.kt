@@ -22,6 +22,7 @@ import java.nio.file.StandardCopyOption
  * same seam. The `rep-N` id counter is resumed above the highest persisted id on open (and realigned on import),
  * so ids never collide across a restart or a migration.
  */
+@com.tneff.cyppieagents.tier.StoreKey("report")
 interface ReportStore {
     suspend fun generate(req: GenerateReportRequest): ReportSnapshot
     fun list(): List<ReportMeta>

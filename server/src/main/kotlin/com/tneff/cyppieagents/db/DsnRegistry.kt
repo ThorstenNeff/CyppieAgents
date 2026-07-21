@@ -50,6 +50,7 @@ class ResolvedDsn(val descriptor: DsnDescriptor, val password: String)
  * at rest with the Phase-2a [SecretCipher] (AAD-bound to `dsn_registry|{dsnId}|password`, so a ciphertext can't
  * be relocated), so **the master key — not the user — protects it**. `null` file → in-memory (tests / dry boots).
  */
+@com.tneff.cyppieagents.tier.StoreKey("dsn_registry")
 interface DsnRegistry {
     /** Add or replace a DSN; [password] is encrypted at rest. Returns the (non-secret) descriptor. */
     fun put(descriptor: DsnDescriptor, password: String): DsnDescriptor

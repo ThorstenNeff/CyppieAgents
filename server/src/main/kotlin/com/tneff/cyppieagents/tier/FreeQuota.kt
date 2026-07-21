@@ -34,6 +34,7 @@ class QuotaEnforcer(private val limits: FreeQuotaLimits = FreeQuotaLimits()) {
 }
 
 /** The current usage for an account (from the managed-DB roll-up; the real roll-up wires in the store phase). */
+@com.tneff.cyppieagents.tier.StoreKey("quota_usage")
 interface QuotaUsageStore {
     fun usage(accountId: String): QuotaUsage
 }

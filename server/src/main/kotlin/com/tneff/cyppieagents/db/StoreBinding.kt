@@ -53,6 +53,7 @@ data class StoreBinding(
  * to a new instance is a bind with a new `dsnId`, done atomically after the migration completes — §1.3). No
  * secrets here (dsnIds only) — but still 0600 hygiene. `null` file → in-memory (tests / dry boots).
  */
+@com.tneff.cyppieagents.tier.StoreKey("store_binding")
 interface BindingRegistry {
     /** Bind (or REBIND) `(storeKey, projectId)` to [dsnId]. Returns the new binding (state=ACTIVE). */
     fun bind(storeKey: String, projectId: String, dsnId: String, schema: String = "public"): StoreBinding
