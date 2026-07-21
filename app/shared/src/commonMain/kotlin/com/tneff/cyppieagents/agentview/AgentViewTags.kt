@@ -104,6 +104,16 @@ object AgentViewTags {
     /** F4 (CYP-580): present ⇔ this user turn was composed while the per-agent socket was NOT LIVE ⇒ honestly
      *  "not delivered" (never rendered as sent). Absent ⇒ a LIVE (best-effort sent) turn. Additive — coordinate w/ QA. */
     fun userTurnUndelivered(agentId: String, index: Int) = "agent.$agentId.event.$index.undelivered"
+
+    /** CYP-790: the collapsible summary/header row of a folded ToolCall/Result run, scoped by the run's
+     *  START [index] (its first event's 0-based render index — stable, collision-free with the per-event tags). */
+    fun toolRun(agentId: String, index: Int) = "agent.$agentId.toolRun.$index"
+
+    /** CYP-790: the expand/collapse control on a [toolRun] header. */
+    fun toolRunToggle(agentId: String, index: Int) = "agent.$agentId.toolRun.$index.toggle"
+
+    /** CYP-790 Zahn 2: the fail-loud error marker on a [toolRun] header — present iff the run has ≥1 error. */
+    fun toolRunErrors(agentId: String, index: Int) = "agent.$agentId.toolRun.$index.errors"
 }
 
 /** Event-kind qualifier vocabulary from Test-Contract v0.4 §2 (`assistantText` · `toolCall` · `toolResult`).

@@ -649,6 +649,13 @@
          WARN-Band + zurückgenommene Historie. Transkript-scoped (distinkt vom Fenster-Banner terminal_context_lost). -->
     <string name="transcript_context_lost">Kontext verloren — der Agent hat den vorherigen Verlauf nicht im Gedächtnis.</string>
     <string name="a11y_transcript_context_lost">Verlaufsbruch: Kontext verloren — der obige Verlauf ist nicht im Gedächtnis des Agenten.</string>
+    <!-- CYP-790: gefalteter ToolCall/Result-Lauf im op-po-Fenster (Anti-Flood verboser PO-Turns). -->
+    <string name="transcript_tool_run_collapsed">%1$d Schritte</string>
+    <string name="transcript_tool_run_errors">%1$d Fehler</string>
+    <string name="a11y_transcript_tool_run_collapsed">%1$d Schritte, eingeklappt</string>
+    <string name="a11y_transcript_tool_run_collapsed_with_errors">%1$d Schritte, eingeklappt, %2$d davon fehlgeschlagen</string>
+    <string name="a11y_transcript_tool_run_expand">Schritte anzeigen</string>
+    <string name="a11y_transcript_tool_run_collapse">Schritte einklappen</string>
     <!-- CYP-354 §5.1 (client mirror): read-only Terminal-Control-Mode-Marker in der Titlebar. MEDIATED = kein Marker.
          Form+Label tragen die Bedeutung (WCAG 1.4.1); content-frei (nur Zustand). -->
     <string name="terminal_ctl_interactive">Interaktiv</string>

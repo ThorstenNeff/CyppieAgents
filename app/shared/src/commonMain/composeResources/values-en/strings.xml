@@ -630,6 +630,13 @@
          WARN band + receded history. Transcript-scoped (distinct from the window banner terminal_context_lost). -->
     <string name="transcript_context_lost">Context lost — the agent does not remember the previous history.</string>
     <string name="a11y_transcript_context_lost">History discontinuity: context lost — the agent does not remember the history above.</string>
+    <!-- CYP-790: folded ToolCall/Result run in the op-po window (anti-flood for verbose PO turns). -->
+    <string name="transcript_tool_run_collapsed">%1$d steps</string>
+    <string name="transcript_tool_run_errors">%1$d failed</string>
+    <string name="a11y_transcript_tool_run_collapsed">%1$d steps, collapsed</string>
+    <string name="a11y_transcript_tool_run_collapsed_with_errors">%1$d steps, collapsed, %2$d failed</string>
+    <string name="a11y_transcript_tool_run_expand">Show steps</string>
+    <string name="a11y_transcript_tool_run_collapse">Collapse steps</string>
     <!-- CYP-354 §5.1 (client mirror): read-only terminal-control mode marker in the title bar. MEDIATED = no marker.
          Form+label carry the meaning (WCAG 1.4.1); content-free (state only). -->
     <string name="terminal_ctl_interactive">Interactive</string>
