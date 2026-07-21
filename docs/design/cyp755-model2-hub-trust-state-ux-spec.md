@@ -115,6 +115,25 @@ Ich spezifiziere Zustände/Renders/Flow; **diese Kanten** dockt Team-1s Trust-Fr
 
 ---
 
+## §5b Präzise Wire-Anforderungen P3/P4/P5 (Bau-Input für die kleine `:core`-Promotion)
+
+**Framing:** dies sind **Client-Anforderungen an die Wire-Fläche** (Feld/Code/Signal je [TF]-Zustand) — **kein** Kontrakt; **exakte Feldnamen/Enum-Werte = Team-1/Backend final** (wie CYP-744). Ich pinne die **Form + die Mindest-Trennschärfe**, die der Client zum ehrlichen Rendern braucht. Umfang klein: **1 Zustands-Enum + 1 kleines Reject-Reason-Enum + die Übergangs-/Provenance-Regeln.**
+
+**Vorgeschlagene Minimal-Form (illustrativ — Team-1 final):**
+```
+HubTrustState = UNKNOWN | PENDING | TRUSTED | REJECTED | STALE   // §1; fail-closed default UNKNOWN
+TrustRejectReason = PROOF_DECLINED | ISSUER_UNTRUSTED | …         // klein, closed; Werte = Team-1 final
+// Netzfehler ist KEIN HubTrustState-Wert — Transport-Ebene → Zustand bleibt UNKNOWN (N4).
+```
+
+- **P3 — `TRUSTED` (Affirmation):** Wire trägt `TRUSTED` als **positiven, hub-ausgestellten** Zustand (**Provenance = Hub**). **Client-Anforderung:** der Zustand ist **lesbar** und wird **nie** client-seitig aus „Verbindung steht"/Absence abgeleitet. *Mindestens:* der Zustand. *Ideal:* als **beobachtbarer Übergang** `PENDING→TRUSTED` (koppelt an P5-Modus). **Naming-Vorsicht an Team-1:** den Wert **nicht** so benennen/typen, dass er **natives** Identsein impliziert — `trusted` ist **abgeleitet/widerrufbar** (Honesty-Kern §1).
+- **P4 — `REJECTED` + Maschinen-Code:** Wire trägt `REJECTED` **plus** `reason: TrustRejectReason` (closed set). **Mindest-Trennschärfe (nicht verhandelbar):** der Code trennt **Trust-Reject** von **(a) Netzfehler** (= kein Trust-Verdikt → Zustand `UNKNOWN`, **nicht** `REJECTED`) **und (b) Widerruf** (→ `STALE`). Feinere Sub-Reasons (bad-audience / expired-proof / unknown-issuer) = **Team-1-Option**; Client-**Minimum** = diese Top-Level-Ursachen-Trennung. Client mappt **`code`→kuratierte Copy**, nie message-string-match (Reuse `net/rest.ts` `restErrorCode`-Muster, `{ error: { code } }`).
+- **P5 — `STALE` + Widerruf-Signal:** Wire trägt `STALE` **distinkt** (nie in `REJECTED`/`TRUSTED` gefaltet) **plus** ein **Widerruf-/Ablauf-Signal**, das `TRUSTED→STALE` bewegt. **Modus** (push/beobachtbar vs. lazy/erst-beim-Next-Call) = **Team-1 sub-weiche (a)**. **Client-Anforderung modus-unabhängig:** `STALE` ist ein **erreichbarer** Zustand; **bei lazy** muss der Next-Call-Fehlschlag den **Widerruf-Code** tragen (distinkt vom transienten Netzfehler), damit der Client **`STALE` setzt statt `UNKNOWN`/generisch**. **Meine Präferenz:** push/beobachtbar — sonst stale-lit-Risiko (trusted bleibt sichtbar nach Widerruf).
+
+**Was die Promotion damit minimal braucht:** das 5-Werte-Zustands-Enum (P1/P2 tragen `UNKNOWN`/`PENDING` schon frame-unabhängig) · das kleine `TrustRejectReason`-Enum (P4) · die Regel „`TRUSTED` nur hub-ausgestellt" (P3) · das Widerruf-Signal `TRUSTED→STALE` (P5). Die **Werte/Modi von P3-Provenance, P4-Reason-Set, P5-Signal** sind die **[TF]-Teilmenge** — der Rest (Enum-Existenz, `UNKNOWN`/`PENDING`, per-`hubId`, hub-scoped-401) ist **frame-unabhängig** und jetzt promotierbar.
+
+---
+
 ## §6 Diskriminierende Zähne (Honesty-Tests)
 1. **fail-closed default** — kein Trust-Signal → `unknown`-Render. *(Mutation: default `trusted`/optimistisch → RED.)*
 2. **pending ≠ unknown ≠ trusted** — drei distinkte Glyph-Formen+Labels. *(Mutation: „wird geprüft" für nicht-verbunden ODER unknown==trusted-Look → RED = Sweep-Fund-#5-Klasse.)*
