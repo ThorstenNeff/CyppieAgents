@@ -4,6 +4,10 @@
 **Baseline (am Objekt):** develop, web-ts. **Folgt auf** `model2-multihub-client-needs.md` (CYP-748, die Bedarfe). Dies ist die **konkrete UX-Spec** für die Teile, die auf den **ratifizierten Weichen** tragen:
 **Weichen (PL, 2026-07-19):** **Q1 = SEAT (n)** · **Q4 = ONE-ACTIVE-HUB** (nicht parallel — Registry = Liste + aktiver-Pointer, switch-first; Abstraktion hält parallel-später offen).
 **⚠ Trust-Frame-Grenze:** exakte Zustands-**Übergänge** (was PENDING→TRUSTED auslöst), **Credential-Präsentations-Mechanik** und das **Widerruf-Signal** (push vs. lazy → STALE-Timing) **warten auf Team-1s Trust-Frame** und sind unten als **[TF]** markiert. Alles Nicht-[TF] trägt auf seat+one-active **jetzt**.
+**Scope:** **NUR web-ts / TypeScript** (`uiux2/CyppieAgents/web-ts`). **★ Abgrenzung:** die **Compose/wasmJs**-Trust-Fläche (**CYP-797**, `IssuerNotTrusted`) ist **Team-1** — hier **kein Compose**.
+**IST-Stand frisch gemessen (2026-07-21):** web-ts ist heute **single-origin/single-hub** — `state/hubConfig.ts` **ein** `apiBase`/`wsBase`; `platform/operatorToken.ts` **ein** globales `CYPPIE_OPERATOR_TOKEN` (sonst first-party same-origin Cookie, spannt nicht cross-origin); **ein** whoami/Rolle; **globaler** `/api`-401 kippt die ganze App. Genau diese Annahmen bricht Modell 2.
+**Single-source:** dies ist die **maßgebliche Quelle**; die frühere `po2/`-Kopie ist entfernt (Drift-Vermeidung).
+**★ Promotion-Kontext (Backend2-objekt-bestätigt):** die Trust-State/Connect-Flow-Schicht liegt heute in **`app/shared`, noch NICHT in `:core`** — sie muss erst **promotet** werden, bevor web-ts sie konsumieren kann. **Diese Spec ist damit auch Anforderungs-Input für die `:core`-Promotion (Team-1) — siehe §4b.**
 
 ---
 
@@ -32,10 +36,12 @@
 
 **Reuse-Anker (kein Neubau):** dieselbe Mechanik wie **`RemoteSecurityTierBadge`** (`remoteSecurityTierModel.ts` — distinkte Glyph-Form `●`/`◐`/`·` + Label + immer-sichtbar fail-closed, nie native-grün) und wie **`statusDotSpec`/`dotRoleVar`** (`lifecycleStatus.ts`, CYP-431 — UNKNOWN=Ring-**Form** distinkt, nicht farb-only). Der Trust-Badge ist eine **Instanz desselben Musters**, nicht ein drittes Dot-Vokabular.
 
-**testid/aria (je Zustand):**
-- Container `data-testid="hub.trust.{hubId}"`, `role="status"`, `aria-live="polite"` (Übergänge sind ansagbar).
-- Zustands-Marker `data-testid="hub.trust.{hubId}.{state}"`; `aria-label` = der Label-Text (nie nur Glyph/Farbe).
-- Klasse `hub-trust-{state}` (Tone via CSS-Var, wie `comm-status-{connection}`).
+**a11y / testid (je Zustand — ausgebaut):**
+- **Container:** `data-testid="hub.trust.{hubId}"`, `role="status"`, `aria-live="polite"` — Zustandswechsel werden **ruhig** angesagt. **Ausnahme (handlungsrelevant):** ein Wechsel des **aktiven** Hubs **in** `rejected`/`stale` mid-session → `aria-live="assertive"` (bzw. eigene `role="alert"`-Ansage). **Nur** dieser aktive-Hub-Wechsel ist assertiv — die stille Switcher-Liste **nicht** (sonst Ansage-Sturm, [[over-alarm-is-also-dishonest]]).
+- **Zustands-Marker:** `data-testid="hub.trust.{hubId}.{state}"`; `aria-label` = der **Label-Text** (das Bedeutungs-Wort), **nie** nur Glyph/Farbe.
+- **colour-never-sole (WCAG 1.4.1):** jeder der fünf Zustände trägt eine **distinkte Glyph-Form + ein distinktes Wort** — ein farbenblinder/monochromer Nutzer unterscheidet alle fünf **ohne Farbe**. Tone/Farbe ist nur Verstärkung.
+- **`unknown` sichtbar, nicht Stille:** der fail-closed-Default rendert einen **sichtbaren neutralen** Marker (nicht Abwesenheit) — sonst liest „kein Marker" als all-clear ([[absence-reads-as-all-clear]]).
+- **Klasse:** `hub-trust-{state}` (Tone via CSS-Var, wie `comm-status-{connection}`).
 
 ---
 
@@ -80,6 +86,26 @@ Zwei Orte, beide **Reuse**:
 
 ---
 
+## §4b Needs an die `:core`-Promotion — was die Wire-Fläche je Zustand liefern muss
+
+**Kontext:** die Trust-State/Connect-Flow-Schicht liegt heute in **`app/shared`, nicht `:core`** (Backend2-objekt-bestätigt) → sie muss **promotet** werden, bevor web-ts sie konsumiert. Dieser Abschnitt = die **Client-Anforderungen an genau diese Promotion**: was die `:core`-Wire-Fläche **je Zustand** tragen muss, damit der Client ehrlich rendert. **Anforderungen, kein Kontrakt** — Team-1 besitzt den Mechanismus.
+
+**Je-Zustand (die 5 aus §1):**
+- **P1 — `unknown` first-class representierbar:** die Wire trägt „keine Trust-Bestimmung / noch nicht geprüft" als **eigenen Wert**, **nicht** als `null`/Absence, die client-seitig zu einem Default kollabiert. Ohne das ist fail-closed unmöglich ([[absence-reads-as-all-clear]]).
+- **P2 — `pending` distinkt von `unknown`:** ein **in-Verifikation**-Signal, das der Client vom bloßen unknown trennt — damit „wird geprüft" nur während echter Verifikation steht (Zahn 2, kein Sammel-Label).
+- **P3 — `trusted` = explizite Affirmation:** ein **positives, vom Hub ausgestelltes** Signal; der Client darf `trusted` **nie** aus Absence/Optimismus ableiten. *(Der [TF]-`pending→trusted`-Trigger dockt genau hier an.)*
+- **P4 — `rejected` = distinkter Reject + Maschinen-Code:** ein Reject mit **maschinenlesbarem Code**, den der Client von **Netzfehler UND von Widerruf** unterscheidet (das N4-Register muss **auf der Wire** liegen, nicht client-geraten).
+- **P5 — `stale` = beobachtbares Widerruf-/Ablauf-Signal:** die Wire exponiert Widerruf/Ablauf als **Zustandswechsel**, nicht nur als impliziten Fehlschlag beim nächsten Call — damit `trusted → stale` ehrlich eintritt. **Push vs. lazy** bestimmt das Timing ([TF], Team-1 sub-weiche (a)).
+
+**Querschnitt-Needs:**
+- **P6 — per-`hubId`-Keying:** jeder Trust-Wert stabil an eine `hubId` gebunden (N1) — damit one-active + Switcher-Liste je Hub korrekt keyen.
+- **P7 — hub-scoped Auth-Fehler:** ein 401/Trust-Verlust muss einem **bestimmten Hub zuschreibbar** sein (nicht global) — Voraussetzung für N4b (hub-scoped statt globaler App-Kippe).
+- **P8 — per-Hub whoami/Rolle:** Rolle/Tier **pro Hub** auflösbar (N5 — Rolle reist nicht); die Promotion muss whoami je Hub tragen.
+
+**Beziehung zu [TF]:** die [TF]-Kanten (§5) sind die **Teilmenge** dieser Needs, die erst mit dem Trust-Frame fixiert wird (P3-Trigger, P4-Code-Set, P5-Signal-Modus, Credential-Präsentation). P1/P2/P6/P7/P8 sind **struktur**-Anforderungen an die Promotion, die **unabhängig** vom finalen Trust-Frame benannt werden können.
+
+---
+
 ## §5 Trust-Frame-abhängig — [TF] (wartet auf Team-1)
 Ich spezifiziere Zustände/Renders/Flow; **diese Kanten** dockt Team-1s Trust-Frame an — **nicht** von mir geraten:
 - **PENDING→TRUSTED-Trigger:** welches beobachtbare Affirmations-Signal (N3) B liefert.
@@ -104,4 +130,4 @@ Ich spezifiziere Zustände/Renders/Flow; **diese Kanten** dockt Team-1s Trust-Fr
 ## §7 Reuse-Ledger & nächster Schritt
 - **Reuse:** `RemoteSecurityTierBadge`/`remoteSecurityTierModel` (Glyph+fail-closed+always-visible) · `statusDotSpec`/`dotRoleVar` (Form-Achse UNKNOWN) · `ProjectSwitcher` (Liste+aktiver-Pointer) · `AuthGate` (resolve-then-render + per-Hub-whoami-Rolle) · `loginFlow` (unavailable≠rejected Register) · Connection-Banner-Muster (`comm-status-{state}` distinkt text+tone).
 - **Kontrakt-Landung:** die aria-label-Strings + `HubTrustState`-Enum landen **mit Dev5s Impl** (i18n-Keys mit der Impl, [[shared-key-landing]] — Sync flaggen). Der `error.code`→Ursache-Mapping landet, **wenn** Team-1 die Reject-Taxonomie fixiert.
-- **Nächster Schritt:** sobald Team-1s Trust-Frame steht, fülle ich die **[TF]-Kanten** (Trigger/Codes/Widerruf-Signal/Credential-Schritte) ein → dann ist die Spec build-vollständig für Dev5.
+- **Nächster Schritt:** die **§4b-Promotion-Needs** speisen Team-1s `app/shared → :core`-Promotion (über PL). Sobald `:core` die Trust-State/Connect-Flow-Fläche trägt **und** Team-1s Trust-Frame steht, fülle ich die **[TF]-Kanten** (Trigger/Codes/Widerruf-Signal/Credential-Schritte) ein → dann ist die Spec build-vollständig für Dev5 (der web-ts dann `:core` konsumiert).
