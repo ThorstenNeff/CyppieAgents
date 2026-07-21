@@ -26,6 +26,11 @@ object PhonePagerTags {
     /** The current page's title text inside the header. */
     const val HEADER_TITLE: String = "phonePager.header.title"
 
+    /** The current page's context-token count chip inside the header, after the title (CYP-65, mirrors the
+     *  canvas `window.<id>.contextTokens`). ABSENT when the agent has no known context size — the fail-closed
+     *  null ≠ 0 honesty invariant (§8-8); its absence is the Z2 test contract. */
+    const val HEADER_CONTEXT: String = "phonePager.header.contextTokens"
+
     /** Indicator container (dots or counter). Absent when there is only a single page. */
     const val INDICATOR: String = "phonePager.indicator"
 
