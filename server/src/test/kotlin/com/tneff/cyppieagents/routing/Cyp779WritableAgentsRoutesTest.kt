@@ -166,6 +166,36 @@ class Cyp779WritableAgentsRoutesTest {
     }
 
     @Test
+    fun participantClaimingSubjectPo_cannotWriteOpPo_unspoofable() = testApplication {
+        val db = Files.createTempFile("cyp-tokensubj", ".db"); val store = SqliteRoleStore(db)
+        application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
+        startApplication()
+        // Reviewer tooth (CYP-787 op-po unspoofability, explicit): a participant token whose SUBJECT is literally
+        // "po" resolves to the RESERVED principal `participant:po` (CYP-297) — NEVER the PO AGENT "po". So a caller
+        // cannot impersonate the PO by naming its subject "po": participant:po is not the op-po member "po", and
+        // CYP-297 Layer-3 rejects participant sends regardless of any grant. Structurally already fail-closed;
+        // this pins it so a future change can't silently open op-po to a subject-"po" participant.
+        val ptRaw = ptStore.mint("po")
+        val participant = "Authorization" to "Bearer $ptRaw"
+        // Positive control: the operator CAN write op-po (201) → the 403 below is the participant block, not a
+        // channel that is closed to everyone (non-vacuous).
+        assertEquals(HttpStatusCode.Created, client.post("/api/channels/op-po/messages") {
+            header("Authorization", "Bearer $opToken"); contentType(ContentType.Application.Json); setBody("""{"body":"op-task"}""")
+        }.status, "positive control: the operator may write op-po")
+        // Even after an operator GRANTS participant:po canWrite on op-po, CYP-297 L3 still rejects the send —
+        // a subject-"po" participant can never become the PO on its own channel.
+        client.put("/api/acl") {
+            header("Authorization", "Bearer $opToken"); contentType(ContentType.Application.Json)
+            setBody("""{"channelId":"op-po","agentId":"participant:po","canRead":true,"canWrite":true}""")
+        }
+        val spoof = client.post("/api/channels/op-po/messages") {
+            header(participant.first, participant.second); contentType(ContentType.Application.Json); setBody("""{"body":"spoof-the-po"}""")
+        }
+        assertEquals(HttpStatusCode.Forbidden, spoof.status, "participant:po (subject 'po') cannot write the PO's op-po even WITH a canWrite grant — unspoofable (CYP-297 L3)")
+        store.close(); Files.deleteIfExists(db)
+    }
+
+    @Test
     fun operator_mayWriteEveryWorker_andThePo_viaOpPo() = testApplication {
         val db = Files.createTempFile("cyp779-op", ".db"); val store = SqliteRoleStore(db)
         application { installPlatform(bootFake(), authDeps(store), settingsClient = KratosSettingsClient("http://localhost:1")) }
