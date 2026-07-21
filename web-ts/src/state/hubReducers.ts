@@ -229,7 +229,18 @@ function applyReadState(state: HubState, ev: ReadStateWsEvent): HubState {
     ...state,
     unreadView: {
       kind: 'available',
-      channels: { ...base, [ev.channelId]: { channelId: ev.channelId, lastReadSeq: ev.lastReadSeq, unreadCount: ev.unreadCount } },
+      // CYP-799: thread the server-computed hasUnreadMention straight through from the readState event — NEVER a
+      // client-fabricated default. The server owns this bit (a mention landed in a channel past the read cursor);
+      // the store slot must carry exactly what the server said, so a later mention-cue reads a real value, not `false`.
+      channels: {
+        ...base,
+        [ev.channelId]: {
+          channelId: ev.channelId,
+          lastReadSeq: ev.lastReadSeq,
+          unreadCount: ev.unreadCount,
+          hasUnreadMention: ev.hasUnreadMention,
+        },
+      },
     },
   }
 }

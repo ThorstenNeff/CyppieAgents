@@ -220,7 +220,7 @@ describe('CYP-641 — token-usage fold (/ws/token-usage)', () => {
 // ── CYP-705 — the self-only read-state echo is what clears the badge (non-optimistic) ─────────────────────────
 describe('CYP-705 — applyCommEvent folds ReadStateEvent', () => {
   it('★ a readState event sets the channel’s server-confirmed cursor + count', () => {
-    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'po-frontend', lastReadSeq: 12, unreadCount: 3 })
+    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'po-frontend', lastReadSeq: 12, unreadCount: 3, hasUnreadMention: false })
     expect(channelUnread(s.unreadView, 'po-frontend')).toEqual({ kind: 'unread', count: 3 })
   })
 
@@ -230,21 +230,39 @@ describe('CYP-705 — applyCommEvent folds ReadStateEvent', () => {
   })
 
   it('★ an echo for one channel never invents state for another', () => {
-    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 4, unreadCount: 1 })
+    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 4, unreadCount: 1, hasUnreadMention: false })
     expect(channelUnread(s.unreadView, 'a')).toEqual({ kind: 'unread', count: 1 })
     expect(channelUnread(s.unreadView, 'b')).toEqual({ kind: 'unknown' }) // untouched stays unknown
   })
 
   it('a later echo replaces the earlier one for the same channel (server is the single count source)', () => {
-    let s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 4, unreadCount: 5 })
-    s = applyCommEvent(s, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0 })
+    let s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 4, unreadCount: 5, hasUnreadMention: false })
+    s = applyCommEvent(s, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0, hasUnreadMention: false })
     expect(channelUnread(s.unreadView, 'a')).toEqual({ kind: 'read' }) // cleared ONLY because the server said so
   })
 
   it('folding a readState echo leaves the other reducers’ state intact', () => {
     let s = applyCommEvent(emptyHubState, { type: 'channels', channels: [ch('po-frontend', ['po', 'frontend'])] })
-    s = applyCommEvent(s, { type: 'readState', channelId: 'po-frontend', lastReadSeq: 1, unreadCount: 2 })
+    s = applyCommEvent(s, { type: 'readState', channelId: 'po-frontend', lastReadSeq: 1, unreadCount: 2, hasUnreadMention: false })
     expect(s.channels.map((c) => c.id)).toEqual(['po-frontend'])
+  })
+})
+
+// ── CYP-799 — applyReadState threads the SERVER-computed hasUnreadMention through, never a client-fabricated const ─
+describe('CYP-799 — the read-state producer carries hasUnreadMention from the event', () => {
+  // The two directions together kill BOTH constant mutations in the producer: hardcode `false` → the true case reds;
+  // hardcode `true` → the false case reds. So the slot's bit provably tracks the event, not a swallowed default —
+  // the exact non-vacuity the fix requires (the server owns "a mention is unread", the client only relays it).
+  it('★ a server hasUnreadMention:true lands as true in the store slot', () => {
+    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 5, unreadCount: 2, hasUnreadMention: true })
+    if (s.unreadView.kind !== 'available') throw new Error('expected an available read-state view')
+    expect(s.unreadView.channels['a'].hasUnreadMention).toBe(true)
+  })
+
+  it('★ a server hasUnreadMention:false lands as false — the bit tracks the event, not a constant', () => {
+    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 5, unreadCount: 2, hasUnreadMention: false })
+    if (s.unreadView.kind !== 'available') throw new Error('expected an available read-state view')
+    expect(s.unreadView.channels['a'].hasUnreadMention).toBe(false)
   })
 })
 
@@ -254,7 +272,7 @@ describe('CYP-705 ⑥ — read-state transitions', () => {
     // The transition must not momentarily claim all-clear: before the answer every channel is unknown, and after
     // it only the LISTED ones become known. An unlisted channel stays unknown across the whole transition.
     expect(channelUnread(emptyHubState.unreadView, 'b')).toEqual({ kind: 'unknown' })
-    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 3, unreadCount: 1 })
+    const s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 3, unreadCount: 1, hasUnreadMention: false })
     expect(channelUnread(s.unreadView, 'a')).toEqual({ kind: 'unread', count: 1 })
     expect(channelUnread(s.unreadView, 'b')).toEqual({ kind: 'unknown' }) // no flash to read/zero
   })
@@ -262,7 +280,7 @@ describe('CYP-705 ⑥ — read-state transitions', () => {
   it('★ a duplicated ReadStateEvent is idempotent — reconnect replay cannot double-count', () => {
     // The server may resend after a reconnect; the count is server-computed, so applying it twice must equal
     // applying it once. (Client-side arithmetic is exactly what the contract forbids.)
-    const ev = { type: 'readState', channelId: 'a', lastReadSeq: 7, unreadCount: 4 } as const
+    const ev = { type: 'readState', channelId: 'a', lastReadSeq: 7, unreadCount: 4, hasUnreadMention: false } as const
     const once = applyCommEvent(emptyHubState, ev)
     const twice = applyCommEvent(once, ev)
     expect(channelUnread(twice.unreadView, 'a')).toEqual(channelUnread(once.unreadView, 'a'))
@@ -270,8 +288,8 @@ describe('CYP-705 ⑥ — read-state transitions', () => {
   })
 
   it('★ an out-of-order echo does not resurrect a cleared badge by arithmetic — last server word wins', () => {
-    let s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0 })
-    s = applyCommEvent(s, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0 })
+    let s = applyCommEvent(emptyHubState, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0, hasUnreadMention: false })
+    s = applyCommEvent(s, { type: 'readState', channelId: 'a', lastReadSeq: 9, unreadCount: 0, hasUnreadMention: false })
     expect(channelUnread(s.unreadView, 'a')).toEqual({ kind: 'read' })
   })
 })
