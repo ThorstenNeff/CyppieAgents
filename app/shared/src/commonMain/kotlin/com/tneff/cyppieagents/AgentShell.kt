@@ -157,6 +157,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_title
+import kmpcyppieagents.app.shared.generated.resources.agent_conn_lost_notice
 import kmpcyppieagents.app.shared.generated.resources.agent_ready_notice
 import kmpcyppieagents.app.shared.generated.resources.agent_turn_error_notice
 import kmpcyppieagents.app.shared.generated.resources.report_title
@@ -527,6 +528,9 @@ fun AgentShell(
     // factory — the mapper is pure Kotlin and cannot call stringResource itself (spec §2, §5).
     val readyNotice = stringResource(Res.string.agent_ready_notice)
     val turnErrorNotice = stringResource(Res.string.agent_turn_error_notice)
+    // CYP-386: the localized conn-lost label for the AgentViewModel's fatal-stream-error notice (the VM is not
+    // composable, so the label is injected here, like the mapper's ready/turn-error labels).
+    val connLostNotice = stringResource(Res.string.agent_conn_lost_notice)
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
         val ws = AgentWsClient(wsHttpClient, resolvedTransport.wsBaseUrl, agentId, cfg.agentToken(agentId))
         MappingAgentSession(
@@ -682,6 +686,8 @@ fun AgentShell(
                 canControl = isOperator,
                 // CYP-738: dormant unless a writable-agents port is injected (post-window HTTP wire-up).
                 agentWritable = resolvedAgentWritable,
+                // CYP-386: the localized conn-lost notice label (the VM holds no user-facing literal).
+                connLostLabel = connLostNotice,
             )
         }
     }

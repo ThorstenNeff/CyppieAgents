@@ -162,6 +162,10 @@
          is appended as ": <subtype>" and stays untranslated. Injected like agent_ready_notice — the mapper is pure
          Kotlin and holds no user-facing literal. -->
     <string name="agent_turn_error_notice">Turn-Fehler</string>
+    <!-- CYP-386: the localized "connection lost" notice label (AgentViewModel's fatal-stream-error path). Injected
+         like agent_ready_notice/agent_turn_error_notice — the ViewModel is not composable and holds no user-facing
+         literal (its non-German fallback default is never shown in prod, where AgentShell injects this). -->
+    <string name="agent_conn_lost_notice">Verbindung zum Agenten verloren</string>
     <!-- CYP-387: persönliche, ungegatete Einstellung (ThemePreferences-Familie) — Anzahl der im Composer-
          Eingabeverlauf gehaltenen gesendeten Nachrichten (↑/↓-Recall). Stepper 0..200, Default 20, 0 = aus. -->
     <string name="composer_history_size_label">Nachrichten im Eingabeverlauf</string>
