@@ -28,6 +28,9 @@ class Cyp383AgentReadyNoticeTest {
         val rows = mapper().map(SystemEvent(subtype = "init", sessionId = "s", uuid = "u1", model = "claude-opus-4-8"), 1_000L)
         val notice = rows.single() as AgentEvent.Notice
         assertEquals("READY · claude-opus-4-8", notice.text, "injected label + ' · <model>' suffix; no hardcoded literal")
+        // CYP-385: "bereit" is a neutral OBSERVATION, never an error — it must NOT carry the error tone (the other
+        // half of the distinction the error notices need: neutral stays neutral). Mutation: flag it isError ⇒ red.
+        assertEquals(false, notice.isError, "the 'ready' line is a neutral INFO notice, never the error tone (CYP-385)")
     }
 
     /** §0/§4.1 — subtype-agnostic: the ready line is the OBSERVATION, so it fires on the first session_id-bearing

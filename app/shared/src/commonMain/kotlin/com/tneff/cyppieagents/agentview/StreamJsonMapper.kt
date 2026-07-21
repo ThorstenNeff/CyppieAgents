@@ -155,7 +155,9 @@ class StreamJsonMapper(
             // Turn end: the assistant text is already shown and complete; result.result duplicates it.
             emptyList()
         } else {
-            listOf(AgentEvent.Notice(idOf(e.uuid), "Turn-Fehler" + (e.subtype?.let { ": $it" } ?: ""), tsMs))
+            // CYP-385: a failed turn is an ERROR notice → the distinct `error` tone in NoticeRow, not the neutral
+            // one that would read like an ordinary status line. (Same axis as the conn-lost notice.)
+            listOf(AgentEvent.Notice(idOf(e.uuid), "Turn-Fehler" + (e.subtype?.let { ": $it" } ?: ""), tsMs, isError = true))
         }
 
     // CYP-383: the ready label is injected (localized by the caller); only the model suffix is composed here.

@@ -349,7 +349,7 @@ class AgentViewModel(
                 // but the row must not depend on that for its honesty: wrap this in a retry loop tomorrow and the
                 // constant id turns into a silently-wrong clock.
                 _transcript.update {
-                    foldEvent(it, AgentEvent.Notice("conn-error-${connErrorSeq++}", "Verbindung zum Agenten verloren", clientStampMs()))
+                    foldEvent(it, AgentEvent.Notice("conn-error-${connErrorSeq++}", "Verbindung zum Agenten verloren", clientStampMs(), isError = true))
                 }
             }
         }
