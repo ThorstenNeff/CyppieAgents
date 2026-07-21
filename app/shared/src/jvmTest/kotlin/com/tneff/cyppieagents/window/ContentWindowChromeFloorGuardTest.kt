@@ -23,6 +23,7 @@ import com.tneff.cyppieagents.agentview.AgentViewModel
 import com.tneff.cyppieagents.agentview.AgentViewTags
 import com.tneff.cyppieagents.agentview.AgentWindow
 import com.tneff.cyppieagents.agentview.StubAgentSession
+import com.tneff.cyppieagents.agentview.StubAgentWritableApi
 import com.tneff.cyppieagents.auth.UserTier
 import com.tneff.cyppieagents.comm.CommApi
 import com.tneff.cyppieagents.comm.StubCommLiveSource
@@ -523,6 +524,11 @@ class ContentWindowChromeFloorGuardTest {
         agentManagementRepository = StubAgentManagementRepository(
             listOf(Agent(AGENT_ID, "Product Owner", Role.PO, AGENT_ID, AgentRunState.RUNNING)),
         ),
+        // CYP-738 (live-wire): the writable-agents seam is now ARMED in the shell → a null port resolves to the live
+        // HttpAgentWritableApi (a dead endpoint here), which would fail-close the composer to UNKNOWN (a read-only
+        // HINT, no input) and time out the input waits below. Stub it editable — this guard measures CHROME, not
+        // writability (the fully-stub promise, like the other injected ports).
+        agentWritableApi = StubAgentWritableApi(listOf(AGENT_ID)),
         projectRepository = StubProjectRepository(),
         crossProjectRepository = StubCrossProjectRepository(),
     )

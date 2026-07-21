@@ -93,6 +93,7 @@ import com.tneff.cyppieagents.comm.CommPanel
 import com.tneff.cyppieagents.comm.CommRepository
 import com.tneff.cyppieagents.comm.CommViewModel
 import com.tneff.cyppieagents.comm.CommWsClient
+import com.tneff.cyppieagents.agentview.HttpAgentWritableApi
 import com.tneff.cyppieagents.comm.HttpWritableChannelsApi
 import com.tneff.cyppieagents.comm.WritableChannelsApi
 import com.tneff.cyppieagents.eventlog.EventBrowsePanel
@@ -550,12 +551,16 @@ fun AgentShell(
     }
     val resolvedWritable = writableChannelsApi ?: defaultWritable
 
-    // CYP-738: the agent-writable port. DORMANT by default (no HTTP wiring) → the agent composer keeps its
-    // pre-CYP-738 unconditional-editable path (never fail-close prod messaging before a real signal exists). The
-    // POST-WINDOW one-liner is `agentWritableApi ?: HttpAgentWritableApi(httpClient, resolvedTransport.httpBaseUrl,
-    // cfg.operatorToken ?: "")` — deferred until the Backend `GET /api/agents/writable` endpoint lands. Tests inject
-    // a StubAgentWritableApi to exercise the active tri-state (WRITABLE / READ_ONLY / UNKNOWN).
-    val resolvedAgentWritable = agentWritableApi
+    // CYP-738 (wiring): the live writable-AGENTS port — CYP-779 (`GET /api/agents/writable → {agentIds:[…]}`) has
+    // landed, so the seam is now ARMED (was DORMANT). Same bearer/base as the comm REST + the writable-CHANNELS
+    // sibling above. Drives the agent composer's tri-state: WRITABLE (agent ∈ set → editable) / READ_ONLY (∉ set →
+    // read-only hint) / UNKNOWN (fetch error / pre-known → disabled-with-hint, NEVER silently editable — the §4a
+    // guardrail). The server 403/chokepoint (CYP-188, `AclReducer`, mutation-proven in CYP-779) stays the real
+    // enforcement; this set only lets the composer disable HONESTLY. Tests inject a StubAgentWritableApi.
+    val defaultAgentWritable = remember(httpClient, cfg) {
+        HttpAgentWritableApi(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
+    }
+    val resolvedAgentWritable = agentWritableApi ?: defaultAgentWritable
 
     // Event-Log read sources, now LIVE (CYP-39 `/api/events` REST + CYP-40 `/ws/events` WS) — Browse and
     // Live-Tail go live together, operator-only/fail-closed like comm. Injectable so tests stay hermetic;

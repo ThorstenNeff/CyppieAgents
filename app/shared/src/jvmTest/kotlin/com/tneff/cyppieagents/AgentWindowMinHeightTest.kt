@@ -11,6 +11,7 @@ import com.tneff.cyppieagents.agentmgmt.AgentManagementRepository
 import com.tneff.cyppieagents.agentmgmt.StubAgentManagementRepository
 import com.tneff.cyppieagents.agentview.AgentViewTags
 import com.tneff.cyppieagents.agentview.StubAgentSession
+import com.tneff.cyppieagents.agentview.StubAgentWritableApi
 import com.tneff.cyppieagents.comm.CommApi
 import com.tneff.cyppieagents.comm.StubCommLiveSource
 import com.tneff.cyppieagents.eventlog.StubEventsApi
@@ -81,6 +82,10 @@ class AgentWindowMinHeightTest {
             commLiveSource = StubCommLiveSource(),
             eventsApi = StubEventsApi(),
             eventsLiveSource = StubEventsSource(),
+            // CYP-738 (live-wire): the armed writable-agents seam would fail-close the composer to a read-only HINT
+            // (no input) against the dead test endpoint → the input waits below would time out. Stub it editable —
+            // this test is about late-arriving windows, not writability (fully-stub promise).
+            agentWritableApi = StubAgentWritableApi(listOf("po", "backend")),
             agentManagementRepository = repo,
             projectRepository = com.tneff.cyppieagents.project.StubProjectRepository(),
             crossProjectRepository = com.tneff.cyppieagents.crossproject.StubCrossProjectRepository(),
