@@ -62,13 +62,15 @@ class J2IsolationE2eTest {
     fun channels_followSwitch_AnotVisibleInB() = runBlocking {
         twoProjects().use { p ->
             val alpha = p.asOperator().use { it.get("${p.baseUrl}/api/channels").body<List<Channel>>() }
-            // CYP-787: alpha is boot-seeded via hubAndSpoke → it has the PO's op-po spoke (operator is a member).
-            // beta below is seeded via addAgent (topology-only, no op-po), so it stays [po-backend] — this asymmetry
-            // is the harness's non-active-project seed path, not a scope leak.
-            assertEquals(listOf("po-frontend", "op-po"), alpha.map { it.id })
+            // CYP-787/792: BOTH projects carry the PO's op-po spoke — alpha via boot `hubAndSpoke`, beta via the
+            // switch/rehydration `addAgent` path (CYP-792 single-sourced op-po there). Asserted as SETS: op-po's
+            // insertion position differs per side (boot appends it after the worker spokes; the switch path adds
+            // the PO before the worker), which is not semantically meaningful. Isolation still holds (foreign
+            // channel absent, checked below).
+            assertEquals(setOf("po-frontend", "op-po"), alpha.map { it.id }.toSet())
             p.switchActive("beta")
             val beta = p.asOperator().use { it.get("${p.baseUrl}/api/channels").body<List<Channel>>() }
-            assertEquals(listOf("po-backend"), beta.map { it.id })
+            assertEquals(setOf("po-backend", "op-po"), beta.map { it.id }.toSet())
             assertFalse(beta.any { it.id == "po-frontend" }, "alpha's channel is not visible while active=beta")
         }
     }
@@ -82,7 +84,8 @@ class J2IsolationE2eTest {
             assertTrue(alphaAcl.isNotEmpty() && alphaAcl.all { it.channelId == "po-frontend" || it.channelId == "op-po" })
             p.switchActive("beta")
             val betaAcl = p.asOperator().use { it.get("${p.baseUrl}/api/acl").body<List<AclEntry>>() }
-            assertTrue(betaAcl.isNotEmpty() && betaAcl.all { it.channelId == "po-backend" })
+            // CYP-792: beta's ACL now also carries op-po entries (its switch-seeded PO spoke). Isolation intent holds.
+            assertTrue(betaAcl.isNotEmpty() && betaAcl.all { it.channelId == "po-backend" || it.channelId == "op-po" })
             assertFalse(betaAcl.any { it.channelId == "po-frontend" }, "no alpha ACL entry leaks into beta scope")
         }
     }
@@ -147,9 +150,9 @@ class J2IsolationE2eTest {
     @Test
     fun wsComm_reScopesOnReconnectAfterSwitch() = runBlocking {
         twoProjects().use { p ->
-            assertEquals(listOf("po-frontend", "op-po"), p.firstCommChannelSnapshot()) // CYP-787: alpha has op-po (boot-seeded)
+            assertEquals(setOf("po-frontend", "op-po"), p.firstCommChannelSnapshot().toSet()) // CYP-787: alpha has op-po
             p.switchActive("beta")
-            assertEquals(listOf("po-backend"), p.firstCommChannelSnapshot()) // beta seeded via addAgent → no op-po
+            assertEquals(setOf("po-backend", "op-po"), p.firstCommChannelSnapshot().toSet()) // CYP-792: beta gets op-po via the switch/rehydration path
         }
     }
 
