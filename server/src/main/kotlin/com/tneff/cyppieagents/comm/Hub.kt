@@ -251,4 +251,22 @@ class Hub(
         if (ParticipantPrincipal.isParticipant(readerId)) return emptyList()
         return state.acl.readableChannels(readerId).map { it.id }.filter { state.acl.canWrite(it, readerId) }
     }
+
+    /**
+     * CYP-779 — the agent ids [readerId] may currently SEND to (for GET /api/agents/writable, the composer-
+     * enable seam at agent granularity). Sending to agent `X` means posting into its hub-and-spoke channel
+     * `po-<X>` ([com.tneff.cyppieagents.comm.HubState.spokeChannelFor], the SAME resolution [MediationRouter]
+     * and the human send path use), which the chokepoint gates with `canWrite`. So writability-of-agent is
+     * exactly writability-of-its-spoke — this DERIVES from [writableChannels] (already single-sourced on the
+     * send-enforcing `AclMatrix.canWrite` AND the CYP-297 participant exclusion) rather than re-deriving the
+     * ACL, so the two answers cannot drift and a participant token yields the empty set for free.
+     *
+     * An agent with no spoke the caller can write (a PO — the hub has no `po-po` — or a worker whose spoke the
+     * caller lacks `canWrite` on) is excluded, fail-closed: you cannot compose a message to an agent you cannot
+     * write. The server-403 at the send chokepoint stays the authority; this only drives the composer's enable.
+     */
+    fun writableAgents(readerId: String): List<String> {
+        val writableSpokes = writableChannels(readerId).toSet()
+        return state.agents.map { it.id }.filter { agentId -> state.spokeChannelFor(agentId) in writableSpokes }
+    }
 }

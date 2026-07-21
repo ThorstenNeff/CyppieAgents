@@ -161,3 +161,17 @@ data class ClaudeMdView(val agentId: String, val content: String, val exists: Bo
  */
 @Serializable
 data class ClaudeMdUpdate(val content: String, val expectedVersion: String? = null)
+
+/**
+ * CYP-779 — response of `GET /api/agents/writable`: the agent ids the caller may currently SEND to (the
+ * composer-enable seam at agent granularity, the sibling of `GET /api/channels/writable`, CYP-273). An agent
+ * is writable ⟺ the caller has `canWrite` on that agent's hub-and-spoke channel (`po-<id>`) — the SAME
+ * `AclMatrix.canWrite` the send chokepoint enforces, so the composer's enable prediction == the server's
+ * write authz (single-source, no second traversal to drift). Content-free (only ids the caller can already
+ * see). The server-403 at the send chokepoint stays the authority; this only drives the UI.
+ *
+ * **Fixed wire contract (PL-0068): exactly `{ "agentIds": string[] }` — the field name is load-bearing, the
+ * Dev composer is built against it. Do not rename.**
+ */
+@Serializable
+data class WritableAgentsView(val agentIds: List<String>)
