@@ -1260,17 +1260,32 @@ private fun UserTurnRow(event: AgentEvent.UserTurn, agentId: String, index: Int,
     }
 }
 
+/**
+ * CYP-385 — the tone ROLE a system notice renders in. A **failure** notice (connection lost, turn error) MUST be
+ * visually distinct from a neutral INFO notice: "Verbindung zum Agenten verloren" in the neutral `onSurfaceVariant`
+ * reads like "alles ok" — the CYP-760 / CYP-643 honesty class (meaning lost when the error tone is absent). A pure
+ * decision (like [statusDotSpec]) so the distinction is toothable without a pixel compare.
+ */
+internal enum class NoticeToneRole { NEUTRAL, ERROR }
+
+internal fun noticeToneRole(isError: Boolean): NoticeToneRole =
+    if (isError) NoticeToneRole.ERROR else NoticeToneRole.NEUTRAL
+
 @Composable
 private fun NoticeRow(event: AgentEvent.Notice, modifier: Modifier = Modifier) {
     val noticeDescription = stringResource(Res.string.a11y_notice, event.text)
+    // CYP-385: an ERROR notice (conn-lost, turn error) takes the distinct `error` tone; a neutral notice keeps
+    // `onSurfaceVariant`. The two MUST differ so a connection loss can never read as neutral (Cyp385NoticeErrorTone*).
+    // WCAG 1.4.1 holds either way — the WORDING carries the meaning ("… verloren" / "Turn-Fehler"), colour only
+    // reinforces. Both tokens are AA as TEXT on `surface`: onSurfaceVariant 8.69:1 / 9.80:1 (CYP-337; still quieter
+    // than the content colour onSurface 15.6:1 — `outline` was never needed to sound soft), `error` per the M3 role.
+    val color = when (noticeToneRole(event.isError)) {
+        NoticeToneRole.ERROR -> MaterialTheme.colorScheme.error
+        NoticeToneRole.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Text(
         text = event.text,
-        // CYP-337: NOT `outline`. Against `surface` it measures 3.55:1 (light) / 3.63:1 (dark) — above WCAG
-        // 1.4.11's 3:1 for graphical objects, below 1.4.3's 4.5:1 for text. The same colour is correct as a
-        // border and wrong as text. This notice carries its meaning in its wording alone (no glyph, no label),
-        // so it is text. `onSurfaceVariant` measures 8.69:1 / 9.80:1 and still reads quieter than the content
-        // colour `onSurface` (15.6:1) — `outline` was never needed to sound soft.
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = color,
         style = MaterialTheme.typography.labelSmall,
         modifier = modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = noticeDescription },
     )

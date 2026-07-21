@@ -61,11 +61,21 @@ sealed interface AgentEvent {
         override val tsMs: Long,
     ) : AgentEvent
 
-    /** System / lifecycle notice (session started, agent stopped, key changed). */
+    /**
+     * System / lifecycle notice (session started, agent stopped, key changed).
+     *
+     * CYP-385 — [isError] separates a **failure** notice ("Verbindung zum Agenten verloren", "Turn-Fehler") from a
+     * neutral INFO notice ("bereit", "Session gestartet"). Default `false` (INFO), so every existing construction
+     * site stays neutral untouched. The renderer ([com.tneff.cyppieagents.agentview] `NoticeRow`) gives an error
+     * notice the distinct `error` tone: a connection loss rendered in the neutral tone reads like "alles ok" — the
+     * same honesty class as CYP-760 / CYP-643 (meaning is lost when the error tone is missing). Parallel to
+     * [Result.isError]; the WORDING carries the meaning (WCAG 1.4.1), the tone only reinforces it.
+     */
     data class Notice(
         override val id: String,
         val text: String,
         override val tsMs: Long,
+        val isError: Boolean = false,
     ) : AgentEvent
 
     /**

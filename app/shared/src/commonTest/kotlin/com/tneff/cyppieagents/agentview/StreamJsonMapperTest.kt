@@ -182,6 +182,10 @@ class StreamJsonMapperTest {
         val rows = mapper.map(ResultEvent(subtype = "error_max_turns", isError = true, uuid = "e"), tsMs = 7_000L)
         val notice = rows.single() as AgentEvent.Notice
         assertTrue(notice.text.contains("error_max_turns"))
+        // CYP-385: a failed turn is an ERROR notice → NoticeRow gives it the distinct `error` tone, never the
+        // neutral one that would read like an ordinary status line. Mutation: drop `isError = true` at the
+        // Turn-Fehler site ⇒ red.
+        assertTrue(notice.isError, "a failed-turn notice must be flagged isError (CYP-385)")
     }
 
     // --- CYP-326 #1: injected incoming/system message visibility ---
