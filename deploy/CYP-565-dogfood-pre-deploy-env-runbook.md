@@ -207,6 +207,18 @@ curl -sI "$STG/api/health" | grep -i '^set-cookie:.*cyppie_csrf'                
 # Step 7 — API key per-project (participant GET -> masked; {set:false}=OAuth intended)
 curl -sf -H "Authorization: Bearer $OPT" "$STG/api/config/apikey" | jq .           # want {set:false,...} (OAuth) or {set:true,masked:"..."} (BYO)
 
-# Step 8 — no secret leak
-grep -RiE 'ory_st_|ANTHROPIC|BEGIN .*PRIVATE KEY|MASTER_KEY=' "$LOGDIR"            # want: EMPTY
+# Step 8 — no secret leak. Fail-closed (PL-0089): an unset/absent/EMPTY $LOGDIR is N/A, NOT a pass —
+# a bare grep over no corpus prints nothing and reads as "empty=clean", indistinguishable from "no logs".
+# Assert the corpus exists AND a planted canary is actually seen (proves the scanner works), THEN scan.
+SECRET_RE='ory_st_|ANTHROPIC|OPERATOR_TOKEN=|BEGIN .*PRIVATE KEY|session_token|MASTER_KEY='
+if [ -z "${LOGDIR:-}" ] || [ ! -d "$LOGDIR" ] || [ -z "$(find "$LOGDIR" -type f -print -quit 2>/dev/null)" ]; then
+  echo "N/A: LOGDIR unset/absent/empty — nothing was scanned (NOT a pass)"
+else
+  printf 'ory_st_CANARY_PL0089\n' > "$LOGDIR/.pl0089-canary"                       # positive control:
+  grep -RiEl "$SECRET_RE" "$LOGDIR" >/dev/null 2>&1 && echo "scanner OK" || echo "SCANNER BROKEN — abort"
+  rm -f "$LOGDIR/.pl0089-canary"
+  grep -RiEl "$SECRET_RE" "$LOGDIR" >/dev/null 2>&1 \
+    && echo "FAIL: secret-shaped string found in logs" \
+    || echo "PASS: corpus scanned ($(find "$LOGDIR" -type f | wc -l | tr -d ' ') file(s)), no secret-shaped strings"
+fi
 ```
