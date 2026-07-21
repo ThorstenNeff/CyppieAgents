@@ -37,6 +37,7 @@ import io.ktor.server.websocket.WebSockets
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -95,6 +96,29 @@ class HubWireRoutesTest {
         assertEquals(1, posted.size)
         assertEquals("po", posted.single().from) // A1: from is the bound agent (no frame field)
         assertTrue(posted.single().body.contains("delegate this"))
+    }
+
+    // ---------- CYP-775 ⭐ close-then-accept: a 2nd connect on an occupied agentId CLOSES + SIGNALS the incumbent ----------
+    // The bug was raw last-wins register: a second `/ws/hub` under the same agentId dropped the incumbent out of
+    // byAgent WITHOUT closing it — a silent mute-zombie (still connected, receives nothing). The fix `removeAndAwait`s
+    // the incumbent before register (mirroring the local spawn path). Mutation: drop that `removeAndAwait` in
+    // HubWireRoutes → WS1 is never server-closed → its `closeReason` never resolves → the `withTimeout` below reddens.
+    @Test
+    fun secondConnectSameAgent_closesIncumbent_neverSilentMute() = testApplication {
+        installWire()
+        val client = wsClient(this)
+        client.webSocket("/ws/hub?token=tok-po") { // WS1 = the incumbent, kept live (this block stays open)
+            sendFrame(WireHello(allAvailable(), provider)); assertIs<WireAck>(recv())
+            // WS2 — SAME agent, nested so WS1 is still live: this connect is the displacement (close-then-accept).
+            client.webSocket("/ws/hub?token=tok-po") { // WS2 = the newcomer
+                sendFrame(WireHello(allAvailable(), provider)); assertIs<WireAck>(recv())
+                // Non-vacuous: WS2 is the LIVE session — it can send as the bound agent (the newcomer took over,
+                // not "both died"). Its post lands as `po`.
+                sendFrame(WireSend("po-backend", "from ws2")); assertIs<WireAck>(recv())
+            }
+            // CYP-775: the incumbent (WS1) is CLOSED + SIGNALLED — the server closed its WS. Never a silent mute.
+            withTimeout(2_000) { closeReason.await() }
+        }
     }
 
     // ---------- AC-auth: no/operator token → close VIOLATED_POLICY before any frame ----------

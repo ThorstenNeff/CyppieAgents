@@ -170,6 +170,14 @@ fun Route.hubWireRoutes(
                         closeWs = { outgoing.close() },
                     )
                     session = s
+                    // CYP-775: close-then-accept, never silent-last-wins. A still-live incumbent under this agentId
+                    // (a legitimate reconnect, or a second "dead" bridge whose HUB_TOKEN is valid but whose claude is
+                    // down) is cleanly closed + JOINED before we register — removeAndAwait → closeAndAwait → the wire
+                    // session's outgoing.close(), a WS-close SIGNAL to the old holder. Mirrors LifecycleManager.start's
+                    // removeAndAwait-before-doSpawn for the LOCAL path (the double-spawn path is already serialised by
+                    // CYP-368). A raw register() here would drop the incumbent out of byAgent WITHOUT closing it — a
+                    // silent mute-zombie (still connected, receives nothing). No-op when there is no incumbent.
+                    connectorSessions.removeAndAwait(agentId)
                     connectorSessions.register(s)
                 }
 

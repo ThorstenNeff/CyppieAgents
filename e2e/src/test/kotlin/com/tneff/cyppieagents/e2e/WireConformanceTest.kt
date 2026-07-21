@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.ProviderInfo
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.WireAck
+import com.tneff.cyppieagents.model.WireDeliver
 import com.tneff.cyppieagents.model.WireEnvelope
 import com.tneff.cyppieagents.model.WireError
 import com.tneff.cyppieagents.model.WireErrorCode
@@ -76,6 +77,13 @@ class WireConformanceTest {
         val bodies = mutableListOf<String>()
         while (true) when (val f = recv()) {
             is WireMessage -> bodies.add(f.message.body)
+            // CYP-775: `/ws/hub` is ONE multiplexed server→client stream — a live [WireDeliver] (the attach-drain
+            // that fires when this session registers, delivering messages undelivered while it was down) can
+            // interleave the subscribe history dump. It is a legit frame (the client de-dups by message.id), not a
+            // protocol error → skip it, don't fail the read. (This interleave was always possible; the CYP-775
+            // close-then-accept `removeAndAwait` before register just shifts the drain's timing so it lands here
+            // deterministically, surfacing a latent fragility in this helper.)
+            is WireDeliver -> {}
             is WireAck -> break
             else -> error("unexpected frame in subscribe response: $f")
         }

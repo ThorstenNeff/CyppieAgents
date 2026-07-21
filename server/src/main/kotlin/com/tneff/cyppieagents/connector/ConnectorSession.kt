@@ -97,13 +97,16 @@ class ConnectorSessions {
     }
 
     /**
-     * ⚠️ **Displaces any session already registered for this agent, without closing it (CYP-368).** The evicted
-     * session keeps running — an unregistered `claude` process, still burning tokens, still holding its exit
-     * listener, and when it dies it moves the run state of the session that replaced it. Nothing here notices.
-     *
-     * It is reachable through the front door: `LifecycleManager.start` is check-then-act with no mutual
-     * exclusion, so two concurrent starts both spawn. Until the spawn is serialised, this method is where the
-     * server loses a process.
+     * ⚠️ **A plain last-wins put — it does NOT close a session already registered for this agent.** So the caller
+     * MUST guarantee the slot is free, or the evicted session becomes a silent mute-zombie (running, unregistered,
+     * still burning tokens; CYP-367 stops its exit from corrupting the replacement's run state, but it is still a
+     * lost process). Both reaching paths now clean the slot BEFORE calling this:
+     *  - **Local (spawn):** `LifecycleManager.start` is serialised per agent (CYP-368 `AgentTransitionLock`) and
+     *    `removeAndAwait`s any incumbent before `doSpawn` — so [doSpawn]'s register hits an empty slot.
+     *  - **Remote (`/ws/hub`):** `HubWireRoutes` `removeAndAwait`s the incumbent before registering (CYP-775
+     *    close-then-accept) — a reconnect / second holder cleanly closes the old session with a WS-close signal.
+     * (An earlier version of this doc said "this method is where the server loses a process." That was true before
+     * CYP-368/CYP-775 closed the two paths; keeping [register] a plain put is deliberate — the callers own the swap.)
      */
     fun register(session: ConnectorSession) {
         byAgent[session.agentId] = session
