@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.db
 
+import com.tneff.cyppieagents.tier.StoreResidencies
 import java.security.MessageDigest
 
 /** A store whose full content can be exported as ordered, canonical rows (for the copy read + the verify). */
@@ -25,6 +26,16 @@ data class MigrationReceipt(
 
 /** Thrown when the post-copy verification (row-count OR checksum) fails — the migration is aborted, source retained. */
 class MigrationVerifyException(message: String) : Exception(message)
+
+/**
+ * CYP-773 (P7 blocker) — thrown when a migration is attempted for a store that is NOT `USER_DB_CAPABLE`. Such a
+ * store (roles / account / dsn_registry / hub_secret / …) MUST stay on our infra; copying its rows into a
+ * customer's Postgres would leak secrets/auth state across the BYODB boundary (§3: the core never pushes
+ * anything secret into the customer DB). The guard is the SAME fail-closed [StoreResidencies] classification the
+ * read path already enforces — so a store only becomes migratable by a deliberate `userDbCapable` opt-in.
+ */
+class StoreResidencyViolation(val storeKey: String) :
+    Exception("store '$storeKey' is not user-DB-capable and must never be migrated to a user DB (residency, CYP-773)")
 
 /**
  * CYP-220 Phase 4 — the **generic** store migration engine (Design §4), reusable for ANY store (not
@@ -54,6 +65,16 @@ class StoreMigrator(
         val fromDsnId = bindings.binding(storeKey, projectId)?.dsnId // null = File source (fallback)
         fun log(phase: MigrationPhase, result: MigrationResult, s: Int = 0, t: Int = 0, cm: Boolean = false, err: String? = null) =
             audit.record(MigrationAuditEntry(actor, now, storeKey, projectId, fromDsnId, targetDsnId, phase, result, s, t, cm, err))
+
+        // CYP-773 — RESIDENCY GUARD, fail-closed, BEFORE any bind or copy: a store that is not USER_DB_CAPABLE
+        // (roles/account/hub_secret/…) must NEVER have its rows written into a user DB. Reject here, so nothing is
+        // bound, no window opens, and `target.importRows` is never reached — the target DB stays empty, no leak.
+        // Uses the existing [StoreResidencies] classification, so it adapts the day a store is opted into
+        // `userDbCapable` (e.g. CYP-772b), with no change here.
+        if (!StoreResidencies.isUserDbCapable(storeKey)) {
+            log(MigrationPhase.WINDOW_OPEN, MigrationResult.FAILED, err = "residency: '$storeKey' is not user-DB-capable")
+            throw StoreResidencyViolation(storeKey)
+        }
 
         // Window open: bind to the target in MIGRATING (writes gated; reads still from source A).
         bindings.bind(storeKey, projectId, targetDsnId)
