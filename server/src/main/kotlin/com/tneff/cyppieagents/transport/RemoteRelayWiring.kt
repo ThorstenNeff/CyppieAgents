@@ -61,6 +61,27 @@ object RemoteRelayWiring {
     fun resolveTransportMode(env: (String) -> String?): TransportMode =
         if (env("CYPPIE_REMOTE_TRANSPORT")?.trim()?.lowercase() == "mux") TransportMode.MUX else TransportMode.POOL
 
+    /** CYP-747 S1 — the resolved trusted-issuer anchor (§5-C2 axis c "hub trusts the issuer/relay"). */
+    class IssuerAnchor(val issuer: String, val kid: String, val pub: ByteArray)
+
+    /**
+     * CYP-747 S1 (Step 1 — issuer CP→Relay repoint, Q3): resolve the hub's trusted-issuer anchor. **ALL-OR-NOTHING
+     * per issuer:** a COMPLETE relay-issuer set (`CYPPIE_RELAY_ISSUER/KID/PUBKEY`) is preferred; else a COMPLETE CP
+     * set (`CYPPIE_CP_*`) for deploy compat (additive/reversible, no breaking rename). NEVER a MIX of relay+CP fields
+     * — a relay issuer with a CP `kid`/key would be an incoherent anchor (the kid names a key the issuer never signed
+     * with). Both sets incomplete/absent → `null` (fail-closed → [InertRelayConnector]). This is the DISTINCT
+     * establishment determination of axis c, verified UPSTREAM of the per-token operator-identity (`sub`) check.
+     */
+    fun resolveIssuerAnchor(env: (String) -> String?): IssuerAnchor? =
+        resolveAnchorSet(env, "CYPPIE_RELAY_") ?: resolveAnchorSet(env, "CYPPIE_CP_")
+
+    private fun resolveAnchorSet(env: (String) -> String?, prefix: String): IssuerAnchor? {
+        val issuer = env("${prefix}ISSUER")?.takeIf { it.isNotBlank() } ?: return null
+        val kid = env("${prefix}KID")?.takeIf { it.isNotBlank() } ?: return null
+        val pub = env("${prefix}PUBKEY")?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() } ?: return null
+        return IssuerAnchor(issuer, kid, pub)
+    }
+
     fun build(
         config: RemoteTransportConfig,
         httpClient: HttpClient,
@@ -144,10 +165,11 @@ fun buildRemoteTransport(
     // The live path REQUIRES local-hub custody + the full CP-pin config; any gap → INERT (fail-closed).
     if (hubIdentity == null || hubSecretStore == null || operatorDeviceStore == null) return InertRelayConnector
     val operatorId = env("CYPPIE_OPERATOR_ID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
-    val cpIssuer = env("CYPPIE_CP_ISSUER")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
-    val cpKid = env("CYPPIE_CP_KID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
-    val cpPub = env("CYPPIE_CP_PUBKEY")?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
-        ?: return InertRelayConnector
+    // CYP-747 S1 (Step 1 — issuer CP→Relay repoint, Q3): the trusted issuer of the operator credential is now the
+    // RELAY. Resolved ALL-OR-NOTHING (relay set preferred, CP set as deploy-compat fallback, never mixed) — the
+    // hub-trusts-issuer EDGE (§5-C2 axis c), verified UPSTREAM of the per-token operator-identity check; per-hub AND
+    // (aud/cb/PoP) untouched.
+    val issuerAnchor = RemoteRelayWiring.resolveIssuerAnchor(env) ?: return InertRelayConnector
     val rpId = env("CYPPIE_OPERATOR_RP_ID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
     // CYP-521: the hub dial-side rendezvous id is now obtained from the CP register (the epoch id), NOT a static env.
     // Needs the CP URL + the operator bearer (like the CYP-512 admit) — a static CYPPIE_REMOTE_RENDEZVOUS is GONE.
@@ -167,8 +189,8 @@ fun buildRemoteTransport(
         config = Rr3Config(
             hubId = hubIdentity.hubId,
             pinnedOperatorId = operatorId,
-            expectedIssuer = cpIssuer,
-            cpPublicKey = { k -> if (k == cpKid) cpPub else null },
+            expectedIssuer = issuerAnchor.issuer,
+            cpPublicKey = { k -> if (k == issuerAnchor.kid) issuerAnchor.pub else null },
             expectedRpId = rpId,
         ),
         finalizedStore = finalizedStore, // CYP-525 GE5/GE7: the ratified provisional→finalize path (prod when wired)
