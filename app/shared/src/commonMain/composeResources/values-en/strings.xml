@@ -778,6 +778,10 @@
     <string name="remote_connect_trust_reject">Doesn't match — abort</string>
     <string name="remote_connect_trust_aborted">Not connected — identity not confirmed.</string>
     <string name="remote_connect_trust_changed_repin">Re-pin only after an out-of-band comparison of the new fingerprint.</string>
+    <!-- CYP-747 §5-C2: owned-but-issuer-not-trusted (UIUX copy 13a06650, verbatim). Anchor-term, not "token rejected". -->
+    <string name="remote_connect_issuer_not_trusted">Connection halted: this hub is registered, but no trusted issuer is established for it. Without established issuer trust, no operator authority is granted.</string>
+    <string name="remote_connect_issuer_oob">A trusted issuer is established for the hub outside the app (by the operator/PO). Reconnect afterwards.</string>
+    <string name="a11y_remote_connect_issuer_not_trusted">Connection halted: no trusted issuer established for the hub. No operator authority. Issuer trust is established outside the app; reconnect afterwards.</string>
 
     <!-- CYP-540 (WS5): N-tunnel pool status chrome (per-tunnel state + aggregate). EN derived from the frozen DE spec §8 (Dev5-derived, flagged to UIUX2 for ratification). -->
     <string name="tunnel_pool_state_dialing">Connecting…</string>

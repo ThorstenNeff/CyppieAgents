@@ -51,11 +51,16 @@ object RemoteConnectTags {
     /** Purely informational "re-pin only OOB" hint at the TrustChanged alarm (HC/①b) — NOT an action button. */
     const val TRUST_CHANGED_REPIN = "remote.connect.trustChangedRepin"
 
+    /** CYP-747 §5-C2 — the OOB "a trusted issuer is established outside the app" hint at the IssuerNotTrusted alarm
+     *  — a text hint, NOT an action button (mirrors [TRUST_CHANGED_REPIN]; issuer decisions are the PO/OOB boundary). */
+    const val ISSUER_OOB = "remote.connect.issuerOob"
+
     /**
      * `remote.connect.error.<cause>`, cause ∈ relayUnreachable / hubOffline / handshakeFailed / trustChanged /
      * trustRejected (CYP-478/696, terminal first-use OOB decline) /
      * authRejected / deviceNotEnrolled / operatorUvFailed / enrollCodesUnavailable (CYP-525 ①, GE8 — retryable
-     * delivery failure, never authRejected).
+     * delivery failure, never authRejected) / issuerNotTrusted (CYP-747 §5-C2, terminal — owned hub but no trusted
+     * CP-JWT issuer; no operator authority, OOB-only recovery).
      */
     fun error(cause: String) = "remote.connect.error.$cause"
 }

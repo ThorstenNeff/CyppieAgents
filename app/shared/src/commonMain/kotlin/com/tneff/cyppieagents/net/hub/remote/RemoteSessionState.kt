@@ -29,6 +29,18 @@ sealed interface RemoteFailure {
      * terminal state rather than letting it unwind the connect loop as a raw cancellation (stale mid-connect limbo).
      */
     data object TrustRejected : RemoteFailure
+
+    /**
+     * CYP-747 §5-C2 — the remote hub is registered/OWNED at the Control Plane, but **no trusted ISSUER is established
+     * for it** (the CP-JWT/cert issuer anchor is absent/untrusted). A **THIRD trust axis (c)**, distinct from
+     * [TrustChanged]/[TrustRejected] (axis-a: hub-key TOFU) and [AuthRejected] (axis-b: operator identity): an
+     * untrusted issuer grants **no operator authority**. TERMINAL, fail-closed — recovery is **OOB only** (the
+     * operator/PO establishes issuer trust at the hub, out-of-band; there is NO in-app trust-grant). [issuer] = the
+     * offending issuer id/hint (for logs; the UI copy is static). The real anchor-determination that emits this is
+     * Backend-S1 wiring; the UI surface here is fixture/stub-driven (the wiring is a separate final slice).
+     */
+    data class IssuerNotTrusted(val issuer: String?) : RemoteFailure
+
     /** The hub's OperatorAssertionVerifier said no (a∧b∧c failed) — fail-closed. */
     data object AuthRejected : RemoteFailure
     /**
