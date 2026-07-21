@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.comm.ConnectionStatus
 import kotlin.test.Test
 
 /**
@@ -45,6 +46,10 @@ class Cyp65PagerContextTokensRenderTest {
                     WindowHost(
                         state = state,
                         contextTokensFor = { id -> if (id == "backend") 137_214 else null },
+                        // CYP-789: a LIVE feed isolates the value-vs-null axis here — the staleness `~` marker on a
+                        // non-LIVE feed is Cyp789PagerChipStalenessRenderTest's job (the default no-feed now
+                        // fail-closes to stale, mirroring the canvas WindowContextTokensRenderTest).
+                        connectionFor = { ConnectionStatus.LIVE },
                         windowContent = { Text("c ${it.id}") },
                     )
                 }
