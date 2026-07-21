@@ -145,8 +145,8 @@
   <h2>§4 PL-Freeze-Regeln — im Prototyp encodiert</h2>
   <ul class="rules">
     <li><strong>malformed = Upstream-Error, NICHT Reject:</strong> ein uninterpretierbarer/malformed Wire-Wert rendert als
-      <span class="badge t-unknown"><span class="g">◯</span> Vertrauen nicht geprüft</span> (fail-closed) mit optionaler
-      Upstream-Fehler-Affordanz — <span class="flag">nie</span> als <code>REJECTED</code> (das wäre ein erfundenes Trust-Verdikt).
+      <span class="badge t-unknown"><span class="g">◯</span> Vertrauen nicht geprüft</span> (fail-closed) und trägt <strong>verbindlich/immer</strong> das
+      Upstream-Fehler-Signal (PL, CYP-798 — nicht optional) — <span class="flag">nie</span> als <code>REJECTED</code> (das wäre ein erfundenes Trust-Verdikt).
       <br><span class="badge t-upstream"><span class="g">⚠</span> Upstream-Fehler — Status nicht lesbar</span>
       <span class="mono-note">(→ Zustand bleibt UNKNOWN; distinkt vom Trust-Reject)</span></li>
     <li><strong>PENDING distinkt von UNKNOWN:</strong> „wird geprüft" ist <em>nie</em> das Sammel-Label für nicht-verbunden/unbekannt.</li>
