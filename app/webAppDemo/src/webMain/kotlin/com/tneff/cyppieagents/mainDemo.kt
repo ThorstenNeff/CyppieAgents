@@ -11,6 +11,7 @@ import androidx.compose.ui.window.ComposeViewport
 import com.tneff.cyppieagents.acl.StubAclHub
 import com.tneff.cyppieagents.agentmgmt.StubAgentManagementRepository
 import com.tneff.cyppieagents.agentview.StubAgentSession
+import com.tneff.cyppieagents.agentview.StubAgentWritableApi
 import com.tneff.cyppieagents.agentview.StubModeRepository
 import com.tneff.cyppieagents.comm.CommApi
 import com.tneff.cyppieagents.comm.StubCommLiveSource
@@ -67,6 +68,12 @@ fun EventLogDemoApp() {
             modifier = Modifier.enableTestTagsAsResourceId().safeContentPadding().fillMaxSize(),
             config = ShellConfig.dev().copy(operatorToken = "demo-operator-stub"),
             sessionFactory = { StubAgentSession() },
+            // CYP-738 (live-wire): the writable-agents seam is now ARMED in the shell — a null port resolves to the
+            // live HttpAgentWritableApi, which on this backendless demo hits a dead endpoint and fail-closes every
+            // agent composer to a read-only HINT (no input). Typing to an agent is the demo's core interaction (and
+            // the Maestro-web flows'), so keep it editable: stub every seeded agent writable (the "fully stub"
+            // promise this entry makes for every port — a null port does NOT fall back to a stub).
+            agentWritableApi = StubAgentWritableApi(StubAgentManagementRepository.DEFAULT_AGENTS.map { it.id }),
             commApi = DemoCommApi,
             commLiveSource = StubCommLiveSource(),
             eventsApi = StubEventsApi(),
