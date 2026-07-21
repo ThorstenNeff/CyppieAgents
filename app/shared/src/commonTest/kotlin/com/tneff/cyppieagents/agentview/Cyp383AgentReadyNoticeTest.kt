@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
  */
 class Cyp383AgentReadyNoticeTest {
 
-    private fun mapper() = StreamJsonMapper(readyNoticeText = "READY")
+    private fun mapper() = StreamJsonMapper(readyNoticeText = "READY", turnErrorLabel = "TURNERR")
 
     /** §2/§4.3 — the ready label is the injected (localized) text + the wire model suffix; NO literal in the mapper.
      *  Mutation: restore the hardcoded `"Session gestartet"` literal ⇒ the text is not `"READY · …"` ⇒ red. */

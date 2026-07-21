@@ -151,6 +151,8 @@
     <!-- CYP-383: transcript "ready" notice — fired once per session at the first stream-json SystemEvent with a
          session_id (an observation that stdin is served, not the RUNNING command). See values/strings.xml. -->
     <string name="agent_ready_notice">Agent ready</string>
+    <!-- CYP-386: the localized "turn error" notice label (see the DE file for the rationale). -->
+    <string name="agent_turn_error_notice">Turn error</string>
     <!-- CYP-387: personal, ungated preference (ThemePreferences family) — number of sent messages kept in the
          composer input history (↑/↓ recall). Stepper 0..200, default 20, 0 = off. -->
     <string name="composer_history_size_label">Messages in input history</string>

@@ -158,6 +158,7 @@ import io.ktor.client.plugins.websocket.WebSockets
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.agent_mgmt_title
 import kmpcyppieagents.app.shared.generated.resources.agent_ready_notice
+import kmpcyppieagents.app.shared.generated.resources.agent_turn_error_notice
 import kmpcyppieagents.app.shared.generated.resources.report_title
 import kmpcyppieagents.app.shared.generated.resources.project_loading
 import kmpcyppieagents.app.shared.generated.resources.compact_window_title
@@ -522,13 +523,15 @@ fun AgentShell(
         if (showRoster(tier)) add(ROSTER_WINDOW_ID to rosterTitle)
     }
 
-    // CYP-383: resolve the localized "ready" label here, in composition, and capture it into the session
+    // CYP-383/386: resolve the localized notice labels here, in composition, and capture them into the session
     // factory — the mapper is pure Kotlin and cannot call stringResource itself (spec §2, §5).
     val readyNotice = stringResource(Res.string.agent_ready_notice)
+    val turnErrorNotice = stringResource(Res.string.agent_turn_error_notice)
     val resolveSession: (String) -> AgentSession = sessionFactory ?: { agentId ->
         val ws = AgentWsClient(wsHttpClient, resolvedTransport.wsBaseUrl, agentId, cfg.agentToken(agentId))
         MappingAgentSession(
-            source = ws.events, sink = ws::send, connection = ws.connection, readyNoticeText = readyNotice,
+            source = ws.events, sink = ws::send, connection = ws.connection,
+            readyNoticeText = readyNotice, turnErrorLabel = turnErrorNotice,
         )
     }
 

@@ -46,6 +46,7 @@ class Cyp571BackfillScrollHonestyTest {
         sink = {},
         connection = MutableStateFlow(ConnectionStatus.LIVE),
         readyNoticeText = "bereit",
+        turnErrorLabel = "Turn-Fehler",
     )
 
     /** V7 — a long replayed backfill LANDS ON THE NEWEST row (shell-like), scrolling PAST the oldest. */

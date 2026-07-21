@@ -158,6 +158,10 @@
          Modellname wird vom Mapper als " · <model>" angehängt. Löst das hartkodierte deutsche Literal
          „Session gestartet" ab; der stringResource-Lookup kommt aus der UI-Schicht (AgentShell). -->
     <string name="agent_ready_notice">Agent bereit</string>
+    <!-- CYP-386: the localized "turn error" notice label (StreamJsonMapper's failed-turn path); the wire subtype
+         is appended as ": <subtype>" and stays untranslated. Injected like agent_ready_notice — the mapper is pure
+         Kotlin and holds no user-facing literal. -->
+    <string name="agent_turn_error_notice">Turn-Fehler</string>
     <!-- CYP-387: persönliche, ungegatete Einstellung (ThemePreferences-Familie) — Anzahl der im Composer-
          Eingabeverlauf gehaltenen gesendeten Nachrichten (↑/↓-Recall). Stepper 0..200, Default 20, 0 = aus. -->
     <string name="composer_history_size_label">Nachrichten im Eingabeverlauf</string>

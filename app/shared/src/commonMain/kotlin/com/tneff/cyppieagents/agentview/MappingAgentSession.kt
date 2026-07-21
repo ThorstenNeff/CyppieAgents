@@ -34,11 +34,16 @@ class MappingAgentSession(
      * `stringResource` and threaded into each fresh [StreamJsonMapper] — the mapper holds no user-facing literal.
      */
     private val readyNoticeText: String,
+    /**
+     * CYP-386: the localized "turn error" label, resolved by the composable caller (AgentShell) via `stringResource`
+     * and threaded into each fresh [StreamJsonMapper] — like [readyNoticeText], no user-facing literal lives here.
+     */
+    private val turnErrorLabel: String,
 ) : AgentSession {
 
     // Fresh mapper per collection so the tool-id linkage (and once-per-session ready) state is never shared.
     override val events: Flow<AgentEvent> = flow {
-        val mapper = StreamJsonMapper(readyNoticeText)
+        val mapper = StreamJsonMapper(readyNoticeText, turnErrorLabel)
         // CYP-335: the envelope's server-stamped `tsMs` dates every row the wire event produces.
         source.collect { stored -> mapper.map(stored.event, stored.tsMs).forEach { emit(it) } }
     }

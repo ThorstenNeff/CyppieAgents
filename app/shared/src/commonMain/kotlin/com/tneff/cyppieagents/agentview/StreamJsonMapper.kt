@@ -37,6 +37,13 @@ class StreamJsonMapper(
      * as a " · <model>" suffix. See [systemNotice].
      */
     private val readyNoticeText: String,
+    /**
+     * CYP-386: the localized "turn error" label (e.g. "Turn-Fehler" / "Turn error"), resolved by the UI caller via
+     * `stringResource(Res.string.agent_turn_error_notice)` — like [readyNoticeText], the mapper holds NO user-facing
+     * literal (the EN build must not show German). The wire `subtype`, when present, is appended as a ": <subtype>"
+     * suffix and stays untranslated (it is a machine enum, not prose). See [mapResult].
+     */
+    private val turnErrorLabel: String,
 ) {
 
     private val toolCalls = HashMap<String, AgentEvent.ToolCall>()
@@ -157,7 +164,9 @@ class StreamJsonMapper(
         } else {
             // CYP-385: a failed turn is an ERROR notice → the distinct `error` tone in NoticeRow, not the neutral
             // one that would read like an ordinary status line. (Same axis as the conn-lost notice.)
-            listOf(AgentEvent.Notice(idOf(e.uuid), "Turn-Fehler" + (e.subtype?.let { ": $it" } ?: ""), tsMs, isError = true))
+            // CYP-386: the label is INJECTED (localized by the caller), never a literal here; the wire subtype stays
+            // untranslated as a ": <subtype>" suffix (format unchanged from the pre-localization literal).
+            listOf(AgentEvent.Notice(idOf(e.uuid), turnErrorLabel + (e.subtype?.let { ": $it" } ?: ""), tsMs, isError = true))
         }
 
     // CYP-383: the ready label is injected (localized by the caller); only the model suffix is composed here.
