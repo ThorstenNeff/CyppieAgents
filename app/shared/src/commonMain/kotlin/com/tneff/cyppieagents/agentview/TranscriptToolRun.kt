@@ -97,10 +97,13 @@ internal fun transcriptItems(
         }
         val run = events.subList(start, j).toList()
         val stepCount = run.count { it is AgentEvent.ToolCall }.let { if (it == 0) run.size else it }
-        // §10.3 streaming tail: the run reaches the very end AND its last event is a RUNNING ToolCall.
-        val lastEv = run.last()
-        val streamingTail = j == n && lastEv is AgentEvent.ToolCall && lastEv.status == ToolStatus.RUNNING
-        if (stepCount >= RUN_FOLD_THRESHOLD && !streamingTail) {
+        // §3 Zahn 3 (UIUX §-QA fix): fold only a run that is NOT the buffer tail (`j < n`). A run reaching the buffer
+        // end may still GROW as the live turn continues — folding it would oscillate (fold on each ToolCall
+        // completion, unfold on the next RUNNING one → flicker + auto-follow jump). It folds once something FOLLOWS
+        // it (the AssistantText answer / next turn), i.e. the run is definitively closed. This subsumes the earlier
+        // "trailing RUNNING ToolCall" check — a running tail is a buffer tail too.
+        val isBufferTail = j == n
+        if (stepCount >= RUN_FOLD_THRESHOLD && !isBufferTail) {
             out += TranscriptItem.Run(start, run)
         } else {
             for (k in start until j) out += TranscriptItem.Single(k, events[k])

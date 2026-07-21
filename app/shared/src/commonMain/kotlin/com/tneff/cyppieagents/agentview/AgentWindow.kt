@@ -1080,11 +1080,13 @@ private fun ToolRunHeader(
     val toggleLabel = stringResource(
         if (collapsed) Res.string.a11y_transcript_tool_run_expand else Res.string.a11y_transcript_tool_run_collapse,
     )
-    // Collapsed state carries "eingeklappt" (+ the error clause); expanded is the neutral count (children own their a11y).
+    // UIUX §-QA fix: an error run defaults OPEN, so the error clause must be in the a11y in BOTH states — else a
+    // screenreader on an open error header hears only "N steps", not "✗ N failed" (Pre-Read parity, SR == sighted).
+    // A clean run: collapsed carries "eingeklappt"; expanded is the neutral count (children own their own a11y).
     val cd = when {
-        !collapsed -> stringResource(Res.string.transcript_tool_run_collapsed, steps)
         run.hasError -> stringResource(Res.string.a11y_transcript_tool_run_collapsed_with_errors, steps, run.errorCount)
-        else -> stringResource(Res.string.a11y_transcript_tool_run_collapsed, steps)
+        collapsed -> stringResource(Res.string.a11y_transcript_tool_run_collapsed, steps)
+        else -> stringResource(Res.string.transcript_tool_run_collapsed, steps)
     }
     val stepsLabel = stringResource(Res.string.transcript_tool_run_collapsed, steps)
     val contentColor =
