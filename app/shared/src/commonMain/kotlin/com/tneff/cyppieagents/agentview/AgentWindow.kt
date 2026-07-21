@@ -141,6 +141,7 @@ import kmpcyppieagents.app.shared.generated.resources.transcript_tool_run_collap
 import kmpcyppieagents.app.shared.generated.resources.transcript_tool_run_errors
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_collapsed
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_collapsed_with_errors
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_open_with_errors
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_expand
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_collapse
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
@@ -1084,6 +1085,10 @@ private fun ToolRunHeader(
     // screenreader on an open error header hears only "N steps", not "✗ N failed" (Pre-Read parity, SR == sighted).
     // A clean run: collapsed carries "eingeklappt"; expanded is the neutral count (children own their own a11y).
     val cd = when {
+        // CYP-795: error runs default OPEN, so the OPEN error header uses its own string — carries the error count
+        // but WITHOUT "collapsed"/"eingeklappt" (which the collapsed_with_errors string would falsely announce).
+        run.hasError && !collapsed ->
+            stringResource(Res.string.a11y_transcript_tool_run_open_with_errors, steps, run.errorCount)
         run.hasError -> stringResource(Res.string.a11y_transcript_tool_run_collapsed_with_errors, steps, run.errorCount)
         collapsed -> stringResource(Res.string.a11y_transcript_tool_run_collapsed, steps)
         else -> stringResource(Res.string.transcript_tool_run_collapsed, steps)

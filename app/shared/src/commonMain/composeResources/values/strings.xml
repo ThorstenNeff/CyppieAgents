@@ -654,6 +654,8 @@
     <string name="transcript_tool_run_errors">%1$d Fehler</string>
     <string name="a11y_transcript_tool_run_collapsed">%1$d Schritte, eingeklappt</string>
     <string name="a11y_transcript_tool_run_collapsed_with_errors">%1$d Schritte, eingeklappt, %2$d davon fehlgeschlagen</string>
+    <!-- CYP-795: der AUSGEKLAPPTE Fehler-Kopf (Fehler-Läufe kommen offen) — ohne „eingeklappt", trägt aber die Zahl. -->
+    <string name="a11y_transcript_tool_run_open_with_errors">%1$d Schritte, %2$d davon fehlgeschlagen</string>
     <string name="a11y_transcript_tool_run_expand">Schritte anzeigen</string>
     <string name="a11y_transcript_tool_run_collapse">Schritte einklappen</string>
     <!-- CYP-354 §5.1 (client mirror): read-only Terminal-Control-Mode-Marker in der Titlebar. MEDIATED = kein Marker.

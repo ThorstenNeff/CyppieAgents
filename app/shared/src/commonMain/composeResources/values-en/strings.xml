@@ -635,6 +635,8 @@
     <string name="transcript_tool_run_errors">%1$d failed</string>
     <string name="a11y_transcript_tool_run_collapsed">%1$d steps, collapsed</string>
     <string name="a11y_transcript_tool_run_collapsed_with_errors">%1$d steps, collapsed, %2$d failed</string>
+    <!-- CYP-795: the EXPANDED error header (error runs come open) — no "collapsed", still carries the count. -->
+    <string name="a11y_transcript_tool_run_open_with_errors">%1$d steps, %2$d failed</string>
     <string name="a11y_transcript_tool_run_expand">Show steps</string>
     <string name="a11y_transcript_tool_run_collapse">Collapse steps</string>
     <!-- CYP-354 §5.1 (client mirror): read-only terminal-control mode marker in the title bar. MEDIATED = no marker.
