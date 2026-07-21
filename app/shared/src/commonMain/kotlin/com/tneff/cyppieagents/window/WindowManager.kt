@@ -155,7 +155,8 @@ fun WindowHost(
     /**
      * CYP-316: per-window live context-token count; `null` → no number (fail-closed, §8-8). Default `{ null }`
      * keeps the host number-free for callers/tests that don't wire a source — never a regression. The shell feeds
-     * it from the `/ws/token-usage` map (mirrors [badgeFor]). Canvas title bar only — NOT the phone pager (v1, §5).
+     * it from the `/ws/token-usage` map (mirrors [badgeFor]). Rendered in BOTH surfaces: the canvas title-bar
+     * chip AND the phone-pager header (CYP-65). (The CYP-656 staleness `~` remains canvas-only — see [PhonePager].)
      */
     contextTokensFor: (String) -> Int? = { null },
     /**
@@ -216,7 +217,8 @@ fun WindowHost(
 
         if (isCompact) {
             // The phone pager shows one page per window without a floating titlebar → no ⋮/theming there (CYP-211).
-            PhonePager(state = state, badgeFor = badgeFor, windowContent = windowContent)
+            // CYP-65: the context-token count IS carried into the pager header (the only per-window chip the pager gets).
+            PhonePager(state = state, badgeFor = badgeFor, contextTokensFor = contextTokensFor, windowContent = windowContent)
         } else {
             WindowCanvas(
                 state = state, onFit = onFit, badgeFor = badgeFor, contextTokensFor = contextTokensFor, busyFor = busyFor,
@@ -377,6 +379,9 @@ private val PAGER_TOUCH_TARGET = 48.dp
 private fun PhonePager(
     state: WindowManagerState,
     badgeFor: (String) -> WindowBadge?,
+    // CYP-65: per-window live context-token count (mirrors the canvas title-bar chip); `null` → no chip
+    // (fail-closed, null ≠ 0). Default `{ null }` keeps existing callers/tests chip-free — never a regression.
+    contextTokensFor: (String) -> Int? = { null },
     windowContent: @Composable (WindowState) -> Unit,
 ) {
     val pages = state.orderedWindows
@@ -411,13 +416,16 @@ private fun PhonePager(
     val currentIndex = pagerState.currentPage.coerceIn(0, pages.lastIndex)
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Slim header — only one window is visible, so it carries that page's title (CYP-54 §4).
-        Box(
+        // Slim header — only one window is visible, so it carries that page's title (CYP-54 §4) and, after it,
+        // that agent's live context-token count (CYP-65, mirroring the canvas title-bar chip).
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .testTag(PhonePagerTags.HEADER)
-                .semantics { heading() },
+                .semantics { heading() }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = pages[currentIndex].title,
@@ -426,9 +434,27 @@ private fun PhonePager(
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .weight(1f, fill = false)
                     .testTag(PhonePagerTags.HEADER_TITLE),
             )
+            // CYP-65: context size AFTER the name — mirrors the canvas chip (formatCompactTokens + the same a11y
+            // string). Fail-closed (§8-8, null ≠ 0): no known value → NO node, never a phantom "0". The CYP-656
+            // staleness `~` is canvas-only here (the pager isn't wired `connectionFor`; flagged as a 656 follow-up).
+            contextTokensFor(pages[currentIndex].id)?.let { n ->
+                val compact = formatCompactTokens(n)
+                val tokensCd = stringResource(Res.string.a11y_agent_context_tokens, compact)
+                Text(
+                    text = compact,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .testTag(PhonePagerTags.HEADER_CONTEXT)
+                        .semantics { contentDescription = tokensCd },
+                )
+            }
         }
 
         HorizontalPager(
