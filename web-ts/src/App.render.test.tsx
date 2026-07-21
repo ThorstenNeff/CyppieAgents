@@ -10,11 +10,11 @@ import { emptyEventLog } from './eventlog/eventLog'
 import { FakeSocketHub } from './net/testing/fakeSocket'
 import { RestError } from './net/rest'
 import { setSetupSkipped } from './firstrun/skipPreference'
-import type { HubConfig } from './state/hubConfig'
+import { singleHubConfig, type HubConfig } from './state/hubConfig'
 import type { HubRepo } from './state/restRepo'
 import type { Agent, Channel } from './types/generated/contract'
 
-const config: HubConfig = { apiBase: 'http://x', wsBase: 'ws://x', token: 'tok', operator: true }
+const config: HubConfig = singleHubConfig({ endpoint: { apiBase: 'http://x', wsBase: 'ws://x' }, token: 'tok', operator: true })
 
 const channels: Channel[] = [
   { id: 'po-frontend', name: 'PO ↔ FE', kind: 'DIRECT', members: ['po', 'frontend'] },

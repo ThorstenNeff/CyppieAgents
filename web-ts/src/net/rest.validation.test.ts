@@ -17,21 +17,21 @@ afterEach(() => vi.unstubAllGlobals())
 describe('CYP-737 — a 200 whose body breaks the contract is a FAILED read, not a usable one', () => {
   it('a conforming body passes through unchanged (non-vacuous control)', async () => {
     vi.stubGlobal('fetch', okJson({ configured: true, url: 'git@x:y.git', branch: 'main' }))
-    const out = await new RestClient('http://x').get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
+    const out = await new RestClient('local', 'http://x').get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
     expect(out).toMatchObject({ configured: true })
   })
 
   it('★ F1 exactly: a 200 LACKING `configured` throws instead of yielding a plausible object', async () => {
     // Previously this returned `{}` cast to RepoConfigView, and `configured === undefined` read as "not set up".
     vi.stubGlobal('fetch', okJson({ url: 'git@x:y.git' }))
-    const call = new RestClient('http://x').get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
+    const call = new RestClient('local', 'http://x').get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
     await expect(call).rejects.toBeInstanceOf(ResponseShapeError)
   })
 
   it('★ a mistyped field is rejected too — not only a missing one', async () => {
     vi.stubGlobal('fetch', okJson({ configured: 'yes' }))
     await expect(
-      new RestClient('http://x').get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema)),
+      new RestClient('local', 'http://x').get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema)),
     ).rejects.toBeInstanceOf(ResponseShapeError)
   })
 
@@ -39,7 +39,7 @@ describe('CYP-737 — a 200 whose body breaks the contract is a FAILED read, not
     // The generated schemas carry `.catchall(z.any())` for exactly this: a server adding a field is normal and
     // must never become a client-wide outage. A validator that forbids growth would be a deploy trap.
     vi.stubGlobal('fetch', okJson({ configured: true, url: 'u', branch: 'b', somethingNew: { nested: 1 } }))
-    const out = await new RestClient('http://x').get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
+    const out = await new RestClient('local', 'http://x').get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
     expect(out).toMatchObject({ configured: true })
   })
 
@@ -63,7 +63,7 @@ describe('CYP-737 — a 200 whose body breaks the contract is a FAILED read, not
       },
     }
     vi.stubGlobal('fetch', okJson({ configured: secret }))
-    const err = await new RestClient('http://x').get('/api/config/repo', leaky).catch((e: unknown) => e)
+    const err = await new RestClient('local', 'http://x').get('/api/config/repo', leaky).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ResponseShapeError)
     const surfaced = `${(err as Error).message} ${JSON.stringify((err as ResponseShapeError).issues)}`
     expect(surfaced).not.toContain(secret) // neither `received` nor the original `message` may travel
@@ -72,7 +72,7 @@ describe('CYP-737 — a 200 whose body breaks the contract is a FAILED read, not
 
   it('a ResponseShapeError is distinct from a RestError — transport succeeded, the body did not', async () => {
     vi.stubGlobal('fetch', okJson({}))
-    const err = await new RestClient('http://x')
+    const err = await new RestClient('local', 'http://x')
       .get('/api/config/repo', contractResponse('RepoConfigView', RepoConfigViewSchema))
       .catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ResponseShapeError)
@@ -81,7 +81,7 @@ describe('CYP-737 — a 200 whose body breaks the contract is a FAILED read, not
 
   it('an unvalidated call still behaves as before — adoption is per-call-site, not a big-bang', async () => {
     vi.stubGlobal('fetch', okJson({ anything: true }))
-    await expect(new RestClient('http://x').get('/api/whatever')).resolves.toMatchObject({ anything: true })
+    await expect(new RestClient('local', 'http://x').get('/api/whatever')).resolves.toMatchObject({ anything: true })
   })
 
   it('★ COVERAGE: EVERY response the client actually reads is validated — the rest is void/ignored by contract', () => {

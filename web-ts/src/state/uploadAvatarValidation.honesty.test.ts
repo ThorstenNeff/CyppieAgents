@@ -38,7 +38,7 @@ function stubFetch(body: unknown, status = 200) {
   )
 }
 
-const repo = () => new RestHubRepo('http://x')
+const repo = () => new RestHubRepo('local', 'http://x')
 const pngFile = () => new File(['\x89PNG'], 'a.png', { type: 'image/png' })
 
 const VALID_DETAIL = { id: 'backend', name: 'Backend', role: 'WORKER', worktree: 'backend', launch: 'bash', persona: null }

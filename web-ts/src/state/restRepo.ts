@@ -3,6 +3,7 @@
 // DTOs are REST-only and NOT yet in the generated contract (only asyncapi/WS DTOs are exported) — hand-modeled
 // here as an interim, to be replaced by the generated types once CYP-426 lands the openapi/REST export.
 import { RestClient, RestError, contractResponse, validateResponse } from '../net/rest'
+import type { HubId } from '../net/hubRegistry'
 import { operatorToken } from '../platform/operatorToken'
 import {
   AclEntrySchema,
@@ -225,8 +226,13 @@ export interface HubRepo {
 
 export class RestHubRepo implements HubRepo {
   private readonly rest: RestClient
-  constructor(private readonly apiBase: string) {
-    this.rest = new RestClient(apiBase)
+  // CYP-800: the repo is bound to ONE hub (hubId + its apiBase). The RestClient carries the hubId so a 401 on this
+  // repo's calls re-auths only this hub (N4.b). apiBase is the active hub's derived endpoint (hubConfig registry).
+  constructor(
+    hubId: HubId,
+    private readonly apiBase: string,
+  ) {
+    this.rest = new RestClient(hubId, apiBase)
   }
   fetchAgents(): Promise<Agent[]> {
     // CYP-737: validated — a malformed roster otherwise becomes "no agents", an invented fact.

@@ -21,7 +21,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('CYP-750 — uploadAvatar validates its multipart response', () => {
   it('a conforming AgentDetail passes through (non-vacuous control)', async () => {
     vi.stubGlobal('fetch', okJson(VALID))
-    const out = await new RestHubRepo('http://x').uploadAvatar('a1', file())
+    const out = await new RestHubRepo('local', 'http://x').uploadAvatar('a1', file())
     expect(out).toMatchObject({ id: 'a1', role: 'WORKER' })
   })
 
@@ -29,17 +29,17 @@ describe('CYP-750 — uploadAvatar validates its multipart response', () => {
     const { role, ...noRole } = VALID
     void role
     vi.stubGlobal('fetch', okJson(noRole))
-    await expect(new RestHubRepo('http://x').uploadAvatar('a1', file())).rejects.toBeInstanceOf(ResponseShapeError)
+    await expect(new RestHubRepo('local', 'http://x').uploadAvatar('a1', file())).rejects.toBeInstanceOf(ResponseShapeError)
   })
 
   it('★ a mistyped field is rejected too (not only a missing one)', async () => {
     vi.stubGlobal('fetch', okJson({ ...VALID, role: 'EMPEROR' })) // not in the role enum
-    await expect(new RestHubRepo('http://x').uploadAvatar('a1', file())).rejects.toBeInstanceOf(ResponseShapeError)
+    await expect(new RestHubRepo('local', 'http://x').uploadAvatar('a1', file())).rejects.toBeInstanceOf(ResponseShapeError)
   })
 
   it('★ a shape failure is distinct from a transport error — 200 arrived, the body did not conform', async () => {
     vi.stubGlobal('fetch', okJson({}))
-    const err = await new RestHubRepo('http://x').uploadAvatar('a1', file()).catch((e: unknown) => e)
+    const err = await new RestHubRepo('local', 'http://x').uploadAvatar('a1', file()).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ResponseShapeError)
     expect(err).not.toBeInstanceOf(RestError) // collapsing the two would hide which half broke
   })

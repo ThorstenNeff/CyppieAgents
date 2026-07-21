@@ -20,11 +20,11 @@ import { useEventLogStore } from './eventlog/eventLogStore'
 import { emptyEventLog } from './eventlog/eventLog'
 import { FakeSocketHub } from './net/testing/fakeSocket'
 import { RestError } from './net/rest'
-import type { HubConfig } from './state/hubConfig'
+import { singleHubConfig, type HubConfig } from './state/hubConfig'
 import type { HubRepo } from './state/restRepo'
 import type { Agent, Channel, Capacity } from './types/generated/contract'
 
-const config: HubConfig = { apiBase: 'http://x', wsBase: 'ws://x', token: 'tok', operator: true }
+const config: HubConfig = singleHubConfig({ endpoint: { apiBase: 'http://x', wsBase: 'ws://x' }, token: 'tok', operator: true })
 const channels: Channel[] = [{ id: 'po-backend', name: 'PO ↔ BE', kind: 'DIRECT', members: ['po', 'backend'] }]
 const roster: Agent[] = [
   { id: 'po', name: 'PO', role: 'PO', worktree: 'po' },

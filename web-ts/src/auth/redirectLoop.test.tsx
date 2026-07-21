@@ -38,6 +38,7 @@ const mount = (over: { authMe?: AuthMe; reject?: boolean; login?: (e: string, p:
   const fetchAuthMe = vi.fn(() => (over.reject ? Promise.reject(new Error('down')) : Promise.resolve(over.authMe ?? me({ role: 'OPERATOR' }))))
   const utils = render(
     <AuthGate
+      activeHubId="local"
       fetchAuthMe={fetchAuthMe as () => Promise<AuthMe>}
       login={vi.fn(over.login ?? (async () => ({ kind: 'rejected' }) as LoginResult))}
       redirectToLogout={navigate}

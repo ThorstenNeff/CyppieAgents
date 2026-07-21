@@ -5,7 +5,7 @@ import { AuthGate } from './auth/AuthGate'
 import { logoutUrl } from './auth/authConfig'
 import { createLogin } from './auth/loginFlow'
 import { RestHubRepo } from './state/restRepo'
-import { readHubConfig } from './state/hubConfig'
+import { bootstrapLocalHub } from './state/hubConfig'
 import { isOperatorServe } from './platform/operatorToken'
 import './ui/tokens.generated.css' // CYP-423 maritime token layer (generated) — must load before app styles
 import './index.css'
@@ -17,8 +17,8 @@ if (root === null) throw new Error('CYP-398: #root not found in index.html')
 // None → the in-app LoginScreen (loginFlow drives the Kratos same-origin API-flow; the server sets the httpOnly session
 // cookie). The AuthGate installs the global 401 → in-app re-auth handler itself. break-glass (injected operator token)
 // bypasses the whoami gate (Bearer authenticates).
-const cfg = readHubConfig()
-const repo = new RestHubRepo(cfg.apiBase)
+const cfg = bootstrapLocalHub()
+const repo = new RestHubRepo(cfg.hubId, cfg.apiBase)
 const login = createLogin({
   fetchImpl: (input, init) => fetch(input, init), // raw fetch — NOT the RestClient (a login 401 must not fire re-auth)
   fetchAuthMe: () => repo.fetchAuthMe(),
@@ -27,6 +27,7 @@ const login = createLogin({
 createRoot(root).render(
   <StrictMode>
     <AuthGate
+      activeHubId={cfg.hubId}
       fetchAuthMe={() => repo.fetchAuthMe()}
       login={login}
       redirectToLogout={() => window.location.assign(logoutUrl())}

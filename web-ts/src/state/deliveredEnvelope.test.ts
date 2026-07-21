@@ -19,7 +19,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('CYP-744 — REST history, send echo, and WS push all carry the DeliveredMessage envelope', () => {
   it('GET /messages resolves an array of envelopes (spans intact)', async () => {
     vi.stubGlobal('fetch', okJson([ENVELOPE]))
-    const out = await new RestHubRepo('http://x').getMessages('c1')
+    const out = await new RestHubRepo('local', 'http://x').getMessages('c1')
     expect(out).toHaveLength(1)
     expect(out[0].message.id).toBe('m1')
     expect(out[0].mentions).toEqual([{ start: 6, end: 15, id: 'frontend' }])
@@ -27,18 +27,18 @@ describe('CYP-744 — REST history, send echo, and WS push all carry the Deliver
 
   it('★ GET /messages REJECTS a bare pre-CYP-744 message (no envelope) — no silent straggler', async () => {
     vi.stubGlobal('fetch', okJson([STORED]))
-    await expect(new RestHubRepo('http://x').getMessages('c1')).rejects.toBeInstanceOf(ResponseShapeError)
+    await expect(new RestHubRepo('local', 'http://x').getMessages('c1')).rejects.toBeInstanceOf(ResponseShapeError)
   })
 
   it('POST /messages resolves the envelope echo', async () => {
     vi.stubGlobal('fetch', okJson(ENVELOPE))
-    const out = await new RestHubRepo('http://x').postMessage('c1', 'bitte @frontend')
+    const out = await new RestHubRepo('local', 'http://x').postMessage('c1', 'bitte @frontend')
     expect(out.message.id).toBe('m1')
   })
 
   it('★ POST /messages REJECTS a bare message echo — the send path is on the envelope too', async () => {
     vi.stubGlobal('fetch', okJson(STORED))
-    await expect(new RestHubRepo('http://x').postMessage('c1', 'x')).rejects.toBeInstanceOf(ResponseShapeError)
+    await expect(new RestHubRepo('local', 'http://x').postMessage('c1', 'x')).rejects.toBeInstanceOf(ResponseShapeError)
   })
 
   it('★ the /ws/comm message frame carries `delivered`, and the OLD `{message}` frame is REJECTED', () => {

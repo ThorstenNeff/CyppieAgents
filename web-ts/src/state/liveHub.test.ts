@@ -1,14 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { startLiveHub } from './liveHub'
-import type { HubConfig } from './hubConfig'
+import { singleHubConfig, type HubConfig } from './hubConfig'
 import { FakeSocketHub } from '../net/testing/fakeSocket'
 
-const config: HubConfig = {
-  apiBase: 'http://x',
-  wsBase: 'ws://x',
-  token: 'tok',
-  operator: true,
-}
+const config: HubConfig = singleHubConfig({ endpoint: { apiBase: 'http://x', wsBase: 'ws://x' }, token: 'tok', operator: true })
 
 const socketFor = (hub: FakeSocketHub, pathFragment: string) => {
   const s = hub.sockets.find((s) => s.url.includes(pathFragment))

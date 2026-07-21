@@ -22,7 +22,7 @@ import { WindowBadge } from './windowmgr/WindowBadge'
 import { commCountBadge, eventSeverityBadge, maxTailSeverity } from './windowmgr/windowBadgeModel'
 import { useHubStore } from './state/hubStore'
 import { rosterPoAgentId } from './state/hubReducers'
-import { readHubConfig, type HubConfig, type SocketDeps } from './state/hubConfig'
+import { bootstrapLocalHub, type HubConfig, type SocketDeps } from './state/hubConfig'
 import { RestHubRepo, type HubRepo } from './state/restRepo'
 import { RestError, restErrorCode } from './net/rest'
 import { commitAclChange } from './state/aclCommit'
@@ -126,13 +126,13 @@ export interface AppProps {
 }
 
 export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {}) {
-  const cfg = config ?? readHubConfig()
+  const cfg = config ?? bootstrapLocalHub()
   // CYP-661 (defense-in-depth): memoize so the repo identity is STABLE across re-renders. A fresh `new RestHubRepo`
   // every render (each building a new RestClient) is the churn ROOT that defeated the section load-effects — the
   // component-local useRef cures immunise the critical paths, but a stable repo protects any consumer (incl. future
   // ones) that keys on its identity. Keyed on the primitive apiBase (cfg is a fresh object each render when config is
   // undefined → readHubConfig()).
-  const hubRepo = useMemo(() => repo ?? new RestHubRepo(cfg.apiBase), [repo, cfg.apiBase])
+  const hubRepo = useMemo(() => repo ?? new RestHubRepo(cfg.hubId, cfg.apiBase), [repo, cfg.hubId, cfg.apiBase])
   // CYP-470: whoami is the truth for operator; cfg.operator (injected token) is the break-glass / test fallback.
   const operator = operatorOverride ?? cfg.operator
 
