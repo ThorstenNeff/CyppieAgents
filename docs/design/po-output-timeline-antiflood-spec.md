@@ -251,8 +251,19 @@ Fold kann keine Aussage schlucken. Das ist die Prädikat-Form der safe-but-silen
 3. **abgeschlossen** — der Lauf ist **nicht** der streamende Tail (§13 Zahn 3).
 4. **kein Operator-Override auf „ausgeklappt"** (§12).
 
-Trifft eine Bedingung nicht zu → der Lauf rendert **wie heute** als Einzelzeilen (kein Kopf, kein
-Kollaps). Kurze/fehlerhafte/streamende Läufe sind damit **byte-identisch** zum heutigen Rendering.
+Trifft die **Längen-** oder **Streaming-**Bedingung nicht zu → der Lauf rendert **wie heute** als
+Einzelzeilen (kein Kopf). **Fehler-Läufe sind die Ausnahme (Korrektur 2026-07-21, §-QA CYP-790):** ein
+Fehler-Lauf ≥ Schwelle **GRUPPIERT** (Kopf trägt `✗ N Fehler` + `N Schritte`), kommt aber
+**default-OFFEN** — §3 Zahn 2. Der `✗ N Fehler`-Marker bleibt **auch bei manuellem Zuklappen** am Kopf
+(am Build verifiziert: `ToolRunHeader` rendert ihn immer bei `hasError`, unabhängig von `collapsed`),
+also kann ein Fehler-Lauf **nie** — auch nicht per Hand — still verschwinden. Damit ist der
+Kopf-mit-Marker der **stärkere** Fail-loud (aggregierter, pre-read, persistenter Fehler-Zähler) als das
+kopflose Roh-Rendering. **Nur kurze/streamende Läufe** sind byte-identisch zum heutigen Rendering.
+
+> **Self-Korrektur:** Ein früherer Satz hier lumpte „fehlerhafte" mit „kurz/streamend" als
+> „byte-identisch, kein Kopf" — das **widersprach §3 Zahn 2** (Kopf mit Marker + offen). Dev folgte dem
+> stärkeren §3-Routing und **hatte recht**; §3 gilt, dieser Satz ist korrigiert. (Gleiche Klasse wie der
+> LoadErrorRetry-Fall: die geteilte/stärkere Formulierung gewinnt, nicht meine spätere Verkürzung.)
 
 ## 11. „N Schritte" — was genau gezählt wird (Zähl-Wahrheit)
 
