@@ -33,10 +33,20 @@ export function capacityReadout(cap: Capacity | null | undefined): CapacityReado
 /**
  * The overload banner visibility (Q5): visible ⇔ a real server reject is active AND not dismissed. It **self-clears**
  * when capacity is known and NOT full (the machine limit is no longer reached) — computed here so the App only holds
- * the two raw flags. `capacity` null (unknown) does NOT self-clear a live reject (we can't prove headroom returned).
+ * the raw flags. `capacity` null (unknown) does NOT self-clear a live reject (we can't prove headroom returned).
+ *
+ * CYP-759 — the self-clear is gated on `capacityNewerThanReject`: the headroom evidence must be NEWER than the reject
+ * (a capacity GET completed, or a spawn succeeded, AFTER the 503). A snapshot fetched BEFORE the reject can read as
+ * headroom while the server is actually full, so clearing on it lets a STALE client estimate over-ride the
+ * authoritative reject — the exact swallow this closes. Without newer evidence a live reject stays visible.
  */
-export function overloadVisible(active: boolean, dismissed: boolean, capacity: Capacity | null | undefined): boolean {
+export function overloadVisible(
+  active: boolean,
+  dismissed: boolean,
+  capacity: Capacity | null | undefined,
+  capacityNewerThanReject: boolean,
+): boolean {
   if (!active || dismissed) return false
-  if (capacity != null && !isFull(capacity)) return false // headroom returned → self-clear
+  if (capacityNewerThanReject && capacity != null && !isFull(capacity)) return false // NEWER headroom → self-clear
   return true
 }
