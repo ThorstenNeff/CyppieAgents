@@ -47,13 +47,16 @@ class StoreMigratorTest {
         val bindings = BindingRegistry(null)
         val audit = InMemoryMigrationAudit()
 
-        val receipt = StoreMigrator(bindings, audit).migrate(source, target, "projectregistry", "default", "pg1", actor = "op-alice")
+        // CYP-773: the store key is the CANONICAL `project` (the key StoreResidencies + PgStoreRouting use for the
+        // project registry), not the old fictional `projectregistry` label — the migrator's residency guard now
+        // makes the key load-bearing, and `project` IS user-DB-capable so this happy path stays valid.
+        val receipt = StoreMigrator(bindings, audit).migrate(source, target, "project", "default", "pg1", actor = "op-alice")
 
         assertTrue(receipt.ok && receipt.checksumMatch)
         assertEquals(4, receipt.sourceRows) // 1 active row + 3 project rows
         assertEquals(listOf("default", "beta", "gamma"), target.projects().map { it.id })
         assertEquals("beta", target.activeProjectId())
-        val b = bindings.binding("projectregistry", "default")!!
+        val b = bindings.binding("project", "default")!!
         assertEquals("pg1", b.dsnId); assertEquals(BindingState.ACTIVE, b.state)
 
         // Audit trail (§5): the phases in order, all OK, stamped with the actor.
@@ -76,9 +79,9 @@ class StoreMigratorTest {
 
         toggle.broken = true
         assertFailsWith<SQLException> {
-            StoreMigrator(bindings, audit).migrate(source, target, "projectregistry", "default", "pg1", actor = "op")
+            StoreMigrator(bindings, audit).migrate(source, target, "project", "default", "pg1", actor = "op")
         }
-        assertNull(bindings.binding("projectregistry", "default"), "failed copy → unbound (File fallback)")
+        assertNull(bindings.binding("project", "default"), "failed copy → unbound (File fallback)")
         assertEquals(listOf("default", "beta", "gamma"), source.projects().map { it.id }, "source A retained + intact")
         val last = audit.entries().last()
         assertEquals(MigrationPhase.ROLLBACK, last.phase); assertEquals(MigrationResult.FAILED, last.result)
@@ -101,9 +104,9 @@ class StoreMigratorTest {
         val bindings = BindingRegistry(null)
         val audit = InMemoryMigrationAudit()
         assertFailsWith<MigrationVerifyException> {
-            StoreMigrator(bindings, audit).migrate(source, corrupt, "projectregistry", "default", "pg1", actor = "op")
+            StoreMigrator(bindings, audit).migrate(source, corrupt, "project", "default", "pg1", actor = "op")
         }
-        assertNull(bindings.binding("projectregistry", "default"))
+        assertNull(bindings.binding("project", "default"))
         assertEquals(listOf("default", "beta", "gamma"), source.projects().map { it.id })
         assertEquals(MigrationPhase.VERIFY, audit.entries().first { it.result == MigrationResult.FAILED }.phase)
     }
@@ -121,9 +124,9 @@ class StoreMigratorTest {
         val reopened = DsnRegistry(dsnFile, cipher())
         assertEquals("the-db-password", reopened.resolve("pg1")!!.password, "encrypted DSN survived restart + decrypted")
 
-        val bindings = BindingRegistry(null).apply { bind("projectregistry", "default", "pg1") }
+        val bindings = BindingRegistry(null).apply { bind("project", "default", "pg1") }
         ConnectionProvider(reopened, bindings, maxPoolSize = 2).use { cp ->
-            val ds = cp.forStore("projectregistry", "default")!!
+            val ds = cp.forStore("project", "default")!!
             assertEquals(listOf("default"), PgProjectRegistry(ds, "default").projects().map { it.id })
         }
     }
