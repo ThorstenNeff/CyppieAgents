@@ -182,6 +182,27 @@ class AgentViewModel(
     }
 
     /**
+     * CYP-239 — persona (CLAUDE.md) restart-pending, per agent. A **persona-relevant** overwrite succeeded but the
+     * running agent read the OLD CLAUDE.md at spawn, so the change only takes effect on the next start. The
+     * [AgentSettingsViewModel]'s `needsRestart`/`claudeMdWritten` carried this, but that VM is dialog-scoped and
+     * CYP-237's close-on-save disposes it — so the reminder lost its home. It lives HERE instead: per-agent, it
+     * survives the dialog close, and it clears itself on the SAME RUNNING lifecycle event this VM already consumes
+     * for "Neustart…" — i.e. exactly when the (re)spawn reads the new file and the persona actually takes effect.
+     *
+     * Set ONLY by [markPersonaPendingRestart] (called by the shell on a CLAUDE.md overwrite success — never on a
+     * name/colour save, which is immediate, §7). No server signal: both facts (persona overwritten; agent RUNNING
+     * since) are client-observable, so a "saved ≠ active persona" signal would be redundant.
+     */
+    val personaPendingRestart: StateFlow<Boolean> get() = _personaPendingRestart
+    private val _personaPendingRestart = MutableStateFlow(false)
+
+    /** CYP-239: mark this agent's persona as changed-but-not-yet-active (a CLAUDE.md overwrite succeeded). Cleared on
+     *  the next RUNNING lifecycle event (see [lifecycleState]) — when the (re)spawn reads the new file. */
+    fun markPersonaPendingRestart() {
+        _personaPendingRestart.value = true
+    }
+
+    /**
      * CYP-333/381: the window's content view — the structured Orchestrierung transcript (default) or the real
      * Terminal. In production the toggle routes through [requestMode] (non-optimistic, CYP-355 motor): choosing
      * TERMINAL hands off to the agent's interactive `claude --resume` session (the mediated reader steps aside) and
@@ -271,6 +292,10 @@ class AgentViewModel(
                 // successful RUNNING→RUNNING restart still emits a lifecycle event, so the "Neustart…" flash resolves.
                 clearStartPending()
                 clearRestartPending()
+                // CYP-239: a RUNNING event = the agent (re)spawned and read the CURRENT CLAUDE.md, so a
+                // persona-restart-pending reminder has been satisfied — clear it. Only RUNNING (a STOP/ERROR event
+                // does not make the new persona active; the reminder must persist until the agent runs again).
+                if (event.state == AgentLifecycleState.RUNNING) _personaPendingRestart.value = false
                 emit(event.state)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, AgentLifecycleState.UNKNOWN)

@@ -158,6 +158,10 @@
          Modellname wird vom Mapper als " · <model>" angehängt. Löst das hartkodierte deutsche Literal
          „Session gestartet" ab; der stringResource-Lookup kommt aus der UI-Schicht (AgentShell). -->
     <string name="agent_ready_notice">Agent bereit</string>
+    <!-- CYP-239: the persistent per-agent header badge label — a persona (CLAUDE.md) change is saved but the running
+         agent still has the old file (takes effect on the next start). The full sentence is the a11y description
+         (reuses agent_edit_effect_hint); this is the short visible label, dropped at compact widths. -->
+    <string name="agent_persona_pending_badge">Neustart nötig</string>
     <!-- CYP-386: the localized "turn error" notice label (StreamJsonMapper's failed-turn path); the wire subtype
          is appended as ": <subtype>" and stays untranslated. Injected like agent_ready_notice — the mapper is pure
          Kotlin and holds no user-facing literal. -->

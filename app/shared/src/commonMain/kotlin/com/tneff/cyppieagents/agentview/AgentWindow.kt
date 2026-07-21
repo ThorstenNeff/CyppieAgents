@@ -110,6 +110,8 @@ import kmpcyppieagents.app.shared.generated.resources.agent_ctl_start
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_unconfigured
 import kmpcyppieagents.app.shared.generated.resources.agent_ctl_stop
 import com.tneff.cyppieagents.comm.ConnectionStatus
+import kmpcyppieagents.app.shared.generated.resources.agent_edit_effect_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_persona_pending_badge
 import kmpcyppieagents.app.shared.generated.resources.agent_reconnecting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_error
 import kmpcyppieagents.app.shared.generated.resources.agent_status_running
@@ -219,6 +221,9 @@ fun AgentWindow(
     val lifecycle by viewModel.lifecycleState.collectAsState()
     val startPending by viewModel.startPending.collectAsState()
     val restartPending by viewModel.restartPending.collectAsState()
+    // CYP-239: persona (CLAUDE.md) changed but not yet active — the restart reminder that lost its home when
+    // CYP-237 closed the settings dialog on save. Rendered as a persistent header badge (see AgentHeader).
+    val personaPendingRestart by viewModel.personaPendingRestart.collectAsState()
     val lifecycleError by viewModel.lifecycleError.collectAsState()
     val connection by viewModel.connection.collectAsState()
     val contentMode by viewModel.contentMode.collectAsState()
@@ -255,6 +260,7 @@ fun AgentWindow(
             connection = connection,
             canControl = viewModel.canControl,
             hubUnconfigured = hubUnconfigured,
+            personaPendingRestart = personaPendingRestart,
             onStart = viewModel::start,
             onStop = viewModel::stop,
             onRestart = viewModel::restart,
@@ -518,6 +524,9 @@ private fun AgentHeader(
     startPending: Boolean = false,
     /** CYP-330: a Restart request is in flight → the status shows the transient "Neustart…" (client-only). */
     restartPending: Boolean = false,
+    /** CYP-239: a persona (CLAUDE.md) change was saved but the running agent still has the OLD file → a persistent
+     *  "wirkt erst beim Neustart" badge, until the agent's next RUNNING event. Absent by default (fail-closed). */
+    personaPendingRestart: Boolean = false,
     connection: ConnectionStatus = ConnectionStatus.LIVE,
     capabilities: Capabilities? = null,
     capabilitiesLoading: Boolean = false,
@@ -580,6 +589,10 @@ private fun AgentHeader(
                     loading = capabilitiesLoading,
                     compact = compact,
                 )
+                // CYP-239: the persona-restart-pending badge — its own marker (≠ lifecycle, ≠ fidelity), present only
+                // while a saved CLAUDE.md change awaits the agent's restart (fail-closed by absence). Compact-aware
+                // like the fidelity badge: the glyph + a11y sentence stay, the word drops at narrow widths.
+                PersonaRestartBadge(agentId = agentId, pending = personaPendingRestart, compact = compact)
             }
             AgentLifecycleControls(
                 agentId = agentId,
@@ -708,6 +721,40 @@ private fun ReconnectingChip(agentId: String, connection: ConnectionStatus) {
             .testTag(AgentViewTags.reconnecting(agentId))
             .semantics { contentDescription = label },
     )
+}
+
+/**
+ * CYP-239 — the persona-restart-pending badge. **Fail-closed by absence:** rendered ONLY while [pending] (a saved
+ * CLAUDE.md persona change the running agent has not picked up yet). This is the home the CYP-237 close-on-save took
+ * from the in-dialog `agent_edit_effect_hint` — persistent at the agent header until the agent's next RUNNING event
+ * (see [AgentViewModel.personaPendingRestart]). EFFECT_DEFERRED tone (a *deferred effect*, not an error). Compact-aware
+ * like the fidelity badge (CYP-350): the glyph + the full a11y sentence stay at every width, only the word drops. The
+ * accessible name is the reused full hint (`agent_edit_effect_hint`), so a screen reader gets the whole reason.
+ */
+@Composable
+private fun PersonaRestartBadge(agentId: String, pending: Boolean, compact: Boolean) {
+    if (!pending) return
+    val a11y = stringResource(Res.string.agent_edit_effect_hint)
+    Row(
+        modifier = Modifier
+            .testTag(AgentViewTags.personaRestartBadge(agentId))
+            .semantics { contentDescription = a11y },
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // CYP-300 (a0): EFFECT_DEFERRED = onSecondaryContainer (secondary/blue Attention), parity with the fidelity
+        // badge's degraded marker and TonedHint — a marked deferral, never an error red. `↻` = restart (plain text,
+        // no emoji — CYP-54, reliable on Desktop-JVM).
+        Text("↻", color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.bodySmall)
+        if (!compact) {
+            Text(
+                text = stringResource(Res.string.agent_persona_pending_badge),
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+            )
+        }
+    }
 }
 
 /** CYP-396: the status dot's drawn form. UNKNOWN is a RING (a different axis than STOPPED), all else a filled disc. */

@@ -38,6 +38,10 @@ object AgentViewTags {
     /** CYP-204: the reconnecting indicator, present only while the per-agent WS is not LIVE (auto-reconnect). */
     fun reconnecting(agentId: String) = "agent.$agentId.reconnecting"
 
+    /** CYP-239: the persona-restart-pending badge — a CLAUDE.md persona change was saved but the running agent still
+     *  has the OLD file; present until the agent's next RUNNING event. The home the CYP-237 close-on-save took away. */
+    fun personaRestartBadge(agentId: String) = "agent.$agentId.personaRestartBadge"
+
     /** Operator-gated lifecycle controls. */
     fun startBtn(agentId: String) = "agent.$agentId.startBtn"
     fun stopBtn(agentId: String) = "agent.$agentId.stopBtn"

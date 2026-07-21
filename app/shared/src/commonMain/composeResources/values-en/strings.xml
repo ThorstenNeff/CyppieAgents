@@ -151,6 +151,8 @@
     <!-- CYP-383: transcript "ready" notice — fired once per session at the first stream-json SystemEvent with a
          session_id (an observation that stdin is served, not the RUNNING command). See values/strings.xml. -->
     <string name="agent_ready_notice">Agent ready</string>
+    <!-- CYP-239: the persistent per-agent persona-restart header badge label (see the DE file for the rationale). -->
+    <string name="agent_persona_pending_badge">Restart needed</string>
     <!-- CYP-386: the localized "turn error" notice label (see the DE file for the rationale). -->
     <string name="agent_turn_error_notice">Turn error</string>
     <!-- CYP-386: the localized "connection lost" notice label (see the DE file for the rationale). -->

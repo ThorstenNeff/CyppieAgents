@@ -905,6 +905,14 @@ fun AgentShell(
                     claudeMdApi = ClaudeMdHttpApi(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: ""),
                 )
             }
+            // CYP-239: when a CLAUDE.md persona OVERWRITE succeeds (state.needsRestart == claudeMdWritten — PERSONA-
+            // specific, never a name/colour save, §7), mark THIS agent's window VM so the persona-restart badge
+            // persists AFTER CYP-237 closes this dialog. The badge lives on the per-agent AgentViewModel (survives the
+            // dialog) and clears itself on the agent's next RUNNING event — where the (re)spawn reads the new file.
+            val settingsUiState by agentSettingsVm.state.collectAsState()
+            LaunchedEffect(settingsUiState.needsRestart, sid) {
+                if (settingsUiState.needsRestart) agentVms[sid]?.markPersonaPendingRestart()
+            }
             // CYP-216: the platform image picker (wasmJs/jvm real; android/ios stub) → the VM does the pre-check
             // + multipart upload + server-truth adopt. onRequestUpload launches the picker for THIS agent's VM.
             val requestUpload = rememberImagePicker { picked ->
