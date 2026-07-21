@@ -658,6 +658,9 @@
     <string name="a11y_transcript_tool_run_open_with_errors">%1$d Schritte, %2$d davon fehlgeschlagen</string>
     <string name="a11y_transcript_tool_run_expand">Schritte anzeigen</string>
     <string name="a11y_transcript_tool_run_collapse">Schritte einklappen</string>
+    <!-- CYP-796: der Fold-ZUSTAND (für stateDescription) — ein Zustands-Wort, nicht die Aktion (anzeigen/einklappen). -->
+    <string name="a11y_transcript_tool_run_state_collapsed">eingeklappt</string>
+    <string name="a11y_transcript_tool_run_state_expanded">ausgeklappt</string>
     <!-- CYP-354 §5.1 (client mirror): read-only Terminal-Control-Mode-Marker in der Titlebar. MEDIATED = kein Marker.
          Form+Label tragen die Bedeutung (WCAG 1.4.1); content-frei (nur Zustand). -->
     <string name="terminal_ctl_interactive">Interaktiv</string>
