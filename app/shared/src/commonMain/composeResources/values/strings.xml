@@ -797,6 +797,10 @@
     <string name="remote_connect_trust_reject">Stimmt nicht — abbrechen</string>
     <string name="remote_connect_trust_aborted">Nicht verbunden — Identität nicht bestätigt.</string>
     <string name="remote_connect_trust_changed_repin">Neu pinnen nur nach Out-of-Band-Abgleich des neuen Fingerprints.</string>
+    <!-- CYP-747 §5-C2: owned-but-issuer-not-trusted (UIUX-Copy 13a06650, verbatim). Anker-Term, kein "Token abgelehnt". -->
+    <string name="remote_connect_issuer_not_trusted">Verbindung angehalten: Dieser Hub ist registriert, aber es ist kein vertrauenswürdiger Aussteller an ihm etabliert. Ohne etabliertes Aussteller-Vertrauen wird keine Operator-Berechtigung erteilt.</string>
+    <string name="remote_connect_issuer_oob">Ein vertrauenswürdiger Aussteller wird außerhalb der App am Hub etabliert (durch den Betreiber/PO). Danach erneut verbinden.</string>
+    <string name="a11y_remote_connect_issuer_not_trusted">Verbindung angehalten: kein vertrauenswürdiger Aussteller am Hub etabliert. Keine Operator-Berechtigung. Aussteller-Vertrauen wird außerhalb der App etabliert; danach erneut verbinden.</string>
 
     <!-- CYP-540 (WS5): N-Tunnel-Pool-Status-Chrome (per-Tunnel-State + Aggregat). Copy aus tunnel-pool-status-spec.md §8. -->
     <string name="tunnel_pool_state_dialing">Verbindet…</string>

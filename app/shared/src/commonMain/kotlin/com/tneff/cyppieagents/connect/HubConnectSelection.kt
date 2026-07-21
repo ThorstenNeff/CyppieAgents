@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -55,6 +56,9 @@ import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_unrea
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_uv_failed
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_changed
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_rejected
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_issuer_not_trusted
+import kmpcyppieagents.app.shared.generated.resources.remote_connect_issuer_oob
+import kmpcyppieagents.app.shared.generated.resources.a11y_remote_connect_issuer_not_trusted
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_provisional
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_trust_check
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -356,6 +360,35 @@ private fun RemoteFailureView(failure: RemoteFailure?, viewModel: HubConnectView
                 color = severityColor(Severity.WARN),
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+        // CYP-747 §5-C2: the hub is registered/owned at the CP, but NO trusted CP-JWT issuer is established — a THIRD
+        // trust axis (distinct from the hub-key TrustChanged/TrustRejected and the operator AuthRejected). A verify-OOB
+        // WARN-amber HARD BLOCK (▲ + colour + label, WCAG 1.4.1) — NOT error-red "broken", and NEVER a retry/grant: an
+        // untrusted issuer grants no operator authority (fail-closed). Recovery is OOB-only (the hint below is a TEXT
+        // hint, not a button, mirroring TrustChanged's re-pin — issuer decisions are the PO/OOB boundary). a11y =
+        // Assertive: an unsolicited terminal trust stop the operator must hear.
+        is RemoteFailure.IssuerNotTrusted -> {
+            val a11y = stringResource(Res.string.a11y_remote_connect_issuer_not_trusted)
+            Column(
+                modifier = Modifier.fillMaxWidth().testTag(RemoteConnectTags.error("issuerNotTrusted"))
+                    .semantics { liveRegion = LiveRegionMode.Assertive; contentDescription = a11y },
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("▲ ", color = severityColor(Severity.WARN))
+                    Text(
+                        stringResource(Res.string.remote_connect_issuer_not_trusted),
+                        color = severityColor(Severity.WARN),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Text(
+                    stringResource(Res.string.remote_connect_issuer_oob),
+                    color = severityColor(Severity.WARN),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag(RemoteConnectTags.ISSUER_OOB),
+                )
+            }
         }
         RemoteFailure.AuthRejected -> TonedHint(
             stringResource(Res.string.remote_connect_auth_rejected), HintTone.ERROR, RemoteConnectTags.error("authRejected"),

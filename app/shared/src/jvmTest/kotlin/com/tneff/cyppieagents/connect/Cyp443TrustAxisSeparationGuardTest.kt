@@ -34,6 +34,18 @@ class Cyp443TrustAxisSeparationGuardTest {
         "OperatorDeviceKey", "CachingUserVerification", "OperatorSecretVault",
     )
 
+    /**
+     * CYP-747 §5-C2 — the **issuer-trust axis (c)**: whether the hub's CP-JWT/cert ISSUER is established/trusted. A
+     * THIRD axis, orthogonal to (a) hub-key TOFU and (b) operator identity — an untrusted issuer grants no authority
+     * regardless of a valid pin or a valid operator. Neither (a) nor (b) may reach into it (the issuer anchor/pin-home
+     * must be its OWN store, never reuse the TOFU pin or the operator vault). The anchor-determination itself lands in
+     * Backend-S1 wiring; this pins the a/b ⊥ c separation NOW (the symmetric "issuer-home ⊥ a/b" scan lands with that
+     * file). Tokens are the issuer-axis type names (the UI failure today + the anticipated S1 anchor/pin types).
+     */
+    private val issuerTrustTokens = listOf(
+        "IssuerNotTrusted", "IssuerAnchor", "IssuerTrust", "IssuerPinStore", "CpIssuerPin",
+    )
+
     @Test
     fun operatorAuth_neverReferences_hubTrustPinAxis() {
         val code = codeLinesOf("src/commonMain/kotlin/com/tneff/cyppieagents/net/hub/operator/ClientOperatorAuth.kt")
@@ -54,6 +66,30 @@ class Cyp443TrustAxisSeparationGuardTest {
                 code.none { it.contains(token) },
                 "Auflage #2: TofuHubTrust (hub-trust axis) must NOT reference the operator-identity type '$token' — " +
                     "the hub pin must not depend on who the operator is. Found a cross-axis reference.",
+            )
+        }
+    }
+
+    @Test
+    fun hubTrust_neverReferences_issuerAxis() {
+        val code = codeLinesOf("src/commonMain/kotlin/com/tneff/cyppieagents/net/hub/trust/TofuHubTrust.kt")
+        for (token in issuerTrustTokens) {
+            assertTrue(
+                code.none { it.contains(token) },
+                "CYP-747 §5-C2: TofuHubTrust (hub-trust axis a) must NOT reference the issuer-trust type '$token' — the " +
+                    "issuer axis (c) is orthogonal; the hub pin must not double as issuer trust. Found a cross-axis reference.",
+            )
+        }
+    }
+
+    @Test
+    fun operatorAuth_neverReferences_issuerAxis() {
+        val code = codeLinesOf("src/commonMain/kotlin/com/tneff/cyppieagents/net/hub/operator/ClientOperatorAuth.kt")
+        for (token in issuerTrustTokens) {
+            assertTrue(
+                code.none { it.contains(token) },
+                "CYP-747 §5-C2: ClientOperatorAuth (operator-identity axis b) must NOT reference the issuer-trust type " +
+                    "'$token' — operator identity does not establish issuer trust. Found a cross-axis reference.",
             )
         }
     }
