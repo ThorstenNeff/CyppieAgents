@@ -639,6 +639,9 @@
     <string name="a11y_transcript_tool_run_open_with_errors">%1$d steps, %2$d failed</string>
     <string name="a11y_transcript_tool_run_expand">Show steps</string>
     <string name="a11y_transcript_tool_run_collapse">Collapse steps</string>
+    <!-- CYP-796: the fold STATE (for stateDescription) — a state word, not the action (show/collapse). -->
+    <string name="a11y_transcript_tool_run_state_collapsed">collapsed</string>
+    <string name="a11y_transcript_tool_run_state_expanded">expanded</string>
     <!-- CYP-354 §5.1 (client mirror): read-only terminal-control mode marker in the title bar. MEDIATED = no marker.
          Form+label carry the meaning (WCAG 1.4.1); content-free (state only). -->
     <string name="terminal_ctl_interactive">Interactive</string>

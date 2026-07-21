@@ -145,6 +145,8 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_c
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_open_with_errors
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_expand
 import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_collapse
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_state_collapsed
+import kmpcyppieagents.app.shared.generated.resources.a11y_transcript_tool_run_state_expanded
 import kmpcyppieagents.app.shared.generated.resources.a11y_terminal_mode
 import kmpcyppieagents.app.shared.generated.resources.workspace_operator_only
 import org.jetbrains.compose.resources.stringResource
@@ -1082,6 +1084,11 @@ private fun ToolRunHeader(
     val toggleLabel = stringResource(
         if (collapsed) Res.string.a11y_transcript_tool_run_expand else Res.string.a11y_transcript_tool_run_collapse,
     )
+    // CYP-796: `stateDescription` must be the STATE ("eingeklappt"/"ausgeklappt"), not the ACTION (`toggleLabel` =
+    // "Schritte anzeigen/einklappen"). The action rides `onClickLabel` on the clickable; the state rides here.
+    val stateDesc = stringResource(
+        if (collapsed) Res.string.a11y_transcript_tool_run_state_collapsed else Res.string.a11y_transcript_tool_run_state_expanded,
+    )
     // UIUX §-QA fix: an error run defaults OPEN, so the error clause must be in the a11y in BOTH states — else a
     // screenreader on an open error header hears only "N steps", not "✗ N failed" (Pre-Read parity, SR == sighted).
     // A clean run: collapsed carries "eingeklappt"; expanded is the neutral count (children own their own a11y).
@@ -1106,7 +1113,7 @@ private fun ToolRunHeader(
                     .clickable(onClickLabel = toggleLabel, role = Role.Button, onClick = onToggle)
                     .semantics {
                         role = Role.Button
-                        stateDescription = toggleLabel
+                        stateDescription = stateDesc
                         contentDescription = cd
                     },
                 verticalAlignment = Alignment.CenterVertically,
