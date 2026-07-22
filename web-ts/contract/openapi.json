@@ -4522,6 +4522,30 @@
                 "required": [
                     "newEmail"
                 ]
+            },
+            "HubTrustState": {
+                "type": "string",
+                "enum": [
+                    "UNKNOWN",
+                    "PENDING",
+                    "TRUSTED",
+                    "REJECTED",
+                    "STALE"
+                ]
+            },
+            "TrustRejectReason": {
+                "type": "string",
+                "enum": [
+                    "KEY_CHANGED",
+                    "OOB_REJECTED"
+                ]
+            },
+            "HubDescriptorValidity": {
+                "type": "string",
+                "enum": [
+                    "VALID",
+                    "MALFORMED"
+                ]
             }
         },
         "securitySchemes": {
