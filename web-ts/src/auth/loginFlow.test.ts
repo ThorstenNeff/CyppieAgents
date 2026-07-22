@@ -37,7 +37,7 @@ function makeFetch(init: Response, submit: Response) {
 const authMe = (over: Partial<AuthMe>): AuthMe => ({ authenticated: true, verified: true, ...over })
 const okFetchAuthMe = (me: AuthMe) => vi.fn(async () => me)
 
-afterEach(() => setOnUnauthorized(null))
+afterEach(() => setOnUnauthorized('local', null))
 
 describe('createLogin (CYP-515 (a) in-app login-core — Kratos BROWSER flow, native httpOnly cookie)', () => {
   it('inits the BROWSER flow (cookie-setting) with Accept: application/json — not the API flow', async () => {
@@ -72,7 +72,7 @@ describe('createLogin (CYP-515 (a) in-app login-core — Kratos BROWSER flow, na
 
   it('④ a login 401 does NOT fire the global setOnUnauthorized re-auth hook (no login-surface loop, CYP-515)', async () => {
     const hook = vi.fn()
-    setOnUnauthorized(hook)
+    setOnUnauthorized('local', hook)
     const { fetchImpl } = makeFetch(FLOW, resp({ status: 401 }))
     const login = createLogin({ fetchImpl, fetchAuthMe: okFetchAuthMe(authMe({})), kratos: K })
     expect(await login('a@b.co', 'pw')).toEqual({ kind: 'rejected' })

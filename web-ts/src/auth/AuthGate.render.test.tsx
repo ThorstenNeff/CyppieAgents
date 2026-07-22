@@ -25,6 +25,7 @@ const setup = (over: {
   const childOperator = vi.fn()
   const utils = render(
     <AuthGate
+      activeHubId="local"
       fetchAuthMe={fetchAuthMe as () => Promise<AuthMe>}
       login={login}
       redirectToLogout={redirectToLogout}

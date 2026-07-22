@@ -61,6 +61,7 @@ describe('CYP-749 — a blank token does NOT skip the whoami gate (break-glass o
     const childOperator = vi.fn()
     const utils = render(
       <AuthGate
+        activeHubId="local"
         fetchAuthMe={fetchAuthMe as () => Promise<AuthMe>}
         login={vi.fn(async () => ({ kind: 'rejected' }) as LoginResult)}
         redirectToLogout={vi.fn()}

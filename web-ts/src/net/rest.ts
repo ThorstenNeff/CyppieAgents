@@ -2,6 +2,7 @@
 // (Bearer) when present, OR the first-party session cookie (credentials:"include") — the server accepts either.
 // Public/MEMBER serve has no operator global -> Bearer omitted -> the cookie carries the logged-in end user.
 import { operatorToken } from '../platform/operatorToken'
+import type { HubId } from './hubRegistry'
 
 export class RestError extends Error {
   constructor(
@@ -27,9 +28,10 @@ export function restErrorCode(err: unknown): string | null {
   }
 }
 
-// CYP-470: a global 401 handler. Every /api/* 401 (session expired/revoked) fires it → the AuthGate re-auth-redirects
-// (clears operator UI, no stale, no retry loop). Module-level so every repo/client routes through the one handler
-// without threading it; the AuthGate installs it on mount. The failing call still throws RestError(401) as usual.
+// CYP-470/CYP-800: the 401 handler is now HUB-SCOPED (N4.b). Modell 2 talks to N hubs; a 401 from hub B (session
+// expired/revoked THERE) must re-auth hub B ONLY — it must NOT tear down the hub-A session. So the handler is keyed
+// by hubId, and each RestClient fires the handler for ITS hub. The AuthGate installs one per active hub. A failing
+// call still throws RestError(401) as usual. (Full multi-hub wiring is additive; today one 'local' hub is keyed.)
 /** Extract zod's `path:code` issues WITHOUT the received values (they can carry secrets/PII — CYP-420 §7.2). */
 function issuesOf(e: unknown): string[] {
   const issues = (e as { issues?: { path?: unknown[]; code?: string }[] })?.issues
@@ -37,9 +39,11 @@ function issuesOf(e: unknown): string[] {
   return issues.map((i) => `${(i.path ?? []).join('.') || '(root)'}:${i.code ?? 'invalid'}`)
 }
 
-let onUnauthorized: (() => void) | null = null
-export function setOnUnauthorized(handler: (() => void) | null): void {
-  onUnauthorized = handler
+const onUnauthorizedByHub = new Map<HubId, () => void>()
+/** Install (or, with null, clear) the 401 handler for ONE hub. Hub-scoped so a 401 at hub B never fires hub A's. */
+export function setOnUnauthorized(hubId: HubId, handler: (() => void) | null): void {
+  if (handler === null) onUnauthorizedByHub.delete(hubId)
+  else onUnauthorizedByHub.set(hubId, handler)
 }
 
 /**
@@ -100,7 +104,11 @@ export class ResponseShapeError extends Error {
 }
 
 export class RestClient {
-  constructor(private readonly baseUrl: string) {}
+  // CYP-800 (N4.b): the client carries its hubId so a 401 fires ONLY this hub's re-auth handler, never a global.
+  constructor(
+    private readonly hubId: HubId,
+    private readonly baseUrl: string,
+  ) {}
 
   get<T>(path: string, validate?: ResponseValidator<T>): Promise<T> {
     return this.request<T>('GET', path, undefined, validate)
@@ -131,7 +139,7 @@ export class RestClient {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
 
-    if (res.status === 401) onUnauthorized?.() // CYP-470: session expired/revoked → re-auth redirect (AuthGate)
+    if (res.status === 401) onUnauthorizedByHub.get(this.hubId)?.() // CYP-470/CYP-800: re-auth ONLY this hub (N4.b)
     if (!res.ok) throw new RestError(res.status, method, path, await res.text().catch(() => ''))
     if (res.status === 204) return undefined as T
     const raw: unknown = await res.json()

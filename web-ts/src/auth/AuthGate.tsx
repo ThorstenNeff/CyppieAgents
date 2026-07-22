@@ -9,33 +9,45 @@
 // A global /api 401 (net/rest setOnUnauthorized) flips the gate back to None → the in-app LoginScreen (re-auth stays,
 // but IN-APP — no window redirect, so a session-expiry can't re-introduce the redirect loop). break-glass (injected
 // operator token) bypasses the whoami gate — that path authenticates by Bearer.
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { AuthMe } from '../types/generated/contract'
 import { setOnUnauthorized } from '../net/rest'
+import type { HubId } from '../net/hubRegistry'
 import { resolveAuthState, signedInAs, AUTH_TEXT, type AuthState, type LoginResult } from './authModel'
 import { LoginScreen } from './LoginScreen'
 
 export interface AuthGateProps {
+  /** CYP-800 (N4.b): the active hub whose 401 this gate re-auths. The default installer binds THIS hubId so a 401
+   *  from another hub never flips this gate. */
+  activeHubId: HubId
   fetchAuthMe: () => Promise<AuthMe>
   /** Submits the in-app login credentials (loginFlow.createLogin). */
   login: (email: string, password: string) => Promise<LoginResult>
   redirectToLogout: () => void
   /** injected operator token (isOperatorServe) → skip the whoami gate; the Bearer authenticates every request. */
   breakGlass?: boolean
-  /** Install seam for the global 401 handler (defaults to net/rest setOnUnauthorized; injectable for tests). */
+  /** Install seam for the hub 401 handler (defaults to a net/rest setOnUnauthorized bound to activeHubId; injectable
+   *  for tests). Called with a handler to install and null to clear — the hubId is already bound. */
   onInstallUnauthorized?: (handler: (() => void) | null) => void
   children: (operator: boolean) => ReactNode
 }
 
 export function AuthGate({
+  activeHubId,
   fetchAuthMe,
   login,
   redirectToLogout,
   breakGlass = false,
-  onInstallUnauthorized = setOnUnauthorized,
+  onInstallUnauthorized,
   children,
 }: AuthGateProps) {
   const [state, setState] = useState<AuthState>(breakGlass ? { kind: 'active', operator: true } : { kind: 'resolving' })
+  // CYP-800: the installer is bound to the active hub (setOnUnauthorized is now per-hubId). Memoised on
+  // [onInstallUnauthorized, activeHubId] so the install/clear effect below does not churn every render.
+  const installUnauthorized = useMemo(
+    () => onInstallUnauthorized ?? ((handler: (() => void) | null) => setOnUnauthorized(activeHubId, handler)),
+    [onInstallUnauthorized, activeHubId],
+  )
 
   // resolve-then-render: fetch whoami first; only then decide what to mount. Fail-closed to None on any error.
   useEffect(() => {
@@ -54,9 +66,9 @@ export function AuthGate({
   // loginFlow uses a direct fetch that bypasses this hook (spec §2.3④).
   useEffect(() => {
     if (breakGlass) return
-    onInstallUnauthorized(() => setState({ kind: 'none' }))
-    return () => onInstallUnauthorized(null)
-  }, [breakGlass, onInstallUnauthorized])
+    installUnauthorized(() => setState({ kind: 'none' }))
+    return () => installUnauthorized(null)
+  }, [breakGlass, installUnauthorized])
 
   if (state.kind === 'resolving') {
     // NOTHING of the app renders yet — no window, no operator control, no login flash (anti-flash).

@@ -71,6 +71,7 @@ function mountAsMain() {
   const grantedAt: (boolean | null)[] = []
   const utils = render(
     <AuthGate
+      activeHubId="local"
       fetchAuthMe={fetchAuthMe}
       login={login}
       redirectToLogout={vi.fn()}
