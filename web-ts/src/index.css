@@ -1877,6 +1877,64 @@ body {
   font-style: italic;
 }
 
+/* CYP-801 (N3) — the per-hub trust badge (uiux2 CYP-755 §1). Mirrors the .rst pill idiom. Colour is NEVER the sole
+   carrier: the glyph FORM (◯◔●⊘◑) + label WORD already distinguish all five states; tone is reinforcement only.
+   unknown/pending stay NEUTRAL (no optimistic/alarm colour); only trusted is positive, rejected warns, stale is
+   action-neutral (distinct, not an alarm). */
+.hub-trust {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.hub-trust-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-variant);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--md-sys-color-on-surface);
+  white-space: nowrap;
+}
+.hub-trust-glyph {
+  color: var(--md-sys-color-on-surface-variant); /* neutral base */
+}
+/* unknown + pending are explicitly NEUTRAL — no optimistic green, no alarm (over-alarm-avoidance). Stated (not just
+   inherited) so each of the five states ships its own rule and the CSS-presence guard is meaningful. */
+.hub-trust-unknown .hub-trust-glyph,
+.hub-trust-pending .hub-trust-glyph {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.hub-trust-trusted .hub-trust-glyph {
+  color: var(--md-sys-color-primary); /* the ONLY positive state */
+}
+.hub-trust-rejected .hub-trust-glyph {
+  color: var(--md-sys-color-error); /* warn — a real trust refusal */
+}
+.hub-trust-stale .hub-trust-glyph {
+  color: var(--md-sys-color-tertiary); /* action-neutral: re-confirm needed, distinct from unknown, NOT an alarm */
+}
+
+/* CYP-801 (N3) — the SEPARATE descriptor/upstream-error marker. Its OWN namespace (NOT hub-trust-*): a malformed
+   descriptor is an upstream error, never a trust verdict (tier*≠trust* discipline, CYP-798 §4b). Error-token tone;
+   the ⚠ glyph + the text carry the meaning (colour never sole). Always shown on malformed (mandatory). */
+.hub-descriptor-invalid {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--md-sys-color-error);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  max-width: 40ch;
+}
+.hub-descriptor-invalid-glyph {
+  flex: 0 0 auto;
+}
+
 /* CYP-288 — shared honest load-error + retry surface (failed INITIAL load ≠ empty). Same error-token tone as the
    shipped event-browse-error; the retry button keeps a ≥24px target. Colour is not the sole signal — the text
    ("Laden fehlgeschlagen.") + the retry button carry the meaning. */
