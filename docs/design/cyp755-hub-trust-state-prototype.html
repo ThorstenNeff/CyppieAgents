@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CYP-755 · Hub-Trust-State — Design-Prototyp (stub-parallel)</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1c1e; --muted: #5b5f66; --line: #d9dde2;
+    --card: #f6f7f9; --code: #eef0f3;
+    --neutral: #5b5f66;       /* unknown/pending tone — neutral, NIE Alarm */
+    --positive: #1f7a3d;      /* trusted — der EINZIGE positive Ton */
+    --warn: #b23a2e;          /* rejected — warnend */
+    --action: #8a5a00;        /* stale — handlungs-neutral (nicht Alarm-rot) */
+    --upstream: #4a4d52;      /* malformed/upstream-error — NICHT reject */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181b; --fg:#e6e8ea; --muted:#a2a7ad; --line:#2c2f34;
+      --card:#1e2126; --code:#23272d; --positive:#4cc76e; --warn:#ff6b5c; --action:#e0a53a; --upstream:#b7bcc2; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+    font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:2rem 1.25rem 4rem; }
+  .wrap { max-width: 940px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin:.2rem 0 .3rem; }
+  h2 { font-size: 1.08rem; margin:2.2rem 0 .7rem; padding-top:.9rem; border-top:1px solid var(--line); }
+  .sub { color:var(--muted); margin:.1rem 0 1rem; }
+  .banner { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--warn);
+    border-radius:8px; padding:.8rem 1rem; margin:1rem 0 1.5rem; }
+  .banner strong { color:var(--warn); }
+  code { background:var(--code); padding:.08em .38em; border-radius:4px; font-size:.86em; }
+  table { border-collapse: collapse; width:100%; margin:.4rem 0; font-size:.92rem; }
+  th,td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .glyph { font-size:1.15rem; width:1.4em; display:inline-block; text-align:center; }
+  /* the badge as it renders — glyph FORM + WORT carry meaning (colour-never-sole) */
+  .badge { display:inline-flex; align-items:center; gap:.45rem; padding:.2rem .55rem;
+    border:1px solid var(--line); border-radius:999px; font-size:.85rem; white-space:nowrap; }
+  .badge .g { font-size:1.05rem; line-height:1; }
+  .t-unknown  { color:var(--neutral); }
+  .t-pending  { color:var(--neutral); }
+  .t-trusted  { color:var(--positive); }
+  .t-rejected { color:var(--warn); }
+  .t-stale    { color:var(--action); }
+  .t-upstream { color:var(--upstream); }
+  .strip { background:var(--card); border:1px solid var(--line); border-radius:8px;
+    padding:.55rem .8rem; margin:.4rem 0; display:flex; align-items:center; gap:.6rem; }
+  .strip .ctx { color:var(--muted); font-size:.8rem; margin-left:auto; }
+  .switcher { background:var(--card); border:1px solid var(--line); border-radius:8px; overflow:hidden; max-width:340px; }
+  .switcher li { list-style:none; display:flex; align-items:center; gap:.5rem; padding:.5rem .7rem;
+    border-bottom:1px solid var(--line); }
+  .switcher li:last-child { border-bottom:0; }
+  .switcher li.active { background:color-mix(in srgb, var(--positive) 12%, transparent); font-weight:600; }
+  .switcher .ptr { width:1em; color:var(--positive); }
+  .switcher ul { margin:0; padding:0; }
+  .mono-note { color:var(--muted); font-size:.82rem; }
+  .rules li { margin:.35rem 0; }
+  .a11y { font-size:.82rem; color:var(--muted); }
+  .flag { color:var(--warn); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Hub-Trust-State — Design-Prototyp (5 Zustände)</h1>
+  <p class="sub">CYP-755 · web-ts · gegen die <strong>PL-gefreezten</strong> Namen <code>UNKNOWN / PENDING / TRUSTED / REJECTED / STALE</code></p>
+
+  <div class="banner">
+    <strong>DESIGN-PROTOTYP — stub-parallel, NICHT merge-ready.</strong> Dies ist die <em>Darstellungs-Referenz</em>
+    (Design-Deliverable), <strong>kein</strong> verdrahtetes Produktions-Bauteil. Die Produktions-Komponente in web-ts
+    + die echten Signal-Teeth (F2: „kommt der State aus echtem Wire") sind <strong>Dev5 / CYP-798-gated</strong>.
+    Gebaut gegen ein client-lokales <strong>Stub-Modell</strong> der gefreezten Namen; die <code>:core</code>-Enum-Verdrahtung
+    landet mit CYP-798.
+  </div>
+
+  <h2>§1 Die fünf Zustände — Darstellung, Ton, a11y</h2>
+  <p class="mono-note">Jeder Zustand trägt eine <strong>distinkte Glyph-Form + ein distinktes Wort</strong> →
+    <strong>colour-never-sole</strong> (WCAG 1.4.1): in Monochrom unterscheidbar. Farbe = nur Verstärkung.</p>
+  <table>
+    <thead><tr><th>Zustand</th><th>Badge (Glyph+Wort)</th><th>Ton</th><th>Regel</th><th>testid</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>UNKNOWN</code></td>
+        <td><span class="badge t-unknown"><span class="g">◯</span> Vertrauen nicht geprüft</span></td>
+        <td>neutral</td>
+        <td><strong>fail-closed Default aus Abwesenheit</strong> (F4) — sichtbar, nie Stille, nie grün</td>
+        <td><code>hub.trust.{id}.unknown</code></td>
+      </tr>
+      <tr>
+        <td><code>PENDING</code></td>
+        <td><span class="badge t-pending"><span class="g">◔</span> wird geprüft…</span></td>
+        <td>neutral</td>
+        <td><strong>distinkt von UNKNOWN</strong> — nur bei <em>echt laufender</em> Verifikation</td>
+        <td><code>hub.trust.{id}.pending</code></td>
+      </tr>
+      <tr>
+        <td><code>TRUSTED</code></td>
+        <td><span class="badge t-trusted"><span class="g">●</span> vertraut</span></td>
+        <td><strong>positiv (einziger)</strong></td>
+        <td>nur hub-ausgestellt; abgeleitet/widerrufbar, <strong>nie natives Identsein</strong></td>
+        <td><code>hub.trust.{id}.trusted</code></td>
+      </tr>
+      <tr>
+        <td><code>REJECTED</code></td>
+        <td><span class="badge t-rejected"><span class="g">⊘</span> abgelehnt</span></td>
+        <td>warnend</td>
+        <td>nur echter <strong>Trust-Eval-Reject</strong> (+ <code>TrustRejectReason</code>) — <span class="flag">nie</span> aus malformed/Netz</td>
+        <td><code>hub.trust.{id}.rejected</code></td>
+      </tr>
+      <tr>
+        <td><code>STALE</code></td>
+        <td><span class="badge t-stale"><span class="g">◑</span> abgelaufen — erneut bestätigen</span></td>
+        <td>handlungs-neutral</td>
+        <td>war trusted, widerrufen/abgelaufen → Surfaces nicht mehr live</td>
+        <td><code>hub.trust.{id}.stale</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="a11y"><strong>a11y je Zustand:</strong> Container <code>role="status"</code>, <code>aria-live="polite"</code>;
+    <code>aria-label</code> = das Wort (nie nur Glyph/Farbe). <strong>Assertive-Ausnahme:</strong> ein Wechsel des
+    <strong>aktiven</strong> Hubs <em>in</em> REJECTED/STALE (handlungsrelevant) → <code>aria-live="assertive"</code> /
+    <code>role="alert"</code>. Nur dieser aktive-Hub-Wechsel ist assertiv — die stille Switcher-Liste nicht (kein Ansage-Sturm).</p>
+
+  <h2>§2 Kontext A — aktiver-Hub-Indikator (always-visible Chrome-Strip)</h2>
+  <p class="mono-note">Zeigt den <strong>echten</strong> Zustand des aktiven Hubs — ein toter/abgelehnter Hub rendert
+    REJECTED/STALE/UNKNOWN, <strong>nie</strong> optimistisch „wird geprüft".</p>
+  <div class="strip"><span class="badge t-unknown"><span class="g">◯</span> Vertrauen nicht geprüft</span><span class="ctx">aktiver Hub · UNKNOWN (aria-live polite)</span></div>
+  <div class="strip"><span class="badge t-pending"><span class="g">◔</span> wird geprüft…</span><span class="ctx">aktiver Hub · PENDING (polite)</span></div>
+  <div class="strip"><span class="badge t-trusted"><span class="g">●</span> vertraut</span><span class="ctx">aktiver Hub · TRUSTED (polite)</span></div>
+  <div class="strip"><span class="badge t-rejected"><span class="g">⊘</span> abgelehnt</span><span class="ctx">aktiver Hub · REJECTED → <strong>assertive</strong></span></div>
+  <div class="strip"><span class="badge t-stale"><span class="g">◑</span> abgelaufen — erneut bestätigen</span><span class="ctx">aktiver Hub · STALE → <strong>assertive</strong></span></div>
+
+  <h2>§3 Kontext B — Hub-Switcher (Liste + aktiver-Pointer, Q4 one-active)</h2>
+  <p class="mono-note">Jeder Eintrag trägt sein eigenes Glyph; nicht-frische inaktive Hubs rendern <code>UNKNOWN</code>,
+    <strong>nicht</strong> das letzte gecachte <code>trusted</code>.</p>
+  <nav class="switcher" aria-label="Hub-Auswahl (Prototyp)">
+    <ul>
+      <li class="active"><span class="ptr" aria-hidden="true">▸</span><span class="badge t-trusted"><span class="g">●</span> vertraut</span> hub-alpha <span class="mono-note">(aktiv)</span></li>
+      <li><span class="ptr" aria-hidden="true"></span><span class="badge t-unknown"><span class="g">◯</span> nicht geprüft</span> hub-beta</li>
+      <li><span class="ptr" aria-hidden="true"></span><span class="badge t-stale"><span class="g">◑</span> abgelaufen</span> hub-gamma</li>
+      <li><span class="ptr" aria-hidden="true"></span><span class="badge t-rejected"><span class="g">⊘</span> abgelehnt</span> hub-delta</li>
+    </ul>
+  </nav>
+
+  <h2>§4 PL-Freeze-Regeln — im Prototyp encodiert</h2>
+  <ul class="rules">
+    <li><strong>malformed = Upstream-Error, NICHT Reject:</strong> ein uninterpretierbarer/malformed Wire-Wert rendert als
+      <span class="badge t-unknown"><span class="g">◯</span> Vertrauen nicht geprüft</span> (fail-closed) und trägt <strong>verbindlich/immer</strong> das
+      Upstream-Fehler-Signal (PL, CYP-798 — nicht optional) — <span class="flag">nie</span> als <code>REJECTED</code> (das wäre ein erfundenes Trust-Verdikt).
+      <br><span class="badge t-upstream"><span class="g">⚠</span> Upstream-Fehler — Status nicht lesbar</span>
+      <span class="mono-note">(→ Zustand bleibt UNKNOWN; distinkt vom Trust-Reject)</span></li>
+    <li><strong>PENDING distinkt von UNKNOWN:</strong> „wird geprüft" ist <em>nie</em> das Sammel-Label für nicht-verbunden/unbekannt.</li>
+    <li><strong><code>TrustRejectReason</code> nur für Trust-Eval-Rejects:</strong> der Reason-Code erscheint <em>ausschließlich</em>,
+      wenn der Hub Trust wirklich evaluiert + abgelehnt hat — nicht bei malformed/Netz/Upstream.</li>
+    <li><strong>UNKNOWN = fail-closed-Default aus Abwesenheit (F4):</strong> Abwesenheit einer Bestimmung → UNKNOWN,
+      nie collapse-to-green; UNKNOWN ist sichtbar (nicht Stille).</li>
+    <li><strong>Netzfehler ≠ Reject:</strong> transienter Netzfehler → Zustand UNKNOWN + „erneut versuchen", kein Trust-Verdikt.</li>
+  </ul>
+
+  <h2>§5 Grenze & Herkunft</h2>
+  <ul class="rules">
+    <li><strong>Scope:</strong> web-ts only. Die Compose/wasmJs-Trust-Fläche (<strong>CYP-797</strong>, <code>IssuerNotTrusted</code>) = Team-1.</li>
+    <li><strong>Produktions-Bau + echte-Wire-Teeth (F2)</strong> = Dev5, <strong>CYP-798-gated</strong>. Dieser Prototyp = Darstellungs-/a11y-Referenz dafür.</li>
+    <li><strong>Wire-Anforderungen</strong> (P3/P4/P5, Feld/Code/Signal) = CYP-755 §5b → speist die kleine <code>:core</code>-Promotion (CYP-798).</li>
+  </ul>
+</div>
+</body>
+</html>
