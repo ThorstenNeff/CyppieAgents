@@ -64,9 +64,10 @@ describe('CYP-801 — hubTrustGlyphSpec (5 distinct renders, colour never sole)'
     expect(p.label).not.toBe(t.label)
   })
 
-  it('over-alarm-avoidance: only TRUSTED positive, only REJECTED warns, unknown/pending neutral', () => {
-    // RED if unknown/pending ever carry an alarm tone, or trusted is not the sole positive.
-    expect(hubTrustGlyphSpec('TRUSTED').tone).toBe('positive')
+  it('over-alarm-avoidance + never-green: TRUSTED is NEUTRAL (no positive accent), only REJECTED warns', () => {
+    // never-green DS (CYP-803): trust is revocable → TRUSTED carries NO affirming/positive tone; its emphasis is CSS-only
+    // (on-surface). RED if TRUSTED ever regains a 'positive' tone, or if unknown/pending pick up an alarm tone.
+    expect(hubTrustGlyphSpec('TRUSTED').tone).toBe('neutral')
     expect(hubTrustGlyphSpec('REJECTED').tone).toBe('warn')
     expect(hubTrustGlyphSpec('UNKNOWN').tone).toBe('neutral')
     expect(hubTrustGlyphSpec('PENDING').tone).toBe('neutral')

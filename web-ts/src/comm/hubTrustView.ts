@@ -14,8 +14,10 @@
 import type { HubTrustState, HubDescriptorValidity } from '../connector/hubTrustModel'
 import { HUB_TRUST_STATE_DEFAULT } from '../connector/hubTrustModel'
 
-/** Presentation tone (CYP-755 §1). unknown/pending are NEUTRAL (no alarm); only rejected warns; stale/trusted carry
- *  their own weight. Colour is secondary — the glyph FORM + label WORD carry the meaning (colour-never-sole). */
+/** Presentation tone (CYP-755 §1). unknown/pending/TRUSTED are NEUTRAL (no alarm, no affirming green — never-green DS,
+ *  CYP-803: trust is revocable, so TRUSTED gets no positive accent, only a fuller CSS emphasis); only rejected warns;
+ *  stale is action. Colour is secondary — the glyph FORM + label WORD carry the meaning (colour-never-sole).
+ *  `'positive'` stays in the vocabulary (unused by trust) so the union isn't re-narrowed; no trust state maps to it. */
 export type HubTrustTone = 'neutral' | 'positive' | 'warn' | 'action'
 
 export interface HubTrustBadgeView {
@@ -71,7 +73,8 @@ const GLYPH: Record<HubTrustState, string> = {
 const TONE: Record<HubTrustState, HubTrustTone> = {
   UNKNOWN: 'neutral',
   PENDING: 'neutral',
-  TRUSTED: 'positive',
+  TRUSTED: 'neutral', // never-green DS (CYP-803): trust is issuer-vouched + REVOCABLE → no affirming accent. Its
+  // full-emphasis distinction (evaluated, not muted) lives in CSS (on-surface vs unknown/pending's on-surface-variant).
   REJECTED: 'warn',
   STALE: 'action',
 }
