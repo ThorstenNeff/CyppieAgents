@@ -17,6 +17,8 @@ describe('CYP-805 — IssuerNotTrustedBlock render', () => {
     const block = getByTestId('issuer.notTrusted.h1')
     expect(block).toBeTruthy()
     expect(block.getAttribute('role')).toBe('alert') // assertive — the refusal announces at once
+    expect(block.getAttribute('aria-live')).toBe('assertive') // spec §5: an unprompted terminal trust-stop
+    expect(block.getAttribute('aria-label')?.trim()).toBeTruthy() // the clean spoken sentence (present, not exact words)
     expect(block.className).toContain('issuer-not-trusted')
     expect(block.textContent?.trim()).toBeTruthy() // the meaning WORD is present (colour never sole)
     expect(container.querySelector('.issuer-not-trusted-glyph')).toBeTruthy() // + the glyph

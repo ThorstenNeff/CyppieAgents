@@ -29,14 +29,23 @@ export function issuerConnectDecision(issuerTrust: HubIssuerTrust | null | undef
   return issuerTrust === 'NOT_TRUSTED' ? 'block' : 'proceed'
 }
 
-// ── COPY / TONE / GLYPH — ★ CYP-805 INTERIM, uiux2 OWNS THE FINAL (axis c terminal block ≠ the neutral trust badge).
-// These placeholders let the scaffold render and let Tester2 measure the STRUCTURE now; swap 1:1 when uiux2 delivers.
-// What is NOT interim (established, remote-connect §HD "terminaler WARN-Amber-Block, no-retry"): the block is TERMINAL,
-// has NO retry, announces assertively (role="alert"), lives in its OWN token namespace `issuer-not-trusted`, and colour
-// is never the sole carrier (glyph + text). Only the exact words / glyph / tone token are uiux2's to finalize.
-export const ISSUER_NOT_TRUSTED_BLOCK_INTERIM = {
-  glyph: '▲', // interim established warn glyph — uiux2 confirms the final
-  title: 'Verbindung blockiert — Aussteller nicht vertraut',
-  detail: 'Dieser Hub vertraut deinem Aussteller-Vouch nicht. Die Remote-Strecke bleibt aus (serverseitig durchgesetzt).',
-  oobHint: 'Kläre die Aussteller-Freigabe außerhalb dieses Kanals (out-of-band).',
+// ── COPY / TONE / GLYPH — ★ FINAL (uiux2 CYP-805 UX-spec `docs/design/cyp805-issuer-not-trusted-block-ux-spec.md`,
+// wortgleich zu Team-1 CYP-747 §5-C2 — cross-surface reuse, no divergent second wording). WARN-amber: IssuerNotTrusted
+// is a PROTECTIVE fail-closed refusal, NOT a defect → never error-red/⚠ ("broken", that's axis-b AuthRejected) and never
+// neutral (that's the axis-a trust badge, CYP-803). The terminal HARD-block hardness is carried by the STRUCTURE (no
+// retry, assertive announce, OOB text-hint), NOT by the tone. Glyph ▲ = the web-ts WARN glyph (NOT ⚠ = ERROR; NOT the
+// axis-a circle glyphs ◯◔●⊘◑), aria-hidden — the TEXT carries the meaning (WCAG 1.4.1).
+//
+// ★★ SECURITY (load-bearing, spec §4): the wire verdict carries a self-asserted `issuer: String?` — the CLAIMED id of a
+// NOT-trusted peer. It is NEVER interpolated into visible copy: rendering an unverified, self-asserted name as fact is a
+// spoofing surface. The field is for state/logging/testid only (parity with Compose, which also does not display it).
+export const ISSUER_NOT_TRUSTED_BLOCK_COPY = {
+  glyph: '▲',
+  title: 'Verbindung angehalten',
+  detail:
+    'Dieser Hub ist registriert, aber es ist kein vertrauenswürdiger Aussteller an ihm etabliert. Ohne etabliertes Aussteller-Vertrauen wird keine Operator-Berechtigung erteilt.',
+  oobHint:
+    'Ein vertrauenswürdiger Aussteller wird außerhalb der App am Hub etabliert (durch den Betreiber/PO). Danach erneut verbinden.',
+  a11yLabel:
+    'Verbindung angehalten: kein vertrauenswürdiger Aussteller am Hub etabliert. Keine Operator-Berechtigung. Aussteller-Vertrauen wird außerhalb der App etabliert; danach erneut verbinden.',
 } as const

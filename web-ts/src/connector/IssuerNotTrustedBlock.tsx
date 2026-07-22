@@ -6,9 +6,10 @@
 // meaning. OWN token namespace `issuer-not-trusted` — NOT hub-trust-* (axis a) and NOT tier* — the three trust/tier
 // axes never share a namespace.
 //
-// ★ Copy/glyph/tone come from the INTERIM const in issuerTrustModel.ts (uiux2 owns the final — 1-place re-point). The
-// STRUCTURE here (terminal, no-retry, assertive, distinct namespace) is established and final.
-import { issuerConnectDecision, ISSUER_NOT_TRUSTED_BLOCK_INTERIM, type HubIssuerTrust } from './issuerTrustModel'
+// ★ Copy/glyph/tone come from ISSUER_NOT_TRUSTED_BLOCK_COPY (uiux2 CYP-805 spec, final). The STRUCTURE here (terminal,
+// no-retry, assertive, distinct namespace) is established and final. The container carries the full a11y description
+// (spec §5) as aria-label so the assertive announcement is the clean spoken sentence, not the visual concatenation.
+import { issuerConnectDecision, ISSUER_NOT_TRUSTED_BLOCK_COPY, type HubIssuerTrust } from './issuerTrustModel'
 
 export interface IssuerNotTrustedBlockProps {
   hubId: string
@@ -18,15 +19,22 @@ export interface IssuerNotTrustedBlockProps {
 
 export function IssuerNotTrustedBlock({ hubId, issuerTrust = null }: IssuerNotTrustedBlockProps) {
   if (issuerConnectDecision(issuerTrust) === 'proceed') return null
-  const c = ISSUER_NOT_TRUSTED_BLOCK_INTERIM
+  const c = ISSUER_NOT_TRUSTED_BLOCK_COPY
   return (
-    <div className="issuer-not-trusted" data-testid={`issuer.notTrusted.${hubId}`} role="alert">
+    <div
+      className="issuer-not-trusted"
+      data-testid={`issuer.notTrusted.${hubId}`}
+      role="alert"
+      aria-live="assertive"
+      aria-label={c.a11yLabel}
+    >
       <span className="issuer-not-trusted-glyph" aria-hidden="true">
         {c.glyph}
       </span>
       <div className="issuer-not-trusted-body">
         <span className="issuer-not-trusted-title">{c.title}</span>
         <span className="issuer-not-trusted-detail">{c.detail}</span>
+        {/* OOB recovery is a TEXT hint on its own line — NOT a button (issuer decisions are the PO/OOB boundary). */}
         <span className="issuer-not-trusted-oob">{c.oobHint}</span>
       </div>
       {/* TERMINAL — deliberately NO retry/dismiss control: the issuer vouch is resolved out-of-band, not by the client. */}
