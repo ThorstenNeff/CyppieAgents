@@ -10,8 +10,15 @@ import java.util.Base64
  * a ratification, so this stays a variant-agnostic naht — the impl behind it ([CpJwtVerifier]) is one option, not
  * hardwired.
  *
- * **The authority decision is LOCAL** (`sub == pinnedOperatorId`): a valid CP-signed token of a DIFFERENT user must
- * NOT open THIS hub (F6). The verifier never asks the CP at verify time.
+ * **The authority decision is LOCAL** (`sub == pinnedOperatorId`): a valid issuer-signed token of a DIFFERENT
+ * operator must NOT open THIS hub (F6). The verifier never asks the issuer at verify time.
+ *
+ * CYP-747 S2 (Model-2 — the pin generalizes, §2/§5 Step 2) — `pinnedOperatorId` is the **issuer-asserted operator
+ * identity**, ONE identity across the operator's OWNED HUB-SET (each owned hub pins the SAME cross-hub operator id).
+ * The set is realized as a per-hub CONJUNCTION (this pin ∧ `aud==thisHub` ∧ `cb` ∧ the tunnel Device-PoP), NEVER a
+ * hub-side "owned-set membership" wildcard: a credential minted for owned Hub-A does NOT open owned Hub-B (aud+cb
+ * isolate it), while the SAME operator opens each owned hub with that hub's own `aud`/`cb`. The generalization is of
+ * the anchor's MEANING, not its check — the per-hub `AND(JWS, Device-PoP)` (§3) is untouched.
  */
 interface IdentityToken {
     /** Verify [token] against the live [ctx]; the authenticated principal on success, else `null` (fail-closed). */
@@ -26,7 +33,9 @@ interface IdentityToken {
 class VerifierContext(
     /** S-C [com.tneff.cyppieagents.crypto.HubIdentity.hubId] — the token's `aud` MUST equal this. */
     val hubId: String,
-    /** The locally-pinned operator identity — the token's `sub` MUST equal this (F6 authority decision). */
+    /** The issuer-asserted operator identity — the token's `sub` MUST equal this (F6 authority decision). CYP-747 S2
+     *  (Model-2): the operator's ONE cross-hub identity, the SAME on every hub they own; a single EXACT id (equality,
+     *  never a set/wildcard), the owned-hub-set staying per-hub-isolated via `aud`+`cb`. */
     val pinnedOperatorId: String,
     /** The live Noise `getHandshakeHash()` — the `cb` claim binds the token to THIS session (anti-replay). */
     val handshakeHash: ByteArray,
@@ -71,7 +80,10 @@ object TokenPredicates {
 
     val NOT_BEFORE = TokenPredicate { c, ctx -> c.nbfSec == null || ctx.nowMs >= c.nbfSec * 1000L - ctx.leewayMs }
 
-    /** F6 authority: the token's subject MUST be the locally-pinned operator (decided here, never at the CP). */
+    /** F6 authority: the token's subject MUST be the pinned operator (decided here, never at the issuer). CYP-747 S2
+     *  (Model-2): `pinnedOperatorId` is the issuer-asserted operator identity — ONE across the operator's owned
+     *  hub-set. EXACT equality, never set-membership: the owned-hub-set is the per-hub conjunction (this ∧ AUDIENCE ∧
+     *  CHANNEL_BINDING ∧ tunnel Device-PoP), so an owned-Hub-A credential cannot laterally open owned-Hub-B. */
     val SUBJECT_PIN = TokenPredicate { c, ctx -> c.sub != null && c.sub == ctx.pinnedOperatorId }
 
     /** Noise channel-binding: the `cb` claim MUST equal `base64url(SHA-256(h ‖ hubId))` recomputed from the LIVE
