@@ -10,6 +10,7 @@ import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.EventsWsClientEvent
 import com.tneff.cyppieagents.model.EventsWsServerEvent
 import com.tneff.cyppieagents.model.HubDescriptorValidity
+import com.tneff.cyppieagents.model.HubIssuerTrust
 import com.tneff.cyppieagents.model.HubTrustState
 import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.TrustRejectReason
@@ -157,6 +158,10 @@ object ContractGenerator {
         serializer<HubTrustState>().descriptor,
         serializer<TrustRejectReason>().descriptor,
         serializer<HubDescriptorValidity>().descriptor,
+        // CYP-804 (axis c) — HubIssuerTrust. Unlike the 3 axis-a enums above it IS route-referenced (a
+        // HubDescriptor.issuerTrust field, so SchemaWalker also inlines it at that site); the standalone export gives
+        // Team-2 a NAMED, reusable `HubIssuerTrust` type instead of an anonymous inline union buried in HubDescriptor.
+        serializer<HubIssuerTrust>().descriptor,
     )
 
     /** The Bearer-only variant served on the EXTERNAL hosted docs surface (234a-3). Still GENERATED (no
