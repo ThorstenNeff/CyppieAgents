@@ -70,7 +70,11 @@ class KratosIdentityProvider(
             val verified = identity["verifiable_addresses"]?.jsonArray?.any {
                 it.jsonObject["verified"]?.jsonPrimitive?.booleanOrNull == true
             } ?: false
-            ResolvedIdentity(id, verified)
+            // CYP-747 S-AAL2a-ii (B1) — the session's assurance level, SERVER-derived from Kratos (`aal1`/`aal2`),
+            // never client-supplied. Only `aal2` (a WebAuthn/second factor was used) unlocks OPERATOR at the cookie
+            // chokepoint; anything else (aal1 / absent / unrecognized) → false → fail-closed.
+            val aal2 = obj["authenticator_assurance_level"]?.jsonPrimitive?.contentOrNull == "aal2"
+            ResolvedIdentity(id, verified, aal2 = aal2)
         } catch (e: Exception) {
             if (retryOnTransient && isTransient(e)) {
                 log.warn("whoami transient failure — retrying once: {}", e.message)

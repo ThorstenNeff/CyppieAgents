@@ -47,6 +47,9 @@ class KratosIdentityProviderTest {
                 val body = when (token ?: cookie) {
                     "verified" -> """{"active":true,"identity":{"id":"alice","verifiable_addresses":[{"verified":true}]}}"""
                     "unverified" -> """{"active":true,"identity":{"id":"bob","verifiable_addresses":[{"verified":false}]}}"""
+                    // CYP-747 S-AAL2a-ii — Kratos carries the session assurance level at the top of the whoami Session object.
+                    "aal2" -> """{"active":true,"authenticator_assurance_level":"aal2","identity":{"id":"alice","verifiable_addresses":[{"verified":true}]}}"""
+                    "aal1" -> """{"active":true,"authenticator_assurance_level":"aal1","identity":{"id":"alice","verifiable_addresses":[{"verified":true}]}}"""
                     "inactive" -> """{"active":false,"identity":{"id":"x"}}"""
                     "malformed" -> """not json at all"""
                     else -> null
@@ -76,6 +79,17 @@ class KratosIdentityProviderTest {
     @Test fun activeUnverified_mapsToUnverified() = runBlocking {
         assertEquals(ResolvedIdentity("bob", verified = false), idp.resolve(native("unverified")))
         assertEquals(ResolvedIdentity("bob", verified = false), idp.resolve(browser("unverified")))
+    }
+
+    // CYP-747 S-AAL2a-ii (B1) — the AAL2 signal is derived by the REAL parser from the Kratos whoami (not a test constant):
+    // `authenticator_assurance_level == "aal2"` → aal2=true; "aal1" → false; ABSENT → false (fail-closed). This is what the
+    // resolvePrincipal chokepoint gate reads, so the operator-authority factor is genuinely server-derived.
+    @Test fun aal2Session_parsesAal2True_aal1AndAbsentFalse_fromRealPlumbing() = runBlocking {
+        // native (header) AND browser (cookie) paths both parse aal2 from the real whoami.
+        assertEquals(ResolvedIdentity("alice", verified = true, aal2 = true), idp.resolve(native("aal2")))
+        assertEquals(ResolvedIdentity("alice", verified = true, aal2 = true), idp.resolve(browser("aal2")))
+        assertEquals(false, idp.resolve(native("aal1"))!!.aal2, "aal1 → not AAL2 (fail-closed)")
+        assertEquals(false, idp.resolve(native("verified"))!!.aal2, "absent assurance level → fail-closed false")
     }
 
     @Test fun inactiveSession_isNull() = runBlocking { assertNull(idp.resolve(native("inactive"))) }

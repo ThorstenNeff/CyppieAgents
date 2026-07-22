@@ -52,7 +52,7 @@ class SessionReadonlyWsTest {
         tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
         idp = FakeIdentityProvider(
             mapOf(
-                "sess-alice" to ResolvedIdentity("alice-op", verified = true), // first-verified → OPERATOR
+                "sess-alice" to ResolvedIdentity("alice-op", verified = true, aal2 = true), // first-verified → OPERATOR
                 "sess-carol" to ResolvedIdentity("carol-mem", verified = true), // later → MEMBER
             ),
         ),

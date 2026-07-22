@@ -35,7 +35,11 @@ class AuthGuardTest {
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
             idp = FakeIdentityProvider(
                 mapOf(
-                    "sess-alice" to ResolvedIdentity("alice", verified = true),
+                    // CYP-747 S-AAL2a-ii — alice is the pinned OPERATOR; her session is AAL2-backed (WebAuthn) so she gets
+                    // OPERATOR at the chokepoint. `sess-alice-aal1` is the SAME operator identity on a password-only (AAL1)
+                    // session → denied (the gate). carol/bob are MEMBER/unverified (unaffected by AAL2).
+                    "sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true),
+                    "sess-alice-aal1" to ResolvedIdentity("alice", verified = true, aal2 = false),
                     "sess-bob-unverified" to ResolvedIdentity("bob", verified = false),
                     "sess-carol" to ResolvedIdentity("carol", verified = true),
                 ),
@@ -87,6 +91,18 @@ class AuthGuardTest {
     fun invalidSession_is401() = testApplication {
         val store = roles(); installGuarded(store)
         assertEquals(HttpStatusCode.Unauthorized, client.get("/api/secret") { header("X-Session-Token", "nope") }.status)
+        store.close(); Files.deleteIfExists(db)
+    }
+
+    @Test
+    fun cyp747_aal2Required_forOperator_aal1Denied_aal2Granted() = testApplication {
+        val store = roles(); installGuarded(store)
+        // ★ positive control: the AAL2-backed (WebAuthn) operator session → OPERATOR (200). Without this the deny below
+        // would be vacuously green (an always-deny gate). The gate must DISCRIMINATE on the aal2 field.
+        assertEquals(HttpStatusCode.OK, client.get("/api/secret") { header("X-Session-Token", "sess-alice") }.status)
+        // ★ deny: the SAME pinned operator on an AAL1 (password-only) session → DENIED at the cookie chokepoint (401,
+        // fail-closed — never a silent MEMBER downgrade). Mutation: drop the `role==OPERATOR && !aal2` gate → this reds.
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/secret") { header("X-Session-Token", "sess-alice-aal1") }.status)
         store.close(); Files.deleteIfExists(db)
     }
 

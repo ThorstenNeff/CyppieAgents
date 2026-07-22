@@ -36,7 +36,7 @@ class Cyp719SubjectEquivalenceTest {
         val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
         val idp = FakeIdentityProvider(
             mapOf(
-                "sess-op" to ResolvedIdentity("op-1", verified = true),
+                "sess-op" to ResolvedIdentity("op-1", verified = true, aal2 = true),
                 "sess-mem" to ResolvedIdentity("mem-1", verified = true),
             ),
         )

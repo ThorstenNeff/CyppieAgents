@@ -118,7 +118,13 @@ suspend fun resolvePrincipal(cred: Credential, deps: AuthDeps): AuthPrincipal? {
     // Human axis (a Kratos session). RC1: session-valid is NOT enough — the identity must be verified.
     val resolved = deps.idp.resolve(cred.session) ?: return null
     if (!resolved.verified) return null
-    return AuthPrincipal.Human(resolved.identityId, deps.roles.ensureAssigned(resolved.identityId, deps.nowMs()))
+    val role = deps.roles.ensureAssigned(resolved.identityId, deps.nowMs())
+    // CYP-747 S-AAL2a-ii — the browser-AAL2 CHOKEPOINT: OPERATOR authority requires an AAL2 (WebAuthn-backed) session.
+    // An AAL1 (password-only) operator session is DENIED here — fail-closed `null` (an explicit re-auth-to-AAL2, NEVER a
+    // silent MEMBER downgrade). Because this is the SOLE cookie→operator authority path (Cyp747OperatorAuthorityClosureTest),
+    // ALL ~20 /api + WS + terminal operator edges inherit the factor as a PROPERTY. MEMBER is unaffected (only OPERATOR gated).
+    if (role == AuthRole.OPERATOR && !resolved.aal2) return null
+    return AuthPrincipal.Human(resolved.identityId, role)
 }
 
 /** CYP-410: the Ktor overload — extract the transport-neutral [Credential] from the call, then resolve. */
@@ -147,7 +153,12 @@ suspend fun ApplicationCall.resolveAuthState(deps: AuthDeps): com.tneff.cyppieag
     val cred = sessionCredential() ?: return com.tneff.cyppieagents.model.AuthMe(authenticated = false)
     val resolved = deps.idp.resolve(cred) ?: return com.tneff.cyppieagents.model.AuthMe(authenticated = false)
     return if (resolved.verified) {
-        com.tneff.cyppieagents.model.AuthMe(true, deps.roles.ensureAssigned(resolved.identityId, deps.nowMs()).name, true)
+        val role = deps.roles.ensureAssigned(resolved.identityId, deps.nowMs())
+        // CYP-747 S-AAL2a-ii — /me must not CLAIM operator authority the non-AAL2 session does not have: an AAL1 operator
+        // session reports role=null (authenticated + verified, but no operator role until AAL2), mirroring the
+        // resolvePrincipal deny → honest UX so the client prompts for the second factor instead of showing operator UI.
+        val effectiveRole = if (role == AuthRole.OPERATOR && !resolved.aal2) null else role.name
+        com.tneff.cyppieagents.model.AuthMe(true, effectiveRole, true)
     } else {
         com.tneff.cyppieagents.model.AuthMe(authenticated = true, role = null, verified = false)
     }

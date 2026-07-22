@@ -1,8 +1,13 @@
 package com.tneff.cyppieagents.auth
 
 /** A resolved identity from the IdP. [verified] = the identity's email/address is confirmed (Kratos
- *  `verifiable_addresses[].verified`). The guard requires `verified==true` (RC1) — session-valid is not enough. */
-data class ResolvedIdentity(val identityId: String, val verified: Boolean)
+ *  `verifiable_addresses[].verified`). The guard requires `verified==true` (RC1) — session-valid is not enough.
+ *
+ *  CYP-747 S-AAL2a-ii (B1) — [aal2] = the SESSION's authenticator-assurance-level is `aal2` (a second factor /
+ *  WebAuthn was used), parsed SERVER-side from the Kratos whoami (`authenticator_assurance_level`), NEVER
+ *  client-supplied. Default `false` = fail-closed: an unknown/AAL1 session yields no operator authority at the
+ *  cookie chokepoint ([resolvePrincipal]). MEMBER is unaffected — only OPERATOR requires AAL2. */
+data class ResolvedIdentity(val identityId: String, val verified: Boolean, val aal2: Boolean = false)
 
 /**
  * A caller's Kratos session credential **plus its source**, so a whoami/settings call sends the ONE header
