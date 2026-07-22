@@ -89,8 +89,8 @@ Jede Zeile ist eine §-QA-Prüfung. **Ton aus dem Bestand** (`severityColor`, `H
   Pointer; `tier*`≠`trust*`-Klasse; der Overclaim saß im Ton, nicht im Wort).
 - **a11y:** trägt den ehrlichen Qualifier **„vouched, widerrufbar"** — **nicht** „sicher"/„verifiziert"
   (kein Garantie-Overclaim).
-- **⚠ Achse-a ⊥ Achse-c am Render (PL-0107, CYP-805-③):** dieses `HubTrustState.TRUSTED` (Hub-Key-Pin) ist **nicht**
-  das Issuer-`TRUSTED` (`RemoteIssuerTrustState.ISSUER_TRUSTED`, Aussteller-Anker). Zwei „TRUSTED", zwei Wahrheiten →
+- **⚠ Achse-a ⊥ Achse-c am Render (PL-0107):** dieses `HubTrustState.TRUSTED` (Hub-Key-Pin) ist **nicht** das
+  Issuer-`HubIssuerTrust.TRUSTED` (`:core`-Carrier, CYP-804; Aussteller-Anker). Zwei „TRUSTED", zwei Wahrheiten →
   im Render **distinkt**, nie konflatieren (Cyp443 auf Label/Fläche). Kriterium: §5-Zahn 9.
 
 ### 2.4 `REJECTED` — evaluiert & verweigert, terminal (trägt `TrustRejectReason`)
@@ -170,8 +170,9 @@ Jede Zeile ist eine §-QA-Prüfung. **Ton aus dem Bestand** (`severityColor`, `H
    Richtungen — Overclaim-Rückkehr **und** Über-Neutralisierung — sind gezahnt.
 9. **Zwei-`TRUSTED`-Distinktheit (Achse a ⊥ c am Render, PL-0107 / CYP-805-③)** — es gibt **ZWEI** „TRUSTED": Achse-a
    **`HubTrustState.TRUSTED`** (Hub-Key-TOFU-Pin; neutral-definit `on-surface`, Label „vertraut", CYP-803) **UND**
-   Achse-c **Issuer-Trust „TRUSTED"** (`RemoteIssuerTrustState.ISSUER_TRUSTED`, `:server`; client-facing Typ landet
-   mit ③/CYP-805). Sie bedeuten **verschiedene Wahrheiten** — *Schlüssel gepinnt* vs. *Aussteller-Anker etabliert* —
+   Achse-c **Issuer-Trust `HubIssuerTrust.TRUSTED`** (der `:core`-Carrier — CYP-804-frozen/PL-ratifiziert:
+   `enum HubIssuerTrust { TRUSTED, NOT_TRUSTED, REMOTE_NOT_CONFIGURED }`; spiegelt die `:server`-interne Quelle
+   `RemoteIssuerTrustState`; landet mit **Backends CYP-804-Build**, im Bau). Sie bedeuten **verschiedene Wahrheiten** — *Schlüssel gepinnt* vs. *Aussteller-Anker etabliert* —
    und **dürfen im Render NICHT konflatieren**: dieselbe Cyp443-Achsen-Firewall, jetzt auf **Label/Glyph/Fläche**-
    Ebene. **§-QA:** distinkte Copy (nicht zweimal nacktes „vertraut"), die die **Achse benennt** (Hub-Key ↔ Aussteller);
    keine geteilte „TRUSTED"-Fläche, die beide Achsen suggeriert; Pre-Read-distinkt (`CYP-738 §4`) über die Achsen.
