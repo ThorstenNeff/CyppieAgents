@@ -90,6 +90,29 @@ class SchemaWalker {
         return buildJsonObject { put("\$ref", "#/components/schemas/$name") }
     }
 
+    /**
+     * CYP-798 — register [enumDesc] (an ENUM) as a NAMED `components/schemas` entry: the standalone-EXPORTED-enum
+     * path, route-INDEPENDENT. [schemaFor] deliberately INLINES enums at field sites (an enum-typed field carries
+     * its values inline, no `$ref`), so a shared-vocabulary enum that no route/DTO references would never surface as
+     * a named type. This is the intentional export knob: it emits the IDENTICAL plain `{type:string, enum:[…]}`
+     * shape [schemaFor] uses for an ENUM, and records the SAME collision-ledger + descriptor bookkeeping as [refTo]
+     * so the injectivity ([nameCollisions]) and structural-tightness guards still cover it. Idempotent per name.
+     */
+    fun registerNamedEnum(enumDesc: SerialDescriptor) {
+        require(enumDesc.kind == SerialKind.ENUM) {
+            "registerNamedEnum expects a SerialKind.ENUM, got ${enumDesc.kind} for ${enumDesc.serialName}"
+        }
+        val name = schemaName(enumDesc)
+        registeredNames.getOrPut(name) { LinkedHashSet() }.add(enumDesc.serialName.removeSuffix("?"))
+        componentDescriptors.putIfAbsent(name, enumDesc)
+        if (name !in components) {
+            components[name] = buildJsonObject {
+                put("type", "string")
+                putJsonArray("enum") { (0 until enumDesc.elementsCount).forEach { add(enumDesc.getElementName(it)) } }
+            }
+        }
+    }
+
     /** Collision-guard result: component names claimed by MORE THAN ONE distinct serialName (should be empty). */
     fun nameCollisions(): Map<String, Set<String>> = registeredNames.filterValues { it.size > 1 }
 

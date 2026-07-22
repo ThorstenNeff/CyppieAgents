@@ -9,7 +9,10 @@ import com.tneff.cyppieagents.model.CommWsClientEvent
 import com.tneff.cyppieagents.model.CommWsServerEvent
 import com.tneff.cyppieagents.model.EventsWsClientEvent
 import com.tneff.cyppieagents.model.EventsWsServerEvent
+import com.tneff.cyppieagents.model.HubDescriptorValidity
+import com.tneff.cyppieagents.model.HubTrustState
 import com.tneff.cyppieagents.model.StoredAgentEvent
+import com.tneff.cyppieagents.model.TrustRejectReason
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.TerminalClientFrame
 import com.tneff.cyppieagents.model.TerminalServerFrame
@@ -141,6 +144,21 @@ object ContractGenerator {
         }
     }
 
+    /**
+     * CYP-798 — the standalone-EXPORTED hub-trust vocabulary enums (axis a, `:core/model/HubTrust.kt`). Emitted as
+     * NAMED `components/schemas` in [openApi] via [SchemaWalker.registerNamedEnum], route-INDEPENDENTLY, so the
+     * TS/browser team (Team-2) consumes them as named types (`contract:gen` merges openapi-only component names on
+     * top of asyncapi) even though no REST route references them yet — the trust state is §5-a client-DERIVED and
+     * does NOT cross the wire (verified: 0 DTO-field usages). PL-ratified Option A: a synthetic REST route would
+     * pollute the REST contract AND break SILENTLY if someone removed the "unused" route. Adding a member here is
+     * the deliberate, drift-guarded export knob (Cyp798StandaloneEnumExportTest pins presence + members).
+     */
+    val STANDALONE_ENUM_EXPORTS: List<SerialDescriptor> = listOf(
+        serializer<HubTrustState>().descriptor,
+        serializer<TrustRejectReason>().descriptor,
+        serializer<HubDescriptorValidity>().descriptor,
+    )
+
     /** The Bearer-only variant served on the EXTERNAL hosted docs surface (234a-3). Still GENERATED (no
      *  artifact) — a documented transform of [openApi], so single-source holds. */
     fun hostedOpenApi(): JsonObject = openApi(externalHosted = true)
@@ -152,6 +170,9 @@ object ContractGenerator {
             bodyDescriptor(op.request)?.let { walker.schemaFor(it) }
             bodyDescriptor(op.response)?.let { walker.schemaFor(it) }
         }
+        // CYP-798 — surface the standalone hub-trust vocabulary as named components (route-independent; see the list's
+        // KDoc). SchemaWalker inlines enums at field sites, so a route-unreferenced vocabulary enum needs this knob.
+        STANDALONE_ENUM_EXPORTS.forEach { walker.registerNamedEnum(it) }
 
         return buildJsonObject {
             put("openapi", "3.1.0")
