@@ -7,14 +7,14 @@
 // renders NEUTRAL, never-green DS, CYP-803). Folding them would conflate "the hub vouches for my issuer" with "I have
 // pinned this hub's key" — two different trust questions.
 //
-// ★ WIRE SEAM — CYP-805 INTERIM (measured: `HubIssuerTrust` is NOT yet in the generated contract.ts / openapi export).
-// The local type below mirrors the frozen shape 1:1. When Team-1's CYP-804 openapi export lands on develop, re-point
-// consumers to `import type { HubIssuerTrust } from '../types/generated/contract'` and delete this local declaration.
-// HUB_ISSUER_TRUST_VALUES is the single source — NO scattered string literals (fail-closed against drift).
-
-// CYP-805 interim → re-point to generated contract.ts when CYP-804 openapi export lands on develop.
-export type HubIssuerTrust = 'TRUSTED' | 'NOT_TRUSTED' | 'REMOTE_NOT_CONFIGURED'
-export const HUB_ISSUER_TRUST_VALUES = ['TRUSTED', 'NOT_TRUSTED', 'REMOTE_NOT_CONFIGURED'] as const
+// ★ WIRE TYPE — RE-POINTED (CYP-804 openapi export landed on develop `9cec7cfc`): `HubIssuerTrust` now comes from the
+// generated `contract.ts` (the authority type, parity-bound to :core), re-exported here so axis-c consumers keep a single
+// import site. The generator emits the TYPE only — NO runtime values array — so HUB_ISSUER_TRUST_VALUES stays a LOCAL
+// runtime companion. It is `satisfies readonly HubIssuerTrust[]` (a value not in the generated union fails to compile);
+// exhaustiveness (no missing value) is pinned by the runtime parity tooth. NO scattered string literals.
+export type { HubIssuerTrust } from '../types/generated/contract'
+import type { HubIssuerTrust } from '../types/generated/contract'
+export const HUB_ISSUER_TRUST_VALUES = ['TRUSTED', 'NOT_TRUSTED', 'REMOTE_NOT_CONFIGURED'] as const satisfies readonly HubIssuerTrust[]
 
 export type IssuerConnectDecision = 'proceed' | 'block'
 
