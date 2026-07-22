@@ -43,6 +43,19 @@
 - **`unknown` sichtbar, nicht Stille:** der fail-closed-Default rendert einen **sichtbaren neutralen** Marker (nicht Abwesenheit) — sonst liest „kein Marker" als all-clear ([[absence-reads-as-all-clear]]).
 - **Klasse:** `hub-trust-{state}` (Tone via CSS-Var, wie `comm-status-{connection}`).
 
+**Casing/Token-Map (Wire UPPERCASE ↔ Präsentation lowercase) — bestätigt für Dev5s CYP-801-Landing-Wiring:**
+Muster wie `remoteSecurityTierModel` (Wire-Enum uppercase → Präsentations-Token lowercase, Map am Seam). Die 5 Werte sind **einwortig** → **triviale `.toLowerCase()`**, **KEIN Sonderfall** (anders als `browser-gateway`→`browserGateway` im Tier-Modell — hier gibt es keinen).
+
+| Wire (`:core`, UPPERCASE) | Präsentations-Token | Klasse | testid | Glyph | Label |
+|---|---|---|---|---|---|
+| `UNKNOWN` | `unknown` | `hub-trust-unknown` | `hub.trust.{id}.unknown` | `◯` | Vertrauen nicht geprüft |
+| `PENDING` | `pending` | `hub-trust-pending` | `hub.trust.{id}.pending` | `◔` | wird geprüft… |
+| `TRUSTED` | `trusted` | `hub-trust-trusted` | `hub.trust.{id}.trusted` | `●` | vertraut |
+| `REJECTED` | `rejected` | `hub-trust-rejected` | `hub.trust.{id}.rejected` | `⊘` | abgelehnt |
+| `STALE` | `stale` | `hub-trust-stale` | `hub.trust.{id}.stale` | `◑` | abgelaufen — erneut bestätigen |
+
+- **★ malformed/⚠ ist NICHT in dieser Map** (PL-ratifiziert CYP-798 §4b: **kein Trust-Zustand**, getrennt vom `HubTrustState`-Enum). Auf malformed: Trust-Badge = `unknown` (fail-closed) **+** das **verbindliche** ⚠-Upstream-Signal in einem **distinkten Token-Namespace — NICHT `hub-trust-*`** (sonst wird ein Descriptor-/Upstream-Fehler mit einem Trust-Zustand konflatiert — exakt die Tier-Modell-Disziplin `tier*` ≠ `trust*`, „distinct names so UI/tests/copy never conflate the two"). **Vorschlag:** Klasse `hub-descriptor-invalid`, testid `hub.trust.{id}.upstreamError` — der **exakte Slug richtet sich nach PLs CYP-798-§4b-Signalnamen** (dann angleichen).
+
 ---
 
 ## §2 Wo es rendert (one-active-hub)
