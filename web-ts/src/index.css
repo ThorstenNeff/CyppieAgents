@@ -181,6 +181,31 @@ body {
   color: var(--md-sys-color-on-error-container);
 }
 
+/* CYP-805 (S1c) — the IssuerNotTrusted TERMINAL block (axis c). Distinct namespace `issuer-not-trusted` — NOT
+   hub-trust-* (axis a) and NOT tier*. Interim WARN-amber tone (established terminal-block convention, remote-connect
+   §HD "WARN-Amber-Block, no-retry"); uiux2 owns the FINAL tone/copy/glyph (1-place re-point via ISSUER_NOT_TRUSTED_
+   BLOCK_INTERIM). Colour never sole: the ▲ glyph + text carry the meaning. */
+.issuer-not-trusted {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--md-sys-color-warn-container);
+  color: var(--md-sys-color-on-warn-container);
+}
+.issuer-not-trusted-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.issuer-not-trusted-title {
+  font-weight: 600;
+}
+.issuer-not-trusted-oob {
+  opacity: 0.85;
+}
+
 /* CYP-404 (W6) / CYP-423 — the transcript's native-scrolling container + a thin scrollbar (parity of CYP-392).
    The thumb is a graphical object (WCAG 1.4.11, ≥3:1): bound to the maritime `outline` token — measured 3.55:1
    (light) / 3.63:1 (dark) on the surface. NOTE: a SOLID colour, never an alpha (the old rgba(128,128,128,.7)
