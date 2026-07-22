@@ -69,19 +69,26 @@ Jede Zeile ist eine §-QA-Prüfung. **Ton aus dem Bestand** (`severityColor`, `H
   für die vorläufige Phase.
 - **a11y:** **Polite** (Öffnen-Zustand); bei aktivem Warten `Role`/`stateDescription` „wird geprüft".
 
-### 2.3 `TRUSTED` — der einzige affirmative Zustand ⚠ **aber NICHT „grün"**
-- **★ Kern-Ehrlichkeits-Prüfung (Konflikt aus dem Bestand — MUSS am Bau entschieden werden):** die
-  `HubTrustState`-KDoc nennt TRUSTED „the only 'green' state", **aber** der Bestand ist eindeutig **„never
-  green"**: `TRUST_PINNED` = „**Neutral** 'identity pinned' indicator — **never green**"; Grün ist per E1/CYP-300
-  **de-overloaded** (nächtliches `tertiary` kippt auf Grün → ein „Trust-Grün" könnte die Bedeutung invertieren).
-  **§-QA-Kriterium:** TRUSTED rendert als **neutraler „gepinnt/Identität bestätigt"-Indikator** (Reuse
-  `TRUST_PINNED`), **nicht** als beruhigendes Grün. Zwei Gründe: (1) **Disclosure-Ehrlichkeit** — TOFU-Pinning
-  ist „diesen Schlüssel haben wir gepinnt", **kein** „verifiziert sicher"; ein Grün überzeichnet die Garantie.
-  (2) **Konsistenz** mit der de-overloaded-Green-Regel. „Green" in der Enum-KDoc = lockere Kurzform für „der
-  einzige affirmative", **nicht** eine Render-Anweisung Grün. **Wenn der Bau literal grün rendert → Flag/Blocker.**
-- **Glyph:** neutral (z.B. `●`/Pin-Glyph), nie ein Erfolgs-`✓`-Grün.
-- **Copy reuse:** der `TRUST_PINNED`-Label-Term (neutral).
-- **a11y:** `stateDescription` „gepinnt" — **nicht** „sicher"/„verifiziert" (kein Garantie-Overclaim).
+### 2.3 `TRUSTED` — **neutral-definit** (PL-adjudiziert 2026-07-22, cross-team-verbindlich)
+> **RESOLVED (PL-Adjudikation, CYP-803-Ruling `ddf1578c` maßgeblich):** TRUSTED = **neutral-definit**, **nicht**
+> positiv/affirmativ, **nicht** `primary`/blau, **nicht** literal-grün. Mein ursprünglicher neutral-Befund war
+> richtig; das web-ts-§1 „positiv" (`0ac8215e`) war der **Ausreißer** und wird von `ddf1578c` auf den
+> **Desktop-Pattern** gebracht: `remote-trust-recovery-ux-spec.md §2.2 `TrustResolution.Pinned` = „neutral,
+> **NIE grün**". **Der Overclaim sitzt im affirmativen TON, nicht nur der Grünheit** — ein blau-positiver Render
+> behandelt einen **widerrufbaren** TOFU-Pin wie eine **Garantie** (derived≠native).
+
+- **Token (CYP-803, exakt):** Glyph = **`on-surface`** (voll-emphase-neutral), Tone = `neutral`.
+  **`on-surface`, NICHT `on-surface-variant`** — voll-emphase hält TRUSTED **distinkt von unknown/pending** (die
+  `on-surface-variant`/gedämpft sind); kein Affirm-Akzent, aber auch **kein** Kollaps in die Absence-Zustände.
+  > ⚠ **Token-Nuance vs Desktop:** Desktop-`TrustResolution.Pinned` nutzt `onSurfaceVariant`; im **5-Zustands**-Modell
+  > braucht TRUSTED aber **`on-surface` (voll)**, weil hier die Nachbarn unknown/pending existieren
+  > (Über-Neutralisierungs-Zahn §5.8). **NICHT** blind Desktops `onSurfaceVariant` übernehmen — sonst kollabiert
+  > TRUSTED in den unknown-Ton.
+- **Form:** `●` (voll) trägt die Distinktion (colour-never-sole), unverändert.
+- **Copy (CYP-803):** Label = **„vertraut"** — **NICHT** „gepinnt" (kollidiert mit `pinnedOperatorId`/aktivem-Hub-
+  Pointer; `tier*`≠`trust*`-Klasse; der Overclaim saß im Ton, nicht im Wort).
+- **a11y:** trägt den ehrlichen Qualifier **„vouched, widerrufbar"** — **nicht** „sicher"/„verifiziert"
+  (kein Garantie-Overclaim).
 
 ### 2.4 `REJECTED` — evaluiert & verweigert, terminal (trägt `TrustRejectReason`)
 - **Ton/Glyph:** **WARN-amber `▲` Verify-OOB-Familie** (wie `TrustChanged`/`TrustRejected` heute, **nicht**
@@ -139,8 +146,9 @@ Jede Zeile ist eine §-QA-Prüfung. **Ton aus dem Bestand** (`severityColor`, `H
 
 ## 5. Die load-bearing Ehrlichkeits-Zähne (die eigentliche Gate-Liste)
 
-1. **Never-green-by-default** — nur `TRUSTED` darf affirmativ sein, **und selbst das NEUTRAL, nicht grün** (§2.3).
-   `UNKNOWN`/`PENDING`/`STALE` nie im vertrauten Look. *(Prüf: Default-Wert, leerer-Zustand-Fallback, Nacht-Theme.)*
+1. **Never-affirmative / never-green (PL/CYP-803)** — `TRUSTED` ist **neutral-definit `on-surface`**, **nicht**
+   positiv/`primary`/blau/grün (§2.3); `UNKNOWN`/`PENDING`/`STALE` nie im vertrauten Look. *(Prüf: Default,
+   leer-Fallback, Nacht-Theme; Mutation `tone:'positive'` / Glyph `primary` → RED = Garantie-Overclaim.)*
 2. **N4-Nicht-Falten** — die 4 Ursachen (network/reject/stale/malformed) + Achse c rendern **je eigenständig**,
    **pre-read-distinkt** (§1). *(Prüf: sieht jede anders aus als ihre Nachbarn, bevor man liest?)*
 3. **Fail-closed** — `UNKNOWN` = Default, `MALFORMED` = immer `⚠`, nichts kippt still auf trusted.
@@ -150,15 +158,22 @@ Jede Zeile ist eine §-QA-Prüfung. **Ton aus dem Bestand** (`severityColor`, `H
    wiederverwenden; kein drittes Vokabular für dieselbe Sache.
 6. **Achsen-Firewall (Cyp443)** — die `HubTrustState`-Fläche (a) referenziert **keine** Issuer-Typen (c);
    der Carry-forward-`issuer-home ⊥ a/b`-Scan (CYP-797, → S1b) bleibt getrackt.
-7. **Kein Garantie-Overclaim** — `TRUSTED`-a11y sagt „gepinnt", **nicht** „sicher/verifiziert".
+7. **Kein Garantie-Overclaim (PL/CYP-803)** — `TRUSTED`-a11y sagt **„vouched, widerrufbar"**, **nicht**
+   „sicher/verifiziert"; der Overclaim sitzt im **affirmativen Ton**, nicht nur der Farbe (blau-positiv = Garantie
+   auf einem widerrufbaren TOFU-Pin).
+8. **Keine Über-Neutralisierung (CYP-803 §6-Z.10, Gegen-Falle)** — `TRUSTED` darf **nicht** in `on-surface-variant`
+   (= unknown/pending-Ton) kollabieren; „evaluiert-gültig" bleibt distinkt von den Absence-Zuständen (Form `●`≠`◯`,
+   Token `on-surface`≠`on-surface-variant`). *(Mutation: TRUSTED-Glyph → `on-surface-variant` → RED.)* **Beide**
+   Richtungen — Overclaim-Rückkehr **und** Über-Neutralisierung — sind gezahnt.
 
 ---
 
 ## 6. Copy-Anker (Reuse-Tabelle + Neu-Vorschläge — final am Bau)
 
 **Reuse (vorhanden, nicht neu erfinden):** `remote_connect_trust_changed` (KEY_CHANGED) ·
-`remote_connect_trust_rejected` (OOB_REJECTED) · `remote_connect_trust_check` (PENDING) · `TRUST_PINNED`-Label
-(TRUSTED-neutral) · `TRUST_PROVISIONAL` (vorläufig).
+`remote_connect_trust_rejected` (OOB_REJECTED) · `remote_connect_trust_check` (PENDING) · `TRUST_PINNED`-**Neutral-Treatment**
+(für TRUSTED — aber Label **„vertraut"**, NICHT „gepinnt", CYP-803: „gepinnt" kollidiert mit
+`pinnedOperatorId`) · `TRUST_PROVISIONAL` (vorläufig).
 
 **Neu nötig (Vorschlag DE / EN — final + Key-Namen am Bau, Dev landet `strings.xml`):**
 
@@ -167,7 +182,7 @@ Jede Zeile ist eine §-QA-Prüfung. **Ton aus dem Bestand** (`severityColor`, `H
 | `UNKNOWN` | Vertrauensstatus unbekannt — noch nicht bewertet. | Trust status unknown — not yet evaluated. |
 | `STALE` | Zuletzt vertraut — Frische nicht bestätigt. | Last trusted — currency not confirmed. |
 | `MALFORMED` | Hub-Kennung unbrauchbar — Vertrauen ließ sich nicht prüfen. | Hub descriptor unusable — trust could not be checked. |
-| `TRUSTED` (neutral) | Identität gepinnt. | Identity pinned. |
+| `TRUSTED` (neutral-definit) | vertraut | trusted |
 
 **Wortlaut-Disziplin:** kein „sicher/verifiziert" bei TRUSTED (Overclaim); „unbrauchbar/nicht geprüft" bei
 MALFORMED (nicht „abgelehnt"); „nicht bestätigt" bei STALE (nicht die konkrete — evtl. Achse-c — Ursache);
@@ -182,9 +197,14 @@ MALFORMED (nicht „abgelehnt"); „nicht bestätigt" bei STALE (nicht die konkr
   (deren Namen waren informell — die echten stehen hier).
 - **Bestehende Copy/Tags reuse-geprüft:** `trust_changed`/`trust_rejected`/`trust_check`/`TRUST_PINNED` existieren
   → als Reuse markiert; Neu-Copy nur für UNKNOWN/STALE/MALFORMED/TRUSTED-neutral.
-- **★ Echter Bestands-Konflikt gefunden + als Kern-§-QA-Kriterium benannt:** `HubTrustState`-KDoc „only green
-  state" vs. Bestand „never green" (`TRUST_PINNED`, E1/CYP-300) — TRUSTED muss **neutral** rendern, sonst
-  Garantie-Overclaim **und** Green-Deoverload-Bruch. Das ist die load-bearing Prüfung, nicht Kosmetik.
+- **★ Cross-Team-Divergenz gefunden, verify-statt-blind, PL-adjudiziert:** die `HubTrustState`-KDoc „only green
+  state" + web-ts-§1 „positiv" (`0ac8215e`, 00:28) kollidierten mit dem **neueren** CYP-803-Ruling (`ddf1578c`,
+  08:57) + eurem Desktop-Pattern (`TrustResolution.Pinned` neutral). Statt die (stale-§1-basierte)
+  „positiv-blau"-Korrektur blind nachzuziehen → am Objekt verifiziert, den Widerspruch **gesurfaced**.
+  **PL-Entscheid 2026-07-22: TRUSTED = neutral-definit `on-surface`, cross-team-verbindlich** — mein
+  Original-neutral-Befund bestätigt. **Beide** Richtungen gezahnt (Overclaim-Rückkehr §5.7 **und**
+  Über-Neutralisierung §5.8). *(Sync-Check: `hubTrustView.ts` `TONE.TRUSTED` evtl. noch `'positive'` — `ddf1578c`
+  änderte nur das Spec-`.md`; der Token-Flip `'positive'→'neutral'` läuft separat, §-QA ich mit.)*
 - **N4-Nicht-Falten als Pre-Read-Anwendung** (`CYP-738 §4`): jede der 5+ Wahrheiten muss vor dem Lesen
   unterscheidbar sein — die zentrale Gate-Frage.
 - **Achse a ⊥ c respektiert:** die Liste faltet die `IssuerNotTrusted`-Fläche (c) **nicht** in `HubTrustState`
