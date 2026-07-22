@@ -1879,8 +1879,8 @@ body {
 
 /* CYP-801 (N3) — the per-hub trust badge (uiux2 CYP-755 §1). Mirrors the .rst pill idiom. Colour is NEVER the sole
    carrier: the glyph FORM (◯◔●⊘◑) + label WORD already distinguish all five states; tone is reinforcement only.
-   unknown/pending stay NEUTRAL (no optimistic/alarm colour); only trusted is positive, rejected warns, stale is
-   action-neutral (distinct, not an alarm). */
+   unknown/pending stay NEUTRAL-muted (no optimistic/alarm colour); trusted is NEUTRAL too but full-emphasis (never-green
+   DS, CYP-803 — trust is revocable, no affirming accent); rejected warns; stale is action-neutral (distinct, not an alarm). */
 .hub-trust {
   display: inline-flex;
   align-items: baseline;
@@ -1910,7 +1910,9 @@ body {
   color: var(--md-sys-color-on-surface-variant);
 }
 .hub-trust-trusted .hub-trust-glyph {
-  color: var(--md-sys-color-primary); /* the ONLY positive state */
+  /* never-green DS (CYP-803): full-emphasis evaluated-NEUTRAL — on-surface, NOT on-surface-variant (so it's distinct
+     from unknown/pending's muted tone) and NOT primary (trust is revocable → no affirming green accent). */
+  color: var(--md-sys-color-on-surface);
 }
 .hub-trust-rejected .hub-trust-glyph {
   color: var(--md-sys-color-error); /* warn — a real trust refusal */
