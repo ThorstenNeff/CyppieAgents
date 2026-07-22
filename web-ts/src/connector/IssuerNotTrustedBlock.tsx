@@ -12,18 +12,20 @@
 import { issuerConnectDecision, ISSUER_NOT_TRUSTED_BLOCK_COPY, type HubIssuerTrust } from './issuerTrustModel'
 
 export interface IssuerNotTrustedBlockProps {
-  hubId: string
   /** Absent/`TRUSTED`/`REMOTE_NOT_CONFIGURED` → no block (proceed); only `NOT_TRUSTED` renders the terminal block. */
   issuerTrust?: HubIssuerTrust | null
 }
 
-export function IssuerNotTrustedBlock({ hubId, issuerTrust = null }: IssuerNotTrustedBlockProps) {
+// ★ testids = Compose parity (spec §5 / RemoteConnectTags), NOT per-hub: the remote-connect progression is a SINGLE
+// connection at a time (one hub being connected), so no `{hubId}` suffix — unlike the axis-a per-hub descriptor badge
+// `hub.trust.{hubId}`. Same tags on Desktop + Browser (cross-surface test parity, matches the wortgleiche copy).
+export function IssuerNotTrustedBlock({ issuerTrust = null }: IssuerNotTrustedBlockProps) {
   if (issuerConnectDecision(issuerTrust) === 'proceed') return null
   const c = ISSUER_NOT_TRUSTED_BLOCK_COPY
   return (
     <div
       className="issuer-not-trusted"
-      data-testid={`issuer.notTrusted.${hubId}`}
+      data-testid="remote.connect.error.issuerNotTrusted"
       role="alert"
       aria-live="assertive"
       aria-label={c.a11yLabel}
@@ -35,7 +37,9 @@ export function IssuerNotTrustedBlock({ hubId, issuerTrust = null }: IssuerNotTr
         <span className="issuer-not-trusted-title">{c.title}</span>
         <span className="issuer-not-trusted-detail">{c.detail}</span>
         {/* OOB recovery is a TEXT hint on its own line — NOT a button (issuer decisions are the PO/OOB boundary). */}
-        <span className="issuer-not-trusted-oob">{c.oobHint}</span>
+        <span className="issuer-not-trusted-oob" data-testid="remote.connect.issuerOob">
+          {c.oobHint}
+        </span>
       </div>
       {/* TERMINAL — deliberately NO retry/dismiss control: the issuer vouch is resolved out-of-band, not by the client. */}
     </div>
