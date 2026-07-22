@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.boot
 import com.tneff.cyppieagents.crypto.HubIdentity
 import com.tneff.cyppieagents.crypto.HubIdentityProvisioner
 import com.tneff.cyppieagents.crypto.RawKeys
+import com.tneff.cyppieagents.model.HubIssuerTrust
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.util.Base64
@@ -30,6 +31,14 @@ data class HubRegistration(
     val dhPubKey: String,
     /** base64 Ed25519 signature over the CP-issued nonce (Proof-of-Possession, R3) — **MANDATORY**. */
     val pop: String,
+    /**
+     * CYP-804 ① — the hub's per-hub ISSUER-TRUST posture (axis c) self-reported at admission, so the CP can publish
+     * it on [com.tneff.cyppieagents.model.HubDescriptor.issuerTrust] for the client to distinguish
+     * owned-but-issuer-not-trusted from offline. Connectability metadata (like the CP's presence view), inside the
+     * zero-knowledge boundary — NOT payload. Additive LAST field, nullable-default = absent-when-unknown.
+     * (Transcript binding of this field is a separate PL-signed-off step — the "every field bound" invariant.)
+     */
+    val issuerTrust: HubIssuerTrust? = null,
 )
 
 class ControlPlaneRegistrar(
@@ -39,6 +48,8 @@ class ControlPlaneRegistrar(
     private val ownerId: String,
     private val name: String,
     private val defaultPort: Int,
+    /** CYP-804 ① — the hub's issuer-trust posture (axis c) to self-report at admission; null when unknown. */
+    private val issuerTrust: HubIssuerTrust? = null,
 ) {
     /**
      * Build and send a registration with a **mandatory** PoP over the CP-issued [cpNonce]. Fail-closed: an empty
@@ -60,6 +71,7 @@ class ControlPlaneRegistrar(
             signingPubKey = identity.signingPubKey,
             dhPubKey = identity.dhPubKey,
             pop = "", // placeholder — the PoP is over the OTHER fields + nonce, never over itself
+            issuerTrust = issuerTrust,
         )
         val pop = Base64.getEncoder().encodeToString(signer.sign(RegistrationTranscript.bytes(fields, cpNonce)))
         val reg = fields.copy(pop = pop)
@@ -109,6 +121,10 @@ object RegistrationTranscript {
         lp(reg.defaultPort.toString().encodeToByteArray())
         lp(reg.signingPubKey.encodeToByteArray())
         lp(reg.dhPubKey.encodeToByteArray())
+        // CYP-804 ① (PL-0108 sign-off) — BIND the issuer-trust posture: preserves the "every field bound" invariant AND
+        // gives security VALUE — a MITM that flips NOT_TRUSTED→TRUSTED in transit (to suppress the client warning)
+        // changes these bytes → the hub's PoP no longer verifies → caught. null→"" is injective (enum names are non-empty).
+        lp((reg.issuerTrust?.name ?: "").encodeToByteArray())
         return out.toByteArray()
     }
 }

@@ -6,6 +6,8 @@ import com.tneff.cyppieagents.boot.NoOpControlPlaneConnector
 import com.tneff.cyppieagents.crypto.HubIdentity
 import com.tneff.cyppieagents.crypto.HubIdentityProvisioner
 import com.tneff.cyppieagents.crypto.SecretStore
+import com.tneff.cyppieagents.transport.RemoteRelayWiring
+import com.tneff.cyppieagents.transport.toWire
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -173,7 +175,10 @@ fun buildHubAdmission(
     val opToken = env("CYPPIE_CP_OPERATOR_TOKEN")!!
     val ownerId = env("CYPPIE_OPERATOR_ID")!!
     val provisioner = HubIdentityProvisioner(hubSecretStore!!, hubIdentityFile!!.toPath())
-    val registrar = ControlPlaneRegistrar(hubIdentity!!, provisioner, NoOpControlPlaneConnector, ownerId, hubName, hubPort)
+    // CYP-804 ① — self-report this hub's issuer-trust posture (axis c) at admission, mapped from the server-internal
+    // classification to the frozen wire vocabulary; the CP publishes it on HubDescriptor.issuerTrust for the client.
+    val issuerTrust = RemoteRelayWiring.classifyIssuerTrust(env).toWire()
+    val registrar = ControlPlaneRegistrar(hubIdentity!!, provisioner, NoOpControlPlaneConnector, ownerId, hubName, hubPort, issuerTrust)
     val client = HubAdmissionClient(cpUrl, httpClientFactory(), registrar, { opToken })
     return {
         val result = client.admit()
