@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub.issuer
 
+import com.tneff.cyppieagents.model.HubIssuerTrust
 import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -29,6 +30,20 @@ class IssuerTrustProducerTest {
         assertNull(IssuerTrustSignal.Trusted.toRemoteFailure(), "a trusted issuer must NOT surface a failure")
         assertNull(IssuerTrustSignal.NotApplicable.toRemoteFailure(), "no remote issuer gate must NOT surface a failure")
         assertNull(IssuerTrustSignal.Unknown.toRemoteFailure(), "an ABSENT/unknown issuer verdict must PROCEED, never block")
+    }
+
+    @Test
+    fun adapter_mapsFrozenCarrier_toClientDomain_1to1_plusAbsent() {
+        // CYP-804 boundary adapter: the :core wire enum -> client-local domain (Pattern B). 1:1 + null(absent)->Unknown.
+        assertEquals(IssuerTrustSignal.NotTrusted("acme"), HubIssuerTrust.NOT_TRUSTED.toIssuerTrustSignal("acme"))
+        assertEquals(IssuerTrustSignal.NotTrusted(null), HubIssuerTrust.NOT_TRUSTED.toIssuerTrustSignal())
+        assertEquals(IssuerTrustSignal.Trusted, HubIssuerTrust.TRUSTED.toIssuerTrustSignal())
+        assertEquals(IssuerTrustSignal.NotApplicable, HubIssuerTrust.REMOTE_NOT_CONFIGURED.toIssuerTrustSignal())
+        // ★ absent (old CP) -> Unknown → PROCEED, never affirm — the [[safe-but-silent-default-needs-own-state]] edge.
+        assertEquals(IssuerTrustSignal.Unknown, (null as HubIssuerTrust?).toIssuerTrustSignal())
+        // and only NOT_TRUSTED produces the block through the full producer chain:
+        assertEquals(RemoteFailure.IssuerNotTrusted("acme"), HubIssuerTrust.NOT_TRUSTED.toIssuerTrustSignal("acme").toRemoteFailure())
+        assertNull((null as HubIssuerTrust?).toIssuerTrustSignal().toRemoteFailure())
     }
 
     @Test

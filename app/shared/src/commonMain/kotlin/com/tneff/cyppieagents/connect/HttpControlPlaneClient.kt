@@ -59,7 +59,9 @@ class HttpControlPlaneClient(
         throw ControlPlaneUnreachableException("hub registration is CP self-admit (list+select) — no desktop register")
 }
 
-/** Map the `:core` wire [CoreHubDescriptor] (CYP-481) straight-through to the client-facing [HubDescriptor]. */
+/** Map the `:core` wire [CoreHubDescriptor] (CYP-481) straight-through to the client-facing [HubDescriptor].
+ *  CYP-802: [CoreHubDescriptor.issuerTrust] (CYP-804, axis c) is threaded through — the client-produce edge derives
+ *  `IssuerNotTrusted` from it; dropping it here would leave the produce edge inert (the Cyp802 toClient tooth guards). */
 private fun CoreHubDescriptor.toClient(): HubDescriptor =
     HubDescriptor(
         hubId = hubId,
@@ -68,4 +70,5 @@ private fun CoreHubDescriptor.toClient(): HubDescriptor =
         defaultPort = defaultPort,
         lastSeen = lastSeen,
         dhPubKey = dhPubKey,
+        issuerTrust = issuerTrust,
     )

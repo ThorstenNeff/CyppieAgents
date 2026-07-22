@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.net.hub.issuer
 
+import com.tneff.cyppieagents.model.HubIssuerTrust
 import com.tneff.cyppieagents.net.hub.remote.RemoteFailure
 
 /**
@@ -60,30 +61,33 @@ fun IssuerTrustSignal.toRemoteFailure(): RemoteFailure? = when (this) {
 }
 
 /**
- * CYP-804 SWAP MAP (prep — apply when Backend's carrier lands on develop). The PL-frozen `:core` carrier is
- * `HubDescriptor.issuerTrust: HubIssuerTrust? = null` with `enum HubIssuerTrust { TRUSTED, NOT_TRUSTED,
- * REMOTE_NOT_CONFIGURED }`. The real [IssuerTrustCheck] reads that field off the connecting hub's descriptor and maps
- * it here (mirrors this exact table); `issuerHint` is an OPTIONAL log-only hint (the UI copy is static). This is the
- * whole client-produce swap — the [RemoteHubSession] arm + teeth are already in place, only [InertIssuerCheck] is
- * replaced by an impl that returns `descriptor.issuerTrust.toIssuerTrustSignal(hint)`:
- *
- *   HubIssuerTrust.NOT_TRUSTED            -> IssuerTrustSignal.NotTrusted(issuerHint)   // the terminal block
- *   HubIssuerTrust.TRUSTED               -> IssuerTrustSignal.Trusted                   // proceed
- *   HubIssuerTrust.REMOTE_NOT_CONFIGURED -> IssuerTrustSignal.NotApplicable             // proceed
- *   null (absent — old server)           -> IssuerTrustSignal.Unknown                   // proceed, NEVER affirm
- *
- * ★ PL-0107 forward-flag (NOT this edge): a positive `HubIssuerTrust.TRUSTED` render (axis c) must stay DISTINCT from
- * axis-a `HubTrustState.TRUSTED` (neutral, CYP-803) — two "TRUSTED", two axes. My produce arm renders no TRUSTED (it
- * only blocks on NOT_TRUSTED, amber-WARN), so it is unaffected; this is a note for the CYP-803 render side.
- *
- * The commented signature below is the swap's one net-new symbol (kept OUT of compile until HubIssuerTrust exists):
- *   fun HubIssuerTrust?.toIssuerTrustSignal(issuerHint: String?): IssuerTrustSignal = when (this) {
- *       HubIssuerTrust.NOT_TRUSTED -> IssuerTrustSignal.NotTrusted(issuerHint)
- *       HubIssuerTrust.TRUSTED -> IssuerTrustSignal.Trusted
- *       HubIssuerTrust.REMOTE_NOT_CONFIGURED -> IssuerTrustSignal.NotApplicable
- *       null -> IssuerTrustSignal.Unknown
- *   }
+ * CYP-802/CYP-804 — the boundary ADAPTER: the PL-frozen `:core` wire carrier ([HubIssuerTrust], off
+ * `HubDescriptor.issuerTrust`, absent-when-`null`) → the client-local [IssuerTrustSignal] domain type (Pattern B:
+ * `HubIssuerTrust` stays on the wire, `IssuerTrustSignal` never serializes). 1:1 + the absent case; `issuerHint` is an
+ * OPTIONAL log-only hint (the UI copy is static). **★ PL-0107 (NOT this edge):** a positive `HubIssuerTrust.TRUSTED`
+ * render (axis c) must stay DISTINCT from axis-a `HubTrustState.TRUSTED` (neutral, CYP-803); my produce arm renders no
+ * TRUSTED (only blocks on NOT_TRUSTED, amber-WARN), so it is unaffected — a note for the CYP-803 render side.
  */
+fun HubIssuerTrust?.toIssuerTrustSignal(issuerHint: String? = null): IssuerTrustSignal = when (this) {
+    HubIssuerTrust.NOT_TRUSTED -> IssuerTrustSignal.NotTrusted(issuerHint)   // the terminal block
+    HubIssuerTrust.TRUSTED -> IssuerTrustSignal.Trusted                       // proceed
+    HubIssuerTrust.REMOTE_NOT_CONFIGURED -> IssuerTrustSignal.NotApplicable   // proceed
+    null -> IssuerTrustSignal.Unknown                                        // absent (old CP) → proceed, NEVER affirm
+}
+
+/**
+ * CYP-802 — the REAL issuer check (replaces [InertIssuerCheck] in the live `buildRemoteHubSession`): it captures the
+ * connecting hub's issuer posture ([issuerTrust], threaded from `HubDescriptor.issuerTrust`) and adapts it to the
+ * client domain via [toIssuerTrustSignal]. Fail-closed by the adapter's `null → Unknown` (proceed, never affirm). The
+ * evaluation is a pure function of the captured posture — no network at connect time (the posture is the CP's
+ * per-hub record, §5-a: not a connect-time oracle).
+ */
+class DescriptorIssuerCheck(
+    private val issuerTrust: HubIssuerTrust?,
+    private val issuerHint: String? = null,
+) : IssuerTrustCheck {
+    override suspend fun evaluate(hubId: String): IssuerTrustSignal = issuerTrust.toIssuerTrustSignal(issuerHint)
+}
 
 /**
  * The INERT default issuer check (stub-parallel): always [IssuerTrustSignal.Unknown] → the live connect flow is

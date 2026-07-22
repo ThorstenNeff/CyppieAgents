@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.connect
 
+import com.tneff.cyppieagents.net.hub.issuer.DescriptorIssuerCheck
 import com.tneff.cyppieagents.net.hub.noise.NoiseJavaClientTransport
 import com.tneff.cyppieagents.net.hub.operator.CachingUserVerification
 import com.tneff.cyppieagents.net.hub.operator.ChannelBinding
@@ -113,6 +114,9 @@ actual fun defaultRemoteHubSessionFactory(): RemoteHubSessionFactory? =
                 cpJwtProvider = CpJwtProvider { _, _ -> null }, // runway #4: HttpCpJwtProvider wires at S-J/CYP-514 ⇒ fail-closed until then
             ),
             scope = scope,
+            // CYP-802 (S1c edge ③): the real issuer check, built from the hub's issuerTrust posture (threaded from
+            // the CP wire via connect.HubDescriptor). NOT_TRUSTED → terminal IssuerNotTrusted; absent/null → proceed.
+            issuerTrust = DescriptorIssuerCheck(hub.issuerTrust),
         )
     }
 
@@ -209,6 +213,8 @@ fun liveRemoteConnectComponentsFactory(
         trust = shared.trust,
         authenticator = operatorAuth,
         scope = scope,
+        // CYP-802 (S1c edge ③): live path — the real issuer check from the hub's issuerTrust posture.
+        issuerTrust = DescriptorIssuerCheck(hub.issuerTrust),
     )
     // CYP-537 (M2 Option A, WS2) — the N-tunnel pool, the F-M2-1 fix. It shares the session's transport/trust/
     // authenticator (pool tunnels ride the pin + enrolled device) AND the live rendezvous resolver + connector
