@@ -1,9 +1,15 @@
 # IssuerNotTrusted — Cross-Surface-Consistency-Referenz (Desktop-Compose → web-ts)
 
-> Owner: UIUX-Designer · **Referenz/Consultation, kein Bau, kein Auftrag an Team-2** (via PO relayed) ·
-> Stand develop `f6c850cd`. Zweck: das **gelandete Desktop-Compose-IssuerNotTrusted-Arm** als 1:1-Vorlage
-> dokumentieren, damit uiux2/Team-2 die **web-ts-Mount/Placement-Slice** (die 0-render-sites-Lücke)
-> **user-visible konsistent** zum Desktop baut. Grundlage: mein §-QA des gelandeten Arms (CYP-805).
+> Owner: UIUX-Designer · **DURABLE host-agnostische Consistency-Referenz** (Consultation, kein Bau, kein
+> Auftrag an Team-2, via PO relayed) · Stand develop `f6c850cd`. Zweck: das **gelandete
+> Desktop-Compose-IssuerNotTrusted-Arm** als **host-agnostisches Konsistenz-Muster** festhalten — für
+> **WENN/FALLS** eine web-ts-Fläche einen Host bekommt, **NICHT** als Input für sofortiges Placement.
+>
+> **⚠ Re-Scope (PL-Connect 2026-07-22):** Team-2s web-ts-Mount ist zu einer **Architektur-Weiche** geworden —
+> web-ts hat **keinen Connect-Flow-Host**, offene **§4b-Auftraggeber-Frage: „web-ts = Multi-Hub-*Client* ODER
+> server-lokale *§9-Operator-Konsole*?"** uiux2s Placement ist **GEHALTEN**, bis die Weiche steht; der PL routet
+> diese Referenz in die **Weichen-Synthese** (Konsistenz-Anker, **falls** „Client-mit-Host" gewählt wird).
+> Grundlage: mein §-QA des gelandeten Arms (CYP-805).
 > Verwandt: `CYP-747-issuer-not-trusted-ui-spec.md` (Achse c) · `CYP-747-n3-trust-render-qa-checklist.md`
 > (die 9 §-QA-Zähne).
 
@@ -12,9 +18,10 @@
 ## 0. Der eine Satz
 
 Die **Wahrheit** ist beidseitig gleich: *owned Hub, kein vertrauenswürdiger Aussteller etabliert →
-terminaler Fail-closed-Block, keine Operator-Berechtigung, Auflösung OOB.* Das **Rendering** muss über
+terminaler Fail-closed-Block, keine Operator-Berechtigung, Auflösung OOB.* Das **Rendering** soll über
 Desktop **und** Browser **dasselbe Muster** tragen — sonst liest derselbe Zustand auf zwei Flächen
-verschieden. Diese 6 Achsen sind die Vorlage.
+verschieden. Diese 6 Achsen sind die **durable Vorlage**, anwendbar **sobald/falls** die Browser-Fläche
+einen Host bekommt (Architektur-Weiche, s. Header) — **kein Muster für sofortiges Placement**.
 
 ---
 
@@ -25,7 +32,7 @@ verschieden. Diese 6 Achsen sind die Vorlage.
 | i | **Ton/Glyph** | **WARN-amber `▲`** + Label in `severityColor(Severity.WARN)` — **NICHT** error-red (`:370`) | amber-WARN `▲` + Label; **nicht** die error/danger-Rolle |
 | ii | **OOB = Hinweis, kein Button** | OOB-Zeile ist ein **`Text`** mit Tag `ISSUER_OOB`; **kein** Button, **kein** Retry, **kein** Grant (mirror `TRUST_CHANGED_REPIN`) | OOB = **statischer Text**, **kein** `<button>`/Link-Action; kein Retry/Grant-Control |
 | iii | **a11y-Dringlichkeit** | `liveRegion = Assertive` + `contentDescription = a11y_...` am **Container** (`Column`) | `aria-live="assertive"` (oder role=alert) am Container + die a11y-Copy |
-| iv | **Placement** | im **Connect-Failure-Flow**: `RemoteConnectingView` → `RemoteConnState.LOST → RemoteFailureView(failure)` → `IssuerNotTrusted`-Zweig (`:326`→`:370`) | im **Connect-Failure-Flow** an der terminalen/LOST-Position — **nicht** ein separates Toast/Modal, **nicht** versteckt/inert |
+| iv | **Placement (Prinzip, host-agnostisch)** | im **Connect-Failure-Flow**: `RemoteConnectingView` → `RemoteConnState.LOST → RemoteFailureView(failure)` → `IssuerNotTrusted`-Zweig (`:326`→`:370`) | **Prinzip:** an der **terminalen/Failure-Position des jeweiligen Connect-Hosts**, nicht Toast/Modal, nicht versteckt. **Der konkrete Ort hängt vom Host ab, den die Architektur-Weiche entscheidet** (Client-mit-Connect-Flow vs §9-Konsole) — **kein Placement-Mandat jetzt** |
 | v | **Copy-Anker** | die 3 gefrorenen Strings (§2), **Anker-Term** „kein vertrauenswürdiger Aussteller etabliert" — **nie** „Token abgelehnt" | **dieselbe Aussage** (Establishment-Ebene, nicht Token-Reject); DE/EN synchron |
 | vi | **Shared testids** | `RemoteConnectTags.error("issuerNotTrusted")` = `remote.connect.error.issuerNotTrusted` · `RemoteConnectTags.ISSUER_OOB` = `remote.connect.issuerOob` | **dieselben** testids — geteilter QA-Contract über beide Flächen |
 
@@ -97,4 +104,8 @@ verschieden. Diese 6 Achsen sind die Vorlage.
   relevant sobald das TRUSTED-Badge koexistiert (Cross-Ref auf Zahn 9 / CYP-808) — kein Overclaim, dass es
   „schon jetzt überall beißt".
 - **Copy-Anker = Establishment-Ebene** verbatim aus dem gelandeten Desktop; kein „Token abgelehnt".
+- **Durable/host-agnostisch reframed (PL-Connect):** kein Placement-Mandat jetzt — der web-ts-Host ist eine
+  offene §4b-Architektur-Weiche (Client vs §9-Konsole); die 6 Achsen sind der **Konsistenz-Anker für die
+  Weichen-Synthese**, greifen erst, wenn/falls ein Host existiert. Ehrlich gescoped, kein Overreach in eine
+  noch-nicht-entschiedene Architektur.
 - **Keine Zeile Bau:** nichts an `strings.xml`/web-ts angefasst — reine Referenz.
