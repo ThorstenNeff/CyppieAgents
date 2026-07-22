@@ -1,0 +1,220 @@
+{
+  "artifact": "CYP-798 fingerprint golden vectors (promotion-input, cross-language freeze for the OOB fingerprint)",
+  "source_of_truth": "app/shared/.../net/hub/trust/HubFingerprintDisplay.kt (CYP-482) + PgpWordList.kt",
+  "algorithm": {
+    "input": "HubDescriptor.dhPubKey = base64(32 raw bytes); fail-closed (empty/malformed/!=32 bytes -> null, never a fingerprint)",
+    "digest": "SHA-256(rawKey) -> 32 bytes; ALL forms fold the SAME digest",
+    "words": "first 11 digest bytes; token[i] = (i even ? EVEN : ODD)[byte]; PGP 256-word even/odd lists; 11*8 = 88 bit",
+    "hex": "colon-separated LOWERCASE hex of the full SHA-256 digest",
+    "qrPayload": "'cyppie-hub-key:' + base64(rawKey)  (raw key, NOT digest)"
+  },
+  "word_tables_pin": {
+    "PGP_LIST_SHA256": "e9b7b0052233a74aa56724ed3f79c272036aed68d8f4c0856e833c8043b9ac62",
+    "definition": "SHA-256( EVEN.join('\\n') + '\\n' + ODD.join('\\n') ); each list 256 words, distinct, disjoint",
+    "anchors": {
+      "EVEN[0]": "aardvark",
+      "EVEN[255]": "Zulu",
+      "ODD[0]": "adroitness",
+      "ODD[255]": "Yucatan"
+    },
+    "note": "TS MUST ship byte-identical EVEN/ODD tables; recompute this checksum in the TS test to guard drift"
+  },
+  "verification": "these vectors were reproduced in Python and self-verified against the Kotlin object: (a) word-table checksum == PGP_LIST_SHA256; (b) SHA-256(zeros32) first6 == the HubFingerprintDisplayTest zerosIndices6 anchor [102,104,122,173,248,98]. Final authority remains the Kotlin object \u2014 cross-run before freeze.",
+  "vectors": {
+    "zeros32": {
+      "dhPubKey_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "sha256_hex_colon": "66:68:7a:ad:f8:62:bd:77:6c:8f:c1:8b:8e:9f:8e:20:08:97:14:85:6e:e2:33:b3:90:2a:59:1d:0d:5f:29:25",
+      "indices_11": [
+        102,
+        104,
+        122,
+        173,
+        248,
+        98,
+        189,
+        119,
+        108,
+        143,
+        193
+      ],
+      "words_11": [
+        "framework",
+        "gravity",
+        "keyboard",
+        "perceptive",
+        "Vulcan",
+        "gadgetry",
+        "skullcap",
+        "inception",
+        "glucose",
+        "midsummer",
+        "snapline"
+      ],
+      "qrPayload": "cyppie-hub-key:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    },
+    "seq_0..31": {
+      "dhPubKey_base64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "sha256_hex_colon": "63:0d:cd:29:66:c4:33:66:91:12:54:48:bb:b2:5b:4f:f4:12:a4:9c:73:2d:b2:c8:ab:c1:b8:58:1b:d7:10:dd",
+      "indices_11": [
+        99,
+        13,
+        205,
+        41,
+        102,
+        196,
+        51,
+        102,
+        145,
+        18,
+        84
+      ],
+      "words_11": [
+        "flatfoot",
+        "asteroid",
+        "spindle",
+        "certify",
+        "framework",
+        "reproduce",
+        "chisel",
+        "gossamer",
+        "pheasant",
+        "backwater",
+        "eating"
+      ],
+      "qrPayload": "cyppie-hub-key:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+    },
+    "mul7": {
+      "dhPubKey_base64": "AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tk=",
+      "sha256_hex_colon": "2d:fd:60:2a:7a:26:0b:7a:12:90:5f:d2:eb:d4:b9:ac:f4:9e:ed:56:17:58:b9:cb:89:cb:cc:ee:38:9a:e0:2d",
+      "indices_11": [
+        45,
+        253,
+        96,
+        42,
+        122,
+        38,
+        11,
+        122,
+        18,
+        144,
+        95
+      ],
+      "words_11": [
+        "button",
+        "Wyoming",
+        "facial",
+        "chambermaid",
+        "keyboard",
+        "caretaker",
+        "alone",
+        "infancy",
+        "atlas",
+        "millionaire",
+        "eyetooth"
+      ],
+      "qrPayload": "cyppie-hub-key:AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tk="
+    },
+    "mul5p1": {
+      "dhPubKey_base64": "AQYLEBUaHyQpLjM4PUJHTFFWW2Blam90eX6DiI2Sl5w=",
+      "sha256_hex_colon": "94:12:3b:b2:2d:3f:a8:51:5c:d2:07:1b:f0:16:30:88:16:55:6d:d4:50:8f:01:bf:18:b5:cc:65:b3:c5:e7:8a",
+      "indices_11": [
+        148,
+        18,
+        59,
+        178,
+        45,
+        63,
+        168,
+        81,
+        92,
+        210,
+        7
+      ],
+      "words_11": [
+        "Pluto",
+        "backwater",
+        "clockwork",
+        "pioneer",
+        "button",
+        "customer",
+        "retouch",
+        "enchanting",
+        "escape",
+        "sensation",
+        "ahead"
+      ],
+      "qrPayload": "cyppie-hub-key:AQYLEBUaHyQpLjM4PUJHTFFWW2Blam90eX6DiI2Sl5w="
+    },
+    "all_0x01": {
+      "dhPubKey_base64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+      "sha256_hex_colon": "72:cd:6e:84:22:c4:07:fb:6d:09:86:90:f1:13:0b:7d:ed:7e:c2:f7:f5:e1:d3:0b:d9:d5:21:f0:15:36:37:93",
+      "indices_11": [
+        114,
+        205,
+        110,
+        132,
+        34,
+        196,
+        7,
+        251,
+        109,
+        9,
+        134
+      ],
+      "words_11": [
+        "highchair",
+        "sandalwood",
+        "goldfish",
+        "Jupiter",
+        "blockade",
+        "reproduce",
+        "ahead",
+        "Wichita",
+        "goggles",
+        "applicant",
+        "necklace"
+      ],
+      "qrPayload": "cyppie-hub-key:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+    },
+    "all_0xFF": {
+      "dhPubKey_base64": "//////////////////////////////////////////8=",
+      "sha256_hex_colon": "af:96:13:76:0f:72:63:5f:bd:b4:4a:5a:0a:63:c3:9f:12:af:30:f9:50:a6:ee:5c:97:1b:e1:88:e8:9c:40:51",
+      "indices_11": [
+        175,
+        150,
+        19,
+        118,
+        15,
+        114,
+        99,
+        95,
+        189,
+        180,
+        74
+      ],
+      "words_11": [
+        "rocker",
+        "monument",
+        "Aztec",
+        "impetus",
+        "artist",
+        "holiness",
+        "flatfoot",
+        "forever",
+        "skullcap",
+        "politeness",
+        "dogsled"
+      ],
+      "qrPayload": "cyppie-hub-key://////////////////////////////////////////8="
+    }
+  },
+  "negative_vectors": {
+    "note": "Derivation-FAILURE = UPSTREAM ERROR (invalid hub-descriptor), NOT a TrustRejectReason and NOT a HubTrustState value (PL-freeze 1/2): REJECTED = trust evaluated-then-refused; malformed = could-NOT-evaluate. Fail-closed via decodePin(dhPubKey) -> null (PinnedHubStore.decodePin: base64 -> exactly 32 bytes, else null); fail-closed => never TRUSTED. The TS decode MUST return null for every case here (anchors Reviewer-2 / the decodePin seam).",
+    "cases": [
+      { "name": "too_short_31B", "dhPubKey_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "expected": null },
+      { "name": "too_long_33B",  "dhPubKey_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "expected": null },
+      { "name": "not_base64",    "dhPubKey_base64": "not-base64!!!", "expected": null },
+      { "name": "empty",         "dhPubKey_base64": "", "expected": null }
+    ]
+  }
+}
