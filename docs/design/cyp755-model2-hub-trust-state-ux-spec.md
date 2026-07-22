@@ -19,13 +19,13 @@
 
 ## §1 Der Per-Hub-Vertrauenszustand — das 5-Zustands-Render (konkret)
 
-**Modell (Client-seitig, eine Quelle):** `HubTrustState = 'unknown' | 'pending' | 'trusted' | 'rejected' | 'stale'`. **Fail-closed Default = `unknown`.** Distinkt gerendert — **colour-never-sole** (jeder Zustand trägt eine distinkte **Glyph-Form + Label-Text**, Farbe ist sekundär), und **over-alarm-vermeidend** (unknown/pending sind **neutral**, kein Alarm; nur rejected/stale tragen Handlungsgewicht).
+**Modell (Client-seitig, eine Quelle):** `HubTrustState = 'unknown' | 'pending' | 'trusted' | 'rejected' | 'stale'`. **Fail-closed Default = `unknown`.** Distinkt gerendert — **colour-never-sole** (jeder Zustand trägt eine distinkte **Glyph-Form + Label-Text**, Farbe ist sekundär), und **over-alarm-vermeidend** (unknown/pending sind **neutral**, kein Alarm; nur rejected/stale tragen Handlungsgewicht). **`trusted` ist ebenfalls neutral-gerendert (definit, aber keine positive-Affirmation)** — siehe Ruling unten.
 
 | Zustand | Bedeutung | Glyph (Form-Achse) | Label (DE) | Tone | render-Regel |
 |---|---|---|---|---|---|
 | **unknown** | Hub noch nicht kontaktiert / lädt | `◯` (leerer Ring) | „Vertrauen nicht geprüft" | neutral | **fail-closed default**, sichtbar (nicht Stille) |
 | **pending** | Proof präsentiert, Hub verifiziert noch [TF-Trigger] | `◔` (Viertel-Füllung) | „wird geprüft…" | neutral | nur bei **echt laufender** Verifikation — **nie** für terminal reject/stale |
-| **trusted** | Hub hat affirmiert [TF-Trigger] | `●` (voll) | „vertraut" | positiv | **einziger** positiver Render |
+| **trusted** | Hub hat affirmiert [TF-Trigger] | `●` (voll) | „vertraut" | **neutral-definit** | **keine positive-Affirmation** — Form `●` (voll) trägt „evaluiert-gültig", nicht der Ton (s. Ruling) |
 | **rejected** | Hub hat das Proof abgelehnt [TF-code] | `⊘` (durchgestrichen) | „abgelehnt" | warnend | distinkt von Netzfehler (§4) |
 | **stale** | war trusted, Proof abgelaufen/widerrufen [TF-Signal] | `◑` (halb, „war voll") | „abgelaufen — erneut bestätigen" | handlungs-neutral | fail-closed: hub-Flächen **nicht** stale-vertraut weiterzeigen |
 
@@ -33,6 +33,15 @@
 - **unknown ≠ pending ≠ trusted:** drei distinkte Renders — [[absence-reads-as-all-clear]] / [[reconcile-not-collapse-distinct-states]]. Insbesondere **pending ≠ unknown**: „wird geprüft" darf **nur** für laufende Verifikation stehen, **nie** als Sammel-Label für „nicht verbunden" — genau der Fehler, den ich im Honesty-Sweep als Fund #5 (Tier-Strip „Wird geprüft" für revoked/offline) markiert habe. Hier vermeidet das 5-Zustands-Modell ihn per Konstruktion.
 - **fail-closed:** ohne Affirmation ist der Zustand `unknown` (nie optimistisch `trusted`). Fehlt das Trust-Signal → `unknown`-Render, nie geraten.
 - **abgeleitet ≠ nativ:** `trusted` heißt „dieser Hub vertraut deinem Aussteller-vouch" — die Copy/Disclosure macht das **widerrufbar**-Wesen sichtbar, **nie** durables natives Konto (Bedarf N3/Honesty-Kern aus CYP-748).
+
+**★ Ruling `trusted` = neutral-gepinnt, nicht positive-Affirmation (CYP-803, DS-Owner-Entscheid §4a):**
+`trusted` ist **abgeleitet + widerrufbar, nie native Identitäts-Affirmation** — dieselbe „derived≠native"-Invariante, die die Trust-Ratifikation (CYP-798/747) schützt. Ein positiver/affirmativer Render (Emphase-Akzent) behandelt einen widerrufbaren Zustand wie eine **Garantie** = Overclaim (Spiegel von [[over-alarm-is-also-dishonest]]: die ehrliche Mitte für einen abgeleitet-gültigen Zustand ist **neutral-definit**, nicht affirmativ). Das **löst die interne §1↔§5b-Spannung auf** (§5b flaggte bereits „Wert nicht als natives Identsein typen", während §1 `positive` wählte). Konvergiert mit Team-1-UIUX (CYP-802).
+- **Exakter Token** (am gemergten Objekt `hubTrustView.ts` / `index.css` verifiziert):
+  - **`TONE.TRUSTED`: `'positive'` → `'neutral'`** (in `comm/hubTrustView.ts`; Kommentar „the ONLY positive state" mit-anpassen).
+  - **CSS-Glyph `.hub-trust-trusted .hub-trust-glyph`: `--md-sys-color-primary` → `--md-sys-color-on-surface`** (NICHT `on-surface-variant`). Begründung: `on-surface` = **voll-emphase-neutral** (definit/evaluiert), distinkt von unknown/pending (`on-surface-variant`, gedämpft = „noch nicht bekannt") → **kein** Kollaps in die Absence-Zustände, aber **kein** Affirm-Akzent. `on-surface`-auf-`surface-variant` ist im DS bereits ein AA-Text-Paar (Label nutzt es, `index.css`), Glyph als Graphik ≥3:1 gedeckt.
+  - **Label bleibt „vertraut"** — **NICHT** „gepinnt". „pinned" ist in Model-2 bereits belegt (`pinnedOperatorId`, ONE-ACTIVE-HUB/aktiver-Pointer Q4); „gepinnt" als Trust-Label würde Trust-Zustand mit dem Aktiv-Hub-Pointer/pinned-Operator konflatieren (frische Kollision, `tier*`≠`trust*`-Klasse). Der Overclaim saß im **Ton/der Farbe**, nicht im Wort; „vertraut" (DE: „vertraut/bekannt") ist neutral genug.
+  - **a11y bleibt** — trägt schon den ehrlichen Qualifier: „Aussteller-vouched, **widerrufbar**".
+  - **Form `●` bleibt** — die FORM-Achse trägt die Distinktion (colour-never-sole), unangetastet.
 
 **Reuse-Anker (kein Neubau):** dieselbe Mechanik wie **`RemoteSecurityTierBadge`** (`remoteSecurityTierModel.ts` — distinkte Glyph-Form `●`/`◐`/`·` + Label + immer-sichtbar fail-closed, nie native-grün) und wie **`statusDotSpec`/`dotRoleVar`** (`lifecycleStatus.ts`, CYP-431 — UNKNOWN=Ring-**Form** distinkt, nicht farb-only). Der Trust-Badge ist eine **Instanz desselben Musters**, nicht ein drittes Dot-Vokabular.
 
@@ -161,6 +170,7 @@ TrustRejectReason = PROOF_DECLINED | ISSUER_UNTRUSTED | …         // klein, cl
 7. **colour-never-sole** — jeder Zustand trägt Glyph-Form + Label, nie nur Farbe (WCAG 1.4.1).
 8. **inaktive Hubs nicht stale-trusted** — Switcher-Liste zeigt nicht-frische Hubs als `unknown`, nicht letztes `trusted`.
 9. **malformed ≠ unknown (PL, CYP-798)** — ein invalider/korrupter Descriptor rendert ein **distinktes diagnostizierbares Upstream-Signal**, nicht still `unknown` und nicht `rejected`. Das ⚠-Signal ist **immer/verbindlich** präsent. *(Mutation: malformed → still `unknown` → RED = korrupter/böswilliger Descriptor verschwindet; malformed → `rejected` → RED = erfundenes Trust-Verdikt; ⚠-Signal optional/weggelassen bei malformed → RED = distinkter Upstream still weg.)*
+10. **`trusted` neutral-definit, keine Affirmation (CYP-803)** — beide Richtungen gezahnt: (a) `trusted` rendert **`data-tone="neutral"`** (nicht `"positive"`) und Glyph-Token **`on-surface`** (nicht `primary`/Affirm-Akzent). *(Mutation: `trusted` → `tone:'positive'` / Glyph `--md-sys-color-primary` → RED = Garantie-Overclaim, derived≠native verletzt.)* (b) `trusted` bleibt **distinct von `unknown`**: Form `●`≠`◯`, Wort „vertraut"≠„Vertrauen nicht geprüft", Glyph-Token `on-surface`≠`on-surface-variant`. *(Mutation: `trusted`-Glyph → `on-surface-variant` (= unknown-Ton) → RED = Über-Neutralisierung kollabiert evaluiert-gültig in die Absence-Zustände, [[reconcile-not-collapse-distinct-states]].)*
 
 ---
 
