@@ -23,15 +23,19 @@ class IssuerTrustProducerTest {
     }
 
     @Test
-    fun trustedAndNotApplicable_produceNoFailure_proceed() {
+    fun everyNonNotTrustedState_producesNoFailure_proceed() {
+        // Trusted / not-configured / UNKNOWN(absent) all PROCEED — only an explicit NOT_TRUSTED blocks. Unknown must
+        // proceed (not block: blocking on absence breaks old servers) yet is a DISTINCT state, never a positive affirm.
         assertNull(IssuerTrustSignal.Trusted.toRemoteFailure(), "a trusted issuer must NOT surface a failure")
         assertNull(IssuerTrustSignal.NotApplicable.toRemoteFailure(), "no remote issuer gate must NOT surface a failure")
+        assertNull(IssuerTrustSignal.Unknown.toRemoteFailure(), "an ABSENT/unknown issuer verdict must PROCEED, never block")
     }
 
     @Test
-    fun inertDefault_isNotApplicable_neverAFailure() = runTest {
-        // The stub-parallel default must be inert: it never fabricates an issuer verdict, so the live flow is unchanged.
-        assertEquals(IssuerTrustSignal.NotApplicable, InertIssuerCheck.evaluate("hub-1"))
+    fun inertDefault_isUnknown_neverAFailure() = runTest {
+        // The stub-parallel default is the honest UNKNOWN (no issuer determination wired yet) — it proceeds without
+        // affirming trust, so the live flow is unchanged, and never fabricates a verdict.
+        assertEquals(IssuerTrustSignal.Unknown, InertIssuerCheck.evaluate("hub-1"))
         assertNull(InertIssuerCheck.evaluate("hub-1").toRemoteFailure())
     }
 }

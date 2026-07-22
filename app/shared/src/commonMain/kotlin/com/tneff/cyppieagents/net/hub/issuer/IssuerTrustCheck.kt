@@ -26,13 +26,24 @@ fun interface IssuerTrustCheck {
  * everything else proceeds (see [toRemoteFailure]).
  */
 sealed interface IssuerTrustSignal {
-    /** A trusted issuer anchor is established → proceed (no issuer-axis block). */
+    /** A trusted issuer anchor is established → proceed (no issuer-axis block). Maps from `HubIssuerTrust.TRUSTED`. */
     data object Trusted : IssuerTrustSignal
 
-    /** Remote issuer trust does not apply (the remote relay is not configured) → proceed. */
+    /** Remote issuer trust does not apply (the remote relay is not configured) → proceed. Maps from
+     *  `HubIssuerTrust.REMOTE_NOT_CONFIGURED`. */
     data object NotApplicable : IssuerTrustSignal
 
-    /** Owned hub, but NO trusted issuer anchor → produce the terminal fail-closed block. [issuer] = a hint for logs. */
+    /**
+     * CYP-804 — the issuer verdict is ABSENT/unknown (an old server that does not emit `HubDescriptor.issuerTrust`,
+     * i.e. the carrier is `null`). A DISTINCT state, NOT folded into [Trusted] ([[safe-but-silent-default-needs-own-state]]):
+     * it must NEVER render a positive "issuer-trusted" affirmation. It PROCEEDS (not a block) — blocking on absence
+     * would break old-server connects and is redundant: the real gate is server-side (`InertRelayConnector`), so an
+     * actually-untrusted issuer already fails closed there. Only an EXPLICIT [NotTrusted] drives the UI hard block.
+     */
+    data object Unknown : IssuerTrustSignal
+
+    /** Owned hub, but NO trusted issuer anchor → produce the terminal fail-closed block. [issuer] = a hint for logs.
+     *  Maps from `HubIssuerTrust.NOT_TRUSTED`. */
     data class NotTrusted(val issuer: String?) : IssuerTrustSignal
 }
 
@@ -45,15 +56,42 @@ sealed interface IssuerTrustSignal {
  */
 fun IssuerTrustSignal.toRemoteFailure(): RemoteFailure? = when (this) {
     is IssuerTrustSignal.NotTrusted -> RemoteFailure.IssuerNotTrusted(issuer)
-    IssuerTrustSignal.Trusted, IssuerTrustSignal.NotApplicable -> null
+    IssuerTrustSignal.Trusted, IssuerTrustSignal.NotApplicable, IssuerTrustSignal.Unknown -> null
 }
 
 /**
- * The INERT default issuer check (stub-parallel): always [IssuerTrustSignal.NotApplicable] → the live connect flow is
- * unchanged until the real wire carrier (edge ②) + a real check are wired (the final slice). Deliberately **NOT** a
- * false [IssuerTrustSignal.Trusted]: "not applicable" means the issuer gate simply does not fire yet, NEVER that an
- * untrusted issuer was waved through (fail-closed intent survives the stub).
+ * CYP-804 SWAP MAP (prep — apply when Backend's carrier lands on develop). The PL-frozen `:core` carrier is
+ * `HubDescriptor.issuerTrust: HubIssuerTrust? = null` with `enum HubIssuerTrust { TRUSTED, NOT_TRUSTED,
+ * REMOTE_NOT_CONFIGURED }`. The real [IssuerTrustCheck] reads that field off the connecting hub's descriptor and maps
+ * it here (mirrors this exact table); `issuerHint` is an OPTIONAL log-only hint (the UI copy is static). This is the
+ * whole client-produce swap — the [RemoteHubSession] arm + teeth are already in place, only [InertIssuerCheck] is
+ * replaced by an impl that returns `descriptor.issuerTrust.toIssuerTrustSignal(hint)`:
+ *
+ *   HubIssuerTrust.NOT_TRUSTED            -> IssuerTrustSignal.NotTrusted(issuerHint)   // the terminal block
+ *   HubIssuerTrust.TRUSTED               -> IssuerTrustSignal.Trusted                   // proceed
+ *   HubIssuerTrust.REMOTE_NOT_CONFIGURED -> IssuerTrustSignal.NotApplicable             // proceed
+ *   null (absent — old server)           -> IssuerTrustSignal.Unknown                   // proceed, NEVER affirm
+ *
+ * ★ PL-0107 forward-flag (NOT this edge): a positive `HubIssuerTrust.TRUSTED` render (axis c) must stay DISTINCT from
+ * axis-a `HubTrustState.TRUSTED` (neutral, CYP-803) — two "TRUSTED", two axes. My produce arm renders no TRUSTED (it
+ * only blocks on NOT_TRUSTED, amber-WARN), so it is unaffected; this is a note for the CYP-803 render side.
+ *
+ * The commented signature below is the swap's one net-new symbol (kept OUT of compile until HubIssuerTrust exists):
+ *   fun HubIssuerTrust?.toIssuerTrustSignal(issuerHint: String?): IssuerTrustSignal = when (this) {
+ *       HubIssuerTrust.NOT_TRUSTED -> IssuerTrustSignal.NotTrusted(issuerHint)
+ *       HubIssuerTrust.TRUSTED -> IssuerTrustSignal.Trusted
+ *       HubIssuerTrust.REMOTE_NOT_CONFIGURED -> IssuerTrustSignal.NotApplicable
+ *       null -> IssuerTrustSignal.Unknown
+ *   }
+ */
+
+/**
+ * The INERT default issuer check (stub-parallel): always [IssuerTrustSignal.Unknown] → the live connect flow is
+ * unchanged until the real wire carrier (CYP-804) + a real check are wired (the final slice; see the SWAP MAP above).
+ * `Unknown` is the honest stub-phase value — the client has NO issuer determination wired yet, so it proceeds WITHOUT
+ * affirming trust; deliberately **NOT** a false [IssuerTrustSignal.Trusted]. This object is the sole swap point:
+ * `buildRemoteHubSession` injects a real check (reading `HubDescriptor.issuerTrust`) in its place.
  */
 object InertIssuerCheck : IssuerTrustCheck {
-    override suspend fun evaluate(hubId: String): IssuerTrustSignal = IssuerTrustSignal.NotApplicable
+    override suspend fun evaluate(hubId: String): IssuerTrustSignal = IssuerTrustSignal.Unknown
 }
