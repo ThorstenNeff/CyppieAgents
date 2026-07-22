@@ -54,19 +54,32 @@ UPPERCASE wire value and maps to the lowercase css-class/`data-testid` vocabular
 `remoteSecurityTierModel` maps a wire tier to a css tone. Pin the exact casing map with uiux2 before building (avoids a
 [[shared-key-landing]] drift).
 
-**★ malformed is NOT a `HubTrustState`.** It arrives as a **separate** enum — confirmed at the codegen bilateral-wire
-(2026-07-22): a-po's CYP-798 export carries a THIRD enum `HubDescriptorValidity { VALID, MALFORMED }` (generated as
-`export type HubDescriptorValidity = "VALID" | "MALFORMED"`), distinct from `HubTrustState`. The render model must
-therefore be a **closed union where malformed is its own arm**, never a sixth `HubTrustState` value and never folded to
-`UNKNOWN`:
+**Casing (Q1 — uiux2 answered, CYP-755 `0ac8215e`):** a plain 1:1 `.toLowerCase()`, no special case (all 5 are single
+words): `UNKNOWN→unknown … STALE→stale`. Mapped **at the seam** (pattern `remoteSecurityTierModel`) to css class
+`hub-trust-{state}`, `data-testid="hub.trust.{hubId}.{state}"`, glyphs `◯◔●⊘◑`. The wire word stays UPPERCASE; only the
+presentation token is lowercase.
+
+**★ malformed is NOT a `HubTrustState` — and NOT an arm of the trust badge either (uiux2 correction, `tier*≠trust*`
+discipline).** It is the separate `HubDescriptorValidity { VALID, MALFORMED }` enum (a-po's, `connector/`), a per-`hubId`
+field (Q2). On `MALFORMED` the render produces **TWO independent outputs**, never one conflated arm:
+1. the **trust badge** = `unknown` (fail-closed — trust could not be evaluated; never `rejected`, never `trusted`);
+2. a **separate ⚠ upstream-error marker** in a **DISTINCT token namespace** — `hub-descriptor-invalid` /
+   `data-testid="hub.trust.{hubId}.upstreamError"`, **NOT** `hub-trust-*` (folding it into the trust namespace would
+   conflate a descriptor/upstream error with a trust verdict). **⚠ is MANDATORY/always on malformed** (CYP-798 §4b, PL).
+   *(Exact slug tracks a-po's CYP-798 §4b signal name; `hub-descriptor-invalid` is uiux2's proposal.)*
+
+So the model is **two signals, not one union arm** — honesty in keeping them separate:
 ```ts
-// planned model type (net or comm/hubTrustModel.ts) — closed union, honesty in the TYPE not caller discipline
-export type HubTrustView =
-  | { kind: 'state'; state: HubTrustState }   // the 5 wire states
-  | { kind: 'malformed' }                     // distinct upstream/diagnostic signal — ⚠ ALWAYS rendered (CYP-755 §6.9)
+// the trust badge is ALWAYS one of the 5 states; a malformed descriptor maps to UNKNOWN (fail-closed), NOT a 6th value.
+export function hubTrustBadgeState(trust: HubTrustState | null, validity: HubDescriptorValidity): HubTrustState {
+  if (validity === 'MALFORMED') return 'UNKNOWN' // couldn't evaluate → unknown; NEVER trusted/rejected
+  return trust ?? 'UNKNOWN'                       // fail-closed default (no signal ⇒ unknown, not absence, not TRUSTED)
+}
+// SEPARATE upstream signal — its OWN namespace, rendered (⚠) iff malformed, ALWAYS (mandatory).
+export const descriptorUpstreamError = (validity: HubDescriptorValidity): boolean => validity === 'MALFORMED'
 ```
-Fail-closed default when **no** trust signal is present for a hub = `{ kind: 'state', state: 'UNKNOWN' }` — never
-absence, never TRUSTED (same rule as CYP-800 `endpointFor→null` and `unreadModel` `unknown ≠ zero`).
+Fail-closed default (no trust signal) = `UNKNOWN` — never absence, never TRUSTED (same rule as CYP-800 `endpointFor→null`
+and `unreadModel` `unknown ≠ zero`).
 
 ---
 
@@ -82,15 +95,17 @@ new one. Reuse ledger:
 
 **Planned files (created only at landing — RENDER layer, distinct from a-po's `connector/` vocabulary):**
 - `web-ts/src/comm/hubTrustView.ts` — pure: **imports** `HubTrustState`/`HubDescriptorValidity` from
-  `../connector/hubTrustModel` (a-po's vocabulary, do NOT redefine); adds the render-only `HubTrustView` closed union
-  (state | malformed arm), `hubTrustView(signal) → HubTrustView` (fail-closed), and a
-  `hubTrustGlyphSpec(view) → {glyph, label, tone, testid, aria}` selector. Framework-free + unit-tested (the honesty
-  rules live here, provable — like `unreadModel`/`capacityModel`). *(Named `hubTrustView`, NOT `hubTrustModel` — the
-  latter is a-po's on `connector/`; avoids the collision.)*
+  `../connector/hubTrustModel` (a-po's vocabulary, do NOT redefine); the render-only **two-signal** derivation (§1) —
+  `hubTrustBadgeState(trust, validity) → HubTrustState` (malformed→UNKNOWN, fail-closed) **and** the separate
+  `descriptorUpstreamError(validity) → boolean` — plus a `hubTrustGlyphSpec(state) → {glyph, label, tone, testid, aria}`
+  selector (lowercase presentation token, mapped at the seam). Framework-free + unit-tested (the honesty rules live
+  here, provable — like `unreadModel`/`capacityModel`). *(Named `hubTrustView`, NOT `hubTrustModel` — the latter is
+  a-po's on `connector/`; avoids the collision.)*
 - `web-ts/src/comm/HubTrustBadge.tsx` — renders the selector; `data-testid="hub.trust.{hubId}"`, `role="status"`
   `aria-live="polite"` (assertive **only** for the *active* hub going REJECTED/STALE mid-session — CYP-755 §1 a11y).
-- CSS `hub-trust-{state}` + `hub-trust-malformed` (tone via css-var; the ⚠ malformed row is a distinct always-on marker).
-  Guard the shipped CSS with a `readFileSync` presence test (jsdom is CSS-blind — [[jsdom-tests-are-css-blind]]).
+- CSS `hub-trust-{state}` (5 tones via css-var) **and a SEPARATE `hub-descriptor-invalid`** class for the ⚠ upstream
+  marker — a distinct namespace, NOT `hub-trust-malformed` (do not conflate descriptor-error with trust state). Guard
+  BOTH shipped classes with a `readFileSync` presence test (jsdom is CSS-blind — [[jsdom-tests-are-css-blind]]).
 
 The 5 glyph forms + DE labels are fixed by CYP-755 §1 (◯ „Vertrauen nicht geprüft" / ◔ „wird geprüft…" / ● „vertraut" /
 ⊘ „abgelehnt" / ◑ „abgelaufen — erneut bestätigen"), + the ⚠ malformed „Ungültiger Hub-Descriptor — Status nicht
@@ -122,8 +137,20 @@ promoted layer, per-`hubId`):
 | revocation/expiry after TRUSTED | `state: STALE` **[TF-signal]** | fail-closed: stop showing hub surfaces as trusted (CYP-755 tooth 3, stale-lit) |
 | inactive hub whose state is not fresh | `state: UNKNOWN` | switcher list shows non-fresh as UNKNOWN, never last-cached TRUSTED (CYP-755 §2, [[forecast-vs-observed-disclosure]]) |
 
-The **[TF]** rows depend on Team-1 fixing the exact trigger/code-set/revocation-mode; the mapping *structure* and the
-non-[TF] rows (UNKNOWN, malformed, inactive-not-fresh) are fixed and buildable at G1+G2.
+**★ [TF] edges RESOLVED (Q3 — a-po/PL answered 2026-07-22, CYP-747-grounded).** The state machine is now fully
+specified, so every row above is fillable at landing:
+- **UNKNOWN** (default) **→ PENDING**: a TOFU pin is recorded, awaiting the OOB fingerprint compare.
+- **PENDING → TRUSTED**: a **successful** OOB fingerprint confirmation via `OobFingerprintConfirmer` (post-pin) — **NEVER
+  from absence / "connection up"** (this is the F4 / PL-0089 core: TRUSTED is hub-affirmed, never inferred).
+- **PENDING → REJECTED**: `TrustRejectReason` = **`KEY_CHANGED`** (presented key ≠ the pinned TOFU key → MITM/rotation)
+  or **`OOB_REJECTED`** (the human compared the OOB fingerprint and rejected). Client maps `code → curated copy`, never a
+  message string-match (reuse `restErrorCode`).
+- **TRUSTED → STALE**: a **PUSH** revocation signal (sub-weiche a2 decided push, not lazy — so STALE enters promptly,
+  no stale-lit window).
+- **malformed** (`HubDescriptorValidity.MALFORMED`, N4's 4th axis, separate per-`hubId` field): badge `UNKNOWN` + the
+  mandatory ⚠ upstream marker (§1) — not a transition, a parallel signal.
+
+All rows (non-[TF] + the now-resolved [TF]) are buildable at G1+G2 — nothing in the mapping is left guessed.
 
 ---
 
@@ -144,13 +171,22 @@ the per-hub trust view.
 
 ## §5 What is buildable-at-landing (mechanical) vs [TF]-gated
 
-**Mechanical at G1+G2 (no new design):** the `hubTrustModel.ts` pure model + selector, `HubTrustBadge.tsx`, the CSS +
-its presence guard, the fail-closed default, the malformed arm, the UNKNOWN/inactive-not-fresh mapping rows, and teeth
-1–4 (fail-closed), 7 (colour-never-sole), 8 (inactive-not-stale-trusted), 9 (malformed distinct + ⚠ always) from CYP-755 §6.
+**Mechanical at G1+G2 (no new design):** the `comm/hubTrustView.ts` pure model + selector (importing the `connector/`
+vocabulary), `HubTrustBadge.tsx`, the `hub-trust-{state}` + separate `hub-descriptor-invalid` CSS + their presence
+guard, the fail-closed default, the two-signal malformed handling (badge→UNKNOWN + separate ⚠), the UNKNOWN/inactive-
+not-fresh mapping rows, and teeth 1–4, 7, 8, 9 from CYP-755 §6.
 
-**[TF]-gated (needs Team-1's trust frame — do NOT guess):** the PENDING→TRUSTED trigger, the REJECTED reason-code
-taxonomy wiring, the STALE revocation-signal mode (push/lazy), the credential-presentation steps; and teeth 3 (stale),
-5 (role-doesn't-travel), 6 (no-optimistic-switch) which exercise the switch/trust edges.
+**★ The [TF] edges are now RESOLVED (Q3 answered) — no longer gated:** the full state machine (UNKNOWN→PENDING→
+TRUSTED/REJECTED, TRUSTED→STALE via PUSH; codes KEY_CHANGED/OOB_REJECTED; TRUSTED only via `OobFingerprintConfirmer`,
+never from absence) is specified in §3, so teeth 3 (stale) and 4 (cause-separation) are buildable at landing too.
+
+**Still gated (NOT on the trust enum — on multi-hub):** teeth 5 (role-doesn't-travel) and 6 (no-optimistic-switch) and
+the active-hub-unambiguous indicator exercise the **switch between ≥2 hubs**, which does not exist yet (single 'local'
+hub). This is the **N5.a** slice — measured GATED (2026-07-22): the role/whoami is global today, the per-hub whoami CALL
+is already satisfied by CYP-800 (`RestHubRepo(hubId).fetchAuthMe()` + threaded `activeHubId`), and role ≠ trust (distinct
+axis, not enum-gated). A `roleByHub` pre-build now would be F2-vacuous (no non-vacuous acceptance until a 2nd hub + a
+switcher). So N5.a's behavioral half **hangs on CYP-801's multi-hub render + switch flow** — it becomes testable then,
+not as a standalone slice now (coordinator-confirmed).
 
 ## §6 Teeth to build (from CYP-755 §6 — mutation-verified at landing)
 
@@ -158,18 +194,22 @@ Carry all 9 as mutation-red acceptance teeth. The high-value ones for this rende
 - **fail-closed default** — no signal → UNKNOWN render (mut: default TRUSTED/optimistic → RED).
 - **PENDING ≠ UNKNOWN ≠ TRUSTED** — three distinct glyph-forms+labels (mut: "wird geprüft" for not-connected, or
   unknown==trusted look → RED = Sweep-Fund-#5 class).
-- **malformed ≠ UNKNOWN and ≠ REJECTED, ⚠ always** (mut: malformed→silent UNKNOWN → RED = corrupt descriptor vanishes;
-  malformed→REJECTED → RED = invented verdict; ⚠ optional/omitted → RED).
+- **malformed = badge UNKNOWN + a SEPARATE mandatory ⚠** (two signals, not one arm): on `MALFORMED` the trust badge is
+  `unknown` (fail-closed — correct) AND the `hub-descriptor-invalid` ⚠ marker is present. Muts: ⚠ omitted on malformed →
+  RED (the distinct upstream signal vanishes); malformed rendered as `rejected`/`trusted` → RED (invented verdict); the
+  ⚠ emitted in the `hub-trust-*` namespace instead of the distinct one → RED (conflates descriptor-error with trust).
 - **colour-never-sole** — each arm glyph-form + word (WCAG 1.4.1).
 - **inactive not stale-trusted** — switcher non-fresh renders UNKNOWN, not last TRUSTED.
 
-## §7 Open questions — route to uiux2 / Team-1 via coordinator
+## §7 Questions — ALL RESOLVED (routed + answered 2026-07-22)
 
-1. **Casing map** (§1): confirm UPPERCASE wire → lowercase presentation token with uiux2 (avoids drift).
-2. **malformed signal form** (G2): ~~the exact wire shape~~ — RESOLVED at the codegen bilateral (2026-07-22): it is the
-   `HubDescriptorValidity { VALID, MALFORMED }` enum a-po exports alongside `HubTrustState`. Remaining: confirm whether
-   it rides per-`hubId` on the same trust wire object (so the `malformed` arm keys correctly).
-3. **[TF] set** (Team-1): PENDING→TRUSTED trigger · `TrustRejectReason`→cause map · revocation mode (push/lazy) — §5.
+1. **Casing map** (§1) — RESOLVED (uiux2, CYP-755 `0ac8215e`): plain 1:1 `.toLowerCase()`, wire UPPERCASE → presentation
+   lowercase, mapped at the seam. See §1.
+2. **malformed signal form** — RESOLVED: `HubDescriptorValidity { VALID, MALFORMED }` (a-po), a **separate per-`hubId`
+   field** (confirmed by a-po/PL) — matches the parallel `trustByHub` store (Q4). Rendered as badge→UNKNOWN + a distinct
+   ⚠ namespace, NOT a trust-badge arm (§1).
+3. **[TF] set** — RESOLVED (a-po/PL): the full state machine + `KEY_CHANGED`/`OOB_REJECTED` cause-map + PUSH revocation +
+   TRUSTED-only-via-`OobFingerprintConfirmer`. See §3.
 4. **Registry attach point** (my CYP-800) — RESOLVED (my call, CYP-800 now merged): the per-hub trust view attaches as a
    **parallel per-`hubId` store in `HubState`** (a `trustByHub: ReadonlyMap<HubId, HubTrustView>`, keyed like
    `unreadView`/`terminalStateByAgent`/`runStateByAgent` already are), **NOT** by extending the pure
