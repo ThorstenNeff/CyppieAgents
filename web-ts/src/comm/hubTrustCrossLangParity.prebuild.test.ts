@@ -1,103 +1,72 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { hubTrustGlyphSpec } from './hubTrustView'
-import { HUB_TRUST_STATE_DEFAULT } from '../connector/hubTrustModel'
 
-// CYP-804/805/③ — **cross-lang render-parity PREBUILD** for the two trust axes (uiux2 N3 + PL-0107). Built NOW against
-// the FROZEN shape (CYP-804-② `HubIssuerTrust` @ develop 9cec7cfc), RED-until-render via `fail()` (NOT `it.skip`/
-// `@Ignore`, so it can never pass as an unwired no-op), then sharpened when the renders land: CYP-805 = web-ts axis-c
-// issuer render · ③ = Compose axis-a N3 render. This is the same "prebuild against the frozen freeze" pattern as the
-// CYP-798 cross-lang parity harness.
+// Cross-lang trust-render PARITY (uiux2 N3 / PL-0107). Web-ts-only, hermetic (reads source files) — NO Gradle/skiko,
+// so no runComposeUiTest-hang. This is the CYP-798-class co-drift catch: assertions the per-surface teeth CANNOT make.
 //
-// ★ NON-DUPLICATION (what this file deliberately does NOT re-assert — the frozen shape is already covered):
-//  • axis-a web-ts RENDER honesty (TRUSTED neutral, on-surface-not-primary, on-surface≠on-surface-variant) — COVERED by
-//    CYP-801 `hubTrustView.test.ts` + CYP-803 `hubTrustTrustedTone.honesty.test.ts` (§6 Tooth 10 + over-neutralization).
-//  • the two-TRUSTED CONTRACT distinctness (4 distinct standalone `components/schemas`, no name collision) — COVERED by
-//    `server/.../Cyp798StandaloneEnumExportTest.standaloneExport_introducesNoNameCollision`.
-//  • the `issuerTrust` WIRE shape (absent-when-null, plain string enum) — COVERED by `server/.../Cyp804IssuerTrustWireTest`.
-// This file covers ONLY the not-yet-covered legs: the axis-c web-ts RENDER, and the cross-surface + cross-axis RENDER
-// parity. The Compose ③ leg is the PAIRED Kotlin sibling (app/shared jvmTest) — web-ts cannot import a Composable; both
-// bind the SAME [CRITERIA] reference below.
+// ★ RECONCILED after CYP-805 + CYP-802-③ landed (develop f6c850cd). The axis-c issuer render + its honesty are now
+// COVERED per-surface — this file must NOT duplicate them:
+//   • Compose mount/visibility: `Cyp747IssuerNotTrustedRenderTest` (runComposeUiTest mounts the REAL RemoteConnectingView
+//     at IssuerNotTrusted+LOST → tag visible + fail-closed + Assertive; mutation-proven).
+//   • full produce chain → terminal state: `Cyp802IssuerChainE2eTest` (CP wire → toClient → DescriptorIssuerCheck →
+//     terminal IssuerNotTrusted STATE). Produce + render meet at RemoteSessionState ⇒ visibility transitively proven.
+//   • axis-c≠a at the render seam: `IssuerNotTrustedBlock.f3Honesty.test.tsx` + structural `Cyp443TrustAxisSeparationGuardTest`.
+// The 3 earlier RED-until-CYP-805 placeholders are RETIRED (the render landed, covered by the above).
 //
-// PL-0107: TWO states literally named "TRUSTED" — axis-a `HubTrustState.TRUSTED` (the N3 hub-key TOFU state, now
-// NEUTRAL) and axis-c `HubIssuerTrust.TRUSTED` (issuer posture) — must stay DISTINCT in type/namespace/render. The
-// contract keeps the TYPES distinct (Cyp798); this prebuild is where the RENDER-namespace distinctness will be pinned.
+// ★ THE ONE co-drift gap this file closes: the issuer testids are HAND-MATCHED string literals across two languages —
+// Compose `RemoteConnectTags` (const + `error("issuerNotTrusted")` in the render arm) vs web-ts `IssuerNotTrustedBlock.tsx`
+// `data-testid`. CYP-805 `5258d001` intended "same tags Desktop+Browser" but NOTHING enforces it: a one-sided rename
+// (the tag + its own surface's test drift together) stays green while cross-surface Maestro/parity breaks silently.
+//
+// ★ NON-VACUITY (PL requirement): BOTH sides are read from the REAL source (like Cyp443 reads :core), NEVER a hardcoded
+// copy of "issuerNotTrusted" — else this test would itself be a driftable twin a rename could not redden. A rename on
+// EITHER surface (const, the render arm's cause literal, or the web-ts data-testid) makes the two source-read sets differ → RED.
+//
+// axis-a (`HubTrustState` neutral-on-surface) cross-lang parity is CARRY-FORWARD: the Compose HubTrustState badge is
+// UNBUILT (no Composable consumes it; PL deferred it, LOW-prio ticket). web-ts axis-a render honesty is covered by
+// CYP-801 + CYP-803 (`hubTrustTrustedTone.honesty.test.ts`). No parity is asserted here against a non-existent surface.
 
-// ── the FROZEN cross-lang render reference (the single parity contract both surfaces bind to) ─────────────────────
-const CRITERIA = {
-  /** axis-a TRUSTED render tone (CYP-803 ruling): NEUTRAL, never a 'positive'/green affirming accent. */
-  axisA_trustedTone: 'neutral',
-  /** axis-a TRUSTED glyph token: FULL-emphasis evaluated-neutral `on-surface` — distinct from absence's muted tone. */
-  axisA_trustedGlyphToken: 'on-surface',
-  /** absence (unknown/pending) glyph token: MUTED `on-surface-variant`. TRUSTED must NOT collapse into this
-   *  (over-neutralization, forbidden by CYP-803 §6 Tooth 10-b). The two-neutrals distinction is a honesty invariant. */
-  absenceGlyphToken: 'on-surface-variant',
-  /** fail-closed default for BOTH surfaces: absent/unknown ⇒ UNKNOWN, never an optimistic TRUSTED. */
-  failClosedDefault: 'UNKNOWN',
-  /** malformed is a SEPARATE upstream signal in its OWN namespace, never folded into a hub-trust-* state. */
-  malformedNamespacePrefix: 'hub-descriptor-invalid',
-  /** axis-a TRUSTED render anchor (present-iff-state testid). axis-c TRUSTED render must NOT reuse this namespace. */
-  axisA_trustedTestId: (hubId: string) => `hub.trust.${hubId}.trusted`,
-  /** the frozen axis-c posture states (CYP-804 `HubIssuerTrust`), the shape CYP-805's render must bind to. */
-  axisC_states: ['TRUSTED', 'NOT_TRUSTED', 'REMOTE_NOT_CONFIGURED'] as const,
-} as const
+const REPO = resolve(process.cwd(), '..') // process.cwd() == web-ts/ ; the repo root holds app/, web-ts/, contract/…
+const read = (rel: string): string => readFileSync(resolve(REPO, rel), 'utf8')
+const one = (re: RegExp, src: string, what: string): string => {
+  const m = re.exec(src)
+  if (!m || !m[1]) throw new Error(`cross-lang parity extraction failed: ${what} (regex ${re}) — source shape changed`)
+  return m[1]
+}
 
-describe('CYP-804/805/③ cross-lang trust render parity — GREEN now (frozen shape + parity-rule anchors)', () => {
-  it('★ axis-c frozen contract (web-ts-consumed openapi.json) is the exact 3-state HubIssuerTrust shape CYP-805 binds to', () => {
-    // The web-ts SIDE of the contract (Cyp798 pins the Kotlin export; this pins what web-ts actually consumes). A
-    // regeneration drift that dropped/renamed a posture state — so CYP-805's render binds to a wrong shape — REDs here.
-    const openapi = JSON.parse(readFileSync(resolve(process.cwd(), 'contract/openapi.json'), 'utf8'))
-    const schema = openapi.components?.schemas?.HubIssuerTrust
-    expect(schema, 'HubIssuerTrust MUST be a named component/schema web-ts can consume for the axis-c render').toBeTruthy()
-    expect(schema.type).toBe('string')
-    expect(schema.enum).toEqual([...CRITERIA.axisC_states])
+describe('cross-lang issuer-render testid CONTRACT parity (Compose source ≡ web-ts source, co-drift-catching)', () => {
+  // ── Compose side: all three inputs read from real source (const + error() prefix + the render arm's cause) ──────────
+  const tagsSrc = read('app/shared/src/commonMain/kotlin/com/tneff/cyppieagents/connect/RemoteConnectTags.kt')
+  const errorPrefix = one(/fun error\(cause: String\)\s*=\s*"([^"$]*)\$cause"/, tagsSrc, 'RemoteConnectTags.error() prefix')
+  const issuerOobConst = one(/const val ISSUER_OOB\s*=\s*"([^"]+)"/, tagsSrc, 'RemoteConnectTags.ISSUER_OOB')
+
+  const renderSrc = read('app/shared/src/commonMain/kotlin/com/tneff/cyppieagents/connect/HubConnectSelection.kt')
+  const armStart = renderSrc.indexOf('is RemoteFailure.IssuerNotTrusted ->')
+  // Bound the arm to the NEXT `is RemoteFailure.` branch (fallback: a generous window) so the whole IssuerNotTrusted
+  // block is captured — including its OOB node — while the first `error("…")` match stays this arm's own cause.
+  const nextArm = renderSrc.indexOf('is RemoteFailure.', armStart + 20)
+  const arm = renderSrc.slice(armStart, nextArm > armStart ? nextArm : armStart + 1600)
+  const issuerCause = one(/RemoteConnectTags\.error\("([^"]+)"\)/, arm, 'IssuerNotTrusted arm error(cause) literal')
+  const armUsesOobConst = /RemoteConnectTags\.ISSUER_OOB/.test(arm)
+
+  const composeIssuerTags = new Set([errorPrefix + issuerCause, issuerOobConst])
+
+  // ── web-ts side: the block's own data-testid literals, read from source ─────────────────────────────────────────
+  const blockSrc = read('web-ts/src/connector/IssuerNotTrustedBlock.tsx')
+  const webIssuerTags = new Set([...blockSrc.matchAll(/data-testid="([^"]+)"/g)].map((m) => m[1]))
+
+  it('non-vacuity: the extractions found real, non-empty tags on both surfaces (armStart present, OOB via the const)', () => {
+    expect(armStart).toBeGreaterThanOrEqual(0)
+    expect(armUsesOobConst).toBe(true) // the arm tags OOB via RemoteConnectTags.ISSUER_OOB (not an inline literal)
+    for (const t of composeIssuerTags) expect(t.startsWith('remote.connect.')).toBe(true)
+    expect(composeIssuerTags.size).toBe(2)
+    expect(webIssuerTags.size).toBe(2)
   })
 
-  it('★ parity-rule non-vacuity: the two-neutrals + cross-axis-namespace rules are well-formed (so the RED-until teeth cannot be vacuous)', () => {
-    // TRUSTED's full-emphasis neutral is DISTINCT from absence's muted neutral — else "both neutral" would be a
-    // meaningless parity (the over-neutralization CYP-803 forbids).
-    expect(CRITERIA.axisA_trustedGlyphToken).not.toBe(CRITERIA.absenceGlyphToken)
-    expect(CRITERIA.axisA_trustedTone).toBe('neutral')
-    // axis-a TRUSTED render namespace is the hub-trust-* family; axis-c must land OUTSIDE it (PL-0107). Pin that the
-    // reference namespace is what we think it is, so the RED-until cross-axis tooth compares against the real anchor.
-    expect(CRITERIA.axisA_trustedTestId('h')).toBe('hub.trust.h.trusted')
-    expect(CRITERIA.failClosedDefault).toBe('UNKNOWN')
-  })
-
-  it('parity BASELINE anchor: the landed axis-a reference still emits the criteria tone (baseline validity, not a re-test of render honesty)', () => {
-    // NOT a duplicate of CYP-801/803 (those pin the render's honesty). This pins the cross-lang BASELINE: if web-ts
-    // axis-a ever drifts off `neutral`, the Compose ③ leg would be compared to a WRONG reference — catch it here first.
-    expect(hubTrustGlyphSpec('TRUSTED').tone).toBe(CRITERIA.axisA_trustedTone)
-    expect(HUB_TRUST_STATE_DEFAULT).toBe(CRITERIA.failClosedDefault)
-  })
-})
-
-describe('CYP-805 axis-c web-ts issuer render — RED-until-wired (fail(), not skipped)', () => {
-  const notWired = (what: string): never => {
-    throw new Error(
-      `CYP-805 web-ts axis-c issuer render not yet landed — cannot evaluate ${what}. No web-ts source consumes ` +
-        `HubIssuerTrust yet (only the generated contract does). This gate is intentionally RED until the render is ` +
-        `wired (NOT skipped, so it can never green as an unwired no-op). SHARPEN on land: replace this fail() with the ` +
-        `real assertion below.`,
-    )
-  }
-
-  it('★ axis-c renders {TRUSTED,NOT_TRUSTED,REMOTE_NOT_CONFIGURED} present-iff-state, distinct per posture (no fold)', () => {
-    // ON LAND: render the issuer badge per posture; assert a distinct present-iff-state anchor per member of
-    // CRITERIA.axisC_states — NOT_TRUSTED (the load-bearing owned-but-issuer-not-trusted → terminal IssuerNotTrusted)
-    // must be its OWN render, never folded into REMOTE_NOT_CONFIGURED or a network/offline state.
-    notWired('the axis-c posture render')
-  })
-
-  it('★ PL-0107 cross-axis: axis-c `HubIssuerTrust.TRUSTED` render namespace ≠ axis-a `hub.trust.{id}.trusted`', () => {
-    // ON LAND: assert the axis-c TRUSTED render testId/class does NOT reuse the axis-a hub-trust-* namespace
-    // (CRITERIA.axisA_trustedTestId) — the two same-named "TRUSTED" must not conflate at the render layer.
-    notWired('the cross-axis render-namespace distinctness')
-  })
-
-  it('★ axis-c honest tone: issuer TRUSTED is not an over-claiming green accent; NOT_TRUSTED is a terminal (no in-app grant) cue, not an alarm-for-a-transient', () => {
-    // ON LAND: axis-c tone honesty per the issuer §5-C2 model (recovery is OOB-only for NOT_TRUSTED).
-    notWired('the axis-c tone honesty')
+  it('★ Compose-source issuer testids ≡ web-ts-source issuer testids (a one-sided rename on EITHER surface reds)', () => {
+    // Both sets are derived by READING the real source of each surface — neither is a hardcoded copy. This is the
+    // enforcer 5258d001 intended but never wrote: Desktop and Browser resolve to the SAME issuer tags, or this reds.
+    expect(webIssuerTags).toEqual(composeIssuerTags)
   })
 })
