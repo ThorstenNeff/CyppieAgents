@@ -1,6 +1,9 @@
 package com.tneff.cyppieagents.net.hub.remote
 
 import com.tneff.cyppieagents.net.Backoff
+import com.tneff.cyppieagents.net.hub.issuer.InertIssuerCheck
+import com.tneff.cyppieagents.net.hub.issuer.IssuerTrustCheck
+import com.tneff.cyppieagents.net.hub.issuer.toRemoteFailure
 import com.tneff.cyppieagents.net.hub.noise.ClientNoiseTransport
 import com.tneff.cyppieagents.net.hub.noise.NoiseTunnel
 import com.tneff.cyppieagents.net.hub.trust.TrustConfirmationRejectedException
@@ -45,6 +48,13 @@ class RemoteHubSession(
      * non-vacuous), so the ordering can never silently drift back. Never overridden in prod.
      */
     private val onBeforeAnnounceConnected: suspend () -> Unit = {},
+    /**
+     * CYP-802 (CYP-747 S1c, client-produce edge) — the AXIS-C issuer-trust seam. Default [InertIssuerCheck] is a STUB
+     * (always `NotApplicable`) → the live connect flow is byte-identical to today; the real check fed by the `:core`
+     * wire carrier (S1c edge ②, a held joint Team-1/Team-2 decision) swaps in as the final slice. Placed LAST so the
+     * many positional `RemoteHubSession(...)` call sites keep compiling unchanged.
+     */
+    private val issuerTrust: IssuerTrustCheck = InertIssuerCheck,
 ) {
     private val _state = MutableStateFlow(RemoteSessionState(hubId, RemoteConnState.RELAY_DIALING))
     val state: StateFlow<RemoteSessionState> = _state.asStateFlow()
@@ -139,6 +149,19 @@ class RemoteHubSession(
                 }
                 return Outcome.TERMINAL // CI-5 hard block — never a silent re-pin
             }
+        }
+
+        // CYP-802 (CYP-747 S1c client-produce, stub-parallel) — the AXIS-C issuer-trust gate. An owned hub with NO
+        // trusted issuer anchor grants no operator authority → terminal, fail-closed (OOB-only recovery), mirroring
+        // the TrustChanged/TrustRejected terminal arms above. The produce path runs through the real mapping
+        // issuerTrust.evaluate(...).toRemoteFailure() (the construction site the CYP-797 render arm was waiting for);
+        // the default seam is INERT (NotApplicable → null), so this is byte-identical to today's flow until the real
+        // :core wire carrier (edge ②) + a real check are wired (the final slice). Checked before the handshake — no
+        // authority means no reason to spend the E2E round-trip.
+        issuerTrust.evaluate(hubId).toRemoteFailure()?.let { issuerFailure ->
+            runCatching { relay.close() }
+            _state.update { it.copy(conn = RemoteConnState.LOST, failure = issuerFailure) }
+            return Outcome.TERMINAL
         }
 
         _state.update { it.copy(conn = RemoteConnState.E2E_HANDSHAKE) }

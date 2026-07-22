@@ -100,6 +100,23 @@ class Cyp443TrustAxisSeparationGuardTest {
     }
 
     @Test
+    fun issuerHome_neverReferences_hubTrustPinOrOperatorAxes() {
+        // CYP-802 (CYP-747 S1c) — the SYMMETRIC scan the issuer-axis KDoc above anticipated ("the symmetric
+        // 'issuer-home ⊥ a/b' scan lands with that file"). IssuerTrustCheck is the FIRST real axis-c client home
+        // (the issuer-trust seam + the client-produce mapping). It must not reach into axis-a (hub-key TOFU pin) or
+        // axis-b (operator identity) — the issuer anchor is its OWN axis, never reusing the TOFU pin or operator vault.
+        val code = codeLinesOf("src/commonMain/kotlin/com/tneff/cyppieagents/net/hub/issuer/IssuerTrustCheck.kt")
+        for (token in hubTrustPinTokens + operatorIdentityTokens) {
+            assertTrue(
+                code.none { it.contains(token) },
+                "CYP-747 §5-C2: the issuer-trust axis-c home (IssuerTrustCheck) must NOT reference the hub-trust-pin (a) " +
+                    "/ operator-identity (b) type '$token' — the issuer axis is orthogonal; it must not reuse the TOFU pin " +
+                    "or the operator vault. Found a cross-axis reference.",
+            )
+        }
+    }
+
+    @Test
     fun sharedHubTrustEnum_neverReferences_operatorOrIssuerAxes() {
         // CYP-798 §4b (Reviewer ①) — module-boundary tooth: the shared `:core` HubTrust vocabulary lives OUTSIDE
         // :app:shared, so a repo-root-relative path (locateSource walks up to the repo root, which holds `core/`).
