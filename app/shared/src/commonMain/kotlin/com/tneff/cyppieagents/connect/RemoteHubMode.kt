@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents.connect
 
 import com.tneff.cyppieagents.net.hub.noise.ClientNoiseTransport
+import com.tneff.cyppieagents.net.hub.issuer.InertIssuerCheck
+import com.tneff.cyppieagents.net.hub.issuer.IssuerTrustCheck
 import com.tneff.cyppieagents.net.hub.remote.HubTrust
 import com.tneff.cyppieagents.net.hub.remote.OperatorAuthenticator
 import com.tneff.cyppieagents.net.hub.remote.RelayDialer
@@ -84,6 +86,10 @@ internal fun buildRemoteHubSession(
     trust: HubTrust,
     authenticator: OperatorAuthenticator,
     scope: CoroutineScope,
+    // CYP-802 (CYP-747 S1c, axis c) — the issuer-trust check. Default [InertIssuerCheck] keeps non-prod callers inert
+    // (stubs/tests unchanged); the jvm factory injects a real DescriptorIssuerCheck built from the hub's issuerTrust
+    // posture. Last + defaulted so the existing positional call sites keep compiling.
+    issuerTrust: IssuerTrustCheck = InertIssuerCheck,
 ): RemoteHubSession = RemoteHubSession(
     hubId = hubId,
     transport = transport,
@@ -91,4 +97,5 @@ internal fun buildRemoteHubSession(
     trust = trust,
     authenticator = authenticator,
     scope = scope,
+    issuerTrust = issuerTrust,
 )

@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.connect
 
+import com.tneff.cyppieagents.model.HubIssuerTrust
+
 /**
  * CYP-419 (Epic CYP-395 S-L) — client-facing model of a registered hub (spec §5 B2 / seam **S-1** `GET /hubs`).
  * The real wire DTO is Backend-owned and lands in `:core` with S-J; this client-facing shape lets S-L build the
@@ -23,6 +25,13 @@ data class HubDescriptor(
      * `""` = no key yet ⇒ fail-closed at trust (empty/malformed/wrong-sized → `null`, never a blind handshake).
      */
     val dhPubKey: String = "",
+    /**
+     * CYP-802 (CYP-747 S1c, axis c) — the per-hub ISSUER-TRUST posture, threaded through from the `:core` wire DTO
+     * (`model.HubDescriptor.issuerTrust`, CYP-804) so the connect flow can derive the terminal `IssuerNotTrusted`
+     * cause. **Absent-when-unknown** (`null` = an older CP that doesn't publish it → the client proceeds with today's
+     * behaviour, NEVER affirms trust). Consumed by the issuer-trust check at `buildRemoteHubSession`.
+     */
+    val issuerTrust: HubIssuerTrust? = null,
 )
 
 /** CYP-419 — outcome of hub registration (spec §4 A2 / seam **S-4**). Phase-1 desktop = device-code automatic (Q7). */
