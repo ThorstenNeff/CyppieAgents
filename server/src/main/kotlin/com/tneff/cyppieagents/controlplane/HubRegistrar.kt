@@ -23,6 +23,13 @@ data class RegisteredHub(
      * `0` = never/unknown. It stays inside the zero-knowledge boundary (a coarse admit time, not a presence feed).
      */
     val admittedAt: Long = 0L,
+    /**
+     * CYP-804 ① — the hub's self-reported issuer-trust posture (axis c) from the admission [HubRegistration], stored so
+     * `GET /hubs` can publish it on [com.tneff.cyppieagents.model.HubDescriptor.issuerTrust]. Connectability metadata
+     * (like [admittedAt]/presence), inside the zero-knowledge boundary — NOT payload. Additive LAST field, default
+     * `null` = unknown/not-reported.
+     */
+    val issuerTrust: com.tneff.cyppieagents.model.HubIssuerTrust? = null,
 )
 
 sealed interface AdmitResult {
@@ -68,7 +75,7 @@ class HubRegistrar(
         if (isNewHubId && registry.values.count { it.ownerId == reg.ownerId } >= maxHubsPerOwner) {
             return AdmitResult.Rejected("owner_hub_cap")
         }
-        val hub = RegisteredHub(reg.hubId, reg.ownerId, reg.name, reg.defaultPort, reg.signingPubKey, reg.dhPubKey, admittedAt = clock())
+        val hub = RegisteredHub(reg.hubId, reg.ownerId, reg.name, reg.defaultPort, reg.signingPubKey, reg.dhPubKey, admittedAt = clock(), issuerTrust = reg.issuerTrust)
         registry[hub.hubId] = hub
         return AdmitResult.Admitted(hub)
     }

@@ -8,6 +8,7 @@ import com.tneff.cyppieagents.controlplane.HubRendezvousRegistrar
 import com.tneff.cyppieagents.crypto.HubIdentity
 import com.tneff.cyppieagents.crypto.HubIdentityProvisioner
 import com.tneff.cyppieagents.crypto.SecretStore
+import com.tneff.cyppieagents.model.HubIssuerTrust
 import com.tneff.cyppieagents.transport.mux.MuxBridge
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -265,3 +266,16 @@ fun buildRemoteTransport(
  * feature flag `CYPPIE_REMOTE_TRANSPORT` ([RemoteRelayWiring.resolveTransportMode]); default [POOL] until dogfooded.
  */
 enum class TransportMode { POOL, MUX }
+
+/**
+ * CYP-804 ① — map the SERVER-INTERNAL issuer-trust classification to the FROZEN wire vocabulary ([HubIssuerTrust],
+ * PL-0107 names — NO `ISSUER_` prefix). This is the ONE place the `ISSUER_`-prefixed server names cross to the wire;
+ * they map cleanly, the prefix never leaks onto the contract. EXHAUSTIVE `when` with NO `else` → a new
+ * [RemoteRelayWiring.RemoteIssuerTrustState] member fails to COMPILE here until it is deliberately mapped (stronger
+ * than a runtime default). `Cyp804IssuerTrustMappingTest` pins each arm's value + the no-`ISSUER_`-leak property.
+ */
+fun RemoteRelayWiring.RemoteIssuerTrustState.toWire(): HubIssuerTrust = when (this) {
+    RemoteRelayWiring.RemoteIssuerTrustState.ISSUER_TRUSTED -> HubIssuerTrust.TRUSTED
+    RemoteRelayWiring.RemoteIssuerTrustState.ISSUER_NOT_TRUSTED -> HubIssuerTrust.NOT_TRUSTED
+    RemoteRelayWiring.RemoteIssuerTrustState.REMOTE_NOT_CONFIGURED -> HubIssuerTrust.REMOTE_NOT_CONFIGURED
+}

@@ -19,4 +19,5 @@ fun RegisteredHub.toDescriptor(online: Boolean, lastSeen: Long): HubDescriptor =
     defaultPort = defaultPort,
     lastSeen = lastSeen,
     dhPubKey = dhPubKey,
+    issuerTrust = issuerTrust, // CYP-804 ① — publish the stored per-hub posture (axis c) to the client
 )

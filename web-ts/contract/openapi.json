@@ -3577,6 +3577,17 @@
                     },
                     "pop": {
                         "type": "string"
+                    },
+                    "issuerTrust": {
+                        "enum": [
+                            "TRUSTED",
+                            "NOT_TRUSTED",
+                            "REMOTE_NOT_CONFIGURED"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
