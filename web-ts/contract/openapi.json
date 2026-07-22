@@ -3632,6 +3632,17 @@
                     },
                     "dhPubKey": {
                         "type": "string"
+                    },
+                    "issuerTrust": {
+                        "enum": [
+                            "TRUSTED",
+                            "NOT_TRUSTED",
+                            "REMOTE_NOT_CONFIGURED"
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -4545,6 +4556,14 @@
                 "enum": [
                     "VALID",
                     "MALFORMED"
+                ]
+            },
+            "HubIssuerTrust": {
+                "type": "string",
+                "enum": [
+                    "TRUSTED",
+                    "NOT_TRUSTED",
+                    "REMOTE_NOT_CONFIGURED"
                 ]
             }
         },

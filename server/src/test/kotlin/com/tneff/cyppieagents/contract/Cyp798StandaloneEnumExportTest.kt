@@ -59,11 +59,24 @@ class Cyp798StandaloneEnumExportTest {
     }
 
     @Test
+    fun hubIssuerTrust_isExported_asTheThreeStateAxisCPosture() {
+        // CYP-804 (axis c) — mirrors the server-internal RemoteIssuerTrustState 1:1. NOT_TRUSTED is the load-bearing
+        // owned-but-issuer-not-trusted state the client maps to the terminal IssuerNotTrusted cause.
+        assertEquals(
+            listOf("TRUSTED", "NOT_TRUSTED", "REMOTE_NOT_CONFIGURED"),
+            enumMembers("HubIssuerTrust"),
+        )
+    }
+
+    @Test
     fun standaloneExport_introducesNoNameCollision() {
         // registerNamedEnum shares the collision ledger with refTo; a standalone name clashing with a walked DTO
-        // component would corrupt the browser types. There must be exactly 3 export descriptors, none colliding.
-        assertEquals(3, ContractGenerator.STANDALONE_ENUM_EXPORTS.size)
+        // component would corrupt the browser types. There must be exactly 4 export descriptors, none colliding.
+        assertEquals(4, ContractGenerator.STANDALONE_ENUM_EXPORTS.size)
         val names = ContractGenerator.STANDALONE_ENUM_EXPORTS.map { it.serialName.substringAfterLast('.') }
-        assertTrue(names.toSet() == setOf("HubTrustState", "TrustRejectReason", "HubDescriptorValidity"), "unexpected export set: $names")
+        assertTrue(
+            names.toSet() == setOf("HubTrustState", "TrustRejectReason", "HubDescriptorValidity", "HubIssuerTrust"),
+            "unexpected export set: $names",
+        )
     }
 }
