@@ -42,6 +42,8 @@ class CsrfTest {
             idp = FakeIdentityProvider(mapOf("sess-op" to ResolvedIdentity("alice", verified = true, aal2 = true))),
             roles = SqliteRoleStore(db, bootstrapOperatorId = "alice"), // CYP-196: alice is the pinned OPERATOR
             nowMs = { 1_000L },
+        
+            browserOperatorPostureEnabled = true,
         )
         application {
             install(StatusPages) { exception<ApiException> { call, cause -> call.respond(cause.status) } }

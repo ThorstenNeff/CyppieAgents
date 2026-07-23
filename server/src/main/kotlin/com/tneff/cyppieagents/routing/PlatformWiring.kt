@@ -452,6 +452,10 @@ fun Application.bootPlatform(
             // NEVER settable by any endpoint/UI/channel. Effective only once a role-OPERATOR exists (lockout-guard).
             operatorTokenDisabled = System.getenv("CYPPIE_OPERATOR_TOKEN_DISABLED")?.toBooleanStrictOrNull()
                 ?: authCfg.operatorTokenDisabled,
+            // CYP-747 S-AAL2b — the browser-AAL2-OPERATOR posture is adequate ONLY on a loopback-bound hub (§9.4/§9.5).
+            // Derived ONCE here from config.hub.host (the single source); off-loopback → false → the cookie→OPERATOR
+            // path is disabled (operator goes token/tunnel). isLoopbackHost catches ::1/localhost/127.0.0.2, not a string compare.
+            browserOperatorPostureEnabled = com.tneff.cyppieagents.auth.isLoopbackHost(config.hub.host),
         )
     } ?: com.tneff.cyppieagents.auth.AuthDeps(booted.tokenRegistry)
     // CYP-181 / P2.4: the Kratos settings shim, wired only when Kratos is configured (the human self-

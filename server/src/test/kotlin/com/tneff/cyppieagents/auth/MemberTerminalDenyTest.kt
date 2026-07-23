@@ -86,7 +86,9 @@ class MemberTerminalDenyTest {
         roles = InMemoryRoleStore(bootstrapOperatorId = "id-op"),
         nowMs = { 1_000L },
         participantTokens = participant,
-    )
+    
+            browserOperatorPostureEnabled = true,
+        )
 
     private fun ApplicationTestBuilder.installTerminal(reg: TokenRegistry, deps: AuthDeps, grants: TerminalGrantStore, command: File) {
         val mgr = PtyManager(

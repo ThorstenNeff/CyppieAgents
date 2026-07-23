@@ -115,6 +115,8 @@ class MemberTier403MatrixTest {
                 ),
             ),
             roles = store, nowMs = { 1_000L },
+        
+            browserOperatorPostureEnabled = true,
         )
         lateinit var app: Application
         application {

@@ -87,6 +87,8 @@ class Cyp710PrincipalClassesTest {
             roles = roles,
             nowMs = { 1_000L },
             participantTokens = participantTokens,
+        
+            browserOperatorPostureEnabled = true,
         )
         lateinit var app: Application
         application {
@@ -199,6 +201,7 @@ class Cyp710PrincipalClassesTest {
             roles = roles,
             nowMs = { 1_000L },
             operatorTokenDisabled = true, // the deploy kill-switch
+            browserOperatorPostureEnabled = true,
         )
         application { installPlatform(bootFake(), authDeps, settingsClient = KratosSettingsClient("http://localhost:1")) }
         startApplication()

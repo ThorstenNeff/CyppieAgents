@@ -30,7 +30,7 @@ class AuthGuardTest {
     private val db = Files.createTempFile("guard-roles", ".db")
     private fun roles() = SqliteRoleStore(db, bootstrapOperatorId = "alice") // CYP-196: alice is the pinned OPERATOR
 
-    private fun ApplicationTestBuilder.installGuarded(store: SqliteRoleStore) {
+    private fun ApplicationTestBuilder.installGuarded(store: SqliteRoleStore, posture: Boolean = true) {
         val deps = AuthDeps(
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
             idp = FakeIdentityProvider(
@@ -46,6 +46,9 @@ class AuthGuardTest {
             ),
             roles = store,
             nowMs = { 1_000L },
+            // CYP-747 S-AAL2b — these tests model a LOOPBACK deploy (the browser-operator posture is adequate), so the
+            // AAL2 operator gets OPERATOR. The posture-disabled (off-loopback / fail-closed-by-default) path is its own test.
+            browserOperatorPostureEnabled = posture,
         )
         application {
             install(StatusPages) {
@@ -91,6 +94,18 @@ class AuthGuardTest {
     fun invalidSession_is401() = testApplication {
         val store = roles(); installGuarded(store)
         assertEquals(HttpStatusCode.Unauthorized, client.get("/api/secret") { header("X-Session-Token", "nope") }.status)
+        store.close(); Files.deleteIfExists(db)
+    }
+
+    @Test
+    fun cyp747_saal2b_offLoopback_deniesBrowserOperator_tokenAxisUnaffected() = testApplication {
+        // CYP-747 S-AAL2b — posture=false models an OFF-LOOPBACK deploy (or the fail-closed default: a raw AuthDeps
+        // without the posture arg defaults to false). Even the AAL2 operator COOKIE is denied (401) — off-loopback a
+        // fronting proxy could replay the cookie (§9.5). Mutation: drop `|| !browserOperatorPostureEnabled` → this reds.
+        val store = roles(); installGuarded(store, posture = false)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/secret") { header("X-Session-Token", "sess-alice") }.status)
+        // ★ the TOKEN axis is unaffected off-loopback (posture is cookie-axis-only): the operator uses token/tunnel there.
+        assertEquals(HttpStatusCode.OK, client.get("/api/secret") { bearerAuth("tok-op") }.status)
         store.close(); Files.deleteIfExists(db)
     }
 

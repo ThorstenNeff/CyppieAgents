@@ -57,7 +57,9 @@ class SessionReadonlyWsTest {
             ),
         ),
         roles = store, nowMs = { 1_000L },
-    )
+    
+            browserOperatorPostureEnabled = true,
+        )
 
     private suspend fun ApplicationTestBuilder.bootstrapOperatorThenMember() {
         client.get("/api/auth/me") { header("X-Session-Token", "sess-alice") }

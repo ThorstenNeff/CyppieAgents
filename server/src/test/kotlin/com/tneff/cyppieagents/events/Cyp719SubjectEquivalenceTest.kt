@@ -41,7 +41,7 @@ class Cyp719SubjectEquivalenceTest {
             ),
         )
         // op-1 is the pinned bootstrap operator → ensureAssigned("op-1") = OPERATOR; any other identity = MEMBER.
-        val deps = AuthDeps(registry, idp, InMemoryRoleStore(bootstrapOperatorId = "op-1"), { 1L })
+        val deps = AuthDeps(registry, idp, InMemoryRoleStore(bootstrapOperatorId = "op-1"), { 1L }, browserOperatorPostureEnabled = true)
         application {
             routing {
                 get("/probe") {

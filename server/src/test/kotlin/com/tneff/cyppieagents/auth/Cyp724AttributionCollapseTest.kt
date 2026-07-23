@@ -62,6 +62,8 @@ class Cyp724AttributionCollapseTest {
             ),
             roles = SqliteRoleStore(Files.createTempFile("cyp724", ".db"), bootstrapOperatorId = "alice"),
             nowMs = { 1_000L },
+        
+            browserOperatorPostureEnabled = true,
         )
         application {
             installPlatform(bootFake(), authDeps, settingsClient = KratosSettingsClient("http://localhost:1"))

@@ -38,6 +38,8 @@ class AuthMeRoutesTest {
             ),
             roles = store,
             nowMs = { 1L },
+        
+            browserOperatorPostureEnabled = true,
         )
         application {
             install(ContentNegotiation) { json(CommJson) }
