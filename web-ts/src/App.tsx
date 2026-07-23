@@ -104,10 +104,15 @@ const currentEntries = (v: { kind: 'unavailable' } | { kind: 'available'; channe
 
 // CYP-744: entries are DeliveredMessage envelopes — order on the STORED message (seq/ts ride there untouched; the
 // mention spans never affect ordering). Same key as the divider (firstUnreadIndex), which also reads the message.
-const byOrder = (a: DeliveredMessage, b: DeliveredMessage): number =>
+export const byOrder = (a: DeliveredMessage, b: DeliveredMessage): number =>
   hasAuthoritativeSeq(a.message) && hasAuthoritativeSeq(b.message)
     ? (a.message.seq as number) - (b.message.seq as number)
     : a.message.ts - b.message.ts
+
+// CYP-814 G1 — WS-close-code → comm connection state, extracted from onCommClose so offline≠revoked is a TESTED unit:
+// a 1008 (auth revoked) is TERMINAL → 'revoked'; any OTHER (transient) drop is reconnectable → 'offline' (never the
+// terminal revoked tone/composer-lock). Behaviourally identical to the previous inline arrow.
+export const commCloseToConnection = (code: number | undefined): 'offline' | 'revoked' => (code === 1008 ? 'revoked' : 'offline')
 
 /** Cascade layout for a freshly opened window (content floor: 320×303). */
 function tiledWindow(id: string, title: string, index: number): WindowState {
@@ -381,7 +386,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           loadReadState()
         },
         // CYP-437(b): an unexpected drop flips the banner off 'live'; a 1008 (auth revoked) is terminal → 'revoked'.
-        onCommClose: (code) => setCommConnection(code === 1008 ? 'revoked' : 'offline'),
+        onCommClose: (code) => setCommConnection(commCloseToConnection(code)),
         // CYP-445-QA minor (folded into CYP-446): a server run-state event also RESOLVES the transient action-reject
         // notice for that agent — a new confirmed state makes the last reject stale, so clear it here (not only on
         // the next action attempt), consistent with how the feed clears the pending flag.
