@@ -387,6 +387,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         },
         // CYP-437(b): an unexpected drop flips the banner off 'live'; a 1008 (auth revoked) is terminal → 'revoked'.
         onCommClose: (code) => setCommConnection(commCloseToConnection(code)),
+        // CYP-815: a 1008 revoke on ANY of the 4 read-only status feeds is session-wide (same bearer) → surface the
+        // visible 'revoked' signal so the run-state/token/busy/terminal indicators don't freeze silently claiming
+        // "still running" (safe-but-silent fix). Non-1008 is transient and self-heals via the feed's reconnect — NOT
+        // routed to 'offline' here (the status feeds don't drive onCommOpen, so it would stick offline incorrectly).
+        onStatusClose: (code) => {
+          if (code === 1008) setCommConnection('revoked')
+        },
         // CYP-445-QA minor (folded into CYP-446): a server run-state event also RESOLVES the transient action-reject
         // notice for that agent — a new confirmed state makes the last reject stale, so clear it here (not only on
         // the next action attempt), consistent with how the feed clears the pending flag.

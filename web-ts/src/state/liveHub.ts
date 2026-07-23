@@ -32,6 +32,11 @@ export interface HubActions {
   onEventsEvent?: (event: EventsWsServerEvent) => void
   /** /ws/events dropped (code 1008 = access revoked) → fail-closed event log (CYP-432). */
   onEventsClose?: (code?: number) => void
+  /** CYP-815: an UNEXPECTED drop on ANY of the 4 read-only status feeds (lifecycle/token/busy/terminal-state).
+   *  A 1008 (auth revoked) is session-wide (same bearer) — surfaces the visible revoked signal so the run-state/
+   *  token/busy/terminal indicators don't freeze silently claiming "still running" (safe-but-silent). Parity with
+   *  onCommClose/onEventsClose. `code` is the WS close code (1008 = revoked). */
+  onStatusClose?: (code?: number) => void
 }
 
 export interface LiveHubHandle {
@@ -41,13 +46,15 @@ export interface LiveHubHandle {
 export function startLiveHub(config: HubConfig, actions: HubActions, deps: SocketDeps = {}): LiveHubHandle {
   const common = { baseUrl: config.wsBase, token: config.token, factory: deps.factory, schedule: deps.schedule }
   const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen, onClose: actions.onCommClose })
-  const terminal = terminalStateFeed({ ...common, onEvent: actions.onTerminalControl })
-  const lifecycle = lifecycleFeed({ ...common, onEvent: (e) => actions.onRunState?.(e) })
+  // CYP-815: the 4 read-only status feeds forward onClose too (parity with comm/events) — a 1008 revoke must not
+  // freeze the run-state/token/busy/terminal indicators silently.
+  const terminal = terminalStateFeed({ ...common, onEvent: actions.onTerminalControl, onClose: actions.onStatusClose })
+  const lifecycle = lifecycleFeed({ ...common, onEvent: (e) => actions.onRunState?.(e), onClose: actions.onStatusClose })
   // CYP-641: the two read-only activity feeds — one global socket each, upserted by agentId in the store. Mounted
   // unconditionally (participant-gated by the server, same bearer as lifecycle); they carry no message bodies, so
   // no operator gate is needed (unlike /ws/events).
-  const busy = busyStateFeed({ ...common, onEvent: (e) => actions.onBusyState?.(e) })
-  const tokenUsage = tokenUsageFeed({ ...common, onEvent: (e) => actions.onTokenUsage?.(e) })
+  const busy = busyStateFeed({ ...common, onEvent: (e) => actions.onBusyState?.(e), onClose: actions.onStatusClose })
+  const tokenUsage = tokenUsageFeed({ ...common, onEvent: (e) => actions.onTokenUsage?.(e), onClose: actions.onStatusClose })
   comm.start()
   terminal.start()
   lifecycle.start()

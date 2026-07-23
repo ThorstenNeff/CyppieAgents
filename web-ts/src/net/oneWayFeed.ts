@@ -17,6 +17,10 @@ export interface OneWayFeedOptions<T> {
   validate?: (raw: unknown) => T
   query?: Record<string, string>
   onOpen?: () => void
+  /** CYP-815: an UNEXPECTED close (1008 = auth revoked) — the view flips to an offline/revoked signal (CYP-437),
+   *  parity with BidiFeed (comm/events). Previously ABSENT here: an onClose passed via the `...o` spread (ChannelBase
+   *  declares it) was silently dropped, so the 4 read-only status feeds died silent on 1008 (safe-but-silent). */
+  onClose?: (code?: number) => void
   backoff?: Backoff
   factory?: SocketFactory
   schedule?: Scheduler
@@ -36,6 +40,7 @@ export class OneWayFeed<T> {
       // CYP-420: runtime-validated; an invalid frame is dropped, never delivered (was: an unchecked cast).
       onText: (data) => deliverIfValid(validate, data, opts.onEvent),
       onOpen: opts.onOpen,
+      onClose: opts.onClose, // CYP-815: forward the close (was dropped) → status feeds surface offline/revoked on 1008.
       backoff: opts.backoff,
       factory: opts.factory,
       schedule: opts.schedule,
