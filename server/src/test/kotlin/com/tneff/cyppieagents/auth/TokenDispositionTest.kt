@@ -47,7 +47,7 @@ class TokenDispositionTest {
 
     private fun idp() = FakeIdentityProvider(
         mapOf(
-            "sess-alice" to ResolvedIdentity("alice-op", verified = true),
+            "sess-alice" to ResolvedIdentity("alice-op", verified = true, aal2 = true),
             "sess-carol" to ResolvedIdentity("carol-mem", verified = true),
         ),
     )

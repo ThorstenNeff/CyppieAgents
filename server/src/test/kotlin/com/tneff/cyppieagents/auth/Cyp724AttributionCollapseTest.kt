@@ -56,7 +56,7 @@ class Cyp724AttributionCollapseTest {
             tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
             idp = FakeIdentityProvider(
                 mapOf(
-                    "sess-alice" to ResolvedIdentity("alice", verified = true), // pinned -> OPERATOR
+                    "sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true), // pinned -> OPERATOR
                     "sess-carol" to ResolvedIdentity("carol", verified = true), // -> MEMBER
                 ),
             ),

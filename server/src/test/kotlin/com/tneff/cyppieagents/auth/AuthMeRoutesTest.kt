@@ -31,7 +31,8 @@ class AuthMeRoutesTest {
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
             idp = FakeIdentityProvider(
                 mapOf(
-                    "sess-verified" to ResolvedIdentity("alice", verified = true),
+                    "sess-verified" to ResolvedIdentity("alice", verified = true, aal2 = true),
+                    "sess-aal1-op" to ResolvedIdentity("alice", verified = true, aal2 = false), // CYP-747 S-AAL2a-ii: pinned operator, but AAL1 session
                     "sess-unverified" to ResolvedIdentity("bob", verified = false),
                 ),
             ),
@@ -73,7 +74,20 @@ class AuthMeRoutesTest {
         val (_, me) = me { header("X-Session-Token", "sess-verified") }
         assertEquals(true, me.authenticated)
         assertEquals(true, me.verified)
-        assertEquals("OPERATOR", me.role) // CYP-196: alice is the PINNED bootstrap OPERATOR
+        assertEquals("OPERATOR", me.role) // CYP-196: alice is the PINNED bootstrap OPERATOR (AAL2-backed → OPERATOR)
+        store.close()
+    }
+
+    @Test
+    fun cyp747_aal1OperatorSession_reportsRoleNull_notOperator() = testApplication {
+        // CYP-747 S-AAL2a-ii — /me must NOT claim operator authority the non-AAL2 session lacks. The SAME pinned operator
+        // on a password-only (AAL1) session reports authenticated+verified but role=null, mirroring the resolvePrincipal
+        // deny (honest UX → the client prompts for the second factor). Mutation: drop the /me gate → role reports "OPERATOR" → red.
+        val store = installMe()
+        val (_, me) = me { header("X-Session-Token", "sess-aal1-op") }
+        assertEquals(true, me.authenticated)
+        assertEquals(true, me.verified)
+        assertEquals(null, me.role, "an AAL1 operator session must not report OPERATOR at /me")
         store.close()
     }
 

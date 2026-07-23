@@ -46,7 +46,10 @@ class DesktopLoginHandoffE2eTest {
     /** AuthDeps wired to the REAL native-session path: a verified session token → the pinned OPERATOR identity. */
     private fun E2ePlatformAuthDeps() = AuthDeps(
         tokens = com.tneff.cyppieagents.routing.TokenRegistry(emptyMap(), operatorToken = null),
-        idp = FakeIdentityProvider(mapOf(operatorSessionToken to ResolvedIdentity(operatorIdentity, verified = true))),
+        // CYP-747 S-AAL2a-ii — the login-handoff operator session is AAL2-backed (WebAuthn) in the AAL2 world; without
+        // aal2=true the chokepoint gate (resolvePrincipal: role==OPERATOR && !aal2 → null) denies it → 401. Mirrors the
+        // 14 :server operator-cookie fixtures. (The one :e2e instance the :server gate missed — caught by the :e2e re-gate.)
+        idp = FakeIdentityProvider(mapOf(operatorSessionToken to ResolvedIdentity(operatorIdentity, verified = true, aal2 = true))),
         roles = InMemoryRoleStore(bootstrapOperatorId = operatorIdentity),
         nowMs = { 0L },
     )

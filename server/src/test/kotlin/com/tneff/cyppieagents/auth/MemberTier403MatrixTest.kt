@@ -110,7 +110,7 @@ class MemberTier403MatrixTest {
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
             idp = FakeIdentityProvider(
                 mapOf(
-                    "sess-alice" to ResolvedIdentity("alice", verified = true),
+                    "sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true),
                     "sess-carol" to ResolvedIdentity("carol", verified = true),
                 ),
             ),

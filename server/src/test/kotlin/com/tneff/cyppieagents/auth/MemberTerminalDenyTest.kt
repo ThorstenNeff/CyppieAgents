@@ -79,7 +79,7 @@ class MemberTerminalDenyTest {
         tokens = reg,
         idp = FakeIdentityProvider(
             mapOf(
-                "sess-op" to ResolvedIdentity("id-op", verified = true),
+                "sess-op" to ResolvedIdentity("id-op", verified = true, aal2 = true),
                 "sess-member" to ResolvedIdentity("id-member", verified = true),
             ),
         ),

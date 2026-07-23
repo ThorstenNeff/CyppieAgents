@@ -80,7 +80,7 @@ class Cyp710PrincipalClassesTest {
             tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
             idp = FakeIdentityProvider(
                 mapOf(
-                    "sess-alice" to ResolvedIdentity("alice", verified = true),
+                    "sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true),
                     "sess-carol" to ResolvedIdentity("carol", verified = true),
                 ),
             ),
@@ -195,7 +195,7 @@ class Cyp710PrincipalClassesTest {
         val roles = SqliteRoleStore(db, bootstrapOperatorId = "alice")
         val authDeps = AuthDeps(
             tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
-            idp = FakeIdentityProvider(mapOf("sess-alice" to ResolvedIdentity("alice", verified = true))),
+            idp = FakeIdentityProvider(mapOf("sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true))),
             roles = roles,
             nowMs = { 1_000L },
             operatorTokenDisabled = true, // the deploy kill-switch

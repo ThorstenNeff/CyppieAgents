@@ -62,7 +62,7 @@ class MemberTierGuardTest {
         val daveVerified = AtomicBoolean(false) // OIDC: verified flips false→true at on-platform verify
         val idp = object : IdentityProvider {
             override suspend fun resolve(credential: SessionCredential?): ResolvedIdentity? = when (credential?.value) {
-                "alice" -> ResolvedIdentity("alice", verified = true)          // password — verified immediately
+                "alice" -> ResolvedIdentity("alice", verified = true, aal2 = true)          // password — verified immediately
                 "dave" -> ResolvedIdentity("dave", verified = daveVerified.get()) // OIDC — verify-then-admit
                 else -> null
             }
@@ -92,7 +92,7 @@ class MemberTierGuardTest {
         val store = SqliteRoleStore(db, bootstrapOperatorId = "u1")
         val idp = object : IdentityProvider {
             override suspend fun resolve(credential: SessionCredential?): ResolvedIdentity? = when (credential?.value) {
-                "u1" -> ResolvedIdentity("u1", verified = true)
+                "u1" -> ResolvedIdentity("u1", verified = true, aal2 = true)
                 "u2" -> ResolvedIdentity("u2", verified = true)
                 else -> null
             }
