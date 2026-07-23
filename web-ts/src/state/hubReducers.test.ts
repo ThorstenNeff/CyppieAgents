@@ -10,6 +10,7 @@ import {
   clearAclPending,
   applyMessage,
   ingestMessages,
+  MESSAGE_TIMELINE_CAP,
   applyCommEvent,
   applyTerminalControl,
   applyRunState,
@@ -125,6 +126,35 @@ describe('ingestMessages — fold fetched history, deduped against live (CYP-438
     let s = applyMessage(emptyHubState, msg('live1', 'po-frontend', 'live'))
     s = ingestMessages(s, [msg('hist1', 'po-frontend', 'h1'), msg('live1', 'po-frontend', 'live'), msg('hist2', 'po-frontend', 'h2')])
     expect(s.messagesByChannel.get('po-frontend')?.map((d) => d.message.id)).toEqual(['live1', 'hist1', 'hist2'])
+  })
+})
+
+describe('CYP-816 — windowed timeline cap (trim-oldest, per-channel)', () => {
+  const N = MESSAGE_TIMELINE_CAP
+  it('★ holds at N and trims the OLDEST when the N+1th arrives (bounded memory/DOM — G6)', () => {
+    // MUT: remove the tail-cap in applyMessage → length becomes N+1 (unbounded) → this reds.
+    let s = emptyHubState
+    for (let i = 0; i <= N; i++) s = applyMessage(s, msg(`m${i}`, 'po-frontend', `b${i}`)) // N+1 messages
+    const ids = s.messagesByChannel.get('po-frontend')!.map((d) => d.message.id)
+    expect(ids).toHaveLength(N) // capped, not N+1
+    expect(ids).not.toContain('m0') // the oldest (first-arrived) was trimmed
+    expect(ids[ids.length - 1]).toBe(`m${N}`) // the newest is retained
+  })
+  it('★ the cap is PER-CHANNEL — trimming one channel never touches another', () => {
+    let s = emptyHubState
+    for (let i = 0; i <= N; i++) s = applyMessage(s, msg(`a${i}`, 'chan-a', 'x')) // overflow chan-a
+    s = applyMessage(s, msg('b1', 'chan-b', 'y'))
+    s = applyMessage(s, msg('b2', 'chan-b', 'z'))
+    expect(s.messagesByChannel.get('chan-a')).toHaveLength(N)
+    expect(s.messagesByChannel.get('chan-b')?.map((d) => d.message.id)).toEqual(['b1', 'b2']) // intact, uncapped
+  })
+  it('★ history ingest is capped too (a full-history fold keeps only the last N — no unbounded load)', () => {
+    const many = Array.from({ length: N + 5 }, (_, i) => msg(`h${i}`, 'po-frontend', 'x'))
+    const s = ingestMessages(emptyHubState, many)
+    const ids = s.messagesByChannel.get('po-frontend')!.map((d) => d.message.id)
+    expect(ids).toHaveLength(N)
+    expect(ids[ids.length - 1]).toBe(`h${N + 4}`) // newest retained
+    expect(ids).not.toContain('h0') // oldest folded-out
   })
 })
 
