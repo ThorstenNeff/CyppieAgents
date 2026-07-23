@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents
 
+import com.tneff.cyppieagents.boot.LoopbackHubLock
 import com.tneff.cyppieagents.boot.PlatformConfig
 import com.tneff.cyppieagents.routing.CommConfig
 import com.tneff.cyppieagents.routing.bootPlatform
@@ -45,6 +46,11 @@ fun main() {
     // of compile-time constants. Loaded here so `embeddedServer` can read them before it binds; `bootPlatform`
     // re-loads the same file for the rest of the wiring (cheap, single source of truth = the file).
     val config = PlatformConfig.load(configFile)
+    // CYP-811 (PL-0110) — fail-closed-by-construction against the on-loopback multi-hub cookie-jar hole: a hub on a
+    // loopback IP takes a box-wide exclusive lock keyed by that IP BEFORE it binds. A 2nd hub on the SAME loopback IP
+    // (cookies ignore port → shared jar → cross-hub operator-cookie replay, §9.5) is REJECTED here, loud, at boot. The
+    // returned handle is held for the process lifetime (kept referenced so the FileLock is not released/GC'd).
+    @Suppress("UNUSED_VARIABLE") val loopbackHubLock = LoopbackHubLock.acquireOrReject(config.hub.host)
     // CYP-427 (M2): TWO connectors on ONE Application (one shared platform / store set — NOT a second
     // installPlatform, which would fork divergent in-memory stores). The tunnel-scoped connector is loopback-only
     // and is the ONLY port the LoopbackBridge dials; installTunnelGodTokenGuard refuses the static operator token
