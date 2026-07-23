@@ -46,6 +46,15 @@ class AuthDeps(
      *  browser's read identity out of the long-lived, loggable `?token=` query. No escalation — it resolves to
      *  the SAME read subject the (already-authenticated) minter had. */
     val wsTickets: WsTicketStore = WsTicketStore(nowMs),
+    /**
+     * CYP-747 S-AAL2b (§9.4/§9.5) — is the browser-AAL2-OPERATOR posture ADEQUATE here? Only on a LOOPBACK-bound hub:
+     * off-loopback a fronting proxy (Relay/reverse-proxy) could replay the AAL2 session cookie to any co-hosted hub
+     * (§9.5 shared-origin replay), so the cookie→OPERATOR posture is disabled off-loopback (operator then goes the
+     * token/tunnel axis — device-PoP, relay-unforgeable). **Default `false` = FAIL-CLOSED (PL decision):** the SAFE
+     * state is the default, so a missed/future prod [AuthDeps] off-loopback DENIES browser-operator (a degraded but
+     * safe UX) rather than a silent §9.5 hole. Production DERIVES it ONCE from `config.hub.host` via [isLoopbackHost]
+     * at `PlatformWiring` (belt+suspenders plumbing verification). Cookie-axis ONLY — token/tunnel are unaffected. */
+    val browserOperatorPostureEnabled: Boolean = false,
 ) {
     /**
      * Token-only convenience (tests + the operator-token-only mount default): the human-auth path is
@@ -92,6 +101,17 @@ data class Credential(val bearer: String?, val session: SessionCredential?)
  * CYP-410 (S-A): the body is now transport-neutral (reads a [Credential], not an [ApplicationCall]); the
  * [ApplicationCall] overload below extracts the credential and delegates — byte-identical behavior.
  */
+/**
+ * CYP-747 S-AAL2b — the browser-AAL2-OPERATOR posture is adequate ONLY on a loopback-bound hub (§9.4/§9.5). RUNTIME
+ * fail-closed: resolve [host] and test `isLoopbackAddress` (the LoopbackBridge T3 idiom — catches `127.0.0.1`/`::1`/
+ * `localhost`/`127.0.0.2`, NOT a brittle string `== "127.0.0.1"`). An unresolvable/invalid host → `false` (SAFE:
+ * treat unknown as off-loopback → posture disabled). Single-sourced; `PlatformWiring` derives the [AuthDeps] flag from
+ * `config.hub.host` through exactly this. */
+fun isLoopbackHost(host: String): Boolean =
+    // ★ blank guard FIRST: `InetAddress.getByName("")` resolves to the LOOPBACK address (a JDK quirk), so a blank /
+    // unconfigured host would WRONGLY enable the posture — treat blank as off-loopback (fail-closed).
+    host.isNotBlank() && runCatching { java.net.InetAddress.getByName(host).isLoopbackAddress }.getOrDefault(false)
+
 suspend fun resolvePrincipal(cred: Credential, deps: AuthDeps): AuthPrincipal? {
     // Machine axis first (a bearer token). A KNOWN bearer is an authenticated machine: operator → OPERATOR,
     // a registered agent token → a MEMBER MachineAgent (403, not 401, on operator routes — the pre-CYP-178
@@ -123,7 +143,9 @@ suspend fun resolvePrincipal(cred: Credential, deps: AuthDeps): AuthPrincipal? {
     // An AAL1 (password-only) operator session is DENIED here — fail-closed `null` (an explicit re-auth-to-AAL2, NEVER a
     // silent MEMBER downgrade). Because this is the SOLE cookie→operator authority path (Cyp747OperatorAuthorityClosureTest),
     // ALL ~20 /api + WS + terminal operator edges inherit the factor as a PROPERTY. MEMBER is unaffected (only OPERATOR gated).
-    if (role == AuthRole.OPERATOR && !resolved.aal2) return null
+    // CYP-747 S-AAL2b — AND the loopback posture: off-loopback ([browserOperatorPostureEnabled]==false) the cookie→OPERATOR
+    // path is disabled entirely (even AAL2), since an AAL2 cookie is replayable through a fronting proxy off-loopback (§9.5).
+    if (role == AuthRole.OPERATOR && (!resolved.aal2 || !deps.browserOperatorPostureEnabled)) return null
     return AuthPrincipal.Human(resolved.identityId, role)
 }
 
@@ -157,7 +179,8 @@ suspend fun ApplicationCall.resolveAuthState(deps: AuthDeps): com.tneff.cyppieag
         // CYP-747 S-AAL2a-ii — /me must not CLAIM operator authority the non-AAL2 session does not have: an AAL1 operator
         // session reports role=null (authenticated + verified, but no operator role until AAL2), mirroring the
         // resolvePrincipal deny → honest UX so the client prompts for the second factor instead of showing operator UI.
-        val effectiveRole = if (role == AuthRole.OPERATOR && !resolved.aal2) null else role.name
+        // CYP-747 S-AAL2b — /me mirrors the loopback posture too: off-loopback the cookie session reports no OPERATOR role.
+        val effectiveRole = if (role == AuthRole.OPERATOR && (!resolved.aal2 || !deps.browserOperatorPostureEnabled)) null else role.name
         com.tneff.cyppieagents.model.AuthMe(true, effectiveRole, true)
     } else {
         com.tneff.cyppieagents.model.AuthMe(authenticated = true, role = null, verified = false)

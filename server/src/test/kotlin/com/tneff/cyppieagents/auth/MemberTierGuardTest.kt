@@ -43,6 +43,8 @@ class MemberTierGuardTest {
         val deps = AuthDeps(
             tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
             idp = idp, roles = store, nowMs = { 1_000L },
+        
+            browserOperatorPostureEnabled = true,
         )
         application {
             install(StatusPages) { exception<ApiException> { call, cause -> call.respond(cause.status) } }

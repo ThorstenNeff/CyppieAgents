@@ -52,6 +52,9 @@ class DesktopLoginHandoffE2eTest {
         idp = FakeIdentityProvider(mapOf(operatorSessionToken to ResolvedIdentity(operatorIdentity, verified = true, aal2 = true))),
         roles = InMemoryRoleStore(bootstrapOperatorId = operatorIdentity),
         nowMs = { 0L },
+        // CYP-747 S-AAL2b — this e2e models a LOOPBACK deploy → the browser-operator posture is adequate (else the
+        // default-false posture gate denies the login-handoff operator, like the aal2 fixture above). Mirrors :server.
+        browserOperatorPostureEnabled = true,
     )
 
     @Test
