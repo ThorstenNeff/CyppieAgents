@@ -48,10 +48,12 @@ describe('CYP-809 G4 — the terminal block has NO retry/dismiss affordance (rol
 
   it('★ source guarantee: the component render wires NO click/activation handler (catches a container onClick React hides from the DOM)', () => {
     // A React `onClick` on the container adds no DOM attribute → the query above can't see it. This source lens closes
-    // that: the render body must contain no onClick/onPointerDown/onMouseDown handler and no href. Not comment-fooled —
-    // the block's prose says "NOT a button", never the literal `onClick=`/`href=`.
+    // that. ★ The block must have ZERO event handlers (terminal, no-retry), so the EXACT invariant is a GENERIC
+    // handler regex `\son[A-Z]\w+=` — NOT a 4-event enumeration (a container `onMouseUp` would slip an enumeration).
+    // Zero false-positive risk: the block legitimately wires no handler, and none of its real props (className/role/
+    // aria-*/data-*) match `on[A-Z]`; its prose says "NOT a button", never a literal `onXxx=`.
     const src = readFileSync(resolve(process.cwd(), 'src/connector/IssuerNotTrustedBlock.tsx'), 'utf8')
-    expect(src, 'no click/activation handler in the terminal block').not.toMatch(/on(Click|PointerDown|MouseDown|KeyDown)\s*=/)
+    expect(src, 'the terminal block must wire NO event handler (any onXxx=)').not.toMatch(/\son[A-Z]\w+\s*=/)
     expect(src, 'no navigation affordance either').not.toMatch(/\shref\s*=/)
   })
 })
