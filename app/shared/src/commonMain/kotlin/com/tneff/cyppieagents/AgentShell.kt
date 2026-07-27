@@ -14,6 +14,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,18 +67,15 @@ import com.tneff.cyppieagents.acl.AclRepository
 import com.tneff.cyppieagents.acl.AclViewModel
 import com.tneff.cyppieagents.acl.AclWsClient
 import com.tneff.cyppieagents.agentview.AgentLifecycleApi
-import com.tneff.cyppieagents.agentview.AgentLifecycleLiveSource
 import com.tneff.cyppieagents.agentview.AgentLifecycleRepository
 import com.tneff.cyppieagents.agentview.AgentLifecycleSource
-import com.tneff.cyppieagents.agentview.BusyStateLiveSource
 import com.tneff.cyppieagents.agentview.BusyStateSource
+import com.tneff.cyppieagents.agentview.StatusMuxClient
 import com.tneff.cyppieagents.agentview.BusyStateViewModel
 import com.tneff.cyppieagents.agentview.ModeRepository
 import com.tneff.cyppieagents.agentview.ModeHttpRepository
-import com.tneff.cyppieagents.agentview.TerminalControlLiveSource
 import com.tneff.cyppieagents.agentview.TerminalControlSource
 import com.tneff.cyppieagents.agentview.TerminalControlStateViewModel
-import com.tneff.cyppieagents.agentview.TokenUsageLiveSource
 import com.tneff.cyppieagents.agentview.TokenUsageSource
 import com.tneff.cyppieagents.agentview.TokenUsageViewModel
 import com.tneff.cyppieagents.agentview.AgentSession
@@ -642,25 +640,19 @@ fun AgentShell(
         AgentLifecycleRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedLifecycleApi = lifecycleApi ?: defaultLifecycleApi
-    val defaultLifecycleSource = remember(httpClient, cfg) {
-        AgentLifecycleLiveSource(wsHttpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked)
+    // CYP-846: ONE muxed `/ws/status` consumer replaces the four separate status sockets (lifecycle/token-usage/
+    // busy-state/terminal-state → 1 WS). Each of the four resolved sources below is a filtered projection of that ONE
+    // shared socket, so the ViewModels stay byte-identical (they still call `source.events()`). Terminal on a 1008
+    // revoke, transient on a malformed frame (CYP-846 addendum). Cuts the pool WS working-set 14→~11 (unblocks
+    // CYP-611). Mirrors web-ts CYP-844; built on the CYP-819 StatusFeed seam. Tests still inject per-feed stubs.
+    val statusMuxScope = rememberCoroutineScope()
+    val statusMux = remember(httpClient, cfg) {
+        StatusMuxClient(wsHttpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked, scope = statusMuxScope)
     }
-    val resolvedLifecycleSource = lifecycleSource ?: defaultLifecycleSource
-    // CYP-316: the per-agent context-token feed (`/ws/token-usage`, participant-gated like lifecycle → same bearer).
-    val defaultTokenUsageSource = remember(httpClient, cfg) {
-        TokenUsageLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked)
-    }
-    val resolvedTokenUsageSource = tokenUsageSource ?: defaultTokenUsageSource
-    // CYP-324: the per-agent busy feed (`/ws/busy-state`, participant-gated like lifecycle → same bearer).
-    val defaultBusyStateSource = remember(httpClient, cfg) {
-        BusyStateLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked)
-    }
-    val resolvedBusyStateSource = busyStateSource ?: defaultBusyStateSource
-    // CYP-354: the per-agent terminal-control mode feed (`/ws/terminal-state`, participant-gated like busy → same bearer).
-    val defaultTerminalControlSource = remember(httpClient, cfg) {
-        TerminalControlLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked)
-    }
-    val resolvedTerminalControlSource = terminalControlSource ?: defaultTerminalControlSource
+    val resolvedLifecycleSource = lifecycleSource ?: statusMux.lifecycle
+    val resolvedTokenUsageSource = tokenUsageSource ?: statusMux.tokenUsage
+    val resolvedBusyStateSource = busyStateSource ?: statusMux.busy
+    val resolvedTerminalControlSource = terminalControlSource ?: statusMux.terminal
     // CYP-381: the hand-off command port. **Real swap done** (CYP-355 motor merged): default = ModeHttpRepository,
     // the live `POST /api/agents/{id}/mode` against BE-2. Non-optimistic by contract — the VM flips only on the
     // server's CONFIRMED (a REJECTED 200 body throws → stay in the old mode). Operator-gated route; a session with

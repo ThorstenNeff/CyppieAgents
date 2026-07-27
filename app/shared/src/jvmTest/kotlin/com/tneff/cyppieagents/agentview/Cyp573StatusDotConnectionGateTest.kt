@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
  * ([gatedLifecycleState]) so it is deterministic without a compose render.
  *
  * The bug: the header status dot/label render the last-known lifecycle [AgentLifecycleState] unconditionally.
- * [AgentLifecycleLiveSource] holds that state across a WS drop (a reconnect just re-streams the snapshot and upserts),
+ * The muxed lifecycle source ([StatusMuxClient].lifecycle) holds that state across a WS drop (a reconnect just re-streams the snapshot and upserts),
  * so across a real server/hub restart the dot keeps showing a **stale RUNNING for an already-stopped agent** through
  * the reconnect gap — a claim it can no longer prove. The fix fails closed: while the live feed is not
  * [ConnectionStatus.LIVE], the resolved state collapses to [AgentLifecycleState.UNKNOWN].

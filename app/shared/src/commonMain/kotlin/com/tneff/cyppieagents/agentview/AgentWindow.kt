@@ -834,7 +834,7 @@ internal fun statusDotSpec(state: AgentLifecycleState, pending: Boolean): Pair<S
 /**
  * CYP-573 — the connection-gate: the lifecycle dot/label may only assert a RESOLVED run-state ([state]) while its
  * live feed is actually [ConnectionStatus.LIVE]. The lifecycle source holds the last-known state across a WS drop
- * (a reconnect just re-streams the snapshot and upserts — [AgentLifecycleLiveSource]), so across a real server/hub
+ * (a reconnect just re-streams the snapshot and upserts — the muxed [StatusMuxClient].lifecycle), so across a real server/hub
  * restart the dot would keep showing a **stale RUNNING for an already-stopped agent** through the reconnect gap —
  * a state it can no longer prove. Fail closed: while the socket is not LIVE, collapse the resolved state to
  * [AgentLifecycleState.UNKNOWN] (RING, "unbekannt") — honest absence, never a phantom claim.

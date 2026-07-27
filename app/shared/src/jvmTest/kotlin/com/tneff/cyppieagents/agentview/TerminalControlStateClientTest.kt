@@ -1,71 +1,27 @@
 package com.tneff.cyppieagents.agentview
 
-import com.tneff.cyppieagents.CommJson
 import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.TerminalControlState
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
-import io.ktor.server.application.install
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
-import io.ktor.server.routing.routing
-import io.ktor.server.websocket.WebSockets as ServerWebSockets
-import io.ktor.server.websocket.webSocket
-import io.ktor.websocket.Frame
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 /**
- * CYP-354 (client mirror) — the read-only terminal-control seam on the frozen BE-1 contract.
- *  - [TerminalControlLiveSource] decodes the REAL `:core` [AgentTerminalControlEvent] off `/ws/terminal-state`
- *    (snapshot then deltas), carrying `state` + holder id + since-time — no hand-parse.
- *  - [TerminalControlStateViewModel] upserts by `agentId` (latest-wins, idempotent) — a reconnect snapshot while
- *    INTERACTIVE re-delivers INTERACTIVE and is applied over the old value, never duplicated.
- * Twin of `BusyStateClientTest` / `TokenUsageClientTest`.
+ * CYP-354 (client mirror) — the [TerminalControlStateViewModel] contract: it upserts by `agentId` (latest-wins,
+ * idempotent) — a reconnect snapshot while INTERACTIVE re-delivers INTERACTIVE and is applied over the old value,
+ * never duplicated; an unseen agent is absent (never a fabricated MEDIATED entry).
+ *
+ * CYP-846: the socket-decode half of this seam (a `TerminalStatus` frame off the muxed `/ws/status`, holder +
+ * since carried) is now covered by `Cyp846StatusMuxTest` (the terminal-control `LiveSource` was folded into
+ * `StatusMuxClient`). The VM is unchanged, and it consumes any [TerminalControlSource] (here a stub), so this test
+ * stands untouched.
  */
 class TerminalControlStateClientTest {
-
-    @Test
-    fun liveSource_decodesRealEvents_withHolderAndSince_snapshotThenDelta() = runBlocking {
-        val server = embeddedServer(Netty, port = 0) {
-            install(ServerWebSockets)
-            routing {
-                // Snapshot (one per agent) then a live delta, all as AgentTerminalControlEvent frames.
-                webSocket("/ws/terminal-state") {
-                    send(Frame.Text(CommJson.encodeToString(AgentTerminalControlEvent.serializer(), AgentTerminalControlEvent("backend", TerminalControlState.INTERACTIVE, heldBy = "op-1", since = 1000L))))
-                    send(Frame.Text(CommJson.encodeToString(AgentTerminalControlEvent.serializer(), AgentTerminalControlEvent("frontend", TerminalControlState.MEDIATED))))
-                    send(Frame.Text(CommJson.encodeToString(AgentTerminalControlEvent.serializer(), AgentTerminalControlEvent("backend", TerminalControlState.MEDIATED)))) // handed back → holder cleared
-                }
-            }
-        }
-        server.start(wait = false)
-        try {
-            val port = server.engine.resolvedConnectors().first().port
-            val client = HttpClient(CIO) { install(ClientWebSockets) }
-            try {
-                val source = TerminalControlLiveSource(client, "ws://127.0.0.1:$port", token = "op")
-                val events = withTimeout(10_000) { source.events().take(3) }
-                // The holder id + since-time survive the wire (content-free but identity/time are carried).
-                assertEquals(AgentTerminalControlEvent("backend", TerminalControlState.INTERACTIVE, heldBy = "op-1", since = 1000L), events[0])
-                assertEquals(AgentTerminalControlEvent("frontend", TerminalControlState.MEDIATED), events[1])
-                assertEquals(AgentTerminalControlEvent("backend", TerminalControlState.MEDIATED), events[2], "the delta hands backend back to mediated")
-            } finally {
-                client.close()
-            }
-        } finally {
-            server.stop(100, 200)
-        }
-    }
 
     private class FakeSource(private val events: List<AgentTerminalControlEvent>) : TerminalControlSource {
         override fun events(): Flow<AgentTerminalControlEvent> = events.asFlow()
@@ -99,17 +55,4 @@ class TerminalControlStateClientTest {
             scope.cancel()
         }
     }
-}
-
-/** Collect exactly [n] items from a (reconnecting/endless) flow, then cancel. */
-private suspend fun <T> Flow<T>.take(n: Int): List<T> {
-    val out = ArrayList<T>(n)
-    try {
-        collect {
-            out.add(it)
-            if (out.size >= n) throw CancellationException("done")
-        }
-    } catch (_: CancellationException) {
-    }
-    return out
 }

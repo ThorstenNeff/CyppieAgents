@@ -35,8 +35,9 @@ import kotlinx.serialization.json.jsonPrimitive
  *
  * **Auth asymmetry (flagged to PO):** `GET /api/capacity` is MEMBER-tier but `/ws/events` is operator-only
  * (1008 → [EventLiveEvent.AccessRevoked]). The workspace is operator-context today (windows exist only when
- * `operatorToken != null`), and every sibling live source ([com.tneff.cyppieagents.agentview.BusyStateLiveSource]
- * etc.) binds the same `operatorToken` — so this does too. For a future pure-member the snapshot would show but
+ * `operatorToken != null`), and every sibling live source (the muxed
+ * [com.tneff.cyppieagents.agentview.StatusMuxClient] etc.) binds the same `operatorToken` — so this does too. For a
+ * future pure-member the snapshot would show but
  * live updates would not; the pill then holds the last-known count (stale, never a lie).
  *
  * **AccessRevoked is terminal** (the [EventTailViewModel] anti-hammer lesson): a 1008 revoke won't clear

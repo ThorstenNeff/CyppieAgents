@@ -1,73 +1,32 @@
 package com.tneff.cyppieagents.agentview
 
 import com.tneff.cyppieagents.CommJson
-import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState
-import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.model.ApiError
 import com.tneff.cyppieagents.model.ApiErrorBody
-import com.tneff.cyppieagents.model.Role
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
-import io.ktor.server.application.install
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
-import io.ktor.server.request.header
 import io.ktor.server.response.respondText
-import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
-import io.ktor.server.websocket.WebSockets as ServerWebSockets
-import io.ktor.server.websocket.webSocket
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.websocket.Frame
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import kotlinx.serialization.builtins.ListSerializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * CYP-73: the real lifecycle clients against an embedded Ktor server, on the frozen contract.
- *  - `/ws/lifecycle` streams content-free [AgentRunStateEvent] → mapped to [AgentLifecycleEvent].
- *  - a non-2xx control decodes the [ApiError] `code` into [AgentLifecycleHttpException] (honest 409).
+ * CYP-73: the operator-gated lifecycle **control** client ([AgentLifecycleRepository]) + the run-state mapping,
+ * on the frozen contract. A non-2xx control decodes the [ApiError] `code` into [AgentLifecycleHttpException]
+ * (honest 409).
+ *
+ * CYP-846: the lifecycle **display** source (`/ws/lifecycle` socket-stream + `GET /api/agents` snapshot) was folded
+ * into `StatusMuxClient`; that stream-decode and the snapshot fail-closed/credential teeth now live in
+ * `Cyp846StatusMuxTest`. The control repository + `toLifecycleState` mapping below are unchanged by the mux.
  */
 class AgentLifecycleClientE2eTest {
-
-    @Test
-    fun lifecycleSocket_streamsRunStateEvents_mappedToClientState() = runBlocking {
-        val server = embeddedServer(Netty, port = 0) {
-            install(ServerWebSockets)
-            routing {
-                webSocket("/ws/lifecycle") {
-                    send(Frame.Text(CommJson.encodeToString(AgentRunStateEvent.serializer(), AgentRunStateEvent("backend", AgentRunState.STOPPED))))
-                    send(Frame.Text(CommJson.encodeToString(AgentRunStateEvent.serializer(), AgentRunStateEvent("backend", AgentRunState.RUNNING))))
-                }
-            }
-        }
-        server.start(wait = false)
-        try {
-            val port = server.engine.resolvedConnectors().first().port
-            val client = HttpClient(CIO) { install(ClientWebSockets) }
-            try {
-                val source = AgentLifecycleLiveSource(client, "http://127.0.0.1:$port", "ws://127.0.0.1:$port", token = "op")
-                val events = withTimeout(10_000) { source.events().toList2(2) }
-                assertEquals(AgentLifecycleEvent("backend", AgentLifecycleState.STOPPED), events[0])
-                assertEquals(AgentLifecycleEvent("backend", AgentLifecycleState.RUNNING), events[1])
-            } finally {
-                client.close()
-            }
-        } finally {
-            server.stop(100, 200)
-        }
-    }
 
     @Test
     fun control_conflict_decodesApiErrorCode() = runBlocking {
@@ -101,76 +60,9 @@ class AgentLifecycleClientE2eTest {
     }
 
     @Test
-    fun snapshot_unreachableServer_failsClosedToEmpty() = runBlocking {
-        // No server on this port → GET throws ConnectException. snapshot() must FAIL-CLOSED (return
-        // emptyMap, never throw) so the header stays UNKNOWN instead of crashing the window. Mutation:
-        // `catch (e: Throwable) -> throw e` makes this the only test that goes RED.
-        val client = HttpClient(CIO)
-        try {
-            val source = AgentLifecycleLiveSource(client, "http://127.0.0.1:1", "ws://127.0.0.1:1", token = "op")
-            val snap = withTimeout(10_000) { source.snapshot() }
-            assertEquals(emptyMap(), snap, "unreachable server must fail-closed to an empty snapshot, not throw")
-        } finally {
-            client.close()
-        }
-    }
-
-    @Test
-    fun snapshot_sendsCredential_soGatedServerAccepts() = runBlocking {
-        // CC1 / CYP-179: GET /api/agents is now gated by requireCommReader. Model that exactly — 401 without
-        // the bearer, the roster WITH it — and prove snapshot() carries the token it holds (same credential the
-        // comm reads send). ⭐ Mutation: drop the Authorization header on the GET → server 401s → snapshot()
-        // fails closed to empty → this is the only test that goes RED (the anonymous-fetch regression CC1 closes).
-        val server = embeddedServer(Netty, port = 0) {
-            routing {
-                get("/api/agents") {
-                    if (call.request.header(HttpHeaders.Authorization) != "Bearer op") {
-                        call.respondText("unauthorized", status = HttpStatusCode.Unauthorized)
-                    } else {
-                        call.respondText(
-                            CommJson.encodeToString(
-                                ListSerializer(Agent.serializer()),
-                                listOf(Agent("backend", "Backend", Role.WORKER, "backend", AgentRunState.RUNNING)),
-                            ),
-                            ContentType.Application.Json,
-                        )
-                    }
-                }
-            }
-        }
-        server.start(wait = false)
-        try {
-            val port = server.engine.resolvedConnectors().first().port
-            val client = HttpClient(CIO)
-            try {
-                val source = AgentLifecycleLiveSource(client, "http://127.0.0.1:$port", "ws://127.0.0.1:$port", token = "op")
-                val snap = withTimeout(10_000) { source.snapshot() }
-                assertEquals(mapOf("backend" to AgentLifecycleState.RUNNING), snap)
-            } finally {
-                client.close()
-            }
-        } finally {
-            server.stop(100, 200)
-        }
-    }
-
-    @Test
     fun runStateMapping_coversAllServerValues() {
         assertEquals(AgentLifecycleState.RUNNING, AgentRunState.RUNNING.toLifecycleState())
         assertEquals(AgentLifecycleState.STOPPED, AgentRunState.STOPPED.toLifecycleState())
         assertEquals(AgentLifecycleState.ERROR, AgentRunState.ERROR.toLifecycleState())
     }
-}
-
-/** Collect exactly [n] items from a (possibly endless/reconnecting) flow. */
-private suspend fun <T> kotlinx.coroutines.flow.Flow<T>.toList2(n: Int): List<T> {
-    val out = ArrayList<T>(n)
-    try {
-        collect {
-            out.add(it)
-            if (out.size >= n) throw kotlinx.coroutines.CancellationException("done")
-        }
-    } catch (_: kotlinx.coroutines.CancellationException) {
-    }
-    return out
 }
