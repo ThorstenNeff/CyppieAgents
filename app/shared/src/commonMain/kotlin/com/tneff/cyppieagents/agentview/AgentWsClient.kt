@@ -6,7 +6,9 @@ import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.StreamJsonEvent
 import com.tneff.cyppieagents.model.UserTurn
 import com.tneff.cyppieagents.net.Backoff
+import com.tneff.cyppieagents.net.isAccessRevoked
 import com.tneff.cyppieagents.net.logWsTeardown
+import com.tneff.cyppieagents.net.readCloseCode
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
@@ -81,6 +83,8 @@ class AgentWsClient(
         var attempt = 0
         while (true) {
             var endReason = "incoming-closed" // the server/tunnel closed the WS cleanly (the for(incoming) loop ended)
+            // CYP-821: set iff the server closed with 1008 (VIOLATED_POLICY) — a revoked/invalid token. TERMINAL.
+            var revoked = false
             try {
                 client.webSocket(
                     urlString = agentUrl(),
@@ -98,19 +102,32 @@ class AgentWsClient(
                         for (turn in outbound) send(Frame.Text(CommJson.encodeToString(UserTurn.serializer(), turn)))
                     }
                     try {
-                        for (frame in incoming) {
-                            if (frame is Frame.Text) {
-                                attempt = 0 // productive connection: a real frame arrived → the ladder is safe to reset
-                                val stored = CommJson.decodeFromString(StoredAgentEvent.serializer(), frame.readText())
-                                if (stored.seq > lastSeq) { // dedup + advance cursor (idempotent replay)
-                                    lastSeq = stored.seq
-                                    // CYP-335: forward the WHOLE envelope, not just `.event` — the server's `tsMs`
-                                    // is the transcript's only honest clock. Stamping at render time would re-date
-                                    // replayed history on every reconnect.
-                                    this@channelFlow.send(stored)
+                        try {
+                            for (frame in incoming) {
+                                if (frame is Frame.Text) {
+                                    attempt = 0 // productive connection: a real frame arrived → the ladder is safe to reset
+                                    val stored = CommJson.decodeFromString(StoredAgentEvent.serializer(), frame.readText())
+                                    if (stored.seq > lastSeq) { // dedup + advance cursor (idempotent replay)
+                                        lastSeq = stored.seq
+                                        // CYP-335: forward the WHOLE envelope, not just `.event` — the server's `tsMs`
+                                        // is the transcript's only honest clock. Stamping at render time would re-date
+                                        // replayed history on every reconnect.
+                                        this@channelFlow.send(stored)
+                                    }
                                 }
                             }
+                        } catch (e: CancellationException) {
+                            // CYP-821: Ktor tears a closing socket down by cancelling the frame channel. If a close
+                            // reason is already recorded, this IS that teardown (e.g. a 1008 reject) — NOT a real
+                            // collector cancel — so swallow it and read the code below. A genuine cancel propagates.
+                            if (!closeReason.isCompleted) throw e
                         }
+                        // CYP-821: a 1008 (VIOLATED_POLICY) auth-revoke is TERMINAL — like the four status feeds
+                        // (CYP-819) and comm/acl/events, do NOT re-dial the dead token forever (the CYP-289 hammer
+                        // class). readCloseCode runs under NonCancellable so a 1008 is seen even as the socket tears
+                        // down. The workspace-wide revoke UX is CYP-819's job (statusRevoked); here we only stop the
+                        // background hammer + hold the connection at DISCONNECTED (honest, terminal).
+                        if (isAccessRevoked(readCloseCode())) revoked = true
                     } finally {
                         pump.cancel()
                     }
@@ -125,6 +142,13 @@ class AgentWsClient(
             // Tunnel-warmth incident instrumentation: log WHY this agent WS ended so an instrumented re-test can
             // correlate whether many agent WS end synchronously (a batch teardown) and their cause. No secrets —
             // agentId + reason + attempt only (never tokens/handshake material).
+            if (revoked) {
+                // CYP-821: terminal — stop the reconnect loop so the revoked token is never re-dialed (the
+                // safe-but-silent CYP-289 hammer the four status feeds already close in CYP-819). Completing the
+                // channelFlow ends `events`; the connection stays DISCONNECTED (never a false "reconnecting").
+                logWsTeardown("agent-ws:$agentId", "1008 revoke → terminal (no reconnect)")
+                break
+            }
             logWsTeardown("agent-ws:$agentId", "$endReason → reconnect #${attempt + 1}")
             attempt += 1
             reconnectDelay(attempt) // CYP-598-B: escalates for a 0-frame (stopped-agent) connection — no floor-hammer
