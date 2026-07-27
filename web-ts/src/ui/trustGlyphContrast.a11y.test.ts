@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 // Reuse — NO new util (uiux2 CYP-806 ref §0): the WCAG calculator + token source already exist canonically here.
-import { contrastRatio, MARITIME_TOKENS, WCAG_NON_TEXT_MIN } from './maritimeTokens'
+import { contrastRatio, MARITIME_TOKENS, EVENT_SEVERITY, WCAG_NON_TEXT_MIN } from './maritimeTokens'
 
 const GRAPHIC_MIN = WCAG_NON_TEXT_MIN // 3 — WCAG 1.4.11 non-text contrast — the glyph FORM
 const TEXT_MIN = 4.5 // WCAG 1.4.3 normal text — the label WORD (no exported const; the AA text floor)
@@ -26,6 +26,14 @@ const roleOf = (cssVar: string) =>
   cssVar.replace(/^--md-sys-color-/, '').replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase())
 
 const hex = (theme: (typeof THEMES)[number], cssVar: string): string => {
+  // CYP-838: STALE's glyph uses the `--event-sev-*` role family (theme-aware amber), resolved from EVENT_SEVERITY, not
+  // the MARITIME md-sys roles. Everything else stays `--md-sys-color-*` → MARITIME_TOKENS.
+  if (cssVar.startsWith('--event-sev-')) {
+    const key = cssVar.replace('--event-sev-', '')
+    const h = (EVENT_SEVERITY[theme] as Record<string, string>)[key]
+    if (h === undefined) throw new Error(`CYP-806: event-sev token ${cssVar} (key ${key}) missing in ${theme} — non-vacuity fail`)
+    return h
+  }
   const role = roleOf(cssVar)
   const h = (MARITIME_TOKENS[theme] as Record<string, string>)[role]
   if (h === undefined) throw new Error(`CYP-806: token ${cssVar} (role ${role}) missing in ${theme} — non-vacuity fail`)
@@ -37,7 +45,8 @@ const tokenIn = (selector: string, prop: 'color' | 'background'): string | null 
   const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const block = css.match(new RegExp(esc + '\\s*\\{([^}]*)\\}'))?.[1]
   if (block === undefined) return null
-  return block.match(new RegExp(prop + ':\\s*var\\((--md-sys-color-[a-z-]+)\\)'))?.[1] ?? null
+  // CYP-838: match both the md-sys-color family and the event-sev family (STALE's amber glyph).
+  return block.match(new RegExp(prop + ':\\s*var\\((--(?:md-sys-color|event-sev)-[a-z-]+)\\)'))?.[1] ?? null
 }
 
 // ── discover the SHIPPED token pairs (fg glyph/text token ON its container bg token) ─────────────────────────────
