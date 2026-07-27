@@ -39,9 +39,14 @@ switch-first; CYP-748/PL). Reuse des **`ProjectSwitcher`-Verhaltens** (CYP-651: 
 **Honesty-Kern:**
 - **Erreichbarkeit ≠ Trust ≠ Tier ≠ Issuer** — vier Achsen, vier Marker. `online:false` heißt **unerreichbar**, **nicht**
   „untrusted"; ein Offline-Hub behält seinen letzten **beobachteten** Trust-Zustand **nur wenn frisch**, sonst `unknown`.
-- **Inaktive / nicht-frische Hubs → `unknown`** im Trust-Badge, **nie** das letzte gecachte `trusted`
-  ([[forecast-vs-observed-disclosure]] / [[absence-reads-as-all-clear]]) — nur der **aktive** Hub hat einen live-frischen
-  Trust-Zustand; die anderen sind fail-closed `unknown`, bis erneut kontaktiert.
+- **Trust-Frische folgt der CONNECTION-BEOBACHTUNG, nicht dem Aktiv-Pointer** (modell-agnostisch): ein Hub zeigt echten
+  Trust (`trusted`/`stale`/…) **nur wenn er über eine live Verbindung frisch beobachtet** wurde; ohne frische Beobachtung
+  → `unknown`, **nie** das letzte gecachte `trusted` ([[forecast-vs-observed-disclosure]] / [[absence-reads-as-all-clear]]).
+  Bei **switch-first (one-active-connection)** ist das **jeder inaktive** Hub; bei **N-connection** (Hubs halten
+  Hintergrund-Verbindungen) ist es **jeder Hub ohne frische Beobachtung**. *(★ Offen — an PO: Connection-Kardinalität =
+  N-Hintergrund-Verbindungen ODER switch-first one-active-connection? bestimmt, ob inaktive Einträge eine **live
+  Progression** (CYP-827) tragen oder `phase:'idle'` + statischer Descriptor. Die Fläche rendert die **echte
+  `RemoteConnState.phase` je Hub** → trägt beide Modelle; die Honesty-Regel hängt an „frisch beobachtet", nicht an „aktiv".)*
 - **axis-c (`issuerTrust`) ist KEIN Switcher-Badge** — es ist ein **Zone-2**-Connect-Verdikt (terminal/actionable Block
   beim Verbinden, CYP-823), **nicht** ein Dauer-Status. Im Switcher **nicht** anzeigen (sonst Zone-Verletzung). Ausnahme
   s. §3 (`remote-not-configured` = actionable, ggf. dezenter Hinweis — aber **nicht** als Trust-Badge).
