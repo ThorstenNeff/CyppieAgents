@@ -10,6 +10,7 @@ import {
   issuerVerdictFor,
   type RemoteConnState,
   type ConnectFailureCause,
+  type IssuerConnectVerdict,
 } from './remoteConnState'
 import { FakeRemoteConnector } from './testing/fakeRemoteConnector'
 
@@ -38,9 +39,9 @@ describe('remoteConnReduce — happy-path progression', () => {
     ).toEqual({ phase: 'connected' })
   })
 
-  it('★ connected --dropped--> lost', () => {
+  it('★ connected --dropped{terminal:true}--> lost', () => {
     // MUT: retarget dropped, or widen its guard → this reds / lets illegal drops through (see guard tests).
-    expect(remoteConnReduce({ phase: 'connected' }, { kind: 'dropped' })).toEqual({ phase: 'lost' })
+    expect(remoteConnReduce({ phase: 'connected' }, { kind: 'dropped', terminal: true })).toEqual({ phase: 'lost' })
   })
 })
 
@@ -107,11 +108,12 @@ describe('remoteConnReduce — guards / no-op stability (illegal edges return SA
     expect(remoteConnReduce(s, { kind: 'dial' })).toBe(s)
   })
 
-  it('★ dropped is a no-op from every non-connected phase — lost only follows an ESTABLISHED connection', () => {
-    // MUT: widen the dropped guard beyond 'connected' → a mid-progression drop becomes 'lost'; these .toBe reds.
+  it('★ dropped is a no-op from every non-established phase — lost/reconnecting only follow an ESTABLISHED connection', () => {
+    // MUT: widen the dropped guard beyond connected/reconnecting → a mid-progression drop transitions; these .toBe reds.
     for (const phase of ['idle', 'dialing', 'handshake', 'trust-check'] as const) {
       const s: RemoteConnState = { phase }
-      expect(remoteConnReduce(s, { kind: 'dropped' })).toBe(s)
+      expect(remoteConnReduce(s, { kind: 'dropped', terminal: true })).toBe(s)
+      expect(remoteConnReduce(s, { kind: 'dropped', terminal: false })).toBe(s)
     }
   })
 
@@ -217,7 +219,7 @@ describe('FakeRemoteConnector → machine — full progressions', () => {
     conn.openHandshake()
     conn.completeHandshake()
     conn.evaluateTrustFromIssuer('TRUSTED')
-    conn.drop()
+    conn.drop(true)
     expect(machine.getState()).toEqual({ phase: 'lost' })
   })
 
@@ -281,7 +283,7 @@ describe('createRemoteConnMachine — subscription semantics', () => {
     const machine = createRemoteConnMachine()
     const seen = vi.fn()
     machine.subscribe(seen)
-    machine.send({ kind: 'dropped' }) // no-op from idle
+    machine.send({ kind: 'dropped', terminal: true }) // no-op from idle
     expect(seen).not.toHaveBeenCalled()
     machine.send({ kind: 'dial' }) // real change
     expect(seen).toHaveBeenCalledTimes(1)
@@ -295,5 +297,62 @@ describe('createRemoteConnMachine — subscription semantics', () => {
     off()
     machine.send({ kind: 'dial' })
     expect(seen).not.toHaveBeenCalled()
+  })
+})
+
+// ── CYP-826 A2 extension: terminal vs reconnectable drop + reconnect + outcome-union fail-closed ──────────────────
+
+describe('CYP-826 A2 — dropped{terminal}: terminal→lost (region) vs reconnectable→reconnecting (transient)', () => {
+  it('★ connected --dropped{terminal:false}--> reconnecting (transient, NOT lost / NOT a failure arm)', () => {
+    // MUT: route a non-terminal drop to 'lost' (or 'failed') → this reds. A reconnectable drop must not enter the region.
+    expect(remoteConnReduce({ phase: 'connected' }, { kind: 'dropped', terminal: false })).toEqual({ phase: 'reconnecting' })
+  })
+
+  it('★ connected --dropped{terminal:true}--> lost (terminal → routes to the failure region)', () => {
+    // MUT: route a terminal drop to 'reconnecting' → this reds. Terminal-lost must reach the region.
+    expect(remoteConnReduce({ phase: 'connected' }, { kind: 'dropped', terminal: true })).toEqual({ phase: 'lost' })
+  })
+
+  it('★ reconnecting --dropped{terminal:true}--> lost (a reconnect that gives up is terminal)', () => {
+    expect(remoteConnReduce({ phase: 'reconnecting' }, { kind: 'dropped', terminal: true })).toEqual({ phase: 'lost' })
+  })
+
+  it('★ reconnecting --dropped{terminal:false}--> reconnecting (no-op, SAME reference)', () => {
+    // MUT: return a fresh object for a still-reconnecting drop → this .toBe reds (identity churn).
+    const s: RemoteConnState = { phase: 'reconnecting' }
+    expect(remoteConnReduce(s, { kind: 'dropped', terminal: false })).toBe(s)
+  })
+
+  it('★ reconnecting --dial--> dialing (retry re-enters the progression)', () => {
+    // MUT: keep the dial guard idle-only → reconnecting could never retry; this reds.
+    expect(remoteConnReduce({ phase: 'reconnecting' }, { kind: 'dial' })).toEqual({ phase: 'dialing' })
+  })
+
+  it('★ reconnecting --reset--> idle', () => {
+    expect(remoteConnReduce({ phase: 'reconnecting' }, { kind: 'reset' })).toEqual({ phase: 'idle' })
+  })
+
+  it('★ resolveTrustCheck outcome-union is fail-CLOSED: an unknown outcome THROWS, never silently connects', () => {
+    // MUT: replace the outcome `switch`+assertNever with `if (blocked) … else return connected` → an unknown outcome
+    // fail-OPENs to connected instead of throwing; this reds. (assertNever is compile-time; the cast simulates a future
+    // unhandled variant reaching runtime — the fail-closed guarantee Assist2 asked for.)
+    expect(() =>
+      remoteConnReduce(
+        { phase: 'trust-check' },
+        { kind: 'trustEvaluated', verdict: { outcome: 'mystery' } as unknown as IssuerConnectVerdict, tierGate: 'ok' },
+      ),
+    ).toThrow()
+  })
+
+  it('★ fake connector: connected → drop(false) → reconnecting → dial → dialing (reconnect retry, end-to-end)', () => {
+    const { conn, machine } = wired()
+    conn.dial()
+    conn.openHandshake()
+    conn.completeHandshake()
+    conn.evaluateTrustFromIssuer('TRUSTED')
+    conn.drop(false)
+    expect(machine.getState()).toEqual({ phase: 'reconnecting' })
+    conn.dial()
+    expect(machine.getState()).toEqual({ phase: 'dialing' })
   })
 })

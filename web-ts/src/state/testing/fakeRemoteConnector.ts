@@ -48,8 +48,10 @@ export class FakeRemoteConnector {
   evaluateTrustFromIssuer(issuer: HubIssuerTrust | null | undefined, tierGate: TierGate = 'ok'): void {
     this.evaluateTrust(issuerVerdictFor(issuer), tierGate)
   }
-  drop(): void {
-    this.emit({ kind: 'dropped' })
+  /** Drive a drop of an established connection. terminal=true → the terminal `lost` phase (→ failure region);
+   *  terminal=false → the transient `reconnecting` phase (polite/retryable, not a failure arm). */
+  drop(terminal: boolean): void {
+    this.emit({ kind: 'dropped', terminal })
   }
   reset(): void {
     this.emit({ kind: 'reset' })
