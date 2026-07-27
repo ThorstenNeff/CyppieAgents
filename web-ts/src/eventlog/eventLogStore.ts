@@ -3,6 +3,7 @@
 // and no coupling to the comm/ACL/lifecycle state.
 import { create } from 'zustand'
 import { emptyEventLog, applyEventsEvent, revokeEventAccess, type EventLogState } from './eventLog'
+import { isLegacyReconnectableClose } from '../net/closeVerdict'
 import type { EventsWsServerEvent } from '../types/generated/contract'
 
 export interface EventLogStore extends EventLogState {
@@ -25,7 +26,8 @@ export const useEventLogStore = create<EventLogStore>((set) => ({
   onEventsEvent: (event) => set((s) => applyEventsEvent(s, event)),
   // Revoke also clears any pause: a fail-closed lock is neither "live" nor a frozen tail (spec §0/§5.6).
   onEventsClose: (code) => {
-    if (code === 1008) set(() => ({ ...revokeEventAccess(), ...NOT_PAUSED }))
+    // CYP-839: single-sourced 1008-terminal (local-hub deny-{1008}); a non-1008 drop self-heals via the feed's reconnect.
+    if (!isLegacyReconnectableClose(code)) set(() => ({ ...revokeEventAccess(), ...NOT_PAUSED }))
   },
   togglePause: () =>
     set((s) =>

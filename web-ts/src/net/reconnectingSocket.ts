@@ -6,6 +6,7 @@
 // The socket factory and scheduler are injectable so reconnect/dedup are deterministically unit-testable without a
 // real socket or real timers.
 import { Backoff } from './backoff'
+import { isLegacyReconnectableClose } from './closeVerdict'
 
 /** The slice of the WHATWG WebSocket we use — lets tests inject a fake without a DOM. */
 export interface SocketLike {
@@ -72,7 +73,8 @@ export class ReconnectingSocket {
         const code = (ev as { code?: number } | undefined)?.code
         // 1008 = policy violation = auth revoked → TERMINAL: reconnecting with a dead token is a useless (and, for
         // an egress channel, unsafe) loop. Mark closed so we never reconnect; the view fails closed (CYP-432).
-        if (code === 1008) this.closed = true
+        // CYP-839: the 1008-terminal verdict is single-sourced (local-hub deny-{1008} policy, isLegacyReconnectableClose).
+        if (!isLegacyReconnectableClose(code)) this.closed = true
         // unexpected drop → tell the view (offline/revoked banner); reconnect only if not terminal
         this.opts.onClose?.(code)
         if (!this.closed) this.schedule(() => this.connect(), this.backoff.next())

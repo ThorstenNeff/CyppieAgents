@@ -4,10 +4,9 @@
 // polarity is INVERTED to fail-closed: a close is TERMINAL unless its code is on an explicit known-reconnectable
 // allowlist.
 //
-// ★ SCOPE (coordinator-ratified option (a), 2026-07-27): this is used ONLY by the new A5 RemoteHubConnector — zero
-// local-hub regression risk. The 3 legacy fail-open sites (reconnectingSocket.ts:73 · App.tsx:115 commCloseToConnection
-// · eventLogStore) are DELIBERATELY LEFT UNTOUCHED; their allowlist-preserving migration onto this fn is the separate
-// follow-up CYP-839 (that is where the local-hub reconnect-regression risk lives, so it gets its own review).
+// ★ SCOPE: isTerminalClose is the A5 REMOTE (security-surface) policy. The LOCAL-HUB (loopback, trusted) sites use the
+// SEPARATE isLegacyReconnectableClose policy below (CYP-839) — deliberately the OPPOSITE polarity, correct per trust
+// context (see its note). The two policies are NEVER merged; each has ONE home.
 
 /**
  * WS close codes that are KNOWN-TRANSIENT → reconnectable (a non-terminal drop; the connector may re-dial). Set from
@@ -31,4 +30,23 @@ export const RECONNECTABLE_CLOSE_CODES: ReadonlySet<number> = new Set([1001, 100
 export function isTerminalClose(code: number | undefined): boolean {
   if (code === undefined) return false // no-code = transient blip → reconnectable (Tester2 baseline; flagged reversal)
   return !RECONNECTABLE_CLOSE_CODES.has(code)
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// CYP-839 — the LOCAL-HUB (loopback) close policy: DENY-{1008}. Deliberately the OPPOSITE polarity to isTerminalClose,
+// and CORRECT for its trust context (coordinator-confirmed Option A, 2026-07-27): the local hub is a TRUSTED loopback
+// connection, NOT a security surface. An unknown/unrecognized close there is a transient blip (server restart /
+// dev-server reload) → reconnect; only 1008 (auth revoked) is terminal. Contrast isTerminalClose (A5 REMOTE = security
+// surface → fail-closed, unknown→terminal): raising the local-hub sites to fail-closed would break local resilience with
+// NO security gain (a real security close carries 1008 either way; the local hub is not a security boundary). TWO
+// policies, one per trust context — NEVER merged. This single-sources the `code === 1008` check the legacy sites
+// (reconnectingSocket · App.commCloseToConnection + the CYP-815 status-feed close · eventLogStore) each duplicated (the
+// CYP-289 convention-only drift hazard).
+/**
+ * Local-hub reconnectability: reconnect on EVERYTHING except 1008 (INCLUDING undefined and every unrecognized code).
+ * Deny-{1008}, no narrowing — this preserves the exact legacy behavior (Tester2 baseline); the ONLY terminal close on a
+ * trusted loopback connection is 1008 (auth revoked).
+ */
+export function isLegacyReconnectableClose(code: number | undefined): boolean {
+  return code !== 1008
 }

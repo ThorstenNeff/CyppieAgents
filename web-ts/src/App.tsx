@@ -25,6 +25,7 @@ import { rosterPoAgentId } from './state/hubReducers'
 import { bootstrapLocalHub, type HubConfig, type SocketDeps } from './state/hubConfig'
 import { RestHubRepo, type HubRepo } from './state/restRepo'
 import { RestError, restErrorCode } from './net/rest'
+import { isLegacyReconnectableClose } from './net/closeVerdict'
 import { commitAclChange } from './state/aclCommit'
 import { startLiveHub } from './state/liveHub'
 import { AgentWindow } from './AgentWindow'
@@ -112,7 +113,10 @@ export const byOrder = (a: DeliveredMessage, b: DeliveredMessage): number =>
 // CYP-814 G1 — WS-close-code → comm connection state, extracted from onCommClose so offline≠revoked is a TESTED unit:
 // a 1008 (auth revoked) is TERMINAL → 'revoked'; any OTHER (transient) drop is reconnectable → 'offline' (never the
 // terminal revoked tone/composer-lock). Behaviourally identical to the previous inline arrow.
-export const commCloseToConnection = (code: number | undefined): 'offline' | 'revoked' => (code === 1008 ? 'revoked' : 'offline')
+// CYP-839: the 1008-terminal verdict is single-sourced (local-hub deny-{1008} policy). isLegacyReconnectableClose(code)
+// is true for every code except 1008 (incl undefined) → 'offline' (reconnectable); only 1008 → 'revoked' (terminal).
+export const commCloseToConnection = (code: number | undefined): 'offline' | 'revoked' =>
+  isLegacyReconnectableClose(code) ? 'offline' : 'revoked'
 
 // CYP-834 — the TERMINAL comm states that a later close code must NOT downgrade: a decoded protocol-`skew` takes
 // PRECEDENCE over the close code (it is terminal and won't self-heal), and a `revoked` stays revoked. Sticky-terminal
@@ -405,7 +409,8 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         // "still running" (safe-but-silent fix). Non-1008 is transient and self-heals via the feed's reconnect — NOT
         // routed to 'offline' here (the status feeds don't drive onCommOpen, so it would stick offline incorrectly).
         onStatusClose: (code) => {
-          if (code === 1008) setCommConnection('revoked')
+          // CYP-839: single-sourced 1008-terminal (local-hub deny-{1008}); non-1008 self-heals via the feed's reconnect.
+          if (!isLegacyReconnectableClose(code)) setCommConnection('revoked')
         },
         // CYP-445-QA minor (folded into CYP-446): a server run-state event also RESOLVES the transient action-reject
         // notice for that agent — a new confirmed state makes the last reject stale, so clear it here (not only on
