@@ -127,15 +127,30 @@ export function CommPanel(props: CommPanelProps) {
       </nav>
 
       <section className="comm-conversation">
-        {/* WARN-amber offline / errorContainer revoke — a terminal revoke must not read as a reconnectable blip. */}
-        <div
-          className={`comm-status comm-status-${connection}`}
-          role="status"
-          aria-live="polite"
-          data-testid="comm-status"
-        >
-          {CONNECTION_TEXT[connection]}
-        </div>
+        {/* CYP-825 (AT-12) — split the comm-status announcement by severity. The 3 TRANSIENT states (live/connecting/
+            offline = reconnectable) share a POLITE role=status region; the TERMINAL revoke (1008, unsolicited, composer
+            locks) escalates to a DEDICATED role=alert node. These are two mutually-exclusive SIBLINGS (fixed child
+            positions), NOT one node with a flipped aria-live: a persistent node whose aria-live flips polite→assertive is
+            unreliable (SRs cache the initial value), and a same-position ternary would let React reuse the one DOM node
+            and merely flip the attribute — same trap. As separate siblings the alert node MOUNTS FRESH on the →revoked
+            transition and announces at once (mirrors IssuerNotTrustedBlock / event-log-revoked). Over-alarm is also
+            dishonest, so ONLY revoked escalates; transients stay calm. Both keep testid `comm-status` +
+            `comm-status-${connection}` class + text; only one renders at a time. Visual stays errorContainer. */}
+        {connection !== 'revoked' && (
+          <div
+            className={`comm-status comm-status-${connection}`}
+            role="status"
+            aria-live="polite"
+            data-testid="comm-status"
+          >
+            {CONNECTION_TEXT[connection]}
+          </div>
+        )}
+        {connection === 'revoked' && (
+          <div className="comm-status comm-status-revoked" role="alert" aria-live="assertive" data-testid="comm-status">
+            {CONNECTION_TEXT.revoked}
+          </div>
+        )}
 
         <div className="comm-timeline transcript-scroll" ref={ref} onScroll={onScroll} data-testid="comm-timeline">
           {messages.length === 0 ? (
