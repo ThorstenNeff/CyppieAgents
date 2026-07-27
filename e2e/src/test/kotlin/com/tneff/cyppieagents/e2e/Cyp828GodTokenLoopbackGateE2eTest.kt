@@ -4,6 +4,7 @@ import com.tneff.cyppieagents.auth.AuthDeps
 import com.tneff.cyppieagents.auth.FakeIdentityProvider
 import com.tneff.cyppieagents.auth.InMemoryRoleStore
 import com.tneff.cyppieagents.model.AuthMe
+import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.routing.TokenRegistry
 import io.ktor.client.HttpClient
@@ -11,6 +12,7 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.websocket.CloseReason
 import kotlinx.coroutines.runBlocking
@@ -18,6 +20,7 @@ import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * CYP-828 (god-token / operatorEligible) — the loopback-gate proven at the REAL HTTP/WS request paths (QA
@@ -147,6 +150,36 @@ class Cyp828GodTokenLoopbackGateE2eTest {
         offLoopback { p ->
             val code = p.client().use { wsCloseCodeOrOpen(it, p.wsBaseUrl, "/ws/agent?agentId=backend&token=$godToken") }
             assertEquals(revoked, code, "★ off loopback the god-token's observe-any is denied → /ws/agent closes 1008")
+        }
+    }
+
+    // ── Seam #4 — /api/channels/{id}/messages BODY confidentiality (Auth.kt:110 participantFor → OPERATOR_ID;
+    //    EventAclFilter/comm ACL: an operator (OPERATOR_ID = member-of-all) reads every body). The SHARPEST seam:
+    //    the CYP-432 CONTENT-confidentiality boundary (complementary to T1d(a)'s content-free event-log metadata). ─────
+    @Test
+    fun seam4_channelMessageBodies_readableByOperatorOnLoopback_deniedOffLoopback() = runBlocking {
+        val secret = "cyp828-confidential-message-body-do-not-egress"
+
+        // ★ Positive control ON loopback — EXPLICITLY non-empty (PO's anti-vacuity crux, CYP-432, no shortcut):
+        //   the operator (OPERATOR_ID member-of-all) reads the ACTUAL seeded body. If this showed empty for an
+        //   unrelated reason, the off-loopback denial below would be vacuous (nothing to filter).
+        e2ePlatform(projects(), hubHost = "127.0.0.1").use { p ->
+            p.booted.store.append(Message("cyp828-m1", "po-backend", "backend", secret, ts = 1, projectId = "default"))
+            val resp: HttpResponse = p.asOperator().use { it.get("${p.baseUrl}/api/channels/po-backend/messages?since=0") }
+            assertEquals(HttpStatusCode.OK, resp.status, "positive control: the operator reads the channel (200)")
+            // Read as TEXT (the read route returns a wire envelope, not raw Message — CYP-744 DeliveredMessage shape;
+            // the point is the CONTENT, so assert the raw body appears — robust to the wire shape, and EXPLICITLY non-empty.
+            assertTrue(resp.bodyAsText().contains(secret),
+                "★ the operator reads the ACTUAL message-body CONTENT (the sensitive CYP-432 surface is genuinely egressed)")
+        }
+
+        // ★ The gate OFF loopback: the SAME body is seeded, but the god-token is operator-INELIGIBLE → not OPERATOR_ID
+        //   → not a channel member → the confidential body is NOT egressed (401). Content-confidentiality holds.
+        e2ePlatform(projects(), hubHost = "0.0.0.0").use { p ->
+            p.booted.store.append(Message("cyp828-m2", "po-backend", "backend", secret, ts = 1, projectId = "default"))
+            val r: HttpResponse = p.asOperator().use { it.get("${p.baseUrl}/api/channels/po-backend/messages?since=0") }
+            assertEquals(HttpStatusCode.Unauthorized, r.status,
+                "★ off loopback the god-token cannot egress the message BODY content (401) — the CYP-432 boundary holds")
         }
     }
 
