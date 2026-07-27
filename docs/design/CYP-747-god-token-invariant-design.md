@@ -1,16 +1,23 @@
 # CYP-747 — God-Token Authority-Boundary: die Security-Invariante, die S3 + S4 gatet (Design-Pass)
 
-> Status: **DESIGN-PASS v2 — zur Ratifikation an PL + Auftraggeber (2 Prinzipale), VOR jedem Bau.** Owner: Backend.
+> Status: **DESIGN-PASS v3 — zur Ratifikation an PL + Auftraggeber (2 Prinzipale), VOR jedem Bau.** Owner: Backend.
 > Bezug: CYP-747 Modell-2 Aussteller-Vertrauen (Design `db1f879c`, `docs/design/CYP-747-model2-issuer-trust-design.md`).
-> Basis: develop `dea4bac1`. **KEIN Bau-Gate.** Output dieses Docs = die ratifizierbare Invariante; es baut nichts an
+> Basis: develop `4db7cac4`. **KEIN Bau-Gate.** Output dieses Docs = die ratifizierbare Invariante; es baut nichts an
 > **S3** (god-token remote-Verweigerungs-Closure) oder **S4** (C3 aktiver Widerruf).
 >
-> **Rev.2 folds den adversarialen Reviewer-Pass (F1-Blocker + F2–F6):** **★ F1 (BLOCKER, am Objekt bestätigt):** die
-> Invariante „god-token strukturell remote-verweigert" ist HEUTE **NICHT** erzwungen — die TOKEN-Achse auf dem
-> öffentlichen Connector ist off-loopback offen (nur die Cookie-Achse ist via S-AAL2b loopback-gated). S3 wächst damit
-> von „nur Tunnel-Port-Closure" auf **„Tunnel-Port-Closure UND öffentlicher-Connector-Token-Achsen-Loopback-Gate"**.
-> **F1 ist an den PL eskaliert (Security-Boundary/Architektur-Ratifikation).** F2–F6 präzisieren Closure-Quelle,
-> Registry-Integrität, Post-Widerruf-Re-Enroll, Weichen-Split und das Kill-Switch-Bootstrap-Fenster (§-Verweise inline).
+> **★ Rev.3 korrigiert einen F1-RESIDUAL-BLOCKER (Reviewer-Re-Review, am Objekt bestätigt) — und ist ein ehrlicher
+> Selbstbefund:** v2 §2.4 behauptete `resolvePrincipal` sei der **EINZIGE** Token→OP-Chokepoint. Das war **empirisch
+> falsch — ich habe es behauptet, nicht verifiziert.** Der god-token→OP-Grant läuft über das **geteilte Prädikat**
+> `TokenRegistry.isOperator` (`Auth.kt:33`), konsumiert an **≥5 Grant-Nähten**; v2 gated nur **eine** (`Principal.kt:125`).
+> Die anderen sind off-loopback am öffentlichen Connector **UNGEGATED** (empirisch enumeriert, §1.9). Das ist dieselbe
+> „Property am EINEN Caller statt an der GETEILTEN Naht"-Krankheit eine Ebene raus (CYP-698/719/815/819). **v3-Fix
+> by-construction:** das Loopback-Gate sitzt an der **geteilten Quelle** (ein `god-token→OP-eligible`-Prädikat,
+> single-sourced `isLoopbackHost(config.hub.host)` wie S-AAL2b), so dass **ALLE Konsumenten den Gate ERBEN** — plus ein
+> **Token-Achsen-CLOSURE-Zahn** (enumeriert alle Grant-Aufrufer; MUT ungegateter Aufrufer → rot), analog zum bereits
+> gebauten `Cyp747OperatorAuthorityClosureTest` der Cookie-Achse. **F1 an PL eskaliert — Exposition GRÖSSER als gedacht**
+> (PTY-Take-over, Agent-Stream-Beobachtung, Event-Log-Egress inkl. Message-BODIES / CYP-432-Vertraulichkeitsgrenze, §1.9).
+> **Rev.2 folds** F1 (v2-Fassung) + F2–F6 (Closure-Quelle, Registry-Integrität, Post-Widerruf-Re-Enroll, Weichen-Split,
+> Kill-Switch-Bootstrap-Fenster). F2–F6 stehen unverändert; Rev.3 fasst nur die F1-Familie (§1.9/§2.1b/§2.4/§6) neu.
 >
 > **Warum dieser Pass existiert:** S3 und S4 fassen **dieselbe Kante** an — die Grenze, welche Operator-Autorität auf
 > welcher Fläche erreichbar/überlebbar ist. Eine falsch gezogene Grenze (eine ungeschützte Achse; ein Widerruf, der bei
@@ -96,23 +103,33 @@ Einzel-Gleichheit.
 - **Die Lücke (S4):** nichts propagiert einen **Aussteller-/Relay-Level-Widerruf** an die **ANDEREN** Hubs des Operators.
   Cross-Hub-Widerruf = heute lazy ≤TTL, kein Push, keine Registry (Modell-2 §7).
 
-### 1.9 ★ F1 (BLOCKER) — die Invariante ist HEUTE NICHT erzwungen: das öffentliche-Connector-Token-Achsen-Loch
+### 1.9 ★ F1 (BLOCKER) — die Invariante ist HEUTE NICHT erzwungen: die god-token-TOKEN-Achse ist an ≥5 Nähten offen
 
-Der öffentliche Connector bindet **`config.hub.host`** (`Application.kt:62`) — ein **überschreibbarer** Wert (Default
-`127.0.0.1`, aber Deploy-/Env-setzbar auf `0.0.0.0` / eine LAN-/Public-IP). Auf diesem Connector existieren **ZWEI**
-Operator-Auth-Achsen im **einen** Chokepoint `resolvePrincipal` (`auth/Principal.kt`):
+Der öffentliche Connector bindet **`config.hub.host`** (`Application.kt:62`) — **überschreibbar** (Default `127.0.0.1`,
+aber Deploy-/Env-setzbar auf `0.0.0.0` / eine LAN-/Public-IP). Der god-token→OPERATOR-**Grant** läuft über das
+**geteilte Prädikat** `TokenRegistry.isOperator(token)` (`Auth.kt:33`, reine String-Gleichheit) und wird an **mehreren
+Grant-Nähten** konsumiert. **S-AAL2b gated NUR die Cookie-Achse** (`Principal.kt:148`, via `browserOperatorPostureEnabled
+= isLoopbackHost(host)`); **die Token-Achse ist an KEINER Naht loopback-gated.** Empirisch enumeriert (develop
+`4db7cac4`, `grep isOperator`) — off-loopback am öffentlichen Connector alle UNGEGATED, Bearer **und** `?token=`:
 
-- **Cookie-Achse (Kratos):** `role==OPERATOR && (!aal2 || !browserOperatorPostureEnabled) → null` (`Principal.kt:148`).
-  `browserOperatorPostureEnabled` wird **single-sourced** aus `isLoopbackHost(config.hub.host)` gesetzt (S-AAL2b,
-  `PlatformWiring.kt`). ⟹ off-loopback ist die Cookie→OPERATOR-Posture **deaktiviert** (fail-closed).
-- **★ TOKEN-Achse (statischer god-token):** `if (isOperator(bearer) && …) return MachineOperator` (`Principal.kt:125`)
-  — **KEIN Loopback-Check.** ⟹ ist der öffentliche Connector off-loopback gebunden, **authentifiziert der statische
-  god-token als voller OPERATOR über das Netz** — Bearer **und** `?token=`-Fallback. Die Tunnel-Gates (§1.7) greifen
-  hier nicht (anderer Connector), und S-AAL2b gated **nur** die Cookie-Achse, **nicht** die Token-Achse.
+| # | Grant-Naht | Effekt off-loopback | Fläche |
+|---|-----------|---------------------|--------|
+| 1 | `Principal.kt:125` `isOperator(bearer)→MachineOperator` | volle OPERATOR-API-Autorität | `/api/*` + WS |
+| 2 | `TerminalAccess.kt:173` `isOperator(token)→TerminalPrincipal.Operator` | **volle PTY-Take-over** | `/ws/terminal?token=<god>` |
+| 3 | `AgentSocket.kt:65` `isOperator(token)→ true` | **jeden Agenten-Stream beobachten** | `/ws/agent` |
+| 4 | `Auth.kt:87` `participantFor: isOperator(token)→OPERATOR_ID` → `EventAclFilter:40 if(isOperator) return true` | **Event-Log-Egress inkl. Message-BODIES** (CYP-432-Vertraulichkeitsgrenze) | `/ws/events` + `/api/events` |
+| 5 | `Principal.kt:170` `resolveAuthState: isOperator(bearer)→AuthMe(OPERATOR)` | `/me` behauptet OPERATOR (Split-Brain) | `/api/auth/me` |
 
-**⟹ Die Invariante-Hälfte „remote strukturell verweigert" ist HALB gebaut:** Tunnel-Fläche ✅, öffentlicher-Connector-
-Token-Achse ❌. Das ist der F1-Blocker. **Fix = §2.1(b).** (Symmetrie-Argument: dieselbe Krankheit, die S-AAL2b für die
-Cookie-Achse schloss, ist auf der Token-Achse offen; der Fix spiegelt S-AAL2b **single-sourced am selben Chokepoint**.)
+**⟹ v2 war falsch:** v2 gated nur Naht #1 und behauptete `resolvePrincipal` sei der einzige Pfad. Tatsächlich ist die
+GETEILTE QUELLE `isOperator`; #2–#5 umgehen `resolvePrincipal` komplett. Die Exposition ist **größer als „nur die
+API-Rolle"** — sie umfasst PTY-Take-over, Agent-Stream-Beobachtung und Message-Body-Egress. **Fix = §2.1(b) an der
+geteilten Quelle** (Symmetrie zu S-AAL2b, aber am Prädikat, nicht am Caller).
+
+> **Wichtige Trennung (empirisch): IDENTITÄT ≠ ELIGIBILITÄT.** `isOperator` wird auch als **REJECT-Identität** benutzt:
+> `PlatformWiring.kt:425` reicht `isOperator` an den `TunnelGodTokenGuard`, um den god-token auf Tunnel-Ports zu
+> **verweigern**, und `Principal.kt:132` nutzt es für den Kill-Switch-Downgrade. Diese IDENTIFIZIEREN den Token
+> (host-unabhängig), sie GRANTEN nicht. Der Loopback-Gate gehört an die **Eligibilität** (god-token→OP-eligible),
+> **nicht** an die rohe Identität — sonst bricht der Reject-Guard. v3 trennt beide sauber (§2.1b).
 
 ---
 
@@ -139,14 +156,25 @@ single-sourced** machen, so dass **Guard und Server dieselbe Menge lesen** — s
 eine Client-seitige Vorstellung, die der Server gar nicht durchsetzt (vakuöse Closure). **Closure heißt:** guard-set ≡
 server-connector-topology **by construction** — Drift unmöglich, nicht bloß getestet.
 
-**(b) ★ Öffentlicher-Connector-Token-Achse — der F1-Fix (Loopback-Gate, spiegelt S-AAL2b).** Die god-token-TOKEN-Achse
-im Chokepoint `resolvePrincipal` (`Principal.kt:125`) wird mit demselben `isLoopbackHost(config.hub.host)`-Signal
-gated wie die Cookie-Achse (S-AAL2b): off-loopback → der statische Token löst **NICHT** zu `MachineOperator` auf
-(401 / MEMBER-Downgrade, **fail-closed**). **Single-sourced:** dasselbe `isLoopbackHost`, dieselbe Chokepoint-Funktion —
-keine zweite Wahrheit. **Alternativ/ergänzend:** Boot-`require`, dass bei aktivem statischem Token der Host loopback ist
-(Weiche §5-W2b). Als **Eigenschaft am Chokepoint** (nicht als Kanten-Liste): weil `resolvePrincipal` der **einzige**
-Token→Operator- **und** Cookie→Operator-Pfad ist, deckt das Gate dort **alle** Operator-Kanten — keine 21., ungelistete
-Kante kann das Loch wieder aufreißen (das Reviewer-Kriterium: F1 **by construction**, keine neue adjazente Fläche).
+**(b) ★ god-token-TOKEN-Achse — der F1-Fix an der GETEILTEN QUELLE (v3-korrigiert, spiegelt S-AAL2b).** Der Loopback-
+Gate sitzt **NICHT** an einem Caller (`resolvePrincipal`), sondern am **geteilten god-token→OP-eligible-Prädikat**, so
+dass **alle** Grant-Nähte (§1.9 #1–#5) ihn **erben**:
+
+- Ein **einziges** Eligibilitäts-Prädikat `operatorEligible(token) = isOperator(token) ∧ loopbackPosture`, wobei
+  `loopbackPosture = isLoopbackHost(config.hub.host)` — **single-sourced**, dasselbe Signal wie die Cookie-Achse
+  (`browserOperatorPostureEnabled`, S-AAL2b). Off-loopback → `operatorEligible == false` an **jeder** Naht → kein
+  `MachineOperator` / keine `TerminalPrincipal.Operator` / kein `/ws/agent`-Grant / kein `OPERATOR_ID` / kein `/me`-OP
+  (fail-closed).
+- **ALLE Grant-Konsumenten (#1–#5) routen über `operatorEligible`, nicht über rohes `isOperator`.** Die **rohe
+  Identität** `isOperator` (host-unabhängig) bleibt für die **REJECT/Downgrade**-Konsumenten (`TunnelGodTokenGuard`-
+  Reject `PlatformWiring:425`, Kill-Switch-Downgrade `Principal:132`) — diese identifizieren den Token, granten nicht.
+- **Als Eigenschaft an der geteilten Naht, nicht als Kanten-Liste:** weil alle Grant-Nähte **dieselbe** Quelle
+  konsumieren, deckt ein Gate dort **alle** by-construction — eine 6., zukünftige Grant-Naht, die `operatorEligible`
+  aufruft, erbt den Gate automatisch (Reviewer-Kriterium: F1 by-construction, keine neue adjazente Fläche). Der
+  **Closure-Zahn** (§6) erzwingt genau das: jeder god-token→OP-Grant-Aufrufer MUSS `operatorEligible` (nicht rohes
+  `isOperator`) nehmen.
+- **Ergänzend (Weiche §5-W2b):** Boot-`require`, dass bei aktivem statischem Token der Host loopback ist — fail-LOUD-
+  Klarheit zusätzlich zum laufzeit-fail-closed-Gate.
 
 **Ports/Capabilities, die NIE remote erreichbar sein dürfen** (Konsequenz der Eigenschaft, nicht ihr Ersatz):
 - der statische `OPERATOR_TOKEN` als **Bearer ODER `?token=`** auf **irgendeinem** tunnel-scoped Connector **ODER** auf
@@ -189,20 +217,24 @@ Token durch → Widerruf ist gegen den gefährlichsten Credential wirkungslos. *
 god-token **volle** Autorität lokal, **null** remote (S3); der remote Ersatz **bounded** (gescopt + PoP-verankert +
 aktiv widerrufbar mit Floor, S4).
 
-### 2.4 ★ Die Chokepoint-Eigenschaft über Hub / Relay / Identity / BYOA (für die PL-Architektur-Ratifikation)
+### 2.4 ★ Die Eigenschaft an der GETEILTEN QUELLE über Hub / Relay / Identity / BYOA (v3-korrigiert)
 
-F1 wird **als Eigenschaft am einen Chokepoint** geschlossen, nicht als per-Fläche-Liste. Explizit über die vier
+F1 wird **als Eigenschaft am geteilten Prädikat** geschlossen, nicht per-Caller. **Die geteilte Quelle sind ZWEI
+Prädikate** (empirisch, §1.9): `operatorEligible` (Token-Achse, alle Grant-Nähte) und `browserOperatorPostureEnabled`
+(Cookie-Achse, S-AAL2b) — **beide** single-sourced auf `isLoopbackHost(config.hub.host)`. Explizit über die vier
 Architektur-Flächen (Reviewer-Kriterium: keine NEUE adjazente Fläche):
 
-| Fläche | Operator-Autoritäts-Pfad | Durchsetzung nach S3 |
-|--------|--------------------------|----------------------|
-| **Hub (lokale API)** | `resolvePrincipal` Token-Achse (`Principal.kt:125`) + Cookie-Achse (`:148`) | beide **loopback-gated** am Chokepoint → off-loopback kein `MachineOperator`/kein Cookie→OP; deckt ALLE `/api`+WS+Terminal-Operator-Kanten by-construction |
-| **Relay (remote Tunnel)** | tunnel-scoped Connector | `TunnelGodTokenGuard` (Port-SET) + `Rr3TunnelGate` (CpJwt∧PoP); statischer Token ist kein RR3-Credential → nie remote |
+| Fläche | Operator-Autoritäts-Pfad (geteilte Quelle) | Durchsetzung nach S3 |
+|--------|--------------------------------------------|----------------------|
+| **Hub (lokale API + WS)** | Token-Achse: **`operatorEligible`** an ALLEN Grant-Nähten (`Principal:125/170`, `TerminalAccess:173`, `AgentSocket:65`, `Auth:87`→Events); Cookie-Achse: `Principal:148` | beide **loopback-gated an der geteilten Quelle** → off-loopback KEIN Grant an keiner Naht; deckt `/api`+`/ws/terminal`+`/ws/agent`+`/ws/events`+`/me` by-construction |
+| **Relay (remote Tunnel)** | tunnel-scoped Connector | `TunnelGodTokenGuard` (Port-SET, nutzt **rohe** `isOperator`-Identität zum Reject) + `Rr3TunnelGate` (CpJwt∧PoP); statischer Token kein RR3-Credential → nie remote |
 | **Identity (Kratos)** | Cookie→OPERATOR | S-AAL2b: `browserOperatorPostureEnabled = isLoopbackHost(host)` → off-loopback deaktiviert (bereits gebaut) |
-| **BYOA (mitgebrachter Agent, remote)** | müsste über Token/Tunnel kommen | Token-Achse loopback-gated (F1) + Tunnel-Guard + RR3 ⟹ der einzige remote Operator-Pfad ist die **widerrufbare** CP-Session+PoP; der statische Token erreicht BYOA **nie** |
+| **BYOA (mitgebrachter Agent, remote)** | müsste über Token/Tunnel kommen | `operatorEligible` loopback-gated (F1) + Tunnel-Guard + RR3 ⟹ der einzige remote Operator-Pfad ist die **widerrufbare** CP-Session+PoP; der statische Token erreicht BYOA **nie** |
 
-**Load-bearing:** `resolvePrincipal` ist der **einzige** Chokepoint für **beide** Achsen (Token + Cookie). Beide dort zu
-gaten = eine **Eigenschaft**, keine Liste — die Reviewer-Bedingung „F1 by-construction, keine neue adjazente Fläche".
+**Load-bearing (v3-Korrektur):** der einzige Chokepoint ist **NICHT** `resolvePrincipal` (v2-Fehler) — es ist das
+**geteilte Prädikat** `operatorEligible` (Token) neben `browserOperatorPostureEnabled` (Cookie). Beide **an der Quelle**
+zu gaten = eine **Eigenschaft**, keine Liste; der Closure-Zahn (§6) erzwingt, dass jeder Grant-Aufrufer die gegatete
+Quelle nimmt — genau die Verifikation, die v2 fehlte („behauptet, nicht verifiziert").
 
 ---
 
@@ -218,7 +250,7 @@ gaten = eine **Eigenschaft**, keine Liste — die Reviewer-Bedingung „F1 by-co
 | A6 | Widerruf-**Registry down/partitioniert** | degradiert auf ≤TTL-Floor via registry-**unabhängige** `exp`; **nie fail-open, nie > Floor** | S4 (§2.2), Modell-2 §11-7b |
 | A7 | Widerruf **umgangen** durch Re-Mint (Floor-Dehnung) | Floor = bestehende `exp`, **kein Re-Mint** | S4 (§2.2) |
 | A8 | Cross-Hub-Leak: Widerruf reißt nur lokalen Hub ab | aktive Propagierung über ALLE live Sessions | S4 (§2.2), schließt CYP-697 |
-| **A9** | **★ F1 — öffentlicher Connector OFF-LOOPBACK: statischer god-token authentifiziert über Netz** (Bearer/`?token=`), da nur die Cookie-Achse loopback-gated ist | **Token-Achse loopback-gated** am Chokepoint (`isLoopbackHost(config.hub.host)`, spiegelt S-AAL2b) → off-loopback kein `MachineOperator` | §1.9, §2.1b; `Principal.kt:125,148` |
+| **A9** | **★ F1 (RESIDUAL) — off-loopback authentifiziert der statische god-token an ≥5 Grant-Nähten** (API, `/ws/terminal` PTY, `/ws/agent`, `/ws/events`+`/api/events` **Message-BODIES**/CYP-432, `/me`), da NUR die Cookie-Achse loopback-gated ist | **god-token→OP-eligible-Prädikat** loopback-gated an der **geteilten Quelle** → ALLE Grant-Nähte erben; Closure-Zahn erzwingt es | §1.9, §2.1b, §2.4; `Auth.kt:33`, `Principal:125/170`, `TerminalAccess:173`, `AgentSocket:65`, `Auth:87` |
 | **A10** | **★ F3 — Widerruf-Registry-Eintrag GEFORGT (Integrität, nicht nur Verfügbarkeit)** | Registry trägt **Liveness, NIE Trust-Anker**; Forge kann nur Früh-Widerruf **verpassen** (→ registry-unabhängiger `exp`-Floor), nie Autorität gewähren/verlängern | §2.2 (F3) |
 | A11 | Über-Guarding: Loopback-Gate sperrt god-token auf einem **validen LOCAL-LOOPBACK** Connector → lokale UI tot | Gate prüft `isLoopbackHost` (deckt `127.0.0.0/8`/`::1`/`localhost`), NICHT String-`==` → local-loopback bleibt 200 | §2.1 Positiv-Kontrolle |
 
@@ -232,12 +264,14 @@ gaten = eine **Eigenschaft**, keine Liste — die Reviewer-Bedingung „F1 by-co
 
 - **S3(a) Tunnel-Closure:** heute Singleton (`config.hub.tunnelPort`) → Umstellung auf die **server-connector-topology-
   abgeleitete** Menge ist **verhaltensidentisch**, bis per-Tunnel-Ports existieren. Kein Wire-/Config-/Client-Impact.
-- **★ S3(b) Token-Achsen-Loopback-Gate (F1):** für den **unterstützten Default** (`config.hub.host = 127.0.0.1`,
-  loopback) **verhaltensidentisch** — der god-token funktioniert lokal weiter. **Impact NUR für off-loopback-Deploys:**
-  dort **verliert** der statische Token die Operator-Posture — **das ist der beabsichtigte Fix**, kein Regress: ein
-  off-loopback-gebundener statischer Operator-Token IST das Loch. Ein off-loopback-Deploy, der Operator-Zugang will,
-  nutzt den revocablen CP-Session+PoP-Pfad (Modell-2). **Am Bau explizit machen (PL-B1-Scan):** kein Deployment darf
-  sich auf off-loopback-Token-Operator verlassen.
+- **★ S3(b) Token-Achsen-Loopback-Gate an der geteilten Quelle (F1):** für den **unterstützten Default**
+  (`config.hub.host = 127.0.0.1`, loopback) **verhaltensidentisch an ALLEN Grant-Nähten** (#1–#5) — der god-token
+  funktioniert lokal überall weiter (API, PTY, Agent-Stream, Events, /me). **Impact NUR off-loopback:** dort verliert der
+  statische Token die Operator-Posture an **allen** Nähten gleichzeitig (das geteilte Prädikat) — **der beabsichtigte
+  Fix**, kein Regress: ein off-loopback statischer Operator-Token IST das Loch (inkl. Message-Body-Egress). Off-loopback-
+  Operator läuft über den revocablen CP-Session+PoP-Pfad. **Refactor-Impact:** die 5 Grant-Nähte wechseln von rohem
+  `isOperator` auf `operatorEligible` — mechanisch, aber **breiter als v2 dachte** (5 statt 1). Der Closure-Zahn (§6)
+  fixiert die Vollständigkeit. **Am Bau (PL-B1-Scan):** kein Deployment darf sich auf off-loopback-Token-Operator verlassen.
 - **S4:** additiv & rückwärtskompatibel. Der passive **≤TTL-Floor existiert bereits** (CYP-484 + per-Hub-`exp`) → ein
   Hub/Relay ohne das aktive Protokoll degradiert auf **heutiges** Verhalten (lazy ≤TTL). Registry = neuer State, dessen
   Ausfall-/Forge-Modus **der Floor / kein-Anker** ist → kein Regress unter heute.
@@ -253,10 +287,12 @@ gaten = eine **Eigenschaft**, keine Liste — die Reviewer-Bedingung „F1 by-co
 - **★ W2 (F5-Split) — die Kern-Grenze, zweigeteilt:**
   - **W2a — null-remote:** Behält der god-token JE eine remote-erreichbare Capability? *Empfehlung:* **NEIN** — null
     remote-Autorität, volle lokale. Die zu ratifizierende Kern-Grenze; alles folgt daraus.
-  - **W2b — öffentlicher-Connector-Loopback-Mechanismus (F1-Fix-Form):** **Posture-Gate** am Chokepoint (spiegelt
-    S-AAL2b, `role==OP`-Downgrade off-loopback) **vs.** Boot-`require`(host loopback, wenn statischer Token aktiv) **vs.
-    beide**. *Empfehlung:* **beide** — Posture-Gate als laufzeit-fail-closed (deckt auch Runtime-Rebind), Boot-`require`
-    als fail-LOUD-Klarheit. Single-sourced auf `isLoopbackHost`.
+  - **W2b — öffentlicher-Connector-Loopback-Mechanismus (F1-Fix-Form) — v3: an der GETEILTEN QUELLE.** Das Gate sitzt
+    am **geteilten `operatorEligible`-Prädikat** (nicht an je-Caller), so dass alle 5 Grant-Nähte erben. Form: **Posture-
+    Gate** (spiegelt S-AAL2b, off-loopback → `operatorEligible == false`) **∧/∨ Boot-`require`**(host loopback, wenn
+    statischer Token aktiv). *Empfehlung:* **beide** — Posture-Gate laufzeit-fail-closed (deckt Runtime-Rebind),
+    Boot-`require` fail-LOUD. Single-sourced auf `isLoopbackHost`. **Nuance (empirisch, §1.9):** die rohe `isOperator`-
+    Identität (host-unabhängig) bleibt für Reject-Guard/Kill-Switch — Gate NUR an der Eligibilität.
 - **W3 — C3-Registry-Placement/Ownership** (relay-/hub-seitig/beide) **+ Widerruf-Nachrichten-Shape.** Konventionelles
   Bau-Detail (Modell-2 §10). Der **Floor** (PL-A1) und die **Integrität** (F3/A10) sind **keine** Weichen.
 - **★ W4 (F6) — Kill-Switch × F1-Bootstrap-Fenster.** Der Never-Lock-Out-Pfad (§1.6) lässt den statischen Token tragen,
@@ -273,10 +309,18 @@ gaten = eine **Eigenschaft**, keine Liste — die Reviewer-Bedingung „F1 by-co
 
 - **T1 (S3a, Tunnel, beide Achsen):** god-token auf **JEDEM** tunnel-scoped Port → 401 (Bearer **und** `?token=`).
   *Mutation:* Guard-Set auf eine echte Teilmenge schrumpfen → dieser Port authentifiziert → rötet.
-- **★ T1b (S3b, F1 — öffentlicher Connector):** *Positiv-Kontrolle eingeengt:* god-token, public-Connector
-  **LOOPBACK**-gebunden → **200**. *Negativ-Zahn (NEU):* god-token, public-Connector **OFF-LOOPBACK** (`config.hub.host`
-  = z. B. `0.0.0.0`/LAN-IP), Bearer **und** `?token=` → **401**. *Mutation:* das Loopback-Gate auf der Token-Achse
-  entfernen (`Principal.kt:125` ungated) → der off-loopback-Token authentifiziert als OPERATOR → **rötet**.
+- **★ T1b (S3b, F1 — öffentlicher Connector, ALLE Grant-Nähte):** *Positiv-Kontrolle:* god-token, public-Connector
+  **LOOPBACK** → **200/grant** an jeder Naht. *Negativ-Zähne (NEU, PRO Naht):* god-token, public-Connector
+  **OFF-LOOPBACK** (`config.hub.host` = `0.0.0.0`/LAN-IP), Bearer **und** `?token=` → **deny** an **#1 `/api`** (401),
+  **#2 `/ws/terminal`** (kein `TerminalPrincipal.Operator`), **#3 `/ws/agent`** (1008), **#4 `/ws/events`+`/api/events`**
+  (KEINE fremden Message-Bodies — CYP-432), **#5 `/me`** (nicht OPERATOR). *Mutation:* das Loopback-Gate an der
+  geteilten Quelle (`operatorEligible`) entfernen → **alle 5** authentifizieren off-loopback → rötet.
+- **★ T1c (S3b-CLOSURE — der Zahn, der v2 gefehlt hat, non-vakuös):** ein **Arch-Scan** enumeriert **ALLE** Aufrufer des
+  god-token→OP-Grants (jede Nutzung von `isOperator` in einem GRANT-Kontext, nicht nur Reject/Identität — nicht bloß
+  Literal-grep) und behauptet, **jeder** routet über das loopback-gegatete `operatorEligible`. *Mutation:* eine
+  Grant-Naht auf **rohes** `isOperator` (ungegated) umstellen → der Scan findet einen ungegateten Grant-Aufrufer →
+  **rötet**. Analog `Cyp747OperatorAuthorityClosureTest` (Cookie-Achse, bereits gebaut). **Dieser Zahn hätte den
+  F1-Residual gefangen** — er macht „Property an der geteilten Quelle" prüfbar statt behauptet.
 - **T2 (S3a-Closure — F2-korrigierte Quelle):** guard-set ≡ **server-connector-topology** by construction. *Mutation:*
   einen tunnel-scoped Connector zur `embeddedServer`-Deklaration hinzufügen, **ohne** dass die abgeleitete Guard-Menge
   ihn mitzieht → ein Ableitungs-Test rötet (die Mengen divergieren). Muss gegen die **Server**-Connector-Deklaration
@@ -301,9 +345,13 @@ gaten = eine **Eigenschaft**, keine Liste — die Reviewer-Bedingung „F1 by-co
 
 - **god-token-Identität/Custody:** `routing/Auth.kt:33`, `boot/Secrets.kt:75-76,32`, `boot/BootOrchestrator.kt:354`,
   `auth/Principal.kt:125-132,126`.
-- **★ F1-Achsen (Chokepoint):** Token-Achse `auth/Principal.kt:125` (`isOperator→MachineOperator`, ungated); Cookie-Achse
-  `:148` (`role==OP && (!aal2 || !browserOperatorPostureEnabled)→null`, S-AAL2b); `browserOperatorPostureEnabled =
-  isLoopbackHost(config.hub.host)` in `routing/PlatformWiring.kt`; `isLoopbackHost` `auth/Principal.kt:110`.
+- **★ F1 geteilte Quelle + ≥5 Grant-Nähte (empirisch, develop `4db7cac4`):** Prädikat `TokenRegistry.isOperator`
+  `routing/Auth.kt:33`. Grant-Nähte: #1 `auth/Principal.kt:125` (API `MachineOperator`) · #2 `routing/TerminalAccess.kt:173`
+  (`TerminalPrincipal.Operator`, PTY) · #3 `routing/AgentSocket.kt:65` (`tokenAuthorize`) · #4 `routing/Auth.kt:87`
+  (`participantFor→OPERATOR_ID`) → `routing/EventAclFilter.kt:40` (`if(isOperator) return true`, Message-Bodies) · #5
+  `auth/Principal.kt:170` (`/me`). **Reject/Identität (NICHT graten):** `routing/PlatformWiring.kt:425` (Tunnel-Guard),
+  `auth/Principal.kt:132` (Kill-Switch). Cookie-Achse `Principal.kt:148`; `browserOperatorPostureEnabled =
+  isLoopbackHost(config.hub.host)` `routing/PlatformWiring.kt`; `isLoopbackHost` `auth/Principal.kt:110`.
 - **★ F2-Closure-Quelle:** die `embeddedServer`-Connector-Deklaration `Application.kt:62-63`.
 - **Kill-Switch:** `boot/PlatformConfig.kt:99-102`, `routing/PlatformWiring.kt:453`.
 - **Containment (Tunnel):** `routing/TunnelGodTokenGuard.kt` (`:22-27,40-41,53,57-67`), Wiring `PlatformWiring.kt:395,425`.
@@ -317,3 +365,12 @@ offen; S3 wächst auf zwei Flächen; Loopback-Gate spiegelt S-AAL2b, Eigenschaft
 §2.4) · **F2** (Closure-Quelle = Server-Connector-Topologie §2.1a/T2) · **F3** (Registry-Integrität §2.2/A10/T4b) · **F4**
 (Post-Widerruf-Re-Enroll OOB-Anker §6-T6) · **F5** (W2-Split → W2a/W2b §5) · **F6** (Kill-Switch-Bootstrap-Fenster × F1
 §5-W4). F1 an PL eskaliert; Bau bleibt gated auf PL-Ratifikation der v2. Design-only.
+**Rev.3 (2026-07-27, Backend):** **F1-RESIDUAL-Blocker korrigiert** (Reviewer-Re-Review). v2 §2.4 behauptete
+`resolvePrincipal` sei der einzige Token→OP-Chokepoint — **empirisch falsch (behauptet, nicht verifiziert):** der Grant
+läuft über das GETEILTE Prädikat `TokenRegistry.isOperator` an **≥5 Nähten** (API, `/ws/terminal`-PTY, `/ws/agent`,
+`/ws/events`+`/api/events` Message-Bodies/CYP-432, `/me`); v2 gated nur eine. **v3-Fix: Loopback-Gate an die geteilte
+Quelle** (`operatorEligible`-Prädikat, alle Konsumenten erben) **+ Closure-Zahn** (T1c, enumeriert alle Grant-Aufrufer,
+MUT ungegatet→rot — der Zahn, der v2 fehlte) **+ Identität-vs-Eligibilität-Trennung** (rohe `isOperator` bleibt für
+Reject-Guard/Kill-Switch). §1.9/§2.1b/§2.4/§4-S3b/§5-W2b/§6-T1b+T1c neu gefasst; F2–F6 unverändert. **Exposition an PL
+neu-eskaliert (größer: PTY + Agent-Streams + Message-Body-Egress).** Lektion: „Property am geteilten Seam, nicht am einen
+Caller" — dieselbe Klasse wie CYP-698/719/815/819. Design-only; Bau gated auf PL-Ratifikation v3.
