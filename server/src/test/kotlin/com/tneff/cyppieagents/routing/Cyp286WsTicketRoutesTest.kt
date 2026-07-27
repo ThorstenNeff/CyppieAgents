@@ -42,7 +42,7 @@ import kotlin.test.assertNotNull
  */
 class Cyp286WsTicketRoutesTest {
 
-    private val reg = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val reg = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     /** ONE AuthDeps → mint and [wsReaderOrNull] share the SAME [AuthDeps.wsTickets] store. */
     private fun ApplicationTestBuilder.app(): AuthDeps {

@@ -69,7 +69,7 @@ class MemberTerminalDenyTest {
         Files.createTempFile("cyp394-tui", ".sh").toFile().apply { writeText(FAKE_TUI); setExecutable(true) }
 
     /** Registry (operator + one agent token) shared with the [AuthDeps] below so BOTH token axes agree. */
-    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     /**
      * The auth harness: an operator SESSION (pinned `id-op` → OPERATOR) and a MEMBER SESSION (`id-member`),

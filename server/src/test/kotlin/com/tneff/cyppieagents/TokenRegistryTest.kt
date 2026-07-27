@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 /** CYP-171 / E2.6 (S3) — runtime token mint security (SEC1/SEC2/SEC5) + the SEC-OP1 drift guard. */
 class TokenRegistryTest {
 
-    private fun registry(seed: Map<String, String> = emptyMap()) = TokenRegistry(seed, operatorToken = "op-secret-token")
+    private fun registry(seed: Map<String, String> = emptyMap()) = TokenRegistry(seed, operatorToken = "op-secret-token", loopbackPosture = true)
 
     /** SEC1 — minted tokens are high-entropy, base64url, all distinct, and never collide with the operator
      *  token. (Mutation: a constant/low-entropy token → duplicates → reds.) */

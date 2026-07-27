@@ -40,7 +40,7 @@ class Cyp521HubRegisterDialTest {
 
     private val opToken = "tok-op"
     private val relay = "wss://r.test/relay"
-    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
+    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
 
     private fun ApplicationTestBuilder.cpApp(rz: RelayRendezvous, reg: HubRegistrar) {
         val d = deps()

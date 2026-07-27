@@ -66,7 +66,7 @@ class Cyp710RouteEnumerationTest {
     @Test
     fun everyRouteInTheTreeIsDeclared_andEveryDeclaredOpExists() = testApplication {
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op"),
+            tokens = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true),
             idp = FakeIdentityProvider(mapOf("sess-alice" to ResolvedIdentity("alice", verified = true))),
             roles = SqliteRoleStore(Files.createTempFile("cyp710-enum", ".db"), bootstrapOperatorId = "alice"),
             nowMs = { 1_000L },

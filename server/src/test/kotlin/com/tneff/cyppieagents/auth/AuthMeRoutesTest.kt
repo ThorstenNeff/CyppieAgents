@@ -28,7 +28,7 @@ class AuthMeRoutesTest {
     private fun ApplicationTestBuilder.installMe(): SqliteRoleStore {
         val store = SqliteRoleStore(Files.createTempFile("me-roles", ".db"), bootstrapOperatorId = "alice") // CYP-196: pinned OPERATOR
         val deps = AuthDeps(
-            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     "sess-verified" to ResolvedIdentity("alice", verified = true, aal2 = true),
@@ -105,7 +105,7 @@ class AuthMeRoutesTest {
     fun presentSession_resolvesExactlyOnce_noDoubleWhoami() = testApplication {
         val idp = CountingIdp(FakeIdentityProvider(mapOf("sess-unverified" to ResolvedIdentity("bob", verified = false))))
         val store = SqliteRoleStore(Files.createTempFile("me-count-roles", ".db"))
-        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = "tok-op"), idp, store, { 1L })
+        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true), idp, store, { 1L })
         application { install(ContentNegotiation) { json(CommJson) }; routing { authMeRoutes(deps) } }
 
         // A present (here unverified) session token — the old code resolved TWICE; now exactly once.

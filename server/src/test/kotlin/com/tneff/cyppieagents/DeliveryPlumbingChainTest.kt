@@ -93,7 +93,7 @@ class DeliveryPlumbingChainTest {
         val tokenRegistry = TokenRegistry(
             mapOf("tok-po" to "po", "tok-frontend" to "frontend", "tok-backend" to "backend"),
             operatorToken = "tok-op",
-        )
+        loopbackPosture = true)
         init {
             hub.onPosted = deliverer::onPosted
             sessions.addRegisterListener(deliverer::onSessionAttached)

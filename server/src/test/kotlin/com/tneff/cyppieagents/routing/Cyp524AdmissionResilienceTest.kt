@@ -75,7 +75,7 @@ class Cyp524AdmissionResilienceTest {
         val opToken = "tok-op"
         val operator = "op-1"
         val cpRegistrar = HubRegistrar()
-        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
+        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
         application {
             install(ContentNegotiation) { json(CommJson) }
             // ★ prod-faithful StatusPages: the SAME ApiErrorBody JSON installPlatform (PlatformWiring:45) emits — so
@@ -96,7 +96,7 @@ class Cyp524AdmissionResilienceTest {
     fun realWire_wrongBearer_realJson401_isDiagnosticTerminal_notOpaque_noRetry() = testApplication {
         val opToken = "tok-op"
         val operator = "op-1"
-        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
+        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
         application {
             install(ContentNegotiation) { json(CommJson) }
             install(StatusPages) { exception<ApiException> { call, cause -> call.respond(cause.status, ApiErrorBody(ApiError(cause.code, cause.message))) } }

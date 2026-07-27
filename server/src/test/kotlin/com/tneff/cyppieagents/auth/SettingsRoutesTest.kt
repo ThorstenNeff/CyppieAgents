@@ -74,7 +74,7 @@ class SettingsRoutesTest {
         val db = Files.createTempFile("settings-roles", ".db")
         val store = SqliteRoleStore(db)
         val deps = AuthDeps(
-            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     "sess-member" to ResolvedIdentity("member", verified = true),

@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
  */
 class DocsRoutesTest {
 
-    private val reg = TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op")
+    private val reg = TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true)
     private fun io.ktor.client.request.HttpRequestBuilder.op() = header("Authorization", "Bearer tok-op")
 
     private fun app(block: suspend (io.ktor.client.HttpClient) -> Unit) = testApplication {

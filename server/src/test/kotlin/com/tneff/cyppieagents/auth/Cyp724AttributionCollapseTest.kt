@@ -53,7 +53,7 @@ class Cyp724AttributionCollapseTest {
     @Test
     fun doTokenAndHumanCollapseToTheSameFrom() = testApplication {
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
+            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken, loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     "sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true), // pinned -> OPERATOR

@@ -55,7 +55,7 @@ class WireHandshakeTimeoutTest {
         CapabilityStatus.UNAVAILABLE, CapabilityStatus.LIMITED, CapabilityStatus.LIMITED,
         CapabilityStatus.LIMITED, CapabilityStatus.AVAILABLE, ConnectorKind.STREAM_JSON,
     )
-    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun ApplicationTestBuilder.installWire(helloTimeoutMs: Long) {
         val hub = Hub(HubState.hubAndSpoke(listOf(Agent("po", "PO", Role.PO, "po"), Agent("backend", "BE", Role.WORKER, "backend")), HubState.OPERATOR_ID), InMemoryMessageStore())

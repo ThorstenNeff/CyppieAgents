@@ -45,7 +45,7 @@ class TrustBoundaryTest {
         Agent("backend", "BE", Role.WORKER, "backend"),
     )
     private fun hub() = Hub(HubState.hubAndSpoke(agents(), HubState.OPERATOR_ID), InMemoryMessageStore())
-    private fun registry() = TokenRegistry(mapOf("tok-po" to "po", "tok-backend" to "backend"), operatorToken = "tok-op")
+    private fun registry() = TokenRegistry(mapOf("tok-po" to "po", "tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun ApplicationTestBuilder.installApp(hub: Hub, registry: TokenRegistry) {
         application {

@@ -107,7 +107,7 @@ class MemberTier403MatrixTest {
         val db = Files.createTempFile("member-403", ".db")
         val store = SqliteRoleStore(db, bootstrapOperatorId = "alice") // CYP-196: alice is the pinned OPERATOR
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     "sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true),

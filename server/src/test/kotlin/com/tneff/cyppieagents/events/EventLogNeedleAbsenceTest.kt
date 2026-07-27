@@ -92,7 +92,7 @@ class EventLogNeedleAbsenceTest {
     @Test
     fun needlesAbsent_inApiEventsResponse() = testApplication {
         val sink = InMemoryEventSink(SystemTimeSource())
-        application { installEvents(sink, TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")) }
+        application { installEvents(sink, TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)) }
         sink.appendBatch(projectNeedledCorpus())
 
         val resp = client.get("/api/events") { bearerAuth("tok-op") } // operator-only surface (CYP-39)

@@ -28,7 +28,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class EventSocketOverrideTest {
 
-    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
     private val authorized = setOf("alpha", "beta")
 
     private fun ApplicationTestBuilder.serve(sink: InMemoryEventSink) {

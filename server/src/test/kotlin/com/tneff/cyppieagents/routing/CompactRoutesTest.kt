@@ -48,7 +48,7 @@ class CompactRoutesTest {
     private val opToken = "tok-op"
     private val op get() = "Authorization" to "Bearer $opToken"
 
-    private fun authDeps() = AuthDeps(tokens = TokenRegistry(emptyMap(), operatorToken = opToken))
+    private fun authDeps() = AuthDeps(tokens = TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true))
 
     private suspend fun ApplicationTestBuilder.postConfig(body: String) = client.post("/api/compact/config") {
         header(op.first, op.second); contentType(ContentType.Application.Json); setBody(body)

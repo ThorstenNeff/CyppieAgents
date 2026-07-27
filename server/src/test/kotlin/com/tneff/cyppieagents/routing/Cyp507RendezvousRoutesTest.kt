@@ -36,7 +36,7 @@ import kotlin.test.assertEquals
 class Cyp507RendezvousRoutesTest {
 
     private val opToken = "tok-op"
-    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
+    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
 
     // CYP-511: the resolve tests own their hubs by op-1 (the operator-token principal), so the owner-gate admits them.
     private fun ownedRegistrar(vararg hubIds: String, ownerId: String = "op-1") =

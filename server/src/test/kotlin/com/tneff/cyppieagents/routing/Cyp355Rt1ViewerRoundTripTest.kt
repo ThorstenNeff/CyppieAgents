@@ -77,7 +77,7 @@ class Cyp355Rt1ViewerRoundTripTest {
     private fun fakeTui(): File =
         Files.createTempFile("cyp355rt1-tui", ".sh").toFile().apply { writeText(FAKE_TUI); setExecutable(true) }
 
-    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private class FakeMediated(override val agentId: String) : ConnectorSession {
         override val events: Flow<StreamJsonEvent> = emptyFlow()

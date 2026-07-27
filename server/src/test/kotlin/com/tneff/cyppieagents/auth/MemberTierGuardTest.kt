@@ -41,7 +41,7 @@ class MemberTierGuardTest {
     /** Mount an OPERATOR-gated and a MEMBER-gated route sharing one [AuthDeps] (per-instance guard selector). */
     private fun ApplicationTestBuilder.installTiers(idp: IdentityProvider, store: SqliteRoleStore) {
         val deps = AuthDeps(
-            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
             idp = idp, roles = store, nowMs = { 1_000L },
         
             browserOperatorPostureEnabled = true,

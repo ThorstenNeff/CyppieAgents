@@ -33,7 +33,7 @@ class ParticipantRateLimitTest {
     private class FakeClock : Clock { override fun now(): Long = 0L }
 
     private val store = ParticipantTokenStore { 1_000L }
-    private val reg = TokenRegistry(mapOf("tok-agent" to "backend"), "tok-op")
+    private val reg = TokenRegistry(mapOf("tok-agent" to "backend"), "tok-op", loopbackPosture = true)
     private fun depsWith(cap: Int) = AuthDeps(
         tokens = reg, idp = FakeIdentityProvider(emptyMap()), roles = InMemoryRoleStore(), nowMs = { 1_000L },
         participantTokens = store, participantRateLimiter = WireRateLimiter(capacity = cap, clock = FakeClock()),

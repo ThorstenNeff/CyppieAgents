@@ -35,7 +35,7 @@ class Cyp487ServerNowSessionReadTest {
     private val opToken = "tok-op"
 
     private fun deps(store: SqliteRoleStore) = AuthDeps(
-        tokens = TokenRegistry(emptyMap(), operatorToken = opToken),
+        tokens = TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true),
         idp = FakeIdentityProvider(mapOf("sess-alice" to ResolvedIdentity("alice-op", verified = true))),
         roles = store, nowMs = { 1_000L },
     )

@@ -33,7 +33,7 @@ import kotlin.test.assertEquals
  */
 class ConnectorCatalogRoutesTest {
 
-    private val reg = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val reg = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun ApplicationTestBuilder.app() {
         val deps = AuthDeps(reg)

@@ -59,7 +59,7 @@ class AclEgressProjectScopeTest {
     @Test
     fun getAcl_isProjectScoped_noCrossProjectLeak() = testApplication {
         val state = state()
-        val registry = TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op")
+        val registry = TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true)
         application {
             install(ContentNegotiation) { json(CommJson) }
             install(WebSockets)

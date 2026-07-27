@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
  */
 class EventRoutesTest {
 
-    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun ApplicationTestBuilder.restClient() =
         createClient { install(ClientContentNegotiation) { json(CommJson) } }

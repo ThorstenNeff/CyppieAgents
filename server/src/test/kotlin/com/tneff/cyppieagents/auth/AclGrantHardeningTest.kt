@@ -54,7 +54,7 @@ class AclGrantHardeningTest {
     private val memberId = "carol-mem"
 
     private fun deps(store: SqliteRoleStore) = AuthDeps(
-        TokenRegistry(emptyMap(), operatorToken = opToken),
+        TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true),
         FakeIdentityProvider(
             mapOf(
                 "sess-alice" to ResolvedIdentity("alice-op", verified = true),

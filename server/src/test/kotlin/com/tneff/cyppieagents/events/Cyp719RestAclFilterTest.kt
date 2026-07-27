@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
  */
 class Cyp719RestAclFilterTest {
 
-    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
     private val active = "alpha"
 
     // backend may read chY, NOT chX.

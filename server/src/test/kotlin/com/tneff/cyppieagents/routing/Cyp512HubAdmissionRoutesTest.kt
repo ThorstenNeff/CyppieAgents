@@ -49,7 +49,7 @@ class Cyp512HubAdmissionRoutesTest {
     private val opToken = "tok-op"
     private val operator = "op-1" // the operator-token principal maps to op-1 (machineOperatorId)
 
-    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
+    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
 
     private fun ApplicationTestBuilder.app(registrar: HubRegistrar, nonces: HubAdmissionNonce, machineOpId: String = operator) {
         val d = deps()

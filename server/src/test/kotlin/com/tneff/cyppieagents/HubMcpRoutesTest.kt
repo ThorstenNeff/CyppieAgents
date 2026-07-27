@@ -47,7 +47,7 @@ class HubMcpRoutesTest {
     private fun registry() = TokenRegistry(
         mapOf("tok-po" to "po", "tok-frontend" to "frontend", "tok-backend" to "backend"),
         operatorToken = "tok-op",
-    )
+    loopbackPosture = true)
 
     private fun ApplicationTestBuilder.installApp(hub: Hub, registry: TokenRegistry) {
         application {

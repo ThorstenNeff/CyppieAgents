@@ -33,7 +33,7 @@ import kotlin.test.assertTrue
  */
 class ReprovisionPreviewRoutesTest {
 
-    private val reg = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val reg = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     /** A WorktreeManager whose `default` project has one dirty worktree ("alice") and one clean ("bob"). */
     private fun worktrees(): WorktreeManager {

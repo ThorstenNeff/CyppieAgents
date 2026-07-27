@@ -136,7 +136,7 @@ class Cyp172AtConnectRosterCrossCheckTest {
         val store = InMemoryMessageStore()
         val state = HubState.hubAndSpoke(projectAAgents(), HubState.OPERATOR_ID, activeProjectId = "A")
         val hub = Hub(state, store)
-        val tokenRegistry = TokenRegistry(emptyMap(), operatorToken = "tok-op")
+        val tokenRegistry = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true)
         val issuer = RemoteTokenIssuer(tokenRegistry, RemoteTokenStore(null))
 
         // (1) the remote agent is created while A is active — the two calls AgentManagement.add makes.

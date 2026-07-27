@@ -59,7 +59,7 @@ class ConfigRoutesTest {
             install(StatusPages) {
                 exception<ApiException> { call, cause -> call.respond(cause.status, ApiErrorBody(com.tneff.cyppieagents.model.ApiError(cause.code, cause.message))) }
             }
-            routing { configRoutes(store, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op"), activeProjectId = { "default" }, reprovision = reprovision) }
+            routing { configRoutes(store, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true), activeProjectId = { "default" }, reprovision = reprovision) }
         }
     }
 

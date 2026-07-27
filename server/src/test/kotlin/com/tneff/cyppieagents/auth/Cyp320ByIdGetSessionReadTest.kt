@@ -63,7 +63,7 @@ class Cyp320ByIdGetSessionReadTest {
     private val claudeMdBody = "# Backend\nYou are the backend developer.\n"
 
     private fun authDeps(store: SqliteRoleStore) = AuthDeps(
-        tokens = TokenRegistry(emptyMap(), operatorToken = opToken),
+        tokens = TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true),
         idp = FakeIdentityProvider(
             mapOf(
                 "sess-alice" to ResolvedIdentity("alice-op", verified = true), // first-verified → OPERATOR

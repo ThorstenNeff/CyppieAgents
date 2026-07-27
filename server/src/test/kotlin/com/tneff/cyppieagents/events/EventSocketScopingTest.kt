@@ -34,7 +34,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class EventSocketScopingTest {
 
-    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     /** Active project pinned to alpha; the resolver is the server-side pointer (no client header). */
     private fun ApplicationTestBuilder.serveScoped(sink: InMemoryEventSink) {

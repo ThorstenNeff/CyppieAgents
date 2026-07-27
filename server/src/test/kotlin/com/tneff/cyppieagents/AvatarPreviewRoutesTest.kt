@@ -86,7 +86,7 @@ class AvatarPreviewRoutesTest {
             install(StatusPages) {
                 exception<ApiException> { call, cause -> call.respond(cause.status, ApiErrorBody(com.tneff.cyppieagents.model.ApiError(cause.code, cause.message))) }
             }
-            routing { agentMgmtRoutes(mgmt, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op")) }
+            routing { agentMgmtRoutes(mgmt, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true)) }
         }
     }
 
@@ -105,7 +105,7 @@ class AvatarPreviewRoutesTest {
         // (requireCommReader) now admits a verified human session too. A MEMBER session suffices (read-tier).
         val presets = Files.createTempDirectory("preview-cyp232").toFile()
         bundle(presets, "bottts", 0, Color(20, 140, 90))
-        val registry = TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op")
+        val registry = TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true)
         val deps = AuthDeps(registry, FakeIdentityProvider(mapOf("sess-m" to ResolvedIdentity("mem-1", verified = true))), InMemoryRoleStore(), { 1L })
         application {
             install(ContentNegotiation) { json(CommJson) }

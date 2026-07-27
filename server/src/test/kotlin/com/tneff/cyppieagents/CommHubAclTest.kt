@@ -44,7 +44,7 @@ class CommHubAclTest {
         tokens = mapOf("tok-po" to "po", "tok-frontend" to "frontend", "tok-backend" to "backend"),
         operatorToken = "tok-op",
         store = store,
-    )
+    loopbackPosture = true)
 
     private fun io.ktor.server.testing.ApplicationTestBuilder.jsonClient() =
         createClient { install(ClientContentNegotiation) { json(CommJson) } }

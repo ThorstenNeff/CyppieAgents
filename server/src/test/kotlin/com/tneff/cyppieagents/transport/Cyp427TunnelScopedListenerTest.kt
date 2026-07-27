@@ -227,7 +227,7 @@ class Cyp427TunnelScopedListenerTest {
         // a CP-scoped Kratos session token (a different random string, which authenticates on the X-Session-Token /
         // cookie axis as a Human operator, not MachineOperator) is `isOperator == false`, so the guard passes it. Proven
         // at the predicate so the guard can never 401 the legitimate remote operator's session, nor mistake it for the God token.
-        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
         assertTrue(registry.isOperator("tok-op"), "the static operator token IS the God token")
         assertTrue(!registry.isOperator("kratos-session-abc123"), "a CP-scoped Kratos session token is NOT the God token — the guard passes it")
         assertTrue(!registry.isOperator("tok-backend"), "an agent token is NOT the God token")

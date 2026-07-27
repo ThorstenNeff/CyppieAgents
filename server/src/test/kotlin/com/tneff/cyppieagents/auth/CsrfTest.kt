@@ -37,7 +37,7 @@ class CsrfTest {
 
     private fun ApplicationTestBuilder.installGuardedWithCsrf() {
         val deps = AuthDeps(
-            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
             // A verified human whose session credential IS the cookie value "sess-op" → bootstraps OPERATOR.
             idp = FakeIdentityProvider(mapOf("sess-op" to ResolvedIdentity("alice", verified = true, aal2 = true))),
             roles = SqliteRoleStore(db, bootstrapOperatorId = "alice"), // CYP-196: alice is the pinned OPERATOR

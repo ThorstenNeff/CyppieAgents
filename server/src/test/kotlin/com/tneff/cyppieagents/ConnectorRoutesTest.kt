@@ -75,7 +75,7 @@ class ConnectorRoutesTest {
                 exception<ApiException> { call, cause -> call.respond(cause.status, ApiErrorBody(ApiError(cause.code, cause.message))) }
             }
             routing {
-                connectorRoutes(fx.state, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op"), fx.capabilityRegistry, optIn)
+                connectorRoutes(fx.state, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true), fx.capabilityRegistry, optIn)
             }
         }
     }

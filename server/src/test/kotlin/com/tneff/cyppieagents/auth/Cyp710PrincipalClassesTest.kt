@@ -77,7 +77,7 @@ class Cyp710PrincipalClassesTest {
         val roles = SqliteRoleStore(db, bootstrapOperatorId = "alice") // CYP-196: alice is the pinned OPERATOR
         val participantTokens = ParticipantTokenStore { 1_000L }
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
+            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken, loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     "sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true),
@@ -196,7 +196,7 @@ class Cyp710PrincipalClassesTest {
         val db = Files.createTempFile("cyp710-killswitch", ".db")
         val roles = SqliteRoleStore(db, bootstrapOperatorId = "alice")
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
+            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken, loopbackPosture = true),
             idp = FakeIdentityProvider(mapOf("sess-alice" to ResolvedIdentity("alice", verified = true, aal2 = true))),
             roles = roles,
             nowMs = { 1_000L },

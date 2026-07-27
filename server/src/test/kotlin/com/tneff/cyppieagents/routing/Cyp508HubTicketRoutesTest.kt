@@ -65,7 +65,7 @@ class Cyp508HubTicketRoutesTest {
     )
 
     private fun ApplicationTestBuilder.app(minter: HubTicketMinter) {
-        val d = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { now })
+        val d = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { now })
         application {
             install(ContentNegotiation) { json(CommJson) }
             install(StatusPages) { exception<ApiException> { call, cause -> call.respond(cause.status) } }
