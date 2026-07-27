@@ -4,6 +4,7 @@ import {
   applyEventsEvent,
   eventRows,
   severityGlyph,
+  severityLabel,
   revokeEventAccess,
   tailView,
   typeGlyph,
@@ -62,6 +63,22 @@ describe('severityGlyph — colour never the sole signal (port of EventVisuals.g
       'ⓘ',
       '·',
     ])
+  })
+})
+
+describe('CYP-812 — severityLabel: the text that carries the meaning (colour never alone) is correct per severity', () => {
+  it('★ each severity maps to its own honest label (a warn→"Info" mislabel would understate the caution — reds)', () => {
+    // Untested until CYP-812: severityLabel is the text half of "colour never the sole carrier"; a wrong mapping
+    // silently mislabels an event's severity. MUT: any arm returning another arm's string → reds here.
+    expect(severityLabel('error')).toBe('Fehler')
+    expect(severityLabel('warn')).toBe('Warnung')
+    expect(severityLabel('info')).toBe('Info')
+    expect(severityLabel('debug')).toBe('Debug')
+  })
+
+  it('★ the four labels are mutually distinct (no two severities read the same — non-vacuity)', () => {
+    const labels = [severityLabel('error'), severityLabel('warn'), severityLabel('info'), severityLabel('debug')]
+    expect(new Set(labels).size).toBe(4)
   })
 })
 
