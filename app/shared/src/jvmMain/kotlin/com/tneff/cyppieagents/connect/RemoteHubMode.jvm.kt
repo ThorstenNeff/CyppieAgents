@@ -234,7 +234,7 @@ fun liveRemoteConnectComponentsFactory(
         nowMs = { System.currentTimeMillis() },
         // CYP-616: reserve the break-glass control slots so lifecycle-REST (CONTROL lane, via the transport's
         // restAcceptor) can ALWAYS acquire a tunnel even when a WS-churn storm has saturated the DATA (WS) lane —
-        // belt-and-suspenders to CYP-609. WS are gated at usable−2 (=21 at cap 24); the reserved 2 are CONTROL-only.
+        // belt-and-suspenders to CYP-609. WS are gated at usable−2 (=13 at cap 16, CYP-611); the reserved 2 are CONTROL-only.
         controlReserved = CONTROL_RESERVED_SLOTS,
     )
     // CYP-542 / B1 — the set-passphrase controller (AC-1/AC-2), built per-connect over the SAME vault the UV opens

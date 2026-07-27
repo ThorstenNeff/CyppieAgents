@@ -357,8 +357,9 @@ fun AgentShell(
     // AgentAvatarView via CompositionLocals.
     // CYP-610: avatars ride the WS (un-capped) client, NOT the REST-capped one. Avatar images are larger + loaded
     // per-agent concurrently; on the 1-socket REST client they would head-of-line-block the API loads (agents/
-    // channels/acl) behind them. The WS client's pool headroom (cap 24: ~8 spare beyond 14 WS + 1 REST) absorbs the
-    // transient avatar connections without contending the persistent WS or the API REST socket.
+    // channels/acl) behind them. The WS client's pool headroom (cap 16, CYP-611: the DATA lane 13 has ~2 spare beyond
+    // 11 WS + 1 REST post-CYP-846-mux) absorbs the transient avatar connections without contending the persistent WS
+    // or the API REST socket.
     val avatarPlatformContext = LocalPlatformContext.current
     val avatarImageLoader = remember(wsHttpClient, avatarPlatformContext) {
         ImageLoader.Builder(avatarPlatformContext)
