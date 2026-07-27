@@ -31,6 +31,10 @@ export class FakeSocket implements SocketLike {
   emitClose(code?: number): void {
     this.onclose?.(code === undefined ? undefined : { code })
   }
+  // CYP-814 G2: drive an error (some WS impls fire error then close). Lets tests exercise the onerror path.
+  emitError(): void {
+    this.onerror?.(undefined)
+  }
 }
 
 /** Records every socket the factory hands out; the scheduler runs reconnects synchronously for deterministic tests. */
@@ -44,6 +48,15 @@ export class FakeSocketHub {
   }
 
   readonly runNow: Scheduler = (fn) => {
+    fn()
+  }
+
+  // CYP-814 G2: the reconnect-DELAY recorder. `runNow` discards the `ms` arg, so the backoff→scheduler wiring
+  // (delay = backoff.next(), reset-on-success) was structurally untestable. This records each scheduled delay, then
+  // runs the reconnect synchronously (deterministic) — so a test can assert the delays came from the backoff.
+  readonly delays: number[] = []
+  readonly recordingSchedule: Scheduler = (fn, ms) => {
+    this.delays.push(ms)
     fn()
   }
 
