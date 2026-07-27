@@ -314,8 +314,12 @@ private fun KindBadge(label: String) {
     }
 }
 
+// CYP-835: `internal` (not `private`) purely as a TEST-SEAM — the revoke×skew precedence (BOTH flags true) is
+// unreachable through CommViewModel (collectLive cancels after the first terminal event, `:203`/`:211`), so
+// Cyp835RevokeSkewPrecedenceRenderTest renders this composable directly. Behaviorally inert visibility widening;
+// NOT a prod/public API — do not consume outside `:app:shared`.
 @Composable
-private fun ConnectionBanner(connection: ConnectionStatus, accessRevoked: Boolean, protocolSkew: Boolean) {
+internal fun ConnectionBanner(connection: ConnectionStatus, accessRevoked: Boolean, protocolSkew: Boolean) {
     // CYP-786: a terminal app-schema SKEW is ERROR-red + static and SUPERSEDES the amber offline banner (an
     // undecodable frame won't resolve without a deploy — never a silent/transient offline). Distinct testTag +
     // Assertive live-region (unsolicited + terminal). Mutually exclusive with accessRevoked in practice; if both,
