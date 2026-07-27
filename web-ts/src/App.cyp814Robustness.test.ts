@@ -6,7 +6,7 @@
 //               `offline`. A `1008 ? 'revoked' : 'revoked'` mutation would paint a transient drop with the terminal
 //               revoked tone/composer-lock and survived (the arm had no test).
 import { describe, it, expect } from 'vitest'
-import { byOrder, commCloseToConnection, nextCommConnectionOnClose } from './App'
+import { byOrder, commCloseToConnection, nextCommConnectionOnClose, nextCommConnectionOnSkew } from './App'
 import type { DeliveredMessage } from './types/generated/contract'
 
 const dm = (id: string, over: { seq?: number; ts?: number }): DeliveredMessage =>
@@ -63,5 +63,24 @@ describe('CYP-834 — nextCommConnectionOnClose: a TERMINAL state (skew/revoked)
     expect(nextCommConnectionOnClose('live', 1006)).toBe('offline')
     expect(nextCommConnectionOnClose('connecting', 1008)).toBe('revoked')
     expect(nextCommConnectionOnClose('offline', 1006)).toBe('offline')
+  })
+})
+
+describe('CYP-845 (F-A5-1) — nextCommConnectionOnSkew: a skew respects the SAME first-terminal-cause latch (no security-mask)', () => {
+  it('★ current=revoked stays revoked (the honesty fix — a buffered skew delivered AFTER a 1008-revoke must NOT downgrade it)', () => {
+    // THE bug: without the latch, onCommSkew unconditionally set 'skew' → 'revoked'→'skew' masks the security revoke.
+    // MUT: drop the latch (always return 'skew') → this reds.
+    expect(nextCommConnectionOnSkew('revoked')).toBe('revoked')
+  })
+
+  it('★ current=skew stays skew (idempotent — a second skew is not a state change)', () => {
+    expect(nextCommConnectionOnSkew('skew')).toBe('skew')
+  })
+
+  it('★ a non-terminal current ESCALATES to skew (skew is terminal — it must not be swallowed by live/offline/connecting)', () => {
+    // MUT: latch ALL states (return current always) → a real skew would never surface over a live/offline banner; reds.
+    for (const current of ['live', 'connecting', 'offline'] as const) {
+      expect(nextCommConnectionOnSkew(current), `from ${current}`).toBe('skew')
+    }
   })
 })
