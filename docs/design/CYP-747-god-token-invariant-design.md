@@ -1,11 +1,11 @@
 # CYP-747 — God-Token Authority-Boundary: die Security-Invariante, die S3 + S4 gatet (Design-Pass)
 
-> Status: **DESIGN-PASS v3.2 — zur Ratifikation an PL + Auftraggeber (2 Prinzipale), VOR jedem Bau.** Owner: Backend.
-> (v3.1: V3-1 `Principal:132` = MEMBER-GRANT, richtungs-gegatet + zwei Zähne [T1d]. **v3.2 (3. Reviewer-Re-Review): V3-1
-> clean/GO; T1c von „construction-keyed" auf SOURCE-keyed korrigiert** — der 4-Typ-Key deckte die roh-`Boolean`- (#3) und
-> `MachineAgent(null)`-MEMBER- (`:132`) Grants NICHT; jetzt: rohes `isOperator(` + rohe Secret-Referenz nur in
-> whitelisted Sites, jeder Autoritäts-Pfad jeden Shapes ruft `operatorEligible`. Siehe Rev.3.1/3.2 am Ende. F2–F6/V3-1
-> unverändert.)
+> Status: **DESIGN-PASS v3.3 — zur Ratifikation an PL + Auftraggeber (2 Prinzipale), VOR jedem Bau.** Owner: Backend.
+> (v3.1: V3-1 `Principal:132`=MEMBER-GRANT richtungs-gegatet+T1d. v3.2: Schicht A SOURCE-keyed (roh-Boolean #3 + `:132`
+> MEMBER mitgedeckt). **v3.3 (4. Reviewer-Re-Review): Schicht A = GO; Schicht-B-Value-Compare-Closure korrigiert (V3.2-1)**
+> — das Secret liegt in **3 Holdern**, 2 davon PUBLIC (`Secrets.operatorToken`, `CommConfig.operatorToken`) → private-val
+> deckte nur 1; **Fix A (gewählt): alle 3 klassen-`private` (NICHT `internal`!) + enge ctor-Consumer + `hasOperator`-Bool**
+> → by-construction terminal. Siehe Rev.3.1/3.2/3.3. Layer-A/V3-1/F2–F6 unverändert.)
 > Bezug: CYP-747 Modell-2 Aussteller-Vertrauen (Design `db1f879c`, `docs/design/CYP-747-model2-issuer-trust-design.md`).
 > Basis: develop `4db7cac4`. **KEIN Bau-Gate.** Output dieses Docs = die ratifizierbare Invariante; es baut nichts an
 > **S3** (god-token remote-Verweigerungs-Closure) oder **S4** (C3 aktiver Widerruf).
@@ -341,19 +341,29 @@ Quelle nimmt — genau die Verifikation, die v2 fehlte („behauptet, nicht veri
     aufgerufen — der `operatorEligible`-Definition und dem Reject-Guard `PlatformWiring:425`. T1c: rohes `isOperator(`
     erscheint **AUSSCHLIESSLICH** in dieser 2-Site-Whitelist; **jeder Autoritäts-Pfad (Operator/MEMBER/Boolean, egal
     Shape) ruft `operatorEligible`.**
-  - **(B) ★ Value-Compare-Closure (die ECHTE terminal-Achse — STRUKTURELL by-visibility, NICHT per Symbol-Liste):**
+  - **(B) ★ Value-Compare-Closure (die ECHTE terminal-Achse — STRUKTURELL by-visibility über ALLE Holder; V3.2-1/V3.3):**
     `isOperator` IST intern `token == operatorToken` (`Auth.kt:33`). Der gefährliche Vektor ist ein **Value-Compare**
-    `X == operatorToken` (präsentierter Token gegen das Secret = ein verdeckter Grant, umginge `operatorEligible` UND den
-    `isOperator(`-Scan). **NICHT als Symbol-Scan bauen:** das Symbol `operatorToken` erscheint an **~11 legitimen
-    Plumbing-Sites** (Secrets · ctor-Seeds `BootOrchestrator:354`/`CommRoutes:87` · ACL-Seed `CommRoutes:57/84` ·
-    Provisioning `ProvisionMain:46/58` · Decl `Auth:28`) — ein Symbol-Whitelist-Zahn false-positivt auf all die
-    (Plumbing ≠ Compare). **Stattdessen STRUKTURELL:** weil `operatorToken` ein **`private val`** (`Auth.kt:28`) OHNE
-    wert-exponierenden Accessor ist (kein Getter / `copy` / Klartext-`toString`; `:32` maskiert ✓), ist der
-    Value-Compare `== operatorToken` **by-visibility** strukturell auf die **2 In-Class-Sites** `{Auth:33 isOperator,
-    Auth:45 mint (Nicht-Grant)}` gebannt — **KEINE Enumeration, keine Whitelist nötig**. Der Zahn pinnt die STRUKTUR:
-    (i) `operatorToken` bleibt `private val` **ohne** wert-exponierenden Accessor; (ii) `isOperator` bleibt der
-    **EINZIGE** öffentliche Identifikator. *Mutation:* einen Value-exponierenden Accessor hinzufügen (Getter / `copy` /
-    Klartext-`toString`) → ein `== operatorToken` wird EXTERN möglich (der 4. Blind-Spot) → **rötet**.
+    `X == <holder>.operatorToken` (präsentierter Token gegen das Secret = verdeckter Grant, umginge `operatorEligible`
+    UND den `isOperator(`-Scan). **NICHT als Symbol-Scan bauen** (das Symbol erscheint an ~11 legitimen Plumbing-Sites →
+    Plumbing ≠ Compare). **★ V3.2-1 (Reviewer, bestätigt): das Secret liegt in DREI Holdern, nicht einem** —
+    `TokenRegistry.operatorToken` (`private val`, `Auth.kt:28`) **+ `Secrets.operatorToken` (PUBLIC val, `Secrets.kt:16`)
+    + `CommConfig.operatorToken` (PUBLIC val, `CommRoutes.kt:57`)**; beide public → `== secrets.operatorToken` /
+    `== config.operatorToken` ist EXTERN möglich → das private-val-Argument deckte nur 1 von 3.
+    **Fix A (gewählt — by-construction, beendet die Klasse; Ripple am Objekt verifiziert = KLEIN, 3 Read-Sites):** alle
+    **drei** Holder klassen-**`private`** — **★ `private`, NICHT `internal`** (`:server` ist EIN Modul → `internal` ließe
+    den Compare modulweit offen = stiller Blind-Spot); (i) kein public Member exponiert den Wert (keine `data class` →
+    kein `copy`/`componentN`; kein Getter; kein Klartext-`toString` — `Secrets`+`CommConfig` sind **plain class**
+    verifiziert, `Secrets.toString` maskiert `:32`); (ii) der Ctor-Feed läuft über einen **engen Consumer**
+    (z. B. `secrets.buildTokenRegistry(...)` statt `TokenRegistry(…, secrets.operatorToken)` an `BootOrchestrator:354`;
+    analog `CommConfig` an `CommRoutes:87`); (iii) der null-Check `CommRoutes:84` `if(config.operatorToken != null)`
+    braucht nur EXISTENZ → ersetzt durch `config.hasOperator: Boolean` (kein Wert-Read). **⟹ by-visibility ist
+    `== operatorToken` für ALLE 3 Holder auf ihre je-Klasse gebannt** (TokenRegistry: `{Auth:33, Auth:45}`; Secrets/
+    CommConfig: nur der interne Consumer) → **strukturell terminal, kein Scan-Zahn**. Der Zahn pinnt die STRUKTUR:
+    alle 3 Holder klassen-`private` ohne wert-exponierenden public Member; `isOperator` = einziger öffentlicher
+    Identifikator. *Mutation:* einen Holder `public`/`internal` machen ODER einen Value-Accessor (Getter/`copy`/
+    Klartext-`toString`) hinzufügen → ein externer `== operatorToken` wird möglich → **rötet**. **(Fallback B, falls der
+    Ripple zu groß wäre — hier nicht nötig: Value-COMPARE-Scan `X == *.operatorToken` exkl. `!= null`, Whitelist
+    {`Auth:33`, `Auth:45`}; MUT `== secrets.operatorToken`-Grant→rot.)**
   - **Mutationen (Schicht A):** **MUT-A** — eine Grant-Naht (explizit **#3 `AgentSocket:65` roh-Boolean** ODER **`:132`
     MEMBER**) auf rohes `isOperator` umstellen → 3. rohe `isOperator(`-Referenz → **rötet** (beweist Boolean+MEMBER
     mitgedeckt). **MUT-B** — eine 6., NEUE rohe `isOperator(`-Grant-Site **beliebigen Shapes** hinzufügen → **rötet**
@@ -445,3 +455,15 @@ keine Enumeration. Zahn pinnt die STRUKTUR: (i) `operatorToken` bleibt private-v
 #3-Boolean+`:132`-MEMBER)→rot · MUT-B (6. roher Grant beliebigen Shapes)→rot. §6-T1c neu gefasst; V3-1/T1d + F2–F6
 unverändert. Objekt-verifiziert (Auth.kt `private val`+maskiertes toString, ~11 Symbol-Sites). Design-only; Bau gated auf
 PL-Ratifikation **v3.2**.
+**Rev.3.3 (2026-07-27, Backend):** vierter Reviewer-Re-Review. **Schicht A = GO** (V3.1-1 sauber). **V3.2-1 (bestätigt):
+das private-val-Argument (v3.2-B) deckte nur 1 von 3 Secret-Value-Holdern** — dasselbe Secret liegt in zwei weiteren
+**PUBLIC vals** (`Secrets.operatorToken` `Secrets.kt:16`, `CommConfig.operatorToken` `CommRoutes.kt:57`) → `== secrets.
+operatorToken`/`== config.operatorToken` extern grantet Operator. **Fix A gewählt (by-construction; Ripple am Objekt
+verifiziert = KLEIN, 3 externe Read-Sites: `BootOrchestrator:354` ctor · `CommRoutes:84` `!=null`-Presence · `CommRoutes:87`
+ctor):** alle 3 Holder klassen-**`private`** — **★ `private`, NICHT `internal`** (`:server`=EIN Modul → `internal` ließe
+den Compare modulweit offen, 5.-Runden-Blind-Spot) — kein value-exponierender public Member (keine `data class`:
+`Secrets`+`CommConfig` sind **plain class** verifiziert; Ctor-Feed via engen Consumer `secrets.buildTokenRegistry(...)`;
+`CommRoutes:84`→`hasOperator: Boolean`). ⟹ by-visibility deckt ALLE 3 Holder → strukturell terminal, kein Scan-Zahn.
+(Fallback B: Value-Compare-Scan — hier nicht nötig.) §6-T1c(B) neu gefasst; Schicht A/V3-1/T1d + F2–F6 unverändert.
+Objekt-verifiziert (Secrets `:13`/CommConfig `:53` plain class, 3 Read-Sites). Design-only; Bau gated auf PL-Ratifikation
+**v3.3**.
