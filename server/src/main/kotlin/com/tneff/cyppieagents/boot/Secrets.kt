@@ -1,5 +1,7 @@
 package com.tneff.cyppieagents.boot
 
+import com.tneff.cyppieagents.routing.TokenRegistry
+
 /**
  * Boot secrets resolved from the host environment (Spec §14): one bearer token per agent, one
  * operator token, and the API key. NEVER hardcoded, NEVER logged — [toString] is masked so an
@@ -13,7 +15,11 @@ package com.tneff.cyppieagents.boot
 class Secrets(
     /** bearer token → agentId */
     val agentTokens: Map<String, String>,
-    val operatorToken: String?,
+    /** ★ CYP-828 (Layer-B, v3.3) — the static operator secret is **`private`** (NOT `internal`: `:server` is one
+     *  module, so `internal` would leave `== operatorToken` module-wide possible). The value NEVER leaves via a public
+     *  member — no getter, no `data class` copy (plain class), `toString` masked; it flows into a [TokenRegistry] ONLY
+     *  via [buildTokenRegistry]. This bans a raw `X == secrets.operatorToken` grant outside the eligibility path. */
+    private val operatorToken: String?,
     /** Team/default ANTHROPIC_API_KEY; the fallback for a project without an explicit key. */
     val apiKey: String?,
     /** Per-project ANTHROPIC_API_KEY overrides (S12 / CYP-82). The single backing for [apiKeyFor]. */
@@ -27,6 +33,15 @@ class Secrets(
      */
     fun apiKeyFor(projectId: String): String? =
         apiKeysByProject[projectId]?.takeIf { it.isNotBlank() } ?: apiKey
+
+    /**
+     * ★ CYP-828 (Layer-B) — the narrow consumer that feeds the private [operatorToken] into a [TokenRegistry]
+     * (the only path out of the secret), so no public getter exposes the value. [loopbackPosture] must be the boot
+     * loopback posture (`= isLoopbackHost(config.hub.host)`, single-sourced with the cookie axis); the caller
+     * (`BootOrchestrator`) supplies it. Fail-closed default (`false`) via the [TokenRegistry] ctor.
+     */
+    fun buildTokenRegistry(loopbackPosture: Boolean): TokenRegistry =
+        TokenRegistry(agentTokens, operatorToken, loopbackPosture)
 
     override fun toString(): String =
         "Secrets(agentTokens=${agentTokens.size} masked, operatorToken=${mask(operatorToken)}, " +

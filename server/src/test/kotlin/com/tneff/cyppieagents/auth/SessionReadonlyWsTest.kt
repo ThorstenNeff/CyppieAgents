@@ -49,7 +49,7 @@ import kotlin.test.assertTrue
 class SessionReadonlyWsTest {
 
     private fun authDeps(store: SqliteRoleStore) = AuthDeps(
-        tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+        tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
         idp = FakeIdentityProvider(
             mapOf(
                 "sess-alice" to ResolvedIdentity("alice-op", verified = true, aal2 = true), // first-verified → OPERATOR

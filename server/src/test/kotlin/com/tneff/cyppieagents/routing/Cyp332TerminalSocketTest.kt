@@ -50,7 +50,7 @@ class Cyp332TerminalSocketTest {
     private fun fakeTui(): File =
         Files.createTempFile("fake-tui-ws", ".sh").toFile().apply { writeText(FAKE_TUI); setExecutable(true) }
 
-    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun ApplicationTestBuilder.installTerminal(command: File) {
         val mgr = PtyManager(

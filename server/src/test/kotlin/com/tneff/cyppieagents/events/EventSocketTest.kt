@@ -34,7 +34,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class EventSocketTest {
 
-    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun ApplicationTestBuilder.serve(sink: InMemoryEventSink) {
         install(WebSockets)

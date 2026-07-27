@@ -61,7 +61,7 @@ class HubWireRoutesTest {
     private fun registry() = TokenRegistry(
         mapOf("tok-po" to "po", "tok-backend" to "backend", "tok-frontend" to "frontend"),
         operatorToken = "tok-op",
-    )
+    loopbackPosture = true)
 
     private class Fixture(val hub: Hub, val store: InMemoryMessageStore, val caps: CapabilityRegistry, val prov: ProviderRegistry)
 

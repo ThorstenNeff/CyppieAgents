@@ -197,7 +197,7 @@ class Rc2ConfigAssertionTest {
     fun guard_leaksNoOracle_absentInvalidUnverifiedAreIdentical401() = testApplication {
         val db = Files.createTempFile("rc2-roles", ".db")
         val deps = AuthDeps(
-            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
             idp = FakeIdentityProvider(mapOf("unverified" to ResolvedIdentity("bob", verified = false))),
             roles = SqliteRoleStore(db),
             nowMs = { 1L },

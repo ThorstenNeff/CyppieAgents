@@ -61,7 +61,7 @@ class RemoteBridgeSubprocessE2eTest {
     )
 
     /** A registered AGENT token (tok-backend→backend); the operator token is a NON-agent for /ws/hub. */
-    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun distBin(): File? {
         System.getenv("CYP199_BRIDGE_BIN")?.let { return File(it).takeIf(File::canExecute) }

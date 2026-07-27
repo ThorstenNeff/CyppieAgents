@@ -73,7 +73,7 @@ class Cyp710InvariantsTest {
         val participantTokens = ParticipantTokenStore { 1_000L }
         val roles = SqliteRoleStore(Files.createTempFile("cyp710-inv1", ".db"), bootstrapOperatorId = "alice")
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
+            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken, loopbackPosture = true),
             idp = FakeIdentityProvider(mapOf("sess-alice" to ResolvedIdentity("alice", verified = true))),
             roles = roles,
             nowMs = { 1_000L },
@@ -159,7 +159,7 @@ class Cyp710InvariantsTest {
     fun invariant2_publicRegistration_createsANameNeverARoleOrAuthority() = testApplication {
         val roles = SqliteRoleStore(Files.createTempFile("cyp710-inv2", ".db"), bootstrapOperatorId = "alice")
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
+            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken, loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     "sess-alice" to ResolvedIdentity("alice", verified = true),   // the deploy-pinned OPERATOR

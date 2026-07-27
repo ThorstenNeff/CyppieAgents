@@ -170,7 +170,7 @@ fun mayOpenTerminal(agentId: String, principal: TerminalPrincipal, grants: Termi
  */
 suspend fun ApplicationCall.terminalPrincipalOrNull(deps: AuthDeps, registry: TokenRegistry): TerminalPrincipal? {
     val token = bearerToken() ?: request.queryParameters["token"]
-    if (registry.isOperator(token)) return TerminalPrincipal.Operator
+    if (registry.operatorEligible(token)) return TerminalPrincipal.Operator // CYP-828 (§2.1b, seam #2): loopback-gated (PTY take-over off-loopback denied)
     registry.agentFor(token)?.let { return TerminalPrincipal.Delegable("agent:$it") }
     deps.participantTokens.subjectFor(token)?.let { return TerminalPrincipal.Delegable("participant:$it") }
     // No machine token → the human session axis (resolvePrincipal reads the cookie / X-Session-Token).

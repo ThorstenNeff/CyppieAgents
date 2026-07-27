@@ -52,7 +52,7 @@ class InjectSizeCapTest {
         tokens = mapOf("tok-po" to "po", "tok-backend" to "backend"),
         operatorToken = "tok-op",
         store = InMemoryMessageStore(),
-    )
+    loopbackPosture = true)
 
     /** One character over the cap — the smallest input that must be rejected. */
     private val oversized = "x".repeat(MessageInput.MAX_BODY_CHARS + 1)

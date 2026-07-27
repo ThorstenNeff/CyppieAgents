@@ -46,7 +46,7 @@ class EventsPrincipalReuseTest {
     }
 
     @Test fun eventsGet_resolvesPrincipalExactlyOnce_reusesGuardStash() = testApplication {
-        val registry = TokenRegistry(emptyMap(), operatorToken = "tok-op")
+        val registry = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true)
         // A verified human session (no bearer → the request takes the session axis, so the idp IS consulted).
         val idp = CountingIdentityProvider(FakeIdentityProvider(mapOf("sess-m" to ResolvedIdentity("mem-1", verified = true))))
         val deps = AuthDeps(registry, idp, InMemoryRoleStore(), { 1L })

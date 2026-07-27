@@ -100,7 +100,7 @@ class GatewayS5Test {
     private fun fakeTui(): File =
         Files.createTempFile("cyp638s5-tui", ".sh").toFile().apply { writeText(FAKE_TUI); setExecutable(true) }
 
-    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
     private fun deps(reg: TokenRegistry) = AuthDeps(
         tokens = reg,
         idp = FakeIdentityProvider(

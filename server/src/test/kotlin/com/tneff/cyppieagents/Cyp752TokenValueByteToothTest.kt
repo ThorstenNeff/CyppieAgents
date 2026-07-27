@@ -70,7 +70,7 @@ class Cyp752TokenValueByteToothTest {
         override suspend fun closeAndAwait() {}
     }
 
-    private val registry = TokenRegistry(emptyMap(), operatorToken = "tok-op")
+    private val registry = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true)
     private val store = RemoteTokenStore(null) // in-memory
 
     private fun mgmt(): AgentManagement {

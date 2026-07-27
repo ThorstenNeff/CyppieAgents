@@ -83,7 +83,7 @@ class Cyp331TerminalE2eTest {
             scope = ptyScope,
             command = listOf(tui.absolutePath), // fake interactive TUI in place of `claude` — deterministic + assertable
         )
-        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
         val server = embeddedServer(Netty, port = 0) {
             install(ServerWebSockets)

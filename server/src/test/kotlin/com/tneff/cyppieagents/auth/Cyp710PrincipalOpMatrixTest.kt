@@ -114,7 +114,7 @@ class Cyp710PrincipalOpMatrixTest {
     fun principalClassesTimesOps_pinsTheAdmittedClassPerOp() = testApplication {
         val participantTokens = ParticipantTokenStore { 1_000L }
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
+            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken, loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     "sess-alice" to ResolvedIdentity("alice", verified = true),
@@ -237,7 +237,7 @@ class Cyp710PrincipalOpMatrixTest {
     @Test
     fun killSwitchClass_sweptAcrossEveryOp() = testApplication {
         val authDeps = AuthDeps(
-            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken),
+            tokens = TokenRegistry(mapOf(agentToken to "backend"), operatorToken = opToken, loopbackPosture = true),
             idp = FakeIdentityProvider(mapOf("sess-alice" to ResolvedIdentity("alice", verified = true))),
             roles = SqliteRoleStore(Files.createTempFile("cyp710-ks", ".db"), bootstrapOperatorId = "alice"),
             nowMs = { 1_000L },

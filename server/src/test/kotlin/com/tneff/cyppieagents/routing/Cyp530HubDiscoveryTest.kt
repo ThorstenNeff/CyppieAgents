@@ -39,7 +39,7 @@ class Cyp530HubDiscoveryTest {
 
     private val opToken = "tok-op"
     private val relay = "wss://r.test/relay"
-    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
+    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
 
     // Shared registry: op-1 owns hub_a + hub_b; op-2 owns hub_z; hub_blank has a BLANK owner. The blank-owner entry
     // makes the blank-operator tooth NON-vacuous: without the isNullOrBlank guard, `filter { ownerId == "" }` would

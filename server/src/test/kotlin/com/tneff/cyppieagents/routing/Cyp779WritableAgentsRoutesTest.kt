@@ -59,7 +59,7 @@ class Cyp779WritableAgentsRoutesTest {
     private val ptStore = ParticipantTokenStore { 1_000L }
 
     private fun authDeps(store: SqliteRoleStore) = AuthDeps(
-        tokens = TokenRegistry(emptyMap(), operatorToken = opToken),
+        tokens = TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true),
         idp = FakeIdentityProvider(mapOf("sess-carol" to ResolvedIdentity(memberId, verified = true))),
         roles = store, nowMs = { 1_000L },
         participantTokens = ptStore,

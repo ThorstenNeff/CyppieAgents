@@ -64,7 +64,7 @@ class Cyp391AttachOnExitTest {
     private fun fakeDyingTui(): File =
         Files.createTempFile("cyp391-tui", ".sh").toFile().apply { writeText(FAKE_DYING_TUI); setExecutable(true) }
 
-    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+    private fun registry() = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun manager(command: File) = PtyManager(
         worktreeDirOf = { Files.createTempDirectory("cyp391-wt").toFile() },

@@ -60,7 +60,7 @@ class Cyp705ReadStateSocketTest {
         tokens = mapOf("tok-po" to "po", "tok-frontend" to "frontend", "tok-backend" to "backend"),
         operatorToken = "tok-op",
         store = InMemoryMessageStore(),
-    )
+    loopbackPosture = true)
 
     private fun ApplicationTestBuilder.jsonClient(): HttpClient =
         createClient { install(ClientContentNegotiation) { json(CommJson) } }

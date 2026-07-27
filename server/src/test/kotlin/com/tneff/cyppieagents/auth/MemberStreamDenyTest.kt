@@ -27,7 +27,7 @@ class MemberStreamDenyTest {
 
     @Test
     fun memberSession_cannotOpenAgentStream_failClosed() = testApplication {
-        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
         application { installAgentSocket(ConnectorSessions(), authorize = tokenAuthorize(registry, AuthDeps(registry)), agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
 

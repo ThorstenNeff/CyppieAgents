@@ -84,10 +84,12 @@ class Cyp747OperatorAuthorityClosureTest {
     private val IS_OPERATOR_DECL = Regex("""fun\s+isOperator\(""")
 
     private val IS_OPERATOR_CALL_FILES = setOf(
-        "com/tneff/cyppieagents/auth/Principal.kt",
-        "com/tneff/cyppieagents/routing/TerminalAccess.kt",
-        "com/tneff/cyppieagents/routing/AgentSocket.kt",
-        "com/tneff/cyppieagents/routing/Auth.kt",            // the def lives here too (excluded from "call") + one call @87
+        // ★ CYP-828 (deliberate review): the god-token->OPERATOR grants relocated from Principal/TerminalAccess/
+        // AgentSocket to TokenRegistry.operatorEligible (= isOperator ∧ loopbackPosture). So the ONLY isOperator(...)
+        // CALL now lives in operatorEligible's definition (Auth.kt). The reject-guard uses ::isOperator (a ref, not a
+        // call) + the mint uses `== operatorToken`; neither matches IS_OPERATOR_CALL. Every grant seam routes
+        // operatorEligible now (Cyp828OperatorEligibleTest pins that + the two-site confinement).
+        "com/tneff/cyppieagents/routing/Auth.kt",
     )
 
     @Test

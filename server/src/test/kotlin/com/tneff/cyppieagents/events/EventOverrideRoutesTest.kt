@@ -23,7 +23,7 @@ import kotlinx.coroutines.runBlocking
  */
 class EventOverrideRoutesTest {
 
-    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
     private val authorized = setOf("alpha", "beta") // the operator's own projects (gamma is NOT authorized)
 
     private fun ApplicationTestBuilder.restClient() =

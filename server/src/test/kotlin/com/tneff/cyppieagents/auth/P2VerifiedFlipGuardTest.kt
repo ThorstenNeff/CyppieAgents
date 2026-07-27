@@ -35,7 +35,7 @@ class P2VerifiedFlipGuardTest {
     fun unverifiedSessionIs401_thenVerifiedFlipAdmitsSameSession() = testApplication {
         val db = Files.createTempFile("p2-flip-roles", ".db")
         val idp = ToggleIdp(verified = false)
-        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = "tok-op"), idp, SqliteRoleStore(db), { 1L })
+        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true), idp, SqliteRoleStore(db), { 1L })
         application {
             install(StatusPages) { exception<ApiException> { call, cause -> call.respond(cause.status) } }
             routing { authenticatedApi(deps, AuthRole.MEMBER) { get("/api/member/thing") { call.respondText("ok") } } }

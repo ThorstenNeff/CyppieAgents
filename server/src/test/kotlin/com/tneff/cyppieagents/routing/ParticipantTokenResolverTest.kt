@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
  */
 class ParticipantTokenResolverTest {
 
-    private val reg = TokenRegistry(mapOf("tok-agent" to "backend"), "tok-op")
+    private val reg = TokenRegistry(mapOf("tok-agent" to "backend"), "tok-op", loopbackPosture = true)
     private val store = ParticipantTokenStore { 1_000L }
     private val raw = store.mint("byo-consumer-1")
     private val deps = AuthDeps(

@@ -33,7 +33,7 @@ import kotlin.test.assertEquals
 class Cyp719SubjectEquivalenceTest {
 
     @Test fun restSubjectEqualsWsSubject_perPrincipalClass() = testApplication {
-        val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+        val registry = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
         val idp = FakeIdentityProvider(
             mapOf(
                 "sess-op" to ResolvedIdentity("op-1", verified = true, aal2 = true),

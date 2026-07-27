@@ -39,7 +39,7 @@ class Cyp512HubAdmissionClientTest {
         val opToken = "tok-op"
         val operator = "op-1" // the operator-token principal maps to op-1
         val cpRegistrar = HubRegistrar()
-        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
+        val deps = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
         application {
             install(ContentNegotiation) { json(CommJson) }
             install(StatusPages) { exception<ApiException> { call, cause -> call.respond(cause.status) } }

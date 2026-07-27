@@ -67,7 +67,7 @@ class ProjectRoutesTest {
                     call.respond(cause.status, ApiErrorBody(com.tneff.cyppieagents.model.ApiError(cause.code, cause.message)))
                 }
             }
-            routing { projectRoutes(reg, del, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op")) }
+            routing { projectRoutes(reg, del, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true)) }
         }
     }
 

@@ -46,7 +46,7 @@ import kotlin.test.assertTrue
  */
 class ChannelShareRoutesTest {
 
-    private val tokens = TokenRegistry(mapOf("tok-fe" to "frontend"), operatorToken = "tok-op")
+    private val tokens = TokenRegistry(mapOf("tok-fe" to "frontend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun fixture(): Pair<HubState, ChannelShareStore> {
         // CYP-244: the GET is now canRead-scoped, so the readers here are explicit members of "c" — the operator

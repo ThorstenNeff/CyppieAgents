@@ -56,7 +56,7 @@ import kotlinx.coroutines.runBlocking
 class ProjectSwitchRescopeTest {
 
     private val op = HubState.OPERATOR_ID
-    private val tokens = TokenRegistry(mapOf("tok-fe" to "frontend"), operatorToken = "tok-op")
+    private val tokens = TokenRegistry(mapOf("tok-fe" to "frontend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun state(): HubState {
         val chA = Channel("ca", "ca", ChannelKind.GROUP, listOf(op), projectId = "alpha")

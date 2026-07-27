@@ -99,7 +99,7 @@ class Cyp458LoopbackBridgeTest {
 
     @Test
     fun t1_loopbackWithoutAuth_rejected_andWithAuth_served() {
-        val registry = TokenRegistry(mapOf("valid-token" to "backend"), operatorToken = null)
+        val registry = TokenRegistry(mapOf("valid-token" to "backend"), operatorToken = null, loopbackPosture = true)
         val port = startGuardedServer(registry)
 
         // T1 negative — no credential over the loopback bridge → 401 (exactly as a network request).
@@ -113,7 +113,7 @@ class Cyp458LoopbackBridgeTest {
 
     @Test
     fun t2_forgedAlreadyAuthMarker_overLoopback_stillRejected() {
-        val registry = TokenRegistry(mapOf("valid-token" to "backend"), operatorToken = null)
+        val registry = TokenRegistry(mapOf("valid-token" to "backend"), operatorToken = null, loopbackPosture = true)
         val port = startGuardedServer(registry)
 
         // ★ HEADLINE: a request carrying markers a naive route MIGHT read as "local ⇒ already trusted", but NO real

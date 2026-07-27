@@ -53,7 +53,7 @@ class TokenDispositionTest {
     )
 
     private fun deps(store: SqliteRoleStore, audit: AuditSink = NoOpAuditSink, disabled: Boolean = false) =
-        AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), idp(), store, { 1_000L }, audit, disabled, browserOperatorPostureEnabled = true)
+        AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), idp(), store, { 1_000L }, audit, disabled, browserOperatorPostureEnabled = true)
 
     private suspend fun ApplicationTestBuilder.bootstrap(vararg sessions: String) {
         sessions.forEach { client.get("/api/auth/me") { header("X-Session-Token", it) } }

@@ -57,7 +57,7 @@ class ReportRoutesTest {
             install(StatusPages) {
                 exception<ApiException> { call, cause -> call.respond(cause.status, ApiErrorBody(com.tneff.cyppieagents.model.ApiError(cause.code, cause.message))) }
             }
-            routing { reportRoutes(store, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op")) }
+            routing { reportRoutes(store, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true)) }
         }
     }
 

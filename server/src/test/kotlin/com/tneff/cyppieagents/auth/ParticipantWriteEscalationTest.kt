@@ -58,7 +58,7 @@ class ParticipantWriteEscalationTest {
     private val ptStore = ParticipantTokenStore { 1_000L }
 
     private fun authDeps(store: SqliteRoleStore) = AuthDeps(
-        tokens = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = opToken),
+        tokens = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = opToken, loopbackPosture = true),
         idp = FakeIdentityProvider(mapOf("sess-mem" to ResolvedIdentity("mem-1", verified = true))),
         roles = store,
         nowMs = { 1_000L },

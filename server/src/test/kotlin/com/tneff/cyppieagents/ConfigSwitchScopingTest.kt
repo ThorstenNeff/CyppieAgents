@@ -44,7 +44,7 @@ import kotlin.test.assertTrue
  */
 class ConfigSwitchScopingTest {
 
-    private val tokens = TokenRegistry(mapOf("tok-fe" to "frontend"), operatorToken = "tok-op")
+    private val tokens = TokenRegistry(mapOf("tok-fe" to "frontend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun store() = ProjectConfigStore(
         file = null,

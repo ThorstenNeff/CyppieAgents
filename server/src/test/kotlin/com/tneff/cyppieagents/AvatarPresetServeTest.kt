@@ -100,7 +100,7 @@ class AvatarPresetServeTest {
                     call.respond(cause.status, ApiErrorBody(com.tneff.cyppieagents.model.ApiError(cause.code, cause.message)))
                 }
             }
-            routing { agentMgmtRoutes(mgmt, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op")) }
+            routing { agentMgmtRoutes(mgmt, TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true)) }
         }
     }
 

@@ -41,7 +41,7 @@ class RemoteTokenMintTest {
             ensureWorktree = {},
             spawn = { id, _ -> FakeSession(id) },
         )
-        val registry = TokenRegistry(emptyMap(), operatorToken = "op-token")
+        val registry = TokenRegistry(emptyMap(), operatorToken = "op-token", loopbackPosture = true)
         val store = RemoteTokenStore(null) // in-memory
         val issuer = RemoteTokenIssuer(registry, store)
         val mgmt = AgentManagement(state, lifecycle, configs, ensureWorktree = {}, deleteWorktree = {}, remoteToken = issuer)

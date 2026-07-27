@@ -32,7 +32,7 @@ class AuthGuardTest {
 
     private fun ApplicationTestBuilder.installGuarded(store: SqliteRoleStore, posture: Boolean = true) {
         val deps = AuthDeps(
-            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     // CYP-747 S-AAL2a-ii — alice is the pinned OPERATOR; her session is AAL2-backed (WebAuthn) so she gets

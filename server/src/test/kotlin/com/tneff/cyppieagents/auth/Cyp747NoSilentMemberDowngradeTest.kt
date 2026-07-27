@@ -45,7 +45,7 @@ class Cyp747NoSilentMemberDowngradeTest {
     /** Mount a MEMBER-tier read route (the surface where a silent downgrade would be VISIBLE as a wrongful 200). */
     private fun ApplicationTestBuilder.installMemberRoute() {
         val deps = AuthDeps(
-            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op"),
+            tokens = TokenRegistry(emptyMap(), operatorToken = "tok-op", loopbackPosture = true),
             idp = FakeIdentityProvider(
                 mapOf(
                     "sess-op-aal2" to ResolvedIdentity(operator, verified = true, aal2 = true),

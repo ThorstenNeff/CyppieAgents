@@ -99,7 +99,7 @@ class AgentSocketTest {
         val sessions = ConnectorSessions()
         val fake = FakeConnectorSession("backend")
         sessions.register(fake)
-        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op")
+        val registry = TokenRegistry(mapOf("tok-backend" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
         application { installAgentSocket(sessions, authorize = tokenAuthorize(registry, AuthDeps(registry)), agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
 
@@ -123,7 +123,7 @@ class AgentSocketTest {
         val registry = TokenRegistry(
             mapOf("tok-backend" to "backend", "tok-frontend" to "frontend"),
             operatorToken = "tok-op",
-        )
+        loopbackPosture = true)
         application { installAgentSocket(sessions, authorize = tokenAuthorize(registry, AuthDeps(registry)), agentEvents = InMemoryAgentEventStore()) }
         val client = createClient { install(ClientWebSockets) }
 

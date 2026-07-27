@@ -38,7 +38,7 @@ class Cyp516RegisterOwnerGateTest {
 
     private val opToken = "tok-op"
     private val relay = "wss://r.test/relay"
-    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
+    private fun deps() = AuthDeps(TokenRegistry(emptyMap(), operatorToken = opToken, loopbackPosture = true), FakeIdentityProvider(emptyMap()), InMemoryRoleStore(), { 1_000L })
     private fun registrar(ownerId: String, hubId: String = "hub_z") =
         HubRegistrar(ConcurrentHashMap(mapOf(hubId to RegisteredHub(hubId, ownerId, "hub", 8787, "s", "d"))))
 

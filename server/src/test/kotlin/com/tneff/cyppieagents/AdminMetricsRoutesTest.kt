@@ -44,7 +44,7 @@ class AdminMetricsRoutesTest {
             install(StatusPages) {
                 exception<ApiException> { call, cause -> call.respond(cause.status, ApiErrorBody(com.tneff.cyppieagents.model.ApiError(cause.code, cause.message))) }
             }
-            routing { adminMetricsRoutes(provider, AuthDeps(TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op"))) }
+            routing { adminMetricsRoutes(provider, AuthDeps(TokenRegistry(mapOf("tok-fe" to "frontend"), "tok-op", loopbackPosture = true))) }
         }
     }
 

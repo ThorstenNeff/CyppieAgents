@@ -42,7 +42,7 @@ import kotlin.test.assertTrue
  */
 class Cyp421TerminalDelegationFlagTest {
 
-    private val tokens = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op")
+    private val tokens = TokenRegistry(mapOf("tok-be" to "backend"), operatorToken = "tok-op", loopbackPosture = true)
 
     private fun ApplicationTestBuilder.app(admin: TerminalGrantAdmin?) {
         application {
