@@ -15,7 +15,7 @@ import type {
   TerminalServerFrame,
   TerminalClientFrame,
 } from '../types/generated/contract'
-import { makeFrameValidator } from './wsValidation'
+import { makeFrameValidator, type FrameRejection } from './wsValidation'
 import {
   CommWsServerEventSchema,
   EventsWsServerEventSchema,
@@ -45,7 +45,11 @@ interface ChannelBase {
 }
 
 // --- bidirectional channels -------------------------------------------------------------------------------
-export function commSocket(o: ChannelBase & { onEvent: (e: CommWsServerEvent) => void }): BidiFeed<CommWsServerEvent, CommWsClientEvent> {
+// CYP-834: comm accepts an optional channel-scoped `onReject` (a schema violation = terminal protocol-skew). It rides
+// through `...o` into BidiFeed; absent → the default global-drop behavior is unchanged.
+export function commSocket(
+  o: ChannelBase & { onEvent: (e: CommWsServerEvent) => void; onReject?: (rejection: FrameRejection) => void },
+): BidiFeed<CommWsServerEvent, CommWsClientEvent> {
   return new BidiFeed<CommWsServerEvent, CommWsClientEvent>({ ...o, path: '/ws/comm', validate: o.validate ?? makeFrameValidator('CommWsServerEvent', CommWsServerEventSchema) })
 }
 

@@ -23,7 +23,10 @@ import type { TerminalControlState } from '../agentview/terminalModeSelection'
 
 /** The /ws/comm connection posture the CommPanel banner reflects (CYP-438 wires connecting→live via onOpen; the
  *  offline/revoked distinction is CYP-437's banner work). */
-export type CommConnection = 'live' | 'connecting' | 'offline' | 'revoked'
+// CYP-834: `skew` is a TERMINAL protocol-skew — the server sent a frame this client cannot decode against :core (a
+// deploy mismatch). Like `revoked` it is terminal (no reconnect, composer locked) but DISTINCT: revoked = access
+// removed (1008); skew = version/schema mismatch (needs an app update, not a re-auth).
+export type CommConnection = 'live' | 'connecting' | 'offline' | 'revoked' | 'skew'
 
 /** Server-confirmed process run-state (from the /ws/lifecycle feed). */
 export type AgentRunState = AgentRunStateEvent['runState']

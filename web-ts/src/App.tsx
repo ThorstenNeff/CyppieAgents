@@ -51,7 +51,7 @@ import { ComposerHistoryStepper } from './agentview/ComposerHistoryStepper'
 import type { AclDimension } from './comm/aclModel'
 import type { SelectedView } from './agentview/terminalModeSelection'
 import { lifecycleRejectMessage } from './agentview/lifecycleStatus'
-import type { LifecycleAction } from './state/hubReducers'
+import type { LifecycleAction, CommConnection } from './state/hubReducers'
 import type { AclEntry, ApiKeyView, DeliveredMessage, RepoConfigView, RepoConfigRequest, ProjectsView, Capacity, CompactStatus, CompactConfig, WorkspaceMember, OperatorAudit } from './types/generated/contract'
 import { WorkspaceRosterPanel } from './workspace/WorkspaceRosterPanel'
 import { CapacityPill } from './workspace/CapacityPill'
@@ -113,6 +113,13 @@ export const byOrder = (a: DeliveredMessage, b: DeliveredMessage): number =>
 // a 1008 (auth revoked) is TERMINAL → 'revoked'; any OTHER (transient) drop is reconnectable → 'offline' (never the
 // terminal revoked tone/composer-lock). Behaviourally identical to the previous inline arrow.
 export const commCloseToConnection = (code: number | undefined): 'offline' | 'revoked' => (code === 1008 ? 'revoked' : 'offline')
+
+// CYP-834 — the TERMINAL comm states that a later close code must NOT downgrade: a decoded protocol-`skew` takes
+// PRECEDENCE over the close code (it is terminal and won't self-heal), and a `revoked` stays revoked. Sticky-terminal
+// latch applied at onCommClose so a race between a skew and a socket close can't overwrite the terminal state.
+const TERMINAL_COMM: readonly CommConnection[] = ['revoked', 'skew']
+export const nextCommConnectionOnClose = (current: CommConnection, code: number | undefined): CommConnection =>
+  TERMINAL_COMM.includes(current) ? current : commCloseToConnection(code)
 
 /** Cascade layout for a freshly opened window (content floor: 320×303). */
 function tiledWindow(id: string, title: string, index: number): WindowState {
@@ -386,7 +393,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           loadReadState()
         },
         // CYP-437(b): an unexpected drop flips the banner off 'live'; a 1008 (auth revoked) is terminal → 'revoked'.
-        onCommClose: (code) => setCommConnection(commCloseToConnection(code)),
+        // CYP-834: a decoded 'skew' (or a prior 'revoked') is terminal and must NOT be downgraded by this close code.
+        onCommClose: (code) => setCommConnection(nextCommConnectionOnClose(useHubStore.getState().commConnection, code)),
+        // CYP-834: a /ws/comm frame that fails :core-schema decode = a TERMINAL protocol-skew. The socket already
+        // stopped itself (bidiFeed closed it, no reconnect); surface the DISTINCT terminal 'skew' banner (never a
+        // generic offline that would reconnect and replay the same undecodable frame). issuer/rejection detail is
+        // not interpolated into visible copy (payload-free by construction — FrameRejection carries paths+codes only).
+        onCommSkew: () => setCommConnection('skew'),
         // CYP-815: a 1008 revoke on ANY of the 4 read-only status feeds is session-wide (same bearer) → surface the
         // visible 'revoked' signal so the run-state/token/busy/terminal indicators don't freeze silently claiming
         // "still running" (safe-but-silent fix). Non-1008 is transient and self-heals via the feed's reconnect — NOT

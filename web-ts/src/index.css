@@ -274,6 +274,12 @@ body {
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
 }
+/* CYP-834 — terminal protocol-skew: same error-container terminal-red family as revoked (both terminal; the TEXT +
+   testid distinguish them, colour is never the sole carrier). */
+.comm-status-skew {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
 
 /* CYP-741 — roster presence: the dot is the SAME shape/role pair as the LifecycleHeader below (inline styles carry
    the fill-vs-ring geometry, as in the header); these rules only place it. The busy marker is deliberately its own

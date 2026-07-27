@@ -16,8 +16,8 @@
 // resting state; the one thing it must never do is show a stronger tier than the connection has.
 import type { RemoteSecurityTier } from './remoteSecurityTierModel'
 
-/** The comm socket's connection state — the app's live-connection signal (CommPanel's `connection`). */
-export type ConnectionState = 'live' | 'connecting' | 'offline' | 'revoked'
+/** The comm socket's connection state — the app's live-connection signal (CommPanel's `connection`, = CommConnection). */
+export type ConnectionState = 'live' | 'connecting' | 'offline' | 'revoked' | 'skew'
 
 /**
  * The tier to display for the current connection.
@@ -25,9 +25,9 @@ export type ConnectionState = 'live' | 'connecting' | 'offline' | 'revoked'
  * `live` → BROWSER_GATEWAY: the SPA is served by the gateway and speaks same-origin `/api`+`/ws` to it, so the
  * gateway terminates the transport encryption and sees traffic in cleartext. Documented weaker, always disclosed.
  *
- * Anything else → UNKNOWN. `connecting` has not established anything yet; `offline`/`revoked` describe a
- * connection that is not carrying traffic. Claiming a tier for a connection that is not up would describe
- * something that does not exist.
+ * Anything else → UNKNOWN. `connecting` has not established anything yet; `offline`/`revoked`/`skew` describe a
+ * connection that is not carrying traffic (CYP-834 `skew` = a terminal protocol-skew, likewise no live tier).
+ * Claiming a tier for a connection that is not up would describe something that does not exist.
  */
 export function gatewayTierFor(connection: ConnectionState): RemoteSecurityTier {
   return connection === 'live' ? 'browser-gateway' : 'unknown'

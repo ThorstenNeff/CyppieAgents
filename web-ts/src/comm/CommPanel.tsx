@@ -29,7 +29,7 @@ export interface CommPanelProps {
   unreadDividerIndex?: number | null
   /** CYP-740: loaded envelopes per channel, for the channel-level @agent mention cue. Absent ⇒ no cue (silent). */
   messagesByChannel?: ReadonlyMap<string, readonly DeliveredMessage[]>
-  connection: 'live' | 'connecting' | 'offline' | 'revoked'
+  connection: 'live' | 'connecting' | 'offline' | 'revoked' | 'skew'
   canWrite: boolean | null
   sendError: string | null
   onSend: (text: string) => void
@@ -47,6 +47,9 @@ const CONNECTION_TEXT: Record<CommPanelProps['connection'], string> = {
   connecting: 'Verbinde…',
   offline: 'Offline — Neuverbindung…',
   revoked: 'Zugriff entzogen',
+  // CYP-834: terminal protocol-skew. Copy is descriptive (uiux2 owns the final wording) — a schema/version mismatch
+  // means the app is out of date vs the server; reconnecting can't fix it (an app update / reload can).
+  skew: 'App veraltet — bitte aktualisieren',
 }
 
 export function CommPanel(props: CommPanelProps) {
@@ -56,6 +59,8 @@ export function CommPanel(props: CommPanelProps) {
   // CYP-437(#4): a terminal revoke (WS 1008) closes the write affordance entirely — don't leave a composer that
   // only fails server-side. This overrides the disclosure (a revoked socket can't write, whatever canWrite said).
   const revoked = connection === 'revoked'
+  // CYP-834: a terminal protocol-skew also closes the write affordance (a skewed socket is stopped, can't send).
+  const skew = connection === 'skew'
   const disclosure = composerDisclosure(props.canWrite, props.sendError)
   const tail = messages.length === 0 ? '' : `${messages.length}|${messages[messages.length - 1].message.id}`
   const { ref, onScroll } = useAutoscrollPin(tail)
@@ -128,15 +133,16 @@ export function CommPanel(props: CommPanelProps) {
 
       <section className="comm-conversation">
         {/* CYP-825 (AT-12) — split the comm-status announcement by severity. The 3 TRANSIENT states (live/connecting/
-            offline = reconnectable) share a POLITE role=status region; the TERMINAL revoke (1008, unsolicited, composer
-            locks) escalates to a DEDICATED role=alert node. These are two mutually-exclusive SIBLINGS (fixed child
-            positions), NOT one node with a flipped aria-live: a persistent node whose aria-live flips polite→assertive is
-            unreliable (SRs cache the initial value), and a same-position ternary would let React reuse the one DOM node
-            and merely flip the attribute — same trap. As separate siblings the alert node MOUNTS FRESH on the →revoked
-            transition and announces at once (mirrors IssuerNotTrustedBlock / event-log-revoked). Over-alarm is also
-            dishonest, so ONLY revoked escalates; transients stay calm. Both keep testid `comm-status` +
-            `comm-status-${connection}` class + text; only one renders at a time. Visual stays errorContainer. */}
-        {connection !== 'revoked' && (
+            offline = reconnectable) share a POLITE role=status region; the TERMINAL states escalate to a DEDICATED
+            role=alert node. These are mutually-exclusive SIBLINGS (fixed child positions), NOT one node with a flipped
+            aria-live: a persistent node whose aria-live flips polite→assertive is unreliable (SRs cache the initial
+            value), and a same-position ternary would let React reuse the one DOM node and merely flip the attribute —
+            same trap. As separate siblings the alert node MOUNTS FRESH on the →terminal transition and announces at once
+            (mirrors IssuerNotTrustedBlock / event-log-revoked). Over-alarm is also dishonest, so ONLY the terminal
+            states escalate; transients stay calm. CYP-834 adds `skew` (protocol-skew) as a SECOND terminal alert,
+            DISTINCT from `revoked` (own text + comm-status-skew class). All keep testid `comm-status` +
+            `comm-status-${connection}` class + text; only one renders at a time. */}
+        {connection !== 'revoked' && connection !== 'skew' && (
           <div
             className={`comm-status comm-status-${connection}`}
             role="status"
@@ -149,6 +155,11 @@ export function CommPanel(props: CommPanelProps) {
         {connection === 'revoked' && (
           <div className="comm-status comm-status-revoked" role="alert" aria-live="assertive" data-testid="comm-status">
             {CONNECTION_TEXT.revoked}
+          </div>
+        )}
+        {connection === 'skew' && (
+          <div className="comm-status comm-status-skew" role="alert" aria-live="assertive" data-testid="comm-status">
+            {CONNECTION_TEXT.skew}
           </div>
         )}
 
@@ -212,6 +223,12 @@ export function CommPanel(props: CommPanelProps) {
         {revoked ? (
           <p className="comm-revoked-lock" data-testid="comm-revoked-lock">
             Zugriff entzogen — Senden ist gesperrt.
+          </p>
+        ) : skew ? (
+          // CYP-834: a terminal protocol-skew locks the composer too (a stopped, undecodable connection can't send).
+          // Distinct from revoked (own testid + message; uiux2 owns the final copy).
+          <p className="comm-skew-lock" data-testid="comm-skew-lock">
+            App veraltet — Senden gesperrt, bitte aktualisieren.
           </p>
         ) : disclosure === 'readonly' ? (
           <p className="comm-readonly-hint" data-testid="comm-readonly-hint">
