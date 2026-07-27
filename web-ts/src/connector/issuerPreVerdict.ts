@@ -10,7 +10,8 @@
 // render gate and blocks ONLY NOT_TRUSTED. This producer is a SUPERSET advisory verdict that ADDS the ACTIONABLE
 // 'remote-not-configured' arm (PL-ratified for A5). They agree on NOT_TRUSTED; they intentionally differ on
 // REMOTE_NOT_CONFIGURED (frozen decision proceeds → hard-block-gate view; this producer blocks-ACTIONABLE → advisory
-// "configure the remote" arm). See the CYP-822 `issuerVerdictFor` note — this producer supersedes it for the connect flow.
+// "configure the remote" arm). CYP-837: this is now the SINGLE issuer→verdict producer for the connect flow — the
+// earlier CYP-822 `issuerVerdictFor` (a second, divergent producer) was removed, and the fake connector derives here.
 import type { HubDescriptor, HubIssuerTrust } from '../types/generated/contract'
 import type { IssuerConnectVerdict } from '../state/remoteConnState'
 
