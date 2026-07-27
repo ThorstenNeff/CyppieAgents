@@ -3,7 +3,8 @@
 // records it, so a test drives idle → … → connected (and each failure arm) deterministically and asserts the machine's
 // visible state. The real connector (CYP-807-A5 / Backend2 CYP-824) implements the same event-source shape over the wire.
 import type { HubIssuerTrust } from '../../connector/issuerTrustModel'
-import { issuerVerdictFor, type IssuerConnectVerdict, type RemoteConnEvent, type TierGate } from '../remoteConnState'
+import { issuerTrustToPreVerdict } from '../../connector/issuerPreVerdict'
+import type { IssuerConnectVerdict, RemoteConnEvent, TierGate } from '../remoteConnState'
 
 export class FakeRemoteConnector {
   private sink: ((event: RemoteConnEvent) => void) | null = null
@@ -39,14 +40,15 @@ export class FakeRemoteConnector {
   completeHandshake(): void {
     this.emit({ kind: 'handshakeOk' })
   }
-  /** Emit a trust-check resolution with an explicit sealed verdict — lets a test drive a WIRE-supplied issuer cause (e.g.
-   *  'remote-not-configured') that the canonical issuerVerdictFor never derives. tierGate defaults to 'ok'. */
+  /** Emit a trust-check resolution with an explicit sealed verdict (bypassing the producer) — lets a test drive an
+   *  arbitrary verdict directly. tierGate defaults to 'ok'. */
   evaluateTrust(verdict: IssuerConnectVerdict, tierGate: TierGate = 'ok'): void {
     this.emit({ kind: 'trustEvaluated', verdict, tierGate })
   }
-  /** Convenience: derive the verdict from a raw HubIssuerTrust via the canonical issuerVerdictFor (the client path). */
+  /** Convenience: derive the verdict from a raw HubIssuerTrust via the ONE issuer→verdict producer,
+   *  issuerTrustToPreVerdict (CYP-837 single-source — the client goes through exactly this path). */
   evaluateTrustFromIssuer(issuer: HubIssuerTrust | null | undefined, tierGate: TierGate = 'ok'): void {
-    this.evaluateTrust(issuerVerdictFor(issuer), tierGate)
+    this.evaluateTrust(issuerTrustToPreVerdict(issuer), tierGate)
   }
   /** Drive a drop of an established connection. terminal=true → the terminal `lost` phase (→ failure region);
    *  terminal=false → the transient `reconnecting` phase (polite/retryable, not a failure arm). */

@@ -9,15 +9,15 @@
 // ★ AXIS DISCIPLINE — NEVER FOLD (coordinator-pinned, mirrored from connector/issuerTrustModel.ts:4). The trust-check
 // step evaluates TWO independent axes and this module keeps them distinct in both the type (two separate failure causes)
 // and the resolution logic (two separate branches):
-//   • axis c = ISSUER trust ("does this hub trust your issuer's vouch?") → cause 'issuer-not-trusted'. Decided here via
-//     the CANONICAL connector/issuerTrustModel.issuerConnectDecision — reused, never re-implemented (only NOT_TRUSTED
-//     blocks). The client render is UX-completeness; the SERVER is the real gate (CYP-802).
+//   • axis c = ISSUER trust ("does this hub trust your issuer's vouch?") → cause 'issuer-not-trusted'. The reducer MAPS a
+//     connector-SUPPLIED IssuerConnectVerdict; the derivation from a raw HubIssuerTrust lives in
+//     connector/issuerPreVerdict.ts (issuerTrustToPreVerdict — CYP-837 single-sourced it there, the ONE issuer→verdict
+//     producer). The client render is UX-completeness; the SERVER is the real gate (CYP-802).
 //   • the security-TIER axis (connector/remoteSecurityTierModel) → cause 'security-tier'. This is NOT a client-computed
 //     policy: web-ts is ALWAYS browser-gateway|unknown (never native), and the tier starts UNKNOWN until the transport
 //     seam resolves it — so if the client derived a block from the raw RemoteSecurityTier, EVERY connect would fail on
 //     the unknown-start. The tier block is therefore a connector-SUPPLIED verdict (TierGate), decided at the wire (A5),
 //     mapped here. The reducer never inspects a RemoteSecurityTier value.
-import { issuerConnectDecision, type HubIssuerTrust } from '../connector/issuerTrustModel'
 
 /**
  * The typed failure causes for the `failed` phase — the four ways the connect PROGRESSION can end negatively before a
@@ -111,18 +111,10 @@ export type TierGate = 'ok' | 'rejected'
  */
 export type IssuerConnectVerdict = { outcome: 'proceed' } | { outcome: 'blocked'; cause: IssuerFailureCause }
 
-/**
- * The CANONICAL client derivation of a verdict from a raw HubIssuerTrust — reuses connector/issuerTrustModel's frozen
- * issuerConnectDecision faithfully: ONLY NOT_TRUSTED blocks (→ 'issuer-not-trusted'); TRUSTED / REMOTE_NOT_CONFIGURED /
- * absent all proceed. ★ NOTE (flagged to coordinator): the PL/Backend2 taxonomy also has 'remote-not-configured' as an
- * ACTIONABLE failure, but the frozen issuerConnectDecision PROCEEDS on REMOTE_NOT_CONFIGURED (the server enforces; this
- * render is UX-completeness — CYP-805). So the canonical path never emits 'remote-not-configured' — that verdict comes
- * from the WIRE (A5) directly. This keeps the client 1:1 with the ratified decision and defers the layering
- * reconciliation to the wire rather than guessing it here.
- */
-export function issuerVerdictFor(issuer: HubIssuerTrust | null | undefined): IssuerConnectVerdict {
-  return issuerConnectDecision(issuer) === 'block' ? { outcome: 'blocked', cause: 'issuer-not-trusted' } : { outcome: 'proceed' }
-}
+// CYP-837: the raw-HubIssuerTrust → IssuerConnectVerdict derivation is SINGLE-SOURCED in connector/issuerPreVerdict.ts
+// (issuerTrustToPreVerdict — the PL-ratified advisory producer). The earlier CYP-822 `issuerVerdictFor` here was a second,
+// divergent producer (it proceeded on REMOTE_NOT_CONFIGURED; the ratified one blocks-actionable) — a drift hazard — and
+// is removed. The reducer only MAPS a supplied verdict; it never derives one.
 
 /**
  * The progression events the connector feeds in. Each event names a single observed wire transition; the reducer maps it

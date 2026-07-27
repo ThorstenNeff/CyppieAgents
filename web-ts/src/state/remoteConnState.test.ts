@@ -7,7 +7,6 @@ import {
   createRemoteConnMachine,
   initialRemoteConnState,
   failureDisposition,
-  issuerVerdictFor,
   type RemoteConnState,
   type ConnectFailureCause,
   type IssuerConnectVerdict,
@@ -171,19 +170,27 @@ describe('failureDisposition — terminal/retryable/actionable taxonomy', () => 
   }
 })
 
-describe('issuerVerdictFor — canonical client derivation reuses the frozen issuerConnectDecision', () => {
-  it("★ NOT_TRUSTED → blocked('issuer-not-trusted')", () => {
-    // MUT: if the reuse of issuerConnectDecision were inverted/broken → this reds. Proves only NOT_TRUSTED blocks.
-    expect(issuerVerdictFor('NOT_TRUSTED')).toEqual({ outcome: 'blocked', cause: 'issuer-not-trusted' })
+describe('CYP-837 — the fake connector derives via the ONE issuer→verdict producer (issuerTrustToPreVerdict), not a second one', () => {
+  // The CYP-822 issuerVerdictFor was removed (it PROCEEDED on REMOTE_NOT_CONFIGURED; the ratified producer blocks it,
+  // actionable). REMOTE_NOT_CONFIGURED is the one value where the two diverged, so it pins the single-source: the fake
+  // must reach failed('remote-not-configured'), which is only possible via issuerTrustToPreVerdict.
+  it("★ evaluateTrustFromIssuer('REMOTE_NOT_CONFIGURED') → failed('remote-not-configured') — proves the single producer", () => {
+    // MUT: point the fake back at a producer that proceeds on REMOTE_NOT_CONFIGURED → this reaches 'connected'; reds.
+    const { conn, machine } = wired()
+    conn.dial()
+    conn.openHandshake()
+    conn.completeHandshake()
+    conn.evaluateTrustFromIssuer('REMOTE_NOT_CONFIGURED')
+    expect(machine.getState()).toEqual({ phase: 'failed', cause: 'remote-not-configured' })
   })
 
-  it('★ TRUSTED / REMOTE_NOT_CONFIGURED / absent all proceed (frozen decision; layering deferred to the wire)', () => {
-    // MUT: if the canonical path emitted 'remote-not-configured' on REMOTE_NOT_CONFIGURED (guessing the layering) → this
-    // reds. Pins that the client stays 1:1 with issuerConnectDecision and does NOT invent the actionable failure here.
-    expect(issuerVerdictFor('TRUSTED')).toEqual({ outcome: 'proceed' })
-    expect(issuerVerdictFor('REMOTE_NOT_CONFIGURED')).toEqual({ outcome: 'proceed' })
-    expect(issuerVerdictFor(null)).toEqual({ outcome: 'proceed' })
-    expect(issuerVerdictFor(undefined)).toEqual({ outcome: 'proceed' })
+  it("★ evaluateTrustFromIssuer('NOT_TRUSTED') → failed('issuer-not-trusted') (both producers agreed here — unchanged)", () => {
+    const { conn, machine } = wired()
+    conn.dial()
+    conn.openHandshake()
+    conn.completeHandshake()
+    conn.evaluateTrustFromIssuer('NOT_TRUSTED')
+    expect(machine.getState()).toEqual({ phase: 'failed', cause: 'issuer-not-trusted' })
   })
 })
 
