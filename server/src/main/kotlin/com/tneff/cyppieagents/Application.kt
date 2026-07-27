@@ -52,6 +52,9 @@ fun main() {
     // CYP-818 B-1: the lock handle is retained for the process lifetime INSIDE acquireOrReject (a process-rooted field,
     // not a caller-held local — a never-read local is GC-collectable even under .start(wait=true), which frees the
     // lock). So we do NOT bind the return value; retention is a property of acquiring, and boot-reject still throws.
+    // CYP-818 ops guard: fail LOUD if the sentinel port collides with the hub/tunnel port (else the sentinel binds it
+    // first and the connector bind below fails with a confusing error) — must run BEFORE the sentinel acquire.
+    LoopbackHubLock.requireSentinelPortFree(config.hub.host, config.hub.port, config.hub.tunnelPort)
     LoopbackHubLock.acquireOrReject(config.hub.host)
     // CYP-427 (M2): TWO connectors on ONE Application (one shared platform / store set — NOT a second
     // installPlatform, which would fork divergent in-memory stores). The tunnel-scoped connector is loopback-only

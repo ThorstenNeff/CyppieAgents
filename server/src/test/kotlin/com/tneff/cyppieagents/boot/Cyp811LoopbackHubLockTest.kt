@@ -64,6 +64,25 @@ class Cyp811LoopbackHubLockTest {
         assertNull(LoopbackHubLock.acquireOrReject("192.168.1.10", port, retain = {}))
     }
 
+    // ---- CYP-818 ops guard: the sentinel port must not collide with the hub/tunnel port (fail LOUD, not mystery) ----
+
+    @Test
+    fun requireSentinelPortFree_loopback_rejectsPortCollision_allowsDistinct_noopOffLoopback() {
+        // loopback + the HUB port equals the sentinel → fail LOUD (else the sentinel steals the hub's bind at boot).
+        assertFailsWith<IllegalArgumentException> {
+            LoopbackHubLock.requireSentinelPortFree("127.0.0.1", hubPort = 9999, tunnelPort = 8786, sentinelPort = 9999)
+        }
+        // loopback + the TUNNEL port equals the sentinel → also rejected.
+        assertFailsWith<IllegalArgumentException> {
+            LoopbackHubLock.requireSentinelPortFree("127.0.0.1", hubPort = 8787, tunnelPort = 9999, sentinelPort = 9999)
+        }
+        // loopback + no collision → OK (must NOT throw). MUT: drop the `require` → the 2 collisions above don't throw → red.
+        LoopbackHubLock.requireSentinelPortFree("127.0.0.1", hubPort = 8787, tunnelPort = 8786, sentinelPort = 9999)
+        // off-loopback: no sentinel is bound → a collision can't happen → OK even when the ports equal. MUT: drop the
+        // loopback gate → this off-loopback collision would throw → red.
+        LoopbackHubLock.requireSentinelPortFree("0.0.0.0", hubPort = 9999, tunnelPort = 8786, sentinelPort = 9999)
+    }
+
     // ---- CYP-818 B-2: the lock is net-NS-keyed, NOT tmpdir-keyed (the PrivateTmp/ProtectSystem-proof property) ----
 
     @Test

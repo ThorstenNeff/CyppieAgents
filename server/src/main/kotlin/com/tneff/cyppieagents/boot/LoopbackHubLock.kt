@@ -80,15 +80,31 @@ object LoopbackHubLock {
         } catch (e: BindException) {
             runCatching { socket.close() }
             throw IllegalStateException(
-                "CYP-818 boot REJECTED: another hub already binds the loopback boot-sentinel ${ip.hostAddress}:$sentinelPort " +
-                    "on this box. Two hubs on the same loopback IP SHARE the browser cookie jar (cookies ignore port, §9.5/§9.6) → " +
-                    "cross-hub operator-cookie replay. Use DISTINCT loopback IPs (127.0.0.1 vs 127.0.0.2) or one hub per box.",
+                "CYP-818 boot REJECTED: another hub OR a foreign process already binds the loopback boot-sentinel " +
+                    "${ip.hostAddress}:$sentinelPort on this box. Two hubs on the same loopback IP SHARE the browser cookie " +
+                    "jar (cookies ignore port, §9.5/§9.6) → cross-hub operator-cookie replay. Use DISTINCT loopback IPs " +
+                    "(127.0.0.1 vs 127.0.0.2) or one hub per box; if a non-CYPPIE process holds $sentinelPort, free it.",
                 e,
             )
         }
         val handle = Closeable { runCatching { socket.close() } }
         retain(handle) // ★ B-1: WITHOUT this, the handle is GC-collectable → the socket closes → the port frees → 2nd hub boots.
         return handle
+    }
+
+    /**
+     * Boot guard (CYP-818 ops fail-loud): on a loopback host the sentinel binds [sentinelPort] BEFORE `embeddedServer`,
+     * so if it collides with the hub or tunnel port the sentinel wins the bind and the hub's OWN connector then fails
+     * with a confusing "address already in use" — a misconfig that reads like a mystery. Fail LOUD and CLEAR here
+     * instead. Only relevant on a loopback host (off-loopback binds no sentinel → no collision → no-op).
+     */
+    fun requireSentinelPortFree(host: String, hubPort: Int, tunnelPort: Int, sentinelPort: Int = SENTINEL_PORT) {
+        if (!isLoopbackHost(host)) return // off-loopback: no sentinel is bound → the port can't collide with it
+        require(hubPort != sentinelPort && tunnelPort != sentinelPort) {
+            "CYP-818 misconfig: the loopback boot-sentinel port $sentinelPort must not equal the hub port ($hubPort) or " +
+                "tunnel port ($tunnelPort) — the sentinel binds it first, so the hub's own connector would fail to bind. " +
+                "Change hub.port / hub.tunnelPort (or LoopbackHubLock.SENTINEL_PORT)."
+        }
     }
 
     /** ★ B-1 default retention: root the handle for the process lifetime AND release it cleanly on JVM shutdown. The
