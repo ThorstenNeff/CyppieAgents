@@ -1,6 +1,8 @@
 # CYP-832 — Multi-Hub Hub/Relay Federation (Design-Pass)
 
-> **Status: DRAFT (v0.2)** — §3 topology firmed, §9.3 named, §8.1 PL build-teeth folded. Design-only, no build. Build-gated behind the god-token close
+> **Status: RATIFICATION-READY (v0.3)** — §4b wire-envelope + §5 trust-anchor/rotation/revoke each spelled out with
+> a recommendation + explicit freeze point (§10 is the PL bundle); §3 topology firmed, §9.3 named, §8.1 PL build-teeth
+> folded. Design-only, no build. Build-gated behind the god-token close
 > (CYP-828 ✅ merged) **and** §9.3. This document exists to (a) sketch the federation architecture on the
 > existing spine, (b) **isolate the hard-reversible Weichen** (§4b, §5) for the PL → Auftraggeber, and (c)
 > carry the story decomposition so soft (stub-able) work can start against contracts *before* the Weichen freeze.
@@ -73,22 +75,68 @@ already-shipped vocabulary; no wire freeze required. Fail-closed: unknown issuer
 
 ### 4b. ⚠ WEICHE — Federation wire envelope (byte format)
 
-**HARD-REVERSIBLE. PL → Auftraggeber before freeze.** The on-the-wire byte shape of a Hub↔Hub federation frame
-(the envelope carrying issuer, PoP transcript, payload discriminator, version). Once two independently-deployed
-hubs speak it in the field, changing it is a coordinated flag-day. DTOs can be *drafted* in `:core` behind
-`@ExperimentalFederation` for shape-review, but **the byte contract does not freeze here.** → **Story S-Fed-1
-(build-drafts only).**
+**HARD-REVERSIBLE. PL → Auftraggeber before freeze.** The on-the-wire byte shape of a Hub↔Hub federation frame.
+Once two independently-deployed hubs speak it in the field, changing it is a coordinated flag-day across every
+deployed hub — so the *shape* and the *forward-compat rule* must be ratified before the first federated hub ships,
+even though exact field bytes may stay drafted (`@ExperimentalFederation`) up to the freeze.
 
-*Decision needed:* version-negotiation strategy (hello-handshake vs. embedded version tag), discriminator
-namespace, forward-compat rule.
+**Envelope contents (proposed):** `version` · `issuer` identity (the Model-2 issuer=Relay anchor, §5) · a
+**peer-attestation PoP** · a **payload** behind a typed discriminator.
+
+**Ratification decisions — recommendation + freeze point:**
+
+1. **PoP transcript — REUSE, do not invent** *(low-risk)*. The peer-attestation reuses the existing `:core`
+   `operatorAuthChallenge(h, hubId, nonce)` (CYP-473 H2: `LP(h)‖LP(hubId)‖LP(nonce)‖LP(purpose)`, 4-byte-BE
+   length-prefixed, injective, bound to the live Noise `h`) with a **distinct purpose tag** `"federation-peer"`
+   (not `"operator-auth"`) — domain separation is exactly what the purpose field is for. Inherits the anti-replay
+   `h`-binding and the single-`:core`-source anti-drift property for free (the CYP-536 C1 lesson: NO new challenge,
+   NO new transcript). **Freeze:** the purpose-tag string + that the federation PoP IS this transcript.
+2. **Discriminator namespace — reuse the CommJson sealed-interface idiom.** `sealed interface FederationFrame`
+   with `@Serializable` variants under CommJson `classDiscriminator="type"` + `explicitNulls=false` — the wire
+   idiom already proven across the protocol. **Freeze:** the discriminator key + the initial variant type-names.
+3. **Version negotiation — explicit hello-handshake with a min/max range** *(the flag-day insurance)*. The first
+   framed message after tunnel establishment is `FederationHello{ protoMin, protoMax, … }`; peers negotiate the
+   highest common version; a peer outside the other's range is **refused (fail-closed)**, never assumed-compatible.
+   Bounds the flag-day cost — future versions negotiate DOWN instead of a synchronized upgrade. **Freeze:** the
+   hello exists, is the first frame, and the negotiate-down rule.
+4. **Forward-compat rule** *(the freeze that matters most)*. Additive-only fields; nullable-default-ABSENT (CYP-804
+   `explicitNulls=false`, proven); NEVER reorder / NEVER repurpose a field; an **unknown frame type or discriminator
+   fails CLOSED** (deny/close the peering), never silently ignored. **Freeze:** this rule itself — it is what makes
+   every later additive change safe.
+
+**Draftable now (S-Fed-1, `@ExperimentalFederation`):** the Kotlin DTOs for the hello + frame variants, for
+shape-review. **Frozen only at ratification:** the four points above. S-Fed-4a (CYP-851) rides ONLY the
+`@ExperimentalFederation` stub interface and never a concrete variant shape → a post-review reshape costs nothing.
 
 ## 5. ⚠ WEICHE — Trust-anchor provisioning, rotation & cross-hub revoke
 
-**HARD-REVERSIBLE. PL → Auftraggeber before freeze.** *Who* is the trust anchor (which relay/issuer signs a
-cross-hub identity), *how* its key rotates, and the *semantics of a cross-hub revoke* (does a revoke at hub A
-propagate to hub B, on what latency, fail-open or fail-closed on partition). This extends CYP-536 revoke-fanout
-and the still-open CYP-747 S4 C3 cross-hub-revoke. The **default posture on partition must be deny**
-(fail-closed), but the anchor/rotation protocol is a durable commitment. → **Stories S-Fed-6, and gates S-Fed-3.**
+**HARD-REVERSIBLE. PL → Auftraggeber before freeze.** *Who* signs a cross-hub identity, *how* its key rotates, and
+what a cross-hub *revoke* means. Grounded on the existing anchor: `RemoteRelayWiring.IssuerAnchor(issuer, kid, pub)`
+(CYP-747 S1) — resolved ALL-OR-NOTHING from a complete issuer set, and `HubIssuerTrust.TRUSTED` ⟺ an anchor is
+pinned. Federation reuses this anchor as the cross-hub trust root; the decisions below extend it.
+
+**Ratification decisions — recommendation + freeze point:**
+
+1. **Anchor = the pinned issuer=Relay (Model-2), provisioned OOB.** A hub trusts a federated peer's identity only
+   if it chains to an anchor the hub has pinned (`resolveIssuerAnchor != null`). Provisioning is out-of-band —
+   matches `HubIssuerTrust.NOT_TRUSTED`'s "recovery is OOB only, no in-app grant." **Freeze:** the anchor is the
+   cross-hub trust root; NO in-app trust-grant path exists.
+2. **Rotation — pin a KEYSET `{kid → pub}`, overlap window** *(today's single-pin is the gap; the biggest durable
+   commitment)*. The anchor already carries a **`kid`** — the rotation seam is native. Rotation = the issuer signs
+   with a new `(kid, pub)`; hubs pin BOTH old and new during an overlap window and accept either, so rotation is
+   not a flag-day. A **rotation attestation signed by the OLD key** authorizes the new key. **Freeze:** single-pin
+   → keyset, the overlap semantics, and the rotation-attestation shape.
+3. **Cross-hub revoke — the issuer/anchor is the revoke authority; fan-out extends CYP-536.** Intra-hub revoke
+   already fans to all N sessions of an operator (`TunnelSessionRegistry.revokeOperator`, CYP-536). Cross-hub revoke
+   = the issuer publishes a revocation that federated hubs honor (the still-open CYP-747 S4 C3). **Freeze:** the
+   revocation object shape + who may publish it + the propagation channel.
+4. **Partition posture — FAIL-CLOSED** *(non-negotiable with the spine)*. A hub that cannot confirm revoke/anchor
+   state from the issuer treats federated identities as **NOT_TRUSTED** → collapses to the S-Fed-2 **DENY**
+   (CYP-849). It may over-deny during a partition; it never over-admits. This is what couples §5 to §9.3 (the
+   tunnel↔credential binding) and to §6 (the admission gate). **Freeze:** partition = deny, always.
+
+**Note:** §5-2 (rotation keyset) and §5-3 (revoke) are the two irreversible commitments; §5-1 and §5-4 largely
+formalize the fail-closed posture that already exists.
 
 ## 6. Server-side off-loopback remote-connect admission (fail-closed gate)
 
@@ -143,15 +191,28 @@ Delivered *with* the trio tickets once M1 (story-boundaries-firm) is reported:
    precondition that couples §5 (cross-hub trust-anchor) to §6 (the admission gate).** Live off-loopback
    remote-connect stays DARK until §9.3 holds **and** the §4b/§5 Weichen are ratified.
 
-## 10. Open Weichen for PL → Auftraggeber (the ratification block)
+## 10. Open Weichen for PL → Auftraggeber (the ratification block) — RATIFICATION-READY
 
-- **§4b** — Federation wire-envelope byte contract + version-negotiation. *(Flag-day cost once fielded.)*
-- **§5** — Trust-anchor identity, key-rotation, cross-hub revoke semantics + partition posture.
+Each Weiche is now spelled out in its section with a **recommendation + an explicit freeze point**. The PL bundles
+these eight freeze points; everything outside them (§4a, §6, S-Fed-2/3/4a) runs against contracts now.
 
-*(This block is what the PO forwards to the PL. Everything outside it — §4a, §6, S-Fed-2/3/4a — runs against
-contracts now.)*
+**§4b — Federation wire envelope (four freeze points):** (1) PoP = reuse `operatorAuthChallenge` with a
+`"federation-peer"` purpose tag; (2) `sealed FederationFrame` under CommJson `type`-discriminator; (3) explicit
+`FederationHello` version-negotiation, negotiate-down, out-of-range = refuse; (4) forward-compat rule
+(additive-only, nullable-absent, unknown-type = fail-closed).
+
+**§5 — Trust anchor / rotation / revoke (four freeze points):** (1) anchor = pinned issuer=Relay (Model-2),
+OOB-provisioned, no in-app grant; (2) **rotation = keyset `{kid→pub}` + overlap window + old-key rotation
+attestation** (the biggest commitment; today's pin is single); (3) **cross-hub revoke** object + authority +
+propagation (CYP-747 S4 C3); (4) partition posture = fail-closed → NOT_TRUSTED → DENY.
+
+**Arming is NOT in this block.** Even fully ratified, off-loopback stays DARK behind §9 — esp. **§9.3** (tunnel↔
+credential binding, M2 G4 / CYP-532) — plus god-token close (CYP-828 ✅) and server-side re-auth. Ratifying the wire
++ trust Weichen unblocks **building** the federation; it does not arm it.
 
 ---
 
-*Author: backend. Grounded on CYP-828 / CYP-747 (Model-2) / CYP-536 / CYP-638 / CYP-687. Deep passes pending;
-this skeleton isolates the Weichen so soft work parallelizes immediately.*
+*Author: backend. Grounded on CYP-828 / CYP-747 (Model-2, `IssuerAnchor`/`operatorAuthChallenge`) / CYP-536 /
+CYP-427 / CYP-638 / CYP-687. §3 topology + §4b wire-envelope + §5 trust-anchor/rotation/revoke deep-passed and
+ratification-ready (§10 = the PL bundle). Remaining thin: §7 BYOA/BYODB (mostly design) + the §3 "open" rendezvous
+peering-id allocation. Building the federation is unblocked by ratifying §4b/§5; arming stays DARK behind §9.*
