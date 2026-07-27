@@ -51,6 +51,7 @@
     <string name="comm_back">Back</string>
     <!-- Shared keys introduced by CYP-48 (PO-approved 2026-06-28); CYP-17/14 hardcodes re-point in CYP-51. -->
     <string name="comm_status_offline">Disconnected – may be stale</string>
+    <string name="comm_status_protocol_skew">Protocol mismatch – update the app or server</string>
     <string name="agent_role_po">PO</string>
     <!-- Comm-Panel i18n coverage (CYP-53) — keys per docs/design/comm-panel-keys.md. #5/#6/#7 distinct. -->
     <string name="comm_channels_empty">No accessible channels</string>

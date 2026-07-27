@@ -22,6 +22,18 @@ sealed interface CommLiveEvent {
      *  token every backoff period). Distinct from a transient [Disconnected], which DOES reconnect. */
     data object AccessRevoked : CommLiveEvent
 
+    /**
+     * CYP-786: a `/ws/comm` frame could not be decoded against the client's `:core` schema (a
+     * [kotlinx.serialization.SerializationException] — an unknown discriminator or a missing field, i.e. the
+     * client and server app-schemas have SKEWED, e.g. a version deployed on one side but not the other). **TERMINAL
+     * + DISTINCT** (mirrors [AccessRevoked], the CYP-819 D2 "safe-but-silent → own named state" discipline): a skew
+     * NEVER resolves without a deploy, so the VM must NOT `.reconnecting()`-churn (the server would replay the same
+     * undecodable frame every backoff) — and it is NOT a transient offline drop, so it is surfaced as its own named
+     * operator-facing state, never folded into [Disconnected]. [detail] = a best-effort hint from the exception
+     * message (e.g. the missing field), for the banner — presentation only, never trusted/parsed.
+     */
+    data class ProtocolSkew(val detail: String? = null) : CommLiveEvent
+
     /** A new message pushed by the hub; deduped by [Message.id] downstream. */
     data class MessageReceived(val message: Message) : CommLiveEvent
 
