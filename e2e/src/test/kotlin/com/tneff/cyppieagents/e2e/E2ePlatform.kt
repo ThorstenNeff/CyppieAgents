@@ -162,6 +162,12 @@ fun e2ePlatform(
     // IdentityProvider + RoleStore to drive the REAL native `X-Session-Token` session→authorized-reads path
     // hermetically (no live Kratos). Additive.
     authDeps: com.tneff.cyppieagents.auth.AuthDeps? = null,
+    // CYP-828 (god-token loopback-gate e2e): the hub host that drives `loopbackPosture = isLoopbackHost(config.hub.host)`
+    // → `operatorEligible`. Default "127.0.0.1" = loopback → posture ON (backward-compatible, every existing journey
+    // grants operator exactly as before). A test passes a NON-loopback string (e.g. "0.0.0.0") to flip posture OFF and
+    // drive the off-loopback god-token DENIAL at the real request paths — config-derived, so NO non-loopback socket is
+    // bound (the server still binds its ephemeral 127.0.0.1 port; baseUrl unchanged). Additive.
+    hubHost: String = "127.0.0.1",
 ): E2ePlatform {
     require(projects.isNotEmpty()) { "e2ePlatform needs at least one project" }
     val active = projects.first()
@@ -179,6 +185,7 @@ fun e2ePlatform(
         repo = RepoConfig(active.repo ?: "git@github.com:org/repo.git", "main"),
         agents = active.agents.map { AgentConfig(it.id, it.id, it.role) },
         projectId = active.id,
+        hub = com.tneff.cyppieagents.boot.HubConfig(host = hubHost), // CYP-828: drives loopbackPosture (see [hubHost])
     )
     val booted = BootOrchestrator(
         config = config,
