@@ -1,6 +1,8 @@
 # CYP-747 — God-Token Authority-Boundary: die Security-Invariante, die S3 + S4 gatet (Design-Pass)
 
-> Status: **DESIGN-PASS v3 — zur Ratifikation an PL + Auftraggeber (2 Prinzipale), VOR jedem Bau.** Owner: Backend.
+> Status: **DESIGN-PASS v3.1 — zur Ratifikation an PL + Auftraggeber (2 Prinzipale), VOR jedem Bau.** Owner: Backend.
+> (v3.1 foldet den 2. Reviewer-Re-Review: V3-1 `Principal:132` = MEMBER-GRANT, richtungs-gegatet + zwei Zähne; V3-2 T1c
+> auf Autoritäts-Konstruktion gekeyed mit MUT-A+MUT-B. Siehe Rev.3.1 am Ende. F2–F6 unverändert.)
 > Bezug: CYP-747 Modell-2 Aussteller-Vertrauen (Design `db1f879c`, `docs/design/CYP-747-model2-issuer-trust-design.md`).
 > Basis: develop `4db7cac4`. **KEIN Bau-Gate.** Output dieses Docs = die ratifizierbare Invariante; es baut nichts an
 > **S3** (god-token remote-Verweigerungs-Closure) oder **S4** (C3 aktiver Widerruf).
@@ -125,11 +127,18 @@ GETEILTE QUELLE `isOperator`; #2–#5 umgehen `resolvePrincipal` komplett. Die E
 API-Rolle"** — sie umfasst PTY-Take-over, Agent-Stream-Beobachtung und Message-Body-Egress. **Fix = §2.1(b) an der
 geteilten Quelle** (Symmetrie zu S-AAL2b, aber am Prädikat, nicht am Caller).
 
-> **Wichtige Trennung (empirisch): IDENTITÄT ≠ ELIGIBILITÄT.** `isOperator` wird auch als **REJECT-Identität** benutzt:
-> `PlatformWiring.kt:425` reicht `isOperator` an den `TunnelGodTokenGuard`, um den god-token auf Tunnel-Ports zu
-> **verweigern**, und `Principal.kt:132` nutzt es für den Kill-Switch-Downgrade. Diese IDENTIFIZIEREN den Token
-> (host-unabhängig), sie GRANTEN nicht. Der Loopback-Gate gehört an die **Eligibilität** (god-token→OP-eligible),
-> **nicht** an die rohe Identität — sonst bricht der Reject-Guard. v3 trennt beide sauber (§2.1b).
+> **Wichtige Trennung (empirisch): IDENTITÄT ≠ ELIGIBILITÄT.** Die **einzige** host-unabhängige **REJECT-Identität**
+> ist `PlatformWiring.kt:425` (reicht `isOperator` an den `TunnelGodTokenGuard`, um den god-token auf Tunnel-Ports zu
+> **verweigern** — identifiziert, grantet nicht). Der Loopback-Gate gehört an die **Eligibilität**, **nicht** an diese
+> rohe Reject-Identität — sonst bricht der Reject-Guard.
+>
+> **★ V3-1 (Reviewer-Re-Review, BLOCKER, bestätigt): `Principal.kt:132` ist KEINE reine Identität — es ist ein
+> MEMBER-GRANT.** `:132 if (isOperator(bearer)) return MachineAgent(null)` wird erreicht, wenn `:125` NICHT griff. Mit
+> dem operatorEligible-Gate an `:125` gilt off-loopback: `:125` skip → `:128 agentFor`=null → **`:132` → MEMBER, NICHT
+> 401** = **grantet cross-agent `/api/events`-Metadaten übers Netz** (der CYP-234b-2-Kommentar direkt darunter warnt
+> selbst davor). ⟹ `:132` MUSS ebenfalls gegatet werden — **aber richtungs-diskriminierend:** off-loopback → durchfallen
+> → 401; on-loopback Kill-Switch (`operatorTokenDisabled ∧ hasOperator`) → **weiter MEMBER-Downgrade** (der legitime
+> never-lock-out-Bootstrap-Fall, den der Fix ERHALTEN muss). Fix + Zähne: §2.1b / §6-T1d.
 
 ---
 
@@ -166,8 +175,12 @@ dass **alle** Grant-Nähte (§1.9 #1–#5) ihn **erben**:
   `MachineOperator` / keine `TerminalPrincipal.Operator` / kein `/ws/agent`-Grant / kein `OPERATOR_ID` / kein `/me`-OP
   (fail-closed).
 - **ALLE Grant-Konsumenten (#1–#5) routen über `operatorEligible`, nicht über rohes `isOperator`.** Die **rohe
-  Identität** `isOperator` (host-unabhängig) bleibt für die **REJECT/Downgrade**-Konsumenten (`TunnelGodTokenGuard`-
-  Reject `PlatformWiring:425`, Kill-Switch-Downgrade `Principal:132`) — diese identifizieren den Token, granten nicht.
+  Identität** `isOperator` (host-unabhängig) bleibt **NUR** für den einen **REJECT**-Konsumenten (`TunnelGodTokenGuard`-
+  Reject `PlatformWiring:425`) — der identifiziert den Token, grantet nicht.
+- **★ V3-1 — `Principal:132` (Kill-Switch-Downgrade) ist ein MEMBER-GRANT und wird MIT-gegatet, richtungs-diskriminierend:**
+  `if (isOperator(bearer) && loopbackPosture) return MachineAgent(null)`. Off-loopback → durchfallen → **401** (volle
+  Denial, NICHT MEMBER — schließt das `/api/events`-Metadaten-Leck). On-loopback + Kill-Switch → **weiter MEMBER**
+  (never-lock-out-Bootstrap ERHALTEN). Zwei Richtungen = zwei Zähne (§6-T1d), damit keine Naht die andere absorbiert.
 - **Als Eigenschaft an der geteilten Naht, nicht als Kanten-Liste:** weil alle Grant-Nähte **dieselbe** Quelle
   konsumieren, deckt ein Gate dort **alle** by-construction — eine 6., zukünftige Grant-Naht, die `operatorEligible`
   aufruft, erbt den Gate automatisch (Reviewer-Kriterium: F1 by-construction, keine neue adjazente Fläche). Der
@@ -315,12 +328,24 @@ Quelle nimmt — genau die Verifikation, die v2 fehlte („behauptet, nicht veri
   **#2 `/ws/terminal`** (kein `TerminalPrincipal.Operator`), **#3 `/ws/agent`** (1008), **#4 `/ws/events`+`/api/events`**
   (KEINE fremden Message-Bodies — CYP-432), **#5 `/me`** (nicht OPERATOR). *Mutation:* das Loopback-Gate an der
   geteilten Quelle (`operatorEligible`) entfernen → **alle 5** authentifizieren off-loopback → rötet.
-- **★ T1c (S3b-CLOSURE — der Zahn, der v2 gefehlt hat, non-vakuös):** ein **Arch-Scan** enumeriert **ALLE** Aufrufer des
-  god-token→OP-Grants (jede Nutzung von `isOperator` in einem GRANT-Kontext, nicht nur Reject/Identität — nicht bloß
-  Literal-grep) und behauptet, **jeder** routet über das loopback-gegatete `operatorEligible`. *Mutation:* eine
-  Grant-Naht auf **rohes** `isOperator` (ungegated) umstellen → der Scan findet einen ungegateten Grant-Aufrufer →
-  **rötet**. Analog `Cyp747OperatorAuthorityClosureTest` (Cookie-Achse, bereits gebaut). **Dieser Zahn hätte den
-  F1-Residual gefangen** — er macht „Property an der geteilten Quelle" prüfbar statt behauptet.
+- **★ T1c (S3b-CLOSURE — V3-2: auf die Autoritäts-KONSTRUKTION keyed, nicht auf eine feste Nähte-Liste):** ein
+  **Arch-Scan** keyed auf die **Konstruktion** von god-token-Operator-Autorität — **jede** Herstellung von
+  `MachineOperator` / `TerminalPrincipal.Operator` / `OPERATOR_ID` / `AuthMe(OPERATOR)` aus dem statischen Token MUSS
+  über das loopback-gegatete `operatorEligible` laufen — **plus eine minimale, explizit-reviewte Identitäts-Whitelist**
+  (nur der Reject-Guard `PlatformWiring:425`). **Zwei Mutationen (Anti-Vakuität):** **MUT-A** — eine bestehende
+  Grant-Naht auf **rohes** `isOperator` umstellen → rötet. **MUT-B** — eine **6., NEUE** Konstruktions-Site hinzufügen,
+  die Autorität aus rohem `isOperator` baut → **rötet** (genau der Beweis, den eine feste 5-Liste NICHT liefert — der
+  v2-Fehler in Zahn-Form). **Bonus-Konsistenz:** ein korrekt gebauter T1c flaggt `:132` SELBST (V3-1) — ein
+  „rohes `isOperator` → MEMBER, ungegated"-Rest darf NICHT grün durchgehen. Analog `Cyp747OperatorAuthorityClosureTest`
+  (Cookie-Achse, bereits gebaut); macht „Property an der geteilten Quelle" **prüfbar statt behauptet** (der Zahn, der
+  v2/v3 fehlte).
+- **★ T1d (V3-1 — `:132` MEMBER-Downgrade, ZWEI Zähne für ZWEI Richtungen, damit keine Naht die andere absorbiert):**
+  (a) **off-loopback** god-token (public-Connector), Bearer/`?token=` → **401** (volle Denial, **NICHT** `MachineAgent(null)`/
+  MEMBER). *Mutation:* `:132` roh lassen (`if (isOperator) …`) → off-loopback → MEMBER (statt 401) → rötet (= das
+  `/api/events`-Metadaten-Leck). (b) **on-loopback + Kill-Switch** (`operatorTokenDisabled ∧ hasOperator`) → **MEMBER**
+  (never-lock-out-Bootstrap ERHALTEN). *Mutation:* das Loopback-`&&` zu streng fassen (auch on-loopback denyen) → der
+  never-lock-out-Downgrade regrediert → rötet. Getrennte Zähne, weil ein einzelner die jeweils andere Richtung
+  absorbieren würde (L#24).
 - **T2 (S3a-Closure — F2-korrigierte Quelle):** guard-set ≡ **server-connector-topology** by construction. *Mutation:*
   einen tunnel-scoped Connector zur `embeddedServer`-Deklaration hinzufügen, **ohne** dass die abgeleitete Guard-Menge
   ihn mitzieht → ein Ableitungs-Test rötet (die Mengen divergieren). Muss gegen die **Server**-Connector-Deklaration
@@ -349,8 +374,10 @@ Quelle nimmt — genau die Verifikation, die v2 fehlte („behauptet, nicht veri
   `routing/Auth.kt:33`. Grant-Nähte: #1 `auth/Principal.kt:125` (API `MachineOperator`) · #2 `routing/TerminalAccess.kt:173`
   (`TerminalPrincipal.Operator`, PTY) · #3 `routing/AgentSocket.kt:65` (`tokenAuthorize`) · #4 `routing/Auth.kt:87`
   (`participantFor→OPERATOR_ID`) → `routing/EventAclFilter.kt:40` (`if(isOperator) return true`, Message-Bodies) · #5
-  `auth/Principal.kt:170` (`/me`). **Reject/Identität (NICHT graten):** `routing/PlatformWiring.kt:425` (Tunnel-Guard),
-  `auth/Principal.kt:132` (Kill-Switch). Cookie-Achse `Principal.kt:148`; `browserOperatorPostureEnabled =
+  `auth/Principal.kt:170` (`/me`). **Reine Reject-Identität (host-unabhängig, NICHT graten):** NUR
+  `routing/PlatformWiring.kt:425` (Tunnel-Guard). **★ V3-1: `auth/Principal.kt:132` (Kill-Switch-Downgrade) ist ein
+  MEMBER-GRANT** → richtungs-gegatet (off-loopback→401, on-loopback-Kill-Switch→MEMBER), KEINE reine Identität. Cookie-Achse
+  `Principal.kt:148`; `browserOperatorPostureEnabled =
   isLoopbackHost(config.hub.host)` `routing/PlatformWiring.kt`; `isLoopbackHost` `auth/Principal.kt:110`.
 - **★ F2-Closure-Quelle:** die `embeddedServer`-Connector-Deklaration `Application.kt:62-63`.
 - **Kill-Switch:** `boot/PlatformConfig.kt:99-102`, `routing/PlatformWiring.kt:453`.
@@ -374,3 +401,13 @@ MUT ungegatet→rot — der Zahn, der v2 fehlte) **+ Identität-vs-Eligibilität
 Reject-Guard/Kill-Switch). §1.9/§2.1b/§2.4/§4-S3b/§5-W2b/§6-T1b+T1c neu gefasst; F2–F6 unverändert. **Exposition an PL
 neu-eskaliert (größer: PTY + Agent-Streams + Message-Body-Egress).** Lektion: „Property am geteilten Seam, nicht am einen
 Caller" — dieselbe Klasse wie CYP-698/719/815/819. Design-only; Bau gated auf PL-Ratifikation v3.
+**Rev.3.1 (2026-07-27, Backend):** zweiter Reviewer-Re-Review — **V3-1 + V3-2 gefoldet** (Reviewer-Kriterien vorab
+fixiert). **V3-1 (BLOCKER, ehrlicher Zweit-Selbstbefund):** v3 klassifizierte `Principal:132` als reine Identität —
+falsch, es ist ein **MEMBER-GRANT** (off-loopback `:125`-skip → `:132` → MEMBER, nicht 401 = `/api/events`-Metadaten-Leck).
+Fix: `:132` richtungs-gegatet (`isOperator ∧ loopbackPosture`) — off-loopback→401, on-loopback-Kill-Switch→MEMBER
+(never-lock-out ERHALTEN); **zwei Zähne für zwei Richtungen** (T1d, damit keine Naht die andere absorbiert, L#24). Die
+reine host-unabhängige Reject-Identität ist damit **NUR** `PlatformWiring:425`. **V3-2:** T1c von „feste 5-Nähte-Liste"
+auf **Autoritäts-KONSTRUKTION gekeyed** (jede `MachineOperator`/`TerminalPrincipal.Operator`/`OPERATOR_ID`/`AuthMe(OPERATOR)`
+via `operatorEligible`) + minimale Identitäts-Whitelist; **2 Mutationen** MUT-A (Grant-Naht→roh→rot) + **MUT-B (6.
+Konstruktions-Site→rot** — der Beweis, den die feste Liste nicht liefert). §1.9/§2.1b/§6-T1c+T1d + §7 neu gefasst; F2–F6
+unverändert. Design-only; Bau gated auf PL-Ratifikation **v3.1**.
