@@ -40,13 +40,20 @@ switch-first; CYP-748/PL). Reuse des **`ProjectSwitcher`-Verhaltens** (CYP-651: 
 - **Erreichbarkeit ≠ Trust ≠ Tier ≠ Issuer** — vier Achsen, vier Marker. `online:false` heißt **unerreichbar**, **nicht**
   „untrusted"; ein Offline-Hub behält seinen letzten **beobachteten** Trust-Zustand **nur wenn frisch**, sonst `unknown`.
 - **Trust-Frische folgt der CONNECTION-BEOBACHTUNG, nicht dem Aktiv-Pointer** (modell-agnostisch): ein Hub zeigt echten
-  Trust (`trusted`/`stale`/…) **nur wenn er über eine live Verbindung frisch beobachtet** wurde; ohne frische Beobachtung
-  → `unknown`, **nie** das letzte gecachte `trusted` ([[forecast-vs-observed-disclosure]] / [[absence-reads-as-all-clear]]).
-  Bei **switch-first (one-active-connection)** ist das **jeder inaktive** Hub; bei **N-connection** (Hubs halten
-  Hintergrund-Verbindungen) ist es **jeder Hub ohne frische Beobachtung**. *(★ Offen — an PO: Connection-Kardinalität =
-  N-Hintergrund-Verbindungen ODER switch-first one-active-connection? bestimmt, ob inaktive Einträge eine **live
-  Progression** (CYP-827) tragen oder `phase:'idle'` + statischer Descriptor. Die Fläche rendert die **echte
-  `RemoteConnState.phase` je Hub** → trägt beide Modelle; die Honesty-Regel hängt an „frisch beobachtet", nicht an „aktiv".)*
+  Trust **nur wenn er über eine live Verbindung frisch beobachtet** wurde; ohne frische Beobachtung → **nie** das letzte
+  gecachte `trusted` weiterzeigen ([[forecast-vs-observed-disclosure]] / [[absence-reads-as-all-clear]]).
+  **★ Kardinalität = switch-first / ONE-ACTIVE-HUB (ratifiziert, cyp755 §-Weichen):** nur der aktive Hub hält eine live
+  Connection; **inaktive Hubs = Registry/last-known-State, KEINE Background-Connection** (resource-safe, CYP-611-Sizing).
+  Die Trust-Degradation je nach **letzter beobachteter** Zustand:
+  - **war `trusted`, jetzt nicht mehr frisch → `stale`** (nicht `unknown`!): der Hub war vertraut, ist aber **nicht mehr
+    aktuell** — genau die **CYP-841 cause-agnostische STALE-Copy** („nicht mehr aktuell — erneut bestätigen") + CYP-838-
+    Amber. „Nicht mehr frisch, weil weggeschaltet" ist eine Frische-Lapse-Form von *nicht-aktuell* (die CYP-841-Copy trägt
+    sie, ohne eine Ursache zu behaupten). **Ehrlicher als `unknown`** — es verwirft die frühere Beobachtung nicht, sagt
+    aber „re-connect zum Bestätigen". Das **Lapse-Timing** (sofort-bei-Switch vs Frische-Fenster) = **[TF]** (Team-1s
+    Staleness-/Widerruf-Signal, cyp755 §1).
+  - **nie beobachtet (frischer Registry-Eintrag) → `unknown`** (fail-closed Default; war nie `trusted` → nicht `stale`).
+  - **inaktive Einträge tragen KEINE live Progression** — `RemoteConnState.phase` des inaktiven Hubs ist effektiv
+    `idle`/nicht-verbunden; die Progression-Chrome (CYP-827) rendert **nur für den aktiven** Connect.
 - **axis-c (`issuerTrust`) ist KEIN Switcher-Badge** — es ist ein **Zone-2**-Connect-Verdikt (terminal/actionable Block
   beim Verbinden, CYP-823), **nicht** ein Dauer-Status. Im Switcher **nicht** anzeigen (sonst Zone-Verletzung). Ausnahme
   s. §3 (`remote-not-configured` = actionable, ggf. dezenter Hinweis — aber **nicht** als Trust-Badge).
@@ -103,7 +110,9 @@ lösen** (Aussteller-Vertrauen OOB etablieren), dann **reconnecten** (Parität m
 ## 4. Teeth (Tester2, beim Mount)
 1. **4 Achsen distinkt** — Erreichbarkeit(`online`) ≠ Trust(axis-a-Badge) ≠ Tier ≠ Issuer; kein Marker konflatiert einen
    anderen. *(Mutation: `online:false` rendert als Trust-`rejected`/`unknown` statt als Offline-Marker → RED.)*
-2. **Inaktive Hubs `unknown`, nicht cached-`trusted`** — nur der aktive hat frischen Trust; andere fail-closed `unknown`.
+2. **Inaktive Hubs degradieren korrekt, nie cached-`trusted`** — war-`trusted`+nicht-mehr-frisch → **`stale`** (CYP-841-Copy),
+   nie-beobachtet → **`unknown`**; **nie** das letzte gecachte `trusted`. *(Mutation: inaktiver war-trusted-Hub bleibt
+   `trusted` → RED = cached-trust; ODER nie-beobachtet zeigt `stale` → RED = erfundene frühere Beobachtung.)*
 3. **axis-c nicht im Switcher** — `issuerTrust` erscheint **nicht** als Switcher-Trust-Badge (Zone-Verletzung).
 4. **Empty ≠ Load-Error** — `/api/cp/hubs`-Fehler → Error+Retry, nicht leere Liste.
 5. **Switch non-optimistisch** — aktiv folgt server-confirmed `activeHubId`, nie dem Klick.
