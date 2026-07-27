@@ -33,7 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -60,7 +62,9 @@ import kmpcyppieagents.app.shared.generated.resources.comm_composer_send
 import kmpcyppieagents.app.shared.generated.resources.comm_msg_pending
 import kmpcyppieagents.app.shared.generated.resources.comm_readonly_hint
 import kmpcyppieagents.app.shared.generated.resources.comm_send_denied
+import kmpcyppieagents.app.shared.generated.resources.acl_access_revoked
 import kmpcyppieagents.app.shared.generated.resources.comm_send_failed
+import kmpcyppieagents.app.shared.generated.resources.comm_send_revoked
 import kmpcyppieagents.app.shared.generated.resources.comm_status_connecting
 import kmpcyppieagents.app.shared.generated.resources.comm_status_offline
 import kmpcyppieagents.app.shared.generated.resources.comm_timeline_empty
@@ -223,7 +227,7 @@ private fun TimelinePane(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
-        ConnectionBanner(state.connection)
+        ConnectionBanner(state.connection, state.accessRevoked)
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
                 state.selectedChannelId == null -> Unit
@@ -251,7 +255,7 @@ private fun TimelinePane(
             }
         }
         val channelName = state.channels.firstOrNull { it.id == state.selectedChannelId }?.name ?: ""
-        Composer(canWrite = state.canWrite, sendError = state.sendError, channelName = channelName, onSend = onSend)
+        Composer(canWrite = state.canWrite, sendError = state.sendError, channelName = channelName, accessRevoked = state.accessRevoked, onSend = onSend)
     }
 }
 
@@ -309,7 +313,30 @@ private fun KindBadge(label: String) {
 }
 
 @Composable
-private fun ConnectionBanner(connection: ConnectionStatus) {
+private fun ConnectionBanner(connection: ConnectionStatus, accessRevoked: Boolean) {
+    // CYP-819 (D2): a terminal 1008 auth-revoke is ERROR-red + static and SUPERSEDES the amber offline banner —
+    // mirrors AclPanel's `acl_access_revoked` errorContainer banner (`&& !accessRevoked`). `✕` is a SEPARATE node
+    // (form carries meaning, WCAG 1.4.1); Assertive (unsolicited + terminal, the operator MUST hear it).
+    if (accessRevoked) {
+        val revokedText = stringResource(Res.string.acl_access_revoked)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.errorContainer)
+                .testTag(CommTags.ACCESS_REVOKED)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = revokedText
+                    liveRegion = LiveRegionMode.Assertive
+                }
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("✕", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            Text(revokedText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+        }
+        return
+    }
     if (connection == ConnectionStatus.LIVE) return
     val text = when (connection) {
         ConnectionStatus.CONNECTING -> stringResource(Res.string.comm_status_connecting)
@@ -330,7 +357,18 @@ private fun ConnectionBanner(connection: ConnectionStatus) {
 }
 
 @Composable
-private fun Composer(canWrite: Boolean?, sendError: String?, channelName: String, onSend: (String) -> Unit) {
+private fun Composer(canWrite: Boolean?, sendError: String?, channelName: String, accessRevoked: Boolean, onSend: (String) -> Unit) {
+    // CYP-819 (D2): a terminal 1008 revoke HARD-LOCKS the composer, independent of `canWrite` — a revoked socket
+    // cannot send, so this overrides the writability disclosure (1:1 web-ts `revoked`-override). Checked FIRST.
+    if (accessRevoked) {
+        Text(
+            text = stringResource(Res.string.comm_send_revoked),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.fillMaxWidth().padding(12.dp).testTag(CommTags.REVOKED_LOCK),
+        )
+        return
+    }
     // CYP-273 tri-state (see CommUiState.canWrite):
     //   false → known read-only → the proactive read-only hint (below).
     //   null  → not yet known (loading / pre-seam) → the composer renders DISABLED, but NEVER the "no

@@ -30,6 +30,13 @@ data class CommUiState(
     val selectedChannelId: String? = null,
     val messages: List<MessageItem> = emptyList(),
     val connection: ConnectionStatus = ConnectionStatus.CONNECTING,
+    /**
+     * CYP-819 (D2): a terminal **1008 (VIOLATED_POLICY) auth-revoke** on `/ws/comm` — its OWN state, NOT folded into
+     * [connection]=DISCONNECTED (a revoked socket is terminal + distinct, not a transient offline drop; the
+     * safe-but-silent class). Drives the ERROR-red banner (supersedes the amber offline banner) + the composer
+     * hard-lock (independent of [canWrite]). Mirrors `AclUiState.accessRevoked` (1:1).
+     */
+    val accessRevoked: Boolean = false,
     val loadingHistory: Boolean = false,
     /** CYP-288: the selected channel's history load FAILED (distinct from an empty channel — error beats empty). */
     val historyError: Boolean = false,
@@ -178,6 +185,10 @@ class CommViewModel(
         liveSource.events().reconnecting(backoff).collect { event ->
             CommReducer.statusOf(event)?.let { status -> _state.update { it.copy(connection = status) } }
             if (event is CommLiveEvent.AccessRevoked) {
+                // CYP-819 (D2): a 1008 revoke is a DISTINCT terminal state, not a transient offline — set the own
+                // flag so the ERROR banner supersedes the amber offline banner and the composer hard-locks
+                // (independent of writability). NOT folded into DISCONNECTED (the safe-but-silent class).
+                _state.update { it.copy(accessRevoked = true) }
                 // CYP-291: a 1008 revoke is TERMINAL — cancel the collector so `.reconnecting()` does NOT re-open
                 // /ws/comm with the revoked token (the reconnect loop). The connection already reads DISCONNECTED.
                 liveJob?.cancel()

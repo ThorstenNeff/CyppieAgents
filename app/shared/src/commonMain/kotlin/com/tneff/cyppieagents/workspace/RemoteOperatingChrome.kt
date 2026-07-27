@@ -1,5 +1,6 @@
 package com.tneff.cyppieagents.workspace
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import com.tneff.cyppieagents.net.hub.remote.RemoteConnState
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_workspace_relay_uncertain
+import kmpcyppieagents.app.shared.generated.resources.acl_access_revoked
 import kmpcyppieagents.app.shared.generated.resources.remote_connect_relay_dropped
 import kmpcyppieagents.app.shared.generated.resources.workspace_relay_uncertain
 import kotlinx.coroutines.flow.StateFlow
@@ -58,7 +60,16 @@ fun RemoteOperatingChrome(
     dataOverTunnel: Boolean = false,
     pinned: Boolean = false,
     ttl: String? = null,
+    // CYP-819 (A1): a session-wide 1008 auth-revoke (fanned in from the four status feeds) → the covering,
+    // terminal ERROR-red banner that SUPERSEDES every transient session banner. Absent by default (byte-identical).
+    accessRevoked: Boolean = false,
 ) {
+    // CYP-819 (A1): a terminal revoke covers the whole workspace and outranks CONNECTED/RECONNECTING — one banner
+    // (shared bearer), static, ERROR-red. Checked FIRST so it supersedes the transient session-state banners below.
+    if (accessRevoked) {
+        AccessRevokedBanner(modifier)
+        return
+    }
     if (sessionState == null) {
         // No live session flow (CYP-527 fallback): the context banner is present-iff a hub name is provided (the
         // caller's CONNECTED gate). No revoke without an active-session flow to end.
@@ -86,6 +97,40 @@ fun RemoteOperatingChrome(
             }
         // LOST (terminal, out-of-scope) / pre-connect states (handled by the connect flow) → absent.
         else -> {}
+    }
+}
+
+/**
+ * CYP-819 (A1) — the ONE covering, session-wide **access-revoked** banner: a terminal 1008 (VIOLATED_POLICY)
+ * auth-revoke on the shared bearer hits every agent window at once, so a single full-width banner covers them all
+ * (never N per-window chips). **ERROR-red `✕`, STATIC** — a revoke is terminal ("neu anmelden"), not a reconnect
+ * (contrast [RemoteRelayDropBanner]'s WARN-amber `▲` + spinner semantics). Copy reuses `acl_access_revoked` (the
+ * shared revoked anchor); the `✕` is a SEPARATE node (form carries meaning, WCAG 1.4.1); a11y **Assertive** (an
+ * unsolicited terminal result the operator MUST hear).
+ */
+@Composable
+fun AccessRevokedBanner(modifier: Modifier = Modifier) {
+    val revokedText = stringResource(Res.string.acl_access_revoked)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.errorContainer)
+            .testTag(WorkspaceTags.ACCESS_REVOKED)
+            .semantics(mergeDescendants = true) {
+                contentDescription = revokedText
+                liveRegion = LiveRegionMode.Assertive
+            }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("✕", color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            revokedText,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
