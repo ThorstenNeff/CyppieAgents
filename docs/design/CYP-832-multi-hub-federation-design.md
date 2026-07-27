@@ -1,6 +1,6 @@
 # CYP-832 — Multi-Hub Hub/Relay Federation (Design-Pass)
 
-> **Status: DRAFT / SKELETON (v0.1)** — design-only, no build. Build-gated behind the god-token close
+> **Status: DRAFT (v0.2)** — §3 topology firmed, §9.3 named, §8.1 PL build-teeth folded. Design-only, no build. Build-gated behind the god-token close
 > (CYP-828 ✅ merged) **and** §9.3. This document exists to (a) sketch the federation architecture on the
 > existing spine, (b) **isolate the hard-reversible Weichen** (§4b, §5) for the PL → Auftraggeber, and (c)
 > carry the story decomposition so soft (stub-able) work can start against contracts *before* the Weichen freeze.
@@ -36,11 +36,31 @@ the fail-closed value** and is decided by comparing FAILURE modes, not the happy
 ([[safe-but-silent-default-needs-own-state]]). A federation not-configured hub must be indistinguishable from a
 hub that denies — silence = deny.
 
-## 3. Hub↔Hub protocol (topology)
+## 3. Hub↔Hub protocol (topology) — FIRMED (deep pass)
 
-*(TBD — deep pass.)* Candidate: hub-to-hub rides the **N-tunnel** (§2), NOT a new socket; the relay stays a
-0-trust rendezvous (relay=0). A federated peer is a `RemoteHub` the local server resolves via the issuer-trust
-axis before any frame is accepted. Open: mux of hub-hub control vs. datapath frames (touches M2, §4b).
+Federation hub↔hub **reuses the existing Noise-tunnel-over-relay substrate** (CYP-536 N-tunnel / CYP-457 Noise
+transport) — NOT a new socket and NOT a mux. Grounding on the transport as it stands:
+
+- **Relay stays 0-trust** (relay=0, CYP-536): it pairs exactly one client-role dialer to one hub-role responder
+  per opaque rendezvous-id. A federated peer participates by taking the **client (dialer) role** toward the
+  target hub's rendezvous — the same client datapath the remote-operator case needs (the CR3/G1 client lane).
+  No relay change; N distinct rendezvous-ids give N concurrent hub↔hub channels.
+- **No mux.** Multiplexing many logical streams over one tunnel is design-forbidden (no WS-in-WS; it would need a
+  from-scratch framing layer). Concurrency = **N tunnels**, each recycling the whole per-tunnel PoP stack — the
+  ratified N-tunnel direction, not mux.
+- **The near hub exposes its operator surface over a tunnel-scoped listener that rejects the static god-token**
+  (CYP-427 `TunnelGodTokenGuard`, already built) — the same discipline as the loopback/god-token close
+  (CYP-828). The far hub must therefore present a **CP-scoped, issuer-Relay-trusted cross-hub identity**
+  (Model-2, CYP-747), NOT the static token.
+- **Auth is NOT propagated by the pump** (M2 Q2): the tunnel authenticates the *channel* (RR3 = CpJwt +
+  device-PoP → `operatorId` used only for the revocation registry); the near hub's routes **independently
+  re-verify** the real credential carried in the request. Federation's cross-hub identity IS that
+  independently-verified credential — which is why the trust-DECISION (§4a) and the trust-ANCHOR (§5) are the
+  load-bearing parts, and the transport is not (it exists).
+
+*Open (next pass):* rendezvous-set allocation for a hub↔hub peering (who registers, who dials which slot), and
+whether federation reuses the operator N-set or gets its own **peering-id namespace** — leans toward its own,
+decided together with §4b.
 
 ## 4. Trust & identity across hubs
 
@@ -96,12 +116,32 @@ Surfaces custody Weichen; little build. → **Story S-Fed-5.**
 - **S-Fed-5** — BYOA/BYODB custody design (§7).
 - **S-Fed-6** — Cross-hub revoke fanout; trust-anchor/rotation = §5.
 
+### 8.1 Build-teeth for the stub-able trio (PL-ratified)
+
+Delivered *with* the trio tickets once M1 (story-boundaries-firm) is reported:
+
+1. **S-Fed-4a rides the `@ExperimentalFederation` STUB interface only** — never a concrete envelope DTO shape.
+   Touching a concrete shape here forces a reshape at the §4b byte-freeze. (The §5-Naht discipline: the session
+   plumbing programs against the seam, not the wire.)
+2. **S-Fed-3 fail-closed carries a MUTATION tooth** — remove the DEFAULT-deny → an admit-green result MUST go
+   RED. A fail-closed gate whose deny-default can be silently dropped without a red test is vacuous
+   ([[safe-but-silent-default-needs-own-state]] · [[verification-aimed-at-wrong-object]]).
+3. **Nothing armed live** — the trio builds against contracts/stubs only; off-loopback remote-connect stays DARK
+   behind §9 (esp. §9.3) and the §4b/§5 ratification.
+
 ## 9. Preconditions & build-gates
 
 1. **§9.1** god-token loopback close — CYP-828 ✅ merged. *(Off-loopback can no longer inherit operator.)*
 2. **§9.2** getenv-compare confinement — CYP-829 (routed, awaiting PO gate). *(No `== getenv("OPERATOR_TOKEN")` bypass.)*
-3. **§9.3** *(placeholder — the remaining live-arming precondition; to be named in the deep pass. Live off-loopback
-   remote-connect stays DARK until §9.3 is defined **and** the §4b/§5 Weichen are ratified.)*
+3. **§9.3 — Tunnel↔credential runtime binding for multi-operator (G4 close / CYP-532 hard-gate).** Federation is
+   **multi-operator by construction** — each hub carries its own operator identity. Today's safety rests on
+   single-operator being HARD-enforced (partial-unique `idx_single_operator`, `NOT EXISTS` upgrade guard, NO
+   promote endpoint), which makes the M2 **G4** scope-leak precondition — "hub-A's tunnel carries hub-B's
+   operator credential" — *unreachable*. Off-loopback federation removes that single-op floor, so it MUST NOT arm
+   until the RR3-tunnel `operatorId` is bound to the route-verified credential (the deferred G4 / CYP-532
+   binding). Without it, a federated tunnel could let hub-A's operator act as hub-B's operator. **This is the
+   precondition that couples §5 (cross-hub trust-anchor) to §6 (the admission gate).** Live off-loopback
+   remote-connect stays DARK until §9.3 holds **and** the §4b/§5 Weichen are ratified.
 
 ## 10. Open Weichen for PL → Auftraggeber (the ratification block)
 
