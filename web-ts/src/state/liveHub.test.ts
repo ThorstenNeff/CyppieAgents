@@ -10,13 +10,14 @@ const socketFor = (hub: FakeSocketHub, pathFragment: string) => {
   if (s === undefined) throw new Error(`no socket for ${pathFragment}`)
   return s
 }
+const maybeSocketFor = (hub: FakeSocketHub, pathFragment: string) => hub.sockets.find((s) => s.url.includes(pathFragment))
 
 describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
-  it('opens /ws/comm and /ws/terminal-state with the token', () => {
+  it('opens /ws/comm and the muxed /ws/status with the token', () => {
     const hub = new FakeSocketHub()
     startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
     expect(socketFor(hub, '/ws/comm').url).toContain('token=tok')
-    expect(socketFor(hub, '/ws/terminal-state').url).toContain('token=tok')
+    expect(socketFor(hub, '/ws/status').url).toContain('token=tok')
   })
 
   it('folds an inbound /ws/comm event into onCommEvent (parsed, typed)', () => {
@@ -27,16 +28,6 @@ describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
     comm.emitOpen()
     comm.emitMessage(JSON.stringify({ type: 'acl', entry: { channelId: 'po-frontend', agentId: 'frontend', canRead: true, canWrite: false } }))
     expect(onCommEvent).toHaveBeenCalledWith({ type: 'acl', entry: { channelId: 'po-frontend', agentId: 'frontend', canRead: true, canWrite: false } })
-  })
-
-  it('folds an inbound /ws/terminal-state event into onTerminalControl', () => {
-    const hub = new FakeSocketHub()
-    const onTerminalControl = vi.fn()
-    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl }, { factory: hub.factory, schedule: hub.runNow })
-    const term = socketFor(hub, '/ws/terminal-state')
-    term.emitOpen()
-    term.emitMessage(JSON.stringify({ agentId: 'backend', state: 'INTERACTIVE' }))
-    expect(onTerminalControl).toHaveBeenCalledWith({ agentId: 'backend', state: 'INTERACTIVE' })
   })
 
   it('fires onCommOpen when /ws/comm (re)connects — drives the connection banner (CYP-438)', () => {
@@ -57,24 +48,6 @@ describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
     expect(onCommClose).toHaveBeenCalledWith(1008)
   })
 
-  it('folds an inbound /ws/lifecycle event into onRunState (CYP-431)', () => {
-    const hub = new FakeSocketHub()
-    const onRunState = vi.fn()
-    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onRunState }, { factory: hub.factory, schedule: hub.runNow })
-    const feed = socketFor(hub, '/ws/lifecycle')
-    feed.emitOpen()
-    feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'RUNNING' }))
-    expect(onRunState).toHaveBeenCalledWith({ agentId: 'backend', runState: 'RUNNING' })
-  })
-
-  it('stop() closes both sockets', () => {
-    const hub = new FakeSocketHub()
-    const handle = startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
-    handle.stop()
-    expect(socketFor(hub, '/ws/comm').closed).toBe(true)
-    expect(socketFor(hub, '/ws/terminal-state').closed).toBe(true)
-  })
-
   it('folds an inbound /ws/events event into onEventsEvent (CYP-432)', () => {
     const hub = new FakeSocketHub()
     const onEventsEvent = vi.fn()
@@ -85,30 +58,111 @@ describe('startLiveHub (the live-socket VM, driven by fake sockets)', () => {
     expect(onEventsEvent).toHaveBeenCalledWith({ type: 'caughtup' })
   })
 
-  it('CYP-641: mounts /ws/busy-state + /ws/token-usage with the token and folds their events', () => {
+  it('stop() closes /ws/comm + /ws/status', () => {
     const hub = new FakeSocketHub()
-    const onBusyState = vi.fn()
-    const onTokenUsage = vi.fn()
-    startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onBusyState, onTokenUsage }, { factory: hub.factory, schedule: hub.runNow })
-
-    const busy = socketFor(hub, '/ws/busy-state')
-    expect(busy.url).toContain('token=tok')
-    busy.emitOpen()
-    busy.emitMessage(JSON.stringify({ agentId: 'backend', busy: true }))
-    expect(onBusyState).toHaveBeenCalledWith({ agentId: 'backend', busy: true })
-
-    const tokens = socketFor(hub, '/ws/token-usage')
-    expect(tokens.url).toContain('token=tok')
-    tokens.emitOpen()
-    tokens.emitMessage(JSON.stringify({ agentId: 'backend', contextTokens: 4200 }))
-    expect(onTokenUsage).toHaveBeenCalledWith({ agentId: 'backend', contextTokens: 4200 })
+    const handle = startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
+    handle.stop()
+    expect(socketFor(hub, '/ws/comm').closed).toBe(true)
+    expect(socketFor(hub, '/ws/status').closed).toBe(true)
   })
 
-  it('CYP-641: stop() closes the busy + token-usage sockets (no leak under StrictMode remount)', () => {
-    const hub = new FakeSocketHub()
-    const handle = startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onBusyState: vi.fn(), onTokenUsage: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
-    handle.stop()
-    expect(socketFor(hub, '/ws/busy-state').closed).toBe(true)
-    expect(socketFor(hub, '/ws/token-usage').closed).toBe(true)
+  // ── CYP-844: the muxed /ws/status feed ─────────────────────────────────────────────────────────────────────────
+  describe('CYP-844 — muxed /ws/status → the four per-kind reducers', () => {
+    // Wire each StatusFrame variant and assert its UNWRAPPED `.event` reaches the SAME callback the legacy feed fed.
+    // MUT: swap two case arms in dispatchStatus → the event lands on the wrong callback → these red.
+    it('★ lifecycle frame → onRunState with the unwrapped event (CYP-431)', () => {
+      const hub = new FakeSocketHub()
+      const onRunState = vi.fn()
+      startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onRunState }, { factory: hub.factory, schedule: hub.runNow })
+      const status = socketFor(hub, '/ws/status')
+      status.emitOpen()
+      status.emitMessage(JSON.stringify({ type: 'lifecycle', event: { agentId: 'backend', runState: 'RUNNING' } }))
+      expect(onRunState).toHaveBeenCalledWith({ agentId: 'backend', runState: 'RUNNING' })
+    })
+
+    it('★ tokenUsage frame → onTokenUsage with the unwrapped event (CYP-641)', () => {
+      const hub = new FakeSocketHub()
+      const onTokenUsage = vi.fn()
+      startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onTokenUsage }, { factory: hub.factory, schedule: hub.runNow })
+      const status = socketFor(hub, '/ws/status')
+      status.emitOpen()
+      status.emitMessage(JSON.stringify({ type: 'tokenUsage', event: { agentId: 'backend', contextTokens: 4200 } }))
+      expect(onTokenUsage).toHaveBeenCalledWith({ agentId: 'backend', contextTokens: 4200 })
+    })
+
+    it('★ busy frame → onBusyState with the unwrapped event (CYP-641)', () => {
+      const hub = new FakeSocketHub()
+      const onBusyState = vi.fn()
+      startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onBusyState }, { factory: hub.factory, schedule: hub.runNow })
+      const status = socketFor(hub, '/ws/status')
+      status.emitOpen()
+      status.emitMessage(JSON.stringify({ type: 'busy', event: { agentId: 'backend', busy: true } }))
+      expect(onBusyState).toHaveBeenCalledWith({ agentId: 'backend', busy: true })
+    })
+
+    it('★ terminal frame → onTerminalControl with the unwrapped event', () => {
+      const hub = new FakeSocketHub()
+      const onTerminalControl = vi.fn()
+      startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl }, { factory: hub.factory, schedule: hub.runNow })
+      const status = socketFor(hub, '/ws/status')
+      status.emitOpen()
+      status.emitMessage(JSON.stringify({ type: 'terminal', event: { agentId: 'backend', state: 'INTERACTIVE' } }))
+      expect(onTerminalControl).toHaveBeenCalledWith({ agentId: 'backend', state: 'INTERACTIVE' })
+    })
+
+    it('★ a variant does NOT leak into another kind’s callback (discriminant is load-bearing)', () => {
+      // MUT: route every frame to one callback (drop the discriminant) → a lifecycle frame would also hit onBusyState → reds.
+      const hub = new FakeSocketHub()
+      const onRunState = vi.fn()
+      const onBusyState = vi.fn()
+      const onTokenUsage = vi.fn()
+      const onTerminalControl = vi.fn()
+      startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl, onRunState, onBusyState, onTokenUsage }, { factory: hub.factory, schedule: hub.runNow })
+      const status = socketFor(hub, '/ws/status')
+      status.emitOpen()
+      status.emitMessage(JSON.stringify({ type: 'lifecycle', event: { agentId: 'backend', runState: 'RUNNING' } }))
+      expect(onRunState).toHaveBeenCalledTimes(1)
+      expect(onBusyState).not.toHaveBeenCalled()
+      expect(onTokenUsage).not.toHaveBeenCalled()
+      expect(onTerminalControl).not.toHaveBeenCalled()
+    })
+
+    it('★ preserves delivery order across a snapshot-then-deltas stream (same agentId, in order)', () => {
+      // The mux must forward frames in the order received — the store folds snapshot then deltas → last write wins.
+      // MUT: buffer/reorder frames → the recorded sequence changes → this reds.
+      const hub = new FakeSocketHub()
+      const seen: string[] = []
+      const onRunState = vi.fn((e: { runState: string }) => seen.push(e.runState))
+      startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onRunState }, { factory: hub.factory, schedule: hub.runNow })
+      const status = socketFor(hub, '/ws/status')
+      status.emitOpen()
+      status.emitMessage(JSON.stringify({ type: 'lifecycle', event: { agentId: 'backend', runState: 'RUNNING' } }))
+      status.emitMessage(JSON.stringify({ type: 'lifecycle', event: { agentId: 'backend', runState: 'STOPPED' } }))
+      expect(seen).toEqual(['RUNNING', 'STOPPED'])
+    })
+
+    it('★ TRANSIENT skew: a schema-violating status frame is dropped, the channel stays open (no terminal, no reconnect kill)', () => {
+      // This is the flagged/confirmed policy: /ws/status has NO onReject → a bad frame is a silent single-drop and the
+      // NEXT valid frame still arrives (contrast /ws/comm CYP-834 terminal-skew). MUT: wire onReject/terminal-skew here
+      // (narrow to comm's policy) → the socket would close after the bad frame and the follow-up would not arrive → reds.
+      const hub = new FakeSocketHub()
+      const onRunState = vi.fn()
+      startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onRunState }, { factory: hub.factory, schedule: hub.runNow })
+      const status = socketFor(hub, '/ws/status')
+      status.emitOpen()
+      status.emitMessage(JSON.stringify({ type: 'nonsense', event: { agentId: 'backend' } })) // unknown discriminant → schema-invalid
+      status.emitMessage(JSON.stringify({ type: 'lifecycle', event: { agentId: 'backend', runState: 'RUNNING' } }))
+      expect(status.closed).toBe(false)
+      expect(onRunState).toHaveBeenCalledWith({ agentId: 'backend', runState: 'RUNNING' })
+    })
+
+    it('★ replaces the four legacy feeds — client opens NONE of /ws/lifecycle,/ws/token-usage,/ws/busy-state,/ws/terminal-state', () => {
+      // MUT: leave a legacy feed mounted alongside the mux → that path reappears → this reds (double-open regression).
+      const hub = new FakeSocketHub()
+      startLiveHub(config, { onCommEvent: vi.fn(), onTerminalControl: vi.fn(), onRunState: vi.fn(), onBusyState: vi.fn(), onTokenUsage: vi.fn() }, { factory: hub.factory, schedule: hub.runNow })
+      for (const legacy of ['/ws/lifecycle', '/ws/token-usage', '/ws/busy-state', '/ws/terminal-state']) {
+        expect(maybeSocketFor(hub, legacy), `legacy feed ${legacy} must not be opened`).toBeUndefined()
+      }
+    })
   })
 })

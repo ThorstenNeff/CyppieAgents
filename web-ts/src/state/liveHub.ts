@@ -1,9 +1,10 @@
-// CYP-425 (App-Assembly) — the "live-socket VM": opens the /ws/comm and /ws/terminal-state sockets and folds
-// every inbound event into the store (ACL echoes, channel snapshots, comm messages, per-agent terminal state).
-// The socket factory/scheduler are injectable (SocketDeps) so tests drive the whole VM with fake sockets — no
-// real WebSocket. Returns a stop() that closes both sockets (called on App unmount). Per-agent /ws/agent and
-// /ws/terminal sockets are owned by the agent windows themselves (one socket per mounted window), not here.
-import { commSocket, terminalStateFeed, lifecycleFeed, busyStateFeed, tokenUsageFeed, eventsSocket } from '../net/channels'
+// CYP-425 (App-Assembly) — the "live-socket VM": opens /ws/comm and the muxed /ws/status socket (CYP-844) and folds
+// every inbound event into the store (ACL echoes, channel snapshots, comm messages, and the four per-agent status
+// kinds — run-state/token/busy/terminal — carried as one StatusFrame stream). The socket factory/scheduler are
+// injectable (SocketDeps) so tests drive the whole VM with fake sockets — no real WebSocket. Returns a stop() that
+// closes the sockets (called on App unmount). Per-agent /ws/agent and /ws/terminal sockets are owned by the agent
+// windows themselves (one socket per mounted window), not here.
+import { commSocket, statusFeed, eventsSocket } from '../net/channels'
 import type { FrameRejection } from '../net/wsValidation'
 import type { HubConfig, SocketDeps } from './hubConfig'
 import type {
@@ -13,6 +14,7 @@ import type {
   AgentBusyStateEvent,
   AgentTokenUsageEvent,
   EventsWsServerEvent,
+  StatusFrame,
 } from '../types/generated/contract'
 
 export interface HubActions {
@@ -47,23 +49,43 @@ export interface LiveHubHandle {
   stop: () => void
 }
 
+function assertNever(x: never): never {
+  throw new Error(`unhandled StatusFrame variant: ${JSON.stringify(x)}`)
+}
+
+// CYP-844: fan a muxed StatusFrame out to the same per-kind reducers the four legacy feeds fed. Exhaustive over the
+// discriminant (assertNever) — a NEW status kind fails to COMPILE until it is wired here, so the mux can never silently
+// drop a variant. `.event` is unwrapped verbatim (the reducers are unchanged; upsert-by-agentId lives in each store).
+function dispatchStatus(frame: StatusFrame, actions: HubActions): void {
+  switch (frame.type) {
+    case 'lifecycle':
+      actions.onRunState?.(frame.event)
+      return
+    case 'tokenUsage':
+      actions.onTokenUsage?.(frame.event)
+      return
+    case 'busy':
+      actions.onBusyState?.(frame.event)
+      return
+    case 'terminal':
+      actions.onTerminalControl(frame.event)
+      return
+    default:
+      assertNever(frame)
+  }
+}
+
 export function startLiveHub(config: HubConfig, actions: HubActions, deps: SocketDeps = {}): LiveHubHandle {
   const common = { baseUrl: config.wsBase, token: config.token, factory: deps.factory, schedule: deps.schedule }
   const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen, onClose: actions.onCommClose, onReject: actions.onCommSkew })
-  // CYP-815: the 4 read-only status feeds forward onClose too (parity with comm/events) — a 1008 revoke must not
-  // freeze the run-state/token/busy/terminal indicators silently.
-  const terminal = terminalStateFeed({ ...common, onEvent: actions.onTerminalControl, onClose: actions.onStatusClose })
-  const lifecycle = lifecycleFeed({ ...common, onEvent: (e) => actions.onRunState?.(e), onClose: actions.onStatusClose })
-  // CYP-641: the two read-only activity feeds — one global socket each, upserted by agentId in the store. Mounted
-  // unconditionally (participant-gated by the server, same bearer as lifecycle); they carry no message bodies, so
-  // no operator gate is needed (unlike /ws/events).
-  const busy = busyStateFeed({ ...common, onEvent: (e) => actions.onBusyState?.(e), onClose: actions.onStatusClose })
-  const tokenUsage = tokenUsageFeed({ ...common, onEvent: (e) => actions.onTokenUsage?.(e), onClose: actions.onStatusClose })
+  // CYP-844: ONE muxed status socket replaces the four separate feeds (lifecycle/token-usage/busy-state/terminal-state).
+  // A StatusFrame is discriminated on `type`; we unwrap `.event` and fan it out to the SAME reducers the four feeds fed
+  // (no reducer change — a pure 1:1 mux). Kept transient (OneWayFeed, no onReject): a schema-violated status frame is a
+  // single-drop, the exact legacy behavior. onStatusClose keeps the CYP-815 parity (a 1008 revoke must not silently
+  // freeze the run-state/token/busy/terminal indicators). Server keeps the four feeds until cutover (additive-parallel).
+  const status = statusFeed({ ...common, onEvent: (f) => dispatchStatus(f, actions), onClose: actions.onStatusClose })
   comm.start()
-  terminal.start()
-  lifecycle.start()
-  busy.start()
-  tokenUsage.start()
+  status.start()
 
   // CYP-432 fail-closed: only OPEN /ws/events when the caller wired onEventsEvent (operator). A non-operator never
   // starts the bodies-carrying socket at all — the client mount-gate is load-bearing defence-in-depth.
@@ -76,10 +98,7 @@ export function startLiveHub(config: HubConfig, actions: HubActions, deps: Socke
   return {
     stop: () => {
       comm.close()
-      terminal.close()
-      lifecycle.close()
-      busy.close()
-      tokenUsage.close()
+      status.close()
       events?.close()
     },
   }

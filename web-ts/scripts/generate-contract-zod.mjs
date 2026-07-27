@@ -34,6 +34,7 @@ const FRAME_ROOTS = [
   'AgentTokenUsageEvent', // /ws/token-usage
   'AgentBusyStateEvent', // /ws/busy-state
   'AgentTerminalControlEvent', // /ws/terminal-state
+  'StatusFrame', // /ws/status (CYP-844: the muxed status feed; discriminated union over the 4 above)
   'StoredAgentEvent', // the agent event socket
 ]
 
