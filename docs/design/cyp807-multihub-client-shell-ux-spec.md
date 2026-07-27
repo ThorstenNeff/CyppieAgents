@@ -54,9 +54,14 @@ switch-first; CYP-748/PL). Reuse des **`ProjectSwitcher`-Verhaltens** (CYP-651: 
   - **nie beobachtet (frischer Registry-Eintrag) → `unknown`** (fail-closed Default; war nie `trusted` → nicht `stale`).
   - **inaktive Einträge tragen KEINE live Progression** — `RemoteConnState.phase` des inaktiven Hubs ist effektiv
     `idle`/nicht-verbunden; die Progression-Chrome (CYP-827) rendert **nur für den aktiven** Connect.
-- **axis-c (`issuerTrust`) ist KEIN Switcher-Badge** — es ist ein **Zone-2**-Connect-Verdikt (terminal/actionable Block
-  beim Verbinden, CYP-823), **nicht** ein Dauer-Status. Im Switcher **nicht** anzeigen (sonst Zone-Verletzung). Ausnahme
-  s. §3 (`remote-not-configured` = actionable, ggf. dezenter Hinweis — aber **nicht** als Trust-Badge).
+- **axis-c (`issuerTrust`) ist GAR NICHT im Switcher — GANZE Achse, keine Ausnahme (M2-Ruling: Option a, Zone-clean).**
+  `issuerTrust` ist **EIN Feld** (`{TRUSTED, NOT_TRUSTED, REMOTE_NOT_CONFIGURED}`); **einen** Wert (`remote-not-configured`)
+  in den Switcher zu heben, während der terminale (`NOT_TRUSTED`) nur in der Failure-Region lebt, würde **axis-c über zwei
+  Zonen splitten** = inkohärent (Nutzer: „warum ist ein Issuer-Zustand in der Liste, der andere erst beim Connect?").
+  → **kein** `issuerTrust`-Wert im Switcher; die **ganze** Achse c ist der **Zone-2-Connect-Verdikt** (M4/Failure-Region):
+  `NOT_TRUSTED` → terminal-Block, `REMOTE_NOT_CONFIGURED` → actionable-Arm (§3), beide **beim Verbinden**, nicht als
+  Switcher-Status. *(Falls proaktive Setup-Sichtbarkeit je ein echter Bedarf wird: als **separater Readiness-Indikator**
+  — wie `online` —, NICHT als axis-c-Trust-Verdikt, der in den Switcher leakt. Nicht jetzt.)*
 - **Empty ≠ Load-Error:** `GET /api/cp/hubs` fehlgeschlagen → Error+Retry (CYP-288, `LoadErrorRetry`), **nicht** leere
   Liste („keine Hubs"). Genuin leer (0 Hubs) → ehrlicher Empty-State. Fail-closed sichtbar.
 
@@ -113,7 +118,8 @@ lösen** (Aussteller-Vertrauen OOB etablieren), dann **reconnecten** (Parität m
 2. **Inaktive Hubs degradieren korrekt, nie cached-`trusted`** — war-`trusted`+nicht-mehr-frisch → **`stale`** (CYP-841-Copy),
    nie-beobachtet → **`unknown`**; **nie** das letzte gecachte `trusted`. *(Mutation: inaktiver war-trusted-Hub bleibt
    `trusted` → RED = cached-trust; ODER nie-beobachtet zeigt `stale` → RED = erfundene frühere Beobachtung.)*
-3. **axis-c nicht im Switcher** — `issuerTrust` erscheint **nicht** als Switcher-Trust-Badge (Zone-Verletzung).
+3. **axis-c GAR NICHT im Switcher** — **kein** `issuerTrust`-Wert (auch nicht `remote-not-configured`) erscheint im
+   Switcher-Eintrag; die ganze Achse c ist Zone-2/M4. *(Mutation: irgendein issuerTrust-Wert als Switcher-Indikator → RED = Zone-Verletzung/Achsen-Split.)*
 4. **Empty ≠ Load-Error** — `/api/cp/hubs`-Fehler → Error+Retry, nicht leere Liste.
 5. **Switch non-optimistisch** — aktiv folgt server-confirmed `activeHubId`, nie dem Klick.
 6. **`actionable` ≠ terminal ≠ retryable** — `remote-not-configured` rendert einen Reconnect-nach-OOB-Arm (kein
