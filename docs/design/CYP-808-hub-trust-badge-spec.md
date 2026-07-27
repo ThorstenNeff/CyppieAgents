@@ -82,24 +82,24 @@ Ausgeschlossene Ursachen (N4, nie in REJECTED falten): Netzfehler → `UNKNOWN`;
 Der **Contract** (States, Glyph-Formen, Copy, a11y, neutral-TRUSTED) ist **identisch**. Zwei Farb-Token **müssen** auf
 Compose abweichen, weil Compose's maritime-M3-Palette andere Rollen-Semantik hat als web-ts's fixe Token:
 
-| State | web-ts (geshippt) | Compose (diese Spec) | Grund |
+| State | web-ts | Compose (diese Spec) | Grund |
 |---|---|---|---|
-| `STALE` | `--md-sys-color-tertiary` | **WARN-amber** (NICHT `tertiary`) | ⚠ **`tertiary` FLIPPT GRÜN in der Nacht** (CYP-300/E1 de-overload) → STALE läse als „ok/vertraut-grün" = invertierte Bedeutung. Compose MUSS night-safe amber nutzen. |
+| `STALE` | ~~`tertiary`~~ → **`--event-sev-warn` (Amber)** seit **CYP-838** | **WARN-amber** | ✅ **KONVERGIERT** — beide Amber. web-ts's alter `tertiary` war **#40D6A0 GRÜN in Dark** (genau die Inversion, die ich flaggte); CYP-838 swappte ihn auf Amber (action-neutral, beide Themes, mutations-getestet). Compose brauchte `tertiary` nie (Nacht-Grün-Falle CYP-300). |
 | `REJECTED` | `--md-sys-color-error` (rot) | **WARN-amber** | Compose's bestehende Trust-Verweiger-Arme (`TrustChanged`/`TrustRejected`, `HubConnectSelection.kt`) sind **bewusst WARN-amber** („protektiv, nicht kaputt/error-red"). Das Badge muss der **eigenen Surface-Doktrin** folgen, sonst amber-Arm + rot-Badge für dieselbe Verweigerung = intern inkonsistent. |
 
-**identisch** bleiben: UNKNOWN/PENDING `onSurfaceVariant`, TRUSTED `onSurface`. **⚠ Cross-Surface-Flag (an PO/Team-2,
-Consultation):** die zwei Divergenzen sind Kandidaten für eine Reconciliation — entweder web-ts zieht auf die geteilte
-Doktrin (STALE night-safe / REJECTED-amber „protektiv"), oder es bleibt bewusst pro-Surface. **Insb. web-ts STALE=
-`tertiary`: prüfen, ob deren Tertiary je grünlich rendert** (dann läse STALE dort ebenfalls falsch). Nicht mein Bau —
-Notiz für die Konsistenz-Runde.
+**identisch** bleiben: UNKNOWN/PENDING `onSurfaceVariant`, TRUSTED `onSurface`. **STALE ist nach CYP-838 auf beiden Amber
+(konvergiert).** Verbleibende Colour-Differenz = **nur `REJECTED`** (web-ts error-rot vs Compose WARN-amber) — bewusst
+pro-Surface (Compose-Verweiger-Doktrin), abgedeckt von der F-A5-3-Resolution unten. Cross-Surface-tertiary-Check
+**erledigt** (CYP-838).
 
 > **★ F-A5-3 RESOLUTION (Tester A5-Pass, 2026-07-27, UIUX-Entscheid): DELIBERATELY DIVERGENT → dokumentiert + geschlossen.
 > Cross-Platform-Colour-Parität ist KEIN Ziel.** Der Tester bestätigte: REJECTED+STALE teilen sich auf Compose Amber
 > (`Severity.WARN`), web-ts nutzt distinkte Tones (`REJECTED='warn'` vs `STALE='action'`) — **kein Kohärenz-Bug**
 > (Glyph `⊘`/`◑` + Wort bleiben distinkt, colour-never-sole hält). Warum bewusst so:
 > 1. **Contract-Parität ist das Ziel, nicht Token-Parität** (§0/§4) — Plattformen haben verschiedene Paletten, normal.
-> 2. **web-ts's distinkter STALE-Token IST `tertiary`** = genau die Rolle, die Compose nicht nutzen darf (Nacht-Grün-
->    Flip) → literale Parität ist **unmöglich** UND web-ts's Wahl selbst verdächtig (s. Tertiary-Prüf-Notiz oben).
+> 2. **web-ts's STALE war `tertiary`** (= #40D6A0 GRÜN in Dark, genau die von mir geflaggte Inversion) → **CYP-838
+>    swappte ihn auf Amber** (`--event-sev-warn`, mutations-getestet); **STALE ist jetzt auf beiden Amber = KONVERGIERT**.
+>    Der verify-don't-trust-Flag war korrekt UND ist bereits actioned. Verbleibende Colour-Differenz = nur `REJECTED`.
 > 3. **REJECTED + STALE sind dieselbe Severitäts-FAMILIE** (WARN: beide „nicht-aktuell-vertraut, Aufmerksamkeit", weder
 >    System-Fehler noch benigne-neutral) — gleiches Amber ist ehrlich; der Unterschied terminal-Verweiger vs Frische-
 >    Lücke trägt Glyph+Copy.
