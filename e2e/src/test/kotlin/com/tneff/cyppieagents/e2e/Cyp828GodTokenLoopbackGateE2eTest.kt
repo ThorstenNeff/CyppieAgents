@@ -1,7 +1,11 @@
 package com.tneff.cyppieagents.e2e
 
+import com.tneff.cyppieagents.auth.AuthDeps
+import com.tneff.cyppieagents.auth.FakeIdentityProvider
+import com.tneff.cyppieagents.auth.InMemoryRoleStore
 import com.tneff.cyppieagents.model.AuthMe
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.routing.TokenRegistry
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.websocket.webSocket
@@ -143,6 +147,33 @@ class Cyp828GodTokenLoopbackGateE2eTest {
         offLoopback { p ->
             val code = p.client().use { wsCloseCodeOrOpen(it, p.wsBaseUrl, "/ws/agent?agentId=backend&token=$godToken") }
             assertEquals(revoked, code, "★ off loopback the god-token's observe-any is denied → /ws/agent closes 1008")
+        }
+    }
+
+    // ── T1d(b) — ON loopback + kill-switch: the god-token is DOWNGRADED to MEMBER (never-lock-out), NOT locked out ──
+    //    (`operatorTokenDisabled ∧ hasOperator` at Principal.kt:127 skips the OPERATOR grant → :137 operatorEligible →
+    //     MachineAgent(null) = MEMBER read-tier). The loopback-`&&` must NOT be so strict it denies this legit case.
+    @Test
+    fun t1dB_onLoopbackKillSwitch_godTokenDowngradedToMember_neverLockOutPreserved() = runBlocking {
+        // A role store that genuinely HAS an operator (so the kill-switch is "effective") — the never-lock-out guard.
+        val roles = InMemoryRoleStore(bootstrapOperatorId = "human-op").also { it.ensureAssigned("human-op", 0L) }
+        val killSwitchAuth = AuthDeps(
+            // ON loopback (loopbackPosture = true) so the gate is NOT what denies — the kill-switch is.
+            tokens = TokenRegistry(emptyMap(), operatorToken = godToken, loopbackPosture = true),
+            idp = FakeIdentityProvider(emptyMap()),
+            roles = roles,
+            nowMs = { 0L },
+            operatorTokenDisabled = true, // the deploy kill-switch is SET, and a role-OPERATOR exists → token is INERT
+        )
+        e2ePlatform(projects(), authDeps = killSwitchAuth).use { p ->
+            // Downgraded, not operator: the operator-only route is 403 (MEMBER), NOT 200.
+            val op: HttpResponse = p.asOperator().use { it.get("${p.baseUrl}/api/workspace/members") }
+            assertEquals(HttpStatusCode.Forbidden, op.status,
+                "kill-switch: the god-token is downgraded to MEMBER → operator route 403 (no longer OPERATOR)")
+            // ★ Never-lock-out PRESERVED: the same downgraded token STILL reads the MEMBER-tier event log (200, not 401).
+            val member: HttpResponse = p.asOperator().use { it.get("${p.baseUrl}/api/events") }
+            assertEquals(HttpStatusCode.OK, member.status,
+                "★ never-lock-out: the kill-switched god-token is a MEMBER (reads the event log 200), NOT fully locked out")
         }
     }
 
