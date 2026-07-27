@@ -189,12 +189,27 @@ export function clearAclPending(state: HubState, channelId: string, agentId: str
 }
 
 /** Append a comm envelope, deduped by the stored message's id (reconnect replay is idempotent). */
+// CYP-816 (§4a windowed retention-cap, from CYP-814 G6) — the per-channel in-memory timeline cap. A long-lived,
+// high-traffic channel would otherwise grow this array + the DOM unboundedly. Messages are durably server-persisted
+// (MessageStore) and re-fetchable via getMessages, so trimming the OLDEST loses nothing permanent — a memory WINDOW,
+// not data loss. The timeline is NOT virtualized (plain `.map` render, App.tsx), so N ≈ the retained DOM-node budget:
+// at ~4-5 nodes/message, 500 keeps a channel at ~2-3k nodes / <1MB — smooth, well above typical traffic. REVERSIBLE:
+// tune with a render-perf pass (Dev5/Tester2). Scroll-back beyond the window returns on channel re-open (loadMessages
+// re-fetches full history today); an incremental `before`/limit re-fetch is the dual-gate follow-up (the messages
+// endpoint has no backward pagination yet — only forward `since`).
+export const MESSAGE_TIMELINE_CAP = 500
+
 export function applyMessage(state: HubState, delivered: DeliveredMessage): HubState {
   const { channelId, id } = delivered.message
   const existing = state.messagesByChannel.get(channelId) ?? []
   if (existing.some((d) => d.message.id === id)) return state // idempotent: drop the duplicate
+  const appended = [...existing, delivered]
+  // CYP-816: tail-cap, oldest-out. Covers live AND history-ingest — ingestMessages folds through here, so each fold
+  // trims → net keeps the last N with no unbounded intermediate. Trims oldest-ARRIVED (≈ oldest-chronological).
+  const capped =
+    appended.length > MESSAGE_TIMELINE_CAP ? appended.slice(appended.length - MESSAGE_TIMELINE_CAP) : appended
   const messagesByChannel = new Map(state.messagesByChannel)
-  messagesByChannel.set(channelId, [...existing, delivered])
+  messagesByChannel.set(channelId, capped)
   return { ...state, messagesByChannel }
 }
 
