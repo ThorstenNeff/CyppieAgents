@@ -12,6 +12,11 @@ import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.model.AgentBusyStateEvent
 import com.tneff.cyppieagents.model.AgentTerminalControlEvent
 import com.tneff.cyppieagents.model.AgentTokenUsageEvent
+import com.tneff.cyppieagents.model.BusyStatus
+import com.tneff.cyppieagents.model.LifecycleStatus
+import com.tneff.cyppieagents.model.StatusFrame
+import com.tneff.cyppieagents.model.TerminalStatus
+import com.tneff.cyppieagents.model.TokenUsageStatus
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -21,6 +26,8 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
 
 /**
@@ -142,5 +149,44 @@ fun Route.terminalControlSocket(terminalControl: () -> TerminalControlStateTrack
             .collect { event ->
                 send(Frame.Text(CommJson.encodeToString(AgentTerminalControlEvent.serializer(), event)))
             }
+    }
+}
+
+/**
+ * CYP-840 (decompose of CYP-612) — the **muxed** `/ws/status`: ONE socket that replaces the 4 content-free
+ * status feeds ([lifecycleSocket]/[tokenUsageSocket]/[busyStateSocket]/[terminalControlSocket]), so the client
+ * opens ONE stream instead of four. Same read-tier gate ([wsReaderOrNull], fail-closed WS `1008`) and same
+ * content-free payloads — muxing them into ONE participant stream dissolves NO egress boundary (the operator-gated
+ * `/ws/events` and the auth-/PTY-gated `/ws/comm|agent|terminal` deliberately stay SEPARATE — the CYP-840
+ * content-free-only invariant).
+ *
+ * Each of the 4 substreams keeps its OWN **snapshot-then-deltas** semantics **atomically** — its `snapshot()`
+ * prologue runs before its live deltas, inside its own [flow] — and the 4 are [merge]d live under one
+ * [StatusFrame] discriminator (`type` = lifecycle/tokenUsage/busy/terminal). The client upserts by `(type,
+ * agentId)`, so cross-substream snapshot interleaving is order-immaterial (no "snapshot-complete" marker needed),
+ * exactly as each single socket already relies on for its reconnect snapshot. **Additive-parallel:** the 4
+ * individual sockets stay wired until the client consumer cuts over.
+ */
+fun Route.statusSocket(
+    lifecycle: () -> LifecycleManager,
+    tokenUsage: () -> AgentTokenUsageTracker,
+    busyState: () -> AgentBusyStateTracker,
+    terminalControl: () -> TerminalControlStateTracker,
+    registry: TokenRegistry,
+    deps: com.tneff.cyppieagents.auth.AuthDeps = com.tneff.cyppieagents.auth.AuthDeps(registry),
+) {
+    webSocket("/ws/status") {
+        if (call.wsReaderOrNull(deps, registry) == null) {
+            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
+        }
+        val lc = lifecycle(); val tu = tokenUsage(); val bs = busyState(); val tc = terminalControl()
+        merge(
+            flow { lc.snapshot().forEach { emit(LifecycleStatus(it)) }; lc.events.collect { emit(LifecycleStatus(it)) } },
+            flow { tu.snapshot().forEach { emit(TokenUsageStatus(it)) }; tu.events.collect { emit(TokenUsageStatus(it)) } },
+            flow { bs.snapshot().forEach { emit(BusyStatus(it)) }; bs.events.collect { emit(BusyStatus(it)) } },
+            flow { tc.snapshot().forEach { emit(TerminalStatus(it)) }; tc.events.collect { emit(TerminalStatus(it)) } },
+        ).collect { frame ->
+            send(Frame.Text(CommJson.encodeToString(StatusFrame.serializer(), frame)))
+        }
     }
 }

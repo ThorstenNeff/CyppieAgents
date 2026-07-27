@@ -12,6 +12,7 @@ import com.tneff.cyppieagents.model.EventsWsServerEvent
 import com.tneff.cyppieagents.model.HubDescriptorValidity
 import com.tneff.cyppieagents.model.HubIssuerTrust
 import com.tneff.cyppieagents.model.HubTrustState
+import com.tneff.cyppieagents.model.StatusFrame
 import com.tneff.cyppieagents.model.StoredAgentEvent
 import com.tneff.cyppieagents.model.TrustRejectReason
 import com.tneff.cyppieagents.model.StreamJsonEvent
@@ -50,6 +51,7 @@ object ContractGenerator {
         WsChannel("/ws/token-usage", serializer<AgentTokenUsageEvent>().descriptor, null), // CYP-316: one-way token feed
         WsChannel("/ws/busy-state", serializer<AgentBusyStateEvent>().descriptor, null), // CYP-324: one-way busy/idle feed
         WsChannel("/ws/terminal-state", serializer<AgentTerminalControlEvent>().descriptor, null), // CYP-354 (BE-1): one-way terminal-control-mode feed
+        WsChannel("/ws/status", serializer<StatusFrame>().descriptor, null), // CYP-840: muxed content-free status feed (lifecycle/tokenUsage/busy/terminal); additive-parallel to the 4 above
         // CYP-409 P1 fix: the server→client frame is the FULL StoredAgentEvent{seq,agentId,projectId,tsMs,event},
         // NOT the bare inner StreamJsonEvent — verified at AgentSocket.kt (the pump sends
         // `CommJson.encodeToString(StoredAgentEvent.serializer(), stored)`) and matched by AgentWsClient. The

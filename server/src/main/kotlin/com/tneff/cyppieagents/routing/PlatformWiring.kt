@@ -119,6 +119,16 @@ fun Application.installPlatform(
         busyStateSocket({ booted.runtimeRegistry.active().busyState }, booted.tokenRegistry, authDeps)
         // /ws/terminal-state — CYP-354 (BE-1): content-free per-agent terminal-control-mode feed, read-tier, active runtime.
         terminalControlSocket({ booted.runtimeRegistry.active().terminalControl }, booted.tokenRegistry, authDeps)
+        // /ws/status — CYP-840: the muxed content-free status feed (lifecycle/tokenUsage/busy/terminal in ONE socket),
+        // read-tier, active runtime. Additive-parallel: the 4 individual sockets above stay until the client cuts over.
+        statusSocket(
+            { booted.runtimeRegistry.active().lifecycle },
+            { booted.runtimeRegistry.active().tokenUsage },
+            { booted.runtimeRegistry.active().busyState },
+            { booted.runtimeRegistry.active().terminalControl },
+            booted.tokenRegistry,
+            authDeps,
+        )
         // /ws/terminal — CYP-332: PTY-over-WS transport for the Desktop interactive terminal (one pty4j PTY per
         // agent; single-flight §4.1). CYP-394: WRITE-tier gated (code-exec in the worktree) → operator-only today
         // via the empty [NoTerminalGrants] store; a per-agent member-grant slots in here additively (a real store
