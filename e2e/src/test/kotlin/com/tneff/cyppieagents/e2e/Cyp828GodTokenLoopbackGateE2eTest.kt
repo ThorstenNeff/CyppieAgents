@@ -2,13 +2,18 @@ package com.tneff.cyppieagents.e2e
 
 import com.tneff.cyppieagents.model.AuthMe
 import com.tneff.cyppieagents.model.Role
+import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode
+import io.ktor.websocket.CloseReason
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 
 /**
  * CYP-828 (god-token / operatorEligible) — the loopback-gate proven at the REAL HTTP/WS request paths (QA
@@ -96,6 +101,48 @@ class Cyp828GodTokenLoopbackGateE2eTest {
             val r: HttpResponse = p.asOperator().use { it.get("${p.baseUrl}/api/events") }
             assertEquals(HttpStatusCode.Unauthorized, r.status,
                 "★ off loopback the god-token is 401 on the MEMBER-tier event log — NOT silently downgraded to a MEMBER read")
+        }
+    }
+
+    // ── WS helper: connect [path], return the server's close code, or null if the socket STAYS OPEN past [waitMs]
+    //    (a granted/authorized connection never closes → `closeReason.await()` blocks → the withTimeout unwinds → null). ─
+    private suspend fun wsCloseCodeOrOpen(client: HttpClient, wsBaseUrl: String, path: String, waitMs: Long = 2_000L): Short? {
+        var code: Short? = null
+        runCatching { withTimeout(waitMs) { client.webSocket("$wsBaseUrl$path") { code = closeReason.await()?.code } } }
+        return code // null = stayed open (granted); a code (e.g. 1008 VIOLATED_POLICY) = closed (denied)
+    }
+
+    private val revoked = CloseReason.Codes.VIOLATED_POLICY.code
+
+    // ── Seam #2 — /ws/terminal PTY take-over (TerminalAccess.kt:173 operatorEligible → TerminalPrincipal.Operator) ──
+
+    @Test
+    fun seam2_wsTerminalTakeover_grantedOnLoopback_deniedOffLoopback() {
+        // Positive control: on loopback the god-token is TerminalPrincipal.Operator → the take-over socket STAYS OPEN.
+        onLoopback { p ->
+            val code = p.client().use { wsCloseCodeOrOpen(it, p.wsBaseUrl, "/ws/terminal?agentId=backend&token=$godToken") }
+            assertEquals(null, code, "on loopback the god-token opens the /ws/terminal take-over (Operator) — socket stays open")
+        }
+        // ★ The gate: off loopback the god-token is not Operator → the PTY take-over socket is CLOSED fail-closed.
+        offLoopback { p ->
+            val code = p.client().use { wsCloseCodeOrOpen(it, p.wsBaseUrl, "/ws/terminal?agentId=backend&token=$godToken") }
+            assertNotEquals(null, code, "★ off loopback the god-token PTY take-over is DENIED — the socket closes fail-closed")
+        }
+    }
+
+    // ── Seam #3 — /ws/agent observe-any (AgentSocket.kt:65 operatorEligible → true) ───────────────────────────────
+
+    @Test
+    fun seam3_wsAgentObserveAny_grantedOnLoopback_1008OffLoopback() {
+        // Positive control: on loopback the god-token may observe ANOTHER agent's stream → the socket STAYS OPEN.
+        onLoopback { p ->
+            val code = p.client().use { wsCloseCodeOrOpen(it, p.wsBaseUrl, "/ws/agent?agentId=backend&token=$godToken") }
+            assertEquals(null, code, "on loopback the god-token observes another agent's stream — socket stays open")
+        }
+        // ★ The gate: off loopback the god-token cannot observe another agent → 1008 (VIOLATED_POLICY), the fail-closed close.
+        offLoopback { p ->
+            val code = p.client().use { wsCloseCodeOrOpen(it, p.wsBaseUrl, "/ws/agent?agentId=backend&token=$godToken") }
+            assertEquals(revoked, code, "★ off loopback the god-token's observe-any is denied → /ws/agent closes 1008")
         }
     }
 
