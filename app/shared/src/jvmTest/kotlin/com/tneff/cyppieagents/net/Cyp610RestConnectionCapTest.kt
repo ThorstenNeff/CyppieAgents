@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
  *
  * **Why a config tooth, not a behavioural socket test:** the CIO connection count under a *cold simultaneous burst* is
  * inherently non-deterministic (its check-then-create is not atomic → a brief handoff connection can appear — the
- * "peak=2" a loaded env saw; bounded, absorbed by the cap-24 headroom, never a durable WS-slot theft). Asserting on a
+ * "peak=2" a loaded env saw; bounded, absorbed by the cap-16 DATA-lane headroom, never a durable WS-slot theft). Asserting on a
  * sampled peak is therefore env-flaky, and a widened tolerance would just paper over the race. Instead this asserts the
  * **configuration** that governs the cap — exact, deterministic, and it reddens the instant the cap line is removed
  * (CIO's default `maxConnectionsPerRoute` is 100 = effectively uncapped). The behaviour is proven END-TO-END on the real
@@ -49,14 +49,15 @@ class Cyp610RestConnectionCapTest {
 
     @Test
     fun partition_fitsUsableDataBudgetAfterControl() {
-        // 14 WS + 1 REST must fit the usable data-ids (cap − 1 control), with headroom at cap 24.
+        // WS + 1 REST must fit the usable data-ids (cap − 1 control). Post-CYP-846 (status-mux 4→1) the WS working set
+        // is 11; the coherent cap=16 + margin envelope is pinned separately in Cyp611ClientCapEnvelopeTest.
         val usable = TUNNEL_POOL_CAP - 1 // Control tunnel holds rendezvous-id 0
         assertTrue(
             WS_RESERVED_SLOTS + REST_DEDICATED_CONNS <= usable,
             "partition ${WS_RESERVED_SLOTS}WS + ${REST_DEDICATED_CONNS}REST must fit $usable usable ids (cap $TUNNEL_POOL_CAP − 1 control)",
         )
         assertEquals(1, REST_DEDICATED_CONNS, "REST is one shared keep-alive socket (Backend: one tunnel = one SOCKET)")
-        assertTrue(WS_RESERVED_SLOTS >= 14, "the 7-agent default needs ≥14 WS (7 agent + 7 singleton, no mux)")
+        assertTrue(WS_RESERVED_SLOTS >= 11, "the 7-agent default needs ≥11 WS (7 agent + 4 singleton after the CYP-846 status-mux: status/comm/events/acl)")
         assertTrue(REST_DEDICATED_CONNS < WS_RESERVED_SLOTS, "REST's budget must be ≪ the WS reservation")
     }
 }
