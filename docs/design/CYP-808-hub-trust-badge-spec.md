@@ -175,7 +175,15 @@ fun hubTrustToneFor(state: HubTrustState, scheme: ColorScheme, dark: Boolean): H
 | `hub_trust_stale` | Zuletzt vertraut — Frische nicht bestätigt | Last trusted — currency not confirmed |
 | `hub_descriptor_invalid` | Ungültiger Hub-Descriptor — Status nicht interpretierbar | Invalid hub descriptor — status not interpretable |
 | `a11y_hub_trust_trusted` | Diesem Hub wird vertraut (Aussteller-vouched, widerrufbar). | This hub is trusted (issuer-vouched, revocable). |
-| `a11y_hub_trust_*` (je State) | *(analog, ruhig; UNKNOWN/PENDING nie „sicher")* | |
+| `a11y_hub_trust_stale` | Zuletzt vertraut — Frische nicht bestätigt. Zum Fortfahren Out-of-Band erneut bestätigen. | Last trusted — currency not confirmed. Re-confirm out-of-band to continue. |
+| `a11y_hub_trust_*` (übrige States) | *(analog, ruhig; UNKNOWN/PENDING nie „sicher")* | |
+
+> **★ STALE-Copy KANONISCH (Cross-Surface, 2026-07-27):** die **deskriptive** Form oben ist die kanonische Trust-STALE-
+> Copy für **beide** Surfaces — **nicht** web-ts's imperativ-„abgelaufen — erneut bestätigen". Grund: STALE = `:core`
+> „can no longer be confirmed **current**" (Revocation **oder** non-LIVE-Feed); „abgelaufen/expired" behauptet eine
+> definite Terminierung, die wir nicht wissen (Overclaim, `null≠fabriziert`), und liest terminaler als STALE ist
+> (≠ REJECTED). **Label deskriptiv** (das Badge zeigt einen Zustand); die **Aktion** („OOB erneut bestätigen") lebt in
+> der **a11y-Zeile**, nie im Pill-Label und nie via „abgelaufen". web-ts alignt hierauf (PO-Follow-up).
 
 **Wortlaut-Disziplin:** kein „sicher/verifiziert" bei TRUSTED (Overclaim); TRUSTED-Label **„vertraut" NICHT „gepinnt"**
 (kollidiert mit `pinnedOperatorId`, CYP-803). Wortgleich zu web-ts `HUB_TRUST_TEXT` wo möglich.
