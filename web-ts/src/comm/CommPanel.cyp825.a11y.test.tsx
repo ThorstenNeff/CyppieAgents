@@ -53,6 +53,20 @@ describe('CYP-825 — terminal revoke escalates to a dedicated role=alert; trans
     expect(offline.queryByRole('alert')).toBeNull()
   })
 
+  it('★ →revoked MOUNTS A FRESH node, not the reused polite node (pins the sibling-split, not a same-position ternary)', () => {
+    // MUT: refactor the two sibling {cond && <div>} into a same-position ternary → React reuses the one DOM node and
+    // flips aria-live (the SR-unreliable trap) → after===before; this .not.toBe reds. Pins the fix's actual mechanism —
+    // the other teeth only render fresh per value and would stay green under that refactor.
+    const { getByTestId, rerender } = render(<CommPanel {...base} connection="offline" />)
+    const before = getByTestId('comm-status')
+    expect(before.getAttribute('aria-live')).toBe('polite')
+    rerender(<CommPanel {...base} connection="revoked" />)
+    const after = getByTestId('comm-status')
+    expect(after.getAttribute('role')).toBe('alert')
+    expect(after.getAttribute('aria-live')).toBe('assertive')
+    expect(after).not.toBe(before) // fresh mount — a same-position ternary would REUSE (after===before) and fail here
+  })
+
   it('revoked keeps the visible text + errorContainer class (only the a11y announcement escalates, visual unchanged)', () => {
     const { getByTestId } = render(<CommPanel {...base} connection="revoked" />)
     const node = getByTestId('comm-status')
