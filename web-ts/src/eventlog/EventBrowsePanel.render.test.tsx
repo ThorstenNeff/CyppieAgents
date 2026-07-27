@@ -189,6 +189,7 @@ describe('EventBrowsePanel — CYP-467 parity (type/project/timeWindow chips + t
     expect(s1.textContent).toContain('3/5')
     expect(s1.textContent).toContain('Timeout')
     expect(s1.className).toContain('event-browse-summary-warn') // amber (and text carries the meaning)
+    expect(s1.textContent).toContain('▲') // CYP-812: the warn glyph reinforces the amber (colour never the sole carrier)
 
     await act(async () => {
       fireEvent.click(getByTestId('eventBrowse.row.1'))
@@ -196,6 +197,7 @@ describe('EventBrowsePanel — CYP-467 parity (type/project/timeWindow chips + t
     const s2 = await findByTestId('eventBrowse.detail.compactSummary')
     expect(s2.textContent).toContain('5/5')
     expect(s2.className).not.toContain('event-browse-summary-warn') // a full run is neutral — never amber, never green
+    expect(s2.textContent).not.toContain('▲') // CYP-812: no warn glyph on a neutral full run (glyph tracks the warn state)
   })
 
   it('a resume.outcome detail shows CONTEXT_LOST as WARN amber; an unknown outcome shows no fabricated summary', async () => {
@@ -210,6 +212,7 @@ describe('EventBrowsePanel — CYP-467 parity (type/project/timeWindow chips + t
     const s = await findByTestId('eventBrowse.detail.resumeOutcome')
     expect(s.textContent).toContain('Kontext verloren')
     expect(s.className).toContain('event-browse-summary-warn')
+    expect(s.textContent).toContain('▲') // CYP-812: warn glyph present on the context-lost resume summary
 
     await act(async () => {
       fireEvent.click(getByTestId('eventBrowse.row.1'))

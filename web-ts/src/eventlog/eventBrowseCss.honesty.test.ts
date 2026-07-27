@@ -56,3 +56,17 @@ describe('handoff banner tone (Nacht-Lane) — the rule its own comment states, 
     expect(banner).not.toBe(revoked)
   })
 })
+
+describe('CYP-812 — event-browse compact/resume summary WARN tone (long-tail sibling of the handoff/revoked guards)', () => {
+  const summary = ruleBody('.event-browse-summary-warn')
+
+  it('★ a compact-timeout / context-lost summary is the WARN caution tone: never green (all-clear), never error-red (crash)', () => {
+    // The class toggle is render-tested; the shipped COLOUR was unpinned. A drift to green would read a partial/lost
+    // compaction as "all done"; error-red would falsely imply a crash. MUT: swap warn-container→tertiary/error → reds.
+    expect(summary).toContain('var(--md-sys-color-warn-container)')
+    expect(summary).toContain('var(--md-sys-color-on-warn-container)')
+    expect(summary).not.toMatch(/tertiary/) // "NEVER green" (green-at-night reads as ok)
+    expect(summary).not.toMatch(/success|-green/)
+    expect(summary).not.toMatch(/error-container|--md-sys-color-error\b/) // never a crash tone
+  })
+})
