@@ -93,6 +93,23 @@ Doktrin (STALE night-safe / REJECTED-amber „protektiv"), oder es bleibt bewuss
 `tertiary`: prüfen, ob deren Tertiary je grünlich rendert** (dann läse STALE dort ebenfalls falsch). Nicht mein Bau —
 Notiz für die Konsistenz-Runde.
 
+> **★ F-A5-3 RESOLUTION (Tester A5-Pass, 2026-07-27, UIUX-Entscheid): DELIBERATELY DIVERGENT → dokumentiert + geschlossen.
+> Cross-Platform-Colour-Parität ist KEIN Ziel.** Der Tester bestätigte: REJECTED+STALE teilen sich auf Compose Amber
+> (`Severity.WARN`), web-ts nutzt distinkte Tones (`REJECTED='warn'` vs `STALE='action'`) — **kein Kohärenz-Bug**
+> (Glyph `⊘`/`◑` + Wort bleiben distinkt, colour-never-sole hält). Warum bewusst so:
+> 1. **Contract-Parität ist das Ziel, nicht Token-Parität** (§0/§4) — Plattformen haben verschiedene Paletten, normal.
+> 2. **web-ts's distinkter STALE-Token IST `tertiary`** = genau die Rolle, die Compose nicht nutzen darf (Nacht-Grün-
+>    Flip) → literale Parität ist **unmöglich** UND web-ts's Wahl selbst verdächtig (s. Tertiary-Prüf-Notiz oben).
+> 3. **REJECTED + STALE sind dieselbe Severitäts-FAMILIE** (WARN: beide „nicht-aktuell-vertraut, Aufmerksamkeit", weder
+>    System-Fehler noch benigne-neutral) — gleiches Amber ist ehrlich; der Unterschied terminal-Verweiger vs Frische-
+>    Lücke trägt Glyph+Copy.
+> 4. Ein 2. Hue erzwingen bräuchte `tertiary` (Nacht-Falle) **oder** REJECTED auf error-rot heben (über-alarmiert
+>    `OOB_REJECTED` = das eigene „Nein" des Operators; bricht die amber-„protektiv"-Verweiger-Doktrin) — beide schlechter.
+>
+> **Optionaler Zukunfts-Hebel (NICHT jetzt), falls je At-a-glance-Scanning-Distinktion gewünscht:** distinguieren via
+> **Emphase innerhalb der Amber-Familie** (STALE = recede/markiert-amber, passend zu „residual trust markiert"; REJECTED
+> = voll-amber), **nie** ein 2. Hue. Kein Requirement — reine spätere Politur.
+
 **Day+Night + WCAG (beide Schemata):** Amber kommt aus der **einen** `severityColor(Severity.WARN)`-Quelle (CYP-274/300,
 schon Day+Night-getunt, ≥ Kontrast). `onSurface`/`onSurfaceVariant` sind Scheme-Rollen (M3 garantiert Text-Kontrast).
 Das **Label-WORT ist immer präsent** → WCAG 1.4.1 erfüllt (Farbe nie Alleinträger); der Glyph ist Verstärkung.
