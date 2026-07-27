@@ -76,7 +76,11 @@ export function failureDisposition(cause: ConnectFailureCause): RemoteFailureDis
 /**
  * The connect-progression state. Discriminated on `phase` (mirrors the hubReducers discriminated-union idiom). The happy
  * path is idle → dialing → handshake → trust-check → connected; `failed(cause)` is a terminal negative outcome of the
- * progression; `lost` is a terminal drop of an ESTABLISHED connection. Both terminals are cleared with a `reset` → idle.
+ * progression; `lost` is a TERMINAL drop of an established connection (routes to the Zone-2 failure region); `reconnecting`
+ * is its TRANSIENT counterpart — an established connection dropped RECONNECTABLY (polite/retryable, NEVER a failure arm;
+ * mirrors Compose RECONNECTING). CYP-826-A2 split the CYP-822 undifferentiated `lost` into these two by drop terminality
+ * (coordinator-decided: this distinction is state-machine semantics, not a view concern). All terminals clear via
+ * `reset` → idle.
  */
 export type RemoteConnState =
   | { phase: 'idle' }
@@ -84,6 +88,7 @@ export type RemoteConnState =
   | { phase: 'handshake' }
   | { phase: 'trust-check' }
   | { phase: 'connected' }
+  | { phase: 'reconnecting' }
   | { phase: 'failed'; cause: ConnectFailureCause }
   | { phase: 'lost' }
 
@@ -126,13 +131,13 @@ export function issuerVerdictFor(issuer: HubIssuerTrust | null | undefined): Iss
  * COMPILE error.
  */
 export type RemoteConnEvent =
-  | { kind: 'dial' } // idle → dialing
+  | { kind: 'dial' } // idle | reconnecting → dialing
   | { kind: 'dialRefused' } // dialing → failed('connect-refused')
   | { kind: 'handshakeOpen' } // dialing → handshake
   | { kind: 'handshakeFailed' } // handshake → failed('handshake-fail')
   | { kind: 'handshakeOk' } // handshake → trust-check
   | { kind: 'trustEvaluated'; verdict: IssuerConnectVerdict; tierGate: TierGate } // trust-check → connected | failed(issuer|tier)
-  | { kind: 'dropped' } // connected → lost
+  | { kind: 'dropped'; terminal: boolean } // connected|reconnecting → lost (terminal) | reconnecting (non-terminal)
   | { kind: 'reset' } // any (non-idle) → idle
 
 /**
@@ -143,9 +148,17 @@ export type RemoteConnEvent =
  * `blocked` verdict carries its own typed issuer cause (fail-closed-by-construction); the reducer never re-derives it.
  */
 function resolveTrustCheck(verdict: IssuerConnectVerdict, tierGate: TierGate): RemoteConnState {
-  if (verdict.outcome === 'blocked') return { phase: 'failed', cause: verdict.cause }
-  if (tierGate === 'rejected') return { phase: 'failed', cause: 'security-tier' }
-  return { phase: 'connected' }
+  // ★ Exhaustive over the OUTCOME union (Assist2 CYP-825 adjacent-vector hardening): a `switch` + assertNever, NOT an
+  // `if (blocked) … else <assume proceed>`. An additive IssuerConnectVerdict.outcome variant then fails to COMPILE here
+  // instead of silently falling through to `connected` (fail-OPEN). Fail-closed by construction.
+  switch (verdict.outcome) {
+    case 'blocked':
+      return { phase: 'failed', cause: verdict.cause }
+    case 'proceed':
+      return tierGate === 'rejected' ? { phase: 'failed', cause: 'security-tier' } : { phase: 'connected' }
+    default:
+      return assertNever(verdict)
+  }
 }
 
 /**
@@ -158,7 +171,8 @@ function resolveTrustCheck(verdict: IssuerConnectVerdict, tierGate: TierGate): R
 export function remoteConnReduce(state: RemoteConnState, event: RemoteConnEvent): RemoteConnState {
   switch (event.kind) {
     case 'dial':
-      return state.phase === 'idle' ? { phase: 'dialing' } : state
+      // idle (first dial) OR reconnecting (retry after a non-terminal drop) → dialing; else a no-op.
+      return state.phase === 'idle' || state.phase === 'reconnecting' ? { phase: 'dialing' } : state
     case 'dialRefused':
       return state.phase === 'dialing' ? { phase: 'failed', cause: 'connect-refused' } : state
     case 'handshakeOpen':
@@ -170,9 +184,17 @@ export function remoteConnReduce(state: RemoteConnState, event: RemoteConnEvent)
     case 'trustEvaluated':
       return state.phase === 'trust-check' ? resolveTrustCheck(event.verdict, event.tierGate) : state
     case 'dropped':
-      // ONLY a connected connection can be 'lost'. A drop during dialing/handshake surfaces as its own progression
-      // failure (dialRefused/handshakeFailed), not as 'lost' — so from any non-connected phase this is a no-op.
-      return state.phase === 'connected' ? { phase: 'lost' } : state
+      // A drop is meaningful only for an ESTABLISHED (connected) or already-reconnecting connection — a drop during
+      // dialing/handshake surfaces as its own progression failure (dialRefused/handshakeFailed), so from any other phase
+      // it is a no-op. terminal → the terminal `lost` phase (→ Zone-2 failure region); non-terminal → the transient
+      // `reconnecting` phase (polite/retryable, NEVER a failure arm). Already-reconnecting + non-terminal is a no-op.
+      return state.phase === 'connected' || state.phase === 'reconnecting'
+        ? event.terminal
+          ? { phase: 'lost' }
+          : state.phase === 'reconnecting'
+            ? state
+            : { phase: 'reconnecting' }
+        : state
     case 'reset':
       return state.phase === 'idle' ? state : { phase: 'idle' }
     default:
@@ -182,9 +204,10 @@ export function remoteConnReduce(state: RemoteConnState, event: RemoteConnEvent)
   }
 }
 
-/** Compile-time proof that every event kind is handled; unreachable at runtime by construction. */
+/** Compile-time proof that every union case is handled (RemoteConnEvent kind AND IssuerConnectVerdict outcome);
+ *  unreachable at runtime by construction — a `default: assertNever` fails to compile if a variant is left unhandled. */
 function assertNever(x: never): never {
-  throw new Error(`unhandled RemoteConnEvent kind: ${JSON.stringify(x)}`)
+  throw new Error(`unhandled variant: ${JSON.stringify(x)}`)
 }
 
 /** The stateful machine runtime: holds the current RemoteConnState, folds fed events through the pure reducer, and
