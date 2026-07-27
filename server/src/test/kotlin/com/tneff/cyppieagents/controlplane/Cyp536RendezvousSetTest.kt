@@ -71,13 +71,15 @@ class Cyp536RendezvousSetTest {
 
     @Test
     fun cyp611_dosCapIs24_authorizedFloor_element0IsControl_dataIdsHaveHeadroom() {
-        // CYP-611 — the per-operator DoS cap (WS6 axis 2) was raised 16→24 with the Auftraggeber's out-of-band GO. This
-        // pins the AUTHORIZED value as a regression guard: reverting to 16 (or any drop below the workload) re-introduces
-        // the 8-agent pool-exhaustion foot-gun and would be an UNauthorized DoS-envelope change. Data-ids = cap-1 (element
-        // 0 is the control tunnel) → 23 usable, headroom to ~16 agents (7 singleton-WS + N agent-WS + 1 REST).
-        assertEquals(24, RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP, "CYP-611: Auftraggeber-authorized DoS cap = 24")
+        // CYP-611 — the per-operator DoS cap (WS6 axis 2). Was raised 16→24 (Auftraggeber-authorized LOOSENING) to
+        // clear the pre-mux 8-agent pool-exhaustion foot-gun. CYP-611 REVERT (24→16, TIGHTENING): the CYP-840 status-mux
+        // consolidates the 4 singleton status feeds → ONE /ws/status, dropping the client WS working set (6 globals → 3)
+        // so the foot-gun is relieved and the 24-headroom is no longer needed — tightening back toward the original DoS
+        // floor. Data-ids = cap-1 (element 0 = control tunnel) → 15 usable, covering the post-mux ~11-WS working set + 1
+        // REST with headroom. Guard pins the CURRENT authorized value; a change (either direction) is a DoS-envelope edit.
+        assertEquals(16, RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP, "CYP-611 revert: DoS cap = 16 (post-CYP-840-mux)")
         val dataIds = RelayRendezvous.rendezvousIdSet(hubId, epoch, RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP).drop(1)
-        assertEquals(23, dataIds.size, "data-id pool (after the control id) = cap-1 = 23")
-        assertTrue(dataIds.size >= 15, "must cover the 7-agent default (14 WS + 1 REST) with headroom")
+        assertEquals(15, dataIds.size, "data-id pool (after the control id) = cap-1 = 15")
+        assertTrue(dataIds.size >= 12, "must cover the post-mux ~11-WS working set + 1 REST")
     }
 }
