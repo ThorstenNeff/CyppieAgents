@@ -58,8 +58,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -366,13 +368,20 @@ private fun ModeToggleRow(
     val currentLabel = if (mode == AgentContentMode.TERMINAL) termLabel else orchLabel
     val viewDescription = stringResource(Res.string.a11y_terminal_mode, currentLabel)
     val idleDeferA11y = stringResource(Res.string.a11y_terminal_idle_defer)
+    // CYP-836: the in-flight switch is aria-busy parity — a `stateDescription`, NOT a live pulse (§2/§4: switching = no
+    // announce). Focus-readable state; the toggle's Assertive fires only on the CONFIRMED flip (above), not here.
+    val switchingLabel = stringResource(Res.string.terminal_mode_switching)
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier
                 .testTag(AgentViewTags.modeToggle(agentId))
                 // Announces the current view (spec §8 `a11y_terminal_mode`); a plain description does not merge
                 // the child segments, so each SegmentedButton still speaks its own label + selected state.
-                .semantics { contentDescription = viewDescription },
+                // CYP-836: the CONFIRMED (non-optimistic, server-flipped) view change is the RESULT of an operator-
+                // submitted switch he is waiting for → Assertive (A11Y-ANNOUNCEMENTS §1). `viewDescription` changes
+                // ONLY when `mode` flips (confirmed) — an in-flight `switching` does NOT change `mode`, so it never
+                // pulses here (that stays a `stateDescription`, below).
+                .semantics { contentDescription = viewDescription; liveRegion = LiveRegionMode.Assertive },
         ) {
             SegmentedButton(
                 selected = mode == AgentContentMode.ORCHESTRATION,
@@ -403,10 +412,13 @@ private fun ModeToggleRow(
             )
             // CYP-381 (provisional): the command is in flight — the view has NOT flipped yet (non-optimistic).
             switching -> Text(
-                text = stringResource(Res.string.terminal_mode_switching),
+                text = switchingLabel,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.testTag(AgentViewTags.modeSwitching(agentId)),
+                // CYP-836: stateDescription (aria-busy parity), NO liveRegion — the in-flight switch must not pulse.
+                modifier = Modifier
+                    .testTag(AgentViewTags.modeSwitching(agentId))
+                    .semantics { stateDescription = switchingLabel },
             )
             // Non-operator: honest read-only disclosure (reuse `workspace_operator_only`, CYP-317 no-fake-switch).
             !canControl -> Text(
@@ -458,7 +470,11 @@ private fun LifecycleErrorRow(agentId: String, code: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .testTag(AgentViewTags.lifecycleError(agentId)),
+            .testTag(AgentViewTags.lifecycleError(agentId))
+            // CYP-836: ERROR (and the CYP-381 §3.4 mode_swap_failed that reuses this row) is the RESULT of an
+            // operator-submitted action / an unsolicited-critical failure → Assertive, its OWN node (§3c; parity web
+            // `lifecycle-error` role=alert). Never the ambient status node flipped loud — this carries the reason.
+            .semantics { liveRegion = LiveRegionMode.Assertive },
     )
 }
 
@@ -522,7 +538,11 @@ private fun FrameBanner(text: String, a11y: String, tag: String) {
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 3.dp)
             .testTag(tag)
-            .semantics { contentDescription = a11y },
+            // CYP-836: the terminal-control change (INTERACTIVE hub-blind / CONTEXT_LOST) is unsolicited + critical —
+            // the operator may be typing elsewhere and MUST hear it → Assertive (A11Y-ANNOUNCEMENTS §1). This is the
+            // once-per-appearance banner announce the transcript landmark defers to. (Web renders it role=status
+            // /polite — flagged to PO as a cross-surface delta; Compose is louder here by the doctrine + PO ruling.)
+            .semantics { contentDescription = a11y; liveRegion = LiveRegionMode.Assertive },
     )
 }
 
@@ -879,7 +899,11 @@ private fun StatusIndicator(
     Row(
         modifier = Modifier
             .testTag(AgentViewTags.status(agentId))
-            .semantics { contentDescription = description },
+            // CYP-836: the ONE announce carrier for the ambient lifecycle state (§3d de-dup — busy stays visual-only).
+            // Polite: an ambient status of a window the operator is looking at, not an alarm (A11Y-ANNOUNCEMENTS §1;
+            // parity with web `LifecycleHeader` role=status). Announces the status WORD on change (WCAG 1.4.1). The
+            // ERROR *reason* is a SEPARATE Assertive node (LifecycleErrorRow, §3c) — this node is never flipped loud.
+            .semantics { contentDescription = description; liveRegion = LiveRegionMode.Polite },
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1162,8 +1186,10 @@ private fun ToolRunHeader(
  * memory begins. Reuses the Event-Log `GapRow` idiom (leading rail + glyph + label on a container) but **WARN, not
  * error** — the session is fine, only its memory isn't. The glyph is the SAME `∅` as the titlebar CONTEXT_LOST
  * marker (one vocabulary across title bar and transcript). Rail + glyph are decorative (`clearAndSetSemantics`); the
- * band is one static a11y landmark (`a11y_transcript_context_lost`, merged, NO `liveRegion` — the live announcement
- * is the window banner, once). Persists after the live state recovers to MEDIATED (§7.1.2 recovery-persistence).
+ * band is one static a11y landmark (`a11y_transcript_context_lost`, merged, NO `liveRegion` HERE — the live
+ * announcement IS the window banner, once: the CONTEXT_LOST [FrameBanner] carries `liveRegion = Assertive` (CYP-836),
+ * so this durable landmark stays focus-readable and is not re-announced). Persists after the live state recovers to
+ * MEDIATED (§7.1.2 recovery-persistence).
  */
 @Composable
 private fun TranscriptDiscontinuityRow(agentId: String) {
