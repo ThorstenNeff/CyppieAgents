@@ -62,7 +62,7 @@ private val agentWsDiagLog = LoggerFactory.getLogger("cyp607-diag")
 fun tokenAuthorize(registry: TokenRegistry, deps: AuthDeps): suspend (ApplicationCall) -> Boolean = { call ->
     val token = call.bearerToken() ?: call.request.queryParameters["token"]
     when {
-        registry.isOperator(token) -> true
+        registry.operatorEligible(token) -> true // CYP-828 (§2.1b, seam #3): loopback-gated (observe-any-agent off-loopback denied)
         registry.agentFor(token)?.let { it == call.request.queryParameters["agentId"] } == true -> true
         // CYP-230: a verified OPERATOR session (Kratos cookie). NOT any session — a MEMBER human is rejected.
         else -> (call.resolvePrincipal(deps) as? AuthPrincipal.Human)?.role == AuthRole.OPERATOR

@@ -122,14 +122,19 @@ suspend fun resolvePrincipal(cred: Credential, deps: AuthDeps): AuthPrincipal? {
         // CYP-186 C.2: the operator token is INERT when the deploy kill-switch is set AND a role-OPERATOR
         // already exists (never-lock-out: it carries until the first human bootstraps OPERATOR). Inert →
         // falls through to a MEMBER MachineAgent → 403 on operator routes (C collapses to A by config).
-        if (deps.tokens.isOperator(bearer) && !(deps.operatorTokenDisabled && deps.roles.hasOperator())) {
+        // CYP-828 (§2.1b, seam #1): the god-token→OPERATOR grant is loopback-gated (operatorEligible, NOT raw
+        // isOperator) — off-loopback this is false → falls through → 401.
+        if (deps.tokens.operatorEligible(bearer) && !(deps.operatorTokenDisabled && deps.roles.hasOperator())) {
             return AuthPrincipal.MachineOperator
         }
         val agentId = deps.tokens.agentFor(bearer)
         if (agentId != null) return AuthPrincipal.MachineAgent(agentId)
-        // CYP-186 C.2: the DISABLED operator token (isOperator, but inert by the kill-switch above) is a KNOWN
-        // credential deliberately DOWNGRADED to MEMBER ("collapses to A", never-lock-out) — NOT "unknown". Keep it.
-        if (deps.tokens.isOperator(bearer)) return AuthPrincipal.MachineAgent(null)
+        // CYP-186 C.2: the DISABLED operator token (inert by the kill-switch above) is a KNOWN credential deliberately
+        // DOWNGRADED to MEMBER ("collapses to A", never-lock-out) — NOT "unknown". Keep it.
+        // ★ CYP-828 (V3-1/T1d): this MEMBER-downgrade is a GRANT → it, too, is loopback-gated (operatorEligible). ON
+        // loopback it fires (kill-switch case → MEMBER, never-lock-out preserved); OFF loopback operatorEligible is
+        // false → falls through → 401 (no MEMBER → no cross-agent /api/events metadata over the net, the V3-1 leak).
+        if (deps.tokens.operatorEligible(bearer)) return AuthPrincipal.MachineAgent(null)
         // CYP-234b-2 ①-fix: an UNKNOWN bearer (garbage, or a CYP-234b participant token) is NOT a role-bearing
         // principal — it must NOT resolve to MEMBER (that let ANY bearer read the MEMBER-tier `/api/events`
         // cross-agent metadata with no grant). Fall through: with no verified session it becomes 401; a
@@ -167,7 +172,10 @@ suspend fun ApplicationCall.resolveAuthState(deps: AuthDeps): com.tneff.cyppieag
         // CYP-234b-2 ①-fix (2nd path): validate the bearer — only a KNOWN credential is authenticated here.
         // An unknown bearer (garbage / a participant token) is NOT MEMBER (it used to report authenticated MEMBER
         // for ANY bearer); it falls through to the session path → `authenticated:false` with no session.
-        if (deps.tokens.isOperator(bearer)) return com.tneff.cyppieagents.model.AuthMe(true, AuthRole.OPERATOR.name, true)
+        // CYP-828 (§2.1b, seam #5): /me must not CLAIM operator authority the loopback-gated grant does not carry —
+        // off-loopback operatorEligible is false → the god-token falls through (not OPERATOR), consistent with
+        // resolvePrincipal's off-loopback denial (no split-brain).
+        if (deps.tokens.operatorEligible(bearer)) return com.tneff.cyppieagents.model.AuthMe(true, AuthRole.OPERATOR.name, true)
         if (deps.tokens.agentFor(bearer) != null) return com.tneff.cyppieagents.model.AuthMe(true, AuthRole.MEMBER.name, true)
         // unknown bearer → fall through (a participant token is not the human whoami subject)
     }

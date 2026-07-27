@@ -351,7 +351,10 @@ class BootOrchestrator(
         val registry = SessionRegistry()
         val turnQueue = SessionTurnQueue()
         val sessions = ConnectorSessions()
-        val tokenRegistry = TokenRegistry(secrets.agentTokens, secrets.operatorToken)
+        // CYP-828 (Layer-B): build the registry through the narrow consumer (the private operatorToken never leaves
+        // Secrets) with the real loopback posture (isLoopbackHost(config.hub.host) — the SAME single source as the
+        // cookie axis's browserOperatorPostureEnabled). Off-loopback → operatorEligible is false everywhere.
+        val tokenRegistry = secrets.buildTokenRegistry(com.tneff.cyppieagents.auth.isLoopbackHost(config.hub.host))
         // CYP-171: restore persisted remote-agent tokens into the registry (a pre-provisioned remote agent
         // reconnects after a restart), and compose the mint+persist / revoke issuer for AgentManagement.
         // CYP-415 (D2): embedded-SQLite in prod (a real file), in-memory File impl for tests (null). Benign

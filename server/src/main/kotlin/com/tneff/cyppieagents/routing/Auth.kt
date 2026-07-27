@@ -26,11 +26,31 @@ import org.slf4j.LoggerFactory
 class TokenRegistry(
     seed: Map<String, String>,
     private val operatorToken: String?,
+    /**
+     * CYP-828 (god-token invariant §2.1b / v3.3) — the loopback posture (`= isLoopbackHost(config.hub.host)`, the same
+     * single source as [com.tneff.cyppieagents.auth.AuthDeps.browserOperatorPostureEnabled] for the cookie axis).
+     * ★ **Default `false` = fail-closed** (PL-ruled, mirrors S-AAL2b): a forgotten/future construction must get a
+     * VISIBLE over-denial (401), NEVER a silent off-loopback operator grant. Production passes the real value
+     * (`BootOrchestrator` / `CommRoutes` wiring); tests that exercise operator behaviour pass `loopbackPosture = true`.
+     */
+    private val loopbackPosture: Boolean = false,
 ) {
     private val tokenToAgent = java.util.concurrent.ConcurrentHashMap(seed)
 
     fun agentFor(token: String?): String? = token?.let { tokenToAgent[it] }
+
+    /** ★ Raw god-token **IDENTITY** (host-independent) — for the reject-guard ([com.tneff.cyppieagents.routing.
+     *  installTunnelGodTokenGuard]) and the [mint] collision-check ONLY. It IDENTIFIES the static token; it does NOT
+     *  grant. Every god-token→OPERATOR **grant** path MUST route [operatorEligible] instead (the loopback-gated seam). */
     fun isOperator(token: String?): Boolean = operatorToken != null && token == operatorToken
+
+    /**
+     * ★ CYP-828 (§2.1b) — the god-token→OPERATOR **ELIGIBILITY** predicate: the raw identity AND the loopback posture.
+     * Off-loopback ([loopbackPosture]==false) this is `false` at every consumer — no `MachineOperator`, no
+     * `TerminalPrincipal.Operator`, no `/ws/agent` grant, no `OPERATOR_ID`, no `/me`-OPERATOR (fail-closed). ALL five
+     * grant seams route this (not [isOperator]); the closure tooth pins that raw [isOperator] is called nowhere else.
+     */
+    fun operatorEligible(token: String?): Boolean = isOperator(token) && loopbackPosture
 
     /**
      * CYP-171 — mint a cryptographically-random per-agent bearer token (256-bit `SecureRandom`,
@@ -84,7 +104,10 @@ fun ApplicationCall.requireAgent(registry: TokenRegistry): String {
  * so downstream the same [com.tneff.cyppieagents.model.AclMatrix] checks apply (CYP-18).
  */
 fun TokenRegistry.participantFor(token: String?): String? =
-    agentFor(token) ?: if (isOperator(token)) HubState.OPERATOR_ID else null
+    // CYP-828 (§2.1b, seam #4): the god-token→OPERATOR_ID grant is loopback-gated via operatorEligible (this extension
+    // has `this: TokenRegistry`, so the posture rides the registry — its 4 callers need no threading). Off-loopback the
+    // static token maps to null → no OPERATOR_ID → no event-log-egress of message bodies (CYP-432 boundary).
+    agentFor(token) ?: if (operatorEligible(token)) HubState.OPERATOR_ID else null
 
 /**
  * CYP-234b — resolve a CYP-234b participant token to its read-SUBJECT, applying the per-subject rate-limit

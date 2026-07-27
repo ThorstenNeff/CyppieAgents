@@ -54,9 +54,21 @@ class CommConfig(
     val agents: List<Agent>,
     /** bearer token → agentId */
     val tokens: Map<String, String>,
-    val operatorToken: String?,
+    /** ★ CYP-828 (Layer-B) — `private` (NOT `internal`); the value flows out ONLY via [buildTokenRegistry], never a
+     *  public getter. Presence is exposed via [hasOperator]. Bans a raw `X == config.operatorToken` grant. */
+    private val operatorToken: String?,
     val store: MessageStore,
+    /** ★ CYP-828 — the loopback posture for the built [TokenRegistry]. Fail-closed default `false`; [dev] sets `true`
+     *  (dev binds localhost = loopback). This is the dev/test comm wiring; production uses `BootOrchestrator`. */
+    private val loopbackPosture: Boolean = false,
 ) {
+    /** CYP-828 — operator PRESENCE (an operator is configured) without exposing the secret value (replaces a raw
+     *  `config.operatorToken != null` read at the ACL seed). */
+    val hasOperator: Boolean get() = operatorToken != null
+
+    /** CYP-828 (Layer-B) — the narrow consumer feeding the private [operatorToken] into a [TokenRegistry]. */
+    fun buildTokenRegistry(): TokenRegistry = TokenRegistry(tokens, operatorToken, loopbackPosture)
+
     companion object {
         /** Dev defaults (PO + frontend + backend). Real tokens come from the host env / `.env`. */
         fun dev(): CommConfig {
@@ -69,7 +81,8 @@ class CommConfig(
                 (System.getenv("HUB_TOKEN_${agent.id.uppercase()}") ?: "dev-token-${agent.id}") to agent.id
             }
             val operator = System.getenv("OPERATOR_TOKEN") ?: "dev-operator-token"
-            return CommConfig(agents, tokens, operator, InMemoryMessageStore())
+            // dev binds localhost (loopback) → operator posture ON (else the dev operator token would never grant).
+            return CommConfig(agents, tokens, operator, InMemoryMessageStore(), loopbackPosture = true)
         }
     }
 }
@@ -81,10 +94,10 @@ class CommConfig(
  */
 fun Application.installComm(config: CommConfig): Hub {
     // Operator participates in the ACL (member of every channel) when an operator token exists.
-    val operatorId = if (config.operatorToken != null) HubState.OPERATOR_ID else null
+    val operatorId = if (config.hasOperator) HubState.OPERATOR_ID else null // CYP-828: presence, not the value
     val state = HubState.hubAndSpoke(config.agents, operatorId)
     val hub = Hub(state, config.store)
-    val registry = TokenRegistry(config.tokens, config.operatorToken)
+    val registry = config.buildTokenRegistry() // CYP-828 (Layer-B): private operatorToken via the narrow consumer
 
     install(ContentNegotiation) { json(CommJson) }
     install(WebSockets)
