@@ -193,6 +193,26 @@ describe('App assembly (CYP-425)', () => {
     expect(await findByTestId('comm-revoked-lock')).toBeTruthy() // composer locked on revoke
   })
 
+  it('★ CYP-845: a schema-skew frame delivered AFTER a 1008-revoke does NOT downgrade the banner (security event not masked)', async () => {
+    // The race: an invalid /ws/comm frame buffered in transport, delivered AFTER auth was revoked. onCommSkew must
+    // respect the first-terminal-cause latch — otherwise 'revoked'→'skew' masks the security revoke as a protocol
+    // skew (honesty bug). MUT: revert onCommSkew to setCommConnection('skew') → the banner downgrades to skew → reds.
+    const hub = new FakeSocketHub()
+    const { findByTestId, getByTestId, queryByTestId } = render(
+      <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
+    )
+    await flush()
+    const comm = hub.sockets.find((s) => s.url.includes('/ws/comm'))!
+    await act(async () => {
+      comm.emitOpen() // → live
+      comm.emitClose(1008) // auth revoked → terminal 'revoked' (security)
+      comm.emitMessage(JSON.stringify({ type: '__unknown_skew__' })) // valid JSON, unknown discriminant → schema-skew
+    })
+    expect(getByTestId('comm-status').className).toContain('comm-status-revoked') // STAYS revoked, not downgraded
+    expect(await findByTestId('comm-revoked-lock')).toBeTruthy()
+    expect(queryByTestId('comm-skew-lock')).toBeNull() // never masked as a mere protocol skew
+  })
+
   it('each agent window carries a lifecycle header driven by the muxed /ws/status feed (CYP-431/CYP-844)', async () => {
     const hub = new FakeSocketHub()
     const { findByTestId, getByTestId } = render(

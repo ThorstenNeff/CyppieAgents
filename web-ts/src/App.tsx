@@ -125,6 +125,14 @@ const TERMINAL_COMM: readonly CommConnection[] = ['revoked', 'skew']
 export const nextCommConnectionOnClose = (current: CommConnection, code: number | undefined): CommConnection =>
   TERMINAL_COMM.includes(current) ? current : commCloseToConnection(code)
 
+// CYP-845 (F-A5-1) — a decoded protocol-skew must respect the SAME first-terminal-cause latch as onCommClose. Without
+// it, a schema-invalid frame BUFFERED before a 1008-revoke and delivered AFTER it would overwrite the terminal
+// 'revoked' with 'skew' — masking a security event (auth revoke) as a generic protocol-skew (an honesty bug: the
+// banner would lie about the cause). Skew still ESCALATES over a non-terminal current ('live'/'offline'/'connecting');
+// a prior terminal ('revoked' or 'skew') wins. Mirrors CYP-834's nextCommConnectionOnClose precedence exactly.
+export const nextCommConnectionOnSkew = (current: CommConnection): CommConnection =>
+  TERMINAL_COMM.includes(current) ? current : 'skew'
+
 /** Cascade layout for a freshly opened window (content floor: 320×303). */
 function tiledWindow(id: string, title: string, index: number): WindowState {
   const col = index % 3
@@ -403,7 +411,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         // stopped itself (bidiFeed closed it, no reconnect); surface the DISTINCT terminal 'skew' banner (never a
         // generic offline that would reconnect and replay the same undecodable frame). issuer/rejection detail is
         // not interpolated into visible copy (payload-free by construction — FrameRejection carries paths+codes only).
-        onCommSkew: () => setCommConnection('skew'),
+        // CYP-845 (F-A5-1): route through the first-terminal-cause latch — a skew delivered AFTER a 1008-revoke (a
+        // buffered invalid frame) must NOT downgrade 'revoked' to 'skew' (that would mask the security revoke). Skew
+        // still escalates over any non-terminal state. Consistent with onCommClose's nextCommConnectionOnClose latch.
+        // CYP-845 (F-A5-1): route through the first-terminal-cause latch — a skew delivered AFTER a 1008-revoke (a
+        // buffered invalid frame) must NOT downgrade 'revoked' to 'skew' (that would mask the security revoke). Skew
+        // still escalates over any non-terminal state. Consistent with onCommClose's nextCommConnectionOnClose latch.
+        onCommSkew: () => setCommConnection(nextCommConnectionOnSkew(useHubStore.getState().commConnection)),
         // CYP-815: a 1008 revoke on ANY of the 4 read-only status feeds is session-wide (same bearer) → surface the
         // visible 'revoked' signal so the run-state/token/busy/terminal indicators don't freeze silently claiming
         // "still running" (safe-but-silent fix). Non-1008 is transient and self-heals via the feed's reconnect — NOT
