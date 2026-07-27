@@ -18,6 +18,7 @@ import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.serialization.SerializationException
 
 /**
  * Live `/ws/comm` adapter (CYP-21 swap, against the CYP-18 frame contract). Decodes each masked
@@ -38,6 +39,9 @@ class CommWsClient(
 
     override fun events(): Flow<CommLiveEvent> = channelFlow {
         var closeCode: Short? = null
+        // CYP-786: set when a frame fails to decode against the client schema (app-schema skew). A skew is TERMINAL:
+        // it is emitted as the final event INSTEAD of the trailing Disconnected, so the VM does not reconnect-churn.
+        var skew: CommLiveEvent.ProtocolSkew? = null
         try {
             client.webSocket(
                 urlString = commUrl(),
@@ -51,7 +55,19 @@ class CommWsClient(
                 try {
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
-                            when (val event = CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())) {
+                            // CYP-786: decode may throw SerializationException (superclass of MissingFieldException —
+                            // an unknown discriminator or a missing required field = an app-schema SKEW). Catch it HERE
+                            // and STOP with a TERMINAL ProtocolSkew, rather than letting it unwind to the outer
+                            // catch(Throwable) → Disconnected → .reconnecting() churn (which replays the same undecodable
+                            // frame forever under a generic "offline" banner). Do NOT skip-and-continue: a skew does not
+                            // resolve without a deploy, so continuing would re-hit it — break and surface it named.
+                            val event = try {
+                                CommJson.decodeFromString(CommWsServerEvent.serializer(), frame.readText())
+                            } catch (e: SerializationException) {
+                                skew = CommLiveEvent.ProtocolSkew(e.message)
+                                break
+                            }
+                            when (event) {
                                 // CYP-744: the frame wraps a DeliveredMessage now; the CMP client takes the bare message.
                                 is MessageEvent -> this@channelFlow.send(CommLiveEvent.MessageReceived(event.delivered.message))
                                 is ChannelsEvent -> this@channelFlow.send(CommLiveEvent.ChannelsChanged(event.channels))
@@ -78,10 +94,11 @@ class CommWsClient(
             // not throw). The cross-context ISE that caused the churn was swallowed here before.
             logWsError("comm", e)
         }
-        // CYP-291: a 1008 (VIOLATED_POLICY) close = a revoked/invalid token → TERMINAL AccessRevoked (the VM
-        // cancels the collector; no reconnect). Any other close = a transient Disconnected (reconnects, CYP-73).
+        // CYP-786: a decode skew is TERMINAL and takes precedence — emit it INSTEAD of Disconnected so the VM does
+        // not reconnect (a skew won't resolve without a deploy). Else CYP-291: a 1008 (VIOLATED_POLICY) close = a
+        // revoked/invalid token → TERMINAL AccessRevoked (no reconnect); any other close = transient Disconnected.
         this@channelFlow.send(
-            if (isAccessRevoked(closeCode)) CommLiveEvent.AccessRevoked else CommLiveEvent.Disconnected,
+            skew ?: if (isAccessRevoked(closeCode)) CommLiveEvent.AccessRevoked else CommLiveEvent.Disconnected,
         )
     }
 

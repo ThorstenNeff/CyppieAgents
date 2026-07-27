@@ -67,6 +67,7 @@ import kmpcyppieagents.app.shared.generated.resources.comm_send_failed
 import kmpcyppieagents.app.shared.generated.resources.comm_send_revoked
 import kmpcyppieagents.app.shared.generated.resources.comm_status_connecting
 import kmpcyppieagents.app.shared.generated.resources.comm_status_offline
+import kmpcyppieagents.app.shared.generated.resources.comm_status_protocol_skew
 import kmpcyppieagents.app.shared.generated.resources.comm_timeline_empty
 import org.jetbrains.compose.resources.stringResource
 
@@ -227,7 +228,7 @@ private fun TimelinePane(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
-        ConnectionBanner(state.connection, state.accessRevoked)
+        ConnectionBanner(state.connection, state.accessRevoked, state.protocolSkew)
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
                 state.selectedChannelId == null -> Unit
@@ -313,10 +314,11 @@ private fun KindBadge(label: String) {
 }
 
 @Composable
-private fun ConnectionBanner(connection: ConnectionStatus, accessRevoked: Boolean) {
-    // CYP-819 (D2): a terminal 1008 auth-revoke is ERROR-red + static and SUPERSEDES the amber offline banner —
-    // mirrors AclPanel's `acl_access_revoked` errorContainer banner (`&& !accessRevoked`). `✕` is a SEPARATE node
-    // (form carries meaning, WCAG 1.4.1); Assertive (unsolicited + terminal, the operator MUST hear it).
+private fun ConnectionBanner(connection: ConnectionStatus, accessRevoked: Boolean, protocolSkew: Boolean) {
+    // CYP-786: a terminal app-schema SKEW is ERROR-red + static and SUPERSEDES the amber offline banner (an
+    // undecodable frame won't resolve without a deploy — never a silent/transient offline). Distinct testTag +
+    // Assertive live-region (unsolicited + terminal). Mutually exclusive with accessRevoked in practice; if both,
+    // the auth-revoke (security) wins, so this is checked AFTER it.
     if (accessRevoked) {
         val revokedText = stringResource(Res.string.acl_access_revoked)
         Row(
@@ -334,6 +336,28 @@ private fun ConnectionBanner(connection: ConnectionStatus, accessRevoked: Boolea
         ) {
             Text("✕", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
             Text(revokedText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+        }
+        return
+    }
+    // CYP-786: the terminal app-schema skew banner (ERROR-red, supersedes the amber offline banner below). Copy is a
+    // PLACEHOLDER (`comm_status_protocol_skew`) — wording refined by UIUX/Dev (PO-brokered); the state is authoritative.
+    if (protocolSkew) {
+        val skewText = stringResource(Res.string.comm_status_protocol_skew)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.errorContainer)
+                .testTag(CommTags.PROTOCOL_SKEW)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = skewText
+                    liveRegion = LiveRegionMode.Assertive
+                }
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("⚠", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            Text(skewText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
         }
         return
     }

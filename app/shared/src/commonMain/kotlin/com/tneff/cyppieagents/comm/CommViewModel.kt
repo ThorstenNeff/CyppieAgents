@@ -37,6 +37,15 @@ data class CommUiState(
      * hard-lock (independent of [canWrite]). Mirrors `AclUiState.accessRevoked` (1:1).
      */
     val accessRevoked: Boolean = false,
+    /**
+     * CYP-786: a terminal **app-schema skew** on `/ws/comm` — a frame could not be decoded against the client's
+     * `:core` schema (client/server versions deployed out of step). Its OWN named state (mirrors [accessRevoked],
+     * CYP-819 D2), NOT folded into [connection]=DISCONNECTED: a skew is terminal + distinct (never resolves without a
+     * deploy), so it drives a distinct actionable banner (supersedes the amber offline banner) and must not
+     * reconnect-churn. [protocolSkewDetail] = a best-effort hint (e.g. the missing field) for the banner.
+     */
+    val protocolSkew: Boolean = false,
+    val protocolSkewDetail: String? = null,
     val loadingHistory: Boolean = false,
     /** CYP-288: the selected channel's history load FAILED (distinct from an empty channel — error beats empty). */
     val historyError: Boolean = false,
@@ -191,6 +200,14 @@ class CommViewModel(
                 _state.update { it.copy(accessRevoked = true) }
                 // CYP-291: a 1008 revoke is TERMINAL — cancel the collector so `.reconnecting()` does NOT re-open
                 // /ws/comm with the revoked token (the reconnect loop). The connection already reads DISCONNECTED.
+                liveJob?.cancel()
+            }
+            if (event is CommLiveEvent.ProtocolSkew) {
+                // CYP-786: an undecodable frame = app-schema skew. Set the OWN named state so a distinct actionable
+                // banner supersedes the amber offline banner (mirrors accessRevoked, CYP-819 D2 — never a silent
+                // offline). TERMINAL: cancel the collector so `.reconnecting()` does NOT re-open and replay the same
+                // undecodable frame every backoff (the exact churn the ticket forbids). connection reads DISCONNECTED.
+                _state.update { it.copy(protocolSkew = true, protocolSkewDetail = event.detail) }
                 liveJob?.cancel()
             }
             if (event is CommLiveEvent.AclChanged) {

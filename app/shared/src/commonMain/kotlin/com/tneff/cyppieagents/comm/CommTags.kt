@@ -23,6 +23,10 @@ object CommTags {
     const val ACCESS_REVOKED = "comm.accessRevoked"
     const val REVOKED_LOCK = "comm.revokedLock"
 
+    /** CYP-786 — a terminal app-schema SKEW banner (ERROR-red, supersedes the amber offline banner), distinct from a
+     *  transient offline drop and from an auth-revoke: an undecodable frame won't resolve without a deploy. */
+    const val PROTOCOL_SKEW = "comm.protocolSkew"
+
     const val EMPTY_CHANNELS = "comm.emptyChannels"
     const val EMPTY_TIMELINE = "comm.emptyTimeline"
 

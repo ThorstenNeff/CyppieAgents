@@ -45,6 +45,8 @@ object CommReducer {
         is CommLiveEvent.Connected -> ConnectionStatus.LIVE
         is CommLiveEvent.Disconnected -> ConnectionStatus.DISCONNECTED
         is CommLiveEvent.AccessRevoked -> ConnectionStatus.DISCONNECTED // CYP-291: honest terminal (never "live")
+        is CommLiveEvent.ProtocolSkew -> ConnectionStatus.DISCONNECTED // CYP-786: honest terminal (never "live"); the
+        // distinct `protocolSkew` own-state (not this status) drives the skew banner, mirroring AccessRevoked (CYP-819)
         else -> null
     }
 }

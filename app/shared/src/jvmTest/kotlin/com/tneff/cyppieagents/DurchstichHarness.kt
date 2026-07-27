@@ -90,6 +90,7 @@ class DurchstichHarness {
         is CommLiveEvent.Connected -> "Connected"
         is CommLiveEvent.Disconnected -> "Disconnected"
         is CommLiveEvent.AccessRevoked -> "AccessRevoked"
+        is CommLiveEvent.ProtocolSkew -> "ProtocolSkew(${e.detail})"
         is CommLiveEvent.AclChanged -> "AclChanged"
         is CommLiveEvent.ChannelsChanged -> "ChannelsChanged(${e.channels.map { it.id }})"
         is CommLiveEvent.MessageReceived -> "Message(id=${e.message.id} from=${e.message.from} '${trunc(e.message.body)}')"
