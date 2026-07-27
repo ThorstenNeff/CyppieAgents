@@ -1949,7 +1949,10 @@ body {
   color: var(--md-sys-color-error); /* warn — a real trust refusal */
 }
 .hub-trust-stale .hub-trust-glyph {
-  color: var(--md-sys-color-tertiary); /* action-neutral: re-confirm needed, distinct from unknown, NOT an alarm */
+  /* CYP-838: was --md-sys-color-tertiary, which is TEAL in light but GREEN (#40D6A0) in DARK — a trust-inversion
+     (STALE read as "trusted/ok" at night, CYP-300 class). --event-sev-warn is the ratified theme-aware amber role
+     (#9A6400 light / #FFC857 dark), action-neutral in BOTH themes: caution/re-confirm, never green-trusted, never alarm. */
+  color: var(--event-sev-warn);
 }
 
 /* CYP-801 (N3) — the SEPARATE descriptor/upstream-error marker. Its OWN namespace (NOT hub-trust-*): a malformed

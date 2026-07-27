@@ -85,14 +85,14 @@ export const HUB_TRUST_TEXT = {
     PENDING: 'wird geprüft…',
     TRUSTED: 'vertraut',
     REJECTED: 'abgelehnt',
-    STALE: 'abgelaufen — erneut bestätigen',
+    STALE: 'nicht mehr aktuell — erneut bestätigen',
   } satisfies Record<HubTrustState, string>,
   a11y: {
     UNKNOWN: 'Hub-Vertrauen noch nicht geprüft.',
     PENDING: 'Hub-Vertrauen wird geprüft.',
     TRUSTED: 'Diesem Hub wird vertraut (Aussteller-vouched, widerrufbar).',
     REJECTED: 'Der Hub hat den Zugang abgelehnt.',
-    STALE: 'Das Hub-Vertrauen ist abgelaufen — erneut bestätigen.',
+    STALE: 'Hub-Vertrauen nicht mehr aktuell — erneut bestätigen.',
   } satisfies Record<HubTrustState, string>,
 } as const
 

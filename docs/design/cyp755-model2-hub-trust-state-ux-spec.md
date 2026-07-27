@@ -27,12 +27,13 @@
 | **pending** | Proof präsentiert, Hub verifiziert noch [TF-Trigger] | `◔` (Viertel-Füllung) | „wird geprüft…" | neutral | nur bei **echt laufender** Verifikation — **nie** für terminal reject/stale |
 | **trusted** | Hub hat affirmiert [TF-Trigger] | `●` (voll) | „vertraut" | **neutral-definit** | **keine positive-Affirmation** — Form `●` (voll) trägt „evaluiert-gültig", nicht der Ton (s. Ruling) |
 | **rejected** | Hub hat das Proof abgelehnt [TF-code] | `⊘` (durchgestrichen) | „abgelehnt" | warnend | distinkt von Netzfehler (§4) |
-| **stale** | war trusted, Proof abgelaufen/widerrufen [TF-Signal] | `◑` (halb, „war voll") | „abgelaufen — erneut bestätigen" | handlungs-neutral | fail-closed: hub-Flächen **nicht** stale-vertraut weiterzeigen |
+| **stale** | war trusted, Proof abgelaufen **oder** widerrufen [TF-Signal] | `◑` (halb, „war voll") | „nicht mehr aktuell — erneut bestätigen" | handlungs-neutral | fail-closed; **cause-agnostisch** (CYP-841, s. u.) |
 
 **Honesty-Kern (nicht verhandelbar):**
 - **unknown ≠ pending ≠ trusted:** drei distinkte Renders — [[absence-reads-as-all-clear]] / [[reconcile-not-collapse-distinct-states]]. Insbesondere **pending ≠ unknown**: „wird geprüft" darf **nur** für laufende Verifikation stehen, **nie** als Sammel-Label für „nicht verbunden" — genau der Fehler, den ich im Honesty-Sweep als Fund #5 (Tier-Strip „Wird geprüft" für revoked/offline) markiert habe. Hier vermeidet das 5-Zustands-Modell ihn per Konstruktion.
 - **fail-closed:** ohne Affirmation ist der Zustand `unknown` (nie optimistisch `trusted`). Fehlt das Trust-Signal → `unknown`-Render, nie geraten.
 - **abgeleitet ≠ nativ:** `trusted` heißt „dieser Hub vertraut deinem Aussteller-vouch" — die Copy/Disclosure macht das **widerrufbar**-Wesen sichtbar, **nie** durables natives Konto (Bedarf N3/Honesty-Kern aus CYP-748).
+- **★ STALE-Copy = cause-agnostisch (CYP-841, UIUX-ratifiziert):** „abgelaufen" behauptet **Ablauf**, aber STALE trägt **Ablauf ODER Widerruf** (`hubTrustModel.ts`: „revocation → STALE"); der Client unterscheidet die beiden am STALE-State **nicht** zuverlässig. Eine nicht-beobachtete Ursache zu behaupten ist unehrlich ([[forecast-vs-observed-disclosure]]). Kanonisch: **Label** „nicht mehr aktuell — erneut bestätigen" · **a11y** „Hub-Vertrauen nicht mehr aktuell — erneut bestätigen." · **Tooltip (optional, progressive disclosure)** „Frühere Bestätigung gilt nicht mehr (abgelaufen oder widerrufen) — erneut bestätigen." — der Tooltip **enumeriert** beide möglichen Ursachen, ohne eine zu **behaupten**. Re-confirm + fail-closed bleiben. *(Tooth: STALE-Copy enthält **nicht** das Wort „abgelaufen" als alleinige Ursachen-Behauptung im Label/a11y → Mutation „abgelaufen"-only = RED = behauptet Ablauf, verdeckt Widerruf.)*
 
 **★ Ruling `trusted` = neutral-gepinnt, nicht positive-Affirmation (CYP-803, DS-Owner-Entscheid §4a):**
 `trusted` ist **abgeleitet + widerrufbar, nie native Identitäts-Affirmation** — dieselbe „derived≠native"-Invariante, die die Trust-Ratifikation (CYP-798/747) schützt. Ein positiver/affirmativer Render (Emphase-Akzent) behandelt einen widerrufbaren Zustand wie eine **Garantie** = Overclaim (Spiegel von [[over-alarm-is-also-dishonest]]: die ehrliche Mitte für einen abgeleitet-gültigen Zustand ist **neutral-definit**, nicht affirmativ). Das **löst die interne §1↔§5b-Spannung auf** (§5b flaggte bereits „Wert nicht als natives Identsein typen", während §1 `positive` wählte). Konvergiert mit Team-1-UIUX (CYP-802).
@@ -62,7 +63,7 @@ Muster wie `remoteSecurityTierModel` (Wire-Enum uppercase → Präsentations-Tok
 | `PENDING` | `pending` | `hub-trust-pending` | `hub.trust.{id}.pending` | `◔` | wird geprüft… |
 | `TRUSTED` | `trusted` | `hub-trust-trusted` | `hub.trust.{id}.trusted` | `●` | vertraut |
 | `REJECTED` | `rejected` | `hub-trust-rejected` | `hub.trust.{id}.rejected` | `⊘` | abgelehnt |
-| `STALE` | `stale` | `hub-trust-stale` | `hub.trust.{id}.stale` | `◑` | abgelaufen — erneut bestätigen |
+| `STALE` | `stale` | `hub-trust-stale` | `hub.trust.{id}.stale` | `◑` | nicht mehr aktuell — erneut bestätigen |
 
 - **★ malformed/⚠ ist NICHT in dieser Map** (PL-ratifiziert CYP-798 §4b: **kein Trust-Zustand**, getrennt vom `HubTrustState`-Enum). Auf malformed: Trust-Badge = `unknown` (fail-closed) **+** das **verbindliche** ⚠-Upstream-Signal in einem **distinkten Token-Namespace — NICHT `hub-trust-*`** (sonst wird ein Descriptor-/Upstream-Fehler mit einem Trust-Zustand konflatiert — exakt die Tier-Modell-Disziplin `tier*` ≠ `trust*`, „distinct names so UI/tests/copy never conflate the two"). **Vorschlag:** Klasse `hub-descriptor-invalid`, testid `hub.trust.{id}.upstreamError` — der **exakte Slug richtet sich nach PLs CYP-798-§4b-Signalnamen** (dann angleichen).
 

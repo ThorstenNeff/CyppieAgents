@@ -32,7 +32,7 @@ const LABEL_IDENTITY: Record<HubTrustState, string> = {
   PENDING: 'wird geprüft…',
   TRUSTED: 'vertraut',
   REJECTED: 'abgelehnt',
-  STALE: 'abgelaufen — erneut bestätigen',
+  STALE: 'nicht mehr aktuell — erneut bestätigen',
 }
 
 describe('CYP-809 G3 — hub-trust per-state glyph + label IDENTITY (not just distinctness — a swap must RED)', () => {
@@ -58,7 +58,9 @@ describe('CYP-809 G3 — hub-trust per-state glyph + label IDENTITY (not just di
 /** The `--md-sys-color-<token>` on a `.hub-trust-<state> .hub-trust-glyph` rule. `[^{]*\{` tolerates the grouped
  *  unknown/pending selector; comment-safe (the trailing `/* … *\/` never contains `color: var(--md-sys-color-…)`). */
 function glyphColorToken(css: string, state: string): string | null {
-  return css.match(new RegExp(`\\.hub-trust-${state}\\s+\\.hub-trust-glyph[^{]*\\{[^}]*?color:\\s*var\\(--md-sys-color-([a-z-]+)\\)`))?.[1] ?? null
+  // CYP-838: STALE's glyph now uses the `--event-sev-*` role family (not `--md-sys-color-*`), so match both namespaces
+  // and capture the token suffix (rejected → 'error' via md-sys-color-, stale → 'warn' via event-sev-).
+  return css.match(new RegExp(`\\.hub-trust-${state}\\s+\\.hub-trust-glyph[^{]*\\{[^}]*?color:\\s*var\\(--(?:md-sys-color-|event-sev-)([a-z-]+)\\)`))?.[1] ?? null
 }
 
 describe('CYP-809 G2 — rejected/stale hub-trust glyph COLOUR tokens are pinned (the CYP-803 lens left them open)', () => {
@@ -73,8 +75,9 @@ describe('CYP-809 G2 — rejected/stale hub-trust glyph COLOUR tokens are pinned
     expect(glyphColorToken(css, 'rejected')).toBe('error')
   })
 
-  it('★ stale glyph = tertiary token (action-neutral re-confirm, distinct from unknown, NOT an alarm) — mutation REDs', () => {
-    expect(glyphColorToken(css, 'stale')).toBe('tertiary')
-    expect(glyphColorToken(css, 'stale')).not.toBe('on-surface-variant') // must not collapse into absence
+  it('★ stale glyph = the event-sev-warn amber token (CYP-838: action-neutral in BOTH themes, NOT the green-in-dark tertiary) — mutation REDs', () => {
+    expect(glyphColorToken(css, 'stale')).toBe('warn')
+    expect(glyphColorToken(css, 'stale')).not.toBe('tertiary') // CYP-838 fix: no longer the teal-light/GREEN-dark tertiary
+    expect(glyphColorToken(css, 'stale')).not.toBe('on-surface-variant') // still not collapsed into absence
   })
 })
