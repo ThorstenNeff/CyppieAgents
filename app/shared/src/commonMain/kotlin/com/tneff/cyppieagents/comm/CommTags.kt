@@ -16,6 +16,13 @@ object CommTags {
     const val COMPOSER_READONLY = "comm.composerReadonly"
 
     const val CONNECTION = "comm.connection"
+
+    /** CYP-819 (D2) — a terminal 1008 auth-revoke: the ERROR-red banner that SUPERSEDES the amber offline banner
+     *  ([CONNECTION]), and the composer hard-lock hint (force-disabled independent of writability). Parity with
+     *  web-ts `comm-status-revoked` / `comm-revoked-lock`; the banner copy is shared with ACL (`acl_access_revoked`). */
+    const val ACCESS_REVOKED = "comm.accessRevoked"
+    const val REVOKED_LOCK = "comm.revokedLock"
+
     const val EMPTY_CHANNELS = "comm.emptyChannels"
     const val EMPTY_TIMELINE = "comm.emptyTimeline"
 

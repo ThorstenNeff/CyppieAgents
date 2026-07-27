@@ -149,6 +149,7 @@ import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.tneff.cyppieagents.net.hub.HubTransport
 import com.tneff.cyppieagents.net.hub.pool.TunnelPoolState
 import com.tneff.cyppieagents.net.hub.remote.RemoteSessionState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.tneff.cyppieagents.net.hub.TransportModeResolver
 import com.tneff.cyppieagents.terminal.TerminalView
@@ -396,6 +397,15 @@ fun AgentShell(
     // (fetching VMs + sockets) that lingers until it self-evicts. `loading` flips true→false exactly ONCE (the
     // initial reload — switches never re-set it), so this gate guards only the FIRST mount: no switch regression.
     // The workspace-scoped ProjectSwitcherBar stays OUTSIDE the gate → the bar (with "loading…") shows during the wait.
+    // CYP-819: the session-wide status-feed REVOKE signal. Any of the four status feeds (lifecycle/token/busy/terminal)
+    // that sees a terminal 1008 (VIOLATED_POLICY; shared bearer) flips this via `onRevoked` → the covering A1 banner
+    // (RemoteOperatingChrome) + the per-window A2 demotion (WindowHost lambdas + AgentWindow.statusRevoked). Latched
+    // (a revoke is terminal — re-auth needed); never auto-cleared. Declared here so it is in scope for the bar's
+    // remote-chrome slot (below) AND the later source construction + WindowHost. The revoke wiring rides the DEFAULT
+    // (live) sources; injected test sources drive their own revoke behaviour directly.
+    val statusRevoked = remember { MutableStateFlow(false) }
+    val markStatusRevoked: () -> Unit = { statusRevoked.value = true }
+    val revoked by statusRevoked.collectAsState()
     Column(modifier = modifier.fillMaxSize()) {
       // CYP-92: the project switcher is a top-level bar ABOVE the window host (always visible, context-independent).
       // CYP-186: the persistent role indicator rides here; operatorName is BE1-pending (null omits the "Operator:" line).
@@ -429,6 +439,8 @@ fun AgentShell(
                       dataOverTunnel = remoteDataOverTunnel,
                       pinned = remotePinned,
                       ttl = remoteSessionTtl,
+                      // CYP-819 (A1): a session-wide 1008 revoke supersedes the transient session banners.
+                      accessRevoked = revoked,
                   )
                   // CYP-540/M2 (WS5): the per-tunnel pool-status surface, co-located BELOW the operating chrome
                   // (ONE surface, per-tunnel rows inside — not N per-agent chips). INERT/absent until the WS2
@@ -631,22 +643,22 @@ fun AgentShell(
     }
     val resolvedLifecycleApi = lifecycleApi ?: defaultLifecycleApi
     val defaultLifecycleSource = remember(httpClient, cfg) {
-        AgentLifecycleLiveSource(wsHttpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        AgentLifecycleLiveSource(wsHttpClient, resolvedTransport.httpBaseUrl, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked)
     }
     val resolvedLifecycleSource = lifecycleSource ?: defaultLifecycleSource
     // CYP-316: the per-agent context-token feed (`/ws/token-usage`, participant-gated like lifecycle → same bearer).
     val defaultTokenUsageSource = remember(httpClient, cfg) {
-        TokenUsageLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        TokenUsageLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked)
     }
     val resolvedTokenUsageSource = tokenUsageSource ?: defaultTokenUsageSource
     // CYP-324: the per-agent busy feed (`/ws/busy-state`, participant-gated like lifecycle → same bearer).
     val defaultBusyStateSource = remember(httpClient, cfg) {
-        BusyStateLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        BusyStateLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked)
     }
     val resolvedBusyStateSource = busyStateSource ?: defaultBusyStateSource
     // CYP-354: the per-agent terminal-control mode feed (`/ws/terminal-state`, participant-gated like busy → same bearer).
     val defaultTerminalControlSource = remember(httpClient, cfg) {
-        TerminalControlLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
+        TerminalControlLiveSource(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "", onRevoked = markStatusRevoked)
     }
     val resolvedTerminalControlSource = terminalControlSource ?: defaultTerminalControlSource
     // CYP-381: the hand-off command port. **Real swap done** (CYP-355 motor merged): default = ModeHttpRepository,
@@ -934,18 +946,25 @@ fun AgentShell(
             badgeFor = { id -> badges[id] },
             // CYP-316: feed each window's live context-token count from the WS map (mirrors badgeFor). Absent
             // key OR a null value → null → the title bar shows no number (unknown ≠ 0).
-            contextTokensFor = { id -> contextTokens[id] },
+            // CYP-819 (A2): on a session-wide revoke the token feed is dead → the count is NOT current → absent (null),
+            // never the frozen last value (the honesty core).
+            contextTokensFor = { id -> if (revoked) null else contextTokens[id] },
             // CYP-324: feed each window's busy flag from the WS map (mirrors contextTokensFor). Absent key → false →
             // no `*` (unknown ≠ busy); only an explicit busy=true event lights it, an explicit false clears it.
-            busyFor = { id -> busy[id] ?: false },
+            // CYP-819 (A2): on a session-wide revoke the busy feed is dead → no `*` (never a frozen "busy" claim).
+            busyFor = { id -> if (revoked) false else (busy[id] ?: false) },
             // CYP-656 substrate: feed each window's live-feed connection (mirrors busyFor). Absent key (system
             // window / not-yet-open agent) → null = "no feed" (fail-closed, ≠ LIVE). No behaviour yet — the
             // busy-`*`/token bundle gates on it. See [titleBarConnection] / [WindowHost.connectionFor].
-            connectionFor = { id -> titleBarConnection(agentConnections, id) },
+            // CYP-819 (A2): on a session-wide revoke force the title-bar feed to DISCONNECTED (non-LIVE) so the
+            // busy-`*`/token bundle demotes and the pager marks stale — the whole session is dead, not just one socket.
+            connectionFor = { id -> if (revoked) ConnectionStatus.DISCONNECTED else titleBarConnection(agentConnections, id) },
             // CYP-354 §5.1: feed each window's terminal-control event from the WS map (mirrors busyFor). Absent key →
             // null → the marker treats it as MEDIATED (the default) → NO marker (absent == MEDIATED). CYP-381: the
             // WHOLE event (holder-identity + since), not just the enum. Read-only mirror.
-            controlEventFor = { id -> controlStates[id] },
+            // CYP-819 (A2): on a session-wide revoke the terminal-control feed is dead → absent marker (never a frozen
+            // INTERACTIVE/mediated claim).
+            controlEventFor = { id -> if (revoked) null else controlStates[id] },
             // CYP-250: desktop empty-state for a 0-agent project (the tool windows still coexist, so this keys on
             // the agent list, NOT the window set). The CTA routes into the EXISTING add flow — bring the
             // agent-management window to front + open its add dialog — and is operator-gated (honest gate hint,
@@ -1054,6 +1073,9 @@ fun AgentShell(
                         AgentWindow(
                             agentId = window.id,
                             viewModel = it,
+                            // CYP-819 (A2): session-wide revoke → this window demotes its dot to UNKNOWN + suppresses
+                            // the reconnecting `↻` chip (busy/token/control demote via the WindowHost lambdas above).
+                            statusRevoked = revoked,
                             capabilities = connectorCapState.capabilities[window.id],
                             capabilitiesLoading = connectorCapState.loading,
                             provider = connectorCapState.providers[window.id],
@@ -1061,7 +1083,9 @@ fun AgentShell(
                             // CYP-381 §6/§7b: this agent's CYP-354 control-state (same map the titlebar marker uses)
                             // → the window frame renders the hub-blind / context-lost banners. Absent key → null →
                             // no banner (fail-closed; the stub reports none of these so they stay absent — honest).
-                            control = controlStates[window.id],
+                            // CYP-819 (A2): revoke → null → the HandoffBanners (INTERACTIVE/CONTEXT_LOST) demote
+                            // (no frozen "interactive" claim); the durable CONTEXT_LOST landmark is latched separately.
+                            control = if (revoked) null else controlStates[window.id],
                             // CYP-333/381: the content-view Terminal, LIVE (see [WORKTREE_SHELL_LIVE_ENABLED]).
                             // Bind a fresh WsTerminalSession to the Desktop TerminalView against /ws/terminal (CYP-332
                             // contract). In TERMINAL mode the CYP-355 motor owns an interactive `claude --resume` PTY and

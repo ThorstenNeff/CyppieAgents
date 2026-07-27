@@ -104,6 +104,12 @@ class AgentWindowChromeInputCoverageTest {
         "capabilitiesLoading" to "toggles the same badge's presence; width only",
         "provider" to "a present provider renders the '(Claude)' chip in the same weighted cluster; width only",
         "onCapabilityBadgeClick" to "a click callback; renders nothing",
+        // CYP-819 (A2): the session-wide revoke demotes the run-state dot (RING/UNKNOWN — a shape+colour change, same
+        // size) and SUPPRESSES the reconnecting `↻` chip (a node in the weighted identity cluster, CYP-369) — both
+        // WIDTH/appearance in the header's single line, never its height. The covering banner + busy/token/control
+        // demotion live at the shell (RemoteOperatingChrome + WindowHost lambdas), NOT in AgentWindow's header.
+        "statusRevoked" to "demotes the run-state dot (shape/colour, same size) + suppresses the reconnecting chip " +
+            "(a width change in the weighted identity cluster, like the fidelity badge); never the header height",
     )
 
     /**
@@ -228,6 +234,8 @@ class AgentWindowChromeInputCoverageTest {
             "capabilitiesLoading" to { agentId, m -> AgentWindow(agentId, vm(), modifier = m, capabilitiesLoading = true) },
             "provider" to { agentId, m -> AgentWindow(agentId, vm(), modifier = m, provider = ProviderInfo.CLAUDE) },
             "onCapabilityBadgeClick" to { agentId, m -> AgentWindow(agentId, vm(), modifier = m, onCapabilityBadgeClick = { error("unused") }) },
+            // CYP-819 (A2): provoke the demotion (dot→UNKNOWN + chip suppressed) — the upper chrome height must not move.
+            "statusRevoked" to { agentId, m -> AgentWindow(agentId, vm(), modifier = m, statusRevoked = true) },
         )
         assertEquals(
             chromeInertByMeasurement.keys, provoked.keys,

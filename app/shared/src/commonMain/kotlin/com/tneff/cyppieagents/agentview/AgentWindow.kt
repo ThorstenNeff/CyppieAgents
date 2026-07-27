@@ -230,6 +230,14 @@ fun AgentWindow(
      * through returns the same reason via the existing `agent_ctl_err_*` surface, Backend-owned).
      */
     hubUnconfigured: Boolean = false,
+    /**
+     * CYP-819 (A2): the session-wide **1008 auth-revoke** is active (fanned in from the four status feeds) → this
+     * window DEMOTES its live indicators to their unknown/absent form (the honesty core): the run-state dot falls to
+     * UNKNOWN, and the reconnecting `↻` chip is SUPPRESSED — a terminal revoke is "disconnected/entzogen" (carried by
+     * the covering banner), never "reconnecting" (which implies recovery). Busy/token/control demote at the shell
+     * (the WindowHost lambdas). Absent by default (`false` = byte-identical today).
+     */
+    statusRevoked: Boolean = false,
 ) {
     val transcript by viewModel.transcript.collectAsState()
     val lifecycle by viewModel.lifecycleState.collectAsState()
@@ -272,6 +280,7 @@ fun AgentWindow(
             startPending = startPending,
             restartPending = restartPending,
             connection = connection,
+            statusRevoked = statusRevoked,
             canControl = viewModel.canControl,
             hubUnconfigured = hubUnconfigured,
             personaPendingRestart = personaPendingRestart,
@@ -542,11 +551,18 @@ private fun AgentHeader(
      *  "wirkt erst beim Neustart" badge, until the agent's next RUNNING event. Absent by default (fail-closed). */
     personaPendingRestart: Boolean = false,
     connection: ConnectionStatus = ConnectionStatus.LIVE,
+    /** CYP-819 (A2): session-wide 1008 revoke → demote the dot to UNKNOWN and SUPPRESS the reconnecting `↻` chip
+     *  (a terminal revoke is not a recoverable reconnect). Absent by default (byte-identical). */
+    statusRevoked: Boolean = false,
     capabilities: Capabilities? = null,
     capabilitiesLoading: Boolean = false,
     provider: ProviderInfo? = null,
     onCapabilityBadgeClick: () -> Unit = {},
 ) {
+    // CYP-819 (A2): on a session-wide 1008 revoke the feeds are dead → the last state is NOT current. Demote the dot
+    // to UNKNOWN by treating the connection as DISCONNECTED (drives gatedLifecycleState → RING/"unbekannt" + the
+    // capability badge → NOT_STARTED); the reconnecting `↻` chip is suppressed separately (revoke ≠ reconnect).
+    val effectiveConnection = if (statusRevoked) ConnectionStatus.DISCONNECTED else connection
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         // CYP-350: below this width the labelled controls cannot be laid out at their intrinsic size, so they are
         // rendered as glyph buttons instead. Measured, not chosen: at 480 dp the three `TextButton`s still need
@@ -578,11 +594,13 @@ private fun AgentHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatusIndicator(agentId, state, startPending, restartPending, connection)
+                StatusIndicator(agentId, state, startPending, restartPending, effectiveConnection)
                 // CYP-204: reconnecting indicator — present ONLY while the per-agent WS is not LIVE (the adapter is
                 // auto-reconnecting from the seq cursor; on reconnect the server replays the history gapless). Its OWN
                 // axis, next to but distinct from the lifecycle status (process state ≠ socket state).
-                ReconnectingChip(agentId, connection)
+                // CYP-819 (A2): SUPPRESSED on a session-wide revoke — a terminal 1008 is not a recoverable reconnect,
+                // so `↻` would falsely imply recovery; the covering banner carries the honest "entzogen" instead.
+                if (!statusRevoked) ReconnectingChip(agentId, effectiveConnection)
                 // Provider axis (CYP-137) — the subordinate "(Claude)" qualifier next to the identity/status, its OWN
                 // marker (≠ fidelity, ≠ lifecycle). Present only when known (fail-closed by absence); neutral, no hue.
                 ConnectorProviderChip(provider = provider, agentId = agentId)
@@ -598,7 +616,7 @@ private fun AgentHeader(
                     // CYP-746: the SAME connection-gated effective state the lifecycle dot shows (see StatusIndicator)
                     // — so the badge's D-vs-E stays coherent with the dot. A dropped socket gates RUNNING→UNKNOWN →
                     // the badge falls to NOT_STARTED (no `○`) exactly as the dot falls to the RING, never a stale `○`.
-                    lifecycle = gatedLifecycleState(state, startPending || restartPending, connection),
+                    lifecycle = gatedLifecycleState(state, startPending || restartPending, effectiveConnection),
                     onClick = onCapabilityBadgeClick,
                     loading = capabilitiesLoading,
                     compact = compact,

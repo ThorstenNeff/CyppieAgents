@@ -5,10 +5,7 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState
 import com.tneff.cyppieagents.model.AgentRunStateEvent
 import com.tneff.cyppieagents.model.ApiErrorBody
-import com.tneff.cyppieagents.net.logWsError
-import com.tneff.cyppieagents.net.reconnecting
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -16,11 +13,8 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
-import io.ktor.websocket.Frame
-import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.builtins.ListSerializer
 
 /**
@@ -88,6 +82,9 @@ class AgentLifecycleLiveSource(
     private val httpBaseUrl: String,
     private val wsBaseUrl: String,
     private val token: String,
+    // CYP-819: fired when the feed sees a terminal 1008 (VIOLATED_POLICY) auth-revoke, so the workspace surfaces
+    // the revoke instead of freezing the last run state as if it were still current (the web-ts twin was CYP-815).
+    private val onRevoked: () -> Unit = {},
 ) : AgentLifecycleSource {
 
     override suspend fun snapshot(): Map<String, AgentLifecycleState> = try {
@@ -112,29 +109,12 @@ class AgentLifecycleLiveSource(
         emptyMap()
     }
 
-    override fun events(): Flow<AgentLifecycleEvent> = channelFlow {
-        // channelFlow (not flow): the webSocket body runs on the engine dispatcher (Dispatchers.IO on Native),
-        // so emitting from here is a cross-context send — illegal in flow{} (the ISE behind the CYP-115 Darwin
-        // churn) but exactly what channelFlow allows. `.reconnecting()` still re-subscribes on a real drop.
-        try {
-            client.webSocket(urlString = lifecycleUrl()) {
-                for (frame in incoming) {
-                    if (frame is Frame.Text) {
-                        val event = CommJson.decodeFromString(AgentRunStateEvent.serializer(), frame.readText())
-                        this@channelFlow.send(AgentLifecycleEvent(event.agentId, event.runState.toLifecycleState()))
-                    }
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            // CYP-125: log a real /ws/lifecycle failure instead of relying purely on reconnecting() to swallow
-            // it — observability parity with Comm/Acl/Events (CYP-115). A normal close doesn't throw → only real
-            // errors, no per-disconnect noise; CancellationException is rethrown; `.reconnecting()` still
-            // re-subscribes (on the block's completion or failure).
-            logWsError("lifecycle", e)
-        }
-    }.reconnecting()
+    override fun events(): Flow<AgentLifecycleEvent> =
+        client.statusFeed(lifecycleUrl(), "lifecycle") {
+            // The REAL :core event; mapped to the client [AgentLifecycleEvent] (no hand-parse, no drift).
+            val event = CommJson.decodeFromString(AgentRunStateEvent.serializer(), it)
+            AgentLifecycleEvent(event.agentId, event.runState.toLifecycleState())
+        }.terminalOnRevoke(onRevoked)
 
     private fun lifecycleUrl(): String {
         val sep = if (wsBaseUrl.endsWith("/")) "" else "/"

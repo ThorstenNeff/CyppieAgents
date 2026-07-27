@@ -52,6 +52,14 @@ object WorkspaceTags {
     const val REMOTE_CONTEXT = "workspace.remoteContext"
 
     /**
+     * CYP-819 (A1) — the ONE covering, session-wide **access-revoked** banner (a terminal 1008 auth-revoke; the shared
+     * bearer means one banner covers all agent windows, never N). Rendered on [RemoteOperatingChrome] where it
+     * SUPERSEDES the transient CONNECTED/RECONNECTING banners. ERROR-red `✕`, STATIC (not a reconnect). Copy reuses
+     * `acl_access_revoked` (the shared revoked anchor, parallel to `aclMatrix.accessRevoked`). a11y Assertive.
+     */
+    const val ACCESS_REVOKED = "workspace.accessRevoked"
+
+    /**
      * CYP-427/M2 (Seam #1) — the E2E-pinned indicator in the affirmative remote-context banner. Present ⇔ identity is
      * REALLY pinned (a `HubTrust` fingerprint pin, NOT provisional trust); copy = `remote_connect_trust_pinned`. A
      * sub-node of [REMOTE_CONTEXT] so QA can tell "pinned is there" from "banner is there" (G2). Neutral/primary tone,

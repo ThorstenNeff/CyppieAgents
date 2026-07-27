@@ -60,6 +60,8 @@
     <string name="comm_readonly_hint">Read-only access in this channel</string>
     <string name="comm_send_denied">No write access in this channel</string>
     <string name="comm_send_failed">Sending failed</string>
+    <!-- CYP-819 (D2): terminal 1008 auth-revoke hard-locks the composer (independent of write access). Parity web-ts comm-revoked-lock. -->
+    <string name="comm_send_revoked">Access revoked — sending is locked.</string>
     <string name="comm_composer_placeholder">Message to %1$s</string>
     <string name="comm_composer_send">Send</string>
     <string name="event_detail_source_ts">Observed: %1$s</string>
