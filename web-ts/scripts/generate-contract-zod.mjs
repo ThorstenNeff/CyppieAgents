@@ -58,6 +58,26 @@ const deref = (node, stack) => {
   return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, deref(v, stack)]))
 }
 
+// CYP-843 — nullable-ENUM null-branch fix. json-schema-to-zod's enum branch IGNORES a `type: [..., "null"]` array and
+// emits `z.enum([...])` WITHOUT `.nullable()`, so a contract-conformant explicit `null` on a nullable enum is wrongly
+// REJECTED. Since CYP-834 makes a /ws/comm schema-rejection TERMINAL, that would false-terminal-skew a valid frame
+// (e.g. `meta.kind: null`) — TS strict where kotlinx is not (the forbidden drift; :core/asyncapi is correct, the bug is
+// purely this codegen). Plain (non-enum) nullable types are already handled correctly by the library
+// (`z.union([<T>, z.null()])`); ONLY the enum+null combination drops it. Fix: rewrite a nullable enum to an explicit
+// `anyOf` union so the library emits `z.union([z.enum([...]), z.null()])`. `.optional()` (non-required) is layered on
+// top by the object schema as before, so absent/null/enum-value all validate; an out-of-set value still rejects (skew).
+const fixNullableEnums = (node) => {
+  if (Array.isArray(node)) return node.map(fixNullableEnums)
+  if (node === null || typeof node !== 'object') return node
+  if (Array.isArray(node.enum) && Array.isArray(node.type) && node.type.includes('null')) {
+    const nonNull = node.type.filter((t) => t !== 'null')
+    const { enum: values, type: _type, ...rest } = node
+    const enumBranch = nonNull.length === 1 ? { enum: values, type: nonNull[0] } : { enum: values }
+    return { ...fixNullableEnums(rest), anyOf: [enumBranch, { type: 'null' }] }
+  }
+  return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, fixNullableEnums(v)]))
+}
+
 // CYP-737 — the REST response roots, DERIVED from the openapi paths (not hand-listed): 67 operations would rot a
 // manual list, and the rot is silent — a new endpoint simply goes unvalidated while coverage still looks complete.
 // An inline (unnamed) response schema cannot become a named root; those are REPORTED rather than dropped, so the
@@ -76,7 +96,7 @@ const chunks = []
 for (const name of ALL_ROOTS) {
   const schema = defs[name]
   if (schema === undefined) throw new Error(`[CYP-420/737] root ${name} missing from the contract — fail-closed.`)
-  const body = jsonSchemaToZod(deref(schema, [name]), { name: `${name}Schema`, module: 'esm', type: false })
+  const body = jsonSchemaToZod(fixNullableEnums(deref(schema, [name])), { name: `${name}Schema`, module: 'esm', type: false })
   // strip the per-schema import line; one shared import goes in the banner
   chunks.push(body.replace(/^import \{ z \} from "zod"\s*/m, '').trim())
 }
