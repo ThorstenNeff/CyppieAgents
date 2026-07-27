@@ -14,7 +14,7 @@ trust-artige Flächen sind **drei distinkte Konzepte** mit **drei Lebenszyklen**
   (laufende-Verbindung-Tier). Ändert sich **nicht** mit dem Connect-Versuch — Status, kein Ereignis.
 - **Zone 2 — Die Connect-Failure-REGION** (transient je Connect-Versuch, terminal): *„Dieser Verbindungsversuch endete
   wie?"* Trägt die **Failure-Arme**, u. a. den **IssuerNotTrustedBlock** (Achse c, terminaler WARN-Block). Erscheint **nur**
-  am Verbindungs-Ausgang (`LOST`), eine Ursache zur Zeit.
+  am terminal-negativen Verbindungs-Ausgang (`failed(cause)`/terminal-`lost`), eine Ursache zur Zeit.
 
 **Warum strikt getrennt:** ein Hub kann **gleichzeitig** `trusted` sein (Achse-a-Badge, Zone 1 — „ich habe seinen Key
 gepinnt") **UND** einen IssuerNotTrusted-Block haben (Achse c, Zone 2 — „der Hub vouched meinen Aussteller nicht"). Das
@@ -55,10 +55,19 @@ bewusst **nicht** per-`hubId`).
 ## 3. Zone 2 — Connect-Flow + Failure-Region
 Der Connect-Flow des **aktiven** Hubs (Parität zu Compose `RemoteConnectingView`, ein `HubCard`), schaltet auf den
 Conn-State:
-`dialing → handshake → trust-check → authenticating → (reconnecting) → CONNECTED | LOST`.
+`dialing → handshake → trust-check → authenticating → (reconnecting) → CONNECTED | failed(cause) | lost`.
+
+**★ Terminologie (reconciled mit Dev5s CYP-822-A1-State-Machine):** meine frühere „`LOST`"-Bezeichnung stammte aus
+Compose' EINEM terminal-negativen State (`RemoteConnState.LOST`). Dev5s Machine ist präziser und splittet ihn:
+**`failed(cause)`** = *nie verbunden* (z. B. IssuerNotTrusted-Refusal am trust-check) vs **`lost`** = *war verbunden,
+dann gedroppt*. „Failure-Region am terminal-negativen Ausgang" meint daher **beide terminal-negativen Ausgänge**:
+`failed(cause)` **∪** terminal-`lost` — der Arm-Switch dispatcht auf die konkrete Ursache/Art. **Ein reconnectbares/
+in-flight `lost`** (falls die Machine das modelliert) ist ein **Transient** (polite, retrybar), **kein** Failure-Arm —
+wie Compose `RECONNECTING`. **`IssuerNotTrusted` ist spezifisch ein `failed(IssuerNotTrusted)`** (Refusal am trust-check,
+nie verbunden) — **nie** `lost`.
 - **In-Progress-States:** neutrale Spinner/Copy (nie Alarm; „reconnecting" ist honestly-uncertain, nicht rot).
 - **CONNECTED:** verbundene Fläche + der **Tier-Badge** (2b) + Enter-Workspace. Kein Failure.
-- **`LOST` → Failure-Region:** **EINE Region, N Arme, Arm-Switch je Ursache** (Parität zu Compose `RemoteFailureView`):
+- **terminal-negativ (`failed(cause)` ∪ terminal-`lost`) → Failure-Region:** **EINE Region, N Arme, Arm-Switch je Ursache** (Parität zu Compose `RemoteFailureView`):
   | Ursache | Achse | Arm | Ton | Retry? |
   |---|---|---|---|---|
   | `NOT_TRUSTED` (Issuer) | c | **`IssuerNotTrustedBlock`** (CYP-805) | ▲ WARN-amber terminal, OOB | **nein** |
@@ -75,16 +84,16 @@ Conn-State:
 |---|---|---|---|---|
 | M1 | Hub-Switcher-Eintrag (je Hub) | `HubTrustBadge` | `trust`, `validity` per `hubId` (axis-a Verdikt-Feed) | immer (alle Registry-Hubs) |
 | M2 | Aktiv-Hub Connection-Header | `RemoteSecurityTierBadge` | `tier` der laufenden Verbindung (S7-Transport-Seam) | wenn aktiv/verbunden |
-| M3 | Failure-Region-Arm (LOST) | `IssuerNotTrustedBlock` | `issuerTrust`-Enum (NUR das Enum, **nie** die issuer-ID — CYP-805-Security) | `conn=LOST ∧ issuerConnectDecision===block` |
+| M3 | Failure-Region-Arm | `IssuerNotTrustedBlock` | `issuerTrust`-Enum (NUR das Enum, **nie** die issuer-ID — CYP-805-Security) | **`failed(cause=IssuerNotTrusted)`** (≡ `issuerConnectDecision===block` am gescheiterten trust-check) — **NICHT** `lost` |
 
 - **M1 ist Zone 1, M3 ist Zone 2 — verschiedene Orte, verschiedene Lebenszyklen.** M1 persistiert; M3 erscheint nur am
-  `LOST`-Ausgang. Sie können **gleichzeitig** sichtbar sein (Hub im Switcher = `trusted`, Connect endet `IssuerNotTrusted`)
+  terminal-negativen Ausgang. Sie können **gleichzeitig** sichtbar sein (Hub im Switcher = `trusted`, Connect endet `IssuerNotTrusted`)
   ohne Widerspruch — genau der Beweis, dass die Zonen getrennt sind.
 
 ## 5. Übergänge
 - **proceed** (`absent`/`TRUSTED`/`REMOTE_NOT_CONFIGURED`): **kein** Issuer-Arm; ohne anderen Failure keine Failure-Region;
   Flow läuft bis `CONNECTED`. *(Absent→proceed sicher, weil **Server** das Gate ist — CYP-805 / [[client-gate-is-not-the-boundary]].)*
-- **block** (`NOT_TRUSTED`): Failure-Region mountet den Issuer-Arm im `LOST`, **assertive**, kein Retry/Proceed, `CONNECTED`
+- **block** (`NOT_TRUSTED`): Failure-Region mountet den Issuer-Arm bei `failed(IssuerNotTrusted)`, **assertive**, kein Retry/Proceed, `CONNECTED`
   wird **nicht** erreicht.
 - **Hub-Switch (CYP-755 §3):** Teardown→Setup, **resolve-then-render**; Rolle/Tier/Trust des neuen aktiven Hubs
   **fail-closed neu aufgelöst** (least-privilege bis aufgelöst) — **nichts** vom alten Hub reist. Die Zone-1-Badges der
@@ -103,7 +112,7 @@ Conn-State:
 2. **Ko-Existenz ohne Widerspruch** — ein Hub `trusted` im Switcher (M1) UND `IssuerNotTrusted` in der Failure-Region (M3)
    **gleichzeitig** rendern beide korrekt, kein Element überschreibt das andere. *(Mutation: der Block „übernimmt" das
    Trust-Badge oder umgekehrt → RED.)*
-3. **Ein-Arm** — genau ein Failure-Arm im `LOST`; nie zwei Failure-Aussagen. Terminal=kein Retry.
+3. **Ein-Arm** — genau ein Failure-Arm am terminal-negativen Ausgang; nie zwei Failure-Aussagen. Terminal=kein Retry.
 4. **proceed→kein Block; block→Block terminal** — s. §5.
 5. **Switcher: inaktiv/nicht-frisch = `unknown`** — kein gecachtes `trusted` für nicht-frische Hubs (Zone-1-Honesty).
 6. **Fail-closed Re-Resolve bei Switch** — nichts vom alten Hub reist; neuer Tier/Trust/Rolle neu aufgelöst.
