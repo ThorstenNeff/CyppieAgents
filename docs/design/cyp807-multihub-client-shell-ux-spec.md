@@ -68,6 +68,21 @@ Hubs **fail-closed neu aufgelöst**, nichts reist vom alten) = **CYP-755 §3** (
   vs Zone-2 Connect-Flow/Failure-Region. Ein Hub kann Switcher-`trusted` (Zone-1) UND `failed(issuer-not-trusted)`
   (Zone-2) gleichzeitig sein — verschiedene Trust-Fragen, nie im selben Element.
 
+### 2b. ★ Mount-Host (M4) — Pre-Arming render-honesty (PL-Verfeinerung, load-bearing)
+Der CYP-827-A3-Mount kommt **nach vorn** (props-driven, jetzt buildbar) — **aber** die gemounteten Trust-Leaves werden
+**pre-arming NUR neutral-default gespeist**: `trust = null` → **UNKNOWN = advisory-neutral** (fail-closed, CYP-824/CYP-805-
+Disziplin). Sie werden **NIE** an eine Live-Trust-**Decision** verdrahtet, bevor die **Arming-Naht** die frisch beobachteten
+Daten liefert.
+- **Warum (render-honesty):** ein Mount **vor** dem Gate/der Beobachtung, der an irgendeine optimistische Quelle hinge,
+  würde **unverifiziert als „vertraut"** rendern = **render ≠ Autorität**-Bruch. **Der Server bleibt die Grenze**
+  ([[client-gate-is-not-the-boundary]]); der Render ist advisory, nie die Entscheidung. Deckt sich mit §1
+  („Frische folgt Beobachtung") und dem fail-closed Default UNKNOWN (CYP-803/755 §1).
+- **Regel:** **Zustand advisory-neutral bis Arming; Live-Trust-Daten = die Arming-Naht.** Vor Arming: `HubTrustBadge`
+  `trust=null`→UNKNOWN · `RemoteSecurityTierBadge` `tier` unset→`unknown` · Issuer-Verdikt aus `computeIssuerPreVerdict`
+  ist **advisory** (client-konstruiert aus dem gehaltenen Descriptor, `issuerPreVerdict.ts` „no oracle"), **nicht** die
+  Autorität. *(Tooth: ein gemounteter-aber-nicht-armed Leaf rendert **nie** `trusted`/`native`/proceed — Mutation:
+  Mount-vorm-Arming zeigt `trusted` → RED = render-honesty-Bruch.)*
+
 ## 3. ★ NEU: die dritte Disposition `actionable` (frozen, CYP-824) — CYP-823-Failure-Region-Ergänzung
 `RemoteFailureDisposition` = **`terminal` | `retryable` | `actionable`**. Meine CYP-823-Arme deckten terminal (issuer/auth)
 + retryable (transport). **Neu: `actionable`** = `remote-not-configured` — **KEIN Reject**: der Operator kann es **in-app
