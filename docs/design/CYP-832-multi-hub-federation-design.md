@@ -1,8 +1,9 @@
 # CYP-832 — Multi-Hub Hub/Relay Federation (Design-Pass)
 
-> **Status: RATIFICATION-READY (v0.3)** — §4b wire-envelope + §5 trust-anchor/rotation/revoke each spelled out with
-> a recommendation + explicit freeze point (§10 is the PL bundle); §3 topology firmed, §9.3 named, §8.1 PL build-teeth
-> folded. Design-only, no build. Build-gated behind the god-token close
+> **Status: RATIFICATION-READY (v0.4)** — the §10 PL bundle (§4b wire-envelope + §5 trust-anchor/rotation/revoke, 8
+> freeze points) is UNCHANGED from v0.3 (`232c9f80`, already at the PL). v0.4 adds design-ahead, **non-Weiche** detail
+> so the post-ratification build has no gap: §3.1 rendezvous peering-id allocation + §7 BYOA/BYODB boundaries. §3
+> topology firmed, §9.3 named, §8.1 PL build-teeth folded. Design-only, no build. Build-gated behind the god-token close
 > (CYP-828 ✅ merged) **and** §9.3. This document exists to (a) sketch the federation architecture on the
 > existing spine, (b) **isolate the hard-reversible Weichen** (§4b, §5) for the PL → Auftraggeber, and (c)
 > carry the story decomposition so soft (stub-able) work can start against contracts *before* the Weichen freeze.
@@ -60,9 +61,29 @@ transport) — NOT a new socket and NOT a mux. Grounding on the transport as it 
   independently-verified credential — which is why the trust-DECISION (§4a) and the trust-ANCHOR (§5) are the
   load-bearing parts, and the transport is not (it exists).
 
-*Open (next pass):* rendezvous-set allocation for a hub↔hub peering (who registers, who dials which slot), and
-whether federation reuses the operator N-set or gets its own **peering-id namespace** — leans toward its own,
-decided together with §4b.
+### 3.1 Rendezvous peering-id allocation (design-ahead — non-Weiche)
+
+*How* two hubs find each other on the relay. Grounded on the operator N-set (CYP-536): the relay pairs one
+client-dialer to one hub-responder per opaque rendezvous-id; the CP mints epoch-derived ids, the responding side
+registers them, the dialing side resolves + dials.
+
+**Decision — federation gets its OWN peering-id namespace, distinct from the operator N-set.** A federated peering
+is domain-separated from operator rendezvous-ids (the derivation adds a `"federation-peer"` domain tag; the exact
+bytes are §4b-adjacent, but the SEPARATION is the design-ahead commitment). Three axes that must stay independent:
+ 1. **Revocation / cap isolation:** a federated-peer tunnel and an operator tunnel to the same hub must be
+    independently revocable and independently DoS-capped. Sharing the operator N-set would conflate them in the
+    `TunnelSessionRegistry` fan-out and the per-operator cap (CYP-536) — revoking a peer would tear down operator
+    sessions. Federation peerings get their OWN cap and a revoke keyed by `peerHubId` (feeds §5-3 cross-hub revoke).
+ 2. **Credential axis:** operator tunnels attest with the RR3 operator device-PoP; federation peers attest with the
+    `"federation-peer"` PoP (§4b-1) chained to the issuer anchor (§5). Different credential → different namespace
+    keeps the two auth paths cleanly separated.
+ 3. **Lifecycle / cardinality:** the operator N-set is per-operator-SESSION (N concurrent workspace channels); a
+    peering is per-PEER-HUB and long-lived.
+
+**Role assignment (deterministic, avoids double-tunnels):** the Noise tunnel is bidirectional once established, so
+ONE tunnel per unordered hub-pair, not two. The **lexicographically-lower `hubId` is the responder** (registers the
+peering-id); the higher dials it. N peer-pairs = N tunnels, **no mux** (consistent with §3). Non-Weiche: it fixes no
+wire bytes — §4b only freezes how the peering-id is CARRIED, not this allocation model.
 
 ## 4. Trust & identity across hubs
 
@@ -145,11 +166,28 @@ federation is *explicitly* configured with a trusted anchor. Buildable **now** a
 (the S-Fed-2 contract) — the gate structure, the fail-closed default, and the reject teeth do not need the wire
 freeze. Live arming is §9. → **Story S-Fed-3.**
 
-## 7. BYOA / BYODB touch
+## 7. BYOA / BYODB touch — FIRMED (design-ahead — non-Weiche)
 
-*(TBD — mostly design.)* A bring-your-own-agent joining via a *federated* hub (the agent's checkout/custody lives
-with the user, per D9); DB custody across hubs (BYODB — whose master-key custody, cf. CYP-670 D2 master-key-in-RAM).
-Surfaces custody Weichen; little build. → **Story S-Fed-5.**
+The federation boundary is a TRUST + TRANSPORT relationship, NOT a shared identity or datastore. Two decisions,
+both fail-closed:
+
+**BYOA — a federated peering carries OPERATOR trust only; cross-hub AGENT participation is an explicit, narrow
+grant.** An agent brought to hub A (its checkout/custody with the user, per D9) does NOT automatically gain identity
+on hub B. If an agent on A must participate in a channel on B, that is an explicit per-agent **federated
+channel-share**, operator-gated — the cross-hub analog of the intra-workspace `ChannelShare` (CYP-93 / S17), and
+fail-closed by default (unshared ⟹ the agent is local to its own hub). A brought agent never silently acquires reach
+across the peering.
+
+**BYODB — per-hub custody is NOT shared across the federation.** Each hub keeps its OWN encrypted-at-rest store and
+its OWN master key (CYP-434 SecretStore, CYP-670 D2 master-key-in-RAM). A federated peering never shares a datastore
+or a master key. Cross-hub data that must be visible on both hubs (messages, ACL projections) flows over the
+federation transport (§3 session plumbing) and each hub **persists its own copy in its own store** — no shared DB,
+no shared custody, no cross-hub master-key entanglement. If BYODB later means "bring your own Postgres" (CYP-220),
+that is a per-hub DSN choice, orthogonal to federation.
+
+**Why non-Weiche:** neither decision fixes a wire byte or an irreversible trust-anchor commitment — they are
+architecture boundaries (identity scope + custody scope) the post-ratification build slots into. → **Story S-Fed-5**
+is now a build against these boundaries, not an open design question.
 
 ## 8. Story decomposition (first cut — mirrors the PO dispatch)
 
@@ -213,6 +251,7 @@ credential binding, M2 G4 / CYP-532) — plus god-token close (CYP-828 ✅) and 
 ---
 
 *Author: backend. Grounded on CYP-828 / CYP-747 (Model-2, `IssuerAnchor`/`operatorAuthChallenge`) / CYP-536 /
-CYP-427 / CYP-638 / CYP-687. §3 topology + §4b wire-envelope + §5 trust-anchor/rotation/revoke deep-passed and
-ratification-ready (§10 = the PL bundle). Remaining thin: §7 BYOA/BYODB (mostly design) + the §3 "open" rendezvous
-peering-id allocation. Building the federation is unblocked by ratifying §4b/§5; arming stays DARK behind §9.*
+CYP-427 / CYP-638 / CYP-687 / CYP-93-S17 / CYP-434 / CYP-670. §3(+3.1) topology + §4b wire-envelope + §5
+trust-anchor/rotation/revoke + §7 BYOA/BYODB all deep-passed. §10 = the PL Weichen bundle (unchanged since v0.3).
+Trio (S-Fed-2/3/4a) BUILT + merged. Building the federation is unblocked by ratifying §4b/§5; arming stays DARK
+behind §9.*
