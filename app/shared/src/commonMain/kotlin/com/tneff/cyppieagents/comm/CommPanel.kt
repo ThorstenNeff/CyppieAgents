@@ -67,6 +67,7 @@ import kmpcyppieagents.app.shared.generated.resources.comm_send_failed
 import kmpcyppieagents.app.shared.generated.resources.comm_send_revoked
 import kmpcyppieagents.app.shared.generated.resources.comm_status_connecting
 import kmpcyppieagents.app.shared.generated.resources.comm_status_offline
+import kmpcyppieagents.app.shared.generated.resources.a11y_comm_status_protocol_skew
 import kmpcyppieagents.app.shared.generated.resources.comm_status_protocol_skew
 import kmpcyppieagents.app.shared.generated.resources.comm_timeline_empty
 import org.jetbrains.compose.resources.stringResource
@@ -339,24 +340,29 @@ private fun ConnectionBanner(connection: ConnectionStatus, accessRevoked: Boolea
         }
         return
     }
-    // CYP-786: the terminal app-schema skew banner (ERROR-red, supersedes the amber offline banner below). Copy is a
-    // PLACEHOLDER (`comm_status_protocol_skew`) — wording refined by UIUX/Dev (PO-brokered); the state is authoritative.
+    // CYP-786 (UIUX-final): the terminal app-schema skew banner — tonal `errorContainer` (IDENTICAL to the revoked
+    // banner, both equally-serious terminal ERROR states, static/no spinner). The distinction is carried STRICTLY by
+    // the ≠ glyph (version-mismatch, vs ✕ = revoked) + copy — NOT by tone (word is the primary carrier, glyph
+    // reinforces, WCAG 1.4.1). (UIUX chose the tonal container over solid `severityContainer(ERROR)`=scheme.error, which
+    // is alarmist + a helper asymmetry: severityContainer(WARN) is tonal but ERROR is solid — no parallel container.)
+    // The Assertive a11y description is the fuller [a11y_…] string.
     if (protocolSkew) {
         val skewText = stringResource(Res.string.comm_status_protocol_skew)
+        val skewA11y = stringResource(Res.string.a11y_comm_status_protocol_skew)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.errorContainer)
                 .testTag(CommTags.PROTOCOL_SKEW)
                 .semantics(mergeDescendants = true) {
-                    contentDescription = skewText
+                    contentDescription = skewA11y
                     liveRegion = LiveRegionMode.Assertive
                 }
                 .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("⚠", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            Text("≠", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
             Text(skewText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
         }
         return
