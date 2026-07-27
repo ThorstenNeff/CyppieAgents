@@ -27,7 +27,7 @@ import kotlin.io.encoding.Base64
  *
  * [incoming] connects **lazily on first collect** (the renderer's read loop drives it); [send]/[resize] queue
  * onto a buffered [outbound] channel that the sender coroutine drains once connected, so an early keystroke isn't
- * lost. Mirrors the other client WS sources (e.g. `AgentLifecycleLiveSource`): `logWsError` on a real failure,
+ * lost. Mirrors the other client WS sources (e.g. the muxed `StatusMuxClient`): `logWsError` on a real failure,
  * `CancellationException` rethrown.
  */
 class WsTerminalSession(
