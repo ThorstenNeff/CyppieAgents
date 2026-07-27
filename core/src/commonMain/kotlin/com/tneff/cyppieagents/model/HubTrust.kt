@@ -16,7 +16,9 @@ import kotlinx.serialization.Serializable
  * local axes; the wire carries the resolved state so Compose + web-ts render identically.
  *
  * **Fail-closed:** [UNKNOWN] is the default — an unknown/absent/not-yet-evaluated verdict **NEVER** renders as trusted
- * ("never green-by-default", safe-but-silent). Only [TRUSTED] is the "green" state.
+ * ("never green-by-default", safe-but-silent). [TRUSTED] is a **NEUTRAL, full-emphasis** state — **never-green**
+ * (CYP-803/CYP-808): trust is issuer-vouched **and revocable**, so it earns no affirming/green accent, only a fuller
+ * emphasis that keeps it distinct from unknown/pending. The canonical trust-tone truth lives in `HubTrustTone` (CYP-808).
  */
 @Serializable
 enum class HubTrustState {
@@ -27,7 +29,8 @@ enum class HubTrustState {
      *  confirm is open, awaiting the human compare. */
     PENDING,
 
-    /** The hub key is pinned and matches — the only "green" state. */
+    /** The hub key is pinned and matches — a **NEUTRAL, full-emphasis** state, **never-green** (issuer-vouched +
+     *  revocable, CYP-803/CYP-808; the tone is `onSurface`, never `primary`/green). */
     TRUSTED,
 
     /** Trust was EVALUATED and refused/aborted (see [TrustRejectReason]); terminal for this attempt. */

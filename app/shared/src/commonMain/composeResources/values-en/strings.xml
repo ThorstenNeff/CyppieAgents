@@ -728,6 +728,19 @@
     <string name="remote_connect_relay_dropped">Connection dropped — reconnecting…</string>
     <string name="remote_connect_trust_changed">Hub key changed — connection blocked. Re-pin required.</string>
     <string name="remote_connect_trust_rejected">Fingerprint rejected — not connected. Confirm out-of-band to connect.</string>
+    <!-- CYP-808: per-hub trust-badge (axis a, HubTrustState) — 5-state labels (the meaning WORD, the a11y carrier). -->
+    <string name="hub_trust_unknown">Trust not checked</string>
+    <string name="hub_trust_pending">checking…</string>
+    <string name="hub_trust_trusted">trusted</string>
+    <string name="hub_trust_rejected">rejected</string>
+    <string name="hub_trust_stale">Last trusted — currency not confirmed</string>
+    <!-- CYP-808: the SEPARATE malformed-descriptor upstream signal (own namespace, never a 6th trust state). -->
+    <string name="hub_descriptor_invalid">Invalid hub descriptor — status not interpretable</string>
+    <string name="a11y_hub_trust_unknown">Hub trust not yet checked.</string>
+    <string name="a11y_hub_trust_pending">Hub trust is being checked.</string>
+    <string name="a11y_hub_trust_trusted">This hub is trusted (issuer-vouched, revocable).</string>
+    <string name="a11y_hub_trust_rejected">Hub trust rejected.</string>
+    <string name="a11y_hub_trust_stale">Hub trust stale — currency not confirmed.</string>
     <string name="remote_connect_auth_rejected">Rejected by the hub. Please sign in again.</string>
     <string name="remote_connect_relay_unreachable">Relay unreachable — try again later.</string>
     <string name="remote_connect_hub_offline">The hub is offline — is it running?</string>
