@@ -1,8 +1,11 @@
 # CYP-747 — God-Token Authority-Boundary: die Security-Invariante, die S3 + S4 gatet (Design-Pass)
 
-> Status: **DESIGN-PASS v3.1 — zur Ratifikation an PL + Auftraggeber (2 Prinzipale), VOR jedem Bau.** Owner: Backend.
-> (v3.1 foldet den 2. Reviewer-Re-Review: V3-1 `Principal:132` = MEMBER-GRANT, richtungs-gegatet + zwei Zähne; V3-2 T1c
-> auf Autoritäts-Konstruktion gekeyed mit MUT-A+MUT-B. Siehe Rev.3.1 am Ende. F2–F6 unverändert.)
+> Status: **DESIGN-PASS v3.2 — zur Ratifikation an PL + Auftraggeber (2 Prinzipale), VOR jedem Bau.** Owner: Backend.
+> (v3.1: V3-1 `Principal:132` = MEMBER-GRANT, richtungs-gegatet + zwei Zähne [T1d]. **v3.2 (3. Reviewer-Re-Review): V3-1
+> clean/GO; T1c von „construction-keyed" auf SOURCE-keyed korrigiert** — der 4-Typ-Key deckte die roh-`Boolean`- (#3) und
+> `MachineAgent(null)`-MEMBER- (`:132`) Grants NICHT; jetzt: rohes `isOperator(` + rohe Secret-Referenz nur in
+> whitelisted Sites, jeder Autoritäts-Pfad jeden Shapes ruft `operatorEligible`. Siehe Rev.3.1/3.2 am Ende. F2–F6/V3-1
+> unverändert.)
 > Bezug: CYP-747 Modell-2 Aussteller-Vertrauen (Design `db1f879c`, `docs/design/CYP-747-model2-issuer-trust-design.md`).
 > Basis: develop `4db7cac4`. **KEIN Bau-Gate.** Output dieses Docs = die ratifizierbare Invariante; es baut nichts an
 > **S3** (god-token remote-Verweigerungs-Closure) oder **S4** (C3 aktiver Widerruf).
@@ -328,17 +331,34 @@ Quelle nimmt — genau die Verifikation, die v2 fehlte („behauptet, nicht veri
   **#2 `/ws/terminal`** (kein `TerminalPrincipal.Operator`), **#3 `/ws/agent`** (1008), **#4 `/ws/events`+`/api/events`**
   (KEINE fremden Message-Bodies — CYP-432), **#5 `/me`** (nicht OPERATOR). *Mutation:* das Loopback-Gate an der
   geteilten Quelle (`operatorEligible`) entfernen → **alle 5** authentifizieren off-loopback → rötet.
-- **★ T1c (S3b-CLOSURE — V3-2: auf die Autoritäts-KONSTRUKTION keyed, nicht auf eine feste Nähte-Liste):** ein
-  **Arch-Scan** keyed auf die **Konstruktion** von god-token-Operator-Autorität — **jede** Herstellung von
-  `MachineOperator` / `TerminalPrincipal.Operator` / `OPERATOR_ID` / `AuthMe(OPERATOR)` aus dem statischen Token MUSS
-  über das loopback-gegatete `operatorEligible` laufen — **plus eine minimale, explizit-reviewte Identitäts-Whitelist**
-  (nur der Reject-Guard `PlatformWiring:425`). **Zwei Mutationen (Anti-Vakuität):** **MUT-A** — eine bestehende
-  Grant-Naht auf **rohes** `isOperator` umstellen → rötet. **MUT-B** — eine **6., NEUE** Konstruktions-Site hinzufügen,
-  die Autorität aus rohem `isOperator` baut → **rötet** (genau der Beweis, den eine feste 5-Liste NICHT liefert — der
-  v2-Fehler in Zahn-Form). **Bonus-Konsistenz:** ein korrekt gebauter T1c flaggt `:132` SELBST (V3-1) — ein
-  „rohes `isOperator` → MEMBER, ungegated"-Rest darf NICHT grün durchgehen. Analog `Cyp747OperatorAuthorityClosureTest`
-  (Cookie-Achse, bereits gebaut); macht „Property an der geteilten Quelle" **prüfbar statt behauptet** (der Zahn, der
-  v2/v3 fehlte).
+- **★ T1c (S3b-CLOSURE — V3.2: SOURCE-keyed, shape-blind-frei, ZWEI Schichten):** die v3.1-Fassung keyte auf **4
+  getypte Operator-Konstruktionen** (`MachineOperator`/`TerminalPrincipal.Operator`/`OPERATOR_ID`/`AuthMe(OPERATOR)`) —
+  deckt **NICHT** alle Grant-Shapes: `AgentSocket:65` grantet ein rohes **`Boolean`** (`isOperator(token)→true`), `:132`
+  ein **`MachineAgent(null)`** (MEMBER); beide sind keine getypte Operator-Konstruktion → ein 4-Typ-Key ließe sie durch
+  (und der „T1c flaggt `:132` selbst"-Bonus war inakkurat). Die Invariante ist **„zero remote" INKL. MEMBER + Boolean**.
+  **Fix — auf die QUELLE keyed, zwei Schichten:**
+  - **(A) `isOperator(`-Aufruf-Closure:** nach dem V3-1-Fix wird `TokenRegistry.isOperator(` an **GENAU ZWEI** Sites
+    aufgerufen — der `operatorEligible`-Definition und dem Reject-Guard `PlatformWiring:425`. T1c: rohes `isOperator(`
+    erscheint **AUSSCHLIESSLICH** in dieser 2-Site-Whitelist; **jeder Autoritäts-Pfad (Operator/MEMBER/Boolean, egal
+    Shape) ruft `operatorEligible`.**
+  - **(B) ★ Value-Compare-Closure (die ECHTE terminal-Achse — STRUKTURELL by-visibility, NICHT per Symbol-Liste):**
+    `isOperator` IST intern `token == operatorToken` (`Auth.kt:33`). Der gefährliche Vektor ist ein **Value-Compare**
+    `X == operatorToken` (präsentierter Token gegen das Secret = ein verdeckter Grant, umginge `operatorEligible` UND den
+    `isOperator(`-Scan). **NICHT als Symbol-Scan bauen:** das Symbol `operatorToken` erscheint an **~11 legitimen
+    Plumbing-Sites** (Secrets · ctor-Seeds `BootOrchestrator:354`/`CommRoutes:87` · ACL-Seed `CommRoutes:57/84` ·
+    Provisioning `ProvisionMain:46/58` · Decl `Auth:28`) — ein Symbol-Whitelist-Zahn false-positivt auf all die
+    (Plumbing ≠ Compare). **Stattdessen STRUKTURELL:** weil `operatorToken` ein **`private val`** (`Auth.kt:28`) OHNE
+    wert-exponierenden Accessor ist (kein Getter / `copy` / Klartext-`toString`; `:32` maskiert ✓), ist der
+    Value-Compare `== operatorToken` **by-visibility** strukturell auf die **2 In-Class-Sites** `{Auth:33 isOperator,
+    Auth:45 mint (Nicht-Grant)}` gebannt — **KEINE Enumeration, keine Whitelist nötig**. Der Zahn pinnt die STRUKTUR:
+    (i) `operatorToken` bleibt `private val` **ohne** wert-exponierenden Accessor; (ii) `isOperator` bleibt der
+    **EINZIGE** öffentliche Identifikator. *Mutation:* einen Value-exponierenden Accessor hinzufügen (Getter / `copy` /
+    Klartext-`toString`) → ein `== operatorToken` wird EXTERN möglich (der 4. Blind-Spot) → **rötet**.
+  - **Mutationen (Schicht A):** **MUT-A** — eine Grant-Naht (explizit **#3 `AgentSocket:65` roh-Boolean** ODER **`:132`
+    MEMBER**) auf rohes `isOperator` umstellen → 3. rohe `isOperator(`-Referenz → **rötet** (beweist Boolean+MEMBER
+    mitgedeckt). **MUT-B** — eine 6., NEUE rohe `isOperator(`-Grant-Site **beliebigen Shapes** hinzufügen → **rötet**
+    (der Beweis, den weder eine feste 5-Liste noch ein 4-Typ-Key liefert). Analog `Cyp747OperatorAuthorityClosureTest`;
+    macht „zero remote an der geteilten Quelle" **prüfbar statt behauptet** (der Zahn, der v2/v3 fehlte).
 - **★ T1d (V3-1 — `:132` MEMBER-Downgrade, ZWEI Zähne für ZWEI Richtungen, damit keine Naht die andere absorbiert):**
   (a) **off-loopback** god-token (public-Connector), Bearer/`?token=` → **401** (volle Denial, **NICHT** `MachineAgent(null)`/
   MEMBER). *Mutation:* `:132` roh lassen (`if (isOperator) …`) → off-loopback → MEMBER (statt 401) → rötet (= das
@@ -411,3 +431,17 @@ auf **Autoritäts-KONSTRUKTION gekeyed** (jede `MachineOperator`/`TerminalPrinci
 via `operatorEligible`) + minimale Identitäts-Whitelist; **2 Mutationen** MUT-A (Grant-Naht→roh→rot) + **MUT-B (6.
 Konstruktions-Site→rot** — der Beweis, den die feste Liste nicht liefert). §1.9/§2.1b/§6-T1c+T1d + §7 neu gefasst; F2–F6
 unverändert. Design-only; Bau gated auf PL-Ratifikation **v3.1**.
+**Rev.3.2 (2026-07-27, Backend):** dritter Reviewer-Re-Review. **V3-1 clean → GO** (`:132` beide Richtungen sauber,
+T1d). **V3.1-1 (T1c-Gap, bestätigt):** die v3.1-„construction-keyed"-T1c (4 getypte Operator-Konstruktionen) deckte
+**NICHT** alle Grant-Shapes — `AgentSocket:65` grantet roh-`Boolean`, `:132` `MachineAgent(null)`-MEMBER; ein 4-Typ-Key
+ließe beide (und den „T1c flaggt :132 selbst"-Bonus inakkurat) durch. Die Invariante = „zero remote" **inkl. MEMBER +
+Boolean**. **Fix: T1c SOURCE-keyed, zwei Schichten** — (A) rohes `isOperator(` nur in {`operatorEligible`-Def,
+`PlatformWiring:425`}; (B) **Value-Compare-Closure — STRUKTURELL by-visibility, NICHT Symbol-Whitelist** (Reviewer-
+Verfeinerung vor Bau): der Vektor ist ein Value-Compare `X == operatorToken`, nicht das Symbol (das an ~11 legitimen
+Plumbing-Sites erscheint → Symbol-Scan false-positivt). Weil `operatorToken` `private val` (`Auth.kt:28`) OHNE
+wert-exponierenden Accessor ist, ist `== operatorToken` by-visibility auf `{Auth:33 isOperator, Auth:45 mint}` gebannt —
+keine Enumeration. Zahn pinnt die STRUKTUR: (i) `operatorToken` bleibt private-val ohne Value-Accessor; (ii) `isOperator`
+= einziger öffentlicher Identifikator; MUT „Value-Accessor hinzufügen"→rot. MUT-A (Grant→roh `isOperator(`, deckt
+#3-Boolean+`:132`-MEMBER)→rot · MUT-B (6. roher Grant beliebigen Shapes)→rot. §6-T1c neu gefasst; V3-1/T1d + F2–F6
+unverändert. Objekt-verifiziert (Auth.kt `private val`+maskiertes toString, ~11 Symbol-Sites). Design-only; Bau gated auf
+PL-Ratifikation **v3.2**.
