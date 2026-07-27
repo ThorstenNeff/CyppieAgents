@@ -50,7 +50,7 @@ class AsyncApiContractTest {
     @Test
     fun asyncApi_hasTheFrontendChannels_withMessagesRefencingGeneratedSchemas() {
         val ch = channels()
-        assertEquals(setOf("/ws/comm", "/ws/events", "/ws/lifecycle", "/ws/token-usage", "/ws/busy-state", "/ws/terminal-state", "/ws/agent", "/ws/terminal"), ch.keys, "exactly the frontend channels")
+        assertEquals(setOf("/ws/comm", "/ws/events", "/ws/lifecycle", "/ws/token-usage", "/ws/busy-state", "/ws/terminal-state", "/ws/status", "/ws/agent", "/ws/terminal"), ch.keys, "exactly the frontend channels")
         val comm = ch["/ws/comm"] as JsonObject
         val sub = ((comm["subscribe"] as JsonObject)["message"] as JsonObject)["\$ref"] as JsonPrimitive
         assertEquals("#/components/messages/CommWsServerEvent", sub.content)
@@ -62,6 +62,7 @@ class AsyncApiContractTest {
         assertFalse((ch["/ws/lifecycle"] as JsonObject).containsKey("publish"), "lifecycle is a one-way status feed")
         assertFalse((ch["/ws/token-usage"] as JsonObject).containsKey("publish"), "token-usage is a one-way status feed (CYP-316)")
         assertFalse((ch["/ws/busy-state"] as JsonObject).containsKey("publish"), "busy-state is a one-way status feed (CYP-324)")
+        assertFalse((ch["/ws/status"] as JsonObject).containsKey("publish"), "status is a one-way muxed status feed (CYP-840)")
     }
 
     @Test

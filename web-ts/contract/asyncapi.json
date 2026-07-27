@@ -66,6 +66,14 @@
                 }
             }
         },
+        "/ws/status": {
+            "subscribe": {
+                "description": "server → client (the client subscribes to receive)",
+                "message": {
+                    "$ref": "#/components/messages/StatusFrame"
+                }
+            }
+        },
         "/ws/agent": {
             "subscribe": {
                 "description": "server → client (the client subscribes to receive)",
@@ -135,6 +143,11 @@
             "AgentTerminalControlEvent": {
                 "payload": {
                     "$ref": "#/components/schemas/AgentTerminalControlEvent"
+                }
+            },
+            "StatusFrame": {
+                "payload": {
+                    "$ref": "#/components/schemas/StatusFrame"
                 }
             },
             "StoredAgentEvent": {
@@ -632,6 +645,75 @@
                 "required": [
                     "agentId",
                     "state"
+                ]
+            },
+            "StatusFrame": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/busy"
+                    },
+                    {
+                        "$ref": "#/components/schemas/lifecycle"
+                    },
+                    {
+                        "$ref": "#/components/schemas/terminal"
+                    },
+                    {
+                        "$ref": "#/components/schemas/tokenUsage"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "busy": "#/components/schemas/busy",
+                        "lifecycle": "#/components/schemas/lifecycle",
+                        "terminal": "#/components/schemas/terminal",
+                        "tokenUsage": "#/components/schemas/tokenUsage"
+                    }
+                }
+            },
+            "busy": {
+                "type": "object",
+                "properties": {
+                    "event": {
+                        "$ref": "#/components/schemas/AgentBusyStateEvent"
+                    }
+                },
+                "required": [
+                    "event"
+                ]
+            },
+            "lifecycle": {
+                "type": "object",
+                "properties": {
+                    "event": {
+                        "$ref": "#/components/schemas/AgentRunStateEvent"
+                    }
+                },
+                "required": [
+                    "event"
+                ]
+            },
+            "terminal": {
+                "type": "object",
+                "properties": {
+                    "event": {
+                        "$ref": "#/components/schemas/AgentTerminalControlEvent"
+                    }
+                },
+                "required": [
+                    "event"
+                ]
+            },
+            "tokenUsage": {
+                "type": "object",
+                "properties": {
+                    "event": {
+                        "$ref": "#/components/schemas/AgentTokenUsageEvent"
+                    }
+                },
+                "required": [
+                    "event"
                 ]
             },
             "StoredAgentEvent": {
