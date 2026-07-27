@@ -193,17 +193,17 @@ describe('App assembly (CYP-425)', () => {
     expect(await findByTestId('comm-revoked-lock')).toBeTruthy() // composer locked on revoke
   })
 
-  it('each agent window carries a lifecycle header driven by the /ws/lifecycle feed (CYP-431)', async () => {
+  it('each agent window carries a lifecycle header driven by the muxed /ws/status feed (CYP-431/CYP-844)', async () => {
     const hub = new FakeSocketHub()
     const { findByTestId, getByTestId } = render(
       <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
     )
     // before any lifecycle event → UNKNOWN
     expect((await findByTestId('lifecycle.status.backend')).textContent).toContain('Unbekannt')
-    const feed = hub.sockets.find((s) => s.url.includes('/ws/lifecycle'))!
+    const feed = hub.sockets.find((s) => s.url.includes('/ws/status'))!
     await act(async () => {
       feed.emitOpen()
-      feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'RUNNING' }))
+      feed.emitMessage(JSON.stringify({ type: 'lifecycle', event: { agentId: 'backend', runState: 'RUNNING' } }))
     })
     expect(getByTestId('lifecycle.status.backend').textContent).toContain('Aktiv') // feed drives state (non-optimistic)
   })
@@ -328,10 +328,10 @@ describe('App assembly (CYP-425)', () => {
       <App config={config} repo={fakeRepo()} socketDeps={{ factory: hub.factory, schedule: hub.runNow }} />,
     )
     await flush()
-    const feed = hub.sockets.find((s) => s.url.includes('/ws/lifecycle'))!
+    const feed = hub.sockets.find((s) => s.url.includes('/ws/status'))!
     await act(async () => {
       feed.emitOpen()
-      feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'ERROR', errorCode: 'CRASHED' }))
+      feed.emitMessage(JSON.stringify({ type: 'lifecycle', event: { agentId: 'backend', runState: 'ERROR', errorCode: 'CRASHED' } }))
     })
     expect((await findByTestId('lifecycle.errorReason.backend')).textContent).toContain('abgestürzt')
   })
@@ -345,10 +345,10 @@ describe('App assembly (CYP-425)', () => {
     )
     fireEvent.click(await findByTestId('lifecycle.restart.backend'))
     expect(await findByTestId('lifecycle.error.backend')).toBeTruthy() // reject notice shown
-    const feed = hub.sockets.find((s) => s.url.includes('/ws/lifecycle'))!
+    const feed = hub.sockets.find((s) => s.url.includes('/ws/status'))!
     await act(async () => {
       feed.emitOpen()
-      feed.emitMessage(JSON.stringify({ agentId: 'backend', runState: 'RUNNING' }))
+      feed.emitMessage(JSON.stringify({ type: 'lifecycle', event: { agentId: 'backend', runState: 'RUNNING' } }))
     })
     expect(queryByTestId('lifecycle.error.backend')).toBeNull() // a confirmed state clears the stale reject
   })

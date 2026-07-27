@@ -6,6 +6,7 @@ import {
   tokenUsageFeed,
   busyStateFeed,
   terminalStateFeed,
+  statusFeed,
   terminalSocket,
 } from './channels'
 import { Backoff } from './backoff'
@@ -35,6 +36,8 @@ describe('channel clients — endpoints (CYP-400 W2-rest)', () => {
     expect(hub.last().url).toBe('ws://host/ws/busy-state?token=t')
     terminalStateFeed(base).start()
     expect(hub.last().url).toBe('ws://host/ws/terminal-state?token=t')
+    statusFeed(base).start() // CYP-844: the muxed status feed
+    expect(hub.last().url).toBe('ws://host/ws/status?token=t')
 
     terminalSocket({ ...base, agentId: 'backend' }).start()
     expect(hub.last().url).toContain('/ws/terminal?')

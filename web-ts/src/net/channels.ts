@@ -12,6 +12,7 @@ import type {
   AgentTokenUsageEvent,
   AgentBusyStateEvent,
   AgentTerminalControlEvent,
+  StatusFrame,
   TerminalServerFrame,
   TerminalClientFrame,
 } from '../types/generated/contract'
@@ -24,6 +25,7 @@ import {
   AgentTokenUsageEventSchema,
   AgentBusyStateEventSchema,
   AgentTerminalControlEventSchema,
+  StatusFrameSchema,
 } from '../types/generated/contractSchemas'
 import { OneWayFeed } from './oneWayFeed'
 import { BidiFeed } from './bidiFeed'
@@ -78,4 +80,13 @@ export function busyStateFeed(o: ChannelBase & { onEvent: (e: AgentBusyStateEven
 
 export function terminalStateFeed(o: ChannelBase & { onEvent: (e: AgentTerminalControlEvent) => void }): OneWayFeed<AgentTerminalControlEvent> {
   return new OneWayFeed<AgentTerminalControlEvent>({ ...o, path: '/ws/terminal-state', validate: o.validate ?? makeFrameValidator('AgentTerminalControlEvent', AgentTerminalControlEventSchema) })
+}
+
+// CYP-844: the MUXED status feed — one global socket carrying all four read-only status kinds as a discriminated
+// union (StatusFrame.type ∈ {lifecycle,tokenUsage,busy,terminal}, each wrapping its `event` verbatim). Replaces the
+// four separate feeds above on the client (server keeps emitting both until cutover — additive-parallel). Kept a
+// OneWayFeed with NO onReject: a schema-violated status frame is a TRANSIENT single-drop (channel lives), the exact
+// legacy behavior — terminal-skew stays reserved for the content-bearing /ws/comm surface (CYP-834/839 trust context).
+export function statusFeed(o: ChannelBase & { onEvent: (f: StatusFrame) => void }): OneWayFeed<StatusFrame> {
+  return new OneWayFeed<StatusFrame>({ ...o, path: '/ws/status', validate: o.validate ?? makeFrameValidator('StatusFrame', StatusFrameSchema) })
 }
