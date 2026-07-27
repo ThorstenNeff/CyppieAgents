@@ -6,7 +6,7 @@
 //               `offline`. A `1008 ? 'revoked' : 'revoked'` mutation would paint a transient drop with the terminal
 //               revoked tone/composer-lock and survived (the arm had no test).
 import { describe, it, expect } from 'vitest'
-import { byOrder, commCloseToConnection } from './App'
+import { byOrder, commCloseToConnection, nextCommConnectionOnClose } from './App'
 import type { DeliveredMessage } from './types/generated/contract'
 
 const dm = (id: string, over: { seq?: number; ts?: number }): DeliveredMessage =>
@@ -41,5 +41,27 @@ describe('CYP-814 G1 — commCloseToConnection: 1008 is a TERMINAL revoke; every
 
   it('★ an absent close code (undefined) → offline, never revoked (a missing code is a transient drop, not a 1008 revoke)', () => {
     expect(commCloseToConnection(undefined)).toBe('offline')
+  })
+})
+
+describe('CYP-834 — nextCommConnectionOnClose: a TERMINAL state (skew/revoked) is sticky, a close code cannot downgrade it', () => {
+  it('★ current=skew stays skew for ANY close code (a decoded protocol-skew takes precedence over the close)', () => {
+    // MUT: drop the terminal-latch (always return commCloseToConnection(code)) → a later close overwrites skew; reds.
+    for (const code of [1008, 1006, 1000, undefined]) {
+      expect(nextCommConnectionOnClose('skew', code), `code ${code}`).toBe('skew')
+    }
+  })
+
+  it('★ current=revoked stays revoked (a terminal revoke is not downgraded by a later transient close)', () => {
+    expect(nextCommConnectionOnClose('revoked', 1006)).toBe('revoked')
+    expect(nextCommConnectionOnClose('revoked', undefined)).toBe('revoked')
+  })
+
+  it('★ a non-terminal current defers to commCloseToConnection(code) (1008→revoked, else→offline)', () => {
+    // MUT: latch ALL states (return current always) → a real close would never update a live/offline banner; reds.
+    expect(nextCommConnectionOnClose('live', 1008)).toBe('revoked')
+    expect(nextCommConnectionOnClose('live', 1006)).toBe('offline')
+    expect(nextCommConnectionOnClose('connecting', 1008)).toBe('revoked')
+    expect(nextCommConnectionOnClose('offline', 1006)).toBe('offline')
   })
 })

@@ -4,6 +4,7 @@
 // real WebSocket. Returns a stop() that closes both sockets (called on App unmount). Per-agent /ws/agent and
 // /ws/terminal sockets are owned by the agent windows themselves (one socket per mounted window), not here.
 import { commSocket, terminalStateFeed, lifecycleFeed, busyStateFeed, tokenUsageFeed, eventsSocket } from '../net/channels'
+import type { FrameRejection } from '../net/wsValidation'
 import type { HubConfig, SocketDeps } from './hubConfig'
 import type {
   CommWsServerEvent,
@@ -21,6 +22,9 @@ export interface HubActions {
   onCommOpen?: () => void
   /** fired on an unexpected /ws/comm drop (code 1008 = revoked) — offline/revoked banner (CYP-437). */
   onCommClose?: (code?: number) => void
+  /** CYP-834: fired when a /ws/comm frame fails :core-schema decode (unknown type / missing-required / unknown-enum) —
+   *  a TERMINAL protocol-skew. The socket has already stopped itself (no reconnect); the view surfaces the skew banner. */
+  onCommSkew?: (rejection: FrameRejection) => void
   /** server-confirmed per-agent run-state — drives the CYP-431 lifecycle header (non-optimistic). */
   onRunState?: (event: AgentRunStateEvent) => void
   /** CYP-641: live per-agent busy flag (/ws/busy-state) — drives the window-title activity marker. */
@@ -45,7 +49,7 @@ export interface LiveHubHandle {
 
 export function startLiveHub(config: HubConfig, actions: HubActions, deps: SocketDeps = {}): LiveHubHandle {
   const common = { baseUrl: config.wsBase, token: config.token, factory: deps.factory, schedule: deps.schedule }
-  const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen, onClose: actions.onCommClose })
+  const comm = commSocket({ ...common, onEvent: actions.onCommEvent, onOpen: actions.onCommOpen, onClose: actions.onCommClose, onReject: actions.onCommSkew })
   // CYP-815: the 4 read-only status feeds forward onClose too (parity with comm/events) — a 1008 revoke must not
   // freeze the run-state/token/busy/terminal indicators silently.
   const terminal = terminalStateFeed({ ...common, onEvent: actions.onTerminalControl, onClose: actions.onStatusClose })

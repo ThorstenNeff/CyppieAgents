@@ -5,7 +5,7 @@
 //
 // `validate` is the untrusted-frame boundary seam (Spec 14 §7 / Assist hardening): a hook to runtime-check each
 // inbound frame (e.g. a generated zod schema). Default is identity; wiring zod uniformly is the W2-rest follow-up.
-import { deliverIfValid, rejectUnvalidated } from './wsValidation'
+import { deliverIfValid, rejectUnvalidated, type FrameRejection } from './wsValidation'
 import { ReconnectingSocket, type SocketFactory, type Scheduler } from './reconnectingSocket'
 import { Backoff } from './backoff'
 
@@ -19,6 +19,11 @@ export interface BidiFeedOptions<TServer> {
   validate?: (raw: unknown) => TServer
   onOpen?: () => void
   onClose?: (code?: number) => void
+  /** CYP-834 (OPTIONAL, additive): a channel-scoped hook for a SCHEMA-violation frame. When wired, a schema violation is
+   *  TERMINAL for this channel — the socket is closed (NO reconnect: a decode/deploy skew replays forever otherwise) and
+   *  `onReject` fires so the view can surface a distinct terminal state. When ABSENT, behavior is unchanged (the global
+   *  drop+warn, channel lives on) — so existing callers are unaffected. */
+  onReject?: (rejection: FrameRejection) => void
   backoff?: Backoff
   factory?: SocketFactory
   schedule?: Scheduler
@@ -30,6 +35,15 @@ export class BidiFeed<TServer, TClient> {
   constructor(opts: BidiFeedOptions<TServer>) {
     // CYP-420 (Assist2 F1): fail-CLOSED default — a forgotten validator drops+reports, never silently passes.
     const validate = opts.validate ?? rejectUnvalidated<TServer>(opts.path)
+    // CYP-834: if the caller opts into channel-scoped skew handling, a schema violation is TERMINAL — fire onReject AND
+    // close this socket so it never reconnects (a decode/deploy skew would replay the same undecodable frame forever
+    // under a generic "offline"). Absent → the default global drop path (backward-compatible, channel lives on).
+    const onReject = opts.onReject
+      ? (rejection: FrameRejection): void => {
+          opts.onReject!(rejection)
+          this.rs.close()
+        }
+      : undefined
     this.rs = new ReconnectingSocket({
       url: () => {
         const p = new URLSearchParams({ ...(opts.query ?? {}), token: opts.token })
@@ -37,7 +51,8 @@ export class BidiFeed<TServer, TClient> {
       },
       // CYP-420: validation failures DROP the frame (deliverIfValid) instead of throwing into the socket's
       // onmessage — one malformed frame must not tear down a live channel (fail-closed, not fail-brittle).
-      onText: (data) => deliverIfValid(validate, data, opts.onEvent),
+      // CYP-834: a wired onReject re-routes a SCHEMA violation to the terminal-skew path above.
+      onText: (data) => deliverIfValid(validate, data, opts.onEvent, onReject),
       onOpen: opts.onOpen,
       onClose: opts.onClose,
       backoff: opts.backoff,

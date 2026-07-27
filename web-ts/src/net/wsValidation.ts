@@ -73,17 +73,29 @@ export function setOnFrameRejected(handler: ((r: FrameRejection) => void) | null
  *  not JSON). Now it is just another payload-free counted drop, exactly like a schema violation.
  *  The parse error is NEVER surfaced: its message can quote the offending source text, which is the leak this
  *  boundary must not create (③). Only `json:malformed` is reported. */
-export function deliverIfValid<T>(validate: (raw: unknown) => T, rawText: string, deliver: (value: T) => void): void {
+// CYP-834: `onReject` is an OPTIONAL channel-scoped hook for a SCHEMA violation. ADDITIVE / backward-compatible — a
+// caller that passes none keeps today's behavior exactly (global drop+warn, channel lives on). A channel that DOES pass
+// it opts a schema-violation OUT of the silent-drop path and into its own handling (CYP-834: /ws/comm treats it as a
+// TERMINAL protocol-skew — a valid-JSON frame the client cannot decode against :core = a deploy mismatch that will not
+// self-heal). Note: MALFORMED JSON (a SyntaxError — not even JSON, e.g. a proxy HTML error page) is NOT routed here — it
+// stays the transient global drop, because unlike a schema/deploy skew it DOES resolve on reconnect. (Flagged.)
+export function deliverIfValid<T>(
+  validate: (raw: unknown) => T,
+  rawText: string,
+  deliver: (value: T) => void,
+  onReject?: (rejection: FrameRejection) => void,
+): void {
   let value: T
   try {
     value = validate(JSON.parse(rawText))
   } catch (e) {
     if (e instanceof FrameValidationError) {
-      onFrameRejected(e.rejection) // ① dropped: `deliver` is NOT called
+      if (onReject) onReject(e.rejection) // channel-scoped (CYP-834): the caller decides (e.g. terminal skew)
+      else onFrameRejected(e.rejection) // ① default: dropped + reported, channel lives on
       return
     }
     if (e instanceof SyntaxError) {
-      // malformed JSON — report the FACT, never the text (a SyntaxError message quotes the payload)
+      // malformed JSON — transient, NOT a schema skew: report the FACT globally, never the text, keep the channel alive.
       onFrameRejected({ schema: 'json', issues: ['json:malformed'] })
       return
     }
