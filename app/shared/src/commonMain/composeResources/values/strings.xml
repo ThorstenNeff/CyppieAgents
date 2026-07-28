@@ -74,6 +74,8 @@
     <string name="channel_mgmt_error_protected_hub">Kanal geschützt — Hub-and-Spoke-Kanäle können nicht archiviert werden.</string>
     <string name="channel_mgmt_error_operator_only">Nur der Operator darf Kanäle verwalten.</string>
     <string name="channel_mgmt_error_generic">Aktion fehlgeschlagen.</string>
+    <string name="nav_rail_canvas">Canvas</string>
+    <string name="nav_rail_settings">Einstellungen</string>
     <string name="agent_address_label">Direktnachricht an</string>
     <string name="agent_address_open">Öffnen</string>
     <string name="agent_address_unreachable">Nicht direkt erreichbar — dafür zuerst einen Kanal anlegen.</string>

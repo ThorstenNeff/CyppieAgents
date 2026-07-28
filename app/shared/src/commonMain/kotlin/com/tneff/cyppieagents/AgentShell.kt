@@ -130,6 +130,10 @@ import com.tneff.cyppieagents.settings.ConfigRepository
 import com.tneff.cyppieagents.settings.SettingsPanel
 import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.settings.ConfigHttpRepository
+import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.window.NavDestination
+import com.tneff.cyppieagents.window.NavPanePlaceholder
+import com.tneff.cyppieagents.window.NavRailShell
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.titleBarConnection
 import com.tneff.cyppieagents.window.WindowManagerState
@@ -169,6 +173,8 @@ import kmpcyppieagents.app.shared.generated.resources.report_title
 import kmpcyppieagents.app.shared.generated.resources.project_loading
 import kmpcyppieagents.app.shared.generated.resources.channel_mgmt_title
 import kmpcyppieagents.app.shared.generated.resources.compact_window_title
+import kmpcyppieagents.app.shared.generated.resources.nav_rail_canvas
+import kmpcyppieagents.app.shared.generated.resources.nav_rail_settings
 import kmpcyppieagents.app.shared.generated.resources.settings_title
 import kmpcyppieagents.app.shared.generated.resources.workspace_members_title
 import org.jetbrains.compose.resources.stringResource
@@ -973,6 +979,28 @@ fun AgentShell(
             )
         }
 
+        // CYP-894 (S1, Epic CYP-892): the desktop vertical nav-rail shell wraps the canvas. The Canvas destination is
+        // the existing WindowHost (paradigm UNCHANGED); PO/worker (S3) + settings (S4) destinations render a
+        // placeholder pane here. The rail is shown ONLY at landscape + short-edge >= 600dp (else canvas-only,
+        // unchanged) — the responsive gate lives in NavRailShell/railEligible.
+        val navCanvasLabel = stringResource(Res.string.nav_rail_canvas)
+        val navSettingsLabel = stringResource(Res.string.nav_rail_settings)
+        val navSelected = remember { mutableStateOf<NavDestination>(NavDestination.Canvas) }
+        val navDestinations = buildList {
+            add(NavDestination.Canvas)
+            // Canvas · PO-Agent · Worker-Agents (dynamic) · Settings — PO ordered above the workers.
+            managedAgents.sortedByDescending { it.role == Role.PO }
+                .forEach { add(NavDestination.Agent(it.id, it.name, isPo = it.role == Role.PO)) }
+            add(NavDestination.Settings)
+        }
+        val navLabelFor: (NavDestination) -> String = { dest ->
+            when (dest) {
+                NavDestination.Canvas -> navCanvasLabel
+                is NavDestination.Agent -> dest.label
+                NavDestination.Settings -> navSettingsLabel
+            }
+        }
+        val canvasPane: @Composable () -> Unit = {
         WindowHost(
             state = state,
             onFit = { state.fit(isRtl) },
@@ -1149,6 +1177,23 @@ fun AgentShell(
                             terminalGatedNote = !WORKTREE_SHELL_LIVE_ENABLED,
                         )
                     }
+                }
+            },
+        )
+        } // end canvasPane
+        NavRailShell(
+            destinations = navDestinations,
+            selected = navSelected.value,
+            onSelect = { navSelected.value = it },
+            labelFor = navLabelFor,
+            paneContent = { dest ->
+                when (dest) {
+                    // Canvas = the existing floating-window canvas (paradigm unchanged).
+                    NavDestination.Canvas -> canvasPane()
+                    // S3 (CYP-896): the agent-destination renders the SAME hoisted AgentViewModel maximized — a
+                    // placeholder until then. S4 (CYP-897): the settings destination.
+                    is NavDestination.Agent -> NavPanePlaceholder("navRail.pane.agent.${dest.agentId}")
+                    NavDestination.Settings -> NavPanePlaceholder("navRail.pane.settings")
                 }
             },
         )
