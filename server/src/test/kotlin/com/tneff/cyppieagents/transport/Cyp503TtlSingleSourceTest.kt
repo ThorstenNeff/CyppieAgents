@@ -37,10 +37,9 @@ class Cyp503TtlSingleSourceTest {
         val registry = TunnelSessionRegistry()
         val tunnel = SignalTunnel()
         val handler = Rr3AuthenticatedTunnelHandler(
-            authorize = { true },
+            authorize = { "op-1" }, // CYP-882a: authorize yields the authenticated operatorId (non-null = granted)
             bridge = { t -> while (t.receive() != null) { /* pump until the TTL tears the session down */ } },
             registry = registry,
-            operatorId = "op-1",
             sessionTtlMs = ttl, // ← the SAME single source the ticket exp derives from
         )
         val job = launch { handler.handle(tunnel) }

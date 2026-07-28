@@ -98,17 +98,31 @@ class Rr3TunnelGate(
         return false
     }
 
-    /** Read → verify against live `h` → reply → return true iff authorized (the caller bridges). Fail-closed. */
-    suspend fun authorize(tunnel: ServerNoiseTunnel): Boolean {
+    /** Read → verify against live `h` → reply → return true iff authorized (the caller bridges). Fail-closed.
+     *  CYP-882a — a thin Boolean view of [authorizeIdentified] (granted ⟺ a non-null authenticated operatorId).
+     *  Preserves the pre-882a contract for the enrollment/gate suites; the operator-identifying overload feeds the
+     *  §9.3 session-registry binding. */
+    suspend fun authorize(tunnel: ServerNoiseTunnel): Boolean = authorizeIdentified(tunnel) != null
+
+    /**
+     * CYP-882a (S-Fed §9.3 foundation, DARK) — authorize the tunnel AND return the **authenticated per-tunnel operator
+     * identity** it proved (the CpJwt principal `sub`, i.e. `identityId ?: pinnedOperatorId`) on grant, or `null` on
+     * deny. This is the value the session is bound to in the [TunnelSessionRegistry] — **what the tunnel actually
+     * authenticated as**, not the static wiring constant — so revocation and the §9.3 tunnel↔credential binding
+     * (CYP-882b) operate on the real per-tunnel operator. Side-effects (reject/grant replies, nonce consumption,
+     * enroll flow) are IDENTICAL to the Boolean [authorize] — this only surfaces the already-computed identity. DARK:
+     * the live path stays inert until arming.
+     */
+    suspend fun authorizeIdentified(tunnel: ServerNoiseTunnel): String? {
         val h = tunnel.handshakeHash
         // CB-d1 (CYP-490): a **load-bearing fail-early short-circuit** — a non-32-byte `h` is rejected HERE, before
         // any verify runs (the CpJwt verify is never reached: proven by the short-circuit spy tooth). It is NOT the
         // sole `h`-guard — the downstream `cb` channel-binding (`SHA-256(h ‖ hubId)`) is redundant defence-in-depth —
         // but short-circuiting keeps a malformed `h` out of the `cb` computation entirely (`h` is always 32 B from
         // BLAKE2s, so a bad size is a bug, not an attack; this fails it closed without processing it).
-        if (h.size != 32) return reject(tunnel)
+        if (h.size != 32) { reject(tunnel); return null }
 
-        val req = readRequest(tunnel) ?: return reject(tunnel) // tunnel closed / malformed → uniform reject
+        val req = readRequest(tunnel) ?: run { reject(tunnel); return null } // tunnel closed / malformed → uniform reject
 
         // ★ CB-and-b (CYP-490 fix): short-circuit on a FAILED CpJwt **before** the operator PoP verify. Otherwise the
         // PoP verify (which consumes the single-use nonce on a valid signature) runs even when the CpJwt is invalid —
@@ -129,26 +143,31 @@ class Rr3TunnelGate(
         // ★ CB-and-b (CYP-490): a failed CpJwt → reject BEFORE the PoP verify, so a bad-CpJwt attempt never consumes
         // the operator's single-use nonce (grief pre-burn, CYP-477-class). The nonce is consumed only once the CpJwt
         // is valid AND the PoP is genuinely processed.
-        if (principal == null) return reject(tunnel)
+        if (principal == null) { reject(tunnel); return null }
+
+        // CYP-882a — the AUTHENTICATED per-tunnel operator identity (CT-2b: the CpJwt principal, `sub == pinnedOperatorId`).
+        // Surfaced to the registry binding on every grant path below (single value for the whole tunnel).
+        val authenticatedOperatorId = (principal as? AuthPrincipal.Human)?.identityId ?: config.pinnedOperatorId
 
         // CYP-525 GE5/GE7 — the FINALIZED anchor comes from the combined [finalizedStore] when wired (else the pre-GE5
         // [deviceStore]). A TAMPERED finalized record is fail-CLOSED with a distinct diagnostic (rejectTampered) — never
         // a silent "empty → re-enroll" over a corrupt anchor (the tamper→re-enroll seizure vector), and never an uncaught
         // throw (H1b self-re-read finding). read() is non-suspend, so this catch cannot swallow a cancellation.
-        val finalizedDevice = try { finalizedStore?.read()?.device } catch (e: Exception) { return rejectTampered(tunnel, e) }
+        val finalizedDevice = try { finalizedStore?.read()?.device } catch (e: Exception) { rejectTampered(tunnel, e); return null }
         // CYP-557 (CYP-550 ③): the pre-GE5 fallback [deviceStore] can ALSO throw on a tampered at-rest blob
         // (`SecretStoreBackedOperatorDeviceStore.enrolled()` fails-closed with `SecretCipherException` on a corrupt
         // record). Guard it with the SAME fail-closed [rejectTampered] as the finalizedStore read above — else the
         // throw propagates → the handler closes the tunnel → a silent reconnect/lockout loop with NO operator
         // diagnostic (the exact silent-lockout rejectTampered exists to prevent). Reachable on a pre-GE5→GE5 upgrade
         // whose old device blob is corrupt, or in the pre-GE5 wiring.
-        val anchor = finalizedDevice ?: try { deviceStore.enrolled() } catch (e: Exception) { return rejectTampered(tunnel, e) }
+        val anchor = finalizedDevice ?: try { deviceStore.enrolled() } catch (e: Exception) { rejectTampered(tunnel, e); return null }
 
         if (anchor == null) {
             // EMPTY: TOFU first-enroll under a CpJwt-authenticated operator (CT-2b; only reachable past a valid CpJwt ⇒
             // no land-grab). GE5/GE7 provisional→SavedAck→combined-atomic-finalize when wired; else pre-GE5 immediate.
-            return if (finalizedStore != null) provisionalFinalizeFlow(tunnel, req, h, principal, finalizedStore)
+            val granted = if (finalizedStore != null) provisionalFinalizeFlow(tunnel, req, h, principal, finalizedStore)
             else firstEnrollThenGrant(tunnel, req, h, principal)
+            return if (granted) authenticatedOperatorId else null
         }
 
         // Steady-state (already Finalized): the PoP may match the enrolled anchor; the nonce is consumed once, only on
@@ -158,7 +177,7 @@ class Rr3TunnelGate(
             req.pop.toOperatorDevicePoP(), devices, h, config.hubId, req.nonce, config.expectedRpId,
         ) is AssertionResult.Verified
 
-        return if (popVerified) grant(tunnel, firstEnroll = false) else reject(tunnel)
+        return if (popVerified) { grant(tunnel, firstEnroll = false); authenticatedOperatorId } else { reject(tunnel); null }
     }
 
     /**

@@ -33,10 +33,9 @@ class Cyp484SessionLifetimeTest {
 
     private fun handler(registry: TunnelSessionRegistry, authorize: Boolean, ttlMs: Long) =
         Rr3AuthenticatedTunnelHandler(
-            authorize = { authorize },
+            authorize = { if (authorize) OP else null }, // CYP-882a: authorize yields the authenticated operatorId (or null)
             bridge = { t -> while (t.receive() != null) { /* pump until the session is torn down */ } },
             registry = registry,
-            operatorId = OP,
             sessionTtlMs = ttlMs,
         )
 
