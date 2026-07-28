@@ -8,8 +8,15 @@ import com.tneff.cyppieagents.controlplane.HubRendezvousRegistrar
 import com.tneff.cyppieagents.crypto.HubIdentity
 import com.tneff.cyppieagents.crypto.HubIdentityProvisioner
 import com.tneff.cyppieagents.crypto.SecretStore
+import com.tneff.cyppieagents.model.ExperimentalFederation
 import com.tneff.cyppieagents.model.HubIssuerTrust
+import com.tneff.cyppieagents.model.IssuerKey
+import com.tneff.cyppieagents.model.IssuerKeyset
+import com.tneff.cyppieagents.model.RotationAttestation
+import com.tneff.cyppieagents.model.SignatureVerifier
+import com.tneff.cyppieagents.model.withRotation
 import com.tneff.cyppieagents.transport.mux.MuxBridge
+import kotlinx.serialization.builtins.ListSerializer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -69,21 +76,101 @@ object RemoteRelayWiring {
     class IssuerAnchor(val issuer: String, val kid: String, val pub: ByteArray)
 
     /**
-     * CYP-747 S1 (Step 1 — issuer CP→Relay repoint, Q3): resolve the hub's trusted-issuer anchor. **ALL-OR-NOTHING
-     * per issuer:** a COMPLETE relay-issuer set (`CYPPIE_RELAY_ISSUER/KID/PUBKEY`) is preferred; else a COMPLETE CP
-     * set (`CYPPIE_CP_*`) for deploy compat (additive/reversible, no breaking rename). NEVER a MIX of relay+CP fields
-     * — a relay issuer with a CP `kid`/key would be an incoherent anchor (the kid names a key the issuer never signed
-     * with). Both sets incomplete/absent → `null` (fail-closed → [InertRelayConnector]). This is the DISTINCT
-     * establishment determination of axis c, verified UPSTREAM of the per-token operator-identity (`sub`) check.
+     * CYP-877 (S-Fed, Epic CYP-832, DARK) — the resolved trusted-issuer **KEYSET** for the LIVE path (the ratified
+     * M2 §5 rotation shape: `{kid→pub}` + overlap window). [envPrefix] is the set that matched (`CYPPIE_RELAY_` or
+     * `CYPPIE_CP_`) — it single-sources the optional rotation env ([rotationEnvKey]) to the SAME issuer set.
      */
-    fun resolveIssuerAnchor(env: (String) -> String?): IssuerAnchor? =
-        resolveAnchorSet(env, "CYPPIE_RELAY_") ?: resolveAnchorSet(env, "CYPPIE_CP_")
+    @ExperimentalFederation
+    class ResolvedIssuerKeyset(val issuer: String, val keyset: IssuerKeyset, val envPrefix: String) {
+        val rotationEnvKey: String get() = "${envPrefix}ROTATION"
+    }
 
-    private fun resolveAnchorSet(env: (String) -> String?, prefix: String): IssuerAnchor? {
+    /**
+     * CYP-877 (§5-2, DARK) — resolve the hub's trusted-issuer KEYSET. **ALL-OR-NOTHING per issuer** (same discipline
+     * as the single pin below, never a relay+CP MIX): a COMPLETE relay set is preferred, else a COMPLETE CP set
+     * (deploy compat). Within a set, a multi-key **`{prefix}KEYSET`** (JSON `[{"kid","pub"}, …]`) is preferred; else
+     * the legacy single-pin **`{prefix}ISSUER/KID/PUBKEY`** collapses to a **keyset of ONE** (= the Auftraggeber
+     * single-pin override, PL-flagged — a size-1 keyset, so the single-pin path is byte-identical to today). Both
+     * absent/incomplete/malformed → `null` (fail-closed → [InertRelayConnector]). **DARK:** only reached behind the
+     * Phase-2-Remote-GO gate in [buildRemoteTransport] (default INERT) — nothing arms.
+     */
+    @ExperimentalFederation
+    fun resolveIssuerKeyset(env: (String) -> String?): ResolvedIssuerKeyset? =
+        resolveKeysetSet(env, "CYPPIE_RELAY_") ?: resolveKeysetSet(env, "CYPPIE_CP_")
+
+    @ExperimentalFederation
+    private fun resolveKeysetSet(env: (String) -> String?, prefix: String): ResolvedIssuerKeyset? {
         val issuer = env("${prefix}ISSUER")?.takeIf { it.isNotBlank() } ?: return null
+        val keyset = resolveMultiKeyset(env, prefix) ?: resolveSinglePinKeyset(env, prefix) ?: return null
+        return ResolvedIssuerKeyset(issuer, keyset, prefix)
+    }
+
+    /** Multi-key `{prefix}KEYSET` = a JSON array of `{kid,pub}`. Empty, malformed, or ANY key with a blank/undecodable
+     *  field ⟹ `null` (fail-closed — a partially-valid keyset is rejected whole, never silently pruned). */
+    @ExperimentalFederation
+    private fun resolveMultiKeyset(env: (String) -> String?, prefix: String): IssuerKeyset? {
+        val raw = env("${prefix}KEYSET")?.takeIf { it.isNotBlank() } ?: return null
+        val keys = runCatching { CommJson.decodeFromString(ListSerializer(IssuerKey.serializer()), raw) }.getOrNull()
+            ?: return null
+        if (keys.isEmpty()) return null
+        if (keys.any { it.kid.isBlank() || it.pub.isBlank() || runCatching { Base64.getDecoder().decode(it.pub) }.isFailure }) {
+            return null
+        }
+        return IssuerKeyset(keys)
+    }
+
+    /** Legacy single pin `{prefix}ISSUER/KID/PUBKEY` → a keyset of ONE (byte-identical to the pre-CYP-877 anchor).
+     *  Missing kid/pubkey or an undecodable pubkey ⟹ `null` (preserves the old [resolveIssuerAnchor] fail-closed). */
+    @ExperimentalFederation
+    private fun resolveSinglePinKeyset(env: (String) -> String?, prefix: String): IssuerKeyset? {
         val kid = env("${prefix}KID")?.takeIf { it.isNotBlank() } ?: return null
-        val pub = env("${prefix}PUBKEY")?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() } ?: return null
-        return IssuerAnchor(issuer, kid, pub)
+        val pub = env("${prefix}PUBKEY")?.takeIf { it.isNotBlank() } ?: return null
+        if (runCatching { Base64.getDecoder().decode(pub) }.isFailure) return null
+        return IssuerKeyset(listOf(IssuerKey(kid, pub)))
+    }
+
+    /**
+     * CYP-877 — apply the optional rotation attestation at the LIVE path, extending the resolved keyset by the
+     * overlap window (`old ∪ new`) IFF an EXISTING key signed [RotationAttestation] (pure [withRotation] logic,
+     * CYP-860, verified by [verifier]). **Fail-closed:** no rotation env → base unchanged; a malformed attestation or
+     * one NOT signed by an existing key → base kept (the unauthorized new key is NEVER pinned), with an observable
+     * WARN (no silent broadening). DARK — only reached from [buildRemoteTransport] behind the remote-GO gate.
+     */
+    @ExperimentalFederation
+    fun applyRotationAtLivePath(
+        env: (String) -> String?,
+        resolved: ResolvedIssuerKeyset,
+        verifier: SignatureVerifier,
+    ): IssuerKeyset {
+        val raw = env(resolved.rotationEnvKey)?.takeIf { it.isNotBlank() } ?: return resolved.keyset
+        val attestation = runCatching { CommJson.decodeFromString(RotationAttestation.serializer(), raw) }.getOrNull()
+        if (attestation == null) {
+            log.warn("remote relay: {} present but not a valid RotationAttestation JSON — ignored (keyset unchanged)", resolved.rotationEnvKey)
+            return resolved.keyset
+        }
+        return resolved.keyset.withRotation(attestation, verifier) ?: run {
+            log.warn(
+                "remote relay: rotation attestation for kid={} NOT signed by an existing keyset key — REJECTED, fail-closed (keyset unchanged)",
+                attestation.newKid,
+            )
+            resolved.keyset
+        }
+    }
+
+    /**
+     * CYP-747 S1 (Step 1 — issuer CP→Relay repoint, Q3): the hub's trusted-issuer anchor (§5-C2 axis c), **DERIVED
+     * from [resolveIssuerKeyset]** (CYP-877 single-sources both — no drift). The anchor carries the establishment
+     * fields (issuer + a representative key = the keyset's first). A single-pin deploy is a keyset of one, so this is
+     * byte-identical to the pre-CYP-877 resolver; a multi-key deploy exposes the first key here while the LIVE
+     * per-`kid` lookup ([buildRemoteTransport] `cpPublicKey`) resolves ACROSS the whole overlap window. `null` =
+     * fail-closed → [InertRelayConnector].
+     */
+    @OptIn(ExperimentalFederation::class)
+    fun resolveIssuerAnchor(env: (String) -> String?): IssuerAnchor? {
+        val resolved = resolveIssuerKeyset(env) ?: return null
+        val first = resolved.keyset.keys.firstOrNull() ?: return null
+        val pub = runCatching { Base64.getDecoder().decode(first.pub) }.getOrNull() ?: return null
+        return IssuerAnchor(resolved.issuer, first.kid, pub)
     }
 
     /**
@@ -183,6 +270,7 @@ object RemoteRelayWiring {
  * (never a half-configured remote dial). INERT by default → the current server is unchanged. [env] and
  * [httpClientFactory] are injectable so the wiring is unit-testable without real env/network.
  */
+@OptIn(ExperimentalFederation::class)
 fun buildRemoteTransport(
     loopbackPort: Int,
     hubIdentity: HubIdentity?,
@@ -204,7 +292,11 @@ fun buildRemoteTransport(
     // RELAY. Resolved ALL-OR-NOTHING (relay set preferred, CP set as deploy-compat fallback, never mixed) — the
     // hub-trusts-issuer EDGE (§5-C2 axis c), verified UPSTREAM of the per-token operator-identity check; per-hub AND
     // (aud/cb/PoP) untouched.
-    val issuerAnchor = RemoteRelayWiring.resolveIssuerAnchor(env) ?: run {
+    // CYP-877 (DARK) — resolve the trusted-issuer KEYSET (§5-2 rotation shape) instead of a single pin. A single-pin
+    // deploy collapses to a keyset of ONE, so this branch is byte-identical to the pre-CYP-877 anchor for today's
+    // deploys; a multi-key deploy pins the overlap window. This is behind the remote-GO gate (default INERT), so it
+    // arms nothing.
+    val resolvedIssuer = RemoteRelayWiring.resolveIssuerKeyset(env) ?: run {
         // CYP-747 S1b (§5-b — NO INERT-silence): control reached here past the relay-URL / custody / operator-id
         // gates, so the hub IS configured for remote but NO trusted issuer is pinned → owned-but-issuer-not-trusted
         // (§5-C2 axis c absent). Emit a DISTINCT, observable server-log reason instead of silently returning INERT.
@@ -213,6 +305,10 @@ fun buildRemoteTransport(
         RemoteRelayWiring.logIssuerNotTrusted(env)
         return InertRelayConnector
     }
+    // CYP-877 — the effective LIVE trust keyset = the resolved set extended by any overlap-window rotation
+    // attestation (fail-closed: no/invalid/unauthorized rotation → the base keyset unchanged). Ed25519 is the real
+    // verifier (CYP-862).
+    val issuerKeyset = RemoteRelayWiring.applyRotationAtLivePath(env, resolvedIssuer, Ed25519SignatureVerifier)
     val rpId = env("CYPPIE_OPERATOR_RP_ID")?.takeIf { it.isNotBlank() } ?: return InertRelayConnector
     // CYP-521: the hub dial-side rendezvous id is now obtained from the CP register (the epoch id), NOT a static env.
     // Needs the CP URL + the operator bearer (like the CYP-512 admit) — a static CYPPIE_REMOTE_RENDEZVOUS is GONE.
@@ -232,8 +328,14 @@ fun buildRemoteTransport(
         config = Rr3Config(
             hubId = hubIdentity.hubId,
             pinnedOperatorId = operatorId,
-            expectedIssuer = issuerAnchor.issuer,
-            cpPublicKey = { k -> if (k == issuerAnchor.kid) issuerAnchor.pub else null },
+            expectedIssuer = resolvedIssuer.issuer,
+            // CYP-877 — resolve the CP public key by `kid` ACROSS the whole keyset (the §5-2 overlap window): a peer
+            // signed under ANY pinned/attested key resolves; an unknown/undecodable kid → null (fail-closed). A
+            // single-pin deploy is a size-1 keyset, so this is exactly the old `k == kid` lookup for today's deploys.
+            cpPublicKey = { k ->
+                issuerKeyset.keys.firstOrNull { it.kid == k }?.pub
+                    ?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
+            },
             expectedRpId = rpId,
         ),
         finalizedStore = finalizedStore, // CYP-525 GE5/GE7: the ratified provisional→finalize path (prod when wired)
