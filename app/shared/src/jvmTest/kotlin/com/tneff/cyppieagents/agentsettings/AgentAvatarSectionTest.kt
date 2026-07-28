@@ -34,7 +34,7 @@ class AgentAvatarSectionTest {
     private class FakeRepo(private val detail: AgentDetail) : AgentManagementRepository {
         override suspend fun list(): List<Agent> = emptyList()
         override suspend fun detail(id: String): AgentDetail = detail
-        override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = error("unused")
         override suspend fun edit(id: String, edit: AgentEdit): Agent =
             Agent(id, detail.name, detail.role, detail.worktree, avatar = edit.avatar)
         override suspend fun remove(id: String, worktree: WorktreeFate) {}

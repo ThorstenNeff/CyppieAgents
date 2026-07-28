@@ -31,7 +31,7 @@ class AgentSettingsViewModelTest {
         val edits = mutableListOf<Pair<String, AgentEdit>>()
         override suspend fun list(): List<Agent> = emptyList()
         override suspend fun detail(id: String): AgentDetail = detail
-        override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = error("unused")
         override suspend fun edit(id: String, edit: AgentEdit): Agent {
             edits.add(id to edit)
             return Agent(id, edit.name ?: detail.name, edit.role ?: detail.role, detail.worktree) // CYP-313: null role = PRESERVE
@@ -112,7 +112,7 @@ class AgentSettingsViewModelTest {
             val repo = object : AgentManagementRepository {
                 override suspend fun list(): List<Agent> = listOf(po)
                 override suspend fun detail(id: String): AgentDetail = AgentDetail("po", "PO", Role.WORKER, "po", "bash")
-                override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+                override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = error("unused")
                 override suspend fun edit(id: String, edit: AgentEdit): Agent {
                     recorded.add(edit)
                     AgentMgmtGuard.validateEdit(listOf(po), id, edit)?.let { throw AgentMgmtException(it) } // REAL guard
@@ -143,7 +143,7 @@ class AgentSettingsViewModelTest {
             val repo = object : AgentManagementRepository {
                 override suspend fun list(): List<Agent> = listOf(po)
                 override suspend fun detail(id: String): AgentDetail = AgentDetail("po", "PO", Role.WORKER, "po", "bash")
-                override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+                override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = error("unused")
                 override suspend fun edit(id: String, edit: AgentEdit): Agent {
                     recorded.add(edit)
                     AgentMgmtGuard.validateEdit(listOf(po), id, edit)?.let { throw AgentMgmtException(it) }

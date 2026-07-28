@@ -50,7 +50,7 @@ class Cyp629WorkspaceDegradedTest {
     private class StubMgmtRepo : AgentManagementRepository {
         override suspend fun list(): List<Agent> = emptyList()
         override suspend fun detail(id: String): AgentDetail = throw AgentMgmtException("stub")
-        override suspend fun add(spec: NewAgentSpec): Agent = throw AgentMgmtException("stub")
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = throw AgentMgmtException("stub")
         override suspend fun edit(id: String, edit: AgentEdit): Agent = throw AgentMgmtException("stub")
         override suspend fun remove(id: String, worktree: WorktreeFate) {}
     }

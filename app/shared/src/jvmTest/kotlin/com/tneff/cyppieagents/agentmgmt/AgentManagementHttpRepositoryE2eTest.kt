@@ -32,6 +32,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 /**
  * CYP-86/87/88 stub→real swap — e2e proof that [AgentManagementHttpRepository] talks the CYP-97 agent-CRUD
@@ -111,8 +112,9 @@ class AgentManagementHttpRepositoryE2eTest {
                 // Add (201) → STOPPED, not spawned. Also proves the CreatedAgent WRAPPER is decoded + unwrapped
                 // (CYP-312): the old client decoded `Agent.serializer()` on `{agent,token}` → threw → false failure.
                 val created = repo.add(NewAgentSpec("fe", "Frontend", Role.WORKER, persona = "careful dev", launch = "claude --x"))
-                assertEquals("fe", created.id)
-                assertEquals(AgentRunState.STOPPED, created.runState)
+                assertEquals("fe", created.agent.id) // CYP-900: add() returns the CreatedAgent wrapper
+                assertEquals(AgentRunState.STOPPED, created.agent.runState)
+                assertNull(created.token) // a local create mints no token
 
                 // CYP-101 detail-prefill: persona/launch come back from GET /api/agents/{id}.
                 val detail = repo.detail("fe")
@@ -146,13 +148,12 @@ class AgentManagementHttpRepositoryE2eTest {
     }
 
     /**
-     * CYP-312 focused regression — `add()` decodes the [CreatedAgent] wrapper and returns `.agent`, and TOLERATES
-     * a **non-null `token`** (the CYP-171/197 remote seam) without choking. Isolated from the CRUD round-trip so the
-     * wrapper-decode is the single thing under test: RED with the old `Agent.serializer()` decode (a `{agent,token}`
-     * body has no top-level `id`/`role` → decode throws), GREEN with the wrapper decode.
+     * CYP-312/CYP-900 — `add()` decodes the [CreatedAgent] wrapper and **carries the one-time minted `token`
+     * through** (CYP-171/197 remote seam). RED with the old `Agent.serializer()` decode (a `{agent,token}` body has
+     * no top-level `id`/`role` → throws); RED for CYP-900 if `add()` unwraps to `.agent` and drops the token.
      */
     @Test
-    fun add_decodesCreatedAgentWrapper_returnsAgent_toleratesRemoteToken() = runBlocking {
+    fun add_decodesCreatedAgentWrapper_carriesMintedToken() = runBlocking {
         val server = embeddedServer(Netty, port = 0) {
             routing {
                 post("/api/agents") {
@@ -174,9 +175,11 @@ class AgentManagementHttpRepositoryE2eTest {
             try {
                 val repo = AgentManagementHttpRepository(client, "http://127.0.0.1:$port", token = "op")
                 val created = repo.add(NewAgentSpec("be", "Backend", Role.WORKER))
-                assertEquals("be", created.id)
-                assertEquals(Role.WORKER, created.role)
-                assertEquals(AgentRunState.STOPPED, created.runState)
+                assertEquals("be", created.agent.id)
+                assertEquals(Role.WORKER, created.agent.role)
+                assertEquals(AgentRunState.STOPPED, created.agent.runState)
+                // ★ CYP-900 token-carry: the one-time minted bearer is carried through, NOT dropped on unwrap.
+                assertEquals("remote-one-time-bearer", created.token)
             } finally {
                 client.close()
             }

@@ -59,7 +59,7 @@ class AgentShellEmptyStateFlashTest {
     ) : AgentManagementRepository {
         override suspend fun list(): List<Agent> { gate.await(); return agents }
         override suspend fun detail(id: String): AgentDetail = throw NotImplementedError()
-        override suspend fun add(spec: NewAgentSpec): Agent = throw NotImplementedError()
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = throw NotImplementedError()
         override suspend fun edit(id: String, edit: AgentEdit): Agent = throw NotImplementedError()
         override suspend fun remove(id: String, worktree: WorktreeFate) = throw NotImplementedError()
     }
@@ -68,7 +68,7 @@ class AgentShellEmptyStateFlashTest {
     private class ImmediateAgentMgmtRepo(private val agents: List<Agent>) : AgentManagementRepository {
         override suspend fun list(): List<Agent> = agents
         override suspend fun detail(id: String): AgentDetail = throw NotImplementedError()
-        override suspend fun add(spec: NewAgentSpec): Agent = throw NotImplementedError()
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = throw NotImplementedError()
         override suspend fun edit(id: String, edit: AgentEdit): Agent = throw NotImplementedError()
         override suspend fun remove(id: String, worktree: WorktreeFate) = throw NotImplementedError()
     }

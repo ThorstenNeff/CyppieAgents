@@ -6,6 +6,7 @@ import com.tneff.cyppieagents.model.WorktreeFate
 
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentRunState
+import com.tneff.cyppieagents.model.CreatedAgent
 import com.tneff.cyppieagents.model.Role
 
 /**
@@ -39,7 +40,7 @@ class StubAgentManagementRepository(
         return AgentDetail(agent.id, agent.name, agent.role, agent.worktree, launch, persona)
     }
 
-    override suspend fun add(spec: NewAgentSpec): Agent {
+    override suspend fun add(spec: NewAgentSpec): CreatedAgent {
         denyWrites?.let { throw AgentMgmtException(it) }
         if (spec.id.isBlank() || spec.name.isBlank()) throw AgentMgmtException("invalid_agent")
         if (agents.any { it.id == spec.id }) throw AgentMgmtException("agent_exists")
@@ -54,7 +55,8 @@ class StubAgentManagementRepository(
         )
         agents.add(created)
         config[created.id] = (spec.launch?.ifBlank { null } ?: "claude") to spec.persona?.ifBlank { null }
-        return created
+        // CYP-900: a local stub mints no token; a remote create against the real server returns a one-time token.
+        return CreatedAgent(created)
     }
 
     override suspend fun edit(id: String, edit: AgentEdit): Agent {

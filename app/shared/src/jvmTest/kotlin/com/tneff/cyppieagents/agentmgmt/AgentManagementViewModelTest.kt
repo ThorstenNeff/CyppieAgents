@@ -201,7 +201,7 @@ class AgentManagementViewModelTest {
     private class RenamingRepo(var serverName: String) : AgentManagementRepository {
         override suspend fun list(): List<Agent> = listOf(Agent("fe", serverName, Role.WORKER, "fe", AgentRunState.RUNNING))
         override suspend fun detail(id: String): AgentDetail = AgentDetail("fe", serverName, Role.WORKER, "fe", "claude", null)
-        override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = error("unused")
         override suspend fun edit(id: String, edit: AgentEdit): Agent = Agent("fe", serverName, Role.WORKER, "fe")
         override suspend fun remove(id: String, worktree: WorktreeFate) {}
     }

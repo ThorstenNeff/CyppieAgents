@@ -30,7 +30,7 @@ class AgentSettingsAvatarViewModelTest {
         var uploadResult: AgentDetail? = null
         override suspend fun list(): List<Agent> = emptyList()
         override suspend fun detail(id: String): AgentDetail = detail
-        override suspend fun add(spec: NewAgentSpec): Agent = error("unused")
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = error("unused")
         override suspend fun edit(id: String, edit: AgentEdit): Agent {
             edits.add(edit)
             return Agent(id, edit.name ?: detail.name, edit.role ?: detail.role, detail.worktree, avatar = edit.avatar) // CYP-313: null role = PRESERVE
