@@ -30,6 +30,7 @@ import { commitAclChange } from './state/aclCommit'
 import { startLiveHub } from './state/liveHub'
 import { MultiHubShell } from './multihub/MultiHubShell'
 import { NavRailShell } from './nav/NavRailShell'
+import { navDestinations, CANVAS_DESTINATION_ID, type NavDestination } from './nav/navDestinations'
 import { AgentWindow } from './AgentWindow'
 import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
@@ -316,6 +317,12 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
   // CYP-444: the PO identity is the roster's role==PO, not a config guess. Null until the roster loads (the W9
   // lockout advisory simply won't fire until we truly know who the PO is).
   const poAgentId = rosterPoAgentId(roster)
+
+  // CYP-889 (NR-2): the vertical nav-rail destinations (Canvas · PO · PRODUCT_LEAD · Worker · Settings) + the local,
+  // optimistic one-active view-state. Deliberately NOT operator-gated / non-optimistic like ProjectSwitcher — a
+  // destination switch is a pure client view change, no server round-trip (see NavRailShell / navDestinations).
+  const navDests = useMemo(() => navDestinations(roster), [roster])
+  const [activeNavId, setActiveNavId] = useState<string>(CANVAS_DESTINATION_ID)
 
   // CYP-288: named snapshot loaders — set the data (clearing the error) on success, or flag a load error on failure,
   // so a failed INITIAL load surfaces an honest error+retry instead of a silent empty state. Reused as the panels'
@@ -987,6 +994,39 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     return null
   }
 
+  // CYP-889 (NR-2): render the pane for the active nav destination. Canvas = the existing floating-window desktop
+  // (WindowHost) unchanged — its positions live in the module-level windowStore, so switching away and back preserves
+  // them. Agent/Settings destinations reuse the EXACT same renderContent path (same AgentWindow/SettingsPanel + same
+  // windowStore-backed VM — NO second render path; only the win.id drives the dispatch), rendered pane-filling.
+  const renderDestinationPane = (active: NavDestination): React.ReactNode => {
+    if (active.kind === 'agent' && active.agentId !== undefined) {
+      return (
+        <div className="nav-pane-fill" data-testid="nav-pane-agent">
+          {renderContent({ id: AGENT_PREFIX + active.agentId, title: active.label, x: 0, y: 0, width: 0, height: 0 })}
+        </div>
+      )
+    }
+    if (active.kind === 'settings') {
+      return (
+        <div className="nav-pane-fill" data-testid="nav-pane-settings">
+          {renderContent({ id: SETTINGS_WINDOW_ID, title: 'Einstellungen', x: 0, y: 0, width: 0, height: 0 })}
+        </div>
+      )
+    }
+    // Canvas (default): the existing floating-window desktop, unchanged.
+    return (
+      <div className="workspace-desktop">
+        <WindowHost>
+          {(win) => (
+            <WindowFrame window={win} titleAccessory={titleAccessoryFor(win)}>
+              {renderContent(win)}
+            </WindowFrame>
+          )}
+        </WindowHost>
+      </div>
+    )
+  }
+
   if (showGate) {
     // The gate covers the workspace while setup is genuinely outstanding. Skipping leads to the REAL workspace
     // carrying the §3.1 banner + agent-start gating (condition a) — never a clean-looking workspace.
@@ -1095,21 +1135,14 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         // CYP-759: has a capacity GET completed AFTER the reject? Only then may headroom self-clear the banner.
         overloadRejectSeq.current !== null && capacityFetchSeq.current > overloadRejectSeq.current,
       ) && <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />}
-      {/* CYP-888 (NR-1): the vertical nav-rail shell wraps ONLY the desktop canvas region. When the responsive gate is
-          on (landscape + short-edge ≥ ~600dp) the rail sits left of the desktop; the always-visible chrome above
-          (workspace-bar, MultiHubShell, tier badge, banners) stays full-width and untouched. Below the gate
-          NavRailShell is a pure passthrough, so the desktop canvas is unchanged. */}
-      <NavRailShell>
-        {/* CYP-641 titleAccessory (activity badge) rides on each WindowFrame, inside the CYP-642 desktop region. */}
-        <div className="workspace-desktop">
-          <WindowHost>
-            {(win) => (
-              <WindowFrame window={win} titleAccessory={titleAccessoryFor(win)}>
-                {renderContent(win)}
-              </WindowFrame>
-            )}
-          </WindowHost>
-        </div>
+      {/* CYP-888/889 (NR-1/NR-2): the vertical nav-rail shell wraps ONLY the desktop canvas region. When the responsive
+          gate is on (landscape + short-edge ≥ ~600dp) the rail (Canvas · PO · PRODUCT_LEAD · Worker · Settings) sits
+          left of the pane, which renders the one active destination; the always-visible chrome above (workspace-bar,
+          MultiHubShell, tier badge, banners) stays full-width and untouched. Below the gate NavRailShell is a pure
+          passthrough that renders the Canvas destination, so the desktop canvas is unchanged. CYP-641 titleAccessory
+          (activity badge) rides on each WindowFrame within the Canvas destination. */}
+      <NavRailShell destinations={navDests} activeId={activeNavId} onSelect={setActiveNavId}>
+        {(active) => renderDestinationPane(active)}
       </NavRailShell>
     </div>
   )
