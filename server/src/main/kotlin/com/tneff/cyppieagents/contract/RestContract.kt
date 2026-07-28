@@ -103,6 +103,11 @@ object RestContract {
         Op("POST", "/api/channels/{id}/read", Tier.OPERATOR, request = json<MarkReadRequest>(), response = json<ChannelReadState>()),
         Op("GET", "/api/acl", Tier.PARTICIPANT, response = arr<AclEntry>()),
         Op("PUT", "/api/acl", Tier.OPERATOR, request = json<AclEntry>(), response = json<AclEntry>()),
+        // CYP-869 (OS-B): channel lifecycle — operator topology control (create/rename/archive arbitrary DIRECT/GROUP
+        // channels beyond hub-and-spoke). The write chokepoint (POST …/messages → postAsAgent) is unchanged.
+        Op("POST", "/api/channels", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.CreateChannelRequest>(), response = json<Channel>()),
+        Op("PUT", "/api/channels/{id}", Tier.OPERATOR, request = json<com.tneff.cyppieagents.model.RenameChannelRequest>(), response = json<Channel>()),
+        Op("DELETE", "/api/channels/{id}", Tier.OPERATOR, response = Body.None),
         // --- AgentMgmtRoutes (/api/agents) ---
         Op("GET", "/api/agents/{id}", Tier.PARTICIPANT, response = json<AgentDetail>()),
         Op("GET", "/api/agents/{id}/avatar", Tier.PARTICIPANT, response = Body.BinaryPng),

@@ -6,9 +6,11 @@ import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AclMatrix
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
+import com.tneff.cyppieagents.model.ChannelMemberGrant
 import com.tneff.cyppieagents.model.DEFAULT_PROJECT_ID
 import com.tneff.cyppieagents.model.ProjectScope
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.routing.BadRequestException
 import com.tneff.cyppieagents.routing.ConflictException
 import com.tneff.cyppieagents.routing.NotFoundException
 
@@ -169,6 +171,74 @@ class HubState(
         channels = nextChannels
         acl = candidate
         entry
+    }
+
+    /**
+     * CYP-869 (OS-B) — create an arbitrary DIRECT/GROUP orchestration channel with per-member ACL seeded. The
+     * single channel-creation mutation point; mirrors [setAcl] (synchronized, rebuild the [AclMatrix] from the
+     * next channels+entries, assign atomically). **Fail-closed:** a [ChannelKind.HUB] kind is rejected (spokes stay
+     * managed by boot/[addAgent], never this path); a blank id/name and a duplicate id are rejected BEFORE any
+     * mutation. **Membership IS the ACL** — only members granted `canWrite` can send at the [com.tneff.cyppieagents.comm.Hub.postAsAgent]
+     * chokepoint (unwritable-by-default); an agent granted neither read nor write gets no [AclEntry] and no
+     * membership. Server-stamps the active [activeProjectId] (never a client projectId). Adds NO write path.
+     */
+    fun createChannel(id: String, name: String, kind: ChannelKind, members: List<ChannelMemberGrant>): Channel = synchronized(lock) {
+        if (id.isBlank()) throw BadRequestException("channel id required", code = "channel_id_required")
+        if (name.isBlank()) throw BadRequestException("channel name required", code = "channel_name_required")
+        if (kind == ChannelKind.HUB) {
+            throw BadRequestException(
+                "cannot create a HUB channel via this API — hub-and-spoke is boot/agent-managed",
+                code = "channel_kind_forbidden",
+            )
+        }
+        if (channels.any { it.id == id }) throw ConflictException("channel '$id' already exists", code = "channel_exists")
+        // Membership IS the ACL (S17/CYP-93): a member granted access (canRead||canWrite) joins; neither = no-op.
+        val granted = members.filter { it.canRead || it.canWrite }.distinctBy { it.agentId }
+        val channel = Channel(id, name, kind, granted.map { it.agentId }, activeProjectId)
+        val newEntries = granted.map { AclEntry(id, it.agentId, it.canRead, it.canWrite, activeProjectId) }
+        val nextChannels = channels + channel
+        val next = entries + newEntries
+        val candidate = AclMatrix(nextChannels, next, activeProjectId, sharedInboundChannelIds)
+        channels = nextChannels
+        entries = next
+        acl = candidate
+        channel
+    }
+
+    /**
+     * CYP-869 (OS-B) — rename a channel's DISPLAY name (id immutable). No ACL/topology impact (name is not in
+     * [Channel.members] or [AclEntry]); rebuilds the matrix for consistency and returns the refreshed channel.
+     * 404 if unknown; 400 on a blank name.
+     */
+    fun renameChannel(id: String, newName: String): Channel = synchronized(lock) {
+        if (newName.isBlank()) throw BadRequestException("channel name required", code = "channel_name_required")
+        if (channels.none { it.id == id }) throw NotFoundException("channel '$id' not found", code = "channel_not_found")
+        val nextChannels = channels.map { if (it.id == id) it.copy(name = newName) else it }
+        channels = nextChannels
+        acl = AclMatrix(nextChannels, entries, activeProjectId, sharedInboundChannelIds)
+        nextChannels.first { it.id == id }
+    }
+
+    /**
+     * CYP-869 (OS-B) — archive (remove from the active topology) a DIRECT/GROUP channel and its ACL entries: it
+     * disappears from [channels]/[AclMatrix] (no longer listed, unreadable, unwritable) while its messages persist
+     * in the store. **Fail-closed:** a [ChannelKind.HUB] spoke is REJECTED (archiving it would break hub-and-spoke
+     * coordination — the CYP-49 PO-lockout discipline, at the topology layer). 404 if unknown.
+     */
+    fun archiveChannel(id: String): Unit = synchronized(lock) {
+        val existing = channels.firstOrNull { it.id == id }
+            ?: throw NotFoundException("channel '$id' not found", code = "channel_not_found")
+        if (existing.kind == ChannelKind.HUB) {
+            throw ConflictException(
+                "cannot archive hub-and-spoke channel '$id' — it would break coordination",
+                code = "channel_hub_protected",
+            )
+        }
+        val nextChannels = channels.filterNot { it.id == id }
+        val next = entries.filterNot { it.channelId == id }
+        channels = nextChannels
+        entries = next
+        acl = AclMatrix(nextChannels, next, activeProjectId, sharedInboundChannelIds)
     }
 
     /**
