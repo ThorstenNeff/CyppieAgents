@@ -29,6 +29,7 @@ import { isLegacyReconnectableClose } from './net/closeVerdict'
 import { commitAclChange } from './state/aclCommit'
 import { startLiveHub } from './state/liveHub'
 import { MultiHubShell } from './multihub/MultiHubShell'
+import { NavRailShell } from './nav/NavRailShell'
 import { AgentWindow } from './AgentWindow'
 import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
@@ -1094,16 +1095,22 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         // CYP-759: has a capacity GET completed AFTER the reject? Only then may headroom self-clear the banner.
         overloadRejectSeq.current !== null && capacityFetchSeq.current > overloadRejectSeq.current,
       ) && <OverloadBanner onDismiss={() => setOverloadDismissed(true)} />}
-      {/* CYP-641 titleAccessory (activity badge) rides on each WindowFrame, inside the CYP-642 desktop region. */}
-      <div className="workspace-desktop">
-        <WindowHost>
-          {(win) => (
-            <WindowFrame window={win} titleAccessory={titleAccessoryFor(win)}>
-              {renderContent(win)}
-            </WindowFrame>
-          )}
-        </WindowHost>
-      </div>
+      {/* CYP-888 (NR-1): the vertical nav-rail shell wraps ONLY the desktop canvas region. When the responsive gate is
+          on (landscape + short-edge ≥ ~600dp) the rail sits left of the desktop; the always-visible chrome above
+          (workspace-bar, MultiHubShell, tier badge, banners) stays full-width and untouched. Below the gate
+          NavRailShell is a pure passthrough, so the desktop canvas is unchanged. */}
+      <NavRailShell>
+        {/* CYP-641 titleAccessory (activity badge) rides on each WindowFrame, inside the CYP-642 desktop region. */}
+        <div className="workspace-desktop">
+          <WindowHost>
+            {(win) => (
+              <WindowFrame window={win} titleAccessory={titleAccessoryFor(win)}>
+                {renderContent(win)}
+              </WindowFrame>
+            )}
+          </WindowHost>
+        </div>
+      </NavRailShell>
     </div>
   )
 }
