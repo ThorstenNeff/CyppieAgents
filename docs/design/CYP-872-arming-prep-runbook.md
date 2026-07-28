@@ -28,7 +28,7 @@ the runbook cites them, it does not re-litigate them.
 
 | Block | State | What it guarantees |
 |---|---|---|
-| Dark batch: CYP-849/850/851/859/860/858/862/863/864 | **All merged to `develop` (`d27f2eaa`)** | The full federation build exists, DARK. |
+| Dark batch: CYP-849/850/851/859/860/858/862/863/864 | **All merged to `develop` (`5eac2dc9`, the CYP-871-into-develop merge)** | The full federation build exists, DARK. |
 | **CYP-858 sole-path guard** | **PL-verified** (MUT-A: `open` ignores gate → the 2 deny teeth red · MUT-B: ctor `private`→`internal` → `federationSessionConstructor_isPrivate` red · + no-off-gate construction scan) | `FederationSession` is constructible **only** via `FederationSession.open(gate, …)`, which is admission-gated. **This is the invariant the whole arm rests on** — there is no back door around the gate. |
 | CYP-871 dark dress rehearsal | **Green + merged-clean (`c12b27ec`)** | The 6 pieces compose end-to-end vs a stub tunnel + real Ed25519. Central tooth `deniedAdmission_noSession_noFrame_assemblyInert` proves posture-OFF ⟹ no session ⟹ 0 frames = the assembly is inert. |
 | §9.1 god-token loopback close | CYP-828 ✅ merged | An off-loopback connect can no longer inherit the operator god-token. |
@@ -36,10 +36,16 @@ the runbook cites them, it does not re-litigate them.
 
 ---
 
-## 2. The three arming PREREQS (all must independently hold, on REAL topology, fail-closed)
+## 2. The four arming PREREQS (all must independently hold, on REAL topology, fail-closed)
 
-Arming is gated on three preconditions from Epic §9. Each is an **AND** — any one absent ⟹ **do not arm**. Each must
-be **verified with evidence on the real target topology**, not asserted and not proven on loopback.
+Arming is gated on four preconditions (three from Epic §9, plus the §5 keyset ruling). Each is an **AND** — any one
+absent ⟹ **do not arm**. Each must be **verified with evidence on the real target topology**, not asserted and not
+proven on loopback.
+
+> **★ Gate — who may run §3, and when.** The prereqs holding is *necessary but not sufficient*. **No one runs the
+> §3 swap sequence** without **(a) PL review of the prereq evidence _on real topology_** and **(b) an explicit
+> Auftraggeber arming-GO.** This document arms nothing; even a reader who satisfies P1–P4 must still obtain the
+> PL-review + Auftraggeber-GO before a single swap step is executed. Backend never runs any of it.
 
 ### P1 — Server-side re-auth verified
 The operator identity used for the federated connect must be **re-authenticated server-side at arm time**, not carried
@@ -59,8 +65,19 @@ couples §5 trust-anchor to §6 admission; it is the one that must not be skippe
 CYP-828 loopback-close merged (§9.1) **and** CYP-829 getenv-compare confinement (§9.2, no `== getenv("OPERATOR_TOKEN")`
 bypass) landed. *Verify:* no path grants operator off-loopback; the closure teeth (CYP-747 v3 SOURCE-keyed scan) hold.
 
-> **Ratification is a build-gate, not an arm-gate.** M2 §4b/§5 being RATIFIED unblocks building; P1–P3 on real
-> topology + GO is what unblocks arming.
+### P4 — Keyset-rotation live-wiring landed, DARK (CYP-877) — the §5 ruling
+**PL ruling (on §3.2): arm on the LIVE keyset, not the single pin.** The live trust anchor MUST resolve through the
+ratified M2 §5 **keyset** shape — `IssuerKeyset {kid→pub}` + overlap window + old-key rotation attestation — **not**
+today's single pin. Today `RemoteRelayWiring.resolveIssuerAnchor` (`:79`) returns a **single** `IssuerAnchor`; the
+keyset DTOs (CYP-860) exist **dark** but are **not live-wired**. Arming on the single pin would **bake the rotation
+gap into the hardest-to-change live layer** and force a guaranteed hard cutover later; wiring the keyset now
+parallelizes with prereq/topology setup. So **CYP-877 (keyset-rotation live-wiring, DARK, arming-prereq) must land
+before arming.** It stays dark until arming. *Verify:* the live path classifies trust via the keyset `accepts`-overlap
++ rotation attestation, not a single `kid`. *(Auftraggeber may override to single-pin — PL flags it; default =
+CYP-877.)*
+
+> **Ratification is a build-gate, not an arm-gate.** M2 §4b/§5 being RATIFIED unblocks building; **P1–P4** on real
+> topology + PL-review + Auftraggeber-GO is what unblocks arming.
 
 ---
 
@@ -74,19 +91,20 @@ live post-check is a known-good comparison, not a first observation.
 - **DARK:** `FederationAdmissionGate(federationEnabled = false)` — default fail-closed; `admit()` denies everything.
 - **LIVE:** derive `federationEnabled = true` **from real config** (a resolvable issuer anchor **and**
   `CYPPIE_REMOTE_RELAY_URL` present), not a hardcoded flip.
-- **Precondition:** §2 P1–P3 all verified on this topology.
+- **Precondition:** §2 P1–P4 all verified on this topology.
 - **Post-check:** `RemoteRelayWiring.classifyIssuerTrust(env)` == `ISSUER_TRUSTED` for the intended peer.
 - **Models:** the central inert tooth (posture-OFF path) — flipping this is exactly what that tooth holds inert.
 
-### 3.2 Trust anchor provisioning (OOB, no in-app grant)
+### 3.2 Trust anchor provisioning (OOB, no in-app grant) — arm on the live KEYSET (PL ruling)
 - **DARK:** no anchor → `RemoteRelayWiring.resolveIssuerAnchor(env)` == `null` → `InertRelayConnector`.
-- **LIVE:** provision the pinned issuer anchor **out-of-band**: `CYPPIE_RELAY_ISSUER/KID/PUBKEY` (own relay, preferred)
-  or the `CYPPIE_CP_*` fallback, so `resolveIssuerAnchor != null`. This is the M2 §5 anchor (Model-2, issuer = Relay).
-- **Note (durable commitment):** M2 §5 ratified **keyset `{kid→pub}` + overlap window + old-key rotation attestation**.
-  Today's `resolveIssuerAnchor` is a **single** pin; the keyset/rotation seam is the biggest §5 commitment and its
-  live wiring is tracked separately. Arming on the single pin is acceptable only if the PL accepts the no-overlap
-  rotation cost until the keyset lands.
-- **Post-check:** the anchor's `kid`/`pub` match the OOB-distributed issuer material (compare, don't trust env echo).
+- **LIVE (arm on the keyset, NOT the single pin — see §2 P4 / CYP-877):** provision the trusted issuer material
+  **out-of-band** as the rotatable **`IssuerKeyset {kid→pub}`** (M2 §5, Model-2, issuer = Relay) via
+  `CYPPIE_RELAY_ISSUER/KID/PUBKEY` (own relay, preferred) or the `CYPPIE_CP_*` fallback. The current single-pin
+  `resolveIssuerAnchor` (`:79`) is **not** the arming target — CYP-877 replaces it at the live path with the keyset +
+  `accepts`-overlap + rotation attestation. No in-app grant.
+- **Post-check:** trust classifies via the keyset `accepts`-overlap (a rotation-attested new key is accepted within
+  the overlap window; an out-of-keyset key is DENY); the active `kid`/`pub` match the OOB-distributed keyset (compare,
+  don't trust env echo).
 
 ### 3.3 Transport — stub tunnel → live Noise tunnel
 - **DARK:** CYP-871 binds a `StubTunnel` (implements `ServerNoiseTunnel`); the live connect path is
@@ -142,9 +160,12 @@ frames), confirming the disarm took.
 
 ## 5. Explicit scope boundary (what this runbook is NOT)
 
-- It does **not** arm, flip the posture, provision anchors, dial a relay, open an off-loopback socket, or deploy.
-- It does **not** authorize P1/P2/P3 — it states how each is **verified**; the human/PL confirms them **out of band**
-  on real topology.
+- It does **not** arm, flip the posture, provision anchors/keysets, dial a relay, open an off-loopback socket, or deploy.
+- It does **not** authorize P1–P4 — it states how each is **verified**; the human/PL confirms them **out of band on
+  real topology**.
+- **No one runs the §3 sequence on the strength of this document.** Execution requires, in addition to P1–P4 holding:
+  **(a) PL review of the prereq evidence on real topology**, and **(b) an explicit Auftraggeber arming-GO**. Absent
+  either, nothing is armed.
 - The backend **authored** this checklist. The **PL owns and executes** the arming sequence, under **Auftraggeber
   GO**. No agent runs any step herein.
 
@@ -152,6 +173,7 @@ frames), confirming the disarm took.
 
 *Grounded on: `FederationAdmissionGate` (CYP-850, `federationEnabled` default-false ∧ issuer-trust decider) ·
 `FederationSession.open` sole-path guard (CYP-858, PL-verified) · `FederationTunnelTransport`/`ServerNoiseTunnel`
-(CYP-864/457) · `RemoteRelayWiring.resolveIssuerAnchor`/`classifyIssuerTrust`/`InertRelayConnector`/`NoiseRelayConnector`
+(CYP-864/457) · `RemoteRelayWiring.resolveIssuerAnchor`(`:79`, single-pin today)/`classifyIssuerTrust`/`InertRelayConnector`/`NoiseRelayConnector`
+· `IssuerKeyset {kid→pub}`/`accepts`/rotation attestation (CYP-860 dark → CYP-877 live-wiring, arming-prereq)
 · `operatorAuthChallenge` + `"federation-peer"` PoP (CYP-473/859) · `FederationRevocationFanout` (CYP-863) ·
 Epic CYP-832 §6/§9. CYP-871 (`c12b27ec`) is the composition evidence.*
