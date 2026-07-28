@@ -19,6 +19,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.model.Agent
+import com.tneff.cyppieagents.model.Role as AgentRole
 
 /**
  * CYP-894 (Epic CYP-892, Nav-Rail S1) — the desktop **vertical-nav-rail shell**: a persistent rail (left) + a content
@@ -46,11 +48,26 @@ sealed interface NavDestination {
     /** The existing floating-window canvas (paradigm unchanged). */
     data object Canvas : NavDestination
 
-    /** A maximized agent destination (PO or a worker), keyed by its agent id. [isPo] orders it above the workers. */
-    data class Agent(val agentId: String, val label: String, val isPo: Boolean) : NavDestination
+    /**
+     * A maximized agent destination, keyed by its agent id + carrying its [role] (CYP-98's three: PO / PRODUCT_LEAD /
+     * WORKER). The role is DISTINCT (PRODUCT_LEAD is never folded into WORKER or collapsed with PO) and drives the
+     * PO → PRODUCT_LEAD → Worker ordering ([navAgentDestinations]).
+     */
+    data class Agent(val agentId: String, val label: String, val role: AgentRole) : NavDestination
 
     /** The settings destination. */
     data object Settings : NavDestination
+}
+
+/**
+ * CYP-896 (S3) — the ordered agent destinations for the rail: **PO → PRODUCT_LEAD → Worker** (CYP-98's three Role
+ * values). Each is **present-iff** there is such an agent (none of a role ⇒ no dead row; several ⇒ all of them, in
+ * roster order). PRODUCT_LEAD is a DISTINCT middle group — never folded into the Worker bucket, never collapsed with
+ * PO, never dropped. Pure — the present-iff / distinct-PL ordering is unit-provable.
+ */
+fun navAgentDestinations(agents: List<Agent>): List<NavDestination.Agent> {
+    fun bucket(role: AgentRole) = agents.filter { it.role == role }.map { NavDestination.Agent(it.id, it.name, it.role) }
+    return bucket(AgentRole.PO) + bucket(AgentRole.PRODUCT_LEAD) + bucket(AgentRole.WORKER)
 }
 
 /** Stable key for a destination's testTag/selection (Canvas/Settings fixed; Agent by id). */
@@ -66,6 +83,9 @@ object NavRailTags {
     const val RAIL = "navRail.rail"
     const val PANE = "navRail.pane"
     fun item(dest: NavDestination) = "navRail.item.${destinationKey(dest)}"
+
+    /** CYP-896 (S3) — a maximized agent destination pane, by agent id. */
+    fun agentPane(agentId: String) = "navRail.pane.agent.$agentId"
 }
 
 @Composable
@@ -100,6 +120,20 @@ fun NavRailShell(
 @Composable
 fun NavPanePlaceholder(tag: String) {
     Box(modifier = Modifier.fillMaxSize().testTag(tag))
+}
+
+/**
+ * CYP-896 (S3, ★★ load-bearing) — the maximized agent destination pane. It renders the agent through the injected
+ * [renderAgent] seam — **the SAME seam the canvas uses** (in prod: `agentVms[id]?.let { AgentWindow(viewModel = it) }`,
+ * the hoisted per-agent VM). So the maximized destination is the SAME `AgentViewModel` instance rendered maximized:
+ * shared transcript / connection / input, and — because the VM is hoisted OUTSIDE the render — full state continuity
+ * across Canvas ↔ maximized nav. **No 2nd VM instance, no 2nd render path**: everything routes through [renderAgent].
+ */
+@Composable
+fun AgentDestinationPane(agentId: String, renderAgent: @Composable (String) -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().testTag(NavRailTags.agentPane(agentId))) {
+        renderAgent(agentId)
+    }
 }
 
 @Composable

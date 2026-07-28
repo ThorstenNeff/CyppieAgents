@@ -17,6 +17,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.model.Role
 import kotlin.test.Test
 
 /**
@@ -27,7 +28,7 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class Cyp894NavRailShellRenderTest {
 
-    private val poAgent = NavDestination.Agent("po", "PO", isPo = true)
+    private val poAgent = NavDestination.Agent("po", "PO", Role.PO)
     private val dests = listOf(NavDestination.Canvas, poAgent, NavDestination.Settings)
 
     @Composable
