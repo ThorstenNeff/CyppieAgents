@@ -1,9 +1,11 @@
 package com.tneff.cyppieagents.e2e
 
 import com.tneff.cyppieagents.CommJson
-import com.tneff.cyppieagents.agentview.TokenUsageLiveSource
+import com.tneff.cyppieagents.agentview.StatusMuxClient
 import com.tneff.cyppieagents.model.AgentTokenUsageEvent
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.model.StatusFrame
+import com.tneff.cyppieagents.model.TokenUsageStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
@@ -11,6 +13,9 @@ import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.post
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -54,8 +59,19 @@ class Cyp316TokenUsageClientWireTest {
      *  auth path is what authenticates against the real route — exactly the production handshake. */
     private fun wsClient() = HttpClient(CIO) { install(ClientWebSockets) }
 
+    // CYP-846: the standalone `/ws/token-usage` `TokenUsageLiveSource` was REMOVED — the live token-usage source is
+    // now the muxed `/ws/status` projection [StatusMuxClient.tokenUsage] (the interface + [AgentTokenUsageEvent]
+    // shape are unchanged, so the source→wire→decode seam this gate proves is identical, now over `/ws/status`).
     private fun source(p: E2ePlatform, client: HttpClient, agentId: String = "backend") =
-        TokenUsageLiveSource(client, p.wsBaseUrl, token = E2ePlatform.agentToken(agentId))
+        StatusMuxClient(
+            client,
+            httpBaseUrl = p.baseUrl,
+            wsBaseUrl = p.wsBaseUrl,
+            token = E2ePlatform.agentToken(agentId),
+            // A SupervisorJob scope for the mux's shared `/ws/status` upstream. WhileSubscribed → the upstream
+            // stops when this test's collector does; the socket is closed via [client] in each test's finally.
+            scope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
+        ).tokenUsage
 
     /** Z1 — a real tracker value flows through the real route + real source snapshot as the decoded Int. */
     @Test
@@ -80,18 +96,20 @@ class Cyp316TokenUsageClientWireTest {
     fun realSource_nullContextTokens_survivesRealWire_neverZero(): Unit = runBlocking {
         e2ePlatform(boot()).use { p ->
             p.booted.runtimeRegistry.active().tokenUsage.onResult("backend", null) // Connector-B / pre-first-turn
-            // (a) the raw frame OMITS the field (explicitNulls) — non-vacuous evidence of the wire mechanic.
+            // (a) the raw muxed frame OMITS the field (explicitNulls) — non-vacuous evidence of the wire mechanic.
+            // CYP-846: the wire is now the muxed `/ws/status` `TokenUsageStatus` frame ({"type":"tokenUsage",
+            // "event":{…}}); the null-omit happens INSIDE the wrapped [AgentTokenUsageEvent] exactly as before.
             wsClient().use { raw ->
                 withTimeout(10_000) {
-                    raw.webSocket("${p.wsBaseUrl}/ws/token-usage?token=${E2ePlatform.agentToken("backend")}") {
+                    raw.webSocket("${p.wsBaseUrl}/ws/status?token=${E2ePlatform.agentToken("backend")}") {
                         for (frame in incoming) {
                             if (frame !is Frame.Text) continue
                             val text = frame.readText()
-                            val ev = CommJson.decodeFromString(AgentTokenUsageEvent.serializer(), text)
-                            if (ev.agentId != "backend") continue
-                            val keys = CommJson.parseToJsonElement(text).jsonObject.keys
-                            assertTrue("contextTokens" !in keys, "a null value OMITS contextTokens on the wire: $keys")
-                            assertNull(ev.contextTokens)
+                            val sf = CommJson.decodeFromString(StatusFrame.serializer(), text)
+                            if (sf !is TokenUsageStatus || sf.event.agentId != "backend") continue
+                            val eventKeys = CommJson.parseToJsonElement(text).jsonObject["event"]!!.jsonObject.keys
+                            assertTrue("contextTokens" !in eventKeys, "a null value OMITS contextTokens inside the muxed event: $eventKeys")
+                            assertNull(sf.event.contextTokens)
                             return@webSocket
                         }
                     }
