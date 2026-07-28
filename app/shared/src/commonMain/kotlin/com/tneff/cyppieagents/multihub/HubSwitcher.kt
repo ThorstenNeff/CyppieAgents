@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -16,8 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.agentview.formatLocalHhMm
 import com.tneff.cyppieagents.connect.HubDescriptor
@@ -26,7 +28,6 @@ import com.tneff.cyppieagents.ui.LoadErrorRetry
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.hub_switcher_empty
 import kmpcyppieagents.app.shared.generated.resources.hub_switcher_last_seen
-import kmpcyppieagents.app.shared.generated.resources.hub_switcher_nav_label
 import kmpcyppieagents.app.shared.generated.resources.hub_switcher_reach_offline
 import kmpcyppieagents.app.shared.generated.resources.hub_switcher_reach_online
 import kmpcyppieagents.app.shared.generated.resources.load_failed
@@ -40,23 +41,23 @@ import org.jetbrains.compose.resources.stringResource
  * [activeHubId]**, never the click; a pending switch disables the whole list; switch-to-active is a no-op. The real
  * switch effect (teardown/setup of the new active hub) is the injected [onSwitch] — an **arming seam** (M3), not here.
  *
- * **This is Slice-1: LOGIC + structure only** — the top-bar placement + maritime/M3 styling are Slice-2 (built against
- * the UIUX spec). Every axis is a separate node/testTag so the visual pass can re-skin without changing the contract.
+ * Slice-1 = LOGIC; **Slice-2 = the maritime/M3 styling per the UIUX spec** (`docs/design/CYP-856-…spec.md`), applied
+ * here + the [HubSwitcherBar] placement. Every axis is a separate node/testTag.
  *
- * ★ FOUR DISTINCT AXES PER ENTRY, NEVER CONFLATED:
- *  - **name/identity** — [HubDescriptor.name] (+ `hubId` as the stable key)
- *  - **reachability** — [HubDescriptor.online] → a NEUTRAL Online/Offline marker (reachability ≠ trust; offline ≠
- *    untrusted; never green / never error-red)
+ * ★ FOUR DISTINCT AXES PER ENTRY, NEVER CONFLATED (colour never the sole signal — WCAG 1.4.1):
+ *  - **name/identity** — [HubDescriptor.name], `onSurface`, ellipsised under a narrow bar
+ *  - **reachability** — [HubDescriptor.online] → shape (`●` online / `○` offline) **+ WORD**, BOTH `onSurfaceVariant`
+ *    (a NEUTRAL net fact: never green for online, never error-red for offline; offline ≠ untrusted)
  *  - **hub-key trust (axis a)** — the reused CYP-808 [HubTrustBadge], fed `state = null` → **UNKNOWN** (pre-arming
  *    neutral): the switcher NEVER wires the badge to a live trust decision; real observed trust arrives at arming (M3)
- *  - **freshness** — [HubDescriptor.lastSeen] → "zuletzt gesehen HH:mm"
+ *  - **freshness** — [HubDescriptor.lastSeen] → "zuletzt gesehen HH:mm", advisory `onSurfaceVariant` `labelSmall`
  *
- * axis-c ([HubDescriptor.issuerTrust]) is DELIBERATELY ABSENT — it is a whole Zone-2 connect verdict (M4), never a
- * switcher badge. Tier is the active-header, not here. Both absences are guarded by a source-scan tooth.
+ * axis-c ([HubDescriptor.issuerTrust]) is DELIBERATELY ABSENT — a Zone-2 connect verdict (M4), never a switcher badge.
+ * Tier is the active-header, not here. Both absences are guarded by a source-scan tooth.
  *
- * **Empty ≠ Load-Error ≠ Unknown** (three distinct [HubSwitcherOutcome]s, precedence error→unknown→empty→list): a
- * failed `GET /hubs` → Error+Retry (never a misleading "no hubs"); a successful zero-hub result → honest empty;
- * not-loaded-yet → render nothing.
+ * **Empty ≠ Load-Error ≠ Unknown** (three [HubSwitcherOutcome]s, precedence error→unknown→empty→list): a failed
+ * `GET /hubs` → Error+Retry (never a misleading "no hubs"); a successful zero-hub result → honest empty; not-loaded
+ * → render nothing.
  */
 @Composable
 fun HubSwitcher(
@@ -84,6 +85,8 @@ fun HubSwitcher(
         HubSwitcherOutcome.Empty -> Text(
             text = stringResource(Res.string.hub_switcher_empty),
             modifier = modifier.testTag(HubSwitcherTags.EMPTY),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
         )
         is HubSwitcherOutcome.Hubs -> HubSwitcherList(outcome.hubs, activeHubId, onSwitch, modifier)
     }
@@ -98,7 +101,6 @@ private fun HubSwitcherList(
 ) {
     var pending by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val navLabel = stringResource(Res.string.hub_switcher_nav_label)
 
     fun pick(hubId: String) {
         if (hubId == activeHubId) return // switch-to-active = no-op (non-optimistic, mirrors ProjectSwitcher)
@@ -113,11 +115,9 @@ private fun HubSwitcherList(
         }
     }
 
+    // The nav/`aria-label` semantics live on the [HubSwitcherBar] container (parity: the nav is the bar).
     Column(
-        modifier = modifier
-            .testTag(HubSwitcherTags.LIST)
-            .semantics { contentDescription = navLabel }
-            .selectableGroup(),
+        modifier = modifier.testTag(HubSwitcherTags.LIST).selectableGroup(),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         hubs.forEach { hub ->
@@ -138,7 +138,7 @@ private fun HubSwitcherEntry(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val reach = if (hub.online) {
+    val reachWord = if (hub.online) {
         stringResource(Res.string.hub_switcher_reach_online)
     } else {
         stringResource(Res.string.hub_switcher_reach_offline)
@@ -154,15 +154,49 @@ private fun HubSwitcherEntry(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Axis 1 — name/identity.
-        Text(hub.name, modifier = Modifier.testTag(HubSwitcherTags.name(hub.hubId)))
-        // Axis 2 — reachability: a SEPARATE, NEUTRAL marker (never the trust badge; offline ≠ untrusted). Default
-        // onSurface tone — Slice-2 keeps it strictly neutral (never green / never error-red).
-        Text(reach, modifier = Modifier.testTag(HubSwitcherTags.reach(hub.hubId)))
-        // Axis 4 — freshness: "zuletzt gesehen HH:mm", its own slot (distinct from reachability and trust).
-        Text(lastSeen, modifier = Modifier.testTag(HubSwitcherTags.lastSeen(hub.hubId)))
+        // Active marker — a NON-COLOUR `●` (never a colour-only highlight; mirrors ProjectSwitcherBar). Present iff active.
+        if (active) {
+            Text(
+                "●",
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        // Axis 1 — name/identity: primary onSurface, ellipsised under a narrow bar.
+        Text(
+            hub.name,
+            modifier = Modifier.weight(1f, fill = false).testTag(HubSwitcherTags.name(hub.hubId)),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        // Axis 2 — reachability: shape (`●` online / `○` offline) + WORD, BOTH onSurfaceVariant — a NEUTRAL net fact
+        // (never green for online, never error-red for offline; offline ≠ untrusted). The word carries the state
+        // (shape is never the sole signal — WCAG 1.4.1).
+        Text(
+            "${hubReachabilityGlyph(hub.online)} $reachWord",
+            modifier = Modifier
+                .testTag(HubSwitcherTags.reach(hub.hubId))
+                .semantics { stateDescription = reachWord },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        // Axis 4 — freshness: advisory "zuletzt gesehen HH:mm", onSurfaceVariant labelSmall (own axis ≠ reachability).
+        Text(
+            lastSeen,
+            modifier = Modifier.testTag(HubSwitcherTags.lastSeen(hub.hubId)),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+        )
         // Axis 3 — hub-key trust (axis a): the reused CYP-808 badge, UNKNOWN pre-arming (state = null) — NEVER wired
         // to a live decision here. axis-c (issuerTrust) + tier are DELIBERATELY ABSENT from the switcher.
         HubTrustBadge(hubId = hub.hubId, state = null)
     }
 }
+
+/**
+ * CYP-856 — the reachability shape marker: filled `●` online / hollow `○` offline. Paired with the WORD so the shape
+ * is never the sole signal (WCAG 1.4.1); a NEUTRAL net fact, never a severity/trust glyph. Pure — unit-tested directly.
+ */
+fun hubReachabilityGlyph(online: Boolean): String = if (online) "●" else "○"
