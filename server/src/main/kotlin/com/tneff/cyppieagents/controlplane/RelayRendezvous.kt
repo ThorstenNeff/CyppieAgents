@@ -32,15 +32,26 @@ interface RelayRendezvous {
          * **CYP-611 (dogfood 2026-07-15, 16→24 — Auftraggeber-AUTHORIZED DoS-envelope change):** the mode-blind
          * client pool opens one tunnel per loopback connection (WS long-lived + 1 dedicated REST tunnel + 1 control),
          * so at the 7-agent default the 15 data-ids (`cap-1`, after the control id at element 0) were filled EXACTLY
-         * (7 agent-WS + 7 singleton-WS + 1 REST) — an 8th agent exhausted the pool. Raising the cap to **24** gives
-         * ~23 data-ids ⟹ headroom to ~16 agents. This IS a deliberate loosening of the per-operator DoS floor, so it
-         * required the Auftraggeber's out-of-band GO (NOT an autonomous change). The **relay imposes no per-session
-         * ceiling** ([com.tneff.cyppieagents.relay.RendezvousRelay] pairs 1↔1 per opaque id, unbounded), so 24
-         * concurrent tunnels are not relay-limited. **Lockstep obligation:** the client `TUNNEL_POOL_CAP` MUST be
-         * raised to 24 in the SAME deploy, and the server cap MUST stay ≥ the client cap (C2). The two consts are
-         * separate (client in `:app:shared`, not a shared `:core` const yet — see the CYP follow-up) → change BOTH.
+         * (7 agent-WS + 7 singleton-WS + 1 REST) — an 8th agent exhausted the pool. Raising the cap to 24 gave
+         * ~23 data-ids ⟹ headroom to ~16 agents. That was a deliberate LOOSENING of the per-operator DoS floor, so it
+         * required the Auftraggeber's out-of-band GO (NOT an autonomous change).
+         *
+         * **CYP-611 REVERT (2026-07-27, 24→16 — a TIGHTENING back toward the original DoS floor):** the CYP-840
+         * status-mux consolidates the 4 singleton status feeds (lifecycle/token-usage/busy-state/terminal-state) into
+         * ONE `/ws/status`, so the client's WS working set drops (6 globals → 3) and the pre-mux 8th-agent exhaustion
+         * foot-gun the 24-bump compensated for is relieved (the sizing analysis: the post-mux ~11-WS working set fits
+         * the cap-16 WS gate of 13 with headroom). Tightening the DoS floor is the SAFE direction (it strengthens, not
+         * weakens, the per-operator envelope) — this is the follow-through the [TunnelPoolState] partition KDoc
+         * anticipated ("consolidate the singletons → relieve pool pressure without a cap bump"), run in reverse.
+         *
+         * The **relay imposes no per-session ceiling** ([com.tneff.cyppieagents.relay.RendezvousRelay] pairs 1↔1 per
+         * opaque id, unbounded), so the cap is purely the client-pool DoS floor. **Lockstep obligation (C2):** the
+         * server cap MUST stay ≥ the client `TUNNEL_POOL_CAP` at ALL times, and the two consts are separate (client in
+         * `:app:shared`, not a shared `:core` const yet) → the revert MUST land **client-first** (client 24→16 in
+         * develop, THEN this server const), else the client (still self-limiting to 24) is handed only 16 rendezvous-ids
+         * and its cap-24 partition math under-provisions its WS lane. Change BOTH; order matters.
          */
-        const val DEFAULT_TUNNEL_POOL_CAP: Int = 24
+        const val DEFAULT_TUNNEL_POOL_CAP: Int = 16
 
         /** RR4 opaque id: `base64url(SHA-256(hubId ‖ epoch))` — the relay sees only this, never `hubId`. The
          *  [rendezvousEpoch] is **per-registration**: a new registration rotates the id (unlinkable across
