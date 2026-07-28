@@ -47,10 +47,15 @@ class HttpAuthRepositoryE2eTest {
         // there (null ⇒ the wrapper was never hit — e.g. a regression back to the raw Kratos registration flow).
         var registerResp: SubmitResp = SubmitResp(200, """{"status":"verification_pending"}""")
         var lastRegister: String? = null
+        // CYP-901: which login-flow init the githubStart hit ("api" = desktop loopback, "browser" = web same-origin)
+        // and the `return_to` it carried — the tooth asserts web → browser + web-origin, never the loopback.
+        var lastLoginInitKind: String? = null
+        var lastLoginReturnTo: String? = null
     }
 
     private fun withFixture(
         configure: Fixture.() -> Unit = {},
+        nativeOidcLoopback: Boolean = false, // CYP-901: default web (browser flow); desktop tests pass true
         block: suspend (Fixture, HttpAuthRepository, InMemoryAuthSessionStore) -> Unit,
     ) = runBlocking {
         val fx = Fixture().apply(configure)
@@ -77,6 +82,10 @@ class HttpAuthRepositoryE2eTest {
                 }
                 get("/.ory/kratos/public/self-service/{kind}/api") {
                     val kind = call.parameters["kind"]
+                    if (kind == "login") {
+                        fx.lastLoginInitKind = "api" // CYP-901: desktop loopback init
+                        fx.lastLoginReturnTo = call.request.queryParameters["return_to"]
+                    }
                     // Cookie-on-API-flow blockade: a recovery ory_kratos_session cookie present at /login/api → 400
                     // (the post-reset re-login must be cookie-free — the recovery session must be cleared first).
                     if (kind == "login" && !call.request.headers["Cookie"].isNullOrBlank()) {
@@ -114,6 +123,8 @@ class HttpAuthRepositoryE2eTest {
                 }
                 // Browser login flow init (OIDC uses it): carries the csrf_token node the repo echoes.
                 get("/.ory/kratos/public/self-service/login/browser") {
+                    fx.lastLoginInitKind = "browser" // CYP-901: web same-origin init
+                    fx.lastLoginReturnTo = call.request.queryParameters["return_to"]
                     call.respondText(
                         """{"id":"lfb","ui":{"nodes":[{"attributes":{"name":"csrf_token","value":"lcsrf","type":"hidden"}}]}}""",
                         ContentType.Application.Json,
@@ -164,6 +175,7 @@ class HttpAuthRepositoryE2eTest {
             val store = InMemoryAuthSessionStore()
             val repo = HttpAuthRepository(
                 client, "http://127.0.0.1:${fx.port}", sessionStore = store, cookieStorage = cookieStorage,
+                nativeOidcLoopback = nativeOidcLoopback,
             )
             block(fx, repo, store)
         } finally {
@@ -506,19 +518,46 @@ class HttpAuthRepositoryE2eTest {
                 SubmitResp(200, "{}")
             }
         }
-    }) { _, repo, _ ->
+    }, nativeOidcLoopback = true) { fx, repo, _ ->
         val r = repo.githubStart()
         assertIs<GithubStart.Redirect>(r)
         assertEquals("https://github.test/login/oauth/authorize?state=abc", r.url)
         // CYP-576: the native API-flow also carries the init half (session_token_exchange_code) for the token-exchange.
         assertEquals("init-code-123", r.initCode)
+        // CYP-901: desktop uses the API loopback init + the loopback return_to (unchanged).
+        assertEquals("api", fx.lastLoginInitKind)
+        assertEquals(OIDC_LOOPBACK_CALLBACK_URL, fx.lastLoginReturnTo)
     }
 
     @Test
     fun githubStart_noRedirect_returnsError() = withFixture({
         onSubmit = { kind, _ -> if (kind == "login") SubmitResp(400, """{"ui":{"messages":[{"text":"nope"}]}}""") else SubmitResp(200, "{}") }
-    }) { _, repo, _ ->
+    }, nativeOidcLoopback = true) { _, repo, _ ->
         assertEquals(GithubStart.Error, repo.githubStart())
+    }
+
+    // ★ CYP-901 anti-re-regression GATE: the WEB GitHub-login flow uses the same-origin Kratos BROWSER flow and NEVER
+    // the desktop RFC-8252 loopback. A regression that points web back at `/login/api` + the 127.0.0.1 loopback (the
+    // exact bug that broke staging web login) flips `lastLoginInitKind`→"api" and sets a loopback `return_to` → RED.
+    @Test
+    fun githubStart_web_usesBrowserFlow_neverLoopback() = withFixture({
+        onSubmit = { kind, _ ->
+            if (kind == "login") {
+                SubmitResp(422, """{"error":{"id":"browser_location_change_required"},"redirect_browser_to":"https://github.test/login/oauth/authorize?flow=web"}""")
+            } else {
+                SubmitResp(200, "{}")
+            }
+        }
+    }, nativeOidcLoopback = false) { fx, repo, _ ->
+        val r = repo.githubStart()
+        assertIs<GithubStart.Redirect>(r)
+        assertEquals("https://github.test/login/oauth/authorize?flow=web", r.url)
+        // Web = the same-origin BROWSER flow, cookie-based → no token-exchange init half.
+        assertEquals("browser", fx.lastLoginInitKind)
+        assertNull(r.initCode)
+        // ★ Never the loopback: web sends NO explicit return_to (Kratos' server-side default owns it), so the
+        // 127.0.0.1:47472 loopback callback can NEVER be the web flow's redirect target.
+        assertNull(fx.lastLoginReturnTo)
     }
 
     @Test

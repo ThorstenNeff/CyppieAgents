@@ -69,7 +69,11 @@ private fun looksLikeHttpUrl(s: String): Boolean {
  */
 fun authRepositoryFor(
     mode: AuthMode,
-    liveFactory: (AuthMode.Live) -> AuthRepository = ::buildLiveAuthRepository,
+    // CYP-901: the platform's GitHub-login flow (desktop loopback vs web browser flow) — threaded into the live
+    // [HttpAuthRepository]. Default false (web); the desktop entry point passes true. The default [liveFactory]
+    // closes over it; an injected factory (tests) may ignore it.
+    nativeOidcLoopback: Boolean = false,
+    liveFactory: (AuthMode.Live) -> AuthRepository = { buildLiveAuthRepository(it, nativeOidcLoopback) },
 ): AuthRepository = when (mode) {
     AuthMode.Stub -> StubAuthRepository()
     is AuthMode.Live -> liveFactory(mode)
@@ -77,7 +81,7 @@ fun authRepositoryFor(
 }
 
 /** Build the live [HttpAuthRepository]: a client with a shared cookie jar (recovery-cookie clearing). */
-private fun buildLiveAuthRepository(live: AuthMode.Live): AuthRepository {
+private fun buildLiveAuthRepository(live: AuthMode.Live, nativeOidcLoopback: Boolean = false): AuthRepository {
     val cookieStorage = AcceptAllCookiesStorage()
     val client = HttpClient { install(HttpCookies) { storage = cookieStorage } }
     // CYP-413 (S-I): back the Kratos session token with the SecureSessionStore seam (Phase 1 in-memory, R7) —
@@ -85,5 +89,6 @@ private fun buildLiveAuthRepository(live: AuthMode.Live): AuthRepository {
     val sessionStore = SecureBackedAuthSessionStore(SecureSessionStore())
     return HttpAuthRepository(
         client, live.platformBaseUrl, live.kratosProxyUrl, sessionStore = sessionStore, cookieStorage = cookieStorage,
+        nativeOidcLoopback = nativeOidcLoopback,
     )
 }
