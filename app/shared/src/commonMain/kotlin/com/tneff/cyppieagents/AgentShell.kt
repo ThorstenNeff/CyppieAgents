@@ -133,7 +133,7 @@ import com.tneff.cyppieagents.settings.ConfigHttpRepository
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.window.AgentDestinationPane
 import com.tneff.cyppieagents.window.NavDestination
-import com.tneff.cyppieagents.window.NavPanePlaceholder
+import com.tneff.cyppieagents.window.SettingsDestinationPane
 import com.tneff.cyppieagents.window.navAgentDestinations
 import com.tneff.cyppieagents.window.NavRailShell
 import com.tneff.cyppieagents.window.WindowHost
@@ -1189,7 +1189,9 @@ fun AgentShell(
                     // CYP-896 (S3, ★★): the agent destination maximizes the SAME hoisted VM via the shared renderAgent
                     // seam — no 2nd VM instance, no 2nd render path. State continuity across Canvas ↔ maximized.
                     is NavDestination.Agent -> AgentDestinationPane(dest.agentId, renderAgent = renderAgent)
-                    NavDestination.Settings -> NavPanePlaceholder("navRail.pane.settings")
+                    // CYP-897 (S4): the settings destination renders the REAL settings surface (the SAME hoisted
+                    // settingsVm the canvas settings window uses) — not a placeholder.
+                    NavDestination.Settings -> SettingsDestinationPane(renderSettings = { SettingsPanel(settingsVm) })
                 }
             },
         )
