@@ -86,6 +86,9 @@ object NavRailTags {
 
     /** CYP-896 (S3) — a maximized agent destination pane, by agent id. */
     fun agentPane(agentId: String) = "navRail.pane.agent.$agentId"
+
+    /** CYP-897 (S4) — the settings destination pane (renders the real settings surface). */
+    const val PANE_SETTINGS = "navRail.pane.settings"
 }
 
 @Composable
@@ -114,15 +117,6 @@ fun NavRailShell(
 }
 
 /**
- * CYP-894 (S1) — the placeholder pane for a not-yet-wired destination (PO/Worker agents = S3 shared-VM-maximize;
- * Settings = S4). A tagged full-size box; the real content routes through the caller's `paneContent` in S3/S4.
- */
-@Composable
-fun NavPanePlaceholder(tag: String) {
-    Box(modifier = Modifier.fillMaxSize().testTag(tag))
-}
-
-/**
  * CYP-896 (S3, ★★ load-bearing) — the maximized agent destination pane. It renders the agent through the injected
  * [renderAgent] seam — **the SAME seam the canvas uses** (in prod: `agentVms[id]?.let { AgentWindow(viewModel = it) }`,
  * the hoisted per-agent VM). So the maximized destination is the SAME `AgentViewModel` instance rendered maximized:
@@ -133,6 +127,18 @@ fun NavPanePlaceholder(tag: String) {
 fun AgentDestinationPane(agentId: String, renderAgent: @Composable (String) -> Unit) {
     Box(modifier = Modifier.fillMaxSize().testTag(NavRailTags.agentPane(agentId))) {
         renderAgent(agentId)
+    }
+}
+
+/**
+ * CYP-897 (S4) — the settings destination pane. Renders the REAL settings surface through the injected
+ * [renderSettings] seam (in prod: `SettingsPanel(settingsVm)` — the SAME hoisted settings VM the canvas settings
+ * window uses), **not** a placeholder. Same shared-surface discipline as [AgentDestinationPane].
+ */
+@Composable
+fun SettingsDestinationPane(renderSettings: @Composable () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().testTag(NavRailTags.PANE_SETTINGS)) {
+        renderSettings()
     }
 }
 
