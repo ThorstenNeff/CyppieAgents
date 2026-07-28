@@ -40,3 +40,30 @@ describe('CYP-888 — nav-rail shell layout (rail left, content right)', () => {
     expect(pane).toMatch(/min-height:\s*0/)
   })
 })
+
+describe('CYP-889 — active-item carrier (form + tone, secondary-container never tertiary)', () => {
+  it('★ the active item uses a pill FORM (border-radius) — the non-colour carrier (pill fill is <3:1)', () => {
+    // MUT: drop the border-radius → the selection would rely on tint alone (measured <3:1) → WCAG 1.4.1 fail → reds.
+    const active = ruleBody('.nav-rail-item-active')
+    expect(active).toMatch(/border-radius:\s*\d/)
+  })
+
+  it('★ the active pill is `secondary-container`, NEVER `tertiary` (hue-stable blue vs the green-flip trap)', () => {
+    // MUT: swap to tertiary → green affirmation on a nav selection at night → this reds.
+    const active = ruleBody('.nav-rail-item-active')
+    expect(active).toContain('var(--md-sys-color-secondary-container)')
+    expect(active).not.toMatch(/tertiary/)
+    expect(active).not.toMatch(/success|-green/)
+  })
+
+  it('★ the active glyph tone shifts to on-secondary-container (a luminance carrier, not colour-only)', () => {
+    const glyph = ruleBody('.nav-rail-item-active .nav-rail-item-glyph')
+    expect(glyph).toContain('var(--md-sys-color-on-secondary-container)')
+  })
+
+  it('★ the worker block is the scrollable middle (fixed Canvas/Settings never displaced)', () => {
+    const workers = ruleBody('.nav-rail-workers')
+    expect(workers).toMatch(/overflow-y:\s*auto/)
+    expect(workers).toMatch(/flex:\s*1 1 auto/)
+  })
+})

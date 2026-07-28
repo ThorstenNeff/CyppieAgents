@@ -66,12 +66,73 @@ body {
 }
 .nav-rail {
   flex: 0 0 auto;
-  width: 72px;
+  /* CYP-887 web-adaptation: M3 NavigationRail is 80dp. */
+  width: 80px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--md-sys-color-surface-variant);
+  /* §2/§6: the rail container is flat `surface`; the 1dp `outlineVariant` VerticalDivider carries the (non-colour)
+     separation from the content pane. */
+  background: var(--md-sys-color-surface);
   border-right: 1px solid var(--md-sys-color-outline-variant);
+}
+/* CYP-889 (NR-2) — a rail destination item: glyph over label, ≥48px touch target. Inactive = on-surface-variant. */
+.nav-rail-item {
+  flex: 0 0 auto;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.nav-rail-item-glyph {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.nav-rail-item-label {
+  font-size: 11px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* ★ CYP-887 §6 measured: the active pill FILL is <3:1 vs the rail — so colour/tint does NOT carry the selection. The
+   carrier is FORM (the pill `border-radius`) + `aria-current` + the glyph-TONE change (on-surface-variant →
+   on-secondary-container) + the brighter label (on-surface). Token is `secondary-container` (hue-stable blue in BOTH
+   themes) — NEVER `tertiary` (green-flip at night = false affirmation on a selection). */
+.nav-rail-item-active {
+  background: var(--md-sys-color-secondary-container);
+  border-radius: 16px;
+  color: var(--md-sys-color-on-surface);
+}
+.nav-rail-item-active .nav-rail-item-glyph {
+  color: var(--md-sys-color-on-secondary-container);
+}
+.nav-rail-item:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
+/* The worker block is the scrollable middle; Canvas (top) + lead agents (PO/PL) above it and Settings below stay
+   visible — N workers never displace the fixed foot destination. */
+.nav-rail-workers {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.nav-rail-workers-empty {
+  margin: 4px 2px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--md-sys-color-on-surface-variant);
 }
 .nav-content-pane {
   flex: 1 1 auto;
@@ -79,6 +140,12 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* CYP-889 (NR-2) — a non-canvas destination (agent / settings) fills the pane (no floating-window chrome). */
+.nav-pane-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* CYP-642 (Epic CYP-640) — the workspace bar (capacity pill; later the project switcher), the overload banner, and
