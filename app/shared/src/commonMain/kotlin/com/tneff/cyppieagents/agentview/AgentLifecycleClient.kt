@@ -52,7 +52,9 @@ class AgentLifecycleRepository(
 
     private suspend fun action(agentId: String, verb: String) {
         val response = client.post("$baseUrl/api/agents/$agentId/$verb") {
-            header(HttpHeaders.Authorization, "Bearer $operatorToken")
+            // CYP-903: Bearer ONLY when present; token-less deployed web SPA → cookie auth (server prefers the
+            // cookie over an empty Bearer, routing/Auth.kt `ifBlank{null}`). Mirrors AgentWsClient/CYP-230.
+            if (operatorToken.isNotBlank()) header(HttpHeaders.Authorization, "Bearer $operatorToken")
         }
         // 200 body is the AgentRunStateEvent; we don't apply it here — the /ws/lifecycle delta reflects
         // the same transition and the header is driven by that single live source.
