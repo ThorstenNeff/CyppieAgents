@@ -28,6 +28,7 @@ import { RestError, restErrorCode } from './net/rest'
 import { isLegacyReconnectableClose } from './net/closeVerdict'
 import { commitAclChange } from './state/aclCommit'
 import { startLiveHub } from './state/liveHub'
+import { MultiHubShell } from './multihub/MultiHubShell'
 import { AgentWindow } from './AgentWindow'
 import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
@@ -1017,6 +1018,12 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
         <ComposerHistoryStepper size={historySizeValue} onChange={onHistorySizeChange} />
         <ThemeToggle mode={themeMode} onChange={onThemeChange} />
       </div>
+      {/* CYP-854 (M4) — the multi-hub shell: the always-visible hub switcher (Zone-1) + the active connect's in-flight
+          progression (Zone-2), wired to the M1–M5 units. §3 render-honesty pre-arming is BINDING: the default IDLE
+          connector never dials and no observation is recorded, so pre-arming every hub reads UNKNOWN and no progression
+          renders — never false-live/trusted/connected. The switcher is empty until /api/cp/hubs populates the list
+          (arming); the real dial connector is injected at arming (CYP-807-A5), not here. */}
+      <MultiHubShell initialActiveHubId={cfg.hubId} />
       {/* CYP-733 — the CYP-676 tier disclosure, finally wired. It lives in the app chrome rather than inside the
           comm window on purpose: the spec requires it to be ALWAYS VISIBLE, and a window can be closed. Its own
           strip (like the overload banner) rather than in the toolbar row, because the disclosure is a full
