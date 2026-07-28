@@ -934,4 +934,11 @@
     <string name="a11y_migration_dsn_password">Target database password</string>
     <string name="a11y_migration_dsn_password_reveal">Show password</string>
     <string name="a11y_migration_dsn_password_hide">Hide password</string>
+
+    <!-- CYP-856 — hub switcher (display-only multi-hub visibility) -->
+    <string name="hub_switcher_empty">No hubs</string>
+    <string name="hub_switcher_reach_online">Online</string>
+    <string name="hub_switcher_reach_offline">Offline</string>
+    <string name="hub_switcher_last_seen">last seen %1$s</string>
+    <string name="hub_switcher_nav_label">Switch active hub</string>
 </resources>
