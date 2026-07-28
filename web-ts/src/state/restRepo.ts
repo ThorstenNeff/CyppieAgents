@@ -32,6 +32,7 @@ import {
 } from '../types/generated/contractSchemas'
 import { z } from 'zod'
 import type {
+  CreateChannelRequest,
   ChannelReadState,
   AclEntry,
   Agent,
@@ -222,6 +223,15 @@ export interface HubRepo {
   /** CYP-659 (operator). DELETE /api/channels/{id}/share — revoke. Idempotent; the server responds 200 with the fresh
    *  ChannelShareView echo ({ shared:false }), NOT 204 — so this returns the echo (re-sync from it, non-optimistic). */
   unshareChannel(channelId: string): Promise<ChannelShareView>
+  /** CYP-875 (OS-C, operator). POST /api/channels — create a DIRECT/GROUP channel; the member GRANTS are the ACL
+   *  (grant canRead||canWrite ⇒ member + AclEntry). Returns the created Channel. 403 operator_required is
+   *  server-authoritative (surfaced, never pre-guessed). */
+  createChannel(req: CreateChannelRequest): Promise<Channel>
+  /** CYP-875 (operator). PUT /api/channels/{id} { name } — rename. Returns the updated Channel. */
+  renameChannel(channelId: string, name: string): Promise<Channel>
+  /** CYP-875 (operator). DELETE /api/channels/{id} — archive. A HUB channel is protected (hub-and-spoke) → the server
+   *  responds 409 (surfaced honestly, never hidden). Returns void; the channel list re-syncs via /ws/comm. */
+  archiveChannel(channelId: string): Promise<void>
 }
 
 export class RestHubRepo implements HubRepo {
@@ -401,5 +411,16 @@ export class RestHubRepo implements HubRepo {
   unshareChannel(channelId: string): Promise<ChannelShareView> {
     // The server responds 200 + the fresh view echo ({shared:false}), NOT 204 — RestClient parses the JSON echo.
     return this.rest.delete(`/api/channels/${encodeURIComponent(channelId)}/share`, contractResponse('ChannelShareView', ChannelShareViewSchema))
+  }
+  createChannel(req: CreateChannelRequest): Promise<Channel> {
+    return this.rest.post('/api/channels', req, contractResponse('Channel', ChannelSchema))
+  }
+  renameChannel(channelId: string, name: string): Promise<Channel> {
+    // RenameChannelRequest { name }.
+    return this.rest.put(`/api/channels/${encodeURIComponent(channelId)}`, { name }, contractResponse('Channel', ChannelSchema))
+  }
+  async archiveChannel(channelId: string): Promise<void> {
+    // DELETE = archive. A HUB channel → 409 (server-authoritative); the caller surfaces it. Void; /ws/comm re-syncs.
+    await this.rest.delete<void>(`/api/channels/${encodeURIComponent(channelId)}`)
   }
 }
