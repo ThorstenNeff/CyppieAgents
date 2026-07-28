@@ -9,6 +9,7 @@ import com.tneff.cyppieagents.model.CreatedAgent
 import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.WorktreeFate
 import io.ktor.client.HttpClient
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -45,6 +46,16 @@ class AgentManagementHttpRepository(
     private val token: String,
 ) : AgentManagementRepository {
 
+    /**
+     * CYP-903 — attach the operator Bearer ONLY when a token is present. The deployed web SPA is token-less, so it
+     * sends NO `Authorization` header and the same-origin `ory_kratos_session` cookie authenticates the read (the
+     * server prefers the cookie over an empty Bearer — `routing/Auth.kt` `ifBlank{null}`). Mirrors `AgentWsClient`/
+     * CYP-230; a blank/guessable Bearer never leaves the client.
+     */
+    private fun HttpRequestBuilder.authBearer() {
+        if (token.isNotBlank()) header(HttpHeaders.Authorization, "Bearer $token")
+    }
+
     override suspend fun list(): List<Agent> =
         getDecoded("/api/agents", ListSerializer(Agent.serializer()))
 
@@ -53,7 +64,7 @@ class AgentManagementHttpRepository(
 
     override suspend fun add(spec: NewAgentSpec): Agent {
         val response = client.post("$baseUrl/api/agents") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            authBearer()
             contentType(ContentType.Application.Json)
             setBody(CommJson.encodeToString(NewAgentSpec.serializer(), spec))
         }
@@ -73,7 +84,7 @@ class AgentManagementHttpRepository(
 
     override suspend fun edit(id: String, edit: AgentEdit): Agent {
         val response = client.put("$baseUrl/api/agents/$id") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            authBearer()
             contentType(ContentType.Application.Json)
             setBody(CommJson.encodeToString(AgentEdit.serializer(), edit))
         }
@@ -84,7 +95,7 @@ class AgentManagementHttpRepository(
 
     override suspend fun remove(id: String, worktree: WorktreeFate) {
         val response = client.delete("$baseUrl/api/agents/$id?worktree=${worktree.name.lowercase()}") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            authBearer()
         }
         ensureSuccess(response, response.bodyAsText()) // 204 No Content
     }
@@ -94,7 +105,7 @@ class AgentManagementHttpRepository(
     // reads "avatar set" from this response, never from the local pick, and can't forge the ref).
     override suspend fun uploadAvatar(id: String, bytes: ByteArray, filename: String, mimeType: String): AgentDetail {
         val response = client.post("$baseUrl/api/agents/$id/avatar") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            authBearer()
             setBody(
                 MultiPartFormDataContent(
                     formData {
@@ -117,13 +128,13 @@ class AgentManagementHttpRepository(
     // CYP-216: clear the avatar (DELETE /api/agents/{id}/avatar → 204). The caller reloads detail for the new truth.
     override suspend fun clearAvatar(id: String) {
         val response = client.delete("$baseUrl/api/agents/$id/avatar") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            authBearer()
         }
         ensureSuccess(response, response.bodyAsText()) // 204 No Content
     }
 
     private suspend fun <T> getDecoded(path: String, serializer: KSerializer<T>): T {
-        val response = client.get("$baseUrl$path") { header(HttpHeaders.Authorization, "Bearer $token") }
+        val response = client.get("$baseUrl$path") { authBearer() }
         val text = response.bodyAsText()
         ensureSuccess(response, text)
         return CommJson.decodeFromString(serializer, text)

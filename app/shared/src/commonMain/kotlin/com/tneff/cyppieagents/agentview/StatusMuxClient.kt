@@ -152,8 +152,12 @@ class StatusMuxClient(
         is TerminalStatus -> terminalCache.update { it + (frame.event.agentId to frame.event) }
     }
 
-    private fun statusUrl(): String {
+    internal fun statusUrl(): String {
         val sep = if (wsBaseUrl.endsWith("/")) "" else "/"
-        return "$wsBaseUrl${sep}ws/status?token=$token"
+        // CYP-903: append `?token=` ONLY when a token is present; the deployed web SPA is token-less → the
+        // same-origin session cookie authenticates the WS handshake (mirrors AgentWsClient/CYP-230). No blank/
+        // guessable token ever leaves the client.
+        val tokenParam = if (token.isNotBlank()) "?token=$token" else ""
+        return "$wsBaseUrl${sep}ws/status$tokenParam"
     }
 }
