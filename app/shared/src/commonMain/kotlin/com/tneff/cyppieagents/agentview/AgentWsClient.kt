@@ -105,8 +105,22 @@ class AgentWsClient(
                         try {
                             for (frame in incoming) {
                                 if (frame is Frame.Text) {
-                                    attempt = 0 // productive connection: a real frame arrived → the ladder is safe to reset
-                                    val stored = CommJson.decodeFromString(StoredAgentEvent.serializer(), frame.readText())
+                                    // CYP-908 (CYP-846 parity): an UNDECODABLE agent frame — a schema-skewed /
+                                    // forward-incompatible event (e.g. a new server-added AgentEvent variant after a
+                                    // deploy, or one malformed persisted event) — is a single DROP, NOT a reconnect.
+                                    // Decoding unguarded here threw → the outer catch re-dialled from the UNCHANGED
+                                    // `?since=lastSeq`, the server replayed the same poison frame, and — because
+                                    // `attempt` was reset BEFORE the decode — the backoff ladder pinned at the ~250ms
+                                    // floor forever (the CYP-600/289 hammer the 0-frame guard above eliminated,
+                                    // reintroduced for the poison-frame case). Drop-and-continue keeps the socket LIVE;
+                                    // subsequent decodable frames still flow. (decode is non-suspending → runCatching
+                                    // never swallows a cooperative cancel, which only fires awaiting the next frame.)
+                                    val stored = runCatching {
+                                        CommJson.decodeFromString(StoredAgentEvent.serializer(), frame.readText())
+                                    }.getOrNull() ?: continue
+                                    // Reset the backoff ladder ONLY on a genuinely productive (DECODABLE) frame — a
+                                    // poison frame must NOT reset it (else a replayed poison pins the 250ms floor).
+                                    attempt = 0
                                     if (stored.seq > lastSeq) { // dedup + advance cursor (idempotent replay)
                                         lastSeq = stored.seq
                                         // CYP-335: forward the WHOLE envelope, not just `.event` — the server's `tsMs`
