@@ -13,6 +13,7 @@ import { LoadErrorRetry } from '../ui/LoadErrorRetry'
 import { applyMentionSpans } from './mentionSpans'
 import { channelUnread, READ_STATE_UNAVAILABLE, type UnreadView } from './unreadModel'
 import { channelHasMention } from './mentionCue'
+import { messageKind, isOrchestrationKind, replyParent, replyDepth, indexById } from './orchestrationMessage'
 import type { Channel, DeliveredMessage } from '../types/generated/contract'
 
 export interface CommPanelProps {
@@ -64,6 +65,9 @@ export function CommPanel(props: CommPanelProps) {
   const disclosure = composerDisclosure(props.canWrite, props.sendError)
   const tail = messages.length === 0 ? '' : `${messages.length}|${messages[messages.length - 1].message.id}`
   const { ref, onScroll } = useAutoscrollPin(tail)
+  // CYP-868: index the visible set so the reply-tree can resolve inReplyTo parents (server links only; a parent not in
+  // this set is not a fabricated thread — replyParent returns null and the message renders top-level).
+  const byId = indexById(messages)
 
   return (
     <div className="comm-panel" data-testid="comm-panel">
@@ -176,7 +180,12 @@ export function CommPanel(props: CommPanelProps) {
             )
           ) : (
             <ol>
-              {messages.map((d, i) => (
+              {messages.map((d, i) => {
+                // CYP-868 — orchestration TYPE + reply THREADING, from server-stamped meta ONLY (render ≠ authority).
+                const kind = messageKind(d.message.meta) // absent/null ⇒ NOTE (never a fabricated TASK/STATUS)
+                const parent = replyParent(d.message, byId) // null unless server inReplyTo points at a PRESENT parent
+                const depth = replyDepth(d.message, byId) // 0 = top-level; indent from the real server chain
+                return (
                 <Fragment key={d.message.id}>
                   {/* CYP-705 — the "Neu" divider at the first-unread boundary. Rendered ONLY from a server cursor
                       (the index is computed by firstUnreadIndex); no cursor ⇒ no divider, never a guessed line. */}
@@ -185,8 +194,30 @@ export function CommPanel(props: CommPanelProps) {
                       Neu
                     </li>
                   )}
-                <li className="comm-message" data-testid={`comm.message.${d.message.id}`}>
+                <li
+                  className={`comm-message${depth > 0 ? ' comm-message-reply' : ''}`}
+                  data-testid={`comm.message.${d.message.id}`}
+                  data-reply-depth={depth}
+                  style={depth > 0 ? { marginInlineStart: `${depth * 16}px` } : undefined}
+                >
+                  {/* CYP-868 reply reference — from server inReplyTo only; present ONLY when the parent is in view. */}
+                  {parent !== null && (
+                    <span className="comm-reply-ref" data-testid={`comm.message.${d.message.id}.replyTo`} data-reply-to={parent.id}>
+                      ↳ Antwort auf {parent.from}
+                    </span>
+                  )}
                   <time>{formatLocalHhMm(d.message.ts)}</time>
+                  {/* CYP-868 orchestration-type badge — TASK/STATUS only (NOTE/absent = quiet default, no badge). The
+                      kind is server-stamped; colour is never the sole signal (the kind WORD is in the badge). */}
+                  {isOrchestrationKind(kind) && (
+                    <span
+                      className={`comm-kind comm-kind-${kind.toLowerCase()}`}
+                      data-testid={`comm.message.${d.message.id}.kind`}
+                      data-kind={kind}
+                    >
+                      {kind}
+                    </span>
+                  )}
                   <span className="comm-from" style={{ color: senderAccent(d.message.from, senderRole(d.message.from)) }}>
                     {d.message.from}
                   </span>
@@ -215,7 +246,8 @@ export function CommPanel(props: CommPanelProps) {
                   </span>
                 </li>
                 </Fragment>
-              ))}
+                )
+              })}
             </ol>
           )}
         </div>
