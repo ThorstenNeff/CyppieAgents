@@ -261,6 +261,32 @@ body {
   margin-left: 4px;
   color: var(--md-sys-color-on-surface-variant);
 }
+/* CYP-868 — orchestration message-type badges + reply threading. colour-never-sole: the kind WORD (TASK/STATUS) is in
+   the badge; tone is reinforcement. Neutral/action tones only — a message TYPE is neither an error (never error-red)
+   nor a success (never a green all-clear). TASK = action (primary-container), STATUS = neutral (surface-variant). */
+.comm-kind {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0 6px;
+  border-radius: 4px;
+}
+.comm-kind-task {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+.comm-kind-status {
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.comm-reply-ref {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.comm-message-reply {
+  border-inline-start: 2px solid var(--md-sys-color-outline-variant);
+}
 .comm-status-live,
 .comm-status-connecting {
   background: var(--md-sys-color-surface-variant);
