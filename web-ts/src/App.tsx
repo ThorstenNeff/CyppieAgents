@@ -32,6 +32,7 @@ import { MultiHubShell } from './multihub/MultiHubShell'
 import { NavRailShell } from './nav/NavRailShell'
 import { navDestinations, CANVAS_DESTINATION_ID, type NavDestination } from './nav/navDestinations'
 import { AgentWindow } from './AgentWindow'
+import { closeAgentVm, liveAgentVmIds } from './agentview/agentVmStore'
 import { AclPanel } from './comm/AclPanel'
 import { CommPanel } from './comm/CommPanel'
 import { firstUnreadIndex, hasAuthoritativeSeq, markReadUpTo, unreadViewFrom, type ChannelReadState } from './comm/unreadModel'
@@ -557,6 +558,13 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
     // the panel gates authorize/revoke on operator internally (present-but-disabled), never omission.
     if (agents.length > 0 && !present.has(CHANNEL_SHARE_WINDOW_ID)) wm.add(tiledWindow(CHANNEL_SHARE_WINDOW_ID, 'Kanal-Freigaben', index++), false)
   }, [agents, operator])
+
+  // CYP-890 (NR-3): the shared agent VMs (agentVmStore) are keep-alive across mounts — so when an agent LEAVES the
+  // roster, close its VM here (its window is gone; an orphaned socket would otherwise reconnect-loop to a dead agent).
+  useEffect(() => {
+    const present = new Set(agents)
+    for (const id of liveAgentVmIds()) if (!present.has(id)) closeAgentVm(id)
+  }, [agents])
 
   const onRequestMode = (agentId: string, mode: SelectedView) => {
     // CYP-759 (a): route the reject through noteCapacityReject instead of a blanket swallow. It is a No-Op for any
