@@ -69,6 +69,8 @@
     <string name="channel_mgmt_error_protected_hub">Channel protected — hub-and-spoke channels cannot be archived.</string>
     <string name="channel_mgmt_error_operator_only">Only the operator may manage channels.</string>
     <string name="channel_mgmt_error_generic">Action failed.</string>
+    <string name="nav_rail_canvas">Canvas</string>
+    <string name="nav_rail_settings">Settings</string>
     <string name="agent_address_label">Direct message to</string>
     <string name="agent_address_open">Open</string>
     <string name="agent_address_unreachable">Not directly addressable — create a channel first.</string>
