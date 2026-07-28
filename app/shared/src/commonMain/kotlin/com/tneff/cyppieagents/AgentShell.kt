@@ -73,7 +73,7 @@ import com.tneff.cyppieagents.agentview.BusyStateSource
 import com.tneff.cyppieagents.agentview.StatusMuxClient
 import com.tneff.cyppieagents.multihub.HubListHolder
 import com.tneff.cyppieagents.multihub.HubListSource
-import com.tneff.cyppieagents.multihub.HubSwitcherBar
+import com.tneff.cyppieagents.multihub.MultiHubShell
 import com.tneff.cyppieagents.agentview.BusyStateViewModel
 import com.tneff.cyppieagents.agentview.ModeRepository
 import com.tneff.cyppieagents.agentview.ModeHttpRepository
@@ -466,19 +466,18 @@ fun AgentShell(
               }
           },
       )
-      // CYP-856 Slice-2: the in-workspace hub-switcher top-bar, mounted at the ProjectSwitcherBar level over
-      // `WindowHost`. DORMANT until a hub-list source is injected — the real CP-backed source + the activeHubId/onSwitch
-      // arming wiring are M3, so prod renders nothing today and the workspace chrome stays byte-identical (the
-      // switcher's own Unknown→render-nothing keeps even an injected-but-unloaded bar absent).
+      // CYP-856/CYP-873: the in-workspace hub-switcher top-bar, now mounted via the M4 mount-host [MultiHubShell]
+      // at the ProjectSwitcherBar level over `WindowHost`. DORMANT until a hub-list source is injected — and even then
+      // ARMING-DARK: MultiHubShell defaults the active pointer to "" (no hub active), an EMPTY trust provenance (every
+      // badge UNKNOWN) and the IDLE connector (never dials → no progression), so prod chrome stays byte-identical. The
+      // real dial connector + observed provenance are the §9.3 arming seam, injected there — not here.
       if (hubListSource != null) {
           val hubListScope = rememberCoroutineScope()
           val hubListHolder = remember(hubListSource) { HubListHolder(hubListSource, hubListScope) }
           LaunchedEffect(hubListHolder) { hubListHolder.refresh() }
-          HubSwitcherBar(
-              state = hubListHolder.state.collectAsState().value,
-              activeHubId = "", // M3: the server-confirmed active hub id (no multi-hub active model yet)
-              onSwitch = {},    // M3: the real switch-effect arming seam
-              onRetry = hubListHolder::refresh,
+          MultiHubShell(
+              hubListState = hubListHolder.state.collectAsState().value,
+              onRetryHubs = hubListHolder::refresh,
           )
       }
       if (projectState.loading) {
