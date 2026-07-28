@@ -64,6 +64,16 @@
     <string name="comm_timeline_empty">Noch keine Nachrichten</string>
     <string name="comm_msg_pending">Wird gesendet…</string>
     <string name="comm_reply_to">Antwort auf %1$s</string>
+    <string name="channel_mgmt_title">Kanäle verwalten</string>
+    <string name="channel_mgmt_create_id">Kanal-ID</string>
+    <string name="channel_mgmt_create_name">Kanal-Name</string>
+    <string name="channel_mgmt_create_submit">Kanal anlegen</string>
+    <string name="channel_mgmt_rename_placeholder">Neuer Name</string>
+    <string name="channel_mgmt_rename_submit">Umbenennen</string>
+    <string name="channel_mgmt_archive">Archivieren</string>
+    <string name="channel_mgmt_error_protected_hub">Kanal geschützt — Hub-and-Spoke-Kanäle können nicht archiviert werden.</string>
+    <string name="channel_mgmt_error_operator_only">Nur der Operator darf Kanäle verwalten.</string>
+    <string name="channel_mgmt_error_generic">Aktion fehlgeschlagen.</string>
     <string name="comm_status_connecting">Verbinde…</string>
     <string name="comm_readonly_hint">Nur Lesezugriff in diesem Kanal</string>
     <string name="comm_send_denied">Keine Schreibrechte in diesem Kanal</string>
