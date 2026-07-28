@@ -87,10 +87,13 @@ import com.tneff.cyppieagents.agentview.AgentViewModel
 import com.tneff.cyppieagents.agentview.AgentWindow
 import com.tneff.cyppieagents.agentview.AgentWsClient
 import com.tneff.cyppieagents.agentview.MappingAgentSession
+import com.tneff.cyppieagents.comm.ChannelManagementPanel
+import com.tneff.cyppieagents.comm.ChannelMgmtApi
 import com.tneff.cyppieagents.comm.CommApi
 import com.tneff.cyppieagents.comm.ConnectionStatus
 import com.tneff.cyppieagents.comm.CommLiveSource
 import com.tneff.cyppieagents.comm.CommPanel
+import com.tneff.cyppieagents.comm.HttpChannelMgmtApi
 import com.tneff.cyppieagents.comm.CommRepository
 import com.tneff.cyppieagents.comm.CommViewModel
 import com.tneff.cyppieagents.comm.CommWsClient
@@ -164,6 +167,7 @@ import kmpcyppieagents.app.shared.generated.resources.agent_ready_notice
 import kmpcyppieagents.app.shared.generated.resources.agent_turn_error_notice
 import kmpcyppieagents.app.shared.generated.resources.report_title
 import kmpcyppieagents.app.shared.generated.resources.project_loading
+import kmpcyppieagents.app.shared.generated.resources.channel_mgmt_title
 import kmpcyppieagents.app.shared.generated.resources.compact_window_title
 import kmpcyppieagents.app.shared.generated.resources.settings_title
 import kmpcyppieagents.app.shared.generated.resources.workspace_members_title
@@ -178,6 +182,9 @@ private const val EVENTLOG_BROWSE_WINDOW_ID = "eventlog"
 private const val EVENTLOG_TAIL_WINDOW_ID = "eventtail"
 private const val ROSTER_WINDOW_ID = "workspaceRoster"
 private const val COMPACT_WINDOW_ID = "compact"
+
+/** CYP-885: the operator channel-management window (OS-C `ChannelManagementPanel` — create/rename/archive). */
+private const val CHANNEL_MGMT_WINDOW_ID = "channelMgmt"
 
 /**
  * The app shell (CYP-15): a "desktop" of floating windows. Marries the window manager (CYP-10) with
@@ -214,6 +221,9 @@ fun AgentShell(
     commApi: CommApi? = null,
     /** Override the comm live source (tests inject a stub); `null` → the live `/ws/comm` adapter. */
     commLiveSource: CommLiveSource? = null,
+    /** CYP-885: override the OS-C channel-mutation port (tests inject a fake); `null` → the live
+     *  [HttpChannelMgmtApi] (`POST/PUT/DELETE /api/channels`, CYP-869). Only consumed by the operator channel-mgmt window. */
+    channelMgmtApi: ChannelMgmtApi? = null,
     /** CYP-856 Slice-2: the multi-hub list source for the in-workspace [HubSwitcherBar]. `null` (default) → the bar is
      *  **DORMANT** (not mounted — the workspace chrome is byte-identical). A test/M3 injects a
      *  [com.tneff.cyppieagents.multihub.HubListSource]; the real CP-backed source + the `activeHubId`/`onSwitch` arming
@@ -343,6 +353,7 @@ fun AgentShell(
     val productLeadTitle = stringResource(Res.string.report_title)
     val rosterTitle = stringResource(Res.string.workspace_members_title)
     val compactTitle = stringResource(Res.string.compact_window_title)
+    val channelMgmtTitle = stringResource(Res.string.channel_mgmt_title)
 
     // CYP-411 (Epic CYP-395 S-H) — the hub connection transport seam. Phase 1 = LocalHubTransport (direct HTTP/WS
     // on the hub's endpoint, from ShellConfig), which OWNS + builds the one shared WS+HTTP client exactly as before
@@ -551,6 +562,9 @@ fun AgentShell(
         if (isOperator) {
             add(EVENTLOG_BROWSE_WINDOW_ID to "Event-Log")
             add(EVENTLOG_TAIL_WINDOW_ID to "Live-Tail")
+            // CYP-885 (OS-C mount): the channel-management window — OPERATOR-only (mutations are operator-tier; a
+            // MEMBER's window set never contains it). The panel's render≠authority honesty is already in CYP-883.
+            add(CHANNEL_MGMT_WINDOW_ID to channelMgmtTitle)
         }
         // CYP-186 roster (§3.2): OPERATOR-only member roster, offered ONLY to a real OPERATOR tier (not the
         // break-glass token — the backend GET is tier-gated). A MEMBER's window set never contains it.
@@ -578,6 +592,10 @@ fun AgentShell(
         CommRepository(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
     }
     val resolvedCommApi = commApi ?: defaultCommApi
+    // CYP-885: the operator channel-mutation port for the channel-mgmt window (POST/PUT/DELETE /api/channels, CYP-869).
+    val resolvedChannelMgmtApi = channelMgmtApi ?: remember(httpClient, cfg) {
+        HttpChannelMgmtApi(httpClient, resolvedTransport.httpBaseUrl, cfg.operatorToken ?: "")
+    }
 
     val defaultLiveSource = remember(httpClient, cfg) {
         CommWsClient(wsHttpClient, resolvedTransport.wsBaseUrl, cfg.operatorToken ?: "")
@@ -1033,6 +1051,17 @@ fun AgentShell(
                         )
                     })
                     ACL_WINDOW_ID -> AclPanel(aclVm)
+                    CHANNEL_MGMT_WINDOW_ID -> {
+                        // CYP-885: mount the CYP-883 operator channel-mgmt panel. Reuse the comm VM's already-loaded
+                        // channels + roster; the mutation round-trip is the resolved (live/injected) ChannelMgmtApi.
+                        val commState = commVm.state.collectAsState().value
+                        ChannelManagementPanel(
+                            channels = commState.channels,
+                            agentIds = commState.agents.keys.toList(),
+                            operator = isOperator,
+                            api = resolvedChannelMgmtApi,
+                        )
+                    }
                     SETTINGS_WINDOW_ID -> SettingsPanel(settingsVm)
                     COMPACT_WINDOW_ID -> CompactPanel(
                         compactVm,
