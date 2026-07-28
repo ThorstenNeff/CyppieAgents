@@ -70,7 +70,7 @@ class Cyp536RendezvousSetTest {
     }
 
     @Test
-    fun cyp611_dosCapIs24_authorizedFloor_element0IsControl_dataIdsHaveHeadroom() {
+    fun cyp611_dosCapIs16_element0IsControl_dataIdsHaveHeadroom() {
         // CYP-611 — the per-operator DoS cap (WS6 axis 2). Was raised 16→24 (Auftraggeber-authorized LOOSENING) to
         // clear the pre-mux 8-agent pool-exhaustion foot-gun. CYP-611 REVERT (24→16, TIGHTENING): the CYP-840 status-mux
         // consolidates the 4 singleton status feeds → ONE /ws/status, dropping the client WS working set (6 globals → 3)
