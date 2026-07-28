@@ -53,6 +53,33 @@ body {
   display: flex;
   flex-direction: column;
 }
+/* CYP-888 (NR-1) — the vertical nav-rail shell. When the responsive gate is on, NavRailShell inserts this ROW layout
+   where .app-root used to sit under #root, so it must take the same grow role (flex:1 1 auto; min-height:0) to keep the
+   #root flex-column height model (CYP-631) intact. The rail is a fixed-width left column; the content pane grows and
+   is itself a flex column so the nested .app-root (flex:1 1 auto) fills it exactly as before. Visual is deliberately
+   MINIMAL/placeholder (PL: the canonical rail styling converges on Team-1's UIUX spec, applied by uiux2 later). */
+.nav-rail-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+.nav-rail {
+  flex: 0 0 auto;
+  width: 72px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--md-sys-color-surface-variant);
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+}
+.nav-content-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 
 /* CYP-642 (Epic CYP-640) — the workspace bar (capacity pill; later the project switcher), the overload banner, and
    the desktop region. The desktop takes the remaining height (flex:1) so WindowHost's height:100% resolves against a
