@@ -1013,6 +1013,8 @@ fun AgentShell(
                     capabilities = connectorCapState.capabilities[agentId],
                     capabilitiesLoading = connectorCapState.loading,
                     provider = connectorCapState.providers[agentId],
+                    // CYP-907 (B3): remote/BYOA origin from the read-model Agent (dormant/false until Backend populates).
+                    remote = agentById[agentId]?.remote ?: false,
                     onCapabilityBadgeClick = { connectorCapVm.openPanel(agentId) },
                     control = if (revoked) null else controlStates[agentId],
                     terminalContent = if (WORKTREE_SHELL_LIVE_ENABLED) {

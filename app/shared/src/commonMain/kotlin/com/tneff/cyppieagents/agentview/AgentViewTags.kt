@@ -32,6 +32,9 @@ object AgentViewTags {
     /** The window header bar (status + lifecycle controls), CYP-73. */
     fun header(agentId: String) = "agent.$agentId.header"
 
+    /** CYP-907 (B3) — the remote/BYOA-origin title-bar marker (present iff the agent is remote). */
+    fun remoteMarker(agentId: String) = "agent.$agentId.remoteMarker"
+
     /** The non-gated lifecycle status indicator (RUNNING/STOPPED/ERROR/UNKNOWN). */
     fun status(agentId: String) = "agent.$agentId.status"
 

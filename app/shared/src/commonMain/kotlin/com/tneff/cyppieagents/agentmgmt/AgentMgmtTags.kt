@@ -50,6 +50,9 @@ object AgentMgmtTags {
     const val ADD_TOKEN_COPY = "agentMgmt.add.token.copy"
     const val ADD_TOKEN_DISMISS = "agentMgmt.add.token.dismiss"
 
+    /** CYP-907 (B3) — the remote/BYOA-origin chip on a roster row (present iff `agent.remote`). */
+    fun itemRemote(agentId: String) = "agentMgmt.item.$agentId.remote"
+
     // CYP-87 — remove (irreversible)
     const val REMOVE_DIALOG = "agentMgmt.remove.dialog"
     const val REMOVE_CONSEQUENCES = "agentMgmt.remove.consequences"

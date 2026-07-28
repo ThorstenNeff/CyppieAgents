@@ -126,6 +126,15 @@ data class Agent(
      * a secret, not operator-gated to READ — same public exposure as the rest of this DTO.
      */
     val avatar: AgentAvatar? = null,
+    /**
+     * CYP-907 (BYOA-M1 B3) — whether this agent is **remote/BYOA**-attached (`true`) rather than a locally-spawned
+     * agent (`false`). Drives the remote-origin indicator (roster chip + title-bar marker). Distinct from a
+     * locally-degraded MCP connector ([connectorKind] == `MCP`), which is still `remote = false`. Additive +
+     * defaulted `false` exactly like [runState]/[connectorKind] — older payloads and the many config-time
+     * `Agent(...)` constructions decode unchanged, so the indicator stays **dormant** until `GET /api/agents`
+     * populates the real value server-side (post-882b). Not a secret — same public exposure as the rest of this DTO.
+     */
+    val remote: Boolean = false,
 )
 
 /**

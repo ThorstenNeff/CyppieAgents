@@ -121,6 +121,8 @@ import kmpcyppieagents.app.shared.generated.resources.agent_edit_effect_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_persona_pending_badge
 import kmpcyppieagents.app.shared.generated.resources.agent_reconnecting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_error
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_remote
+import kmpcyppieagents.app.shared.generated.resources.agent_remote_indicator
 import kmpcyppieagents.app.shared.generated.resources.agent_status_running
 import kmpcyppieagents.app.shared.generated.resources.agent_status_starting
 import kmpcyppieagents.app.shared.generated.resources.agent_status_restarting
@@ -196,6 +198,8 @@ fun AgentWindow(
     capabilitiesLoading: Boolean = false,
     /** CYP-137 provider for this agent (`null` = not yet reported → chip absent, fail-closed). */
     provider: ProviderInfo? = null,
+    /** CYP-907 (B3): the agent is remote/BYOA-attached → a title-bar origin marker (secondary). Default false (local). */
+    remote: Boolean = false,
     /** Opens the capability detail panel (CYP-123); no-op default keeps existing call sites/tests intact. */
     onCapabilityBadgeClick: () -> Unit = {},
     /**
@@ -292,6 +296,7 @@ fun AgentWindow(
             capabilities = capabilities,
             capabilitiesLoading = capabilitiesLoading,
             provider = provider,
+            remote = remote,
             onCapabilityBadgeClick = onCapabilityBadgeClick,
         )
         // CYP-629 §6.3c: the honest, VISIBLE reason the Start control is gated — adjacent to the header controls
@@ -577,6 +582,8 @@ private fun AgentHeader(
     capabilities: Capabilities? = null,
     capabilitiesLoading: Boolean = false,
     provider: ProviderInfo? = null,
+    /** CYP-907 (B3): remote/BYOA origin → a subordinate title-bar marker next to the provider chip. Default false. */
+    remote: Boolean = false,
     onCapabilityBadgeClick: () -> Unit = {},
 ) {
     // CYP-819 (A2): on a session-wide 1008 revoke the feeds are dead → the last state is NOT current. Demote the dot
@@ -624,6 +631,18 @@ private fun AgentHeader(
                 // Provider axis (CYP-137) — the subordinate "(Claude)" qualifier next to the identity/status, its OWN
                 // marker (≠ fidelity, ≠ lifecycle). Present only when known (fail-closed by absence); neutral, no hue.
                 ConnectorProviderChip(provider = provider, agentId = agentId)
+                // CYP-907 (B3): remote/BYOA-origin marker — SECONDARY surfacing, its OWN axis (≠ provider, ≠ fidelity,
+                // ≠ lifecycle). Present only when the agent is remote (absent for local, incl. locally-degraded MCP).
+                if (remote) {
+                    val remoteA11y = stringResource(Res.string.a11y_agent_remote)
+                    Text(
+                        text = stringResource(Res.string.agent_remote_indicator),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag(AgentViewTags.remoteMarker(agentId))
+                            .semantics { contentDescription = remoteA11y },
+                    )
+                }
                 // Fidelity axis (CYP-123) — its own marker next to the lifecycle status, NOT mixed into it. Present
                 // only when degraded / not-yet-reported (fail-closed by absence); opens the capability panel.
                 //

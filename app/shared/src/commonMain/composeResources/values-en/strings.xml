@@ -272,6 +272,8 @@
     <string name="agent_add_token_shown_once">Shown only ONCE. Copy and store it securely now — it cannot be retrieved again.</string>
     <string name="agent_add_token_copy">Copy token</string>
     <string name="agent_add_token_dismiss">Saved — dismiss</string>
+    <string name="agent_remote_indicator">Remote</string>
+    <string name="a11y_agent_remote">Remote agent (BYOA)</string>
     <!-- CYP-228: Agent-Add onboarding — inline field help (supportingText + placeholder) + auto-note + project-scope note + empty state -->
     <string name="agent_add_id_hint">Required · permanent. Only a–z, 0–9, "-", "_". Becomes folder, branch &amp; channel.</string>
     <string name="agent_add_name_hint">Required · display name, editable anytime.</string>
