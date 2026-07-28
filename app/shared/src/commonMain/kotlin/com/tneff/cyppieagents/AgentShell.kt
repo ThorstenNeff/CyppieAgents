@@ -131,8 +131,10 @@ import com.tneff.cyppieagents.settings.SettingsPanel
 import com.tneff.cyppieagents.settings.SettingsViewModel
 import com.tneff.cyppieagents.settings.ConfigHttpRepository
 import com.tneff.cyppieagents.model.Role
+import com.tneff.cyppieagents.window.AgentDestinationPane
 import com.tneff.cyppieagents.window.NavDestination
 import com.tneff.cyppieagents.window.NavPanePlaceholder
+import com.tneff.cyppieagents.window.navAgentDestinations
 import com.tneff.cyppieagents.window.NavRailShell
 import com.tneff.cyppieagents.window.WindowHost
 import com.tneff.cyppieagents.window.titleBarConnection
@@ -988,9 +990,8 @@ fun AgentShell(
         val navSelected = remember { mutableStateOf<NavDestination>(NavDestination.Canvas) }
         val navDestinations = buildList {
             add(NavDestination.Canvas)
-            // Canvas · PO-Agent · Worker-Agents (dynamic) · Settings — PO ordered above the workers.
-            managedAgents.sortedByDescending { it.role == Role.PO }
-                .forEach { add(NavDestination.Agent(it.id, it.name, isPo = it.role == Role.PO)) }
+            // CYP-896 (S3): Canvas · PO → PRODUCT_LEAD → Worker (present-iff, PRODUCT_LEAD distinct) · Settings.
+            addAll(navAgentDestinations(managedAgents))
             add(NavDestination.Settings)
         }
         val navLabelFor: (NavDestination) -> String = { dest ->
@@ -998,6 +999,32 @@ fun AgentShell(
                 NavDestination.Canvas -> navCanvasLabel
                 is NavDestination.Agent -> dest.label
                 NavDestination.Settings -> navSettingsLabel
+            }
+        }
+        // CYP-896 (S3, ★★): the SINGLE agent-render seam — the hoisted per-agent AgentViewModel rendered as an
+        // AgentWindow. BOTH the canvas (windowContent else-branch) AND the maximized agent destination call THIS →
+        // one render path, the SAME VM instance (state continuity across Canvas ↔ maximized, no fork).
+        val renderAgent: @Composable (String) -> Unit = { agentId ->
+            agentVms[agentId]?.let {
+                AgentWindow(
+                    agentId = agentId,
+                    viewModel = it,
+                    statusRevoked = revoked,
+                    capabilities = connectorCapState.capabilities[agentId],
+                    capabilitiesLoading = connectorCapState.loading,
+                    provider = connectorCapState.providers[agentId],
+                    onCapabilityBadgeClick = { connectorCapVm.openPanel(agentId) },
+                    control = if (revoked) null else controlStates[agentId],
+                    terminalContent = if (WORKTREE_SHELL_LIVE_ENABLED) {
+                        { id, m ->
+                            val session = remember(id) {
+                                WsTerminalSession(wsHttpClient, resolvedTransport.wsBaseUrl, id, cfg.operatorToken ?: "")
+                            }
+                            TerminalView(session, m)
+                        }
+                    } else null,
+                    terminalGatedNote = !WORKTREE_SHELL_LIVE_ENABLED,
+                )
             }
         }
         val canvasPane: @Composable () -> Unit = {
@@ -1141,42 +1168,9 @@ fun AgentShell(
                     EVENTLOG_BROWSE_WINDOW_ID -> browseVm?.let { EventBrowsePanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId, agents = agentById) }
                     EVENTLOG_TAIL_WINDOW_ID -> tailVm?.let { EventTailPanel(it, projects = projectState.projects, activeProjectId = projectState.activeProjectId, agents = agentById) }
                     ROSTER_WINDOW_ID -> rosterVm?.let { WorkspaceRosterPanel(it) }
-                    else -> agentVms[window.id]?.let {
-                        AgentWindow(
-                            agentId = window.id,
-                            viewModel = it,
-                            // CYP-819 (A2): session-wide revoke → this window demotes its dot to UNKNOWN + suppresses
-                            // the reconnecting `↻` chip (busy/token/control demote via the WindowHost lambdas above).
-                            statusRevoked = revoked,
-                            capabilities = connectorCapState.capabilities[window.id],
-                            capabilitiesLoading = connectorCapState.loading,
-                            provider = connectorCapState.providers[window.id],
-                            onCapabilityBadgeClick = { connectorCapVm.openPanel(window.id) },
-                            // CYP-381 §6/§7b: this agent's CYP-354 control-state (same map the titlebar marker uses)
-                            // → the window frame renders the hub-blind / context-lost banners. Absent key → null →
-                            // no banner (fail-closed; the stub reports none of these so they stay absent — honest).
-                            // CYP-819 (A2): revoke → null → the HandoffBanners (INTERACTIVE/CONTEXT_LOST) demote
-                            // (no frozen "interactive" claim); the durable CONTEXT_LOST landmark is latched separately.
-                            control = if (revoked) null else controlStates[window.id],
-                            // CYP-333/381: the content-view Terminal, LIVE (see [WORKTREE_SHELL_LIVE_ENABLED]).
-                            // Bind a fresh WsTerminalSession to the Desktop TerminalView against /ws/terminal (CYP-332
-                            // contract). In TERMINAL mode the CYP-355 motor owns an interactive `claude --resume` PTY and
-                            // this socket attaches as a viewer; with no live motor session it falls back to the `bash -l`
-                            // worktree shell (CYP-348). It is remembered per agent so it stays stable while shown and is
-                            // torn down (TerminalView DisposableEffect) on switch-away. The session connects lazily on
-                            // first collect, so the flag being on does NOT eagerly spawn anything — only opening the
-                            // Terminal view does.
-                            terminalContent = if (WORKTREE_SHELL_LIVE_ENABLED) {
-                                { id, m ->
-                                    val session = remember(id) {
-                                        WsTerminalSession(wsHttpClient, resolvedTransport.wsBaseUrl, id, cfg.operatorToken ?: "")
-                                    }
-                                    TerminalView(session, m)
-                                }
-                            } else null,
-                            terminalGatedNote = !WORKTREE_SHELL_LIVE_ENABLED,
-                        )
-                    }
+                    // CYP-896 (S3): route through the SINGLE agent-render seam — the SAME seam the maximized agent
+                    // destination uses (same hoisted VM, one render path).
+                    else -> renderAgent(window.id)
                 }
             },
         )
@@ -1192,7 +1186,9 @@ fun AgentShell(
                     NavDestination.Canvas -> canvasPane()
                     // S3 (CYP-896): the agent-destination renders the SAME hoisted AgentViewModel maximized — a
                     // placeholder until then. S4 (CYP-897): the settings destination.
-                    is NavDestination.Agent -> NavPanePlaceholder("navRail.pane.agent.${dest.agentId}")
+                    // CYP-896 (S3, ★★): the agent destination maximizes the SAME hoisted VM via the shared renderAgent
+                    // seam — no 2nd VM instance, no 2nd render path. State continuity across Canvas ↔ maximized.
+                    is NavDestination.Agent -> AgentDestinationPane(dest.agentId, renderAgent = renderAgent)
                     NavDestination.Settings -> NavPanePlaceholder("navRail.pane.settings")
                 }
             },
