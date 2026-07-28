@@ -67,6 +67,15 @@ fun rotationAttestationMessage(newKid: String, newPub: String): ByteArray =
     )
 
 /**
+ * CYP-863 (§5-3) — the canonical message an issuer signs to authorize a [FederationRevocation]. Length-prefixed
+ * injective concat of a domain tag + the revoked subject (the CYP-473 discipline). The distinct tag
+ * `"federation-revoke"` separates it from the rotation attestation ([rotationAttestationMessage]) and the peer PoP.
+ */
+@ExperimentalFederation
+fun federationRevocationMessage(subject: String): ByteArray =
+    lengthPrefixedConcat("federation-revoke".encodeToByteArray(), subject.encodeToByteArray())
+
+/**
  * Overlap **accept-either**: a message+signature is accepted iff SOME key in the set verifies it. Fail-closed — an
  * empty keyset, or a signature no pinned key made, returns `false`.
  */
