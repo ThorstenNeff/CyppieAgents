@@ -2865,6 +2865,9 @@
                                 "type": "null"
                             }
                         ]
+                    },
+                    "remote": {
+                        "type": "boolean"
                     }
                 },
                 "required": [

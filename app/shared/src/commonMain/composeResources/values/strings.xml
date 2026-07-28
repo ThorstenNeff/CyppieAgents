@@ -285,6 +285,8 @@
     <string name="agent_add_token_shown_once">Wird nur EINMAL angezeigt. Jetzt kopieren und sicher speichern – er kann nicht erneut abgerufen werden.</string>
     <string name="agent_add_token_copy">Token kopieren</string>
     <string name="agent_add_token_dismiss">Gespeichert – schließen</string>
+    <string name="agent_remote_indicator">Remote</string>
+    <string name="a11y_agent_remote">Remote-Agent (BYOA)</string>
     <!-- CYP-228: Agent-Add-Onboarding — Inline-Feldhilfe (supportingText + placeholder) + Auto-Note + Projekt-Scope-Note + Leerzustand -->
     <string name="agent_add_id_hint">Pflicht · unveränderlich. Nur a–z, 0–9, „-", „_". Wird zu Ordner, Branch &amp; Kanal.</string>
     <string name="agent_add_name_hint">Pflicht · Anzeigename, jederzeit änderbar.</string>

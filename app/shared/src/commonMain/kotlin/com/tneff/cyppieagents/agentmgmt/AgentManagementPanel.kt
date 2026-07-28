@@ -48,7 +48,9 @@ import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_add_id
 import kmpcyppieagents.app.shared.generated.resources.a11y_agent_add_persona
 import kmpcyppieagents.app.shared.generated.resources.agent_add
+import kmpcyppieagents.app.shared.generated.resources.a11y_agent_remote
 import kmpcyppieagents.app.shared.generated.resources.agent_add_autofields_note
+import kmpcyppieagents.app.shared.generated.resources.agent_remote_indicator
 import kmpcyppieagents.app.shared.generated.resources.agent_add_remote_label
 import kmpcyppieagents.app.shared.generated.resources.agent_add_remote_hint
 import kmpcyppieagents.app.shared.generated.resources.agent_add_token_title
@@ -266,6 +268,18 @@ private fun RowScope.AgentIdentity(agent: Agent) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.testTag(AgentViewTags.status(agent.id)),
     )
+    // CYP-907 (B3): the remote/BYOA-origin chip — PRIMARY surfacing. Present ONLY when the agent is remote
+    // (dormant/absent for local agents, incl. a locally-degraded MCP connector, which is remote=false).
+    if (agent.remote) {
+        val remoteA11y = stringResource(Res.string.a11y_agent_remote)
+        Text(
+            text = stringResource(Res.string.agent_remote_indicator),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.testTag(AgentMgmtTags.itemRemote(agent.id))
+                .semantics { contentDescription = remoteA11y },
+        )
+    }
 }
 
 /** Action cluster (edit + remove) — line 2 narrow, trailing cells wide. Guardrail stays disabled. */
