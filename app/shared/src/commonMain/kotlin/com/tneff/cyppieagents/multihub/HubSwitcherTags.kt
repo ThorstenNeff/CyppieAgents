@@ -6,6 +6,10 @@ package com.tneff.cyppieagents.multihub
  * ABSENT. Mirrors the web-ts `data-testid` scheme (`hub-switcher.*`).
  */
 object HubSwitcherTags {
+    /** CYP-856 Slice-2 — the in-workspace top-bar container (over `WindowHost`, ProjectSwitcherBar level). Absent
+     *  when the list is unknown (not-loaded) — no confident-empty chrome. */
+    const val BAR = "hubSwitcher.bar"
+
     /** The switcher nav/list container (present only when loaded with ≥1 hub). */
     const val LIST = "hub-switcher"
 

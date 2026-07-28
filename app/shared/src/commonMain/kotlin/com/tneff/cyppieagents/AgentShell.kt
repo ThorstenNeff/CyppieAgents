@@ -71,6 +71,9 @@ import com.tneff.cyppieagents.agentview.AgentLifecycleRepository
 import com.tneff.cyppieagents.agentview.AgentLifecycleSource
 import com.tneff.cyppieagents.agentview.BusyStateSource
 import com.tneff.cyppieagents.agentview.StatusMuxClient
+import com.tneff.cyppieagents.multihub.HubListHolder
+import com.tneff.cyppieagents.multihub.HubListSource
+import com.tneff.cyppieagents.multihub.HubSwitcherBar
 import com.tneff.cyppieagents.agentview.BusyStateViewModel
 import com.tneff.cyppieagents.agentview.ModeRepository
 import com.tneff.cyppieagents.agentview.ModeHttpRepository
@@ -211,6 +214,11 @@ fun AgentShell(
     commApi: CommApi? = null,
     /** Override the comm live source (tests inject a stub); `null` → the live `/ws/comm` adapter. */
     commLiveSource: CommLiveSource? = null,
+    /** CYP-856 Slice-2: the multi-hub list source for the in-workspace [HubSwitcherBar]. `null` (default) → the bar is
+     *  **DORMANT** (not mounted — the workspace chrome is byte-identical). A test/M3 injects a
+     *  [com.tneff.cyppieagents.multihub.HubListSource]; the real CP-backed source + the `activeHubId`/`onSwitch` arming
+     *  wiring are M3 (display-only here). */
+    hubListSource: HubListSource? = null,
     /** CYP-273: override the writable-channels port (tests inject a fake); `null` → the live
      *  `GET /api/channels/writable` HTTP client ([HttpWritableChannelsApi]) that drives the composer enable/disable. */
     writableChannelsApi: WritableChannelsApi? = null,
@@ -458,6 +466,21 @@ fun AgentShell(
               }
           },
       )
+      // CYP-856 Slice-2: the in-workspace hub-switcher top-bar, mounted at the ProjectSwitcherBar level over
+      // `WindowHost`. DORMANT until a hub-list source is injected — the real CP-backed source + the activeHubId/onSwitch
+      // arming wiring are M3, so prod renders nothing today and the workspace chrome stays byte-identical (the
+      // switcher's own Unknown→render-nothing keeps even an injected-but-unloaded bar absent).
+      if (hubListSource != null) {
+          val hubListScope = rememberCoroutineScope()
+          val hubListHolder = remember(hubListSource) { HubListHolder(hubListSource, hubListScope) }
+          LaunchedEffect(hubListHolder) { hubListHolder.refresh() }
+          HubSwitcherBar(
+              state = hubListHolder.state.collectAsState().value,
+              activeHubId = "", // M3: the server-confirmed active hub id (no multi-hub active model yet)
+              onSwitch = {},    // M3: the real switch-effect arming seam
+              onRetry = hubListHolder::refresh,
+          )
+      }
       if (projectState.loading) {
         ProjectLoadingPlaceholder(modifier = Modifier.weight(1f).fillMaxWidth())
       } else {
