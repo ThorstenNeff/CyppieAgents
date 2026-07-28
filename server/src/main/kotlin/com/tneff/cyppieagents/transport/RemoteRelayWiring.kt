@@ -214,9 +214,9 @@ object RemoteRelayWiring {
         dhStaticPrivate: ByteArray,
         loopbackPort: Int,
         gate: Rr3TunnelGate,
-        /** CYP-484 — the live-session registry (revocation teardown) + the authenticated operator + the passive TTL. */
+        /** CYP-484 — the live-session registry (revocation teardown) + the passive TTL. CYP-882a: the session's
+         *  operatorId is now the per-tunnel AUTHENTICATED id from `gate::authorizeIdentified`, not a static param. */
         registry: TunnelSessionRegistry,
-        operatorId: String,
         sessionTtlMs: Long,
         scope: CoroutineScope,
         /** CYP-536 — the per-operator tunnel cap (= the CP set size). Single-sourced [RelayRendezvous.DEFAULT_TUNNEL_POOL_CAP]. */
@@ -240,10 +240,11 @@ object RemoteRelayWiring {
             TransportMode.POOL -> LoopbackBridge(loopbackPort)::bridge
         }
         val handler = Rr3AuthenticatedTunnelHandler(
-            authorize = gate::authorize,
+            // CYP-882a — the handler binds the session to the AUTHENTICATED per-tunnel operatorId (from the CpJwt
+            // `sub`), not the static wiring `operatorId`. `pinnedOperatorId` still gates the CpJwt inside the gate.
+            authorize = gate::authorizeIdentified,
             bridge = bridge,
             registry = registry,
-            operatorId = operatorId,
             sessionTtlMs = sessionTtlMs,
         )
         return ConcurrentRelayResponderManager(
@@ -355,7 +356,6 @@ fun buildRemoteTransport(
         loopbackPort = loopbackPort,
         gate = gate,
         registry = TunnelSessionRegistry(),
-        operatorId = operatorId,
         sessionTtlMs = sessionTtlMs,
         scope = scope,
         transportMode = RemoteRelayWiring.resolveTransportMode(env), // CYP-620: pool (default) | mux, from CYPPIE_REMOTE_TRANSPORT

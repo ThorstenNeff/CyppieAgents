@@ -268,9 +268,9 @@ class Cyp536LiveRelayLoopbackE2eTest {
         val bridgeReady = CompletableDeferred<Unit>()
         val realBridge = LoopbackBridge(platform.tunnelPort)
         val handler = Rr3AuthenticatedTunnelHandler(
-            authorize = gate::authorize,
+            authorize = gate::authorizeIdentified, // CYP-882a: bind the session to the authenticated per-tunnel operatorId
             bridge = { t -> bridgeReady.complete(Unit); realBridge.bridge(t) },
-            registry = TunnelSessionRegistry(), operatorId = operatorId, sessionTtlMs = 600_000L,
+            registry = TunnelSessionRegistry(), sessionTtlMs = 600_000L,
         )
         scope.launch { runCatching { handler.handle(server) } }
         return bridgeReady

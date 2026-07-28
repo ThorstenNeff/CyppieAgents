@@ -189,10 +189,9 @@ class Cyp427G3SustainedWsTunnelTest {
         // Drive through the REAL Rr3AuthenticatedTunnelHandler (which owns the TTL). authorize = { true } isolates the
         // lifetime under test — the RR3 gate itself is proven by the CYP-469/525 suites; here we characterize teardown.
         val handler = Rr3AuthenticatedTunnelHandler(
-            authorize = { true },
+            authorize = { "op" }, // CYP-882a: authorize yields the authenticated operatorId (non-null = granted)
             bridge = LoopbackBridge(port)::bridge,
             registry = TunnelSessionRegistry(),
-            operatorId = "op",
             sessionTtlMs = ttlMs,
         )
         val tunnel = ControllableTunnel()

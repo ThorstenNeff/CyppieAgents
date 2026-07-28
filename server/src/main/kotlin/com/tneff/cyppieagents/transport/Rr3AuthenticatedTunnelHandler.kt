@@ -16,16 +16,20 @@ import kotlinx.coroutines.launch
  * functional seams (prod = `Rr3TunnelGate::authorize` / `LoopbackBridge::bridge`) so the lifetime is unit-testable.
  */
 class Rr3AuthenticatedTunnelHandler(
-    private val authorize: suspend (ServerNoiseTunnel) -> Boolean,
+    /** CYP-882a — returns the AUTHENTICATED per-tunnel operatorId on grant, or `null` on deny (was a bare `Boolean`).
+     *  Prod = `Rr3TunnelGate::authorizeIdentified`. */
+    private val authorize: suspend (ServerNoiseTunnel) -> String?,
     private val bridge: suspend (ServerNoiseTunnel) -> Unit,
     private val registry: TunnelSessionRegistry,
-    private val operatorId: String,
     private val sessionTtlMs: Long,
 ) {
     /** The `suspend (ServerNoiseTunnel) -> Unit` seam value: `handler::handle`. */
     suspend fun handle(tunnel: ServerNoiseTunnel): Unit = coroutineScope {
         try {
-            if (!authorize(tunnel)) {
+            // CYP-882a — bind the session to the operatorId the tunnel ACTUALLY authenticated as (the CpJwt `sub`),
+            // NOT a static wiring constant. `null` = rejected → terminal, never bridge (fail-closed).
+            val authOperatorId = authorize(tunnel)
+            if (authOperatorId == null) {
                 tunnel.close() // rejected → terminal, never bridge
                 return@coroutineScope
             }
@@ -33,7 +37,7 @@ class Rr3AuthenticatedTunnelHandler(
             // ends, the TTL fires, or a revocation closes the tunnel — whichever is first.
             // close-handle: the tunnel's close() is suspend, so a revocation (a synchronous call) fires it on this
             // session's scope — fire-and-forget, matching "immediate teardown" (the bridge then ends on the null read).
-            val sessionId = registry.register(operatorId) { launch { runCatching { tunnel.close() } } }
+            val sessionId = registry.register(authOperatorId) { launch { runCatching { tunnel.close() } } }
             val ttl = launch {
                 delay(sessionTtlMs)
                 runCatching { tunnel.close() } // ★ passive Op-Session-TTL teardown (Decision 4)
