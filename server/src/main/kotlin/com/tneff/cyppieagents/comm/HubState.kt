@@ -191,6 +191,16 @@ class HubState(
                 code = "channel_kind_forbidden",
             )
         }
+        // CYP-878 — fail-closed: the `po-*` worker-spoke prefix and `op-po` ([OP_PO_CHANNEL_ID]) are the RESERVED
+        // hub-and-spoke namespace, minted ONLY by boot/[addAgent]. Creating an arbitrary channel with such an id
+        // would collide with a future spoke — [spokeChannelFor]'s `firstOrNull` then resolves to whichever landed
+        // first = a SILENT topology/ACL collision (operator creates `po-X` before worker X is added). Reject it.
+        if (id == OP_PO_CHANNEL_ID || id.startsWith("po-")) {
+            throw BadRequestException(
+                "channel id '$id' is reserved for the hub-and-spoke topology (boot/agent-managed)",
+                code = "channel_id_reserved",
+            )
+        }
         if (channels.any { it.id == id }) throw ConflictException("channel '$id' already exists", code = "channel_exists")
         // Membership IS the ACL (S17/CYP-93): a member granted access (canRead||canWrite) joins; neither = no-op.
         val granted = members.filter { it.canRead || it.canWrite }.distinctBy { it.agentId }
@@ -287,7 +297,12 @@ class HubState(
         val productLeadIds = agents.filter { it.role == Role.PRODUCT_LEAD }.map { it.id } // existing PLs
         agents = agents + agent
         when {
-            agent.role == Role.WORKER && po != null -> {
+            // CYP-878 — dup-guard, PROJECT-SCOPED (mirrors the op-po branch below): if this worker's spoke
+            // `po-<id>` already exists in the active project, skip re-appending it — a plain double-add (or a
+            // re-hydration) must NOT silently mint a SECOND `po-<id>` channel (the `spokeChannelFor.firstOrNull`
+            // collision). Idempotent: the agent still joins [agents]; the existing spoke stands.
+            agent.role == Role.WORKER && po != null &&
+                channels.none { it.id == "po-${agent.id}" && it.projectId == activeProjectId } -> {
                 // New worker spoke: po + worker + operator? all read+write, plus existing PLs read-only (CYP-98).
                 val members = buildList {
                     add(po.id); add(agent.id); operatorId?.let { add(it) }; addAll(productLeadIds)
