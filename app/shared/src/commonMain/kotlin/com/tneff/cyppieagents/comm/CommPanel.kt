@@ -34,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -46,6 +48,7 @@ import com.tneff.cyppieagents.window.COMPOSER_COMPACT_INPUT_THRESHOLD
 import com.tneff.cyppieagents.window.PANE_COLLAPSE_WIDTH
 import com.tneff.cyppieagents.model.Channel
 import com.tneff.cyppieagents.model.ChannelKind
+import com.tneff.cyppieagents.model.Message
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.testing.testTagA11y
 import com.tneff.cyppieagents.ui.AgentAvatarView
@@ -61,6 +64,7 @@ import kmpcyppieagents.app.shared.generated.resources.comm_composer_placeholder
 import kmpcyppieagents.app.shared.generated.resources.comm_composer_send
 import kmpcyppieagents.app.shared.generated.resources.comm_msg_pending
 import kmpcyppieagents.app.shared.generated.resources.comm_readonly_hint
+import kmpcyppieagents.app.shared.generated.resources.comm_reply_to
 import kmpcyppieagents.app.shared.generated.resources.comm_send_denied
 import kmpcyppieagents.app.shared.generated.resources.acl_access_revoked
 import kmpcyppieagents.app.shared.generated.resources.comm_send_failed
@@ -71,6 +75,13 @@ import kmpcyppieagents.app.shared.generated.resources.a11y_comm_status_protocol_
 import kmpcyppieagents.app.shared.generated.resources.comm_status_protocol_skew
 import kmpcyppieagents.app.shared.generated.resources.comm_timeline_empty
 import org.jetbrains.compose.resources.stringResource
+
+/**
+ * CYP-879 (OS-A) — the server-derived reply-tree indent depth, exposed as a semantics property so a render test can
+ * assert the applied indentation (parity with web-ts `data-reply-depth`). Set from [replyDepth] on each message row.
+ */
+val ReplyDepthKey = SemanticsPropertyKey<Int>("commReplyDepth")
+var SemanticsPropertyReceiver.commReplyDepth by ReplyDepthKey
 
 /**
  * Comm panel (CYP-21, design CYP-17): master channel list + detail timeline + composer. Renders the
@@ -248,12 +259,16 @@ private fun TimelinePane(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp).testTag(CommTags.EMPTY_TIMELINE),
                     )
-                else ->
+                else -> {
+                    // CYP-879: the id→message index the reply-tree helpers key on (from the visible set only, so a
+                    // reply to a not-yet-loaded parent renders top-level — never a fabricated thread).
+                    val byId = remember(state.messages) { indexById(state.messages.map { it.message }) }
                     LazyColumn(modifier = Modifier.fillMaxSize().testTagA11y(CommTags.TIMELINE)) {
                         items(state.messages, key = { it.message.id }) { item ->
-                            MessageRow(item, agents)
+                            MessageRow(item, agents, byId)
                         }
                     }
+                }
             }
         }
         val channelName = state.channels.firstOrNull { it.id == state.selectedChannelId }?.name ?: ""
@@ -262,16 +277,23 @@ private fun TimelinePane(
 }
 
 @Composable
-private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
+private fun MessageRow(item: MessageItem, agents: Map<String, Agent>, byId: Map<String, Message>) {
     val agent = agents[item.message.from]
     // CYP-275: adapt the CYP-14 identity accent to be AA-readable on the CURRENT surface (light OR dark) — the raw
     // pastels are dark-palette-calibrated and wash out on the maritime light surface (a name is real TEXT → 4.5:1).
     val nameColor = readableNameAccent(SenderPalette.forSender(item.message.from, agent?.role).nameAccent)
     val displayName = agent?.name ?: item.message.from
+    // CYP-879 (OS-A) — orchestration type + reply threading from SERVER-STAMPED meta ONLY (render ≠ authority):
+    // kind absent ⇒ NOTE (no badge); a reply link/indent only from inReplyTo to a PRESENT parent; depth cycle-safe.
+    val kind = messageKind(item.message.meta)
+    val parent = replyParent(item.message, byId)
+    val depth = replyDepth(item.message, byId)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .testTagA11y(CommTags.message(item.message.id))
+            .semantics { commReplyDepth = depth }
+            .padding(start = (depth * 16).dp) // CYP-879: indent by the server-derived reply depth (0 ⇒ no indent)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -290,12 +312,25 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(displayName, color = nameColor, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 if (agent?.role == Role.PO) KindBadge(stringResource(Res.string.agent_role_po))
-                item.message.meta?.kind?.let { KindBadge(it.name) }
+                // CYP-879: badge ONLY the orchestration-significant kinds (TASK/STATUS). NOTE / absent meta ⇒ NO
+                // badge (never a fabricated significance the server did not stamp — render ≠ authority).
+                if (isOrchestrationKind(kind)) KindBadge(kind.name, tag = CommTags.messageKind(item.message.id))
                 // CYP-337: `onSurfaceVariant`, not `outline`. "ausstehend" is a state that exists ONLY in this
                 // word — the leading `·` is a separator, not a symbol carrying the meaning — so it is text and
                 // owes WCAG 1.4.3's 4.5:1. `outline` measures 3.55:1 / 3.63:1 against `surface`: fine for a
                 // border (1.4.11, 3:1), a fail for text. `onSurfaceVariant` gives 8.69:1 / 9.80:1.
                 if (item.pending) Text("· " + stringResource(Res.string.comm_msg_pending), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // CYP-879: the reply reference — rendered ONLY when the server `inReplyTo` points at a PRESENT parent
+            // (an orphan/top-level message has none; we never fabricate a thread to a message we cannot show).
+            if (parent != null) {
+                val parentName = agents[parent.from]?.name ?: parent.from
+                Text(
+                    "↩ " + stringResource(Res.string.comm_reply_to, parentName),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag(CommTags.messageReplyTo(item.message.id)),
+                )
             }
             Text(item.message.body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
         }
@@ -303,14 +338,20 @@ private fun MessageRow(item: MessageItem, agents: Map<String, Agent>) {
 }
 
 @Composable
-private fun KindBadge(label: String) {
+private fun KindBadge(label: String, tag: String? = null) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.secondaryContainer)
             .padding(horizontal = 5.dp, vertical = 1.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        // CYP-879: the tag (when given) rides the label Text so a render test can assert the kind word verbatim.
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = if (tag != null) Modifier.testTag(tag) else Modifier,
+        )
     }
 }
 
