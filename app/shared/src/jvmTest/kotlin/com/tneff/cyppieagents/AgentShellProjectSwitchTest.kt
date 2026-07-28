@@ -91,7 +91,7 @@ class AgentShellProjectSwitchTest {
     private class FakeAgentMgmtRepo(private val server: ScopedServer) : AgentManagementRepository {
         override suspend fun list(): List<Agent> = server.agentsForActive()
         override suspend fun detail(id: String): AgentDetail = throw NotImplementedError()
-        override suspend fun add(spec: com.tneff.cyppieagents.model.NewAgentSpec): Agent = throw NotImplementedError()
+        override suspend fun add(spec: com.tneff.cyppieagents.model.NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = throw NotImplementedError()
         override suspend fun edit(id: String, edit: AgentEdit): Agent = throw NotImplementedError()
         override suspend fun remove(id: String, worktree: WorktreeFate) = throw NotImplementedError()
     }

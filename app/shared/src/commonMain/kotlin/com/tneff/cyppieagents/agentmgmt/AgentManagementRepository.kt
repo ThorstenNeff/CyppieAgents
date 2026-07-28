@@ -3,6 +3,7 @@ package com.tneff.cyppieagents.agentmgmt
 import com.tneff.cyppieagents.model.Agent
 import com.tneff.cyppieagents.model.AgentDetail
 import com.tneff.cyppieagents.model.AgentEdit
+import com.tneff.cyppieagents.model.CreatedAgent
 import com.tneff.cyppieagents.model.NewAgentSpec
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.WorktreeFate
@@ -28,8 +29,12 @@ interface AgentManagementRepository {
      */
     suspend fun detail(id: String): AgentDetail
 
-    /** Operator-only: register a new agent (not spawned). Throws [AgentMgmtException] on the §2 codes. */
-    suspend fun add(spec: NewAgentSpec): Agent
+    /**
+     * Operator-only: register a new agent (not spawned). Throws [AgentMgmtException] on the §2 codes.
+     * CYP-900: returns the [CreatedAgent] wrapper `{agent, token}` — a REMOTE/BYOA create mints a per-agent bearer
+     * token surfaced ONCE to the operator (`token != null`); a local create returns `token = null`.
+     */
+    suspend fun add(spec: NewAgentSpec): CreatedAgent
 
     /** Operator-only: write agent config (effective next spawn). Throws on `po_already_exists`/`last_po`/… */
     suspend fun edit(id: String, edit: AgentEdit): Agent

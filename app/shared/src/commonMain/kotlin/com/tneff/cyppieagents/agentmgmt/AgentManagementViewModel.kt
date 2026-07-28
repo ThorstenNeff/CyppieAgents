@@ -67,6 +67,11 @@ data class AgentMgmtUiState(
      * cleared when a fresh add-dialog opens. null → no confirmation shown.
      */
     val addSuccessName: String? = null,
+    /**
+     * CYP-900 (B2) — the one-time minted bearer token for a just-created REMOTE/BYOA agent, surfaced ONCE for the
+     * operator to copy (shown-once, no re-view, NEVER logged). null = local create (no token) or already dismissed.
+     */
+    val addSuccessToken: String? = null,
     // CYP-87 remove
     val removeTarget: Agent? = null,
     val removeWorktreeFate: WorktreeFate = WorktreeFate.KEEP,
@@ -160,9 +165,13 @@ class AgentManagementViewModel(
 
     fun openAdd() {
         if (!_state.value.editable) return
-        // Clear any prior success confirmation — a fresh add cycle starts clean (CYP-314).
-        _state.update { it.copy(addOpen = true, addForm = AddForm(), addError = null, addSuccessName = null) }
+        // Clear any prior success confirmation — a fresh add cycle starts clean (CYP-314). CYP-900: also clear the
+        // one-time token reveal (shown-once — a new create starts with no leftover token on screen).
+        _state.update { it.copy(addOpen = true, addForm = AddForm(), addError = null, addSuccessName = null, addSuccessToken = null) }
     }
+
+    /** CYP-900 (B2) — dismiss the one-time token reveal (shown-once: once dismissed, there is NO way to view it again). */
+    fun dismissAddSuccessToken() = _state.update { it.copy(addSuccessToken = null) }
 
     fun closeAdd() = _state.update { it.copy(addOpen = false, addError = null) }
     fun setAddId(v: String) = _state.update { it.copy(addForm = it.addForm.copy(id = v), addError = null) }
@@ -200,11 +209,15 @@ class AgentManagementViewModel(
                         remote = f.remote,
                     ),
                 )
-            }.onSuccess {
+            }.onSuccess { created ->
                 reload()
                 // CYP-314: confirm the create landed, naming the agent. Bound to the verified success (post-repo),
                 // never optimistic — a failure below sets addError instead and leaves addSuccessName untouched.
-                _state.update { it.copy(addOpen = false, addError = null, addSuccessName = f.name.trim()) }
+                // CYP-900 (B2): surface the one-time minted token (non-null only for a REMOTE/BYOA create) for the
+                // shown-once reveal. NEVER logged — it lives only in this state field + the reveal composable.
+                _state.update {
+                    it.copy(addOpen = false, addError = null, addSuccessName = f.name.trim(), addSuccessToken = created.token)
+                }
             }.onFailure { e ->
                 if (e is CancellationException) throw e
                 _state.update { it.copy(addError = addErrorKey(e)) }

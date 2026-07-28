@@ -31,9 +31,9 @@ class Cyp899RemoteToggleTest {
         var lastSpec: NewAgentSpec? = null
         override suspend fun list(): List<Agent> = emptyList()
         override suspend fun detail(id: String): AgentDetail = error("unused")
-        override suspend fun add(spec: NewAgentSpec): Agent {
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent {
             lastSpec = spec
-            return Agent(spec.id, spec.name, spec.role, spec.id, AgentRunState.STOPPED)
+            return com.tneff.cyppieagents.model.CreatedAgent(Agent(spec.id, spec.name, spec.role, spec.id, AgentRunState.STOPPED))
         }
         override suspend fun edit(id: String, edit: AgentEdit): Agent = error("unused")
         override suspend fun remove(id: String, worktree: WorktreeFate) {}

@@ -62,7 +62,7 @@ class AgentManagementHttpRepository(
     override suspend fun detail(id: String): AgentDetail =
         getDecoded("/api/agents/$id", AgentDetail.serializer())
 
-    override suspend fun add(spec: NewAgentSpec): Agent {
+    override suspend fun add(spec: NewAgentSpec): CreatedAgent {
         val response = client.post("$baseUrl/api/agents") {
             authBearer()
             contentType(ContentType.Application.Json)
@@ -71,15 +71,10 @@ class AgentManagementHttpRepository(
         val text = response.bodyAsText()
         ensureSuccess(response, text)
         // CYP-312: POST /api/agents responds the [CreatedAgent] WRAPPER `{agent, token}` (RestContract §98 /
-        // AgentManagement.add → CreatedAgent) — NOT a bare [Agent]. Decoding it as `Agent` threw, surfacing a
-        // FALSE "Anlegen fehlgeschlagen" even though the server created the agent (a refresh showed it). Decode the
-        // wrapper and return `.agent`.
-        val created = CommJson.decodeFromString(CreatedAgent.serializer(), text)
-        // The `token` is the ONE-TIME bearer for a REMOTE-spawned agent (CYP-171/197). Local creates return
-        // token=null and the interface hands the UI only the [Agent], so we intentionally do not surface it here —
-        // but decode it consciously (not `ignoreUnknownKeys`-swallow) so the CYP-197 remote seam has a real field to
-        // plumb through when it lands, rather than silently dropping a value the server sent.
-        return created.agent
+        // AgentManagement.add → CreatedAgent) — NOT a bare [Agent].
+        // CYP-900 (B2): return the FULL wrapper. The `token` is the ONE-TIME bearer for a REMOTE/BYOA agent
+        // (CYP-171/197) — surfaced once to the operator by the VM/reveal (never logged); a local create → token=null.
+        return CommJson.decodeFromString(CreatedAgent.serializer(), text)
     }
 
     override suspend fun edit(id: String, edit: AgentEdit): Agent {

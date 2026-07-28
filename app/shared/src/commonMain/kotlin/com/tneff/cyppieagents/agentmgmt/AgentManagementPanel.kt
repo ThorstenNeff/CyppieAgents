@@ -16,9 +16,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +51,10 @@ import kmpcyppieagents.app.shared.generated.resources.agent_add
 import kmpcyppieagents.app.shared.generated.resources.agent_add_autofields_note
 import kmpcyppieagents.app.shared.generated.resources.agent_add_remote_label
 import kmpcyppieagents.app.shared.generated.resources.agent_add_remote_hint
+import kmpcyppieagents.app.shared.generated.resources.agent_add_token_title
+import kmpcyppieagents.app.shared.generated.resources.agent_add_token_shown_once
+import kmpcyppieagents.app.shared.generated.resources.agent_add_token_copy
+import kmpcyppieagents.app.shared.generated.resources.agent_add_token_dismiss
 import kmpcyppieagents.app.shared.generated.resources.agent_add_confirm
 import kmpcyppieagents.app.shared.generated.resources.agent_add_success
 import kmpcyppieagents.app.shared.generated.resources.agent_add_error
@@ -162,6 +169,10 @@ fun AgentManagementPanel(
                 AgentMgmtTags.ADD_SUCCESS,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
+        }
+        // CYP-900 (B2): the ONE-TIME minted-token reveal for a just-created REMOTE/BYOA agent (token != null only then).
+        state.addSuccessToken?.let { token ->
+            MintedTokenReveal(token = token, onDismiss = viewModel::dismissAddSuccessToken)
         }
 
         // CYP-276 (CYP-270 class): gate the onboarding empty-state on !loading so it never FLASHES during the
@@ -392,6 +403,42 @@ private fun AddDialog(
             }
         },
     )
+}
+
+/**
+ * CYP-900 (B2) — the ONE-TIME minted bearer-token reveal for a just-created REMOTE/BYOA agent. Secret-hygiene
+ * (mirrors [com.tneff.cyppieagents.net.hub.operator.ui.RecoveryCodesReveal]): shown ONCE, readable (a
+ * [SelectionContainer] manual-copy fallback, esp. Web), a Copy button, and an explicit dismiss — there is **no**
+ * "view again". The token is **never logged** (not to logs/event-log/crash); it lives only in the VM state field and
+ * this composable, and is gone once dismissed or a fresh add opens.
+ */
+@Composable
+private fun MintedTokenReveal(token: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val clipboard = LocalClipboardManager.current
+    Column(
+        modifier = modifier.fillMaxWidth().testTag(AgentMgmtTags.ADD_TOKEN_REVEAL),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(stringResource(Res.string.agent_add_token_title), style = MaterialTheme.typography.titleSmall)
+        Text(
+            stringResource(Res.string.agent_add_token_shown_once),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Readable (NOT masked) + selectable manual-copy fallback — it must be captured before dismiss.
+        SelectionContainer {
+            Text(token, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(AgentMgmtTags.ADD_TOKEN_VALUE))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(
+                onClick = { clipboard.setText(AnnotatedString(token)) },
+                modifier = Modifier.testTag(AgentMgmtTags.ADD_TOKEN_COPY),
+            ) { Text(stringResource(Res.string.agent_add_token_copy)) }
+            Button(onClick = onDismiss, modifier = Modifier.testTag(AgentMgmtTags.ADD_TOKEN_DISMISS)) {
+                Text(stringResource(Res.string.agent_add_token_dismiss))
+            }
+        }
+    }
 }
 
 @Composable

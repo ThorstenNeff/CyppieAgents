@@ -44,6 +44,11 @@ object AgentMgmtTags {
     const val ADD_REMOTE_HINT = "agentMgmt.add.remote.hint" // CYP-899: remote-agent explanation
     const val ADD_ERROR = "agentMgmt.add.error"
     const val ADD_SUCCESS = "agentMgmt.add.success" // CYP-314: panel-level INFO confirmation after a successful create
+    // CYP-900 (B2): one-time minted-token reveal (remote/BYOA create) — shown-once, copyable, never logged.
+    const val ADD_TOKEN_REVEAL = "agentMgmt.add.token.reveal"
+    const val ADD_TOKEN_VALUE = "agentMgmt.add.token.value"
+    const val ADD_TOKEN_COPY = "agentMgmt.add.token.copy"
+    const val ADD_TOKEN_DISMISS = "agentMgmt.add.token.dismiss"
 
     // CYP-87 — remove (irreversible)
     const val REMOVE_DIALOG = "agentMgmt.remove.dialog"

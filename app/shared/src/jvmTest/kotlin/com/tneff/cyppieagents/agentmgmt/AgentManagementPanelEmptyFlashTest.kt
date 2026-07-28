@@ -33,7 +33,7 @@ class AgentManagementPanelEmptyFlashTest {
     private class GatedRepo(val gate: CompletableDeferred<Unit>, val result: List<Agent>) : AgentManagementRepository {
         override suspend fun list(): List<Agent> { gate.await(); return result }
         override suspend fun detail(id: String): AgentDetail = throw NotImplementedError()
-        override suspend fun add(spec: NewAgentSpec): Agent = throw NotImplementedError()
+        override suspend fun add(spec: NewAgentSpec): com.tneff.cyppieagents.model.CreatedAgent = throw NotImplementedError()
         override suspend fun edit(id: String, edit: AgentEdit): Agent = throw NotImplementedError()
         override suspend fun remove(id: String, worktree: WorktreeFate) = throw NotImplementedError()
     }
