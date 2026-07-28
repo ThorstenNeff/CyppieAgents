@@ -20,6 +20,29 @@ class Cyp862Ed25519SignatureVerifierTest {
 
     private fun enc(b: ByteArray): String = Base64.getEncoder().encodeToString(b)
 
+    private fun hex(s: String): ByteArray =
+        ByteArray(s.length / 2) { ((s[it * 2].digitToInt(16) shl 4) or s[it * 2 + 1].digitToInt(16)).toByte() }
+
+    /**
+     * RFC 8032 §7.1 TEST 1 — a canonical EXTERNAL known-answer triple (empty message). Breaks the self-consistency
+     * circularity the determinism/round-trip teeth cannot: a self-generated `valid→true` cannot distinguish a
+     * self-consistently-WRONG base64 wiring (sign-wrong + verify-wrong agree) from a correct one. An externally
+     * correct vector anchors the whole hex→base64→verify path to the STANDARD. Canonical-positive verifies; a single
+     * flipped signature byte is canonical-negative.
+     */
+    @Test
+    fun rfc8032Test1_canonicalVector_anchorsToStandard() {
+        val pub = hex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+        val msg = ByteArray(0) // empty message
+        val sig = hex(
+            "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555" +
+                "fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+        )
+        assertTrue(Ed25519SignatureVerifier.verify(enc(pub), msg, enc(sig)), "canonical RFC-8032 §7.1 TEST-1 must verify")
+        val tampered = sig.copyOf().also { it[0] = (it[0] + 1).toByte() }
+        assertFalse(Ed25519SignatureVerifier.verify(enc(pub), msg, enc(tampered)), "flipped sig byte → canonical-negative")
+    }
+
     @Test
     fun validSignature_verifiesTrue() {
         val kp = RawKeys.generateEd25519()
