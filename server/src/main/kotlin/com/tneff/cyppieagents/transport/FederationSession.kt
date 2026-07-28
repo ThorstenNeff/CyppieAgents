@@ -1,6 +1,8 @@
 package com.tneff.cyppieagents.transport
 
 import com.tneff.cyppieagents.model.ExperimentalFederation
+import com.tneff.cyppieagents.model.FederationTrustDecision
+import com.tneff.cyppieagents.model.HubIssuerTrust
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -33,9 +35,15 @@ interface FederationPeerTransport {
  * exactly ONE transport → N concurrent sessions ride N independent transports with **NO multiplexing**.
  *
  * Does NOT arm anything — the pure plumbing over a stub seam; the live transport is §9.3-gated.
+ *
+ * **CYP-858 §9.3 sole-path guard.** The constructor is `private` (NOT `internal` — `:server` is one module, so
+ * `internal` would let any same-module site build one off-gate). The ONLY way to obtain a `FederationSession` is
+ * [open], which yields one **iff the [FederationAdmissionGate] ADMITs the peer**. This makes every dark-built
+ * federation piece physically INERT until arming: nothing can produce an (eventually off-loopback) live session
+ * except through the gated admission — there is no session side-door.
  */
 @ExperimentalFederation
-class FederationSession(private val transport: FederationPeerTransport) {
+class FederationSession private constructor(private val transport: FederationPeerTransport) {
     private var closed = false
 
     val isClosed: Boolean get() = closed
@@ -54,5 +62,21 @@ class FederationSession(private val transport: FederationPeerTransport) {
         if (closed) return
         closed = true
         transport.close()
+    }
+
+    companion object {
+        /**
+         * CYP-858 (§9.3 sole-path guard) — the **only** way to construct a [FederationSession]. Returns a session
+         * IFF the [gate] ADMITs the peer's [remoteIssuerTrust]; a DENY yields `null` — **no session off the gate**.
+         * Because the constructor is `private`, this admission check is unavoidable: a caller cannot fabricate a
+         * session bypassing the [FederationAdmissionGate]. Wiring a real [FederationPeerTransport] (a live Noise
+         * tunnel) into this remains arming-gated — the guard is what keeps the dark build inert until then.
+         */
+        fun open(
+            gate: FederationAdmissionGate,
+            remoteIssuerTrust: HubIssuerTrust?,
+            transport: FederationPeerTransport,
+        ): FederationSession? =
+            if (gate.admit(remoteIssuerTrust) == FederationTrustDecision.ADMIT) FederationSession(transport) else null
     }
 }
