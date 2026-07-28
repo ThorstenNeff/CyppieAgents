@@ -888,6 +888,7 @@ export function App({ config, repo, socketDeps, operatorOverride }: AppProps = {
           onSelectChannel={setSelectedChannelId}
           messages={messages}
           senderRole={senderRole}
+          addressableAgents={agents.filter((a) => a !== poAgentId)}
           readState={unreadView}
           unreadDividerIndex={selectedChannelId === null ? null : firstUnreadIndex(messages.map((d) => d.message), unreadView, selectedChannelId)}
           messagesByChannel={messagesByChannel}
