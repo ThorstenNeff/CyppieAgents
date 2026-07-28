@@ -59,6 +59,16 @@
     <string name="comm_timeline_empty">No messages yet</string>
     <string name="comm_msg_pending">Sending…</string>
     <string name="comm_reply_to">Reply to %1$s</string>
+    <string name="channel_mgmt_title">Manage channels</string>
+    <string name="channel_mgmt_create_id">Channel ID</string>
+    <string name="channel_mgmt_create_name">Channel name</string>
+    <string name="channel_mgmt_create_submit">Create channel</string>
+    <string name="channel_mgmt_rename_placeholder">New name</string>
+    <string name="channel_mgmt_rename_submit">Rename</string>
+    <string name="channel_mgmt_archive">Archive</string>
+    <string name="channel_mgmt_error_protected_hub">Channel protected — hub-and-spoke channels cannot be archived.</string>
+    <string name="channel_mgmt_error_operator_only">Only the operator may manage channels.</string>
+    <string name="channel_mgmt_error_generic">Action failed.</string>
     <string name="comm_status_connecting">Connecting…</string>
     <string name="comm_readonly_hint">Read-only access in this channel</string>
     <string name="comm_send_denied">No write access in this channel</string>
