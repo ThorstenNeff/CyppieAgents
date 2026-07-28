@@ -9,6 +9,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.tneff.cyppieagents.model.HubTrustState
 import kmpcyppieagents.app.shared.generated.resources.Res
 import kmpcyppieagents.app.shared.generated.resources.hub_switcher_nav_label
 import org.jetbrains.compose.resources.stringResource
@@ -29,6 +30,8 @@ fun HubSwitcherBar(
     activeHubId: String,
     onSwitch: suspend (String) -> Unit,
     onRetry: () -> Unit,
+    /** The axis-a trust to DISPLAY per hub (M4 supplies `displayedTrust`); DEFAULT `{ null }` → UNKNOWN (pre-arming). */
+    trustFor: (String) -> HubTrustState? = { null },
     modifier: Modifier = Modifier,
 ) {
     // Unknown (not loaded) → render NOTHING: no empty padded bar, no confident-empty chrome (spec §4).
@@ -41,6 +44,7 @@ fun HubSwitcherBar(
             activeHubId = activeHubId,
             onSwitch = onSwitch,
             onRetry = onRetry,
+            trustFor = trustFor,
             // Project-bar padding + the nav label on the container (the nav IS the bar, parity web aria-label).
             modifier = Modifier
                 .padding(horizontal = 12.dp, vertical = 6.dp)

@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tneff.cyppieagents.agentview.formatLocalHhMm
 import com.tneff.cyppieagents.connect.HubDescriptor
+import com.tneff.cyppieagents.model.HubTrustState
 import com.tneff.cyppieagents.net.hub.trust.HubTrustBadge
 import com.tneff.cyppieagents.ui.LoadErrorRetry
 import kmpcyppieagents.app.shared.generated.resources.Res
@@ -48,8 +49,9 @@ import org.jetbrains.compose.resources.stringResource
  *  - **name/identity** — [HubDescriptor.name], `onSurface`, ellipsised under a narrow bar
  *  - **reachability** — [HubDescriptor.online] → shape (`●` online / `○` offline) **+ WORD**, BOTH `onSurfaceVariant`
  *    (a NEUTRAL net fact: never green for online, never error-red for offline; offline ≠ untrusted)
- *  - **hub-key trust (axis a)** — the reused CYP-808 [HubTrustBadge], fed `state = null` → **UNKNOWN** (pre-arming
- *    neutral): the switcher NEVER wires the badge to a live trust decision; real observed trust arrives at arming (M3)
+ *  - **hub-key trust (axis a)** — the reused CYP-808 [HubTrustBadge], fed the host's observed trust via [trustFor]
+ *    (the M4/CYP-873 mount supplies `displayedTrust`); the DEFAULT `{ null }` → **UNKNOWN** (pre-arming neutral). The
+ *    switcher itself makes NO trust decision — it DISPLAYS what the host observed; real observed trust arrives at arming
  *  - **freshness** — [HubDescriptor.lastSeen] → "zuletzt gesehen HH:mm", advisory `onSurfaceVariant` `labelSmall`
  *
  * axis-c ([HubDescriptor.issuerTrust]) is DELIBERATELY ABSENT — a Zone-2 connect verdict (M4), never a switcher badge.
@@ -68,6 +70,11 @@ fun HubSwitcher(
     onSwitch: suspend (String) -> Unit,
     /** Retry a failed `GET /hubs` load. */
     onRetry: () -> Unit,
+    /**
+     * The axis-a trust to DISPLAY per hub (M4 supplies `displayedTrust`). DEFAULT `{ null }` → UNKNOWN — the switcher
+     * makes no trust decision itself; it renders what the host observed. `null` for a hub ⇒ the fail-closed UNKNOWN pill.
+     */
+    trustFor: (String) -> HubTrustState? = { null },
     modifier: Modifier = Modifier,
 ) {
     when (val outcome = state.outcome()) {
@@ -88,7 +95,7 @@ fun HubSwitcher(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelMedium,
         )
-        is HubSwitcherOutcome.Hubs -> HubSwitcherList(outcome.hubs, activeHubId, onSwitch, modifier)
+        is HubSwitcherOutcome.Hubs -> HubSwitcherList(outcome.hubs, activeHubId, onSwitch, trustFor, modifier)
     }
 }
 
@@ -97,6 +104,7 @@ private fun HubSwitcherList(
     hubs: List<HubDescriptor>,
     activeHubId: String,
     onSwitch: suspend (String) -> Unit,
+    trustFor: (String) -> HubTrustState?,
     modifier: Modifier,
 ) {
     var pending by remember { mutableStateOf(false) }
@@ -125,6 +133,7 @@ private fun HubSwitcherList(
                 hub = hub,
                 active = hub.hubId == activeHubId,
                 enabled = !pending,
+                trust = trustFor(hub.hubId),
                 onClick = { pick(hub.hubId) },
             )
         }
@@ -136,6 +145,7 @@ private fun HubSwitcherEntry(
     hub: HubDescriptor,
     active: Boolean,
     enabled: Boolean,
+    trust: HubTrustState?,
     onClick: () -> Unit,
 ) {
     val reachWord = if (hub.online) {
@@ -189,9 +199,10 @@ private fun HubSwitcherEntry(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall,
         )
-        // Axis 3 — hub-key trust (axis a): the reused CYP-808 badge, UNKNOWN pre-arming (state = null) — NEVER wired
-        // to a live decision here. axis-c (issuerTrust) + tier are DELIBERATELY ABSENT from the switcher.
-        HubTrustBadge(hubId = hub.hubId, state = null)
+        // Axis 3 — hub-key trust (axis a): the reused CYP-808 badge, fed the host's observed [trust] (M4 supplies
+        // displayedTrust; `null` ⇒ UNKNOWN). The switcher makes NO trust decision — it displays what the host observed.
+        // axis-c (issuerTrust) + tier are DELIBERATELY ABSENT from the switcher.
+        HubTrustBadge(hubId = hub.hubId, state = trust)
     }
 }
 

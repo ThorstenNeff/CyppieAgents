@@ -13,8 +13,9 @@ import kotlin.test.assertTrue
  *     `onSurface`/`onSurfaceVariant` ONLY — it must never reach a severity/primary/trust colour. (The error STATE is
  *     the separate `LoadErrorRetry` component; the trust axis is the separate `HubTrustBadge`.) A reflex that tints
  *     online green or offline red reddens here. Mutation: reach `onSurfaceVariant → error` → RED.
- *  2. **placement** — the [HubSwitcherBar] is mounted in `AgentShell` (the in-workspace top-bar over `WindowHost`),
- *     and it is **dormant** (gated on the injected `hubListSource`) so prod chrome stays byte-identical.
+ *  2. **placement** — the switcher top-bar is mounted in `AgentShell` (the in-workspace top-bar over `WindowHost`)
+ *     via the M4 mount-host `MultiHubShell` (CYP-873; it renders the `HubSwitcherBar` internally), and it is
+ *     **dormant** (gated on the injected `hubListSource`) so prod chrome stays byte-identical.
  */
 class Cyp856SwitcherStylingGuardTest {
 
@@ -39,14 +40,17 @@ class Cyp856SwitcherStylingGuardTest {
     @Test
     fun hubSwitcherBar_isMounted_inAgentShell_dormantOnInjectedSource() {
         val code = codeLinesOf("src/commonMain/kotlin/com/tneff/cyppieagents/AgentShell.kt")
+        // CYP-873: the switcher top-bar is now mounted via the M4 mount-host MultiHubShell (which renders the
+        // HubSwitcherBar internally + owns the active pointer / trust / progression), not by a direct HubSwitcherBar call.
         assertTrue(
-            code.any { it.contains("HubSwitcherBar(") },
-            "CYP-856 §1 placement: AgentShell must MOUNT the HubSwitcherBar (the in-workspace top-bar over WindowHost).",
+            code.any { it.contains("MultiHubShell(") },
+            "CYP-856 §1 placement (CYP-873): AgentShell must MOUNT the switcher top-bar via the M4 host MultiHubShell " +
+                "(the in-workspace top-bar over WindowHost).",
         )
         assertTrue(
             code.any { it.contains("if (hubListSource != null)") },
-            "CYP-856: the HubSwitcherBar mount must be DORMANT — gated on the injected `hubListSource` so prod chrome is " +
-                "byte-identical (the real source + activeHubId/onSwitch arming are M3). Found the mount ungated.",
+            "CYP-856: the switcher mount must be DORMANT — gated on the injected `hubListSource` so prod chrome is " +
+                "byte-identical (the real dial connector + observed provenance are the §9.3 arming seam). Found the mount ungated.",
         )
     }
 
