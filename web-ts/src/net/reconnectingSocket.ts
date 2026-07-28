@@ -22,10 +22,16 @@ export type SocketFactory = (url: string) => SocketLike
 export type Scheduler = (fn: () => void, ms: number) => void
 
 export interface ReconnectingSocketOptions {
-  /** Computed on EVERY (re)connect, so a channel can fold its live cursor (e.g. `?since=<lastSeq>`) into the URL. */
-  url: () => string
+  /** Computed on EVERY (re)connect, so a channel can fold its live cursor (e.g. `?since=<lastSeq>`) into the URL.
+   *  CYP-881 (DARK): receives a freshly-minted single-use `ticket` when `ticketProvider` is wired (flag ON); called
+   *  with NO arg on the default path (flag OFF) → the channel folds `?token=` as before (byte-unchanged). */
+  url: (ticket?: string) => string
   /** One inbound text frame. */
   onText: (data: string) => void
+  /** CYP-881 (DARK, dark-arming-prep for the tokenless-cookie cutover): when present (flag ON), connect() mints a FRESH
+   *  single-use read-WS ticket BEFORE each (re)connect and folds it via `url(ticket)`. ABSENT (flag OFF / default) →
+   *  the connect path is byte-unchanged (sync `url()`, `?token=`). Activation is deploy-gated; this is the dark handling. */
+  ticketProvider?: () => Promise<string>
   onOpen?: () => void
   /** An UNEXPECTED close (not a deliberate close()) — the view layer flips to an offline/revoked banner (CYP-437).
    *  `code` is the WebSocket close code when the transport supplies one (1008 = policy violation = auth revoked). */
@@ -56,7 +62,26 @@ export class ReconnectingSocket {
 
   connect(): void {
     if (this.closed) return
-    const sock = this.factory(this.opts.url())
+    // CYP-881 (DARK): flag ON → mint a FRESH single-use ticket per (re)connect, then open with `?ticket=` (single-use-
+    // safe: each reconnect re-mints). Flag OFF (no provider) → the byte-unchanged sync path below. A mint failure
+    // schedules a retry, same as a connect drop — the loop never dies silently.
+    const provider = this.opts.ticketProvider
+    if (provider !== undefined) {
+      provider().then(
+        (ticket) => {
+          if (!this.closed) this.openSocket(this.opts.url(ticket))
+        },
+        () => {
+          if (!this.closed) this.schedule(() => this.connect(), this.backoff.next())
+        },
+      )
+      return
+    }
+    this.openSocket(this.opts.url())
+  }
+
+  private openSocket(url: string): void {
+    const sock = this.factory(url)
     this.sock = sock
     sock.onopen = () => {
       this.open = true

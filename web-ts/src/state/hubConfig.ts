@@ -82,4 +82,7 @@ export function bootstrapLocalHub(): HubConfig {
 export interface SocketDeps {
   factory?: SocketFactory
   schedule?: Scheduler
+  /** CYP-881 (DARK): inject the ws-ticket mint (tests only). Production uses the real mintWsTicket(apiBase). Only
+   *  consulted when the CYPPIE_WS_TICKET flag is ON; ignored on the default `?token=` path. */
+  mintTicket?: (apiBase: string) => Promise<string>
 }
