@@ -31,6 +31,7 @@ import com.tneff.cyppieagents.model.RepoConfigRequest
 import com.tneff.cyppieagents.model.RepoConfigView
 import com.tneff.cyppieagents.model.ReportSnapshot
 import com.tneff.cyppieagents.model.SendMessageRequest
+import com.tneff.cyppieagents.model.EditMessageRequest
 import com.tneff.cyppieagents.model.SwitchActiveRequest
 import com.tneff.cyppieagents.model.WorkspaceMember
 import com.tneff.cyppieagents.routing.ChangeEmailRequest
@@ -98,6 +99,9 @@ object RestContract {
         // `?kind=TASK|STATUS` query param on GET …/messages above (a filter, not a new path — no Op change).
         Op("GET", "/api/channels/{id}/messages/{msgId}/thread", Tier.PARTICIPANT, response = arr<DeliveredMessage>()),
         Op("POST", "/api/channels/{id}/messages", Tier.PARTICIPANT_WRITE, request = json<SendMessageRequest>(), response = json<DeliveredMessage>()),
+        // CYP-905 (Parity-Edit E-server): edit a posted message's body. Participant-WRITE tier (author-gate ∧
+        // canWrite enforced at the Hub.editMessage chokepoint); returns the re-emitted DeliveredMessage (editedAt set).
+        Op("PUT", "/api/channels/{id}/messages/{msgId}", Tier.PARTICIPANT_WRITE, request = json<EditMessageRequest>(), response = json<DeliveredMessage>()),
         Op("GET", "/api/inbox", Tier.PARTICIPANT, response = arr<Message>()),
         // CYP-705 — unread-per-channel read-state. OPERATOR-tier (measurement DoD: no MEMBER-tier read-state
         // consumer exists in web-ts → fail-closed operator-only; the operator serve is the sole consumer).

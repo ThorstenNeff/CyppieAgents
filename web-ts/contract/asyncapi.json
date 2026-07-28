@@ -304,6 +304,12 @@
                         "items": {
                             "$ref": "#/components/schemas/MentionSpan"
                         }
+                    },
+                    "editedAt": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
                     }
                 },
                 "required": [

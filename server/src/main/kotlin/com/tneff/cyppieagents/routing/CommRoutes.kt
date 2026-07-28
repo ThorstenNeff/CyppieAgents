@@ -24,6 +24,7 @@ import com.tneff.cyppieagents.model.ProjectScope
 import com.tneff.cyppieagents.model.ReadStateEvent
 import com.tneff.cyppieagents.model.Role
 import com.tneff.cyppieagents.model.SendMessageRequest
+import com.tneff.cyppieagents.model.EditMessageRequest
 import com.tneff.cyppieagents.model.Subscribe
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -242,6 +243,18 @@ fun Route.commRoutes(
                 // CYP-744: return the SAME DeliveredMessage envelope as the WS echo + REST get (Dev5 consistency:
                 // one shape in the messagesByChannel slot). The spans are viewer-independent (Display), resolved once.
                 call.respond(HttpStatusCode.Created, hub.deliveredOf(message))
+            }
+            // CYP-905 (Parity-Edit E-server): edit a posted message's body. Same participant-WRITE tier as POST
+            // (requireCommWriter); the author-gate (from==editor) ∧ canWrite is enforced fail-closed at the
+            // Hub.editMessage chokepoint — postAsAgent stays UNTOUCHED (parallel guarded EDIT path, no WS-send
+            // bypass, no body-derived routing). The re-emit rides the existing /ws/comm MessageEvent (upsert by id).
+            put("/{msgId}") {
+                val participant = call.requireCommWriter(deps, registry)
+                val channelId = call.parameters["id"] ?: throw BadRequestException("missing channel id")
+                val msgId = call.parameters["msgId"] ?: throw BadRequestException("missing message id")
+                val req = call.receive<EditMessageRequest>()
+                MessageInput.requireValidBody(req.body) // CYP-143: same cap + validate as post, before the chokepoint
+                call.respond(hub.editMessage(participant, channelId, msgId, req.body))
             }
         }
 

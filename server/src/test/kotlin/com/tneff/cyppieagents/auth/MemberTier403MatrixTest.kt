@@ -100,6 +100,12 @@ class MemberTier403MatrixTest {
         // `canWrite` at postAsAgent is the authz (deny-without-grant 403 / allow-with-grant 201). It is ACL-gated,
         // not tier-denied → member-permitted here; the deny/allow invariant is proven by HumanSendAclTest.
         "POST /api/channels/{id}/messages",
+        // CYP-905 — message EDIT is the SAME participant-write tier as SEND above: the gate admits a session
+        // (requireCommWriter), and the authz is the fail-closed author-gate (`from==editor`) ∧ `canWrite` at the
+        // Hub.editMessage chokepoint — ACL-gated, NOT operator-tier (the OPERATOR-only edit is a client AFFORDANCE
+        // decision, not a server restriction; the server author-gate is identity-agnostic). Member-permitted here;
+        // the deny invariant (non-author / no-canWrite → 403) is proven by Cyp905EditMessageTest + Cyp905EditRouteTest.
+        "PUT /api/channels/{id}/messages/{msgId}",
     )
 
     @Test
